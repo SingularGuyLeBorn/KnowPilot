@@ -1,0 +1,3470 @@
+[
+    {
+        "type": "text",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            99,
+            754,
+            156
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Gemma Team, Google DeepMind1 ",
+        "bbox": [
+            99,
+            166,
+            339,
+            181
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "This work introduces Gemma, a family of lightweight, state-of-the art open models built from the research and technology used to create Gemini models. Gemma models demonstrate strong performance across academic benchmarks for language understanding, reasoning, and safety. We release two sizes of models (2 billion and 7 billion parameters), and provide both pretrained and fine-tuned checkpoints. Gemma outperforms similarly sized open models on 11 out of 18 text-based tasks, and we present comprehensive evaluations of safety and responsibility aspects of the models, alongside a detailed description of model development. We believe the responsible release of LLMs is critical for improving the safety of frontier models, and for enabling the next wave of LLM innovations. ",
+        "bbox": [
+            97,
+            202,
+            899,
+            336
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Introduction ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            359,
+            231,
+            376
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "We present Gemma, a family of open models based on Google’s Gemini models (Gemini Team, 2023). ",
+        "bbox": [
+            97,
+            391,
+            490,
+            439
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "We trained Gemma models on up to 6T tokens of text, using architectures, data, and training recipes inspired by the Gemini model family. Like Gemini, these models achieve strong generalist capabilities in text domains, alongside state-of-theart understanding and reasoning skills at scale. With this work, we release both pre-trained and fine-tuned checkpoints, as well as an open-source codebase for inference and serving. ",
+        "bbox": [
+            97,
+            447,
+            489,
+            592
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Gemma comes in two sizes: a 7 billion parameter model for efficient deployment and development on GPU and TPU, and a 2 billion parameter model for CPU and on-device applications. Each size is designed to address different computational constraints, applications, and developer requirements. At each scale, we release raw, pretrained checkpoints, as well as checkpoints finetuned for dialogue, instruction-following, helpfulness, and safety. We thoroughly evaluate the shortcomings of our models on a suite of quantitative and qualitative benchmarks. We believe the release of both pretrained and fine-tuned check points will enable thorough research and investigation into the impact of current instructiontuning regimes, as well as the development of increasingly safe and responsible model development methodologies. ",
+        "bbox": [
+            97,
+            600,
+            492,
+            891
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Gemma advances state-of-the-art performance relative to comparable-scale (and some larger), open models (Almazrouei et al., 2023; Jiang et al., 2023; Touvron et al., 2023a,b) across a wide range of domains including both automated benchmarks and human evaluation. Example domains include question answering (Clark et al., 2019; Kwiatkowski et al., 2019), commonsense reasoning (Sakaguchi et al., 2019; Suzgun et al., 2022), mathematics and science (Cobbe et al., 2021; Hendrycks et al., 2020), and coding (Austin et al., 2021; Chen et al., 2021). See complete details in the Evaluation section. ",
+        "bbox": [
+            505,
+            361,
+            900,
+            570
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Like Gemini, Gemma builds on recent work on sequence models (Sutskever et al., 2014) and transformers (Vaswani et al., 2017), deep learning methods based on neural networks (LeCun et al., 2015), and techniques for large-scale training on distributed systems (Barham et al., 2022; Dean et al., 2012; Roberts et al., 2023). Gemma also builds on Google’s long history of open models and ecosystems, including Word2Vec (Mikolov et al., 2013), the Transformer (Vaswani et al., 2017), BERT (Devlin et al., 2018), and T5 (Raffel et al., 2019) and T5X (Roberts et al., 2022). ",
+        "bbox": [
+            505,
+            579,
+            900,
+            772
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "We believe the responsible release of LLMs is critical for improving the safety of frontier models, for ensuring equitable access to this breakthrough technology, for enabling rigorous evaluation and analysis of current techniques, and for enabling the development of the next wave of innovations. While thorough testing of all Gemma models has been conducted, testing cannot cover all appli cations and scenarios in which Gemma may be used. With this in mind, all Gemma users should conduct rigorous safety testing specific to their use case before deployment or use. More details on our approach to safety can be found in section Responsible Deployment. ",
+        "bbox": [
+            505,
+            778,
+            900,
+            892
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "Google DeepMind ",
+        "bbox": [
+            100,
+            55,
+            258,
+            73
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "2024-02-21 ",
+        "bbox": [
+            818,
+            61,
+            890,
+            73
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "aside_text",
+        "text": "arXiv:2403.08295v4 [cs.CL] 16 Apr 2024 ",
+        "bbox": [
+            21,
+            307,
+            63,
+            724
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_footnote",
+        "text": "1See Contributions and Acknowledgments section for full author list. Please send correspondence to gemma-1-report@google.com. © 2024 Google DeepMind. All rights reservec ",
+        "bbox": [
+            97,
+            931,
+            889,
+            957
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "chart",
+        "img_path": "images/e5dea91a6cba006ceb35b75d4033fc5e8e58c61c846bf1d3a8946dfc3c1923fc.jpg",
+        "content": "| Category | LLaMA 2 (7B) | LLaMA 2 (13B) | Mistral (7B) | Gemma (7B) |\n| :--- | :--- | :--- | :--- | :--- |\n| Question Answering | 60 | 64 | 61 | 62 |\n| Reasoning | 58 | 64 | 63 | 65 |\n| Math / Science | 21 | 29 | 36 | 45 |\n| Coding | 16 | 24 | 33 | 38 |",
+        "chart_caption": [
+            "Figure 1 | Language understanding and generation performance of Gemma 7B across different capabilities compared to similarly sized open models. We group together standard academic benchmark evaluations by capability and average the respective scores; see Table 6 for a detailed breakdown of performance. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "bar",
+        "bbox": [
+            139,
+            108,
+            880,
+            336
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            444,
+            489,
+            557
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "In this technical report, we provide a detailed overview of the model architecture, training in frastructure, and pretraining and fine-tuning recipes for Gemma, followed by thorough evaluations of all checkpoints across a wide-variety of quantitative and qualitative benchmarks, as well as both standard academic benchmarks and human-preference evaluations. We then discuss in detail our approach to safe and responsible deployment. Finally, we outline the broader implica tions of Gemma, its limitations and advantages. ",
+        "bbox": [
+            97,
+            565,
+            489,
+            743
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Model Architecture ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            772,
+            302,
+            790
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "The Gemma model architecture is based on the transformer decoder (Vaswani et al., 2017). The core parameters of the architecture are summarized in Table 1. Models are trained on a context length of 8192 tokens. We also utilize several improvements proposed after the original transformer paper, and list them below: ",
+        "bbox": [
+            97,
+            804,
+            490,
+            903
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "table",
+        "img_path": "images/406f621f2116fa8786d7ccdbcc13360c90ae2d7467607c45baf95466911c487b.jpg",
+        "table_caption": [
+            "Table 1 | Key model parameters. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Parameters</td><td>2B</td><td>7B</td></tr><tr><td>d_model</td><td>2048</td><td>3072</td></tr><tr><td>Layers</td><td>18</td><td>28</td></tr><tr><td>Feedforward hidden dims</td><td>32768</td><td>49152</td></tr><tr><td>Num heads</td><td>8</td><td>16</td></tr><tr><td>Num KV heads</td><td>1</td><td>16</td></tr><tr><td>Head size</td><td>256</td><td>256</td></tr><tr><td>Vocab size</td><td>256128</td><td>256128</td></tr></table>",
+        "bbox": [
+            509,
+            441,
+            900,
+            588
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            652,
+            788,
+            669
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Multi-Query Attention (Shazeer, 2019). Notably, the 7B model uses multi-head attention while the 2B checkpoints use multi-query attention (with ??????\\_????\\_ℎ???????? = 1), based on ablations that showed that multi-query attention works well at small scales (Shazeer, 2019). ",
+        "bbox": [
+            505,
+            676,
+            897,
+            772
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "RoPE Embeddings (Su et al., 2021). Rather than using absolute positional embeddings, we use rotary positional embeddings in each layer; we also share embeddings across our inputs and outputs to reduce model size. ",
+        "bbox": [
+            505,
+            781,
+            897,
+            860
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "GeGLU Activations (Shazeer, 2020). The standard ReLU non-linearity is replaced by the approximated version of the GeGLU activation function. ",
+        "bbox": [
+            505,
+            869,
+            899,
+            903
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "page_number",
+        "text": "2 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "table",
+        "img_path": "images/d7bb1baa4f6e6ecd4dd16601dbddf9f66a0be59a81c6efbf4d0d105df513422d.jpg",
+        "table_caption": [
+            "Table 2 | Parameter counts for the Gemma models. We inherit from the large Gemini vocabulary (256k entries), that is designed to work on large quantities of languages, hence, the larger embedding parameter counts compared to models that are limited to one or a few languages. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Embedding Parameters</td><td>Non-embedding Parameters</td></tr><tr><td>2B</td><td>524,550,144</td><td>1,981,884,416</td></tr><tr><td>7B</td><td>786,825,216</td><td>7,751,248,896</td></tr></table>",
+        "bbox": [
+            122,
+            98,
+            467,
+            179
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            99,
+            311,
+            489,
+            328
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "RMSNorm. We normalize the input of each transformer sub-layer, the attention layer and the feedforward layer, with RMSNorm (Zhang and Sennrich, 2019) to stabilize the training. ",
+        "bbox": [
+            97,
+            335,
+            490,
+            401
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Training Infrastructure ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            426,
+            337,
+            444
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We train the Gemma models using TPUv5e; TPUv5e are deployed in pods of 256 chips, configured into a 2D torus of 16 x 16 chips. For the 7B model, we train our model across 16 pods, to taling to 4096 TPUv5e. We pretrain the 2B model across 2 pods, totaling 512 TPUv5e. Within a pod, we use 16-way model sharding and 16-way data replication for the 7B model. For the 2B, we simply use 256-way data replication. The optimizer state is further sharded using techniques simi lar to ZeRO-3. Beyond a pod, we perform datareplica reduce over the data-center network, using Pathways approach of (Barham et al., 2022). ",
+        "bbox": [
+            97,
+            457,
+            489,
+            668
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We follow Gemini and we leverage the ’sin gle controller’ programming paradigm of Jax (Roberts et al., 2023) and Pathways (Barham et al., 2022). This simplifies the development process by enabling a single Python process to orchestrate the entire training run; we also leverage the GSPMD partitioner (Xu et al., 2021) for the training step computation and the MegaScale XLA compiler (XLA, 2019). ",
+        "bbox": [
+            97,
+            674,
+            489,
+            820
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Carbon Footprint ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            843,
+            250,
+            859
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We estimate the carbon emissions from pretrain ing the Gemma models to be ∼ 131 ??????2????. This value is calculated based on the hourly energy usage reported directly from our TPU datacenters; we also scale this value to account for the additional energy expended to create and maintain the data center, giving us the total energy usage for our training experiments. We convert total energy usage to carbon emissions by joining our hourly energy usage against hourly per-cell carbon emission data reported by our data centers. ",
+        "bbox": [
+            97,
+            869,
+            489,
+            902
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            99,
+            897,
+            244
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "In addition, Google data centers are carbon neutral, achieved through a combination of energy efficiency, renewable energy purchases, and carbon offsets. This carbon neutrality applies to our experiments and the machines running them. ",
+        "bbox": [
+            505,
+            253,
+            897,
+            334
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Pretraining ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            359,
+            626,
+            376
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Training Data ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            392,
+            630,
+            407
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Gemma 2B and 7B are trained on 3T and 6T tokens respectively of primarily-English data from web documents, mathematics, and code. Unlike Gemini, these models are not multimodal, nor are they trained for state-of-the-art performance on multilingual tasks. ",
+        "bbox": [
+            505,
+            418,
+            895,
+            514
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We use a subset of the SentencePiece tokenizer (Kudo and Richardson, 2018) of Gemini for compatibility. It splits digits, does not remove extra whitespace, and relies on byte-level encodings for unknown tokens, following the techniques used for both (Chowdhery et al., 2022) and (Gemini Team, 2023). The vocabulary size is 256k tokens. ",
+        "bbox": [
+            505,
+            521,
+            897,
+            634
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Filtering ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            658,
+            586,
+            674
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We filter the pre-training dataset to reduce the risk of unwanted or unsafe utterances, and filter out certain personal information or other sensitive data. This includes both heuristics and modelbased classifiers to remove harmful or low-quality content. Further, we filter all evaluation sets from our pre-training data mixture, run targeted contamination analyses to check against evaluation set leakage, and reduce the risk of recitation by minimizing proliferation of sensitive outputs. ",
+        "bbox": [
+            505,
+            684,
+            897,
+            845
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "The final data mixture was determined through a series of ablations on both the 2B and 7B models. Similar to the approach advocated in (Gemini ",
+        "bbox": [
+            505,
+            853,
+            897,
+            902
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "page_number",
+        "text": "3 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Team, 2023), we stage training to alter the corpus mixture throughout training to increase the weight of relevant, high-quality data towards the end of training. ",
+        "bbox": [
+            97,
+            101,
+            489,
+            165
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Instruction Tuning ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            191,
+            294,
+            209
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "We finetune Gemma 2B and 7B with supervised fine-tuning (SFT) on a mix of text-only, Englishonly synthetic and human-generated prompt response pairs and reinforcement learning from human feedback (RLHF) with the reward model trained on labelled English-only preference data and the policy based on a set of high-quality prompts. We find that both stages are important for improved performance on downstream automatic evaluations and human preference evaluations of model outputs. ",
+        "bbox": [
+            97,
+            222,
+            490,
+            399
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Supervised Fine-Tuning ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            423,
+            305,
+            439
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "We selected our data mixtures for supervised finetuning based on LM-based side-by-side evaluations (Zheng et al., 2023). Given a set of heldout prompts, we generate responses from a test model, generate responses on the same prompts from a baseline model, shuffle these randomly, and ask a larger, high capability model to express a preference between two responses. Different prompt sets are constructed to highlight specific capabilities, such as instruction following, factu ality, creativity, and safety. Our LM-based judges employ a number of known strategies, such as chain-of-thought prompting (Wei et al., 2022), rubrics and constitutions (Bai et al., 2022), to be aligned with human preferences. ",
+        "bbox": [
+            97,
+            449,
+            489,
+            690
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Filtering ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            714,
+            178,
+            730
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "When using synthetic data, we run several stages of filtering over it, removing examples that show certain personal information, unsafe or toxic model outputs, mistaken self-identification data, or duplicated examples. Following Gemini, we find that including subsets of data that encourage better in-context attribution, hedging, and refusals to minimize hallucinations improves performance on factuality metrics, without degrading model performance on other metrics. ",
+        "bbox": [
+            97,
+            741,
+            490,
+            902
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "The final data mixtures and supervised finetuning recipe, which includes tuned hyperparameters, were chosen on the basis of improving helpfulness while minimizing model harms related to safety and hallucinations. ",
+        "bbox": [
+            505,
+            101,
+            899,
+            181
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Formatting ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            203,
+            606,
+            219
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Instruction tuned models are trained with a specific formatter that annotates all instruction tuning examples with extra information, both at training and inference time. It has two purposes: 1) indicating roles in a conversation, such as the User role, and 2) delineating turns in a conversation, especially in a multi-turn conversation. Special control tokens are reserved in the tokenizer for this purpose. While it is possible to get coherent generations without the formatter, it will be out-of-distribution for the model, and will very likely produce worse generations. ",
+        "bbox": [
+            505,
+            229,
+            900,
+            423
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "The relevant formatting control tokens are presented in Table 3, with a dialogue example presented in Table 4. ",
+        "bbox": [
+            505,
+            430,
+            899,
+            476
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "table",
+        "img_path": "images/bab4ae7e34af38aa6a7dbc881cdfd7192ef7c33b3987efc1353c01301a28b6c6.jpg",
+        "table_caption": [
+            "Table 3 | Relevant formatting control tokens used for both SFT and RLHF of Gemma models. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Context</td><td>Relevant Token</td></tr><tr><td>User turn</td><td>user</td></tr><tr><td>Model turn</td><td>model</td></tr><tr><td>Start of conversation turn</td><td></td></tr><tr><td>End of conversation turn</td><td></td></tr></table>",
+        "bbox": [
+            539,
+            485,
+            865,
+            588
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "table",
+        "img_path": "images/3b36e9b258f23578b0ced67079d4112f85ad3b2ae80a9fdf4abef5430e217645.jpg",
+        "table_caption": [
+            "Table 4 | Example dialogue with user and model control tokens. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>User:</td><td>&lt;start_of_turn&gt;userKnock knock.&lt;end_of_turn&gt;&lt;start_of_turn&gt;model</td></tr><tr><td>Model:</td><td>Who&#x27;s there?&lt;end_of_turn&gt;</td></tr><tr><td>User:</td><td>&lt;start_of_turn&gt;userGemma.&lt;end_of_turn&gt;&lt;start_of_turn&gt;model</td></tr><tr><td>Model:</td><td>Gemma who?&lt;end_of_turn&gt;</td></tr></table>",
+        "bbox": [
+            544,
+            644,
+            858,
+            772
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Reinforcement Learning from Human Feedback ",
+        "text_level": 1,
+        "bbox": [
+            505,
+            827,
+            897,
+            858
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "We further finetuned the supervised fine-tuned model using RLHF (Christiano et al., 2017; ",
+        "bbox": [
+            505,
+            869,
+            897,
+            902
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "page_number",
+        "text": "4 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Ouyang et al., 2022). We collected pairs of pref erences from human raters and trained a reward function under the Bradley-Terry model (Bradley and Terry, 1952), similarly to Gemini. The pol icy was trained to optimize this reward function using a novel reinforcement learning algorithm. Similar to the SFT phase, and in order to tune hy perparameters and additionally mitigate reward hacking (Amodei et al., 2016; Skalse et al., 2022) we relied on a high capacity model as an automatic rater and computed side-by-side comparisons against baseline models. ",
+        "bbox": [
+            97,
+            99,
+            492,
+            294
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Evaluation ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            323,
+            211,
+            338
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "We evaluate Gemma across a broad range of domains, using both automated benchmarks and human evaluation. ",
+        "bbox": [
+            97,
+            354,
+            489,
+            401
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Human Preference Evaluations ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            429,
+            366,
+            443
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "In addition to running standard academic bench marks on the finetuned models, we sent final release candidates to human evaluation studies to be compared against the Mistral v0.2 7B Instruct model (Jiang et al., 2023). ",
+        "bbox": [
+            97,
+            454,
+            489,
+            536
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "On a held-out collection of around 1000 prompts oriented toward asking models to follow instructions across creative writing tasks, coding, and following instructions, Gemma 7B IT has a 61.2% positive win rate and Gemma 2B IT has a 45% win rate over Mistral v0.2 7B Instruct. On a held-out collection of around 400 prompts oriented towards testing basic safety protocols, Gemma 7B IT has a 63.5% win rate, while Gemma 2B IT has a 60.1% win rate. We report the corresponding numbers in Table 5. ",
+        "bbox": [
+            97,
+            543,
+            489,
+            721
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Automated Benchmarks ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            747,
+            307,
+            762
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "We measure Gemma models’ performance on domains including physical reasoning (Bisk et al., 2019), social reasoning (Sap et al., 2019), question answering (Clark et al., 2019; Kwiatkowski et al., 2019), coding (Austin et al., 2021; Chen et al., 2021), mathematics (Cobbe et al., 2021), commonsense reasoning (Sakaguchi et al., 2019), language modeling (Paperno et al., 2016), read-Table 5 | Win rate of Gemma 1.1 IT models versus Mistral 7B v0.2 Instruct with 95% confidence intervals. We report breakdowns of wins, ties, and losses, and we break ties evenly when reporting the final win rate. Gemma 1.0 results can be found in the appendix. ",
+        "bbox": [
+            97,
+            772,
+            492,
+            903
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "table",
+        "img_path": "images/93e548abb0d9638c8bf331ef3eb407f11d7b4a4065972b2e49f18192dd2b63e3.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Safety</td><td>Instr. Following</td></tr><tr><td>Gemma 1.1 IT 7B</td><td>63.5%</td><td>61.2%</td></tr><tr><td>95% Conf. Interval</td><td>[60.7%, 66.1%]</td><td>[59.3%, 63%]</td></tr><tr><td>Win / Tie / Loss</td><td>51.5% / 23.9% / 24.6%</td><td>52.2% / 18.1% / 29.8%</td></tr><tr><td>Gemma 1.1 IT 2B</td><td>60.1%</td><td>45%</td></tr><tr><td>95% Conf. Interval</td><td>[57.3%, 62.8%]</td><td>[43.1%, 46.9%]</td></tr><tr><td>Win / Tie / Loss</td><td>48.5% / 23.2% / 28.3%</td><td>37.1% / 15.8% / 47.1%</td></tr></table>",
+        "bbox": [
+            509,
+            98,
+            907,
+            211
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            219,
+            899,
+            317
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "ing comprehension (Joshi et al., 2017), and more. ",
+        "bbox": [
+            505,
+            355,
+            897,
+            370
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "For most automated benchmarks we use the same evaluation methodology as in Gemini. Specifically for those where we report performance compared with Mistral, we replicated methodology from the Mistral technical report as closely as possible. These specific benchmarks are: ARC (Clark et al., 2018), CommonsenseQA (Talmor et al., 2019), Big Bench Hard (Suzgun et al., 2022), and AGI Eval (English-only) (Zhong et al., 2023). Due to restrictive licensing, we were unable to run any evaluations on LLaMA-2 and cite only those metrics previously reported (Touvron et al., 2023b). ",
+        "bbox": [
+            505,
+            379,
+            897,
+            588
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "We compare Gemma 2B and 7B models to several external open-source (OSS) LLMs across a series of academic benchmarks, reported in Table 6 and Table 7. ",
+        "bbox": [
+            505,
+            596,
+            897,
+            659
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "On MMLU (Hendrycks et al., 2020), Gemma 7B outperforms all OSS alternatives at the same or smaller scale; it also outperforms several larger models, including LLaMA2 13B. However, human expert performance is gauged at 89.8% by the benchmark authors; as Gemini Ultra is the first model to exceed this threshold, there is significant room for continued improvements to achieve Gemini and human-level performance. ",
+        "bbox": [
+            505,
+            668,
+            897,
+            814
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Gemma models demonstrate particularly strong performance on mathematics and coding benchmarks. On mathematics tasks, which are often used to benchmark the general analytical capabilities of models, Gemma models outperform other models by at least 10 points on GSM8K (Cobbe et al., 2021) and the more difficult MATH (Hendrycks et al., 2021) bench mark. Similarly, they outperform alternate open models by at least 6 points on HumanEval (Chen et al., 2021). They even surpass the performance of the code-fine-tuned CodeLLaMA-7B models on MBPP (CodeLLaMA achieves a score of 41.4% where Gemma 7B achieves 44.4%). ",
+        "bbox": [
+            505,
+            821,
+            897,
+            902
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "page_number",
+        "text": "5 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "table",
+        "img_path": "images/61e3425b3e982a9404be8a6a833ebcb4a616105c241da03ca520f20e34634518.jpg",
+        "table_caption": [
+            "Table 6 | Academic benchmark results, compared to similarly sized, openly-available models trained on general English text data. † Mistral reports 50.2 on a different split for MBPP and on their split our 7B model achieves 54.5. ∗ evaluations run by us. Note that due to restrictive licensing, we were unable to run evals on LLaMA-2; all values above were previously reported in Touvron et al. (2023b). "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Benchmark</td><td rowspan=\"2\">metric</td><td colspan=\"2\">LLaMA-2</td><td>Mistral</td><td colspan=\"2\">Gemma</td></tr><tr><td>7B</td><td>13B</td><td>7B</td><td>2B</td><td>7B</td></tr><tr><td>MMLU</td><td>5-shot, top-1</td><td>45.3</td><td>54.8</td><td>62.5</td><td>42.3</td><td>64.3</td></tr><tr><td>HellaSwag</td><td>0-shot</td><td>77.2</td><td>80.7</td><td>81.0</td><td>71.4</td><td>81.2</td></tr><tr><td>PIQA</td><td>0-shot</td><td>78.8</td><td>80.5</td><td>82.2</td><td>77.3</td><td>81.2</td></tr><tr><td>SIQA</td><td>0-shot</td><td>48.3</td><td>50.3</td><td>47.0*</td><td>49.7</td><td>51.8</td></tr><tr><td>Boolq</td><td>0-shot</td><td>77.4</td><td>81.7</td><td>83.2*</td><td>69.4</td><td>83.2</td></tr><tr><td>Winogrande</td><td>partial scoring</td><td>69.2</td><td>72.8</td><td>74.2</td><td>65.4</td><td>72.3</td></tr><tr><td>CQA</td><td>7-shot</td><td>57.8</td><td>67.3</td><td>66.3*</td><td>65.3</td><td>71.3</td></tr><tr><td>OBQA</td><td></td><td>58.6</td><td>57.0</td><td>52.2</td><td>47.8</td><td>52.8</td></tr><tr><td>ARC-e</td><td></td><td>75.2</td><td>77.3</td><td>80.5</td><td>73.2</td><td>81.5</td></tr><tr><td>ARC-c</td><td></td><td>45.9</td><td>49.4</td><td>54.9</td><td>42.1</td><td>53.2</td></tr><tr><td>TriviaQA</td><td>5-shot</td><td>72.1</td><td>79.6</td><td>62.5</td><td>53.2</td><td>63.4</td></tr><tr><td>NQ</td><td>5-shot</td><td>25.7</td><td>31.2</td><td>23.2</td><td>12.5</td><td>23.0</td></tr><tr><td>HumanEval</td><td>pass@1</td><td>12.8</td><td>18.3</td><td>26.2</td><td>22.0</td><td>32.3</td></tr><tr><td>MBPP†</td><td>3-shot</td><td>20.8</td><td>30.6</td><td>40.2*</td><td>29.2</td><td>44.4</td></tr><tr><td>GSM8K</td><td>maj@1</td><td>14.6</td><td>28.7</td><td>35.4*</td><td>17.7</td><td>46.4</td></tr><tr><td>MATH</td><td>4-shot</td><td>2.5</td><td>3.9</td><td>12.7</td><td>11.8</td><td>24.3</td></tr><tr><td>AGIEval</td><td></td><td>29.3</td><td>39.1</td><td>41.2*</td><td>24.2</td><td>41.7</td></tr><tr><td>BBH</td><td></td><td>32.6</td><td>39.4</td><td>56.1*</td><td>35.2</td><td>55.1</td></tr><tr><td>Average</td><td></td><td>46.9</td><td>52.4</td><td>54.5</td><td>45.0</td><td>56.9</td></tr></table>",
+        "bbox": [
+            188,
+            98,
+            811,
+            492
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            590,
+            489,
+            736
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "Memorization Evaluations ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            763,
+            327,
+            778
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "Recent work has shown that aligned models may be vulnerable to new adversarial attacks that can bypass alignment (Nasr et al., 2023). These attacks can cause models to diverge, and sometimes regurgitate memorized training data in the process. We focus on discoverable memorization, which serves as a reasonable upper-bound on the memorization of a model (Nasr et al., 2023) and has been the common definition used in several studies (Anil et al., 2023; Carlini et al., 2022; Kudugunta et al., 2023). ",
+        "bbox": [
+            97,
+            789,
+            490,
+            903
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            590,
+            897,
+            657
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "We test for memorization1 of the Gemma pretrained models with the same methodology performed in Anil et al. (2023). We sample 10,000 documents from each corpus and use the first 50 tokens as a prompt for the model. We focus mainly on exact memorization, where we classify texts as memorized if the subsequent 50 tokens generated by the model exactly match the ground truth continuation in the text. However, to better capture potential paraphrased memorizations, we include approximate memorization (Ippolito et al., 2022) using an 10% edit distance threshold. In Figure 2, we compare the results of our evaluation with the closest sized PaLM (Chowdhery et al., 2022) and PaLM 2 models (Anil et al., 2023). ",
+        "bbox": [
+            505,
+            664,
+            900,
+            858
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "page_footnote",
+        "text": "1Our use of “memorization” relies on the definition of that term found at www.genlaw.org/glossary.html. ",
+        "bbox": [
+            507,
+            873,
+            897,
+            902
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "page_number",
+        "text": "6 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "table",
+        "img_path": "images/a4833f3f6847fe17f893ec5d43b5b624c68e442394c9379601e15835f56a82ae.jpg",
+        "table_caption": [
+            "Table 7 | HuggingFace H6 benchmark. The performance of small models are sensitive to small modifications in prompts and we further validate the quality of our models on an independent im plementation of multiple known benchmarks. All evaluations were run by HuggingFace. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Benchmark</td><td>Mistral 7B</td><td>Gemma 7B</td></tr><tr><td>ARC-c</td><td>60.0</td><td>61.9</td></tr><tr><td>HellaSwag</td><td>83.3</td><td>82.2</td></tr><tr><td>MMLU</td><td>64.2</td><td>64.6</td></tr><tr><td>TruthfulQA</td><td>42.2</td><td>44.8</td></tr><tr><td>Winogrande</td><td>78.4</td><td>79.0</td></tr><tr><td>GSM8K</td><td>37.8</td><td>50.9</td></tr><tr><td>Average</td><td>61.0</td><td>63.8</td></tr></table>",
+        "bbox": [
+            154,
+            98,
+            436,
+            267
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "image",
+        "img_path": "images/6e2b97e593a4990834b42f410b68e86b9a1183740c9c5984d534bebfab3f9b12.jpg",
+        "image_caption": [
+            "Figure 2 | Comparing average memorization rates across model families. We compare the Gemma pretrained models to PaLM and PaLM 2 models of comparable size and find similarly low rates of memorization. "
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            104,
+            388,
+            487,
+            545
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            663,
+            490,
+            728
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Verbatim Memorization PaLM 2 compared with PaLM by evaluating on a shared subset of their training corpora. However, there is even less overlap between the Gemma pretraining data with the PaLM models, and so using this same methodology, we observe much lower memorization rates (Figure 2 left). Instead, we find that estimating the “total memorization” across the entire pretraining dataset gives a more reliable estimate (Figure 2 right) where we now find the Gemma memorizes training data at a comparable rate to PaLM. ",
+        "bbox": [
+            97,
+            757,
+            490,
+            903
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            101,
+            895,
+            148
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/c3e6f3e71954e166e0a3713b2984eb12a73d13ae815e5c9c62102c812858dac4.jpg",
+        "content": "| Data Source    | % Exact Memorized |\n| -------------- | ----------------- |\n| Code           | 10.0              |\n| Wiki           | 10.0              |\n| Science        | 5.0               |\n| Web            | 0.5               |\n| Multilingual   | 0.1               |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "bar",
+        "bbox": [
+            510,
+            158,
+            695,
+            286
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/9667a24a7f1b47baac718bec05d4a19bb266088ab5a420fd8e36374b169b8946.jpg",
+        "content": "| Data Source   | % Exact Memorized |\n| ------------- | ----------------- |\n| Code          | 10.0              |\n| Wiki          | 10.0              |\n| Science       | 10.0              |\n| Web           | 0.1               |\n| Multilingual  | 0.01              |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "bar",
+        "bbox": [
+            705,
+            158,
+            890,
+            286
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "image",
+        "img_path": "images/abf8444bc299b02b0614e1c3780e4a3f89b1852e3af9eac5fce64211cdfedfcf.jpg",
+        "image_caption": [
+            "Figure 3 | Measuring personal and sensitive data memorization rates. No sensitive data was memorized, hence it is omitted from the figure. "
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            653,
+            288,
+            771,
+            313
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Personal Data Perhaps of higher importance is the possibility that personal data might be memorized. As part of making Gemma pre-trained models safe and reliable, we used automated techniques to filter out certain personal information and other sensitive data from training sets. ",
+        "bbox": [
+            505,
+            411,
+            897,
+            508
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "To identify possible occurrences of personal data, we use Google Cloud Sensitive Data Protection2. This tool outputs three severity levels based on many categories of personal data (e.g., names, emails, etc.). We classify the highest severity as “sensitive” and the remaining two as simply “personal”. Then, we measure how many memorized outputs contain any sensitive or personal data. As shown in Figure 3, we observe no cases of memorized sensitive data. We do find that the model memorizes some data we have classified as potentially “personal” according to the above, though often at a much lower rate. Further, it is important to note that these tools are known to have many false positives (because they only match patterns and do not consider the context), meaning that our results are likely overestimates of the amount of personal data identified. ",
+        "bbox": [
+            505,
+            514,
+            897,
+            806
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Approximate Memorization In Figure 4, we observe that roughly 50% more data is approximately memorized (note the log scale) and that this is nearly consistent across each of the different subcategories over the dataset. ",
+        "bbox": [
+            505,
+            832,
+            897,
+            865
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "page_footnote",
+        "text": "2Available at: https://cloud.google.com/ sensitive-data-protection ",
+        "bbox": [
+            507,
+            873,
+            897,
+            902
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "page_number",
+        "text": "7 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "table",
+        "img_path": "images/65e5c31dfeaca9e21bd501cb3db23da2fdc4297c7e1cdb8361c2002809028e68.jpg",
+        "table_caption": [
+            "Table 8 | Safety academic benchmark results of Gemma 1.1 IT models, compared to similarly sized, openly-available models. Evaluations run by us. Note that due to restrictive licensing, we were unable to run evals on LLaMA-2; we do not report previously-published numbers for LLaMA-2 on TruthfulQA, as we use different, non-comparable evaluation set-ups: we use MC2, where LLaMA-2 uses GPT-Judge. Results for Gemma 1.0 IT models can be found in appendix. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Benchmark</td><td rowspan=\"2\">metric</td><td>Mistral v0.2</td><td colspan=\"2\">Gemma 1.1 IT</td></tr><tr><td>7B*</td><td>2B</td><td>7B</td></tr><tr><td>RealToxicity</td><td>avg</td><td>8.44</td><td>7.03</td><td>8.04</td></tr><tr><td>BOLD</td><td></td><td>46.0</td><td>47.76</td><td>45.2</td></tr><tr><td>CrowS-Pairs</td><td>top-1</td><td>32.76</td><td>45.89</td><td>49.67</td></tr><tr><td>BBQ Ambig</td><td>1-shot, top-1</td><td>97.53</td><td>58.97</td><td>86.06</td></tr><tr><td>BBQ Disambig</td><td>top-1</td><td>84.45</td><td>53.9</td><td>85.08</td></tr><tr><td>Winogender</td><td>top-1</td><td>64.3</td><td>50.14</td><td>57.64</td></tr><tr><td>TruthfulQA</td><td></td><td>48.54</td><td>44.24</td><td>45.34</td></tr><tr><td>Winobias 1_2</td><td></td><td>65.72</td><td>55.93</td><td>59.22</td></tr><tr><td>Winobias 2_2</td><td></td><td>84.53</td><td>89.46</td><td>89.2</td></tr><tr><td>Toxigen</td><td></td><td>61.77</td><td>29.64</td><td>38.75</td></tr></table>",
+        "bbox": [
+            240,
+            98,
+            754,
+            316
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "image",
+        "img_path": "images/5303db6543d124697349c386f664c44449d62c402b4499cdbb9a1b6da6f60cc8.jpg",
+        "image_caption": [
+            "Figure 4 | Comparing exact and approximate memorization. "
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            104,
+            429,
+            484,
+            588
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            659,
+            489,
+            708
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Responsible Deployment ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            741,
+            354,
+            760
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "In line with previous releases of Google’s AI technologies (Gemini Team, 2023; Kavukcuoglu et al., 2022), we follow a structured approach to responsible development and deployment of our models, in order to identify, measure, and manage foreseeable downstream societal impacts. As with our recent Gemini release, these are informed by prior academic literature on language model risks (Weidinger et al., 2021), findings from similar prior exercises conducted across the industry (Anil et al., 2023), ongoing engagement with experts internally and externally, and unstructured attempts to discover new model vulnerabilities. ",
+        "bbox": [
+            97,
+            772,
+            490,
+            903
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            430,
+            899,
+            512
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Benefits ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            546,
+            581,
+            558
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "We believe that openness in AI science and technology can bring significant benefits. Opensourcing is a significant driver of science and innovation, and a responsible practice in most circumstances. But this needs to be balanced against the risk of providing actors with the tools to cause harm now or in the future. ",
+        "bbox": [
+            505,
+            571,
+            897,
+            684
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Google has long committed to providing broader access to successful research innovations (GraphCast, Transformer, BERT, T5, Word2Vec), and we believe that releasing Gemma into the AI development ecosystem will enable downstream developers to create a host of beneficial applications, in areas such as science, education and the arts. Our instruction-tuned offerings should encourage a range of developers to leverage Gemma’s chat and code capabilities to support their own beneficial applications, while allowing for custom fine-tuning to specialize the model’s capabilities for specific use cases. To ensure Gemma supports a wide range of developer needs, we are also releasing two model sizes to optimally sup port different environments, and have made these models available across a number of platforms (see Kaggle for details). Providing broad access to Gemma in this way should reduce the economic and technical barriers that newer ventures or in dependent developers face when incorporating these technologies into their workstreams. ",
+        "bbox": [
+            505,
+            692,
+            897,
+            902
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_number",
+        "text": "8 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            99,
+            101,
+            492,
+            247
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "As well as serving developers with our instruction-tuned models, we have also provided access to corresponding base pretrained models. By doing so, it is our intention to encourage further AI safety research and community innovation, providing a wider pool of models available to developers to build on various methods of transparency and interpretability research that the community has already benefited from (Pacchiardi et al., 2023; Zou et al., 2023). ",
+        "bbox": [
+            97,
+            254,
+            492,
+            414
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Risks ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            441,
+            152,
+            455
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "In addition to bringing benefits to the AI development ecosystem, we are aware that malicious uses of LLMs, such as the creation of deepfake imagery, AI-generated disinformation, and illegal and disturbing material can cause harm on both an individual and institutional levels (Weidinger et al., 2021). Providing access to model weights, rather than releasing models behind an API, also raises new challenges for responsible deployment. ",
+        "bbox": [
+            97,
+            467,
+            490,
+            613
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "First, we cannot prevent bad actors from fine tuning Gemma for malicious intent, despite their use being subject to Terms of Use that prohibit the use of Gemma models in ways that contravene our Gemma Prohibited Use Policy. However, we are cognizant that further work is required to build more robust mitigation strategies against intentional misuse of open models, which Google DeepMind will continue to explore both internally and in collaboration with the AI community. ",
+        "bbox": [
+            97,
+            620,
+            489,
+            782
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "The second challenge we face is protecting developers and downstream users against the unintended behaviours of open models, including generation of toxic language or perpetuation of discriminatory social harms, model hallucinations and leakage of personally identifiable information. When deploying models behind an API, these risks can be reduced via various filtering methods. ",
+        "bbox": [
+            97,
+            789,
+            490,
+            903
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            507,
+            101,
+            870,
+            117
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Mitigations ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            133,
+            610,
+            148
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Without this layer of defense for the Gemma family of models, we have endeavoured to safeguard against these risks by filtering and measuring biases in pre-training data in line with the Gemini approach, assessing safety through standardized AI safety benchmarks, internal red teaming to better understand the risks associated with external use of Gemma, and subjecting the models to rigorous ethics and safety evaluations, the results of which can be seen in 8. ",
+        "bbox": [
+            505,
+            158,
+            900,
+            319
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "While we’ve invested significantly in improving the model, we recognize its limitations. To ensure transparency for downstream users, we’ve published a detailed model card to provide researchers with a more comprehensive understanding of Gemma. ",
+        "bbox": [
+            505,
+            328,
+            900,
+            425
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "We have also released a Generative AI Responsible Toolkit to support developers to build AI responsibly. This encompasses a series of assets to help developers design and implement responsible AI best practices and keep their users safe. ",
+        "bbox": [
+            505,
+            432,
+            900,
+            513
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "The relative novelty of releasing open weights models means new uses, and misuses, of these models are still being discovered, which is why Google DeepMind is committed to the continuous research and development of robust mitigation strategies alongside future model development. ",
+        "bbox": [
+            505,
+            521,
+            899,
+            619
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Assessment ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            634,
+            613,
+            648
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Ultimately, given the capabilities of larger systems accessible within the existing ecosystem, we believe the release of Gemma will have a negligible effect on the overall AI risk portfolio. In light of this, and given the utility of these models for research, auditing and downstream product development, we are confident that the benefit of Gemma to the AI community outweighs the risks described. ",
+        "bbox": [
+            505,
+            659,
+            900,
+            804
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Going Forward ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            827,
+            640,
+            843
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "As a guiding principle, Google DeepMind strives to adopt assessments and safety mitigations proportionate to the potential risks from our models. ",
+        "bbox": [
+            505,
+            853,
+            900,
+            903
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            64,
+            692,
+            76
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "page_number",
+        "text": "9 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Although we are confident that Gemma models will provide a net benefit to the community, our emphasis on safety stems from the irreversible na ture of this release. As the harms resulting from open models are not yet well defined, nor does an established evaluation framework for such mod els exist, we will continue to follow this precedent and take a measured and cautionary approach to open model development. As capabilities advance, we may explore extended testing, stag gered releases or alternative access mechanisms to ensure responsible AI development. ",
+        "bbox": [
+            99,
+            101,
+            492,
+            294
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "As the ecosystem evolves, we urge the wider AI community to move beyond simplistic ’open vs. closed’ debates, and avoid either exaggerating or minimising potential harms, as we believe a nuanced, collaborative approach to risks and benefits is essential. At Google DeepMind we’re committed to developing high-quality evaluations and invite the community to join us in this effort for a deeper understanding of AI systems. ",
+        "bbox": [
+            97,
+            302,
+            489,
+            448
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Discussion and Conclusion ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            483,
+            376,
+            502
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "We present Gemma, an openly available family of generative language models for text and code. Gemma advances the state of the art of openly available language model performance, safety, and responsible development. ",
+        "bbox": [
+            97,
+            514,
+            490,
+            596
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "In particular, we are confident that Gemma models will provide a net benefit to the community given our extensive safety evaluations and mitigations; however, we acknowledge that this release is irreversible and the harms resulting from open models are not yet well defined, so we continue to adopt assessments and safety mitiga tions proportionate to the potential risks of these models. In addition, our models outperform competitors on 6 standard safety benchmarks, and in human side-by-side evaluations. ",
+        "bbox": [
+            97,
+            604,
+            492,
+            781
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Gemma models improve performance on a broad range of domains including dialogue, reasoning, mathematics, and code generation. Results on MMLU (64.3%) and MBPP (44.4%) demonstrate both the high performance of Gemma, as well as the continued headroom in openly available LLM performance. ",
+        "bbox": [
+            97,
+            789,
+            492,
+            903
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Beyond state-of-the-art performance measures on benchmark tasks, we are excited to see what new use-cases arise from the community, and what new capabilities emerge as we advance the field together. We hope that researchers use Gemma to accelerate a broad array of research, and that developers create beneficial new applications, user experiences, and other functionality. ",
+        "bbox": [
+            505,
+            101,
+            900,
+            231
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Gemma benefits from many learnings of the Gemini model program including code, data, architecture, instruction tuning, reinforcement learning from human feedback, and evaluations. As discussed in the Gemini technical report, we reiterate a non-exhaustive set of limitations to the use of LLMs. Even with great performance on benchmark tasks, further research is needed to create robust, safe models that reliably perform as intended. Example further research areas include factuality, alignment, complex reasoning, and robustness to adversarial input. As discussed by Gemini, we note the need for more challenging and robust benchmarks. ",
+        "bbox": [
+            505,
+            237,
+            900,
+            464
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            64,
+            692,
+            76
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "page_number",
+        "text": "10 ",
+        "bbox": [
+            878,
+            933,
+            897,
+            944
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Contributions and Acknowledgments ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            99,
+            475,
+            118
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Core Contributors ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            131,
+            257,
+            145
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Thomas Mesnard ",
+        "bbox": [
+            100,
+            148,
+            240,
+            161
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Cassidy Hardin ",
+        "bbox": [
+            100,
+            164,
+            225,
+            178
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Robert Dadashi ",
+        "bbox": [
+            100,
+            180,
+            226,
+            193
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Surya Bhupatiraju ",
+        "bbox": [
+            100,
+            196,
+            250,
+            211
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Shreya Pathak ",
+        "bbox": [
+            100,
+            212,
+            218,
+            225
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Laurent Sifre ",
+        "bbox": [
+            100,
+            228,
+            208,
+            241
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Morgane Rivière ",
+        "bbox": [
+            100,
+            244,
+            236,
+            259
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Mihir Sanjay Kale ",
+        "bbox": [
+            100,
+            260,
+            245,
+            274
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Juliette Love ",
+        "bbox": [
+            100,
+            275,
+            205,
+            290
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Pouya Tafti ",
+        "bbox": [
+            100,
+            292,
+            194,
+            307
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Léonard Hussenot ",
+        "bbox": [
+            100,
+            309,
+            248,
+            322
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Pier Giuseppe Sessa ",
+        "bbox": [
+            100,
+            325,
+            263,
+            340
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Contributors ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            348,
+            211,
+            362
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Aakanksha Chowdhery ",
+        "bbox": [
+            100,
+            365,
+            285,
+            380
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Adam Roberts ",
+        "bbox": [
+            100,
+            381,
+            216,
+            394
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Aditya Barua ",
+        "bbox": [
+            100,
+            397,
+            208,
+            412
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Alex Botev ",
+        "bbox": [
+            100,
+            413,
+            189,
+            426
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Alex Castro-Ros ",
+        "bbox": [
+            100,
+            429,
+            228,
+            442
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ambrose Slone ",
+        "bbox": [
+            100,
+            445,
+            223,
+            458
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Amélie Héliou ",
+        "bbox": [
+            100,
+            461,
+            216,
+            475
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Andrea Tacchetti ",
+        "bbox": [
+            100,
+            476,
+            238,
+            491
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Anna Bulanova ",
+        "bbox": [
+            100,
+            494,
+            225,
+            507
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Antonia Paterson ",
+        "bbox": [
+            100,
+            510,
+            240,
+            523
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Beth Tsai ",
+        "bbox": [
+            100,
+            525,
+            179,
+            539
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Bobak Shahriari ",
+        "bbox": [
+            100,
+            542,
+            233,
+            555
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Charline Le Lan ",
+        "bbox": [
+            100,
+            558,
+            230,
+            571
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Christopher A. Choquette-Choo ",
+        "bbox": [
+            100,
+            574,
+            354,
+            589
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Clément Crepy ",
+        "bbox": [
+            100,
+            590,
+            223,
+            605
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Daniel Cer ",
+        "bbox": [
+            100,
+            606,
+            189,
+            619
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Daphne Ippolito ",
+        "bbox": [
+            100,
+            621,
+            233,
+            637
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "David Reid ",
+        "bbox": [
+            100,
+            639,
+            191,
+            652
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Elena Buchatskaya ",
+        "bbox": [
+            100,
+            653,
+            253,
+            669
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Eric Ni ",
+        "bbox": [
+            100,
+            671,
+            159,
+            683
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Eric Noland ",
+        "bbox": [
+            100,
+            686,
+            200,
+            700
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Geng Yan ",
+        "bbox": [
+            100,
+            703,
+            179,
+            717
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "George Tucker ",
+        "bbox": [
+            100,
+            719,
+            221,
+            734
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "George-Christian Muraru ",
+        "bbox": [
+            100,
+            734,
+            304,
+            750
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Grigory Rozhdestvenskiy ",
+        "bbox": [
+            100,
+            751,
+            302,
+            766
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Henryk Michalewski ",
+        "bbox": [
+            100,
+            766,
+            265,
+            782
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ian Tenney ",
+        "bbox": [
+            100,
+            784,
+            194,
+            797
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ivan Grishchenko ",
+        "bbox": [
+            100,
+            800,
+            243,
+            813
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Jacob Austin ",
+        "bbox": [
+            100,
+            816,
+            203,
+            829
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "James Keeling ",
+        "bbox": [
+            100,
+            832,
+            216,
+            847
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Jane Labanowski ",
+        "bbox": [
+            100,
+            848,
+            238,
+            860
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Jean-Baptiste Lespiau ",
+        "bbox": [
+            100,
+            864,
+            275,
+            879
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Jeff Stanway ",
+        "bbox": [
+            100,
+            879,
+            206,
+            895
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Jenny Brennan ",
+        "bbox": [
+            507,
+            102,
+            631,
+            116
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Jeremy Chen ",
+        "bbox": [
+            507,
+            118,
+            616,
+            131
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Johan Ferret ",
+        "bbox": [
+            507,
+            134,
+            611,
+            147
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Justin Chiu ",
+        "bbox": [
+            507,
+            149,
+            601,
+            162
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Justin Mao-Jones ",
+        "bbox": [
+            507,
+            166,
+            648,
+            179
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Katherine Lee ",
+        "bbox": [
+            507,
+            181,
+            623,
+            195
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Kathy Yu ",
+        "bbox": [
+            507,
+            198,
+            584,
+            212
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Katie Millican ",
+        "bbox": [
+            507,
+            214,
+            621,
+            227
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Lars Lowe Sjoesund ",
+        "bbox": [
+            507,
+            230,
+            670,
+            244
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Lisa Lee ",
+        "bbox": [
+            507,
+            247,
+            576,
+            260
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Lucas Dixon ",
+        "bbox": [
+            507,
+            263,
+            608,
+            275
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Machel Reid ",
+        "bbox": [
+            507,
+            278,
+            611,
+            291
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Maciej Mikuła ",
+        "bbox": [
+            507,
+            294,
+            625,
+            309
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Mateo Wirth ",
+        "bbox": [
+            507,
+            311,
+            613,
+            324
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Michael Sharman ",
+        "bbox": [
+            507,
+            326,
+            652,
+            340
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Nikolai Chinaev ",
+        "bbox": [
+            507,
+            342,
+            640,
+            356
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Nithum Thain ",
+        "bbox": [
+            507,
+            359,
+            623,
+            372
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Olivier Bachem ",
+        "bbox": [
+            507,
+            375,
+            633,
+            388
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Oscar Chang ",
+        "bbox": [
+            507,
+            391,
+            613,
+            406
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Oscar Wahltinez ",
+        "bbox": [
+            507,
+            407,
+            640,
+            420
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Paige Bailey ",
+        "bbox": [
+            507,
+            423,
+            608,
+            439
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Paul Michel ",
+        "bbox": [
+            507,
+            439,
+            605,
+            451
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Petko Yotov ",
+        "bbox": [
+            507,
+            456,
+            605,
+            469
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Rahma Chaabouni ",
+        "bbox": [
+            507,
+            472,
+            660,
+            485
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ramona Comanescu ",
+        "bbox": [
+            507,
+            488,
+            673,
+            501
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Reena Jana ",
+        "bbox": [
+            507,
+            504,
+            603,
+            517
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Rohan Anil ",
+        "bbox": [
+            507,
+            520,
+            601,
+            533
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ross McIlroy ",
+        "bbox": [
+            507,
+            536,
+            613,
+            551
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ruibo Liu ",
+        "bbox": [
+            507,
+            552,
+            589,
+            565
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ryan Mullins ",
+        "bbox": [
+            507,
+            568,
+            616,
+            582
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Samuel L Smith ",
+        "bbox": [
+            507,
+            583,
+            638,
+            598
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Sebastian Borgeaud ",
+        "bbox": [
+            507,
+            600,
+            670,
+            615
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Sertan Girgin ",
+        "bbox": [
+            507,
+            617,
+            620,
+            632
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Sholto Douglas ",
+        "bbox": [
+            507,
+            633,
+            633,
+            648
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Shree Pandya ",
+        "bbox": [
+            507,
+            649,
+            620,
+            664
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Siamak Shakeri ",
+        "bbox": [
+            507,
+            665,
+            636,
+            678
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Soham De ",
+        "bbox": [
+            507,
+            681,
+            594,
+            694
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Ted Klimenko ",
+        "bbox": [
+            507,
+            697,
+            621,
+            709
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Tom Hennigan ",
+        "bbox": [
+            507,
+            713,
+            628,
+            728
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Vlad Feinberg ",
+        "bbox": [
+            507,
+            728,
+            623,
+            745
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Wojciech Stokowiec ",
+        "bbox": [
+            507,
+            745,
+            668,
+            759
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Yu-hui Chen ",
+        "bbox": [
+            507,
+            760,
+            611,
+            775
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Zafarali Ahmed ",
+        "bbox": [
+            507,
+            777,
+            636,
+            791
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Zhitao Gong ",
+        "bbox": [
+            507,
+            793,
+            611,
+            809
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "page_number",
+        "text": "11 ",
+        "bbox": [
+            878,
+            933,
+            894,
+            942
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Product Management ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            101,
+            287,
+            117
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Tris Warkentin ",
+        "bbox": [
+            100,
+            118,
+            221,
+            131
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Ludovic Peran ",
+        "bbox": [
+            100,
+            134,
+            216,
+            147
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Program Management ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            156,
+            295,
+            173
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Minh Giang ",
+        "bbox": [
+            100,
+            174,
+            200,
+            189
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Executive Sponsors ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            198,
+            268,
+            212
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Clément Farabet ",
+        "bbox": [
+            100,
+            214,
+            235,
+            227
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Oriol Vinyals ",
+        "bbox": [
+            100,
+            230,
+            206,
+            244
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Jeff Dean ",
+        "bbox": [
+            100,
+            246,
+            179,
+            260
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Koray Kavukcuoglu ",
+        "bbox": [
+            100,
+            262,
+            258,
+            277
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Demis Hassabis ",
+        "bbox": [
+            100,
+            279,
+            228,
+            292
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Zoubin Ghahramani ",
+        "bbox": [
+            100,
+            294,
+            265,
+            307
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Douglas Eck ",
+        "bbox": [
+            100,
+            311,
+            201,
+            325
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Joelle Barral ",
+        "bbox": [
+            100,
+            326,
+            203,
+            341
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Fernando Pereira ",
+        "bbox": [
+            100,
+            343,
+            240,
+            356
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Eli Collins ",
+        "bbox": [
+            100,
+            359,
+            186,
+            372
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Leads ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            382,
+            154,
+            395
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Armand Joulin ",
+        "bbox": [
+            100,
+            399,
+            221,
+            413
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Noah Fiedel ",
+        "bbox": [
+            100,
+            414,
+            200,
+            429
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Evan Senter ",
+        "bbox": [
+            100,
+            432,
+            200,
+            445
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Tech Leads ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            455,
+            198,
+            469
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Alek Andreev† ",
+        "bbox": [
+            100,
+            470,
+            218,
+            485
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Kathleen Kenealy† ",
+        "bbox": [
+            100,
+            487,
+            250,
+            502
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Acknowledgements ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            512,
+            268,
+            527
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Our work is made possible by the dedication and efforts of numerous teams at Google. We would like to acknowledge the support from the following teams: Gemini, Gemini Safety, Gemini In frastructure, Gemini Evaluation, Google Cloud, Google Research Responsible AI, Kaggle, and Keras. ",
+        "bbox": [
+            97,
+            527,
+            490,
+            638
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Special thanks and acknowledgment to Adrian Hutter, Andreas Terzis, Andrei Kulik, Angelos Fi los, Anushan Fernando, Aurelien Boffy, Danila Sinopalnikov, Edouard Leurent, Gabriela Surita, Geoffrey Cideron, Jilin Chen, Karthik Raveen dran, Kathy Meier-Hellstern, Kehang Han, Kevin Robinson, Kritika Muralidharan, Le Hou, Leonard Berrada, Lev Proleev, Luheng He, Marie Pellat, Mark Sherwood, Matt Hoffman, Matthias Grundmann, Nicola De Cao, Nikola Momchev, Nino Vieillard, Noah Constant, Peter Liu, Piotr Stanczyk, Qiao Zhang, Ruba Haroun, Seliem El-Sayed, Siddhartha Brahma, Tianhe (Kevin) Yu, Tom Le Paine, Yingjie Miao, Yuanzhong Xu, and Yuting Sun. ",
+        "bbox": [
+            97,
+            639,
+            490,
+            879
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "References ",
+        "text_level": 1,
+        "bbox": [
+            509,
+            99,
+            621,
+            115
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "E. Almazrouei, H. Alobeidli, A. Alshamsi, A. Cappelli, R. Cojocaru, M. Debbah, Étienne Goffinet, D. Hesslow, J. Launay, Q. Malartic, D. Mazzotta, B. Noune, B. Pannier, and G. Penedo. The falcon series of open language models, 2023. ",
+            "D. Amodei, C. Olah, J. Steinhardt, P. Christiano, J. Schulman, and D. Mané. Concrete problems in AI safety. arXiv preprint, 2016. ",
+            "R. Anil, A. M. Dai, O. Firat, M. Johnson, D. Lepikhin, A. Passos, S. Shakeri, E. Taropa, P. Bailey, Z. Chen, et al. Palm 2 technical report. arXiv preprint arXiv:2305.10403, 2023. ",
+            "J. Austin, A. Odena, M. I. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. J. Cai, M. Terry, Q. V. Le, and C. Sutton. Program synthesis with large language models. CoRR, abs/2108.07732, 2021. URL https: //arxiv.org/abs/2108.07732. ",
+            "Y. Bai, S. Kadavath, S. Kundu, A. Askell, J. Kernion, A. Jones, A. Chen, A. Goldie, A. Mirhoseini, C. McKinnon, C. Chen, C. Olsson, C. Olah, D. Hernandez, D. Drain, D. Ganguli, D. Li, E. Tran-Johnson, E. Perez, J. Kerr, J. Mueller, J. Ladish, J. Landau, K. Ndousse, K. Lukosuite, L. Lovitt, M. Sellitto, N. Elhage, N. Schiefer, N. Mercado, N. DasSarma, R. Lasenby, R. Larson, S. Ringer, S. Johnston, S. Kravec, S. E. Showk, S. Fort, T. Lanham, T. Telleen-Lawton, T. Conerly, T. Henighan, T. Hume, S. R. Bowman, Z. Hatfield-Dodds, B. Mann, D. Amodei, N. Joseph, S. McCandlish, T. Brown, and J. Kaplan. Constitutional ai: Harmlessness from ai feedback, 2022. ",
+            "P. Barham, A. Chowdhery, J. Dean, S. Ghemawat, S. Hand, D. Hurt, M. Isard, H. Lim, R. Pang, S. Roy, B. Saeta, P. Schuh, R. Sepassi, L. E. Shafey, C. A. Thekkath, and Y. Wu. Pathways: Asynchronous distributed dataflow for ml, 2022. ",
+            "Y. Bisk, R. Zellers, R. L. Bras, J. Gao, and Y. Choi. PIQA: reasoning about physical commonsense in natural language. CoRR, abs/1911.11641, 2019. URL http://arxiv.org/abs/1911. 11641. "
+        ],
+        "bbox": [
+            507,
+            131,
+            899,
+            900
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_footnote",
+        "text": "† equal contribution. ",
+        "bbox": [
+            127,
+            887,
+            267,
+            901
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_number",
+        "text": "12 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "R. A. Bradley and M. E. Terry. Rank analysis of incomplete block designs: I. the method of paired comparisons. Biometrika, 39, 1952. ",
+            "N. Carlini, D. Ippolito, M. Jagielski, K. Lee, F. Tramer, and C. Zhang. Quantifying memorization across neural language models. arXiv preprint arXiv:2202.07646, 2022. ",
+            "M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. de Oliveira Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, A. Ray, R. Puri, G. Krueger, M. Petrov, H. Khlaaf, G. Sastry, P. Mishkin, B. Chan, S. Gray, N. Ryder, M. Pavlov, A. Power, L. Kaiser, M. Bavarian, C. Winter, P. Tillet, F. P. Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. H. Guss, A. Nichol, A. Paino, N. Tezak, J. Tang, I. Babuschkin, S. Balaji, S. Jain, W. Saunders, C. Hesse, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. Knight, M. Brundage, M. Murati, K. Mayer, P. Welinder, B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, and W. Zaremba. Evaluating large language models trained on code. CoRR, abs/2107.03374, 2021. URL https://arxiv.org/abs/2107.03374. ",
+            "A. Chowdhery, S. Narang, J. Devlin, M. Bosma, G. Mishra, A. Roberts, P. Barham, H. W. Chung, C. Sutton, S. Gehrmann, P. Schuh, K. Shi, S. Tsvyashchenko, J. Maynez, A. Rao, P. Barnes, Y. Tay, N. Shazeer, V. Prabhakaran, E. Reif, N. Du, B. Hutchinson, R. Pope, J. Bradbury, J. Austin, M. Isard, G. Gur-Ari, P. Yin, T. Duke, A. Levskaya, S. Ghemawat, S. Dev, H. Michalewski, X. Garcia, V. Misra, K. Robinson, L. Fedus, D. Zhou, D. Ippolito, D. Luan, H. Lim, B. Zoph, A. Spiridonov, R. Sepassi, D. Dohan, S. Agrawal, M. Omernick, A. M. Dai, T. S. Pillai, M. Pellat, A. Lewkowycz, E. Moreira, R. Child, O. Polozov, K. Lee, Z. Zhou, X. Wang, B. Saeta, M. Diaz, O. Firat, M. Catasta, J. Wei, K. Meier-Hellstern, D. Eck, J. Dean, S. Petrov, and N. Fiedel. Palm: Scaling language modeling with pathways, 2022. ",
+            "P. F. Christiano, J. Leike, T. Brown, M. Martic, S. Legg, and D. Amodei. Deep reinforcement learning from human preferences. Advances "
+        ],
+        "bbox": [
+            100,
+            99,
+            490,
+            902
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "in Neural Information Processing Systems, 30, 2017. ",
+            "C. Clark, K. Lee, M. Chang, T. Kwiatkowski, M. Collins, and K. Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions. CoRR, abs/1905.10044, 2019. URL http://arxiv.org/abs/1905.10044. ",
+            "P. Clark, I. Cowhey, O. Etzioni, T. Khot, A. Sabharwal, C. Schoenick, and O. Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge, 2018. ",
+            "K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schulman. Training verifiers to solve math word problems. CoRR, abs/2110.14168, 2021. URL https://arxiv.org/abs/2110.14168. ",
+            "J. Dean, G. Corrado, R. Monga, K. Chen, M. Devin, M. Mao, M. a. Ranzato, A. Senior, P. Tucker, K. Yang, Q. Le, and A. Ng. Large scale distributed deep networks. In F. Pereira, C. Burges, L. Bottou, and K. Weinberger, editors, Advances in Neural Information Processing Systems, volume 25. Curran Associates, Inc., 2012. URL https://proceedings.neurips. cc/paper\\_files/paper/2012/file/ 6aca97005c68f1206823815f66102863-Paper. pdf. ",
+            "J. Devlin, M. Chang, K. Lee, and K. Toutanova. BERT: pre-training of deep bidirectional transformers for language understanding. CoRR, abs/1810.04805, 2018. URL http://arxiv. org/abs/1810.04805. ",
+            "Gemini Team. Gemini: A family of highly capable multimodal models, 2023. ",
+            "D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt. Measuring massive multitask language understanding. CoRR, abs/2009.03300, 2020. URL https://arxiv.org/abs/2009.03300. ",
+            "D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt. Measuring mathematical problem solving with the math dataset. NeurIPS, 2021. "
+        ],
+        "bbox": [
+            509,
+            99,
+            941,
+            902
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "page_number",
+        "text": "13 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "D. Ippolito, F. Tramèr, M. Nasr, C. Zhang, M. Jagielski, K. Lee, C. A. Choquette-Choo, and N. Carlini. Preventing verbatim memorization in language models gives a false sense of privacy. arXiv preprint arXiv:2210.17546, 2022. ",
+            "A. Q. Jiang, A. Sablayrolles, A. Mensch, C. Bamford, D. S. Chaplot, D. de las Casas, F. Bressand, G. Lengyel, G. Lample, L. Saulnier, L. R. Lavaud, M.-A. Lachaux, P. Stock, T. L. Scao, T. Lavril, T. Wang, T. Lacroix, and W. E. Sayed. Mistral 7b, 2023. ",
+            "M. Joshi, E. Choi, D. S. Weld, and L. Zettlemoyer. Triviaqa: A large scale distantly supervised challenge dataset for reading comprehension. CoRR, abs/1705.03551, 2017. URL http://arxiv.org/abs/1705.03551. ",
+            "K. Kavukcuoglu, P. Kohli, L. Ibrahim, D. Bloxwich, and S. Brown. How our principles helped define alphafold’s release, 2022. ",
+            "T. Kudo and J. Richardson. SentencePiece: A simple and language independent subword tokenizer and detokenizer for neural text processing. In E. Blanco and W. Lu, editors, Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing: System Demonstrations, pages 66–71, Brussels, Belgium, Nov. 2018. Association for Computational Linguistics. doi: 10.18653/v1/D18-2012. URL https://aclanthology.org/D18-2012. ",
+            "S. Kudugunta, I. Caswell, B. Zhang, X. Garcia, C. A. Choquette-Choo, K. Lee, D. Xin, A. Kusupati, R. Stella, A. Bapna, et al. Madlad-400: A multilingual and document-level large audited dataset. arXiv preprint arXiv:2309.04662, 2023. ",
+            "T. Kwiatkowski, J. Palomaki, O. Redfield, M. Collins, A. Parikh, C. Alberti, D. Epstein, I. Polosukhin, J. Devlin, K. Lee, K. Toutanova, L. Jones, M. Kelcey, M.-W. Chang, A. M. Dai, J. Uszkoreit, Q. Le, and S. Petrov. Natural questions: A benchmark for question answering research. Transactions of the Association for Computational Linguistics, 7:452–466, 2019. doi: 10.1162/tacl\\_a\\_00276. URL https:// aclanthology.org/Q19-1026. "
+        ],
+        "bbox": [
+            100,
+            99,
+            490,
+            903
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "Y. LeCun, Y. Bengio, and G. Hinton. Deep learning. nature, 521(7553):436–444, 2015. ",
+        "bbox": [
+            507,
+            99,
+            897,
+            133
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "T. Mikolov, K. Chen, G. Corrado, and J. Dean. Efficient estimation of word representations in vector space. In Y. Bengio and Y. LeCun, editors, 1st International Conference on Learning Representations, ICLR 2013, Scottsdale, Arizona, USA, May 2-4, 2013, Workshop Track Proceedings, 2013. URL http://arxiv.org/abs/ 1301.3781. ",
+        "bbox": [
+            509,
+            143,
+            897,
+            271
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "M. Nasr, N. Carlini, J. Hayase, M. Jagielski, A. F. Cooper, D. Ippolito, C. A. Choquette-Choo, E. Wallace, F. Tramèr, and K. Lee. Scalable extraction of training data from (production) language models. arXiv preprint arXiv:2311.17035, 2023. ",
+        "bbox": [
+            509,
+            282,
+            897,
+            380
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal, K. Slama, A. Ray, et al. Training language models to follow instructions with human feedback. Advances in Neural Information Processing Systems, 35, 2022. ",
+        "bbox": [
+            509,
+            391,
+            897,
+            487
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "L. Pacchiardi, A. J. Chan, S. Mindermann, I. Moscovitz, A. Y. Pan, Y. Gal, O. Evans, and J. Brauner. How to catch an ai liar: Lie detection in black-box llms by asking unrelated questions, 2023. ",
+        "bbox": [
+            509,
+            499,
+            897,
+            579
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "D. Paperno, G. Kruszewski, A. Lazaridou, Q. N. Pham, R. Bernardi, S. Pezzelle, M. Baroni, G. Boleda, and R. Fernández. The LAMBADA dataset: Word prediction requiring a broad discourse context. CoRR, abs/1606.06031, 2016. URL http://arxiv.org/abs/1606. 06031. ",
+        "bbox": [
+            509,
+            590,
+            899,
+            702
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li, and P. J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. CoRR, abs/1910.10683, 2019. URL http://arxiv. org/abs/1910.10683. ",
+        "bbox": [
+            509,
+            714,
+            899,
+            810
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "ref_text",
+        "text": "A. Roberts, H. W. Chung, A. Levskaya, G. Mishra, J. Bradbury, D. Andor, S. Narang, B. Lester, C. Gaffney, A. Mohiuddin, C. Hawthorne, A. Lewkowycz, A. Salcianu, M. van Zee, J. Austin, S. Goodman, L. B. Soares, H. Hu, ",
+        "bbox": [
+            509,
+            821,
+            899,
+            903
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "page_number",
+        "text": "14 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "S. Tsvyashchenko, A. Chowdhery, J. Bastings, J. Bulian, X. Garcia, J. Ni, A. Chen, K. Kenealy, J. H. Clark, S. Lee, D. Garrette, J. Lee-Thorp, C. Raffel, N. Shazeer, M. Ritter, M. Bosma, A. Passos, J. Maitin-Shepard, N. Fiedel, M. Omernick, B. Saeta, R. Sepassi, A. Spiridonov, J. Newlan, and A. Gesmundo. Scaling up models and data with t5x and seqio, 2022. ",
+            "A. Roberts, H. W. Chung, G. Mishra, A. Levskaya, J. Bradbury, D. Andor, S. Narang, B. Lester, C. Gaffney, A. Mohiuddin, et al. Scaling up models and data with t5x and seqio. Journal of Machine Learning Research, 24(377):1–8, 2023. ",
+            "K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. Choi. WINOGRANDE: an adversarial winograd schema challenge at scale. CoRR, abs/1907.10641, 2019. URL http://arxiv. org/abs/1907.10641. ",
+            "M. Sap, H. Rashkin, D. Chen, R. L. Bras, and Y. Choi. Socialiqa: Commonsense reasoning about social interactions. CoRR, abs/1904.09728, 2019. URL http://arxiv. org/abs/1904.09728. ",
+            "N. Shazeer. Fast transformer decoding: One writehead is all you need. CoRR, abs/1911.02150, 2019. URL http://arxiv.org/abs/1911. 02150. ",
+            "N. Shazeer. GLU variants improve transformer. CoRR, abs/2002.05202, 2020. URL https: //arxiv.org/abs/2002.05202. ",
+            "J. M. V. Skalse, N. H. R. Howe, D. Krasheninnikov, and D. Krueger. Defining and characterizing reward gaming. In NeurIPS, 2022. ",
+            "J. Su, Y. Lu, S. Pan, B. Wen, and Y. Liu. Roformer: Enhanced transformer with rotary position embedding. CoRR, abs/2104.09864, 2021. URL https://arxiv.org/abs/2104.09864. ",
+            "I. Sutskever, O. Vinyals, and Q. V. Le. Sequence to sequence learning with neural networks. CoRR, abs/1409.3215, 2014. URL http://arxiv. org/abs/1409.3215. "
+        ],
+        "bbox": [
+            97,
+            98,
+            495,
+            904
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "ref_text",
+        "text": "M. Suzgun, N. Scales, N. Schärli, S. Gehrmann, Y. Tay, H. W. Chung, A. Chowdhery, Q. V. Le, E. H. Chi, D. Zhou, and J. Wei. Challenging big-bench tasks and whether chain-of-thought can solve them, 2022. ",
+        "bbox": [
+            507,
+            99,
+            899,
+            180
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "ref_text",
+        "text": "A. Talmor, J. Herzig, N. Lourie, and J. Berant. Commonsenseqa: A question answering challenge targeting commonsense knowledge, 2019. ",
+        "bbox": [
+            507,
+            191,
+            899,
+            255
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "ref_text",
+        "text": "H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.- A. Lachaux, T. Lacroix, B. Rozière, N. Goyal, E. Hambro, F. Azhar, A. Rodriguez, A. Joulin, E. Grave, and G. Lample. Llama: Open and efficient foundation language models, 2023a. ",
+        "bbox": [
+            507,
+            266,
+            899,
+            346
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "ref_text",
+        "text": "H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale, D. Bikel, L. Blecher, C. C. Ferrer, M. Chen, G. Cucurull, D. Esiobu, J. Fernandes, J. Fu, W. Fu, B. Fuller, C. Gao, V. Goswami, N. Goyal, A. Hartshorn, S. Hosseini, R. Hou, H. Inan, M. Kardas, V. Kerkez, M. Khabsa, I. Kloumann, A. Korenev, P. S. Koura, M.-A. Lachaux, T. Lavril, J. Lee, D. Liskovich, Y. Lu, Y. Mao, X. Martinet, T. Mihaylov, P. Mishra, I. Molybog, Y. Nie, A. Poulton, J. Reizenstein, R. Rungta, K. Saladi, A. Schelten, R. Silva, E. M. Smith, R. Subramanian, X. E. Tan, B. Tang, R. Taylor, A. Williams, J. X. Kuan, P. Xu, Z. Yan, I. Zarov, Y. Zhang, A. Fan, M. Kambadur, S. Narang, A. Rodriguez, R. Stojnic, S. Edunov, and T. Scialom. Llama 2: Open foundation and fine-tuned chat models, 2023b. ",
+        "bbox": [
+            507,
+            356,
+            899,
+            646
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "ref_text",
+        "text": "A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin. Attention is all you need. CoRR, abs/1706.03762, 2017. URL http://arxiv. org/abs/1706.03762. ",
+        "bbox": [
+            507,
+            656,
+            899,
+            737
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "ref_text",
+        "text": "J. Wei, X. Wang, D. Schuurmans, M. Bosma, E. H. Chi, Q. Le, and D. Zhou. Chain of thought prompting elicits reasoning in large language models. CoRR, abs/2201.11903, 2022. URL https://arxiv.org/abs/2201.11903. ",
+        "bbox": [
+            507,
+            747,
+            899,
+            827
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "ref_text",
+        "text": "L. Weidinger, J. Mellor, M. Rauh, C. Griffin, J. Uesato, P. Huang, M. Cheng, M. Glaese, B. Balle, A. Kasirzadeh, Z. Kenton, S. Brown, W. Hawkins, T. Stepleton, C. Biles, A. Birhane, ",
+        "bbox": [
+            507,
+            837,
+            899,
+            902
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            692,
+            76
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "page_number",
+        "text": "15 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "J. Haas, L. Rimell, L. A. Hendricks, W. Isaac, S. Legassick, G. Irving, and I. Gabriel. Ethical and social risks of harm from language models. CoRR, abs/2112.04359, 2021. URL https://arxiv.org/abs/2112.04359. ",
+            "XLA. Xla: Optimizing compiler for tensorflow, 2019. URL https://www.tensorflow. org/xla. ",
+            "Y. Xu, H. Lee, D. Chen, B. A. Hechtman, Y. Huang, R. Joshi, M. Krikun, D. Lepikhin, A. Ly, M. Maggioni, R. Pang, N. Shazeer, S. Wang, T. Wang, Y. Wu, and Z. Chen. GSPMD: general and scalable parallelization for ML computation graphs. CoRR, abs/2105.04663, 2021. URL https://arxiv.org/abs/2105.04663. ",
+            "B. Zhang and R. Sennrich. Root mean square layer normalization. CoRR, abs/1910.07467, 2019. URL http://arxiv.org/abs/1910. 07467. ",
+            "L. Zheng, W.-L. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. P. Xing, H. Zhang, J. E. Gonzalez, and I. Stoica. Judging llm-as-a-judge with mt-bench and chatbot arena, 2023. ",
+            "W. Zhong, R. Cui, Y. Guo, Y. Liang, S. Lu, Y. Wang, A. Saied, W. Chen, and N. Duan. Agieval: A human-centric benchmark for evaluating foundation models, 2023. ",
+            "A. Zou, L. Phan, S. Chen, J. Campbell, P. Guo, R. Ren, A. Pan, X. Yin, M. Mazeika, A.-K. Dombrowski, S. Goel, N. Li, M. J. Byun, Z. Wang, A. Mallen, S. Basart, S. Koyejo, D. Song, M. Fredrikson, J. Z. Kolter, and D. Hendrycks. Representation engineering: A top-down approach to ai transparency, 2023. "
+        ],
+        "bbox": [
+            95,
+            97,
+            499,
+            734
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            64,
+            692,
+            76
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "page_number",
+        "text": "16 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Gemma 1.0 IT results ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            99,
+            322,
+            116
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "The core of the paper presents the results of the Gemma 1.1 IT models. We kept the results of the previous Gemma 1.0 IT models for comparison in this appendix. Side-by-side evaluations of Gemma 1.0 IT against Mistral 7b v0.2 can be found in table 9. Safety academic benchmark results of version 1.0 can be found in table 10. ",
+        "bbox": [
+            97,
+            130,
+            899,
+            195
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "table",
+        "img_path": "images/47437985c58a5237ed7b4e49c067fa693d188633dbb4359dc22629ea0d35a7e3.jpg",
+        "table_caption": [
+            "Table 9 | Win rate of Gemma 1.0 IT models versus Mistral 7B v0.2 Instruct with 95% confidence intervals. We report breakdowns of wins, ties, and losses. Ties are broken evenly in the final win rate. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Safety</td><td>Instruction Following</td></tr><tr><td>Gemma 7B IT</td><td>58%</td><td>51.7%</td></tr><tr><td>95% Conf. Interval</td><td>[55.9%, 60.1%]</td><td>[49.6%, 53.8%]</td></tr><tr><td>Win / Tie / Loss</td><td>42.9% / 30.2% / 26.9%</td><td>42.5% / 18.4% / 39.1%</td></tr><tr><td>Gemma 2B IT</td><td>56.5%</td><td>41.6%</td></tr><tr><td>95% Conf. Interval</td><td>[54.4%, 58.6%]</td><td>[39.5%, 43.7%]</td></tr><tr><td>Win / Tie / Loss</td><td>44.8% / 22.9% / 32.3%</td><td>32.7% / 17.8% / 49.5%</td></tr></table>",
+        "bbox": [
+            297,
+            237,
+            702,
+            350
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "table",
+        "img_path": "images/a7d6901be2360e5dc40ecde85ce2f395dbe5ab430d6432071b802ac8551ccca9.jpg",
+        "table_caption": [
+            "Table 10 | Safety academic benchmark results of Gemma 1.0 IT models, compared to similar size open models. Evaluations run by us. Note that due to restrictive licensing, we were unable to run evals on LLaMA-2; we do not report previously-published numbers for LLaMA-2 on TruthfulQA, because we use different, non-comparable evaluation set-ups: we use MC2, where LLaMA-2 uses GPT-Judge. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Benchmark</td><td rowspan=\"2\">metric</td><td>Mistral v0.2</td><td colspan=\"2\">Gemma IT</td></tr><tr><td>7B*</td><td>2B</td><td>7B</td></tr><tr><td>RealToxicity</td><td>avg</td><td>8.44</td><td>6.86</td><td>7.90</td></tr><tr><td>BOLD</td><td></td><td>46.0</td><td>45.57</td><td>49.08</td></tr><tr><td>CrowS-Pairs</td><td>top-1</td><td>32.76</td><td>45.82</td><td>51.33</td></tr><tr><td>BBQ Ambig</td><td>1-shot, top-1</td><td>97.53</td><td>62.58</td><td>92.54</td></tr><tr><td>BBQ Disambig</td><td>top-1</td><td>84.45</td><td>54.62</td><td>71.99</td></tr><tr><td>Winogender</td><td>top-1</td><td>64.3</td><td>51.25</td><td>54.17</td></tr><tr><td>TruthfulQA</td><td></td><td>48.54</td><td>31.81</td><td>44.84</td></tr><tr><td>Winobias 1_2</td><td></td><td>65.72</td><td>56.12</td><td>59.09</td></tr><tr><td>Winobias 2_2</td><td></td><td>84.53</td><td>91.1</td><td>92.23</td></tr><tr><td>Toxigen</td><td></td><td>61.77</td><td>29.77</td><td>39.59</td></tr></table>",
+        "bbox": [
+            242,
+            444,
+            757,
+            663
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "header",
+        "text": "Gemma: Open Models Based on Gemini Research and Technology ",
+        "bbox": [
+            302,
+            63,
+            694,
+            76
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "page_number",
+        "text": "17 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 16
+    }
+]

@@ -1,0 +1,27 @@
+[
+    [
+        {
+            "type": "header",
+            "bbox": [
+                0.05,
+                0.028,
+                0.383,
+                0.077
+            ],
+            "angle": 0,
+            "content": "Math MBPP BBH MMLU"
+        },
+        {
+            "type": "chart",
+            "bbox": [
+                0.027,
+                0.138,
+                0.977,
+                0.948
+            ],
+            "angle": 0,
+            "content": "| Category | 3T | 7T | 18T |\n| :--- | :--- | :--- | :--- |\n| Qwen1.5-72B | 1.5 | 2.7 | 4.0 |\n| Qwen2-72B | 7.2 | 8.0 | 9.0 |\n| Qwen2.5-72B | 1.5 | 1.8 | 1.9 |",
+            "sub_type": "bar"
+        }
+    ]
+]

@@ -1,0 +1,28 @@
+[
+    {
+        "type": "chart",
+        "img_path": "images/018a0a988913843f3f052944f65eb082e87e3ebd8c06d6d80df932aaedec4130.jpg",
+        "content": "| Category | 3T | 7T | 18T |\n| :--- | :--- | :--- | :--- |\n| Qwen1.5-72B | 1.5 | 2.7 | 4.0 |\n| Qwen2-72B | 7.2 | 8.0 | 9.0 |\n| Qwen2.5-72B | 1.5 | 1.8 | 1.9 |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "bar",
+        "bbox": [
+            26,
+            136,
+            976,
+            947
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "Math MBPP BBH MMLU ",
+        "bbox": [
+            49,
+            27,
+            382,
+            76
+        ],
+        "page_idx": 0
+    }
+]

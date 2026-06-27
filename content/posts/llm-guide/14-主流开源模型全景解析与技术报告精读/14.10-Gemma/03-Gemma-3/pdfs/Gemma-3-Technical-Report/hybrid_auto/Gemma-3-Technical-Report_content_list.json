@@ -1,0 +1,5230 @@
+[
+    {
+        "type": "text",
+        "text": "Gemma 3 Technical Report ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            101,
+            547,
+            130
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Gemma Team, Google DeepMind1 ",
+        "bbox": [
+            99,
+            139,
+            339,
+            154
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "We introduce Gemma 3, a multimodal addition to the Gemma family of lightweight open models, ranging in scale from 1 to 27 billion parameters. This version introduces vision understanding abilities, a wider coverage of languages and longer context – at least 128K tokens. We also change the architecture of the model to reduce the KV-cache memory that tends to explode with long context. This is achieved by increasing the ratio of local to global attention layers, and keeping the span on local attention short. The Gemma 3 models are trained with distillation and achieve superior performance to Gemma 2 for both pre-trained and instruction finetuned versions. In particular, our novel post-training recipe significantly improves the math, chat, instruction-following and multilingual abilities, making Gemma3- 4B-IT competitive with Gemma2-27B-IT and Gemma3-27B-IT comparable to Gemini-1.5-Pro across benchmarks. We release all our models to the community. ",
+        "bbox": [
+            97,
+            174,
+            900,
+            344
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "1. Introduction ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            366,
+            260,
+            382
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "We present the newest version of Gemma open language models (Gemma Team, 2024a), codesigned with the family of Gemini frontier models (Gemini Team, 2023). This new version comes in sizes comparable to Gemma 2 (Gemma Team, 2024b), with the addition of a 1B model. These models are designed to run on standard consumer-grade hardware such as phones, lap tops, and high-end GPUs. This version comes with several new abilities to the Gemma family; namely, multimodality, long context, and multilinguality, while preserving or surpassing the performance of prior versions. ",
+        "bbox": [
+            97,
+            398,
+            490,
+            608
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "In terms of multimodality, most Gemma 3 models are compatible with a tailored version of the SigLIP vision encoder (Zhai et al., 2023). The language models treat images as a sequence of soft tokens encoded by SigLIP. We reduce the inference cost of image processing by condensing the vision embeddings into a fixed size of 256 vectors. The encoder works at a fixed resolution and we take inspiration from LLaVA (Liu et al., 2024) to enable flexible resolutions with a Pan and Scan (P&S) method. ",
+        "bbox": [
+            97,
+            615,
+            490,
+            791
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "The second main architectural improvement is an increase in context size to 128K tokens, without reducing performance. A challenge with long context is the memory explosion of the KV cache during inference. To reduce this issue, we interleave multiple local layers between each global layer, and assign a smaller span of only 1024 tokens to the local layers. Therefore, only the global layers attend to long context, and we have 1 global for every 5 local layers. ",
+        "bbox": [
+            97,
+            800,
+            490,
+            898
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            367,
+            897,
+            434
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "The pre-training optimization recipe is similar to Gemma 2, with some modifications in the architecture design. We use the same tokenizer as Gemini 2.0, and we also revisit our data mixture to improve the multilingual capabilities of the models, while introducing image understanding. All Gemma 3 models are trained with knowledge distillation (Hinton et al., 2015). ",
+        "bbox": [
+            505,
+            439,
+            899,
+            570
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "In post-training, we focus our efforts on improving mathematics, reasoning, and chat abilities, as well as integrating the new capabilities of Gemma 3, long-context, and image inputs. We use a novel post-training approach that brings gains across all capabilities, including math, coding, chat, instruction following, and multilingual. The resulting Gemma 3 instruction-tuned models are both powerful and versatile, outperforming their predecessors by a wide margin. ",
+        "bbox": [
+            505,
+            577,
+            900,
+            739
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "In the following sections, we provide a brief overview of our models, including the architecture and pre- and post-training recipes. We also provide detailed evaluations across a wide variety of quantitative and qualitative benchmarks. We discuss our approach to safe and responsible deployment and outline the broader implications of Gemma 3, its limitations, and advantages. ",
+        "bbox": [
+            505,
+            746,
+            900,
+            876
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "aside_text",
+        "text": "arXiv:2503.19786v1 [cs.CL] 25 Mar 2025 ",
+        "bbox": [
+            21,
+            305,
+            60,
+            724
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "Google DeepMind ",
+        "bbox": [
+            100,
+            55,
+            258,
+            72
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "2025-03-12 ",
+        "bbox": [
+            818,
+            61,
+            890,
+            73
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "page_footnote",
+        "text": "1See Contributions and Acknowledgments section for full author list. Please send correspondence to gemma-3-report@google.com. © 2025 Google DeepMind. All rights reservec ",
+        "bbox": [
+            97,
+            931,
+            892,
+            957
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "image",
+        "img_path": "images/636be88e0c20c336c745974f6c0974124e2f2a990e121bb38988dc65ec9adec0.jpg",
+        "image_caption": [
+            "I only had the sliced meat, how much do I need to pay? include a 18% tip "
+        ],
+        "image_footnote": [],
+        "content": "Belegnummer\nTischnummer\nGaste\n27\n73\n2\n1x Wienerschittel\n+ Rostt\n1x Zürcher\nGeschnetzeltes\n+ Rostt\n1x Prüselbeersauce 1.80\n2x 4 01 ZHK Hausbier\na 36.50 36.50 3\na 0.00\na 36.50 36.50 3\na 0.00\na 1.80 1.80 3\na 6.80 13.60 3\nTotal CHF:\nTotal EUR:\n(TEUR=0.95CHF)\nTotal exkl.\nUmsatz 8.10x inkl.\nMMGT 8.10% (3)\nEUR 93.05\nCHF 81.78\nCHF 88.40\nCHF 6.62\nBar CHF 88.40\nVielen Dank für Ihren Besuch!\nEs bediente Sie Luis.\nDatum: 04.04.2024 Zeit: 19:48/1\nTeichwahaler SA",
+        "sub_type": "text_image",
+        "bbox": [
+            178,
+            98,
+            411,
+            271
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Here's the breakdown of the cost and the tip calculation, based on the receipt: ",
+        "bbox": [
+            107,
+            319,
+            448,
+            342
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "list",
+        "sub_type": "text",
+        "list_items": [
+            "1. Identify the cost of the sliced meat: ",
+            "•The receipt lists \"1x Zürcher Geschnetzeltes + Rösti\" at CHF 36.50. This is the sliced meat dish with a side of Rösti (fried potatoes). ",
+            "2. Calculate the 18% tip: ",
+            "• Tip amount = CHF 36.5O \\* O.18 = CHF 6.57 ",
+            "Calculate the total amount to pay: ",
+            "• Total = CHF 36.50 + CHF 6.57 = CHF 43.07 "
+        ],
+        "bbox": [
+            107,
+            357,
+            478,
+            514
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Therefore, you need to pay approximately CHF 43.07, including an 18% tip. ",
+        "bbox": [
+            107,
+            532,
+            477,
+            544
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Figure 1 | Example of visual interaction with Gemma 3 27B IT model. ",
+        "bbox": [
+            97,
+            556,
+            487,
+            588
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "2. Model Architecture ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            621,
+            329,
+            637
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Gemma 3 models follow the same general decoder-only transformer architecture as previous iterations (Vaswani et al., 2017), with most architecture elements similar to the first two Gemma versions. We use a Grouped-Query Attention (GQA) (Ainslie et al., 2023) with post-norm and pre-norm with RMSNorm (Zhang and Sennrich, 2019). Inspired by Dehghani et al. (2023), Wortsman et al. (2023) and Chameleon Team (2024), we replace the soft-capping of Gemma 2 with QK-norm. In this section, we focus on some key differences from previous versions below. ",
+        "bbox": [
+            97,
+            652,
+            489,
+            845
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "5:1 interleaving of local/global layers. We alternate between a local sliding window selfattention (Beltagy et al., 2020) and global self-",
+        "bbox": [
+            97,
+            853,
+            490,
+            903
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "table",
+        "img_path": "images/bfb4e1a8eab0c88ad193bc07ecb45b211cb9e52619c69057ea4add61e7f10b7c.jpg",
+        "table_caption": [
+            "Table 1 | Parameter counts for the Gemma 3 models. Our vocabulary has 256k entries. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Vision Encoder</td><td>Embedding Parameters</td><td>Non-embedding Parameters</td></tr><tr><td>1B</td><td>0</td><td>302M</td><td>698M</td></tr><tr><td>4B</td><td>417M</td><td>675M</td><td>3,209M</td></tr><tr><td>12B</td><td>417M</td><td>1,012M</td><td>10,759M</td></tr><tr><td>27B</td><td>417M</td><td>1,416M</td><td>25,600M</td></tr></table>",
+        "bbox": [
+            507,
+            99,
+            909,
+            212
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "attention (Luong et al., 2015), with a pattern of 5 local layers for every global layer, starting with a local layer as the first layer of the model. ",
+        "bbox": [
+            505,
+            282,
+            897,
+            331
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Long context. Gemma 3 models support context length of 128K tokens, with the exception of the 1B model that has 32K. We increase RoPE base frequency from 10k to 1M on global self-attention layers, and keep the frequency of the local layers at 10k. We follow a process similar to the positional interpolation of Chen et al. (2023) to extend the span of the global self-attention layers. ",
+        "bbox": [
+            505,
+            338,
+            897,
+            468
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "2.1. Vision modality ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            497,
+            687,
+            514
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Vision encoder. We use a 400M variant of the SigLIP encoder (Zhai et al., 2023), a Vision Transformer (Dosovitskiy, 2020) trained with a variation of the CLIP loss (Radford et al., 2021). The Gemma vision encoder takes as input square images resized to 896 x 896, and is finetuned on data from visual assistant tasks. For simplicity, we share the vision encoder across our 4B, 12B, and 27B models, keeping it frozen during training. ",
+        "bbox": [
+            505,
+            523,
+            897,
+            669
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "Pan & Scan (P&S). The Gemma vision encoder operates at a fixed resolution of 896 × 896. This results in artifacts when processing non-square aspect ratios and high-resolution images, leading to unreadable text, or small objects disappearing. We address this issue with an adaptive windowing algorithm during inference. This algorithm segments images into non-overlapping crops of equal size, covering the whole image, and resize them to 896×896 pixels to pass them to the encoder. This windowing is applied only when necessary, and control for the maximum number of crops. It is an inference-time only optimization and can be disabled for faster inference. ",
+        "bbox": [
+            505,
+            676,
+            897,
+            901
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            418,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "page_number",
+        "text": "2 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "table",
+        "img_path": "images/ae6126193e7032aa0c13a352746dc4e7d7b6b41477b4f26c076b621742aac728.jpg",
+        "table_caption": [
+            "Table 2 | Training infrastructure with sharding by data, sequence (Seq.), and replica. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Model</td><td rowspan=\"2\">Type</td><td rowspan=\"2\">#Chips</td><td colspan=\"3\">Shards</td></tr><tr><td>Data</td><td>Seq.</td><td>Replica</td></tr><tr><td>1B</td><td>TPUv5e</td><td>512</td><td>16</td><td>16</td><td>2</td></tr><tr><td>4B</td><td>TPUv5e</td><td>2048</td><td>16</td><td>16</td><td>8</td></tr><tr><td>12B</td><td>TPUv4</td><td>6144</td><td>16</td><td>16</td><td>24</td></tr><tr><td>27B</td><td>TPUv5p</td><td>6144</td><td>24</td><td>8</td><td>32</td></tr></table>",
+        "bbox": [
+            100,
+            98,
+            490,
+            218
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "2.2. Pre-training ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            296,
+            248,
+            313
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We follow a similar recipe as in Gemma 2 for pre-training with knowledge distillation. ",
+        "bbox": [
+            97,
+            322,
+            489,
+            356
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Training data. We pre-train our models on a slightly larger token budget than Gemma 2, i.e., we train on 14T tokens for Gemma 3 27B, 12T for the 12B version, 4T for the 4B, and 2T tokens for the 1B. The increase in tokens accounts for the mix of images and text used during pretraining. We also increase the amount of multilingual data to improve language coverage. We add both monolingual and parallel data, and we handle the imbalance in language representation using a strategy inspired by Chung et al. (2023). ",
+        "bbox": [
+            97,
+            362,
+            490,
+            541
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Tokenizer. We use the same tokenizer as Gemini 2.0: a SentencePiece tokenizer with split digits, preserved whitespace, and byte-level encodings (Kudo and Richardson, 2018). The resulting vocabulary has 262k entries. This tokenizer is more balanced for non-English languages. ",
+        "bbox": [
+            97,
+            546,
+            490,
+            645
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Filtering. We use filtering techniques that reduce the risk of unwanted or unsafe utterances and remove certain personal information and other sensitive data. We decontaminate evaluation sets from our pre-training data mixture, and reduce the risk of recitation by minimizing the prolifer ation of sensitive outputs. We also apply a quality reweighing step inspired by Sachdeva et al. (2024) to reduce occurrences of low quality data. ",
+        "bbox": [
+            97,
+            652,
+            490,
+            797
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Distillation. We sample 256 logits per token, weighted by teacher probabilities. The student learns the teacher’s distribution within these samples via cross-entropy loss. The teacher’s target distribution is set to zero probability for nonsampled logits, and renormalized. ",
+        "bbox": [
+            97,
+            804,
+            490,
+            903
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "table",
+        "img_path": "images/f48fa5b359976d70e620b3f64b562c323a440a3fe2bd913e401ac309ec4645ec.jpg",
+        "table_caption": [
+            "Table 3 | Memory footprints (in GB) comparison between raw (bfloat16) and quantized checkpoints for weights and KV caching (+KV) at 32,768 context size, quantized in 8 bits. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Model</td><td>Raw (GB)</td><td colspan=\"3\">Quantized (GB)</td></tr><tr><td>bf16</td><td>Int4</td><td>Int4blocks=32</td><td>SFP8</td></tr><tr><td>1B</td><td>2.0</td><td>0.5</td><td>0.7</td><td>1.0</td></tr><tr><td>+KV</td><td>2.9</td><td>1.4</td><td>1.6</td><td>1.9</td></tr><tr><td>4B</td><td>8.0</td><td>2.6</td><td>2.9</td><td>4.4</td></tr><tr><td>+KV</td><td>12.7</td><td>7.3</td><td>7.6</td><td>9.1</td></tr><tr><td>12B</td><td>24.0</td><td>6.6</td><td>7.1</td><td>12.4</td></tr><tr><td>+KV</td><td>38.9</td><td>21.5</td><td>22.0</td><td>27.3</td></tr><tr><td>27B</td><td>54.0</td><td>14.1</td><td>15.3</td><td>27.4</td></tr><tr><td>+KV</td><td>72.7</td><td>32.8</td><td>34.0</td><td>46.1</td></tr></table>",
+        "bbox": [
+            515,
+            98,
+            890,
+            302
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "2.3. Quantization Aware Training ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            399,
+            803,
+            416
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Along with the raw checkpoints, we also provide quantized versions of our models in different standard formats. These versions are obtained by finetuning each model for a small number of steps, typically 5,000, using Quantization Aware Training (QAT) (Jacob et al., 2018). We use probabilities from the non-quantized checkpoint as targets, and adapt the data to match the pretraining and post-training distributions. Based on the most popular open source quantization inference engines (e.g. llama.cpp), we focus on three weight representations: per-channel int4, per-block int4, and switched fp8. In Table 3, we report the memory filled by raw and quantized models for each weight representation with and without a KV-cache for a sequence of 32k tokens. ",
+        "bbox": [
+            505,
+            425,
+            900,
+            684
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "2.4. Compute Infrastructure ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            707,
+            756,
+            722
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We train our models with TPUv4, TPUv5e, and TPUv5p as outlined in Table 2. Each model configuration is optimized to minimize training step time. For the vision encoder, we pre-compute the embeddings for each image and directly train with the embeddings, adding no cost to the training of the language models. ",
+        "bbox": [
+            505,
+            732,
+            899,
+            847
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "The optimizer state is sharded using an implementation of ZeRO-3 (Ren et al., 2021). For multi-pod training, we perform a data replica reduction over the data center network, using the Pathways approach of Barham et al. (2022). We use the ‘single controller’ programming paradigm of Jax (Roberts et al., 2023) and Pathways (Barham et al., 2022), along with the GSPMD partitioner (Xu et al., 2021) and the MegaScale XLA compiler (XLA, 2019). ",
+        "bbox": [
+            505,
+            853,
+            900,
+            903
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "page_number",
+        "text": "3 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "table",
+        "img_path": "images/bb0aea0ef718fc92a1205a8af4139564f6ef254537cae4d3fad4901b9ae982d7.jpg",
+        "table_caption": [
+            "Table 4 | Formatting for Gemma IT models. Explicitly add the [BOS] token after tokenization, or use the add\\_bos=True option in the tokenizer. Do not tokenize the text \"[BOS]\". "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Context</td><td>Formatting</td></tr><tr><td>User turn</td><td>(user)</td></tr><tr><td>Model turn</td><td>(model)</td></tr><tr><td>End of turn</td><td>(end_of_turn)</td></tr><tr><td colspan=\"2\">Example of discussion:</td></tr><tr><td colspan=\"2\">User: Who are you?Model: My name is Gemma!User: What is 2+2?Model: 2+2=4.</td></tr><tr><td colspan=\"2\">Model input:</td></tr><tr><td colspan=\"2\">[BOS]userWho are you?modelMy name is Gemma!userWhat is 2+2?model</td></tr><tr><td colspan=\"2\">Model output:</td></tr><tr><td colspan=\"2\">2+2=4.</td></tr></table>",
+        "bbox": [
+            127,
+            98,
+            460,
+            414
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            500,
+            489,
+            613
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "3. Instruction-Tuning ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            645,
+            324,
+            664
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Pre-trained models are turned into instructiontuned models with an improved post-training approach compared to our prior recipe (see Table 6). ",
+        "bbox": [
+            97,
+            676,
+            492,
+            725
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Techniques. Our post-training approach relies on an improved version of knowledge distillation (Agarwal et al., 2024; Anil et al., 2018; Hinton et al., 2015) from a large IT teacher, along with a RL finetuning phase based on improved ver sions of BOND (Sessa et al., 2024), WARM (Ramé et al., 2024b), and WARP (Ramé et al., 2024a). ",
+        "bbox": [
+            97,
+            732,
+            490,
+            845
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Reinforcement learning objectives. We use a variety of reward functions to improve help fulness, math, coding, reasoning, instructionfollowing, and multilingual abilities, while minimizing model harmfulness. This includes learning from weight averaged reward models (Ramé et al., 2024b) trained with human feedback data, code execution feedback (Gehring et al., 2024), and ground-truth rewards for solving math problems (DeepSeek-AI, 2025; Lambert et al., 2024). ",
+        "bbox": [
+            97,
+            853,
+            490,
+            902
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            99,
+            900,
+            214
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "Data filtering. We carefully optimize the data used in post-training to maximize model performance. We filter examples that show certain personal information, unsafe or toxic model outputs, mistaken self-identification data, and duplicated examples. Including subsets of data that encourage better in-context attribution, hedging, and refusals to minimize hallucinations also improves performance on factuality metrics, without degrading model performance on other metrics. ",
+        "bbox": [
+            505,
+            221,
+            900,
+            382
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "[BOS] token. For both PT and IT models, text starts with a [BOS] token, that needs to be added explicitly since the text “[BOS]” does not map to the [BOS] token. For instance, Flax has an option, add\\_bos=True, to add this token automatically when tokenizing. An example of the formatting for an IT model is shown in Table 4, ",
+        "bbox": [
+            505,
+            390,
+            897,
+            502
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "PT versus IT Formatting. All models share the same tokenizer, with some control tokens dedicated to IT formatting. A key difference is that PT models output a <eos> token at the end of generation, while IT models output a <end\\_of\\_turn> at the end of the generation, as shown for IT in Table 4. Fine-tuning either model type thus also requires adding their respective end tokens. ",
+        "bbox": [
+            505,
+            511,
+            899,
+            640
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "4. Evaluation of final models ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            671,
+            806,
+            688
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "In this section, we evaluate the IT models over a series of automated benchmarks and human evaluations across a variety of domains, as well as static benchmarks such as MMLU. ",
+        "bbox": [
+            505,
+            703,
+            897,
+            766
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "4.1. LMSYS Chatbot Arena ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            795,
+            741,
+            810
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "In this section, we report the performance of our IT 27B model on LMSys Chatbot Arena (Chiang et al., 2024) in blind side-by-side evaluations by human raters against other state-of-the-art models. We report Elo scores in Table 5. Gemma 3 27B ",
+        "bbox": [
+            505,
+            821,
+            897,
+            902
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "page_number",
+        "text": "4 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "table",
+        "img_path": "images/60827af1706454fd705145d182f016e51fbfa12295cf3e57dfb8650fb840e8c7.jpg",
+        "table_caption": [
+            "Table 5 | Evaluation of Gemma 3 27B IT model in the Chatbot Arena (Chiang et al., 2024). All the models are evaluated against each other through blind side-by-side evaluations by human raters. Each model is attributed a score, based on the Elo rating system. Gemma-3-27B-IT numbers are preliminary results received on March 8, 2025. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Rank</td><td>Model</td><td>Elo</td><td>95% CI</td><td>Open</td><td>Type</td><td>#params/#activated</td></tr><tr><td>1</td><td>Grok-3-Preview-02-24</td><td>1412</td><td>+8/-10</td><td>-</td><td>-</td><td>-</td></tr><tr><td>1</td><td>GPT-4.5-Preview</td><td>1411</td><td>+11/-11</td><td>-</td><td>-</td><td>-</td></tr><tr><td>3</td><td>Gemini-2.0-Flash-Thinking-Exp-01-21</td><td>1384</td><td>+6/-5</td><td>-</td><td>-</td><td>-</td></tr><tr><td>3</td><td>Gemini-2.0-Pro-Exp-02-05</td><td>1380</td><td>+5/-6</td><td>-</td><td>-</td><td>-</td></tr><tr><td>3</td><td>ChatGPT-4o-latest (2025-01-29)</td><td>1377</td><td>+5/-4</td><td>-</td><td>-</td><td>-</td></tr><tr><td>6</td><td>DeepSeek-R1</td><td>1363</td><td>+8/-6</td><td>yes</td><td>MoE</td><td>671B/37B</td></tr><tr><td>6</td><td>Gemini-2.0-Flash-001</td><td>1357</td><td>+6/-5</td><td>-</td><td>-</td><td>-</td></tr><tr><td>8</td><td>o1-2024-12-17</td><td>1352</td><td>+4/-6</td><td>-</td><td>-</td><td>-</td></tr><tr><td>9</td><td>Gemma-3-27B-IT</td><td>1338</td><td>+8/-9</td><td>yes</td><td>Dense</td><td>27B</td></tr><tr><td>9</td><td>Qwen2.5-Max</td><td>1336</td><td>+7/-5</td><td>-</td><td>-</td><td>-</td></tr><tr><td>9</td><td>o1-preview</td><td>1335</td><td>+4/-3</td><td>-</td><td>-</td><td>-</td></tr><tr><td>9</td><td>o3-mini-high</td><td>1329</td><td>+8/-6</td><td>-</td><td>-</td><td>-</td></tr><tr><td>13</td><td>DeepSeek-V3</td><td>1318</td><td>+8/-6</td><td>yes</td><td>MoE</td><td>671B/37B</td></tr><tr><td>14</td><td>GLM-4-Plus-0111</td><td>1311</td><td>+8/-8</td><td>-</td><td>-</td><td>-</td></tr><tr><td>14</td><td>Qwen-Plus-0125</td><td>1310</td><td>+7/-5</td><td>-</td><td>-</td><td>-</td></tr><tr><td>14</td><td>Claude 3.7 Sonnet</td><td>1309</td><td>+9/-11</td><td>-</td><td>-</td><td>-</td></tr><tr><td>14</td><td>Gemini-2.0-Flash-Lite</td><td>1308</td><td>+5/-5</td><td>-</td><td>-</td><td>-</td></tr><tr><td>18</td><td>Step-2-16K-Exp</td><td>1305</td><td>+7/-6</td><td>-</td><td>-</td><td>-</td></tr><tr><td>18</td><td>o3-mini</td><td>1304</td><td>+5/-4</td><td>-</td><td>-</td><td>-</td></tr><tr><td>18</td><td>o1-mini</td><td>1304</td><td>+4/-3</td><td>-</td><td>-</td><td>-</td></tr><tr><td>18</td><td>Gemini-1.5-Pro-002</td><td>1302</td><td>+3/-3</td><td>-</td><td>-</td><td>-</td></tr><tr><td>...</td><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td>28</td><td>Meta-Llama-3.1-405B-Instruct-bf16</td><td>1269</td><td>+4/-3</td><td>yes</td><td>Dense</td><td>405B</td></tr><tr><td>...</td><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td>38</td><td>Llama-3.3-70B-Instruct</td><td>1257</td><td>+5/-3</td><td>yes</td><td>Dense</td><td>70B</td></tr><tr><td>...</td><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td>39</td><td>Qwen2.5-72B-Instruct</td><td>1257</td><td>+3/-3</td><td>yes</td><td>Dense</td><td>72B</td></tr><tr><td>...</td><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td>59</td><td>Gemma-2-27B-it</td><td>1220</td><td>+3/-2</td><td>yes</td><td>Dense</td><td>27B</td></tr></table>",
+        "bbox": [
+            132,
+            99,
+            867,
+            506
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "IT (1338) is among the top 10 best models, with a score above other non-thinking open models, such as DeepSeek-V3 (1318), LLaMA 3 405B (1257), and Qwen2.5-70B (1257), which are much larger models. Finally, the Elo of Gemma 3 is signifi cantly higher than Gemma 2, at 1220. Note that Elo scores do not take into account visual abilities, which none of the aforementioned models have. ",
+        "bbox": [
+            97,
+            605,
+            490,
+            734
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "4.2. Standard benchmarks ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            762,
+            332,
+            778
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "In Table 6, we show the performance of our final models across a variety of benchmarks compared to our previous model iteration, and Gemini 1.5. We do not compare directly with external models that often report their own evaluation settings, since running them in our setting does not guarantee a fair comparison. We encourage the reader to follow third-party static leaderboards for a fairer comparison across models. We include additional evaluations of our models on other benchmarks in the appendix. ",
+        "bbox": [
+            97,
+            789,
+            490,
+            903
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            605,
+            897,
+            671
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "5. Ablations ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            693,
+            638,
+            709
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "In this section, we focus on the impact of our architecture changes, as well as some of the vision abilities new to this model. ",
+        "bbox": [
+            505,
+            724,
+            897,
+            772
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "5.1. Pre-training ability probing ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            794,
+            788,
+            812
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "We use several standard benchmarks as probes during pre-training to ensure our models capture general abilities, and in Figure 2, we compare the quality of pre-trained models from Gemma 2 and 3 across these general abilities, namely, science, code, factuality, multilinguality, reasoning, and vision. The details of the performance across the different public benchmarks used in these plots are summarized in the appendix. Overall, we see that the new versions improve in most categories, despite the addition of vision. We particularly focus on multilinguality in this version, and this directly impacts the quality of our models. However, despite the use of decontamination techniques, there is always a risk of contamination of these probes (Mirzadeh et al., 2024), making more definitive conclusions harder to assess. ",
+        "bbox": [
+            505,
+            821,
+            899,
+            903
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "page_number",
+        "text": "5 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "table",
+        "img_path": "images/149680c4a269400caf4186dc8625f248b29f77c03cba2b238bea8ca8d4f4b090.jpg",
+        "table_caption": [
+            "Table 6 | Performance of instruction fine-tuned (IT) models compared to Gemini 1.5, Gemini 2.0, and Gemma 2 on zero-shot benchmarks across different abilities. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\"></td><td colspan=\"2\">Gemini 1.5</td><td colspan=\"2\">Gemini 2.0</td><td colspan=\"3\">Gemma 2</td><td colspan=\"4\">Gemma 3</td></tr><tr><td>Flash</td><td>Pro</td><td>Flash</td><td>Pro</td><td>2B</td><td>9B</td><td>27B</td><td>1B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>MMLU-Pro</td><td>67.3</td><td>75.8</td><td>77.6</td><td>79.1</td><td>15.6</td><td>46.8</td><td>56.9</td><td>14.7</td><td>43.6</td><td>60.6</td><td>67.5</td></tr><tr><td>LiveCodeBench</td><td>30.7</td><td>34.2</td><td>34.5</td><td>36.0</td><td>1.2</td><td>10.8</td><td>20.4</td><td>1.9</td><td>12.6</td><td>24.6</td><td>29.7</td></tr><tr><td>Bird-SQL (dev)</td><td>45.6</td><td>54.4</td><td>58.7</td><td>59.3</td><td>12.2</td><td>33.8</td><td>46.7</td><td>6.4</td><td>36.3</td><td>47.9</td><td>54.4</td></tr><tr><td>GPQA Diamond</td><td>51.0</td><td>59.1</td><td>60.1</td><td>64.7</td><td>24.7</td><td>28.8</td><td>34.3</td><td>19.2</td><td>30.8</td><td>40.9</td><td>42.4</td></tr><tr><td>SimpleQA</td><td>8.6</td><td>24.9</td><td>29.9</td><td>44.3</td><td>2.8</td><td>5.3</td><td>9.2</td><td>2.2</td><td>4.0</td><td>6.3</td><td>10.0</td></tr><tr><td>FACTS Grounding</td><td>82.9</td><td>80.0</td><td>84.6</td><td>82.8</td><td>43.8</td><td>62.0</td><td>62.4</td><td>36.4</td><td>70.1</td><td>75.8</td><td>74.9</td></tr><tr><td>Global MMLU-Lite</td><td>73.7</td><td>80.8</td><td>83.4</td><td>86.5</td><td>41.9</td><td>64.8</td><td>68.6</td><td>34.2</td><td>54.5</td><td>69.5</td><td>75.1</td></tr><tr><td>MATH</td><td>77.9</td><td>86.5</td><td>90.9</td><td>91.8</td><td>27.2</td><td>49.4</td><td>55.6</td><td>48.0</td><td>75.6</td><td>83.8</td><td>89.0</td></tr><tr><td>HiddenMath</td><td>47.2</td><td>52.0</td><td>63.5</td><td>65.2</td><td>1.8</td><td>10.4</td><td>14.8</td><td>15.8</td><td>43.0</td><td>54.5</td><td>60.3</td></tr><tr><td>MMMU (val)</td><td>62.3</td><td>65.9</td><td>71.7</td><td>72.7</td><td>-</td><td>-</td><td>-</td><td>-</td><td>48.8</td><td>59.6</td><td>64.9</td></tr></table>",
+        "bbox": [
+            127,
+            98,
+            870,
+            318
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "chart",
+        "img_path": "images/ddf6d94bfd31b3b39bca39065974836e771e7bf1df0741f96fc718f12dd04154.jpg",
+        "content": "| Category     | Gemma 2 | Gemma 3 |\n| ------------ | ------- | ------- |\n| Code         | 21      | 36      |\n| Factuality   | 35      | 31      |\n| Reasoning    | 36      | 36      |\n| Science      | 28      | 32      |\n| Multilingual | 20      | 33      |\n| Vision       | 12      | 34      |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "radar",
+        "bbox": [
+            112,
+            372,
+            369,
+            502
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "chart",
+        "img_path": "images/e3ca6ee26bd0aa24c5a366044b924d1a9d9db3c244d5ba0f5e2c271db2a23bb4.jpg",
+        "content": "| Category     | Gemma 2 | Gemma 3 |\n| ------------ | ------- | ------- |\n| Code         | 60      | 90      |\n| Factuality   | 72      | 77      |\n| Reasoning    | 65      | 62      |\n| Science      | 30      | 90      |\n| Multilingual | 51      | 41      |\n| Vision       | 44      | 30      |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "radar",
+        "bbox": [
+            386,
+            372,
+            640,
+            502
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "chart",
+        "img_path": "images/4ed0722cc46d80eb69ec2303d60298848bafe5434037826a9d201291c0810333.jpg",
+        "content": "| Category     | Gemma 2 27B | Gemma 3 27B |\n| ------------ | ----------- | ----------- |\n| Code         | 31          | 31          |\n| Factuality   | 27          | 27          |\n| Reasoning    | 31          | 31          |\n| Science      | 20          | 20          |\n| Multilingual | 18          | 18          |\n| Vision       | 33          | 33          |",
+        "chart_caption": [
+            "Figure 2 | Summary of the performance of different pre-trained models from Gemma 2 and 3 across general abilities. These plots are meant to give a simplified summary and details are in the appendix. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "radar",
+        "bbox": [
+            657,
+            372,
+            915,
+            502
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            574,
+            490,
+            766
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "5.2. Local:Global attention layers ",
+        "text_level": 1,
+        "bbox": [
+            97,
+            803,
+            393,
+            819
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "We measure the impact of changes to local and global self-attention layers on performance and memory consumption during inference. ",
+        "bbox": [
+            97,
+            829,
+            487,
+            878
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "Local:Global ratio. In Fig. 3, we compare differ-",
+        "bbox": [
+            97,
+            885,
+            490,
+            903
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "chart",
+        "img_path": "images/37163c8a52d7fe56032abb6663dee5c15b20f774f8e976cc2cf6207eb1dadb16.jpg",
+        "content": "| Local:Global | 2B    | 9B    |\n| ------------ | ----- | ----- |\n| 1:1          | 0.0   | 0.0   |\n| 3:1          | 0.0   | 0.0   |\n| 5:1          | -0.05 | 0.0   |\n| 7:1          | 0.05  | 0.0   |",
+        "chart_caption": [
+            "Figure 3 | Impact of Local:Global ratio on the perplexity on a validation set. The impact is minimal, even with 7-to-1 local to global. This ablation is run with text-only models. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            552,
+            576,
+            850,
+            686
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "ent ratios of local to global attention layers. 1:1 is used in Gemma 2 models, and 5:1 is used in Gemma 3. We observe minimal impact on perplexity when changing this ratio. ",
+        "bbox": [
+            505,
+            797,
+            899,
+            863
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "Sliding window size. In Fig. 4, we compare different sliding window sizes for the local attention layers in different global:local ratio configurations. The sliding window can be reduced significantly without impacting perplexity. ",
+        "bbox": [
+            505,
+            869,
+            899,
+            902
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "page_number",
+        "text": "6 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            99,
+            99,
+            492,
+            151
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/8489324e25ac9fa7d34c0685aa0f31085b43a4441fe87481bf7a05be4a215e64.jpg",
+        "content": "| Sliding Window | 2B L:G=1:1 | 2B L:G=3:1 |\n| -------------- | ---------- | ---------- |\n| 512            | -0.005     | -0.02      |\n| 1024           | 0.00       | 0.00       |\n| 2048           | 0.01       | 0.005      |\n| 4096           | 0.005      | 0.0075     |",
+        "chart_caption": [
+            "Figure 4 | Impact of Sliding Window size on perplexity measured on a validation set. We consider 2 2B models, with 1:1 and 1:3 local to global layer ratios. This ablation is run with text-only models. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            144,
+            162,
+            443,
+            273
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Impact on KV cache memory. In Fig. 5, we show the balance between the memory used by the model and the KV cache during inference with a context of 32k tokens. The “global only” configu ration is the standard configuration used across most dense models. The “1:1, $\\scriptstyle \\mathbf { S } \\mathbf { W } = 4 0 9 6 ^ { \\mathfrak { W } }$ is used in Gemma 2. We observe that the “global only” configuration results in a memory overhead of 60%, while this is reduced to less than 15% with 1:3 and sliding windows of 1024 (“sw=1024”). In Fig. 6, we compute the memory used by the KV cache as a function of the context length with either our 2B architecture (L:G=5:1, sw=1024) versus a “global only” 2B model. ",
+        "bbox": [
+            97,
+            366,
+            492,
+            592
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/8305796936a0544708db03bb2dc08e5b571fd5f9dfb73073e8ef0f4021c5dcb4.jpg",
+        "content": "| Category | model (MB) | kv cache (MB) |\n| :--- | :--- | :--- |\n| global only | 3300 | 1400 |\n| 1:1, sw=4096 | 3250 | 650 |\n| 1:1 sw=1024 | 3250 | 650 |\n| 1:3 sw=4096 | 3250 | 550 |\n| 1:3 sw=1024 | 3250 | 550 |",
+        "chart_caption": [
+            "Figure 5 | Model versus KV cache memory during inference with a pre-fill KV cache of size 32k. We consider a 2B model with different local to global ratios and sliding window sizes (sw). We compare to global only, which is the standard used in Gemma 1 and Llama. This ablation is run with a text-only model. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "bar_stacked",
+        "bbox": [
+            104,
+            602,
+            485,
+            690
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "5.3. Enabling long context ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            843,
+            332,
+            859
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Instead of training with 128K sequences from scratch, we pre-train our models with 32K sequences and then scale the 4B, 12B, and 27B models up to 128K tokens at the end of pre-training while rescaling RoPE (Chen et al., 2023). We find a scaling factor of 8 to work well in practice. Note that compared to Gemma 2, we have also increased the RoPE base frequency of global selfattention layers from 10k to 1M, while keeping 10k for the local self-attention layers. In Figure 7, we show the impact on perplexity for different context lengths. Our models generalize to 128K, but rapidly degrade as we continue to scale. ",
+        "bbox": [
+            97,
+            869,
+            490,
+            902
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/1d2f0a25c5e34fe4bd1625b188cfffa74a096c85e65929550208d4e8ef682833.jpg",
+        "content": "| Context length | 2B L:G=5:1, sw=1024 | 2B global only |\n| -------------- | ------------------- | -------------- |\n| 1K             | ~0                  | ~0             |\n| 4K             | ~0                  | ~0             |\n| 8K             | ~0                  | ~0             |\n| 16K            | ~0                  | ~0             |\n| 32K            | ~0                  | ~0             |\n| 64K            | ~0                  | ~0             |\n| 128K           | ~0                  | ~0             |",
+        "chart_caption": [
+            "Figure 6 | KV cache memory versus context length. We show the memory usage of the KV cache for our architecture (L:G=5:1, sw=1024) and a transformer with global attention only – as used in LLaMa or Gemma 1. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            552,
+            99,
+            850,
+            214
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            335,
+            900,
+            513
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/42000dc1cf9b20c7c609af9b45d2da5579894353cdb9cfc5c4e0e74c7afae0f2.jpg",
+        "content": "| Context length | 4B    | 12B   | 27B   | 4B + long context | 12B + long context | 27B + long context |\n| -------------- | ----- | ----- | ----- | ----------------- | ------------------ | ------------------ |\n| 16K            | 0.70  | 0.65  | 0.62  | 0.70              | 0.65               | 0.62               |\n| 32K            | 0.68  | 0.62  | 0.60  | 0.68              | 0.62               | 0.60               |\n| 64K            | 0.67  | 0.60  | 0.58  | 0.67              | 0.60               | 0.58               |\n| 128K           | 0.66  | 0.65  | 0.56  | 0.66              | 0.58               | 0.56               |\n| 256K           | 0.65  | 0.68  | 0.54  | 0.65              | 0.54               | 0.54               |\n| 512K           | 0.64  | 0.69  | 0.53  | 0.64              | 0.56               | 0.53               |",
+        "chart_caption": [
+            "Figure 7 | Long context performance of pretrained models before and after RoPE rescaling. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            512,
+            525,
+            894,
+            765
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "5.4. Small versus large teacher ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            843,
+            779,
+            859
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "A common finding is that, to train a small model, it is preferable to distill from a smaller teacher. ",
+        "bbox": [
+            505,
+            869,
+            899,
+            902
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            581,
+            76
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "page_number",
+        "text": "7 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/659c6ab3a81a3a8b295ee1fa968f3d5ea79e5e6a82fb565d8f3996a7f44e0be8.jpg",
+        "content": "| Total training tokens (B) | Δ Perplexity |\n| ------------------------- | ------------ |\n| 10^1                      | 0.002        |\n| 10^2                      | -0.004       |\n| 10^3                      | -0.008       |",
+        "chart_caption": [
+            "Figure 8 | Small versus large teacher. Relative difference of perplexity when using a small and large teacher as a function of the token size of training. Smaller numbers means distilling from a larger teacher is better. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            166,
+            103,
+            428,
+            258
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "We suspect this is because these studies are often performed in settings where the regularization effect of using a worse teacher surpasses the benefit of using a better teacher. We train a student with 2 teachers of different sizes, one large and one small, for different training horizons. In Fig. 8, we observe that for short training horizons, the smaller teacher is better, but the trend is reversed for longer training. ",
+        "bbox": [
+            97,
+            381,
+            489,
+            526
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "5.5. Vision encoder ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            552,
+            272,
+            567
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "table",
+        "img_path": "images/0697aa18a72756738a1b494c383822afba55ca282545cbaac342928517f8c85e.jpg",
+        "table_caption": [
+            "Table 7 | Impact of image encoder input resolution. We measure performance using a short schedule 2B Gemma model on a few evaluation benchmarks to observe the effect of input image resolution on vision encoder pre-training. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Resolution</td><td>DocVQA</td><td>InfoVQA</td><td>TextVQA</td></tr><tr><td>256</td><td>31.9</td><td>23.1</td><td>44.1</td></tr><tr><td>448</td><td>45.4</td><td>31.6</td><td>53.5</td></tr><tr><td>896</td><td>59.8</td><td>33.7</td><td>58.0</td></tr></table>",
+        "bbox": [
+            124,
+            586,
+            465,
+            667
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Impact of image resolution. We use a vision encoder based on SigLIP (Zhai et al., 2023). The vision encoder is frozen, and only the language model is trained. Each image in this multimodal data is represented by 256 image tokens from the respective vision encoder. The higher resolu tion encoders thus use average pooling to reduce their output to 256 tokens. For instance, the 896 resolution encoder has a 4x4 average pooling on its output. As shown in Table 7, higher resolution encoders perform better than smaller ones. ",
+        "bbox": [
+            97,
+            772,
+            489,
+            902
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            101,
+            895,
+            149
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "table",
+        "img_path": "images/7bbb77b897c05fee3075eeb3af29d588671fb1ba6b2b4b41ce00001711aa774e.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td>DocVQA</td><td>InfoVQA</td><td>TextVQA</td></tr><tr><td>4B</td><td>72.8</td><td>44.1</td><td>58.9</td></tr><tr><td>4B w/ P&amp;S</td><td>81.0</td><td>57.0</td><td>60.8</td></tr><tr><td>Δ</td><td>(+8.2)</td><td>(+12.9)</td><td>(+1.9)</td></tr><tr><td>27B</td><td>85.6</td><td>59.4</td><td>68.6</td></tr><tr><td>27B w/ P&amp;S</td><td>90.4</td><td>76.4</td><td>70.2</td></tr><tr><td>Δ</td><td>(+4.8)</td><td>(+17.0)</td><td>(+1.6)</td></tr></table>",
+        "bbox": [
+            524,
+            160,
+            880,
+            296
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Table 8 | Impact of P&S. 4-shot evaluation results on the valid set, with and without P&S on a pre-trained checkpoint. Boosts are on tasks associated with images with varying aspect ratios, or involving reading text on images. ",
+        "bbox": [
+            505,
+            306,
+            897,
+            387
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Pan & Scan. P&S enables capturing images at close to their native aspect ratio and image resolution. In Table 8, we compare our 27B IT model with and without P&S. As expected, the ability to treat images with close to native resolution greatly helps with tasks that require some form of reading text on images, which is particularly important for visual language models. ",
+        "bbox": [
+            505,
+            403,
+            897,
+            532
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "6. Memorization and Privacy ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            558,
+            806,
+            576
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Large language models may produce near-copies of some text used in training (Biderman et al., 2023; Carlini et al., 2021, 2022; Ippolito et al., 2022; Nasr et al., 2023). Several prior reports have released audits that quantify this risk by measuring the memorization rate (Anil et al., 2023; Chowdhery et al., 2022; Gemini Team, 2023, 2024; Gemma Team, 2024a,b; LLaMa Team, 2024). This “memorization rate”1 is defined as the ratio of generations from the model that match its training data compared to all model generations using the following setup. We follow the methodology described in Gemma Team (2024b) to measure it. Specifically, we subsample a large portion of training data distributed uniformly across different corpora and test for discoverable extraction (Nasr et al., 2023) of this content using a prefix of length 50 and a suffix of length 50. We denote text as either “exactly memorized” if all tokens in the continuation match the source suffix or “approximately memorized” if they match up to an edit distance of 10%. ",
+        "bbox": [
+            505,
+            590,
+            897,
+            799
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            581,
+            76
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_footnote",
+        "text": "1\"We do not state or imply [here] that a model \"contains\" its training data in the sense that there is a copy of that data in the model. Rather, a model memorizes attributes of its training data such that in certain cases it is statistically able to generate such training data when following rules and using information about features of its training data that it does contain.\" ",
+        "bbox": [
+            505,
+            808,
+            897,
+            900
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_number",
+        "text": "8 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "chart",
+        "img_path": "images/1d0e2ca10243a0980112ba9c88e4f38562056b1d47eadf9670ef00856795ed98.jpg",
+        "content": "| Model     | Exact  | Approximate |\n| --------- | ------ | ----------- |\n| Gemma 3   | 0.0001 | 0.005       |\n| Gemma 3   | 0.0003 | 0.01        |\n| Gemma 3   | 0.0003 | 0.01        |\n| Gemma 3   | 0.0003 | 0.01        |\n| Gemma 2   | 0.003  | 0.05        |\n| Gemma 2   | 0.01   | 0.04        |\n| Gemma 2   | 0.02   | 0.03        |\n| Gemmi 1.5 | 0.03   | 0.3         |\n| Gemma     | 1.0    | 1.5         |\n| Gemma     | 1.5    | 2.0         |\n| PalM      | 1.5    | 1.5         |\n| Small     | 0.0001 | 0.0001      |",
+        "chart_caption": [
+            "Figure 9 | Total memorization rates for both exact and approximate memorization. Gemma 3 models memorize significantly less than all prior models. \\*No results for approximate memorization on these models. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "bar",
+        "bbox": [
+            104,
+            99,
+            485,
+            269
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            390,
+            489,
+            535
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Figure 9 compares the memorization rates across Gemma and Gemini models; these models are ordered in reverse chronological order, with the newest Gemma 3 models on the left. We find that Gemma 3 models memorize long-form text at a much lower rate than prior models (note the log y-axis). We observe only a marginal difference in the memorization rates between the 4B, 12B, and 27B models, with 1B memorizing less than these larger models. Further, we find that a larger proportion of text is characterized as approximately memorized, with a relative increase in approximate memorization compared to exact memorization of roughly 24x on average. ",
+        "bbox": [
+            97,
+            543,
+            489,
+            770
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "We also study the rate at which the generations may contain personal information. To identify potentially personal information, we use the Google Cloud Sensitive Data Protection (SDP) service.2 SDP uses broad detection rules to identify text that may contain personal information. SDP is designed to have high recall and does not consider the context in which the information may appear, which leads to many false positives. Thus, we are likely overestimating the true amount of potentially personal information contained in the outputs classified as memorized. SDP also provides broad severity levels: low, medium, and high. We classify text as personal if SDP classifies it as personal information at any severity level. We observed no personal information in the outputs characterized as memorization for all Gemma 3 models. This indicates a low rate of personal data, below our detection thresholds, in outputs classified as memorization. ",
+        "bbox": [
+            97,
+            776,
+            489,
+            873
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            99,
+            897,
+            326
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "7. Responsibility, Safety, Security ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            357,
+            850,
+            376
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Responsibility, safety, and security are of utmost importance in the development of Gemma models. To reduce risks to Gemma 3 users, we have continued to integrate enhanced internal safety processes that span the development workflow, in line with recent Google AI models (Gemini Team, 2024). This focuses on safety mitigation at training time, and robust and transparent model evaluations for the new image-to-text capabilities we have introduced. ",
+        "bbox": [
+            505,
+            388,
+            897,
+            549
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "7.1. Governance & Assessment ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            577,
+            778,
+            592
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Our approach to assessing the benefits and risks of Gemma is reflective of that outlined for Gemma 1 (Gemma Team, 2024a), taking into account the changes in supported modalities. We continue to believe that openness in AI can spread the benefits of these technologies across society, but must be evaluated against the risk of malicious uses that can cause harm on both individual and institutional levels (Weidinger et al., 2021). Since the inaugural Gemma launch, we have seen these models drive a number of socially beneficial applications, such as our own ShieldGemma 2, a 4B image safety classifier built with Gemma 3, which provides a ready-made solution for image safety, outputting safety labels across dangerous content, sexually explicit, and violence categories. ",
+        "bbox": [
+            505,
+            604,
+            897,
+            862
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "Releasing Gemma 3 models required specific attention to changes in model capabilities and close monitoring of the evolving risks of existing multimodal LLMs (Lin et al., 2024), as well as an understanding of the ways in which models are being used in the wild. Although we are yet to receive any reports of malicious use for Gemma, we remain committed to investigating any such reporting, and work with the academic and developer communities, as well as conduct our own monitoring, to flag such cases. ",
+        "bbox": [
+            507,
+            869,
+            897,
+            902
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            418,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "page_footnote",
+        "text": "2https://cloud.google.com/sensitive-data-protection ",
+        "bbox": [
+            117,
+            885,
+            468,
+            901
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "page_number",
+        "text": "9 ",
+        "bbox": [
+            885,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            99,
+            490,
+            247
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Despite advancements in capabilities, we believe that, given the number of larger powerful open models available, this release will have a negligible effect on the overall risk landscape. ",
+        "bbox": [
+            97,
+            253,
+            490,
+            319
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "7.2. Safety policies and train-time mitigations ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            344,
+            489,
+            362
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "A key pillar of Gemma’s approach to safety is to align fine-tuned models with Google’s safety poli cies, in line with Gemini models (Gemini Team, 2023). They are designed to help prevent our models from generating harmful content, i.e., ",
+        "bbox": [
+            97,
+            370,
+            490,
+            453
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "list",
+        "sub_type": "text",
+        "list_items": [
+            "• Child sexual abuse and exploitation ",
+            "• Revealing personally identifiable information that can lead to harm (e.g., Social Security numbers) ",
+            "• Hate speech and harassment ",
+            "• Dangerous or malicious content (including promoting self-harm or instructing in harmful activities) ",
+            "• Sexually explicit content ",
+            "• Medical advice that runs contrary to scientific or medical consensus "
+        ],
+        "bbox": [
+            115,
+            470,
+            490,
+            651
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "We undertook considerable safety filtering of our pre-training data to reduce the likelihood of our pre-trained and fine-tuned checkpoints producing harmful content. For fine-tuned models, we also use both SFT and RLHF to steer the model away from undesirable behavior. ",
+        "bbox": [
+            97,
+            671,
+            490,
+            768
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "7.3. Assurance Evaluations ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            795,
+            336,
+            810
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "We also run our IT models through a set of baseline assurance evaluations to understand the potential harms that our models can cause. As we champion open models, we also recognize that the irreversible nature of weight releases requires rigorous risk assessment. Our internal safety processes are designed accordingly, and for previous Gemma models we have also undertaken evaluations of capabilities relevant to extreme risks (Phuong et al., 2024; Shevlane et al., 2023). As we continue to develop and share open models, we will follow the heuristic that thoroughly evaluating a more capable model often provides sufficient assurance for less capable ones. As such, we prioritised a streamlined set of evaluations for Gemma 3, reserving in-depth dangerous capability assessments for cases where a specific model may present a potentially heightened risk (as described below on CBRN evaluations). We balance development speed with targeted safety testing, ensuring our evaluations are well-focused and efficient, while upholding the commitments laid out in our Frontier Safety Framework. ",
+        "bbox": [
+            97,
+            821,
+            490,
+            904
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            99,
+            900,
+            391
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Baseline Evaluations ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            410,
+            684,
+            425
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Baseline assurance captures the model violation rate for safety policies, using a large number of synthetic adversarial user queries, and human raters to label the answers as policy violating or not. Overall, Gemma 3 violation rate is significantly low overall on these safety policies. ",
+        "bbox": [
+            505,
+            436,
+            899,
+            533
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Chemical, Biological, Radiological and Nuclear (CBRN) knowledge ",
+        "text_level": 1,
+        "bbox": [
+            505,
+            552,
+            897,
+            586
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Owing to enhanced performance on STEMrelated tasks, we evaluated knowledge relevant to biological, radiological, and nuclear risks using an internal dataset of closed-ended, knowledgebased multiple choice questions. For evaluations of chemical knowledge, we employed a closedended knowledge-based approach on chemical hazards developed by Macknight et al. Our evaluation suggests that the knowledge of Gemma 3 models in these domains is low. ",
+        "bbox": [
+            505,
+            595,
+            900,
+            755
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "7.4. Our approach to responsible open models ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            778,
+            897,
+            795
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "Designing safe, secure, and responsible applications requires a system-level approach, working to mitigate risks associated with each specific use case and environment. We will continue to adopt assessments and safety mitigations proportionate to the potential risks from our models, and will only share these with the community when we are confident that the benefits significantly outweigh the foreseeable risks. ",
+        "bbox": [
+            505,
+            804,
+            899,
+            902
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "page_number",
+        "text": "10 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            97,
+            101,
+            490,
+            149
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "8. Discussion and Conclusion ",
+        "text_level": 1,
+        "bbox": [
+            99,
+            175,
+            403,
+            193
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "In this work, we have presented Gemma 3, the latest addition to the Gemma family of open language models for text, image, and code. In this version, we focus on adding image understanding and long context while improving multilinguality and STEM-related abilities. Our model sizes and architectures are designed to be compatible with standard hardware, and most of our architecture improvements are tailored to fit this hardware while maintaining performance. ",
+        "bbox": [
+            97,
+            206,
+            490,
+            369
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "References ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            395,
+            215,
+            413
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "Realworldqa. https://x.ai/news/grok-1. 5v. ",
+            "M. Acharya, K. Kafle, and C. Kanan. Tallyqa: Answering complex counting questions. In AAAI, 2018. ",
+            "R. Agarwal, N. Vieillard, Y. Zhou, P. Stanczyk, S. R. Garea, M. Geist, and O. Bachem. On-policy distillation of language models: Learning from self-generated mistakes. In ICLR, 2024. ",
+            "J. Ainslie, J. Lee-Thorp, M. de Jong, Y. Zemlyanskiy, F. Lebrón, and S. Sanghai. Gqa: Training generalized multi-query transformer models from multi-head checkpoints. arXiv preprint arXiv:2305.13245, 2023. ",
+            "R. Anil, G. Pereyra, A. Passos, R. Ormandi, G. E. Dahl, and G. E. Hinton. Large scale distributed neural network training through online distillation. arXiv preprint arXiv:1804.03235, 2018. ",
+            "R. Anil, A. M. Dai, O. Firat, M. Johnson, D. Lepikhin, A. Passos, S. Shakeri, E. Taropa, P. Bailey, Z. Chen, et al. Palm 2 technical report. arXiv preprint arXiv:2305.10403, 2023. ",
+            "M. Artetxe, S. Ruder, and D. Yogatama. On the cross-lingual transferability of monolingual representations. In ACL, 2020. "
+        ],
+        "bbox": [
+            97,
+            426,
+            494,
+            903
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "A. Asai, J. Kasai, J. H. Clark, K. Lee, E. Choi, and H. Hajishirzi. Xor qa: Cross-lingual openretrieval question answering. arXiv preprint arXiv:2010.11856, 2020. ",
+            "J. Austin, A. Odena, M. I. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. J. Cai, M. Terry, Q. V. Le, and C. Sutton. Program synthesis with large language models. CoRR, abs/2108.07732, 2021. ",
+            "P. Barham, A. Chowdhery, J. Dean, S. Ghemawat, S. Hand, D. Hurt, M. Isard, H. Lim, R. Pang, S. Roy, B. Saeta, P. Schuh, R. Sepassi, L. E. Shafey, C. A. Thekkath, and Y. Wu. Pathways: Asynchronous distributed dataflow for ml, 2022. ",
+            "I. Beltagy, M. E. Peters, and A. Cohan. Longformer: The long-document transformer. arXiv preprint arXiv:2004.05150, 2020. ",
+            "S. Biderman, U. Prashanth, L. Sutawika, H. Schoelkopf, Q. Anthony, S. Purohit, and E. Raff. Emergent and predictable memorization in large language models. NeurIPS, 36: 28072–28090, 2023. ",
+            "Y. Bisk, R. Zellers, R. L. Bras, J. Gao, and Y. Choi. PIQA: reasoning about physical commonsense in natural language. CoRR, abs/1911.11641, 2019. ",
+            "N. Carlini, F. Tramer, E. Wallace, M. Jagielski, A. Herbert-Voss, K. Lee, A. Roberts, T. Brown, D. Song, U. Erlingsson, et al. Extracting training data from large language models. In USENIX, 2021. ",
+            "N. Carlini, D. Ippolito, M. Jagielski, K. Lee, F. Tramer, and C. Zhang. Quantifying memorization across neural language models. arXiv preprint arXiv:2202.07646, 2022. ",
+            "Chameleon Team. Chameleon: Mixed-modal early-fusion foundation models. arXiv preprint arXiv:2405.09818, 2024. ",
+            "M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. de Oliveira Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, A. Ray, R. Puri, G. Krueger, M. Petrov, H. Khlaaf, "
+        ],
+        "bbox": [
+            505,
+            98,
+            900,
+            904
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "page_number",
+        "text": "11 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "G. Sastry, P. Mishkin, B. Chan, S. Gray, N. Ry der, M. Pavlov, A. Power, L. Kaiser, M. Bavarian, C. Winter, P. Tillet, F. P. Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. H. Guss, A. Nichol, A. Paino, N. Tezak, J. Tang, I. Babuschkin, S. Balaji, S. Jain, W. Saunders, C. Hesse, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. Knight, M. Brundage, M. Murati, K. Mayer, P. Welinder, B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, and W. Zaremba. Evaluating large language models trained on code. CoRR, abs/2107.03374, 2021. ",
+            "S. Chen, S. Wong, L. Chen, and Y. Tian. Extending context window of large language models via positional interpolation. arXiv preprint arXiv:2306.15595, 2023. ",
+            "X. Chen, H. Fang, T.-Y. Lin, R. Vedantam, S. Gupta, P. Dollár, and C. L. Zitnick. Microsoft coco captions: Data collection and evaluation server. ArXiv, abs/1504.00325, 2015. ",
+            "W.-L. Chiang, L. Zheng, Y. Sheng, A. N. Angelopoulos, T. Li, D. Li, H. Zhang, B. Zhu, M. Jordan, J. E. Gonzalez, and I. Stoica. Chatbot arena: An open platform for evaluating llms by human preference, 2024. ",
+            "F. Chollet. On the measure of intelligence. arXiv preprint arXiv:1911.01547, 2019. ",
+            "A. Chowdhery, S. Narang, J. Devlin, M. Bosma, G. Mishra, A. Roberts, P. Barham, H. W. Chung, C. Sutton, S. Gehrmann, P. Schuh, K. Shi, S. Tsvyashchenko, J. Maynez, A. Rao, P. Barnes, Y. Tay, N. Shazeer, V. Prabhakaran, E. Reif, N. Du, B. Hutchinson, R. Pope, J. Bradbury, J. Austin, M. Isard, G. Gur-Ari, P. Yin, T. Duke, A. Levskaya, S. Ghemawat, S. Dev, H. Michalewski, X. Garcia, V. Misra, K. Robinson, L. Fedus, D. Zhou, D. Ippolito, D. Luan, H. Lim, B. Zoph, A. Spiridonov, R. Sepassi, D. Dohan, S. Agrawal, M. Omernick, A. M. Dai, T. S. Pillai, M. Pellat, A. Lewkowycz, E. Moreira, R. Child, O. Polozov, K. Lee, Z. Zhou, X. Wang, B. Saeta, M. Diaz, O. Firat, M. Catasta, J. Wei, K. Meier-Hellstern, D. Eck, J. Dean, S. Petrov, and N. Fiedel. Palm: Scaling language modeling with pathways, 2022. "
+        ],
+        "bbox": [
+            99,
+            99,
+            494,
+            903
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "H. W. Chung, N. Constant, X. Garcia, A. Roberts, Y. Tay, S. Narang, and O. Firat. Unimax: Fairer and more effective language sampling for largescale multilingual pretraining, 2023. ",
+            "C. Clark, K. Lee, M. Chang, T. Kwiatkowski, M. Collins, and K. Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions. CoRR, abs/1905.10044, 2019. ",
+            "K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schulman. Training verifiers to solve math word problems. CoRR, abs/2110.14168, 2021. ",
+            "DeepSeek-AI. Deepseek-r1: Incentivizing reasoningt learning, 2025. ",
+            "M. Dehghani, J. Djolonga, B. Mustafa, P. Padlewski, J. Heek, J. Gilmer, A. P. Steiner, M. Caron, R. Geirhos, I. Alabdulmohsin, et al. Scaling vision transformers to 22 billion parameters. In ICML, 2023. ",
+            "D. Deutsch, E. Briakou, I. Caswell, M. Finkelstein, R. Galor, J. Juraska, G. Kovacs, A. Lui, R. Rei, J. Riesa, S. Rijhwani, P. Riley, E. Salesky, F. Trabelsi, S. Winkler, B. Zhang, and M. Freitag. Wmt24++: Expanding the language coverage of wmt24 to 55 languages & dialects, 2025. ",
+            "A. Dosovitskiy. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929, 2020. ",
+            "D. Dua, Y. Wang, P. Dasigi, G. Stanovsky, S. Singh, and M. Gardner. DROP: A reading comprehension benchmark requiring discrete reasoning over paragraphs. In ACL, 2019. ",
+            "B. Fatemi, M. Kazemi, A. Tsitsulin, K. Malkan, J. Yim, J. Palowitch, S. Seo, J. Halcrow, and B. Perozzi. Test of time: A benchmark for evaluating llms on temporal reasoning. arXiv preprint arXiv:2406.09170, 2024. ",
+            "X. Fu, Y. Hu, B. Li, Y. Feng, H. Wang, X. Lin, D. Roth, N. A. Smith, W.-C. Ma, and R. Krishna. Blink: Multimodal large language models can see but not perceive. ArXiv, abs/2404.12390, 2024. "
+        ],
+        "bbox": [
+            507,
+            99,
+            899,
+            901
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_number",
+        "text": "12 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "J. Gehring, K. Zheng, J. Copet, V. Mella, T. Cohen, and G. Synnaeve. Rlef: Grounding code llms in execution feedback with reinforcement learn ing. arXiv preprint arXiv:2410.02089, 2024. ",
+            "Gemini Team. Gemini: A family of highly capable multimodal models, 2023. ",
+            "Gemini Team. Gemini 1.5: Unlocking multimodal understanding across millions of tokens of context, 2024. ",
+            "Gemma Team. Gemma: Open models based on gemini research and technology, 2024a. ",
+            "Gemma Team. Gemma 2: Improving open language models at a practical size. arXiv preprint arXiv:2408.00118, 2024b. ",
+            "O. Goldman, U. Shaham, D. Malkin, S. Eiger, A. Hassidim, Y. Matias, J. Maynez, A. M. Gilady, J. Riesa, S. Rijhwani, L. Rimell, I. Szpektor, R. Tsarfaty, and M. Eyal. Eclektic: a novel challenge set for evaluation of cross-lingual knowledge transfer, 2025. ",
+            "N. Goyal, C. Gao, V. Chaudhary, P.-J. Chen, G. Wenzek, D. Ju, S. Krishnan, M. Ranzato, F. Guzmán, and A. Fan. The flores-101 evaluation benchmark for low-resource and multilingual machine translation. ACL, 2022. ",
+            "Y. Goyal, T. Khot, D. Summers-Stay, D. Batra, and D. Parikh. Making the V in VQA matter: Elevating the role of image understanding in Visual Question Answering. In CVPR, 2017. ",
+            "D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt. Measuring massive multitask language understanding. CoRR, abs/2009.03300, 2020. ",
+            "D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt. Measuring mathematical problem solving with the math dataset. NeurIPS, 2021. ",
+            "J. Hessel, A. Marasović, J. D. Hwang, L. Lee, J. Da, R. Zellers, R. Mankoff, and Y. Choi. Do androids laugh at electric sheep? humor\" understanding\" benchmarks from the new yorker caption contest. arXiv preprint arXiv:2209.06293, 2022. "
+        ],
+        "bbox": [
+            100,
+            99,
+            490,
+            901
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "G. Hinton, O. Vinyals, and J. Dean. Distilling the knowledge in a neural network. arXiv preprint arXiv:1503.02531, 2015. ",
+            "C.-P. Hsieh, S. Sun, S. Kriman, S. Acharya, D. Rekesh, F. Jia, Y. Zhang, and B. Ginsburg. Ruler: What’s the real context size of your long-context language models? arXiv preprint arXiv:2404.06654, 2024. ",
+            "D. Ippolito, F. Tramèr, M. Nasr, C. Zhang, M. Jagielski, K. Lee, C. A. Choquette-Choo, and N. Carlini. Preventing verbatim memorization in language models gives a false sense of privacy. arXiv preprint arXiv:2210.17546, 2022. ",
+            "B. Jacob, S. Kligys, B. Chen, M. Zhu, M. Tang, A. Howard, H. Adam, and D. Kalenichenko. Quantization and training of neural networks for efficient integer-arithmetic-only inference. In CVPR, 2018. ",
+            "M. Joshi, E. Choi, D. S. Weld, and L. Zettlemoyer. Triviaqa: A large scale distantly supervised challenge dataset for reading comprehension. CoRR, abs/1705.03551, 2017. ",
+            "M. Kazemi, H. Alvari, A. Anand, J. Wu, X. Chen, and R. Soricut. Geomverse: A systematic evaluation of large models for geometric reasoning. arXiv preprint arXiv:2312.12241, 2023. ",
+            "M. Kazemi, N. Dikkala, A. Anand, P. Dević, I. Dasgupta, F. Liu, B. Fatemi, P. Awasthi, D. Guo, S. Gollapudi, and A. Qureshi. Remi: A dataset for reasoning with multiple images. ArXiv, abs/2406.09175, 2024a. ",
+            "M. Kazemi, Q. Yuan, D. Bhatia, N. Kim, X. Xu, V. Imbrasaite, and D. Ramachandran. Boardgameqa: A dataset for natural language reasoning with contradictory information. NeurIPS, 36, 2024b. ",
+            "M. Kazemi, B. Fatemi, H. Bansal, J. Palowitch, C. Anastasiou, S. V. Mehta, L. K. Jain, V. Aglietti, D. Jindal, P. Chen, et al. Big-bench extra hard. arXiv preprint arXiv:2502.19187, 2025. ",
+            "A. Kembhavi, M. Salvato, E. Kolve, M. Seo, H. Hajishirzi, and A. Farhadi. A diagram is worth a dozen images. ArXiv, abs/1603.07396, 2016. "
+        ],
+        "bbox": [
+            507,
+            99,
+            897,
+            902
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "page_number",
+        "text": "13 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "E. Kıcıman, R. Ness, A. Sharma, and C. Tan. Causal reasoning and large language models: Opening a new frontier for causality. arXiv preprint arXiv:2305.00050, 2023. ",
+            "T. Kudo and J. Richardson. SentencePiece: A simple and language independent subword tokenizer and detokenizer for neural text processing. 2018. ",
+            "T. Kwiatkowski, J. Palomaki, O. Redfield, M. Collins, A. Parikh, C. Alberti, D. Epstein, I. Polosukhin, J. Devlin, K. Lee, K. Toutanova, L. Jones, M. Kelcey, M.-W. Chang, A. M. Dai, J. Uszkoreit, Q. Le, and S. Petrov. Natural questions: A benchmark for question answering research. ACL, 2019. ",
+            "N. Lambert, J. Morrison, V. Pyatkin, S. Huang, H. Ivison, F. Brahman, L. J. V. Miranda, A. Liu, N. Dziri, S. Lyu, et al. T\\\" ulu 3: Pushing frontiers in open language model post-training. arXiv preprint arXiv:2411.15124, 2024. ",
+            "Z. Lin, J. Cui, X. Liao, and X. Wang. Malla: Demystifying real-world large language model integrated malicious services, 2024. ",
+            "H. Liu, C. Li, Q. Wu, and Y. J. Lee. Visual instruction tuning. NeurIPS, 36, 2024. ",
+            "LLaMa Team. The llama 3 herd of models. arXiv preprint arXiv:2407.21783, 2024. ",
+            "M. Luong, H. Pham, and C. D. Manning. Effective approaches to attention-based neural machine translation. 2015. ",
+            "Macknight, Aung, and Gomes. Personal Communication. ",
+            "K. Marino, M. Rastegari, A. Farhadi, and R. Mottaghi. Ok-vqa: A visual question answering benchmark requiring external knowledge. In CVPR, 2019. ",
+            "A. Masry, X. L. Do, J. Q. Tan, S. Joty, and E. Hoque. ChartQA: A benchmark for question answering about charts with visual and logical reasoning. ACL, 2022. ",
+            "M. Mathew, D. Karatzas, R. Manmatha, and C. V. Jawahar. Docvqa: A dataset for vqa on document images. WACV, 2020. "
+        ],
+        "bbox": [
+            100,
+            99,
+            490,
+            903
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "M. Mathew, V. Bagal, R. Tito, D. Karatzas, E. Valveny, and C. Jawahar. Infographicvqa. In WACV, 2022. ",
+            "I. Mirzadeh, K. Alizadeh, H. Shahrokhi, O. Tuzel, S. Bengio, and M. Farajtabar. Gsm-symbolic: Understanding the limitations of mathematical reasoning in large language models. arXiv preprint arXiv:2410.05229, 2024. ",
+            "M. Nasr, N. Carlini, J. Hayase, M. Jagielski, A. F. Cooper, D. Ippolito, C. A. Choquette-Choo, E. Wallace, F. Tramèr, and K. Lee. Scalable extraction of training data from (production) language models. arXiv preprint arXiv:2311.17035, 2023. ",
+            "A. Nie, Y. Zhang, A. S. Amdekar, C. Piech, T. B. Hashimoto, and T. Gerstenberg. Moca: Measuring human-language model alignment on causal and moral judgment tasks. NeurIPS, 36, 2024. ",
+            "R. Paiss, A. Ephrat, O. Tov, S. Zada, I. Mosseri, M. Irani, and T. Dekel. Teaching clip to count to ten. ICCV, 2023. ",
+            "M. Phuong, M. Aitchison, E. Catt, S. Cogan, A. Kaskasoli, V. Krakovna, D. Lindner, M. Rahtz, Y. Assael, S. Hodkinson, H. Howard, T. Lieberum, R. Kumar, M. A. Raad, A. Webson, L. Ho, S. Lin, S. Farquhar, M. Hutter, G. Deletang, A. Ruoss, S. El-Sayed, S. Brown, A. Dragan, R. Shah, A. Dafoe, and T. Shevlane. Evaluating frontier models for dangerous capabilities, 2024. ",
+            "A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, et al. Learning transferable visual models from natural language supervision. In ICML, pages 8748–8763. PMLR, 2021. ",
+            "A. Ramé, J. Ferret, N. Vieillard, R. Dadashi, L. Hussenot, P.-L. Cedoz, P. G. Sessa, S. Girgin, A. Douillard, and O. Bachem. WARP: On the benefits of weight averaged rewarded policies, 2024a. ",
+            "A. Ramé, N. Vieillard, L. Hussenot, R. Dadashi, G. Cideron, O. Bachem, and J. Ferret. WARM: On the benefits of weight averaged reward models. In ICML, 2024b. "
+        ],
+        "bbox": [
+            507,
+            99,
+            899,
+            902
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "page_number",
+        "text": "14 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "D. Rein, B. L. Hou, A. C. Stickland, J. Petty, R. Y. Pang, J. Dirani, J. Michael, and S. R. Bowman. Gpqa: A graduate-level google-proof q&a benchmark. ArXiv, abs/2311.12022, 2023. ",
+            "J. Ren, S. Rajbhandari, R. Y. Aminabadi, O. Ruwase, S. Yang, M. Zhang, D. Li, and Y. He. Zero-offload: Democratizing billionscale model training. In USENIX, 2021. ",
+            "A. Roberts, H. W. Chung, G. Mishra, A. Levskaya, J. Bradbury, D. Andor, S. Narang, B. Lester, C. Gaffney, A. Mohiuddin, et al. Scaling up models and data with t5x and seqio. JMLR, 2023. ",
+            "N. Sachdeva, B. Coleman, W.-C. Kang, J. Ni, L. Hong, E. H. Chi, J. Caverlee, J. McAuley, and D. Z. Cheng. How to train data-efficient llms. arXiv preprint arXiv:2402.09668, 2024. ",
+            "K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. Choi. WINOGRANDE: an adversarial winograd schema challenge at scale. CoRR, abs/1907.10641, 2019. ",
+            "E. Sánchez, B. Alastruey, C. Ropers, P. Stenetorp, M. Artetxe, and M. R. Costa-jussà. Linguini: A benchmark for language-agnostic linguistic reasoning. arXiv preprint arXiv:2409.12126, 2024. ",
+            "M. Sap, H. Rashkin, D. Chen, R. L. Bras, and Y. Choi. Socialiqa: Commonsense reasoning about social interactions. CoRR, abs/1904.09728, 2019. ",
+            "P. G. Sessa, R. Dadashi, L. Hussenot, J. Ferret, N. Vieillard, A. Ramé, B. Shariari, S. Perrin, A. Friesen, G. Cideron, S. Girgin, P. Stanczyk, A. Michi, D. Sinopalnikov, S. Ramos, A. Héliou, A. Severyn, M. Hoffman, N. Momchev, and O. Bachem. Bond: Aligning llms with best-of-n distillation, 2024. ",
+            "K. Shah, N. Dikkala, X. Wang, and R. Panigrahy. Causal language modeling can elicit search and reasoning capabilities on logic puzzles. arXiv preprint arXiv:2409.10502, 2024. ",
+            "T. Shevlane, S. Farquhar, B. Garfinkel, M. Phuong, J. Whittlestone, J. Leung, D. Kokotajlo, N. Marchal, M. Anderljung, N. Kolt, L. Ho, D. Siddarth, S. Avin, W. Hawkins, B. Kim, I. Gabriel, "
+        ],
+        "bbox": [
+            100,
+            99,
+            490,
+            903
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "V. Bolina, J. Clark, Y. Bengio, P. Christiano, and A. Dafoe. Model evaluation for extreme risks, 2023. ",
+            "F. Shi, M. Suzgun, M. Freitag, X. Wang, S. Srivats, S. Vosoughi, H. W. Chung, Y. Tay, S. Ruder, D. Zhou, D. Das, and J. Wei. Language models are multilingual chain-of-thought reasoners. In ICLR, 2023. ",
+            "A. Singh, V. Natarjan, M. Shah, Y. Jiang, X. Chen, D. Parikh, and M. Rohrbach. Towards vqa models that can read. In CVPR, 2019. ",
+            "H. Singh, N. Gupta, S. Bharadwaj, D. Tewari, and P. Talukdar. Indicgenbench: a multilingual benchmark to evaluate generation capabilities of llms on indic languages. arXiv preprint arXiv:2404.16816, 2024a. ",
+            "S. Singh, A. Romanou, C. Fourrier, D. I. Adelani, J. G. Ngui, D. Vila-Suero, P. Limkonchotiwat, K. Marchisio, W. Q. Leong, Y. Susanto, R. Ng, S. Longpre, W.-Y. Ko, M. Smith, A. Bosselut, A. Oh, A. F. T. Martins, L. Choshen, D. Ippolito, E. Ferrante, M. Fadaee, B. Ermis, and S. Hooker. Global mmlu: Understanding and addressing cultural and linguistic biases in multilingual evaluation, 2024b. ",
+            "A. Steiner, A. S. Pinto, M. Tschannen, D. Keysers, X. Wang, Y. Bitton, A. Gritsenko, M. Minderer, A. Sherbondy, S. Long, S. Qin, R. Ingle, E. Bugliarello, S. Kazemzadeh, T. Mesnard, I. Alabdulmohsin, L. Beyer, and X. Zhai. PaliGemma 2: A Family of Versatile VLMs for Transfer. arXiv preprint arXiv:2412.03555, 2024. ",
+            "M. Suzgun, N. Scales, N. Schärli, S. Gehrmann, Y. Tay, H. W. Chung, A. Chowdhery, Q. V. Le, E. H. Chi, D. Zhou, and J. Wei. Challenging big-bench tasks and whether chain-of-thought can solve them, 2022. ",
+            "G. Tyen, H. Mansoor, P. Chen, T. Mak, and V. Cărbune. Llms cannot find reasoning errors, but can correct them! arXiv preprint arXiv:2311.08516, 2023. ",
+            "A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin. Attention is all you need. 2017. "
+        ],
+        "bbox": [
+            507,
+            99,
+            899,
+            902
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "page_number",
+        "text": "15 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "K. Vodrahalli, S. Ontanon, N. Tripuraneni, K. Xu, S. Jain, R. Shivanna, J. Hui, N. Dikkala, M. Kazemi, B. Fatemi, et al. Michelangelo: Long context evaluations beyond haystacks via latent structure queries. arXiv preprint arXiv:2409.12640, 2024. ",
+            "Y. Wang, X. Ma, G. Zhang, Y. Ni, A. Chandra, S. Guo, W. Ren, A. Arulraj, X. He, Z. Jiang, et al. Mmlu-pro: A more robust and challenging multi-task language understanding benchmark. In NeurIPS, 2024. ",
+            "L. Weidinger, J. Mellor, M. Rauh, C. Griffin, J. Uesato, P.-S. Huang, M. Cheng, M. Glaese, B. Balle, A. Kasirzadeh, Z. Kenton, S. Brown, W. Hawkins, T. Stepleton, C. Biles, A. Birhane, J. Haas, L. Rimell, L. A. Hendricks, W. Isaac, S. Legassick, G. Irving, and I. Gabriel. Ethical and social risks of harm from language models, 2021. ",
+            "C. White, S. Dooley, M. Roberts, A. Pal, B. Feuer, S. Jain, R. Shwartz-Ziv, N. Jain, K. Saifullah, S. Naidu, et al. Livebench: A challenging, contamination-free llm benchmark. arXiv preprint arXiv:2406.19314, 2024. ",
+            "M. Wortsman, P. J. Liu, L. Xiao, K. Everett, A. Alemi, B. Adlam, J. D. Co-Reyes, I. Gur, A. Kumar, R. Novak, et al. Small-scale proxies for large-scale transformer training instabilities. arXiv preprint arXiv:2309.14322, 2023. ",
+            "XLA. Xla: Optimizing compiler for tensorflow, 2019. URL https://www.tensorflow. org/xla. ",
+            "Y. Xu, H. Lee, D. Chen, B. A. Hechtman, Y. Huang, R. Joshi, M. Krikun, D. Lepikhin, A. Ly, M. Maggioni, R. Pang, N. Shazeer, S. Wang, T. Wang, Y. Wu, and Z. Chen. GSPMD: general and scalable parallelization for ML computation graphs. 2021. ",
+            "Y. Yamada, Y. Bao, A. K. Lampinen, J. Kasai, and I. Yildirim. Evaluating spatial understanding of large language models. arXiv preprint arXiv:2310.14540, 2023. ",
+            "K. Yang, O. Russakovsky, and J. Deng. Spatialsense: An adversarially crowdsourced "
+        ],
+        "bbox": [
+            100,
+            99,
+            490,
+            901
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "benchmark for spatial relation recognition. ICCV, 2019. ",
+            "X. Yue, Y. Ni, K. Zhang, T. Zheng, R. Liu, G. Zhang, S. Stevens, D. Jiang, W. Ren, Y. Sun, C. Wei, B. Yu, R. Yuan, R. Sun, M. Yin, B. Zheng, Z. Yang, Y. Liu, W. Huang, H. Sun, Y. Su, and W. Chen. Mmmu: A massive multidiscipline multimodal understanding and reasoning benchmark for expert agi. CVPR, 2023. ",
+            "R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, and Y. Choi. HellaSwag: Can a machine really finish your sentence? In ACL, 2019. ",
+            "X. Zhai, B. Mustafa, A. Kolesnikov, and L. Beyer. Sigmoid loss for language image pre-training. In CVPR, 2023. ",
+            "B. Zhang and R. Sennrich. Root mean square layer normalization. 2019. ",
+            "J. Zhang, L. Jain, Y. Guo, J. Chen, K. L. Zhou, S. Suresh, A. Wagenmaker, S. Sievert, T. Rogers, K. Jamieson, et al. Humor in ai: Massive scale crowd-sourced preferences and benchmarks for cartoon captioning. arXiv preprint arXiv:2406.10522, 2024. ",
+            "W. Zhong, R. Cui, Y. Guo, Y. Liang, S. Lu, Y. Wang, A. Saied, W. Chen, and N. Duan. Agieval: A human-centric benchmark for evaluating foundation models, 2023. "
+        ],
+        "bbox": [
+            507,
+            99,
+            899,
+            599
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "page_number",
+        "text": "16 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "Core contributors ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            101,
+            253,
+            116
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Aishwarya Kamath∗ ",
+        "bbox": [
+            100,
+            118,
+            260,
+            133
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Johan Ferret∗ ",
+        "bbox": [
+            100,
+            134,
+            211,
+            147
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Shreya Pathak∗ ",
+        "bbox": [
+            102,
+            149,
+            225,
+            164
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Nino Vieillard∗ ",
+        "bbox": [
+            102,
+            165,
+            221,
+            179
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Ramona Merhej∗ ",
+        "bbox": [
+            102,
+            181,
+            236,
+            197
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Sarah Perrin∗ ",
+        "bbox": [
+            102,
+            198,
+            211,
+            212
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Tatiana Matejovicova∗ ",
+        "bbox": [
+            100,
+            214,
+            278,
+            229
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Alexandre Ramé∗ ",
+        "bbox": [
+            100,
+            230,
+            242,
+            244
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Morgane Rivière∗ ",
+        "bbox": [
+            100,
+            246,
+            242,
+            261
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Louis Rouillard∗ ",
+        "bbox": [
+            100,
+            262,
+            233,
+            275
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Thomas Mesnard∗ ",
+        "bbox": [
+            100,
+            278,
+            247,
+            292
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Geoffrey Cideron∗",
+        "bbox": [
+            100,
+            294,
+            247,
+            309
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Jean-bastien Grill∗ ",
+        "bbox": [
+            100,
+            311,
+            248,
+            324
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Sabela Ramos∗ ",
+        "bbox": [
+            102,
+            326,
+            221,
+            341
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Edouard Yvinec∗ ",
+        "bbox": [
+            102,
+            342,
+            236,
+            356
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Michelle Casbon∗",
+        "bbox": [
+            102,
+            359,
+            240,
+            372
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Etienne Pot ",
+        "bbox": [
+            102,
+            375,
+            196,
+            388
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Ivo Penchev ",
+        "bbox": [
+            102,
+            391,
+            200,
+            404
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Gaël Liu ",
+        "bbox": [
+            102,
+            407,
+            171,
+            420
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Francesco Visin ",
+        "bbox": [
+            102,
+            423,
+            228,
+            437
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Kathleen Kenealy ",
+        "bbox": [
+            102,
+            439,
+            242,
+            455
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Lucas Beyer ",
+        "bbox": [
+            100,
+            456,
+            200,
+            470
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Xiaohai Zhai ",
+        "bbox": [
+            100,
+            472,
+            205,
+            485
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Anton Tsitsulin ",
+        "bbox": [
+            100,
+            488,
+            225,
+            501
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Robert Busa-Fekete ",
+        "bbox": [
+            100,
+            504,
+            258,
+            518
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Alex Feng ",
+        "bbox": [
+            100,
+            520,
+            183,
+            535
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Noveen Sachdeva ",
+        "bbox": [
+            100,
+            536,
+            243,
+            550
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Benjamin Coleman ",
+        "bbox": [
+            100,
+            552,
+            255,
+            567
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Yi Gao ",
+        "bbox": [
+            100,
+            569,
+            156,
+            582
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Basil Mustafa ",
+        "bbox": [
+            100,
+            583,
+            211,
+            598
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Iain Barr ",
+        "bbox": [
+            100,
+            601,
+            174,
+            614
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Emilio Parisotto ",
+        "bbox": [
+            100,
+            615,
+            231,
+            630
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "David Tian ",
+        "bbox": [
+            100,
+            632,
+            191,
+            646
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Matan Eyal ",
+        "bbox": [
+            100,
+            649,
+            194,
+            663
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Colin Cherry ",
+        "bbox": [
+            100,
+            665,
+            206,
+            680
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Jan-Thorsten Peter ",
+        "bbox": [
+            100,
+            681,
+            253,
+            695
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Danila Sinopalnikov ",
+        "bbox": [
+            100,
+            697,
+            265,
+            712
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Surya Bhupatiraju ",
+        "bbox": [
+            100,
+            713,
+            250,
+            728
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Rishabh Agarwal ",
+        "bbox": [
+            100,
+            730,
+            238,
+            744
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Mehran Kazemi ",
+        "bbox": [
+            100,
+            745,
+            231,
+            759
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Dan Malkin ",
+        "bbox": [
+            100,
+            760,
+            196,
+            775
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Ravin Kumar ",
+        "bbox": [
+            100,
+            777,
+            208,
+            791
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "David Vilar ",
+        "bbox": [
+            100,
+            793,
+            194,
+            807
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Idan Brusilovsky ",
+        "bbox": [
+            100,
+            809,
+            236,
+            825
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Jiaming Luo ",
+        "bbox": [
+            100,
+            826,
+            201,
+            841
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Andreas Steiner ",
+        "bbox": [
+            100,
+            841,
+            231,
+            854
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Contributors (alphabetical order) ",
+        "text_level": 1,
+        "bbox": [
+            507,
+            101,
+            791,
+            117
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Abe Friesen ",
+        "bbox": [
+            507,
+            118,
+            605,
+            131
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Abhanshu Sharma ",
+        "bbox": [
+            507,
+            134,
+            657,
+            147
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Abheesht Sharma ",
+        "bbox": [
+            507,
+            149,
+            650,
+            162
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Adi Mayrav Gilady ",
+        "bbox": [
+            507,
+            165,
+            660,
+            181
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Adrian Goedeckemeyer ",
+        "bbox": [
+            507,
+            181,
+            697,
+            197
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Alaa Saade ",
+        "bbox": [
+            507,
+            198,
+            601,
+            212
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Alex Feng ",
+        "bbox": [
+            507,
+            214,
+            589,
+            229
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Alexander Kolesnikov ",
+        "bbox": [
+            507,
+            230,
+            684,
+            244
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Alexei Bendebury ",
+        "bbox": [
+            507,
+            246,
+            652,
+            261
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Alvin Abdagic ",
+        "bbox": [
+            507,
+            262,
+            623,
+            277
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Amit Vadi ",
+        "bbox": [
+            507,
+            279,
+            589,
+            292
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "András György ",
+        "bbox": [
+            507,
+            294,
+            628,
+            310
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "André Susano Pinto ",
+        "bbox": [
+            507,
+            311,
+            668,
+            324
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Anil Das ",
+        "bbox": [
+            507,
+            326,
+            578,
+            340
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Ankur Bapna ",
+        "bbox": [
+            507,
+            343,
+            616,
+            357
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Antoine Miech ",
+        "bbox": [
+            507,
+            359,
+            626,
+            372
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Antoine Yang ",
+        "bbox": [
+            507,
+            375,
+            618,
+            390
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Antonia Paterson ",
+        "bbox": [
+            507,
+            391,
+            648,
+            404
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Ashish Shenoy ",
+        "bbox": [
+            507,
+            407,
+            626,
+            422
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Ayan Chakrabarti ",
+        "bbox": [
+            507,
+            423,
+            650,
+            438
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Bilal Piot ",
+        "bbox": [
+            507,
+            439,
+            584,
+            451
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Bo Wu ",
+        "bbox": [
+            507,
+            456,
+            564,
+            469
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Bobak Shahriari ",
+        "bbox": [
+            507,
+            472,
+            640,
+            485
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Bryce Petrini ",
+        "bbox": [
+            507,
+            488,
+            615,
+            502
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Charlie Chen ",
+        "bbox": [
+            507,
+            504,
+            615,
+            517
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Charline Le Lan ",
+        "bbox": [
+            507,
+            520,
+            638,
+            533
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Christopher A. Choquette-Choo ",
+        "bbox": [
+            507,
+            536,
+            761,
+            551
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "CJ Carey ",
+        "bbox": [
+            507,
+            552,
+            584,
+            567
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Cormac Brick ",
+        "bbox": [
+            507,
+            569,
+            620,
+            581
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Daniel Deutsch ",
+        "bbox": [
+            507,
+            583,
+            633,
+            598
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Danielle Eisenbud ",
+        "bbox": [
+            507,
+            600,
+            655,
+            614
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Dee Cattle ",
+        "bbox": [
+            507,
+            615,
+            594,
+            629
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Derek Cheng ",
+        "bbox": [
+            507,
+            633,
+            616,
+            648
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Dimitris Paparas ",
+        "bbox": [
+            507,
+            649,
+            642,
+            664
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Divyashree Shivakumar Sreepathihalli ",
+        "bbox": [
+            507,
+            665,
+            815,
+            680
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Doug Reid ",
+        "bbox": [
+            507,
+            681,
+            594,
+            696
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Dustin Tran ",
+        "bbox": [
+            507,
+            697,
+            606,
+            709
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Dustin Zelle ",
+        "bbox": [
+            507,
+            713,
+            608,
+            726
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Eric Noland ",
+        "bbox": [
+            507,
+            728,
+            606,
+            743
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Erwin Huizenga ",
+        "bbox": [
+            507,
+            745,
+            640,
+            760
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Eugene Kharitonov ",
+        "bbox": [
+            507,
+            760,
+            663,
+            776
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Frederick Liu ",
+        "bbox": [
+            507,
+            777,
+            618,
+            791
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Gagik Amirkhanyan ",
+        "bbox": [
+            507,
+            793,
+            670,
+            809
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Glenn Cameron ",
+        "bbox": [
+            507,
+            810,
+            636,
+            822
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Hadi Hashemi ",
+        "bbox": [
+            507,
+            825,
+            626,
+            839
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Hanna Klimczak-Plucińska ",
+        "bbox": [
+            507,
+            841,
+            724,
+            854
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Harman Singh ",
+        "bbox": [
+            507,
+            858,
+            628,
+            873
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Harsh Mehta ",
+        "bbox": [
+            507,
+            873,
+            616,
+            887
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "page_footnote",
+        "text": "∗ co-first authors. ",
+        "bbox": [
+            127,
+            887,
+            245,
+            900
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "page_number",
+        "text": "17 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Harshal Tushar Lehri ",
+        "bbox": [
+            100,
+            99,
+            273,
+            116
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Hussein Hazimeh ",
+        "bbox": [
+            100,
+            117,
+            243,
+            131
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Ian Ballantyne ",
+        "bbox": [
+            102,
+            134,
+            221,
+            148
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Idan Szpektor ",
+        "bbox": [
+            102,
+            149,
+            216,
+            165
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Ivan Nardini ",
+        "bbox": [
+            102,
+            166,
+            203,
+            179
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Jean Pouget-Abadie ",
+        "bbox": [
+            100,
+            181,
+            260,
+            197
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Jetha Chan ",
+        "bbox": [
+            100,
+            199,
+            191,
+            212
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Joe Stanton ",
+        "bbox": [
+            100,
+            215,
+            196,
+            227
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "John Wieting ",
+        "bbox": [
+            100,
+            231,
+            208,
+            244
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Jonathan Lai ",
+        "bbox": [
+            100,
+            247,
+            206,
+            260
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Jordi Orbay ",
+        "bbox": [
+            100,
+            263,
+            196,
+            278
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Joseph Fernandez ",
+        "bbox": [
+            100,
+            279,
+            245,
+            294
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Josh Newlan ",
+        "bbox": [
+            100,
+            294,
+            205,
+            307
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Ju-yeong Ji ",
+        "bbox": [
+            100,
+            311,
+            194,
+            326
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Jyotinder Singh ",
+        "bbox": [
+            100,
+            326,
+            228,
+            342
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Kat Black ",
+        "bbox": [
+            100,
+            343,
+            181,
+            356
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Kathy Yu ",
+        "bbox": [
+            102,
+            359,
+            176,
+            374
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Kevin Hui ",
+        "bbox": [
+            102,
+            376,
+            183,
+            388
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Kiran Vodrahalli ",
+        "bbox": [
+            102,
+            391,
+            233,
+            404
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Klaus Greff ",
+        "bbox": [
+            102,
+            407,
+            194,
+            420
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Linhai Qiu ",
+        "bbox": [
+            102,
+            423,
+            189,
+            438
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Marcella Valentine ",
+        "bbox": [
+            102,
+            439,
+            252,
+            453
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Marina Coelho ",
+        "bbox": [
+            102,
+            456,
+            221,
+            469
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Marvin Ritter ",
+        "bbox": [
+            102,
+            472,
+            211,
+            485
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Matt Hoffman ",
+        "bbox": [
+            102,
+            488,
+            216,
+            501
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Matthew Watson ",
+        "bbox": [
+            102,
+            504,
+            238,
+            517
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Mayank Chaturvedi ",
+        "bbox": [
+            102,
+            520,
+            260,
+            535
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Michael Moynihan ",
+        "bbox": [
+            102,
+            536,
+            252,
+            551
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Min Ma ",
+        "bbox": [
+            102,
+            552,
+            166,
+            565
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Nabila Babar ",
+        "bbox": [
+            102,
+            568,
+            206,
+            581
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Natasha Noy ",
+        "bbox": [
+            102,
+            583,
+            206,
+            599
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Nathan Byrd ",
+        "bbox": [
+            102,
+            601,
+            205,
+            615
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Nick Roy ",
+        "bbox": [
+            102,
+            617,
+            174,
+            632
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Nikola Momchev ",
+        "bbox": [
+            102,
+            633,
+            238,
+            646
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Nilay Chauhan ",
+        "bbox": [
+            102,
+            649,
+            221,
+            664
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Noveen Sachdeva ",
+        "bbox": [
+            102,
+            665,
+            243,
+            678
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Oskar Bunyan ",
+        "bbox": [
+            102,
+            681,
+            215,
+            696
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Pankil Botarda ",
+        "bbox": [
+            102,
+            697,
+            221,
+            711
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Paul Caron ",
+        "bbox": [
+            102,
+            713,
+            191,
+            726
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Paul Kishan Rubenstein ",
+        "bbox": [
+            102,
+            728,
+            290,
+            743
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Phil Culliton ",
+        "bbox": [
+            102,
+            745,
+            203,
+            759
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Philipp Schmid ",
+        "bbox": [
+            102,
+            760,
+            225,
+            777
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Pier Giuseppe Sessa ",
+        "bbox": [
+            102,
+            778,
+            263,
+            793
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Pingmei Xu ",
+        "bbox": [
+            102,
+            794,
+            196,
+            808
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Piotr Stanczyk ",
+        "bbox": [
+            102,
+            810,
+            218,
+            825
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Pouya Tafti ",
+        "bbox": [
+            102,
+            826,
+            194,
+            841
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Rakesh Shivanna ",
+        "bbox": [
+            102,
+            841,
+            238,
+            856
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Renjie Wu ",
+        "bbox": [
+            102,
+            858,
+            184,
+            873
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Renke Pan ",
+        "bbox": [
+            102,
+            875,
+            186,
+            888
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Reza Rokni ",
+        "bbox": [
+            509,
+            101,
+            601,
+            115
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Rob Willoughby ",
+        "bbox": [
+            509,
+            117,
+            640,
+            133
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Rohith Vallu ",
+        "bbox": [
+            509,
+            134,
+            610,
+            147
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Ryan Mullins ",
+        "bbox": [
+            509,
+            149,
+            616,
+            164
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Sammy Jerome ",
+        "bbox": [
+            509,
+            166,
+            635,
+            180
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Sara Smoot ",
+        "bbox": [
+            509,
+            181,
+            603,
+            195
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Sertan Girgin ",
+        "bbox": [
+            509,
+            199,
+            618,
+            212
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Shariq Iqbal ",
+        "bbox": [
+            509,
+            215,
+            608,
+            229
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Shashir Reddy ",
+        "bbox": [
+            509,
+            231,
+            626,
+            244
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Shruti Sheth ",
+        "bbox": [
+            509,
+            247,
+            611,
+            260
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Siim Põder ",
+        "bbox": [
+            509,
+            263,
+            600,
+            275
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Sijal Bhatnagar ",
+        "bbox": [
+            509,
+            279,
+            635,
+            294
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Sindhu Raghuram Panyam ",
+        "bbox": [
+            509,
+            294,
+            724,
+            310
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Sivan Eiger ",
+        "bbox": [
+            509,
+            311,
+            601,
+            326
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Susan Zhang ",
+        "bbox": [
+            509,
+            326,
+            616,
+            342
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Tianqi Liu ",
+        "bbox": [
+            509,
+            343,
+            591,
+            357
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Trevor Yacovone ",
+        "bbox": [
+            509,
+            359,
+            642,
+            373
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Tyler Liechty ",
+        "bbox": [
+            509,
+            375,
+            616,
+            391
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Uday Kalra ",
+        "bbox": [
+            509,
+            392,
+            600,
+            406
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Utku Evci ",
+        "bbox": [
+            509,
+            407,
+            589,
+            420
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Vedant Misra ",
+        "bbox": [
+            509,
+            423,
+            616,
+            437
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Vincent Roseberry ",
+        "bbox": [
+            509,
+            439,
+            655,
+            455
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Vlad Feinberg ",
+        "bbox": [
+            509,
+            456,
+            621,
+            470
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Vlad Kolesnikov ",
+        "bbox": [
+            509,
+            472,
+            638,
+            486
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Woohyun Han ",
+        "bbox": [
+            509,
+            488,
+            625,
+            502
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Woosuk Kwon ",
+        "bbox": [
+            509,
+            504,
+            623,
+            518
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Xi Chen ",
+        "bbox": [
+            509,
+            520,
+            574,
+            533
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Yinlam Chow ",
+        "bbox": [
+            509,
+            536,
+            618,
+            549
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Yuvein Zhu ",
+        "bbox": [
+            509,
+            552,
+            601,
+            565
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Zichuan Wei ",
+        "bbox": [
+            509,
+            568,
+            611,
+            582
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Zoltan Egyed ",
+        "bbox": [
+            509,
+            583,
+            616,
+            600
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Support ",
+        "text_level": 1,
+        "bbox": [
+            509,
+            625,
+            579,
+            639
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Victor Cotruta ",
+        "bbox": [
+            509,
+            640,
+            623,
+            653
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Minh Giang ",
+        "bbox": [
+            509,
+            657,
+            606,
+            671
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Phoebe Kirk ",
+        "bbox": [
+            509,
+            673,
+            608,
+            686
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Anand Rao ",
+        "bbox": [
+            509,
+            690,
+            600,
+            703
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Kat Black ",
+        "bbox": [
+            509,
+            705,
+            586,
+            718
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Nabila Babar ",
+        "bbox": [
+            509,
+            721,
+            615,
+            734
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Jessica Lo ",
+        "bbox": [
+            509,
+            738,
+            589,
+            751
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Erica Moreira ",
+        "bbox": [
+            509,
+            753,
+            620,
+            766
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Luiz Gustavo Martins ",
+        "bbox": [
+            509,
+            770,
+            680,
+            783
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Omar Sanseviero ",
+        "bbox": [
+            509,
+            785,
+            648,
+            799
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Lucas Gonzalez ",
+        "bbox": [
+            509,
+            802,
+            635,
+            815
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Zach Gleicher ",
+        "bbox": [
+            509,
+            818,
+            621,
+            831
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Tris Warkentin ",
+        "bbox": [
+            509,
+            834,
+            628,
+            847
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Sponsors ",
+        "text_level": 1,
+        "bbox": [
+            509,
+            873,
+            589,
+            890
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "page_number",
+        "text": "18 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "text",
+        "text": "Vahab Mirrokni ",
+        "bbox": [
+            100,
+            101,
+            226,
+            115
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Evan Senter ",
+        "bbox": [
+            100,
+            118,
+            201,
+            131
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Eli Collins ",
+        "bbox": [
+            102,
+            134,
+            186,
+            147
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Joelle Barral ",
+        "bbox": [
+            102,
+            149,
+            203,
+            162
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Zoubin Ghahramani ",
+        "bbox": [
+            102,
+            166,
+            265,
+            179
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Raia Hadsell ",
+        "bbox": [
+            100,
+            181,
+            205,
+            195
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Yossi Matias ",
+        "bbox": [
+            100,
+            198,
+            200,
+            211
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "D. Sculley ",
+        "bbox": [
+            102,
+            214,
+            184,
+            229
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Slav Petrov ",
+        "bbox": [
+            102,
+            231,
+            193,
+            243
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Noah Fiedel ",
+        "bbox": [
+            102,
+            246,
+            200,
+            259
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Noam Shazeer ",
+        "bbox": [
+            102,
+            263,
+            220,
+            275
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Oriol Vinyals ",
+        "bbox": [
+            100,
+            279,
+            206,
+            293
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Jeff Dean ",
+        "bbox": [
+            100,
+            294,
+            179,
+            307
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Demis Hassabis ",
+        "bbox": [
+            102,
+            311,
+            228,
+            324
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Koray Kavukcuoglu ",
+        "bbox": [
+            102,
+            326,
+            258,
+            342
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Clement Farabet ",
+        "bbox": [
+            102,
+            343,
+            233,
+            356
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Technical advisors ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            382,
+            260,
+            395
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Elena Buchatskaya ",
+        "bbox": [
+            100,
+            399,
+            253,
+            414
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Jean-Baptiste Alayrac ",
+        "bbox": [
+            100,
+            416,
+            275,
+            430
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Rohan Anil ",
+        "bbox": [
+            102,
+            432,
+            193,
+            444
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Dmitry (Dima) Lepikhin ",
+        "bbox": [
+            102,
+            447,
+            297,
+            462
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Sebastian Borgeaud ",
+        "bbox": [
+            102,
+            464,
+            262,
+            478
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Olivier Bachem ",
+        "bbox": [
+            102,
+            480,
+            225,
+            492
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Lead ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            520,
+            146,
+            532
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Armand Joulin ",
+        "bbox": [
+            100,
+            536,
+            221,
+            549
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Technical leads ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            576,
+            233,
+            589
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Alek Andreev ",
+        "bbox": [
+            100,
+            593,
+            211,
+            605
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Cassidy Hardin ",
+        "bbox": [
+            102,
+            608,
+            225,
+            623
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Robert Dadashi ",
+        "bbox": [
+            102,
+            625,
+            226,
+            638
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Léonard Hussenot ",
+        "bbox": [
+            102,
+            640,
+            248,
+            653
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "page_number",
+        "text": "19 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "text",
+        "text": "Appendix ",
+        "text_level": 1,
+        "bbox": [
+            100,
+            99,
+            203,
+            118
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Details of pre-trained performances. ",
+        "bbox": [
+            100,
+            131,
+            413,
+            149
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "table",
+        "img_path": "images/28ec2e97c08407b8e3131505c417d3631e2a01501d08d46ac7686d28e8ef99cb.jpg",
+        "table_caption": [
+            "Table 9 | Factuality, common-sense performance and reasoning after pre-training phase. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td colspan=\"3\">Gemma 2</td><td colspan=\"4\">Gemma 3</td></tr><tr><td></td><td>2B</td><td>9B</td><td>27B</td><td>1B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>HellaS</td><td>72.9</td><td>81.9</td><td>86.4</td><td>62.3</td><td>77.2</td><td>84.2</td><td>85.6</td></tr><tr><td>BoolQ</td><td>75.6</td><td>77.5</td><td>76.2</td><td>63.2</td><td>72.3</td><td>78.8</td><td>82.4</td></tr><tr><td>PIQA</td><td>78.1</td><td>81.9</td><td>83.5</td><td>73.8</td><td>79.6</td><td>81.8</td><td>83.3</td></tr><tr><td>SIQA</td><td>51.8</td><td>53.3</td><td>53.8</td><td>48.9</td><td>51.9</td><td>53.4</td><td>54.9</td></tr><tr><td>TQA</td><td>60.2</td><td>76.5</td><td>83.8</td><td>39.8</td><td>65.8</td><td>78.2</td><td>85.5</td></tr><tr><td>NQ</td><td>17.2</td><td>29.2</td><td>34.7</td><td>9.48</td><td>20.0</td><td>31.4</td><td>36.1</td></tr><tr><td>ARC-C</td><td>55.8</td><td>69.1</td><td>71.4</td><td>38.4</td><td>56.2</td><td>68.9</td><td>70.6</td></tr><tr><td>ARC-E</td><td>80.6</td><td>88.3</td><td>88.6</td><td>73.0</td><td>82.4</td><td>88.3</td><td>89.0</td></tr><tr><td>WinoG</td><td>65.4</td><td>73.9</td><td>79.4</td><td>58.2</td><td>64.7</td><td>74.3</td><td>78.8</td></tr><tr><td>BBH</td><td>42.4</td><td>69.4</td><td>74.8</td><td>28.4</td><td>50.9</td><td>72.6</td><td>77.7</td></tr><tr><td>Drop</td><td>53.2</td><td>71.5</td><td>75.2</td><td>42.4</td><td>60.1</td><td>72.2</td><td>77.2</td></tr></table>",
+        "bbox": [
+            99,
+            168,
+            492,
+            416
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Factuality and common-sense. In Table 9, we report the performance of our new pre-trained benchmarks compared to previous versions. We consider several standard benchmarks, namely HellaSwag (Zellers et al., 2019), BoolQ (Clark et al., 2019), PIQA (Bisk et al., 2019), SIQA (Sap et al., 2019), TriviaQA (Joshi et al., 2017), Natural Questions (Kwiatkowski et al., 2019), ARC-C and ARC-E (Chollet, 2019), WinoGrande (Sakaguchi et al., 2019), BBH (Suzgun et al., 2022), DROP (Dua et al., 2019). Evaluation details are described in Table 19. Overall, our models are in the same ballpark as Gemma 2, which is encour aging since these abilities are not the focus of the improvements brought in this version. ",
+        "bbox": [
+            97,
+            475,
+            490,
+            717
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "STEM and code. The details of our performance on STEM and Code are in Ta ble 10. We consider several standard benchmarks, namely MMLU (Hendrycks et al., 2020), MMLU-Pro (Wang et al., 2024), AGIEval (Zhong et al., 2023), MATH (Hendrycks et al., 2021), GSM8K (Cobbe et al., 2021), GPQA (Rein et al., 2023), MBPP (Austin et al., 2021), Hu manEval (Chen et al., 2021). Evaluation details are described in Table 19. Overall we see a consistent improvement over STEM abilities across our pre-trained models. On code, we see a similar improvement for the 4B and 12B models but not on the 27B. ",
+        "bbox": [
+            97,
+            724,
+            492,
+            903
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "table",
+        "img_path": "images/21cbd8c7726eb19cd2e811e54fac2d4a73d4a8884b6a494289f0e539a128531d.jpg",
+        "table_caption": [
+            "Table 10 | STEM and code performance after pretraining phase. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td colspan=\"3\">Gemma 2</td><td colspan=\"3\">Gemma 3</td></tr><tr><td></td><td>2B</td><td>9B</td><td>27B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>MMLU</td><td>52.2</td><td>71.2</td><td>75.2</td><td>59.6</td><td>74.5</td><td>78.6</td></tr><tr><td>MMLUpro</td><td>22.2</td><td>43.7</td><td>49.4</td><td>29.2</td><td>45.3</td><td>52.2</td></tr><tr><td>AGIE</td><td>31.6</td><td>53.1</td><td>55.1</td><td>42.1</td><td>57.4</td><td>66.2</td></tr><tr><td>MATH</td><td>16.4</td><td>36.4</td><td>42.1</td><td>24.2</td><td>43.3</td><td>50.0</td></tr><tr><td>GSM8K</td><td>25.0</td><td>70.2</td><td>74.6</td><td>38.4</td><td>71.0</td><td>82.6</td></tr><tr><td>GPQA Diamond</td><td>12.5</td><td>24.8</td><td>26.3</td><td>15.0</td><td>25.4</td><td>24.3</td></tr><tr><td>MBPP</td><td>31.0</td><td>51.2</td><td>60.8</td><td>46.0</td><td>60.4</td><td>65.6</td></tr><tr><td>HumanE</td><td>19.5</td><td>40.2</td><td>51.2</td><td>36.0</td><td>45.7</td><td>48.8</td></tr></table>",
+        "bbox": [
+            507,
+            98,
+            922,
+            282
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            349,
+            897,
+            397
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "table",
+        "img_path": "images/e01b54b38a89ab0f5b28aed77fc1f577ccffa902a9ab8243f81cbe44c7b6d831.jpg",
+        "table_caption": [
+            "Table 11 | Multimodal performance after pretraining phase. The scores are on the val split of each dataset without P&S. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>COCO caption</td><td>102</td><td>111</td><td>116</td></tr><tr><td>DocVQA</td><td>72.8</td><td>82.3</td><td>85.6</td></tr><tr><td>InfoVQA</td><td>44.1</td><td>54.8</td><td>59.4</td></tr><tr><td>MMMU</td><td>39.2</td><td>50.3</td><td>56.1</td></tr><tr><td>TextVQA</td><td>58.9</td><td>66.5</td><td>68.6</td></tr><tr><td>RealWorldQA</td><td>45.5</td><td>52.2</td><td>53.9</td></tr><tr><td>ReMI</td><td>27.3</td><td>38.5</td><td>44.8</td></tr><tr><td>AI2D</td><td>63.2</td><td>75.2</td><td>79.0</td></tr><tr><td>ChartQA</td><td>63.6</td><td>74.7</td><td>76.3</td></tr><tr><td>VQAv2</td><td>63.9</td><td>71.2</td><td>72.9</td></tr><tr><td>BLINK</td><td>38.0</td><td>35.9</td><td>39.6</td></tr><tr><td>OK-VQA</td><td>51.0</td><td>58.7</td><td>60.2</td></tr><tr><td>TallyQA</td><td>42.5</td><td>51.8</td><td>54.3</td></tr><tr><td>SpatialSense VQA</td><td>50.9</td><td>60.0</td><td>59.4</td></tr><tr><td>CountBench VQA</td><td>26.1</td><td>17.8</td><td>68.0</td></tr></table>",
+        "bbox": [
+            539,
+            405,
+            867,
+            680
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "Image understanding. In Table 11, we report performance across a variety of visual question answer benchmarks for the different models that were trained with a vision encoder, namely COCO Caption (Chen et al., 2015), DocVQA (Mathew et al., 2020), InfographicVQA (Mathew et al., 2022), MMMU (Yue et al., 2023), TextVQA (Singh et al., 2019), RealWorldQA (Rea), ReMI (Kazemi et al., 2024a), ",
+        "bbox": [
+            505,
+            757,
+            900,
+            903
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "page_number",
+        "text": "20 ",
+        "bbox": [
+            877,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "AI2D (Kembhavi et al., 2016), ChartQA (Masry et al., 2022), VQA v2 (Goyal et al., 2017), BLINK (Fu et al., 2024), OK-VQA (Marino et al., 2019), TallyQA (Acharya et al., 2018), SpatialSense VQA (Yang et al., 2019), CountBench VQA (Paiss et al., 2023). Evaluation details are described in Table 20. ",
+        "bbox": [
+            97,
+            99,
+            490,
+            212
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "table",
+        "img_path": "images/a370d9edb7aaeb02f7ae9e4c0265d2f04538f50de021da951e827139b380a64c.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td colspan=\"3\">PaliGemma 2</td><td colspan=\"3\">Gemma 3</td></tr><tr><td></td><td>2B</td><td>9B</td><td>27B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>DocVQA</td><td>81.6</td><td>86.3</td><td>85.1</td><td>86.1</td><td>89.0</td><td>89.5</td></tr><tr><td>InfoVQA</td><td>41.4</td><td>53.1</td><td>50.2</td><td>55.6</td><td>61.6</td><td>64.6</td></tr><tr><td>TextVQA</td><td>76.3</td><td>76.3</td><td>75.1</td><td>79.1</td><td>81.6</td><td>83.2</td></tr><tr><td>ChartQA</td><td>70.7</td><td>79.1</td><td>71.3</td><td>79.8</td><td>83.5</td><td>83.4</td></tr><tr><td>AI2D</td><td>76.0</td><td>84.4</td><td>84.6</td><td>80.9</td><td>85.6</td><td>86.5</td></tr><tr><td>OKVQA</td><td>64.1</td><td>68.6</td><td>70.6</td><td>65.2</td><td>69.3</td><td>71.1</td></tr><tr><td>CountBenchQA</td><td>82.0</td><td>85.3</td><td>87.4</td><td>79.4</td><td>83.5</td><td>87.8</td></tr><tr><td>COCO caption</td><td>143.</td><td>145.</td><td>145.</td><td>143.</td><td>143.</td><td>144.</td></tr><tr><td>VQAv2</td><td>84.8</td><td>85.8</td><td>85.8</td><td>84.1</td><td>84.9</td><td>85.1</td></tr><tr><td>Tally QA</td><td>80.6</td><td>82.4</td><td>82.1</td><td>79.0</td><td>81.3</td><td>81.7</td></tr></table>",
+        "bbox": [
+            105,
+            223,
+            485,
+            429
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Table 12 | Performance of pre-trained checkpoints after fine-tuning on multi-modal benchmarks (without P&S). PaliGemma 2 was transferred at 896x896 resolution for the first four benchmarks, and at 448x448 resolution for the others. ",
+        "bbox": [
+            97,
+            439,
+            489,
+            519
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Comparison to PaliGemma 2. We fine-tune multimodal Gemma 3 pre-trained checkpoints following the protocol from Steiner et al. (2024) – only learning rate is swept, otherwise the same transfer settings are used. The results in Table 12 show that Gemma 3 excels at benchmarks in volving document understanding, even outperforming the larger PaliGemma 2 variant. Note that due to average pooling in the vision encoder the Gemma 3 4B and 12B models are about 10x cheaper to transfer compared with the PaliGemma 2 9B and 27B models at the same 896 x 896 resolution. Gemma 3 also performs better on AI2D and OKVQA, but PaliGemma 2 performs slightly better on VQAv2 and COCO caption. ",
+        "bbox": [
+            97,
+            539,
+            489,
+            782
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Multilinguality. In Table 13 we report the performance of the pre-trained models on multilin gual tasks. We apply in-context learning with multi-shot prompting and present results on the following benchmarks: MGSM (Shi et al., 2023), Global-MMLU-Lite (Singh et al., 2024b), WMT24++ (Deutsch et al., 2025), FLoRes (Goyal Table 13 | Multilingual performance after the pretraining phase. IndicGenBench is an average over benchmarks reported in Table 14. ",
+        "bbox": [
+            97,
+            789,
+            490,
+            903
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "table",
+        "img_path": "images/765a0049207f8076b362427cdaf1944ceb1556175e0262ac296d17675201f802.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td colspan=\"3\">Gemma 2</td><td colspan=\"4\">Gemma 3</td></tr><tr><td></td><td>2B</td><td>9B</td><td>27B</td><td>1B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>MGSM</td><td>18.7</td><td>57.3</td><td>68.0</td><td>2.04</td><td>34.7</td><td>64.3</td><td>74.3</td></tr><tr><td>GMMLU</td><td>43.3</td><td>64.0</td><td>69.4</td><td>24.9</td><td>57.0</td><td>69.4</td><td>75.7</td></tr><tr><td>WMT24++</td><td>38.8</td><td>50.3</td><td>53.0</td><td>36.7</td><td>48.4</td><td>53.9</td><td>55.7</td></tr><tr><td>Flores</td><td>30.2</td><td>41.3</td><td>44.3</td><td>29.5</td><td>39.2</td><td>46.0</td><td>48.8</td></tr><tr><td>XQuAD</td><td>53.7</td><td>72.2</td><td>73.9</td><td>43.9</td><td>68.0</td><td>74.5</td><td>76.8</td></tr><tr><td>ECLeKTic</td><td>8.29</td><td>14.0</td><td>17.1</td><td>4.69</td><td>11.0</td><td>17.2</td><td>24.4</td></tr><tr><td>IndicGB</td><td>47.4</td><td>59.3</td><td>62.1</td><td>41.4</td><td>57.2</td><td>61.7</td><td>63.4</td></tr></table>",
+        "bbox": [
+            507,
+            98,
+            909,
+            267
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            505,
+            275,
+            899,
+            325
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "et al., 2022), XQuAD (Artetxe et al., 2020), ECLeKTic (Goldman et al., 2025), IndicGen-Bench (Singh et al., 2024a), XOR QA (Asai et al., 2020). Evaluation details are described in Table 19. ",
+        "bbox": [
+            505,
+            351,
+            900,
+            431
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "table",
+        "img_path": "images/826e2ebfcb31c35625cb771b7cfc4a6630d59b0e514b261df363964f637e6e57.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td colspan=\"3\">Gemma 2</td><td colspan=\"4\">Gemma 3</td></tr><tr><td></td><td>2B</td><td>9B</td><td>27B</td><td>1B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>XQuAD Indic</td><td>54.3</td><td>73.1</td><td>74.9</td><td>43.1</td><td>68.3</td><td>75.2</td><td>77.8</td></tr><tr><td>XORQA in-en</td><td>66.2</td><td>69.3</td><td>72.5</td><td>56.3</td><td>68.3</td><td>69.8</td><td>70.4</td></tr><tr><td>XORQA in-xx</td><td>31.2</td><td>40.8</td><td>44.3</td><td>27.1</td><td>39.8</td><td>43.8</td><td>46.0</td></tr><tr><td>Flores Indic</td><td>38.1</td><td>54.0</td><td>56.9</td><td>39.0</td><td>52.3</td><td>58.0</td><td>59.5</td></tr></table>",
+        "bbox": [
+            507,
+            442,
+            937,
+            563
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Table 14 | Detailed IndicGenBench performance after the pre-training phase. ",
+        "bbox": [
+            505,
+            571,
+            897,
+            605
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "Long context. In Table 15 we report the performance of pre-trained and fine-tuned models on long context benchmarks. We include RULER (Hsieh et al., 2024) and MRCR (Vodrahalli et al., 2024) benchmarks evaluating at 32K and 128K sequence lengths. ",
+        "bbox": [
+            505,
+            624,
+            899,
+            721
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "8.1. Performance of IT models ",
+        "text_level": 1,
+        "bbox": [
+            505,
+            746,
+            771,
+            762
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "We report in Table 18, additional benchmarks on our IT models. Note that N2C refers to Natural2Code, the Gemini 1.0 internal held-out dataset, which uses author-generated sources instead of web-based information. BBEH refers to BIG-Bench Extra Hard (Kazemi et al., 2025), a challenging LLM reasoning benchmark that aggregates several reasoning tasks (Fatemi et al., 2024; ",
+        "bbox": [
+            505,
+            772,
+            900,
+            903
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "page_number",
+        "text": "21 ",
+        "bbox": [
+            877,
+            932,
+            895,
+            942
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "table",
+        "img_path": "images/bee084c6f216440f1155d7c20f3f4b345b503f960e466412f9cfabbede3226ad.jpg",
+        "table_caption": [
+            "Table 15 | Performance of pre-trained (PT) and instruction fine-tuned (IT) models on long context benchmarks at different context lengths. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\"></td><td rowspan=\"2\">Context</td><td colspan=\"3\">Gemma 3 PT</td><td colspan=\"3\">Gemma 3 IT</td></tr><tr><td>4B</td><td>12B</td><td>27B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>RULER</td><td>32K</td><td>67.1</td><td>90.6</td><td>85.9</td><td>61.4</td><td>80.3</td><td>91.1</td></tr><tr><td>RULER</td><td>128K</td><td>51.7</td><td>80.7</td><td>72.9</td><td>46.8</td><td>57.1</td><td>66.0</td></tr><tr><td>MRCR</td><td>32K</td><td>44.7</td><td>59.8</td><td>63.2</td><td>49.8</td><td>53.7</td><td>63.2</td></tr><tr><td>MRCR</td><td>128K</td><td>40.6</td><td>56.9</td><td>60.0</td><td>44.6</td><td>49.8</td><td>59.3</td></tr></table>",
+        "bbox": [
+            100,
+            98,
+            500,
+            225
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "table",
+        "img_path": "images/5698ea246cb01fb0a50e367c4284e20f557907b739f61a6413f69c612e2cfa8a.jpg",
+        "table_caption": [
+            "Table 16 | Performance of instruction fine-tuned (IT) models on multimodal benchmarks. If not mentioned, these results are on the final test set of each dataset with P&S applied. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>MMMU (val)</td><td>48.8</td><td>59.6</td><td>64.9</td></tr><tr><td>DocVQA</td><td>75.8</td><td>87.1</td><td>86.6</td></tr><tr><td>InfoVQA</td><td>50.0</td><td>64.9</td><td>70.6</td></tr><tr><td>TextVQA</td><td>57.8</td><td>67.7</td><td>65.1</td></tr><tr><td>AI2D</td><td>74.8</td><td>84.2</td><td>84.5</td></tr><tr><td>ChartQA</td><td>68.8</td><td>75.7</td><td>78.0</td></tr><tr><td>VQAv2 (val)</td><td>62.4</td><td>71.6</td><td>71.0</td></tr><tr><td>MathVista (testmini)</td><td>50.0</td><td>62.9</td><td>67.6</td></tr></table>",
+        "bbox": [
+            122,
+            294,
+            468,
+            458
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Hessel et al., 2022; Kazemi et al., 2023, 2024b; Kıcıman et al., 2023; Nie et al., 2024; Sánchez et al., 2024; Shah et al., 2024; Tyen et al., 2023; White et al., 2024; Yamada et al., 2023; Zhang et al., 2024). ECLeKTic refers to Goldman et al. (2025). We report the micro average score. More evaluation details are described in Table 21. ",
+        "bbox": [
+            97,
+            557,
+            489,
+            670
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "8.2. Performance of IT models on video understanding ",
+        "text_level": 1,
+        "bbox": [
+            97,
+            694,
+            489,
+            728
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Additional multimodal evaluations. Gemma 3 IT models were evaluated on common vision benchmarks following the evaluation protocol of Gemini 1.5 (Gemini Team, 2024). The results are given in Table 16 when P&S is activated. ",
+        "bbox": [
+            97,
+            736,
+            489,
+            818
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "table",
+        "img_path": "images/982fafad3d354d6678c94831af0ff4a36932cf050726f262689ecfc352631adb.jpg",
+        "table_caption": [],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>Perception Test MCVQA</td><td>50.6</td><td>54.9</td><td>58.1</td></tr><tr><td>ActivityNet-QA</td><td>46.3</td><td>50.4</td><td>52.8</td></tr></table>",
+        "bbox": [
+            521,
+            395,
+            885,
+            461
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Table 17 | Performance of instruction fine-tuned (IT) models on vision understanding benchmarks using 0 shot with 16 frames linspace. Perception Test consists of real-world videos designed to show perceptually interesting situations and we report results on the multiple choice video QA benchmark in terms of top-1 accuracy. ActivityNet-QA reports standard gpt-evaluation. ",
+        "bbox": [
+            505,
+            470,
+            899,
+            602
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "page_number",
+        "text": "22 ",
+        "bbox": [
+            877,
+            932,
+            895,
+            942
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "table",
+        "img_path": "images/a9ed1db54c62d5c8d38d4e618ebc4feaa5848e90535eb6305c69d828cfb92502.jpg",
+        "table_caption": [
+            "Table 18 | Performance of instruction fine-tuned (IT) models of different sizes on more internal and external benchmarks. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td></td><td colspan=\"3\">Gemma 2</td><td colspan=\"4\">Gemma 3</td></tr><tr><td></td><td>2B</td><td>9B</td><td>27B</td><td>1B</td><td>4B</td><td>12B</td><td>27B</td></tr><tr><td>MMLU</td><td>56.1</td><td>71.3</td><td>76.2</td><td>38.8</td><td>58.1</td><td>71.9</td><td>76.9</td></tr><tr><td>MBPP</td><td>36.6</td><td>59.2</td><td>67.4</td><td>35.2</td><td>63.2</td><td>73.0</td><td>74.4</td></tr><tr><td>HumanEval</td><td>20.1</td><td>40.2</td><td>51.8</td><td>41.5</td><td>71.3</td><td>85.4</td><td>87.8</td></tr><tr><td>N2C</td><td>46.8</td><td>68.3</td><td>77.3</td><td>56.0</td><td>70.3</td><td>80.7</td><td>84.5</td></tr><tr><td>LiveCodeBench</td><td>7.0</td><td>20.0</td><td>29.0</td><td>5.0</td><td>23.0</td><td>32.0</td><td>39.0</td></tr><tr><td>GSM8K</td><td>62.6</td><td>88.1</td><td>91.1</td><td>62.8</td><td>89.2</td><td>94.4</td><td>95.9</td></tr><tr><td>MATH</td><td>27.2</td><td>49.4</td><td>55.6</td><td>48.0</td><td>75.6</td><td>83.8</td><td>89.0</td></tr><tr><td>HiddenMath</td><td>2.0</td><td>8.0</td><td>12.0</td><td>15.0</td><td>42.0</td><td>51.0</td><td>56.0</td></tr><tr><td>BBH</td><td>41.4</td><td>69.0</td><td>74.9</td><td>39.1</td><td>72.2</td><td>85.7</td><td>87.6</td></tr><tr><td>BBEH</td><td>5.9</td><td>9.8</td><td>14.8</td><td>7.2</td><td>11.0</td><td>16.3</td><td>19.3</td></tr><tr><td>IFEval</td><td>80.4</td><td>88.4</td><td>91.1</td><td>80.2</td><td>90.2</td><td>88.9</td><td>90.4</td></tr><tr><td>GMMLU-Lite</td><td>41.9</td><td>64.8</td><td>68.6</td><td>34.2</td><td>54.5</td><td>69.5</td><td>75.1</td></tr><tr><td>ECLeKTic</td><td>5.3</td><td>11.8</td><td>17.6</td><td>1.4</td><td>4.6</td><td>10.3</td><td>16.7</td></tr><tr><td>WMT24++</td><td>37.4</td><td>48.7</td><td>51.7</td><td>35.9</td><td>46.8</td><td>51.6</td><td>53.4</td></tr></table>",
+        "bbox": [
+            161,
+            332,
+            836,
+            620
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            418,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "page_number",
+        "text": "23 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "table",
+        "img_path": "images/0a1d596ce0cbb546f73fd1d9a3d15f77691a146857fbadcb302946e76f44dbb1.jpg",
+        "table_caption": [
+            "Table 19 | Details on text benchmarks. Char-Len stands for Character Length Normalization and COT stands for Chain-Of-Thought prompting. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Evaluation</td><td>Metric</td><td>Type</td><td>n-shot</td><td>COT</td><td>Norm</td></tr><tr><td>MBPP</td><td>pass@1</td><td>sampling</td><td>3-shot</td><td></td><td></td></tr><tr><td>HumanEval</td><td>pass@1</td><td>sampling</td><td>0-shot</td><td></td><td></td></tr><tr><td>HellaSwag</td><td>Accuracy</td><td>scoring</td><td>10-shot</td><td></td><td>Char-Len</td></tr><tr><td>BoolQ</td><td>Accuracy</td><td>scoring</td><td>0-shot</td><td></td><td>Char-Len</td></tr><tr><td>PIQA</td><td>Accuracy</td><td>scoring</td><td>0-shot</td><td></td><td>Char-Len</td></tr><tr><td>SIQA</td><td>Accuracy</td><td>scoring</td><td>0-shot</td><td></td><td>Char-Len</td></tr><tr><td>TriviaQA</td><td>Accuracy</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>Natural Questions</td><td>Accuracy</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>ARC-C</td><td>Accuracy</td><td>scoring</td><td>25-shot</td><td></td><td>Char-Len</td></tr><tr><td>ARC-E</td><td>Accuracy</td><td>scoring</td><td>0-shot</td><td></td><td>Char-Len</td></tr><tr><td>WinoGrande</td><td>Accuracy</td><td>scoring</td><td>5-shot</td><td></td><td>Char-Len</td></tr><tr><td>BBH</td><td>Accuracy</td><td>sampling</td><td>few-shot</td><td>Yes</td><td></td></tr><tr><td>DROP</td><td>Token F1 score</td><td>sampling</td><td>1-shot</td><td></td><td></td></tr><tr><td>AGIEval</td><td>Accuracy</td><td>sampling</td><td>3-5-shot</td><td></td><td></td></tr><tr><td>MMLU</td><td>Accuracy</td><td>scoring</td><td>5-shot</td><td></td><td>Char-Len</td></tr><tr><td>MATH</td><td>Accuracy</td><td>sampling</td><td>4-shot</td><td>Yes</td><td></td></tr><tr><td>GSM8K</td><td>Accuracy</td><td>sampling</td><td>8-shot</td><td>Yes</td><td></td></tr><tr><td>GPQA Diamond</td><td>Accuracy</td><td>sampling</td><td>5-shot</td><td>Yes</td><td></td></tr><tr><td>MMLU-Pro</td><td>Accuracy</td><td>sampling</td><td>5-shot</td><td>Yes</td><td></td></tr><tr><td>MGSM</td><td>Accuracy</td><td>sampling</td><td>8-shot</td><td></td><td></td></tr><tr><td>FLoRes</td><td>CHaRacter-level F-score</td><td>sampling</td><td>1-shot</td><td></td><td></td></tr><tr><td>Global-MMLU-Lite</td><td>Accuracy</td><td>scoring</td><td>5-shot</td><td></td><td>Char-Len</td></tr><tr><td>XQuAD</td><td>CHaRacter-level F-score</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>WMT24++</td><td>CHaRacter-level F-score</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>ECLeKTic</td><td>ECLeKTic score</td><td>sampling</td><td>2-shot</td><td></td><td>First-line/strip</td></tr><tr><td>XQuAD Indic</td><td>CHaRacter-level F-score</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>XOR QA IN-EN</td><td>CHaRacter-level F-score</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>XOR QA IN-XX</td><td>CHaRacter-level F-score</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>FLoRes Indic</td><td>CHaRacter-level F-score</td><td>sampling</td><td>5-shot</td><td></td><td></td></tr><tr><td>RULER</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td></td><td></td></tr><tr><td>MRCR</td><td>MRCR score</td><td>sampling</td><td>few-shot</td><td></td><td></td></tr></table>",
+        "bbox": [
+            119,
+            210,
+            878,
+            743
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            418,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "page_number",
+        "text": "24 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            942
+        ],
+        "page_idx": 23
+    },
+    {
+        "type": "table",
+        "img_path": "images/a7a976d062a001ff0779484a9a5a837cd11d3a9b716b8c5223bac8d47c68148c.jpg",
+        "table_caption": [
+            "Table 20 | Details on vision benchmarks. No Chain-Of-Thought prompting nor normalization. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Evaluation</td><td>Metric</td><td>Type</td><td>n-shot</td></tr><tr><td>COCO Caption</td><td>Cider score</td><td>sampling</td><td>4-shot</td></tr><tr><td>DocVQA</td><td>ANLS score</td><td>sampling</td><td>4-shot</td></tr><tr><td>InfographicVQA</td><td>ANLS score</td><td>sampling</td><td>4-shot</td></tr><tr><td>MMMU</td><td>Accuracy</td><td>sampling</td><td>3-shot text only</td></tr><tr><td>TextVQA</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>RealWorldQA</td><td>Accuracy</td><td>sampling</td><td>4-shot text only</td></tr><tr><td>ReMI</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>AI2D</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>ChartQA</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>VQA v2</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>BLINK</td><td>Accuracy</td><td>sampling</td><td>0-shot</td></tr><tr><td>OK-VQA</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>TallyQA</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>SpatialSense VQA</td><td>Accuracy</td><td>sampling</td><td>4-shot</td></tr><tr><td>CountBench VQA</td><td>Accuracy</td><td>sampling</td><td>0-shot</td></tr></table>",
+        "bbox": [
+            238,
+            145,
+            759,
+            420
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "table",
+        "img_path": "images/bdd2d4f260e8d8e23a8a0587583d99c0b8ab65d7900225bc80dcbdb219387fc2.jpg",
+        "table_caption": [
+            "Table 21 | Details on instruction fine-tuned (IT) benchmarks. No normalization. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Evaluation</td><td>Metric</td><td>Type</td><td>n-shot</td><td>COT</td></tr><tr><td>MMLU</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>MBPP</td><td>pass@1</td><td>sampling</td><td>3-shot</td><td></td></tr><tr><td>HumanEval</td><td>pass@1</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>N2C</td><td>pass@1</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>LiveCodeBench</td><td>Average over 8 samples</td><td>sampling</td><td>0-shot</td><td>Yes</td></tr><tr><td>GSM8K</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td>Yes</td></tr><tr><td>GPQA Diamond</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td>Yes</td></tr><tr><td>MATH</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>HiddenMath</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>BBH</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>BBEH</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>IFEval</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>Global-MMLU-lite</td><td>Accuracy</td><td>sampling</td><td>0-shot</td><td>Yes</td></tr><tr><td>ECLeKTic</td><td>ECLeKTic score</td><td>sampling</td><td>0-shot</td><td></td></tr><tr><td>WMT24++</td><td>CHaRacter-level F-score</td><td>sampling</td><td>0-shot</td><td></td></tr></table>",
+        "bbox": [
+            196,
+            549,
+            801,
+            825
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "header",
+        "text": "Gemma 3 Technical Report ",
+        "bbox": [
+            416,
+            64,
+            579,
+            76
+        ],
+        "page_idx": 24
+    },
+    {
+        "type": "page_number",
+        "text": "25 ",
+        "bbox": [
+            878,
+            933,
+            895,
+            944
+        ],
+        "page_idx": 24
+    }
+]

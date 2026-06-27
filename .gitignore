@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.logs/
+
+# Temp
+tmp/
+*.tmp
+
+# Database
+*.db
+*.sqlite
+
+# Prisma
+apps/server/prisma/migrations/**/migration_lock.toml
+
+# Test
+coverage/
+.playwright-mcp/
+
+# Docker volumes
+pgdata/

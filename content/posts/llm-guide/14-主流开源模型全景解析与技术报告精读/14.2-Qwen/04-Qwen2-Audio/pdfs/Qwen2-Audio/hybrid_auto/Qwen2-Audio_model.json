@@ -1,0 +1,4958 @@
+[
+    [
+        {
+            "type": "aside_text",
+            "bbox": [
+                0.023,
+                0.266,
+                0.061,
+                0.72
+            ],
+            "angle": 270,
+            "content": "arXiv:2407.10759v1 [eess.AS] 15 Jul 2024"
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.298,
+                0.137,
+                0.709,
+                0.163
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.143,
+                0.194,
+                0.823,
+                0.269
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.267,
+                0.286,
+                0.733,
+                0.301
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.468,
+                0.335,
+                0.531,
+                0.348
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.212,
+                0.373,
+                0.788,
+                0.653
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.113,
+                0.688,
+                0.262,
+                0.704
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.726,
+                0.885,
+                0.819
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.825,
+                0.885,
+                0.888
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "page_footnote",
+            "bbox": [
+                0.138,
+                0.896,
+                0.401,
+                0.911
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.494,
+                0.936,
+                0.504,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.299,
+                0.135,
+                0.709,
+                0.164
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.256,
+                0.195,
+                0.372,
+                0.21
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.404,
+                0.195,
+                0.479,
+                0.212
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.505,
+                0.195,
+                0.742,
+                0.215
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.145,
+                0.214,
+                0.235,
+                0.232
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.268,
+                0.212,
+                0.82,
+                0.233
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.29,
+                0.231,
+                0.706,
+                0.25
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.379,
+                0.248,
+                0.624,
+                0.268
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.271,
+                0.288,
+                0.732,
+                0.3
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.47,
+                0.336,
+                0.53,
+                0.349
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.236,
+                0.375,
+                0.784,
+                0.388
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.214,
+                0.388,
+                0.786,
+                0.403
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.215,
+                0.403,
+                0.785,
+                0.416
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.215,
+                0.416,
+                0.783,
+                0.43
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.43,
+                0.783,
+                0.443
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.445,
+                0.783,
+                0.457
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.459,
+                0.784,
+                0.47
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.473,
+                0.783,
+                0.485
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.215,
+                0.487,
+                0.786,
+                0.499
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.215,
+                0.5,
+                0.784,
+                0.513
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.215,
+                0.514,
+                0.784,
+                0.525
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.528,
+                0.784,
+                0.54
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.215,
+                0.542,
+                0.784,
+                0.554
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.555,
+                0.783,
+                0.568
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.569,
+                0.785,
+                0.581
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.583,
+                0.784,
+                0.596
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.597,
+                0.783,
+                0.609
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.611,
+                0.784,
+                0.623
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.214,
+                0.623,
+                0.784,
+                0.638
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.216,
+                0.638,
+                0.597,
+                0.651
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.688,
+                0.26,
+                0.705
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.725,
+                0.884,
+                0.743
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.743,
+                0.883,
+                0.757
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.758,
+                0.884,
+                0.772
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.77,
+                0.884,
+                0.788
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.113,
+                0.786,
+                0.884,
+                0.805
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.802,
+                0.708,
+                0.819
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.825,
+                0.883,
+                0.843
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.842,
+                0.882,
+                0.857
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.857,
+                0.882,
+                0.871
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.872,
+                0.884,
+                0.887
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.14,
+                0.896,
+                0.399,
+                0.91
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.494,
+                0.937,
+                0.505,
+                0.951
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "chart",
+            "bbox": [
+                0.224,
+                0.092,
+                0.77,
+                0.436
+            ],
+            "angle": 0,
+            "content": "| Model                  | Previous Top-tiers | Qwen-Audio | Qwen2-Audio |\n| ---------------------- | ------------------ | ---------- | ----------- |\n| Librispeech            | 94.0               | 96.0       | 96.0        |\n| Aishell2               | 96.0               | 96.0       | 96.0        |\n| CoVoST2                | 94.0               | 96.0       | 96.0        |\n| Meld                   | 96.0               | 96.0       | 96.0        |\n| VocalSound             | 94.0               | 96.0       | 96.0        |\n| FLUERS-ZH              | 92.62              | 96.0       | 96.0        |\n| AIR-Bench-Chat-Speech  | 92.62              | 96.0       | 96.0        |\n| AIR-Bench-Chat-Sound  | 92.62              | 96.0       | 96.0        |\n| AIR-Bench-Chat-Music  | 92.62              | 96.0       | 96.0        |\n| AIR-Bench-Chat-Mixed  | 92.62              | 96.0       | 96.0        |",
+            "sub_type": "radar"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.111,
+                0.451,
+                0.889,
+                0.62
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.644,
+                0.884,
+                0.707
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.713,
+                0.885,
+                0.866
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.873,
+                0.884,
+                0.906
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.493,
+                0.936,
+                0.506,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.645,
+                0.882,
+                0.66
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.66,
+                0.884,
+                0.675
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.675,
+                0.883,
+                0.689
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.691,
+                0.205,
+                0.705
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.493,
+                0.936,
+                0.506,
+                0.952
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.452,
+                0.884,
+                0.467
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.465,
+                0.885,
+                0.484
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.482,
+                0.885,
+                0.496
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.497,
+                0.884,
+                0.512
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.513,
+                0.883,
+                0.527
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.529,
+                0.883,
+                0.541
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.542,
+                0.884,
+                0.557
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.557,
+                0.884,
+                0.572
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.572,
+                0.883,
+                0.587
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.587,
+                0.883,
+                0.604
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.603,
+                0.526,
+                0.62
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.715,
+                0.883,
+                0.729
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.729,
+                0.883,
+                0.745
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.742,
+                0.884,
+                0.761
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.759,
+                0.885,
+                0.775
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.775,
+                0.885,
+                0.79
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.789,
+                0.884,
+                0.805
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.805,
+                0.883,
+                0.819
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.82,
+                0.885,
+                0.836
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.835,
+                0.884,
+                0.851
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.85,
+                0.536,
+                0.865
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.874,
+                0.884,
+                0.89
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.89,
+                0.882,
+                0.904
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "image",
+            "bbox": [
+                0.153,
+                0.089,
+                0.85,
+                0.416
+            ],
+            "angle": 0,
+            "content": "```mermaid\ngraph TD\n    A[\"Multi-Task Pre-training\"] --> B[\"ASR\"]\n    A --> C[\"AAC\"]\n    B --> D[\"Input audio\"]\n    C --> E[\"Input audio\"]\n    D --> F[\"Language prompt\"]\n    E --> G[\"Language prompt\"]\n    F --> H[\"Detect the language and recognize the speech\"]\n    G --> I[\"(Sound of a car horning,)\"]\n    H --> J[\"Generate the caption in English\"]\n    I --> K[\"Audio Encoder\"]\n    J --> K\n    K --> L[\"QwenLM\"]\n    L --> M[\"Next Token Prediction\"]\n    M --> N[\"Feedback\"]\n    N --> O[\"SFT\"]\n    O --> P[\"Voice Chat\"]\n    O --> Q[\"Audio Analysis\"]\n    P --> R[\"“I lost my phone today...”\"]\n    Q --> S[\"“What's the mood of the speaker?”\"]\n    R --> T[\"Qwen2-Audio\"]\n    S --> T\n    T --> U[\"Preference scores\"]\n    U --> V[\"Response 1: 3.0, Lose!\"]\n    U --> W[\"Response 2: 9.0, Win!\"]\n    V --> X[\"<lzh>你好。\"]\n    W --> Y[\"I'm sorry to hear that! Losing your phone can be frustrating.\"]\n    Y --> Z[\"She is sad.\"]\n```",
+            "sub_type": "flowchart"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.238,
+                0.427,
+                0.759,
+                0.444
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.465,
+                0.884,
+                0.496
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.113,
+                0.525,
+                0.269,
+                0.544
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.563,
+                0.884,
+                0.61
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "equation",
+            "bbox": [
+                0.405,
+                0.616,
+                0.884,
+                0.634
+            ],
+            "angle": 0,
+            "content": "\\[\n\\mathcal {P} _ {\\theta} \\left(x _ {t} \\mid \\boldsymbol {x} _ {<   t}, \\operatorname{Encoder} _ {\\phi} (\\boldsymbol {a})\\right), \\tag {1}\n\\]"
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.639,
+                0.884,
+                0.671
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.678,
+                0.885,
+                0.786
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.81,
+                0.884,
+                0.858
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.882,
+                0.884,
+                0.915
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.493,
+                0.936,
+                0.505,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.597,
+                0.643,
+                0.63,
+                0.655
+            ],
+            "latex": "\\scriptstyle { \\mathbf { \\mathcal { x } } } _ { < t } ,",
+            "score": 0.7923
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.523,
+                0.268,
+                0.545
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.565,
+                0.882,
+                0.577
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.579,
+                0.882,
+                0.594
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.595,
+                0.838,
+                0.609
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.81,
+                0.884,
+                0.826
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.826,
+                0.884,
+                0.843
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.841,
+                0.555,
+                0.858
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.494,
+                0.936,
+                0.505,
+                0.95
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.465,
+                0.884,
+                0.48
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.481,
+                0.236,
+                0.495
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.64,
+                0.596,
+                0.655
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.631,
+                0.64,
+                0.883,
+                0.655
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.655,
+                0.513,
+                0.671
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.883,
+                0.883,
+                0.899
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.896,
+                0.883,
+                0.916
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.242,
+                0.428,
+                0.757,
+                0.443
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.678,
+                0.885,
+                0.694
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.694,
+                0.884,
+                0.71
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.709,
+                0.882,
+                0.724
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.725,
+                0.881,
+                0.739
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.74,
+                0.883,
+                0.755
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.755,
+                0.884,
+                0.77
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.77,
+                0.842,
+                0.784
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "chart",
+            "bbox": [
+                0.312,
+                0.093,
+                0.688,
+                0.379
+            ],
+            "angle": 0,
+            "content": "| Category | Value (k) |\n|---|---|\n| Speech | 370 |\n| Sound | 10 |\n| Music | 140 |",
+            "sub_type": "bar"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.316,
+                0.392,
+                0.68,
+                0.409
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.434,
+                0.884,
+                0.496
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.504,
+                0.519,
+                0.518
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "list",
+            "bbox": [
+                0.137,
+                0.54,
+                0.88,
+                0.59
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.137,
+                0.54,
+                0.88,
+                0.571
+            ],
+            "angle": 0,
+            "content": "- Audio Analysis: In the audio analysis mode, users are afforded the flexibility to have Qwen2-Audio analyze a diverse array of audio. User instructions can be given either through audio or text.",
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.152,
+                0.575,
+                0.566,
+                0.59
+            ],
+            "angle": 0,
+            "content": "This mode is often used for offline analysis of audio files.",
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.137,
+                0.6,
+                0.881,
+                0.63
+            ],
+            "angle": 0,
+            "content": "- Voice Chat: In the voice chat mode, users are encouraged to engage in voice conversations with Qwen2-Audio, asking a wide range of questions. Please feel free to consider it your voice chat assistant",
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.152,
+                0.635,
+                0.585,
+                0.649
+            ],
+            "angle": 0,
+            "content": "This mode is often used for online interaction with LALMs.",
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.671,
+                0.884,
+                0.718
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.743,
+                0.884,
+                0.806
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "equation",
+            "bbox": [
+                0.207,
+                0.815,
+                0.884,
+                0.851
+            ],
+            "angle": 0,
+            "content": "\\[\n\\mathcal {L} _ {\\mathrm{DPO}} \\left(\\mathcal {P} _ {\\theta}; \\mathcal {P} _ {\\text { ref }}\\right) = - \\mathbb {E} _ {\\left(\\boldsymbol {x}, \\boldsymbol {y} _ {\\boldsymbol {w}}, \\boldsymbol {y} _ {\\boldsymbol {l}}\\right) \\sim \\mathcal {D}} \\left[ \\log \\sigma \\left(\\beta \\log \\frac {\\mathcal {P} _ {\\theta} \\left(\\boldsymbol {y} _ {\\boldsymbol {w}} \\mid \\boldsymbol {x}\\right)}{\\mathcal {P} _ {\\text { ref }} \\left(\\boldsymbol {y} _ {\\boldsymbol {w}} \\mid \\boldsymbol {x}\\right)} - \\beta \\log \\frac {\\mathcal {P} _ {\\theta} \\left(\\boldsymbol {y} _ {\\boldsymbol {l}} \\mid \\boldsymbol {x}\\right)}{\\mathcal {P} _ {\\text { ref }} \\left(\\boldsymbol {y} _ {\\boldsymbol {l}} \\mid \\boldsymbol {x}\\right)}\\right) \\right], \\tag {2}\n\\]"
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.858,
+                0.884,
+                0.89
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "page_footnote",
+            "bbox": [
+                0.132,
+                0.899,
+                0.359,
+                0.913
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.494,
+                0.936,
+                0.504,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.349,
+                0.776,
+                0.372,
+                0.79
+            ],
+            "latex": "\\mathbf { \\Delta } _ { \\mathbf { \\mathcal { I } } w }",
+            "score": 0.8512
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.284,
+                0.79,
+                0.305,
+                0.804
+            ],
+            "latex": "{ \\mathcal { P } } _ { \\theta }",
+            "score": 0.8333
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.406,
+                0.776,
+                0.425,
+                0.79
+            ],
+            "latex": "_ { { \\mathbf { } } ^ { y _ { l } } }",
+            "score": 0.6676
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.655,
+                0.76,
+                0.731,
+                0.775
+            ],
+            "latex": "( \\pmb { x } , \\pmb { y _ { w } } , \\pmb { y _ { l } } ) ,",
+            "score": 0.8707
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.163,
+                0.86,
+                0.191,
+                0.874
+            ],
+            "latex": "\\mathcal { P } _ { \\mathrm { r e f } }",
+            "score": 0.8753
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.506,
+                0.86,
+                0.529,
+                0.874
+            ],
+            "latex": "{ \\mathcal { P } } _ { \\theta } ,",
+            "score": 0.8451
+        },
+        {
+            "type": "inline_formula",
+            "bbox": [
+                0.778,
+                0.859,
+                0.792,
+                0.874
+            ],
+            "latex": "\\beta",
+            "score": 0.6468
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.504,
+                0.519,
+                0.519
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.156,
+                0.575,
+                0.566,
+                0.59
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.158,
+                0.636,
+                0.585,
+                0.649
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.434,
+                0.883,
+                0.449
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.449,
+                0.885,
+                0.466
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.465,
+                0.885,
+                0.48
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.481,
+                0.513,
+                0.495
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.673,
+                0.882,
+                0.685
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.686,
+                0.883,
+                0.704
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.703,
+                0.7,
+                0.717
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.744,
+                0.883,
+                0.759
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.759,
+                0.655,
+                0.774
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.732,
+                0.759,
+                0.884,
+                0.774
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.774,
+                0.348,
+                0.79
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.373,
+                0.774,
+                0.405,
+                0.79
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.425,
+                0.774,
+                0.886,
+                0.79
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.79,
+                0.284,
+                0.804
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.306,
+                0.79,
+                0.384,
+                0.804
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.495,
+                0.937,
+                0.505,
+                0.949
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.857,
+                0.162,
+                0.875
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.192,
+                0.857,
+                0.505,
+                0.875
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.53,
+                0.857,
+                0.777,
+                0.875
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.792,
+                0.857,
+                0.884,
+                0.875
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.874,
+                0.672,
+                0.89
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.319,
+                0.393,
+                0.679,
+                0.408
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.139,
+                0.54,
+                0.881,
+                0.555
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.155,
+                0.555,
+                0.821,
+                0.571
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.139,
+                0.6,
+                0.883,
+                0.616
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.156,
+                0.616,
+                0.882,
+                0.63
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.134,
+                0.899,
+                0.359,
+                0.912
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "table_caption",
+            "bbox": [
+                0.266,
+                0.089,
+                0.731,
+                0.105
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "table",
+            "bbox": [
+                0.115,
+                0.109,
+                0.884,
+                0.357
+            ],
+            "angle": 0,
+            "content": "<table><tr><td>Task</td><td>Description</td><td>Dataset</td><td>Split</td><td>Metric</td></tr><tr><td rowspan=\"4\">ASR</td><td rowspan=\"4\">Automatic Speech Recognition</td><td>Fleurs (Conneau et al., 2022)</td><td>dev | test</td><td rowspan=\"4\">WER</td></tr><tr><td>Aishell2 (Du et al., 2018)</td><td>test</td></tr><tr><td>Librispeech (Panayotov et al., 2015)</td><td>dev | test</td></tr><tr><td>Common Voice (Ardila et al., 2020)</td><td>dev | test</td></tr><tr><td>S2TT</td><td>Speech-to-Text Translation</td><td>CoVoST2 (Wang et al., 2020)</td><td>test</td><td>BLEU1 (Papineni et al., 2002)</td></tr><tr><td>SER</td><td>Speech Emotion Recognition</td><td>Meld (Poria et al., 2019)</td><td>test</td><td>ACC</td></tr><tr><td>VSC</td><td>Vocal Sound Classification</td><td>VocalSound (Gong et al., 2022)</td><td>test</td><td>ACC</td></tr><tr><td rowspan=\"9\">AIR-Bench (Yang et al., 2024)</td><td rowspan=\"4\">Chat-Benchmark-Speech</td><td>Fisher (Cieri et al., 2004)</td><td rowspan=\"4\">dev | test</td><td rowspan=\"4\">GPT-4 Eval</td></tr><tr><td>SpokenWOZ (Si et al., 2023)</td></tr><tr><td>IEMOCAP (Si et al., 2023)</td></tr><tr><td>Common voice (Ardila et al., 2020)</td></tr><tr><td>Chat-Benchmark-Sound</td><td>Clotho (Drossos et al., 2020)</td><td>dev | test</td><td>GPT-4 Eval</td></tr><tr><td>Chat-Benchmark-Music</td><td>MusicCaps (Agostinelli et al., 2023)</td><td>dev | test</td><td>GPT-4 Eval</td></tr><tr><td rowspan=\"3\">Chat-Benchmark-Mixed-Audio</td><td>Common voice (Ardila et al., 2020)</td><td rowspan=\"3\">dev | test</td><td rowspan=\"3\">GPT-4 Eval</td></tr><tr><td>AudioCaps (Kim et al., 2019)</td></tr><tr><td>MusicCaps (Agostinelli et al., 2023)</td></tr></table>"
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.112,
+                0.38,
+                0.262,
+                0.399
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.113,
+                0.42,
+                0.26,
+                0.436
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.453,
+                0.888,
+                0.606
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.113,
+                0.633,
+                0.283,
+                0.649
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.667,
+                0.886,
+                0.865
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.872,
+                0.884,
+                0.889
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.494,
+                0.936,
+                0.506,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.271,
+                0.09,
+                0.729,
+                0.104
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.112,
+                0.379,
+                0.26,
+                0.399
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.419,
+                0.258,
+                0.437
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.494,
+                0.936,
+                0.505,
+                0.95
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.455,
+                0.883,
+                0.469
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.47,
+                0.881,
+                0.485
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.485,
+                0.883,
+                0.499
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.499,
+                0.886,
+                0.515
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.516,
+                0.885,
+                0.528
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.53,
+                0.884,
+                0.545
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.545,
+                0.882,
+                0.56
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.561,
+                0.882,
+                0.575
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.575,
+                0.882,
+                0.59
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.59,
+                0.365,
+                0.605
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.872,
+                0.884,
+                0.887
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.634,
+                0.28,
+                0.649
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.666,
+                0.884,
+                0.683
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.684,
+                0.882,
+                0.697
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.697,
+                0.884,
+                0.713
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.712,
+                0.883,
+                0.728
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.729,
+                0.882,
+                0.742
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.743,
+                0.885,
+                0.759
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.759,
+                0.883,
+                0.772
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.771,
+                0.883,
+                0.789
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.789,
+                0.883,
+                0.801
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.803,
+                0.882,
+                0.818
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.819,
+                0.884,
+                0.833
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.113,
+                0.832,
+                0.883,
+                0.85
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.848,
+                0.252,
+                0.864
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "table_caption",
+            "bbox": [
+                0.112,
+                0.089,
+                0.888,
+                0.137
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "table",
+            "bbox": [
+                0.113,
+                0.139,
+                0.889,
+                0.76
+            ],
+            "angle": 0,
+            "content": "<table><tr><td rowspan=\"2\">Task</td><td rowspan=\"2\">Dataset</td><td rowspan=\"2\">Model</td><td colspan=\"2\">Performance</td></tr><tr><td>Metrics</td><td>Results</td></tr><tr><td rowspan=\"4\">ASR</td><td>Librispeechdev-clean | dev-other | test-clean | test-other</td><td>SpeechT5 (Ao et al., 2021)SpeechNet (Chen et al., 2021)SLM-FT (Wang et al., 2023b)SALMONN (Tang et al., 2024)SpeechVerse (Das et al., 2024)Qwen-Audio (Chu et al., 2023)Qwen2-Audio</td><td>WER ↓</td><td>2.1 | 5.5 | 2.4 | 5.8- | - | 30.7 | -- | - | 2.6 | 5.0- | - | 2.1 | 4.9- | - | 2.1 | 4.41.8 | 4.0 | 2.0 | 4.21.3 | 3.4 | 1.6 | 3.6</td></tr><tr><td>Common Voice 15en | zh | yue | fr</td><td>Whisper-large-v3 (Radford et al., 2023)Qwen2-Audio</td><td>WER ↓</td><td>9.3 | 12.8 | 10.9 | 10.88.6 | 6.9 | 5.9 | 9.6</td></tr><tr><td>Fleurszh</td><td>Whisper-large-v3 (Radford et al., 2023)Qwen2-Audio</td><td>WER ↓</td><td>7.77.5</td></tr><tr><td>Aishell2Mic | iOS | Android</td><td>MMSpeech-base (Zhou et al., 2022)Paraformer-large (Gao et al., 2023)Qwen-Audio (Chu et al., 2023)Qwen2-Audio</td><td>WER ↓</td><td>4.5 | 3.9 | 4.0- | 2.9 | -3.3 | 3.1 | 3.33.0 | 3.0 | 2.9</td></tr><tr><td rowspan=\"2\">S2TT</td><td>CoVoST2en-de | de-en |en-zh | zh-en</td><td>SALMONN (Tang et al., 2024)SpeechLLaMA (Wu et al., 2023a)BLSP (Wang et al., 2023a)Qwen-Audio (Chu et al., 2023)Qwen2-Audio</td><td>BLEU ↑</td><td>18.6 | - | 33.1 | -- | 27.1 | - | 12.314.1 | - | - | -25.1 | 33.9 | 41.5 | 15.729.9 | 35.2 | 45.2 | 24.4</td></tr><tr><td>CoVoST2es-en | fr-en | it-en |</td><td>SpeechLLaMA (Wu et al., 2023a)Qwen-Audio (Chu et al., 2023)Qwen2-Audio</td><td>BLEU ↑</td><td>27.9 | 25.2 | 25.939.7 | 38.5 | 36.040.0 | 38.5 | 36.3</td></tr><tr><td>SER</td><td>Meld</td><td>WavLM-large (Chen et al., 2022)Qwen-Audio (Chu et al., 2023)Qwen2-Audio</td><td>ACC ↑</td><td>0.5420.5570.553</td></tr><tr><td>VSC</td><td>VocalSound</td><td>CLAP (Elizalde et al., 2022)Pengi (Deshmukh et al., 2023)Qwen-Audio (Chu et al., 2023)Qwen2-Audio</td><td>ACC ↑</td><td>0.49450.60350.92890.9392</td></tr><tr><td>AIR-Bench(Yang et al., 2024)</td><td>Chat BenchmarkSpeech | Sound | Music | Mixed-Audio</td><td>SALMONN (Tang et al., 2024)BLSP (Wang et al., 2023a)Pandagpt (Su et al., 2023)Macaw-LLM (Lyu et al., 2023)SpeechGPT (Zhang et al., 2023)Next-gpt (Wu et al., 2023b)Qwen-Audio (Chu et al., 2023)Gemini-1.5-pro (Reid et al., 2024)Qwen2-Audio</td><td>GPT-4 ↑</td><td>6.16 | 6.28 | 5.95 | 6.086.17 | 5.55 | 5.08 | 5.333.58 | 5.46 | 5.06 | 4.250.97 | 1.01 | 0.91 | 1.011.57 | 0.95 | 0.95 | 4.133.86 | 4.76 | 4.18 | 4.136.47 | 6.95 | 5.52 | 6.086.97 | 5.49 | 5.06 | 5.277.18 | 6.99 | 6.79 | 6.77</td></tr></table>"
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.781,
+                0.888,
+                0.872
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "page_footnote",
+            "bbox": [
+                0.13,
+                0.878,
+                0.637,
+                0.894
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.494,
+                0.937,
+                0.506,
+                0.949
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.78,
+                0.884,
+                0.797
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.798,
+                0.884,
+                0.813
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.814,
+                0.883,
+                0.826
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.828,
+                0.884,
+                0.843
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.844,
+                0.882,
+                0.857
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.857,
+                0.177,
+                0.871
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.09,
+                0.882,
+                0.105
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.105,
+                0.884,
+                0.119
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.121,
+                0.884,
+                0.135
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.494,
+                0.937,
+                0.505,
+                0.95
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.879,
+                0.634,
+                0.891
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "title",
+            "bbox": [
+                0.114,
+                0.091,
+                0.201,
+                0.106
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.128,
+                0.886,
+                0.16
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "image",
+            "bbox": [
+                0.231,
+                0.172,
+                0.77,
+                0.671
+            ],
+            "angle": 0,
+            "content": "",
+            "sub_type": ""
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.202,
+                0.68,
+                0.795,
+                0.698
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.114,
+                0.733,
+                0.251,
+                0.749
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.111,
+                0.771,
+                0.888,
+                0.896
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.493,
+                0.936,
+                0.506,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.732,
+                0.25,
+                0.75
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.494,
+                0.936,
+                0.506,
+                0.95
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.128,
+                0.884,
+                0.145
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.145,
+                0.701,
+                0.158
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.77,
+                0.883,
+                0.788
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.786,
+                0.884,
+                0.803
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.801,
+                0.886,
+                0.817
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.817,
+                0.884,
+                0.832
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.832,
+                0.885,
+                0.847
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.847,
+                0.885,
+                0.863
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.862,
+                0.884,
+                0.877
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.878,
+                0.885,
+                0.894
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.112,
+                0.088,
+                0.201,
+                0.108
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.205,
+                0.68,
+                0.792,
+                0.696
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "image",
+            "bbox": [
+                0.231,
+                0.214,
+                0.769,
+                0.758
+            ],
+            "angle": 0,
+            "content": "\"Help me translate the sentence into Chinese. Everyone wants to be appreciated, so if you appreciate someone, don't keep it a secret.\"\n▶ 0:00 / 0:07\n每个人都希望被欣赏，所以如果你欣赏某人，不要把它保密。\n\"Translate it into German.\"\n▶ 0:00 / 0:03\nJeder möchte geschätzt werden, also wenn du jemanden schätzt, lass es nicht als Geheimnis verbergen.\n\"How about into French?\"\n▶ 0:00 / 0:03\nChacun veut être apprécié, alors si tu apprécies quelqu'un, ne le gardes pas secret.\n\"给我生成一些类似这句话意思的，其他说法的句子，用中文生成。\"\n▶ 0:00 / 0:05\n1. 每个人都喜欢被赞美，所以如果你喜欢一个人，不要隐藏你的赞赏。\n2. 所有人都渴望得到认可，因此如果你欣赏某人，请不要独自享用这种感觉。\n3. 欣赏他人是一种美德，所以不要让别人知道你对他们的赞赏是秘密的。\n4. 人们都希望受到赞扬，所以如果你欣赏某人，不妨公开表达出来。\n5. 如果你喜欢某人，不要犹豫告诉他们，因为每个人都有权利享受他人的赞赏。",
+            "sub_type": "text_image"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.204,
+                0.769,
+                0.793,
+                0.786
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.494,
+                0.937,
+                0.504,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.495,
+                0.937,
+                0.505,
+                0.949
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.205,
+                0.768,
+                0.792,
+                0.785
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "image",
+            "bbox": [
+                0.231,
+                0.277,
+                0.769,
+                0.695
+            ],
+            "angle": 0,
+            "content": "(with renovation noise) \"Oh no, how can I study quiet like this?\"\n▶ 0:00 / 0:05\nUse headphones to block out external noise and find a quiet place to study.\nPrioritize your tasks and set realistic goals for yourself. Use active learning\ntechniques such as summarizing, note-taking, and quizzing to help you\nretain information. Take breaks and practice self-care to avoid burnout.\n(with renovation noise) \"In this situation, can I negotiate with them?\"\n▶ 0:00 / 0:05\nYes, you can try negotiating with them to reach a mutually beneficial\nagreement. You could also consider seeking help from a mediator or\nprofessional negotiator if needed.\n(雨声)“哎呀，真喜欢在这种场景下睡觉啊睡的真香，你能猜猜为什么我喜欢在这种场景\n下睡觉吗？”\n▶ 0:00 / 0:07\n因为这种场景让你感到放松和舒适，有助于提高睡眠质量。",
+            "sub_type": "text_image"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.137,
+                0.706,
+                0.86,
+                0.723
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.494,
+                0.936,
+                0.506,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.494,
+                0.937,
+                0.505,
+                0.951
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.138,
+                0.705,
+                0.859,
+                0.722
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "image",
+            "bbox": [
+                0.231,
+                0.279,
+                0.768,
+                0.693
+            ],
+            "angle": 0,
+            "content": "\"Please transcribe the content of the next audio clip.\"\n(Then a piece of audio is played)\n\nThe original content of this audio is: 'Stop all the clocks, cut off the telephone, prevent the dog from barking, silence the pianos and with muffled drum bring out the coffin, let the mourners come.'\n\nNo less than 50 words and no more than 200 words, add scenes such as rain and thunder to the poem. Finally, give the verses you created in lines.\n\nIn the midst of an eerie stormy night, With raindrops falling heavy and bright, The world seemed to hush its voice, As winds howled through the darkened space.\nStop all the clocks, the time stood still, As the lightning flashed through the sky, The telephone's ring was drowned out, By the roaring thunder that shook the ground.\nPrevent the dog from barking, its cries were silenced, By the fear that gripped it in the night, Silence the pianos, their keys were muted, As the mournful sound of raindrops beat on wood.\nWith muffled drums, a slow march began, A solemn procession through the storm, The coffin was carried, heavy and solemn, Let the mourners come, to pay their final respects.\nAs the storm slowly passed, the world emerged, A new day dawned, but memories lingered, Of the night when time stood still, And the mourners came, to say goodbye.",
+            "sub_type": "text_image"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.234,
+                0.705,
+                0.763,
+                0.721
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.491,
+                0.936,
+                0.509,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.236,
+                0.705,
+                0.762,
+                0.72
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.49,
+                0.936,
+                0.511,
+                0.952
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "image",
+            "bbox": [
+                0.231,
+                0.218,
+                0.769,
+                0.75
+            ],
+            "angle": 0,
+            "content": "",
+            "sub_type": ""
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.236,
+                0.765,
+                0.761,
+                0.782
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.49,
+                0.936,
+                0.508,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.237,
+                0.765,
+                0.761,
+                0.781
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.49,
+                0.936,
+                0.509,
+                0.952
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "image",
+            "bbox": [
+                0.231,
+                0.244,
+                0.768,
+                0.729
+            ],
+            "angle": 0,
+            "content": "(play a piece of music without asking anything)\n0:00 / 0:30\nThis is a pop punk music piece. There is a male vocalist singing melodically in the lead. The tune is being played by the guitar with the bass guitar playing in the background. The rhythmic background consists of loud and aggressive sounding drums. The atmosphere is rebellious. This piece could be used in the soundtrack of a high school drama movie or TV show during scenes where the characters are rebelling against authority.\n\"What's the tempo of this music?\"\n0:00 / 0:03\nThe tempo of this music is 104.17 bpm.\n\"What's the time signature of this music\"\n0:00 / 0:03\nThe time signature of this music is 4/4.\n\"What's the key of this music\"\n0:00 / 0:03\nThe key of this music piece is F# major.",
+            "sub_type": "text_image"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.236,
+                0.74,
+                0.761,
+                0.758
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.49,
+                0.936,
+                0.51,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.239,
+                0.74,
+                0.76,
+                0.756
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.489,
+                0.935,
+                0.51,
+                0.953
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "image",
+            "bbox": [
+                0.231,
+                0.133,
+                0.769,
+                0.84
+            ],
+            "angle": 0,
+            "content": "\"What are the lyrics of the singing?\"\n(Then a song is played.)\n0:00 / 0:20\nThe lyrics are 'Waiting for my favorite song.'\n\"What are the lyrics of the singing?\"\n(Then a song mixed with a sound is played.\n0:00 / 0:20\nThe lyrics are 'Waiting for my favorite song.'\n\"What are the lyrics of the singing?\"\n(Then a song mixed with a speech(man speaking) is played.\n0:00 / 0:20\nThe lyrics are 'Waiting for my favorite song.'\n\"What does the person say?\"\n(Then a speech is played.\n0:00 / 0:10\nThe old man laid down his hand to light a cigar.\n\"What does the person say?\"\n(Then a speech mixed with a music is played.\n0:00 / 0:10\nThe old man laid down his hand to light a cigar.\n\"What does the person say?\"\n(Then a speech mixed with a sound is played.\n0:00 / 0:10\nThe old man laid down his hand to light a cigar.",
+            "sub_type": "text_image"
+        },
+        {
+            "type": "image_caption",
+            "bbox": [
+                0.206,
+                0.85,
+                0.793,
+                0.867
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.49,
+                0.936,
+                0.51,
+                0.949
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.208,
+                0.849,
+                0.79,
+                0.865
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.489,
+                0.936,
+                0.51,
+                0.952
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "title",
+            "bbox": [
+                0.113,
+                0.09,
+                0.326,
+                0.109
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "text",
+            "bbox": [
+                0.112,
+                0.128,
+                0.884,
+                0.16
+            ],
+            "angle": 0,
+            "content": null,
+            "merge_prev": false
+        },
+        {
+            "type": "title",
+            "bbox": [
+                0.114,
+                0.188,
+                0.216,
+                0.205
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "list",
+            "bbox": [
+                0.108,
+                0.221,
+                0.893,
+                0.91
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.226,
+                0.885,
+                0.273
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.282,
+                0.887,
+                0.327
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.337,
+                0.885,
+                0.384
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.392,
+                0.885,
+                0.425
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.433,
+                0.885,
+                0.495
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.503,
+                0.885,
+                0.55
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.558,
+                0.885,
+                0.605
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.613,
+                0.885,
+                0.646
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.654,
+                0.885,
+                0.716
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.724,
+                0.885,
+                0.771
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.779,
+                0.885,
+                0.812
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.82,
+                0.885,
+                0.866
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.114,
+                0.875,
+                0.885,
+                0.907
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.49,
+                0.936,
+                0.511,
+                0.949
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.224,
+                0.884,
+                0.245
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.242,
+                0.884,
+                0.257
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.258,
+                0.355,
+                0.271
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.282,
+                0.884,
+                0.297
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.298,
+                0.884,
+                0.313
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.312,
+                0.172,
+                0.326
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.337,
+                0.882,
+                0.352
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.353,
+                0.882,
+                0.368
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.13,
+                0.368,
+                0.639,
+                0.382
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.432,
+                0.885,
+                0.449
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.449,
+                0.882,
+                0.464
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.463,
+                0.884,
+                0.479
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.48,
+                0.476,
+                0.494
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.501,
+                0.884,
+                0.521
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.519,
+                0.884,
+                0.534
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.535,
+                0.479,
+                0.548
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.558,
+                0.884,
+                0.574
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.574,
+                0.885,
+                0.591
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.591,
+                0.397,
+                0.603
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.654,
+                0.885,
+                0.67
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.67,
+                0.884,
+                0.685
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.685,
+                0.886,
+                0.7
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.701,
+                0.512,
+                0.714
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.724,
+                0.884,
+                0.742
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.741,
+                0.882,
+                0.755
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.755,
+                0.522,
+                0.77
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.822,
+                0.882,
+                0.835
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.835,
+                0.881,
+                0.852
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.852,
+                0.284,
+                0.864
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.128,
+                0.882,
+                0.144
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.145,
+                0.27,
+                0.159
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.393,
+                0.884,
+                0.409
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.13,
+                0.408,
+                0.666,
+                0.424
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.615,
+                0.882,
+                0.628
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.63,
+                0.518,
+                0.645
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.779,
+                0.882,
+                0.795
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.795,
+                0.309,
+                0.809
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.114,
+                0.875,
+                0.884,
+                0.891
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.892,
+                0.406,
+                0.904
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.09,
+                0.324,
+                0.108
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.489,
+                0.936,
+                0.51,
+                0.951
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.188,
+                0.216,
+                0.205
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "list",
+            "bbox": [
+                0.107,
+                0.085,
+                0.895,
+                0.911
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.09,
+                0.885,
+                0.123
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.131,
+                0.885,
+                0.178
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.187,
+                0.885,
+                0.248
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.257,
+                0.885,
+                0.305
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.312,
+                0.885,
+                0.357
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.368,
+                0.885,
+                0.414
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.423,
+                0.388,
+                0.44
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.449,
+                0.654,
+                0.466
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.473,
+                0.885,
+                0.52
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.528,
+                0.885,
+                0.574
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.583,
+                0.885,
+                0.647
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.654,
+                0.885,
+                0.686
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.694,
+                0.885,
+                0.741
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.75,
+                0.885,
+                0.797
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.805,
+                0.885,
+                0.853
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.86,
+                0.885,
+                0.908
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.49,
+                0.936,
+                0.509,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.131,
+                0.882,
+                0.148
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.148,
+                0.885,
+                0.163
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.163,
+                0.335,
+                0.177
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.118,
+                0.189,
+                0.884,
+                0.201
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.202,
+                0.885,
+                0.218
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.218,
+                0.887,
+                0.232
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.234,
+                0.445,
+                0.247
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.118,
+                0.258,
+                0.882,
+                0.273
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.273,
+                0.882,
+                0.288
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.287,
+                0.808,
+                0.303
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.314,
+                0.882,
+                0.328
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.329,
+                0.885,
+                0.344
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.344,
+                0.172,
+                0.357
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.368,
+                0.882,
+                0.385
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.383,
+                0.886,
+                0.4
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.398,
+                0.336,
+                0.413
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.474,
+                0.882,
+                0.489
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.489,
+                0.885,
+                0.505
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.504,
+                0.706,
+                0.519
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.531,
+                0.882,
+                0.544
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.544,
+                0.885,
+                0.561
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.56,
+                0.172,
+                0.573
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.118,
+                0.585,
+                0.882,
+                0.598
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.6,
+                0.884,
+                0.615
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.616,
+                0.885,
+                0.63
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.63,
+                0.684,
+                0.645
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.118,
+                0.697,
+                0.882,
+                0.71
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.712,
+                0.882,
+                0.725
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.726,
+                0.491,
+                0.739
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.75,
+                0.884,
+                0.765
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.766,
+                0.882,
+                0.781
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.781,
+                0.412,
+                0.795
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.805,
+                0.884,
+                0.822
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.823,
+                0.882,
+                0.835
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.837,
+                0.769,
+                0.85
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.86,
+                0.882,
+                0.878
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.878,
+                0.882,
+                0.892
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.893,
+                0.535,
+                0.906
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.424,
+                0.389,
+                0.439
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.092,
+                0.881,
+                0.107
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.107,
+                0.614,
+                0.122
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.654,
+                0.885,
+                0.67
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.67,
+                0.457,
+                0.684
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.45,
+                0.654,
+                0.465
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.489,
+                0.935,
+                0.511,
+                0.952
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ],
+    [
+        {
+            "type": "list",
+            "bbox": [
+                0.107,
+                0.086,
+                0.893,
+                0.608
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.091,
+                0.885,
+                0.122
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.131,
+                0.885,
+                0.178
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.187,
+                0.885,
+                0.218
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.227,
+                0.885,
+                0.273
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.282,
+                0.885,
+                0.343
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.353,
+                0.885,
+                0.399
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.408,
+                0.885,
+                0.439
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.448,
+                0.885,
+                0.495
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.503,
+                0.885,
+                0.549
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ref_text",
+            "bbox": [
+                0.115,
+                0.559,
+                0.885,
+                0.604
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "page_number",
+            "bbox": [
+                0.49,
+                0.936,
+                0.51,
+                0.948
+            ],
+            "angle": 0,
+            "content": null
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.118,
+                0.132,
+                0.882,
+                0.147
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.147,
+                0.884,
+                0.162
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.161,
+                0.849,
+                0.179
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.118,
+                0.228,
+                0.882,
+                0.243
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.243,
+                0.884,
+                0.26
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.258,
+                0.368,
+                0.272
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.282,
+                0.882,
+                0.298
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.299,
+                0.884,
+                0.314
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.313,
+                0.884,
+                0.329
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.33,
+                0.442,
+                0.342
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.353,
+                0.885,
+                0.369
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.369,
+                0.882,
+                0.385
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.385,
+                0.385,
+                0.399
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.448,
+                0.882,
+                0.466
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.465,
+                0.882,
+                0.48
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.481,
+                0.428,
+                0.494
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.117,
+                0.505,
+                0.885,
+                0.519
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.129,
+                0.52,
+                0.886,
+                0.535
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.132,
+                0.535,
+                0.171,
+                0.548
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.559,
+                0.884,
+                0.576
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.575,
+                0.885,
+                0.591
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.131,
+                0.59,
+                0.172,
+                0.604
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.09,
+                0.885,
+                0.108
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.108,
+                0.415,
+                0.12
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.115,
+                0.185,
+                0.885,
+                0.205
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.204,
+                0.749,
+                0.217
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.116,
+                0.409,
+                0.885,
+                0.425
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.133,
+                0.425,
+                0.344,
+                0.437
+            ],
+            "text": "",
+            "score": 1.0
+        },
+        {
+            "type": "ocr_text",
+            "bbox": [
+                0.489,
+                0.935,
+                0.511,
+                0.952
+            ],
+            "text": "",
+            "score": 1.0
+        }
+    ]
+]

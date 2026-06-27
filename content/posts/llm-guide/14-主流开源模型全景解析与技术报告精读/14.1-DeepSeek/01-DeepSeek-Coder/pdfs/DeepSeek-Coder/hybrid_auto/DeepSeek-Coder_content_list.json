@@ -1,0 +1,2334 @@
+[
+    {
+        "type": "text",
+        "text": "DeepSeek-Coder: When the Large Language Model Meets Programming - The Rise of Code Intelligence ",
+        "text_level": 1,
+        "bbox": [
+            141,
+            134,
+            855,
+            181
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Daya Guo\\*1, Qihao Zhu∗1,2, Dejian Yang1, Zhenda Xie1, Kai Dong1, Wentao Zhang1 Guanting Chen1, Xiao Bi 1, Y. Wu1, Y.K. Li1, Fuli Luo1, Yingfei Xiong2, Wenfeng Liang1 ",
+        "bbox": [
+            174,
+            210,
+            818,
+            243
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "1DeepSeek-AI 2Key Lab of HCST (PKU), MOE; SCS, Peking University {zhuqh, guodaya}@deepseek.com https://github.com/deepseek-ai/DeepSeek-Coder ",
+        "bbox": [
+            277,
+            252,
+            719,
+            312
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "Abstract ",
+        "text_level": 1,
+        "bbox": [
+            448,
+            351,
+            549,
+            370
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "The rapid development of large language models has revolutionized code intelligence in software development. However, the predominance of closed-source models has restricted extensive research and development. To address this, we introduce the DeepSeek-Coder series, a range of open-source code models with sizes from 1.3B to 33B, trained from scratch on 2 trillion tokens. These models are pre-trained on a high-quality project-level code corpus and employ a fill-in-the-blank task with a 16K window to enhance code generation and infilling. Our extensive evaluations demonstrate that DeepSeek-Coder not only achieves state-of-the-art performance among open-source code models across multiple benchmarks but also surpasses existing closed-source models like Codex and GPT-3.5. Furthermore, DeepSeek-Coder models are under a permissive license that allows for both research and unrestricted commercial use. ",
+        "bbox": [
+            110,
+            395,
+            885,
+            567
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "chart",
+        "img_path": "images/6de36c69c2b115c3892e9701d5b6053454d2e3b1acfb21c8f7c799f09207d197.jpg",
+        "content": "| Language    | CodeGeeX2-6B | CodeLlama-13B | CodeLlama-34B | DeepSeek-Coder-7B | DeepSeek-Coder-33B |\n| ----------- | ------------ | ------------- | ------------- | ----------------- | ------------------ |\n| Python      | 15.8         | 15.8          | 15.8          | 56.1              | 56.1               |\n| JavaScript  | 15.8         | 15.8          | 15.8          | 55.3              | 55.3               |\n| Bash        | 15.8         | 15.8          | 15.8          | 52.3              | 52.3               |\n| C#          | 15.8         | 15.8          | 15.8          | 50.0              | 50.0               |\n| TypeScript  | 15.8         | 15.8          | 15.8          | 49.7              | 49.7               |\n| PHP         | 15.8         | 15.8          | 15.8          | 44.1              | 44.1               |\n| Java        | 15.8         | 15.8          | 15.8          | 51.9              | 51.9               |\n| Cpp         | 15.8         | 15.8          | 15.8          | 58.4              | 58.4               |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "radar",
+        "bbox": [
+            121,
+            581,
+            445,
+            832
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "chart",
+        "img_path": "images/5ff1b185eb45af4c78f444fd9f452eb0c7ab5416abad43afed3c0eb4c4f6a1f6.jpg",
+        "content": "LeetCode Weekly Contest\n| Framework | Pass@1 (%) |\n| :--- | :--- |\n| WizardCoder-15B-V1.0 | 5.0 |\n| CodeLlama-34B-Instruct | 9.4 |\n| Phind-CodeLlama-34B-v2 | 13.3 |\n| DeepSeek-Coder-7B-Instruct | 21.1 |\n| DeepSeek-Coder-33B-Instruct | 28.9 |\nGPT-4-Turbo: 41.8, GPT-3.5-Turbo: 23.3",
+        "chart_caption": [
+            "Figure 1 | The Performance of DeepSeek-Coder "
+        ],
+        "chart_footnote": [],
+        "sub_type": "bar",
+        "bbox": [
+            455,
+            583,
+            870,
+            829
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "",
+        "bbox": [
+            114,
+            39,
+            178,
+            72
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "header",
+        "text": "deepseek ",
+        "bbox": [
+            179,
+            46,
+            322,
+            68
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "aside_text",
+        "text": "arXiv:2401.14196v2 [cs.SE] 26 Jan 2024 ",
+        "bbox": [
+            21,
+            315,
+            60,
+            724
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "footer",
+        "text": "\\*Core contributors, ordered alphabetically by the name. ",
+        "bbox": [
+            112,
+            929,
+            569,
+            948
+        ],
+        "page_idx": 0
+    },
+    {
+        "type": "text",
+        "text": "1. Introduction ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            99,
+            272,
+            116
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "The field of software development has been significantly transformed by the swift advancement of large language models (OpenAI, 2023; Touvron et al., 2023), which have brought about a new era of code intelligence. These models have the potential to automate and streamline many aspects of coding, from bug detection to code generation, thereby enhancing productivity and reducing the likelihood of human error. However, a major challenge in this field is the performance gap between open-source models (Li et al., 2023; Nijkamp et al., 2022; Roziere et al., 2023; Wang et al., 2021) and closed-source models (Gemini Team, 2023; OpenAI, 2023). The giant closed-source models, while powerful, are often inaccessible to many researchers and developers due to their proprietary nature. ",
+        "bbox": [
+            110,
+            131,
+            882,
+            277
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "In response to this challenge, we present the DeepSeek-Coder series. This series comprises a range of open-source code models, varying in size from 1.3B to 33B, including the base version and instructed version for each size. Each model in the series has been trained from scratch on 2 trillion tokens sourced from 87 programming languages, ensuring a comprehensive understanding of coding languages and syntax. Besides, we attempt to organize the pretraining data at the repository level to enhance the pre-trained model’s understanding capability within the context of cross-files within a repository. In addition to employing the next token prediction loss during pre-training, we have also incorporated the Fill-In-Middle (FIM) approach (Bavarian et al., 2022; Li et al., 2023). This approach is designed to further bolster the model’s code completion capabilities. To meet the requirements of handling longer code inputs, we have extended the context length to 16K. This adjustment allows our models to handle more complex and extensive coding tasks, thereby increasing their versatility and applicability in various coding scenarios. ",
+        "bbox": [
+            115,
+            284,
+            884,
+            493
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "We have carried out comprehensive experiments using a variety of public code-related benchmarks. The findings reveal that among open-source models, DeepSeek-Coder-Base 33B consistently delivers superior performance across all benchmarks. Furthermore, DeepSeek-Coder-Instruct 33B surpasses OpenAI GPT-3.5 Turbo in the majority of the evaluation benchmarks, significantly narrowing the performance gap between OpenAI GPT-4 and open-source models. Remarkably, despite having fewer parameters, DeepSeek-Coder-Base 7B demonstrates competitive performance when compared to models that are five times larger, such as CodeLlama-33B (Roziere et al., 2023). To summarize, our main contributions are: ",
+        "bbox": [
+            110,
+            501,
+            882,
+            630
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "list",
+        "sub_type": "text",
+        "list_items": [
+            "• We introduce DeepSeek-Coder-Base and DeepSeek-Coder-Instruct, our advanced code focused large language models (LLMs). Developed through extensive training on an expansive code corpus, these models exhibit proficiency in understanding 87 programming languages. Additionally, they are available in various model scales to cater to a wide range of computational and application needs. ",
+            "• We make the first attempt to incorporate repository-level data construction during the pre-training phase of our models. We find that it can significantly boost the capability of cross-file code generation. ",
+            "• Our analysis rigorously examines the impact of FIM training strategies on the pretraining phase of code models. The outcomes of these comprehensive studies shed light on intriguing aspects of FIM configurations, offering valuable insights that significantly contribute to the enhancement and development of code pretrained models. ",
+            "• We conduct extensive evaluations of our code LLMs against a wide array of benchmarks en compassing numerous code-related tasks. The findings demonstrate that DeepSeek-Coder Base surpasses all existing open-source code LLMs across these benchmarks. Furthermore "
+        ],
+        "bbox": [
+            127,
+            652,
+            878,
+            891
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "page_number",
+        "text": "2 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            935
+        ],
+        "page_idx": 1
+    },
+    {
+        "type": "text",
+        "text": "with meticulous fine-tuning using instructional data, DeepSeek-Coder-Instruct achieves better performance compared to the OpenAI GPT-3.5 Turbo model in code-related tasks. ",
+        "bbox": [
+            144,
+            101,
+            880,
+            133
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "2. Data Collection ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            159,
+            302,
+            175
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "The training dataset of DeepSeek-Coder is composed of 87% source code, 10% English coderelated natural language corpus, and 3% code-unrelated Chinese natural language corpus. The English corpus consists of materials from GitHub’s Markdown and StackExchange1, which are used to enhance the model’s understanding of code-related concepts and improve its ability to handle tasks like library usage and bug fixing. Meanwhile, the Chinese corpus consists of high-quality articles aimed at improving the model’s proficiency in understanding the Chinese language. In this section, we will provide an overview of how we construct the code training data. This process involves data crawling, rule-based filtering, dependency parsing, repository level deduplication, and quality screening, as illustrated in Figure 2. In the following, we will describe the data creation procedure step by step. ",
+        "bbox": [
+            110,
+            190,
+            885,
+            351
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "image",
+        "img_path": "images/2d79a44fffac8cb8bcb17220510c4e33aa939b1b812e69cb0614816e3be4e984.jpg",
+        "image_caption": [
+            "Figure 2 | The Procedure of Dataset Creation "
+        ],
+        "image_footnote": [],
+        "content": "```mermaid\ngraph LR\n    A[\"User\"] -->|Data Crawling| B[\"Database\"]\n    B -->|Rule Filtering| C[\"Database\"]\n    C -->|Dependency Parsing| D[\"Database\"]\n    D -->|Repo-level Deduplication| E[\"Database\"]\n    E -->|Quality Screening| F[\"Database\"]\n```",
+        "sub_type": "flowchart",
+        "bbox": [
+            121,
+            378,
+            870,
+            431
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "2.1. GitHub Data Crawling and Filtering ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            495,
+            462,
+            514
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "We collect public repositories created before February 2023 on GitHub and retain only 87 programming languages, as listed in Table 1. To reduce the amount of data to be processed, we apply filtering rules similar to those used in the StarCoder project (Li et al., 2023) to preliminarily filter out lower-quality code. By applying these filtering rules, we reduce the total amount of data to only 32.8% of its original size. To make the paper self-contained, we briefly describe the filter rules used in the StarCoder Data project: ",
+        "bbox": [
+            110,
+            523,
+            882,
+            620
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "Firstly, we filter out files with an average line length exceeding 100 characters or a maximum line length surpassing 1000 characters. Additionally, we remove files with fewer than 25% alphabetic characters. Except for the XSLT programming language, we further filter out files where the string \"<?xml version=\" appeared in the first 100 characters. For HTML files, we consider the ratio of visible text to HTML code. We retain files where the visible text constitutes at least 20% of the code and is no less than 100 characters. For JSON and YAML files, which typically contain more data, we only keep files that have a character count ranging from 50 to 5000 characters. This effectively removes most data-heavy files. ",
+        "bbox": [
+            110,
+            627,
+            882,
+            757
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "2.2. Dependency Parsing ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            780,
+            329,
+            796
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "text",
+        "text": "In previous works (Chen et al., 2021; Li et al., 2023; Nijkamp et al., 2022; Roziere et al., 2023), large language models for code are mainly pre-trained on file-level source code, which ignores the dependencies between different files in a project. However, in practical applications, such models struggle to effectively scale to handle entire project-level code scenarios. Therefore, we will consider how to leverage the dependencies between files within the same repository in this step. Specifically, we first parse the dependencies between files and then arrange these files in an order that ensures the context each file relies on is placed before that file in the input sequence. By aligning the files in accordance with their dependencies, our dataset more accurately represents real coding practices and structures. This enhanced alignment not only makes our dataset more relevant but also potentially increases the practicality and applicability of the model in handling project-level code scenarios. It’s worth noting that we only consider the invocation relationships between files and use regular expressions to extract them, such as \"import\" in Python, \"using\" in C#, and \"include\" in C. ",
+        "bbox": [
+            110,
+            806,
+            882,
+            872
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "page_footnote",
+        "text": "1https://stackexchange.com ",
+        "bbox": [
+            139,
+            887,
+            369,
+            901
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "page_number",
+        "text": "3 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            935
+        ],
+        "page_idx": 2
+    },
+    {
+        "type": "code",
+        "sub_type": "algorithm",
+        "code_caption": [
+            "Algorithm 1 Topological Sort for Dependency Analysis "
+        ],
+        "code_body": "1: procedure TOPOLOGICALSORT(files)\n2:    graphs ← {} ▷ Initialize an empty adjacency list\n3:    inDegree ← {} ▷ Initialize an empty dictionary for in-degrees\n4:    for each file in files do\n5:    graphs[file] ← []\n6:    inDegree[file] ← 0\n7:    end for\n8:\n9:    for each fileA in files do\n10:    for each fileB in files do\n11:    if HASDEPENDENCY(fileA, fileB) then ▷ If fileA depends on fileB\n12:    graphs[fileB].append(fileA) ▷ Add edge from B to A\n13:    inDegree[fileA] ← inDegree[fileA] + 1 ▷ Increment in-degree of A\n14:    end if\n15:    end for\n16:    end for\n17:\n18:    subgraphs ← getDisconnectedSubgraphs(graphs) ▷ Identify disconnected subgraphs\n19:    allResults ← []\n20:    for each subgraph in subgraphs do\n21:    results ← []\n22:    while length(results) ≠ NumberOfNodes(subgraph) do\n23:    file ← argmin({inDegree[file] | file ∈ subgraph and file∉ results})\n24:    for each node in graphs[file] do\n25:    inDegree[node] ← inDegree[node] - 1\n26:    end for\n27:    results.append(file)\n28:    end while\n29:    allResults.append(results)\n30:    end for\n31:\n32:    return allResults\n33: end procedure ",
+        "bbox": [
+            115,
+            120,
+            887,
+            657
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            110,
+            682,
+            884,
+            828
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "The algorithm 1 describes a topological sort for dependency analysis on a list of files within the same project. Initially, it sets up two data structures: an empty adjacency list named \"graphs\" to represent dependencies between files and an empty dictionary called \"inDegree\" for storing the in-degrees of each file. The algorithm then iterates over each file pair to identify dependencies, updating \"graphs\" and \"inDegree\" accordingly. Next, it identifies any disconnected subgraphs within the overall dependency graph. For each subgraph, the algorithm employs a modified topological sort. Unlike the standard approach that selects nodes with zero in-degrees, this algorithm selects nodes with minimal in-degrees, which allows it to handle cycles within the graph. Selected nodes are added to a \"results\" list, and the in-degrees of their connected nodes are decreased. This process continues until a topologically sorted sequence is generated for each subgraph. The algorithm concludes by returning a list of these sorted sequences, and each sequence’s files are concatenated to form a single training sample. To incorporate file path information, a comment indicating the file’s path is added at the beginning of each file. This method ensures that the path information is preserved in the training data. ",
+        "bbox": [
+            110,
+            834,
+            884,
+            902
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "page_number",
+        "text": "4 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            935
+        ],
+        "page_idx": 3
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            110,
+            101,
+            882,
+            262
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "2.3. Repo-Level Deduplication ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            285,
+            378,
+            302
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "Recent studies have demonstrated the significant performance improvements that can be achieved by deduplicating training datasets for Large Language Models (LLMs). Lee et al. (2022) have shown that language model training corpora often contain numerous near-duplicates, and the performance of LLMs can be enhanced by removing long repetitive substrings. Kocetkov et al. (2022) have applied a near-deduplication method to training data, resulting in dramatic improvements, and they emphasize that near-deduplication is a crucial preprocessing step for achieving competitive performance on code benchmark tasks. In our dataset, we have also employed near-deduplication. However, there is a distinction in our approach compared to previous works. We perform deduplication at the repository level of code, rather than at the file level, as the latter approach may filter out certain files within a repository, potentially disrupting the structure of the repository. Specifically, we treat the concatenated code from the repository level as a single sample and apply the same near-deduplication algorithm to ensure the integrity of the repository structure. ",
+        "bbox": [
+            110,
+            312,
+            882,
+            521
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "2.4. Quality Screening and Decontamination ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            544,
+            495,
+            558
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "text",
+        "text": "In addition to applying the filtering rules mentioned in Section 2.1, we also employ a compiler and a quality model, combined with heuristic rules, to further filter out low-quality data. This includes code with syntax errors, poor readability, and low modularity. We provide the statistical summary of source code in Table 1, which includes a total of 87 languages, detailing the disk size, number of files, and percentage for each language. The total data volume is 798 GB with 603 million files. To ensure that our code training data is not contaminated by information from the test set, which may be present on GitHub, we’ve implemented an n-gram filtering process. This process involves the removal of any code segments that match specific criteria. Specifically, we filter out files containing docstrings, questions, and solutions from sources such as HumanEval (Chen et al., 2021), MBPP (Austin et al., 2021), GSM8K (Cobbe et al., 2021) and MATH (Hendrycks et al., 2021). For the filtering criteria, we apply the following rules: if a piece of code includes a 10-gram string identical to any in the test data, it is excluded from our training data. In cases where the test data comprises strings that are shorter than 10-grams but no less than 3-grams, we use an exact match approach for filtering. ",
+        "bbox": [
+            110,
+            571,
+            882,
+            797
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "page_number",
+        "text": "5 ",
+        "bbox": [
+            492,
+            922,
+            505,
+            935
+        ],
+        "page_idx": 4
+    },
+    {
+        "type": "table",
+        "img_path": "images/271dd8b5ba6ee652e9978c646a611c7d5fbc4e057a90c7a148bfa666ce6c9807.jpg",
+        "table_caption": [
+            "Table 1 | A summary of the cleaned training data for the selected programming languages. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Language</td><td>Size (GB)</td><td>Files (k)</td><td>Prop. (%)</td><td>Language</td><td>Size (GB)</td><td>Files (k)</td><td>Prop. (%)</td></tr><tr><td>Ada</td><td>0.91</td><td>126</td><td>0.11</td><td>Literate Haskell</td><td>0.16</td><td>20</td><td>0.02</td></tr><tr><td>Agda</td><td>0.26</td><td>59</td><td>0.03</td><td>Lua</td><td>0.82</td><td>138</td><td>0.10</td></tr><tr><td>Alloy</td><td>0.07</td><td>24</td><td>0.01</td><td>Makefile</td><td>0.92</td><td>460</td><td>0.12</td></tr><tr><td>ANTLR</td><td>0.19</td><td>38</td><td>0.02</td><td>Maple</td><td>0.03</td><td>6</td><td>0.00</td></tr><tr><td>AppleScript</td><td>0.03</td><td>17</td><td>0.00</td><td>Mathematica</td><td>0.82</td><td>10</td><td>0.10</td></tr><tr><td>Assembly</td><td>0.91</td><td>794</td><td>0.11</td><td>MATLAB</td><td>0.01</td><td>1</td><td>0.00</td></tr><tr><td>Augeas</td><td>0.00</td><td>1</td><td>0.00</td><td>OCaml</td><td>0.91</td><td>139</td><td>0.11</td></tr><tr><td>AWK</td><td>0.09</td><td>53</td><td>0.01</td><td>Pascal</td><td>0.79</td><td>470</td><td>0.10</td></tr><tr><td>Batchfile</td><td>0.92</td><td>859</td><td>0.12</td><td>Perl</td><td>0.81</td><td>148</td><td>0.10</td></tr><tr><td>Bluespec</td><td>0.10</td><td>15</td><td>0.01</td><td>PHP</td><td>58.92</td><td>40,627</td><td>7.38</td></tr><tr><td>C</td><td>28.64</td><td>27,111</td><td>3.59</td><td>PowerShell</td><td>0.91</td><td>236</td><td>0.11</td></tr><tr><td>C#</td><td>58.56</td><td>53,739</td><td>7.34</td><td>Prolog</td><td>0.03</td><td>5</td><td>0.00</td></tr><tr><td>Clojure</td><td>0.90</td><td>295</td><td>0.11</td><td>Protocol Buffer</td><td>0.92</td><td>391</td><td>0.12</td></tr><tr><td>CMake</td><td>0.90</td><td>359</td><td>0.11</td><td>Python</td><td>120.68</td><td>75,188</td><td>15.12</td></tr><tr><td>CoffeeScript</td><td>0.92</td><td>361</td><td>0.12</td><td>R</td><td>0.92</td><td>158</td><td>0.11</td></tr><tr><td>Common Lisp</td><td>0.92</td><td>105</td><td>0.11</td><td>Racket</td><td>0.09</td><td>13</td><td>0.01</td></tr><tr><td>C++</td><td>90.87</td><td>36,006</td><td>11.39</td><td>RMarkdown</td><td>6.83</td><td>1,606</td><td>0.86</td></tr><tr><td>CSS</td><td>5.63</td><td>11,638</td><td>0.71</td><td>Ruby</td><td>15.01</td><td>18,526</td><td>1.88</td></tr><tr><td>CUDA</td><td>0.91</td><td>115</td><td>0.11</td><td>Rust</td><td>0.61</td><td>692</td><td>0.08</td></tr><tr><td>Dart</td><td>0.89</td><td>264</td><td>0.11</td><td>SAS</td><td>0.92</td><td>70</td><td>0.11</td></tr><tr><td>Dockerfile</td><td>0.04</td><td>48</td><td>0.00</td><td>Scala</td><td>0.81</td><td>971</td><td>0.10</td></tr><tr><td>Elixir</td><td>0.91</td><td>549</td><td>0.11</td><td>Scheme</td><td>0.92</td><td>216</td><td>0.12</td></tr><tr><td>Elm</td><td>0.92</td><td>232</td><td>0.12</td><td>Shell</td><td>13.92</td><td>10,890</td><td>1.74</td></tr><tr><td>Emacs Lisp</td><td>0.91</td><td>148</td><td>0.11</td><td>Smalltalk</td><td>0.92</td><td>880</td><td>0.12</td></tr><tr><td>Erlang</td><td>0.92</td><td>145</td><td>0.12</td><td>Solidity</td><td>0.85</td><td>83</td><td>0.11</td></tr><tr><td>F#</td><td>0.91</td><td>340</td><td>0.11</td><td>Sparql</td><td>0.10</td><td>88</td><td>0.01</td></tr><tr><td>Fortran</td><td>1.67</td><td>654</td><td>0.21</td><td>SQL</td><td>15.14</td><td>7,009</td><td>1.90</td></tr><tr><td>GLSL</td><td>0.92</td><td>296</td><td>0.11</td><td>Stan</td><td>0.20</td><td>41</td><td>0.03</td></tr><tr><td>Go</td><td>2.58</td><td>1,365</td><td>0.32</td><td>Standard ML</td><td>0.74</td><td>117</td><td>0.09</td></tr><tr><td>Groovy</td><td>0.89</td><td>340</td><td>0.11</td><td>Stata</td><td>0.91</td><td>122</td><td>0.11</td></tr><tr><td>Haskell</td><td>0.87</td><td>213</td><td>0.11</td><td>SystemVerilog</td><td>0.91</td><td>165</td><td>0.11</td></tr><tr><td>HTML</td><td>30.05</td><td>14,998</td><td>3.77</td><td>TCL</td><td>0.90</td><td>110</td><td>0.11</td></tr><tr><td>Idris</td><td>0.11</td><td>32</td><td>0.01</td><td>Tcsh</td><td>0.17</td><td>53</td><td>0.02</td></tr><tr><td>Isabelle</td><td>0.74</td><td>39</td><td>0.09</td><td>Tex</td><td>20.46</td><td>2,867</td><td>2.56</td></tr><tr><td>Java</td><td>148.66</td><td>134,367</td><td>18.63</td><td>Thrift</td><td>0.05</td><td>21</td><td>0.01</td></tr><tr><td>Java Server Pages</td><td>0.86</td><td>1072</td><td>0.11</td><td>TypeScript</td><td>60.62</td><td>62,432</td><td>7.60</td></tr><tr><td>JavaScript</td><td>53.84</td><td>71,895</td><td>6.75</td><td>Verilog</td><td>0.01</td><td>1</td><td>0.00</td></tr><tr><td>JSON</td><td>4.61</td><td>11956</td><td>0.58</td><td>VHDL</td><td>0.85</td><td>392</td><td>0.11</td></tr><tr><td>Julia</td><td>0.92</td><td>202</td><td>0.12</td><td>Visual Basic</td><td>0.75</td><td>73</td><td>0.09</td></tr><tr><td>Jupyter Notebook</td><td>14.38</td><td>2,555</td><td>1.80</td><td>XSLT</td><td>0.36</td><td>48</td><td>0.04</td></tr><tr><td>Kotlin</td><td>6.00</td><td>3,121</td><td>0.75</td><td>Yacc</td><td>0.72</td><td>67</td><td>0.09</td></tr><tr><td>Lean</td><td>0.52</td><td>68</td><td>0.07</td><td>YAML</td><td>0.74</td><td>890</td><td>0.09</td></tr><tr><td>Literate Agda</td><td>0.05</td><td>4</td><td>0.01</td><td>Zig</td><td>0.81</td><td>70</td><td>0.10</td></tr><tr><td>Literate CoffeeScript</td><td>0.01</td><td>3</td><td>0.00</td><td>Total</td><td>797.92</td><td>603,173</td><td>100.00</td></tr></table>",
+        "bbox": [
+            115,
+            97,
+            882,
+            701
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "3. Training Policy ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            751,
+            300,
+            769
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "3.1. Training Strategy ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            784,
+            302,
+            801
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "3.1.1. Next Token Prediction ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            810,
+            352,
+            826
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "The first training objective for our model is known as next token prediction. In this process, various files are concatenated to form a fixed-length entry. Then, these entries are used to train the model, enabling it to predict the subsequent token based on the provided context. ",
+        "bbox": [
+            112,
+            837,
+            884,
+            885
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "page_number",
+        "text": "6 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            935
+        ],
+        "page_idx": 5
+    },
+    {
+        "type": "text",
+        "text": "3.1.2. Fill-in-the-Middle ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            101,
+            319,
+            115
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "The second training objective for our model is known as fill-in-the-middle. In the code pre-training scenario, it is often necessary to generate corresponding inserted content based on the given context and subsequent text. Due to specific dependencies in a programming language, relying solely on next token prediction is insufficient to learn this fill-in-the-middle capability. Therefore, several approaches (Bavarian et al., 2022; Li et al., 2023) propose the pretraining method of Fill-in-the-Midlle (FIM). This approach involves randomly dividing the text into three parts, then shuffling the order of these parts and connecting them with special characters. This method aims to incorporate a fill-in-the-blank pretraining task during the training process. Within the FIM methodology, two distinct modes are employed: PSM (Prefix-Suffix-Middle) and SPM (Suffix-Prefix-Middle). In the PSM mode, the training corpus is organized in the sequence of ?????? ?? ????, ???? ?? ?? ????, ????????????, aligning the text in a way that the middle segment is flanked by the prefix and suffix. Conversely, the SPM mode arranges the segments as ???? ?? ?? ????, ?????? ?? ????, ????????????, presenting a different structural challenge. These modes are instrumental in enhancing the model’s capability to handle various structural arrangements in code, providing a robust training framework for advanced code prediction tasks. ",
+        "bbox": [
+            110,
+            127,
+            885,
+            370
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/b85341466e9835c024ca941bed7276323aaa771520c7c28be498f4355d8d3377.jpg",
+        "content": "| Steps | Green Line | Red Line | Cyan Line | Blue Line |\n|-------|------------|----------|-----------|-----------|\n| 0     | 0.000      | 0.000    | 0.000     | 0.000     |\n| 2000  | 0.100      | 0.100    | 0.100     | 0.075     |\n| 4000  | 0.150      | 0.125    | 0.125     | 0.100     |\n| 6000  | 0.175      | 0.150    | 0.150     | 0.125     |\n| 8000  | 0.190      | 0.160    | 0.160     | 0.150     |\n| 10000 | 0.200      | 0.160    | 0.160     | 0.150     |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            124,
+            388,
+            349,
+            527
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/2577a315207e406e4f6e61a85c7d1793777c97a9948ce748807ab4c7e2b565f7.jpg",
+        "content": "| Steps | Blue Line | Red Line | Cyan Line |\n|-------|-----------|----------|-----------|\n| 0     | 0.0       | 0.0      | 0.0       |\n| 2000  | 0.5       | 0.3      | 0.2       |\n| 4000  | 0.65      | 0.55     | 0.35      |\n| 6000  | 0.65      | 0.6      | 0.4       |\n| 8000  | 0.6       | 0.62     | 0.42      |",
+        "chart_caption": [],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            359,
+            388,
+            574,
+            527
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "chart",
+        "img_path": "images/f6fab04c54ff5ac3886f23e76e50f62efcf235d2e3e39a4f9690933c046bc2c9.jpg",
+        "content": "| Steps | fim_0 | fim_0.5 | fim_1.0 | msp_0.5 |\n| ----- | ----- | ------- | ------- | ------- |\n| 0     | 0.00  | 0.00    | 0.00    | 0.00    |\n| 2000  | 0.10  | 0.08    | 0.05    | 0.07    |\n| 4000  | 0.18  | 0.16    | 0.12    | 0.15    |\n| 6000  | 0.22  | 0.20    | 0.15    | 0.18    |\n| 8000  | 0.24  | 0.22    | 0.17    | 0.20    |\n| 10000 | 0.25  | 0.23    | 0.18    | 0.22    |",
+        "chart_caption": [
+            "Figure 3 | The effectiveness of using FIM objective. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "line",
+        "bbox": [
+            588,
+            388,
+            860,
+            527
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "To determine the effectiveness of various hyperparameters within the FIM approach, we conducted a series of ablation experiments. ",
+        "bbox": [
+            112,
+            580,
+            882,
+            613
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Experiment Settings: In this experiment, we employ DeepSeek-Coder-Base 1.3B as our model architecture. We focused on a Python subset from our training dataset to streamline the experimental process. Our primary objective was to assess the efficacy of the Fill-in-the-Middle (FIM) technique, utilizing the HumanEval-FIM benchmark (Fried et al., 2022). This benchmark specializes in a single-line FIM task for Python, in which one line of code from a HumanEval solution is randomly obscured, testing the model’s proficiency in predicting the missing line. We hypothesize that the PSM mode may exhibit subtle differences compared to the traditional next-token prediction objective. This is primarily because PSM involves rearranging the order of the original text, potentially impacting the learning dynamics of the model. Therefore, we implement the PSM mode for FIM across four distinct configurations: 0% FIM rate, 50% FIM rate, 100% FIM rate, and 50% MSP rate. The Masked Span Prediction (MSP) strategy, initially introduced in T5 (Raffel et al., 2023), conceals multiple text spans and trains the model to reconstruct these segments. According to CodeGen2.5 (Nijkamp et al., 2023), MSP may enhance FIM performance compared to PSM. Thus, we include this method in our comparative analysis. ",
+        "bbox": [
+            110,
+            620,
+            884,
+            847
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "Results: The outcomes of our experiment are illustrated in Figure 3. While the model demonstrates peak performance on the HumanEval-FIM with a 100% FIM rate, this configuration also results in the weakest code completion capability. This indicates a trade-off between FIM and code completion abilities. Moreover, we observe that with a 50% PSM rate, the model outperforms the MSP strategy. To achieve a balance between FIM efficiency and code completion proficiency, we ultimately choose the 50% PSM rate as our preferred training policy. ",
+        "bbox": [
+            110,
+            853,
+            882,
+            902
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "page_number",
+        "text": "7 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            934
+        ],
+        "page_idx": 6
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            110,
+            101,
+            882,
+            151
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "In our implementation, we have introduced three sentinel tokens specifically for this task. For each code file, we initially divide its content into three segments, denoted as $f _ { p r e } , f _ { m i d d l e } ,$ , and $f _ { s u f }$ . Using the PSM mode, we construct the training example as follows: ",
+        "bbox": [
+            112,
+            156,
+            882,
+            206
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "equation",
+        "text": "$$\n<   | \\text {fim\\_start} | > f _ {p r e} <   | \\text {fim\\_hole} | > f _ {s u f} <   | \\text {fim\\_end} | > f _ {m i d d l e} <   | \\text {eos\\_token} | >\n$$",
+        "text_format": "latex",
+        "bbox": [
+            161,
+            217,
+            836,
+            237
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "We implement the Fill-in-the-Middle (FIM) method at the document level before the packing process, as proposed in the original work by Bavarian et al. (2022). This is done with an FIM rate of 0.5, following the PSM mode. ",
+        "bbox": [
+            110,
+            247,
+            882,
+            297
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.2. Tokenizer ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            319,
+            240,
+            334
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "For the tokenization process, we employ the HuggingFace Tokenizer library2 to train Byte Pair Encoding (BPE) tokenizers, as outlined in Sennrich et al. (2015) (Sennrich et al., 2015), on a subset of our training corpus. Ultimately, we utilize a tokenizer configured with a vocabulary size of 32,000. ",
+        "bbox": [
+            110,
+            344,
+            882,
+            411
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.3. Model Architecture ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            432,
+            319,
+            449
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "We develop a range of models with varying parameters to cater to diverse applications, including models with 1.3B, 6.7B, and 33B parameters. These models are built upon the same framework as the DeepSeek Large Language Model (LLM) outlined by DeepSeek-AI (2024). Each model is a decoder-only Transformer, incorporating Rotary Position Embedding (RoPE) as described by Su et al. (2023). Notably, the DeepSeek 33B model integrates Grouped-Query-Attention (GQA) with a group size of $8 ,$ enhancing both training and inference efficiency. Additionally, we employ FlashAttention $\\mathbf { v } 2$ (Dao, 2023) to expedite the computation involved in the attention mechanism. The architectural details of our models are summarized in Table 2. ",
+        "bbox": [
+            110,
+            458,
+            882,
+            589
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.4. Optimization ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            612,
+            270,
+            627
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Following DeepSeek LLM (DeepSeek-AI, 2024), we use AdamW (Loshchilov and Hutter, 2019) as the optimizer with $\\beta _ { 1 }$ and $\\beta _ { 2 }$ values of 0.9 and 0.95. We adapt batch sizes and learning rates by the scaling laws suggested in DeepSeek LLM. For the learning rate scheduling, we implement a three-stage policy, which includes 2000 warm-up steps, and set the final learning rate to 10% of the initial rate. Notably, the learning rate at each stage is scaled down to $\\scriptstyle { \\sqrt { \\frac { 1 } { 1 0 } } }$ of the preceding stage’s rate, following the guidelines established in DeepSeek LLM (DeepSeek-AI, 2024). ",
+        "bbox": [
+            110,
+            638,
+            882,
+            743
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "3.5. Environments ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            766,
+            275,
+            780
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "text",
+        "text": "Our experiments are conducted using the HAI-LLM (High-Flyer, 2023) framework, known for its efficiency and lightweight approach in training large language models. This framework incorporates a variety of parallelism strategies to optimize computational efficiency. These include tensor parallelism (Korthikanti et al., 2023), alongside ZeRO data parallelism (Rajbhandari et al., 2020) and PipeDream pipeline parallelism (Narayanan et al., 2019). Our experiments utilize clusters outfitted with NVIDIA A100 and H800 GPUs. In the A100 cluster, each node is configured with 8 GPUs, interconnected in pairs using NVLink bridges. The H800 cluster is similarly arranged, with each node containing 8 GPUs. These GPUs are interconnected using a combination of NVLink and NVSwitch technologies, ensuring efficient data transfer within nodes. To facilitate seamless communication between nodes in both A100 and H800 clusters, we employ InfiniBand interconnects, known for their high throughput and low latency. This setup provides a robust and efficient infrastructure for our computational experiments. ",
+        "bbox": [
+            110,
+            791,
+            882,
+            873
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_footnote",
+        "text": "2https://github.com/huggingface/tokenizers ",
+        "bbox": [
+            137,
+            887,
+            509,
+            903
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "page_number",
+        "text": "8 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            935
+        ],
+        "page_idx": 7
+    },
+    {
+        "type": "table",
+        "img_path": "images/35146f49c97606dbff842424c67cac48797fee45bbea87b25becf746596b0e85.jpg",
+        "table_caption": [
+            "Table 2 | Hyperparameters of DeepSeek-Coder. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Hyperparameter</td><td>DeepSeek-Coder 1.3B</td><td>DeepSeek-Coder 6.7B</td><td>DeepSeek-Coder 33B</td></tr><tr><td>Hidden Activation</td><td>SwiGLU</td><td>SwiGLU</td><td>SwiGLU</td></tr><tr><td>Hidden size</td><td>2048</td><td>4096</td><td>7168</td></tr><tr><td>Intermediate size</td><td>5504</td><td>11008</td><td>19200</td></tr><tr><td>Hidden layers number</td><td>24</td><td>32</td><td>62</td></tr><tr><td>Attention heads number</td><td>16</td><td>32</td><td>56</td></tr><tr><td>Attention</td><td>Multi-head</td><td>Multi-head</td><td>Grouped-query (8)</td></tr><tr><td>Batch Size</td><td>1024</td><td>2304</td><td>3840</td></tr><tr><td>Max Learning Rate</td><td>5.3e-4</td><td>4.2e-4</td><td>3.5e-4</td></tr></table>",
+        "bbox": [
+            127,
+            98,
+            870,
+            243
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            110,
+            294,
+            882,
+            409
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.6. Long Context ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            422,
+            270,
+            438
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "To enhance the capabilities of DeepSeek-Coder in handling extended contexts, particularly for scenarios like repository-level code processing, we have reconfigured the RoPE (Su et al., 2023) parameters to extend the default context window. Following previous practices (Chen et al., 2023; kaiokendev, 2023), we employed a linear scaling strategy, increasing the scaling factor from 1 to 4 and altering the base frequency from 10000 to 100000. The model underwent an additional 1000 steps of training, using a batch size of 512 and a sequence length of 16K. The learning rate was maintained as in the final pre-training phase. Theoretically, these modifications enable our model to process up to 64K tokens in context. However, empirical observations suggest that the model delivers its most reliable outputs within a 16K token range. Future research will continue to refine and evaluate the long-context adaptation methodology, aiming to further enhance DeepSeek-Coder’s efficiency and user-friendliness in processing extended contexts. ",
+        "bbox": [
+            110,
+            448,
+            884,
+            625
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "3.7. Instruction Tuning ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            640,
+            314,
+            657
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "We develop DeepSeek-Coder-Instruct by enhancing the DeepSeek-Coder-Base through instructionbased fine-tuning using high-quality data. This data comprises helpful and impartial human instructions, structured by the Alpaca Instruction format (Taori et al., 2023). To demarcate each dialogue turn, we employed a unique delimiter token <|EOT|> to signify the conclusion of each segment. For training, we use a cosine schedule with 100 warm-up steps and an initial learning rate 1e-5. We also use a batch size of 4M tokens and 2B tokens in total. ",
+        "bbox": [
+            110,
+            665,
+            895,
+            763
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "text",
+        "text": "An example of using DeepSeek-Coder-Instruct 34B is depicted in Figure 4. This example is a multi-turn dialogue scenario for building a snake game. Initially, we ask the model to write a game snake using pygame. The model successfully creates a basic snake game that can run without bugs. To improve the game, we further request adding a scoring system in the top left corner. The model then introduces a \"score\" variable and a \"display\\_score\" function, along with an explanation of how to integrate these features. This example illustrates DeepSeek-Coder-Instruct’s ability to provide complete solutions in multi-turn dialogue settings. More cases can be found in the Appendix A. ",
+        "bbox": [
+            110,
+            771,
+            884,
+            902
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "page_number",
+        "text": "9 ",
+        "bbox": [
+            492,
+            923,
+            505,
+            935
+        ],
+        "page_idx": 8
+    },
+    {
+        "type": "image",
+        "img_path": "images/e2f8b49d07b9ae196ebded0a57c80deb6a1dac8355623e630dc1de27d46827ac.jpg",
+        "image_caption": [
+            "Figure 4 | An example of responses from DeepSeek-Coder-Instruct 33B in a multi-turn setting. "
+        ],
+        "image_footnote": [],
+        "content": "```mermaid\ngraph TD\n    A[\"Q1: Write a game snake using pygame\"] --> B[\"Run Code\"]\n    B --> C[\"Snake Game\"]\n    A --> D[\"Q2: Add a scoring system in the top left corner\"]\n    D --> E[\"Run Code\"]\n    E --> F[\"Snake Game\"]\n```",
+        "sub_type": "flowchart",
+        "bbox": [
+            122,
+            99,
+            873,
+            514
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "4. Experimental Results ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            564,
+            359,
+            582
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "In this section, we evaluate DeepSeek-Coder on four tasks, including code generation (§4.1), FIM code completion (§4.2), cross-file code completion (§4.3) and program-based math reasoning (§4.4). We compare DeepSeek-Coder with the previous state-of-the-art large language models: ",
+        "bbox": [
+            112,
+            595,
+            882,
+            644
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "list",
+        "sub_type": "text",
+        "list_items": [
+            "• CodeGeeX2 (Zheng et al., 2023) represents the second generation of the multilingual code generation model CodeGeeX. It is developed using the ChatGLM2 (Du et al., 2022) architecture and is enhanced with an extensive dataset of coding examples. ",
+            "• StarCoder (Li et al., 2023) is a publicly accessible model with a substantial parameter count of 15 billion. It is specifically trained on a meticulously curated subset of the Stack dataset (Kocetkov et al., 2022), covering 86 programming languages, ensuring its proficiency across a wide range of coding tasks. ",
+            "• CodeLlama (Roziere et al., 2023) encompasses a series of code-centric Large Language Models (LLMs) that are derivatives of LLaMA2 (Touvron et al., 2023). Available in three sizes — 7B, 13B, and 34B — these models undergo continued training on a vast 500 billion token code corpus, building upon the foundational LLaMA2 architecture. ",
+            "• code-cushman-001 Chen et al. (2021) is a 12 billion parameter model developed by OpenAI and served as the initial model for Github Copilot. ",
+            "• GPT-3.5 and GPT-4 (OpenAI, 2023) are advanced generative AI models developed by OpenAI. While they are not explicitly trained for code generation, they also demonstrate "
+        ],
+        "bbox": [
+            139,
+            659,
+            882,
+            904
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "page_number",
+        "text": "10 ",
+        "bbox": [
+            487,
+            923,
+            509,
+            935
+        ],
+        "page_idx": 9
+    },
+    {
+        "type": "text",
+        "text": "notable performance in this domain. Their effectiveness in handling code generation tasks is largely attributed to their massive scale in terms of parameter count. ",
+        "bbox": [
+            159,
+            101,
+            880,
+            133
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "4.1. Code Generation ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            156,
+            299,
+            171
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "HumanEval and MBPP Benchmarks The HumanEval (Chen et al., 2021) and MBPP (Austin et al., 2021) benchmarks are widely used for evaluating code LLMs. HumanEval consists of 164 hand-written Python problems that are validated using test cases to assess the code generated by a Code LLM in a zero-shot setting, while the MBPP benchmark includes 500 problems in a few-shot setting. To evaluate the model’s multilingual capabilities, we expanded the Python problems of Humaneval Benchmark to seven additional commonly used programming languages, namely C++, Java, PHP, TypeScript (TS), C#, Bash, and JavaScript (JS) (Cassano et al., 2023). For both benchmarks, We adopted a greedy search approach and re-implemented the baseline results using the same script and environment for fair comparison. ",
+        "bbox": [
+            110,
+            181,
+            885,
+            329
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "table",
+        "img_path": "images/ade2939230fe995229dc66311f8aeeb3e720fcb7fc4aa8078bf0ed9aa0996525.jpg",
+        "table_caption": [
+            "Table 3 | Performance of approaches on the Multilingual HumanEval and MBPP Benchmarks. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Size</td><td>Python</td><td>C++</td><td>Java</td><td>PHP</td><td>TS</td><td>C#</td><td>Bash</td><td>JS</td><td>Avg</td><td>MBPP</td></tr><tr><td colspan=\"12\">Multilingual Base Models</td></tr><tr><td>code-cushman-001</td><td>12B</td><td>33.5%</td><td>31.9%</td><td>30.6%</td><td>28.9%</td><td>31.3%</td><td>22.1%</td><td>11.7%</td><td>-</td><td>-</td><td>-</td></tr><tr><td>CodeGeeX2</td><td>6B</td><td>36.0%</td><td>29.2%</td><td>25.9%</td><td>23.6%</td><td>20.8%</td><td>29.7%</td><td>6.3%</td><td>24.8%</td><td>24.5%</td><td>36.2%</td></tr><tr><td>StarCoderBase</td><td>16B</td><td>31.7%</td><td>31.1%</td><td>28.5%</td><td>25.4%</td><td>34.0%</td><td>34.8%</td><td>8.9%</td><td>29.8%</td><td>28.0%</td><td>42.8%</td></tr><tr><td>CodeLlama</td><td>7B</td><td>31.7%</td><td>29.8%</td><td>34.2%</td><td>23.6%</td><td>36.5%</td><td>36.7%</td><td>12.0%</td><td>29.2%</td><td>29.2%</td><td>38.6%</td></tr><tr><td>CodeLlama</td><td>13B</td><td>36.0%</td><td>37.9%</td><td>38.0%</td><td>34.2%</td><td>45.2%</td><td>43.0%</td><td>16.5%</td><td>32.3%</td><td>35.4%</td><td>48.4%</td></tr><tr><td>CodeLlama</td><td>34B</td><td>48.2%</td><td>44.7%</td><td>44.9%</td><td>41.0%</td><td>42.1%</td><td>48.7%</td><td>15.8%</td><td>42.2%</td><td>41.0%</td><td>55.2%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>1.3B</td><td>34.8%</td><td>31.1%</td><td>32.3%</td><td>24.2%</td><td>28.9%</td><td>36.7%</td><td>10.1%</td><td>28.6%</td><td>28.3%</td><td>46.2%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>6.7B</td><td>49.4%</td><td>50.3%</td><td>43.0%</td><td>38.5%</td><td>49.7%</td><td>50.0%</td><td>28.5%</td><td>48.4%</td><td>44.7%</td><td>60.6%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>33B</td><td>56.1%</td><td>58.4%</td><td>51.9%</td><td>44.1%</td><td>52.8%</td><td>51.3%</td><td>32.3%</td><td>55.3%</td><td>50.3%</td><td>66.0%</td></tr><tr><td colspan=\"12\">Instruction-Tuned Models</td></tr><tr><td>GPT-3.5-Turbo</td><td>-</td><td>76.2%</td><td>63.4%</td><td>69.2%</td><td>60.9%</td><td>69.1%</td><td>70.8%</td><td>42.4%</td><td>67.1%</td><td>64.9%</td><td>70.8%</td></tr><tr><td>GPT-4</td><td>-</td><td>84.1%</td><td>76.4%</td><td>81.6%</td><td>77.2%</td><td>77.4%</td><td>79.1%</td><td>58.2%</td><td>78.0%</td><td>76.5%</td><td>80.0%</td></tr><tr><td>DeepSeek-Coder-Instruct</td><td>1.3B</td><td>65.2%</td><td>45.3%</td><td>51.9%</td><td>45.3%</td><td>59.7%</td><td>55.1%</td><td>12.7%</td><td>52.2%</td><td>48.4%</td><td>49.4%</td></tr><tr><td>DeepSeek-Coder-Instruct</td><td>6.7B</td><td>78.6%</td><td>63.4%</td><td>68.4%</td><td>68.9%</td><td>67.2%</td><td>72.8%</td><td>36.7%</td><td>72.7%</td><td>66.1%</td><td>65.4%</td></tr><tr><td>DeepSeek-Coder-Instruct</td><td>33B</td><td>79.3%</td><td>68.9%</td><td>73.4%</td><td>72.7%</td><td>67.9%</td><td>74.1%</td><td>43.0%</td><td>73.9%</td><td>69.2%</td><td>70.0%</td></tr></table>",
+        "bbox": [
+            114,
+            338,
+            885,
+            583
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "The results are presented in Table 3. As we can see, DeepSeek-Coder-Base achieves stateof-the-art performance with an average accuracy of 50.3% on HumanEval and 66.0% on MBPP. In comparison to the similarly sized open-source model CodeLlama-Base 34B, our model has demonstrated a notable improvement of 9% and 11% in accuracy, respectively. It’s worth noting that even our smaller model, DeepSeek-Coder-Base 6.7B, surpasses the performance of CodeLlama-Base 34B. After instruction fine-tuning, our model surpasses the closed-source GPT-3.5-Turbo model in HumanEval benchmark, significantly reducing the performance gap between OpenAI GPT-4 and open-source models. ",
+        "bbox": [
+            110,
+            623,
+            884,
+            752
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "DS-1000 Benchmark HumanEval and MBPP have a significant drawback in that they rely heavily on straightforward programming tasks that may not accurately represent the kind of code most programmers typically write. In contrast, the DS-1000 benchmark, as introduced in the work by Lai et al. (2023), offers a comprehensive collection of 1,000 practical and realistic data science workflows across seven different libraries. This benchmark evaluates code generation by executing it against specific test cases. What sets DS-1000 apart is its categorization of problems based on the libraries involved, which encompass Matplotlib, NumPy, Pandas, SciPy, Scikit ",
+        "bbox": [
+            110,
+            778,
+            884,
+            892
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "page_number",
+        "text": "11 ",
+        "bbox": [
+            487,
+            923,
+            507,
+            935
+        ],
+        "page_idx": 10
+    },
+    {
+        "type": "text",
+        "text": "Learn, PyTorch, and TensorFlow. The benchmark assesses the performance of base models in the code completion setting and we provide pass@1 results for each library, as well as overall score. ",
+        "bbox": [
+            112,
+            101,
+            882,
+            134
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "The results of DS-1000 benchmark are shown in Table 4. As can be seen from the table, the DeepSeek-Coder model achieves relatively high accuracy in all libraries, demonstrating that our model is not only capable of generating good code but also of using libraries more accurately in real data science workflows. ",
+        "bbox": [
+            112,
+            141,
+            884,
+            206
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "table",
+        "img_path": "images/360f9533f47da85b343c098199fd759366f2493f882d0f043d1ea8b8b5617067.jpg",
+        "table_caption": [
+            "Table 4 | Performance of different approaches on the DS-1000-Tasks. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Size</td><td>Matplotlib</td><td>Numpy</td><td>Pandas</td><td>Pytorch</td><td>Scipy</td><td>Scikit-Learn</td><td>Tensorflow</td><td>Avg</td></tr><tr><td>CodeGeeX2</td><td>6B</td><td>38.7%</td><td>26.8%</td><td>14.4%</td><td>11.8%</td><td>19.8%</td><td>27.0%</td><td>17.8%</td><td>22.9%</td></tr><tr><td>StarCoder-Base</td><td>16B</td><td>43.2%</td><td>29.1%</td><td>11.0%</td><td>20.6%</td><td>23.6%</td><td>32.2%</td><td>15.6%</td><td>24.6%</td></tr><tr><td>CodeLlama-Base</td><td>7B</td><td>41.9%</td><td>24.6%</td><td>14.8%</td><td>16.2%</td><td>18.9%</td><td>17.4%</td><td>17.8%</td><td>22.1%</td></tr><tr><td>CodeLlama-Base</td><td>13B</td><td>46.5%</td><td>28.6%</td><td>18.2%</td><td>19.1%</td><td>18.9%</td><td>27.8%</td><td>33.3%</td><td>26.8%</td></tr><tr><td>CodeLlama-Base</td><td>34B</td><td>50.3%</td><td>42.7%</td><td>23.0%</td><td>25.0%</td><td>28.3%</td><td>33.9%</td><td>40.0%</td><td>34.3%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>1.3B</td><td>32.3%</td><td>21.4%</td><td>9.3%</td><td>8.8%</td><td>8.5%</td><td>16.5%</td><td>8.9%</td><td>16.2%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>6.7B</td><td>48.4%</td><td>35.5%</td><td>20.6%</td><td>19.1%</td><td>22.6%</td><td>38.3%</td><td>24.4%</td><td>30.5%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>33B</td><td>56.1%</td><td>49.6%</td><td>25.8%</td><td>36.8%</td><td>36.8%</td><td>40.0%</td><td>46.7%</td><td>40.2%</td></tr></table>",
+        "bbox": [
+            117,
+            214,
+            884,
+            342
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "LeetCode Contest Benchmark To further validate the model’s capability in real-world programming problems, we construct the LeetCode Contest benchmark3. LeetCode4 presents competition-level problems, offering significant challenges that test the model’s problem understanding and code generation skills. We collected the latest problems from LeetCode Contests to prevent the appearance of both the problems or their solutions in our pre-training data. A total of 180 problems were collected from July 2023 to January 2024. For each problem, we collected 100 test cases to ensure the test coverage. We use the template \"{problem\\_description}\\nPlease complete the code below to solve the above problem:\\n\\`\\`\\`python\\n{code\\_template}\\n\\`\\`\\`\" to build the instruction prompt. ",
+        "bbox": [
+            110,
+            395,
+            882,
+            541
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "The evaluation results are shown in Table 5. In our evaluation, the DeepSeek-Coder models demonstrate remarkable performance over current open-source coding models. Specifically, the DeepSeek-Coder-Instruct 6.7B and 33B achieve Pass@1 scores of 19.4% and 27.8% respectively in this benchmark. This performance notably surpasses existing open-sourced models such as Code-Llama-33B. The DeepSeek-Coder-Instruct 33B is the only open-sourced model that outperforms OpenAI’s GPT-3.5-Turbo in this task. However, there remains a substantial performance gap when compared to the more advanced GPT-4-Turbo. ",
+        "bbox": [
+            110,
+            548,
+            882,
+            662
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "text",
+        "text": "Our analysis indicates that the implementation of Chain-of-Thought (CoT) prompting no tably enhances the capabilities of DeepSeek-Coder-Instruct models. This improvement becomes particularly evident in the more challenging subsets of tasks. By adding the directive, \"You need first to write a step-by-step outline and then write the code.\" following the initial prompt, we have observed enhancements in performance. This observation leads us to believe that the process of first crafting detailed code descriptions assists the model in more effectively understanding and addressing the intricacies of logic and dependencies in coding tasks, particularly those of higher complexity. Therefore, we strongly recommend employing CoT prompting strategies when utilizing DeepSeek-Coder-Instruct models for complex coding challenges. Such an approach promotes a more methodical and logical framework for problem-solving, potentially resulting in more precise and efficient outcomes in code generation tasks. ",
+        "bbox": [
+            110,
+            669,
+            884,
+            847
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_footnote",
+        "text": "3We have published this benchmark in https://github.com/deepseek-ai/DeepSeek-Coder/tree/main /Evaluation/LeetCode. ",
+        "bbox": [
+            112,
+            860,
+            882,
+            887
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_footnote",
+        "text": "4https://leetcode.com/ ",
+        "bbox": [
+            141,
+            888,
+            334,
+            901
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "page_number",
+        "text": "12 ",
+        "bbox": [
+            487,
+            923,
+            510,
+            935
+        ],
+        "page_idx": 11
+    },
+    {
+        "type": "table",
+        "img_path": "images/26b79d1769fe68ace7e5d125239971ae60651b1cc23ba606702d5396b434490a.jpg",
+        "table_caption": [
+            "Table 5 | Performance of different models on the LeetCode Contest Benchmark. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Size</td><td>Easy (45)</td><td>Medium (91)</td><td>Hard (44)</td><td>Overall(180)</td></tr><tr><td>WizardCoder-V1.0</td><td>15B</td><td>17.8%</td><td>1.1%</td><td>0.0%</td><td>5.0%</td></tr><tr><td>CodeLlama-Instruct</td><td>34B</td><td>24.4%</td><td>4.4%</td><td>4.5%</td><td>9.4%</td></tr><tr><td>Phind-CodeLlama-V2</td><td>34B</td><td>26.7%</td><td>8.8%</td><td>9.1%</td><td>13.3%</td></tr><tr><td>GPT-3.5-Turbo</td><td>-</td><td>46.7%</td><td>15.4%</td><td>15.9%</td><td>23.3%</td></tr><tr><td>GPT-3.5-Turbo + CoT</td><td>-</td><td>42.2%</td><td>15.4%</td><td>20.5%</td><td>23.3%</td></tr><tr><td>GPT-4-Turbo</td><td>-</td><td>73.3%</td><td>31.9%</td><td>25.0%</td><td>40.6%</td></tr><tr><td>GPT-4-Turbo + CoT</td><td>-</td><td>71.1%</td><td>35.2%</td><td>25.0%</td><td>41.8%</td></tr><tr><td>DeepSeek-Coder-Instruct</td><td>1.3B</td><td>22.2%</td><td>1.1%</td><td>4.5%</td><td>7.2%</td></tr><tr><td>DeepSeek-Coder-Instruct + CoT</td><td>1.3B</td><td>22.2%</td><td>2.2%</td><td>2.3%</td><td>7.2%</td></tr><tr><td>DeepSeek-Coder-Instruct</td><td>6.7B</td><td>44.4%</td><td>12.1%</td><td>9.1%</td><td>19.4%</td></tr><tr><td>DeepSeek-Coder-Instruct + CoT</td><td>6.7B</td><td>44.4%</td><td>17.6%</td><td>4.5%</td><td>21.1%</td></tr><tr><td>DeepSeek-Coder-Instruct</td><td>33B</td><td>57.8%</td><td>22.0%</td><td>9.1%</td><td>27.8%</td></tr><tr><td>DeepSeek-Coder-Instruct + CoT</td><td>33B</td><td>53.3%</td><td>25.3%</td><td>11.4%</td><td>28.9%</td></tr></table>",
+        "bbox": [
+            137,
+            99,
+            858,
+            326
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "It is important to acknowledge that despite our diligent efforts to gather the most recent code questions for model testing, the possibility of data contamination cannot be entirely ruled out. We observed that the GPT-4-Turbo and DeepSeek-Coder models achieved higher scores in the LeetCode Contest held in July and August. We encourage the research community to consider the potential issue of data contamination when evaluating models in future studies using our released LeetCode data. ",
+        "bbox": [
+            112,
+            379,
+            882,
+            475
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "4.2. Fill-in-the-Middle Code Completion ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            489,
+            462,
+            507
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "DeepSeek-Coder models are trained with a 0.5 FIM (Fill-In-the-Middle) rate during their pretraining phase. This specialized training strategy empowers the model to proficiently generate code by filling in blanks based on the surrounding context, both prefix and suffix, of the given code snippet. This capability is particularly advantageous in the realm of code completion tools. Several open-source models have emerged with similar capabilities. Notable among these are SantaCoder (Allal et al., 2023), StarCoder (Li et al., 2023), and CodeLlama (Roziere et al., 2023). These models have set a precedent in the field of code generation and completion. In evaluating the performance DeepSeek-Coder models, we conducted a comparative analysis with the aforementioned models. The benchmark for this comparison was the Single-Line Infilling benchmarks, encompassing three different programming languages, as proposed by Allal et al. (2023). This benchmark uses the line exact match accuracy as the evaluation metric. ",
+        "bbox": [
+            112,
+            516,
+            884,
+            694
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "table",
+        "img_path": "images/3af317570660d4e04f62114ef00dd0050324c91c7a5dfaaaa418f5b6b582b625.jpg",
+        "table_caption": [
+            "Table 6 | Performance of different approaches on the FIM-Tasks. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Size</td><td>python</td><td>java</td><td>javascript</td><td>Mean</td></tr><tr><td>SantaCoder</td><td>1.1B</td><td>44.0%</td><td>62.0%</td><td>74.0%</td><td>69.0%</td></tr><tr><td>StarCoder</td><td>16B</td><td>62.0%</td><td>73.0%</td><td>74.0%</td><td>69.7%</td></tr><tr><td>CodeLlama-Base</td><td>7B</td><td>67.6%</td><td>74.3%</td><td>80.2%</td><td>69.7%</td></tr><tr><td>CodeLlama-Base</td><td>13B</td><td>68.3%</td><td>77.6%</td><td>80.7%</td><td>75.5%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>1B</td><td>57.4%</td><td>82.2%</td><td>71.7%</td><td>70.4%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>7B</td><td>66.6%</td><td>88.1%</td><td>79.7%</td><td>80.7%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>33B</td><td>65.4%</td><td>86.6%</td><td>82.5%</td><td>81.2%</td></tr></table>",
+        "bbox": [
+            231,
+            706,
+            768,
+            843
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "The evaluation results are shown in Table 6. Despite being the smallest model with a capacity of 1.3 billion parameters, DeepSeek-Coder outperforms its larger counterparts, StarCoder and CodeLlama, in these benchmarks. This superior performance can be attributed to the high quality of the pre-trained data utilized by DeepSeek-Coder. Furthermore, a notable trend observed is the correlation between the size of the model and its performance. As the model size increases, there is a corresponding and responsible enhancement in performance. This trend underscores the importance of model capacity in achieving higher accuracy in code completion tasks. Based on these findings, we recommend the deployment of the DeepSeek-Coder-Base 6.7B model in code completion tools. This recommendation is grounded in the model’s demonstrated balance between efficiency and accuracy. The DeepSeek-Coder-Base 6.7B model, with its substantial parameter size, has proven to be highly effective in the context of code completion, making it an ideal choice for integrating advanced computational capabilities into coding environments. ",
+        "bbox": [
+            142,
+            884,
+            882,
+            902
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "page_number",
+        "text": "13 ",
+        "bbox": [
+            487,
+            923,
+            510,
+            935
+        ],
+        "page_idx": 12
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            110,
+            101,
+            882,
+            294
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.3. Cross-File Code Completion ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            317,
+            394,
+            334
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "In this section, we will evaluate the performance of existing open-source models in cross-file code completion tasks. Unlike code generation discussed in the previous section, cross-file code completion requires the model to access and understand repositories that span multiple files with numerous cross-file dependencies. We use CrossCodeEval (Ding et al., 2023) to evaluate the capabilities of currently available open-source code models of 7B scale in cross-file completion tasks. This dataset is constructed on a diverse set of real-world, open-sourced, permissively licensed repositories in four popular programming languages: Python, Java, TypeScript, and C#. The dataset is specifically designed to strictly require cross-file context for accurate completion. Notably, this dataset was constructed from repositories created between March and June 2023, while our pre-training data only includes code created before February 2023, which ensures that this dataset was not present in our pre-training data, thus avoiding data leakage. ",
+        "bbox": [
+            110,
+            343,
+            884,
+            521
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "table",
+        "img_path": "images/4ba162f46013ec93da30060e523a80f342f870ed882cd89140e3e455450f910f.jpg",
+        "table_caption": [
+            "Table 7 | Performance of different models on cross-file code completion. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Model</td><td rowspan=\"2\">Size</td><td colspan=\"2\">Python</td><td colspan=\"2\">Java</td><td colspan=\"2\">TypeScript</td><td colspan=\"2\">C#</td></tr><tr><td>EM</td><td>ES</td><td>EM</td><td>ES</td><td>EM</td><td>ES</td><td>EM</td><td>ES</td></tr><tr><td>CodeGeex2</td><td>6B</td><td>8.11%</td><td>59.55%</td><td>7.34%</td><td>59.60%</td><td>6.14%</td><td>55.50%</td><td>1.70%</td><td>51.66%</td></tr><tr><td>+ Retrieval</td><td></td><td>10.73%</td><td>61.76%</td><td>10.10%</td><td>59.56%</td><td>7.72%</td><td>55.17%</td><td>4.64%</td><td>52.30%</td></tr><tr><td>StarCoder-Base</td><td>7B</td><td>6.68%</td><td>59.55%</td><td>8.65%</td><td>62.57%</td><td>5.01%</td><td>48.83%</td><td>4.75%</td><td>59.53%</td></tr><tr><td>+ Retrieval</td><td></td><td>13.06%</td><td>64.24%</td><td>15.61%</td><td>64.78%</td><td>7.54%</td><td>42.06%</td><td>14.20%</td><td>65.03%</td></tr><tr><td>CodeLlama-Base</td><td>7B</td><td>7.32%</td><td>59.66%</td><td>9.68%</td><td>62.64%</td><td>8.19%</td><td>58.50%</td><td>4.07%</td><td>59.19%</td></tr><tr><td>+ Retrieval</td><td></td><td>13.02%</td><td>64.30%</td><td>16.41%</td><td>64.64%</td><td>12.34%</td><td>60.64%</td><td>13.19%</td><td>63.04%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>6.7B</td><td>9.53%</td><td>61.65%</td><td>10.80%</td><td>61.77%</td><td>9.59%</td><td>60.17%</td><td>5.26%</td><td>61.32%</td></tr><tr><td>+ Retrieval</td><td></td><td>16.14%</td><td>66.51%</td><td>17.72%</td><td>63.18%</td><td>14.03%</td><td>61.77%</td><td>16.23%</td><td>63.42%</td></tr><tr><td>+ Retrieval w/o Repo Pre-training</td><td></td><td>16.02%</td><td>66.65%</td><td>16.64%</td><td>61.88%</td><td>13.23%</td><td>60.92%</td><td>14.48%</td><td>62.38%</td></tr></table>",
+        "bbox": [
+            114,
+            533,
+            882,
+            700
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "In our evaluation of various models, we set the maximum sequence length to 2048 tokens, the maximum output length to 50 tokens, and a limit of 512 tokens for the cross-file context. For the cross-file context, we utilize the official BM25 search results provided by Ding et al. (2023). Evaluation metrics include exact match and edit similarity. The results, presented in Table 7, demonstrate that DeepSeek-Coder consistently outperforms other models in cross-file completion tasks across multiple languages, showcasing its superior practical application capabilities. When only utilizing file-level code corpus (w/o Repo Pre-training) to pre-train DeepSeek-Coder, we observe a decrease in performance in the Java, TypeScript, and C# languages, indicating the effectiveness of the repository-level pre-training. ",
+        "bbox": [
+            110,
+            740,
+            884,
+            887
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "page_number",
+        "text": "14 ",
+        "bbox": [
+            487,
+            923,
+            510,
+            935
+        ],
+        "page_idx": 13
+    },
+    {
+        "type": "text",
+        "text": "4.4. Program-based Math Reasoning ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            101,
+            426,
+            118
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "Program-based math reasoning involves evaluating a model’s ability to understand and solve mathematical problems through programming. This type of reasoning is critical in fields such as data analysis and scientific computing. To conduct this assessment, we utilize the Program-Aided Math Reasoning (PAL) method as outlined in Gao et al. (2023). This approach is applied across seven distinct benchmarks, each offering unique challenges and contexts. These benchmarks includes GSM8K (Cobbe et al., 2021), MATH (Hendrycks et al., 2021), GSM Hard (Gao et al., 2023), SVAMP (Patel et al., 2021), TabMWP (Lu et al., 2022), ASDiv (Miao et al., 2020) and MAWPS (Gou et al., 2023). In each of these benchmarks, the model is prompted to alternately describe a solution step in natural language and then execute that step with code. As seen in Table 8, DeepSeek-Coder models achieve a remarkable performance across all benchmarks, especially the 33B variant, which demonstrates the potential of using such models in applications that require complex mathematical computations and problem-solving abilities. ",
+        "bbox": [
+            110,
+            127,
+            885,
+            323
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "table",
+        "img_path": "images/9cf7046bfe004cc486f0ae47b6a51db1ecc0a8dbe51156c9d068ae6815a9d848.jpg",
+        "table_caption": [
+            "Table 8 | Performance of different approaches on the program-aid math reasoning tasks. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Model</td><td>Size</td><td>GSM8k</td><td>MATH</td><td>GSM-Hard</td><td>SVAMP</td><td>TabMWP</td><td>ASDiv</td><td>MAWPS</td><td>Avg</td></tr><tr><td colspan=\"10\">Multilingual Base Models</td></tr><tr><td>CodeGeex-2</td><td>7B</td><td>22.2%</td><td>9.7%</td><td>23.6%</td><td>39.0%</td><td>44.6%</td><td>48.5%</td><td>66.0%</td><td>36.2%</td></tr><tr><td>StarCoder-Base</td><td>16B</td><td>23.4%</td><td>10.3%</td><td>23.0%</td><td>42.4%</td><td>45.0%</td><td>54.9%</td><td>81.1%</td><td>40.0%</td></tr><tr><td>CodeLlama-Base</td><td>7B</td><td>31.2%</td><td>12.1%</td><td>30.2%</td><td>54.2%</td><td>52.9%</td><td>59.6%</td><td>82.6%</td><td>46.1%</td></tr><tr><td>CodeLlama-Base</td><td>13B</td><td>43.1%</td><td>14.4%</td><td>40.2%</td><td>59.2%</td><td>60.3%</td><td>63.6%</td><td>85.3%</td><td>52.3%</td></tr><tr><td>CodeLlama-Base</td><td>34B</td><td>58.2%</td><td>21.2%</td><td>51.8%</td><td>70.3%</td><td>69.8%</td><td>70.7%</td><td>91.8%</td><td>62.0%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>1.3B</td><td>14.6%</td><td>16.8%</td><td>14.5%</td><td>36.7%</td><td>30.0%</td><td>48.2%</td><td>62.3%</td><td>31.9%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>6.7B</td><td>43.2%</td><td>19.2%</td><td>40.3%</td><td>58.4%</td><td>67.9%</td><td>67.2%</td><td>87.0%</td><td>54.7%</td></tr><tr><td>DeepSeek-Coder-Base</td><td>33B</td><td>60.7%</td><td>29.1%</td><td>54.1%</td><td>71.6%</td><td>75.3%</td><td>76.7%</td><td>93.3%</td><td>65.8%</td></tr></table>",
+        "bbox": [
+            117,
+            332,
+            885,
+            483
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "5. Continue Pre-Training From General LLM ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            541,
+            568,
+            560
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "To further enhance the natural language understanding and mathematical reasoning abilities of the DeepSeek-Coder model, we perform additional pre-training from the general language model DeepSeek-LLM-7B Base (DeepSeek-AI, 2024) on 2 trillion tokens, resulting in DeepSeek Coder-v1.5 7B. For this pre-training, we specifically use the data sources listed in Table 9. Unlike DeepSeek-Coder, DeepSeek-Coder-v1.5 employs solely a next token prediction objective with a 4K context length during its pre-training phase. ",
+        "bbox": [
+            110,
+            571,
+            887,
+            671
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "table",
+        "img_path": "images/0c36876fd9fab8b8f350482b13855ec2c655005bc88541b673db997f51ab4979.jpg",
+        "table_caption": [
+            "Table 9 | Data sources for DeepSeek-Coder-v1.5 7B pre-training "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td>Data Source</td><td>Percentage</td></tr><tr><td>Source Code</td><td>70%</td></tr><tr><td>Markdown and StackExchange</td><td>10%</td></tr><tr><td>Natural language related to code</td><td>7%</td></tr><tr><td>Natural language related to math</td><td>7%</td></tr><tr><td>Bilingual (Chinese-English) natural language</td><td>6%</td></tr></table>",
+        "bbox": [
+            248,
+            682,
+            749,
+            795
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "text",
+        "text": "We conduct a comparison between DeepSeek-Coder-v1.5 7B and DeepSeek-Coder 6.7B, and re-run all benchmarks using our evaluation pipeline to ensure a fair comparison. We evaluate performance across a wide range of tasks, which can be categorized as follows: ",
+        "bbox": [
+            112,
+            835,
+            882,
+            885
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "page_number",
+        "text": "15 ",
+        "bbox": [
+            487,
+            922,
+            510,
+            935
+        ],
+        "page_idx": 14
+    },
+    {
+        "type": "list",
+        "sub_type": "text",
+        "list_items": [
+            "• Programming: This category includes evaluations in a multilingual setting using the HumanEval dataset by Chen et al. (2021), as well as evaluations in a Python setting using the MBPP dataset by Austin et al. (2021) ",
+            "• Math Reasoning: We assess performance on math reasoning tasks using the GSM8K benchmark (Cobbe et al., 2021) and the MATH (Hendrycks et al., 2021) benchmark [4] These tasks involve solving math problems by generating programs. ",
+            "• Natural Language Our evaluation in natural language tasks includes MMLU (Hendrycks et al., 2020), BBH (Suzgun et al., 2022), HellaSwag (Zellers et al., 2019), Winogrande (Sak aguchi et al., 2021), and ARC-Challenge (Clark et al., 2018) benchmarks. "
+        ],
+        "bbox": [
+            139,
+            101,
+            878,
+            244
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "The results for the Base and Instruct models are presented in Table 10. It is observed that the DeepSeek-Coder-Base-v1.5 model, despite a slight decrease in coding performance, shows marked improvements across most tasks when compared to the DeepSeek-Coder-Base model. In particular, in the Math Reasoning and Natural Language categories, DeepSeek Coder-Base-v1.5 significantly outperforms its predecessor across all benchmarks, which also demonstrates significant improvements in its mathematical reasoning and natural language processing capabilities. ",
+        "bbox": [
+            110,
+            263,
+            880,
+            376
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "table",
+        "img_path": "images/22b54e6dc4f1f2128baa0d6befd7a0bff103d710b96d88fe3d2ca29d984bd04e.jpg",
+        "table_caption": [
+            "Table 10 | Comparative analysis of performance between DeepSeek-Coder-Base and DeepSeek-Coder-Base-v1.5. Math tasks are solved through programming. "
+        ],
+        "table_footnote": [],
+        "table_body": "<table><tr><td rowspan=\"2\">Models</td><td rowspan=\"2\">Size</td><td colspan=\"2\">Programming</td><td colspan=\"2\">Math Reasoning</td><td colspan=\"5\">Natural Language</td></tr><tr><td>HumanEval</td><td>MBPP</td><td>GSM8K</td><td>MATH</td><td>MMLU</td><td>BBH</td><td>HellaSwag</td><td>WinoG</td><td>ARC-C</td></tr><tr><td>DeepSeek-Coder-Base</td><td>6.7B</td><td>44.7%</td><td>60.6%</td><td>43.2%</td><td>19.2%</td><td>36.6%</td><td>44.3%</td><td>53.8%</td><td>57.1%</td><td>32.5%</td></tr><tr><td>DeepSeek-Coder-Base-v1.5</td><td>6.9B</td><td>43.2%</td><td>60.4%</td><td>62.4%</td><td>24.7%</td><td>49.1%</td><td>55.2%</td><td>69.9%</td><td>63.8%</td><td>47.2%</td></tr><tr><td>DeepSeek-Coder-Instruct</td><td>6.7B</td><td>66.1%</td><td>65.4%</td><td>62.8%</td><td>28.6%</td><td>37.2%</td><td>46.9%</td><td>55.0%</td><td>57.6%</td><td>37.4%</td></tr><tr><td>DeepSeek-Coder-Instruct-v1.5</td><td>6.9B</td><td>64.1%</td><td>64.6%</td><td>72.6%</td><td>34.1%</td><td>49.5%</td><td>53.3%</td><td>72.2%</td><td>63.4%</td><td>48.1%</td></tr></table>",
+        "bbox": [
+            119,
+            388,
+            878,
+            488
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "6. Conclusion ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            562,
+            258,
+            579
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "In this technical report, we introduce a series of specialized Large Language Models (LLMs) for coding, named DeepSeek-Coder, available in three distinct scales: 1.3B, 6.7B, and 33B parameters. These models are uniquely trained on a meticulously curated project-level code corpus, utilizing a \"fill-in-the-blank\" pre-training objective to enhance code infilling capabilities. A significant advancement is the extension of the models’ context window to 16,384 tokens, thereby greatly improving their effectiveness in handling extensive code generation tasks. Our evaluations reveal that the most advanced model in our series, DeepSeek-Coder-Base 33B surpasses existing open-source code models across a variety of standard tests. Impressively, the DeepSeek-Coder-Base 6.7B model, despite its smaller scale, delivers performance on par with the 34B parameter CodeLlama, a testament to the high quality of our pretraining corpus. ",
+        "bbox": [
+            110,
+            594,
+            880,
+            755
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "To augment the zero-shot instruction capabilities of the DeepSeek-Coder-Base models, we have fine-tuned them with high-quality instructional data. This has led to the DeepSeek-Coder Instruct 33B model outperforming OpenAI’s GPT-3.5 Turbo in a range of coding-related tasks, showcasing its exceptional proficiency in code generation and understanding. ",
+        "bbox": [
+            110,
+            763,
+            880,
+            828
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "To further improve the natural language understanding capabilities of the DeepSeek-Coder Base models, we have conducted additional pretraining based on the DeepSeek-LLM 7B check point. This additional training involved processing a diverse dataset comprising 2 billion tokens, including natural language, code, and mathematical data. The result is the creation of a new and improved code model, DeepSeek-Coder-v1.5. Our observations indicate that DeepSeek-Coder-v1.5 not only maintains its predecessor’s high-level coding performance but also exhibits enhanced natural language comprehension. This advancement underscores our belief that the most effective code-focused Large Language Models (LLMs) are those built upon robust general LLMs. The reason is evident: to effectively interpret and execute coding tasks, these models must also possess a deep understanding of human instructions, which often come in various forms of natural language. Looking ahead, our commitment is to develop and openly share even more powerful code-focused LLMs based on larger-scale general LLMs. ",
+        "bbox": [
+            110,
+            835,
+            880,
+            900
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "page_number",
+        "text": "16 ",
+        "bbox": [
+            487,
+            923,
+            507,
+            934
+        ],
+        "page_idx": 15
+    },
+    {
+        "type": "text",
+        "text": "",
+        "bbox": [
+            110,
+            101,
+            887,
+            233
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "Acknowledgements ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            255,
+            319,
+            273
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "We would like to express our gratitude to Bo Liu, Chengqi Deng, Chong Ruan, Damai Dai, Jiashi Li, Kang Guan, Mingchuan Zhang, Panpan Huang, Shuiping Yu, Shirong Ma, Yaofeng Sun, Yishi Piao, Zhihong Shao, and Zhewen Hao for their invaluable discussions and assistance during training DeepSeek-Coder models. ",
+        "bbox": [
+            110,
+            286,
+            885,
+            353
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "text",
+        "text": "References ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            376,
+            228,
+            393
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "L. B. Allal, R. Li, D. Kocetkov, C. Mou, C. Akiki, C. M. Ferrandis, N. Muennighoff, M. Mishra, A. Gu, M. Dey, et al. Santacoder: don’t reach for the stars! arXiv preprint arXiv:2301.03988, 2023. ",
+            "J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, and C. Sutton. Program synthesis with large language models, 2021. ",
+            "M. Bavarian, H. Jun, N. Tezak, J. Schulman, C. McLeavey, J. Tworek, and M. Chen. Efficient training of language models to fill in the middle. arXiv preprint arXiv:2207.14255, 2022. ",
+            "F. Cassano, J. Gouwar, D. Nguyen, S. Nguyen, L. Phipps-Costin, D. Pinckney, M.-H. Yee, Y. Zi, C. J. Anderson, M. Q. Feldman, et al. Multipl-e: a scalable and polyglot approach to benchmarking neural code generation. IEEE Transactions on Software Engineering, 2023. ",
+            "M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. d. O. Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, et al. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374, 2021. ",
+            "S. Chen, S. Wong, L. Chen, and Y. Tian. Extending context window of large language models via positional interpolation. arXiv preprint arXiv:2306.15595, 2023. ",
+            "P. Clark, I. Cowhey, O. Etzioni, T. Khot, A. Sabharwal, C. Schoenick, and O. Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge. arXiv preprint arXiv:1803.05457, 2018. ",
+            "K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, et al. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168, 2021. ",
+            "T. Dao. Flashattention-2: Faster attention with better parallelism and work partitioning, 2023. ",
+            "DeepSeek-AI. Deepseek llm: Scaling open-source language models with longtermism. arXiv preprint arXiv:2401.02954, 2024. "
+        ],
+        "bbox": [
+            107,
+            403,
+            892,
+            897
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "page_number",
+        "text": "17 ",
+        "bbox": [
+            487,
+            922,
+            510,
+            935
+        ],
+        "page_idx": 16
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "Y. Ding, Z. Wang, W. U. Ahmad, H. Ding, M. Tan, N. Jain, M. K. Ramanathan, R. Nallapati, P. Bhatia, D. Roth, et al. Crosscodeeval: A diverse and multilingual benchmark for cross-file code completion. In Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track, 2023. ",
+            "Z. Du, Y. Qian, X. Liu, M. Ding, J. Qiu, Z. Yang, and J. Tang. Glm: General language model pretraining with autoregressive blank infilling. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 320–335, 2022. ",
+            "D. Fried, A. Aghajanyan, J. Lin, S. Wang, E. Wallace, F. Shi, R. Zhong, W.-t. Yih, L. Zettlemoyer, and M. Lewis. Incoder: A generative model for code infilling and synthesis. arXiv preprint arXiv:2204.05999, 2022. ",
+            "L. Gao, A. Madaan, S. Zhou, U. Alon, P. Liu, Y. Yang, J. Callan, and G. Neubig. Pal: Programaided language models. In International Conference on Machine Learning, pages 10764– 10799. PMLR, 2023. ",
+            "G. Gemini Team. Gemini: A family of highly capable multimodal models, 2023. URL https: //goo.gle/GeminiPaper. ",
+            "Z. Gou, Z. Shao, Y. Gong, Y. Yang, M. Huang, N. Duan, W. Chen, et al. Tora: A tool-integrated reasoning agent for mathematical problem solving. arXiv preprint arXiv:2309.17452, 2023. ",
+            "D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt. Measuring massive multitask language understanding. In International Conference on Learning Representations, 2020. ",
+            "D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt. Measuring mathematical problem solving with the math dataset. arXiv preprint arXiv:2103.03874, 2021. ",
+            "High-Flyer. Hai-llm: An efficient and lightweight tool for training large models. 2023. URL https://www.high-flyer.cn/en/blog/hai-llm. ",
+            "kaiokendev. Things i’m learning while training superhot. https://kaiokendev.github.io /til#extending-context-to-8k, 2023. ",
+            "D. Kocetkov, R. Li, L. Jia, C. Mou, Y. Jernite, M. Mitchell, C. M. Ferrandis, S. Hughes, T. Wolf, D. Bahdanau, et al. The stack: 3 tb of permissively licensed source code. Transactions on Machine Learning Research, 2022. ",
+            "V. A. Korthikanti, J. Casper, S. Lym, L. McAfee, M. Andersch, M. Shoeybi, and B. Catanzaro. Reducing activation recomputation in large transformer models. Proceedings of Machine Learning and Systems, 5, 2023. ",
+            "Y. Lai, C. Li, Y. Wang, T. Zhang, R. Zhong, L. Zettlemoyer, W.-t. Yih, D. Fried, S. Wang, and T. Yu. Ds-1000: A natural and reliable benchmark for data science code generation. In International Conference on Machine Learning, pages 18319–18345. PMLR, 2023. ",
+            "K. Lee, D. Ippolito, A. Nystrom, C. Zhang, D. Eck, C. Callison-Burch, and N. Carlini. Deduplicating training data makes language models better. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 8424–8445, 2022. "
+        ],
+        "bbox": [
+            107,
+            95,
+            892,
+            902
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "page_number",
+        "text": "18 ",
+        "bbox": [
+            487,
+            922,
+            510,
+            935
+        ],
+        "page_idx": 17
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "R. Li, L. B. Allal, Y. Zi, N. Muennighoff, D. Kocetkov, C. Mou, M. Marone, C. Akiki, J. Li, J. Chim, et al. Starcoder: may the source be with you! arXiv preprint arXiv:2305.06161, 2023. ",
+            "I. Loshchilov and F. Hutter. Decoupled weight decay regularization, 2019. ",
+            "P. Lu, L. Qiu, K.-W. Chang, Y. N. Wu, S.-C. Zhu, T. Rajpurohit, P. Clark, and A. Kalyan. Dynamic prompt learning via policy gradient for semi-structured mathematical reasoning. In The Eleventh International Conference on Learning Representations, 2022. ",
+            "S.-Y. Miao, C.-C. Liang, and K.-Y. Su. A diverse corpus for evaluating and developing english math word problem solvers. In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages 975–984, 2020. ",
+            "D. Narayanan, A. Harlap, A. Phanishayee, V. Seshadri, N. R. Devanur, G. R. Ganger, P. B. Gibbons, and M. Zaharia. Pipedream: Generalized pipeline parallelism for dnn training. In Proceedings of the 27th ACM Symposium on Operating Systems Principles, pages 1–15, 2019. ",
+            "E. Nijkamp, B. Pang, H. Hayashi, L. Tu, H. Wang, Y. Zhou, S. Savarese, and C. Xiong. Codegen: An open large language model for code with multi-turn program synthesis. arXiv preprint arXiv:2203.13474, 2022. ",
+            "E. Nijkamp, H. Hayashi, C. Xiong, S. Savarese, and Y. Zhou. Codegen2: Lessons for training llms on programming and natural languages, 2023. ",
+            "OpenAI. Gpt-4 technical report, 2023. "
+        ],
+        "bbox": [
+            107,
+            95,
+            892,
+            485
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "A. Patel, S. Bhattamishra, and N. Goyal. Are nlp models really able to solve simple math word problems? In Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, pages 2080– 2094, 2021. ",
+            "C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li, and P. J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer, 2023. ",
+            "S. Rajbhandari, J. Rasley, O. Ruwase, and Y. He. Zero: Memory optimizations toward training tril lion parameter models. In SC20: International Conference for High Performance Computing, Networking, Storage and Analysis, pages 1–16. IEEE, 2020. ",
+            "B. Roziere, J. Gehring, F. Gloeckle, S. Sootla, I. Gat, X. E. Tan, Y. Adi, J. Liu, T. Remez, J. Rapin, et al. Code llama: Open foundation models for code. arXiv preprint arXiv:2308.12950, 2023. ",
+            "K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. Choi. Winogrande: An adversarial winograd schema challenge at scale. Communications of the ACM, 64(9):99–106, 2021. ",
+            "R. Sennrich, B. Haddow, and A. Birch. Neural machine translation of rare words with subword units. arXiv preprint arXiv:1508.07909, 2015. ",
+            "J. Su, Y. Lu, S. Pan, A. Murtadha, B. Wen, and Y. Liu. Roformer: Enhanced transformer with rotary position embedding, 2023. ",
+            "M. Suzgun, N. Scales, N. Schärli, S. Gehrmann, Y. Tay, H. W. Chung, A. Chowdhery, Q. V. Le, E. H. Chi, D. Zhou, , and J. Wei. Challenging big-bench tasks and whether chain-of-thought can solve them. arXiv preprint arXiv:2210.09261, 2022. "
+        ],
+        "bbox": [
+            107,
+            487,
+            890,
+            892
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "page_number",
+        "text": "19 ",
+        "bbox": [
+            487,
+            922,
+            510,
+            935
+        ],
+        "page_idx": 18
+    },
+    {
+        "type": "list",
+        "sub_type": "ref_text",
+        "list_items": [
+            "R. Taori, I. Gulrajani, T. Zhang, Y. Dubois, X. Li, C. Guestrin, P. Liang, and T. B. Hashimoto. Stanford alpaca: An instruction-following llama model. https://github.com/tatsu-lab /stanford\\_alpaca, 2023. ",
+            "H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288, 2023. ",
+            "Y. Wang, W. Wang, S. Joty, and S. C. Hoi. Codet5: Identifier-aware unified pre-trained encoderdecoder models for code understanding and generation. arXiv preprint arXiv:2109.00859, 2021. ",
+            "R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, and Y. Choi. Hellaswag: Can a machine really finish your sentence? In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages 4791–4800, 2019. ",
+            "Q. Zheng, X. Xia, X. Zou, Y. Dong, S. Wang, Y. Xue, L. Shen, Z. Wang, A. Wang, Y. Li, et al. Codegeex: A pre-trained model for code generation with multilingual benchmarking on humaneval-x. In Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining, pages 5673–5684, 2023. "
+        ],
+        "bbox": [
+            107,
+            95,
+            892,
+            407
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "page_number",
+        "text": "20 ",
+        "bbox": [
+            487,
+            922,
+            510,
+            935
+        ],
+        "page_idx": 19
+    },
+    {
+        "type": "text",
+        "text": "A. Cases of Chatting with DeepSeek-Coder-Instruct ",
+        "text_level": 1,
+        "bbox": [
+            114,
+            99,
+            642,
+            118
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "We will present two cases of interactions with DeepSeek-Coder-Instruct, with one involving a multi-turn conversation about creating a database and performing data analysis, and the other centered around using a model to solve a sample problem from LeetCode. ",
+        "bbox": [
+            110,
+            131,
+            885,
+            181
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "text",
+        "text": "In the first scenario, depicted in Figure 5, we instruct the model to build a student database using Python and randomly insert 10 pieces of information. Subsequently, in the second round of the conversation, we continue to ask the model by analyzing the age distribution of the students. From Figure 5, it’s evident that the model can generate bug-free and comprehensive code, accompanied by explanatory details. In the second scenario, as illustrated in Figure 6, we further assess the model’s capabilities by testing it on an out-of-domain LeetCode contest problem. This particular problem was released in November 2023, after our data collection, and thus, isn’t part of our model’s training data. The results show that our model excels at solving problems that extend beyond its training distribution. ",
+        "bbox": [
+            110,
+            187,
+            884,
+            335
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "image",
+        "img_path": "images/fa681f8069c7e79188f77c9239851648a9d2f740921dba0872ba85662e0d781f.jpg",
+        "image_caption": [
+            "Figure 5 | An example of building database and data analysis. "
+        ],
+        "image_footnote": [],
+        "content": "Q1: Build a database in Python that includes various pieces of information about students, insert ten random records and display.\n\nSure, here is a simple example of how you can do this using SQLite in Python.\n\n```python\nimport sqlite3\nimport random\n# Connect to SQLite database\nconn = sqlite3.connect('students.db')\n# Create a cursor object\ncur = conn.cursor()\n...\n# Create table\ncur.execute('''\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT,\n    age INTEGER,\n    grade TEXT) '')\n...\n# Display all records\ncur.execute('SELECT * FROM students')\n...\n\nThis script will create a SQLite database named 'students.db'\nand a table named 'students' with four columns: 'id', 'name', 'age',\nand 'grade'. It will then insert 10 random records into the table\nand display all records. ...\n\nRun Code\n(1, 'Student0', 24, 'B')\n(2, 'Student1', 18, 'F')\n(3, 'Student2', 21, 'A')\n(4, 'Student3', 22, 'F')\n(5, 'Student4', 21, 'C')\n(6, 'Student5', 19, 'A')\n(7, 'Student6', 20, 'B')\n(8, 'Student7', 24, 'A')\n(9, 'Student8', 21, 'A')\n(10, 'Student9', 20, 'B')\n\nRun Code\nTo create a graph depicting the age distribution of the students, you can use the matplotlib library in Python. Here's how you can do it:\n```python\nimport sqlite3\nimport pandas as pd\nimport matplotlib.pyplot as plt\n# Connect to SQLite database\nconn = sqlite3.connect('students.db')\n# Read the data from the database into a pandas DataFrame\ndf = pd.read_sql_query(\"SELECT * from students\", conn)\n# Create a histogram of the age distribution\nplt.hist(df['age'], bins=range(10, 30, 2), edgecolor='black')\nplt.title('Age Distribution of Students')\nplt.xlabel('Age')\nplt.ylabel('Number of Students')\nplt.show()\n# Close the connection\nconn.close()\n...\n\nThis script will connect to the SQLite database, read the data into a pandas DataFrame, then create a histogram of the age distribution. The histogram will show the number of students in each age range.",
+        "sub_type": "text_image",
+        "bbox": [
+            122,
+            346,
+            875,
+            743
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "page_number",
+        "text": "21 ",
+        "bbox": [
+            487,
+            922,
+            507,
+            935
+        ],
+        "page_idx": 20
+    },
+    {
+        "type": "image",
+        "img_path": "images/bb280bfd8bc2ec09933eff93a83eccfdb30927050fb9e928fd0646adf27a77b7.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            124,
+            101,
+            154,
+            123
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Q: There are n teams numbered from 0 to n - 1 in a tournament; each team is also a node in a DAG. ",
+        "bbox": [
+            166,
+            107,
+            431,
+            121
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "You are given the integer n and a 0-indexed 2D integer array edges of length m representing the DAG, where edges[i] = [ui, vi] indicates that there is a directed edge from team u to team v in the graph. ",
+        "bbox": [
+            166,
+            122,
+            442,
+            143
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "A directed edge from a to b in the graph means that team a is stronger than team b and team b is weaker than team a. ",
+        "bbox": [
+            166,
+            143,
+            425,
+            158
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Team a will be the champion of the tournament if there is no team b that is stronger than team a. ",
+        "bbox": [
+            166,
+            159,
+            416,
+            172
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Return the team that will be the champion of the tournament if there is a unique champion, otherwise, return -1 ",
+        "bbox": [
+            166,
+            172,
+            408,
+            186
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Note ",
+        "bbox": [
+            166,
+            186,
+            191,
+            192
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "•A cycle is a series of nodes a , a , ..., a , a such that node a is the same node as node a , the nodes a , a , ..., a are distinct, and there is a directed edge from the node a to node a for every i in the range [1, n]. ",
+        "bbox": [
+            166,
+            193,
+            442,
+            215
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "•A DAG is a directed graph that does not have any cycle. ",
+        "bbox": [
+            166,
+            215,
+            363,
+            223
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "•Example 1: ",
+        "bbox": [
+            166,
+            228,
+            215,
+            237
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "•Example 2: ",
+        "bbox": [
+            166,
+            243,
+            215,
+            250
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Constraints: ",
+        "bbox": [
+            166,
+            265,
+            215,
+            272
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "… ",
+        "bbox": [
+            166,
+            274,
+            179,
+            280
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "Please follow the template below to solve the problem: \\`\\`\\`pytho ",
+        "bbox": [
+            166,
+            286,
+            356,
+            299
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "class Solution: ",
+        "bbox": [
+            166,
+            300,
+            221,
+            307
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "def findChampion(self, n: int, edges: List[List[int]]) -> int: ",
+        "bbox": [
+            166,
+            307,
+            389,
+            316
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "image",
+        "img_path": "images/b7488a6cb12936775829e3c5e8a3ee745505c61a8281032911ffa2a59ea95e90.jpg",
+        "image_caption": [
+            "2924. Find Champion II "
+        ],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            205,
+            354,
+            233,
+            362
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "image",
+        "img_path": "images/4405a07b617cf300741138f770d0290295199bc6831ee7e0073cb4f4d4aa4272.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            236,
+            355,
+            267,
+            362
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "image",
+        "img_path": "images/795732c3716eeb084e60c3e1bf68457be546f26581cca907cf78f6ceb687a0a7.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            275,
+            355,
+            317,
+            362
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "image",
+        "img_path": "images/8ccea34602c10f4f026a6349eedd9ca20ef92b9fe68b2ce4afb4f1c3c7902061.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            326,
+            355,
+            347,
+            362
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "image",
+        "img_path": "images/37fa101057be58f251969ad69b2c198c51f3b84acd53a4efb5e781a3a416c406.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "",
+        "bbox": [
+            495,
+            101,
+            527,
+            123
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "To solve this problem, we can use a topological sorting algorithm. The idea is to … \\`\\`\\`python ",
+        "bbox": [
+            547,
+            107,
+            833,
+            121
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "from typing import List ",
+        "bbox": [
+            549,
+            122,
+            638,
+            130
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "class Solution: ",
+        "bbox": [
+            549,
+            136,
+            603,
+            143
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "def findChampion(self, n: int, edges: List[List[int]]) -> int: # Create an adjacency list to represent the DAG ",
+        "bbox": [
+            559,
+            143,
+            769,
+            156
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "adj\\_list = {i: [] for i in range(n)} ",
+        "bbox": [
+            566,
+            158,
+            682,
+            165
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "for u, v in edges: ",
+        "bbox": [
+            566,
+            166,
+            628,
+            172
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "adj\\_list[u].append(v) ",
+        "bbox": [
+            566,
+            173,
+            652,
+            180
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "\\# Initialize a list to keep track of the number of … ",
+        "bbox": [
+            566,
+            180,
+            747,
+            187
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "in\\_degree = [0] \\* n ",
+        "bbox": [
+            566,
+            187,
+            636,
+            193
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "\\# Calculate the in-degree for each team ",
+        "bbox": [
+            566,
+            200,
+            710,
+            208
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "for u in adj\\_list: ",
+        "bbox": [
+            566,
+            209,
+            626,
+            216
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "for v in adj\\_list[u]: ",
+        "bbox": [
+            576,
+            217,
+            645,
+            223
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "in\\_degree[v] += 1 ",
+        "bbox": [
+            576,
+            224,
+            648,
+            230
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "\\# Initialize a list to keep track of the teams with no incoming edges ",
+        "bbox": [
+            566,
+            236,
+            806,
+            244
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "no\\_incoming\\_edges = [i for i in range(n) if in\\_degree[i] == 0] ",
+        "bbox": [
+            566,
+            244,
+            786,
+            252
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "\\# If there is more than one team with no incoming edges, there is no unique champion ",
+        "bbox": [
+            547,
+            258,
+            838,
+            271
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "if len(no\\_incoming\\_edges) != 1: ",
+        "bbox": [
+            566,
+            272,
+            680,
+            279
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "return ",
+        "bbox": [
+            576,
+            280,
+            608,
+            286
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "\\# Return the team with no incoming edges, which is the champion return no\\_incoming\\_edges[0] ",
+        "bbox": [
+            566,
+            294,
+            805,
+            307
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "This code first creates an adjacency list to represent the DAG. Then, … ",
+        "bbox": [
+            547,
+            313,
+            793,
+            323
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "chart",
+        "img_path": "images/f6041d94bc30ce86872666ab2de3b9979274f1180bb5a19742b33dc0987145a4.jpg",
+        "content": "Accepted\ndocketText submitted at Jan 24, 2024 29:56\n| Category | Percentage (%) |\n| :--- | :--- |\n| Runtime | 827 |\n| Memory | 18.05 |\n| Nets 50.16% of users with Python3 | 50.16% |\n| Dots 47.87% of users with Python3 | 47.87% |",
+        "chart_caption": [
+            "Submit Code ",
+            "Figure 6 | An example of solving LeetCode Problem. "
+        ],
+        "chart_footnote": [],
+        "sub_type": "bar",
+        "bbox": [
+            665,
+            335,
+            828,
+            409
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "B. Benchmark curves during training of DeepSeek-Coder-Base ",
+        "text_level": 1,
+        "bbox": [
+            112,
+            462,
+            746,
+            481
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "text",
+        "text": "In Figure 7, we present the benchmark curves illustrating the performance of DeepSeek-Coder-Base models during their training phase. For validation, a carefully curated subset of the training corpus was employed, consisting of 8,000 code files. This subset was deliberately chosen to ensure a diverse and representative sample, critical for an accurate assessment of the models’ capabilities. The performance metrics of these models are specifically detailed in the final two sub-figures of Figure 7, offering a clear visual representation of their efficacy throughout the training process. ",
+        "bbox": [
+            112,
+            493,
+            885,
+            607
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "page_number",
+        "text": "22 ",
+        "bbox": [
+            487,
+            923,
+            509,
+            935
+        ],
+        "page_idx": 21
+    },
+    {
+        "type": "image",
+        "img_path": "images/c5ebb7719e24cee204ce2d10983005f78df145bc09062bff5f8592d3a634a463.jpg",
+        "image_caption": [],
+        "image_footnote": [
+            "DeepSeek-Coder-Base-1.3B DeepSeek-Coder-Base-6.7B DeepSeek-Coder-Base-33B "
+        ],
+        "content": "",
+        "bbox": [
+            137,
+            168,
+            863,
+            804
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "text",
+        "text": "Figure 7 | Benchmark curves during training of DeepSeek-Coder-Base. ",
+        "bbox": [
+            208,
+            814,
+            784,
+            832
+        ],
+        "page_idx": 22
+    },
+    {
+        "type": "page_number",
+        "text": "23 ",
+        "bbox": [
+            487,
+            923,
+            509,
+            935
+        ],
+        "page_idx": 22
+    }
+]

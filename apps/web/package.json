@@ -1,0 +1,46 @@
+{
+  "name": "@knowpilot/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@knowpilot/shared": "workspace:*",
+    "@knowpilot/server": "workspace:*",
+    "@trpc/client": "11.1.0",
+    "@trpc/react-query": "11.1.0",
+    "@tanstack/react-query": "5.66.0",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "superjson": "2.2.2",
+    "zustand": "5.0.3",
+    "framer-motion": "12.0.0",
+    "lucide-react": "0.475.0",
+    "lodash-es": "4.17.21",
+    "@milkdown/core": "7.5.9",
+    "@milkdown/ctx": "7.5.9",
+    "@milkdown/react": "7.5.9",
+    "@milkdown/transformer": "7.5.9",
+    "@milkdown/preset-commonmark": "7.5.9",
+    "@milkdown/plugin-listener": "7.5.9",
+    "@milkdown/plugin-slash": "7.5.9",
+    "@milkdown/plugin-math": "7.5.9",
+    "@milkdown/plugin-prism": "7.5.9"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.1",
+    "@types/node": "20.19.43",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@types/lodash-es": "4.17.12",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.9",
+    "tailwindcss": "4.3.1",
+    "typescript": "5.8.3"
+  }
+}

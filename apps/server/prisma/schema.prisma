@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// 文章 (Post)
+model Post {
+  id         String   @id @default(cuid())
+  title      String
+  slug       String   @unique
+  content    String            /// Markdown 原文
+  excerpt    String?           /// 摘要
+  coverImage String?           /// 封面图 URL
+  published  Boolean  @default(false)
+  category   String?
+  tags       String   @default("") /// 标签 (逗号分隔字符串)
+  viewCount  Int      @default(0)
+  metadata   Json?             /// 扩展字段
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([published, createdAt(sort: Desc)])
+  @@index([category])
+  @@index([slug])
+}
+
+/// Agent 配置
+model Agent {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  description  String?
+  model        String   @default("deepseek-chat")
+  systemPrompt String   @default("")
+  tools        String   @default("") /// 逗号分隔的工具名称列表
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// 技能 (Custom Tools)
+model Skill {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  code        String   /// TypeScript/JavaScript 逻辑代码
+  icon        String?
+  trigger     String?  /// 触发规则 (关键字或正则)
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// 聊天会话
+model ChatSession {
+  id           String        @id @default(cuid())
+  title        String
+  model        String        @default("deepseek-chat")
+  systemPrompt String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  messages     ChatMessage[]
+}
+
+/// 聊天消息
+model ChatMessage {
+  id          String      @id @default(cuid())
+  sessionId   String
+  role        String      /// "user" | "assistant" | "system" | "tool"
+  content     String
+  toolCalls   Json?       /// 调用的工具
+  toolResults Json?       /// 工具执行结果
+  tokenUsage  Json?       /// { prompt, completion, total }
+  createdAt   DateTime    @default(now())
+  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+/// 上传的文件元数据
+model File {
+  id        String   @id @default(cuid())
+  name      String
+  path      String
+  mimeType  String
+  size      Int
+  url       String
+  createdAt DateTime @default(now())
+}
+
+/// 系统日志与执行追踪
+model Log {
+  id        String   @id @default(cuid())
+  level     String   /// "info" | "warn" | "error" | "debug" | "success"
+  component String   /// "server" | "agent" | "db" | "mcp" etc.
+  event     String
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+/// MCP 服务器配置
+model McpServer {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  command   String
+  args      Json?    /// 参数 String[]
+  env       Json?    /// 环境变量 Record<string, string>
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// 长期记忆
+model Memory {
+  id        String   @id @default(cuid())
+  content   String
+  type      String   @default("episodic") /// "episodic" | "semantic"
+  strength  Float    @default(1.0)
+  keywords  String   @default("") /// 逗号分隔的关键字
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Git 仓库管理
+model GitRepo {
+  id        String   @id @default(cuid())
+  name      String
+  path      String   @unique
+  branch    String   @default("main")
+  remoteUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// 后台任务/定时任务
+model Task {
+  id             String    @id @default(cuid())
+  name           String
+  type           String    /// "cron" | "oneshot"
+  status         String    /// "pending" | "running" | "success" | "failed"
+  input          Json?
+  output         Json?
+  cronExpression String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+/// 工作区管理 (Workspace)
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  path        String   @unique /// 对应硬盘上的目录路径
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// 触发器配置 (Trigger)
+model Trigger {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  type        String   /// "file_change" | "webhook" | "cron"
+  source      String   /// 触发源 (文件路径, webhook url, or cron expression)
+  actionType  String   /// "run_agent" | "run_task"
+  actionId    String   /// 动作关联的 Agent 或 Task ID
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// 审批队列 (Approval)
+model Approval {
+  id        String   @id @default(cuid())
+  toolName  String
+  args      Json     /// 调用参数
+  status    String   @default("pending") /// "pending" | "approved" | "rejected"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,212 @@
+---
+title: "Gemma 2 Technical Report (Original Text)"
+converted_by: "arXiv HTML extraction (MinerU unavailable)"
+---
+
+# Gemma 2: Improving Open Language Models at a Practical Size
+
+> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+
+
+> Original title: Gemma 2: Improving Open Language Models at a Practical Size
+> Authors: Gemma Team, Google DeepMind
+> arXiv: 2408.00118
+> Date: 2024-07-31
+
+---
+
+## 1 Introduction
+
+Large language models (LLMs) have demonstrated strong capabilities in language understanding, generation, and reasoning (Radford et al., 2019; Raffel et al., 2019; Brown et al., 2020). Scaling has been key to this recent progress, with many new capabilities only emerging at scale (Brown et al., 2020). The newest large models not only reach unprecedented performance on reasoning benchmarks (Achiam et al., 2023), but they also demonstrate multimodal and multilingual capabilities (Gemini Team, 2024) and even the ability to use context lengths of over 1M tokens (Gemini Team, 2024).
+
+Small-scale models have also shown a rapid increase in performance, but these gains are largely derived from increasing the length of training (Touvron et al., 2023; Jiang et al., 2023; Gemma Team, 2024). This approach only scales logarithmically with dataset size (Hoffmann et al., 2022), and the latest small models require up to 15T tokens to improve the state of the art by less than 1-2% (AI@Meta, 2024).
+
+Yet, these continued improvements provide evidence that small models are still under-trained. In this work, we explore alternatives to improve small model performance without solely increasing training length. One solution is to improve the quality of information received by the network at each training step by replacing the next token prediction task with a richer objective.
+
+In particular, we focus our efforts on knowledge distillation (Hinton et al., 2015), which replaces the one-hot vector seen at each token with the distribution of potential next tokens computed from a large model. This approach is often used to reduce the training time of smaller models by giving them richer gradients. In this work, we instead train for large quantities of tokens with distillation in order to simulate training beyond the number of available tokens. Concretely, we use a large language model as a teacher to train small models, namely 2B and 9B models, on a quantity of tokens that is more than 50 times the compute-optimal quantity predicted by the theory (Hoffmann et al., 2022). Along with the models trained with distillation, we also release a 27B model trained from scratch for this work.
+
+We also leverage several known modifications of Transformers, namely the interleaving of global and local attention layers from Beltagy et al. (2020a), and the Grouped-Query Attention (GQA) mechanism of Ainslie et al. (2023).
+
+Overall, Gemma 2 significantly advances state-of-the-art performance relative to comparable-scale open models and are even competitive with some models more than twice their size (xAI, 2024; AI@Meta, 2024; Jiang et al., 2023; Almazrouei et al., 2023), across a variety of automated benchmarks and human evaluations. Example domains include question answering (Clark et al., 2019; Kwiatkowski et al., 2019), commonsense reasoning (Sakaguchi et al., 2019; Suzgun et al., 2022), mathematics and science (Cobbe et al., 2021; Hendrycks et al., 2020), and coding (Austin et al., 2021; Chen et al., 2021).
+
+While thorough testing of our models has been conducted, these tests cannot cover all applications and scenarios in which Gemma 2 may be used. With this mind, all Gemma 2 users should conduct rigorous safety testing specific to their use case before deployment or use.
+
+In this technical report, we provide an overview of models, including the architecture, training, and pre- and post-training recipes for Gemma 2. We also provide detailed evaluations across a wide variety of quantitative and qualitative benchmarks, as well as both standard academic benchmarks and human-preference evaluations. Finally, we discuss our approach to safe and responsible deployment and outline the broader implications of Gemma 2, its limitations, and advantages.
+
+---
+
+## 2 Model Architecture
+
+Similar to previous Gemma models (Gemma Team, 2024), the Gemma 2 models are based on a decoder-only transformer architecture (Vaswani et al., 2017). We summarize the main parameters and architecture choices in Table 1.
+
+A few architectural elements are similar to the first version of Gemma models; namely, a context length of 8192 tokens, the use of Rotary Position Embeddings (RoPE) (Su et al., 2021), and the approximated GeGLU non-linearity (Shazeer, 2020). A few elements differ between Gemma 1 and Gemma 2, including using deeper networks. We summarize the key differences below.
+
+### 2.1 Local Sliding Window and Global Attention
+
+We alternate between a local sliding window attention (Beltagy et al., 2020b, a) and global attention (Luong et al., 2015) in every other layer. The sliding window size of local attention layers is set to 4096 tokens, while the span of the global attention layers is set to 8192 tokens.
+
+### 2.2 Logit soft-capping
+
+We cap logits (Bello et al., 2016) in each attention layer and the final layer such that the value of the logits stays between -soft_cap and +soft_cap. More specifically, we cap the logits with the following function:
+
+logits <- soft_cap * tanh(logits / soft_cap)
+
+We set the soft_cap parameter to 50.0 for the self-attention layers and to 30.0 for the final layer.
+
+### 2.3 Post-norm and pre-norm with RMSNorm
+
+To stabilize training, we use RMSNorm (Zhang and Sennrich, 2019) to normalize the input and output of each transformer sub-layer, the attention layer, and the feedforward layer.
+
+### 2.4 Grouped-Query Attention
+
+We use GQA with num_groups=2, based on ablations showing increased speed at inference time while maintaining downstream performance.
+
+Table 2: Parameter counts for the Gemma models. We inherit from the large Gemini vocabulary (256k entries), that is designed to work on a large number of languages, hence, the larger embedding parameter counts compared to models that are limited to one or a few languages.
+
+---
+
+## 3 Pre-training
+
+We provide a brief overview of the parts of our pre-training that differs from Gemma 1.
+
+### 3.1 Training Data
+
+We train Gemma 2 27B on 13 trillion tokens of primarily-English data, the 9B model on 8 trillion tokens, and the 2B on 2 trillion tokens. These tokens come from a variety of data sources, including web documents, code, and science articles. Our models are not multimodal and are not trained specifically for state-of-the-art multilingual capabilities. The final data mixture was determined through ablations similar to the approach in Gemini 1.0 (Gemini Team, 2023).
+
+Tokenizer. We use the same tokenizer as Gemma 1 and Gemini: a SentencePiece tokenizer with split digits, preserved whitespace, and byte-level encodings (Kudo and Richardson, 2018). The resulting vocabulary has 256k entries.
+
+Filtering. We use the same data filtering techniques as Gemma 1. Specifically, we filter the pre-training dataset to reduce the risk of unwanted or unsafe utterances, filter out certain personal information or other sensitive data, decontaminate evaluation sets from our pre-training data mixture, and reduce the risk of recitation by minimizing the proliferation of sensitive outputs.
+
+Table 3: Training infrastructure with sharding.
+
+### 3.2 Knowledge Distillation
+
+Given a large model used as a teacher, we learn smaller models by distilling from the probability given by the teacher of each token x given its context x_c, i.e., P_T(x | x_c). More precisely, we minimize the negative log-likelihood between the probabilities from the teacher and the student:
+
+min_{P_S} sum_x -P_T(x | x_c) log P_S(x | x_c)
+
+where P_S is the parameterized probability of the student. Note that knowledge distillation was also used in Gemini 1.5 (Gemini Team, 2024).
+
+### 3.3 Compute Infrastructure
+
+We train our models with TPUv4, TPUv5e, and TPUv5p as outlined in Table 3. For the 2B model, we train on a 2x16x16 configuration of TPUv5e, totaling 512 chips, with 512-way data replication and 1-way model sharding. For the 9B model, we train on an 8x16x32 configuration of TPUv4, totaling 4096 chips, with 1024-way data replication and 4-way model sharding. For the 27B model, we train on an 8x24x32 configuration of TPUv5p, totaling 6144 chips, with 768-way data replication and 8-way model sharding.
+
+The optimizer state is further sharded using techniques similar to ZeRO-3 (Ren et al., 2021). For scales beyond a single pod, we perform a data-replica reduction over the data center network, using the Pathways approach of Barham et al. (2022). We also use the 'single controller' programming paradigm of Jax (Roberts et al., 2023) and Pathways (Barham et al., 2022). As in Gemma 1, we use the GSPMD partitioner (Xu et al., 2021) for training step computation and the MegaScale XLA compiler (XLA, 2019).
+
+### 3.4 Carbon Footprint
+
+We estimate the carbon emissions from pre-training the Gemma models to be 1247.61 tCO2eq. As in Gemma 1 (Gemma Team, 2024), this value is calculated based on the hourly energy usage reported directly from our TPU data centers and scaled to account for the additional energy expended to create and maintain the data center. Importantly, Google data centers are carbon neutral, achieved through a combination of energy efficiency, renewable energy purchases, and carbon offsets. This carbon neutrality applies to our experiments and the machines running them.
+
+---
+
+## 4 Post-Training
+
+For post-training, we fine-tune our pre-trained models into instruction-tuned models. First, we apply supervised fine-tuning (SFT) on a mix of text-only, English-only synthetic and human-generated prompt-response pairs. We then apply RLHF on top of these models with the reward model trained on labelled English-only preference data and the policy based on the same prompts as the SFT phase. Finally, we average the models obtained after each phase to improve their overall performance. The final data mixtures and post-training recipe, which includes tuned hyperparameters, were chosen on the basis of improving helpfulness while minimizing model harms related to safety and hallucinations.
+
+We extended the post-training data from Gemma 1.1 with a mixture of internal and external public data. In particular, we use the prompts, but not the answers from LMSYS-chat-1M (Zheng et al., 2023). All of our data go through a filtering stage described below.
+
+Supervised fine-tuning (SFT). We run behavioral cloning on synthetic and real prompts, and responses predominantly synthetically generated by the teacher, that is a larger model. We also run distillation from the teacher on the student's distribution (Agarwal et al., 2024; Gu et al., 2024).
+
+Reinforcement Learning from Human Feedback (RLHF). We use a similar RLHF algorithm as Gemma 1.1 (Gemma Team, 2024) but a different reward model, which is an order of magnitude larger than the policy. The new reward model is also oriented more towards conversational capabilities, specifically multi-turn.
+
+Model merging. We average different models obtained by running our pipeline with different hyperparameters (Rame et al., 2024).
+
+Data filtering. When using synthetic data, we run several stages of filtering to remove examples that show certain personal information, unsafe or toxic model outputs, mistaken self-identification data, and duplicated examples. Following Gemini, we find that including subsets of data that encourage better in-context attribution, hedging, and refusals to minimize hallucinations improves performance on factuality metrics, without degrading model performance on other metrics.
+
+Formatting. Gemma 2 models are fine-tuned with the same control tokens as Gemma 1 models, as detailed in Table 4, but a different formatting schema. See the dialogue example in Table 5. Notice that the model explicitly ends generations with <end_of_turn><eos> tokens, while previously it only generated <eos>. For the motivation behind this formatting structure, see Gemma 1.
+
+---
+
+## 5 Ablations
+
+In this section, we focus on the main finding of this work, which is the impact of knowledge distillation on small language models.
+
+Table 6: Comparison between a 2B model trained over 500B tokens either from scratch or with distillation from a 7B model.
+
+Distillation versus from scratch. In Table 6, we show that distilling from a larger model improves performance compared to training from scratch. Note that 500B is 10x more than the compute-optimal number of tokens for a 2B model. We distill from a 7B model to keep a ratio similar to our target distillation from 27B to 9B.
+
+Table 7: Perplexity measured on a validation set of models of different sizes trained with or without distillation. The teacher has 7B parameters.
+
+Impact of distillation w.r.t. model size. In Table 7, we measure the impact of distillation as model size increases. We observe that the gain remains as the model size is scaled. In this ablation, we maintain the size of the teacher at 7B and train smaller models to simulate the same gap as between our final teacher and student sizes.
+
+Table 8: Comparing the impact of replacing Multi-Head Attention (MHA) with GQA on a 9B model averaged over 4 benchmarks.
+
+GQA versus MHA. In Table 8, we compare two instances of our 9B with MHA or GQA. We observe overall few changes in performance between both models as measured on several benchmarks. We choose GQA since it requires fewer parameters and is faster at inference time.
+
+Table 9: Wide versus deep 9B models. Performance on 4 benchmarks, higher is better.
+
+Wide versus deep. In Table 9, we show that a deeper 9B network is slightly better than a wider 9B for the same number of parameters. Although the gap is small, it is consistent across benchmarks and warrants the switch to a deeper architecture.
+
+Table 10: Impact of changing the sliding window size at inference time for the 9B model.
+
+Changing sliding window size. In Table 10, we show that we can change the sliding window size of the local attention layers of the models during inference with moderate impact on perplexity. Adjusting the size of the sliding window can thus be a leverage for slight inference speed gain.
+
+Table 11: Standard deviations of MMLU scores for 12 combinations of formatting and evaluation.
+
+Impact of formatting. We measure performance variance on MMLU across prompt/evaluation formatting variations. Table 11 shows the standard deviations of MMLU scores for 12 formatting/evaluation combinations, a proxy for undesired performance variability. The Gemma 2B models are slightly less format-robust than the larger ones. Notably, Mistral 7B is significantly less robust than our models.
+
+---
+
+## 6 Evaluation
+
+In this section, we evaluate both pre-trained and IT models over a series of automated benchmarks and human evaluations across a variety of domains. We also report performance from models of similar sizes that have permissive licenses, or as reported by others. Note that we consider total parameters, not active parameters, since total memory usage is often what limits the use of open models on standard devices.
+
+### 6.1 Pre-training Evaluations
+
+#### Evaluating the 27B model
+
+In this set of evaluations, we evaluate the performance of our 27B model trained without distillation on 13T tokens. We report results in Table 12, where we compare with a model of similar size, Qwen1.5 34B (Team, 2024), and a model 2.5x larger, LLaMA-3 70B on the HuggingFace evaluation suite. We selected these models based on their ranking on the HuggingFace leaderboard.
+
+Overall, we observe that our model is the best in its size category and is even competitive with a larger model that is trained for longer. That being said, the performance of models trained in a similar fashion improves only logarithmically with their size and hence, our model is likely in the same Pareto curve as the LLaMA-3 models. However, it is not clear how these differences affect the quality of the resulting IT models.
+
+Table 12: We compare, on the HuggingFace benchmark, our 27B model with a competitive open model, Qwen1.5 32B, that has a similar size. We also report the performance of LLaMA-3 70B for completeness. Note that our model outperforms Qwen1.5 32B and is only a few percent below LLaMA-3 70B despite being 2.5x smaller and trained on 2/3rds less data.
+
+#### Evaluating the 2B and 9B models
+
+Table 13: Comparison of models in the range of 2B to 9B parameters, as well as our 27B model, on a variety of benchmarks. We report the average performance on the 8 benchmarks where we can compare with LLaMA-3, and on all the benchmarks (all). The numbers for LLaMA-3 8B are either from the HuggingFace leaderboard or their blogpost.
+
+In this set of experiments, we compare our new 2B and 9B trained with distillation to our previous models and several standard open models in Gemma Team (2024).
+
+We observe overall a massive improvement in our models compared to previous versions, by up to 10% in some benchmarks for the 9B model. The two 2B models were trained with a similar number of tokens (2T for Gemma 2 and 3T for Gemma 1) and we still observe a significant improvement for the new models. This confirms that distillation significantly improves the quality of models even when trained on the same number of tokens.
+
+### 6.2 Post-training Evaluations
+
+In this section, we evaluate our IT models on a set of human evaluations as well as standard academic benchmarks. The Gemma 2 models push the frontier for post-trained open-weights models, setting a new state of the art on the LMSYS Chatbot Arena (Chiang et al., 2024).
+
+#### LMSYS Chatbot Arena
+
+Gemma 2 Instruction Tuned models were evaluated on the Chatbot Arena (Chiang et al., 2024) in blind side by side evaluations by human raters against other state of the art models. We report Elo scores in Table 14. Gemma 2.6B, 9B and 27B strongly outperform all other open models in the same range of parameters, with notably: Gemma 27B (Elo 1218) ranked higher than Llama 3 70B (Elo 1206), Gemma 9B (Elo 1187) similar as GPT-4-0314 (Elo 1186), Gemma 2.6B (Elo 1126) ranked higher than GPT-3.5-Turbo-0613 (Elo 1116).
+
+Table 14: Evaluation of Gemma 2 Instruction Tuned models on the Chatbot Arena (Chiang et al., 2024). The models are evaluated against each other through blind side by side evaluations by human raters. Each model is attributed a score, based on the Elo rating system.
+
+#### Human Preference Evaluations
+
+We also submit Gemma IT models for side-by-side human evaluation studies (which are independent from the Chatbot Arena). We used held-out collections of single-turn prompts that target safety and instruction following (IF). We use gpt4o-2024-05-13 as the base model, and observe large improvements in win rates and preference scores as compared against the older Gemma 1.1 7B model. We report safety as a win-loss ratio against GPT4o, and we report single-sided instruction following scores as ratio of prompts where all instructions are followed. In particular, we find that regardless of their size, Gemma 2 models produce safer, more appropriate prompts on the held-out safety prompt set than GPT4o.
+
+Table 15: Instruction following and safety metrics from human raters. The instruction following metrics are single-sided and do not have win-loss rates, and so are left blank.
+
+#### Human Multi-Turn Evaluations
+
+We evaluated the multi-turn capabilities of Gemma 1.1 7B, Gemma 2 2B, 9B and 27B models by tasking human raters to have conversations with the models and follow specified given scenarios. We used a diverse, held-out set of 500 scenarios, each describing a sequence of requests to the model, including measuring instances of brainstorming, making a plan, or learning something new. The average number of user turns is 8.4. We found that the conversations with Gemma 2 models are rated significantly better than Gemma 1.1 in user satisfaction and conversation goal achievement (Table 16). Moreover, we saw that the Gemma 2 models were better than Gemma 1.1 7B at maintaining high quality of responses for the entire conversation.
+
+Table 16: Human evaluations on 500 multi-turn scenarios. The raters attribute a score ranging between 1 and 5 for both overall satisfaction and conversation goal achievement.
+
+#### Standard Benchmarks
+
+It has been observed in Llama-3 (AI@Meta, 2024) that instruction fine-tuning can improve the performance of the models on few-shot benchmarks despite not being trained to target few-shot capabilities. In Table 17, we show a similar improvement across our models. Overall, we observe improvements on the order of several percentage points. We conjecture that IT models are better at understanding formatted questions, while pre-trained models are sensitive to formatting.
+
+Table 17: Comparing pre-trained (PT) and instruction fine-tuned (IT) models of different sizes on few-shot benchmarks.
+
+---
+
+## 7 Memorization and Privacy
+
+Large language models may, under particular circumstances, be vulnerable to attacks causing the model to produce memorized training data (Nasr et al., 2023). To study susceptibility to such attacks and quantify memorization, we evaluate models for verbatim and approximate memorization as was done in several prior studies (Carlini et al., 2022; Anil et al., 2023; Kudugunta et al., 2023; Gemini Team, 2024).
+
+We follow the evaluation setting of (Gemma Team, 2024) which tests for (50 token) memorizations of training data given a prompt of 50 tokens. We compare the overall memorization rates, across a uniform sample of the entire dataset, using both an exact match criteria and approximate match criteria (Ippolito et al., 2022) using an edit distance of 10%.
+
+Verbatim Memorization: Results are in Figure 1. We first compare against recent models from the literature that include memorization evaluations. We find that Gemma 2 memorizes significantly less than prior models at a similar size, with memorization rates below 0.1% (note the log y-axis). We further investigate how this memorization breaks down with respect to the data source. Similar to Gemma 1, we find that Gemma 2 memorizes more from code, wiki, and science sources, and also that it memorizes significantly less across the board (again, note the log y-axis).
+
+Approximate Memorization: Figure 1 also presents approximate memorization by data source. We observe that while approximate memorization is higher than exact, the rate of memorization is still low. For example, the approximate memorization of this model is much lower than even the exact memorization of Gemma 1. We find that the increase in approximate memorization is much lower than prior models; in some cases we observed no lift at all c.f. (Gemma Team, 2024, Figure 4) (note that no bar indicates no increase, i.e., the rate of approximate memorization equals that of exact memorization). Note that no approximate memorization bar in Figure X indicates no increase, i.e., the rate of approximate memorization equals that of exact memorization.
+
+Personal Data We use the same prevention methods at training time and the same evaluations as Gemma Team (2024). In particular, we use Google Cloud Sensitive Data Protection Tool to find potential instances of personal data. The many categories of personal data (e.g., phone numbers, account numbers) are classified into three severity levels. We analyze memorized outputs using these severity levels. We found no instances of high-severity data being emitted, and found a very low rate of 0.00026% of memorized data to contain lower-severity personal information. We note that these automated tools are known to incur false positives because they do not account for context. This means our results are likely overestimates.

@@ -1,0 +1,17 @@
+[
+    {
+        "type": "image",
+        "img_path": "images/33dde4670c23f20429875a596565810710c0903e847c1a0ae8b8c0bb65caaa33.jpg",
+        "image_caption": [],
+        "image_footnote": [],
+        "content": "```mermaid\ngraph TD\n    A[\"Base Models\"] --> B[\"Stage 1<br>Long-CoT Cold Start\"]\n    B --> C[\"Stage 2<br>Reasoning RL\"]\n    C --> D[\"Stage 3<br>Thinking Mode Fusion\"]\n    D --> E[\"Stage 4<br>General RL\"]\n    E --> F[\"Qwen3-235B-A22B<br>Qwen3-32B\"]\n    F --> G[\"Strong-to-Weak Distillation\"]\n    G --> H[\"Qwen3-30B-A3B<br>14B/8B/4B/1.7B/0.6B\"]\n    H --> I[\"Base Models\"]\n    style A fill:#e6f7ff,stroke:#333\n    style B fill:#e6f7ff,stroke:#333\n    style C fill:#e6f7ff,stroke:#333\n    style D fill:#e6f7ff,stroke:#333\n    style E fill:#e6f7ff,stroke:#333\n    style F fill:#e6f7ff,stroke:#333\n    style G fill:#e6f7ff,stroke:#333\n    style H fill:#e6f7ff,stroke:#333\n    style I fill:#e6f7ff,stroke:#333\n```",
+        "sub_type": "flowchart",
+        "bbox": [
+            0,
+            0,
+            998,
+            941
+        ],
+        "page_idx": 0
+    }
+]

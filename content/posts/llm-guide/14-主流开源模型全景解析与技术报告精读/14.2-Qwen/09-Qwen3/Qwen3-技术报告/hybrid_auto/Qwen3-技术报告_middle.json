@@ -1,0 +1,148 @@
+{
+    "pdf_info": [
+        {
+            "preproc_blocks": [
+                {
+                    "type": "chart",
+                    "bbox": [
+                        44,
+                        73,
+                        1613,
+                        508
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                44,
+                                73,
+                                1613,
+                                508
+                            ],
+                            "type": "chart_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        44,
+                                        73,
+                                        1613,
+                                        508
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                44,
+                                                73,
+                                                1613,
+                                                508
+                                            ],
+                                            "type": "chart",
+                                            "content": "| Category | 3T | 7T | 18T |\n| :--- | :--- | :--- | :--- |\n| Qwen1.5-72B | 1.5 | 2.7 | 4.0 |\n| Qwen2-72B | 7.2 | 8.0 | 9.0 |\n| Qwen2.5-72B | 1.5 | 1.8 | 1.9 |",
+                                            "image_path": "018a0a988913843f3f052944f65eb082e87e3ebd8c06d6d80df932aaedec4130.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 1
+                        }
+                    ],
+                    "index": 1,
+                    "sub_type": "bar"
+                }
+            ],
+            "discarded_blocks": [
+                {
+                    "bbox": [
+                        82,
+                        15,
+                        632,
+                        41
+                    ],
+                    "type": "header",
+                    "angle": 0,
+                    "lines": [
+                        {
+                            "bbox": [
+                                82,
+                                15,
+                                632,
+                                41
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        82,
+                                        15,
+                                        632,
+                                        41
+                                    ],
+                                    "type": "text",
+                                    "content": "Math MBPP BBH MMLU"
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 0
+                }
+            ],
+            "page_size": [
+                1651,
+                536
+            ],
+            "page_idx": 0,
+            "para_blocks": [
+                {
+                    "type": "chart",
+                    "bbox": [
+                        44,
+                        73,
+                        1613,
+                        508
+                    ],
+                    "blocks": [
+                        {
+                            "bbox": [
+                                44,
+                                73,
+                                1613,
+                                508
+                            ],
+                            "type": "chart_body",
+                            "angle": 0,
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        44,
+                                        73,
+                                        1613,
+                                        508
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                44,
+                                                73,
+                                                1613,
+                                                508
+                                            ],
+                                            "type": "chart",
+                                            "content": "| Category | 3T | 7T | 18T |\n| :--- | :--- | :--- | :--- |\n| Qwen1.5-72B | 1.5 | 2.7 | 4.0 |\n| Qwen2-72B | 7.2 | 8.0 | 9.0 |\n| Qwen2.5-72B | 1.5 | 1.8 | 1.9 |",
+                                            "image_path": "018a0a988913843f3f052944f65eb082e87e3ebd8c06d6d80df932aaedec4130.jpg"
+                                        }
+                                    ]
+                                }
+                            ],
+                            "index": 1
+                        }
+                    ],
+                    "index": 1,
+                    "sub_type": "bar"
+                }
+            ]
+        }
+    ],
+    "_backend": "hybrid",
+    "_ocr_enable": true,
+    "_vlm_ocr_enable": true,
+    "_version_name": "3.1.15"
+}

@@ -1,0 +1,1786 @@
+[
+    [
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "Fast Transformer Decoding: One Write-Head is All You Need "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                145,
+                109,
+                864,
+                164
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Noam Shazeer "
+                    }
+                ]
+            },
+            "bbox": [
+                436,
+                203,
+                560,
+                219
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Google "
+                    }
+                ]
+            },
+            "bbox": [
+                467,
+                220,
+                529,
+                238
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "noam@google.com "
+                    }
+                ]
+            },
+            "bbox": [
+                419,
+                239,
+                575,
+                256
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "November 7, 2019 "
+                    }
+                ]
+            },
+            "bbox": [
+                421,
+                268,
+                575,
+                285
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "Abstract "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                462,
+                316,
+                532,
+                329
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Multi-head attention layers, as used in the Transformer neural sequence model, are a powerful alternative to RNNs for moving information across and between sequences. While training these layers is generally fast and simple, due to parallelizability across the length of the sequence, incremental inference (where such paralleization is impossible) is often slow, due to the memory-bandwidth cost of repeatedly loading the large \"keys\" and \"values\" tensors. We propose a variant called multi-query attention, where the keys and values are shared across all of the different attention \"heads\", greatly reducing the size of these tensors and hence the memory bandwidth requirements of incremental decoding. We verify experimentally that the resulting models can indeed be much faster to decode, and incur only minor quality degradation from the baseline. "
+                    }
+                ]
+            },
+            "bbox": [
+                151,
+                335,
+                844,
+                460
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "1 Introduction "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                484,
+                303,
+                502
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "The Transformer neural sequence model [Vaswani et al., 2017] has emerged as a popular alternative to recurrent sequence models. Transformer relies on attention layers to communicate information between and across sequences. One major challenge with Transformer is the speed of incremental inference. As we will discuss, the speed of incremental Transformer inference on modern computing hardware is limited by the memory bandwidth necessary to reload the large \"keys\" and \"values\" tensors which encode the state of the attention layers. In the following sections, we will review the multi-head-attention layers used by Transformer, provide a performance analysis, and propose an architectural variation (multi-query attention) which greatly improves inference speed with only minor quality degradation. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                513,
+                887,
+                636
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "2 Background: Neural Attention "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                111,
+                657,
+                511,
+                678
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Neural Attention, introduced by [Bahdanau et al., 2014], is a powerful tool for manipulating variable-length representations. A neural attention function takes a single query-vector q and a set of m different (key-vector, value-vector) pairs (represented by the matrices K and V ), and produces an output vector y. The output y is computed as a weighted sum of the different value vectors, where the weights are derived by comparing the query to the keys. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                689,
+                885,
+                765
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "2.1 Dot-Product Attention "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                111,
+                782,
+                390,
+                799
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "The following code describes a common formulation, where the weights are computed as the softmax of the dot-products of the query with the different keys. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                808,
+                883,
+                839
+            ]
+        },
+        {
+            "type": "page_aside_text",
+            "content": {
+                "page_aside_text_content": [
+                    {
+                        "type": "text",
+                        "content": "arXiv:1911.02150v1 [cs.NE] 6 Nov 2019 "
+                    }
+                ]
+            },
+            "bbox": [
+                22,
+                241,
+                60,
+                676
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": [
+                    {
+                        "type": "text",
+                        "content": "1 "
+                    }
+                ]
+            },
+            "bbox": [
+                493,
+                950,
+                503,
+                962
+            ]
+        }
+    ],
+    [
+        {
+            "type": "code",
+            "content": {
+                "code_caption": [],
+                "code_content": [
+                    {
+                        "type": "text",
+                        "content": "def DotProductAttention(q, K, V):\n    \"\"\"Dot-Product Attention on one query.\n    Args:\n    q: a vector with shape [k]\n    K: a matrix with shape [m, k]\n    V: a matrix with shape [m, v]\n    Returns:\n    y: a vector with shape [v]\n    \"\"\"\n    logits = tf.einsum(\"k, mk->m\", q, K)\n    weights = tf.softmax(logits)\n    return tf.einsum(\"m, mv->v\", weights, V) "
+                    }
+                ],
+                "code_language": "python"
+            },
+            "bbox": [
+                138,
+                95,
+                542,
+                279
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Our code samples use einsum notation, as defined in TensorFlow and numpy, for generalized contractions between tensors of arbitrary dimension. In this notation, an equation names the dimensions of the input and output Tensors. The computation is numerically equivalent to broadcasting each input to have the union of all dimensions, multiplying component-wise, and summing across all dimensions not in the desired output shape. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                285,
+                883,
+                359
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "2.2 Multi-head Attention "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                378,
+                374,
+                393
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "The \"Transformer\" seuqence-to-sequence model [Vaswani et al., 2017] uses h different attention layers (heads) in parallel, which the authors refer to as \"Multi-head attention\". The query vectors for the h different layers are derived from h different learned linear projections "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { q }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "of an input vector x. Similarly, the keys and values are derived from h different learned linear projections "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { k } , P _ { v }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "of a collection M of m different input vectors. The outputs of the h layers are themselves passed through different learned linear projections "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { o } ,"
+                    },
+                    {
+                        "type": "text",
+                        "content": "then summed. For simplicity, we give the input and output vectors identical dimensionality d. The The computation can be expressed as follows: "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                402,
+                883,
+                508
+            ]
+        },
+        {
+            "type": "code",
+            "content": {
+                "code_caption": [],
+                "code_content": [
+                    {
+                        "type": "text",
+                        "content": "def MultiheadAttention(\n    x, M, P_q, P_k, P_v, P_o):\n    \"\"\"Multi-head Attention on one query.\n    Args:\n    x: a vector with shape [d]\n    M: a matrix with shape [m, d]\n    P_q: a tensor with shape [h, d, k]\n    P_k: a tensor with shape [h, d, k]\n    P_v: a tensor with shape [h, d, v]\n    P_o: a tensor with shape [h, d, v]\n    Returns:\n    y: a vector with shape [d]\n    \"\"\"\n    q = tf.einsum(\"d, hdk->hk\", x, P_q)\n    K = tf.einsum(\"md, hdk->hmk\", M, P_k)\n    V = tf.einsum(\"md, hdv->hmv\", M, P_v)\n    logits = tf.einsum(\"hk, hmk->hm\", q, K)\n    weights = tf.softmax(logits)\n    o = tf.einsum(\"hm, hmv->hv\", weights, V)\n    y = tf.einsum(\"hv, hdv->d\", o, P_o)\n    return y "
+                    }
+                ],
+                "code_language": "python"
+            },
+            "bbox": [
+                138,
+                515,
+                544,
+                834
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Note: [Vaswani et al., 2017] include a constant scaling factor on the logits. We omit this in our code, as it can be folded into the linear projections "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { q }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "or "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { k }"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                840,
+                883,
+                872
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": []
+            },
+            "bbox": [
+                493,
+                950,
+                503,
+                962
+            ]
+        }
+    ],
+    [
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "2.3 Multi-head Attention (Batched) "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                89,
+                477,
+                108
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "In practice, it is far more efficient to batch together multiple queries. The code below adds two types of batching. First, we generate queries from n different positions in a sequence. These queries all interact with the same keys and values. In addition, we process a batch of b different non-interacting sequences at once. Following [Vaswani et al., 2017], in an autoregressive model, we can prevent backward-information-flow by adding a \"mask\" to the logits containing the value −∞ in the illegal positions. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                114,
+                887,
+                191
+            ]
+        },
+        {
+            "type": "code",
+            "content": {
+                "code_caption": [],
+                "code_content": [
+                    {
+                        "type": "text",
+                        "content": "def MultiheadAttentionBatched(\n    X, M, mask, P_q, P_k, P_v, P_o):\n    \"\"\"Multi-head Attention.\n\n    Args:\n    X: a tensor with shape [b, n, d]\n    M: a tensor with shape [b, m, d]\n    mask: a tensor with shape [b, h, n, m]\n    P_q: a tensor with shape [h, d, k]\n    P_k: a tensor with shape [h, d, k]\n    P_v: a tensor with shape [h, d, v]\n    P_o: a tensor with shape [h, d, v]\n\n    Returns:\n    Y: a tensor with shape [b, n, d]\n\n    \"\"\"\n    Q = tf.einsum(\"bnd, hdk->bhnk\", X, P_q)\n    K = tf.einsum(\"bmd, hdk->bhmk\", M, P_k)\n    V = tf.einsum(\"bmd, hdv->bhmv\", M, P_v)\n    logits = tf.einsum(\"bhnk, bhmk->bhnm\", Q, K)\n    weights = tf.softmax(logits + mask)\n    O = tf.einsum(\"bhnm, bhmv->bhnv\", weights, V)\n    Y = tf.einsum(\"bhnv, hdv->bnd\", O, P_o)\n    return Y "
+                    }
+                ],
+                "code_language": "python"
+            },
+            "bbox": [
+                138,
+                196,
+                591,
+                529
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "2.3.1 Performance Analysis of Batched Multi-head Attention "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                553,
+                630,
+                569
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "To simplify the performance analysis, we will make several simplifying assumptions: "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                575,
+                718,
+                593
+            ]
+        },
+        {
+            "type": "list",
+            "content": {
+                "list_type": "text_list",
+                "list_items": [
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "• m = n "
+                            }
+                        ]
+                    },
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "• "
+                            },
+                            {
+                                "type": "equation_inline",
+                                "content": "\\textstyle k = v = { \\frac { d } { h } }"
+                            },
+                            {
+                                "type": "text",
+                                "content": ", as suggested by [Vaswani et al., 2017] "
+                            }
+                        ]
+                    },
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "• n ≤ d "
+                            }
+                        ]
+                    }
+                ]
+            },
+            "bbox": [
+                135,
+                604,
+                509,
+                667
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "The total number of arithmetic operations is "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\Theta ( b n d ^ { 2 } )"
+                    },
+                    {
+                        "type": "text",
+                        "content": "). (Since the complexity of each of the tf.einsum operations above is "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "O ( b n d ^ { 2 } )"
+                    },
+                    {
+                        "type": "text",
+                        "content": "given the simplifying assumptions. "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                676,
+                885,
+                707
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "The total size of memory to be accessed is equal to the sum of the sizes of all the tensors involved: "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "O ( b n d + b h n ^ { 2 } + d ^ { 2 } )"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". The first term is due to X, M , Q, K, V , O and Y , the second term due to the logits and weights, and the third term due to the projection tensors "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { q } , P _ { k } , P _ { v }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "and "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { o }"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                708,
+                887,
+                753
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Dividing the two, we find that the ratio of memory access to arithmetic operations is "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "O ( \\frac { 1 } { k } + \\frac { 1 } { b n } )"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". This low ratio is necessary for good performance on modern GPU/TPU hardware, where the computational capacity can be two orders of magnitude higher than the memory bandwidth. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                752,
+                885,
+                799
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "2.4 Multihead Attention (Incremental) "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                816,
+                504,
+                834
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "In some settings, data dependencies make it is impossible to process queries from multiple positions in parallel. An example is a self-attention layer in an autoregressive language model such as Transformer [Vaswani et al., 2017]. The queries produced at each position attend to key-value pairs produced at all positions up to and including that position. During training, the ground-truth target sequence is known, and we can use an efficient parallel implementation similar to that in section 2.3. However, when generating from the trained model, the output of the self-attention layer at a particular position affects the token that is generated at the next position, which in turn affects the input to that layer at the next position. This prevents parallel computation. Code for incrementally computing this self-attention layer is shown below. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                840,
+                887,
+                902
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": [
+                    {
+                        "type": "text",
+                        "content": "3 "
+                    }
+                ]
+            },
+            "bbox": [
+                493,
+                950,
+                504,
+                962
+            ]
+        }
+    ],
+    [
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": []
+            },
+            "bbox": [
+                109,
+                90,
+                887,
+                154
+            ]
+        },
+        {
+            "type": "code",
+            "content": {
+                "code_caption": [],
+                "code_content": [
+                    {
+                        "type": "text",
+                        "content": "def MultiheadSelfAttentionIncremental(\n    x, prev_K, prev_V, P_q, P_k, P_v, P_o):\n    \"\"\"Multi-head Self-Attention (one step).\n    Args:\n    x: a tensor with shape [b, d]\n    prev_K: tensor with shape [b, h, m, k]\n    prev_V: tensor with shape [b, h, m, v]\n    P_q: a tensor with shape [h, d, k]\n    P_k: a tensor with shape [h, d, k]\n    P_v: a tensor with shape [h, d, v]\n    P_o: a tensor with shape [h, d, v]\n    Returns:\n    y: a tensor with shape [b, d]\n    new_K: tensor with shape [b, h, m+1, k]\n    new_V: tensor with shape [b, h, m+1, v]\n    \"\"\"\n    q = tf.einsum(\"bd, hdk->bhk\", x, P_q)\n    new_K = tf.concat(\n    [prev_K, tf.expand_dims(tf.einsum(\"bd, hdk->bhk\", M, P_k), axis=2)], axis=2)\n    new_V = tf.concat(\n    [prev_V, tf.expand_dims(tf.einsum(\"bd, hdv->bhv\", M, P_v), axis=2)], axis=2)\n    logits = tf.einsum(\"bhk, bhmk->bhm\", q, new_K)\n    weights = tf.softmax(logits)\n    o = tf.einsum(\"bhm, bhmv->bhv\", weights, new_V)\n    y = tf.einsum(\"bhv, hdv->bd\", O, P_o)\n    return y, new_K, new_V "
+                    }
+                ],
+                "code_language": "python"
+            },
+            "bbox": [
+                138,
+                157,
+                834,
+                583
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "2.4.1 Performance Analysis "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                604,
+                354,
+                619
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "We make the same simplifying assumptions as in section 2.3.1. "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                628,
+                563,
+                643
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Across n calls, the total number of arithmetic operations is again Θ(bnd2). "
+                    }
+                ]
+            },
+            "bbox": [
+                135,
+                643,
+                674,
+                659
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Across n calls, the total amount of memory access is "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\Theta ( b n ^ { 2 } d + n d ^ { 2 } )"
+                    },
+                    {
+                        "type": "text",
+                        "content": ", the first term due to K and V and the second term due to "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { q } , P _ { k } , P _ { v }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "and "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { o }"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                659,
+                883,
+                689
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Dividing the memory by the computations, we find that the ratio of memory access to arithmetic operations is "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\Theta ( \\textstyle { \\frac { n } { d } } + \\frac { 1 } { b } )"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". When n ≈ d or "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "b \\approx 1"
+                    },
+                    {
+                        "type": "text",
+                        "content": ", the ratio is close to 1, causing memory bandwidth to be a major performance bottleneck on modern computing hardware. In order to make incremental generation efficient, we must reduce both of these terms to be "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\ll 1"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". The "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\textstyle { \\frac { 1 } { b } }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "term is the easier one - we can just use a larger batch size, memory size permitting. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                689,
+                885,
+                763
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Reducing the "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\textstyle { \\frac { n } { d } }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "term is harder. This term is related to the expense of reloading at each step the K and V tensors representing the memory which have size "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "b h m k = b n ^ { 2 }"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". One solution is to limit the sequence length n. Another is to reduce the number of positions being attended-to, either by attending to a local neighborhood, or by otherwise compressing the number of memory positions, as in [Liu et al., 2018], [Zhang et al., 2018], [Povey et al., 2018]. In this paper we present an orthogonal approach to reducing the size of the K and V tensors - namely removing their \"heads\" dimension, while maintaining the \"heads\" dimension in the queries. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                763,
+                887,
+                857
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": [
+                    {
+                        "type": "text",
+                        "content": "4 "
+                    }
+                ]
+            },
+            "bbox": [
+                493,
+                950,
+                504,
+                962
+            ]
+        }
+    ],
+    [
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "3 Multi-Query Attention "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                87,
+                421,
+                108
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "We introduce multi-query Attention as a variation of multi-head attention as described in [Vaswani et al., 2017]. Multi-head attention consists of multiple attention layers (heads) in parallel with different linear transformations on the queries, keys, values and outputs. Multi-query attention is identical except that the different heads share a single set of keys and values. The code for (incremental) multi-query (self) attention is identical to the code listed above for multi-head attention, except that we remove the letter \"h\" from the tf.einsum equations where it represents the \"heads\" dimension of K, V , Pk, or Pv. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                118,
+                883,
+                209
+            ]
+        },
+        {
+            "type": "code",
+            "content": {
+                "code_caption": [],
+                "code_content": [
+                    {
+                        "type": "text",
+                        "content": "def MultiqueryAttentionBatched(\n    X, M, mask, P_q, P_k, P_v, P_o):\n    \"\"\"Multi-Query Attention.\n\n    Args:\n    X: a tensor with shape [b, n, d]\n    M: a tensor with shape [b, m, d]\n    mask: a tensor with shape [b, h, n, m]\n    P_q: a tensor with shape [h, d, k]\n    P_k: a tensor with shape [d, k]\n    P_v: a tensor with shape d, v]\n    P_o: a tensor with shape [h, d, v]\n\n    Returns:\n    Y: a tensor with shape [b, n, d]\n    \"\"\"\n\n    Q = tf.einsum(\"bnd, hdk->bhnk\", X, P_q)\n    K = tf.einsum(\"bmd, dk->bmk\", M, P_k)\n    V = tf.einsum(\"bmd, dv->bmv\", M, P_v)\n    logits = tf.einsum(\"bhnk, bmk->bhnm\", Q, K)\n    weights = tf.softmax(logits + mask)\n    O = tf.einsum(\"bhnm, bmv->bhnv\", weights, V)\n    Y = tf.einsum(\"bhnv, hdv->bnd\", O, P_o)\n    return Y "
+                    }
+                ],
+                "code_language": "python"
+            },
+            "bbox": [
+                138,
+                215,
+                580,
+                547
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": [
+                    {
+                        "type": "text",
+                        "content": "5 "
+                    }
+                ]
+            },
+            "bbox": [
+                493,
+                950,
+                503,
+                962
+            ]
+        }
+    ],
+    [
+        {
+            "type": "code",
+            "content": {
+                "code_caption": [],
+                "code_content": [
+                    {
+                        "type": "text",
+                        "content": "def MultiquerySelfAttentionIncremental(\n    x, prev_K, prev_V, P_q, P_k, P_v, P_o):\n    \"\"\"Multi-query Self-Attention (one step).\n    Args:\n    x: a tensor with shape [b, d]\n    prev_K: tensor with shape [b, m, k]\n    prev_V: tensor with shape [b, m, v]\n    P_q: a tensor with shape [h, d, k]\n    P_k: a tensor with shape [d, k]\n    P_v: a tensor with shape [d, v]\n    P_o: a tensor with shape [h, d, v]\n    Returns:\n    y: a tensor with shape [b, d]\n    new_K: tensor with shape [b, m+1, k]\n    new_V: tensor with shape [b, m+1, v]\n    \"\"\"\n    q = tf.einsum(\"bd, hdk->bhk\", x, P_q)\n    K = tf.concat(\n    [prev_K, tf.expand_dims(tf.einsum(\"bd, dk->bk\", M, P_k), axis=2)],\n    axis=2)\n    V = tf.concat(\n    [prev_V, tf.expand_dims(tf.einsum(\"bd, dv->bv\", M, P_v), axis=2)],\n    axis=2)\n    logits = tf.einsum(\"bhk, bmk->bhm\", q, K)\n    weights = tf.softmax(logits)\n    o = tf.einsum(\"bhm, bmv->bhv\", weights, V)\n    y = tf.einsum(\"bhv, hdv->bd\", O, P_o)\n    return y, K, V "
+                    }
+                ],
+                "code_language": "python"
+            },
+            "bbox": [
+                138,
+                95,
+                815,
+                518
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "3.1 Performance Analysis for Incremental Multi-Query Attention "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                111,
+                542,
+                759,
+                561
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "We make the same simplifying assumptions as in section 2.3.1. "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                568,
+                563,
+                583
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Across n calls, the total number of arithmetic operations is again Θ(bnd2). "
+                    }
+                ]
+            },
+            "bbox": [
+                137,
+                583,
+                673,
+                599
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Across n calls, the total amount of memory access is "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\Theta ( b n d + b n ^ { 2 } k + n d ^ { 2 } )"
+                    },
+                    {
+                        "type": "text",
+                        "content": ", the first term due to x, q, o and "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "y ,"
+                    },
+                    {
+                        "type": "text",
+                        "content": "the second term due to K and V and the third term due to "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "P _ { q } , P _ { k } , P _ { v } , P _ { o }"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                599,
+                883,
+                630
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Dividing the memory by the computations, we find that the ratio of memory access to arithmetic operations is "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\begin{array} { r } { \\Theta ( \\frac { 1 } { d } + \\frac { n } { d h } + \\frac { 1 } { b } ) } \\end{array}"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". We have reduced the offensive "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "\\textstyle { \\frac { n } { d } }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "by a factor of h. Theoretically, given large batch size "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "b ,"
+                    },
+                    {
+                        "type": "text",
+                        "content": "this should dramatically improve performance of incremental generation. In our experimental section, we will show that the performance gains are real and that model quality remains high. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                628,
+                883,
+                690
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "4 Experiments and Results "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                111,
+                712,
+                446,
+                732
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "4.1 Experimental Setup "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                744,
+                359,
+                762
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Following [Vaswani et al., 2017], we evaluate on the WMT 2014 English-German translation task. As a baseline, we use an encoder-decoder Transformer model with 6 layers, using "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "d _ { m o d e l } = 1 0 2 4 \\ d _ { f f } = 4 0 9 6 "
+                    },
+                    {
+                        "type": "text",
+                        "content": ", "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "h = 8 , d _ { k } = d _ { v } = 1 2 8"
+                    },
+                    {
+                        "type": "text",
+                        "content": ", learned positional embeddings, and weight-sharing between the token-embedding and output layers. The baseline model and all variations have 211 million parameters. All models were trained for 100,000 steps ( 20 epochs). Each training batch consisted of 128 examples, each of which consisted of a 256-token input sequence and a 256-token target sequence (multiple training sentences were concatenated together to reach this length). Models were trained on a 32-core TPUv3 cluster, with each model taking about 2 hours to train. We used an implementation from the tensor2tensor and mesh-tensorflow libraries. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                768,
+                885,
+                890
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": [
+                    {
+                        "type": "text",
+                        "content": "6 "
+                    }
+                ]
+            },
+            "bbox": [
+                493,
+                950,
+                503,
+                962
+            ]
+        }
+    ],
+    [
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "The configurations used can be found at [to be added before publication] , including details about learning rates, dropout, label smoothing, etc. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                90,
+                883,
+                119
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "In our \"multi-query\" model, we replace all of the attention layers in the model to multi-query attention. This includes the encoder-self-attention, decoder-self-attention and encoder-decoder-attention layers. We widen the feed-forward hidden layers from 4096 to 5440 to make the total parameter-count equal to that of the baseline. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                121,
+                883,
+                180
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "To demonstrate that local-attention and multi-query attention are orthogonal, we also trained \"local\" versions of the baseline and multi-query models, where the decoder-self-attention layers (but not the other attention layers) restrict attention to the current position and the previous 31 positions. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                181,
+                883,
+                226
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "A simpler alternative way to reduce the sizes of K and V is to reduce the number of heads h and/or to reduce the dimensionalities k and v of the keys and values. We trained several such models for comparison, again widening the feed-forward hidden layers to make the total parameter-count equal to that of the baseline. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                227,
+                883,
+                272
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "We preformed a similar set of experiments using \"transformer-decoder\" language models on the Billion-Word Language Modeling Benchmark [Chelba et al., 2013]. For the baseline, we use a model with 6 layers, "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "d _ { m o d e l } = 1 0 2 4 \\ d _ { f f } = 8 1 9 2 , h = 8 , d _ { k } = d _ { v } = 1 2 8"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". The total parameter count is 192 million for the baseline and for all variations. We trained for 136K steps (10 epochs) at a batch size of 64K tokens. Again, we used a 32-core TPUv3 cluster for approximately 3 hours to train each model. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                272,
+                883,
+                348
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "4.2 Model Quality "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                366,
+                307,
+                383
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Table 1 shows results for the machine-translation experiments. We decoded the dev set using greedy maximum-likelihood decoding and computed BLEU score with sacrebleu \"sacrebleu -t wmt13 -l en-de -tok intl\". We also list per-subword-token perplexity on the dev set. According to both of these metrics, the multi-query attention model seems to be slightly worse than the baseline, but much closer than any of the alternatives involving decreasing h, dk and "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "d _ { v }"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                391,
+                883,
+                465
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "We validated the results by decoding the test set using both greedy decoding and beam search (beam "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "4 , \\alpha = 0 . 6 )"
+                    },
+                    {
+                        "type": "text",
+                        "content": ", and evaluated with sacrebleu \"sacrebleu -t wmt14 -l en-de -tok intl\". Again, the multiquery model performed similarly to the baseline, and actually had the highest BLEU score (28.5) with beam-4 decoding. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                465,
+                883,
+                527
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Table 3 shows results for the billion-word language modeling benchmark. Models were evaluated by perword (not per-subword-token) perplexity on the dev set. The results paint a similar picture to the translation results. The multi-query attention model was slightly worse than the baseline, but significantly better than any of the alternatives involving decreasing h, "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "d _ { k }"
+                    },
+                    {
+                        "type": "text",
+                        "content": "and "
+                    },
+                    {
+                        "type": "equation_inline",
+                        "content": "d _ { v }"
+                    },
+                    {
+                        "type": "text",
+                        "content": ". "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                527,
+                883,
+                587
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "4.3 Speed "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                606,
+                225,
+                623
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "Table 2 shows training and inference times for the various models. Both training and inference speeds were evaluated on one TPUv2 (8 cores). A training step (consisting of 32,768 input tokens and 32,768 target tokens, as described above) took 433ms for the base model and 425ms for the multi-query model. Dividing by 32,768, we find that the training time is 13.2µs per (input-token + target-token), as listed in Table 2. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                630,
+                883,
+                691
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "We ran incremental greedy inference on a batch of 1024 sequences (128 per core) using a source-sequence length of 128 tokens and a target sequence length of 128. 1 For the baseline model, the encoder part of the model took 222ms and each incremental step of the decoder took 47ms. Dividing by the respective numbers of tokens, we find that the amortized inference time is 1.7µs per token for the encoder and a much larger 46µs per token for the decoder, as listed in Table 2. For the multi-query model, the encoder took 195ms and the decoder took 3.9ms per step, for amortized per-token costs of 1.5µs and 3.8µs respectively. Table 2 shows these values as well as similar results for beam-search. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                691,
+                883,
+                796
+            ]
+        },
+        {
+            "type": "page_footnote",
+            "content": {
+                "page_footnote_content": [
+                    {
+                        "type": "text",
+                        "content": "1Due to system limitations requiring fixed shapes, we used padding and masking in our decoder-self-attention implementation. The memory tensors were thus padded to the maximum length (128), or to the window-size (32) in the case of local attention. Each decoding step thus took the same amount of time. An alternative implementation of incrementally growing the tensors could save time near the beginning of the sequence. "
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                801,
+                883,
+                852
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": []
+            },
+            "bbox": [
+                493,
+                950,
+                503,
+                960
+            ]
+        }
+    ],
+    [
+        {
+            "type": "table",
+            "content": {
+                "image_source": {
+                    "path": "images/6fc2fe097df6ac73b3be91c4adacc7d4321ee5b1fc7deebb6d2ce1d4f09f5d9d.jpg"
+                },
+                "table_caption": [
+                    {
+                        "type": "text",
+                        "content": "Table 1: WMT14 EN-DE Results. "
+                    }
+                ],
+                "table_footnote": [],
+                "html": "<table><tr><td>Attention Type</td><td>h</td><td>dk, dv</td><td>dff</td><td>ln(PPL) (dev)</td><td>BLEU (dev)</td><td>BLEU (test) beam 1 / 4</td></tr><tr><td>multi-head</td><td>8</td><td>128</td><td>4096</td><td>1.424</td><td>26.7</td><td>27.7 / 28.4</td></tr><tr><td>multi-query</td><td>8</td><td>128</td><td>5440</td><td>1.439</td><td>26.5</td><td>27.5 / 28.5</td></tr><tr><td>multi-head local</td><td>8</td><td>128</td><td>4096</td><td>1.427</td><td>26.6</td><td>27.5 / 28.3</td></tr><tr><td>multi-query local</td><td>8</td><td>128</td><td>5440</td><td>1.437</td><td>26.5</td><td>27.6 / 28.2</td></tr><tr><td>multi-head</td><td>1</td><td>128</td><td>6784</td><td>1.518</td><td>25.8</td><td rowspan=\"4\">26.8 / 27.9</td></tr><tr><td>multi-head</td><td>2</td><td>64</td><td>6784</td><td>1.480</td><td>26.2</td></tr><tr><td>multi-head</td><td>4</td><td>32</td><td>6784</td><td>1.488</td><td>26.1</td></tr><tr><td>multi-head</td><td>8</td><td>16</td><td>6784</td><td>1.513</td><td>25.8</td></tr></table>",
+                "table_type": "complex_table",
+                "table_nest_level": 1
+            },
+            "bbox": [
+                228,
+                127,
+                769,
+                286
+            ]
+        },
+        {
+            "type": "table",
+            "content": {
+                "image_source": {
+                    "path": "images/9922ef5195690566a4447ad9352bbbe7cd0211ad7fcde4adc21b8eb761e206f4.jpg"
+                },
+                "table_caption": [
+                    {
+                        "type": "text",
+                        "content": "Table 2: Amortized training and inference costs for WMT14 EN-DE Translation Task with sequence length 128. Values listed are in TPUv2-microseconds per output token. "
+                    }
+                ],
+                "table_footnote": [],
+                "html": "<table><tr><td>Attention Type</td><td>Training</td><td>Inference enc. + dec.</td><td>Beam-4 Search enc. + dec.</td></tr><tr><td>multi-head</td><td>13.2</td><td>1.7 + 46</td><td>2.0 + 203</td></tr><tr><td>multi-query</td><td>13.0</td><td>1.5 + 3.8</td><td>1.6 + 32</td></tr><tr><td>multi-head local</td><td>13.2</td><td>1.7 + 23</td><td>1.9 + 47</td></tr><tr><td>multi-query local</td><td>13.0</td><td>1.5 + 3.3</td><td>1.6 + 16</td></tr></table>",
+                "table_type": "simple_table",
+                "table_nest_level": 1
+            },
+            "bbox": [
+                272,
+                364,
+                725,
+                460
+            ]
+        },
+        {
+            "type": "table",
+            "content": {
+                "image_source": {
+                    "path": "images/a5d68786e3524a9907f699196bec226493cbe0abf4801eafcf2132b86c8c9ed8.jpg"
+                },
+                "table_caption": [
+                    {
+                        "type": "text",
+                        "content": "Table 3: Billion-Word LM Benchmark Results. "
+                    }
+                ],
+                "table_footnote": [],
+                "html": "<table><tr><td>Attention</td><td>h</td><td>dk, dv</td><td>dff</td><td>dev-PPL</td></tr><tr><td>multi-head</td><td>8</td><td>128</td><td>8192</td><td>29.9</td></tr><tr><td>multi-query</td><td>8</td><td>128</td><td>9088</td><td>30.2</td></tr><tr><td>multi-head</td><td>1</td><td>128</td><td>9984</td><td>31.2</td></tr><tr><td>multi-head</td><td>2</td><td>64</td><td>9984</td><td>31.1</td></tr><tr><td>multi-head</td><td>4</td><td>32</td><td>9984</td><td>31.0</td></tr><tr><td>multi-head</td><td>8</td><td>16</td><td>9984</td><td>30.9</td></tr></table>",
+                "table_type": "simple_table",
+                "table_nest_level": 1
+            },
+            "bbox": [
+                333,
+                523,
+                663,
+                637
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "5 Conclusion "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                670,
+                284,
+                688
+            ]
+        },
+        {
+            "type": "paragraph",
+            "content": {
+                "paragraph_content": [
+                    {
+                        "type": "text",
+                        "content": "We have proposed multi-query attention - an alternative to multi-head attention with much lower memorybandwidth requirements in the incremental setting. We believe that this enables wider adoption of attentionbased sequence models in inference-performance-critical applications. "
+                    }
+                ]
+            },
+            "bbox": [
+                111,
+                700,
+                885,
+                747
+            ]
+        },
+        {
+            "type": "title",
+            "content": {
+                "title_content": [
+                    {
+                        "type": "text",
+                        "content": "References "
+                    }
+                ],
+                "level": 1
+            },
+            "bbox": [
+                112,
+                768,
+                240,
+                787
+            ]
+        },
+        {
+            "type": "list",
+            "content": {
+                "list_type": "reference_list",
+                "list_items": [
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly learning to align and translate, 2014. "
+                            }
+                        ]
+                    },
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "Ciprian Chelba, Tomas Mikolov, Mike Schuster, Qi Ge, Thorsten Brants, and Phillipp Koehn. One billion word benchmark for measuring progress in statistical language modeling. CoRR, abs/1312.3005, 2013. URL http://arxiv.org/abs/1312.3005. "
+                            }
+                        ]
+                    },
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "Peter J Liu, Mohammad Saleh, Etienne Pot, Ben Goodrich, Ryan Sepassi, Lukasz Kaiser, and Noam Shazeer. "
+                            }
+                        ]
+                    }
+                ]
+            },
+            "bbox": [
+                112,
+                800,
+                885,
+                912
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": [
+                    {
+                        "type": "text",
+                        "content": "8 "
+                    }
+                ]
+            },
+            "bbox": [
+                493,
+                950,
+                503,
+                962
+            ]
+        }
+    ],
+    [
+        {
+            "type": "list",
+            "content": {
+                "list_type": "reference_list",
+                "list_items": [
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "Generating wikipedia by summarizing long sequences. In Proceedings of the International Conference on Learning Representations, 2018. "
+                            }
+                        ]
+                    },
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "Daniel Povey, Hossein Hadian, Pegah Ghahremani, Ke Li, and Sanjeev Khudanpur. A time-restricted selfattention layer for ASR. In Proceddings of the IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2018. "
+                            }
+                        ]
+                    },
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In NIPS, 2017. "
+                            }
+                        ]
+                    },
+                    {
+                        "item_type": "text",
+                        "item_content": [
+                            {
+                                "type": "text",
+                                "content": "Biao Zhang, Deyi Xiong, and Jinsong Su. Accelerating neural transformer via an average attention network, 2018. "
+                            }
+                        ]
+                    }
+                ]
+            },
+            "bbox": [
+                109,
+                88,
+                888,
+                258
+            ]
+        },
+        {
+            "type": "page_number",
+            "content": {
+                "page_number_content": [
+                    {
+                        "type": "text",
+                        "content": "9 "
+                    }
+                ]
+            },
+            "bbox": [
+                493,
+                950,
+                504,
+                962
+            ]
+        }
+    ]
+]

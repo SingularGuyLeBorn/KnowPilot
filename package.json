@@ -1,0 +1,22 @@
+{
+  "name": "knowpilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KnowPilot — 智能知识管理与博客平台",
+  "scripts": {
+    "dev": "concurrently --names server,web --prefix-colors blue,green \"pnpm --filter @knowpilot/server dev\" \"pnpm --filter @knowpilot/web dev\"",
+    "dev:web": "pnpm --filter @knowpilot/web dev",
+    "dev:server": "pnpm --filter @knowpilot/server dev",
+    "build": "pnpm --filter @knowpilot/web build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "db:migrate": "pnpm --filter @knowpilot/server db:migrate",
+    "db:studio": "pnpm --filter @knowpilot/server db:studio",
+    "db:seed": "pnpm --filter @knowpilot/server db:seed",
+    "db:sync": "pnpm --filter @knowpilot/server db:sync"
+  },
+  "devDependencies": {
+    "concurrently": "9.1.2",
+    "typescript": "5.8.3"
+  }
+}
