@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { PenLine, Calendar, Eye } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { PenLine, Calendar, Eye, FolderOpen, Hash } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { trpc } from "@/lib/trpc";
 import { buttonVariants } from "@/components/ui/button";
@@ -9,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TagCloud } from "@/components/post/TagCloud";
+import { CategoryList } from "@/components/post/CategoryList";
 
 export default function PostsPage() {
   const { data, isLoading } = trpc.post.list.useQuery({
@@ -50,24 +53,73 @@ export default function PostsPage() {
         ) : (
           <EmptyState />
         )}
+
+        <div className="mt-12 grid gap-8 lg:grid-cols-2">
+          <section>
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+              <FolderOpen className="h-5 w-5 text-primary" />
+              分类
+            </h2>
+            <CategoryList />
+          </section>
+          <section>
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+              <Hash className="h-5 w-5 text-primary" />
+              标签云
+            </h2>
+            <TagCloud />
+          </section>
+        </div>
       </div>
     </Shell>
   );
 }
 
-function PostRow({ post }: { post: any }) {
+interface PostListItem {
+  id: string;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  content: string | null;
+  category: string | null;
+  viewCount: number;
+  updatedAt: Date | string;
+}
+
+function PostRow({ post }: { post: PostListItem }) {
+  const router = useRouter();
   return (
     <Link href={`/posts/${encodeURIComponent(post.slug)}`} className="group block">
       <Card className="transition-all hover:-translate-y-[2px] hover:border-primary/20 hover:bg-accent hover:shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg group-hover:text-primary">{post.title}</CardTitle>
           <CardDescription className="line-clamp-2">
-            {post.excerpt || post.content.slice(0, 160) + "..."}
+            {post.excerpt || (post.content ? post.content.slice(0, 160) : "") + (post.content && post.content.length > 160 ? "..." : "")}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            {post.category && <Badge variant="secondary">{post.category}</Badge>}
+            {post.category && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  router.push(`/categories/${encodeURIComponent(post.category!)}`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    router.push(`/categories/${encodeURIComponent(post.category!)}`);
+                  }
+                }}
+              >
+                <Badge variant="secondary" className="cursor-pointer hover:bg-primary/10 hover:text-primary">
+                  {post.category}
+                </Badge>
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <Calendar className="h-3 w-3" />
               {new Date(post.updatedAt).toLocaleDateString("zh-CN")}

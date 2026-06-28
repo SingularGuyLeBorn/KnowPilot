@@ -6,8 +6,10 @@ import Link from "next/link";
 import { ArrowLeft, Save, Send } from "lucide-react";
 import { Shell } from "@/components/layout/Shell";
 import { MilkdownEditor, MilkdownStyles } from "@/components/editor/MilkdownEditor";
+import { ImageUploadButton, useImageDrop } from "@/components/editor/ImageUploadButton";
 import { trpc } from "@/lib/trpc";
 import { useAutoSave } from "@/lib/useAutoSave";
+import { cn } from "@/lib/utils";
 
 export default function NewPostPage() {
   const router = useRouter();
@@ -15,7 +17,6 @@ export default function NewPostPage() {
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
-  const [publishing, setPublishing] = useState(false);
 
   const { lastSavedAt } = useAutoSave({
     title,
@@ -32,15 +33,33 @@ export default function NewPostPage() {
     },
   });
 
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [uploadKey, setUploadKey] = useState(0);
+
   const createPost = trpc.post.create.useMutation({
-    onSuccess: (post) => {
-      router.push(`/posts/${encodeURIComponent(post.slug)}`);
+    onSuccess: (result) => {
+      if (result.success && result.data) {
+        router.push(`/posts/${encodeURIComponent(result.data.slug)}`);
+      } else {
+        const err = result.error;
+        setErrorMessage(err?.message || "创建文章失败");
+        console.error("创建文章失败:", err);
+      }
+    },
+    onError: (error) => {
+      setErrorMessage(error.message || "创建文章时发生网络错误");
     },
   });
 
+  const appendImage = (markdown: string) => {
+    setContent((prev) => (prev ? `${prev}\n${markdown}` : markdown));
+    setUploadKey((k) => k + 1);
+  };
+
+  const { dragOver, dropHandlers } = useImageDrop(appendImage);
+
   const handleSave = (publish = false) => {
     if (!title.trim()) return;
-    setPublishing(true);
     createPost.mutate({
       title: title.trim(),
       content,
@@ -75,11 +94,17 @@ export default function NewPostPage() {
             />
           </div>
           <div className="flex items-center gap-3">
+            {errorMessage && (
+              <span className="max-w-xs truncate text-xs text-red-500" title={errorMessage}>
+                {errorMessage}
+              </span>
+            )}
             {lastSavedAt && (
               <span className="hidden text-xs text-[var(--kp-text-3)] sm:inline">
                 草稿已保存 {lastSavedAt.toLocaleTimeString("zh-CN")}
               </span>
             )}
+            <ImageUploadButton onUploaded={appendImage} />
             <button
               onClick={() => handleSave(false)}
               disabled={createPost.isPending || !title.trim()}
@@ -117,10 +142,19 @@ export default function NewPostPage() {
 
         {/* Editor */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <MilkdownEditor
-            initialValue={content}
-            onChange={setContent}
-          />
+          <div
+            {...dropHandlers}
+            className={cn(
+              "h-full rounded-xl transition-colors",
+              dragOver && "bg-[var(--kp-brand)]/5 ring-2 ring-[var(--kp-brand)]/30"
+            )}
+          >
+            <MilkdownEditor
+              key={uploadKey}
+              initialValue={content}
+              onChange={setContent}
+            />
+          </div>
         </div>
       </div>
     </Shell>

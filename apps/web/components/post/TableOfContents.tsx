@@ -1,16 +1,22 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { Search, X, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
 interface TocItem {
   id: string;
   text: string;
   level: number;
+}
+
+interface TocGroup {
+  heading: TocItem;
+  children: TocItem[];
 }
 
 function slugify(text: string) {
@@ -35,6 +41,23 @@ function parseHeadings(content: string): TocItem[] {
   return items;
 }
 
+function buildGroups(items: TocItem[]): TocGroup[] {
+  const groups: TocGroup[] = [];
+  let current: TocGroup | null = null;
+  for (const item of items) {
+    if (item.level === 2) {
+      current = { heading: item, children: [] };
+      groups.push(current);
+    } else if (current) {
+      current.children.push(item);
+    } else {
+      // orphan h3/h4 before any h2: create a virtual group
+      groups.push({ heading: item, children: [] });
+    }
+  }
+  return groups;
+}
+
 function scrollToId(id: string) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -42,9 +65,20 @@ function scrollToId(id: string) {
   history.replaceState(null, "", `#${id}`);
 }
 
+function useInitialHash(items: TocItem[], setActiveId: (id: string) => void) {
+  useEffect(() => {
+    const hash = decodeURIComponent(window.location.hash.slice(1));
+    if (!hash) return;
+    if (items.some((item) => item.id === hash)) {
+      setActiveId(hash);
+    }
+  }, [items, setActiveId]);
+}
+
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query.trim()) return <>{text}</>;
-  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"));
+  const safe = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${safe})`, "gi"));
   return (
     <>
       {parts.map((part, i) =>
@@ -60,15 +94,51 @@ function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
+function filterGroups(groups: TocGroup[], query: string): TocGroup[] {
+  const q = query.toLowerCase();
+  return groups.reduce<TocGroup[]>((acc, group) => {
+    const headingMatch = group.heading.text.toLowerCase().includes(q);
+    const matchedChildren = group.children.filter((c) =>
+      c.text.toLowerCase().includes(q)
+    );
+    if (headingMatch) {
+      acc.push({ ...group, children: group.children });
+    } else if (matchedChildren.length) {
+      acc.push({ ...group, children: matchedChildren });
+    }
+    return acc;
+  }, []);
+}
+
 export function TableOfContents({ content, className }: { content: string; className?: string }) {
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [manuallyExpanded, setManuallyExpanded] = useState<Set<string>>(new Set());
+
   const items = useMemo(() => parseHeadings(content), [content]);
+  const groups = useMemo(() => buildGroups(items), [items]);
   const filtered = useMemo(() => {
-    if (!query.trim()) return items;
-    const q = query.toLowerCase();
-    return items.filter((item) => item.text.toLowerCase().includes(q));
-  }, [items, query]);
+    if (!query.trim()) return groups;
+    return filterGroups(groups, query);
+  }, [groups, query]);
+
+  const expanded = useMemo(() => {
+    const next = new Set(manuallyExpanded);
+    if (activeId) {
+      for (const group of groups) {
+        if (group.heading.id === activeId || group.children.some((c) => c.id === activeId)) {
+          next.add(group.heading.id);
+          break;
+        }
+      }
+    }
+    if (query.trim()) {
+      for (const group of filtered) next.add(group.heading.id);
+    }
+    return next;
+  }, [manuallyExpanded, activeId, groups, query, filtered]);
+
+  useInitialHash(items, setActiveId);
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -84,7 +154,8 @@ export function TableOfContents({ content, className }: { content: string; class
         }
         if (topVisible) setActiveId(topVisible);
       },
-      { rootMargin: "-80px 0px -70% 0px", threshold: 0 }
+      // 观察区域：从导航栏下方到视口 45% 处，取最靠近顶部的标题
+      { rootMargin: "-88px 0px -55% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
     );
     for (const item of items) {
       const el = document.getElementById(item.id);
@@ -93,12 +164,21 @@ export function TableOfContents({ content, className }: { content: string; class
     return () => observer.disconnect();
   }, [items]);
 
+  const toggleGroup = useCallback((id: string) => {
+    setManuallyExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   if (items.length === 0) return null;
 
   return (
     <aside
       className={cn(
-        "fixed top-20 right-4 z-30 hidden w-64 flex-col rounded-xl border bg-card text-card-foreground shadow-sm xl:flex",
+        "fixed top-[5.5rem] right-4 z-30 hidden w-60 flex-col rounded-xl border bg-card text-card-foreground shadow-sm xl:flex",
         className
       )}
     >
@@ -129,34 +209,81 @@ export function TableOfContents({ content, className }: { content: string; class
           )}
         </div>
       </div>
-      <ScrollArea className="max-h-[calc(100vh-15rem)]">
+      <ScrollArea className="max-h-[calc(100vh-11rem)]">
         <nav className="flex flex-col px-2 pb-2">
-          {filtered.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => scrollToId(item.id)}
-              className={cn(
-                "group flex items-start gap-1 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-                item.level === 2 && "font-medium",
-                item.level === 3 && "pl-5 text-muted-foreground",
-                item.level === 4 && "pl-9 text-muted-foreground/80",
-                activeId === item.id
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              )}
-            >
-              <ChevronRight
-                className={cn(
-                  "mt-0.5 h-3 w-3 shrink-0 transition-transform",
-                  activeId === item.id ? "rotate-90 text-primary" : "text-muted-foreground/60 group-hover:text-accent-foreground"
+          {filtered.map((group) => {
+            const isOpen = expanded.has(group.heading.id);
+            const hasChildren = group.children.length > 0;
+            const isActiveGroup = activeId === group.heading.id;
+
+            return (
+              <Collapsible key={group.heading.id} open={isOpen} onOpenChange={() => toggleGroup(group.heading.id)}>
+                <div className="flex items-center">
+                  {hasChildren ? (
+                    <CollapsibleTrigger
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label={isOpen ? "折叠" : "展开"}
+                    >
+                      <ChevronRight
+                        className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-90")}
+                      />
+                    </CollapsibleTrigger>
+                  ) : (
+                    <span className="h-5 w-5 shrink-0" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveId(group.heading.id);
+                      scrollToId(group.heading.id);
+                    }}
+                    className={cn(
+                      "group flex flex-1 items-start rounded-md px-2 py-1 text-left text-xs transition-colors",
+                      isActiveGroup
+                        ? "bg-primary/10 text-primary"
+                        : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    <span className="line-clamp-2 font-medium">
+                      <Highlight text={group.heading.text} query={query} />
+                    </span>
+                  </button>
+                </div>
+
+                {hasChildren && (
+                  <CollapsibleContent>
+                    <div className="ml-4 border-l border-border pl-2">
+                      {group.children.map((child) => {
+                        const isActive = activeId === child.id;
+                        return (
+                          <button
+                            key={child.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveId(child.id);
+                              scrollToId(child.id);
+                            }}
+                            className={cn(
+                              "group flex w-full items-start rounded-md px-2 py-1 text-left text-xs transition-colors",
+                              child.level === 3 && "pl-4",
+                              child.level === 4 && "pl-6 text-muted-foreground/80",
+                              isActive
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                            )}
+                          >
+                            <span className="line-clamp-2">
+                              <Highlight text={child.text} query={query} />
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </CollapsibleContent>
                 )}
-              />
-              <span className="line-clamp-2">
-                <Highlight text={item.text} query={query} />
-              </span>
-            </button>
-          ))}
+              </Collapsible>
+            );
+          })}
           {filtered.length === 0 && (
             <p className="px-2 py-3 text-xs text-muted-foreground">无匹配标题</p>
           )}

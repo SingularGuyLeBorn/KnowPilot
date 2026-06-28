@@ -86,6 +86,11 @@ export function useAutoSave({
           published: payload.published,
         },
         {
+          onSuccess: (result) => {
+            if (!result.success) {
+              console.error("自动保存失败:", result.error);
+            }
+          },
           onSettled: () => setIsSaving(false),
         }
       );
@@ -107,8 +112,9 @@ export function useAutoSave({
   }, [enabled, title, content, category, tags, published]);
 
   useEffect(() => {
+    const save = debouncedSave.current;
     return () => {
-      debouncedSave.current.flush();
+      save.flush();
     };
   }, []);
 

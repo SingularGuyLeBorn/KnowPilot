@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useLayoutEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight, FileText, FolderClosed, FolderOpen, Search, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 
 interface PostSummary {
@@ -40,23 +40,50 @@ function buildTree(posts: PostSummary[]): TreeNode[] {
 
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
+
+      // 如果文件与父文件夹同名（或 index.md），把文章挂在父节点上，避免重复子节点
+      if (
+        i === parts.length - 1 &&
+        parentItem &&
+        (part === "index" || part === parts[i - 1])
+      ) {
+        parentItem.post = post;
+        break;
+      }
+
       if (!map[part]) {
         map[part] = { post: null, children: {} };
       }
       const item = map[part];
       if (i === parts.length - 1) {
-        if (part === "index" && parentItem) {
-          parentItem.post = post;
-        } else {
-          item.post = post;
-        }
+        item.post = post;
       }
       parentItem = item;
       map = item.children;
     }
   }
 
-  const sortByKey = (a: TreeNode, b: TreeNode) => a.key.localeCompare(b.key, "zh-CN");
+  const naturalCompare = (a: string, b: string): number => {
+    const re = /(\d+)|(\D+)/g;
+    const aParts = a.match(re) || [];
+    const bParts = b.match(re) || [];
+    for (let i = 0; i < Math.min(aParts.length, bParts.length); i++) {
+      const aPart = aParts[i];
+      const bPart = bParts[i];
+      const aNum = parseInt(aPart, 10);
+      const bNum = parseInt(bPart, 10);
+      const bothNums = !Number.isNaN(aNum) && !Number.isNaN(bNum);
+      if (bothNums) {
+        if (aNum !== bNum) return aNum - bNum;
+      } else {
+        const cmp = aPart.localeCompare(bPart, "zh-CN");
+        if (cmp !== 0) return cmp;
+      }
+    }
+    return aParts.length - bParts.length;
+  };
+
+  const sortByKey = (a: TreeNode, b: TreeNode) => naturalCompare(a.key, b.key);
 
   const convert = (key: string, item: TreeItem): TreeNode => {
     const children = Object.entries(item.children)
@@ -167,7 +194,12 @@ function TreeNodeItem({
         )}
 
         {isDoc && node.slug ? (
-          <Link href={`/posts/${encodeURIComponent(node.slug)}`} className={rowClass} title={node.title}>
+          <Link
+            href={`/posts/${encodeURIComponent(node.slug)}`}
+            scroll={false}
+            className={rowClass}
+            title={node.title}
+          >
             {iconNode}
             <span className="line-clamp-1">{node.title}</span>
           </Link>
@@ -210,29 +242,33 @@ export function PostTreeNav({ className }: { className?: string }) {
   const pathname = usePathname();
   const activeSlug = useMemo(() => getPostSlug(pathname), [pathname]);
   const tree = useMemo(() => buildTree(data || []), [data]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [query, setQuery] = useState("");
-
-  useEffect(() => {
+  const [manuallyExpanded, setManuallyExpanded] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setExpanded(new Set(JSON.parse(saved)));
+      return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch {
-      // ignore
+      return new Set();
     }
-  }, []);
+  });
+  const [query, setQuery] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollTopRef = useRef(0);
+  const prevPathnameRef = useRef(pathname);
 
-  useEffect(() => {
-    if (!activeSlug || tree.length === 0) return;
-    const ancestors = collectAncestorKeys(activeSlug, tree);
-    if (ancestors !== null) {
-      setExpanded((prev) => {
-        const next = new Set(prev);
-        for (const key of ancestors) next.add(key);
-        return next;
-      });
-    }
-  }, [activeSlug, tree]);
+  // 路由切换后保持左侧文档树滚动位置，避免点击文章后侧边栏自动滚回顶部
+  useLayoutEffect(() => {
+    if (prevPathnameRef.current === pathname) return;
+    prevPathnameRef.current = pathname;
+    const el = scrollRef.current;
+    if (!el) return;
+    const restore = () => {
+      el.scrollTop = scrollTopRef.current;
+    };
+    restore();
+    requestAnimationFrame(restore);
+    const id = setTimeout(restore, 50);
+    return () => clearTimeout(id);
+  });
 
   const persist = useCallback((next: Set<string>) => {
     try {
@@ -244,7 +280,7 @@ export function PostTreeNav({ className }: { className?: string }) {
 
   const toggle = useCallback(
     (key: string, open: boolean) => {
-      setExpanded((prev) => {
+      setManuallyExpanded((prev) => {
         const next = new Set(prev);
         if (open) next.add(key);
         else next.delete(key);
@@ -257,16 +293,28 @@ export function PostTreeNav({ className }: { className?: string }) {
 
   const visibleTree = useMemo(() => {
     if (!query.trim()) return tree;
-    const filtered = filterTree(tree, query);
-    // expand all filtered branches
-    const keys = collectAllKeys(filtered);
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      for (const key of keys) next.add(key);
-      return next;
-    });
-    return filtered;
+    return filterTree(tree, query);
   }, [tree, query]);
+
+  const expanded = useMemo(() => {
+    const next = new Set(manuallyExpanded);
+    if (activeSlug && tree.length > 0) {
+      const ancestors = collectAncestorKeys(activeSlug, tree);
+      if (ancestors !== null) {
+        for (const key of ancestors) next.add(key);
+      }
+    }
+    if (query.trim()) {
+      for (const key of collectAllKeys(visibleTree)) next.add(key);
+    }
+    return next;
+  }, [manuallyExpanded, activeSlug, tree, query, visibleTree]);
+
+  const handleScroll = useCallback(() => {
+    if (scrollRef.current) {
+      scrollTopRef.current = scrollRef.current.scrollTop;
+    }
+  }, []);
 
   if (isLoading) {
     return (
@@ -279,7 +327,9 @@ export function PostTreeNav({ className }: { className?: string }) {
   }
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div
+      className={cn("flex h-full min-h-0 flex-col gap-2", className)}
+    >
       <h3 className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         知识库
       </h3>
@@ -301,7 +351,11 @@ export function PostTreeNav({ className }: { className?: string }) {
           </button>
         )}
       </div>
-      <ScrollArea className="h-[calc(100vh-16rem)] pr-1">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="kp-tree-scroll flex-1 min-h-0 overflow-y-auto pr-1"
+      >
         <nav className="flex flex-col pb-2">
           {visibleTree.map((node) => (
             <TreeNodeItem
@@ -316,7 +370,7 @@ export function PostTreeNav({ className }: { className?: string }) {
             <p className="px-2 py-3 text-xs text-muted-foreground">无匹配文档</p>
           )}
         </nav>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

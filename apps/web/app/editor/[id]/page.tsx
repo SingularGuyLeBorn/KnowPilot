@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Send } from "lucide-react";
@@ -8,61 +8,21 @@ import { Shell } from "@/components/layout/Shell";
 import { MilkdownEditor, MilkdownStyles } from "@/components/editor/MilkdownEditor";
 import { trpc } from "@/lib/trpc";
 import { useAutoSave } from "@/lib/useAutoSave";
+interface Post {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  category: string | null;
+  tags: string[];
+  published: boolean;
+}
 
 export default function EditPostPage() {
   const params = useParams();
-  const router = useRouter();
   const id = params.id as string;
 
   const { data: post, isLoading } = trpc.post.getById.useQuery({ id });
-
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [category, setCategory] = useState("");
-  const [tags, setTags] = useState("");
-  const [published, setPublished] = useState(false);
-
-  useEffect(() => {
-    if (post) {
-      setTitle(post.title);
-      setContent(post.content);
-      setCategory(post.category || "");
-      setTags(post.tags?.join(", ") || "");
-      setPublished(post.published);
-    }
-  }, [post]);
-
-  const { lastSavedAt, isSaving } = useAutoSave({
-    id,
-    title,
-    content,
-    category,
-    tags,
-    published,
-    enabled: !!post,
-  });
-
-  const updatePost = trpc.post.update.useMutation({
-    onSuccess: (updated) => {
-      router.push(`/posts/${encodeURIComponent(updated.slug)}`);
-    },
-  });
-
-  const handleSave = (publish = false) => {
-    if (!title.trim() || !id) return;
-    updatePost.mutate({
-      id,
-      title: title.trim(),
-      content,
-      category: category || null,
-      tags: tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-      published: publish,
-    });
-    setPublished(publish);
-  };
 
   if (isLoading) {
     return (
@@ -83,6 +43,60 @@ export default function EditPostPage() {
       </Shell>
     );
   }
+
+  return <EditorForm key={post.id} id={id} post={post} />;
+}
+
+function EditorForm({ id, post }: { id: string; post: Post }) {
+  const router = useRouter();
+
+  const [title, setTitle] = useState(post.title);
+  const [content, setContent] = useState(post.content);
+  const [category, setCategory] = useState(post.category || "");
+  const [tags, setTags] = useState(post.tags?.join(", ") || "");
+  const [published, setPublished] = useState(post.published);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const { lastSavedAt, isSaving } = useAutoSave({
+    id,
+    title,
+    content,
+    category,
+    tags,
+    published,
+    enabled: true,
+  });
+
+  const updatePost = trpc.post.update.useMutation({
+    onSuccess: (result) => {
+      if (result.success && result.data) {
+        router.push(`/posts/${encodeURIComponent(result.data.slug)}`);
+      } else {
+        const err = result.error;
+        setErrorMessage(err?.message || "更新文章失败");
+        console.error("更新文章失败:", err);
+      }
+    },
+    onError: (error) => {
+      setErrorMessage(error.message || "更新文章时发生网络错误");
+    },
+  });
+
+  const handleSave = (publish = false) => {
+    if (!title.trim() || !id) return;
+    updatePost.mutate({
+      id,
+      title: title.trim(),
+      content,
+      category: category || null,
+      tags: tags
+        .split(",")
+        .map((t: string) => t.trim())
+        .filter(Boolean),
+      published: publish,
+    });
+    setPublished(publish);
+  };
 
   return (
     <Shell className="overflow-hidden">
@@ -106,6 +120,11 @@ export default function EditPostPage() {
             />
           </div>
           <div className="flex items-center gap-3">
+            {errorMessage && (
+              <span className="max-w-xs truncate text-xs text-red-500" title={errorMessage}>
+                {errorMessage}
+              </span>
+            )}
             {(lastSavedAt || isSaving) && (
               <span className="hidden text-xs text-[var(--kp-text-3)] sm:inline">
                 {isSaving ? "保存中…" : `已保存 ${lastSavedAt?.toLocaleTimeString("zh-CN")}`}
