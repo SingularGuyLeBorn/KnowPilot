@@ -11,5 +11,6 @@
     "e2e": "26 passed"
   },
   "validatedAt": "2026-06-29T02:10:00+08:00",
-  "gitCommit": "68017eb"
+  "gitCommit": "9f44c9e",
+  "docs": "docs/development/README.md#计划完成与验收2026-06-29"
 }
