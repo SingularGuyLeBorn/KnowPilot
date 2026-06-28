@@ -4,7 +4,7 @@ title: "ABAB-初代 核心技术专题索引"
 
 # ABAB-初代 核心技术专题索引
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 ## 1. 技术问题定义与背景 (Technical Problem Definition)
 

@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 DeepSeek-AI

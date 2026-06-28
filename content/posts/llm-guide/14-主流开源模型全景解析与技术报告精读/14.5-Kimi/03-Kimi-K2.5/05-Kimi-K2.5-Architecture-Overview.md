@@ -4,7 +4,7 @@ title: "Kimi-K2.5原生多模态智能体与Agent-Swarm编排体系剖析"
 
 # Kimi K2.5 原生多模态智能体与 Agent Swarm 编排体系剖析
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 
 > 信息来源: Kimi K2.5: Visual Agentic Intelligence (arXiv:2602.02276)
@@ -142,7 +142,9 @@ PARL(Parallel Agent Reinforcement Learning)采用解耦架构:
 
 ### 6.3 PARL 奖励设计
 
-$$ r_{PARL}(x, y) = \lambda_1 \cdot r_{parallel} + \lambda_2 \cdot r_{finish} + r_{perf}(x, y) $$
+$$
+ r_{PARL}(x, y) = \lambda_1 \cdot r_{parallel} + \lambda_2 \cdot r_{finish} + r_{perf}(x, y)
+$$
 
 三个组件的分工:
 - **$r_{perf}$**: 最终目标,评估任务解决方案的整体成功和质量
@@ -157,7 +159,9 @@ $$ r_{PARL}(x, y) = \lambda_1 \cdot r_{parallel} + \lambda_2 \cdot r_{finish} + 
 
 为衡量并行智能体的计算时间成本,Agent Swarm 引入 Critical Steps:
 
-$$ \text{CriticalSteps} = \sum_{t=1}^{T} S_{\text{main}}^{(t)} + \max_i S_{\text{sub},i}^{(t)} $$
+$$
+ \text{CriticalSteps} = \sum_{t=1}^{T} S_{\text{main}}^{(t)} + \max_i S_{\text{sub},i}^{(t)}
+$$
 
 即每个阶段的持续时间由该并行组中最长运行的子智能体决定. 这与计算图中的关键路径长度一致,迫使编排器关注「瓶颈子任务」——那些执行时间最长的分支.
 
@@ -173,7 +177,9 @@ Agent Swarm 通过显式编排实现主动式上下文控制: 长程任务被分
 
 K2.5 提出 Toggle,一种在推理时扩展和预算约束优化之间交替的训练启发式:
 
-$$ \tilde{r}(x, y) = \begin{cases} r(x, y) \cdot \mathbb{I}\left[\bar{r} \geq \tau \text{ 或 } |y| \leq \text{budget}(x)\right] & \text{Phase0} \\ r(x, y) & \text{Phase1} \end{cases} $$
+$$
+ \tilde{r}(x, y) = \begin{cases} r(x, y) \cdot \mathbb{I}\left[\bar{r} \geq \tau \text{ 或 } |y| \leq \text{budget}(x)\right] & \text{Phase0} \\ r(x, y) & \text{Phase1} \end{cases}
+$$
 
 - **Phase0(预算限制)**: 模型被训练在任务相关的 token 预算内解决问题. 约束有条件应用: 仅当平均准确率超过阈值 $\tau$ 时才强制执行
 - **Phase1(标准扩展)**: 模型生成响应直至最大 token 限制,鼓励利用计算获得更好的推理

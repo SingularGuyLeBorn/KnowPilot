@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 # DeepSeek-V3.2: 推动开源大语言模型的前沿
@@ -232,7 +232,7 @@ GRPO (Shao et al., 2024) is a powerful RL algorithm for reasoning model training
 GRPO (Shao et al., 2024) 是一种用于推理模型训练的强大 RL 算法。在 GRPO 中，对于每个问题 $q$，从当前模型采样一组 $G$ 个回复。一组奖励分数由基于规则的验证器或奖励模型生成，优势通过回复的归一化奖励计算，无需价值模型。GRPO 的优化目标可以表述为：
 
 $$
-J_{\mathrm{GRPO}}(\theta) = \mathbb{E}\left[ q \sim P(Q), \left\{ o_i \right\}_{i=1}^{G} \sim \pi_{\theta_{\text{old}}}(O|q) \right]  
+J_{\mathrm{GRPO}}(\theta) = \mathbb{E}\left[ q \sim P(Q), \left\{ o_i \right\}_{i=1}^{G} \sim \pi_{\theta_{\text{old}}}(O|q) \right]
 \frac{1}{G} \sum_{i=1}^{G} \left( \min \left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{\text{old}}}(o_i|q)} A_i, \ \mathrm{clip}\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{\text{old}}}(o_i|q)}, 1-\varepsilon, 1+\varepsilon \right) A_i \right) - \beta \mathbb{D}_{\mathrm{KL}}\left( \pi_\theta \big\| \pi_{\mathrm{ref}} \right) \right), \tag{5}
 $$
 

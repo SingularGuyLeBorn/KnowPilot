@@ -54,7 +54,9 @@ OPSD 就是让“闭卷考的你”在写下每一个算符时，去向“开卷
 在基础 OPD 中，我们极力推崇 Reverse KL，因为它能防止学生在面对不确定的教师时瞎猜(防幻觉). 
 **但在 OPSD 中，作者惊人地发现: 必须改用 Forward KL！**
 
-$$ \mathcal{L}_{OPSD} = \mathbb{E}_{x, y^*} \mathbb{E}_{y \sim \pi_\theta} \left[ \frac{1}{T} \sum_{t=1}^T \underline{\mathbf{D_{KL}(\pi_T \| \pi_\theta)}} \right] \tag{1} $$
+$$
+ \mathcal{L}_{OPSD} = \mathbb{E}_{x, y^*} \mathbb{E}_{y \sim \pi_\theta} \left[ \frac{1}{T} \sum_{t=1}^T \underline{\mathbf{D_{KL}(\pi_T \| \pi_\theta)}} \right] \tag{1}
+$$
 
 **物理层面的根因剖析**: 
 - 在基础 OPD 中，Teacher 是凭空猜题，它的分布可能是平坦的(High Entropy). 

@@ -6,7 +6,7 @@ arxiv_id: "2403.08295"
 
 # Gemma: Open Models Based on Gemini Research and Technology
 
-> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+>  **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
 
 
 Gemma Team, Google DeepMind

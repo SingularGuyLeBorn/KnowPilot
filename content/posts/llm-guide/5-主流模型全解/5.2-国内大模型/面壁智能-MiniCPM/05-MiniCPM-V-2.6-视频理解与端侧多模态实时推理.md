@@ -172,11 +172,11 @@ MiniCPM-V 2.6 提供多种量化版本以适应不同端侧设备:
 
 | 模型 | 参数量 | 视觉编码器 | 语言基座 | 视频理解 | 端侧实时 | 视觉 token/180 万像素 |
 |------|--------|-----------|---------|---------|---------|---------------------|
-| MiniCPM-V 2.6 | 8B | SigLip-400M | Qwen2-7B | ✅ | ✅ | 640 |
-| MiniCPM-Llama3-V 2.5 | 8B | SigLip-400M | Llama3-8B | ❌ | ❌ | ~640 |
-| LLaVA-NeXT-Video-34B | 34B | CLIP-L | Vicuna-33B | ✅ | ❌ | ~2560 |
-| Phi-3-vision-128k | 4.2B | CLIP-L | Phi-3 | ❌ | 部分 | ~2560 |
-| Qwen2-VL-7B | 7B | ViT | Qwen2-7B | ✅ | 部分 | ~1024 |
+| MiniCPM-V 2.6 | 8B | SigLip-400M | Qwen2-7B |  |  | 640 |
+| MiniCPM-Llama3-V 2.5 | 8B | SigLip-400M | Llama3-8B |  |  | ~640 |
+| LLaVA-NeXT-Video-34B | 34B | CLIP-L | Vicuna-33B |  |  | ~2560 |
+| Phi-3-vision-128k | 4.2B | CLIP-L | Phi-3 |  | 部分 | ~2560 |
+| Qwen2-VL-7B | 7B | ViT | Qwen2-7B |  | 部分 | ~1024 |
 
 ### 5.2 关键差异分析
 

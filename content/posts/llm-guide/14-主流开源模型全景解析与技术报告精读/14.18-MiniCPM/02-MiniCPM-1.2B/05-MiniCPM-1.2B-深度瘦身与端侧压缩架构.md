@@ -4,7 +4,7 @@ title: "MiniCPM-1.2B 深度瘦身与端侧压缩架构解析"
 
 # MiniCPM-1.2B 深度瘦身与端侧压缩架构解析
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文定位: MiniCPM 技术报告第 4 节 "Model" 及第 6 节相关配置

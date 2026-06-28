@@ -6,7 +6,7 @@ date: 2026-05-19
 
 # DeepSeek-V2: 一个强大、经济且高效的混合专家语言模型
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model
@@ -60,17 +60,33 @@ date: 2026-05-19
 
 我们首先介绍标准 MHA 机制作为背景. 设 $d$ 为嵌入维度, $n_h$ 为注意力头数, $d_h$ 为每头维度, $\mathbf{h}_t \in \mathbb{R}^d$ 为注意力层中第 $t$ 个 token 的注意力输入. 标准 MHA 首先通过三个矩阵 $W^Q, W^K, W^V \in \mathbb{R}^{d_h n_h \times d}$ 分别产生 $\mathbf{q}_t, \mathbf{k}_t, \mathbf{v}_t \in \mathbb{R}^{d_h n_h}$:
 
-$$ \mathbf{q}_t = W^Q \mathbf{h}_t \tag{1} $$
-$$ \mathbf{k}_t = W^K \mathbf{h}_t \tag{2} $$
-$$ \mathbf{v}_t = W^V \mathbf{h}_t \tag{3} $$
+$$
+ \mathbf{q}_t = W^Q \mathbf{h}_t \tag{1}
+$$
+$$
+ \mathbf{k}_t = W^K \mathbf{h}_t \tag{2}
+$$
+$$
+ \mathbf{v}_t = W^V \mathbf{h}_t \tag{3}
+$$
 
 然后, $\mathbf{q}_t, \mathbf{k}_t, \mathbf{v}_t$ 被切分为 $n_h$ 个头以进行多头注意力计算:
 
-$$ [\mathbf{q}_{t,1}; \mathbf{q}_{t,2}; ...; \mathbf{q}_{t,n_h}] = \mathbf{q}_t \tag{4} $$
-$$ [\mathbf{k}_{t,1}; \mathbf{k}_{t,2}; ...; \mathbf{k}_{t,n_h}] = \mathbf{k}_t \tag{5} $$
-$$ [\mathbf{v}_{t,1}; \mathbf{v}_{t,2}; ...; \mathbf{v}_{t,n_h}] = \mathbf{v}_t \tag{6} $$
-$$ \mathbf{o}_{t,i} = \sum_{j=1}^{t} \text{Softmax}_j\left(\frac{\mathbf{q}_{t,i}^T \mathbf{k}_{j,i}}{\sqrt{d_h}}\right) \mathbf{v}_{j,i} \tag{7} $$
-$$ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_h}] \tag{8} $$
+$$
+ [\mathbf{q}_{t,1}; \mathbf{q}_{t,2}; ...; \mathbf{q}_{t,n_h}] = \mathbf{q}_t \tag{4}
+$$
+$$
+ [\mathbf{k}_{t,1}; \mathbf{k}_{t,2}; ...; \mathbf{k}_{t,n_h}] = \mathbf{k}_t \tag{5}
+$$
+$$
+ [\mathbf{v}_{t,1}; \mathbf{v}_{t,2}; ...; \mathbf{v}_{t,n_h}] = \mathbf{v}_t \tag{6}
+$$
+$$
+ \mathbf{o}_{t,i} = \sum_{j=1}^{t} \text{Softmax}_j\left(\frac{\mathbf{q}_{t,i}^T \mathbf{k}_{j,i}}{\sqrt{d_h}}\right) \mathbf{v}_{j,i} \tag{7}
+$$
+$$
+ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_h}] \tag{8}
+$$
 
 其中 $\mathbf{q}_{t,i}, \mathbf{k}_{t,i}, \mathbf{v}_{t,i} \in \mathbb{R}^{d_h}$ 分别表示第 $i$ 个注意力头的 query、key 和 value; $W^O \in \mathbb{R}^{d \times d_h n_h}$ 表示输出投影矩阵. 在推理期间, 所有 key 和 value 都需要被缓存以加速推理, 因此 MHA 每个 token 需要缓存 $2 n_h d_h l$ 个元素($l$ 为层数). 在模型部署中, 这个沉重的 KV 缓存是限制最大 batch size 和序列长度的一大瓶颈.
 
@@ -78,16 +94,26 @@ $$ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_
 
 MLA 的核心是键值的低秩联合压缩, 以减少 KV 缓存:
 
-$$ \mathbf{c}_t^{KV} = W^{DKV} \mathbf{h}_t \tag{9} $$
-$$ \mathbf{k}_t^C = W^{UK} \mathbf{c}_t^{KV} \tag{10} $$
-$$ \mathbf{v}_t^C = W^{UV} \mathbf{c}_t^{KV} \tag{11} $$
+$$
+ \mathbf{c}_t^{KV} = W^{DKV} \mathbf{h}_t \tag{9}
+$$
+$$
+ \mathbf{k}_t^C = W^{UK} \mathbf{c}_t^{KV} \tag{10}
+$$
+$$
+ \mathbf{v}_t^C = W^{UV} \mathbf{c}_t^{KV} \tag{11}
+$$
 
 其中 $\mathbf{c}_t^{KV} \in \mathbb{R}^{d_c}$ 是键和值的压缩潜在向量; $d_c (\ll d_h n_h)$ 表示 KV 压缩维度; $W^{DKV} \in \mathbb{R}^{d_c \times d}$ 是下投影矩阵; $W^{UK}, W^{UV} \in \mathbb{R}^{d_h n_h \times d_c}$ 分别是键和值的上投影矩阵. 在推理期间, MLA 只需要缓存 $\mathbf{c}_t^{KV}$, 因此其 KV 缓存仅有 $d_c l$ 个元素. 此外, 在推理期间, 由于 $W^{UK}$ 可以吸收进 $W^Q$, $W^{UV}$ 可以吸收进 $W^O$, 我们甚至不需要为注意力计算显式地恢复 key 和 value.
 
 此外, 为了减少训练期间的激活内存, 我们还对 query 进行低秩压缩, 尽管这不能减少 KV 缓存:
 
-$$ \mathbf{c}_t^Q = W^{DQ} \mathbf{h}_t \tag{12} $$
-$$ \mathbf{q}_t^C = W^{UQ} \mathbf{c}_t^Q \tag{13} $$
+$$
+ \mathbf{c}_t^Q = W^{DQ} \mathbf{h}_t \tag{12}
+$$
+$$
+ \mathbf{q}_t^C = W^{UQ} \mathbf{c}_t^Q \tag{13}
+$$
 
 其中 $\mathbf{c}_t^Q \in \mathbb{R}^{d_c^{\prime}}$ 是 query 的压缩潜在向量; $d_c^{\prime} (\ll d_h n_h)$ 表示 query 压缩维度; $W^{DQ} \in \mathbb{R}^{d_c^{\prime} \times d}, W^{UQ} \in \mathbb{R}^{d_h n_h \times d_c^{\prime}}$ 分别是 query 的下投影和上投影矩阵.
 
@@ -97,12 +123,24 @@ $$ \mathbf{q}_t^C = W^{UQ} \mathbf{c}_t^Q \tag{13} $$
 
 作为解决方案, 我们提出了解耦 RoPE 策略, 使用额外的多头 query $\mathbf{q}_{t,i}^R \in \mathbb{R}^{d_h^R}$ 和共享的 key $\mathbf{k}_t^R \in \mathbb{R}^{d_h^R}$ 来承载 RoPE, 其中 $d_h^R$ 表示解耦 query 和 key 的每头维度. 配备解耦 RoPE 策略后, MLA 执行以下计算:
 
-$$ [\mathbf{q}_{t,1}^R; \mathbf{q}_{t,2}^R; ...; \mathbf{q}_{t,n_h}^R] = \mathbf{q}_t^R = \text{RoPE}(W^{QR} \mathbf{c}_t^Q) \tag{14} $$
-$$ \mathbf{k}_t^R = \text{RoPE}(W^{KR} \mathbf{h}_t) \tag{15} $$
-$$ \mathbf{q}_{t,i} = [\mathbf{q}_{t,i}^C; \mathbf{q}_{t,i}^R] \tag{16} $$
-$$ \mathbf{k}_{t,i} = [\mathbf{k}_{t,i}^C; \mathbf{k}_t^R] \tag{17} $$
-$$ \mathbf{o}_{t,i} = \sum_{j=1}^{t} \text{Softmax}_j\left(\frac{\mathbf{q}_{t,i}^T \mathbf{k}_{j,i}}{\sqrt{d_h + d_h^R}}\right) \mathbf{v}_{j,i}^C \tag{18} $$
-$$ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_h}] \tag{19} $$
+$$
+ [\mathbf{q}_{t,1}^R; \mathbf{q}_{t,2}^R; ...; \mathbf{q}_{t,n_h}^R] = \mathbf{q}_t^R = \text{RoPE}(W^{QR} \mathbf{c}_t^Q) \tag{14}
+$$
+$$
+ \mathbf{k}_t^R = \text{RoPE}(W^{KR} \mathbf{h}_t) \tag{15}
+$$
+$$
+ \mathbf{q}_{t,i} = [\mathbf{q}_{t,i}^C; \mathbf{q}_{t,i}^R] \tag{16}
+$$
+$$
+ \mathbf{k}_{t,i} = [\mathbf{k}_{t,i}^C; \mathbf{k}_t^R] \tag{17}
+$$
+$$
+ \mathbf{o}_{t,i} = \sum_{j=1}^{t} \text{Softmax}_j\left(\frac{\mathbf{q}_{t,i}^T \mathbf{k}_{j,i}}{\sqrt{d_h + d_h^R}}\right) \mathbf{v}_{j,i}^C \tag{18}
+$$
+$$
+ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_h}] \tag{19}
+$$
 
 其中 $W^{QR} \in \mathbb{R}^{d_h^R n_h \times d_c^{\prime}}$ 和 $W^{KR} \in \mathbb{R}^{d_h^R \times d}$ 分别是产生解耦 query 和 key 的矩阵; $\text{RoPE}(\cdot)$ 表示应用 RoPE 矩阵的操作; $[\cdot; \cdot]$ 表示拼接操作. 在推理期间, 解耦的 key 也需要被缓存. 因此, DeepSeek-V2 每个 token 需要缓存的 KV 元素总数为 $(d_c + d_h^R)l$.
 
@@ -131,11 +169,17 @@ $$ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_
 
 设 $\mathbf{u}_t$ 为第 $t$ 个 token 的 FFN 输入, 我们计算 FFN 输出 $\mathbf{h}_t^{\prime}$ 如下:
 
-$$ \mathbf{h}_t^{\prime} = \mathbf{u}_t + \sum_{i=1}^{N_s} \text{FFN}_i^{(s)}(\mathbf{u}_t) + \sum_{i=1}^{N_r} g_{i,t} \text{FFN}_i^{(r)}(\mathbf{u}_t) \tag{20} $$
+$$
+ \mathbf{h}_t^{\prime} = \mathbf{u}_t + \sum_{i=1}^{N_s} \text{FFN}_i^{(s)}(\mathbf{u}_t) + \sum_{i=1}^{N_r} g_{i,t} \text{FFN}_i^{(r)}(\mathbf{u}_t) \tag{20}
+$$
 
-$$ g_{i,t} = \begin{cases} s_{i,t}, & s_{i,t} \in \text{Topk}(\{s_{j,t} | 1 \leq j \leq N_r\}, K_r) \\ 0, & \text{otherwise} \end{cases} \tag{21} $$
+$$
+ g_{i,t} = \begin{cases} s_{i,t}, & s_{i,t} \in \text{Topk}(\{s_{j,t} | 1 \leq j \leq N_r\}, K_r) \\ 0, & \text{otherwise} \end{cases} \tag{21}
+$$
 
-$$ s_{i,t} = \text{Softmax}_i(\mathbf{u}_t^T \mathbf{e}_i) \tag{22} $$
+$$
+ s_{i,t} = \text{Softmax}_i(\mathbf{u}_t^T \mathbf{e}_i) \tag{22}
+$$
 
 其中 $N_s$ 和 $N_r$ 分别表示共享专家和路由专家的数量; $\text{FFN}_i^{(s)}(\cdot)$ 和 $\text{FFN}_i^{(r)}(\cdot)$ 分别表示第 $i$ 个共享专家和第 $i$ 个路由专家; $K_r$ 表示激活的路由专家数量; $g_{i,t}$ 是第 $i$ 个专家的门控值; $s_{i,t}$ 是 token 到专家的亲和度; $\mathbf{e}_i$ 是该层中第 $i$ 个路由专家的质心; $\text{Topk}(\cdot, K)$ 表示在第 $t$ 个 token 与所有路由专家计算的亲和度分数中, 取最高的 $K$ 个分数组成的集合.
 
@@ -153,31 +197,49 @@ $$ s_{i,t} = \text{Softmax}_i(\mathbf{u}_t^T \mathbf{e}_i) \tag{22} $$
 
 **专家级均衡损失.** 我们使用专家级均衡损失来缓解路由崩溃的风险:
 
-$$ \mathcal{L}_{\text{ExpBal}} = \alpha_1 \sum_{i=1}^{N_r} f_i P_i \tag{23} $$
+$$
+ \mathcal{L}_{\text{ExpBal}} = \alpha_1 \sum_{i=1}^{N_r} f_i P_i \tag{23}
+$$
 
-$$ f_i = \frac{N_r}{K_r T} \sum_{t=1}^{T} \mathbb{1}(\text{Token } t \text{ selects Expert } i) \tag{24} $$
+$$
+ f_i = \frac{N_r}{K_r T} \sum_{t=1}^{T} \mathbb{1}(\text{Token } t \text{ selects Expert } i) \tag{24}
+$$
 
-$$ P_i = \frac{1}{T} \sum_{t=1}^{T} s_{i,t} \tag{25} $$
+$$
+ P_i = \frac{1}{T} \sum_{t=1}^{T} s_{i,t} \tag{25}
+$$
 
 其中 $\alpha_1$ 是称为专家级均衡因子的超参数; $\mathbb{1}(\cdot)$ 表示指示函数; $T$ 表示序列中的 token 数量.
 
 **设备级均衡损失.** 除了专家级均衡损失外, 我们还额外设计了设备级均衡损失来确保不同设备之间的计算均衡:
 
-$$ \mathcal{L}_{\text{DevBal}} = \alpha_2 \sum_{i=1}^{D} f_i^{\prime} P_i^{\prime} \tag{26} $$
+$$
+ \mathcal{L}_{\text{DevBal}} = \alpha_2 \sum_{i=1}^{D} f_i^{\prime} P_i^{\prime} \tag{26}
+$$
 
-$$ f_i^{\prime} = \frac{1}{|\mathcal{E}_i|} \sum_{j \in \mathcal{E}_i} f_j \tag{27} $$
+$$
+ f_i^{\prime} = \frac{1}{|\mathcal{E}_i|} \sum_{j \in \mathcal{E}_i} f_j \tag{27}
+$$
 
-$$ P_i^{\prime} = \sum_{j \in \mathcal{E}_i} P_j \tag{28} $$
+$$
+ P_i^{\prime} = \sum_{j \in \mathcal{E}_i} P_j \tag{28}
+$$
 
 其中 $\alpha_2$ 是称为设备级均衡因子的超参数. 在 DeepSeek-V2 的训练过程中, 我们将所有路由专家划分为 $D$ 组 $\{\mathcal{E}_1, \mathcal{E}_2, ..., \mathcal{E}_D\}$, 并将每组部署在单个设备上.
 
 **通信均衡损失.** 最后, 我们引入通信均衡损失来确保每个设备的通信是均衡的. 尽管设备限制路由机制保证了每个设备的发送通信是有界的, 但如果某个设备接收的 token 比其他设备多, 实际通信效率也会受到影响. 为此, 我们设计通信均衡损失如下:
 
-$$ \mathcal{L}_{\text{CommBal}} = \alpha_3 \sum_{i=1}^{D} f_i^{\prime\prime} P_i^{\prime\prime} \tag{29} $$
+$$
+ \mathcal{L}_{\text{CommBal}} = \alpha_3 \sum_{i=1}^{D} f_i^{\prime\prime} P_i^{\prime\prime} \tag{29}
+$$
 
-$$ f_i^{\prime\prime} = \frac{D}{MT} \sum_{t=1}^{T} \mathbb{1}(\text{Token } t \text{ is sent to Device } i) \tag{30} $$
+$$
+ f_i^{\prime\prime} = \frac{D}{MT} \sum_{t=1}^{T} \mathbb{1}(\text{Token } t \text{ is sent to Device } i) \tag{30}
+$$
 
-$$ P_i^{\prime\prime} = \sum_{j \in \mathcal{E}_i} P_j \tag{31} $$
+$$
+ P_i^{\prime\prime} = \sum_{j \in \mathcal{E}_i} P_j \tag{31}
+$$
 
 其中 $\alpha_3$ 是称为通信均衡因子的超参数.
 
@@ -308,21 +370,31 @@ DeepSeek-V2 在双语语料库上预训练, 因此我们在一系列英文和中
 
 **RL 算法.** 为了节省 RL 的训练成本, 我们采用 Group Relative Policy Optimization(GRPO), 它省去了通常与策略模型同等规模的 critic 模型, 而是从组分数中估计基线. 对于每个问题 $q$, GRPO 从旧策略 $\pi_{\theta_{old}}$ 中采样一组输出 $\{o_1, o_2, \cdots, o_G\}$, 然后通过最大化以下目标来优化策略模型 $\pi_\theta$:
 
-$$ \mathcal{J}_{GRPO}(\theta) = \mathbb{E}_{[q \sim P(Q), \{o_i\}_{i=1}^G \sim \pi_{\theta_{old}}(O|q)]} \frac{1}{G}\sum_{i=1}^G \left( \min \left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\epsilon, 1+\epsilon\right) A_i \right) - \beta \mathbb{D}_{KL}(\pi_\theta \|\| \pi_{ref}) \right) \tag{32} $$
+$$
+ \mathcal{J}_{GRPO}(\theta) = \mathbb{E}_{[q \sim P(Q), \{o_i\}_{i=1}^G \sim \pi_{\theta_{old}}(O|q)]} \frac{1}{G}\sum_{i=1}^G \left( \min \left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)} A_i, \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\epsilon, 1+\epsilon\right) A_i \right) - \beta \mathbb{D}_{KL}(\pi_\theta \|\| \pi_{ref}) \right) \tag{32}
+$$
 
-$$ \mathbb{D}_{KL}(\pi_\theta \|\| \pi_{ref}) = \frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - \log\frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - 1 \tag{33} $$
+$$
+ \mathbb{D}_{KL}(\pi_\theta \|\| \pi_{ref}) = \frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - \log\frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - 1 \tag{33}
+$$
 
-$$ A_i = \frac{r_i - \text{mean}(\{r_1, r_2, \cdots, r_G\})}{\text{std}(\{r_1, r_2, \cdots, r_G\})} \tag{34} $$
+$$
+ A_i = \frac{r_i - \text{mean}(\{r_1, r_2, \cdots, r_G\})}{\text{std}(\{r_1, r_2, \cdots, r_G\})} \tag{34}
+$$
 
 **训练策略.** 在我们的初步实验中, 我们发现推理数据(如代码和数学提示)上的 RL 训练展现出与通用数据训练不同的独特特征. 例如, 模型的数学和编码能力可以在更长的训练步数内持续提升. 因此, 我们采用两阶段 RL 训练策略, 首先进行推理对齐, 然后进行人类偏好对齐.
 
 在第一阶段推理对齐中, 我们为代码和数学推理任务训练奖励模型 $RM_{reasoning}$, 并使用 $RM_{reasoning}$ 的反馈优化策略模型:
 
-$$ r_i = RM_{reasoning}(o_i) \tag{35} $$
+$$
+ r_i = RM_{reasoning}(o_i) \tag{35}
+$$
 
 在第二阶段人类偏好对齐中, 我们采用多奖励框架, 从有用性奖励模型 $RM_{helpful}$、安全性奖励模型 $RM_{safety}$ 和基于规则的奖励模型 $RM_{rule}$ 获取奖励. 响应 $o_i$ 的最终奖励为:
 
-$$ r_i = c_1 \cdot RM_{helpful}(o_i) + c_2 \cdot RM_{safety}(o_i) + c_3 \cdot RM_{rule}(o_i) \tag{36} $$
+$$
+ r_i = c_1 \cdot RM_{helpful}(o_i) + c_2 \cdot RM_{safety}(o_i) + c_3 \cdot RM_{rule}(o_i) \tag{36}
+$$
 
 其中 $c_1$, $c_2$, $c_3$ 为相应系数.
 

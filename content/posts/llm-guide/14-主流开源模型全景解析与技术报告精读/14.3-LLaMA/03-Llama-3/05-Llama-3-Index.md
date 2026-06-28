@@ -4,7 +4,7 @@ title: "Llama-3 核心技术专题索引"
 
 # Llama-3 核心技术专题索引
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 ## 1. 技术问题定义与背景 (Technical Problem Definition)
 
@@ -27,7 +27,9 @@ Llama-3 没有改变基础公式，但极大地改变了“数据配方”：
 
 架构上极为保守，完全基于标准 Decoder-only Transformer。唯一的显著改变是在所有尺寸(包括 8B)中全面引入了 **Grouped-Query Attention (GQA)**。
 
-$$ \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right)V $$
+$$
+ \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right)V
+$$
 其中 $K, V$ 的头数减少为 $Q$ 的头数的 $1/G$。
 
 ```mermaid

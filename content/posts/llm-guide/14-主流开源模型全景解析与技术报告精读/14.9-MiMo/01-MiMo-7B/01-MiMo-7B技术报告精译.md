@@ -4,7 +4,7 @@ title: "MiMo-7B 技术报告精译"
 
 # MiMo-7B 技术报告精译
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 
 > 原文标题: MiMo: Unlocking the Reasoning Potential of Language Model - From Pretraining to Posttraining
@@ -179,11 +179,15 @@ MTP loss weight: 前 10.3T token 设为 0.3,预训练剩余部分降至 0.1.
 
 团队采用改进版的 GRPO(Group Relative Policy Optimization),并纳入研究社区近期提出的改进.对于每个问题 q,算法从旧策略 pi_old 采样一组响应 {o1, o2, ..., oG},通过最大化以下目标更新策略 pi:
 
-$$J_{GRPO}(\pi) = E_{q,\{o_i\}} \left[ \frac{1}{\sum_{i=1}^G |o_i|} \sum_{i=1}^G \sum_{t=1}^{|o_i|} \min\left( \frac{\pi_\theta(o_{i,t}|q,o_{i,<t})}{\pi_{old}(o_{i,t}|q,o_{i,<t})} \hat{A}_{i,t}, \text{clip}\left(\frac{\pi_\theta(o_{i,t}|q,o_{i,<t})}{\pi_{old}(o_{i,t}|q,o_{i,<t})}, 1-\epsilon_{low}, 1+\epsilon_{high}\right) \hat{A}_{i,t} \right) \right]$$
+$$
+J_{GRPO}(\pi) = E_{q,\{o_i\}} \left[ \frac{1}{\sum_{i=1}^G |o_i|} \sum_{i=1}^G \sum_{t=1}^{|o_i|} \min\left( \frac{\pi_\theta(o_{i,t}|q,o_{i,<t})}{\pi_{old}(o_{i,t}|q,o_{i,<t})} \hat{A}_{i,t}, \text{clip}\left(\frac{\pi_\theta(o_{i,t}|q,o_{i,<t})}{\pi_{old}(o_{i,t}|q,o_{i,<t})}, 1-\epsilon_{low}, 1+\epsilon_{high}\right) \hat{A}_{i,t} \right) \right]
+$$
 
 其中 epsilon_low 和 epsilon_high 为超参数.hat_A_{i,t} 是优势,由同组响应的奖励 {r1, r2, ..., rG} 计算:
 
-$$\hat{A}_{i,t} = \frac{r_i - \text{mean}(\{r_j\}_{j=1}^G)}{\text{std}(\{r_j\}_{j=1}^G)}$$
+$$
+\hat{A}_{i,t} = \frac{r_i - \text{mean}(\{r_j\}_{j=1}^G)}{\text{std}(\{r_j\}_{j=1}^G)}
+$$
 
 在原始 GRPO 算法基础上,团队纳入几项近期研究的增强:
 - **移除 KL Loss**(He et al., 2025; Hu et al., 2025): 简单移除 KL loss 可有效释放策略模型的全部潜力,且不损害训练稳定性.

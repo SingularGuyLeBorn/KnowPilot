@@ -4,7 +4,7 @@ title: "MiMo-V2.5全模态Agent架构剖析"
 
 # MiMo-V2.5 全模态 Agent 架构剖析
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 
 > 信息来源: MiMo-V2.5 / MiMo-V2.5-Pro Technical Blog (Xiaomi AI Lab, 2026-04-22/27)

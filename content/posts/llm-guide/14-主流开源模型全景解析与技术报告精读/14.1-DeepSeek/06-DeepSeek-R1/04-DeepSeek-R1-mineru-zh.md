@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeek-R1: 通过强化学习激励 LLM 中的推理能力
@@ -1398,7 +1398,7 @@ Figure 12 | The rank of DeepSeek-R1 across various aspects on January 24, 2025.
 > D.3: DeepSeek-R1 安全报告
 
 ## Warning: This section contains potentially risky and offensive content!
-> ⚠️ 警告: 本章节包含潜在风险和冒犯性内容!
+>  警告: 本章节包含潜在风险和冒犯性内容!
 
 We fully recognize that, while open source sharing facilitates the dissemination of advanced technologies within the community, it also introduces potential risks of misuse. In this section, we systematically present the security risk assessment of DeepSeek-R1. Specifically, we structure our analysis around the following aspects: (1) D.3.1: the risk control system for the official DeepSeek-R1 service, (2) D.3.2: a comparative safety evaluation with other state-of-the-art models on 6 publicly safety benchmarks, (3) D.3.3: a taxonomy-based study based on in-house safety testsets, (4) D.3.4: an evaluation of the multilingual safety of the R1 model, (5) D.3.5: an assessment of the model’s robustness to jailbreak attacks.
 

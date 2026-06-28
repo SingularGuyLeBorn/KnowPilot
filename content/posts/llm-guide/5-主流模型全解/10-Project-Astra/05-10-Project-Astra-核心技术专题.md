@@ -4,7 +4,7 @@ title: "Project Astra：实时多模态感知与持续记忆的Agent系统架构
 
 # 10-Project-Astra 核心技术专题：实时多模态感知与持续记忆的 Agent 系统架构
 
-> 🔙 **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
+>  **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
 
 
 ## 一、项目定位与展示背景

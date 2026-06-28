@@ -4,7 +4,7 @@ title: "Qwen2.5-VL 多模态架构剖析"
 
 # Qwen2.5-VL 多模态架构剖析
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > **分析基础**: Qwen2.5-VL Technical Report (arXiv:2502.13923)

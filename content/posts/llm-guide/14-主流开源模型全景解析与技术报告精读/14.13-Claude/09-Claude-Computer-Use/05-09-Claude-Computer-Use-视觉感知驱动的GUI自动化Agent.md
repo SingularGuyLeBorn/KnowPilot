@@ -7,7 +7,7 @@ title: "Claude Computer Use：视觉感知驱动的GUI自动化Agent——从API
 > **模型定位**：Anthropic 首个公开提供的计算机操控Agent(2024-10)，业界首个基于纯视觉感知操作GUI的前沿AI
 > **家族归属**：14.13-Claude｜编号 09-Claude-Computer-Use
 > **核心论文/报告**：*Developing a Computer Use Capability* (Anthropic, 2024-10)
-> 🔙 **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
+>  **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
 
 ---
 

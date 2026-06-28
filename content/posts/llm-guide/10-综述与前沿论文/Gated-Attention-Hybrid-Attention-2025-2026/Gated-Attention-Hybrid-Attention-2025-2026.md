@@ -54,10 +54,10 @@ Qwen 团队实验了四种门控放置位置:
 
 | 位置 | 描述 | 效果 |
 |:----|:-----|:----:|
-| **G1** | gate 在 Attn 输出后(Y × gate) | **最优** ✅ |
+| **G1** | gate 在 Attn 输出后(Y × gate) | **最优**  |
 | G2 | gate 在 Softmax 前 | 无法使输出为 0 |
 | G3 | gate 在 V 上 | 无法使输出为 0 |
-| G4 | gate 在 Q 之前 | 最差 ❌ |
+| G4 | gate 在 Q 之前 | 最差  |
 
 **G1 位置最优的原因**: 只有将门控放在注意力输出的最终位置,才能从根本上控制"模型是否需要输出任何信息"——这是门控消除 Attention Sink 的关键. 
 
@@ -90,26 +90,36 @@ Gated DeltaNet 代表了线性注意力多年演化的终极形态. 要理解 Ga
 #### Stage 1: 原始 Linear Attention
 去掉 Softmax 和 Causal Mask 后,Attention 变成线性递推形式: 
 
-$$S_t = S_{t-1} + v_t k_t^\top \tag{1}$$
-$$o_t = S_t q_t \tag{2} $$
+$$
+S_t = S_{t-1} + v_t k_t^\top \tag{1}
+$$
+$$
+o_t = S_t q_t \tag{2}
+$$
 这里 $S_t \in \mathbb{R}^{d \times d}$ 是状态矩阵. 问题是: $S_t$ 容量有限,随着 step 增长会遗忘早期信息. 
 
 #### Stage 2: 常数衰减(RetNet / Lightning Attention)
 给 $S_{t-1}$ 一个常数衰减因子 $\gamma$: 
 
-$$S_t = \gamma S_{t-1} + v_t k_t^\top \tag{3}$$
+$$
+S_t = \gamma S_{t-1} + v_t k_t^\top \tag{3}
+$$
 
 但 $\gamma$ 与数据无关,缺乏选择性更新能力. 
 
 #### Stage 3: 数据依赖的衰减(Mamba-2 / Gated Retention)
 让衰减因子 $\gamma_t$ 是输入的函数: 
 
-$$S_t = \gamma_t S_{t-1} + v_t k_t^\top \tag{4} $$
+$$
+S_t = \gamma_t S_{t-1} + v_t k_t^\top \tag{4}
+$$
 
 #### Stage 4: Gated DeltaNet(终极形态)
 将 SSM 的递归更新视为在线学习问题. 核心思想: 状态 $S_t$ 是一个将 $k_t$ 映射到 $v_t$ 的权重矩阵. 按照 Delta Rule(梯度下降)更新: 
 
-$$S_t = S_{t-1} + \beta_t (v_t - S_{t-1} k_t) k_t^\top \tag{5}$$
+$$
+S_t = S_{t-1} + \beta_t (v_t - S_{t-1} k_t) k_t^\top \tag{5}
+$$
 
 这里的创新在于: **更新不再是简单的加法($v_t k_t^\top$),而是包含了误差项($v_t - S_{t-1}k_t$)的修正**——只有当模型对当前输入的预测 $S_{t-1}k_t$ 与真实值 $v_t$ 存在差异时,状态才会被更新. 这大大减少了状态被无关信息污染的程度. 
 
@@ -182,7 +192,9 @@ Qwen3.5-Plus 实现了 **4 项技术整合 → 约 19× 系统效率提升**:
 
 Qwen3.5-Plus 的实践提出了一个重要视角——**Agent 时代的真正成本公式**: 
 
-$$\text{单位有效成本} = \frac{\text{GPU小时} \times \text{GPU数} / \text{tokens产出}}{\text{成功率}} \tag{6} $$
+$$
+\text{单位有效成本} = \frac{\text{GPU小时} \times \text{GPU数} / \text{tokens产出}}{\text{成功率}} \tag{6}
+$$
 - **吞吐**(分子)决定"跑得多快、跑得多便宜"
 - **成功率**(分母)决定"要不要返工、要不要重跑"
 

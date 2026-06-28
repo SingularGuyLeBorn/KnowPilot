@@ -4,7 +4,7 @@ title: "GLM-130B二维RoPE数理推导"
 
 # GLM-130B 位置编码: 从二维到一维 RoPE 的数理推导
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > 基于 GLM-130B 论文 Appendix B.3 及 RoPE 原始论文(Su et al., 2021)的深度推导.
@@ -86,7 +86,9 @@ $$
 > **[技术细节]** 为什么 $R_m^T R_n = R_{n-m}$?
 > 
 > 这源于旋转矩阵的基本性质.对于单个二维子空间,旋转矩阵为:
-> $$R(\alpha) = \begin{pmatrix} \cos\alpha & -\sin\alpha \\ \sin\alpha & \cos\alpha \end{pmatrix}$$
+> $$
+R(\alpha) = \begin{pmatrix} \cos\alpha & -\sin\alpha \\ \sin\alpha & \cos\alpha \end{pmatrix}
+$$
 > 直接计算可得 $R(\alpha)^T R(\beta) = R(-\alpha) R(\beta) = R(\beta - \alpha)$.由于 $R_{d,m}$ 是由独立的二维旋转块组成的分块对角矩阵,整体也满足 $R_m^T R_n = R_{n-m}$.这个性质是 RoPE 能够编码相对位置而不破坏注意力分数概率解释的数学基础.
 
 ### 2.3 长距离衰减性质

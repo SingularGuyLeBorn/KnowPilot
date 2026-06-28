@@ -54,17 +54,23 @@ SDFT 最惊艳的学术贡献，并不在于它设计了一个多么复杂的架
 
 两者模型权重完全一致，教师只是因为多看了几个 Few-Shot 示例，被临时激发成了“高维形态”. 
 此时，学生去逼近教师，采用 **Reverse KL** 散度: 
-$$ \mathcal{L}_{SDFT} = \mathbb{E}_{x \sim \mathcal{D}} \left[ \underline{\mathbf{D_{KL}(\pi_\theta(\cdot|x) \| \pi_T(\cdot|x, d))}} \right] \tag{1} $$
+$$
+ \mathcal{L}_{SDFT} = \mathbb{E}_{x \sim \mathcal{D}} \left[ \underline{\mathbf{D_{KL}(\pi_\theta(\cdot|x) \| \pi_T(\cdot|x, d))}} \right] \tag{1}
+$$
 
 ### 4.1 为什么要与 RL 对比？隐式 IRL 视角的引入
 标准的基于信赖域(Trust-Region)的强化学习目标(如 PPO)包含两项: 最大化外部奖励，同时不偏离参考模型太远. 
 我们来看标准 RL 的目标函数: 
-$$ \max_\theta \mathbb{E}_{y \sim \pi_\theta}[R(y)] - \beta \underline{\mathbf{D_{KL}(\pi_\theta(\cdot|x) \| \pi_{ref}(\cdot|x))}} \tag{2} $$
+$$
+ \max_\theta \mathbb{E}_{y \sim \pi_\theta}[R(y)] - \beta \underline{\mathbf{D_{KL}(\pi_\theta(\cdot|x) \| \pi_{ref}(\cdot|x))}} \tag{2}
+$$
 - $R(y)$: 环境或外部 Reward Model 给出的奖励分数. 
 - $\beta$: KL 惩罚系数. 
 
 通过变分推断求导，这个 RL 目标的理论闭式最优解(Optimal Policy)是: 
-$$ \pi^*(y|x) \propto \pi_{ref}(y|x) \exp \left( \frac{R(y)}{\beta} \right) \tag{3} $$
+$$
+ \pi^*(y|x) \propto \pi_{ref}(y|x) \exp \left( \frac{R(y)}{\beta} \right) \tag{3}
+$$
 
 ### 4.2 惊天替换: The In-Context Assumption
 在持续学习中，我们**没有外部奖励模型 $R(y)$**，只有几个正确示范 $d$. 
@@ -75,7 +81,9 @@ SDFT 提出了一个大胆的假设(In-Context Assumption):
 
 将这个假设代入上面那个 RL 最优解的等公公式子中，做对数变换，我们得到了一个令人拍案叫绝的结论——**隐式奖励函数(Implicit Reward)** : 
 
-$$ R_{implicit}(y) \approx \beta \cdot \left[ \underline{\mathbf{\log \pi_T(y|x, d)}} - \underline{\mathbf{\log \pi_{ref}(y|x)}} \right] \tag{4} $$
+$$
+ R_{implicit}(y) \approx \beta \cdot \left[ \underline{\mathbf{\log \pi_T(y|x, d)}} - \underline{\mathbf{\log \pi_{ref}(y|x)}} \right] \tag{4}
+$$
 **[公式物理意义详析]**: 
 - **这是什么？** 这意味着，我们根本不需要去人工标注十万条偏好数据来训练一个 Reward Model. 
 

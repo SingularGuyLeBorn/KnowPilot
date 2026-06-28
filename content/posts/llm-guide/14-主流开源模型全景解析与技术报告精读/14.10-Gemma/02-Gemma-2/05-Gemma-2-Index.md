@@ -4,7 +4,7 @@ title: "Gemma-2 核心技术专题索引"
 
 # Gemma-2 核心技术专题索引
 
-> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+>  **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
 
 ## 1. 技术问题定义与背景 (Technical Problem Definition)
 
@@ -21,7 +21,9 @@ Gemma-2 面临的主要技术挑战包括：
 
 Gemma-2 广泛采用了教师模型的预测概率分布(Logits)来指导学生模型的训练。相比于仅使用硬标签(Hard Labels), 软标签(Soft Labels)包含了模型对不同候选词的置信度, 这在保留模型推理路径上至关重要。
 
-$$ \mathcal{L}_{KD} = - \sum_{i} P_{teacher}(y_i | x) \log P_{student}(y_i | x) $$
+$$
+ \mathcal{L}_{KD} = - \sum_{i} P_{teacher}(y_i | x) \log P_{student}(y_i | x)
+$$
 
 此外, Gemma-2 引入了更细粒度的蒸馏策略, 结合了中间层特征对齐与分布对齐。
 
@@ -52,7 +54,9 @@ graph TD
 为了防止由于极端 Logit 值导致的梯度爆炸和数值不稳定, Gemma-2 在注意力分数(Attention Scores)和最终输出层引入了 Soft-Capping 机制。
 
 公式如下：
-$$ \text{Logit} = \tau \cdot \tanh\left(\frac{x}{\tau}\right) $$
+$$
+ \text{Logit} = \tau \cdot \tanh\left(\frac{x}{\tau}\right)
+$$
 其中 $\tau$ 是一预设的缩放阈值(例如 30.0)。这种非线性约束在保证梯度的同时, 硬性限制了输出的上界, 极大增强了量化推理(如 FP8、INT8)的鲁棒性。
 
 ## 3. 工程实现与性能分析 (Engineering Analysis)

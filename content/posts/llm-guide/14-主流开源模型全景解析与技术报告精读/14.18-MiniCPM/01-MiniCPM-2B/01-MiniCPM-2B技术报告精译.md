@@ -4,7 +4,7 @@ title: "MiniCPM-2B 技术报告精译"
 
 # MiniCPM-2B 技术报告精译
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文标题: MiniCPM: Unveiling the Potential of Small Language Models with Scalable Training Strategies

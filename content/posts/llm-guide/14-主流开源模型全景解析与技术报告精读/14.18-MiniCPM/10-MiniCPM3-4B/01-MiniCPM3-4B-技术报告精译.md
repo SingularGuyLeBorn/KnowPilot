@@ -4,7 +4,7 @@ title: "MiniCPM3-4B 技术报告精译"
 
 # MiniCPM3-4B 技术报告精译
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文标题: MiniCPM3-4B: A Language Model with Function Call, Long Context, and Retrieval Augmented Generation

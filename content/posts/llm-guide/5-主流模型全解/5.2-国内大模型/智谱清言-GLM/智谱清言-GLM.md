@@ -14,7 +14,9 @@ GLM 的预训练目标可以概括为：对于输入文本 $\bm{x} = [x_1, x_2, 
 
 目标函数为：
 
-$$\underset{\theta}{\text{max}} \; \mathbb{E}_{z \sim Z_m} \left[ \sum_{i=1}^{m} \log p_\theta(\bm{s}_{z_i} | \bm{x}_{\text{corrupt}}, \bm{s}_{z_{<i}}) \right] \tag{1} $$
+$$
+\underset{\theta}{\text{max}} \; \mathbb{E}_{z \sim Z_m} \left[ \sum_{i=1}^{m} \log p_\theta(\bm{s}_{z_i} | \bm{x}_{\text{corrupt}}, \bm{s}_{z_{<i}}) \right] \tag{1}
+$$
 
 其中 $Z_m$ 是所有可能的排列顺序的集合，片段顺序被随机打乱以捕捉不同片段之间的相互依赖关系。
 

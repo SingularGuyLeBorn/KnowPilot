@@ -6,7 +6,7 @@ title: "Claude 4：长程Agent能力与记忆机制的工程突破——Anthropi
 
 > **模型定位**：Anthropic Claude 4 系列(2025-05)，包含 Opus 4(旗舰)与 Sonnet 4(平衡版)，首个支持数小时连续工作的长程Agent模型
 > **家族归属**：14.13-Claude｜编号 11-Claude-4
-> 🔙 **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
+>  **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
 
 ---
 

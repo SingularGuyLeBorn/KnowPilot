@@ -5,7 +5,7 @@ status: completed
 
 # MiMo-7B 推理优化剖析
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 本文将深入解析 MiMo-7B 在推理侧所做的工程优化与算法创新. 在面对多模态(视觉-语言)交织的长上下文任务时, MiMo-7B 不仅继承了开源大模型的常规加速手段, 还提出了一系列针对多模态特征分布的专属优化策略. 本文将从工程痛点出发, 推导其核心优化原理, 拆解代码实现细节, 并全面评估其在生产环境中的性能表现及局限性. 
 
@@ -39,7 +39,9 @@ graph TD
 
 在视觉-文本交织的任务中, 高分辨率图像通常被切分为数百甚至数千个 Patch, 每个 Patch 映射为一个 Token. 这种多模态输入使得 Prompt 长度动辄突破 8K 甚至 32K. 
 KV Cache 的显存占用公式为：
-$$ \text{Memory}_{KV} = 2 \times b \times s \times L \times h \times d \times \text{sizeof(dtype)} $$
+$$
+ \text{Memory}_{KV} = 2 \times b \times s \times L \times h \times d \times \text{sizeof(dtype)}
+$$
 其中：
 - $b$ 为 Batch Size
 - $s$ 为序列长度
@@ -69,13 +71,19 @@ MiMo-7B 并没有采用一刀切的 Token 丢弃策略, 而是基于模态感知
 #### 注意力重要性评分
 对于第 $l$ 层, 给定查询 $Q_l$ 和键 $K_l$, 注意力得分矩阵为 $S = Q_l K_l^T / \sqrt{d}$. 
 MiMo-7B 累积历史上所有 Query 对某个特定 Key Token 的注意力权重总和, 作为该 Token 的重要性得分 $I_i$：
-$$ I_i = \sum_{j=i}^{T} \text{Softmax} \left( \frac{q_j k_i^T}{\sqrt{d}} \right) $$
+$$
+ I_i = \sum_{j=i}^{T} \text{Softmax} \left( \frac{q_j k_i^T}{\sqrt{d}} \right)
+$$
 
 #### 二分聚类与特征融合 (Bipartite Clustering and Merging)
 当缓存超过阈值 $N_{max}$ 时, 框架识别出 $I_i$ 低于阈值 $\tau$ 的视觉和文本 Token. 视觉 Token 由于空间连续性较高, MiMo-7B 采用基于余弦相似度的快速二分匹配算法进行融合. 
 假设有两个相邻的视觉 Token $k_a, v_a$ 和 $k_b, v_b$, 且它们的相似度 $\cos(k_a, k_b) > \gamma$, 则将其融合为：
-$$ k_{merged} = \frac{I_a k_a + I_b k_b}{I_a + I_b} $$
-$$ v_{merged} = \frac{I_a v_a + I_b v_b}{I_a + I_b} $$
+$$
+ k_{merged} = \frac{I_a k_a + I_b k_b}{I_a + I_b}
+$$
+$$
+ v_{merged} = \frac{I_a v_a + I_b v_b}{I_a + I_b}
+$$
 这种策略在维持 99% 的 Zero-Shot 视觉问答准确率的同时, 将视觉 Token 的 KV Cache 压缩了 60% 以上. 
 
 ### 2.2 W4A8 与 KV Cache INT8 联合量化 (Mixed-Precision Quantization)
@@ -85,13 +93,17 @@ $$ v_{merged} = \frac{I_a v_a + I_b v_b}{I_a + I_b} $$
 #### 权重的非对称分组量化 (Group-wise Asymmetric Quantization)
 采用 AWQ(Activation-aware Weight Quantization)思想, 保留激活值中重要的 1% 离群通道(Outliers)为 FP16, 对剩余的 99% 权重进行 4-bit 量化. 
 量化公式如下：
-$$ W_{int4} = \text{Round}\left( \frac{W_{fp16} \cdot s}{\Delta} \right) - Z $$
+$$
+ W_{int4} = \text{Round}\left( \frac{W_{fp16} \cdot s}{\Delta} \right) - Z
+$$
 其中缩放因子 $\Delta$ 针对块(Block Size = 128)计算, 从而降低精度损失. 
 
 #### KV Cache 的动态范围量化
 为了解决长文本场景下 K 矩阵存在的巨大动态范围, MiMo-7B 对 K 和 V 应用了逐通道(Per-Channel)的 Token 级量化. 
 在将 FP16 的 V 写入 PagedAttention 显存池时：
-$$ V_{int8} = \text{Clip}\left(\text{Round}\left(\frac{V_{fp16}}{s_v}\right), -128, 127\right) $$
+$$
+ V_{int8} = \text{Clip}\left(\text{Round}\left(\frac{V_{fp16}}{s_v}\right), -128, 127\right)
+$$
 在读取时, Triton 算子在片上(SRAM)完成反量化并直接进行 MMA(Matrix Multiply-Accumulate)计算. 
 
 ### 2.3 基于 PagedAttention 的多模态连续批处理
@@ -216,7 +228,9 @@ def mimo_fused_paged_attention_kernel(
 3. **Tree Attention**：为了进一步提高接受率, 草稿模型会生成一棵候选 Token 树, 目标模型利用自定义的 Tree Attention 算子, 一次性验证多条生成路径. 
 
 公式推导上, 对于草稿模型生成的 Token $x_{t+1}, x_{t+2}, \dots, x_{t+k}$, 目标模型计算分布 $P_{target}(x|x_{<t})$ 和 $P_{draft}(x|x_{<t})$. 按照接受概率进行采样：
-$$ \alpha(x) = \min \left(1, \frac{P_{target}(x)}{P_{draft}(x)} \right) $$
+$$
+ \alpha(x) = \min \left(1, \frac{P_{target}(x)}{P_{draft}(x)} \right)
+$$
 
 如果所有 $k$ 个 Token 都被接受, 则单个步骤完成了 $k+1$ 个 Token 的生成, 系统吞吐量翻倍. 
 

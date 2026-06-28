@@ -4,7 +4,7 @@ title: "MiniCPM4 技术报告逐段精译"
 
 # MiniCPM4: Ultra-Efficient LLMs on End Devices
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 本文基于 PyMuPDF 提取的原文进行逐段翻译，关键节点插入译者注。

@@ -4,7 +4,7 @@ title: "DeepSeek-V4 技术报告精译"
 
 # DeepSeek-V4: 面向高效百万 Token 上下文智能
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence

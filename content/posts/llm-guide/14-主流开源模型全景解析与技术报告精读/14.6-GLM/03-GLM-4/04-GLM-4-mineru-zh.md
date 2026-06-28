@@ -7,7 +7,7 @@ date: 2026-05-23
 
 # GLM-4 技术报告 MinerU 逐段翻译
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 > 原文标题: ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools
 > 翻译基于: MinerU 英文提取稿 `03-GLM-4-mineru-en.md`

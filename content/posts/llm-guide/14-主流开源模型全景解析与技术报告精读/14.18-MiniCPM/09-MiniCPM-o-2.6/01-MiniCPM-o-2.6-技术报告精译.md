@@ -4,7 +4,7 @@ title: "MiniCPM-o-2.6 技术报告精译"
 
 # MiniCPM-o-2.6 技术报告精译
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文来源: OpenBMB GitHub 官方仓库 / Notion 技术报告 / 社区评测资料

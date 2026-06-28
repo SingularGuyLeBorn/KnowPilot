@@ -1,6 +1,6 @@
 # Ling 2.0 技术报告精译
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 > **原文**: *Every Activation Boosted: Scaling General Reasoner to 1 Trillion Open Language Foundation*  

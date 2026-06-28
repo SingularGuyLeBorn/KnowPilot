@@ -4,7 +4,7 @@ title: "DeepSeek-V4 核心架构剖析"
 
 # DeepSeek-V4 核心架构剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文基于《DeepSeek-V4 技术报告精译》与 D5 核心技术专题, 对 DeepSeek-V4 的架构进行系统性梳理. V4 是 DeepSeek 在 2026 年 4 月发布的最新旗舰模型, 将上下文能力和推理效率推向新的高度.

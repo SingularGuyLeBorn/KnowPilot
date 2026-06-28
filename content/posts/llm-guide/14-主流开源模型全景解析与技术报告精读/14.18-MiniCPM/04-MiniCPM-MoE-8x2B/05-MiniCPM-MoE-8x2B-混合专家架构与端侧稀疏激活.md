@@ -4,7 +4,7 @@ title: "MiniCPM-MoE-8x2B 混合专家架构与端侧稀疏激活解析"
 
 # MiniCPM-MoE-8x2B 混合专家架构与端侧稀疏激活解析
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文定位: MiniCPM 技术报告 Section 6.3 + GitHub README + 官方技术博客

@@ -4,7 +4,7 @@ title: "Qwen2-VL 技术报告精译"
 
 # Qwen2-VL 技术报告精译
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > **原文**: Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution (arXiv:2409.12191)

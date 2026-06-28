@@ -5,7 +5,7 @@ status: pending
 
 # MiniMax ABAB 技术报告全景解析与中文重构
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 >
 > 原文来源: MiniMax ABAB 初代及进阶版技术博文、开源及闭源模型架构分析报告  
 > 状态: pending - 该模型尚未发布独立的技术报告 PDF，内容由社区和官方技术博客整理重构并深入扩展。  

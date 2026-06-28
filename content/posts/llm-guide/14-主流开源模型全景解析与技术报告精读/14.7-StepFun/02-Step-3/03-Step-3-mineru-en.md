@@ -6,7 +6,7 @@ source_pdf: step-3.pdf
 
 # 02-Step-3 Technical Report
 
-> 🔙 **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
+>  **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
 
 
 

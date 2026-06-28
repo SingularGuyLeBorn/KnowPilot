@@ -4,7 +4,7 @@ title: "Step-3模型-系统协同设计与解码成本优化剖析"
 
 # Step-3 模型-系统协同设计与解码成本优化剖析
 
-> 🔙 **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
+>  **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
 
 
 > **分析基础**: Step-3 is Large yet Affordable: Model-system Co-design for Cost-effective Decoding (arXiv:2507.19427v1)

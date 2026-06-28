@@ -5,7 +5,7 @@ converted_by: MinerU (re-processed)
 date: 2026-05-23
 ---
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 # DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models

@@ -104,7 +104,9 @@ GPT-2的目标旨在训练一个泛化能力更强的词向量模型，它并没
 
 GPT-2的学习目标是**使用无监督的预训练模型做有监督的任务**. 因为文本数据的时序性，一个输出序列可以表示为一系列条件概率的乘积：
 
-$$ p(x) = \prod_{i=1}^n p (s_n | s_1, \dots, s_{n-1}) \tag{1} $$
+$$
+ p(x) = \prod_{i=1}^n p (s_n | s_1, \dots, s_{n-1}) \tag{1}
+$$
 式 (1) 也可以写成 $p(s_{n-k},\dots,s_n | s_1, s_2, \dots, s_{n-k-1})$，其物理意义是：根据已知的上文 $\text{input} = \{s_1, s_2, \dots, s_{n-k-1}\}$ 预测未知的下文 $\text{output}=\{s_{n-k},\dots,s_n\}$. 因此语言模型本质上建模了 $p(\text{output}|\text{input})$. 若进一步引入任务描述，则有监督任务可统一建模为 $p(\text{output}|\text{input}, \text{task})$ 的形式. 在decaNLP[8]中，他们提出的MQAN模型可以将机器翻译，自然语言推理，语义分析，关系提取等10类任务统一建模为一个分类任务，而无需再为每一个子任务单独设计一个模型. 
 
 基于上面的思想，作者认为，当一个语言模型的容量足够大时，它就足以覆盖所有的有监督任务，也就是说**所有的有监督学习都是无监督语言模型的一个子集**. 例如当模型训练完“Micheal Jordan is the best basketball player in the history”语料的语言模型之后，便也学会了(question：“who is the best basketball player in the history ?”，answer:“Micheal Jordan”)的Q&A任务. 

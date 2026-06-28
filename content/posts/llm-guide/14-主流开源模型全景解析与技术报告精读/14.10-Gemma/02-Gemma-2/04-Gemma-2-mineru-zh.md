@@ -4,7 +4,7 @@ title: "Gemma 2 技术报告逐译与译者注"
 
 # Gemma 2 技术报告逐译与译者注
 
-> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+>  **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
 
 
 > 原文: Gemma 2: Improving Open Language Models at a Practical Size

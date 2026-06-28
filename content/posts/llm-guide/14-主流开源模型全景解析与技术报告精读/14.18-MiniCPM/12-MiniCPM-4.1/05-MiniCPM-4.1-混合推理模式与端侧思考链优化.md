@@ -4,7 +4,7 @@ title: "MiniCPM-4.1 混合推理模式与端侧思考链优化"
 
 # MiniCPM-4.1 混合推理模式与端侧思考链优化
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 本文件为 MiniCPM-4.1 的深度技术解析,聚焦「混合推理模式」(Hybrid Reasoning Mode)的设计原理、工程实现与落地挑战。

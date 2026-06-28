@@ -6,21 +6,21 @@ status: completed
 
 # MiniMax-M2.5 技术报告逐译与全景深度解析
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 >
-> 📌 **译者注**：本文档基于 MiniMax 官方发布的技术博客、模型卡以及相关前沿研究(结合 abab6.5/abab7 架构特性)进行了深度重构与翻译解析. M2.5 系列代表了 MiniMax 在稀疏混合专家网络(MoE)与长上下文处理方面的集大成之作. 
+>  **译者注**：本文档基于 MiniMax 官方发布的技术博客、模型卡以及相关前沿研究(结合 abab6.5/abab7 架构特性)进行了深度重构与翻译解析. M2.5 系列代表了 MiniMax 在稀疏混合专家网络(MoE)与长上下文处理方面的集大成之作. 
 
 ---
 
 ## 摘要 (Abstract)
 
-### 📄 原始文献重构段落
+###  原始文献重构段落
 > We introduce MiniMax-M2.5, a highly efficient and scalable Mixture-of-Experts (MoE) language model designed to achieve state-of-the-art performance across diverse benchmarks while maintaining low inference latency. By employing a fine-grained expert routing mechanism and scaling the pre-training corpus to over 8 trillion tokens, M2.5 bridges the performance gap between sparse models and dense models of equivalent total parameter size. Furthermore, we extend the context window to 256K tokens, enabling advanced long-document comprehension and reasoning.
 
-### 🇨🇳 译文精校
+###  译文精校
 我们介绍了 MiniMax-M2.5, 这是一种高效且可扩展的混合专家(MoE)语言模型, 旨在在保持低推理延迟的同时, 在各种基准测试中实现最先进(SOTA)的性能. 通过采用细粒度的专家路由机制并将预训练语料库扩展至超过 8 万亿个 token, M2.5 弥合了稀疏模型与同等总参数规模的稠密模型之间的性能差距. 此外, 我们将上下文窗口扩展到了 256K tokens, 从而实现了高级的长文档理解和推理. 
 
-### 💡 译者技术解析
+###  译者技术解析
 **MoE 的演进与 M2.5 的定位**
 MiniMax 从早期的稠密模型转向 MoE 架构, 核心驱动力在于**打破显存带宽与计算密度的内存墙限制**. 传统的稠密模型(Dense Models)在每次前向传播时会激活所有参数, 而 M2.5 采用了条件计算(Conditional Computation). 
 
@@ -46,17 +46,19 @@ graph TD
 
 ## 1. 架构创新 (Architectural Innovations)
 
-### 📄 原始文献重构段落
+###  原始文献重构段落
 > M2.5 adopts a Transformer-based MoE architecture. Unlike standard MoE models that use a small number of large experts, M2.5 implements a decoupled architecture with 64 fine-grained experts, activating 8 experts per token. This top-8 routing strategy maximizes model capacity without linearly increasing computational cost. To mitigate routing collapse, we introduce a dual-level load balancing loss.
 
-### 🇨🇳 译文精校
+###  译文精校
 M2.5 采用了基于 Transformer 的 MoE 架构. 与使用少量大专家的标准 MoE 模型不同, M2.5 实现了一种解耦架构, 包含 64 个细粒度专家, 并在每个 token 上激活 8 个专家. 这种 Top-8 路由策略在不线性增加计算成本的情况下, 最大化了模型容量. 为了缓解路由崩溃问题, 我们引入了双层负载均衡损失. 
 
-### 💡 译者技术解析
+###  译者技术解析
 #### 1.1 细粒度专家的数学表达
 在 M2.5 中, 前馈神经网络(FFN)被替换为 MoE 层. 对于给定的输入 $x$, MoE 层的输出 $y$ 定义为：
 
-$$ y = \sum_{i=1}^{N} G(x)_i \cdot E_i(x) $$
+$$
+ y = \sum_{i=1}^{N} G(x)_i \cdot E_i(x)
+$$
 
 其中：
 - $N = 64$ 是专家的总数. 
@@ -64,14 +66,18 @@ $$ y = \sum_{i=1}^{N} G(x)_i \cdot E_i(x) $$
 - $G(x)_i$ 是门控网络(Router)输出的权重. 
 
 为了实现 Top-8 路由, 门控函数可以表示为：
-$$ G(x) = \text{Softmax}(\text{TopK}(W_g x, k=8)) $$
+$$
+ G(x) = \text{Softmax}(\text{TopK}(W_g x, k=8))
+$$
 
 未被选中的 56 个专家的 $G(x)_i$ 被强制设为 0. 这种设计的优势在于, 尽管总参数量庞大, 但每次推理(FLOPs)仅相当于一个较小的模型, 极大地提升了部署的性价比. 
 
 #### 1.2 负载均衡损失 (Load Balancing Loss)
 为了防止所有 tokens 都涌向某几个“明星专家”(导致其他专家“饿死”且引发严重的计算负载不均), M2.5 使用了辅助损失函数 $\mathcal{L}_{bal}$：
 
-$$ \mathcal{L}_{bal} = \alpha \cdot N \sum_{i=1}^{N} f_i \cdot P_i $$
+$$
+ \mathcal{L}_{bal} = \alpha \cdot N \sum_{i=1}^{N} f_i \cdot P_i
+$$
 
 - $f_i$ 是当前批次中分配给专家 $i$ 的 token 比例. 
 - $P_i$ 是门控网络对专家 $i$ 的平均预测概率. 
@@ -127,13 +133,13 @@ class MiniMaxMoELayer(nn.Module):
 
 ## 2. 长上下文与位置编码 (Long Context & RoPE)
 
-### 📄 原始文献重构段落
+###  原始文献重构段落
 > Handling long documents efficiently is a core objective for M2.5. We modified the Rotary Position Embedding (RoPE) by scaling the base frequency from 10,000 to 1,000,000. Combined with a multi-stage continuous pre-training strategy, M2.5 reliably supports a context window of up to 256K tokens. Attention mechanisms were optimized using FlashAttention-3 and sequence parallelism.
 
-### 🇨🇳 译文精校
+###  译文精校
 高效处理长文档是 M2.5 的核心目标之一. 我们通过将基础频率从 10,000 扩展到 1,000,000 来修改旋转位置编码(RoPE). 结合多阶段持续预训练策略, M2.5 能够稳定支持高达 256K tokens 的上下文窗口. 注意力机制使用 FlashAttention-3 和序列并行(Sequence Parallelism)进行了优化. 
 
-### 💡 译者技术解析
+###  译者技术解析
 **RoPE 基频扩展(Base Frequency Scaling)**是解决长文本位置衰减的有效手段. 
 在标准的 RoPE 中, 位置编码的旋转角度定义为 $\theta_i = \text{base}^{-2i/d}$. 
 当 base = 10,000 时, 对于极大的相对位置差(例如距离几十万 tokens), 高频维度的内积会迅速衰减, 导致模型失去对远距离依赖的感知. 
@@ -164,13 +170,13 @@ sequenceDiagram
 
 ## 3. 预训练数据工程 (Pre-training Data Engineering)
 
-### 📄 原始文献重构段落
+###  原始文献重构段落
 > The quality and scale of pre-training data strictly dictate the upper bound of the model. We constructed an 8-trillion-token high-quality corpus containing multilingual text, diverse mathematical proofs, and vast software code repositories. The pipeline emphasizes rigorous decontamination against downstream benchmarks and aggressive deduplication at both document and sentence levels using MinHash.
 
-### 🇨🇳 译文精校
+###  译文精校
 预训练数据的质量和规模严格决定了模型的上限. 我们构建了一个包含 8 万亿 token 的高质量语料库, 其中包含多语言文本、多样的数学证明以及庞大的软件代码库. 数据处理流水线强调了针对下游基准测试的严格去污染(decontamination), 以及使用 MinHash 在文档和句子级别进行激进的去重(deduplication). 
 
-### 💡 译者技术解析
+###  译者技术解析
 **数据是新时代的源代码**. M2.5 的 8T token 相比上一代实现了量和质的双重飞跃. 
 
 #### 3.1 数据配比 (Data Distribution)
@@ -192,13 +198,13 @@ MiniMax 构建了极大规模的数据清洗集群.
 
 ## 4. 后训练与强化对齐 (Post-training & Alignment)
 
-### 📄 原始文献重构段落
+###  原始文献重构段落
 > Post-training is composed of Supervised Fine-Tuning (SFT) and Direct Preference Optimization (DPO). The SFT stage heavily relies on synthetic data generated via rejection sampling, ensuring complex conversational behaviors. During alignment, we replaced traditional PPO with an optimized batched DPO framework, which eliminates the need for an explicit reward model during the optimization phase, enhancing stability and reducing VRAM overhead.
 
-### 🇨🇳 译文精校
+###  译文精校
 后训练阶段由监督微调(SFT)和直接偏好优化(DPO)组成. SFT 阶段严重依赖通过拒绝采样(rejection sampling)生成的合成数据, 以确保复杂的对话行为. 在对齐过程中, 我们将传统的 PPO 替换为优化的批处理 DPO 框架. 这消除了优化阶段对显式奖励模型的依赖, 增强了稳定性并降低了显存开销. 
 
-### 💡 译者技术解析
+###  译者技术解析
 #### 4.1 拒绝采样生成高质量 SFT 数据
 对于诸如复杂指令遵循、代码重构等任务, 人类标注成本极高且容易出现错误. M2.5 采用了“拒绝采样”(Rejection Sampling)技术：
 1. 模型接收一个复杂提示词(Prompt). 
@@ -216,7 +222,9 @@ MiniMax 构建了极大规模的数据清洗集群.
 
 M2.5 采用的 **DPO (Direct Preference Optimization)** 巧妙地通过数学变换, 将偏好学习转化为一个监督分类损失, 直接更新语言模型：
 
-$$ \mathcal{L}_{DPO}(\pi_\theta; \pi_{ref}) = - \mathbb{E}_{(x, y_w, y_l)} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w | x)}{\pi_{ref}(y_w | x)} - \beta \log \frac{\pi_\theta(y_l | x)}{\pi_{ref}(y_l | x)} \right) \right] $$
+$$
+ \mathcal{L}_{DPO}(\pi_\theta; \pi_{ref}) = - \mathbb{E}_{(x, y_w, y_l)} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w | x)}{\pi_{ref}(y_w | x)} - \beta \log \frac{\pi_\theta(y_l | x)}{\pi_{ref}(y_l | x)} \right) \right]
+$$
 
 其中, $\sigma$ 是 sigmoid 函数, $y_w$ 是被偏好的回答(win), $y_l$ 是被拒绝的回答(lose). 通过这种方式, DPO 丢掉了 Reward 和 Critic 模型, 使得对齐训练变得像常规 SFT 一样稳定且高效. 
 
@@ -224,13 +232,13 @@ $$ \mathcal{L}_{DPO}(\pi_\theta; \pi_{ref}) = - \mathbb{E}_{(x, y_w, y_l)} \left
 
 ## 5. 实验评估 (Evaluations)
 
-### 📄 原始文献重构段落
+###  原始文献重构段落
 > We evaluated M2.5 across comprehensive benchmarks covering general language understanding, logical reasoning, and coding proficiencies. It significantly outperforms preceding open-weight models in its parameter class, achieving 82.5 on MMLU and 78.4 on HumanEval. Long-context evaluations via the 'Needle In A Haystack' (NIAH) test demonstrated a 99.8% retrieval accuracy up to the 256K token limit.
 
-### 🇨🇳 译文精校
+###  译文精校
 我们在涵盖通用语言理解、逻辑推理和编码能力的综合基准测试中对 M2.5 进行了评估. 在同等参数级别的开源模型中, 它显著优于前代模型, 在 MMLU 上达到 82.5 分, 在 HumanEval 上达到 78.4 分. 通过“大海捞针”(NIAH)测试进行的长上下文评估表明, 在高达 256K token 的限制范围内, 检索准确率达到了 99.8%. 
 
-### 💡 译者技术解析
+###  译者技术解析
 **关键性能表现**
 
 | Benchmark | 测试维度 | M2.5 得分 | 竞品对比 (例如 Llama-3-70B) |

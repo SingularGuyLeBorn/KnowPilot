@@ -3,7 +3,7 @@ title: "Claude Computer Use: 突破沙盒的系统级图形界面接管 - 对齐
 ---
 # 09-Claude-Computer-Use 核心技术专题：RLAIF 与模型神经元干预
 
-> 🔙 **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
+>  **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
 
 
 ## 宪法 AI 的底层数学

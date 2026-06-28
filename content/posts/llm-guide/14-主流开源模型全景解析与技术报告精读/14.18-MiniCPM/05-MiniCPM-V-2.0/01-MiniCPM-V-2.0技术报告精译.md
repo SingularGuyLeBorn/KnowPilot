@@ -4,7 +4,7 @@ title: "MiniCPM-V 2.0 技术报告精译"
 
 # MiniCPM-V 2.0 技术报告精译
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文标题: MiniCPM-V: A GPT-4V Level MLLM on Your Phone

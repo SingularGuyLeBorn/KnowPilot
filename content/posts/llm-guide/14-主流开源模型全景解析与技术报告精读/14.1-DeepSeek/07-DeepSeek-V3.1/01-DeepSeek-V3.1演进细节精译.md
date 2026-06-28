@@ -5,7 +5,7 @@ status: completed
 
 # DeepSeek-V3.1: 迈向 Agent 时代的第一步
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: Introducing DeepSeek-V3.1: our first step toward the agent era!

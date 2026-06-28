@@ -355,17 +355,25 @@ Input Hidden States
 
 **三条计算通道**：
 
-$$q^I = W^{Q,I} \cdot q_r \quad \text{(从 MLA latent 升维, 64 heads × 128 dim)}$$
+$$
+q^I = W^{Q,I} \cdot q_r \quad \text{(从 MLA latent 升维, 64 heads × 128 dim)}
+$$
 
-$$k^I = W^{K,I} \cdot x \quad \text{(从 hidden states 投影, 1 head × 128 dim)}$$
+$$
+k^I = W^{K,I} \cdot x \quad \text{(从 hidden states 投影, 1 head × 128 dim)}
+$$
 
-$$w^I = W^{W,I} \cdot x \quad \text{(重要性权重, 64 heads)}$$
+$$
+w^I = W^{W,I} \cdot x \quad \text{(重要性权重, 64 heads)}
+$$
 
 **RoPE 处理**：与 MLA 一致的解耦方式——$q^I$ 和 $k^I$ 均分为 PE/Nope 两部分, 仅对 PE 分量应用旋转编码. 
 
 **核心公式：Index Score**
 
-$$I_{t,s} = \sum_{j=1}^{H^I} w_{t,j}^I \cdot \text{ReLU}(q_{t,j}^I \cdot k_s^I)$$
+$$
+I_{t,s} = \sum_{j=1}^{H^I} w_{t,j}^I \cdot \text{ReLU}(q_{t,j}^I \cdot k_s^I)
+$$
 
 其中 $H^I = 64$ 是 Indexer 的 head 数, $k_s^I$ 是历史位置 $s$ 的 Key. 
 
@@ -412,15 +420,23 @@ Decode 阶段(MQA 模式)：seq_len = 1, $Q = [\text{heads}, 1, \text{head\_dim}
 
 **MLA 的 Attention FLOPs**：
 
-$$\text{KV\_scores} = 2 \cdot bs \cdot heads \cdot seq \cdot (seq + cache) \cdot (qk\_dim) / 2$$
+$$
+\text{KV\_scores} = 2 \cdot bs \cdot heads \cdot seq \cdot (seq + cache) \cdot (qk\_dim) / 2
+$$
 
-$$\text{QKV} = 2 \cdot bs \cdot heads \cdot seq \cdot (seq + cache) \cdot v\_dim / 2$$
+$$
+\text{QKV} = 2 \cdot bs \cdot heads \cdot seq \cdot (seq + cache) \cdot v\_dim / 2
+$$
 
 **DSA 的 Attention FLOPs**(将 $seq + cache$ 替换为 $top\_k$)：
 
-$$\text{KV\_scores\_DSA} = 2 \cdot bs \cdot heads \cdot seq \cdot top\_k \cdot qk\_dim / 2$$
+$$
+\text{KV\_scores\_DSA} = 2 \cdot bs \cdot heads \cdot seq \cdot top\_k \cdot qk\_dim / 2
+$$
 
-$$\text{QKV\_DSA} = 2 \cdot bs \cdot heads \cdot seq \cdot top\_k \cdot v\_dim / 2$$
+$$
+\text{QKV\_DSA} = 2 \cdot bs \cdot heads \cdot seq \cdot top\_k \cdot v\_dim / 2
+$$
 
 **Indexer 额外 FLOPs**：
 
@@ -448,7 +464,9 @@ $$\text{QKV\_DSA} = 2 \cdot bs \cdot heads \cdot seq \cdot top\_k \cdot v\_dim /
 
 Indexer 权重存储(FP16)：
 
-$$\text{Mem} = 2 \times (7168 \times 64 + 1536 \times 64 \times 128 + 7168 \times 128) \text{ bytes} \approx 26.6 \text{ MB}$$
+$$
+\text{Mem} = 2 \times (7168 \times 64 + 1536 \times 64 \times 128 + 7168 \times 128) \text{ bytes} \approx 26.6 \text{ MB}
+$$
 
 **激活值峰值**(Prefill 阶段)：
 
@@ -640,13 +658,17 @@ else:
 
 Indexer 中的 $q, k$ 在量化前经过 Hadamard 变换：
 
-$$\tilde{q} = q \cdot H / \sqrt{n}, \quad \tilde{k} = k \cdot H / \sqrt{n}$$
+$$
+\tilde{q} = q \cdot H / \sqrt{n}, \quad \tilde{k} = k \cdot H / \sqrt{n}
+$$
 
 其中 $H$ 是 Hadamard 矩阵, 满足 $HH^T = H^TH = nI$. 
 
 **正确性保证**：
 
-$$(qH)(kH)^T = qHH^Tk^T = q(nI)k^T = n \cdot qk^T$$
+$$
+(qH)(kH)^T = qHH^Tk^T = q(nI)k^T = n \cdot qk^T
+$$
 
 除以 $\sqrt{n}$ 后, 内积结果不变. 
 
@@ -707,7 +729,9 @@ $$(qH)(kH)^T = qHH^Tk^T = q(nI)k^T = n \cdot qk^T$$
 
 **FFN(MoE)层**(58 层 MoE + 3 层 Dense)：
 
-$$\text{FFN\_FLOPs} = 58 \times (8 \times 3 \times 7168 \times 2048 + 3 \times 7168 \times 2048) + 3 \times 3 \times 7168 \times 18432 \approx 24.3 \text{ GFLOPs/token}$$
+$$
+\text{FFN\_FLOPs} = 58 \times (8 \times 3 \times 7168 \times 2048 + 3 \times 7168 \times 2048) + 3 \times 3 \times 7168 \times 18432 \approx 24.3 \text{ GFLOPs/token}
+$$
 
 **Attention 层**(61 层)：
 

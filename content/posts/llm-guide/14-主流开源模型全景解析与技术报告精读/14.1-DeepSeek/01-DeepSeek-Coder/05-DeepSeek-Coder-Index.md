@@ -6,7 +6,7 @@ date: 2026-05-19
 
 # DeepSeek-Coder
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > DeepSeek-Coder 是 DeepSeek 家族的第一款开源模型，专注于代码智能领域。

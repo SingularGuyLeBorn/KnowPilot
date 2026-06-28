@@ -7,7 +7,7 @@ date: 2024-12
 
 # DeepSeek-V3 Technical Report
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 DeepSeek-AI

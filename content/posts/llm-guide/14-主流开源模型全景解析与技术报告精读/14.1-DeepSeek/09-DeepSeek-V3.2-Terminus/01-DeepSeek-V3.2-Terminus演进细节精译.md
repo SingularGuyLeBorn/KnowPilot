@@ -5,7 +5,7 @@ status: completed
 
 # DeepSeek-V3.1-Terminus: V3.1 架构的终局版本
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeek-V3.1 → DeepSeek-V3.1-Terminus

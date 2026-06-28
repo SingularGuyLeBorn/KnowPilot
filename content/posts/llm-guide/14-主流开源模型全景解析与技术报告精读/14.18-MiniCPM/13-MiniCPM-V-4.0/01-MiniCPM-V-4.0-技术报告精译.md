@@ -4,7 +4,7 @@ title: "MiniCPM-V-4.0 技术报告精译"
 
 # MiniCPM-V-4.0 技术报告精译
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文来源: OpenBMB GitHub 官方仓库 / HuggingFace 模型卡片 / 官方发布说明

@@ -4,7 +4,7 @@ title: "GLM-4-Voice端到端语音对话架构与低延迟设计剖析"
 
 # GLM-4-Voice 端到端语音对话架构与低延迟设计剖析
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > 信息来源: GLM-4-Voice: Towards Intelligent and Human-Like End-to-End Spoken Chatbot (arXiv:2412.02612)
@@ -18,7 +18,9 @@ title: "GLM-4-Voice端到端语音对话架构与低延迟设计剖析"
 
 传统语音对话机器人采用级联 pipeline:
 
-$$ \text{语音输入} \xrightarrow{\text{ASR}} \text{文本} \xrightarrow{\text{LLM}} \text{文本回复} \xrightarrow{\text{TTS}} \text{语音输出} $$
+$$
+ \text{语音输入} \xrightarrow{\text{ASR}} \text{文本} \xrightarrow{\text{LLM}} \text{文本回复} \xrightarrow{\text{TTS}} \text{语音输出}
+$$
 
 这一方案有三个结构性缺陷:
 
@@ -54,7 +56,9 @@ GLM-4-Voice 选择「监督语义 token」路线: 在预训练 ASR 模型(Whispe
 
 ASR Encoder 的结构可以抽象为:
 
-$$ \text{波形} \xrightarrow{\text{前半部分}} \text{声学特征} \xrightarrow{\text{后半部分}} \text{文本} $$
+$$
+ \text{波形} \xrightarrow{\text{前半部分}} \text{声学特征} \xrightarrow{\text{后半部分}} \text{文本}
+$$
 
 在「中间」截断并量化,意味着量化后的 token 既保留了足够的语义信息(后半部分仍能解码出文本),又足够紧凑(经过了量化压缩). 这是一种「语义锚定」策略——token 的语义内容由 ASR 模型的训练目标保证,而非像 HuBERT 那样通过自监督学习「发现」语音单元.
 
@@ -113,11 +117,15 @@ GLM-4-Voice 的语音Decoder  采用三组件设计:
 
 如果不采用流式策略,端到端语音模型的延迟为:
 
-$$ T_{\text{total}} = T_{\text{ASR}} + T_{\text{LLM\_full}} + T_{\text{TTS}} $$
+$$
+ T_{\text{total}} = T_{\text{ASR}} + T_{\text{LLM\_full}} + T_{\text{TTS}}
+$$
 
 其中 $T_{\text{LLM\_full}}$ 是生成完整文本回复的时间(可能数百个 token). GLM-4-Voice 的「流式思考(Streaming Thoughts)」模板将延迟降低到:
 
-$$ T_{\text{total}} = T_{\text{speech\_tokenize}} + T_{\text{llm\_prefill}} + T_{\text{llm\_decode}}(23) + T_{\text{speech\_decode}}(10) $$
+$$
+ T_{\text{total}} = T_{\text{speech\_tokenize}} + T_{\text{llm\_prefill}} + T_{\text{llm\_decode}}(23) + T_{\text{speech\_decode}}(10)
+$$
 
 ### 4.2 交替生成策略
 

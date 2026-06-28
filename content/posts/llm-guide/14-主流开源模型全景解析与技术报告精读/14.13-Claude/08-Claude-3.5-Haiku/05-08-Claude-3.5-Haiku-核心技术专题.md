@@ -3,7 +3,7 @@ title: "Claude 3.5 Haiku: 算力成本的最优解 - 对齐与安全核心专题
 ---
 # 08-Claude-3.5-Haiku 核心技术专题：RLAIF 与模型神经元干预
 
-> 🔙 **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
+>  **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
 
 
 ## 宪法 AI 的底层数学

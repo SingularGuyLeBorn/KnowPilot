@@ -6,7 +6,7 @@ source_pdf: Gemma-3-Technical-Report.pdf
 
 # Gemma-3 Technical Report
 
-> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+>  **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
 
 
 > Original source: Gemma-3 technical report PDF
@@ -89,7 +89,7 @@ We discuss our approach to safe and responsible
 deployment and outline the broader implications
 of Gemma 3, its limitations, and advantages.
 1See Contributions and Acknowledgments section for full author list. Please send correspondence to gemma-3-report@google.com.
-© 2025 Google DeepMind. All rights reserved
+ 2025 Google DeepMind. All rights reserved
 arXiv:2503.19786v1  [cs.CL]  25 Mar 2025
 
 ---

@@ -5,7 +5,7 @@ source_pdf: GLM-5-Technical-Report.pdf
 ---
 # 06-GLM-5 Technical Report
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 ---
 GLM-5: from Vibe Coding to Agentic Engineering

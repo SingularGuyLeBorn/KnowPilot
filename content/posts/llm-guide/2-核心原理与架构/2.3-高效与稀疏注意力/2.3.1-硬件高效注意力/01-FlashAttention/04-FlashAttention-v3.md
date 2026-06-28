@@ -107,18 +107,26 @@ FP8 (8位浮点数) 分为两种不同的物理格式:
 为了破解这一难题, FlashAttention-v3 引入了 **块级动态量化缩放 (Block-wise Dynamic Scaling)**.
 当每一个分块(Tile)的 $Q_i$ 和 $K_j$ 加载进入 SRAM 后, 我们在片上通过高性能的寄存器扫描, 动态算出当前 Tile 内元素的最大绝对值 $max\_val$:
 
-$$s_{Q_i} = \frac{V_{\text{max\_fp8}}}{\max(|Q_i|)} \tag{1}$$
+$$
+s_{Q_i} = \frac{V_{\text{max\_fp8}}}{\max(|Q_i|)} \tag{1}
+$$
 
-$$s_{K_j} = \frac{V_{\text{max\_fp8}}}{\max(|K_j|)} \tag{2}$$
+$$
+s_{K_j} = \frac{V_{\text{max\_fp8}}}{\max(|K_j|)} \tag{2}
+$$
 
 其中 $V_{\text{max\_fp8}} = 448.0$. 
 随后, 我们将当前 Tile 内的元素乘以缩放因子, 将其动态量化投影到整个 FP8 的最优表示区间内: 
 
-$$\hat{Q}_i = \text{to\_fp8}(Q_i \cdot s_{Q_i}), \quad \hat{K}_j = \text{to\_fp8}(K_j \cdot s_{K_j}) \tag{3}$$
+$$
+\hat{Q}_i = \text{to\_fp8}(Q_i \cdot s_{Q_i}), \quad \hat{K}_j = \text{to\_fp8}(K_j \cdot s_{K_j}) \tag{3}
+$$
 
 利用 WGMMA 执行高效的 FP8 矩阵乘法. 由于输入被动态放大了, 计算累加和时必须在 FMA 累加到 FP32 累加器之前, 进行**数学精度逆补偿(反量化)**：
 
-$$S_{ij} = \frac{1}{s_{Q_i} \cdot s_{K_j}} \cdot \text{WGMMA}(\hat{Q}_i, \hat{K}_j^T) \tag{4}$$
+$$
+S_{ij} = \frac{1}{s_{Q_i} \cdot s_{K_j}} \cdot \text{WGMMA}(\hat{Q}_i, \hat{K}_j^T) \tag{4}
+$$
 
 这一机制的精妙之处在于: **由于缩放因子是在快速的片上 SRAM 中动态生成并直接被 WGMMA 消费的, 它完全不需要写回 HBM 显存, 因而带来了零外部带宽消耗. 同时, 它针对每一个分块进行了局部的极细粒度量化自适应, 哪怕出现极端的离群值 (Outliers), 也能够通过独立的缩放因子予以完美保护, 真正达成了 FP8 算力吞吐暴涨下的零精度损失推理.**
 

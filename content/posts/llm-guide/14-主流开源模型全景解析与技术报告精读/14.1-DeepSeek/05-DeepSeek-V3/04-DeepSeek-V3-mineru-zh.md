@@ -7,7 +7,7 @@ date: 2024-12
 
 # DeepSeek-V3: 一个强大、经济且高效的混合专家语言模型
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeek-V3 Technical Report
@@ -647,7 +647,7 @@ Support for Tile- and Block-Wise Quantization. Current GPUs only support per-ten
 
 支持 Tile 和 Block 级别的量化. 当前的 GPU 仅支持张量级量化, 缺乏对细粒度量化 (如我们的 tile 和 block 级别量化) 的原生支持. 在当前的实现中, 当达到累加间隔时, 部分结果将从 Tensor Core 复制到 CUDA Core, 乘以缩放因子, 并累加到 CUDA Core 的 FP32 寄存器中. 尽管结合我们精确的 FP32 累加策略, 反量化开销被显著缓解, 但 Tensor Core 和 CUDA Core 之间频繁的数据移动仍然限制了计算效率. 因此, 我们建议未来的芯片通过使 Tensor Core 能够接收缩放因子并实现带组缩放的 MMA, 来支持细粒度量化. 这样, 整个部分和累加和反量化可以直接在 Tensor Core 内部完成, 直到产生最终结果, 避免频繁的数据移动.
 
-> 译者注: 细粒度量化的硬件支持是当前 GPU 的重大缺口. DeepSeek 在 Hopper 上不得不通过 Tensor Core ↔ CUDA Core 之间的频繁数据移动来实现, 这造成了效率损失. 他们建议下一代芯片直接在 Tensor Core 内支持 group scaling, 这与 NVIDIA Blackwell 的 microscaling 方向一致, 再次验证了他们的硬件前瞻能力.
+> 译者注: 细粒度量化的硬件支持是当前 GPU 的重大缺口. DeepSeek 在 Hopper 上不得不通过 Tensor Core  CUDA Core 之间的频繁数据移动来实现, 这造成了效率损失. 他们建议下一代芯片直接在 Tensor Core 内支持 group scaling, 这与 NVIDIA Blackwell 的 microscaling 方向一致, 再次验证了他们的硬件前瞻能力.
 
 Support for Online Quantization. The current implementations struggle to effectively support online quantization, despite its effectiveness demonstrated in our research. In the existing process, we need to read 128 BF16 activation values (the output of the previous computation) from HBM (High Bandwidth Memory) for quantization, and the quantized FP8 values are then written back to HBM, only to be read again for MMA. To address this inefficiency, we recommend that future chips integrate FP8 cast and TMA (Tensor Memory Accelerator) access into a single fused operation, so quantization can be completed during the transfer of activations from global memory to shared memory, avoiding frequent memory reads and writes. We also recommend supporting a warp-level cast instruction for speedup, which further facilitates the better fusion of layer normalization and FP8 cast. Alternatively, a near-memory computing approach can be adopted, where compute logic is placed near the HBM. In this case, BF16 elements can be cast to FP8 directly as they are read from HBM into the GPU, reducing off-chip memory access by roughly 50%.
 

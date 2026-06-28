@@ -6,7 +6,7 @@ date: 2026-05-19
 
 # DeepSeek-Coder 核心架构剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文是对 DeepSeek-Coder 技术报告(arXiv:2401.14196)中架构与工程决策的深度解读，聚焦「为什么这样设计」以及「工程落地时的权衡」。

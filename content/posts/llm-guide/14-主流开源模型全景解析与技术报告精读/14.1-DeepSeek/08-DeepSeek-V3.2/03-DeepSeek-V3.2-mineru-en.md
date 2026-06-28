@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 DeepSeek-AI

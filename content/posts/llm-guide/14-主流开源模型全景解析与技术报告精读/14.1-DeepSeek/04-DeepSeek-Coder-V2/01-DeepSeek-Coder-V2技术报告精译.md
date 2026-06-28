@@ -4,7 +4,7 @@ title: "DeepSeek-Coder-V2 技术报告精译"
 
 # DeepSeek-Coder-V2 技术报告精译
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence

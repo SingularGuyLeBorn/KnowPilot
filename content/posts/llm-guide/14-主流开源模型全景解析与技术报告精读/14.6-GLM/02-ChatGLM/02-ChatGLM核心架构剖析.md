@@ -5,7 +5,7 @@ status: pending
 
 # ChatGLM 核心架构剖析
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 > 本文档基于深入研究 ChatGLM 技术报告及其开源代码整理，聚焦核心技术点的深度剖析，重点涵盖其独特的中英双语分词器、GLM 训练目标函数、对话格式设计以及人类意图对齐策略。由于 GLM (General Language Model) 家族模型在底层架构上的连贯性，本文的内容涵盖了从 GLM-130B 经验继承而来的 ChatGLM (6B~130B) 以及 ChatGLM2/3 代的架构演进。
 
@@ -104,8 +104,8 @@ graph TD
 - **Target-to-Context & Target-to-Target**：目标片段中的词可以看到所有的上下文词(Context)，但在目标片段内部，生成过程是自回归的，因此只能看到当前生成片段中排在自己之前的词，且不能看到其他被乱序调度的未来片段。
 
 $$
-M_{ij} = 
-\begin{cases} 
+M_{ij} =
+\begin{cases}
 1, & \text{if } i, j \in \text{Context} \\
 1, & \text{if } i \in \text{Span}_k, j \in \text{Context} \\
 1, & \text{if } i, j \in \text{Span}_k \text{ and } j \le i \\

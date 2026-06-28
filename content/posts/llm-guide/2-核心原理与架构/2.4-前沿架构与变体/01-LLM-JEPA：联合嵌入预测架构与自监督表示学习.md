@@ -66,7 +66,9 @@ Input Text
 - **冻结梯度**：Target Encoder 不参与反向传播, 其输出作为" ground truth "
 - **EMA 更新**：Target Encoder 缓慢跟随 Context Encoder, 保持稳定性
 
-$$\theta_{\text{tgt}}^{(t+1)} = m \cdot \theta_{\text{tgt}}^{(t)} + (1-m) \cdot \theta_{\text{ctx}}^{(t)}$$
+$$
+\theta_{\text{tgt}}^{(t+1)} = m \cdot \theta_{\text{tgt}}^{(t)} + (1-m) \cdot \theta_{\text{ctx}}^{(t)}
+$$
 
 其中 $m = 0.99$ 是动量系数. 这意味着 Target Encoder 的变化速度是 Context Encoder 的 1%. 
 
@@ -125,7 +127,9 @@ def sample_span_mask(seq_len, mask_ratio=0.3, mean_span_len=3):
 
 JEPA 的损失在**表示空间**中计算, 而非词汇表空间：
 
-$$\mathcal{L}_{\text{JEPA}} = 1 - \frac{\text{pred} \cdot z_{\text{tgt}}}{\|\text{pred}\| \cdot \|z_{\text{tgt}}\|}$$
+$$
+\mathcal{L}_{\text{JEPA}} = 1 - \frac{\text{pred} \cdot z_{\text{tgt}}}{\|\text{pred}\| \cdot \|z_{\text{tgt}}\|}
+$$
 
 即 **1 - 余弦相似度**. 当预测表示与目标表示方向完全一致时, 损失为 0. 
 

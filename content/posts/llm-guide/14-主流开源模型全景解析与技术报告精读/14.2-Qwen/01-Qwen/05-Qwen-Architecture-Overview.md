@@ -4,7 +4,7 @@ title: "Qwen 核心架构与长上下文扩展设计剖析"
 
 # Qwen 核心架构与长上下文扩展设计剖析
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 对应精译: [01-Qwen技术报告精译](./01-Qwen技术报告精译.md)
@@ -82,19 +82,27 @@ Qwen 实现了一套仅应用于推理阶段的无训练长上下文扩展技术
 NTK-aware 插值调整 RoPE 的基数(base), 而非像位置插值(PI)那样对所有维度等比例缩放. Dynamic NTK-aware 插值进一步按块动态改变缩放比例, 避免了严重的性能下降.
 
 标准 RoPE 的位置编码为:
-$$f(m, \theta) = e^{im\theta}$$
+$$
+f(m, \theta) = e^{im\theta}
+$$
 
 NTK-aware 插值通过调整基数 $b$ 来扩展上下文:
-$$\theta_i = b^{-2i/d}$$
+$$
+\theta_i = b^{-2i/d}
+$$
 
 当上下文从 $L_{\text{train}}$ 扩展到 $L_{\text{target}}$ 时, 缩放后的基数为:
-$$b' = b \cdot \left(\frac{L_{\text{target}}}{L_{\text{train}}}\right)^{d/(d-2)}$$
+$$
+b' = b \cdot \left(\frac{L_{\text{target}}}{L_{\text{train}}}\right)^{d/(d-2)}
+$$
 
 ### 4.2 LogN-Scaling
 
 LogN-Scaling 通过一个依赖于上下文长度与训练长度之比的因子重新缩放 query 和 value 的点积:
 
-$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} \cdot \log_{L_{\text{train}}}(L_{\text{current}})\right)V$$
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} \cdot \log_{L_{\text{train}}}(L_{\text{current}})\right)V
+$$
 
 这确保随着上下文长度增长, 注意力值的熵保持稳定.
 

@@ -4,7 +4,7 @@ title: "MiMo-7B推理密度最大化与RL基础设施优化剖析"
 
 # MiMo-7B 推理密度最大化与 RL 基础设施优化剖析
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 
 > **分析基础**: MiMo: Unlocking the Reasoning Potential of Language Model - From Pretraining to Posttraining (Xiaomi LLM-Core Team, 2025-04-30)

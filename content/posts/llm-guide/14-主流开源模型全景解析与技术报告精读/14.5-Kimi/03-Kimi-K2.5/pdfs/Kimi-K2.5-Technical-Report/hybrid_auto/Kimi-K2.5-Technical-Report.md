@@ -1694,7 +1694,7 @@ The video clip was successfully extracted. Let me summarize the results for the 
 
 # SUMMARY
 
-✅ \*\*Video clip extracted successfully!\*\*
+ \*\*Video clip extracted successfully!\*\*
 
 \*\*Output file:\*\* \`./video/wukong-result-video-web-master/clips/01\_prologue\_battle.mp4\`
 
@@ -1710,7 +1710,7 @@ All tasks are complete. Let me provide a comprehensive summary to the user about
 
 # SUMMARY
 
-\## ✅ Analysis Complete! Black Myth: Wukong Journey Showcase
+\##  Analysis Complete! Black Myth: Wukong Journey Showcase
 
 \### How to View
 

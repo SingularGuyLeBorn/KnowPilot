@@ -7,7 +7,7 @@ title: "Gemini 1.0：原生多模态预训练与Pathways分布式基础设施—
 > **模型定位**：Google DeepMind 合并后首个大模型(2023-12)，业界首个从预训练阶段即原生多模态的旗舰模型
 > **家族归属**：14.11-Gemini｜编号 01-Gemini-1.0
 > **核心论文**：*Gemini: A Family of Highly Capable Multimodal Models* (Gemini Team, arXiv:2312.11805)
-> 🔙 **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
+>  **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
 
 ---
 

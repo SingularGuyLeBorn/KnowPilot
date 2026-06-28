@@ -36,7 +36,9 @@ Grok 3 将测试时 scaling 系统化为三个层次：
 
 Think 模式是 Grok 3 的默认推理机制. 当用户提出复杂问题时，模型自动生成思维链(Chain-of-Thought)：
 
-$$\text{Think}(x) = \text{CoT}_1 \rightarrow \text{CoT}_2 \rightarrow \cdots \rightarrow \text{CoT}_n \rightarrow \text{Answer}$$
+$$
+\text{Think}(x) = \text{CoT}_1 \rightarrow \text{CoT}_2 \rightarrow \cdots \rightarrow \text{CoT}_n \rightarrow \text{Answer}
+$$
 
 每个 $\text{CoT}_i$ 是一个中间推理步骤，模型在生成最终答案前会自我验证每个步骤的正确性. 
 
@@ -44,7 +46,9 @@ $$\text{Think}(x) = \text{CoT}_1 \rightarrow \text{CoT}_2 \rightarrow \cdots \ri
 
 Big Brain Mode 是 Think 模式的强化版，核心机制是**多路径假设验证**：
 
-$$\text{BigBrain}(x) = \text{Aggregate}\left(\{\text{Path}_i(x)\}_{i=1}^{k}\right)$$
+$$
+\text{BigBrain}(x) = \text{Aggregate}\left(\{\text{Path}_i(x)\}_{i=1}^{k}\right)
+$$
 
 其中 $k$ 是并行推理路径的数量(通常为 3-5 条). 每条路径独立探索不同的解题策略：
 
@@ -54,7 +58,9 @@ $$\text{BigBrain}(x) = \text{Aggregate}\left(\{\text{Path}_i(x)\}_{i=1}^{k}\righ
 
 聚合策略采用**自一致性投票(Self-Consistency Voting)**：
 
-$$\text{Answer} = \arg\max_y \sum_{i=1}^{k} \mathbb{1}[\text{Path}_i \rightarrow y]$$
+$$
+\text{Answer} = \arg\max_y \sum_{i=1}^{k} \mathbb{1}[\text{Path}_i \rightarrow y]
+$$
 
 如果多条路径得出相同答案，该答案的置信度大幅提升; 如果路径间存在分歧，模型会标记"该问题存在多种合理解法". 
 
@@ -79,7 +85,9 @@ $$\text{Answer} = \arg\max_y \sum_{i=1}^{k} \mathbb{1}[\text{Path}_i \rightarrow
 
 使用一个轻量级的"草稿模型"(Grok-3-Mini，~100B 参数)快速生成候选推理路径，然后由完整模型(Grok-3，2.7T 参数)验证和修正：
 
-$$\text{Path}_{\text{draft}} = \text{Grok-3-Mini}(x), \quad \text{Path}_{\text{verified}} = \text{Grok-3}(\text{Path}_{\text{draft}})$$
+$$
+\text{Path}_{\text{draft}} = \text{Grok-3-Mini}(x), \quad \text{Path}_{\text{verified}} = \text{Grok-3}(\text{Path}_{\text{draft}})
+$$
 
 这种"小模型探索 + 大模型验证"的策略将 Big Brain Mode 的开销从 5× 降低至 **2×**. 
 
@@ -87,7 +95,9 @@ $$\text{Path}_{\text{draft}} = \text{Grok-3-Mini}(x), \quad \text{Path}_{\text{v
 
 在并行推理过程中，如果某条路径的 intermediate confidence 连续 3 步低于阈值 $\tau = 0.3$，该路径被提前终止，释放计算资源给其他路径：
 
-$$\text{if } \prod_{j=1}^{3} P(\text{CoT}_j) < \tau \text{, then terminate Path}_i$$
+$$
+\text{if } \prod_{j=1}^{3} P(\text{CoT}_j) < \tau \text{, then terminate Path}_i
+$$
 
 **缓存共享**：
 
@@ -117,7 +127,9 @@ Grok 3 的 DeepSearch 是**原生集成**的搜索引擎——不是外挂工具
 
 DeepSearch 首先分析用户问题的信息需求，将其分解为多个子查询：
 
-$$\text{SubQueries} = \text{Decomposer}(x) = \{q_1, q_2, \ldots, q_m\}$$
+$$
+\text{SubQueries} = \text{Decomposer}(x) = \{q_1, q_2, \ldots, q_m\}
+$$
 
 例如，对于问题"SpaceX 星舰下一次发射的时间和地点是什么？"，分解为：
 - $q_1$：SpaceX 官方发布的星舰发射计划
@@ -138,7 +150,9 @@ $$\text{SubQueries} = \text{Decomposer}(x) = \{q_1, q_2, \ldots, q_m\}$$
 
 检索不是简单的关键词匹配，而是**语义检索**：
 
-$$\text{Score}(d, q) = \cos(\text{Embed}(d), \text{Embed}(q)) + \alpha \cdot \text{Recency}(d) + \beta \cdot \text{Authority}(d)$$
+$$
+\text{Score}(d, q) = \cos(\text{Embed}(d), \text{Embed}(q)) + \alpha \cdot \text{Recency}(d) + \beta \cdot \text{Authority}(d)
+$$
 
 其中 $\text{Embed}(\cdot)$ 是语义嵌入，$\text{Recency}(d)$ 是文档时效性评分，$\text{Authority}(d)$ 是来源权威性评分. 
 
@@ -167,8 +181,8 @@ $$\text{Score}(d, q) = \cos(\text{Embed}(d), \text{Embed}(q)) + \alpha \cdot \te
 - SpaceX 官方 X 账号(2025-02-20)
 - FAA 发射许可公告(2025-02-18)
 
-【验证状态】✅ 多源一致
-【时效性】⚠️ 信息发布于 7 天内，建议关注最新更新
+【验证状态】 多源一致
+【时效性】 信息发布于 7 天内，建议关注最新更新
 ```
 
 ### 3.3 X 平台数据的独特价值
@@ -212,13 +226,17 @@ Grok 3 支持 **100 万 token** 的扩展上下文——足以一次性处理《
 
 Grok 3 采用**分层稀疏注意力(Hierarchical Sparse Attention)**解决上述问题：
 
-$$\text{Attention}(Q, K, V) = \text{LocalAttn}(Q, K, V) + \text{DilatedAttn}(Q, K, V) + \text{GlobalAttn}(Q, K, V)$$
+$$
+\text{Attention}(Q, K, V) = \text{LocalAttn}(Q, K, V) + \text{DilatedAttn}(Q, K, V) + \text{GlobalAttn}(Q, K, V)
+$$
 
 **局部注意力(Local Attention)**：
 
 每个 token 只关注邻近的 $W = 4096$ 个 token：
 
-$$A_{\text{local}}(i, j) = \begin{cases} \frac{Q_i K_j^T}{\sqrt{d_k}} & \text{if } |i - j| \leq W/2 \\ -\infty & \text{otherwise} \end{cases}$$
+$$
+A_{\text{local}}(i, j) = \begin{cases} \frac{Q_i K_j^T}{\sqrt{d_k}} & \text{if } |i - j| \leq W/2 \\ -\infty & \text{otherwise} \end{cases}
+$$
 
 这捕捉了局部的语法和语义依赖，计算复杂度 $O(nW)$. 
 
@@ -226,7 +244,9 @@ $$A_{\text{local}}(i, j) = \begin{cases} \frac{Q_i K_j^T}{\sqrt{d_k}} & \text{if
 
 每个 token 关注间隔为 $D = 128$ 的 token：
 
-$$A_{\text{dilated}}(i, j) = \begin{cases} \frac{Q_i K_j^T}{\sqrt{d_k}} & \text{if } |i - j| \equiv 0 \pmod{D} \\ -\infty & \text{otherwise} \end{cases}$$
+$$
+A_{\text{dilated}}(i, j) = \begin{cases} \frac{Q_i K_j^T}{\sqrt{d_k}} & \text{if } |i - j| \equiv 0 \pmod{D} \\ -\infty & \text{otherwise} \end{cases}
+$$
 
 这以极低成本捕捉长程的周期性模式. 
 
@@ -234,7 +254,9 @@ $$A_{\text{dilated}}(i, j) = \begin{cases} \frac{Q_i K_j^T}{\sqrt{d_k}} & \text{
 
 每 $G = 1024$ 个 token 设置一个"全局锚点"，所有 token 可见：
 
-$$A_{\text{global}}(i, j) = \frac{Q_i K_j^T}{\sqrt{d_k}} \quad \text{if } j \in \text{GlobalAnchors}$$
+$$
+A_{\text{global}}(i, j) = \frac{Q_i K_j^T}{\sqrt{d_k}} \quad \text{if } j \in \text{GlobalAnchors}
+$$
 
 全局锚点通常是段落边界、章节标题、或语义转换点. 
 
@@ -334,7 +356,7 @@ Grok 3 是 xAI"大力出奇迹"哲学的首次全面验证. 其**测试时计算
 
 ---
 
-> 📚 **延伸阅读**
+>  **延伸阅读**
 > - [xAI Grok 3 发布直播](https://x.ai/blog/grok-3)
 > - [Colossus 数据中心建设纪实](https://www.techtarget.com/whatis/feature/Grok-3-model-explained)
 > - [测试时计算扩展：理论与实验](https://arxiv.org/abs/2408.03314)

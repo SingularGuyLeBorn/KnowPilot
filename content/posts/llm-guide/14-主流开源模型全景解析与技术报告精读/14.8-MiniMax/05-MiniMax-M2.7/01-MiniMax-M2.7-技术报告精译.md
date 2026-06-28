@@ -3,7 +3,7 @@ title: "MiniMax-M2.7 技术报告精译"
 ---
 # MiniMax-M2.7 技术报告精译
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > **模型定位**：多智能体协作与模型自我进化 (Self-Evolution) 的集大成者. 

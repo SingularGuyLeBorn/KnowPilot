@@ -4,7 +4,7 @@ title: "DeepSeek-Coder-V2 核心架构剖析"
 
 # DeepSeek-Coder-V2 核心架构剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文是对 DeepSeek-Coder-V2 技术报告(arXiv:2406.11931)中架构与工程决策的深度解读，聚焦「为什么这样设计」以及「工程落地时的权衡」。

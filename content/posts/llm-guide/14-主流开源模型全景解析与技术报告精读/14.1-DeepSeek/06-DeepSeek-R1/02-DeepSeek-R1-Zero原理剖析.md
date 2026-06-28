@@ -4,7 +4,7 @@ title: "DeepSeek-R1-Zero 原理剖析"
 
 # DeepSeek-R1-Zero 原理剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文聚焦 DeepSeek-R1-Zero 的核心机制: GRPO 算法、基于规则的奖励系统, 以及 RL 驱动的自我进化行为. 如需 GRPO 的完整数学推导, 请参阅 [05-DeepSeek-R1-GRPO.md](./05-DeepSeek-R1-GRPO.md).
@@ -15,7 +15,9 @@ title: "DeepSeek-R1-Zero 原理剖析"
 
 Proximal Policy Optimization(PPO)是 LLM RL 阶段的事实标准. 其目标函数依赖 Generalized Advantage Estimation(GAE), 而 GAE 需要独立训练的价值模型 $V_\phi(s)$:
 
-$$ A_t^{GAE} = \sum_{l=0}^{\infty} (\gamma\lambda)^l \delta_{t+l}^V, \quad \delta_t^V = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t) $$
+$$
+ A_t^{GAE} = \sum_{l=0}^{\infty} (\gamma\lambda)^l \delta_{t+l}^V, \quad \delta_t^V = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)
+$$
 
 价值模型的训练目标是: 基于从序列开头到当前位置生成的 token, 预测从当前位置开始的预期累积奖励.
 
@@ -31,7 +33,9 @@ Group Relative Policy Optimization(GRPO)的核心洞察是: **既然价值模型
 
 GRPO 的优势计算完全使用同一问题下采样出的 $G$ 个输出之间的相对比较:
 
-$$ A_i = \frac{r_i - \text{mean}(\{r_1, r_2, \cdots, r_G\})}{\text{std}(\{r_1, r_2, \cdots, r_G\})} $$
+$$
+ A_i = \frac{r_i - \text{mean}(\{r_1, r_2, \cdots, r_G\})}{\text{std}(\{r_1, r_2, \cdots, r_G\})}
+$$
 
 其中 $r_i \in \{0, 1\}$ 是第 $i$ 个输出的规则奖励(正确或错误). 假设 $G=16$ 个输出中有 $k$ 个正确, 则正确输出的优势为正, 错误输出的优势为负.
 
@@ -45,7 +49,9 @@ $$ A_i = \frac{r_i - \text{mean}(\{r_1, r_2, \cdots, r_G\})}{\text{std}(\{r_1, r
 
 GRPO 的 clip ratio $\epsilon$ 在 R1-Zero 中被设为 10, 远高于 PPO 通常的 0.1-0.2:
 
-$$ \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\epsilon, 1+\epsilon\right) $$
+$$
+ \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\epsilon, 1+\epsilon\right)
+$$
 
 当 $\epsilon=10$ 时, clip 区间变为 $[-9, 11]$, 概率比几乎不会被裁剪. 这与传统 RL 的保守哲学形成鲜明对比.
 
@@ -55,7 +61,9 @@ $$ \text{clip}\left(\frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1-\epsi
 
 GRPO 使用逆向 KL 散度的无偏估计:
 
-$$ \mathbb{D}_{KL}(\pi_\theta \| \pi_{ref}) = \frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - \log\frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - 1 $$
+$$
+ \mathbb{D}_{KL}(\pi_\theta \| \pi_{ref}) = \frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - \log\frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - 1
+$$
 
 与 PPO 的逐 token KL 惩罚不同, GRPO 不会隐式惩罚响应长度, 允许模型自由扩展思维链.
 

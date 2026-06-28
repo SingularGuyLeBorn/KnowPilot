@@ -4,7 +4,7 @@ title: "Kimi-K2 技术报告精译"
 
 # Kimi K2: Open Agentic Intelligence 技术报告精译
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 
 > 原文标题: Kimi K2: Open Agentic Intelligence (arXiv:2507.20534v2)

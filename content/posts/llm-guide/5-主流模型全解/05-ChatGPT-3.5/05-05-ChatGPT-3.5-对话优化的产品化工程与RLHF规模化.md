@@ -7,7 +7,7 @@ title: "ChatGPT (GPT-3.5)：对话优化的产品化工程与RLHF规模化——
 > **模型定位**：OpenAI 首个面向消费级的对话AI产品(2022-11)，2个月内达到1亿用户，史上增长最快的消费级应用
 > **家族归属**：14.12-OpenAI｜编号 05-ChatGPT-3.5
 > **技术基础**：基于 GPT-3.5 系列(text-davinci-003 改进版)+ 大规模 RLHF
-> 🔙 **[返回 14.12-OpenAI 家族总览](../../14.12-OpenAI.md)**
+>  **[返回 14.12-OpenAI 家族总览](../../14.12-OpenAI.md)**
 
 ---
 
@@ -144,7 +144,9 @@ ChatGPT的成功离不开**标注者培训的工业化**：
 
 ChatGPT的RM可能比InstructGPT的更复杂，推测采用了**多目标优化**：
 
-$$r_{total} = w_1 \cdot r_{helpful} + w_2 \cdot r_{harmless} + w_3 \cdot r_{honest} + w_4 \cdot r_{style}$$
+$$
+r_{total} = w_1 \cdot r_{helpful} + w_2 \cdot r_{harmless} + w_3 \cdot r_{honest} + w_4 \cdot r_{style}
+$$
 
 其中：
 - $r_{helpful}$：回答是否有用、是否满足用户需求

@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 Qihao Zhu\*, Daya Guo\*, Zhihong Shao\*, Dejian Yang\*, Peiyi Wang, Runxin Xu, Y. Wu   

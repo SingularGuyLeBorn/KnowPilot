@@ -4,7 +4,7 @@ title: "Qwen2 技术报告精译"
 
 # Qwen2 Technical Report 精译
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 原文: An Yang, Baosong Yang, Binyuan Hui, et al. "Qwen2 Technical Report". arXiv:2407.10671, 2024.

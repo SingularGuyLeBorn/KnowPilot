@@ -4,7 +4,7 @@ title: "MiniCPM4 InfLLM v2 稀疏注意力与端侧推理加速"
 
 # MiniCPM4: InfLLM v2 稀疏注意力与端侧推理加速
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 本文聚焦 MiniCPM4 的两项核心技术创新: (1) InfLLM v2 可训练稀疏注意力机制，从算法层面突破 Transformer 长文本瓶颈; (2) CPM.cu + FR-Spec + BitCPM 端侧推理系统，从工程层面实现极致推理效率。我们将深入分析其设计原理、实现细节和实际效果。
@@ -70,21 +70,29 @@ InfLLM v2 的注意力计算分为两个阶段:
 
 对于第 $i$ 个查询 token $q_i$，上下文被划分为 $m$ 个块 $B = \{B_1, B_2, ..., B_m\}$。每个块 $B_j$ 通过压缩函数(如平均池化或最大池化)生成语义核 $k_j^{block}$:
 
-$$ k_j^{block} = \text{Pool}(\{k_t \mid t \in B_j\}) $$
+$$
+ k_j^{block} = \text{Pool}(\{k_t \mid t \in B_j\})
+$$
 
 查询 token 与每个块的相关性得分通过点积计算:
 
-$$ r_{block}(q_i, B_j) = q_i \cdot k_j^{block} $$
+$$
+ r_{block}(q_i, B_j) = q_i \cdot k_j^{block}
+$$
 
 选择得分最高的 top-k 个块:
 
-$$ \mathcal{I}_i = \text{TopK}(\{r_{block}(q_i, B_j)\}_{j=1}^m) $$
+$$
+ \mathcal{I}_i = \text{TopK}(\{r_{block}(q_i, B_j)\}_{j=1}^m)
+$$
 
 **阶段二: 注意力计算**
 
 基于选中的块集合 $\mathcal{I}_i$，计算标准注意力:
 
-$$ \text{Attention}(q_i, \{k_t, v_t\}_{t \in \bigcup_{j \in \mathcal{I}_i} B_j}) = \text{softmax}\left(\frac{q_i K_{\mathcal{I}_i}^T}{\sqrt{d_k}}\right) V_{\mathcal{I}_i} $$
+$$
+ \text{Attention}(q_i, \{k_t, v_t\}_{t \in \bigcup_{j \in \mathcal{I}_i} B_j}) = \text{softmax}\left(\frac{q_i K_{\mathcal{I}_i}^T}{\sqrt{d_k}}\right) V_{\mathcal{I}_i}
+$$
 
 其中 $K_{\mathcal{I}_i}$ 和 $V_{\mathcal{I}_i}$ 是选中块内的 key 和 value 矩阵。
 
@@ -243,21 +251,29 @@ MiniCPM4 通过 InfLLM v2、CPM.cu、FR-Spec 和 BitCPM 的协同设计，在端
 
 **语义核计算**:
 
-$$ k_j^{block} = \text{Pool}(\{k_t \mid t \in B_j\}) $$
+$$
+ k_j^{block} = \text{Pool}(\{k_t \mid t \in B_j\})
+$$
 
 其中 Pool 可以是平均池化或最大池化操作。
 
 **块相关性得分**:
 
-$$ r_{block}(q_i, B_j) = q_i \cdot k_j^{block} $$
+$$
+ r_{block}(q_i, B_j) = q_i \cdot k_j^{block}
+$$
 
 **选中块的 Top-K 选择**:
 
-$$ \mathcal{I}_i = \text{TopK}(\{r_{block}(q_i, B_j)\}_{j=1}^m, k) $$
+$$
+ \mathcal{I}_i = \text{TopK}(\{r_{block}(q_i, B_j)\}_{j=1}^m, k)
+$$
 
 **稀疏注意力计算**:
 
-$$ \text{Attention}(q_i, K_{\mathcal{I}_i}, V_{\mathcal{I}_i}) = \text{softmax}\left(\frac{q_i K_{\mathcal{I}_i}^T}{\sqrt{d_k}}\right) V_{\mathcal{I}_i} $$
+$$
+ \text{Attention}(q_i, K_{\mathcal{I}_i}, V_{\mathcal{I}_i}) = \text{softmax}\left(\frac{q_i K_{\mathcal{I}_i}^T}{\sqrt{d_k}}\right) V_{\mathcal{I}_i}
+$$
 
 ### B. 术语表
 

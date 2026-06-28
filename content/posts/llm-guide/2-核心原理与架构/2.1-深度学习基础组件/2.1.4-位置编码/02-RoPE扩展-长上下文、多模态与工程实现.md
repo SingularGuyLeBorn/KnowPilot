@@ -134,7 +134,7 @@ $$
 \text{score}_{ij}
 =
 \langle \mathbf{q}_i^{C}, \mathbf{k}_j^{C} \rangle
-+ 
++
 \left\langle
 \text{RoPE}(\mathbf{q}_i^{R}, i),\
 \text{RoPE}(\mathbf{k}_j^{R}, j)

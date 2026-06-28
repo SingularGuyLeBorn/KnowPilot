@@ -5,7 +5,7 @@ status: completed
 
 # Qwen3.6: 全尺度智能体编程能力的飞跃
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 原文标题: Qwen3.6-35B-A3B: Agentic Coding Power, Now Open to All / Qwen3.6-27B: Flagship-Level Coding in a 27B Dense Model

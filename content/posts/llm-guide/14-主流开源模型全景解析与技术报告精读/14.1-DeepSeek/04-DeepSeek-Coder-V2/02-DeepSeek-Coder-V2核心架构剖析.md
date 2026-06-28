@@ -4,7 +4,7 @@ title: "DeepSeek-Coder-V2 核心架构剖析"
 
 # DeepSeek-Coder-V2 核心架构剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文基于《DeepSeek-Coder-V2 技术报告精译》与 D5 核心技术专题, 对 DeepSeek-Coder-V2 的架构进行系统性梳理. Coder-V2 是首款将 MLA + DeepSeekMoE 架构应用于代码领域的旗舰模型.

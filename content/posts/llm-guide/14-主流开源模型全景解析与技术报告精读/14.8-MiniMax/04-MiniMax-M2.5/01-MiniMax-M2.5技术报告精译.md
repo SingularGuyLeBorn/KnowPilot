@@ -4,7 +4,7 @@ title: "MiniMax-M2.5 技术报告精译"
 
 # MiniMax-M2.5 技术报告精译
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > 原文标题: MiniMax M2.5: Built for Real-World Productivity.

@@ -5,7 +5,7 @@ status: pending
 
 # MiMo-V2-Flash 高效 MoE 推理剖析
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 > 本文档基于 D2 精译和 D4 逐段精译整理, 聚焦核心技术点的深度剖析. 
 > 状态：深入完善与技术全景构建中. 
 
@@ -116,7 +116,7 @@ sequenceDiagram
 设定 $N$ 为独立专家的总数, $E_i$ 为第 $i$ 个专家. 路由权重 $\mathbf{g} \in \mathbb{R}^N$ 计算如下：
 
 $$
-h_i = \mathbf{W}_g \cdot \mathbf{x} 
+h_i = \mathbf{W}_g \cdot \mathbf{x}
 $$
 $$
 g_i = \text{Softmax}\left(\frac{h_i}{\tau}\right) = \frac{\exp(h_i/\tau)}{\sum_{j=1}^N \exp(h_j/\tau)}
@@ -271,7 +271,7 @@ def mimo_flash_moe_kernel(
 | 维度 / 模型 | MiMo-V2-Flash | DeepSeek-MoE | Mixtral 8x7B | Qwen1.5-MoE |
 | :--- | :--- | :--- | :--- | :--- |
 | **专家切分粒度** | **极细粒度 (64+)** | 细粒度 (64) | 粗粒度 (8) | 细粒度 (60) |
-| **共享专家设计** | ✅ **有** | ✅ 有 | ❌ 无 | ✅ 有 |
+| **共享专家设计** |  **有** |  有 |  无 |  有 |
 | **路由策略** | **Dropless** | Top-K + 丢弃 | Top-2 + 丢弃 | Top-4 + 丢弃 |
 | **底层算子优化** | **全链路 Triton** | 闭源 (CUDA) | Megatron分支 | 基于 vLLM |
 | **负载均衡惩罚** | Aux + Z-Loss | Aux Loss | Aux Loss | Aux Loss |

@@ -41,7 +41,9 @@ JEPA 采用**预测式目标**:
 
 使用**表示对齐损失**: 预测嵌入和目标嵌入之间的余弦距离. 
 
-$$\mathcal{L} = 1 - \cos(\hat{z}, z)$$
+$$
+\mathcal{L} = 1 - \cos(\hat{z}, z)
+$$
 
 其中: 
 - $\hat{z}$: Context Encoder 预测的嵌入

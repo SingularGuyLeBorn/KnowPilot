@@ -5,7 +5,7 @@ converted_by: MinerU (re-processed)
 date: 2026-05-23
 ---
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 # QWEN TECHNICAL REPORT

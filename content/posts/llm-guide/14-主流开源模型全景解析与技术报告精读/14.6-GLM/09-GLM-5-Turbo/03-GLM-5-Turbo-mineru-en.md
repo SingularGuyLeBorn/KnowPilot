@@ -6,7 +6,7 @@ status: pending
 
 # GLM-5-Turbo 技术报告原始文本
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > status: pending

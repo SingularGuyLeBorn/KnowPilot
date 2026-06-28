@@ -5,7 +5,7 @@ converted_by: MinerU (re-processed)
 date: 2026-05-23
 ---
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 
 # MiMo-V2-Flash Technical Report

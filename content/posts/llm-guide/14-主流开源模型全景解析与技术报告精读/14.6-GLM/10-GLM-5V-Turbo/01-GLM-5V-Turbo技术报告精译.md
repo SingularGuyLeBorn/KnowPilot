@@ -4,7 +4,7 @@ title: "GLM-5V-Turbo 技术报告精译"
 
 # GLM-5V-Turbo: 面向多模态智能体的原生基础模型 技术报告精译
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > 原文标题: GLM-5V-Turbo: Toward a Native Foundation Model for Multimodal Agents

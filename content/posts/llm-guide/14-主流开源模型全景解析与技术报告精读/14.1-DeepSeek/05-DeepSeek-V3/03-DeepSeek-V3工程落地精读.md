@@ -4,7 +4,7 @@ title: "DeepSeek-V3 工程落地精读"
 
 # DeepSeek-V3 工程落地精读
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文聚焦 DeepSeek-V3 训练与推理的工程实现细节, 涵盖 DualPipe 流水线并行、跨节点 All-to-All 通信优化、FP8 混合精度训练、内存节省策略、推理部署架构以及训练成本核算. 如需更深入的细节, 请参阅 [05-DeepSeek-V3-Training-System.md](./05-DeepSeek-V3-Training-System.md).

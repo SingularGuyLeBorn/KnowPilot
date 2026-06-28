@@ -4,7 +4,7 @@ title: "DeepSeek-Math 数理逻辑解码"
 
 # DeepSeek-Math 数理逻辑解码
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文基于《DeepSeek-Math 技术报告精译》与 D5 核心技术专题, 对 DeepSeek-Math 的数理逻辑能力进行系统性梳理. Math 是 DeepSeek 在数学推理领域的专项模型, 首次提出了 GRPO 算法.
@@ -62,7 +62,9 @@ GRPO 的核心洞察: **在数学推理中, 价值模型难以准确预测多步
 
 GRPO 的解决方案是**组内相对评分**: 对于同一个问题, 采样多个输出, 用它们之间的相对比较来计算优势, 而不是依赖价值模型的绝对预测.
 
-$$ A_i = \frac{r_i - \text{mean}(\{r_1, \cdots, r_G\})}{\text{std}(\{r_1, \cdots, r_G\})} $$
+$$
+ A_i = \frac{r_i - \text{mean}(\{r_1, \cdots, r_G\})}{\text{std}(\{r_1, \cdots, r_G\})}
+$$
 
 > 译者注: GRPO 的设计体现了 DeepSeek 团队对 RL 本质的深刻理解. 传统 PPO 的价值模型在短文本生成中工作良好, 因为部分响应可以较好地预测最终质量. 但在长思维链场景中, 模型可能在生成过程中进行反思和修正, 使得基于部分响应的预测几乎不可能. GRPO 通过「相对比较」绕开了这个难题, 这一思路后来被推广到所有需要长推理的场景.
 

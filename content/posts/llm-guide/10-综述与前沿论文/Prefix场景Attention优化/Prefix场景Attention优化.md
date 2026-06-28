@@ -56,13 +56,19 @@ Prefix优化的重要性在工程层面体现得淋漓尽致:
 
 KV Cache是Prefix优化的基石. 在标准Transformer的Decoder中,每个自注意力层对输入序列 $X \\\in \\\mathbb{R}^{L \\\times d}$ 计算: 
 
-$$Q = XW_Q, \\\quad K = XW_K, \\\quad V = XW_V \tag{1}$$
-$$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_h}}\\right)V \tag{2} $$
+$$
+Q = XW_Q, \\\quad K = XW_K, \\\quad V = XW_V \tag{1}
+$$
+$$
+\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_h}}\\right)V \tag{2}
+$$
 在自回归生成中,当计算第 $t+1$ 个token的注意力时,Query只需要当前token的 $q_{t+1}$,但Key和Value需要所有历史token的 $k_1, \\dots, k_t$ 和 $v_1, \\dots, v_t$. 因此,在Prefill阶段一次性计算并存储所有历史token的 $(K, V)$ 矩阵,后续Decode阶段只需计算新token的Query并与缓存的 $K, V$ 做注意力,这就是KV Cache的基本原理. 
 
 KV Cache的显存占用为: 
 
-$$\\text{Cache Size} = 2 \\\times b \\\times l \\\times h \\\times d_h \\\times s \tag{3}$$
+$$
+\\text{Cache Size} = 2 \\\times b \\\times l \\\times h \\\times d_h \\\times s \tag{3}
+$$
 
 其中 $b$ 为batch size,$l$ 为层数,$h$ 为注意力头数,$d_h$ 为每头维度,$s$ 为序列长度,系数2对应K和V两个矩阵. 以Llama-3-70B为例($l=80, h=64, d_h=128$),batch=1、序列长度4096时,KV Cache约占用 $2 \\\times 1 \\\times 80 \\\times 64 \\\times 128 \\\times 4096 \\\times 2 \\text{ bytes} \\approx 10.5 \\text{ GB}$(FP16精度). 
 

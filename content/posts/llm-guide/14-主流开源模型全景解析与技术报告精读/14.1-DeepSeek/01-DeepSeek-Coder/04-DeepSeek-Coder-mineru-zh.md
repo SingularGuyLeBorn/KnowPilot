@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # DeepSeek-Coder: When the Large Language Model Meets Programming - The Rise of Code Intelligence
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 DeepSeek-Coder: 当大语言模型遇见编程——代码智能的崛起

@@ -4,7 +4,7 @@ title: "Qwen2.5-Math 数理逻辑剖析"
 
 # Qwen2.5-Math 数理逻辑剖析
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > **分析基础**: Qwen2.5-Math Technical Report (arXiv:2409.12122)

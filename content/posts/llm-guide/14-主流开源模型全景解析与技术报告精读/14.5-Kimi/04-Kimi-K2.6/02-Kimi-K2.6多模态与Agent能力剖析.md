@@ -4,7 +4,7 @@ title: "Kimi-K2.6多模态与Agent能力剖析"
 
 # Kimi K2.6 多模态与 Agent 能力剖析
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 
 > 信息来源: Kimi K2.6: Advancing Open-Source Coding (Moonshot Blog, 2026-04-20)

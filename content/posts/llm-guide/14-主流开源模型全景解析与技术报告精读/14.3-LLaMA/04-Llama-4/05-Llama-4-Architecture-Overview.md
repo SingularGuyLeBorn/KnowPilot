@@ -4,7 +4,7 @@ title: "Llama-4架构迭代剖析"
 
 # Llama 4 架构迭代与原生多模态设计剖析
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 > 信息来源: Meta 官方 Model Card、GitHub 开源代码(llama-models)、Meta AI 博客、arXiv:2601.11659(已撤回). Llama 4 暂未发布正式 arXiv 技术报告,本文基于官方已公开的技术细节与开源代码进行系统性架构剖析.

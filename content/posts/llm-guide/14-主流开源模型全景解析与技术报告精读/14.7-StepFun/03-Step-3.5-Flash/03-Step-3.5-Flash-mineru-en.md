@@ -5,7 +5,7 @@ converted_by: MinerU (re-processed)
 date: 2026-05-23
 ---
 
-> 🔙 **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
+>  **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
 
 
 # Step 3.5 Flash: Open Frontier-Level Intelligence with 11B Active Parameters

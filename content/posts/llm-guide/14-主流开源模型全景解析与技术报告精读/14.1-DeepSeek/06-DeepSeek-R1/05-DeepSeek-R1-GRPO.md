@@ -4,7 +4,7 @@ title: "DeepSeek-R1-Zero 原理与实现"
 
 # DeepSeek-R1-Zero 原理剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文聚焦 DeepSeek-R1-Zero 的核心机制: GRPO 算法、基于规则的奖励系统, 以及 RL 驱动的自我进化行为.

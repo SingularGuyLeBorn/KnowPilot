@@ -6,7 +6,7 @@ title: "Claude 2：超长上下文与Constitutional AI的工程实践——Anthr
 
 > **模型定位**：Anthropic 首个公开广泛可用的对话模型(2023-07)，100K上下文窗口的业界开创者
 > **家族归属**：14.13-Claude｜编号 02-Claude-2
-> 🔙 **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
+>  **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
 
 ---
 

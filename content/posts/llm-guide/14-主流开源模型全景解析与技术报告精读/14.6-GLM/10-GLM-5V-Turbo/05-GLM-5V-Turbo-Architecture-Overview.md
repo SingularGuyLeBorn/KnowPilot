@@ -4,7 +4,7 @@ title: "GLM-5V-Turbo多模态Agent架构剖析"
 
 # GLM-5V-Turbo 多模态 Agent 架构剖析
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > **分析基础**: GLM-5V-Turbo: Toward a Native Foundation Model for Multimodal Agents (arXiv:2604.26752)

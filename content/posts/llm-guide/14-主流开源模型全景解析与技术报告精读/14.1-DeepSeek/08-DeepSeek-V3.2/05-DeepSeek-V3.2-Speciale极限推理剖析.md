@@ -4,7 +4,7 @@ title: "DeepSeek-V3.2-Speciale 极限推理剖析"
 
 # DeepSeek-V3.2-Speciale 极限推理剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文基于 `01-DeepSeek-V3.2技术报告精译.md` 中关于 Speciale 变体的内容, 对其极限推理能力做深度拆解. Speciale 是 DeepSeek-V3.2 的高算力实验变体, 通过放宽长度约束和聚焦推理数据, 在数学与编程竞赛中达到金牌级表现.

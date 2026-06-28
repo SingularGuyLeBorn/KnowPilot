@@ -4,7 +4,7 @@ title: "MiniCPM-S-1.2B 技术报告精译 - ProSparse: 引入与增强大语言�
 
 # MiniCPM-S-1.2B 技术报告精译
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文标题: ProSparse: Introducing and Enhancing Intrinsic Activation Sparsity within Large Language Models

@@ -6,7 +6,7 @@ title: "Claude 3.7 Sonnet：混合推理架构与可控思考预算——Anthrop
 
 > **模型定位**：Anthropic 首个混合推理模型(2025-02)，业界首个支持用户可控思考预算的前沿AI
 > **家族归属**：14.13-Claude｜编号 10-Claude-3.7-Sonnet
-> 🔙 **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
+>  **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
 
 ---
 

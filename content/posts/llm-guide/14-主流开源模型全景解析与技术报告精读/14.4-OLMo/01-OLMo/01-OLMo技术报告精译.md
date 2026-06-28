@@ -4,7 +4,7 @@ title: "OLMo 技术报告精译"
 
 # OLMo 技术报告精译
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 
 > 原文标题: OLMo: Accelerating the Science of Language Models

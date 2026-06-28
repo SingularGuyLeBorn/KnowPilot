@@ -14,7 +14,7 @@ translated_by: TechReportDeepDive
 
 # LLaMA: Open and Efficient Foundation Language Models
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 LLaMA: Open and Efficient Foundation Language Models

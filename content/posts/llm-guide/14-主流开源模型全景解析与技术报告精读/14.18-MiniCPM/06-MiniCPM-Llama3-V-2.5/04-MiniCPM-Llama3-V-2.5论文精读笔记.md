@@ -4,7 +4,7 @@ title: "MiniCPM-Llama3-V 2.5 论文精读笔记"
 
 # MiniCPM-Llama3-V 2.5 论文精读笔记
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文: MiniCPM-V: A GPT-4V Level MLLM on Your Phone (arXiv:2408.01800)

@@ -43,11 +43,17 @@ Grok-1 的架构参数如下：
 
 Grok-1 的门控网络采用**Top-2 路由**：
 
-$$g(x) = \text{Softmax}(W_g \cdot x + b_g)$$
+$$
+g(x) = \text{Softmax}(W_g \cdot x + b_g)
+$$
 
-$$\text{Top2}(g(x)) = \{i, j \mid g_i(x) \geq g_k(x), g_j(x) \geq g_k(x), \forall k \neq i, j\}$$
+$$
+\text{Top2}(g(x)) = \{i, j \mid g_i(x) \geq g_k(x), g_j(x) \geq g_k(x), \forall k \neq i, j\}
+$$
 
-$$	ext{Output} = g_i(x) \cdot \text{Expert}_i(x) + g_j(x) \cdot \text{Expert}_j(x)$$
+$$
+	ext{Output} = g_i(x) \cdot \text{Expert}_i(x) + g_j(x) \cdot \text{Expert}_j(x)
+$$
 
 这种设计的优势在于：
 
@@ -59,7 +65,9 @@ $$	ext{Output} = g_i(x) \cdot \text{Expert}_i(x) + g_j(x) \cdot \text{Expert}_j(
 
 Grok-1 采用 48 个查询头但仅 8 个 KV 头，这是**分组查询注意力(Grouped-Query Attention, GQA)**的经典配置：
 
-$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+$$
 
 其中 $Q \in \mathbb{R}^{48 \times d_h}$，$K, V \in \mathbb{R}^{8 \times d_h}$. 每个 KV 头被 6 个查询头共享. 
 
@@ -75,7 +83,9 @@ GQA 的内存节省效果显著：
 
 Grok-1 使用旋转位置编码(Rotary Position Embedding, RoPE)：
 
-$$\text{RoPE}(x_m, m) = \begin{pmatrix} x_m^{(1)} \\ x_m^{(2)} \end{pmatrix} \odot \begin{pmatrix} \cos(m\theta) \\ \sin(m\theta) \end{pmatrix}$$
+$$
+\text{RoPE}(x_m, m) = \begin{pmatrix} x_m^{(1)} \\ x_m^{(2)} \end{pmatrix} \odot \begin{pmatrix} \cos(m\theta) \\ \sin(m\theta) \end{pmatrix}
+$$
 
 其中 $\theta_i = 10000^{-2i/d}$ 是频率基数. RoPE 的优势在于：
 
@@ -142,7 +152,9 @@ Grok-1 的训练采用以下效率优化：
 
 将优化器状态(Adam 的一阶和二阶矩)分片到所有数据并行进程：
 
-$$\text{Memory per GPU} = \frac{\text{Model Params} + \text{Optimizer States}}{N_{\text{data\_parallel}}}$$
+$$
+\text{Memory per GPU} = \frac{\text{Model Params} + \text{Optimizer States}}{N_{\text{data\_parallel}}}
+$$
 
 对于 314B 参数的模型，ZeRO-3 将每 GPU 内存需求从 ~2TB 降至 ~50GB. 
 
@@ -150,7 +162,9 @@ $$\text{Memory per GPU} = \frac{\text{Model Params} + \text{Optimizer States}}{N
 
 在每层之间保存激活值，反向传播时重新计算中间激活：
 
-$$\text{Memory}_{\text{activations}} = O(L) \text{ instead of } O(L^2)$$
+$$
+\text{Memory}_{\text{activations}} = O(L) \text{ instead of } O(L^2)
+$$
 
 以 10% 的计算开销换取 70% 的激活内存节省. 
 
@@ -158,7 +172,9 @@ $$\text{Memory}_{\text{activations}} = O(L) \text{ instead of } O(L^2)$$
 
 前向/反向传播使用 bfloat16，优化器状态使用 float32：
 
-$$\text{Forward/Backward}: \text{bfloat16}, \quad \text{Optimizer}: \text{float32}$$
+$$
+\text{Forward/Backward}: \text{bfloat16}, \quad \text{Optimizer}: \text{float32}
+$$
 
 这种组合在保持训练稳定性的同时，将显存占用和通信带宽降低 50%. 
 
@@ -168,12 +184,12 @@ $$\text{Forward/Backward}: \text{bfloat16}, \quad \text{Optimizer}: \text{float3
 
 Grok-1 采用 Apache 2.0 许可证，这是开源软件中最宽松的许可证之一. 与 LLaMA-2 的自定义许可证(限制月活用户数、禁止用于训练其他模型)相比，Apache 2.0 允许：
 
-- ✅ 商业使用
-- ✅ 修改和分发
-- ✅ 私有使用
-- ✅ 专利授权
-- ❌ 商标使用(需单独授权)
-- ❌ 担保责任
+-  商业使用
+-  修改和分发
+-  私有使用
+-  专利授权
+-  商标使用(需单独授权)
+-  担保责任
 
 xAI 选择 Apache 2.0 的动机：
 
@@ -294,7 +310,7 @@ Grok-1 的历史意义在于：它是**开源 AI 从"百 B 时代"迈向"数百 
 
 ---
 
-> 📚 **延伸阅读**
+>  **延伸阅读**
 > - [Grok-1 GitHub 仓库](https://github.com/xai-org/grok-1)
 > - [xAI Grok-1 发布公告](https://x.ai/blog/grok-1)
 > - [MoE 架构综述](https://arxiv.org/abs/2401.04081)

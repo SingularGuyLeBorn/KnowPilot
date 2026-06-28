@@ -9,7 +9,7 @@ status: completed
 
 # GLM-130B: An Open Bilingual Pre-trained Model
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 Aohan Zeng et al. — Tsinghua University, Zhipu.AI
 

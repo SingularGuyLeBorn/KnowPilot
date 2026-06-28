@@ -4,7 +4,7 @@ title: "Gemma-1 Multi-Query Attention 深度解析"
 
 # Gemma-1 Multi-Query Attention 深度解析
 
-> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+>  **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
 
 
 > 原文定位: Gemma-1 技术报告第 2 节 "Model Architecture"

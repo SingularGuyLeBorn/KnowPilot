@@ -5,7 +5,7 @@ status: active
 
 # Llama-2 核心架构剖析
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 本文档针对 Llama-2 的核心架构设计进行深度剖析，重点覆盖 Tokenizer 原理、分组查询注意力(Grouped-Query Attention, GQA)、均方根归一化(RMSNorm)、以及用于对齐的强化学习人类反馈(RLHF)接口设计等关键技术点。Llama-2 在 Llama-1 的基础上进行了多项改进，以适应更长上下文和更高的推理效率。
 

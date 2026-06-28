@@ -5,7 +5,7 @@ converted_by: MinerU (re-processed)
 date: 2026-05-23
 ---
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 # MiniCPM-o 4.5: Towards Real-Time Full-Duplex Omni-Modal Interaction

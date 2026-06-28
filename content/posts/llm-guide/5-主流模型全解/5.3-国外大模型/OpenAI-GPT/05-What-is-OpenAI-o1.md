@@ -14,9 +14,9 @@ API 中有两种可用的推理模型：
 
 1. o1：旨在利用有关世界的广泛常识来推理难题.2. o1-mini：o1 的更快、更实惠的版本,特别擅长不需要大量常识的编码、数学和科学任务.
 
-**>****👇****>这是OpenAI Strawberry(o1) 和 Reasoning**>的研究论文和博客的集合>👇
+**>********>这是OpenAI Strawberry(o1) 和 Reasoning**>的研究论文和博客的集合>
 
-[GitHub - hijkzzz/Awesome-LLM-Strawberry: A collection of LLM papers, blogs, and projects, with a focus on OpenAI o1 🍓 and reasoning techniques.](https://github.com/hijkzzz/Awesome-LLM-Strawberry)
+[GitHub - hijkzzz/Awesome-LLM-Strawberry: A collection of LLM papers, blogs, and projects, with a focus on OpenAI o1  and reasoning techniques.](https://github.com/hijkzzz/Awesome-LLM-Strawberry)
 
 [《OpenAI o1大模型》英文技术报告.pdf](https://www.yuque.com/attachments/yuque/0/2024/pdf/42982692/1735141464001-12672be9-2dcd-4a66-b42c-d3dc8d05c3e6.pdf)
 
@@ -28,7 +28,7 @@ OpenAI-o1 的复现报告博主: Jian Hu
 
 两个月前,我启动了一个开源项目,名为[Awesome-LLM-Strawberry](https://github.com/hijkzzz/Awesome-LLM-Strawberry),这是一个精心策划的资源集合,涵盖了关于OpenAI O1模型复制策略和推理技术的研究论文、博客和项目. 该仓库在GitHub上已获得超过**5000个星标**.
 
-[GitHub - hijkzzz/Awesome-LLM-Strawberry: A collection of LLM papers, blogs, and projects, with a focus on OpenAI o1 🍓 and reasoning techniques.](https://github.com/hijkzzz/Awesome-LLM-Strawberry)
+[GitHub - hijkzzz/Awesome-LLM-Strawberry: A collection of LLM papers, blogs, and projects, with a focus on OpenAI o1  and reasoning techniques.](https://github.com/hijkzzz/Awesome-LLM-Strawberry)
 
 “一个聚焦于OpenAI O1模型和推理技术的LLM论文、博客和项目集合. "
 

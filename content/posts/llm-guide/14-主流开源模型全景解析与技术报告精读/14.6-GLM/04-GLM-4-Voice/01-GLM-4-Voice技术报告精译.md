@@ -4,7 +4,7 @@ title: "GLM-4-Voice 技术报告精译"
 
 # GLM-4-Voice 技术报告精译
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > 原文标题: GLM-4-Voice: Towards Intelligent and Human-Like End-to-End Spoken Chatbot
@@ -148,23 +148,33 @@ title: "GLM-4-Voice 技术报告精译"
 
 - Speech Tokenization: 用户的语音输入由语音分词器以流式方式处理,分词器以固定大小为 t_block 的块为单位运行. 得益于流式设计,分词器立即开始处理,仅需处理当前块所需的时间,而与总语音时长无关. 因此,分词延迟为:
 
-$$T_{\text{speech_tokenize}} = f_{\text{speech_tokenize}}(t_{\text{block}})$$
+$$
+T_{\text{speech_tokenize}} = f_{\text{speech_tokenize}}(t_{\text{block}})
+$$
 
 - LLM Prefilling: 分词器生成的语音 token 数量 N_speech_tokens 基于用户语音时长 T_user_speech 和帧率 f_r = 12.5 tokens per second. LLM 的 prefill 延迟为:
 
-$$T_{\text{llm_prefill}} = f_{\text{llm_prefill}}(f_r \cdot T_{\text{user_speech}})$$
+$$
+T_{\text{llm_prefill}} = f_{\text{llm_prefill}}(f_r \cdot T_{\text{user_speech}})
+$$
 
 - LLM Decoding: 对于初始音频响应,LLM 生成 13 个文本 token 和 10 个语音 token,总共 N_first_speech = 13 + 10 = 23 个 token. 此步骤的解码延迟为:
 
-$$T_{\text{llm_decode}} = f_{\text{llm_decode}}(N_{\text{first_speech}})$$
+$$
+T_{\text{llm_decode}} = f_{\text{llm_decode}}(N_{\text{first_speech}})
+$$
 
 - Speech Decoding: N_speech = 10 个音频 token 由语音Decoder  处理以生成第一个音频块. 此步骤的延迟为:
 
-$$T_{\text{speech_decode}} = f_{\text{speech_decode}}(N_{\text{speech}})$$
+$$
+T_{\text{speech_decode}} = f_{\text{speech_decode}}(N_{\text{speech}})
+$$
 
 总体响应延迟为:
 
-$$T_{\text{total}} = T_{\text{speech_tokenize}} + T_{\text{llm_prefill}} + T_{\text{llm_decode}} + T_{\text{speech_decode}}$$
+$$
+T_{\text{total}} = T_{\text{speech_tokenize}} + T_{\text{llm_prefill}} + T_{\text{llm_decode}} + T_{\text{speech_decode}}
+$$
 
 > 译者注: 这个延迟分解公式虽然形式化,但传递了一个重要的工程信息. 在级联 ASR+LLM+TTS 方案中,延迟是串行相加的: ASR 转录完整语音 → LLM 生成完整文本 → TTS 合成完整语音. 而在 GLM-4-Voice 的端到端方案中,分词是流式的(LLM 可以在用户还在说话时就开始 prefill),解码也是流式的(文本和语音 token 交替生成). 虽然公式中各项仍然是相加关系,但由于流式处理的叠加效应,实际感知延迟远低于级联方案. 论文提到整体延迟约为 3 秒(「Latency: ~ 20 tokens」即约 20 个语音 token,对应约 1.6 秒语音,加上处理开销约 3 秒),这在当时的语音对话模型中是相当有竞争力的数字.
 

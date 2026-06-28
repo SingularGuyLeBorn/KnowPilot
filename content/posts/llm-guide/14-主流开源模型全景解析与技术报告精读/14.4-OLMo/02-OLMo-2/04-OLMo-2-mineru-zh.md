@@ -10,7 +10,7 @@ source_d3: 03-OLMo-2-mineru-en.md
 
 ## Abstract
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 
 > 原文段落 1
@@ -156,17 +156,25 @@ Finally, this work introduces OLMo 2 which made further modifications:
 
 - **Reordered norm**: We normalize the outputs to the attention and feedforward (MLP) layers within each transformer block, instead of the inputs. So the formula for each block becomes:
 
-$$h := x + \text{RMSNorm}(\text{Attention}(x)) \quad (1)$$
+$$
+h := x + \text{RMSNorm}(\text{Attention}(x)) \quad (1)
+$$
 
-$$h_{\text{out}} := h + \text{RMSNorm}(\text{MLP}(x)) \quad (2)$$
+$$
+h_{\text{out}} := h + \text{RMSNorm}(\text{MLP}(x)) \quad (2)
+$$
 
 where $x$ is the input to the layer, $h$ is an intermediate hidden state, and $h_{\text{out}}$ is the output. This strategy was first proposed by Liu et al. (2021) to stabilize training.
 
 - **重排序归一化 (Reordered norm)**：我们在每个 Transformer 块中对注意力层和前馈层 (MLP) 的输出进行归一化，而非输入。因此，每个块的计算式变为：
 
-$$h := x + \text{RMSNorm}(\text{Attention}(x)) \quad (1)$$
+$$
+h := x + \text{RMSNorm}(\text{Attention}(x)) \quad (1)
+$$
 
-$$h_{\text{out}} := h + \text{RMSNorm}(\text{MLP}(x)) \quad (2)$$
+$$
+h_{\text{out}} := h + \text{RMSNorm}(\text{MLP}(x)) \quad (2)
+$$
 
 其中 $x$ 是该层的输入，$h$ 是中间隐状态，$h_{\text{out}}$ 是输出。这一策略最早由 Liu 等人 (2021) 提出，用于稳定训练。
 
@@ -566,7 +574,9 @@ A fundamental concern for training deep networks is ensuring that the activation
 
 训练深层网络的一个基本关切是确保激活值和梯度不会在各层之间爆炸或消失，导致学习变得不稳定或停滞。相反，我们希望激活值和梯度的尺度从一层到下一层大致保持不变。受到近期相关工作 (Cowsik et al., 2024) 的启发，我们评估了不同的候选初始化方案，看它们如何影响各层之间激活值和梯度的 2-范数。具体而言，我们随机初始化一个模型，将来自 The Pile (Gao et al., 2021) 的 50 个随机文档传过模型，并在初始层和最终层收集激活值和梯度(损失相对于激活值的梯度，忽略嵌入层)。然后我们在文档和时间步上对这些张量取平均，得到初始层的向量 $v$ 和最终层的向量 $v'$，两者长度均为 $d_{\text{model}}$。最后，我们计算以下跨层的扩展或收缩度量，称之为增长指数 (growth exponent)：
 
-$$\lambda = \frac{1}{n_{\text{layers}}} \log\left(\frac{\|v'\|}{\|v\|}\right)$$
+$$
+\lambda = \frac{1}{n_{\text{layers}}} \log\left(\frac{\|v'\|}{\|v\|}\right)
+$$
 
 We compute $\lambda$ for both the activations and gradients. Ideally, both $\lambda$'s remain near 0, indicating that the activations and gradients do not explode or vanish across layers. Figure 5 plots the growth exponents for different randomly initialized models as a function of their widths (4096 corresponds to a full 7B model).
 
@@ -1141,25 +1151,25 @@ For the 1B and 32B model, we performed RLVR with Group Relative Policy Optimizat
 
 ### 超参数选择 (Hyperparameter selection)
 
-We perform the following hyperparameter tuning for the 7 and 13B models. At each stage we experiment with 1 random seed initially to arrive on a configuration and up to 4 with final hyperparameters. The final hyperparameters are marked with (♥):
+We perform the following hyperparameter tuning for the 7 and 13B models. At each stage we experiment with 1 random seed initially to arrive on a configuration and up to 4 with final hyperparameters. The final hyperparameters are marked with ():
 
-我们对 7B 和 13B 模型进行以下超参数调优。在每个阶段，我们首先用 1 个随机种子实验以确定配置，最终超参数最多用 4 个随机种子。最终超参数标记为 (♥)：
+我们对 7B 和 13B 模型进行以下超参数调优。在每个阶段，我们首先用 1 个随机种子实验以确定配置，最终超参数最多用 4 个随机种子。最终超参数标记为 ()：
 
-1. **SFT**: We sweep over learning rates $1 \times 10^{-5}$, $2 \times 10^{-5}$ (♥), $3 \times 10^{-5}$ for the 7B model and $1 \times 10^{-6}$, $4 \times 10^{-6}$, $5 \times 10^{-6}$ (♥), $7.5 \times 10^{-6}$, $8 \times 10^{-6}$ for the 13B model.
+1. **SFT**: We sweep over learning rates $1 \times 10^{-5}$, $2 \times 10^{-5}$ (), $3 \times 10^{-5}$ for the 7B model and $1 \times 10^{-6}$, $4 \times 10^{-6}$, $5 \times 10^{-6}$ (), $7.5 \times 10^{-6}$, $8 \times 10^{-6}$ for the 13B model.
 
-1. **SFT**：我们对 7B 模型的学习率进行扫描：$1 \times 10^{-5}$、$2 \times 10^{-5}$ (♥)、$3 \times 10^{-5}$; 对 13B 模型：$1 \times 10^{-6}$、$4 \times 10^{-6}$、$5 \times 10^{-6}$ (♥)、$7.5 \times 10^{-6}$、$8 \times 10^{-6}$。
+1. **SFT**：我们对 7B 模型的学习率进行扫描：$1 \times 10^{-5}$、$2 \times 10^{-5}$ ()、$3 \times 10^{-5}$; 对 13B 模型：$1 \times 10^{-6}$、$4 \times 10^{-6}$、$5 \times 10^{-6}$ ()、$7.5 \times 10^{-6}$、$8 \times 10^{-6}$。
 
-2. **DPO**: We sweep over learning rates $5 \times 10^{-7}$, $6 \times 10^{-7}$, $7 \times 10^{-7}$, $8 \times 10^{-7}$ (♥-13B), and $1 \times 10^{-6}$ (♥-7B) for both the 7B model and 13B model.
+2. **DPO**: We sweep over learning rates $5 \times 10^{-7}$, $6 \times 10^{-7}$, $7 \times 10^{-7}$, $8 \times 10^{-7}$ (-13B), and $1 \times 10^{-6}$ (-7B) for both the 7B model and 13B model.
 
-2. **DPO**：我们对 7B 和 13B 模型的学习率进行扫描：$5 \times 10^{-7}$、$6 \times 10^{-7}$、$7 \times 10^{-7}$、$8 \times 10^{-7}$ (♥-13B) 和 $1 \times 10^{-6}$ (♥-7B)。
+2. **DPO**：我们对 7B 和 13B 模型的学习率进行扫描：$5 \times 10^{-7}$、$6 \times 10^{-7}$、$7 \times 10^{-7}$、$8 \times 10^{-7}$ (-13B) 和 $1 \times 10^{-6}$ (-7B)。
 
 3. **RM**: We train with $3 \times 10^{-6}$ learning rate and 1 random seed for the 7B and 13B models, respectively.
 
 3. **RM**：我们分别对 7B 和 13B 模型使用 $3 \times 10^{-6}$ 学习率和 1 个随机种子进行训练。
 
-4. **RLVR**: We sweep over beta values 0.03, 0.05, 0.07 (♥-7B), and 0.1 (♥-13B). For 13B model, we also sweep over learning rates $3 \times 10^{-7}$ (♥-13B), $4 \times 10^{-7}$ (♥-7B). For 13B, we run this sweep on the best model at each RLVR stage.
+4. **RLVR**: We sweep over beta values 0.03, 0.05, 0.07 (-7B), and 0.1 (-13B). For 13B model, we also sweep over learning rates $3 \times 10^{-7}$ (-13B), $4 \times 10^{-7}$ (-7B). For 13B, we run this sweep on the best model at each RLVR stage.
 
-4. **RLVR**：我们对 beta 值进行扫描：0.03、0.05、0.07 (♥-7B) 和 0.1 (♥-13B)。对于 13B 模型，我们还对学习率进行扫描：$3 \times 10^{-7}$ (♥-13B)、$4 \times 10^{-7}$ (♥-7B)。对于 13B，我们在每个 RLVR 阶段的最佳模型上运行此扫描。
+4. **RLVR**：我们对 beta 值进行扫描：0.03、0.05、0.07 (-7B) 和 0.1 (-13B)。对于 13B 模型，我们还对学习率进行扫描：$3 \times 10^{-7}$ (-13B)、$4 \times 10^{-7}$ (-7B)。对于 13B，我们在每个 RLVR 阶段的最佳模型上运行此扫描。
 
 We conducted a hyperparameter sweep for SFT and DPO, using earlier development checkpoints, with results detailed in Table 17 and Figure 12. A key finding was that OLMo 2 required significantly higher learning rates compared to the Llama 3.1 training recipe described by Lambert et al. (2024). Finally, the optimized hyperparameters for our final model are presented in Table 17 and Table 18.
 
@@ -1455,13 +1465,17 @@ To calculate carbon emissions, we multiply the total power consumption by a carb
 
 为了计算碳排放，我们将总功率消耗乘以基于每个数据中心物理位置的碳强度因子，单位为 kg CO2 每 kWh。Jupiter 集群由 Austin Energy 供电，其最新报告的碳强度为 0.332 kg CO2 每 kWh。Augusta 集群位于爱荷华州，爱荷华州的平均碳强度为 0.352 kg CO2 每 kWh，我们在计算中使用该值。我们估计训练我们的最新模型排放约 154 tCO2eq。
 
-$$\text{CO}_2 \text{ Emissions} = P_{\text{GPU}} \cdot \text{PUE} \cdot \text{Carbon Intensity}$$
+$$
+\text{CO}_2 \text{ Emissions} = P_{\text{GPU}} \cdot \text{PUE} \cdot \text{Carbon Intensity}
+$$
 
 To calculate water consumption, we multiply the total power consumption by the water usage effectiveness (WUE) of both the offsite power generation as well as the onsite cooling hardware. Both clusters use highly efficient, closed-loop cooling hardware, so we assume a WUE_onsite of 0 liters per kWh. Following Reig et al. (2020), we assume a WUE_offsite of 1.29 L per kWh for our Jupiter cluster and 3.10 L per kWh for our Augusta cluster. We estimate that training our latest models consumed about 1.1 million liters of water.
 
 为了计算水消耗，我们将总功率消耗乘以异地发电和现场冷却硬件的水使用效率 (WUE)。两个集群都使用高效的闭环冷却硬件，因此我们假设 WUE_onsite 为 0 升每 kWh。遵循 Reig 等人 (2020)，我们假设 Jupiter 集群的 WUE_offsite 为 1.29 L 每 kWh，Augusta 集群为 3.10 L 每 kWh。我们估计训练我们的最新模型消耗约 110 万升水。
 
-$$\text{Water Consumption} = P_{\text{GPU}} \cdot \text{PUE} \cdot (\text{WUE}_{\text{onsite}} + \text{WUE}_{\text{offsite}})$$
+$$
+\text{Water Consumption} = P_{\text{GPU}} \cdot \text{PUE} \cdot (\text{WUE}_{\text{onsite}} + \text{WUE}_{\text{offsite}})
+$$
 
 Though we aim to report a comprehensive analysis of the environmental impact of training our models, we emphasize that this is a lower bound on the total cost of developing large models. In an upcoming paper (Morrison et al., 2025), we will provide more comprehensive analysis covering energy, emissions, and water.
 

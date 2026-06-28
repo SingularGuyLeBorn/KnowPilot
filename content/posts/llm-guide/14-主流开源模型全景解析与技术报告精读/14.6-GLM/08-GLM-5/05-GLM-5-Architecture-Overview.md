@@ -4,7 +4,7 @@ title: "GLM-5 核心架构剖析"
 
 # GLM-5 核心架构剖析
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > 基于 GLM-5 技术报告(arXiv:2602.15763)的架构深度分析,聚焦四大技术支柱:DSA 稀疏注意力、MLA+Muon Split、异步 Agentic RL 基础设施、国产芯片全栈适配.
@@ -42,7 +42,9 @@ DSA 的核心是一个「lightning indexer」和一个「token selector」:
 
 为每个查询 token $q_t$ 计算与所有 key $k_i$ 的相似度分数,检索 top-$k$ 个最相关的 key-value 对:
 
-$$S_t = \text{TopK}_i\left( q_t \cdot k_i^T \right), \quad |S_t| = k$$
+$$
+S_t = \text{TopK}_i\left( q_t \cdot k_i^T \right), \quad |S_t| = k
+$$
 
 在 GLM-5 中,$k=2048$,远小于序列长度(128K 或 200K).
 
@@ -50,7 +52,9 @@ $$S_t = \text{TopK}_i\left( q_t \cdot k_i^T \right), \quad |S_t| = k$$
 
 注意力仅在检索到的子集 $S_t$ 上计算:
 
-$$\text{Attention}(q_t, K, V) = \text{softmax}\left( \frac{q_t \cdot K_{S_t}^T}{\sqrt{d_k}} \right) \cdot V_{S_t}$$
+$$
+\text{Attention}(q_t, K, V) = \text{softmax}\left( \frac{q_t \cdot K_{S_t}^T}{\sqrt{d_k}} \right) \cdot V_{S_t}
+$$
 
 > **[关键洞察]** 为什么 DSA 是无损的?
 > 
@@ -82,7 +86,9 @@ MLA(Multi-latent Attention)将 key 和 value 压缩到低维潜在向量,减少 
 
 Muon Split 将上投影矩阵 $W^{UQ}, W^{UK}, W^{UV}$ 按头拆分为独立子矩阵:
 
-$$W^{UQ} = [W^{UQ}_1, W^{UQ}_2, \dots, W^{UQ}_h], \quad \text{对每个 } W^{UQ}_i \text{ 独立正交化}$$
+$$
+W^{UQ} = [W^{UQ}_1, W^{UQ}_2, \dots, W^{UQ}_h], \quad \text{对每个 } W^{UQ}_i \text{ 独立正交化}
+$$
 
 这使不同头的投影权重可以以不同尺度更新,实验显示 MLA + Muon Split 在 4/7 基准上超越了 GQA-8.
 

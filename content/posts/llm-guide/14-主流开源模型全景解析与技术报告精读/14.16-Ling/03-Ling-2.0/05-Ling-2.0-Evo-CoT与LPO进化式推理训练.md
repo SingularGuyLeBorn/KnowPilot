@@ -11,7 +11,7 @@ tags:
 
 # Ling 2.0 Evo-CoT 与 LPO：非思考模型的进化式推理训练
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 > **来源**: Ling 2.0 Technical Report (arXiv:2510.22115), Section 4  

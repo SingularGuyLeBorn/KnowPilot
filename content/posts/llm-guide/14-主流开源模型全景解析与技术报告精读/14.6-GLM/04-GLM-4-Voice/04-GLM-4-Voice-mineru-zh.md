@@ -32,7 +32,7 @@ We introduce GLM-4-Voice, an intelligent and human-like end-to-end spoken chatbo
 
 ## 1 Introduction
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 The success of large language models (LLMs) has driven significant advancements in conversational AI, enabling the development of text-based chatbots and digital assistants. However, LLMs are primarily designed to process text input and generate text output, focusing on semantic and logical communication. In contrast, human communication extends beyond semantics, often conveying emotions and subtle nuances. Voice-based interaction, therefore, provides a more natural and intuitive medium for human-computer interaction, offering richer and more engaging user experiences.

@@ -4,7 +4,7 @@ title: "Qwen 技术报告精译"
 
 # Qwen 技术报告精译
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 原文标题: Qwen Technical Report

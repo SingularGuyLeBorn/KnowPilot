@@ -5,7 +5,7 @@ status: complete
 
 # GLM-130B 二维 RoPE 数理推导
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 >
 > 深入剖析 GLM-130B 中的核心位置编码技术：**二维旋转位置编码(2D Rotary Position Embedding, 2D RoPE)**。本文将从架构设计动机、严格的数学推导、代码级实现细节、工程优化策略到局限性分析进行全方位解读，旨在提供一份工业级的技术精读报告。
 
@@ -120,7 +120,7 @@ $$
 
 $$
 \begin{align*}
-\langle \tilde{q}_A, \tilde{k}_B \rangle 
+\langle \tilde{q}_A, \tilde{k}_B \rangle
 &= (R_{\Theta_1, m_A}^{d/2} q_A^{(1)})^\top (R_{\Theta_1, m_B}^{d/2} k_B^{(1)}) + (R_{\Theta_2, n_A}^{d/2} q_A^{(2)})^\top (R_{\Theta_2, n_B}^{d/2} k_B^{(2)}) \\
 &= (q_A^{(1)})^\top (R_{\Theta_1, m_A}^{d/2})^\top R_{\Theta_1, m_B}^{d/2} k_B^{(1)} + (q_A^{(2)})^\top (R_{\Theta_2, n_A}^{d/2})^\top R_{\Theta_2, n_B}^{d/2} k_B^{(2)} \\
 &= (q_A^{(1)})^\top R_{\Theta_1, m_B - m_A}^{d/2} k_B^{(1)} + (q_A^{(2)})^\top R_{\Theta_2, n_B - n_A}^{d/2} k_B^{(2)}

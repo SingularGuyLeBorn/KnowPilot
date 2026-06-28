@@ -5,7 +5,7 @@ status: completed
 
 # ABAB 初代技术博文分析
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 ## 原文信息

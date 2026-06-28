@@ -1,6 +1,6 @@
 # Ling 2.5 技术报告精译
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 > **来源**: Inclusion AI 官方博客、HuggingFace Model Card、技术社区分析  

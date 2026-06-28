@@ -4,7 +4,7 @@ title: "Qwen2工程落地精读"
 
 # Qwen2 工程落地精读
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 本文聚焦 Qwen2 预训练与后训练阶段的工程决策 —— 数据质量与规模的权衡、自动化数据合成流水线、长上下文训练策略与数据污染控制 —— 的实现细节与可复用经验.
@@ -94,7 +94,9 @@ InsTag 自动本体提取  -->  人工精修本体
 
 离线阶段使用预编译的偏好数据集 $\mathcal{P}$ 进行 DPO:
 
-$$ \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(x, y^+, y^-) \sim \mathcal{P}} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y^+|x)}{\pi_{\text{ref}}(y^+|x)} - \beta \log \frac{\pi_\theta(y^-|x)}{\pi_{\text{ref}}(y^-|x)} \right) \right] $$
+$$
+ \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(x, y^+, y^-) \sim \mathcal{P}} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y^+|x)}{\pi_{\text{ref}}(y^+|x)} - \beta \log \frac{\pi_\theta(y^-|x)}{\pi_{\text{ref}}(y^-|x)} \right) \right]
+$$
 
 其中 $\pi_\theta$ 为策略模型, $\pi_{\text{ref}}$ 为参考模型(通常是 SFT checkpoint), $\beta$ 为温度超参数. DPO 的优势在于无需显式训练奖励模型, 直接从偏好数据优化策略.
 
@@ -111,7 +113,9 @@ $$ \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(x, y^+, y^-) \sim \mathcal{P}} \left
 
 在线 DPO 的风险是「对齐税」(alignment tax): 策略模型为迎合人类偏好而偏离预训练知识. Online Merging Optimizer 通过定期将策略模型与参考模型合并来缓解这一问题:
 
-$$ \theta^{(t+1)} \leftarrow \alpha \cdot \theta^{(t+1)} + (1 - \alpha) \cdot \theta_{\text{ref}} $$
+$$
+ \theta^{(t+1)} \leftarrow \alpha \cdot \theta^{(t+1)} + (1 - \alpha) \cdot \theta_{\text{ref}}
+$$
 
 这种「软约束」类似于 PPO 中的 KL 散度惩罚, 但实现更轻量(无需计算 KL). 参数 $\alpha$ 控制对齐强度与知识保留的权衡: $\alpha$ 越大, 对齐越激进, 知识遗忘风险越高; $\alpha$ 越小, 模型越接近参考模型, 对齐效果减弱.
 
@@ -129,7 +133,9 @@ Qwen2 采用 n-gram 匹配与 LCS(最长公共子序列)双重过滤:
 
 **第二层: LCS 约束**. 对通过第一层过滤的样本进行更严格的检查:
 
-$$ \text{移除条件}: |\text{LCS}(\mathbf{s}_t, \mathbf{s}_e)| \geq 13 \quad \text{且} \quad |\text{LCS}(\mathbf{s}_t, \mathbf{s}_e)| \geq 0.6 \times \min(|\mathbf{s}_t|, |\mathbf{s}_e|) $$
+$$
+ \text{移除条件}: |\text{LCS}(\mathbf{s}_t, \mathbf{s}_e)| \geq 13 \quad \text{且} \quad |\text{LCS}(\mathbf{s}_t, \mathbf{s}_e)| \geq 0.6 \times \min(|\mathbf{s}_t|, |\mathbf{s}_e|)
+$$
 
 13-gram 的最小长度过滤掉偶然匹配, 0.6 的比例阈值确保实质性重叠. 这一双层策略在严格性与召回率之间取得平衡.
 

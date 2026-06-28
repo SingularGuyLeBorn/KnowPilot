@@ -44,7 +44,9 @@ Opus 4.7 的注意力层并行运行两种注意力头：
 
 专注于固定窗口内的精细关系建模. 对于位置 $i$ 的 query，只计算与 $[i - w/2, i + w/2]$ 范围内 key/value 的注意力分数：
 
-$$\text{Attn}_{\text{local}}(Q_i, K, V) = \text{softmax}\left(\frac{Q_i K_{[i-w/2, i+w/2]}^T}{\sqrt{d_k}}\right) V_{[i-w/2, i+w/2]}$$
+$$
+\text{Attn}_{\text{local}}(Q_i, K, V) = \text{softmax}\left(\frac{Q_i K_{[i-w/2, i+w/2]}^T}{\sqrt{d_k}}\right) V_{[i-w/2, i+w/2]}
+$$
 
 窗口大小 $w$ 根据层深度动态调整：浅层使用较小窗口(捕捉局部语法结构)，深层使用较大窗口(建模段落级语义). 
 
@@ -52,21 +54,29 @@ $$\text{Attn}_{\text{local}}(Q_i, K, V) = \text{softmax}\left(\frac{Q_i K_{[i-w/
 
 通过可学习的锚点选择机制，从整个序列中采样关键位置进行关注. 锚点选择由一个轻量级门控网络完成：
 
-$$\alpha_i = \text{sigmoid}(W_g \cdot h_i + b_g)$$
+$$
+\alpha_i = \text{sigmoid}(W_g \cdot h_i + b_g)
+$$
 
 其中 $h_i$ 是位置 $i$ 的隐藏状态，$\alpha_i \in [0, 1]$ 是该位置被选为全局锚点的概率. Top-k 个最高概率的位置构成全局锚点集合 $\mathcal{G}$，全局注意力计算为：
 
-$$\text{Attn}_{\text{global}}(Q_i, K, V) = \text{softmax}\left(\frac{Q_i K_{\mathcal{G}}^T}{\sqrt{d_k}}\right) V_{\mathcal{G}}$$
+$$
+\text{Attn}_{\text{global}}(Q_i, K, V) = \text{softmax}\left(\frac{Q_i K_{\mathcal{G}}^T}{\sqrt{d_k}}\right) V_{\mathcal{G}}
+$$
 
 ### 2.3 混合掩码与动态权重
 
 两种注意力的输出通过可学习的融合系数 $\beta$ 进行加权组合：
 
-$$\text{Attn}_{\text{hybrid}} = \beta \cdot \text{Attn}_{\text{local}} + (1 - \beta) \cdot \text{Attn}_{\text{global}}$$
+$$
+\text{Attn}_{\text{hybrid}} = \beta \cdot \text{Attn}_{\text{local}} + (1 - \beta) \cdot \text{Attn}_{\text{global}}
+$$
 
 $\beta$ 不是全局超参数，而是**每个注意力头、每一层、每一个输入序列**动态计算的：
 
-$$\beta^{(l,h)} = \text{sigmoid}\left(\frac{1}{n} \sum_{i=1}^{n} W_{\beta}^{(l,h)} \cdot h_i^{(l-1)}\right)$$
+$$
+\beta^{(l,h)} = \text{sigmoid}\left(\frac{1}{n} \sum_{i=1}^{n} W_{\beta}^{(l,h)} \cdot h_i^{(l-1)}\right)
+$$
 
 其中 $l$ 是层索引，$h$ 是头索引. 这种设计使得模型能够根据输入内容的特性自动调整注意力策略：对于局部结构密集的任务(如代码语法分析)，自动增强本地注意力的权重; 对于需要跨文档推理的任务(如长论文分析)，自动增强全局注意力的权重. 
 
@@ -84,7 +94,9 @@ Opus 4.7 通过三层技术组合应对这一挑战：
 
 模型在处理超长文档时，自动将输入划分为语义连贯的块(chunks，每块约 4K-8K tokens)，并为每个块生成压缩摘要向量 $s_j \in \mathbb{R}^d$. 这些摘要向量构成"元记忆层"(Meta-Memory Layer)：
 
-$$s_j = \text{Compress}(\text{Transformer}_{\text{chunk}}(x_{[j \cdot L : (j+1) \cdot L]}))$$
+$$
+s_j = \text{Compress}(\text{Transformer}_{\text{chunk}}(x_{[j \cdot L : (j+1) \cdot L]}))
+$$
 
 当需要定位特定信息时，模型首先在元记忆层进行粗粒度检索(通过向量相似度匹配)，然后精确定位到具体块进行细粒度阅读. 这种两级检索策略将信息定位效率提升了 **3-5 倍**. 
 
@@ -92,7 +104,9 @@ $$s_j = \text{Compress}(\text{Transformer}_{\text{chunk}}(x_{[j \cdot L : (j+1) 
 
 Opus 4.7 采用了改进的旋转位置编码(RoPE)变体，引入频率域衰减因子：
 
-$$\text{RoPE}(x, m) = \begin{pmatrix} \cos(m \cdot \theta_i \cdot e^{-\lambda m}) & -\sin(m \cdot \theta_i \cdot e^{-\lambda m}) \\ \sin(m \cdot \theta_i \cdot e^{-\lambda m}) & \cos(m \cdot \theta_i \cdot e^{-\lambda m}) \end{pmatrix} \cdot x$$
+$$
+\text{RoPE}(x, m) = \begin{pmatrix} \cos(m \cdot \theta_i \cdot e^{-\lambda m}) & -\sin(m \cdot \theta_i \cdot e^{-\lambda m}) \\ \sin(m \cdot \theta_i \cdot e^{-\lambda m}) & \cos(m \cdot \theta_i \cdot e^{-\lambda m}) \end{pmatrix} \cdot x
+$$
 
 其中 $\lambda$ 是衰减系数，$\theta_i = \theta_{\text{base}}^{-2i/d}$ 是基础频率. 衰减因子 $e^{-\lambda m}$ 使得模型对不同距离的位置关系具有更平滑的感知——远距离位置的编码差异被软化，避免了位置编码在超长序列中的数值爆炸. 
 
@@ -100,7 +114,9 @@ $$\text{RoPE}(x, m) = \begin{pmatrix} \cos(m \cdot \theta_i \cdot e^{-\lambda m}
 
 在处理跨越多轮对话的长期任务(如 30 小时以上的编码会话)时，模型会对历史上下文进行周期性总结，形成"记忆快照"(Memory Snapshots). 快照不是简单的文本摘要，而是**隐藏状态的压缩表示**：
 
-$$\text{Snapshot}_t = \text{MLP}_{\text{compress}}\left(\frac{1}{|H_t|} \sum_{h \in H_t} h\right)$$
+$$
+\text{Snapshot}_t = \text{MLP}_{\text{compress}}\left(\frac{1}{|H_t|} \sum_{h \in H_t} h\right)
+$$
 
 其中 $H_t$ 是第 $t$ 轮对话的隐藏状态集合. 快照作为压缩的历史表示参与后续推理，既保留了关键信息，又避免了上下文长度的无限膨胀. 
 
@@ -124,25 +140,35 @@ Opus 4.7 最显著的技术升级之一是视觉处理能力的全面提升. 模
 
 **全局路径**：图像被下采样至标准分辨率(448×448)，提取整体语义和布局信息：
 
-$$F_{\text{global}} = \text{ViT}_{\text{base}}(\text{Resize}(I, 448 \times 448))$$
+$$
+F_{\text{global}} = \text{ViT}_{\text{base}}(\text{Resize}(I, 448 \times 448))
+$$
 
 **局部路径**：图像被切分为多个重叠的高分辨率块(每个块 1024×1024，重叠率 50%)，每个块独立编码以保留细节：
 
-$$F_{\text{local}}^{(k)} = \text{ViT}_{\text{high}}(\text{Crop}_k(I)), \quad k = 1, 2, ..., K$$
+$$
+F_{\text{local}}^{(k)} = \text{ViT}_{\text{high}}(\text{Crop}_k(I)), \quad k = 1, 2, ..., K
+$$
 
 两条路径的输出通过**跨模态注意力融合**：
 
-$$F_{\text{fused}} = \text{CrossAttn}(F_{\text{global}}, [F_{\text{local}}^{(1)}; ...; F_{\text{local}}^{(K)}])$$
+$$
+F_{\text{fused}} = \text{CrossAttn}(F_{\text{global}}, [F_{\text{local}}^{(1)}; ...; F_{\text{local}}^{(K)}])
+$$
 
 ### 4.2 视觉-语言统一投影
 
 视觉 token 与文本 token 在统一的语义空间中通过投影器(Projector)对齐. Opus 4.7 的投影器采用**多层感知机 + 对比学习预训练**：
 
-$$h_{\text{visual}} = \text{MLP}_{\text{project}}(F_{\text{fused}})$$
+$$
+h_{\text{visual}} = \text{MLP}_{\text{project}}(F_{\text{fused}})
+$$
 
 投影器在大规模图文对数据上进行对比学习预训练，目标函数为 InfoNCE：
 
-$$\mathcal{L}_{\text{contrast}} = -\log \frac{\exp(\text{sim}(h_{\text{visual}}, h_{\text{text}}^+) / \tau)}{\sum_{h^- \in \mathcal{N}} \exp(\text{sim}(h_{\text{visual}}, h^-) / \tau)}$$
+$$
+\mathcal{L}_{\text{contrast}} = -\log \frac{\exp(\text{sim}(h_{\text{visual}}, h_{\text{text}}^+) / \tau)}{\sum_{h^- \in \mathcal{N}} \exp(\text{sim}(h_{\text{visual}}, h^-) / \tau)}
+$$
 
 这种细粒度的跨模态对齐使得 Opus 4.7 在处理密集文本截图(如终端输出、IDE 界面)时具有显著优势. 在 XBOW 视觉敏锐度测试(评估模型在自主渗透测试中读取界面截图的能力)中，Opus 4.7 从 4.6 版本的 54.5% 飙升至 **98.5%**，实现了近乎完美的视觉识别能力. 
 
@@ -185,7 +211,9 @@ Lead Agent: 整合各 Worker 输出，检查一致性
 
 Opus 4.7 引入了**任务预算(Task Budgets)**机制(beta 功能). 开发者可以为多步骤任务设置 token 消耗上限 $B$，模型在执行过程中持续监控累计消耗 $C_t$：
 
-$$\text{Action}_t = \begin{cases} \text{Continue} & C_t < 0.7B \\ \text{Optimize} & 0.7B \leq C_t < 0.9B \\ \text{Finalize} & C_t \geq 0.9B \end{cases}$$
+$$
+\text{Action}_t = \begin{cases} \text{Continue} & C_t < 0.7B \\ \text{Optimize} & 0.7B \leq C_t < 0.9B \\ \text{Finalize} & C_t \geq 0.9B \end{cases}
+$$
 
 当消耗超过 70% 预算时，模型自动切换到"优化模式"——优先完成核心任务，跳过非关键步骤; 当消耗超过 90% 时，模型进入"收尾模式"——生成当前最佳答案并终止. 这一机制对于成本敏感的企业场景具有重要价值. 
 
@@ -246,7 +274,7 @@ Claude Opus 4.7 代表了 Anthropic 在"软件工程专用大模型"方向上的
 
 ---
 
-> 📚 **延伸阅读**
+>  **延伸阅读**
 > - [Claude Opus 4.7 官方发布博客](https://www.anthropic.com/news/claude-opus-4-7)
 > - [Anthropic MCP 协议文档](https://modelcontextprotocol.io/)
 > - [SWE-bench 基准测试论文](https://arxiv.org/abs/2310.06770)
@@ -255,6 +283,6 @@ Claude Opus 4.7 代表了 Anthropic 在"软件工程专用大模型"方向上的
 
 ---
 
-> 🔄 **双向同步**
+>  **双向同步**
 > - 本文件为 `14-主流开源模型全景解析与技术报告精读/14.13-Claude/17-Claude-Opus-4.7/05-Claude-Opus-4.7-混合稀疏注意力与长上下文Agent编码架构.md` 的知识库同步版本
 > - 主文档更新时，本文件将同步更新

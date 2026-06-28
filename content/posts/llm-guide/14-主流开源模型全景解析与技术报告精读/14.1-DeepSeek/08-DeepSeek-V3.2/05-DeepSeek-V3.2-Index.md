@@ -6,7 +6,7 @@ date: 2026-05-24
 
 # DeepSeek-V3.2
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > DeepSeek-V3.2 通过 `DSA`、可扩展 `GRPO` 和大规模智能体任务合成流水线，把 DeepSeek 家族从“强架构、强训练系统”进一步推进到“强推理、强 agent、强成本效率”的新阶段。

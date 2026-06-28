@@ -6,7 +6,7 @@ source_pdf: OLMoE-Technical-Report.pdf
 
 ## 1 Introduction
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 Despite significant advances in Large Language Models (LMs) on various tasks, there remains a
 clear trade-off between performance and cost in both training and inference. High-performing LMs

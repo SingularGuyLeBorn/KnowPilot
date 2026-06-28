@@ -5,7 +5,7 @@ status: completed
 
 # Kimi-Chat 长上下文技术精译
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 
 ## 原文信息

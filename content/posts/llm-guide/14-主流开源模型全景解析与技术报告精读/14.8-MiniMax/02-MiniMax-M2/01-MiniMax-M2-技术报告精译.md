@@ -3,7 +3,7 @@ title: "MiniMax-M2 技术报告精译"
 ---
 # MiniMax-M2 技术报告精译
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > **模型定位**：全球首批将 Transformer 与 Linear Attention(闪电注意力 Lightning Attention)深度融合的开源旗舰。

@@ -6,7 +6,7 @@ title: "OpenAI Operator (CUA)：视觉推理与浏览器自动化的工程实现
 
 > **模型定位**：OpenAI 首个自主浏览器Agent(2025-01)，基于CUA(Computer-Using Agent)模型，业界首个大规模商用的视觉驱动网页自动化系统
 > **家族归属**：14.12-OpenAI｜编号 15-Operator-Agent
-> 🔙 **[返回 14.12-OpenAI 家族总览](../../14.12-OpenAI.md)**
+>  **[返回 14.12-OpenAI 家族总览](../../14.12-OpenAI.md)**
 
 ---
 

@@ -19,13 +19,19 @@
 ## 核心公式速查
 
 **旋转角度**：
-$$\theta_i = \text{base}^{-2i/d}, \quad i \in [0, d/2 - 1]$$
+$$
+\theta_i = \text{base}^{-2i/d}, \quad i \in [0, d/2 - 1]
+$$
 
 **相对位置内积**：
-$$(R_m q)^T (R_n k) = q^T R_{n-m} k$$
+$$
+(R_m q)^T (R_n k) = q^T R_{n-m} k
+$$
 
 **高效实现**：
-$$q_{\text{embed}} = q \cdot \cos + \text{rotate\_half}(q) \cdot \sin$$
+$$
+q_{\text{embed}} = q \cdot \cos + \text{rotate\_half}(q) \cdot \sin
+$$
 
 ---
 

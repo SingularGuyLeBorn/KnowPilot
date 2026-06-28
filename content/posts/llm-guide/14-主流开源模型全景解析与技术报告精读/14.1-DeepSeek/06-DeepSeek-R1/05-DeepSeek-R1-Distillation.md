@@ -4,7 +4,7 @@ title: "DeepSeek-R1 蒸馏与工业应用"
 
 # DeepSeek-R1 蒸馏与工业落地
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文聚焦 DeepSeek-R1 的蒸馏策略、小模型性能分析, 以及在实际部署中的工程考量.
@@ -119,7 +119,9 @@ DeepSeek-R1 是一个 671B 总参数、37B 激活参数的 MoE 模型. 虽然其
 
 学习率与参数量的近似反比关系:
 
-$$ \text{LR} \approx \frac{C}{\sqrt{N_{params}}} $$
+$$
+ \text{LR} \approx \frac{C}{\sqrt{N_{params}}}
+$$
 
 其中 $C$ 是常数, $N_{params}$ 是参数量.
 

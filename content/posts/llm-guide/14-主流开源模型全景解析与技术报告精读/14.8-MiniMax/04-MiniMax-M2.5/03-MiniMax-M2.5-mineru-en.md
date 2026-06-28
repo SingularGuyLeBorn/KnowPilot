@@ -6,7 +6,7 @@ status: completed
 
 # MiniMax-M2.5 Technical Report: Advancing Efficient Large Language Models via Sparse Mixture-of-Experts
 
-> 🔙 **[Back to 14.8-MiniMax Family Overview](../../14.8-MiniMax.md)**
+>  **[Back to 14.8-MiniMax Family Overview](../../14.8-MiniMax.md)**
 
 ## Abstract
 
@@ -66,7 +66,9 @@ For a given input token representation $x \in \mathbb{R}^d$, the routing network
 
 Let the number of total experts be $N$, and the number of active experts per token be $K$ (where $K=2$ and $N=8$). The router produces a set of unnormalized scores (logits) for each expert:
 
-$$ H(x) = W_g \cdot x + \epsilon \cdot \text{Softplus}(W_{noise} \cdot x) $$
+$$
+ H(x) = W_g \cdot x + \epsilon \cdot \text{Softplus}(W_{noise} \cdot x)
+$$
 
 Where:
 - $W_g \in \mathbb{R}^{N \times d}$ is the primary routing weight matrix.
@@ -75,11 +77,15 @@ Where:
 
 The routing probabilities are computed using a softmax function applied strictly over the top-$K$ values of $H(x)$. The logits for the unselected $N-K$ experts are explicitly masked to $-\infty$:
 
-$$ p_i(x) = \begin{cases} \frac{\exp(H(x)_i)}{\sum_{j \in \text{top-}K(H(x))} \exp(H(x)_j)} & \text{if } i \in \text{top-}K(H(x)) \\ 0 & \text{otherwise} \end{cases} $$
+$$
+ p_i(x) = \begin{cases} \frac{\exp(H(x)_i)}{\sum_{j \in \text{top-}K(H(x))} \exp(H(x)_j)} & \text{if } i \in \text{top-}K(H(x)) \\ 0 & \text{otherwise} \end{cases}
+$$
 
 The final output of the MoE layer, $y$, is the probability-weighted sum of the selected experts' outputs:
 
-$$ y = \sum_{i=1}^N p_i(x) \cdot E_i(x) = \sum_{i \in \text{top-}K} p_i(x) \cdot E_i(x) $$
+$$
+ y = \sum_{i=1}^N p_i(x) \cdot E_i(x) = \sum_{i \in \text{top-}K} p_i(x) \cdot E_i(x)
+$$
 
 #### 2.2.2 Expert Implementation (SwiGLU)
 
@@ -87,7 +93,9 @@ Each individual expert $E_i$ is implemented as a specialized multi-layer percept
 
 For an input $x$, the computation within expert $i$ is defined as:
 
-$$ E_i(x) = (\text{SiLU}(x W_{1,i}) \otimes (x W_{3,i})) W_{2,i} $$
+$$
+ E_i(x) = (\text{SiLU}(x W_{1,i}) \otimes (x W_{3,i})) W_{2,i}
+$$
 
 Where:
 - $W_{1,i}, W_{3,i} \in \mathbb{R}^{d \times d_{ffn}}$ are the up-projection weight matrices for expert $i$.
@@ -107,15 +115,21 @@ To mitigate this, we employ an auxiliary load balancing loss $\mathcal{L}_{balan
 
 For a batch of tokens $X = \{x_1, x_2, ..., x_B\}$, we define $f_i$ as the fraction of tokens in the batch that are routed to expert $i$:
 
-$$ f_i = \frac{1}{B \cdot K} \sum_{j=1}^B \sum_{k=1}^K \mathbb{I}(\text{Expert } i \text{ is the } k\text{-th choice for token } x_j) $$
+$$
+ f_i = \frac{1}{B \cdot K} \sum_{j=1}^B \sum_{k=1}^K \mathbb{I}(\text{Expert } i \text{ is the } k\text{-th choice for token } x_j)
+$$
 
 We also define $P_i$ as the average routing probability assigned to expert $i$ across all tokens in the batch:
 
-$$ P_i = \frac{1}{B} \sum_{j=1}^B p_i(x_j) $$
+$$
+ P_i = \frac{1}{B} \sum_{j=1}^B p_i(x_j)
+$$
 
 The load balancing loss is calculated as the scaled dot product of these two distributions:
 
-$$ \mathcal{L}_{balance} = \alpha \cdot N \sum_{i=1}^N f_i \cdot P_i $$
+$$
+ \mathcal{L}_{balance} = \alpha \cdot N \sum_{i=1}^N f_i \cdot P_i
+$$
 
 Where $\alpha$ is a scaling hyperparameter (empirically set to $0.01$). 
 - If routing is perfectly balanced, $f_i = \frac{1}{N}$ and $P_i = \frac{1}{N}$ for all $i$, minimizing the loss.
@@ -169,11 +183,15 @@ Transformers are permutation-invariant and require explicit positional informati
 
 For a token at position $m$, RoPE applies a rotation matrix $R_{\Theta, m}$ to the query vector $q$:
 
-$$ q_m = R_{\Theta, m} W_q x_m $$
+$$
+ q_m = R_{\Theta, m} W_q x_m
+$$
 
 The key innovation of RoPE is that the dot product between a query at position $m$ and a key at position $n$ depends only on their relative distance $m-n$:
 
-$$ q_m^T k_n = (R_{\Theta, m} W_q x_m)^T (R_{\Theta, n} W_k x_n) = x_m^T W_q^T R_{\Theta, m-n} W_k x_n $$
+$$
+ q_m^T k_n = (R_{\Theta, m} W_q x_m)^T (R_{\Theta, n} W_k x_n) = x_m^T W_q^T R_{\Theta, m-n} W_k x_n
+$$
 
 To support an extended context window of 128,000 tokens, we apply a variation of **YaRN (Yet another RoPE extensioN)** scaling during the later stages of pre-training and fine-tuning. YaRN alters the base frequency of the RoPE rotations depending on the dimension of the embedding head, effectively "stretching" the positional embeddings to accommodate longer sequences without catastrophic forgetting of short-context patterns.
 
@@ -299,7 +317,9 @@ To align the model with nuanced human preferences (e.g., preferring polite refus
 DPO mathematically optimizes the policy directly against a dataset of chosen ($y_w$) and rejected ($y_l$) responses, eliminating the need for a separate, often unstable Reward Model and the complex PPO reinforcement learning loop.
 
 The objective function:
-$$ \mathcal{L}_{DPO}(\pi_\theta; \pi_{ref}) = -\mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w | x)}{\pi_{ref}(y_w | x)} - \beta \log \frac{\pi_\theta(y_l | x)}{\pi_{ref}(y_l | x)} \right) \right] $$
+$$
+ \mathcal{L}_{DPO}(\pi_\theta; \pi_{ref}) = -\mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w | x)}{\pi_{ref}(y_w | x)} - \beta \log \frac{\pi_\theta(y_l | x)}{\pi_{ref}(y_l | x)} \right) \right]
+$$
 
 We train DPO for 2 epochs using a learning rate significantly lower than the SFT phase ($1 \times 10^{-6}$) and a high $\beta$ value (e.g., $0.1$) to ensure the model does not deviate too far from the high-quality SFT reference policy ($\pi_{ref}$).
 
@@ -366,4 +386,4 @@ Crucially, MiniMax-M2.5 achieves these heights while offering profound computati
 
 ---
 
-> 📝 **Note**: This document is a comprehensive technical reconstruction of the MiniMax-M2.5 model. Due to the lack of an official arXiv PDF, this report synthesizes established methodologies in MoE LLM development, data gathered from official MiniMax technical blogs, and corresponding benchmark data to provide a complete English technical reference.
+>  **Note**: This document is a comprehensive technical reconstruction of the MiniMax-M2.5 model. Due to the lack of an official arXiv PDF, this report synthesizes established methodologies in MoE LLM development, data gathered from official MiniMax technical blogs, and corresponding benchmark data to provide a complete English technical reference.

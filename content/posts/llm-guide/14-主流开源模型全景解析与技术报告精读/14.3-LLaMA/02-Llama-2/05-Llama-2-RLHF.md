@@ -5,7 +5,7 @@ status: completed
 
 # Llama 2 RLHF 与安全对齐精读
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 > 本文基于《Llama 2: Open Foundation and Fine-Tuned Chat Models》技术报告中 Section 3(Fine-Tuning)和 Section 4(Safety)的内容, 对 Llama 2 的 RLHF 训练流水线、双奖励模型设计、迭代拒绝采样、安全对齐策略及红队测试方法论进行深度工程剖析.
@@ -68,11 +68,15 @@ Llama 2 的解决方案是训练两个独立的奖励模型:
 
 标准二元排名损失只要求 $y_c$ 的分数高于 $y_r$:
 
-$$ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r}))) $$
+$$
+ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r})))
+$$
 
 Llama 2 引入了与偏好强度成正比的 margin:
 
-$$ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r}) - m(r))) $$
+$$
+ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r}) - m(r)))
+$$
 
 其中 margin $m(r)$ 是人类四级评级的离散映射:
 
@@ -140,7 +144,9 @@ Llama 2 的 PPO 实现包含多项稳定性措施:
 
 **KL 惩罚的动态调整**: 最终奖励函数包含偏离原始策略的惩罚项:
 
-$$ R(g \mid p) = \tilde{R}_{c}(g \mid p) - \beta D_{KL}(\pi_{\theta}(g \mid p) \parallel \pi_{0}(g \mid p)) $$
+$$
+ R(g \mid p) = \tilde{R}_{c}(g \mid p) - \beta D_{KL}(\pi_{\theta}(g \mid p) \parallel \pi_{0}(g \mid p))
+$$
 
 $\beta$ 随模型规模调整: 7B/13B 使用 0.01, 34B/70B 使用 0.005. 更大的模型需要更小的 KL 约束——因为大模型的策略空间更复杂, 过强的约束会限制优化空间, 导致 reward hacking 的缓解效果下降但模型能力提升受限.
 

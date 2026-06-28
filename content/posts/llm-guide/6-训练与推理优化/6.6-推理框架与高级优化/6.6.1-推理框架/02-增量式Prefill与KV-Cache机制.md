@@ -119,11 +119,11 @@ Query 是**当前正在生成的 token** 独有的. 在 Decode 阶段, 每次只
 
 | 缓存对象 | 是否缓存 | 原因 |
 |:--------|:--------|:-----|
-| K(Key) | ✅ | 历史 token 的 K 固定不变, 可被未来所有 token 复用 |
-| V(Value) | ✅ | 历史 token 的 V 固定不变, 可被未来所有 token 复用 |
-| Q(Query) | ❌ | 每个新 token 有唯一的 Q, 只用一次 |
-| QK^T | ❌ | 依赖当前 Q, 下个 token 的 Q 不同 |
-| QK^TV | ❌ | 依赖当前 Q, 下个 token 的 Q 不同 |
+| K(Key) |  | 历史 token 的 K 固定不变, 可被未来所有 token 复用 |
+| V(Value) |  | 历史 token 的 V 固定不变, 可被未来所有 token 复用 |
+| Q(Query) |  | 每个新 token 有唯一的 Q, 只用一次 |
+| QK^T |  | 依赖当前 Q, 下个 token 的 Q 不同 |
+| QK^TV |  | 依赖当前 Q, 下个 token 的 Q 不同 |
 
 **类比**：KV Cache 就像写论文时的"参考文献卡片". 你已经读过的资料(历史 token)的要点(K, V)被记在卡片上, 后面写作时随时查阅. 但你当前正在写的这句话(当前 Q)和它与参考资料的关系(QK^T)是临时的, 不需要记录. 
 

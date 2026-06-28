@@ -873,7 +873,7 @@ Group photo of formally dressed individuals in front of a historic building, wit
 <details>
 <summary>text_image</summary>
 
-NVIDIA GB200 Grace® Blackwell Superchip
+NVIDIA GB200 Grace Blackwell Superchip
 The processor for the one of A6
 </details>
 

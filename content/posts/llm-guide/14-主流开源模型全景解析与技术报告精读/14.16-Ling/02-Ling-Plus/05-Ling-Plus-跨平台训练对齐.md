@@ -11,7 +11,7 @@ tags:
 
 # 跨平台训练对齐：在 5 种异构硬件上训练 290B MoE 的工程实践
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 > **技术点**: Cross-Platform Alignment for MoE Training

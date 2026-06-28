@@ -5,7 +5,7 @@ status: completed
 
 # Qwen3.7: 面向智能体时代的新一代旗舰模型
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 原文标题: Qwen3.7: The Agent Frontier

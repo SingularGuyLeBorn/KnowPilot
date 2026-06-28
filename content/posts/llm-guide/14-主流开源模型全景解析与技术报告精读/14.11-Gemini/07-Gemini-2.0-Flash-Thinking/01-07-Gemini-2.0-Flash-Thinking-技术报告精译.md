@@ -3,7 +3,7 @@ title: "Gemini 2.0 Flash-Thinking: 内置隐式思考链 - 技术报告精译"
 ---
 # Gemini 2.0 Flash-Thinking: 内置隐式思考链 - 技术报告精译
 
-> 🔙 **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
+>  **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
 
 
 > **核心定位**：本报告深度解构了 Google DeepMind 在该阶段发布的技术细节与架构思想。作为闭源模型，其技术报告是窥探其内部机制的唯一窗口。

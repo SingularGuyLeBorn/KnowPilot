@@ -4,7 +4,7 @@ title: "MiniCPM-S-1.2B 核心技术专题 - ProSparse 稀疏激活与端侧推�
 
 # MiniCPM-S-1.2B 核心技术专题: ProSparse 稀疏激活与端侧推理加速
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 本文基于 Song et al. (2024) "ProSparse: Introducing and Enhancing Intrinsic Activation Sparsity within Large Language Models"(COLING 2025)及 MiniCPM-S-1B 官方发布信息撰写。

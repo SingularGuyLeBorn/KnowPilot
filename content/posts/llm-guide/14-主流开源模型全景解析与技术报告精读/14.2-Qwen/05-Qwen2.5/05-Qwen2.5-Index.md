@@ -6,7 +6,7 @@ date: 2026-05-24
 
 # Qwen2.5 核心技术专题索引
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 Qwen2.5 是 Qwen 路线从“强开源模型系列”迈向“成熟模型平台”的关键版本。它没有依赖颠覆性新架构，而是围绕数据规模、后训练体系、超长上下文和产品矩阵做系统升级，把 Qwen2 推向了更工业化的阶段。
 
@@ -33,7 +33,9 @@ Qwen2.5 建立了一个高度自动化的数据飞轮。除了常规的启发式
 Qwen2.5-Turbo 实现 1M 上下文的核心在于渐进式扩展(Progressive Extension)与 YARN(Yet Another RoPE for Transformers)技术的结合。
 
 对于位置编码，Qwen2.5 调整了基频(Base Frequency)：
-$$ \theta_i = \theta_0 \cdot b^{-\frac{2i}{d}} $$
+$$
+ \theta_i = \theta_0 \cdot b^{-\frac{2i}{d}}
+$$
 在长上下文微调中，动态调整 $b$(如从 10000 扩展到 1000000)，配合 Dual Chunk Attention (DCA) 和稀疏注意力，以降低计算复杂度。
 
 ```mermaid

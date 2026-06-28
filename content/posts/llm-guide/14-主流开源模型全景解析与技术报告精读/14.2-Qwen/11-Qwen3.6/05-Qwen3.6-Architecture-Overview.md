@@ -5,7 +5,7 @@ status: completed
 
 # Qwen3.6 核心架构剖析
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 基于 Qwen3.6-35B-A3B 与 Qwen3.6-27B 官方博客信息整理.

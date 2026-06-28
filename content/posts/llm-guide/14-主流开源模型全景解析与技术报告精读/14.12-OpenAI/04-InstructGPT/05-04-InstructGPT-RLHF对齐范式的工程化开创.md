@@ -7,7 +7,7 @@ title: "InstructGPT：RLHF对齐范式的工程化开创——从语言模型到
 > **模型定位**：OpenAI 首个基于人类反馈强化学习(RLHF)的指令遵循模型(2022-03)，ChatGPT 的技术前身
 > **家族归属**：14.12-OpenAI｜编号 04-InstructGPT
 > **核心论文**：*Training language models to follow instructions with human feedback* (Ouyang et al., 2022)
-> 🔙 **[返回 14.12-OpenAI 家族总览](../../14.12-OpenAI.md)**
+>  **[返回 14.12-OpenAI 家族总览](../../14.12-OpenAI.md)**
 
 ---
 
@@ -90,7 +90,9 @@ InstructGPT的训练分为三个紧密衔接的阶段，这一流程后来被称
 
 对于一对responses $(y_w, y_l)$，其中 $y_w$ 是标注者偏好的(win)，$y_l$ 是不偏好的(lose)：
 
-$$\mathcal{L}_{RM} = -\mathbb{E}_{(x, y_w, y_l) \sim D} \left[ \log \sigma \left( r_\theta(x, y_w) - r_\theta(x, y_l) \right) \right]$$
+$$
+\mathcal{L}_{RM} = -\mathbb{E}_{(x, y_w, y_l) \sim D} \left[ \log \sigma \left( r_\theta(x, y_w) - r_\theta(x, y_l) \right) \right]
+$$
 
 其中：
 - $r_\theta(x, y)$ 是RM对prompt $x$ 和response $y$ 的评分
@@ -114,7 +116,9 @@ PPO是OpenAI提出的RL算法(Schulman et al., 2017)，因其稳定性成为RLHF
 
 **PPO-RLHF的目标函数**：
 
-$$\mathcal{L}_{PPO} = \mathbb{E}_{(x, y) \sim \pi_\theta} \left[ r_\phi(x, y) \right] - \beta \cdot D_{KL}\left( \pi_\theta(y|x) \;\|\; \pi_{SFT}(y|x) \right)$$
+$$
+\mathcal{L}_{PPO} = \mathbb{E}_{(x, y) \sim \pi_\theta} \left[ r_\phi(x, y) \right] - \beta \cdot D_{KL}\left( \pi_\theta(y|x) \;\|\; \pi_{SFT}(y|x) \right)
+$$
 
 其中：
 - $r_\phi(x, y)$：RM的评分(第一阶段训练的6B RM)

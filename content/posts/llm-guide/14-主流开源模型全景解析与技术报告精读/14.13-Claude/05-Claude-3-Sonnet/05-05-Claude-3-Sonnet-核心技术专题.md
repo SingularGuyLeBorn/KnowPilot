@@ -4,7 +4,7 @@ title: "Claude 3 Sonnet：平衡性能与成本的Anthropic中坚架构"
 
 # 05-Claude-3-Sonnet 核心技术专题：平衡性能与成本的Anthropic中坚架构
 
-> 🔙 **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
+>  **[返回 14.13-Claude 家族总览](../../14.13-Claude.md)**
 
 
 ## 一、模型定位与产品矩阵
@@ -32,7 +32,7 @@ Sonnet 的价格仅为 Opus 的 **1/5**，但能力保留了 **85-90%**，成为
 | 上下文 | 200K | 8K/32K | 16K | 32K |
 | MMLU | 79.0% | 86.4% | 70.0% | 71.8% |
 | 价格(输入)| $3.00 | $30.00 | $0.50 | $0.50 |
-| 多模态 | ✅ | ❌ | ❌ | ✅ |
+| 多模态 |  |  |  |  |
 
 Sonnet 在**上下文长度**和**性价比**两个维度上具有明显优势，200K 上下文是其最强差异化卖点。
 
@@ -109,10 +109,14 @@ Claude 3 很可能采用了**RoPE(Rotary Position Embedding)的改进版本**：
 **NTK-RoPE(Neural Tangent Kernel-aware RoPE)**：
 通过动态调整 RoPE 的基频参数，实现训练长度到推理长度的平滑外推：
 
-$$\theta_j = (b \cdot \lambda)^{-2j/d}$$
+$$
+\theta_j = (b \cdot \lambda)^{-2j/d}
+$$
 
 其中 $\lambda$ 为外推缩放因子。对于 200K 上下文，如果训练最大长度为 8K：
-$$\lambda = \frac{200K}{8K} = 25$$
+$$
+\lambda = \frac{200K}{8K} = 25
+$$
 
 这意味着基频需要调整 25 倍，以保持位置编码的有效周期。
 
@@ -124,7 +128,9 @@ $$\lambda = \frac{200K}{8K} = 25$$
 ### 3.3 注意力计算优化
 
 对于 200K 序列，标准 Attention 的计算量：
-$$\text{FLOPs} = 4 \times N^2 \times d = 4 \times (200K)^2 \times 128 = 2.048 \times 10^{16}$$
+$$
+\text{FLOPs} = 4 \times N^2 \times d = 4 \times (200K)^2 \times 128 = 2.048 \times 10^{16}
+$$
 
 这需要一个有效的近似方案。推测 Anthropic 采用了**分层注意力(Hierarchical Attention)**：
 
@@ -153,9 +159,15 @@ $$\text{FLOPs} = 4 \times N^2 \times d = 4 \times (200K)^2 \times 128 = 2.048 \t
 
 **内存需求估算**：
 假设 $d_{model}=8192$，$n_{layers}=80$，$n_{heads}=64$，$d_{head}=128$：
-$$\text{KV-Cache} = 2 \times L \times n_{layers} \times d_{model} \times \text{bytes}$$
-$$= 2 \times 200K \times 80 \times 8192 \times 2\text{ bytes (FP16)}$$
-$$= 524.3\text{ GB}$$
+$$
+\text{KV-Cache} = 2 \times L \times n_{layers} \times d_{model} \times \text{bytes}
+$$
+$$
+= 2 \times 200K \times 80 \times 8192 \times 2\text{ bytes (FP16)}
+$$
+$$
+= 524.3\text{ GB}
+$$
 
 这需要**多卡分布式存储**或**激进压缩**。
 

@@ -4,7 +4,7 @@ title: "Step-3.5-Flash 技术报告精译"
 
 # Step-3.5-Flash 技术报告精译
 
-> 🔙 **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
+>  **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
 
 
 > 原文: arXiv:2602.10604 — Step 3.5 Flash Technical Report

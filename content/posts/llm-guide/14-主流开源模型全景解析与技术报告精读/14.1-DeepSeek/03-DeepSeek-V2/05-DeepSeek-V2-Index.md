@@ -6,7 +6,7 @@ date: 2026-05-19
 
 # DeepSeek-V2
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > DeepSeek-V2 是 DeepSeek 的架构创世纪模型，首次提出 MLA 和 DeepSeekMoE 架构。

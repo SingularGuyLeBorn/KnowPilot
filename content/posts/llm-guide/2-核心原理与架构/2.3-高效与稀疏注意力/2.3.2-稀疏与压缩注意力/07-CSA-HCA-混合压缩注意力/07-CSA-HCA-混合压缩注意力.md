@@ -72,8 +72,7 @@ DeepSeek-V4 将上下文推至 **1M tokens**，核心不是替换 Transformer，
 
 $$
 \hat{K}_i = \sum_{j} Z^a_j \odot C^a_j, \quad
-\hat{V}_i = \sum_{j} Z^b_j \odot C^b_j
-\tag{1}
+\hat{V}_i = \sum_{j} Z^b_j \odot C^b_j \tag{1}
 $$
 
 重叠块使 $C^{Comp}$ 序列长度 $\approx n/m$，且块边界不「硬切」语义单元。
@@ -83,8 +82,7 @@ $$
 Indexer 对压缩键 $K^{IComp}$ 打分，top-k 得到稀疏集合，再执行：
 
 $$
-\mathbf{o}_t = \mathrm{CoreAttn}\bigl(\mathbf{q}_t,\; C_t^{SprsComp},\; C_t^{SprsComp}\bigr)
-\tag{2}
+\mathbf{o}_t = \mathrm{CoreAttn}\bigl(\mathbf{q}_t,\; C_t^{SprsComp},\; C_t^{SprsComp}\bigr) \tag{2}
 $$
 
 **复杂度直觉**：$O(n/m)$ 次压缩 + $O(k \cdot c)$ 次核心 attention，$k \ll n/m$。

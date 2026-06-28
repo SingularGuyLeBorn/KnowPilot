@@ -9,7 +9,7 @@ status: completed
 
 # Kimi K2: Open Agentic Intelligence
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 ![](images/figure_01_paper_header.jpg)
 

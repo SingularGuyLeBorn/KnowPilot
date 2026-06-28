@@ -392,7 +392,7 @@ graph TD
     K --> L["Agent (o1-preview)"]
     M["Azure Isolated VNET"] --> N["Eval Virtual Machine"]
     N --> O["Modified challenge container"]
-    O --> P["print(▶)"]
+    O --> P["print()"]
     style O fill:#f9f,stroke:#333
 ```
 </details>

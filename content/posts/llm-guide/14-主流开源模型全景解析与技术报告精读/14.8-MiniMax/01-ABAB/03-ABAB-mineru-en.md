@@ -5,7 +5,7 @@ status: complete
 
 # ABAB: Technical Report and Architectural Innovations
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 > Original Source: MiniMax ABAB Initial Technical Blogs & Architecture Papers
 > Status: Extracted and Reconstructed

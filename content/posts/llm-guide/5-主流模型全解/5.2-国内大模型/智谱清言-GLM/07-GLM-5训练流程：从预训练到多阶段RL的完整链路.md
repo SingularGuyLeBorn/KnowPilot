@@ -68,7 +68,9 @@ GLM-5 的训练流程分为两大阶段、七个步骤：
 
 标准自回归预训练，优化目标：
 
-$$\mathcal{L}_{\text{PT}} = -\mathbb{E}_{x \sim \mathcal{D}} \left[ \sum_{t=1}^{|x|} \log P(x_t \mid x_{<t}) \right] \tag{2.1}$$
+$$
+\mathcal{L}_{\text{PT}} = -\mathbb{E}_{x \sim \mathcal{D}} \left[ \sum_{t=1}^{|x|} \log P(x_t \mid x_{<t}) \right] \tag{2.1}
+$$
 
 **数据特点**：
 - 大规模 Web、Code、Math & Science 语料
@@ -182,7 +184,9 @@ GLM-5 SFT 阶段引入了三种显式的推理模式：
 
 **奖励设计**：结果导向的 0/1 reward
 
-$$r(x, y) = \begin{cases} 1 & \text{if } \text{Verify}(x, y) = \text{True} \\ 0 & \text{otherwise} \end{cases} \tag{4.1}$$
+$$
+r(x, y) = \begin{cases} 1 & \text{if } \text{Verify}(x, y) = \text{True} \\ 0 & \text{otherwise} \end{cases} \tag{4.1}
+$$
 
 **数据样例**：
 
@@ -224,7 +228,9 @@ Reasoning RL 在 Agentic RL 之前，顺序合理：
 
 模型生成的不是一次性输出，而是**整条交互轨迹**：
 
-$$y = (r_1, a_1, o_1, r_2, a_2, o_2, \ldots, r_n, a_n, o_n) \tag{5.1}$$
+$$
+y = (r_1, a_1, o_1, r_2, a_2, o_2, \ldots, r_n, a_n, o_n) \tag{5.1}
+$$
 
 其中：
 - $r_i$：reasoning / thinking
@@ -245,11 +251,15 @@ $$y = (r_1, a_1, o_1, r_2, a_2, o_2, \ldots, r_n, a_n, o_n) \tag{5.1}$$
 
 **组内相对优势**：
 
-$$A(x, y_i) = r(x, y_i) - \bar{r}(x) \tag{5.2}$$
+$$
+A(x, y_i) = r(x, y_i) - \bar{r}(x) \tag{5.2}
+$$
 
 其中组内平均 reward：
 
-$$\bar{r}(x) = \frac{1}{K} \sum_{i=1}^{K} r(x, y_i) \tag{5.3}$$
+$$
+\bar{r}(x) = \frac{1}{K} \sum_{i=1}^{K} r(x, y_i) \tag{5.3}
+$$
 
 **解释**：
 - $A(x, y_i) > 0$：该轨迹比组内平均更好，被鼓励
@@ -279,7 +289,9 @@ $$\bar{r}(x) = \frac{1}{K} \sum_{i=1}^{K} r(x, y_i) \tag{5.3}$$
 
 ### 6.2 混合奖励系统
 
-$$R_{\text{hybrid}} = w_1 R_{\text{rule}} + w_2 R_{\text{ORM}} + w_3 R_{\text{GRM}} \tag{6.1}$$
+$$
+R_{\text{hybrid}} = w_1 R_{\text{rule}} + w_2 R_{\text{ORM}} + w_3 R_{\text{GRM}} \tag{6.1}
+$$
 
 | 奖励类型 | 优点 | 缺点 | 适用场景 |
 |---------|------|------|---------|
@@ -320,7 +332,9 @@ GLM-5 显式引入**高质量人类撰写答案**作为风格和质量锚点。
 
 对 student 生成的序列中的每个 token：
 
-$$\hat{A}_{i,t} = \text{sg}\left[ \log \frac{\pi^{\text{infer}}_{\theta_{\text{teacher}}}(y_{i,t} \mid x, y_{i,<t})}{\pi^{\text{train}}_{\theta_{\text{student}}}(y_{i,t} \mid x, y_{i,<t})} \right] \tag{7.1}$$
+$$
+\hat{A}_{i,t} = \text{sg}\left[ \log \frac{\pi^{\text{infer}}_{\theta_{\text{teacher}}}(y_{i,t} \mid x, y_{i,<t})}{\pi^{\text{train}}_{\theta_{\text{student}}}(y_{i,t} \mid x, y_{i,<t})} \right] \tag{7.1}
+$$
 
 其中 sg 表示 stop gradient。
 
@@ -454,7 +468,9 @@ Agentic 数据合成的关键不是"合成文本"，而是：
 
 **深层原因**：参数空间中的多目标冲突。每个 RL 阶段优化不同的奖励函数，梯度方向可能正交甚至相反：
 
-$$\nabla_\theta \mathcal{L}_{\text{reasoning}} \cdot \nabla_\theta \mathcal{L}_{\text{general}} < 0 \tag{9.1}$$
+$$
+\nabla_\theta \mathcal{L}_{\text{reasoning}} \cdot \nabla_\theta \mathcal{L}_{\text{general}} < 0 \tag{9.1}
+$$
 
 **对策**：Cross-Stage Distillation 作为最终精炼步骤，将各阶段能力重新"缝合"。
 
@@ -514,4 +530,4 @@ $$\nabla_\theta \mathcal{L}_{\text{reasoning}} \cdot \nabla_\theta \mathcal{L}_{
 > **整合记录**:  
 > 原始素材：知乎 #64《Agent 时代的基座大模型训练方法——以 GLM-5 为主线》  
 > 深度改写：构建七阶段训练流程全景图，补充 Mid-Training 渐进式扩展的数学原理、三种 Thinking 模式的工程意义、Agentic RL 组内优势公式 (5.2–5.3)、Cross-Stage Distillation 的 token-level advantage (7.1)、Agentic 数据合成标准流水线、五大失效模式深层分析。  
-> 质量等级：符合新规范 ✅(公式推导链完整、含真实 GLM-5 配置走查、失效模式分析深层物理原因)
+> 质量等级：符合新规范 (公式推导链完整、含真实 GLM-5 配置走查、失效模式分析深层物理原因)

@@ -11,7 +11,7 @@ tags:
 
 # Ling 2.5 混合线性注意力架构：从 $O(n^2)$ 到 $O(n)$ 的注意力革命
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 > **来源**: Inclusion AI Ling 2.5 技术博客、Sebastian Raschka 架构分析、社区技术解读  

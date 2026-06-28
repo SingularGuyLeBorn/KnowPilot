@@ -31,7 +31,7 @@ We present GLM-5V-Turbo, a step toward native foundation models for multimodal a
 
 ## 1 Overview
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 概述
 

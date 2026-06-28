@@ -4,7 +4,7 @@ title: "ChatGLM系列技术报告精译"
 
 # ChatGLM: 从 GLM-130B 到 GLM-4 All Tools 的大语言模型家族
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > 原文标题: ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools

@@ -4,7 +4,7 @@ title: "Kimi-K2.5推理架构剖析"
 
 # Kimi K2.5 推理架构剖析
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 
 > 信息来源: Kimi K2.5: Visual Agentic Intelligence (arXiv:2602.02276)

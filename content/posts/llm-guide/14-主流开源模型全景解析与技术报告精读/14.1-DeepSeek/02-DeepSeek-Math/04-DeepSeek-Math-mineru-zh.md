@@ -7,7 +7,7 @@ date: 2026-05-23
 
 # DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 ## 原文标题说明
 

@@ -7,7 +7,7 @@ sync_to:
 
 # DeepSeek-V3.1-Terminus 语言一致性修复的多层工程实践
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文基于 DeepSeek-V3.1-Terminus 官方公告及多语言 LLM 的工程实践, 对该版本最核心的稳定性改进——语言一致性修复——进行系统性技术剖析. 重点分析语言混杂问题的根因、Terminus 的三层修复策略, 以及这一改进对 Agent 能力的间接增益.

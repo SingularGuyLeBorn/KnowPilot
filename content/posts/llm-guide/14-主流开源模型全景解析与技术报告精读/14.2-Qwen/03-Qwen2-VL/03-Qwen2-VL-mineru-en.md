@@ -6,7 +6,7 @@ source_pdf: pdfs/Qwen2-VL-Technical-Report.pdf
 
 # Qwen2-VL Technical Report
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > Original source: Qwen2-VL technical report PDF

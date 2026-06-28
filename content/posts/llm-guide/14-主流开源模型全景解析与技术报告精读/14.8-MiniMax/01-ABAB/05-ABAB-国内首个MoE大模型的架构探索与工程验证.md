@@ -7,7 +7,7 @@ sync_to:
 
 # ABAB 国内首个 MoE 大模型的架构探索与工程验证
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > 本文基于 MiniMax 官方博客及 MoE 领域公开文献, 对 abab 系列最核心的技术贡献——国内首个基于 MoE 架构的通用大语言模型——进行系统性技术剖析. 重点分析其架构选择动机、训练工程实践、长上下文验证, 以及从 abab 到 MiniMax-01 的技术演进脉络.
@@ -53,7 +53,9 @@ MiniMax 押注 MoE 的核心判断包括:
 
 abab 6 采用标准的 MoE 层设计, 其核心机制可以表示为:
 
-$$y = \sum_{i \in \text{TopK}(G(x))} G(x)_i \cdot E_i(x)$$
+$$
+y = \sum_{i \in \text{TopK}(G(x))} G(x)_i \cdot E_i(x)
+$$
 
 其中:
 - $x$ 为输入 token 的隐藏状态

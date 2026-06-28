@@ -4,7 +4,7 @@ title: "OLMo-3 (OLMoE) Technical Report - Segment-by-Segment Translation with Tr
 
 ## 1 引言 (Introduction)
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 
 Despite significant advances in Large Language Models (LMs) on various tasks, there remains a clear trade-off between performance and cost in both training and inference. High-performing LMs are inaccessible for many academics and open-source developers as they are prohibitively expensive to build and deploy. One approach to improve the cost-performance trade-off lies in using sparsely-activated Mixture-of-Experts (MoEs). MoEs have several experts in each layer, only a subset of which is activated at a time (see Figure 2). This makes MoEs significantly more efficient than dense models with a similar number of total parameters, which activate all parameters for every input. For this reason, industry frontier models use MoEs including Gemini-1.5 and reportedly GPT-4.
@@ -41,7 +41,9 @@ OLMOE is a decoder-only LM consisting of NL transformer layers. The feedforward 
 
 OLMOE 是一个仅解码器的语言模型，由 $N_L$ 个 Transformer 层组成。像 OLMo 这样的稠密模型中的前馈网络 (FFN) 被替换为 MoE 模块，该模块由 $N_E$ 个较小的 FFN 模块(称为专家)组成，每个处理的输入 token x 激活其中的 k 个专家子集(也见图 2)：
 
-$$\text{MoE module}(x) = \sum_{i \in \text{Top-}k(r(x))} \text{softmax}(r(x))_i \cdot E_i(x) \tag{1}$$
+$$
+\text{MoE module}(x) = \sum_{i \in \text{Top-}k(r(x))} \text{softmax}(r(x))_i \cdot E_i(x) \tag{1}
+$$
 
 where r, called the router, is a learned linear layer mapping from the input logits to the chosen k experts. A softmax is applied to the router outputs to compute routing probabilities for all NE experts. Each selected expert Ei processes the input x, the output of which is then multiplied with its respective routing probability. The results are then summed across all chosen Top-k experts to constitute the output of the MoE module for a single layer of the model out of its NL total layers.
 
@@ -68,7 +70,9 @@ In summary, we use 1.3B active parameters out of a total of 6.9B, with 8 activat
 
 总之，我们在总计 69 亿参数中使用 13 亿激活参数，每层 64 个专家中激活 8 个。我们使用 dropless token choice 路由：对于每个输入 token，学习的路由器网络确定 8 个专家来处理它。我们从零开始训练 OLMOE-1B-7B，使用两个辅助损失：负载平衡损失 ($L_{\text{LB}}$) 和路由器 z-loss ($L_{\text{RZ}}$)，我们分别在 §4.1.6 和 §4.1.7 中定义和实验。我们将它们乘以各自的损失权重 $\alpha$ 和 $\beta$，并与交叉熵损失 ($L_{\text{CE}}$) 线性求和，得到最终的训练损失：
 
-$$L = L_{\text{CE}} + \alpha L_{\text{LB}} + \beta L_{\text{RZ}} \tag{2}$$
+$$
+L = L_{\text{CE}} + \alpha L_{\text{LB}} + \beta L_{\text{RZ}} \tag{2}
+$$
 
 Our full pretraining configuration for OLMOE-1B-7B is in Appendix B.
 
@@ -272,7 +276,9 @@ Shazeer et al. propose the load balancing loss to penalize the model if it is un
 
 Shazeer 等人提出负载平衡损失来惩罚模型如果它不平衡，即如果它将所有 token 路由到仅少数几个专家。这是基于观察：如果没有这样的惩罚，模型倾向于只更新每层中少数几个专家。为了计算负载平衡损失 ($L_{\text{LB}}$)，我们将路由到一个专家 $E_i$ 的 token 比例 $f_i$ 与分配给 $E_i$ 的总路由概率 $P_i$ 相乘，并在专家数量 $N_E$ 上求和：
 
-$$L_{\text{LB}} = N_E \cdot \sum_{i=1}^{N_E} f_i \cdot P_i \tag{3}$$
+$$
+L_{\text{LB}} = N_E \cdot \sum_{i=1}^{N_E} f_i \cdot P_i \tag{3}
+$$
 
 The loss is further scaled by $N_E$ and a loss weight $\alpha$ (see Equation 2), which is an optional weight to determine the magnitude of the loss commonly set to 0.01. We do not experiment with changing the weight of 0.01.
 
@@ -292,7 +298,9 @@ Zoph et al. propose the router z-loss to improve both the stability and quality 
 
 Zoph 等人提出路由器 z-loss 来改善 MoE 模型的稳定性和质量。这个辅助损失惩罚进入门控网络的大 logits。如此大的 logits 可能导致 MoE 层中大矩阵乘法中的数值溢出。它通过将路由器层之前的 logits $x_j$ 取指数，在专家数量 $N_E$ 上求和，并在批次 $B$ 上取平均来计算，从而使更大的 logits 导致更大的损失：
 
-$$L_{\text{RZ}}(x) = \frac{1}{B} \sum_{i=1}^{B} \left( \log \sum_{j=1}^{N_E} \exp(x_j^{(i)}) \right)^2 \tag{4}$$
+$$
+L_{\text{RZ}}(x) = \frac{1}{B} \sum_{i=1}^{B} \left( \log \sum_{j=1}^{N_E} \exp(x_j^{(i)}) \right)^2 \tag{4}
+$$
 
 The loss is further multiplied with an optional loss weight, $\beta$ (see Equation 2), to determine the magnitude of the loss commonly set to 0.001. We do not experiment with changing the weight of 0.001.
 
@@ -434,8 +442,7 @@ We define router saturation as the proportion of expert activations at some inte
 我们将路由饱和定义为：在某个中间检查点 t 时刻的专家激活，与同一数据集上最终检查点的专家 ID 匹配的比例：
 
 $$
-\text{Router Saturation}(t) = \frac{1}{N} \sum_{i=1}^{N} \frac{|E_i^{(t)} \cap E_i^{(T)}|}{k},
-\tag{5}
+\text{Router Saturation}(t) = \frac{1}{N} \sum_{i=1}^{N} \frac{|E_i^{(t)} \cap E_i^{(T)}|}{k}, \tag{5}
 $$
 
 where:
@@ -472,8 +479,7 @@ We define expert co-activation as the proportion of times two specific experts, 
 我们将专家共激活定义为：两个特定专家 Ei 和 Ej 同时被激活的次数，占其中一个专家总激活次数的比例：
 
 $$
-\text{Expert co-activation}(E_i, E_j) = \frac{N_{E_i,E_j}}{N_{E_i}},
-\tag{6}
+\text{Expert co-activation}(E_i, E_j) = \frac{N_{E_i,E_j}}{N_{E_i}}, \tag{6}
 $$
 
 where:
@@ -508,8 +514,7 @@ We define domain specialization as the proportion of tokens from a particular do
 我们将领域专业化定义为：来自特定领域 D 的 token 中，被路由到特定专家 Ei 的比例：
 
 $$
-\text{Domain specialization}(E_i, D) = \frac{N^{(k)}_{E_i,D}}{N_D},
-\tag{7}
+\text{Domain specialization}(E_i, D) = \frac{N^{(k)}_{E_i,D}}{N_D}, \tag{7}
 $$
 
 where:
@@ -551,8 +556,7 @@ We define vocabulary specialization as the proportion of tokens with a token ID 
 我们将词汇专业化定义为：具有特定 token ID x(也称词汇元素)的 token 中，被路由到某一层内特定专家 Ei 的比例：
 
 $$
-\text{Vocabulary specialization}(E_i, x) = \frac{N^{(k)}_{x,E_i}}{N_x},
-\tag{8}
+\text{Vocabulary specialization}(E_i, x) = \frac{N^{(k)}_{x,E_i}}{N_x}, \tag{8}
 $$
 
 where:

@@ -7,7 +7,7 @@ sync_to:
 
 # DeepSeek-V3.1 混合推理模式的设计与实现
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文基于 DeepSeek-V3.1 官方博客、API 文档及 vLLM/SGLang 社区实践, 对 V3.1 最核心的产品级创新——混合推理模式(Hybrid Inference)——进行系统性技术剖析. 重点分析其设计动机、实现机制、与业界同类方案的对比, 以及工程落地中的已知问题与局限.

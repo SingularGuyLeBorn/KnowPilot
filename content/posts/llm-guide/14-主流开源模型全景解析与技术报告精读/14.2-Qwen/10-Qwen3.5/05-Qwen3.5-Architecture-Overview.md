@@ -5,7 +5,7 @@ description: 从工程视角拆解 Qwen3.5-397B-A17B 的混合注意力、稀疏
 
 # Qwen3.5 核心架构剖析
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 本文基于 Qwen3.5 官方技术博客的精译内容, 从设计动机、工程落地、数据可信性、谱系演进与潜在风险五个维度, 对模型核心架构做系统性拆解. 分析对象为 Qwen3.5-397B-A17B: 397B 总参数, 17B 激活参数, 1M tokens 上下文窗口, 支持 201 种语言的原生多模态模型.
@@ -22,11 +22,15 @@ description: 从工程视角拆解 Qwen3.5-397B-A17B 的混合注意力、稀疏
 
 第一, **线性注意力的 $O(n)$ 复杂度在长序列下具有不可替代的吞吐量优势**. Gated Delta Networks 通过门控状态更新机制, 将注意力计算从二次降为线性. 标准 Softmax 注意力的输出为:
 
-$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V \tag{1}$$
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V \tag{1}
+$$
 
 其复杂度为 $O(n^2 \cdot d)$. 线性注意力将 Softmax 核函数替换为特征映射 $\phi$, 使得:
 
-$$\text{LinearAttn}(Q, K, V) = \frac{\phi(Q) \cdot (\phi(K)^T \cdot V)}{\phi(Q) \cdot \sum_{i=1}^{n} \phi(K_i)} \tag{2}$$
+$$
+\text{LinearAttn}(Q, K, V) = \frac{\phi(Q) \cdot (\phi(K)^T \cdot V)}{\phi(Q) \cdot \sum_{i=1}^{n} \phi(K_i)} \tag{2}
+$$
 
 通过将 $\phi(K)^T \cdot V$ 预先计算为累积状态矩阵, 整个序列的复杂度降为 $O(n \cdot d^2)$. 当 $n \gg d$ 时, 这就是从 $O(n^2)$ 到 $O(n)$ 的质变.
 

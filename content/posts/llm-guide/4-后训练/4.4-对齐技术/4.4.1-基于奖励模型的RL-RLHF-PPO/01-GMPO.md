@@ -43,25 +43,35 @@ GRPO提出了一种极为巧妙的替代方案: **“好”与“坏”是相对
 
 基于上述分析，建立如下数学关系：
 
-$$ \mu_G = \frac{1}{G} \sum_{j=1}^G R(o_j) \tag{1} $$
+$$
+ \mu_G = \frac{1}{G} \sum_{j=1}^G R(o_j) \tag{1}
+$$
 - **奖励标准差 (Reward Standard Deviation):**
 
-$$ \sigma_G = \sqrt{\frac{1}{G} \sum_{j=1}^G (R(o_j) - \mu_G)^2} \tag{2} $$
+$$
+ \sigma_G = \sqrt{\frac{1}{G} \sum_{j=1}^G (R(o_j) - \mu_G)^2} \tag{2}
+$$
 **3. 计算群体相对奖励 (优势)** 
 
 - 对于群体中的每一个样本 $o_i$, 其相对奖励 (即优势) $A_i^G$ 计算如下:
 
-$$ A_i^G = \frac{R(o_i) - \mu_G}{\sigma_G + \epsilon} \tag{3} $$
+$$
+ A_i^G = \frac{R(o_i) - \mu_G}{\sigma_G + \epsilon} \tag{3}
+$$
 - 其中, $\epsilon$ 是一个极小的平滑项, 用于防止分母为零.式 (3) 将原始奖励转化为以群体均值为中心、以群体标准差为尺度的标准化分数，使得不同问题或不同批次之间的优势值具有可比性. 
 
 **4. 构建损失函数并更新**
 
 - GRPO的最终目标是最大化那些相对奖励 (优势) 为正的样本的概率, 同时最小化相对奖励为负的样本的概率.- 每个样本 $o_i$ 的损失 $L_i(\theta)$ 定义为:
 
-$$ L_i(\theta) = -\log \pi_\theta(o_i|q) \cdot A_i^G \tag{4} $$
+$$
+ L_i(\theta) = -\log \pi_\theta(o_i|q) \cdot A_i^G \tag{4}
+$$
 - **引导性问题:** 为什么这里有一个负号? 因为在梯度下降中, 我们希望最小化损失. 当优势 $A_i^G$ 为正 (好答案) 时, 我们希望 $\log \pi_\theta$ 变大 (即概率变大), 此时损失 $L_i(\theta)$ 为负, 最小化它就等同于最大化 $\log \pi_\theta$. 反之亦然.- 最终的目标函数 $J_{\text{GRPO}}(\theta)$ 会综合考虑一个批次中所有样本的平均损失, 并加入一个**KL散度 (KL Divergence)** 惩罚项, 以防止新策略 $\pi_\theta$ 偏离旧策略 $\pi_{\theta_{\text{old}}}$ 太远, 从而保证训练稳定.
 
-$$ J_{\text{GRPO}}(\theta) = \mathbb{E} \left[ \frac{1}{G} \sum_{i=1}^G L_i(\theta) \right] - \beta D_{\text{KL}}(\pi_{\theta_{\text{old}}} \| \pi_\theta) \tag{5} $$
+$$
+ J_{\text{GRPO}}(\theta) = \mathbb{E} \left[ \frac{1}{G} \sum_{i=1}^G L_i(\theta) \right] - \beta D_{\text{KL}}(\pi_{\theta_{\text{old}}} \| \pi_\theta) \tag{5}
+$$
 
 式 (5) 的物理含义是：策略更新时不仅追求群体内的相对高分答案，还必须支付一个与旧策略的 KL 散度"代价". 这保证了模型不会为了迎合某一批次的奖励分布而剧烈改变自身行为，从而维持训练的稳定性. 在实际场景中，$\beta$ 的大小决定了这种保守程度——$\beta$ 越大，模型越"谨慎"，每一步更新都紧贴旧策略; $\beta$ 越小，模型越"激进"，愿意为了追求更高的群体相对奖励而承担更大的分布偏移风险. 
 
@@ -146,12 +156,16 @@ GMPO的核心思想非常直观: **将GRPO的优化目标从最大化token级奖
 
 GMPO的核心目标函数 (为清晰起见, 省略裁剪) 如下:
 
-$$ J_{\text{GMPO}}(\pi_\theta) = \mathbb{E} \left[ \frac{1}{G} \sum_{i=1}^G \left( \prod_{t=1}^{|o_i|} \frac{\pi_\theta(o_{i,t}|q, o_{i,<t})}{\pi_{\theta_{old}}(o_{i,t}|q, o_{i,<t})} \right)^{\frac{1}{|o_i|}} \cdot \hat{A}_i \right] \tag{6} $$
+$$
+ J_{\text{GMPO}}(\pi_\theta) = \mathbb{E} \left[ \frac{1}{G} \sum_{i=1}^G \left( \prod_{t=1}^{|o_i|} \frac{\pi_\theta(o_{i,t}|q, o_{i,<t})}{\pi_{\theta_{old}}(o_{i,t}|q, o_{i,<t})} \right)^{\frac{1}{|o_i|}} \cdot \hat{A}_i \right] \tag{6}
+$$
 - **与GRPO对比:** GRPO 在式 (5) 中对每个样本使用算术平均 $\sum (\text{ratio} \cdot \hat{A}_i)$，而 GMPO 在式 (6) 中将同一序列内的 token 级重要性比率改为几何平均 $(\prod \text{ratio})^{1/|o_i|} \cdot \hat{A}_i$. 关键差异在于聚合算子由求和变成了连乘后开方，这使得离群值比率的影响被指数平滑所抑制. 
 
 - **对数空间:** 在实践中, 为了计算稳定, 通常在对数空间操作. GMPO的目标等价于:
 
-$$ \log J_{\text{GMPO}} \propto \frac{1}{|o_i|} \sum_{t=1}^{|o_i|} \log(\text{ratio}) + \log(\hat{A}_i) \tag{7} $$
+$$
+ \log J_{\text{GMPO}} \propto \frac{1}{|o_i|} \sum_{t=1}^{|o_i|} \log(\text{ratio}) + \log(\hat{A}_i) \tag{7}
+$$
 式 (7) 将式 (6) 中的连乘转化为对数空间中的算术平均，既避免了数值下溢，又保留了几何平均对离群值的鲁棒性. 
 
 ### 3.3 为何GMPO更稳定: 梯度视角
@@ -160,11 +174,15 @@ $$ \log J_{\text{GMPO}} \propto \frac{1}{|o_i|} \sum_{t=1}^{|o_i|} \log(\text{ra
 
 **GRPO Gradient:**
 基于上述分析，建立如下数学关系：
-$$ \nabla_\theta J_{\text{GRPO}} \propto \left( \sum_{t=1}^{|o_i|} \nabla_\theta \log \pi_\theta(o_{i,t}) \right) \cdot \left( \frac{\pi_\theta(o_i)}{\pi_{\theta_{old}}(o_i)} \hat{A}_i \right) \tag{8} $$
+$$
+ \nabla_\theta J_{\text{GRPO}} \propto \left( \sum_{t=1}^{|o_i|} \nabla_\theta \log \pi_\theta(o_{i,t}) \right) \cdot \left( \frac{\pi_\theta(o_i)}{\pi_{\theta_{old}}(o_i)} \hat{A}_i \right) \tag{8}
+$$
 此式描述了变量之间的定量关系，其物理意义将在下文详细阐述. 
 **GMPO Gradient:**
 该公式的推导过程如下：
-$$ \nabla_\theta J_{\text{GMPO}} \propto \left( \frac{1}{|o_i|} \sum_{t=1}^{|o_i|} \nabla_\theta \log \pi_\theta(o_{i,t}) \right) \cdot \hat{A}_i \tag{9} $$
+$$
+ \nabla_\theta J_{\text{GMPO}} \propto \left( \frac{1}{|o_i|} \sum_{t=1}^{|o_i|} \nabla_\theta \log \pi_\theta(o_{i,t}) \right) \cdot \hat{A}_i \tag{9}
+$$
 对比式 (8) 与式 (9) 可见，GMPO 去掉了容易产生离群值的序列级比率项 $\pi_\theta(o_i)/\pi_{\theta_{old}}(o_i)$，同时将梯度天然地按序列长度 $|o_i|$ 归一化，直接缓解了 GRPO 中的响应长度偏差. 
 
 **关键洞察:**

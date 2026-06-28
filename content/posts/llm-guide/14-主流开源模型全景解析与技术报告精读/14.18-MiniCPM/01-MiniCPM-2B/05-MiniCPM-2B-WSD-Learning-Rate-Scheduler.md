@@ -4,7 +4,7 @@ title: "MiniCPM WSD 学习率调度器深度解析"
 
 # MiniCPM WSD 学习率调度器深度解析
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文定位: MiniCPM 技术报告第 3 节 "WSD Learning Rate Scheduler"

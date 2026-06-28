@@ -233,7 +233,6 @@ $$
 
 $$
 \text{AI}_{\text{attention}} = \frac{4 \cdot B \cdot H \cdot N^2 \cdot D}{\text{total\_bytes\_moved}} \tag{8}
-
 $$
 
 **手动实现的内存访问**: 需要读取 $Q, K, V$($3 \cdot B \cdot N \cdot H \cdot D$), 写入 $S, A, O$($2 \cdot B \cdot H \cdot N^2 + B \cdot N \cdot H \cdot D$), 总计约 $2 \cdot B \cdot H \cdot N^2 \cdot 4$ bytes(FP32)或 $2 \cdot B \cdot H \cdot N^2 \cdot 2$ bytes(FP16). 

@@ -9,7 +9,7 @@ date: 2026-05-19
 
 # DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 DeepSeek-AI research@deepseek.com

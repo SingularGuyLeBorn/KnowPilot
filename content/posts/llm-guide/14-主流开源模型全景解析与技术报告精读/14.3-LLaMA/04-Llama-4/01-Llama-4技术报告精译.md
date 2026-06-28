@@ -4,7 +4,7 @@ title: "Llama-4 技术报告精译"
 
 # Llama 4: 原生多模态 MoE 模型的技术解读
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 > 信息来源: Meta 官方 Model Card、GitHub 开源代码 (llama-models)、Meta AI 博客、以及社区公开资料。Llama 4 暂未发布正式 arXiv 技术报告,本文基于官方已公开的技术细节进行系统性梳理与解读。

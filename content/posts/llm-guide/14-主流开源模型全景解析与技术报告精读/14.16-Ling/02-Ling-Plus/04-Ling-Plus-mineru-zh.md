@@ -6,7 +6,7 @@ translator: "MinerU + 人工精校"
 
 # 每 FLOP 都算数：在无高端 GPU 的情况下扩展 300B MoE Ling 大模型
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 > **原文标题**: EVERY FLOP COUNTS: SCALING A 300B MIXTURE-OF-EXPERTS LING LLM WITHOUT PREMIUM GPUS

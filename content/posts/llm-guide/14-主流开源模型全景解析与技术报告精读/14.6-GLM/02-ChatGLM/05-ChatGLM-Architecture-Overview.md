@@ -4,7 +4,7 @@ title: "ChatGLM三代迭代与开源生态建设剖析"
 
 # ChatGLM 三代迭代与开源生态建设剖析
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 > 信息来源: ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools (arXiv:2406.12793v2)
@@ -85,7 +85,9 @@ ChatGLM3-6B 的核心变化不在架构,而在**能力范围**:
 
 智谱 AI 的迭代哲学可以概括为:
 
-$$ \text{小模型探路} \rightarrow \text{验证假设} \rightarrow \text{大模型验证} \rightarrow \text{产品化} $$
+$$
+ \text{小模型探路} \rightarrow \text{验证假设} \rightarrow \text{大模型验证} \rightarrow \text{产品化}
+$$
 
 在 ChatGLM 的开发过程中,团队同时训练了 1.5B、3B、12B、32B、66B 和 130B 参数的模型,以验证观察结果并建立自己的 scaling laws. 这种多尺度实验设计使得团队能够在 6B 模型上快速试错(数周即可完成训练),然后将验证成功的技术迁移到更大规模.
 

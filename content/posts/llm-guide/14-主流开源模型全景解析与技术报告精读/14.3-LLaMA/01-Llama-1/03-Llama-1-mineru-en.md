@@ -6,7 +6,7 @@ source_pdf: Llama-1.pdf
 
 # Llama-1 Technical Report
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 > Original source: Llama-1 technical report PDF

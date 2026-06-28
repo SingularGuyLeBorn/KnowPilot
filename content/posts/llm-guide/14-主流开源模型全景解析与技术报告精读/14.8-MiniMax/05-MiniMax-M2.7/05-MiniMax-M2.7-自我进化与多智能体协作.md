@@ -4,7 +4,7 @@ title: "MiniMax-M2.7自我进化与多智能体协作"
 
 # MiniMax M2.7 自我进化与多智能体协作剖析
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > 信息来源: MiniMax M2.7: Early Echoes of Self-Evolution (MiniMax Blog, 2026-03-18)

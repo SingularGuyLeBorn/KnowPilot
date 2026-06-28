@@ -4,7 +4,7 @@ title: "MiniCPM-2B-128K 技术报告精译"
 
 # MiniCPM-2B-128K 技术报告精译
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文来源: MiniCPM 主论文(arXiv:2404.06395)Section 6.2 + 官方博客/ModelScope 模型卡

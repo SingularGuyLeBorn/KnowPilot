@@ -5,7 +5,7 @@ status: completed
 
 # Qwen3.5: 以原生多模态智能体加速生产力
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 原文标题: Qwen3.5: Accelerating Productivity with Native Multimodal Agents

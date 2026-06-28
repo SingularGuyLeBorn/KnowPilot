@@ -10,18 +10,18 @@ tags: [Agent, 智能体, ReAct, 多Agent系统, MCP, Agentic RL]
 
 | 编号 | 文章 | 核心内容 | 难度 |
 |------|------|----------|------|
-| 13.1 | [Agent 组件](./13.1-Agent组件/13.1-Agent组件.md) | 感知、推理、行动、记忆,ReAct 循环,工具执行,MCP | ⭐⭐⭐ |
-| 13.1.1 | [记忆系统](./13.1-Agent组件/13.1.1-记忆系统.md) | 短期/长期记忆、向量检索、知识图谱 | ⭐⭐⭐ |
-| 13.1.2 | [工具执行与 MCP](./13.1-Agent组件/13.1.2-工具执行与MCP.md) | Tool Registry、Function Calling、MCP 协议 | ⭐⭐⭐ |
-| 13.1.3 | [记忆压缩](./13.1-Agent组件/13.1.3-记忆压缩.md) | 摘要压缩、选择性保留、分层存储 | ⭐⭐⭐ |
-| 13.1.4 | [Agentic RL 训练](./13.1-Agent组件/13.1.4-AgenticRL训练.md) | 环境建模、奖励设计、PPO/GRPO/DAPO | ⭐⭐⭐⭐ |
-| 13.1.5 | [Benchmark 与 Eval](./13.1-Agent组件/13.1.5-Benchmark与Eval.md) | SWE-Bench、WebArena、OSWorld、GAIA | ⭐⭐⭐ |
-| 13.1.6 | [代码沙箱](./13.1-Agent组件/13.1.6-代码沙箱.md) | Docker、Firecracker、E2B、浏览器沙箱 | ⭐⭐⭐ |
-| 13.1.7 | [结构化输出](./13.1-Agent组件/13.1.7-结构化输出.md) | JSON Schema、XML、约束解码、Outlines | ⭐⭐⭐ |
-| 13.2 | [Agent 与控制论](./13.2-Agent与控制论/13.2-Agent与控制论.md) | 反馈循环、稳定性分析、PID 控制与 Agent 的映射 | ⭐⭐⭐⭐ |
-| 13.3 | [多 Agent 系统](./13.3-多Agent系统/13.3-多Agent系统.md) | 协作协议、角色分配、冲突解决、涌现行为 | ⭐⭐⭐⭐ |
-| 13.4 | [设计模式与实现](./13.4-设计模式与实现/13.4-设计模式与实现.md) | ReAct、Plan-and-Solve、Reflexion、AutoGPT 模式 | ⭐⭐⭐ |
-| 13.5 | [IDE 解析](./13.5-IDE解析/13.5-IDE解析.md) | Cursor Agent、GitHub Copilot Agent 的工程实现 | ⭐⭐⭐ |
+| 13.1 | [Agent 组件](./13.1-Agent组件/13.1-Agent组件.md) | 感知、推理、行动、记忆,ReAct 循环,工具执行,MCP |  |
+| 13.1.1 | [记忆系统](./13.1-Agent组件/13.1.1-记忆系统.md) | 短期/长期记忆、向量检索、知识图谱 |  |
+| 13.1.2 | [工具执行与 MCP](./13.1-Agent组件/13.1.2-工具执行与MCP.md) | Tool Registry、Function Calling、MCP 协议 |  |
+| 13.1.3 | [记忆压缩](./13.1-Agent组件/13.1.3-记忆压缩.md) | 摘要压缩、选择性保留、分层存储 |  |
+| 13.1.4 | [Agentic RL 训练](./13.1-Agent组件/13.1.4-AgenticRL训练.md) | 环境建模、奖励设计、PPO/GRPO/DAPO |  |
+| 13.1.5 | [Benchmark 与 Eval](./13.1-Agent组件/13.1.5-Benchmark与Eval.md) | SWE-Bench、WebArena、OSWorld、GAIA |  |
+| 13.1.6 | [代码沙箱](./13.1-Agent组件/13.1.6-代码沙箱.md) | Docker、Firecracker、E2B、浏览器沙箱 |  |
+| 13.1.7 | [结构化输出](./13.1-Agent组件/13.1.7-结构化输出.md) | JSON Schema、XML、约束解码、Outlines |  |
+| 13.2 | [Agent 与控制论](./13.2-Agent与控制论/13.2-Agent与控制论.md) | 反馈循环、稳定性分析、PID 控制与 Agent 的映射 |  |
+| 13.3 | [多 Agent 系统](./13.3-多Agent系统/13.3-多Agent系统.md) | 协作协议、角色分配、冲突解决、涌现行为 |  |
+| 13.4 | [设计模式与实现](./13.4-设计模式与实现/13.4-设计模式与实现.md) | ReAct、Plan-and-Solve、Reflexion、AutoGPT 模式 |  |
+| 13.5 | [IDE 解析](./13.5-IDE解析/13.5-IDE解析.md) | Cursor Agent、GitHub Copilot Agent 的工程实现 |  |
 
 ## 1. 章节定位与价值
 

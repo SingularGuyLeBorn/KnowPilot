@@ -5,9 +5,9 @@ status: published
 
 # Llama-1 核心架构剖析
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
-> ⏱️ **更新时间**: 2026-05-24
-> 🎯 **核心聚焦**: Base Dense Route、超大规模数据清洗、Scaling Laws (推理优先)、极限工程优化。
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **更新时间**: 2026-05-24
+>  **核心聚焦**: Base Dense Route、超大规模数据清洗、Scaling Laws (推理优先)、极限工程优化。
 
 ## 引言：重新定义开源模型的标准线
 
@@ -40,13 +40,19 @@ Llama-1 最具颠覆性的贡献并不在于发明了某种革命性的全新架
 
 **原理推导：**
 标准的 LayerNorm 需要计算均值 $\mu$ 和方差 $\sigma^2$：
-$$y = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} \odot \gamma + \beta$$
+$$
+y = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} \odot \gamma + \beta
+$$
 
 RMSNorm 的作者(Biao Zhang et al., 2019)发现，LayerNorm 带来的收益大部分来自于平移不变性(均值中心化)和缩放不变性(方差归一化)中的**缩放不变性**。因此，直接移除均值计算，不仅不会降低性能，反而能减少 10%-40% 的计算开销。
 
 RMSNorm 的公式极简：
-$$RMS(x) = \sqrt{\frac{1}{d}\sum_{i=1}^{d}x_i^2}$$
-$$\bar{x} = \frac{x}{RMS(x)} \odot \gamma$$
+$$
+RMS(x) = \sqrt{\frac{1}{d}\sum_{i=1}^{d}x_i^2}
+$$
+$$
+\bar{x} = \frac{x}{RMS(x)} \odot \gamma
+$$
 
 **工程实现(PyTorch 伪代码)：**
 ```python
@@ -77,7 +83,9 @@ Swish 激活函数定义为：$Swish_\beta(x) = x \cdot \sigma(\beta x)$。
 GLU (Gated Linear Unit) 的标准形式是：$GLU(x, W, V, b, c) = \sigma(xW + b) \otimes (xV + c)$。
 
 结合两者，SwiGLU 的公式为：
-$$SwiGLU(x, W, V) = Swish_\beta(xW) \otimes (xV)$$
+$$
+SwiGLU(x, W, V) = Swish_\beta(xW) \otimes (xV)
+$$
 其中 $\otimes$ 为逐元素相乘。SwiGLU 引入了门控机制(Gating Mechanism)，允许网络动态地决定哪些信息应该被向前传递，这种乘法交互相较于传统的加法交互(如 ResNet)具有更强的表达能力。
 
 **工程实现(PyTorch 伪代码)：**
@@ -106,7 +114,9 @@ class SwiGLU(nn.Module):
 RoPE 的绝妙之处在于它通过**绝对位置的旋转操作，实现了相对位置编码的效果**。它将词嵌入向量映射到复数平面，通过旋转一定的角度来赋予位置信息。
 
 给定位置 $m$ 的词向量 $q$，其在复平面上的旋转可表示为：
-$$f(q, m) = (q_0 + i q_1) e^{i m \theta}$$
+$$
+f(q, m) = (q_0 + i q_1) e^{i m \theta}
+$$
 转换为实数矩阵表示：
 $$
 \begin{pmatrix} q_0^{(m)} \\ q_1^{(m)} \end{pmatrix} =

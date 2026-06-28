@@ -82,8 +82,12 @@ Grok-1 每一层的 Feed-Forward Network (FFN) 都被替换成了 8 个并行的
 
 给定输入 token 的隐藏状态 $x$，门控权重矩阵 $W_g$：
 
-$$ \text{Router\_Logits} = x \cdot W_g $$
-$$ \text{Gate\_Scores} = \text{TopK}(\text{Softmax}(\text{Router\_Logits}), k=2) $$
+$$
+ \text{Router\_Logits} = x \cdot W_g
+$$
+$$
+ \text{Gate\_Scores} = \text{TopK}(\text{Softmax}(\text{Router\_Logits}), k=2)
+$$
 
 通过只激活 $k=2$ 个专家，Grok-1 在保持 314B 总参数量(庞大的知识容量)的同时，每次推理只带来了大约 39B 参数的计算量. 这极大地提高了计算效率，降低了推理时的算力瓶颈，但在分布式训练时却带来了巨大的显存与通信带宽挑战. 
 
@@ -128,7 +132,9 @@ class GrokMoERouter(nn.Module):
 在 MoE 训练中，一个常见的问题是“专家崩溃(Expert Collapse)”，即网络倾向于将所有的 tokens 都分配给少数几个已经训练得较好的专家，导致其他专家被闲置. 
 为了解决这个问题，Grok 在损失函数中引入了辅助负载均衡损失(Auxiliary Loss)：
 
-$$ L_{aux} = \alpha \cdot N \sum_{i=1}^{N} f_i \cdot P_i $$
+$$
+ L_{aux} = \alpha \cdot N \sum_{i=1}^{N} f_i \cdot P_i
+$$
 
 其中：
 *   $N$ 是专家总数(8). 

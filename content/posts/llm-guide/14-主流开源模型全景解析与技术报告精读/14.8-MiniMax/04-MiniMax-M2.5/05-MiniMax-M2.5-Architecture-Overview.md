@@ -4,7 +4,7 @@ title: "MiniMax-M2.5真实世界生产力与Agent原生RL框架剖析"
 
 # MiniMax M2.5 真实世界生产力与 Agent 原生 RL 框架剖析
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > **分析基础**: MiniMax M2.5: Built for Real-World Productivity (MiniMax Blog, 2026-02-12)

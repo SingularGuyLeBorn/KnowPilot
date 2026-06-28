@@ -57,7 +57,9 @@ FlashAttention-v2 对此执行了极其精巧的**嵌套循环顺序交换 (Nest
 
 FlashAttention-v2 引入了**标度延迟融合 (Delayed Scaling)**: 
 
-$$\tilde{Q} = \frac{1}{\sqrt{D_{head}}} \cdot Q \tag{1}$$
+$$
+\tilde{Q} = \frac{1}{\sqrt{D_{head}}} \cdot Q \tag{1}
+$$
 
 **我们将原本需要作用于中间分数矩阵的标度运算, 通过代数等价交换, 提前在外部直接作用于输入矩阵 $Q$！因为 $Q$ 的维度是 $N \times D_{head}$, 其大小远远小于 $N \times N$ 的分数矩阵, 这一简单的等价变换, 直接消除了高达 $O(N^2)$ 次的逐元素乘法操作, 将其压缩到了极限的 $O(ND_{head})$ 次寄存器变换. **
 
@@ -65,9 +67,13 @@ $$\tilde{Q} = \frac{1}{\sqrt{D_{head}}} \cdot Q \tag{1}$$
 在流式 Online Softmax 递推更新中, 每次合并不同的分块时都需要乘以指数补偿因子 $exp(m_i^{(old)} - m_i)$.
 在底层的 CUDA 汇编层面, FlashAttention-v2 通过 **Fused Multiply-Add (FMA)** 指令, 将这一指数乘法与局部输出矩阵 $O_i$ 的标度更新完美融合进了单条寄存器指令周期内：
 
-$$d_i \leftarrow d_i \cdot exp\left(m_i^{(old)} - m_i\right) + d_i^{(new)} \tag{2}$$
+$$
+d_i \leftarrow d_i \cdot exp\left(m_i^{(old)} - m_i\right) + d_i^{(new)} \tag{2}
+$$
 
-$$O_i \leftarrow O_i \cdot \left[exp\left(m_i^{(old)} - m_i\right)\right] + \tilde{O}_i^{(new)} \tag{3}$$
+$$
+O_i \leftarrow O_i \cdot \left[exp\left(m_i^{(old)} - m_i\right)\right] + \tilde{O}_i^{(new)} \tag{3}
+$$
 
 公式 (2) 和 (3) 的底层操作在更新时, 寄存器指针不需要发生任何抖动, 指令完全在原位寄存器内被无缝消费, 最大化规避了寄存器溢出 (Register Spilling) 带来的显存交换开销.
 

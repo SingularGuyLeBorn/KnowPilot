@@ -4,7 +4,7 @@ title: "MiniCPM3-4B 端侧工具调用与无限长文本处理"
 
 # MiniCPM3-4B: 端侧工具调用与无限长文本处理
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 本文聚焦 MiniCPM3-4B 的两项核心创新: (1) 在 40 亿参数规模上实现端侧最强 Function Calling 能力; (2) 通过 LLMxMapReduce 机制突破 Transformer 长文本瓶颈。我们将从工程原理、实现挑战和实际应用三个维度展开深度分析。
@@ -203,19 +203,25 @@ MiniCPM3-4B 的技术路线直接影响了后续 MiniCPM4(2025.06)和 MiniCPM4.1
 
 **自注意力计算复杂度**:
 
-$$ \text{FLOPs}_{\text{attention}} = 2 \times n^2 \times d_{\text{head}} \times h $$
+$$
+ \text{FLOPs}_{\text{attention}} = 2 \times n^2 \times d_{\text{head}} \times h
+$$
 
 其中 $n$ 为序列长度，$d_{\text{head}}$ 为每个注意力头的维度，$h$ 为注意力头数。当 $n$ 从 4K 增加到 128K 时，FLOPs 增长 1,024 倍。
 
 **MapReduce 分块后的复杂度**:
 
-$$ \text{FLOPs}_{\text{MapReduce}} = \frac{n}{k} \times 2 \times k^2 \times d_{\text{head}} \times h + \text{FLOPs}_{\text{reduce}} $$
+$$
+ \text{FLOPs}_{\text{MapReduce}} = \frac{n}{k} \times 2 \times k^2 \times d_{\text{head}} \times h + \text{FLOPs}_{\text{reduce}}
+$$
 
 其中 $k$ 为每个片段的长度，$n/k$ 为片段数量。第一项为 Map 阶段总 FLOPs，第二项为 Reduce 阶段开销。当 $k \ll n$ 时，整体复杂度从 O(n^2) 降至 O(nk)。
 
 **LoRA 低秩适配**:
 
-$$ h = W_0 x + \Delta W x = W_0 x + B A x $$
+$$
+ h = W_0 x + \Delta W x = W_0 x + B A x
+$$
 
 其中 $W_0$ 为预训练权重(frozen)，$B \in \mathbb{R}^{d \times r}$，$A \in \mathbb{R}^{r \times k}$，$r \ll \min(d, k)$。训练时只更新 $A$ 和 $B$，参数量从 $d \times k$ 降至 $r \times (d + k)$。
 

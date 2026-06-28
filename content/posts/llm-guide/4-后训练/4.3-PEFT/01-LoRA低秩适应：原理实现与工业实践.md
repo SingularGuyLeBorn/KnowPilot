@@ -48,7 +48,9 @@ Aghajanyan et al. (2020, [Intrinsic Dimensionality Explains the Effectiveness of
 
 这意味着，为适应下游任务所需的权重变化 $\Delta W$ 并非满秩矩阵，而是可以被一个低秩矩阵充分近似：
 
-$$\text{rank}(\Delta W) \ll \min(d, k)$$
+$$
+\text{rank}(\Delta W) \ll \min(d, k)
+$$
 
 其中 $W \in \mathbb{R}^{d \times k}$ 为某一层权重矩阵，$d$ 为输出维度，$k$ 为输入维度. 
 
@@ -64,11 +66,15 @@ Hu et al. (2021, [LoRA](https://arxiv.org/abs/2106.09685)) 将这一洞察形式
 
 **原始前向传播：**
 
-$$h = W_0 x \tag{3.1}$$
+$$
+h = W_0 x \tag{3.1}
+$$
 
 **LoRA 微调后的前向传播：**
 
-$$h = W_0 x + \Delta W \, x = W_0 x + B A x \tag{3.2}$$
+$$
+h = W_0 x + \Delta W \, x = W_0 x + B A x \tag{3.2}
+$$
 
 其中：
 - $W_0$：**冻结**，训练期间不计算梯度，不更新
@@ -82,15 +88,21 @@ $$h = W_0 x + \Delta W \, x = W_0 x + B A x \tag{3.2}$$
 
 **证明**：将 $B^{(0)} = 0$ 代入式 (3.2)：
 
-$$h^{(0)} = W_0 x + 0 \cdot A^{(0)} x = W_0 x \tag{3.3}$$
+$$
+h^{(0)} = W_0 x + 0 \cdot A^{(0)} x = W_0 x \tag{3.3}
+$$
 
 因此 $t=0$ 时刻的梯度仅通过 $A$ 传播：
 
-$$\frac{\partial \mathcal{L}}{\partial A} = \frac{\partial \mathcal{L}}{\partial h} \cdot \frac{\partial h}{\partial A} = B^\top \frac{\partial \mathcal{L}}{\partial h} x^\top = 0 \quad \text{(因为 } B=0 \text{)}$$
+$$
+\frac{\partial \mathcal{L}}{\partial A} = \frac{\partial \mathcal{L}}{\partial h} \cdot \frac{\partial h}{\partial A} = B^\top \frac{\partial \mathcal{L}}{\partial h} x^\top = 0 \quad \text{(因为 } B=0 \text{)}
+$$
 
 此处出现"零梯度"？实际上需要更精确地展开. 设 $h = W_0 x + BAx$，则：
 
-$$\frac{\partial \mathcal{L}}{\partial B} = \frac{\partial \mathcal{L}}{\partial h} (Ax)^\top, \quad \frac{\partial \mathcal{L}}{\partial A} = B^\top \frac{\partial \mathcal{L}}{\partial h} x^\top \tag{3.4}$$
+$$
+\frac{\partial \mathcal{L}}{\partial B} = \frac{\partial \mathcal{L}}{\partial h} (Ax)^\top, \quad \frac{\partial \mathcal{L}}{\partial A} = B^\top \frac{\partial \mathcal{L}}{\partial h} x^\top \tag{3.4}
+$$
 
 当 $B=0$ 时，$\partial \mathcal{L}/\partial A = 0$，但 $\partial \mathcal{L}/\partial B = \frac{\partial \mathcal{L}}{\partial h} (A^{(0)}x)^\top \neq 0$(只要 $A^{(0)}$ 非零). 因此：
 
@@ -103,7 +115,9 @@ $$\frac{\partial \mathcal{L}}{\partial B} = \frac{\partial \mathcal{L}}{\partial
 
 **定理 3.2**(Eckart-Young-Mirsky)：对矩阵 $\Delta W$ 的最佳秩-$r$ 近似(Frobenius 范数意义下)由截断 SVD 给出：
 
-$$\Delta W^* = U_r \Sigma_r V_r^\top = \sum_{i=1}^{r} \sigma_i u_i v_i^\top \tag{3.5}$$
+$$
+\Delta W^* = U_r \Sigma_r V_r^\top = \sum_{i=1}^{r} \sigma_i u_i v_i^\top \tag{3.5}
+$$
 
 LoRA 用梯度下降学习 $B$ 和 $A$，而非直接计算 SVD. 但当训练收敛时，$BA$ 近似于对最优 $\Delta W$ 的低秩投影. 
 
@@ -117,13 +131,13 @@ LoRA 用梯度下降学习 $B$ 和 $A$，而非直接计算 SVD. 但当训练收
 
 | 目标矩阵 | 维度(Llama 2 7B, hidden=4096) | 是否常用 | 物理意义 |
 |---------|-------------------------------|---------|---------|
-| $W_q$ | $4096 \times 4096$ | ✅ 高频 | 查询投影：决定"关注什么" |
-| $W_k$ | $4096 \times 4096$ | ⚠️ 中频 | 键投影：决定"被什么匹配" |
-| $W_v$ | $4096 \times 4096$ | ✅ 高频 | 值投影：决定"提取什么信息" |
-| $W_o$ | $4096 \times 4096$ | ⚠️ 中频 | 输出投影：多头聚合 |
-| $W_{gate}$ | $4096 \times 11008$ | ✅ 高频 | FFN 门控(Llama 用 SwiGLU) |
-| $W_{up}$ | $4096 \times 11008$ | ✅ 高频 | FFN 上采样 |
-| $W_{down}$ | $11008 \times 4096$ | ⚠️ 中频 | FFN 下采样 |
+| $W_q$ | $4096 \times 4096$ |  高频 | 查询投影：决定"关注什么" |
+| $W_k$ | $4096 \times 4096$ |  中频 | 键投影：决定"被什么匹配" |
+| $W_v$ | $4096 \times 4096$ |  高频 | 值投影：决定"提取什么信息" |
+| $W_o$ | $4096 \times 4096$ |  中频 | 输出投影：多头聚合 |
+| $W_{gate}$ | $4096 \times 11008$ |  高频 | FFN 门控(Llama 用 SwiGLU) |
+| $W_{up}$ | $4096 \times 11008$ |  高频 | FFN 上采样 |
+| $W_{down}$ | $11008 \times 4096$ |  中频 | FFN 下采样 |
 
 表 4.1：Llama 2 7B 各权重矩阵的 LoRA 注入策略
 
@@ -158,15 +172,21 @@ LoRA 用梯度下降学习 $B$ 和 $A$，而非直接计算 SVD. 但当训练收
 
 对权重矩阵 $W \in \mathbb{R}^{d \times k}$：
 
-$$N_{\text{LoRA}} = d \cdot r + r \cdot k = r(d + k) \tag{5.1}$$
+$$
+N_{\text{LoRA}} = d \cdot r + r \cdot k = r(d + k) \tag{5.1}
+$$
 
 **相对参数量比例**：
 
-$$\rho = \frac{N_{\text{LoRA}}}{N_{\text{original}}} = \frac{r(d+k)}{d \cdot k} = r\left(\frac{1}{k} + \frac{1}{d}\right) \tag{5.2}$$
+$$
+\rho = \frac{N_{\text{LoRA}}}{N_{\text{original}}} = \frac{r(d+k)}{d \cdot k} = r\left(\frac{1}{k} + \frac{1}{d}\right) \tag{5.2}
+$$
 
 当 $d = k = 4096$，$r = 8$：
 
-$$\rho = 8 \times \left(\frac{1}{4096} + \frac{1}{4096}\right) = \frac{16}{4096} = 0.39\% \tag{5.3}$$
+$$
+\rho = 8 \times \left(\frac{1}{4096} + \frac{1}{4096}\right) = \frac{16}{4096} = 0.39\% \tag{5.3}
+$$
 
 ### 5.2 全模型 LoRA 参数量(Llama 2 7B 实例)
 
@@ -182,17 +202,21 @@ $$\rho = 8 \times \left(\frac{1}{4096} + \frac{1}{4096}\right) = \frac{16}{4096}
 
 **总可训练参数量**：
 
-$$\begin{aligned}
+$$
+\begin{aligned}
 N_{\text{total}} &= 32 \times [\underbrace{2 \times r(d+d)}_{W_q, W_v} + \underbrace{2 \times r(d+k_{\text{ffn}})}_{W_{gate}, W_{up}}] \
 &= 32 \times [2 \times 8 \times 8192 + 2 \times 8 \times (4096 + 11008)] \
 &= 32 \times [131072 + 241664] \
 &= 32 \times 372736 \
 &= 11,927,552 \approx 11.9\text{M}
-\end{aligned} \tag{5.4}$$
+\end{aligned} \tag{5.4}
+$$
 
 **相对于全量**：
 
-$$\frac{11.9\text{M}}{6.7\text{B}} \approx 0.18\% \tag{5.5}$$
+$$
+\frac{11.9\text{M}}{6.7\text{B}} \approx 0.18\% \tag{5.5}
+$$
 
 即仅训练 **0.18%** 的参数即可达到全量微调 **99.3%** 的性能(WikiSQL 任务). 
 

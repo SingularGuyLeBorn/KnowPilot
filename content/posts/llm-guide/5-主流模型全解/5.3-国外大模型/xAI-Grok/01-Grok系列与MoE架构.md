@@ -60,7 +60,9 @@ Grok-1 的 MoE 架构遵循了经典的 **Top-K 门控路由** 设计. 在每一
 
 数学表达为：
 
-$$ y = \sum_{i \in \text{Top2}(G(x))} G(x)_i \cdot E_i(x) \tag{1} $$
+$$
+ y = \sum_{i \in \text{Top2}(G(x))} G(x)_i \cdot E_i(x) \tag{1}
+$$
 
 其中 $G(x) = \text{Softmax}(W_g \cdot x)$ 是门控网络，$E_i$ 是第 $i$ 个专家(一个标准的前馈网络). 
 
@@ -75,7 +77,9 @@ $$ y = \sum_{i \in \text{Top2}(G(x))} G(x)_i \cdot E_i(x) \tag{1} $$
 
 Grok-1 的辅助损失函数形式为：
 
-$$ L_{\text{aux}} = \alpha \cdot N \cdot \sum_{i=1}^{N} f_i \cdot P_i \tag{2} $$
+$$
+ L_{\text{aux}} = \alpha \cdot N \cdot \sum_{i=1}^{N} f_i \cdot P_i \tag{2}
+$$
 
 其中 $N=8$ 是专家数量，$f_i$ 是第 $i$ 个专家在 batch 中实际处理的 token 比例，$P_i$ 是门控网络分配给第 $i$ 个专家的平均概率，$\alpha$ 是平衡系数. 
 

@@ -5,7 +5,7 @@ converted_by: "MinerU"
 
 # Every Activation Boosted: Scaling General Reasoner to 1 Trillion Open Language Foundation
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 Ling Team, Inclusion AI∗

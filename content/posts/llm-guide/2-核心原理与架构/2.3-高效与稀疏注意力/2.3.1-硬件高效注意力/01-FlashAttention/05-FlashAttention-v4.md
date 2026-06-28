@@ -33,7 +33,9 @@ tags: [FlashAttention-4, Blackwell, SFU Exp, Horner's Scheme, Metaprogramming]
 我们不能直接使用常规的泰勒级数展开, 因为泰勒级数在偏离展开点时误差会急剧发散. 
 FlashAttention-4 采用基于 Remez 算法导出的**极小化极大值逼近 (Minimax Approximation)**. 对于在区间 $[-1, 0]$ 内的浮点数 $x$, 其指数函数 $e^x$ 可以由如下五阶多项式进行极其精确的拟合:
 
-$$e^x \approx C_0 + C_1 x + C_2 x^2 + C_3 x^3 + C_4 x^4 + C_5 x^5 \tag{1}$$
+$$
+e^x \approx C_0 + C_1 x + C_2 x^2 + C_3 x^3 + C_4 x^4 + C_5 x^5 \tag{1}
+$$
 
 其中多项式物理系数经过严密计算为:
 - $C_0 = 1.00000000$
@@ -49,7 +51,9 @@ $$e^x \approx C_0 + C_1 x + C_2 x^2 + C_3 x^3 + C_4 x^4 + C_5 x^5 \tag{1}$$
 如果我们直接按照公式 (1) 的常规幂次相加方式计算, 需要执行大量的乘法以生成 $x^2, x^3, x^4, x^5$, 这需要消耗宝贵的寄存器来存储中间幂次.
 为了精简寄存器, 必须引入**秦九韶算法(Horner's Scheme)**对公式 (1) 进行嵌套重组:
 
-$$e^x \approx \left(\left(\left(\left(C_5 \cdot x + C_4\right) \cdot x + C_3\right) \cdot x + C_2\right) \cdot x + C_1\right) \cdot x + C_0 \tag{2}$$
+$$
+e^x \approx \left(\left(\left(\left(C_5 \cdot x + C_4\right) \cdot x + C_3\right) \cdot x + C_2\right) \cdot x + C_1\right) \cdot x + C_0 \tag{2}
+$$
 
 观察嵌套公式 (2) 的代数结构: **整条多项式链条完全由 5 次连续的, 形式高度统一的 $A \cdot B + C$ 乘加结构组成.**
 在底层 Blackwell GPU 的汇编指令中, 这一重组可以直接被无缝编译为 5 条原位级联的 **FMA 指令**: 
@@ -99,7 +103,9 @@ NVIDIA Blackwell 架构引入了更为复杂的片上寄存器排布与异构 Me
 FlashAttention-4 全面拥抱了基于元编程理念构建的 **CuTe 领域专属语言 (CuTe-DSL)**.
 CuTe-DSL 将所有的硬件张量抽象为包含 Stride 信息的**多维数学布局 (Layout)**:
 
-$$\text{Layout} = \left(\text{Shape}, \text{Stride}\right) \tag{3}$$
+$$
+\text{Layout} = \left(\text{Shape}, \text{Stride}\right) \tag{3}
+$$
 
 通过这套数学元描述, 我们可以在编译期直接定义线程块与片上 SRAM 之间的空间代数映射关系, 例如:
 

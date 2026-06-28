@@ -5,7 +5,7 @@ status: completed
 
 # Llama-3 核心架构剖析
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 > 本文基于《The Llama 3 Herd of Models》技术报告精译, 对 405B dense Transformer 的架构选择,三阶段预训练,4D 并行基础设施,六轮后训练及超大规模集群可靠性进行深度拆解.

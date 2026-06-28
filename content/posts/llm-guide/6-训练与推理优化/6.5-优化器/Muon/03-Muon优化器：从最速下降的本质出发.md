@@ -20,7 +20,9 @@ SGD、Adam、Shampoo、Muon 等优化器(忽略动量时), 实际上相当于在
 
 考虑损失函数 $L(W)$, 在参数更新量 $\Delta w$ 的约束下：
 
-$$L(W + \Delta w) \approx L(W) + \langle g, \Delta w \rangle + \frac{\lambda}{2} \|\Delta w\|^2$$
+$$
+L(W + \Delta w) \approx L(W) + \langle g, \Delta w \rangle + \frac{\lambda}{2} \|\Delta w\|^2
+$$
 
 **关键发现**：在相同的更新量约束下, 不同范数定义会导致不同的最速下降方向. 
 
@@ -39,19 +41,25 @@ $$L(W + \Delta w) \approx L(W) + \langle g, \Delta w \rangle + \frac{\lambda}{2}
 
 求解最优更新量：
 
-$$\arg\min_{\Delta w \in V} \left[ \langle g, \Delta w \rangle + \frac{\lambda}{2} \|\Delta w\|^2 \right]$$
+$$
+\arg\min_{\Delta w \in V} \left[ \langle g, \Delta w \rangle + \frac{\lambda}{2} \|\Delta w\|^2 \right]
+$$
 
 ### 2.2 方向求解
 
 固定 $\|\Delta w\|$ 时, 最优方向为：
 
-$$\arg\max_{t \in V, \|t\|=1} \langle g, t \rangle$$
+$$
+\arg\max_{t \in V, \|t\|=1} \langle g, t \rangle
+$$
 
 ### 2.3 Muon 的核心：谱范数约束
 
 Muon 使用**谱范数**(spectral norm)约束更新量：
 
-$$\|\Delta w\|_{spec} = \sigma_{max}(\Delta w)$$
+$$
+\|\Delta w\|_{spec} = \sigma_{max}(\Delta w)
+$$
 
 这导致更新方向与标准梯度下降不同, 具有更好的性质. 
 

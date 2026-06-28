@@ -4,7 +4,7 @@ title: "OLMoE 技术报告精译"
 
 # OLMoE: Open Mixture-of-Experts Language Models 技术报告精译
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 
 > 原文: Muennighoff, N., Soldaini, L., Groeneveld, D., et al. "OLMoE: Open Mixture-of-Experts Language Models." ICLR 2025 / arXiv:2409.02060.
@@ -104,9 +104,13 @@ title: "OLMoE 技术报告精译"
 
 > **[技术细节]** 路由的核心公式
 > MoE 模块的核心计算公式如下:
-> $$ \text{MoE module}(x) = \sum_{i \in \text{Top-}k(r(x))} \mathrm{softmax} \left( r(x) \right)_i E_i(x) $$
+> $$
+ \text{MoE module}(x) = \sum_{i \in \text{Top-}k(r(x))} \mathrm{softmax} \left( r(x) \right)_i E_i(x)
+$$
 > 其中 $r$ 为学习得到的路由器(Router),将输入映射到选定的 $k$ 个专家;对每个选中的专家 $E_i$,其输出与对应的路由概率相乘,最后对所有选中的 Top-$k$ 专家结果求和,得到该层的输出。训练总损失为:
-> $$ \mathcal{L} = \mathcal{L}_{\textit{CE}} + \alpha \mathcal{L}_{\textit{LB}} + \beta \mathcal{L}_{\textit{RZ}} $$
+> $$
+ \mathcal{L} = \mathcal{L}_{\textit{CE}} + \alpha \mathcal{L}_{\textit{LB}} + \beta \mathcal{L}_{\textit{RZ}}
+$$
 > 其中 $\mathcal{L}_{\textit{CE}}$ 为交叉熵损失,$\mathcal{L}_{\textit{LB}}$ 为负载均衡损失,$\mathcal{L}_{\textit{RZ}}$ 为 Router Z-loss,$\alpha=0.01$,$\beta=0.001$。
 
 关键发现包括:
@@ -355,7 +359,9 @@ OLMoE 是一个Encoder-Only(Decoder-only)的 Transformer 模型,由 $N_L$ 层组
 
 > **[技术细节]** 负载均衡损失的公式
 > 负载均衡损失 $\mathcal{L}_{\textit{LB}}$ 惩罚模型如果不均衡,即如果将所有 token 路由到仅少数几个专家:
-> $$ \mathcal{L}_{\textit{LB}} = N_E \cdot \sum_{i=1}^{N_E} f_i \cdot P_i $$
+> $$
+ \mathcal{L}_{\textit{LB}} = N_E \cdot \sum_{i=1}^{N_E} f_i \cdot P_i
+$$
 > 其中 $f_i$ 为路由到专家 $E_i$ 的 token 比例,$P_i$ 为分配给 $E_i$ 的总路由概率。损失进一步乘以专家数 $N_E$ 和损失权重 $\alpha$ (通常设为 0.01)。
 
 实验发现:
@@ -369,7 +375,9 @@ OLMoE 是一个Encoder-Only(Decoder-only)的 Transformer 模型,由 $N_L$ 层组
 
 > **[技术细节]** Router Z-loss 的公式
 > Router Z-loss 惩罚进入门控网络的大 logit,这类大 logit 可能导致 MoE 层大矩阵乘法中的数值溢出:
-> $$ \mathcal{L}_{\textit{RZ}}(x) = \frac{1}{B} \cdot \sum_{i=1}^B \left( \log \sum_{j=1}^{N_E} \exp({x_j^{(i)}}) \right)^2 $$
+> $$
+ \mathcal{L}_{\textit{RZ}}(x) = \frac{1}{B} \cdot \sum_{i=1}^B \left( \log \sum_{j=1}^{N_E} \exp({x_j^{(i)}}) \right)^2
+$$
 > 损失进一步乘以可选权重 $\beta$ (通常设为 0.001)。
 
 实验发现:
@@ -471,7 +479,9 @@ OLMo 使用 AdamW 优化器的 epsilon 值为 1E-05。较大的 eps 导致优化
 
 我们定义路由饱和为:在某个中间时间 $t$ 的Checkpoint上,与最终Checkpoint $T$ 相比,激活的专家 ID 匹配的比例:
 
-$$ \text{Router Saturation}(t) = \frac{1}{N} \sum_{i=1}^{N} \frac{|\mathcal{E}_{i}^{(t)} \cap \mathcal{E}_{i}^{(T)}|}{k} $$
+$$
+ \text{Router Saturation}(t) = \frac{1}{N} \sum_{i=1}^{N} \frac{|\mathcal{E}_{i}^{(t)} \cap \mathcal{E}_{i}^{(T)}|}{k}
+$$
 
 其中 $N$ 为数据集中 token 总数,$k$ 为每个输入 token 激活的专家数,$\mathcal{E}_{i}^{(t)}$ 为第 $t$ 个Checkpoint第 $i$ 个 token 激活的 $k$ 个专家集合。
 
@@ -493,7 +503,9 @@ $$ \text{Router Saturation}(t) = \frac{1}{N} \sum_{i=1}^{N} \frac{|\mathcal{E}_{
 
 我们定义专家共激活为:两个特定专家 $E_i$ 和 $E_j$ 同时被激活的次数占其中一个专家总激活次数的比例:
 
-$$ \text{Expert co-activation}(E_i, E_j) = \frac{N_{E_i, E_j}}{N_{E_i}} $$
+$$
+ \text{Expert co-activation}(E_i, E_j) = \frac{N_{E_i, E_j}}{N_{E_i}}
+$$
 
 100% 表示如果 $E_i$ 被激活,$E_j$ 也始终被激活;0% 表示两者从不共现。
 
@@ -509,7 +521,9 @@ $$ \text{Expert co-activation}(E_i, E_j) = \frac{N_{E_i, E_j}}{N_{E_i}} $$
 
 > **[设计动机]** 不同领域的 token 是否被路由到不同的专家?
 > 我们定义领域专业化为:来自特定领域 $D$ 的 token 被路由到特定专家 $E_i$ 的比例:
-> $$ \text{Domain specialization}(E_i, D) = \frac{N_{E_i, D}^{(k)}}{N_D} $$
+> $$
+ \text{Domain specialization}(E_i, D) = \frac{N_{E_i, D}^{(k)}}{N_D}
+$$
 > 100% 表示该领域所有数据都路由到 $E_i$;0% 表示该领域从不使用该专家。
 
 实验发现(OLMoE-1B-7B vs. Mixtral-8x7B):
@@ -532,7 +546,9 @@ $$ \text{Expert co-activation}(E_i, E_j) = \frac{N_{E_i, E_j}}{N_{E_i}} $$
 
 > **[设计动机]** 专家是否专门处理特定词汇?
 > 我们定义词汇专业化为:具有特定 token ID $x$ 的 token 被路由到特定专家 $E_i$ 的比例:
-> $$ \text{Vocabulary specialization}(E_i, x) = \frac{N_{x, E_i}^{(k)}}{N_x} $$
+> $$
+ \text{Vocabulary specialization}(E_i, x) = \frac{N_{x, E_i}^{(k)}}{N_x}
+$$
 > 我们区分输入和输出变体:$x$ 可以是输入 token ID 或下一个输出 token ID(真实下一个 token 或模型预测的 token)。
 
 实验发现:

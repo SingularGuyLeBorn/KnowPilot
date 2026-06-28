@@ -174,9 +174,9 @@ def _fwd_kernel(
 
 **读代码时的对照**：
 
-- 本篇 `_fwd_kernel` 中外循环扫 `K,V` 块 ↔ FA-2 的 **K/V 外循环**；FA-3 将 `tl.load` 换为 TMA 背景载入，逻辑不变。
-- `m_i, d_i, acc` 驻留寄存器 ↔ FA-2 §3「零 Shared Memory Barrier」；FA-3 用 **双 Warpgroup Pingpong** 在 softmax 与 GEMM 间重叠（见 04 图 1–2）。
-- `tl.math.exp` ↔ FA-4 在 Blackwell 上改为 **Horner 五阶多项式 + FMA**（见 05 §2），因 SFU 成为新瓶颈。
+- 本篇 `_fwd_kernel` 中外循环扫 `K,V` 块  FA-2 的 **K/V 外循环**；FA-3 将 `tl.load` 换为 TMA 背景载入，逻辑不变。
+- `m_i, d_i, acc` 驻留寄存器  FA-2 §3「零 Shared Memory Barrier」；FA-3 用 **双 Warpgroup Pingpong** 在 softmax 与 GEMM 间重叠（见 04 图 1–2）。
+- `tl.math.exp`  FA-4 在 Blackwell 上改为 **Horner 五阶多项式 + FMA**（见 05 §2），因 SFU 成为新瓶颈。
 
 **NSA 等稀疏注意力**：论文 Triton 内核（如 NSA 选择分支）在 **GQA 组 + 稀疏块索引** 上扩展本篇调度模型，块内仍可调 FA-2/3 稠密子内核 — 见 [02-NSA](../../2.3.2-稀疏与压缩注意力/02-原生稀疏注意力机制NSA/02-原生稀疏注意力机制NSA.md) 图 3–4。
 

@@ -4,7 +4,7 @@ title: "Llama-2 核心架构剖析"
 
 # Llama 2 核心架构与对齐技术剖析
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 > 原文标题: Llama 2: Open Foundation and Fine-Tuned Chat Models
@@ -124,11 +124,15 @@ Llama 2 训练了两个独立的奖励模型:
 
 二元排名损失的标准形式:
 
-$$ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r}))) \tag{1} $$
+$$
+ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r}))) \tag{1}
+$$
 
 Llama 2 的改进版本引入了 margin:
 
-$$ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r}) - m(r))) \tag{2} $$
+$$
+ \mathcal{L}_{\text{ranking}} = -\log(\sigma(r_\theta(x,y_{c}) - r_\theta(x,y_{r}) - m(r))) \tag{2}
+$$
 
 其中 margin $m(r)$ 是人类偏好评级的离散函数:显著更好 → 大 margin,几乎相同 → 小 margin.
 
@@ -165,11 +169,15 @@ Llama 2 的 RLHF 不是一次性完成的,而是通过 5 轮迭代(RLHF-V1 到 V
 
 **PPO** 阶段的目标:
 
-$$ \arg \max _\pi \mathbb{E}_{p \sim \mathcal{D}, g \sim \pi}[R(g \mid p)] \tag{3} $$
+$$
+ \arg \max _\pi \mathbb{E}_{p \sim \mathcal{D}, g \sim \pi}[R(g \mid p)] \tag{3}
+$$
 
 最终奖励函数包含 KL 惩罚:
 
-$$ R(g \mid p) = \tilde{R}_{c}(g \mid p) - \beta D_{KL}(\pi_{\theta}(g \mid p) \parallel \pi_{0}(g \mid p)) \tag{4} $$
+$$
+ R(g \mid p) = \tilde{R}_{c}(g \mid p) - \beta D_{KL}(\pi_{\theta}(g \mid p) \parallel \pi_{0}(g \mid p)) \tag{4}
+$$
 
 KL 惩罚对训练稳定性和减少 reward hacking 至关重要.$\beta$ 随模型规模调整:7B/13B 使用 0.01,34B/70B 使用 0.005——更大的模型需要更小的 KL 约束,因为它们的策略空间更复杂,过强的约束会限制优化空间.
 

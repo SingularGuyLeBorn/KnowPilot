@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 DeepSeek-AI

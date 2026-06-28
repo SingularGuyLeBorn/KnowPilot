@@ -4,7 +4,7 @@ title: "Gemma-1 技术报告精译"
 
 # Gemma-1 技术报告精译
 
-> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+>  **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
 
 
 > 原文标题: Gemma: Open Models Based on Gemini Research and Technology

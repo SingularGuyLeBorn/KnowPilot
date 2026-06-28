@@ -6,7 +6,7 @@ status: completed
 
 # MiMo-V2.5: Pushing the Boundaries of Mixture-of-Experts with Efficient Routing and Dynamic Activation
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 ## Abstract
 
@@ -56,8 +56,8 @@ $$
 Instead of simply taking the Top-K elements for each row (token), D-Router employs a thresholding mechanism:
 
 $$
-\hat{A}_{t, i} = 
-\begin{cases} 
+\hat{A}_{t, i} =
+\begin{cases}
 A_{t, i} & \text{if } A_{t, i} > \tau \\
 0 & \text{otherwise}
 \end{cases}

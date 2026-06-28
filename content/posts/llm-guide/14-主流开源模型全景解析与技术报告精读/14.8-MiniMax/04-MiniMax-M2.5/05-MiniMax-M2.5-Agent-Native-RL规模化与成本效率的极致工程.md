@@ -7,7 +7,7 @@ sync_to:
 
 # MiniMax-M2.5 Agent-Native RL 规模化与成本效率的极致工程
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > 本文基于 MiniMax 官方博客及 agentic RL 领域公开文献, 对 M2.5 最核心的技术突破——Agent-Native 强化学习框架 Forge 的规模化实践, 以及将推理成本压至行业前沿模型 1/10~1/20 的极致工程——进行系统性技术剖析.
@@ -173,7 +173,9 @@ M2.5 的 RL 训练不仅优化任务成功率, 还将**任务完成时间**和 *
 
 **多目标奖励函数**(推测):
 
-$$R_{\text{total}} = R_{\text{success}} + \alpha \cdot R_{\text{speed}} + \beta \cdot R_{\text{efficiency}}$$
+$$
+R_{\text{total}} = R_{\text{success}} + \alpha \cdot R_{\text{speed}} + \beta \cdot R_{\text{efficiency}}
+$$
 
 其中:
 - $R_{\text{success}}$: 任务是否成功完成(二元奖励).

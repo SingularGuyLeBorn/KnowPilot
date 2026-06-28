@@ -4,7 +4,7 @@ title: "MiMo-V2-Flash混合注意力与MOPD后训练范式剖析"
 
 # MiMo-V2-Flash 混合注意力与 MOPD 后训练范式剖析
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 
 > **分析基础**: MiMo-V2-Flash Technical Report (Xiaomi LLM-Core Team, arXiv:2601.02780)

@@ -1287,7 +1287,9 @@ Figure 9: The prompt used in evaluating GaoKao Math Cloze on the base models.
 
 解:命题“若\(x^{2}=1\),则\(x=1\)”的否命题为“若\(x^{2}\neq 1\),则\(x\neq 1\”),故排除\(A\); $∵\(命题“若\(x=y\),则\(sin x=\sin y\)”为真命题,故其逆否命题为真命题,B正确;命题“存在\(x∈R\),使得\(x^{2}+x+1<0\)”的否定是:“对任意\(x∈R\),均有\(x^{2}+x+1>0\”),故排除\(C\); $∵“\(x^{2}-5x-6=0\)”\(L“\(x=-1\)”或\(x=6\”),$∴“\(x=-1\)”是“\(x^{2}-5x-6=0\)”的充分不必要条件,排除\(D\);故选:B.推理结束。
 
-选择题:已知函数\(f$(x\$)=\$x\${\,!}{2}+$$mx\$-1\),若对于任意\(x\$∈[$$m\,$m\$+1]\$,都有\(f$(x\$)<0\)成立,则实数\(m\$的取值范围是(.)\newline A.$\left(-\sqrt{2},0\right)\$\newline B.$\left(-2,0\right)\$\newline C.$\left[-\frac{\sqrt{2}}{2},0\right]\$\newline D.$\left(-\frac{\sqrt{2}}{2},0\right)\$
+选择题:已知函数\(f$(x\$)=\$x\${\,!}{2}+$$
+mx\$-1\),若对于任意\(x\$∈[
+$$m\,$m\$+1]\$,都有\(f$(x\$)<0\)成立,则实数\(m\$的取值范围是(.)\newline A.$\left(-\sqrt{2},0\right)\$\newline B.$\left(-2,0\right)\$\newline C.$\left[-\frac{\sqrt{2}}{2},0\right]\$\newline D.$\left(-\frac{\sqrt{2}}{2},0\right)\$
 
 解:由题意可得\begin{cases}f(m)=2{m}{2}-1<0\ f(m+1)=2{m}{2}+3m<0\end{cases}\$,求得$-\frac{\sqrt{2}}{2}<m<0\$,即实数\(m\$的取值范围为\(-\frac{\sqrt{2}}{2},0\)\$.故选:D.推理结束。
 

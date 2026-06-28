@@ -54,9 +54,13 @@ tags: [FlashAttention, GPU, SRAM, HBM, Roofline, Memory-Bound]
 ### 2.1 张量流向与物理物化 (Materialization)
 标准自注意力机制的数学定义形式为:
 
-$$A = \text{softmax}\left(\frac{Q K^T}{\sqrt{D_{head}}}\right) \tag{1}$$
+$$
+A = \text{softmax}\left(\frac{Q K^T}{\sqrt{D_{head}}}\right) \tag{1}
+$$
 
-$$O = A V \tag{2}$$
+$$
+O = A V \tag{2}
+$$
 
 其中隐藏层头维度为 $D_{head}$, 序列长度为 $N$, 批次大小为 $B$, 头数为 $H$. 
 
@@ -75,7 +79,9 @@ $$O = A V \tag{2}$$
 ### 2.2 惊人的带宽放大效应 (Bandwidth Amplification)
 我们将所有的 HBM 读写搬运字节数进行物理加和, 得到标准注意力机制的总 HBM 数据搬运量 $T_{\text{Standard}}$:
 
-$$T_{\text{Standard}} = 2 B H N^2 + 5 B H N D_{head} \text{ bytes} \tag{3}$$
+$$
+T_{\text{Standard}} = 2 B H N^2 + 5 B H N D_{head} \text{ bytes} \tag{3}
+$$
 
 为了让这一数学公式展现出直接的物理冲击力, 我们代入一组生产环境下的真实数值进行定量计算:
 - Batch Size $B = 64$
@@ -86,9 +92,13 @@ $$T_{\text{Standard}} = 2 B H N^2 + 5 B H N D_{head} \text{ bytes} \tag{3}$$
 
 利用公式 (3) 计算:
 - 最终有用的输入和输出张量体积 ($Q, K, V, O$) 仅为: 
-$$V_{\text{useful}} = 4 \cdot B \cdot H \cdot N \cdot D_{head} \cdot 2 \text{ bytes} \approx 134.2 \text{ MB}$$
+$$
+V_{\text{useful}} = 4 \cdot B \cdot H \cdot N \cdot D_{head} \cdot 2 \text{ bytes} \approx 134.2 \text{ MB}
+$$
 - 然而, 在 HBM 中实际被强制搬运的数据吞吐总量为:
-$$T_{\text{Standard}} = 2 \cdot 64 \cdot 32 \cdot (8192)^2 \cdot 2 + 5 \cdot 64 \cdot 32 \cdot 8192 \cdot 128 \cdot 2 \text{ bytes} \approx 549.7 \text{ GB}$$
+$$
+T_{\text{Standard}} = 2 \cdot 64 \cdot 32 \cdot (8192)^2 \cdot 2 + 5 \cdot 64 \cdot 32 \cdot 8192 \cdot 128 \cdot 2 \text{ bytes} \approx 549.7 \text{ GB}
+$$
 
 **这一数字令人感到窒息：为了在 GPU 上算出仅有 $134.2 \text{ MB}$ 的有用注意力输出, 由于中间矩阵 $S$ 和 $A$ 被强行物化并高频读写 HBM, 系统居然在 GPU 显存内往复搬运了高达 $549.7 \text{ GB}$ 的数据！带宽放大比达到了惊人的 4096 倍！**
 
@@ -103,7 +113,9 @@ $$T_{\text{Standard}} = 2 \cdot 64 \cdot 32 \cdot (8192)^2 \cdot 2 + 5 \cdot 64 
 ### 3.1 Roofline 模型数学形式
 Roofline 模型定义了算子在特定硬件平台上的最大可达性能 $P$ 是**算术强度 (Operational Intensity)** $I$ 的函数:
 
-$$P(I) = \min\left(P_{\text{peak}}, I \cdot W_{\text{mem}}\right) \tag{4}$$
+$$
+P(I) = \min\left(P_{\text{peak}}, I \cdot W_{\text{mem}}\right) \tag{4}
+$$
 
 其中:
 - $P_{\text{peak}}$ 为硬件平台的物理峰值算力 (FLOPs/s).
@@ -115,26 +127,40 @@ $$P(I) = \min\left(P_{\text{peak}}, I \cdot W_{\text{mem}}\right) \tag{4}$$
 我们以 NVIDIA A100 (SXM4 80GB FP16 精度) 和 Hopper H100 (SXM5 FP8 精度) 为例进行临界值走查:
 
 - **A100 GPU**:
-$$P_{\text{peak}} = 312 \text{ TFLOPs/s}, \quad W_{\text{mem}} = 2000 \text{ GB/s}$$
-$$I_{\text{critical, A100}} = \frac{312 \times 10^{12}}{2000 \times 10^9} = 156.0 \text{ FLOPs/Byte} \tag{5}$$
+$$
+P_{\text{peak}} = 312 \text{ TFLOPs/s}, \quad W_{\text{mem}} = 2000 \text{ GB/s}
+$$
+$$
+I_{\text{critical, A100}} = \frac{312 \times 10^{12}}{2000 \times 10^9} = 156.0 \text{ FLOPs/Byte} \tag{5}
+$$
 - **H100 GPU**:
-$$P_{\text{peak}} = 1979 \text{ TFLOPs/s} \text{ (FP8 Tensor Core)}, \quad W_{\text{mem}} = 3350 \text{ GB/s}$$
-$$I_{\text{critical, H100}} = \frac{1979 \times 10^{12}}{3350 \times 10^9} = 590.7 \text{ FLOPs/Byte} \tag{6}$$
+$$
+P_{\text{peak}} = 1979 \text{ TFLOPs/s} \text{ (FP8 Tensor Core)}, \quad W_{\text{mem}} = 3350 \text{ GB/s}
+$$
+$$
+I_{\text{critical, H100}} = \frac{1979 \times 10^{12}}{3350 \times 10^9} = 590.7 \text{ FLOPs/Byte} \tag{6}
+$$
 
 这组物理常数表明: 在 H100 GPU 上计算 FP8 矩阵时, 每搬运 1 字节的数据, 必须在片上执行至少 **590 次浮点运算**, 才能将 Tensor Core 的硬件威力彻底跑满. 否则, 即使硬件算力再庞大, 也会因为显存搬运跟不上而陷入无休止的空转.
 
 ### 3.3 标准自注意力的算术强度坍塌
 标准自注意力的算术强度是多少呢? 自注意力机制的浮点运算量 (FLOPs) 主要由两个 GEMM 贡献: $Q K^T$ 的运算量为 $2 B H N^2 D_{head}$, $A V$ 的运算量为 $2 B H N^2 D_{head}$, 总运算量为:
 
-$$F_{\text{Attention}} = 4 B H N^2 D_{head} \text{ FLOPs} \tag{7}$$
+$$
+F_{\text{Attention}} = 4 B H N^2 D_{head} \text{ FLOPs} \tag{7}
+$$
 
 根据公式 (3) 的 HBM 数据搬运量, 我们得出标准自注意力的算术强度 $I_{\text{Standard}}$:
 
-$$I_{\text{Standard}} = \frac{F_{\text{Attention}}}{T_{\text{Standard}}} = \frac{4 B H N^2 D_{head}}{2 B H N^2 + 5 B H N D_{head}} = \frac{4 N D_{head}}{2 N + 5 D_{head}} \text{ FLOPs/Byte} \tag{8}$$
+$$
+I_{\text{Standard}} = \frac{F_{\text{Attention}}}{T_{\text{Standard}}} = \frac{4 B H N^2 D_{head}}{2 B H N^2 + 5 B H N D_{head}} = \frac{4 N D_{head}}{2 N + 5 D_{head}} \text{ FLOPs/Byte} \tag{8}
+$$
 
 在长序列长文本场景下(即 $N \gg D_{head}$), 公式 (8) 的分母中 $2N$ 占据绝对主导, 我们对公式 (8) 求极限近似:
 
-$$\lim_{N \to \infty} I_{\text{Standard}} \approx 2 D_{head} \text{ FLOPs/Byte} \tag{9}$$
+$$
+\lim_{N \to \infty} I_{\text{Standard}} \approx 2 D_{head} \text{ FLOPs/Byte} \tag{9}
+$$
 
 以常见的头维度 $D_{head} = 64$ 为例, 标准自注意力的算术强度极限被焊死在 $128 \text{ FLOPs/Byte}$ 左右. 当序列长度较短时(例如 $N=1024$), 实际算术强度甚至萎缩到 **十几 FLOPs/Byte**.
 

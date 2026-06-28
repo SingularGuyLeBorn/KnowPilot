@@ -6,7 +6,7 @@ title: "Gemini 2.5 Pro：思考模式与多模态推理的工程化实现——G
 
 > **模型定位**：Google DeepMind 首个引入显式思考模式(Thinking Mode)的旗舰模型(2025-03)，Gemini系列推理能力的突破者
 > **家族归属**：14.11-Gemini｜编号 08-Gemini-2.5-Pro
-> 🔙 **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
+>  **[返回 14.11-Gemini 家族总览](../../14.11-Gemini.md)**
 
 ---
 

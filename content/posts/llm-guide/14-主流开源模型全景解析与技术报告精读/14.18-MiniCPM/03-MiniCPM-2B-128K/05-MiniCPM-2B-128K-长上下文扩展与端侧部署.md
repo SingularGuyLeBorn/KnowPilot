@@ -4,7 +4,7 @@ title: "MiniCPM-2B-128K 长上下文扩展与端侧部署解析"
 
 # MiniCPM-2B-128K 长上下文扩展与端侧部署解析
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 
 > 原文定位: MiniCPM 技术报告 Section 6.2 + 官方博客/ModelScope 模型卡

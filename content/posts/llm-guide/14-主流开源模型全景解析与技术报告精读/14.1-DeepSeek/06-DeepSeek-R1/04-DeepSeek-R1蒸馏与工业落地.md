@@ -4,7 +4,7 @@ title: "DeepSeek-R1 蒸馏与工业落地"
 
 # DeepSeek-R1 蒸馏与工业落地
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 本文聚焦 DeepSeek-R1 的蒸馏策略、小模型性能分析以及实际部署中的工程考量. 详细分析请参阅 [05-DeepSeek-R1-Distillation.md](./05-DeepSeek-R1-Distillation.md).

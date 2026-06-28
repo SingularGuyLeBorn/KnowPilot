@@ -5,7 +5,7 @@ converted_by: "arXiv HTML extraction (MinerU unavailable)"
 
 # Gemma 2: Improving Open Language Models at a Practical Size
 
-> 🔙 **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
+>  **[返回 14.10-Gemma 家族总览](../../14.10-Gemma.md)**
 
 
 > Original title: Gemma 2: Improving Open Language Models at a Practical Size

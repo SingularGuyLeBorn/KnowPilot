@@ -4,7 +4,7 @@ title: "OLMo 核心技术专题索引"
 
 # OLMo 核心技术专题索引
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 ## 1. 技术问题定义与背景 (Technical Problem Definition)
 
@@ -24,7 +24,9 @@ title: "OLMo 核心技术专题索引"
 - **非参数化的 LayerNorm (Non-parametric LayerNorm)**：OLMo 放弃了带有仿射变换(Affine Transformation)的 LayerNorm，转而使用简单的 RMSNorm 或没有缩放和平移因子的标准化。
 - **RoPE (Rotary Position Embedding)**：完全替换了绝对位置编码。
 
-$$ \text{LayerNorm}_{\text{OLMo}}(x) = \frac{x}{\sqrt{\frac{1}{d}\sum x_i^2 + \epsilon}} $$
+$$
+ \text{LayerNorm}_{\text{OLMo}}(x) = \frac{x}{\sqrt{\frac{1}{d}\sum x_i^2 + \epsilon}}
+$$
 (不包含 $\gamma$ 和 $\beta$ 参数)
 
 ### 2.2 Dolma 数据集引擎

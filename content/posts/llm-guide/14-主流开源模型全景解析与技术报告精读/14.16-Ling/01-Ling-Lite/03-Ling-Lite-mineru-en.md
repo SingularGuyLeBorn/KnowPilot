@@ -5,7 +5,7 @@ converted_by: MinerU (re-processed)
 date: 2026-05-23
 ---
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 # EVERY FLOP COUNTS: SCALING A 300BMIXTURE-OF-EXPERTS LING LLM WITHOUT PREMIUM GPUS

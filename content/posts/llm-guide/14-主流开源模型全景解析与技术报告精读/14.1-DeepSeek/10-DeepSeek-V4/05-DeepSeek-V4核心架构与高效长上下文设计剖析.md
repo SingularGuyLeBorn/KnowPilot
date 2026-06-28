@@ -4,7 +4,7 @@ title: "DeepSeek-V4 核心架构与高效长上下文设计剖析"
 
 # DeepSeek-V4 核心架构与高效长上下文设计剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 ## 1 设计动机:从"能跑 1M"到"高效跑 1M"
@@ -46,7 +46,9 @@ CSA 的核心流程分为三步:
 
 **Step 1: Token 级压缩**。对于输入隐藏状态 $h \in \mathbb{R}^{n \times d}$,生成两组压缩权重 $Z_a, Z_b \in \mathbb{R}^{n \times c}$ 和两组压缩 KV 条目 $C_a, C_b \in \mathbb{R}^{n \times c}$。对于第 $i$ 个压缩块(包含 $m$ 个连续 token):
 
-$$\hat{K}_i = \sum_{j=(i-1)m+1}^{im} Z_{a,j} \odot C_{a,j}, \quad \hat{V}_i = \sum_{j=(i-1)m+1}^{im} Z_{b,j} \odot C_{b,j}$$
+$$
+\hat{K}_i = \sum_{j=(i-1)m+1}^{im} Z_{a,j} \odot C_{a,j}, \quad \hat{V}_i = \sum_{j=(i-1)m+1}^{im} Z_{b,j} \odot C_{b,j}
+$$
 
 压缩后的 KV 条目数从 $n$ 降至 $n/m$。
 
@@ -78,7 +80,9 @@ HCA 采用与 CSA 类似的压缩机制,但参数更激进:
 
 mHC 的核心创新是将残差映射矩阵 $W_{res}$ 约束到双随机矩阵流形(Birkhoff polytope):
 
-$$W_{res} \in M \subseteq \{W \in \mathbb{R}^{d \times d} | W \cdot 1 = 1, 1^T \cdot W = 1^T, W \geq 0\}$$
+$$
+W_{res} \in M \subseteq \{W \in \mathbb{R}^{d \times d} | W \cdot 1 = 1, 1^T \cdot W = 1^T, W \geq 0\}
+$$
 
 双随机矩阵的谱范数天然不超过 1,这意味着信号不会放大也不会消失——这是梯度稳定传播的数学保证。动态参数化使得残差连接的权重根据当前输入动态生成,通过 Sigmoid 约束在 $(0,1)$ 范围内。
 
@@ -227,7 +231,9 @@ Muon 的核心计算是 Newton-Schulz 迭代,将梯度矩阵近似正交化为 $
 
 统一模型作为学生,学习优化与多个教师(各领域专家)的 reverse KL loss:
 
-$$L_{OPD} = \sum_{t} \sum_{teacher} \pi_{student}(w_t|w_{<t}) \cdot \log \frac{\pi_{student}(w_t|w_{<t})}{\pi_{teacher}(w_t|w_{<t})}$$
+$$
+L_{OPD} = \sum_{t} \sum_{teacher} \pi_{student}(w_t|w_{<t}) \cdot \log \frac{\pi_{student}(w_t|w_{<t})}{\pi_{teacher}(w_t|w_{<t})}
+$$
 
 Reverse KL 防止学生过度扩散,鼓励其保守地接近教师分布。
 

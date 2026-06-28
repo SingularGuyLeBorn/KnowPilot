@@ -7,7 +7,7 @@ date: 2026-05-19
 
 # Qwen3 Technical Report
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 Qwen Team

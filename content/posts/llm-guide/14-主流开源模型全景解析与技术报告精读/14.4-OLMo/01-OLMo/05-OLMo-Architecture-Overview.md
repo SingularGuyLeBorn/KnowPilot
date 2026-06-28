@@ -4,7 +4,7 @@ title: "OLMo核心架构与全开放生态剖析"
 
 # OLMo 核心架构与全开放生态剖析
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 
 > 对应精译: [01-OLMo技术报告精译](./01-OLMo技术报告精译.md)
@@ -57,7 +57,7 @@ OLMo 采用标准的 decoder-only Transformer 架构, 提供 1B 和 7B 两种规
 | 全局 Batch Size | ~4M tokens | ~4M tokens |
 | 序列长度 | 2048 | 2048 |
 | 峰值学习率 | 4.0E-4 | 3.0E-4 |
-| 权重共享 | 是 (embedding ↔ LM head) | 否 |
+| 权重共享 | 是 (embedding  LM head) | 否 |
 
 > 表 2: OLMo 模型架构与训练配置.
 
@@ -84,7 +84,9 @@ OLMo 使用 SwiGLU 激活函数替代 ReLU, 并遵循 LLaMA 的设计将 FFN 中
 OLMo 采用旋转位置编码(Rotary Position Embedding, RoPE)替代绝对位置编码, 与 LLaMA、PaLM 等保持一致. RoPE 通过将查询和键向量旋转一个与位置相关的角度, 使得注意力分数天然编码了相对位置信息.
 
 RoPE 的数学表达为: 对于位置 $m$ 的向量 $x$, 其旋转后的表示为:
-$$R_{\Theta, m}^d x = \begin{pmatrix} x_1 \\ x_2 \\ x_3 \\ x_4 \\ \vdots \\ x_{d-1} \\ x_d \end{pmatrix} \otimes \begin{pmatrix} \cos m\theta_1 \\ \cos m\theta_1 \\ \cos m\theta_2 \\ \cos m\theta_2 \\ \vdots \\ \cos m\theta_{d/2} \\ \cos m\theta_{d/2} \end{pmatrix} + \begin{pmatrix} -x_2 \\ x_1 \\ -x_4 \\ x_3 \\ \vdots \\ -x_d \\ x_{d-1} \end{pmatrix} \otimes \begin{pmatrix} \sin m\theta_1 \\ \sin m\theta_1 \\ \sin m\theta_2 \\ \sin m\theta_2 \\ \vdots \\ \sin m\theta_{d/2} \\ \sin m\theta_{d/2} \end{pmatrix}$$
+$$
+R_{\Theta, m}^d x = \begin{pmatrix} x_1 \\ x_2 \\ x_3 \\ x_4 \\ \vdots \\ x_{d-1} \\ x_d \end{pmatrix} \otimes \begin{pmatrix} \cos m\theta_1 \\ \cos m\theta_1 \\ \cos m\theta_2 \\ \cos m\theta_2 \\ \vdots \\ \cos m\theta_{d/2} \\ \cos m\theta_{d/2} \end{pmatrix} + \begin{pmatrix} -x_2 \\ x_1 \\ -x_4 \\ x_3 \\ \vdots \\ -x_d \\ x_{d-1} \end{pmatrix} \otimes \begin{pmatrix} \sin m\theta_1 \\ \sin m\theta_1 \\ \sin m\theta_2 \\ \sin m\theta_2 \\ \vdots \\ \sin m\theta_{d/2} \\ \sin m\theta_{d/2} \end{pmatrix}
+$$
 
 其中 $\theta_i = 10000^{-2(i-1)/d}$ 为旋转角频率.
 

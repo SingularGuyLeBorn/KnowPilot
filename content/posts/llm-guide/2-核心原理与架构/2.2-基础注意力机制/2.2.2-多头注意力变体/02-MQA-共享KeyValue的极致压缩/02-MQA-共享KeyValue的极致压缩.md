@@ -69,8 +69,7 @@ GQA 论文 Figure 2 的 **Multi-query** 子图，专门刻画 MQA 的「多 Q、
 
 $$
 Q_h = X W^Q_h,\quad K_h = X W^K_h,\quad V_h = X W^V_h,\quad
-\mathrm{head}_h = \mathrm{softmax}\!\left(\frac{Q_h K_h^\top}{\sqrt{d_k}}\right) V_h
-\tag{1}
+\mathrm{head}_h = \mathrm{softmax}\!\left(\frac{Q_h K_h^\top}{\sqrt{d_k}}\right) V_h \tag{1}
 $$
 
 **MQA**：仅 $W^Q_h$ 带头下标；$W^K, W^V$ 全局共享：
@@ -78,14 +77,12 @@ $$
 $$
 Q_h = X W^Q_h \in \mathbb{R}^{L \times d_h},\quad
 K = X W^K \in \mathbb{R}^{L \times d_k},\quad
-V = X W^V \in \mathbb{R}^{L \times d_v}
-\tag{2}
+V = X W^V \in \mathbb{R}^{L \times d_v} \tag{2}
 $$
 
 $$
 \mathrm{head}_h = \mathrm{softmax}\left(\frac{Q_h K^\top}{\sqrt{d_k}}\right) V,\quad
-\mathrm{MQA}(X) = \mathrm{Concat}(\mathrm{head}_1,\ldots,\mathrm{head}_H)\, W^O
-\tag{3}
+\mathrm{MQA}(X) = \mathrm{Concat}(\mathrm{head}_1,\ldots,\mathrm{head}_H)\, W^O \tag{3}
 $$
 
 与 MHA 相比，式 (3) 中 $K,V$ **不随 $h$ 变化**；$H$ 个 softmax 矩阵 $\in \mathbb{R}^{L \times L}$ 仍各自独立（因 $Q_h$ 不同），但乘的 $V$ 相同。
@@ -99,29 +96,25 @@ $$
 **Query**（每头独立，同 MHA 式 (7)）：
 
 $$
-q_{t,h,i} = \sum_{m=1}^{d_{\mathrm{model}}} x_{t,m}\, W^Q_{h,i,m}
-\tag{4}
+q_{t,h,i} = \sum_{m=1}^{d_{\mathrm{model}}} x_{t,m}\, W^Q_{h,i,m} \tag{4}
 $$
 
 **Key / Value**（共享，**无** $h$ 下标）：
 
 $$
 k_{t,j} = \sum_{m=1}^{d_{\mathrm{model}}} x_{t,m}\, W^K_{j,m},\quad
-v_{t,j} = \sum_{m=1}^{d_{\mathrm{model}}} x_{t,m}\, W^V_{j,m}
-\tag{5}
+v_{t,j} = \sum_{m=1}^{d_{\mathrm{model}}} x_{t,m}\, W^V_{j,m} \tag{5}
 $$
 
 **Logit 与权重**（第 $h$ 头，位置 $t$ 对 $s$）：
 
 $$
-e_{t,s,h} = \frac{1}{\sqrt{d_k}} \sum_{i=1}^{d_k} q_{t,h,i}\, k_{s,i}
-\tag{6}
+e_{t,s,h} = \frac{1}{\sqrt{d_k}} \sum_{i=1}^{d_k} q_{t,h,i}\, k_{s,i} \tag{6}
 $$
 
 $$
 \alpha_{t,s,h} = \frac{\exp(e_{t,s,h})}{\sum_{s'=1}^{L} \exp(e_{t,s',h})},\quad
-o_{t,h,j} = \sum_{s=1}^{L} \alpha_{t,s,h}\, v_{s,j}
-\tag{7}
+o_{t,h,j} = \sum_{s=1}^{L} \alpha_{t,s,h}\, v_{s,j} \tag{7}
 $$
 
 式 (7) 说明：头 $h$ 的输出仍是历史 Value 的凸组合，但 $v_{s,j}$ 对所有 $h$ **相同**；头间差异完全来自 $\alpha_{t,s,h}$（由 $Q_h$ 决定）。
@@ -131,8 +124,7 @@ $$
 拼接 $\bar{o}_t = [o_{t,1};\ldots;o_{t,H}] \in \mathbb{R}^{H d_v}$，最终：
 
 $$
-y_{t,r} = \sum_{h=1}^{H} \sum_{j=1}^{d_v} o_{t,h,j}\, W_{O,\,(h-1)d_v + j,\, r}
-\tag{8}
+y_{t,r} = \sum_{h=1}^{H} \sum_{j=1}^{d_v} o_{t,h,j}\, W_{O,\,(h-1)d_v + j,\, r} \tag{8}
 $$
 
 MQA 不改变式 (8) 的形式；压缩只发生在 **cache 里的 $k_s, v_s$**，不在 $W^O$。
@@ -147,16 +139,14 @@ $$
 e_{t,s,h}
 = \frac{1}{\sqrt{d_k}} \sum_{i=1}^{d_k}
 \left(\sum_m x_{t,m} W^Q_{h,i,m}\right)
-\left(\sum_n x_{s,n} W^K_{i,n}\right)
-\tag{9}
+\left(\sum_n x_{s,n} W^K_{i,n}\right) \tag{9}
 $$
 
 交换求和（先 $i$ 再 $m,n$）：
 
 $$
 e_{t,s,h} = \sum_{m,n} x_{t,m}\, x_{s,n}
-\underbrace{\left(\frac{1}{\sqrt{d_k}} \sum_i W^Q_{h,i,m} W^K_{i,n}\right)}_{B_{h,m,n}}
-\tag{10}
+\underbrace{\left(\frac{1}{\sqrt{d_k}} \sum_i W^Q_{h,i,m} W^K_{i,n}\right)}_{B_{h,m,n}} \tag{10}
 $$
 
 **读式 (10)**：第 $h$ 头仍对应一张 bilinear form $B_h$，与 MHA 同构；差别是 $W^K$ 只有一套，故所有头「检索」的 Key 子空间相同，只是 $W^Q_h$ 不同导致 $B_h$ 不同。KV 侧 $k_s, v_s$ **只算、只存一份**，这是 cache 收益的来源。
@@ -165,8 +155,7 @@ $$
 
 $$
 o_{t,h,j} = \sum_{s=1}^{L} \alpha_{t,s,h} \sum_{m=1}^{d_{\mathrm{model}}} x_{s,m} W^V_{j,m}
-= \sum_{m=1}^{d_{\mathrm{model}}} W^V_{j,m} \left( \sum_{s=1}^{L} \alpha_{t,s,h}\, x_{s,m} \right)
-\tag{11}
+= \sum_{m=1}^{d_{\mathrm{model}}} W^V_{j,m} \left( \sum_{s=1}^{L} \alpha_{t,s,h}\, x_{s,m} \right) \tag{11}
 $$
 
 括号内是第 $m$ 维隐藏坐标在历史 token 上的加权平均；MQA 与 MHA 在此相同，差异仅在 $\alpha$ 是否共享同一组 $k_s$ 算出来。
@@ -178,8 +167,7 @@ $$
 Decoder-only 在位置 $t$ 只对 $s \le t$ 求和。实现上于 softmax 前令：
 
 $$
-e_{t,s,h} \leftarrow \begin{cases} e_{t,s,h} & s \le t \\ -\infty & s > t \end{cases}
-\tag{12}
+e_{t,s,h} \leftarrow \begin{cases} e_{t,s,h} & s \le t \\ -\infty & s > t \end{cases} \tag{12}
 $$
 
 MQA **每个头**各自做式 (12)；掩码语义与 MHA 一致。训练若用 MHA、推理若换 MQA 而不 uptrain，分布偏移会放大——故工业界常 **pool + 短 uptrain**（§9）。
@@ -253,8 +241,7 @@ $$
 现代 LLM 在 Q/K 上施加 RoPE：$\tilde{q}_{t,h} = R_t q_{t,h}$，$\tilde{k}_s = R_s k_s$（共享 $k$，故**所有头共用同一条** $\tilde{k}_s$ 序列）。每头 $q_{t,h}$ 仍独立旋转，logit 为：
 
 $$
-e_{t,s,h} = \frac{1}{\sqrt{d_k}} \tilde{q}_{t,h}^\top \tilde{k}_s
-\tag{13}
+e_{t,s,h} = \frac{1}{\sqrt{d_k}} \tilde{q}_{t,h}^\top \tilde{k}_s \tag{13}
 $$
 
 RoPE **不阻止** MQA：位置信息写入共享 Key 的相位，各 Query 头仍用不同 $W^Q_h$ 读取。MLA 则因低秩压缩与 RoPE 冲突风险，需**解耦**内容/位置通道（见 [04 MLA](../04-MLA-低秩潜变量与解耦式注意力/04-MLA-低秩潜变量与解耦式注意力.md) §6）。
@@ -267,8 +254,7 @@ GQA 论文 Figure 1 的 checkpoint 转换（图 2）：
 
 $$
 W^K_{\mathrm{MQ}} = \frac{1}{H}\sum_{h=1}^{H} W^K_h,\quad
-W^V_{\mathrm{MQ}} = \frac{1}{H}\sum_{h=1}^{H} W^V_h
-\tag{14}
+W^V_{\mathrm{MQ}} = \frac{1}{H}\sum_{h=1}^{H} W^V_h \tag{14}
 $$
 
 $W^Q_h$ 与 $W^O$ 通常**原样保留**。Mean pool 比「只取第 1 头」或随机初始化保留更多 MHA 预训练信息；再对约 **5%** 预训练 token **uptrain** 后，质量可接近 MHA（GQA 论文 Figure 3）。
@@ -290,8 +276,7 @@ $W^Q_h$ 与 $W^O$ 通常**原样保留**。Mean pool 比「只取第 1 头」或
 
 $$
 \text{KV}_{\mathrm{MHA}} = 2 \cdot N \cdot B \cdot L \cdot H \cdot d_h \cdot s,\quad
-\text{KV}_{\mathrm{MQA}} = 2 \cdot N \cdot B \cdot L \cdot d_h \cdot s
-\tag{15}
+\text{KV}_{\mathrm{MQA}} = 2 \cdot N \cdot B \cdot L \cdot d_h \cdot s \tag{15}
 $$
 
 **例**（Llama-2-70B 量级：$N=80,\ H=64,\ d_h=128,\ s=2$ FP16，$L=4096,\ B=1$）：

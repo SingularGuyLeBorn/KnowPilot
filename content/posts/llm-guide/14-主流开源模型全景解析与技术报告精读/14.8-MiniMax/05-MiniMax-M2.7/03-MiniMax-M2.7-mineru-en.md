@@ -6,7 +6,7 @@ status: completed
 
 # MiniMax-M2.7 Technical Report: Scaling Mixture-of-Experts with Advanced Long-Context Alignment
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 ## Abstract
 
@@ -77,16 +77,24 @@ Unlike traditional MoE models that use a small number of monolithic experts (e.g
 
 Given a token representation $x \in \mathbb{R}^d$, the gating network computes routing probabilities:
 
-$$ H(x) = W_g \cdot x $$
-$$ G(x) = \text{Softmax}(\text{TopK}(H(x), k=4)) $$
+$$
+ H(x) = W_g \cdot x
+$$
+$$
+ G(x) = \text{Softmax}(\text{TopK}(H(x), k=4))
+$$
 
 The output of the MoE layer is the weighted sum of the selected experts $E_i$:
 
-$$ y = \sum_{i=1}^{k} G(x)_i E_{\text{index}(i)}(x) $$
+$$
+ y = \sum_{i=1}^{k} G(x)_i E_{\text{index}(i)}(x)
+$$
 
 To ensure load balancing across the 160 experts, we utilize an auxiliary loss function combining expert load and importance:
 
-$$ \mathcal{L}_{\text{bal}} = \alpha \cdot N \sum_{i=1}^{N} f_i \cdot P_i $$
+$$
+ \mathcal{L}_{\text{bal}} = \alpha \cdot N \sum_{i=1}^{N} f_i \cdot P_i
+$$
 
 Where:
 - $N$ is the total number of experts (160).
@@ -146,7 +154,9 @@ To reduce KV cache memory pressure during generation, especially for 1M context 
 
 If $Q, K, V$ are the query, key, and value tensors:
 
-$$ \text{Attention}(Q, K, V) = \text{Softmax}\left(\frac{Q K^T}{\sqrt{d_k} \cdot \tau(p)}\right) V $$
+$$
+ \text{Attention}(Q, K, V) = \text{Softmax}\left(\frac{Q K^T}{\sqrt{d_k} \cdot \tau(p)}\right) V
+$$
 
 Where $\tau(p)$ is a learned temperature scalar based on relative bucketed positions.
 
@@ -154,7 +164,9 @@ Where $\tau(p)$ is a learned temperature scalar based on relative bucketed posit
 
 Extending the context window from 32k to 1M requires careful manipulation of the Rotary Position Embeddings (RoPE). We adopt a hybrid approach: interpolation for high-frequency dimensions and extrapolation for low-frequency dimensions, akin to YaRN (Yet another RoPE extensioN method).
 
-$$ \theta_i = b^{-2i/d}, \quad \text{where } b = 10000 \cdot \left(\frac{L_{\text{target}}}{L_{\text{train}}}\right)^{\alpha} $$
+$$
+ \theta_i = b^{-2i/d}, \quad \text{where } b = 10000 \cdot \left(\frac{L_{\text{target}}}{L_{\text{train}}}\right)^{\alpha}
+$$
 
 #### Code Snippet: NTK-Aware RoPE
 
@@ -262,7 +274,9 @@ Aligning the final tone, formatting, and safety constraints on top of the logica
 
 The DPO loss is derived from the Bradley-Terry model:
 
-$$ \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log \frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \right) \right] $$
+$$
+ \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log \frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \right) \right]
+$$
 
 Where $y_w$ is the winning response, $y_l$ is the losing response, and $\beta$ controls the divergence from the reference model $\pi_{\text{ref}}$.
 

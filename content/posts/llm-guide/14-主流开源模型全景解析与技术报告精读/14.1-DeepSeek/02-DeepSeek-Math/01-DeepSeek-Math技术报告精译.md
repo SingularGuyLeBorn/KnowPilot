@@ -6,7 +6,7 @@ date: 2026-05-19
 
 # DeepSeek-Math 技术报告精译
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models

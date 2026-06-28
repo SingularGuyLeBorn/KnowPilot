@@ -4,7 +4,7 @@ title: "Qwen2.5 技术报告精译"
 
 # Qwen2.5 Technical Report 精译
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 原文: Qwen Team. "Qwen2.5 Technical Report". arXiv:2412.15115, 2024.

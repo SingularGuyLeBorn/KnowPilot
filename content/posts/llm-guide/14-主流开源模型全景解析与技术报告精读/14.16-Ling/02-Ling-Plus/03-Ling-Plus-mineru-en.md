@@ -6,7 +6,7 @@ converted_by: "MinerU"
 
 # EVERY FLOP COUNTS: SCALING A 300BMIXTURE-OF-EXPERTS LING LLM WITHOUT PREMIUM GPUS
 
-> 🔙 **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
+>  **[返回 14.16-Ling 家族总览](../../14.16-Ling.md)**
 
 
 Ling Team, AI@Ant Group

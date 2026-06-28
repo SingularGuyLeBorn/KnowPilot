@@ -9,7 +9,7 @@ status: completed
 
 # GLM-4-Voice: Towards Intelligent and Human-Like End-to-End Spoken Chatbot
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 Aohan Zeng et al. — Zhipu.AI, Tsinghua University
 

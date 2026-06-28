@@ -7,7 +7,7 @@ sync_to:
 
 # Kimi-Chat 长上下文扩展的技术路径与工程实践
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 
 > 本文基于 Moonshot AI 官方产品信息、第三方学术评测及业界长上下文技术文献, 对 Kimi-Chat 最核心的产品级创新——200K 汉字超长上下文窗口——进行系统性技术剖析. 重点分析其技术路径选择、工程实现挑战, 以及与同期竞品的对比.
@@ -53,7 +53,9 @@ Kimi-Chat 采用基于 RoPE(Rotary Position Embedding)的位置编码方案. RoP
 
 对于位置 $m$ 和 $n$ 的 query 和 key, RoPE 通过旋转矩阵 $R_{\Theta, m}$ 和 $R_{\Theta, n}$ 编码位置信息. 注意力分数的计算变为:
 
-$$Attention(Q_m, K_n) = (R_{\Theta, m} W_q x_m)^T (R_{\Theta, n} W_k x_n)$$
+$$
+Attention(Q_m, K_n) = (R_{\Theta, m} W_q x_m)^T (R_{\Theta, n} W_k x_n)
+$$
 
 其中旋转角度 $\theta_i = 10000^{-2i/d}$.
 

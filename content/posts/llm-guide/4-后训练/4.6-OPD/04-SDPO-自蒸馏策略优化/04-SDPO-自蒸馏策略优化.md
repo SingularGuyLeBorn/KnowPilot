@@ -62,7 +62,9 @@ SDPO 将富反馈(Rich Feedback)引入自蒸馏，在数学上彻底颠覆了 RL
 ### 4.2 SDPO 的蒸馏目标函数
 为了让学生逼近这个“看了答案/反馈的自己”，SDPO 采用了 Forward KL 散度(在后续工程中进化为 JS 散度，见工程章节)：
 
-$$ \mathcal{L}_{SDPO} = \sum_t \underline{\mathbf{D_{KL}\left(\pi_\theta(\cdot|x, y_{<t}) \| \text{stopgrad}(\pi_T(\cdot|x, f, y_{<t}))\right)}} \tag{1} $$
+$$
+ \mathcal{L}_{SDPO} = \sum_t \underline{\mathbf{D_{KL}\left(\pi_\theta(\cdot|x, y_{<t}) \| \text{stopgrad}(\pi_T(\cdot|x, f, y_{<t}))\right)}} \tag{1}
+$$
 
 **极其关键的操作：`stopgrad`**
 为什么在 $\pi_T$ 外面必须套上一层 $\text{stopgrad}$(停止梯度传播)？
@@ -74,12 +76,16 @@ $$ \mathcal{L}_{SDPO} = \sum_t \underline{\mathbf{D_{KL}\left(\pi_\theta(\cdot|x
 对比一下传统 GRPO 和 SDPO 的 Advantage：
 
 **传统 GRPO 的序列级优势(Sequence-Level Advantage)** ：
-$$ A_t^{GRPO} = \frac{R(y) - \mu(R)}{\sigma(R)} \tag{2} $$
+$$
+ A_t^{GRPO} = \frac{R(y) - \mu(R)}{\sigma(R)} \tag{2}
+$$
 - 特点：这是一个常数！对于一条长达 2000 token 的代码，从第 1 个 token 到第 2000 个 token，它们获得的 Advantage $A_t$ **全部都是同一个固定的数字**. 即便第 1 个 token 写得无比绝妙，只要最后一个 token 写漏了一个分号导致编译失败，第 1 个 token 也会背锅挨骂. 
 
 **SDPO 的稠密优势(Token-Level Advantage)** ：
 通过对 KL 散度求导展开，SDPO 对每个 token $a_t$ 更新的梯度方向正比于：
-$$ A_t^{SDPO} = \underline{\mathbf{\log \pi_T(a_t|x, f, y_{<t})}} - \underline{\mathbf{\log \pi_\theta(a_t|x, y_{<t})}} \tag{3} $$
+$$
+ A_t^{SDPO} = \underline{\mathbf{\log \pi_T(a_t|x, f, y_{<t})}} - \underline{\mathbf{\log \pi_\theta(a_t|x, y_{<t})}} \tag{3}
+$$
 
 **[公式物理意义详析]**：
 这个公式极其优美. 它在每一个特定的时间步 $t$ 计算分数. 
@@ -107,7 +113,9 @@ $$ A_t^{SDPO} = \underline{\mathbf{\log \pi_T(a_t|x, f, y_{<t})}} - \underline{\
 
 ### 5.3 弃用 KL，拥抱对称 JS Divergence
 直接使用单向 KL 散度容易在极端概率下导致无穷大梯度爆炸. SDPO 在实战中将目标函数更换为对称的 Jensen-Shannon Divergence：
-$$ \mathcal{L}_{JS} = \frac{1}{2} D_{KL}(\pi_\theta \| M) + \frac{1}{2} D_{KL}(\pi_T \| M) \quad \text{其中 } M = \frac{1}{2}(\pi_\theta + \pi_T) \tag{4} $$
+$$
+ \mathcal{L}_{JS} = \frac{1}{2} D_{KL}(\pi_\theta \| M) + \frac{1}{2} D_{KL}(\pi_T \| M) \quad \text{其中 } M = \frac{1}{2}(\pi_\theta + \pi_T) \tag{4}
+$$
 JS 散度天然有界(在 $[0, \ln 2]$ 之间)，这意味着即使老师和学生在某个 Token 上的分歧大到天上去了，梯度惩罚依然会被柔和地限制在安全范围内. 
 
 ## 6. 最强创新：Test-Time Self-Distillation (测试时搜索)

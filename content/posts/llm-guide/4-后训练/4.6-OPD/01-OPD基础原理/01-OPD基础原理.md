@@ -43,7 +43,9 @@ OPD 的核心在于目标函数的根本性转变. 让我们直接对比 SFT 和
 ### 4.1 SFT 隐含的 Forward KL
 
 在标准的 SFT 或 Off-Policy Distillation 中，学生模型 $\pi_\theta$ 试图最小化负对数似然损失：
-$$ \mathcal{L}_{SFT} = \mathbb{E}_{s_t \sim \pi_T} [ - \log \pi_\theta(a_t | s_t) ] \tag{1} $$
+$$
+ \mathcal{L}_{SFT} = \mathbb{E}_{s_t \sim \pi_T} [ - \log \pi_\theta(a_t | s_t) ] \tag{1}
+$$
 
 - $\mathbb{E}_{s_t \sim \pi_T}$：期望的采样来自**教师模型 $\pi_T$**(或人类演示数据集). 状态 $s_t$ 是预设的. 
 - $\log \pi_\theta(a_t | s_t)$：学生模型在给定教师状态下，生成正确动作 $a_t$ 的对数概率. 
@@ -55,11 +57,15 @@ Forward KL 的致命特点是 **Mean-Seeking(求均值)** 或 **Mass-Covering**.
 
 OPD 逆转了这一过程，使用的是 **Reverse KL (逆向 KL 散度)** . 同族算法(如 GRPO, PPO)通常基于优势函数(Advantage)，而 **<u>OPD 的核心是直接对分布的差异求期望</u>**：
 
-$$ \mathcal{L}_{OPD} = \mathbb{E}_{s_t \sim \pi_\theta} [ D_{KL}(\pi_\theta(\cdot|s_t) \| \pi_T(\cdot|s_t)) ] \tag{2} $$
+$$
+ \mathcal{L}_{OPD} = \mathbb{E}_{s_t \sim \pi_\theta} [ D_{KL}(\pi_\theta(\cdot|s_t) \| \pi_T(\cdot|s_t)) ] \tag{2}
+$$
 让我们拆解这个极其优美的公式：
 - $\mathbb{E}_{s_t \sim \pi_\theta}$：**[高亮差异项：采样源]** 注意期望的下标！现在的状态 $s_t$ 是由**学生模型 $\pi_\theta$ 自己生成**的(On-Policy). 这解决了 Exposure Bias，因为学生在训练时看到的就是它在推理时会遇到的状态. 
 - $D_{KL}(\pi_\theta \| \pi_T)$：**[高亮差异项：散度方向]** 这是 Reverse KL. 展开它：
-  $$ \sum_{a} \pi_\theta(a|s_t) \left[ \log \pi_\theta(a|s_t) - \log \pi_T(a|s_t) \right] \tag{3} $$
+  $$
+ \sum_{a} \pi_\theta(a|s_t) \left[ \log \pi_\theta(a|s_t) - \log \pi_T(a|s_t) \right] \tag{3}
+$$
   - $\pi_\theta(a|s_t)$：权重项. 学生自己觉得概率很低的 token，哪怕老师觉得很重要，损失的权重也极小. 这意味着 **Reverse KL 是 Mode-Seeking(寻模态)的**. 
   - $\log \pi_\theta - \log \pi_T$：对数概率的差值，作为优化的梯度信号. 
 
@@ -73,12 +79,16 @@ $$ \mathcal{L}_{OPD} = \mathbb{E}_{s_t \sim \pi_\theta} [ D_{KL}(\pi_\theta(\cdo
 由于能力限制，**学生(Student)** 只能是极端的，只能输出 $P_S = [1.0, 0.0]$(死磕 A)或者 $P_S = [0.0, 1.0]$(死磕 B). 
 
 **场景 1：如果强制使用 Forward KL (SFT 范式)** 
-$$ D_{KL}(P_T \| P_S) = \sum P_T \log \frac{P_T}{P_S} \tag{4} $$
+$$
+ D_{KL}(P_T \| P_S) = \sum P_T \log \frac{P_T}{P_S} \tag{4}
+$$
 - 若学生选 $P_S = [1.0, 0.0]$，计算 $B$ 的 KL：$0.5 \log(0.5 / 0) \to +\infty$. 
 - 结果：Loss 爆炸！Forward KL 强迫学生必须学会 B，即便学生没这个能力，最终导致崩溃. 
 
 **场景 2：如果使用 Reverse KL (OPD 范式)** 
-$$ D_{KL}(P_S \| P_T) = \sum P_S \log \frac{P_S}{P_T} \tag{5} $$
+$$
+ D_{KL}(P_S \| P_T) = \sum P_S \log \frac{P_S}{P_T} \tag{5}
+$$
 - 学生选 $P_S = [1.0, 0.0]$，此时只计算 $A$ 的项，因为当 $P_S(B)=0$ 时权重为 0. 
 - 计算：$1.0 \times \log(1.0 / 0.5) = 1.0 \times 0.693 = 0.693$. 
 - 结果：Loss 是一个非常小且稳定的标量. OPD 宽容了学生的偏科，允许学生“只挑自己会的且老师不反对的”那条路走. 

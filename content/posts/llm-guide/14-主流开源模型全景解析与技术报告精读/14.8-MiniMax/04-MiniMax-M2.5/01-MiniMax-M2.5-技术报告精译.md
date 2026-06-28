@@ -3,7 +3,7 @@ title: "MiniMax-M2.5 技术报告精译"
 ---
 # MiniMax-M2.5 技术报告精译
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 > **模型定位**：Agent-Native RL 驱动的全新一代，专为高强度的生产力工作流设计. 

@@ -9,7 +9,7 @@ status: completed
 
 # ChatGLM: A Family of Large Language Models from GLM-130B to GLM-4 All Tools
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 Team GLM — Zhipu AI, Tsinghua University
 

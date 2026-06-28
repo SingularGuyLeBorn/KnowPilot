@@ -4,7 +4,7 @@ title: "DeepSeek-V3 技术报告精译"
 
 # DeepSeek-V3 技术报告精译
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 
 > 原文标题: DeepSeek-V3 Technical Report
@@ -91,15 +91,25 @@ DeepSeek-V3 的基础架构仍然在 Transformer(Vaswani et al., 2017)框架内.
 
 对于注意力机制, DeepSeek-V3 采用 MLA 架构. 令 $d$ 表示嵌入维度, $n_h$ 表示注意力头的数量, $d_h$ 表示每个头的维度, $\mathbf{h}_t \in \mathbb{R}^d$ 表示给定注意力层中第 $t$ 个 token 的注意力输入. MLA 的核心是对注意力键(Key)和值(Value)进行低秩联合压缩, 以减少推理期间的 KV Cache:
 
-$$ \boxed{\mathbf{c}_t^{KV}} = W^{DKV} \mathbf{h}_t, \tag{1} $$
+$$
+ \boxed{\mathbf{c}_t^{KV}} = W^{DKV} \mathbf{h}_t, \tag{1}
+$$
 
-$$ [\mathbf{k}_{t,1}^C; \mathbf{k}_{t,2}^C; ...; \mathbf{k}_{t,n_h}^C] = \mathbf{k}_t^C = W^{UK} \mathbf{c}_t^{KV}, \tag{2} $$
+$$
+ [\mathbf{k}_{t,1}^C; \mathbf{k}_{t,2}^C; ...; \mathbf{k}_{t,n_h}^C] = \mathbf{k}_t^C = W^{UK} \mathbf{c}_t^{KV}, \tag{2}
+$$
 
-$$ \boxed{\mathbf{k}_t^R} = \operatorname{RoPE}(W^{KR} \mathbf{h}_t), \tag{3} $$
+$$
+ \boxed{\mathbf{k}_t^R} = \operatorname{RoPE}(W^{KR} \mathbf{h}_t), \tag{3}
+$$
 
-$$ \mathbf{k}_{t,i} = [\mathbf{k}_{t,i}^C; \mathbf{k}_t^R], \tag{4} $$
+$$
+ \mathbf{k}_{t,i} = [\mathbf{k}_{t,i}^C; \mathbf{k}_t^R], \tag{4}
+$$
 
-$$ [\mathbf{v}_{t,1}^C; \mathbf{v}_{t,2}^C; ...; \mathbf{v}_{t,n_h}^C] = \mathbf{v}_t^C = W^{UV} \mathbf{c}_t^{KV}, \tag{5} $$
+$$
+ [\mathbf{v}_{t,1}^C; \mathbf{v}_{t,2}^C; ...; \mathbf{v}_{t,n_h}^C] = \mathbf{v}_t^C = W^{UV} \mathbf{c}_t^{KV}, \tag{5}
+$$
 
 其中 $\mathbf{c}_t^{KV} \in \mathbb{R}^{d_c}$ 是键和值的压缩潜在向量; $d_c (\ll d_h n_h)$ 表示 KV 压缩维度; $W^{DKV} \in \mathbb{R}^{d_c \times d}$ 表示下投影矩阵; $W^{UK}, W^{UV} \in \mathbb{R}^{d_h n_h \times d_c}$ 分别是键和值的上投影矩阵; $W^{KR} \in \mathbb{R}^{d_h^R \times d}$ 是用于生成携带 Rotary Positional Embedding(RoPE, 旋转位置编码)(Su et al., 2024)的解耦键的矩阵; $\operatorname{RoPE}(\cdot)$ 表示应用 RoPE 矩阵的操作; $[\cdot; \cdot]$ 表示拼接. 注意, 对于 MLA, 只有蓝色方框中的向量(即 $\mathbf{c}_t^{KV}$ 和 $\mathbf{k}_t^R$)需要在生成期间被缓存, 这显著减少了 KV Cache, 同时保持与标准 Multi-Head Attention(MHA, 多头注意力)(Vaswani et al., 2017)相当的性能.
 
@@ -107,21 +117,33 @@ $$ [\mathbf{v}_{t,1}^C; \mathbf{v}_{t,2}^C; ...; \mathbf{v}_{t,n_h}^C] = \mathbf
 
 对于注意力查询(Query), 我们也执行低秩压缩, 这可以减少训练期间的激活显存:
 
-$$ \mathbf{c}_t^Q = W^{DQ} \mathbf{h}_t, \tag{6} $$
+$$
+ \mathbf{c}_t^Q = W^{DQ} \mathbf{h}_t, \tag{6}
+$$
 
-$$ [\mathbf{q}_{t,1}^C; \mathbf{q}_{t,2}^C; ...; \mathbf{q}_{t,n_h}^C] = \mathbf{q}_t^C = W^{UQ} \mathbf{c}_t^Q, \tag{7} $$
+$$
+ [\mathbf{q}_{t,1}^C; \mathbf{q}_{t,2}^C; ...; \mathbf{q}_{t,n_h}^C] = \mathbf{q}_t^C = W^{UQ} \mathbf{c}_t^Q, \tag{7}
+$$
 
-$$ [\mathbf{q}_{t,1}^R; \mathbf{q}_{t,2}^R; ...; \mathbf{q}_{t,n_h}^R] = \mathbf{q}_t^R = \operatorname{RoPE}(W^{QR} \mathbf{c}_t^Q), \tag{8} $$
+$$
+ [\mathbf{q}_{t,1}^R; \mathbf{q}_{t,2}^R; ...; \mathbf{q}_{t,n_h}^R] = \mathbf{q}_t^R = \operatorname{RoPE}(W^{QR} \mathbf{c}_t^Q), \tag{8}
+$$
 
-$$ \mathbf{q}_{t,i} = [\mathbf{q}_{t,i}^C; \mathbf{q}_{t,i}^R], \tag{9} $$
+$$
+ \mathbf{q}_{t,i} = [\mathbf{q}_{t,i}^C; \mathbf{q}_{t,i}^R], \tag{9}
+$$
 
 其中 $\mathbf{c}_t^Q \in \mathbb{R}^{d_c^{\prime}}$ 是查询的压缩潜在向量; $d_c^{\prime} (\ll d_h n_h)$ 表示查询压缩维度; $W^{DQ} \in \mathbb{R}^{d_c^{\prime} \times d}, W^{UQ} \in \mathbb{R}^{d_h n_h \times d_c^{\prime}}$ 分别是查询的下投影和上投影矩阵; $W^{QR} \in \mathbb{R}^{d_h^R n_h \times d_c^{\prime}}$ 是用于生成携带 RoPE 的解耦查询的矩阵.
 
 最终, 注意力查询($\mathbf{q}_{t,i}$)、键($\mathbf{k}_{j,i}$)和值($\mathbf{v}_{j,i}^C$)被组合以产生最终的注意力输出 $\mathbf{u}_t$:
 
-$$ \mathbf{o}_{t,i} = \sum_{j=1}^{t} \operatorname{Softmax}_j\left(\frac{\mathbf{q}_{t,i}^T \mathbf{k}_{j,i}}{\sqrt{d_h + d_h^R}}\right) \mathbf{v}_{j,i}^C, \tag{10} $$
+$$
+ \mathbf{o}_{t,i} = \sum_{j=1}^{t} \operatorname{Softmax}_j\left(\frac{\mathbf{q}_{t,i}^T \mathbf{k}_{j,i}}{\sqrt{d_h + d_h^R}}\right) \mathbf{v}_{j,i}^C, \tag{10}
+$$
 
-$$ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_h}], \tag{11} $$
+$$
+ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_h}], \tag{11}
+$$
 
 其中 $W^O \in \mathbb{R}^{d \times d_h n_h}$ 表示输出投影矩阵.
 
@@ -133,13 +155,21 @@ $$ \mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; ...; \mathbf{o}_{t,n_
 
 对于 Feed-Forward Networks(FFN, 前馈网络), DeepSeek-V3 采用 DeepSeekMoE 架构(Dai et al., 2024). 与传统的 MoE 架构(如 GShard(Lepikhin et al., 2021))相比, DeepSeekMoE 使用了更细粒度的专家, 并将一些专家隔离为共享专家. 令 $\mathbf{u}_t$ 表示第 $t$ 个 token 的 FFN 输入, 我们按如下方式计算 FFN 输出 $\mathbf{h}_t^{\prime}$:
 
-$$ \mathbf{h}_t^{\prime} = \mathbf{u}_t + \sum_{i=1}^{N_s} \operatorname{FFN}_i^{(s)}(\mathbf{u}_t) + \sum_{i=1}^{N_r} g_{i,t} \operatorname{FFN}_i^{(r)}(\mathbf{u}_t), \tag{12} $$
+$$
+ \mathbf{h}_t^{\prime} = \mathbf{u}_t + \sum_{i=1}^{N_s} \operatorname{FFN}_i^{(s)}(\mathbf{u}_t) + \sum_{i=1}^{N_r} g_{i,t} \operatorname{FFN}_i^{(r)}(\mathbf{u}_t), \tag{12}
+$$
 
-$$ g_{i,t} = \frac{g_{i,t}^{\prime}}{\sum_{j=1}^{N_r} g_{j,t}^{\prime}}, \tag{13} $$
+$$
+ g_{i,t} = \frac{g_{i,t}^{\prime}}{\sum_{j=1}^{N_r} g_{j,t}^{\prime}}, \tag{13}
+$$
 
-$$ g_{i,t}^{\prime} = \begin{cases} s_{i,t}, & s_{i,t} \in \operatorname{Topk}(\{s_{j,t} | 1 \leq j \leq N_r\}, K_r), \\ 0, & \text{otherwise}, \end{cases} \tag{14} $$
+$$
+ g_{i,t}^{\prime} = \begin{cases} s_{i,t}, & s_{i,t} \in \operatorname{Topk}(\{s_{j,t} | 1 \leq j \leq N_r\}, K_r), \\ 0, & \text{otherwise}, \end{cases} \tag{14}
+$$
 
-$$ s_{i,t} = \operatorname{Sigmoid}(\mathbf{u}_t^T \mathbf{e}_i), \tag{15} $$
+$$
+ s_{i,t} = \operatorname{Sigmoid}(\mathbf{u}_t^T \mathbf{e}_i), \tag{15}
+$$
 
 其中 $N_s$ 和 $N_r$ 分别表示共享专家和路由专家的数量; $\operatorname{FFN}_i^{(s)}(\cdot)$ 和 $\operatorname{FFN}_i^{(r)}(\cdot)$ 分别表示第 $i$ 个共享专家和第 $i$ 个路由专家; $K_r$ 表示激活的路由专家数量; $g_{i,t}$ 是第 $i$ 个专家的门控值; $s_{i,t}$ 是 token-to-expert 亲和度; $\mathbf{e}_i$ 是第 $i$ 个路由专家的质心向量; $\operatorname{Topk}(\cdot, K)$ 表示从第 $t$ 个 token 与所有路由专家计算的亲和度分数中选取 $K$ 个最高分数组成的集合. 与 DeepSeek-V2 略有不同, DeepSeek-V3 使用 sigmoid 函数计算亲和度分数, 并在所有选中的亲和度分数之间应用归一化来产生门控值.
 
@@ -149,7 +179,9 @@ $$ s_{i,t} = \operatorname{Sigmoid}(\mathbf{u}_t^T \mathbf{e}_i), \tag{15} $$
 
 对于 MoE 模型, 不均衡的专家负载会导致路由崩溃(Shazeer et al., 2017)并在专家并行场景中降低计算效率. 传统解决方案通常依赖辅助损失(Fedus et al., 2021; Lepikhin et al., 2021)来避免负载不均衡. 然而, 过大的辅助损失会损害模型性能(Wang et al., 2024a). 为了在负载均衡和模型性能之间取得更好的权衡, 我们开创了一种 auxiliary-loss-free 的负载均衡策略(Wang et al., 2024a)来确保负载均衡. 具体而言, 我们为每个专家引入一个偏置项 $b_i$, 并将其加到相应的亲和度分数 $s_{i,t}$ 上以确定 Top-K 路由:
 
-$$ g_{i,t}^{\prime} = \begin{cases} s_{i,t}, & s_{i,t} + b_i \in \operatorname{Topk}(\{s_{j,t} + b_j | 1 \leq j \leq N_r\}, K_r), \\ 0, & \text{otherwise}. \end{cases} \tag{16} $$
+$$
+ g_{i,t}^{\prime} = \begin{cases} s_{i,t}, & s_{i,t} + b_i \in \operatorname{Topk}(\{s_{j,t} + b_j | 1 \leq j \leq N_r\}, K_r), \\ 0, & \text{otherwise}. \end{cases} \tag{16}
+$$
 
 注意, 偏置项仅用于路由. 门控值(将与 FFN 输出相乘)仍然从原始亲和度分数 $s_{i,t}$ 导出. 在训练期间, 我们持续监控每个训练步骤整个批次上的专家负载. 在每个步骤结束时, 如果对应专家过载, 我们将偏置项减少 $\gamma$; 如果对应专家欠载, 我们将偏置项增加 $\gamma$, 其中 $\gamma$ 是一个称为偏置更新速度的超参数. 通过动态调整, DeepSeek-V3 在训练期间保持均衡的专家负载, 并取得了比纯粹通过辅助损失鼓励负载均衡的模型更好的性能.
 
@@ -159,13 +191,21 @@ $$ g_{i,t}^{\prime} = \begin{cases} s_{i,t}, & s_{i,t} + b_i \in \operatorname{T
 
 虽然 DeepSeek-V3 主要依赖 auxiliary-loss-free 策略进行负载均衡, 但为了防止任何单个序列内的极端不均衡, 我们还采用了一种互补的序列级均衡损失:
 
-$$ \mathcal{L}_{\mathrm{Bal}} = \alpha \sum_{i=1}^{N_r} f_i P_i, \tag{17} $$
+$$
+ \mathcal{L}_{\mathrm{Bal}} = \alpha \sum_{i=1}^{N_r} f_i P_i, \tag{17}
+$$
 
-$$ f_i = \frac{N_r}{K_r T} \sum_{t=1}^{T} \mathds{1}\left(s_{i,t} \in \operatorname{Topk}(\{s_{j,t} | 1 \leq j \leq N_r\}, K_r)\right), \tag{18} $$
+$$
+ f_i = \frac{N_r}{K_r T} \sum_{t=1}^{T} \mathds{1}\left(s_{i,t} \in \operatorname{Topk}(\{s_{j,t} | 1 \leq j \leq N_r\}, K_r)\right), \tag{18}
+$$
 
-$$ s_{i,t}^{\prime} = \frac{s_{i,t}}{\sum_{j=1}^{N_r} s_{j,t}}, \tag{19} $$
+$$
+ s_{i,t}^{\prime} = \frac{s_{i,t}}{\sum_{j=1}^{N_r} s_{j,t}}, \tag{19}
+$$
 
-$$ P_i = \frac{1}{T} \sum_{t=1}^{T} s_{i,t}^{\prime}, \tag{20} $$
+$$
+ P_i = \frac{1}{T} \sum_{t=1}^{T} s_{i,t}^{\prime}, \tag{20}
+$$
 
 其中平衡因子 $\alpha$ 是一个超参数, 在 DeepSeek-V3 中被赋予极小的值; $\mathds{1}(\cdot)$ 表示指示函数; $T$ 表示序列中的 token 数量. 序列级均衡损失鼓励每个序列上的专家负载均衡.
 
@@ -189,15 +229,21 @@ $$ P_i = \frac{1}{T} \sum_{t=1}^{T} s_{i,t}^{\prime}, \tag{20} $$
 
 具体而言, 我们的 MTP 实现使用 $D$ 个顺序模块来预测 $D$ 个额外 token. 第 $k$ 个 MTP 模块包含一个共享嵌入层 $\operatorname{Emb}(\cdot)$、一个共享输出头 $\operatorname{OutHead}(\cdot)$、一个 Transformer 块 $\operatorname{TRM}_k(\cdot)$ 和一个投影矩阵 $M_k \in \mathbb{R}^{d \times 2d}$. 对于第 $i$ 个输入 token $t_i$, 在第 $k$ 个预测深度, 我们首先将第 $(k-1)$ 个深度第 $i$ 个 token 的表示 $\mathbf{h}_i^{k-1} \in \mathbb{R}^d$ 和第 $(i+k)$ 个 token 的嵌入 $\operatorname{Emb}(t_{i+k}) \in \mathbb{R}^d$ 通过线性投影组合:
 
-$$ \mathbf{h}_i^{\prime k} = M_k [\operatorname{RMSNorm}(\mathbf{h}_i^{k-1}); \operatorname{RMSNorm}(\operatorname{Emb}(t_{i+k}))], \tag{21} $$
+$$
+ \mathbf{h}_i^{\prime k} = M_k [\operatorname{RMSNorm}(\mathbf{h}_i^{k-1}); \operatorname{RMSNorm}(\operatorname{Emb}(t_{i+k}))], \tag{21}
+$$
 
 其中 $[\cdot; \cdot]$ 表示拼接. 特别地, 当 $k=1$ 时, $\mathbf{h}_i^{k-1}$ 指主模型给出的表示. 注意, 对于每个 MTP 模块, 其嵌入层与主模型共享. 组合的 $\mathbf{h}_i^{\prime k}$ 作为第 $k$ 个深度的 Transformer 块的输入, 以产生当前深度的输出表示 $\mathbf{h}_i^k$:
 
-$$ \mathbf{h}_{1:T-k}^k = \operatorname{TRM}_k(\mathbf{h}_{1:T-k}^{\prime k}), \tag{22} $$
+$$
+ \mathbf{h}_{1:T-k}^k = \operatorname{TRM}_k(\mathbf{h}_{1:T-k}^{\prime k}), \tag{22}
+$$
 
 其中 $T$ 表示输入序列长度, $_{i:j}$ 表示切片操作(包含左右边界). 最后, 以 $\mathbf{h}_i^k$ 为输入, 共享输出头将计算第 $k$ 个额外预测 token $P_{i+1+k}^k \in \mathbb{R}^V$ 的概率分布, 其中 $V$ 是词表大小:
 
-$$ P_{i+k+1}^k = \operatorname{OutHead}(\mathbf{h}_i^k). \tag{23} $$
+$$
+ P_{i+k+1}^k = \operatorname{OutHead}(\mathbf{h}_i^k). \tag{23}
+$$
 
 输出头 $\operatorname{OutHead}(\cdot)$ 将表示线性映射到 logits, 随后应用 $\operatorname{Softmax}(\cdot)$ 函数来计算第 $k$ 个额外 token 的预测概率. 此外, 对于每个 MTP 模块, 其输出头也与主模型共享. 我们保持预测因果链的原则与 EAGLE 类似, 但 EAGLE 的主要目标是投机解码, 而我们利用 MTP 来改善训练.
 
@@ -205,11 +251,15 @@ $$ P_{i+k+1}^k = \operatorname{OutHead}(\mathbf{h}_i^k). \tag{23} $$
 
 对于每个预测深度, 我们计算交叉熵损失 $\mathcal{L}_{\text{MTP}}^k$:
 
-$$ \mathcal{L}_{\text{MTP}}^k = \operatorname{CrossEntropy}(P_{2+k:T+1}^k, t_{2+k:T+1}) = -\frac{1}{T} \sum_{i=2+k}^{T+1} \log P_i^k[t_i], \tag{24} $$
+$$
+ \mathcal{L}_{\text{MTP}}^k = \operatorname{CrossEntropy}(P_{2+k:T+1}^k, t_{2+k:T+1}) = -\frac{1}{T} \sum_{i=2+k}^{T+1} \log P_i^k[t_i], \tag{24}
+$$
 
 其中 $T$ 表示输入序列长度, $t_i$ 表示第 $i$ 个位置的真实 token, $P_i^k[t_i]$ 表示由第 $k$ 个 MTP 模块给出的 $t_i$ 的对应预测概率. 最后, 我们计算所有深度上 MTP 损失的平均值, 并将其乘以权重因子 $\lambda$, 得到整体的 MTP 损失 $\mathcal{L}_{\text{MTP}}$, 它作为 DeepSeek-V3 的额外训练目标:
 
-$$ \mathcal{L}_{\text{MTP}} = \frac{\lambda}{D} \sum_{k=1}^{D} \mathcal{L}_{\text{MTP}}^k. \tag{25} $$
+$$
+ \mathcal{L}_{\text{MTP}} = \frac{\lambda}{D} \sum_{k=1}^{D} \mathcal{L}_{\text{MTP}}^k. \tag{25}
+$$
 
 **MTP 在推理中的应用.**
 
@@ -424,7 +474,9 @@ Prefilling 阶段的最小部署单元由 4 个节点共 32 块 GPU 组成. `att
 
 在 DeepSeekCoder-V2 的训练过程中, 我们观察到 Fill-in-Middle(FIM, 中间填充)策略不会损害 next-token prediction 能力, 同时使模型能够基于上下文线索准确预测中间文本. 与 DeepSeekCoder-V2 一致, 我们也在 DeepSeek-V3 的预训练中融入了 FIM 策略. 具体而言, 我们采用 Prefix-Suffix-Middle(PSM)框架将数据结构化如下:
 
-$$ \texttt{<|fim\_begin|>} f_{\text{pre}} \texttt{<|fim\_hole|>} f_{\text{suf}} \texttt{<|fim\_end|>} f_{\text{middle}} \texttt{<|eos\_token|>} . $$
+$$
+ \texttt{<|fim\_begin|>} f_{\text{pre}} \texttt{<|fim\_hole|>} f_{\text{suf}} \texttt{<|fim\_end|>} f_{\text{middle}} \texttt{<|eos\_token|>} .
+$$
 
 这种结构在文档级别作为预打包过程的一部分应用. FIM 策略以 0.1 的比率应用, 与 PSM 框架一致.
 
@@ -656,13 +708,19 @@ Auxiliary-loss-free 均衡与序列级辅助损失之间的关键区别在于它
 
 与 DeepSeek-V2 类似, 我们采用 Group Relative Policy Optimization(GRPO)(Shao et al., 2024), 它放弃了通常与策略模型大小相同的 critic 模型, 而是从组分数中估计基线. 具体而言, 对于每个问题 $q$, GRPO 从旧策略模型 $\pi_{\theta_{old}}$ 采样一组输出 $\{o_1, o_2, \cdots, o_G\}$, 然后通过最大化以下目标来优化策略模型 $\pi_\theta$:
 
-$$ \mathcal{J}_{GRPO}(\theta) = \mathbb{E}_{[q \sim P(Q), \{o_i\}_{i=1}^G \sim \pi_{\theta_{old}}(O|q)]} \left[ \frac{1}{G}\sum_{i=1}^G \left( \min\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)} A_i, \text{clip}\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1 - \epsilon, 1 + \epsilon\right) A_i \right) - \beta \mathbb{D}_{KL}(\pi_\theta || \pi_{ref}) \right) \right], \tag{26} $$
+$$
+ \mathcal{J}_{GRPO}(\theta) = \mathbb{E}_{[q \sim P(Q), \{o_i\}_{i=1}^G \sim \pi_{\theta_{old}}(O|q)]} \left[ \frac{1}{G}\sum_{i=1}^G \left( \min\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)} A_i, \text{clip}\left( \frac{\pi_\theta(o_i|q)}{\pi_{\theta_{old}}(o_i|q)}, 1 - \epsilon, 1 + \epsilon\right) A_i \right) - \beta \mathbb{D}_{KL}(\pi_\theta || \pi_{ref}) \right) \right], \tag{26}
+$$
 
-$$ \mathbb{D}_{KL}(\pi_\theta || \pi_{ref}) = \frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - \log\frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - 1, \tag{27} $$
+$$
+ \mathbb{D}_{KL}(\pi_\theta || \pi_{ref}) = \frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - \log\frac{\pi_{ref}(o_i|q)}{\pi_\theta(o_i|q)} - 1, \tag{27}
+$$
 
 其中 $\epsilon$ 和 $\beta$ 是超参数; $\pi_{ref}$ 是参考模型; $A_i$ 是优势, 源自每个组内输出对应的奖励 $\{r_1, r_2, \ldots, r_G\}$:
 
-$$ A_i = \frac{r_i - \operatorname{mean}(\{r_1, r_2, \cdots, r_G\})}{\operatorname{std}(\{r_1, r_2, \cdots, r_G\})}. \tag{28} $$
+$$
+ A_i = \frac{r_i - \operatorname{mean}(\{r_1, r_2, \cdots, r_G\})}{\operatorname{std}(\{r_1, r_2, \cdots, r_G\})}. \tag{28}
+$$
 
 我们在 RL 过程中纳入来自代码、数学、写作、角色扮演和问答等多个领域的 prompt. 这种方法不仅使模型更紧密地与人类偏好对齐, 还增强了在基准测试上的性能, 尤其在可用 SFT 数据有限的场景中.
 

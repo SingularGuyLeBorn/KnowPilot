@@ -37,14 +37,12 @@ M[i,j]=
 P^{\mathrm{Intra}}_{\mathbf{q}}[i]-P_{\mathbf{k}}[j], & \lfloor i/C\rfloor-\lfloor j/C\rfloor=0 \\
 P^{\mathrm{Succ}}_{\mathbf{q}}[i]-P_{\mathbf{k}}[j], & \lfloor i/C\rfloor-\lfloor j/C\rfloor=1 \\
 P^{\mathrm{Inter}}_{\mathbf{q}}[i]-P_{\mathbf{k}}[j], & \lfloor i/C\rfloor-\lfloor j/C\rfloor>1
-\end{cases}
-\tag{1}
+\end{cases} \tag{1}
 $$
 
 $$
 \mathbf{p}_i=\mathrm{softmax}\!\left(\frac{[\,f(\mathbf{q},P_{\mathbf{q}}[i])^\top f(\mathbf{k}_j,P_{\mathbf{k}}[j])\,]_{j\le i}}{\sqrt{d_k}}\right),\quad
-\mathbf{o}_i=\mathbf{p}_i V_{:i}
-\tag{2}
+\mathbf{o}_i=\mathbf{p}_i V_{:i} \tag{2}
 $$
 
 下文「Intra / Inter / Succ」指 **相对位置矩阵 $M$ 的三段构造规则**（论文 Figure 2），便于理解；实现上对应式 (1)(2) 的统一 attention。
@@ -66,8 +64,7 @@ $$
 
 $$
 \mathrm{Attn}_{\mathrm{intra}}(q_t, K, V) =
-\mathrm{softmax}\!\left(\frac{q_t K_{[b(t),:]}^{\top}}{\sqrt{d_k}}\right) V_{[b(t),:]}
-\tag{2}
+\mathrm{softmax}\!\left(\frac{q_t K_{[b(t),:]}^{\top}}{\sqrt{d_k}}\right) V_{[b(t),:]} \tag{2}
 $$
 
 其中 $b(t)$ 为 $t$ 所在 chunk 索引。
@@ -78,8 +75,7 @@ Query 来自当前块，Key/Value 来自 **先前各块的聚合表示** $\bar{k
 
 $$
 \mathrm{Attn}_{\mathrm{inter}}(q_t) =
-\mathrm{softmax}\!\left(\frac{q_t \, \bar{K}_{<b(t)}^{\top}}{\sqrt{d_k}}\right) \bar{V}_{<b(t)}
-\tag{3}
+\mathrm{softmax}\!\left(\frac{q_t \, \bar{K}_{<b(t)}^{\top}}{\sqrt{d_k}}\right) \bar{V}_{<b(t)} \tag{3}
 $$
 
 跨块 RoPE 使用 **块差** $\Delta b = b(t) - b(s)$ 而非全局 $|t-s|$。

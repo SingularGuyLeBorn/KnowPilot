@@ -4,7 +4,7 @@ title: "Qwen2-Audio多模态架构剖析"
 
 # Qwen2-Audio 多模态架构剖析
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > 本文基于《Qwen2-Audio 技术报告精译》的架构与训练章节, 对音频-语言融合架构、自然语言提示统一机制、双模式联合训练及 DPO 后训练的工程原理进行深度拆解.
@@ -158,7 +158,9 @@ DPO 的核心优势在于**流程简化**:
 
 DPO 损失函数中的参考模型 $\mathcal{P}_{\text{ref}}$ 起到了关键的「锚定」作用:
 
-$$ \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(\bm{x}, \bm{y_w}, \bm{y_l})} \left[ \log \sigma \left( \beta \log \frac{\mathcal{P}_\theta(\bm{y_w} | \bm{x})}{\mathcal{P}_{\text{ref}}(\bm{y_w} | \bm{x})} - \beta \log \frac{\mathcal{P}_\theta(\bm{y_l} | \bm{x})}{\mathcal{P}_{\text{ref}}(\bm{y_l} | \bm{x})} \right) \right] $$
+$$
+ \mathcal{L}_{\text{DPO}} = -\mathbb{E}_{(\bm{x}, \bm{y_w}, \bm{y_l})} \left[ \log \sigma \left( \beta \log \frac{\mathcal{P}_\theta(\bm{y_w} | \bm{x})}{\mathcal{P}_{\text{ref}}(\bm{y_w} | \bm{x})} - \beta \log \frac{\mathcal{P}_\theta(\bm{y_l} | \bm{x})}{\mathcal{P}_{\text{ref}}(\bm{y_l} | \bm{x})} \right) \right]
+$$
 
 $\beta$ 参数控制了策略偏离参考模型的程度. 当 $\beta \to \infty$ 时, 模型被迫严格跟随参考模型, 几乎没有优化空间; 当 $\beta \to 0$ 时, 模型可以自由优化偏好对, 但可能偏离 SFT 基座太远, 导致通用能力下降或输出风格失控.
 

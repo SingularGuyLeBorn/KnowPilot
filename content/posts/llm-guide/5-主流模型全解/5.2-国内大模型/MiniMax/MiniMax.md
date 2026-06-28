@@ -106,7 +106,7 @@ M2.5(2026 年 2 月)是 MiniMax 在 Agent 方向的重要里程碑：
 - **编程与工具调用能力的大幅提升**——在 SWE-bench、LiveCodeBench 等编码基准上进入第一梯队
 - **Office Agent 能力**：Word/Excel/PDF 等文档处理 Agent
 
-> ⚠️ 需要注意的是，M2.5 的 Office Skill 被 Kimi 指控抄袭(代码结构高度相似，详见 Kimi 部分的分析)，这对 MiniMax 的技术声誉造成了一定影响。
+>  需要注意的是，M2.5 的 Office Skill 被 Kimi 指控抄袭(代码结构高度相似，详见 Kimi 部分的分析)，这对 MiniMax 的技术声誉造成了一定影响。
 
 ### 4.2 M2.7：编码 Agent 的最新迭代
 
@@ -122,8 +122,8 @@ M2.7(2026 年 3 月)进一步强化了编码 Agent 能力：
 MiniMax-01 (2025.1)          MiniMax-M2 (2025.10)
   ├ 架构: Linear+Softmax        ├ 架构: Full Attention
   ├ 参数: 456B/45.9B           ├ 定位: Agent 场景
-  ├ 上下文: 4M token            ├ 多跳推理: ✅ 显著提升
-  ├ 开源: ✅ Apache 2.0         ├ 开源: ❌ 闭源
+  ├ 上下文: 4M token            ├ 多跳推理:  显著提升
+  ├ 开源:  Apache 2.0         ├ 开源:  闭源
   └ 核心创新: Lightning Attn    └ 核心决策: 务实回调
 
 MiniMax-M1 (2025)              MiniMax-M2.5 (2026.2)

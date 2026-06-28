@@ -5,7 +5,7 @@ status: completed
 
 # Llama 3 集群失效分析精读
 
-> 🔙 **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
+>  **[返回 14.3-LLaMA 家族总览](../../14.3-LLaMA.md)**
 
 
 > 本文基于《The Llama 3 Herd of Models》技术报告中 Section 3.5 "Infrastructure, Scaling, and Efficiency" 的可靠性数据, 对 16K H100 GPU 超大规模训练集群在 54 天预训练期间的 466 次作业中断进行系统性失效分析, 并推导其自动化容错机制的设计原理与工程代价.

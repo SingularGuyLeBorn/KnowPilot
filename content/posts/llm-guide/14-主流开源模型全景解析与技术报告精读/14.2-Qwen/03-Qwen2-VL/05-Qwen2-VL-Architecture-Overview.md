@@ -4,7 +4,7 @@ title: "Qwen2-VL多模态架构剖析"
 
 # Qwen2-VL 多模态架构剖析
 
-> 🔙 **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
+>  **[返回 14.2-Qwen 家族总览](../../14.2-Qwen.md)**
 
 
 > **分析基础**: Qwen2-VL: Enhancing Vision-Language Model's Perception of the World at Any Resolution (arXiv:2409.12191)

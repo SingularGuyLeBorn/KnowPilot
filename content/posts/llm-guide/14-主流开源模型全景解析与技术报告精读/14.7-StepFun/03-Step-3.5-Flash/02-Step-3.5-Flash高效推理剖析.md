@@ -4,7 +4,7 @@ title: "Step-3.5-Flash高效推理剖析"
 
 # Step 3.5 Flash 高效推理剖析
 
-> 🔙 **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
+>  **[返回 14.7-StepFun 家族总览](../../14.7-StepFun.md)**
 
 
 > 信息来源: Step 3.5 Flash Technical Report (arXiv:2602.10604)

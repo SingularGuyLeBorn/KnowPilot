@@ -10,7 +10,7 @@ status: completed
 
 # Kimi K2.5: Visual Agentic Intelligence
 
-> 🔙 **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
+>  **[返回 14.5-Kimi 家族总览](../../14.5-Kimi.md)**
 
 ## Abstract
 

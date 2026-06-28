@@ -4,7 +4,7 @@ title: "MiniMax-M2.5"
 
 # MiniMax-M2.5
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 

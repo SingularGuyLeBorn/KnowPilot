@@ -3,7 +3,7 @@ title: "DeepSeek-Coder 核心架构剖析"
 ---
 # DeepSeek-Coder 核心架构剖析
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 > 本文基于《DeepSeek-Coder 技术报告精译》与 D5 核心技术专题, 对 DeepSeek-Coder 的架构进行系统性梳理. Coder 是 DeepSeek 家族的第一款开源模型, 专注于代码智能领域.
 > 详细分析请参阅 [05-DeepSeek-Coder-Architecture-Overview.md](./05-DeepSeek-Coder-Architecture-Overview.md).

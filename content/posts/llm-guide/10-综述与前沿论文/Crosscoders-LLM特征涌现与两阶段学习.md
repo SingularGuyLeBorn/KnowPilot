@@ -24,12 +24,18 @@ Crosscoder 为不同训练快照的激活构建**统一的共享特征空间**.
 
 设 $\Theta$ 为训练快照集合,$a^\theta(x)$ 为输入 $x$ 在快照 $\theta$ 的激活. Encoder 为每个快照分配专属权重 $W_{\text{enc}}^\theta$,但共享偏置 $b_{\text{enc}}$,产生跨快照共享的稀疏特征 $f(x)$; 每个快照还有专属Decoder   $W_{\text{dec}}^\theta$ 负责重构: 
 
-$$f(x) = \sigma\left(\sum_{\theta \in \Theta} W_{\text{enc}}^\theta a^\theta(x) + b_{\text{enc}}\right) \tag{1}$$
-$$\hat{a}^\theta(x) = W_{\text{dec}}^\theta f(x) + b_{\text{dec}}^\theta \tag{2}$$
+$$
+f(x) = \sigma\left(\sum_{\theta \in \Theta} W_{\text{enc}}^\theta a^\theta(x) + b_{\text{enc}}\right) \tag{1}
+$$
+$$
+\hat{a}^\theta(x) = W_{\text{dec}}^\theta f(x) + b_{\text{dec}}^\theta \tag{2}
+$$
 
 训练目标最小化重构损失与稀疏度损失之和: 
 
-$$\mathcal{L}(x) = \sum_{\theta \in \Theta} \|a^\theta(x) - \hat{a}^\theta(x)\|^2 + \lambda_{\text{sparsity}} \sum_{\theta \in \Theta} \sum_{i=1}^{n_{\text{features}}} \Omega\left(f_i(x) \cdot \|W_{\text{dec},i}^\theta\|\right) \tag{3}$$
+$$
+\mathcal{L}(x) = \sum_{\theta \in \Theta} \|a^\theta(x) - \hat{a}^\theta(x)\|^2 + \lambda_{\text{sparsity}} \sum_{\theta \in \Theta} \sum_{i=1}^{n_{\text{features}}} \Omega\left(f_i(x) \cdot \|W_{\text{dec},i}^\theta\|\right) \tag{3}
+$$
 
 ### 关键洞察: Decoder  范数作为特征强度代理
 

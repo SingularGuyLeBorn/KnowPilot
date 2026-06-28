@@ -6,7 +6,7 @@ source_pdf: GLM-5V-Turbo.pdf
 
 # 08-GLM-5V-Turbo Technical Report
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 
 

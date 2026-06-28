@@ -5,7 +5,7 @@ status: completed
 
 # OLMo 科学白盒架构剖析
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 
 > 对应精译: [01-OLMo技术报告精译](./01-OLMo技术报告精译.md)
@@ -58,7 +58,7 @@ OLMo 采用标准的 decoder-only Transformer 架构, 提供 1B 和 7B 两种规
 | 全局 Batch Size | ~4M tokens | ~4M tokens |
 | 序列长度 | 2048 | 2048 |
 | 峰值学习率 | $4.0 \times 10^{-4}$ | $3.0 \times 10^{-4}$ |
-| 权重共享 | 是(embedding ↔ LM head) | 否 |
+| 权重共享 | 是(embedding  LM head) | 否 |
 
 > 表 2: OLMo 模型架构与训练配置.
 

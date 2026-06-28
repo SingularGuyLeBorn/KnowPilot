@@ -164,16 +164,16 @@ In this paper, we present Qwen2-Audio, which builds upon Qwen-Audio’s capabili
 <summary>text_image</summary>
 
 "Help me translate the sentence into Chinese. Everyone wants to be appreciated, so if you appreciate someone, don't keep it a secret."
-▶ 0:00 / 0:07
+ 0:00 / 0:07
 每个人都希望被欣赏，所以如果你欣赏某人，不要把它保密。
 "Translate it into German."
-▶ 0:00 / 0:03
+ 0:00 / 0:03
 Jeder möchte geschätzt werden, also wenn du jemanden schätzt, lass es nicht als Geheimnis verbergen.
 "How about into French?"
-▶ 0:00 / 0:03
+ 0:00 / 0:03
 Chacun veut être apprécié, alors si tu apprécies quelqu'un, ne le gardes pas secret.
 "给我生成一些类似这句话意思的，其他说法的句子，用中文生成。"
-▶ 0:00 / 0:05
+ 0:00 / 0:05
 1. 每个人都喜欢被赞美，所以如果你喜欢一个人，不要隐藏你的赞赏。
 2. 所有人都渴望得到认可，因此如果你欣赏某人，请不要独自享用这种感觉。
 3. 欣赏他人是一种美德，所以不要让别人知道你对他们的赞赏是秘密的。
@@ -189,19 +189,19 @@ Figure 5: Example showing Qwen2-Audio’s capability in free chat around speech.
 <summary>text_image</summary>
 
 (with renovation noise) "Oh no, how can I study quiet like this?"
-▶ 0:00 / 0:05
+ 0:00 / 0:05
 Use headphones to block out external noise and find a quiet place to study.
 Prioritize your tasks and set realistic goals for yourself. Use active learning
 techniques such as summarizing, note-taking, and quizzing to help you
 retain information. Take breaks and practice self-care to avoid burnout.
 (with renovation noise) "In this situation, can I negotiate with them?"
-▶ 0:00 / 0:05
+ 0:00 / 0:05
 Yes, you can try negotiating with them to reach a mutually beneficial
 agreement. You could also consider seeking help from a mediator or
 professional negotiator if needed.
 (雨声)“哎呀，真喜欢在这种场景下睡觉啊睡的真香，你能猜猜为什么我喜欢在这种场景
 下睡觉吗？”
-▶ 0:00 / 0:07
+ 0:00 / 0:07
 因为这种场景让你感到放松和舒适，有助于提高睡眠质量。
 </details>
 

@@ -4,7 +4,7 @@ title: "MiMo-V2-Flash"
 
 # MiMo-V2-Flash
 
-> 🔙 **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
+>  **[返回 14.9-MiMo 家族总览](../../14.9-MiMo.md)**
 
 
 

@@ -6,7 +6,7 @@ date: 2026-05-19
 
 # DeepSeek-Math
 
-> 🔙 **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
+>  **[返回 14.1-DeepSeek 家族总览](../../14.1-DeepSeek.md)**
 
 DeepSeek-Math 是 DeepSeek 在数学推理方向上的关键专项模型。它一方面通过 120B 数学相关 token 的数据工程，把 7B 级别模型推到了接近 GPT-4 的竞赛级数学推理水平; 另一方面又首次提出了 GRPO，为后续 DeepSeek 全系推理模型的强化学习路线奠定了基础。
 

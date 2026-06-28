@@ -6,7 +6,7 @@ source_pdf: OLMo-Technical-Report.pdf
 
 # OLMo Technical Report
 
-> 🔙 **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
+>  **[返回 14.4-OLMo 家族总览](../../14.4-OLMo.md)**
 
 
 > Original source: OLMo technical report PDF

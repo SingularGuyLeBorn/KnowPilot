@@ -4,7 +4,7 @@ title: "GLM-4 核心技术专题索引"
 
 # GLM-4 核心技术专题索引
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 ## 1. 技术问题定义与背景 (Technical Problem Definition)
 
@@ -41,7 +41,9 @@ GLM-4 不是简单地在 SFT 阶段加入工具调用指令，而是通过 **Age
 - 构造了一个包含多步推理、错误纠正和跨工具通信的高质量轨迹(Trajectory)数据集。
 - 使用 Reward Model 对 Agent 探索的轨迹进行打分，并采用 RLHF 进一步强化。
 
-$$ R(s, a) = R_{task}(s, a) + \lambda \cdot R_{tool\_efficiency}(s, a) - \gamma \cdot R_{hallucination}(s, a) $$
+$$
+ R(s, a) = R_{task}(s, a) + \lambda \cdot R_{tool\_efficiency}(s, a) - \gamma \cdot R_{hallucination}(s, a)
+$$
 (奖励函数不仅考虑任务是否完成，还惩罚无效的工具调用和幻觉)
 
 ### 2.3 LongAlign 长文本对齐

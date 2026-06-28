@@ -4,7 +4,7 @@ title: "MiniMax M2.5：Agent-Native RL规模化与成本效率的极致工程"
 
 # 03-MiniMax-M2.5 核心技术专题：Agent-Native RL 规模化与成本效率的极致工程
 
-> 🔙 **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
+>  **[返回 14.8-MiniMax 家族总览](../../14.8-MiniMax.md)**
 
 
 ## 一、模型定位与发布背景
@@ -142,10 +142,14 @@ M2.5 继承了 M2 的 **LightningAttention** 技术：
 **LightningAttention 核心思想**：
 将标准 Attention 的 $O(N^2)$ 复杂度降低到近似 $O(N)$：
 
-$$\text{Attention}(Q, K, V) \approx \text{LinearAttention}(Q, K, V)$$
+$$
+\text{Attention}(Q, K, V) \approx \text{LinearAttention}(Q, K, V)
+$$
 
 通过核技巧(Kernel Trick)将 Softmax Attention 替换为线性核函数：
-$$\text{sim}(q, k) = \phi(q) \cdot \phi(k)$$
+$$
+\text{sim}(q, k) = \phi(q) \cdot \phi(k)
+$$
 
 这样可以将计算顺序从 $(Q \cdot K^T) \cdot V$ 变为 $Q \cdot (K^T \cdot V)$，将复杂度从 $O(N^2 d)$ 降到 $O(N d^2)$. 
 

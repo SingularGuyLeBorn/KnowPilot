@@ -16,54 +16,54 @@ tags: []
 
 | Type | Model Name | #Parameters | Release | Base Models | Open Source | #Tokens |
 | --- | --- | --- | --- | --- | --- | --- |
-| Encoder-Only | BERT | 110M, 340M | 2018 | - | ✅ | 137B |
-| Encoder-Only | [RoBERTa](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=RoBERTa&zhida_source=entity) | 355M | 2019 | - | ✅ | 2.2T |
-| Encoder-Only | [ALBERT](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=ALBERT&zhida_source=entity) | 12M, 18M, 60M, 235M | 2019 | - | ✅ | 137B |
-| Encoder-Only | [DeBERTa](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=DeBERTa&zhida_source=entity) | - | 2020 | - | ✅ | - |
-| Encoder-Only | XLNet | 110M, 340M | 2019 | - | ✅ | 32.89B |
-| Decoder-only | GPT-1 | 120M | 2018 | - | ✅ | 1.3B |
-| Decoder-only | GPT-2 | 1.5B | 2019 | - | ✅ | 10B |
-| Encoder-Decoder | T5 (Base) | 223M | 2019 | - | ✅ | 156B |
-| Encoder-Decoder | MT5 (Base) | 300M | 2020 | - | ✅ | - |
-| Encoder-Decoder | BART (Base) | 139M | 2019 | - | ✅ | - |
-| GPT Family | GPT-3 | 125M, 350M, 760M, 1.3B, 2.7B, 6.7B, 13B, 175B | 2020 | - | ❌ | 300B |
-| GPT Family | CODEX | 12B | 2021 | GPT | ✅ | - |
-| GPT Family | WebGPT | 760M, 13B, 175B | 2021 | GPT-3 | ❌ | - |
-| GPT Family | GPT-4 | 1.76T | 2023 | - | ❌ | 13T |
-| LLaMA Family | LLaMA1 | 7B, 13B, 33B, 65B | 2023 | - | ✅ | 1T, 1.4T |
-| LLaMA Family | LLaMA2 | 7B, 13B, 34B, 70B | 2023 | - | ✅ | 2T |
-| LLaMA Family | [Alpaca](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=Alpaca&zhida_source=entity) | 7B | 2023 | LLaMA1 | ✅ | - |
-| LLaMA Family | [Vicuna-13B](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=Vicuna-13B&zhida_source=entity) | 13B | 2023 | LLaMA1 | ✅ | - |
-| LLaMA Family | Koala | 13B | 2023 | LLaMA | ✅ | - |
-| LLaMA Family | Mistral-7B | 7.3B | 2023 | - | ✅ | - |
-| LLaMA Family | Code Llama | 34 | 2023 | LLaMA2 | ✅ | 500B |
-| LLaMA Family | LongLLaMA | 3B, 7B | 2023 | OpenLLaMA | ✅ | 1T |
-| LLaMA Family | LLaMA-Pro-8B | 8.3B | 2024 | LLaMA2-7B | ✅ | 80B |
-| LLaMA Family | TinyLlama-1.1B | 1.1B | 2024 | LLaMA1.1B | ✅ | 3T |
-| PaLM Family | PaLM | 8B, 62B, 540B | 2022 | - | ❌ | 780B |
-| PaLM Family | U-PaLM | 8B, 62B, 540B | 2022 | - | ❌ | 1.3B |
-| PaLM Family | PaLM-2 | 340B | 2023 | - | ✅ | 3.6T |
-| PaLM Family | Med-PaLM | 540B | 2022 | PaLM | ❌ | 780B |
-| PaLM Family | Med-PaLM 2 | - | 2023 | PaLM 2 | ❌ | - |
-| Other Popular LLMs | FLAN | 137B | 2021 | LaMDA-PT | ✅ | - |
-| Other Popular LLMs | Gopher | 280B | 2021 | - | ❌ | 300B |
-| Other Popular LLMs | ERNIE 4.0 | 10B | 2023 | - | ❌ | 4TB |
-| Other Popular LLMs | Retro | 7.5B | 2021 | - | ❌ | 600B |
-| Other Popular LLMs | LaMDA | 137B | 2022 | - | ❌ | 168B |
-| Other Popular LLMs | ChinChilla | 70B | 2022 | - | ❌ | 1.4T |
+| Encoder-Only | BERT | 110M, 340M | 2018 | - |  | 137B |
+| Encoder-Only | [RoBERTa](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=RoBERTa&zhida_source=entity) | 355M | 2019 | - |  | 2.2T |
+| Encoder-Only | [ALBERT](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=ALBERT&zhida_source=entity) | 12M, 18M, 60M, 235M | 2019 | - |  | 137B |
+| Encoder-Only | [DeBERTa](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=DeBERTa&zhida_source=entity) | - | 2020 | - |  | - |
+| Encoder-Only | XLNet | 110M, 340M | 2019 | - |  | 32.89B |
+| Decoder-only | GPT-1 | 120M | 2018 | - |  | 1.3B |
+| Decoder-only | GPT-2 | 1.5B | 2019 | - |  | 10B |
+| Encoder-Decoder | T5 (Base) | 223M | 2019 | - |  | 156B |
+| Encoder-Decoder | MT5 (Base) | 300M | 2020 | - |  | - |
+| Encoder-Decoder | BART (Base) | 139M | 2019 | - |  | - |
+| GPT Family | GPT-3 | 125M, 350M, 760M, 1.3B, 2.7B, 6.7B, 13B, 175B | 2020 | - |  | 300B |
+| GPT Family | CODEX | 12B | 2021 | GPT |  | - |
+| GPT Family | WebGPT | 760M, 13B, 175B | 2021 | GPT-3 |  | - |
+| GPT Family | GPT-4 | 1.76T | 2023 | - |  | 13T |
+| LLaMA Family | LLaMA1 | 7B, 13B, 33B, 65B | 2023 | - |  | 1T, 1.4T |
+| LLaMA Family | LLaMA2 | 7B, 13B, 34B, 70B | 2023 | - |  | 2T |
+| LLaMA Family | [Alpaca](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=Alpaca&zhida_source=entity) | 7B | 2023 | LLaMA1 |  | - |
+| LLaMA Family | [Vicuna-13B](https://zhida.zhihu.com/search?content_id=241846195&content_type=Article&match_order=1&q=Vicuna-13B&zhida_source=entity) | 13B | 2023 | LLaMA1 |  | - |
+| LLaMA Family | Koala | 13B | 2023 | LLaMA |  | - |
+| LLaMA Family | Mistral-7B | 7.3B | 2023 | - |  | - |
+| LLaMA Family | Code Llama | 34 | 2023 | LLaMA2 |  | 500B |
+| LLaMA Family | LongLLaMA | 3B, 7B | 2023 | OpenLLaMA |  | 1T |
+| LLaMA Family | LLaMA-Pro-8B | 8.3B | 2024 | LLaMA2-7B |  | 80B |
+| LLaMA Family | TinyLlama-1.1B | 1.1B | 2024 | LLaMA1.1B |  | 3T |
+| PaLM Family | PaLM | 8B, 62B, 540B | 2022 | - |  | 780B |
+| PaLM Family | U-PaLM | 8B, 62B, 540B | 2022 | - |  | 1.3B |
+| PaLM Family | PaLM-2 | 340B | 2023 | - |  | 3.6T |
+| PaLM Family | Med-PaLM | 540B | 2022 | PaLM |  | 780B |
+| PaLM Family | Med-PaLM 2 | - | 2023 | PaLM 2 |  | - |
+| Other Popular LLMs | FLAN | 137B | 2021 | LaMDA-PT |  | - |
+| Other Popular LLMs | Gopher | 280B | 2021 | - |  | 300B |
+| Other Popular LLMs | ERNIE 4.0 | 10B | 2023 | - |  | 4TB |
+| Other Popular LLMs | Retro | 7.5B | 2021 | - |  | 600B |
+| Other Popular LLMs | LaMDA | 137B | 2022 | - |  | 168B |
+| Other Popular LLMs | ChinChilla | 70B | 2022 | - |  | 1.4T |
 | Other Popular LLMs | Galactia-120B | 120B | 2022 | - | - | 450B |
-| Other Popular LLMs | CodeGen | 16.1B | 2022 | - | ✅ | - |
-| Other Popular LLMs | BLOOM | 176B | 2022 | - | ✅ | 366B |
-| Other Popular LLMs | Zephyr | 7.24B | 2023 | Mistral-7B | ✅ | 800B |
-| Other Popular LLMs | Grok-0 | 33B | 2023 | - | ❌ | - |
+| Other Popular LLMs | CodeGen | 16.1B | 2022 | - |  | - |
+| Other Popular LLMs | BLOOM | 176B | 2022 | - |  | 366B |
+| Other Popular LLMs | Zephyr | 7.24B | 2023 | Mistral-7B |  | 800B |
+| Other Popular LLMs | Grok-0 | 33B | 2023 | - |  | - |
 | Other Popular LLMs | ORCA-2 | 13B | 2023 | LLaMA2 | - | 2001B |
-| Other Popular LLMs | StartCoder | 15.5B | 2023 | - | ✅ | 35B |
-| Other Popular LLMs | MPT | 7B | 2023 | - | ✅ | 1T |
-| Other Popular LLMs | Mixtral-8x7B | 46.7B | 2023 | - | ✅ | - |
-| Other Popular LLMs | Falcon 180B | 180B | 2023 | - | ✅ | 3.5T |
-| Other Popular LLMs | Gemini | 1.8B, 3.25B | 2023 | - | ✅ | - |
-| Other Popular LLMs | DeepSeek-Coder | 1.3B, 6.7B, 33B | 2024 | - | ✅ | 2T |
-| Other Popular LLMs | DocLLM | 1B,7B | 2024 | - | ❌ | 2T |
+| Other Popular LLMs | StartCoder | 15.5B | 2023 | - |  | 35B |
+| Other Popular LLMs | MPT | 7B | 2023 | - |  | 1T |
+| Other Popular LLMs | Mixtral-8x7B | 46.7B | 2023 | - |  | - |
+| Other Popular LLMs | Falcon 180B | 180B | 2023 | - |  | 3.5T |
+| Other Popular LLMs | Gemini | 1.8B, 3.25B | 2023 | - |  | - |
+| Other Popular LLMs | DeepSeek-Coder | 1.3B, 6.7B, 33B | 2024 | - |  | 2T |
+| Other Popular LLMs | DocLLM | 1B,7B | 2024 | - |  | 2T |
 
 ### 前期研究
 

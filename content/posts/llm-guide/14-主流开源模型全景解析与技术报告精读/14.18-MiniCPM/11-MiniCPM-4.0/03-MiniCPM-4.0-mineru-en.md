@@ -5,7 +5,7 @@ converted_by: PyMuPDF
 
 # MiniCPM4: Ultra-Efficient LLMs on End Devices
 
-> 🔙 **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
+>  **[返回 14.18-MiniCPM 家族总览](../../14.18-MiniCPM.md)**
 
 > Authors: MiniCPM Team
 https://huggingface.co/openbmb/MiniCPM4-8B

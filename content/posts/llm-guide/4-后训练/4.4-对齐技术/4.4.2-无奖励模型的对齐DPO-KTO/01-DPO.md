@@ -29,41 +29,55 @@ DPO 的核心洞见在于论文标题的点睛之笔: **"Your Language Model is 
 
 标准的 RLHF 流程使用 PPO 算法, 其优化目标是在奖励最大化与策略稳定性之间取得平衡. 该目标可以形式化地写为:
 
-$$ \max_{\pi_\theta} \mathbb{E}_{x \sim \mathcal{D}, y \sim \pi_\theta(y|x)}[r_\phi(x,y)] - \beta D_{KL}[\pi_\theta(y|x) \,||\, \pi_{\text{ref}}(y|x)] \tag{1} $$
+$$
+ \max_{\pi_\theta} \mathbb{E}_{x \sim \mathcal{D}, y \sim \pi_\theta(y|x)}[r_\phi(x,y)] - \beta D_{KL}[\pi_\theta(y|x) \,||\, \pi_{\text{ref}}(y|x)] \tag{1}
+$$
 此式包含两个竞争项. 第一项 $r_\phi(x,y)$ 是奖励模型对生成结果 $y$ 的打分，驱动策略模型 $\pi_\theta$ 朝着高奖励方向移动. 第二项 $D_{KL}[\pi_\theta \,||\, \pi_{\text{ref}}]$ 衡量优化后的模型与初始参考模型(通常是 SFT 模型)之间的分布差异，超参数 $\beta$ 像一个**牵引绳**，防止模型为了追求高奖励而偏离原始语言能力太远，导致输出分布 collapse 或模式崩溃. 
 
 ### 2. 关键洞察: 最优策略的解析解
 
 为了将强化学习目标转化为可直接优化的形式，需要建立最优策略与奖励函数之间的解析关系. 对式 (1) 进行变分求解，可得最优策略 $\pi_r$ 的闭式表达式:
 
-$$ \pi_r(y|x) = \frac{1}{Z(x)} \pi_{\text{ref}}(y|x) \exp\left(\frac{1}{\beta}r(x,y)\right) \tag{2} $$
+$$
+ \pi_r(y|x) = \frac{1}{Z(x)} \pi_{\text{ref}}(y|x) \exp\left(\frac{1}{\beta}r(x,y)\right) \tag{2}
+$$
 其中 $Z(x) = \sum_y \pi_{\text{ref}}(y|x) \exp\left(\frac{1}{\beta}r(x,y)\right)$ 是配分函数，作用是对所有可能输出 $y$ 的概率进行归一化，确保 $\sum_y \pi_r(y|x)=1$. 式 (2) 的核心意义在于：最优策略由参考策略按奖励指数加权得到，奖励越高的输出获得的概率提升越大，而 $\beta$ 控制着这种提升的锐度. 
 
 ### 3. 反向推导: 从策略反解奖励
 
 既然策略可以由奖励表示，那么反过来，奖励也应能由策略反解. 对式 (2) 两侧取对数并整理，可得到奖励函数的显式表达式:
 
-$$ r(x,y) = \beta \log\left(\frac{\pi_r(y|x)}{\pi_{\text{ref}}(y|x)}\right) + \beta \log(Z(x)) \tag{3} $$
+$$
+ r(x,y) = \beta \log\left(\frac{\pi_r(y|x)}{\pi_{\text{ref}}(y|x)}\right) + \beta \log(Z(x)) \tag{3}
+$$
 式 (3) 是 DPO 的理论基石. 它表明奖励函数完全由策略比值 $\pi_r/\pi_{\text{ref}}$ 决定，无需单独训练奖励模型. 其中 $\beta \log(Z(x))$ 仅与输入 $x$ 有关，对于同一 $x$ 下的不同 $y$ 为常数，因此在后续比较偏好时会被消去. 
 
 ### 4. 建模偏好: Bradley-Terry 模型
 
 为了将隐式奖励与人类标注的偏好数据关联，需要引入偏好概率模型. Bradley-Terry (BT) 模型假设人类对两个选项 $y_w$(winner，更偏好)和 $y_l$(loser，不太偏好)的选择概率由奖励差异决定:
 
-$$ p^*(y_w \succ y_l | x) = \frac{\exp(r(x, y_w))}{\exp(r(x, y_w)) + \exp(r(x, y_l))} = \sigma\bigl(r(x, y_w) - r(x, y_l)\bigr) \tag{4} $$
+$$
+ p^*(y_w \succ y_l | x) = \frac{\exp(r(x, y_w))}{\exp(r(x, y_w)) + \exp(r(x, y_l))} = \sigma\bigl(r(x, y_w) - r(x, y_l)\bigr) \tag{4}
+$$
 其中 $\sigma$ 是 Sigmoid 函数. 式 (4) 的物理意义是：两个选项的奖励差异越大，人类选择 $y_w$ 的确定性越高; 当差异为 0 时，选择概率恰好为 0.5. 
 
 ### 5. 终极一跃: 组合推导出 DPO 损失函数
 
 现在将式 (3) 的隐式奖励代入式 (4) 的 BT 模型. 对于同一输入 $x$，两个输出的奖励差异为:
 
-$$ r(x, y_w) - r(x, y_l) = \beta \log\frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log\frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \tag{5} $$
+$$
+ r(x, y_w) - r(x, y_l) = \beta \log\frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log\frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \tag{5}
+$$
 这里用待优化的策略 $\pi_\theta$ 替换理想中的最优策略 $\pi_r$，并消去了与 $y$ 无关的常数项 $\beta \log(Z(x))$. 将式 (5) 代入式 (4)，人类偏好概率可完全由策略比值表示:
 
-$$ p^*(y_w \succ y_l | x) = \sigma\left( \beta \log\frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log\frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \right) \tag{6} $$
+$$
+ p^*(y_w \succ y_l | x) = \sigma\left( \beta \log\frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log\frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \right) \tag{6}
+$$
 至此，复杂的强化学习问题已转化为监督学习问题：通过最大似然估计 (MLE) 使模型预测的偏好概率逼近人类标注的真实偏好. 最小化负对数似然得到最终的 DPO 损失函数:
 
-$$ \mathcal{L}_{\text{DPO}}(\pi_\theta; \pi_{\text{ref}}) = - \mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}} \left[ \log \sigma\left( \beta \log\frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log\frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \right) \right] \tag{7} $$
+$$
+ \mathcal{L}_{\text{DPO}}(\pi_\theta; \pi_{\text{ref}}) = - \mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}} \left[ \log \sigma\left( \beta \log\frac{\pi_\theta(y_w|x)}{\pi_{\text{ref}}(y_w|x)} - \beta \log\frac{\pi_\theta(y_l|x)}{\pi_{\text{ref}}(y_l|x)} \right) \right] \tag{7}
+$$
 这个损失函数非常直观:
 
 - 它试图最大化模型对 $y_w$ 的生成概率 (相对于参考模型), 同时最小化对 $y_l$ 的生成概率.- $\beta$ 参数扮演着**恒温器**的角色:

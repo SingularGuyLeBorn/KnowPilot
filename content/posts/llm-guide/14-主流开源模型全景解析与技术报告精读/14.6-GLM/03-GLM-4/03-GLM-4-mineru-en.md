@@ -9,7 +9,7 @@ status: completed
 
 # GLM-4: ChatGLM Family Technical Report
 
-> 🔙 **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
+>  **[返回 14.6-GLM 家族总览](../../14.6-GLM.md)**
 
 Team GLM — Zhipu AI, Tsinghua University
 

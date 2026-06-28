@@ -692,7 +692,9 @@ $\mathcal{L}_{\text{DPO}}(\theta) = - \mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}
 
 一切的起点是标准的策略梯度 (Policy Gradient). 我们要最大化期望奖励:
 
-$$ J(\theta) = \mathbb{E}_{q \sim P(Q), o \sim \pi_\theta(\cdot|q)} [r(q, o)] \tag{1} $$
+$$
+ J(\theta) = \mathbb{E}_{q \sim P(Q), o \sim \pi_\theta(\cdot|q)} [r(q, o)] \tag{1}
+$$
 为了求式 (1) 的梯度，首先将期望显式地写成对所有可能输出 $o$ 的求和(或积分)形式. 注意这里只有策略 $\pi_\theta$ 包含需要优化的参数 $\theta$: 
 
 $J(\theta) = \mathbb{E}_{q \sim P(Q)} \left[ \sum_o \pi_\theta(o|q) \cdot r(q,o) \right]$
