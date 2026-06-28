@@ -19,6 +19,10 @@ import { taskRouter } from "./routers/task.js";
 import { workspaceRouter } from "./routers/workspace.js";
 import { triggerRouter } from "./routers/trigger.js";
 import { approvalRouter } from "./routers/approval.js";
+import { toolRouter } from "./routers/tool.js";
+import { runRouter } from "./routers/run.js";
+import { promptRouter } from "./routers/prompt.js";
+import { credentialRouter } from "./routers/credential.js";
 
 export const appRouter = router({
   post: postRouter,
@@ -35,6 +39,10 @@ export const appRouter = router({
   workspace: workspaceRouter,
   trigger: triggerRouter,
   approval: approvalRouter,
+  tool: toolRouter,
+  run: runRouter,
+  prompt: promptRouter,
+  credential: credentialRouter,
 });
 
 /** 导出类型供前端使用 — 这是 tRPC 的核心价值 */
