@@ -1,0 +1,119 @@
+/**
+ * Memory 同步器
+ *
+ * 文件格式：content/memories/{slug}.md
+ * frontmatter: content, type, strength, keywords
+ * 正文：content（如 frontmatter 未提供则使用正文）
+ */
+
+import { PrismaClient } from "@prisma/client";
+import { Syncer, SyncRecord } from "./types.js";
+import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, readNumber, getFileMtime } from "./utils.js";
+
+interface MemoryData {
+  content: string;
+  type: string;
+  strength: number;
+  keywords: string; // 逗号分隔
+}
+
+export const memorySyncer: Syncer<MemoryData> = {
+  entityName: "Memory",
+  contentDirName: "memories",
+  extensions: [".md"],
+
+  async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<MemoryData>[]> {
+    const filePaths = getFilesRecursive(contentDir, [".md"]);
+    const records: SyncRecord<MemoryData>[] = [];
+
+    for (const filePath of filePaths) {
+      try {
+        const slug = filePathToSlug(contentDir, filePath);
+        const mtime = getFileMtime(filePath);
+        const { data, content } = parseMarkdownFile(filePath);
+
+        const memoryContent = typeof data.content === "string" ? data.content : content.trim();
+        if (!memoryContent) {
+          console.warn(`  ⚠️ [Memory 跳过] ${filePath}: content 为空`);
+          continue;
+        }
+
+        const type = typeof data.type === "string" ? data.type : "episodic";
+        const strength = readNumber(data.strength, 1.0);
+        const keywords = readStringArray(data.keywords).join(",");
+
+        records.push({
+          slug,
+          mtime,
+          data: { content: memoryContent, type, strength, keywords },
+        });
+      } catch (e: any) {
+        console.error(`  ❌ [Memory 解析失败] ${filePath}:`, e.message);
+      }
+    }
+
+    return records;
+  },
+
+  async upsert(prisma: PrismaClient, record: SyncRecord<MemoryData>): Promise<void> {
+    const { slug, mtime, data } = record;
+
+    // Memory 以 sourceSlug 作为本地标识进行幂等同步
+    const existing = await prisma.memory.findUnique({
+      where: { sourceSlug: slug },
+    });
+
+    if (existing) {
+      await prisma.memory.update({
+        where: { id: existing.id },
+        data: {
+          content: data.content,
+          type: data.type,
+          strength: data.strength,
+          keywords: data.keywords,
+          sourceMtime: mtime,
+        },
+      });
+    } else {
+      await prisma.memory.create({
+        data: {
+          content: data.content,
+          type: data.type,
+          strength: data.strength,
+          keywords: data.keywords,
+          sourceSlug: slug,
+          sourceMtime: mtime,
+        },
+      });
+    }
+  },
+
+  async cleanup(prisma: PrismaClient, activeSlugs: string[]): Promise<number> {
+    // Memory 现在以 sourceSlug 为唯一标识，可以安全清理本地已删除的文件
+    const allInDb = await prisma.memory.findMany({ select: { id: true, sourceSlug: true } });
+    let deleted = 0;
+
+    for (const dbMemory of allInDb) {
+      if (dbMemory.sourceSlug && !activeSlugs.includes(dbMemory.sourceSlug)) {
+        await prisma.memory.delete({ where: { id: dbMemory.id } });
+        console.log(`  🗑️ [Memory 已清理] "${dbMemory.sourceSlug}" (本地文件已被删除)`);
+        deleted++;
+      }
+    }
+
+    return deleted;
+  },
+
+  async getExistingMtimes(prisma: PrismaClient): Promise<Map<string, Date>> {
+    const rows = await prisma.memory.findMany({
+      select: { sourceSlug: true, sourceMtime: true },
+    });
+    const map = new Map<string, Date>();
+    for (const row of rows) {
+      if (row.sourceSlug && row.sourceMtime) {
+        map.set(row.sourceSlug, row.sourceMtime);
+      }
+    }
+    return map;
+  },
+};
