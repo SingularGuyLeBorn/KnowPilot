@@ -1,5 +1,5 @@
 ---
-title: "Gemini 2.0 Flash Thinking：轻量模型上的测试时计算扩展先驱实验"
+title: "05 · Gemini 2.0 Flash Thinking：轻量模型上的测试时计算扩展先驱实验"
 ---
 
 # 07-Gemini-2.0-Flash-Thinking 核心技术专题：轻量模型上的测试时计算扩展先驱实验

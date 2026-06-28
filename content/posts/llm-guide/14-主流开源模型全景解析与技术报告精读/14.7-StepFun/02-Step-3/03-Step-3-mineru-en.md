@@ -1,5 +1,5 @@
 ---
-title: "02-Step-3 Technical Report (MinerU EN)"
+title: "03 · 02-Step-3 Technical Report (MinerU EN)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: step-3.pdf
 ---

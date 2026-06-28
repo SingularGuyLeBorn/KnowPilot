@@ -1,5 +1,5 @@
 ---
-title: "Qwen2.5 核心技术专题索引"
+title: "05 · Qwen2.5 核心技术专题索引"
 status: completed
 date: 2026-05-24
 ---

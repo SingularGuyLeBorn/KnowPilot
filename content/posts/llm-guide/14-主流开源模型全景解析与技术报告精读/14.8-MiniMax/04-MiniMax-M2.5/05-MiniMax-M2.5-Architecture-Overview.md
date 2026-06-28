@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.5真实世界生产力与Agent原生RL框架剖析"
+title: "05 · MiniMax-M2.5真实世界生产力与Agent原生RL框架剖析"
 ---
 
 # MiniMax M2.5 真实世界生产力与 Agent 原生 RL 框架剖析

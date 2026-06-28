@@ -1,5 +1,5 @@
 ---
-title: "Tool-integrated Reasoning RL 与 Agentic RL 前沿进展"
+title: "10 · Tool-integrated Reasoning RL 与 Agentic RL 前沿进展"
 date: 2026-05-16
 tags: [Agentic RL, Tool-integrated Reasoning, TIR, Search-R1, Multi-turn RL, 综述]
 ---

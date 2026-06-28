@@ -1,6 +1,6 @@
 ---
 
-title: "Gemma-3 Technical Report (MinerU 逐译+译者注)"
+title: "04 · Gemma-3 Technical Report (MinerU 逐译+译者注)"
 
 source: 03-Gemma-3-mineru-en.md
 

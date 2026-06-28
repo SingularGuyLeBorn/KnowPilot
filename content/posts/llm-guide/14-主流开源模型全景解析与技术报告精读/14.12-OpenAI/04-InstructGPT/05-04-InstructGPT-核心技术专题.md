@@ -1,5 +1,5 @@
 ---
-title: "InstructGPT: RLHF 对齐人类意图的里程碑 - 核心技术黑盒探测"
+title: "05 · InstructGPT: RLHF 对齐人类意图的里程碑 - 核心技术黑盒探测"
 ---
 # 04-InstructGPT 核心技术专题：黑盒边界与逆向工程
 

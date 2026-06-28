@@ -1,5 +1,5 @@
 ---
-title: "Llama-1 Technical Report (MinerU EN)"
+title: "03 · Llama-1 Technical Report (MinerU EN)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: Llama-1.pdf
 ---

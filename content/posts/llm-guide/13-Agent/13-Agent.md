@@ -1,5 +1,5 @@
 ---
-title: "13 Agent"
+title: "13 · Agent"
 date: 2026-05-17
 tags: [Agent, 智能体, ReAct, 多Agent系统, MCP, Agentic RL]
 ---

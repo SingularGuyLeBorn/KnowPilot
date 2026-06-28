@@ -1,5 +1,5 @@
 ---
-title: "Llama-1 技术报告精译"
+title: "01 · Llama-1 技术报告精译"
 ---
 
 # LLaMA: Open and Efficient Foundation Language Models 精译

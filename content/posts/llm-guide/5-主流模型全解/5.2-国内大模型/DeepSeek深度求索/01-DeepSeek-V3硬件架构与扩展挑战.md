@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3 硬件架构与扩展挑战"
+title: "01 · DeepSeek-V3 硬件架构与扩展挑战"
 date: 2026-05-16
 tags: [DeepSeek, V3, 硬件架构, 扩展挑战, H800, MoE, MLA]
 ---

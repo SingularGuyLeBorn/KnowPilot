@@ -1,5 +1,5 @@
 ---
-title: "Qwen3 - 逐段精译与译者注"
+title: "04 · Qwen3 - 逐段精译与译者注"
 source: 03-Qwen3-mineru-en.md
 translated_by: "AI Agent"
 date: 2026-05-19

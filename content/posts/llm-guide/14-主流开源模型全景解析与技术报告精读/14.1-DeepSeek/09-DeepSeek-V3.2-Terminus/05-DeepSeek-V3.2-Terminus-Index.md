@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.2-Terminus"
+title: "05 · DeepSeek-V3.2-Terminus"
 status: completed
 date: 2026-05-24
 ---

@@ -1,5 +1,5 @@
 ---
-title: "15-MiniCPM-o-4.5 Technical Report (MinerU EN)"
+title: "03 · 15-MiniCPM-o-4.5 Technical Report (MinerU EN)"
 source_pdf: pdfs/MiniCPM-o-4.5.pdf
 converted_by: MinerU (re-processed)
 date: 2026-05-23

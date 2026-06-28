@@ -1,5 +1,5 @@
 ---
-title: "[ChatGLM2]大模型模型架构详解"
+title: "01 · [ChatGLM2]大模型模型架构详解"
 date: 2026-05-11
 tags: []
 ---

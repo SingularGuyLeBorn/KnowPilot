@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2 Lightning Attention 架构解析"
+title: "05 · MiniMax-M2 Lightning Attention 架构解析"
 ---
 # MiniMax-M2 核心技术专题：Lightning Attention 闪电注意力
 

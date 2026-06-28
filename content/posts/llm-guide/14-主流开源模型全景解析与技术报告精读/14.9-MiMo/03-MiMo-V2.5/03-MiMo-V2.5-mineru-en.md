@@ -1,5 +1,5 @@
 ---
-title: "MiMo-V2.5 - MinerU 原始转换(英文)"
+title: "03 · MiMo-V2.5 - MinerU 原始转换(英文)"
 source_pdf: "pdfs/mimo-v2.5-technical-report.pdf"
 status: completed
 ---

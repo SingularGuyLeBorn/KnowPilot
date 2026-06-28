@@ -1,5 +1,5 @@
 ---
-title: "Doubao Lite 端侧轻量化部署与成本效率优化"
+title: "05 · Doubao Lite 端侧轻量化部署与成本效率优化"
 ---
 
 # Doubao Lite 核心技术专题：端侧轻量化部署与成本效率优化

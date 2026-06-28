@@ -1,5 +1,5 @@
 ---
-title: "MTP: 多 Token 预测的训练动力学与推理应用"
+title: "05 · MTP: 多 Token 预测的训练动力学与推理应用"
 ---
 
 # MTP: 多 Token 预测的训练动力学与推理应用

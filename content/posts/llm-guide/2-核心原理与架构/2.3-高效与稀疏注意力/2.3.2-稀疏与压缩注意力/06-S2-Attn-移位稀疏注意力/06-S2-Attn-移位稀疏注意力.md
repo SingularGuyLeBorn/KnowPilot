@@ -1,5 +1,5 @@
 ---
-title: "06 S²-Attn：移位稀疏注意力"
+title: "06 · S²-Attn：移位稀疏注意力"
 date: 2026-05-24
 tags: [S2-Attn, LongLoRA, 长上下文微调, 稀疏注意力, Shifted Sparse]
 ---

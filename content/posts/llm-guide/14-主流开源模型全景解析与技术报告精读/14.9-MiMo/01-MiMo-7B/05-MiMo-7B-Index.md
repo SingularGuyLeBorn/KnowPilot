@@ -1,5 +1,5 @@
 ---
-title: "MiMo-7B"
+title: "05 · MiMo-7B"
 ---
 
 # MiMo-7B

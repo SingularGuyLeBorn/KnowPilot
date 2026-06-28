@@ -1,5 +1,5 @@
 ---
-title: "Gemini 2.0 Flash: 取代 1.5 Pro 的性价比王者 - 技术报告精译"
+title: "01 · Gemini 2.0 Flash: 取代 1.5 Pro 的性价比王者 - 技术报告精译"
 ---
 # Gemini 2.0 Flash: 取代 1.5 Pro 的性价比王者 - 技术报告精译
 

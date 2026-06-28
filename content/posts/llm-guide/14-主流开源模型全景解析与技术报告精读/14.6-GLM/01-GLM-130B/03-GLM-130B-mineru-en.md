@@ -1,5 +1,5 @@
 ---
-title: "GLM-130B - MinerU 原始转换(英文)"
+title: "03 · GLM-130B - MinerU 原始转换(英文)"
 source_pdf: pdfs/GLM-130B.pdf
 converted_by: MinerU (hybrid_auto)
 arxiv: "2210.02414"

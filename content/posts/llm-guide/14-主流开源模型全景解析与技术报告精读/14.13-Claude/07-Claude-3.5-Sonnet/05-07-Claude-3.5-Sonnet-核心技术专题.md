@@ -1,5 +1,5 @@
 ---
-title: "Claude 3.5 Sonnet: 编码之神与交互式工件 (Artifacts) - 对齐与安全核心专题"
+title: "05 · Claude 3.5 Sonnet: 编码之神与交互式工件 (Artifacts) - 对齐与安全核心专题"
 ---
 # 07-Claude-3.5-Sonnet 核心技术专题：RLAIF 与模型神经元干预
 

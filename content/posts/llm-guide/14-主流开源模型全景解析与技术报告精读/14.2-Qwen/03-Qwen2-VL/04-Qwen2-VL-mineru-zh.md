@@ -1,5 +1,5 @@
 ---
-title: "Qwen2-VL 技术报告 (MinerU 逐译 + 译者注)"
+title: "04 · Qwen2-VL 技术报告 (MinerU 逐译 + 译者注)"
 translated_from: 03-Qwen2-VL-mineru-en.md
 model: Qwen2-VL
 scope: D4 (逐译 + 译者注)

@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V4 核心架构与高效长上下文设计剖析"
+title: "05 · DeepSeek-V4 核心架构与高效长上下文设计剖析"
 ---
 
 # DeepSeek-V4 核心架构与高效长上下文设计剖析

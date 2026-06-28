@@ -1,5 +1,5 @@
 ---
-title: "ChatGLM系列技术报告精译"
+title: "01 · ChatGLM系列技术报告精译"
 ---
 
 # ChatGLM: 从 GLM-130B 到 GLM-4 All Tools 的大语言模型家族

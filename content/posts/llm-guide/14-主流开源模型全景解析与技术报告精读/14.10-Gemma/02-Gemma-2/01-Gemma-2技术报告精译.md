@@ -1,5 +1,5 @@
 ---
-title: "Gemma-2 技术报告精译"
+title: "01 · Gemma-2 技术报告精译"
 ---
 
 # Gemma-2 技术报告精译

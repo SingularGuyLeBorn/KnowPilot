@@ -152,9 +152,9 @@ body {
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }
 
-/* 平滑滚动 */
+/* 全局默认 instant 滚动，避免路由切换时出现 smooth 滚动导致的「跳一下」 */
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 /* 选中文字颜色 */
@@ -617,5 +617,16 @@ mark.kp-page-search-mark.kp-page-search-current {
   }
   html {
     @apply font-sans;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -1,5 +1,5 @@
 ---
-title: "GLM-Z1 - 逐段精译与译者注"
+title: "04 · GLM-Z1 - 逐段精译与译者注"
 source: 03-GLM-Z1-mineru-en.md
 source_type: "official product announcement (no standalone technical report PDF)"
 translated_by: "AI Agent"

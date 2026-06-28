@@ -1,5 +1,5 @@
 ---
-title: "Gemma-4技术规格精译"
+title: "01 · Gemma-4技术规格精译"
 ---
 
 # Gemma 4 技术规格精译

@@ -1,5 +1,5 @@
 ---
-title: "GLM-5-Turbo - 逐段精译与译者注"
+title: "04 · GLM-5-Turbo - 逐段精译与译者注"
 source: "03-GLM-5-Turbo-mineru-en.md"
 status: pending
 ---

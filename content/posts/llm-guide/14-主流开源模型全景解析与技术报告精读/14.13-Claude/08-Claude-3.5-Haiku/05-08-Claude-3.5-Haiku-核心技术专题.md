@@ -1,5 +1,5 @@
 ---
-title: "Claude 3.5 Haiku: 算力成本的最优解 - 对齐与安全核心专题"
+title: "05 · Claude 3.5 Haiku: 算力成本的最优解 - 对齐与安全核心专题"
 ---
 # 08-Claude-3.5-Haiku 核心技术专题：RLAIF 与模型神经元干预
 

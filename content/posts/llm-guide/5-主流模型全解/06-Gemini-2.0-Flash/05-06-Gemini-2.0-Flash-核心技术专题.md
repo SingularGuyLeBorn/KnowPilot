@@ -1,5 +1,5 @@
 ---
-title: "Gemini 2.0 Flash：原生多模态输出与Agentic智能体架构"
+title: "05 · Gemini 2.0 Flash：原生多模态输出与Agentic智能体架构"
 ---
 
 # 06-Gemini-2.0-Flash 核心技术专题：原生多模态输出与Agentic智能体架构

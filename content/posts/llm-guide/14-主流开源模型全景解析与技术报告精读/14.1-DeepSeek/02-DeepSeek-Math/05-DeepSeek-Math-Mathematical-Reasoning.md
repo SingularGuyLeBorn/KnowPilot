@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Math 数理逻辑解码"
+title: "05 · DeepSeek-Math 数理逻辑解码"
 status: completed
 date: 2026-05-19
 ---

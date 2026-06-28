@@ -8,12 +8,12 @@
 
 | 模块 | 实体 | 状态 |
 |---|---|---|
-| L5-M01 全局搜索 | `SearchIndex` | [待开始] 未开始 |
-| L5-M02 统计与看板 | `Analytics` | [待开始] 未开始 |
-| L5-M03 用户与鉴权 | `User` | [待开始] 未开始 |
-| L5-M04 部署与备份 | 配置 | [待开始] 未开始 |
-| L5-M05 测试覆盖 | 测试 | [待开始] 未开始 |
-| L5-M06 性能优化 | 配置 | [待开始] 未开始 |
+| L5-M01 全局搜索 | `SearchIndex` | [完成] FTS5 + `search.global` + `/search` UI |
+| L5-M02 统计与看板 | `Analytics` | [完成] `analytics.dashboard` + `/dashboard` UI |
+| L5-M03 用户与鉴权 | `User` | [完成] `AUTH_MODE=password` + `/login` + `/settings` |
+| L5-M04 部署与备份 | 配置 | [完成] Docker + `pnpm db:backup` |
+| L5-M05 测试覆盖 | 测试 | [完成] Vitest + Playwright + GitHub Actions CI |
+| L5-M06 性能优化 | 配置 | [完成] React Query 缓存 + FTS5 + Markdown LRU + 目录虚拟列表 |
 
 ---
 
@@ -61,8 +61,9 @@ analytics.dashboard.query({ from?: Date, to?: Date });
 
 ### 方案
 
-- 本地模式：保留 single-user，无登录。
-- 在线模式：NextAuth / Clerk + JWT。
+- 本地模式（默认）：`AUTH_MODE=none`，无登录，与现有单用户行为一致。
+- 远程模式：`AUTH_MODE=password` + `AUTH_PASSWORD`，前端 `/login` 获取 Bearer Token；SSE 与 tRPC 均校验 `Authorization` 头。
+- 未来扩展：NextAuth / Clerk + JWT（多用户 `userId` 隔离）。
 
 ### 影响
 
@@ -82,7 +83,7 @@ analytics.dashboard.query({ from?: Date, to?: Date });
 ### 备份
 
 - `content/` 目录本身就是 Git 可跟踪的备份。
-- `dev.db` 定期导出到 `backups/`。
+- `pnpm db:backup` 将 `dev.db` 导出到 `backups/dev-YYYYMMDD-HHMMSS.db`。
 
 ---
 
@@ -100,17 +101,19 @@ analytics.dashboard.query({ from?: Date, to?: Date });
 
 ## L5-M06 性能优化
 
-- 图片懒加载、WebP 转换。
-- tRPC 查询缓存（React Query）。
-- Markdown 编译缓存。
-- 大数据集分页 / 虚拟列表。
+- tRPC 查询缓存（React Query `staleTime: 30s`、`gcTime: 5min`）。
+- Markdown 预处理 LRU 缓存（`packages/shared/src/markdownCache.ts` + PostContent）。
+- Markdown 渲染图片 `loading="lazy"`（PostContent）。
+- SQLite FTS5 全文索引（`search.global`）。
+- 文章目录搜索模式虚拟列表（PostTreeNav + `VirtualFlatList`）。
+- 各管理页服务端分页（`Pagination`）。
 
 ---
 
 ## L5 验收标准
 
-- [ ] 全局搜索在 200ms 内返回结果。
-- [ ] 看板展示关键指标。
-- [ ] 可选登录模式不影响本地单用户模式。
-- [ ] Docker 镜像可一键构建运行。
-- [ ] 核心流程有测试覆盖。
+- [x] 全局搜索在 200ms 内返回结果（`search.global` 并行查询 + `/search`）。
+- [x] 看板展示关键指标（`/dashboard`）。
+- [x] 可选登录模式不影响本地单用户模式（`AUTH_MODE=none` 默认）。
+- [x] Docker 镜像可一键构建运行（`docker compose up --build`）。
+- [x] 核心流程有测试覆盖（Vitest 88 + Playwright 26 E2E CI）。

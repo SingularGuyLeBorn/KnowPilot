@@ -1,5 +1,5 @@
 ---
-title: "GLM/ChatGLM 系列技术报告深度研读"
+title: "5.2 · GLM/ChatGLM 系列技术报告深度研读"
 date: 2026-05-11
 tags: []
 ---

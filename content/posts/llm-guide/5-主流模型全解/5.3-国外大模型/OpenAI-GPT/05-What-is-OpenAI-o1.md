@@ -1,5 +1,5 @@
 ---
-title: "What is OpenAI-o1"
+title: "05 · What is OpenAI-o1"
 date: 2026-05-11
 tags: []
 ---

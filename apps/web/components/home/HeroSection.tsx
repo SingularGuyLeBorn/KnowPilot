@@ -86,7 +86,7 @@ export function HeroSection({ postCount, categoryCount }: HeroSectionProps) {
             <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
           </Link>
           <Link
-            href="/editor/new"
+            href="/editor"
             className="group inline-flex h-12 items-center gap-2 rounded-full glass-card px-7 text-sm font-semibold text-[var(--kp-text-1)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[var(--kp-brand-soft)]"
           >
             <PenLine className="h-4 w-4" />

@@ -30,7 +30,7 @@ export function FinalCta() {
             </p>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link
-                href="/editor/new"
+                href="/editor"
                 className="group inline-flex h-12 items-center gap-2 rounded-full bg-[var(--kp-brand)] px-8 text-sm font-semibold text-white shadow-lg shadow-[rgba(184,160,144,0.35)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[rgba(184,160,144,0.45)]"
               >
                 创建第一篇文章

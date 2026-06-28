@@ -1,8 +1,28 @@
+# KnowPilot 本地开发 / 生产部署（SQLite + monorepo）
+
 services:
+  knowpilot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: knowpilot-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "3010:3010"
+    environment:
+      DATABASE_URL: "file:/data/dev.db"
+      SERVER_PORT: "3010"
+      NODE_ENV: "production"
+    volumes:
+      - kp-data:/data
+      - ./content:/app/content:ro
+
   postgres:
     image: postgres:16-alpine
     container_name: knowpilot-pg
     restart: unless-stopped
+    profiles: ["postgres"]
     ports:
       - "5432:5432"
     environment:
@@ -13,4 +33,5 @@ services:
       - pgdata:/var/lib/postgresql/data
 
 volumes:
+  kp-data:
   pgdata:

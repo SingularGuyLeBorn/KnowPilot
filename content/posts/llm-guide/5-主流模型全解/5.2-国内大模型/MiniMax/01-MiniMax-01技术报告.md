@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-01 技术报告"
+title: "01 · MiniMax-01 技术报告"
 date: 2026-05-11
 tags: []
 ---

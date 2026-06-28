@@ -1,5 +1,5 @@
 ---
-title: "TTT(Test-Time Training)与 Titans: 2025-2026 年最受关注的新架构"
+title: "10 · TTT(Test-Time Training)与 Titans: 2025-2026 年最受关注的新架构"
 date: 2026-05-11
 tags: []
 ---

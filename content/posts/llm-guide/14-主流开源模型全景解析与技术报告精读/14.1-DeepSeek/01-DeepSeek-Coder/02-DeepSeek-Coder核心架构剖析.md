@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Coder 核心架构剖析"
+title: "02 · DeepSeek-Coder 核心架构剖析"
 ---
 # DeepSeek-Coder 核心架构剖析
 

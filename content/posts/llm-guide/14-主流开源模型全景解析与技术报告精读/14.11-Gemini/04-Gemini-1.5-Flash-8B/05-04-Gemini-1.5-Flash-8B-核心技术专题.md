@@ -1,5 +1,5 @@
 ---
-title: "Gemini 1.5 Flash-8B：端侧友好的极致轻量架构与1M上下文工程"
+title: "05 · Gemini 1.5 Flash-8B：端侧友好的极致轻量架构与1M上下文工程"
 ---
 
 # 04-Gemini-1.5-Flash-8B 核心技术专题：端侧友好的极致轻量架构与 1M 上下文工程

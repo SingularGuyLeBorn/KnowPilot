@@ -1,5 +1,5 @@
 ---
-title: "Gemini 1.0: 开启原生多模态时代 (Ultra/Pro/Nano) - 核心技术专题"
+title: "05 · Gemini 1.0: 开启原生多模态时代 (Ultra/Pro/Nano) - 核心技术专题"
 ---
 # 01-Gemini-1.0 核心技术专题：原生多模态与长上下文的底层原理
 

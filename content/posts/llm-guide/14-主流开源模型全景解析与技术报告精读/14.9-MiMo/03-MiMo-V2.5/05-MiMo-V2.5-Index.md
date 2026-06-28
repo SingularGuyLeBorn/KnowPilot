@@ -1,5 +1,5 @@
 ---
-title: "MiMo-V2.5"
+title: "05 · MiMo-V2.5"
 ---
 
 # MiMo-V2.5

@@ -1,5 +1,5 @@
 ---
-title: "Gemini"
+title: "02 · Gemini"
 date: 2026-05-11
 tags: []
 ---

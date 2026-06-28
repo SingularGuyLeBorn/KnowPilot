@@ -1,5 +1,5 @@
 ---
-title: "Kimi K2.6 - Source Notes (EN)"
+title: "03 · Kimi K2.6 - Source Notes (EN)"
 source: "https://www.kimi.com/blog/kimi-k2-6"
 source_type: "official blog (no technical report PDF as of 2026-05)"
 compiled_by: "AI Agent"

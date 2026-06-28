@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.2-Terminus - Source Notes (EN)"
+title: "03 · DeepSeek-V3.2-Terminus - Source Notes (EN)"
 source_pdf: "pdfs/DeepSeek-V3.2-Terminus"
 source_type: "official announcement and public product documentation"
 compiled_by: "AI Agent"

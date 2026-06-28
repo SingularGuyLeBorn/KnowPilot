@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.5 Agent-Native RL 规模化与成本效率的极致工程"
+title: "05 · MiniMax-M2.5 Agent-Native RL 规模化与成本效率的极致工程"
 source: 01-MiniMax-M2.5技术报告精译.md
 sync_to:
   - docs/guide/minimax/minimax-m25-agent-rl.md

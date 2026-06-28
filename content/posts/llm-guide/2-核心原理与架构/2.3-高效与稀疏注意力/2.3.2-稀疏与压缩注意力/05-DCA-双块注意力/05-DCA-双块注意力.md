@@ -1,5 +1,5 @@
 ---
-title: "05 DCA：双块注意力"
+title: "05 · DCA：双块注意力"
 date: 2026-05-24
 tags: [DCA, Dual-Chunk-Attention, 长上下文, 训练无关, RoPE, ChunkLlama]
 ---

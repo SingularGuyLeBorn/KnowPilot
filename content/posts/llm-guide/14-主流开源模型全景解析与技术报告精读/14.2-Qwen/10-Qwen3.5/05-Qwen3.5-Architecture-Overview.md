@@ -1,5 +1,5 @@
 ---
-title: "Qwen3.5 核心架构剖析"
+title: "05 · Qwen3.5 核心架构剖析"
 description: 从工程视角拆解 Qwen3.5-397B-A17B 的混合注意力、稀疏 MoE、原生多模态、1M 长上下文与异步 RL 框架
 ---
 

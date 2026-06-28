@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1 技术剖析：没有强化学习基础也能看懂的 PPO & GRPO"
+title: "03 · DeepSeek-R1 技术剖析：没有强化学习基础也能看懂的 PPO & GRPO"
 date: 2026-05-11
 tags: []
 ---

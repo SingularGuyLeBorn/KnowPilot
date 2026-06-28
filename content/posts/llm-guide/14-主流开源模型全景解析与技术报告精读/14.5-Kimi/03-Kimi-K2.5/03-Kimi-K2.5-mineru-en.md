@@ -1,5 +1,5 @@
 ---
-title: "Kimi K2.5: Visual Agentic Intelligence - MinerU 原始转换(英文)"
+title: "03 · Kimi K2.5: Visual Agentic Intelligence - MinerU 原始转换(英文)"
 source_pdf: pdfs/Kimi-K2.5-Technical-Report.pdf
 converted_by: "MinerU (hybrid_auto)"
 doc_title: "Kimi K2.5: Visual Agentic Intelligence"

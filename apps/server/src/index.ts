@@ -4,33 +4,67 @@
 
 import "dotenv/config";
 import fs from "fs";
-import path from "path";
 import express from "express";
 import cors from "cors";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./router.js";
 import { createContext } from "./trpc/context.js";
+import { getAppConfig, loadRootEnv } from "./infra/config.js";
+import { getEventBus } from "./infra/eventBus.js";
+import { getServiceContainer } from "./infra/serviceContainer.js";
+import { getTriggerEngine } from "./infra/triggerEngine.js";
+import { getTaskScheduler } from "./infra/taskScheduler.js";
+import { rebuildFtsIndex } from "./infra/ftsIndex.js";
+import { prisma } from "./db.js";
+import { handleAgentChatStream } from "./infra/agentStream.js";
+import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 
 const app = express();
-const PORT = parseInt(process.env.SERVER_PORT || "3010", 10);
 
-// 定位 content 目录 (与 sync.ts / post.ts 保持一致)
-let postsDir = path.resolve(process.cwd(), "content/posts");
-if (!fs.existsSync(postsDir)) {
-  postsDir = path.resolve(process.cwd(), "../../content/posts");
-}
+// 优先加载 monorepo 根目录 .env
+loadRootEnv();
 
-const uploadsDir = path.resolve(process.cwd(), "content/uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// 初始化配置、事件总线、Service容器、触发器引擎
+const config = getAppConfig();
+const eventBus = getEventBus();
+const services = getServiceContainer(prisma, eventBus, config);
+const triggerEngine = getTriggerEngine(prisma, eventBus, services);
+const taskScheduler = getTaskScheduler(prisma, services);
 
-// CORS
+// 启动事件触发器引擎与定时任务调度器
+triggerEngine.start().catch((err) => {
+  console.error("❌ [TriggerEngine] 启动失败:", err);
+});
+taskScheduler.start().catch((err) => {
+  console.error("❌ [TaskScheduler] 启动失败:", err);
+});
+rebuildFtsIndex(prisma).catch((err) => {
+  console.error("❌ [FTS] 索引重建失败:", err);
+});
+
+const PORT = config.port;
+const postsDir = config.contentPaths.posts;
+const uploadsDir = config.uploadDir;
+
+// CORS — 支持 PUBLIC_URL / CORS_ORIGINS（Cloudflare Tunnel 远程访问）
+const defaultOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3002",
+  "http://127.0.0.1:3002",
+];
+const corsOrigins = [
+  ...new Set([
+    ...defaultOrigins,
+    ...(config.publicUrl ? [config.publicUrl] : []),
+    ...config.corsOrigins,
+  ]),
+];
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    origin: corsOrigins,
     credentials: true,
-  })
+  }),
 );
 
 // JSON body 解析
@@ -49,6 +83,12 @@ if (fs.existsSync(postsDir)) {
 // 上传文件静态服务
 app.use("/uploads", express.static(uploadsDir));
 
+// Agent 流式聊天 SSE（不走 tRPC，避免 buffering）
+app.post(
+  "/api/agent/chat/stream",
+  handleAgentChatStream(services, config, createTrpcInvoker({ services })),
+);
+
 // tRPC 挂载
 app.use(
   "/api/trpc",
@@ -62,12 +102,27 @@ app.use(
 );
 
 // 启动
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n  🚀 KnowPilot Server running at http://localhost:${PORT}`);
   console.log(`  📡 tRPC endpoint: http://localhost:${PORT}/api/trpc`);
   console.log(`  💚 Health check:  http://localhost:${PORT}/health\n`);
 });
 
-export type { AppRouter } from "./trpc/router.js";
+// 优雅退出处理
+const handleShutdown = () => {
+  console.log("\n  💾 [Shutdown] 正在关闭服务，清理资源...");
+  triggerEngine.stop();
+  server.close(() => {
+    prisma.$disconnect().then(() => {
+      console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");
+      process.exit(0);
+    });
+  });
+};
+
+process.on("SIGINT", handleShutdown);
+process.on("SIGTERM", handleShutdown);
+
+export type { AppRouter } from "./router.js";
 
 

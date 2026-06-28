@@ -1,5 +1,5 @@
 ---
-title: "Claude Opus 4.7 混合稀疏注意力与长上下文 Agent 编码架构"
+title: "05 · Claude Opus 4.7 混合稀疏注意力与长上下文 Agent 编码架构"
 ---
 
 # Claude Opus 4.7：混合稀疏注意力与长上下文 Agent 编码架构

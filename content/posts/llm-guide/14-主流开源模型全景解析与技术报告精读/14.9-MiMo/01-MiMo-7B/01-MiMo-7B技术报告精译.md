@@ -1,5 +1,5 @@
 ---
-title: "MiMo-7B 技术报告精译"
+title: "01 · MiMo-7B 技术报告精译"
 ---
 
 # MiMo-7B 技术报告精译

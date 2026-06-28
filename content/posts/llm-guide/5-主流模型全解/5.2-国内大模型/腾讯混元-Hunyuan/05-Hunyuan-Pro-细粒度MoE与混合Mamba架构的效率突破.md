@@ -1,5 +1,5 @@
 ---
-title: "Hunyuan Pro 细粒度MoE与混合Mamba架构的效率突破"
+title: "05 · Hunyuan Pro 细粒度MoE与混合Mamba架构的效率突破"
 ---
 
 # Hunyuan Pro 核心技术专题：细粒度 MoE 与混合 Mamba 架构的效率突破

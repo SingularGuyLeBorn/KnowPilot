@@ -1,5 +1,5 @@
 ---
-title: "Gemini 2.5 Pro：思考模式与多模态推理的工程化实现——Google DeepMind的推理时代入场券"
+title: "05 · Gemini 2.5 Pro：思考模式与多模态推理的工程化实现——Google DeepMind的推理时代入场券"
 ---
 
 # Gemini 2.5 Pro：思考模式与多模态推理的工程化实现

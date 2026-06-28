@@ -1,5 +1,5 @@
 ---
-title: "Automated Weak-to-Strong Researcher 解读"
+title: "10 · Automated Weak-to-Strong Researcher 解读"
 date: 2026-05-16
 tags: [Weak-to-Strong, 对齐, 可扩展监督, Anthropic, 自动化研究, AI安全]
 ---

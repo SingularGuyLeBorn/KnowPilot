@@ -1,5 +1,5 @@
 ---
-title: "Claude 3 Haiku: 极致响应速度的端侧小钢炮 - 技术报告反向工程"
+title: "01 · Claude 3 Haiku: 极致响应速度的端侧小钢炮 - 技术报告反向工程"
 ---
 # Claude 3 Haiku: 极致响应速度的端侧小钢炮 - 架构还原与精译
 

@@ -1,5 +1,5 @@
 ---
-title: "Qwen2-Audio"
+title: "05 · Qwen2-Audio"
 ---
 
 # Qwen2-Audio

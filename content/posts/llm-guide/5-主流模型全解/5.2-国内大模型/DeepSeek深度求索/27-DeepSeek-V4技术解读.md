@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V4 技术解读：CSA/HCA 混合注意力、Gated Attention 与 MTP 多词元预测"
+title: "27 · DeepSeek-V4 技术解读：CSA/HCA 混合注意力、Gated Attention 与 MTP 多词元预测"
 date: 2026-05-16
 tags: [DeepSeek, V4, MoE, MTP, Gated Attention, CSA, HCA, 模型解读]
 ---

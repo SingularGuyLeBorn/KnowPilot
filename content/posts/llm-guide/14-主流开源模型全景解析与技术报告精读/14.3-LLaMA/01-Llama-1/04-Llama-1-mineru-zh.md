@@ -1,5 +1,5 @@
 ---
-title: "Llama-1 Technical Report (MinerU 逐译+译者注)"
+title: "04 · Llama-1 Technical Report (MinerU 逐译+译者注)"
 source: 03-Llama-1-mineru-en.md
 converted_by: PyMuPDF (MinerU fallback)
 translated_by: TechReportDeepDive

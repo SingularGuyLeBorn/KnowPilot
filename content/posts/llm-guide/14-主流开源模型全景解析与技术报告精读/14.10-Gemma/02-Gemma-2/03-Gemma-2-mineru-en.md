@@ -1,5 +1,5 @@
 ---
-title: "Gemma 2 Technical Report (Original Text)"
+title: "03 · Gemma 2 Technical Report (Original Text)"
 converted_by: "arXiv HTML extraction (MinerU unavailable)"
 ---
 

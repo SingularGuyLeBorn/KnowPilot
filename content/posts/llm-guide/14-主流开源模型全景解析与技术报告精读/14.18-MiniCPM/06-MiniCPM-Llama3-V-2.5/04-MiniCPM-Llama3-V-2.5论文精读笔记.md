@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-Llama3-V 2.5 论文精读笔记"
+title: "04 · MiniCPM-Llama3-V 2.5 论文精读笔记"
 ---
 
 # MiniCPM-Llama3-V 2.5 论文精读笔记

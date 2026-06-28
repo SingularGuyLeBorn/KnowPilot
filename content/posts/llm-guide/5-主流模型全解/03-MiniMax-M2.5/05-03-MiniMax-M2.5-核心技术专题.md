@@ -1,5 +1,5 @@
 ---
-title: "MiniMax M2.5：Agent-Native RL规模化与成本效率的极致工程"
+title: "05 · MiniMax M2.5：Agent-Native RL规模化与成本效率的极致工程"
 ---
 
 # 03-MiniMax-M2.5 核心技术专题：Agent-Native RL 规模化与成本效率的极致工程

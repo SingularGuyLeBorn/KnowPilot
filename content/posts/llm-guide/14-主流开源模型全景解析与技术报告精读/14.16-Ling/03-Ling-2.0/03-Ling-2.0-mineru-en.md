@@ -1,5 +1,5 @@
 ---
-title: "Ling 2.0 Technical Report - MinerU Extract"
+title: "03 · Ling 2.0 Technical Report - MinerU Extract"
 converted_by: "MinerU"
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: "Claude 3.5 Haiku: 算力成本的最优解 - 技术报告反向工程"
+title: "01 · Claude 3.5 Haiku: 算力成本的最优解 - 技术报告反向工程"
 ---
 # Claude 3.5 Haiku: 算力成本的最优解 - 架构还原与精译
 

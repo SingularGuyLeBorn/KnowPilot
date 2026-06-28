@@ -1,5 +1,5 @@
 ---
-title: "02-MiMo-V2-Flash Technical Report (MinerU ZH)"
+title: "04 · 02-MiMo-V2-Flash Technical Report (MinerU ZH)"
 source_pdf: pdfs/MiMo-V2-Flash.pdf
 converted_by: MinerU (re-processed)
 date: 2026-05-23

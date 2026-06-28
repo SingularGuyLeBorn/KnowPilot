@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-Llama3-V 2.5 核心技术专题：RLAIF-V 多模态对齐与可扩展 AI 反馈"
+title: "05 · MiniCPM-Llama3-V 2.5 核心技术专题：RLAIF-V 多模态对齐与可扩展 AI 反馈"
 ---
 
 # MiniCPM-Llama3-V 2.5 核心技术专题：RLAIF-V 多模态对齐与可扩展 AI 反馈

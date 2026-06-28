@@ -1,5 +1,5 @@
 ---
-title: "Kimi-K2.5原生多模态智能体与Agent-Swarm编排体系剖析"
+title: "05 · Kimi-K2.5原生多模态智能体与Agent-Swarm编排体系剖析"
 ---
 
 # Kimi K2.5 原生多模态智能体与 Agent Swarm 编排体系剖析

@@ -1,5 +1,5 @@
 ---
-title: "Claude 3.7 Sonnet: 混合推理(Hybrid Reasoning)的混合巨兽 - 对齐与安全核心专题"
+title: "05 · Claude 3.7 Sonnet: 混合推理(Hybrid Reasoning)的混合巨兽 - 对齐与安全核心专题"
 ---
 # 10-Claude-3.7-Sonnet 核心技术专题：RLAIF 与模型神经元干预
 

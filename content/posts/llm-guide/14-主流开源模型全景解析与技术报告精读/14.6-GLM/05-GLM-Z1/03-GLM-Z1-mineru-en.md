@@ -1,5 +1,5 @@
 ---
-title: "GLM-Z1 - Source Notes (EN)"
+title: "03 · GLM-Z1 - Source Notes (EN)"
 source: "Z.ai PR release, Hugging Face model cards, Zhipu MaaS documentation"
 source_type: "official product announcement (no standalone technical report PDF)"
 compiled_by: "AI Agent"

@@ -1,5 +1,5 @@
 ---
-title: "07 CSA-HCA：混合压缩注意力"
+title: "07 · CSA-HCA：混合压缩注意力"
 date: 2026-05-24
 tags: [DeepSeek-V4, CSA, HCA, 长上下文, 稀疏注意力, DSA]
 ---

@@ -3,6 +3,8 @@
 > 本文件为项目迁移与重构的终极指南，开发人员必须严格遵循此规范。
 > 项目路径: `D:\ALL IN AI\KnowPilot`
 > 核心原则: 单用户模式，文章采用 “Markdown 为源，SQLite 为缓存/检索层” 双向同步架构。
+>
+> **实施状态（2026-06-29）**：L1–L5 已全部落地。阶段细节见 `docs/development/README.md` 与 `entities/entity-matrix.md`。
 
 ---
 
@@ -132,39 +134,48 @@ excerpt: "一句话文章简要介绍。"
 - **L1-T11, L1-T12**: Command Palette 全局搜索（Cmd+K）与图片上传组件。
 
 ### P2: 单用户本地 AI 模块
-- **L2**: AI 聊天 UI 与文章 CRUD 工具注入。
+- **L2 ~ L5**: [已完成] Agent Chat、18 实体 CRUD、自动化、FTS 搜索、鉴权、Docker、CI（详见 `docs/development/`）。
 
 ---
 
 ## 📋 L1 任务拆解与执行细节 (新增同步脚本)
 
 ### L1-T05: Markdown ↔ SQLite 同步编译器 (P0 - 新增)
-- [ ] 后端引入 `gray-matter` 进行 Frontmatter 结构解析。
-- [ ] 创建 `content/posts/` 目录，并将 3 篇示例种子文章转化为实体 `.md` 文件存入。
-- [ ] 编写 `apps/server/src/scripts/sync.ts` 同步编译脚本：
+- [x] 后端引入 `gray-matter` 进行 Frontmatter 结构解析。
+- [x] 创建 `content/posts/` 目录，并将 3 篇示例种子文章转化为实体 `.md` 文件存入。
+- [x] 编写 `apps/server/src/scripts/sync.ts` 同步编译脚本：
   - 扫描本地 md 文件，解析 frontmatter。
   - 通过 Prisma 同步至 `dev.db` 数据库。
   - 如果数据库中存在某篇文章但在本地 md 文件中已被删除，自动从数据库中清除（保持 Git 真实性）。
-- [ ] 修改 `post.ts` tRPC router：
+- [x] 修改 `post` tRPC router（`apps/server/src/router.ts`）：
   - `create` 成功时，在本地 `content/posts/` 下生成新 `.md` 文件。
   - `update` 成功时，根据 `slug` 生成 YAML Frontmatter + Markdown，同步写入对应的 `.md` 文件。
   - `delete` 成功时，删除对应的 `.md` 文件。
-- [ ] 根目录 `package.json` 注册 `"db:sync": "pnpm --filter @knowpilot/server db:sync"`。
+- [x] 根目录 `package.json` 注册 `"db:sync": "pnpm --filter @knowpilot/server db:sync"`。
+
+### 后续阶段（摘要）
+
+| 阶段 | 状态 | 关键交付 |
+|---|---|---|
+| L2 AI 核心 | [已完成] | Agent SSE Chat、Skill/MCP/Memory、Playwright E2E |
+| L3 内容运维 | [已完成] | File/Git/Task/Log/Workspace 管理页 + TaskScheduler |
+| L4 自动化 | [已完成] | TriggerEngine、ApprovalGate、工作流 UI |
+| L5 打磨 | [已完成] | FTS5 搜索、Analytics、AUTH_MODE、Docker、CI、`db:backup` |
 
 ---
 
 ## 🧪 单元测试与质量保证规范
 
-### 1. 同步编译器单元测试 (Vitest)
-测试 `.md` 文件解析与数据库写入的正确性。
-```typescript
-// apps/server/src/scripts/sync.test.ts
-import { syncMarkdownToDb } from './sync';
-import { prisma } from '../db';
+### 验收命令（根目录）
 
-describe("Markdown 同步测试", () => {
-  it("应该能成功解析 markdown 并 upsert 到 SQLite", async () => {
-    // 写入一个模拟 md 文件 -> 跑 sync 脚本 -> 查询 Prisma 确保入库且字段解析正确
-  });
-});
+```bash
+pnpm lint       # 0 error
+pnpm test       # Vitest 87+ passed
+pnpm build      # Next.js 生产构建
+pnpm test:e2e   # Playwright 10 passed（web:3002）
+pnpm db:backup  # SQLite 备份
 ```
+
+### 1. 同步编译器测试
+
+同步逻辑由 `trpc.test.ts` 中 `task.run` + `db:sync` 集成测试覆盖；各实体 CRUD 与 FTS 索引见 `apps/server/src/__tests__/`。

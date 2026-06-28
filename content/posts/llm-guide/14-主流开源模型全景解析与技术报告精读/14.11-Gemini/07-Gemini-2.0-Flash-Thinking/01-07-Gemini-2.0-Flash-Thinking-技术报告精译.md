@@ -1,5 +1,5 @@
 ---
-title: "Gemini 2.0 Flash-Thinking: 内置隐式思考链 - 技术报告精译"
+title: "01 · Gemini 2.0 Flash-Thinking: 内置隐式思考链 - 技术报告精译"
 ---
 # Gemini 2.0 Flash-Thinking: 内置隐式思考链 - 技术报告精译
 

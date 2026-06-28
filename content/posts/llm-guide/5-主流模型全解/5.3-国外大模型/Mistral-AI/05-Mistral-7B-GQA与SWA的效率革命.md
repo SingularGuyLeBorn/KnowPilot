@@ -1,5 +1,5 @@
 ---
-title: "Mistral 7B GQA与SWA的效率革命"
+title: "05 · Mistral 7B GQA与SWA的效率革命"
 ---
 
 # Mistral 7B 核心技术专题：GQA 与 SWA 的效率革命

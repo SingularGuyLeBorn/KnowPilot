@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @knowpilot/server db:generate
+
+      - name: Push database schema
+        run: pnpm --filter @knowpilot/server db:push
+        env:
+          DATABASE_URL: "file:./ci.db"
+
+      - name: Sync content to SQLite
+        run: pnpm db:sync
+        env:
+          DATABASE_URL: "file:./ci.db"
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+        env:
+          DATABASE_URL: "file:./ci.db"
+          REQUIRE_APPROVAL: "false"
+
+      - name: Build web (production)
+        run: pnpm build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @knowpilot/web exec playwright install chromium --with-deps
+
+      - name: E2E tests
+        run: pnpm test:e2e
+        env:
+          CI: "true"
+          DATABASE_URL: "file:./ci.db"
+          REQUIRE_APPROVAL: "false"

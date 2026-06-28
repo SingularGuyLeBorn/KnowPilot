@@ -1,5 +1,5 @@
 ---
-title: "跨平台训练对齐：在 5 种异构硬件上训练 290B MoE 的工程实践"
+title: "05 · 跨平台训练对齐：在 5 种异构硬件上训练 290B MoE 的工程实践"
 date: 2026-05-24
 status: published
 tags:

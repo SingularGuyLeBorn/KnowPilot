@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM4 技术报告逐段精译"
+title: "04 · MiniCPM4 技术报告逐段精译"
 ---
 
 # MiniCPM4: Ultra-Efficient LLMs on End Devices

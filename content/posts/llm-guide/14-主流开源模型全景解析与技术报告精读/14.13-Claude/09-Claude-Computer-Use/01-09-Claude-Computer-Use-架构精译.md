@@ -1,5 +1,5 @@
 ---
-title: "Claude Computer Use: 突破沙盒的系统级图形界面接管 - 技术报告反向工程"
+title: "01 · Claude Computer Use: 突破沙盒的系统级图形界面接管 - 技术报告反向工程"
 ---
 # Claude Computer Use: 突破沙盒的系统级图形界面接管 - 架构还原与精译
 

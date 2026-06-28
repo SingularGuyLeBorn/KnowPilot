@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1 完整技术解读：从 R1-Zero 到 GRPO，纯强化学习的推理革命"
+title: "04 · DeepSeek-R1 完整技术解读：从 R1-Zero 到 GRPO，纯强化学习的推理革命"
 date: 2026-05-16
 tags: [DeepSeek, R1, GRPO, 强化学习, 推理模型, 蒸馏, R1-Zero]
 ---

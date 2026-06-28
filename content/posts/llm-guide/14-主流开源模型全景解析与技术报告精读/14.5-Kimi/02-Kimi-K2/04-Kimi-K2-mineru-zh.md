@@ -1,5 +1,5 @@
 ---
-title: "Kimi K2 Technical Report - Segment-by-Segment Translation with Translator's Notes"
+title: "04 · Kimi K2 Technical Report - Segment-by-Segment Translation with Translator's Notes"
 ---
 
 ## 1 Introduction

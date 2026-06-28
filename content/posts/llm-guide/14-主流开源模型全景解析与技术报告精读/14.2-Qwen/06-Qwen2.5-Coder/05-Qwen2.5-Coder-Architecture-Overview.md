@@ -1,5 +1,5 @@
 ---
-title: "Qwen2.5-Coder 核心架构精析"
+title: "05 · Qwen2.5-Coder 核心架构精析"
 ---
 
 # Qwen2.5-Coder 核心架构剖析

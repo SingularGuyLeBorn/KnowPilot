@@ -1,5 +1,5 @@
 ---
-title: "大语言模型演进历程：从 Transformer 到推理模型的技术编年史"
+title: "5.4 · 大语言模型演进历程：从 Transformer 到推理模型的技术编年史"
 date: 2026-05-16
 tags: [LLM, 演进历程, Transformer, GPT, BERT, ChatGPT, 历史, 时间线]
 ---

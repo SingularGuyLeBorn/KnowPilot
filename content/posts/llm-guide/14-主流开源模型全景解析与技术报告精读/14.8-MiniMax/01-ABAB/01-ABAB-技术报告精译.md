@@ -1,5 +1,5 @@
 ---
-title: "MiniMax ABAB-初代 技术报告精译"
+title: "01 · MiniMax ABAB-初代 技术报告精译"
 ---
 # MiniMax ABAB 技术报告精译
 

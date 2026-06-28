@@ -1,5 +1,5 @@
 ---
-title: "ChatGLM Index"
+title: "05 · ChatGLM Index"
 date: 2026-05-24
 status: completed
 tags:

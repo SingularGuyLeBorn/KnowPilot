@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-S-1.2B 技术报告精译 - ProSparse: 引入与增强大语言模型中的内在激活稀疏性"
+title: "01 · MiniCPM-S-1.2B 技术报告精译 - ProSparse: 引入与增强大语言模型中的内在激活稀疏性"
 ---
 
 # MiniCPM-S-1.2B 技术报告精译

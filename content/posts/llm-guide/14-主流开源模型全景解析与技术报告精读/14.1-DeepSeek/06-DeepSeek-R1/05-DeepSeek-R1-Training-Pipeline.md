@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1 全阶段训练流水线"
+title: "05 · DeepSeek-R1 全阶段训练流水线"
 ---
 
 # DeepSeek-R1 多阶段对齐剖析

@@ -1,5 +1,5 @@
 ---
-title: "面壁智能 MiniCPM"
+title: "5.2 · 面壁智能 MiniCPM"
 date: 2026-05-11
 tags: []
 ---

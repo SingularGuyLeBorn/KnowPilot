@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-o 4.5 技术报告精译：面向实时全双工全模态交互"
+title: "01 · MiniCPM-o 4.5 技术报告精译：面向实时全双工全模态交互"
 author: "OpenBMB / Tsinghua University"
 date: "2026-04-30"
 arXiv: "2604.27393"

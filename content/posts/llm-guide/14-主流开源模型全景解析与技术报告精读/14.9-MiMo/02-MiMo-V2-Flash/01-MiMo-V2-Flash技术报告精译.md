@@ -1,5 +1,5 @@
 ---
-title: "MiMo-V2-Flash 技术报告精译"
+title: "01 · MiMo-V2-Flash 技术报告精译"
 ---
 
 # MiMo-V2-Flash 技术报告精译

@@ -1,5 +1,5 @@
 ---
-title: "Mistral 7B: 欧洲开源之光的起跑线 架构精译"
+title: "01 · Mistral 7B: 欧洲开源之光的起跑线 架构精译"
 ---
 # Mistral 7B: 欧洲开源之光的起跑线
 

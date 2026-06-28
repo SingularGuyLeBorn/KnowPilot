@@ -1,5 +1,5 @@
 ---
-title: "Kimi-K2.5 Index"
+title: "05 · Kimi-K2.5 Index"
 date: 2026-05-24
 status: completed
 tags:

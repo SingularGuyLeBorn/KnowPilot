@@ -1,5 +1,5 @@
 ---
-title: "ICML风格的Motivation"
+title: "10 · ICML风格的Motivation"
 date: 2026-05-11
 tags: []
 ---

@@ -1,5 +1,5 @@
 ---
-title: "Qwen3.6 - Source Notes (EN)"
+title: "03 · Qwen3.6 - Source Notes (EN)"
 source: "https://qwen.ai/blog?id=qwen3.6-35b-a3b / https://qwen.ai/blog?id=qwen3.6-27b"
 source_type: "official blog announcement"
 compiled_by: "AI Agent"

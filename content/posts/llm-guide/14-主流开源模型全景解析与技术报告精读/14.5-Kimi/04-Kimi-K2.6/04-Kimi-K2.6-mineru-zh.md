@@ -1,5 +1,5 @@
 ---
-title: "Kimi K2.6 - 逐段精译与译者注"
+title: "04 · Kimi K2.6 - 逐段精译与译者注"
 source: "https://www.kimi.com/blog/kimi-k2-6"
 source_type: "official blog (no PDF)"
 date: 2026-05-24

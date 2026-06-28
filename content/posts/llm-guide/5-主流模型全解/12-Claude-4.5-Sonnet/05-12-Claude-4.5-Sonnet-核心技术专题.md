@@ -1,5 +1,5 @@
 ---
-title: "Claude 4.5 Sonnet：编码能力跃迁与Agent自主执行的工程突破"
+title: "05 · Claude 4.5 Sonnet：编码能力跃迁与Agent自主执行的工程突破"
 ---
 
 # 12-Claude-4.5-Sonnet 核心技术专题：编码能力跃迁与 Agent 自主执行的工程突破

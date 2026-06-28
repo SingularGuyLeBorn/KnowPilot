@@ -1,5 +1,5 @@
 ---
-title: "Gemma-3 Technical Report (MinerU EN)"
+title: "03 · Gemma-3 Technical Report (MinerU EN)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: Gemma-3-Technical-Report.pdf
 ---

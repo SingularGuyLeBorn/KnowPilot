@@ -1,5 +1,5 @@
 ---
-title: "MiMo-V2.5多模态Agentic能力与Harness感知剖析"
+title: "05 · MiMo-V2.5多模态Agentic能力与Harness感知剖析"
 ---
 
 # MiMo-V2.5 多模态 Agentic 能力与 Harness 感知剖析

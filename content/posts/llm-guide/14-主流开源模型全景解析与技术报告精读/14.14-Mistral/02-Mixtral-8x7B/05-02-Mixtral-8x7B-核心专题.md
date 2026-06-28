@@ -1,5 +1,5 @@
 ---
-title: "02-Mixtral-8x7B 核心专题"
+title: "05 · 02-Mixtral-8x7B 核心专题"
 ---
 # 02-Mixtral-8x7B 核心技术剖析
 

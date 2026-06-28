@@ -1,5 +1,5 @@
 ---
-title: "Doubao Pro 7倍杠杆MoE与多模态原生统一"
+title: "05 · Doubao Pro 7倍杠杆MoE与多模态原生统一"
 ---
 
 # Doubao Pro 核心技术专题：7 倍杠杆 MoE 与多模态原生统一

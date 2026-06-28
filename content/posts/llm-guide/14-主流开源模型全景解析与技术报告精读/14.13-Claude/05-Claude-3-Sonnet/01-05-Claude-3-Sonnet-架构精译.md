@@ -1,5 +1,5 @@
 ---
-title: "Claude 3 Sonnet: 企业级多模态生产力中枢 - 技术报告反向工程"
+title: "01 · Claude 3 Sonnet: 企业级多模态生产力中枢 - 技术报告反向工程"
 ---
 # Claude 3 Sonnet: 企业级多模态生产力中枢 - 架构还原与精译
 

@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Coder-V2"
+title: "05 · DeepSeek-Coder-V2"
 status: completed
 date: 2026-05-24
 ---

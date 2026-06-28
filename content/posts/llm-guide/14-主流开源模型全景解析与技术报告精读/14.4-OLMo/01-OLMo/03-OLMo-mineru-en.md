@@ -1,5 +1,5 @@
 ---
-title: "OLMo Technical Report (MinerU EN)"
+title: "03 · OLMo Technical Report (MinerU EN)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: OLMo-Technical-Report.pdf
 ---

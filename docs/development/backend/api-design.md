@@ -1,6 +1,6 @@
 # 后端 API 设计总则
 
-> 适用于 `apps/server/src/trpc/routers/*.ts` 下的所有实体 Router。
+> 适用于 `apps/server/src/router.ts` 中收拢的所有实体 Router。
 
 ---
 

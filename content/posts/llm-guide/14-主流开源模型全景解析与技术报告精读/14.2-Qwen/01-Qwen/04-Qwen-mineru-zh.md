@@ -1,5 +1,5 @@
 ---
-title: "Qwen Technical Report (MinerU 中文精译与译者注)"
+title: "04 · Qwen Technical Report (MinerU 中文精译与译者注)"
 source: 03-Qwen-mineru-en.md
 source_pdf: pdfs/Qwen.pdf
 date: 2026-05-23

@@ -1,5 +1,5 @@
 ---
-title: "Qwen2-Audio多模态架构剖析"
+title: "05 · Qwen2-Audio多模态架构剖析"
 ---
 
 # Qwen2-Audio 多模态架构剖析

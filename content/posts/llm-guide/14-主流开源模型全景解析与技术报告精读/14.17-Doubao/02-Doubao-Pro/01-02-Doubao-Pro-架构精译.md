@@ -1,5 +1,5 @@
 ---
-title: "Doubao Pro: 字节全家桶中枢 架构精译"
+title: "01 · Doubao Pro: 字节全家桶中枢 架构精译"
 ---
 # Doubao Pro: 字节全家桶中枢
 

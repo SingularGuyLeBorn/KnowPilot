@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-1.2B 技术报告精译"
+title: "01 · MiniCPM-1.2B 技术报告精译"
 ---
 
 # MiniCPM-1.2B 技术报告精译

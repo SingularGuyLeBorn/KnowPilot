@@ -1,5 +1,5 @@
 ---
-title: "Kimi-Chat 核心技术专题索引"
+title: "05 · Kimi-Chat 核心技术专题索引"
 date: 2026-05-24
 status: completed
 tags:

@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.7自我进化与多智能体协作"
+title: "05 · MiniMax-M2.7自我进化与多智能体协作"
 ---
 
 # MiniMax M2.7 自我进化与多智能体协作剖析

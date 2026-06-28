@@ -1,5 +1,5 @@
 ---
-title: "ChatGLM - MinerU 原始转换(英文)"
+title: "03 · ChatGLM - MinerU 原始转换(英文)"
 source_pdf: pdfs/chatglm-family.pdf
 converted_by: "MinerU (hybrid_auto)"
 date: "2024-06"

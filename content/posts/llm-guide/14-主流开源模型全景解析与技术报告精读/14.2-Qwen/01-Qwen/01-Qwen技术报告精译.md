@@ -1,5 +1,5 @@
 ---
-title: "Qwen 技术报告精译"
+title: "01 · Qwen 技术报告精译"
 ---
 
 # Qwen 技术报告精译

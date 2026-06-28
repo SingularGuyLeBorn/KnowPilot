@@ -1,5 +1,5 @@
 ---
-title: "01 MHA：多头注意力的标准形式"
+title: "01 · MHA：多头注意力的标准形式"
 date: 2026-05-24
 tags: [MHA, Multi-Head Attention, KV-Cache, Transformer, RoPE]
 ---

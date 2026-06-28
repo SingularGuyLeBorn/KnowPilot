@@ -1,5 +1,5 @@
 ---
-title: "Qwen2.5-Coder"
+title: "05 · Qwen2.5-Coder"
 status: completed
 date: 2026-05-24
 ---

@@ -1,5 +1,5 @@
 ---
-title: "ChatGLM 核心架构剖析"
+title: "02 · ChatGLM 核心架构剖析"
 status: pending
 ---
 

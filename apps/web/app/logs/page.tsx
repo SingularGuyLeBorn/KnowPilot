@@ -1,0 +1,173 @@
+/**
+ * Logs 运行日志审计页面 (L3 系统与运维)
+ *
+ * 实现了日志级别（INFO, WARN, ERROR, SUCCESS）动态过滤和一键清空日志库的完整数据链路。
+ */
+
+"use client";
+
+import React, { useState } from "react";
+import { motion } from "framer-motion";
+import { ScrollText, Trash2, Sparkles, Filter } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useLog } from "@/lib/hooks";
+import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { trpc } from "@/lib/trpc";
+
+interface LogEntry {
+  id: string;
+  level: string;
+  component: string;
+  event: string;
+  message: string;
+  createdAt: string | Date;
+}
+
+export default function LogsPage() {
+  const { useList } = useLog();
+  const [page, setPage] = useState(1);
+  const [level, setLevel] = useState<string>("");
+  
+  // 动态数据获取
+  const { data, isLoading, refetch } = useList({ page, pageSize: 50, level });
+
+  // 清空日志 Mutation
+  const clearAllMutation = trpc.log.clearAll.useMutation({
+    onSuccess: () => {
+      refetch();
+    }
+  });
+
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+
+  const handleClearAll = () => {
+    setIsClearConfirmOpen(true);
+  };
+
+  const confirmClear = () => {
+    clearAllMutation.mutate();
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
+      >
+        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
+          <ScrollText className="w-80 h-80 text-[var(--vp-c-brand)]" />
+        </div>
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
+              <Sparkles className="w-3.5 h-3.5" />
+              L3 阶段 · 运行日志与追踪
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
+              控制台与系统日志
+            </h1>
+            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
+              审计智能代理运行状况、外部 MCP 调用细节和触发器执行记录。日志信息专为 AI 和开发调试设计，精准记录每一个微服务轨迹。
+            </p>
+          </div>
+
+          <Button
+            onClick={handleClearAll}
+            disabled={clearAllMutation.isPending}
+            className="flex items-center gap-2 bg-red-500 text-white hover:bg-red-600 px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0 border-0"
+          >
+            <Trash2 className="w-5 h-5" />
+            {clearAllMutation.isPending ? "正在清理..." : "清空全部日志"}
+          </Button>
+        </div>
+      </motion.div>
+
+      {/* 筛选菜单 */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="text-xs font-bold uppercase tracking-wider text-[var(--vp-c-text-3)] flex items-center gap-1">
+          <Filter className="w-3.5 h-3.5" />
+          级别过滤
+        </span>
+        {["", "info", "success", "warn", "error"].map((lvl) => (
+          <button
+            key={lvl}
+            onClick={() => { setLevel(lvl); setPage(1); }}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all ${
+              level === lvl
+                ? "bg-[var(--vp-c-brand)] border-[var(--vp-c-brand)] text-white"
+                : "bg-[var(--vp-c-bg-alt)] border-[var(--vp-c-divider-light)] text-[var(--vp-c-text-2)] hover:bg-[var(--vp-c-bg-soft)]"
+            }`}
+          >
+            {lvl === "" ? "全部" : lvl.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {/* 日志展现表格 */}
+      {isLoading ? (
+        <LoadingState count={5} />
+      ) : !data?.items || data.items.length === 0 ? (
+        <EmptyState
+          title="日志库空置"
+          description="目前没有任何系统执行痕迹。所有的 tRPC 变更操作（如创建文章、上传文件等）都会被自动记录日志。"
+        />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/20 shadow-inner">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[var(--vp-c-divider)] text-[10px] uppercase font-bold tracking-wider text-[var(--vp-c-text-3)] bg-[var(--vp-c-bg-alt)]/60">
+                  <th className="p-4 w-28">级别</th>
+                  <th className="p-4 w-32">组件</th>
+                  <th className="p-4 w-36">事件</th>
+                  <th className="p-4">日志信息</th>
+                  <th className="p-4 w-40 text-right">时间戳</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--vp-c-divider-light)] font-mono text-[11px]">
+                {data.items.map((log: LogEntry) => {
+                  const levelBadge = {
+                    info: "text-blue-500 bg-blue-500/10",
+                    success: "text-green-500 bg-green-500/10",
+                    warn: "text-yellow-500 bg-yellow-500/10",
+                    error: "text-red-500 bg-red-500/10",
+                    debug: "text-purple-500 bg-purple-500/10",
+                  };
+                  return (
+                    <tr key={log.id} className="hover:bg-white/30 dark:hover:bg-[var(--vp-c-bg-soft)]/20 transition-colors">
+                      <td className="p-4">
+                        <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${levelBadge[log.level as keyof typeof levelBadge] || "text-gray-500 bg-gray-500/10"}`}>
+                          {log.level.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="p-4 text-[var(--vp-c-text-2)]">{log.component}</td>
+                      <td className="p-4 text-[var(--vp-c-brand)]">{log.event}</td>
+                      <td className="p-4 text-[var(--vp-c-text-1)] truncate max-w-xs md:max-w-md" title={log.message}>
+                        {log.message}
+                      </td>
+                      <td className="p-4 text-right text-[var(--vp-c-text-3)]">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={isClearConfirmOpen}
+        title="清空运行日志"
+        description="确定要彻底清空历史数据库中的所有日志信息吗？清空后控制台的历史事件和 AI 轨迹将无法找回。"
+        isDestructive={true}
+        confirmLabel="确认清空"
+        onConfirm={confirmClear}
+        onCancel={() => setIsClearConfirmOpen(false)}
+      />
+    </div>
+  );
+}

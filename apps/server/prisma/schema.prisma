@@ -52,6 +52,7 @@ model Skill {
   icon        String?
   trigger     String?  /// 触发规则 (关键字或正则)
   enabled     Boolean  @default(true)
+  metaJson    String?  /// frontmatter 扩展：model, context, allowedTools, kind
   sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())
@@ -151,6 +152,8 @@ model Task {
   input          Json?
   output         Json?
   cronExpression String?
+  sourceSlug     String?   @unique /// 本地源文件 slug（content/tasks/）
+  sourceMtime    DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }

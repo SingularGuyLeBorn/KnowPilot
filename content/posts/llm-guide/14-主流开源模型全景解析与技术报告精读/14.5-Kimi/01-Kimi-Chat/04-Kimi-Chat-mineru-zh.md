@@ -1,5 +1,5 @@
 ---
-title: "Kimi-Chat - 逐段精译与译者注"
+title: "04 · Kimi-Chat - 逐段精译与译者注"
 source: 03-Kimi-Chat-mineru-en.md
 source_type: "official product announcement (no technical report PDF)"
 translated_by: "AI Agent"

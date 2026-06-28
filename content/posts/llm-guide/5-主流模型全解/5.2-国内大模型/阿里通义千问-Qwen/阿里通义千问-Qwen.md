@@ -1,5 +1,5 @@
 ---
-title: "阿里通义千问 Qwen"
+title: "5.2 · 阿里通义千问 Qwen"
 date: 2026-05-11
 tags: []
 ---

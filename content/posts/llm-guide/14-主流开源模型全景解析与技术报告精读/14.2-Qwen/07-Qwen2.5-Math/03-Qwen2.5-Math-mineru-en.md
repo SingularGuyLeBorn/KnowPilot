@@ -1,5 +1,5 @@
 ---
-title: "Qwen2.5-Math - MinerU 原始转换(英文)"
+title: "03 · Qwen2.5-Math - MinerU 原始转换(英文)"
 source_pdf: pdfs/Qwen2.5-Math-Technical-Report.pdf
 converted_by: MinerU
 date: 2026-05-19

@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-S-1.2B 核心技术专题 - ProSparse 稀疏激活与端侧推理加速"
+title: "05 · MiniCPM-S-1.2B 核心技术专题 - ProSparse 稀疏激活与端侧推理加速"
 ---
 
 # MiniCPM-S-1.2B 核心技术专题: ProSparse 稀疏激活与端侧推理加速

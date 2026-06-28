@@ -3,24 +3,37 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bot,
+  ChevronDown,
+  ChevronUp,
+  CornerDownLeft,
   FileText,
   FolderOpen,
   Hash,
   Home,
   PenLine,
   Search,
-  Settings,
-  Command,
+  Wand2,
+  UserCircle,
+  Zap,
+  ShieldCheck,
+  FileCode2,
+  BarChart3,
+  Settings2,
+  Wrench,
+  Activity,
+  KeyRound,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { KbdKey, ShortcutCmdK, ShortcutEsc } from "@/lib/icons";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
 interface CommandItem {
   id: string;
-  type: "post" | "category" | "tag" | "action";
+  type: "post" | "category" | "tag" | "action" | "agent" | "skill";
   title: string;
   subtitle?: string;
   href?: string;
@@ -40,21 +53,22 @@ export function CommandPalette() {
     setSelectedIndex(0);
   };
 
-  const { data: posts = [] } = trpc.post.tree.useQuery(undefined, {
-    enabled: open,
-  });
-  const { data: categories = [] } = trpc.post.categories.useQuery(undefined, {
-    enabled: open,
-  });
-  const { data: tags = [] } = trpc.post.tags.useQuery(undefined, {
-    enabled: open,
-  });
+  const { data: posts = [] } = trpc.post.tree.useQuery(undefined, { enabled: open });
+  const { data: categories = [] } = trpc.post.categories.useQuery(undefined, { enabled: open });
+  const { data: tags = [] } = trpc.post.tags.useQuery(undefined, { enabled: open });
+  const { data: agentsData } = trpc.agent.list.useQuery(
+    { page: 1, pageSize: 50 },
+    { enabled: open }
+  );
+  const { data: skillsData } = trpc.skill.list.useQuery(
+    { page: 1, pageSize: 50 },
+    { enabled: open }
+  );
 
   const items = useMemo<CommandItem[]>(() => {
     const q = query.trim().toLowerCase();
     const list: CommandItem[] = [];
 
-    // Actions (always on top)
     list.push(
       {
         id: "action:home",
@@ -81,16 +95,91 @@ export function CommandPalette() {
         shortcut: "N",
       },
       {
+        id: "action:agents",
+        type: "action",
+        title: "Agent 管理",
+        href: "/agents",
+        icon: <Bot className="h-4 w-4" />,
+      },
+      {
+        id: "action:skills",
+        type: "action",
+        title: "Skill 管理",
+        href: "/skills",
+        icon: <Wand2 className="h-4 w-4" />,
+      },
+      {
+        id: "action:prompts",
+        type: "action",
+        title: "提示词模板",
+        href: "/prompts",
+        icon: <FileCode2 className="h-4 w-4" />,
+      },
+      {
+        id: "action:tools",
+        type: "action",
+        title: "工具注册",
+        href: "/tools",
+        icon: <Wrench className="h-4 w-4" />,
+      },
+      {
+        id: "action:runs",
+        type: "action",
+        title: "执行记录",
+        href: "/runs",
+        icon: <Activity className="h-4 w-4" />,
+      },
+      {
+        id: "action:credentials",
+        type: "action",
+        title: "凭据管理",
+        href: "/credentials",
+        icon: <KeyRound className="h-4 w-4" />,
+      },
+      {
+        id: "action:triggers",
+        type: "action",
+        title: "事件触发器",
+        href: "/triggers",
+        icon: <Zap className="h-4 w-4" />,
+      },
+      {
+        id: "action:approvals",
+        type: "action",
+        title: "审批队列",
+        href: "/approvals",
+        icon: <ShieldCheck className="h-4 w-4" />,
+      },
+      {
+        id: "action:search",
+        type: "action",
+        title: "全局搜索",
+        href: "/search",
+        icon: <Search className="h-4 w-4" />,
+      },
+      {
+        id: "action:dashboard",
+        type: "action",
+        title: "系统看板",
+        href: "/dashboard",
+        icon: <BarChart3 className="h-4 w-4" />,
+      },
+      {
         id: "action:settings",
         type: "action",
-        title: "打开设置",
-        href: "#settings",
-        icon: <Settings className="h-4 w-4" />,
-        shortcut: "S",
+        title: "系统设置",
+        href: "/settings",
+        icon: <Settings2 className="h-4 w-4" />,
+      },
+      {
+        id: "action:about",
+        type: "action",
+        title: "About Me",
+        href: "/about",
+        icon: <UserCircle className="h-4 w-4" />,
       }
     );
 
-    // Posts
     for (const post of posts) {
       if (!q || post.title.toLowerCase().includes(q) || post.slug.toLowerCase().includes(q)) {
         list.push({
@@ -104,7 +193,32 @@ export function CommandPalette() {
       }
     }
 
-    // Categories
+    for (const agent of agentsData?.items ?? []) {
+      if (!q || agent.name.toLowerCase().includes(q) || (agent.description ?? "").toLowerCase().includes(q)) {
+        list.push({
+          id: `agent:${agent.id}`,
+          type: "agent",
+          title: agent.name,
+          subtitle: agent.description ?? "Agent",
+          href: "/agents",
+          icon: <Bot className="h-4 w-4" />,
+        });
+      }
+    }
+
+    for (const skill of skillsData?.items ?? []) {
+      if (!q || skill.name.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q)) {
+        list.push({
+          id: `skill:${skill.id}`,
+          type: "skill",
+          title: skill.name,
+          subtitle: skill.description,
+          href: "/skills",
+          icon: <Wand2 className="h-4 w-4" />,
+        });
+      }
+    }
+
     for (const category of categories) {
       if (!q || category.toLowerCase().includes(q)) {
         list.push({
@@ -117,7 +231,6 @@ export function CommandPalette() {
       }
     }
 
-    // Tags
     for (const tag of tags) {
       if (!q || tag.toLowerCase().includes(q)) {
         list.push({
@@ -131,7 +244,7 @@ export function CommandPalette() {
     }
 
     return list;
-  }, [posts, categories, tags, query]);
+  }, [posts, categories, tags, agentsData, skillsData, query]);
 
   const openPalette = () => {
     setQueryRaw("");
@@ -182,24 +295,15 @@ export function CommandPalette() {
       e.preventDefault();
       const item = items[selectedIndex];
       if (item?.href) {
-        if (item.href === "#settings") {
-          alert("设置页尚未实现");
-        } else {
-          router.push(item.href);
-        }
+        router.push(item.href);
         closePalette();
       }
-      return;
     }
   };
 
   const runItem = (item: CommandItem) => {
     if (item.href) {
-      if (item.href === "#settings") {
-        alert("设置页尚未实现");
-      } else {
-        router.push(item.href);
-      }
+      router.push(item.href);
       setOpen(false);
     }
   };
@@ -209,13 +313,13 @@ export function CommandPalette() {
       <button
         type="button"
         onClick={openPalette}
-        className="hidden items-center gap-2 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-3 py-1.5 text-xs text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] md:inline-flex"
+        className="hidden items-center gap-2 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-3 py-2 text-sm text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] md:inline-flex"
       >
-        <Search className="h-3.5 w-3.5" />
+        <Search className="h-4 w-4" />
         <span>搜索</span>
-        <kbd className="ml-1 rounded border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-1 font-mono text-[10px]">
-          <Command className="inline h-3 w-3" />K
-        </kbd>
+        <span className="ml-1">
+          <ShortcutCmdK />
+        </span>
       </button>
     );
   }
@@ -238,12 +342,12 @@ export function CommandPalette() {
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索文章、分类、标签或操作…"
+            placeholder="搜索文章、Agent、Skill、分类…"
             className="h-auto border-0 bg-transparent px-0 text-base text-[var(--kp-text-1)] shadow-none placeholder:text-[var(--kp-text-3)] focus-visible:ring-0"
           />
-          <kbd className="hidden rounded border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--kp-text-3)] sm:inline-block">
-            ESC
-          </kbd>
+          <span className="hidden sm:inline-block">
+            <ShortcutEsc />
+          </span>
         </div>
 
         <ScrollArea className="max-h-[55vh]">
@@ -261,18 +365,16 @@ export function CommandPalette() {
         <div className="flex items-center justify-between border-t border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-3)]">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-1 font-mono">↑</kbd>
-              <kbd className="rounded border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-1 font-mono">↓</kbd>
+              <KbdKey icon={ChevronUp} label="上" />
+              <KbdKey icon={ChevronDown} label="下" />
               选择
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-1 font-mono">↵</kbd>
+              <KbdKey icon={CornerDownLeft} label="确认" />
               确认
             </span>
           </div>
-          <span>
-            {items.length} 个结果
-          </span>
+          <span>{items.length} 个结果</span>
         </div>
       </div>
     </div>
@@ -288,6 +390,8 @@ function renderGroupedItems(
   const groups: { label: string; items: CommandItem[] }[] = [
     { label: "操作", items: items.filter((i) => i.type === "action") },
     { label: "文章", items: items.filter((i) => i.type === "post") },
+    { label: "Agent", items: items.filter((i) => i.type === "agent") },
+    { label: "Skill", items: items.filter((i) => i.type === "skill") },
     { label: "分类", items: items.filter((i) => i.type === "category") },
     { label: "标签", items: items.filter((i) => i.type === "tag") },
   ];
@@ -297,7 +401,7 @@ function renderGroupedItems(
     if (group.items.length === 0) continue;
     elements.push(
       <div key={`group-${group.label}`}>
-        <div className="sticky top-0 bg-[var(--kp-bg)] px-4 py-1.5 text-xs font-medium text-[var(--kp-text-3)]">
+        <div className="sticky top-0 bg-[var(--kp-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--kp-text-3)]">
           {group.label}
         </div>
         <div className="px-2">
@@ -347,7 +451,6 @@ function renderGroupedItems(
       </div>
     );
   }
-  // Remove trailing separator
   if (elements.length > 0) {
     elements.pop();
   }

@@ -1,5 +1,5 @@
 ---
-title: "再深挖DeepSeek-R1 ：Reward is Enough"
+title: "18 · 再深挖DeepSeek-R1 ：Reward is Enough"
 date: 2026-05-11
 tags: []
 ---

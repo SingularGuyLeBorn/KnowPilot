@@ -1,5 +1,5 @@
 ---
-title: "Doubao Lite: 字节端侧极致压缩 架构精译"
+title: "01 · Doubao Lite: 字节端侧极致压缩 架构精译"
 ---
 # Doubao Lite: 字节端侧极致压缩
 

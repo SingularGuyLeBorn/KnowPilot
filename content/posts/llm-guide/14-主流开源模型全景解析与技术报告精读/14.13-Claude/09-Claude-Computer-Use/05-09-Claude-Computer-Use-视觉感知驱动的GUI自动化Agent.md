@@ -1,5 +1,5 @@
 ---
-title: "Claude Computer Use：视觉感知驱动的GUI自动化Agent——从API集成到像素级操控的范式转移"
+title: "05 · Claude Computer Use：视觉感知驱动的GUI自动化Agent——从API集成到像素级操控的范式转移"
 ---
 
 # Claude Computer Use：视觉感知驱动的GUI自动化Agent

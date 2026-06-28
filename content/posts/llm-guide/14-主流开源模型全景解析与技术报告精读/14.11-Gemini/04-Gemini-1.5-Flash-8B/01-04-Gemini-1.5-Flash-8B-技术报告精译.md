@@ -1,5 +1,5 @@
 ---
-title: "Gemini 1.5 Flash-8B: 端侧与边缘计算的微型巨头 - 技术报告精译"
+title: "01 · Gemini 1.5 Flash-8B: 端侧与边缘计算的微型巨头 - 技术报告精译"
 ---
 # Gemini 1.5 Flash-8B: 端侧与边缘计算的微型巨头 - 技术报告精译
 

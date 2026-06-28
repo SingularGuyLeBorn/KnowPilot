@@ -1,0 +1,9 @@
+{
+  "name": "daily-content-sync",
+  "type": "cron",
+  "status": "pending",
+  "cronExpression": "0 2 * * *",
+  "input": {
+    "action": "db:sync"
+  }
+}

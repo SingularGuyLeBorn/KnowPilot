@@ -1,5 +1,5 @@
 ---
-title: "GLM-4-Voice 技术报告精译"
+title: "01 · GLM-4-Voice 技术报告精译"
 ---
 
 # GLM-4-Voice 技术报告精译

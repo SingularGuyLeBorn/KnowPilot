@@ -1,5 +1,5 @@
 ---
-title: "Kimi-K2 核心演化剖析"
+title: "02 · Kimi-K2 核心演化剖析"
 status: pending
 ---
 

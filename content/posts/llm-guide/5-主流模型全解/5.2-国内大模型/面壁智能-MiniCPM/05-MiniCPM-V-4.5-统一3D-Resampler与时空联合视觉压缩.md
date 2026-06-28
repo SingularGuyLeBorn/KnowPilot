@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-V-4.5 统一 3D-Resampler 与时空联合视觉压缩"
+title: "05 · MiniCPM-V-4.5 统一 3D-Resampler 与时空联合视觉压缩"
 ---
 
 # MiniCPM-V-4.5 统一 3D-Resampler 与时空联合视觉压缩

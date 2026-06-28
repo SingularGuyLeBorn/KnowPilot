@@ -1,5 +1,5 @@
 ---
-title: "GLM-4-Voice 技术报告 (MinerU 逐译 + 译者注)"
+title: "04 · GLM-4-Voice 技术报告 (MinerU 逐译 + 译者注)"
 translated_from: 03-GLM-4-Voice-mineru-en.md
 model: GLM-4-Voice
 scope: D4 (逐译 + 译者注)

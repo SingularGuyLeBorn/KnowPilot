@@ -1,5 +1,5 @@
 ---
-title: "LLM-JEPA: 从 Token 预测到嵌入预测的实现"
+title: "10 · LLM-JEPA: 从 Token 预测到嵌入预测的实现"
 date: 2026-05-17
 tags: [JEPA, LLM-JEPA, 嵌入预测, 自监督学习, 表示学习, Joint Embedding Predictive Architecture]
 ---

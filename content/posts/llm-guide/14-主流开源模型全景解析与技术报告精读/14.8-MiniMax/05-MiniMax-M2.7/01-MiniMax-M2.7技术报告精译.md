@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.7 技术报告精译"
+title: "01 · MiniMax-M2.7 技术报告精译"
 ---
 
 # MiniMax M2.7 技术博客精译

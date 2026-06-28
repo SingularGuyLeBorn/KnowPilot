@@ -1,5 +1,5 @@
 ---
-title: "GLM-130B Technical Report - Segment-by-Segment Translation with Translator's Notes"
+title: "04 · GLM-130B Technical Report - Segment-by-Segment Translation with Translator's Notes"
 source: 03-GLM-130B-mineru-en.md
 model: GLM-130B
 ---

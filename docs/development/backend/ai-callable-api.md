@@ -43,39 +43,27 @@ export const agentRouter = router({
 
 ## 3. 提供一个统一的 `ai.tools` 接口
 
-在 L2 阶段新增一个 `ai` router，暴露所有 AI 可调用的工具描述：
+[已完成] `ai` router 已在 `apps/server/src/router.ts` 实现：
 
 ```ts
-ai.tools.query(() => {
-  return [
-    {
-      name: "post.list",
-      description: "列出已发布的文章",
-      parameters: zodToJsonSchema(listPostsSchema),
-    },
-    {
-      name: "agent.create",
-      description: "创建一个新的 AI Agent",
-      parameters: zodToJsonSchema(createAgentSchema),
-    },
-    // ...
-  ];
-});
+ai.tools.query()   // 反射 meta.aiReadable !== false 的所有 procedure + JSON Schema
+ai.invoke.mutation({ tool: "post.list", args: { page: 1, pageSize: 10 } })
 ```
 
-前端/Agent 先调用 `ai.tools` 拿到工具列表，再按需调用具体 procedure。
+前端通过 `useAIApi()`（`apps/web/lib/hooks.ts`）调用。Agent 运行时（`agentRuntime.ts`）已通过 native 工具 + `invokeTrpc` 与 LLM ReAct 循环串联；`ai.invoke` 供反射式工具发现场景使用。
 
 ---
 
 ## 4. 调用路径
 
-```textnAgent (LLM)
+```text
+Agent (LLM)
    │
    ├─ 1. ai.tools ──→ 获取可用工具 + JSON Schema
    │
    ├─ 2. 生成工具调用参数
    │
-   ├─ 3. post.list / agent.create / ... ──→ tRPC procedure
+   ├─ 3. ai.invoke / post.list / agent.create / ... ──→ tRPC procedure
    │
    └─ 4. 根据返回结果继续推理或向用户展示
 ```
@@ -98,43 +86,30 @@ Agent 收到错误后，可以按 reason 自动处理：
 
 ## 6. 权限与审批（L4）
 
-危险操作需要用户审批：
+[已完成] 危险操作通过 `ApprovalGate` 拦截（`REQUIRE_APPROVAL=true` 时生效）：
 
-- `agent.delete`
-- `task.delete`
-- `mcp.create` / `mcp.update`
-- `git.pull` / `git.push`
-- `file.delete`
+- `agent.delete`、`post.delete`、`skill.delete` 等实体 delete
+- `git.push`
+- 审批通过后 `approval.execute` / `approveAndExecute` 执行原操作
 
-这些 procedure 内部检查 `Approval` 表：
-
-```ts
-// 伪代码
-if (requiresApproval("agent.delete", input)) {
-  const approval = await ctx.prisma.approval.create({
-    data: { toolName: "agent.delete", args: input, status: "pending" },
-  });
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message: "删除 Agent 需要用户确认",
-    cause: { reason: "PENDING_APPROVAL", approvalId: approval.id },
-  });
-}
-```
+前端 `/approvals` 队列可查看与批准。
 
 ---
 
 ## 7. 调用日志
 
-每个 AI 调用都记录到 `Log`：
+[已完成] 所有 mutation（含 `ai.invoke`）经 `loggerMiddleware` 写入 `Log` 表：
+
+- `ai.invoke` 使用 `component: "ai.call"`，`metadata.tool` 记录工具名与耗时。
+- 其他 mutation 按 router 名写入 `component` 字段。
 
 ```ts
 {
   level: "info",
   component: "ai.call",
-  event: "agent.create",
-  message: "AI 调用 agent.create 成功",
-  metadata: { input, outputId: agent.id, durationMs },
+  event: "ai.invoke",
+  message: "AI 调用 agent.create 成功 (42ms)",
+  metadata: { tool: "agent.create", durationMs: 42, success: true },
 }
 ```
 

@@ -1,5 +1,5 @@
 ---
-title: "Claude 3 Sonnet：平衡性能与成本的Anthropic中坚架构"
+title: "05 · Claude 3 Sonnet：平衡性能与成本的Anthropic中坚架构"
 ---
 
 # 05-Claude-3-Sonnet 核心技术专题：平衡性能与成本的Anthropic中坚架构

@@ -2,13 +2,22 @@
  * Skill 同步器
  *
  * 文件格式：content/skills/{slug}.md
- * frontmatter: name, description, icon, trigger, enabled
- * 正文：code
+ * frontmatter: name, description, icon, trigger, enabled, model, context, allowed-tools, kind
+ * 正文：code / prompt
  */
 
+import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readBoolean, getFileMtime } from "./utils.js";
+
+export interface SkillMeta {
+  model?: string;
+  context?: "inline" | "fork";
+  allowedTools?: string[];
+  kind?: "skill" | "reference";
+  version?: string;
+}
 
 interface SkillData {
   name: string;
@@ -17,6 +26,51 @@ interface SkillData {
   icon: string | null;
   trigger: string | null;
   enabled: boolean;
+  metaJson: string | null;
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value.trim()) {
+    return value.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+  }
+  return undefined;
+}
+
+function parseSkillFrontmatter(data: Record<string, unknown>, filePath: string, contentDir: string): SkillMeta {
+  const rel = path.relative(contentDir, filePath).replace(/\\/g, "/");
+  const isReferenceDir = rel.startsWith("design-references/");
+
+  const kind =
+    data.kind === "reference" || data.kind === "skill"
+      ? (data.kind as SkillMeta["kind"])
+      : isReferenceDir
+        ? "reference"
+        : "skill";
+
+  const context =
+    data.context === "fork" || data.context === "inline" ? (data.context as SkillMeta["context"]) : undefined;
+
+  const version =
+    typeof data.version === "string" && data.version.trim()
+      ? data.version.trim()
+      : typeof data.version === "number"
+        ? String(data.version)
+        : "1.0.0";
+
+  return {
+    model: typeof data.model === "string" ? data.model : undefined,
+    context,
+    allowedTools: readStringArray(data["allowed-tools"] ?? data.allowedTools),
+    kind,
+    version,
+  };
+}
+
+function normalizeTrigger(data: Record<string, unknown>, name: string): string | null {
+  if (typeof data.trigger === "string" && data.trigger.trim()) return data.trigger.trim();
+  if (name.startsWith("/")) return name;
+  return `/${name}`;
 }
 
 export const skillSyncer: Syncer<SkillData> = {
@@ -33,21 +87,33 @@ export const skillSyncer: Syncer<SkillData> = {
         const slug = filePathToSlug(contentDir, filePath);
         const mtime = getFileMtime(filePath);
         const { data, content } = parseMarkdownFile(filePath);
+        const fm = data as Record<string, unknown>;
 
-        const name = typeof data.name === "string" ? data.name : slug;
-        const description = typeof data.description === "string" ? data.description : "";
+        const name = typeof fm.name === "string" ? fm.name : slug;
+        const description = typeof fm.description === "string" ? fm.description : "";
         const code = content.trim();
-        const icon = typeof data.icon === "string" ? data.icon : null;
-        const trigger = typeof data.trigger === "string" ? data.trigger : null;
-        const enabled = readBoolean(data.enabled, true);
+        const icon = typeof fm.icon === "string" ? fm.icon : "Wand2";
+        const meta = parseSkillFrontmatter(fm, filePath, contentDir);
+        const trigger = normalizeTrigger(fm, name);
+        let enabled = readBoolean(fm.enabled, true);
+        if (meta.kind === "reference") enabled = readBoolean(fm.enabled, false);
 
         records.push({
           slug,
           mtime,
-          data: { name, description, code, icon, trigger, enabled },
+          data: {
+            name,
+            description,
+            code,
+            icon,
+            trigger,
+            enabled,
+            metaJson: JSON.stringify({ ...meta, trigger }),
+          },
         });
-      } catch (e: any) {
-        console.error(`  ❌ [Skill 解析失败] ${filePath}:`, e.message);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`  ❌ [Skill 解析失败] ${filePath}:`, msg);
       }
     }
 
@@ -65,6 +131,7 @@ export const skillSyncer: Syncer<SkillData> = {
         icon: data.icon,
         trigger: data.trigger,
         enabled: data.enabled,
+        metaJson: data.metaJson,
         sourceSlug: slug,
         sourceMtime: mtime,
       },
@@ -75,6 +142,7 @@ export const skillSyncer: Syncer<SkillData> = {
         icon: data.icon,
         trigger: data.trigger,
         enabled: data.enabled,
+        metaJson: data.metaJson,
         sourceSlug: slug,
         sourceMtime: mtime,
       },
@@ -109,3 +177,12 @@ export const skillSyncer: Syncer<SkillData> = {
     return map;
   },
 };
+
+export function parseSkillMetaJson(metaJson?: string | null): SkillMeta & { trigger?: string } {
+  if (!metaJson) return {};
+  try {
+    return JSON.parse(metaJson) as SkillMeta & { trigger?: string };
+  } catch {
+    return {};
+  }
+}

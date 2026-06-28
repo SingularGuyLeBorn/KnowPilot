@@ -8,11 +8,11 @@
 
 | 模块 | 实体 | 内容目录 | 状态 |
 |---|---|---|---|
-| L3-M01 文件管理 | `File` | 磁盘 + DB 元数据 | [待开始] 后端 Router 已存在，缺 UI 和上传实现 |
-| L3-M02 Git 仓库管理 | `GitRepo` | DB 元数据 + 磁盘仓库 | [待开始] 同上 |
-| L3-M03 后台任务 | `Task` | `content/tasks/` | [待开始] 同上 |
-| L3-M04 日志系统 | `Log` | DB 仅存储 | [待开始] 同上 |
-| L3-M05 工作区 | `Workspace` | DB 仅存储 | [待开始] 同上 |
+| L3-M01 文件管理 | `File` | 磁盘 + DB 元数据 | [已完成] CRUD + `/files` + `file.upload` |
+| L3-M02 Git 仓库管理 | `GitRepo` | DB 元数据 + 磁盘仓库 | [已完成] CRUD + `/git` + status/log API |
+| L3-M03 后台任务 | `Task` | `content/tasks/` | [已完成] CRUD + sync + TaskScheduler + `/tasks` |
+| L3-M04 日志系统 | `Log` | DB 仅存储 | [已完成] CRUD + `log.clearAll` + `/logs` + mutation 自动审计 |
+| L3-M05 工作区 | `Workspace` | DB 仅存储 | [已完成] CRUD + `/workspaces` |
 
 ---
 
@@ -21,11 +21,11 @@
 ### 存储
 
 - 元数据：SQLite `File` 表。
-- 实际文件：`content/uploads/` 或 `public/uploads/`。
+- 实际文件：`content/uploads/`（server 静态路由 `/uploads`）。
 
 ### API
 
-标准 CRUD + list。`file.create` 接收文件元数据；上传本身可以走 tRPC + base64，或单独的 upload 路由。
+标准 CRUD + list + `file.upload`（Base64 上传，已实现）。
 
 ### 安全
 
@@ -143,8 +143,8 @@
 
 ## L3 验收标准
 
-- [ ] 可以上传、查看、删除文件。
-- [ ] 可以注册 Git 仓库并查看状态/提交历史。
-- [ ] 可以创建/启停/删除定时任务。
-- [ ] 可以按 level/component 过滤日志。
-- [ ] 可以切换/管理工作区。
+- [x] 可以上传、查看、删除文件（`/files` + `file.upload`）。
+- [x] 可以注册 Git 仓库并查看状态/提交历史（`git.status` / `git.log` + `/git` 详情 UI）。
+- [x] 可以创建/启停/删除定时任务（CRUD + TaskScheduler + `task.run`）。
+- [x] 可以按 level/component 过滤日志（`/logs` 管理页）。
+- [x] 可以切换/管理工作区（`/workspaces` 管理页）。

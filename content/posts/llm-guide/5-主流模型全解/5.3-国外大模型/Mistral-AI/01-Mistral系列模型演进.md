@@ -1,5 +1,5 @@
 ---
-title: "Mistral系列: 从7B到MoE"
+title: "01 · Mistral系列: 从7B到MoE"
 date: 2026-05-16
 tags: [knowledge-base, mistral, moe, mixture-of-experts, codestral, mathstral]
 ---

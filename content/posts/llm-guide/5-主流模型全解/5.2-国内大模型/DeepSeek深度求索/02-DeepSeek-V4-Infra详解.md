@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V4 Infra 详解"
+title: "02 · DeepSeek-V4 Infra 详解"
 date: 2026-05-16
 tags: [DeepSeek, V4, MoE, mHC, CSA, HCA, FP4, Muon, 专家并行]
 ---

@@ -1,5 +1,5 @@
 ---
-title: "03-Step-3.5-Flash Technical Report (MinerU EN)"
+title: "03 · 03-Step-3.5-Flash Technical Report (MinerU EN)"
 source_pdf: pdfs/Step-3.5-Flash.pdf
 converted_by: MinerU (re-processed)
 date: 2026-05-23

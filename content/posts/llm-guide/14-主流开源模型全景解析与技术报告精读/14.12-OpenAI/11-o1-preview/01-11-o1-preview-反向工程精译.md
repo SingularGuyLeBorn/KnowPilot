@@ -1,5 +1,5 @@
 ---
-title: "o1-preview: 纯强化学习驱动的 System-2 思考引擎 - 技术报告反向工程"
+title: "01 · o1-preview: 纯强化学习驱动的 System-2 思考引擎 - 技术报告反向工程"
 ---
 # o1-preview: 纯强化学习驱动的 System-2 思考引擎 - 技术探测与反向工程
 

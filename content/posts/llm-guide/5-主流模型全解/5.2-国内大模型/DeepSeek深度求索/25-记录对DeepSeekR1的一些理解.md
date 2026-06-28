@@ -1,5 +1,5 @@
 ---
-title: "记录对DeepSeek-R1的一些理解"
+title: "25 · 记录对DeepSeek-R1的一些理解"
 date: 2026-05-11
 tags: []
 ---

@@ -1,0 +1,179 @@
+/**
+ * TriggerEngine — 事件触发器引擎
+ */
+
+import type { PrismaClient } from "@prisma/client";
+import type { AppEventBus, EntityEventPayload } from "./eventBus.js";
+import type { ServiceContainer } from "./serviceContainer.js";
+import { getAppConfig } from "./config.js";
+import { runAgent } from "./agentRuntime.js";
+import { createTrpcInvoker } from "./trpcInvoker.js";
+import { executeTaskJob } from "./taskRunner.js";
+
+export class TriggerEngine {
+  private isRunning = false;
+  private eventHandler: ((payload: EntityEventPayload<any>) => void) | null = null;
+
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly eventBus: AppEventBus,
+    private readonly services: ServiceContainer,
+  ) {}
+
+  async start(): Promise<void> {
+    if (this.isRunning) return;
+    this.isRunning = true;
+
+    console.log("  ⚡ [TriggerEngine] 启动事件触发器引擎...");
+
+    this.eventHandler = async (payload: EntityEventPayload<any>) => {
+      try {
+        await this.handleEvent(payload);
+      } catch (err: unknown) {
+        console.error(
+          `  ❌ [TriggerEngine] 事件处理失败 [${payload.entity}.${payload.action}]:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    };
+
+    this.eventBus.on("*", this.eventHandler);
+  }
+
+  stop(): void {
+    if (!this.isRunning) return;
+    this.isRunning = false;
+
+    if (this.eventHandler) {
+      this.eventBus.off("*", this.eventHandler);
+      this.eventHandler = null;
+    }
+
+    console.log("  ⚡ [TriggerEngine] 已停止");
+  }
+
+  private async handleEvent(payload: EntityEventPayload<any>): Promise<void> {
+    const eventSource = `${payload.entity}.${payload.action}`;
+
+    const triggers = await this.prisma.trigger.findMany({
+      where: { source: eventSource, enabled: true },
+    });
+
+    if (triggers.length === 0) return;
+
+    console.log(`  ⚡ [TriggerEngine] 匹配到 ${triggers.length} 个触发器 [源: ${eventSource}]`);
+
+    for (const trigger of triggers) {
+      console.log(`    ↳ 触发动作 [${trigger.name}]: ${trigger.actionType} → ID: ${trigger.actionId}`);
+
+      try {
+        await this.prisma.log.create({
+          data: {
+            level: "info",
+            component: "trigger.engine",
+            event: "trigger.fired",
+            message: `触发器 "${trigger.name}" 被事件 "${eventSource}" 触发`,
+            metadata: JSON.stringify({ triggerId: trigger.id, eventPayload: payload }),
+          },
+        });
+
+        if (trigger.actionType === "run_task") {
+          await this.executeTask(trigger.actionId, payload);
+        } else if (trigger.actionType === "run_agent") {
+          await this.executeAgent(trigger.actionId, payload);
+        } else {
+          console.warn(`  ⚠️ [TriggerEngine] 未知动作类型: ${trigger.actionType}`);
+        }
+      } catch (err: unknown) {
+        await this.prisma.log.create({
+          data: {
+            level: "error",
+            component: "trigger.engine",
+            event: "trigger.failed",
+            message: `触发器 "${trigger.name}" 执行失败: ${err instanceof Error ? err.message : String(err)}`,
+            metadata: JSON.stringify({ triggerId: trigger.id, error: String(err) }),
+          },
+        });
+      }
+    }
+  }
+
+  private async executeTask(taskId: string, triggerPayload: EntityEventPayload<any>): Promise<void> {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new Error(`找不到匹配的 Task 记录: ${taskId}`);
+
+    console.log(`    ⚙️ [TriggerEngine] 启动后台任务: ${task.name}`);
+
+    await this.prisma.task.update({
+      where: { id: taskId },
+      data: {
+        status: "running",
+        input: JSON.stringify({ triggerEvent: triggerPayload }),
+      },
+    });
+
+    try {
+      const output = await executeTaskJob(this.prisma, {
+        id: task.id,
+        name: task.name,
+        type: task.type,
+        input: task.input,
+      });
+      await this.prisma.task.update({
+        where: { id: taskId },
+        data: {
+          status: "success",
+          output: JSON.stringify(output),
+        },
+      });
+      console.log(`    ✅ [TriggerEngine] 自动任务执行完毕: ${task.name}`);
+    } catch (e: unknown) {
+      await this.prisma.task.update({
+        where: { id: taskId },
+        data: {
+          status: "failed",
+          output: JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
+        },
+      });
+      throw e;
+    }
+  }
+
+  /** 异步启动 Agent ReAct 循环 */
+  private async executeAgent(agentId: string, triggerPayload: EntityEventPayload<any>): Promise<void> {
+    const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) throw new Error(`找不到匹配的 Agent 记录: ${agentId}`);
+
+    console.log(`    🤖 [TriggerEngine] 自动唤醒 Agent: ${agent.name}`);
+
+    const config = getAppConfig();
+    const invokeTrpc = createTrpcInvoker({ services: this.services });
+    const prompt = `事件 "${triggerPayload.entity}.${triggerPayload.action}" 被触发。请根据关联数据采取适当行动。\n\n数据摘要：\n${JSON.stringify(triggerPayload.data ?? triggerPayload, null, 2).slice(0, 4000)}`;
+
+    const result = await runAgent(
+      this.services,
+      config,
+      { agentId: agent.id, input: prompt },
+      invokeTrpc,
+    );
+
+    if (!result.success) {
+      throw new Error(result.error?.message ?? "Agent 执行失败");
+    }
+
+    console.log(`    ✅ [TriggerEngine] Agent 执行完成: ${result.data?.content?.slice(0, 120) ?? ""}`);
+  }
+}
+
+let _engine: TriggerEngine | null = null;
+
+export function getTriggerEngine(
+  prisma: PrismaClient,
+  eventBus: AppEventBus,
+  services: ServiceContainer,
+): TriggerEngine {
+  if (!_engine) {
+    _engine = new TriggerEngine(prisma, eventBus, services);
+  }
+  return _engine;
+}

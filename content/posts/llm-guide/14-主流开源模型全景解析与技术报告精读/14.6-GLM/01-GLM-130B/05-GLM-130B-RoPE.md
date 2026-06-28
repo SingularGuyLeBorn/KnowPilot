@@ -1,5 +1,5 @@
 ---
-title: "GLM-130B二维RoPE数理推导"
+title: "05 · GLM-130B二维RoPE数理推导"
 ---
 
 # GLM-130B 位置编码: 从二维到一维 RoPE 的数理推导

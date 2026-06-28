@@ -6,15 +6,22 @@
   "scripts": {
     "dev": "concurrently --names server,web,sync --prefix-colors blue,green,yellow \"pnpm --filter @knowpilot/server dev\" \"pnpm --filter @knowpilot/web dev\" \"pnpm --filter @knowpilot/server db:sync:watch\"",
     "dev:quick": "concurrently --names server,web --prefix-colors blue,green \"pnpm --filter @knowpilot/server dev\" \"pnpm --filter @knowpilot/web dev\"",
+    "dev:remote": "concurrently --names server,web --prefix-colors blue,green \"pnpm --filter @knowpilot/server dev\" \"pnpm --filter @knowpilot/web dev:remote\"",
     "dev:web": "pnpm --filter @knowpilot/web dev",
     "dev:server": "pnpm --filter @knowpilot/server dev",
     "build": "pnpm --filter @knowpilot/web build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @knowpilot/web test:e2e",
+    "validate": "pnpm lint && pnpm test && pnpm build && pnpm test:e2e",
+    "tunnel:quick": "powershell -ExecutionPolicy Bypass -File scripts/tunnel.ps1 quick",
+    "tunnel:run": "powershell -ExecutionPolicy Bypass -File scripts/tunnel.ps1 run",
+    "tunnel:run:config": "powershell -ExecutionPolicy Bypass -File scripts/tunnel.ps1 run -Config cloudflare/config.yml",
     "db:migrate": "pnpm --filter @knowpilot/server db:migrate",
     "db:studio": "pnpm --filter @knowpilot/server db:studio",
     "db:seed": "pnpm --filter @knowpilot/server db:seed",
-    "db:sync": "pnpm --filter @knowpilot/server db:sync"
+    "db:sync": "pnpm --filter @knowpilot/server db:sync",
+    "db:backup": "node scripts/backup-db.mjs"
   },
   "devDependencies": {
     "concurrently": "9.1.2",

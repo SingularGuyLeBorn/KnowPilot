@@ -3,7 +3,6 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Eye, Hash } from "lucide-react";
-import { Shell } from "@/components/layout/Shell";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -24,8 +23,7 @@ export default function TagPage() {
   });
 
   return (
-    <Shell>
-      <div className="w-full px-[5%] py-8 md:px-[8%] lg:px-[10%] xl:px-[12%]">
+    <div className="w-full px-[5%] py-8 md:px-[8%] lg:px-[10%] xl:px-[12%]">
         <div className="mb-8">
           <Link
             href="/posts"
@@ -61,8 +59,7 @@ export default function TagPage() {
         ) : (
           <EmptyState tag={slug} />
         )}
-      </div>
-    </Shell>
+    </div>
   );
 }
 

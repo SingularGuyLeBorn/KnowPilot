@@ -1,5 +1,5 @@
 ---
-title: "Gemini 1.5 Pro: 100万上下文与MoE架构的引入 - 技术报告精译"
+title: "01 · Gemini 1.5 Pro: 100万上下文与MoE架构的引入 - 技术报告精译"
 ---
 # Gemini 1.5 Pro: 100万上下文与MoE架构的引入 - 技术报告精译
 

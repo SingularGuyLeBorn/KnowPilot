@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.7 - 逐段精译与译者注"
+title: "04 · MiniMax-M2.7 - 逐段精译与译者注"
 source: "03-MiniMax-M2.7-mineru-en.md"
 status: completed
 ---

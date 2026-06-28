@@ -1,5 +1,5 @@
 ---
-title: "Claude 3 Haiku: 极致响应速度的端侧小钢炮 - 对齐与安全核心专题"
+title: "05 · Claude 3 Haiku: 极致响应速度的端侧小钢炮 - 对齐与安全核心专题"
 ---
 # 04-Claude-3-Haiku 核心技术专题：RLAIF 与模型神经元干预
 

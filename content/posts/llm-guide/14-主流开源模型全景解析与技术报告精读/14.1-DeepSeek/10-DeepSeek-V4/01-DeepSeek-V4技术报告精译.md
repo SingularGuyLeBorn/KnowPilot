@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V4 技术报告精译"
+title: "01 · DeepSeek-V4 技术报告精译"
 ---
 
 # DeepSeek-V4: 面向高效百万 Token 上下文智能

@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-V 2.0 论文精读笔记"
+title: "04 · MiniCPM-V 2.0 论文精读笔记"
 ---
 
 # MiniCPM-V 2.0 论文精读笔记

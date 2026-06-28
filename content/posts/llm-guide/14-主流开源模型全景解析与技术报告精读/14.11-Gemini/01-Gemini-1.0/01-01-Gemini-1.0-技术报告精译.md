@@ -1,5 +1,5 @@
 ---
-title: "Gemini 1.0: 开启原生多模态时代 (Ultra/Pro/Nano) - 技术报告精译"
+title: "01 · Gemini 1.0: 开启原生多模态时代 (Ultra/Pro/Nano) - 技术报告精译"
 ---
 # Gemini 1.0: 开启原生多模态时代 (Ultra/Pro/Nano) - 技术报告精译
 

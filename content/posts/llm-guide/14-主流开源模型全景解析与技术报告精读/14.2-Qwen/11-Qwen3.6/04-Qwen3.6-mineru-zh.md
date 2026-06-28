@@ -1,5 +1,5 @@
 ---
-title: "Qwen3.6 - 逐段精译与译者注"
+title: "04 · Qwen3.6 - 逐段精译与译者注"
 source: 03-Qwen3.6-mineru-en.md
 source_type: "official blog announcement"
 translated_by: "AI Agent"

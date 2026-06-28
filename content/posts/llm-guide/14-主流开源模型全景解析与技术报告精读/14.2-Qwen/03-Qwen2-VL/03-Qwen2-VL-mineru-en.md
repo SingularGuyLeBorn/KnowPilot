@@ -1,5 +1,5 @@
 ---
-title: "Qwen2-VL Technical Report (MinerU EN)"
+title: "03 · Qwen2-VL Technical Report (MinerU EN)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: pdfs/Qwen2-VL-Technical-Report.pdf
 ---

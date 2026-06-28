@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.1 - Source Notes (EN)"
+title: "03 · DeepSeek-V3.1 - Source Notes (EN)"
 source_pdf: "pdfs/DeepSeek-V3.1.html"
 source_type: "official announcement and model card"
 compiled_by: "AI Agent"

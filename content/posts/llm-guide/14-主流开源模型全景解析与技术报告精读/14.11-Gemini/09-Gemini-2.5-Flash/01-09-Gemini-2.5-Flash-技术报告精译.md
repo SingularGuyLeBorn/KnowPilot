@@ -1,5 +1,5 @@
 ---
-title: "Gemini 2.5 Flash: 端到端低延迟语音交互霸主 - 技术报告精译"
+title: "01 · Gemini 2.5 Flash: 端到端低延迟语音交互霸主 - 技术报告精译"
 ---
 # Gemini 2.5 Flash: 端到端低延迟语音交互霸主 - 技术报告精译
 

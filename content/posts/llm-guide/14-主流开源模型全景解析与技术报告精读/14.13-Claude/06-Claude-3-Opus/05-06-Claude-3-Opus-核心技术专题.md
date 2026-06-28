@@ -1,5 +1,5 @@
 ---
-title: "Claude 3 Opus: 全面反超 GPT-4 的巅峰之作 - 对齐与安全核心专题"
+title: "05 · Claude 3 Opus: 全面反超 GPT-4 的巅峰之作 - 对齐与安全核心专题"
 ---
 # 06-Claude-3-Opus 核心技术专题：RLAIF 与模型神经元干预
 

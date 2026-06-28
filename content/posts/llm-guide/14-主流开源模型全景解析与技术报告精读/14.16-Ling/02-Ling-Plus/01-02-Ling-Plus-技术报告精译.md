@@ -1,5 +1,5 @@
 ---
-title: "02-Ling-Plus 技术精译"
+title: "01 · 02-Ling-Plus 技术精译"
 ---
 # 02-Ling-Plus 技术报告纯中文精译
 

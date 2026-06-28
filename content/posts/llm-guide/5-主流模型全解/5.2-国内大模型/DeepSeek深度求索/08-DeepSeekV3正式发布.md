@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-v3正式发布！"
+title: "08 · DeepSeek-v3正式发布！"
 date: 2026-05-11
 tags: []
 ---

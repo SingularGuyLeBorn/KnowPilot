@@ -1,5 +1,5 @@
 ---
-title: "MoE 模型量化技术综述"
+title: "09 · MoE 模型量化技术综述"
 date: 2026-05-16
 tags: [MoE, 量化, PTQ, 混合精度, GPTQ, AWQ, 低秩补偿]
 ---

@@ -6,4 +6,5 @@
 
 | 日志文件名 | 活跃日期 | 主要开发内容 |
 | :--- | :--- | :--- |
-| [session-2026-06-27.md](file:///D:/ALL%20IN%20AI/KnowPilot/.dev-log/session-2026-06-27.md) | 2026-06-27 | 项目工程初始化、14 个实体的 tRPC 接口与 Zustand Store 全量开发、测试及 Git 初始化 |
+| [session-2026-06-29.md](session-2026-06-29.md) | 2026-06-29 | **L1–L5 全阶段封板**：Agent Chat、18 实体管理页、FTS/鉴权/CI、Playwright 25 E2E |
+| [session-2026-06-27.md](session-2026-06-27.md) | 2026-06-27 | 项目工程初始化、14 个实体的 tRPC 接口与 Zustand Store 全量开发、测试及 Git 初始化 |

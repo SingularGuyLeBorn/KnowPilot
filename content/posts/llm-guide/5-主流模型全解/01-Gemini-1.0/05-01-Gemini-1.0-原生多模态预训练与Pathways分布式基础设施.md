@@ -1,5 +1,5 @@
 ---
-title: "Gemini 1.0：原生多模态预训练与Pathways分布式基础设施——Google DeepMind合并后的首个大模型宣言"
+title: "05 · Gemini 1.0：原生多模态预训练与Pathways分布式基础设施——Google DeepMind合并后的首个大模型宣言"
 ---
 
 # Gemini 1.0：原生多模态预训练与Pathways分布式基础设施

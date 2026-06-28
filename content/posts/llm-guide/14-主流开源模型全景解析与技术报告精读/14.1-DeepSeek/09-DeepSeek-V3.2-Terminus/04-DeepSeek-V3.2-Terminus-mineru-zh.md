@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.2-Terminus - 中文交付稿"
+title: "04 · DeepSeek-V3.2-Terminus - 中文交付稿"
 source: 03-DeepSeek-V3.2-Terminus-mineru-en.md
 source_type: "official announcement and public product documentation"
 translated_by: "AI Agent"

@@ -1,5 +1,5 @@
 ---
-title: "Mistral Large 企业级MoE架构与多语言长上下文优化"
+title: "05 · Mistral Large 企业级MoE架构与多语言长上下文优化"
 ---
 
 # Mistral Large 核心技术专题：企业级 MoE 架构与多语言长上下文优化

@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Coder 核心架构剖析"
+title: "05 · DeepSeek-Coder 核心架构剖析"
 status: completed
 date: 2026-05-19
 ---

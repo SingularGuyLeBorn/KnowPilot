@@ -1,5 +1,5 @@
 ---
-title: "AGI四层阶梯"
+title: "12 · AGI四层阶梯"
 date: 2026-05-11
 tags: []
 ---

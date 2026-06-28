@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-MoE-8x2B 技术报告精译"
+title: "01 · MiniCPM-MoE-8x2B 技术报告精译"
 ---
 
 # MiniCPM-MoE-8x2B 技术报告精译

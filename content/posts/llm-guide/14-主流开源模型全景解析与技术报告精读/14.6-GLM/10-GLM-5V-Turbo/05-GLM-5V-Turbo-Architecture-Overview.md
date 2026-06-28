@@ -1,5 +1,5 @@
 ---
-title: "GLM-5V-Turbo多模态Agent架构剖析"
+title: "05 · GLM-5V-Turbo多模态Agent架构剖析"
 ---
 
 # GLM-5V-Turbo 多模态 Agent 架构剖析

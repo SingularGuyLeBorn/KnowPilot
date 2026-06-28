@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.2-Speciale 极限推理剖析"
+title: "05 · DeepSeek-V3.2-Speciale 极限推理剖析"
 ---
 
 # DeepSeek-V3.2-Speciale 极限推理剖析

@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.1 极长上下文对齐"
+title: "05 · MiniMax-M2.1 极长上下文对齐"
 ---
 # MiniMax-M2.1 核心技术专题：极长上下文与专家路由优化
 

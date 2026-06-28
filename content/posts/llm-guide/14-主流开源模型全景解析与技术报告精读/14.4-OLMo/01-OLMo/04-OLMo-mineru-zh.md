@@ -1,5 +1,5 @@
 ---
-title: "OLMo Technical Report (MinerU 逐译+译者注)"
+title: "04 · OLMo Technical Report (MinerU 逐译+译者注)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: OLMo.pdf
 ---

@@ -1,5 +1,5 @@
 ---
-title: "ChatGLM三代迭代与开源生态建设剖析"
+title: "05 · ChatGLM三代迭代与开源生态建设剖析"
 ---
 
 # ChatGLM 三代迭代与开源生态建设剖析

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import { Editor, rootCtx, defaultValueCtx } from "@milkdown/core";
 import { commonmark } from "@milkdown/preset-commonmark";
@@ -17,18 +17,25 @@ function MilkdownEditorInner({
   onChange,
   placeholder,
 }: MilkdownEditorProps) {
+  // 保存 onChange 的最新引用，避免在 editor 配置的回调中产生闭包陈旧值
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
   useEditor(
     (root) => {
       const editor = Editor.make()
         .config((ctx) => {
           ctx.set(rootCtx, root);
           ctx.set(defaultValueCtx, initialValue);
-          if (onChange) {
-            const l = ctx.get(listenerCtx);
-            l.markdownUpdated((_, markdown) => {
-              onChange(markdown);
-            });
-          }
+          
+          const l = ctx.get(listenerCtx);
+          l.markdownUpdated((_, markdown) => {
+            onChangeRef.current?.(markdown);
+          });
+
           if (placeholder) {
             root.setAttribute("data-placeholder", placeholder);
           }
@@ -38,7 +45,7 @@ function MilkdownEditorInner({
 
       return editor;
     },
-    [initialValue]
+    [] // 只在挂载时初始化一次，防止初值更新导致编辑器在每次击键时被销毁重建，造成无法输入和失去焦点
   );
 
   return (

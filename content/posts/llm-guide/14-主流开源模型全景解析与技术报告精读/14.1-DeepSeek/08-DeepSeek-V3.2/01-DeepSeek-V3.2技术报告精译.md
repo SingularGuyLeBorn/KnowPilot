@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.2 技术报告精译"
+title: "01 · DeepSeek-V3.2 技术报告精译"
 ---
 
 # DeepSeek-V3.2 技术报告精译

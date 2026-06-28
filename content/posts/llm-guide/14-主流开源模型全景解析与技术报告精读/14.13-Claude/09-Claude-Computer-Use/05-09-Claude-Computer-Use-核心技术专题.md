@@ -1,5 +1,5 @@
 ---
-title: "Claude Computer Use: 突破沙盒的系统级图形界面接管 - 对齐与安全核心专题"
+title: "05 · Claude Computer Use: 突破沙盒的系统级图形界面接管 - 对齐与安全核心专题"
 ---
 # 09-Claude-Computer-Use 核心技术专题：RLAIF 与模型神经元干预
 

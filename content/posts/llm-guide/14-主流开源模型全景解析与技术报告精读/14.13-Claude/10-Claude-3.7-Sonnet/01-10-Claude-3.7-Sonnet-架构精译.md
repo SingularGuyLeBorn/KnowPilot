@@ -1,5 +1,5 @@
 ---
-title: "Claude 3.7 Sonnet: 混合推理(Hybrid Reasoning)的混合巨兽 - 技术报告反向工程"
+title: "01 · Claude 3.7 Sonnet: 混合推理(Hybrid Reasoning)的混合巨兽 - 技术报告反向工程"
 ---
 # Claude 3.7 Sonnet: 混合推理(Hybrid Reasoning)的混合巨兽 - 架构还原与精译
 

@@ -1,5 +1,5 @@
 ---
-title: 'Gemini 2.0 Pro：原生多模态输出与Agentic工具链——从"理解世界"到"创造与行动"的跃迁'
+title: "05 · Gemini 2.0 Pro：原生多模态输出与Agentic工具链——从\"理解世界\"到\"创造与行动\"的跃迁"
 ---
 
 # Gemini 2.0 Pro：原生多模态输出与Agentic工具链

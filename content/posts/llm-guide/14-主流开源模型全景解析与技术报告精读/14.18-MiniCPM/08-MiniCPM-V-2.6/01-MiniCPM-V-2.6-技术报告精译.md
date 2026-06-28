@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-V-2.6 技术报告精译"
+title: "01 · MiniCPM-V-2.6 技术报告精译"
 ---
 
 # MiniCPM-V-2.6 技术报告精译

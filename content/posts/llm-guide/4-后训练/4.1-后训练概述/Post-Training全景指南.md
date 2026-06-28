@@ -1,5 +1,5 @@
 ---
-title: "Post-Training 全景指南"
+title: "4.1 · Post-Training 全景指南"
 date: 2026-05-16
 tags: [Post-Training, SFT, RLHF, DPO, PPO, 对齐, 指令遵循]
 ---

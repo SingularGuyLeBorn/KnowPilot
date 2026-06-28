@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek 深度求索 — V3/R1 技术报告深度研读"
+title: "5.2 · DeepSeek 深度求索 — V3/R1 技术报告深度研读"
 date: 2026-05-11
 tags: []
 ---

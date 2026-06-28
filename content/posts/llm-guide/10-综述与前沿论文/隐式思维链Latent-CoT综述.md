@@ -1,5 +1,5 @@
 ---
-title: "隐式思维链(Latent CoT)综述: 超越语言的推理"
+title: "10 · 隐式思维链(Latent CoT)综述: 超越语言的推理"
 date: 2026-05-17
 tags: [Latent CoT, 隐式推理, 思维链, 推理 beyond language, 综述, 潜在空间]
 ---

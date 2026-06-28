@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1-Zero 原理剖析"
+title: "02 · DeepSeek-R1-Zero 原理剖析"
 ---
 
 # DeepSeek-R1-Zero 原理剖析

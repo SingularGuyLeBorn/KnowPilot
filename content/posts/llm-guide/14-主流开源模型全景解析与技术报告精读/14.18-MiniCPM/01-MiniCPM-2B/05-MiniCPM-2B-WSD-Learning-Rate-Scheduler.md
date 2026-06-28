@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM WSD 学习率调度器深度解析"
+title: "05 · MiniCPM WSD 学习率调度器深度解析"
 ---
 
 # MiniCPM WSD 学习率调度器深度解析

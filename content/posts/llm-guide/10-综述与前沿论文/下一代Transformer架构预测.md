@@ -1,5 +1,5 @@
 ---
-title: "下一代 Transformer 架构预测: 从纯注意力到混合架构"
+title: "10 · 下一代 Transformer 架构预测: 从纯注意力到混合架构"
 date: 2026-05-17
 tags: [Transformer, 下一代架构, SSM, Mamba, MoE, 稀疏化, 混合架构, 预测]
 ---

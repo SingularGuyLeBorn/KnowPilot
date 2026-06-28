@@ -1,5 +1,5 @@
 ---
-title: "Claude 4：长程Agent能力与记忆机制的工程突破——Anthropic虚拟协作者愿景的实现"
+title: "05 · Claude 4：长程Agent能力与记忆机制的工程突破——Anthropic虚拟协作者愿景的实现"
 ---
 
 # Claude 4：长程Agent能力与记忆机制的工程突破

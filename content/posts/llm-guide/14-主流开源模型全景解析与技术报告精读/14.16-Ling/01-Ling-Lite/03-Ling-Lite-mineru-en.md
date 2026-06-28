@@ -1,5 +1,5 @@
 ---
-title: "01-Ling-Lite Technical Report (MinerU EN)"
+title: "03 · 01-Ling-Lite Technical Report (MinerU EN)"
 source_pdf: pdfs/Ling-Lite.pdf
 converted_by: MinerU (re-processed)
 date: 2026-05-23

@@ -178,25 +178,25 @@ export function TableOfContents({ content, className }: { content: string; class
   return (
     <aside
       className={cn(
-        "fixed top-[5.5rem] right-4 z-30 hidden w-60 flex-col rounded-xl border bg-card text-card-foreground shadow-sm xl:flex",
+        "fixed top-[5.5rem] right-4 z-30 hidden w-72 flex-col rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] shadow-sm xl:flex",
         className
       )}
     >
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">目录</h3>
-        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <div className="flex items-center justify-between px-4 py-3">
+        <h3 className="text-sm font-semibold text-[var(--kp-text-1)]">本页目录</h3>
+        <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-xs font-medium text-[var(--kp-text-3)]">
           {filtered.length}
         </span>
       </div>
       <Separator />
-      <div className="p-2">
+      <div className="p-3">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索页内标题"
-            className="h-8 pl-8 pr-7 text-xs"
+            className="h-9 pl-9 pr-8 text-sm"
           />
           {query && (
             <button
@@ -238,10 +238,10 @@ export function TableOfContents({ content, className }: { content: string; class
                       scrollToId(group.heading.id);
                     }}
                     className={cn(
-                      "group flex flex-1 items-start rounded-md px-2 py-1 text-left text-xs transition-colors",
+                      "group flex flex-1 items-start rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
                       isActiveGroup
-                        ? "bg-primary/10 text-primary"
-                        : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                        ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                        : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]"
                     )}
                   >
                     <span className="line-clamp-2 font-medium">
@@ -264,12 +264,12 @@ export function TableOfContents({ content, className }: { content: string; class
                               scrollToId(child.id);
                             }}
                             className={cn(
-                              "group flex w-full items-start rounded-md px-2 py-1 text-left text-xs transition-colors",
-                              child.level === 3 && "pl-4",
-                              child.level === 4 && "pl-6 text-muted-foreground/80",
+                              "group flex w-full items-start rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
+                              child.level === 3 && "pl-3",
+                              child.level === 4 && "pl-5 text-[var(--kp-text-2)]",
                               isActive
-                                ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                                : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
                             )}
                           >
                             <span className="line-clamp-2">
@@ -285,7 +285,7 @@ export function TableOfContents({ content, className }: { content: string; class
             );
           })}
           {filtered.length === 0 && (
-            <p className="px-2 py-3 text-xs text-muted-foreground">无匹配标题</p>
+            <p className="px-2 py-3 text-sm text-[var(--kp-text-3)]">无匹配标题</p>
           )}
         </nav>
       </ScrollArea>

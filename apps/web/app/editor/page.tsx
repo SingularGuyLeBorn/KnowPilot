@@ -4,10 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Send } from "lucide-react";
-import { Shell } from "@/components/layout/Shell";
-import { MilkdownEditor, MilkdownStyles } from "@/components/editor/MilkdownEditor";
-import { ImageUploadButton, useImageDrop } from "@/components/editor/ImageUploadButton";
-import { trpc } from "@/lib/trpc";
+import dynamic from "next/dynamic";
+import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
+
+const MilkdownEditor = dynamic(
+  () => import("@/components/editor/MilkdownEditor").then((m) => m.MilkdownEditor),
+  { ssr: false }
+);
+import { ImageUploadButton, useImageDrop, useImagePaste } from "@/components/editor/ImageUploadButton";
+import { usePostMutations } from "@/lib/hooks";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { cn } from "@/lib/utils";
 
@@ -36,18 +41,9 @@ export default function NewPostPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadKey, setUploadKey] = useState(0);
 
-  const createPost = trpc.post.create.useMutation({
-    onSuccess: (result) => {
-      if (result.success && result.data) {
-        router.push(`/posts/${encodeURIComponent(result.data.slug)}`);
-      } else {
-        const err = result.error;
-        setErrorMessage(err?.message || "创建文章失败");
-        console.error("创建文章失败:", err);
-      }
-    },
-    onError: (error) => {
-      setErrorMessage(error.message || "创建文章时发生网络错误");
+  const { create } = usePostMutations({
+    onCreateSuccess: (slug) => {
+      router.push(`/posts/${encodeURIComponent(slug)}`);
     },
   });
 
@@ -57,23 +53,36 @@ export default function NewPostPage() {
   };
 
   const { dragOver, dropHandlers } = useImageDrop(appendImage);
+  const pasteHandlers = useImagePaste(appendImage);
 
   const handleSave = (publish = false) => {
     if (!title.trim()) return;
-    createPost.mutate({
-      title: title.trim(),
-      content,
-      category: category || null,
-      tags: tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-      published: publish,
-    });
+    create.mutate(
+      {
+        title: title.trim(),
+        content,
+        category: category || null,
+        tags: tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        published: publish,
+      },
+      {
+        onError: (error) => {
+          setErrorMessage(error.message || "创建文章时发生网络错误");
+        },
+        onSuccess: (result) => {
+          if (!result.success) {
+            setErrorMessage(result.error?.message || "创建文章失败");
+          }
+        },
+      }
+    );
   };
 
   return (
-    <Shell className="overflow-hidden">
+    <>
       <MilkdownStyles />
       <div className="flex h-full flex-col">
         {/* Header */}
@@ -107,7 +116,7 @@ export default function NewPostPage() {
             <ImageUploadButton onUploaded={appendImage} />
             <button
               onClick={() => handleSave(false)}
-              disabled={createPost.isPending || !title.trim()}
+              disabled={create.isPending || !title.trim()}
               className="inline-flex items-center gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-4 py-2 text-sm font-medium text-[var(--kp-text-1)] transition hover:bg-[var(--kp-bg-mute)] disabled:opacity-50"
             >
               <Save className="h-4 w-4" />
@@ -115,7 +124,7 @@ export default function NewPostPage() {
             </button>
             <button
               onClick={() => handleSave(true)}
-              disabled={createPost.isPending || !title.trim()}
+              disabled={create.isPending || !title.trim()}
               className="inline-flex items-center gap-2 rounded-xl bg-[var(--kp-brand)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[var(--kp-brand-dark)] disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
@@ -144,6 +153,7 @@ export default function NewPostPage() {
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div
             {...dropHandlers}
+            {...pasteHandlers}
             className={cn(
               "h-full rounded-xl transition-colors",
               dragOver && "bg-[var(--kp-brand)]/5 ring-2 ring-[var(--kp-brand)]/30"
@@ -157,6 +167,6 @@ export default function NewPostPage() {
           </div>
         </div>
       </div>
-    </Shell>
+    </>
   );
 }

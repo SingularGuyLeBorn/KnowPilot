@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-MoE-8x2B 混合专家架构与端侧稀疏激活解析"
+title: "05 · MiniCPM-MoE-8x2B 混合专家架构与端侧稀疏激活解析"
 ---
 
 # MiniCPM-MoE-8x2B 混合专家架构与端侧稀疏激活解析

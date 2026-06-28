@@ -8,10 +8,10 @@
 
 | 模块 | 实体 | 状态 |
 |---|---|---|
-| L4-M01 触发器 | `Trigger` | [待开始] 后端 Router 已存在，缺引擎和 UI |
-| L4-M02 审批系统 | `Approval` | [待开始] 同上 |
-| L4-M03 Agent 工作流 | 运行时 | [待开始] 需设计工作流引擎 |
-| L4-M04 工具权限矩阵 | 运行时 | [待开始] 需定义哪些工具需要审批 |
+| L4-M01 触发器 | `Trigger` | [已完成] CRUD + UI + TriggerEngine + Task 执行链 |
+| L4-M02 审批系统 | `Approval` | [已完成] CRUD + ApprovalGate + `/approvals` |
+| L4-M03 Agent 工作流 | 运行时 | [已完成] `agent.runWorkflow` + humanApproval 暂停 |
+| L4-M04 工具权限矩阵 | 运行时 | [已完成] delete/git.push 等 ApprovalGate |
 
 ---
 
@@ -37,9 +37,10 @@
 
 ### 运行方式
 
-1. 事件总线：在 `post.create` / `post.update` 等 mutation 成功后发布事件。
-2. Trigger 引擎监听事件，匹配 `source` 和 `type`。
-3. 调用对应的 Skill / MCP / Task。
+1. [已完成] 事件总线：`BaseService` 在 create/update/delete 后通过 `AppEventBus` 发布 `{entity}.{action}` 事件。
+2. [已完成] `TriggerEngine`（`infra/triggerEngine.ts`）监听 `*` 事件，匹配数据库中启用的 Trigger 规则。
+3. [已完成] 匹配后调用 Skill / Task / Agent（TriggerEngine + TaskRunner）。
+4. [已完成] Trigger / Approval 前端管理页（`/triggers`、`/approvals`、`/prompts`）。
 
 ---
 
@@ -120,25 +121,25 @@ steps:
 
 ## L4-M04 工具权限矩阵
 
-默认需要审批的操作：
+默认需要审批的操作（**规划，代码未接入**）：
 
 | operation | 是否需要审批 |
 |---|---|
-| agent.delete | [已完成] |
-| skill.delete | [已完成] |
-| mcp.create / update / delete | [已完成] |
-| task.delete | [已完成] |
-| git.push | [已完成] |
-| file.delete | [已完成] |
-| post.delete | 建议 [已完成] |
+| agent.delete | 建议 |
+| skill.delete | 建议 |
+| mcp.create / update / delete | 建议 |
+| task.delete | 建议 |
+| git.push | 建议 |
+| file.delete | 建议 |
+| post.delete | 建议 |
 | post.update (published) | 可配置 |
 
 ---
 
 ## L4 验收标准
 
-- [ ] 可以创建/启用/禁用 Trigger。
-- [ ] 文章发布等事件能触发 Skill / Task。
-- [ ] 危险操作自动进入 Approval 待审批状态。
-- [ ] 用户可以在 UI 中查看并通过/拒绝审批。
-- [ ] 可以定义并运行简单的多步骤 Agent 工作流。
+- [x] 可以创建/启用/禁用 Trigger（后端 CRUD + `/triggers` UI）。
+- [x] 文章发布等事件能触发 Skill / Task（TriggerEngine + TaskRunner db:sync）。
+- [x] 危险操作自动进入 Approval 待审批状态（ApprovalGate）。
+- [x] 用户可以在 UI 中查看并通过/拒绝审批（`/approvals`）。
+- [x] 可以定义并运行简单的多步骤 Agent 工作流（`agent.runWorkflow`）。

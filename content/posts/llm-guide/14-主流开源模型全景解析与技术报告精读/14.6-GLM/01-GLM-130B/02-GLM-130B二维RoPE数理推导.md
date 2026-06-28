@@ -1,5 +1,5 @@
 ---
-title: "GLM-130B 二维 RoPE 数理推导"
+title: "02 · GLM-130B 二维 RoPE 数理推导"
 status: complete
 ---
 

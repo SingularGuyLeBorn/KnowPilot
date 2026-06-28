@@ -1,5 +1,5 @@
 ---
-title: "Qwen2-VL"
+title: "05 · Qwen2-VL"
 status: completed
 date: 2026-05-24
 ---

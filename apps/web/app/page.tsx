@@ -1,6 +1,5 @@
 "use client";
 
-import { Shell } from "@/components/layout/Shell";
 import { HeroSection } from "@/components/home/HeroSection";
 import { FeatureBento } from "@/components/home/FeatureBento";
 import { TechMarquee } from "@/components/home/TechMarquee";
@@ -21,14 +20,12 @@ export default function HomePage() {
   ).size;
 
   return (
-    <Shell className="overflow-x-hidden">
-      <div className="relative">
-        <HeroSection postCount={postCount} categoryCount={categoryCount} />
-        <FeatureBento />
-        <TechMarquee />
-        <RecentIntelligence posts={posts} />
-        <FinalCta />
-      </div>
-    </Shell>
+    <div className="relative">
+      <HeroSection postCount={postCount} categoryCount={categoryCount} />
+      <FeatureBento />
+      <TechMarquee />
+      <RecentIntelligence posts={posts} />
+      <FinalCta />
+    </div>
   );
 }

@@ -24,6 +24,29 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+async function uploadImageFile(
+  file: File,
+  upload: ReturnType<typeof trpc.file.upload.useMutation>,
+): Promise<string | null> {
+  if (!file.type.startsWith("image/")) {
+    alert("仅支持上传图片文件");
+    return null;
+  }
+  const data = await fileToBase64(file);
+  const result = await upload.mutateAsync({
+    name: file.name,
+    mimeType: file.type,
+    size: file.size,
+    data,
+  });
+  if (result.success && result.data?.url) {
+    const alt = file.name.replace(/\.[^/.]+$/, "");
+    return `\n![${alt}](${result.data.url})\n`;
+  }
+  alert(`上传失败：${result.error?.message || "未知错误"}`);
+  return null;
+}
+
 export function ImageUploadButton({ onUploaded, className }: ImageUploadButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -31,27 +54,10 @@ export function ImageUploadButton({ onUploaded, className }: ImageUploadButtonPr
 
   const handleFileSelect = async (file: File | undefined) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("仅支持上传图片文件");
-      return;
-    }
-
     setUploading(true);
     try {
-      const data = await fileToBase64(file);
-      const result = await uploadFile.mutateAsync({
-        name: file.name,
-        mimeType: file.type,
-        size: file.size,
-        data,
-      });
-
-      if (result.success && result.data?.url) {
-        const alt = file.name.replace(/\.[^/.]+$/, "");
-        onUploaded(`\n![${alt}](${result.data.url})\n`);
-      } else {
-        alert(`上传失败：${result.error?.message || "未知错误"}`);
-      }
+      const markdown = await uploadImageFile(file, uploadFile);
+      if (markdown) onUploaded(markdown);
     } catch (err) {
       alert(`上传失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -99,26 +105,8 @@ export function useImageDrop(onUploaded: (markdown: string) => void) {
     if (!file) return;
 
     try {
-      const reader = new FileReader();
-      const data = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve((reader.result as string).split(",")[1] || "");
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      const result = await uploadFile.mutateAsync({
-        name: file.name,
-        mimeType: file.type,
-        size: file.size,
-        data,
-      });
-
-      if (result.success && result.data?.url) {
-        const alt = file.name.replace(/\.[^/.]+$/, "");
-        onUploaded(`\n![${alt}](${result.data.url})\n`);
-      } else {
-        alert(`上传失败：${result.error?.message || "未知错误"}`);
-      }
+      const markdown = await uploadImageFile(file, uploadFile);
+      if (markdown) onUploaded(markdown);
     } catch (err) {
       alert(`上传失败：${err instanceof Error ? err.message : String(err)}`);
     }
@@ -142,4 +130,30 @@ export function useImageDrop(onUploaded: (markdown: string) => void) {
       onDragLeave: handleDragLeave,
     },
   };
+}
+
+/** 粘贴剪贴板图片并上传 */
+export function useImagePaste(onUploaded: (markdown: string) => void) {
+  const uploadFile = trpc.file.upload.useMutation();
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items);
+    const imageItem = items.find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+
+    e.preventDefault();
+    const file = imageItem.getAsFile();
+    if (!file) return;
+
+    try {
+      const ext = file.type.split("/")[1] || "png";
+      const named = file.name && file.name !== "image.png" ? file : new File([file], `paste-${Date.now()}.${ext}`, { type: file.type });
+      const markdown = await uploadImageFile(named, uploadFile);
+      if (markdown) onUploaded(markdown);
+    } catch (err) {
+      alert(`粘贴上传失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  return { onPaste: handlePaste };
 }

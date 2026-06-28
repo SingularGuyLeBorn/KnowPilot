@@ -11,6 +11,7 @@
 
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import chokidar from "chokidar";
 import { PrismaClient } from "@prisma/client";
 import { Syncer } from "./sync/types.js";
@@ -21,10 +22,11 @@ import { skillSyncer } from "./sync/sync-skills.js";
 import { mcpServerSyncer } from "./sync/sync-mcp-servers.js";
 import { memorySyncer } from "./sync/sync-memories.js";
 import { promptSyncer } from "./sync/sync-prompts.js";
+import { taskSyncer } from "./sync/sync-tasks.js";
 
 const prisma = new PrismaClient();
 
-// 所有已注册的实体同步器（L2 已接入 Agent/Skill/MCP/Memory/Prompt；L3-L4 逐步扩展）
+// 所有已注册的实体同步器（L2 已接入 Agent/Skill/MCP/Memory/Prompt；L3 Task）
 const syncers: Syncer<unknown>[] = [
   postSyncer,
   agentSyncer,
@@ -32,6 +34,7 @@ const syncers: Syncer<unknown>[] = [
   mcpServerSyncer,
   memorySyncer,
   promptSyncer,
+  taskSyncer,
 ];
 
 interface SyncResult {
@@ -52,7 +55,7 @@ function needsSync(recordMtime: Date, existingMtime?: Date): boolean {
 }
 
 /** 同步单个实体（增量），返回统计 */
-async function syncEntity<T>(syncer: Syncer<T>): Promise<SyncResult> {
+async function syncEntity<T>(syncer: Syncer<T>, client: PrismaClient): Promise<SyncResult> {
   const contentDir = getContentDir(syncer.contentDirName);
   const result: SyncResult = { entityName: syncer.entityName, scanned: 0, upserted: 0, cleaned: 0 };
 
@@ -62,15 +65,15 @@ async function syncEntity<T>(syncer: Syncer<T>): Promise<SyncResult> {
   }
 
   try {
-    const existingMtimes = await syncer.getExistingMtimes(prisma);
-    const records = await syncer.scan(prisma, contentDir);
+    const existingMtimes = await syncer.getExistingMtimes(client);
+    const records = await syncer.scan(client, contentDir);
     result.scanned = records.length;
 
     for (const record of records) {
       try {
         const dbMtime = existingMtimes.get(record.slug);
         if (needsSync(record.mtime, dbMtime)) {
-          await syncer.upsert(prisma, record);
+          await syncer.upsert(client, record);
           result.upserted++;
         }
       } catch (e: any) {
@@ -79,7 +82,7 @@ async function syncEntity<T>(syncer: Syncer<T>): Promise<SyncResult> {
     }
 
     const activeSlugs = records.map((r) => r.slug);
-    result.cleaned = await syncer.cleanup(prisma, activeSlugs);
+    result.cleaned = await syncer.cleanup(client, activeSlugs);
   } catch (e: any) {
     console.error(`  ❌ [${syncer.entityName}] 同步过程失败:`, e.message);
   }
@@ -87,20 +90,31 @@ async function syncEntity<T>(syncer: Syncer<T>): Promise<SyncResult> {
   return result;
 }
 
-/** 一次性同步所有实体 */
-async function runSync(): Promise<SyncResult[]> {
+/** 一次性同步所有实体（可被 TaskRunner / CLI 复用） */
+export async function runContentSync(client: PrismaClient = prisma): Promise<SyncResult[]> {
   console.log(`\n🔄 开始同步本地内容文件至数据库...`);
 
   const results: SyncResult[] = [];
   for (const syncer of syncers) {
     console.log(`\n📂 [${syncer.entityName}] 源目录: ${getContentDir(syncer.contentDirName)}`);
-    const result = await syncEntity(syncer);
+    const result = await syncEntity(syncer, client);
     results.push(result);
     console.log(`  📊 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
   }
 
   console.log(`\n🎉 内容同步完成！\n`);
+  try {
+    const { rebuildFtsIndex } = await import("../infra/ftsIndex.js");
+    await rebuildFtsIndex(client);
+  } catch (e: unknown) {
+    console.warn("  ⚠️ [FTS] 索引重建跳过:", e instanceof Error ? e.message : e);
+  }
   return results;
+}
+
+/** @deprecated 使用 runContentSync */
+async function runSync(): Promise<SyncResult[]> {
+  return runContentSync(prisma);
 }
 
 /** 监听模式：增量同步后持续监听变更 */
@@ -134,7 +148,7 @@ async function runWatch(): Promise<void> {
       debounceMap.set(
         syncer.entityName,
         setTimeout(async () => {
-          const result = await syncEntity(syncer);
+          const result = await syncEntity(syncer, prisma);
           console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
         }, 300)
       );
@@ -149,18 +163,21 @@ async function runWatch(): Promise<void> {
 }
 
 const isWatchMode = process.argv.includes("--watch");
+const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
 
-if (isWatchMode) {
-  runWatch()
-    .catch((e) => {
-      console.error("❌ 监听模式执行失败:", e);
-      process.exit(1);
-    });
-} else {
-  runSync()
-    .catch((e) => {
-      console.error("❌ 同步脚本执行失败:", e);
-      process.exit(1);
-    })
-    .finally(() => prisma.$disconnect());
+if (isDirectRun) {
+  if (isWatchMode) {
+    runWatch()
+      .catch((e) => {
+        console.error("❌ 监听模式执行失败:", e);
+        process.exit(1);
+      });
+  } else {
+    runContentSync()
+      .catch((e) => {
+        console.error("❌ 同步脚本执行失败:", e);
+        process.exit(1);
+      })
+      .finally(() => prisma.$disconnect());
+  }
 }

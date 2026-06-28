@@ -1,5 +1,5 @@
 ---
-title: "Claude 1：Constitutional AI安全对齐范式的首次工程实践"
+title: "05 · Claude 1：Constitutional AI安全对齐范式的首次工程实践"
 ---
 
 # 01-Claude-1 核心技术专题：Constitutional AI 安全对齐范式的首次工程实践

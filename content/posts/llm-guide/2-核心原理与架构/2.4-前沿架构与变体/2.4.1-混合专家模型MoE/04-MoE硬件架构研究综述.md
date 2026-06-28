@@ -1,5 +1,5 @@
 ---
-title: "MoE 硬件架构研究综述"
+title: "04 · MoE 硬件架构研究综述"
 date: 2026-05-16
 tags: [MoE, 硬件架构, FPGA, 加速器, 稀疏计算, UbiMoE]
 ---

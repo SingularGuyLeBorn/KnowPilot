@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.2 - MinerU 原始转换(英文)"
+title: "03 · DeepSeek-V3.2 - MinerU 原始转换(英文)"
 source_pdf: pdfs/deepseek-v3.2.pdf
 converted_by: MinerU
 date: 2026-05-19

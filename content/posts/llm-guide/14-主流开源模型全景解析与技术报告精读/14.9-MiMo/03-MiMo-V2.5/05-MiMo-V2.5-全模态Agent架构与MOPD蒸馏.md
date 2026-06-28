@@ -1,5 +1,5 @@
 ---
-title: "MiMo-V2.5全模态Agent架构剖析"
+title: "05 · MiMo-V2.5全模态Agent架构剖析"
 ---
 
 # MiMo-V2.5 全模态 Agent 架构剖析

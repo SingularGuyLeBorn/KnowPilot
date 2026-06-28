@@ -1,5 +1,5 @@
 ---
-title: "On-Policy Distillation (OPD) 深度解析"
+title: "4.4 · On-Policy Distillation (OPD) 深度解析"
 date: 2026-05-16
 tags: [OPD, On-Policy Distillation, 知识蒸馏, RL, Reverse KL, MiniLLM, GKD]
 ---

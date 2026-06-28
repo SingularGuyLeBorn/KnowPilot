@@ -1,5 +1,5 @@
 ---
-title: "从 RL 的视角理解 SFT: DFT、PSFT、ASFT"
+title: "4.4 · 从 RL 的视角理解 SFT: DFT、PSFT、ASFT"
 date: 2026-05-16
 tags: [SFT, RL, Policy Gradient, DFT, PSFT, ASFT, 梯度动态降权]
 ---

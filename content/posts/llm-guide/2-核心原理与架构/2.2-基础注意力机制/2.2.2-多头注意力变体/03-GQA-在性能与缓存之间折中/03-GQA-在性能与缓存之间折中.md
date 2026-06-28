@@ -1,5 +1,5 @@
 ---
-title: "GQA：在性能与 KV Cache 之间折中"
+title: "03 · GQA：在性能与 KV Cache 之间折中"
 ---
 
 # GQA：在性能与 KV Cache 之间折中

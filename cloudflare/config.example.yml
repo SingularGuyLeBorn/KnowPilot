@@ -1,0 +1,22 @@
+# Cloudflare Tunnel 配置示例
+# 复制为 config.yml 并填入 tunnel / credentials 信息
+#
+# 快速上手（无需域名）：
+#   pnpm tunnel:quick
+#
+# 固定域名（Zero Trust → Networks → Tunnels）：
+#   1. 创建 Tunnel，复制 Token 到 .env 的 CLOUDFLARE_TUNNEL_TOKEN
+#   2. pnpm tunnel:run
+
+# tunnel: <UUID>          # 命名隧道 ID（使用 token 模式时可省略）
+# credentials-file: ./cloudflare/<tunnel-id>.json
+
+ingress:
+  # 只暴露 Next.js（3000）；API 由 next.config rewrites 反代到 localhost:3010
+  - hostname: knowpilot.example.com
+    service: http://127.0.0.1:3000
+    originRequest:
+      # Agent SSE 流式聊天：禁用缓冲
+      disableChunkedEncoding: false
+      noHappyEyeballs: true
+  - service: http_status:404

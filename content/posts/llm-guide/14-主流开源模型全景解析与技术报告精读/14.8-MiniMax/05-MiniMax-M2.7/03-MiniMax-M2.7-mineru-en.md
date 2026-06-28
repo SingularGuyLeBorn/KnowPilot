@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.7 - MinerU 原始转换(英文)"
+title: "03 · MiniMax-M2.7 - MinerU 原始转换(英文)"
 source_pdf: "pdfs/minimax-m2.7-technical-report.pdf"
 status: completed
 ---

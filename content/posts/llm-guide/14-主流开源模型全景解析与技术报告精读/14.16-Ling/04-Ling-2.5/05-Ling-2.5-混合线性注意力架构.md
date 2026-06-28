@@ -1,5 +1,5 @@
 ---
-title: "Ling 2.5 混合线性注意力架构：从 $O(n^2)$ 到 $O(n)$ 的注意力革命"
+title: "05 · Ling 2.5 混合线性注意力架构：从 $O(n^2)$ 到 $O(n)$ 的注意力革命"
 date: 2026-05-24
 status: published
 tags:

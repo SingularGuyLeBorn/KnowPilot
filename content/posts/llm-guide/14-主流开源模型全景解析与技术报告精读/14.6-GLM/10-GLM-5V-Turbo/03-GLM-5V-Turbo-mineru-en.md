@@ -1,5 +1,5 @@
 ---
-title: "08-GLM-5V-Turbo Technical Report (MinerU EN)"
+title: "03 · 08-GLM-5V-Turbo Technical Report (MinerU EN)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: GLM-5V-Turbo.pdf
 ---

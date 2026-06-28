@@ -1,5 +1,5 @@
 ---
-title: "OLMo-2 Technical Report - Segment-by-Segment Translation with Translator's Notes"
+title: "04 · OLMo-2 Technical Report - Segment-by-Segment Translation with Translator's Notes"
 source_d3: 03-OLMo-2-mineru-en.md
 ---
 

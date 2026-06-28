@@ -1,5 +1,5 @@
 ---
-title: "GLM-5 Technical Report - Segment-by-Segment Translation with Translator's Notes"
+title: "04 · GLM-5 Technical Report - Segment-by-Segment Translation with Translator's Notes"
 description: GLM-5 技术报告逐段精译,含译者注
 ---
 

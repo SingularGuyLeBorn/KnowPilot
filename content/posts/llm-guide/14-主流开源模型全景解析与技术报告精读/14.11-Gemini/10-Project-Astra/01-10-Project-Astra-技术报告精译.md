@@ -1,5 +1,5 @@
 ---
-title: "Project Astra: 实时视觉与语音多模态全双工 Agent - 技术报告精译"
+title: "01 · Project Astra: 实时视觉与语音多模态全双工 Agent - 技术报告精译"
 ---
 # Project Astra: 实时视觉与语音多模态全双工 Agent - 技术报告精译
 

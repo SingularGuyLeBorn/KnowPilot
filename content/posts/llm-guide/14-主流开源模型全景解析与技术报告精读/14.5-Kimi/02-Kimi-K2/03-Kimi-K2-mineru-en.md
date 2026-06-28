@@ -1,5 +1,5 @@
 ---
-title: "Kimi K2 - MinerU 原始转换(英文)"
+title: "03 · Kimi K2 - MinerU 原始转换(英文)"
 source_pdf: pdfs/Kimi-K2.pdf
 converted_by: MinerU (hybrid_auto)
 arxiv: "2507.20534v2"

@@ -1,5 +1,5 @@
 ---
-title: "Project Astra：实时多模态感知与持续记忆的Agent系统架构"
+title: "05 · Project Astra：实时多模态感知与持续记忆的Agent系统架构"
 ---
 
 # 10-Project-Astra 核心技术专题：实时多模态感知与持续记忆的 Agent 系统架构

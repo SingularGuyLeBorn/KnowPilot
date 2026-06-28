@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Coder-V2 - 中文交付稿"
+title: "04 · DeepSeek-Coder-V2 - 中文交付稿"
 source: 03-DeepSeek-Coder-V2-mineru-en.md
 translated_by: "AI Agent"
 date: 2026-05-24

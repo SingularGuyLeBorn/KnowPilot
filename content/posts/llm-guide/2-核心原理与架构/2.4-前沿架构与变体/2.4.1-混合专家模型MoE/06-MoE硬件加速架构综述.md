@@ -1,5 +1,5 @@
 ---
-title: "MoE 硬件加速架构综述：从 FPGA 到近存计算"
+title: "06 · MoE 硬件加速架构综述：从 FPGA 到近存计算"
 date: 2026-05-17
 tags: [MoE, 硬件加速, FPGA, NDP, PIM, 近存计算, 专家并行]
 ---

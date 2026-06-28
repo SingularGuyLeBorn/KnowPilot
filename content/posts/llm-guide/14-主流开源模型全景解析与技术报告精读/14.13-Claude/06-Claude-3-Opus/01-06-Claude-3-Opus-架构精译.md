@@ -1,5 +1,5 @@
 ---
-title: "Claude 3 Opus: 全面反超 GPT-4 的巅峰之作 - 技术报告反向工程"
+title: "01 · Claude 3 Opus: 全面反超 GPT-4 的巅峰之作 - 技术报告反向工程"
 ---
 # Claude 3 Opus: 全面反超 GPT-4 的巅峰之作 - 架构还原与精译
 

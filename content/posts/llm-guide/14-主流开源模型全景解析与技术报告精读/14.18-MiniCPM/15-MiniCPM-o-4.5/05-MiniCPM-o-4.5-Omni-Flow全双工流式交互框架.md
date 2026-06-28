@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-o 4.5 深度解析：Omni-Flow 全双工流式交互框架"
+title: "05 · MiniCPM-o 4.5 深度解析：Omni-Flow 全双工流式交互框架"
 source_paper: "arXiv:2604.27393"
 focus: "Omni-Flow unified streaming framework, TAIL, proactive behavior"
 ---

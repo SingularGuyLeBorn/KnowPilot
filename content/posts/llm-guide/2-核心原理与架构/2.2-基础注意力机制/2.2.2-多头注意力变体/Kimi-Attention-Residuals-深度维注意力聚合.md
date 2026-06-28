@@ -1,5 +1,5 @@
 ---
-title: "Kimi Attention Residuals：深度维注意力聚合"
+title: "2.2.2 · Kimi Attention Residuals：深度维注意力聚合"
 ---
 # Kimi Attention Residuals：当层间残差混合变成深度维注意力
 

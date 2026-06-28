@@ -1,5 +1,5 @@
 ---
-title: "Qwen3 - MinerU 原始转换(英文)"
+title: "03 · Qwen3 - MinerU 原始转换(英文)"
 source_pdf: pdfs/Qwen3-Technical-Report.pdf
 converted_by: MinerU
 date: 2026-05-19

@@ -61,6 +61,17 @@ pnpm dev
 - 后端：`http://localhost:3010`
 - tRPC 端点：`http://localhost:3010/api/trpc`
 
+### 测试与验收
+
+```bash
+pnpm lint          # 全仓 lint（0 error）
+pnpm test          # Vitest：88 passed / 3 skipped
+pnpm build         # Next.js 生产构建
+pnpm test:e2e      # Playwright：26 passed（web:3002 + server:3010）
+pnpm validate      # 以上四步一键验收
+pnpm db:backup     # SQLite 备份到 backups/
+```
+
 ---
 
 ## <img src="docs/assets/icons/wrench.svg" width="24" align="absmiddle" alt=""> 技术栈
@@ -92,7 +103,7 @@ KnowPilot/
 │   ├── skills/               # Skill 配置（占位）
 │   ├── memories/             # 记忆配置（占位）
 │   ├── tasks/                # 任务配置（占位）
-│   └── mcp/                  # MCP Server 配置（占位）
+│   └── mcp/                  # MCP Server 配置（YAML + sync）
 ├── docs/development/         # L1-L5 分阶段开发文档
 ├── docker-compose.yml        # 可选：PostgreSQL 等外部服务
 └── README.md                 # 本文件
@@ -106,11 +117,11 @@ KnowPilot/
 
 | 阶段 | 主题 | 状态 |
 |---|---|---|
-| **L1** | 博客基建：首页、文章、编辑器、Markdown ↔ SQLite 同步 | <img src="docs/assets/icons/construction.svg" width="16" align="absmiddle" alt=""> 进行中 |
-| **L2** | AI 核心：Agent / Skill / MCP / Memory / Chat | <img src="docs/assets/icons/hourglass.svg" width="16" align="absmiddle" alt=""> 待开始 |
-| **L3** | 内容运维：File / Git / Task / Log / Workspace | <img src="docs/assets/icons/hourglass.svg" width="16" align="absmiddle" alt=""> 待开始 |
-| **L4** | 自动化流：Trigger / Approval / Agent Loop | <img src="docs/assets/icons/hourglass.svg" width="16" align="absmiddle" alt=""> 待开始 |
-| **L5** | 打磨与规模化：搜索、鉴权、统计、部署 | <img src="docs/assets/icons/hourglass.svg" width="16" align="absmiddle" alt=""> 待开始 |
+| **L1** | 博客基建：首页、文章、编辑器、Markdown ↔ SQLite 同步 | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已封板 |
+| **L2** | AI 核心：Agent / Skill / MCP / Memory / Chat | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
+| **L3** | 内容运维：File / Git / Task / Log / Workspace | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
+| **L4** | 自动化流：Trigger / Approval / Agent Loop | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
+| **L5** | 打磨与规模化：搜索、鉴权、统计、部署 | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
 
 ---
 

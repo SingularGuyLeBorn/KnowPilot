@@ -1,5 +1,5 @@
 ---
-title: "ABAB 国内首个 MoE 大模型的架构探索与工程验证"
+title: "05 · ABAB 国内首个 MoE 大模型的架构探索与工程验证"
 source: 01-ABAB初代技术博文分析.md
 sync_to:
   - docs/guide/minimax/abab-moe-architecture.md

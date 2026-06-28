@@ -1,5 +1,5 @@
 ---
-title: "OpenAI GPT"
+title: "5.3 · OpenAI GPT"
 date: 2026-05-11
 tags: [openai, gpt, chatgpt, transformer, api]
 ---

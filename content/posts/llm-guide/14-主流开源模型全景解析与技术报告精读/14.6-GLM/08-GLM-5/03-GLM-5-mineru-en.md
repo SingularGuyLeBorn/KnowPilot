@@ -1,5 +1,5 @@
 ---
-title: "06-GLM-5 Technical Report (MinerU EN)"
+title: "03 · 06-GLM-5 Technical Report (MinerU EN)"
 converted_by: PyMuPDF (MinerU fallback)
 source_pdf: GLM-5-Technical-Report.pdf
 ---

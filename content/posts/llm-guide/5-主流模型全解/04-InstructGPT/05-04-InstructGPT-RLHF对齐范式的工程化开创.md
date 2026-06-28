@@ -1,5 +1,5 @@
 ---
-title: "InstructGPT：RLHF对齐范式的工程化开创——从语言模型到指令遵循系统的范式转移"
+title: "05 · InstructGPT：RLHF对齐范式的工程化开创——从语言模型到指令遵循系统的范式转移"
 ---
 
 # InstructGPT：RLHF对齐范式的工程化开创

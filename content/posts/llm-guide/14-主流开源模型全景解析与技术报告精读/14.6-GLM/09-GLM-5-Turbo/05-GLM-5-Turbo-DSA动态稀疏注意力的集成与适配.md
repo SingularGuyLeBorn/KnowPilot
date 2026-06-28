@@ -1,5 +1,5 @@
 ---
-title: "GLM-5 DSA 动态稀疏注意力的集成与适配"
+title: "05 · GLM-5 DSA 动态稀疏注意力的集成与适配"
 source: 01-GLM-5-Turbo技术报告精译.md
 sync_to:
   - docs/guide/glm/glm-5-dsa-sparse-attention.md

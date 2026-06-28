@@ -1,5 +1,5 @@
 ---
-title: "GLM-4 技术报告 MinerU 逐段翻译"
+title: "04 · GLM-4 技术报告 MinerU 逐段翻译"
 source: 03-GLM-4-mineru-en.md
 translated_by: "AI Agent"
 date: 2026-05-23

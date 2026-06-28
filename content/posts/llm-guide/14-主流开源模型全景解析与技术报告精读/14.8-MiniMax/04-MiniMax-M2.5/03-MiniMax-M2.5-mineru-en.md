@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.5 - Technical Report (English)"
+title: "03 · MiniMax-M2.5 - Technical Report (English)"
 source_pdf: "pdfs/"
 status: completed
 ---

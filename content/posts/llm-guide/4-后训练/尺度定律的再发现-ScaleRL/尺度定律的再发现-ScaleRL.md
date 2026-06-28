@@ -1,5 +1,5 @@
 ---
-title: "尺度定律的再发现 ScaleRL"
+title: "4 尺度定律的再发现 ScaleRL"
 date: 2026-05-11
 tags: []
 ---

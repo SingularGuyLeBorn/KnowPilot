@@ -1,5 +1,5 @@
 ---
-title: "The Document is All You Need"
+title: "1.1 · The Document is All You Need"
 date: 2026-05-11
 tags: []
 ---

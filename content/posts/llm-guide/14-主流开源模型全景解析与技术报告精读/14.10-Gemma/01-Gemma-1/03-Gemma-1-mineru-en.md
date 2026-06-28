@@ -1,5 +1,5 @@
 ---
-title: "Gemma-1: Open Models Based on Gemini Research and Technology"
+title: "03 · Gemma-1: Open Models Based on Gemini Research and Technology"
 converted_by: "arXiv HTML manual formatting"
 arxiv_id: "2403.08295"
 ---

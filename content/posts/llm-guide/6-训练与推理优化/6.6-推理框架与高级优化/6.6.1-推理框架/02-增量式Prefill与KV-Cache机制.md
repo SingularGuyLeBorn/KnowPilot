@@ -1,5 +1,5 @@
 ---
-title: "增量式 Prefill 与 KV Cache 机制：动态检索增强推理的技术基石"
+title: "02 · 增量式 Prefill 与 KV Cache 机制：动态检索增强推理的技术基石"
 date: 2026-05-17
 tags: [Prefill, KV Cache, 增量计算, Search-R1, 动态RAG, 推理优化]
 ---

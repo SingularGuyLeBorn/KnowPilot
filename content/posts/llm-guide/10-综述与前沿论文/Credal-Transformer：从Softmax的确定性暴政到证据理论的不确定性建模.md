@@ -1,5 +1,5 @@
 ---
-title: "Credal Transformer: 从 Softmax 的确定性暴政到证据理论的不确定性建模"
+title: "10 · Credal Transformer: 从 Softmax 的确定性暴政到证据理论的不确定性建模"
 date: 2026-05-16
 tags: [Credal Transformer, 幻觉, 不确定性, 证据理论, 狄利克雷分布, Softmax, 架构创新]
 ---

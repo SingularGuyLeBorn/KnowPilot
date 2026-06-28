@@ -1,5 +1,5 @@
 ---
-title: "Ling-Lite 技术报告逐段翻译"
+title: "04 · Ling-Lite 技术报告逐段翻译"
 source: 03-Ling-Lite-mineru-en.md
 translated_by: "AI Agent"
 date: 2026-05-23

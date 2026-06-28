@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-Llama3-V 2.5 技术报告精译"
+title: "01 · MiniCPM-Llama3-V 2.5 技术报告精译"
 ---
 
 # MiniCPM-Llama3-V 2.5 技术报告精译

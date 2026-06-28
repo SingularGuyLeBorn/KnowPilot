@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V2 技术报告精读"
+title: "01 · DeepSeek-V2 技术报告精读"
 status: completed
 date: 2026-05-19
 ---

@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1-Zero 原理与实现"
+title: "05 · DeepSeek-R1-Zero 原理与实现"
 ---
 
 # DeepSeek-R1-Zero 原理剖析

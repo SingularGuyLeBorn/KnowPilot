@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Math 数理逻辑解码"
+title: "02 · DeepSeek-Math 数理逻辑解码"
 ---
 
 # DeepSeek-Math 数理逻辑解码

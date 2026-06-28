@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.7自我进化与Harness优化剖析"
+title: "05 · MiniMax-M2.7自我进化与Harness优化剖析"
 ---
 
 # MiniMax M2.7 自我进化与 Harness 优化剖析

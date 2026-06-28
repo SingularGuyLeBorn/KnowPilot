@@ -1,5 +1,5 @@
 ---
-title: "Kimi-K2.6多模态与Agent能力剖析"
+title: "05 · Kimi-K2.6多模态与Agent能力剖析"
 ---
 
 # Kimi K2.6 多模态与 Agent 能力剖析

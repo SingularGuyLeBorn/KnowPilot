@@ -1,5 +1,5 @@
 ---
-title: "Mistral Large: 剑指 GPT-4 的旗舰闭源模型 架构精译"
+title: "01 · Mistral Large: 剑指 GPT-4 的旗舰闭源模型 架构精译"
 ---
 # Mistral Large: 剑指 GPT-4 的旗舰闭源模型
 

@@ -1,5 +1,5 @@
 ---
-title: "Gated Attention 与混合注意力: 2025-2026 LLM架构最大突破"
+title: "10 · Gated Attention 与混合注意力: 2025-2026 LLM架构最大突破"
 date: 2026-05-07
 tags:
   - Gated Attention

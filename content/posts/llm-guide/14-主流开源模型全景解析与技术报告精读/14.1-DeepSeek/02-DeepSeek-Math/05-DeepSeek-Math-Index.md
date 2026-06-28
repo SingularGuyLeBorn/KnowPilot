@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Math"
+title: "05 · DeepSeek-Math"
 status: completed
 date: 2026-05-19
 ---

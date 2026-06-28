@@ -1,5 +1,5 @@
 ---
-title: "Mixtral 8x7B: 首个击败 LLaMA 的开源 MoE 架构精译"
+title: "01 · Mixtral 8x7B: 首个击败 LLaMA 的开源 MoE 架构精译"
 ---
 # Mixtral 8x7B: 首个击败 LLaMA 的开源 MoE
 

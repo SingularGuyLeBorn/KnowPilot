@@ -1,5 +1,5 @@
 ---
-title: "Radial Attention：O(n log n) 复杂度的稀疏注意力"
+title: "04 · Radial Attention：O(n log n) 复杂度的稀疏注意力"
 date: 2026-05-24
 tags: [Radial Attention, 稀疏注意力, 视频生成, DiT, 能量衰减, 时空稀疏性]
 ---

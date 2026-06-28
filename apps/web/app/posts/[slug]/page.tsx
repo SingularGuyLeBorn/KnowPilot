@@ -1,53 +1,45 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
+import { keepPreviousData } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, Eye, Edit2, Trash2 } from "lucide-react";
-import { Shell } from "@/components/layout/Shell";
-import { MarkdownRenderer } from "@/components/post/MarkdownRenderer";
+import { PostContent } from "@/components/post/PostContent";
 import { TableOfContents } from "@/components/post/TableOfContents";
 import { PageSearch } from "@/components/post/PageSearch";
 import { trpc } from "@/lib/trpc";
+import { usePostMutations } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/shared";
 
 export default function PostDetailPage() {
   const params = useParams();
   const router = useRouter();
   const slug = decodeURIComponent(params.slug as string);
   const articleRef = useRef<HTMLElement>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const { data: post, isLoading } = trpc.post.getBySlug.useQuery({ slug });
-  const utils = trpc.useUtils();
+  const { data: post, isLoading } = trpc.post.getBySlug.useQuery(
+    { slug },
+    { placeholderData: keepPreviousData }
+  );
 
-  const deletePost = trpc.post.delete.useMutation({
-    onSuccess: (result) => {
-      if (result.success) {
-        utils.post.list.invalidate();
-        utils.post.tree.invalidate();
-        router.push("/posts");
-      } else {
-        alert(`删除失败：${result.error?.message || "未知错误"}`);
-      }
-    },
-    onError: (error) => {
-      alert(`删除失败：${error.message}`);
-    },
+  const { remove } = usePostMutations({
+    onDeleteSuccess: () => router.push("/posts"),
   });
 
   const handleDelete = () => {
     if (!post) return;
-    if (!window.confirm(`确定要删除文章《${post.title}》吗？此操作不可恢复。`)) return;
-    deletePost.mutate({ id: post.id });
+    remove.mutate({ id: post.id });
   };
 
   return (
-    <Shell>
-      <div className="w-full px-[5%] py-8 md:px-[8%] lg:px-[12%] xl:pr-[19rem] 2xl:pr-[21rem]">
+    <div className="w-full px-[5%] py-8 md:px-[8%] lg:px-[12%] xl:pr-[20rem] 2xl:pr-[22rem]">
         <div className="mb-6">
           <Link
             href="/posts"
@@ -61,7 +53,7 @@ export default function PostDetailPage() {
           </Link>
         </div>
 
-        {isLoading ? (
+        {isLoading && !post ? (
           <PostSkeleton />
         ) : post ? (
           <>
@@ -71,6 +63,9 @@ export default function PostDetailPage() {
                   {post.title}
                 </h1>
                 <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                  {!post.published && (
+                    <Badge variant="secondary">草稿</Badge>
+                  )}
                   {post.category && (
                     <Link href={`/categories/${encodeURIComponent(post.category)}`}>
                       <Badge variant="secondary" className="cursor-pointer hover:bg-primary/10 hover:text-primary">
@@ -98,15 +93,15 @@ export default function PostDetailPage() {
                   </Link>
                   <button
                     type="button"
-                    onClick={handleDelete}
-                    disabled={deletePost.isPending}
+                    onClick={() => setConfirmOpen(true)}
+                    disabled={remove.isPending}
                     className={cn(
                       buttonVariants({ variant: "ghost", size: "sm" }),
                       "inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
                     )}
                   >
                     <Trash2 className="h-4 w-4" />
-                    {deletePost.isPending ? "删除中…" : "删除"}
+                    {remove.isPending ? "删除中…" : "删除"}
                   </button>
                 </div>
                 {post.tags?.length > 0 && (
@@ -128,18 +123,27 @@ export default function PostDetailPage() {
 
               <Card>
                 <CardContent className="p-6 sm:p-8">
-                  <MarkdownRenderer content={post.content} postSlug={post.slug} />
+                  <PostContent content={post.content} postSlug={post.slug} />
                 </CardContent>
               </Card>
             </article>
 
             <TableOfContents content={post.content} />
+
+            <ConfirmDialog
+              isOpen={confirmOpen}
+              title="删除文章"
+              description={`确定要删除《${post.title}》吗？此操作不可恢复。`}
+              confirmLabel={remove.isPending ? "删除中…" : "确认删除"}
+              isDestructive
+              onConfirm={handleDelete}
+              onCancel={() => setConfirmOpen(false)}
+            />
           </>
         ) : (
           <NotFound />
         )}
-      </div>
-    </Shell>
+    </div>
   );
 }
 

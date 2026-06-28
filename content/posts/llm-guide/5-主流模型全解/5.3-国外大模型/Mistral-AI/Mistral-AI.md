@@ -1,5 +1,5 @@
 ---
-title: "Mistral-AI 系列模型全解"
+title: "5.3 · Mistral-AI 系列模型全解"
 description: "深入剖析欧洲最强 AI 独角兽 Mistral AI 旗下全系列模型，从 Mistral 7B、Mixtral MoE 架构到旗舰模型 Mistral Large 的技术细节、训练策略与应用实践. "
 ---
 

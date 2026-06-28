@@ -1,5 +1,5 @@
 ---
-title: "Kimi-K2 技术报告精译"
+title: "01 · Kimi-K2 技术报告精译"
 ---
 
 # Kimi K2: Open Agentic Intelligence 技术报告精译

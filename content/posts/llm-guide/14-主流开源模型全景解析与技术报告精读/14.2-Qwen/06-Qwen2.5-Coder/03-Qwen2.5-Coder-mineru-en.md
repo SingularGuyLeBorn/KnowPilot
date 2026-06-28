@@ -1,5 +1,5 @@
 ---
-title: "06-Qwen2.5-Coder Technical Report (MinerU EN)"
+title: "03 · 06-Qwen2.5-Coder Technical Report (MinerU EN)"
 source_pdf: pdfs/Qwen2.5-Coder.pdf
 converted_by: MinerU (re-processed)
 date: 2026-05-23

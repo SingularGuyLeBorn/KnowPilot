@@ -1,5 +1,5 @@
 ---
-title: "EDiT：面向异构硬件的高效异步分布式训练"
+title: "05 · EDiT：面向异构硬件的高效异步分布式训练"
 date: 2026-05-24
 status: published
 tags:

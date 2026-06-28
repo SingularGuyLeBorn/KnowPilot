@@ -1,5 +1,5 @@
 ---
-title: "Hyper-Connections 与 mHC"
+title: "01 · Hyper-Connections 与 mHC"
 ---
 
 # Hyper-Connections 与 mHC：残差主干在 2024-2026 年的新进展

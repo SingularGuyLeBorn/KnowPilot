@@ -1,5 +1,5 @@
 ---
-title: "MiMo-7B 推理优化剖析"
+title: "02 · MiMo-7B 推理优化剖析"
 status: completed
 ---
 

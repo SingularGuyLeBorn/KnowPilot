@@ -1,5 +1,5 @@
 ---
-title: "百川智能 Baichuan"
+title: "5.2 · 百川智能 Baichuan"
 date: 2026-05-11
 tags: []
 ---

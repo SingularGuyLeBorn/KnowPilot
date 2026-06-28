@@ -1,5 +1,5 @@
 ---
-title: "Gemini 2.5 Flash：轻量架构上的Thinking Mode推理能力迁移"
+title: "05 · Gemini 2.5 Flash：轻量架构上的Thinking Mode推理能力迁移"
 ---
 
 # 09-Gemini-2.5-Flash 核心技术专题：轻量架构上的 Thinking Mode 推理能力迁移

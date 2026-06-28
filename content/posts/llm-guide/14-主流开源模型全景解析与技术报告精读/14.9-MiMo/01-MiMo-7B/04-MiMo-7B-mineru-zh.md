@@ -1,5 +1,5 @@
 ---
-title: "01-MiMo-7B Technical Report (MinerU ZH)"
+title: "04 · 01-MiMo-7B Technical Report (MinerU ZH)"
 source_pdf: pdfs/MiMo-7B.pdf
 converted_by: MinerU (re-processed)
 date: 2026-05-23

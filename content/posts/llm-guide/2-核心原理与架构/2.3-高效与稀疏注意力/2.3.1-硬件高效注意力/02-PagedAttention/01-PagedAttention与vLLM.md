@@ -1,5 +1,5 @@
 ---
-title: "02 · PagedAttention 与 vLLM: 虚拟内存思想终结 KV Cache 碎片"
+title: "01 · PagedAttention 与 vLLM: 虚拟内存思想终结 KV Cache 碎片"
 date: 2026-05-16
 tags: [PagedAttention, vLLM, KV Cache, 推理优化, 内存管理, Continuous Batching]
 ---

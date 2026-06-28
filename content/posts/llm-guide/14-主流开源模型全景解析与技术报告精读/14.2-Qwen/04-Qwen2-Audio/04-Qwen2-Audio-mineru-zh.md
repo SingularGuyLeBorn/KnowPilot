@@ -1,5 +1,5 @@
 ---
-title: "Qwen2-Audio Technical Report (MinerU 中文精译与译者注)"
+title: "04 · Qwen2-Audio Technical Report (MinerU 中文精译与译者注)"
 source: 03-Qwen2-Audio-mineru-en.md
 source_pdf: pdfs/Qwen2-Audio.pdf
 date: 2026-05-23

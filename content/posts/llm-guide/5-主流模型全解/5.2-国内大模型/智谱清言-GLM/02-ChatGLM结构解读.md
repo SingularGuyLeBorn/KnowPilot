@@ -1,5 +1,5 @@
 ---
-title: "ChatGLM结构解读"
+title: "02 · ChatGLM结构解读"
 date: 2026-05-11
 tags: []
 ---

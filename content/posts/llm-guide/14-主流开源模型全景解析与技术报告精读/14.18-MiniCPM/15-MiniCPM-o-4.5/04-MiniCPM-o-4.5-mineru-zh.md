@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-o 4.5 技术报告逐段翻译"
+title: "04 · MiniCPM-o 4.5 技术报告逐段翻译"
 source: 03-MiniCPM-o-4.5-mineru-en.md
 translated_by: "AI Agent"
 date: 2026-05-23

@@ -1,5 +1,5 @@
 ---
-title: "Qwen3.6 核心架构剖析"
+title: "05 · Qwen3.6 核心架构剖析"
 status: completed
 ---
 

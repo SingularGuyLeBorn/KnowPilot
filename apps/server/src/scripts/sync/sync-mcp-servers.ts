@@ -1,11 +1,12 @@
 /**
  * MCP Server 同步器
  *
- * 文件格式：content/mcp/{slug}.yaml
+ * 文件格式：content/mcp/{slug}.yaml 或 {slug}.json
  * 字段：name, command, args, env, enabled
  */
 
 import { PrismaClient } from "@prisma/client";
+import fs from "fs";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseYamlFile, filePathToSlug, readBoolean, getFileMtime } from "./utils.js";
 
@@ -20,17 +21,20 @@ interface McpServerData {
 export const mcpServerSyncer: Syncer<McpServerData> = {
   entityName: "McpServer",
   contentDirName: "mcp",
-  extensions: [".yaml", ".yml"],
+  extensions: [".yaml", ".yml", ".json"],
 
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<McpServerData>[]> {
-    const filePaths = getFilesRecursive(contentDir, [".yaml", ".yml"]);
+    const filePaths = getFilesRecursive(contentDir, [".yaml", ".yml", ".json"]);
     const records: SyncRecord<McpServerData>[] = [];
 
     for (const filePath of filePaths) {
       try {
         const slug = filePathToSlug(contentDir, filePath);
         const mtime = getFileMtime(filePath);
-        const { data } = parseYamlFile(filePath);
+        const data =
+          filePath.endsWith(".json")
+            ? (JSON.parse(fs.readFileSync(filePath, "utf-8")) as Record<string, unknown>)
+            : parseYamlFile(filePath).data;
 
         const name = typeof data.name === "string" ? data.name : slug;
         const command = typeof data.command === "string" ? data.command : "";

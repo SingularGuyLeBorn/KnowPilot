@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-Math Technical Report (MinerU 中文精译与译者注)"
+title: "04 · DeepSeek-Math Technical Report (MinerU 中文精译与译者注)"
 source: 03-DeepSeek-Math-mineru-en.md
 source_pdf: pdfs/DeepSeek-Math.pdf
 date: 2026-05-23

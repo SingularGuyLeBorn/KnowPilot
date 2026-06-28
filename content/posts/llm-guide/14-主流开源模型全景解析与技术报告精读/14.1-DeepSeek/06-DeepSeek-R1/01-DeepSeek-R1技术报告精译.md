@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1 技术报告精译"
+title: "01 · DeepSeek-R1 技术报告精译"
 ---
 
 # DeepSeek-R1: 通过强化学习激励 LLM 中的推理能力

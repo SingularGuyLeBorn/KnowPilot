@@ -1,5 +1,5 @@
 ---
-title: "OLMo-3 (OLMoE) Technical Report - Segment-by-Segment Translation with Translator's Notes"
+title: "04 · OLMo-3 (OLMoE) Technical Report - Segment-by-Segment Translation with Translator's Notes"
 ---
 
 ## 1 引言 (Introduction)

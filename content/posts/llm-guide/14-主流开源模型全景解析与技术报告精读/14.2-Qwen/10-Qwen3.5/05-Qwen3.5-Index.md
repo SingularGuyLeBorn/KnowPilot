@@ -1,5 +1,5 @@
 ---
-title: "Qwen3.5 Index"
+title: "05 · Qwen3.5 Index"
 date: 2026-05-24
 status: completed
 tags:

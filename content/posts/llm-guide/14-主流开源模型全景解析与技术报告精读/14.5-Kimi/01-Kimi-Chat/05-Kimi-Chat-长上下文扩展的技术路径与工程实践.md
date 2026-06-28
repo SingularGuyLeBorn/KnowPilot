@@ -1,5 +1,5 @@
 ---
-title: "Kimi-Chat 长上下文扩展的技术路径与工程实践"
+title: "05 · Kimi-Chat 长上下文扩展的技术路径与工程实践"
 source: 01-Kimi-Chat长上下文技术精译.md
 sync_to:
   - docs/guide/kimi/kimi-chat-long-context.md

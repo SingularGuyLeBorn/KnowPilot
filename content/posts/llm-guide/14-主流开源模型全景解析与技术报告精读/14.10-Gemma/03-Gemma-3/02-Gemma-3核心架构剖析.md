@@ -1,5 +1,5 @@
 ---
-title: "Gemma-3 核心架构剖析"
+title: "02 · Gemma-3 核心架构剖析"
 ---
 
 # Gemma-3 核心架构剖析

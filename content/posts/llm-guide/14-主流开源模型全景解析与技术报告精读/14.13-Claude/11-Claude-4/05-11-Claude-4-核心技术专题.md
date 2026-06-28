@@ -1,5 +1,5 @@
 ---
-title: "Claude 4: Anthropic 新一代安全与智能边界探索 - 对齐与安全核心专题"
+title: "05 · Claude 4: Anthropic 新一代安全与智能边界探索 - 对齐与安全核心专题"
 ---
 # 11-Claude-4 核心技术专题：RLAIF 与模型神经元干预
 

@@ -1,5 +1,5 @@
 ---
-title: "MiniMax M2 Lightning Attention 与 400 万上下文训练工程"
+title: "05 · MiniMax M2 Lightning Attention 与 400 万上下文训练工程"
 ---
 
 # MiniMax M2 核心技术专题：Lightning Attention 与 400 万上下文训练工程

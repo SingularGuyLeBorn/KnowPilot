@@ -1,5 +1,5 @@
 ---
-title: "Ling 2.0 Evo-CoT 与 LPO：非思考模型的进化式推理训练"
+title: "05 · Ling 2.0 Evo-CoT 与 LPO：非思考模型的进化式推理训练"
 date: 2026-05-24
 status: published
 tags:

@@ -1,5 +1,5 @@
 ---
-title: "Operator: 接管浏览器的自动化自主 Agent - 核心技术黑盒探测"
+title: "05 · Operator: 接管浏览器的自动化自主 Agent - 核心技术黑盒探测"
 ---
 # 15-Operator-Agent 核心技术专题：黑盒边界与逆向工程
 

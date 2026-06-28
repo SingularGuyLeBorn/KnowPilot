@@ -1,5 +1,5 @@
 ---
-title: "OpenAI愿景推演"
+title: "12 · OpenAI愿景推演"
 date: 2026-05-11
 tags: []
 ---

@@ -1,5 +1,5 @@
 ---
-title: "MiniMax-M2.7"
+title: "05 · MiniMax-M2.7"
 ---
 
 # MiniMax-M2.7

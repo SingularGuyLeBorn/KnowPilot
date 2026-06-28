@@ -1,5 +1,5 @@
 ---
-title: "Claude 3 Opus：长上下文推理与多模态理解的双重突破——Claude 3系列的旗舰之作"
+title: "05 · Claude 3 Opus：长上下文推理与多模态理解的双重突破——Claude 3系列的旗舰之作"
 ---
 
 # Claude 3 Opus：长上下文推理与多模态理解的双重突破

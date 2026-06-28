@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.1-Terminus 语言一致性修复的多层工程实践"
+title: "05 · DeepSeek-V3.1-Terminus 语言一致性修复的多层工程实践"
 source: 01-DeepSeek-V3.2-Terminus演进细节精译.md
 sync_to:
   - docs/guide/deepseek/terminus-language-consistency.md

@@ -1,0 +1,11 @@
+{
+  "name": "filesystem",
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-filesystem",
+    "D:\\ALL IN AI\\KnowPilot"
+  ],
+  "env": {},
+  "enabled": true
+}

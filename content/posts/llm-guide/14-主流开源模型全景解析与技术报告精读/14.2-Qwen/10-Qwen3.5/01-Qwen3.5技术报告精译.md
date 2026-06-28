@@ -1,5 +1,5 @@
 ---
-title: "Qwen3.5 技术报告精译"
+title: "01 · Qwen3.5 技术报告精译"
 status: completed
 ---
 

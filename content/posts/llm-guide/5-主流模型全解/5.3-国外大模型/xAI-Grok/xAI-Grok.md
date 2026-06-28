@@ -1,5 +1,5 @@
 ---
-title: "xAI-Grok"
+title: "5.3 · xAI-Grok"
 description: "全面解析 xAI 旗下 Grok 系列大模型的架构、演进、MoE技术细节与训练基础设施"
 date: "2026-05-24"
 ---

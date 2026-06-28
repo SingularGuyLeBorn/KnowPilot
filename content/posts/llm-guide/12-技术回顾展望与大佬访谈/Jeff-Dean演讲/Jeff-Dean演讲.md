@@ -1,5 +1,5 @@
 ---
-title: "Jeff Dean演讲回顾LLM发展史,Transformer、蒸馏、MoE、思维链等技术都来自谷歌"
+title: "12 · Jeff Dean演讲回顾LLM发展史,Transformer、蒸馏、MoE、思维链等技术都来自谷歌"
 date: 2026-05-11
 tags: []
 ---

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTRPCReact, httpLink } from "@trpc/react-query";
 import superjson from "superjson";
 import type { AppRouter } from "@knowpilot/server/router";
+import { authHeaders } from "@/lib/auth";
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -19,7 +20,8 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5 * 1000,
+            staleTime: 30 * 1000,
+            gcTime: 5 * 60 * 1000,
             refetchOnWindowFocus: false,
           },
         },
@@ -32,6 +34,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
         httpLink({
           url: `${getBaseUrl()}/api/trpc`,
           transformer: superjson,
+          headers: () => authHeaders(),
         }),
       ],
     })

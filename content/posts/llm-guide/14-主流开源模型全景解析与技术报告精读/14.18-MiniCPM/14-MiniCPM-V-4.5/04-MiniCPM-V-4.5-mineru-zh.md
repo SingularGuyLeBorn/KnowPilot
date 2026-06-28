@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-V-4.5 技术报告逐段翻译"
+title: "04 · MiniCPM-V-4.5 技术报告逐段翻译"
 ---
 
 # MiniCPM-V-4.5 技术报告逐段翻译

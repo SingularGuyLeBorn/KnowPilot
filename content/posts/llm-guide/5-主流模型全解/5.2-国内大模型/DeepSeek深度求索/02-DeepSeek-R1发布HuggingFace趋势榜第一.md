@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1发布：HuggingFace趋势榜第一，通过强化学习激发大语言模型的推理能力"
+title: "02 · DeepSeek-R1发布：HuggingFace趋势榜第一，通过强化学习激发大语言模型的推理能力"
 date: 2026-05-11
 tags: []
 ---

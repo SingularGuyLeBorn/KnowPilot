@@ -1,5 +1,5 @@
 ---
-title: "ChatGLM 技术报告逐段翻译"
+title: "04 · ChatGLM 技术报告逐段翻译"
 source: 03-ChatGLM-mineru-en.md
 translated_by: "AI Agent"
 date: 2026-05-23

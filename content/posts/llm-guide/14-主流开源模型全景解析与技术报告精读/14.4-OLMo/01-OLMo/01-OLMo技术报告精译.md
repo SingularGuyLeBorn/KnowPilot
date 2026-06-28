@@ -1,5 +1,5 @@
 ---
-title: "OLMo 技术报告精译"
+title: "01 · OLMo 技术报告精译"
 ---
 
 # OLMo 技术报告精译

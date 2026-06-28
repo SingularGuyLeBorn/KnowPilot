@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3 核心架构剖析"
+title: "05 · DeepSeek-V3 核心架构剖析"
 ---
 
 # DeepSeek-V3 核心架构剖析

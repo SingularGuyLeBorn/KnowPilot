@@ -1,5 +1,5 @@
 ---
-title: "聊聊DeepSeek-R1的技术路径"
+title: "24 · 聊聊DeepSeek-R1的技术路径"
 date: 2026-05-11
 tags: []
 ---

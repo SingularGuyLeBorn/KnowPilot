@@ -1,5 +1,5 @@
 ---
-title: "Qwen2-VL多模态架构剖析"
+title: "05 · Qwen2-VL多模态架构剖析"
 ---
 
 # Qwen2-VL 多模态架构剖析

@@ -1,26 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { PenLine, MessageSquare, Bot, Menu } from "lucide-react";
+import { KnowPilotLogo } from "@/lib/icons";
+import { usePathname } from "next/navigation";
+import { Bot, Menu, MessageSquare, PenLine, PlusCircle, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "./CommandPalette";
+import type { LayoutMode } from "./layoutMode";
 
 interface NavbarProps {
+  mode: LayoutMode;
   onMenuClick?: () => void;
   className?: string;
 }
 
-export function Navbar({ onMenuClick, className }: NavbarProps) {
+export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
+  const pathname = usePathname();
+  const showMobileMenu = mode === "app" || mode === "content";
+
   return (
     <header
       className={cn(
-        "sticky top-0 z-50 border-b border-[var(--kp-divider)]",
+        "sticky top-0 z-50 shrink-0 border-b border-[var(--kp-divider)]",
         "bg-[var(--kp-glass-bg)] backdrop-blur-md",
-        className
+        className,
       )}
     >
-      <div className="flex h-16 w-full items-center justify-between px-[4%] md:px-[6%] lg:px-[8%] xl:px-[10%]">
-        <div className="flex items-center gap-4">
+      <div className="flex h-14 w-full items-center gap-4 px-4 md:px-6">
+        {showMobileMenu && (
           <button
             onClick={onMenuClick}
             className="rounded-lg p-2 text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] lg:hidden"
@@ -28,30 +35,35 @@ export function Navbar({ onMenuClick, className }: NavbarProps) {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-lg font-semibold tracking-tight text-[var(--kp-text-1)]"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand)] text-white">
-              K
-            </span>
-            <span>KnowPilot</span>
-          </Link>
-        </div>
+        )}
 
-        <nav className="hidden items-center gap-1 md:flex">
-          <NavLink href="/posts" icon={<PenLine className="h-4 w-4" />}>
+        <Link
+          href="/"
+          className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight text-[var(--kp-text-1)]"
+        >
+          <KnowPilotLogo size={32} className="shrink-0" />
+          <span className="hidden sm:inline">KnowPilot</span>
+        </Link>
+
+        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+          <TopNavLink href="/posts" active={pathname.startsWith("/posts")} icon={<PenLine className="h-4 w-4" />}>
             文章
-          </NavLink>
-          <NavLink href="/chat" icon={<MessageSquare className="h-4 w-4" />}>
-            聊天
-          </NavLink>
-          <NavLink href="/agents" icon={<Bot className="h-4 w-4" />}>
+          </TopNavLink>
+          <TopNavLink href="/editor" active={pathname.startsWith("/editor")} icon={<PlusCircle className="h-4 w-4" />}>
+            写作
+          </TopNavLink>
+          <TopNavLink href="/chat" active={pathname.startsWith("/chat")} icon={<MessageSquare className="h-4 w-4" />}>
+            对话
+          </TopNavLink>
+          <TopNavLink href="/agents" active={pathname.startsWith("/agents")} icon={<Bot className="h-4 w-4" />}>
             Agents
-          </NavLink>
+          </TopNavLink>
+          <TopNavLink href="/about" active={pathname.startsWith("/about")} icon={<UserCircle className="h-4 w-4" />}>
+            About
+          </TopNavLink>
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <CommandPalette />
         </div>
       </div>
@@ -59,22 +71,29 @@ export function Navbar({ onMenuClick, className }: NavbarProps) {
   );
 }
 
-function NavLink({
+function TopNavLink({
   href,
+  active,
   icon,
   children,
 }: {
   href: string;
+  active: boolean;
   icon: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
-      className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+      className={cn(
+        "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition",
+        active
+          ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+          : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+      )}
     >
       {icon}
-      {children}
+      <span className="hidden md:inline">{children}</span>
     </Link>
   );
 }

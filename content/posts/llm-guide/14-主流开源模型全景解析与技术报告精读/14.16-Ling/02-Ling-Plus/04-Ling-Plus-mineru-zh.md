@@ -1,5 +1,5 @@
 ---
-title: "Ling-Plus 技术报告精读 (基于 Ling-Lite/Plus 联合报告)"
+title: "04 · Ling-Plus 技术报告精读 (基于 Ling-Lite/Plus 联合报告)"
 source: "Ling-Lite-Plus-Technical-Report.pdf"
 translator: "MinerU + 人工精校"
 ---

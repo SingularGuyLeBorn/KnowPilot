@@ -1,5 +1,5 @@
 ---
-title: "Claude 1: Constitutional AI (宪法AI) 的初试啼声 - 技术报告反向工程"
+title: "01 · Claude 1: Constitutional AI (宪法AI) 的初试啼声 - 技术报告反向工程"
 ---
 # Claude 1: Constitutional AI (宪法AI) 的初试啼声 - 架构还原与精译
 

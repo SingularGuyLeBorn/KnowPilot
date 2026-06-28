@@ -1,5 +1,5 @@
 ---
-title: "Vision-R1: 多模态推理的 RL 进化"
+title: "10 · Vision-R1: 多模态推理的 RL 进化"
 date: 2026-05-16
 tags: [Vision-R1, 多模态推理, RL, 视觉推理, DeepSeek-R1, 模型解读]
 ---

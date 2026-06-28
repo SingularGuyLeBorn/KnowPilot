@@ -1,5 +1,5 @@
 ---
-title: "Operator: 接管浏览器的自动化自主 Agent - 技术报告反向工程"
+title: "01 · Operator: 接管浏览器的自动化自主 Agent - 技术报告反向工程"
 ---
 # Operator: 接管浏览器的自动化自主 Agent - 技术探测与反向工程
 

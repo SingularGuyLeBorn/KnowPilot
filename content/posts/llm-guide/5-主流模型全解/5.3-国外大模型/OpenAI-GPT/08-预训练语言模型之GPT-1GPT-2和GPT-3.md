@@ -1,5 +1,5 @@
 ---
-title: "预训练语言模型之GPT-1，GPT-2和GPT-3"
+title: "08 · 预训练语言模型之GPT-1，GPT-2和GPT-3"
 date: 2026-05-11
 tags: []
 ---

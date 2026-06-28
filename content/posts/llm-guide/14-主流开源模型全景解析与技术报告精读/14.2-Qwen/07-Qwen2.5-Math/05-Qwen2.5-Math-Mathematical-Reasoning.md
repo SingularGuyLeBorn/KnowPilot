@@ -1,5 +1,5 @@
 ---
-title: "Qwen2.5-Math 数理逻辑剖析"
+title: "05 · Qwen2.5-Math 数理逻辑剖析"
 ---
 
 # Qwen2.5-Math 数理逻辑剖析

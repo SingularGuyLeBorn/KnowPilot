@@ -1,5 +1,5 @@
 ---
-title: "GLM-4 - MinerU 原始转换(英文)"
+title: "03 · GLM-4 - MinerU 原始转换(英文)"
 source_pdf: pdfs/ChatGLM-Family-GLM-4-All-Tools.pdf
 converted_by: "MinerU (hybrid_auto)"
 date: "2024-06"

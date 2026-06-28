@@ -1,5 +1,5 @@
 ---
-title: "Attention 实现方式全景对比: 从手动实现到 FlashAttention"
+title: "01 · Attention 实现方式全景对比: 从手动实现到 FlashAttention"
 date: 2026-05-17
 tags: [Attention, SDPA, FlashAttention, xFormers, 性能优化, CUDA, GPU]
 ---

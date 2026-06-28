@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-V3.1 混合推理模式的设计与实现"
+title: "05 · DeepSeek-V3.1 混合推理模式的设计与实现"
 source: 01-DeepSeek-V3.1演进细节精译.md
 sync_to:
   - docs/guide/deepseek/v3.1-hybrid-reasoning.md

@@ -1,5 +1,5 @@
 ---
-title: "Qwen2.5-Math"
+title: "05 · Qwen2.5-Math"
 status: completed
 date: 2026-05-24
 ---

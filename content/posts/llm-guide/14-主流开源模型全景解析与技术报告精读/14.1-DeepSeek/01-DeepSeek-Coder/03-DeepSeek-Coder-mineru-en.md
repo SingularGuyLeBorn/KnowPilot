@@ -1,5 +1,5 @@
 ---
-title: "01-DeepSeek-Coder Technical Report (MinerU EN)"
+title: "03 · 01-DeepSeek-Coder Technical Report (MinerU EN)"
 source_pdf: pdfs/DeepSeek-Coder.pdf
 converted_by: MinerU (re-processed)
 date: 2026-05-23

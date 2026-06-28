@@ -1,5 +1,5 @@
 ---
-title: "OpenAI Operator (CUA)：视觉推理与浏览器自动化的工程实现——从API集成到像素级网页操控"
+title: "05 · OpenAI Operator (CUA)：视觉推理与浏览器自动化的工程实现——从API集成到像素级网页操控"
 ---
 
 # OpenAI Operator (CUA)：视觉推理与浏览器自动化的工程实现

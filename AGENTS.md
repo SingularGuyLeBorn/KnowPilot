@@ -9,8 +9,7 @@
 KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」。
 
 - **核心原则**：本地 Markdown 文件是数据的唯一事实源，SQLite（通过 Prisma）只作为查询与缓存层。
-- **当前阶段**：L1（博客基建）中后期，核心博客读写、渲染、编辑器、自动保存、TOC、页内搜索已跑通。
-- **未完成领域**：L2 ~ L5 仅后端 tRPC Router 与 Prisma 模型存在，前端页面、内容目录同步、AI 能力均未实现。
+- **当前阶段**：**L1–L5 已全部落地**。本地 Markdown 为源、18 实体 CRUD + 管理页、Agent SSE Chat、自动化/审批、FTS 搜索、可选鉴权、Docker/CI 均已就绪。
 
 项目完整路径：`D:\ALL IN AI\KnowPilot`
 
@@ -33,7 +32,7 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 | 后端 | Express 5.1.0 + CORS |
 | ORM / 数据库 | Prisma 6.9.0 + SQLite |
 | 校验 / 共享类型 | Zod 3.25.56，集中定义在 `packages/shared` |
-| 测试 | Vitest 3.2.3（server、shared） |
+| 测试 | Vitest 3.2.3（server、shared）+ Playwright（web Chat E2E） |
 | 其他工具 | `gray-matter`（frontmatter 解析）、`lodash-es`、lucide-react |
 
 > 注意：`docker-compose.yml` 中提供了可选的 PostgreSQL 16 服务，但当前 `.env.example` 与代码实际使用 SQLite（`DATABASE_URL="file:./dev.db"`）。PostgreSQL 容器仅作未来扩展使用，日常开发无需启动。
@@ -47,38 +46,46 @@ KnowPilot/
 ├── apps/
 │   ├── server/                 # Express + tRPC + Prisma 后端
 │   │   ├── prisma/
-│   │   │   ├── schema.prisma   # 14 个实体模型
+│   │   │   ├── schema.prisma   # 18 个实体模型
 │   │   │   ├── seed.ts         # 3 篇示例文章种子
 │   │   │   └── dev.db          # SQLite 数据库（运行时生成/更新）
 │   │   └── src/
-│   │       ├── index.ts        # Express 入口
-│   │       ├── router.ts       # 导出 AppRouter 类型给前端
+│   │       ├── index.ts        # Express 入口（启动 EventBus + TriggerEngine）
+│   │       ├── router.ts       # 唯一 API 路由文件（19 业务路由 + about + ai 反射）
+│   │       ├── services.ts     # 唯一业务服务层文件（收拢全部 Service 逻辑）
 │   │       ├── db.ts           # Prisma 单例
-│   │       ├── scripts/sync.ts # Markdown ↔ SQLite 同步脚本
-│   │       ├── __tests__/trpc.test.ts
+│   │       ├── infra/          # agentTools、nativeTools、mcpClient、autoCompact、agentStream 等
+│   │       ├── scripts/
+│   │       │   ├── sync.ts     # Markdown/YAML ↔ SQLite 同步入口
+│   │       │   └── sync/       # 各实体 sync-* 脚本
+│   │       ├── __tests__/      # trpc + nativeTools + agentTools + skillRunner + mcpClient
 │   │       └── trpc/
-│   │           ├── trpc.ts     # initTRPC + publicProcedure
-│   │           ├── context.ts  # 注入 prisma
-│   │           ├── router.ts   # 合并 14 个子 router
-│   │           └── routers/    # post/agent/session/... 共 14 个
+│   │           ├── trpc.ts     # initTRPC + publicProcedure + 全局错误格式化
+│   │           └── context.ts  # 注入 prisma 与 ServiceContainer
 │   └── web/                    # Next.js 16 前端
-│       ├── app/                # 页面路由
-│       ├── components/         # layout、post、editor、home、ui
-│       ├── lib/                # trpc.tsx、useAutoSave.ts、utils.ts
+│       ├── app/                # 页面：博客 + agents/skills/mcp/memories/prompts/triggers/approvals/search/dashboard/...
+│       ├── components/         # 布局与页面组件
+│       │   └── shared.tsx      # 唯一共享通用 UI 组件库 (分页、空态、骨架屏、弹窗)
+│       ├── lib/                # trpc.tsx、hooks.ts、icons.tsx、aboutProfile.ts
 │       ├── public/
 │       └── 配置文件
 ├── packages/
-│   └── shared/                 # 前后端共享 Zod schema + TS 类型
+│   └── shared/                 # 前后端共享 Zod schema + TS 类型 + 常量
 │       └── src/
 │           ├── schemas.ts
+│           ├── constants.ts
+│           ├── types.ts
 │           └── index.ts
 ├── content/                    # Git 跟踪的文本数据源
 │   ├── posts/                  # 文章 Markdown 源文件（已大量使用）
-│   ├── agents/                 # Agent 配置（占位 .gitkeep）
-│   ├── skills/                 # Skill 配置（占位 .gitkeep）
-│   ├── memories/               # Memory 配置（占位 .gitkeep）
-│   ├── tasks/                  # Task 配置（占位 .gitkeep）
-│   └── mcp/                    # MCP Server 配置（占位 .gitkeep）
+│   ├── about/                  # About Me（profile.md，Web /about 读取）
+│   ├── agents/                 # Agent 配置（Markdown，运行时 CRUD 写回）
+│   ├── skills/                 # Skill 配置（Markdown）
+│   ├── memories/               # Memory 配置（Markdown）
+│   ├── prompts/                # Prompt 模板（Markdown）
+│   ├── tasks/                  # Task 配置（JSON + db:sync）
+│   ├── mcp/                    # MCP Server 配置（YAML）
+│   └── uploads/                # 上传文件（file.upload）
 ├── docs/development/           # L1-L5 阶段开发文档与 API 规范
 ├── scripts/
 │   └── clean-content.mjs       # 清理 emoji、规范化数学公式
@@ -90,8 +97,13 @@ KnowPilot/
 
 详见 `docs/development/entities/entity-matrix.md`。关键事实：
 
-- **Post**：后端 CRUD、前端页面、Markdown 同步、AI 可读性全部完成。
-- 其余 13 个实体（Agent、Skill、McpServer、Memory、ChatSession、ChatMessage、File、GitRepo、Task、Log、Workspace、Trigger、Approval）：后端 CRUD 基本就绪，但前端未实现、内容目录同步未实现。
+- **Post**：L1 已封板（博客、编辑器、同步、删除、Command Palette、图片上传含粘贴）。
+- **Agent / Skill / McpServer / Memory / Prompt**：L2 后端 CRUD、内容双向写回、`db:sync`、管理页已完成；Agent ReAct + SSE 流式 `/chat`（三栏 UI）、`skill:*` 双路径、MCP 截断重连、auto-compact 已实现。
+- **ChatSession / ChatMessage**：`/chat` 会话 UI + 后端 CRUD + Agent 运行时已接入。
+- **File / GitRepo / Task / Log / Workspace**：L3 后端 CRUD + 管理页 + Task sync/Scheduler 已完成。
+- **Trigger / Approval**：L4 后端 + 前端页（`/triggers`、`/approvals`）+ 审批拦截已通。
+- **L5**：`search.global` + FTS5、`/dashboard`、`AUTH_MODE=password` 可选鉴权（`/login`、`/settings`）、Docker + CI + `db:backup`。
+- **Tool / Run / Credential**：后端 CRUD + `/tools` `/runs` `/credentials` 管理页已完成。
 
 ---
 
@@ -125,7 +137,8 @@ pnpm dev:server
 ### 数据库相关
 
 ```bash
-pnpm db:sync      # Markdown → SQLite 单向同步（关键，开发前/构建前必须执行）
+pnpm db:sync      # content/ → SQLite 同步（Post/Agent/Skill/MCP/Memory/Prompt/Task；支持 --watch）
+pnpm db:backup    # 将 dev.db 复制到 backups/ 目录
 pnpm db:migrate   # Prisma migrate dev
 pnpm db:push      # Prisma db push
 pnpm db:generate  # 生成 Prisma Client
@@ -146,7 +159,8 @@ pnpm test         # 全仓库运行 Vitest
 - **Server**：Express 监听 `SERVER_PORT`（默认 3010）。
   - `/health`：健康检查。
   - `/api/posts/assets`：静态托管 `content/posts/` 下的图片等资源。
-  - `/api/trpc`：tRPC 端点，挂载 14 个 router。
+  - `/api/trpc`：tRPC 端点，挂载 19 个实体 router + `ai` 反射。
+  - `/uploads`：静态托管 `content/uploads/` 上传文件。
 - **Web**：Next.js Dev Server（默认 3000）。
   - `next.config.ts` 配置 rewrites：
     - `/api/trpc/:path*` → `http://localhost:3010/api/trpc/:path*`
@@ -186,8 +200,8 @@ pnpm test         # 全仓库运行 Vitest
 
 - 使用 `cn()` 工具（`clsx` + `tailwind-merge`）合并 Tailwind 类名，位于 `apps/web/lib/utils.ts`。
 - 颜色变量同时存在 `--kp-*`（项目自定义莫兰迪色）与 shadcn/ui 标准 CSS variables。
-- 动画偏好：Framer Motion `type: "spring", stiffness: 180, damping: 20`。
-- 图标统一使用 `lucide-react`。
+- 动画偏好：Framer Motion `type: "spring", stiffness: 260, damping: 26`（Chat 等）；旧页面可用 180/20。
+- **图标**：统一 Lucide 或 `apps/web/lib/icons.tsx` 自绘 SVG；**禁止**用 emoji / 键盘可直接输入字符当 UI 图标。详见 `docs/development/frontend/ui-design.md`。
 
 ### Markdown ↔ SQLite 同步约定
 
@@ -204,9 +218,17 @@ pnpm test         # 全仓库运行 Vitest
    excerpt: "一句话文章简要介绍。"
    ---
    ```
-3. `pnpm db:sync` 扫描 `content/posts/**/*.md`，解析 frontmatter，以相对路径（去掉 `.md`）作为 `slug` 写入 `Post` 表；删除本地已不存在但数据库仍有的文章。
-4. `post.create` / `post.update` / `post.delete` 会同步创建/覆盖/删除 `content/posts/{slug}.md`。
+3. `pnpm db:sync` 扫描 `content/posts/`、`content/agents/` 等已注册目录，解析后 upsert 到对应表；删除本地已不存在但数据库仍有的记录。
+4. Post / Agent / Skill / MCP / Memory / Prompt 的 `create` / `update` / `delete` 会同步写回 `content/` 对应文件。
 5. 自动保存：`useAutoSave.ts` 500ms 节流写入 LocalStorage，2s 防抖调用 `post.update`（仅对已存在 id）。
+
+### 项目扁平化与代码收拢约定
+
+为了杜绝项目文件夹过深、同名文件繁多引发维护崩溃，以及防止功能重复定义，项目必须严格遵循**“单文件逻辑收拢”**原则：
+1. **后端业务层合并**：禁止创建 `services/` 子目录及零散服务文件。所有 18 个实体的 Service 业务逻辑统一写在 `apps/server/src/services.ts` 中。
+2. **后端路由层合并**：禁止创建 `trpc/routers/` 子目录及零散路由文件。所有 API 路由统一声明在 `apps/server/src/router.ts` 中。
+3. **前端 Hooks 合并**：禁止创建 `hooks/` 子目录及零散数据 hooks 文件。所有 React Query hooks 统一放在 `apps/web/lib/hooks.ts` 中。
+4. **前端通用组件合并**：禁止创建 `components/shared/` 目录及零散小组件。通用的页面基础 UI 组件（如分页、空状态、骨架屏、确认弹窗）统一放在 `apps/web/components/shared.tsx` 中。
 
 ---
 
@@ -214,21 +236,37 @@ pnpm test         # 全仓库运行 Vitest
 
 ### 测试框架
 
-- **Vitest 3.2.3**：用于 `@knowpilot/server` 与 `@knowpilot/shared`。
-- 未发现独立的 `vitest.config.*` 文件，使用各 package 的 `package.json` 默认脚本。
-- Web 端未配置测试脚本；README 中提到 Playwright，但项目中未找到 `playwright.config.ts`。`.playwright-mcp/` 目录为 Playwright MCP 运行痕迹，不是正式测试套件。
+- **Vitest 3.2.3**：`@knowpilot/server` / `@knowpilot/shared`
+- **Playwright 1.52+**：`apps/web/e2e/`，使用本机 **Chrome**（`channel: "chrome"`），无需 `playwright install chromium`
 
 ### 运行测试
 
 ```bash
-pnpm test              # 运行所有 package 的测试
+pnpm validate          # 一键验收：lint → test → build → e2e
+pnpm test              # Vitest 全 package
+pnpm test:e2e          # Playwright E2E（web 3002 + server 3010）
+pnpm test:e2e:headed   # 有界面调试
 pnpm --filter @knowpilot/server test
-pnpm --filter @knowpilot/shared test
 ```
 
 ### 现有测试
 
-- `apps/server/src/__tests__/trpc.test.ts`：测试 Workspace 的 CRUD（create → getById → list → update → delete），使用 `appRouter.createCaller(ctx)` 而非 HTTP。
+| 文件 | 覆盖 |
+|---|---|
+| `trpc.test.ts` | 18 实体 CRUD、db:sync、Agent chat |
+| `auth.test.ts` | AUTH_MODE 鉴权 |
+| `fts.test.ts` | FTS5 全局搜索索引 |
+| `nativeTools.test.ts` | 11 个 native 工具 |
+| `agentTools.test.ts` | 解析、授权、并发批次 |
+| `skillRunner.test.ts` | Skill 沙箱 |
+| `mcpClient.test.ts` | MCP 截断 |
+| `e2e/chat-thinking.spec.ts` | Chat 发消息/重试、思考时间线不重复 |
+| `e2e/admin-pages.spec.ts` | 管理页冒烟（19 路由 + /about） |
+| `e2e/blog-smoke.spec.ts` | L1 博客冒烟（/posts、/editor、/、/posts/[slug]） |
+
+Agent 工具链：`docs/development/backend/agent-tools.md`  
+Chat UX 对标：`docs/development/frontend/agent-ux-reference.md`  
+E2E 说明：`docs/development/frontend/e2e-testing.md`
 
 ### Lint
 
@@ -248,18 +286,17 @@ pnpm lint
   - `DATABASE_URL`：SQLite 路径（当前为 `file:./dev.db`）。
   - `SERVER_PORT`：后端端口（默认 3010）。
   - `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`：L2+ AI 能力使用，当前未启用。
-- 当前为单用户模式，所有 tRPC procedure 公开，无鉴权、无输入长度限制、无速率限制。若暴露到公网，必须额外增加反向代理、鉴权、限流等安全措施。
+- 当前默认 `AUTH_MODE=none` 无鉴权；远程部署可设 `AUTH_MODE=password`。若暴露到公网，必须启用鉴权并增加反向代理、限流等措施。
 - SQLite 文件 `apps/server/prisma/dev.db` 被 `.gitignore` 忽略，但 `content/posts/` 下的 Markdown 源文件受 Git 跟踪，是数据的持久化真相源。
 
 ---
 
 ## 部署相关
 
-- **当前状态**：项目明显处于本地开发阶段，尚无成熟部署流程。
-- **Docker**：`docker-compose.yml` 仅定义 PostgreSQL 容器，没有为 web/server 构建的 Dockerfile。
-- **生产构建**：根 `build` 脚本仅执行 `pnpm --filter @knowpilot/web build`。构建前应执行 `pnpm db:sync` 把 `content/posts` 同步到 `dev.db`。
-- **CI/CD**：未找到 `.github/workflows`、`.gitlab-ci.yml` 等持续集成配置。
-- **部署建议**（按当前架构）：构建前同步 Markdown 到 SQLite，将生成的 `dev.db` 与 Next.js 产物一起部署；server 作为独立服务运行时注意配置 `SERVER_PORT` 与跨域。
+- **Docker**：根目录 `Dockerfile` + `docker-compose.yml`（`docker compose up --build`）。
+- **CI**：`.github/workflows/ci.yml`（lint + Vitest + Playwright E2E）。
+- **生产构建**：根 `build` 前执行 `pnpm db:sync`；server 独立运行时配置 `SERVER_PORT` 与 CORS。
+- **备份**：`pnpm db:backup` 导出 `dev.db` 到 `backups/`。
 
 ---
 
@@ -274,9 +311,11 @@ pnpm lint
 | 让 AI 调用某个实体 | `docs/development/backend/ai-callable-api.md` |
 | 查看实体实现状态矩阵 | `docs/development/entities/entity-matrix.md` |
 | 修改前端样式/组件 | `apps/web/components/`、`apps/web/app/globals.css` |
-| 新增或修改 tRPC Router | `apps/server/src/trpc/routers/`、`packages/shared/src/schemas.ts` |
-| 新增内容同步逻辑 | `apps/server/src/scripts/sync.ts`、对应实体的 router |
+| Chat / About / UX 对标 | `docs/development/frontend/agent-ux-reference.md`、`ui-design.md` |
+| 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts`、`docs/development/backend/agent-tools.md` |
+| 新增或修改 tRPC Router | `apps/server/src/router.ts`、`packages/shared/src/schemas.ts` |
+| 新增内容同步逻辑 | `apps/server/src/scripts/sync.ts`、`apps/server/src/scripts/sync/sync-*.ts` |
 
 ---
 
-> 最后更新：2026-06-28。若你修改了构建流程、技术栈、目录结构或开发约定，请务必同步更新本文件。
+> 最后更新：2026-06-29。L1–L5 已全部落地；lint 0 error + Vitest 88 passed + Playwright 26 E2E passed + CI 全绿。

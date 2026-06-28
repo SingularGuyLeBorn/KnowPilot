@@ -1,5 +1,5 @@
 ---
-title: "万字长文带你了解ChatGLM系列"
+title: "04 · 万字长文带你了解ChatGLM系列"
 date: 2026-05-11
 tags: []
 ---

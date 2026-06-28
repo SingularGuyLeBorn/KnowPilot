@@ -1,5 +1,5 @@
 ---
-title: "DualPipe: 双向流水线并行的设计与工程实现"
+title: "05 · DualPipe: 双向流水线并行的设计与工程实现"
 ---
 
 # DualPipe: 双向流水线并行的设计与工程实现

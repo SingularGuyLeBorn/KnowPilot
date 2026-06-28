@@ -1,5 +1,5 @@
 ---
-title: "Ling 2.0 技术报告精读"
+title: "04 · Ling 2.0 技术报告精读"
 source: "Ling-2.0-Technical-Report.pdf (arXiv:2510.22115)"
 translator: "MinerU + 人工精校"
 ---

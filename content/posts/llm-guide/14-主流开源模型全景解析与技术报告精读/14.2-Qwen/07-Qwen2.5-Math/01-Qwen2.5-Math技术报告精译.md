@@ -1,5 +1,5 @@
 ---
-title: "Qwen2.5-Math 技术报告精译"
+title: "01 · Qwen2.5-Math 技术报告精译"
 ---
 
 # Qwen2.5-Math 技术报告精译

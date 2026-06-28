@@ -1,5 +1,5 @@
 ---
-title: "Kimi-K2核心架构与Agentic训练体系剖析"
+title: "05 · Kimi-K2核心架构与Agentic训练体系剖析"
 ---
 
 # Kimi K2 核心架构与 Agentic 训练体系剖析

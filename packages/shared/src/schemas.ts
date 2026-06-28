@@ -77,6 +77,88 @@ export const listAgentsSchema = z.object({
   keyword: z.string().optional(),
 });
 
+export const agentRunSchema = z.object({
+  agentId: z.string().cuid().optional(),
+  sessionId: z.string().cuid().optional(),
+  input: z.string().min(1).optional(),
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant", "system"]),
+        content: z.string(),
+      }),
+    )
+    .optional(),
+});
+
+export const chatConfigSchema = z.object({
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().min(256).max(32768).optional(),
+  systemPrompt: z.string().optional(),
+  enableReasoning: z.boolean().optional(),
+  reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
+});
+
+export const switchMessageVersionSchema = z.object({
+  messageId: z.string().cuid(),
+  versionIndex: z.number().int().min(0),
+});
+
+export const agentChatSchema = z
+  .object({
+    sessionId: z.string().cuid().optional(),
+    agentId: z.string().cuid().optional(),
+    message: z.string().min(1).optional(),
+    model: z.string().optional(),
+    config: chatConfigSchema.optional(),
+    regenerate: z.boolean().optional(),
+    regenerateUserMessageId: z.string().cuid().optional(),
+    retryFromMessageId: z.string().cuid().optional(),
+    editMessageId: z.string().cuid().optional(),
+    editContent: z.string().min(1).optional(),
+    skillId: z.string().cuid().optional(),
+  })
+  .refine(
+    (data) =>
+      data.regenerate ||
+      data.retryFromMessageId ||
+      data.editMessageId ||
+      (typeof data.message === "string" && data.message.trim().length > 0),
+    { message: "需要提供 message，或使用 regenerate / edit / retry" },
+  )
+  .refine(
+    (data) => !data.editMessageId || (typeof data.editContent === "string" && data.editContent.trim().length > 0),
+    { message: "编辑消息需要提供 editContent" },
+  );
+
+export const webSearchSchema = z.object({
+  query: z.string().min(1, "搜索词不能为空"),
+  maxResults: z.number().int().min(1).max(20).default(5),
+  provider: z.enum(["auto", "tavily", "serpapi"]).default("auto"),
+});
+
+export const gitRepoPathSchema = z.object({
+  repoId: z.string().cuid().optional(),
+  repoPath: z.string().optional(),
+});
+
+export const gitLogSchema = gitRepoPathSchema.extend({
+  limit: z.number().int().min(1).max(100).default(10),
+});
+
+export const gitDiffSchema = gitRepoPathSchema.extend({
+  staged: z.boolean().default(false),
+});
+
+export const gitCommitSchema = gitRepoPathSchema.extend({
+  message: z.string().min(1, "提交信息不能为空"),
+});
+
+export const nativeExecuteSchema = z.object({
+  name: z.string().min(1),
+  args: z.record(z.any()).default({}),
+});
+
 /* ═══════════════════════════════════════════════════════
    Skill (技能 / 工具)
    ═══════════════════════════════════════════════════════ */
@@ -88,6 +170,7 @@ export const createSkillSchema = z.object({
   icon: z.string().optional(),
   trigger: z.string().optional(),
   enabled: z.boolean().default(true),
+  metaJson: z.string().optional(),
 });
 
 export const updateSkillSchema = z.object({
@@ -98,6 +181,7 @@ export const updateSkillSchema = z.object({
   icon: z.string().optional(),
   trigger: z.string().optional(),
   enabled: z.boolean().optional(),
+  metaJson: z.string().optional(),
 });
 
 export const listSkillsSchema = z.object({
@@ -518,6 +602,59 @@ export const listCredentialsSchema = z.object({
 });
 
 /* ═══════════════════════════════════════════════════════
+   L4 审批 / 任务 / 工作流
+   ═══════════════════════════════════════════════════════ */
+
+export const deleteByIdSchema = z.object({
+  id: z.string().cuid(),
+});
+
+export const deleteByIdWithApprovalSchema = deleteByIdSchema.extend({
+  approvalId: z.string().cuid().optional(),
+});
+
+export const gitPushWithApprovalSchema = gitRepoPathSchema.extend({
+  approvalId: z.string().cuid().optional(),
+});
+
+export const runTaskSchema = z.object({
+  id: z.string().cuid(),
+});
+
+export const executeApprovalSchema = z.object({
+  id: z.string().cuid(),
+});
+
+export const approveAndExecuteApprovalSchema = executeApprovalSchema;
+
+export const workflowStepSchema = z.object({
+  action: z.string().min(1),
+  input: z.any().optional(),
+});
+
+export const runWorkflowSchema = z.object({
+  name: z.string().min(1),
+  steps: z.array(workflowStepSchema).min(1),
+});
+
+export const globalSearchSchema = z.object({
+  query: z.string().min(1, "搜索词不能为空"),
+  entities: z
+    .array(z.enum(["post", "agent", "skill", "memory", "task", "mcp", "message"]))
+    .optional(),
+  limit: z.number().int().min(1).max(50).default(20),
+});
+
+export const analyticsDashboardSchema = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+
+export const authLoginSchema = z.object({
+  password: z.string().min(1, "密码不能为空"),
+});
+
+/* ═══════════════════════════════════════════════════════
    通用类型响应包装
    ═══════════════════════════════════════════════════════ */
 
@@ -542,6 +679,21 @@ export type SearchPostsInput = z.infer<typeof searchPostsSchema>;
 export type CreateAgentInput = z.infer<typeof createAgentSchema>;
 export type UpdateAgentInput = z.infer<typeof updateAgentSchema>;
 export type ListAgentsInput = z.infer<typeof listAgentsSchema>;
+export type AgentRunInput = z.infer<typeof agentRunSchema>;
+export type SwitchMessageVersionInput = z.infer<typeof switchMessageVersionSchema>;
+export type ChatConfigInput = z.infer<typeof chatConfigSchema>;
+export type AgentChatInput = z.infer<typeof agentChatSchema>;
+export type WebSearchInput = z.infer<typeof webSearchSchema>;
+export type GitRepoPathInput = z.infer<typeof gitRepoPathSchema>;
+export type NativeExecuteInput = z.infer<typeof nativeExecuteSchema>;
+export type DeleteByIdWithApprovalInput = z.infer<typeof deleteByIdWithApprovalSchema>;
+export type GitPushWithApprovalInput = z.infer<typeof gitPushWithApprovalSchema>;
+export type RunTaskInput = z.infer<typeof runTaskSchema>;
+export type ExecuteApprovalInput = z.infer<typeof executeApprovalSchema>;
+export type RunWorkflowInput = z.infer<typeof runWorkflowSchema>;
+export type GlobalSearchInput = z.infer<typeof globalSearchSchema>;
+export type AnalyticsDashboardInput = z.infer<typeof analyticsDashboardSchema>;
+export type AuthLoginInput = z.infer<typeof authLoginSchema>;
 
 export type CreateSkillInput = z.infer<typeof createSkillSchema>;
 export type UpdateSkillInput = z.infer<typeof updateSkillSchema>;

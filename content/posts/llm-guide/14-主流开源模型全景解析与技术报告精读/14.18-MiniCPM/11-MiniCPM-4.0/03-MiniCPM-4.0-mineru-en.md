@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM4 Technical Report (English)"
+title: "03 · MiniCPM4 Technical Report (English)"
 converted_by: PyMuPDF
 ---
 

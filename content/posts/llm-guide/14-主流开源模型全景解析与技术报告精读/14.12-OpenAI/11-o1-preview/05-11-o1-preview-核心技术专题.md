@@ -1,5 +1,5 @@
 ---
-title: "o1-preview: 纯强化学习驱动的 System-2 思考引擎 - 核心技术黑盒探测"
+title: "05 · o1-preview: 纯强化学习驱动的 System-2 思考引擎 - 核心技术黑盒探测"
 ---
 # 11-o1-preview 核心技术专题：黑盒边界与逆向工程
 

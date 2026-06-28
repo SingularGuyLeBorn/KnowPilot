@@ -1,5 +1,5 @@
 ---
-title: "Qwen3.7 长程自主执行与跨框架泛化的工程实践"
+title: "05 · Qwen3.7 长程自主执行与跨框架泛化的工程实践"
 source: 01-Qwen3.7技术报告精译.md
 sync_to:
   - docs/guide/qwen/qwen37-agent-capabilities.md

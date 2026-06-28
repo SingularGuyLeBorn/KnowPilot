@@ -1,5 +1,5 @@
 ---
-title: "01-Ling-Lite 技术精译"
+title: "01 · 01-Ling-Lite 技术精译"
 ---
 # 01-Ling-Lite 技术报告纯中文精译
 

@@ -1,5 +1,5 @@
 ---
-title: "InstructGPT: RLHF 对齐人类意图的里程碑 - 技术报告反向工程"
+title: "01 · InstructGPT: RLHF 对齐人类意图的里程碑 - 技术报告反向工程"
 ---
 # InstructGPT: RLHF 对齐人类意图的里程碑 - 技术探测与反向工程
 

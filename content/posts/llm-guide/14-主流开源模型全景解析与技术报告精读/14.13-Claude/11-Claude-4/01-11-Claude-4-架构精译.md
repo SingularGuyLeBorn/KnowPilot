@@ -1,5 +1,5 @@
 ---
-title: "Claude 4: Anthropic 新一代安全与智能边界探索 - 技术报告反向工程"
+title: "01 · Claude 4: Anthropic 新一代安全与智能边界探索 - 技术报告反向工程"
 ---
 # Claude 4: Anthropic 新一代安全与智能边界探索 - 架构还原与精译
 

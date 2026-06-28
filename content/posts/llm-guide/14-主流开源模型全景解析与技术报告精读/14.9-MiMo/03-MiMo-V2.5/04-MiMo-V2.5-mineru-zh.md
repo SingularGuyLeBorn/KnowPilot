@@ -1,5 +1,5 @@
 ---
-title: "MiMo-V2.5 - 逐段精译与译者注"
+title: "04 · MiMo-V2.5 - 逐段精译与译者注"
 source: "03-MiMo-V2.5-mineru-en.md"
 status: translated
 ---

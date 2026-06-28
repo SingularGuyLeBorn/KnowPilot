@@ -1,5 +1,5 @@
 ---
-title: "GLM-130B Index"
+title: "05 · GLM-130B Index"
 date: 2026-05-24
 status: completed
 tags:

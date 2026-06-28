@@ -1,5 +1,5 @@
 ---
-title: "BERT"
+title: "01 · BERT"
 date: 2026-05-11
 tags: []
 ---

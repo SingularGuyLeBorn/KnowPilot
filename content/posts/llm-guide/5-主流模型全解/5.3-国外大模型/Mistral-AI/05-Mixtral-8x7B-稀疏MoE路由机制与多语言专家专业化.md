@@ -1,5 +1,5 @@
 ---
-title: "Mixtral 8x7B 稀疏MoE路由机制与多语言专家专业化"
+title: "05 · Mixtral 8x7B 稀疏MoE路由机制与多语言专家专业化"
 ---
 
 # Mixtral 8x7B 核心技术专题：稀疏 MoE 路由机制与多语言专家专业化

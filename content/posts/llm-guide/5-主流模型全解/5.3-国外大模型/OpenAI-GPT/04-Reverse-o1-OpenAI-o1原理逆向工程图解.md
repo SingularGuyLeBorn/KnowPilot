@@ -1,5 +1,5 @@
 ---
-title: "Reverse o1 OpenAI o1原理逆向工程图解"
+title: "04 · Reverse o1 OpenAI o1原理逆向工程图解"
 date: 2026-05-11
 tags: []
 ---

@@ -1,5 +1,5 @@
 ---
-title: "大模型进化史：从Transformer到DeepSeek-R1的AI变革之路"
+title: "5.4 · 大模型进化史：从Transformer到DeepSeek-R1的AI变革之路"
 date: 2026-05-11
 tags: []
 ---

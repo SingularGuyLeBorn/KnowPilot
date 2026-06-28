@@ -1,5 +1,5 @@
 ---
-title: "Kimi-Chat - Source Notes (EN)"
+title: "03 · Kimi-Chat - Source Notes (EN)"
 source: "Moonshot AI product launch and third-party evaluations"
 source_type: "official product announcement (no technical report PDF)"
 compiled_by: "AI Agent"

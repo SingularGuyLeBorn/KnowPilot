@@ -1,5 +1,5 @@
 ---
-title: "MiniCPM-V 4.5 Technical Report (PyMuPDF Extraction)"
+title: "03 · MiniCPM-V 4.5 Technical Report (PyMuPDF Extraction)"
 converted_by: PyMuPDF
 ---
 

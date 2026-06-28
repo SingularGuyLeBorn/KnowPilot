@@ -1,5 +1,5 @@
 ---
-title: "Qwen3 系列全景：Thinking/Non-Thinking 动态切换、Omni 融合与 OPD 后训练"
+title: "02 · Qwen3 系列全景：Thinking/Non-Thinking 动态切换、Omni 融合与 OPD 后训练"
 date: 2026-05-16
 tags: [Qwen3, 通义千问, 动态思考, Omni, 多模态, OPD, 模型解读]
 ---

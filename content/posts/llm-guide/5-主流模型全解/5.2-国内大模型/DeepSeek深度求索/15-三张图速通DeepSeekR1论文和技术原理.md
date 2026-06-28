@@ -1,5 +1,5 @@
 ---
-title: "三张图速通 DeepSeek-R1 论文和技术原理"
+title: "15 · 三张图速通 DeepSeek-R1 论文和技术原理"
 date: 2026-05-11
 tags: []
 ---

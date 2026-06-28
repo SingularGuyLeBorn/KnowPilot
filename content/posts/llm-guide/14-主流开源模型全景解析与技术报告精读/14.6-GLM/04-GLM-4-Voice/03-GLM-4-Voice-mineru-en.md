@@ -1,5 +1,5 @@
 ---
-title: "GLM-4-Voice - MinerU 原始转换(英文)"
+title: "03 · GLM-4-Voice - MinerU 原始转换(英文)"
 source_pdf: pdfs/GLM-4-Voice.pdf
 converted_by: "MinerU (hybrid_auto)"
 date: "2024-12"

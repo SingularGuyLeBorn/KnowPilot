@@ -7,8 +7,8 @@ import { ChevronRight, FileText, FolderClosed, FolderOpen, Search, X } from "luc
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { VirtualFlatList } from "@/components/shared";
 
 interface PostSummary {
   id: string;
@@ -30,6 +30,9 @@ interface TreeItem {
   children: Record<string, TreeItem>;
 }
 
+const EXPANDED_KEY = "kp-tree-expanded";
+const SCROLL_KEY = "kp-tree-scroll-top";
+
 function buildTree(posts: PostSummary[]): TreeNode[] {
   const root: Record<string, TreeItem> = {};
 
@@ -41,7 +44,6 @@ function buildTree(posts: PostSummary[]): TreeNode[] {
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
 
-      // 如果文件与父文件夹同名（或 index.md），把文章挂在父节点上，避免重复子节点
       if (
         i === parts.length - 1 &&
         parentItem &&
@@ -137,18 +139,55 @@ function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
   }, []);
 }
 
-const STORAGE_KEY = "kp-tree-expanded";
+interface FlatDocRow {
+  key: string;
+  slug: string;
+  title: string;
+  depth: number;
+}
+
+function flattenDocNodes(nodes: TreeNode[], depth = 0): FlatDocRow[] {
+  const rows: FlatDocRow[] = [];
+  for (const node of nodes) {
+    if (node.slug) {
+      rows.push({ key: node.key, slug: node.slug, title: node.title, depth });
+    }
+    if (node.children.length) {
+      rows.push(...flattenDocNodes(node.children, depth + 1));
+    }
+  }
+  return rows;
+}
+
+function readScrollTop(): number {
+  try {
+    const raw = sessionStorage.getItem(SCROLL_KEY);
+    return raw ? Number(raw) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveScrollTop(top: number) {
+  try {
+    sessionStorage.setItem(SCROLL_KEY, String(top));
+  } catch {
+    // ignore
+  }
+}
 
 function TreeNodeItem({
   node,
   expanded,
   activeSlug,
   onToggle,
+  onNavigate,
 }: {
   node: TreeNode;
   expanded: Set<string>;
   activeSlug: string | null;
   onToggle: (key: string, open: boolean) => void;
+  onNavigate: () => void;
 }) {
   const isExpanded = expanded.has(node.key);
   const isActive = node.slug === activeSlug;
@@ -156,20 +195,20 @@ function TreeNodeItem({
   const isDoc = node.type === "doc";
 
   const rowClass = cn(
-    "group flex w-full items-center gap-1 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+    "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition",
     isActive
-      ? "bg-primary/10 text-primary"
-      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+      : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
   );
 
   const iconNode = hasChildren ? (
     isExpanded ? (
-      <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+      <FolderOpen className="h-4 w-4 shrink-0 text-[var(--kp-brand)]" />
     ) : (
-      <FolderClosed className="h-3.5 w-3.5 shrink-0" />
+      <FolderClosed className="h-4 w-4 shrink-0 text-[var(--kp-brand-light)]" />
     )
   ) : (
-    <FileText className="h-3.5 w-3.5 shrink-0" />
+    <FileText className="h-4 w-4 shrink-0 text-[var(--kp-text-3)]" />
   );
 
   return (
@@ -180,28 +219,29 @@ function TreeNodeItem({
             type="button"
             onClick={() => onToggle(node.key, !isExpanded)}
             className={cn(
-              "flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-              isExpanded && "text-foreground"
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--kp-text-3)] transition-colors hover:bg-[var(--kp-bg-soft)] hover:text-[var(--kp-text-1)]",
+              isExpanded && "text-[var(--kp-text-1)]"
             )}
             aria-label={isExpanded ? "折叠" : "展开"}
           >
             <ChevronRight
-              className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")}
+              className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-90")}
             />
           </button>
         ) : (
-          <span className="h-5 w-5 shrink-0" />
+          <span className="h-6 w-6 shrink-0" />
         )}
 
         {isDoc && node.slug ? (
           <Link
             href={`/posts/${encodeURIComponent(node.slug)}`}
             scroll={false}
+            onClick={onNavigate}
             className={rowClass}
             title={node.title}
           >
             {iconNode}
-            <span className="line-clamp-1">{node.title}</span>
+            <span className="line-clamp-2 leading-snug">{node.title}</span>
           </Link>
         ) : (
           <button
@@ -211,15 +251,15 @@ function TreeNodeItem({
             title={node.title}
           >
             {iconNode}
-            <span className="line-clamp-1">{node.title}</span>
+            <span className="line-clamp-2 leading-snug">{node.title}</span>
           </button>
         )}
       </div>
 
       {hasChildren && (
         <Collapsible open={isExpanded} onOpenChange={(open) => onToggle(node.key, open)}>
-          <CollapsibleContent>
-            <div className="ml-3 border-l border-border pl-2">
+          <CollapsibleContent className="data-open:animate-none data-closed:animate-none">
+            <div className="ml-3 border-l border-[var(--kp-divider)] pl-2">
               {node.children.map((child) => (
                 <TreeNodeItem
                   key={child.key}
@@ -227,6 +267,7 @@ function TreeNodeItem({
                   expanded={expanded}
                   activeSlug={activeSlug}
                   onToggle={onToggle}
+                  onNavigate={onNavigate}
                 />
               ))}
             </div>
@@ -244,7 +285,7 @@ export function PostTreeNav({ className }: { className?: string }) {
   const tree = useMemo(() => buildTree(data || []), [data]);
   const [manuallyExpanded, setManuallyExpanded] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(EXPANDED_KEY);
       return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch {
       return new Set();
@@ -252,27 +293,10 @@ export function PostTreeNav({ className }: { className?: string }) {
   });
   const [query, setQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollTopRef = useRef(0);
-  const prevPathnameRef = useRef(pathname);
 
-  // 路由切换后保持左侧文档树滚动位置，避免点击文章后侧边栏自动滚回顶部
-  useLayoutEffect(() => {
-    if (prevPathnameRef.current === pathname) return;
-    prevPathnameRef.current = pathname;
-    const el = scrollRef.current;
-    if (!el) return;
-    const restore = () => {
-      el.scrollTop = scrollTopRef.current;
-    };
-    restore();
-    requestAnimationFrame(restore);
-    const id = setTimeout(restore, 50);
-    return () => clearTimeout(id);
-  });
-
-  const persist = useCallback((next: Set<string>) => {
+  const persistExpanded = useCallback((next: Set<string>) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(next)));
+      localStorage.setItem(EXPANDED_KEY, JSON.stringify(Array.from(next)));
     } catch {
       // ignore
     }
@@ -284,17 +308,24 @@ export function PostTreeNav({ className }: { className?: string }) {
         const next = new Set(prev);
         if (open) next.add(key);
         else next.delete(key);
-        persist(next);
+        persistExpanded(next);
         return next;
       });
     },
-    [persist]
+    [persistExpanded]
   );
 
   const visibleTree = useMemo(() => {
     if (!query.trim()) return tree;
     return filterTree(tree, query);
   }, [tree, query]);
+
+  const flatSearchResults = useMemo(() => {
+    if (!query.trim()) return [];
+    return flattenDocNodes(visibleTree);
+  }, [visibleTree, query]);
+
+  const isSearchMode = query.trim().length > 0;
 
   const expanded = useMemo(() => {
     const next = new Set(manuallyExpanded);
@@ -310,67 +341,112 @@ export function PostTreeNav({ className }: { className?: string }) {
     return next;
   }, [manuallyExpanded, activeSlug, tree, query, visibleTree]);
 
+  const restoreScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = readScrollTop();
+  }, []);
+
+  useLayoutEffect(() => {
+    restoreScroll();
+  }, [restoreScroll]);
+
   const handleScroll = useCallback(() => {
     if (scrollRef.current) {
-      scrollTopRef.current = scrollRef.current.scrollTop;
+      saveScrollTop(scrollRef.current.scrollTop);
+    }
+  }, []);
+
+  const handleNavigate = useCallback(() => {
+    if (scrollRef.current) {
+      saveScrollTop(scrollRef.current.scrollTop);
     }
   }, []);
 
   if (isLoading) {
     return (
-      <div className={cn("space-y-2 px-2", className)}>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-5 w-full rounded bg-muted" />
-        ))}
+      <div className={cn("flex flex-1 items-center justify-center p-4", className)}>
+        <p className="text-sm text-[var(--kp-text-3)]">加载目录…</p>
       </div>
     );
   }
 
   return (
-    <div
-      className={cn("flex h-full min-h-0 flex-col gap-2", className)}
-    >
-      <h3 className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        知识库
-      </h3>
-      <div className="relative px-2">
-        <Search className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索文档"
-          className="h-8 pl-8 pr-7 text-xs"
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="kp-tree-scroll flex-1 min-h-0 overflow-y-auto pr-1"
-      >
-        <nav className="flex flex-col pb-2">
-          {visibleTree.map((node) => (
-            <TreeNodeItem
-              key={node.key}
-              node={node}
-              expanded={expanded}
-              activeSlug={activeSlug}
-              onToggle={toggle}
-            />
-          ))}
-          {visibleTree.length === 0 && (
-            <p className="px-2 py-3 text-xs text-muted-foreground">无匹配文档</p>
+    <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
+      <div className="shrink-0 px-3 pb-2 pt-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="筛选文章…"
+            className="h-9 border-[var(--kp-divider)] bg-[var(--kp-bg)] pl-9 pr-8 text-sm"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+              aria-label="清除筛选"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           )}
-        </nav>
+        </div>
       </div>
+
+      {isSearchMode ? (
+        <VirtualFlatList
+          className="px-2 pb-3 [overflow-anchor:none]"
+          items={flatSearchResults}
+          rowHeight={40}
+          getKey={(item) => item.key}
+          emptyMessage="没有匹配的文章"
+          renderItem={(item) => {
+            const isActive = item.slug === activeSlug;
+            return (
+              <Link
+                href={`/posts/${encodeURIComponent(item.slug)}`}
+                scroll={false}
+                onClick={handleNavigate}
+                className={cn(
+                  "flex h-full items-center gap-2 rounded-lg px-2.5 text-sm font-medium transition",
+                  isActive
+                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                    : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+                )}
+                style={{ paddingLeft: `${10 + item.depth * 12}px` }}
+                title={item.title}
+              >
+                <FileText className="h-4 w-4 shrink-0 text-[var(--kp-text-3)]" />
+                <span className="truncate">{item.title}</span>
+              </Link>
+            );
+          }}
+        />
+      ) : (
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3 [overflow-anchor:none]"
+        >
+          <nav className="flex flex-col gap-0.5">
+            {visibleTree.map((node) => (
+              <TreeNodeItem
+                key={node.key}
+                node={node}
+                expanded={expanded}
+                activeSlug={activeSlug}
+                onToggle={toggle}
+                onNavigate={handleNavigate}
+              />
+            ))}
+            {visibleTree.length === 0 && (
+              <p className="px-2 py-4 text-sm text-[var(--kp-text-3)]">暂无本地文章</p>
+            )}
+          </nav>
+        </div>
+      )}
     </div>
   );
 }

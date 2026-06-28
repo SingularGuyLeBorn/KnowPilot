@@ -1,5 +1,5 @@
 ---
-title: "DeepSeek-R1 多阶段对齐剖析"
+title: "03 · DeepSeek-R1 多阶段对齐剖析"
 ---
 
 # DeepSeek-R1 多阶段对齐剖析

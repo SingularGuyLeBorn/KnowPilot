@@ -1,5 +1,5 @@
 ---
-title: "最新「大模型简史」整理！从Transformer(2017)到DeepSeek-R1"
+title: "5.4 · 最新「大模型简史」整理！从Transformer(2017)到DeepSeek-R1"
 date: 2026-05-11
 tags: []
 ---

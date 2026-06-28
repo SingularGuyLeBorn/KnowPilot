@@ -1,5 +1,5 @@
 ---
-title: "Kimi K2.5 技术报告阅读笔记"
+title: "01 · Kimi K2.5 技术报告阅读笔记"
 date: 2026-05-16
 tags: [Kimi, K2.5, 多模态, MoE, Muon, Agent Swarm, MoonViT]
 ---

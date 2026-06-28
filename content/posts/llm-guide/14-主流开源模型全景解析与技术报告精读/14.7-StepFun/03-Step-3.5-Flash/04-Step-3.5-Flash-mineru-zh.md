@@ -1,5 +1,5 @@
 ---
-title: "Step-3.5-Flash 技术报告逐段翻译"
+title: "04 · Step-3.5-Flash 技术报告逐段翻译"
 source: 03-Step-3.5-Flash-mineru-en.md
 translated_by: "AI Agent"
 date: 2026-05-23

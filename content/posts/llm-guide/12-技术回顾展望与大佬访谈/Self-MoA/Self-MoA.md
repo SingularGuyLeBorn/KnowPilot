@@ -1,5 +1,5 @@
 ---
-title: "Self MoA"
+title: "12 · Self MoA"
 date: 2026-05-11
 tags: []
 ---

@@ -1,5 +1,5 @@
 ---
-title: "Claude 3.7 Sonnet：混合推理架构与可控思考预算——Anthropic推理时代的开山之作"
+title: "05 · Claude 3.7 Sonnet：混合推理架构与可控思考预算——Anthropic推理时代的开山之作"
 ---
 
 # Claude 3.7 Sonnet：混合推理架构与可控思考预算

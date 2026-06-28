@@ -1,5 +1,5 @@
 ﻿---
-title: "DeepSeek-V3 - 逐段精译与译者注"
+title: "04 · DeepSeek-V3 - 逐段精译与译者注"
 source: 03-DeepSeek-V3-mineru-en.md
 translated_by: "AI Agent"
 date: 2024-12
