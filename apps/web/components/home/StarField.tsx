@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const STAR_COUNT = 1400;
+
+import { Canvas, useFrame } from "@react-three/fiber";
+import * as THREE from "three";
+
 function createStarTexture() {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
@@ -17,13 +22,24 @@ function createStarTexture() {
   ctx.fillRect(0, 0, 32, 32);
   return new THREE.CanvasTexture(canvas);
 }
-import { Canvas, useFrame } from "@react-three/fiber";
-import * as THREE from "three";
+
+function generatePositions(count: number) {
+  const arr = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const radius = 4 + Math.random() * 12;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    arr[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+    arr[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+    arr[i * 3 + 2] = radius * Math.cos(phi);
+  }
+  return arr;
+}
 
 function Stars() {
   const ref = useRef<THREE.Points>(null);
   const [color, setColor] = useState("rgba(168, 144, 128)");
-  const texture = useMemo(createStarTexture, []);
+  const texture = useMemo(() => createStarTexture(), []);
 
   useEffect(() => {
     const update = () => {
@@ -39,19 +55,7 @@ function Stars() {
     return () => observer.disconnect();
   }, []);
 
-  const positions = useMemo(() => {
-    const count = 1400;
-    const arr = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      const radius = 4 + Math.random() * 12;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      arr[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      arr[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-      arr[i * 3 + 2] = radius * Math.cos(phi);
-    }
-    return arr;
-  }, []);
+  const [positions] = useState(() => generatePositions(STAR_COUNT));
 
   useFrame((_, delta) => {
     if (ref.current) {

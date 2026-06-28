@@ -2,7 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
 @plugin "@tailwindcss/typography";
 
 :root {
@@ -145,87 +144,7 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --kp-bg: #1a1a1a;
-    --kp-bg-alt: #242424;
-    --kp-bg-soft: #2d2d2d;
-    --kp-bg-mute: #363636;
-
-    --kp-text: #e0ddd8;
-    --kp-text-1: #e0ddd8;
-    --kp-text-2: #b0aba4;
-    --kp-text-3: #8a8580;
-
-    --kp-brand: #c9b8b3;
-    --kp-brand-1: #c9b8b3;
-    --kp-brand-light: #d8ccc8;
-    --kp-brand-dark: #b8a090;
-    --kp-brand-soft: rgba(201, 184, 179, 0.15);
-
-    --kp-divider: rgba(255, 255, 255, 0.08);
-    --kp-divider-light: rgba(255, 255, 255, 0.04);
-
-    --kp-glass-bg: rgba(30, 30, 35, 0.72);
-    --kp-glass-border: rgba(255, 255, 255, 0.1);
-  }
-}
-
-.dark {
-  --kp-bg: #1a1a1a;
-  --kp-bg-alt: #242424;
-  --kp-bg-soft: #2d2d2d;
-  --kp-bg-mute: #363636;
-
-  --kp-text: #e0ddd8;
-  --kp-text-1: #e0ddd8;
-  --kp-text-2: #b0aba4;
-  --kp-text-3: #8a8580;
-
-  --kp-brand: #c9b8b3;
-  --kp-brand-1: #c9b8b3;
-  --kp-brand-light: #d8ccc8;
-  --kp-brand-dark: #b8a090;
-  --kp-brand-soft: rgba(201, 184, 179, 0.15);
-
-  --kp-divider: rgba(255, 255, 255, 0.08);
-  --kp-divider-light: rgba(255, 255, 255, 0.04);
-
-  --kp-glass-bg: rgba(30, 30, 35, 0.72);
-  --kp-glass-border: rgba(255, 255, 255, 0.1);
-
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
+/* 强制亮色主题，暂不提供暗色模式 */
 
 body {
   background: var(--kp-bg);
@@ -334,12 +253,13 @@ html {
 }
 
 .prose code {
-  background: var(--kp-bg-mute);
+  background: var(--kp-bg-soft);
   color: var(--kp-brand-dark);
-  padding: 0.15rem 0.35rem;
+  padding: 0.15rem 0.4rem;
   border-radius: 0.375rem;
+  border: 1px solid var(--kp-divider-light);
   font-size: 0.875em;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .prose code::before,
@@ -378,18 +298,21 @@ html {
 
 /* KaTeX 公式 */
 .katex {
-  color: inherit;
+  color: var(--kp-text-1);
   font-size: 1.05em;
+  font-weight: 500;
+}
+
+/* 行内公式更醒目 */
+.katex-inline .katex {
+  color: var(--kp-text-1);
 }
 
 .katex-display {
   margin: 1.5rem 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 1rem;
-  border-radius: 0.75rem;
-  background: var(--kp-bg-alt);
-  border: 1px solid var(--kp-divider);
+  padding: 0.5rem 0;
 }
 
 .katex-display .katex {
@@ -570,6 +493,42 @@ html {
 
 .kp-toc-level-4 {
   padding-left: 2rem;
+}
+
+/* 页内搜索高亮 — 莫兰迪暖杏色，与主题融合 */
+mark.kp-page-search-mark {
+  background: var(--kp-brand-soft);
+  color: var(--kp-brand-dark);
+  border-radius: 0.125rem;
+  padding: 0 0.1rem;
+}
+
+mark.kp-page-search-mark.kp-page-search-current {
+  background: rgba(184, 160, 144, 0.32);
+  box-shadow: 0 0 0 2px rgba(184, 160, 144, 0.35);
+}
+
+/* 文档树滚动区域 */
+.kp-tree-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--kp-bg-mute) transparent;
+}
+
+.kp-tree-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.kp-tree-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kp-tree-scroll::-webkit-scrollbar-thumb {
+  background: var(--kp-bg-mute);
+  border-radius: 3px;
+}
+
+.kp-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--kp-brand-light);
 }
 
 /* 文档树导航 */

@@ -9,7 +9,7 @@ import { FinalCta } from "@/components/home/FinalCta";
 import { trpc } from "@/lib/trpc";
 
 export default function HomePage() {
-  const { data: recentPosts, isLoading } = trpc.post.list.useQuery({
+  const { data: recentPosts } = trpc.post.list.useQuery({
     published: true,
     pageSize: 100,
   });

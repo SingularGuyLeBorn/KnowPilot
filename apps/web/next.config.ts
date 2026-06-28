@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
         source: "/api/trpc/:path*",
         destination: "http://localhost:3010/api/trpc/:path*",
       },
+      {
+        source: "/api/posts/assets/:path*",
+        destination: "http://localhost:3010/api/posts/assets/:path*",
+      },
+      {
+        source: "/uploads/:path*",
+        destination: "http://localhost:3010/uploads/:path*",
+      },
     ];
   },
   images: {

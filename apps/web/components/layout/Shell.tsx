@@ -14,7 +14,7 @@ export function Shell({ children, className }: ShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <Navbar onMenuClick={() => setMobileMenuOpen((v) => !v)} />
 
       <div className="flex flex-1 overflow-hidden">

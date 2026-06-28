@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { PenLine, MessageSquare, Bot, Search, Menu } from "lucide-react";
+import { PenLine, MessageSquare, Bot, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CommandPalette } from "./CommandPalette";
 
 interface NavbarProps {
   onMenuClick?: () => void;
@@ -51,16 +52,7 @@ export function Navbar({ onMenuClick, className }: NavbarProps) {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link
-            href="/search"
-            className="flex items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-3 py-1.5 text-sm text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)]"
-          >
-            <Search className="h-4 w-4" />
-            <span className="hidden sm:inline">搜索...</span>
-            <kbd className="hidden rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-xs text-[var(--kp-text-3)] sm:inline">
-              ⌘K
-            </kbd>
-          </Link>
+          <CommandPalette />
         </div>
       </div>
     </header>
