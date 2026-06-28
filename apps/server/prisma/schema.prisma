@@ -20,6 +20,7 @@ model Post {
   tags       String   @default("") /// 标签 (逗号分隔字符串)
   viewCount  Int      @default(0)
   metadata   Json?             /// 扩展字段
+  sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -36,11 +37,13 @@ model Agent {
   model        String   @default("deepseek-chat")
   systemPrompt String   @default("")
   tools        String   @default("") /// 逗号分隔的工具名称列表
+  sourceSlug   String?  @unique /// 本地源文件 slug（用于增量同步与清理）
+  sourceMtime  DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
 
-/// 技能 (Custom Tools)
+/// 技能 (Skill)
 model Skill {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -49,6 +52,8 @@ model Skill {
   icon        String?
   trigger     String?  /// 触发规则 (关键字或正则)
   enabled     Boolean  @default(true)
+  sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
+  sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -106,9 +111,11 @@ model McpServer {
   command   String
   args      Json?    /// 参数 String[]
   env       Json?    /// 环境变量 Record<string, string>
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  enabled     Boolean  @default(true)
+  sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
+  sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 /// 长期记忆
@@ -117,9 +124,11 @@ model Memory {
   content   String
   type      String   @default("episodic") /// "episodic" | "semantic"
   strength  Float    @default(1.0)
-  keywords  String   @default("") /// 逗号分隔的关键字
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  keywords    String   @default("") /// 逗号分隔的关键字
+  sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
+  sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 /// Git 仓库管理
@@ -177,4 +186,60 @@ model Approval {
   status    String   @default("pending") /// "pending" | "approved" | "rejected"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// 工具注册表 (Tool)
+model Tool {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  type             String   /// "skill" | "mcp" | "native"
+  targetId         String?  /// skillId 或 mcpServerId（native 可为空）
+  description      String?
+  parametersSchema String?  /// JSON Schema 字符串，描述参数
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// Agent 执行记录 (Run)
+model Run {
+  id         String   @id @default(cuid())
+  agentId    String?
+  sessionId  String?
+  status     String   /// "pending" | "running" | "success" | "failed" | "cancelled"
+  input      Json?
+  output     Json?
+  toolCalls  Json?
+  tokenUsage Json?
+  error      Json?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/// 提示词模板 (Prompt)
+model Prompt {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  version     String   @default("1.0.0")
+  description String?
+  variables   String   @default("") /// 逗号分隔
+  tags        String   @default("") /// 逗号分隔
+  content     String
+  sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
+  sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// 凭据 (Credential)
+model Credential {
+  id         String    @id @default(cuid())
+  name       String    @unique
+  type       String    /// "api_key" | "token" | "password"
+  value      String    /// 当前先明文，L5 加密
+  scope      String    @default("") /// 逗号分隔，如 "llm,mcp"
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
