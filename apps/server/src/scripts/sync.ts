@@ -1,128 +1,166 @@
 /**
- * Markdown ↔ SQLite 同步编译脚本
+ * Markdown / YAML ↔ SQLite 同步编译脚本
  *
- * 扫描 content/posts/ 目录下的所有 .md 文件，
- * 解析其 Frontmatter 和正文，同步写入 SQLite 数据库中。
+ * 扫描 content/ 目录下各实体的源文件，解析后同步写入 SQLite 数据库。
+ * 本地 Markdown/YAML 文件是数据的唯一事实源。
+ *
+ * 支持两种模式：
+ * 1. 一次性全量/增量同步（默认）
+ * 2. --watch 监听模式：先做一遍增量同步，然后监听文件变更实时同步
  */
 
 import fs from "fs";
 import path from "path";
-import matter from "gray-matter";
+import chokidar from "chokidar";
 import { PrismaClient } from "@prisma/client";
+import { Syncer } from "./sync/types.js";
+import { getContentDir } from "./sync/utils.js";
+import { postSyncer } from "./sync/sync-posts.js";
+import { agentSyncer } from "./sync/sync-agents.js";
+import { skillSyncer } from "./sync/sync-skills.js";
+import { mcpServerSyncer } from "./sync/sync-mcp-servers.js";
+import { memorySyncer } from "./sync/sync-memories.js";
+import { promptSyncer } from "./sync/sync-prompts.js";
 
 const prisma = new PrismaClient();
 
-// 定位 content/posts 目录 (自适应执行路径)
-let postsDir = path.resolve(process.cwd(), "content/posts");
-if (!fs.existsSync(postsDir)) {
-  postsDir = path.resolve(process.cwd(), "../../content/posts");
+// 所有已注册的实体同步器（L2 已接入 Agent/Skill/MCP/Memory/Prompt；L3-L4 逐步扩展）
+const syncers: Syncer<unknown>[] = [
+  postSyncer,
+  agentSyncer,
+  skillSyncer,
+  mcpServerSyncer,
+  memorySyncer,
+  promptSyncer,
+];
+
+interface SyncResult {
+  entityName: string;
+  scanned: number;
+  upserted: number;
+  cleaned: number;
 }
 
-/** 递归获取所有 .md 文件路径 */
-function getMarkdownFilesRecursive(dir: string): string[] {
-  let results: string[] = [];
-  const list = fs.readdirSync(dir);
-  list.forEach((file) => {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-    if (stat && stat.isDirectory()) {
-      // 忽略 images 或 资源目录
-      if (file !== "images" && file !== "public") {
-        results = results.concat(getMarkdownFilesRecursive(filePath));
+/**
+ * 判断文件是否需要同步：
+ * - 数据库无记录 → 需要
+ * - 本地 mtime 晚于数据库 sourceMtime → 需要
+ */
+function needsSync(recordMtime: Date, existingMtime?: Date): boolean {
+  if (!existingMtime) return true;
+  return recordMtime.getTime() > existingMtime.getTime();
+}
+
+/** 同步单个实体（增量），返回统计 */
+async function syncEntity<T>(syncer: Syncer<T>): Promise<SyncResult> {
+  const contentDir = getContentDir(syncer.contentDirName);
+  const result: SyncResult = { entityName: syncer.entityName, scanned: 0, upserted: 0, cleaned: 0 };
+
+  if (!fs.existsSync(contentDir)) {
+    console.log(`  ⚠️ 目录不存在，跳过: ${contentDir}`);
+    return result;
+  }
+
+  try {
+    const existingMtimes = await syncer.getExistingMtimes(prisma);
+    const records = await syncer.scan(prisma, contentDir);
+    result.scanned = records.length;
+
+    for (const record of records) {
+      try {
+        const dbMtime = existingMtimes.get(record.slug);
+        if (needsSync(record.mtime, dbMtime)) {
+          await syncer.upsert(prisma, record);
+          result.upserted++;
+        }
+      } catch (e: any) {
+        console.error(`  ❌ [${syncer.entityName} 同步失败] ${record.slug}:`, e.message);
       }
-    } else if (file.endsWith(".md")) {
-      results.push(filePath);
     }
-  });
+
+    const activeSlugs = records.map((r) => r.slug);
+    result.cleaned = await syncer.cleanup(prisma, activeSlugs);
+  } catch (e: any) {
+    console.error(`  ❌ [${syncer.entityName}] 同步过程失败:`, e.message);
+  }
+
+  return result;
+}
+
+/** 一次性同步所有实体 */
+async function runSync(): Promise<SyncResult[]> {
+  console.log(`\n🔄 开始同步本地内容文件至数据库...`);
+
+  const results: SyncResult[] = [];
+  for (const syncer of syncers) {
+    console.log(`\n📂 [${syncer.entityName}] 源目录: ${getContentDir(syncer.contentDirName)}`);
+    const result = await syncEntity(syncer);
+    results.push(result);
+    console.log(`  📊 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+  }
+
+  console.log(`\n🎉 内容同步完成！\n`);
   return results;
 }
 
-async function syncPosts() {
-  console.log(`\n🔄 开始同步 Markdown 文章至数据库...`);
-  console.log(`📂 文章源目录: ${postsDir}`);
+/** 监听模式：增量同步后持续监听变更 */
+async function runWatch(): Promise<void> {
+  await runSync();
 
-  if (!fs.existsSync(postsDir)) {
-    console.error(`❌ 错误: 找不到文章目录 "${postsDir}"`);
-    process.exit(1);
-  }
+  console.log(`\n👀 进入监听模式，实时同步 content/ 目录变更...\n`);
 
-  // 1. 递归获取所有 .md 文件路径
-  const filePaths = getMarkdownFilesRecursive(postsDir);
-  console.log(`📝 检测到 ${filePaths.length} 篇本地文章（含子目录）。`);
+  const debounceMap = new Map<string, ReturnType<typeof setTimeout>>();
 
-  const activeSlugs: string[] = [];
+  for (const syncer of syncers) {
+    const contentDir = getContentDir(syncer.contentDirName);
+    if (!fs.existsSync(contentDir)) continue;
 
-  // 2. 循环处理每篇文章
-  for (const filePath of filePaths) {
-    // 生成基于相对路径的唯一 slug (使用正斜杠 /，且去掉 .md 后缀)
-    const relativePath = path.relative(postsDir, filePath);
-    const slug = relativePath.replace(/\\/g, "/").replace(/\.md$/, "");
-    activeSlugs.push(slug);
+    const watcher = chokidar.watch(contentDir, {
+      ignored: /(^|[/\\])\../,
+      persistent: true,
+      ignoreInitial: true,
+    });
 
-    const fileContent = fs.readFileSync(filePath, "utf-8");
-    const fileName = path.basename(filePath);
+    const triggerSync = (eventPath: string, eventType: string) => {
+      const ext = path.extname(eventPath).toLowerCase();
+      if (!syncer.extensions.includes(ext)) return;
 
-    try {
-      // 解析 YAML Frontmatter 和正文
-      const { data, content } = matter(fileContent);
+      console.log(`  🔔 [${syncer.entityName}] 检测到${eventType}: ${path.relative(contentDir, eventPath)}`);
 
-      const title = data.title || slug;
-      const category = data.category || null;
-      const excerpt = data.excerpt || null;
-      const published = typeof data.published === "boolean" ? data.published : true;
-      
-      // 处理标签 (数组转逗号分隔字符串)
-      let tags = "";
-      if (Array.isArray(data.tags)) {
-        tags = data.tags.filter(Boolean).map((t: string) => t.trim()).join(",");
-      } else if (typeof data.tags === "string") {
-        tags = data.tags;
+      if (debounceMap.has(syncer.entityName)) {
+        clearTimeout(debounceMap.get(syncer.entityName));
       }
 
-      // Upsert 到数据库
-      await prisma.post.upsert({
-        where: { slug },
-        update: {
-          title,
-          content,
-          excerpt,
-          published,
-          category,
-          tags,
-        },
-        create: {
-          slug,
-          title,
-          content,
-          excerpt,
-          published,
-          category,
-          tags,
-        },
-      });
+      debounceMap.set(
+        syncer.entityName,
+        setTimeout(async () => {
+          const result = await syncEntity(syncer);
+          console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+        }, 300)
+      );
+    };
 
-      console.log(`  ✅ [已同步] ${title} \n     slug: "${slug}" (${fileName}) -> 数据库`);
-    } catch (e: any) {
-      console.error(`  ❌ [解析失败] 文件 ${fileName}:`, e.message);
-    }
+    watcher
+      .on("add", (filePath) => triggerSync(filePath, "新增"))
+      .on("change", (filePath) => triggerSync(filePath, "变更"))
+      .on("unlink", (filePath) => triggerSync(filePath, "删除"))
+      .on("error", (error) => console.error(`  ❌ [${syncer.entityName}] 监听错误:`, error));
   }
-
-  // 3. 清理已删除的本地文件对应的数据库记录 (保持 Git 作为唯一事实源)
-  const allPostsInDb = await prisma.post.findMany({ select: { slug: true, title: true } });
-  
-  for (const dbPost of allPostsInDb) {
-    if (!activeSlugs.includes(dbPost.slug)) {
-      await prisma.post.delete({ where: { slug: dbPost.slug } });
-      console.log(`  🗑️ [已清理] 数据库文章 "${dbPost.title}" (本地文件已被删除)`);
-    }
-  }
-
-  console.log(`🎉 文章同步完成！\n`);
 }
 
-syncPosts()
-  .catch((e) => {
-    console.error("❌ 同步脚本执行失败:", e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+const isWatchMode = process.argv.includes("--watch");
+
+if (isWatchMode) {
+  runWatch()
+    .catch((e) => {
+      console.error("❌ 监听模式执行失败:", e);
+      process.exit(1);
+    });
+} else {
+  runSync()
+    .catch((e) => {
+      console.error("❌ 同步脚本执行失败:", e);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}

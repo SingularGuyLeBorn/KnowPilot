@@ -17,22 +17,26 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:sync": "tsx src/scripts/sync.ts"
+    "db:sync": "tsx src/scripts/sync.ts",
+    "db:sync:watch": "tsx src/scripts/sync.ts --watch"
   },
   "dependencies": {
     "@knowpilot/shared": "workspace:*",
     "@prisma/client": "6.9.0",
     "@trpc/server": "11.1.0",
+    "chokidar": "^5.0.0",
     "cors": "2.8.5",
     "dotenv": "16.5.0",
     "express": "5.1.0",
     "gray-matter": "4.0.3",
+    "js-yaml": "^5.2.0",
     "superjson": "2.2.2",
     "zod": "3.25.56"
   },
   "devDependencies": {
     "@types/cors": "2.8.18",
     "@types/express": "5.0.2",
+    "@types/js-yaml": "^4.0.9",
     "prisma": "6.9.0",
     "tsx": "4.21.0",
     "typescript": "5.8.3",
