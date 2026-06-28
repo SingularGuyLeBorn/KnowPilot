@@ -172,6 +172,13 @@ export const createFileSchema = z.object({
   url: z.string(),
 });
 
+export const uploadFileSchema = z.object({
+  name: z.string().min(1),
+  mimeType: z.string(),
+  size: z.number().int().positive(),
+  data: z.string().min(1), // base64 encoded file content
+});
+
 export const updateFileSchema = z.object({
   id: z.string().cuid(),
   name: z.string().min(1).optional(),
@@ -192,6 +199,12 @@ export const createLogSchema = z.object({
   component: z.string(),
   event: z.string(),
   message: z.string(),
+  metadata: z.any().optional(),
+});
+
+export const updateLogSchema = z.object({
+  id: z.string().cuid(),
+  message: z.string().min(1).optional(),
   metadata: z.any().optional(),
 });
 
@@ -288,6 +301,7 @@ export const createTaskSchema = z.object({
   type: z.enum(["cron", "oneshot"]),
   status: z.enum(["pending", "running", "success", "failed"]).default("pending"),
   input: z.any().optional(),
+  output: z.any().optional(),
   cronExpression: z.string().optional(),
 });
 
@@ -380,6 +394,130 @@ export const listApprovalsSchema = z.object({
 });
 
 /* ═══════════════════════════════════════════════════════
+   Tool (工具注册表)
+   ═══════════════════════════════════════════════════════ */
+
+export const createToolSchema = z.object({
+  name: z.string().min(1, "名称不能为空").max(100),
+  type: z.enum(["skill", "mcp", "native"]),
+  targetId: z.string().optional(),
+  description: z.string().optional(),
+  parametersSchema: z.string().optional(),
+  enabled: z.boolean().default(true),
+});
+
+export const updateToolSchema = z.object({
+  id: z.string().cuid(),
+  name: z.string().min(1).max(100).optional(),
+  type: z.enum(["skill", "mcp", "native"]).optional(),
+  targetId: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  parametersSchema: z.string().optional().nullable(),
+  enabled: z.boolean().optional(),
+});
+
+export const listToolsSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+  type: z.string().optional(),
+  keyword: z.string().optional(),
+  enabled: z.boolean().optional(),
+});
+
+/* ═══════════════════════════════════════════════════════
+   Run (Agent 执行记录)
+   ═══════════════════════════════════════════════════════ */
+
+export const createRunSchema = z.object({
+  agentId: z.string().cuid().optional(),
+  sessionId: z.string().cuid().optional(),
+  status: z.enum(["pending", "running", "success", "failed", "cancelled"]).default("pending"),
+  input: z.any().optional(),
+  output: z.any().optional(),
+  toolCalls: z.any().optional(),
+  tokenUsage: z.any().optional(),
+  error: z.any().optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+});
+
+export const updateRunSchema = z.object({
+  id: z.string().cuid(),
+  status: z.enum(["pending", "running", "success", "failed", "cancelled"]).optional(),
+  output: z.any().optional(),
+  toolCalls: z.any().optional(),
+  tokenUsage: z.any().optional(),
+  error: z.any().optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+});
+
+export const listRunsSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+  agentId: z.string().optional(),
+  sessionId: z.string().optional(),
+  status: z.string().optional(),
+  keyword: z.string().optional(),
+});
+
+/* ═══════════════════════════════════════════════════════
+   Prompt (提示词模板)
+   ═══════════════════════════════════════════════════════ */
+
+export const createPromptSchema = z.object({
+  name: z.string().min(1, "名称不能为空").max(100),
+  version: z.string().default("1.0.0"),
+  description: z.string().optional(),
+  variables: z.array(z.string()).default([]),
+  tags: z.array(z.string()).default([]),
+  content: z.string().min(1, "内容不能为空"),
+});
+
+export const updatePromptSchema = z.object({
+  id: z.string().cuid(),
+  name: z.string().min(1).max(100).optional(),
+  version: z.string().optional(),
+  description: z.string().optional().nullable(),
+  variables: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  content: z.string().optional(),
+});
+
+export const listPromptsSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+  keyword: z.string().optional(),
+  tag: z.string().optional(),
+});
+
+/* ═══════════════════════════════════════════════════════
+   Credential (凭据)
+   ═══════════════════════════════════════════════════════ */
+
+export const createCredentialSchema = z.object({
+  name: z.string().min(1, "名称不能为空").max(100),
+  type: z.enum(["api_key", "token", "password"]),
+  value: z.string().min(1, "值不能为空"),
+  scope: z.array(z.string()).default([]),
+  lastUsedAt: z.string().datetime().optional().or(z.date().optional()),
+});
+
+export const updateCredentialSchema = z.object({
+  id: z.string().cuid(),
+  name: z.string().min(1).max(100).optional(),
+  type: z.enum(["api_key", "token", "password"]).optional(),
+  value: z.string().optional(),
+  scope: z.array(z.string()).optional(),
+  lastUsedAt: z.string().datetime().optional().or(z.date().optional()),
+});
+
+export const listCredentialsSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+  type: z.string().optional(),
+  keyword: z.string().optional(),
+});
+
+/* ═══════════════════════════════════════════════════════
    通用类型响应包装
    ═══════════════════════════════════════════════════════ */
 
@@ -418,10 +556,12 @@ export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;
 export type ListMessagesInput = z.infer<typeof listMessagesSchema>;
 
 export type CreateFileInput = z.infer<typeof createFileSchema>;
+export type UploadFileInput = z.infer<typeof uploadFileSchema>;
 export type UpdateFileInput = z.infer<typeof updateFileSchema>;
 export type ListFilesInput = z.infer<typeof listFilesSchema>;
 
 export type CreateLogInput = z.infer<typeof createLogSchema>;
+export type UpdateLogInput = z.infer<typeof updateLogSchema>;
 export type ListLogsInput = z.infer<typeof listLogsSchema>;
 
 export type CreateMcpServerInput = z.infer<typeof createMcpServerSchema>;
@@ -451,4 +591,20 @@ export type ListTriggersInput = z.infer<typeof listTriggersSchema>;
 export type CreateApprovalInput = z.infer<typeof createApprovalSchema>;
 export type UpdateApprovalInput = z.infer<typeof updateApprovalSchema>;
 export type ListApprovalsInput = z.infer<typeof listApprovalsSchema>;
+
+export type CreateToolInput = z.infer<typeof createToolSchema>;
+export type UpdateToolInput = z.infer<typeof updateToolSchema>;
+export type ListToolsInput = z.infer<typeof listToolsSchema>;
+
+export type CreateRunInput = z.infer<typeof createRunSchema>;
+export type UpdateRunInput = z.infer<typeof updateRunSchema>;
+export type ListRunsInput = z.infer<typeof listRunsSchema>;
+
+export type CreatePromptInput = z.infer<typeof createPromptSchema>;
+export type UpdatePromptInput = z.infer<typeof updatePromptSchema>;
+export type ListPromptsInput = z.infer<typeof listPromptsSchema>;
+
+export type CreateCredentialInput = z.infer<typeof createCredentialSchema>;
+export type UpdateCredentialInput = z.infer<typeof updateCredentialSchema>;
+export type ListCredentialsInput = z.infer<typeof listCredentialsSchema>;
 
