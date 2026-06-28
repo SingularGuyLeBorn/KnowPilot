@@ -130,6 +130,16 @@ export const postRouter = router({
     };
   }),
 
+  /** 文档树：返回所有已发布文章的层级数据 */
+  tree: publicProcedure.query(async ({ ctx }) => {
+    const posts = await ctx.prisma.post.findMany({
+      where: { published: true },
+      select: { id: true, slug: true, title: true },
+      orderBy: { slug: "asc" },
+    });
+    return posts;
+  }),
+
   /** 按 slug 获取单篇 (文章详情页) */
   getBySlug: publicProcedure
     .input(z.object({ slug: z.string() }))
@@ -186,7 +196,11 @@ export const postRouter = router({
           title: input.title,
           slug,
           content: input.content,
-          published: false,
+          published: input.published ?? false,
+          excerpt: input.excerpt,
+          coverImage: input.coverImage,
+          category: input.category,
+          tags: input.tags?.join(",") || "",
         },
       });
 

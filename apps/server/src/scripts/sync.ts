@@ -69,7 +69,7 @@ async function syncPosts() {
       const title = data.title || slug;
       const category = data.category || null;
       const excerpt = data.excerpt || null;
-      const published = typeof data.published === "boolean" ? data.published : false;
+      const published = typeof data.published === "boolean" ? data.published : true;
       
       // 处理标签 (数组转逗号分隔字符串)
       let tags = "";

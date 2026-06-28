@@ -437,7 +437,7 @@ XAgent由三部分组成:
 
         
 
-          - *🤖*Dispatcher: 负责动态实例化任务并将任务分派给不同的Agent. 它允许添加新的Agent并提高Agent的能力. 
+          - *<img src="/icons/robot.svg" alt="" width="16" style="display:inline;vertical-align:middle">*Dispatcher: 负责动态实例化任务并将任务分派给不同的Agent. 它允许添加新的Agent并提高Agent的能力. 
           - *🧐*Planner: 负责生成和修正任务计划. 它将任务划分为子任务并为它们生成里程碑，允许Agent逐步解决任务. 
           - *🦾*Actor: 负责执行行动以实现目标并完成子任务. Actor利用各种工具来解决子任务，它也可以与人协作来解决任务. 
         

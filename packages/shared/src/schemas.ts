@@ -15,6 +15,11 @@ export const createPostSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
   content: z.string().default(""),
   slug: z.string().optional(),
+  excerpt: z.string().optional(),
+  coverImage: z.string().url().optional().nullable(),
+  category: z.string().optional().nullable(),
+  tags: z.array(z.string()).optional(),
+  published: z.boolean().optional(),
 });
 
 export const updatePostSchema = z.object({

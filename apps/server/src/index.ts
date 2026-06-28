@@ -6,7 +6,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { appRouter } from "./trpc/router.js";
+import { appRouter } from "./router.js";
 import { createContext } from "./trpc/context.js";
 
 const app = express();
