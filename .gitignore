@@ -43,3 +43,6 @@ coverage/
 
 # Docker volumes
 pgdata/
+
+# Server runtime cache
+apps/server/content/
