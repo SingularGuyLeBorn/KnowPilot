@@ -55,6 +55,11 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   git_status: gitStatusTool,
   git_log: gitLogTool,
   git_diff: gitDiffTool,
+  git_commit: gitCommitTool,
+  git_pull: gitPullTool,
+  git_push: gitPushTool,
+  file_delete: fileDeleteTool,
+  task_run: taskRunTool,
   yuque_get_doc: yuqueGetDocTool,
   github_search_repos: githubSearchReposTool,
   feishu_send_text: feishuSendTextTool,
@@ -180,6 +185,63 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         repoId: { type: "string" },
         repoPath: { type: "string" },
         staged: { type: "boolean", description: "是否只看暂存区" },
+      },
+    },
+  },
+  {
+    name: "git_commit",
+    description: "Git add -A 并提交当前仓库变更。",
+    parameters: {
+      type: "object",
+      properties: {
+        repoId: { type: "string", description: "已注册 GitRepo 的 id" },
+        repoPath: { type: "string", description: "或直接指定本地仓库路径" },
+        message: { type: "string", description: "提交信息" },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "git_pull",
+    description: "Git pull 拉取远程更新。",
+    parameters: {
+      type: "object",
+      properties: {
+        repoId: { type: "string" },
+        repoPath: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "git_push",
+    description: "Git push 推送本地提交到远程。",
+    parameters: {
+      type: "object",
+      properties: {
+        repoId: { type: "string" },
+        repoPath: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "file_delete",
+    description: "删除项目根目录内的文件（相对路径）。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "相对项目根的路径" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "task_run",
+    description: "立即执行一条已注册的后台 Task（如 db:sync）。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task id" },
+        name: { type: "string", description: "或按任务名称匹配" },
       },
     },
   },
@@ -783,6 +845,52 @@ async function gitDiffTool(args: Record<string, unknown>, ctx: NativeToolContext
   const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
   const gitArgs = args.staged ? ["diff", "--cached"] : ["diff"];
   return { path: cwd, diff: (await runGit(cwd, gitArgs)).slice(0, 12000) };
+}
+
+async function gitCommitTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
+  const message = String(args.message || "").trim();
+  if (!message) throw new Error("提交信息 message 不能为空");
+  await runGit(cwd, ["add", "-A"]);
+  const output = await runGit(cwd, ["commit", "-m", message]);
+  return { path: cwd, output };
+}
+
+async function gitPullTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
+  return { path: cwd, output: await runGit(cwd, ["pull"]) };
+}
+
+async function gitPushTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
+  return { path: cwd, output: await runGit(cwd, ["push"]) };
+}
+
+async function fileDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const abs = resolveSafePath(ctx.config, String(args.path));
+  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
+  const stat = fs.statSync(abs);
+  if (stat.isDirectory()) throw new Error(`不支持删除目录，请指定文件: ${args.path}`);
+  fs.unlinkSync(abs);
+  return { path: args.path, deleted: true };
+}
+
+async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = args.id ? String(args.id) : undefined;
+  const name = args.name ? String(args.name) : undefined;
+  if (!id && !name) throw new Error("必须提供 task id 或 name");
+
+  let taskId = id;
+  if (!taskId && name) {
+    const result = await ctx.services.task.list({ page: 1, pageSize: 50 });
+    const matched = result.items.find((t) => t.name === name);
+    if (!matched) throw new Error(`未找到名称为 "${name}" 的 Task`);
+    taskId = matched.id;
+  }
+
+  const runResult = await ctx.services.task.run(taskId!);
+  if (!runResult.success) throw new Error(runResult.error?.message || "Task 执行失败");
+  return { taskId, output: runResult.data };
 }
 
 async function yuqueGetDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {

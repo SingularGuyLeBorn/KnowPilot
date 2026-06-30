@@ -168,6 +168,78 @@ describe("native:list_directory", () => {
   });
 });
 
+describe("native:file_delete", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+    fs.writeFileSync(path.join(root, "to-delete.txt"), "bye", "utf8");
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("删除项目内文件", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("file_delete", { path: "to-delete.txt" }, ctx)) as {
+      path: string;
+      deleted: boolean;
+    };
+    expect(result.deleted).toBe(true);
+    expect(fs.existsSync(path.join(root, "to-delete.txt"))).toBe(false);
+  });
+
+  it("拒绝路径穿越", async () => {
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_delete", { path: "../etc/passwd" }, ctx)).rejects.toThrow(/\.\./);
+  });
+
+  it("文件不存在时报错", async () => {
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_delete", { path: "missing.txt" }, ctx)).rejects.toThrow(/不存在/);
+  });
+});
+
+describe("native:task_run", () => {
+  it("按 id 执行任务并返回结果", async () => {
+    const root = createTempProjectDir();
+    const taskService = {
+      run: vi.fn(async (id: string) => ({ success: true, data: { id, ok: true } })),
+    };
+    const ctx = createNativeCtx(root, { services: { task: taskService } as never });
+    const result = (await executeNativeTool("task_run", { id: "task-123" }, ctx)) as {
+      taskId: string;
+      output: unknown;
+    };
+    expect(taskService.run).toHaveBeenCalledWith("task-123");
+    expect(result.taskId).toBe("task-123");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("按 name 查找并执行", async () => {
+    const root = createTempProjectDir();
+    const taskService = {
+      list: vi.fn(async () => ({
+        items: [{ id: "task-456", name: "daily-sync" }],
+        total: 1,
+        page: 1,
+        pageSize: 50,
+        totalPages: 1,
+      })),
+      run: vi.fn(async (id: string) => ({ success: true, data: { id } })),
+    };
+    const ctx = createNativeCtx(root, { services: { task: taskService } as never });
+    const result = (await executeNativeTool("task_run", { name: "daily-sync" }, ctx)) as {
+      taskId: string;
+    };
+    expect(taskService.list).toHaveBeenCalledWith({ page: 1, pageSize: 50 });
+    expect(taskService.run).toHaveBeenCalledWith("task-456");
+    expect(result.taskId).toBe("task-456");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
 describe("native:invoke_api", () => {
   it("转发到 invokeTrpc", async () => {
     const root = createTempProjectDir();

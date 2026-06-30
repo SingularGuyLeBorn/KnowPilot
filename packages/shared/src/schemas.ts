@@ -450,6 +450,7 @@ export const createTaskSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["cron", "oneshot"]),
   status: z.enum(["pending", "running", "success", "failed"]).default("pending"),
+  sessionId: z.string().optional(),
   input: z.any().optional(),
   output: z.any().optional(),
   cronExpression: z.string().optional(),
@@ -459,6 +460,8 @@ export const updateTaskSchema = z.object({
   id: z.string().cuid(),
   name: z.string().min(1).optional(),
   status: z.enum(["pending", "running", "success", "failed"]).optional(),
+  sessionId: z.string().optional(),
+  input: z.any().optional(),
   output: z.any().optional(),
   cronExpression: z.string().optional(),
 });

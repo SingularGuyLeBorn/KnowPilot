@@ -24,13 +24,14 @@ async function createAsyncTask(data: {
       name: `[async] ${data.taskLabel}`,
       type: "oneshot",
       status: data.status,
+      sessionId,
+      delivered: data.delivered ?? false,
       input: {
         kind: ASYNC_KIND,
         sessionId,
         task: data.taskLabel,
         taskLabel: data.taskLabel,
         agentSnapshot: { id: "t", model: "m", systemPrompt: "", tools: [] },
-        delivered: data.delivered ?? false,
       },
       output:
         data.status === "success"
@@ -77,7 +78,7 @@ describe("asyncJobManager 持久化", () => {
     expect(second).toHaveLength(0);
 
     const row = await prisma.task.findUnique({ where: { id: task.id } });
-    expect((row?.input as { delivered?: boolean }).delivered).toBe(true);
+    expect(row?.delivered).toBe(true);
   });
 
   it("recoverStaleAsyncJobs 仅处理 async_agent，忽略普通 running Task", async () => {

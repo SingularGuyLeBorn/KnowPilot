@@ -37,7 +37,6 @@ interface AsyncTaskInput {
   task: string;
   taskLabel: string;
   agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[] };
-  delivered?: boolean;
 }
 
 interface AsyncTaskOutput {
@@ -46,10 +45,29 @@ interface AsyncTaskOutput {
 }
 
 function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as AsyncTaskInput;
+  let value = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const o = value as AsyncTaskInput;
   if (o.kind !== ASYNC_KIND || typeof o.sessionId !== "string") return null;
   return o;
+}
+
+function parseAsyncOutput(raw: unknown): AsyncTaskOutput {
+  if (typeof raw === "string") {
+    try {
+      return (JSON.parse(raw) ?? {}) as AsyncTaskOutput;
+    } catch {
+      return { asyncResult: raw };
+    }
+  }
+  return (raw ?? {}) as AsyncTaskOutput;
 }
 
 function toDelivery(task: {
@@ -61,7 +79,7 @@ function toDelivery(task: {
 }): AsyncQueueDelivery | null {
   const input = parseAsyncInput(task.input);
   if (!input) return null;
-  const output = (task.output ?? {}) as AsyncTaskOutput;
+  const output = parseAsyncOutput(task.output);
   const failed = task.status === "failed";
   return {
     id: `del-${task.id}`,
@@ -71,12 +89,8 @@ function toDelivery(task: {
     asyncResult: failed ? "" : output.asyncResult || "(无文本输出)",
     status: failed ? "failed" : "done",
     error: output.error,
-    createdAt: task.createdAt.getTime(),
+    createdAt: task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime(),
   };
-}
-
-function isUndelivered(input: AsyncTaskInput): boolean {
-  return input.delivered !== true;
 }
 
 /** 服务启动时：仅将遗留 async_agent running 任务标为 failed */
@@ -100,46 +114,46 @@ export async function recoverStaleAsyncJobs(): Promise<number> {
   return count;
 }
 
-/** 拉取并标记已投递的异步结果（前端轮询）— 按 sessionId + kind 索引 */
+/** 拉取并标记已投递的异步结果（前端轮询）— 原子 CLAIM，防止重复投递 */
 export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueueDelivery[]> {
-  const rows = await prisma.task.findMany({
-    where: {
-      status: { in: ["success", "failed"] },
-      name: { startsWith: "[async]" },
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 200,
-  });
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      input: unknown;
+      output: unknown;
+      status: string;
+      createdAt: Date;
+    }>
+  >`
+    UPDATE "Task"
+    SET delivered = 1, deliveredAt = datetime('now')
+    WHERE sessionId = ${sessionId}
+      AND name LIKE '[async]%'
+      AND status IN ('success', 'failed')
+      AND delivered = 0
+    RETURNING id, input, output, status, createdAt
+  `;
 
   const deliveries: AsyncQueueDelivery[] = [];
   for (const row of rows) {
-    const input = parseAsyncInput(row.input);
-    if (!input || input.sessionId !== sessionId || !isUndelivered(input)) continue;
     const delivery = toDelivery(row);
-    if (!delivery) continue;
-    deliveries.push(delivery);
-    await prisma.task.update({
-      where: { id: row.id },
-      data: {
-        input: { ...input, delivered: true },
-      },
-    });
+    if (delivery) deliveries.push(delivery);
   }
   return deliveries;
 }
 
 export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunningJob[]> {
   const rows = await prisma.task.findMany({
-    where: { status: "running", name: { startsWith: "[async]" } },
+    where: { sessionId, status: "running", name: { startsWith: "[async]" } },
     orderBy: { createdAt: "desc" },
   });
   return rows
     .map((row) => {
       const input = parseAsyncInput(row.input);
-      if (!input || input.sessionId !== sessionId) return null;
+      if (!input) return null;
       return {
         jobId: row.id,
-        sessionId: input.sessionId,
+        sessionId,
         taskLabel: input.taskLabel,
         status: "running" as const,
         createdAt: row.createdAt.getTime(),
@@ -172,13 +186,13 @@ export async function startAsyncAgentTask(options: {
     name: `[async] ${taskLabel}`,
     type: "oneshot",
     status: "running",
+    sessionId: options.sessionId,
     input: {
       kind: ASYNC_KIND,
       sessionId: options.sessionId,
       task,
       taskLabel,
       agentSnapshot,
-      delivered: false,
     } satisfies AsyncTaskInput,
   });
 
