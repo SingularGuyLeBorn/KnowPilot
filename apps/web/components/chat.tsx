@@ -153,12 +153,12 @@ function ThinkingTimeline({
                 <summary className="cursor-pointer text-[10px] text-[var(--kp-text-3)] hover:text-[var(--kp-brand-dark)]">
                   参数与结果
                 </summary>
-                <pre className="mt-2 max-h-20 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
+                <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
                   {JSON.stringify(step.args, null, 2)}
                 </pre>
                 {step.result !== undefined && (
-                  <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
-                    {JSON.stringify(step.result, null, 2).slice(0, 2000)}
+                  <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
+                    {JSON.stringify(step.result, null, 2)}
                   </pre>
                 )}
               </details>
