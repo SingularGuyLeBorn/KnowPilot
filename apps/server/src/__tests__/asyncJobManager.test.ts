@@ -6,6 +6,8 @@ import {
   listRunningAsyncJobs,
   pullAsyncDeliveries,
   recoverStaleAsyncJobs,
+  cleanupDeliveredAsyncJobs,
+  retryAsyncJob,
   startAsyncAgentTask,
 } from "../infra/asyncJobManager.js";
 
@@ -142,6 +144,65 @@ describe("asyncJobManager 持久化", () => {
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0].jobId).toBe(started.jobId);
     expect(deliveries[0].asyncResult).toContain("P1 集成测试");
+
+    vi.restoreAllMocks();
+  });
+
+  it("cleanupDeliveredAsyncJobs 删除已投递且过期的任务", async () => {
+    const task = await createAsyncTask({ status: "success", taskLabel: "过期 D", asyncResult: "ok", delivered: true });
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { deliveredAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) },
+    });
+
+    const n = await cleanupDeliveredAsyncJobs();
+    expect(n).toBeGreaterThanOrEqual(1);
+
+    const row = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(row).toBeNull();
+  });
+
+  it("retryAsyncJob 复制失败任务并重新执行", async () => {
+    vi.spyOn(agentRuntime, "runAgentLoop").mockResolvedValue({
+      content: "重试成功结果",
+      toolCalls: [],
+      tokenUsage: { prompt: 1, completion: 2, total: 3 },
+      model: "deepseek-chat",
+      provider: "deepseek",
+      roundsUsed: 1,
+    });
+
+    const ctx = await createContextInner();
+    const first = await startAsyncAgentTask({
+      sessionId,
+      task: "测试",
+      label: "重试源",
+      config: ctx.config,
+      services: ctx.services,
+      agent: { id: "t", model: "deepseek-chat", systemPrompt: "test", tools: [] },
+    });
+
+    await vi.waitFor(
+      async () => {
+        const row = await prisma.task.findUnique({ where: { id: first.jobId } });
+        expect(row?.status).toBe("success");
+      },
+      { timeout: 5000, interval: 50 },
+    );
+
+    await prisma.task.update({ where: { id: first.jobId }, data: { status: "failed", output: { error: "手动失败" } } });
+
+    const retried = await retryAsyncJob(first.jobId, ctx.config, ctx.services);
+    expect(retried.status).toBe("running");
+    expect(retried.message).toContain("第 1 次重试");
+
+    await vi.waitFor(
+      async () => {
+        const row = await prisma.task.findUnique({ where: { id: retried.jobId } });
+        expect(row?.status).toBe("success");
+      },
+      { timeout: 5000, interval: 50 },
+    );
 
     vi.restoreAllMocks();
   });

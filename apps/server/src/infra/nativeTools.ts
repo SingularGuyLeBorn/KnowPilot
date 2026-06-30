@@ -52,6 +52,8 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   read_file: readFileTool,
   write_file: writeFileTool,
   list_directory: listDirectoryTool,
+  file_rename: fileRenameTool,
+  file_move: fileMoveTool,
   git_status: gitStatusTool,
   git_log: gitLogTool,
   git_diff: gitDiffTool,
@@ -151,6 +153,30 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
       properties: {
         path: { type: "string", description: "相对目录，默认 ." },
       },
+    },
+  },
+  {
+    name: "file_rename",
+    description: "重命名项目根目录内的文件。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "原相对路径" },
+        newName: { type: "string", description: "新文件名（不含目录）" },
+      },
+      required: ["path", "newName"],
+    },
+  },
+  {
+    name: "file_move",
+    description: "移动项目根目录内的文件到另一个相对路径。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "原相对路径" },
+        dest: { type: "string", description: "目标相对路径（含文件名）" },
+      },
+      required: ["path", "dest"],
     },
   },
   {
@@ -873,6 +899,32 @@ async function fileDeleteTool(args: Record<string, unknown>, ctx: NativeToolCont
   if (stat.isDirectory()) throw new Error(`不支持删除目录，请指定文件: ${args.path}`);
   fs.unlinkSync(abs);
   return { path: args.path, deleted: true };
+}
+
+async function fileRenameTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const abs = resolveSafePath(ctx.config, String(args.path));
+  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
+  const stat = fs.statSync(abs);
+  if (stat.isDirectory()) throw new Error(`不支持重命名目录: ${args.path}`);
+  const newName = String(args.newName || "").trim();
+  if (!newName) throw new Error("newName 不能为空");
+  if (newName.includes("/") || newName.includes("\\")) throw new Error("newName 不能包含目录分隔符");
+  const dest = path.join(path.dirname(abs), newName);
+  if (!dest.startsWith(path.resolve(ctx.config.projectRoot))) throw new Error("目标路径超出项目根目录范围");
+  fs.renameSync(abs, dest);
+  return { from: args.path, to: path.relative(ctx.config.projectRoot, dest).replace(/\\/g, "/") };
+}
+
+async function fileMoveTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const abs = resolveSafePath(ctx.config, String(args.path));
+  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
+  const destRel = String(args.dest || "").trim();
+  if (!destRel) throw new Error("dest 不能为空");
+  const destAbs = resolveSafePath(ctx.config, destRel);
+  const destDir = path.dirname(destAbs);
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  fs.renameSync(abs, destAbs);
+  return { from: args.path, to: destRel };
 }
 
 async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext) {

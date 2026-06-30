@@ -240,6 +240,54 @@ describe("native:task_run", () => {
   });
 });
 
+describe("native:file_rename", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+    fs.writeFileSync(path.join(root, "old.txt"), "content", "utf8");
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("重命名文件", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("file_rename", { path: "old.txt", newName: "new.txt" }, ctx)) as {
+      from: string;
+      to: string;
+    };
+    expect(result.to).toBe("new.txt");
+    expect(fs.existsSync(path.join(root, "new.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "old.txt"))).toBe(false);
+  });
+});
+
+describe("native:file_move", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+    fs.writeFileSync(path.join(root, "a.txt"), "a", "utf8");
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("移动文件并创建目标目录", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("file_move", { path: "a.txt", dest: "dir/b.txt" }, ctx)) as {
+      from: string;
+      to: string;
+    };
+    expect(result.to).toBe("dir/b.txt");
+    expect(fs.existsSync(path.join(root, "dir", "b.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "a.txt"))).toBe(false);
+  });
+});
+
 describe("native:invoke_api", () => {
   it("转发到 invokeTrpc", async () => {
     const root = createTempProjectDir();

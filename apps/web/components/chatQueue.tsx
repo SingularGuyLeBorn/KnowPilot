@@ -17,6 +17,7 @@ import {
   Trash2,
   X,
   Square,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatQueueItem } from "@/lib/chatQueueTypes";
@@ -28,6 +29,7 @@ interface MessageQueueProps {
   onChange: (items: ChatQueueItem[]) => void;
   onRemove: (id: string) => void;
   onCancel?: (jobId: string) => void;
+  onRetry?: (jobId: string) => void;
   /** 右侧设置 Panel 打开时向左偏移，避免重叠 */
   settingsPanelOpen?: boolean;
   settingsPanelWidth?: number;
@@ -56,6 +58,7 @@ function QueueCard({
   onMoveDown,
   onTogglePin,
   onCancel,
+  onRetry,
 }: {
   item: ChatQueueItem;
   expanded: boolean;
@@ -65,6 +68,7 @@ function QueueCard({
   onMoveDown: () => void;
   onTogglePin: () => void;
   onCancel?: () => void;
+  onRetry?: () => void;
 }) {
   const isAsyncResult = item.kind === "async-result";
   const isRunning = item.kind === "async-running";
@@ -200,6 +204,16 @@ function QueueCard({
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
+          {item.kind === "async-result" && item.status === "failed" && onRetry && item.jobId && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded p-1 text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+              title="重试"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -213,6 +227,7 @@ export function MessageQueue({
   onChange,
   onRemove,
   onCancel,
+  onRetry,
   settingsPanelOpen = false,
   settingsPanelWidth = 360,
 }: MessageQueueProps) {
@@ -349,6 +364,7 @@ export function MessageQueue({
                   onMoveDown={() => moveItem(item.id, 1)}
                   onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
                   onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
+                  onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
                 />
               </div>
             ))}

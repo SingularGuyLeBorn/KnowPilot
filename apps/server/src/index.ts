@@ -14,7 +14,7 @@ import { getEventBus } from "./infra/eventBus.js";
 import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
 import { getTaskScheduler } from "./infra/taskScheduler.js";
-import { recoverStaleAsyncJobs } from "./infra/asyncJobManager.js";
+import { recoverStaleAsyncJobs, cleanupDeliveredAsyncJobs } from "./infra/asyncJobManager.js";
 import { closeBrowser } from "./infra/metablog/webScraper.js";
 import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
@@ -131,6 +131,13 @@ const server = app.listen(PORT, () => {
     })
     .catch((err) => {
       console.error("❌ [AsyncJobs] 恢复检查失败:", err);
+    });
+  cleanupDeliveredAsyncJobs()
+    .then((n) => {
+      if (n > 0) console.log(`  🧹 [AsyncJobs] 已清理 ${n} 条过期已投递任务`);
+    })
+    .catch((err) => {
+      console.error("❌ [AsyncJobs] 清理过期任务失败:", err);
     });
 
   if (hasSystemChrome() && process.env.BROWSER_WARMUP !== "0") {

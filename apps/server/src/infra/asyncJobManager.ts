@@ -37,6 +37,7 @@ interface AsyncTaskInput {
   task: string;
   taskLabel: string;
   agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[] };
+  retryCount?: number;
 }
 
 interface AsyncTaskOutput {
@@ -114,6 +115,19 @@ export async function recoverStaleAsyncJobs(): Promise<number> {
   return count;
 }
 
+/** 清理已投递且过期的异步任务，防止 Task 表无限膨胀（默认保留 7 天） */
+export async function cleanupDeliveredAsyncJobs(olderThanMs = 7 * 24 * 60 * 60 * 1000): Promise<number> {
+  const before = new Date(Date.now() - olderThanMs);
+  const { count } = await prisma.task.deleteMany({
+    where: {
+      name: { startsWith: "[async]" },
+      delivered: true,
+      deliveredAt: { lt: before },
+    },
+  });
+  return count;
+}
+
 /** 拉取并标记已投递的异步结果（前端轮询）— 原子 CLAIM，防止重复投递 */
 export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueueDelivery[]> {
   const rows = await prisma.$queryRaw<
@@ -172,6 +186,54 @@ export async function cancelAsyncJob(jobId: string, config: AppConfig): Promise<
   return { cancelled: true, message: "已取消异步任务" };
 }
 
+function buildAsyncExecute(
+  config: AppConfig,
+  services: ServiceContainer,
+  jobId: string,
+  task: string,
+  agentSnapshot: AsyncTaskInput["agentSnapshot"],
+  retryCount: number,
+): (signal: AbortSignal) => Promise<void> {
+  const invokeTrpc = createTrpcInvoker({ services });
+  const retryHint = retryCount > 0 ? `（第 ${retryCount} 次重试）` : "";
+  return async (signal) => {
+    try {
+      if (signal.aborted) {
+        throw new Error("异步任务已被取消");
+      }
+      const loop = await runAgentLoop({
+        config,
+        services,
+        agent: {
+          model: agentSnapshot.model,
+          systemPrompt: `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务${retryHint}。完成后用简洁中文汇总结果，不要继续追问用户。`,
+          tools: agentSnapshot.tools,
+        },
+        messages: [{ role: "user", content: task }],
+        invokeTrpc,
+        signal,
+      });
+
+      await services.task.update({
+        id: jobId,
+        status: "success",
+        output: { asyncResult: loop.content || "(无文本输出)" } satisfies AsyncTaskOutput,
+      });
+    } catch (err: unknown) {
+      const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
+      const isTimeout = err instanceof Error && err.message.includes("超时");
+      const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
+      await services.task.update({
+        id: jobId,
+        status: "failed",
+        output: {
+          error: reason || (err instanceof Error ? err.message : String(err)),
+        } satisfies AsyncTaskOutput,
+      });
+    }
+  };
+}
+
 export async function startAsyncAgentTask(options: {
   sessionId: string;
   task: string;
@@ -203,6 +265,7 @@ export async function startAsyncAgentTask(options: {
       task,
       taskLabel,
       agentSnapshot,
+      retryCount: 0,
     } satisfies AsyncTaskInput,
   });
 
@@ -211,53 +274,68 @@ export async function startAsyncAgentTask(options: {
   }
 
   const jobId = (created.data as { id: string }).id;
-  const invokeTrpc = createTrpcInvoker({ services: options.services });
   const orchestrator = getAsyncJobOrchestrator(options.config);
 
   orchestrator.enqueue({
     jobId,
     sessionId: options.sessionId,
-    execute: async (signal) => {
-      try {
-        if (signal.aborted) {
-          throw new Error("异步任务已被取消");
-        }
-        const loop = await runAgentLoop({
-          config: options.config,
-          services: options.services,
-          agent: {
-            model: agentSnapshot.model,
-            systemPrompt: `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务。完成后用简洁中文汇总结果，不要继续追问用户。`,
-            tools: agentSnapshot.tools,
-          },
-          messages: [{ role: "user", content: task }],
-          invokeTrpc,
-          signal,
-        });
-
-        await options.services.task.update({
-          id: jobId,
-          status: "success",
-          output: { asyncResult: loop.content || "(无文本输出)" } satisfies AsyncTaskOutput,
-        });
-      } catch (err: unknown) {
-        const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
-        const isTimeout = err instanceof Error && err.message.includes("超时");
-        const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
-        await options.services.task.update({
-          id: jobId,
-          status: "failed",
-          output: {
-            error: reason || (err instanceof Error ? err.message : String(err)),
-          } satisfies AsyncTaskOutput,
-        });
-      }
-    },
+    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0),
   });
 
   return {
     jobId,
     status: "running",
     message: `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
+  };
+}
+
+/** 重试一条失败的异步任务 */
+export async function retryAsyncJob(
+  jobId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+): Promise<{ jobId: string; status: "running"; message: string }> {
+  const existing = await services.task.getById(jobId);
+  if (!existing) throw new Error("任务不存在");
+  if (existing.status !== "failed") throw new Error("只能重试失败的任务");
+  const input = parseAsyncInput(existing.input);
+  if (!input) throw new Error("不是有效的异步 Agent 任务");
+
+  const retryCount = (input.retryCount ?? 0) + 1;
+  const taskLabel = input.taskLabel;
+  const agentSnapshot = input.agentSnapshot;
+
+  const created = await services.task.create({
+    name: `[async] ${taskLabel}`,
+    type: "oneshot",
+    status: "running",
+    sessionId: input.sessionId,
+    input: {
+      kind: ASYNC_KIND,
+      sessionId: input.sessionId,
+      task: input.task,
+      taskLabel,
+      agentSnapshot,
+      retryCount,
+    } satisfies AsyncTaskInput,
+  });
+
+  if (!created.success || !created.data) {
+    throw new Error(created.error?.message ?? "创建重试任务失败");
+  }
+
+  const newJobId = (created.data as { id: string }).id;
+  const orchestrator = getAsyncJobOrchestrator(config);
+
+  orchestrator.enqueue({
+    jobId: newJobId,
+    sessionId: input.sessionId,
+    execute: buildAsyncExecute(config, services, newJobId, input.task, agentSnapshot, retryCount),
+  });
+
+  return {
+    jobId: newJobId,
+    status: "running",
+    message: `已启动后台任务「${taskLabel}」的第 ${retryCount} 次重试。`,
   };
 }
