@@ -49,6 +49,7 @@ import { runGlobalSearch } from "./infra/globalSearch.js";
 import { getAnalyticsDashboard } from "./infra/analytics.js";
 import { loadAboutProfile } from "./infra/aboutProfile.js";
 import { pullAsyncDeliveries, listRunningAsyncJobs, cancelAsyncJob, retryAsyncJob } from "./infra/asyncJobManager.js";
+
 import { extractTextFromImage, getOcrStatus, probeOcrPython } from "./infra/ocrService.js";
 import {
   getRemoteAccessInfo,
@@ -125,7 +126,7 @@ const agentRouter = router({
   cancelAsyncJob: publicProcedure
     .meta({ description: "取消运行中或排队中的后台异步任务。", aiReadable: false })
     .input(z.object({ jobId: z.string().cuid() }))
-    .mutation(async ({ ctx, input }) => cancelAsyncJob(input.jobId, ctx.config)),
+    .mutation(async ({ ctx, input }) => cancelAsyncJob(input.jobId, ctx.config, ctx.services)),
   retryAsyncJob: publicProcedure
     .meta({ description: "重试一条失败的异步任务。", aiReadable: false })
     .input(z.object({ jobId: z.string().cuid() }))

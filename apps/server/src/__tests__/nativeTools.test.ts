@@ -19,7 +19,7 @@ import {
 } from "./helpers/toolTestFixtures.js";
 
 describe("Native 工具注册表", () => {
-  it("listNativeTools 包含全部 16 个工具定义", () => {
+  it("listNativeTools 包含全部 27 个工具定义", () => {
     const names = listNativeTools().map((d) => d.name);
     expect(names).toEqual(expect.arrayContaining([...ALL_NATIVE_TOOL_NAMES]));
     expect(names).toHaveLength(ALL_NATIVE_TOOL_NAMES.length);
@@ -117,6 +117,19 @@ describe("native:read_file", () => {
     expect(result.content).toHaveLength(10);
     expect(result.truncated).toBe(true);
   });
+
+  it("offset 控制读取起点", async () => {
+    fs.writeFileSync(path.join(root, "seq.txt"), "0123456789", "utf8");
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("read_file", { path: "seq.txt", offset: 3, maxChars: 4 }, ctx)) as {
+      content: string;
+      offset: number;
+      totalChars: number;
+    };
+    expect(result.content).toBe("3456");
+    expect(result.offset).toBe(3);
+    expect(result.totalChars).toBe(10);
+  });
 });
 
 describe("native:write_file", () => {
@@ -165,6 +178,18 @@ describe("native:list_directory", () => {
     expect(names).toContain("a.txt");
     expect(names).toContain("subdir");
     expect(entries.find((e) => e.name === "subdir")?.type).toBe("directory");
+  });
+
+  it("recursive 递归列出", async () => {
+    fs.writeFileSync(path.join(root, "subdir", "nested.txt"), "n", "utf8");
+    const ctx = createNativeCtx(root);
+    const entries = (await executeNativeTool("list_directory", { path: ".", recursive: true }, ctx)) as Array<{
+      path: string;
+      type: string;
+    }>;
+    const paths = entries.map((e) => e.path);
+    expect(paths).toContain("subdir");
+    expect(paths).toContain("subdir/nested.txt");
   });
 });
 
@@ -262,6 +287,23 @@ describe("native:file_rename", () => {
     expect(fs.existsSync(path.join(root, "new.txt"))).toBe(true);
     expect(fs.existsSync(path.join(root, "old.txt"))).toBe(false);
   });
+
+  it("拒绝重命名目录", async () => {
+    fs.mkdirSync(path.join(root, "dir"), { recursive: true });
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_rename", { path: "dir", newName: "x" }, ctx)).rejects.toThrow(/不支持重命名目录/);
+  });
+
+  it("newName 含目录分隔符时报错", async () => {
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_rename", { path: "old.txt", newName: "x/y" }, ctx)).rejects.toThrow(/不能包含目录分隔符/);
+  });
+
+  it("目标已存在时报错", async () => {
+    fs.writeFileSync(path.join(root, "existing.txt"), "", "utf8");
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_rename", { path: "old.txt", newName: "existing.txt" }, ctx)).rejects.toThrow(/目标已存在/);
+  });
 });
 
 describe("native:file_move", () => {
@@ -285,6 +327,142 @@ describe("native:file_move", () => {
     expect(result.to).toBe("dir/b.txt");
     expect(fs.existsSync(path.join(root, "dir", "b.txt"))).toBe(true);
     expect(fs.existsSync(path.join(root, "a.txt"))).toBe(false);
+  });
+
+  it("拒绝移动目录", async () => {
+    fs.mkdirSync(path.join(root, "dir"), { recursive: true });
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_move", { path: "dir", dest: "x.txt" }, ctx)).rejects.toThrow(/不支持移动目录/);
+  });
+
+  it("目标已存在时报错", async () => {
+    fs.writeFileSync(path.join(root, "b.txt"), "", "utf8");
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_move", { path: "a.txt", dest: "b.txt" }, ctx)).rejects.toThrow(/目标已存在/);
+  });
+});
+
+describe("native:file_copy", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+    fs.writeFileSync(path.join(root, "a.txt"), "copy me", "utf8");
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("复制文件并保留原文件", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("file_copy", { path: "a.txt", dest: "dir/b.txt" }, ctx)) as {
+      from: string;
+      to: string;
+    };
+    expect(result.to).toBe("dir/b.txt");
+    expect(fs.existsSync(path.join(root, "dir", "b.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "a.txt"))).toBe(true);
+    expect(fs.readFileSync(path.join(root, "dir", "b.txt"), "utf8")).toBe("copy me");
+  });
+
+  it("目标已存在时报错", async () => {
+    fs.writeFileSync(path.join(root, "b.txt"), "", "utf8");
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("file_copy", { path: "a.txt", dest: "b.txt" }, ctx)).rejects.toThrow(/目标已存在/);
+  });
+});
+
+describe("native:search_files", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+    fs.mkdirSync(path.join(root, "notes"), { recursive: true });
+    fs.writeFileSync(path.join(root, "notes", "a.md"), "hello world\nfoo bar", "utf8");
+    fs.writeFileSync(path.join(root, "b.md"), "another hello", "utf8");
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("按字面量搜索并返回行号", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("search_files", { pattern: "hello", path: "." }, ctx)) as {
+      total: number;
+      results: Array<{ file: string; line: number; snippet: string }>;
+    };
+    expect(result.total).toBeGreaterThanOrEqual(2);
+    expect(result.results.some((r) => r.file === "notes/a.md" && r.line === 1)).toBe(true);
+    expect(result.results.some((r) => r.file === "b.md")).toBe(true);
+  });
+
+  it("isRegex 支持正则", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("search_files", { pattern: "^foo", path: ".", isRegex: true }, ctx)) as {
+      total: number;
+      results: Array<{ file: string; line: number; snippet: string }>;
+    };
+    expect(result.results.length).toBeGreaterThanOrEqual(1);
+    expect(result.results[0]?.snippet).toContain("foo");
+  });
+
+  it("maxResults 限制返回数量", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("search_files", { pattern: "hello", path: ".", maxResults: 1 }, ctx)) as {
+      total: number;
+    };
+    expect(result.total).toBe(1);
+  });
+});
+
+describe("native:directory_create", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("创建目录", async () => {
+    const ctx = createNativeCtx(root);
+    await executeNativeTool("directory_create", { path: "a/b/c" }, ctx);
+    expect(fs.existsSync(path.join(root, "a", "b", "c"))).toBe(true);
+  });
+
+  it("路径已存在时报错", async () => {
+    fs.mkdirSync(path.join(root, "a"), { recursive: true });
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("directory_create", { path: "a" }, ctx)).rejects.toThrow(/路径已存在/);
+  });
+});
+
+describe("native:file_stat", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+    fs.writeFileSync(path.join(root, "a.txt"), "abc", "utf8");
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("返回文件元信息", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("file_stat", { path: "a.txt" }, ctx)) as {
+      isFile: boolean;
+      size: number;
+      modifiedAt: string;
+    };
+    expect(result.isFile).toBe(true);
+    expect(result.size).toBe(3);
+    expect(result.modifiedAt).toBeTruthy();
   });
 });
 

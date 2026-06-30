@@ -168,8 +168,11 @@ export interface Task {
   name: string;
   type: "cron" | "oneshot";
   status: "pending" | "running" | "success" | "failed";
+  sessionId: string | null;
   input: any;
   output: any;
+  delivered: boolean;
+  deliveredAt: string | Date | null;
   cronExpression: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;

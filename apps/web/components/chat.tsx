@@ -1291,7 +1291,10 @@ export function ChatView() {
           }
           onRemove={(id) => setLocalQueue((q) => q.filter((t) => t.id !== id))}
           onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
-          onRetry={(jobId) => retryAsyncJobMutation.mutate({ jobId })}
+          onRetry={(jobId) => {
+            setConsumedDeliveries((prev) => new Set([...prev, jobId]));
+            retryAsyncJobMutation.mutate({ jobId });
+          }}
           settingsPanelOpen={rightOpen}
           settingsPanelWidth={360}
         />

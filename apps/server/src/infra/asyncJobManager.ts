@@ -97,7 +97,7 @@ function toDelivery(task: {
 /** 服务启动时：仅将遗留 async_agent running 任务标为 failed */
 export async function recoverStaleAsyncJobs(): Promise<number> {
   const stale = await prisma.task.findMany({
-    where: { status: "running" },
+    where: { status: "running", name: { startsWith: "[async]" } },
   });
   let count = 0;
   for (const task of stale) {
@@ -177,12 +177,33 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
 }
 
 /** 取消一条运行中或排队中的异步任务 */
-export async function cancelAsyncJob(jobId: string, config: AppConfig): Promise<{ cancelled: boolean; message: string }> {
+export async function cancelAsyncJob(
+  jobId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+): Promise<{ cancelled: boolean; message: string }> {
+  const task = await services.task.getById(jobId);
+  if (!task) return { cancelled: false, message: "任务不存在" };
+  if (task.status !== "running") return { cancelled: false, message: "任务未在运行中" };
+
   const orchestrator = getAsyncJobOrchestrator(config);
   const cancelled = orchestrator.cancel(jobId);
   if (!cancelled) {
-    return { cancelled: false, message: "未找到该任务或已结束" };
+    // 任务可能刚好执行完但尚未被 poll，把仍标记为 running 的记录置为失败，防止永久占坑
+    await services.task.update({
+      id: jobId,
+      status: "failed",
+      output: { error: "任务已结束或丢失，取消失败" } satisfies AsyncTaskOutput,
+    });
+    return { cancelled: true, message: "任务已结束，已标记为失败" };
   }
+
+  // 对排队中任务，orchestrator 只清队列不会执行 finally，需要手动回写状态
+  await services.task.update({
+    id: jobId,
+    status: "failed",
+    output: { error: "异步任务已取消" } satisfies AsyncTaskOutput,
+  });
   return { cancelled: true, message: "已取消异步任务" };
 }
 
@@ -301,7 +322,11 @@ export async function retryAsyncJob(
   const input = parseAsyncInput(existing.input);
   if (!input) throw new Error("不是有效的异步 Agent 任务");
 
+  const MAX_ASYNC_RETRIES = 3;
   const retryCount = (input.retryCount ?? 0) + 1;
+  if (retryCount > MAX_ASYNC_RETRIES) {
+    throw new Error(`该异步任务最多只能重试 ${MAX_ASYNC_RETRIES} 次`);
+  }
   const taskLabel = input.taskLabel;
   const agentSnapshot = input.agentSnapshot;
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { prisma } from "../db.js";
 import * as agentRuntime from "../infra/agentRuntime.js";
 import { createContextInner } from "../trpc/context.js";
@@ -7,9 +7,12 @@ import {
   pullAsyncDeliveries,
   recoverStaleAsyncJobs,
   cleanupDeliveredAsyncJobs,
+  cancelAsyncJob,
   retryAsyncJob,
   startAsyncAgentTask,
 } from "../infra/asyncJobManager.js";
+import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
+import { createTestConfig } from "./helpers/toolTestFixtures.js";
 
 const ASYNC_KIND = "async_agent";
 const sessionId = "cltestasyncjobsession001";
@@ -54,6 +57,10 @@ async function cleanupTestTasks() {
 }
 
 describe("asyncJobManager 持久化", () => {
+  beforeEach(() => {
+    resetAsyncJobOrchestratorForTests();
+  });
+
   afterEach(async () => {
     await cleanupTestTasks();
   });
@@ -205,5 +212,61 @@ describe("asyncJobManager 持久化", () => {
     );
 
     vi.restoreAllMocks();
+  });
+
+  it("cancelAsyncJob 取消排队中的任务并回写失败状态", async () => {
+    vi.spyOn(agentRuntime, "runAgentLoop").mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ content: "慢任务", toolCalls: [], tokenUsage: { prompt: 1, completion: 2, total: 3 }, model: "m", provider: "p", roundsUsed: 1 }), 5000)),
+    );
+
+    const ctx = await createContextInner();
+    const narrowConfig = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: { maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000 },
+    });
+
+    const first = await startAsyncAgentTask({
+      sessionId,
+      task: "慢任务 A",
+      label: "A",
+      config: narrowConfig,
+      services: ctx.services,
+      agent: { id: "t", model: "m", systemPrompt: "test", tools: [] },
+    });
+
+    const queued = await startAsyncAgentTask({
+      sessionId,
+      task: "排队任务 B",
+      label: "B",
+      config: narrowConfig,
+      services: ctx.services,
+      agent: { id: "t", model: "m", systemPrompt: "test", tools: [] },
+    });
+
+    // first 在运行，queued 在队列
+    const runningBefore = await listRunningAsyncJobs(sessionId);
+    expect(runningBefore.some((j) => j.jobId === first.jobId)).toBe(true);
+
+    const cancelled = await cancelAsyncJob(queued.jobId, narrowConfig, ctx.services);
+    expect(cancelled.cancelled).toBe(true);
+
+    const queuedRow = await prisma.task.findUnique({ where: { id: queued.jobId } });
+    expect(queuedRow?.status).toBe("failed");
+    expect((queuedRow?.output as { error?: string })?.error).toContain("已取消");
+
+    // 清理运行中任务
+    await cancelAsyncJob(first.jobId, narrowConfig, ctx.services);
+    vi.restoreAllMocks();
+  });
+
+  it("retryAsyncJob 超过最大重试次数时报错", async () => {
+    const task = await createAsyncTask({ status: "failed", taskLabel: "超限", error: "fail" });
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { input: { kind: ASYNC_KIND, sessionId, task: "超限", taskLabel: "超限", agentSnapshot: { id: "t", model: "m", systemPrompt: "", tools: [] }, retryCount: 3 } },
+    });
+
+    const ctx = await createContextInner();
+    await expect(retryAsyncJob(task.id, ctx.config, ctx.services)).rejects.toThrow(/最多只能重试/);
   });
 });
