@@ -52,6 +52,7 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   scrape_web_page: scrapeWebPageTool,
   read_file: readFileTool,
   write_file: writeFileTool,
+  append_to_file: appendToFileTool,
   list_directory: listDirectoryTool,
   file_rename: fileRenameTool,
   file_move: fileMoveTool,
@@ -160,6 +161,18 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
     },
   },
   {
+    name: "append_to_file",
+    description: "在项目根目录内的文本文件末尾追加内容（文件不存在则创建）。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "相对项目根的路径" },
+        content: { type: "string", description: "追加内容" },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
     name: "list_directory",
     description: "列出项目内目录内容，可选递归。",
     parameters: {
@@ -215,6 +228,8 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         pattern: { type: "string", description: "搜索关键词或正则表达式" },
         path: { type: "string", description: "相对起始目录，默认 ." },
         isRegex: { type: "boolean", description: "是否将 pattern 视为正则表达式，默认 false（字面量匹配）" },
+        caseSensitive: { type: "boolean", description: "是否区分大小写，默认 false" },
+        glob: { type: "string", description: "文件名通配过滤，如 *.md" },
         maxResults: { type: "number", description: "最大返回结果数，默认 30" },
       },
       required: ["pattern"],
@@ -506,6 +521,7 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
       properties: {
         task: { type: "string", description: "交给后台 Agent 执行的任务描述" },
         label: { type: "string", description: "队列中显示的简短标签" },
+        timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
       },
       required: ["task"],
     },
@@ -1032,6 +1048,14 @@ async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolConte
   return { path: args.path, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
 }
 
+async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const abs = resolveSafePath(ctx.config, String(args.path));
+  const dir = path.dirname(abs);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(abs, String(args.content ?? ""), "utf8");
+  return { path: args.path, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
+}
+
 async function listDirectoryTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const abs = resolveSafePath(ctx.config, String(args.path || "."));
   if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${args.path || "."}`);
@@ -1149,10 +1173,24 @@ async function searchFilesTool(args: Record<string, unknown>, ctx: NativeToolCon
   const rawPattern = String(args.pattern || "");
   if (!rawPattern) throw new Error("pattern 不能为空");
   const isRegex = args.isRegex === true;
+  const caseSensitive = args.caseSensitive === true;
+  const flags = caseSensitive ? "" : "i";
   const regex = isRegex
-    ? new RegExp(rawPattern, "i")
-    : new RegExp(rawPattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    ? new RegExp(rawPattern, flags)
+    : new RegExp(rawPattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), flags);
   const maxResults = Math.min(200, Math.max(1, Number(args.maxResults || 30)));
+  const glob = args.glob ? String(args.glob) : undefined;
+  const globRegex = glob
+    ? new RegExp(
+        "^" +
+          glob
+            .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+            .replace(/\*/g, ".*")
+            .replace(/\?/g, ".") +
+          "$",
+        flags,
+      )
+    : undefined;
   const results: Array<{ file: string; line: number; snippet: string }> = [];
   const skipDirs = new Set(["node_modules", ".git", ".next", "dist", "out", "tmp", "weights", "backups"]);
 
@@ -1166,6 +1204,7 @@ async function searchFilesTool(args: Record<string, unknown>, ctx: NativeToolCon
         continue;
       }
       if (!entry.isFile()) continue;
+      if (globRegex && !globRegex.test(entry.name)) continue;
       const ext = path.extname(entry.name).toLowerCase();
       if (
         [".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".mp4", ".mp3", ".pdf", ".zip", ".gz", ".exe", ".dll", ".db", ".db-wal", ".db-shm"].includes(ext)
@@ -1193,7 +1232,7 @@ async function searchFilesTool(args: Record<string, unknown>, ctx: NativeToolCon
   }
 
   walk(root);
-  return { pattern: rawPattern, isRegex, total: results.length, results };
+  return { pattern: rawPattern, isRegex, caseSensitive, glob: glob ?? null, total: results.length, results };
 }
 
 async function directoryCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -1425,10 +1464,13 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     throw new Error("run_async 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
   }
   const { startAsyncAgentTask } = await import("./asyncJobManager.js");
+  const timeoutMs =
+    args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined;
   return startAsyncAgentTask({
     sessionId: ctx.sessionId,
     task: String(args.task || ""),
     label: args.label ? String(args.label) : undefined,
+    timeoutMs,
     config: ctx.config,
     services: ctx.services,
     agent: ctx.agentSnapshot,

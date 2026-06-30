@@ -135,6 +135,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "scrape_web_page",
   "read_file",
   "write_file",
+  "append_to_file",
   "list_directory",
   "file_rename",
   "file_move",

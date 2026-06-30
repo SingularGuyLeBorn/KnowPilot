@@ -7,6 +7,8 @@ import type { AppConfig } from "./config.js";
 export interface AsyncJobRunSpec {
   jobId: string;
   sessionId: string;
+  /** 任务级超时毫秒数；未指定时使用 orchestrator 全局超时 */
+  timeoutMs?: number;
   execute: (signal: AbortSignal) => Promise<void>;
 }
 
@@ -79,9 +81,10 @@ export class AsyncJobOrchestrator {
     this.runningBySession.set(spec.sessionId, (this.runningBySession.get(spec.sessionId) ?? 0) + 1);
     this.runningJobs.set(spec.jobId, { spec, controller, startedAt: Date.now() });
 
+    const timeoutMs = spec.timeoutMs ?? this.limits.taskTimeoutMs;
     const timeout = setTimeout(() => {
       controller.abort();
-    }, this.limits.taskTimeoutMs);
+    }, timeoutMs);
 
     const execute = spec.execute(controller.signal);
     void execute

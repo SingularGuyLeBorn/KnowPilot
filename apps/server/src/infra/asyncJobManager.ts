@@ -259,6 +259,7 @@ export async function startAsyncAgentTask(options: {
   sessionId: string;
   task: string;
   label?: string;
+  timeoutMs?: number;
   config: AppConfig;
   services: ServiceContainer;
   agent: { id: string; model: string; systemPrompt: string; tools: string[] };
@@ -300,6 +301,7 @@ export async function startAsyncAgentTask(options: {
   orchestrator.enqueue({
     jobId,
     sessionId: options.sessionId,
+    timeoutMs: options.timeoutMs,
     execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0),
   });
 

@@ -155,6 +155,56 @@ describe("asyncJobManager 持久化", () => {
     vi.restoreAllMocks();
   });
 
+  it("startAsyncAgentTask 支持 timeoutMs 覆盖全局超时", async () => {
+    vi.spyOn(agentRuntime, "runAgentLoop").mockImplementation(async (_opts) => {
+      const signal = _opts.signal;
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(resolve, 10_000);
+        signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(t);
+            reject(new Error("Aborted"));
+          },
+          { once: true },
+        );
+      });
+      return {
+        content: "不应返回",
+        toolCalls: [],
+        tokenUsage: { prompt: 1, completion: 2, total: 3 },
+        model: "deepseek-chat",
+        provider: "deepseek",
+        roundsUsed: 1,
+      };
+    });
+
+    const ctx = await createContextInner();
+    const started = await startAsyncAgentTask({
+      sessionId,
+      task: "慢任务",
+      label: "超时测",
+      timeoutMs: 100,
+      config: ctx.config,
+      services: ctx.services,
+      agent: { id: "t", model: "deepseek-chat", systemPrompt: "test", tools: [] },
+    });
+
+    await vi.waitFor(
+      async () => {
+        const row = await prisma.task.findUnique({ where: { id: started.jobId } });
+        expect(row?.status).toBe("failed");
+      },
+      { timeout: 3000, interval: 50 },
+    );
+
+    const row = await prisma.task.findUnique({ where: { id: started.jobId } });
+    expect(row?.status).toBe("failed");
+    expect((row?.output as { error?: string })?.error).toBeTruthy();
+
+    vi.restoreAllMocks();
+  });
+
   it("cleanupDeliveredAsyncJobs 删除已投递且过期的任务", async () => {
     const task = await createAsyncTask({ status: "success", taskLabel: "过期 D", asyncResult: "ok", delivered: true });
     await prisma.task.update({

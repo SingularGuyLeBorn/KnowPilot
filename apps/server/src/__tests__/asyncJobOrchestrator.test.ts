@@ -95,4 +95,24 @@ describe("AsyncJobOrchestrator", () => {
     await new Promise((r) => setTimeout(r, 120));
     expect(aborted).toBe(true);
   });
+
+  it("任务级 timeoutMs 覆盖全局默认值", async () => {
+    const orch = new AsyncJobOrchestrator({ maxGlobal: 2, maxPerSession: 2, taskTimeoutMs: 60_000 });
+    let aborted = false;
+
+    orch.enqueue({
+      jobId: "j1",
+      sessionId: "s1",
+      timeoutMs: 50,
+      execute: async (signal) => {
+        signal.addEventListener("abort", () => {
+          aborted = true;
+        });
+        await new Promise((r) => setTimeout(r, 500));
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 120));
+    expect(aborted).toBe(true);
+  });
 });

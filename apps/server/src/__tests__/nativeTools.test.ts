@@ -20,7 +20,7 @@ import {
 } from "./helpers/toolTestFixtures.js";
 
 describe("Native 工具注册表", () => {
-  it("listNativeTools 包含全部 35 个工具定义", () => {
+  it("listNativeTools 包含全部 36 个工具定义", () => {
     const names = listNativeTools().map((d) => d.name);
     expect(names).toEqual(expect.arrayContaining([...ALL_NATIVE_TOOL_NAMES]));
     expect(names).toHaveLength(ALL_NATIVE_TOOL_NAMES.length);
@@ -191,6 +191,39 @@ describe("native:list_directory", () => {
     const paths = entries.map((e) => e.path);
     expect(paths).toContain("subdir");
     expect(paths).toContain("subdir/nested.txt");
+  });
+});
+
+describe("native:append_to_file", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("在已有文件末尾追加内容", async () => {
+    fs.writeFileSync(path.join(root, "log.txt"), "line1\n", "utf8");
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("append_to_file", { path: "log.txt", content: "line2\n" }, ctx)) as {
+      path: string;
+      bytes: number;
+    };
+    expect(result.bytes).toBe(6);
+    expect(fs.readFileSync(path.join(root, "log.txt"), "utf8")).toBe("line1\nline2\n");
+  });
+
+  it("文件不存在时创建并写入", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("append_to_file", { path: "new.txt", content: "x" }, ctx)) as {
+      path: string;
+      bytes: number;
+    };
+    expect(result.bytes).toBe(1);
+    expect(fs.readFileSync(path.join(root, "new.txt"), "utf8")).toBe("x");
   });
 });
 
@@ -415,6 +448,30 @@ describe("native:search_files", () => {
       total: number;
     };
     expect(result.total).toBe(1);
+  });
+
+  it("glob 过滤文件名", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("search_files", { pattern: "hello", path: ".", glob: "*.md" }, ctx)) as {
+      total: number;
+      results: Array<{ file: string }>;
+    };
+    expect(result.results.every((r) => r.file.endsWith(".md"))).toBe(true);
+  });
+
+  it("caseSensitive 区分大小写", async () => {
+    fs.writeFileSync(path.join(root, "case.txt"), "Hello\nhello", "utf8");
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool(
+      "search_files",
+      { pattern: "Hello", path: ".", caseSensitive: true },
+      ctx,
+    )) as {
+      total: number;
+      results: Array<{ snippet: string }>;
+    };
+    expect(result.total).toBe(1);
+    expect(result.results[0]?.snippet).toBe("Hello");
   });
 });
 
