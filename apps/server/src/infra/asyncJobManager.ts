@@ -162,6 +162,16 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
     .filter((j): j is AsyncRunningJob => j !== null);
 }
 
+/** 取消一条运行中或排队中的异步任务 */
+export async function cancelAsyncJob(jobId: string, config: AppConfig): Promise<{ cancelled: boolean; message: string }> {
+  const orchestrator = getAsyncJobOrchestrator(config);
+  const cancelled = orchestrator.cancel(jobId);
+  if (!cancelled) {
+    return { cancelled: false, message: "未找到该任务或已结束" };
+  }
+  return { cancelled: true, message: "已取消异步任务" };
+}
+
 export async function startAsyncAgentTask(options: {
   sessionId: string;
   task: string;
@@ -207,8 +217,11 @@ export async function startAsyncAgentTask(options: {
   orchestrator.enqueue({
     jobId,
     sessionId: options.sessionId,
-    execute: async () => {
+    execute: async (signal) => {
       try {
+        if (signal.aborted) {
+          throw new Error("异步任务已被取消");
+        }
         const loop = await runAgentLoop({
           config: options.config,
           services: options.services,
@@ -219,6 +232,7 @@ export async function startAsyncAgentTask(options: {
           },
           messages: [{ role: "user", content: task }],
           invokeTrpc,
+          signal,
         });
 
         await options.services.task.update({
@@ -227,11 +241,14 @@ export async function startAsyncAgentTask(options: {
           output: { asyncResult: loop.content || "(无文本输出)" } satisfies AsyncTaskOutput,
         });
       } catch (err: unknown) {
+        const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
+        const isTimeout = err instanceof Error && err.message.includes("超时");
+        const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
         await options.services.task.update({
           id: jobId,
           status: "failed",
           output: {
-            error: err instanceof Error ? err.message : String(err),
+            error: reason || (err instanceof Error ? err.message : String(err)),
           } satisfies AsyncTaskOutput,
         });
       }

@@ -43,10 +43,11 @@ export interface AppConfig {
     maxToolRounds: number;
     providers: Record<string, LlmProviderConfig>;
   };
-  /** 异步 Agent 后台任务并发 */
+  /** 异步 Agent 后台任务并发与超时 */
   asyncJobs: {
     maxConcurrent: number;
     maxPerSession: number;
+    taskTimeoutMs: number;
   };
   /** OCR — 对齐 MetaBlog PaddleOCR + OCR.space */
   ocr: {
@@ -292,6 +293,7 @@ export function createAppConfig(): AppConfig {
     asyncJobs: {
       maxConcurrent: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_CONCURRENT") || "2", 10)),
       maxPerSession: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_PER_SESSION") || "2", 10)),
+      taskTimeoutMs: Math.max(10_000, parseInt(readEnv("AGENT_ASYNC_TASK_TIMEOUT_MS") || "300000", 10)),
     },
     ocr: {
       paddleCliPath: readEnv("PADDLEOCR_CLI_PATH") || paddleCliDefault,

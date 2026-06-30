@@ -423,9 +423,16 @@ export const listInfoSourcesSchema = z.object({
    GitRepo (Git 仓库)
    ═══════════════════════════════════════════════════════ */
 
+const safePathString = z
+  .string()
+  .min(1)
+  .refine((v) => !v.includes("..") && /^([A-Za-z]:[\\/].*|[\\/].*|[^\\/].*)$/.test(v), {
+    message: "路径不能包含 ..，且需为合法相对或绝对路径",
+  });
+
 export const createGitRepoSchema = z.object({
   name: z.string().min(1),
-  path: z.string().min(1),
+  path: safePathString,
   branch: z.string().default("main"),
   remoteUrl: z.string().url().optional().nullable(),
 });
@@ -433,6 +440,7 @@ export const createGitRepoSchema = z.object({
 export const updateGitRepoSchema = z.object({
   id: z.string().cuid(),
   name: z.string().min(1).optional(),
+  path: safePathString.optional(),
   branch: z.string().optional(),
   remoteUrl: z.string().url().optional().nullable(),
 });
@@ -480,14 +488,14 @@ export const listTasksSchema = z.object({
 export const createWorkspaceSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(100),
   description: z.string().optional(),
-  path: z.string().min(1, "路径不能为空"),
+  path: safePathString,
 });
 
 export const updateWorkspaceSchema = z.object({
   id: z.string().cuid(),
   name: z.string().min(1).max(100).optional(),
   description: z.string().optional(),
-  path: z.string().min(1).optional(),
+  path: safePathString.optional(),
 });
 
 export const listWorkspacesSchema = z.object({

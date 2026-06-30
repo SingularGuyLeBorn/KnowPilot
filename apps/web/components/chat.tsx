@@ -454,6 +454,12 @@ export function ChatView() {
     },
   );
 
+  const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
+    onSuccess: () => {
+      void asyncQueueQuery.refetch();
+    },
+  });
+
   const queue = useMemo(
     () =>
       mergeAsyncPollIntoQueue(localQueue, asyncQueueQuery.data, {
@@ -1278,6 +1284,7 @@ export function ChatView() {
             setLocalQueue(extractLocalQueueFromMerged(items, asyncQueueQuery.data))
           }
           onRemove={(id) => setLocalQueue((q) => q.filter((t) => t.id !== id))}
+          onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
           settingsPanelOpen={rightOpen}
           settingsPanelWidth={360}
         />

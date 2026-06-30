@@ -106,6 +106,7 @@ export async function runAgentLoop(options: {
   agent: { model: string; systemPrompt: string; tools: string[] };
   messages: LlmMessage[];
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
+  signal?: AbortSignal;
 }): Promise<AgentLoopResult> {
   assertLlmBudget(options.config);
   const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
@@ -135,6 +136,7 @@ export async function runAgentLoop(options: {
       model: effectiveModel,
       messages: llmMessages,
       tools: toolSchemas,
+      signal: options.signal,
     });
 
     lastModel = completion.model;

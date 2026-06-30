@@ -1,5 +1,5 @@
 /**
- * 异步 Agent 任务编排 — 全局 /  per-session 并发池（MetaBlog 式后台任务中间层）
+ * 异步 Agent 任务编排 — 全局 / per-session 并发池 + 超时 + 取消
  */
 
 import type { AppConfig } from "./config.js";
@@ -7,16 +7,23 @@ import type { AppConfig } from "./config.js";
 export interface AsyncJobRunSpec {
   jobId: string;
   sessionId: string;
-  execute: () => Promise<void>;
+  execute: (signal: AbortSignal) => Promise<void>;
+}
+
+interface RunningJob {
+  spec: AsyncJobRunSpec;
+  controller: AbortController;
+  startedAt: number;
 }
 
 export class AsyncJobOrchestrator {
   private readonly queue: AsyncJobRunSpec[] = [];
   private runningGlobal = 0;
   private readonly runningBySession = new Map<string, number>();
+  private readonly runningJobs = new Map<string, RunningJob>();
 
   constructor(
-    private readonly limits: { maxGlobal: number; maxPerSession: number },
+    private readonly limits: { maxGlobal: number; maxPerSession: number; taskTimeoutMs: number },
   ) {}
 
   /** 入队；有并发槽位时立即执行 */
@@ -31,6 +38,21 @@ export class AsyncJobOrchestrator {
       runningGlobal: this.runningGlobal,
       limits: this.limits,
     };
+  }
+
+  /** 取消一条运行中的任务；若未运行则忽略 */
+  cancel(jobId: string): boolean {
+    const running = this.runningJobs.get(jobId);
+    if (running) {
+      running.controller.abort();
+      return true;
+    }
+    const idx = this.queue.findIndex((s) => s.jobId === jobId);
+    if (idx >= 0) {
+      this.queue.splice(idx, 1);
+      return true;
+    }
+    return false;
   }
 
   private canStart(sessionId: string): boolean {
@@ -52,15 +74,29 @@ export class AsyncJobOrchestrator {
   }
 
   private start(spec: AsyncJobRunSpec): void {
+    const controller = new AbortController();
     this.runningGlobal++;
     this.runningBySession.set(spec.sessionId, (this.runningBySession.get(spec.sessionId) ?? 0) + 1);
-    void spec.execute().finally(() => {
-      this.runningGlobal = Math.max(0, this.runningGlobal - 1);
-      const left = (this.runningBySession.get(spec.sessionId) ?? 1) - 1;
-      if (left <= 0) this.runningBySession.delete(spec.sessionId);
-      else this.runningBySession.set(spec.sessionId, left);
-      this.drain();
-    });
+    this.runningJobs.set(spec.jobId, { spec, controller, startedAt: Date.now() });
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, this.limits.taskTimeoutMs);
+
+    const execute = spec.execute(controller.signal);
+    void execute
+      .catch(() => {
+        /* 执行者内部已捕获并更新 Task 状态；这里只需保证 finally 走通 */
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        this.runningJobs.delete(spec.jobId);
+        this.runningGlobal = Math.max(0, this.runningGlobal - 1);
+        const left = (this.runningBySession.get(spec.sessionId) ?? 1) - 1;
+        if (left <= 0) this.runningBySession.delete(spec.sessionId);
+        else this.runningBySession.set(spec.sessionId, left);
+        this.drain();
+      });
   }
 }
 
@@ -71,6 +107,7 @@ export function getAsyncJobOrchestrator(config: AppConfig): AsyncJobOrchestrator
     _orchestrator = new AsyncJobOrchestrator({
       maxGlobal: Math.max(1, config.asyncJobs.maxConcurrent),
       maxPerSession: Math.max(1, config.asyncJobs.maxPerSession),
+      taskTimeoutMs: config.asyncJobs.taskTimeoutMs,
     });
   }
   return _orchestrator;

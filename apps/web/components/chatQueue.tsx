@@ -16,6 +16,7 @@ import {
   PinOff,
   Trash2,
   X,
+  Square,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatQueueItem } from "@/lib/chatQueueTypes";
@@ -26,6 +27,7 @@ interface MessageQueueProps {
   onPanelOpenChange: (open: boolean) => void;
   onChange: (items: ChatQueueItem[]) => void;
   onRemove: (id: string) => void;
+  onCancel?: (jobId: string) => void;
   /** 右侧设置 Panel 打开时向左偏移，避免重叠 */
   settingsPanelOpen?: boolean;
   settingsPanelWidth?: number;
@@ -53,6 +55,7 @@ function QueueCard({
   onMoveUp,
   onMoveDown,
   onTogglePin,
+  onCancel,
 }: {
   item: ChatQueueItem;
   expanded: boolean;
@@ -61,6 +64,7 @@ function QueueCard({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onTogglePin: () => void;
+  onCancel?: () => void;
 }) {
   const isAsyncResult = item.kind === "async-result";
   const isRunning = item.kind === "async-running";
@@ -182,7 +186,16 @@ function QueueCard({
               </button>
             </>
           )}
-          {!isRunning && (
+          {isRunning ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded p-1 text-amber-600 hover:bg-amber-50"
+              title="取消任务"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </button>
+          ) : (
             <button type="button" onClick={onRemove} className="rounded p-1 text-red-500 hover:bg-red-50" title="移除">
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -199,6 +212,7 @@ export function MessageQueue({
   onPanelOpenChange,
   onChange,
   onRemove,
+  onCancel,
   settingsPanelOpen = false,
   settingsPanelWidth = 360,
 }: MessageQueueProps) {
@@ -334,6 +348,7 @@ export function MessageQueue({
                   onMoveUp={() => moveItem(item.id, -1)}
                   onMoveDown={() => moveItem(item.id, 1)}
                   onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
+                  onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
                 />
               </div>
             ))}
