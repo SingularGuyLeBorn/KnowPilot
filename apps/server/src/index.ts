@@ -14,10 +14,15 @@ import { getEventBus } from "./infra/eventBus.js";
 import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
 import { getTaskScheduler } from "./infra/taskScheduler.js";
-import { rebuildFtsIndex } from "./infra/ftsIndex.js";
-import { prisma } from "./db.js";
+import { recoverStaleAsyncJobs } from "./infra/asyncJobManager.js";
+import { closeBrowser } from "./infra/metablog/webScraper.js";
+import { getSharedBrowser } from "./infra/metablog/browserPool.js";
+import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
+import { syncSearchEnvFromConfig } from "./infra/nativeTools.js";
+import { getEnrichedServerCapabilities, getServerCapabilities } from "./infra/capabilities.js";
 import { handleAgentChatStream } from "./infra/agentStream.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
+import { prisma } from "./db.js";
 
 const app = express();
 
@@ -26,21 +31,11 @@ loadRootEnv();
 
 // 初始化配置、事件总线、Service容器、触发器引擎
 const config = getAppConfig();
+syncSearchEnvFromConfig(config);
 const eventBus = getEventBus();
 const services = getServiceContainer(prisma, eventBus, config);
 const triggerEngine = getTriggerEngine(prisma, eventBus, services);
 const taskScheduler = getTaskScheduler(prisma, services);
-
-// 启动事件触发器引擎与定时任务调度器
-triggerEngine.start().catch((err) => {
-  console.error("❌ [TriggerEngine] 启动失败:", err);
-});
-taskScheduler.start().catch((err) => {
-  console.error("❌ [TaskScheduler] 启动失败:", err);
-});
-rebuildFtsIndex(prisma).catch((err) => {
-  console.error("❌ [FTS] 索引重建失败:", err);
-});
 
 const PORT = config.port;
 const postsDir = config.contentPaths.posts;
@@ -71,8 +66,24 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 
 // 健康检查 (非 tRPC)
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: Date.now() });
+app.get("/health", async (_req, res) => {
+  try {
+    const capabilities = await getEnrichedServerCapabilities(config, () =>
+      services.infoSource.list({ page: 1, pageSize: 1, enabled: true }),
+    );
+    res.json({
+      status: "ok",
+      timestamp: Date.now(),
+      capabilities,
+    });
+  } catch (err: unknown) {
+    res.status(503).json({
+      status: "error",
+      timestamp: Date.now(),
+      capabilities: getServerCapabilities(config),
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 });
 
 // 文章本地资源（图片等）静态服务
@@ -106,12 +117,34 @@ const server = app.listen(PORT, () => {
   console.log(`\n  🚀 KnowPilot Server running at http://localhost:${PORT}`);
   console.log(`  📡 tRPC endpoint: http://localhost:${PORT}/api/trpc`);
   console.log(`  💚 Health check:  http://localhost:${PORT}/health\n`);
+
+  // listen 后再启后台任务；FTS 仅由 pnpm db:sync / sync:watch 重建
+  triggerEngine.start().catch((err) => {
+    console.error("❌ [TriggerEngine] 启动失败:", err);
+  });
+  taskScheduler.start().catch((err) => {
+    console.error("❌ [TaskScheduler] 启动失败:", err);
+  });
+  recoverStaleAsyncJobs()
+    .then((n) => {
+      if (n > 0) console.log(`  ⚠️ [AsyncJobs] 已将 ${n} 个中断的后台任务标为 failed`);
+    })
+    .catch((err) => {
+      console.error("❌ [AsyncJobs] 恢复检查失败:", err);
+    });
+
+  if (hasSystemChrome() && process.env.BROWSER_WARMUP !== "0") {
+    void getSharedBrowser()
+      .then(() => console.log("  🌐 [Browser] Playwright 共享实例已预热"))
+      .catch((err) => console.warn("  ⚠️ [Browser] 预热失败:", err instanceof Error ? err.message : err));
+  }
 });
 
 // 优雅退出处理
 const handleShutdown = () => {
   console.log("\n  💾 [Shutdown] 正在关闭服务，清理资源...");
   triggerEngine.stop();
+  void closeBrowser().catch(() => undefined);
   server.close(() => {
     prisma.$disconnect().then(() => {
       console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");

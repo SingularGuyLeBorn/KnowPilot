@@ -8,6 +8,7 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import {
   chatCompletionStream,
   chatCompletion,
+  resolveEffectiveAgentModel,
   type LlmMessage,
   type LlmToolCall,
 } from "./llmClient.js";
@@ -19,8 +20,9 @@ import {
   type ToolRegistryEntry,
 } from "./agentTools.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.js";
-import type { AgentChatInput, ChatConfigInput } from "@knowpilot/shared";
-import { resolveAgent, buildMemoryContext, parseToolCall } from "./agentRuntime.js";
+import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
+import { formatToolResultHint } from "@knowpilot/shared";
+import { resolveAgent, buildMemoryContext, parseToolCall, buildSystemPromptWithHints } from "./agentRuntime.js";
 import { maybeCompactMessages } from "./autoCompact.js";
 import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
 import { verifyAuthHeader, isAuthEnabled } from "./auth.js";
@@ -34,8 +36,8 @@ export type AgentStreamEvent =
   | { type: "round_start"; round: number }
   | { type: "thinking"; delta: string }
   | { type: "token"; delta: string }
-  | { type: "tool_start"; name: string; args: unknown; round: number }
-  | { type: "tool_end"; name: string; result: unknown; round: number }
+  | { type: "tool_start"; toolCallId: string; name: string; args: unknown; round: number }
+  | { type: "tool_end"; toolCallId: string; name: string; result: unknown; round: number; hint?: string }
   | {
       type: "done";
       sessionId: string;
@@ -61,6 +63,7 @@ interface LlmCallOptions {
   temperature?: number;
   maxTokens?: number;
   enableReasoning?: boolean;
+  reasoningEffort?: import("@knowpilot/shared").ReasoningEffort;
 }
 
 interface PrepareResult {
@@ -68,6 +71,7 @@ interface PrepareResult {
   skipUserCreate: boolean;
   excludeAssistantId?: string;
   updateAssistantId?: string;
+  attachments?: ChatImageAttachment[];
   userMessageMeta?: { skill?: { id: string; name: string; icon?: string | null } };
 }
 
@@ -102,6 +106,9 @@ async function runAgentLoopStream(options: {
   llmOptions: LlmCallOptions;
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
   emit: (event: AgentStreamEvent) => void;
+  sessionId?: string;
+  agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[] };
+  signal?: AbortSignal;
 }): Promise<{
   content: string;
   toolCalls: StoredToolCall[];
@@ -113,7 +120,10 @@ async function runAgentLoopStream(options: {
   const parsed = parseAgentTools(options.agent.tools);
   const registry = new Map<string, ToolRegistryEntry>();
   const toolSchemas = await buildAgentToolSchemas(options.services, parsed, registry);
-  const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed);
+  const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
+    sessionId: options.sessionId,
+    agentSnapshot: options.agentMeta,
+  });
   const maxRounds = options.config.llm.maxToolRounds;
 
   let llmMessages: LlmMessage[] = [...options.messages];
@@ -139,6 +149,8 @@ async function runAgentLoopStream(options: {
       temperature: options.llmOptions.temperature,
       maxTokens: options.llmOptions.maxTokens,
       enableReasoning: options.llmOptions.enableReasoning,
+      reasoningEffort: options.llmOptions.reasoningEffort,
+      signal: options.signal,
     });
 
     lastModel = probe.model;
@@ -155,9 +167,18 @@ async function runAgentLoopStream(options: {
     }
 
     if (probe.toolCalls.length > 0) {
+      const roundReasoning =
+        probe.reasoningContent ||
+        executedTools
+          .filter((t) => t.kind === "thinking" && t.id === `think_${roundsUsed}`)
+          .map((t) => String(t.result ?? ""))
+          .join("") ||
+        null;
+
       llmMessages.push({
         role: "assistant",
         content: probe.content,
+        reasoning_content: roundReasoning,
         tool_calls: probe.toolCalls,
       });
 
@@ -165,10 +186,17 @@ async function runAgentLoopStream(options: {
         const parsedCall = parseToolCall(call);
         options.emit({
           type: "tool_start",
+          toolCallId: call.id,
           name: parsedCall.name,
           args: parsedCall.args,
           round: roundsUsed,
         });
+      }
+
+      if (options.signal?.aborted) {
+        const err = new Error("流式输出已被用户中断");
+        err.name = "AbortError";
+        throw err;
       }
 
       const batchResults = await executeToolCallsBatch(probe.toolCalls, toolCtx, registry, parsed);
@@ -182,9 +210,11 @@ async function runAgentLoopStream(options: {
         });
         options.emit({
           type: "tool_end",
+          toolCallId: call.id,
           name: parsedCall.name,
           result,
           round: roundsUsed,
+          hint: formatToolResultHint(result) ?? undefined,
         });
 
         llmMessages.push({
@@ -205,6 +235,8 @@ async function runAgentLoopStream(options: {
       temperature: options.llmOptions.temperature,
       maxTokens: options.llmOptions.maxTokens,
       enableReasoning: options.llmOptions.enableReasoning,
+      reasoningEffort: options.llmOptions.reasoningEffort,
+      signal: options.signal,
     })) {
       if (chunk.type === "reasoning" && chunk.delta) {
         pushThinking(executedTools, roundsUsed, chunk.delta, options.emit);
@@ -305,8 +337,13 @@ async function prepareMessage(
   }
 
   const messageText = input.message?.trim() ?? "";
-  if (!messageText) throw new Error("message 不能为空");
-  return { messageText, skipUserCreate: false };
+  const hasAttachments = Array.isArray(input.attachments) && input.attachments.length > 0;
+  if (!messageText && !hasAttachments) throw new Error("message 不能为空");
+  return {
+    messageText: messageText || "（见附件）",
+    skipUserCreate: false,
+    attachments: input.attachments,
+  };
 }
 
 async function resolveSkillPrompt(
@@ -333,6 +370,7 @@ function resolveLlmOptions(config?: ChatConfigInput): LlmCallOptions {
     temperature: config?.temperature,
     maxTokens: config?.maxTokens,
     enableReasoning: config?.enableReasoning,
+    reasoningEffort: config?.reasoningEffort,
   };
 }
 
@@ -342,9 +380,11 @@ export async function chatAgentStream(
   input: AgentChatInput,
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>,
   emit: (event: AgentStreamEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const start = Date.now();
   let sessionId = input.sessionId;
+  let partialContent = "";
 
   try {
     assertLlmBudget(config);
@@ -352,7 +392,7 @@ export async function chatAgentStream(
     const skillResolved = await resolveSkillPrompt(services, input.skillId);
     const prepared = await prepareMessage(services, input);
 
-    const effectiveModel = input.model || agent.model;
+    const effectiveModel = resolveEffectiveAgentModel(config, input.model || agent.model);
     let effectiveSystemPrompt =
       skillResolved.prompt ??
       (input.config?.systemPrompt !== undefined ? input.config.systemPrompt : agent.systemPrompt);
@@ -362,13 +402,15 @@ export async function chatAgentStream(
         title: prepared.messageText.slice(0, 40) || "新对话",
         model: effectiveModel,
         systemPrompt: effectiveSystemPrompt,
+        agentId: agent.id,
       });
       sessionId = created.data!.id;
-    } else if (input.model || input.config?.systemPrompt !== undefined || skillResolved.prompt) {
+    } else if (input.model || input.config?.systemPrompt !== undefined || skillResolved.prompt || input.agentId) {
       await services.session.update({
         id: sessionId,
         ...(input.model ? { model: input.model } : {}),
         ...(effectiveSystemPrompt !== undefined ? { systemPrompt: effectiveSystemPrompt } : {}),
+        ...(input.agentId ? { agentId: input.agentId } : {}),
       });
     }
 
@@ -377,7 +419,8 @@ export async function chatAgentStream(
         sessionId,
         role: "user",
         content: prepared.messageText,
-        toolResults: skillResolved.meta ?? undefined,
+        attachments: prepared.attachments?.length ? prepared.attachments : undefined,
+        toolResults: skillResolved.meta ? { skill: skillResolved.meta.skill } : undefined,
       });
     }
 
@@ -388,9 +431,17 @@ export async function chatAgentStream(
 
     const memoryHint = await buildMemoryContext(services, prepared.messageText);
     const messages = buildLlmMessagesFromHistory(
-      (effectiveSystemPrompt || "你是 KnowPilot 助手。") + memoryHint,
+      buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint),
       historyForLlm,
+      { modelId: effectiveModel },
     );
+
+    const trackingEmit = (event: AgentStreamEvent) => {
+      if (event.type === "token" && event.delta) {
+        partialContent += event.delta;
+      }
+      emit(event);
+    };
 
     const result = await runAgentLoopStream({
       config,
@@ -399,7 +450,15 @@ export async function chatAgentStream(
       messages,
       llmOptions: resolveLlmOptions(input.config),
       invokeTrpc,
-      emit,
+      emit: trackingEmit,
+      sessionId,
+      agentMeta: {
+        id: agent.id,
+        model: effectiveModel,
+        systemPrompt: effectiveSystemPrompt || agent.systemPrompt,
+        tools: agent.tools,
+      },
+      signal,
     });
 
     let assistantMessageId: string | undefined;
@@ -468,6 +527,21 @@ export async function chatAgentStream(
       tokenUsage: result.tokenUsage,
     });
   } catch (err: unknown) {
+    const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
+    if (isAbort && sessionId && partialContent.trim()) {
+      try {
+        await services.message.create({
+          sessionId,
+          role: "assistant",
+          content: partialContent.trim(),
+          toolCalls: [],
+          toolResults: buildInitialVersionMeta(partialContent.trim(), []).toolResults,
+          finishReason: "aborted",
+        });
+      } catch (saveErr) {
+        console.error("[chatAgentStream] 保存中断消息失败:", saveErr);
+      }
+    }
     const message = err instanceof Error ? err.message : String(err);
     const isBudget = message.includes("LLM 预算");
     emit({
@@ -536,8 +610,16 @@ export function handleAgentChatStream(
       return;
     }
 
-    await chatAgentStream(services, config, body, invokeTrpc, (event) => writeSse(res, event));
-    res.end();
+    const abortController = new AbortController();
+    const onClose = () => abortController.abort();
+    res.on("close", onClose);
+
+    try {
+      await chatAgentStream(services, config, body, invokeTrpc, (event) => writeSse(res, event), abortController.signal);
+    } finally {
+      res.off("close", onClose);
+      res.end();
+    }
   };
 }
 

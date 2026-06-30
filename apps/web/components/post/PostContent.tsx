@@ -9,8 +9,8 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { Check, Copy, Link2 } from "lucide-react";
-import { WikiLink, transformWikiLinks } from "./WikiLink";
-import Link from "next/link";
+import { transformWikiLinks } from "./WikiLink";
+import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
 import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
@@ -229,26 +229,13 @@ export function PostContent({ content, className, postSlug }: PostContentProps) 
     [],
   );
 
-  const components = {
-    a: ({ href, children, ...props }) => {
-      if (!href) return <span {...props}>{children}</span>;
-      if (href.startsWith("wiki://")) {
-        const target = decodeURIComponent(href.slice(7));
-        return <WikiLink target={target}>{children}</WikiLink>;
-      }
-      if (href.startsWith("/")) {
-        return (
-          <Link href={href} {...props}>
-            {children}
-          </Link>
-        );
-      }
-      return (
-        <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
-          {children}
-        </a>
-      );
-    },
+  const components = useMemo(
+    () => ({
+    a: ({ href, children, ...props }) => (
+      <PostMarkdownLink href={href} postSlug={postSlug} {...props}>
+        {children}
+      </PostMarkdownLink>
+    ),
     h2: (props) => <Heading level={2} {...props} />,
     h3: (props) => <Heading level={3} {...props} />,
     h4: (props) => <Heading level={4} {...props} />,
@@ -293,7 +280,9 @@ export function PostContent({ content, className, postSlug }: PostContentProps) 
         {children}
       </ThinkingNode>
     ),
-  } as Components;
+  }) as Components,
+    [postSlug],
+  );
 
   return (
     <div className={`prose prose-stone max-w-none ${className || ""}`}>

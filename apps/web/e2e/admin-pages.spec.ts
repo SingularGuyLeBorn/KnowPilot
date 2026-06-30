@@ -19,6 +19,7 @@ const ADMIN_PAGES: Array<{ path: string; heading: string }> = [
   { path: "/search", heading: "搜索 KnowPilot" },
   { path: "/dashboard", heading: "Analytics 概览" },
   { path: "/tools", heading: "Tools 工具目录" },
+  { path: "/sources", heading: "信息源管理" },
   { path: "/runs", heading: "Runs 执行记录" },
   { path: "/credentials", heading: "Credentials 凭据库" },
   { path: "/settings", heading: "远程访问与安全" },
@@ -46,5 +47,41 @@ test.describe("管理控制台冒烟", () => {
     await page.goto("/about");
     await expect(page.getByText("About Me")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("/tools 展示原生运行时能力面板", async ({ page }) => {
+    await page.goto("/tools");
+    await expect(page.getByRole("heading", { name: "Tools 工具目录", level: 1 })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("native-capabilities-panel")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("原生运行时能力")).toBeVisible();
+  });
+
+  test("/sources 展示搜索引擎能力条", async ({ page }) => {
+    await page.goto("/sources");
+    await expect(page.getByRole("heading", { name: "信息源管理", level: 1 })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("native-capabilities-panel")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("web_search 与 read_article")).toBeVisible();
+    await expect(page.getByText(/信息源 \d+/)).toBeVisible();
+  });
+
+  test("/dashboard 展示紧凑能力面板", async ({ page }) => {
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: "Analytics 概览", level: 1 })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("native-capabilities-panel")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("link", { name: /Tools 能力详情/ })).toBeVisible();
+  });
+
+  test("/settings 展示运行时能力面板", async ({ page }) => {
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { name: "远程访问与安全", level: 1 })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("native-capabilities-panel")).toBeVisible({ timeout: 15_000 });
   });
 });

@@ -3,6 +3,7 @@
  */
 
 import type { ChatMessage } from "@knowpilot/shared";
+import { formatToolResultHint, formatToolTimingHint } from "@knowpilot/shared";
 
 export type ToolCallRecord = {
   id: string;
@@ -102,7 +103,18 @@ export function getActiveVersion(group: MessageGroup): AssistantVersionEntry | n
 
 export type TimelineStep =
   | { type: "thinking"; content: string; round: number }
-  | { type: "tool"; name: string; args: unknown; result?: unknown; round: number; status: "running" | "done" };
+  | {
+      type: "tool";
+      toolCallId: string;
+      name: string;
+      args: unknown;
+      result?: unknown;
+      hint?: string | null;
+      round: number;
+      status: "running" | "done";
+    };
+
+export { formatToolResultHint, formatToolTimingHint };
 
 export function buildTimelineFromStored(toolCalls?: ToolCallRecord[]): TimelineStep[] {
   if (!toolCalls?.length) return [];
@@ -113,7 +125,16 @@ export function buildTimelineFromStored(toolCalls?: ToolCallRecord[]): TimelineS
     if (tc.kind === "thinking") {
       steps.push({ type: "thinking", content: String(tc.result ?? ""), round });
     } else {
-      steps.push({ type: "tool", name: tc.name, args: tc.args, result: tc.result, round, status: "done" });
+      steps.push({
+        type: "tool",
+        toolCallId: tc.id,
+        name: tc.name,
+        args: tc.args,
+        result: tc.result,
+        hint: formatToolResultHint(tc.result),
+        round,
+        status: "done",
+      });
     }
   }
   return steps;

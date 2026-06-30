@@ -6,6 +6,7 @@
 import type { LlmToolCall } from "./llmClient.js";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
+import { DEFAULT_AGENT_NATIVE } from "@knowpilot/shared";
 import {
   buildNativeToolSchemas,
   executeNativeTool,
@@ -58,10 +59,10 @@ export interface ToolRegistryEntry {
 
 type ToolKind = "native" | "skill" | "mcp";
 
-const DEFAULT_NATIVE = ["web_search", "read_file", "list_directory", "invoke_api"];
+const DEFAULT_NATIVE = [...DEFAULT_AGENT_NATIVE];
 
 /** 可并发执行的工具（只读 / 无副作用） */
-const READ_ONLY_NATIVE = new Set(["web_search", "read_file", "list_directory"]);
+const READ_ONLY_NATIVE = new Set(["web_search", "read_article", "scrape_web_page", "read_file", "list_directory", "wait"]);
 
 const agentSchemaCache = new Map<
   string,
@@ -251,11 +252,18 @@ export async function executeToolCallsBatch(
   if (safe.length > 0) {
     const safeResults = await Promise.all(
       safe.map(async (item) => {
+        const started = Date.now();
         try {
           const result = await executeAgentTool(item.parsed.name, item.parsed.args, ctx, registry);
           return { ...item, result };
         } catch (err: unknown) {
-          return { ...item, result: { error: err instanceof Error ? err.message : String(err) } };
+          return {
+            ...item,
+            result: {
+              error: err instanceof Error ? err.message : String(err),
+              elapsedMs: Date.now() - started,
+            },
+          };
         }
       }),
     );
@@ -263,6 +271,7 @@ export async function executeToolCallsBatch(
   }
 
   for (const item of unsafe) {
+    const started = Date.now();
     try {
       if (!isToolAuthorized(item.parsed.name, registry, parsed)) {
         throw new Error(`Agent 未授权使用工具 ${item.parsed.name}`);
@@ -270,7 +279,13 @@ export async function executeToolCallsBatch(
       const result = await executeAgentTool(item.parsed.name, item.parsed.args, ctx, registry);
       results.push({ ...item, result });
     } catch (err: unknown) {
-      results.push({ ...item, result: { error: err instanceof Error ? err.message : String(err) } });
+      results.push({
+        ...item,
+        result: {
+          error: err instanceof Error ? err.message : String(err),
+          elapsedMs: Date.now() - started,
+        },
+      });
     }
   }
 
@@ -283,11 +298,14 @@ export function createAgentToolContext(
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>,
   parsed: ParsedAgentTools,
   skillNames?: string[],
+  meta?: { sessionId?: string; agentSnapshot?: NativeToolContext["agentSnapshot"] },
 ): AgentToolContext {
   return {
     config,
     services,
     invokeTrpc,
+    sessionId: meta?.sessionId,
+    agentSnapshot: meta?.agentSnapshot,
     allowedNative: parsed.native,
     allowedSkills: skillNames ?? parsed.skills,
     allowedMcpServers: parsed.mcpServers,
@@ -308,6 +326,16 @@ export interface AgentToolSummary {
   mcpTools: number;
   apiProcedures: number;
   llmFunctions: number;
+  /** 配置原文（每行授权） */
+  configuredLines: string[];
+  /** 实际生效的内置工具名 */
+  resolvedNative: string[];
+  /** 实际生效的 Skill 名 */
+  resolvedSkills: string[];
+  /** 实际生效的 MCP 服务名 */
+  resolvedMcpServers: string[];
+  /** 是否使用了未写明的默认内置工具包 */
+  usesDefaultNative: boolean;
 }
 
 export async function countAiReadableProcedures(): Promise<number> {
@@ -346,6 +374,12 @@ export async function summarizeAgentTools(
   const nativeLlm =
     grantedNative.filter((n) => n !== "invoke_api").length + (hasInvokeApi ? 1 : 0);
 
+  const explicitNative = tools.filter((t) => t.startsWith("native:")).map((t) => t.slice("native:".length));
+  const usesDefaultNative =
+    explicitNative.length === 0 &&
+    tools.length > 0 &&
+    (parsed.skillWildcard || parsed.skills.length > 0 || parsed.mcpServers.length > 0);
+
   return {
     authLines: tools.length,
     nativeBuiltinTotal: allNative.length,
@@ -354,5 +388,10 @@ export async function summarizeAgentTools(
     mcpTools,
     apiProcedures,
     llmFunctions: nativeLlm + skillNames.length + mcpTools,
+    configuredLines: tools,
+    resolvedNative: grantedNative,
+    resolvedSkills: skillNames,
+    resolvedMcpServers: parsed.mcpServers,
+    usesDefaultNative,
   };
 }

@@ -9,6 +9,13 @@ export interface AgentChatStreamInput {
   sessionId?: string;
   agentId?: string;
   message?: string;
+  attachments?: Array<{
+    name: string;
+    mimeType: string;
+    previewUrl: string;
+    extractedText?: string;
+    source?: "ocr" | "vision" | "user";
+  }>;
   model?: string;
   config?: ChatConfigInput;
   regenerate?: boolean;
@@ -37,13 +44,13 @@ export interface AgentStreamCallbacks {
   onRoundStart?: (round: number) => void;
   onThinking?: (delta: string) => void;
   onToken?: (delta: string) => void;
-  onToolStart?: (name: string, args: unknown, round: number) => void;
-  onToolEnd?: (name: string, result: unknown, round: number) => void;
-  onDone?: (data: AgentStreamDone) => void;
-  onError?: (message: string, sessionId?: string, suggestion?: string) => void;
+  onToolStart?: (name: string, args: unknown, round: number, toolCallId: string) => void;
+  onToolEnd?: (name: string, result: unknown, round: number, hint: string | undefined, toolCallId: string) => void;
+  onDone?: (data: AgentStreamDone) => void | Promise<void>;
+  onError?: (message: string, sessionId?: string, suggestion?: string) => void | Promise<void>;
 }
 
-function parseSseBlock(block: string, callbacks: AgentStreamCallbacks) {
+async function parseSseBlock(block: string, callbacks: AgentStreamCallbacks) {
   const lines = block.split("\n");
   let eventType = "message";
   let dataLine = "";
@@ -65,16 +72,16 @@ function parseSseBlock(block: string, callbacks: AgentStreamCallbacks) {
         callbacks.onToken?.(payload.delta ?? "");
         break;
       case "tool_start":
-        callbacks.onToolStart?.(payload.name, payload.args, payload.round ?? 1);
+        callbacks.onToolStart?.(payload.name, payload.args, payload.round ?? 1, payload.toolCallId ?? "");
         break;
       case "tool_end":
-        callbacks.onToolEnd?.(payload.name, payload.result, payload.round ?? 1);
+        callbacks.onToolEnd?.(payload.name, payload.result, payload.round ?? 1, payload.hint, payload.toolCallId ?? "");
         break;
       case "done":
-        callbacks.onDone?.(payload as AgentStreamDone);
+        await callbacks.onDone?.(payload as AgentStreamDone);
         break;
       case "error":
-        callbacks.onError?.(payload.message, payload.sessionId, payload.suggestion);
+        await callbacks.onError?.(payload.message, payload.sessionId, payload.suggestion);
         break;
     }
   } catch {
@@ -112,11 +119,11 @@ export async function streamAgentChat(
     buffer = parts.pop() ?? "";
 
     for (const block of parts) {
-      if (block.trim()) parseSseBlock(block, callbacks);
+      if (block.trim()) await parseSseBlock(block, callbacks);
     }
   }
 
-  if (buffer.trim()) parseSseBlock(buffer, callbacks);
+  if (buffer.trim()) await parseSseBlock(buffer, callbacks);
 }
 
 export async function copyToClipboard(text: string) {

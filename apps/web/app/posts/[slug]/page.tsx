@@ -8,6 +8,7 @@ import { ArrowLeft, Calendar, Eye, Edit2, Trash2 } from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
 import { TableOfContents } from "@/components/post/TableOfContents";
 import { PageSearch } from "@/components/post/PageSearch";
+import { PostExportActions } from "@/components/post/PostExportActions";
 import { trpc } from "@/lib/trpc";
 import { usePostMutations } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
@@ -81,6 +82,18 @@ export default function PostDetailPage() {
                     <Eye className="h-4 w-4" />
                     {post.viewCount} 阅读
                   </span>
+                  <PostExportActions
+                    post={{
+                      title: post.title,
+                      slug: post.slug,
+                      content: post.content,
+                      excerpt: post.excerpt,
+                      category: post.category,
+                      tags: post.tags,
+                      published: post.published,
+                    }}
+                    articleRef={articleRef}
+                  />
                   <Link
                     href={`/editor/${post.id}`}
                     className={cn(

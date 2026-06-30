@@ -1,0 +1,10 @@
+{
+  "name": "DeepSeek 官方文档",
+  "url": "https://api-docs.deepseek.com/",
+  "type": "official",
+  "description": "DeepSeek API 与模型能力官方说明，Agent 检索技术问题时优先引用。",
+  "reliability": 5,
+  "language": "zh",
+  "tags": ["AI", "官方", "API"],
+  "enabled": true
+}

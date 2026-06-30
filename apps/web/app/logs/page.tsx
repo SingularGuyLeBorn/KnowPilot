@@ -93,11 +93,12 @@ export default function LogsPage() {
         {["", "info", "success", "warn", "error"].map((lvl) => (
           <button
             key={lvl}
+            type="button"
             onClick={() => { setLevel(lvl); setPage(1); }}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
               level === lvl
-                ? "bg-[var(--vp-c-brand)] border-[var(--vp-c-brand)] text-white"
-                : "bg-[var(--vp-c-bg-alt)] border-[var(--vp-c-divider-light)] text-[var(--vp-c-text-2)] hover:bg-[var(--vp-c-bg-soft)]"
+                ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)] shadow-sm"
+                : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] text-[var(--kp-text-2)] hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]"
             }`}
           >
             {lvl === "" ? "全部" : lvl.toUpperCase()}
@@ -128,26 +129,27 @@ export default function LogsPage() {
               </thead>
               <tbody className="divide-y divide-[var(--vp-c-divider-light)] font-mono text-[11px]">
                 {data.items.map((log: LogEntry) => {
-                  const levelBadge = {
-                    info: "text-blue-500 bg-blue-500/10",
-                    success: "text-green-500 bg-green-500/10",
-                    warn: "text-yellow-500 bg-yellow-500/10",
-                    error: "text-red-500 bg-red-500/10",
-                    debug: "text-purple-500 bg-purple-500/10",
+                  const levelKey = log.level.toLowerCase();
+                  const levelBadge: Record<string, string> = {
+                    info: "border border-sky-200 bg-sky-100 text-sky-900",
+                    success: "border border-emerald-200 bg-emerald-100 text-emerald-900",
+                    warn: "border border-amber-200 bg-amber-100 text-amber-950",
+                    error: "border border-red-200 bg-red-100 text-red-900",
+                    debug: "border border-violet-200 bg-violet-100 text-violet-900",
                   };
                   return (
-                    <tr key={log.id} className="hover:bg-white/30 dark:hover:bg-[var(--vp-c-bg-soft)]/20 transition-colors">
+                    <tr key={log.id} className="hover:bg-[var(--kp-bg-soft)]/60 transition-colors">
                       <td className="p-4">
-                        <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] ${levelBadge[log.level as keyof typeof levelBadge] || "text-gray-500 bg-gray-500/10"}`}>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 font-bold text-[9px] ${levelBadge[levelKey] ?? "border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]"}`}>
                           {log.level.toUpperCase()}
                         </span>
                       </td>
-                      <td className="p-4 text-[var(--vp-c-text-2)]">{log.component}</td>
-                      <td className="p-4 text-[var(--vp-c-brand)]">{log.event}</td>
-                      <td className="p-4 text-[var(--vp-c-text-1)] truncate max-w-xs md:max-w-md" title={log.message}>
+                      <td className="p-4 text-[var(--kp-text-2)]">{log.component}</td>
+                      <td className="p-4 text-[var(--kp-brand-dark)]">{log.event}</td>
+                      <td className="p-4 text-[var(--kp-text-1)] truncate max-w-xs md:max-w-md" title={log.message}>
                         {log.message}
                       </td>
-                      <td className="p-4 text-right text-[var(--vp-c-text-3)]">
+                      <td className="p-4 text-right text-[var(--kp-text-3)]">
                         {new Date(log.createdAt).toLocaleString()}
                       </td>
                     </tr>

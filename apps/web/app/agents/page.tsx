@@ -15,16 +15,15 @@ import {
   Plus,
   Search,
   Sparkles,
-  Terminal,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Agent } from "@knowpilot/shared";
-import { CHAT_MODELS } from "@knowpilot/shared";
+import { CHAT_MODELS, materializeAgentTools } from "@knowpilot/shared";
 import { useAgent } from "@/lib/hooks";
-import { trpc } from "@/lib/trpc";
-import { EmptyState, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
+import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
+import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { cn } from "@/lib/utils";
 
 type AgentForm = {
@@ -32,7 +31,7 @@ type AgentForm = {
   description: string;
   model: string;
   systemPrompt: string;
-  tools: string;
+  tools: string[];
 };
 
 const DEFAULT_AGENT_TOOLS = [
@@ -43,44 +42,22 @@ const DEFAULT_AGENT_TOOLS = [
   "native:git_status",
   "skill:*",
   "mcp:filesystem",
-].join("\n");
+];
 
 const EMPTY_FORM: AgentForm = {
   name: "",
   description: "",
-  model: "deepseek-chat",
+  model: "deepseek-v4-flash",
   systemPrompt: "你是 KnowPilot 智能助手，擅长知识管理与 Markdown 写作。",
-  tools: DEFAULT_AGENT_TOOLS,
+  tools: [...DEFAULT_AGENT_TOOLS],
 };
 
-function AgentToolStats({ tools }: { tools: string[] }) {
-  const { data, isLoading } = trpc.agent.toolSummary.useQuery(
-    { tools },
-    { enabled: tools.length > 0, staleTime: 60_000 },
-  );
-
-  if (isLoading || !data) {
-    return (
-      <div className="text-[10px] font-bold uppercase text-[var(--kp-text-3)]">
-        工具 · 授权 {tools.length} 项
-      </div>
-    );
+function modelOptions(currentModel: string) {
+  const options = CHAT_MODELS.map((m) => ({ value: m.id, label: m.label }));
+  if (currentModel && !options.some((o) => o.value === currentModel)) {
+    options.unshift({ value: currentModel, label: `${currentModel}（当前配置）` });
   }
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1 text-[10px] font-bold uppercase text-[var(--kp-text-3)]">
-        <Terminal className="h-3 w-3" />
-        工具 · LLM {data.llmFunctions} 个
-      </div>
-      <p className="text-[9px] leading-relaxed text-[var(--kp-text-3)]">
-        授权 {data.authLines} 行 · Native {data.nativeGranted}/{data.nativeBuiltinTotal}
-        {data.skillTools > 0 ? ` · Skill ${data.skillTools}` : ""}
-        {data.mcpTools > 0 ? ` · MCP ${data.mcpTools}` : ""}
-        {data.apiProcedures > 0 ? ` · API ${data.apiProcedures}（invoke_api）` : ""}
-      </p>
-    </div>
-  );
+  return options;
 }
 
 export default function AgentsPage() {
@@ -112,16 +89,10 @@ export default function AgentsPage() {
       description: agent.description ?? "",
       model: agent.model,
       systemPrompt: agent.systemPrompt,
-      tools: (agent.tools ?? []).join("\n"),
+      tools: materializeAgentTools(agent.tools ?? []),
     });
     setView("edit");
   };
-
-  const parseTools = (raw: string) =>
-    raw
-      .split(/[\n,]/)
-      .map((t) => t.trim())
-      .filter(Boolean);
 
   const handleSave = async () => {
     const payload = {
@@ -129,7 +100,7 @@ export default function AgentsPage() {
       description: form.description.trim() || undefined,
       model: form.model,
       systemPrompt: form.systemPrompt,
-      tools: parseTools(form.tools),
+      tools: materializeAgentTools(form.tools),
     };
     if (!payload.name) return;
 
@@ -188,15 +159,13 @@ export default function AgentsPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">默认模型</label>
-              <select
+              <KpSelect
                 value={form.model}
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
-                className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm"
-              >
-                {CHAT_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
+                onChange={(model) => setForm({ ...form, model })}
+                options={modelOptions(form.model)}
+                className="w-full"
+                aria-label="默认模型"
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">System Prompt</label>
@@ -205,26 +174,22 @@ export default function AgentsPage() {
                 onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
                 rows={8}
                 className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand)]"
-                placeholder="定义 Agent 角色与行为…"
+                placeholder="定义 Agent 角色与行为。留空则仅依赖模型默认能力。"
               />
+              {!form.systemPrompt.trim() && (
+                <p className="mt-1.5 text-[11px] text-[var(--kp-text-3)]">
+                  当前为空。可在下方 Markdown 源文件或此处填写系统提示词。
+                </p>
+              )}
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">
-                授权工具（每行一个）
+              <label className="mb-2 block text-xs font-medium text-[var(--kp-text-3)]">
+                工具授权
               </label>
-              <textarea
-                value={form.tools}
-                onChange={(e) => setForm({ ...form, tools: e.target.value })}
-                rows={7}
-                className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 font-mono text-xs outline-none focus:border-[var(--kp-brand)]"
-                placeholder={"native:read_file\nskill:*\nmcp:filesystem"}
+              <AgentToolsEditor
+                tools={form.tools}
+                onChange={(tools) => setForm({ ...form, tools })}
               />
-              <p className="mt-2 text-[11px] leading-relaxed text-[var(--kp-text-3)]">
-                前缀：<code className="rounded bg-[var(--kp-bg-mute)] px-1">native:</code> 内置工具 ·
-                <code className="rounded bg-[var(--kp-bg-mute)] px-1">skill:</code> 技能（<code className="rounded bg-[var(--kp-bg-mute)] px-1">skill:*</code> 全部已启用） ·
-                <code className="rounded bg-[var(--kp-bg-mute)] px-1">mcp:</code> MCP 服务名。
-                内置：web_search、read_file、write_file、list_directory、git_status、git_log、git_diff、invoke_api 等。
-              </p>
             </div>
           </div>
 
@@ -335,17 +300,7 @@ export default function AgentsPage() {
                 </p>
 
                 <div className="mb-4 space-y-1 border-t border-[var(--kp-divider)] pt-3">
-                  <AgentToolStats tools={agent.tools ?? []} />
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {(agent.tools ?? []).slice(0, 4).map((t: string) => (
-                      <span key={t} className="rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)] px-2 py-0.5 text-[9px]">
-                        {t}
-                      </span>
-                    ))}
-                    {(agent.tools?.length ?? 0) > 4 && (
-                      <span className="text-[9px] text-[var(--kp-text-3)]">+{(agent.tools?.length ?? 0) - 4}</span>
-                    )}
-                  </div>
+                  <AgentToolSummaryCard tools={agent.tools ?? []} />
                 </div>
 
                 <div className="flex gap-2">

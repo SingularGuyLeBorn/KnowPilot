@@ -1,0 +1,5 @@
+# KnowPilot 本地 PaddleOCR（与 MetaBlog 对齐，Windows CPU 验证通过）
+# 安装: py -3.10 -m pip install -r tools/ocr/requirements.txt
+paddlepaddle==2.6.2
+paddleocr==2.9.1
+simplejson>=3.19.0

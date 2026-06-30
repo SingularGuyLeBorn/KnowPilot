@@ -3,7 +3,17 @@
 import { useState, useMemo, useCallback, useRef, useLayoutEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, FileText, FolderClosed, FolderOpen, Search, X } from "lucide-react";
+import {
+  ChevronRight,
+  FileText,
+  FoldVertical,
+  FolderClosed,
+  FolderOpen,
+  LocateFixed,
+  Search,
+  UnfoldVertical,
+  X,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -123,6 +133,13 @@ function collectAncestorKeys(slug: string, nodes: TreeNode[]): string[] | null {
   return null;
 }
 
+function collectGroupKeys(nodes: TreeNode[]): string[] {
+  return nodes.flatMap((node) => {
+    const childGroups = collectGroupKeys(node.children);
+    return node.children.length ? [node.key, ...childGroups] : childGroups;
+  });
+}
+
 function collectAllKeys(nodes: TreeNode[]): string[] {
   return nodes.flatMap((node) => [node.key, ...collectAllKeys(node.children)]);
 }
@@ -239,6 +256,7 @@ function TreeNodeItem({
             onClick={onNavigate}
             className={rowClass}
             title={node.title}
+            data-tree-slug={node.slug}
           >
             {iconNode}
             <span className="line-clamp-2 leading-snug">{node.title}</span>
@@ -363,6 +381,45 @@ export function PostTreeNav({ className }: { className?: string }) {
     }
   }, []);
 
+  const allGroupKeys = useMemo(() => collectGroupKeys(tree), [tree]);
+
+  const expandAll = useCallback(() => {
+    const next = new Set(allGroupKeys);
+    setManuallyExpanded(next);
+    persistExpanded(next);
+  }, [allGroupKeys, persistExpanded]);
+
+  const collapseAll = useCallback(() => {
+    const next = new Set<string>();
+    setManuallyExpanded(next);
+    persistExpanded(next);
+  }, [persistExpanded]);
+
+  const scrollToActiveItem = useCallback(
+    (smooth = true) => {
+      if (!activeSlug || !scrollRef.current) return;
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = scrollRef.current?.querySelector(
+            `[data-tree-slug="${CSS.escape(activeSlug)}"]`,
+          );
+          el?.scrollIntoView({ block: "center", behavior: smooth ? "smooth" : "auto" });
+        });
+      });
+    },
+    [activeSlug],
+  );
+
+  const locateCurrent = useCallback(() => {
+    scrollToActiveItem(true);
+  }, [scrollToActiveItem]);
+
+  useLayoutEffect(() => {
+    if (!activeSlug || isSearchMode) return;
+    scrollToActiveItem(false);
+  }, [activeSlug, isSearchMode, scrollToActiveItem]);
+
   if (isLoading) {
     return (
       <div className={cn("flex flex-1 items-center justify-center p-4", className)}>
@@ -393,6 +450,39 @@ export function PostTreeNav({ className }: { className?: string }) {
             </button>
           )}
         </div>
+
+        {!isSearchMode && (
+          <div className="mt-2 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={expandAll}
+              className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-2 py-1.5 text-xs font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+              title="一键展开全部目录"
+            >
+              <UnfoldVertical className="h-3.5 w-3.5" />
+              展开
+            </button>
+            <button
+              type="button"
+              onClick={collapseAll}
+              className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-2 py-1.5 text-xs font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+              title="一键折叠全部目录"
+            >
+              <FoldVertical className="h-3.5 w-3.5" />
+              折叠
+            </button>
+            <button
+              type="button"
+              onClick={locateCurrent}
+              disabled={!activeSlug}
+              className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-2 py-1.5 text-xs font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] disabled:cursor-not-allowed disabled:opacity-40"
+              title={activeSlug ? "定位当前文章" : "当前不在文章页"}
+            >
+              <LocateFixed className="h-3.5 w-3.5" />
+              定位
+            </button>
+          </div>
+        )}
       </div>
 
       {isSearchMode ? (
@@ -417,6 +507,7 @@ export function PostTreeNav({ className }: { className?: string }) {
                 )}
                 style={{ paddingLeft: `${10 + item.depth * 12}px` }}
                 title={item.title}
+                data-tree-slug={item.slug}
               >
                 <FileText className="h-4 w-4 shrink-0 text-[var(--kp-text-3)]" />
                 <span className="truncate">{item.title}</span>

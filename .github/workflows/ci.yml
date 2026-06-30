@@ -46,6 +46,37 @@ jobs:
           DATABASE_URL: "file:./ci.db"
           REQUIRE_APPROVAL: "false"
 
+      - name: Install Playwright Chromium (integration smoke)
+        run: pnpm --filter @knowpilot/server exec playwright install chromium --with-deps
+
+      - name: Integration smoke (network)
+        run: pnpm integration:smoke
+        continue-on-error: true
+        env:
+          INTEGRATION_SMOKE_CI: "1"
+          DATABASE_URL: "file:./ci.db"
+
+      - name: Integration smoke (platform quick)
+        run: pnpm integration:smoke:platform:quick
+        continue-on-error: true
+        env:
+          INTEGRATION_SMOKE_CI: "1"
+          DATABASE_URL: "file:./ci.db"
+
+      - name: Integration smoke (platform medium)
+        run: pnpm integration:smoke:platform:medium
+        continue-on-error: true
+        env:
+          INTEGRATION_SMOKE_CI: "1"
+          DATABASE_URL: "file:./ci.db"
+
+      - name: Integration smoke (platform extended)
+        run: pnpm integration:smoke:platform:extended
+        continue-on-error: true
+        env:
+          INTEGRATION_SMOKE_CI: "1"
+          DATABASE_URL: "file:./ci.db"
+
       - name: Build web (production)
         run: pnpm build
 

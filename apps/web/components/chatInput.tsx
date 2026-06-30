@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Send, X } from "lucide-react";
+import { ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc";
+import type { ChatQueueAttachment } from "@/lib/chatQueueTypes";
 
 export interface SelectedSkill {
   id: string;
@@ -18,28 +19,44 @@ export interface SelectedSkill {
 interface ChatInputAreaProps {
   value: string;
   onChange: (v: string) => void;
-  onSend: (text: string, skill?: SelectedSkill) => void;
+  onSend: (text: string, skill?: SelectedSkill, attachments?: ChatQueueAttachment[]) => void;
+  onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
+  queueLength?: number;
   skills: Skill[];
   selectedSkill: SelectedSkill | null;
   onSkillChange: (skill: SelectedSkill | null) => void;
+  modelHint?: string;
+  modelId?: string;
+  supportsVision?: boolean;
 }
 
 export function ChatInputArea({
   value,
   onChange,
   onSend,
+  onStop,
   disabled,
   isStreaming,
+  queueLength = 0,
   skills,
   selectedSkill,
   onSkillChange,
+  modelHint,
+  modelId = "",
+  supportsVision = false,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [highlightIdx, setHighlightIdx] = useState(0);
+  const [pendingImages, setPendingImages] = useState<ChatQueueAttachment[]>([]);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+
+  const ocrMutation = trpc.agent.ocrImage.useMutation();
 
   const enabledSkills = skills.filter((s) => s.enabled);
 
@@ -87,12 +104,95 @@ export function ChatInputArea({
     textareaRef.current?.focus();
   };
 
-  const handleSend = () => {
-    const text = value.trim();
-    if (!text || disabled) return;
-    onSend(text, selectedSkill ?? undefined);
-    onSkillChange(null);
+  const runOcrForAttachment = async (att: ChatQueueAttachment): Promise<ChatQueueAttachment> => {
+    if (att.extractedText || supportsVision) return att;
+    const base64 = att.previewUrl?.split(",")[1] ?? "";
+    if (!base64) return att;
+    const res = await ocrMutation.mutateAsync({
+      base64,
+      mimeType: att.mimeType,
+      chatSupportsVision: supportsVision,
+    });
+    if (!res.success || !res.data?.text?.trim()) {
+      const msg =
+        (res as { error?: { message?: string } }).error?.message ??
+        "OCR 未返回文字，请检查 pnpm ocr:check 或配置 OCR_SPACE_API_KEY";
+      throw new Error(msg);
+    }
+    return {
+      ...att,
+      extractedText: res.data.text,
+      source: res.data.source ?? "ocr",
+    };
   };
+
+  const handleSend = async () => {
+    const text = value.trim();
+    if ((!text && pendingImages.length === 0) || disabled || ocrLoading) return;
+
+    let attachments = pendingImages;
+    const needsOcr = !supportsVision && attachments.some((a) => !a.extractedText);
+    if (needsOcr) {
+      setOcrLoading(true);
+      setOcrError(null);
+      try {
+        attachments = await Promise.all(attachments.map(runOcrForAttachment));
+      } catch (err: unknown) {
+        setOcrError(err instanceof Error ? err.message : "OCR 识别失败");
+        return;
+      } finally {
+        setOcrLoading(false);
+      }
+    }
+
+    onSend(text, selectedSkill ?? undefined, attachments.length ? attachments : undefined);
+    onSkillChange(null);
+    setPendingImages([]);
+    setOcrError(null);
+  };
+
+  const addImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const previewUrl = reader.result as string;
+      const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const att: ChatQueueAttachment = {
+        id,
+        name: file.name,
+        mimeType: file.type,
+        previewUrl,
+        source: supportsVision ? "vision" : "ocr",
+      };
+      setOcrError(null);
+      setPendingImages((prev) => [...prev, att]);
+
+      if (!supportsVision) {
+        setOcrLoading(true);
+        void runOcrForAttachment(att)
+          .then((done) => {
+            setPendingImages((prev) => prev.map((x) => (x.id === id ? done : x)));
+          })
+          .catch((err: unknown) => {
+            setOcrError(err instanceof Error ? err.message : "OCR 识别失败");
+            setPendingImages((prev) => prev.filter((x) => x.id !== id));
+          })
+          .finally(() => {
+            setOcrLoading(false);
+          });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const canSend = (!!value.trim() || pendingImages.length > 0) && !disabled && !ocrLoading;
+  const placeholderHint = disabled
+    ? "后端未连接"
+    : isStreaming
+      ? "Agent 回复中，发送将加入队列…"
+      : queueLength > 0
+        ? `队列中还有 ${queueLength} 条，继续发送会依次执行`
+        : "输入消息";
 
   return (
     <div className="relative mx-auto max-w-3xl">
@@ -139,7 +239,39 @@ export function ChatInputArea({
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div
+        className={cn(
+          "flex items-stretch overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-sm transition-[border-color,box-shadow]",
+          "focus-within:border-[var(--kp-brand)] focus-within:shadow-[0_0_0_3px_rgba(184,160,144,0.12)]",
+          disabled && "opacity-60",
+        )}
+      >
+        <button
+          type="button"
+          disabled={disabled || ocrLoading}
+          onClick={() => fileRef.current?.click()}
+          data-testid="chat-attach-image"
+          className="flex w-11 shrink-0 items-center justify-center border-r border-[var(--kp-divider-light)] text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
+          title="添加图片"
+        >
+          {ocrLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" data-testid="chat-ocr-loading" />
+          ) : (
+            <ImagePlus className="h-4 w-4" />
+          )}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          data-testid="chat-file-input"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) addImageFile(f);
+            e.target.value = "";
+          }}
+        />
         <div className="relative min-w-0 flex-1">
           <textarea
             ref={textareaRef}
@@ -176,34 +308,103 @@ export function ChatInputArea({
                 handleSend();
               }
             }}
+            onPaste={(e) => {
+              const item = e.clipboardData?.items?.[0];
+              if (item?.kind === "file" && item.type.startsWith("image/")) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) addImageFile(file);
+              }
+            }}
             rows={3}
             disabled={disabled}
-            placeholder={disabled ? "后端未连接" : ""}
+            placeholder=""
             data-testid="chat-input"
-            className="min-h-[84px] w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm outline-none focus:border-[var(--kp-brand)] disabled:opacity-50"
+            className="min-h-[88px] w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-[var(--kp-text-1)] outline-none disabled:cursor-not-allowed"
           />
           {!disabled && !value.trim() && (
             <div
               className="pointer-events-none absolute inset-0 flex items-start justify-between gap-3 px-4 py-3"
               aria-hidden={false}
             >
-              <span className="text-sm text-[var(--kp-text-3)]">
-                {isStreaming ? "Agent 回复中…" : "输入消息"}
-              </span>
+              <span className="text-sm text-[var(--kp-text-3)]">{placeholderHint}</span>
               <ChatShortcutHints isStreaming={isStreaming} className="pointer-events-auto shrink-0" />
             </div>
           )}
+          {ocrError && (
+            <div
+              data-testid="chat-ocr-error"
+              className="border-t border-[var(--kp-divider-light)] px-3 py-2 text-xs text-red-600"
+            >
+              {ocrError}
+            </div>
+          )}
+          {pendingImages.length > 0 && (
+            <div
+              data-testid="chat-image-previews"
+              className="flex flex-wrap gap-2 border-t border-[var(--kp-divider-light)] px-3 py-2"
+            >
+              {pendingImages.map((img) => (
+                <div key={img.id} className="relative" data-testid="chat-image-preview">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.previewUrl} alt={img.name} className="h-14 w-14 rounded-lg object-cover" />
+                  {!supportsVision && img.extractedText && (
+                    <span
+                      data-testid="chat-ocr-ready"
+                      className="absolute bottom-0 left-0 right-0 truncate rounded-b-lg bg-emerald-600/80 px-1 text-[9px] text-white"
+                      title={img.extractedText.slice(0, 200)}
+                    >
+                      OCR ✓
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
+                    className="absolute -right-1 -top-1 rounded-full bg-black/60 p-0.5 text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
         <button
           type="button"
-          onClick={handleSend}
-          disabled={!value.trim() || disabled}
-          data-testid="chat-send"
-          className={cn(buttonVariants(), "h-auto self-end px-4")}
+          onClick={isStreaming ? onStop : handleSend}
+          disabled={!canSend && !isStreaming}
+          data-testid={isStreaming ? "chat-stop" : "chat-send"}
+          title={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送"}
+          aria-label={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送消息"}
+          className={cn(
+            "relative flex w-[56px] shrink-0 flex-col items-center justify-center gap-1 border-l border-[var(--kp-divider-light)] transition-all duration-200",
+            isStreaming || canSend
+              ? "bg-gradient-to-b from-[var(--kp-brand-light)] to-[var(--kp-brand-dark)] text-white hover:from-[var(--kp-brand)] hover:to-[var(--kp-brand-dark)]"
+              : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+          )}
         >
-          <Send className="h-4 w-4" />
+          {isStreaming ? (
+            <Square className="h-4 w-4 fill-current" />
+          ) : queueLength > 0 ? (
+            <>
+              <ListOrdered className="h-4 w-4" />
+              {queueLength > 0 && (
+                <span className="text-[9px] font-semibold tabular-nums">{queueLength}</span>
+              )}
+            </>
+          ) : (
+            <Send className="h-5 w-5" />
+          )}
         </button>
       </div>
+
+      {modelHint && (
+        <p className="mt-2 px-1 text-[11px] leading-relaxed text-[var(--kp-text-3)]">
+          <span className="font-medium text-[var(--kp-text-2)]">当前模型 {modelId}：</span>
+          {modelHint}
+        </p>
+      )}
     </div>
   );
 }

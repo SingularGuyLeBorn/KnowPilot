@@ -1,0 +1,232 @@
+/**
+ * 异步 Agent 任务 — 后台执行，完成后投递到会话队列（MetaBlog 风格）
+ * 持久化到 Task 表；执行由 asyncJobOrchestrator 限流调度
+ */
+
+import type { AppConfig } from "./config.js";
+import type { ServiceContainer } from "./serviceContainer.js";
+import { runAgentLoop } from "./agentRuntime.js";
+import { createTrpcInvoker } from "./trpcInvoker.js";
+import { prisma } from "../db.js";
+import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
+
+export interface AsyncQueueDelivery {
+  id: string;
+  jobId: string;
+  sessionId: string;
+  taskLabel: string;
+  asyncResult: string;
+  status: "done" | "failed";
+  error?: string;
+  createdAt: number;
+}
+
+export interface AsyncRunningJob {
+  jobId: string;
+  sessionId: string;
+  taskLabel: string;
+  status: "running";
+  createdAt: number;
+}
+
+const ASYNC_KIND = "async_agent";
+
+interface AsyncTaskInput {
+  kind: typeof ASYNC_KIND;
+  sessionId: string;
+  task: string;
+  taskLabel: string;
+  agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[] };
+  delivered?: boolean;
+}
+
+interface AsyncTaskOutput {
+  asyncResult?: string;
+  error?: string;
+}
+
+function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as AsyncTaskInput;
+  if (o.kind !== ASYNC_KIND || typeof o.sessionId !== "string") return null;
+  return o;
+}
+
+function toDelivery(task: {
+  id: string;
+  input: unknown;
+  output: unknown;
+  status: string;
+  createdAt: Date;
+}): AsyncQueueDelivery | null {
+  const input = parseAsyncInput(task.input);
+  if (!input) return null;
+  const output = (task.output ?? {}) as AsyncTaskOutput;
+  const failed = task.status === "failed";
+  return {
+    id: `del-${task.id}`,
+    jobId: task.id,
+    sessionId: input.sessionId,
+    taskLabel: input.taskLabel,
+    asyncResult: failed ? "" : output.asyncResult || "(无文本输出)",
+    status: failed ? "failed" : "done",
+    error: output.error,
+    createdAt: task.createdAt.getTime(),
+  };
+}
+
+function isUndelivered(input: AsyncTaskInput): boolean {
+  return input.delivered !== true;
+}
+
+/** 服务启动时：仅将遗留 async_agent running 任务标为 failed */
+export async function recoverStaleAsyncJobs(): Promise<number> {
+  const stale = await prisma.task.findMany({
+    where: { status: "running" },
+  });
+  let count = 0;
+  for (const task of stale) {
+    const input = parseAsyncInput(task.input);
+    if (!input) continue;
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: "failed",
+        output: { error: "服务重启，后台任务已中断" },
+      },
+    });
+    count++;
+  }
+  return count;
+}
+
+/** 拉取并标记已投递的异步结果（前端轮询）— 按 sessionId + kind 索引 */
+export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueueDelivery[]> {
+  const rows = await prisma.task.findMany({
+    where: {
+      status: { in: ["success", "failed"] },
+      name: { startsWith: "[async]" },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 200,
+  });
+
+  const deliveries: AsyncQueueDelivery[] = [];
+  for (const row of rows) {
+    const input = parseAsyncInput(row.input);
+    if (!input || input.sessionId !== sessionId || !isUndelivered(input)) continue;
+    const delivery = toDelivery(row);
+    if (!delivery) continue;
+    deliveries.push(delivery);
+    await prisma.task.update({
+      where: { id: row.id },
+      data: {
+        input: { ...input, delivered: true },
+      },
+    });
+  }
+  return deliveries;
+}
+
+export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunningJob[]> {
+  const rows = await prisma.task.findMany({
+    where: { status: "running", name: { startsWith: "[async]" } },
+    orderBy: { createdAt: "desc" },
+  });
+  return rows
+    .map((row) => {
+      const input = parseAsyncInput(row.input);
+      if (!input || input.sessionId !== sessionId) return null;
+      return {
+        jobId: row.id,
+        sessionId: input.sessionId,
+        taskLabel: input.taskLabel,
+        status: "running" as const,
+        createdAt: row.createdAt.getTime(),
+      };
+    })
+    .filter((j): j is AsyncRunningJob => j !== null);
+}
+
+export async function startAsyncAgentTask(options: {
+  sessionId: string;
+  task: string;
+  label?: string;
+  config: AppConfig;
+  services: ServiceContainer;
+  agent: { id: string; model: string; systemPrompt: string; tools: string[] };
+}): Promise<{ jobId: string; status: "running"; message: string }> {
+  const task = options.task.trim();
+  if (!task) throw new Error("task 不能为空");
+  if (!options.sessionId) throw new Error("run_async 需要有效 sessionId");
+
+  const taskLabel = options.label?.trim() || task.slice(0, 80);
+  const agentSnapshot = {
+    id: options.agent.id,
+    model: options.agent.model,
+    systemPrompt: options.agent.systemPrompt,
+    tools: options.agent.tools,
+  };
+
+  const created = await options.services.task.create({
+    name: `[async] ${taskLabel}`,
+    type: "oneshot",
+    status: "running",
+    input: {
+      kind: ASYNC_KIND,
+      sessionId: options.sessionId,
+      task,
+      taskLabel,
+      agentSnapshot,
+      delivered: false,
+    } satisfies AsyncTaskInput,
+  });
+
+  if (!created.success || !created.data) {
+    throw new Error(created.error?.message ?? "创建异步任务失败");
+  }
+
+  const jobId = (created.data as { id: string }).id;
+  const invokeTrpc = createTrpcInvoker({ services: options.services });
+  const orchestrator = getAsyncJobOrchestrator(options.config);
+
+  orchestrator.enqueue({
+    jobId,
+    sessionId: options.sessionId,
+    execute: async () => {
+      try {
+        const loop = await runAgentLoop({
+          config: options.config,
+          services: options.services,
+          agent: {
+            model: agentSnapshot.model,
+            systemPrompt: `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务。完成后用简洁中文汇总结果，不要继续追问用户。`,
+            tools: agentSnapshot.tools,
+          },
+          messages: [{ role: "user", content: task }],
+          invokeTrpc,
+        });
+
+        await options.services.task.update({
+          id: jobId,
+          status: "success",
+          output: { asyncResult: loop.content || "(无文本输出)" } satisfies AsyncTaskOutput,
+        });
+      } catch (err: unknown) {
+        await options.services.task.update({
+          id: jobId,
+          status: "failed",
+          output: {
+            error: err instanceof Error ? err.message : String(err),
+          } satisfies AsyncTaskOutput,
+        });
+      }
+    },
+  });
+
+  return {
+    jobId,
+    status: "running",
+    message: `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
+  };
+}

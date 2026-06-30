@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 
-const tags = [
+const DEFAULT_TAGS = [
   "Next.js 16",
   "React 19",
   "tRPC 11",
@@ -17,10 +17,18 @@ const tags = [
   "Monorepo",
 ];
 
-export function TechMarquee() {
+interface TechMarqueeProps {
+  /** 自定义标签；未传时使用默认技术栈列表 */
+  tags?: string[];
+  /** 区块上方小标题 */
+  label?: string;
+}
+
+export function TechMarquee({ tags = DEFAULT_TAGS, label = "Powered by modern stack" }: TechMarqueeProps) {
+  const displayTags = tags.length > 0 ? tags : DEFAULT_TAGS;
   const row = (
     <>
-      {tags.map((tag) => (
+      {displayTags.map((tag) => (
         <span
           key={tag}
           className="flex-shrink-0 rounded-full glass-card px-5 py-2.5 text-sm font-medium text-[var(--kp-text-2)] transition-colors duration-300 hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-text-1)]"
@@ -44,7 +52,7 @@ export function TechMarquee() {
         className="mb-10 text-center"
       >
         <p className="text-sm font-medium tracking-widest text-[var(--kp-text-3)] uppercase">
-          Powered by modern stack
+          {label}
         </p>
       </motion.div>
 

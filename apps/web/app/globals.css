@@ -33,6 +33,20 @@
   /* 动态曲线 */
   --kp-spring-gentle: cubic-bezier(0.22, 1, 0.36, 1);
 
+  /* 兼容旧管理页 --vp-c-* 变量（映射到莫兰迪 kp 主题） */
+  --vp-c-bg: var(--kp-bg);
+  --vp-c-bg-alt: var(--kp-bg-alt);
+  --vp-c-bg-soft: var(--kp-bg-soft);
+  --vp-c-bg-mute: var(--kp-bg-mute);
+  --vp-c-text-1: var(--kp-text-1);
+  --vp-c-text-2: var(--kp-text-2);
+  --vp-c-text-3: var(--kp-text-3);
+  --vp-c-brand: var(--kp-brand);
+  --vp-c-brand-dark: var(--kp-brand-dark);
+  --vp-c-brand-soft: var(--kp-brand-soft);
+  --vp-c-divider: var(--kp-divider);
+  --vp-c-divider-light: var(--kp-divider-light);
+
   /* Tailwind v4 theme tokens */
 
   --background: oklch(1 0 0);

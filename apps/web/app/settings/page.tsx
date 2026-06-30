@@ -10,11 +10,13 @@ import { motion } from "framer-motion";
 import { Cloud, Lock, Shield, Sparkles, ExternalLink } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { clearAuthToken } from "@/lib/auth";
-import { LoadingState } from "@/components/shared";
+import { LoadingState, NativeCapabilitiesPanel } from "@/components/shared";
 import { Button } from "@/components/ui/button";
+import { useNativeCapabilities } from "@/lib/hooks";
 
 export default function SettingsPage() {
   const { data, isLoading, refetch } = trpc.auth.status.useQuery();
+  const { data: caps } = useNativeCapabilities();
 
   const handleLogout = () => {
     clearAuthToken();
@@ -112,6 +114,17 @@ export default function SettingsPage() {
             </ol>
           </section>
         </div>
+      )}
+
+      {caps && (
+        <NativeCapabilitiesPanel
+          data={caps}
+          compact
+          title="原生运行时能力"
+          showSearchEnginesInCompact
+          detailHref="/tools"
+          detailLabel="Tools 详情"
+        />
       )}
     </div>
   );

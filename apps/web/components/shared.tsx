@@ -4,15 +4,17 @@
  * 【扁平化单文件设计】：
  * 1. 包含 Pagination (分页组件)、EmptyState (空状态组件)。
  * 2. 包含 LoadingState (加载骨架屏)、ConfirmDialog (玻璃模态二次确认弹窗)。
- * 3. 彻底删除 components/shared/ 子目录，消除一堆 index.ts 导出的冗余度。
+ * 3. 包含 KpSelect (莫兰迪风格自定义下拉，替代原生 select)。
+ * 4. 彻底删除 components/shared/ 子目录，消除一堆 index.ts 导出的冗余度。
  */
 
 "use client";
 
-import React, { useEffect, useState, useLayoutEffect } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Inbox, Plus, AlertTriangle } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Inbox, Plus, AlertTriangle, CheckCircle2, Globe, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
@@ -76,8 +78,8 @@ export function Pagination({
                 onClick={() => onPageChange(p)}
                 className={`h-8 w-8 rounded-lg text-xs ${
                   p === page
-                    ? "bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)]"
-                    : "border-[var(--vp-c-divider)] text-[var(--vp-c-text-2)] hover:bg-[var(--vp-c-bg-soft)]"
+                    ? "border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+                    : "border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]"
                 }`}
               >
                 {p}
@@ -133,7 +135,7 @@ export function EmptyState({
       {onAction && actionLabel && (
         <Button
           onClick={onAction}
-          className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] transition-all rounded-xl"
+          className="flex items-center gap-2 border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand)]/20 transition-all rounded-xl"
         >
           <Plus className="w-4 h-4" />
           {actionLabel}
@@ -220,7 +222,7 @@ export function ConfirmDialog({
   return ReactDOM.createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -238,32 +240,32 @@ export function ConfirmDialog({
               transition: { type: "spring", stiffness: 300, damping: 25 }
             }}
             exit={{ scale: 0.95, opacity: 0, y: 10 }}
-            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg)] p-6 shadow-2xl z-10"
+            className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6 shadow-2xl"
           >
             <div className="flex items-start gap-4">
-              <div className={`flex items-center justify-center w-10 h-10 rounded-xl shrink-0 ${
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                 isDestructive 
                   ? "bg-red-500/10 text-red-500" 
-                  : "bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]"
+                  : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
               }`}>
-                <AlertTriangle className="w-5 h-5" />
+                <AlertTriangle className="h-5 w-5" />
               </div>
               
               <div className="space-y-1">
-                <h3 className="text-base font-semibold text-[var(--vp-c-text-1)]">
+                <h3 className="text-base font-semibold text-[var(--kp-text-1)]">
                   {title}
                 </h3>
-                <p className="text-sm text-[var(--vp-c-text-3)] leading-relaxed">
+                <p className="text-sm leading-relaxed text-[var(--kp-text-3)]">
                   {description}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 mt-6">
+            <div className="mt-6 flex items-center justify-end gap-3">
               <Button
                 variant="outline"
                 onClick={onCancel}
-                className="rounded-xl border-[var(--vp-c-divider)] text-[var(--vp-c-text-2)] hover:bg-[var(--vp-c-bg-soft)]"
+                className="rounded-xl border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]"
               >
                 {cancelLabel}
               </Button>
@@ -275,7 +277,7 @@ export function ConfirmDialog({
                 className={`rounded-xl text-white transition-all ${
                   isDestructive
                     ? "bg-red-500 hover:bg-red-600 focus:ring-red-500"
-                    : "bg-[var(--vp-c-brand)] hover:bg-[var(--vp-c-brand-dark)]"
+                    : "bg-[var(--kp-brand)] hover:bg-[var(--kp-brand-dark)]"
                 }`}
               >
                 {confirmLabel}
@@ -290,7 +292,191 @@ export function ConfirmDialog({
 }
 
 /* ═══════════════════════════════════════════════════════
-   5. VirtualFlatList — 固定行高虚拟滚动（L5-M06）
+   5. KpSelect — 莫兰迪自定义下拉（替代原生 select）
+   ═══════════════════════════════════════════════════════ */
+
+export interface KpSelectOption<T extends string = string> {
+  value: T;
+  label: string;
+}
+
+export interface KpSelectProps<T extends string = string> {
+  value: T;
+  options: KpSelectOption<T>[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  variant?: "default" | "capsule";
+  size?: "sm" | "md";
+  className?: string;
+  menuClassName?: string;
+  placeholder?: string;
+  "aria-label"?: string;
+  /** 与控件同一行的左侧标签（capsule 场景） */
+  label?: string;
+}
+
+export function KpSelect<T extends string = string>({
+  value,
+  options,
+  onChange,
+  disabled,
+  variant = "default",
+  size = "md",
+  className,
+  menuClassName,
+  placeholder = "请选择",
+  "aria-label": ariaLabel,
+  label,
+}: KpSelectProps<T>) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const listId = React.useId();
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 });
+
+  const selected = options.find((o) => o.value === value);
+
+  const updateMenuPos = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setMenuPos({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updateMenuPos();
+    window.addEventListener("scroll", updateMenuPos, true);
+    window.addEventListener("resize", updateMenuPos);
+    return () => {
+      window.removeEventListener("scroll", updateMenuPos, true);
+      window.removeEventListener("resize", updateMenuPos);
+    };
+  }, [open, updateMenuPos]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const triggerClass = cn(
+    "inline-flex items-center justify-between gap-2 border border-[var(--kp-divider)] bg-[var(--kp-bg)]/80 text-[var(--kp-text-1)] shadow-sm outline-none transition",
+    "hover:border-[var(--kp-brand-light)] focus-visible:border-[var(--kp-brand)] focus-visible:ring-2 focus-visible:ring-[var(--kp-brand)]/20",
+    "disabled:cursor-not-allowed disabled:opacity-45",
+    variant === "capsule" ? "rounded-full" : "rounded-xl w-full",
+    size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-2 text-sm",
+    className,
+  );
+
+  const control = (
+    <div className={cn(label ? "flex items-center justify-between gap-3" : "relative")}>
+      {label && (
+        <span className="text-xs font-medium text-[var(--kp-text-2)]">{label}</span>
+      )}
+      <button
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel ?? label}
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        className={cn(triggerClass, label && "shrink-0")}
+      >
+        <span className="truncate">{selected?.label ?? placeholder}</span>
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+    </div>
+  );
+
+  const menu =
+    open &&
+    typeof document !== "undefined" &&
+    ReactDOM.createPortal(
+      <AnimatePresence>
+        <motion.div
+          ref={menuRef}
+          id={listId}
+          role="listbox"
+          initial={{ opacity: 0, y: -4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -4, scale: 0.98 }}
+          transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            position: "fixed",
+            top: menuPos.top,
+            left: menuPos.left,
+            minWidth: Math.max(menuPos.width, variant === "capsule" ? 148 : menuPos.width),
+            zIndex: 9999,
+          }}
+          className={cn(
+            "overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-1 shadow-lg shadow-[rgba(45,42,38,0.08)] backdrop-blur-md",
+            menuClassName,
+          )}
+        >
+          {options.map((opt) => {
+            const active = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors",
+                  active
+                    ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+                    : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+                )}
+              >
+                <span className="truncate">{opt.label}</span>
+                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />}
+              </button>
+            );
+          })}
+        </motion.div>
+      </AnimatePresence>,
+      document.body,
+    );
+
+  return (
+    <>
+      {control}
+      {menu}
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   6. VirtualFlatList — 固定行高虚拟滚动（L5-M06）
    ═══════════════════════════════════════════════════════ */
 
 export interface VirtualFlatListProps<T> {
@@ -358,6 +544,150 @@ export function VirtualFlatList<T>({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   6. NativeCapabilitiesPanel — 搜索/OCR/浏览器/read_article 能力
+   ═══════════════════════════════════════════════════════ */
+
+export const READ_PLATFORM_LABELS: Record<string, string> = {
+  zhihu: "知乎",
+  wechat: "微信",
+  xiaohongshu: "小红书",
+  douyin: "抖音",
+  bilibili: "B站",
+  weibo: "微博",
+  juejin: "掘金",
+  csdn: "CSDN",
+  cnblogs: "博客园",
+  jianshu: "简书",
+  infoq: "InfoQ",
+  segmentfault: "SegmentFault",
+  oschina: "开源中国",
+  github: "GitHub",
+  stackoverflow: "StackOverflow",
+};
+
+export interface NativeCapabilitiesData {
+  search: { priority: string; engines: string[] };
+  ocr: { modelsReady: boolean };
+  browser: { chromeInstalled: boolean; poolReady: boolean };
+  readArticle: {
+    platforms: string[];
+    cookies?: { zhihu: boolean; wechat: boolean; xhs: boolean; douyin: boolean };
+  };
+  infoSources?: { enabled: number };
+}
+
+function CapabilityStatusDot({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+        ok ? "bg-emerald-500/10 text-emerald-700" : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+      )}
+    >
+      {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+      {label}
+    </span>
+  );
+}
+
+export function NativeCapabilitiesPanel({
+  data,
+  compact = false,
+  className,
+  title = "原生运行时能力",
+  detailHref,
+  detailLabel = "Tools 能力详情",
+  showSearchEnginesInCompact = false,
+}: {
+  data: NativeCapabilitiesData;
+  compact?: boolean;
+  className?: string;
+  title?: string;
+  detailHref?: string;
+  detailLabel?: string;
+  showSearchEnginesInCompact?: boolean;
+}) {
+  const cookieEntries = data.readArticle.cookies
+    ? ([
+        ["zhihu", "知乎 Cookie", data.readArticle.cookies.zhihu],
+        ["wechat", "微信 Cookie", data.readArticle.cookies.wechat],
+        ["xhs", "小红书 Cookie", data.readArticle.cookies.xhs],
+        ["douyin", "抖音 Cookie", data.readArticle.cookies.douyin],
+      ] as const)
+    : [];
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 space-y-3",
+        compact ? "p-4" : "p-5 space-y-4",
+        className,
+      )}
+      data-testid="native-capabilities-panel"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
+          <Globe className="h-4 w-4 text-[var(--kp-brand)]" />
+          {title}
+        </div>
+        {detailHref && (
+          <Link
+            href={detailHref}
+            className="text-[10px] font-medium text-[var(--kp-brand)] hover:underline"
+          >
+            {detailLabel} →
+          </Link>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <CapabilityStatusDot
+          ok={data.search.engines.length > 0}
+          label={`搜索 ${data.search.engines.length}`}
+        />
+        <CapabilityStatusDot ok={data.ocr.modelsReady} label="OCR" />
+        <CapabilityStatusDot ok={data.browser.poolReady} label="Playwright" />
+        <CapabilityStatusDot ok={data.browser.chromeInstalled} label="Chrome" />
+        {data.infoSources !== undefined && (
+          <CapabilityStatusDot
+            ok={data.infoSources.enabled > 0}
+            label={`信息源 ${data.infoSources.enabled}`}
+          />
+        )}
+      </div>
+      {(showSearchEnginesInCompact || !compact) && data.search.engines.length > 0 && (
+        <p className="text-[10px] text-[var(--kp-text-3)]">
+          引擎：{data.search.engines.join(" · ")}（{data.search.priority}）
+        </p>
+      )}
+      {cookieEntries.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {cookieEntries.map(([key, label, ok]) => (
+            <CapabilityStatusDot key={key} ok={ok} label={label} />
+          ))}
+        </div>
+      )}
+      {!compact && (
+        <div>
+          <p className="mb-2 text-[10px] font-medium text-[var(--kp-text-2)]">
+            read_article · {data.readArticle.platforms.length} 平台
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.readArticle.platforms.map((p) => (
+              <span
+                key={p}
+                className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-[10px] text-[var(--kp-text-2)]"
+              >
+                {READ_PLATFORM_LABELS[p] ?? p}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -96,7 +96,7 @@ export const chatConfigSchema = z.object({
   maxTokens: z.number().int().min(256).max(32768).optional(),
   systemPrompt: z.string().optional(),
   enableReasoning: z.boolean().optional(),
-  reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
+  reasoningEffort: z.enum(["low", "medium", "high", "max"]).optional(),
 });
 
 export const switchMessageVersionSchema = z.object({
@@ -104,11 +104,21 @@ export const switchMessageVersionSchema = z.object({
   versionIndex: z.number().int().min(0),
 });
 
+/** Chat 图片附件 — vision 模型直传 data URL，非 vision 走 OCR 文本 */
+export const chatImageAttachmentSchema = z.object({
+  name: z.string(),
+  mimeType: z.string(),
+  previewUrl: z.string(),
+  extractedText: z.string().optional(),
+  source: z.enum(["ocr", "vision", "user"]).optional(),
+});
+
 export const agentChatSchema = z
   .object({
     sessionId: z.string().cuid().optional(),
     agentId: z.string().cuid().optional(),
     message: z.string().min(1).optional(),
+    attachments: z.array(chatImageAttachmentSchema).optional(),
     model: z.string().optional(),
     config: chatConfigSchema.optional(),
     regenerate: z.boolean().optional(),
@@ -123,8 +133,9 @@ export const agentChatSchema = z
       data.regenerate ||
       data.retryFromMessageId ||
       data.editMessageId ||
-      (typeof data.message === "string" && data.message.trim().length > 0),
-    { message: "需要提供 message，或使用 regenerate / edit / retry" },
+      (typeof data.message === "string" && data.message.trim().length > 0) ||
+      (Array.isArray(data.attachments) && data.attachments.length > 0),
+    { message: "需要提供 message / 附件，或使用 regenerate / edit / retry" },
   )
   .refine(
     (data) => !data.editMessageId || (typeof data.editContent === "string" && data.editContent.trim().length > 0),
@@ -197,8 +208,9 @@ export const listSkillsSchema = z.object({
 
 export const createSessionSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
-  model: z.string().default("deepseek-chat"),
+  model: z.string().default("deepseek-v4-flash"),
   systemPrompt: z.string().optional(),
+  agentId: z.string().cuid().optional(),
 });
 
 export const updateSessionSchema = z.object({
@@ -206,6 +218,7 @@ export const updateSessionSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
+  agentId: z.string().cuid().optional(),
 });
 
 export const listSessionsSchema = z.object({
@@ -222,6 +235,7 @@ export const createMessageSchema = z.object({
   sessionId: z.string().cuid(),
   role: z.enum(["user", "assistant", "system", "tool"]),
   content: z.string().min(1, "内容不能为空"),
+  attachments: z.array(chatImageAttachmentSchema).optional(),
   toolCalls: z.any().optional(),
   toolResults: z.any().optional(),
   tokenUsage: z.object({
@@ -229,13 +243,16 @@ export const createMessageSchema = z.object({
     completion: z.number(),
     total: z.number(),
   }).optional(),
+  finishReason: z.string().optional(),
 });
 
 export const updateMessageSchema = z.object({
   id: z.string().cuid(),
   content: z.string().min(1).optional(),
+  attachments: z.array(chatImageAttachmentSchema).optional(),
   toolCalls: z.any().optional(),
   toolResults: z.any().optional(),
+  finishReason: z.string().optional(),
 });
 
 export const listMessagesSchema = z.object({
@@ -351,6 +368,55 @@ export const listMemoriesSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   keyword: z.string().optional(),
   type: z.string().optional(),
+});
+
+/* ═══════════════════════════════════════════════════════
+   InfoSource (信息源)
+   ═══════════════════════════════════════════════════════ */
+
+export const infoSourceTypeSchema = z.enum([
+  "blog",
+  "paper",
+  "news",
+  "official",
+  "community",
+  "general",
+  "rss",
+]);
+
+export const infoSourceLanguageSchema = z.enum(["zh", "en", "auto"]);
+
+export const createInfoSourceSchema = z.object({
+  name: z.string().min(1, "名称不能为空").max(200),
+  url: z.string().min(1, "URL 不能为空"),
+  type: infoSourceTypeSchema.default("general"),
+  description: z.string().default(""),
+  reliability: z.number().int().min(1).max(5).default(3),
+  language: infoSourceLanguageSchema.default("auto"),
+  tags: z.array(z.string()).default([]),
+  enabled: z.boolean().default(true),
+});
+
+export const updateInfoSourceSchema = z.object({
+  id: z.string().cuid(),
+  name: z.string().min(1).max(200).optional(),
+  url: z.string().min(1).optional(),
+  type: infoSourceTypeSchema.optional(),
+  description: z.string().optional(),
+  reliability: z.number().int().min(1).max(5).optional(),
+  language: infoSourceLanguageSchema.optional(),
+  tags: z.array(z.string()).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const listInfoSourcesSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+  keyword: z.string().optional(),
+  type: infoSourceTypeSchema.optional(),
+  tag: z.string().optional(),
+  minReliability: z.number().int().min(1).max(5).optional(),
+  enabled: z.boolean().optional(),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -683,6 +749,7 @@ export type AgentRunInput = z.infer<typeof agentRunSchema>;
 export type SwitchMessageVersionInput = z.infer<typeof switchMessageVersionSchema>;
 export type ChatConfigInput = z.infer<typeof chatConfigSchema>;
 export type AgentChatInput = z.infer<typeof agentChatSchema>;
+
 export type WebSearchInput = z.infer<typeof webSearchSchema>;
 export type GitRepoPathInput = z.infer<typeof gitRepoPathSchema>;
 export type NativeExecuteInput = z.infer<typeof nativeExecuteSchema>;
@@ -723,6 +790,10 @@ export type ListMcpServersInput = z.infer<typeof listMcpServersSchema>;
 export type CreateMemoryInput = z.infer<typeof createMemorySchema>;
 export type UpdateMemoryInput = z.infer<typeof updateMemorySchema>;
 export type ListMemoriesInput = z.infer<typeof listMemoriesSchema>;
+
+export type CreateInfoSourceInput = z.infer<typeof createInfoSourceSchema>;
+export type UpdateInfoSourceInput = z.infer<typeof updateInfoSourceSchema>;
+export type ListInfoSourcesInput = z.infer<typeof listInfoSourcesSchema>;
 
 export type CreateGitRepoInput = z.infer<typeof createGitRepoSchema>;
 export type UpdateGitRepoInput = z.infer<typeof updateGitRepoSchema>;

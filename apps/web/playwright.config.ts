@@ -40,11 +40,11 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "pnpm --filter @knowpilot/server dev",
+      command: "pnpm --filter @knowpilot/server dev:once",
       url: serverHealthUrl,
       cwd: rootDir,
       reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
+      timeout: 180_000,
       env: {
         SERVER_PORT: serverPort,
         DATABASE_URL: process.env.DATABASE_URL ?? "file:./dev.db",

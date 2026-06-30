@@ -22,6 +22,7 @@ import {
   type CreateAgentInput,
   type UpdateAgentInput,
   type ListAgentsInput,
+  materializeAgentTools,
   type CreateSkillInput,
   type UpdateSkillInput,
   type ListSkillsInput,
@@ -70,6 +71,9 @@ import {
   type CreateCredentialInput,
   type UpdateCredentialInput,
   type ListCredentialsInput,
+  type CreateInfoSourceInput,
+  type UpdateInfoSourceInput,
+  type ListInfoSourcesInput,
   type AgentRunInput,
   type AgentChatInput,
   type WebSearchInput,
@@ -566,12 +570,13 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
   }
 
   protected buildCreateData(input: CreateAgentInput): any {
+    const tools = materializeAgentTools(input.tools);
     return {
       name: input.name,
       description: input.description,
       model: input.model,
       systemPrompt: input.systemPrompt,
-      tools: input.tools.join(","),
+      tools: tools.join(","),
     };
   }
 
@@ -579,7 +584,7 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     const { id: _id, tools, name, ...data } = input;
     const updateData: any = { ...data };
     if (name !== undefined) updateData.name = name;
-    if (tools !== undefined) updateData.tools = tools.join(",");
+    if (tools !== undefined) updateData.tools = materializeAgentTools(tools).join(",");
     return updateData;
   }
 
@@ -827,6 +832,7 @@ export interface SessionEntity {
   title: string;
   model: string;
   systemPrompt: string | null;
+  agentId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -869,6 +875,7 @@ export interface MessageEntity {
   sessionId: string;
   role: string;
   content: string;
+  attachments: any;
   toolCalls: any;
   toolResults: any;
   tokenUsage: any;
@@ -1263,5 +1270,125 @@ export class CredentialService extends BaseService<CreateCredentialInput, Update
   }
   protected override async validateUpdate(input: UpdateCredentialInput, existing: any): Promise<void> {
     if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
+  }
+}
+
+/** InfoSource 信息源 — Agent 可信信息来源 */
+export interface InfoSourceEntity {
+  id: string;
+  name: string;
+  url: string;
+  type: string;
+  description: string;
+  reliability: number;
+  language: string;
+  tags: string[];
+  enabled: boolean;
+  sourceSlug: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export class InfoSourceService extends FileSyncService<
+  CreateInfoSourceInput,
+  UpdateInfoSourceInput,
+  ListInfoSourcesInput,
+  InfoSourceEntity
+> {
+  readonly entityName = "infoSource";
+  readonly contentDirName = "sources";
+  readonly fileExtension = ".json";
+
+  protected get delegate() { return this.prisma.infoSource; }
+
+  protected formatEntity(raw: any): InfoSourceEntity {
+    return {
+      ...raw,
+      tags: raw.tags ? raw.tags.split(",").filter(Boolean).map((t: string) => t.trim()) : [],
+    };
+  }
+
+  protected buildListWhere(input: ListInfoSourcesInput): any {
+    const where: any = {};
+    if (input.type) where.type = input.type;
+    if (input.enabled !== undefined) where.enabled = input.enabled;
+    if (input.minReliability !== undefined) where.reliability = { gte: input.minReliability };
+    if (input.tag) where.tags = { contains: input.tag };
+    if (input.keyword) {
+      where.OR = [
+        { name: { contains: input.keyword } },
+        { url: { contains: input.keyword } },
+        { description: { contains: input.keyword } },
+        { tags: { contains: input.keyword } },
+      ];
+    }
+    return where;
+  }
+
+  private slugifyName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^\w\u4e00-\u9fff]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || `source-${Date.now().toString(36)}`;
+  }
+
+  protected buildCreateData(input: CreateInfoSourceInput): any {
+    const slug = this.slugifyName(input.name);
+    return {
+      name: input.name.trim(),
+      url: input.url.trim(),
+      type: input.type,
+      description: input.description ?? "",
+      reliability: input.reliability,
+      language: input.language,
+      tags: input.tags?.join(",") || "",
+      enabled: input.enabled ?? true,
+      sourceSlug: slug,
+    };
+  }
+
+  protected buildUpdateData(input: UpdateInfoSourceInput): any {
+    const { id: _id, tags, name, url, ...data } = input;
+    const updateData: any = { ...data };
+    if (name !== undefined) updateData.name = name.trim();
+    if (url !== undefined) updateData.url = url.trim();
+    if (tags !== undefined) updateData.tags = tags.join(",");
+    return updateData;
+  }
+
+  protected serializeToFile(entity: InfoSourceEntity): string {
+    return `${JSON.stringify(
+      {
+        name: entity.name,
+        url: entity.url,
+        type: entity.type,
+        description: entity.description,
+        reliability: entity.reliability,
+        language: entity.language,
+        tags: entity.tags,
+        enabled: entity.enabled,
+      },
+      null,
+      2,
+    )}\n`;
+  }
+
+  protected getFileSlug(entity: InfoSourceEntity): string {
+    return entity.sourceSlug || this.slugifyName(entity.name);
+  }
+
+  protected override async validateCreate(input: CreateInfoSourceInput): Promise<void> {
+    await this.assertUnique("name", input.name.trim(), "创建");
+  }
+
+  protected override async validateUpdate(input: UpdateInfoSourceInput, existing: any): Promise<void> {
+    if (input.name && input.name.trim() !== existing.name) {
+      await this.assertUnique("name", input.name.trim(), "更新", input.id);
+    }
+  }
+
+  protected override buildDeleteSummary(existing: any): Record<string, unknown> {
+    return { id: existing.id, name: existing.name, url: existing.url };
   }
 }

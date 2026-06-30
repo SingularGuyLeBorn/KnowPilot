@@ -8,20 +8,37 @@ const DEFAULT_KEY = "kp-chat-default-config";
 const sessionKey = (id: string) => `kp-chat-session-${id}`;
 
 export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
-  model: "deepseek-chat",
+  model: "deepseek-v4-flash",
   temperature: 0.7,
-  maxTokens: 4096,
+  maxTokens: 8192,
   systemPrompt: "",
-  enableReasoning: false,
+  enableReasoning: true,
   reasoningEffort: "high",
   customSystemPrompt: false,
 };
 
 export function getModelOption(modelId: string) {
-  return CHAT_MODELS.find((m) => m.id === modelId) ?? CHAT_MODELS[0];
+  const found = CHAT_MODELS.find((m) => m.id === modelId);
+  if (found) return found;
+  const isDeepSeek = modelId.includes("deepseek");
+  const isVision = modelId.includes("vl") || modelId.includes("vision");
+  return {
+    id: modelId,
+    label: modelId,
+    provider: isDeepSeek ? "deepseek" : "openai",
+    supportsThinking: isDeepSeek && !isVision,
+    supportsReasoning: isDeepSeek && !isVision,
+    supportsVision: isVision,
+    ocrFallback: isDeepSeek && !isVision,
+    inputHint: isVision
+      ? "多模态识图 · 支持直接发送图片"
+      : "纯文本模型 · 图片将 OCR 识别后以文字附在消息中",
+    defaultTemperature: 0.7,
+  };
 }
 
 export function loadDefaultChatConfig(): ChatSessionConfig {
+  if (typeof window === "undefined") return { ...DEFAULT_CHAT_CONFIG };
   try {
     const raw = localStorage.getItem(DEFAULT_KEY);
     if (raw) return { ...DEFAULT_CHAT_CONFIG, ...JSON.parse(raw) };
@@ -29,6 +46,20 @@ export function loadDefaultChatConfig(): ChatSessionConfig {
     // ignore
   }
   return { ...DEFAULT_CHAT_CONFIG };
+}
+
+/** 新对话：未自定义 Prompt 时跟随 Agent 默认 systemPrompt */
+export function resolveNewChatConfig(
+  base: ChatSessionConfig,
+  agent?: { model: string; systemPrompt: string } | null,
+): ChatSessionConfig {
+  if (!agent || base.customSystemPrompt) return base;
+  return {
+    ...base,
+    model: base.model || agent.model,
+    systemPrompt: agent.systemPrompt,
+    customSystemPrompt: false,
+  };
 }
 
 export function saveDefaultChatConfig(config: ChatSessionConfig) {
@@ -40,6 +71,7 @@ export function saveDefaultChatConfig(config: ChatSessionConfig) {
 }
 
 export function loadSessionChatConfig(sessionId: string): ChatSessionConfig | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(sessionKey(sessionId));
     if (raw) return { ...DEFAULT_CHAT_CONFIG, ...JSON.parse(raw) };
@@ -57,15 +89,21 @@ export function saveSessionChatConfig(sessionId: string, config: ChatSessionConf
   }
 }
 
-export function buildStreamConfig(config: ChatSessionConfig) {
+export function buildStreamConfig(
+  config: ChatSessionConfig,
+  agentFallback?: { systemPrompt: string },
+) {
   const modelOpt = getModelOption(config.model);
-  const reasoningOn = modelOpt.reasoningRequired || config.enableReasoning;
+  const reasoningOn = modelOpt.reasoningRequired ? true : config.enableReasoning;
+  const systemPrompt =
+    config.systemPrompt.trim() ||
+    (config.customSystemPrompt ? "" : agentFallback?.systemPrompt ?? "");
   return {
     model: config.model,
     config: {
       temperature: config.temperature,
       maxTokens: config.maxTokens,
-      systemPrompt: config.systemPrompt,
+      systemPrompt,
       enableReasoning: reasoningOn,
       reasoningEffort: config.reasoningEffort,
     },

@@ -63,8 +63,9 @@ model Skill {
 model ChatSession {
   id           String        @id @default(cuid())
   title        String
-  model        String        @default("deepseek-chat")
+  model        String        @default("deepseek-v4-flash")
   systemPrompt String?
+  agentId      String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   messages     ChatMessage[]
@@ -72,15 +73,17 @@ model ChatSession {
 
 /// 聊天消息
 model ChatMessage {
-  id          String      @id @default(cuid())
-  sessionId   String
-  role        String      /// "user" | "assistant" | "system" | "tool"
-  content     String
-  toolCalls   Json?       /// 调用的工具
-  toolResults Json?       /// 工具执行结果
-  tokenUsage  Json?       /// { prompt, completion, total }
-  createdAt   DateTime    @default(now())
-  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id           String      @id @default(cuid())
+  sessionId    String
+  role         String      /// "user" | "assistant" | "system" | "tool"
+  content      String
+  attachments  Json?       /// ChatImageAttachment[]，用户消息的图片附件
+  toolCalls    Json?       /// 调用的工具
+  toolResults  Json?       /// 工具执行结果
+  tokenUsage   Json?       /// { prompt, completion, total }
+  finishReason String?     /// "stop" | "aborted" 等流式结束原因
+  createdAt    DateTime    @default(now())
+  session      ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 /// 上传的文件元数据
@@ -156,6 +159,26 @@ model Task {
   sourceMtime    DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+
+/// 信息源 (InfoSource) — Agent 可信信息来源配置
+model InfoSource {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  url         String
+  type        String    @default("general") /// blog | paper | news | official | community | general | rss
+  description String    @default("")
+  reliability Int       @default(3) /// 1-5 可信度
+  language    String    @default("auto") /// zh | en | auto
+  tags        String    @default("") /// 逗号分隔
+  enabled     Boolean   @default(true)
+  sourceSlug  String?   @unique
+  sourceMtime DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([type])
+  @@index([enabled])
 }
 
 /// 工作区管理 (Workspace)

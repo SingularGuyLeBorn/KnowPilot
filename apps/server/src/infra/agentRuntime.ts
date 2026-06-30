@@ -4,7 +4,7 @@
 
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import { chatCompletion, type LlmMessage, type LlmToolCall } from "./llmClient.js";
+import { chatCompletion, resolveEffectiveAgentModel, type LlmMessage, type LlmToolCall } from "./llmClient.js";
 import {
   parseAgentTools,
   buildAgentToolSchemas,
@@ -36,6 +36,31 @@ export async function buildMemoryContext(services: ServiceContainer, userText: s
   return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
 }
 
+const WEB_TOOL_GUIDE = `## 网络工具用法
+- web_search：查最新信息、文档、新闻；返回标题+URL+摘要，优先用结果中的 URL 继续深挖。已配置 Tavily/SerpAPI 时按 SEARCH_ENGINE_PRIORITY 自动降级；在 /sources 启用信息源后，Tavily/SerpAPI 会优先在信息源域名内 scoped 搜索（hint 含 infoSource-scoped / N 信息源）。
+- read_article：读取单篇网页正文（Markdown）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书/GitHub 等；GitHub blob→raw + jsDelivr/API（~1s）；InfoQ/OSChina API；SegmentFault/CSDN/掘金/博客园 SSR HTTP；简书 Mobile HTTP；知乎 Cookie HTTP（~1s，需 ZHIHU_COOKIE）；HTTP 404 秒级报错；正文偏短（<150 字）时返回 contentWarning 并建议 scrape_web_page。
+- scrape_web_page：Playwright 采集复杂 SPA/需 JS 渲染页面；返回 method=playwright 与 platform；read_article 失败或页面高度动态时再试。
+建议流程：web_search 找 URL → read_article 读正文 → 必要时 scrape_web_page。知乎/微信/小红书/抖音若被登录墙拦截，可在 .env 配置 ZHIHU_COOKIE / WECHAT_COOKIE / XHS_COOKIE / DOUYIN_COOKIE；GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
+
+/** 根据 Agent 已授权工具追加简短使用指引 */
+export function buildAgentToolGuide(tools: string[]): string {
+  const has = (name: string) => tools.some((t) => t === `native:${name}` || t === name);
+  if (has("web_search") || has("read_article") || has("scrape_web_page")) {
+    return WEB_TOOL_GUIDE;
+  }
+  return "";
+}
+
+export function buildSystemPromptWithHints(
+  basePrompt: string,
+  tools: string[],
+  memoryHint: string,
+): string {
+  const base = (basePrompt || "你是 KnowPilot 助手。") + memoryHint;
+  const guide = buildAgentToolGuide(tools);
+  return guide ? `${base}\n\n${guide}` : base;
+}
+
 export function parseToolCall(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
   let args: Record<string, unknown> = {};
   try {
@@ -57,11 +82,13 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
   const created = await services.agent.create({
     name: "assistant",
     description: "KnowPilot 默认助手",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     systemPrompt:
-      "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。",
+      "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。",
     tools: [
       "native:web_search",
+      "native:read_article",
+      "native:scrape_web_page",
       "native:read_file",
       "native:list_directory",
       "native:invoke_api",
@@ -81,13 +108,14 @@ export async function runAgentLoop(options: {
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
 }): Promise<AgentLoopResult> {
   assertLlmBudget(options.config);
+  const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
   const parsed = parseAgentTools(options.agent.tools);
   const registry = new Map<string, ToolRegistryEntry>();
   const toolSchemas = await buildAgentToolSchemas(options.services, parsed, registry);
   const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed);
 
   let llmMessages: LlmMessage[] = [...options.messages];
-  const compacted = await maybeCompactMessages(options.config, llmMessages, options.agent.model);
+  const compacted = await maybeCompactMessages(options.config, llmMessages, effectiveModel);
   llmMessages = compacted.messages;
   if (compacted.compacted) {
     console.log("[Agent] 长对话已自动压缩上下文");
@@ -95,7 +123,7 @@ export async function runAgentLoop(options: {
 
   const executedTools: StoredToolCall[] = [];
   let totalUsage = { prompt: 0, completion: 0, total: 0 };
-  let lastModel = options.agent.model;
+  let lastModel = effectiveModel;
   let lastProvider = options.config.llm.defaultProvider;
   let roundsUsed = 0;
   const maxRounds = options.config.llm.maxToolRounds;
@@ -104,7 +132,7 @@ export async function runAgentLoop(options: {
     roundsUsed = round + 1;
     const completion = await chatCompletion({
       config: options.config,
-      model: options.agent.model,
+      model: effectiveModel,
       messages: llmMessages,
       tools: toolSchemas,
     });
@@ -132,6 +160,7 @@ export async function runAgentLoop(options: {
     llmMessages.push({
       role: "assistant",
       content: completion.content,
+      reasoning_content: completion.reasoningContent ?? null,
       tool_calls: completion.toolCalls,
     });
 
@@ -173,7 +202,10 @@ export async function runAgent(
     const agent = await resolveAgent(services, input.agentId);
     const memoryHint = input.input ? await buildMemoryContext(services, input.input) : "";
     const messages: LlmMessage[] = [
-      { role: "system", content: (agent.systemPrompt || "你是 KnowPilot 助手。") + memoryHint },
+      {
+        role: "system",
+        content: buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint),
+      },
     ];
 
     if (input.messages?.length) {
@@ -233,29 +265,39 @@ export async function chatAgent(
 ) {
   const start = Date.now();
   let sessionId = input.sessionId;
-  const messageText = input.message?.trim();
-  if (!messageText) {
+  const messageText = input.message?.trim() ?? "";
+  const hasAttachments = Array.isArray(input.attachments) && input.attachments.length > 0;
+  if (!messageText && !hasAttachments) {
     throw new Error("message 不能为空");
   }
+  const displayText = messageText || "（见附件）";
   try {
     const agent = await resolveAgent(services, input.agentId);
+    const effectiveModel = input.model || agent.model;
 
     if (!sessionId) {
       const created = await services.session.create({
-        title: messageText.slice(0, 40) || "新对话",
-        model: input.model || agent.model,
+        title: displayText.slice(0, 40) || "新对话",
+        model: effectiveModel,
         systemPrompt: agent.systemPrompt,
+        agentId: agent.id,
       });
       sessionId = created.data!.id;
     }
 
-    await services.message.create({ sessionId, role: "user", content: messageText });
+    await services.message.create({
+      sessionId,
+      role: "user",
+      content: displayText,
+      attachments: hasAttachments ? input.attachments : undefined,
+    });
 
     const history = await services.message.list({ sessionId, page: 1, pageSize: 50 });
-    const memoryHint = await buildMemoryContext(services, messageText);
+    const memoryHint = await buildMemoryContext(services, displayText);
     const messages = buildLlmMessagesFromHistory(
-      (agent.systemPrompt || "你是 KnowPilot 助手。") + memoryHint,
+      buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint),
       history.items,
+      { modelId: effectiveModel },
     );
 
     const result = await runAgentLoop({
@@ -278,7 +320,7 @@ export async function chatAgent(
       agentId: agent.id,
       sessionId,
       status: "success",
-      input: { message: messageText },
+      input: { message: displayText, attachments: input.attachments?.length ? input.attachments : undefined },
       output: { content: result.content },
       toolCalls: result.toolCalls,
       tokenUsage: result.tokenUsage,

@@ -28,6 +28,7 @@ import {
   createToolSchema, updateToolSchema, listToolsSchema,
   createRunSchema, updateRunSchema, listRunsSchema,
   createPromptSchema, updatePromptSchema, listPromptsSchema,
+  createInfoSourceSchema, updateInfoSourceSchema, listInfoSourcesSchema,
   createCredentialSchema, updateCredentialSchema, listCredentialsSchema,
   webSearchSchema, nativeExecuteSchema,
   deleteByIdWithApprovalSchema, gitPushWithApprovalSchema,
@@ -37,6 +38,7 @@ import {
 } from "@knowpilot/shared";
 import { listConfiguredLlmProviders } from "./infra/config.js";
 import { listNativeTools, executeNativeTool } from "./infra/nativeTools.js";
+import { getEnrichedServerCapabilities } from "./infra/capabilities.js";
 import { runAgent, chatAgent } from "./infra/agentRuntime.js";
 import { switchAssistantMessageVersion } from "./infra/agentStream.js";
 import { summarizeAgentTools } from "./infra/agentTools.js";
@@ -46,6 +48,8 @@ import { assertApprovalOrProceed, executeApprovedOperation } from "./infra/appro
 import { runGlobalSearch } from "./infra/globalSearch.js";
 import { getAnalyticsDashboard } from "./infra/analytics.js";
 import { loadAboutProfile } from "./infra/aboutProfile.js";
+import { pullAsyncDeliveries, listRunningAsyncJobs } from "./infra/asyncJobManager.js";
+import { extractTextFromImage, getOcrStatus, probeOcrPython } from "./infra/ocrService.js";
 import {
   getRemoteAccessInfo,
   isAuthEnabled,
@@ -111,6 +115,60 @@ const agentRouter = router({
   llmBudgetStatus: publicProcedure
     .meta({ description: "获取今日 LLM 美元预算消耗状态。", aiReadable: true })
     .query(({ ctx }) => getLlmBudgetStatus(ctx.config)),
+  pullAsyncQueue: publicProcedure
+    .meta({ description: "拉取会话内已完成的后台异步任务结果（供 Chat 队列消费）。", aiReadable: false })
+    .input(z.object({ sessionId: z.string().cuid() }))
+    .query(async ({ input }) => ({
+      deliveries: await pullAsyncDeliveries(input.sessionId),
+      running: await listRunningAsyncJobs(input.sessionId),
+    })),
+  ocrStatus: publicProcedure
+    .meta({ description: "OCR 环境诊断（模型、Python、是否可用）。", aiReadable: false })
+    .query(async ({ ctx }) => {
+      const status = getOcrStatus(ctx.config);
+      const probe = await probeOcrPython(ctx.config);
+      const modelsReady = status.models.det && status.models.rec;
+      return success({
+        data: {
+          ...status,
+          probe,
+          modelsReady,
+          ready: status.paddleCli && modelsReady && probe.paddleImportOk,
+        },
+        operation: "ocr",
+        entity: "agent",
+      });
+    }),
+  ocrImage: publicProcedure
+    .meta({ description: "从图片提取文字（非多模态模型 OCR / 多模态识图）。", aiReadable: false })
+    .input(
+      z.object({
+        base64: z.string().min(1),
+        mimeType: z.string().default("image/png"),
+        chatSupportsVision: z.boolean().default(false),
+        visionModelId: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await extractTextFromImage(ctx.config, {
+          base64: input.base64,
+          mimeType: input.mimeType,
+          chatSupportsVision: input.chatSupportsVision,
+          visionModelId: input.visionModelId,
+        });
+        return success({ data: result, operation: "ocr", entity: "agent" });
+      } catch (err: unknown) {
+        return failure({
+          code: "OCR_FAILED",
+          message: err instanceof Error ? err.message : String(err),
+          suggestion: "运行 pnpm ocr:check 诊断；或配置 OCR_SPACE_API_KEY 作为云端降级。",
+          retryable: true,
+          operation: "ocr",
+          entity: "agent",
+        });
+      }
+    }),
   runWorkflow: publicProcedure
     .meta({ description: "按步骤顺序执行 Agent 工作流；遇到 humanApproval 步骤时暂停并创建审批。", aiReadable: true })
     .input(runWorkflowSchema)
@@ -174,6 +232,14 @@ const memoryRouter = router({
   list: publicProcedure.meta({ description: "列出记忆，支持按 type/keyword 过滤。", aiReadable: true }).input(listMemoriesSchema).query(({ ctx, input }) => ctx.services.memory.list(input)),
   update: publicProcedure.meta({ description: "更新记忆条目。", aiReadable: true }).input(updateMemorySchema).mutation(({ ctx, input }) => ctx.services.memory.update(input)),
   delete: publicProcedure.meta({ description: "删除记忆条目。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.memory.delete(input.id)),
+});
+
+const infoSourceRouter = router({
+  create: publicProcedure.meta({ description: "创建信息源（可信信息来源配置）。", aiReadable: true }).input(createInfoSourceSchema).mutation(({ ctx, input }) => ctx.services.infoSource.create(input)),
+  getById: publicProcedure.meta({ description: "获取信息源详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.infoSource.getById(input.id)),
+  list: publicProcedure.meta({ description: "列出信息源，支持类型/标签/可信度筛选。", aiReadable: true }).input(listInfoSourcesSchema).query(({ ctx, input }) => ctx.services.infoSource.list(input)),
+  update: publicProcedure.meta({ description: "更新信息源配置。", aiReadable: true }).input(updateInfoSourceSchema).mutation(({ ctx, input }) => ctx.services.infoSource.update(input)),
+  delete: publicProcedure.meta({ description: "删除信息源。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.infoSource.delete(input.id)),
 });
 
 const sessionRouter = router({
@@ -289,6 +355,13 @@ const nativeRouter = router({
   list: publicProcedure
     .meta({ description: "列出所有内置原生工具及参数 Schema。", aiReadable: true })
     .query(() => listNativeTools()),
+  capabilities: publicProcedure
+    .meta({ description: "服务器原生能力状态（搜索/OCR/浏览器/read_article 平台）。", aiReadable: true })
+    .query(async ({ ctx }) =>
+      getEnrichedServerCapabilities(ctx.config, () =>
+        ctx.services.infoSource.list({ page: 1, pageSize: 1, enabled: true }),
+      ),
+    ),
   execute: publicProcedure
     .meta({ description: "执行指定原生工具。", aiReadable: true })
     .input(nativeExecuteSchema)
@@ -471,6 +544,7 @@ export const appRouter = router({
   log: logRouter,
   mcp: mcpRouter,
   memory: memoryRouter,
+  infoSource: infoSourceRouter,
   git: gitRouter,
   search: searchRouter,
   analytics: analyticsRouter,

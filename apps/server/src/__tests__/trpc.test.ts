@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { appRouter } from "../router.js";
 import { createContextInner } from "../trpc/context.js";
+import * as llmClient from "../infra/llmClient.js";
 
 describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
   let caller: any;
@@ -719,17 +720,35 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     expect(nativeTools.some((t: { name: string }) => t.name === "web_search")).toBe(true);
   });
 
+  it("native.capabilities 应返回运行时能力及 infoSources 计数", async () => {
+    const caps = await caller.native.capabilities();
+    expect(Array.isArray(caps.search.engines)).toBe(true);
+    expect(typeof caps.readArticle.cookies.zhihu).toBe("boolean");
+    expect(typeof caps.infoSources?.enabled).toBe("number");
+  });
+
   it("agent.chat 失败时仍保留 sessionId，用户消息不丢失", async () => {
-    const res = await caller.agent.chat({
-      message: `test-fail-${Date.now()}`,
-      model: "invalid-model-for-test",
-    });
+    const spy = vi.spyOn(llmClient, "chatCompletion").mockRejectedValueOnce(
+      new Error("LLM mock failure for unit test"),
+    );
 
-    expect(res.success).toBe(false);
-    expect(res.state?.sessionId).toBeTruthy();
+    try {
+      const res = await caller.agent.chat({
+        message: `test-fail-${Date.now()}`,
+        model: "deepseek-v4-flash",
+      });
 
-    const session = await caller.session.getById({ id: res.state!.sessionId as string });
-    expect(session.messages?.some((m: { role: string }) => m.role === "user")).toBe(true);
+      expect(res.success).toBe(false);
+      expect(res.state?.sessionId).toBeTruthy();
+
+      const sessionId = res.state!.sessionId as string;
+      const session = await caller.session.getById({ id: sessionId });
+      expect(session.messages?.some((m: { role: string }) => m.role === "user")).toBe(true);
+
+      await caller.session.delete({ id: sessionId });
+    } finally {
+      spy.mockRestore();
+    }
   }, 15_000);
 
   it("should search globally across entities", async () => {

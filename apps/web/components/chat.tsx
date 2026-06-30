@@ -10,13 +10,13 @@ import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
+  Ban,
   Bot,
-  ChevronDown,
+  Check,
   ChevronLeft,
   ChevronRight,
   Copy,
   Loader2,
-  MessageSquare,
   PanelLeft,
   PanelRight,
   Pencil,
@@ -24,6 +24,8 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Share2,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
@@ -32,31 +34,41 @@ import { useAgent } from "@/lib/hooks";
 import { streamAgentChat, copyToClipboard } from "@/lib/agentStream";
 import {
   buildStreamConfig,
+  DEFAULT_CHAT_CONFIG,
   getModelOption,
   loadDefaultChatConfig,
   loadSessionChatConfig,
+  resolveNewChatConfig,
   saveDefaultChatConfig,
   saveSessionChatConfig,
 } from "@/lib/chatConfig";
 import {
   buildMessageGroups,
   buildTimelineFromStored,
+  formatToolResultHint,
   getActiveVersion,
   type MessageGroup,
   type TimelineStep,
 } from "@/lib/chatMessageUtils";
 import { LucideIconByName, ChatShortcutHints } from "@/lib/icons";
 import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
-import { type Agent, type ChatSessionConfig } from "@knowpilot/shared";
+import { type Agent, type ChatSession, type ChatSessionConfig, type ChatImageAttachment } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { PostContent } from "@/components/post/PostContent";
+import { KpSelect, ConfirmDialog } from "@/components/shared";
+import { SessionContextBar } from "@/components/sessionContextUsage";
 import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
 import { ChatSettingsPanel } from "@/components/chatSettingsPanel";
 import { buildTokenBudget } from "@/components/tokenBudgetBar";
-
-const msgSpring = { type: "spring" as const, stiffness: 280, damping: 28 };
-
-type QueuedTask = { id: string; text: string; skillId?: string; skillPrompt?: string };
+import {
+  type ChatQueueItem,
+  createUserQueueItem,
+  formatQueueItemForLlm,
+  mergeAsyncPollIntoQueue,
+  extractLocalQueueFromMerged,
+  sortQueueItems,
+} from "@/lib/chatQueueTypes";
+import { MessageQueue } from "@/components/chatQueue";
 
 /* ─── Sub-components ─── */
 
@@ -67,98 +79,93 @@ function ThinkingTimeline({
   steps: TimelineStep[];
   isLive?: boolean;
 }) {
-  const hasRunning = steps.some((s) => s.type === "tool" && s.status === "running");
-  const hasThinkingText = steps.some((s) => s.type === "thinking" && s.content.trim().length > 0);
-  const [open, setOpen] = useState(isLive || hasRunning || hasThinkingText);
   if (!steps.length) return null;
 
-  const toolCount = steps.filter((s) => s.type === "tool").length;
-  const thinkCount = steps.filter((s) => s.type === "thinking").length;
-  const summary =
-    thinkCount && toolCount
-      ? `${thinkCount} 轮推理 · ${toolCount} 次工具`
-      : thinkCount
-        ? `${thinkCount} 轮推理`
-        : `${toolCount} 次工具`;
-
   return (
-    <div className="mb-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)]/60 p-2" data-testid="thinking-timeline">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 text-xs font-medium text-[var(--kp-text-3)] hover:text-[var(--kp-brand-dark)]"
-      >
-        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        <span>推理 · 工具 · 观察</span>
-        <span className="rounded-full bg-[var(--kp-bg)] px-1.5 py-0.5 text-[10px] tabular-nums text-[var(--kp-text-2)]">
-          {steps.length}
-        </span>
-        {isLive && hasRunning && <Loader2 className="ml-auto h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
-        {!open && <span className="ml-auto truncate text-[10px] font-normal opacity-70">{summary}</span>}
-      </button>
-      {open && (
-        <div className="mt-2 space-y-2">
-          {steps.map((step, i) => (
-            <div key={i} className="rounded-lg bg-[var(--kp-bg)] p-2 text-xs">
-              {step.type === "thinking" ? (
-                <>
-                  <div className="mb-1 flex items-center gap-1.5 font-semibold text-[var(--kp-brand-dark)]">
-                    <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-700">
-                      推理
-                    </span>
-                    <span>第 {step.round} 轮</span>
-                  </div>
-                  <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[var(--kp-text-2)]">{step.content}</pre>
-                </>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sky-700">
-                      工具
-                    </span>
+    <div className="mb-4 space-y-3" data-testid="thinking-timeline">
+      {steps.map((step, i) => (
+        <div
+          key={step.type === "tool" ? step.toolCallId : `${step.type}-${step.round}-${i}`}
+          className="relative border-l-2 border-[var(--kp-brand-light)]/50 pl-3"
+        >
+          <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
+          {step.type === "thinking" ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-[11px] font-medium text-[var(--kp-text-2)]">
+                <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--kp-brand-dark)]">
+                  推理
+                </span>
+                <span>第 {step.round} 轮</span>
+                {isLive && i === steps.length - 1 && step.type === "thinking" && (
+                  <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />
+                )}
+              </div>
+              {step.content.trim() ? (
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-[var(--kp-bg)]/80 px-3 py-2 text-xs leading-relaxed text-[var(--kp-text-2)]">
+                  {step.content}
+                </pre>
+              ) : isLive ? (
+                <p className="text-xs text-[var(--kp-text-3)]">思考中…</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--kp-text-2)]">
+                  工具
+                </span>
+                <span
+                  className={cn(
+                    "inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium",
+                    step.status === "running"
+                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                      : "bg-[var(--kp-bg-soft)] text-[var(--kp-text-2)]",
+                  )}
+                  data-testid="tool-pill"
+                >
+                  <Wrench className="h-3 w-3 shrink-0" />
+                  <span className="truncate">
+                    {step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ")}
+                  </span>
+                  {step.status === "running" && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
+                  {step.status === "done" && !isLive && (
+                    <span className="text-[9px] text-[var(--kp-brand-dark)]">完成</span>
+                  )}
+                  {step.status === "done" && (step.hint || formatToolResultHint(step.result)) && (
                     <span
                       className={cn(
-                        "inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                        step.status === "running"
-                          ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
-                          : step.status === "done"
-                            ? "bg-emerald-50 text-emerald-800"
-                            : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
+                        "text-[9px]",
+                        step.result &&
+                          typeof step.result === "object" &&
+                          step.result !== null &&
+                          "error" in (step.result as Record<string, unknown>)
+                          ? "text-red-600"
+                          : "text-[var(--kp-text-3)]",
                       )}
-                      data-testid="tool-pill"
+                      data-testid="tool-timing-hint"
                     >
-                      <Wrench className="h-3 w-3 shrink-0" />
-                      <span className="truncate">
-                        {step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ")}
-                      </span>
-                      {step.status === "running" && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
-                      {step.status === "done" && !isLive && (
-                        <span className="text-[9px] opacity-80">完成</span>
-                      )}
+                      {step.hint || formatToolResultHint(step.result)}
                     </span>
-                  </div>
-                  <details className="mt-1">
-                    <summary className="cursor-pointer text-[10px] text-[var(--kp-text-3)] hover:text-[var(--kp-brand-dark)]">
-                      <span className="mr-1 rounded bg-amber-50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">
-                        观察
-                      </span>
-                      参数与结果
-                    </summary>
-                    <pre className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap opacity-70">
-                      {JSON.stringify(step.args, null, 2)}
-                    </pre>
-                    {step.result !== undefined && (
-                      <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider)] pt-1 text-[var(--kp-text-2)]">
-                        {JSON.stringify(step.result, null, 2).slice(0, 2000)}
-                      </pre>
-                    )}
-                  </details>
-                </>
-              )}
+                  )}
+                </span>
+              </div>
+              <details className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 px-3 py-2">
+                <summary className="cursor-pointer text-[10px] text-[var(--kp-text-3)] hover:text-[var(--kp-brand-dark)]">
+                  参数与结果
+                </summary>
+                <pre className="mt-2 max-h-20 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
+                  {JSON.stringify(step.args, null, 2)}
+                </pre>
+                {step.result !== undefined && (
+                  <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
+                    {JSON.stringify(step.result, null, 2).slice(0, 2000)}
+                  </pre>
+                )}
+              </details>
             </div>
-          ))}
+          )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -168,43 +175,22 @@ function MessageVersions({
   total,
   onPrev,
   onNext,
-  onRegenerate,
-  isStreaming,
 }: {
   current: number;
   total: number;
   onPrev: () => void;
   onNext: () => void;
-  onRegenerate: () => void;
-  isStreaming: boolean;
 }) {
-  if (total <= 1 && isStreaming) {
-    return (
-      <div className="mt-2 flex items-center gap-1 text-xs text-[var(--kp-text-3)]">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        生成中…
-      </div>
-    );
-  }
+  if (total <= 1) return null;
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--kp-divider)] pt-2">
-      {total > 1 && (
-        <div className="flex items-center gap-1 text-xs text-[var(--kp-text-3)]">
-          <button type="button" onClick={onPrev} disabled={current <= 0} className="rounded p-1 hover:bg-[var(--kp-bg-mute)] disabled:opacity-30">
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          <span>{current + 1} / {total}</span>
-          <button type="button" onClick={onNext} disabled={current >= total - 1} className="rounded p-1 hover:bg-[var(--kp-bg-mute)] disabled:opacity-30">
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-      {!isStreaming && (
-        <button type="button" onClick={onRegenerate} className="flex items-center gap-1 text-xs text-[var(--kp-brand-dark)] hover:underline">
-          <RotateCcw className="h-3 w-3" />
-          重新生成
-        </button>
-      )}
+    <div className="flex items-center gap-1 text-[11px] text-[var(--kp-text-3)]">
+      <button type="button" onClick={onPrev} disabled={current <= 0} className="rounded-md p-1 hover:bg-[var(--kp-bg-mute)] disabled:opacity-30" aria-label="上一版本">
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <span className="tabular-nums">{current + 1}/{total}</span>
+      <button type="button" onClick={onNext} disabled={current >= total - 1} className="rounded-md p-1 hover:bg-[var(--kp-bg-mute)] disabled:opacity-30" aria-label="下一版本">
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -212,54 +198,180 @@ function MessageVersions({
 function MessageActions({
   onCopy,
   onEdit,
+  onEditSave,
+  onEditCancel,
   onRetry,
+  onRegenerate,
+  onShare,
   showEdit = true,
   showRetry = true,
+  showRegenerate = false,
+  showShare = true,
+  isEditing = false,
   disabled,
+  versionNav,
+  copied,
 }: {
   onCopy: () => void;
   onEdit?: () => void;
+  onEditSave?: () => void;
+  onEditCancel?: () => void;
   onRetry?: () => void;
+  onRegenerate?: () => void;
+  onShare?: () => void;
   showEdit?: boolean;
   showRetry?: boolean;
+  showRegenerate?: boolean;
+  showShare?: boolean;
+  isEditing?: boolean;
   disabled?: boolean;
+  versionNav?: React.ReactNode;
+  copied?: boolean;
 }) {
+  const btnClass =
+    "rounded-lg p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] disabled:pointer-events-none disabled:opacity-40";
+
   return (
-    <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity duration-150 group-hover:opacity-100 group-hover:pointer-events-auto">
-      <button
-        type="button"
-        onClick={onCopy}
-        disabled={disabled}
-        className="rounded-md p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] disabled:pointer-events-none disabled:opacity-40"
-        title="复制"
-        aria-label="复制"
-      >
+    <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/msg:opacity-100 group-hover/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-focus-within/msg:pointer-events-auto">
+      {versionNav}
+      <button type="button" onClick={onCopy} disabled={disabled} className={btnClass} title="复制" aria-label="复制">
         <Copy className="h-3.5 w-3.5" />
       </button>
-      {showEdit && onEdit && (
-        <button
-          type="button"
-          onClick={onEdit}
-          disabled={disabled}
-          className="rounded-md p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] disabled:pointer-events-none disabled:opacity-40"
-          title="编辑"
-          aria-label="编辑"
-        >
+      {showShare && onShare && (
+        <button type="button" onClick={onShare} disabled={disabled} className={btnClass} title="分享" aria-label="分享">
+          <Share2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {showRegenerate && onRegenerate && (
+        <button type="button" onClick={onRegenerate} disabled={disabled} className={btnClass} title="重新生成" aria-label="重新生成">
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {isEditing && onEditSave && (
+        <button type="button" onClick={onEditSave} disabled={disabled} className={btnClass} title="保存并重新生成" aria-label="保存">
+          <Check className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {isEditing && onEditCancel && (
+        <button type="button" onClick={onEditCancel} disabled={disabled} className={btnClass} title="取消编辑" aria-label="取消">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {!isEditing && showEdit && onEdit && (
+        <button type="button" onClick={onEdit} disabled={disabled} className={btnClass} title="编辑" aria-label="编辑">
           <Pencil className="h-3.5 w-3.5" />
         </button>
       )}
       {showRetry && onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          disabled={disabled}
-          className="rounded-md p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] disabled:pointer-events-none disabled:opacity-40"
-          title="重试"
-          aria-label="重试"
-        >
+        <button type="button" onClick={onRetry} disabled={disabled} className={btnClass} title="重试" aria-label="重试">
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
       )}
+      {copied && <span className="ml-1 text-[10px] text-[var(--kp-text-3)]">已复制</span>}
+    </div>
+  );
+}
+
+function SessionListItem({
+  session,
+  active,
+  editing,
+  renameDraft,
+  onSelect,
+  onStartRename,
+  onRenameDraftChange,
+  onConfirmRename,
+  onCancelRename,
+  onDelete,
+}: {
+  session: ChatSession;
+  active: boolean;
+  editing: boolean;
+  renameDraft: string;
+  onSelect: () => void;
+  onStartRename: () => void;
+  onRenameDraftChange: (v: string) => void;
+  onConfirmRename: () => void;
+  onCancelRename: () => void;
+  onDelete: () => void;
+}) {
+  if (editing) {
+    return (
+      <div className="mb-1 flex items-center gap-1 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-bg)] px-2 py-1.5">
+        <input
+          value={renameDraft}
+          onChange={(e) => onRenameDraftChange(e.target.value)}
+          className="min-w-0 flex-1 rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-2 py-1 text-xs outline-none focus:border-[var(--kp-brand)]"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); onConfirmRename(); }
+            if (e.key === "Escape") { e.preventDefault(); onCancelRename(); }
+          }}
+        />
+        <button
+          type="button"
+          onClick={onConfirmRename}
+          className="rounded-md p-1 text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+          aria-label="确认重命名"
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onCancelRename}
+          className="rounded-md p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+          aria-label="取消"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "group/sess mb-1 flex items-stretch overflow-hidden rounded-lg border transition-colors",
+        active
+          ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand)]/10"
+          : "border-transparent hover:border-[var(--kp-divider)] hover:bg-[var(--kp-bg-mute)]/50",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          "min-w-0 flex-1 px-3 py-2 text-left text-sm transition",
+          active ? "text-[var(--kp-brand-dark)]" : "text-[var(--kp-text-2)]",
+        )}
+      >
+        <div className="truncate font-medium">{session.title}</div>
+        <div className="truncate text-xs text-[var(--kp-text-3)]">
+          {session.model} · {formatRelativeTime(session.updatedAt)}
+        </div>
+      </button>
+      <div className="flex shrink-0 items-center gap-0.5 border-l border-[var(--kp-divider-light)] px-1 opacity-70 transition-opacity group-hover/sess:opacity-100">
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onStartRename}
+          className="rounded-md p-1.5 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+          aria-label="重命名"
+          title="重命名"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onDelete}
+          className="rounded-md p-1.5 text-[var(--kp-text-3)] hover:bg-red-50 hover:text-red-600"
+          aria-label="删除"
+          title="删除"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -275,26 +387,35 @@ export function ChatView() {
   const [agentId, setAgentId] = useState("");
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [optimistic, setOptimistic] = useState<{ id: string; content: string }[]>([]);
+  const [optimistic, setOptimistic] = useState<{ id: string; content: string; attachments?: ChatImageAttachment[] }[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [liveTimeline, setLiveTimeline] = useState<TimelineStep[]>([]);
   const [lastRoundTokens, setLastRoundTokens] = useState(0);
-  const [queue, setQueue] = useState<QueuedTask[]>([]);
+  const [localQueue, setLocalQueue] = useState<ChatQueueItem[]>([]);
+  const [consumedDeliveries, setConsumedDeliveries] = useState<Set<string>>(() => new Set());
+  const [queuePanelOpen, setQueuePanelOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [chatConfig, setChatConfig] = useState<ChatSessionConfig>(() => loadDefaultChatConfig());
+  const [chatConfig, setChatConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [sessionSearch, setSessionSearch] = useState("");
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; title: string } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const consumeRef = useRef<() => void>(() => {});
   const queueDrainingRef = useRef(false);
+  const isStreamingRef = useRef(false);
+  const localQueueRef = useRef<ChatQueueItem[]>([]);
+  const activeQueueTaskIdRef = useRef<string | null>(null);
+  const consumedDeliveriesRef = useRef<Set<string>>(new Set());
 
   const { useList: useAgentList } = useAgent();
   const agentsQuery = useAgentList({ page: 1, pageSize: 50 });
@@ -303,6 +424,7 @@ export function ChatView() {
   const providers = trpc.agent.llmProviders.useQuery();
   const utils = trpc.useUtils();
   const updateSession = trpc.session.update.useMutation();
+  const deleteSession = trpc.session.delete.useMutation();
   const switchVersion = trpc.message.switchVersion.useMutation();
 
   const defaultAgentId = useMemo(() => {
@@ -313,14 +435,45 @@ export function ChatView() {
   }, [agentsQuery.data?.items]);
 
   const effectiveSessionId = sessionFromUrl ?? sessionId;
-  const effectiveAgentId = agentFromUrl ?? (agentId || defaultAgentId);
 
   const { data: sessionDetail, refetch: refetchSession } = trpc.session.getById.useQuery(
     { id: effectiveSessionId! },
     { enabled: !!effectiveSessionId },
   );
 
+  const effectiveAgentId =
+    agentFromUrl ?? (agentId || sessionDetail?.agentId || defaultAgentId);
+
   const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
+
+  const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
+    { sessionId: effectiveSessionId! },
+    {
+      enabled: !!effectiveSessionId && !backendDown,
+      refetchInterval: 2500,
+    },
+  );
+
+  const queue = useMemo(
+    () =>
+      mergeAsyncPollIntoQueue(localQueue, asyncQueueQuery.data, {
+        skipDeliveryJobIds: consumedDeliveries,
+      }),
+    [localQueue, asyncQueueQuery.data, consumedDeliveries],
+  );
+
+  useEffect(() => {
+    localQueueRef.current = localQueue;
+  }, [localQueue]);
+
+  useEffect(() => {
+    consumedDeliveriesRef.current = consumedDeliveries;
+  }, [consumedDeliveries]);
+
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
   const selectedAgent = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
   const modelOpt = getModelOption(chatConfig.model);
 
@@ -354,25 +507,35 @@ export function ChatView() {
   }, [messageGroups]);
 
   useEffect(() => {
-    if (!effectiveSessionId || !selectedAgent) return;
-    const saved = loadSessionChatConfig(effectiveSessionId);
-    startTransition(() => {
-      if (saved) {
-        setChatConfig(saved);
-        return;
-      }
-      setChatConfig((prev) => ({
-        ...prev,
-        model: sessionDetail?.model ?? selectedAgent.model,
-        systemPrompt: sessionDetail?.systemPrompt ?? selectedAgent.systemPrompt,
-        customSystemPrompt: !!sessionDetail?.systemPrompt && sessionDetail.systemPrompt !== selectedAgent.systemPrompt,
-      }));
-    });
+    if (effectiveSessionId) {
+      if (!selectedAgent) return;
+      const saved = loadSessionChatConfig(effectiveSessionId);
+      startTransition(() => {
+        if (saved) {
+          setChatConfig(resolveNewChatConfig(saved, selectedAgent));
+          return;
+        }
+        setChatConfig((prev) => ({
+          ...prev,
+          model: sessionDetail?.model ?? selectedAgent.model,
+          systemPrompt:
+            sessionDetail?.systemPrompt?.trim() || selectedAgent.systemPrompt,
+          customSystemPrompt:
+            !!sessionDetail?.systemPrompt?.trim() &&
+            sessionDetail.systemPrompt !== selectedAgent.systemPrompt,
+        }));
+      });
+    } else {
+      startTransition(() => {
+        setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
+      });
+    }
   }, [effectiveSessionId, selectedAgent, sessionDetail?.model, sessionDetail?.systemPrompt]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messageGroups, optimistic, isStreaming, streamingContent, liveTimeline]);
+    // 仅在会话结构变化时滚动；token 逐字更新不触发 smooth scroll（避免视觉抖动）
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  }, [messageGroups.length, optimistic.length, isStreaming]);
 
   const updateConfig = useCallback(
     (patch: Partial<ChatSessionConfig>) => {
@@ -401,6 +564,7 @@ export function ChatView() {
   const runStream = useCallback(
     async (opts: {
       message?: string;
+      attachments?: ChatQueueItem["attachments"];
       regenerate?: boolean;
       regenerateUserMessageId?: string;
       retryFromMessageId?: string;
@@ -414,6 +578,7 @@ export function ChatView() {
       const ac = new AbortController();
       abortRef.current = ac;
 
+      isStreamingRef.current = true;
       setIsStreaming(true);
       setStreamingContent("");
       setLiveTimeline([{ type: "thinking", content: "", round: 1 }]);
@@ -421,12 +586,15 @@ export function ChatView() {
       setError(null);
       setEditingUserId(null);
 
-      const streamConfig = buildStreamConfig({
-        ...chatConfig,
-        ...(opts.skillPrompt
-          ? { systemPrompt: opts.skillPrompt, customSystemPrompt: true }
-          : {}),
-      });
+      const streamConfig = buildStreamConfig(
+        {
+          ...chatConfig,
+          ...(opts.skillPrompt
+            ? { systemPrompt: opts.skillPrompt, customSystemPrompt: true }
+            : {}),
+        },
+        selectedAgent ? { systemPrompt: selectedAgent.systemPrompt } : undefined,
+      );
 
       try {
         await streamAgentChat(
@@ -434,6 +602,13 @@ export function ChatView() {
             sessionId: effectiveSessionId ?? undefined,
             agentId: effectiveAgentId || undefined,
             message: opts.message,
+            attachments: opts.attachments?.map(({ name, mimeType, previewUrl, extractedText, source }) => ({
+              name,
+              mimeType,
+              previewUrl: previewUrl ?? "",
+              extractedText,
+              source,
+            })),
             regenerate: opts.regenerate,
             regenerateUserMessageId: opts.regenerateUserMessageId,
             retryFromMessageId: opts.retryFromMessageId,
@@ -464,73 +639,152 @@ export function ChatView() {
               });
             },
             onToken: (delta) => setStreamingContent((prev) => prev + delta),
-            onToolStart: (name, args, round) => {
-              setLiveTimeline((prev) => [...prev, { type: "tool", name, args, round, status: "running" }]);
+            onToolStart: (name, args, round, toolCallId) => {
+              setLiveTimeline((prev) => [...prev, { type: "tool", toolCallId, name, args, round, status: "running" }]);
             },
-            onToolEnd: (name, result, round) => {
+            onToolEnd: (name, result, round, hint, toolCallId) => {
               setLiveTimeline((prev) =>
                 prev.map((s) =>
-                  s.type === "tool" && s.name === name && s.round === round && s.status === "running"
-                    ? { ...s, result, status: "done" }
+                  s.type === "tool" && s.toolCallId === toolCallId && s.status === "running"
+                    ? { ...s, result, hint: hint ?? formatToolResultHint(result), status: "done" }
                     : s,
                 ),
               );
+              if (name === "run_async" && result && typeof result === "object") {
+                const r = result as { jobId?: string; status?: string; message?: string };
+                if (r.jobId && r.status === "running") {
+                  setLocalQueue((prev) => {
+                    if (prev.some((q) => q.jobId === r.jobId)) return prev;
+                    return [
+                      {
+                        id: `run-${r.jobId}`,
+                        kind: "async-running" as const,
+                        text: r.message || "",
+                        jobId: r.jobId,
+                        taskLabel: r.message?.slice(0, 60),
+                        status: "running" as const,
+                        createdAt: Date.now(),
+                      },
+                      ...prev,
+                    ];
+                  });
+                }
+              }
             },
             onDone: async (data) => {
               setSessionId(data.sessionId);
               if (data.tokenUsage?.total) setLastRoundTokens(data.tokenUsage.total);
-              if (opts.optimisticUser) {
-                setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
-              }
               if (opts.skillPrompt) {
                 updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
               }
-              setStreamingContent("");
-              setLiveTimeline([]);
               await refetchSession();
+              // 延后清空，避免与 tool_end 的 setState 同批提交导致 hint 从未挂载
+              setTimeout(() => setLiveTimeline([]), 0);
+              if (opts.optimisticUser) {
+                setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+              }
               void utils.session.list.invalidate();
             },
             onError: (message, sid, suggestion) => {
               if (opts.optimisticUser) setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
               setError(message + (suggestion ? `\n${suggestion}` : ""));
               if (sid) setSessionId(sid);
+              setTimeout(() => setLiveTimeline([]), 0);
             },
           },
           ac.signal,
         );
       } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") return;
+        if (err instanceof Error && err.name === "AbortError") {
+          setLiveTimeline([]);
+          // 给后端一点时间保存中断消息，然后刷新会话
+          setTimeout(() => void refetchSession(), 500);
+          if (opts.optimisticUser) {
+            setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+          }
+          return;
+        }
         setError(err instanceof Error ? err.message : "对话请求失败");
+        setLiveTimeline([]);
       } finally {
+        isStreamingRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
         queueDrainingRef.current = false;
+        const finishedTaskId = activeQueueTaskIdRef.current;
+        if (finishedTaskId) {
+          activeQueueTaskIdRef.current = null;
+          setLocalQueue((prev) => prev.filter((i) => i.id !== finishedTaskId));
+        }
         consumeRef.current();
       }
     },
-    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list],
+    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, selectedAgent],
   );
 
   const consumeQueue = useCallback(() => {
-    if (isStreaming || queueDrainingRef.current) return;
-    queueDrainingRef.current = true;
-    setQueue((prev) => {
-      if (prev.length === 0) {
-        queueDrainingRef.current = false;
-        return prev;
-      }
-      const [task, ...rest] = prev;
-      const optimisticId = `opt-${task.id}`;
-      setOptimistic((o) => (o.some((m) => m.id === optimisticId) ? o : [...o, { id: optimisticId, content: task.text }]));
-      void runStream({
-        message: task.text,
-        skillId: task.skillId,
-        skillPrompt: task.skillPrompt,
-        optimisticUser: { id: optimisticId, text: task.text },
-      });
-      return rest;
+    if (isStreamingRef.current || queueDrainingRef.current) return;
+
+    const pollData = asyncQueueQuery.data;
+    const merged = mergeAsyncPollIntoQueue(localQueueRef.current, pollData, {
+      skipDeliveryJobIds: consumedDeliveriesRef.current,
     });
-  }, [isStreaming, runStream]);
+    const sorted = sortQueueItems(merged);
+    const readyIdx = sorted.findIndex(
+      (t) =>
+        t.kind !== "async-running" &&
+        (t.text.trim() || t.asyncResult || t.attachments?.length),
+    );
+    if (readyIdx < 0) return;
+
+    queueDrainingRef.current = true;
+    const task = sorted[readyIdx];
+
+    if (task.kind === "async-result" && task.jobId) {
+      setConsumedDeliveries((s) => new Set(s).add(task.jobId!));
+    }
+
+    if (task.kind === "user") {
+      // 已发出即离开队列，气泡区由 optimistic / session 消息展示
+      setLocalQueue((prev) => prev.filter((i) => i.id !== task.id));
+    } else {
+      activeQueueTaskIdRef.current = task.id;
+      const restMerged = sorted.filter((_, i) => i !== readyIdx);
+      setLocalQueue(extractLocalQueueFromMerged(restMerged, pollData));
+    }
+
+    isStreamingRef.current = true;
+
+    const supportsVision = !!getModelOption(chatConfig.model).supportsVision;
+    const streamMessage = supportsVision
+      ? formatQueueItemForLlm(task, true)
+      : task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
+    const streamAttachments = task.attachments?.map(
+      ({ id, name, mimeType, previewUrl, extractedText, source }) => ({
+        id,
+        name,
+        mimeType,
+        previewUrl: previewUrl ?? "",
+        extractedText,
+        source,
+      }),
+    );
+    const optimisticId = `opt-${task.id}`;
+    const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
+    const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
+    setOptimistic((o) =>
+      o.some((m) => m.id === optimisticId)
+        ? o
+        : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments }],
+    );
+    void runStream({
+      message: streamMessage,
+      attachments: streamAttachments?.length ? streamAttachments : undefined,
+      skillId: task.skillId,
+      skillPrompt: task.skillPrompt,
+      optimisticUser: { id: optimisticId, text: optimisticText },
+    });
+  }, [runStream, chatConfig.model, asyncQueueQuery.data]);
 
   useEffect(() => {
     consumeRef.current = consumeQueue;
@@ -540,16 +794,24 @@ export function ChatView() {
     if (!isStreaming) consumeQueue();
   }, [isStreaming, queue.length, consumeQueue]);
 
-  const enqueueMessage = (text: string, skill?: SelectedSkill) => {
+  const enqueueMessage = (
+    text: string,
+    skill?: SelectedSkill,
+    attachments?: ChatQueueItem["attachments"],
+  ) => {
     const trimmed = text.trim();
-    if (!trimmed || backendDown) return;
+    if ((!trimmed && !attachments?.length) || backendDown) return;
     setInput("");
     const skillPrompt = skill
       ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
       : undefined;
-    setQueue((prev) => [
+    setLocalQueue((prev) => [
       ...prev,
-      { id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`, text: trimmed, skillId: skill?.id, skillPrompt },
+      createUserQueueItem(trimmed || "（见附件）", {
+        skillId: skill?.id,
+        skillPrompt,
+        attachments,
+      }),
     ]);
   };
 
@@ -582,15 +844,79 @@ export function ChatView() {
     }
   };
 
+  const handleShare = async (content: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ text: content });
+        return;
+      }
+    } catch {
+      /* fallback to copy */
+    }
+    if (await copyToClipboard(content)) {
+      setCopiedId("share");
+      setTimeout(() => setCopiedId(null), 1500);
+    }
+  };
+
   const startNewChat = () => {
     abortRef.current?.abort();
     setSessionId(null);
     setInput("");
     setError(null);
     setOptimistic([]);
-    setQueue([]);
+    setLocalQueue([]);
+    setConsumedDeliveries(new Set());
     setSelectedSkill(null);
-    setChatConfig(loadDefaultChatConfig());
+    setEditingSessionId(null);
+    setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
+  };
+
+  const handleRenameSession = async (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setEditingSessionId(null);
+      return;
+    }
+    try {
+      const res = await updateSession.mutateAsync({ id, title: trimmed });
+      if (!res.success) {
+        setError(res.error?.message ?? "重命名失败");
+        return;
+      }
+      void utils.session.list.invalidate();
+      if (effectiveSessionId === id) void refetchSession();
+      setEditingSessionId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "重命名失败");
+    }
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    try {
+      const res = await deleteSession.mutateAsync({ id });
+      if (!res.success) {
+        setError(res.error?.message ?? "删除失败");
+        setDeleteSessionTarget(null);
+        return;
+      }
+      void utils.session.list.invalidate();
+      if (effectiveSessionId === id) startNewChat();
+      setDeleteSessionTarget(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除失败");
+      setDeleteSessionTarget(null);
+    }
+  };
+
+  const selectSession = (id: string) => {
+    setSessionId(id);
+    setAgentId("");
+    setOptimistic([]);
+    setError(null);
+    setLocalQueue([]);
+    setConsumedDeliveries(new Set());
+    setEditingSessionId(null);
   };
 
   const selectAgent = (id: string) => {
@@ -599,76 +925,62 @@ export function ChatView() {
     if (agent && !chatConfig.customSystemPrompt) {
       updateConfig({ systemPrompt: agent.systemPrompt, model: agent.model });
     }
+    if (effectiveSessionId) {
+      updateSession.mutate({ id: effectiveSessionId, agentId: id });
+    }
   };
 
   const hasMessages = messageGroups.length > 0 || optimistic.length > 0 || isStreaming;
+  const showLiveStream = isStreaming || liveTimeline.length > 0;
   const lastGroupIndex = messageGroups.length - 1;
 
-  const renderAssistantBubble = (group: MessageGroup, groupIdx: number) => {
+  const renderAssistantBubble = (group: MessageGroup) => {
     const active = getActiveVersion(group);
-    const assistantId = group.assistantMessage?.id ?? `streaming-${group.userMessage.id}`;
-    const timeline = buildTimelineFromStored(active?.toolCalls);
-    const isLast = groupIdx === lastGroupIndex;
-    const showLiveStream = isLast && (isStreaming || liveTimeline.length > 0);
-    if (!active && !showLiveStream) return null;
+    if (!active || !group.assistantMessage) return null;
+    const assistantId = group.assistantMessage.id;
+    const isInterrupted = group.assistantMessage.finishReason === "aborted";
 
     return (
       <motion.div
         key={`a-${assistantId}`}
-        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+        initial={false}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={msgSpring}
-        className="group relative mb-4 flex justify-start"
+        data-testid="assistant-message-bubble"
+        className="group/msg relative mb-6 flex max-w-[88%] flex-col items-start gap-1"
       >
-        <div className="relative max-w-[88%]">
-          <div
-            className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)]"
-            {...(showLiveStream ? { "data-testid": "streaming-assistant-bubble" } : {})}
-          >
-            {(showLiveStream ? liveTimeline : timeline).length > 0 && (
-              <ThinkingTimeline steps={showLiveStream ? liveTimeline : timeline} isLive={showLiveStream} />
-            )}
-            {showLiveStream ? (
-              streamingContent ? (
-                <PostContent content={streamingContent} className="prose-sm max-w-none" />
-              ) : (
-                <div className="flex items-center gap-2 text-[var(--kp-text-3)]">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Agent 思考中…
-                </div>
-              )
-            ) : active ? (
-              <PostContent content={active.content} className="prose-sm max-w-none" />
-            ) : (
-              <p className="text-[var(--kp-text-3)]">（无回复）</p>
-            )}
-            {group.versions.length > 0 && group.assistantMessage && !showLiveStream && (
+        <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
+          {buildTimelineFromStored(active.toolCalls).length > 0 && (
+            <ThinkingTimeline steps={buildTimelineFromStored(active.toolCalls)} isLive={false} />
+          )}
+          <PostContent content={active.content} className="prose-sm max-w-none" />
+          {isInterrupted && (
+            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-amber-600">
+              <Ban className="h-3 w-3" />
+              <span>已停止生成</span>
+            </div>
+          )}
+        </div>
+
+        <MessageActions
+          onCopy={() => void handleCopy(assistantId, active.content)}
+          onShare={() => void handleShare(active.content)}
+          onRegenerate={() => handleRegenerate(group.userMessage.id)}
+          showRegenerate
+          showEdit={false}
+          showRetry={false}
+          disabled={isStreaming}
+          copied={copiedId === assistantId}
+          versionNav={
+            group.versions.length > 1 ? (
               <MessageVersions
                 current={group.activeVersionIndex}
                 total={group.versions.length}
                 onPrev={() => void handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex - 1)}
                 onNext={() => void handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex + 1)}
-                onRegenerate={() => handleRegenerate(group.userMessage.id)}
-                isStreaming={isLast && isStreaming}
               />
-            )}
-            {showLiveStream && (
-              <MessageVersions current={group.versions.length} total={group.versions.length + 1} onPrev={() => {}} onNext={() => {}} onRegenerate={() => {}} isStreaming />
-            )}
-          </div>
-          {active && !showLiveStream && (
-            <div className="absolute left-0 top-full z-10 mt-1 flex items-center gap-2">
-              <MessageActions
-                onCopy={() => void handleCopy(assistantId, active.content)}
-                showEdit={false}
-                showRetry={false}
-              />
-              {copiedId === assistantId && (
-                <span className="text-[10px] text-[var(--kp-text-3)]">已复制</span>
-              )}
-            </div>
-          )}
-        </div>
+            ) : null
+          }
+        />
       </motion.div>
     );
   };
@@ -678,7 +990,7 @@ export function ChatView() {
       <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">对话历史</h2>
-          <button type="button" onClick={startNewChat} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")} aria-label="新建对话">
+          <button type="button" onClick={startNewChat} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")} aria-label="新建对话" title="新建对话（发送首条消息时创建）">
             <Plus className="h-4 w-4" />
           </button>
         </div>
@@ -707,17 +1019,22 @@ export function ChatView() {
                 {group.label}
               </p>
               {group.items.map((s) => (
-                <button
+                <SessionListItem
                   key={s.id}
-                  type="button"
-                  onClick={() => { setSessionId(s.id); setOptimistic([]); setError(null); setQueue([]); }}
-                  className={cn("mb-1 w-full rounded-lg px-3 py-2 text-left text-sm transition", effectiveSessionId === s.id ? "bg-[var(--kp-brand)]/10 text-[var(--kp-brand-dark)]" : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]")}
-                >
-                  <div className="truncate font-medium">{s.title}</div>
-                  <div className="truncate text-xs text-[var(--kp-text-3)]">
-                    {s.model} · {formatRelativeTime(s.updatedAt)}
-                  </div>
-                </button>
+                  session={s}
+                  active={effectiveSessionId === s.id}
+                  editing={editingSessionId === s.id}
+                  renameDraft={renameDraft}
+                  onSelect={() => selectSession(s.id)}
+                  onStartRename={() => {
+                    setEditingSessionId(s.id);
+                    setRenameDraft(s.title);
+                  }}
+                  onRenameDraftChange={setRenameDraft}
+                  onConfirmRename={() => void handleRenameSession(s.id, renameDraft)}
+                  onCancelRename={() => setEditingSessionId(null)}
+                  onDelete={() => setDeleteSessionTarget({ id: s.id, title: s.title })}
+                />
               ))}
             </div>
           ))}
@@ -731,25 +1048,48 @@ export function ChatView() {
           </button>
           <Bot className="h-5 w-5 shrink-0 text-[var(--kp-brand)]" />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold">Agent 对话</h1>
+            <h1 className="truncate text-sm font-semibold">
+              {sessionDetail?.title ?? "Agent 对话"}
+            </h1>
             <p className="truncate text-xs text-[var(--kp-text-3)]">
               {selectedAgent?.name ?? "—"} · {chatConfig.model}
-              {tokenBudget.sessionTokens > 0 && ` · ${tokenBudget.sessionTokens} tok`}
               {queue.length > 0 && ` · 队列 ${queue.length}`}
             </p>
           </div>
+          {effectiveSessionId && sessionDetail && (
+            <SessionContextBar
+              messages={sessionDetail.messages ?? []}
+              systemPrompt={chatConfig.systemPrompt}
+              className="hidden shrink-0 lg:flex"
+            />
+          )}
           {agentsQuery.data?.items && (
-            <select value={effectiveAgentId} onChange={(e) => selectAgent(e.target.value)} className="max-w-[140px] rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-2 py-1 text-xs">
-              {agentsQuery.data.items.map((a: Agent) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
+            <KpSelect
+              value={effectiveAgentId}
+              onChange={selectAgent}
+              options={agentsQuery.data.items.map((a: Agent) => ({
+                value: a.id,
+                label: a.name,
+              }))}
+              size="sm"
+              className="max-w-[140px]"
+              aria-label="选择 Agent"
+            />
           )}
           <Link href="/agents" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:flex text-xs")}>Agent 管理</Link>
           <button type="button" onClick={() => setRightOpen((v) => !v)} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}>
             <PanelRight className="h-4 w-4" />
           </button>
         </header>
+
+        {effectiveSessionId && sessionDetail && (
+          <div className="flex border-b border-[var(--kp-divider)] px-4 py-2 lg:hidden">
+            <SessionContextBar
+              messages={sessionDetail.messages ?? []}
+              systemPrompt={chatConfig.systemPrompt}
+            />
+          </div>
+        )}
 
         {backendDown && (
           <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -770,15 +1110,38 @@ export function ChatView() {
             const isLastUser = groupIdx === lastGroupIndex;
             const isEditing = editingUserId === group.userMessage.id;
             return (
-              <div key={group.userMessage.id}>
+              <div key={group.userMessage.id} className="flex flex-col">
+                <div className="flex w-full justify-end">
                 <motion.div
-                  initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                  initial={false}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={msgSpring}
-                  className="group relative mb-3 flex justify-end"
+                  data-testid="user-message-bubble"
+                  className="group/msg relative mb-3 flex max-w-[70%] flex-col items-end gap-1 self-end"
                 >
-                  <div className="relative max-w-[88%]">
-                    <div className="rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white">
+                  {group.userMessage.attachments && group.userMessage.attachments.length > 0 && !isEditing && (
+                    <div className="mb-1.5 flex flex-wrap justify-end gap-2">
+                      {group.userMessage.attachments.map((att) => (
+                        <div
+                          key={att.previewUrl}
+                          className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
+                          title={att.extractedText ? `OCR 识别 · ${att.extractedText.slice(0, 120)}` : att.name}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={att.previewUrl}
+                            alt={att.name}
+                            className="max-h-40 max-w-[min(100%,16rem)] object-contain"
+                          />
+                          {att.source === "ocr" && att.extractedText && (
+                            <span className="absolute bottom-0 left-0 right-0 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
+                              OCR ✓
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white shadow-sm">
                       {group.userMessage.skillName && (
                         <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
                           <LucideIconByName name={group.userMessage.skillIcon} className="h-3 w-3" />
@@ -786,68 +1149,97 @@ export function ChatView() {
                         </span>
                       )}
                       {isEditing ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={editDraft}
-                            onChange={(e) => setEditDraft(e.target.value)}
-                            rows={3}
-                            className="w-full resize-none rounded-lg bg-white/10 p-2 text-sm text-white outline-none"
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleEditConfirm(group.userMessage.id); }
-                              if (e.key === "Escape") setEditingUserId(null);
-                            }}
-                          />
-                          <div className="flex gap-2">
-                            <button type="button" onClick={() => handleEditConfirm(group.userMessage.id)} className="rounded bg-white/20 px-2 py-1 text-xs">确认</button>
-                            <button type="button" onClick={() => setEditingUserId(null)} className="rounded px-2 py-1 text-xs opacity-70">取消</button>
-                          </div>
-                        </div>
+                        <textarea
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          rows={Math.max(1, editDraft.split("\n").length)}
+                          className="block w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-white outline-none placeholder:text-white/50 [field-sizing:content]"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleEditConfirm(group.userMessage.id);
+                            }
+                            if (e.key === "Escape") setEditingUserId(null);
+                          }}
+                        />
                       ) : (
-                        <p className="whitespace-pre-wrap">{group.userMessage.content}</p>
+                        <p className="whitespace-pre-wrap leading-relaxed">{group.userMessage.content}</p>
                       )}
                     </div>
-                    {!isEditing && (
-                      <div className="absolute right-0 top-full z-10 mt-1 flex items-center gap-2">
-                        <MessageActions
-                          onCopy={() => void handleCopy(group.userMessage.id, group.userMessage.content)}
-                          onEdit={() => { setEditingUserId(group.userMessage.id); setEditDraft(group.userMessage.content); }}
-                          onRetry={() => handleRetry(group.userMessage.id)}
-                          showEdit={isLastUser}
-                          showRetry
-                          disabled={isStreaming}
-                        />
-                        {copiedId === group.userMessage.id && (
-                          <span className="text-[10px] text-[var(--kp-text-3)]">已复制</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <MessageActions
+                    onCopy={() => void handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content)}
+                    onShare={() => void handleShare(isEditing ? editDraft : group.userMessage.content)}
+                    onEdit={() => {
+                      setEditingUserId(group.userMessage.id);
+                      setEditDraft(group.userMessage.content);
+                    }}
+                    onEditSave={() => handleEditConfirm(group.userMessage.id)}
+                    onEditCancel={() => setEditingUserId(null)}
+                    onRetry={() => handleRetry(group.userMessage.id)}
+                    showEdit={isLastUser}
+                    showRetry={!isEditing}
+                    showRegenerate={false}
+                    isEditing={isEditing}
+                    disabled={isStreaming}
+                    copied={copiedId === group.userMessage.id}
+                  />
                 </motion.div>
-                {renderAssistantBubble(group, groupIdx)}
+                </div>
+                <div className="flex w-full justify-start">
+                {renderAssistantBubble(group)}
+                </div>
               </div>
             );
           })}
 
           {optimistic.map((msg) => (
             <div key={msg.id} className="mb-4 flex justify-end">
-              <div className="max-w-[88%] rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white opacity-80">
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+              <div className="flex max-w-[70%] flex-col items-end gap-1.5">
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {msg.attachments.map((att) => (
+                      <div
+                        key={att.previewUrl}
+                        className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={att.previewUrl}
+                          alt={att.name}
+                          className="max-h-40 max-w-[min(100%,16rem)] object-contain opacity-80"
+                        />
+                        {att.source === "ocr" && att.extractedText && (
+                          <span className="absolute bottom-0 left-0 right-0 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
+                            OCR ✓
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white opacity-80">
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                </div>
               </div>
             </div>
           ))}
 
-          {(isStreaming || liveTimeline.length > 0) && messageGroups.length === 0 && (
-            <div className="mb-4 flex justify-start" data-testid="streaming-assistant-bubble">
-              <div className="max-w-[88%] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm">
+          {showLiveStream && (
+            <div
+              className="group/msg mb-6 flex max-w-[88%] flex-col items-start gap-1"
+              data-testid="streaming-assistant-bubble"
+            >
+              <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
                 {liveTimeline.length > 0 && <ThinkingTimeline steps={liveTimeline} isLive />}
                 {streamingContent ? (
                   <PostContent content={streamingContent} className="prose-sm max-w-none" />
-                ) : (
+                ) : liveTimeline.length === 0 ? (
                   <div className="flex items-center gap-2 text-[var(--kp-text-3)]">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin text-[var(--kp-brand)]" />
                     Agent 思考中…
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}
@@ -878,36 +1270,40 @@ export function ChatView() {
           </div>
         )}
 
-        {queue.length > 0 && (
-          <div className="mx-4 mb-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-2">
-            <div className="mb-1 text-xs font-medium text-[var(--kp-text-3)]">发送队列 ({queue.length})</div>
-            {queue.map((task) => (
-              <div key={task.id} className="flex items-center gap-2 py-1 text-xs">
-                <MessageSquare className="h-3 w-3 shrink-0" />
-                <span className="flex-1 truncate">{task.text}</span>
-                <button type="button" onClick={() => setQueue((q) => q.filter((t) => t.id !== task.id))}><X className="h-3 w-3" /></button>
-              </div>
-            ))}
-          </div>
-        )}
+        <MessageQueue
+          items={queue}
+          panelOpen={queuePanelOpen}
+          onPanelOpenChange={setQueuePanelOpen}
+          onChange={(items) =>
+            setLocalQueue(extractLocalQueueFromMerged(items, asyncQueueQuery.data))
+          }
+          onRemove={(id) => setLocalQueue((q) => q.filter((t) => t.id !== id))}
+          settingsPanelOpen={rightOpen}
+          settingsPanelWidth={360}
+        />
 
         <div className="border-t border-[var(--kp-divider)] px-4 py-3 md:px-6">
           <ChatInputArea
             value={input}
             onChange={setInput}
             onSend={enqueueMessage}
+            onStop={() => abortRef.current?.abort()}
             disabled={backendDown}
             isStreaming={isStreaming}
+            queueLength={queue.filter((q) => q.kind === "user").length}
             skills={skillsQuery.data?.items ?? []}
             selectedSkill={selectedSkill}
             onSkillChange={setSelectedSkill}
+            modelHint={modelOpt.inputHint ?? (modelOpt.supportsVision ? "多模态 · 支持图片" : "纯文本 · 图片将 OCR 后发送")}
+            modelId={chatConfig.model}
+            supportsVision={!!modelOpt.supportsVision}
           />
         </div>
       </div>
 
       <aside
         className={cn(
-          "flex shrink-0 flex-col border-l border-[var(--kp-divider)] bg-[var(--kp-bg)]/80 backdrop-blur-xl transition-[width] duration-300 ease-[var(--kp-spring-gentle)]",
+          "relative z-40 flex shrink-0 flex-col border-l border-[var(--kp-divider)] bg-[var(--kp-bg)]/80 backdrop-blur-xl transition-[width] duration-300 ease-[var(--kp-spring-gentle)]",
           rightOpen ? "w-[360px]" : "w-0 overflow-hidden border-l-0",
         )}
       >
@@ -929,7 +1325,7 @@ export function ChatView() {
                 skills={skillsQuery.data?.items ?? []}
                 selectedSkill={selectedSkill}
                 onSelectSkill={setSelectedSkill}
-                modelSupportsReasoning={!!modelOpt.supportsReasoning}
+                modelSupportsReasoning={!!(modelOpt.supportsThinking ?? modelOpt.supportsReasoning)}
                 modelReasoningRequired={!!modelOpt.reasoningRequired}
                 tokenBudget={tokenBudget}
               />
@@ -952,6 +1348,16 @@ export function ChatView() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={!!deleteSessionTarget}
+        title="删除会话"
+        description={`确定删除「${deleteSessionTarget?.title ?? ""}」？所有消息将被永久删除。`}
+        confirmLabel="删除"
+        isDestructive
+        onConfirm={() => deleteSessionTarget && void handleDeleteSession(deleteSessionTarget.id)}
+        onCancel={() => setDeleteSessionTarget(null)}
+      />
     </div>
   );
 }

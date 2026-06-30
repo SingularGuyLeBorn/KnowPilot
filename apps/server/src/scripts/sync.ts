@@ -23,6 +23,7 @@ import { mcpServerSyncer } from "./sync/sync-mcp-servers.js";
 import { memorySyncer } from "./sync/sync-memories.js";
 import { promptSyncer } from "./sync/sync-prompts.js";
 import { taskSyncer } from "./sync/sync-tasks.js";
+import { infoSourceSyncer } from "./sync/sync-info-sources.js";
 
 const prisma = new PrismaClient();
 
@@ -35,6 +36,7 @@ const syncers: Syncer<unknown>[] = [
   memorySyncer,
   promptSyncer,
   taskSyncer,
+  infoSourceSyncer,
 ];
 
 interface SyncResult {
@@ -90,8 +92,11 @@ async function syncEntity<T>(syncer: Syncer<T>, client: PrismaClient): Promise<S
   return result;
 }
 
-/** 一次性同步所有实体（可被 TaskRunner / CLI 复用） */
-export async function runContentSync(client: PrismaClient = prisma): Promise<SyncResult[]> {
+/** 一次性同步所有实体（可被 TaskRunner / CLI / dev 编排复用） */
+export async function runContentSync(
+  client: PrismaClient = prisma,
+  options: { rebuildFts?: boolean } = {},
+): Promise<SyncResult[]> {
   console.log(`\n🔄 开始同步本地内容文件至数据库...`);
 
   const results: SyncResult[] = [];
@@ -103,11 +108,13 @@ export async function runContentSync(client: PrismaClient = prisma): Promise<Syn
   }
 
   console.log(`\n🎉 内容同步完成！\n`);
-  try {
-    const { rebuildFtsIndex } = await import("../infra/ftsIndex.js");
-    await rebuildFtsIndex(client);
-  } catch (e: unknown) {
-    console.warn("  ⚠️ [FTS] 索引重建跳过:", e instanceof Error ? e.message : e);
+  if (options.rebuildFts !== false) {
+    try {
+      const { rebuildFtsIndex } = await import("../infra/ftsIndex.js");
+      await rebuildFtsIndex(client);
+    } catch (e: unknown) {
+      console.warn("  ⚠️ [FTS] 索引重建跳过:", e instanceof Error ? e.message : e);
+    }
   }
   return results;
 }
@@ -117,9 +124,9 @@ async function runSync(): Promise<SyncResult[]> {
   return runContentSync(prisma);
 }
 
-/** 监听模式：增量同步后持续监听变更 */
+/** 监听模式：增量同步后持续监听变更（不重建 FTS，由 dev 前置 db:sync 负责） */
 async function runWatch(): Promise<void> {
-  await runSync();
+  await runContentSync(prisma, { rebuildFts: false });
 
   console.log(`\n👀 进入监听模式，实时同步 content/ 目录变更...\n`);
 

@@ -71,14 +71,33 @@ export interface Memory {
   updatedAt: string | Date;
 }
 
+/** 信息源实体 — Agent 可信信息来源 */
+export interface InfoSource {
+  id: string;
+  name: string;
+  url: string;
+  type: string;
+  description: string;
+  reliability: number;
+  language: string;
+  tags: string[];
+  enabled: boolean;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+/** DeepSeek V4 思考强度（API 仅 high/max 生效，low/medium 映射为 high） */
+export type ReasoningEffort = "low" | "medium" | "high" | "max";
+
 /** 会话级 Chat 配置（扩展字段存 localStorage，model/systemPrompt 同步到 DB） */
 export interface ChatSessionConfig {
   model: string;
   temperature: number;
   maxTokens: number;
   systemPrompt: string;
+  /** 思考模式开关（V4：对应 API thinking.type enabled/disabled） */
   enableReasoning: boolean;
-  reasoningEffort: "low" | "medium" | "high";
+  reasoningEffort: ReasoningEffort;
   customSystemPrompt: boolean;
 }
 
@@ -88,9 +107,19 @@ export interface ChatSession {
   title: string;
   model: string;
   systemPrompt: string | null;
+  agentId?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
   messages?: ChatMessage[];
+}
+
+/** Chat 图片附件 */
+export interface ChatImageAttachment {
+  name: string;
+  mimeType: string;
+  previewUrl: string;
+  extractedText?: string;
+  source?: "ocr" | "vision" | "user";
 }
 
 /** 消息实体 */
@@ -99,6 +128,7 @@ export interface ChatMessage {
   sessionId: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  attachments?: ChatImageAttachment[];
   toolCalls: any;
   toolResults: any;
   tokenUsage: {
@@ -106,6 +136,7 @@ export interface ChatMessage {
     completion: number;
     total: number;
   } | null;
+  finishReason?: string | null;
   createdAt: string | Date;
 }
 

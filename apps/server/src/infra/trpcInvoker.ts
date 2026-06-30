@@ -2,12 +2,22 @@
  * tRPC 反射调用器 — 供 Agent / Trigger 内部调用 aiReadable procedures
  */
 
-import type { ServiceContainer } from "./serviceContainer.js";
+import type { Context } from "../trpc/context.js";
+import { getAppConfig } from "./config.js";
 
-export function createTrpcInvoker(ctx: { services: ServiceContainer }) {
+export function createTrpcInvoker(ctx: Partial<Context> & { services: Context["services"] }) {
   return async (tool: string, args?: unknown) => {
     const { appRouter } = await import("../router.js");
-    const caller = appRouter.createCaller(ctx as never);
+    const config = ctx.config ?? getAppConfig();
+    const fullCtx = {
+      prisma: ctx.prisma!,
+      services: ctx.services,
+      eventBus: ctx.eventBus!,
+      config,
+      req: ctx.req ?? ({ headers: {} } as Context["req"]),
+      res: ctx.res ?? ({} as Context["res"]),
+    } satisfies Context;
+    const caller = appRouter.createCaller(fullCtx as never);
     const parts = tool.split(".");
     let method = caller as Record<string, unknown>;
     for (const part of parts) {

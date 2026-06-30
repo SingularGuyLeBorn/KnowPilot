@@ -8,7 +8,8 @@ import React from "react";
 import { motion } from "framer-motion";
 import { BarChart3, Bot, FileText, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, type LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { LoadingState } from "@/components/shared";
+import { useNativeCapabilities } from "@/lib/hooks";
+import { LoadingState, NativeCapabilitiesPanel } from "@/components/shared";
 
 function StatCard({
   icon: Icon,
@@ -37,6 +38,7 @@ function StatCard({
 
 export default function DashboardPage() {
   const { data, isLoading } = trpc.analytics.dashboard.useQuery({});
+  const { data: caps } = useNativeCapabilities();
 
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
@@ -52,6 +54,15 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-extrabold text-[var(--vp-c-text-1)]">Analytics 概览</h1>
         <p className="text-sm text-[var(--vp-c-text-3)] mt-2">文章、Agent 运行、Token 与日志错误趋势一览。</p>
       </motion.div>
+
+      {caps && (
+        <NativeCapabilitiesPanel
+          data={caps}
+          compact
+          className="border-[var(--vp-c-divider)]"
+          detailHref="/tools"
+        />
+      )}
 
       {isLoading || !data ? (
         <LoadingState count={6} />

@@ -1,143 +1,511 @@
 /**
- * Tools 工具注册表管理页面 (L2/L4 运行时)
+ * Tools 工具注册表 — 完整 CRUD 配置页（参考 MetaBlog / sources）
  */
 
 "use client";
 
-import React, { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Wrench, Plus, Sparkles, Cpu } from "lucide-react";
+import {
+  ChevronLeft,
+  Cpu,
+  Link2,
+  Plus,
+  Puzzle,
+  Search,
+  Server,
+  Sparkles,
+  Trash2,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { Tool } from "@knowpilot/shared";
-import { useTool } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
+import { useTool, useNativeCapabilities } from "@/lib/hooks";
+import { trpc } from "@/lib/trpc";
+import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, NativeCapabilitiesPanel } from "@/components/shared";
+import { cn } from "@/lib/utils";
 
-const TYPE_LABEL: Record<Tool["type"], string> = {
+type ToolForm = {
+  name: string;
+  type: Tool["type"];
+  targetId: string;
+  description: string;
+  parametersSchema: string;
+  enabled: boolean;
+};
+
+const TYPE_OPTIONS = [
+  { value: "native", label: "原生工具 (Native)" },
+  { value: "skill", label: "Skill 绑定" },
+  { value: "mcp", label: "MCP 绑定" },
+] as const;
+
+const TYPE_LABELS: Record<Tool["type"], string> = {
   native: "原生工具",
   skill: "Skill 绑定",
   mcp: "MCP 绑定",
 };
 
-export default function ToolsPage() {
-  const { useList, useCreate, useDelete } = useTool();
-  const [page, setPage] = useState(1);
-  const { data, isLoading } = useList({ page, pageSize: 12 });
-  const createMutation = useCreate();
-  const deleteMutation = useDelete();
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+const TYPE_ICONS: Record<Tool["type"], typeof Wrench> = {
+  native: Wrench,
+  skill: Puzzle,
+  mcp: Server,
+};
 
-  const handleCreateDemo = () => {
-    createMutation.mutate({
-      name: `custom_tool_${Date.now().toString(36).slice(-4)}`,
-      type: "native",
-      description: "示例：注册到 Tool 表的自定义原生工具元数据。",
-      enabled: true,
+const EMPTY_FORM: ToolForm = {
+  name: "",
+  type: "native",
+  targetId: "",
+  description: "",
+  parametersSchema: "",
+  enabled: true,
+};
+
+export default function ToolsPage() {
+  const { useList, useCreate, useUpdate, useDelete } = useTool();
+
+  const [page, setPage] = useState(1);
+  const [keyword, setKeyword] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [enabledFilter, setEnabledFilter] = useState<boolean | undefined>(undefined);
+
+  const [view, setView] = useState<"list" | "edit">("list");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ToolForm>(EMPTY_FORM);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+
+  const listInput = {
+    page,
+    pageSize: 12,
+    keyword: keyword || undefined,
+    type: typeFilter || undefined,
+    enabled: enabledFilter,
+  };
+
+  const { data, isLoading, refetch } = useList(listInput);
+  const { data: caps } = useNativeCapabilities();
+  const { data: nativeTools = [] } = trpc.native.list.useQuery(undefined, { staleTime: 60_000 });
+  const { data: skillData } = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true });
+  const { data: mcpData } = trpc.mcp.list.useQuery({ page: 1, pageSize: 100 });
+
+  const createMutation = useCreate();
+  const updateMutation = useUpdate();
+  const deleteMutation = useDelete();
+
+  const skills = skillData?.items ?? [];
+  const mcpServers = mcpData?.items ?? [];
+
+  const nativeOptions = useMemo(
+    () => nativeTools.map((t) => ({ value: t.name, label: t.name })),
+    [nativeTools],
+  );
+
+  const skillOptions = useMemo(
+    () => skills.map((s) => ({ value: s.name, label: s.name })),
+    [skills],
+  );
+
+  const mcpOptions = useMemo(
+    () => mcpServers.map((s) => ({ value: s.name, label: s.name })),
+    [mcpServers],
+  );
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setSchemaError(null);
+    setView("edit");
+  };
+
+  const openEdit = (tool: Tool) => {
+    setEditingId(tool.id);
+    setForm({
+      name: tool.name,
+      type: tool.type,
+      targetId: tool.targetId ?? "",
+      description: tool.description ?? "",
+      parametersSchema: tool.parametersSchema ?? "",
+      enabled: tool.enabled,
     });
+    setSchemaError(null);
+    setView("edit");
+  };
+
+  const applyNativeTemplate = (name: string) => {
+    const def = nativeTools.find((t) => t.name === name);
+    if (!def) return;
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name || def.name,
+      type: "native",
+      targetId: def.name,
+      description: def.description,
+      parametersSchema: JSON.stringify(def.parameters, null, 2),
+    }));
+    setSchemaError(null);
+  };
+
+  const validateSchema = (raw: string): boolean => {
+    if (!raw.trim()) {
+      setSchemaError(null);
+      return true;
+    }
+    try {
+      JSON.parse(raw);
+      setSchemaError(null);
+      return true;
+    } catch {
+      setSchemaError("parametersSchema 必须是合法 JSON");
+      return false;
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    if (!validateSchema(form.parametersSchema)) return;
+
+    const payload = {
+      name: form.name.trim(),
+      type: form.type,
+      targetId: form.targetId.trim() || undefined,
+      description: form.description.trim() || undefined,
+      parametersSchema: form.parametersSchema.trim() || undefined,
+      enabled: form.enabled,
+    };
+
+    if (editingId) {
+      await updateMutation.mutateAsync({ id: editingId, ...payload });
+    } else {
+      await createMutation.mutateAsync(payload);
+    }
+    setView("list");
+    void refetch();
+  };
+
+  const handleSearch = () => {
+    setKeyword(searchInput.trim());
+    setPage(1);
+  };
+
+  const toggleEnabled = (tool: Tool) => {
+    updateMutation.mutate({ id: tool.id, enabled: !tool.enabled });
   };
 
   const confirmDelete = () => {
     if (deleteId) {
       deleteMutation.mutate({ id: deleteId });
       setDeleteId(null);
+      if (editingId === deleteId) setView("list");
     }
   };
 
-  return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <Wrench className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
+  if (view === "edit") {
+    return (
+      <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8">
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          className="mb-6 flex items-center gap-1 text-sm text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          返回工具列表
+        </button>
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              L4 · 工具注册表
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-              Tools 工具目录
+        <div className="mx-auto max-w-2xl space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold text-[var(--kp-text-1)]">
+              {editingId ? "编辑工具注册" : "注册新工具"}
             </h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              统一管理 Native / Skill / MCP 三类工具的注册元数据，供 Agent 运行时与 ai.tools 反射发现。
+            <p className="mt-1 text-sm text-[var(--kp-text-3)]">
+              登记 Native / Skill / MCP 工具元数据，供 Agent 授权与 ai.tools 反射发现。Native 实现仍由
+              nativeTools.ts 提供，此处为配置与文档层。
             </p>
           </div>
 
-          <Button
-            onClick={handleCreateDemo}
-            disabled={createMutation.isPending}
-            className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0"
-          >
-            <Plus className="w-5 h-5" />
-            注册示例工具
+          <div className="space-y-4 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">工具名称</label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="web_search"
+              />
+              <p className="mt-1 text-[10px] text-[var(--kp-text-3)]">全局唯一，Agent 授权时使用 native:名称 等形式。</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">类型</label>
+                <KpSelect
+                  value={form.type}
+                  onChange={(type) => setForm({ ...form, type: type as Tool["type"], targetId: "" })}
+                  options={[...TYPE_OPTIONS]}
+                  className="w-full"
+                  aria-label="工具类型"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">
+                  {form.type === "native" ? "内置工具" : form.type === "skill" ? "绑定 Skill" : "绑定 MCP 服务"}
+                </label>
+                {form.type === "native" ? (
+                  <KpSelect
+                    value={form.targetId}
+                    onChange={(targetId) => {
+                      setForm({ ...form, targetId });
+                      applyNativeTemplate(targetId);
+                    }}
+                    options={[{ value: "", label: "选择内置工具…" }, ...nativeOptions]}
+                    className="w-full"
+                    aria-label="内置工具"
+                  />
+                ) : form.type === "skill" ? (
+                  <KpSelect
+                    value={form.targetId}
+                    onChange={(targetId) => setForm({ ...form, targetId })}
+                    options={[{ value: "", label: "选择 Skill…" }, ...skillOptions]}
+                    className="w-full"
+                    aria-label="Skill"
+                  />
+                ) : (
+                  <KpSelect
+                    value={form.targetId}
+                    onChange={(targetId) => setForm({ ...form, targetId })}
+                    options={[{ value: "", label: "选择 MCP 服务…" }, ...mcpOptions]}
+                    className="w-full"
+                    aria-label="MCP 服务"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">描述</label>
+              <textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                rows={3}
+                className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand)]"
+                placeholder="说明该工具的用途、限制与典型场景"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">
+                参数 Schema（JSON）
+              </label>
+              <textarea
+                value={form.parametersSchema}
+                onChange={(e) => {
+                  setForm({ ...form, parametersSchema: e.target.value });
+                  if (schemaError) validateSchema(e.target.value);
+                }}
+                onBlur={() => validateSchema(form.parametersSchema)}
+                rows={10}
+                spellCheck={false}
+                className={cn(
+                  "w-full resize-y rounded-xl border bg-[var(--kp-bg)] px-3 py-2 font-mono text-xs outline-none focus:border-[var(--kp-brand)]",
+                  schemaError ? "border-red-400" : "border-[var(--kp-divider)]",
+                )}
+                placeholder='{"type":"object","properties":{...}}'
+              />
+              {schemaError && <p className="mt-1 text-xs text-red-500">{schemaError}</p>}
+              {form.type === "native" && form.targetId && (
+                <button
+                  type="button"
+                  onClick={() => applyNativeTemplate(form.targetId)}
+                  className="mt-2 text-xs text-[var(--kp-brand-dark)] hover:underline"
+                >
+                  从内置工具「{form.targetId}」重新填充 Schema
+                </button>
+              )}
+            </div>
+
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--kp-text-2)]">
+              <input
+                type="checkbox"
+                checked={form.enabled}
+                onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+                className="rounded accent-[var(--kp-brand)]"
+              />
+              启用此工具注册
+            </label>
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              onClick={() => void handleSave()}
+              disabled={createMutation.isPending || updateMutation.isPending}
+            >
+              {editingId ? "保存修改" : "注册工具"}
+            </Button>
+            {editingId && (
+              <Button variant="destructive" onClick={() => setDeleteId(editingId)}>
+                <Trash2 className="mr-1 h-4 w-4" />
+                删除
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <ConfirmDialog
+          isOpen={deleteId !== null}
+          title="删除工具注册"
+          description="确定删除此工具注册条目？不会影响 nativeTools 实际实现。"
+          isDestructive
+          confirmLabel="确认删除"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteId(null)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
+      <motion.div
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-3xl border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-bg-alt)] to-[var(--kp-bg-mute)] p-8"
+      >
+        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5">
+          <Wrench className="h-80 w-80 text-[var(--kp-brand)]" />
+        </div>
+        <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--kp-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--kp-brand-dark)]">
+              <Sparkles className="h-3.5 w-3.5" />
+              L4 · 工具注册表
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--kp-text-1)]">Tools 工具目录</h1>
+            <p className="max-w-xl text-sm text-[var(--kp-text-3)]">
+              像 MetaBlog 一样完整注册工具元数据：名称、类型、绑定目标、参数 Schema 与启用状态。Agent 通过
+              native:/skill:/mcp: 授权后才会在对话中可见。
+            </p>
+          </div>
+          <Button onClick={openCreate} className="shrink-0 gap-2 rounded-2xl px-5 py-6">
+            <Plus className="h-5 w-5" />
+            注册工具
           </Button>
         </div>
       </motion.div>
 
+      {caps && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <NativeCapabilitiesPanel data={caps} />
+        </motion.div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <div className="relative min-w-[200px] flex-1 max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="搜索工具名称或描述…"
+            className="pl-9"
+          />
+        </div>
+        <KpSelect
+          value={typeFilter}
+          onChange={setTypeFilter}
+          options={[{ value: "", label: "全部类型" }, ...TYPE_OPTIONS]}
+          aria-label="类型筛选"
+        />
+        <KpSelect
+          value={enabledFilter === undefined ? "" : enabledFilter ? "true" : "false"}
+          onChange={(v) => setEnabledFilter(v === "" ? undefined : v === "true")}
+          options={[
+            { value: "", label: "全部状态" },
+            { value: "true", label: "已启用" },
+            { value: "false", label: "已禁用" },
+          ]}
+          aria-label="启用状态"
+        />
+        <Button variant="outline" onClick={handleSearch}>
+          搜索
+        </Button>
+      </div>
+
       {isLoading ? (
         <LoadingState count={3} />
-      ) : !data?.items || data.items.length === 0 ? (
+      ) : !data?.items?.length ? (
         <EmptyState
           title="工具注册表为空"
-          description="尚未注册任何工具元数据。Agent 仍可使用内置 nativeTools，但自定义工具需在此登记。"
-          actionLabel="添加示例工具"
-          onAction={handleCreateDemo}
+          description="注册第一个工具，或从内置 Native 工具模板快速导入。"
+          actionLabel="注册工具"
+          onAction={openCreate}
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {data.items.map((tool: Tool, idx: number) => (
-              <motion.div
-                key={tool.id}
-                initial={{ opacity: 0, y: 15 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  transition: { delay: idx * 0.04, type: "spring", stiffness: 200, damping: 20 },
-                }}
-                className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300"
-              >
-                <div className="flex justify-between items-start gap-4 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]">
-                      <Cpu className="h-5 w-5" />
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {data.items.map((tool: Tool, idx: number) => {
+              const Icon = TYPE_ICONS[tool.type] ?? Cpu;
+              return (
+                <motion.div
+                  key={tool.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0, transition: { delay: idx * 0.04 } }}
+                  className="group relative rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-lg"
+                >
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-[var(--kp-text-1)]">{tool.name}</h3>
+                        <span className="text-[10px] text-[var(--kp-text-3)]">{TYPE_LABELS[tool.type]}</span>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-sm text-[var(--vp-c-text-1)] group-hover:text-[var(--vp-c-brand-dark)]">
-                        {tool.name}
-                      </h3>
-                      <span className="text-[10px] text-[var(--vp-c-text-3)]">{TYPE_LABEL[tool.type]}</span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteId(tool.id)}
+                      className="rounded-lg px-2 py-1 text-red-500 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteId(tool.id)}
-                    className="opacity-0 group-hover:opacity-100 text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
-                  >
-                    删除
-                  </button>
-                </div>
 
-                <p className="text-xs text-[var(--vp-c-text-3)] min-h-[32px] mb-4 line-clamp-2">
-                  {tool.description || "无描述"}
-                </p>
+                  <p className="mb-3 min-h-[32px] text-xs leading-relaxed text-[var(--kp-text-3)] line-clamp-2">
+                    {tool.description || "无描述"}
+                  </p>
 
-                <div className="flex items-center justify-between border-t border-[var(--vp-c-divider-light)] pt-3 text-[10px] text-[var(--vp-c-text-3)]">
-                  <span className="font-mono truncate max-w-[60%]">{tool.targetId || "—"}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full font-medium ${
-                      tool.enabled ? "bg-green-500/10 text-green-600" : "bg-gray-500/10 text-gray-500"
-                    }`}
-                  >
-                    {tool.enabled ? "已启用" : "已禁用"}
-                  </span>
-                </div>
-              </motion.div>
-            ))}
+                  {tool.targetId && (
+                    <p className="mb-3 flex items-center gap-1 truncate font-mono text-[10px] text-[var(--kp-text-3)]">
+                      <Link2 className="h-3 w-3 shrink-0" />
+                      {tool.targetId}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between border-t border-[var(--kp-divider)] pt-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleEnabled(tool)}
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-[10px] font-medium transition",
+                        tool.enabled
+                          ? "bg-green-500/10 text-green-600 hover:bg-green-500/20"
+                          : "bg-gray-500/10 text-gray-500 hover:bg-gray-500/20",
+                      )}
+                    >
+                      {tool.enabled ? "已启用" : "已禁用"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEdit(tool)}
+                      className="rounded-xl border border-[var(--kp-divider)] px-3 py-1.5 text-xs text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+                    >
+                      编辑
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
 
           {data && (

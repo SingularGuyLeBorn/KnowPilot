@@ -27,6 +27,7 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       memories: path.join(projectRoot, "content", "memories"),
       tasks: path.join(projectRoot, "content", "tasks"),
       prompts: path.join(projectRoot, "content", "prompts"),
+      sources: path.join(projectRoot, "content", "sources"),
     },
     uploadDir: path.join(projectRoot, "content", "uploads"),
     env: "test",
@@ -40,9 +41,24 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       maxToolRounds: 8,
       providers: {},
     },
+    asyncJobs: { maxConcurrent: 2, maxPerSession: 2 },
+    ocr: {
+      paddleCliPath: path.join(projectRoot, "missing-paddle.py"),
+      paddlePythonPath: "python3",
+      ppocrHome: path.join(projectRoot, "weights", "ocr", "paddleocr"),
+      ocrSpaceApiKey: "",
+      ocrSpaceDefaultLang: "chs",
+    },
     search: {
       tavilyApiKey: "",
       serpApiKey: "",
+      baiduQianfanApiKey: "",
+      metasoApiKey: "",
+      bochaApiKey: "",
+      langsearchApiKey: "",
+      braveApiKey: "",
+      bingApiKey: "",
+      enginePriority: "bing_crawler,tavily",
     },
     integrations: {
       feishu: { appId: "", appSecret: "", userAccessToken: "", tenantAccessToken: "" },
@@ -56,6 +72,13 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
     },
     cloudflare: {
       tunnelToken: "",
+    },
+    shell: {
+      enabled: true,
+      mode: "host_restricted",
+      timeoutMs: 30_000,
+      maxOutputChars: 12_000,
+      shell: "auto",
     },
     ...overrides,
   };
@@ -108,6 +131,8 @@ export function makeSkillEntity(partial: Partial<SkillEntity> & Pick<SkillEntity
 
 export const ALL_NATIVE_TOOL_NAMES = [
   "web_search",
+  "read_article",
+  "scrape_web_page",
   "read_file",
   "write_file",
   "list_directory",
@@ -118,4 +143,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "github_search_repos",
   "feishu_send_text",
   "invoke_api",
+  "run_async",
+  "run_shell",
+  "wait",
 ] as const;

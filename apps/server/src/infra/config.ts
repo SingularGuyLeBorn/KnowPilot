@@ -7,6 +7,7 @@
 
 import fs from "fs";
 import path from "path";
+import { buildEffectiveSearchPriorityString } from "./metablog/search/priority.js";
 
 /* ─── 类型定义 ─── */
 
@@ -28,6 +29,7 @@ export interface AppConfig {
     memories: string;
     tasks: string;
     prompts: string;
+    sources: string;
   };
   uploadDir: string;
   env: "development" | "production" | "test";
@@ -41,9 +43,30 @@ export interface AppConfig {
     maxToolRounds: number;
     providers: Record<string, LlmProviderConfig>;
   };
+  /** 异步 Agent 后台任务并发 */
+  asyncJobs: {
+    maxConcurrent: number;
+    maxPerSession: number;
+  };
+  /** OCR — 对齐 MetaBlog PaddleOCR + OCR.space */
+  ocr: {
+    paddleCliPath: string;
+    paddlePythonPath: string;
+    ppocrHome: string;
+    ocrSpaceApiKey: string;
+    ocrSpaceDefaultLang: string;
+  };
   search: {
     tavilyApiKey: string;
     serpApiKey: string;
+    baiduQianfanApiKey: string;
+    metasoApiKey: string;
+    bochaApiKey: string;
+    langsearchApiKey: string;
+    braveApiKey: string;
+    bingApiKey: string;
+    /** 逗号分隔，如 bing_crawler,baidu_qianfan,tavily */
+    enginePriority: string;
   };
   integrations: {
     feishu: {
@@ -67,6 +90,15 @@ export interface AppConfig {
   };
   cloudflare: {
     tunnelToken: string;
+  };
+  /** Shell 执行策略（host_restricted = 用户选定的默认方案） */
+  shell: {
+    enabled: boolean;
+    mode: "disabled" | "host_restricted" | "host_full" | "docker";
+    timeoutMs: number;
+    maxOutputChars: number;
+    /** auto | powershell | cmd | bash */
+    shell: string;
   };
 }
 
@@ -150,7 +182,7 @@ export function createAppConfig(): AppConfig {
       ["DEEPSEEK_MODEL", "VITE_DEEPSEEK_MODEL"],
       ["DEEPSEEK_API_KEY", "VITE_DEEPSEEK_API_KEY"],
       ["DEEPSEEK_BASE_URL", "VITE_DEEPSEEK_BASE_URL"],
-      "deepseek-chat",
+      "deepseek-v4-flash",
     ),
     kimi: readProvider(
       ["KIMI_MODEL", "VITE_KIMI_MODEL"],
@@ -226,6 +258,8 @@ export function createAppConfig(): AppConfig {
     ),
   };
 
+  const paddleCliDefault = path.join(projectRoot, "tools", "ocr", "paddleocr_cli.py");
+
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
     projectRoot,
@@ -238,6 +272,7 @@ export function createAppConfig(): AppConfig {
       memories: path.join(contentDir, "memories"),
       tasks: path.join(contentDir, "tasks"),
       prompts: path.join(contentDir, "prompts"),
+      sources: path.join(contentDir, "sources"),
     },
     uploadDir: path.join(contentDir, "uploads"),
     env: (process.env.NODE_ENV || "development") as AppConfig["env"],
@@ -251,13 +286,43 @@ export function createAppConfig(): AppConfig {
     llm: {
       defaultProvider: readEnv("LLM_DEFAULT_PROVIDER") || "deepseek",
       dailyBudget: parseFloat(readEnv("LLM_DAILY_BUDGET") || "10"),
-      maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "16", 10)),
+      maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "100", 10)),
       providers,
     },
-    search: {
-      tavilyApiKey: readEnv("SEARCH_TAVILY_API_KEY", "TAVILY_API_KEY"),
-      serpApiKey: readEnv("SEARCH_SERPAPI_API_KEY", "SERPAPI_API_KEY"),
+    asyncJobs: {
+      maxConcurrent: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_CONCURRENT") || "2", 10)),
+      maxPerSession: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_PER_SESSION") || "2", 10)),
     },
+    ocr: {
+      paddleCliPath: readEnv("PADDLEOCR_CLI_PATH") || paddleCliDefault,
+      paddlePythonPath:
+        readEnv("PADDLEOCR_PYTHON_PATH") ||
+        (process.platform === "win32" ? "" : "python3"),
+      ppocrHome: readEnv("PPOCR_HOME") || path.join(projectRoot, "weights", "ocr", "paddleocr"),
+      ocrSpaceApiKey: readEnv("OCR_SPACE_API_KEY"),
+      ocrSpaceDefaultLang: readEnv("OCR_SPACE_DEFAULT_LANG") || "chs",
+    },
+    search: (() => {
+      const tavilyApiKey = readEnv("SEARCH_TAVILY_API_KEY", "TAVILY_API_KEY");
+      const serpApiKey = readEnv("SEARCH_SERPAPI_API_KEY", "SERPAPI_API_KEY");
+      const baiduQianfanApiKey = readEnv("SEARCH_BAIDU_QIANFAN_API_KEY", "BAIDU_QIANFAN_API_KEY", "QIANFAN_API_KEY");
+      return {
+        tavilyApiKey,
+        serpApiKey,
+        baiduQianfanApiKey,
+        metasoApiKey: readEnv("SEARCH_METASO_API_KEY", "METASO_API_KEY"),
+        bochaApiKey: readEnv("SEARCH_BOCHA_API_KEY", "BOCHA_API_KEY"),
+        langsearchApiKey: readEnv("SEARCH_LANGSEARCH_API_KEY", "LANGSEARCH_API_KEY"),
+        braveApiKey: readEnv("SEARCH_BRAVE_API_KEY", "BRAVE_API_KEY"),
+        bingApiKey: readEnv("SEARCH_BING_API_KEY", "BING_API_KEY"),
+        enginePriority: buildEffectiveSearchPriorityString({
+          envPriority: readEnv("SEARCH_ENGINE_PRIORITY"),
+          tavilyApiKey,
+          serpApiKey,
+          baiduQianfanApiKey,
+        }),
+      };
+    })(),
     integrations: {
       feishu: {
         appId: readEnv("FEISHU_APP_ID"),
@@ -280,6 +345,19 @@ export function createAppConfig(): AppConfig {
     },
     cloudflare: {
       tunnelToken: readEnv("CLOUDFLARE_TUNNEL_TOKEN"),
+    },
+    shell: {
+      enabled: readEnv("SHELL_ENABLED", "SHELL_TOOL_ENABLED") !== "false",
+      mode: (() => {
+        const raw = readEnv("SHELL_MODE") || "host_restricted";
+        if (raw === "disabled" || raw === "host_restricted" || raw === "host_full" || raw === "docker") {
+          return raw;
+        }
+        return "host_restricted";
+      })(),
+      timeoutMs: Math.max(1000, parseInt(readEnv("SHELL_TIMEOUT_MS") || "30000", 10)),
+      maxOutputChars: Math.max(1000, parseInt(readEnv("SHELL_MAX_OUTPUT_CHARS") || "12000", 10)),
+      shell: readEnv("SHELL_BINARY") || "auto",
     },
   };
 

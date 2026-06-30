@@ -3,13 +3,22 @@
  */
 
 import type { AppConfig, LlmProviderConfig } from "./config.js";
+import type { ReasoningEffort } from "@knowpilot/shared";
+
+export interface LlmContentPart {
+  type: "text" | "image_url";
+  text?: string;
+  image_url?: { url: string; detail?: "auto" | "low" | "high" };
+}
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | LlmContentPart[] | null;
   tool_call_id?: string;
   name?: string;
   tool_calls?: LlmToolCall[];
+  /** DeepSeek V4 思考链 — 工具调用回合必须原样回传 */
+  reasoning_content?: string | null;
 }
 
 export interface LlmToolDefinition {
@@ -35,6 +44,21 @@ export interface LlmCompletionResult {
   finishReason: string | null;
   model: string;
   provider: string;
+}
+
+/** LLM 请求扩展（DeepSeek V4 思考模式） */
+export interface LlmRequestOptions {
+  temperature?: number;
+  maxTokens?: number;
+  enableReasoning?: boolean;
+  reasoningEffort?: ReasoningEffort;
+}
+
+export interface ResolvedDeepSeekRequest {
+  apiModel: string;
+  thinking: "enabled" | "disabled";
+  reasoningEffort: "high" | "max";
+  isDeepSeek: boolean;
 }
 
 const DEFAULT_BASE_URLS: Record<string, string> = {
@@ -65,6 +89,91 @@ export function resolveProvider(config: AppConfig, modelOrProvider?: string): Ll
   return { id: providerId, ...provider };
 }
 
+/**
+ * 解析 Agent/Session 实际使用的 model id。
+ * `.env` 的 DEEPSEEK_MODEL / VITE_DEEPSEEK_MODEL 在仍为 legacy `deepseek-chat` 时覆盖。
+ */
+export function resolveEffectiveAgentModel(config: AppConfig, model: string): string {
+  const trimmed = model.trim();
+  const envDeepseek = config.llm.providers.deepseek?.model?.trim();
+  if ((trimmed === "deepseek-chat" || !trimmed) && envDeepseek) {
+    return envDeepseek;
+  }
+  return trimmed || envDeepseek || "deepseek-v4-flash";
+}
+
+/** API 文档：low/medium → high，xhigh → max；此处仅暴露 high/max */
+export function normalizeReasoningEffort(effort?: ReasoningEffort): "high" | "max" {
+  return effort === "max" ? "max" : "high";
+}
+
+export function isDeepSeekFamily(model: string): boolean {
+  const m = model.toLowerCase();
+  return m.includes("deepseek");
+}
+
+/**
+ * 对齐 DeepSeek V4 Thinking Mode 文档：
+ * - thinking.type: enabled | disabled（V4 默认 enabled）
+ * - reasoning_effort: high | max
+ * - legacy deepseek-chat / deepseek-reasoner 映射到 v4-flash
+ */
+export function resolveDeepSeekRequest(
+  config: AppConfig,
+  requestedModel: string,
+  options: Pick<LlmRequestOptions, "enableReasoning" | "reasoningEffort">,
+): ResolvedDeepSeekRequest {
+  let model = resolveEffectiveAgentModel(config, requestedModel);
+  const effort = normalizeReasoningEffort(options.reasoningEffort);
+
+  if (model === "deepseek-reasoner") {
+    return { apiModel: "deepseek-v4-flash", thinking: "enabled", reasoningEffort: effort, isDeepSeek: true };
+  }
+
+  if (model === "deepseek-chat") {
+    model = "deepseek-v4-flash";
+  }
+
+  if (model.toLowerCase().includes("vl")) {
+    return { apiModel: model, thinking: "disabled", reasoningEffort: effort, isDeepSeek: true };
+  }
+
+  if (!isDeepSeekFamily(model)) {
+    return { apiModel: model, thinking: "disabled", reasoningEffort: effort, isDeepSeek: false };
+  }
+
+  const thinking: "enabled" | "disabled" =
+    options.enableReasoning === false ? "disabled" : "enabled";
+
+  return { apiModel: model, thinking, reasoningEffort: effort, isDeepSeek: true };
+}
+
+export function serializeMessagesForApi(messages: LlmMessage[]): Record<string, unknown>[] {
+  return messages.map((m) => {
+    const row: Record<string, unknown> = { role: m.role, content: m.content };
+    if (m.tool_calls?.length) row.tool_calls = m.tool_calls;
+    if (m.tool_call_id) row.tool_call_id = m.tool_call_id;
+    if (m.name) row.name = m.name;
+    if (m.tool_calls?.length) {
+      row.reasoning_content = m.reasoning_content ?? "";
+    } else if (m.reasoning_content) {
+      row.reasoning_content = m.reasoning_content;
+    }
+    return row;
+  });
+}
+
+function applyDeepSeekThinkingBody(
+  body: Record<string, unknown>,
+  resolved: ResolvedDeepSeekRequest,
+): void {
+  if (!resolved.isDeepSeek) return;
+  body.thinking = { type: resolved.thinking };
+  if (resolved.thinking === "enabled") {
+    body.reasoning_effort = resolved.reasoningEffort;
+  }
+}
+
 /** 根据 model 字段推断 provider（agent.model 可能是 deepseek-chat / kimi-k2.5 等） */
 export function inferProviderFromModel(config: AppConfig, model: string): LlmProviderConfig & { id: string } {
   const lower = model.toLowerCase();
@@ -82,16 +191,14 @@ export function inferProviderFromModel(config: AppConfig, model: string): LlmPro
   return resolveProvider(config, config.llm.defaultProvider);
 }
 
-function resolveEffectiveModel(
-  requested: string | undefined,
-  providerDefault: string,
-  enableReasoning?: boolean,
-): string {
-  const base = requested && !requested.includes("/") ? requested : providerDefault;
-  if (enableReasoning && base.includes("deepseek") && !base.includes("reasoner")) {
-    return "deepseek-reasoner";
+function resolveEffectiveModel(requested: string | undefined, providerDefault: string): string {
+  if (!requested?.trim()) return providerDefault;
+  const r = requested.trim();
+  const lower = r.toLowerCase();
+  if (lower === "kimi" || lower === "moonshot-v1-auto" || lower.includes("moonshot")) {
+    return providerDefault;
   }
-  return base;
+  return r.includes("/") ? providerDefault : r;
 }
 
 export async function chatCompletion(options: {
@@ -99,23 +206,25 @@ export async function chatCompletion(options: {
   model?: string;
   messages: LlmMessage[];
   tools?: LlmToolDefinition[];
-  temperature?: number;
-  maxTokens?: number;
-  enableReasoning?: boolean;
-}): Promise<LlmCompletionResult> {
+  signal?: AbortSignal;
+} & LlmRequestOptions): Promise<LlmCompletionResult> {
   const provider = options.model
     ? inferProviderFromModel(options.config, options.model)
     : resolveProvider(options.config);
 
-  const model = resolveEffectiveModel(options.model, provider.model, options.enableReasoning);
+  const ds = resolveDeepSeekRequest(options.config, options.model || provider.model, options);
+  const model = resolveEffectiveModel(ds.apiModel, provider.model);
   const baseUrl = (provider.baseUrl || DEFAULT_BASE_URLS[provider.id] || DEFAULT_BASE_URLS.openai).replace(/\/$/, "");
 
   const body: Record<string, unknown> = {
     model,
-    messages: options.messages,
-    temperature: options.temperature ?? 0.7,
+    messages: serializeMessagesForApi(options.messages),
     max_tokens: options.maxTokens ?? 4096,
   };
+  if (!ds.isDeepSeek || ds.thinking === "disabled") {
+    body.temperature = options.temperature ?? 0.7;
+  }
+  applyDeepSeekThinkingBody(body, { ...ds, apiModel: model });
   if (options.tools && options.tools.length > 0) {
     body.tools = options.tools;
     body.tool_choice = "auto";
@@ -128,6 +237,7 @@ export async function chatCompletion(options: {
       Authorization: `Bearer ${provider.apiKey}`,
     },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!res.ok) {
@@ -184,24 +294,26 @@ export async function* chatCompletionStream(options: {
   model?: string;
   messages: LlmMessage[];
   tools?: LlmToolDefinition[];
-  temperature?: number;
-  maxTokens?: number;
-  enableReasoning?: boolean;
-}): AsyncGenerator<StreamChunk> {
+  signal?: AbortSignal;
+} & LlmRequestOptions): AsyncGenerator<StreamChunk> {
   const provider = options.model
     ? inferProviderFromModel(options.config, options.model)
     : resolveProvider(options.config);
 
-  const model = resolveEffectiveModel(options.model, provider.model, options.enableReasoning);
+  const ds = resolveDeepSeekRequest(options.config, options.model || provider.model, options);
+  const model = resolveEffectiveModel(ds.apiModel, provider.model);
   const baseUrl = (provider.baseUrl || DEFAULT_BASE_URLS[provider.id] || DEFAULT_BASE_URLS.openai).replace(/\/$/, "");
 
   const body: Record<string, unknown> = {
     model,
-    messages: options.messages,
-    temperature: options.temperature ?? 0.7,
+    messages: serializeMessagesForApi(options.messages),
     max_tokens: options.maxTokens ?? 4096,
     stream: true,
   };
+  if (!ds.isDeepSeek || ds.thinking === "disabled") {
+    body.temperature = options.temperature ?? 0.7;
+  }
+  applyDeepSeekThinkingBody(body, { ...ds, apiModel: model });
   if (options.tools && options.tools.length > 0) {
     body.tools = options.tools;
     body.tool_choice = "auto";
@@ -214,6 +326,7 @@ export async function* chatCompletionStream(options: {
       Authorization: `Bearer ${provider.apiKey}`,
     },
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 
   if (!res.ok) {
@@ -232,6 +345,11 @@ export async function* chatCompletionStream(options: {
   let responseModel = model;
 
   while (true) {
+    if (options.signal?.aborted) {
+      const err = new Error("流式输出已被用户中断");
+      err.name = "AbortError";
+      throw err;
+    }
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });

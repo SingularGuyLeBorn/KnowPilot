@@ -12,7 +12,7 @@ import { trpc } from "@/lib/trpc";
 import type {
   OperationResult,
   CreatePostInput, UpdatePostInput, ListPostsInput, Post,
-  Agent, Skill, McpServer, Memory,
+  Agent, Skill, McpServer, Memory, InfoSource,
   ChatSession, ChatMessage, FileMeta, GitRepo,
   Task, Workspace, Trigger, Approval,
   Tool, Prompt, Credential, Run,
@@ -164,6 +164,7 @@ export const useAgent = () => useCRUDApi<any, any, any, Agent>("agent");
 export const useSkill = () => useCRUDApi<any, any, any, Skill>("skill");
 export const useMcp = () => useCRUDApi<any, any, any, McpServer>("mcp");
 export const useMemory = () => useCRUDApi<any, any, any, Memory>("memory");
+export const useInfoSource = () => useCRUDApi<any, any, any, InfoSource>("infoSource");
 export const useSession = () => useCRUDApi<any, any, any, ChatSession>("session");
 export const useMessage = () => useCRUDApi<any, any, any, ChatMessage>("message");
 
@@ -239,6 +240,14 @@ export const useApproval = () => {
   };
 };
 export const useTool = () => useCRUDApi<any, any, any, Tool>("tool");
+
+/** 原生工具运行时能力（搜索/OCR/浏览器/read_article 平台） */
+export function useNativeCapabilities(options?: { staleTime?: number }) {
+  return trpc.native.capabilities.useQuery(undefined, {
+    staleTime: options?.staleTime ?? 60_000,
+  });
+}
+
 export const useRun = () => useCRUDApi<any, any, any, Run>("run");
 export const usePrompt = () => useCRUDApi<any, any, any, Prompt>("prompt");
 export const useCredential = () => useCRUDApi<any, any, any, Credential>("credential");

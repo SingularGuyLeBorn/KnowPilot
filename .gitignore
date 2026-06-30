@@ -32,6 +32,8 @@ tmp/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 backups/
 
@@ -51,3 +53,10 @@ pgdata/
 
 # Server runtime cache
 apps/server/content/
+
+# OCR / TTS / ASR 模型权重（大文件，用 pnpm ocr:download 拉取）
+weights/ocr/
+weights/tts/
+weights/asr/
+!weights/README.md
+!weights/**/.gitkeep

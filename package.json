@@ -4,9 +4,9 @@
   "private": true,
   "description": "KnowPilot — 智能知识管理与博客平台",
   "scripts": {
-    "dev": "concurrently --names server,web,sync --prefix-colors blue,green,yellow \"pnpm --filter @knowpilot/server dev\" \"pnpm --filter @knowpilot/web dev\" \"pnpm --filter @knowpilot/server db:sync:watch\"",
-    "dev:quick": "concurrently --names server,web --prefix-colors blue,green \"pnpm --filter @knowpilot/server dev\" \"pnpm --filter @knowpilot/web dev\"",
-    "dev:remote": "concurrently --names server,web --prefix-colors blue,green \"pnpm --filter @knowpilot/server dev\" \"pnpm --filter @knowpilot/web dev:remote\"",
+    "dev": "node scripts/dev.mjs",
+    "dev:quick": "node scripts/dev.mjs --quick",
+    "dev:remote": "node scripts/dev.mjs --remote",
     "dev:web": "pnpm --filter @knowpilot/web dev",
     "dev:server": "pnpm --filter @knowpilot/server dev",
     "build": "pnpm --filter @knowpilot/web build",
@@ -21,7 +21,17 @@
     "db:studio": "pnpm --filter @knowpilot/server db:studio",
     "db:seed": "pnpm --filter @knowpilot/server db:seed",
     "db:sync": "pnpm --filter @knowpilot/server db:sync",
-    "db:backup": "node scripts/backup-db.mjs"
+    "db:backup": "node scripts/backup-db.mjs",
+    "ocr:copy": "node scripts/copy-ocr-from-metablog.mjs",
+    "ocr:setup": "py -3.10 -m pip install -r tools/ocr/requirements.txt",
+    "ocr:check": "pnpm --filter @knowpilot/server ocr:check",
+    "integration:smoke": "pnpm --filter @knowpilot/server integration:smoke",
+    "integration:smoke:platform": "pnpm --filter @knowpilot/server integration:smoke:platform",
+    "integration:smoke:platform:quick": "pnpm --filter @knowpilot/server integration:smoke:platform:quick",
+    "integration:smoke:platform:medium": "pnpm --filter @knowpilot/server integration:smoke:platform:medium",
+    "integration:smoke:platform:extended": "pnpm --filter @knowpilot/server integration:smoke:platform:extended",
+    "read-article:spot": "pnpm --filter @knowpilot/server read-article:spot",
+    "cleanup:smoke-artifacts": "pnpm --filter @knowpilot/server cleanup:smoke-artifacts"
   },
   "devDependencies": {
     "concurrently": "9.1.2",

@@ -34,6 +34,8 @@
     "clsx": "^2.1.1",
     "framer-motion": "12.42.0",
     "highlight.js": "^11.11.1",
+    "html2pdf.js": "^0.14.0",
+    "jszip": "^3.10.1",
     "katex": "^0.17.0",
     "lodash-es": "4.17.21",
     "lucide-react": "0.475.0",
