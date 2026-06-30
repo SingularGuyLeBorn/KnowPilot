@@ -322,10 +322,9 @@ export async function retryAsyncJob(
   const input = parseAsyncInput(existing.input);
   if (!input) throw new Error("不是有效的异步 Agent 任务");
 
-  const MAX_ASYNC_RETRIES = 3;
   const retryCount = (input.retryCount ?? 0) + 1;
-  if (retryCount > MAX_ASYNC_RETRIES) {
-    throw new Error(`该异步任务最多只能重试 ${MAX_ASYNC_RETRIES} 次`);
+  if (retryCount > config.asyncJobs.maxRetries) {
+    throw new Error(`该异步任务最多只能重试 ${config.asyncJobs.maxRetries} 次`);
   }
   const taskLabel = input.taskLabel;
   const agentSnapshot = input.agentSnapshot;

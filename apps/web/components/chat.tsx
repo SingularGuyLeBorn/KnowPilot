@@ -482,6 +482,32 @@ export function ChatView() {
     consumedDeliveriesRef.current = consumedDeliveries;
   }, [consumedDeliveries]);
 
+  // 按会话持久化已消费的异步投递，刷新页面后不再显示旧结果
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+    const key = `kp:consumed-deliveries:${effectiveSessionId}`;
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        // 从外部存储恢复已消费的异步投递；eslint 规则不适用于这种外部系统同步
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setConsumedDeliveries(new Set(JSON.parse(saved)));
+      }
+    } catch {
+      // ignore
+    }
+  }, [effectiveSessionId]);
+
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+    const key = `kp:consumed-deliveries:${effectiveSessionId}`;
+    try {
+      localStorage.setItem(key, JSON.stringify([...consumedDeliveries]));
+    } catch {
+      // ignore
+    }
+  }, [effectiveSessionId, consumedDeliveries]);
+
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);

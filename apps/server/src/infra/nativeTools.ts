@@ -8,7 +8,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import type { PostEntity } from "../services.js";
+import type { PostEntity, MemoryEntity } from "../services.js";
 import {
   smartSearch,
   parsePlatformUrl,
@@ -62,9 +62,12 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   file_stat: fileStatTool,
   post_create: postCreateTool,
   post_update: postUpdateTool,
+  memory_create: memoryCreateTool,
+  memory_search: memorySearchTool,
   git_status: gitStatusTool,
   git_branch: gitBranchTool,
   git_checkout: gitCheckoutTool,
+  git_clone: gitCloneTool,
   git_log: gitLogTool,
   git_diff: gitDiffTool,
   git_commit: gitCommitTool,
@@ -289,6 +292,33 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
     },
   },
   {
+    name: "memory_create",
+    description: "创建一条记忆（写入 content/memories）。",
+    parameters: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "记忆内容" },
+        type: { type: "string", description: "类型，默认 note" },
+        strength: { type: "number", description: "强度 0-1，默认 1" },
+        keywords: { type: "array", items: { type: "string" }, description: "关键词列表" },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "memory_search",
+    description: "搜索本地记忆库。",
+    parameters: {
+      type: "object",
+      properties: {
+        keyword: { type: "string", description: "关键词" },
+        type: { type: "string", description: "按类型过滤" },
+        page: { type: "number", description: "页码，默认 1" },
+        pageSize: { type: "number", description: "每页条数，默认 20" },
+      },
+    },
+  },
+  {
     name: "git_branch",
     description: "查看 Git 仓库分支列表。",
     parameters: {
@@ -312,6 +342,18 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         create: { type: "boolean", description: "是否新建分支，默认 false" },
       },
       required: ["branch"],
+    },
+  },
+  {
+    name: "git_clone",
+    description: "克隆远程 Git 仓库到项目根目录内的指定子目录。",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "仓库 HTTPS/SSH URL" },
+        dest: { type: "string", description: "项目内目标相对目录，如 repos/foo" },
+      },
+      required: ["url", "dest"],
     },
   },
   {
@@ -1247,6 +1289,63 @@ async function gitCheckoutTool(args: Record<string, unknown>, ctx: NativeToolCon
   if (!branch) throw new Error("branch 不能为空");
   const output = await runGit(cwd, args.create === true ? ["checkout", "-b", branch] : ["checkout", branch]);
   return { path: cwd, branch, output };
+}
+
+async function gitCloneTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const url = String(args.url || "").trim();
+  if (!url) throw new Error("url 不能为空");
+  try {
+    new URL(url);
+  } catch {
+    throw new Error(`无效的仓库 URL: ${url}`);
+  }
+  const destRel = String(args.dest || "").trim();
+  if (!destRel) throw new Error("dest 不能为空");
+  const destAbs = resolveSafePath(ctx.config, destRel);
+  if (fs.existsSync(destAbs)) throw new Error(`目标目录已存在: ${destRel}`);
+  const parent = path.dirname(destAbs);
+  if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
+  const { stdout, stderr } = await execFileAsync("git", ["clone", url, destAbs], {
+    maxBuffer: 4 * 1024 * 1024,
+    windowsHide: true,
+  });
+  return { url, dest: destRel, output: (stdout || stderr || "").trim() };
+}
+
+async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const content = String(args.content || "").trim();
+  if (!content) throw new Error("content 不能为空");
+  const strength = Number(args.strength ?? 1);
+  const input = {
+    content,
+    type: args.type ? String(args.type) : "note",
+    strength: Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1,
+    keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : [],
+  };
+  const result = await ctx.services.memory.create(input);
+  if (!result.success) throw new Error(result.error?.message || "创建记忆失败");
+  const memory = result.data as MemoryEntity;
+  return { id: memory.id, type: memory.type, strength: memory.strength, keywords: memory.keywords };
+}
+
+async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const keyword = String(args.keyword || "");
+  const type = args.type ? String(args.type) : undefined;
+  const page = Math.max(1, Number(args.page || 1));
+  const pageSize = Math.min(50, Math.max(1, Number(args.pageSize || 20)));
+  const result = await ctx.services.memory.list({ page, pageSize, keyword: keyword || undefined, type });
+  return {
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    items: result.items.map((m: MemoryEntity) => ({
+      id: m.id,
+      content: m.content.slice(0, 200),
+      type: m.type,
+      strength: m.strength,
+      keywords: m.keywords,
+    })),
+  };
 }
 
 async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext) {

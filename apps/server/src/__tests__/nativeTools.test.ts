@@ -20,7 +20,7 @@ import {
 } from "./helpers/toolTestFixtures.js";
 
 describe("Native 工具注册表", () => {
-  it("listNativeTools 包含全部 32 个工具定义", () => {
+  it("listNativeTools 包含全部 35 个工具定义", () => {
     const names = listNativeTools().map((d) => d.name);
     expect(names).toEqual(expect.arrayContaining([...ALL_NATIVE_TOOL_NAMES]));
     expect(names).toHaveLength(ALL_NATIVE_TOOL_NAMES.length);
@@ -580,6 +580,71 @@ describe("native:git_branch / git_checkout", () => {
   });
 });
 
+describe("native:memory_create / memory_search", () => {
+  it("memory_create 调用 memory.create", async () => {
+    const root = createTempProjectDir();
+    const memoryService = {
+      create: vi.fn(async () => ({ success: true, data: { id: "m1", type: "note", strength: 0.8, keywords: ["a", "b"] } })),
+    };
+    const ctx = createNativeCtx(root, { services: { memory: memoryService } as never });
+    const result = (await executeNativeTool("memory_create", { content: "记住这件事", type: "note", strength: 0.8, keywords: ["a", "b"] }, ctx)) as {
+      id: string;
+      strength: number;
+    };
+    expect(memoryService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ content: "记住这件事", type: "note", strength: 0.8, keywords: ["a", "b"] }),
+    );
+    expect(result.id).toBe("m1");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("memory_search 调用 memory.list 并返回摘要", async () => {
+    const root = createTempProjectDir();
+    const memoryService = {
+      list: vi.fn(async () => ({
+        items: [{ id: "m1", content: "这是一段很长的记忆内容...", type: "note", strength: 1, keywords: ["a"] }],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        totalPages: 1,
+      })),
+    };
+    const ctx = createNativeCtx(root, { services: { memory: memoryService } as never });
+    const result = (await executeNativeTool("memory_search", { keyword: "记忆" }, ctx)) as {
+      total: number;
+      items: Array<{ content: string }>;
+    };
+    expect(memoryService.list).toHaveBeenCalledWith(expect.objectContaining({ keyword: "记忆", page: 1, pageSize: 20 }));
+    expect(result.total).toBe(1);
+    expect(result.items[0]?.content).toContain("这是一段很长的记忆内容");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("memory_create content 为空时报错", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("memory_create", { content: "  " }, ctx)).rejects.toThrow(/content 不能为空/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("native:git_clone", () => {
+  it("无效 URL 时报错", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("git_clone", { url: "not-a-url", dest: "repo" }, ctx)).rejects.toThrow(/无效/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("目标目录已存在时报错", async () => {
+    const root = createTempProjectDir();
+    fs.mkdirSync(path.join(root, "repo"), { recursive: true });
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("git_clone", { url: "https://example.com/repo.git", dest: "repo" }, ctx)).rejects.toThrow(/已存在/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
 describe("native:invoke_api", () => {
   it("转发到 invokeTrpc", async () => {
     const root = createTempProjectDir();
@@ -1032,6 +1097,18 @@ describe("native:run_shell", () => {
       config: { shell: { enabled: false, mode: "disabled", timeoutMs: 1000, maxOutputChars: 1000, shell: "auto" } },
     });
     await expect(executeNativeTool("run_shell", { command: "echo hi" }, ctx)).rejects.toThrow(/未启用/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("非零退出码返回 exitCode 而不是抛错", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root, {
+      config: { shell: { enabled: true, mode: "host_restricted", timeoutMs: 1000, maxOutputChars: 1000, shell: "cmd" } },
+    });
+    const result = (await executeNativeTool("run_shell", { command: "exit 42" }, ctx)) as {
+      exitCode: number;
+    };
+    expect(result.exitCode).toBe(42);
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
