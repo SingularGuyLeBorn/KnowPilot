@@ -38,6 +38,7 @@ interface AsyncTaskInput {
   taskLabel: string;
   agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[] };
   retryCount?: number;
+  timeoutMs?: number;
 }
 
 interface AsyncTaskOutput {
@@ -288,6 +289,7 @@ export async function startAsyncAgentTask(options: {
       taskLabel,
       agentSnapshot,
       retryCount: 0,
+      timeoutMs: options.timeoutMs,
     } satisfies AsyncTaskInput,
   });
 
@@ -343,6 +345,7 @@ export async function retryAsyncJob(
       taskLabel,
       agentSnapshot,
       retryCount,
+      timeoutMs: input.timeoutMs,
     } satisfies AsyncTaskInput,
   });
 
@@ -356,6 +359,7 @@ export async function retryAsyncJob(
   orchestrator.enqueue({
     jobId: newJobId,
     sessionId: input.sessionId,
+    timeoutMs: input.timeoutMs,
     execute: buildAsyncExecute(config, services, newJobId, input.task, agentSnapshot, retryCount),
   });
 
@@ -363,5 +367,25 @@ export async function retryAsyncJob(
     jobId: newJobId,
     status: "running",
     message: `已启动后台任务「${taskLabel}」的第 ${retryCount} 次重试。`,
+  };
+}
+
+export interface AsyncQueueStats {
+  queued: number;
+  runningGlobal: number;
+  maxGlobal: number;
+  maxPerSession: number;
+  taskTimeoutMs: number;
+}
+
+/** 获取异步任务队列实时统计（全局排队数与运行数） */
+export function getAsyncQueueStats(config: AppConfig): AsyncQueueStats {
+  const stats = getAsyncJobOrchestrator(config).getStats();
+  return {
+    queued: stats.queued,
+    runningGlobal: stats.runningGlobal,
+    maxGlobal: stats.limits.maxGlobal,
+    maxPerSession: stats.limits.maxPerSession,
+    taskTimeoutMs: stats.limits.taskTimeoutMs,
   };
 }

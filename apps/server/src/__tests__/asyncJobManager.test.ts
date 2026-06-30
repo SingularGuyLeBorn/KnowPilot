@@ -10,6 +10,7 @@ import {
   cancelAsyncJob,
   retryAsyncJob,
   startAsyncAgentTask,
+  getAsyncQueueStats,
 } from "../infra/asyncJobManager.js";
 import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
 import { createTestConfig } from "./helpers/toolTestFixtures.js";
@@ -318,5 +319,15 @@ describe("asyncJobManager 持久化", () => {
 
     const ctx = await createContextInner();
     await expect(retryAsyncJob(task.id, ctx.config, ctx.services)).rejects.toThrow(/最多只能重试/);
+  });
+
+  it("getAsyncQueueStats 返回队列统计", async () => {
+    const ctx = await createContextInner();
+    const stats = getAsyncQueueStats(ctx.config);
+    expect(stats.maxGlobal).toBeGreaterThanOrEqual(1);
+    expect(stats.maxPerSession).toBeGreaterThanOrEqual(1);
+    expect(stats.taskTimeoutMs).toBeGreaterThanOrEqual(1);
+    expect(typeof stats.queued).toBe("number");
+    expect(typeof stats.runningGlobal).toBe("number");
   });
 });

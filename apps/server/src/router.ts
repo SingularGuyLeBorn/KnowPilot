@@ -48,7 +48,13 @@ import { assertApprovalOrProceed, executeApprovedOperation } from "./infra/appro
 import { runGlobalSearch } from "./infra/globalSearch.js";
 import { getAnalyticsDashboard } from "./infra/analytics.js";
 import { loadAboutProfile } from "./infra/aboutProfile.js";
-import { pullAsyncDeliveries, listRunningAsyncJobs, cancelAsyncJob, retryAsyncJob } from "./infra/asyncJobManager.js";
+import {
+  pullAsyncDeliveries,
+  listRunningAsyncJobs,
+  cancelAsyncJob,
+  retryAsyncJob,
+  getAsyncQueueStats,
+} from "./infra/asyncJobManager.js";
 
 import { extractTextFromImage, getOcrStatus, probeOcrPython } from "./infra/ocrService.js";
 import {
@@ -131,6 +137,9 @@ const agentRouter = router({
     .meta({ description: "重试一条失败的异步任务。", aiReadable: false })
     .input(z.object({ jobId: z.string().cuid() }))
     .mutation(async ({ ctx, input }) => retryAsyncJob(input.jobId, ctx.config, ctx.services)),
+  asyncQueueStats: publicProcedure
+    .meta({ description: "获取异步任务队列实时统计。", aiReadable: false })
+    .query(({ ctx }) => getAsyncQueueStats(ctx.config)),
   ocrStatus: publicProcedure
     .meta({ description: "OCR 环境诊断（模型、Python、是否可用）。", aiReadable: false })
     .query(async ({ ctx }) => {

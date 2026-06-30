@@ -30,6 +30,8 @@ interface MessageQueueProps {
   onRemove: (id: string) => void;
   onCancel?: (jobId: string) => void;
   onRetry?: (jobId: string) => void;
+  /** 异步队列实时统计 */
+  asyncStats?: { queued: number; runningGlobal: number };
   /** 右侧设置 Panel 打开时向左偏移，避免重叠 */
   settingsPanelOpen?: boolean;
   settingsPanelWidth?: number;
@@ -228,6 +230,7 @@ export function MessageQueue({
   onRemove,
   onCancel,
   onRetry,
+  asyncStats,
   settingsPanelOpen = false,
   settingsPanelWidth = 360,
 }: MessageQueueProps) {
@@ -273,6 +276,12 @@ export function MessageQueue({
               >
                 <span className="text-[11px] font-semibold text-[var(--kp-text-2)]">
                   发送队列 · {items.length}
+                  {asyncStats && asyncStats.runningGlobal > 0 && (
+                    <span className="ml-1.5 text-[var(--kp-brand)]">· 运行 {asyncStats.runningGlobal}</span>
+                  )}
+                  {asyncStats && asyncStats.queued > 0 && (
+                    <span className="ml-1.5 text-[var(--kp-text-3)]">· 排队 {asyncStats.queued}</span>
+                  )}
                 </span>
                 <span className="ml-2 text-[10px] text-[var(--kp-text-3)]">
                   {barExpanded ? "点击收起" : "点击展开"}
@@ -333,7 +342,14 @@ export function MessageQueue({
           <div className="flex items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">发送队列</h2>
-              <p className="text-[11px] text-[var(--kp-text-3)]">拖动/箭头调序 · 异步结果仅可追加说明</p>
+              <p className="text-[11px] text-[var(--kp-text-3)]">
+                拖动/箭头调序 · 异步结果仅可追加说明
+                {asyncStats && (
+                  <span className="ml-2 text-[var(--kp-text-2)]">
+                    运行 {asyncStats.runningGlobal} · 排队 {asyncStats.queued}
+                  </span>
+                )}
+              </p>
             </div>
             <button
               type="button"

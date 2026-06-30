@@ -454,6 +454,11 @@ export function ChatView() {
     },
   );
 
+  const asyncQueueStatsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
+    enabled: !backendDown,
+    refetchInterval: (query) => (query.state.error ? 30000 : 5000),
+  });
+
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {
       void asyncQueueQuery.refetch();
@@ -1321,6 +1326,7 @@ export function ChatView() {
             setConsumedDeliveries((prev) => new Set([...prev, jobId]));
             retryAsyncJobMutation.mutate({ jobId });
           }}
+          asyncStats={asyncQueueStatsQuery.data}
           settingsPanelOpen={rightOpen}
           settingsPanelWidth={360}
         />

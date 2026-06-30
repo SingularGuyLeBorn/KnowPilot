@@ -20,7 +20,7 @@ import {
 } from "./helpers/toolTestFixtures.js";
 
 describe("Native 工具注册表", () => {
-  it("listNativeTools 包含全部 36 个工具定义", () => {
+  it("listNativeTools 包含全部 38 个工具定义", () => {
     const names = listNativeTools().map((d) => d.name);
     expect(names).toEqual(expect.arrayContaining([...ALL_NATIVE_TOOL_NAMES]));
     expect(names).toHaveLength(ALL_NATIVE_TOOL_NAMES.length);
@@ -597,6 +597,18 @@ describe("native:post_create / post_update", () => {
     await expect(executeNativeTool("post_create", { title: "  " }, ctx)).rejects.toThrow(/title 不能为空/);
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  it("post_delete 调用 post.delete 并返回 deleted", async () => {
+    const root = createTempProjectDir();
+    const postService = {
+      delete: vi.fn(async () => ({ success: true, data: { id: "p1", deleted: true } })),
+    };
+    const ctx = createNativeCtx(root, { services: { post: postService } as never });
+    const result = (await executeNativeTool("post_delete", { id: "p1" }, ctx)) as { id: string; deleted: boolean };
+    expect(postService.delete).toHaveBeenCalledWith("p1");
+    expect(result.deleted).toBe(true);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 });
 
 describe("native:git_branch / git_checkout", () => {
@@ -674,6 +686,18 @@ describe("native:memory_create / memory_search", () => {
     expect(memoryService.list).toHaveBeenCalledWith(expect.objectContaining({ keyword: "记忆", page: 1, pageSize: 20 }));
     expect(result.total).toBe(1);
     expect(result.items[0]?.content).toContain("这是一段很长的记忆内容");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("memory_delete 调用 memory.delete 并返回 deleted", async () => {
+    const root = createTempProjectDir();
+    const memoryService = {
+      delete: vi.fn(async () => ({ success: true, data: { id: "m1", deleted: true } })),
+    };
+    const ctx = createNativeCtx(root, { services: { memory: memoryService } as never });
+    const result = (await executeNativeTool("memory_delete", { id: "m1" }, ctx)) as { id: string; deleted: boolean };
+    expect(memoryService.delete).toHaveBeenCalledWith("m1");
+    expect(result.deleted).toBe(true);
     fs.rmSync(root, { recursive: true, force: true });
   });
 
@@ -1166,6 +1190,18 @@ describe("native:run_shell", () => {
       exitCode: number;
     };
     expect(result.exitCode).toBe(42);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("timeoutMs 覆盖全局默认超时", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root, {
+      config: { shell: { enabled: true, mode: "host_restricted", timeoutMs: 60_000, maxOutputChars: 1000, shell: "auto" } },
+    });
+    const sleepCmd = process.platform === "win32" ? "Start-Sleep -Milliseconds 2000" : "sleep 2";
+    await expect(
+      executeNativeTool("run_shell", { command: sleepCmd, timeoutMs: 100 }, ctx),
+    ).rejects.toThrow(/超时/);
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

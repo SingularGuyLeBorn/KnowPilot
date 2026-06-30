@@ -63,8 +63,10 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   file_stat: fileStatTool,
   post_create: postCreateTool,
   post_update: postUpdateTool,
+  post_delete: postDeleteTool,
   memory_create: memoryCreateTool,
   memory_search: memorySearchTool,
+  memory_delete: memoryDeleteTool,
   git_status: gitStatusTool,
   git_branch: gitBranchTool,
   git_checkout: gitCheckoutTool,
@@ -307,6 +309,17 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
     },
   },
   {
+    name: "post_delete",
+    description: "删除本地知识库中的 Markdown 文章。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "文章 id" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "memory_create",
     description: "创建一条记忆（写入 content/memories）。",
     parameters: {
@@ -331,6 +344,17 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         page: { type: "number", description: "页码，默认 1" },
         pageSize: { type: "number", description: "每页条数，默认 20" },
       },
+    },
+  },
+  {
+    name: "memory_delete",
+    description: "删除本地记忆库中的一条记忆。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "记忆 id" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -536,6 +560,7 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         command: { type: "string", description: "要执行的命令，如 pnpm test 或 dir" },
         cwd: { type: "string", description: "相对项目根的工作目录，默认 ." },
         shell: { type: "string", enum: ["auto", "powershell", "cmd", "bash"], description: "Shell 类型，默认 auto" },
+        timeoutMs: { type: "number", description: "命令超时毫秒数，不填则使用全局默认值" },
       },
       required: ["command"],
     },
@@ -1309,6 +1334,14 @@ async function postUpdateTool(args: Record<string, unknown>, ctx: NativeToolCont
   return { id: post.id, slug: post.slug, title: post.title };
 }
 
+async function postDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  const result = await ctx.services.post.delete(id);
+  if (!result.success) throw new Error(result.error?.message || "删除文章失败");
+  return { id, deleted: true };
+}
+
 async function gitBranchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
   const output = await runGit(cwd, args.all === true ? ["branch", "-a"] : ["branch"]);
@@ -1385,6 +1418,14 @@ async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolCo
       keywords: m.keywords,
     })),
   };
+}
+
+async function memoryDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  const result = await ctx.services.memory.delete(id);
+  if (!result.success) throw new Error(result.error?.message || "删除记忆失败");
+  return { id, deleted: true };
 }
 
 async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -1481,6 +1522,7 @@ async function runShellTool(args: Record<string, unknown>, ctx: NativeToolContex
   return runShellRestricted(ctx.config, String(args.command || ""), {
     cwd: args.cwd ? String(args.cwd) : undefined,
     shell: args.shell ? String(args.shell) : undefined,
+    timeoutMs: args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined,
   });
 }
 

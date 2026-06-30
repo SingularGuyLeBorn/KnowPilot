@@ -101,7 +101,7 @@ export interface ShellRunResult {
 export async function runShellRestricted(
   config: AppConfig,
   command: string,
-  opts?: { cwd?: string; shell?: string },
+  opts?: { cwd?: string; shell?: string; timeoutMs?: number },
 ): Promise<ShellRunResult> {
   assertShellEnabled(config);
   validateShellCommand(command);
@@ -110,12 +110,13 @@ export async function runShellRestricted(
   const { file, argsPrefix } = resolveShellExecutable(config, opts?.shell);
   const args = [...argsPrefix, command];
   const maxBuffer = config.shell.maxOutputChars * 4;
+  const timeoutMs = Math.max(1000, Math.min(300_000, opts?.timeoutMs ?? config.shell.timeoutMs));
   const start = Date.now();
 
   try {
     const { stdout, stderr } = await execFileAsync(file, args, {
       cwd,
-      timeout: config.shell.timeoutMs,
+      timeout: timeoutMs,
       maxBuffer,
       windowsHide: true,
       env: {
@@ -140,7 +141,7 @@ export async function runShellRestricted(
   } catch (e: unknown) {
     const err = e as { code?: number | string; stdout?: string; stderr?: string; killed?: boolean; signal?: string };
     if (err.killed || err.signal === "SIGTERM") {
-      throw new Error(`命令执行超时（${config.shell.timeoutMs}ms）`);
+      throw new Error(`命令执行超时（${timeoutMs}ms）`);
     }
     const stdout = (err.stdout || "").slice(0, config.shell.maxOutputChars);
     const stderr = (err.stderr || "").slice(0, config.shell.maxOutputChars);
