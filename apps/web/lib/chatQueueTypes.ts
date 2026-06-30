@@ -158,8 +158,9 @@ export function extractLocalQueueFromMerged(
 }
 
 export function sortQueueItems(items: ChatQueueItem[]): ChatQueueItem[] {
-  const pinned = items.filter((i) => i.pinned);
-  const rest = items.filter((i) => !i.pinned);
+  const byCreatedAt = (a: ChatQueueItem, b: ChatQueueItem) => a.createdAt - b.createdAt;
+  const pinned = items.filter((i) => i.pinned).sort(byCreatedAt);
+  const rest = items.filter((i) => !i.pinned).sort(byCreatedAt);
   return [...pinned, ...rest];
 }
 

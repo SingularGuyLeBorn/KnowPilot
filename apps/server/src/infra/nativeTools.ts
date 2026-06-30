@@ -8,6 +8,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
+import type { PostEntity } from "../services.js";
 import {
   smartSearch,
   parsePlatformUrl,
@@ -57,8 +58,13 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   file_copy: fileCopyTool,
   search_files: searchFilesTool,
   directory_create: directoryCreateTool,
+  directory_delete: directoryDeleteTool,
   file_stat: fileStatTool,
+  post_create: postCreateTool,
+  post_update: postUpdateTool,
   git_status: gitStatusTool,
+  git_branch: gitBranchTool,
+  git_checkout: gitCheckoutTool,
   git_log: gitLogTool,
   git_diff: gitDiffTool,
   git_commit: gitCommitTool,
@@ -231,6 +237,81 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         path: { type: "string", description: "相对路径" },
       },
       required: ["path"],
+    },
+  },
+  {
+    name: "directory_delete",
+    description: "删除项目根目录内的空目录；设置 recursive=true 可递归删除。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "相对目录路径" },
+        recursive: { type: "boolean", description: "是否递归删除非空目录，默认 false" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "post_create",
+    description: "在本地知识库中创建一篇 Markdown 文章（content/posts）。",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "文章标题" },
+        content: { type: "string", description: "Markdown 正文" },
+        slug: { type: "string", description: "URL 标识，不填则自动生成" },
+        excerpt: { type: "string", description: "摘要" },
+        coverImage: { type: "string", description: "封面图 URL" },
+        category: { type: "string", description: "分类" },
+        tags: { type: "array", items: { type: "string" }, description: "标签列表" },
+        published: { type: "boolean", description: "是否发布" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "post_update",
+    description: "更新本地知识库中的 Markdown 文章。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "文章 id" },
+        title: { type: "string", description: "文章标题" },
+        content: { type: "string", description: "Markdown 正文" },
+        slug: { type: "string", description: "URL 标识" },
+        excerpt: { type: "string", description: "摘要" },
+        coverImage: { type: "string", description: "封面图 URL" },
+        category: { type: "string", description: "分类" },
+        tags: { type: "array", items: { type: "string" }, description: "标签列表" },
+        published: { type: "boolean", description: "是否发布" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "git_branch",
+    description: "查看 Git 仓库分支列表。",
+    parameters: {
+      type: "object",
+      properties: {
+        repoId: { type: "string", description: "已注册 GitRepo 的 id" },
+        repoPath: { type: "string", description: "或直接指定本地仓库路径" },
+        all: { type: "boolean", description: "是否包含远程分支，默认 false" },
+      },
+    },
+  },
+  {
+    name: "git_checkout",
+    description: "切换或新建并切换 Git 分支。",
+    parameters: {
+      type: "object",
+      properties: {
+        repoId: { type: "string", description: "已注册 GitRepo 的 id" },
+        repoPath: { type: "string", description: "或直接指定本地仓库路径" },
+        branch: { type: "string", description: "分支名" },
+        create: { type: "boolean", description: "是否新建分支，默认 false" },
+      },
+      required: ["branch"],
     },
   },
   {
@@ -1093,6 +1174,79 @@ async function fileStatTool(args: Record<string, unknown>, ctx: NativeToolContex
     modifiedAt: stat.mtime.toISOString(),
     createdAt: stat.birthtime.toISOString(),
   };
+}
+
+async function directoryDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const abs = resolveSafePath(ctx.config, String(args.path));
+  if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${args.path}`);
+  const stat = fs.statSync(abs);
+  if (!stat.isDirectory()) throw new Error(`目标不是目录: ${args.path}`);
+  if (args.recursive === true) {
+    fs.rmSync(abs, { recursive: true, force: true });
+  } else {
+    fs.rmdirSync(abs);
+  }
+  return { path: args.path, deleted: true };
+}
+
+async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const title = String(args.title || "").trim();
+  if (!title) throw new Error("title 不能为空");
+  const input = {
+    title,
+    content: String(args.content ?? ""),
+    slug: args.slug ? String(args.slug) : undefined,
+    excerpt: args.excerpt ? String(args.excerpt) : undefined,
+    coverImage: args.coverImage ? String(args.coverImage) : null,
+    category: args.category ? String(args.category) : null,
+    tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
+    published: args.published === true,
+  };
+  const result = await ctx.services.post.create(input);
+  if (!result.success) throw new Error(result.error?.message || "创建文章失败");
+  const post = result.data as PostEntity;
+  return { id: post.id, slug: post.slug, title: post.title };
+}
+
+async function postUpdateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  const input = {
+    id,
+    title: args.title !== undefined ? String(args.title) : undefined,
+    content: args.content !== undefined ? String(args.content) : undefined,
+    slug: args.slug !== undefined ? String(args.slug) : undefined,
+    excerpt: args.excerpt !== undefined ? String(args.excerpt) : undefined,
+    coverImage: args.coverImage !== undefined ? (args.coverImage ? String(args.coverImage) : null) : undefined,
+    category: args.category !== undefined ? (args.category ? String(args.category) : null) : undefined,
+    tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
+    published: args.published !== undefined ? args.published === true : undefined,
+  };
+  const result = await ctx.services.post.update(input);
+  if (!result.success) throw new Error(result.error?.message || "更新文章失败");
+  const post = result.data as PostEntity;
+  return { id: post.id, slug: post.slug, title: post.title };
+}
+
+async function gitBranchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
+  const output = await runGit(cwd, args.all === true ? ["branch", "-a"] : ["branch"]);
+  const branches = output
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => ({
+      name: line.replace(/^[*+]\s+/, "").trim(),
+      current: line.startsWith("*"),
+    }));
+  return { path: cwd, branches };
+}
+
+async function gitCheckoutTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
+  const branch = String(args.branch || "").trim();
+  if (!branch) throw new Error("branch 不能为空");
+  const output = await runGit(cwd, args.create === true ? ["checkout", "-b", branch] : ["checkout", branch]);
+  return { path: cwd, branch, output };
 }
 
 async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext) {

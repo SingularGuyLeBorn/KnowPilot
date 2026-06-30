@@ -4,6 +4,7 @@
 
 import fs from "fs";
 import path from "path";
+import { execFileSync } from "child_process";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   executeNativeTool,
@@ -19,7 +20,7 @@ import {
 } from "./helpers/toolTestFixtures.js";
 
 describe("Native 工具注册表", () => {
-  it("listNativeTools 包含全部 27 个工具定义", () => {
+  it("listNativeTools 包含全部 32 个工具定义", () => {
     const names = listNativeTools().map((d) => d.name);
     expect(names).toEqual(expect.arrayContaining([...ALL_NATIVE_TOOL_NAMES]));
     expect(names).toHaveLength(ALL_NATIVE_TOOL_NAMES.length);
@@ -463,6 +464,119 @@ describe("native:file_stat", () => {
     expect(result.isFile).toBe(true);
     expect(result.size).toBe(3);
     expect(result.modifiedAt).toBeTruthy();
+  });
+});
+
+describe("native:directory_delete", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = createTempProjectDir();
+    fs.mkdirSync(path.join(root, "empty"), { recursive: true });
+    fs.mkdirSync(path.join(root, "full"), { recursive: true });
+    fs.writeFileSync(path.join(root, "full", "a.txt"), "a", "utf8");
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("删除空目录", async () => {
+    const ctx = createNativeCtx(root);
+    await executeNativeTool("directory_delete", { path: "empty" }, ctx);
+    expect(fs.existsSync(path.join(root, "empty"))).toBe(false);
+  });
+
+  it("recursive 删除非空目录", async () => {
+    const ctx = createNativeCtx(root);
+    await executeNativeTool("directory_delete", { path: "full", recursive: true }, ctx);
+    expect(fs.existsSync(path.join(root, "full"))).toBe(false);
+  });
+
+  it("目标不是目录时报错", async () => {
+    fs.writeFileSync(path.join(root, "file.txt"), "", "utf8");
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("directory_delete", { path: "file.txt" }, ctx)).rejects.toThrow(/不是目录/);
+  });
+});
+
+describe("native:post_create / post_update", () => {
+  it("post_create 调用 post.create 并返回 slug", async () => {
+    const root = createTempProjectDir();
+    const postService = {
+      create: vi.fn(async () => ({ success: true, data: { id: "p1", slug: "hello-world", title: "Hello" } })),
+    };
+    const ctx = createNativeCtx(root, { services: { post: postService } as never });
+    const result = (await executeNativeTool(
+      "post_create",
+      { title: "Hello", content: "# Hi", tags: ["a", "b"], published: true },
+      ctx,
+    )) as { id: string; slug: string };
+    expect(postService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Hello", content: "# Hi", published: true, tags: ["a", "b"] }),
+    );
+    expect(result.slug).toBe("hello-world");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("post_update 调用 post.update", async () => {
+    const root = createTempProjectDir();
+    const postService = {
+      update: vi.fn(async () => ({ success: true, data: { id: "p1", slug: "hello", title: "Hello Updated" } })),
+    };
+    const ctx = createNativeCtx(root, { services: { post: postService } as never });
+    const result = (await executeNativeTool("post_update", { id: "p1", title: "Hello Updated" }, ctx)) as {
+      id: string;
+      title: string;
+    };
+    expect(postService.update).toHaveBeenCalledWith(expect.objectContaining({ id: "p1", title: "Hello Updated" }));
+    expect(result.title).toBe("Hello Updated");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("post_create title 为空时报错", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("post_create", { title: "  " }, ctx)).rejects.toThrow(/title 不能为空/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("native:git_branch / git_checkout", () => {
+  let repo: string;
+  const isGitRepo = fs.existsSync(path.join(process.cwd(), ".git"));
+
+  beforeEach(() => {
+    repo = createTempProjectDir();
+    if (isGitRepo) {
+      execFileSync("git", ["init"], { cwd: repo, stdio: "ignore" });
+      execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: repo, stdio: "ignore" });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: repo, stdio: "ignore" });
+      fs.writeFileSync(path.join(repo, "a.txt"), "a", "utf8");
+      execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", "init"], { cwd: repo, stdio: "ignore" });
+    }
+  });
+
+  afterEach(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  it.skipIf(!isGitRepo)("git_branch 列出分支并标记当前分支", async () => {
+    const ctx = createNativeCtx(repo);
+    const result = (await executeNativeTool("git_branch", { repoPath: "." }, ctx)) as {
+      branches: Array<{ name: string; current: boolean }>;
+    };
+    expect(result.branches.some((b) => b.current)).toBe(true);
+  });
+
+  it.skipIf(!isGitRepo)("git_checkout create 创建并切换分支", async () => {
+    const ctx = createNativeCtx(repo);
+    await executeNativeTool("git_checkout", { repoPath: ".", branch: "feature", create: true }, ctx);
+    const result = (await executeNativeTool("git_branch", { repoPath: "." }, ctx)) as {
+      branches: Array<{ name: string; current: boolean }>;
+    };
+    expect(result.branches.some((b) => b.name === "feature" && b.current)).toBe(true);
   });
 });
 

@@ -450,7 +450,7 @@ export function ChatView() {
     { sessionId: effectiveSessionId! },
     {
       enabled: !!effectiveSessionId && !backendDown,
-      refetchInterval: 2500,
+      refetchInterval: (query) => (query.state.error ? 10000 : 2500),
     },
   );
 
