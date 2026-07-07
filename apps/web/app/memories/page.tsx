@@ -7,6 +7,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Brain, Plus, Zap, Tag, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Memory } from "@knowpilot/shared";
 import { useMemory } from "@/lib/hooks";
@@ -99,12 +100,20 @@ export default function MemoriesPage() {
                     {memory.type === "preference" ? "个性偏好" : "客观事实"}
                   </span>
                   
-                  <button
-                    onClick={() => setDeleteId(memory.id)}
-                    className="opacity-0 group-hover:opacity-100 text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
-                  >
-                    粉碎
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Link
+                      href={`/memories/edit/${memory.id}`}
+                      className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                    >
+                      编辑
+                    </Link>
+                    <button
+                      onClick={() => setDeleteId(memory.id)}
+                      className="text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
+                    >
+                      粉碎
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-xs text-[var(--vp-c-text-2)] leading-relaxed mb-4">

@@ -7,6 +7,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { GitBranch, Plus, GitCommit, Sparkles, RefreshCw } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { GitRepo } from "@knowpilot/shared";
 import { useGit } from "@/lib/hooks";
@@ -33,7 +34,6 @@ export default function GitPage() {
       name: "KnowPilot 主仓库",
       path: "D:\\ALL IN AI\\KnowPilot",
       branch: "main",
-      remoteUrl: "",
     });
   };
 
@@ -130,7 +130,14 @@ export default function GitPage() {
             >
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-bold text-[var(--vp-c-text-1)]">{selected.name} · 详情</h2>
-                <button
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/git/edit/${selected.id}`}
+                    className="inline-flex items-center rounded-lg border border-[var(--vp-c-divider)] px-2 py-1 text-[10px] hover:bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]"
+                  >
+                    编辑
+                  </Link>
+                  <button
                   type="button"
                   onClick={() => {
                     void statusQuery.refetch();
@@ -142,6 +149,7 @@ export default function GitPage() {
                   <RefreshCw className="h-3 w-3" />
                   刷新
                 </button>
+                </div>
               </div>
 
               <div>

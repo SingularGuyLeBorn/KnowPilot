@@ -7,6 +7,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { FileCode2, Plus, Sparkles, Tag } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Prompt } from "@knowpilot/shared";
 import { usePrompt } from "@/lib/hooks";
@@ -105,12 +106,20 @@ export default function PromptsPage() {
                       </h3>
                       <p className="text-[10px] text-[var(--vp-c-text-3)]">v{prompt.version}</p>
                     </div>
-                    <button
-                      onClick={() => setDeleteId(prompt.id)}
-                      className="opacity-0 group-hover:opacity-100 text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
-                    >
-                      删除
-                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Link
+                        href={`/prompts/edit/${prompt.id}`}
+                        className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                      >
+                        编辑
+                      </Link>
+                      <button
+                        onClick={() => setDeleteId(prompt.id)}
+                        className="text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
 
                   {prompt.description && (

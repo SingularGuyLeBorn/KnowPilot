@@ -9,6 +9,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Wand2, Plus, Code, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Skill } from "@knowpilot/shared";
 import { useSkill } from "@/lib/hooks";
@@ -126,12 +127,20 @@ export default function SkillsPage() {
                   </div>
                 </div>
                 
-                <button
-                  onClick={() => setDeleteId(skill.id)}
-                  className="opacity-0 group-hover:opacity-100 text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
-                >
-                  卸载
-                </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Link
+                    href={`/skills/edit/${skill.id}`}
+                    className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                  >
+                    编辑
+                  </Link>
+                  <button
+                    onClick={() => setDeleteId(skill.id)}
+                    className="text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
+                  >
+                    卸载
+                  </button>
+                </div>
               </div>
 
               <p className="text-xs text-[var(--vp-c-text-3)] min-h-[35px] mb-4">

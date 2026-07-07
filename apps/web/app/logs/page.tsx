@@ -29,7 +29,7 @@ export default function LogsPage() {
   const [level, setLevel] = useState<string>("");
   
   // 动态数据获取
-  const { data, isLoading, refetch } = useList({ page, pageSize: 50, level });
+  const { data, isLoading, refetch } = useList({ page, pageSize: 50, level: level || undefined });
 
   // 清空日志 Mutation
   const clearAllMutation = trpc.log.clearAll.useMutation({

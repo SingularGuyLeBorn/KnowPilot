@@ -7,6 +7,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Activity, Sparkles, Clock, Bot } from "lucide-react";
+import Link from "next/link";
 import type { Run } from "@knowpilot/shared";
 import { useRun } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
@@ -139,13 +140,21 @@ export default function RunsPage() {
                         {formatRelativeTime(run.createdAt)}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => setDeleteId(run.id)}
-                          className="text-xs text-red-500 hover:text-red-600"
-                        >
-                          删除
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/runs/edit/${run.id}`}
+                            className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)]"
+                          >
+                            详情
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteId(run.id)}
+                            className="text-xs text-red-500 hover:text-red-600"
+                          >
+                            删除
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

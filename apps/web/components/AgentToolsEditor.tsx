@@ -19,6 +19,7 @@ const NATIVE_LABELS: Record<string, string> = {
   read_file: "读取文件",
   write_file: "写入文件",
   list_directory: "列出目录",
+  delete_all_chat_sessions: "删除全部会话",
   file_rename: "重命名文件",
   file_move: "移动文件",
   file_copy: "复制文件",

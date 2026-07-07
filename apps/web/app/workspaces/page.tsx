@@ -7,6 +7,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { HardDrive, Plus, Folder, MapPin, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Workspace } from "@knowpilot/shared";
 import { useWorkspace } from "@/lib/hooks";
@@ -103,12 +104,20 @@ export default function WorkspacesPage() {
                     </h3>
                   </div>
                   
-                  <button
-                    onClick={() => setDeleteId(workspace.id)}
-                    className="opacity-0 group-hover:opacity-100 text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
-                  >
-                    注销
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Link
+                      href={`/workspaces/edit/${workspace.id}`}
+                      className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                    >
+                      编辑
+                    </Link>
+                    <button
+                      onClick={() => setDeleteId(workspace.id)}
+                      className="text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10"
+                    >
+                      注销
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-xs text-[var(--vp-c-text-3)] min-h-[30px] mb-4">
