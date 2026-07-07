@@ -70,6 +70,7 @@ import {
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
 import { MessageQueue } from "@/components/chatQueue";
+import { SubagentPanel } from "@/components/subagentPanel";
 
 /* ─── Sub-components ─── */
 
@@ -1277,6 +1278,7 @@ export function ChatView() {
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
+        <SubagentPanel parentSessionId={effectiveSessionId ?? undefined} />
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">对话历史</h2>
           <button type="button" onClick={startNewChat} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")} aria-label="新建对话" title="新建对话（发送首条消息时创建）">
