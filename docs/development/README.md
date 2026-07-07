@@ -9,28 +9,30 @@
 ## 文档结构
 
 ```text
-docs/development/
-├── README.md                         # 本文件：总览与索引
-├── L1-foundation.md                  # L1：博客与项目基础
-├── L2-ai-core.md                     # L2：AI 核心（Agent / Skill / MCP / Memory / Chat）
-├── L3-content-knowledge.md           # L3：内容与知识运维（File / Git / Task / Log / Workspace）
-├── L4-automation-workflows.md        # L4：自动化与工作流（Trigger / Approval / Agent Loop）
-├── L5-polish-scale.md                # L5：打磨与规模化（Search / Auth / Analytics / Deploy）
-├── L6-future-scale.md                # L6+：未来扩展（规划，非当前范围）
-├── backend/
-│   ├── api-design.md                 # 后端 API 设计总则
-│   ├── agent-tools.md                # Agent native / skill / mcp 工具链
-│   ├── error-handling.md             # 错误处理规范：让 AI 和人都能看懂
-│   ├── ai-callable-api.md            # 如何让 AI 方便、安全地调用后端
-│   └── entity-sync.md                # Markdown / SQLite / 运行时数据同步策略
-├── frontend/
-│   ├── ui-design.md                  # Chat 三栏、图标、玻璃拟态
-│   ├── agent-ux-reference.md         # OpenClaw / Hermes / Codex 对标
-│   └── e2e-testing.md                # Playwright Chat E2E
-├── deployment/
-│   └── cloudflare-tunnel.md          # 远程访问（Tunnel）
-└── entities/
-    └── entity-matrix.md            # 18 个实体的 API/目录/状态矩阵
+docs/
+├── development/
+│   ├── README.md                         # 本文件：总览与索引
+│   ├── L1-foundation.md                  # L1：博客与项目基础
+│   ├── L2-ai-core.md                     # L2：AI 核心（Agent / Skill / MCP / Memory / Chat）
+│   ├── L3-content-knowledge.md           # L3：内容与知识运维（File / Git / Task / Log / Workspace）
+│   ├── L4-automation-workflows.md        # L4：自动化与工作流（Trigger / Approval / Agent Loop）
+│   ├── L5-polish-scale.md                # L5：打磨与规模化（Search / Auth / Analytics / Deploy）
+│   ├── L6-future-scale.md                # L6+：未来扩展（规划，非当前范围）
+│   ├── REMEDIATION_PLAN.md               # 整改计划（审视发现的问题与修复进度）
+│   ├── backend/
+│   │   ├── api-design.md                 # 后端 API 设计总则
+│   │   ├── agent-tools.md                # Agent native / skill / mcp 工具链
+│   │   ├── error-handling.md             # 错误处理规范：让 AI 和人都能看懂
+│   │   ├── ai-callable-api.md            # 如何让 AI 方便、安全地调用后端
+│   │   └── entity-sync.md                # Markdown / SQLite / 运行时数据同步策略
+│   ├── frontend/
+│   │   ├── ui-design.md                  # Chat 三栏、图标、玻璃拟态
+│   │   ├── agent-ux-reference.md         # OpenClaw / Hermes / Codex 对标
+│   │   └── e2e-testing.md                # Playwright Chat E2E
+│   └── entities/
+│       └── entity-matrix.md            # 19 个实体的 API/目录/状态矩阵
+└── deployment/
+    └── cloudflare-tunnel.md          # 远程访问（Tunnel）
 ```
 
 ---

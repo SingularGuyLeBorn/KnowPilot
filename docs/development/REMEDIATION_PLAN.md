@@ -35,10 +35,10 @@
 | P2-5 | 🟢 轻微 | `autoCompact` 静默降级 | ⏸️ |
 | P2-6 | 🟢 轻微 | `recoverStaleAsyncJobs` 仅启动时跑一次 | ⏸️ |
 | P2-7 | 🟢 轻微 | Post 软删不触发 EventBus | ⬜ |
-| D-1 | 📋 文档 | entity-matrix 补 InfoSource，"18 实体"改 19 | ⬜ |
-| D-2 | 📋 文档 | E2E 文件名清单更新（chat-thinking 拆分等） | ⬜ |
-| D-3 | 📋 文档 | `docs/development/README.md` 索引路径修正 | ⬜ |
-| D-4 | 📋 文档 | 新增 `.dev-log` 记录封板后演进 | ⬜ |
+| D-1 | 📋 文档 | entity-matrix 补 InfoSource，"18 实体"改 19 | ✅ |
+| D-2 | 📋 文档 | E2E 文件名清单更新（chat-thinking 拆分等） | ✅ |
+| D-3 | 📋 文档 | `docs/development/README.md` 索引路径修正 | ✅ |
+| D-4 | 📋 文档 | 新增 `.dev-log` 记录封板后演进 | ✅ |
 
 ---
 
@@ -254,21 +254,25 @@
 
 - **定位**：`docs/development/entities/entity-matrix.md`
 - **修复**：新增 `InfoSource` 行；"18 实体"措辞改 19。
+- **状态**：✅
 
 ### D-2 E2E 文件名清单更新
 
 - **定位**：`docs/development/frontend/e2e-testing.md`；`AGENTS.md` 测试表
 - **修复**：`chat-thinking.spec.ts` → `chat-thinking-real.spec.ts` / `chat-thinking-mock.spec.ts`；补 `post-trash`、`ui-components`、`chat-*-mock`；路由数 19 → 20。
+- **状态**：✅
 
 ### D-3 索引路径修正
 
 - **定位**：`docs/development/README.md:30`
-- **修复**：`docs/development/deployment/cloudflare-tunnel.md` → `docs/deployment/cloudflare-tunnel.md`。
+- **修复**：`deployment/` 是 `docs/` 下与 `development/` 平级，不是其子目录；补 `REMEDIATION_PLAN.md` 索引。
+- **状态**：✅
 
 ### D-4 新增 `.dev-log` 记录封板后演进
 
 - **定位**：`.dev-log/`
 - **修复**：新增 `session-2026-07-07.md`，记录 Mock E2E 体系落地、chatHistory 扁平格式重构、本次审视与整改计划。
+- **状态**：✅
 
 ---
 
@@ -280,6 +284,6 @@
 | 第 2 批 | P1-1 ~ P1-6 + P1-10（中等） | ✅ 已完成（vitest 228 passed） |
 | 第 3 批 | P1-7 ~ P1-11（中等） | ✅ 已完成（P1-9 暂缓，P1-10 随第 2 批完成） |
 | 第 4 批 | P2-2 / P2-4 / P2-7（轻微可做） | ⬜ |
-| 第 5 批 | D-1 ~ D-4（文档同步） | ⬜ |
+| 第 5 批 | D-1 ~ D-4（文档同步） | ✅ 已完成 |
 
 > 每完成一批即 git commit + 更新本文档状态列。

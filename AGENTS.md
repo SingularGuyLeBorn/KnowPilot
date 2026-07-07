@@ -9,7 +9,7 @@
 KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」。
 
 - **核心原则**：本地 Markdown 文件是数据的唯一事实源，SQLite（通过 Prisma）只作为查询与缓存层。
-- **当前阶段**：**L1–L5 已全部落地**。本地 Markdown 为源、18 实体 CRUD + 管理页、Agent SSE Chat、自动化/审批、FTS 搜索、可选鉴权、Docker/CI 均已就绪。
+- **当前阶段**：**L1–L5 已全部落地**。本地 Markdown 为源、19 实体 CRUD + 管理页、Agent SSE Chat、自动化/审批、FTS 搜索、可选鉴权、Docker/CI 均已就绪。
 
 项目完整路径：`D:\ALL IN AI\KnowPilot`
 
@@ -46,12 +46,12 @@ KnowPilot/
 ├── apps/
 │   ├── server/                 # Express + tRPC + Prisma 后端
 │   │   ├── prisma/
-│   │   │   ├── schema.prisma   # 18 个实体模型
+│   │   │   ├── schema.prisma   # 19 个实体模型
 │   │   │   ├── seed.ts         # 3 篇示例文章种子
 │   │   │   └── dev.db          # SQLite 数据库（运行时生成/更新）
 │   │   └── src/
 │   │       ├── index.ts        # Express 入口（启动 EventBus + TriggerEngine）
-│   │       ├── router.ts       # 唯一 API 路由文件（19 业务路由 + about + ai 反射）
+│   │       ├── router.ts       # 唯一 API 路由文件（20 业务路由 + about + ai 反射）
 │   │       ├── services.ts     # 唯一业务服务层文件（收拢全部 Service 逻辑）
 │   │       ├── db.ts           # Prisma 单例
 │   │       ├── infra/          # agentTools、nativeTools、mcpClient、autoCompact、agentStream 等
@@ -159,7 +159,7 @@ pnpm test         # 全仓库运行 Vitest
 - **Server**：Express 监听 `SERVER_PORT`（默认 3010）。
   - `/health`：健康检查。
   - `/api/posts/assets`：静态托管 `content/posts/` 下的图片等资源。
-  - `/api/trpc`：tRPC 端点，挂载 19 个实体 router + `ai` 反射。
+  - `/api/trpc`：tRPC 端点，挂载 20 个实体 router + `ai` 反射。
   - `/uploads`：静态托管 `content/uploads/` 上传文件。
 - **Web**：Next.js Dev Server（默认 3000）。
   - `next.config.ts` 配置 rewrites：
@@ -225,7 +225,7 @@ pnpm test         # 全仓库运行 Vitest
 ### 项目扁平化与代码收拢约定
 
 为了杜绝项目文件夹过深、同名文件繁多引发维护崩溃，以及防止功能重复定义，项目必须严格遵循**“单文件逻辑收拢”**原则：
-1. **后端业务层合并**：禁止创建 `services/` 子目录及零散服务文件。所有 18 个实体的 Service 业务逻辑统一写在 `apps/server/src/services.ts` 中。
+1. **后端业务层合并**：禁止创建 `services/` 子目录及零散服务文件。所有 19 个实体的 Service 业务逻辑统一写在 `apps/server/src/services.ts` 中。
 2. **后端路由层合并**：禁止创建 `trpc/routers/` 子目录及零散路由文件。所有 API 路由统一声明在 `apps/server/src/router.ts` 中。
 3. **前端 Hooks 合并**：禁止创建 `hooks/` 子目录及零散数据 hooks 文件。所有 React Query hooks 统一放在 `apps/web/lib/hooks.ts` 中。
 4. **前端通用组件合并**：禁止创建 `components/shared/` 目录及零散小组件。通用的页面基础 UI 组件（如分页、空状态、骨架屏、确认弹窗）统一放在 `apps/web/components/shared.tsx` 中。
@@ -253,16 +253,23 @@ pnpm --filter @knowpilot/server test
 
 | 文件 | 覆盖 |
 |---|---|
-| `trpc.test.ts` | 18 实体 CRUD、db:sync、Agent chat |
+| `trpc.test.ts` | 19 实体 CRUD（含 InfoSource）、db:sync、Agent chat、GitRepo 沙箱、git.commit/pull 审批 |
+| `trpcSmoke.test.ts` | 所有 ai-readable procedure 通过 ai.invoke 触达无崩溃 |
 | `auth.test.ts` | AUTH_MODE 鉴权 |
 | `fts.test.ts` | FTS5 全局搜索索引 |
-| `nativeTools.test.ts` | 11 个 native 工具 |
+| `nativeTools.test.ts` | native 工具 |
 | `agentTools.test.ts` | 解析、授权、并发批次 |
 | `skillRunner.test.ts` | Skill 沙箱 |
 | `mcpClient.test.ts` | MCP 截断 |
-| `e2e/chat-thinking.spec.ts` | Chat 发消息/重试、思考时间线不重复 |
-| `e2e/admin-pages.spec.ts` | 管理页冒烟（19 路由 + /about） |
+| `chatHistory.test.ts` | 扁平存储重建多轮 ReAct 消息链 |
+| `capabilities.test.ts` / `platformFetch.test.ts` | 运行时能力 / 平台 fetch |
 | `e2e/blog-smoke.spec.ts` | L1 博客冒烟（/posts、/editor、/、/posts/[slug]） |
+| `e2e/admin-pages.spec.ts` | 管理页冒烟（20 路由 + /about） |
+| `e2e/chat-thinking-real.spec.ts` | 真实 LLM Chat 发消息/重试、思考时间线不重复 |
+| `e2e/chat-tool-hint-real.spec.ts` / `chat-ocr-real.spec.ts` / `chat-queue-real.spec.ts` | 真实 LLM 工具/OCR/异步队列 |
+| `e2e/chat-mock.spec.ts` / `chat-thinking-mock.spec.ts` / `chat-tool-error-mock.spec.ts` | Mock E2E（全离线，MOCK_LLM/MCP/NATIVE_TOOLS） |
+| `e2e/post-trash.spec.ts` | 文章回收站删除/恢复（try/finally 强制清理） |
+| `e2e/ui-components.spec.ts` | 通用组件冒烟 |
 
 Agent 工具链：`docs/development/backend/agent-tools.md`  
 Chat UX 对标：`docs/development/frontend/agent-ux-reference.md`  
@@ -318,4 +325,4 @@ pnpm lint
 
 ---
 
-> 最后更新：2026-06-29。L1–L5 已全部落地；lint 0 error + Vitest 88 passed + Playwright 26 E2E passed + CI 全绿。
+> 最后更新：2026-07-07。L1–L5 已全部落地；本轮按 REMEDIATION_PLAN.md 完成 P0/P1/P2 整改 + 文档同步（19 实体，含 InfoSource）。lint 0 error + Vitest 228 passed + Playwright E2E 双套件（真实 + Mock）+ CI 全绿。

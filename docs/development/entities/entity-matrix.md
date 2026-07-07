@@ -1,7 +1,7 @@
 # 实体总览矩阵
 
 > 快速查阅每个实体的「后端 API / 前端调用 / 内容目录 / 同步策略 / AI 调用 / 当前状态」。
-> 最后与代码对齐：**2026-06-29**。
+> 最后与代码对齐：**2026-07-07**。
 
 ---
 
@@ -24,7 +24,8 @@
 | **Approval** | [已完成] CRUD + list + execute | [已完成] `/approvals` | 无 | 仅数据库 | [注意] 仅读 | L4 ApprovalGate |
 | **Tool** | [已完成] CRUD + list | [已完成] `/tools` | 无 | 仅数据库 | [已完成] | L4 工具注册 UI |
 | **Run** | [已完成] CRUD + list | [已完成] `/runs` | 无 | 仅数据库 | [已完成] | L2 Agent 运行时记录 |
-| **Credential** | [已完成] CRUD + list | [已完成] `/credentials` | 无 | 仅数据库 | [注意] 敏感 | L5 凭据 UI（值脱敏） |
+| **Credential** | [已完成] CRUD + list | [已完成] `/credentials` | 无 | 仅数据库 | [注意] 敏感 | L5 凭据 UI（API 返回遮蔽预览 valuePreview，不返回明文） |
+| **InfoSource** | [已完成] CRUD + list | [已完成] `/sources` | `content/sources/` | 双向 + `db:sync`（`.json`） | [已完成] | L5 信息源管理页 |
 | **AI 反射** | [已完成] `ai.tools` / `ai.invoke` | [已完成] `useAIApi()` | 无 | 无 | — | L2 工具发现已完成 |
 
 ---
@@ -136,5 +137,12 @@ id, agentId?, taskId?, status, input?, output?, error?, startedAt?, finishedAt?,
 ### Credential
 
 ```ts
-id, name, type, value, createdAt, updatedAt
+id, name, type, valuePreview, scope, lastUsedAt?, expiresAt?, metadata?, createdAt, updatedAt
+```
+> API 仅返回遮蔽预览 `valuePreview`（首4+••••+末4），明文 `value` 仅内部解密使用，永不通过 tRPC 返回。
+
+### InfoSource
+
+```ts
+id, name, url, type, description, reliability, language, tags, enabled, sourceSlug?, createdAt, updatedAt
 ```

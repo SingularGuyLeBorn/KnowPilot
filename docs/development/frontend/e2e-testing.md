@@ -25,13 +25,37 @@ Playwright 会自动启动 **server:3010**（本地若已在跑则复用）+ **w
 
 ## 用例目录
 
+### 默认 E2E 套件（真实 LLM，`pnpm test:e2e`）
+
 | 文件 | 场景 |
 |---|---|
-| `apps/web/e2e/chat-thinking.spec.ts` | 新对话发消息；用户-only 会话重试 |
-| `apps/web/e2e/admin-pages.spec.ts` | 管理页冒烟（19 路由 + /about） |
 | `apps/web/e2e/blog-smoke.spec.ts` | L1 博客冒烟（/posts、/editor、/、/posts/[slug]） |
+| `apps/web/e2e/admin-pages.spec.ts` | 管理页冒烟（20 路由 + /about） |
+| `apps/web/e2e/chat-thinking-real.spec.ts` | 真实 LLM：新对话发消息；用户-only 会话重试 |
+| `apps/web/e2e/chat-tool-hint-real.spec.ts` | 真实 LLM：工具调用 pill/hint |
+| `apps/web/e2e/chat-ocr-real.spec.ts` | 真实 LLM：图片 OCR |
+| `apps/web/e2e/chat-queue-real.spec.ts` | 真实 LLM：异步队列 |
+| `apps/web/e2e/chat-ocr.spec.ts` | OCR 交互（mock SSE） |
+| `apps/web/e2e/chat-tool-hint.spec.ts` | 工具 pill/hint（mock SSE） |
+| `apps/web/e2e/chat-runtime-capabilities.spec.ts` | 运行时能力自检 |
+| `apps/web/e2e/post-trash.spec.ts` | 文章回收站删除/恢复（含 try/finally 强制清理） |
+| `apps/web/e2e/ui-components.spec.ts` | 通用组件冒烟（分页/空态/弹窗等） |
 | `apps/web/e2e/helpers/mockStream.ts` | Mock SSE（round_start / thinking / done） |
 | `apps/web/e2e/helpers/sessionFixture.ts` | 创建「仅有用户消息」会话 |
+| `apps/web/e2e/helpers/trpcE2e.ts` | tRPC E2E 调用封装 |
+| `apps/web/e2e/helpers/realChatFixture.ts` | 真实 LLM Chat 断言封装 |
+
+### Mock E2E 套件（`pnpm test:e2e:mock`，全离线，三开关 MOCK_LLM/MCP/NATIVE_TOOLS）
+
+| 文件 | 场景 |
+|---|---|
+| `apps/web/e2e/chat-mock.spec.ts` | 问候 + 触发 web_search 工具并显示 pill/hint |
+| `apps/web/e2e/chat-thinking-mock.spec.ts` | Mock 思考时间线不重复 |
+| `apps/web/e2e/chat-tool-error-mock.spec.ts` | Mock 工具失败（红色 pill） |
+| `apps/web/e2e/helpers/mockChatFixture.ts` | Mock Chat 断言封装（适配极快流式） |
+| `apps/web/playwright.config.mock.ts` | Mock 专用配置（3003/3011 + cross-env 启动） |
+
+> 默认 `playwright.config.ts` 已 `testIgnore: ["**/*mock.spec.ts"]`，两套互不干扰。
 
 ---
 
