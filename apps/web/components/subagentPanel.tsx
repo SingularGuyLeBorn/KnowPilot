@@ -21,6 +21,18 @@ interface SubagentBrief {
   taskDescription?: string | null;
   model?: string | null;
   updatedAt: string | Date;
+  createdAt?: string | Date;
+}
+
+/** 估算进度：running 时基于已耗时 / 默认 5min 上限，封顶 99%（视觉反馈，非精确） */
+const PROGRESS_TIMEOUT_MS = 5 * 60 * 1000;
+function estimateProgress(createdAt?: string | Date | null): number | null {
+  if (!createdAt) return null;
+  const start = new Date(createdAt).getTime();
+  if (!Number.isFinite(start)) return null;
+  const elapsed = Date.now() - start;
+  if (elapsed <= 0) return 0;
+  return Math.min(99, Math.round((elapsed / PROGRESS_TIMEOUT_MS) * 100));
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -83,6 +95,20 @@ function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () =>
                 <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5">{STATUS_LABEL[sub.status] ?? sub.status}</span>
                 {sub.model && <span className="truncate">{sub.model}</span>}
               </div>
+              {isRunning && (() => {
+                const pct = estimateProgress(sub.createdAt);
+                return pct != null ? (
+                  <div data-testid="subagent-progress" className="space-y-1">
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--kp-bg-mute)]">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[var(--kp-brand-light)] to-[var(--kp-brand)] transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <div className="text-[9px] tabular-nums text-[var(--kp-text-3)]">估算进度 {pct}%</div>
+                  </div>
+                ) : null;
+              })()}
               {sub.taskDescription && (
                 <p className="line-clamp-3 text-[11px] leading-relaxed text-[var(--kp-text-3)]">{sub.taskDescription}</p>
               )}
