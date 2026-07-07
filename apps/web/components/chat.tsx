@@ -1288,6 +1288,47 @@ export function ChatView() {
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
+        <div className="w-64 shrink-0 border-b border-[var(--kp-divider)] px-3 py-2.5" data-testid="chat-left-panel-header">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+              <Bot className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-semibold text-[var(--kp-text-1)]">
+                {selectedAgent?.name ?? "assistant"}
+              </div>
+              <div className="truncate text-[10px] text-[var(--kp-text-3)]">{chatConfig.model}</div>
+            </div>
+          </div>
+          {(() => {
+            const pills = (skillsQuery.data?.items ?? []).filter((s: any) => s.enabled).slice(0, 3);
+            if (pills.length === 0) return null;
+            return (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {pills.map((s: any) => {
+                  const active = selectedSkill?.id === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setSelectedSkill(active ? null : { id: s.id, name: s.name, icon: s.icon, description: s.description, code: s.code })}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] transition",
+                        active
+                          ? "bg-[var(--kp-brand)] text-white"
+                          : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
+                      )}
+                      title={s.description}
+                    >
+                      <Sparkles className="h-2.5 w-2.5" />
+                      <span className="max-w-[5rem] truncate">{s.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
         <SubagentPanel parentSessionId={effectiveSessionId ?? undefined} onCreate={() => setShowCreateSubagent(true)} />
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">对话历史</h2>
