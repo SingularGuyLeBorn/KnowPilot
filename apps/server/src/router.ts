@@ -16,7 +16,7 @@ import {
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
-  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema,
+  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, switchMessageVersionSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
   createLogSchema, updateLogSchema, listLogsSchema,
@@ -55,7 +55,9 @@ import {
   cancelAsyncJob,
   retryAsyncJob,
   getAsyncQueueStats,
+  startAsyncAgentTask,
 } from "./infra/asyncJobManager.js";
+import { resolveAgent } from "./infra/agentRuntime.js";
 
 import { extractTextFromImage, getOcrStatus, probeOcrPython } from "./infra/ocrService.js";
 import {
@@ -282,6 +284,60 @@ const sessionRouter = router({
     .meta({ description: "停止子代理会话（状态置为 paused）。", aiReadable: false })
     .input(stopSessionSchema)
     .mutation(({ ctx, input }) => ctx.services.session.update({ id: input.id, status: "paused" })),
+  spawn: publicProcedure
+    .meta({ description: "创建并启动子代理任务（subagent）。返回 subagentSessionId 与 jobId。", aiReadable: false })
+    .input(
+      z.object({
+        parentSessionId: z.string().cuid(),
+        agentId: z.string().cuid().optional(),
+        task: z.string().min(1).max(2000),
+        label: z.string().max(120).optional(),
+        model: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const agent = await resolveAgent(ctx.services, input.agentId);
+      const model = input.model || agent.model;
+      const started = await startAsyncAgentTask({
+        sessionId: input.parentSessionId,
+        task: input.task,
+        label: input.label,
+        config: ctx.config,
+        services: ctx.services,
+        agent: { id: agent.id, model, systemPrompt: agent.systemPrompt, tools: agent.tools },
+      });
+      return {
+        subagentSessionId: started.subagentSessionId,
+        jobId: started.jobId,
+        status: started.status,
+        message: started.message,
+      };
+    }),
+  rerun: publicProcedure
+    .meta({ description: "基于原子代理会话重跑：创建新 subagent 并启动后台任务。", aiReadable: false })
+    .input(rerunSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const original = await ctx.services.session.getById(input.id);
+      if (!original) throw new Error("原子代理会话不存在");
+      const orig = original as { parentSessionId?: string | null; agentId?: string | null; model?: string; taskDescription?: string | null };
+      if (!orig.parentSessionId) throw new Error("该会话不是子代理，无法重跑");
+      const agent = await resolveAgent(ctx.services, orig.agentId ?? undefined);
+      const task = input.taskDescription ?? orig.taskDescription ?? "重跑任务";
+      const started = await startAsyncAgentTask({
+        sessionId: orig.parentSessionId,
+        task,
+        label: `${orig.model ?? agent.model} 重跑`,
+        config: ctx.config,
+        services: ctx.services,
+        agent: { id: agent.id, model: orig.model ?? agent.model, systemPrompt: agent.systemPrompt, tools: agent.tools },
+      });
+      return {
+        subagentSessionId: started.subagentSessionId,
+        jobId: started.jobId,
+        status: started.status,
+        message: started.message,
+      };
+    }),
   delete: publicProcedure.meta({ description: "删除会话及其所有消息（级联删除）。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.session.delete(input.id)),
 });
 
