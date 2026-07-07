@@ -71,12 +71,25 @@ model ChatSession {
   model        String        @default("deepseek-v4-flash")
   systemPrompt String?
   agentId      String?
+  // Swarm/Subagent：父会话 id（普通会话为 null）
+  parentSessionId String?
+  // 会话类型："chat"（默认普通会话）| "subagent"（子代理任务会话）
+  kind         String        @default("chat")
+  // 任务状态：active | queued | running | paused | completed | failed
+  status       String        @default("active")
+  // 任务描述（subagent 的任务文本）
+  taskDescription String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   // P1-8：外键到 Agent，删 Agent 时 agentId 置 null
   agent        Agent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
   messages     ChatMessage[]
   runs         Run[]
+  // Swarm：父子会话层级，删父会话时 parentSessionId 置 null
+  parent       ChatSession?  @relation("SessionChildren", fields: [parentSessionId], references: [id], onDelete: SetNull)
+  children     ChatSession[] @relation("SessionChildren")
+  @@index([parentSessionId, status, updatedAt])
+  @@index([kind, status])
 }
 
 /// 聊天消息
