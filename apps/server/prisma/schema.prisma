@@ -43,6 +43,9 @@ model Agent {
   sourceMtime  DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  // P1-8：补外键关系，删 Agent 后 session/run 的 agentId 置 null，不再留孤儿引用
+  sessions     ChatSession[]
+  runs         Run[]
 }
 
 /// 技能 (Skill)
@@ -70,7 +73,10 @@ model ChatSession {
   agentId      String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+  // P1-8：外键到 Agent，删 Agent 时 agentId 置 null
+  agent        Agent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
   messages     ChatMessage[]
+  runs         Run[]
 }
 
 /// 聊天消息
@@ -248,6 +254,9 @@ model Run {
   durationMs Int?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  // P1-8：外键，删 Agent/Session 时对应字段置 null
+  agent      Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  session    ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 }
 
 /// 提示词模板 (Prompt)

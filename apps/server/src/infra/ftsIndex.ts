@@ -48,49 +48,30 @@ export async function ensureFtsTable(prisma: PrismaClient): Promise<void> {
 /** 全量重建 FTS 索引（db:sync 后调用） */
 export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
   await ensureFtsTable(prisma);
-  await prisma.$executeRawUnsafe(`DELETE FROM search_fts;`);
 
-  let count = 0;
-  const insert = async (entity: string, entityId: string, title: string, body: string) => {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO search_fts(entity, entity_id, title, body) VALUES (?, ?, ?, ?)`,
-      entity,
-      entityId,
-      safeSlice(title, 500),
-      safeSlice(body, 8000),
-    );
-    count++;
+  // P1-7：收集所有插入参数后用单事务批量提交，避免逐条 $executeRawUnsafe 阻塞
+  const rows: Array<[string, string, string, string]> = [];
+  const add = (entity: string, entityId: string, title: string, body: string) => {
+    rows.push([entity, entityId, safeSlice(title, 500), safeSlice(body, 8000)]);
   };
 
   const posts = await prisma.post.findMany({ select: { id: true, title: true, content: true, slug: true } });
-  for (const p of posts) {
-    await insert("post", p.id, p.title, `${p.slug}\n${p.content ?? ""}`);
-  }
+  for (const p of posts) add("post", p.id, p.title, `${p.slug}\n${p.content ?? ""}`);
 
   const agents = await prisma.agent.findMany({ select: { id: true, name: true, description: true, systemPrompt: true } });
-  for (const a of agents) {
-    await insert("agent", a.id, a.name, `${a.description ?? ""}\n${a.systemPrompt ?? ""}`);
-  }
+  for (const a of agents) add("agent", a.id, a.name, `${a.description ?? ""}\n${a.systemPrompt ?? ""}`);
 
   const skills = await prisma.skill.findMany({ select: { id: true, name: true, description: true, code: true } });
-  for (const s of skills) {
-    await insert("skill", s.id, s.name, `${s.description}\n${s.code}`);
-  }
+  for (const s of skills) add("skill", s.id, s.name, `${s.description}\n${s.code}`);
 
   const memories = await prisma.memory.findMany({ select: { id: true, content: true, type: true } });
-  for (const m of memories) {
-    await insert("memory", m.id, m.type, m.content);
-  }
+  for (const m of memories) add("memory", m.id, m.type, m.content);
 
   const tasks = await prisma.task.findMany({ select: { id: true, name: true, cronExpression: true } });
-  for (const t of tasks) {
-    await insert("task", t.id, t.name, t.cronExpression ?? "");
-  }
+  for (const t of tasks) add("task", t.id, t.name, t.cronExpression ?? "");
 
   const mcps = await prisma.mcpServer.findMany({ select: { id: true, name: true, command: true } });
-  for (const m of mcps) {
-    await insert("mcp", m.id, m.name, m.command);
-  }
+  for (const m of mcps) add("mcp", m.id, m.name, m.command);
 
   const messages = await prisma.chatMessage.findMany({
     where: { role: { in: ["user", "assistant"] } },
@@ -98,12 +79,24 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
     take: 5000,
     orderBy: { createdAt: "desc" },
   });
-  for (const msg of messages) {
-    await insert("message", msg.id, safeSlice(msg.content, 80), msg.content);
-  }
+  for (const msg of messages) add("message", msg.id, safeSlice(msg.content, 80), msg.content);
 
-  console.log(`  🔍 [FTS] 索引已重建：${count} 条`);
-  return count;
+  // 事务内 DELETE + 批量 INSERT，原子且减少 IO 抖动
+  await prisma.$transaction([
+    prisma.$executeRawUnsafe(`DELETE FROM search_fts;`),
+    ...rows.map(([entity, entityId, title, body]) =>
+      prisma.$executeRawUnsafe(
+        `INSERT INTO search_fts(entity, entity_id, title, body) VALUES (?, ?, ?, ?)`,
+        entity,
+        entityId,
+        title,
+        body,
+      ),
+    ),
+  ]);
+
+  console.log(`  🔍 [FTS] 索引已重建：${rows.length} 条`);
+  return rows.length;
 }
 
 /** FTS 查询；无匹配或 FTS 不可用时返回空数组 */

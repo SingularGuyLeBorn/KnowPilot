@@ -13,7 +13,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { dump } from "js-yaml";
 import { TRPCError } from "@trpc/server";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   type OperationResult,
   type NextStep,
@@ -96,6 +96,24 @@ function safeJsonParse(raw: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+/** P1-11：检测 Prisma 唯一约束冲突（P2002），返回友好的 CONFLICT failure；非 P2002 返回 null。 */
+function failureFromPrismaUnique(error: unknown, operation: string, entityName: string) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    const target = (error.meta?.target as string[] | undefined)?.join(", ") ?? "字段";
+    return failure({
+      code: `${entityName.toUpperCase()}_CONFLICT`,
+      message: `${operation} ${entityName} 失败：${target} 已被其他记录占用（并发冲突）。`,
+      details: { target: error.meta?.target },
+      field: target,
+      suggestion: `请使用不同的 ${target}，或稍后重试。`,
+      retryable: false,
+      operation,
+      entity: entityName,
+    });
+  }
+  return null;
 }
 
 export interface PaginatedResult<T> {
@@ -256,6 +274,9 @@ export abstract class BaseService<
       });
     } catch (error) {
       if (error instanceof ServiceValidationError) return error.result;
+      // P1-11：并发 create 同名触发 P2002 时转友好 CONFLICT，而非通用 CREATE_FAILED
+      const uniqueConflict = failureFromPrismaUnique(error, "创建", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
       return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
     }
   }
@@ -280,6 +301,8 @@ export abstract class BaseService<
       });
     } catch (error) {
       if (error instanceof ServiceValidationError) return error.result;
+      const uniqueConflict = failureFromPrismaUnique(error, "更新", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
       return failureFromError(error, "update", this.entityName, `${this.entityName.toUpperCase()}_UPDATE_FAILED`);
     }
   }
@@ -467,7 +490,8 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
   }
 
   protected override getListSelect(): any {
-    return { id: true, title: true, slug: true, excerpt: true, coverImage: true, published: true, category: true, tags: true, content: true, viewCount: true, createdAt: true, updatedAt: true };
+    // P1-7：列表不返回完整 content，载荷过大；需要正文走 getById。
+    return { id: true, title: true, slug: true, excerpt: true, coverImage: true, published: true, category: true, tags: true, viewCount: true, createdAt: true, updatedAt: true };
   }
 
   protected serializeToFile(entity: PostEntity): string {
@@ -1017,7 +1041,11 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   }
 
   override async getById(id: string): Promise<any> {
-    const session = await this.prisma.chatSession.findUnique({ where: { id }, include: { messages: true } });
+    // P1-7：messages 加分页上限，避免长会话一次性 include 全量消息 OOM
+    const session = await this.prisma.chatSession.findUnique({
+      where: { id },
+      include: { messages: { orderBy: { createdAt: "asc" }, take: 500 } },
+    });
     if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
     return session;
   }

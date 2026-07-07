@@ -23,11 +23,11 @@
 | P1-4 | 🟡 中等 | Task sync 覆盖运行时状态 | ✅ |
 | P1-5 | 🟡 中等 | Credential 缓存不清理 + scope 子串匹配 | ✅ |
 | P1-6 | 🟡 中等 | 错误处理不一致（CRUD vs getById vs JSON.parse） | ✅ |
-| P1-7 | 🟡 中等 | 性能隐患（列表全 content / 会话全消息 / FTS 阻塞 / N+1） | ⬜ |
-| P1-8 | 🟡 中等 | Prisma 几乎无外键，删 Agent/Task 留孤儿 | ⬜ |
+| P1-7 | 🟡 中等 | 性能隐患（列表全 content / 会话全消息 / FTS 阻塞 / N+1） | ✅ |
+| P1-8 | 🟡 中等 | Prisma 几乎无外键，删 Agent/Task 留孤儿 | ✅ |
 | P1-9 | 🟡 中等 | Skill `node:vm` 沙箱逃逸面 | ⏸️ |
 | P1-10 | 🟡 中等 | Trigger 日志可能泄露敏感数据 | ✅ |
-| P1-11 | 🟡 中等 | `assertUnique` 竞态 | ⬜ |
+| P1-11 | 🟡 中等 | `assertUnique` 竞态 | ✅ |
 | P2-1 | 🟢 轻微 | `nativeTools.ts` 过大（~2546 行） | ⏸️ |
 | P2-2 | 🟢 轻微 | 死代码（`internalProcedure` / `runSync`） | ⬜ |
 | P2-3 | 🟢 轻微 | 类型安全（Service `any` / `ai.invoke` args） | ⏸️ |
@@ -278,7 +278,7 @@
 |---|---|---|
 | 第 1 批 | P0-1 ~ P0-5（严重安全/数据） | ✅ 已完成（vitest 228 passed） |
 | 第 2 批 | P1-1 ~ P1-6 + P1-10（中等） | ✅ 已完成（vitest 228 passed） |
-| 第 3 批 | P1-7 ~ P1-11（中等） | 🟦 进行中（P1-10 已随第 2 批完成） |
+| 第 3 批 | P1-7 ~ P1-11（中等） | ✅ 已完成（P1-9 暂缓，P1-10 随第 2 批完成） |
 | 第 4 批 | P2-2 / P2-4 / P2-7（轻微可做） | ⬜ |
 | 第 5 批 | D-1 ~ D-4（文档同步） | ⬜ |
 

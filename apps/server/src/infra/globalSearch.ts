@@ -40,10 +40,10 @@ function includesQuery(text: string | null | undefined, q: string): boolean {
 
 async function hrefForFtsHit(prisma: PrismaClient, hit: FtsHit): Promise<string> {
   switch (hit.entity) {
-    case "post": {
-      const p = await prisma.post.findUnique({ where: { id: hit.entityId }, select: { slug: true } });
-      return p ? `/posts/${encodeURIComponent(p.slug)}` : "/posts";
-    }
+    case "post":
+    case "message":
+      // 由 mapFtsHits 批量预取 slug/sessionId 后注入到 (hit as any)._href，避免此处再查
+      return (hit as any)._href ?? "/search";
     case "agent":
       return "/agents";
     case "skill":
@@ -54,28 +54,44 @@ async function hrefForFtsHit(prisma: PrismaClient, hit: FtsHit): Promise<string>
       return "/tasks";
     case "mcp":
       return "/mcp";
-    case "message": {
-      const msg = await prisma.chatMessage.findUnique({
-        where: { id: hit.entityId },
-        select: { sessionId: true },
-      });
-      return msg ? `/chat?sessionId=${msg.sessionId}` : "/chat";
-    }
     default:
       return "/search";
   }
 }
 
 async function mapFtsHits(prisma: PrismaClient, rows: FtsHit[], targets: GlobalSearchEntity[]): Promise<GlobalSearchHit[]> {
+  // P1-7：消除 N+1 —— 仅 post / message 需要额外查 href，按实体批量 findMany 后注入
+  const filtered = rows.filter((r) => targets.includes(r.entity as GlobalSearchEntity));
+  const postIds = filtered.filter((r) => r.entity === "post").map((r) => r.entityId);
+  const messageIds = filtered.filter((r) => r.entity === "message").map((r) => r.entityId);
+
+  const [posts, msgs] = await Promise.all([
+    postIds.length ? prisma.post.findMany({ where: { id: { in: postIds } }, select: { id: true, slug: true } }) : [],
+    messageIds.length
+      ? prisma.chatMessage.findMany({ where: { id: { in: messageIds } }, select: { id: true, sessionId: true } })
+      : [],
+  ]);
+  const postSlugById = new Map(posts.map((p) => [p.id, p.slug] as const));
+  const msgSessionById = new Map(msgs.map((m) => [m.id, m.sessionId] as const));
+
   const hits: GlobalSearchHit[] = [];
-  for (const row of rows) {
-    if (!targets.includes(row.entity as GlobalSearchEntity)) continue;
+  for (const row of filtered) {
+    let href = "/search";
+    if (row.entity === "post") {
+      const slug = postSlugById.get(row.entityId);
+      href = slug ? `/posts/${encodeURIComponent(slug)}` : "/posts";
+    } else if (row.entity === "message") {
+      const sid = msgSessionById.get(row.entityId);
+      href = sid ? `/chat?sessionId=${sid}` : "/chat";
+    } else {
+      href = await hrefForFtsHit(prisma, row);
+    }
     hits.push({
       entity: row.entity as GlobalSearchEntity,
       id: row.entityId,
       title: row.title,
       subtitle: row.body.slice(0, 120),
-      href: await hrefForFtsHit(prisma, row),
+      href,
       score: 3,
     });
   }
