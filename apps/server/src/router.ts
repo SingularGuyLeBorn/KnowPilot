@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { router, publicProcedure, internalProcedure } from "./trpc/trpc.js";
+import { router, publicProcedure } from "./trpc/trpc.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {

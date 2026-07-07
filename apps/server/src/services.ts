@@ -616,6 +616,9 @@ ${entity.content}
       const slug = this.getExistingFileSlug(existing);
       if (slug) this.moveFileToTrash(slug);
       const raw = await this.delegate.update({ where: { id }, data: { deletedAt: new Date() } });
+      // P2-7：软删后显式触发 post.deleted 事件（不调继承的 afterDelete，因其会 deleteFileBySlug，
+      // 而此处文件已 moveFileToTrash，避免重复处理）。TriggerEngine 等监听器依赖此事件联动。
+      this.eventBus.emit("post.deleted", existing);
       return success({
         data: this.buildDeleteSummary(existing),
         state: await this.getState(),

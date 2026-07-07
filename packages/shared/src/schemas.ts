@@ -311,7 +311,7 @@ export const updateLogSchema = z.object({
 
 export const listLogsSchema = z.object({
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(200).default(50),
+  pageSize: z.number().int().min(1).max(100).default(50),
   level: z.enum(["info", "warn", "error", "debug", "success"]).optional(),
   component: z.string().optional(),
   keyword: z.string().optional(),

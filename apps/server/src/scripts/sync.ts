@@ -119,11 +119,6 @@ export async function runContentSync(
   return results;
 }
 
-/** @deprecated 使用 runContentSync */
-async function runSync(): Promise<SyncResult[]> {
-  return runContentSync(prisma);
-}
-
 /** 监听模式：增量同步后持续监听变更（不重建 FTS，由 dev 前置 db:sync 负责） */
 async function runWatch(): Promise<void> {
   await runContentSync(prisma, { rebuildFts: false });
