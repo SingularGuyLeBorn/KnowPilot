@@ -53,6 +53,8 @@ export interface AppConfig {
     maxPerSession: number;
     taskTimeoutMs: number;
     maxRetries: number;
+    /** 每个父会话允许的 subagent 任务数量上限（防止失控） */
+    maxSubagentsPerSession: number;
   };
   /** OCR — 对齐 MetaBlog PaddleOCR + OCR.space */
   ocr: {
@@ -303,6 +305,7 @@ export function createAppConfig(): AppConfig {
       maxPerSession: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_PER_SESSION") || "2", 10)),
       taskTimeoutMs: Math.max(10_000, parseInt(readEnv("AGENT_ASYNC_TASK_TIMEOUT_MS") || "300000", 10)),
       maxRetries: Math.max(0, parseInt(readEnv("AGENT_ASYNC_MAX_RETRIES") || "3", 10)),
+      maxSubagentsPerSession: Math.max(1, parseInt(readEnv("AGENT_MAX_SUBAGENTS_PER_SESSION") || "10", 10)),
     },
     ocr: {
       paddleCliPath: readEnv("PADDLEOCR_CLI_PATH") || paddleCliDefault,
