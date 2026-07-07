@@ -968,11 +968,14 @@ export function ChatView() {
       skipDeliveryJobIds: st.consumedDeliveries,
     });
     const sorted = sortQueueItems(merged);
-    const readyIdx = sorted.findIndex(
-      (t) =>
-        t.kind !== "async-running" &&
-        (t.text.trim() || t.asyncResult || t.attachments?.length),
-    );
+    // 两阶段优先消费：异步任务结果(async-result)优先于用户手动消息(user)。
+    // 这样 agent 当前回复结束后，后台任务结果自动先于用户队列被发给 LLM。
+    const isReady = (t: ChatQueueItem) =>
+      t.kind !== "async-running" &&
+      (t.text.trim() || t.asyncResult || t.attachments?.length);
+    let readyIdx = sorted.findIndex((t) => t.kind === "async-result" && isReady(t));
+    if (readyIdx < 0) readyIdx = sorted.findIndex((t) => t.kind === "user" && isReady(t));
+    if (readyIdx < 0) readyIdx = sorted.findIndex(isReady);
     if (readyIdx < 0) return;
 
     st.queueDraining = true;

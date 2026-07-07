@@ -208,11 +208,18 @@ export const listSkillsSchema = z.object({
    Session (会话)
    ═══════════════════════════════════════════════════════ */
 
+export const sessionStatusSchema = z.enum(["active", "queued", "running", "paused", "completed", "failed"]);
+
 export const createSessionSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
   model: z.string().default("deepseek-v4-flash"),
   systemPrompt: z.string().optional(),
   agentId: z.string().cuid().optional(),
+  // Swarm/Subagent
+  parentSessionId: z.string().cuid().optional(),
+  kind: z.enum(["chat", "subagent"]).optional(),
+  taskDescription: z.string().max(2000).optional(),
+  status: sessionStatusSchema.optional(),
 });
 
 export const updateSessionSchema = z.object({
@@ -221,12 +228,27 @@ export const updateSessionSchema = z.object({
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   agentId: z.string().cuid().optional(),
+  // Swarm/Subagent
+  status: sessionStatusSchema.optional(),
+  taskDescription: z.string().max(2000).optional(),
 });
 
 export const listSessionsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
   keyword: z.string().optional(),
+  agentId: z.string().optional(),
+  // Swarm/Subagent 过滤
+  parentSessionId: z.string().cuid().optional(),
+  kind: z.enum(["chat", "subagent"]).optional(),
+  status: sessionStatusSchema.optional(),
+});
+
+export const stopSessionSchema = z.object({ id: z.string().cuid() });
+
+export const rerunSessionSchema = z.object({
+  id: z.string().cuid(),
+  taskDescription: z.string().max(2000).optional(),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -796,6 +818,9 @@ export type ListSkillsInput = z.infer<typeof listSkillsSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type UpdateSessionInput = z.infer<typeof updateSessionSchema>;
 export type ListSessionsInput = z.infer<typeof listSessionsSchema>;
+export type StopSessionInput = z.infer<typeof stopSessionSchema>;
+export type RerunSessionInput = z.infer<typeof rerunSessionSchema>;
+export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;
