@@ -11,6 +11,7 @@ export const DEFAULT_AGENT_NATIVE = [
   "read_file",
   "list_directory",
   "invoke_api",
+  "session_clear",
 ] as const;
 
 export type DefaultAgentNative = (typeof DEFAULT_AGENT_NATIVE)[number];

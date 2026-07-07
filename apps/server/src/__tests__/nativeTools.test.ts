@@ -20,7 +20,7 @@ import {
 } from "./helpers/toolTestFixtures.js";
 
 describe("Native 工具注册表", () => {
-  it("listNativeTools 包含全部 38 个工具定义", () => {
+  it("listNativeTools 包含全部工具定义", () => {
     const names = listNativeTools().map((d) => d.name);
     expect(names).toEqual(expect.arrayContaining([...ALL_NATIVE_TOOL_NAMES]));
     expect(names).toHaveLength(ALL_NATIVE_TOOL_NAMES.length);
@@ -1098,14 +1098,14 @@ describe("native:yuque_get_doc", () => {
     const ctx = createNativeCtx(root);
     await expect(
       executeNativeTool("yuque_get_doc", { namespace: "u/r", slug: "doc" }, ctx),
-    ).rejects.toThrow(/YUQUE_SESSION/);
+    ).rejects.toThrow(/YUQUE_CTOKEN|语雀凭证/);
     fs.rmSync(root, { recursive: true, force: true });
   });
 
   it("API 成功返回文档 body", async () => {
     const root = createTempProjectDir();
     const ctx = createNativeCtx(root, {
-      config: { integrations: { feishu: { appId: "", appSecret: "", userAccessToken: "", tenantAccessToken: "" }, yuque: { session: "sess", ctoken: "" }, github: { token: "" } } },
+      config: { integrations: { feishu: { appId: "", appSecret: "", userAccessToken: "", tenantAccessToken: "" }, yuque: { session: "", ctoken: "sess" }, github: { token: "" } } },
     });
     vi.stubGlobal(
       "fetch",
@@ -1137,9 +1137,10 @@ describe("native:github_search_repos", () => {
       "fetch",
       vi.fn(async () => ({
         ok: true,
-        json: async () => ({
-          items: [{ full_name: "o/r", html_url: "https://github.com/o/r", description: "d", stargazers_count: 9 }],
-        }),
+        text: async () =>
+          JSON.stringify({
+            items: [{ full_name: "o/r", html_url: "https://github.com/o/r", description: "d", stargazers_count: 9 }],
+          }),
       })),
     );
     const result = (await executeNativeTool("github_search_repos", { query: "knowpilot", limit: 1 }, ctx)) as Array<{
@@ -1160,6 +1161,34 @@ describe("native:wait", () => {
     const result = (await executeNativeTool("wait", { ms: 30 }, ctx)) as { waitedMs: number };
     expect(result.waitedMs).toBe(30);
     expect(Date.now() - start).toBeGreaterThanOrEqual(20);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("native:session_clear", () => {
+  it("confirm 不为 true 时拒绝", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("session_clear", { confirm: false }, ctx)).rejects.toThrow(/confirm/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("未提供 SessionService 时抛错", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("session_clear", { confirm: true }, ctx)).rejects.toThrow(/SessionService/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("删除全部 ChatSession 并返回数量", async () => {
+    const root = createTempProjectDir();
+    const deleteMany = vi.fn().mockResolvedValue({ count: 7 });
+    const ctx = createNativeCtx(root, {
+      services: { session: { deleteMany } } as any,
+    });
+    const result = (await executeNativeTool("session_clear", { confirm: true }, ctx)) as { deletedSessions: number };
+    expect(result.deletedSessions).toBe(7);
+    expect(deleteMany).toHaveBeenCalledWith();
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
