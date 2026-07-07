@@ -84,7 +84,7 @@ import {
 import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
-import { encryptCredentialValue, decryptCredentialValue, maskSecret } from "./infra/credentialVault.js";
+import { encryptCredentialValue, decryptCredentialValue, maskSecret, clearCredentialCache } from "./infra/credentialVault.js";
 import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
@@ -1460,6 +1460,10 @@ export class CredentialService extends BaseService<CreateCredentialInput, Update
   protected override async validateUpdate(input: UpdateCredentialInput, existing: any): Promise<void> {
     if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
   }
+  // P1-5：CRUD 后清 credential vault 缓存，避免 30s 内返回旧密钥
+  protected override async afterCreate(): Promise<void> { clearCredentialCache(); }
+  protected override async afterUpdate(): Promise<void> { clearCredentialCache(); }
+  protected override async afterDelete(): Promise<void> { clearCredentialCache(); }
 }
 
 /** InfoSource 信息源 — Agent 可信信息来源 */

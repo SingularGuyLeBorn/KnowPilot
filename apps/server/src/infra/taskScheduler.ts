@@ -51,7 +51,13 @@ export class TaskScheduler {
   }
 
   private async runScheduled(taskId: string, taskName: string): Promise<void> {
+    // 重叠保护：cron 触发前查 DB，running 则跳过防叠跑
     try {
+      const current = await this.prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
+      if (current?.status === "running") {
+        console.warn(`  ⏰ [TaskScheduler] 任务 "${taskName}" 正在运行，跳过本次触发`);
+        return;
+      }
       console.log(`  ⏰ [TaskScheduler] 触发执行: ${taskName}`);
       await this.services.task.run(taskId);
     } catch (err: unknown) {

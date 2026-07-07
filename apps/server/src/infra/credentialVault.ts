@@ -88,11 +88,19 @@ export interface CredentialRecord {
 }
 
 function formatCredential(raw: any): CredentialRecord {
+  let metadata: Record<string, unknown> | null = null;
+  if (raw.metadata) {
+    try {
+      metadata = JSON.parse(raw.metadata);
+    } catch {
+      metadata = null;
+    }
+  }
   return {
     ...raw,
     value: decryptCredentialValue(raw.value),
     scope: raw.scope ? raw.scope.split(",").filter(Boolean).map((s: string) => s.trim()) : [],
-    metadata: raw.metadata ? JSON.parse(raw.metadata) : null,
+    metadata,
   };
 }
 
@@ -120,11 +128,12 @@ export async function listCredentialsByScope(
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return cached.items;
   }
-  const rawItems = await prisma.credential.findMany({
-    where: { scope: { contains: scope } },
-    orderBy: { updatedAt: "desc" },
-  });
-  const items = rawItems.map(formatCredential);
+  // P1-5：scope 精确匹配。DB 存逗号分隔字符串，contains 子串会误命中（如 "llm" 命中 "myllm"）。
+  // 改为拉全量后内存按 scope 数组精确包含过滤（凭据数量少，可接受）。
+  const rawItems = await prisma.credential.findMany({ orderBy: { updatedAt: "desc" } });
+  const items = rawItems
+    .map(formatCredential)
+    .filter((c) => Array.isArray(c.scope) && c.scope.includes(scope));
   cache.set(key, { at: Date.now(), items });
   return items;
 }

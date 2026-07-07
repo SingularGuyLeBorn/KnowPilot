@@ -74,10 +74,11 @@ export const taskSyncer: Syncer<TaskData> = {
       update: {
         name: data.name,
         type: data.type,
-        status: data.status,
         cronExpression: data.cronExpression,
         input: data.input as object,
         sourceMtime: mtime,
+        // 安全：sync 不覆盖运行时状态字段（status / lastRunAt / result），
+        // 避免 db:sync 把 running 任务重置为文件里的 pending/success。
       },
       create: {
         name: data.name,

@@ -10,9 +10,31 @@ import { runAgent } from "./agentRuntime.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { executeTaskJob } from "./taskRunner.js";
 
+/** 脱敏事件 payload 中的敏感字段，防止凭据/密钥被写入 Log.metadata。 */
+function sanitizePayloadForLog(payload: unknown): unknown {
+  const SENSITIVE_KEYS = /^(password|secret|token|api[-_]?key|authorization|value)$/i;
+  const mask = (s: string) => (s.length > 8 ? `${s.slice(0, 4)}••••${s.slice(-4)}` : "••••••••");
+  const walk = (val: unknown, depth: number): unknown => {
+    if (depth > 5) return "[maxDepth]";
+    if (typeof val === "string") return val.length > 2000 ? `${val.slice(0, 2000)}…[truncated]` : val;
+    if (Array.isArray(val)) return val.map((v) => walk(v, depth + 1));
+    if (val && typeof val === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+        out[k] = SENSITIVE_KEYS.test(k) ? (typeof v === "string" ? mask(v) : "[redacted]") : walk(v, depth + 1);
+      }
+      return out;
+    }
+    return val;
+  };
+  return walk(payload, 0);
+}
+
 export class TriggerEngine {
   private isRunning = false;
   private eventHandler: ((payload: EntityEventPayload<any>) => void) | null = null;
+  /** P1-2：per-trigger 互斥，防止同一触发器在长 Agent/Task 执行期间被并发事件叠跑 */
+  private runningTriggers = new Map<string, Promise<void>>();
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -64,37 +86,49 @@ export class TriggerEngine {
     console.log(`  ⚡ [TriggerEngine] 匹配到 ${triggers.length} 个触发器 [源: ${eventSource}]`);
 
     for (const trigger of triggers) {
+      // P1-2：per-trigger 互斥 —— 同一触发器正在跑则跳过本次，防叠跑
+      if (this.runningTriggers.has(trigger.id)) {
+        console.warn(`  ⏭️ [TriggerEngine] 触发器 "${trigger.name}" 正在执行，跳过本次并发触发`);
+        continue;
+      }
       console.log(`    ↳ 触发动作 [${trigger.name}]: ${trigger.actionType} → ID: ${trigger.actionId}`);
 
-      try {
-        await this.prisma.log.create({
-          data: {
-            level: "info",
-            component: "trigger.engine",
-            event: "trigger.fired",
-            message: `触发器 "${trigger.name}" 被事件 "${eventSource}" 触发`,
-            metadata: JSON.stringify({ triggerId: trigger.id, eventPayload: payload }),
-          },
-        });
+      const exec = (async () => {
+        try {
+          await this.prisma.log.create({
+            data: {
+              level: "info",
+              component: "trigger.engine",
+              event: "trigger.fired",
+              message: `触发器 "${trigger.name}" 被事件 "${eventSource}" 触发`,
+              // P1-10：脱敏后再写日志，避免凭据/密钥落 Log
+              metadata: JSON.stringify({ triggerId: trigger.id, eventPayload: sanitizePayloadForLog(payload) }),
+            },
+          });
 
-        if (trigger.actionType === "run_task") {
-          await this.executeTask(trigger.actionId, payload);
-        } else if (trigger.actionType === "run_agent") {
-          await this.executeAgent(trigger.actionId, payload);
-        } else {
-          console.warn(`  ⚠️ [TriggerEngine] 未知动作类型: ${trigger.actionType}`);
+          if (trigger.actionType === "run_task") {
+            await this.executeTask(trigger.actionId, payload);
+          } else if (trigger.actionType === "run_agent") {
+            await this.executeAgent(trigger.actionId, payload);
+          } else {
+            console.warn(`  ⚠️ [TriggerEngine] 未知动作类型: ${trigger.actionType}`);
+          }
+        } catch (err: unknown) {
+          await this.prisma.log.create({
+            data: {
+              level: "error",
+              component: "trigger.engine",
+              event: "trigger.failed",
+              message: `触发器 "${trigger.name}" 执行失败: ${err instanceof Error ? err.message : String(err)}`,
+              metadata: JSON.stringify({ triggerId: trigger.id, error: String(err) }),
+            },
+          });
         }
-      } catch (err: unknown) {
-        await this.prisma.log.create({
-          data: {
-            level: "error",
-            component: "trigger.engine",
-            event: "trigger.failed",
-            message: `触发器 "${trigger.name}" 执行失败: ${err instanceof Error ? err.message : String(err)}`,
-            metadata: JSON.stringify({ triggerId: trigger.id, error: String(err) }),
-          },
-        });
-      }
+      })();
+
+      this.runningTriggers.set(trigger.id, exec);
+      void exec.finally(() => this.runningTriggers.delete(trigger.id));
+      // 不 await：让本事件内的多个触发器并行执行，且不阻塞 EventBus.emit
     }
   }
 

@@ -23,6 +23,7 @@ import { getEnrichedServerCapabilities, getServerCapabilities } from "./infra/ca
 import { handleAgentChatStream } from "./infra/agentStream.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
+import { isAuthEnabled, verifyAuthHeader } from "./infra/auth.js";
 import { prisma } from "./db.js";
 
 const app = express();
@@ -88,12 +89,19 @@ app.get("/health", async (_req, res) => {
 });
 
 // 文章本地资源（图片等）静态服务
+// P1-1：AUTH_MODE=password 时静态资源也走鉴权，避免 /uploads、/api/posts/assets 裸奔
+const staticAuthMiddleware = (req: any, res: any, next: any) => {
+  if (!isAuthEnabled(config)) return next();
+  if (verifyAuthHeader(config, req.headers.authorization)) return next();
+  res.status(401).json({ error: "UNAUTHORIZED", message: "静态资源需鉴权，请提供 Bearer Token。" });
+  return;
+};
 if (fs.existsSync(postsDir)) {
-  app.use("/api/posts/assets", express.static(postsDir));
+  app.use("/api/posts/assets", staticAuthMiddleware, express.static(postsDir));
 }
 
 // 上传文件静态服务
-app.use("/uploads", express.static(uploadsDir));
+app.use("/uploads", staticAuthMiddleware, express.static(uploadsDir));
 
 // Agent 流式聊天 SSE（不走 tRPC，避免 buffering）
 app.post(
@@ -121,6 +129,13 @@ const server = app.listen(PORT, () => {
 
   // 凭据加密护栏：生产模式无 CREDENTIAL_MASTER_KEY 拒启动；开发模式 warn
   assertCredentialEncryptionAvailable();
+
+  // P1-1：鉴权护栏 —— AUTH_TOKEN 回退为 AUTH_PASSWORD 时 warn（token 与密码同值，无轮换）
+  if (isAuthEnabled(config) && config.auth.token === config.auth.password) {
+    console.warn(
+      "  ⚠️ [安全] AUTH_TOKEN 未显式设置，回退为 AUTH_PASSWORD（同值、无轮换）。生产环境建议单独设置 AUTH_TOKEN。",
+    );
+  }
 
   // Mock 模式护栏：警告混合启用导致的「假 LLM + 真工具」静默降级
   const mockFlags = {
