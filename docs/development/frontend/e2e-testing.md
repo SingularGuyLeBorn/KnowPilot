@@ -52,6 +52,7 @@ Playwright 会自动启动 **server:3010**（本地若已在跑则复用）+ **w
 | `apps/web/e2e/chat-mock.spec.ts` | 问候 + 触发 web_search 工具并显示 pill/hint |
 | `apps/web/e2e/chat-thinking-mock.spec.ts` | Mock 思考时间线不重复 |
 | `apps/web/e2e/chat-tool-error-mock.spec.ts` | Mock 工具失败（红色 pill） |
+| `apps/web/e2e/subagent-mock.spec.ts` | Mock 子代理创建弹窗 → 左侧卡片 + /subagents 页列表 |
 | `apps/web/e2e/helpers/mockChatFixture.ts` | Mock Chat 断言封装（适配极快流式） |
 | `apps/web/playwright.config.mock.ts` | Mock 专用配置（3003/3011 + cross-env 启动） |
 
