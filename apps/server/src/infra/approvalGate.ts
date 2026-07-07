@@ -13,7 +13,6 @@ import type { OperationResult } from "@knowpilot/shared";
 /** 默认需要人工审批的工具路径 */
 const APPROVAL_REQUIRED_OPS = new Set([
   "agent.delete",
-  "post.delete",
   "skill.delete",
   "mcp.delete",
   "task.delete",

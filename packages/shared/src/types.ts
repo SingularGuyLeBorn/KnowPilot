@@ -18,6 +18,7 @@ export interface Post {
   tags: string[]; // 前端为解析后的数组
   viewCount: number;
   metadata: any;
+  deletedAt: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -261,6 +262,8 @@ export interface Credential {
   value: string;
   scope: string[];
   lastUsedAt: string | Date | null;
+  expiresAt: string | Date | null;
+  metadata: Record<string, unknown> | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }

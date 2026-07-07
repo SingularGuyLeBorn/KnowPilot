@@ -74,10 +74,19 @@ export default function PostsPage() {
               {isFetching && !isLoading ? " · 刷新中…" : ""}
             </p>
           </div>
-          <Link href="/editor" className={cn(buttonVariants(), "inline-flex items-center gap-2")}>
-            <PenLine className="h-4 w-4" />
-            新建文章
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/posts/trash"
+              className={cn(buttonVariants({ variant: "outline" }), "inline-flex items-center gap-2 text-xs")}
+            >
+              <Trash2 className="h-4 w-4" />
+              回收站
+            </Link>
+            <Link href="/editor" className={cn(buttonVariants(), "inline-flex items-center gap-2")}>
+              <PenLine className="h-4 w-4" />
+              新建文章
+            </Link>
+          </div>
         </div>
 
         <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 sm:flex-row sm:items-center">
@@ -176,7 +185,7 @@ export default function PostsPage() {
         title="删除文章"
         description={
           deleteTarget
-            ? `确定删除《${deleteTarget.title}》吗？本地 Markdown 文件与数据库记录将被永久移除。`
+            ? `确定删除《${deleteTarget.title}》吗？文章将移入回收站，可在 30 天内恢复。`
             : ""
         }
         confirmLabel={remove.isPending ? "删除中…" : "确认删除"}

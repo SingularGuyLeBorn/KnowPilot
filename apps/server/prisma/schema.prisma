@@ -21,10 +21,12 @@ model Post {
   viewCount  Int      @default(0)
   metadata   Json?             /// 扩展字段
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
+  deletedAt  DateTime?         /// 软删除时间，null 表示未删除
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([published, createdAt(sort: Desc)])
+  @@index([deletedAt])
   @@index([category])
   @@index([slug])
 }
@@ -268,9 +270,11 @@ model Credential {
   id         String    @id @default(cuid())
   name       String    @unique
   type       String    /// "api_key" | "token" | "password"
-  value      String    /// 当前先明文，L5 加密
+  value      String    /// 明文或 AES-GCM 密文（带 enc: 前缀）
   scope      String    @default("") /// 逗号分隔，如 "llm,mcp"
   lastUsedAt DateTime?
+  expiresAt  DateTime? /// 凭据过期时间（OAuth token 等）
+  metadata   String?   /// JSON 字符串，保存 refresh_token、scope 等扩展信息
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 }

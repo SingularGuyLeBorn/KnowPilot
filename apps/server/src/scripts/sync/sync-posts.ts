@@ -22,7 +22,7 @@ export const postSyncer: Syncer<PostData> = {
   extensions: [".md"],
 
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<PostData>[]> {
-    const filePaths = getFilesRecursive(contentDir, [".md"]);
+    const filePaths = getFilesRecursive(contentDir, [".md"]).filter((p) => !p.includes(`${contentDir}/.trash/`));
     const records: SyncRecord<PostData>[] = [];
 
     for (const filePath of filePaths) {
@@ -69,6 +69,7 @@ export const postSyncer: Syncer<PostData> = {
         category: data.category,
         tags: data.tags,
         sourceMtime: mtime,
+        deletedAt: null,
       },
       create: {
         slug,
@@ -79,12 +80,13 @@ export const postSyncer: Syncer<PostData> = {
         category: data.category,
         tags: data.tags,
         sourceMtime: mtime,
+        deletedAt: null,
       },
     });
   },
 
   async cleanup(prisma: PrismaClient, activeSlugs: string[]): Promise<number> {
-    const allInDb = await prisma.post.findMany({ select: { slug: true, title: true } });
+    const allInDb = await prisma.post.findMany({ where: { deletedAt: null }, select: { slug: true, title: true } });
     let deleted = 0;
 
     for (const dbPost of allInDb) {

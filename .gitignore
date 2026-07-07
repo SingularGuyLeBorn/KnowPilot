@@ -46,7 +46,13 @@ coverage/
 content/posts/test-post-slug-*.md
 content/posts/search-test-*.md
 content/posts/draft-search-test-*.md
+content/posts/.trash/
 content/uploads/vitest-test-file-*
+
+# Runtime generated memory / trash files
+content/memories/*.md
+.dev-log/llm-budget.json
+.dev-log/oschina-sample.html
 
 # Docker volumes
 pgdata/

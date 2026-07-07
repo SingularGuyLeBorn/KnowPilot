@@ -31,13 +31,14 @@ import {
   createInfoSourceSchema, updateInfoSourceSchema, listInfoSourcesSchema,
   createCredentialSchema, updateCredentialSchema, listCredentialsSchema,
   webSearchSchema, nativeExecuteSchema,
-  deleteByIdWithApprovalSchema, gitPushWithApprovalSchema,
+  deleteByIdSchema, deleteByIdWithApprovalSchema, gitPushWithApprovalSchema,
   runTaskSchema, executeApprovalSchema, approveAndExecuteApprovalSchema,
   runWorkflowSchema, globalSearchSchema, analyticsDashboardSchema,
   authLoginSchema,
 } from "@knowpilot/shared";
 import { listConfiguredLlmProviders } from "./infra/config.js";
 import { listNativeTools, executeNativeTool } from "./infra/nativeTools.js";
+import { getEnvCredentialCandidates } from "./infra/credentialVault.js";
 import { getEnrichedServerCapabilities } from "./infra/capabilities.js";
 import { runAgent, chatAgent } from "./infra/agentRuntime.js";
 import { switchAssistantMessageVersion } from "./infra/agentStream.js";
@@ -88,9 +89,10 @@ const postRouter = router({
   getById: publicProcedure.meta({ description: "按 id 获取文章，用于编辑器加载。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.post.getById(input.id)),
   create: publicProcedure.meta({ description: "创建新文章，自动同步到本地 Markdown 文件。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
   update: publicProcedure.meta({ description: "更新文章内容，自动同步到本地 Markdown 文件。", aiReadable: true }).input(updatePostSchema).mutation(({ ctx, input }) => ctx.services.post.update(input)),
-  delete: publicProcedure.meta({ description: "删除文章，同时删除本地 Markdown 文件。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
-    withApprovalGuard(ctx.services, "post.delete", { id: input.id }, input.approvalId, () => ctx.services.post.delete(input.id)),
-  ),
+  delete: publicProcedure.meta({ description: "删除文章到回收站。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.delete(input.id)),
+  restore: publicProcedure.meta({ description: "从回收站恢复文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.restore(input.id)),
+  permanentDelete: publicProcedure.meta({ description: "从回收站永久删除文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.permanentDelete(input.id)),
+  listDeleted: publicProcedure.meta({ description: "列出回收站中的文章。", aiReadable: true }).query(({ ctx }) => ctx.services.post.listDeleted()),
   search: publicProcedure.meta({ description: "搜索文章标题和内容。", aiReadable: true }).input(searchPostsSchema).query(({ ctx, input }) => ctx.services.post.search(input.query, input.limit)),
   categories: publicProcedure.meta({ description: "获取所有已发布文章的分类列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.categories()),
   tags: publicProcedure.meta({ description: "获取所有已发布文章的标签列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.tags()),
@@ -292,12 +294,12 @@ const fileRouter = router({
 });
 
 const logRouter = router({
-  create: internalProcedure.meta({ description: "创建日志记录。", aiReadable: true }).input(createLogSchema).mutation(({ ctx, input }) => ctx.services.log.create(input)),
-  getById: internalProcedure.meta({ description: "获取日志详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.log.getById(input.id)),
-  list: internalProcedure.meta({ description: "分页列出日志，支持按 level/component/keyword 过滤。", aiReadable: true }).input(listLogsSchema).query(({ ctx, input }) => ctx.services.log.list(input)),
-  update: internalProcedure.meta({ description: "更新日志（一般不建议）。", aiReadable: false }).input(updateLogSchema).mutation(({ ctx, input }) => ctx.services.log.update(input)),
-  delete: internalProcedure.meta({ description: "删除单条日志。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.log.delete(input.id)),
-  clearAll: internalProcedure.meta({ description: "一键清空日志审计库。", aiReadable: true }).mutation(({ ctx }) => ctx.services.log.clearAll()),
+  create: publicProcedure.meta({ description: "创建日志记录。", aiReadable: true }).input(createLogSchema).mutation(({ ctx, input }) => ctx.services.log.create(input)),
+  getById: publicProcedure.meta({ description: "获取日志详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.log.getById(input.id)),
+  list: publicProcedure.meta({ description: "分页列出日志，支持按 level/component/keyword 过滤。", aiReadable: true }).input(listLogsSchema).query(({ ctx, input }) => ctx.services.log.list(input)),
+  update: publicProcedure.meta({ description: "更新日志（一般不建议）。", aiReadable: false }).input(updateLogSchema).mutation(({ ctx, input }) => ctx.services.log.update(input)),
+  delete: publicProcedure.meta({ description: "删除单条日志。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.log.delete(input.id)),
+  clearAll: publicProcedure.meta({ description: "一键清空日志审计库。", aiReadable: true }).mutation(({ ctx }) => ctx.services.log.clearAll()),
 });
 
 const gitRouter = router({
@@ -322,7 +324,11 @@ const searchRouter = router({
     .meta({ description: "联网搜索（Tavily / SerpAPI）。", aiReadable: true })
     .input(webSearchSchema)
     .query(({ ctx, input }) =>
-      executeNativeTool("web_search", { query: input.query, maxResults: input.maxResults }, {
+      executeNativeTool("web_search", {
+        query: input.query,
+        maxResults: input.maxResults,
+        engine: input.provider === "auto" ? undefined : input.provider,
+      }, {
         config: ctx.config,
         services: ctx.services,
         invokeTrpc: createTrpcInvokerForCtx(ctx),
@@ -340,7 +346,7 @@ const analyticsRouter = router({
   dashboard: publicProcedure
     .meta({ description: "系统看板关键指标（文章/Agent/Run/Token/日志）。", aiReadable: true })
     .input(analyticsDashboardSchema)
-    .query(({ ctx }) => getAnalyticsDashboard(ctx.prisma)),
+    .query(({ ctx, input }) => getAnalyticsDashboard(ctx.prisma, input)),
 });
 
 const aboutRouter = router({
@@ -462,6 +468,24 @@ const credentialRouter = router({
   list: publicProcedure.meta({ description: "列出所有凭据。", aiReadable: true }).input(listCredentialsSchema).query(({ ctx, input }) => ctx.services.credential.list(input)),
   update: publicProcedure.meta({ description: "更新凭据。", aiReadable: true }).input(updateCredentialSchema).mutation(({ ctx, input }) => ctx.services.credential.update(input)),
   delete: publicProcedure.meta({ description: "删除凭据。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.credential.delete(input.id)),
+  importFromEnv: publicProcedure
+    .meta({ description: "从 .env 导入集成密钥到 Credential 表（不覆盖已存在）。", aiReadable: true })
+    .mutation(async ({ ctx }) => {
+      const candidates = getEnvCredentialCandidates();
+      const existing = await ctx.prisma.credential.findMany({ select: { name: true } });
+      const existingNames = new Set(existing.map((e) => e.name));
+      const imported: string[] = [];
+      const skipped: string[] = [];
+      for (const c of candidates) {
+        if (existingNames.has(c.name)) {
+          skipped.push(c.name);
+          continue;
+        }
+        await ctx.services.credential.create(c as any);
+        imported.push(c.name);
+      }
+      return { imported, skipped, total: candidates.length };
+    }),
 });
 
 const aiRouter = router({

@@ -156,7 +156,21 @@ export function usePostMutations(options?: {
     },
   });
 
-  return { create, update, remove, invalidatePostQueries };
+  const restore = trpc.post.restore.useMutation({
+    onSuccess: () => {
+      invalidatePostQueries();
+      void utils.post.listDeleted.invalidate();
+    },
+  });
+
+  const permanentDelete = trpc.post.permanentDelete.useMutation({
+    onSuccess: () => {
+      invalidatePostQueries();
+      void utils.post.listDeleted.invalidate();
+    },
+  });
+
+  return { create, update, remove, restore, permanentDelete, invalidatePostQueries };
 }
 
 // 通用实体 Hooks
@@ -250,7 +264,22 @@ export function useNativeCapabilities(options?: { staleTime?: number }) {
 
 export const useRun = () => useCRUDApi<any, any, any, Run>("run");
 export const usePrompt = () => useCRUDApi<any, any, any, Prompt>("prompt");
-export const useCredential = () => useCRUDApi<any, any, any, Credential>("credential");
+export const useCredential = () => {
+  const crud = useCRUDApi<any, any, any, Credential>("credential");
+  return {
+    ...crud,
+    useImportFromEnv: (options?: any) => {
+      const utils = trpc.useUtils();
+      return trpc.credential.importFromEnv.useMutation({
+        onSuccess: (res: any) => {
+          if (res?.imported?.length) void utils.credential.list.invalidate();
+          options?.onSuccess?.(res);
+        },
+        ...options,
+      });
+    },
+  };
+};
 
 /* ─── 3. AI 反射调用 Hooks ─── */
 

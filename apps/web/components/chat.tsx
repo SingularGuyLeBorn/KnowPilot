@@ -25,6 +25,7 @@ import {
   RotateCcw,
   Search,
   Share2,
+  Sparkles,
   Trash2,
   Wrench,
   X,
@@ -72,6 +73,108 @@ import { MessageQueue } from "@/components/chatQueue";
 
 /* ─── Sub-components ─── */
 
+function ThinkingStep({
+  step,
+  isLive = false,
+}: {
+  step: Extract<TimelineStep, { type: "thinking" }>;
+  isLive?: boolean;
+}) {
+  const content = step.content.trim();
+  const isEmpty = !content;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
+      <div className="flex items-center gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-soft)] px-3 py-2 text-[11px] font-medium text-[var(--kp-text-2)]">
+        <Sparkles className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
+        <span>Thinking</span>
+        <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--kp-brand-dark)]">
+          第 {step.round} 轮
+        </span>
+        {isLive && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
+        <span className="ml-auto text-[10px] text-[var(--kp-text-3)]">
+          {isEmpty ? "thinking…" : `${content.length} 字`}
+        </span>
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
+        {isEmpty ? (
+          isLive ? (
+            <p className="text-xs text-[var(--kp-text-3)]">等待模型输出…</p>
+          ) : null
+        ) : (
+          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-[var(--kp-text-2)]">
+            {content}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToolStep({
+  step,
+  isLive = false,
+}: {
+  step: Extract<TimelineStep, { type: "tool" }>;
+  isLive?: boolean;
+}) {
+  const [open, setOpen] = useState(isLive && step.status === "running");
+  const displayName = step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
+  const hasError =
+    step.result &&
+    typeof step.result === "object" &&
+    step.result !== null &&
+    "error" in (step.result as Record<string, unknown>);
+
+  return (
+    <div
+      data-testid="tool-pill"
+      className={cn(
+        "overflow-hidden rounded-xl border shadow-sm transition-colors",
+        step.status === "running"
+          ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30"
+          : "border-[var(--kp-divider-light)] bg-[var(--kp-bg)]",
+      )}
+    >
+      <details open={open} className="group/tool" onToggle={(e) => setOpen(e.currentTarget.open)}>
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-[var(--kp-text-2)]">
+          <span
+            className={cn(
+              "h-2 w-2 shrink-0 rounded-full",
+              step.status === "running" ? "animate-pulse bg-[var(--kp-brand)]" : hasError ? "bg-red-500" : "bg-green-500",
+            )}
+          />
+          <Wrench className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
+          <span className="min-w-0 truncate">{displayName}</span>
+          {step.status === "running" && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[var(--kp-brand)]" />}
+          {step.status === "done" && !isLive && (step.hint || formatToolResultHint(step.result)) && (
+            <span
+              className={cn(
+                "ml-auto text-[10px]",
+                hasError ? "text-red-600" : "text-[var(--kp-text-3)]",
+              )}
+              data-testid="tool-timing-hint"
+            >
+              {step.hint || formatToolResultHint(step.result)}
+            </span>
+          )}
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200 group-open/tool:rotate-90" />
+        </summary>
+        <div className="border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/40 px-3 py-2">
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
+            {JSON.stringify(step.args, null, 2)}
+          </pre>
+          {step.result !== undefined && (
+            <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
+              {JSON.stringify(step.result, null, 2)}
+            </pre>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function ThinkingTimeline({
   steps,
   isLive = false,
@@ -82,90 +185,25 @@ function ThinkingTimeline({
   if (!steps.length) return null;
 
   return (
-    <div className="mb-4 space-y-3" data-testid="thinking-timeline">
-      {steps.map((step, i) => (
-        <div
-          key={step.type === "tool" ? step.toolCallId : `${step.type}-${step.round}-${i}`}
-          className="relative border-l-2 border-[var(--kp-brand-light)]/50 pl-3"
-        >
-          <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
-          {step.type === "thinking" ? (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-[11px] font-medium text-[var(--kp-text-2)]">
-                <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--kp-brand-dark)]">
-                  推理
-                </span>
-                <span>第 {step.round} 轮</span>
-                {isLive && i === steps.length - 1 && step.type === "thinking" && (
-                  <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />
-                )}
-              </div>
-              {step.content.trim() ? (
-                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-[var(--kp-bg)]/80 px-3 py-2 text-xs leading-relaxed text-[var(--kp-text-2)]">
-                  {step.content}
-                </pre>
-              ) : isLive ? (
-                <p className="text-xs text-[var(--kp-text-3)]">思考中…</p>
-              ) : null}
+    <div className="mb-2 flex max-w-[88%] gap-0" data-testid="thinking-timeline">
+      <div className="relative flex w-6 shrink-0 justify-center pt-2">
+        <div className="absolute top-2 bottom-2 w-0.5 bg-[var(--kp-brand-light)]/40" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-3">
+        {steps.map((step, i) => {
+          const key = step.type === "tool" ? step.toolCallId : `thinking-${step.round}-${i}`;
+          return (
+            <div key={key} className="relative">
+              <span className="absolute -left-[17px] top-2 h-2.5 w-2.5 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
+              {step.type === "thinking" ? (
+                <ThinkingStep step={step} isLive={isLive && i === steps.length - 1} />
+              ) : (
+                <ToolStep step={step} isLive={isLive} />
+              )}
             </div>
-          ) : (
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--kp-text-2)]">
-                  工具
-                </span>
-                <span
-                  className={cn(
-                    "inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium",
-                    step.status === "running"
-                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
-                      : "bg-[var(--kp-bg-soft)] text-[var(--kp-text-2)]",
-                  )}
-                  data-testid="tool-pill"
-                >
-                  <Wrench className="h-3 w-3 shrink-0" />
-                  <span className="truncate">
-                    {step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ")}
-                  </span>
-                  {step.status === "running" && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
-                  {step.status === "done" && !isLive && (
-                    <span className="text-[9px] text-[var(--kp-brand-dark)]">完成</span>
-                  )}
-                  {step.status === "done" && (step.hint || formatToolResultHint(step.result)) && (
-                    <span
-                      className={cn(
-                        "text-[9px]",
-                        step.result &&
-                          typeof step.result === "object" &&
-                          step.result !== null &&
-                          "error" in (step.result as Record<string, unknown>)
-                          ? "text-red-600"
-                          : "text-[var(--kp-text-3)]",
-                      )}
-                      data-testid="tool-timing-hint"
-                    >
-                      {step.hint || formatToolResultHint(step.result)}
-                    </span>
-                  )}
-                </span>
-              </div>
-              <details className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 px-3 py-2">
-                <summary className="cursor-pointer text-[10px] text-[var(--kp-text-3)] hover:text-[var(--kp-brand-dark)]">
-                  参数与结果
-                </summary>
-                <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
-                  {JSON.stringify(step.args, null, 2)}
-                </pre>
-                {step.result !== undefined && (
-                  <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
-                    {JSON.stringify(step.result, null, 2)}
-                  </pre>
-                )}
-              </details>
-            </div>
-          )}
-        </div>
-      ))}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -722,7 +760,10 @@ export function ChatView() {
               }
               await refetchSession();
               // 延后清空，避免与 tool_end 的 setState 同批提交导致 hint 从未挂载
-              setTimeout(() => setLiveTimeline([]), 0);
+              setTimeout(() => {
+                setLiveTimeline([]);
+                setStreamingContent("");
+              }, 0);
               if (opts.optimisticUser) {
                 setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
               }
@@ -732,27 +773,31 @@ export function ChatView() {
               if (opts.optimisticUser) setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
               setError(message + (suggestion ? `\n${suggestion}` : ""));
               if (sid) setSessionId(sid);
-              setTimeout(() => setLiveTimeline([]), 0);
+              setLiveTimeline([]);
+              setStreamingContent("");
             },
           },
           ac.signal,
         );
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") {
-          setLiveTimeline([]);
-          // 给后端一点时间保存中断消息，然后刷新会话
-          setTimeout(() => void refetchSession(), 500);
-          if (opts.optimisticUser) {
-            setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
-          }
+          // 用户点击停止：保持当前流式 UI，等后端保存中断消息并刷新会话后再清空
+          setTimeout(async () => {
+            await refetchSession();
+            setLiveTimeline([]);
+            setStreamingContent("");
+            if (opts.optimisticUser) {
+              setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+            }
+          }, 500);
           return;
         }
         setError(err instanceof Error ? err.message : "对话请求失败");
         setLiveTimeline([]);
+        setStreamingContent("");
       } finally {
         isStreamingRef.current = false;
         setIsStreaming(false);
-        setStreamingContent("");
         queueDrainingRef.current = false;
         const finishedTaskId = activeQueueTaskIdRef.current;
         if (finishedTaskId) {
@@ -974,8 +1019,20 @@ export function ChatView() {
   };
 
   const hasMessages = messageGroups.length > 0 || optimistic.length > 0 || isStreaming;
-  const showLiveStream = isStreaming || liveTimeline.length > 0;
+  const showLiveStream = isStreaming || liveTimeline.length > 0 || !!streamingContent;
   const lastGroupIndex = messageGroups.length - 1;
+
+  const renderIntermediateSteps = (group: MessageGroup) => {
+    const active = getActiveVersion(group);
+    if (!active) return null;
+    const steps = buildTimelineFromStored(active.toolCalls);
+    if (!steps.length) return null;
+    return (
+      <div className="flex w-full justify-start">
+        <ThinkingTimeline steps={steps} isLive={false} />
+      </div>
+    );
+  };
 
   const renderAssistantBubble = (group: MessageGroup) => {
     const active = getActiveVersion(group);
@@ -992,9 +1049,6 @@ export function ChatView() {
         className="group/msg relative mb-6 flex max-w-[88%] flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
-          {buildTimelineFromStored(active.toolCalls).length > 0 && (
-            <ThinkingTimeline steps={buildTimelineFromStored(active.toolCalls)} isLive={false} />
-          )}
           <PostContent content={active.content} className="prose-sm max-w-none" />
           {isInterrupted && (
             <div className="mt-3 flex items-center gap-1.5 text-[11px] text-amber-600">
@@ -1229,6 +1283,7 @@ export function ChatView() {
                   />
                 </motion.div>
                 </div>
+                {renderIntermediateSteps(group)}
                 <div className="flex w-full justify-start">
                 {renderAssistantBubble(group)}
                 </div>
@@ -1268,21 +1323,31 @@ export function ChatView() {
             </div>
           ))}
 
+          {showLiveStream && liveTimeline.length > 0 && (
+            <div className="flex w-full justify-start">
+              <ThinkingTimeline steps={liveTimeline} isLive />
+            </div>
+          )}
+
           {showLiveStream && (
-            <div
-              className="group/msg mb-6 flex max-w-[88%] flex-col items-start gap-1"
-              data-testid="streaming-assistant-bubble"
-            >
-              <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
-                {liveTimeline.length > 0 && <ThinkingTimeline steps={liveTimeline} isLive />}
+            <div className="flex w-full justify-start">
+              <div
+                className={cn(
+                  "group/msg flex max-w-[88%] flex-col items-start gap-1",
+                  streamingContent ? "mb-6" : "mb-4",
+                )}
+                data-testid="streaming-assistant-bubble"
+              >
                 {streamingContent ? (
-                  <PostContent content={streamingContent} className="prose-sm max-w-none" />
-                ) : liveTimeline.length === 0 ? (
-                  <div className="flex items-center gap-2 text-[var(--kp-text-3)]">
-                    <Loader2 className="h-4 w-4 animate-spin text-[var(--kp-brand)]" />
-                    Agent 思考中…
+                  <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
+                    <PostContent content={streamingContent} className="prose-sm max-w-none" />
                   </div>
-                ) : null}
+                ) : (
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-brand)]" />
+                    Thinking…
+                  </div>
+                )}
               </div>
             </div>
           )}

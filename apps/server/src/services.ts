@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { dump } from "js-yaml";
 import { TRPCError } from "@trpc/server";
 import type { PrismaClient } from "@prisma/client";
 import {
@@ -83,6 +84,7 @@ import {
 import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
+import { encryptCredentialValue, decryptCredentialValue } from "./infra/credentialVault.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
 
@@ -400,6 +402,7 @@ export interface PostEntity {
   tags: string[];
   viewCount: number;
   metadata: any;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -419,7 +422,7 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
   }
 
   protected buildListWhere(input: ListPostsInput): any {
-    const where: any = {};
+    const where: any = { deletedAt: null };
     if (input.published !== undefined) where.published = input.published;
     if (input.category) where.category = input.category;
     if (input.tag) where.tags = { contains: input.tag };
@@ -487,7 +490,7 @@ ${entity.content}
   }
 
   async getBySlug(slug: string): Promise<PostEntity> {
-    const post = await this.prisma.post.findUnique({ where: { slug } });
+    const post = await this.prisma.post.findUnique({ where: { slug, deletedAt: null } });
     if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "文章不存在" });
     await this.prisma.post.update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } });
     return this.formatEntity(post);
@@ -495,7 +498,7 @@ ${entity.content}
 
   async search(query: string, limit = 10): Promise<PostEntity[]> {
     const rawItems = await this.prisma.post.findMany({
-      where: { OR: [{ title: { contains: query } }, { content: { contains: query } }] },
+      where: { deletedAt: null, OR: [{ title: { contains: query } }, { content: { contains: query } }] },
       take: limit,
       orderBy: { updatedAt: "desc" },
     });
@@ -504,7 +507,7 @@ ${entity.content}
 
   async tree(): Promise<{ id: string; slug: string; title: string }[]> {
     return this.prisma.post.findMany({
-      where: { published: true },
+      where: { published: true, deletedAt: null },
       select: { id: true, slug: true, title: true },
       orderBy: { slug: "asc" },
     });
@@ -512,7 +515,7 @@ ${entity.content}
 
   async categories(): Promise<string[]> {
     const rows = await this.prisma.post.findMany({
-      where: { published: true, category: { not: null } },
+      where: { published: true, deletedAt: null, category: { not: null } },
       select: { category: true },
       distinct: ["category"],
     });
@@ -520,7 +523,7 @@ ${entity.content}
   }
 
   async tags(): Promise<string[]> {
-    const rows = await this.prisma.post.findMany({ where: { published: true }, select: { tags: true } });
+    const rows = await this.prisma.post.findMany({ where: { published: true, deletedAt: null }, select: { tags: true } });
     const tagSet = new Set<string>();
     for (const row of rows) {
       if (row.tags) {
@@ -528,6 +531,146 @@ ${entity.content}
       }
     }
     return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }
+
+  async getById(id: string): Promise<PostEntity> {
+    const raw = await this.delegate.findUnique({ where: { id, deletedAt: null } });
+    if (!raw) throw new TRPCError({ code: "NOT_FOUND", message: "文章不存在" });
+    return this.formatEntity(raw);
+  }
+
+  private getTrashDir(): string {
+    return path.join(this.getContentDir(), ".trash");
+  }
+
+  private moveFileToTrash(slug: string): void {
+    const dir = this.getContentDir();
+    const trashDir = this.getTrashDir();
+    const src = path.join(dir, `${slug}${this.fileExtension}`);
+    const dest = path.join(trashDir, `${slug}${this.fileExtension}`);
+    if (fs.existsSync(src)) {
+      if (!fs.existsSync(trashDir)) fs.mkdirSync(trashDir, { recursive: true });
+      fs.renameSync(src, dest);
+    }
+  }
+
+  private moveFileFromTrash(slug: string): void {
+    const dir = this.getContentDir();
+    const trashDir = this.getTrashDir();
+    const src = path.join(trashDir, `${slug}${this.fileExtension}`);
+    const dest = path.join(dir, `${slug}${this.fileExtension}`);
+    if (fs.existsSync(src)) {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.renameSync(src, dest);
+    }
+  }
+
+  private deleteFileFromTrash(slug: string): void {
+    const trashDir = this.getTrashDir();
+    const filePath = path.join(trashDir, `${slug}${this.fileExtension}`);
+    if (fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); } catch {}
+    }
+  }
+
+  async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const start = Date.now();
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing) return this.buildNotFoundFailure("删除", id, Date.now() - start);
+      if (existing.deletedAt) return this.buildNotFoundFailure("删除", id, Date.now() - start);
+      const slug = this.getExistingFileSlug(existing);
+      if (slug) this.moveFileToTrash(slug);
+      const raw = await this.delegate.update({ where: { id }, data: { deletedAt: new Date() } });
+      return success({
+        data: this.buildDeleteSummary(existing),
+        state: await this.getState(),
+        nextSteps: this.getDeleteNextSteps(),
+        operation: "delete",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      return failureFromError(error, "delete", this.entityName, `${this.entityName.toUpperCase()}_DELETE_FAILED`);
+    }
+  }
+
+  async restore(id: string): Promise<OperationResult<PostEntity>> {
+    const start = Date.now();
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing || !existing.deletedAt) {
+        return failure({
+          code: "POST_NOT_FOUND",
+          message: "恢复文章失败：文章不在回收站中。",
+          details: { id },
+          retryable: false,
+          operation: "restore",
+          entity: this.entityName,
+        });
+      }
+      const slug = this.getExistingFileSlug(existing);
+      if (slug) this.moveFileFromTrash(slug);
+      const raw = await this.delegate.update({ where: { id }, data: { deletedAt: null } });
+      const entity = this.formatEntity(raw);
+      return success({
+        data: entity,
+        state: await this.getState(),
+        operation: "restore",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      return failureFromError(error, "restore", this.entityName, "POST_RESTORE_FAILED");
+    }
+  }
+
+  async permanentDelete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const start = Date.now();
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing || !existing.deletedAt) {
+        return failure({
+          code: "POST_NOT_FOUND",
+          message: "永久删除失败：文章不在回收站中。",
+          details: { id },
+          retryable: false,
+          operation: "permanentDelete",
+          entity: this.entityName,
+        });
+      }
+      const slug = this.getExistingFileSlug(existing);
+      if (slug) this.deleteFileFromTrash(slug);
+      await this.delegate.delete({ where: { id } });
+      return success({
+        data: this.buildDeleteSummary(existing),
+        state: await this.getState(),
+        operation: "permanentDelete",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      return failureFromError(error, "permanentDelete", this.entityName, "POST_PERMANENT_DELETE_FAILED");
+    }
+  }
+
+  async listDeleted(page = 1, pageSize = 20): Promise<PaginatedResult<PostEntity>> {
+    const where = { deletedAt: { not: null } };
+    const skip = (page - 1) * pageSize;
+    const [rawItems, total] = await Promise.all([
+      this.delegate.findMany({ where, skip, take: pageSize, orderBy: { deletedAt: "desc" } }),
+      this.delegate.count({ where }),
+    ]);
+    return {
+      items: rawItems.map((item: any) => this.formatEntity(item)),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
   }
 
   private generateSlug(title: string): string {
@@ -783,7 +926,7 @@ export interface MemoryEntity {
 export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemoryInput, ListMemoriesInput, MemoryEntity> {
   readonly entityName = "memory";
   readonly contentDirName = "memories";
-  readonly fileExtension = ".json";
+  readonly fileExtension = ".md";
 
   protected get delegate() { return this.prisma.memory; }
 
@@ -820,7 +963,16 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
   }
 
   protected serializeToFile(entity: MemoryEntity): string {
-    return JSON.stringify({ content: entity.content, type: entity.type, strength: entity.strength, keywords: entity.keywords }, null, 2) + "\n";
+    const frontmatter = dump(
+      {
+        content: entity.content,
+        type: entity.type,
+        strength: entity.strength,
+        keywords: entity.keywords,
+      },
+      { lineWidth: -1, noRefs: true },
+    );
+    return `---\n${frontmatter}---\n\n${entity.content}\n`;
   }
 
   protected getFileSlug(entity: MemoryEntity): string { return entity.id; }
@@ -858,6 +1010,11 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     const session = await this.prisma.chatSession.findUnique({ where: { id }, include: { messages: true } });
     if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
     return session;
+  }
+
+  async deleteMany(_input?: Record<string, never>): Promise<{ count: number }> {
+    const result = await this.prisma.chatSession.deleteMany({});
+    return { count: result.count };
   }
 
   protected override getCreateNextSteps(entity: SessionEntity): NextStep[] {
@@ -1243,7 +1400,9 @@ export class CredentialService extends BaseService<CreateCredentialInput, Update
   protected formatEntity(raw: any) {
     return {
       ...raw,
+      value: decryptCredentialValue(raw.value),
       scope: raw.scope ? raw.scope.split(",").filter(Boolean).map((s: string) => s.trim()) : [],
+      metadata: raw.metadata ? JSON.parse(raw.metadata) : null,
     };
   }
 
@@ -1255,13 +1414,23 @@ export class CredentialService extends BaseService<CreateCredentialInput, Update
   }
 
   protected buildCreateData(input: CreateCredentialInput) {
-    return { name: input.name, type: input.type, value: input.value, scope: input.scope.join(",") };
+    return {
+      name: input.name,
+      type: input.type,
+      value: encryptCredentialValue(input.value),
+      scope: input.scope.join(","),
+      expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+      metadata: input.metadata ? JSON.stringify(input.metadata) : null,
+    };
   }
 
   protected buildUpdateData(input: UpdateCredentialInput) {
-    const { id: _id, scope, ...data } = input;
+    const { id: _id, scope, expiresAt, metadata, value, ...data } = input;
     const updateData: any = { ...data };
+    if (value !== undefined) updateData.value = encryptCredentialValue(value);
     if (scope !== undefined) updateData.scope = scope.join(",");
+    if (expiresAt !== undefined) updateData.expiresAt = expiresAt ? new Date(expiresAt) : null;
+    if (metadata !== undefined) updateData.metadata = metadata ? JSON.stringify(metadata) : null;
     return updateData;
   }
 
