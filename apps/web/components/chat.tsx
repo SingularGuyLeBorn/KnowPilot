@@ -10,6 +10,7 @@ import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
+  ArrowLeft,
   Ban,
   Bot,
   Check,
@@ -598,6 +599,13 @@ export function ChatView() {
   const { data: sessionDetail, refetch: refetchSession } = trpc.session.getById.useQuery(
     { id: effectiveSessionId! },
     { enabled: !!effectiveSessionId },
+  );
+  // 当前会话是否为子代理任务会话；若是则查父会话标题用于返回提示
+  const isSubagentSession = sessionDetail?.kind === "subagent";
+  const parentSessionId = (sessionDetail as any)?.parentSessionId ?? null;
+  const { data: parentSession } = trpc.session.getById.useQuery(
+    { id: parentSessionId! },
+    { enabled: !!parentSessionId },
   );
 
   const effectiveAgentId =
@@ -1374,6 +1382,31 @@ export function ChatView() {
             <PanelRight className="h-4 w-4" />
           </button>
         </header>
+
+        {isSubagentSession && (
+          <div
+            data-testid="subagent-context-bar"
+            className="flex items-center gap-2 border-b border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-4 py-1.5 text-xs"
+          >
+            <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />
+            <span className="font-medium text-[var(--kp-brand-dark)]">子代理任务</span>
+            {(sessionDetail as any)?.taskDescription && (
+              <span className="min-w-0 flex-1 truncate text-[var(--kp-text-2)]">
+                {(sessionDetail as any).taskDescription}
+              </span>
+            )}
+            {parentSessionId && (
+              <Link
+                href={`/chat?sessionId=${parentSessionId}`}
+                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+                title="返回父会话"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                来自会话{parentSession?.title ? ` · ${parentSession.title.slice(0, 16)}` : ""}
+              </Link>
+            )}
+          </div>
+        )}
 
         {effectiveSessionId && sessionDetail && (
           <div className="flex border-b border-[var(--kp-divider)] px-4 py-2 lg:hidden">
