@@ -1,0 +1,15 @@
+feat(swarm): Phase 1 — ChatSession 扩展 + 子代理查询/停止 + 队列优先级消费
+
+数据模型(为 subagent/swarm 铺路):
+- ChatSession 新增 parentSessionId/kind/status/taskDescription 字段 +
+  parent/children 自关系(onDelete: SetNull)+ 复合索引
+- shared schemas: createSessionSchema/updateSessionSchema/listSessionsSchema
+  扩展 subagent 字段;新增 sessionStatusSchema/stopSessionSchema
+- SessionService.buildListWhere/Create/Update 支持 parentSessionId/kind/status/taskDescription
+- sessionRouter 新增 listChildren(列子代理)/stop(置 paused)
+
+队列优先级(异步结果优先于用户消息):
+- consumeQueue 改两阶段:先扫 async-result,再扫 user,
+  确保 agent 当前回复结束后后台任务结果自动先于用户队列发给 LLM
+
+验证: tsc 0 错误; server vitest 228 passed; db:sync 重建 FTS 1455 条

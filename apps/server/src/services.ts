@@ -1034,13 +1034,30 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   protected buildListWhere(input: ListSessionsInput): any {
     const where: any = {};
     if (input.keyword) where.title = { contains: input.keyword };
+    if (input.agentId) where.agentId = input.agentId;
+    if (input.parentSessionId !== undefined) where.parentSessionId = input.parentSessionId;
+    if (input.kind) where.kind = input.kind;
+    if (input.status) where.status = input.status;
     return where;
   }
 
-  protected buildCreateData(input: CreateSessionInput): any { return input; }
+  protected buildCreateData(input: CreateSessionInput): any {
+    const { parentSessionId, kind, taskDescription, status, ...rest } = input;
+    return {
+      ...rest,
+      ...(parentSessionId !== undefined ? { parentSessionId } : {}),
+      ...(kind ? { kind } : {}),
+      ...(taskDescription !== undefined ? { taskDescription } : {}),
+      ...(status ? { status } : {}),
+    };
+  }
   protected buildUpdateData(input: UpdateSessionInput): any {
-    const { id: _id, ...data } = input;
-    return data;
+    const { id: _id, status, taskDescription, ...data } = input;
+    return {
+      ...data,
+      ...(status ? { status } : {}),
+      ...(taskDescription !== undefined ? { taskDescription } : {}),
+    };
   }
 
   override async getById(id: string): Promise<any> {

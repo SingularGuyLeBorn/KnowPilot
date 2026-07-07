@@ -16,7 +16,7 @@ import {
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
-  createSessionSchema, updateSessionSchema, listSessionsSchema,
+  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, switchMessageVersionSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
   createLogSchema, updateLogSchema, listLogsSchema,
@@ -266,7 +266,22 @@ const sessionRouter = router({
   create: publicProcedure.meta({ description: "创建聊天会话。", aiReadable: true }).input(createSessionSchema).mutation(({ ctx, input }) => ctx.services.session.create(input)),
   getById: publicProcedure.meta({ description: "获取会话详情（含消息列表）。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.session.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有聊天会话。", aiReadable: true }).input(listSessionsSchema).query(({ ctx, input }) => ctx.services.session.list(input)),
+  listChildren: publicProcedure
+    .meta({ description: "列出指定父会话的子代理会话（Subagent）。", aiReadable: true })
+    .input(z.object({ parentSessionId: z.string().cuid(), pageSize: z.number().int().min(1).max(100).optional() }))
+    .query(({ ctx, input }) =>
+      ctx.services.session.list({
+        page: 1,
+        pageSize: input.pageSize ?? 50,
+        parentSessionId: input.parentSessionId,
+        kind: "subagent",
+      } as any),
+    ),
   update: publicProcedure.meta({ description: "更新会话标题或系统提示。", aiReadable: true }).input(updateSessionSchema).mutation(({ ctx, input }) => ctx.services.session.update(input)),
+  stop: publicProcedure
+    .meta({ description: "停止子代理会话（状态置为 paused）。", aiReadable: false })
+    .input(stopSessionSchema)
+    .mutation(({ ctx, input }) => ctx.services.session.update({ id: input.id, status: "paused" })),
   delete: publicProcedure.meta({ description: "删除会话及其所有消息（级联删除）。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.session.delete(input.id)),
 });
 
