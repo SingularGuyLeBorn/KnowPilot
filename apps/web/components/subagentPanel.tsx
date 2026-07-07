@@ -67,7 +67,7 @@ function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () =>
   return (
     <div
       data-testid="subagent-card"
-      className="rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] p-2 text-xs shadow-sm"
+      className="rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] p-2 text-xs shadow-sm transition-colors hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]"
     >
       <button
         type="button"
@@ -209,11 +209,24 @@ export function SubagentPanel({
           </button>
         )}
       </div>
-      <div className="space-y-2">
+      <div className="max-h-[320px] space-y-2 overflow-y-auto pr-0.5">
         {items.length === 0 ? (
           <p className="px-1 py-2 text-center text-[10px] text-[var(--kp-text-3)]">暂无子代理任务</p>
         ) : (
-          items.map((s) => <SubagentCard key={s.id} sub={s} onRefresh={refresh} />)
+          <AnimatePresence initial={false}>
+            {items.map((s) => (
+              <motion.div
+                key={s.id}
+                layout
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ type: "spring", stiffness: 300, damping: 26 }}
+              >
+                <SubagentCard sub={s} onRefresh={refresh} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </div>
     </div>
