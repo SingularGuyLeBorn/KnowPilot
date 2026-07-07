@@ -9,6 +9,7 @@ import { runAgentLoop } from "./agentRuntime.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { prisma } from "../db.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
+import { assertLlmBudget } from "./llmBudget.js";
 
 export interface AsyncQueueDelivery {
   id: string;
@@ -280,6 +281,22 @@ export async function startAsyncAgentTask(options: {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
   if (!options.sessionId) throw new Error("run_async 需要有效 sessionId");
+
+  // 数量上限：防止同一父会话失控开太多 subagent
+  const activeCount = await prisma.chatSession.count({
+    where: {
+      parentSessionId: options.sessionId,
+      kind: "subagent",
+      status: { in: ["running", "queued"] },
+    },
+  });
+  const limit = options.config.asyncJobs.maxSubagentsPerSession;
+  if (activeCount >= limit) {
+    throw new Error(`已达到每会话子代理上限（${limit}），请先停止或等待已有任务完成后再启动新任务。`);
+  }
+
+  // 预算检查：避免预算耗尽时还启动后台任务浪费资源
+  assertLlmBudget(options.config);
 
   const taskLabel = options.label?.trim() || task.slice(0, 80);
   const agentSnapshot = {

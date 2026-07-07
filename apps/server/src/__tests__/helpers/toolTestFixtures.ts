@@ -43,7 +43,7 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       toolCallConcurrency: 4,
       providers: {},
     },
-    asyncJobs: { maxConcurrent: 2, maxPerSession: 2, taskTimeoutMs: 60_000, maxRetries: 3 },
+    asyncJobs: { maxConcurrent: 2, maxPerSession: 2, taskTimeoutMs: 60_000, maxRetries: 3, maxSubagentsPerSession: 10 },
     ocr: {
       paddleCliPath: path.join(projectRoot, "missing-paddle.py"),
       paddlePythonPath: "python3",

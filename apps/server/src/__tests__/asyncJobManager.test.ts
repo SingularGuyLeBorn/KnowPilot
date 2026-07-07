@@ -273,7 +273,7 @@ describe("asyncJobManager 持久化", () => {
     const ctx = await createContextInner();
     const narrowConfig = createTestConfig(ctx.config.projectRoot, {
       ...ctx.config,
-      asyncJobs: { maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000, maxRetries: 3 },
+      asyncJobs: { maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000, maxRetries: 3, maxSubagentsPerSession: 10 },
     });
 
     const first = await startAsyncAgentTask({
