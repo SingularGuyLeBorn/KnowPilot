@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:once": "tsx src/index.ts",
+    "dev:mock": "cross-env SERVER_PORT=3011 MOCK_LLM=true MOCK_MCP=true MOCK_NATIVE_TOOLS=true REQUIRE_APPROVAL=false tsx src/index.ts",
     "start": "tsx src/index.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",

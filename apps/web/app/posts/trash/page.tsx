@@ -66,6 +66,7 @@ export default function PostTrashPage() {
             {items.map((post) => (
               <div
                 key={post.id}
+                data-testid="trash-post-card"
                 className="flex flex-col gap-3 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">

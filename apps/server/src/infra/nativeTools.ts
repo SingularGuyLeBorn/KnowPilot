@@ -1231,6 +1231,14 @@ export async function executeNativeTool(
   args: Record<string, unknown>,
   ctx: NativeToolContext,
 ): Promise<unknown> {
+  // Mock 模式：命中已覆盖的 native 工具则走 Mock 实现，避免真实网络调用
+  if (process.env.MOCK_NATIVE_TOOLS === "true") {
+    const { hasMockNativeTool, executeMockNativeTool } = await import("./mockNativeTools.js");
+    if (hasMockNativeTool(name)) {
+      return executeMockNativeTool(name, args, ctx);
+    }
+  }
+
   const handler = TOOL_HANDLERS[name];
   if (!handler) {
     throw new Error(`未知原生工具 "${name}"。可用：${Object.keys(TOOL_HANDLERS).join(", ")}`);

@@ -147,7 +147,7 @@ function ToolStep({
           <Wrench className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
           <span className="min-w-0 truncate">{displayName}</span>
           {step.status === "running" && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[var(--kp-brand)]" />}
-          {step.status === "done" && !isLive && (step.hint || formatToolResultHint(step.result)) && (
+          {step.status === "done" && !isLive && (
             <span
               className={cn(
                 "ml-auto text-[10px]",
@@ -155,7 +155,7 @@ function ToolStep({
               )}
               data-testid="tool-timing-hint"
             >
-              {step.hint || formatToolResultHint(step.result)}
+              {step.hint || formatToolResultHint(step.result) || (hasError ? "失败" : "")}
             </span>
           )}
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200 group-open/tool:rotate-90" />
@@ -1342,12 +1342,12 @@ export function ChatView() {
                   <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
                     <PostContent content={streamingContent} className="prose-sm max-w-none" />
                   </div>
-                ) : (
+                ) : liveTimeline.length === 0 ? (
                   <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-brand)]" />
                     Thinking…
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}

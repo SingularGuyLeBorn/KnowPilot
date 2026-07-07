@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { McpServerEntity } from "../services.js";
+import { executeMockMcpTool, getMockMcpToolSchemas } from "./mockMcpRegistry.js";
 
 interface McpToolMeta {
   serverName: string;
@@ -109,6 +110,15 @@ export async function buildMcpToolSchemas(
 ): Promise<Array<{ type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }>> {
   if (serverNames.length === 0) return [];
 
+  if (process.env.MOCK_MCP === "true") {
+    const schemas = getMockMcpToolSchemas();
+    for (const schema of schemas) {
+      const meta = parseMcpToolName(schema.function.name);
+      if (meta) toolRegistry.set(schema.function.name, meta);
+    }
+    return schemas;
+  }
+
   const cacheKey = serverNames.slice().sort().join(",");
   const cached = schemaCache.get(cacheKey);
   if (cached) return cached;
@@ -159,6 +169,10 @@ export async function executeMcpTool(
   externalName: string,
   args: Record<string, unknown>,
 ): Promise<unknown> {
+  if (process.env.MOCK_MCP === "true") {
+    return executeMockMcpTool(externalName, args, services);
+  }
+
   const meta = parseMcpToolName(externalName);
   if (!meta) throw new Error(`无效的 MCP 工具名: ${externalName}`);
 

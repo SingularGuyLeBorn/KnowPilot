@@ -270,6 +270,7 @@ export function ConfirmDialog({
                 {cancelLabel}
               </Button>
               <Button
+                data-testid="confirm-dialog-confirm"
                 onClick={() => {
                   onConfirm();
                   onCancel();

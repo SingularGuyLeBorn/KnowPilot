@@ -4,6 +4,7 @@
 
 import type { AppConfig, LlmProviderConfig } from "./config.js";
 import type { ReasoningEffort } from "@knowpilot/shared";
+import { mockChatCompletion, mockChatCompletionStream } from "./mockLlmClient.js";
 
 export interface LlmContentPart {
   type: "text" | "image_url";
@@ -208,6 +209,9 @@ export async function chatCompletion(options: {
   tools?: LlmToolDefinition[];
   signal?: AbortSignal;
 } & LlmRequestOptions): Promise<LlmCompletionResult> {
+  if (process.env.MOCK_LLM === "true") {
+    return mockChatCompletion(options);
+  }
   const provider = options.model
     ? inferProviderFromModel(options.config, options.model)
     : resolveProvider(options.config);
@@ -296,6 +300,10 @@ export async function* chatCompletionStream(options: {
   tools?: LlmToolDefinition[];
   signal?: AbortSignal;
 } & LlmRequestOptions): AsyncGenerator<StreamChunk> {
+  if (process.env.MOCK_LLM === "true") {
+    yield* mockChatCompletionStream(options);
+    return;
+  }
   const provider = options.model
     ? inferProviderFromModel(options.config, options.model)
     : resolveProvider(options.config);

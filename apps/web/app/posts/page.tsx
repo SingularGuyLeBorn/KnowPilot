@@ -209,7 +209,7 @@ function PostRow({
   const router = useRouter();
 
   return (
-    <article className="group rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-sm">
+    <article data-testid="post-card" className="group rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">

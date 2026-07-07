@@ -43,9 +43,14 @@ apps/server/prisma/migrations/**/migration_lock.toml
 # Test
 coverage/
 .playwright-mcp/
+apps/web/e2e/playwright-report/
+apps/web/e2e/playwright-report-mock/
+apps/web/e2e/test-results/
+apps/web/e2e/test-results-mock/
 content/posts/test-post-slug-*.md
 content/posts/search-test-*.md
 content/posts/draft-search-test-*.md
+content/posts/e2e-trash-*.md
 content/posts/.trash/
 content/uploads/vitest-test-file-*
 

@@ -2,7 +2,7 @@
  * E2E 侧 tRPC HTTP 客户端（走真实 server:3010，避免 Playwright 直接 import server TS）
  */
 
-const SERVER_URL = process.env.E2E_SERVER_URL ?? "http://127.0.0.1:3010";
+export const SERVER_URL = process.env.E2E_SERVER_URL ?? "http://127.0.0.1:3010";
 
 type TrpcBatchItem<T> = {
   result?: { data?: { json?: T } };
