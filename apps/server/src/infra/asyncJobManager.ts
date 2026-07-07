@@ -46,6 +46,8 @@ interface AsyncTaskInput {
 interface AsyncTaskOutput {
   asyncResult?: string;
   error?: string;
+  /** 任务 token 消耗（纳入 LLM 预算闭环，便于审计） */
+  tokenUsage?: { prompt: number; completion: number; total: number };
 }
 
 function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
@@ -258,10 +260,17 @@ function buildAsyncExecute(
         signal,
       });
 
+      const resultText = loop.content || "(无文本输出)";
+      const tokenUsage = loop.tokenUsage;
       await services.task.update({
         id: jobId,
         status: "success",
-        output: { asyncResult: loop.content || "(无文本输出)" } satisfies AsyncTaskOutput,
+        output: {
+          asyncResult: tokenUsage?.total
+            ? `${resultText}\n\n[消耗 token: ${tokenUsage.total}（prompt ${tokenUsage.prompt} + completion ${tokenUsage.completion}）]`
+            : resultText,
+          tokenUsage,
+        } satisfies AsyncTaskOutput,
       });
       await syncSubStatus("completed");
     } catch (err: unknown) {
@@ -387,6 +396,7 @@ export async function getAsyncJobStatus(
   error?: string;
   asyncResult?: string;
   subagentSessionId?: string;
+  tokenUsage?: { prompt: number; completion: number; total: number };
 }> {
   const task = await services.task.getById(jobId);
   if (!task) return { jobId, status: "not_found" };
@@ -404,6 +414,7 @@ export async function getAsyncJobStatus(
     error: output.error,
     asyncResult: output.asyncResult,
     subagentSessionId: input?.subagentSessionId,
+    tokenUsage: output.tokenUsage,
   };
 }
 
