@@ -1180,6 +1180,7 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         label: { type: "string", description: "队列中显示的简短标签" },
         timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
         waitForResult: { type: "boolean", description: "true=阻塞等待任务完成直接返回结果；false(默认)=立即返回 running，结果进队列" },
+        shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id（跨会话共享）" },
       },
       required: ["task"],
     },
@@ -2523,6 +2524,9 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
   const timeoutMs =
     args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined;
   const waitForResult = args.waitForResult === true;
+  const shareToSessionIds = Array.isArray(args.shareToSessionIds)
+    ? (args.shareToSessionIds as unknown[]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+    : undefined;
   const started = await startAsyncAgentTask({
     sessionId: ctx.sessionId,
     task: String(args.task || ""),
@@ -2531,6 +2535,7 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     config: ctx.config,
     services: ctx.services,
     agent: ctx.agentSnapshot,
+    shareToSessionIds,
   });
   if (!waitForResult) return started;
   // 阻塞等待结果（受工具超时约束）：结果直接返回，不进发送队列
