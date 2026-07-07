@@ -57,6 +57,16 @@ export class AsyncJobOrchestrator {
     return false;
   }
 
+  /** 任务是否正在执行 */
+  isRunning(jobId: string): boolean {
+    return this.runningJobs.has(jobId);
+  }
+
+  /** 任务是否在队列等待槽位 */
+  isQueued(jobId: string): boolean {
+    return this.queue.some((s) => s.jobId === jobId);
+  }
+
   private canStart(sessionId: string): boolean {
     if (this.runningGlobal >= this.limits.maxGlobal) return false;
     return (this.runningBySession.get(sessionId) ?? 0) < this.limits.maxPerSession;
