@@ -55,6 +55,8 @@ export interface ToolRegistryEntry {
   skillName?: string;
   mcpExternalName?: string;
   concurrencySafe?: boolean;
+  /** 并发分级：A=纯CPU/内存高并发 B=网络只读中并发 C=本地进程低并发 D=写入/副作用串行 */
+  concurrencyClass?: "A" | "B" | "C" | "D";
 }
 
 type ToolKind = "native" | "skill" | "mcp";
@@ -63,6 +65,74 @@ const DEFAULT_NATIVE = [...DEFAULT_AGENT_NATIVE];
 
 /** 可并发执行的工具（只读 / 无副作用） */
 const READ_ONLY_NATIVE = new Set(["web_search", "read_article", "scrape_web_page", "read_file", "list_directory", "wait"]);
+
+/**
+ * 工具并发分级（用于 executeToolCallsBatch 分桶，避免三四个慢工具拖垮快工具）：
+ * A 纯 CPU/内存（高并发 8）、B 网络只读（中并发 4）、C 本地进程（低并发 2）、D 写入/副作用（串行 1）
+ */
+const CONCURRENCY_CLASS_NATIVE: Record<string, "A" | "B" | "C" | "D"> = {
+  // A: 纯本地只读，几乎不占资源
+  read_article: "A",
+  read_file: "A",
+  list_directory: "A",
+  search_files: "A",
+  file_stat: "A",
+  directory_create: "D",
+  wait: "A",
+  search_global: "A",
+  // B: 网络只读
+  web_search: "B",
+  scrape_web_page: "B",
+  invoke_api: "B",
+  github_list_issues: "B",
+  github_get_issue: "B",
+  github_list_pull_requests: "B",
+  github_get_pull_request: "B",
+  github_list_branches: "B",
+  github_get_branch: "B",
+  github_list_workflows: "B",
+  feishu_search_docs: "B",
+  feishu_get_wiki_space: "B",
+  feishu_get_wiki_nodes: "B",
+  feishu_get_doc: "B",
+  feishu_token_status: "B",
+  // C: 本地进程 / OCR / shell（重资源）
+  run_shell: "C",
+  run_async: "A",
+  task_status: "A",
+  cancel_async: "A",
+  await_async: "B",
+  // D: 写入 / 副作用（串行）
+  write_file: "D",
+  append_to_file: "D",
+  file_rename: "D",
+  file_move: "D",
+  file_copy: "D",
+  directory_delete: "D",
+  github_create_pull_request: "D",
+  github_create_branch: "D",
+  github_trigger_workflow: "D",
+  github_create_release: "D",
+  github_tool: "D",
+  feishu_send_text: "D",
+  feishu_send_message: "D",
+  feishu_create_doc: "D",
+  feishu_create_spreadsheet: "D",
+  feishu_append_spreadsheet_values: "D",
+  feishu_refresh_token: "D",
+  session_clear: "D",
+};
+
+const CLASS_CONCURRENCY: Record<"A" | "B" | "C" | "D", number> = { A: 8, B: 4, C: 2, D: 1 };
+
+function getToolConcurrencyClass(name: string, registry: Map<string, ToolRegistryEntry>): "A" | "B" | "C" | "D" {
+  const entry = registry.get(name);
+  if (entry?.concurrencyClass) return entry.concurrencyClass;
+  if (entry?.kind === "mcp") return "B"; // MCP 默认网络类
+  if (entry?.kind === "skill") return "B"; // skill 默认网络类
+  const nativeName = entry?.nativeName || name;
+  return CONCURRENCY_CLASS_NATIVE[nativeName] ?? "B";
+}
 
 const agentSchemaCache = new Map<
   string,
@@ -236,20 +306,19 @@ export async function executeToolCallsBatch(
 ): Promise<Array<{ call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> }; result: unknown }>> {
   const prepared = toolCalls.map((call) => ({ call, parsed: parseToolCallArgs(call) }));
 
-  const safe: typeof prepared = [];
-  const unsafe: typeof prepared = [];
+  // 按 concurrencyClass 分桶（A/B/C/D），每桶独立并发上限，桶间并行
+  const buckets: Record<"A" | "B" | "C" | "D", typeof prepared> = { A: [], B: [], C: [], D: [] };
+  const unauthorized: typeof prepared = [];
 
   for (const item of prepared) {
     if (!isToolAuthorized(item.parsed.name, registry, parsed)) {
-      unsafe.push(item);
+      unauthorized.push(item);
       continue;
     }
-    if (isConcurrencySafeTool(item.parsed.name, registry)) safe.push(item);
-    else unsafe.push(item);
+    buckets[getToolConcurrencyClass(item.parsed.name, registry)].push(item);
   }
 
   const timeoutMs = ctx.config.llm.toolCallTimeoutMs;
-  const concurrency = ctx.config.llm.toolCallConcurrency;
 
   // 单工具执行包裹超时 + abort：超时或被中断时返回错误结果，绝不永久挂起
   const runOne = async (item: { call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> } }) => {
@@ -259,6 +328,7 @@ export async function executeToolCallsBatch(
         executeAgentTool(item.parsed.name, item.parsed.args, ctx, registry),
         timeoutMs,
         item.parsed.name,
+        signal,
       );
       return { ...item, result };
     } catch (err: unknown) {
@@ -274,29 +344,41 @@ export async function executeToolCallsBatch(
 
   const results: Array<{ call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> }; result: unknown }> = [];
 
-  if (safe.length > 0) {
-    // 并发上限：避免一次开太多工具调用拖垮后端 / 触发上游限流
-    const safeResults = await runWithConcurrency(
-      safe.map((item) => () => runOne(item)),
-      concurrency,
-    );
-    results.push(...safeResults);
+  // 各桶独立并发执行，桶间并行（A 类快工具不被 C 类慢进程阻塞）
+  const bucketTasks: Array<Promise<Array<{ call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> }; result: unknown }>>> = [];
+  for (const cls of ["A", "B", "C", "D"] as const) {
+    const items = buckets[cls];
+    if (items.length === 0) continue;
+    const limit = CLASS_CONCURRENCY[cls];
+    bucketTasks.push(runWithConcurrency(items.map((item) => () => runOne(item)), limit));
+  }
+  if (bucketTasks.length > 0) {
+    const bucketResults = await Promise.all(bucketTasks);
+    for (const r of bucketResults) results.push(...r);
   }
 
-  for (const item of unsafe) {
+  // 未授权工具串行返回错误结果
+  for (const item of unauthorized) {
     results.push(await runOne(item));
   }
 
   return results;
 }
 
-/** 工具调用超时包装：超时则拒绝，调用方捕获后转为错误结果（abort 由 agentStream 在轮间检查） */
-function withToolTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+/** 工具调用超时包装：超时或 abort 时拒绝，调用方捕获后转为错误结果 */
+function withToolTimeout<T>(promise: Promise<T>, ms: number, label: string, signal?: AbortSignal): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<T>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`工具 ${label} 执行超时（${ms}ms）`)), ms);
   });
-  return Promise.race([promise, timeout]).finally(() => {
+  const abortPromise = signal
+    ? new Promise<T>((_, reject) => {
+        if (signal.aborted) reject(new Error("流式输出已被用户中断"));
+        else signal.addEventListener("abort", () => reject(new Error("流式输出已被用户中断")), { once: true });
+      })
+    : null;
+  const racers = abortPromise ? [promise, timeout, abortPromise] : [promise, timeout];
+  return Promise.race(racers).finally(() => {
     if (timer) clearTimeout(timer);
   });
 }
