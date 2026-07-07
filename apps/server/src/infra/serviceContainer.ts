@@ -33,6 +33,7 @@ import {
 } from "../services.js";
 
 export class ServiceContainer {
+  readonly prisma: PrismaClient;
   readonly post: PostService;
   readonly agent: AgentService;
   readonly skill: SkillService;
@@ -54,6 +55,7 @@ export class ServiceContainer {
   readonly infoSource: InfoSourceService;
 
   constructor(prisma: PrismaClient, eventBus: AppEventBus, config: AppConfig) {
+    this.prisma = prisma;
     this.post = new PostService(prisma, eventBus, config);
     this.agent = new AgentService(prisma, eventBus, config);
     this.skill = new SkillService(prisma, eventBus, config);

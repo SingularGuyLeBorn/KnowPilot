@@ -303,6 +303,7 @@ export function createAgentToolContext(
   return {
     config,
     services,
+    prisma: services.prisma,
     invokeTrpc,
     sessionId: meta?.sessionId,
     agentSnapshot: meta?.agentSnapshot,

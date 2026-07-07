@@ -15,8 +15,12 @@ export interface AnalyticsDashboard {
   tokens: { estimatedTotal: number };
 }
 
-export async function getAnalyticsDashboard(prisma: PrismaClient): Promise<AnalyticsDashboard> {
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+export async function getAnalyticsDashboard(
+  prisma: PrismaClient,
+  range?: { from?: string; to?: string },
+): Promise<AnalyticsDashboard> {
+  const since24h = range?.from ? new Date(range.from) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const logCreatedAtLte = range?.to ? new Date(range.to) : undefined;
 
   const [
     postTotal,
@@ -44,7 +48,15 @@ export async function getAnalyticsDashboard(prisma: PrismaClient): Promise<Analy
     prisma.run.count({ where: { status: "failed" } }),
     prisma.task.count(),
     prisma.task.count({ where: { type: "cron" } }),
-    prisma.log.count({ where: { level: "error", createdAt: { gte: since24h } } }),
+    prisma.log.count({
+      where: {
+        level: "error",
+        createdAt: {
+          gte: since24h,
+          ...(logCreatedAtLte ? { lte: logCreatedAtLte } : {}),
+        },
+      },
+    }),
     prisma.run.findMany({
       select: { tokenUsage: true },
       take: 500,

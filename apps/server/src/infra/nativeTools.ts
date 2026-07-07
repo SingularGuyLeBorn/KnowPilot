@@ -9,6 +9,7 @@ import { promisify } from "util";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { PostEntity, MemoryEntity } from "../services.js";
+import type { PrismaClient } from "@prisma/client";
 import {
   smartSearch,
   parsePlatformUrl,
@@ -19,7 +20,68 @@ import {
   type SearchEngineName,
 } from "./metablog/index.js";
 import { runShellRestricted, waitMs } from "./shellRunner.js";
+import {
+  getGitHubToken,
+  parseRepo,
+  githubApiRequest,
+  githubGetRepo,
+  githubCreateRepo,
+  githubUpdateRepo,
+  githubGetFile,
+  githubCreateFile,
+  githubUpdateFile,
+  githubDeleteFile,
+  githubListIssues,
+  githubGetIssue,
+  githubCreateIssue,
+  githubUpdateIssue,
+  githubListPullRequests,
+  githubGetPullRequest,
+  githubCreatePullRequest,
+  githubListBranches,
+  githubGetBranch,
+  githubCreateBranch,
+  githubListWorkflows,
+  githubTriggerWorkflow,
+  githubCreateRelease,
+  githubSearchRepos,
+} from "./githubClient.js";
+import { executeGitHubTool, listGitHubTools } from "./external/githubToolExecutor.js";
+import {
+  feishuSendText,
+  feishuSendMessage,
+  feishuGetDoc,
+  feishuCreateDoc,
+  feishuSearchDocs,
+  feishuGetWikiSpace,
+  feishuGetWikiNodes,
+  feishuCreateSpreadsheet,
+  feishuAppendSpreadsheetValues,
+  getUserAccessTokenStatus,
+  refreshUserAccessToken,
+} from "./feishuClient.js";
+import { getCredentialValue } from "./credentialVault.js";
+import { refreshTokenManually as refreshFileToken } from "./external/larkTokenManager.js";
+import {
+  getYuqueCredentials,
+  yuqueApi,
+  yuqueListBooks,
+  yuqueGetBookToc,
+  yuqueGetDocWeb,
+  yuqueCreateDoc,
+  yuqueUpdateDoc,
+  yuqueDeleteDoc,
+  yuqueListRepos,
+  yuqueListDocs,
+  yuqueGetDocV2,
+  yuqueCreateDocV2,
+  yuqueUpdateDocV2,
+  yuqueDeleteDocV2,
+} from "./yuqueClient.js";
+import { captureZhihuLoginState } from "./metablog/auth/zhihuLogin.js";
+import { listSavedCookiePlatforms } from "./cookieJar.js";
 
+import { DEFAULT_AGENT_NATIVE } from "@knowpilot/shared";
 import { isSmokeInfoSource } from "./smokeArtifacts.js";
 
 const execFileAsync = promisify(execFile);
@@ -33,6 +95,7 @@ export interface NativeToolDefinition {
 export interface NativeToolContext {
   config: AppConfig;
   services: ServiceContainer;
+  prisma?: PrismaClient;
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
   /** 当前 Chat 会话 — run_async 等需要 */
   sessionId?: string;
@@ -79,12 +142,56 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   file_delete: fileDeleteTool,
   task_run: taskRunTool,
   yuque_get_doc: yuqueGetDocTool,
+  yuque_list_books: yuqueListBooksTool,
+  yuque_get_book_toc: yuqueGetBookTocTool,
+  yuque_create_doc: yuqueCreateDocTool,
+  yuque_update_doc: yuqueUpdateDocTool,
+  yuque_delete_doc: yuqueDeleteDocTool,
+  yuque_list_repos: yuqueListReposTool,
+  yuque_list_docs: yuqueListDocsTool,
+  yuque_create_doc_v2: yuqueCreateDocV2Tool,
+  yuque_update_doc_v2: yuqueUpdateDocV2Tool,
+  yuque_delete_doc_v2: yuqueDeleteDocV2Tool,
+  capture_zhihu_login: captureZhihuLoginTool,
+  browser_login_status: browserLoginStatusTool,
   github_search_repos: githubSearchReposTool,
+  github_get_repo: githubGetRepoTool,
+  github_create_repo: githubCreateRepoTool,
+  github_update_repo: githubUpdateRepoTool,
+  github_get_file: githubGetFileTool,
+  github_create_file: githubCreateFileTool,
+  github_update_file: githubUpdateFileTool,
+  github_delete_file: githubDeleteFileTool,
+  github_list_issues: githubListIssuesTool,
+  github_get_issue: githubGetIssueTool,
+  github_create_issue: githubCreateIssueTool,
+  github_update_issue: githubUpdateIssueTool,
+  github_list_pull_requests: githubListPullRequestsTool,
+  github_get_pull_request: githubGetPullRequestTool,
+  github_create_pull_request: githubCreatePullRequestTool,
+  github_list_branches: githubListBranchesTool,
+  github_get_branch: githubGetBranchTool,
+  github_create_branch: githubCreateBranchTool,
+  github_list_workflows: githubListWorkflowsTool,
+  github_trigger_workflow: githubTriggerWorkflowTool,
+  github_create_release: githubCreateReleaseTool,
+  github_tool: githubTool,
   feishu_send_text: feishuSendTextTool,
+  feishu_send_message: feishuSendMessageTool,
+  feishu_get_doc: feishuGetDocTool,
+  feishu_create_doc: feishuCreateDocTool,
+  feishu_search_docs: feishuSearchDocsTool,
+  feishu_get_wiki_space: feishuGetWikiSpaceTool,
+  feishu_get_wiki_nodes: feishuGetWikiNodesTool,
+  feishu_create_spreadsheet: feishuCreateSpreadsheetTool,
+  feishu_append_spreadsheet_values: feishuAppendSpreadsheetValuesTool,
+  feishu_token_status: feishuTokenStatusTool,
+  feishu_refresh_token: feishuRefreshTokenTool,
   invoke_api: invokeApiTool,
   run_async: runAsyncTool,
   run_shell: runShellTool,
   wait: waitTool,
+  session_clear: sessionClearTool,
 };
 
 export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
@@ -489,7 +596,7 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_get_doc",
-    description: "通过语雀 API 获取文档内容（需配置 YUQUE_SESSION）。",
+    description: "通过语雀 Open API v2 获取文档内容（需配置 YUQUE_SESSION 或 Credential scope=yuque）。",
     parameters: {
       type: "object",
       properties: {
@@ -498,6 +605,131 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
       },
       required: ["namespace", "slug"],
     },
+  },
+  {
+    name: "yuque_list_books",
+    description: "列出语雀知识库（内部 Web API，需 Cookie）。",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "yuque_get_book_toc",
+    description: "获取语雀知识库目录（内部 Web API，需 Cookie）。",
+    parameters: {
+      type: "object",
+      properties: {
+        bookId: { type: "string" },
+      },
+      required: ["bookId"],
+    },
+  },
+  {
+    name: "yuque_create_doc",
+    description: "在语雀知识库创建文档（内部 Web API，需 Cookie）。",
+    parameters: {
+      type: "object",
+      properties: {
+        bookId: { type: "string" },
+        title: { type: "string" },
+        body: { type: "string", description: "Markdown 内容" },
+      },
+      required: ["bookId", "title", "body"],
+    },
+  },
+  {
+    name: "yuque_update_doc",
+    description: "更新语雀文档（内部 Web API，需 Cookie）。",
+    parameters: {
+      type: "object",
+      properties: {
+        docId: { type: "string" },
+        bookId: { type: "string" },
+        title: { type: "string" },
+        body: { type: "string" },
+      },
+      required: ["docId", "title", "body"],
+    },
+  },
+  {
+    name: "yuque_delete_doc",
+    description: "删除语雀文档（内部 Web API，需 Cookie）。",
+    parameters: {
+      type: "object",
+      properties: {
+        docId: { type: "string" },
+        bookId: { type: "string" },
+      },
+      required: ["docId", "bookId"],
+    },
+  },
+  {
+    name: "yuque_list_repos",
+    description: "列出语雀知识库（Open API v2，需 Token）。",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "yuque_list_docs",
+    description: "列出语雀知识库文档（Open API v2，需 Token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        namespace: { type: "string" },
+      },
+      required: ["namespace"],
+    },
+  },
+  {
+    name: "yuque_create_doc_v2",
+    description: "创建语雀文档（Open API v2，需 Token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        namespace: { type: "string" },
+        title: { type: "string" },
+        body: { type: "string" },
+      },
+      required: ["namespace", "title", "body"],
+    },
+  },
+  {
+    name: "yuque_update_doc_v2",
+    description: "更新语雀文档（Open API v2，需 Token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        namespace: { type: "string" },
+        slug: { type: "string" },
+        title: { type: "string" },
+        body: { type: "string" },
+      },
+      required: ["namespace", "slug", "title", "body"],
+    },
+  },
+  {
+    name: "yuque_delete_doc_v2",
+    description: "删除语雀文档（Open API v2，需 Token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        namespace: { type: "string" },
+        slug: { type: "string" },
+      },
+      required: ["namespace", "slug"],
+    },
+  },
+  {
+    name: "capture_zhihu_login",
+    description: "弹出浏览器窗口让用户登录知乎，完成后保存登录态到 content/cookies/zhihu_storage_state.json。",
+    parameters: {
+      type: "object",
+      properties: {
+        timeoutSec: { type: "number", description: "等待超时秒数，默认 120" },
+      },
+    },
+  },
+  {
+    name: "browser_login_status",
+    description: "列出当前已保存的浏览器登录态平台。",
+    parameters: { type: "object", properties: {} },
   },
   {
     name: "github_search_repos",
@@ -512,8 +744,293 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
     },
   },
   {
+    name: "github_get_repo",
+    description: "获取 GitHub 仓库详情。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+      },
+      required: ["repo"],
+    },
+  },
+  {
+    name: "github_create_repo",
+    description: "创建 GitHub 仓库（需要 token 有 repo 或 public_repo 权限）。",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        description: { type: "string" },
+        private: { type: "boolean", description: "默认 false" },
+        autoInit: { type: "boolean", description: "是否自动初始化 README，默认 false" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "github_update_repo",
+    description: "更新 GitHub 仓库元信息。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        description: { type: "string" },
+        private: { type: "boolean" },
+        defaultBranch: { type: "string" },
+      },
+      required: ["repo"],
+    },
+  },
+  {
+    name: "github_get_file",
+    description: "读取 GitHub 仓库文件内容（Base64 自动解码）。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        path: { type: "string" },
+        ref: { type: "string", description: "分支/tag/sha，默认默认分支" },
+      },
+      required: ["repo", "path"],
+    },
+  },
+  {
+    name: "github_create_file",
+    description: "在 GitHub 仓库创建文件。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        path: { type: "string" },
+        content: { type: "string" },
+        message: { type: "string" },
+        branch: { type: "string" },
+      },
+      required: ["repo", "path", "content", "message"],
+    },
+  },
+  {
+    name: "github_update_file",
+    description: "更新 GitHub 仓库文件（需要先获取 sha）。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        path: { type: "string" },
+        content: { type: "string" },
+        message: { type: "string" },
+        sha: { type: "string" },
+        branch: { type: "string" },
+      },
+      required: ["repo", "path", "content", "message", "sha"],
+    },
+  },
+  {
+    name: "github_delete_file",
+    description: "删除 GitHub 仓库文件。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        path: { type: "string" },
+        message: { type: "string" },
+        sha: { type: "string" },
+        branch: { type: "string" },
+      },
+      required: ["repo", "path", "message", "sha"],
+    },
+  },
+  {
+    name: "github_list_issues",
+    description: "列出 GitHub 仓库 Issues。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        state: { type: "string", enum: ["open", "closed", "all"], description: "默认 open" },
+        perPage: { type: "number", description: "默认 30" },
+        page: { type: "number", description: "默认 1" },
+      },
+      required: ["repo"],
+    },
+  },
+  {
+    name: "github_get_issue",
+    description: "获取单个 GitHub Issue 详情。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        number: { type: "number" },
+      },
+      required: ["repo", "number"],
+    },
+  },
+  {
+    name: "github_create_issue",
+    description: "创建 GitHub Issue。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        title: { type: "string" },
+        body: { type: "string" },
+        labels: { type: "array", items: { type: "string" } },
+      },
+      required: ["repo", "title"],
+    },
+  },
+  {
+    name: "github_update_issue",
+    description: "更新 GitHub Issue（状态/标题/正文/标签）。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        number: { type: "number" },
+        title: { type: "string" },
+        body: { type: "string" },
+        state: { type: "string", enum: ["open", "closed"] },
+        labels: { type: "array", items: { type: "string" } },
+      },
+      required: ["repo", "number"],
+    },
+  },
+  {
+    name: "github_list_pull_requests",
+    description: "列出 GitHub 仓库 Pull Requests。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        state: { type: "string", enum: ["open", "closed", "all"], description: "默认 open" },
+        perPage: { type: "number", description: "默认 30" },
+        page: { type: "number", description: "默认 1" },
+      },
+      required: ["repo"],
+    },
+  },
+  {
+    name: "github_get_pull_request",
+    description: "获取单个 GitHub Pull Request 详情。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        number: { type: "number" },
+      },
+      required: ["repo", "number"],
+    },
+  },
+  {
+    name: "github_create_pull_request",
+    description: "创建 GitHub Pull Request。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        title: { type: "string" },
+        head: { type: "string", description: "源分支" },
+        base: { type: "string", description: "目标分支" },
+        body: { type: "string" },
+      },
+      required: ["repo", "title", "head", "base"],
+    },
+  },
+  {
+    name: "github_list_branches",
+    description: "列出 GitHub 仓库分支。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        perPage: { type: "number", description: "默认 30" },
+        page: { type: "number", description: "默认 1" },
+      },
+      required: ["repo"],
+    },
+  },
+  {
+    name: "github_get_branch",
+    description: "获取 GitHub 分支详情。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        branch: { type: "string" },
+      },
+      required: ["repo", "branch"],
+    },
+  },
+  {
+    name: "github_create_branch",
+    description: "基于已有分支创建新分支。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        newBranch: { type: "string" },
+        fromBranch: { type: "string", description: "默认 main" },
+      },
+      required: ["repo", "newBranch"],
+    },
+  },
+  {
+    name: "github_list_workflows",
+    description: "列出 GitHub Actions 工作流。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+      },
+      required: ["repo"],
+    },
+  },
+  {
+    name: "github_trigger_workflow",
+    description: "触发 GitHub Actions 工作流 dispatch 事件。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        workflowId: { type: "string", description: "工作流 ID 或文件名" },
+        ref: { type: "string", description: "触发分支，默认 main" },
+        inputs: { type: "object", description: "工作流输入参数" },
+      },
+      required: ["repo", "workflowId"],
+    },
+  },
+  {
+    name: "github_create_release",
+    description: "创建 GitHub Release。",
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "仓库，格式 owner/repo" },
+        tagName: { type: "string" },
+        name: { type: "string" },
+        body: { type: "string" },
+        targetCommitish: { type: "string", description: "目标分支或 commit" },
+      },
+      required: ["repo", "tagName", "name"],
+    },
+  },
+  {
+    name: "github_tool",
+    description: `调用完整版 GitHub 工具集（MetaBlog 全量）。可用 tool 名称：${listGitHubTools().join(", ")}。`,
+    parameters: {
+      type: "object",
+      properties: {
+        tool: { type: "string", description: "GitHub 工具名，如 github_create_issue" },
+        params: { type: "object", description: "该工具所需参数" },
+      },
+      required: ["tool", "params"],
+    },
+  },
+  {
     name: "feishu_send_text",
-    description: "向飞书用户/群发送文本（需配置 FEISHU_TENANT_ACCESS_TOKEN）。",
+    description: "向飞书用户/群发送文本（优先 tenant token；也支持 user token）。",
     parameters: {
       type: "object",
       properties: {
@@ -522,6 +1039,118 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         text: { type: "string" },
       },
       required: ["receiveId", "text"],
+    },
+  },
+  {
+    name: "feishu_send_message",
+    description: "向飞书发送任意类型消息（text/post/image/interactive 等）。",
+    parameters: {
+      type: "object",
+      properties: {
+        receiveId: { type: "string" },
+        receiveIdType: { type: "string", enum: ["open_id", "chat_id", "user_id"], description: "默认 open_id" },
+        msgType: { type: "string", description: "消息类型：text/post/image/interactive" },
+        content: { type: "object", description: "消息内容对象" },
+      },
+      required: ["receiveId", "msgType", "content"],
+    },
+  },
+  {
+    name: "feishu_get_doc",
+    description: "获取飞书文档详情（需 user_access_token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        documentId: { type: "string" },
+      },
+      required: ["documentId"],
+    },
+  },
+  {
+    name: "feishu_create_doc",
+    description: "创建飞书文档（需 user_access_token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        folderToken: { type: "string", description: "可选父文件夹 token" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "feishu_search_docs",
+    description: "搜索飞书文档（需 user_access_token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "feishu_get_wiki_space",
+    description: "获取飞书 Wiki 空间信息（需 user_access_token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        spaceId: { type: "string" },
+      },
+      required: ["spaceId"],
+    },
+  },
+  {
+    name: "feishu_get_wiki_nodes",
+    description: "获取飞书 Wiki 节点列表（需 user_access_token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        spaceId: { type: "string" },
+        parentNodeToken: { type: "string", description: "可选父节点 token" },
+      },
+      required: ["spaceId"],
+    },
+  },
+  {
+    name: "feishu_create_spreadsheet",
+    description: "创建飞书表格（需 user_access_token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        folderToken: { type: "string" },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "feishu_append_spreadsheet_values",
+    description: "向飞书表格追加数据（需 user_access_token）。",
+    parameters: {
+      type: "object",
+      properties: {
+        spreadsheetToken: { type: "string" },
+        range: { type: "string", description: "如 sheet1!A1" },
+        values: { type: "array", description: "二维数组" },
+      },
+      required: ["spreadsheetToken", "range", "values"],
+    },
+  },
+  {
+    name: "feishu_token_status",
+    description: "查询飞书 user_access_token 状态（Credential 表或文件缓存）。",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "feishu_refresh_token",
+    description: "手动刷新飞书 user_access_token。",
+    parameters: {
+      type: "object",
+      properties: {},
     },
   },
   {
@@ -574,6 +1203,21 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         seconds: { type: "number", description: "等待秒数，默认 1，最大 300" },
         ms: { type: "number", description: "或直接指定毫秒数（与 seconds 二选一）" },
       },
+    },
+  },
+  {
+    name: "session_clear",
+    description:
+      "删除所有 ChatSession 及其关联的 ChatMessage（级联清空）。这是一个破坏性操作，调用时必须将 confirm 显式设为 true。",
+    parameters: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          description: "必须设为 true 才会执行清空，否则拒绝调用",
+        },
+      },
+      required: ["confirm"],
     },
   },
 ];
@@ -1447,53 +2091,383 @@ async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext
 }
 
 async function yuqueGetDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { session, ctoken } = ctx.config.integrations.yuque;
-  if (!session) throw new Error("未配置 YUQUE_SESSION");
-  const res = await fetch(`https://www.yuque.com/api/v2/repos/${args.namespace}/docs/${args.slug}`, {
-    headers: {
-      Cookie: `_yuque_session=${session}`,
-      ...(ctoken ? { "X-Auth-Token": ctoken } : {}),
-      "User-Agent": "KnowPilot/1.0",
-    },
-  });
-  if (!res.ok) throw new Error(`语雀 API 失败: HTTP ${res.status}`);
-  const data = (await res.json()) as { data?: { title?: string; body?: string; slug?: string } };
-  return { title: data.data?.title, slug: data.data?.slug, body: (data.data?.body || "").slice(0, 12000) };
+  const token = ctx.config.integrations.yuque.ctoken || "";
+  const data = (await yuqueGetDocV2(String(args.namespace), String(args.slug), token)) as {
+    title?: string;
+    slug?: string;
+    body?: string;
+  };
+  return { title: data.title, slug: data.slug, body: (data.body || "").slice(0, 12000) };
+}
+
+async function yuqueListBooksTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueListBooks(credentials);
+}
+
+async function yuqueGetBookTocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueGetBookToc(String(args.bookId), credentials);
+}
+
+async function yuqueCreateDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueCreateDoc(String(args.bookId), String(args.title), String(args.body), credentials);
+}
+
+async function yuqueUpdateDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueUpdateDoc(String(args.docId), String(args.bookId), String(args.title), String(args.body), credentials);
+}
+
+async function yuqueDeleteDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueDeleteDoc(String(args.docId), String(args.bookId), credentials);
+}
+
+async function yuqueListReposTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = ctx.config.integrations.yuque.ctoken || "";
+  return yuqueListRepos(token);
+}
+
+async function yuqueListDocsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = ctx.config.integrations.yuque.ctoken || "";
+  return yuqueListDocs(String(args.namespace), token);
+}
+
+async function yuqueCreateDocV2Tool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = ctx.config.integrations.yuque.ctoken || "";
+  return yuqueCreateDocV2(String(args.namespace), String(args.title), String(args.body), token);
+}
+
+async function yuqueUpdateDocV2Tool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = ctx.config.integrations.yuque.ctoken || "";
+  return yuqueUpdateDocV2(String(args.namespace), String(args.slug), String(args.title), String(args.body), token);
+}
+
+async function yuqueDeleteDocV2Tool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = ctx.config.integrations.yuque.ctoken || "";
+  return yuqueDeleteDocV2(String(args.namespace), String(args.slug), token);
+}
+
+async function captureZhihuLoginTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
+  return captureZhihuLoginState(Number(args.timeoutSec || 120));
+}
+
+async function browserLoginStatusTool(_args: Record<string, unknown>, _ctx: NativeToolContext) {
+  return { platforms: listSavedCookiePlatforms() };
 }
 
 async function githubSearchReposTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.github.token;
-  const url = new URL("https://api.github.com/search/repositories");
-  url.searchParams.set("q", String(args.query));
-  url.searchParams.set("per_page", String(args.limit || 5));
-  const res = await fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "User-Agent": "KnowPilot/1.0",
-    },
-  });
-  if (!res.ok) throw new Error(`GitHub API 失败: HTTP ${res.status}`);
-  const data = (await res.json()) as { items?: Array<{ full_name: string; html_url: string; description: string; stargazers_count: number }> };
+  const token = getGitHubToken(ctx.config);
+  const data = (await githubSearchRepos(String(args.query), Number(args.limit || 5), token)) as {
+    items?: Array<{ full_name: string; html_url: string; description: string; stargazers_count: number }>;
+  };
   return (data.items || []).map((r) => ({ name: r.full_name, url: r.html_url, description: r.description, stars: r.stargazers_count }));
 }
 
+async function githubGetRepoTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubGetRepo(owner, repoName, getGitHubToken(ctx.config));
+}
+
+async function githubCreateRepoTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  return githubCreateRepo(
+    String(args.name),
+    {
+      description: args.description ? String(args.description) : undefined,
+      private: args.private === true,
+      autoInit: args.autoInit === true,
+    },
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubUpdateRepoTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubUpdateRepo(
+    owner,
+    repoName,
+    {
+      description: args.description ? String(args.description) : undefined,
+      private: args.private === true ? true : args.private === false ? false : undefined,
+      default_branch: args.defaultBranch ? String(args.defaultBranch) : undefined,
+    },
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubGetFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  const file = await githubGetFile(owner, repoName, String(args.path), args.ref ? String(args.ref) : undefined, getGitHubToken(ctx.config));
+  return {
+    name: file.name,
+    path: file.path,
+    sha: file.sha,
+    htmlUrl: file.html_url,
+    content: file.decodedContent,
+  };
+}
+
+async function githubCreateFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubCreateFile(
+    owner,
+    repoName,
+    String(args.path),
+    String(args.content),
+    String(args.message),
+    args.branch ? String(args.branch) : undefined,
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubUpdateFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubUpdateFile(
+    owner,
+    repoName,
+    String(args.path),
+    String(args.content),
+    String(args.message),
+    String(args.sha),
+    args.branch ? String(args.branch) : undefined,
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubDeleteFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubDeleteFile(
+    owner,
+    repoName,
+    String(args.path),
+    String(args.message),
+    String(args.sha),
+    args.branch ? String(args.branch) : undefined,
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubListIssuesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubListIssues(
+    owner,
+    repoName,
+    (args.state as "open" | "closed" | "all") || "open",
+    Number(args.perPage || 30),
+    Number(args.page || 1),
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubGetIssueTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubGetIssue(owner, repoName, Number(args.number), getGitHubToken(ctx.config));
+}
+
+async function githubCreateIssueTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubCreateIssue(
+    owner,
+    repoName,
+    String(args.title),
+    args.body ? String(args.body) : undefined,
+    Array.isArray(args.labels) ? args.labels.map(String) : undefined,
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubUpdateIssueTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubUpdateIssue(
+    owner,
+    repoName,
+    Number(args.number),
+    {
+      title: args.title ? String(args.title) : undefined,
+      body: args.body ? String(args.body) : undefined,
+      state: args.state as "open" | "closed" | undefined,
+      labels: Array.isArray(args.labels) ? args.labels.map(String) : undefined,
+    },
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubListPullRequestsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubListPullRequests(
+    owner,
+    repoName,
+    (args.state as "open" | "closed" | "all") || "open",
+    Number(args.perPage || 30),
+    Number(args.page || 1),
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubGetPullRequestTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubGetPullRequest(owner, repoName, Number(args.number), getGitHubToken(ctx.config));
+}
+
+async function githubCreatePullRequestTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubCreatePullRequest(
+    owner,
+    repoName,
+    String(args.title),
+    String(args.head),
+    String(args.base),
+    args.body ? String(args.body) : undefined,
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubListBranchesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubListBranches(owner, repoName, Number(args.perPage || 30), Number(args.page || 1), getGitHubToken(ctx.config));
+}
+
+async function githubGetBranchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubGetBranch(owner, repoName, String(args.branch), getGitHubToken(ctx.config));
+}
+
+async function githubCreateBranchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubCreateBranch(owner, repoName, String(args.newBranch), String(args.fromBranch || "main"), getGitHubToken(ctx.config));
+}
+
+async function githubListWorkflowsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubListWorkflows(owner, repoName, getGitHubToken(ctx.config));
+}
+
+async function githubTriggerWorkflowTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubTriggerWorkflow(
+    owner,
+    repoName,
+    String(args.workflowId),
+    String(args.ref || "main"),
+    args.inputs && typeof args.inputs === "object" ? (args.inputs as Record<string, string>) : undefined,
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubCreateReleaseTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubCreateRelease(
+    owner,
+    repoName,
+    String(args.tagName),
+    String(args.name),
+    args.body ? String(args.body) : undefined,
+    args.targetCommitish ? String(args.targetCommitish) : undefined,
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const tool = String(args.tool || "");
+  const params = (args.params || {}) as Record<string, unknown>;
+  return executeGitHubTool(tool, params, getGitHubToken(ctx.config));
+}
+
 async function feishuSendTextTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.feishu.tenantAccessToken;
-  if (!token) throw new Error("未配置 FEISHU_TENANT_ACCESS_TOKEN");
-  const receiveIdType = String(args.receiveIdType || "open_id");
-  const res = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      receive_id: String(args.receiveId),
-      msg_type: "text",
-      content: JSON.stringify({ text: String(args.text) }),
-    }),
-  });
-  const data = (await res.json()) as { code?: number; msg?: string; data?: unknown };
-  if (!res.ok || data.code !== 0) throw new Error(`飞书发送失败: ${data.msg || res.status}`);
-  return data.data;
+  if (!ctx.prisma) {
+    // 无 prisma 时保持向后兼容：直接用 config 中的 tenant token
+    const token = ctx.config.integrations.feishu.tenantAccessToken;
+    if (!token) throw new Error("未配置 FEISHU_TENANT_ACCESS_TOKEN");
+    const receiveIdType = String(args.receiveIdType || "open_id");
+    const res = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        receive_id: String(args.receiveId),
+        msg_type: "text",
+        content: JSON.stringify({ text: String(args.text) }),
+      }),
+    });
+    const data = (await res.json()) as { code?: number; msg?: string; data?: unknown };
+    if (!res.ok || data.code !== 0) throw new Error(`飞书发送失败: ${data.msg || res.status}`);
+    return data.data;
+  }
+  return feishuSendText(
+    String(args.receiveId),
+    String(args.receiveIdType || "open_id"),
+    String(args.text),
+    ctx.config,
+  );
+}
+
+async function feishuSendMessageTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuSendMessage(
+    String(args.receiveId),
+    String(args.receiveIdType || "open_id"),
+    String(args.msgType || "text"),
+    (args.content || {}) as Record<string, unknown>,
+    ctx.config,
+  );
+}
+
+async function feishuGetDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuGetDoc(String(args.documentId), ctx.prisma, ctx.config);
+}
+
+async function feishuCreateDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuCreateDoc(String(args.title), args.folderToken ? String(args.folderToken) : undefined, ctx.prisma, ctx.config);
+}
+
+async function feishuSearchDocsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuSearchDocs(String(args.query), ctx.prisma, ctx.config);
+}
+
+async function feishuGetWikiSpaceTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuGetWikiSpace(String(args.spaceId), ctx.prisma, ctx.config);
+}
+
+async function feishuGetWikiNodesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuGetWikiNodes(String(args.spaceId), args.parentNodeToken ? String(args.parentNodeToken) : undefined, ctx.prisma, ctx.config);
+}
+
+async function feishuCreateSpreadsheetTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuCreateSpreadsheet(String(args.title), args.folderToken ? String(args.folderToken) : undefined, ctx.prisma, ctx.config);
+}
+
+async function feishuAppendSpreadsheetValuesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuAppendSpreadsheetValues(
+    String(args.spreadsheetToken),
+    String(args.range),
+    (args.values || []) as unknown[],
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuTokenStatusTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return getUserAccessTokenStatus(ctx.prisma, ctx.config);
+}
+
+async function feishuRefreshTokenTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const refreshToken = await getCredentialValue(ctx.prisma, "feishu", "feishu_refresh_token");
+  if (refreshToken) {
+    const token = await refreshUserAccessToken(ctx.prisma, refreshToken);
+    return { success: true, source: "credential", token: token.slice(0, 8) + "..." };
+  }
+  const fileResult = await refreshFileToken();
+  return { source: "file", ...fileResult };
 }
 
 async function invokeApiTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -1536,10 +2510,21 @@ async function waitTool(args: Record<string, unknown>, _ctx: NativeToolContext) 
   return { ...result, waitedSeconds: result.waitedMs / 1000 };
 }
 
+async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (args.confirm !== true) {
+    throw new Error("缺少确认：请将 confirm 设为 true 以删除全部 Chat 会话");
+  }
+  if (!ctx.services?.session?.deleteMany) {
+    throw new Error("当前上下文未提供 SessionService，无法执行 session_clear");
+  }
+  const result = await ctx.services.session.deleteMany();
+  return { deletedSessions: result.count };
+}
+
 export function resolveAllowedNativeTools(agentTools: string[]): string[] | "all" {
   const native = agentTools.filter((t) => t.startsWith("native:")).map((t) => t.replace(/^native:/, ""));
   if (agentTools.length === 0) return "all";
-  if (native.length === 0) return ["web_search", "read_file", "list_directory", "invoke_api"];
+  if (native.length === 0) return [...DEFAULT_AGENT_NATIVE];
   return native;
 }
 

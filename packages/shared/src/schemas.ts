@@ -312,7 +312,7 @@ export const updateLogSchema = z.object({
 export const listLogsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(200).default(50),
-  level: z.string().optional(),
+  level: z.enum(["info", "warn", "error", "debug", "success"]).optional(),
   component: z.string().optional(),
   keyword: z.string().optional(),
 });
@@ -458,7 +458,7 @@ export const createTaskSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["cron", "oneshot"]),
   status: z.enum(["pending", "running", "success", "failed"]).default("pending"),
-  sessionId: z.string().optional(),
+  sessionId: z.string().nullish(),
   input: z.any().optional(),
   output: z.any().optional(),
   cronExpression: z.string().optional(),
@@ -468,7 +468,7 @@ export const updateTaskSchema = z.object({
   id: z.string().cuid(),
   name: z.string().min(1).optional(),
   status: z.enum(["pending", "running", "success", "failed"]).optional(),
-  sessionId: z.string().optional(),
+  sessionId: z.string().nullish(),
   input: z.any().optional(),
   output: z.any().optional(),
   cronExpression: z.string().optional(),
@@ -477,7 +477,7 @@ export const updateTaskSchema = z.object({
 export const listTasksSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
-  status: z.string().optional(),
+  status: z.enum(["pending", "running", "success", "failed"]).optional(),
   keyword: z.string().optional(),
 });
 
@@ -551,7 +551,7 @@ export const updateApprovalSchema = z.object({
 export const listApprovalsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
-  status: z.string().optional(),
+  status: z.enum(["pending", "approved", "rejected"]).optional(),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -580,7 +580,7 @@ export const updateToolSchema = z.object({
 export const listToolsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
-  type: z.string().optional(),
+  type: z.enum(["skill", "mcp", "native"]).optional(),
   keyword: z.string().optional(),
   enabled: z.boolean().optional(),
 });
@@ -616,7 +616,7 @@ export const listRunsSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   agentId: z.string().optional(),
   sessionId: z.string().optional(),
-  status: z.string().optional(),
+  status: z.enum(["pending", "running", "success", "failed", "cancelled"]).optional(),
   keyword: z.string().optional(),
 });
 
@@ -660,6 +660,8 @@ export const createCredentialSchema = z.object({
   value: z.string().min(1, "值不能为空"),
   scope: z.array(z.string()).default([]),
   lastUsedAt: z.string().datetime().optional().or(z.date().optional()),
+  expiresAt: z.string().datetime().optional().or(z.date().optional()),
+  metadata: z.record(z.any()).optional(),
 });
 
 export const updateCredentialSchema = z.object({
@@ -669,12 +671,14 @@ export const updateCredentialSchema = z.object({
   value: z.string().optional(),
   scope: z.array(z.string()).optional(),
   lastUsedAt: z.string().datetime().optional().or(z.date().optional()),
+  expiresAt: z.string().datetime().optional().or(z.date().optional()),
+  metadata: z.record(z.any()).optional(),
 });
 
 export const listCredentialsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
-  type: z.string().optional(),
+  type: z.enum(["api_key", "token", "password"]).optional(),
   keyword: z.string().optional(),
 });
 

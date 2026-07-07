@@ -13,6 +13,7 @@ import type { ContentFetcher, FetchedContent } from "./types";
 import { launchPlaywrightBrowser } from "../playwrightChrome.js";
 import { getSharedBrowser, closeSharedBrowser } from "../browserPool.js";
 import { PW_SCROLL_HALF, PW_SCROLL_THIRD, PW_EXTRACT_ARTICLE_DOM, PW_WAIT_BODY_MIN_FN } from "../playwrightBrowserScripts.js";
+import { loadCookies } from "../../cookieJar.js";
 
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -744,8 +745,7 @@ export async function fetchWithPlaywright(
   const visible = opts.visible ?? false;
 
   if (isDouyin) {
-    const cookieHeader = process.env.DOUYIN_COOKIE?.trim();
-    const cookies = cookieHeader ? parseCookieHeader(cookieHeader, ".douyin.com") : [];
+    const cookies = loadCookies("douyin");
     const browser = await getSharedBrowser();
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
@@ -772,8 +772,7 @@ export async function fetchWithPlaywright(
   }
 
   if (isXiaohongshu) {
-    const cookieHeader = (process.env.XHS_COOKIE || process.env.XIAOHONGSHU_COOKIE)?.trim();
-    const cookies = cookieHeader ? parseCookieHeader(cookieHeader, ".xiaohongshu.com") : [];
+    const cookies = loadCookies("xhs");
     const browser = await getSharedBrowser();
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
@@ -800,8 +799,7 @@ export async function fetchWithPlaywright(
   }
 
   if (isWechat) {
-    const cookieHeader = process.env.WECHAT_COOKIE?.trim();
-    const cookies = cookieHeader ? parseCookieHeader(cookieHeader, ".weixin.qq.com") : [];
+    const cookies = loadCookies("wechat");
     const browser = await getSharedBrowser();
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
@@ -827,8 +825,7 @@ export async function fetchWithPlaywright(
   }
 
   if (isZhihu) {
-    const cookieHeader = process.env.ZHIHU_COOKIE?.trim();
-    const cookies = cookieHeader ? parseCookieHeader(cookieHeader, ".zhihu.com") : [];
+    const cookies = loadCookies("zhihu");
 
     const runZhihuContext = async (headless: boolean) => {
       if (headless) {

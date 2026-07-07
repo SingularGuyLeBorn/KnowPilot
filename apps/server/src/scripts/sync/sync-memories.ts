@@ -6,6 +6,8 @@
  * 正文：content（如 frontmatter 未提供则使用正文）
  */
 
+import fs from "fs";
+import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, readNumber, getFileMtime } from "./utils.js";
@@ -20,32 +22,47 @@ interface MemoryData {
 export const memorySyncer: Syncer<MemoryData> = {
   entityName: "Memory",
   contentDirName: "memories",
-  extensions: [".md"],
+  extensions: [".md", ".json"],
 
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<MemoryData>[]> {
-    const filePaths = getFilesRecursive(contentDir, [".md"]);
+    const filePaths = getFilesRecursive(contentDir, [".md", ".json"]);
     const records: SyncRecord<MemoryData>[] = [];
 
     for (const filePath of filePaths) {
       try {
         const slug = filePathToSlug(contentDir, filePath);
         const mtime = getFileMtime(filePath);
-        const { data, content } = parseMarkdownFile(filePath);
+        const ext = path.extname(filePath).toLowerCase();
 
-        const memoryContent = typeof data.content === "string" ? data.content : content.trim();
+        let memoryContent: string;
+        let type: string;
+        let strength: number;
+        let keywords: string[];
+
+        if (ext === ".json") {
+          // 兼容旧版运行时生成的 .json 记忆文件
+          const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+          memoryContent = typeof parsed.content === "string" ? parsed.content : "";
+          type = typeof parsed.type === "string" ? parsed.type : "episodic";
+          strength = typeof parsed.strength === "number" ? parsed.strength : 1.0;
+          keywords = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: unknown) => typeof k === "string") : [];
+        } else {
+          const { data, content } = parseMarkdownFile(filePath);
+          memoryContent = typeof data.content === "string" ? data.content : content.trim();
+          type = typeof data.type === "string" ? data.type : "episodic";
+          strength = readNumber(data.strength, 1.0);
+          keywords = readStringArray(data.keywords);
+        }
+
         if (!memoryContent) {
           console.warn(`  ⚠️ [Memory 跳过] ${filePath}: content 为空`);
           continue;
         }
 
-        const type = typeof data.type === "string" ? data.type : "episodic";
-        const strength = readNumber(data.strength, 1.0);
-        const keywords = readStringArray(data.keywords).join(",");
-
         records.push({
           slug,
           mtime,
-          data: { content: memoryContent, type, strength, keywords },
+          data: { content: memoryContent, type, strength, keywords: keywords.join(",") },
         });
       } catch (e: any) {
         console.error(`  ❌ [Memory 解析失败] ${filePath}:`, e.message);
