@@ -330,10 +330,13 @@ async function prepareMessage(
     const idx = items.findIndex((m) => m.id === input.retryFromMessageId);
     if (idx === -1) throw new Error(`消息 ${input.retryFromMessageId} 不存在`);
     if (items[idx].role !== "user") throw new Error("只能重试用户消息");
-    for (let i = items.length - 1; i > idx; i--) {
-      await services.message.delete(items[i].id);
-    }
-    return { messageText: items[idx].content, skipUserCreate: true };
+    const assistantAfter = items[idx + 1]?.role === "assistant" ? items[idx + 1] : null;
+    return {
+      messageText: items[idx].content,
+      skipUserCreate: true,
+      excludeAssistantId: assistantAfter?.id,
+      updateAssistantId: assistantAfter?.id,
+    };
   }
 
   const messageText = input.message?.trim() ?? "";
@@ -385,12 +388,14 @@ export async function chatAgentStream(
   const start = Date.now();
   let sessionId = input.sessionId;
   let partialContent = "";
+  const partialToolCalls: StoredToolCall[] = [];
+  let prepared: PrepareResult | undefined;
 
   try {
     assertLlmBudget(config);
     const agent = await resolveAgent(services, input.agentId);
     const skillResolved = await resolveSkillPrompt(services, input.skillId);
-    const prepared = await prepareMessage(services, input);
+    prepared = await prepareMessage(services, input);
 
     const effectiveModel = resolveEffectiveAgentModel(config, input.model || agent.model);
     let effectiveSystemPrompt =
@@ -425,8 +430,8 @@ export async function chatAgentStream(
     }
 
     const history = await services.message.list({ sessionId, page: 1, pageSize: 100 });
-    const historyForLlm = prepared.excludeAssistantId
-      ? history.items.filter((m) => m.id !== prepared.excludeAssistantId)
+    const historyForLlm = prepared!.excludeAssistantId
+      ? history.items.filter((m) => m.id !== prepared!.excludeAssistantId)
       : history.items;
 
     const memoryHint = await buildMemoryContext(services, prepared.messageText);
@@ -436,9 +441,41 @@ export async function chatAgentStream(
       { modelId: effectiveModel },
     );
 
+    let currentRound = 1;
+    const toolArgsMap = new Map<string, unknown>();
     const trackingEmit = (event: AgentStreamEvent) => {
+      if (event.type === "round_start") {
+        currentRound = event.round;
+      }
       if (event.type === "token" && event.delta) {
         partialContent += event.delta;
+      }
+      if (event.type === "thinking" && event.delta) {
+        const id = `think_${currentRound}`;
+        const existing = partialToolCalls.find((t) => t.id === id);
+        if (existing) {
+          existing.result = String(existing.result ?? "") + event.delta;
+        } else {
+          partialToolCalls.push({
+            id,
+            name: "__thinking__",
+            args: { round: currentRound },
+            result: event.delta,
+            kind: "thinking",
+          });
+        }
+      }
+      if (event.type === "tool_start" && event.toolCallId) {
+        toolArgsMap.set(event.toolCallId, event.args);
+      }
+      if (event.type === "tool_end" && event.toolCallId) {
+        partialToolCalls.push({
+          id: event.toolCallId,
+          name: event.name,
+          args: toolArgsMap.get(event.toolCallId) ?? {},
+          result: event.result,
+          kind: "tool",
+        });
       }
       emit(event);
     };
@@ -465,8 +502,8 @@ export async function chatAgentStream(
     let versionIndex = 0;
     let versionCount = 1;
 
-    if (prepared.updateAssistantId) {
-      const existing = history.items.find((m) => m.id === prepared.updateAssistantId);
+    if (prepared!.updateAssistantId) {
+      const existing = history.items.find((m) => m.id === prepared!.updateAssistantId);
       if (existing) {
         const { versionMeta } = getActiveAssistantPayload(existing);
         const nextMeta = appendAssistantVersion(versionMeta, result.content, result.toolCalls);
@@ -528,16 +565,31 @@ export async function chatAgentStream(
     });
   } catch (err: unknown) {
     const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
-    if (isAbort && sessionId && partialContent.trim()) {
+    if (isAbort && sessionId && (partialContent.trim() || partialToolCalls.length > 0)) {
       try {
-        await services.message.create({
-          sessionId,
-          role: "assistant",
-          content: partialContent.trim(),
-          toolCalls: [],
-          toolResults: buildInitialVersionMeta(partialContent.trim(), []).toolResults,
-          finishReason: "aborted",
-        });
+        if (prepared?.updateAssistantId) {
+          const existing = await services.message.getById(prepared.updateAssistantId);
+          const { versionMeta } = getActiveAssistantPayload(existing);
+          const nextMeta = appendAssistantVersion(versionMeta, partialContent.trim(), partialToolCalls);
+          const active = nextMeta.versions[nextMeta.activeIndex];
+          await services.message.update({
+            id: prepared.updateAssistantId,
+            content: active.content,
+            toolCalls: active.toolCalls,
+            toolResults: { versionMeta: nextMeta },
+            finishReason: "aborted",
+          });
+        } else {
+          const initial = buildInitialVersionMeta(partialContent.trim(), partialToolCalls);
+          await services.message.create({
+            sessionId,
+            role: "assistant",
+            content: partialContent.trim(),
+            toolCalls: partialToolCalls,
+            toolResults: initial.toolResults,
+            finishReason: "aborted",
+          });
+        }
       } catch (saveErr) {
         console.error("[chatAgentStream] 保存中断消息失败:", saveErr);
       }
