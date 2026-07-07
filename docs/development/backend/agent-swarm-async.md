@@ -336,5 +336,34 @@ Subagent done → ChatSession.status=completed + 末条 assistant 消息
 
 ---
 
-> 本文档整合 `subagent-plan.md` 与异步任务闭环设计，按 Phase 0–5 逐步落地，每 Phase 独立可验证。
+## 13. 实施状态（2026-07-08）
+
+| Phase | 状态 | 交付 |
+|---|---|---|
+| Phase 0 多 session 并发流式 | ✅ 已落地 | `chat.tsx` `streamStatesRef` Map + 独立 AbortController + 切换不 abort + queue 按 session 隔离 |
+| Phase 1 数据模型 + 队列优先级 | ✅ 已落地 | ChatSession 扩展 parentSessionId/kind/status/taskDescription + listChildren/stop router + consumeQueue 两阶段优先消费 |
+| Phase 2 subagent 工具 | ✅ 已落地 | run_async 创建 subagent ChatSession + task_status/await_async/cancel_async 工具 + waitForResult 参数 |
+| Phase 3 Subagent UI | ✅ 已落地 | SubagentPanel/SubagentCard + /subagents 后台页 + Sidebar 导航 |
+| Phase 4 并发治理 | ✅ 已落地 | 工具分级并发 A/B/C/D 桶 + withToolTimeout 接 AbortSignal race 拒绝 |
+| Phase 5 进程级隔离 | ✅ 评估结案 | 见下 |
+
+### Phase 5 评估结论（不实施 worker thread 迁移）
+
+经评估，`run_shell`/OCR **当前已是子进程异步执行**（`child_process.spawn` / PaddleOCR python 子进程），主事件循环不被阻塞。Phase 4 的 C 类并发上限（2）已防止进程爆炸。真正的 worker thread 迁移存在以下问题，**不推荐**：
+
+- PrismaClient 不能跨 worker 共享（SQLite 连接不能多线程），worker 内需独立连接，加剧文件锁竞争。
+- 收益有限：子进程已隔离 CPU/内存，主循环仅异步等待 IO，不阻塞。
+- 迁移成本与回归风险高。
+
+**结论**：现有「子进程异步 + Phase 4 分级并发上限 + 工具超时 race」已覆盖进程级隔离诉求。后续若出现子进程僵尸/资源泄漏，再针对性加 `maxListeners`/进程数硬上限即可。
+
+### 验证总览
+- `tsc --noEmit`（server + web）0 错误。
+- server Vitest 228 passed / 5 skipped（串行单 fork，无 SQLite Socket timeout）。
+- admin-pages E2E 26 passed（含 /subagents）。
+- mock E2E chat-mock/chat-thinking-mock/chat-tool-error-mock 4 passed。
+
+---
+
+> 本文档整合 `subagent-plan.md` 与异步任务闭环设计，Phase 0–4 已落地，Phase 5 评估结案。
 > `subagent-plan.md` 的 UI/UX 细节（§10）与组件设计（§4）仍为 Phase 3 的实施依据，不在此重复。
