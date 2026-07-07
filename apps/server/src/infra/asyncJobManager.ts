@@ -97,10 +97,10 @@ function toDelivery(task: {
   };
 }
 
-/** 服务启动时：仅将遗留 async_agent running 任务标为 failed */
+/** 服务启动时：将遗留 async_agent running/queued 任务标为 failed，并同步其 subagent ChatSession 状态 */
 export async function recoverStaleAsyncJobs(): Promise<number> {
   const stale = await prisma.task.findMany({
-    where: { status: "running", name: { startsWith: "[async]" } },
+    where: { status: { in: ["running", "queued"] }, name: { startsWith: "[async]" } },
   });
   let count = 0;
   for (const task of stale) {
@@ -113,6 +113,17 @@ export async function recoverStaleAsyncJobs(): Promise<number> {
         output: { error: "服务重启，后台任务已中断" },
       },
     });
+    // 同步 subagent ChatSession 状态为 failed（避免卡片永久停在 running/queued）
+    if (input.subagentSessionId) {
+      try {
+        await prisma.chatSession.update({
+          where: { id: input.subagentSessionId },
+          data: { status: "failed" },
+        });
+      } catch {
+        // subagent session 可能已删除，忽略
+      }
+    }
     count++;
   }
   return count;
