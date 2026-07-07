@@ -698,6 +698,14 @@ export const gitPushWithApprovalSchema = gitRepoPathSchema.extend({
   approvalId: z.string().cuid().optional(),
 });
 
+// P0-4：git.commit / git.pull 入审批，与 git.push 同档
+export const gitCommitWithApprovalSchema = gitCommitSchema.extend({
+  approvalId: z.string().cuid().optional(),
+});
+export const gitPullWithApprovalSchema = gitRepoPathSchema.extend({
+  approvalId: z.string().cuid().optional(),
+});
+
 export const runTaskSchema = z.object({
   id: z.string().cuid(),
 });
@@ -770,6 +778,8 @@ export type GitRepoPathInput = z.infer<typeof gitRepoPathSchema>;
 export type NativeExecuteInput = z.infer<typeof nativeExecuteSchema>;
 export type DeleteByIdWithApprovalInput = z.infer<typeof deleteByIdWithApprovalSchema>;
 export type GitPushWithApprovalInput = z.infer<typeof gitPushWithApprovalSchema>;
+export type GitCommitWithApprovalInput = z.infer<typeof gitCommitWithApprovalSchema>;
+export type GitPullWithApprovalInput = z.infer<typeof gitPullWithApprovalSchema>;
 export type RunTaskInput = z.infer<typeof runTaskSchema>;
 export type ExecuteApprovalInput = z.infer<typeof executeApprovalSchema>;
 export type RunWorkflowInput = z.infer<typeof runWorkflowSchema>;

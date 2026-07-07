@@ -69,7 +69,8 @@ export const postSyncer: Syncer<PostData> = {
         category: data.category,
         tags: data.tags,
         sourceMtime: mtime,
-        deletedAt: null,
+        // 安全：sync 不再覆盖 deletedAt —— 已软删的文章不会被 sync 复活，
+        // 恢复需走显式的回收站恢复 API（PostService.restore）。
       },
       create: {
         slug,
@@ -85,14 +86,41 @@ export const postSyncer: Syncer<PostData> = {
     });
   },
 
-  async cleanup(prisma: PrismaClient, activeSlugs: string[]): Promise<number> {
+  async cleanup(prisma: PrismaClient, activeSlugs: string[], contentDir?: string): Promise<number> {
+    // 防御：activeSlugs 为空（目录为空或配置错误）时绝不清理，避免一次性清库
+    if (activeSlugs.length === 0) {
+      console.warn(`  ⚠️ [Post] activeSlugs 为空，跳过 cleanup 以防误删（请检查 content/posts 目录）。`);
+      return 0;
+    }
+
+    // 磁盘存在性检查：重新扫描目录（含解析失败的文件），仅清理「文件确实已不存在」的记录。
+    // 这样解析失败的文件（仍在磁盘）不会被误删。
+    const diskSlugs = new Set<string>(activeSlugs);
+    if (contentDir) {
+      try {
+        const allFiles = getFilesRecursive(contentDir, [".md"]).filter((p) => !p.includes(`${contentDir}/.trash/`));
+        for (const filePath of allFiles) {
+          try {
+            diskSlugs.add(filePathToSlug(contentDir, filePath));
+          } catch {
+            // 即使 slug 转换失败，文件仍存在，不应被清理
+          }
+        }
+      } catch {
+        // 目录读取失败时不清理，保守不动 DB
+        console.warn(`  ⚠️ [Post] contentDir 读取失败，跳过 cleanup。`);
+        return 0;
+      }
+    }
+
     const allInDb = await prisma.post.findMany({ where: { deletedAt: null }, select: { slug: true, title: true } });
     let deleted = 0;
 
     for (const dbPost of allInDb) {
-      if (!activeSlugs.includes(dbPost.slug)) {
-        await prisma.post.delete({ where: { slug: dbPost.slug } });
-        console.log(`  🗑️ [Post 已清理] "${dbPost.title}" (本地文件已被删除)`);
+      if (!diskSlugs.has(dbPost.slug)) {
+        // 改为软删：与 PostService.delete 语义一致，进回收站而非硬删，可恢复
+        await prisma.post.update({ where: { slug: dbPost.slug }, data: { deletedAt: new Date() } });
+        console.log(`  🗑️ [Post 已软删] "${dbPost.title}" (本地文件已不存在，移入回收站)`);
         deleted++;
       }
     }

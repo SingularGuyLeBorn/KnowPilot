@@ -7,6 +7,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { AppConfig } from "./config.js";
+import { resolveSafePath, assertPathWithinProjectRoot } from "./safePath.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { PostEntity, MemoryEntity } from "../services.js";
 import type { PrismaClient } from "@prisma/client";
@@ -1254,19 +1255,15 @@ export async function executeNativeTool(
   return raw;
 }
 
-function resolveSafePath(config: AppConfig, relPath: string): string {
-  const normalized = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
-  if (normalized.includes("..")) throw new Error("路径不允许包含 ..");
-  const abs = path.resolve(config.projectRoot, normalized);
-  const root = path.resolve(config.projectRoot);
-  if (!abs.startsWith(root)) throw new Error("路径超出项目根目录范围");
-  return abs;
-}
+// resolveSafePath 已抽到 ./safePath.js，被本文件多处工具复用。
+// 下方保留原位置仅作历史注释，实际导入见文件顶部。
 
 async function resolveRepoPath(ctx: NativeToolContext, repoId?: string, repoPath?: string): Promise<string> {
   if (repoPath) return resolveSafePath(ctx.config, repoPath);
   if (repoId) {
     const repo = await ctx.services.git.getById(repoId);
+    // 安全：DB 里的 repo.path 也必须校验在 projectRoot 之内，防止注册阶段绕过沙箱
+    assertPathWithinProjectRoot(ctx.config, repo.path);
     return repo.path;
   }
   return ctx.config.projectRoot;

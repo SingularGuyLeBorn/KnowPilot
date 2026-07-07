@@ -149,7 +149,11 @@ export const skillSyncer: Syncer<SkillData> = {
     });
   },
 
-  async cleanup(prisma: PrismaClient, activeSlugs: string[]): Promise<number> {
+  async cleanup(prisma: PrismaClient, activeSlugs: string[], _contentDir?: string): Promise<number> {
+    if (activeSlugs.length === 0) {
+      console.warn(`  ⚠️ [Skill] activeSlugs 为空，跳过 cleanup 以防误删。`);
+      return 0;
+    }
     const allInDb = await prisma.skill.findMany({ select: { id: true, sourceSlug: true } });
     let deleted = 0;
 

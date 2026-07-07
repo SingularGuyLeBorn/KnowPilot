@@ -31,8 +31,8 @@ export interface Syncer<T = unknown> {
   /** 将单条记录 upsert 到数据库 */
   upsert(prisma: PrismaClient, record: SyncRecord<T>): Promise<void>;
 
-  /** 清理数据库中已不存在本地文件的记录 */
-  cleanup(prisma: PrismaClient, activeSlugs: string[]): Promise<number>;
+  /** 清理数据库中已不存在本地文件的记录。contentDir 可选，用于磁盘存在性检查（避免误删解析失败的记录）。 */
+  cleanup(prisma: PrismaClient, activeSlugs: string[], contentDir?: string): Promise<number>;
 
   /** 获取数据库中现有记录的 slug → sourceMtime 映射，用于增量同步 */
   getExistingMtimes(prisma: PrismaClient): Promise<Map<string, Date>>;

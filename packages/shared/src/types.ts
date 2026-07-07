@@ -259,7 +259,8 @@ export interface Credential {
   id: string;
   name: string;
   type: "api_key" | "token" | "password";
-  value: string;
+  /** 遮蔽后的预览串（首 4 + 末 4，中间 ••••）。API 永不返回明文。 */
+  valuePreview: string;
   scope: string[];
   lastUsedAt: string | Date | null;
   expiresAt: string | Date | null;

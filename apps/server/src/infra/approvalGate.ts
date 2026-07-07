@@ -18,6 +18,9 @@ const APPROVAL_REQUIRED_OPS = new Set([
   "task.delete",
   "file.delete",
   "git.push",
+  // P0-4：git.commit / git.pull 会改变仓库状态，与 push 同档需审批
+  "git.commit",
+  "git.pull",
 ]);
 
 export function toolRequiresApproval(toolName: string): boolean {

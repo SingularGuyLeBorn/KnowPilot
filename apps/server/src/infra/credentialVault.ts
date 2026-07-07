@@ -30,13 +30,36 @@ function deriveKey(masterKey: string): Buffer {
 
 export function encryptCredentialValue(plain: string, masterKey?: string): string {
   const key = masterKey || getMasterKey();
-  if (!key) return plain;
+  if (!key) {
+    // 生产模式强制加密：无 master key 时拒绝明文落库，避免 dev.db 被复制即泄露全部密钥。
+    // 开发模式保留明文回退以便本地快速试用，但启动时会 warn（见 assertCredentialEncryptionAvailable）。
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "生产环境必须配置 CREDENTIAL_MASTER_KEY 才能存储凭据，当前为空（拒绝明文落库）。",
+      );
+    }
+    return plain;
+  }
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv("aes-256-gcm", deriveKey(key), iv);
   const encrypted = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   const payload = Buffer.concat([iv, authTag, encrypted]).toString("base64");
   return `${ENC_PREFIX}${payload}`;
+}
+
+/** 启动时凭据加密护栏：生产模式无 key 抛错；开发模式 warn。 */
+export function assertCredentialEncryptionAvailable(): void {
+  const key = getMasterKey();
+  if (key) return;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "生产环境启动被拒：未配置 CREDENTIAL_MASTER_KEY，凭据将以明文落库。请设置该环境变量后重启。",
+    );
+  }
+  console.warn(
+    "⚠️ [安全] 未配置 CREDENTIAL_MASTER_KEY，凭据将以明文存储到 dev.db。生产环境必须配置该变量。",
+  );
 }
 
 export function decryptCredentialValue(value: string, masterKey?: string): string {
@@ -71,6 +94,13 @@ function formatCredential(raw: any): CredentialRecord {
     scope: raw.scope ? raw.scope.split(",").filter(Boolean).map((s: string) => s.trim()) : [],
     metadata: raw.metadata ? JSON.parse(raw.metadata) : null,
   };
+}
+
+/** 将明文密钥遮蔽为预览串：仅留首 4 + 末 4，中间以 •••• 占位。运行时 API 永远不返回明文。 */
+export function maskSecret(value: string): string {
+  if (!value) return "";
+  if (value.length <= 8) return "••••••••";
+  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
 }
 
 /** 内存缓存：按 scope 的凭据列表，TTL 30 秒 */

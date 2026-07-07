@@ -355,7 +355,8 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
 
   // 10. GitRepo (Git仓库)
   it("should perform CRUD on GitRepo entity", async () => {
-    const uniquePath = `D:/temp/test-git-${Date.now()}`;
+    // 安全：GitRepo.path 必须在 projectRoot 之内（绝对路径会被 resolveSafePath 拒绝）
+    const uniquePath = `tmp/test-git-${Date.now()}`;
     const uniqueName = `Git Test ${Date.now()}`;
 
     const created = await caller.git.create({
@@ -385,6 +386,26 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     expect(deleted.success).toBe(true);
 
     await expect(caller.git.getById({ id: created.data.id })).rejects.toThrow();
+  });
+
+  it("should reject GitRepo with absolute path or .. traversal (P0-3 沙箱)", async () => {
+    // 绝对路径：Zod 放行但 resolveSafePath 拒绝 → 返回 success:false
+    const absRes = await caller.git.create({ name: "abs-path", path: "D:/Windows", branch: "main" });
+    expect(absRes.success).toBe(false);
+    // .. 穿越：Zod 直接拒绝 → 抛 TRPCError
+    await expect(
+      caller.git.create({ name: "traversal", path: "../escape", branch: "main" }),
+    ).rejects.toThrow();
+  });
+
+  it("should require approval for git.commit / git.pull (P0-4 反射面收紧)", async () => {
+    // 无 approvalId → 触发待审批，抛 FORBIDDEN
+    await expect(
+      caller.git.commit({ repoPath: "tmp/p0-4-test", message: "should require approval" }),
+    ).rejects.toThrow();
+    await expect(
+      caller.git.pull({ repoPath: "tmp/p0-4-test" }),
+    ).rejects.toThrow();
   });
 
   // 11. Task (任务)
@@ -701,7 +722,9 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
       scope: ["llm"],
     });
     expect(updated.success).toBe(true);
-    expect(updated.data.value).toBe("sk-updated-456");
+    // 安全：update 返回遮蔽预览而非明文，末 4 位应保留
+    expect(updated.data.valuePreview).toBe("sk-u••••-456");
+    expect((updated.data as any).value).toBeUndefined();
     expect(updated.data.scope).toContain("llm");
     expect(updated.data.scope).not.toContain("mcp");
 

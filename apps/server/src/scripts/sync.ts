@@ -84,7 +84,7 @@ async function syncEntity<T>(syncer: Syncer<T>, client: PrismaClient): Promise<S
     }
 
     const activeSlugs = records.map((r) => r.slug);
-    result.cleaned = await syncer.cleanup(client, activeSlugs);
+    result.cleaned = await syncer.cleanup(client, activeSlugs, contentDir);
   } catch (e: any) {
     console.error(`  ❌ [${syncer.entityName}] 同步过程失败:`, e.message);
   }

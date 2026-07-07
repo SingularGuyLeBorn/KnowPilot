@@ -84,9 +84,19 @@ import {
 import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
-import { encryptCredentialValue, decryptCredentialValue } from "./infra/credentialVault.js";
+import { encryptCredentialValue, decryptCredentialValue, maskSecret } from "./infra/credentialVault.js";
+import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
+
+/** 安全 JSON.parse：失败时返回 null 并 warn，避免坏数据致 list 整体崩溃。 */
+function safeJsonParse(raw: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
 export interface PaginatedResult<T> {
   items: T[];
@@ -1125,15 +1135,22 @@ export class GitService extends BaseService<CreateGitRepoInput, UpdateGitRepoInp
 
   protected override async validateCreate(input: CreateGitRepoInput): Promise<void> {
     await this.assertUnique("path", input.path, "创建");
+    // 安全：注册阶段即校验 path 在 projectRoot 之内，堵住后续 git commit/push 对任意磁盘路径的操作
+    resolveSafePath(this.config, input.path);
+  }
+  protected override async validateUpdate(input: UpdateGitRepoInput, _existing: any): Promise<void> {
+    if (input.path) resolveSafePath(this.config, input.path);
   }
   protected override buildDeleteSummary(existing: any): Record<string, unknown> {
     return { id: existing.id, name: existing.name, path: existing.path };
   }
 
   private async resolveRepoPath(input: GitRepoPathInput): Promise<string> {
-    if (input.repoPath) return input.repoPath;
+    // 安全：所有 Git 操作的 cwd 都必须经 resolveSafePath / assertPathWithinProjectRoot 校验
+    if (input.repoPath) return resolveSafePath(this.config, input.repoPath);
     if (input.repoId) {
       const repo = await this.getById(input.repoId);
+      assertPathWithinProjectRoot(this.config, repo.path);
       return repo.path;
     }
     return this.config.projectRoot;
@@ -1398,11 +1415,14 @@ export class CredentialService extends BaseService<CreateCredentialInput, Update
   protected get delegate() { return this.prisma.credential; }
 
   protected formatEntity(raw: any) {
+    // 安全：API 响应永不返回明文 value，仅返回遮蔽后的 valuePreview。
+    // 明文仅在 credentialVault 内部（getCredentialValue 等）解密使用。
+    const { value: _encryptedValue, ...rest } = raw;
     return {
-      ...raw,
-      value: decryptCredentialValue(raw.value),
+      ...rest,
+      valuePreview: maskSecret(decryptCredentialValue(raw.value)),
       scope: raw.scope ? raw.scope.split(",").filter(Boolean).map((s: string) => s.trim()) : [],
-      metadata: raw.metadata ? JSON.parse(raw.metadata) : null,
+      metadata: raw.metadata ? safeJsonParse(raw.metadata) : null,
     };
   }
 

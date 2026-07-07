@@ -31,7 +31,7 @@ import {
   createInfoSourceSchema, updateInfoSourceSchema, listInfoSourcesSchema,
   createCredentialSchema, updateCredentialSchema, listCredentialsSchema,
   webSearchSchema, nativeExecuteSchema,
-  deleteByIdSchema, deleteByIdWithApprovalSchema, gitPushWithApprovalSchema,
+  deleteByIdSchema, deleteByIdWithApprovalSchema, gitPushWithApprovalSchema, gitCommitWithApprovalSchema, gitPullWithApprovalSchema,
   runTaskSchema, executeApprovalSchema, approveAndExecuteApprovalSchema,
   runWorkflowSchema, globalSearchSchema, analyticsDashboardSchema,
   authLoginSchema,
@@ -267,7 +267,7 @@ const sessionRouter = router({
   getById: publicProcedure.meta({ description: "获取会话详情（含消息列表）。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.session.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有聊天会话。", aiReadable: true }).input(listSessionsSchema).query(({ ctx, input }) => ctx.services.session.list(input)),
   update: publicProcedure.meta({ description: "更新会话标题或系统提示。", aiReadable: true }).input(updateSessionSchema).mutation(({ ctx, input }) => ctx.services.session.update(input)),
-  delete: publicProcedure.meta({ description: "删除会话及其所有消息（级联删除）。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.session.delete(input.id)),
+  delete: publicProcedure.meta({ description: "删除会话及其所有消息（级联删除）。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.session.delete(input.id)),
 });
 
 const messageRouter = router({
@@ -299,7 +299,7 @@ const logRouter = router({
   list: publicProcedure.meta({ description: "分页列出日志，支持按 level/component/keyword 过滤。", aiReadable: true }).input(listLogsSchema).query(({ ctx, input }) => ctx.services.log.list(input)),
   update: publicProcedure.meta({ description: "更新日志（一般不建议）。", aiReadable: false }).input(updateLogSchema).mutation(({ ctx, input }) => ctx.services.log.update(input)),
   delete: publicProcedure.meta({ description: "删除单条日志。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.log.delete(input.id)),
-  clearAll: publicProcedure.meta({ description: "一键清空日志审计库。", aiReadable: true }).mutation(({ ctx }) => ctx.services.log.clearAll()),
+  clearAll: publicProcedure.meta({ description: "一键清空日志审计库。", aiReadable: false }).mutation(({ ctx }) => ctx.services.log.clearAll()),
 });
 
 const gitRouter = router({
@@ -311,8 +311,14 @@ const gitRouter = router({
   status: publicProcedure.meta({ description: "查看 Git 工作区状态。", aiReadable: true }).input(gitRepoPathSchema).query(({ ctx, input }) => ctx.services.git.status(input)),
   log: publicProcedure.meta({ description: "查看 Git 提交历史。", aiReadable: true }).input(gitLogSchema).query(({ ctx, input }) => ctx.services.git.log(input)),
   diff: publicProcedure.meta({ description: "查看 Git diff。", aiReadable: true }).input(gitDiffSchema).query(({ ctx, input }) => ctx.services.git.diff(input)),
-  commit: publicProcedure.meta({ description: "Git add -A 并提交。", aiReadable: true }).input(gitCommitSchema).mutation(({ ctx, input }) => ctx.services.git.commit(input)),
-  pull: publicProcedure.meta({ description: "Git pull。", aiReadable: true }).input(gitRepoPathSchema).mutation(({ ctx, input }) => ctx.services.git.pull(input)),
+  commit: publicProcedure.meta({ description: "Git add -A 并提交（需审批）。", aiReadable: true }).input(gitCommitWithApprovalSchema).mutation(({ ctx, input }) => {
+    const { approvalId, ...gitArgs } = input;
+    return withApprovalGuard(ctx.services, "git.commit", gitArgs as Record<string, unknown>, approvalId, () => ctx.services.git.commit(gitArgs as any));
+  }),
+  pull: publicProcedure.meta({ description: "Git pull（需审批）。", aiReadable: true }).input(gitPullWithApprovalSchema).mutation(({ ctx, input }) => {
+    const { approvalId, ...gitArgs } = input;
+    return withApprovalGuard(ctx.services, "git.pull", gitArgs as Record<string, unknown>, approvalId, () => ctx.services.git.pull(gitArgs as any));
+  }),
   push: publicProcedure.meta({ description: "Git push。", aiReadable: true }).input(gitPushWithApprovalSchema).mutation(({ ctx, input }) => {
     const { approvalId, ...gitArgs } = input;
     return withApprovalGuard(ctx.services, "git.push", gitArgs as Record<string, unknown>, approvalId, () => ctx.services.git.push(gitArgs));
@@ -410,7 +416,7 @@ const taskRouter = router({
 });
 
 const workspaceRouter = router({
-  create: publicProcedure.meta({ description: "创建工作区。name 和 path 都必须唯一。", aiReadable: true }).input(createWorkspaceSchema).mutation(({ ctx, input }) => ctx.services.workspace.create(input)),
+  create: publicProcedure.meta({ description: "创建工作区。name 和 path 都必须唯一。", aiReadable: false }).input(createWorkspaceSchema).mutation(({ ctx, input }) => ctx.services.workspace.create(input)),
   getById: publicProcedure.meta({ description: "获取工作区详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.workspace.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有工作区。", aiReadable: true }).input(listWorkspacesSchema).query(({ ctx, input }) => ctx.services.workspace.list(input)),
   update: publicProcedure.meta({ description: "更新工作区配置。", aiReadable: true }).input(updateWorkspaceSchema).mutation(({ ctx, input }) => ctx.services.workspace.update(input)),
@@ -464,8 +470,9 @@ const promptRouter = router({
 
 const credentialRouter = router({
   create: publicProcedure.meta({ description: "创建凭据。name 必须唯一。", aiReadable: true }).input(createCredentialSchema).mutation(({ ctx, input }) => ctx.services.credential.create(input)),
-  getById: publicProcedure.meta({ description: "获取凭据详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.credential.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出所有凭据。", aiReadable: true }).input(listCredentialsSchema).query(({ ctx, input }) => ctx.services.credential.list(input)),
+  // 安全：getById / list 不对 AI 反射开放（aiReadable: false），防止 Agent 通过 ai.invoke 拖走全部密钥。
+  getById: publicProcedure.meta({ description: "获取凭据详情（返回遮蔽预览，不含明文）。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.credential.getById(input.id)),
+  list: publicProcedure.meta({ description: "列出所有凭据（返回遮蔽预览，不含明文）。", aiReadable: false }).input(listCredentialsSchema).query(({ ctx, input }) => ctx.services.credential.list(input)),
   update: publicProcedure.meta({ description: "更新凭据。", aiReadable: true }).input(updateCredentialSchema).mutation(({ ctx, input }) => ctx.services.credential.update(input)),
   delete: publicProcedure.meta({ description: "删除凭据。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.credential.delete(input.id)),
   importFromEnv: publicProcedure

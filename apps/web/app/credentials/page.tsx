@@ -6,7 +6,7 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { KeyRound, Plus, ShieldAlert, Eye, EyeOff, Download } from "lucide-react";
+import { KeyRound, Plus, ShieldAlert, Download } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Credential } from "@knowpilot/shared";
@@ -19,10 +19,8 @@ const TYPE_LABEL: Record<Credential["type"], string> = {
   password: "密码",
 };
 
-function maskValue(value: string, reveal: boolean): string {
-  if (reveal) return value;
-  if (value.length <= 8) return "••••••••";
-  return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+function maskValue(value: string): string {
+  return value || "••••••••";
 }
 
 const SCOPE_COLORS: Record<string, string> = {
@@ -53,8 +51,6 @@ export default function CredentialsPage() {
   const deleteMutation = useDelete();
   const importMutation = useImportFromEnv();
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-
   const handleCreateDemo = () => {
     createMutation.mutate({
       name: `demo_key_${Date.now().toString(36).slice(-4)}`,
@@ -78,10 +74,6 @@ export default function CredentialsPage() {
       },
       onError: (err) => alert(`导入失败：${err.message}`),
     });
-  };
-
-  const toggleReveal = (id: string) => {
-    setRevealed((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   return (
@@ -177,15 +169,7 @@ export default function CredentialsPage() {
                 </div>
 
                 <div className="flex items-center gap-2 rounded-lg bg-[var(--vp-c-bg-soft)] px-3 py-2 font-mono text-xs text-[var(--vp-c-text-2)] mb-3">
-                  <span className="flex-1 truncate">{maskValue(cred.value, !!revealed[cred.id])}</span>
-                  <button
-                    type="button"
-                    onClick={() => toggleReveal(cred.id)}
-                    className="shrink-0 text-[var(--vp-c-text-3)] hover:text-[var(--vp-c-brand)]"
-                    aria-label={revealed[cred.id] ? "隐藏" : "显示"}
-                  >
-                    {revealed[cred.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
+                  <span className="flex-1 truncate">{maskValue(cred.valuePreview)}</span>
                 </div>
 
                 <div className="flex flex-wrap gap-1 mb-2">

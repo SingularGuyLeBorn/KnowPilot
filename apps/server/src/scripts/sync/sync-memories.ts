@@ -105,7 +105,11 @@ export const memorySyncer: Syncer<MemoryData> = {
     }
   },
 
-  async cleanup(prisma: PrismaClient, activeSlugs: string[]): Promise<number> {
+  async cleanup(prisma: PrismaClient, activeSlugs: string[], _contentDir?: string): Promise<number> {
+    if (activeSlugs.length === 0) {
+      console.warn(`  ⚠️ [Memory] activeSlugs 为空，跳过 cleanup 以防误删。`);
+      return 0;
+    }
     // Memory 现在以 sourceSlug 为唯一标识，可以安全清理本地已删除的文件
     const allInDb = await prisma.memory.findMany({ select: { id: true, sourceSlug: true } });
     let deleted = 0;

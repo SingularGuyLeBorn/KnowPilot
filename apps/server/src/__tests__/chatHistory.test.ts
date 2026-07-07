@@ -28,21 +28,24 @@ describe("chatHistory 工具回放", () => {
     ]);
   });
 
-  it("buildLlmMessagesFromHistory 重建 assistant+tool 消息链", () => {
+  it("buildLlmMessagesFromHistory 重建扁平存储的 assistant+tool 消息链", () => {
+    // runtime 实际存储：一条 assistant(content=final + toolCalls=[all tools])
     const messages = buildLlmMessagesFromHistory("system", [
       { role: "user", content: "读文件" },
       {
         role: "assistant",
-        content: "",
+        content: "文件内容是 hi",
         toolCalls: [{ id: "call_1", name: "read_file", args: { path: "x.md" }, result: { content: "hi" } }],
       },
-      { role: "assistant", content: "文件内容是 hi" },
     ]);
 
+    // 重建后：assistant(content=null, tool_calls) → tool → assistant(content=final)
     expect(messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "tool", "assistant"]);
     expect(messages[2].tool_calls?.[0].id).toBe("call_1");
+    expect(messages[2].content).toBeNull();
     expect(messages[3].tool_call_id).toBe("call_1");
     expect(messages[3].role).toBe("tool");
+    expect(messages[4].content).toBe("文件内容是 hi");
   });
 
   it("parseAttachmentsFromToolResults 从 user toolResults 解析 OCR 附件", () => {

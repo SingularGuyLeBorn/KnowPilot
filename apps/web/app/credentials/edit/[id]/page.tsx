@@ -75,15 +75,17 @@ export default function CredentialDetailPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    // value 留空表示不修改（API 不再返回明文，无法回填原值）
+    const valuePayload = form.value && form.value.trim() ? form.value : undefined;
     update.mutate(
       {
         id: cred.id,
         name: form.name ?? cred.name,
         type: form.type ?? cred.type,
-        value: form.value ?? cred.value,
+        value: valuePayload,
         scope: form.scope ?? cred.scope,
         expiresAt: form.expiresAt !== undefined ? (form.expiresAt ? new Date(form.expiresAt as string) : null) : cred.expiresAt,
-      },
+      } as any,
       {
         onSuccess: () => router.push("/credentials"),
         onError: (err: Error) => setError(err.message || "保存失败"),
@@ -138,6 +140,7 @@ export default function CredentialDetailPage() {
                 type={revealed ? "text" : "password"}
                 value={String(value("value") ?? "")}
                 onChange={(e) => updateField("value", e.target.value)}
+                placeholder="留空表示不修改（出于安全，原值不回填）"
                 className="bg-[var(--vp-c-bg)] flex-1 font-mono"
               />
               <button

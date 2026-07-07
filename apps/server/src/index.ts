@@ -22,6 +22,7 @@ import { syncSearchEnvFromConfig } from "./infra/nativeTools.js";
 import { getEnrichedServerCapabilities, getServerCapabilities } from "./infra/capabilities.js";
 import { handleAgentChatStream } from "./infra/agentStream.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
+import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
 import { prisma } from "./db.js";
 
 const app = express();
@@ -117,6 +118,9 @@ const server = app.listen(PORT, () => {
   console.log(`\n  🚀 KnowPilot Server running at http://localhost:${PORT}`);
   console.log(`  📡 tRPC endpoint: http://localhost:${PORT}/api/trpc`);
   console.log(`  💚 Health check:  http://localhost:${PORT}/health\n`);
+
+  // 凭据加密护栏：生产模式无 CREDENTIAL_MASTER_KEY 拒启动；开发模式 warn
+  assertCredentialEncryptionAvailable();
 
   // Mock 模式护栏：警告混合启用导致的「假 LLM + 真工具」静默降级
   const mockFlags = {
