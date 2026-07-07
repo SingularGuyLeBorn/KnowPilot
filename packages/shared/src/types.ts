@@ -100,6 +100,10 @@ export interface ChatSessionConfig {
   enableReasoning: boolean;
   reasoningEffort: ReasoningEffort;
   customSystemPrompt: boolean;
+  /** 单次工具调用超时毫秒（0/缺省走后端全局默认） */
+  toolCallTimeoutMs?: number;
+  /** 单轮对话最大工具调用轮数（0/缺省走后端全局默认） */
+  maxToolRounds?: number;
 }
 
 /** 会话实体 */

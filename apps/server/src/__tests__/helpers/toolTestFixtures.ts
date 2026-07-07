@@ -39,6 +39,8 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       defaultProvider: "deepseek",
       dailyBudget: 0,
       maxToolRounds: 8,
+      toolCallTimeoutMs: 30_000,
+      toolCallConcurrency: 4,
       providers: {},
     },
     asyncJobs: { maxConcurrent: 2, maxPerSession: 2, taskTimeoutMs: 60_000, maxRetries: 3 },

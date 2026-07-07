@@ -226,12 +226,13 @@ export async function executeAgentTool(
   return executeNativeTool(nativeName, args, ctx);
 }
 
-/** 批量执行工具调用：只读并发，写入串行 */
+/** 批量执行工具调用：只读并发（带超时与并发上限），写入串行 */
 export async function executeToolCallsBatch(
   toolCalls: LlmToolCall[],
   ctx: AgentToolContext,
   registry: Map<string, ToolRegistryEntry>,
   parsed: ParsedAgentTools,
+  signal?: AbortSignal,
 ): Promise<Array<{ call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> }; result: unknown }>> {
   const prepared = toolCalls.map((call) => ({ call, parsed: parseToolCallArgs(call) }));
 
@@ -247,48 +248,70 @@ export async function executeToolCallsBatch(
     else unsafe.push(item);
   }
 
-  const results: Array<{ call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> }; result: unknown }> = [];
+  const timeoutMs = ctx.config.llm.toolCallTimeoutMs;
+  const concurrency = ctx.config.llm.toolCallConcurrency;
 
-  if (safe.length > 0) {
-    const safeResults = await Promise.all(
-      safe.map(async (item) => {
-        const started = Date.now();
-        try {
-          const result = await executeAgentTool(item.parsed.name, item.parsed.args, ctx, registry);
-          return { ...item, result };
-        } catch (err: unknown) {
-          return {
-            ...item,
-            result: {
-              error: err instanceof Error ? err.message : String(err),
-              elapsedMs: Date.now() - started,
-            },
-          };
-        }
-      }),
-    );
-    results.push(...safeResults);
-  }
-
-  for (const item of unsafe) {
+  // 单工具执行包裹超时 + abort：超时或被中断时返回错误结果，绝不永久挂起
+  const runOne = async (item: { call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> } }) => {
     const started = Date.now();
     try {
-      if (!isToolAuthorized(item.parsed.name, registry, parsed)) {
-        throw new Error(`Agent 未授权使用工具 ${item.parsed.name}`);
-      }
-      const result = await executeAgentTool(item.parsed.name, item.parsed.args, ctx, registry);
-      results.push({ ...item, result });
+      const result = await withToolTimeout(
+        executeAgentTool(item.parsed.name, item.parsed.args, ctx, registry),
+        timeoutMs,
+        item.parsed.name,
+      );
+      return { ...item, result };
     } catch (err: unknown) {
-      results.push({
+      return {
         ...item,
         result: {
           error: err instanceof Error ? err.message : String(err),
           elapsedMs: Date.now() - started,
         },
-      });
+      };
     }
+  };
+
+  const results: Array<{ call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> }; result: unknown }> = [];
+
+  if (safe.length > 0) {
+    // 并发上限：避免一次开太多工具调用拖垮后端 / 触发上游限流
+    const safeResults = await runWithConcurrency(
+      safe.map((item) => () => runOne(item)),
+      concurrency,
+    );
+    results.push(...safeResults);
   }
 
+  for (const item of unsafe) {
+    results.push(await runOne(item));
+  }
+
+  return results;
+}
+
+/** 工具调用超时包装：超时则拒绝，调用方捕获后转为错误结果（abort 由 agentStream 在轮间检查） */
+function withToolTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`工具 ${label} 执行超时（${ms}ms）`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/** 简单并发限制器：最多 limit 个 Promise 同时运行 */
+async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let index = 0;
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+    while (index < tasks.length) {
+      const i = index++;
+      results[i] = await tasks[i]();
+    }
+  });
+  await Promise.all(workers);
   return results;
 }
 

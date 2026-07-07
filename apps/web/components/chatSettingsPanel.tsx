@@ -13,6 +13,7 @@ import {
   Sparkles,
   SlidersHorizontal,
   Wand2,
+  Wrench,
 } from "lucide-react";
 import type { Skill, ChatSessionConfig } from "@knowpilot/shared";
 import { PRIMARY_CHAT_MODELS } from "@knowpilot/shared";
@@ -396,6 +397,38 @@ export function ChatSettingsPanel({
                     display={String(chatConfig.maxTokens)}
                     onChange={(maxTokens) => updateConfig({ maxTokens })}
                   />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-3 shadow-sm backdrop-blur-md">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                    <Wrench className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="text-xs font-semibold text-[var(--kp-text-1)]">工具调用</span>
+                </div>
+                <div className="space-y-4">
+                  <MorandiSlider
+                    label="单工具超时"
+                    value={chatConfig.toolCallTimeoutMs ?? 0}
+                    min={0}
+                    max={180000}
+                    step={5000}
+                    display={(chatConfig.toolCallTimeoutMs ?? 0) === 0 ? "默认" : `${Math.round((chatConfig.toolCallTimeoutMs ?? 0) / 1000)}s`}
+                    onChange={(toolCallTimeoutMs) => updateConfig({ toolCallTimeoutMs })}
+                  />
+                  <MorandiSlider
+                    label="最大轮数"
+                    value={chatConfig.maxToolRounds ?? 0}
+                    min={0}
+                    max={30}
+                    step={1}
+                    display={(chatConfig.maxToolRounds ?? 0) === 0 ? "默认" : String(chatConfig.maxToolRounds ?? 0)}
+                    onChange={(maxToolRounds) => updateConfig({ maxToolRounds })}
+                  />
+                  <p className="text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+                    超时设为 0 走后端默认（60s）；轮数设为 0 走后端默认（12）。超时后该工具返回错误结果而非永久挂起。
+                  </p>
                 </div>
               </div>
 

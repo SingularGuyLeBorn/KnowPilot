@@ -15,6 +15,9 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
   enableReasoning: true,
   reasoningEffort: "high",
   customSystemPrompt: false,
+  // 0 表示走后端全局默认（AGENT_TOOL_CALL_TIMEOUT_MS / AGENT_MAX_TOOL_ROUNDS）
+  toolCallTimeoutMs: 0,
+  maxToolRounds: 0,
 };
 
 export function getModelOption(modelId: string) {
@@ -56,7 +59,8 @@ export function resolveNewChatConfig(
   if (!agent || base.customSystemPrompt) return base;
   return {
     ...base,
-    model: base.model || agent.model,
+    // 新对话默认跟随 Agent 的模型，避免 localStorage 中旧模型长期覆盖
+    model: agent.model,
     systemPrompt: agent.systemPrompt,
     customSystemPrompt: false,
   };
@@ -106,6 +110,9 @@ export function buildStreamConfig(
       systemPrompt,
       enableReasoning: reasoningOn,
       reasoningEffort: config.reasoningEffort,
+      // 0/缺省不传，后端走全局默认；非 0 才覆盖
+      ...(config.toolCallTimeoutMs ? { toolCallTimeoutMs: config.toolCallTimeoutMs } : {}),
+      ...(config.maxToolRounds ? { maxToolRounds: config.maxToolRounds } : {}),
     },
   };
 }

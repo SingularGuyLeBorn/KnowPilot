@@ -1,0 +1,18 @@
+feat(chat): 多 session 并发流式隔离 + 工具超时设置 + SQLite 测试稳定性 + swarm 设计文档
+
+- chat.tsx 流式状态重构为按 sessionId 隔离的 Map(streamStatesRef),
+  每 session 独立 AbortController,切换 session 不 abort 旧流式,
+  支持 agent swarm 多任务并发(切回原 session 可看流式继续/完整回复)
+- 发送队列(localQueue)与异步投递(consumedDeliveries)也按 session 隔离,
+  杜绝跨 session 共享 queue
+- 重试/重生成/编辑流式原位渲染,旧 assistant 气泡不再与新流式气泡并存
+- ThinkingStep 可折叠(默认展开)+ ThinkingTimeline 去左导轨与 assistant 气泡左对齐
+- OCR 角标 ✓ 符号换 lucide Check SVG 图标
+- 工具调用超时/并发:maxToolRounds 默认 100→12,新增 toolCallTimeoutMs(默认60s)/
+  toolCallConcurrency(默认4)配置,executeToolCallsBatch 单工具超时+并发上限,
+  避免一次性开太多工具调用卡死
+- 前端 ChatSettingsPanel 新增工具调用卡片(单工具超时/最大轮数滑块),
+  chatConfigSchema/ChatSessionConfig/buildStreamConfig/agentStream 打通覆盖
+- vitest 改单 fork 串行执行,消除 SQLite 并发文件锁 Socket timeout flaky
+- 修复 credentials edit 页面 value 字段类型错误(独立 newValue state)
+- 新增 docs/development/backend/agent-swarm-async.md(swarm 异步任务/subagent 统一设计)

@@ -199,7 +199,7 @@ async function runAgentLoopStream(options: {
         throw err;
       }
 
-      const batchResults = await executeToolCallsBatch(probe.toolCalls, toolCtx, registry, parsed);
+      const batchResults = await executeToolCallsBatch(probe.toolCalls, toolCtx, registry, parsed, options.signal);
       for (const { call, parsed: parsedCall, result } of batchResults) {
         executedTools.push({
           id: call.id,
@@ -467,6 +467,16 @@ export async function chatAgentStream(
       skillResolved.prompt ??
       (input.config?.systemPrompt !== undefined ? input.config.systemPrompt : agent.systemPrompt);
 
+    // 前端 chatConfig 可覆盖工具超时与最大轮数（0/缺省走全局默认）
+    const effectiveConfig: AppConfig = {
+      ...config,
+      llm: {
+        ...config.llm,
+        ...(input.config?.toolCallTimeoutMs ? { toolCallTimeoutMs: input.config.toolCallTimeoutMs } : {}),
+        ...(input.config?.maxToolRounds ? { maxToolRounds: input.config.maxToolRounds } : {}),
+      },
+    };
+
     if (!sessionId) {
       const created = await services.session.create({
         title: prepared.messageText.slice(0, 40) || "新对话",
@@ -546,7 +556,7 @@ export async function chatAgentStream(
     };
 
     const result = await runAgentLoopStream({
-      config,
+      config: effectiveConfig,
       services,
       agent: { ...agent, model: effectiveModel },
       messages,

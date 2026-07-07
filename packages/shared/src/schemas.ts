@@ -97,6 +97,8 @@ export const chatConfigSchema = z.object({
   systemPrompt: z.string().optional(),
   enableReasoning: z.boolean().optional(),
   reasoningEffort: z.enum(["low", "medium", "high", "max"]).optional(),
+  toolCallTimeoutMs: z.number().int().min(2000).max(600000).optional(),
+  maxToolRounds: z.number().int().min(1).max(50).optional(),
 });
 
 export const switchMessageVersionSchema = z.object({

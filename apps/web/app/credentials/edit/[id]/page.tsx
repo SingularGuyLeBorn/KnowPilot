@@ -26,6 +26,8 @@ export default function CredentialDetailPage() {
   const update = useUpdate();
 
   const [form, setForm] = useState<Partial<Credential>>({});
+  // 新值独立于 Credential 类型存储（API 不再返回明文 value，仅返回 valuePreview 遮蔽值）
+  const [newValue, setNewValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
 
@@ -76,7 +78,7 @@ export default function CredentialDetailPage() {
     e.preventDefault();
     setError(null);
     // value 留空表示不修改（API 不再返回明文，无法回填原值）
-    const valuePayload = form.value && form.value.trim() ? form.value : undefined;
+    const valuePayload = newValue.trim() ? newValue : undefined;
     update.mutate(
       {
         id: cred.id,
@@ -138,8 +140,8 @@ export default function CredentialDetailPage() {
             <div className="flex items-center gap-2">
               <Input
                 type={revealed ? "text" : "password"}
-                value={String(value("value") ?? "")}
-                onChange={(e) => updateField("value", e.target.value)}
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
                 placeholder="留空表示不修改（出于安全，原值不回填）"
                 className="bg-[var(--vp-c-bg)] flex-1 font-mono"
               />

@@ -82,31 +82,44 @@ function ThinkingStep({
 }) {
   const content = step.content.trim();
   const isEmpty = !content;
+  // 默认展开（不折叠）；流式中不允许折叠，避免漏看实时输出
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
-      <div className="flex items-center gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-soft)] px-3 py-2 text-[11px] font-medium text-[var(--kp-text-2)]">
-        <Sparkles className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
+      <button
+        type="button"
+        onClick={() => !isLive && setCollapsed((v) => !v)}
+        disabled={isLive}
+        className="flex w-full items-center gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-soft)] px-3 py-2 text-left text-[11px] font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] disabled:cursor-default disabled:hover:bg-[var(--kp-bg-soft)]"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "展开思考" : "折叠思考"}
+      >
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
         <span>Thinking</span>
-        <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--kp-brand-dark)]">
-          第 {step.round} 轮
-        </span>
         {isLive && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
-        <span className="ml-auto text-[10px] text-[var(--kp-text-3)]">
-          {isEmpty ? "thinking…" : `${content.length} 字`}
-        </span>
-      </div>
-      <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
-        {isEmpty ? (
-          isLive ? (
-            <p className="text-xs text-[var(--kp-text-3)]">等待模型输出…</p>
-          ) : null
-        ) : (
-          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-[var(--kp-text-2)]">
-            {content}
-          </pre>
+        {!isLive && (
+          <ChevronRight
+            className={cn(
+              "ml-auto h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200",
+              collapsed ? "" : "rotate-90",
+            )}
+          />
         )}
-      </div>
+      </button>
+      {!collapsed && (
+        <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
+          {isEmpty ? (
+            isLive ? (
+              <p className="text-xs text-[var(--kp-text-3)]">等待模型输出…</p>
+            ) : null
+          ) : (
+            <pre className="whitespace-pre-wrap text-xs leading-relaxed text-[var(--kp-text-2)]">
+              {content}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -429,6 +442,9 @@ export function ChatView() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [liveTimeline, setLiveTimeline] = useState<TimelineStep[]>([]);
+  // 当前流式目标所属的 user 消息 id（重试/重生成/编辑时定位到原 group 原位渲染，
+  // 避免旧 assistant 气泡与新流式气泡并存）。新消息流式时为 null，流式气泡落列表底部。
+  const [streamTargetUserId, setStreamTargetUserId] = useState<string | null>(null);
   const [lastRoundTokens, setLastRoundTokens] = useState(0);
   const [localQueue, setLocalQueue] = useState<ChatQueueItem[]>([]);
   const [consumedDeliveries, setConsumedDeliveries] = useState<Set<string>>(() => new Set());
@@ -446,14 +462,114 @@ export function ChatView() {
   const [renameDraft, setRenameDraft] = useState("");
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; title: string } | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const consumeRef = useRef<() => void>(() => {});
-  const queueDrainingRef = useRef(false);
-  const isStreamingRef = useRef(false);
-  const localQueueRef = useRef<ChatQueueItem[]>([]);
-  const activeQueueTaskIdRef = useRef<string | null>(null);
-  const consumedDeliveriesRef = useRef<Set<string>>(new Set());
+
+  /* ─── 多 session 流式状态隔离 ───
+   * 每个 session 拥有独立的流式状态(isStreaming/streamingContent/liveTimeline/optimistic/error/abort/...)，
+   * 支持多 session 并发流式(为 agent swarm 铺路)：
+   *   - 切换 session 只切视图，不 abort 旧 session 的流式
+   *   - 切回原 session 时从 Map 取回其流式状态继续展示
+   *   - 流式回调用闭包捕获的 originSid 只更新该 session 的状态，不污染当前视图
+   * 视图 useState(isStreaming/streamingContent/...)作为"当前 effectiveSessionId 的镜像"，
+   * 由 applyView() 在切换时同步；helper setter 同步写 ref Map + 视图(若是当前 session)。
+   */
+  type OptimisticMsg = { id: string; content: string; attachments?: ChatImageAttachment[] };
+  interface SessionStreamState {
+    isStreaming: boolean;
+    streamingContent: string;
+    liveTimeline: TimelineStep[];
+    streamTargetUserId: string | null;
+    optimistic: OptimisticMsg[];
+    error: string | null;
+    lastRoundTokens: number;
+    abort: AbortController | null;
+    // 按 session 隔离的发送队列与异步投递消费记录（避免跨 session 共享 queue）
+    localQueue: ChatQueueItem[];
+    consumedDeliveries: Set<string>;
+    queueDraining: boolean;
+    activeQueueTaskId: string | null;
+  }
+  const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessionId 时的临时键
+  const streamStatesRef = useRef<Map<string, SessionStreamState>>(new Map());
+  const effectiveSessionIdRef = useRef<string | null>(null);
+
+  const getStreamState = useCallback((sid: string): SessionStreamState => {
+    let s = streamStatesRef.current.get(sid);
+    if (!s) {
+      s = {
+        isStreaming: false,
+        streamingContent: "",
+        liveTimeline: [],
+        streamTargetUserId: null,
+        optimistic: [],
+        error: null,
+        lastRoundTokens: 0,
+        abort: null,
+        localQueue: [],
+        consumedDeliveries: new Set<string>(),
+        queueDraining: false,
+        activeQueueTaskId: null,
+      };
+      streamStatesRef.current.set(sid, s);
+    }
+    return s;
+  }, []);
+
+  // 把指定 session 的后台状态镜像到视图 useState（切换 session 时调用）
+  const applyView = useCallback(
+    (sid: string | null) => {
+      const s = sid ? streamStatesRef.current.get(sid) : undefined;
+      setIsStreaming(s?.isStreaming ?? false);
+      setStreamingContent(s?.streamingContent ?? "");
+      setLiveTimeline(s?.liveTimeline ?? []);
+      setStreamTargetUserId(s?.streamTargetUserId ?? null);
+      setOptimistic(s?.optimistic ?? []);
+      setError(s?.error ?? null);
+      setLastRoundTokens(s?.lastRoundTokens ?? 0);
+      setLocalQueue(s?.localQueue ?? []);
+      setConsumedDeliveries(s?.consumedDeliveries ?? new Set<string>());
+    },
+    [],
+  );
+
+  // session-aware setter：更新 ref Map[originSid]，若它是当前视图则同步 useState
+  const ssSet = useCallback(
+    <K extends keyof SessionStreamState>(
+      originSid: string,
+      key: K,
+      value: SessionStreamState[K] | ((prev: SessionStreamState[K]) => SessionStreamState[K]),
+    ) => {
+      const s = getStreamState(originSid);
+      const next = typeof value === "function" ? (value as (p: SessionStreamState[K]) => SessionStreamState[K])(s[key]) : value;
+      (s as SessionStreamState)[key] = next;
+      if (originSid === effectiveSessionIdRef.current) {
+        switch (key) {
+          case "isStreaming": setIsStreaming(next as boolean); break;
+          case "streamingContent": setStreamingContent(next as string); break;
+          case "liveTimeline": setLiveTimeline(next as TimelineStep[]); break;
+          case "streamTargetUserId": setStreamTargetUserId(next as string | null); break;
+          case "optimistic": setOptimistic(next as OptimisticMsg[]); break;
+          case "error": setError(next as string | null); break;
+          case "lastRoundTokens": setLastRoundTokens(next as number); break;
+          case "localQueue": setLocalQueue(next as ChatQueueItem[]); break;
+          case "consumedDeliveries": setConsumedDeliveries(next as Set<string>); break;
+          default: break;
+        }
+      }
+    },
+    [getStreamState],
+  );
+
+  const isSessionStreaming = useCallback(
+    (sid: string | null): boolean => (sid ? streamStatesRef.current.get(sid)?.isStreaming ?? false : false),
+    [],
+  );
+
+  const getAbort = useCallback(
+    (sid: string | null): AbortController | null => (sid ? streamStatesRef.current.get(sid)?.abort ?? null : null),
+    [],
+  );
 
   const { useList: useAgentList } = useAgent();
   const agentsQuery = useAgentList({ page: 1, pageSize: 50 });
@@ -473,6 +589,8 @@ export function ChatView() {
   }, [agentsQuery.data?.items]);
 
   const effectiveSessionId = sessionFromUrl ?? sessionId;
+  // 每次 render 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
+  effectiveSessionIdRef.current = effectiveSessionId;
 
   const { data: sessionDetail, refetch: refetchSession } = trpc.session.getById.useQuery(
     { id: effectiveSessionId! },
@@ -517,13 +635,7 @@ export function ChatView() {
     [localQueue, asyncQueueQuery.data, consumedDeliveries],
   );
 
-  useEffect(() => {
-    localQueueRef.current = localQueue;
-  }, [localQueue]);
-
-  useEffect(() => {
-    consumedDeliveriesRef.current = consumedDeliveries;
-  }, [consumedDeliveries]);
+  // localQueueRef / consumedDeliveriesRef 已由按 session 的 streamStatesRef 取代
 
   // 按会话持久化已消费的异步投递，刷新页面后不再显示旧结果
   useEffect(() => {
@@ -532,14 +644,14 @@ export function ChatView() {
     try {
       const saved = localStorage.getItem(key);
       if (saved) {
-        // 从外部存储恢复已消费的异步投递；eslint 规则不适用于这种外部系统同步
+        // 从外部存储恢复已消费的异步投递；写到该 session 的后台状态
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setConsumedDeliveries(new Set(JSON.parse(saved)));
+        ssSet(effectiveSessionId, "consumedDeliveries", new Set<string>(JSON.parse(saved)));
       }
     } catch {
       // ignore
     }
-  }, [effectiveSessionId]);
+  }, [effectiveSessionId, ssSet]);
 
   useEffect(() => {
     if (!effectiveSessionId) return;
@@ -551,9 +663,7 @@ export function ChatView() {
     }
   }, [effectiveSessionId, consumedDeliveries]);
 
-  useEffect(() => {
-    isStreamingRef.current = isStreaming;
-  }, [isStreaming]);
+  // 流式状态已按 session 隔离（streamStatesRef），不再需要全局 isStreamingRef 同步
 
   const selectedAgent = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
   const modelOpt = getModelOption(chatConfig.model);
@@ -593,7 +703,13 @@ export function ChatView() {
       const saved = loadSessionChatConfig(effectiveSessionId);
       startTransition(() => {
         if (saved) {
-          setChatConfig(resolveNewChatConfig(saved, selectedAgent));
+          // 已有会话保留用户选择的模型，只同步 systemPrompt（如果用户没自定义）
+          setChatConfig({
+            ...saved,
+            systemPrompt: saved.customSystemPrompt
+              ? saved.systemPrompt
+              : (saved.systemPrompt || selectedAgent.systemPrompt),
+          });
           return;
         }
         setChatConfig((prev) => ({
@@ -655,16 +771,23 @@ export function ChatView() {
       skillPrompt?: string;
       optimisticUser?: { id: string; text: string };
     }) => {
-      abortRef.current?.abort();
+      // 捕获本次流式所属的 session（新会话首条消息时为 null，onDone 拿到 sessionId 后迁移键）
+      let originSid = effectiveSessionId ?? NEW_STREAM_KEY;
+      // 仅中止同一 session 上已有的流式（支持多 session 并发流式，互不干扰）
+      getAbort(originSid)?.abort();
       const ac = new AbortController();
-      abortRef.current = ac;
+      getStreamState(originSid).abort = ac;
 
-      isStreamingRef.current = true;
-      setIsStreaming(true);
-      setStreamingContent("");
-      setLiveTimeline([{ type: "thinking", content: "", round: 1 }]);
-      setLastRoundTokens(0);
-      setError(null);
+      ssSet(originSid, "isStreaming", true);
+      ssSet(originSid, "streamingContent", "");
+      ssSet(originSid, "liveTimeline", [{ type: "thinking", content: "", round: 1 }]);
+      // 重试/重生成/编辑：定位到原 user 消息所在 group 原位流式，替换旧 assistant 气泡；
+      // 新消息：null，流式气泡落列表底部。
+      ssSet(originSid, "streamTargetUserId",
+        opts.retryFromMessageId ?? opts.regenerateUserMessageId ?? opts.editMessageId ?? null,
+      );
+      ssSet(originSid, "lastRoundTokens", 0);
+      ssSet(originSid, "error", null);
       setEditingUserId(null);
 
       const streamConfig = buildStreamConfig(
@@ -700,14 +823,14 @@ export function ChatView() {
           },
           {
             onRoundStart: (round) =>
-              setLiveTimeline((prev) => {
+              ssSet(originSid, "liveTimeline", (prev) => {
                 if (prev.length === 1 && prev[0]?.type === "thinking" && !prev[0].content) {
                   return [{ type: "thinking" as const, content: "", round }];
                 }
                 return [...prev, { type: "thinking" as const, content: "", round }];
               }),
             onThinking: (delta) => {
-              setLiveTimeline((prev) => {
+              ssSet(originSid, "liveTimeline", (prev) => {
                 const copy = [...prev];
                 for (let i = copy.length - 1; i >= 0; i--) {
                   const step = copy[i];
@@ -719,12 +842,12 @@ export function ChatView() {
                 return [...copy, { type: "thinking", content: delta, round: 1 }];
               });
             },
-            onToken: (delta) => setStreamingContent((prev) => prev + delta),
+            onToken: (delta) => ssSet(originSid, "streamingContent", (prev) => prev + delta),
             onToolStart: (name, args, round, toolCallId) => {
-              setLiveTimeline((prev) => [...prev, { type: "tool", toolCallId, name, args, round, status: "running" }]);
+              ssSet(originSid, "liveTimeline", (prev) => [...prev, { type: "tool", toolCallId, name, args, round, status: "running" }]);
             },
             onToolEnd: (name, result, round, hint, toolCallId) => {
-              setLiveTimeline((prev) =>
+              ssSet(originSid, "liveTimeline", (prev) =>
                 prev.map((s) =>
                   s.type === "tool" && s.toolCallId === toolCallId && s.status === "running"
                     ? { ...s, result, hint: hint ?? formatToolResultHint(result), status: "done" }
@@ -734,7 +857,7 @@ export function ChatView() {
               if (name === "run_async" && result && typeof result === "object") {
                 const r = result as { jobId?: string; status?: string; message?: string };
                 if (r.jobId && r.status === "running") {
-                  setLocalQueue((prev) => {
+                  ssSet(originSid, "localQueue", (prev) => {
                     if (prev.some((q) => q.jobId === r.jobId)) return prev;
                     return [
                       {
@@ -753,8 +876,17 @@ export function ChatView() {
               }
             },
             onDone: async (data) => {
+              // 新会话首条消息：originSid 是临时键，拿到真实 sessionId 后迁移状态
+              if (originSid === NEW_STREAM_KEY && data.sessionId) {
+                const prev = streamStatesRef.current.get(NEW_STREAM_KEY);
+                if (prev) {
+                  streamStatesRef.current.set(data.sessionId, prev);
+                  streamStatesRef.current.delete(NEW_STREAM_KEY);
+                }
+                originSid = data.sessionId;
+              }
               setSessionId(data.sessionId);
-              if (data.tokenUsage?.total) setLastRoundTokens(data.tokenUsage.total);
+              if (data.tokenUsage?.total) ssSet(originSid, "lastRoundTokens", data.tokenUsage.total);
               if (opts.skillPrompt) {
                 updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
               }
@@ -767,20 +899,28 @@ export function ChatView() {
               }
               // 延后清空，避免与 tool_end 的 setState 同批提交导致 hint 从未挂载
               setTimeout(() => {
-                setLiveTimeline([]);
-                setStreamingContent("");
+                ssSet(originSid, "liveTimeline", []);
+                ssSet(originSid, "streamingContent", "");
               }, 0);
               if (opts.optimisticUser) {
-                setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+                ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
               }
               void utils.session.list.invalidate();
             },
             onError: (message, sid, suggestion) => {
-              if (opts.optimisticUser) setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
-              setError(message + (suggestion ? `\n${suggestion}` : ""));
+              if (originSid === NEW_STREAM_KEY && sid) {
+                const prev = streamStatesRef.current.get(NEW_STREAM_KEY);
+                if (prev) {
+                  streamStatesRef.current.set(sid, prev);
+                  streamStatesRef.current.delete(NEW_STREAM_KEY);
+                }
+                originSid = sid;
+              }
+              if (opts.optimisticUser) ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+              ssSet(originSid, "error", message + (suggestion ? `\n${suggestion}` : ""));
               if (sid) setSessionId(sid);
-              setLiveTimeline([]);
-              setStreamingContent("");
+              ssSet(originSid, "liveTimeline", []);
+              ssSet(originSid, "streamingContent", "");
             },
           },
           ac.signal,
@@ -790,38 +930,42 @@ export function ChatView() {
           // 用户点击停止：保持当前流式 UI，等后端保存中断消息并刷新会话后再清空
           setTimeout(async () => {
             await refetchSession();
-            setLiveTimeline([]);
-            setStreamingContent("");
+            ssSet(originSid, "liveTimeline", []);
+            ssSet(originSid, "streamingContent", "");
             if (opts.optimisticUser) {
-              setOptimistic((prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+              ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
             }
           }, 500);
           return;
         }
-        setError(err instanceof Error ? err.message : "对话请求失败");
-        setLiveTimeline([]);
-        setStreamingContent("");
+        ssSet(originSid, "error", err instanceof Error ? err.message : "对话请求失败");
+        ssSet(originSid, "liveTimeline", []);
+        ssSet(originSid, "streamingContent", "");
       } finally {
-        isStreamingRef.current = false;
-        setIsStreaming(false);
-        queueDrainingRef.current = false;
-        const finishedTaskId = activeQueueTaskIdRef.current;
+        ssSet(originSid, "isStreaming", false);
+        ssSet(originSid, "streamTargetUserId", null);
+        const st = getStreamState(originSid);
+        st.abort = null;
+        st.queueDraining = false;
+        const finishedTaskId = st.activeQueueTaskId;
         if (finishedTaskId) {
-          activeQueueTaskIdRef.current = null;
-          setLocalQueue((prev) => prev.filter((i) => i.id !== finishedTaskId));
+          st.activeQueueTaskId = null;
+          ssSet(originSid, "localQueue", (prev) => prev.filter((i) => i.id !== finishedTaskId));
         }
         consumeRef.current();
       }
     },
-    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, selectedAgent],
+    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, selectedAgent, getStreamState, ssSet, getAbort],
   );
 
   const consumeQueue = useCallback(() => {
-    if (isStreamingRef.current || queueDrainingRef.current) return;
+    const sid = effectiveSessionId ?? NEW_STREAM_KEY;
+    const st = getStreamState(sid);
+    if (isSessionStreaming(effectiveSessionId) || st.queueDraining) return;
 
     const pollData = asyncQueueQuery.data;
-    const merged = mergeAsyncPollIntoQueue(localQueueRef.current, pollData, {
-      skipDeliveryJobIds: consumedDeliveriesRef.current,
+    const merged = mergeAsyncPollIntoQueue(st.localQueue, pollData, {
+      skipDeliveryJobIds: st.consumedDeliveries,
     });
     const sorted = sortQueueItems(merged);
     const readyIdx = sorted.findIndex(
@@ -831,23 +975,23 @@ export function ChatView() {
     );
     if (readyIdx < 0) return;
 
-    queueDrainingRef.current = true;
+    st.queueDraining = true;
     const task = sorted[readyIdx];
 
     if (task.kind === "async-result" && task.jobId) {
-      setConsumedDeliveries((s) => new Set(s).add(task.jobId!));
+      ssSet(sid, "consumedDeliveries", (s: Set<string>) => new Set(s).add(task.jobId!));
     }
 
     if (task.kind === "user") {
       // 已发出即离开队列，气泡区由 optimistic / session 消息展示
-      setLocalQueue((prev) => prev.filter((i) => i.id !== task.id));
+      ssSet(sid, "localQueue", (prev) => prev.filter((i) => i.id !== task.id));
     } else {
-      activeQueueTaskIdRef.current = task.id;
+      st.activeQueueTaskId = task.id;
       const restMerged = sorted.filter((_, i) => i !== readyIdx);
-      setLocalQueue(extractLocalQueueFromMerged(restMerged, pollData));
+      ssSet(sid, "localQueue", extractLocalQueueFromMerged(restMerged, pollData));
     }
 
-    isStreamingRef.current = true;
+    // runStream 会在开头设置 isStreaming=true；此处无需预置（多 session 隔离下避免污染其他 session）
 
     const supportsVision = !!getModelOption(chatConfig.model).supportsVision;
     const streamMessage = supportsVision
@@ -866,7 +1010,7 @@ export function ChatView() {
     const optimisticId = `opt-${task.id}`;
     const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
     const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
-    setOptimistic((o) =>
+    ssSet(sid, "optimistic", (o) =>
       o.some((m) => m.id === optimisticId)
         ? o
         : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments }],
@@ -878,15 +1022,20 @@ export function ChatView() {
       skillPrompt: task.skillPrompt,
       optimisticUser: { id: optimisticId, text: optimisticText },
     });
-  }, [runStream, chatConfig.model, asyncQueueQuery.data]);
+  }, [runStream, chatConfig.model, asyncQueueQuery.data, effectiveSessionId, isSessionStreaming, ssSet, getStreamState]);
 
   useEffect(() => {
     consumeRef.current = consumeQueue;
   }, [consumeQueue]);
 
   useEffect(() => {
-    if (!isStreaming) consumeQueue();
-  }, [isStreaming, queue.length, consumeQueue]);
+    if (!isSessionStreaming(effectiveSessionId)) consumeQueue();
+  }, [isStreaming, queue.length, consumeQueue, effectiveSessionId, isSessionStreaming]);
+
+  // 切换视图 session 时，从后台状态 Map 镜像该 session 的流式状态到视图
+  useEffect(() => {
+    applyView(effectiveSessionId);
+  }, [effectiveSessionId, applyView]);
 
   const enqueueMessage = (
     text: string,
@@ -899,7 +1048,7 @@ export function ChatView() {
     const skillPrompt = skill
       ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
       : undefined;
-    setLocalQueue((prev) => [
+    ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "localQueue", (prev) => [
       ...prev,
       createUserQueueItem(trimmed || "（见附件）", {
         skillId: skill?.id,
@@ -910,23 +1059,23 @@ export function ChatView() {
   };
 
   const handleRegenerate = (userMessageId: string) => {
-    if (!effectiveSessionId || isStreaming) return;
+    if (!effectiveSessionId || isSessionStreaming(effectiveSessionId)) return;
     void runStream({ regenerate: true, regenerateUserMessageId: userMessageId });
   };
 
   const handleRetry = (messageId: string) => {
-    if (!effectiveSessionId || isStreaming) return;
+    if (!effectiveSessionId || isSessionStreaming(effectiveSessionId)) return;
     void runStream({ retryFromMessageId: messageId });
   };
 
   const handleEditConfirm = (userMessageId: string) => {
     const content = editDraft.trim();
-    if (!content || isStreaming) return;
+    if (!content || isSessionStreaming(effectiveSessionId)) return;
     void runStream({ editMessageId: userMessageId, editContent: content });
   };
 
   const handleSwitchVersion = async (assistantMessageId: string, versionIndex: number) => {
-    if (isStreaming) return;
+    if (isSessionStreaming(effectiveSessionId)) return;
     await switchVersion.mutateAsync({ messageId: assistantMessageId, versionIndex });
     await refetchSession();
   };
@@ -954,16 +1103,14 @@ export function ChatView() {
   };
 
   const startNewChat = () => {
-    abortRef.current?.abort();
+    // 新建对话不中止任何已有 session 的流式（多 session 并发隔离）
     setSessionId(null);
     setInput("");
-    setError(null);
-    setOptimistic([]);
-    setLocalQueue([]);
-    setConsumedDeliveries(new Set());
     setSelectedSkill(null);
     setEditingSessionId(null);
     setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
+    // 视图切到空会话（applyView 会把流式视图与队列镜像为空）
+    applyView(null);
   };
 
   const handleRenameSession = async (id: string, title: string) => {
@@ -1004,13 +1151,15 @@ export function ChatView() {
   };
 
   const selectSession = (id: string) => {
+    if (effectiveSessionId === id) return;
+    // 多 session 隔离：切换会话只切视图，不中止任何 session 的流式。
+    // 流式状态 + 队列按 sessionId 存在 streamStatesRef，applyView 镜像目标 session 的状态到视图。
+    // 切回仍在流式的 session 时能看到流式继续；已完成的能看到从 DB 加载的完整回复。
     setSessionId(id);
     setAgentId("");
-    setOptimistic([]);
-    setError(null);
-    setLocalQueue([]);
-    setConsumedDeliveries(new Set());
     setEditingSessionId(null);
+    setSelectedSkill(null);
+    applyView(id);
   };
 
   const selectAgent = (id: string) => {
@@ -1052,7 +1201,7 @@ export function ChatView() {
         initial={false}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         data-testid="assistant-message-bubble"
-        className="group/msg relative mb-6 flex max-w-[88%] flex-col items-start gap-1"
+        className="group/msg relative mb-6 ml-6 flex max-w-[88%] flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
           <PostContent content={active.content} className="prose-sm max-w-none" />
@@ -1087,6 +1236,40 @@ export function ChatView() {
       </motion.div>
     );
   };
+
+  // 流式渲染块：思考时间线 + 实时 assistant 气泡。重试/重生成/编辑时原位调用，
+  // 新消息时在列表底部调用。
+  const renderLiveStreamBlock = () => (
+    <>
+      {showLiveStream && liveTimeline.length > 0 && (
+        <div className="flex w-full justify-start">
+          <ThinkingTimeline steps={liveTimeline} isLive />
+        </div>
+      )}
+      {showLiveStream && (
+        <div className="flex w-full justify-start">
+          <div
+            className={cn(
+              "group/msg ml-6 flex max-w-[88%] flex-col items-start gap-1",
+              streamingContent ? "mb-6" : "mb-4",
+            )}
+            data-testid="streaming-assistant-bubble"
+          >
+            {streamingContent ? (
+              <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
+                <PostContent content={streamingContent} className="prose-sm max-w-none" />
+              </div>
+            ) : liveTimeline.length === 0 ? (
+              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-brand)]" />
+                Thinking…
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -1236,8 +1419,8 @@ export function ChatView() {
                             className="max-h-40 max-w-[min(100%,16rem)] object-contain"
                           />
                           {att.source === "ocr" && att.extractedText && (
-                            <span className="absolute bottom-0 left-0 right-0 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
-                              OCR ✓
+                            <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
+                              OCR <Check className="h-2.5 w-2.5" />
                             </span>
                           )}
                         </div>
@@ -1289,10 +1472,16 @@ export function ChatView() {
                   />
                 </motion.div>
                 </div>
-                {renderIntermediateSteps(group)}
-                <div className="flex w-full justify-start">
-                {renderAssistantBubble(group)}
-                </div>
+                {isStreaming && streamTargetUserId === group.userMessage.id
+                  ? renderLiveStreamBlock()
+                  : (
+                      <>
+                        {renderIntermediateSteps(group)}
+                        <div className="flex w-full justify-start">
+                        {renderAssistantBubble(group)}
+                        </div>
+                      </>
+                    )}
               </div>
             );
           })}
@@ -1314,8 +1503,8 @@ export function ChatView() {
                           className="max-h-40 max-w-[min(100%,16rem)] object-contain opacity-80"
                         />
                         {att.source === "ocr" && att.extractedText && (
-                          <span className="absolute bottom-0 left-0 right-0 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
-                            OCR ✓
+                          <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
+                            OCR <Check className="h-2.5 w-2.5" />
                           </span>
                         )}
                       </div>
@@ -1329,34 +1518,7 @@ export function ChatView() {
             </div>
           ))}
 
-          {showLiveStream && liveTimeline.length > 0 && (
-            <div className="flex w-full justify-start">
-              <ThinkingTimeline steps={liveTimeline} isLive />
-            </div>
-          )}
-
-          {showLiveStream && (
-            <div className="flex w-full justify-start">
-              <div
-                className={cn(
-                  "group/msg flex max-w-[88%] flex-col items-start gap-1",
-                  streamingContent ? "mb-6" : "mb-4",
-                )}
-                data-testid="streaming-assistant-bubble"
-              >
-                {streamingContent ? (
-                  <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
-                    <PostContent content={streamingContent} className="prose-sm max-w-none" />
-                  </div>
-                ) : liveTimeline.length === 0 ? (
-                  <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-brand)]" />
-                    Thinking…
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          )}
+          {showLiveStream && !streamTargetUserId && renderLiveStreamBlock()}
 
           <div ref={bottomRef} />
         </div>
@@ -1389,12 +1551,12 @@ export function ChatView() {
           panelOpen={queuePanelOpen}
           onPanelOpenChange={setQueuePanelOpen}
           onChange={(items) =>
-            setLocalQueue(extractLocalQueueFromMerged(items, asyncQueueQuery.data))
+            ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "localQueue", extractLocalQueueFromMerged(items, asyncQueueQuery.data))
           }
-          onRemove={(id) => setLocalQueue((q) => q.filter((t) => t.id !== id))}
+          onRemove={(id) => ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "localQueue", (q) => q.filter((t) => t.id !== id))}
           onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
           onRetry={(jobId) => {
-            setConsumedDeliveries((prev) => new Set([...prev, jobId]));
+            ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
             retryAsyncJobMutation.mutate({ jobId });
           }}
           asyncStats={asyncQueueStatsQuery.data}
@@ -1407,7 +1569,7 @@ export function ChatView() {
             value={input}
             onChange={setInput}
             onSend={enqueueMessage}
-            onStop={() => abortRef.current?.abort()}
+            onStop={() => getAbort(effectiveSessionId)?.abort()}
             disabled={backendDown}
             isStreaming={isStreaming}
             queueLength={queue.filter((q) => q.kind === "user").length}

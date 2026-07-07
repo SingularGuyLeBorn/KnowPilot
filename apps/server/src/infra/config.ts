@@ -41,6 +41,10 @@ export interface AppConfig {
     defaultProvider: string;
     dailyBudget: number;
     maxToolRounds: number;
+    /** 单次工具调用超时毫秒，超时则该工具返回错误结果而非永久挂起 */
+    toolCallTimeoutMs: number;
+    /** 单轮内并发执行的工具数上限，避免一次开太多工具调用拖垮后端/触发限流 */
+    toolCallConcurrency: number;
     providers: Record<string, LlmProviderConfig>;
   };
   /** 异步 Agent 后台任务并发、超时与重试 */
@@ -288,7 +292,10 @@ export function createAppConfig(): AppConfig {
     llm: {
       defaultProvider: readEnv("LLM_DEFAULT_PROVIDER") || "deepseek",
       dailyBudget: parseFloat(readEnv("LLM_DAILY_BUDGET") || "10"),
-      maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "100", 10)),
+      // 默认 12 轮：覆盖绝大多数 ReAct 场景，避免坏 LLM 空转到 100 轮长时间转圈
+      maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "12", 10)),
+      toolCallTimeoutMs: Math.max(2000, parseInt(readEnv("AGENT_TOOL_CALL_TIMEOUT_MS") || "60000", 10)),
+      toolCallConcurrency: Math.max(1, parseInt(readEnv("AGENT_TOOL_CALL_CONCURRENCY") || "4", 10)),
       providers,
     },
     asyncJobs: {
