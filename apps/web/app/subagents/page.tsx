@@ -42,6 +42,14 @@ export default function SubagentsPage() {
     kind: "subagent",
     ...(status ? { status: status as any } : {}),
   } as any);
+  // orchestrator 全局统计（排队/运行/上限），有 running/queued 时 3s 轮询
+  const statsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
+    refetchInterval: (q: any) => {
+      const s = q?.data;
+      return s && (s.runningGlobal > 0 || s.queued > 0) ? 3000 : false;
+    },
+  });
+  const stats = statsQuery.data;
   const stopMut = trpc.session.stop.useMutation({
     onSuccess: () => utils.session.list.invalidate(),
   });
@@ -69,6 +77,22 @@ export default function SubagentsPage() {
             <p className="text-xs text-[var(--kp-text-3)]">管理后台异步子代理会话</p>
           </div>
         </div>
+
+        {stats && (
+          <div data-testid="orchestrator-stats" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { label: "排队中", value: stats.queued, color: "text-amber-600" },
+              { label: "执行中", value: stats.runningGlobal, color: "text-blue-600" },
+              { label: "全局上限", value: stats.maxGlobal, color: "text-[var(--kp-text-2)]" },
+              { label: "每会话上限", value: stats.maxPerSession, color: "text-[var(--kp-text-2)]" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3 py-2">
+                <div className={cn("text-lg font-bold tabular-nums", item.color)}>{item.value}</div>
+                <div className="text-[10px] text-[var(--kp-text-3)]">{item.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
       <div className="mb-4 flex items-center gap-2">
         {STATUS_OPTIONS.map((s) => (
