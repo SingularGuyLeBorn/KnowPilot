@@ -39,6 +39,7 @@ interface AsyncTaskInput {
   agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[] };
   retryCount?: number;
   timeoutMs?: number;
+  subagentSessionId?: string;
 }
 
 interface AsyncTaskOutput {
@@ -215,9 +216,18 @@ function buildAsyncExecute(
   task: string,
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
   retryCount: number,
+  subagentSessionId?: string,
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
   const retryHint = retryCount > 0 ? `（第 ${retryCount} 次重试）` : "";
+  const syncSubStatus = async (status: "completed" | "failed") => {
+    if (!subagentSessionId) return;
+    try {
+      await services.session.update({ id: subagentSessionId, status } as any);
+    } catch {
+      // subagent session 同步失败不阻塞任务
+    }
+  };
   return async (signal) => {
     try {
       if (signal.aborted) {
@@ -241,6 +251,7 @@ function buildAsyncExecute(
         status: "success",
         output: { asyncResult: loop.content || "(无文本输出)" } satisfies AsyncTaskOutput,
       });
+      await syncSubStatus("completed");
     } catch (err: unknown) {
       const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
       const isTimeout = err instanceof Error && err.message.includes("超时");
@@ -252,6 +263,7 @@ function buildAsyncExecute(
           error: reason || (err instanceof Error ? err.message : String(err)),
         } satisfies AsyncTaskOutput,
       });
+      await syncSubStatus("failed");
     }
   };
 }
@@ -264,7 +276,7 @@ export async function startAsyncAgentTask(options: {
   config: AppConfig;
   services: ServiceContainer;
   agent: { id: string; model: string; systemPrompt: string; tools: string[] };
-}): Promise<{ jobId: string; status: "running"; message: string }> {
+}): Promise<{ jobId: string; status: "running"; message: string; subagentSessionId?: string }> {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
   if (!options.sessionId) throw new Error("run_async 需要有效 sessionId");
@@ -276,6 +288,24 @@ export async function startAsyncAgentTask(options: {
     systemPrompt: options.agent.systemPrompt,
     tools: options.agent.tools,
   };
+
+  // 创建 subagent ChatSession 作为任务的可视化载体（Phase 3 UI 显示卡片）
+  let subagentSessionId: string | undefined;
+  try {
+    const sub = await options.services.session.create({
+      title: taskLabel.slice(0, 60),
+      model: agentSnapshot.model,
+      systemPrompt: agentSnapshot.systemPrompt,
+      agentId: agentSnapshot.id,
+      parentSessionId: options.sessionId,
+      kind: "subagent",
+      taskDescription: task,
+      status: "running",
+    } as any);
+    if (sub.success && sub.data) subagentSessionId = (sub.data as { id: string }).id;
+  } catch {
+    // subagent session 创建失败不阻塞任务执行
+  }
 
   const created = await options.services.task.create({
     name: `[async] ${taskLabel}`,
@@ -290,6 +320,7 @@ export async function startAsyncAgentTask(options: {
       agentSnapshot,
       retryCount: 0,
       timeoutMs: options.timeoutMs,
+      subagentSessionId,
     } satisfies AsyncTaskInput,
   });
 
@@ -304,14 +335,101 @@ export async function startAsyncAgentTask(options: {
     jobId,
     sessionId: options.sessionId,
     timeoutMs: options.timeoutMs,
-    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0),
+    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId),
   });
 
   return {
     jobId,
     status: "running",
+    subagentSessionId,
     message: `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
   };
+}
+
+/** 查询单个异步任务状态（含 subagent session 与已执行时长） */
+export async function getAsyncJobStatus(
+  jobId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+): Promise<{
+  jobId: string;
+  status: string;
+  taskLabel?: string;
+  elapsedMs?: number;
+  error?: string;
+  asyncResult?: string;
+  subagentSessionId?: string;
+}> {
+  const task = await services.task.getById(jobId);
+  if (!task) return { jobId, status: "not_found" };
+  const input = parseAsyncInput(task.input);
+  const orchestrator = getAsyncJobOrchestrator(config);
+  const running = orchestrator.isRunning(jobId);
+  const queued = orchestrator.isQueued(jobId);
+  const status = running ? "running" : queued ? "queued" : task.status === "success" ? "completed" : task.status === "failed" ? "failed" : task.status;
+  const output = parseAsyncOutput(task.output);
+  return {
+    jobId,
+    status,
+    taskLabel: input?.taskLabel,
+    elapsedMs: running || task.status === "running" ? Date.now() - (task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime()) : undefined,
+    error: output.error,
+    asyncResult: output.asyncResult,
+    subagentSessionId: input?.subagentSessionId,
+  };
+}
+
+/** 列出某会话的全部异步任务状态 */
+export async function listSessionAsyncJobs(
+  sessionId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+): Promise<Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }>> {
+  const rows = await services.task.list({ page: 1, pageSize: 50 } as any);
+  const orchestrator = getAsyncJobOrchestrator(config);
+  const items: Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }> = [];
+  for (const row of (rows as any).items ?? []) {
+    if (row.sessionId !== sessionId) continue;
+    const input = parseAsyncInput(row.input);
+    if (!input) continue;
+    const running = orchestrator.isRunning(row.id);
+    const queued = orchestrator.isQueued(row.id);
+    const status = running ? "running" : queued ? "queued" : row.status === "success" ? "completed" : row.status === "failed" ? "failed" : row.status;
+    items.push({
+      jobId: row.id,
+      status,
+      taskLabel: input.taskLabel,
+      elapsedMs: running ? Date.now() - (row.createdAt instanceof Date ? row.createdAt.getTime() : new Date(row.createdAt).getTime()) : undefined,
+      subagentSessionId: input.subagentSessionId,
+    });
+  }
+  return items;
+}
+
+/**
+ * 阻塞等待一个异步任务结束，返回最终结果（用于 run_async(waitForResult) / await_async）。
+ * 受 toolCallTimeoutMs 约束（由调用方的 withToolTimeout race 兜底），此处轮询最长 10 分钟。
+ */
+export async function waitForAsyncJob(
+  jobId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+): Promise<{ jobId: string; status: "completed" | "failed"; asyncResult?: string; error?: string }> {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const task = await services.task.getById(jobId);
+    if (task && (task.status === "success" || task.status === "failed")) {
+      const output = parseAsyncOutput(task.output);
+      return {
+        jobId,
+        status: task.status === "success" ? "completed" : "failed",
+        asyncResult: output.asyncResult,
+        error: output.error,
+      };
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return { jobId, status: "failed", error: "等待超时（10 分钟）" };
 }
 
 /** 重试一条失败的异步任务 */

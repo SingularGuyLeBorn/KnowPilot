@@ -190,6 +190,9 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_refresh_token: feishuRefreshTokenTool,
   invoke_api: invokeApiTool,
   run_async: runAsyncTool,
+  task_status: taskStatusTool,
+  cancel_async: cancelAsyncTool,
+  await_async: awaitAsyncTool,
   run_shell: runShellTool,
   wait: waitTool,
   session_clear: sessionClearTool,
@@ -1169,15 +1172,48 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   {
     name: "run_async",
     description:
-      "启动后台异步任务（不阻塞当前对话）。任务完成后结果会自动进入发送队列最前，你可继续与用户聊天。",
+      "启动后台异步任务（不阻塞当前对话）。任务完成后结果会自动进入发送队列最前，你可继续与用户聊天。设 waitForResult=true 则阻塞等待结果直接返回（受工具超时约束）。",
     parameters: {
       type: "object",
       properties: {
         task: { type: "string", description: "交给后台 Agent 执行的任务描述" },
         label: { type: "string", description: "队列中显示的简短标签" },
         timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
+        waitForResult: { type: "boolean", description: "true=阻塞等待任务完成直接返回结果；false(默认)=立即返回 running，结果进队列" },
       },
       required: ["task"],
+    },
+  },
+  {
+    name: "task_status",
+    description: "查询异步任务/Subagent 的状态（排队中/执行中/已完成/失败）与已执行时长。可传 jobId 查单个，不传则列当前会话全部。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "任务 id（run_async 返回的 jobId），不传则列出当前会话全部任务" },
+      },
+    },
+  },
+  {
+    name: "cancel_async",
+    description: "取消一条运行中或排队中的异步任务/Subagent。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "要取消的任务 id" },
+      },
+      required: ["jobId"],
+    },
+  },
+  {
+    name: "await_async",
+    description: "显式等待一个已启动的异步任务结束（阻塞当前轮，受工具超时约束）。返回最终结果。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "要等待的任务 id" },
+      },
+      required: ["jobId"],
     },
   },
   {
@@ -2483,10 +2519,11 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
   if (!ctx.sessionId || !ctx.agentSnapshot) {
     throw new Error("run_async 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
   }
-  const { startAsyncAgentTask } = await import("./asyncJobManager.js");
+  const { startAsyncAgentTask, waitForAsyncJob } = await import("./asyncJobManager.js");
   const timeoutMs =
     args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined;
-  return startAsyncAgentTask({
+  const waitForResult = args.waitForResult === true;
+  const started = await startAsyncAgentTask({
     sessionId: ctx.sessionId,
     task: String(args.task || ""),
     label: args.label ? String(args.label) : undefined,
@@ -2495,6 +2532,32 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     services: ctx.services,
     agent: ctx.agentSnapshot,
   });
+  if (!waitForResult) return started;
+  // 阻塞等待结果（受工具超时约束）：结果直接返回，不进发送队列
+  const result = await waitForAsyncJob(started.jobId, ctx.config, ctx.services);
+  return result;
+}
+
+async function taskStatusTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { getAsyncJobStatus, listSessionAsyncJobs } = await import("./asyncJobManager.js");
+  const jobId = args.jobId ? String(args.jobId) : undefined;
+  if (jobId) return getAsyncJobStatus(jobId, ctx.config, ctx.services);
+  if (!ctx.sessionId) return { items: [] };
+  return { items: await listSessionAsyncJobs(ctx.sessionId, ctx.config, ctx.services) };
+}
+
+async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { cancelAsyncJob } = await import("./asyncJobManager.js");
+  const jobId = String(args.jobId || "");
+  if (!jobId) throw new Error("cancel_async 需要 jobId");
+  return cancelAsyncJob(jobId, ctx.config, ctx.services);
+}
+
+async function awaitAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { waitForAsyncJob } = await import("./asyncJobManager.js");
+  const jobId = String(args.jobId || "");
+  if (!jobId) throw new Error("await_async 需要 jobId");
+  return waitForAsyncJob(jobId, ctx.config, ctx.services);
 }
 
 async function runShellTool(args: Record<string, unknown>, ctx: NativeToolContext) {
