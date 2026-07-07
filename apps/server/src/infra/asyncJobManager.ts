@@ -41,6 +41,8 @@ interface AsyncTaskInput {
   retryCount?: number;
   timeoutMs?: number;
   subagentSessionId?: string;
+  /** swarm 协作：任务结果额外广播到这些会话（共享给其他父会话） */
+  shareToSessionIds?: string[];
 }
 
 interface AsyncTaskOutput {
@@ -231,6 +233,7 @@ function buildAsyncExecute(
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
   retryCount: number,
   subagentSessionId?: string,
+  shareToSessionIds?: string[],
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
   const retryHint = retryCount > 0 ? `（第 ${retryCount} 次重试）` : "";
@@ -240,6 +243,29 @@ function buildAsyncExecute(
       await services.session.update({ id: subagentSessionId, status } as any);
     } catch {
       // subagent session 同步失败不阻塞任务
+    }
+  };
+  // swarm 协作：结果广播到 shareToSessionIds 对应会话（复制一条 success Task 到目标 session，
+  // 各目标会话 pullAsyncDeliveries 会拉到，实现跨会话结果共享）
+  const broadcastShare = async (status: "success" | "failed", output: AsyncTaskOutput) => {
+    if (!shareToSessionIds?.length) return;
+    const input = parseAsyncInput(
+      (await services.task.getById(jobId))?.input,
+    );
+    if (!input) return;
+    for (const targetSessionId of shareToSessionIds) {
+      if (targetSessionId === input.sessionId) continue; // 原会话已投递，跳过
+      try {
+        await services.task.create({
+          name: `[async-share] ${input.taskLabel}`,
+          type: "oneshot",
+          status,
+          sessionId: targetSessionId,
+          input: { ...input, sessionId: targetSessionId, shareToSessionIds: undefined },
+        } as any);
+      } catch {
+        // 单个目标广播失败不阻塞其他
+      }
     }
   };
   return async (signal) => {
@@ -273,6 +299,7 @@ function buildAsyncExecute(
         } satisfies AsyncTaskOutput,
       });
       await syncSubStatus("completed");
+      await broadcastShare("success", { asyncResult: resultText, tokenUsage });
     } catch (err: unknown) {
       const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
       const isTimeout = err instanceof Error && err.message.includes("超时");
@@ -285,6 +312,7 @@ function buildAsyncExecute(
         } satisfies AsyncTaskOutput,
       });
       await syncSubStatus("failed");
+      await broadcastShare("failed", { error: reason || (err instanceof Error ? err.message : String(err)) });
     }
   };
 }
@@ -297,6 +325,8 @@ export async function startAsyncAgentTask(options: {
   config: AppConfig;
   services: ServiceContainer;
   agent: { id: string; model: string; systemPrompt: string; tools: string[] };
+  /** swarm 协作：结果额外广播到这些会话 */
+  shareToSessionIds?: string[];
 }): Promise<{ jobId: string; status: "running"; message: string; subagentSessionId?: string }> {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
@@ -358,6 +388,7 @@ export async function startAsyncAgentTask(options: {
       retryCount: 0,
       timeoutMs: options.timeoutMs,
       subagentSessionId,
+      shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
     } satisfies AsyncTaskInput,
   });
 
@@ -372,7 +403,7 @@ export async function startAsyncAgentTask(options: {
     jobId,
     sessionId: options.sessionId,
     timeoutMs: options.timeoutMs,
-    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId),
+    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId, options.shareToSessionIds),
   });
 
   return {
