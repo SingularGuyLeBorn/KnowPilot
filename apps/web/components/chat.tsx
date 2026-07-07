@@ -1619,6 +1619,11 @@ export function ChatView() {
             modelHint={modelOpt.inputHint ?? (modelOpt.supportsVision ? "多模态 · 支持图片" : "纯文本 · 图片将 OCR 后发送")}
             modelId={chatConfig.model}
             supportsVision={!!modelOpt.supportsVision}
+            sessionHint={
+              isSubagentSession
+                ? "这是子代理任务会话，发送的消息将由子代理处理（结果会投递回父会话）。"
+                : undefined
+            }
           />
         </div>
       </div>

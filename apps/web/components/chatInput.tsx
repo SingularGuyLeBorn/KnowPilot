@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
+import { Bot, ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,8 @@ interface ChatInputAreaProps {
   modelHint?: string;
   modelId?: string;
   supportsVision?: boolean;
+  /** 会话级提示（如子代理任务会话警告），显示在输入框上方 */
+  sessionHint?: string;
 }
 
 export function ChatInputArea({
@@ -46,6 +48,7 @@ export function ChatInputArea({
   modelHint,
   modelId = "",
   supportsVision = false,
+  sessionHint,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -196,6 +199,15 @@ export function ChatInputArea({
 
   return (
     <div className="relative mx-auto max-w-3xl">
+      {sessionHint && (
+        <div
+          data-testid="session-hint"
+          className="mb-2 flex items-center gap-1.5 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-1.5 text-[11px] text-[var(--kp-brand-dark)]"
+        >
+          <Bot className="h-3 w-3 shrink-0" />
+          <span>{sessionHint}</span>
+        </div>
+      )}
       {selectedSkill && (
         <div className="mb-2 flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-1 text-xs font-medium text-[var(--kp-brand-dark)]">
