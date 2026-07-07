@@ -44,7 +44,7 @@ test.describe("Chat 真实 LLM — 思考时间线", () => {
     expect(firstRoundText).toMatch(/2/);
 
     // 第二轮：发送后立即检查，此时应仍处于流式状态
-    await sendChatMessage(page, "再加 3 呢？");
+    await sendChatMessage(page, "2 加 3 等于多少？请用一句话回答。");
 
     // 关键断言：第二轮流式期间，第一轮 assistant 气泡仍然可见
     await expect(page.getByTestId("assistant-message-bubble").first()).toBeVisible({
