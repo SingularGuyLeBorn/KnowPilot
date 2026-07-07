@@ -120,22 +120,38 @@ export function buildLlmMessagesFromHistory(
     const reasoningContent = buildReasoningContentFromStored(active.toolCalls);
 
     if (tools.length > 0) {
-      messages.push({
-        role: "assistant",
-        content: active.content || null,
-        reasoning_content: reasoningContent ?? null,
-        tool_calls: tools.map((tc) => ({
-          id: tc.id,
-          type: "function" as const,
-          function: { name: tc.name, arguments: JSON.stringify(tc.args ?? {}) },
-        })),
-      });
+      // 多轮 ReAct 拆分：每个 tool_call 独立成一条 assistant(content=null, tool_calls=[that tool])
+      // 后接 tool result，符合 OpenAI 格式（tool 轮 assistant 必须content=null）。
+      // 最终答案作为独立 assistant 消息在末尾发出，避免与 tool_calls 混在同一条。
+      // 这同时兼容两种存储格式：
+      //   - 旧格式：[assistant(content="" + toolCalls), assistant(content=final)] 两条
+      //   - 新格式：[assistant(content=final + toolCalls)] 一条扁平存储
       for (const tc of tools) {
+        messages.push({
+          role: "assistant",
+          content: null,
+          reasoning_content: null,
+          tool_calls: [
+            {
+              id: tc.id,
+              type: "function" as const,
+              function: { name: tc.name, arguments: JSON.stringify(tc.args ?? {}) },
+            },
+          ],
+        });
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
           name: tc.name,
           content: JSON.stringify(tc.result ?? {}).slice(0, 16000),
+        });
+      }
+      // 最终答案作为独立 assistant 消息（仅当有内容时；aborted 等空 content 情况跳过）
+      if (active.content && active.content.trim()) {
+        messages.push({
+          role: "assistant",
+          content: active.content,
+          reasoning_content: reasoningContent ?? null,
         });
       }
     } else {

@@ -109,21 +109,33 @@ const scenarios: MockLlmScenario[] = [
       for (const token of content.split("")) {
         yield { type: "token", delta: token, model: opts.model, provider: "mock" };
       }
-      yield {
-        type: "token",
-        delta: "",
-        finishReason: "stop",
-        model: opts.model,
-        provider: "mock",
-        tokenUsage: { prompt: 10, completion: 12, total: 22 },
-      };
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 工具失败后的最终回答：与 red pill 一致地输出失败摘要文案
+    name: "tool_error_final",
+    match: (opts, forced) =>
+      forced === "tool_error_final" ||
+      (hasAnyToolResult(opts) && /坏掉|broken|失败|error/i.test(lastUserText(opts))),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "读取文章失败：Mock 404，无法获取正文。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      const content = "读取文章失败：Mock 404，无法获取正文。";
+      for (const token of content.split("")) {
+        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+      }
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },
   {
     name: "read_article_final",
     match: (opts, forced) =>
       forced === "read_article_final" ||
-      (hasAnyToolResult(opts) && /读取文章|read article|juejin|掘金|坏掉|broken/i.test(lastUserText(opts))),
+      (hasAnyToolResult(opts) && /读取文章|read article|juejin|掘金/i.test(lastUserText(opts))),
     completion: (opts) => ({
       ...baseResult(opts),
       content: "已完成 read_article，Mock 文章正文已读取。",
@@ -134,14 +146,7 @@ const scenarios: MockLlmScenario[] = [
       for (const token of content.split("")) {
         yield { type: "token", delta: token, model: opts.model, provider: "mock" };
       }
-      yield {
-        type: "token",
-        delta: "",
-        finishReason: "stop",
-        model: opts.model,
-        provider: "mock",
-        tokenUsage: { prompt: 10, completion: 12, total: 22 },
-      };
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },
   {
@@ -156,15 +161,10 @@ const scenarios: MockLlmScenario[] = [
       content: null,
       toolCalls: [makeToolCall("web_search", { query: "KnowPilot" })],
     }),
+    // agentStream 在 probe 返回 tool_calls 时不会调用 stream；stream 仅作单元测试直接调用兜底，
+    // 不再 yield tool_calls chunk（agentStream stream 路径不处理它，是死代码）
     stream: async function* (opts) {
-      yield { type: "token", delta: "", model: opts.model, provider: "mock" };
-      yield {
-        type: "tool_calls",
-        toolCalls: [makeToolCall("web_search", { query: "KnowPilot" })],
-        finishReason: "tool_calls",
-        model: opts.model,
-        provider: "mock",
-      };
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },
   {
@@ -181,19 +181,7 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("read_article", { url: "https://example.com/broken" })],
     }),
     stream: async function* (opts) {
-      // 工具失败后，stream 阶段输出失败摘要，让 UI assistant 气泡可断言
-      const content = "读取文章失败：Mock 404，无法获取正文。";
-      for (const token of content.split("")) {
-        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
-      }
-      yield {
-        type: "token",
-        delta: "",
-        finishReason: "stop",
-        model: opts.model,
-        provider: "mock",
-        tokenUsage: { prompt: 10, completion: 12, total: 22 },
-      };
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },
   {
@@ -209,21 +197,14 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("read_article", { url: "https://juejin.cn/post/mock" })],
     }),
     stream: async function* (opts) {
-      yield { type: "token", delta: "", model: opts.model, provider: "mock" };
-      yield {
-        type: "tool_calls",
-        toolCalls: [makeToolCall("read_article", { url: "https://juejin.cn/post/mock" })],
-        finishReason: "tool_calls",
-        model: opts.model,
-        provider: "mock",
-      };
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },
   {
     name: "thinking",
     match: (opts, forced) =>
       forced === "thinking" ||
-      (/思考|reasoning|explain|解释/i.test(lastUserText(opts)) && hasTool(opts, "web_search") === false),
+      /思考|reasoning|explain|解释/i.test(lastUserText(opts)),
     completion: (opts) => ({
       ...baseResult(opts),
       content: "这是 Mock LLM 给出的最终回答。",
@@ -239,14 +220,7 @@ const scenarios: MockLlmScenario[] = [
       for (const token of content.split("")) {
         yield { type: "token", delta: token, model: opts.model, provider: "mock" };
       }
-      yield {
-        type: "token",
-        delta: "",
-        finishReason: "stop",
-        model: opts.model,
-        provider: "mock",
-        tokenUsage: { prompt: 10, completion: 12, total: 22 },
-      };
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },
   {
@@ -262,14 +236,7 @@ const scenarios: MockLlmScenario[] = [
       for (const token of content.split("")) {
         yield { type: "token", delta: token, model: opts.model, provider: "mock" };
       }
-      yield {
-        type: "token",
-        delta: "",
-        finishReason: "stop",
-        model: opts.model,
-        provider: "mock",
-        tokenUsage: { prompt: 10, completion: 12, total: 22 },
-      };
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },
 ];

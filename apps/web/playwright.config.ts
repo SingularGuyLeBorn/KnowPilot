@@ -21,6 +21,9 @@ export default defineConfig({
   workers: 1,
   timeout: 60_000,
   reporter: [["list"], ["html", { open: "never", outputFolder: "./e2e/playwright-report" }]],
+  // 排除 Mock 套件：Mock spec 依赖 MOCK_LLM/MOCK_MCP/MOCK_NATIVE_TOOLS 环境变量与 3011 端口，
+  // 默认配置在 3010 真实 server 上跑会因场景不匹配而 flaky。Mock 套件走 playwright.config.mock.ts。
+  testIgnore: ["**/*mock.spec.ts"],
   use: {
     baseURL: webBaseUrl,
     trace: "on-first-retry",

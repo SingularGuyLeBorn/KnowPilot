@@ -111,7 +111,12 @@ export async function buildMcpToolSchemas(
   if (serverNames.length === 0) return [];
 
   if (process.env.MOCK_MCP === "true") {
-    const schemas = getMockMcpToolSchemas();
+    // 按 agent 配置的 serverNames 过滤，避免 Mock 模式下授权边界比真实更宽
+    const allowed = new Set(serverNames);
+    const schemas = getMockMcpToolSchemas().filter((s) => {
+      const meta = parseMcpToolName(s.function.name);
+      return meta ? allowed.has(meta.serverName) : false;
+    });
     for (const schema of schemas) {
       const meta = parseMcpToolName(schema.function.name);
       if (meta) toolRegistry.set(schema.function.name, meta);

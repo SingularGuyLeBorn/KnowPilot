@@ -758,7 +758,13 @@ export function ChatView() {
               if (opts.skillPrompt) {
                 updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
               }
-              await refetchSession();
+              // 用 data.sessionId 显式拉取会话详情，避免 refetchSession 在
+              // setSessionId 异步生效前用 null id 打 tRPC（控制台报错 + 短暂不同步）
+              if (data.sessionId) {
+                await utils.session.getById.fetch({ id: data.sessionId }).catch(() => {
+                  // 拉取失败不阻塞 UI，下个 render 会因 enabled 查询自动重试
+                });
+              }
               // 延后清空，避免与 tool_end 的 setState 同批提交导致 hint 从未挂载
               setTimeout(() => {
                 setLiveTimeline([]);

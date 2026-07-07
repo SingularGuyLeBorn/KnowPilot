@@ -5,7 +5,7 @@
  * 通过环境变量启用：
  *   MOCK_NATIVE_TOOLS=true
  *
- * 当前覆盖：web_search、read_article、scrape_web_page、search.global、read_file、write_file。
+ * 当前覆盖：web_search、read_article、scrape_web_page、read_file、write_file。
  * 未覆盖的工具会回退到真实实现（如需可继续补）。
  */
 
@@ -65,21 +65,6 @@ const MOCK_HANDLERS: Record<string, MockHandler> = {
     title: "Mock Page",
     content: "Mock scrape content.",
     links: [{ text: "Mock Link", href: "https://example.com" }],
-    elapsedMs: 5,
-  }),
-
-  search_global: (args) => ({
-    query: String(args.query ?? ""),
-    items: [
-      {
-        type: "post",
-        id: "mock-post-1",
-        title: "Mock 全局搜索结果",
-        slug: "mock-post",
-        excerpt: "Mock 摘要",
-      },
-    ],
-    total: 1,
     elapsedMs: 5,
   }),
 

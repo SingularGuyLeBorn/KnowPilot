@@ -118,6 +118,25 @@ const server = app.listen(PORT, () => {
   console.log(`  📡 tRPC endpoint: http://localhost:${PORT}/api/trpc`);
   console.log(`  💚 Health check:  http://localhost:${PORT}/health\n`);
 
+  // Mock 模式护栏：警告混合启用导致的「假 LLM + 真工具」静默降级
+  const mockFlags = {
+    LLM: process.env.MOCK_LLM === "true",
+    MCP: process.env.MOCK_MCP === "true",
+    NATIVE_TOOLS: process.env.MOCK_NATIVE_TOOLS === "true",
+  };
+  const enabledMocks = Object.entries(mockFlags).filter(([, v]) => v).map(([k]) => k);
+  if (enabledMocks.length > 0) {
+    const missing = Object.entries(mockFlags).filter(([, v]) => !v).map(([k]) => k);
+    if (missing.length > 0) {
+      console.warn(
+        `  ⚠️ [Mock] 已启用 ${enabledMocks.join(",")}，但未启用 ${missing.join(",")}。` +
+          `这会导致「假 LLM 回复 + 真实工具触网」的混合态，生产环境请勿如此配置。`,
+      );
+    } else {
+      console.warn(`  🧪 [Mock] 全部 Mock 开关已启用 (LLM/MCP/NATIVE_TOOLS) — 服务运行在测试模式，不调用任何真实外部 API。`);
+    }
+  }
+
   // listen 后再启后台任务；FTS 仅由 pnpm db:sync / sync:watch 重建
   triggerEngine.start().catch((err) => {
     console.error("❌ [TriggerEngine] 启动失败:", err);

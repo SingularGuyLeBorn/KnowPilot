@@ -227,6 +227,25 @@ async function runAgentLoopStream(options: {
       continue;
     }
 
+    // probe 无 tool_calls：复用 probe.content 作为最终答案，避免二次 chatCompletionStream
+    // 调用浪费 token/延迟（probe 已是完整 LLM 响应）。
+    // 仅当 probe 无 reasoningContent 时短路：有思考链的场景走 stream 路径以保留 token-by-token
+    // 的思考流式 UX（reasoningContent 已通过 pushThinking 单次 emit，但流式版渐进输出体验更好）。
+    if (probe.content && probe.content.trim() && !probe.reasoningContent) {
+      finalContent = probe.content;
+      for (const token of probe.content.split("")) {
+        options.emit({ type: "token", delta: token });
+      }
+      return {
+        content: finalContent,
+        toolCalls: executedTools,
+        tokenUsage: totalUsage,
+        model: lastModel,
+        provider: lastProvider,
+        roundsUsed,
+      };
+    }
+
     finalContent = "";
     for await (const chunk of chatCompletionStream({
       config: options.config,
@@ -263,6 +282,52 @@ async function runAgentLoopStream(options: {
       provider: lastProvider,
       roundsUsed,
     };
+  }
+
+  // maxRounds 耗尽：若末轮执行过工具，再做一次无 tools 的合成调用读取 tool 结果，
+  // 而不是直接吐兜底文案（用户至少能看到基于工具结果的最终回答）
+  if (executedTools.some((t) => t.kind === "tool") && !options.signal?.aborted) {
+    try {
+      finalContent = "";
+      for await (const chunk of chatCompletionStream({
+        config: options.config,
+        model: options.agent.model,
+        messages: llmMessages,
+        temperature: options.llmOptions.temperature,
+        maxTokens: options.llmOptions.maxTokens,
+        enableReasoning: options.llmOptions.enableReasoning,
+        reasoningEffort: options.llmOptions.reasoningEffort,
+        signal: options.signal,
+      })) {
+        if (chunk.type === "reasoning" && chunk.delta) {
+          pushThinking(executedTools, maxRounds, chunk.delta, options.emit);
+        }
+        if (chunk.type === "token" && chunk.delta) {
+          finalContent += chunk.delta;
+          options.emit({ type: "token", delta: chunk.delta });
+        }
+        if (chunk.model) lastModel = chunk.model;
+        if (chunk.provider) lastProvider = chunk.provider;
+        if (chunk.tokenUsage) {
+          totalUsage.prompt += chunk.tokenUsage.prompt;
+          totalUsage.completion += chunk.tokenUsage.completion;
+          totalUsage.total += chunk.tokenUsage.total;
+          recordTokenUsage(options.config, chunk.tokenUsage);
+        }
+      }
+      if (finalContent.trim()) {
+        return {
+          content: finalContent,
+          toolCalls: executedTools,
+          tokenUsage: totalUsage,
+          model: lastModel,
+          provider: lastProvider,
+          roundsUsed: maxRounds,
+        };
+      }
+    } catch {
+      // 合成失败则落兜底文案
+    }
   }
 
   finalContent = `已达到最大工具调用轮次（${maxRounds}）。`;
