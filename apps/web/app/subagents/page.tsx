@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Bot, ExternalLink, Square, Trash2 } from "lucide-react";
+import { Bot, ExternalLink, Square, Trash2, RotateCcw } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -46,6 +46,9 @@ export default function SubagentsPage() {
     onSuccess: () => utils.session.list.invalidate(),
   });
   const deleteMut = trpc.session.delete.useMutation({
+    onSuccess: () => utils.session.list.invalidate(),
+  });
+  const rerunMut = trpc.session.rerun.useMutation({
     onSuccess: () => utils.session.list.invalidate(),
   });
 
@@ -150,6 +153,14 @@ export default function SubagentsPage() {
                           <Square className="h-3 w-3" /> 停止
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => rerunMut.mutate({ id: s.id })}
+                        disabled={rerunMut.isPending}
+                        className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-7 gap-1 px-2 text-[10px]")}
+                      >
+                        <RotateCcw className="h-3 w-3" /> 重跑
+                      </button>
                       <button
                         type="button"
                         onClick={() => setConfirmId(s.id)}

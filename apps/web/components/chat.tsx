@@ -71,6 +71,7 @@ import {
 } from "@/lib/chatQueueTypes";
 import { MessageQueue } from "@/components/chatQueue";
 import { SubagentPanel } from "@/components/subagentPanel";
+import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 
 /* ─── Sub-components ─── */
 
@@ -462,6 +463,7 @@ export function ChatView() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; title: string } | null>(null);
+  const [showCreateSubagent, setShowCreateSubagent] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const consumeRef = useRef<() => void>(() => {});
@@ -1278,7 +1280,7 @@ export function ChatView() {
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
-        <SubagentPanel parentSessionId={effectiveSessionId ?? undefined} />
+        <SubagentPanel parentSessionId={effectiveSessionId ?? undefined} onCreate={() => setShowCreateSubagent(true)} />
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">对话历史</h2>
           <button type="button" onClick={startNewChat} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")} aria-label="新建对话" title="新建对话（发送首条消息时创建）">
@@ -1644,6 +1646,12 @@ export function ChatView() {
         isDestructive
         onConfirm={() => deleteSessionTarget && void handleDeleteSession(deleteSessionTarget.id)}
         onCancel={() => setDeleteSessionTarget(null)}
+      />
+
+      <SubagentCreateDialog
+        open={showCreateSubagent}
+        parentSessionId={effectiveSessionId ?? undefined}
+        onClose={() => setShowCreateSubagent(false)}
       />
     </div>
   );

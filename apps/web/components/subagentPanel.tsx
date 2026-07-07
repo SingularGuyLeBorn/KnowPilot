@@ -8,7 +8,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, ChevronRight, Plus, Square, Trash2, ExternalLink } from "lucide-react";
+import { Bot, ChevronRight, Plus, Square, Trash2, ExternalLink, RotateCcw } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -46,6 +46,7 @@ function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () =>
   const [confirmDelete, setConfirmDelete] = useState(false);
   const stopMut = trpc.session.stop.useMutation({ onSuccess: onRefresh });
   const deleteMut = trpc.session.delete.useMutation({ onSuccess: onRefresh });
+  const rerunMut = trpc.session.rerun.useMutation({ onSuccess: onRefresh });
   const utils = trpc.useUtils();
 
   const statusColor = STATUS_COLOR[sub.status] ?? "bg-gray-400";
@@ -102,6 +103,14 @@ function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () =>
                     <Square className="h-3 w-3" /> 停止
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => rerunMut.mutate({ id: sub.id })}
+                  disabled={rerunMut.isPending}
+                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
+                >
+                  <RotateCcw className="h-3 w-3" /> 重跑
+                </button>
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
