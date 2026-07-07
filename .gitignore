@@ -54,6 +54,10 @@ content/memories/*.md
 .dev-log/llm-budget.json
 .dev-log/oschina-sample.html
 
+# Python virtual env / cache
+experiments/.venv/
+experiments/**/__pycache__/
+
 # Docker volumes
 pgdata/
 
