@@ -397,6 +397,7 @@ export async function getAsyncJobStatus(
   asyncResult?: string;
   subagentSessionId?: string;
   tokenUsage?: { prompt: number; completion: number; total: number };
+  timeoutMs?: number;
 }> {
   const task = await services.task.getById(jobId);
   if (!task) return { jobId, status: "not_found" };
@@ -415,6 +416,7 @@ export async function getAsyncJobStatus(
     asyncResult: output.asyncResult,
     subagentSessionId: input?.subagentSessionId,
     tokenUsage: output.tokenUsage,
+    timeoutMs: input?.timeoutMs ?? config.asyncJobs.taskTimeoutMs,
   };
 }
 
