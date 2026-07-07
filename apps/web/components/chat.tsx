@@ -465,6 +465,7 @@ export function ChatView() {
   const [renameDraft, setRenameDraft] = useState("");
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; title: string } | null>(null);
   const [showCreateSubagent, setShowCreateSubagent] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const consumeRef = useRef<() => void>(() => {});
@@ -1050,6 +1051,25 @@ export function ChatView() {
   useEffect(() => {
     applyView(effectiveSessionId);
   }, [effectiveSessionId, applyView]);
+
+  // Ctrl+Shift+S 快捷键打开新建子代理弹窗
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "S" || e.key === "s")) {
+        e.preventDefault();
+        setShowCreateSubagent(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // toast 自动消失
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const enqueueMessage = (
     text: string,
@@ -1731,7 +1751,20 @@ export function ChatView() {
         open={showCreateSubagent}
         parentSessionId={effectiveSessionId ?? undefined}
         onClose={() => setShowCreateSubagent(false)}
+        onCreated={() => setToast("子代理任务已启动，结果完成后自动进入对话")}
       />
+
+      {toast && (
+        <div
+          data-testid="chat-toast"
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-[var(--kp-brand-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-1)] shadow-lg"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Check className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
+            {toast}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
