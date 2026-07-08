@@ -37,6 +37,7 @@ export interface AppConfig {
   corsOrigins: string[];
   serverInternalUrl: string;
   webHost: string;
+  emailProvider: string;
   llm: {
     defaultProvider: string;
     dailyBudget: number;
@@ -291,6 +292,7 @@ export function createAppConfig(): AppConfig {
       .filter(Boolean),
     serverInternalUrl: readEnv("SERVER_INTERNAL_URL") || "http://127.0.0.1:3010",
     webHost: readEnv("WEB_HOST") || "127.0.0.1",
+    emailProvider: readEnv("EMAIL_PROVIDER") || "none",
     llm: {
       defaultProvider: readEnv("LLM_DEFAULT_PROVIDER") || "deepseek",
       dailyBudget: parseFloat(readEnv("LLM_DAILY_BUDGET") || "10"),

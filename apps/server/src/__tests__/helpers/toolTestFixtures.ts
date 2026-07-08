@@ -35,6 +35,7 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
     corsOrigins: [],
     serverInternalUrl: "http://127.0.0.1:3010",
     webHost: "127.0.0.1",
+    emailProvider: "none",
     llm: {
       defaultProvider: "deepseek",
       dailyBudget: 0,
@@ -231,4 +232,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "agent_create_sub",
   "workspace_create",
   "workspace_archive",
+  "send_email",
+  "free_api_keys_list",
+  "free_api_keys_fetch",
 ] as const;

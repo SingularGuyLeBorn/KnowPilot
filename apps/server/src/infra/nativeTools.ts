@@ -213,6 +213,11 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   agent_create_sub: agentCreateSubTool,
   workspace_create: workspaceCreateTool,
   workspace_archive: workspaceArchiveTool,
+  // 邮件通知
+  send_email: sendEmailTool,
+  // 免费 API Key
+  free_api_keys_list: freeApiKeysListTool,
+  free_api_keys_fetch: freeApiKeysFetchTool,
 };
 
 export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
@@ -1435,6 +1440,34 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         id: { type: "string", description: "Workspace id" },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "send_email",
+    description: "发送邮件通知用户（任务完成、预算耗尽、心跳失败等）。需配置 EMAIL_PROVIDER 环境变量。",
+    parameters: {
+      type: "object",
+      properties: {
+        subject: { type: "string", description: "邮件主题" },
+        body: { type: "string", description: "邮件正文（纯文本）" },
+        to: { type: "string", description: "收件人邮箱（不填则用 EMAIL_TO 环境变量）" },
+      },
+      required: ["subject", "body"],
+    },
+  },
+  {
+    name: "free_api_keys_list",
+    description: "列出可用的免费 API Key（从 Credential 表中 scope=llm 且 metadata.source=free 的记录）。",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    name: "free_api_keys_fetch",
+    description: "获取一个可用的免费 API Key（轮询分配，标记 lastUsedAt）。用于 Agent 无专属 key 时获取临时 key。",
+    parameters: {
+      type: "object",
+      properties: {
+        provider: { type: "string", description: "偏好提供商（如 deepseek/openai），不填则随机分配" },
+      },
     },
   },
 ];
@@ -3095,6 +3128,125 @@ async function workspaceArchiveTool(args: Record<string, unknown>, ctx: NativeTo
     metadata: { workspaceId: wsId, agentCount: agents.length, operatorAgentId: ctx.agentSnapshot?.id },
   }).catch(() => {});
   return { success: true, message: `Workspace 已归档，${agents.length} 个 Agent 设为 dormant。可随时恢复。` };
+}
+
+// ─── 邮件通知工具 ───
+
+async function sendEmailTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const subject = String(args.subject || "");
+  const body = String(args.body || "");
+  if (!subject || !body) return { error: "send_email 需要 subject 和 body" };
+
+  const provider = ctx.config.emailProvider || process.env.EMAIL_PROVIDER || "none";
+  if (provider === "none" || !provider) {
+    return { error: "邮件未配置（EMAIL_PROVIDER=none），请设置 EMAIL_PROVIDER=smtp 或 agentemail。" };
+  }
+  const to = (args.to as string) || process.env.EMAIL_TO || "";
+  if (!to) return { error: "未配置收件人（EMAIL_TO 环境变量或 to 参数）" };
+
+  try {
+    if (provider === "smtp") {
+      // SMTP 发送（需 nodemailer，动态导入避免未安装时崩溃）
+      // @ts-ignore — nodemailer 可选依赖，未安装时 catch 返回 null
+      const nodemailer: any = await import("nodemailer").catch(() => null);
+      if (!nodemailer?.default?.createTransport && !nodemailer?.createTransport) return { error: "nodemailer 未安装，无法通过 SMTP 发送邮件。" };
+      const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_SMTP_HOST,
+        port: Number(process.env.EMAIL_SMTP_PORT || "587"),
+        secure: process.env.EMAIL_SMTP_SECURE === "true",
+        auth: { user: process.env.EMAIL_SMTP_USER, pass: process.env.EMAIL_SMTP_PASS },
+      });
+      await transporter.sendMail({ from: process.env.EMAIL_SMTP_USER, to, subject, text: body });
+    } else if (provider === "agentemail") {
+      // AgentEmail API（简单 fetch）
+      const apiKey = process.env.AGENTEMAIL_API_KEY;
+      if (!apiKey) return { error: "AGENTEMAIL_API_KEY 未配置。" };
+      const res = await fetch("https://api.agentemail.com/v1/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ to, subject, body }),
+        signal: undefined,
+      });
+      if (!res.ok) return { error: `AgentEmail 发送失败: HTTP ${res.status}` };
+    } else {
+      return { error: `未知的邮件提供商: ${provider}` };
+    }
+
+    await ctx.services.log?.create?.({
+      level: "info", component: "swarm", event: "email_sent",
+      message: `邮件已发送: ${subject} → ${to}`,
+      metadata: { subject, to, provider, agentId: ctx.agentSnapshot?.id },
+    }).catch(() => {});
+    return { success: true, message: `邮件已发送到 ${to}` };
+  } catch (err) {
+    return { error: `邮件发送失败: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+// ─── 免费 API Key 工具 ───
+
+async function freeApiKeysListTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) return { error: "需要 prisma 上下文" };
+  const creds = await ctx.prisma.credential.findMany({
+    where: { scope: { contains: "llm" } },
+    select: { id: true, name: true, type: true, scope: true, lastUsedAt: true, metadata: true },
+  });
+  // 过滤出免费 key（metadata.source === "free"）
+  const freeKeys = creds.filter((c) => {
+    try {
+      const meta = JSON.parse(c.metadata || "{}");
+      return meta.source === "free";
+    } catch {
+      return false;
+    }
+  });
+  return {
+    count: freeKeys.length,
+    keys: freeKeys.map((c) => ({
+      id: c.id,
+      name: c.name,
+      lastUsedAt: c.lastUsedAt,
+      // 不返回 value（安全）
+    })),
+  };
+}
+
+async function freeApiKeysFetchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) return { error: "需要 prisma 上下文" };
+  const provider = args.provider as string | undefined;
+  const where: any = { scope: { contains: "llm" } };
+  // 按 lastUsedAt 升序排列，取最久未使用的
+  const creds = await ctx.prisma.credential.findMany({
+    where,
+    orderBy: { lastUsedAt: "asc" },
+    take: 20,
+  });
+  // 过滤免费 key + 可选 provider 匹配
+  const freeKeys = creds.filter((c) => {
+    try {
+      const meta = JSON.parse(c.metadata || "{}");
+      if (meta.source !== "free") return false;
+      if (provider && meta.provider !== provider) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (freeKeys.length === 0) {
+    return { error: "无可用免费 API Key。请先运行 sync-free-keys 同步，或配置 LLM_API_KEY 环境变量。" };
+  }
+  const picked = freeKeys[0];
+  // 标记 lastUsedAt
+  await ctx.prisma.credential.update({
+    where: { id: picked.id },
+    data: { lastUsedAt: new Date() },
+  }).catch(() => {});
+  return {
+    apiKey: picked.value, // 返回实际 key 供 Agent 使用
+    credentialId: picked.id,
+    name: picked.name,
+    hint: "使用后请勿持久化此 key，每次需要时重新获取。",
+  };
 }
 
 export function resolveAllowedNativeTools(agentTools: string[]): string[] | "all" {
