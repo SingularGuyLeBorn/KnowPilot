@@ -157,6 +157,37 @@ export function extractLocalQueueFromMerged(
   return [...userItems, ...overlays];
 }
 
+/** 把合并后的队列拆成两个物理独立的队列：
+ *  - userQueue: 用户主动发送的消息（kind="user"）
+ *  - asyncOverlays: 异步结果的用户追加编辑（async-result 带 userAppend/text，或不再被 poll 跟踪的 async-running）
+ *  两队列物理独立，consumeQueue 先查 asyncResultQueue 再查 userQueue，避免冲突。 */
+export function splitQueueByKind(
+  merged: ChatQueueItem[],
+  poll?: {
+    running?: Array<{ jobId: string }>;
+    deliveries?: Array<{ jobId: string }>;
+  },
+): { userQueue: ChatQueueItem[]; asyncOverlays: ChatQueueItem[] } {
+  const pollRunning = new Set((poll?.running ?? []).map((j) => j.jobId));
+  const userQueue = merged.filter((i) => i.kind === "user");
+  const asyncOverlays: ChatQueueItem[] = [];
+
+  for (const item of merged) {
+    if (item.kind === "async-running" && item.jobId && !pollRunning.has(item.jobId)) {
+      asyncOverlays.push(item);
+    }
+    if (item.kind === "async-result" && item.jobId && (item.userAppend?.trim() || item.text.trim())) {
+      asyncOverlays.push({
+        ...item,
+        id: item.id.startsWith("overlay-") ? item.id : `overlay-${item.jobId}`,
+        asyncResult: undefined,
+      });
+    }
+  }
+
+  return { userQueue, asyncOverlays };
+}
+
 export function sortQueueItems(items: ChatQueueItem[]): ChatQueueItem[] {
   const byCreatedAt = (a: ChatQueueItem, b: ChatQueueItem) => a.createdAt - b.createdAt;
   // 优先级：pinned > async-result（异步任务结果投递）> user（用户主动消息）

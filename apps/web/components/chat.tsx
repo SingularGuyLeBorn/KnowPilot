@@ -67,7 +67,7 @@ import {
   createUserQueueItem,
   formatQueueItemForLlm,
   mergeAsyncPollIntoQueue,
-  extractLocalQueueFromMerged,
+  splitQueueByKind,
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
 import { MessageQueue } from "@/components/chatQueue";
@@ -477,7 +477,10 @@ export function ChatView() {
   // 避免旧 assistant 气泡与新流式气泡并存）。新消息流式时为 null，流式气泡落列表底部。
   const [streamTargetUserId, setStreamTargetUserId] = useState<string | null>(null);
   const [lastRoundTokens, setLastRoundTokens] = useState(0);
-  const [localQueue, setLocalQueue] = useState<ChatQueueItem[]>([]);
+  // 两个物理独立的队列：userQueue（用户主动消息）+ asyncOverlays（异步结果的用户追加编辑）
+  // asyncResultQueue（运行中+已完成投递）由 poll 数据派生，不存入 session state
+  const [userQueue, setUserQueue] = useState<ChatQueueItem[]>([]);
+  const [asyncOverlays, setAsyncOverlays] = useState<ChatQueueItem[]>([]);
   const [consumedDeliveries, setConsumedDeliveries] = useState<Set<string>>(() => new Set());
   const [queuePanelOpen, setQueuePanelOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
@@ -517,8 +520,9 @@ export function ChatView() {
     error: string | null;
     lastRoundTokens: number;
     abort: AbortController | null;
-    // 按 session 隔离的发送队列与异步投递消费记录（避免跨 session 共享 queue）
-    localQueue: ChatQueueItem[];
+    // 按 session 隔离的两个物理独立队列 + 异步投递消费记录
+    userQueue: ChatQueueItem[];
+    asyncOverlays: ChatQueueItem[];
     consumedDeliveries: Set<string>;
     queueDraining: boolean;
     activeQueueTaskId: string | null;
@@ -539,7 +543,8 @@ export function ChatView() {
         error: null,
         lastRoundTokens: 0,
         abort: null,
-        localQueue: [],
+        userQueue: [],
+        asyncOverlays: [],
         consumedDeliveries: new Set<string>(),
         queueDraining: false,
         activeQueueTaskId: null,
@@ -560,7 +565,8 @@ export function ChatView() {
       setOptimistic(s?.optimistic ?? []);
       setError(s?.error ?? null);
       setLastRoundTokens(s?.lastRoundTokens ?? 0);
-      setLocalQueue(s?.localQueue ?? []);
+      setUserQueue(s?.userQueue ?? []);
+      setAsyncOverlays(s?.asyncOverlays ?? []);
       setConsumedDeliveries(s?.consumedDeliveries ?? new Set<string>());
     },
     [],
@@ -585,7 +591,8 @@ export function ChatView() {
           case "optimistic": setOptimistic(next as OptimisticMsg[]); break;
           case "error": setError(next as string | null); break;
           case "lastRoundTokens": setLastRoundTokens(next as number); break;
-          case "localQueue": setLocalQueue(next as ChatQueueItem[]); break;
+          case "userQueue": setUserQueue(next as ChatQueueItem[]); break;
+          case "asyncOverlays": setAsyncOverlays(next as ChatQueueItem[]); break;
           case "consumedDeliveries": setConsumedDeliveries(next as Set<string>); break;
           default: break;
         }
@@ -669,12 +676,21 @@ export function ChatView() {
     },
   });
 
-  const queue = useMemo(
+  // 两个物理独立队列：
+  // - asyncResultQueue: 从 poll 数据派生（async-running + async-result），合并 asyncOverlays（用户追加编辑）
+  // - userQueue: 用户主动发送的消息（存入 session state）
+  // 显示队列 = asyncResultQueue + userQueue（async 在前，符合优先级语义）
+  const asyncResultQueue = useMemo(
     () =>
-      mergeAsyncPollIntoQueue(localQueue, asyncQueueQuery.data, {
+      mergeAsyncPollIntoQueue(asyncOverlays, asyncQueueQuery.data, {
         skipDeliveryJobIds: consumedDeliveries,
       }),
-    [localQueue, asyncQueueQuery.data, consumedDeliveries],
+    [asyncOverlays, asyncQueueQuery.data, consumedDeliveries],
+  );
+
+  const queue = useMemo(
+    () => [...sortQueueItems(asyncResultQueue), ...sortQueueItems(userQueue)],
+    [asyncResultQueue, userQueue],
   );
 
   // localQueueRef / consumedDeliveriesRef 已由按 session 的 streamStatesRef 取代
@@ -906,7 +922,7 @@ export function ChatView() {
               if (name === "run_async" && result && typeof result === "object") {
                 const r = result as { jobId?: string; status?: string; message?: string };
                 if (r.jobId && r.status === "running") {
-                  ssSet(originSid, "localQueue", (prev) => {
+                  ssSet(originSid, "asyncOverlays", (prev) => {
                     if (prev.some((q) => q.jobId === r.jobId)) return prev;
                     return [
                       {
@@ -999,7 +1015,7 @@ export function ChatView() {
         const finishedTaskId = st.activeQueueTaskId;
         if (finishedTaskId) {
           st.activeQueueTaskId = null;
-          ssSet(originSid, "localQueue", (prev) => prev.filter((i) => i.id !== finishedTaskId));
+          ssSet(originSid, "asyncOverlays", (prev) => prev.filter((i) => i.id !== finishedTaskId));
         }
         consumeRef.current();
       }
@@ -1012,35 +1028,42 @@ export function ChatView() {
     const st = getStreamState(sid);
     if (isSessionStreaming(effectiveSessionId) || st.queueDraining) return;
 
-    const pollData = asyncQueueQuery.data;
-    const merged = mergeAsyncPollIntoQueue(st.localQueue, pollData, {
-      skipDeliveryJobIds: st.consumedDeliveries,
-    });
-    const sorted = sortQueueItems(merged);
-    // 两阶段优先消费：异步任务结果(async-result)优先于用户手动消息(user)。
-    // 这样 agent 当前回复结束后，后台任务结果自动先于用户队列被发给 LLM。
+    // 两阶段优先消费：asyncResultQueue（异步任务结果）优先于 userQueue（用户消息）
+    // 两个物理独立队列，不混排，保证优先级绝对正确
     const isReady = (t: ChatQueueItem) =>
       t.kind !== "async-running" &&
       (t.text.trim() || t.asyncResult || t.attachments?.length);
-    let readyIdx = sorted.findIndex((t) => t.kind === "async-result" && isReady(t));
-    if (readyIdx < 0) readyIdx = sorted.findIndex((t) => t.kind === "user" && isReady(t));
-    if (readyIdx < 0) readyIdx = sorted.findIndex(isReady);
-    if (readyIdx < 0) return;
+
+    // 1. 先查 asyncResultQueue 中的可消费 async-result
+    let asyncReady: ChatQueueItem | undefined;
+    for (const t of asyncResultQueue) {
+      if (t.kind === "async-result" && isReady(t)) { asyncReady = t; break; }
+    }
+    // 2. 再查 userQueue 中的可消费 user 消息
+    let userReady: ChatQueueItem | undefined;
+    if (!asyncReady) {
+      for (const t of st.userQueue) {
+        if (t.kind === "user" && isReady(t)) { userReady = t; break; }
+      }
+    }
+    const task = asyncReady ?? userReady;
+    if (!task) return;
 
     st.queueDraining = true;
-    const task = sorted[readyIdx];
 
     if (task.kind === "async-result" && task.jobId) {
       ssSet(sid, "consumedDeliveries", (s: Set<string>) => new Set(s).add(task.jobId!));
     }
 
     if (task.kind === "user") {
-      // 已发出即离开队列，气泡区由 optimistic / session 消息展示
-      ssSet(sid, "localQueue", (prev) => prev.filter((i) => i.id !== task.id));
+      // 用户消息：从 userQueue 移除
+      ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
     } else {
+      // async-result：标记 consumedDeliveries（已上面处理），asyncOverlays 中对应的 overlay 也清除
       st.activeQueueTaskId = task.id;
-      const restMerged = sorted.filter((_, i) => i !== readyIdx);
-      ssSet(sid, "localQueue", extractLocalQueueFromMerged(restMerged, pollData));
+      if (task.jobId) {
+        ssSet(sid, "asyncOverlays", (prev) => prev.filter((o) => o.jobId !== task.jobId));
+      }
     }
 
     // runStream 会在开头设置 isStreaming=true；此处无需预置（多 session 隔离下避免污染其他 session）
@@ -1074,7 +1097,7 @@ export function ChatView() {
       skillPrompt: task.skillPrompt,
       optimisticUser: { id: optimisticId, text: optimisticText },
     });
-  }, [runStream, chatConfig.model, asyncQueueQuery.data, effectiveSessionId, isSessionStreaming, ssSet, getStreamState]);
+  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState]);
 
   useEffect(() => {
     consumeRef.current = consumeQueue;
@@ -1122,7 +1145,7 @@ export function ChatView() {
     const skillPrompt = skill
       ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
       : undefined;
-    ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "localQueue", (prev) => [
+    ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (prev) => [
       ...prev,
       createUserQueueItem(trimmed || "（见附件）", {
         skillId: skill?.id,
@@ -1691,10 +1714,17 @@ export function ChatView() {
           items={queue}
           panelOpen={queuePanelOpen}
           onPanelOpenChange={setQueuePanelOpen}
-          onChange={(items) =>
-            ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "localQueue", extractLocalQueueFromMerged(items, asyncQueueQuery.data))
-          }
-          onRemove={(id) => ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "localQueue", (q) => q.filter((t) => t.id !== id))}
+          onChange={(items) => {
+            // 用户编辑队列后，拆成 userQueue + asyncOverlays 两个物理独立队列
+            const { userQueue: uq, asyncOverlays: ao } = splitQueueByKind(items, asyncQueueQuery.data);
+            ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", uq);
+            ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", ao);
+          }}
+          onRemove={(id) => {
+            // 从对应队列移除（userQueue 或 asyncOverlays）
+            ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (q) => q.filter((t) => t.id !== id));
+            ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", (q) => q.filter((t) => t.id !== id));
+          }}
           onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
           onRetry={(jobId) => {
             ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
