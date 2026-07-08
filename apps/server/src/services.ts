@@ -765,6 +765,13 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     return where;
   }
 
+  protected override getOrderBy(input: ListAgentsInput): any {
+    // tier DESC 使 "super" 排最前（字典序 super > sub > manager），
+    // 前端页内再按 super>manager>sub 精确排序；避免超级 Agent 沉到后面分页
+    if ((input as any).orderBy) return super.getOrderBy(input);
+    return [{ tier: "desc" }, { createdAt: "desc" }];
+  }
+
   protected buildCreateData(input: CreateAgentInput): any {
     const tools = materializeAgentTools(input.tools);
     return {

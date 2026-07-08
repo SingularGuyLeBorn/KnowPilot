@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   Cpu,
   Crown,
+  HeartPulse,
   MessageSquare,
   Plus,
   Search,
@@ -34,7 +35,20 @@ type AgentForm = {
   model: string;
   systemPrompt: string;
   tools: string[];
+  // 心跳配置（#4）
+  heartbeatEnabled: boolean;
+  heartbeatCron: string;
+  heartbeatGoal: string;
 };
+
+/** 心跳 cron 预设 */
+const HEARTBEAT_CRON_PRESETS = [
+  { value: "0 9 * * *", label: "每天 9:00" },
+  { value: "0 */6 * * *", label: "每 6 小时" },
+  { value: "0 */12 * * *", label: "每 12 小时" },
+  { value: "0 9 * * 1", label: "每周一 9:00" },
+  { value: "*/30 * * * *", label: "每 30 分钟" },
+];
 
 const DEFAULT_AGENT_TOOLS = [
   "native:web_search",
@@ -52,6 +66,9 @@ const EMPTY_FORM: AgentForm = {
   model: "deepseek-v4-flash",
   systemPrompt: "你是 KnowPilot 智能助手，擅长知识管理与 Markdown 写作。",
   tools: [...DEFAULT_AGENT_TOOLS],
+  heartbeatEnabled: false,
+  heartbeatCron: "0 9 * * *",
+  heartbeatGoal: "",
 };
 
 function modelOptions(currentModel: string) {
@@ -72,8 +89,15 @@ export default function AgentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<AgentForm>(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // 编辑时保留心跳运行历史（lastRunAt/lastRunStatus/consecutiveFailures），保存不清零
+  const [heartbeatMeta, setHeartbeatMeta] = useState<{ lastRunAt: string | null; lastRunStatus: string | null; consecutiveFailures: number }>({ lastRunAt: null, lastRunStatus: null, consecutiveFailures: 0 });
 
   const { data, isLoading, refetch } = useList({ page, pageSize: 12, keyword });
+  // tier 置顶排序：超级 > 管理 > 子（页内排序；超级 Agent 不再沉底）
+  const TIER_RANK: Record<string, number> = { super: 0, manager: 1, sub: 2 };
+  const sortedItems = [...(data?.items ?? [])].sort(
+    (a: Agent, b: Agent) => (TIER_RANK[a.tier ?? "sub"] ?? 2) - (TIER_RANK[b.tier ?? "sub"] ?? 2),
+  );
   const createMutation = useCreate();
   const updateMutation = useUpdate();
   const deleteMutation = useDelete();
@@ -86,12 +110,21 @@ export default function AgentsPage() {
 
   const openEdit = (agent: Agent) => {
     setEditingId(agent.id);
+    const hb = agent.heartbeat as { enabled?: boolean; cron?: string; goal?: string; lastRunAt?: string | null; lastRunStatus?: string | null; consecutiveFailures?: number } | null;
+    setHeartbeatMeta({
+      lastRunAt: hb?.lastRunAt ?? null,
+      lastRunStatus: hb?.lastRunStatus ?? null,
+      consecutiveFailures: hb?.consecutiveFailures ?? 0,
+    });
     setForm({
       name: agent.name,
       description: agent.description ?? "",
       model: agent.model,
       systemPrompt: agent.systemPrompt,
       tools: materializeAgentTools(agent.tools ?? []),
+      heartbeatEnabled: hb?.enabled ?? false,
+      heartbeatCron: hb?.cron ?? "0 9 * * *",
+      heartbeatGoal: hb?.goal ?? "",
     });
     setView("edit");
   };
@@ -103,6 +136,15 @@ export default function AgentsPage() {
       model: form.model,
       systemPrompt: form.systemPrompt,
       tools: materializeAgentTools(form.tools),
+      heartbeat: {
+        enabled: form.heartbeatEnabled,
+        cron: form.heartbeatCron,
+        goal: form.heartbeatGoal,
+        // 保留运行历史，不因编辑而清零
+        lastRunAt: heartbeatMeta.lastRunAt,
+        lastRunStatus: heartbeatMeta.lastRunStatus,
+        consecutiveFailures: heartbeatMeta.consecutiveFailures,
+      },
     };
     if (!payload.name) return;
 
@@ -193,6 +235,74 @@ export default function AgentsPage() {
                 onChange={(tools) => setForm({ ...form, tools })}
               />
             </div>
+            {/* 心跳配置（#4）：定时自主运行 */}
+            <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <HeartPulse className="h-4 w-4 text-[var(--kp-brand)]" />
+                  <span className="text-xs font-medium text-[var(--kp-text-1)]">心跳（定时自主运行）</span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.heartbeatEnabled}
+                  onClick={() => setForm({ ...form, heartbeatEnabled: !form.heartbeatEnabled })}
+                  className={cn(
+                    "relative h-5 w-9 rounded-full transition-colors",
+                    form.heartbeatEnabled ? "bg-[var(--kp-brand)]" : "bg-[var(--kp-bg-mute)]",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+                      form.heartbeatEnabled ? "translate-x-4" : "translate-x-0.5",
+                    )}
+                  />
+                </button>
+              </div>
+              {form.heartbeatEnabled && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-[11px] text-[var(--kp-text-3)]">触发频率</label>
+                    <KpSelect
+                      value={HEARTBEAT_CRON_PRESETS.some((p) => p.value === form.heartbeatCron) ? form.heartbeatCron : "custom"}
+                      onChange={(v) => v !== "custom" && setForm({ ...form, heartbeatCron: v })}
+                      options={[
+                        ...HEARTBEAT_CRON_PRESETS,
+                        ...(HEARTBEAT_CRON_PRESETS.some((p) => p.value === form.heartbeatCron)
+                          ? []
+                          : [{ value: "custom", label: `自定义（${form.heartbeatCron}）` }]),
+                      ]}
+                      className="w-full"
+                      aria-label="心跳频率"
+                    />
+                    <Input
+                      value={form.heartbeatCron}
+                      onChange={(e) => setForm({ ...form, heartbeatCron: e.target.value })}
+                      placeholder="cron 表达式，如 0 9 * * *"
+                      className="mt-1.5 font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-[var(--kp-text-3)]">心跳目标（触发时发给 Agent 的任务）</label>
+                    <textarea
+                      value={form.heartbeatGoal}
+                      onChange={(e) => setForm({ ...form, heartbeatGoal: e.target.value })}
+                      rows={3}
+                      className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand)]"
+                      placeholder="例：检查信息源更新并整理新文章"
+                    />
+                  </div>
+                  {heartbeatMeta.lastRunAt && (
+                    <p className="text-[11px] text-[var(--kp-text-3)]">
+                      上次运行：{new Date(heartbeatMeta.lastRunAt).toLocaleString("zh-CN")} ·{" "}
+                      {heartbeatMeta.lastRunStatus === "success" ? "成功" : heartbeatMeta.lastRunStatus ?? "未知"}
+                      {heartbeatMeta.consecutiveFailures > 0 && ` · 连续失败 ${heartbeatMeta.consecutiveFailures} 次`}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex gap-3">
@@ -275,7 +385,7 @@ export default function AgentsPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {data.items.map((agent: Agent, idx: number) => (
+            {sortedItems.map((agent: Agent, idx: number) => (
               <motion.div
                 key={agent.id}
                 initial={{ opacity: 0, y: 12 }}
@@ -312,9 +422,29 @@ export default function AgentsPage() {
                           <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">休眠</span>
                         )}
                       </div>
-                      <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]">
-                        <Cpu className="h-2.5 w-2.5" />
-                        {agent.model}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                        <span className="inline-flex items-center gap-1 rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]">
+                          <Cpu className="h-2.5 w-2.5" />
+                          {agent.model}
+                        </span>
+                        {/* 心跳状态徽标（#9）：启用标记 + 上次运行结果 */}
+                        {(() => {
+                          const hb = agent.heartbeat as { enabled?: boolean; cron?: string; lastRunStatus?: string | null; consecutiveFailures?: number } | null;
+                          if (!hb?.enabled) return null;
+                          const failed = (hb.consecutiveFailures ?? 0) > 0;
+                          return (
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
+                                failed ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600",
+                              )}
+                              title={`心跳 ${hb.cron ?? ""}${hb.lastRunStatus ? ` · 上次: ${hb.lastRunStatus}` : ""}`}
+                            >
+                              <HeartPulse className="h-2.5 w-2.5" />
+                              {failed ? `心跳失败×${hb.consecutiveFailures}` : "心跳"}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
