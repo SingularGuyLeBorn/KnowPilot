@@ -1961,6 +1961,7 @@ export function ChatView() {
 
         <div className="border-t border-[var(--kp-divider)] px-4 py-3 md:px-6">
           <ChatInputArea
+            key={effectiveSessionId ?? "new"}
             value={input}
             onChange={setInput}
             onSend={enqueueMessage}

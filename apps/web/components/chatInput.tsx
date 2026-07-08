@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
 import { Bot, ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
@@ -94,11 +94,6 @@ export function ChatInputArea({
     },
     [historyKey, getHistory],
   );
-
-  // 切换 session 时重置历史浏览状态
-  useEffect(() => {
-    setHistoryIdx(-1);
-  }, [sessionId]);
 
   const ocrMutation = trpc.agent.ocrImage.useMutation();
 

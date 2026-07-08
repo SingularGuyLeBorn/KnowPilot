@@ -7,7 +7,7 @@
  * hover 时横杠放大 + 显示消息内容预览气泡，点击滚动到对应消息。
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
