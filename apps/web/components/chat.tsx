@@ -57,7 +57,7 @@ import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
 import { type Agent, type ChatSession, type ChatSessionConfig, type ChatImageAttachment } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { PostContent } from "@/components/post/PostContent";
-import { KpSelect, ConfirmDialog } from "@/components/shared";
+import { ConfirmDialog } from "@/components/shared";
 import { SessionContextBar } from "@/components/sessionContextUsage";
 import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
 import { ChatSettingsPanel } from "@/components/chatSettingsPanel";
@@ -74,6 +74,7 @@ import { MessageQueue } from "@/components/chatQueue";
 import { SubagentPanel } from "@/components/subagentPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 import { WorkspaceTree } from "@/components/workspaceTree";
+import { AgentTreeSelect } from "@/components/agentTreeSelect";
 
 /* ─── Sub-components ─── */
 
@@ -1531,15 +1532,17 @@ export function ChatView() {
             />
           )}
           {agentsQuery.data?.items && (
-            <KpSelect
+            <AgentTreeSelect
               value={effectiveAgentId}
               onChange={selectAgent}
-              options={agentsQuery.data.items.map((a: Agent) => ({
-                value: a.id,
-                label: a.name,
+              agents={agentsQuery.data.items.map((a: Agent) => ({
+                id: a.id,
+                name: a.name,
+                tier: a.tier,
+                parentId: a.parentId,
+                status: a.status,
               }))}
-              size="sm"
-              className="max-w-[140px]"
+              className="max-w-[180px]"
               aria-label="选择 Agent"
             />
           )}
