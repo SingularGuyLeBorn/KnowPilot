@@ -301,20 +301,28 @@ export function PostTreeNav({ className }: { className?: string }) {
   const pathname = usePathname();
   const activeSlug = useMemo(() => getPostSlug(pathname), [pathname]);
   const tree = useMemo(() => buildTree(data || []), [data]);
-  const [manuallyExpanded, setManuallyExpanded] = useState<Set<string>>(() => {
+  const [manuallyExpanded, setManuallyExpanded] = useState<Map<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem(EXPANDED_KEY);
-      return saved ? new Set(JSON.parse(saved)) : new Set();
+      if (saved) {
+        // 兼容旧格式（数组=展开的key列表）→ 转为 Map（key=true）
+        const arr = JSON.parse(saved) as string[];
+        return new Map(arr.map((k) => [k, true]));
+      }
+      return new Map();
     } catch {
-      return new Set();
+      return new Map();
     }
   });
   const [query, setQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const persistExpanded = useCallback((next: Set<string>) => {
+  const persistExpanded = useCallback((next: Map<string, boolean>) => {
     try {
-      localStorage.setItem(EXPANDED_KEY, JSON.stringify(Array.from(next)));
+      // 只持久化显式设置的 key（true=展开, false=折叠）
+      const obj: Record<string, boolean> = {};
+      for (const [k, v] of next) obj[k] = v;
+      localStorage.setItem(EXPANDED_KEY, JSON.stringify(obj));
     } catch {
       // ignore
     }
@@ -323,9 +331,8 @@ export function PostTreeNav({ className }: { className?: string }) {
   const toggle = useCallback(
     (key: string, open: boolean) => {
       setManuallyExpanded((prev) => {
-        const next = new Set(prev);
-        if (open) next.add(key);
-        else next.delete(key);
+        const next = new Map(prev);
+        next.set(key, open); // true=显式展开, false=显式折叠
         persistExpanded(next);
         return next;
       });
@@ -346,15 +353,26 @@ export function PostTreeNav({ className }: { className?: string }) {
   const isSearchMode = query.trim().length > 0;
 
   const expanded = useMemo(() => {
-    const next = new Set(manuallyExpanded);
+    const next = new Set<string>();
+    // 1. 先加显式展开的 key
+    for (const [key, isOpen] of manuallyExpanded) {
+      if (isOpen) next.add(key);
+    }
+    // 2. 自动展开当前文章的祖先文件夹 — 但不覆盖显式折叠的 key
     if (activeSlug && tree.length > 0) {
       const ancestors = collectAncestorKeys(activeSlug, tree);
       if (ancestors !== null) {
-        for (const key of ancestors) next.add(key);
+        for (const key of ancestors) {
+          // 只自动展开未被显式折叠的 key
+          if (manuallyExpanded.get(key) !== false) next.add(key);
+        }
       }
     }
+    // 3. 搜索模式：展开所有匹配的 key（不覆盖显式折叠）
     if (query.trim()) {
-      for (const key of collectAllKeys(visibleTree)) next.add(key);
+      for (const key of collectAllKeys(visibleTree)) {
+        if (manuallyExpanded.get(key) !== false) next.add(key);
+      }
     }
     return next;
   }, [manuallyExpanded, activeSlug, tree, query, visibleTree]);
@@ -384,16 +402,18 @@ export function PostTreeNav({ className }: { className?: string }) {
   const allGroupKeys = useMemo(() => collectGroupKeys(tree), [tree]);
 
   const expandAll = useCallback(() => {
-    const next = new Set(allGroupKeys);
+    const next = new Map<string, boolean>();
+    for (const key of allGroupKeys) next.set(key, true);
     setManuallyExpanded(next);
     persistExpanded(next);
   }, [allGroupKeys, persistExpanded]);
 
   const collapseAll = useCallback(() => {
-    const next = new Set<string>();
+    const next = new Map<string, boolean>();
+    for (const key of allGroupKeys) next.set(key, false);
     setManuallyExpanded(next);
     persistExpanded(next);
-  }, [persistExpanded]);
+  }, [allGroupKeys, persistExpanded]);
 
   const scrollToActiveItem = useCallback(
     (smooth = true) => {
