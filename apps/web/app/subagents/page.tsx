@@ -11,6 +11,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog, EmptyState, Pagination } from "@/components/shared";
+import type { SessionStatus } from "@knowpilot/shared";
 
 const STATUS_OPTIONS = ["", "running", "queued", "completed", "failed", "paused"] as const;
 const STATUS_LABEL: Record<string, string> = {
@@ -46,7 +47,7 @@ export default function SubagentsPage() {
   const statsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
     refetchInterval: (q) => {
       const s = q.state.data as { runningGlobal?: number; queued?: number } | undefined;
-      return s && (s.runningGlobal > 0 || s.queued > 0) ? 3000 : false;
+      return (s?.runningGlobal ?? 0) > 0 || (s?.queued ?? 0) > 0 ? 3000 : false;
     },
   });
   const stats = statsQuery.data;
