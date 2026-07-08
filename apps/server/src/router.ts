@@ -144,6 +144,24 @@ const agentRouter = router({
   asyncQueueStats: publicProcedure
     .meta({ description: "获取异步任务队列实时统计。", aiReadable: false })
     .query(({ ctx }) => getAsyncQueueStats(ctx.config)),
+  // Swarm：Agent 间消息轮询
+  pullAgentMessages: publicProcedure
+    .meta({ description: "拉取发给指定 Agent 的待投递消息（Swarm 通信）。", aiReadable: false })
+    .input(z.object({ agentId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const { getSwarmBus } = await import("./infra/swarmBus.js");
+      const bus = getSwarmBus(ctx.prisma, ctx.services);
+      return bus.poll(input.agentId);
+    }),
+  markAgentMessageConsumed: publicProcedure
+    .meta({ description: "标记 Agent 间消息已消费。", aiReadable: false })
+    .input(z.object({ messageId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getSwarmBus } = await import("./infra/swarmBus.js");
+      const bus = getSwarmBus(ctx.prisma, ctx.services);
+      await bus.markConsumed(input.messageId);
+      return { success: true };
+    }),
   ocrStatus: publicProcedure
     .meta({ description: "OCR 环境诊断（模型、Python、是否可用）。", aiReadable: false })
     .query(async ({ ctx }) => {
