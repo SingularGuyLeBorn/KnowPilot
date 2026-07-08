@@ -679,6 +679,16 @@ export async function chatAgentStream(
       toolCallCount: result.toolCalls.filter((t) => t.kind === "tool").length,
     } as any);
 
+    // Agent 进化：经验自动积累（每次 Run 完成后写入 Memory）
+    import("./agentEvolution.js")
+      .then(({ accumulateExperience }) =>
+        accumulateExperience(services.prisma, services, agent.id, sessionId!, result, {
+          message: prepared!.messageText,
+          trigger: "user",
+        }, Date.now() - start),
+      )
+      .catch(() => { /* 经验积累失败不阻塞 */ });
+
     emit({
       type: "done",
       sessionId,

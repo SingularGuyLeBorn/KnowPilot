@@ -1,4 +1,5 @@
 # KnowPilot 本地开发 / 生产部署（SQLite + monorepo）
+# Swarm 模式：docker compose --profile swarm up -d
 
 services:
   knowpilot:
@@ -14,9 +15,16 @@ services:
       DATABASE_URL: "file:/data/dev.db"
       SERVER_PORT: "3010"
       NODE_ENV: "production"
+      # Swarm 模式：取消注释启用 Redis SwarmBus
+      # SWARM_MODE: "redis"
+      # REDIS_URL: "redis://redis:6379"
     volumes:
       - kp-data:/data
       - ./content:/app/content:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+        required: false  # 仅 swarm profile 时需要
 
   postgres:
     image: postgres:16-alpine
@@ -32,6 +40,38 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  # Redis — Swarm 模式消息队列（BullMQ）
+  # 启用：docker compose --profile swarm up -d
+  redis:
+    image: redis:7-alpine
+    container_name: knowpilot-redis
+    restart: unless-stopped
+    profiles: ["swarm"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redisdata:/data
+
+  # Cloudflare Tunnel — 远程安全访问（无需开放公网端口）
+  # 启用：docker compose --profile cloudflare up -d cloudflare
+  # 需先设置 CLOUDFLARE_TUNNEL_TOKEN 环境变量
+  cloudflare:
+    image: cloudflare/cloudflared:latest
+    container_name: knowpilot-tunnel
+    restart: unless-stopped
+    profiles: ["cloudflare"]
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - knowpilot
+
 volumes:
   kp-data:
   pgdata:
+  redisdata:

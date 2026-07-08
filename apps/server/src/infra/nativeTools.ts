@@ -221,6 +221,9 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   // Hermes 进化：超级 Agent 跨 Workspace 发现优秀 Skill 并推广（#45）
   skill_promote: skillPromoteTool,
   skill_discover: skillDiscoverTool,
+  // Agent 进化高级版
+  optimize_agent_prompt: optimizeAgentPromptTool,
+  generate_skill_from_experience: generateSkillFromExperienceTool,
 };
 
 export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
@@ -1494,6 +1497,30 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         targetAgentIds: { type: "array", items: { type: "string" }, description: "目标 Agent id 列表（将 Skill 加入其工具列表）" },
       },
       required: ["skillId", "targetAgentIds"],
+    },
+  },
+  {
+    name: "optimize_agent_prompt",
+    description: "自动优化子 Agent 的 system prompt（管理 Agent 专用，Agent 进化高级版）。基于近期运行经验分析成功率与工具使用模式，追加优化建议到 prompt。",
+    parameters: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "目标子 Agent id" },
+      },
+      required: ["agentId"],
+    },
+  },
+  {
+    name: "generate_skill_from_experience",
+    description: "从 Agent 运行经验中自动生成 Skill（管理 Agent 专用，Agent 进化高级版）。分析高频工具组合，提炼为可复用的 Skill。",
+    parameters: {
+      type: "object",
+      properties: {
+        agentId: { type: "string", description: "分析哪个 Agent 的经验" },
+        skillName: { type: "string", description: "新 Skill 的名称" },
+        skillDescription: { type: "string", description: "新 Skill 的描述" },
+      },
+      required: ["agentId", "skillName", "skillDescription"],
     },
   },
 ];
@@ -3352,6 +3379,37 @@ async function skillPromoteTool(args: Record<string, unknown>, ctx: NativeToolCo
     metadata: { skillId, skillName: skill.name, targetAgentIds, promoted, errors, operatorAgentId: ctx.agentSnapshot?.id },
   }).catch(() => {});
   return { success: true, promoted, errors: errors.length > 0 ? errors : undefined, message: `Skill ${skill.name} 已推广到 ${promoted} 个 Agent。` };
+}
+
+// ─── Agent 进化高级版 ───
+
+async function optimizeAgentPromptTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) return { error: "需要 prisma 上下文" };
+  const { optimizeAgentPrompt } = await import("./agentEvolution.js");
+  const result = await optimizeAgentPrompt(
+    ctx.prisma,
+    ctx.services,
+    String(args.agentId || ""),
+    ctx.agentSnapshot?.id ?? "",
+  );
+  return result.success
+    ? { success: true, message: "Prompt 已优化", optimized: result.optimized }
+    : { error: result.reason ?? "优化失败" };
+}
+
+async function generateSkillFromExperienceTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) return { error: "需要 prisma 上下文" };
+  const { generateSkillFromExperience } = await import("./agentEvolution.js");
+  const result = await generateSkillFromExperience(
+    ctx.prisma,
+    ctx.services,
+    String(args.agentId || ""),
+    String(args.skillName || ""),
+    String(args.skillDescription || ""),
+  );
+  return result.success
+    ? { success: true, skillId: result.skillId, message: `Skill 已从经验中生成` }
+    : { error: result.reason ?? "生成失败" };
 }
 
 export function resolveAllowedNativeTools(agentTools: string[]): string[] | "all" {
