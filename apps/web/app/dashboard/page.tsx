@@ -6,7 +6,7 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { BarChart3, Bot, FileText, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, type LucideIcon } from "lucide-react";
+import { BarChart3, Bot, Crown, FileText, ShieldCheck, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, Activity, type LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useNativeCapabilities } from "@/lib/hooks";
 import { LoadingState, NativeCapabilitiesPanel } from "@/components/shared";
@@ -39,6 +39,9 @@ function StatCard({
 export default function DashboardPage() {
   const { data, isLoading } = trpc.analytics.dashboard.useQuery({});
   const { data: caps } = useNativeCapabilities();
+  const { data: swarmStats } = trpc.analytics.swarmStats.useQuery({ days: 30 });
+
+  const tierIcon = (tier: string) => (tier === "super" ? Crown : tier === "manager" ? ShieldCheck : Bot);
 
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
@@ -105,6 +108,60 @@ export default function DashboardPage() {
             value={data.tokens.estimatedTotal.toLocaleString()}
           />
         </div>
+      )}
+
+      {/* Swarm Agent 运行统计（#25/#46） */}
+      {swarmStats && swarmStats.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg-alt)]/50 p-6"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="h-4 w-4 text-[var(--vp-c-brand)]" />
+            <h2 className="text-sm font-bold text-[var(--vp-c-text-1)]">Swarm Agent 运行统计（近 30 天）</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-[var(--vp-c-divider)] text-[var(--vp-c-text-3)]">
+                  <th className="px-3 py-2 text-left font-medium">Agent</th>
+                  <th className="px-3 py-2 text-right font-medium">对话轮数</th>
+                  <th className="px-3 py-2 text-right font-medium">工具调用</th>
+                  <th className="px-3 py-2 text-right font-medium">成功率</th>
+                  <th className="px-3 py-2 text-right font-medium">平均耗时</th>
+                  <th className="px-3 py-2 text-right font-medium">Token 消耗</th>
+                </tr>
+              </thead>
+              <tbody>
+                {swarmStats.map((stat: { agentId: string; agentName: string; agentTier: string; conversationRounds: number; toolCallCount: number; successRate: number; avgDurationMs: number; totalTokens: number }) => {
+                  const TierIcon = tierIcon(stat.agentTier);
+                  return (
+                    <tr key={stat.agentId} className="border-b border-[var(--vp-c-divider-light)] hover:bg-[var(--vp-c-bg-soft)]">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <TierIcon className="h-3 w-3 shrink-0 text-[var(--vp-c-brand)]" />
+                          <span className="text-[var(--vp-c-text-1)]">{stat.agentName}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">{stat.conversationRounds}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">{stat.toolCallCount}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        <span className={stat.successRate >= 80 ? "text-green-600" : stat.successRate >= 50 ? "text-amber-600" : "text-red-600"}>
+                          {stat.successRate}%
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">
+                        {stat.avgDurationMs > 1000 ? `${(stat.avgDurationMs / 1000).toFixed(1)}s` : `${stat.avgDurationMs}ms`}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">{stat.totalTokens.toLocaleString()}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
       )}
     </div>
   );

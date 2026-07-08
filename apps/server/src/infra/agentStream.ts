@@ -669,12 +669,15 @@ export async function chatAgentStream(
         regenerate: input.regenerate,
         edit: input.editMessageId,
         skillId: input.skillId,
+        trigger: "user", // #42：标记触发来源
       },
       output: { content: result.content, assistantMessageId },
       toolCalls: result.toolCalls,
       tokenUsage: result.tokenUsage,
       durationMs: Date.now() - start,
-    });
+      // #46：记录工具调用总次数（排除 thinking/content kind）
+      toolCallCount: result.toolCalls.filter((t) => t.kind === "tool").length,
+    } as any);
 
     emit({
       type: "done",
