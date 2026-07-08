@@ -646,7 +646,9 @@ export function ChatView() {
     return assistant?.id ?? items[0].id;
   }, [agentsQuery.data?.items]);
 
-  const effectiveSessionId = sessionFromUrl ?? sessionId;
+  // sessionId state 优先于 URL param：点击切换 session 时 state 生效；
+  // 从外部页面跳转（/subagents → /chat?sessionId=xxx）时组件重新挂载，sessionId 为 null，URL param 生效
+  const effectiveSessionId = sessionId ?? sessionFromUrl;
   // 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
   useEffect(() => {
     effectiveSessionIdRef.current = effectiveSessionId;
