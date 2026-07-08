@@ -40,12 +40,12 @@ export default function SubagentsPage() {
     page,
     pageSize: 20,
     kind: "subagent",
-    ...(status ? { status: status as any } : {}),
-  } as any);
+    ...(status ? { status: status as SessionStatus } : {}),
+  });
   // orchestrator 全局统计（排队/运行/上限），有 running/queued 时 3s 轮询
   const statsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
-    refetchInterval: (q: any) => {
-      const s = q?.data;
+    refetchInterval: (q) => {
+      const s = q.state.data as { runningGlobal?: number; queued?: number } | undefined;
       return s && (s.runningGlobal > 0 || s.queued > 0) ? 3000 : false;
     },
   });
@@ -60,7 +60,7 @@ export default function SubagentsPage() {
     onSuccess: () => utils.session.list.invalidate(),
   });
 
-  const items = (query.data?.items as any[]) ?? [];
+  const items = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
   const totalPages = query.data?.totalPages ?? 1;
   const confirmTarget = items.find((s) => s.id === confirmId);

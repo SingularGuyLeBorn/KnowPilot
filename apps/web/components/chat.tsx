@@ -594,8 +594,10 @@ export function ChatView() {
   }, [agentsQuery.data?.items]);
 
   const effectiveSessionId = sessionFromUrl ?? sessionId;
-  // 每次 render 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
-  effectiveSessionIdRef.current = effectiveSessionId;
+  // 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
+  useEffect(() => {
+    effectiveSessionIdRef.current = effectiveSessionId;
+  }, [effectiveSessionId]);
 
   const { data: sessionDetail, refetch: refetchSession } = trpc.session.getById.useQuery(
     { id: effectiveSessionId! },
@@ -603,7 +605,7 @@ export function ChatView() {
   );
   // 当前会话是否为子代理任务会话；若是则查父会话标题用于返回提示
   const isSubagentSession = sessionDetail?.kind === "subagent";
-  const parentSessionId = (sessionDetail as any)?.parentSessionId ?? null;
+  const parentSessionId = sessionDetail?.parentSessionId ?? null;
   const { data: parentSession } = trpc.session.getById.useQuery(
     { id: parentSessionId! },
     { enabled: !!parentSessionId },
@@ -967,7 +969,7 @@ export function ChatView() {
         consumeRef.current();
       }
     },
-    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, selectedAgent, getStreamState, ssSet, getAbort],
+    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, selectedAgent, getStreamState, ssSet, getAbort],
   );
 
   const consumeQueue = useCallback(() => {
@@ -1044,7 +1046,10 @@ export function ChatView() {
   }, [consumeQueue]);
 
   useEffect(() => {
-    if (!isSessionStreaming(effectiveSessionId)) consumeQueue();
+    if (!isSessionStreaming(effectiveSessionId)) {
+      // queueMicrotask 避免在 effect 同步阶段调用 setState，防止级联渲染
+      queueMicrotask(() => consumeRef.current());
+    }
   }, [isStreaming, queue.length, consumeQueue, effectiveSessionId, isSessionStreaming]);
 
   // 切换视图 session 时，从后台状态 Map 镜像该 session 的流式状态到视图
@@ -1321,11 +1326,11 @@ export function ChatView() {
             </div>
           </div>
           {(() => {
-            const pills = (skillsQuery.data?.items ?? []).filter((s: any) => s.enabled).slice(0, 3);
+            const pills = (skillsQuery.data?.items ?? []).filter((s) => s.enabled).slice(0, 3);
             if (pills.length === 0) return null;
             return (
               <div className="mt-2 flex flex-wrap gap-1">
-                {pills.map((s: any) => {
+                {pills.map((s) => {
                   const active = selectedSkill?.id === s.id;
                   return (
                     <button
@@ -1451,9 +1456,9 @@ export function ChatView() {
           >
             <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />
             <span className="font-medium text-[var(--kp-brand-dark)]">子代理任务</span>
-            {(sessionDetail as any)?.taskDescription && (
+            {sessionDetail?.taskDescription && (
               <span className="min-w-0 flex-1 truncate text-[var(--kp-text-2)]">
-                {(sessionDetail as any).taskDescription}
+                {sessionDetail.taskDescription}
               </span>
             )}
             {parentSessionId && (

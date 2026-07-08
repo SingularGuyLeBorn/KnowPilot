@@ -4,7 +4,7 @@
  * 创建子代理任务弹窗 — 选择 Agent + 任务描述 + 模型，提交后启动 subagent
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, Loader2, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -35,20 +35,25 @@ export function SubagentCreateDialog({
     },
   });
 
-  const agents = (agentsQuery.data?.items as any[]) ?? [];
+  const agents = useMemo(() => agentsQuery.data?.items ?? [], [agentsQuery.data?.items]);
   const [agentId, setAgentId] = useState<string>("");
   const [task, setTask] = useState("");
   const [model, setModel] = useState<string>("");
 
   useEffect(() => {
-    if (open && !agentId && agents[0]) setAgentId(agents[0].id);
+    if (open && !agentId && agents[0]) {
+      // queueMicrotask 避免在 effect 同步阶段调用 setState
+      queueMicrotask(() => setAgentId(agents[0].id));
+    }
   }, [open, agents, agentId]);
 
   useEffect(() => {
     if (!open) {
-      setTask("");
-      setModel("");
-      spawnMut.reset();
+      queueMicrotask(() => {
+        setTask("");
+        setModel("");
+        spawnMut.reset();
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
