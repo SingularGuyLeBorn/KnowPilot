@@ -301,6 +301,29 @@ function buildAsyncExecute(
 
       const resultText = loop.content || "(无文本输出)";
       const tokenUsage = loop.tokenUsage;
+
+      // 保存子代理的消息到 ChatSession（#1 修复：点击"查看详情"时能看到对话内容）
+      if (subagentSessionId) {
+        try {
+          await services.message.create({
+            sessionId: subagentSessionId,
+            role: "user",
+            content: task,
+            source: "super",
+          });
+          await services.message.create({
+            sessionId: subagentSessionId,
+            role: "assistant",
+            content: resultText,
+            toolCalls: loop.toolCalls as any,
+            tokenUsage: tokenUsage ?? undefined,
+            source: "sub",
+          });
+        } catch (msgErr) {
+          console.warn(`[asyncJobManager] 保存子代理消息失败:`, msgErr);
+        }
+      }
+
       await services.task.update({
         id: jobId,
         status: "success",

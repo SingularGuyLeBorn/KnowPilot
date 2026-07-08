@@ -753,12 +753,16 @@ export function ChatView() {
 
   const filteredSessions = useMemo(() => {
     const items = sessionsQuery.data?.items ?? [];
+    // #4 修复：按当前 Agent 过滤 session（agent 隔离）
+    const agentFiltered = effectiveAgentId
+      ? items.filter((s) => s.agentId === effectiveAgentId || !s.agentId)
+      : items;
     const q = sessionSearch.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
+    if (!q) return agentFiltered;
+    return agentFiltered.filter(
       (s) => s.title.toLowerCase().includes(q) || s.model.toLowerCase().includes(q),
     );
-  }, [sessionsQuery.data?.items, sessionSearch]);
+  }, [sessionsQuery.data?.items, sessionSearch, effectiveAgentId]);
 
   const groupedSessions = useMemo(
     () => groupBySessionDate(filteredSessions),
