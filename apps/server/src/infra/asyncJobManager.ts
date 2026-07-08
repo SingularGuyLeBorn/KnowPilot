@@ -403,6 +403,7 @@ export async function startAsyncAgentTask(options: {
     jobId,
     sessionId: options.sessionId,
     timeoutMs: options.timeoutMs,
+    metadata: subagentSessionId ? { subagentSessionId } : undefined,
     execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId, options.shareToSessionIds),
   });
 
@@ -505,6 +506,12 @@ export async function waitForAsyncJob(
 }
 
 /** 重试一条失败的异步任务 */
+/** 停止指定 subagent session 对应的后台任务（真正 abort） */
+export function stopSubagentSession(subagentSessionId: string, config: AppConfig): boolean {
+  const orchestrator = getAsyncJobOrchestrator(config);
+  return orchestrator.stopSubagent(subagentSessionId);
+}
+
 export async function retryAsyncJob(
   jobId: string,
   config: AppConfig,

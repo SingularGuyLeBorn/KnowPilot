@@ -217,9 +217,9 @@ export const createSessionSchema = z.object({
   agentId: z.string().cuid().optional(),
   // Swarm/Subagent
   parentSessionId: z.string().cuid().optional(),
-  kind: z.enum(["chat", "subagent"]).optional(),
+  kind: z.enum(["chat", "subagent"]).default("chat"),
   taskDescription: z.string().max(2000).optional(),
-  status: sessionStatusSchema.optional(),
+  status: sessionStatusSchema.default("active"),
 });
 
 export const updateSessionSchema = z.object({

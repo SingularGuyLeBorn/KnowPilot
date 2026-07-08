@@ -115,4 +115,55 @@ describe("AsyncJobOrchestrator", () => {
     await new Promise((r) => setTimeout(r, 120));
     expect(aborted).toBe(true);
   });
+
+  it("stopSubagent 会 abort 运行中的 subagent 任务", async () => {
+    const orch = new AsyncJobOrchestrator({ maxGlobal: 2, maxPerSession: 2, taskTimeoutMs: 60_000 });
+    let aborted = false;
+
+    orch.enqueue({
+      jobId: "j-sub",
+      sessionId: "s1",
+      metadata: { subagentSessionId: "sub-1" },
+      execute: async (signal) => {
+        signal.addEventListener("abort", () => {
+          aborted = true;
+        });
+        await new Promise((r) => setTimeout(r, 500));
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(orch.stopSubagent("sub-1")).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(aborted).toBe(true);
+  });
+
+  it("stopSubagent 可以移除排队中的 subagent 任务", async () => {
+    const orch = new AsyncJobOrchestrator({ maxGlobal: 1, maxPerSession: 1, taskTimeoutMs: 60_000 });
+    let started = false;
+
+    orch.enqueue({
+      jobId: "j-first",
+      sessionId: "s1",
+      execute: async () => {
+        started = true;
+        await new Promise((r) => setTimeout(r, 200));
+      },
+    });
+
+    orch.enqueue({
+      jobId: "j-sub",
+      sessionId: "s1",
+      metadata: { subagentSessionId: "sub-queued" },
+      execute: async () => {
+        await new Promise((r) => setTimeout(r, 50));
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(started).toBe(true);
+    expect(orch.isQueued("j-sub")).toBe(true);
+    expect(orch.stopSubagent("sub-queued")).toBe(true);
+    expect(orch.isQueued("j-sub")).toBe(false);
+  });
 });
