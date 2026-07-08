@@ -194,6 +194,7 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   task_status: taskStatusTool,
   cancel_async: cancelAsyncTool,
   await_async: awaitAsyncTool,
+  async_task_wait: awaitAsyncTool,
   run_shell: runShellTool,
   wait: waitTool,
   session_clear: sessionClearTool,
@@ -1226,7 +1227,18 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   },
   {
     name: "await_async",
-    description: "显式等待一个已启动的异步任务结束（阻塞当前轮，受工具超时约束）。返回最终结果。",
+    description: "显式等待一个已启动的异步任务结束（阻塞当前轮，不受默认 30s 工具超时限制，最长等待 10 分钟）。任务完成后返回最终结果，LLM 基于结果继续生成最终答案。这是 Pause-on-Result 语义：表达等待意图 → 阻塞等结果 → 拿到结果后回复。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "要等待的任务 id" },
+      },
+      required: ["jobId"],
+    },
+  },
+  {
+    name: "async_task_wait",
+    description: "async_task_wait 是 await_async 的语义别名：显式等待异步任务完成（阻塞当前轮，最长 10 分钟，不受默认工具超时限制）。任务完成后返回结果，LLM 基于结果继续生成最终答案。",
     parameters: {
       type: "object",
       properties: {
@@ -2620,11 +2632,21 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   };
 }
 
+/** await_async / async_task_wait：Pause-on-Result 语义。
+ *  LLM 表达等待意图 → 阻塞等任务完成（最长 10 分钟，由 agentTools 豁免默认 30s 超时）→
+ *  拿到结果后 LLM 基于结果继续生成最终答案。
+ *  agentTools 的 LONG_WAIT_TOOLS 集合确保本工具不受默认 toolCallTimeoutMs 限制。 */
 async function awaitAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { waitForAsyncJob } = await import("./asyncJobManager.js");
   const jobId = String(args.jobId || "");
-  if (!jobId) throw new Error("await_async 需要 jobId");
-  return waitForAsyncJob(jobId, ctx.config, ctx.services);
+  if (!jobId) throw new Error("await_async / async_task_wait 需要 jobId");
+  const result = await waitForAsyncJob(jobId, ctx.config, ctx.services);
+  return {
+    ...result,
+    hint: result.status === "completed"
+      ? "任务已完成，请基于上述结果继续生成最终回复。"
+      : "任务失败，请告知用户失败原因并建议重试或改用其他方式。",
+  };
 }
 
 async function runShellTool(args: Record<string, unknown>, ctx: NativeToolContext) {

@@ -202,17 +202,20 @@ export async function cancelAsyncJob(
 ): Promise<{ cancelled: boolean; message: string }> {
   const task = await services.task.getById(jobId);
   if (!task) return { cancelled: false, message: "任务不存在" };
-  if (task.status !== "running") return { cancelled: false, message: "任务未在运行中" };
+  // 接受 running 与 queued 两种活跃状态；已完成（success/failed）的不允许取消
+  if (task.status !== "running" && task.status !== "queued") {
+    return { cancelled: false, message: "任务未在运行中或排队中" };
+  }
 
   const orchestrator = getAsyncJobOrchestrator(config);
   const cancelled = orchestrator.cancel(jobId);
   if (!cancelled) {
-    // 任务可能刚好执行完但尚未被 poll，把仍标记为 running 的记录置为失败，防止永久占坑
+    // 任务可能刚好执行完但尚未被 poll，把仍标记为 running/queued 的记录置为失败，防止永久占坑
     await services.task.update({
       id: jobId,
       status: "failed",
       output: { error: "任务已结束或丢失，取消失败" } satisfies AsyncTaskOutput,
-    });
+    } as any);
     return { cancelled: true, message: "任务已结束，已标记为失败" };
   }
 
@@ -221,7 +224,7 @@ export async function cancelAsyncJob(
     id: jobId,
     status: "failed",
     output: { error: "异步任务已取消" } satisfies AsyncTaskOutput,
-  });
+  } as any);
   return { cancelled: true, message: "已取消异步任务" };
 }
 
@@ -237,7 +240,7 @@ function buildAsyncExecute(
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
   const retryHint = retryCount > 0 ? `（第 ${retryCount} 次重试）` : "";
-  const syncSubStatus = async (status: "completed" | "failed" | "paused") => {
+  const syncSubStatus = async (status: "completed" | "failed" | "paused" | "running") => {
     if (!subagentSessionId) return;
     try {
       await services.session.update({ id: subagentSessionId, status });
@@ -274,6 +277,14 @@ function buildAsyncExecute(
     try {
       if (signal.aborted) {
         throw new Error("异步任务已被取消");
+      }
+      // queued → running 状态同步：orchestrator 从队列取出开始执行时，
+      // 把 Task 与 subagent session 从 queued 升级为 running
+      await syncSubStatus("running");
+      try {
+        await services.task.update({ id: jobId, status: "running" } as any);
+      } catch {
+        /* 状态回写失败不阻塞执行 */
       }
       const loop = await runAgentLoop({
         config,
@@ -330,7 +341,7 @@ export async function startAsyncAgentTask(options: {
   agent: { id: string; model: string; systemPrompt: string; tools: string[] };
   /** swarm 协作：结果额外广播到这些会话 */
   shareToSessionIds?: string[];
-}): Promise<{ jobId: string; status: "running"; message: string; subagentSessionId?: string }> {
+}): Promise<{ jobId: string; status: "queued" | "running"; message: string; subagentSessionId?: string }> {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
   if (!options.sessionId) throw new Error("run_async 需要有效 sessionId");
@@ -360,7 +371,12 @@ export async function startAsyncAgentTask(options: {
   };
 
   // 创建 subagent ChatSession 作为任务的可视化载体（Phase 3 UI 显示卡片）
+  // 初始状态：queued（若 orchestrator 无空闲槽位）或 running（立即执行）
   let subagentSessionId: string | undefined;
+  const orchestrator = getAsyncJobOrchestrator(options.config);
+  const stats = orchestrator.getStats();
+  const willQueue = stats.runningGlobal >= stats.limits.maxGlobal;
+  const initialStatus = willQueue ? "queued" : "running";
   try {
     const sub = await options.services.session.create({
       title: taskLabel.slice(0, 60),
@@ -370,7 +386,7 @@ export async function startAsyncAgentTask(options: {
       parentSessionId: options.sessionId,
       kind: "subagent",
       taskDescription: task,
-      status: "running",
+      status: initialStatus,
     } as any);
     if (sub.success && sub.data) subagentSessionId = (sub.data as { id: string }).id;
   } catch (err) {
@@ -381,7 +397,7 @@ export async function startAsyncAgentTask(options: {
   const created = await options.services.task.create({
     name: `[async] ${taskLabel}`,
     type: "oneshot",
-    status: "running",
+    status: willQueue ? "queued" : "running",
     sessionId: options.sessionId,
     input: {
       kind: ASYNC_KIND,
@@ -394,14 +410,13 @@ export async function startAsyncAgentTask(options: {
       subagentSessionId,
       shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
     } satisfies AsyncTaskInput,
-  });
+  } as any);
 
   if (!created.success || !created.data) {
     throw new Error(created.error?.message ?? "创建异步任务失败");
   }
 
   const jobId = (created.data as { id: string }).id;
-  const orchestrator = getAsyncJobOrchestrator(options.config);
 
   orchestrator.enqueue({
     jobId,
@@ -413,9 +428,11 @@ export async function startAsyncAgentTask(options: {
 
   return {
     jobId,
-    status: "running",
+    status: willQueue ? "queued" : "running",
     subagentSessionId,
-    message: `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
+    message: willQueue
+      ? `已排队后台任务「${taskLabel}」（并发槽位已满，将在前序任务完成后执行）。`
+      : `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
   };
 }
 

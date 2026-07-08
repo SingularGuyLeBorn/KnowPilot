@@ -217,6 +217,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "task_status",
   "cancel_async",
   "await_async",
+  "async_task_wait",
   "run_shell",
   "wait",
   "session_clear",
