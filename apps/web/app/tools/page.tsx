@@ -95,23 +95,20 @@ export default function ToolsPage() {
   const updateMutation = useUpdate();
   const deleteMutation = useDelete();
 
-  const skills = skillData?.items ?? [];
-  const mcpServers = mcpData?.items ?? [];
-
   const nativeOptions = useMemo(
     () => nativeTools.map((t) => ({ value: t.name, label: t.name })),
     [nativeTools],
   );
 
-  const skillOptions = useMemo(
-    () => skills.map((s) => ({ value: s.name, label: s.name })),
-    [skills],
-  );
+  const skillOptions = useMemo(() => {
+    const skills = skillData?.items ?? [];
+    return skills.map((s) => ({ value: s.name, label: s.name }));
+  }, [skillData]);
 
-  const mcpOptions = useMemo(
-    () => mcpServers.map((s) => ({ value: s.name, label: s.name })),
-    [mcpServers],
-  );
+  const mcpOptions = useMemo(() => {
+    const mcpServers = mcpData?.items ?? [];
+    return mcpServers.map((s) => ({ value: s.name, label: s.name }));
+  }, [mcpData]);
 
   const openCreate = () => {
     setEditingId(null);

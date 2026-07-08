@@ -178,8 +178,9 @@ export function SubagentPanel({
     { parentSessionId: parentSessionId ?? "", pageSize: 20 },
     {
       enabled: !!parentSessionId,
-      refetchInterval: (q: any) => {
-        const items = (q?.data?.items as SubagentBrief[] | undefined) ?? (q?.items as SubagentBrief[] | undefined) ?? [];
+      refetchInterval: (q) => {
+        const data = (q.state.data ?? q.data) as { items?: SubagentBrief[] } | undefined;
+        const items = data?.items ?? [];
         return items.some((s) => s.status === "running" || s.status === "queued") ? 3000 : false;
       },
     },

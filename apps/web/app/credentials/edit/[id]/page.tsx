@@ -87,7 +87,7 @@ export default function CredentialDetailPage() {
         value: valuePayload,
         scope: form.scope ?? cred.scope,
         expiresAt: form.expiresAt !== undefined ? (form.expiresAt ? new Date(form.expiresAt as string) : null) : cred.expiresAt,
-      } as any,
+      },
       {
         onSuccess: () => router.push("/credentials"),
         onError: (err: Error) => setError(err.message || "保存失败"),
