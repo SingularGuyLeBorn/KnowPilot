@@ -128,7 +128,7 @@ function ThinkingStep({
   );
 }
 
-/** 中间正式回复（工具轮次中 probe 返回的 content，后续仍有工具调用）。进导轨，无圆点。 */
+/** 中间正式回复（工具轮次中 probe 返回的 content，后续仍有工具调用）。进导轨，无圆点，无气泡包裹。 */
 function ContentStep({
   step,
 }: {
@@ -137,10 +137,7 @@ function ContentStep({
   const content = step.content.trim();
   if (!content) return null;
   return (
-    <div
-      data-testid="intermediate-content-step"
-      className="overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm"
-    >
+    <div data-testid="intermediate-content-step" className="px-1 py-1 text-sm text-[var(--kp-text-1)]">
       <PostContent content={content} className="prose-sm max-w-none" />
     </div>
   );
