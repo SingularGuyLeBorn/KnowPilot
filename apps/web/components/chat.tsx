@@ -520,15 +520,22 @@ export function ChatView() {
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(() => new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   // #12 Swarm 新手引导（可关闭，localStorage 记忆）
-  const [showSwarmOnboarding, setShowSwarmOnboarding] = useState(() => {
+  // 避免 SSR/客户端 localStorage 不一致导致 hydration mismatch：
+  // 首次渲染始终输出 DOM（带 hidden），hydration 后通过 ref 读取 localStorage 再显示/移除
+  const onboardingRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
     try {
-      return localStorage.getItem("kp-swarm-onboarding-dismissed") !== "1";
+      if (localStorage.getItem("kp-swarm-onboarding-dismissed") === "1") {
+        onboardingRef.current?.remove();
+      } else {
+        onboardingRef.current?.classList.remove("hidden");
+      }
     } catch {
-      return true;
+      onboardingRef.current?.classList.remove("hidden");
     }
-  });
+  }, []);
   const dismissSwarmOnboarding = () => {
-    setShowSwarmOnboarding(false);
+    onboardingRef.current?.remove();
     try {
       localStorage.setItem("kp-swarm-onboarding-dismissed", "1");
     } catch {
@@ -1714,8 +1721,8 @@ export function ChatView() {
               <Bot className="mb-1 h-12 w-12 opacity-40" />
               <p className="text-sm">发送第一条消息开始对话</p>
               {/* #12 Swarm 新手引导：无 Workspace 时展示（可关闭，localStorage 记忆） */}
-              {!hasWorkspaces && showSwarmOnboarding && (
-                <div className="relative max-w-md rounded-2xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30 p-4 text-left" data-testid="swarm-onboarding">
+              {!hasWorkspaces && (
+                <div ref={onboardingRef} className="relative max-w-md hidden rounded-2xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30 p-4 text-left" data-testid="swarm-onboarding">
                   <button
                     type="button"
                     onClick={dismissSwarmOnboarding}
