@@ -11,9 +11,11 @@ import {
   Bot,
   ChevronLeft,
   Cpu,
+  Crown,
   MessageSquare,
   Plus,
   Search,
+  ShieldCheck,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -282,11 +284,34 @@ export default function AgentsPage() {
               >
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
-                      <Bot className="h-5 w-5" />
+                    <div className={cn(
+                      "flex h-11 w-11 items-center justify-center rounded-xl",
+                      agent.tier === "super"
+                        ? "bg-amber-100 text-amber-600"
+                        : agent.tier === "manager"
+                          ? "bg-blue-100 text-blue-600"
+                          : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]",
+                    )}>
+                      {agent.tier === "super" ? <Crown className="h-5 w-5" /> : agent.tier === "manager" ? <ShieldCheck className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
                     </div>
                     <div>
-                      <h3 className="font-bold text-[var(--kp-text-1)]">{agent.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-[var(--kp-text-1)]">{agent.name}</h3>
+                        {agent.tier && agent.tier !== "sub" && (
+                          <span className={cn(
+                            "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
+                            agent.tier === "super" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700",
+                          )}>
+                            {agent.tier === "super" ? "超级" : "管理"}
+                          </span>
+                        )}
+                        {agent.status === "deleted" && (
+                          <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] text-gray-500">已删除</span>
+                        )}
+                        {agent.status === "dormant" && (
+                          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">休眠</span>
+                        )}
+                      </div>
                       <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]">
                         <Cpu className="h-2.5 w-2.5" />
                         {agent.model}
