@@ -314,6 +314,7 @@ pnpm lint
 | 了解产品背景与快速开始 | `README.md` |
 | 了解迁移/重构原则与同步机制 | `MIGRATION_PLAN.md` |
 | 了解 L1-L5 阶段划分与当前状态 | `docs/development/README.md` |
+| Swarm 架构设计决策 | `docs/development/swarmplan.md` |
 | 设计新的后端接口 | `docs/development/backend/api-design.md`、`docs/development/backend/error-handling.md` |
 | 让 AI 调用某个实体 | `docs/development/backend/ai-callable-api.md` |
 | 查看实体实现状态矩阵 | `docs/development/entities/entity-matrix.md` |
@@ -322,6 +323,22 @@ pnpm lint
 | 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts`、`docs/development/backend/agent-tools.md` |
 | 新增或修改 tRPC Router | `apps/server/src/router.ts`、`packages/shared/src/schemas.ts` |
 | 新增内容同步逻辑 | `apps/server/src/scripts/sync.ts`、`apps/server/src/scripts/sync/sync-*.ts` |
+
+---
+
+## 设计决策 Q&A 流程
+
+当遇到需要用户决策的设计问题时，遵循以下流程：
+
+1. **AI 把问题写入文件**（如 `docs/development/swarmplan.md`），每条问题包含：
+   - 问题描述
+   - 推荐的解决方式
+   - `回答：` 占位行
+2. **用户在文件内回答**：直接在 `回答：` 后写回复
+3. **回答约定**：
+   - 用户**不写回答** = **默认同意**推荐方案
+   - 用户**写了回答** = AI 需阅读并据此调整，如有疑问再追加问题
+4. **AI 读取回复后**：确认的决策移入「已确认 ✅」表格，新问题继续追加到文件末尾
 
 ---
 
