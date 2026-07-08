@@ -94,7 +94,10 @@ KnowPilot 映射：
 ├── 左栏 Session          ← OpenClaw 会话列表
 ├── 中栏 MessageArea      ← Codex 气泡 + Hermes 推理分区
 │   ├── ThinkingTimeline  ← 单实例；data-testid="thinking-timeline"
-│   └── PostContent       ← 最终回复
+│   │   ├── ThinkingStep  ← 有圆点（导轨标记思考阶段）
+│   │   ├── ContentStep   ← 无圆点（中间正式回复，后续仍有工具调用）
+│   │   └── ToolStep      ← 无圆点（工具调用）
+│   └── PostContent       ← 最终回复（独立气泡，导轨外）
 ├── 右栏 ChatSettingsPanel← Codex 紧凑参数 + Skill
 └── TokenBudgetBar        ← 上下文/输出预算（header + 设置 Panel）
 ```
