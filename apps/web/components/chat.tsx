@@ -73,6 +73,7 @@ import {
 import { MessageQueue } from "@/components/chatQueue";
 import { SubagentPanel } from "@/components/subagentPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
+import { WorkspaceTree } from "@/components/workspaceTree";
 
 /* ─── Sub-components ─── */
 
@@ -633,6 +634,9 @@ export function ChatView() {
   const skillsQuery = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true });
   const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
   const providers = trpc.agent.llmProviders.useQuery();
+  // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
+  const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
+  const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
   const utils = trpc.useUtils();
   const updateSession = trpc.session.update.useMutation();
   const deleteSession = trpc.session.delete.useMutation();
@@ -1450,36 +1454,54 @@ export function ChatView() {
           </div>
         </div>
         <div className="w-64 flex-1 overflow-y-auto p-2" data-testid="session-list">
-          {filteredSessions.length === 0 && (
-            <p className="px-2 py-6 text-center text-xs text-[var(--kp-text-3)]">
-              {sessionSearch.trim() ? "无匹配会话" : "暂无对话"}
-            </p>
-          )}
-          {groupedSessions.map((group) => (
-            <div key={group.key} className="mb-3">
-              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
-                {group.label}
-              </p>
-              {group.items.map((s) => (
-                <SessionListItem
-                  key={s.id}
-                  session={s}
-                  active={effectiveSessionId === s.id}
-                  editing={editingSessionId === s.id}
-                  renameDraft={renameDraft}
-                  onSelect={() => selectSession(s.id)}
-                  onStartRename={() => {
-                    setEditingSessionId(s.id);
-                    setRenameDraft(s.title);
-                  }}
-                  onRenameDraftChange={setRenameDraft}
-                  onConfirmRename={() => void handleRenameSession(s.id, renameDraft)}
-                  onCancelRename={() => setEditingSessionId(null)}
-                  onDelete={() => setDeleteSessionTarget({ id: s.id, title: s.title })}
-                />
+          {hasWorkspaces ? (
+            /* Swarm 模式：Workspace → Agent → Session 三层树 */
+            <WorkspaceTree
+              effectiveSessionId={effectiveSessionId}
+              onSelectSession={selectSession}
+              onSelectAgent={(agentId) => {
+                setAgentId(agentId);
+                const agent = agentsQuery.data?.items.find((a: Agent) => a.id === agentId);
+                if (agent) updateConfig({ systemPrompt: agent.systemPrompt, model: agent.model });
+              }}
+              onNewChat={startNewChat}
+              searchQuery={sessionSearch}
+            />
+          ) : (
+            /* 非 swarm 模式：回退到扁平 session 列表 */
+            <>
+              {filteredSessions.length === 0 && (
+                <p className="px-2 py-6 text-center text-xs text-[var(--kp-text-3)]">
+                  {sessionSearch.trim() ? "无匹配会话" : "暂无对话"}
+                </p>
+              )}
+              {groupedSessions.map((group) => (
+                <div key={group.key} className="mb-3">
+                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+                    {group.label}
+                  </p>
+                  {group.items.map((s) => (
+                    <SessionListItem
+                      key={s.id}
+                      session={s}
+                      active={effectiveSessionId === s.id}
+                      editing={editingSessionId === s.id}
+                      renameDraft={renameDraft}
+                      onSelect={() => selectSession(s.id)}
+                      onStartRename={() => {
+                        setEditingSessionId(s.id);
+                        setRenameDraft(s.title);
+                      }}
+                      onRenameDraftChange={setRenameDraft}
+                      onConfirmRename={() => void handleRenameSession(s.id, renameDraft)}
+                      onCancelRename={() => setEditingSessionId(null)}
+                      onDelete={() => setDeleteSessionTarget({ id: s.id, title: s.title })}
+                    />
+                  ))}
+                </div>
               ))}
-            </div>
-          ))}
+            </>
+          )}
         </div>
       </aside>
 

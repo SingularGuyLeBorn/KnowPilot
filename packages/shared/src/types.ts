@@ -153,6 +153,7 @@ export interface ChatSession {
   kind?: "chat" | "subagent";
   status?: import("./schemas.js").SessionStatus;
   taskDescription?: string | null;
+  isMainSession?: boolean;
   createdAt: string | Date;
   updatedAt: string | Date;
   messages?: ChatMessage[];
