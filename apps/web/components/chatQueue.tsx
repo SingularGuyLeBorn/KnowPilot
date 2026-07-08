@@ -275,7 +275,14 @@ export function MessageQueue({
                 aria-expanded={barExpanded}
               >
                 <span className="text-[11px] font-semibold text-[var(--kp-text-2)]">
-                  发送队列 · {items.length}
+                  {(() => {
+                    const userCount = items.filter((i) => i.kind === "user").length;
+                    const asyncCount = items.length - userCount;
+                    const parts = [];
+                    if (userCount > 0) parts.push(`待发 ${userCount}`);
+                    if (asyncCount > 0) parts.push(`异步 ${asyncCount}`);
+                    return `队列 · ${parts.join(" · ") || items.length}`;
+                  })()}
                   {asyncStats && asyncStats.runningGlobal > 0 && (
                     <span className="ml-1.5 text-[var(--kp-brand)]">· 运行 {asyncStats.runningGlobal}</span>
                   )}

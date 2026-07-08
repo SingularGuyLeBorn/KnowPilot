@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { Bot, ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
@@ -32,6 +32,8 @@ interface ChatInputAreaProps {
   supportsVision?: boolean;
   /** 会话级提示（如子代理任务会话警告），显示在输入框上方 */
   sessionHint?: string;
+  /** 当前会话 ID，用于隔离上键历史恢复 */
+  sessionId?: string | null;
 }
 
 export function ChatInputArea({
@@ -49,6 +51,7 @@ export function ChatInputArea({
   modelId = "",
   supportsVision = false,
   sessionHint,
+  sessionId,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -58,6 +61,44 @@ export function ChatInputArea({
   const [pendingImages, setPendingImages] = useState<ChatQueueAttachment[]>([]);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
+
+  // 上键历史恢复：按 sessionId 隔离，存 localStorage
+  const historyKey = sessionId ? `kp-input-history:${sessionId}` : null;
+  const [historyIdx, setHistoryIdx] = useState(-1); // -1 = 不在浏览历史模式
+  const [draftBackup, setDraftBackup] = useState(""); // 浏览历史前的草稿备份
+
+  const getHistory = useCallback((): string[] => {
+    if (!historyKey) return [];
+    try {
+      const raw = localStorage.getItem(historyKey);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  }, [historyKey]);
+
+  const pushHistory = useCallback(
+    (text: string) => {
+      if (!historyKey || !text.trim()) return;
+      try {
+        const list = getHistory();
+        // 避免连续重复
+        if (list[0] !== text) {
+          list.unshift(text);
+          if (list.length > 50) list.length = 50; // 上限 50 条
+          localStorage.setItem(historyKey, JSON.stringify(list));
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [historyKey, getHistory],
+  );
+
+  // 切换 session 时重置历史浏览状态
+  useEffect(() => {
+    setHistoryIdx(-1);
+  }, [sessionId]);
 
   const ocrMutation = trpc.agent.ocrImage.useMutation();
 
@@ -149,9 +190,11 @@ export function ChatInputArea({
     }
 
     onSend(text, selectedSkill ?? undefined, attachments.length ? attachments : undefined);
+    pushHistory(text); // 记录到上键历史
     onSkillChange(null);
     setPendingImages([]);
     setOcrError(null);
+    setHistoryIdx(-1); // 退出历史浏览模式
   };
 
   const addImageFile = (file: File) => {
@@ -318,6 +361,33 @@ export function ChatInputArea({
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 handleSend();
+              }
+              // 上键恢复历史消息（skill picker 关闭时）
+              if (!skillOpen && e.key === "ArrowUp" && textareaRef.current?.selectionStart === 0) {
+                const list = getHistory();
+                if (list.length === 0) return;
+                e.preventDefault();
+                if (historyIdx === -1) {
+                  // 首次按上键：备份当前草稿，显示最新一条历史
+                  setDraftBackup(value);
+                  setHistoryIdx(0);
+                  onChange(list[0]);
+                } else if (historyIdx < list.length - 1) {
+                  setHistoryIdx(historyIdx + 1);
+                  onChange(list[historyIdx + 1]);
+                }
+              }
+              if (!skillOpen && e.key === "ArrowDown" && historyIdx !== -1) {
+                e.preventDefault();
+                const list = getHistory();
+                if (historyIdx > 0) {
+                  setHistoryIdx(historyIdx - 1);
+                  onChange(list[historyIdx - 1]);
+                } else {
+                  // 回到草稿
+                  setHistoryIdx(-1);
+                  onChange(draftBackup);
+                }
               }
             }}
             onPaste={(e) => {

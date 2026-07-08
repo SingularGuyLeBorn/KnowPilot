@@ -384,6 +384,23 @@ const sessionRouter = router({
       };
     }),
   delete: publicProcedure.meta({ description: "删除会话及其所有消息（级联删除）。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.session.delete(input.id)),
+  // #11 批量删除：多选会话一次删除
+  bulkDelete: publicProcedure
+    .meta({ description: "批量删除多个会话及其消息。", aiReadable: false })
+    .input(z.object({ ids: z.array(z.string().cuid()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      let deleted = 0;
+      const errors: string[] = [];
+      for (const id of input.ids) {
+        try {
+          await ctx.services.session.delete(id);
+          deleted++;
+        } catch (err) {
+          errors.push(`${id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return { deleted, errors: errors.length > 0 ? errors : undefined };
+    }),
 });
 
 const messageRouter = router({

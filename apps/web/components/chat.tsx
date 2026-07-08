@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  ListChecks,
   Loader2,
   PanelLeft,
   PanelRight,
@@ -52,7 +53,7 @@ import {
   type MessageGroup,
   type TimelineStep,
 } from "@/lib/chatMessageUtils";
-import { LucideIconByName, ChatShortcutHints } from "@/lib/icons";
+import { LucideIconByName } from "@/lib/icons";
 import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
 import { type Agent, type ChatSession, type ChatSessionConfig, type ChatImageAttachment } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
@@ -75,6 +76,7 @@ import { SubagentPanel } from "@/components/subagentPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 import { WorkspaceTree } from "@/components/workspaceTree";
 import { AgentTreeSelect } from "@/components/agentTreeSelect";
+import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
 
 /* ─── Sub-components ─── */
 
@@ -513,6 +515,26 @@ export function ChatView() {
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; title: string } | null>(null);
   const [showCreateSubagent, setShowCreateSubagent] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // #11 会话批量管理
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(() => new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  // #12 Swarm 新手引导（可关闭，localStorage 记忆）
+  const [showSwarmOnboarding, setShowSwarmOnboarding] = useState(() => {
+    try {
+      return localStorage.getItem("kp-swarm-onboarding-dismissed") !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const dismissSwarmOnboarding = () => {
+    setShowSwarmOnboarding(false);
+    try {
+      localStorage.setItem("kp-swarm-onboarding-dismissed", "1");
+    } catch {
+      // ignore
+    }
+  };
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const consumeRef = useRef<() => void>(() => {});
@@ -638,6 +660,7 @@ export function ChatView() {
   const utils = trpc.useUtils();
   const updateSession = trpc.session.update.useMutation();
   const deleteSession = trpc.session.delete.useMutation();
+  const bulkDeleteMutation = trpc.session.bulkDelete.useMutation();
   const switchVersion = trpc.message.switchVersion.useMutation();
 
   const defaultAgentId = useMemo(() => {
@@ -751,6 +774,23 @@ export function ChatView() {
     () => buildMessageGroups(sessionDetail?.messages ?? []),
     [sessionDetail?.messages],
   );
+
+  // 右侧导航条：每条 assistant 回复一个横杠，hover 放大 + 预览，点击滚动定位
+  const navItems = useMemo<NavItem[]>(() => {
+    return messageGroups
+      .map((g) => {
+        if (!g.assistantMessage) return null;
+        const active = getActiveVersion(g);
+        if (!active) return null;
+        const preview = active.content.replace(/[#*`>\-\[\]!]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
+        return {
+          id: g.assistantMessage.id,
+          preview: preview || "（空回复）",
+          domId: g.assistantMessage.id,
+        } satisfies NavItem;
+      })
+      .filter((x): x is NavItem => x !== null);
+  }, [messageGroups]);
 
   const filteredSessions = useMemo(() => {
     const items = sessionsQuery.data?.items ?? [];
@@ -1094,9 +1134,11 @@ export function ChatView() {
     // runStream 会在开头设置 isStreaming=true；此处无需预置（多 session 隔离下避免污染其他 session）
 
     const supportsVision = !!getModelOption(chatConfig.model).supportsVision;
-    const streamMessage = supportsVision
-      ? formatQueueItemForLlm(task, true)
-      : task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
+    // 统一走 formatQueueItemForLlm：async-result 的 asyncResult 块 + OCR 附件文本都由它拼装。
+    // 之前非 vision 分支只取 task.text，导致异步结果内容被整体丢弃（空消息报错，主 Agent 收不到结果）。
+    const streamMessage =
+      formatQueueItemForLlm(task, supportsVision) ||
+      (task.attachments?.length ? "（见附件）" : "");
     const streamAttachments = task.attachments?.map(
       ({ id, name, mimeType, previewUrl, extractedText, source }) => ({
         id,
@@ -1108,7 +1150,10 @@ export function ChatView() {
       }),
     );
     const optimisticId = `opt-${task.id}`;
-    const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
+    const optimisticText =
+      task.text.trim() ||
+      (task.kind === "async-result" ? `[后台任务完成] ${task.taskLabel ?? task.jobId ?? ""}` : "") ||
+      (task.attachments?.length ? "（见附件）" : "");
     const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
     ssSet(sid, "optimistic", (o) =>
       o.some((m) => m.id === optimisticId)
@@ -1323,6 +1368,7 @@ export function ChatView() {
         initial={false}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         data-testid="assistant-message-bubble"
+        data-nav-id={assistantId}
         className="group/msg relative mb-6 ml-6 flex max-w-[88%] flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
@@ -1440,10 +1486,52 @@ export function ChatView() {
         <SubagentPanel parentSessionId={effectiveSessionId ?? undefined} onCreate={() => setShowCreateSubagent(true)} />
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">对话历史</h2>
-          <button type="button" onClick={startNewChat} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")} aria-label="新建对话" title="新建对话（发送首条消息时创建）">
-            <Plus className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-0.5">
+            {/* #11 批量管理模式切换 */}
+            <button
+              type="button"
+              onClick={() => {
+                setBulkMode((v) => !v);
+                setBulkSelected(new Set());
+              }}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "h-8 w-8",
+                bulkMode && "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]",
+              )}
+              aria-label="批量管理"
+              title="批量管理会话"
+            >
+              <ListChecks className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={startNewChat} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8")} aria-label="新建对话" title="新建对话（发送首条消息时创建）">
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
         </div>
+        {/* 批量操作条 */}
+        {bulkMode && (
+          <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] bg-[var(--kp-brand-soft)]/30 px-3 py-2 text-xs">
+            <span className="text-[var(--kp-text-2)]">已选 {bulkSelected.size}</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setBulkSelected(new Set(filteredSessions.map((s) => s.id)))}
+                className="rounded px-1.5 py-0.5 text-[11px] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+              >
+                全选
+              </button>
+              <button
+                type="button"
+                disabled={bulkSelected.size === 0 || bulkDeleteMutation.isPending}
+                onClick={() => setShowBulkDeleteConfirm(true)}
+                className="rounded px-1.5 py-0.5 text-[11px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-40"
+              >
+                {bulkDeleteMutation.isPending ? "删除中…" : "删除所选"}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="w-64 border-b border-[var(--kp-divider)] px-3 py-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--kp-text-3)]" />
@@ -1485,22 +1573,48 @@ export function ChatView() {
                     {group.label}
                   </p>
                   {group.items.map((s) => (
-                    <SessionListItem
-                      key={s.id}
-                      session={s}
-                      active={effectiveSessionId === s.id}
-                      editing={editingSessionId === s.id}
-                      renameDraft={renameDraft}
-                      onSelect={() => selectSession(s.id)}
-                      onStartRename={() => {
-                        setEditingSessionId(s.id);
-                        setRenameDraft(s.title);
-                      }}
-                      onRenameDraftChange={setRenameDraft}
-                      onConfirmRename={() => void handleRenameSession(s.id, renameDraft)}
-                      onCancelRename={() => setEditingSessionId(null)}
-                      onDelete={() => setDeleteSessionTarget({ id: s.id, title: s.title })}
-                    />
+                    <div key={s.id} className={cn(bulkMode && "flex items-center gap-1.5")}>
+                      {bulkMode && (
+                        <input
+                          type="checkbox"
+                          checked={bulkSelected.has(s.id)}
+                          onChange={(e) => {
+                            setBulkSelected((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(s.id);
+                              else next.delete(s.id);
+                              return next;
+                            });
+                          }}
+                          className="ml-1 h-3.5 w-3.5 shrink-0 accent-[var(--kp-brand)]"
+                          aria-label={`选择会话 ${s.title}`}
+                        />
+                      )}
+                      <div className={cn(bulkMode && "min-w-0 flex-1")}>
+                        <SessionListItem
+                          session={s}
+                          active={effectiveSessionId === s.id}
+                          editing={editingSessionId === s.id}
+                          renameDraft={renameDraft}
+                          onSelect={() => (bulkMode
+                            ? setBulkSelected((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(s.id)) next.delete(s.id);
+                                else next.add(s.id);
+                                return next;
+                              })
+                            : selectSession(s.id))}
+                          onStartRename={() => {
+                            setEditingSessionId(s.id);
+                            setRenameDraft(s.title);
+                          }}
+                          onRenameDraftChange={setRenameDraft}
+                          onConfirmRename={() => void handleRenameSession(s.id, renameDraft)}
+                          onCancelRename={() => setEditingSessionId(null)}
+                          onDelete={() => setDeleteSessionTarget({ id: s.id, title: s.title })}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
               ))}
@@ -1593,11 +1707,32 @@ export function ChatView() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
+        <div className="relative flex min-h-0 flex-1">
+          <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
           {!hasMessages && !backendDown && (
-            <div className="flex h-full flex-col items-center justify-center text-center text-[var(--kp-text-3)]">
-              <Bot className="mb-3 h-12 w-12 opacity-40" />
-              <ChatShortcutHints className="justify-center" />
+            <div className="flex h-full flex-col items-center justify-center gap-4 text-center text-[var(--kp-text-3)]">
+              <Bot className="mb-1 h-12 w-12 opacity-40" />
+              <p className="text-sm">发送第一条消息开始对话</p>
+              {/* #12 Swarm 新手引导：无 Workspace 时展示（可关闭，localStorage 记忆） */}
+              {!hasWorkspaces && showSwarmOnboarding && (
+                <div className="relative max-w-md rounded-2xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30 p-4 text-left" data-testid="swarm-onboarding">
+                  <button
+                    type="button"
+                    onClick={dismissSwarmOnboarding}
+                    className="absolute right-2 top-2 rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+                    aria-label="关闭引导"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <p className="mb-1.5 text-xs font-semibold text-[var(--kp-text-1)]">试试 Agent Swarm</p>
+                  <ul className="space-y-1 text-[11px] leading-relaxed text-[var(--kp-text-2)]">
+                    <li>· 右上角选择「KnowPilot 超级 Agent」，让它替你管理其他 Agent</li>
+                    <li>· 对它说「创建一个 XX 工作区」，它会自动生成管理 Agent</li>
+                    <li>· 也可以在 <Link href="/workspaces" className="text-[var(--kp-brand-dark)] underline">工作区管理页</Link> 手动创建</li>
+                    <li>· 长任务会派生子代理后台执行，完成后结果自动回到对话</li>
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
@@ -1741,6 +1876,8 @@ export function ChatView() {
           {showLiveStream && !streamTargetUserId && renderLiveStreamBlock()}
 
           <div ref={bottomRef} />
+          </div>
+          <MessageNavRail items={navItems} />
         </div>
 
         {error && (
@@ -1753,15 +1890,46 @@ export function ChatView() {
                 <p className="font-semibold">请求失败</p>
                 <p className="whitespace-pre-wrap leading-relaxed opacity-90">{error}</p>
               </div>
-              {lastUserMessageId && (
-                <button
-                  type="button"
-                  onClick={() => handleRetry(lastUserMessageId)}
-                  className="shrink-0 rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
-                >
-                  重试
-                </button>
-              )}
+              <div className="flex shrink-0 items-center gap-1.5">
+                {/* 错误可操作化：按错误类型提供针对性动作（#14） */}
+                {error.includes("预算") && (
+                  <Link
+                    href="/settings"
+                    className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
+                  >
+                    查看预算设置
+                  </Link>
+                )}
+                {(error.includes("超时") || error.includes("timeout")) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 超时 → 建议转后台任务：把上一条用户消息包装成 run_async 请求重新入队
+                      const lastGroup = messageGroups[messageGroups.length - 1];
+                      const lastText = lastGroup?.userMessage.content;
+                      if (lastText) {
+                        ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (prev) => [
+                          ...prev,
+                          createUserQueueItem(`请用 run_async 在后台执行这个任务（避免前台超时）：\n${lastText}`),
+                        ]);
+                        ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "error", null);
+                      }
+                    }}
+                    className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
+                  >
+                    转后台重试
+                  </button>
+                )}
+                {lastUserMessageId && (
+                  <button
+                    type="button"
+                    onClick={() => handleRetry(lastUserMessageId)}
+                    className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
+                  >
+                    重试
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1811,6 +1979,7 @@ export function ChatView() {
                 ? "这是子代理任务会话。你直接发送的消息只在本会话内处理，不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话。"
                 : undefined
             }
+            sessionId={effectiveSessionId}
           />
         </div>
       </div>
@@ -1871,6 +2040,33 @@ export function ChatView() {
         isDestructive
         onConfirm={() => deleteSessionTarget && void handleDeleteSession(deleteSessionTarget.id)}
         onCancel={() => setDeleteSessionTarget(null)}
+      />
+
+      {/* #11 批量删除确认 */}
+      <ConfirmDialog
+        isOpen={showBulkDeleteConfirm}
+        title="批量删除会话"
+        description={`确定删除所选的 ${bulkSelected.size} 个会话？所有消息将被永久删除。`}
+        confirmLabel="删除"
+        isDestructive
+        onConfirm={() => {
+          const ids = [...bulkSelected];
+          setShowBulkDeleteConfirm(false);
+          bulkDeleteMutation.mutate(
+            { ids },
+            {
+              onSuccess: (res) => {
+                setToast(`已删除 ${res.deleted} 个会话`);
+                setTimeout(() => setToast(null), 2500);
+                setBulkSelected(new Set());
+                setBulkMode(false);
+                if (effectiveSessionId && ids.includes(effectiveSessionId)) startNewChat();
+                void utils.session.list.invalidate();
+              },
+            },
+          );
+        }}
+        onCancel={() => setShowBulkDeleteConfirm(false)}
       />
 
       <SubagentCreateDialog
