@@ -209,6 +209,23 @@ function ToolStep({
   );
 }
 
+/** 消息来源标签条（#21）：非 user 来源的消息在左侧显示彩色标签 */
+function MessageSourceLabel({ source }: { source?: string }) {
+  if (!source || source === "user") return null;
+  const config: Record<string, { label: string; bg: string; text: string }> = {
+    super: { label: "超级 Agent", bg: "bg-purple-100", text: "text-purple-700" },
+    manager: { label: "管理 Agent", bg: "bg-blue-100", text: "text-blue-700" },
+    sub: { label: "子 Agent", bg: "bg-green-100", text: "text-green-700" },
+    system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700" },
+  };
+  const c = config[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600" };
+  return (
+    <div className={cn("mb-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", c.bg, c.text)}>
+      {c.label}
+    </div>
+  );
+}
+
 function ThinkingTimeline({
   steps,
   isLive = false,
@@ -1559,14 +1576,19 @@ export function ChatView() {
           {messageGroups.map((group, groupIdx) => {
             const isLastUser = groupIdx === lastGroupIndex;
             const isEditing = editingUserId === group.userMessage.id;
+            const msgSource = (group.userMessage as { source?: string }).source ?? "user";
+            const isAgentMessage = msgSource !== "user"; // super/manager/sub/system → 左侧
             return (
               <div key={group.userMessage.id} className="flex flex-col">
-                <div className="flex w-full justify-end">
+                <div className={cn("flex w-full", isAgentMessage ? "justify-start" : "justify-end")}>
                 <motion.div
                   initial={false}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   data-testid="user-message-bubble"
-                  className="group/msg relative mb-3 flex max-w-[70%] flex-col items-end gap-1 self-end"
+                  className={cn(
+                    "group/msg relative mb-3 flex max-w-[70%] flex-col gap-1",
+                    isAgentMessage ? "items-start self-start" : "items-end self-end",
+                  )}
                 >
                   {group.userMessage.attachments && group.userMessage.attachments.length > 0 && !isEditing && (
                     <div className="mb-1.5 flex flex-wrap justify-end gap-2">
@@ -1591,7 +1613,13 @@ export function ChatView() {
                       ))}
                     </div>
                   )}
-                  <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white shadow-sm">
+                  {isAgentMessage && <MessageSourceLabel source={msgSource} />}
+                  <div className={cn(
+                    "w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-sm shadow-sm",
+                    isAgentMessage
+                      ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
+                      : "bg-[var(--kp-brand)] text-white",
+                  )}>
                       {group.userMessage.skillName && (
                         <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
                           <LucideIconByName name={group.userMessage.skillIcon} className="h-3 w-3" />

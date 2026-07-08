@@ -21,6 +21,8 @@
     "db:generate": "prisma generate",
     "db:sync": "tsx src/scripts/sync.ts",
     "db:sync:watch": "tsx src/scripts/sync.ts --watch",
+    "sync-free-keys": "tsx src/scripts/sync-free-keys.ts",
+    "sync-free-keys:watch": "tsx src/scripts/sync-free-keys.ts --watch",
     "db:cleanup-test-sessions": "tsx src/scripts/cleanup-test-sessions.ts",
     "cleanup:smoke-artifacts": "tsx src/scripts/cleanup-smoke-artifacts.ts",
     "integration:smoke": "tsx src/scripts/integration-smoke.ts",

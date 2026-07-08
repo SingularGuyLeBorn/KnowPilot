@@ -218,6 +218,9 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   // 免费 API Key
   free_api_keys_list: freeApiKeysListTool,
   free_api_keys_fetch: freeApiKeysFetchTool,
+  // Hermes 进化：超级 Agent 跨 Workspace 发现优秀 Skill 并推广（#45）
+  skill_promote: skillPromoteTool,
+  skill_discover: skillDiscoverTool,
 };
 
 export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
@@ -1468,6 +1471,29 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
       properties: {
         provider: { type: "string", description: "偏好提供商（如 deepseek/openai），不填则随机分配" },
       },
+    },
+  },
+  {
+    name: "skill_discover",
+    description: "发现跨 Workspace 的优秀 Skill（超级 Agent 专用，Hermes 进化 #45）。扫描所有 Skill，按使用频率/成功率排序，返回值得推广的候选。",
+    parameters: {
+      type: "object",
+      properties: {
+        minSuccessRate: { type: "number", description: "最低成功率阈值（0-100），默认 80" },
+        limit: { type: "number", description: "返回数量上限，默认 10" },
+      },
+    },
+  },
+  {
+    name: "skill_promote",
+    description: "将一个优秀 Skill 推广到其他 Workspace（超级 Agent 专用，Hermes 进化 #45）。把 Skill 复制到目标 Workspace 的 Agent 工具列表中。",
+    parameters: {
+      type: "object",
+      properties: {
+        skillId: { type: "string", description: "要推广的 Skill id" },
+        targetAgentIds: { type: "array", items: { type: "string" }, description: "目标 Agent id 列表（将 Skill 加入其工具列表）" },
+      },
+      required: ["skillId", "targetAgentIds"],
     },
   },
 ];
@@ -3242,11 +3268,90 @@ async function freeApiKeysFetchTool(args: Record<string, unknown>, ctx: NativeTo
     data: { lastUsedAt: new Date() },
   }).catch(() => {});
   return {
-    apiKey: picked.value, // 返回实际 key 供 Agent 使用
+    apiKey: picked.value,
     credentialId: picked.id,
     name: picked.name,
     hint: "使用后请勿持久化此 key，每次需要时重新获取。",
   };
+}
+
+// ─── Hermes 进化：Skill 发现与推广（#45）───
+
+async function skillDiscoverTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) return { error: "需要 prisma 上下文" };
+  const minSuccessRate = (args.minSuccessRate as number) ?? 80;
+  const limit = (args.limit as number) ?? 10;
+  // 查所有启用的 Skill
+  const skills = await ctx.prisma.skill.findMany({
+    where: { enabled: true },
+    select: { id: true, name: true, description: true, icon: true, metaJson: true },
+  });
+  // 按 Run 表中使用该 skill 的成功率排序
+  // Run.toolCalls 中可能包含 skill 调用记录，此处简化：按 skill name 在 Run 中出现次数排序
+  // 完整实现需要 Run 表记录 skill 调用明细，此处用 metaJson 中的统计作为近似
+  const candidates = skills.map((s) => {
+    let stats = { usageCount: 0, successRate: 100 };
+    try {
+      const meta = JSON.parse(s.metaJson || "{}");
+      if (meta.stats) stats = meta.stats;
+    } catch { /* ignore */ }
+    return { ...s, ...stats };
+  }).filter((s) => s.successRate >= minSuccessRate)
+    .sort((a, b) => b.usageCount - a.usageCount)
+    .slice(0, limit);
+
+  return {
+    count: candidates.length,
+    skills: candidates.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      icon: s.icon,
+      usageCount: s.usageCount,
+      successRate: s.successRate,
+    })),
+    hint: "使用 skill_promote 将优秀 Skill 推广到其他 Workspace 的 Agent。",
+  };
+}
+
+async function skillPromoteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const skillId = String(args.skillId || "");
+  const targetAgentIds = Array.isArray(args.targetAgentIds) ? (args.targetAgentIds as string[]) : [];
+  if (!skillId || targetAgentIds.length === 0) {
+    return { error: "skill_promote 需要 skillId 和 targetAgentIds" };
+  }
+  // 验证 Skill 存在
+  const skill = await ctx.services.skill.getById(skillId);
+  if (!skill) return { error: `Skill ${skillId} 不存在` };
+  const skillToolName = `skill:${skill.name}`;
+  let promoted = 0;
+  const errors: string[] = [];
+  for (const agentId of targetAgentIds) {
+    try {
+      const agent = await ctx.services.agent.getById(agentId);
+      if (!agent) { errors.push(`Agent ${agentId} 不存在`); continue; }
+      const currentTools = agent.tools || [];
+      if (currentTools.includes(skillToolName)) {
+        errors.push(`Agent ${agent.name} 已有 Skill ${skill.name}`);
+        continue;
+      }
+      // 加入 Skill 到工具列表
+      await ctx.services.agent.update({
+        id: agentId,
+        tools: [...currentTools, skillToolName],
+      } as any);
+      promoted++;
+    } catch (err) {
+      errors.push(`Agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  // 审计日志
+  await ctx.services.log?.create?.({
+    level: "info", component: "swarm", event: "skill_promoted",
+    message: `Skill ${skill.name} 推广到 ${promoted} 个 Agent`,
+    metadata: { skillId, skillName: skill.name, targetAgentIds, promoted, errors, operatorAgentId: ctx.agentSnapshot?.id },
+  }).catch(() => {});
+  return { success: true, promoted, errors: errors.length > 0 ? errors : undefined, message: `Skill ${skill.name} 已推广到 ${promoted} 个 Agent。` };
 }
 
 export function resolveAllowedNativeTools(agentTools: string[]): string[] | "all" {

@@ -236,4 +236,6 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "send_email",
   "free_api_keys_list",
   "free_api_keys_fetch",
+  "skill_discover",
+  "skill_promote",
 ] as const;
