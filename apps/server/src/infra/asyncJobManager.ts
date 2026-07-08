@@ -37,7 +37,7 @@ interface AsyncTaskInput {
   sessionId: string;
   task: string;
   taskLabel: string;
-  agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[] };
+  agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
   retryCount?: number;
   timeoutMs?: number;
   subagentSessionId?: string;
@@ -335,6 +335,10 @@ function buildAsyncExecute(
         } satisfies AsyncTaskOutput,
       });
       await syncSubStatus("completed");
+      // 独立子 Agent 实例任务完成 → 自动休眠（#15：无任务+队列空+无心跳 → dormant）
+      if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
+        await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch(() => {});
+      }
       await broadcastShare("success", { asyncResult: resultText, tokenUsage });
     } catch (err: unknown) {
       const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
@@ -386,11 +390,38 @@ export async function startAsyncAgentTask(options: {
   assertLlmBudget(options.config);
 
   const taskLabel = options.label?.trim() || task.slice(0, 80);
+
+  // #3 子代理独立 Agent 实例：spawn 时创建 tier=sub 的独立 Agent（不复用父 Agent 身份）。
+  // 独立实例让 tier 权限、parentId 回报链、tombstone、审计都有正确语义。
+  // 创建失败时降级复用父 Agent（保证任务不被阻塞）。
+  const parentAgent = await prisma.agent.findUnique({ where: { id: options.agent.id } }).catch(() => null);
+  let subAgentId = options.agent.id;
+  try {
+    const subAgentResult = await options.services.agent.create({
+      name: `${taskLabel.slice(0, 40)} 子代理`,
+      description: `由 ${parentAgent?.name ?? options.agent.id} 派生的子代理（任务：${taskLabel.slice(0, 60)}）`,
+      model: options.agent.model,
+      systemPrompt: options.agent.systemPrompt,
+      tools: options.agent.tools,
+      tier: "sub",
+      parentId: options.agent.id,
+      workspaceId: parentAgent?.workspaceId ?? undefined,
+    });
+    if (subAgentResult.success && subAgentResult.data) {
+      subAgentId = (subAgentResult.data as { id: string }).id;
+    }
+  } catch (err) {
+    console.warn(`[asyncJobManager] 创建独立子 Agent 失败，降级复用父 Agent:`, err);
+  }
+
   const agentSnapshot = {
-    id: options.agent.id,
+    id: subAgentId,
     model: options.agent.model,
     systemPrompt: options.agent.systemPrompt,
     tools: options.agent.tools,
+    tier: "sub",
+    parentId: options.agent.id,
+    workspaceId: parentAgent?.workspaceId ?? null,
   };
 
   // 创建 subagent ChatSession 作为任务的可视化载体（Phase 3 UI 显示卡片）
@@ -405,7 +436,7 @@ export async function startAsyncAgentTask(options: {
       title: taskLabel.slice(0, 60),
       model: agentSnapshot.model,
       systemPrompt: agentSnapshot.systemPrompt,
-      agentId: agentSnapshot.id,
+      agentId: subAgentId, // 指向独立子 Agent 实例
       parentSessionId: options.sessionId,
       kind: "subagent",
       taskDescription: task,

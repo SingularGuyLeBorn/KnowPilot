@@ -573,7 +573,27 @@ const taskRouter = router({
 });
 
 const workspaceRouter = router({
-  create: publicProcedure.meta({ description: "创建工作区。name 和 path 都必须唯一。", aiReadable: false }).input(createWorkspaceSchema).mutation(({ ctx, input }) => ctx.services.workspace.create(input)),
+  create: publicProcedure
+    .meta({ description: "创建工作区（path 唯一）。autoCreateManager=true 时自动创建管理 Agent + 主 session + .knowpilot/ 目录。", aiReadable: false })
+    .input(createWorkspaceSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (input.autoCreateManager === false) {
+        return ctx.services.workspace.create(input);
+      }
+      // 走完整 provision：Workspace + 管理 Agent + 主 session + .knowpilot/
+      const { provisionWorkspace } = await import("./infra/workspaceProvision.js");
+      const result = await provisionWorkspace(ctx.config, ctx.services, {
+        name: input.name,
+        path: input.path,
+        description: input.description,
+        operatorAgentId: "user",
+      });
+      if (!result.success) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: result.error ?? "创建 Workspace 失败" });
+      }
+      const ws = await ctx.services.workspace.getById(result.workspaceId!);
+      return { success: true as const, data: ws, managerAgentId: result.managerAgentId };
+    }),
   getById: publicProcedure.meta({ description: "获取工作区详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.workspace.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有工作区。", aiReadable: true }).input(listWorkspacesSchema).query(({ ctx, input }) => ctx.services.workspace.list(input)),
   update: publicProcedure.meta({ description: "更新工作区配置。", aiReadable: true }).input(updateWorkspaceSchema).mutation(({ ctx, input }) => ctx.services.workspace.update(input)),

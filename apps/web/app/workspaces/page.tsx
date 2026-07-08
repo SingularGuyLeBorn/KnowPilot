@@ -6,27 +6,53 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { HardDrive, Plus, Folder, MapPin, Sparkles } from "lucide-react";
+import { HardDrive, Plus, Folder, MapPin, ShieldCheck, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { Workspace } from "@knowpilot/shared";
 import { useWorkspace } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { cn } from "@/lib/utils";
 
 export default function WorkspacesPage() {
   const { useList, useCreate, useDelete } = useWorkspace();
   const [page] = useState(1);
-  const { data, isLoading } = useList({ page, pageSize: 12 });
+  const { data, isLoading, refetch } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
   const deleteMutation = useDelete();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // 创建弹窗（#5）：name/path/description + autoCreateManager
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    path: "",
+    description: "",
+    autoCreateManager: true,
+  });
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  const handleCreateDemo = () => {
-    createMutation.mutate({
-      name: `我的知识库_${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-      description: "存储 markdown 原文与项目文件的默认工作空间。",
-      path: `D:\\ALL IN AI\\KnowPilot_Workspace_${Math.random().toString(36).substring(2, 6)}`,
-    });
+  const handleCreate = async () => {
+    setCreateError(null);
+    const name = createForm.name.trim();
+    const path = createForm.path.trim();
+    if (!name || !path) {
+      setCreateError("名称和路径不能为空");
+      return;
+    }
+    try {
+      await createMutation.mutateAsync({
+        name,
+        path,
+        description: createForm.description.trim() || undefined,
+        autoCreateManager: createForm.autoCreateManager,
+      });
+      setShowCreate(false);
+      setCreateForm({ name: "", path: "", description: "", autoCreateManager: true });
+      void refetch();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "创建失败");
+    }
   };
 
   const confirmDelete = () => {
@@ -62,7 +88,7 @@ export default function WorkspacesPage() {
           </div>
 
           <Button
-            onClick={handleCreateDemo}
+            onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0"
           >
             <Plus className="w-5 h-5" />
@@ -78,7 +104,7 @@ export default function WorkspacesPage() {
           title="孤立的系统"
           description="目前还没有关联任何本地磁盘文件夹。点击下方按钮快速关联一个本地知识库。"
           actionLabel="关联本地工作区"
-          onAction={handleCreateDemo}
+          onAction={() => setShowCreate(true)}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -148,6 +174,80 @@ export default function WorkspacesPage() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteId(null)}
       />
+
+      {/* 创建 Workspace 弹窗（#5）：支持自动创建管理 Agent */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg-alt)] shadow-xl">
+            <div className="flex items-center justify-between border-b border-[var(--vp-c-divider)] px-5 py-3.5">
+              <h3 className="text-sm font-semibold text-[var(--vp-c-text-1)]">创建 Workspace</h3>
+              <button type="button" onClick={() => setShowCreate(false)} aria-label="关闭">
+                <X className="h-4 w-4 text-[var(--vp-c-text-3)]" />
+              </button>
+            </div>
+            <div className="space-y-4 p-5">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--vp-c-text-3)]">名称</label>
+                <Input
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                  placeholder="技术博客"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--vp-c-text-3)]">本地路径（项目根内相对路径或绝对路径）</label>
+                <Input
+                  value={createForm.path}
+                  onChange={(e) => setCreateForm({ ...createForm, path: e.target.value })}
+                  placeholder="workspaces/techblog"
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[var(--vp-c-text-3)]">描述（可选）</label>
+                <Input
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                  placeholder="这个工作区做什么"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateForm({ ...createForm, autoCreateManager: !createForm.autoCreateManager })}
+                className="flex w-full items-center justify-between rounded-xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg)] px-3 py-2.5 text-left"
+              >
+                <span className="flex items-center gap-2 text-xs text-[var(--vp-c-text-1)]">
+                  <ShieldCheck className="h-4 w-4 text-blue-500" />
+                  自动创建管理 Agent + 主会话
+                </span>
+                <span
+                  className={cn(
+                    "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                    createForm.autoCreateManager ? "bg-[var(--vp-c-brand)]" : "bg-[var(--vp-c-bg-mute)]",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
+                      createForm.autoCreateManager ? "translate-x-4" : "translate-x-0.5",
+                    )}
+                  />
+                </span>
+              </button>
+              {createError && <p className="text-xs text-red-600">{createError}</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[var(--vp-c-divider)] px-5 py-3.5">
+              <Button variant="outline" size="sm" onClick={() => setShowCreate(false)}>
+                取消
+              </Button>
+              <Button size="sm" onClick={() => void handleCreate()} disabled={createMutation.isPending}>
+                {createMutation.isPending ? "创建中…" : "创建"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

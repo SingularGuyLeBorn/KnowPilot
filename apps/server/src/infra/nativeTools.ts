@@ -3121,60 +3121,24 @@ async function workspaceCreateTool(args: Record<string, unknown>, ctx: NativeToo
   const name = String(args.name || "");
   const path = String(args.path || "");
   if (!name || !path) return { error: "workspace_create 需要 name 和 path" };
-  // 创建 Workspace
-  const wsResult = await ctx.services.workspace.create({ name, description: args.description as string | undefined, path });
-  if (!wsResult.success || !wsResult.data) return { error: wsResult.error?.message ?? "创建 Workspace 失败" };
-  const wsId = wsResult.data.id;
-  // 自动创建管理 Agent
-  const managerPrompt = args.managerSystemPrompt as string | undefined ??
-    `你是 ${name} 的管理 Agent。\n你的职责是管理本 Workspace 内的子 Agent，接收来自超级 Agent 或用户的命令并执行/分配。\n你可以创建子 Agent，可以与子 Agent 通信，可以向上级回报结果。`;
-  const mgrResult = await ctx.services.agent.create({
-    name: `${name} 管理 Agent`,
-    description: `${name} Workspace 的管理 Agent`,
-    model: (args.managerModel as string) ?? "deepseek-v4-flash",
-    systemPrompt: managerPrompt,
-    tools: [
-      "native:web_search", "native:read_file", "native:write_file", "native:list_directory",
-      "native:invoke_api", "native:run_async", "native:spawn_subagent", "native:task_status",
-      "native:await_async", "native:cancel_async",
-      "native:agent_create_sub", "native:agent_send_message", "native:agent_report_back",
-    ],
-    tier: "manager",
-    workspaceId: wsId,
-    parentId: ctx.agentSnapshot?.id,
+  // 复用 workspaceProvision 编排（与 workspace.create tRPC 路由共享逻辑）
+  const { provisionWorkspace } = await import("./workspaceProvision.js");
+  const result = await provisionWorkspace(ctx.config, ctx.services, {
+    name,
+    path,
+    description: args.description as string | undefined,
+    managerModel: args.managerModel as string | undefined,
+    managerSystemPrompt: args.managerSystemPrompt as string | undefined,
+    operatorAgentId: ctx.agentSnapshot?.id,
+    managerParentId: ctx.agentSnapshot?.id,
   });
-  let managerAgentId: string | undefined;
-  if (mgrResult.success && mgrResult.data) {
-    managerAgentId = mgrResult.data.id;
-    // 关联管理 Agent 到 Workspace
-    await ctx.prisma?.workspace.update({ where: { id: wsId }, data: { managerAgentId } }).catch(() => {});
-    // 创建主 session
-    await ctx.services.session.create({
-      title: `${name} 管理主会话`,
-      model: (args.managerModel as string) ?? "deepseek-v4-flash",
-      agentId: managerAgentId,
-      isMainSession: true,
-    }).catch(() => {});
-  }
-  // 自动创建 .knowpilot/ 目录结构（#30）
-  const { resolveSafePath } = await import("./safePath.js");
-  try {
-    const wsPath = resolveSafePath(ctx.config, path);
-    const fs = await import("node:fs/promises");
-    await fs.mkdir(`${wsPath}/.knowpilot/shared/data`, { recursive: true });
-    await fs.mkdir(`${wsPath}/.knowpilot/shared/scratch`, { recursive: true });
-    await fs.writeFile(`${wsPath}/.knowpilot/state.json`, "{}");
-    await fs.appendFile(`${wsPath}/.knowpilot/log.jsonl`, JSON.stringify({ event: "workspace_created", at: new Date().toISOString(), by: ctx.agentSnapshot?.id }) + "\n");
-  } catch (err) {
-    console.warn(`[workspace_create] .knowpilot/ 目录创建失败:`, err);
-  }
-  // 审计日志
-  await ctx.services.log?.create?.({
-    level: "info", component: "swarm", event: "workspace_created",
-    message: `Workspace ${name} 被创建（管理 Agent: ${managerAgentId ?? "未创建"}）`,
-    metadata: { workspaceId: wsId, managerAgentId, operatorAgentId: ctx.agentSnapshot?.id },
-  }).catch(() => {});
-  return { success: true, workspaceId: wsId, managerAgentId, message: `Workspace ${name} 已创建，管理 Agent 已就绪。` };
+  if (!result.success) return { error: result.error };
+  return {
+    success: true,
+    workspaceId: result.workspaceId,
+    managerAgentId: result.managerAgentId,
+    message: `Workspace ${name} 已创建，管理 Agent 已就绪。`,
+  };
 }
 
 async function workspaceArchiveTool(args: Record<string, unknown>, ctx: NativeToolContext) {
