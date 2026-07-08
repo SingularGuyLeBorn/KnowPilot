@@ -1,0 +1,52 @@
+feat(swarm): Phase 1 — 三层 Agent 层级 + 权限硬拦截 + Agent CRUD 工具化 + 超级 Agent 自动创建
+
+Schema 改动：
+- Agent 加 tier/workspaceId/parentId/apiKey/heartbeatModel/heartbeat/status/
+  deletedAt/deletedBy 字段，name 去 @unique（#37 允许重名）
+- Workspace 加 managerAgentId/status/deletedAt/deletedBy，name 去 @unique
+- ChatMessage 加 source 字段（user/super/manager/sub/system）
+- ChatSession 加 isMainSession（管理 Agent 主 session）
+- Run 加 toolCallCount（监控统计）
+- 新增 AgentMessage 表（Agent 间消息通道）
+
+Shared schemas：
+- agentTierSchema/agentStatusSchema/workspaceStatusSchema/heartbeatConfigSchema
+- createAgentSchema 加 swarm 字段（tier 可选，默认 sub）
+- listAgentsSchema 加 tier/workspaceId/parentId/status 过滤
+- createWorkspaceSchema 加 autoCreateManager
+- createMessageSchema 加 source（可选）
+
+Services：
+- AgentService.buildCreateData/buildUpdateData/buildListWhere 支持 swarm 字段
+- 移除 name 唯一性校验（#37）
+- WorkspaceService 支持 status 过滤 + 自动创建
+
+Infra：
+- swarmPermissionGuard.ts：工具调用权限硬拦截中间层
+  - tier 权限校验（super/manager/sub 工具限制）
+  - 向上发消息时机约束（#41：工具轮次中不能向上级发）
+  - 跨 Workspace 校验（#19：只有 super 能跨）
+  - depth 校验（#12：防循环，上限 10）
+  - 返回错误码 + 错误原因（#44）
+- swarmBus.ts：LocalSwarmBus（Agent 间消息系统）
+  - send()：权限校验 + 队列容量(100) + 审计日志
+  - poll()：拉取待投递消息
+  - markConsumed()：标记已消费
+- swarmInitializer.ts：首次启动自动创建超级 Agent
+  - 默认 system prompt（#29）
+  - 默认心跳：每天 9 点（#43）
+  - 默认工具集（含所有 swarm 管理工具）
+
+Native tools（9 个新工具）：
+- agent_create/agent_update/agent_delete（超级权限）
+- agent_inspect（越级查看完整上下文）
+- agent_send_message/agent_report_back（Agent 间通信）
+- agent_create_sub（管理 Agent 本 Workspace 内创建子 Agent）
+- workspace_create（自动创建管理 Agent + 主 session + .knowpilot/ 目录）
+- workspace_archive（归档：Agent 设 dormant）
+
+agentStream 集成：
+- agentMeta 传递 tier/workspaceId/parentId
+- 工具调用轮次标记 inToolRound=true（向上发消息拦截）
+
+sync-agents.ts：改用 sourceSlug 做 upsert（name 不再 unique）

@@ -163,6 +163,10 @@ const server = app.listen(PORT, () => {
   taskScheduler.start().catch((err) => {
     console.error("❌ [TaskScheduler] 启动失败:", err);
   });
+  // Swarm 初始化：首次启动自动创建超级 Agent（幂等）
+  import("./infra/swarmInitializer.js")
+    .then(({ initSwarm }) => initSwarm(prisma))
+    .catch((err) => console.error("❌ [Swarm] 初始化失败:", err));
   recoverStaleAsyncJobs()
     .then((n) => {
       if (n > 0) console.log(`  ⚠️ [AsyncJobs] 已将 ${n} 个中断的后台任务标为 failed`);

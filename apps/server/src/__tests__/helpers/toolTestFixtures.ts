@@ -221,4 +221,14 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "run_shell",
   "wait",
   "session_clear",
+  // Swarm 管理工具
+  "agent_create",
+  "agent_update",
+  "agent_delete",
+  "agent_inspect",
+  "agent_send_message",
+  "agent_report_back",
+  "agent_create_sub",
+  "workspace_create",
+  "workspace_archive",
 ] as const;

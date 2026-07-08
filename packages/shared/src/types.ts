@@ -30,9 +30,44 @@ export interface Agent {
   description: string | null;
   model: string;
   systemPrompt: string;
-  tools: string[]; // 解析后的工具数组
+  tools: string[];
+  // Swarm 层级
+  tier: "super" | "manager" | "sub";
+  workspaceId: string | null;
+  parentId: string | null;
+  apiKey: string | null;
+  heartbeatModel: string | null;
+  heartbeat: HeartbeatConfig | null;
+  status: "active" | "idle" | "dormant" | "deleted";
+  deletedAt: string | Date | null;
+  deletedBy: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
+}
+
+export interface HeartbeatConfig {
+  enabled: boolean;
+  cron: string;
+  goal: string;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  consecutiveFailures: number;
+}
+
+/** Agent 间消息 */
+export interface AgentMessage {
+  id: string;
+  fromAgentId: string;
+  toAgentId: string;
+  sessionId: string | null;
+  content: string;
+  messageType: "command" | "query" | "report" | "forward";
+  source: "super" | "manager" | "sub" | "user" | "system";
+  depth: number;
+  taskRef: string | null;
+  status: "pending" | "delivered" | "consumed";
+  createdAt: string | Date;
+  deliveredAt: string | Date | null;
 }
 
 /** 技能实体 */
@@ -147,6 +182,7 @@ export interface ChatMessage {
     total: number;
   } | null;
   finishReason?: string | null;
+  source?: "user" | "super" | "manager" | "sub" | "system";
   createdAt: string | Date;
 }
 
@@ -194,6 +230,10 @@ export interface Workspace {
   name: string;
   description: string | null;
   path: string;
+  managerAgentId: string | null;
+  status: "active" | "archived" | "deleted";
+  deletedAt: string | Date | null;
+  deletedBy: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }

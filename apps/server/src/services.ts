@@ -723,6 +723,16 @@ export interface AgentEntity {
   model: string;
   systemPrompt: string;
   tools: string[];
+  // Swarm 层级
+  tier: string;
+  workspaceId: string | null;
+  parentId: string | null;
+  apiKey: string | null;
+  heartbeatModel: string | null;
+  heartbeat: any;
+  status: string;
+  deletedAt: Date | null;
+  deletedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -746,6 +756,12 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     if (input.keyword) {
       where.OR = [{ name: { contains: input.keyword } }, { description: { contains: input.keyword } }];
     }
+    // Swarm 过滤
+    if (input.tier) where.tier = input.tier;
+    if (input.workspaceId) where.workspaceId = input.workspaceId;
+    if (input.parentId) where.parentId = input.parentId;
+    if (input.status) where.status = input.status;
+    else where.status = { not: "deleted" }; // 默认不返回 tombstone
     return where;
   }
 
@@ -757,14 +773,28 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
       model: input.model,
       systemPrompt: input.systemPrompt,
       tools: tools.join(","),
+      // Swarm 字段（tier 默认 sub）
+      tier: input.tier ?? "sub",
+      ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
+      ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+      ...(input.apiKey !== undefined ? { apiKey: input.apiKey } : {}),
+      ...(input.heartbeatModel !== undefined ? { heartbeatModel: input.heartbeatModel } : {}),
+      ...(input.heartbeat !== undefined ? { heartbeat: input.heartbeat } : {}),
     };
   }
 
   protected buildUpdateData(input: UpdateAgentInput): any {
-    const { id: _id, tools, name, ...data } = input;
+    const { id: _id, tools, name, tier, workspaceId, parentId, apiKey, heartbeatModel, heartbeat, status, ...data } = input;
     const updateData: any = { ...data };
     if (name !== undefined) updateData.name = name;
     if (tools !== undefined) updateData.tools = materializeAgentTools(tools).join(",");
+    if (tier !== undefined) updateData.tier = tier;
+    if (workspaceId !== undefined) updateData.workspaceId = workspaceId;
+    if (parentId !== undefined) updateData.parentId = parentId;
+    if (apiKey !== undefined) updateData.apiKey = apiKey;
+    if (heartbeatModel !== undefined) updateData.heartbeatModel = heartbeatModel;
+    if (heartbeat !== undefined) updateData.heartbeat = heartbeat;
+    if (status !== undefined) updateData.status = status;
     return updateData;
   }
 
@@ -779,21 +809,10 @@ ${entity.systemPrompt}
 `;
   }
 
-  protected getFileSlug(entity: AgentEntity): string { return entity.name; }
+  protected getFileSlug(entity: AgentEntity): string { return `${entity.name}-${entity.id.slice(-6)}`; }
 
-  protected override async validateCreate(input: CreateAgentInput): Promise<void> {
-    await this.assertUnique("name", input.name, "创建");
-  }
-
-  protected override async validateUpdate(input: UpdateAgentInput, existing: any): Promise<void> {
-    if (input.name !== undefined && input.name !== existing.name) {
-      await this.assertUnique("name", input.name, "更新", input.id);
-    }
-  }
-
-  protected override buildDeleteSummary(existing: any): Record<string, unknown> {
-    return { id: existing.id, name: existing.name };
-  }
+  // name 不再 @unique（swarm 允许重名，#37），用 id 做全局唯一标识
+  // sourceSlug 仍 @unique，由 getFileSlug 生成唯一 slug
 }
 
 /** Skill 技能 */
@@ -1313,17 +1332,23 @@ export class WorkspaceService extends BaseService<CreateWorkspaceInput, UpdateWo
     if (input.keyword) {
       where.OR = [{ name: { contains: input.keyword } }, { description: { contains: input.keyword } }];
     }
+    if (input.status) where.status = input.status;
+    else where.status = { not: "deleted" }; // 默认不返回 tombstone
     return where;
   }
-  protected buildCreateData(input: CreateWorkspaceInput) { return input; }
-  protected buildUpdateData(input: UpdateWorkspaceInput) { const { id: _id, ...data } = input; return data; }
+  protected buildCreateData(input: CreateWorkspaceInput) {
+    const { autoCreateManager: _auto, ...data } = input;
+    return { ...data, status: "active" };
+  }
+  protected buildUpdateData(input: UpdateWorkspaceInput) {
+    const { id: _id, ...data } = input;
+    return data;
+  }
 
   protected override async validateCreate(input: CreateWorkspaceInput): Promise<void> {
-    await this.assertUnique("name", input.name, "创建");
     await this.assertUnique("path", input.path, "创建");
   }
   protected override async validateUpdate(input: UpdateWorkspaceInput, existing: any): Promise<void> {
-    if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
     if (input.path && input.path !== existing.path) await this.assertUnique("path", input.path, "更新", input.id);
   }
 }

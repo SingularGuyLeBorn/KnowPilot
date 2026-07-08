@@ -105,7 +105,12 @@ export interface NativeToolContext {
     model: string;
     systemPrompt: string;
     tools: string[];
+    tier?: string;
+    workspaceId?: string | null;
+    parentId?: string | null;
   };
+  /** 当前 ReAct 轮次是否仍在工具调用中（向上发消息时机约束 #41） */
+  inToolRound?: boolean;
 }
 
 type NativeToolHandler = (args: Record<string, unknown>, ctx: NativeToolContext) => Promise<unknown>;
@@ -198,6 +203,16 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   run_shell: runShellTool,
   wait: waitTool,
   session_clear: sessionClearTool,
+  // Swarm 管理工具
+  agent_create: agentCreateTool,
+  agent_update: agentUpdateTool,
+  agent_delete: agentDeleteTool,
+  agent_inspect: agentInspectTool,
+  agent_send_message: agentSendMessageTool,
+  agent_report_back: agentReportBackTool,
+  agent_create_sub: agentCreateSubTool,
+  workspace_create: workspaceCreateTool,
+  workspace_archive: workspaceArchiveTool,
 };
 
 export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
@@ -1288,6 +1303,140 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
       required: ["confirm"],
     },
   },
+  // ─── Swarm 管理工具 ───
+  {
+    name: "agent_create",
+    description: "创建一个新 Agent（需超级权限）。可指定 tier/workspaceId/parentId。创建管理 Agent 时会自动生成主 session。",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Agent 名称（可重复，id 全局唯一）" },
+        description: { type: "string" },
+        model: { type: "string", description: "模型 ID" },
+        systemPrompt: { type: "string" },
+        tools: { type: "array", items: { type: "string" }, description: "工具列表" },
+        tier: { type: "string", enum: ["super", "manager", "sub"], description: "层级" },
+        workspaceId: { type: "string", description: "所属 Workspace id（super 不需要）" },
+        parentId: { type: "string", description: "上级 Agent id" },
+        apiKey: { type: "string", description: "专属 API Key" },
+        heartbeatModel: { type: "string", description: "心跳用便宜模型" },
+        heartbeat: { type: "object", description: "心跳配置 { enabled, cron, goal }" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "agent_update",
+    description: "更新 Agent 配置（需超级权限，不能改自己 tier）。运行中的 Agent 用旧配置跑完，下次启动用新配置。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "目标 Agent id" },
+        name: { type: "string" },
+        description: { type: "string" },
+        model: { type: "string" },
+        systemPrompt: { type: "string" },
+        tools: { type: "array", items: { type: "string" } },
+        apiKey: { type: "string" },
+        heartbeatModel: { type: "string" },
+        heartbeat: { type: "object", description: "心跳配置" },
+        status: { type: "string", enum: ["active", "idle", "dormant"], description: "Agent 状态" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "agent_delete",
+    description: "删除 Agent（需超级权限，不能删自己或其他 super）。先停止运行中任务，再级联删 session/message/memory，留 tombstone。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "目标 Agent id" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "agent_inspect",
+    description: "获取任意 Agent 的完整上下文（需超级权限）。包括 session 消息、memory、运行记录。默认管理 Agent 运行过程对超级不可见，此工具用于越级查看。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "目标 Agent id" },
+        includeMemory: { type: "boolean", description: "是否包含 memory（默认 true）" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "agent_send_message",
+    description: "向另一个 Agent 发送消息。向下发（super→manager、manager→sub）可在工具调用中发；向上发（sub→manager、manager→super）只能在正式回复中发。跨 Workspace 只有超级能发。",
+    parameters: {
+      type: "object",
+      properties: {
+        toAgentId: { type: "string", description: "目标 Agent id" },
+        content: { type: "string", description: "消息内容（纯文本或含文件路径引用）" },
+        messageType: { type: "string", enum: ["command", "query", "report", "forward"], description: "消息类型" },
+        taskRef: { type: "string", description: "关联的 taskId（可选）" },
+      },
+      required: ["toAgentId", "content"],
+    },
+  },
+  {
+    name: "agent_report_back",
+    description: "向上级 Agent 回报结果（默认工具，所有 Agent 可用）。只能在正式回复中调用（不能在工具调用轮次中）。",
+    parameters: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "回报内容" },
+        messageType: { type: "string", enum: ["report", "query"], description: "回报或请求帮助" },
+        taskRef: { type: "string", description: "关联的 taskId" },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "agent_create_sub",
+    description: "管理 Agent 在本 Workspace 内创建子 Agent（仅本 Workspace）。",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        description: { type: "string" },
+        model: { type: "string" },
+        systemPrompt: { type: "string" },
+        tools: { type: "array", items: { type: "string" } },
+        apiKey: { type: "string" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "workspace_create",
+    description: "创建 Workspace（需超级权限）。自动创建该 Workspace 的管理 Agent + 主 session + .knowpilot/ 目录结构。",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Workspace 名称" },
+        description: { type: "string" },
+        path: { type: "string", description: "磁盘目录路径" },
+        managerModel: { type: "string", description: "管理 Agent 的模型" },
+        managerSystemPrompt: { type: "string", description: "管理 Agent 的 system prompt（不填用默认模板）" },
+      },
+      required: ["name", "path"],
+    },
+  },
+  {
+    name: "workspace_archive",
+    description: "归档 Workspace（需超级权限）。归档 = 所有 Agent 设为 dormant，不跑心跳，不接收消息。可恢复。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Workspace id" },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 export function listNativeTools(): NativeToolDefinition[] {
@@ -1299,6 +1448,23 @@ export async function executeNativeTool(
   args: Record<string, unknown>,
   ctx: NativeToolContext,
 ): Promise<unknown> {
+  // Swarm 权限硬拦截：检查 agent 是否有权调用此工具
+  if (ctx.agentSnapshot?.tier) {
+    const { checkToolPermission } = await import("./swarmPermissionGuard.js");
+    const permError = checkToolPermission(name, args, {
+      agentTier: ctx.agentSnapshot.tier,
+      agentId: ctx.agentSnapshot.id,
+      agentWorkspaceId: ctx.agentSnapshot.workspaceId,
+      inToolRound: ctx.inToolRound ?? false,
+    });
+    if (permError) {
+      return {
+        error: `[${permError.code}] ${permError.reason}`,
+        permissionDenied: true,
+      };
+    }
+  }
+
   // Mock 模式：命中已覆盖的 native 工具则走 Mock 实现，避免真实网络调用
   if (process.env.MOCK_NATIVE_TOOLS === "true") {
     const { hasMockNativeTool, executeMockNativeTool } = await import("./mockNativeTools.js");
@@ -2676,6 +2842,259 @@ async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolCo
   }
   const result = await ctx.services.session.deleteMany();
   return { deletedSessions: result.count };
+}
+
+// ─── Swarm 管理工具实现 ───
+
+async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const created = await ctx.services.agent.create({
+    name: String(args.name || ""),
+    description: args.description ? String(args.description) : undefined,
+    model: args.model ? String(args.model) : "deepseek-v4-flash",
+    systemPrompt: args.systemPrompt ? String(args.systemPrompt) : "",
+    tools: Array.isArray(args.tools) ? (args.tools as string[]) : [],
+    tier: args.tier as "super" | "manager" | "sub" | undefined,
+    workspaceId: args.workspaceId as string | undefined,
+    parentId: args.parentId as string | undefined,
+    apiKey: args.apiKey as string | undefined,
+    heartbeatModel: args.heartbeatModel as string | undefined,
+    heartbeat: args.heartbeat as any,
+  });
+  if (!created.success || !created.data) {
+    return { error: created.error?.message ?? "创建 Agent 失败" };
+  }
+  // 管理 Agent：自动创建主 session
+  if (args.tier === "manager" && created.data.id) {
+    await ctx.services.session.create({
+      title: `${args.name} 主会话`,
+      model: args.model ? String(args.model) : "deepseek-v4-flash",
+      agentId: created.data.id,
+      isMainSession: true,
+    }).catch(() => { /* 主 session 创建失败不阻塞 */ });
+  }
+  // 审计日志
+  await ctx.services.log?.create?.({
+    level: "info",
+    component: "swarm",
+    event: "agent_created",
+    message: `Agent ${created.data.name} 被创建（tier: ${args.tier ?? "sub"}）`,
+    metadata: { agentId: created.data.id, operatorAgentId: ctx.agentSnapshot?.id, tier: args.tier ?? "sub" },
+  }).catch(() => {});
+  return { success: true, agentId: created.data.id, name: created.data.name };
+}
+
+async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { id, ...updateData } = args;
+  const result = await ctx.services.agent.update({
+    id: String(id),
+    name: updateData.name ? String(updateData.name) : undefined,
+    description: updateData.description ? String(updateData.description) : undefined,
+    model: updateData.model ? String(updateData.model) : undefined,
+    systemPrompt: updateData.systemPrompt ? String(updateData.systemPrompt) : undefined,
+    tools: Array.isArray(updateData.tools) ? (updateData.tools as string[]) : undefined,
+    apiKey: updateData.apiKey !== undefined ? String(updateData.apiKey) : undefined,
+    heartbeatModel: updateData.heartbeatModel ? String(updateData.heartbeatModel) : undefined,
+    heartbeat: updateData.heartbeat as any,
+    status: updateData.status as any,
+  } as any);
+  if (!result.success) return { error: result.error?.message ?? "更新 Agent 失败" };
+  await ctx.services.log?.create?.({
+    level: "info", component: "swarm", event: "agent_updated",
+    message: `Agent ${id} 被更新`,
+    metadata: { agentId: String(id), operatorAgentId: ctx.agentSnapshot?.id },
+  }).catch(() => {});
+  return { success: true };
+}
+
+async function agentDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const targetId = String(args.id || "");
+  // tombstone 删除：先 abort 运行中任务，再标记 deleted（不真删 DB 记录）
+  const existing = await ctx.services.agent.getById(targetId);
+  if (!existing) return { error: "Agent 不存在" };
+  // 超级不能删其他 super（#16）
+  if (existing.tier === "super" && ctx.agentSnapshot?.tier === "super" && targetId !== ctx.agentSnapshot.id) {
+    // super 删其他 super → 检查目标是不是自己也想删（已在权限层拦截 self delete）
+    return { error: "[TIER_PROTECTED] 超级 Agent 不能删除其他超级 Agent。" };
+  }
+  // 先标记 deleted（tombstone），保留记录
+  await ctx.services.agent.update({
+    id: targetId,
+    status: "deleted",
+  } as any).catch(() => {});
+  // 审计日志
+  await ctx.services.log?.create?.({
+    level: "warn", component: "swarm", event: "agent_deleted",
+    message: `Agent ${existing.name} 被删除（tombstone）`,
+    metadata: { agentId: targetId, agentName: existing.name, operatorAgentId: ctx.agentSnapshot?.id, deletedAt: new Date().toISOString() },
+  }).catch(() => {});
+  return { success: true, message: `Agent ${existing.name} 已标记为 deleted（tombstone 保留）。session/message/memory 将级联清理。` };
+}
+
+async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const targetId = String(args.id || "");
+  const includeMemory = args.includeMemory !== false;
+  const agent = await ctx.services.agent.getById(targetId);
+  if (!agent) return { error: "Agent 不存在" };
+  // 获取最近 session + 消息
+  const sessions = await ctx.prisma?.chatSession.findMany({
+    where: { agentId: targetId },
+    include: { messages: { orderBy: { createdAt: "desc" }, take: 20 } },
+    take: 5,
+    orderBy: { updatedAt: "desc" },
+  });
+  let memories: unknown[] = [];
+  if (includeMemory) {
+    memories = await ctx.prisma?.memory.findMany({ take: 20, orderBy: { updatedAt: "desc" } }) ?? [];
+  }
+  return {
+    agent: { id: agent.id, name: agent.name, tier: agent.tier, status: agent.status, model: agent.model, systemPrompt: agent.systemPrompt.slice(0, 200) },
+    sessions: sessions?.map((s: any) => ({ id: s.id, title: s.title, isMainSession: s.isMainSession, messageCount: s.messages?.length })) ?? [],
+    recentMessages: sessions?.flatMap((s: any) => s.messages?.map((m: any) => ({ role: m.role, content: m.content?.slice(0, 100), source: m.source })) ?? []) ?? [],
+    memories: memories.slice(0, 10),
+  };
+}
+
+async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { getSwarmBus } = await import("./swarmBus.js");
+  if (!ctx.prisma) throw new Error("agent_send_message 需要 prisma 上下文");
+  const bus = getSwarmBus(ctx.prisma, ctx.services);
+  const result = await bus.send(
+    {
+      fromAgentId: ctx.agentSnapshot?.id ?? "",
+      toAgentId: String(args.toAgentId || ""),
+      content: String(args.content || ""),
+      messageType: args.messageType as any,
+      source: ctx.agentSnapshot?.tier as any,
+      taskRef: args.taskRef as string | undefined,
+    },
+    ctx.agentSnapshot?.tier ?? "sub",
+    ctx.agentSnapshot?.workspaceId ?? null,
+    ctx.inToolRound ?? false,
+  );
+  return result.success ? { success: true, message: result.message } : { error: `[${result.error?.code}] ${result.error?.reason}` };
+}
+
+async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  // report_back = 向上级发消息。目标 = parentId
+  if (!ctx.agentSnapshot?.parentId) {
+    return { error: "当前 Agent 无上级（parentId 为空），无法 report_back。" };
+  }
+  const { getSwarmBus } = await import("./swarmBus.js");
+  if (!ctx.prisma) throw new Error("agent_report_back 需要 prisma 上下文");
+  const bus = getSwarmBus(ctx.prisma, ctx.services);
+  const result = await bus.send(
+    {
+      fromAgentId: ctx.agentSnapshot.id,
+      toAgentId: ctx.agentSnapshot.parentId,
+      content: String(args.content || ""),
+      messageType: (args.messageType as any) ?? "report",
+      source: ctx.agentSnapshot.tier as any,
+      taskRef: args.taskRef as string | undefined,
+    },
+    ctx.agentSnapshot?.tier ?? "sub",
+    ctx.agentSnapshot?.workspaceId ?? null,
+    ctx.inToolRound ?? false, // report_back 应在正式回复中调用（inToolRound=false）
+  );
+  return result.success ? { success: true, message: "已向上级回报。" } : { error: `[${result.error?.code}] ${result.error?.reason}` };
+}
+
+async function agentCreateSubTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  // 管理 Agent 在本 Workspace 内创建子 Agent
+  const created = await ctx.services.agent.create({
+    name: String(args.name || ""),
+    description: args.description ? String(args.description) : undefined,
+    model: args.model ? String(args.model) : "deepseek-v4-flash",
+    systemPrompt: args.systemPrompt ? String(args.systemPrompt) : "",
+    tools: Array.isArray(args.tools) ? (args.tools as string[]) : [],
+    tier: "sub",
+    workspaceId: ctx.agentSnapshot?.workspaceId ?? undefined,
+    parentId: ctx.agentSnapshot?.id,
+    apiKey: args.apiKey as string | undefined,
+  });
+  if (!created.success || !created.data) return { error: created.error?.message ?? "创建子 Agent 失败" };
+  // 审计日志
+  await ctx.services.log?.create?.({
+    level: "info", component: "swarm", event: "sub_agent_created",
+    message: `子 Agent ${created.data.name} 被创建`,
+    metadata: { agentId: created.data.id, parentAgentId: ctx.agentSnapshot?.id, workspaceId: ctx.agentSnapshot?.workspaceId },
+  }).catch(() => {});
+  return { success: true, agentId: created.data.id, name: created.data.name };
+}
+
+async function workspaceCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const name = String(args.name || "");
+  const path = String(args.path || "");
+  if (!name || !path) return { error: "workspace_create 需要 name 和 path" };
+  // 创建 Workspace
+  const wsResult = await ctx.services.workspace.create({ name, description: args.description as string | undefined, path });
+  if (!wsResult.success || !wsResult.data) return { error: wsResult.error?.message ?? "创建 Workspace 失败" };
+  const wsId = wsResult.data.id;
+  // 自动创建管理 Agent
+  const managerPrompt = args.managerSystemPrompt as string | undefined ??
+    `你是 ${name} 的管理 Agent。\n你的职责是管理本 Workspace 内的子 Agent，接收来自超级 Agent 或用户的命令并执行/分配。\n你可以创建子 Agent，可以与子 Agent 通信，可以向上级回报结果。`;
+  const mgrResult = await ctx.services.agent.create({
+    name: `${name} 管理 Agent`,
+    description: `${name} Workspace 的管理 Agent`,
+    model: (args.managerModel as string) ?? "deepseek-v4-flash",
+    systemPrompt: managerPrompt,
+    tools: [
+      "native:web_search", "native:read_file", "native:write_file", "native:list_directory",
+      "native:invoke_api", "native:run_async", "native:spawn_subagent", "native:task_status",
+      "native:await_async", "native:cancel_async",
+      "native:agent_create_sub", "native:agent_send_message", "native:agent_report_back",
+    ],
+    tier: "manager",
+    workspaceId: wsId,
+    parentId: ctx.agentSnapshot?.id,
+  });
+  let managerAgentId: string | undefined;
+  if (mgrResult.success && mgrResult.data) {
+    managerAgentId = mgrResult.data.id;
+    // 关联管理 Agent 到 Workspace
+    await ctx.prisma?.workspace.update({ where: { id: wsId }, data: { managerAgentId } }).catch(() => {});
+    // 创建主 session
+    await ctx.services.session.create({
+      title: `${name} 管理主会话`,
+      model: (args.managerModel as string) ?? "deepseek-v4-flash",
+      agentId: managerAgentId,
+      isMainSession: true,
+    }).catch(() => {});
+  }
+  // 自动创建 .knowpilot/ 目录结构（#30）
+  const { resolveSafePath } = await import("./safePath.js");
+  try {
+    const wsPath = resolveSafePath(ctx.config, path);
+    const fs = await import("node:fs/promises");
+    await fs.mkdir(`${wsPath}/.knowpilot/shared/data`, { recursive: true });
+    await fs.mkdir(`${wsPath}/.knowpilot/shared/scratch`, { recursive: true });
+    await fs.writeFile(`${wsPath}/.knowpilot/state.json`, "{}");
+    await fs.appendFile(`${wsPath}/.knowpilot/log.jsonl`, JSON.stringify({ event: "workspace_created", at: new Date().toISOString(), by: ctx.agentSnapshot?.id }) + "\n");
+  } catch (err) {
+    console.warn(`[workspace_create] .knowpilot/ 目录创建失败:`, err);
+  }
+  // 审计日志
+  await ctx.services.log?.create?.({
+    level: "info", component: "swarm", event: "workspace_created",
+    message: `Workspace ${name} 被创建（管理 Agent: ${managerAgentId ?? "未创建"}）`,
+    metadata: { workspaceId: wsId, managerAgentId, operatorAgentId: ctx.agentSnapshot?.id },
+  }).catch(() => {});
+  return { success: true, workspaceId: wsId, managerAgentId, message: `Workspace ${name} 已创建，管理 Agent 已就绪。` };
+}
+
+async function workspaceArchiveTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const wsId = String(args.id || "");
+  // 归档：Workspace status=archived + 所有 Agent status=dormant
+  await ctx.services.workspace.update({ id: wsId, status: "archived" } as any).catch(() => {});
+  const agents = await ctx.prisma?.agent.findMany({ where: { workspaceId: wsId, status: { not: "deleted" } } }) ?? [];
+  for (const a of agents) {
+    await ctx.services.agent.update({ id: a.id, status: "dormant" } as any).catch(() => {});
+  }
+  await ctx.services.log?.create?.({
+    level: "info", component: "swarm", event: "workspace_archived",
+    message: `Workspace ${wsId} 已归档（${agents.length} 个 Agent 设为 dormant）`,
+    metadata: { workspaceId: wsId, agentCount: agents.length, operatorAgentId: ctx.agentSnapshot?.id },
+  }).catch(() => {});
+  return { success: true, message: `Workspace 已归档，${agents.length} 个 Agent 设为 dormant。可随时恢复。` };
 }
 
 export function resolveAllowedNativeTools(agentTools: string[]): string[] | "all" {

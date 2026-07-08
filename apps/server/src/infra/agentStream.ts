@@ -132,7 +132,7 @@ async function runAgentLoopStream(options: {
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
   emit: (event: AgentStreamEvent) => void;
   sessionId?: string;
-  agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[] };
+  agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; workspaceId?: string | null; parentId?: string | null };
   signal?: AbortSignal;
 }): Promise<{
   content: string;
@@ -230,7 +230,10 @@ async function runAgentLoopStream(options: {
         throw err;
       }
 
+      // 工具调用轮次中：标记 inToolRound=true，向上发消息被权限层拦截（#41）
+      toolCtx.inToolRound = true;
       const batchResults = await executeToolCallsBatch(probe.toolCalls, toolCtx, registry, parsed, options.signal);
+      toolCtx.inToolRound = false;
       for (const { call, parsed: parsedCall, result } of batchResults) {
         executedTools.push({
           id: call.id,
@@ -615,6 +618,9 @@ export async function chatAgentStream(
         model: effectiveModel,
         systemPrompt: effectiveSystemPrompt || agent.systemPrompt,
         tools: agent.tools,
+        tier: (agent as any).tier ?? "sub",
+        workspaceId: (agent as any).workspaceId ?? null,
+        parentId: (agent as any).parentId ?? null,
       },
       signal,
     });

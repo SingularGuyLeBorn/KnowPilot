@@ -34,18 +34,40 @@ model Post {
 /// Agent 配置
 model Agent {
   id           String   @id @default(cuid())
-  name         String   @unique
+  name         String                    /// 名称（可重复，id 才是全局唯一标识）
   description  String?
   model        String   @default("deepseek-chat")
   systemPrompt String   @default("")
   tools        String   @default("") /// 逗号分隔的工具名称列表
   sourceSlug   String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime  DateTime?        /// 本地源文件最后修改时间（用于增量同步）
+  // Swarm 三层层级
+  tier         String   @default("sub")  /// "super" | "manager" | "sub"
+  workspaceId  String?                     /// 所属 Workspace（super 无）
+  parentId     String?                     /// 上级 Agent id（super 无）
+  apiKey       String?                     /// 专属 API Key（不设则用 env）
+  heartbeatModel String?                   /// 心跳用便宜模型（不设则用 model）
+  heartbeat    Json?                       /// { enabled, cron, goal, lastRunAt, lastRunStatus, consecutiveFailures }
+  status       String   @default("active") /// "active" | "idle" | "dormant" | "deleted"（tombstone）
+  deletedAt    DateTime?                   /// 删除时间（tombstone）
+  deletedBy    String?                     /// 删除者（"user" | agentId）
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   // P1-8：补外键关系，删 Agent 后 session/run 的 agentId 置 null，不再留孤儿引用
   sessions     ChatSession[]
   runs         Run[]
+  // Swarm 层级关系
+  workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  parent       Agent?     @relation("AgentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Agent[]    @relation("AgentHierarchy")
+  // Agent 间消息
+  sentMessages     AgentMessage[] @relation("AgentMsgFrom")
+  receivedMessages AgentMessage[] @relation("AgentMsgTo")
+  // Workspace 的管理 Agent 反向关系
+  managedWorkspace Workspace? @relation("WorkspaceManager")
+  @@index([tier, status])
+  @@index([workspaceId, tier])
+  @@index([parentId])
 }
 
 /// 技能 (Skill)
@@ -79,6 +101,8 @@ model ChatSession {
   status       String        @default("active")
   // 任务描述（subagent 的任务文本）
   taskDescription String?
+  // 主 session 标记：管理 Agent 的主 session 用于接收命令，置顶显示
+  isMainSession Boolean @default(false)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   // P1-8：外键到 Agent，删 Agent 时 agentId 置 null
@@ -103,6 +127,7 @@ model ChatMessage {
   toolResults  Json?       /// 工具执行结果
   tokenUsage   Json?       /// { prompt, completion, total }
   finishReason String?     /// "stop" | "aborted" 等流式结束原因
+  source       String      @default("user") /// "user" | "super" | "manager" | "sub" | "system"（心跳）
   createdAt    DateTime    @default(now())
   session      ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
@@ -209,12 +234,20 @@ model InfoSource {
 
 /// 工作区管理 (Workspace)
 model Workspace {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  path        String   @unique /// 对应硬盘上的目录路径
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String                    /// 名称（可重复，id 全局唯一）
+  description    String?
+  path           String   @unique /// 对应硬盘上的目录路径
+  managerAgentId String?  @unique                /// 该 Workspace 的管理 Agent id
+  status         String   @default("active") /// "active" | "archived" | "deleted"（tombstone）
+  deletedAt      DateTime?                 /// 删除时间
+  deletedBy      String?                   /// 删除者
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  // 关系
+  managerAgent   Agent?   @relation("WorkspaceManager", fields: [managerAgentId], references: [id], onDelete: SetNull)
+  agents         Agent[]
+  @@index([status])
 }
 
 /// 触发器配置 (Trigger)
@@ -265,6 +298,7 @@ model Run {
   tokenUsage Json?
   error      Json?
   durationMs Int?
+  toolCallCount Int?  /// 本次运行调用的工具总次数（Swarm 监控统计）
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   // P1-8：外键，删 Agent/Session 时对应字段置 null
@@ -299,4 +333,25 @@ model Credential {
   metadata   String?   /// JSON 字符串，保存 refresh_token、scope 等扩展信息
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+}
+
+/// Agent 间消息（Swarm 通信通道）
+model AgentMessage {
+  id          String   @id @default(cuid())
+  fromAgentId String   /// 发送方 Agent id
+  toAgentId   String   /// 接收方 Agent id
+  sessionId   String?  /// 投递到哪个 ChatSession（null 表示待投递）
+  content     String   /// 消息内容（纯文本或结构化 JSON）
+  messageType String   @default("command") /// "command" | "query" | "report" | "forward"
+  source      String   @default("manager") /// "super" | "manager" | "sub" | "user" | "system"
+  depth       Int      @default(1)  /// 委托层级（防循环）
+  taskRef     String?  /// 关联的 taskId（可选）
+  status      String   @default("pending") /// "pending" | "delivered" | "consumed"
+  createdAt   DateTime @default(now())
+  deliveredAt DateTime?
+  // 关系
+  fromAgent   Agent    @relation("AgentMsgFrom", fields: [fromAgentId], references: [id], onDelete: Cascade)
+  toAgent     Agent    @relation("AgentMsgTo", fields: [toAgentId], references: [id], onDelete: Cascade)
+  @@index([toAgentId, status])
+  @@index([fromAgentId])
 }

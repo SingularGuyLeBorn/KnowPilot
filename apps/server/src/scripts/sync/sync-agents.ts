@@ -55,26 +55,33 @@ export const agentSyncer: Syncer<AgentData> = {
   async upsert(prisma: PrismaClient, record: SyncRecord<AgentData>): Promise<void> {
     const { slug, mtime, data } = record;
 
-    await prisma.agent.upsert({
-      where: { name: data.name },
-      update: {
-        description: data.description,
-        model: data.model,
-        systemPrompt: data.systemPrompt,
-        tools: data.tools,
-        sourceSlug: slug,
-        sourceMtime: mtime,
-      },
-      create: {
-        name: data.name,
-        description: data.description,
-        model: data.model,
-        systemPrompt: data.systemPrompt,
-        tools: data.tools,
-        sourceSlug: slug,
-        sourceMtime: mtime,
-      },
-    });
+    // name 不再 @unique（swarm 允许重名），用 sourceSlug 做 upsert 唯一键
+    const existing = await prisma.agent.findFirst({ where: { sourceSlug: slug } });
+    if (existing) {
+      await prisma.agent.update({
+        where: { id: existing.id },
+        data: {
+          name: data.name,
+          description: data.description,
+          model: data.model,
+          systemPrompt: data.systemPrompt,
+          tools: data.tools,
+          sourceMtime: mtime,
+        },
+      });
+    } else {
+      await prisma.agent.create({
+        data: {
+          name: data.name,
+          description: data.description,
+          model: data.model,
+          systemPrompt: data.systemPrompt,
+          tools: data.tools,
+          sourceSlug: slug,
+          sourceMtime: mtime,
+        },
+      });
+    }
   },
 
   async cleanup(prisma: PrismaClient, activeSlugs: string[], _contentDir?: string): Promise<number> {

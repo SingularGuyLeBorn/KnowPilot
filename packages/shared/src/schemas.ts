@@ -54,12 +54,32 @@ export const searchPostsSchema = z.object({
    Agent (AI 代理)
    ═══════════════════════════════════════════════════════ */
 
+export const agentTierSchema = z.enum(["super", "manager", "sub"]);
+export const agentStatusSchema = z.enum(["active", "idle", "dormant", "deleted"]);
+export const workspaceStatusSchema = z.enum(["active", "archived", "deleted"]);
+
+export const heartbeatConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  cron: z.string().default("0 9 * * *"),
+  goal: z.string().default(""),
+  lastRunAt: z.string().nullable().optional(),
+  lastRunStatus: z.string().nullable().optional(),
+  consecutiveFailures: z.number().default(0),
+});
+
 export const createAgentSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(100),
   description: z.string().optional(),
   model: z.string().default("deepseek-chat"),
   systemPrompt: z.string().default(""),
-  tools: z.array(z.string()).default([]), // 前端用数组，后端转逗号分隔
+  tools: z.array(z.string()).default([]),
+  // Swarm 层级（不传则 service 层默认 "sub"）
+  tier: agentTierSchema.optional(),
+  workspaceId: z.string().cuid().optional(),
+  parentId: z.string().cuid().optional(),
+  apiKey: z.string().optional(),
+  heartbeatModel: z.string().optional(),
+  heartbeat: heartbeatConfigSchema.optional(),
 });
 
 export const updateAgentSchema = z.object({
@@ -69,12 +89,25 @@ export const updateAgentSchema = z.object({
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   tools: z.array(z.string()).optional(),
+  // Swarm
+  tier: agentTierSchema.optional(),
+  workspaceId: z.string().cuid().nullable().optional(),
+  parentId: z.string().cuid().nullable().optional(),
+  apiKey: z.string().nullable().optional(),
+  heartbeatModel: z.string().nullable().optional(),
+  heartbeat: heartbeatConfigSchema.optional(),
+  status: agentStatusSchema.optional(),
 });
 
 export const listAgentsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
   keyword: z.string().optional(),
+  // Swarm 过滤
+  tier: agentTierSchema.optional(),
+  workspaceId: z.string().cuid().optional(),
+  parentId: z.string().cuid().optional(),
+  status: agentStatusSchema.optional(),
 });
 
 export const agentRunSchema = z.object({
@@ -220,6 +253,7 @@ export const createSessionSchema = z.object({
   kind: z.enum(["chat", "subagent"]).optional(),
   taskDescription: z.string().max(2000).optional(),
   status: sessionStatusSchema.optional(),
+  isMainSession: z.boolean().optional(), // 管理 Agent 的主 session
 });
 
 export const updateSessionSchema = z.object({
@@ -268,6 +302,7 @@ export const createMessageSchema = z.object({
     total: z.number(),
   }).optional(),
   finishReason: z.string().optional(),
+  source: z.enum(["user", "super", "manager", "sub", "system"]).optional(), // 不传则 service 层默认 "user"
 });
 
 export const updateMessageSchema = z.object({
@@ -513,6 +548,7 @@ export const createWorkspaceSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(100),
   description: z.string().optional(),
   path: safePathString,
+  autoCreateManager: z.boolean().optional(), // 自动创建管理 Agent（不传则默认 true，由 service 处理）
 });
 
 export const updateWorkspaceSchema = z.object({
@@ -520,12 +556,14 @@ export const updateWorkspaceSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().optional(),
   path: safePathString.optional(),
+  status: workspaceStatusSchema.optional(),
 });
 
 export const listWorkspacesSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
   keyword: z.string().optional(),
+  status: workspaceStatusSchema.optional(),
 });
 
 /* ═══════════════════════════════════════════════════════
