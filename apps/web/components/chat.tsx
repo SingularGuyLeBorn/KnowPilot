@@ -1808,7 +1808,7 @@ export function ChatView() {
             supportsVision={!!modelOpt.supportsVision}
             sessionHint={
               isSubagentSession
-                ? "这是子代理任务会话，发送的消息将由子代理处理（结果会投递回父会话）。"
+                ? "这是子代理任务会话。你直接发送的消息只在本会话内处理，不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话。"
                 : undefined
             }
           />

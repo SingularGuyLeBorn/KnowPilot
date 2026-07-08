@@ -111,6 +111,8 @@ export interface NativeToolContext {
   };
   /** 当前 ReAct 轮次是否仍在工具调用中（向上发消息时机约束 #41） */
   inToolRound?: boolean;
+  /** 本次运行的触发来源：user=用户直接对话（禁止向上回传）；parent=上级下发任务（结果经 Task 投递回传）；heartbeat=心跳 */
+  runOrigin?: "user" | "parent" | "heartbeat";
 }
 
 type NativeToolHandler = (args: Record<string, unknown>, ctx: NativeToolContext) => Promise<unknown>;
@@ -3061,6 +3063,14 @@ async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeTo
 }
 
 async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  // 硬拦截：用户直接发起的对话不回传上级（只有上级下发的任务才需要回报，
+  // 而上级下发的任务结果经 Task 投递机制自动回传，无需调用本工具）
+  if (ctx.runOrigin === "user") {
+    return {
+      error: "[USER_ORIGIN_NO_REPORT] 这是用户直接发起的对话，回复只保留在当前会话内，不回传上级。只有上级 Agent 下发的任务才会将结果投递回上级。",
+      permissionDenied: true,
+    };
+  }
   // report_back = 向上级发消息。目标 = parentId
   if (!ctx.agentSnapshot?.parentId) {
     return { error: "当前 Agent 无上级（parentId 为空），无法 report_back。" };

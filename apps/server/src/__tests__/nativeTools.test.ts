@@ -42,6 +42,36 @@ describe("Native 工具注册表", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  it("agent_report_back 在用户直接对话(runOrigin=user)中被硬拦截", async () => {
+    const root = createTempProjectDir();
+    const ctx = {
+      ...createNativeCtx(root),
+      runOrigin: "user" as const,
+      agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
+    };
+    const result = (await executeNativeTool("agent_report_back", { content: "汇报" }, ctx)) as {
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain("USER_ORIGIN_NO_REPORT");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("agent_report_back 在上级下发任务(runOrigin=parent)中不被 user 拦截", async () => {
+    const root = createTempProjectDir();
+    const ctx = {
+      ...createNativeCtx(root),
+      runOrigin: "parent" as const,
+      // 无 parentId：走到"无上级"分支而非 USER_ORIGIN_NO_REPORT 拦截
+      agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: null },
+    };
+    const result = (await executeNativeTool("agent_report_back", { content: "汇报" }, ctx)) as { error?: string };
+    expect(result.error).not.toContain("USER_ORIGIN_NO_REPORT");
+    expect(result.error).toContain("无上级");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   it("isUnreadableArticlePage 识别 404 标题", () => {
     expect(isUnreadableArticlePage("404 页面不存在 - 博客园", 73)).toBe(true);
     expect(isUnreadableArticlePage("正常标题", 73)).toBe(false);

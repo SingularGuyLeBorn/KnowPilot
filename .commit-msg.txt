@@ -1,0 +1,11 @@
+fix(swarm): 用户直接发给子代理的对话不回传主 Agent
+
+规则：只有主 Agent 下发的任务需要回传结果，用户直接对话保留在子代理会话内。
+
+- NativeToolContext 加 runOrigin 字段：user=用户直接对话 / parent=上级下发 / heartbeat=心跳
+- chatAgentStream（SSE 对话流，始终用户发起）标记 runOrigin=user
+- agent_report_back 硬拦截：runOrigin=user 时返回 USER_ORIGIN_NO_REPORT 错误+原因，
+  不向上级发送任何消息（上级下发任务的结果本就经 Task 投递机制回传，无需此工具）
+- 修正子代理会话输入框提示文案：明确直接发送的消息只在本会话内处理，
+  不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话
+- 新增 2 个单元测试：user 拦截 + parent 不拦截

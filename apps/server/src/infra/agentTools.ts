@@ -419,7 +419,7 @@ export function createAgentToolContext(
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>,
   parsed: ParsedAgentTools,
   skillNames?: string[],
-  meta?: { sessionId?: string; agentSnapshot?: NativeToolContext["agentSnapshot"] },
+  meta?: { sessionId?: string; agentSnapshot?: NativeToolContext["agentSnapshot"]; runOrigin?: NativeToolContext["runOrigin"] },
 ): AgentToolContext {
   return {
     config,
@@ -428,6 +428,7 @@ export function createAgentToolContext(
     invokeTrpc,
     sessionId: meta?.sessionId,
     agentSnapshot: meta?.agentSnapshot,
+    runOrigin: meta?.runOrigin,
     allowedNative: parsed.native,
     allowedSkills: skillNames ?? parsed.skills,
     allowedMcpServers: parsed.mcpServers,

@@ -148,6 +148,9 @@ async function runAgentLoopStream(options: {
   const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
     sessionId: options.sessionId,
     agentSnapshot: options.agentMeta,
+    // SSE 对话流始终由用户直接发起：禁止向上回传（agent_report_back 硬拦截）。
+    // 上级下发的任务走 buildAsyncExecute（runOrigin=parent），结果经 Task 投递回传。
+    runOrigin: "user",
   });
   const maxRounds = options.config.llm.maxToolRounds;
 
