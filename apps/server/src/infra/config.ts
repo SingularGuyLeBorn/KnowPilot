@@ -42,6 +42,8 @@ export interface AppConfig {
     defaultProvider: string;
     dailyBudget: number;
     maxToolRounds: number;
+    /** 单次 Agent 运行的总工具调用次数上限（#32a：用户确认 168） */
+    maxToolCallsPerRun: number;
     /** 单次工具调用超时毫秒，超时则该工具返回错误结果而非永久挂起 */
     toolCallTimeoutMs: number;
     /** 单轮内并发执行的工具数上限，避免一次开太多工具调用拖垮后端/触发限流 */
@@ -298,6 +300,8 @@ export function createAppConfig(): AppConfig {
       dailyBudget: parseFloat(readEnv("LLM_DAILY_BUDGET") || "10"),
       // 默认 12 轮：覆盖绝大多数 ReAct 场景，避免坏 LLM 空转到 100 轮长时间转圈
       maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "12", 10)),
+      // #32a：单次运行总工具调用上限 168（用户确认）
+      maxToolCallsPerRun: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_CALLS_PER_RUN") || "168", 10)),
       // 默认 30s 超时 + 并发 2：收紧以避免慢工具（fetch/MCP）长时间占槽导致卡死；
       // 慢工具应由 run_async 转异步而非阻塞主循环
       toolCallTimeoutMs: Math.max(2000, parseInt(readEnv("AGENT_TOOL_CALL_TIMEOUT_MS") || "30000", 10)),
