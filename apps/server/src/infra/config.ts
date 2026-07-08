@@ -150,6 +150,12 @@ function resolveProjectRoot(): string {
 }
 
 function resolveContentDir(projectRoot: string): string {
+  // 测试隔离（#2）：KP_CONTENT_DIR 覆盖 content 目录，测试产物不落入真实 content/
+  const envDir = process.env.KP_CONTENT_DIR?.trim();
+  if (envDir) {
+    return path.isAbsolute(envDir) ? envDir : path.resolve(projectRoot, envDir);
+  }
+
   const contentDir = path.join(projectRoot, "content");
   if (fs.existsSync(contentDir)) return contentDir;
 
