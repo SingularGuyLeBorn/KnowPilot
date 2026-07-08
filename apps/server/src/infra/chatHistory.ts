@@ -12,7 +12,7 @@ export interface StoredToolCall {
   name: string;
   args: unknown;
   result: unknown;
-  kind?: "tool" | "thinking";
+  kind?: "tool" | "thinking" | "content";
 }
 
 export function parseStoredToolCalls(raw: unknown): StoredToolCall[] {
@@ -22,7 +22,12 @@ export function parseStoredToolCalls(raw: unknown): StoredToolCall[] {
     name: String(tc?.name ?? ""),
     args: tc?.args ?? {},
     result: tc?.result ?? null,
-    kind: tc?.kind === "thinking" ? "thinking" : "tool",
+    kind:
+      tc?.kind === "thinking"
+        ? "thinking"
+        : tc?.kind === "content" || tc?.name === "__content__"
+          ? "content"
+          : "tool",
   }));
 }
 
@@ -116,7 +121,7 @@ export function buildLlmMessagesFromHistory(
 
     const active = getActiveAssistantPayload(msg);
     const allCalls = parseStoredToolCalls(active.toolCalls);
-    const tools = allCalls.filter((tc) => tc.kind !== "thinking");
+    const tools = allCalls.filter((tc) => tc.kind !== "thinking" && tc.kind !== "content");
     const reasoningContent = buildReasoningContentFromStored(active.toolCalls);
 
     if (tools.length > 0) {

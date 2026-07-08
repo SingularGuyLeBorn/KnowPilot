@@ -95,6 +95,41 @@ async function* delayYield<T>(items: T[], ms = 8): AsyncGenerator<T> {
 
 const scenarios: MockLlmScenario[] = [
   {
+    name: "intermediate_content_final",
+    match: (opts, forced) =>
+      forced === "intermediate_content_final" ||
+      (hasAnyToolResult(opts) && /中间回复|intermediate/i.test(lastUserText(opts))),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "已完成工具调用，这是基于结果的最终回答。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      const content = "已完成工具调用，这是基于结果的最终回答。";
+      for (const token of content.split("")) {
+        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+      }
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 第一轮：返回中间正式回复 + web_search tool_call（验证中间回复进导轨）
+    name: "intermediate_content",
+    match: (opts, forced) =>
+      forced === "intermediate_content" ||
+      (/中间回复|intermediate/i.test(lastUserText(opts)) &&
+        hasTool(opts, "web_search") &&
+        !hasAnyToolResult(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "我将先搜索相关资料，然后给出回答。",
+      toolCalls: [makeToolCall("web_search", { query: "KnowPilot intermediate" })],
+    }),
+    stream: async function* (opts) {
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
     name: "web_search_final",
     match: (opts, forced) =>
       forced === "web_search_final" ||

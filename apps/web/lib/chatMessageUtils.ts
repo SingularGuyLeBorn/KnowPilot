@@ -10,7 +10,7 @@ export type ToolCallRecord = {
   name: string;
   args: unknown;
   result: unknown;
-  kind?: "tool" | "thinking";
+  kind?: "tool" | "thinking" | "content";
 };
 
 export interface AssistantVersionEntry {
@@ -34,7 +34,12 @@ export function parseToolCalls(raw: unknown): ToolCallRecord[] {
     name: String(tc?.name ?? ""),
     args: tc?.args ?? {},
     result: tc?.result ?? null,
-    kind: tc?.kind === "thinking" || tc?.name === "__thinking__" ? "thinking" : "tool",
+    kind:
+      tc?.kind === "thinking" || tc?.name === "__thinking__"
+        ? "thinking"
+        : tc?.kind === "content" || tc?.name === "__content__"
+          ? "content"
+          : "tool",
   }));
 }
 
@@ -103,6 +108,7 @@ export function getActiveVersion(group: MessageGroup): AssistantVersionEntry | n
 
 export type TimelineStep =
   | { type: "thinking"; content: string; round: number }
+  | { type: "content"; content: string; round: number }
   | {
       type: "tool";
       toolCallId: string;
@@ -124,6 +130,8 @@ export function buildTimelineFromStored(toolCalls?: ToolCallRecord[]): TimelineS
       typeof (tc.args as { round?: number })?.round === "number" ? (tc.args as { round: number }).round : 1;
     if (tc.kind === "thinking") {
       steps.push({ type: "thinking", content: String(tc.result ?? ""), round });
+    } else if (tc.kind === "content") {
+      steps.push({ type: "content", content: String(tc.result ?? ""), round });
     } else {
       steps.push({
         type: "tool",

@@ -111,4 +111,35 @@ describe("chatHistory 工具回放", () => {
     expect(typeof messages[1].content).toBe("string");
     expect(messages[1].content).toContain("GRPO");
   });
+
+  it("parseStoredToolCalls 识别 content kind（中间正式回复）", () => {
+    const tools = parseStoredToolCalls([
+      { id: "content_1", name: "__content__", args: { round: 1 }, result: "我将先搜索。", kind: "content" },
+      { id: "call_1", name: "web_search", args: { query: "x" }, result: { ok: true } },
+    ]);
+    expect(tools[0].kind).toBe("content");
+    expect(tools[1].kind).toBe("tool");
+  });
+
+  it("buildLlmMessagesFromHistory 跳过 content kind（不污染 ReAct 重建）", () => {
+    // 中间正式回复进导轨展示，但重建 LLM messages 时必须跳过（与 thinking 同处理），
+    // 否则会被当作 tool_call 拆成 assistant(content=null, tool_calls) 污染历史。
+    const messages = buildLlmMessagesFromHistory("system", [
+      { role: "user", content: "中间回复测试" },
+      {
+        role: "assistant",
+        content: "最终回答",
+        toolCalls: [
+          { id: "content_1", name: "__content__", args: { round: 1 }, result: "我将先搜索。", kind: "content" },
+          { id: "call_1", name: "web_search", args: { query: "x" }, result: { hits: 1 }, kind: "tool" },
+        ],
+      },
+    ]);
+    // 重建后：assistant(content=null, tool_calls=[web_search]) → tool → assistant(content=final)
+    // content_1 不应出现为 tool_call
+    expect(messages.map((m) => m.role)).toEqual(["system", "user", "assistant", "tool", "assistant"]);
+    expect(messages[2].tool_calls?.[0].id).toBe("call_1");
+    expect(messages[2].tool_calls?.some((tc) => tc.id === "content_1")).toBe(false);
+    expect(messages[4].content).toBe("最终回答");
+  });
 });

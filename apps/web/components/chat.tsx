@@ -127,6 +127,24 @@ function ThinkingStep({
   );
 }
 
+/** 中间正式回复（工具轮次中 probe 返回的 content，后续仍有工具调用）。进导轨，无圆点。 */
+function ContentStep({
+  step,
+}: {
+  step: Extract<TimelineStep, { type: "content" }>;
+}) {
+  const content = step.content.trim();
+  if (!content) return null;
+  return (
+    <div
+      data-testid="intermediate-content-step"
+      className="overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm"
+    >
+      <PostContent content={content} className="prose-sm max-w-none" />
+    </div>
+  );
+}
+
 function ToolStep({
   step,
   isLive = false,
@@ -207,12 +225,22 @@ function ThinkingTimeline({
       </div>
       <div className="min-w-0 flex-1 space-y-3">
         {steps.map((step, i) => {
-          const key = step.type === "tool" ? step.toolCallId : `thinking-${step.round}-${i}`;
+          const key =
+            step.type === "tool"
+              ? step.toolCallId
+              : step.type === "content"
+                ? `content-${step.round}-${i}`
+                : `thinking-${step.round}-${i}`;
+          // 圆点仅给 thinking；content / tool 共享竖线但不画圆点（对标 Kimi Code）
           return (
             <div key={key} className="relative">
-              <span className="absolute -left-[17px] top-2 h-2.5 w-2.5 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
+              {step.type === "thinking" && (
+                <span className="absolute -left-[17px] top-2 h-2.5 w-2.5 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
+              )}
               {step.type === "thinking" ? (
                 <ThinkingStep step={step} isLive={isLive && i === steps.length - 1} />
+              ) : step.type === "content" ? (
+                <ContentStep step={step} />
               ) : (
                 <ToolStep step={step} isLive={isLive} />
               )}
@@ -857,6 +885,13 @@ export function ChatView() {
               });
             },
             onToken: (delta) => ssSet(originSid, "streamingContent", (prev) => prev + delta),
+            onIntermediateContent: (content, round) => {
+              // 工具轮次中的中间正式回复 → 进导轨时间线（无圆点），不进最终气泡
+              ssSet(originSid, "liveTimeline", (prev) => {
+                if (prev.some((s) => s.type === "content" && s.round === round)) return prev;
+                return [...prev, { type: "content" as const, content, round }];
+              });
+            },
             onToolStart: (name, args, round, toolCallId) => {
               ssSet(originSid, "liveTimeline", (prev) => [...prev, { type: "tool", toolCallId, name, args, round, status: "running" }]);
             },

@@ -153,8 +153,8 @@ export default function SubagentsPage() {
                   </td>
                   <td className="px-3 py-2">
                     <span className="inline-flex items-center gap-1.5">
-                      <span className={cn("h-2 w-2 rounded-full", STATUS_COLOR[s.status] ?? "bg-gray-400")} />
-                      {STATUS_LABEL[s.status] ?? s.status}
+                      <span className={cn("h-2 w-2 rounded-full", STATUS_COLOR[s.status ?? ""] ?? "bg-gray-400")} />
+                      {STATUS_LABEL[s.status ?? ""] ?? s.status ?? "—"}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-[var(--kp-text-3)]">

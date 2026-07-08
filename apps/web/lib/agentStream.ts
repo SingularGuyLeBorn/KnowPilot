@@ -44,6 +44,7 @@ export interface AgentStreamCallbacks {
   onRoundStart?: (round: number) => void;
   onThinking?: (delta: string) => void;
   onToken?: (delta: string) => void;
+  onIntermediateContent?: (content: string, round: number) => void;
   onToolStart?: (name: string, args: unknown, round: number, toolCallId: string) => void;
   onToolEnd?: (name: string, result: unknown, round: number, hint: string | undefined, toolCallId: string) => void;
   onDone?: (data: AgentStreamDone) => void | Promise<void>;
@@ -70,6 +71,9 @@ async function parseSseBlock(block: string, callbacks: AgentStreamCallbacks) {
         break;
       case "token":
         callbacks.onToken?.(payload.delta ?? "");
+        break;
+      case "intermediate_content":
+        callbacks.onIntermediateContent?.(payload.content ?? "", payload.round ?? 1);
         break;
       case "tool_start":
         callbacks.onToolStart?.(payload.name, payload.args, payload.round ?? 1, payload.toolCallId ?? "");

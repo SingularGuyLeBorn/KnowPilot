@@ -36,6 +36,7 @@ export type AgentStreamEvent =
   | { type: "round_start"; round: number }
   | { type: "thinking"; delta: string }
   | { type: "token"; delta: string }
+  | { type: "intermediate_content"; content: string; round: number }
   | { type: "tool_start"; toolCallId: string; name: string; args: unknown; round: number }
   | { type: "tool_end"; toolCallId: string; name: string; result: unknown; round: number; hint?: string }
   | {
@@ -94,6 +95,30 @@ function pushThinking(
       args: { round },
       result: delta,
       kind: "thinking",
+    });
+  }
+}
+
+/** 捕获工具轮次中 probe 返回的中间正式回复（后续仍有 tool_calls），进导轨时间线 */
+function pushIntermediateContent(
+  executedTools: StoredToolCall[],
+  round: number,
+  content: string,
+  emit: (event: AgentStreamEvent) => void,
+) {
+  if (!content?.trim()) return;
+  emit({ type: "intermediate_content", content, round });
+  const id = `content_${round}`;
+  const existing = executedTools.find((t) => t.id === id);
+  if (existing) {
+    existing.result = String(existing.result ?? "") + content;
+  } else {
+    executedTools.push({
+      id,
+      name: "__content__",
+      args: { round },
+      result: content,
+      kind: "content",
     });
   }
 }
@@ -167,6 +192,12 @@ async function runAgentLoopStream(options: {
     }
 
     if (probe.toolCalls.length > 0) {
+      // 工具轮次中 probe 可能同时返回 content（中间正式回复，后续仍有工具调用）
+      // 捕获并 emit，使其进入左侧导轨时间线（对标 Kimi Code / Cursor）
+      if (probe.content && probe.content.trim()) {
+        pushIntermediateContent(executedTools, roundsUsed, probe.content, options.emit);
+      }
+
       const roundReasoning =
         probe.reasoningContent ||
         executedTools
@@ -537,6 +568,21 @@ export async function chatAgentStream(
             args: { round: currentRound },
             result: event.delta,
             kind: "thinking",
+          });
+        }
+      }
+      if (event.type === "intermediate_content" && event.content) {
+        const id = `content_${currentRound}`;
+        const existing = partialToolCalls.find((t) => t.id === id);
+        if (existing) {
+          existing.result = String(existing.result ?? "") + event.content;
+        } else {
+          partialToolCalls.push({
+            id,
+            name: "__content__",
+            args: { round: currentRound },
+            result: event.content,
+            kind: "content",
           });
         }
       }
