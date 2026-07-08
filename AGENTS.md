@@ -54,9 +54,12 @@ KnowPilot/
 │   │       ├── router.ts       # 唯一 API 路由文件（20 业务路由 + about + ai 反射）
 │   │       ├── services.ts     # 唯一业务服务层文件（收拢全部 Service 逻辑）
 │   │       ├── db.ts           # Prisma 单例
-│   │       ├── infra/          # agentTools、nativeTools、mcpClient、autoCompact、agentStream 等
+│   │       ├── infra/          # agentTools、nativeTools、mcpClient、autoCompact、agentStream、
+│   │       │                  # swarmPermissionGuard、swarmBus、swarmInitializer、heartbeatEngine、
+│   │       │                  # asyncJobManager、asyncJobOrchestrator、safePath 等
 │   │       ├── scripts/
 │   │       │   ├── sync.ts     # Markdown/YAML ↔ SQLite 同步入口
+│   │       │   ├── sync-free-keys.ts  # 免费 API Key 同步（GitHub → Credential 表）
 │   │       │   └── sync/       # 各实体 sync-* 脚本
 │   │       ├── __tests__/      # trpc + nativeTools + agentTools + skillRunner + mcpClient
 │   │       └── trpc/
@@ -283,6 +286,46 @@ pnpm lint
 
 - `@knowpilot/server` / `@knowpilot/shared`：`tsc --noEmit`
 - `@knowpilot/web`：`eslint`（`eslint.config.mjs` 使用 `eslint-config-next/core-web-vitals` + `eslint-config-next/typescript`）
+
+---
+
+## Swarm 架构（三层 Agent 层级 + 心跳自主运行）
+
+KnowPilot 已落地完整的 Swarm 能力，设计决策详见 `docs/development/swarmplan.md`（48 项决策全部确认）。
+
+### 三层 Agent 层级
+
+| 层级 | tier | 权限 | 说明 |
+|---|---|---|---|
+| 超级 Agent | `super` | 全局 CRUD + 跨 Workspace | 首次启动自动创建，心跳自主运行 |
+| 管理 Agent | `manager` | Workspace 内 CRUD 子 Agent | 每个 Workspace 一个，自动创建主 session |
+| 子 Agent | `sub` | 执行任务 + report_back | 由管理 Agent 或用户创建 |
+
+### 核心模块
+
+| 模块 | 文件 | 说明 |
+|---|---|---|
+| 权限硬拦截 | `infra/swarmPermissionGuard.ts` | tier 校验 + 向上发消息时机 + 跨 Workspace + depth 防循环 |
+| Agent 间消息 | `infra/swarmBus.ts` | LocalSwarmBus（SQLite AgentMessage 表） |
+| 心跳引擎 | `infra/heartbeatEngine.ts` | node-cron 定时触发 + 预算检查 + 并发控制 |
+| 超级 Agent 初始化 | `infra/swarmInitializer.ts` | 首次启动自动创建 |
+| Swarm native tools | `infra/nativeTools.ts` | agent_create/update/delete/inspect/send_message/report_back + workspace_create/archive + skill_discover/promote + send_email + free_api_keys |
+
+### 环境变量
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `SWARM_MODE` | `local` | `local`（零依赖）/ `redis`（BullMQ，Phase 4） |
+| `EMAIL_PROVIDER` | `none` | `none` / `smtp` / `agentemail` |
+| `AGENT_MAX_TOOL_CALLS_PER_RUN` | `168` | 单次运行工具调用上限 |
+| `AGENT_DESTRUCTIVE_APPROVAL` | `false` | true 时删除操作走审批 |
+
+### 启用免费 API Key 同步
+
+```bash
+pnpm --filter @knowpilot/server run sync-free-keys     # 单次同步
+pnpm --filter @knowpilot/server run sync-free-keys:watch  # 定时刷新
+```
 
 ---
 
