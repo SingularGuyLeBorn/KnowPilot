@@ -53,6 +53,19 @@ content/posts/draft-search-test-*.md
 content/posts/e2e-trash-*.md
 content/posts/.trash/
 content/uploads/vitest-test-file-*
+# 测试数据隔离（#2）：Vitest 用 test.db + .test-content，以下为 E2E/漏网 smoke 产物防御
+.test-content/
+content/posts/smoke-post-*.md
+content/agents/Smoke Agent*.md
+content/agents/ApprovalGate_*.md
+content/agents/*子代理*.md
+content/skills/smoke_skill_*.md
+content/skills/Test Skill*.md
+content/mcp/smoke_mcp_*.json
+content/mcp/Test Mcp*.json
+content/prompts/smoke-prompt-*.md
+content/prompts/Test Prompt*.md
+content/sources/smoke-source-*.json
 
 # Runtime generated memory / trash files
 content/memories/*.md
