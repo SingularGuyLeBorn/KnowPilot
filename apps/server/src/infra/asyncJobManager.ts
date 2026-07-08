@@ -237,12 +237,13 @@ function buildAsyncExecute(
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
   const retryHint = retryCount > 0 ? `（第 ${retryCount} 次重试）` : "";
-  const syncSubStatus = async (status: "completed" | "failed") => {
+  const syncSubStatus = async (status: "completed" | "failed" | "paused") => {
     if (!subagentSessionId) return;
     try {
-      await services.session.update({ id: subagentSessionId, status } as any);
-    } catch {
-      // subagent session 同步失败不阻塞任务
+      await services.session.update({ id: subagentSessionId, status });
+    } catch (err) {
+      // subagent session 同步失败不阻塞任务，但记录日志便于排查
+      console.warn(`[asyncJobManager] syncSubStatus(${status}) 失败 for ${subagentSessionId}:`, err);
     }
   };
   // swarm 协作：结果广播到 shareToSessionIds 对应会话（复制一条 success Task 到目标 session，
@@ -263,8 +264,9 @@ function buildAsyncExecute(
           sessionId: targetSessionId,
           input: { ...input, sessionId: targetSessionId, shareToSessionIds: undefined },
         } as any);
-      } catch {
-        // 单个目标广播失败不阻塞其他
+      } catch (err) {
+        // 单个目标广播失败不阻塞其他，但记录日志便于排查跨会话共享丢失
+        console.warn(`[asyncJobManager] broadcastShare 到 ${targetSessionId} 失败:`, err);
       }
     }
   };
@@ -311,7 +313,8 @@ function buildAsyncExecute(
           error: reason || (err instanceof Error ? err.message : String(err)),
         } satisfies AsyncTaskOutput,
       });
-      await syncSubStatus("failed");
+      // 用户主动停止 → session 置 paused（不覆盖为 failed）；超时/异常 → failed
+      await syncSubStatus(isAbort && !isTimeout ? "paused" : "failed");
       await broadcastShare("failed", { error: reason || (err instanceof Error ? err.message : String(err)) });
     }
   };
@@ -370,8 +373,9 @@ export async function startAsyncAgentTask(options: {
       status: "running",
     } as any);
     if (sub.success && sub.data) subagentSessionId = (sub.data as { id: string }).id;
-  } catch {
-    // subagent session 创建失败不阻塞任务执行
+  } catch (err) {
+    // subagent session 创建失败不阻塞任务执行，但记录日志便于排查 UI 卡片缺失
+    console.warn(`[asyncJobManager] 创建 subagent session 失败，降级为无可视化载体继续执行:`, err);
   }
 
   const created = await options.services.task.create({
@@ -505,9 +509,12 @@ export async function waitForAsyncJob(
   return { jobId, status: "failed", error: "等待超时（10 分钟）" };
 }
 
-/** 重试一条失败的异步任务 */
-/** 停止指定 subagent session 对应的后台任务（真正 abort） */
-export function stopSubagentSession(subagentSessionId: string, config: AppConfig): boolean {
+/** 停止指定 subagent session 对应的后台任务（真正 abort）。
+ *  返回详细信息：wasRunning 区分运行中/排队中，jobId 供调用方回写 Task 状态。 */
+export function stopSubagentSession(
+  subagentSessionId: string,
+  config: AppConfig,
+): { stopped: boolean; wasRunning: boolean; jobId?: string } {
   const orchestrator = getAsyncJobOrchestrator(config);
   return orchestrator.stopSubagent(subagentSessionId);
 }

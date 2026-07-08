@@ -133,7 +133,7 @@ describe("AsyncJobOrchestrator", () => {
     });
 
     await new Promise((r) => setTimeout(r, 30));
-    expect(orch.stopSubagent("sub-1")).toBe(true);
+    expect(orch.stopSubagent("sub-1")).toEqual({ stopped: true, wasRunning: true, jobId: "j-sub" });
     await new Promise((r) => setTimeout(r, 50));
     expect(aborted).toBe(true);
   });
@@ -163,7 +163,13 @@ describe("AsyncJobOrchestrator", () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(started).toBe(true);
     expect(orch.isQueued("j-sub")).toBe(true);
-    expect(orch.stopSubagent("sub-queued")).toBe(true);
+    // 排队中移除：wasRunning=false，jobId 返回供调用方回写 Task
+    expect(orch.stopSubagent("sub-queued")).toEqual({ stopped: true, wasRunning: false, jobId: "j-sub" });
     expect(orch.isQueued("j-sub")).toBe(false);
+  });
+
+  it("stopSubagent 未命中返回 stopped=false", async () => {
+    const orch = new AsyncJobOrchestrator({ maxGlobal: 1, maxPerSession: 1, taskTimeoutMs: 60_000 });
+    expect(orch.stopSubagent("nonexistent")).toEqual({ stopped: false, wasRunning: false });
   });
 });

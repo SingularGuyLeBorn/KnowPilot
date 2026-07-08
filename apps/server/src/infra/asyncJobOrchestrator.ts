@@ -61,20 +61,23 @@ export class AsyncJobOrchestrator {
     return false;
   }
 
-  /** 根据 subagent sessionId 中断其后台任务 */
-  stopSubagent(subagentSessionId: string): boolean {
+  /** 根据 subagent sessionId 中断其后台任务。
+   *  返回 stopped=是否命中、wasRunning=是否正在执行（否则为排队中）、jobId=关联任务 ID（用于回写 Task 状态） */
+  stopSubagent(subagentSessionId: string): { stopped: boolean; wasRunning: boolean; jobId?: string } {
     const controller = this.subagentControllers.get(subagentSessionId);
     if (controller) {
+      const running = [...this.runningJobs.entries()].find(([, r]) => r.controller === controller);
       controller.abort();
       this.subagentControllers.delete(subagentSessionId);
-      return true;
+      return { stopped: true, wasRunning: true, jobId: running?.[0] };
     }
     const idx = this.queue.findIndex((s) => s.metadata?.subagentSessionId === subagentSessionId);
     if (idx >= 0) {
+      const spec = this.queue[idx];
       this.queue.splice(idx, 1);
-      return true;
+      return { stopped: true, wasRunning: false, jobId: spec.jobId };
     }
-    return false;
+    return { stopped: false, wasRunning: false };
   }
 
   /** 任务是否正在执行 */

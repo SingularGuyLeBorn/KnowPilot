@@ -159,9 +159,13 @@ export function extractLocalQueueFromMerged(
 
 export function sortQueueItems(items: ChatQueueItem[]): ChatQueueItem[] {
   const byCreatedAt = (a: ChatQueueItem, b: ChatQueueItem) => a.createdAt - b.createdAt;
+  // 优先级：pinned > async-result（异步任务结果投递）> user（用户主动消息）
+  // ARQ > User Queue：后台任务完成后结果应优先于用户后续消息被消费，
+  // 避免用户连续发消息把异步结果挤到后面
   const pinned = items.filter((i) => i.pinned).sort(byCreatedAt);
-  const rest = items.filter((i) => !i.pinned).sort(byCreatedAt);
-  return [...pinned, ...rest];
+  const asyncResults = items.filter((i) => !i.pinned && i.kind === "async-result").sort(byCreatedAt);
+  const rest = items.filter((i) => !i.pinned && i.kind !== "async-result").sort(byCreatedAt);
+  return [...pinned, ...asyncResults, ...rest];
 }
 
 export function createUserQueueItem(

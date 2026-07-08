@@ -190,6 +190,7 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_refresh_token: feishuRefreshTokenTool,
   invoke_api: invokeApiTool,
   run_async: runAsyncTool,
+  spawn_subagent: spawnSubagentTool,
   task_status: taskStatusTool,
   cancel_async: cancelAsyncTool,
   await_async: awaitAsyncTool,
@@ -1181,6 +1182,23 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
         waitForResult: { type: "boolean", description: "true=阻塞等待任务完成直接返回结果；false(默认)=立即返回 running，结果进队列" },
         shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id（跨会话共享）" },
+      },
+      required: ["task"],
+    },
+  },
+  {
+    name: "spawn_subagent",
+    description:
+      "派生一个独立子代理（Subagent）执行长任务，不阻塞当前对话。子代理在 UI 左侧面板有独立卡片，可查看进度/停止。任务完成后结果进入发送队列最前。适合：长时间研究、多步代码重构、并行子任务。",
+    parameters: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "子代理要执行的任务描述（详细越好）" },
+        label: { type: "string", description: "子代理卡片/队列中显示的简短标签" },
+        agentId: { type: "string", description: "指定子代理使用的 Agent ID（不填则继承当前 Agent）" },
+        model: { type: "string", description: "指定子代理使用的模型 ID（不填则用 Agent 默认模型）" },
+        timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
+        shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
       },
       required: ["task"],
     },
@@ -2556,6 +2574,50 @@ async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolCon
   const jobId = String(args.jobId || "");
   if (!jobId) throw new Error("cancel_async 需要 jobId");
   return cancelAsyncJob(jobId, ctx.config, ctx.services);
+}
+
+/** LLM 主动派生子代理：与 run_async 区别在于 spawn_subagent 语义明确为「派生一个独立子代理」，
+ *  强制创建 subagent ChatSession（UI 卡片可见），且不阻塞当前对话（结果进发送队列最前） */
+async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId || !ctx.agentSnapshot) {
+    throw new Error("spawn_subagent 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
+  }
+  const { startAsyncAgentTask } = await import("./asyncJobManager.js");
+  const task = String(args.task || "");
+  if (!task.trim()) throw new Error("spawn_subagent 需要 task（子代理任务描述）");
+  // 可选指定不同 Agent；缺省继承当前 Agent
+  let agent = ctx.agentSnapshot;
+  if (args.agentId && typeof args.agentId === "string") {
+    try {
+      const resolved = await ctx.services.agent.getById(String(args.agentId));
+      if (resolved) {
+        agent = {
+          id: resolved.id,
+          model: args.model ? String(args.model) : resolved.model,
+          systemPrompt: resolved.systemPrompt,
+          tools: resolved.tools,
+        };
+      }
+    } catch (err) {
+      throw new Error(`spawn_subagent 指定的 Agent 不存在: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  const started = await startAsyncAgentTask({
+    sessionId: ctx.sessionId,
+    task,
+    label: args.label ? String(args.label) : `子代理: ${task.slice(0, 40)}`,
+    timeoutMs: args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined,
+    config: ctx.config,
+    services: ctx.services,
+    agent,
+    shareToSessionIds: Array.isArray(args.shareToSessionIds)
+      ? (args.shareToSessionIds as unknown[]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      : undefined,
+  });
+  return {
+    ...started,
+    hint: `子代理已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 task_status 查询进度，cancel_async 取消。`,
+  };
 }
 
 async function awaitAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {

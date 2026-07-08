@@ -213,6 +213,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "feishu_refresh_token",
   "invoke_api",
   "run_async",
+  "spawn_subagent",
   "task_status",
   "cancel_async",
   "await_async",
