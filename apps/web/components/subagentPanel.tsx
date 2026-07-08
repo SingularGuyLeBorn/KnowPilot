@@ -24,15 +24,20 @@ interface SubagentBrief {
   createdAt?: string | Date;
 }
 
-/** 估算进度：running 时基于已耗时 / 默认 5min 上限，封顶 99%（视觉反馈，非精确） */
-const PROGRESS_TIMEOUT_MS = 5 * 60 * 1000;
-function estimateProgress(createdAt?: string | Date | null): number | null {
+/** 真实已运行时长文本（替代此前的假进度条估算） */
+function formatElapsed(createdAt?: string | Date | null): string | null {
   if (!createdAt) return null;
   const start = new Date(createdAt).getTime();
   if (!Number.isFinite(start)) return null;
-  const elapsed = Date.now() - start;
-  if (elapsed <= 0) return 0;
-  return Math.min(99, Math.round((elapsed / PROGRESS_TIMEOUT_MS) * 100));
+  const elapsed = Math.max(0, Date.now() - start);
+  const totalSec = Math.floor(elapsed / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min >= 60) {
+    const hr = Math.floor(min / 60);
+    return `${hr}h ${min % 60}m`;
+  }
+  return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -96,16 +101,11 @@ function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () =>
                 {sub.model && <span className="truncate">{sub.model}</span>}
               </div>
               {isRunning && (() => {
-                const pct = estimateProgress(sub.createdAt);
-                return pct != null ? (
-                  <div data-testid="subagent-progress" className="space-y-1">
-                    <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--kp-bg-mute)]">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[var(--kp-brand-light)] to-[var(--kp-brand)] transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <div className="text-[9px] tabular-nums text-[var(--kp-text-3)]">估算进度 {pct}%</div>
+                const elapsed = formatElapsed(sub.createdAt);
+                return elapsed ? (
+                  <div data-testid="subagent-progress" className="flex items-center gap-1.5 text-[10px] tabular-nums text-[var(--kp-text-3)]">
+                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
+                    已运行 {elapsed}
                   </div>
                 ) : null;
               })()}
