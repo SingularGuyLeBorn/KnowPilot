@@ -8,9 +8,10 @@
  * 4. web + sync:watch 并行
  */
 
-import { spawn } from "child_process";
+import { spawn, exec } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import { promisify } from "util";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const healthUrl = process.env.SERVER_INTERNAL_URL
@@ -45,6 +46,34 @@ function run(args, opts = {}) {
       else reject(new Error(`pnpm ${args.join(" ")} 退出码 ${code}`));
     });
   });
+}
+
+const execAsync = promisify(exec);
+
+/** 清理遗留的 Next.js dev 进程（Windows 下异常退出时 next dev 子进程可能存活并占用 3000 端口） */
+async function killOrphanNextDev(webPort = 3000) {
+  if (process.platform !== "win32") return;
+  try {
+    const { stdout } = await execAsync(`netstat -ano | findstr ":${webPort}"`);
+    const listeningPid = stdout
+      .split("\n")
+      .map((l) => l.trim().split(/\s+/))
+      .filter((parts) => parts.length >= 5 && parts[parts.length - 2] === "LISTENING")
+      .map((parts) => parts[parts.length - 1])[0];
+    if (!listeningPid) return;
+
+    // 仅清理确认为本项目的 Next.js dev server
+    const { stdout: cmdStdout } = await execAsync(
+      `wmic process where "ProcessId=${listeningPid}" get CommandLine /format:csv`,
+    );
+    if (!cmdStdout.includes("next") || !cmdStdout.includes(root)) return;
+
+    console.log(`\n  ⚠️  检测到遗留 Next.js dev 进程 PID ${listeningPid}，正在清理…`);
+    await execAsync(`taskkill /pid ${listeningPid} /T /F`).catch(() => {});
+    await new Promise((r) => setTimeout(r, 800));
+  } catch {
+    /* ignore */
+  }
 }
 
 function spawnService(label, args) {
@@ -109,6 +138,7 @@ async function main() {
   spawnService("server", ["--filter", "@knowpilot/server", "dev"]);
   await waitForHealth(healthUrl);
 
+  await killOrphanNextDev();
   spawnService("web", ["--filter", "@knowpilot/web", webScript]);
 
   if (!quick) {
