@@ -281,9 +281,16 @@ const sessionRouter = router({
     ),
   update: publicProcedure.meta({ description: "更新会话标题或系统提示。", aiReadable: true }).input(updateSessionSchema).mutation(({ ctx, input }) => ctx.services.session.update(input)),
   stop: publicProcedure
-    .meta({ description: "停止子代理会话（状态置为 paused）。", aiReadable: false })
+    .meta({ description: "停止子代理会话（状态置为 paused 并真正 abort 运行中后台任务）。", aiReadable: false })
     .input(stopSessionSchema)
-    .mutation(({ ctx, input }) => ctx.services.session.update({ id: input.id, status: "paused" })),
+    .mutation(async ({ ctx, input }) => {
+      const session = await ctx.services.session.getById(input.id);
+      if (session.kind === "subagent") {
+        const { stopSubagentSession } = await import("./infra/asyncJobManager.js");
+        stopSubagentSession(session.id, ctx.config);
+      }
+      return ctx.services.session.update({ id: input.id, status: "paused" });
+    }),
   spawn: publicProcedure
     .meta({ description: "创建并启动子代理任务（subagent）。返回 subagentSessionId 与 jobId。", aiReadable: false })
     .input(

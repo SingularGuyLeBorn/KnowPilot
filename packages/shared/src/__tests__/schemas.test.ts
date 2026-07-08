@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createGitRepoSchema, createWorkspaceSchema } from "../schemas.js";
+import {
+  createGitRepoSchema,
+  createWorkspaceSchema,
+  createSessionSchema,
+  listSessionsSchema,
+  stopSessionSchema,
+  rerunSessionSchema,
+} from "../schemas.js";
 
 describe("createGitRepoSchema path 校验", () => {
   it("接受 Windows 绝对路径", () => {
@@ -32,5 +39,58 @@ describe("createWorkspaceSchema path 校验", () => {
   it("拒绝包含 .. 的路径", () => {
     const parsed = createWorkspaceSchema.safeParse({ name: "ws", path: "/tmp/../etc" });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("Session / Subagent schema 校验", () => {
+  it("createSessionSchema 接受普通会话", () => {
+    const parsed = createSessionSchema.safeParse({ title: "新会话" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.kind).toBe("chat");
+      expect(parsed.data.status).toBe("active");
+    }
+  });
+
+  it("createSessionSchema 接受 subagent 会话", () => {
+    const parsed = createSessionSchema.safeParse({
+      title: "子代理任务",
+      kind: "subagent",
+      status: "running",
+      parentSessionId: "clx12345678901234567890123",
+      taskDescription: "搜索 KnowPilot 并整理摘要",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("createSessionSchema 拒绝非法 kind", () => {
+    const parsed = createSessionSchema.safeParse({ title: "x", kind: "worker" });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("createSessionSchema 拒绝非法 status", () => {
+    const parsed = createSessionSchema.safeParse({ title: "x", status: "unknown" });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("listSessionsSchema 支持 subagent 过滤", () => {
+    const parsed = listSessionsSchema.safeParse({
+      page: 1,
+      pageSize: 20,
+      kind: "subagent",
+      status: "running",
+      parentSessionId: "clx12345678901234567890123",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("stopSessionSchema 要求合法 cuid", () => {
+    expect(stopSessionSchema.safeParse({ id: "clx12345678901234567890123" }).success).toBe(true);
+    expect(stopSessionSchema.safeParse({ id: "not-a-cuid" }).success).toBe(false);
+  });
+
+  it("rerunSessionSchema 要求合法 cuid", () => {
+    expect(rerunSessionSchema.safeParse({ id: "clx12345678901234567890123" }).success).toBe(true);
+    expect(rerunSessionSchema.safeParse({ id: "not-a-cuid" }).success).toBe(false);
   });
 });

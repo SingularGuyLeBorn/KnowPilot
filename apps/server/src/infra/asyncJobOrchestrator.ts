@@ -9,6 +9,8 @@ export interface AsyncJobRunSpec {
   sessionId: string;
   /** 任务级超时毫秒数；未指定时使用 orchestrator 全局超时 */
   timeoutMs?: number;
+  /** 附加元数据：当前用于 subagent session 与 AbortController 关联 */
+  metadata?: { subagentSessionId?: string };
   execute: (signal: AbortSignal) => Promise<void>;
 }
 
@@ -23,6 +25,8 @@ export class AsyncJobOrchestrator {
   private runningGlobal = 0;
   private readonly runningBySession = new Map<string, number>();
   private readonly runningJobs = new Map<string, RunningJob>();
+  /** subagentSessionId -> AbortController，用于 session.stop 真正中断运行中任务 */
+  private readonly subagentControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly limits: { maxGlobal: number; maxPerSession: number; taskTimeoutMs: number },
@@ -50,6 +54,22 @@ export class AsyncJobOrchestrator {
       return true;
     }
     const idx = this.queue.findIndex((s) => s.jobId === jobId);
+    if (idx >= 0) {
+      this.queue.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  /** 根据 subagent sessionId 中断其后台任务 */
+  stopSubagent(subagentSessionId: string): boolean {
+    const controller = this.subagentControllers.get(subagentSessionId);
+    if (controller) {
+      controller.abort();
+      this.subagentControllers.delete(subagentSessionId);
+      return true;
+    }
+    const idx = this.queue.findIndex((s) => s.metadata?.subagentSessionId === subagentSessionId);
     if (idx >= 0) {
       this.queue.splice(idx, 1);
       return true;
@@ -90,6 +110,9 @@ export class AsyncJobOrchestrator {
     this.runningGlobal++;
     this.runningBySession.set(spec.sessionId, (this.runningBySession.get(spec.sessionId) ?? 0) + 1);
     this.runningJobs.set(spec.jobId, { spec, controller, startedAt: Date.now() });
+    if (spec.metadata?.subagentSessionId) {
+      this.subagentControllers.set(spec.metadata.subagentSessionId, controller);
+    }
 
     const timeoutMs = spec.timeoutMs ?? this.limits.taskTimeoutMs;
     const timeout = setTimeout(() => {
@@ -103,6 +126,9 @@ export class AsyncJobOrchestrator {
       })
       .finally(() => {
         clearTimeout(timeout);
+        if (spec.metadata?.subagentSessionId) {
+          this.subagentControllers.delete(spec.metadata.subagentSessionId);
+        }
         this.runningJobs.delete(spec.jobId);
         this.runningGlobal = Math.max(0, this.runningGlobal - 1);
         const left = (this.runningBySession.get(spec.sessionId) ?? 1) - 1;

@@ -179,7 +179,7 @@ export function SubagentPanel({
     {
       enabled: !!parentSessionId,
       refetchInterval: (q) => {
-        const data = (q.state.data ?? q.data) as { items?: SubagentBrief[] } | undefined;
+        const data = q.state.data as { items?: SubagentBrief[] } | undefined;
         const items = data?.items ?? [];
         return items.some((s) => s.status === "running" || s.status === "queued") ? 3000 : false;
       },
