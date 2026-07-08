@@ -47,8 +47,8 @@ describe("Session / Subagent schema 校验", () => {
     const parsed = createSessionSchema.safeParse({ title: "新会话" });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.kind).toBe("chat");
-      expect(parsed.data.status).toBe("active");
+      expect(parsed.data.kind).toBeUndefined();
+      expect(parsed.data.status).toBeUndefined();
     }
   });
 

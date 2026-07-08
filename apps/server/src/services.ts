@@ -1022,11 +1022,11 @@ export interface SessionEntity {
   model: string;
   systemPrompt: string | null;
   agentId: string | null;
-  // Swarm/Subagent 扩展字段
-  parentSessionId: string | null;
-  kind: "chat" | "subagent";
-  status: import("@knowpilot/shared").SessionStatus;
-  taskDescription: string | null;
+  // Swarm/Subagent 扩展字段（数据库有默认值，普通会话可省略）
+  parentSessionId?: string | null;
+  kind?: "chat" | "subagent";
+  status?: import("@knowpilot/shared").SessionStatus;
+  taskDescription?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
