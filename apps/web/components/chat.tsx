@@ -600,9 +600,10 @@ export function ChatView() {
   }, []);
 
   // 把指定 session 的后台状态镜像到视图 useState（切换 session 时调用）
+  // sid 为 null 时镜像 NEW_STREAM_KEY，保证新会话首条消息期间用户也能看到乐观消息/流式状态
   const applyView = useCallback(
     (sid: string | null) => {
-      const s = sid ? streamStatesRef.current.get(sid) : undefined;
+      const s = streamStatesRef.current.get(sid ?? NEW_STREAM_KEY);
       setIsStreaming(s?.isStreaming ?? false);
       setStreamingContent(s?.streamingContent ?? "");
       setLiveTimeline(s?.liveTimeline ?? []);
@@ -627,7 +628,10 @@ export function ChatView() {
       const s = getStreamState(originSid);
       const next = typeof value === "function" ? (value as (p: SessionStreamState[K]) => SessionStreamState[K])(s[key]) : value;
       (s as SessionStreamState)[key] = next;
-      if (originSid === effectiveSessionIdRef.current) {
+      const isCurrentView =
+        originSid === effectiveSessionIdRef.current ||
+        (effectiveSessionIdRef.current === null && originSid === NEW_STREAM_KEY);
+      if (isCurrentView) {
         switch (key) {
           case "isStreaming": setIsStreaming(next as boolean); break;
           case "streamingContent": setStreamingContent(next as string); break;
@@ -1283,7 +1287,9 @@ export function ChatView() {
     setSelectedSkill(null);
     setEditingSessionId(null);
     setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
-    // 视图切到空会话（applyView 会把流式视图与队列镜像为空）
+    // 清空新会话临时状态，避免上一次新建会话的残留 optimistic/queue 污染下一次
+    streamStatesRef.current.delete(NEW_STREAM_KEY);
+    // 视图切到空会话（applyView(null) 会读取已清空的 NEW_STREAM_KEY）
     applyView(null);
   };
 
