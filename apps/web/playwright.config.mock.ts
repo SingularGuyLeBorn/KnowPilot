@@ -16,7 +16,8 @@ process.env.E2E_WEB_PORT = webPort;
 process.env.SERVER_INTERNAL_URL = serverInternal;
 process.env.NEXT_PUBLIC_SERVER_URL = serverInternal;
 
-const webStartCommand = `pnpm --filter @knowpilot/web run build:mock && pnpm --filter @knowpilot/web exec next start -p ${webPort}`;
+// 与默认 E2E 一致：webServer 只负责启动，不在此处 build（否则每次跑 mock 都等 3–10 分钟像卡死）
+const webStartCommand = `pnpm --filter @knowpilot/web run start:mock`;
 
 /**
  * Mock 模式 Playwright 配置：

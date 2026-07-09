@@ -47,6 +47,9 @@ Playwright 会自动启动 **server:3010**（本地若已在跑则复用）+ **w
 
 ### Mock E2E 套件（`pnpm test:e2e:mock`，全离线，三开关 MOCK_LLM/MCP/NATIVE_TOOLS）
 
+**首次或改前端后**先 `pnpm --filter @knowpilot/web test:e2e:mock:prep`（即 `build:mock`），再跑 `pnpm test:e2e:mock`。  
+Mock 的 `playwright.config.mock.ts` **不会在启动时自动 build**（避免每次 E2E 等 3–10 分钟像卡死）；与默认套件一样，build 与 test 分离。
+
 | 文件 | 场景 |
 |---|---|
 | `apps/web/e2e/chat-mock.spec.ts` | 问候 + 触发 web_search 工具并显示 pill/hint |
