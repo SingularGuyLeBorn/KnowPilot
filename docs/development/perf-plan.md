@@ -457,6 +457,62 @@
 | R1 | post.search FTS 优先 + LIKE 回退 | ✅ 已实施 |
 | R2 | 服务端 SSE token 16ms 合并 | ✅ 已实施 |
 
+## R3. chatHistory 重复 parse toolCalls
+
+- **位置**：`apps/server/src/infra/chatHistory.ts:122-125`
+- **当前行为**：每条 assistant 消息先 `parseStoredToolCalls(active.toolCalls)`，再 `buildReasoningContentFromStored(active.toolCalls)`——后者内部**再次** `parseStoredToolCalls`。长会话×多工具 = 重复解析。
+- **推荐**：复用已解析的 `allCalls` 派生 reasoningContent（filter thinking + map result + join），消除第二次 parse。
+- **风险**：无；`buildReasoningContentFromStored` 仍导出供外部，仅热路径内联化。
+- **回答：同意。已实施。**
+
+## R4. swarmStats 无上限拉 Run
+
+- **位置**：`apps/server/src/router.ts:507` swarmStats
+- **当前行为**：`run.findMany({ where: { createdAt gte since } })` 无 take，30 天内全部 Run 进内存 JS 聚合，高频 Agent 下内存峰值高。
+- **推荐**：加 `take: 5000, orderBy: createdAt desc` 封顶（dashboard 统计可接受近似）。tokenUsage 是 JSON，SQL 聚合困难，保留 JS 聚合。
+- **风险**：低；超 5000 条的极高频场景统计为近似（取最近 5000）。
+- **回答：同意。已实施。**
+
+## R5. agentStream 历史 pageSize 不一致
+
+- **位置**：`apps/server/src/infra/agentStream.ts` prepareMessage(200) vs 主流程(100)
+- **当前行为**：edit/regenerate/retry 的 prepareMessage 加载 200 条，主流程加载 100 条。>100 条历史时主流程 LLM 上下文**截断更早消息**（正确性风险）。
+- **推荐**：统一为常量 `HISTORY_PAGE_SIZE = 200`。
+- **风险**：低；修正一致性，主流程多加载到 200 条（与 session.getById 500 同向）。
+- **回答：同意。已实施。**
+
+## R6. Run.list 列表返回大 JSON
+
+- **位置**：`apps/server/src/services.ts` RunService（无 getListSelect）
+- **当前行为**：Runs 列表返回完整 `input/output/toolCalls/error` 大 JSON，UI 只用 status/agent/session/耗时/时间。
+- **推荐**：`getListSelect` 仅返 id/agentId/sessionId/status/durationMs/toolCallCount/tokenUsage/createdAt/updatedAt；详情走 getById。
+- **风险**：低；已确认 runs 页只用所选字段，详情走 `/runs/edit/[id]`。
+- **回答：同意。已实施。**
+
+## 批次 6 自审记录
+
+### 实施项
+
+- **R3**：chatHistory 复用 allCalls 派生 reasoningContent，消除第二次 parseStoredToolCalls。
+- **R4**：swarmStats findMany 加 `take: 5000, orderBy: createdAt desc`。
+- **R5**：agentStream 加 `HISTORY_PAGE_SIZE = 200`，prepareMessage 与主流程统一。
+- **R6**：RunService.getListSelect 裁剪 input/output/toolCalls/error。
+
+### 复核确认
+
+- **R3 等价**：内联派生与 `buildReasoningContentFromStored` 逻辑逐句一致（filter thinking → map result → join → `|| undefined`）。
+- **R6 消费方**：runs 页只用所选字段；详情走 getById；ai.invoke 反射 run.list 拿窄字段无碍；trpcSmoke run.list 通过。
+- **R5**：主流程由 100 改 200 与 prepare 对齐，消除 >100 条历史的早期截断（正确性修复）；不引入新分页。
+- **R4**：保留 JS 聚合（tokenUsage JSON 不便 SQL 聚合），仅封顶内存；5000 条对 dashboard 足够。
+
+### 已排除项（本轮自审后不做）
+
+- **Agent.list / Skill.list 裁剪**：Chat 依赖 agent.list 的 `systemPrompt`（chatConfig）与 skill.list 的 `code`（skillPrompt），全局裁剪会破坏 Chat；需配合 Chat 改用 getById，超出本轮安全范围。
+- **Task.list 裁剪**：asyncJobManager/taskScheduler 等内部消费者需 `input`，全局裁剪风险高。
+- **Memory.list 裁剪**：列表页展示完整 content。
+- **P2-4 双查历史复用**：仅做 pageSize 统一（R5），未做 items 跨函数复用（改动 prepareMessage 返回签名，风险中等，留待后续）。
+- **dashboard 13 count 合并/缓存**：已并行，单 SQL/CTE 重写收益中等、风险中等，留待后续。
+
 ## 批次 5 自审记录
 
 ### 实施项

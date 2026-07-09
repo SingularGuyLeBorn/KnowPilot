@@ -1598,6 +1598,21 @@ export class RunService extends BaseService<CreateRunInput, UpdateRunInput, List
   }
   protected buildCreateData(input: CreateRunInput) { return input; }
   protected buildUpdateData(input: UpdateRunInput) { const { id: _id, ...data } = input; return data; }
+  // P2-5：Runs 列表 UI 只需 status/agent/session/耗时/token/时间，裁剪 input/output/toolCalls/error 等大 JSON；
+  // 详情走 getById 取全量。
+  protected override getListSelect(): any {
+    return {
+      id: true,
+      agentId: true,
+      sessionId: true,
+      status: true,
+      durationMs: true,
+      toolCallCount: true,
+      tokenUsage: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+  }
 }
 
 /** Prompt 提示词模板 (文件同步) */

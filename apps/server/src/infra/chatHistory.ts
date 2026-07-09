@@ -122,7 +122,9 @@ export function buildLlmMessagesFromHistory(
     const active = getActiveAssistantPayload(msg);
     const allCalls = parseStoredToolCalls(active.toolCalls);
     const tools = allCalls.filter((tc) => tc.kind !== "thinking" && tc.kind !== "content");
-    const reasoningContent = buildReasoningContentFromStored(active.toolCalls);
+    // R3：复用已解析的 allCalls 派生 reasoningContent，避免 buildReasoningContentFromStored 内部再次 parseStoredToolCalls
+    const reasoningParts = allCalls.filter((tc) => tc.kind === "thinking").map((tc) => String(tc.result ?? "")).filter(Boolean);
+    const reasoningContent = reasoningParts.join("") || undefined;
 
     if (tools.length > 0) {
       // 多轮 ReAct 拆分：runtime 扁平存储为一条 assistant(content=final + toolCalls=[all])，
