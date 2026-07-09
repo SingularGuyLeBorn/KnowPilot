@@ -1278,11 +1278,9 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   }
 
   override async getById(id: string): Promise<any> {
-    // P1-7：messages 加分页上限，避免长会话一次性 include 全量消息 OOM
-    const session = await this.prisma.chatSession.findUnique({
-      where: { id },
-      include: { messages: { orderBy: { createdAt: "asc" }, take: 500 } },
-    });
+    // P0-1 彻底解耦：getById 只返会话元数据（title/model/agentId/kind/status...），不含 messages。
+    // 消息由前端 useInfiniteQuery 走 message.listForChat（cursor 分页）独立加载。
+    const session = await this.prisma.chatSession.findUnique({ where: { id } });
     if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
     return session;
   }
@@ -1334,6 +1332,33 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   }
   protected override get defaultOrderBy(): string { return "createdAt"; }
   protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
+
+  // P0-1 彻底解耦：Chat 专用 cursor 无限查询。
+  // 无 cursor：返最近 limit 条（asc）。有 cursor：返早于 cursor(消息 id) 的 limit 条（asc）。
+  // nextCursor = 本页最旧消息 id（供下页继续向上翻），items.length < limit 时无 nextCursor（已到顶）。
+  async listForChat(input: { sessionId: string; cursor?: string; limit?: number }): Promise<{ items: MessageEntity[]; nextCursor?: string }> {
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+    let items: any[];
+    if (input.cursor) {
+      const cur = await this.prisma.chatMessage.findUnique({ where: { id: input.cursor }, select: { createdAt: true } });
+      if (!cur) return { items: [] };
+      items = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId, createdAt: { lt: cur.createdAt } },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+    } else {
+      items = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+    }
+    items.reverse(); // asc，便于前端按序渲染
+    const formatted = items.map((i: any) => this.formatEntity(i));
+    const nextCursor = formatted.length >= limit ? formatted[0]?.id : undefined;
+    return { items: formatted, nextCursor };
+  }
 }
 
 /** File 资源元数据 (带 Base64 上传) */

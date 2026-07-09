@@ -55,7 +55,7 @@ import {
 } from "@/lib/chatMessageUtils";
 import { LucideIconByName } from "@/lib/icons";
 import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
-import { type Agent, type ChatSession, type ChatSessionConfig, type ChatImageAttachment } from "@knowpilot/shared";
+import { type Agent, type ChatSession, type ChatSessionConfig, type ChatImageAttachment, type ChatMessage } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { PostContent } from "@/components/post/PostContent";
 import { ConfirmDialog } from "@/components/shared";
@@ -789,6 +789,22 @@ export function ChatView() {
     { id: effectiveSessionId! },
     { enabled: !!effectiveSessionId },
   );
+  // P0-1 彻底解耦：消息独立走 message.listForChat 无限查询（cursor 分页），session.getById 只返元数据。
+  // 第一页 = 最近 limit 条；向上滚（startReached）fetchNextPage 加载更早，Virtuoso 稳定 key 保持滚动位置。
+  const messagesInfinite = trpc.message.listForChat.useInfiniteQuery(
+    { sessionId: effectiveSessionId!, limit: 50 },
+    {
+      enabled: !!effectiveSessionId,
+      getNextPageParam: (last) => last.nextCursor,
+      refetchOnMount: false,
+    },
+  );
+  // pages 顺序为 [最近页, 更早页, ...]，展示需倒序拼接（更早在前 + 最近在后）成时间正序
+  // cast ChatMessage[]：listForChat 返 MessageEntity(role:string)，运行时 role 为合法联合值，与 ChatMessage 同形
+  const messages = useMemo(
+    () => ((messagesInfinite.data?.pages ?? []).slice().reverse().flatMap((p) => p.items) as ChatMessage[]),
+    [messagesInfinite.data],
+  );
   // 当前会话是否为子代理任务会话；若是则查父会话标题用于返回提示
   const isSubagentSession = sessionDetail?.kind === "subagent";
   const parentSessionId = sessionDetail?.parentSessionId ?? null;
@@ -895,8 +911,8 @@ export function ChatView() {
   const modelOpt = getModelOption(chatConfig.model);
 
   const messageGroups = useMemo(
-    () => buildMessageGroups(sessionDetail?.messages ?? []),
-    [sessionDetail?.messages],
+    () => buildMessageGroups(messages),
+    [messages],
   );
 
   // 右侧导航条：每条 assistant 回复一个横杠，hover 放大 + 预览，点击滚动定位
@@ -943,8 +959,8 @@ export function ChatView() {
   );
 
   const tokenBudget = useMemo(
-    () => buildTokenBudget(sessionDetail?.messages ?? [], chatConfig.maxTokens, lastRoundTokens),
-    [sessionDetail?.messages, chatConfig.maxTokens, lastRoundTokens],
+    () => buildTokenBudget(messages, chatConfig.maxTokens, lastRoundTokens),
+    [messages, chatConfig.maxTokens, lastRoundTokens],
   );
 
   const lastUserMessageId = useMemo(() => {
@@ -1168,12 +1184,11 @@ export function ChatView() {
               if (opts.skillPrompt) {
                 updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
               }
-              // 用 data.sessionId 显式拉取会话详情，避免 refetchSession 在
-              // setSessionId 异步生效前用 null id 打 tRPC（控制台报错 + 短暂不同步）
+              // P0-1 解耦：session.getById 不再含 messages。流结束后刷新会话元数据 + 消息无限查询
+              // （invalidate listForChat → 重拉最近页，新 user/assistant 消息出现；已加载的更早页保留）。
               if (data.sessionId) {
-                await utils.session.getById.fetch({ id: data.sessionId }).catch(() => {
-                  // 拉取失败不阻塞 UI，下个 render 会因 enabled 查询自动重试
-                });
+                void utils.session.getById.invalidate({ id: data.sessionId }).catch(() => undefined);
+                void utils.message.listForChat.invalidate().catch(() => undefined);
               }
               // 延后清空，避免与 tool_end 的 setState 同批提交导致 hint 从未挂载
               setTimeout(() => {
@@ -1210,9 +1225,10 @@ export function ChatView() {
         if (err instanceof Error && err.name === "AbortError") {
           // 用户点击停止：先把待写 token 落地（保留中断前的部分内容），再延后清空
           flushStreamNow(originSid);
-          // 保持当前流式 UI，等后端保存中断消息并刷新会话后再清空
-          setTimeout(async () => {
-            await refetchSession();
+          // 保持当前流式 UI，等后端保存中断消息并刷新消息查询后再清空
+          setTimeout(() => {
+            // P0-1：刷新消息无限查询以显示中断后的 assistant 消息
+            void utils.message.listForChat.invalidate();
             ssSet(originSid, "liveTimeline", []);
             ssSet(originSid, "streamingContent", "");
             if (opts.optimisticUser) {
@@ -1241,7 +1257,7 @@ export function ChatView() {
         consumeRef.current();
       }
     },
-    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush],
+    [effectiveAgentId, chatConfig, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, utils.message.listForChat, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush],
   );
 
   const consumeQueue = useCallback(() => {
@@ -1423,7 +1439,8 @@ export function ChatView() {
   const handleSwitchVersion = async (assistantMessageId: string, versionIndex: number) => {
     if (isSessionStreaming(effectiveSessionId)) return;
     await switchVersion.mutateAsync({ messageId: assistantMessageId, versionIndex });
-    await refetchSession();
+    // P0-1：版本切换改变 assistant 消息内容，刷新消息无限查询
+    void utils.message.listForChat.invalidate();
   };
 
   const handleCopy = async (id: string, content: string) => {
@@ -2049,7 +2066,7 @@ export function ChatView() {
           </div>
           {effectiveSessionId && sessionDetail && (
             <SessionContextBar
-              messages={sessionDetail.messages ?? []}
+              messages={messages}
               systemPrompt={chatConfig.systemPrompt}
               className="hidden shrink-0 lg:flex"
             />
@@ -2103,7 +2120,7 @@ export function ChatView() {
         {effectiveSessionId && sessionDetail && (
           <div className="flex border-b border-[var(--kp-divider)] px-4 py-2 lg:hidden">
             <SessionContextBar
-              messages={sessionDetail.messages ?? []}
+              messages={messages}
               systemPrompt={chatConfig.systemPrompt}
             />
           </div>
@@ -2156,11 +2173,26 @@ export function ChatView() {
                 </div>
               )}
               components={{
-                Header: () => <div className="h-4" />,
+                // 顶部加载更早时显示细条 spinner（无按钮，滚到顶部自动触发，见 startReached）
+                Header: () =>
+                  messagesInfinite.isFetchingNextPage ? (
+                    <div className="flex justify-center py-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-text-3)]" />
+                    </div>
+                  ) : (
+                    <div className="h-2" />
+                  ),
                 Footer: () => <div className="h-4" />,
               }}
               followOutput={(atBottom) => (atBottom ? "auto" : false)}
               increaseViewportBy={{ top: 600, bottom: 600 }}
+              // P0-1：滚到顶部自动 fetchNextPage 加载更早消息（业界标准 infinite-up-scroll，无按钮）；
+              // Virtuoso 按 computeItemKey 稳定 id 在 prepend 时自动保持滚动位置。
+              startReached={() => {
+                if (messagesInfinite.hasNextPage && !messagesInfinite.isFetchingNextPage) {
+                  void messagesInfinite.fetchNextPage();
+                }
+              }}
             />
           )}
           <MessageNavRail items={navItems} onScrollToIndex={handleNavScrollToIndex} />

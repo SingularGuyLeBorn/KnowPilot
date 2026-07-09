@@ -323,6 +323,14 @@ export const listMessagesSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(50),
 });
 
+// P0-1：Chat 专用 cursor 无限查询（session 元数据与消息解耦）
+export const listMessagesForChatSchema = z.object({
+  sessionId: z.string().cuid(),
+  /** cursor = 上一页最旧消息 id；省略时返最近 limit 条 */
+  cursor: z.string().cuid().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+});
+
 /* ═══════════════════════════════════════════════════════
    File (文件)
    ═══════════════════════════════════════════════════════ */
