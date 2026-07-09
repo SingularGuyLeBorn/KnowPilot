@@ -1485,7 +1485,8 @@ export function ChatView() {
   const startNewChat = useCallback(() => {
     // 新建对话不中止任何已有 session 的流式（多 session 并发隔离）
     setSessionId(null);
-    setAgentId("");
+    // 保持当前选中的 Agent，不清空——用户选了哪个 Agent，新会话继续用哪个
+    // setAgentId("") 已移除，避免回退到 defaultAgentId(assistant)
     // 输入框 value 已下放到 ChatInputArea，由其 key={effectiveSessionId ?? "new"}
     // 在切换/新建会话时整体 remount 自动清空，无需在此手动 reset。
     setSelectedSkill(null);
