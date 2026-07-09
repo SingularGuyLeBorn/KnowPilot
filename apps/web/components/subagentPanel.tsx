@@ -176,10 +176,13 @@ export function SubagentPanel({
   parentSessionId,
   onCreate,
   onOpenSubagent,
+  variant = "collapsible",
 }: {
   parentSessionId?: string;
   onCreate?: () => void;
   onOpenSubagent?: (sessionId: string) => void;
+  /** "collapsible"=左栏内嵌折叠块（默认）；"tab"=作为标签页内容填满高度 */
+  variant?: "collapsible" | "tab";
 }) {
   const utils = trpc.useUtils();
   // 连续轮询计数器：子代理持续 running/queued 时逐步拉长轮询间隔，降低后台压力
@@ -232,9 +235,57 @@ export function SubagentPanel({
     void utils.session.list.invalidate();
   };
 
-  if (!parentSessionId) return null;
+  if (!parentSessionId) {
+    return variant === "tab" ? (
+      <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-[var(--kp-text-3)]">
+        发送一条消息创建会话后，可在此查看子代理任务
+      </div>
+    ) : null;
+  }
   // 无任何子代理任务时只显示一行极简 header（不占空间）
   const hasItems = items.length > 0;
+
+  // tab 模式：无折叠 header，直接填满高度显示卡片列表
+  if (variant === "tab") {
+    return (
+      <div className="flex w-full min-h-0 flex-1 flex-col" data-testid="subagent-panel">
+        {onCreate && (
+          <div className="flex shrink-0 items-center justify-end border-b border-[var(--kp-divider)] px-2 py-1.5">
+            <button
+              type="button"
+              onClick={onCreate}
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-7 gap-1 text-xs")}
+              aria-label="新建子代理"
+              title="新建子代理"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新建
+            </button>
+          </div>
+        )}
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 pr-2.5">
+          {!hasItems ? (
+            <p className="px-1 py-6 text-center text-[10px] text-[var(--kp-text-3)]">暂无子代理任务</p>
+          ) : (
+            <AnimatePresence initial={false}>
+              {items.map((s) => (
+                <motion.div
+                  key={s.id}
+                  layout
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                >
+                  <SubagentCard sub={s} onRefresh={refresh} onOpenSubagent={onOpenSubagent} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-64 shrink-0 border-b border-[var(--kp-divider)]" data-testid="subagent-panel">

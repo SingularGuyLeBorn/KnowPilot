@@ -19,7 +19,8 @@ test.describe("Subagent Mock — 子代理任务创建与展示", () => {
     await sendChatMessage(page, "你好");
     await waitForStreamingComplete(page);
 
-    // 打开创建弹窗
+    // 打开创建弹窗（先切到左栏「子代理」标签页）
+    await page.getByTestId("left-tab-subagents").click();
     await page.getByRole("button", { name: "新建子代理" }).click();
     await expect(page.getByText("新建子代理任务")).toBeVisible({ timeout: 5_000 });
 

@@ -100,6 +100,8 @@ export function ChatView() {
   const [queuePanelOpen, setQueuePanelOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  // 左栏标签页：sessions=对话历史，subagents=子代理任务
+  const [leftTab, setLeftTab] = useState<"sessions" | "subagents">("sessions");
   const [chatConfig, setChatConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -397,6 +399,16 @@ export function ChatView() {
       return hasActive ? 5000 : 15000;
     },
   });
+
+  // 左栏 tab 徽章：子代理活跃数（与 SubagentPanel 共享 React Query 缓存，不重复请求）
+  const subagentCountQuery = trpc.session.listChildren.useQuery(
+    { parentSessionId: effectiveSessionId ?? "", pageSize: 20 },
+    { enabled: !!effectiveSessionId },
+  );
+  const subagentActiveCount = useMemo(() => {
+    const items = (subagentCountQuery.data?.items ?? []) as { status?: string }[];
+    return items.filter((s) => s.status === "running" || s.status === "queued").length;
+  }, [subagentCountQuery.data?.items]);
 
   // A8：仅在有活跃异步任务（running/queued）时才轮询 pullAsyncQueue，无任务时停止轮询，
   // 避免每个会话固定 2.5s 空 poll（含 raw UPDATE + findMany）。参照 listChildren 的 running 判断。
@@ -1469,13 +1481,51 @@ export function ChatView() {
               <div className="truncate text-[10px] text-[var(--kp-text-3)]">{chatConfig.model}</div>
             </div>
           </div>
-          {/* UX #1：Skill 快捷药丸已移除——输入框 / 触发与右栏设置面板已覆盖，左栏留给会话列表 */}
+          {/* 左栏标签页切换 */}
+          <div className="mt-2 flex gap-1 rounded-lg bg-[var(--kp-bg-mute)] p-0.5">
+            <button
+              type="button"
+              onClick={() => setLeftTab("sessions")}
+              data-testid="left-tab-sessions"
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                leftTab === "sessions"
+                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+              )}
+            >
+              对话历史
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeftTab("subagents")}
+              data-testid="left-tab-subagents"
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                leftTab === "subagents"
+                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+              )}
+            >
+              子代理
+              {subagentActiveCount > 0 && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1 py-0 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
+                  {subagentActiveCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
-        <SubagentPanel
-          parentSessionId={effectiveSessionId ?? undefined}
-          onCreate={() => setShowCreateSubagent(true)}
-          onOpenSubagent={selectSession}
-        />
+        {leftTab === "subagents" ? (
+          <SubagentPanel
+            parentSessionId={effectiveSessionId ?? undefined}
+            onCreate={() => setShowCreateSubagent(true)}
+            onOpenSubagent={selectSession}
+            variant="tab"
+          />
+        ) : (
+          <>
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">对话历史</h2>
           <div className="flex items-center gap-0.5">
@@ -1602,6 +1652,8 @@ export function ChatView() {
             </>
           )}
         </div>
+          </>
+        )}
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
