@@ -14,7 +14,28 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import ReactDOM from "react-dom";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Inbox, Plus, AlertTriangle, CheckCircle2, Globe, XCircle, LayoutGrid, List } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Inbox,
+  Plus,
+  AlertTriangle,
+  CheckCircle2,
+  Globe,
+  XCircle,
+  LayoutGrid,
+  List,
+  Search,
+  Telescope,
+  Database,
+  Shield,
+  Cloud,
+  Target,
+  Radar,
+  Languages,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCardDensity, type CardDensity } from "@/lib/hooks";
 import { Button, buttonVariants } from "./ui/button";
@@ -643,6 +664,51 @@ function CapabilityStatusDot({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+/* ─── 搜索引擎小药丸 ─── */
+
+const ENGINE_STYLES: Record<
+  string,
+  {
+    label: string;
+    bg: string;
+    text: string;
+    border: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }
+> = {
+  bing_crawler: { label: "Bing Crawler", bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", icon: Search },
+  tavily: { label: "Tavily", bg: "bg-emerald-50", text: "text-emerald-600", border: "border-emerald-200", icon: Telescope },
+  serpapi: { label: "SerpAPI", bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-200", icon: Database },
+  duckduckgo: { label: "DuckDuckGo", bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", icon: Shield },
+  baidu_qianfan: { label: "百度千帆", bg: "bg-sky-50", text: "text-sky-700", border: "border-sky-200", icon: Cloud },
+  metaso: { label: "Metaso", bg: "bg-purple-50", text: "text-purple-600", border: "border-purple-200", icon: Target },
+  bocha: { label: "Bocha", bg: "bg-rose-50", text: "text-rose-600", border: "border-rose-200", icon: Radar },
+  langsearch: { label: "LangSearch", bg: "bg-cyan-50", text: "text-cyan-600", border: "border-cyan-200", icon: Languages },
+  brave: { label: "Brave", bg: "bg-red-50", text: "text-red-600", border: "border-red-200", icon: Shield },
+  bing: { label: "Bing", bg: "bg-indigo-50", text: "text-indigo-600", border: "border-indigo-200", icon: Search },
+  searxng: { label: "SearXNG", bg: "bg-lime-50", text: "text-lime-700", border: "border-lime-200", icon: Globe },
+};
+
+function SearchEnginePill({ engine }: { engine: string }) {
+  const style = ENGINE_STYLES[engine];
+  const Icon = style?.icon ?? Search;
+  const label = style?.label ?? engine;
+  return (
+    <span
+      title={engine}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:opacity-80",
+        style?.bg ?? "bg-[var(--kp-bg-mute)]",
+        style?.text ?? "text-[var(--kp-text-2)]",
+        style?.border ?? "border-[var(--kp-divider)]",
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
+
 export function NativeCapabilitiesPanel({
   data,
   compact = false,
@@ -708,9 +774,20 @@ export function NativeCapabilitiesPanel({
         )}
       </div>
       {(showSearchEnginesInCompact || !compact) && data.search.engines.length > 0 && (
-        <p className="text-[10px] text-[var(--kp-text-3)]">
-          引擎：{data.search.engines.join(" · ")}（{data.search.priority}）
-        </p>
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-[var(--kp-text-3)]">引擎：</span>
+            {data.search.engines.map((engine) => (
+              <SearchEnginePill key={engine} engine={engine} />
+            ))}
+            <span
+              className="ml-1 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)]/50 px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]"
+              title="搜索优先级策略"
+            >
+              {data.search.priority}
+            </span>
+          </div>
+        </div>
       )}
       {cookieEntries.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
