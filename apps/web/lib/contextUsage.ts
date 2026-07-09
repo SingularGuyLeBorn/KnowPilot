@@ -12,6 +12,15 @@ export interface ContextUsageSegment {
   color: string;
 }
 
+export interface ContextUsageMessageInfo {
+  id: string;
+  role: string;
+  tokens: number;
+  preview: string;
+  isSummarized: boolean;
+  createdAt?: string | Date;
+}
+
 export interface ContextUsageSnapshot {
   segments: ContextUsageSegment[];
   estimatedTotal: number;
@@ -19,6 +28,19 @@ export interface ContextUsageSnapshot {
   inputTokens: number;
   outputTokens: number;
   maxContextTokens: number;
+  /** 按 token 消耗降序排列的消息（Top N 由调用方截取） */
+  topMessages: ContextUsageMessageInfo[];
+  /** 压缩状态 */
+  compression: {
+    summarizedCount: number;
+    originalCount: number;
+    /** 摘要消息的 token 数 */
+    summarizedTokens: number;
+    /** 原始消息的 token 数 */
+    originalTokens: number;
+    /** 是否已触发自动压缩 */
+    hasAutoCompacted: boolean;
+  };
 }
 
 const SUMMARY_MARKER = "[此前对话摘要 — 自动压缩]";
@@ -74,6 +96,44 @@ export function buildContextUsage(params: {
   const estimatedTotal = segments.reduce((sum, s) => sum + s.tokens, 0);
   const ratio = Math.min(1, estimatedTotal / maxContextTokens);
 
+  // Per-message token 排行
+  const topMessages: ContextUsageMessageInfo[] = params.messages
+    .map((m) => {
+      const content = m.content ?? "";
+      const isSummarized = content.includes(SUMMARY_MARKER);
+      const msgChars = content.length + (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) + (m.toolResults ? JSON.stringify(m.toolResults).length : 0);
+      return {
+        id: m.id,
+        role: m.role,
+        tokens: charsToTokens(msgChars),
+        preview: content.replace(SUMMARY_MARKER, "").trim().slice(0, 80) || "(空)",
+        isSummarized,
+        createdAt: m.createdAt,
+      };
+    })
+    .filter((m) => m.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, 10);
+
+  // 压缩状态
+  let summarizedCount = 0;
+  let originalCount = 0;
+  let summarizedTokens = 0;
+  let originalTokens = 0;
+  for (const m of params.messages) {
+    const content = m.content ?? "";
+    const isSummarized = content.includes(SUMMARY_MARKER);
+    const msgChars = content.length + (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) + (m.toolResults ? JSON.stringify(m.toolResults).length : 0);
+    const tokens = charsToTokens(msgChars);
+    if (isSummarized) {
+      summarizedCount++;
+      summarizedTokens += tokens;
+    } else {
+      originalCount++;
+      originalTokens += tokens;
+    }
+  }
+
   let inputTokens = 0;
   let outputTokens = 0;
   for (const m of params.messages) {
@@ -94,6 +154,14 @@ export function buildContextUsage(params: {
     inputTokens,
     outputTokens,
     maxContextTokens,
+    topMessages,
+    compression: {
+      summarizedCount,
+      originalCount,
+      summarizedTokens,
+      originalTokens,
+      hasAutoCompacted: summarizedCount > 0,
+    },
   };
 }
 

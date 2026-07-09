@@ -30,7 +30,7 @@ export const SessionContextBar = memo(function SessionContextBar({
     const el = triggerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const panelWidth = 320;
+    const panelWidth = 420;
     let left = rect.left;
     if (left + panelWidth > window.innerWidth - 12) {
       left = window.innerWidth - panelWidth - 12;
@@ -119,61 +119,156 @@ const ContextUsagePopover = forwardRef<
   }
 >(function ContextUsagePopover({ usage, style, onClose }, ref) {
   const pct = Math.round(usage.ratio * 100);
+  const warn = usage.ratio >= 0.75;
+  const critical = usage.ratio >= 0.92;
+  const ringColor = critical ? "#ef4444" : warn ? "#f59e0b" : "var(--kp-brand)";
 
   return (
     <motion.div
       ref={ref}
       role="dialog"
-      aria-label="上下文占用"
+      aria-label="上下文占用报告"
       initial={{ opacity: 0, y: -6, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
       style={{ position: "fixed", top: style.top, left: style.left, zIndex: 9999 }}
-      className="w-80 overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-xl shadow-[rgba(45,42,38,0.1)]"
+      className="overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-xl shadow-[rgba(45,42,38,0.12)]"
       data-testid="context-usage-popover"
     >
-      <div className="flex items-center justify-between border-b border-[var(--kp-divider-light)] px-4 py-3">
-        <h3 className="text-sm font-semibold text-[var(--kp-text-1)]">上下文占用</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
-          aria-label="关闭"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="space-y-3 px-4 py-3">
-        <div className="flex items-baseline justify-between text-xs">
-          <span className="font-semibold text-[var(--kp-text-1)]">{pct}% 已满</span>
-          <span className="text-[var(--kp-text-3)]">
-            ~{formatTokenCount(usage.estimatedTotal)} / {formatTokenCount(usage.maxContextTokens)} tokens
-          </span>
+      <div className="w-[420px]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-[var(--kp-divider-light)] px-4 py-3">
+          <h3 className="text-sm font-semibold text-[var(--kp-text-1)]">上下文占用报告</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+            aria-label="关闭"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        <SegmentedBar segments={usage.segments} total={usage.estimatedTotal} />
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto px-4 py-4">
+          {/* Ring chart + 总览 */}
+          <div className="flex items-center gap-4">
+            <div className="relative h-20 w-20 shrink-0">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--kp-bg-mute)" strokeWidth="3" />
+                <circle
+                  cx="18" cy="18" r="15.5" fill="none" stroke={ringColor} strokeWidth="3"
+                  strokeDasharray={`${usage.ratio * 97.4} 97.4`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-lg font-bold tabular-nums text-[var(--kp-text-1)]">{pct}%</span>
+              </div>
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="text-xs text-[var(--kp-text-3)]">已用 / 上限</div>
+              <div className="text-sm font-semibold tabular-nums text-[var(--kp-text-1)]">
+                ~{formatTokenCount(usage.estimatedTotal)} / {formatTokenCount(usage.maxContextTokens)}
+              </div>
+              <div className="flex gap-3 text-[10px] text-[var(--kp-text-3)]">
+                <span className="inline-flex items-center gap-0.5">
+                  <ArrowUp className="h-2.5 w-2.5" />{formatTokenCount(usage.inputTokens)}
+                </span>
+                <span className="inline-flex items-center gap-0.5">
+                  <ArrowDown className="h-2.5 w-2.5" />{formatTokenCount(usage.outputTokens)}
+                </span>
+              </div>
+            </div>
+          </div>
 
-        <ul className="space-y-0.5">
-          {usage.segments.map((seg) => (
-            <li
-              key={seg.id}
-              className="flex items-center justify-between rounded-lg px-2 py-1.5 text-xs transition hover:bg-[var(--kp-bg-mute)]/60"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: seg.color }} />
-                <span className="truncate text-[var(--kp-text-2)]">{seg.label}</span>
-              </span>
-              <span className="shrink-0 tabular-nums text-[var(--kp-text-1)]">
-                {formatTokenCount(seg.tokens)}
-              </span>
-            </li>
-          ))}
-        </ul>
+          {/* Segmented bar */}
+          <div>
+            <SegmentedBar segments={usage.segments} total={usage.estimatedTotal} />
+            <ul className="mt-2 space-y-0.5">
+              {usage.segments.map((seg) => (
+                <li
+                  key={seg.id}
+                  className="flex items-center justify-between rounded-lg px-2 py-1.5 text-xs transition hover:bg-[var(--kp-bg-mute)]/60"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: seg.color }} />
+                    <span className="truncate text-[var(--kp-text-2)]">{seg.label}</span>
+                  </span>
+                  <span className="shrink-0 tabular-nums text-[var(--kp-text-1)]">
+                    {formatTokenCount(seg.tokens)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
 
-        <p className="text-[10px] leading-relaxed text-[var(--kp-text-3)]">
-          输入/输出为 API 累计用量；上下文分段按字符粗算（÷4）。超过阈值时服务端自动摘要旧消息。
-        </p>
+          {/* 压缩状态 */}
+          {usage.compression.hasAutoCompacted ? (
+            <div className="rounded-xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30 px-3 py-2.5">
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-[var(--kp-brand-dark)]">
+                <Gauge className="h-3 w-3" />
+                自动压缩已启用
+              </div>
+              <div className="text-[10px] leading-relaxed text-[var(--kp-text-2)]">
+                {usage.compression.summarizedCount} 条旧消息已被摘要压缩，占用 ~{formatTokenCount(usage.compression.summarizedTokens)} tokens。
+                {usage.compression.originalCount} 条原始消息占用 ~{formatTokenCount(usage.compression.originalTokens)} tokens。
+                超过 75% 时服务端自动摘要更早的对话。
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 px-3 py-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+              {pct >= 75
+                ? "⚠ 接近自动压缩阈值（75%）。继续对话将触发旧消息摘要。"
+                : "未触发自动压缩。超过 75% 时服务端自动摘要更早的对话以节省上下文。"}
+            </div>
+          )}
+
+          {/* Top 消耗消息 */}
+          {usage.topMessages.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+                Top 消耗消息
+              </div>
+              <ul className="space-y-1">
+                {usage.topMessages.map((msg, i) => (
+                  <li
+                    key={msg.id}
+                    className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-[11px] transition hover:bg-[var(--kp-bg-mute)]/60"
+                  >
+                    <span className="shrink-0 tabular-nums font-semibold text-[var(--kp-text-3)]">#{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "shrink-0 rounded px-1 py-0.5 text-[9px] font-medium",
+                            msg.role === "user"
+                              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                              : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
+                          )}
+                        >
+                          {msg.role === "user" ? "用户" : msg.role === "assistant" ? "AI" : msg.role}
+                        </span>
+                        {msg.isSummarized && (
+                          <span className="shrink-0 rounded bg-[var(--kp-brand-light)]/30 px-1 py-0.5 text-[9px] text-[var(--kp-brand-dark)]">
+                            已压缩
+                          </span>
+                        )}
+                        <span className="ml-auto shrink-0 tabular-nums font-medium text-[var(--kp-text-1)]">
+                          ~{formatTokenCount(msg.tokens)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 truncate text-[10px] text-[var(--kp-text-3)]">{msg.preview}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p className="text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+            分段按字符粗算（÷4 估算 token）；输入/输出为 API 累计用量。超过阈值时服务端自动摘要旧消息以释放上下文空间。
+          </p>
+        </div>
       </div>
     </motion.div>
   );
