@@ -1001,10 +1001,13 @@ export function ChatView() {
     [effectiveSessionId, updateSession],
   );
 
-  const resetPromptToAgent = () => {
+  // R17：useCallback 稳定化，使 ChatSettingsPanel memo 后流式期间跳过重渲染
+  const resetPromptToAgent = useCallback(() => {
     if (!selectedAgent) return;
     updateConfig({ systemPrompt: selectedAgent.systemPrompt, customSystemPrompt: false });
-  };
+  }, [selectedAgent, updateConfig]);
+
+  const handleOpenPromptEditor = useCallback(() => setShowPromptEditor(true), []);
 
   const runStream = useCallback(
     async (opts: {
@@ -2280,8 +2283,8 @@ export function ChatView() {
                 chatConfig={chatConfig}
                 updateConfig={updateConfig}
                 resetPromptToAgent={resetPromptToAgent}
-                onOpenPromptEditor={() => setShowPromptEditor(true)}
-                skills={skillsQuery.data?.items ?? []}
+                onOpenPromptEditor={handleOpenPromptEditor}
+                skills={skills}
                 selectedSkill={selectedSkill}
                 onSelectSkill={setSelectedSkill}
                 modelSupportsReasoning={!!(modelOpt.supportsThinking ?? modelOpt.supportsReasoning)}
