@@ -222,6 +222,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "async_task_wait",
   "run_shell",
   "wait",
+  "sleep",
   "session_clear",
   // Swarm 管理工具
   "agent_create",

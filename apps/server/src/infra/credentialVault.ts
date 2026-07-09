@@ -204,10 +204,15 @@ export async function injectIntegrationCredentials(
  * 此前 createContext 对每个 tRPC 请求都调用 injectIntegrationCredentials，
  * 即便 listCredentialsByScope 有 30s 缓存，每请求仍做 3 次 Map 查 + 对象 spread
  * 并改写共享 config（并发竞态）。改为：首次请求注入一次，后续请求零工作；
- * 凭据 CRUD 后标记失效，下一次请求惰性重注入（CRUD 路径不额外读 DB）。
+ * 凭据 CRUD 后立即重注入刷新 config。
+ *
+ * 用 generation 计数器消除「首次注入进行中发生 CRUD」的竞态：
+ * invalidate 自增 gen，进行中的旧注入完成时发现 gen 已超越便不写 config、
+ * 不标记 injected，避免旧凭据覆盖新凭据。
  */
 let integrationInjected = false;
 let integrationInjectPromise: Promise<void> | null = null;
+let integrationGen = 0;
 
 /** 幂等注入：已注入则立即返回；首次或失效后执行一次注入（并发合并为单次）。 */
 export async function ensureIntegrationCredentialsInjected(
@@ -216,21 +221,33 @@ export async function ensureIntegrationCredentialsInjected(
 ): Promise<void> {
   if (integrationInjected) return;
   if (!integrationInjectPromise) {
+    const myGen = integrationGen;
     integrationInjectPromise = (async () => {
-      await injectIntegrationCredentials(config, prisma);
-      integrationInjected = true;
-      integrationInjectPromise = null;
+      try {
+        await injectIntegrationCredentials(config, prisma);
+        // 仅当本次注入未被后续 invalidate 超越时才落地
+        if (myGen === integrationGen) integrationInjected = true;
+      } finally {
+        if (myGen === integrationGen) integrationInjectPromise = null;
+      }
     })();
   }
   await integrationInjectPromise;
 }
 
-/** 凭据 CRUD 后调用：标记需要重注入 + 清 listCredentialsByScope 缓存。
- *  下一个请求的 ensureIntegrationCredentialsInjected 会重新拉取并写入 config。 */
-export function invalidateIntegrationCredentials(): void {
+/** 凭据 CRUD 后调用：清缓存 + 标记失效 + 立即重新注入（用最新 DB 数据刷新 config）。
+ *  自增 gen 使任何进行中的旧注入作废（不写 config、不标记 injected），
+ *  随后启动的新注入用最新数据写入 config，彻底消除竞态。
+ *  CRUD 是低频用户操作，多 3 次读可接受。 */
+export async function invalidateIntegrationCredentials(
+  config: AppConfig,
+  prisma: PrismaClient,
+): Promise<void> {
+  integrationGen++;
   integrationInjected = false;
   integrationInjectPromise = null;
   clearCredentialCache();
+  await ensureIntegrationCredentialsInjected(config, prisma);
 }
 
 export async function touchCredentialLastUsed(

@@ -22,15 +22,43 @@ export function SubagentCreateDialog({
   open: boolean;
   parentSessionId?: string;
   onClose: () => void;
-  onCreated?: () => void;
+  onCreated?: (result: { subagentSessionId?: string; status: "queued" | "running"; jobId: string; taskLabel: string; model?: string }) => void;
 }) {
   const utils = trpc.useUtils();
   const agentsQuery = trpc.agent.list.useQuery({ page: 1, pageSize: 50 });
   const spawnMut = trpc.session.spawn.useMutation({
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      const taskLabel = variables.task.trim().slice(0, 60);
+      // 乐观更新：子代理卡片立即出现在左侧面板，无需等待轮询
+      if (data.subagentSessionId) {
+        utils.session.listChildren.setData(
+        { parentSessionId: variables.parentSessionId, pageSize: 20 },
+        (prev) => {
+          if (!prev) return prev;
+          const exists = prev.items.some((item) => item.id === data.subagentSessionId);
+          if (exists) return prev;
+          const optimisticItem = {
+            id: data.subagentSessionId,
+            title: taskLabel,
+            status: data.status,
+            taskDescription: taskLabel,
+            model: variables.model || null,
+            updatedAt: new Date(),
+            createdAt: new Date(),
+          } as (typeof prev.items)[number];
+          return { ...prev, items: [optimisticItem, ...prev.items] };
+        },
+      );
+      }
       void utils.session.list.invalidate();
       void utils.session.listChildren.invalidate();
-      onCreated?.();
+      onCreated?.({
+        subagentSessionId: data.subagentSessionId,
+        status: data.status,
+        jobId: data.jobId,
+        taskLabel,
+        model: variables.model || undefined,
+      });
       onClose();
     },
   });

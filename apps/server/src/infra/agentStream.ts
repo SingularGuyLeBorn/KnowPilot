@@ -538,6 +538,7 @@ export async function chatAgentStream(
         content: prepared.messageText,
         attachments: prepared.attachments?.length ? prepared.attachments : undefined,
         toolResults: skillResolved.meta ? { skill: skillResolved.meta.skill } : undefined,
+        source: input.source ?? "user",
       });
     }
 

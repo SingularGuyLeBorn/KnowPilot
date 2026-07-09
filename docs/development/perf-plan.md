@@ -319,6 +319,32 @@
 
 ---
 
+## 自审记录（AI 自找茬 + 修复）
+
+批次 1 实施过程中的自审发现与处置：
+
+### 已发现并修复
+
+- **P1 并发竞态**：初版 `invalidateIntegrationCredentials` 仅置 `injected=false` + 清缓存，依赖下次请求惰性重注入。若凭据 CRUD 恰发生在首次注入进行中，in-flight 旧注入会用旧凭据覆盖 config 并标记 `injected=true`，导致 config 持久 stale。
+  - **修复**：引入 `integrationGen` generation 计数器；`invalidate` 自增 gen 使进行中的旧注入作废（不再写 config、不再标记 injected），并立即重新注入用最新 DB 数据刷新 config。CRUD 后 config 必为最新，竞态彻底消除。
+
+### 复核确认无问题
+
+- **P2/P3**：`rawInput` 在中间件内仅用于 mutation 日志，query 跳过零风险；错误日志保留同步写入。
+- **A1**：批量查询 `enabled: allAgentIds.length > 0` 守卫；后端 `list` override 对空 `agentIds` 落到 `super.list`（前端不会发送空数组）；复用 `session.list` 失效键，8 个既有 `utils.session.list.invalidate()` 站点自动覆盖，无需额外接线。
+- **A2**：`findSkillsByNames` 保留 fuzzy 兜底（`s.name.includes(name) || name.includes(s.name)`），与原 `findSkillByName` 行为等价；缺失 skill 改为 warn+skip（原为 throw+catch+warn，等价）。
+
+### 已知可接受项
+
+- **P1 importFromEnv**：循环 `credential.create` 每次触发 `afterCreate` → 重注入，N 次导入 = 3N 次读。`importFromEnv` 为一次性低频操作，可接受；未做合并优化。
+- **A1 over-fetch**：批量查询为所有 Agent（含未展开）拉取会话，但单次查询远优于 N 次，且展开即时无查询延迟，UX 更佳。
+
+### WIP 隔离
+
+- 工作区中存在本会话之前就有的未提交 WIP（`schemas.ts` 的 `source` 字段、`agentTools.ts` 的 `sleep` 工具、`nativeTools/router/agentStream` 等关联改动），彼此依赖。为避免部分提交破坏 master 一致性，本批仅暂存**我自己的 hunk**，WIP 留在工作区未提交。
+
+---
+
 > 扫描结论摘要：后端最大单点开销是 **P1（createContext 每请求 3 次 DB 注入凭据）**；前端 Swarm UI 最大开销是 **A1（WorkspaceTree N+1）**；Agent 运行时最大开销是 **A2（Skill N+1）**。这三项 + **P5/A11（索引）** + **P2/P3（loggerMiddleware）** 构成「不影响功能、收益最大」的核心批次。
 
 

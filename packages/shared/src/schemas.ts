@@ -162,6 +162,7 @@ export const agentChatSchema = z
     editMessageId: z.string().cuid().optional(),
     editContent: z.string().min(1).optional(),
     skillId: z.string().cuid().optional(),
+    source: z.enum(["user", "super", "manager", "sub", "system"]).optional(),
   })
   .refine(
     (data) =>
@@ -272,6 +273,8 @@ export const listSessionsSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   keyword: z.string().optional(),
   agentId: z.string().optional(),
+  // A1：批量按多个 agentId 查询（WorkspaceTree 用），提供时不分页、服务端 take 上限 500
+  agentIds: z.array(z.string()).optional(),
   // Swarm/Subagent 过滤
   parentSessionId: z.string().cuid().optional(),
   kind: z.enum(["chat", "subagent"]).optional(),

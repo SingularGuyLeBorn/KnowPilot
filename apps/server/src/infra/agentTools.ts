@@ -16,7 +16,7 @@ import {
 import {
   buildSkillToolSchema,
   executeSkill,
-  findSkillByName,
+  findSkillsByNames,
   parseSkillToolName,
   skillToolName,
 } from "./skillRunner.js";
@@ -64,21 +64,22 @@ type ToolKind = "native" | "skill" | "mcp";
 const DEFAULT_NATIVE = [...DEFAULT_AGENT_NATIVE];
 
 /** 可并发执行的工具（只读 / 无副作用） */
-const READ_ONLY_NATIVE = new Set(["web_search", "read_article", "scrape_web_page", "read_file", "list_directory", "wait"]);
+const READ_ONLY_NATIVE = new Set(["web_search", "read_article", "scrape_web_page", "read_file", "list_directory", "wait", "sleep"]);
 
 /**
  * 工具并发分级（用于 executeToolCallsBatch 分桶，避免三四个慢工具拖垮快工具）：
  * A 纯 CPU/内存（高并发 8）、B 网络只读（中并发 4）、C 本地进程（低并发 2）、D 写入/副作用（串行 1）
  */
 const CONCURRENCY_CLASS_NATIVE: Record<string, "A" | "B" | "C" | "D"> = {
-  // A: 纯本地只读，几乎不占资源
+  // A: 纯本地只读/等待，几乎不占资源
   read_article: "A",
   read_file: "A",
   list_directory: "A",
   search_files: "A",
+  wait: "A",
+  sleep: "A",
   file_stat: "A",
   directory_create: "D",
-  wait: "A",
   search_global: "A",
   // B: 网络只读
   web_search: "B",
@@ -127,7 +128,7 @@ const CLASS_CONCURRENCY: Record<"A" | "B" | "C" | "D", number> = { A: 8, B: 4, C
 
 /** 长等待工具：不受默认 30s 工具超时限制，使用 10 分钟等待上限（与 waitForAsyncJob 对齐）。
  *  这些工具实现 Pause-on-Result 语义：LLM 表达等待意图 → 阻塞等任务完成 → 拿到结果继续生成最终答案 */
-const LONG_WAIT_TOOLS = new Set(["await_async", "async_task_wait"]);
+const LONG_WAIT_TOOLS = new Set(["await_async", "async_task_wait", "sleep"]);
 const LONG_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getToolConcurrencyClass(name: string, registry: Map<string, ToolRegistryEntry>): "A" | "B" | "C" | "D" {
@@ -234,15 +235,17 @@ export async function buildAgentToolSchemas(
     });
   }
 
+  // A2：批量加载所有 Skill（一次 list 查询），消除 N 次 findSkillByName 的 N+1。
+  const skillMap = await findSkillsByNames(services, skillNames);
   for (const skillName of skillNames) {
-    try {
-      const skill = await findSkillByName(services, skillName);
-      const schema = buildSkillToolSchema(skill);
-      registry.set(schema.function.name, { kind: "skill", skillName: skill.name, concurrencySafe: true });
-      schemas.push(schema);
-    } catch (err: unknown) {
-      console.warn(`[AgentTools] Skill ${skillName} 跳过:`, err instanceof Error ? err.message : err);
+    const skill = skillMap.get(skillName);
+    if (!skill) {
+      console.warn(`[AgentTools] Skill ${skillName} 跳过: 不存在或未启用`);
+      continue;
     }
+    const schema = buildSkillToolSchema(skill);
+    registry.set(schema.function.name, { kind: "skill", skillName: skill.name, concurrencySafe: true });
+    schemas.push(schema);
   }
 
   if (parsed.mcpServers.length > 0) {

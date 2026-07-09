@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ import { useAgent } from "@/lib/hooks";
 import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
 
 type AgentForm = {
   name: string;
@@ -52,9 +54,14 @@ const HEARTBEAT_CRON_PRESETS = [
 
 const DEFAULT_AGENT_TOOLS = [
   "native:web_search",
+  "native:read_article",
   "native:read_file",
+  "native:write_file",
   "native:list_directory",
   "native:invoke_api",
+  "native:spawn_subagent",
+  "native:run_async",
+  "native:sleep",
   "native:git_status",
   "skill:*",
   "mcp:filesystem",
@@ -71,6 +78,23 @@ const EMPTY_FORM: AgentForm = {
   heartbeatGoal: "",
 };
 
+const TIER_OPTIONS = [
+  { value: "", label: "全部层级" },
+  { value: "super", label: "超级 Agent" },
+  { value: "manager", label: "管理 Agent" },
+  { value: "sub", label: "子 Agent" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "", label: "全部状态" },
+  { value: "active", label: "活跃" },
+  { value: "idle", label: "空闲" },
+  { value: "dormant", label: "休眠" },
+  { value: "deleted", label: "已删除" },
+];
+
+const TIER_RANK: Record<string, number> = { super: 0, manager: 1, sub: 2 };
+
 function modelOptions(currentModel: string) {
   const options = CHAT_MODELS.map((m) => ({ value: m.id, label: m.label }));
   if (currentModel && !options.some((o) => o.value === currentModel)) {
@@ -79,28 +103,195 @@ function modelOptions(currentModel: string) {
   return options;
 }
 
+function useDebouncedValue<T>(value: T, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
+/** 单张 Agent 卡片 — memo 避免父组件搜索输入时整页重绘 */
+const AgentCard = memo(function AgentCard({
+  agent,
+  selected,
+  onToggleSelect,
+  onEdit,
+  onDelete,
+}: {
+  agent: Agent;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
+  onEdit: (agent: Agent) => void;
+  onDelete: (id: string) => void;
+}) {
+  const handleToggle = useCallback(() => onToggleSelect(agent.id), [agent.id, onToggleSelect]);
+  const handleEdit = useCallback(() => onEdit(agent), [agent, onEdit]);
+  const handleDelete = useCallback(() => onDelete(agent.id), [agent.id, onDelete]);
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        "group relative rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-lg",
+        selected && "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/30",
+      )}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <label className="flex cursor-pointer items-center">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={handleToggle}
+              className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand)] focus:ring-[var(--kp-brand)]"
+            />
+          </label>
+          <div
+            className={cn(
+              "flex h-11 w-11 items-center justify-center rounded-xl",
+              agent.tier === "super"
+                ? "bg-amber-100 text-amber-600"
+                : agent.tier === "manager"
+                  ? "bg-blue-100 text-blue-600"
+                  : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]",
+            )}
+          >
+            {agent.tier === "super" ? <Crown className="h-5 w-5" /> : agent.tier === "manager" ? <ShieldCheck className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-[var(--kp-text-1)]">{agent.name}</h3>
+              {agent.tier && agent.tier !== "sub" && (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
+                    agent.tier === "super" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700",
+                  )}
+                >
+                  {agent.tier === "super" ? "超级" : "管理"}
+                </span>
+              )}
+              {agent.status === "deleted" && (
+                <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] text-gray-500">已删除</span>
+              )}
+              {agent.status === "dormant" && (
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">休眠</span>
+              )}
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1">
+              <span className="inline-flex items-center gap-1 rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]">
+                <Cpu className="h-2.5 w-2.5" />
+                {agent.model}
+              </span>
+              {(() => {
+                const hb = agent.heartbeat as {
+                  enabled?: boolean;
+                  cron?: string;
+                  lastRunStatus?: string | null;
+                  consecutiveFailures?: number;
+                } | null;
+                if (!hb?.enabled) return null;
+                const failed = (hb.consecutiveFailures ?? 0) > 0;
+                return (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
+                      failed ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600",
+                    )}
+                    title={`心跳 ${hb.cron ?? ""}${hb.lastRunStatus ? ` · 上次: ${hb.lastRunStatus}` : ""}`}
+                  >
+                    <HeartPulse className="h-2.5 w-2.5" />
+                    {failed ? `心跳失败×${hb.consecutiveFailures}` : "心跳"}
+                  </span>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="mb-4 min-h-[36px] text-xs leading-relaxed text-[var(--kp-text-3)]">{agent.description || "暂无描述"}</p>
+
+      <div className="mb-4 space-y-1 border-t border-[var(--kp-divider)] pt-3">
+        <AgentToolSummaryCard tools={agent.tools ?? []} />
+      </div>
+
+      <div className="flex gap-2">
+        <Link
+          href={`/chat?agentId=${agent.id}`}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1 rounded-xl bg-[var(--kp-brand)] py-2 text-xs font-medium text-white transition hover:opacity-90",
+          )}
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+          对话
+        </Link>
+        <button
+          type="button"
+          onClick={handleEdit}
+          className="rounded-xl border border-[var(--kp-divider)] px-3 py-2 text-xs text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+        >
+          配置
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="rounded-xl px-2 py-2 text-red-500 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
+});
+
 export default function AgentsPage() {
   const { useList, useCreate, useUpdate, useDelete } = useAgent();
+  const utils = trpc.useUtils();
 
   const [page, setPage] = useState(1);
-  const [keyword, setKeyword] = useState("");
   const [searchInput, setSearchInput] = useState("");
+  const keyword = useDebouncedValue(searchInput.trim(), 300);
+  const [tier, setTier] = useState<"" | "super" | "manager" | "sub">("");
+  const [status, setStatus] = useState<"" | "active" | "idle" | "dormant" | "deleted">("");
   const [view, setView] = useState<"list" | "edit">("list");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<AgentForm>(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
   // 编辑时保留心跳运行历史（lastRunAt/lastRunStatus/consecutiveFailures），保存不清零
-  const [heartbeatMeta, setHeartbeatMeta] = useState<{ lastRunAt: string | null; lastRunStatus: string | null; consecutiveFailures: number }>({ lastRunAt: null, lastRunStatus: null, consecutiveFailures: 0 });
+  const [heartbeatMeta, setHeartbeatMeta] = useState<{
+    lastRunAt: string | null;
+    lastRunStatus: string | null;
+    consecutiveFailures: number;
+  }>({ lastRunAt: null, lastRunStatus: null, consecutiveFailures: 0 });
 
-  const { data, isLoading, refetch } = useList({ page, pageSize: 12, keyword });
-  // tier 置顶排序：超级 > 管理 > 子（页内排序；超级 Agent 不再沉底）
-  const TIER_RANK: Record<string, number> = { super: 0, manager: 1, sub: 2 };
-  const sortedItems = [...(data?.items ?? [])].sort(
-    (a: Agent, b: Agent) => (TIER_RANK[a.tier ?? "sub"] ?? 2) - (TIER_RANK[b.tier ?? "sub"] ?? 2),
+  const listInput = useMemo(
+    () => ({ page, pageSize: 12, keyword: keyword || undefined, tier: tier || undefined, status: status || undefined }),
+    [page, keyword, tier, status],
   );
+  const { data, isLoading, refetch } = useList(listInput);
+
+  const sortedItems = useMemo(
+    () => [...(data?.items ?? [])].sort((a: Agent, b: Agent) => (TIER_RANK[a.tier ?? "sub"] ?? 2) - (TIER_RANK[b.tier ?? "sub"] ?? 2)),
+    [data?.items],
+  );
+
   const createMutation = useCreate();
   const updateMutation = useUpdate();
   const deleteMutation = useDelete();
+  const bulkDeleteMutation = trpc.agent.bulkDelete.useMutation({
+    onSuccess: () => {
+      void utils.agent.list.invalidate();
+      setSelectedIds(new Set());
+    },
+  });
 
   const openCreate = () => {
     setEditingId(null);
@@ -108,9 +299,16 @@ export default function AgentsPage() {
     setView("edit");
   };
 
-  const openEdit = (agent: Agent) => {
+  const openEdit = useCallback((agent: Agent) => {
     setEditingId(agent.id);
-    const hb = agent.heartbeat as { enabled?: boolean; cron?: string; goal?: string; lastRunAt?: string | null; lastRunStatus?: string | null; consecutiveFailures?: number } | null;
+    const hb = agent.heartbeat as {
+      enabled?: boolean;
+      cron?: string;
+      goal?: string;
+      lastRunAt?: string | null;
+      lastRunStatus?: string | null;
+      consecutiveFailures?: number;
+    } | null;
     setHeartbeatMeta({
       lastRunAt: hb?.lastRunAt ?? null,
       lastRunStatus: hb?.lastRunStatus ?? null,
@@ -127,7 +325,7 @@ export default function AgentsPage() {
       heartbeatGoal: hb?.goal ?? "",
     });
     setView("edit");
-  };
+  }, []);
 
   const handleSave = async () => {
     const payload = {
@@ -157,11 +355,6 @@ export default function AgentsPage() {
     void refetch();
   };
 
-  const handleSearch = () => {
-    setKeyword(searchInput.trim());
-    setPage(1);
-  };
-
   const confirmDelete = () => {
     if (deleteId) {
       deleteMutation.mutate({ id: deleteId });
@@ -169,6 +362,42 @@ export default function AgentsPage() {
       if (editingId === deleteId) setView("list");
     }
   };
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === sortedItems.length) return new Set();
+      return new Set(sortedItems.map((a) => a.id));
+    });
+  }, [sortedItems]);
+
+  const confirmBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      await bulkDeleteMutation.mutateAsync({ ids: Array.from(selectedIds) });
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setSearchInput("");
+    setTier("");
+    setStatus("");
+    setPage(1);
+    clearSelection();
+  };
+
+  const activeFiltersCount = Number(!!searchInput) + Number(!!tier) + Number(!!status);
 
   if (view === "edit") {
     return (
@@ -184,9 +413,7 @@ export default function AgentsPage() {
 
         <div className="mx-auto max-w-2xl space-y-6">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--kp-text-1)]">
-              {editingId ? "编辑 Agent" : "新建 Agent"}
-            </h1>
+            <h1 className="text-2xl font-bold text-[var(--kp-text-1)]">{editingId ? "编辑 Agent" : "新建 Agent"}</h1>
             <p className="mt-1 text-sm text-[var(--kp-text-3)]">
               配置模型、System Prompt 与工具授权。Chat 页右侧设置可会话级覆盖 Prompt。
             </p>
@@ -199,7 +426,11 @@ export default function AgentsPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">描述</label>
-              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Agent 职责简介" />
+              <Input
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                placeholder="Agent 职责简介"
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">默认模型</label>
@@ -221,19 +452,12 @@ export default function AgentsPage() {
                 placeholder="定义 Agent 角色与行为。留空则仅依赖模型默认能力。"
               />
               {!form.systemPrompt.trim() && (
-                <p className="mt-1.5 text-[11px] text-[var(--kp-text-3)]">
-                  当前为空。可在下方 Markdown 源文件或此处填写系统提示词。
-                </p>
+                <p className="mt-1.5 text-[11px] text-[var(--kp-text-3)]">当前为空。可在下方 Markdown 源文件或此处填写系统提示词。</p>
               )}
             </div>
             <div>
-              <label className="mb-2 block text-xs font-medium text-[var(--kp-text-3)]">
-                工具授权
-              </label>
-              <AgentToolsEditor
-                tools={form.tools}
-                onChange={(tools) => setForm({ ...form, tools })}
-              />
+              <label className="mb-2 block text-xs font-medium text-[var(--kp-text-3)]">工具授权</label>
+              <AgentToolsEditor tools={form.tools} onChange={(tools) => setForm({ ...form, tools })} />
             </div>
             {/* 心跳配置（#4）：定时自主运行 */}
             <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-4">
@@ -359,18 +583,72 @@ export default function AgentsPage() {
         </div>
       </motion.div>
 
-      <div className="flex gap-2">
-        <div className="relative flex-1 max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="搜索 Agent 名称…"
-            className="pl-9"
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
+            <Input
+              value={searchInput}
+              onChange={(e) => { setSearchInput(e.target.value); clearSelection(); }}
+              onKeyDown={(e) => e.key === "Enter" && setSearchInput(e.currentTarget.value.trim())}
+              placeholder="搜索 Agent 名称…"
+              className="pl-9"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <KpSelect
+            value={tier}
+            onChange={(v) => { setTier(v as typeof tier); setPage(1); clearSelection(); }}
+            options={TIER_OPTIONS}
+            className="w-36"
+            aria-label="层级筛选"
           />
+          <KpSelect
+            value={status}
+            onChange={(v) => { setStatus(v as typeof status); setPage(1); clearSelection(); }}
+            options={STATUS_OPTIONS}
+            className="w-32"
+            aria-label="状态筛选"
+          />
+          {activeFiltersCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--kp-divider)] px-2.5 py-1.5 text-xs text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+            >
+              <X className="h-3 w-3" />
+              清空筛选
+            </button>
+          )}
         </div>
-        <Button variant="outline" onClick={handleSearch}>搜索</Button>
+
+        {selectedIds.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex items-center gap-2"
+          >
+            <span className="text-xs text-[var(--kp-text-3)]">已选 {selectedIds.size} 项</span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setDeleteId("__bulk__")}
+              disabled={isBulkDeleting}
+              className="gap-1"
+            >
+              <Trash2 className="h-4 w-4" />
+              批量删除
+            </Button>
+          </motion.div>
+        )}
       </div>
 
       {isLoading ? (
@@ -378,112 +656,33 @@ export default function AgentsPage() {
       ) : !data?.items?.length ? (
         <EmptyState
           title="暂无 Agent"
-          description="创建第一个 Agent，然后在 Chat 页开始对话。"
-          actionLabel="新建 Agent"
-          onAction={openCreate}
+          description={activeFiltersCount > 0 ? "当前筛选条件下没有匹配结果，尝试调整筛选。" : "创建第一个 Agent，然后在 Chat 页开始对话。"}
+          actionLabel={activeFiltersCount > 0 ? "清空筛选" : "新建 Agent"}
+          onAction={activeFiltersCount > 0 ? clearFilters : openCreate}
         />
       ) : (
         <>
+          <div className="flex items-center gap-2 px-1">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--kp-text-3)]">
+              <input
+                type="checkbox"
+                checked={selectedIds.size === sortedItems.length && sortedItems.length > 0}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand)] focus:ring-[var(--kp-brand)]"
+              />
+              全选本页
+            </label>
+          </div>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {sortedItems.map((agent: Agent, idx: number) => (
-              <motion.div
+            {sortedItems.map((agent: Agent) => (
+              <AgentCard
                 key={agent.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: idx * 0.04 } }}
-                className="group relative rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-lg"
-              >
-                <div className="mb-4 flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "flex h-11 w-11 items-center justify-center rounded-xl",
-                      agent.tier === "super"
-                        ? "bg-amber-100 text-amber-600"
-                        : agent.tier === "manager"
-                          ? "bg-blue-100 text-blue-600"
-                          : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]",
-                    )}>
-                      {agent.tier === "super" ? <Crown className="h-5 w-5" /> : agent.tier === "manager" ? <ShieldCheck className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-[var(--kp-text-1)]">{agent.name}</h3>
-                        {agent.tier && agent.tier !== "sub" && (
-                          <span className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
-                            agent.tier === "super" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700",
-                          )}>
-                            {agent.tier === "super" ? "超级" : "管理"}
-                          </span>
-                        )}
-                        {agent.status === "deleted" && (
-                          <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] text-gray-500">已删除</span>
-                        )}
-                        {agent.status === "dormant" && (
-                          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">休眠</span>
-                        )}
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                        <span className="inline-flex items-center gap-1 rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]">
-                          <Cpu className="h-2.5 w-2.5" />
-                          {agent.model}
-                        </span>
-                        {/* 心跳状态徽标（#9）：启用标记 + 上次运行结果 */}
-                        {(() => {
-                          const hb = agent.heartbeat as { enabled?: boolean; cron?: string; lastRunStatus?: string | null; consecutiveFailures?: number } | null;
-                          if (!hb?.enabled) return null;
-                          const failed = (hb.consecutiveFailures ?? 0) > 0;
-                          return (
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
-                                failed ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600",
-                              )}
-                              title={`心跳 ${hb.cron ?? ""}${hb.lastRunStatus ? ` · 上次: ${hb.lastRunStatus}` : ""}`}
-                            >
-                              <HeartPulse className="h-2.5 w-2.5" />
-                              {failed ? `心跳失败×${hb.consecutiveFailures}` : "心跳"}
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <p className="mb-4 min-h-[36px] text-xs leading-relaxed text-[var(--kp-text-3)]">
-                  {agent.description || "暂无描述"}
-                </p>
-
-                <div className="mb-4 space-y-1 border-t border-[var(--kp-divider)] pt-3">
-                  <AgentToolSummaryCard tools={agent.tools ?? []} />
-                </div>
-
-                <div className="flex gap-2">
-                  <Link
-                    href={`/chat?agentId=${agent.id}`}
-                    className={cn(
-                      "flex flex-1 items-center justify-center gap-1 rounded-xl bg-[var(--kp-brand)] py-2 text-xs font-medium text-white transition hover:opacity-90",
-                    )}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    对话
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => openEdit(agent)}
-                    className="rounded-xl border border-[var(--kp-divider)] px-3 py-2 text-xs text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
-                  >
-                    配置
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteId(agent.id)}
-                    className="rounded-xl px-2 py-2 text-red-500 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </motion.div>
+                agent={agent}
+                selected={selectedIds.has(agent.id)}
+                onToggleSelect={toggleSelect}
+                onEdit={openEdit}
+                onDelete={setDeleteId}
+              />
             ))}
           </div>
 
@@ -493,19 +692,29 @@ export default function AgentsPage() {
               pageSize={data.pageSize}
               total={data.total}
               totalPages={data.totalPages}
-              onPageChange={setPage}
+              onPageChange={(p) => { setPage(p); clearSelection(); }}
             />
           )}
         </>
       )}
 
       <ConfirmDialog
-        isOpen={deleteId !== null}
+        isOpen={deleteId !== null && deleteId !== "__bulk__"}
         title="删除 Agent"
         description="确定删除此 Agent？此操作不可撤销。"
         isDestructive
         confirmLabel="确认删除"
         onConfirm={confirmDelete}
+        onCancel={() => setDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteId === "__bulk__"}
+        title="批量删除 Agent"
+        description={`确定删除选中的 ${selectedIds.size} 个 Agent？此操作不可撤销。`}
+        isDestructive
+        confirmLabel="确认删除"
+        onConfirm={confirmBulkDelete}
         onCancel={() => setDeleteId(null)}
       />
     </div>

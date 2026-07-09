@@ -41,6 +41,7 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "agent_update_sub",
     "agent_delete_sub",
     "agent_forward",
+    "spawn_subagent", // 子 Agent 可执行异步任务，但不能再派生下级子 Agent
   ],
 };
 

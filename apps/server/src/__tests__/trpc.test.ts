@@ -123,6 +123,19 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     await expect(caller.agent.getById({ id: created.data.id })).rejects.toThrow();
   });
 
+  it("should bulk delete agents", async () => {
+    const a1 = await caller.agent.create({ name: `BulkA_${Date.now()}_1`, model: "deepseek-chat" });
+    const a2 = await caller.agent.create({ name: `BulkA_${Date.now()}_2`, model: "deepseek-chat" });
+    expect(a1.success).toBe(true);
+    expect(a2.success).toBe(true);
+
+    const result = await caller.agent.bulkDelete({ ids: [a1.data!.id, a2.data!.id] });
+    expect(result.deleted).toBe(2);
+
+    await expect(caller.agent.getById({ id: a1.data!.id })).rejects.toThrow();
+    await expect(caller.agent.getById({ id: a2.data!.id })).rejects.toThrow();
+  });
+
   // 3. Skill (技能)
   it("should perform CRUD on Skill entity", async () => {
     const uniqueName = `Test Skill ${Date.now()}`;

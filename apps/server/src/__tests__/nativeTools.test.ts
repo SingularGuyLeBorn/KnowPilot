@@ -1195,6 +1195,58 @@ describe("native:wait", () => {
   });
 });
 
+describe("native:sleep", () => {
+  it("阻塞等待指定秒数", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root);
+    const start = Date.now();
+    const result = (await executeNativeTool("sleep", { seconds: 0.05 }, ctx)) as { waitedSeconds: number };
+    expect(result.waitedSeconds).toBeCloseTo(0.05, 1);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(40);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("async=true 需要 sessionId/agentSnapshot", async () => {
+    const root = createTempProjectDir();
+    const ctx = createNativeCtx(root);
+    await expect(executeNativeTool("sleep", { seconds: 0.1, async: true }, ctx)).rejects.toThrow(/sessionId/);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("sub Agent 无权调用 spawn_subagent", async () => {
+    const root = createTempProjectDir();
+    const ctx = {
+      ...createNativeCtx(root),
+      sessionId: "sess-1",
+      agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
+    };
+    const result = (await executeNativeTool("spawn_subagent", { task: "再派生子代理" }, ctx)) as {
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain("TIER_INSUFFICIENT");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("sub Agent 调用 run_async 不因 tier 被拦截", async () => {
+    const root = createTempProjectDir();
+    const ctx = {
+      ...createNativeCtx(root),
+      sessionId: "sess-1",
+      agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
+    };
+    // 权限检查通过后会因缺少真实服务抛错，但不应是 TIER_INSUFFICIENT
+    await expect(executeNativeTool("run_async", { task: "后台任务" }, ctx)).rejects.toThrow();
+    try {
+      await executeNativeTool("run_async", { task: "后台任务" }, ctx);
+    } catch (err) {
+      expect((err as Error).message).not.toContain("TIER_INSUFFICIENT");
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
 describe("native:session_clear", () => {
   it("confirm 不为 true 时拒绝", async () => {
     const root = createTempProjectDir();
