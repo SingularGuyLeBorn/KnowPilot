@@ -85,6 +85,12 @@ export const agentSyncer: Syncer<AgentData> = {
     }
   },
 
+  // #7：unlink 增量硬删 by sourceSlug
+  async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const r = await prisma.agent.deleteMany({ where: { sourceSlug: slug } });
+    return r.count;
+  },
+
   async cleanup(prisma: PrismaClient, activeSlugs: string[], _contentDir?: string): Promise<number> {
     if (activeSlugs.length === 0) {
       console.warn(`  ⚠️ [Agent] activeSlugs 为空，跳过 cleanup 以防误删。`);

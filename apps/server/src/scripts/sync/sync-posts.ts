@@ -91,6 +91,12 @@ export const postSyncer: Syncer<PostData> = {
     });
   },
 
+  // #7：unlink 增量软删（与 cleanup 语义一致，进回收站可恢复）
+  async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const r = await prisma.post.updateMany({ where: { slug, deletedAt: null }, data: { deletedAt: new Date() } });
+    return r.count;
+  },
+
   async cleanup(prisma: PrismaClient, activeSlugs: string[], contentDir?: string): Promise<number> {
     // 防御：activeSlugs 为空（目录为空或配置错误）时绝不清理，避免一次性清库
     if (activeSlugs.length === 0) {

@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 import chokidar from "chokidar";
 import { PrismaClient } from "@prisma/client";
 import { Syncer } from "./sync/types.js";
-import { getContentDir } from "./sync/utils.js";
+import { getContentDir, filePathToSlug } from "./sync/utils.js";
 import { postSyncer } from "./sync/sync-posts.js";
 import { agentSyncer } from "./sync/sync-agents.js";
 import { skillSyncer } from "./sync/sync-skills.js";
@@ -150,12 +150,24 @@ async function runWatch(): Promise<void> {
       debounceMap.set(
         syncer.entityName,
         setTimeout(async () => {
-          // A13：删除事件或不支持单文件解析的 syncer 走全量同步（含 cleanup）；
-          // 新增/变更走单文件解析 + upsert，避免每次变更全目录扫描。
-          if (eventType === "删除" || !syncer.scanFile) {
-            const result = await syncEntity(syncer, prisma);
-            console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
-          } else {
+          // A13 + #7：删除事件优先走增量 deleteBySlug（不再全目录扫描）；不支持时回退全量 syncEntity。
+          // 新增/变更走单文件 scanFile + upsert。
+          if (eventType === "删除") {
+            if (syncer.deleteBySlug) {
+              try {
+                const slug = filePathToSlug(contentDir, eventPath);
+                const n = await syncer.deleteBySlug(prisma, slug);
+                console.log(`  🗑️ [${syncer.entityName}] 增量清理: ${path.relative(contentDir, eventPath)} (${n} 条)`);
+              } catch (e: any) {
+                console.error(`  ❌ [${syncer.entityName}] 增量清理失败，回退全量:`, e.message);
+                const result = await syncEntity(syncer, prisma);
+                console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+              }
+            } else {
+              const result = await syncEntity(syncer, prisma);
+              console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+            }
+          } else if (syncer.scanFile) {
             try {
               const record = await syncer.scanFile(eventPath, contentDir);
               if (record) {
@@ -165,6 +177,9 @@ async function runWatch(): Promise<void> {
             } catch (e: any) {
               console.error(`  ❌ [${syncer.entityName}] 单文件同步失败:`, e.message);
             }
+          } else {
+            const result = await syncEntity(syncer, prisma);
+            console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
           }
         }, 300)
       );
