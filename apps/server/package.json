@@ -25,6 +25,7 @@
     "sync-free-keys:watch": "tsx src/scripts/sync-free-keys.ts --watch",
     "db:cleanup-test-sessions": "tsx src/scripts/cleanup-test-sessions.ts",
     "cleanup:smoke-artifacts": "tsx src/scripts/cleanup-smoke-artifacts.ts",
+    "cleanup:duplicate-agents": "tsx src/scripts/cleanup-duplicate-agents.ts",
     "integration:smoke": "tsx src/scripts/integration-smoke.ts",
     "integration:smoke:platform": "tsx src/scripts/integration-smoke.ts --platform",
     "integration:smoke:platform:quick": "tsx src/scripts/integration-smoke.ts --quick-platform",

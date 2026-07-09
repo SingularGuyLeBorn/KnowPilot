@@ -392,6 +392,9 @@ export abstract class FileSyncService<
 
   protected override async afterCreate(entity: TEntity, input: TCreate): Promise<void> {
     this.writeFile(entity);
+    // 写完文件后回写 sourceSlug/sourceMtime 到 DB，否则 db:sync 用 sourceSlug 查不到记录
+    // 会误判为新文件并重复创建（曾导致超级 Agent 每次同步都复制一份）
+    await this.syncFileMetaToDb(entity);
     await super.afterCreate(entity, input);
   }
 
@@ -400,7 +403,26 @@ export abstract class FileSyncService<
     const newSlug = this.getFileSlug(entity);
     if (oldSlug && oldSlug !== newSlug) this.deleteFileBySlug(oldSlug);
     this.writeFile(entity);
+    await this.syncFileMetaToDb(entity);
     await super.afterUpdate(entity, existing, input);
+  }
+
+  /**
+   * 写文件后把 sourceSlug/sourceMtime 回写到 DB，让 db:sync 能按 sourceSlug 匹配到记录。
+   * 没有 sourceSlug 字段的实体表（如 Post 用 slug）会静默跳过。
+   */
+  private async syncFileMetaToDb(entity: TEntity): Promise<void> {
+    try {
+      const slug = this.getFileSlug(entity);
+      const id = (entity as any).id;
+      if (!id) return;
+      const dir = this.getContentDir();
+      const filePath = path.join(dir, `${slug}${this.fileExtension}`);
+      const mtime = fs.existsSync(filePath) ? fs.statSync(filePath).mtime : new Date();
+      await this.delegate.update({ where: { id }, data: { sourceSlug: slug, sourceMtime: mtime } });
+    } catch {
+      // 实体表可能没有 sourceSlug/sourceMtime 字段（如 Post），静默跳过
+    }
   }
 
   protected override async afterDelete(existing: any): Promise<void> {

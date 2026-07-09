@@ -56,8 +56,13 @@ export const agentSyncer: Syncer<AgentData> = {
   async upsert(prisma: PrismaClient, record: SyncRecord<AgentData>): Promise<void> {
     const { slug, mtime, data } = record;
 
-    // name 不再 @unique（swarm 允许重名），用 sourceSlug 做 upsert 唯一键
-    const existing = await prisma.agent.findFirst({ where: { sourceSlug: slug } });
+    // 1. 按 sourceSlug 精确匹配（正常路径）
+    let existing = await prisma.agent.findFirst({ where: { sourceSlug: slug } });
+    // 2. 防御：sourceSlug 未匹配时按 name 兜底，避免历史遗留 sourceSlug=null 的记录被重复创建
+    //    （曾导致超级 Agent 每次 sync 复制一份）
+    if (!existing) {
+      existing = await prisma.agent.findFirst({ where: { name: data.name, status: { not: "deleted" } } });
+    }
     if (existing) {
       await prisma.agent.update({
         where: { id: existing.id },
@@ -67,6 +72,7 @@ export const agentSyncer: Syncer<AgentData> = {
           model: data.model,
           systemPrompt: data.systemPrompt,
           tools: data.tools,
+          sourceSlug: slug,
           sourceMtime: mtime,
         },
       });
