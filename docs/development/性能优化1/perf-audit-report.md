@@ -373,3 +373,44 @@
 ### 验证
 
 server tsc ✅ / web tsc ✅ / vitest **248 passed 5 skipped**（含新增 apiKey masking 回归测试）✅
+
+---
+
+## 八、验证补强（批次 11：#16/#17/#18）
+
+> 针对第六章 #16/#17/#18 的验证流程改进，开 `perf/batch11-verification` 分支落地。
+
+### #16 E2E
+
+- `pnpm test:e2e:mock`（playwright mock 配置，MOCK_LLM/MCP/NATIVE_TOOLS 全开，web 3002 + server 3011）：**11 passed (41.8s)**
+  - 覆盖：chat 工具调用/思考时间线/中间正式回复/工具失败、文章回收站删除恢复、子代理创建展示、通用 UI 组件
+  - 验证前端性能改造（虚拟化、rAF token 合并、input 下放、SSE 合并、WorkspaceTree prop 传递）未破坏 mock 交互流
+- 真实 LLM E2E（chat-thinking-real / chat-tool-hint-real / chat-ocr-real / chat-queue-real）未运行：需真实 API Key（DEEPSEEK/OPENAI 等），本地无 keys 时跳过；建议在具备 keys 的环境补跑
+
+### #17 性能基准（dev.db：posts=1312 sessions=37 agents=37 runs=102）
+
+脚本：`apps/server/src/scripts/bench-perf.ts`（`pnpm --filter @knowpilot/server exec tsx src/scripts/bench-perf.ts`）
+
+| 热路径 | avg | 说明 |
+|---|---|---|
+| post.search **FTS**（R1） | **0ms** | searchFts post，走 FTS5 索引 |
+| post.search LIKE（优化前等价路径） | **33ms** | title+content contains 全表扫 |
+| → FTS 较 LIKE | **~33x 提速** | 1312 篇文章下 R1 的实际收益 |
+| session.getById（include 500 消息） | 0–1ms | 测试会话仅 2 条消息、载荷 ~1.7KiB |
+| agent.list（take 100 全字段） | 0–1ms | 37 agents |
+| analytics.dashboard（13 count，冷） | 14ms | R8 缓存未命中时 |
+| swarmStats groupBy（30d，#9） | 14ms | SQL 聚合，runs=102 |
+
+- **结论**：R1（post.search FTS）有可量化的大幅提速（33x）；session.getById 在小会话下快，但 P0-1 的风险在大会话（多消息 + 图片附件 data URL）时才显现——本次基准的会话太小未触发，需用大会话构造场景才能体现 P0-1 收益。
+- dashboard/swarmStats 在当前数据量下 14ms，可接受。
+
+### #18 并发测试
+
+新增 `apps/server/src/__tests__/concurrency.test.ts`（3 tests passed）：
+- P1：`ensureIntegrationCredentialsInjected` 10 并发调用幂等不抛错，config 一致
+- P1：`invalidate` 后再次 `ensure` 重新注入，config 一致
+- A6：两组不相交 agent 并发 `bulkDelete` 互不干扰，各删 2 条
+
+### 验证
+
+server tsc ✅ / web tsc ✅ / vitest **251 passed 5 skipped**（248 + 3 并发测试）✅ / mock E2E **11 passed** ✅
