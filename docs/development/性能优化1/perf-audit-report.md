@@ -414,3 +414,42 @@ server tsc ✅ / web tsc ✅ / vitest **248 passed 5 skipped**（含新增 apiKe
 ### 验证
 
 server tsc ✅ / web tsc ✅ / vitest **251 passed 5 skipped**（248 + 3 并发测试）✅ / mock E2E **11 passed** ✅
+
+---
+
+# 第三轮性能优化（round 3）
+
+> 第二轮 10 项 + 硬茬 6 + 验证 3 + #5/#7 + P0-1 已落地。本轮继续做不碰 Chat UI 的安全后端项。
+> 自答自审，`回答：` 由 AI 据 AGENTS.md 流程默认填写。
+
+## R11. buildMemoryContext 改 FTS 召回
+
+- **位置**：`apps/server/src/infra/agentRuntime.ts` buildMemoryContext
+- **当前**：`memory.list({keyword})` 用 LIKE 扫 content；Memory 已有 FTS（P11）却未用。
+- **推荐**：searchFts(entity=memory) 取 id → prisma.memory.findMany 回填；FTS 无命中/不可用回退 LIKE。
+- **回答：同意。已实施。**
+
+## R12. dashboard 13 count 合并为单 SQL
+
+- **位置**：`apps/server/src/infra/analytics.ts` getAnalyticsDashboard
+- **当前**：Promise.all 13 个 count/findMany（已 30s 缓存，但缓存 miss 时 13 路）。
+- **推荐**：12 个 count 合并为一条 raw SQL（子查询），tokenUsage(JSON) 仍 findMany；2 查询替代 13。
+- **回答：同意。已实施。**
+
+## R13. post.list.keyword 走 FTS
+
+- **位置**：`apps/server/src/services.ts` PostService.buildListWhere keyword（LIKE 扫 title+content）
+- **推荐**：list override 时 keyword 先 searchFts 取 post id，buildListWhere 按 id 过滤；FTS 无命中回退 LIKE。
+- **回答：同意。已实施。**
+
+## 批次 12 自审记录
+
+### 复核
+
+- **R11**：FTS 优先 + LIKE 回退；services.prisma.memory.findMany 回填；agent.chat E2E 覆盖未破坏。
+- **R12**：raw SQL 用子查询 12 count，SQLite 布尔用 =1，DateTime 比较 ISO 字符串；range.to 可选 lte；dashboard 测试（typeof number）通过。基准 16ms（小数据集，单 SQL vs 13 并行差距小，主要减少查询/parse 数）。
+- **R13**：list override 注入 ftsIds（transient，as any），buildListWhere 优先 ftsIds else LIKE；super.list 复用分页/count/getListSelect；回退保证。
+
+### 验证
+
+server tsc ✅ / vitest **251 passed** ✅ / web build ✅ / mock E2E **11 passed** ✅

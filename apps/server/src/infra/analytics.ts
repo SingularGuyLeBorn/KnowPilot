@@ -22,47 +22,35 @@ export async function getAnalyticsDashboard(
   const since24h = range?.from ? new Date(range.from) : new Date(Date.now() - 24 * 60 * 60 * 1000);
   const logCreatedAtLte = range?.to ? new Date(range.to) : undefined;
 
-  const [
-    postTotal,
-    postPublished,
-    agentTotal,
-    skillTotal,
-    skillEnabled,
-    sessionTotal,
-    runTotal,
-    runSuccess,
-    runFailed,
-    taskTotal,
-    taskCron,
-    logErrors24h,
-    runsWithTokens,
-  ] = await Promise.all([
-    prisma.post.count(),
-    prisma.post.count({ where: { published: true } }),
-    prisma.agent.count(),
-    prisma.skill.count(),
-    prisma.skill.count({ where: { enabled: true } }),
-    prisma.chatSession.count(),
-    prisma.run.count(),
-    prisma.run.count({ where: { status: "success" } }),
-    prisma.run.count({ where: { status: "failed" } }),
-    prisma.task.count(),
-    prisma.task.count({ where: { type: "cron" } }),
-    prisma.log.count({
-      where: {
-        level: "error",
-        createdAt: {
-          gte: since24h,
-          ...(logCreatedAtLte ? { lte: logCreatedAtLte } : {}),
-        },
-      },
-    }),
+  // R12：12 个 count 合并为单条 raw SQL（子查询），替代 13 路 Promise.all；tokenUsage 是 JSON 无法 SQL 聚合，仍 findMany。
+  const logLteClause = logCreatedAtLte ? `AND "createdAt" <= ?` : "";
+  const sql = `
+    SELECT
+      (SELECT COUNT(*) FROM "Post") AS "postTotal",
+      (SELECT COUNT(*) FROM "Post" WHERE "published" = 1) AS "postPublished",
+      (SELECT COUNT(*) FROM "Agent") AS "agentTotal",
+      (SELECT COUNT(*) FROM "Skill") AS "skillTotal",
+      (SELECT COUNT(*) FROM "Skill" WHERE "enabled" = 1) AS "skillEnabled",
+      (SELECT COUNT(*) FROM "ChatSession") AS "sessionTotal",
+      (SELECT COUNT(*) FROM "Run") AS "runTotal",
+      (SELECT COUNT(*) FROM "Run" WHERE "status" = 'success') AS "runSuccess",
+      (SELECT COUNT(*) FROM "Run" WHERE "status" = 'failed') AS "runFailed",
+      (SELECT COUNT(*) FROM "Task") AS "taskTotal",
+      (SELECT COUNT(*) FROM "Task" WHERE "type" = 'cron') AS "taskCron",
+      (SELECT COUNT(*) FROM "Log" WHERE "level" = 'error' AND "createdAt" >= ? ${logLteClause}) AS "logErrors24h"
+  `;
+  const params: Date[] = [since24h];
+  if (logCreatedAtLte) params.push(logCreatedAtLte);
+
+  const [rows, runsWithTokens] = await Promise.all([
+    prisma.$queryRawUnsafe<any[]>(sql, ...params),
     prisma.run.findMany({
       select: { tokenUsage: true },
       take: 500,
       orderBy: { createdAt: "desc" },
     }),
   ]);
+  const r = rows[0] ?? {};
 
   let estimatedTotal = 0;
   for (const run of runsWithTokens) {
@@ -71,13 +59,13 @@ export async function getAnalyticsDashboard(
   }
 
   return {
-    posts: { total: postTotal, published: postPublished },
-    agents: { total: agentTotal },
-    skills: { total: skillTotal, enabled: skillEnabled },
-    sessions: { total: sessionTotal },
-    runs: { total: runTotal, success: runSuccess, failed: runFailed },
-    tasks: { total: taskTotal, cron: taskCron },
-    logs: { errors24h: logErrors24h },
+    posts: { total: Number(r.postTotal ?? 0), published: Number(r.postPublished ?? 0) },
+    agents: { total: Number(r.agentTotal ?? 0) },
+    skills: { total: Number(r.skillTotal ?? 0), enabled: Number(r.skillEnabled ?? 0) },
+    sessions: { total: Number(r.sessionTotal ?? 0) },
+    runs: { total: Number(r.runTotal ?? 0), success: Number(r.runSuccess ?? 0), failed: Number(r.runFailed ?? 0) },
+    tasks: { total: Number(r.taskTotal ?? 0), cron: Number(r.taskCron ?? 0) },
+    logs: { errors24h: Number(r.logErrors24h ?? 0) },
     tokens: { estimatedTotal },
   };
 }
