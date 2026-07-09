@@ -5,7 +5,7 @@
  * 卡片可展开：查看详情（跳转子会话）/ 停止 / 删除
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, ChevronRight, Plus, Square, Trash2, ExternalLink, RotateCcw } from "lucide-react";
@@ -207,6 +207,25 @@ export function SubagentPanel({
   );
 
   const items = useMemo(() => (query.data?.items as SubagentBrief[] | undefined) ?? [], [query.data?.items]);
+  const activeCount = useMemo(
+    () => items.filter((s) => s.status === "running" || s.status === "queued").length,
+    [items],
+  );
+
+  // UX #1：默认折叠，节省左栏空间；存在活跃任务（running/queued）时自动展开。
+  // 用户手动折叠后不再被自动展开打扰（userToggledRef 记忆手动操作）。
+  const [expanded, setExpanded] = useState(false);
+  const userToggledRef = useRef(false);
+  useEffect(() => {
+    if (activeCount > 0 && !userToggledRef.current) {
+      setExpanded(true);
+    }
+  }, [activeCount]);
+
+  // 切换会话时重置手动折叠记忆
+  useEffect(() => {
+    userToggledRef.current = false;
+  }, [parentSessionId]);
 
   const refresh = () => {
     void query.refetch();
@@ -214,16 +233,45 @@ export function SubagentPanel({
   };
 
   if (!parentSessionId) return null;
+  // 无任何子代理任务时只显示一行极简 header（不占空间）
+  const hasItems = items.length > 0;
 
   return (
-    <div className="w-64 shrink-0 border-b border-[var(--kp-divider)] p-2" data-testid="subagent-panel">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-medium text-[var(--kp-text-2)]">子代理任务</span>
+    <div className="w-64 shrink-0 border-b border-[var(--kp-divider)]" data-testid="subagent-panel">
+      <div className="flex items-center gap-1 px-2 py-1.5">
+        <button
+          type="button"
+          onClick={() => {
+            userToggledRef.current = true;
+            setExpanded((v) => !v);
+          }}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition hover:bg-[var(--kp-bg-mute)]"
+          aria-expanded={expanded}
+          aria-label={expanded ? "折叠子代理任务" : "展开子代理任务"}
+        >
+          <ChevronRight
+            className={cn(
+              "h-3 w-3 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200",
+              expanded && "rotate-90",
+            )}
+          />
+          <span className="text-xs font-medium text-[var(--kp-text-2)]">子代理任务</span>
+          {activeCount > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
+              {activeCount} 运行中
+            </span>
+          ) : hasItems ? (
+            <span className="rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px] tabular-nums text-[var(--kp-text-3)]">
+              {items.length}
+            </span>
+          ) : null}
+        </button>
         {onCreate && (
           <button
             type="button"
             onClick={onCreate}
-            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-6 w-6")}
+            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-6 w-6 shrink-0")}
             aria-label="新建子代理"
             title="新建子代理"
           >
@@ -231,26 +279,28 @@ export function SubagentPanel({
           </button>
         )}
       </div>
-      <div className="max-h-[320px] space-y-2 overflow-y-auto pr-0.5">
-        {items.length === 0 ? (
-          <p className="px-1 py-2 text-center text-[10px] text-[var(--kp-text-3)]">暂无子代理任务</p>
-        ) : (
-          <AnimatePresence initial={false}>
-            {items.map((s) => (
-              <motion.div
-                key={s.id}
-                layout
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ type: "spring", stiffness: 300, damping: 26 }}
-              >
-                <SubagentCard sub={s} onRefresh={refresh} onOpenSubagent={onOpenSubagent} />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        )}
-      </div>
+      {expanded && (
+        <div className="max-h-[280px] space-y-2 overflow-y-auto px-2 pb-2 pr-2.5">
+          {!hasItems ? (
+            <p className="px-1 py-2 text-center text-[10px] text-[var(--kp-text-3)]">暂无子代理任务</p>
+          ) : (
+            <AnimatePresence initial={false}>
+              {items.map((s) => (
+                <motion.div
+                  key={s.id}
+                  layout
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                >
+                  <SubagentCard sub={s} onRefresh={refresh} onOpenSubagent={onOpenSubagent} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          )}
+        </div>
+      )}
     </div>
   );
 }

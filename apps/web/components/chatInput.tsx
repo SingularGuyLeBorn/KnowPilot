@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { Bot, ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
@@ -52,6 +52,13 @@ export const ChatInputArea = memo(function ChatInputArea({
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // UX #6：进入 / 切换会话后自动聚焦输入框，从 Agent 卡片「对话」直达可立即打字。
+  // key={sessionId} 使切会话时组件重挂载，此 effect 每次挂载执行一次。
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
   // 输入框 value 内部自管理，避免每个字符都触发外层 ChatView 重渲染
   const [input, setInput] = useState("");
   const [skillOpen, setSkillOpen] = useState(false);

@@ -1907,34 +1907,7 @@ export function ChatView() {
               <div className="truncate text-[10px] text-[var(--kp-text-3)]">{chatConfig.model}</div>
             </div>
           </div>
-          {(() => {
-            const pills = (skillsQuery.data?.items ?? []).filter((s) => s.enabled).slice(0, 3);
-            if (pills.length === 0) return null;
-            return (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {pills.map((s) => {
-                  const active = selectedSkill?.id === s.id;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setSelectedSkill(active ? null : { id: s.id, name: s.name, icon: s.icon, description: s.description, code: s.code })}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] transition",
-                        active
-                          ? "bg-[var(--kp-brand)] text-white"
-                          : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
-                      )}
-                      title={s.description}
-                    >
-                      <Sparkles className="h-2.5 w-2.5" />
-                      <span className="max-w-[5rem] truncate">{s.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })()}
+          {/* UX #1：Skill 快捷药丸已移除——输入框 / 触发与右栏设置面板已覆盖，左栏留给会话列表 */}
         </div>
         <SubagentPanel
           parentSessionId={effectiveSessionId ?? undefined}

@@ -19,7 +19,6 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -580,32 +579,23 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-bg-alt)] to-[var(--kp-bg-mute)] p-8"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5">
-          <Bot className="h-80 w-80 text-[var(--kp-brand)]" />
-        </div>
-        <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--kp-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--kp-brand-dark)]">
-              <Sparkles className="h-3.5 w-3.5" />
-              Agent 档案馆
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--kp-text-1)]">我的 Agents</h1>
-            <p className="max-w-xl text-sm text-[var(--kp-text-3)]">
-              创建、配置并管理 AI 代理。每个 Agent 拥有独立的模型、System Prompt 与工具授权。
-            </p>
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-5">
+      {/* UX #3：compact header——去掉整屏渐变 banner，标题与新建按钮同行，卡片直接可见 */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+            <Bot className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-[var(--kp-text-1)]">我的 Agents</h1>
+            <p className="text-xs text-[var(--kp-text-3)]">选择一个 Agent 开始对话，或配置模型、Prompt 与工具授权</p>
           </div>
-          <Button onClick={openCreate} className="shrink-0 gap-2 rounded-2xl px-5 py-6">
-            <Plus className="h-5 w-5" />
-            新建 Agent
-          </Button>
         </div>
-      </motion.div>
+        <Button onClick={openCreate} className="shrink-0 gap-1.5">
+          <Plus className="h-4 w-4" />
+          新建 Agent
+        </Button>
+      </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
