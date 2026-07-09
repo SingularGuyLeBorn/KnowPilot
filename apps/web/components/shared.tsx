@@ -14,8 +14,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import ReactDOM from "react-dom";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Inbox, Plus, AlertTriangle, CheckCircle2, Globe, XCircle } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Inbox, Plus, AlertTriangle, CheckCircle2, Globe, XCircle, LayoutGrid, List } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCardDensity, type CardDensity } from "@/lib/hooks";
 import { Button, buttonVariants } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 
@@ -99,6 +100,52 @@ export function Pagination({
         </Button>
       </div>
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   1b. EntityCard — 通用实体卡片（支持紧凑/舒适密度）
+   ═══════════════════════════════════════════════════════ */
+
+export function EntityCard({
+  density: densityProp,
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof motion.div> & { density?: CardDensity }) {
+  const { density: densityFromHook } = useCardDensity();
+  const density = densityProp ?? densityFromHook;
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={cn(
+        "group relative overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 transition hover:shadow-lg",
+        density === "compact" ? "p-3" : "p-5",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+export function CardDensityToggle({ className }: { className?: string }) {
+  const { density, toggle } = useCardDensity();
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={density === "compact" ? "切换为舒适视图" : "切换为紧凑视图"}
+      className={cn(
+        "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--kp-divider)] text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+        className,
+      )}
+    >
+      {density === "compact" ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
+    </button>
   );
 }
 
@@ -712,12 +759,14 @@ export function PageHeader({
   description,
   action,
   children,
+  showDensityToggle = false,
 }: {
   icon?: React.ComponentType<{ className?: string }>;
   title: string;
   description?: string;
   action?: PageHeaderAction;
   children?: React.ReactNode;
+  showDensityToggle?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -738,6 +787,7 @@ export function PageHeader({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {children}
+        {showDensityToggle && <CardDensityToggle />}
         {action &&
           (action.href ? (
             <Link

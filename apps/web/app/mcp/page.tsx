@@ -5,15 +5,17 @@
 "use client";
 
 import React, { useState } from "react";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Cpu, Plus, Terminal } from "lucide-react";
 import Link from "next/link";
 import type { McpServer } from "@knowpilot/shared";
-import { useMcp } from "@/lib/hooks";
+import { useMcp, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function McpPage() {
   const { useList, useCreate, useDelete } = useMcp();
+  const { density } = useCardDensity();
   const [page] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
@@ -44,6 +46,7 @@ export default function McpPage() {
         title="MCP 服务器接入"
         description="Model Context Protocol (MCP) 让智能体安全、标准地读取本地数据源（如本地文件系统、数据库或外部 API 终端）。"
         action={{ label: "接入 MCP 服务", onClick: handleCreateDemo, icon: Plus }}
+        showDensityToggle
       />
 
       {isLoading ? (
@@ -56,7 +59,7 @@ export default function McpPage() {
           onAction={handleCreateDemo}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((server: McpServer, idx: number) => (
             <motion.div
               key={server.id}
@@ -66,7 +69,7 @@ export default function McpPage() {
                 y: 0,
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
-              className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300"
+              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300", density === "compact" ? "p-3" : "p-5")}
             >
               <div className="flex justify-between items-start gap-4 mb-3">
                 <div className="flex items-center gap-3">

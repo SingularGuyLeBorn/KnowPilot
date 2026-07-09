@@ -5,15 +5,17 @@
 "use client";
 
 import React, { useState } from "react";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Brain, Plus, Zap, Tag } from "lucide-react";
 import Link from "next/link";
 import type { Memory } from "@knowpilot/shared";
-import { useMemory } from "@/lib/hooks";
+import { useMemory, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function MemoriesPage() {
   const { useList, useCreate, useDelete } = useMemory();
+  const { density } = useCardDensity();
   const [page] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
@@ -43,6 +45,7 @@ export default function MemoriesPage() {
         title="Memories 记忆晶体"
         description="沉淀与用户的对话事实或喜好偏好。记忆以向量化和语义提取形式持久化存盘，在与 Agent 交互时被自动关联提取，使智能体愈加懂你。"
         action={{ label: "写入记忆晶体", onClick: handleCreateDemo, icon: Plus }}
+        showDensityToggle
       />
 
       {isLoading ? (
@@ -55,7 +58,7 @@ export default function MemoriesPage() {
           onAction={handleCreateDemo}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((memory: Memory, idx: number) => (
             <motion.div
               key={memory.id}
@@ -65,7 +68,7 @@ export default function MemoriesPage() {
                 y: 0,
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
-              className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
+              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
             >
               <div>
                 <div className="flex justify-between items-start gap-4 mb-3">

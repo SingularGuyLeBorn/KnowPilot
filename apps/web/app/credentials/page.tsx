@@ -5,12 +5,13 @@
 "use client";
 
 import React, { useState } from "react";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { KeyRound, Plus, Download } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Credential } from "@knowpilot/shared";
-import { useCredential } from "@/lib/hooks";
+import { useCredential, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 
 const TYPE_LABEL: Record<Credential["type"], string> = {
@@ -45,6 +46,7 @@ function formatExpiresAt(expiresAt?: string | Date | null): string | null {
 
 export default function CredentialsPage() {
   const { useList, useCreate, useDelete, useImportFromEnv } = useCredential();
+  const { density } = useCardDensity();
   const [page, setPage] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
@@ -83,6 +85,7 @@ export default function CredentialsPage() {
         title="Credentials 凭据库"
         description="管理 API Key / Token 等敏感凭据，按 scope 隔离用途。启用 AUTH_MODE=password 时建议配合远程访问使用。"
         action={{ label: "添加示例凭据", onClick: handleCreateDemo, icon: Plus, disabled: createMutation.isPending }}
+        showDensityToggle
       >
         <Button
           onClick={handleImportFromEnv}
@@ -106,7 +109,7 @@ export default function CredentialsPage() {
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
             {data.items.map((cred: Credential, idx: number) => (
               <motion.div
                 key={cred.id}
@@ -116,7 +119,7 @@ export default function CredentialsPage() {
                   y: 0,
                   transition: { delay: idx * 0.04, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:shadow-lg transition-all"
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:shadow-lg transition-all", density === "compact" ? "p-3" : "p-5")}
               >
                 <div className="flex justify-between items-start mb-3">
                   <div>

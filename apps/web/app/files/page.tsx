@@ -9,14 +9,16 @@
 
 import React, { useState, useRef } from "react";
 import Image from "next/image";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Files, Upload, Link, Database } from "lucide-react";
 import type { FileMeta } from "@knowpilot/shared";
-import { useFile } from "@/lib/hooks";
+import { useFile, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function FilesPage() {
   const { useList, useDelete, useUpload } = useFile();
+  const { density } = useCardDensity();
   const [page] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
   const deleteMutation = useDelete();
@@ -81,6 +83,7 @@ export default function FilesPage() {
         title="资源与文件柜"
         description="为文章提供图片、图表或代码附件的集中托管。在这里上传的资源会被自动放置在本地上传文件夹，直接通过相对 URL 在 Markdown 中渲染引用。"
         action={{ label: uploadMutation.isPending ? "正在存盘..." : "上传本地资源", onClick: triggerUpload, icon: Upload, disabled: uploadMutation.isPending }}
+        showDensityToggle
       />
 
       {/* 数据列表 */}
@@ -94,7 +97,7 @@ export default function FilesPage() {
           onAction={triggerUpload}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((file: FileMeta, idx: number) => {
             const isImage = file.mimeType.startsWith("image/");
             return (
@@ -106,7 +109,7 @@ export default function FilesPage() {
                   y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
                 }}
-                className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-4 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-2.5" : "p-4")}
               >
                 {/* 预览区域 */}
                 <div className="aspect-video w-full rounded-xl bg-[var(--vp-c-bg-soft)] overflow-hidden mb-3 relative flex items-center justify-center border border-[var(--vp-c-divider-light)]">

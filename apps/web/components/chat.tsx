@@ -337,15 +337,19 @@ export function ChatView() {
   // 1. 从外部页面跳转（/subagents → /chat?sessionId=xxx）时 sessionId 为 null，URL param 生效
   // 2. 浏览器前进/后退改变 URL 时，把 URL 同步回 state
   // 3. selectSession 已主动更新 URL，所以日常侧边栏切换不会触发这里
+  // 4. startNewChat 期间 router.replace 清 URL 是异步的，必须用 ref 记录上一次 URL 值，
+  //    避免 stale sessionFromUrl 把刚清空的 state 又拉回去（用户感知的“点两次才新建”）。
   const effectiveSessionId = sessionId ?? sessionFromUrl;
+  const prevSessionFromUrlRef = useRef<string | null>(sessionFromUrl);
   useEffect(() => {
-    if (sessionFromUrl && sessionFromUrl !== sessionId) {
+    if (sessionFromUrl && sessionFromUrl !== sessionId && sessionFromUrl !== prevSessionFromUrlRef.current) {
       // 同步 URL 到 state：用 queueMicrotask 避免在 effect 同步阶段触发级联渲染
       queueMicrotask(() => {
         setSessionId(sessionFromUrl);
         applyView(sessionFromUrl);
       });
     }
+    prevSessionFromUrlRef.current = sessionFromUrl;
   }, [sessionFromUrl, sessionId, applyView]);
   // 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
   useEffect(() => {
@@ -1997,6 +2001,7 @@ export function ChatView() {
       <SubagentCreateDialog
         open={showCreateSubagent}
         parentSessionId={effectiveSessionId ?? undefined}
+        parentAgentId={effectiveAgentId}
         onClose={() => setShowCreateSubagent(false)}
         onCreated={() => setToast("子代理任务已启动，结果完成后自动进入对话")}
       />

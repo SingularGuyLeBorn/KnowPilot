@@ -5,10 +5,11 @@
 "use client";
 
 import React, { useState } from "react";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Zap, Plus, ToggleLeft, ToggleRight } from "lucide-react";
 import type { Trigger } from "@knowpilot/shared";
-import { useTrigger } from "@/lib/hooks";
+import { useTrigger, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 
 const EVENT_SOURCES = ["post.create", "post.update", "post.delete", "agent.create", "skill.create"];
@@ -16,6 +17,7 @@ const ACTION_TYPES = ["run_agent", "run_task"] as const;
 
 export default function TriggersPage() {
   const { useList, useCreate, useUpdate, useDelete } = useTrigger();
+  const { density } = useCardDensity();
   const [page, setPage] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
@@ -52,6 +54,7 @@ export default function TriggersPage() {
         title="Triggers 触发器"
         description="当 post.create 等事件发生时，自动唤醒 Agent 或执行后台 Task。source 格式为 entity.action。"
         action={{ label: "新建触发器", onClick: handleCreateDemo, icon: Plus, disabled: createMutation.isPending }}
+        showDensityToggle
       />
 
       <div className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/30 p-4 text-xs text-[var(--vp-c-text-3)]">
@@ -72,7 +75,7 @@ export default function TriggersPage() {
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className={cn("grid grid-cols-1 md:grid-cols-2 ", density === "compact" ? "gap-4" : "gap-6")}>
             {data.items.map((trigger: Trigger, idx: number) => (
               <motion.div
                 key={trigger.id}
@@ -82,7 +85,7 @@ export default function TriggersPage() {
                   y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className="group rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:shadow-lg transition-all"
+                className={cn("group rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:shadow-lg transition-all", density === "compact" ? "p-3" : "p-5")}
               >
                 <div className="flex justify-between items-start gap-4 mb-4">
                   <div>

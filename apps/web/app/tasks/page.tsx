@@ -5,16 +5,18 @@
 "use client";
 
 import React, { useState } from "react";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { CalendarClock, Plus, Play } from "lucide-react";
+import { CalendarClock, Plus, Play, Info } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Task } from "@knowpilot/shared";
-import { useTask } from "@/lib/hooks";
+import { useTask, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function TasksPage() {
   const { useList, useCreate, useDelete, useRun } = useTask();
+  const { density } = useCardDensity();
   const [page] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
@@ -47,7 +49,22 @@ export default function TasksPage() {
         title="Tasks 定时任务"
         description="配置定期备份、增量编译、健康检查或 AI 定期摘要的自动化脚本作业，让 KnowPilot 系统独立且持续地后台运营。"
         action={{ label: "新建定时任务", onClick: handleCreateDemo, icon: Plus }}
+        showDensityToggle
       />
+
+      <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 px-3 py-2 text-xs text-[var(--kp-text-2)]">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+        <div>
+          <span className="font-medium text-[var(--kp-text-1)]">查看指南：</span>
+          Task 是周期性后台脚本；运行记录去
+          <Link href="/runs" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/runs</Link>，
+          事件触发去
+          <Link href="/triggers" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/triggers</Link>，
+          Agent 自主心跳去
+          <Link href="/agents" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/agents</Link>。
+          详情见 <code className="rounded bg-[var(--kp-bg-mute)] px-1 py-0.5">docs/development/scheduled-tasks-and-heartbeat.md</code>。
+        </div>
+      </div>
 
       {isLoading ? (
         <LoadingState count={3} />
@@ -59,7 +76,7 @@ export default function TasksPage() {
           onAction={handleCreateDemo}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((task: Task, idx: number) => {
             const statusColors = {
               pending: "bg-yellow-500/10 text-yellow-600",
@@ -76,7 +93,7 @@ export default function TasksPage() {
                   y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
                 }}
-                className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
               >
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-3">
