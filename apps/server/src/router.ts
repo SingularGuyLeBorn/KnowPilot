@@ -112,17 +112,9 @@ const agentRouter = router({
     .meta({ description: "批量删除多个 Agent 及其本地配置文件。", aiReadable: false })
     .input(z.object({ ids: z.array(z.string().cuid()).min(1).max(100) }))
     .mutation(async ({ ctx, input }) => {
-      let deleted = 0;
-      const errors: string[] = [];
-      for (const id of input.ids) {
-        try {
-          await ctx.services.agent.delete(id);
-          deleted++;
-        } catch (err) {
-          errors.push(`${id}: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-      return { deleted, errors: errors.length > 0 ? errors : undefined };
+      // A6：改用 AgentService.bulkDelete 单次 deleteMany + 批量文件/FTS 清理
+      const res = await ctx.services.agent.bulkDelete(input.ids);
+      return { deleted: res.deleted, errors: res.errors.length > 0 ? res.errors : undefined };
     }),
   llmProviders: publicProcedure
     .meta({ description: "列出已配置 API Key 的 LLM 厂商。", aiReadable: true })
@@ -318,7 +310,8 @@ const sessionRouter = router({
     .meta({ description: "停止子代理会话（状态置为 paused 并真正 abort 运行中后台任务）。", aiReadable: false })
     .input(stopSessionSchema)
     .mutation(async ({ ctx, input }) => {
-      const session = await ctx.services.session.getById(input.id);
+      // A4：stop 只需 kind/status，用轻量 getByIdLite 避免拉 500 条消息
+      const session = await ctx.services.session.getByIdLite(input.id);
       if (session.kind === "subagent") {
         const { stopSubagentSession } = await import("./infra/asyncJobManager.js");
         const result = stopSubagentSession(session.id, ctx.config);
@@ -341,7 +334,7 @@ const sessionRouter = router({
           return ctx.services.session.update({ id: input.id, status: "paused" });
         }
         // 运行中：catch 会把 session 置 paused；这里不重复写，避免覆盖
-        return ctx.services.session.getById(input.id);
+        return ctx.services.session.getByIdLite(input.id);
       }
       return ctx.services.session.update({ id: input.id, status: "paused" });
     }),
@@ -378,7 +371,8 @@ const sessionRouter = router({
     .meta({ description: "基于原子代理会话重跑：创建新 subagent 并启动后台任务。", aiReadable: false })
     .input(rerunSessionSchema)
     .mutation(async ({ ctx, input }) => {
-      const original = await ctx.services.session.getById(input.id);
+      // A4：rerun 只需 parentSessionId/agentId/model/taskDescription，用轻量查询
+      const original = await ctx.services.session.getByIdLite(input.id);
       if (!original) throw new Error("原子代理会话不存在");
       const orig = original as { parentSessionId?: string | null; agentId?: string | null; model?: string; taskDescription?: string | null };
       if (!orig.parentSessionId) throw new Error("该会话不是子代理，无法重跑");

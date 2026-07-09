@@ -125,3 +125,36 @@ export async function searchFts(prisma: PrismaClient, query: string, limit = 20)
     return [];
   }
 }
+
+/* ─── P11：FTS 增量维护（替代仅靠 db:sync 全量重建） ───
+ * 实体 create/update 后 upsertFtsRow，delete 后 deleteFtsRow，
+ * 使 CRUD 写入的内容立即可搜（此前要等下次 db:sync 才进索引）。
+ * FTS5 无原生 upsert，用 DELETE+INSERT 事务实现原子替换。
+ * 失败不应阻塞业务，调用方需 try/catch。
+ */
+export async function upsertFtsRow(
+  prisma: PrismaClient,
+  entity: string,
+  entityId: string,
+  title: string,
+  body: string,
+): Promise<void> {
+  if (!ftsReady) await ensureFtsTable(prisma);
+  const t = safeSlice(title, 500);
+  const b = safeSlice(body, 8000);
+  await prisma.$transaction([
+    prisma.$executeRawUnsafe(`DELETE FROM search_fts WHERE entity = ? AND entity_id = ?`, entity, entityId),
+    prisma.$executeRawUnsafe(
+      `INSERT INTO search_fts(entity, entity_id, title, body) VALUES (?, ?, ?, ?)`,
+      entity,
+      entityId,
+      t,
+      b,
+    ),
+  ]);
+}
+
+export async function deleteFtsRow(prisma: PrismaClient, entity: string, entityId: string): Promise<void> {
+  if (!ftsReady) await ensureFtsTable(prisma);
+  await prisma.$executeRawUnsafe(`DELETE FROM search_fts WHERE entity = ? AND entity_id = ?`, entity, entityId);
+}

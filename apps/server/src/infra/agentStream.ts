@@ -56,8 +56,8 @@ export type AgentStreamEvent =
   | { type: "error"; message: string; sessionId?: string; suggestion?: string };
 
 function writeSse(res: Response, event: AgentStreamEvent) {
-  res.write(`event: ${event.type}\n`);
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
+  // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
+  res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
 interface LlmCallOptions {
@@ -395,8 +395,10 @@ async function prepareMessage(
     if (items[idx].role !== "user") throw new Error("只能编辑用户消息");
     const newContent = input.editContent!.trim();
     await services.message.update({ id: input.editMessageId, content: newContent });
-    for (let i = items.length - 1; i > idx; i--) {
-      await services.message.delete(items[i].id);
+    // A5：编辑后删除尾部消息改为单次 deleteMany，避免 K 次逐条往返
+    const tailIds = items.slice(idx + 1).map((m) => m.id);
+    if (tailIds.length > 0) {
+      await services.prisma.chatMessage.deleteMany({ where: { id: { in: tailIds } } });
     }
     return { messageText: newContent, skipUserCreate: true };
   }
@@ -651,37 +653,45 @@ export async function chatAgentStream(
       }
     }
 
-    if (!assistantMessageId) {
-      const initial = buildInitialVersionMeta(result.content, result.toolCalls);
-      const created = await services.message.create({
-        sessionId,
-        role: "assistant",
-        content: result.content,
-        toolCalls: result.toolCalls,
-        toolResults: initial.toolResults,
-        tokenUsage: result.tokenUsage,
-      });
-      assistantMessageId = created.data?.id;
-    }
+    // A12：assistant 消息写入 + run 记录写入合并为单次 $transaction，减少 SQLite 单连接下的 commit 次数
+    assistantMessageId = await services.prisma.$transaction(async (tx) => {
+      if (!assistantMessageId) {
+        const initial = buildInitialVersionMeta(result.content, result.toolCalls);
+        const created = await tx.chatMessage.create({
+          data: {
+            sessionId,
+            role: "assistant",
+            content: result.content,
+            toolCalls: result.toolCalls,
+            toolResults: initial.toolResults,
+            tokenUsage: result.tokenUsage,
+          } as any,
+        });
+        assistantMessageId = created.id;
+      }
 
-    await services.run.create({
-      agentId: agent.id,
-      sessionId,
-      status: "success",
-      input: {
-        message: prepared.messageText,
-        regenerate: input.regenerate,
-        edit: input.editMessageId,
-        skillId: input.skillId,
-        trigger: "user", // #42：标记触发来源
-      },
-      output: { content: result.content, assistantMessageId },
-      toolCalls: result.toolCalls,
-      tokenUsage: result.tokenUsage,
-      durationMs: Date.now() - start,
-      // #46：记录工具调用总次数（排除 thinking/content kind）
-      toolCallCount: result.toolCalls.filter((t) => t.kind === "tool").length,
-    } as any);
+      await tx.run.create({
+        data: {
+          agentId: agent.id,
+          sessionId,
+          status: "success",
+          input: {
+            message: prepared!.messageText,
+            regenerate: input.regenerate,
+            edit: input.editMessageId,
+            skillId: input.skillId,
+            trigger: "user", // #42：标记触发来源
+          },
+          output: { content: result.content, assistantMessageId },
+          toolCalls: result.toolCalls,
+          tokenUsage: result.tokenUsage,
+          durationMs: Date.now() - start,
+          // #46：记录工具调用总次数（排除 thinking/content kind）
+          toolCallCount: result.toolCalls.filter((t) => t.kind === "tool").length,
+        } as any,
+      });
+      return assistantMessageId;
+    });
 
     // Agent 进化：经验自动积累（每次 Run 完成后写入 Memory）
     import("./agentEvolution.js")
@@ -785,6 +795,8 @@ export function handleAgentChatStream(
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
+    // P8：禁用 nginx / Cloudflare Tunnel 等反代对 SSE 的缓冲，否则前端收不到实时流
+    res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders?.();
 
     if (isAuthEnabled(config) && !verifyAuthHeader(config, req.headers.authorization)) {
