@@ -929,6 +929,26 @@ ${entity.systemPrompt}
     this.eventBus.emit("agent.deleted", existing);
   }
 
+  // 超级 Agent 全局唯一——创建时拦截
+  protected override async validateCreate(input: CreateAgentInput): Promise<void> {
+    await this.assertUnique("name", input.name, "创建");
+    if (input.tier === "super") {
+      const existingSuper = await this.prisma.agent.findFirst({
+        where: { tier: "super", status: { not: "deleted" } },
+      });
+      if (existingSuper) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "已存在超级 Agent，全局只允许一个。请编辑现有超级 Agent 而非创建新的。",
+        });
+      }
+    }
+  }
+
+  protected override async validateUpdate(input: UpdateAgentInput, existing: any): Promise<void> {
+    if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
+  }
+
   // 超级 Agent 不可删除——系统核心，删除会导致 Swarm 体系崩溃
   override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
     const existing = await this.delegate.findUnique({ where: { id } });
