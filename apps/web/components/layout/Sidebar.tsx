@@ -15,8 +15,6 @@ import {
   CalendarClock,
   ScrollText,
   Settings,
-  ChevronDown,
-  ChevronRight,
   Zap,
   ShieldCheck,
   FileCode2,
@@ -51,6 +49,47 @@ const MIN_WIDTH = 240;
 const MAX_WIDTH = 520;
 const DEFAULT_WIDTH = 288;
 
+const navGroups: Record<string, NavGroup> = {
+  ai: {
+    title: "智能工作台",
+    icon: Cpu,
+    items: [
+      { href: "/agents", icon: Bot, label: "Agents" },
+      { href: "/subagents", icon: Bot, label: "子代理任务" },
+      { href: "/skills", icon: Wand2, label: "Skill 管理" },
+      { href: "/mcp", icon: Cpu, label: "MCP 服务器" },
+      { href: "/sources", icon: Globe, label: "信息源" },
+      { href: "/memories", icon: Brain, label: "长期记忆" },
+      { href: "/prompts", icon: FileCode2, label: "提示词模板" },
+      { href: "/tools", icon: Wrench, label: "工具注册" },
+      { href: "/runs", icon: Activity, label: "执行记录" },
+      { href: "/search", icon: Search, label: "全局搜索" },
+    ],
+  },
+  automation: {
+    title: "自动化与工作流",
+    icon: Zap,
+    items: [
+      { href: "/triggers", icon: Zap, label: "事件触发器" },
+      { href: "/approvals", icon: ShieldCheck, label: "审批队列" },
+    ],
+  },
+  ops: {
+    title: "系统与运维",
+    icon: Settings,
+    items: [
+      { href: "/workspaces", icon: HardDrive, label: "工作区管理" },
+      { href: "/files", icon: Files, label: "文件管理" },
+      { href: "/git", icon: GitBranch, label: "Git 仓库" },
+      { href: "/tasks", icon: CalendarClock, label: "后台任务" },
+      { href: "/logs", icon: ScrollText, label: "运行日志" },
+      { href: "/credentials", icon: KeyRound, label: "凭据管理" },
+      { href: "/dashboard", icon: BarChart3, label: "系统看板" },
+      { href: "/settings", icon: Settings, label: "系统设置" },
+    ],
+  },
+};
+
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
@@ -58,15 +97,11 @@ export function Sidebar({ className }: SidebarProps) {
   const startXRef = useRef(0);
   const startWidthRef = useRef(DEFAULT_WIDTH);
 
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    ai: true,
-    ops: true,
-    automation: true,
-  });
-
-  const toggleGroup = (key: string) => {
-    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const activeTab =
+    Object.entries(navGroups).find(([, group]) =>
+      group.items.some((item) => pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href))),
+    )?.[0] ?? "ai";
+  const activeGroup = navGroups[activeTab] ?? navGroups.ai;
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -117,88 +152,28 @@ export function Sidebar({ className }: SidebarProps) {
     };
   }, [isResizing, width]);
 
-  const navGroups: Record<string, NavGroup> = {
-    ai: {
-      title: "智能工作台",
-      icon: Cpu,
-      items: [
-        { href: "/agents", icon: Bot, label: "Agents" },
-        { href: "/subagents", icon: Bot, label: "子代理任务" },
-        { href: "/skills", icon: Wand2, label: "Skill 管理" },
-        { href: "/mcp", icon: Cpu, label: "MCP 服务器" },
-        { href: "/sources", icon: Globe, label: "信息源" },
-        { href: "/memories", icon: Brain, label: "长期记忆" },
-        { href: "/prompts", icon: FileCode2, label: "提示词模板" },
-        { href: "/tools", icon: Wrench, label: "工具注册" },
-        { href: "/runs", icon: Activity, label: "执行记录" },
-        { href: "/search", icon: Search, label: "全局搜索" },
-      ],
-    },
-    automation: {
-      title: "自动化与工作流",
-      icon: Zap,
-      items: [
-        { href: "/triggers", icon: Zap, label: "事件触发器" },
-        { href: "/approvals", icon: ShieldCheck, label: "审批队列" },
-      ],
-    },
-    ops: {
-      title: "系统与运维",
-      icon: Settings,
-      items: [
-        { href: "/workspaces", icon: HardDrive, label: "工作区管理" },
-        { href: "/files", icon: Files, label: "文件管理" },
-        { href: "/git", icon: GitBranch, label: "Git 仓库" },
-        { href: "/tasks", icon: CalendarClock, label: "后台任务" },
-        { href: "/logs", icon: ScrollText, label: "运行日志" },
-        { href: "/credentials", icon: KeyRound, label: "凭据管理" },
-        { href: "/dashboard", icon: BarChart3, label: "系统看板" },
-        { href: "/settings", icon: Settings, label: "系统设置" },
-      ],
-    },
-  };
-
-  const renderNavGroup = (key: string, group: NavGroup) => {
-    const isExpanded = expandedGroups[key];
-    const GroupIcon = group.icon;
+  const renderNavItems = (group: NavGroup) => {
     return (
-      <div key={key} className="space-y-1">
-        <button
-          type="button"
-          onClick={() => toggleGroup(key)}
-          className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
-        >
-          <span className="flex items-center gap-2">
-            <GroupIcon className="h-4 w-4 text-[var(--kp-brand)]" />
-            {group.title}
-          </span>
-          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
-        {isExpanded && (
-          <div className="space-y-0.5 pl-1">
-            {group.items.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href));
-              const ItemIcon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
-                    isActive
-                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
-                      : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
-                  )}
-                >
-                  <ItemIcon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        )}
+      <div className="space-y-0.5">
+        {group.items.map((item) => {
+          const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+          const ItemIcon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                isActive
+                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                  : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+              )}
+            >
+              <ItemIcon className="h-4 w-4 shrink-0" />
+              {item.label}
+            </Link>
+          );
+        })}
       </div>
     );
   };
@@ -222,9 +197,29 @@ export function Sidebar({ className }: SidebarProps) {
           </div>
         </Link>
 
-        {/* 主导航：占满剩余高度 */}
+        {/* 主导航：标签页 + 当前分组项 */}
         <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3">
-          {Object.entries(navGroups).map(([key, group]) => renderNavGroup(key, group))}
+          <div className="flex gap-1 border-b border-[var(--kp-divider)] pb-2">
+            {Object.entries(navGroups).map(([key, group]) => {
+              const Icon = group.icon;
+              return (
+                <Link
+                  key={key}
+                  href={group.items[0].href}
+                  className={cn(
+                    "flex flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-medium transition",
+                    activeTab === key
+                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                      : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="line-clamp-1">{group.title}</span>
+                </Link>
+              );
+            })}
+          </div>
+          {renderNavItems(activeGroup)}
         </div>
       </div>
 
