@@ -626,7 +626,8 @@ export async function listSessionAsyncJobs(
   config: AppConfig,
   services: ServiceContainer,
 ): Promise<Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }>> {
-  const rows = await services.task.list({ page: 1, pageSize: 50 } as any);
+  // R7：DB 层按 sessionId 过滤，避免全局 task.list(50) 后 JS 过滤漏掉非 top-50 的任务
+  const rows = await services.task.list({ page: 1, pageSize: 50, sessionId } as any);
   const orchestrator = getAsyncJobOrchestrator(config);
   const items: Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }> = [];
   for (const row of (rows as any).items ?? []) {

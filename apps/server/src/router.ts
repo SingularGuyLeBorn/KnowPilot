@@ -47,7 +47,7 @@ import { getLlmBudgetStatus } from "./infra/llmBudget.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertApprovalOrProceed, executeApprovedOperation } from "./infra/approvalGate.js";
 import { runGlobalSearch } from "./infra/globalSearch.js";
-import { getAnalyticsDashboard } from "./infra/analytics.js";
+import { getCachedAnalyticsDashboard } from "./infra/analytics.js";
 import { loadAboutProfile } from "./infra/aboutProfile.js";
 import {
   pullAsyncDeliveries,
@@ -495,7 +495,7 @@ const analyticsRouter = router({
   dashboard: publicProcedure
     .meta({ description: "系统看板关键指标（文章/Agent/Run/Token/日志）。", aiReadable: true })
     .input(analyticsDashboardSchema)
-    .query(({ ctx, input }) => getAnalyticsDashboard(ctx.prisma, input)),
+    .query(({ ctx, input }) => getCachedAnalyticsDashboard(ctx.prisma, input)),
   // Swarm 监控统计：按 Agent 分组展示对话轮数/工具执行数/成功率/平均耗时/token（#25/#46）
   swarmStats: publicProcedure
     .meta({ description: "Swarm Agent 运行统计（按 Agent 分组）。", aiReadable: false })
