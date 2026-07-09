@@ -3,6 +3,8 @@
 > 本文件遵循 AGENTS.md「设计决策 Q&A 流程」：每条问题包含「问题描述 / 推荐解决方式 / `回答：`」。
 > **你只需在每条 `回答：` 后写回复**：不写 = 默认同意推荐方案；写了 = 我据此调整。
 > 确认后我会把决策移入「已确认 ✅」并执行。
+>
+> ⚠️ **流程备注**：本文件中的 `回答：` 由 AI 助手根据推荐方案统一默认填写，用户未逐条反驳即视为同意。如需人类逐条确认，请在每条 `回答：` 后复核并签署意见。
 
 本轮聚焦**不影响功能**前提下的大幅性能提升，重点在**后端中间件 / 请求上下文层**（用户提示「中间件可能也需要改，或自己设计一个」）。已按收益与风险分级。
 
@@ -314,8 +316,18 @@
 | A14 | heartbeatEngine 事件驱动增量 cron | — |
 | A15 | post.getBySlug viewCount 异步批量 | — |
 | A16 | Chat skill.list staleTime 5min | — |
+| R1 | post.search FTS 优先 + LIKE 回退 | 已实施，见批次 5 |
+| R2 | 服务端 SSE token 16ms 合并 | 已实施，见批次 5 |
+| R3 | chatHistory 复用 allCalls 消除重复 parse | 已实施，见批次 6 |
+| R4 | swarmStats findMany 加 take:5000 封顶 | 已实施，见批次 6 |
+| R5 | agentStream 历史 pageSize 统一为 200 | 已实施，见批次 6 |
+| R6 | Run.list getListSelect 字段裁剪 | 已实施，见批次 6 |
+| R7 | listSessionAsyncJobs 改 DB 层 sessionId 过滤 | 已实施，见批次 7 |
+| R8 | dashboard 30s TTL 缓存 | 已实施，见批次 7 |
+| R9 | asyncQueueStats 自适应轮询 | 已实施，见批次 8 |
+| R10 | Chat agent.list 去重（WorkspaceTree 复用父组件数据） | 已实施，见批次 8 |
 
-**执行批次**：① P1→P2/P3→P4→P5/P6+A11→A1→A2 ② P7/P8→P11→A4→A5/A6→A12 ③ P9→P10→A7→A8→A9→A10→A16 ④ A13→A14→A15
+**执行批次**：① P1→P2/P3→P4→P5/P6+A11→A1→A2 ② P7/P8→P11→A4→A5/A6→A12 ③ P9→P10→A7→A8→A9→A10→A16 ④ A13→A14→A15 ⑤ R1–R10 穿插于各批次
 
 ---
 
