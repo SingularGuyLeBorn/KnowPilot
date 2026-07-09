@@ -4,9 +4,9 @@
  * Agent Chat — 三栏布局 · 多版本 · 消息编辑 · Skill / 触发
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
@@ -210,22 +210,45 @@ function ToolStep({
   );
 }
 
-/** 消息来源标签条（#21）：非 user 来源的消息在左侧显示彩色标签 */
-function MessageSourceLabel({ source }: { source?: string }) {
+/** 消息来源角标（#21 + #24）：非 user 来源的消息在气泡角上显示微型来源徽章 */
+const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  super: { label: "子代理任务", bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200" },
+  manager: { label: "管理 Agent", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
+  sub: { label: "子 Agent", bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
+  system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
+};
+
+const MessageSourceLabel = memo(function MessageSourceLabel({
+  source,
+  isSubagentSession,
+  align = "left",
+}: {
+  source?: string;
+  isSubagentSession?: boolean;
+  align?: "left" | "right";
+}) {
   if (!source || source === "user") return null;
-  const config: Record<string, { label: string; bg: string; text: string }> = {
-    super: { label: "超级 Agent", bg: "bg-purple-100", text: "text-purple-700" },
-    manager: { label: "管理 Agent", bg: "bg-blue-100", text: "text-blue-700" },
-    sub: { label: "子 Agent", bg: "bg-green-100", text: "text-green-700" },
-    system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700" },
-  };
-  const c = config[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600" };
+  const base = SOURCE_LABEL_STYLES[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" };
+  const isParent = source === "super" && isSubagentSession;
+  const label = isParent ? "父代理" : base.label;
+  const bg = isParent ? "bg-[var(--kp-brand)]" : base.bg;
+  const text = isParent ? "text-white" : base.text;
+  const border = isParent ? "border-[var(--kp-brand-light)]" : base.border;
   return (
-    <div className={cn("mb-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", c.bg, c.text)}>
-      {c.label}
-    </div>
+    <span
+      className={cn(
+        "pointer-events-none absolute -top-2 z-10 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-[1px] text-[9px] font-medium shadow-sm",
+        align === "right" ? "right-3" : "left-3",
+        bg,
+        text,
+        border,
+      )}
+    >
+      <Bot className="h-2.5 w-2.5" />
+      {label}
+    </span>
   );
-}
+});
 
 function ThinkingTimeline({
   steps,
@@ -372,7 +395,7 @@ function MessageActions({
   );
 }
 
-function SessionListItem({
+const SessionListItem = memo(function SessionListItem({
   session,
   active,
   editing,
@@ -388,12 +411,12 @@ function SessionListItem({
   active: boolean;
   editing: boolean;
   renameDraft: string;
-  onSelect: () => void;
-  onStartRename: () => void;
+  onSelect: (id: string) => void;
+  onStartRename: (id: string) => void;
   onRenameDraftChange: (v: string) => void;
-  onConfirmRename: () => void;
+  onConfirmRename: (id: string) => void;
   onCancelRename: () => void;
-  onDelete: () => void;
+  onDelete: (id: string) => void;
 }) {
   if (editing) {
     return (
@@ -404,13 +427,13 @@ function SessionListItem({
           className="min-w-0 flex-1 rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-2 py-1 text-xs outline-none focus:border-[var(--kp-brand)]"
           autoFocus
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); onConfirmRename(); }
+            if (e.key === "Enter") { e.preventDefault(); onConfirmRename(session.id); }
             if (e.key === "Escape") { e.preventDefault(); onCancelRename(); }
           }}
         />
         <button
           type="button"
-          onClick={onConfirmRename}
+          onClick={() => onConfirmRename(session.id)}
           className="rounded-md p-1 text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
           aria-label="确认重命名"
         >
@@ -439,7 +462,7 @@ function SessionListItem({
     >
       <button
         type="button"
-        onClick={onSelect}
+        onClick={() => onSelect(session.id)}
         className={cn(
           "min-w-0 flex-1 px-3 py-2 text-left text-sm transition",
           active ? "text-[var(--kp-brand-dark)]" : "text-[var(--kp-text-2)]",
@@ -454,7 +477,7 @@ function SessionListItem({
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={onStartRename}
+          onClick={() => onStartRename(session.id)}
           className="rounded-md p-1.5 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
           aria-label="重命名"
           title="重命名"
@@ -464,7 +487,7 @@ function SessionListItem({
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={onDelete}
+          onClick={() => onDelete(session.id)}
           className="rounded-md p-1.5 text-[var(--kp-text-3)] hover:bg-red-50 hover:text-red-600"
           aria-label="删除"
           title="删除"
@@ -474,18 +497,19 @@ function SessionListItem({
       </div>
     </div>
   );
-}
+});
 
 /* ─── Main ─── */
 
 export function ChatView() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const agentFromUrl = searchParams.get("agentId");
   const sessionFromUrl = searchParams.get("sessionId");
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState("");
-  const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [optimistic, setOptimistic] = useState<{ id: string; content: string; attachments?: ChatImageAttachment[] }[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -681,9 +705,20 @@ export function ChatView() {
     return assistant?.id ?? items[0].id;
   }, [agentsQuery.data?.items]);
 
-  // sessionId state 优先于 URL param：点击切换 session 时 state 生效；
-  // 从外部页面跳转（/subagents → /chat?sessionId=xxx）时组件重新挂载，sessionId 为 null，URL param 生效
+  // sessionId state 与 URL param 保持同步：
+  // 1. 从外部页面跳转（/subagents → /chat?sessionId=xxx）时 sessionId 为 null，URL param 生效
+  // 2. 浏览器前进/后退改变 URL 时，把 URL 同步回 state
+  // 3. selectSession 已主动更新 URL，所以日常侧边栏切换不会触发这里
   const effectiveSessionId = sessionId ?? sessionFromUrl;
+  useEffect(() => {
+    if (sessionFromUrl && sessionFromUrl !== sessionId) {
+      // 同步 URL 到 state：用 queueMicrotask 避免在 effect 同步阶段触发级联渲染
+      queueMicrotask(() => {
+        setSessionId(sessionFromUrl);
+        applyView(sessionFromUrl);
+      });
+    }
+  }, [sessionFromUrl, sessionId, applyView]);
   // 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
   useEffect(() => {
     effectiveSessionIdRef.current = effectiveSessionId;
@@ -701,8 +736,11 @@ export function ChatView() {
     { enabled: !!parentSessionId },
   );
 
+  // Agent 选择优先级：用户显式选择 > 当前会话关联 Agent > URL 参数 > 默认 assistant
+  // 修复：之前 `agentFromUrl ?? ...` 导致 URL 中的 agentId 永远覆盖用户选择，
+  //      表现为 Agent 选择器无法切换。
   const effectiveAgentId =
-    agentFromUrl ?? (agentId || sessionDetail?.agentId || defaultAgentId);
+    agentId || sessionDetail?.agentId || agentFromUrl || defaultAgentId;
 
   const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
 
@@ -805,16 +843,22 @@ export function ChatView() {
 
   const filteredSessions = useMemo(() => {
     const items = sessionsQuery.data?.items ?? [];
-    // #4 修复：按当前 Agent 过滤 session（agent 隔离）
+    // #4 修复：按当前 Agent 过滤 session（agent 隔离）。
+    // 同时保留当前父会话的子代理任务会话，避免子代理卡片/会话被过滤掉。
     const agentFiltered = effectiveAgentId
-      ? items.filter((s) => s.agentId === effectiveAgentId || !s.agentId)
+      ? items.filter(
+          (s) =>
+            s.agentId === effectiveAgentId ||
+            !s.agentId ||
+            (s.kind === "subagent" && s.parentSessionId === effectiveSessionId),
+        )
       : items;
     const q = sessionSearch.trim().toLowerCase();
     if (!q) return agentFiltered;
     return agentFiltered.filter(
       (s) => s.title.toLowerCase().includes(q) || s.model.toLowerCase().includes(q),
     );
-  }, [sessionsQuery.data?.items, sessionSearch, effectiveAgentId]);
+  }, [sessionsQuery.data?.items, sessionSearch, effectiveAgentId, effectiveSessionId]);
 
   const groupedSessions = useMemo(
     () => groupBySessionDate(filteredSessions),
@@ -903,6 +947,7 @@ export function ChatView() {
       editContent?: string;
       skillId?: string;
       skillPrompt?: string;
+      source?: "user" | "super" | "manager" | "sub" | "system";
       optimisticUser?: { id: string; text: string };
     }) => {
       // 捕获本次流式所属的 session（新会话首条消息时为 null，onDone 拿到 sessionId 后迁移键）
@@ -953,6 +998,7 @@ export function ChatView() {
             editMessageId: opts.editMessageId,
             editContent: opts.editContent,
             skillId: opts.skillId,
+            source: opts.source,
             ...streamConfig,
           },
           {
@@ -1176,6 +1222,7 @@ export function ChatView() {
       attachments: streamAttachments?.length ? streamAttachments : undefined,
       skillId: task.skillId,
       skillPrompt: task.skillPrompt,
+      source: task.kind === "async-result" ? "super" : "user",
       optimisticUser: { id: optimisticId, text: optimisticText },
     });
   }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState]);
@@ -1222,7 +1269,7 @@ export function ChatView() {
   ) => {
     const trimmed = text.trim();
     if ((!trimmed && !attachments?.length) || backendDown) return;
-    setInput("");
+    // 输入框清空由 ChatInputArea 内部完成（value 状态已下放）
     const skillPrompt = skill
       ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
       : undefined;
@@ -1280,10 +1327,12 @@ export function ChatView() {
     }
   };
 
-  const startNewChat = () => {
+  const startNewChat = useCallback(() => {
     // 新建对话不中止任何已有 session 的流式（多 session 并发隔离）
     setSessionId(null);
-    setInput("");
+    setAgentId("");
+    // 输入框 value 已下放到 ChatInputArea，由其 key={effectiveSessionId ?? "new"}
+    // 在切换/新建会话时整体 remount 自动清空，无需在此手动 reset。
     setSelectedSkill(null);
     setEditingSessionId(null);
     setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
@@ -1291,9 +1340,23 @@ export function ChatView() {
     streamStatesRef.current.delete(NEW_STREAM_KEY);
     // 视图切到空会话（applyView(null) 会读取已清空的 NEW_STREAM_KEY）
     applyView(null);
-  };
+    // 清除 URL 中的 sessionId/agentId，确保新建对话不受旧参数束缚
+    const params = new URLSearchParams(searchParams.toString());
+    let changed = false;
+    if (params.get("sessionId")) {
+      params.delete("sessionId");
+      changed = true;
+    }
+    if (params.get("agentId")) {
+      params.delete("agentId");
+      changed = true;
+    }
+    if (changed) {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [selectedAgent, searchParams, pathname, router, applyView]);
 
-  const handleRenameSession = async (id: string, title: string) => {
+  const handleRenameSession = useCallback(async (id: string, title: string) => {
     const trimmed = title.trim();
     if (!trimmed) {
       setEditingSessionId(null);
@@ -1311,9 +1374,9 @@ export function ChatView() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "重命名失败");
     }
-  };
+  }, [updateSession, utils.session.list, effectiveSessionId, refetchSession]);
 
-  const handleDeleteSession = async (id: string) => {
+  const handleDeleteSession = useCallback(async (id: string) => {
     try {
       const res = await deleteSession.mutateAsync({ id });
       if (!res.success) {
@@ -1328,9 +1391,9 @@ export function ChatView() {
       setError(err instanceof Error ? err.message : "删除失败");
       setDeleteSessionTarget(null);
     }
-  };
+  }, [deleteSession, effectiveSessionId, startNewChat, utils.session.list]);
 
-  const selectSession = (id: string) => {
+  const selectSession = useCallback((id: string) => {
     if (effectiveSessionId === id) return;
     // 多 session 隔离：切换会话只切视图，不中止任何 session 的流式。
     // 流式状态 + 队列按 sessionId 存在 streamStatesRef，applyView 镜像目标 session 的状态到视图。
@@ -1340,18 +1403,63 @@ export function ChatView() {
     setEditingSessionId(null);
     setSelectedSkill(null);
     applyView(id);
-  };
+    // 切换会话后同步 URL sessionId，移除 agentId，避免 URL 参数覆盖用户选择
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("sessionId", id);
+    if (params.get("agentId")) params.delete("agentId");
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [effectiveSessionId, applyView, searchParams, pathname, router]);
 
-  const selectAgent = (id: string) => {
+  const selectAgent = useCallback((id: string) => {
     setAgentId(id);
     const agent = agentsQuery.data?.items.find((a: Agent) => a.id === id);
     if (agent && !chatConfig.customSystemPrompt) {
       updateConfig({ systemPrompt: agent.systemPrompt, model: agent.model });
     }
-    if (effectiveSessionId) {
-      updateSession.mutate({ id: effectiveSessionId, agentId: id });
+    // 同步 URL：用户显式选择后，移除可能覆盖选择的 agentId 参数
+    const params = new URLSearchParams(searchParams.toString());
+    if (params.get("agentId")) {
+      params.delete("agentId");
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  };
+  }, [agentsQuery.data?.items, chatConfig.customSystemPrompt, updateConfig, searchParams, pathname, router]);
+
+  // 会话列表项交互回调：保持引用稳定，避免每次输入都触发所有 SessionListItem 重渲染
+  const handleSessionSelect = useCallback((id: string) => {
+    if (bulkMode) {
+      setBulkSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    } else {
+      selectSession(id);
+    }
+  }, [bulkMode, selectSession]);
+
+  const handleStartRename = useCallback((id: string) => {
+    setEditingSessionId(id);
+    const s = sessionsQuery.data?.items.find((x) => x.id === id);
+    setRenameDraft(s?.title ?? "");
+  }, [sessionsQuery.data?.items]);
+
+  const renameDraftRef = useRef(renameDraft);
+  useEffect(() => {
+    renameDraftRef.current = renameDraft;
+  }, [renameDraft]);
+  const handleConfirmRename = useCallback((id: string) => {
+    void handleRenameSession(id, renameDraftRef.current);
+  }, [handleRenameSession]);
+
+  const handleCancelRename = useCallback(() => {
+    setEditingSessionId(null);
+  }, []);
+
+  const handleRequestDelete = useCallback((id: string) => {
+    const s = sessionsQuery.data?.items.find((x) => x.id === id);
+    if (s) setDeleteSessionTarget({ id: s.id, title: s.title });
+  }, [sessionsQuery.data?.items]);
 
   const hasMessages = messageGroups.length > 0 || optimistic.length > 0 || isStreaming;
   const showLiveStream = isStreaming || liveTimeline.length > 0 || !!streamingContent;
@@ -1496,7 +1604,11 @@ export function ChatView() {
             );
           })()}
         </div>
-        <SubagentPanel parentSessionId={effectiveSessionId ?? undefined} onCreate={() => setShowCreateSubagent(true)} />
+        <SubagentPanel
+          parentSessionId={effectiveSessionId ?? undefined}
+          onCreate={() => setShowCreateSubagent(true)}
+          onOpenSubagent={selectSession}
+        />
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
           <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">对话历史</h2>
           <div className="flex items-center gap-0.5">
@@ -1564,10 +1676,8 @@ export function ChatView() {
             <WorkspaceTree
               effectiveSessionId={effectiveSessionId}
               onSelectSession={selectSession}
-              onSelectAgent={(agentId) => {
-                setAgentId(agentId);
-                const agent = agentsQuery.data?.items.find((a: Agent) => a.id === agentId);
-                if (agent) updateConfig({ systemPrompt: agent.systemPrompt, model: agent.model });
+              onSelectAgent={(id) => {
+                selectAgent(id);
               }}
               onNewChat={startNewChat}
               searchQuery={sessionSearch}
@@ -1609,22 +1719,12 @@ export function ChatView() {
                           active={effectiveSessionId === s.id}
                           editing={editingSessionId === s.id}
                           renameDraft={renameDraft}
-                          onSelect={() => (bulkMode
-                            ? setBulkSelected((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(s.id)) next.delete(s.id);
-                                else next.add(s.id);
-                                return next;
-                              })
-                            : selectSession(s.id))}
-                          onStartRename={() => {
-                            setEditingSessionId(s.id);
-                            setRenameDraft(s.title);
-                          }}
+                          onSelect={handleSessionSelect}
+                          onStartRename={handleStartRename}
                           onRenameDraftChange={setRenameDraft}
-                          onConfirmRename={() => void handleRenameSession(s.id, renameDraft)}
-                          onCancelRename={() => setEditingSessionId(null)}
-                          onDelete={() => setDeleteSessionTarget({ id: s.id, title: s.title })}
+                          onConfirmRename={handleConfirmRename}
+                          onCancelRename={handleCancelRename}
+                          onDelete={handleRequestDelete}
                         />
                       </div>
                     </div>
@@ -1753,7 +1853,10 @@ export function ChatView() {
             const isLastUser = groupIdx === lastGroupIndex;
             const isEditing = editingUserId === group.userMessage.id;
             const msgSource = (group.userMessage as { source?: string }).source ?? "user";
-            const isAgentMessage = msgSource !== "user"; // super/manager/sub/system → 左侧
+            // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧），
+            // 但用角标标识为「父代理」；其他非 user 来源仍显示在左侧。
+            const isParentAgentTask = isSubagentSession && msgSource === "super";
+            const isAgentMessage = msgSource !== "user" && !isParentAgentTask;
             return (
               <div key={group.userMessage.id} className="flex flex-col">
                 <div className={cn("flex w-full", isAgentMessage ? "justify-start" : "justify-end")}>
@@ -1789,13 +1892,17 @@ export function ChatView() {
                       ))}
                     </div>
                   )}
-                  {isAgentMessage && <MessageSourceLabel source={msgSource} />}
                   <div className={cn(
-                    "w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-sm shadow-sm",
+                    "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-sm shadow-sm",
                     isAgentMessage
                       ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
                       : "bg-[var(--kp-brand)] text-white",
                   )}>
+                    <MessageSourceLabel
+                      source={msgSource}
+                      isSubagentSession={isSubagentSession}
+                      align={isParentAgentTask ? "right" : "left"}
+                    />
                       {group.userMessage.skillName && (
                         <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
                           <LucideIconByName name={group.userMessage.skillIcon} className="h-3 w-3" />
@@ -1967,6 +2074,7 @@ export function ChatView() {
             ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
             retryAsyncJobMutation.mutate({ jobId });
           }}
+          onOpenSubagent={selectSession}
           asyncStats={asyncQueueStatsQuery.data}
           settingsPanelOpen={rightOpen}
           settingsPanelWidth={360}
@@ -1975,8 +2083,6 @@ export function ChatView() {
         <div className="border-t border-[var(--kp-divider)] px-4 py-3 md:px-6">
           <ChatInputArea
             key={effectiveSessionId ?? "new"}
-            value={input}
-            onChange={setInput}
             onSend={enqueueMessage}
             onStop={() => getAbort(effectiveSessionId)?.abort()}
             disabled={backendDown}

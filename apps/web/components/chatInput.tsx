@@ -17,8 +17,6 @@ export interface SelectedSkill {
 }
 
 interface ChatInputAreaProps {
-  value: string;
-  onChange: (v: string) => void;
   onSend: (text: string, skill?: SelectedSkill, attachments?: ChatQueueAttachment[]) => void;
   onStop?: () => void;
   disabled?: boolean;
@@ -37,8 +35,6 @@ interface ChatInputAreaProps {
 }
 
 export function ChatInputArea({
-  value,
-  onChange,
   onSend,
   onStop,
   disabled,
@@ -55,6 +51,8 @@ export function ChatInputArea({
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 输入框 value 内部自管理，避免每个字符都触发外层 ChatView 重渲染
+  const [input, setInput] = useState("");
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [highlightIdx, setHighlightIdx] = useState(0);
@@ -132,12 +130,12 @@ export function ChatInputArea({
     });
     const ta = textareaRef.current;
     if (ta) {
-      const before = value.slice(0, ta.selectionStart);
-      const after = value.slice(ta.selectionStart);
+      const before = input.slice(0, ta.selectionStart);
+      const after = input.slice(ta.selectionStart);
       const cleaned = before.replace(/\/[\w-]*$/, "");
-      onChange(cleaned + after);
+      setInput(cleaned + after);
     } else {
-      onChange(value.replace(/\/[\w-]*$/, ""));
+      setInput(input.replace(/\/[\w-]*$/, ""));
     }
     setSkillOpen(false);
     textareaRef.current?.focus();
@@ -166,7 +164,7 @@ export function ChatInputArea({
   };
 
   const handleSend = async () => {
-    const text = value.trim();
+    const text = input.trim();
     if ((!text && pendingImages.length === 0) || disabled || ocrLoading) return;
 
     let attachments = pendingImages;
@@ -185,6 +183,7 @@ export function ChatInputArea({
     }
 
     onSend(text, selectedSkill ?? undefined, attachments.length ? attachments : undefined);
+    setInput(""); // 清空输入框（状态内部化后由组件自行清空）
     pushHistory(text); // 记录到上键历史
     onSkillChange(null);
     setPendingImages([]);
@@ -226,7 +225,7 @@ export function ChatInputArea({
     reader.readAsDataURL(file);
   };
 
-  const canSend = (!!value.trim() || pendingImages.length > 0) && !disabled && !ocrLoading;
+  const canSend = (!!input.trim() || pendingImages.length > 0) && !disabled && !ocrLoading;
   const placeholderHint = disabled
     ? "后端未连接"
     : isStreaming
@@ -325,12 +324,12 @@ export function ChatInputArea({
         <div className="relative min-w-0 flex-1">
           <textarea
             ref={textareaRef}
-            value={value}
+            value={input}
             onChange={(e) => {
-              onChange(e.target.value);
+              setInput(e.target.value);
               detectSkillTrigger(e.target.value, e.target.selectionStart);
             }}
-            onClick={(e) => detectSkillTrigger(value, e.currentTarget.selectionStart)}
+            onClick={(e) => detectSkillTrigger(input, e.currentTarget.selectionStart)}
             onKeyDown={(e) => {
               if (skillOpen && filteredSkills.length > 0) {
                 if (e.key === "ArrowDown") {
@@ -364,12 +363,12 @@ export function ChatInputArea({
                 e.preventDefault();
                 if (historyIdx === -1) {
                   // 首次按上键：备份当前草稿，显示最新一条历史
-                  setDraftBackup(value);
+                  setDraftBackup(input);
                   setHistoryIdx(0);
-                  onChange(list[0]);
+                  setInput(list[0]);
                 } else if (historyIdx < list.length - 1) {
                   setHistoryIdx(historyIdx + 1);
-                  onChange(list[historyIdx + 1]);
+                  setInput(list[historyIdx + 1]);
                 }
               }
               if (!skillOpen && e.key === "ArrowDown" && historyIdx !== -1) {
@@ -377,11 +376,11 @@ export function ChatInputArea({
                 const list = getHistory();
                 if (historyIdx > 0) {
                   setHistoryIdx(historyIdx - 1);
-                  onChange(list[historyIdx - 1]);
+                  setInput(list[historyIdx - 1]);
                 } else {
                   // 回到草稿
                   setHistoryIdx(-1);
-                  onChange(draftBackup);
+                  setInput(draftBackup);
                 }
               }
             }}
@@ -399,7 +398,7 @@ export function ChatInputArea({
             data-testid="chat-input"
             className="min-h-[88px] w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-[var(--kp-text-1)] outline-none disabled:cursor-not-allowed"
           />
-          {!disabled && !value.trim() && (
+          {!disabled && !input.trim() && (
             <div
               className="pointer-events-none absolute inset-0 flex items-start justify-between gap-3 px-4 py-3"
               aria-hidden={false}
