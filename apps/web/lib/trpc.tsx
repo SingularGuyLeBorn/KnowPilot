@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createTRPCReact, httpLink } from "@trpc/react-query";
+import { createTRPCReact, httpLink, httpBatchLink, splitLink } from "@trpc/react-query";
 import superjson from "superjson";
 import type { AppRouter } from "@knowpilot/server/router";
 import { authHeaders } from "@/lib/auth";
@@ -31,10 +31,21 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
   const [trpcClient] = useState(() =>
     trpc.createClient({
       links: [
-        httpLink({
-          url: `${getBaseUrl()}/api/trpc`,
-          transformer: superjson,
-          headers: () => authHeaders(),
+        // P4：query 走 httpBatchLink（同 tick 多 query 合并单 HTTP 请求，减少往返），
+        // mutation/subscription 走 httpLink（不合并）。file.upload 等大 payload 是 mutation，
+        // 自动落在非 batch 分支，避免 payload 过大；SSE 流式不走 tRPC，不受影响。
+        splitLink({
+          condition: (op) => op.type === "query",
+          true: httpBatchLink({
+            url: `${getBaseUrl()}/api/trpc`,
+            transformer: superjson,
+            headers: () => authHeaders(),
+          }),
+          false: httpLink({
+            url: `${getBaseUrl()}/api/trpc`,
+            transformer: superjson,
+            headers: () => authHeaders(),
+          }),
         }),
       ],
     })
