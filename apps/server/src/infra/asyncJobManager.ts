@@ -346,9 +346,8 @@ function buildAsyncExecute(
         id: jobId,
         status: "success",
         output: {
-          asyncResult: tokenUsage?.total
-            ? `${resultText}\n\n[消耗 token: ${tokenUsage.total}（prompt ${tokenUsage.prompt} + completion ${tokenUsage.completion}）]`
-            : resultText,
+          // 修复：asyncResult 只存干净的 LLM 回复文本，不追加 token 消耗日志（token 信息在 tokenUsage 字段里）
+          asyncResult: resultText,
           tokenUsage,
         } satisfies AsyncTaskOutput,
       });

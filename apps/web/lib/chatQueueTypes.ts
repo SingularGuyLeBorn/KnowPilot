@@ -50,7 +50,10 @@ export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = fals
   }
 
   if (item.kind === "async-result" && item.asyncResult) {
-    parts.push(`[异步任务结果 · ${item.taskLabel || item.jobId || "background"} · 系统生成 · 不可修改]\n${item.asyncResult}`);
+    // 修复：不再往消息内容里塞 [异步任务结果 · ... · 系统生成 · 不可修改] 日志前缀。
+    // source="super" 已标识来源，前端 MessageSourceLabel 显示「子代理任务」角标。
+    // LLM 上下文由 source 字段 + 消息位置传达，不需要在 content 里加日志行。
+    parts.push(item.asyncResult);
     if (item.userAppend?.trim()) {
       parts.push(`[用户补充说明 · 可编辑]\n${item.userAppend.trim()}`);
     }
