@@ -39,7 +39,7 @@ import {
 import { listConfiguredLlmProviders } from "./infra/config.js";
 import { listNativeTools, executeNativeTool } from "./infra/nativeTools.js";
 import { getEnvCredentialCandidates } from "./infra/credentialVault.js";
-import { getEnrichedServerCapabilities } from "./infra/capabilities.js";
+import { getCachedEnrichedServerCapabilities } from "./infra/capabilities.js";
 import { runAgent, chatAgent } from "./infra/agentRuntime.js";
 import { switchAssistantMessageVersion } from "./infra/agentStream.js";
 import { summarizeAgentTools } from "./infra/agentTools.js";
@@ -571,11 +571,8 @@ const nativeRouter = router({
     .query(() => listNativeTools()),
   capabilities: publicProcedure
     .meta({ description: "服务器原生能力状态（搜索/OCR/浏览器/read_article 平台）。", aiReadable: true })
-    .query(async ({ ctx }) =>
-      getEnrichedServerCapabilities(ctx.config, () =>
-        ctx.services.infoSource.list({ page: 1, pageSize: 1, enabled: true }),
-      ),
-    ),
+    // P10/A10：改用缓存版本 + infoSource.count 精确计数，避免每次挂载查 DB 多取一页数据
+    .query(({ ctx }) => getCachedEnrichedServerCapabilities(ctx.config, ctx.prisma)),
   execute: publicProcedure
     .meta({ description: "执行指定原生工具。", aiReadable: true })
     .input(nativeExecuteSchema)

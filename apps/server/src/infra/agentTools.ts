@@ -25,6 +25,7 @@ import {
   executeMcpTool,
   parseMcpToolName,
 } from "./mcpClient.js";
+import { getEventBus } from "./eventBus.js";
 
 function parseToolCallArgs(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
   let args: Record<string, unknown> = {};
@@ -147,6 +148,21 @@ const agentSchemaCache = new Map<
     registryEntries: Array<[string, ToolRegistryEntry]>;
   }
 >();
+
+/** A9：清空 Agent 工具 schema 缓存（skill/mcp 变更后调用，避免 stale schema 到进程重启） */
+export function clearAgentSchemaCache(): void {
+  agentSchemaCache.clear();
+}
+
+// A9：模块加载时订阅 skill.*/mcp.* 事件，自动清缓存。
+// SkillService/McpService CRUD 后 emit 对应事件；agentTools 在服务启动导入本模块时注册订阅。
+void (() => {
+  const bus = getEventBus();
+  const handler = () => clearAgentSchemaCache();
+  for (const ev of ["skill.created", "skill.updated", "skill.deleted", "mcp.created", "mcp.updated", "mcp.deleted"]) {
+    bus.on(ev as any, handler);
+  }
+})();
 
 /** 解析 Agent tools 配置：native: / skill: / mcp: / skill:* */
 export function parseAgentTools(agentTools: string[]): ParsedAgentTools {

@@ -270,9 +270,8 @@ async function runAgentLoopStream(options: {
     // 的思考流式 UX（reasoningContent 已通过 pushThinking 单次 emit，但流式版渐进输出体验更好）。
     if (probe.content && probe.content.trim() && !probe.reasoningContent) {
       finalContent = probe.content;
-      for (const token of probe.content.split("")) {
-        options.emit({ type: "token", delta: token });
-      }
+      // A7：整段一次性 emit，避免 split("") 逐字符形成 SSE 风暴（前端按 delta 累积，整段可正确拼接）
+      options.emit({ type: "token", delta: probe.content });
       return {
         content: finalContent,
         toolCalls: executedTools,
