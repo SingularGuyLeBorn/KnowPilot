@@ -265,12 +265,16 @@ pnpm --filter @knowpilot/server test
 | `skillRunner.test.ts` | Skill 沙箱 |
 | `mcpClient.test.ts` | MCP 截断 |
 | `chatHistory.test.ts` | 扁平存储重建多轮 ReAct 消息链 |
+| `async-task-queue.test.ts` | `async_task_run/status/wait` 与队列状态 |
 | `capabilities.test.ts` / `platformFetch.test.ts` | 运行时能力 / 平台 fetch |
 | `e2e/blog-smoke.spec.ts` | L1 博客冒烟（/posts、/editor、/、/posts/[slug]） |
 | `e2e/admin-pages.spec.ts` | 管理页冒烟（20 路由 + /about） |
 | `e2e/chat-thinking-real.spec.ts` | 真实 LLM Chat 发消息/重试、思考时间线不重复 |
 | `e2e/chat-tool-hint-real.spec.ts` / `chat-ocr-real.spec.ts` / `chat-queue-real.spec.ts` | 真实 LLM 工具/OCR/异步队列 |
 | `e2e/chat-mock.spec.ts` / `chat-thinking-mock.spec.ts` / `chat-tool-error-mock.spec.ts` | Mock E2E（全离线，MOCK_LLM/MCP/NATIVE_TOOLS） |
+| `e2e/chat-subagent-resume-mock.spec.ts` | 刷新 / 切 session / 切 Agent 后父会话流式恢复 |
+| `e2e/async-task-mock.spec.ts` | Mock 异步任务结果自动插入对话 |
+| `e2e/theme-toggle-mock.spec.ts` | Navbar 主题切换 light/dark |
 | `e2e/post-trash.spec.ts` | 文章回收站删除/恢复（try/finally 强制清理） |
 | `e2e/ui-components.spec.ts` | 通用组件冒烟 |
 
@@ -385,4 +389,4 @@ pnpm --filter @knowpilot/server run sync-free-keys:watch  # 定时刷新
 
 ---
 
-> 最后更新：2026-07-07。L1–L5 已全部落地；本轮按 REMEDIATION_PLAN.md 完成 P0/P1/P2 整改 + 文档同步（19 实体，含 InfoSource）。lint 0 error + Vitest 228 passed + Playwright E2E 双套件（真实 + Mock）+ CI 全绿。
+> 最后更新：2026-07-10。L1–L5 已全部落地；REMEDIATION_PLAN.md 与性能优化计划 28 项已收尾；Async Task Queue Phase 1–5、子 Agent 会话恢复、深色模式主题切换已落地。lint 0 error + Vitest 256 passed + Playwright Mock E2E 全绿。

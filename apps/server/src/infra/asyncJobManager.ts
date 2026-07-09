@@ -21,6 +21,7 @@ export interface AsyncQueueDelivery {
   status: "done" | "failed";
   error?: string;
   subagentSessionId?: string;
+  subagentName?: string;
   createdAt: number;
 }
 
@@ -40,7 +41,7 @@ interface AsyncTaskInput {
   sessionId: string;
   task: string;
   taskLabel: string;
-  agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
+  agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null; name?: string | null };
   retryCount?: number;
   timeoutMs?: number;
   subagentSessionId?: string;
@@ -101,6 +102,7 @@ function toDelivery(task: {
     status: failed ? "failed" : "done",
     error: output.error,
     subagentSessionId: input.subagentSessionId,
+    subagentName: input.agentSnapshot?.name ?? undefined,
     createdAt: task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime(),
   };
 }
@@ -108,7 +110,10 @@ function toDelivery(task: {
 /** 服务启动时：将遗留 async_agent running/queued 任务标为 failed，并同步其 subagent ChatSession 状态 */
 export async function recoverStaleAsyncJobs(): Promise<number> {
   const stale = await prisma.task.findMany({
-    where: { status: { in: ["running", "queued"] }, name: { startsWith: "[async]" } },
+    where: {
+      status: { in: ["running", "queued"] },
+      OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+    },
   });
   let count = 0;
   for (const task of stale) {
@@ -118,6 +123,7 @@ export async function recoverStaleAsyncJobs(): Promise<number> {
       where: { id: task.id },
       data: {
         status: "failed",
+        finishedAt: new Date(),
         output: { error: "服务重启，后台任务已中断" },
       },
     });
@@ -164,7 +170,7 @@ export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueue
     UPDATE "Task"
     SET delivered = 1, deliveredAt = datetime('now')
     WHERE sessionId = ${sessionId}
-      AND name LIKE '[async]%'
+      AND (name LIKE '[async]%' OR type = 'async_agent')
       AND status IN ('success', 'failed')
       AND delivered = 0
     RETURNING id, input, output, status, createdAt
@@ -180,7 +186,11 @@ export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueue
 
 export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunningJob[]> {
   const rows = await prisma.task.findMany({
-    where: { sessionId, status: "running", name: { startsWith: "[async]" } },
+    where: {
+      sessionId,
+      status: "running",
+      OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+    },
     orderBy: { createdAt: "desc" },
   });
   return rows
@@ -198,6 +208,47 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
       return base;
     })
     .filter((j): j is AsyncRunningJob => j !== null);
+}
+
+export interface AsyncQueuedJob {
+  jobId: string;
+  sessionId: string;
+  taskLabel: string;
+  status: "queued";
+  position?: number;
+  subagentSessionId?: string;
+  createdAt: number;
+}
+
+export async function listQueuedAsyncJobs(
+  sessionId: string,
+  config: AppConfig,
+): Promise<AsyncQueuedJob[]> {
+  const orchestrator = getAsyncJobOrchestrator(config);
+  const rows = await prisma.task.findMany({
+    where: {
+      sessionId,
+      status: "queued",
+      OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return rows
+    .map((row): AsyncQueuedJob | null => {
+      const input = parseAsyncInput(row.input);
+      if (!input) return null;
+      const base: AsyncQueuedJob = {
+        jobId: row.id,
+        sessionId,
+        taskLabel: input.taskLabel,
+        status: "queued",
+        position: orchestrator.getPosition(row.id),
+        createdAt: row.createdAt.getTime(),
+      };
+      if (input.subagentSessionId) base.subagentSessionId = input.subagentSessionId;
+      return base;
+    })
+    .filter((j): j is AsyncQueuedJob => j !== null);
 }
 
 /** 取消一条运行中或排队中的异步任务 */
@@ -220,6 +271,7 @@ export async function cancelAsyncJob(
     await services.task.update({
       id: jobId,
       status: "failed",
+      finishedAt: new Date(),
       output: { error: "任务已结束或丢失，取消失败" } satisfies AsyncTaskOutput,
     } as any);
     return { cancelled: true, message: "任务已结束，已标记为失败" };
@@ -229,6 +281,7 @@ export async function cancelAsyncJob(
   await services.task.update({
     id: jobId,
     status: "failed",
+    finishedAt: new Date(),
     output: { error: "异步任务已取消" } satisfies AsyncTaskOutput,
   } as any);
   return { cancelled: true, message: "已取消异步任务" };
@@ -300,10 +353,10 @@ function buildAsyncExecute(
         throw new Error("异步任务已被取消");
       }
       // queued → running 状态同步：orchestrator 从队列取出开始执行时，
-      // 把 Task 与 subagent session 从 queued 升级为 running
+      // 把 Task 与 subagent session 从 queued 升级为 running，并记录 startedAt
       await syncSubStatus("running");
       try {
-        await services.task.update({ id: jobId, status: "running" } as any);
+        await services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
       } catch {
         /* 状态回写失败不阻塞执行 */
       }
@@ -345,12 +398,13 @@ function buildAsyncExecute(
       await services.task.update({
         id: jobId,
         status: "success",
+        finishedAt: new Date(),
         output: {
           // 修复：asyncResult 只存干净的 LLM 回复文本，不追加 token 消耗日志（token 信息在 tokenUsage 字段里）
           asyncResult: resultText,
           tokenUsage,
         } satisfies AsyncTaskOutput,
-      });
+      } as any);
       await syncSubStatus("completed");
       // 独立子 Agent 实例任务完成 → 自动休眠（#15：无任务+队列空+无心跳 → dormant）
       if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
@@ -365,10 +419,11 @@ function buildAsyncExecute(
       await services.task.update({
         id: jobId,
         status: "failed",
+        finishedAt: new Date(),
         output: {
           error: errorText,
         } satisfies AsyncTaskOutput,
-      });
+      } as any);
       // 用户主动停止 → session 置 paused（不覆盖为 failed）；超时/异常 → failed
       await syncSubStatus(isAbort && !isTimeout ? "paused" : "failed");
       // 失败也把原因写入 subagent ChatSession，避免点击进去一片空白
@@ -446,6 +501,7 @@ export async function startAsyncAgentTask(options: {
     console.warn(`[asyncJobManager] 创建独立子 Agent 失败，降级复用父 Agent:`, err);
   }
 
+  const subagentName = `${taskLabel.slice(0, 40)} 子 Agent`;
   const agentSnapshot = {
     id: subAgentId,
     model: options.agent.model,
@@ -454,6 +510,7 @@ export async function startAsyncAgentTask(options: {
     tier: "sub",
     parentId: options.agent.id,
     workspaceId: parentAgent?.workspaceId ?? null,
+    name: subagentName,
   };
 
   // 创建 subagent ChatSession 作为任务的可视化载体（Phase 3 UI 显示卡片）
@@ -482,9 +539,11 @@ export async function startAsyncAgentTask(options: {
 
   const created = await options.services.task.create({
     name: `[async] ${taskLabel}`,
-    type: "oneshot",
+    type: "async_agent",
     status: willQueue ? "queued" : "running",
     sessionId: options.sessionId,
+    queuedAt: willQueue ? new Date() : null,
+    startedAt: willQueue ? null : new Date(),
     input: {
       kind: ASYNC_KIND,
       sessionId: options.sessionId,
@@ -543,9 +602,10 @@ export async function startAsyncSleepTask(options: {
 
   const created = await options.services.task.create({
     name: `[async] ${taskLabel}`,
-    type: "oneshot",
+    type: "async_agent",
     status: "queued",
     sessionId: options.sessionId,
+    queuedAt: new Date(),
     input,
   } as any);
   if (!created.success || !created.data) {
@@ -559,7 +619,7 @@ export async function startAsyncSleepTask(options: {
     timeoutMs: ms + 10_000,
     execute: async (signal) => {
       try {
-        await options.services.task.update({ id: jobId, status: "running" } as any);
+        await options.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
       } catch {
         /* 状态回写失败不阻塞 */
       }
@@ -568,6 +628,7 @@ export async function startAsyncSleepTask(options: {
       await options.services.task.update({
         id: jobId,
         status: "success",
+        finishedAt: new Date(),
         output: { asyncResult: `已等待 ${seconds} 秒（定时器到期）` } satisfies AsyncTaskOutput,
       } as any);
     },
@@ -704,9 +765,10 @@ export async function retryAsyncJob(
 
   const created = await services.task.create({
     name: `[async] ${taskLabel}`,
-    type: "oneshot",
+    type: "async_agent",
     status: "running",
     sessionId: input.sessionId,
+    startedAt: new Date(),
     input: {
       kind: ASYNC_KIND,
       sessionId: input.sessionId,

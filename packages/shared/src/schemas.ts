@@ -165,15 +165,18 @@ export const agentChatSchema = z
     editContent: z.string().min(1).optional(),
     skillId: z.string().cuid().optional(),
     source: z.enum(["user", "super", "manager", "sub", "system"]).optional(),
+    toolResults: z.record(z.unknown()).optional(),
+    resumeAfter: z.number().int().min(0).optional(),
   })
   .refine(
     (data) =>
       data.regenerate ||
       data.retryFromMessageId ||
       data.editMessageId ||
+      data.resumeAfter !== undefined ||
       (typeof data.message === "string" && data.message.trim().length > 0) ||
       (Array.isArray(data.attachments) && data.attachments.length > 0),
-    { message: "需要提供 message / 附件，或使用 regenerate / edit / retry" },
+    { message: "需要提供 message / 附件，或使用 regenerate / edit / retry / resumeAfter" },
   )
   .refine(
     (data) => !data.editMessageId || (typeof data.editContent === "string" && data.editContent.trim().length > 0),
@@ -530,28 +533,34 @@ export const listGitReposSchema = z.object({
 
 export const createTaskSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(["cron", "oneshot"]),
-  status: z.enum(["pending", "running", "success", "failed"]).default("pending"),
+  type: z.enum(["cron", "oneshot", "async_agent"]),
+  status: z.enum(["pending", "queued", "running", "success", "failed", "cancelled"]).default("pending"),
   sessionId: z.string().nullish(),
   input: z.any().optional(),
   output: z.any().optional(),
   cronExpression: z.string().optional(),
+  queuedAt: z.coerce.date().optional().nullable(),
+  startedAt: z.coerce.date().optional().nullable(),
+  finishedAt: z.coerce.date().optional().nullable(),
 });
 
 export const updateTaskSchema = z.object({
   id: z.string().cuid(),
   name: z.string().min(1).optional(),
-  status: z.enum(["pending", "running", "success", "failed"]).optional(),
+  status: z.enum(["pending", "queued", "running", "success", "failed", "cancelled"]).optional(),
   sessionId: z.string().nullish(),
   input: z.any().optional(),
   output: z.any().optional(),
   cronExpression: z.string().optional(),
+  queuedAt: z.coerce.date().optional().nullable(),
+  startedAt: z.coerce.date().optional().nullable(),
+  finishedAt: z.coerce.date().optional().nullable(),
 });
 
 export const listTasksSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
-  status: z.enum(["pending", "running", "success", "failed"]).optional(),
+  status: z.enum(["pending", "queued", "running", "success", "failed", "cancelled"]).optional(),
   keyword: z.string().optional(),
   // R7：按会话过滤（listSessionAsyncJobs 用），避免全局拉 50 条后 JS 过滤漏掉非 top-50 任务
   sessionId: z.string().optional(),

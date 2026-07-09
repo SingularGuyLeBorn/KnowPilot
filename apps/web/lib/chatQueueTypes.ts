@@ -26,13 +26,15 @@ export interface ChatQueueItem {
   /** 异步任务 */
   jobId?: string;
   taskLabel?: string;
-  status?: "pending" | "running" | "done" | "failed"; // user 仅 pending；async 用 running/done/failed
+  status?: "pending" | "queued" | "running" | "done" | "failed"; // user 仅 pending；async 用 queued/running/done/failed
   /** 异步原始结果（不可编辑） */
   asyncResult?: string;
   /** 用户对异步结果追加的说明（可编辑，LLM 会区分） */
   userAppend?: string;
   /** 关联的子 Agent 会话 id，用于在新标签页中对话 */
   subagentSessionId?: string;
+  /** 子 Agent 名字，用于消息来源角标 */
+  subagentName?: string;
   createdAt: number;
 }
 
@@ -71,6 +73,7 @@ export function mergeAsyncPollIntoQueue(
   local: ChatQueueItem[],
   poll?: {
     running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; createdAt: number }>;
+    queued?: Array<{ jobId: string; taskLabel: string; position?: number; subagentSessionId?: string; createdAt: number }>;
     deliveries?: Array<{
       id: string;
       jobId: string;
@@ -79,6 +82,7 @@ export function mergeAsyncPollIntoQueue(
       status: "done" | "failed";
       error?: string;
       subagentSessionId?: string;
+      subagentName?: string;
       createdAt: number;
     }>;
   },
@@ -90,6 +94,7 @@ export function mergeAsyncPollIntoQueue(
 
   const pollJobIds = new Set<string>();
   for (const j of poll.running ?? []) pollJobIds.add(j.jobId);
+  for (const j of poll.queued ?? []) pollJobIds.add(j.jobId);
   for (const d of poll.deliveries ?? []) pollJobIds.add(d.jobId);
 
   const localByJobId = new Map(
@@ -116,6 +121,20 @@ export function mergeAsyncPollIntoQueue(
     });
   }
 
+  for (const job of poll.queued ?? []) {
+    if (next.some((q) => q.jobId === job.jobId)) continue;
+    next.unshift({
+      id: `queued-${job.jobId}`,
+      kind: "async-running",
+      text: job.position !== undefined ? `排队第 ${job.position + 1}` : "",
+      jobId: job.jobId,
+      taskLabel: job.taskLabel,
+      status: "queued",
+      subagentSessionId: job.subagentSessionId,
+      createdAt: job.createdAt,
+    });
+  }
+
   for (const del of poll.deliveries ?? []) {
     if (skipDeliveries.has(del.jobId)) continue;
     next = next.filter((q) => q.jobId !== del.jobId);
@@ -131,6 +150,7 @@ export function mergeAsyncPollIntoQueue(
       status: del.status,
       userAppend: prev?.userAppend ?? "",
       subagentSessionId: del.subagentSessionId ?? prev?.subagentSessionId,
+      subagentName: del.subagentName ?? prev?.subagentName,
       createdAt: del.createdAt,
     });
   }
@@ -142,10 +162,14 @@ export function extractLocalQueueFromMerged(
   merged: ChatQueueItem[],
   poll?: {
     running?: Array<{ jobId: string }>;
+    queued?: Array<{ jobId: string }>;
     deliveries?: Array<{ jobId: string }>;
   },
 ): ChatQueueItem[] {
-  const pollRunning = new Set((poll?.running ?? []).map((j) => j.jobId));
+  const pollRunning = new Set([
+    ...(poll?.running ?? []).map((j) => j.jobId),
+    ...(poll?.queued ?? []).map((j) => j.jobId),
+  ]);
   const userItems = merged.filter((i) => i.kind === "user");
   const overlays: ChatQueueItem[] = [];
 
@@ -173,10 +197,14 @@ export function splitQueueByKind(
   merged: ChatQueueItem[],
   poll?: {
     running?: Array<{ jobId: string }>;
+    queued?: Array<{ jobId: string }>;
     deliveries?: Array<{ jobId: string }>;
   },
 ): { userQueue: ChatQueueItem[]; asyncOverlays: ChatQueueItem[] } {
-  const pollRunning = new Set((poll?.running ?? []).map((j) => j.jobId));
+  const pollRunning = new Set([
+    ...(poll?.running ?? []).map((j) => j.jobId),
+    ...(poll?.queued ?? []).map((j) => j.jobId),
+  ]);
   const userQueue = merged.filter((i) => i.kind === "user");
   const asyncOverlays: ChatQueueItem[] = [];
 

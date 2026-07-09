@@ -121,9 +121,17 @@ export class SessionStreamHub {
     }
 
     // 先重放已有事件
-    for (const ev of state.buffer) {
-      if (ev.id > afterEventId) {
-        onEvent(ev);
+    const replayed = state.buffer.filter((ev) => ev.id > afterEventId);
+    for (const ev of replayed) {
+      onEvent(ev);
+    }
+
+    // 若运行已结束且客户端已经追到最新（afterEventId >= 最后事件 id），
+    // 重放一次 terminal 事件，让客户端能干净地结束而不是反复重连。
+    if (state.completed && replayed.length === 0 && state.buffer.length > 0) {
+      const last = state.buffer[state.buffer.length - 1];
+      if (last.event.type === "done" || last.event.type === "error") {
+        onEvent(last);
       }
     }
 
@@ -135,6 +143,18 @@ export class SessionStreamHub {
     return () => {
       state.subscribers.delete(onEvent);
     };
+  }
+
+  /**
+   * 将运行中的 sessionId 迁移到新 id（用于 POST 启动时前端尚未拿到真实 sessionId 的场景）。
+   */
+  migrateSessionId(oldId: string, newId: string): boolean {
+    const state = this.runs.get(oldId);
+    if (!state) return false;
+    state.sessionId = newId;
+    this.runs.set(newId, state);
+    this.runs.delete(oldId);
+    return true;
   }
 
   /**

@@ -4,6 +4,7 @@ import * as agentRuntime from "../infra/agentRuntime.js";
 import { createContextInner } from "../trpc/context.js";
 import {
   listRunningAsyncJobs,
+  listQueuedAsyncJobs,
   pullAsyncDeliveries,
   recoverStaleAsyncJobs,
   cleanupDeliveredAsyncJobs,
@@ -273,7 +274,7 @@ describe("asyncJobManager 持久化", () => {
     const ctx = await createContextInner();
     const narrowConfig = createTestConfig(ctx.config.projectRoot, {
       ...ctx.config,
-      asyncJobs: { maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000, maxRetries: 3, maxSubagentsPerSession: 10 },
+      asyncJobs: { maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxRetries: 3, maxSubagentsPerSession: 10 },
     });
 
     const first = await startAsyncAgentTask({
@@ -307,6 +308,31 @@ describe("asyncJobManager 持久化", () => {
 
     // 清理运行中任务
     await cancelAsyncJob(first.jobId, narrowConfig, ctx.services);
+    vi.restoreAllMocks();
+  });
+
+  it("listQueuedAsyncJobs 返回排队中的任务及位置", async () => {
+    vi.spyOn(agentRuntime, "runAgentLoop").mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ content: "慢任务", toolCalls: [], tokenUsage: { prompt: 1, completion: 2, total: 3 }, model: "m", provider: "p", roundsUsed: 1 }), 5000)),
+    );
+
+    const ctx = await createContextInner();
+    const narrowConfig = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: { maxConcurrent: 1, maxPerSession: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxRetries: 3, maxSubagentsPerSession: 10 },
+    });
+
+    const first = await startAsyncAgentTask({ sessionId, task: "排队测 A", label: "A", config: narrowConfig, services: ctx.services, agent: { id: "t", model: "m", systemPrompt: "test", tools: [] } });
+    const second = await startAsyncAgentTask({ sessionId, task: "排队测 B", label: "B", config: narrowConfig, services: ctx.services, agent: { id: "t", model: "m", systemPrompt: "test", tools: [] } });
+    const third = await startAsyncAgentTask({ sessionId, task: "排队测 C", label: "C", config: narrowConfig, services: ctx.services, agent: { id: "t", model: "m", systemPrompt: "test", tools: [] } });
+
+    const queued = await listQueuedAsyncJobs(sessionId, narrowConfig);
+    expect(queued.map((q) => q.jobId).sort()).toEqual([second.jobId, third.jobId].sort());
+    expect(queued.every((q) => q.status === "queued")).toBe(true);
+
+    await cancelAsyncJob(first.jobId, narrowConfig, ctx.services);
+    await cancelAsyncJob(second.jobId, narrowConfig, ctx.services);
+    await cancelAsyncJob(third.jobId, narrowConfig, ctx.services);
     vi.restoreAllMocks();
   });
 

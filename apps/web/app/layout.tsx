@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayoutClient } from "@/components/layout/AppLayoutClient";
+import Script from "next/script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,6 +32,16 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <Script id="kp-theme-init" strategy="beforeInteractive">
+        {`(function() {
+  try {
+    const stored = localStorage.getItem("kp-theme");
+    const resolved = stored === "light" || stored === "dark" ? stored : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.classList.remove("light", "dark");
+    document.documentElement.classList.add(resolved);
+  } catch {}
+})()`}
+      </Script>
       <body className="min-h-full bg-[var(--kp-bg)] text-[var(--kp-text)]">
         <TooltipProvider>
           <Providers>

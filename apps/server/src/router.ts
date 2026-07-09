@@ -56,6 +56,7 @@ import {
   retryAsyncJob,
   getAsyncQueueStats,
   startAsyncAgentTask,
+  listQueuedAsyncJobs,
 } from "./infra/asyncJobManager.js";
 import { resolveAgent } from "./infra/agentRuntime.js";
 
@@ -135,11 +136,12 @@ const agentRouter = router({
     .meta({ description: "获取今日 LLM 美元预算消耗状态。", aiReadable: true })
     .query(({ ctx }) => getLlmBudgetStatus(ctx.config)),
   pullAsyncQueue: publicProcedure
-    .meta({ description: "拉取会话内已完成的后台异步任务结果（供 Chat 队列消费）。", aiReadable: false })
+    .meta({ description: "拉取会话内后台异步任务队列（结果 + 运行中 + 排队中）。", aiReadable: false })
     .input(z.object({ sessionId: z.string().cuid() }))
-    .query(async ({ input }) => ({
+    .query(async ({ input, ctx }) => ({
       deliveries: await pullAsyncDeliveries(input.sessionId),
       running: await listRunningAsyncJobs(input.sessionId),
+      queued: await listQueuedAsyncJobs(input.sessionId, ctx.config),
     })),
   cancelAsyncJob: publicProcedure
     .meta({ description: "取消运行中或排队中的后台异步任务。", aiReadable: false })

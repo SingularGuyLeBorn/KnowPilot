@@ -174,7 +174,12 @@ export function SubagentPanel({
   const utils = trpc.useUtils();
   const query = trpc.agent.list.useQuery(
     { page: 1, pageSize: 50, parentId: parentAgentId },
-    { enabled: !!parentAgentId },
+    {
+      enabled: !!parentAgentId,
+      // 子 Agent 面板实时刷新：工具创建子 Agent 后立即反映到左侧面板
+      refetchInterval: 5000,
+      refetchIntervalInBackground: false,
+    },
   );
 
   const items = useMemo(() => (query.data?.items as Agent[] | undefined) ?? [], [query.data?.items]);
@@ -199,6 +204,7 @@ export function SubagentPanel({
         {onCreate && (
           <button
             type="button"
+            data-testid="subagent-create-button"
             onClick={onCreate}
             className="inline-flex items-center gap-1 rounded-md bg-[var(--kp-brand-soft)] px-2 py-1 text-[10px] font-medium text-[var(--kp-brand-dark)] transition hover:bg-[var(--kp-brand-light)]/30"
           >

@@ -125,19 +125,22 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
     // 仅当系统提示还是旧版默认（或空）时才自动升级，避免覆盖用户自定义提示词
     const needsPromptUpdate =
       !exact.systemPrompt || exact.systemPrompt === LEGACY_ASSISTANT_SYSTEM_PROMPT;
-    const needsUpdate = needsToolsUpdate || needsPromptUpdate;
+    // 默认 assistant 必须是 manager 层级，否则 spawn_subagent / run_async 等工具会被权限层拦截
+    const needsTierUpdate = exact.tier !== "manager";
+    const needsUpdate = needsToolsUpdate || needsPromptUpdate || needsTierUpdate;
     if (needsUpdate) {
       try {
         const updated = await services.agent.update({
           id: exact.id,
           tools: Array.from(new Set([...tools, ...DEFAULT_ASSISTANT_TOOLS])),
           ...(needsPromptUpdate ? { systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT } : {}),
+          ...(needsTierUpdate ? { tier: "manager" } : {}),
         });
         if (updated.success && updated.data) {
           return updated.data;
         }
       } catch (err) {
-        console.warn("[resolveAgent] 更新默认 assistant 工具失败:", err);
+        console.warn("[resolveAgent] 更新默认 assistant 工具/层级失败:", err);
       }
     }
     return exact;
@@ -149,6 +152,7 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
     model: "deepseek-v4-flash",
     systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT,
     tools: DEFAULT_ASSISTANT_TOOLS,
+    tier: "manager",
   });
   return created.data!;
 }

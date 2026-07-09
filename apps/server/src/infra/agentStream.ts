@@ -34,6 +34,7 @@ import {
 import { SessionStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 
 export type AgentStreamEvent =
+  | { type: "session_start"; sessionId: string }
   | { type: "round_start"; round: number }
   | { type: "thinking"; delta: string }
   | { type: "token"; delta: string }
@@ -530,6 +531,8 @@ export async function chatAgentStream(
         agentId: agent.id,
       });
       sessionId = created.data!.id;
+      // 让前端尽早拿到 sessionId，以便刷新/切 tab 后能按真实 sessionId 恢复流式状态
+      emit({ type: "session_start", sessionId });
     } else if (input.model || input.config?.systemPrompt !== undefined || skillResolved.prompt || input.agentId) {
       await services.session.update({
         id: sessionId,
@@ -545,7 +548,9 @@ export async function chatAgentStream(
         role: "user",
         content: prepared.messageText,
         attachments: prepared.attachments?.length ? prepared.attachments : undefined,
-        toolResults: skillResolved.meta ? { skill: skillResolved.meta.skill } : undefined,
+        toolResults: skillResolved.meta
+          ? { skill: skillResolved.meta.skill, ...(input.toolResults ?? {}) }
+          : (input.toolResults ?? undefined),
         source: input.source ?? "user",
       });
     }
@@ -814,10 +819,12 @@ export function handleAgentChatStream(
 
     const isPost = req.method === "POST";
     const body = (req.body ?? {}) as AgentChatInput & { resumeAfter?: number };
-    const sessionId = body.sessionId || String(req.query.sessionId || "");
+    const requestSessionId = body.sessionId || String(req.query.sessionId || "");
     const afterEventId = Number(body.resumeAfter ?? req.query.resumeAfter ?? 0);
+    // POST 且未带 sessionId 时，先以空字符串在 Hub 中占位；等 chatAgentStream 创建真实 session 后再迁移。
+    let runSessionId = requestSessionId;
 
-    if (!sessionId && !isPost) {
+    if (!requestSessionId && !isPost) {
       writeSse(res, { type: "error", message: "缺少 sessionId" });
       res.end();
       return;
@@ -837,14 +844,14 @@ export function handleAgentChatStream(
       }
 
       // 幂等：若已有运行中的任务，不再重复启动（可能是前端重连时误发了 POST）
-      if (!hub.isRunning(sessionId)) {
-        hub.start(sessionId, body, (emit, signal) =>
+      if (!hub.isRunning(runSessionId)) {
+        hub.start(runSessionId, body, (emit, signal) =>
           chatAgentStream(services, config, body, invokeTrpc, emit, signal),
         );
       }
     }
 
-    if (!hub.isRunning(sessionId) && afterEventId === 0) {
+    if (!hub.isRunning(runSessionId) && afterEventId === 0) {
       // 不是 POST 且没有运行中的任务，也没有要续传的历史事件
       writeSse(res, { type: "error", message: "该会话没有运行中的 Agent 流" });
       res.end();
@@ -876,8 +883,15 @@ export function handleAgentChatStream(
       }
     };
 
-    const unsubscribe = hub.subscribe(sessionId, afterEventId, (buffered: BufferedEvent) => {
+    const unsubscribe = hub.subscribe(runSessionId, afterEventId, (buffered: BufferedEvent) => {
       const event = buffered.event;
+      // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
+      if (event.type === "session_start" && event.sessionId && !requestSessionId) {
+        if (runSessionId !== event.sessionId) {
+          hub.migrateSessionId(runSessionId, event.sessionId);
+          runSessionId = event.sessionId;
+        }
+      }
       if (event.type === "token") {
         tokenBuffer += event.delta;
         if (tokenBuffer.length >= 512) {
@@ -909,7 +923,8 @@ export function handleAgentChatStream(
     });
 
     // 如果订阅时任务已经结束，需要主动关闭响应
-    if (!hub.isRunning(sessionId) && ended === false) {
+    if (!hub.isRunning(runSessionId) && ended === false) {
+      // 运行已结束，响应会在重放完成后关闭
       // 给重放事件一点处理时间
       setTimeout(() => {
         flushTokens();

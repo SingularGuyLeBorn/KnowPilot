@@ -56,6 +56,9 @@ Mock 的 `playwright.config.mock.ts` **不会在启动时自动 build**（避免
 | `apps/web/e2e/chat-thinking-mock.spec.ts` | Mock 思考时间线不重复 |
 | `apps/web/e2e/chat-tool-error-mock.spec.ts` | Mock 工具失败（红色 pill） |
 | `apps/web/e2e/subagent-mock.spec.ts` | Mock 子代理创建弹窗 → 左侧卡片 + /subagents 页列表 |
+| `apps/web/e2e/chat-subagent-resume-mock.spec.ts` | 刷新 / 切 session / 切 Agent 后父会话流式恢复 |
+| `apps/web/e2e/async-task-mock.spec.ts` | Mock 异步任务结果自动插入对话 |
+| `apps/web/e2e/theme-toggle-mock.spec.ts` | Navbar 主题切换 light/dark |
 | `apps/web/e2e/helpers/mockChatFixture.ts` | Mock Chat 断言封装（适配极快流式） |
 | `apps/web/playwright.config.mock.ts` | Mock 专用配置（3003/3011 + cross-env 启动） |
 

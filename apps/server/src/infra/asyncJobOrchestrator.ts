@@ -1,5 +1,5 @@
 /**
- * 异步 Agent 任务编排 — 全局 / per-session 并发池 + 超时 + 取消
+ * 异步 Agent 任务编排 — 全局 / per-session 并发池 + 超时 + 取消 + 事件
  */
 
 import type { AppConfig } from "./config.js";
@@ -20,6 +20,9 @@ interface RunningJob {
   startedAt: number;
 }
 
+type AsyncJobEventType = "queued" | "started" | "completed" | "cancelled" | "failed" | "timeout";
+type AsyncJobEventListener = (event: { type: AsyncJobEventType; jobId: string; sessionId: string }) => void;
+
 export class AsyncJobOrchestrator {
   private readonly queue: AsyncJobRunSpec[] = [];
   private runningGlobal = 0;
@@ -27,14 +30,63 @@ export class AsyncJobOrchestrator {
   private readonly runningJobs = new Map<string, RunningJob>();
   /** subagentSessionId -> AbortController，用于 session.stop 真正中断运行中任务 */
   private readonly subagentControllers = new Map<string, AbortController>();
+  private readonly listeners = new Set<AsyncJobEventListener>();
+  /** 排队超时句柄：jobId -> timeout */
+  private readonly queuedTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
-    private readonly limits: { maxGlobal: number; maxPerSession: number; taskTimeoutMs: number },
+    private readonly limits: {
+      maxGlobal: number;
+      maxPerSession: number;
+      taskTimeoutMs: number;
+      queuedTimeoutMs?: number;
+    },
   ) {}
+
+  /** 订阅任务生命周期事件 */
+  on(event: AsyncJobEventType, listener: AsyncJobEventListener): () => void {
+    const wrapper: AsyncJobEventListener = (ev) => {
+      if (ev.type === event) listener(ev);
+    };
+    this.listeners.add(wrapper);
+    return () => this.listeners.delete(wrapper);
+  }
+
+  /** 订阅所有事件（用于日志/调试） */
+  onAny(listener: AsyncJobEventListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private emit(event: { type: AsyncJobEventType; jobId: string; sessionId: string }): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch {
+        /* 事件监听失败不阻塞编排 */
+      }
+    }
+  }
 
   /** 入队；有并发槽位时立即执行 */
   enqueue(spec: AsyncJobRunSpec): void {
     this.queue.push(spec);
+    this.emit({ type: "queued", jobId: spec.jobId, sessionId: spec.sessionId });
+
+    const queuedTimeoutMs = this.limits.queuedTimeoutMs ?? 0;
+    if (queuedTimeoutMs > 0) {
+      this.queuedTimeouts.set(
+        spec.jobId,
+        setTimeout(() => {
+          const idx = this.queue.findIndex((s) => s.jobId === spec.jobId);
+          if (idx >= 0) {
+            this.queue.splice(idx, 1);
+            this.emit({ type: "timeout", jobId: spec.jobId, sessionId: spec.sessionId });
+          }
+        }, queuedTimeoutMs),
+      );
+    }
+
     this.drain();
   }
 
@@ -46,6 +98,12 @@ export class AsyncJobOrchestrator {
     };
   }
 
+  /** 获取任务在当前队列中的位置（0-based，运行中为 -1，不在队列中为 undefined） */
+  getPosition(jobId: string): number | undefined {
+    const idx = this.queue.findIndex((s) => s.jobId === jobId);
+    return idx >= 0 ? idx : undefined;
+  }
+
   /** 取消一条运行中的任务；若未运行则忽略 */
   cancel(jobId: string): boolean {
     const running = this.runningJobs.get(jobId);
@@ -55,7 +113,10 @@ export class AsyncJobOrchestrator {
     }
     const idx = this.queue.findIndex((s) => s.jobId === jobId);
     if (idx >= 0) {
+      const spec = this.queue[idx];
       this.queue.splice(idx, 1);
+      this.clearQueuedTimeout(jobId);
+      this.emit({ type: "cancelled", jobId, sessionId: spec.sessionId });
       return true;
     }
     return false;
@@ -75,6 +136,8 @@ export class AsyncJobOrchestrator {
     if (idx >= 0) {
       const spec = this.queue[idx];
       this.queue.splice(idx, 1);
+      this.clearQueuedTimeout(spec.jobId);
+      this.emit({ type: "cancelled", jobId: spec.jobId, sessionId: spec.sessionId });
       return { stopped: true, wasRunning: false, jobId: spec.jobId };
     }
     return { stopped: false, wasRunning: false };
@@ -88,6 +151,14 @@ export class AsyncJobOrchestrator {
   /** 任务是否在队列等待槽位 */
   isQueued(jobId: string): boolean {
     return this.queue.some((s) => s.jobId === jobId);
+  }
+
+  private clearQueuedTimeout(jobId: string): void {
+    const t = this.queuedTimeouts.get(jobId);
+    if (t) {
+      clearTimeout(t);
+      this.queuedTimeouts.delete(jobId);
+    }
   }
 
   private canStart(sessionId: string): boolean {
@@ -104,6 +175,7 @@ export class AsyncJobOrchestrator {
         continue;
       }
       this.queue.splice(i, 1);
+      this.clearQueuedTimeout(spec.jobId);
       this.start(spec);
     }
   }
@@ -116,6 +188,7 @@ export class AsyncJobOrchestrator {
     if (spec.metadata?.subagentSessionId) {
       this.subagentControllers.set(spec.metadata.subagentSessionId, controller);
     }
+    this.emit({ type: "started", jobId: spec.jobId, sessionId: spec.sessionId });
 
     const timeoutMs = spec.timeoutMs ?? this.limits.taskTimeoutMs;
     const timeout = setTimeout(() => {
@@ -150,6 +223,7 @@ export function getAsyncJobOrchestrator(config: AppConfig): AsyncJobOrchestrator
       maxGlobal: Math.max(1, config.asyncJobs.maxConcurrent),
       maxPerSession: Math.max(1, config.asyncJobs.maxPerSession),
       taskTimeoutMs: config.asyncJobs.taskTimeoutMs,
+      queuedTimeoutMs: config.asyncJobs.queuedTimeoutMs,
     });
   }
   return _orchestrator;

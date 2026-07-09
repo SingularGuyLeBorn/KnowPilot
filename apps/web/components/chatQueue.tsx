@@ -41,13 +41,19 @@ interface MessageQueueProps {
 }
 
 function kindLabel(item: ChatQueueItem): string {
-  if (item.kind === "async-running") return "异步任务 · 执行中";
+  if (item.kind === "async-running") {
+    if (item.status === "queued") return "异步任务 · 排队中";
+    return "异步任务 · 执行中";
+  }
   if (item.kind === "async-result") return "异步结果";
   return "待发消息";
 }
 
 function previewText(item: ChatQueueItem): string {
-  if (item.kind === "async-running") return item.taskLabel || item.text || "后台任务…";
+  if (item.kind === "async-running") {
+    const suffix = item.status === "queued" && item.text ? ` · ${item.text}` : "";
+    return (item.taskLabel || "后台任务…") + suffix;
+  }
   if (item.kind === "async-result") {
     return item.asyncResult?.slice(0, 120) || item.text || "（空结果）";
   }

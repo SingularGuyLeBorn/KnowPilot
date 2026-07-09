@@ -25,6 +25,8 @@ export interface AgentChatStreamInput {
   editContent?: string;
   skillId?: string;
   source?: "user" | "super" | "manager" | "sub" | "system";
+  /** 额外元数据，会作为用户消息的 toolResults 持久化（如子 Agent 名字） */
+  toolResults?: Record<string, unknown>;
   /** 断线续传：从该事件 ID 之后开始接收 */
   resumeAfter?: number;
 }
@@ -44,6 +46,7 @@ export interface AgentStreamDone {
 }
 
 export interface AgentStreamCallbacks {
+  onSessionStart?: (sessionId: string) => void;
   onRoundStart?: (round: number) => void;
   onThinking?: (delta: string) => void;
   onToken?: (delta: string) => void;
@@ -79,6 +82,9 @@ async function parseSseBlock(
   try {
     const payload = JSON.parse(dataLine);
     switch (eventType) {
+      case "session_start":
+        callbacks.onSessionStart?.(payload.sessionId ?? "");
+        break;
       case "round_start":
         callbacks.onRoundStart?.(payload.round ?? 1);
         break;
@@ -174,13 +180,15 @@ export async function streamAgentChat(
   signal?: AbortSignal,
 ) {
   let lastEventId = input.resumeAfter ?? 0;
+  const explicitResume = typeof input.resumeAfter === "number";
   let attempt = 0;
   const maxAttempts = 12; // 最长约 2 分钟的总重连窗口
 
   while (true) {
     if (signal?.aborted) return;
 
-    const isResume = lastEventId > 0;
+    // 显式 resumeAfter=0 也要走 GET 续传；新流 lastEventId=0 则走 POST
+    const isResume = lastEventId > 0 || explicitResume;
     let url: string;
     let init: RequestInit;
 

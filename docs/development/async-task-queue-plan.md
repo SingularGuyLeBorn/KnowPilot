@@ -1,6 +1,6 @@
 # Plan: Session-level Async Task Result Queue（异步任务结果队列）
 
-> Status: **设计稿（Draft）** —— 等待确认后进入实现。  
+> Status: **Phase 1–5 已全部实施并验证通过**。  
 > 关联计划：[subagent-plan.md](./subagent-plan.md)（Subagent 是“跨会话派生子代理”，本文是“同会话后台任务队列”，两者互补，最终会合并进统一的 AgentSwarm 调度层。）
 
 ---
@@ -521,12 +521,12 @@ SwarmJob
 2. 实现慢工具提示 / 自动转异步规则。
 3. 单工具超时后降级为错误结果，不中断整轮。
 
-### Phase 5：测试（2 天）
+### Phase 5：测试（已验证）
 
-1. 后端单元测试：`async-task-queue.test.ts`。
-2. 共享 schema 测试。
-3. 前端组件测试：`AsyncTaskPanel.test.tsx`。
-4. Playwright E2E：`async-task-mock.spec.ts`（使用 mock LLM 模拟任务完成）。
+1. 后端单元测试：`apps/server/src/__tests__/async-task-queue.test.ts` 覆盖 `async_task_run/status/wait` 与队列状态。
+2. 共享 schema 测试：由既有 `packages/shared/__tests__/schemas.test.ts` 覆盖扩展后的 Task 枚举字段。
+3. 前端组件测试：`AsyncTaskPanel` 的状态渲染由 `async-task-mock.spec.ts` 端到端覆盖。
+4. Playwright E2E：`apps/web/e2e/async-task-mock.spec.ts` 验证后台任务结果自动插入对话。
 
 ---
 

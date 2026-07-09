@@ -6,6 +6,8 @@ import {
   listSessionsSchema,
   stopSessionSchema,
   rerunSessionSchema,
+  createTaskSchema,
+  updateTaskSchema,
 } from "../schemas.js";
 
 describe("createGitRepoSchema path 校验", () => {
@@ -92,5 +94,37 @@ describe("Session / Subagent schema 校验", () => {
   it("rerunSessionSchema 要求合法 cuid", () => {
     expect(rerunSessionSchema.safeParse({ id: "clx12345678901234567890123" }).success).toBe(true);
     expect(rerunSessionSchema.safeParse({ id: "not-a-cuid" }).success).toBe(false);
+  });
+});
+
+describe("Task schema 校验", () => {
+  it("createTaskSchema 接受 async_agent / queued 及时间戳", () => {
+    const parsed = createTaskSchema.safeParse({
+      name: "后台任务",
+      type: "async_agent",
+      status: "queued",
+      sessionId: "clx12345678901234567890123",
+      queuedAt: new Date().toISOString(),
+      startedAt: null,
+      finishedAt: null,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.type).toBe("async_agent");
+      expect(parsed.data.status).toBe("queued");
+    }
+  });
+
+  it("createTaskSchema 拒绝非法 type", () => {
+    expect(createTaskSchema.safeParse({ name: "x", type: "unknown" }).success).toBe(false);
+  });
+
+  it("createTaskSchema 拒绝非法 status", () => {
+    expect(createTaskSchema.safeParse({ name: "x", status: "unknown" }).success).toBe(false);
+  });
+
+  it("updateTaskSchema 允许只更新状态", () => {
+    const parsed = updateTaskSchema.safeParse({ id: "clx12345678901234567890123", status: "running" });
+    expect(parsed.success).toBe(true);
   });
 });

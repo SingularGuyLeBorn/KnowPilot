@@ -57,6 +57,7 @@ test.describe("Chat 真实 LLM — 思考时间线", () => {
     expect(assistantCount).toBe(2);
 
     const secondRoundText = await lastAssistantText(page);
-    expect(secondRoundText.length).toBeGreaterThan(3);
+    // thinking 模式下模型可能只输出极简答案（如 "5"），重点验证有回复且包含预期数字
+    expect(secondRoundText).toMatch(/5/);
   });
 });

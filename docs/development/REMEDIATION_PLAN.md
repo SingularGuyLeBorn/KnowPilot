@@ -29,12 +29,12 @@
 | P1-10 | 🟡 中等 | Trigger 日志可能泄露敏感数据 | ✅ |
 | P1-11 | 🟡 中等 | `assertUnique` 竞态 | ✅ |
 | P2-1 | 🟢 轻微 | `nativeTools.ts` 过大（~2546 行） | ⏸️ |
-| P2-2 | 🟢 轻微 | 死代码（`internalProcedure` / `runSync`） | ⬜ |
+| P2-2 | 🟢 轻微 | 死代码（`internalProcedure` / `runSync`） | ✅ |
 | P2-3 | 🟢 轻微 | 类型安全（Service `any` / `ai.invoke` args） | ⏸️ |
-| P2-4 | 🟢 轻微 | 分页不一致（messages pageSize=200 vs 100） | ⬜ |
+| P2-4 | 🟢 轻微 | 分页不一致（messages pageSize=200 vs 100） | ✅ |
 | P2-5 | 🟢 轻微 | `autoCompact` 静默降级 | ⏸️ |
 | P2-6 | 🟢 轻微 | `recoverStaleAsyncJobs` 仅启动时跑一次 | ⏸️ |
-| P2-7 | 🟢 轻微 | Post 软删不触发 EventBus | ⬜ |
+| P2-7 | 🟢 轻微 | Post 软删不触发 EventBus | ✅ |
 | D-1 | 📋 文档 | entity-matrix 补 InfoSource，"18 实体"改 19 | ✅ |
 | D-2 | 📋 文档 | E2E 文件名清单更新（chat-thinking 拆分等） | ✅ |
 | D-3 | 📋 文档 | `docs/development/README.md` 索引路径修正 | ✅ |
@@ -283,7 +283,7 @@
 | 第 1 批 | P0-1 ~ P0-5（严重安全/数据） | ✅ 已完成（vitest 228 passed） |
 | 第 2 批 | P1-1 ~ P1-6 + P1-10（中等） | ✅ 已完成（vitest 228 passed） |
 | 第 3 批 | P1-7 ~ P1-11（中等） | ✅ 已完成（P1-9 暂缓，P1-10 随第 2 批完成） |
-| 第 4 批 | P2-2 / P2-4 / P2-7（轻微可做） | ⬜ |
+| 第 4 批 | P2-2 / P2-4 / P2-7（轻微可做） | ✅ |
 | 第 5 批 | D-1 ~ D-4（文档同步） | ✅ 已完成 |
 
 > 每完成一批即 git commit + 更新本文档状态列。

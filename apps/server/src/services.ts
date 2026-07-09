@@ -1413,6 +1413,19 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   protected override get defaultOrderBy(): string { return "createdAt"; }
   protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
 
+  protected override async afterCreate(entity: MessageEntity, input: CreateMessageInput): Promise<void> {
+    // 每次写入消息都把父会话顶到列表最前，确保后台更新/子 Agent 返回后父会话能被立即找到。
+    try {
+      await this.prisma.chatSession.update({
+        where: { id: input.sessionId },
+        data: { updatedAt: new Date() },
+      });
+    } catch {
+      // 会话可能已被删除，忽略
+    }
+    await super.afterCreate(entity, input);
+  }
+
   // P0-1 彻底解耦：Chat 专用 cursor 无限查询。
   // 无 cursor：返最近 limit 条（asc）。有 cursor：返早于 cursor(消息 id) 的 limit 条（asc）。
   // nextCursor = 本页最旧消息 id（供下页继续向上翻），items.length < limit 时无 nextCursor（已到顶）。

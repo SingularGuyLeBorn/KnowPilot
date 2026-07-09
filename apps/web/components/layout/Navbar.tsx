@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Bot, Menu, PenLine, PlusCircle, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "./CommandPalette";
+import { ThemeToggle } from "@/components/themeToggle";
 import type { LayoutMode } from "./layoutMode";
 
 interface NavbarProps {
@@ -62,6 +63,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
 
         <div className="flex shrink-0 items-center gap-2">
           <CommandPalette />
+          <ThemeToggle />
         </div>
       </div>
     </header>

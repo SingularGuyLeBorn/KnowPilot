@@ -205,11 +205,14 @@ model GitRepo {
 model Task {
   id             String    @id @default(cuid())
   name           String
-  type           String    /// "cron" | "oneshot"
+  type           String    /// "cron" | "oneshot" | "async_agent"
   status         String    /// "queued" | "running" | "success" | "failed" | "cancelled"
   sessionId      String?   /// 异步 Agent 任务归属的 ChatSession id
   delivered      Boolean   @default(false) /// 异步结果是否已投递给前端
   deliveredAt    DateTime? /// 异步结果投递时间
+  queuedAt       DateTime? /// 进入编排器队列的时间
+  startedAt      DateTime? /// 真正开始执行的时间
+  finishedAt     DateTime? /// 执行结束（成功/失败/取消）的时间
   input          Json?
   output         Json?
   cronExpression String?
@@ -219,6 +222,8 @@ model Task {
   updatedAt      DateTime  @updatedAt
 
   @@index([sessionId, status, delivered])
+  @@index([status, delivered, createdAt])
+  @@index([type, status])
 }
 
 /// 信息源 (InfoSource) — Agent 可信信息来源配置

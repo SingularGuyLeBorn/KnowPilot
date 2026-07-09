@@ -16,6 +16,7 @@ interface AgentData {
   model: string;
   systemPrompt: string;
   tools: string;
+  tier: string;
   source: string | null;
 }
 
@@ -46,9 +47,10 @@ export const agentSyncer: Syncer<AgentData> = {
       const model = typeof data.model === "string" ? data.model : "deepseek-chat";
       const systemPrompt = content.trim();
       const tools = readStringArray(data.tools).join(",");
+      const tier = typeof data.tier === "string" ? data.tier : "sub";
       const source = typeof data.source === "string" ? data.source : null;
 
-      return { slug, mtime, data: { name, description, model, systemPrompt, tools, source } };
+      return { slug, mtime, data: { name, description, model, systemPrompt, tools, tier, source } };
     } catch (e: any) {
       console.error(`  ❌ [Agent 解析失败] ${filePath}:`, e.message);
       return null;
@@ -74,6 +76,7 @@ export const agentSyncer: Syncer<AgentData> = {
           model: data.model,
           systemPrompt: data.systemPrompt,
           tools: data.tools,
+          tier: data.tier,
           source: data.source,
           sourceSlug: slug,
           sourceMtime: mtime,
@@ -87,6 +90,7 @@ export const agentSyncer: Syncer<AgentData> = {
           model: data.model,
           systemPrompt: data.systemPrompt,
           tools: data.tools,
+          tier: data.tier,
           source: data.source,
           sourceSlug: slug,
           sourceMtime: mtime,

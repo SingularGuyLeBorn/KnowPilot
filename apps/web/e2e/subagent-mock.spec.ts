@@ -21,12 +21,14 @@ test.describe("Subagent Mock — 子 Agent 任务创建与展示", () => {
 
     // 打开创建弹窗（先切到左栏「子 Agent」标签页）
     await page.getByTestId("left-tab-subagents").click();
-    await page.getByRole("button", { name: "新建子 Agent" }).click();
+    await page.getByTestId("subagent-create-button").click();
     await expect(page.getByText("新建子 Agent 任务")).toBeVisible({ timeout: 5_000 });
 
-    // 填任务描述并提交
+    // 切换到「新建子 Agent」模式，填写名称与任务描述并提交
+    await page.getByRole("button", { name: "新建子 Agent" }).click();
+    await page.getByPlaceholder("例如：Research-Helper").fill("E2E-Test-Subagent");
     await page.getByPlaceholder(/搜索 KnowPilot 并整理/).fill("总结本地文章并生成摘要");
-    await page.getByRole("button", { name: "创建并运行" }).click();
+    await page.getByRole("button", { name: "创建并启动" }).click();
 
     // 子 Agent 卡片应出现在左侧 SubagentPanel
     await expect(page.getByTestId("subagent-card").first()).toBeVisible({ timeout: 15_000 });

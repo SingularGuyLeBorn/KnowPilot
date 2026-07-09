@@ -55,6 +55,7 @@ export interface AppConfig {
     maxConcurrent: number;
     maxPerSession: number;
     taskTimeoutMs: number;
+    queuedTimeoutMs: number;
     maxRetries: number;
     /** 每个父会话允许的 subagent 任务数量上限（防止失控） */
     maxSubagentsPerSession: number;
@@ -318,6 +319,7 @@ export function createAppConfig(): AppConfig {
       maxConcurrent: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_CONCURRENT") || "2", 10)),
       maxPerSession: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_PER_SESSION") || "2", 10)),
       taskTimeoutMs: Math.max(10_000, parseInt(readEnv("AGENT_ASYNC_TASK_TIMEOUT_MS") || "300000", 10)),
+      queuedTimeoutMs: Math.max(0, parseInt(readEnv("AGENT_ASYNC_QUEUED_TIMEOUT_MS") || "0", 10)),
       maxRetries: Math.max(0, parseInt(readEnv("AGENT_ASYNC_MAX_RETRIES") || "3", 10)),
       maxSubagentsPerSession: Math.max(1, parseInt(readEnv("AGENT_MAX_SUBAGENTS_PER_SESSION") || "10", 10)),
     },

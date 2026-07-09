@@ -68,6 +68,7 @@ export const SessionListItem = memo(function SessionListItem({
 
   return (
     <div
+      data-testid="session-list-item"
       className={cn(
         "group/sess mb-1 flex items-stretch overflow-hidden rounded-lg border transition-colors",
         active

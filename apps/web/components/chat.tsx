@@ -5,6 +5,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -72,6 +73,70 @@ import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import { MessageActions, MessageSourceLabel, MessageVersions } from "@/components/chatMessageBits";
 import { SessionListItem } from "@/components/chatSessionListItem";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+
+/* ─── 模块级类型与流式状态持久化 ─── */
+
+type OptimisticMsg = { id: string; content: string; attachments?: ChatImageAttachment[] };
+
+interface SessionStreamState {
+  isStreaming: boolean;
+  streamingContent: string;
+  liveTimeline: TimelineStep[];
+  streamTargetUserId: string | null;
+  optimistic: OptimisticMsg[];
+  error: string | null;
+  lastRoundTokens: number;
+  abort: AbortController | null;
+  // 断线续传状态
+  lastEventId: number;
+  lastEventAt: number;
+  connected: boolean;
+  // 按 session 隔离的两个物理独立队列 + 异步投递消费记录
+  userQueue: ChatQueueItem[];
+  asyncOverlays: ChatQueueItem[];
+  consumedDeliveries: Set<string>;
+  queueDraining: boolean;
+  activeQueueTaskId: string | null;
+}
+
+const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessionId 时的临时键
+const STREAM_STATES_STORAGE_KEY = "kp:chat-stream-states";
+
+function serializeStreamStates(map: Map<string, SessionStreamState>): string {
+  const obj: Record<string, unknown> = {};
+  for (const [k, v] of map) {
+    if (k === NEW_STREAM_KEY) continue; // 不持久化临时新会话状态
+    const { abort, ...rest } = v;
+    void abort;
+    obj[k] = { ...rest, consumedDeliveries: [...rest.consumedDeliveries] };
+  }
+  return JSON.stringify(obj);
+}
+
+function deserializeStreamStates(raw: string): Map<string, SessionStreamState> {
+  const map = new Map<string, SessionStreamState>();
+  try {
+    const parsed = JSON.parse(raw) as Record<string, SessionStreamState>;
+    for (const [k, v] of Object.entries(parsed)) {
+      map.set(k, {
+        ...v,
+        abort: null,
+        consumedDeliveries: new Set(v.consumedDeliveries ?? []),
+      });
+    }
+  } catch {
+    // ignore
+  }
+  return map;
+}
+
+function saveStreamStatesToStorage(map: Map<string, SessionStreamState>) {
+  try {
+    sessionStorage.setItem(STREAM_STATES_STORAGE_KEY, serializeStreamStates(map));
+  } catch {
+    // ignore
+  }
+}
 
 /* ─── Main ─── */
 
@@ -156,30 +221,10 @@ export function ChatView() {
    * 视图 useState(isStreaming/streamingContent/...)作为"当前 effectiveSessionId 的镜像"，
    * 由 applyView() 在切换时同步；helper setter 同步写 ref Map + 视图(若是当前 session)。
    */
-  type OptimisticMsg = { id: string; content: string; attachments?: ChatImageAttachment[] };
-  interface SessionStreamState {
-    isStreaming: boolean;
-    streamingContent: string;
-    liveTimeline: TimelineStep[];
-    streamTargetUserId: string | null;
-    optimistic: OptimisticMsg[];
-    error: string | null;
-    lastRoundTokens: number;
-    abort: AbortController | null;
-    // 断线续传状态
-    lastEventId: number;
-    lastEventAt: number;
-    connected: boolean;
-    // 按 session 隔离的两个物理独立队列 + 异步投递消费记录
-    userQueue: ChatQueueItem[];
-    asyncOverlays: ChatQueueItem[];
-    consumedDeliveries: Set<string>;
-    queueDraining: boolean;
-    activeQueueTaskId: string | null;
-  }
-  const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessionId 时的临时键
   const streamStatesRef = useRef<Map<string, SessionStreamState>>(new Map());
   const effectiveSessionIdRef = useRef<string | null>(null);
+  // 页面刷新/关闭时阻止 runStream finally 把 isStreaming 清为 false，保证下次 mount 能续传
+  const isPageUnloadingRef = useRef(false);
 
   const getStreamState = useCallback((sid: string): SessionStreamState => {
     let s = streamStatesRef.current.get(sid);
@@ -226,6 +271,21 @@ export function ChatView() {
     [],
   );
 
+  // 流式状态防抖持久化：每次状态变更后 100ms 内无新变更则写入 sessionStorage，
+  // 确保刷新、崩溃、异常关闭时尽可能不丢状态。isStreaming 等关键状态会立即保存。
+  const streamSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleStreamSave = useCallback((immediate?: boolean) => {
+    if (streamSaveTimeoutRef.current) clearTimeout(streamSaveTimeoutRef.current);
+    if (immediate) {
+      saveStreamStatesToStorage(streamStatesRef.current);
+      return;
+    }
+    streamSaveTimeoutRef.current = setTimeout(() => {
+      saveStreamStatesToStorage(streamStatesRef.current);
+      streamSaveTimeoutRef.current = null;
+    }, 100);
+  }, []);
+
   // session-aware setter：更新 ref Map[originSid]，若它是当前视图则同步 useState
   const ssSet = useCallback(
     <K extends keyof SessionStreamState>(
@@ -254,8 +314,9 @@ export function ChatView() {
           default: break;
         }
       }
+      scheduleStreamSave();
     },
-    [getStreamState],
+    [getStreamState, scheduleStreamSave],
   );
 
   const isSessionStreaming = useCallback(
@@ -338,6 +399,7 @@ export function ChatView() {
       void utils.task.list.invalidate();
       void utils.session.list.invalidate();
       void utils.session.listChildren.invalidate({ parentSessionId: effectiveSessionId ?? undefined });
+      void utils.agent.list.invalidate();
       setToast(`已启动子 Agent 任务：${data.message ?? ""}`);
     },
     onError: (err) => {
@@ -389,6 +451,15 @@ export function ChatView() {
       refetchOnMount: false,
     },
   );
+  // 切回某个 session 时强制刷新消息：确保子 Agent 在后台完成写入的消息能立刻出现
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+    const st = streamStatesRef.current.get(effectiveSessionId);
+    if (st && (st.isStreaming || st.asyncOverlays.length > 0 || st.userQueue.length > 0)) {
+      void messagesInfinite.refetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveSessionId]);
   // pages 顺序为 [最近页, 更早页, ...]，展示需倒序拼接（更早在前 + 最近在后）成时间正序
   // cast ChatMessage[]：listForChat 返 MessageEntity(role:string)，运行时 role 为合法联合值，与 ChatMessage 同形
   const messages = useMemo(
@@ -438,23 +509,49 @@ export function ChatView() {
   );
   const asyncTaskActiveCount = useMemo(() => {
     const items = (asyncTaskCountQuery.data?.items ?? []) as { status?: string }[];
-    return items.filter((t) => t.status === "running" || t.status === "pending").length;
+    return items.filter((t) => t.status === "running" || t.status === "queued").length;
   }, [asyncTaskCountQuery.data?.items]);
 
   // A8：仅在有活跃异步任务（running/queued）时才轮询 pullAsyncQueue，无任务时停止轮询，
   // 避免每个会话固定 2.5s 空 poll（含 raw UPDATE + findMany）。参照 listChildren 的 running 判断。
+  // 同时监听本地 async-running overlay：任务可能在全球 stats 刷新前就已开始并完成，
+  // 必须靠 overlay 触发至少一次 poll，否则结果可能永远投递不到前端。
   const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
     { sessionId: effectiveSessionId! },
     {
       enabled: !!effectiveSessionId && !backendDown,
       refetchInterval: (query) => {
         if (query.state.error) return 10000;
-        const stats = asyncQueueStatsQuery.data;
-        const hasActive = !!stats && (stats.runningGlobal > 0 || stats.queued > 0);
+        const data = query.state.data as { running?: unknown[]; queued?: unknown[] } | undefined;
+        const hasActive =
+          !!data &&
+          ((data.running?.length ?? 0) > 0 || (data.queued?.length ?? 0) > 0);
         return hasActive ? 2500 : false;
       },
     },
   );
+
+  // 当工具调用产生 async-running overlay 时立即触发一次 poll，防止任务在 stats 轮询间隙完成而漏投。
+  const asyncPollTriggerRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+    const runningIds = asyncOverlays
+      .filter(
+        (o) =>
+          o.kind === "async-running" &&
+          (o.status === "running" || o.status === "queued") &&
+          o.jobId,
+      )
+      .map((o) => o.jobId!);
+    let shouldPoll = false;
+    for (const id of runningIds) {
+      if (!asyncPollTriggerRef.current.has(id)) {
+        asyncPollTriggerRef.current.add(id);
+        shouldPoll = true;
+      }
+    }
+    if (shouldPoll) void asyncQueueQuery.refetch();
+  }, [asyncOverlays, effectiveSessionId, asyncQueueQuery]);
 
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {
@@ -665,28 +762,39 @@ export function ChatView() {
       skillId?: string;
       skillPrompt?: string;
       source?: "user" | "super" | "manager" | "sub" | "system";
+      toolResults?: Record<string, unknown>;
       optimisticUser?: { id: string; text: string };
+      resumeAfter?: number;
+      isResume?: boolean;
+      targetSessionId?: string;
     }) => {
       // 捕获本次流式所属的 session（新会话首条消息时为 null，onDone 拿到 sessionId 后迁移键）
-      let originSid = effectiveSessionId ?? NEW_STREAM_KEY;
+      let originSid = opts.targetSessionId ?? effectiveSessionId ?? NEW_STREAM_KEY;
       // 仅中止同一 session 上已有的流式（支持多 session 并发流式，互不干扰）
       getAbort(originSid)?.abort();
       const ac = new AbortController();
       getStreamState(originSid).abort = ac;
 
+      const isResume = opts.isResume === true;
       ssSet(originSid, "isStreaming", true);
-      ssSet(originSid, "streamingContent", "");
-      ssSet(originSid, "liveTimeline", [{ type: "thinking", content: "", round: 1 }]);
-      // 重试/重生成/编辑：定位到原 user 消息所在 group 原位流式，替换旧 assistant 气泡；
-      // 新消息：null，流式气泡落列表底部。
-      ssSet(originSid, "streamTargetUserId",
-        opts.retryFromMessageId ?? opts.regenerateUserMessageId ?? opts.editMessageId ?? null,
-      );
-      ssSet(originSid, "lastRoundTokens", 0);
+      // 流式一开始立即持久化，避免极快刷新/崩溃时状态未落盘
+      saveStreamStatesToStorage(streamStatesRef.current);
+      if (!isResume) {
+        ssSet(originSid, "streamingContent", "");
+        ssSet(originSid, "liveTimeline", [{ type: "thinking", content: "", round: 1 }]);
+        // 重试/重生成/编辑：定位到原 user 消息所在 group 原位流式，替换旧 assistant 气泡；
+        // 新消息：null，流式气泡落列表底部。
+        ssSet(originSid, "streamTargetUserId",
+          opts.retryFromMessageId ?? opts.regenerateUserMessageId ?? opts.editMessageId ?? null,
+        );
+        ssSet(originSid, "lastRoundTokens", 0);
+      }
       ssSet(originSid, "error", null);
-      // 断线续传状态初始化
+      // 断线续传状态初始化（resume 时保留 lastEventId / streamingContent / liveTimeline）
       const st = getStreamState(originSid);
-      st.lastEventId = 0;
+      if (!isResume) {
+        st.lastEventId = 0;
+      }
       st.lastEventAt = Date.now();
       st.connected = true;
       setEditingUserId(null);
@@ -704,9 +812,10 @@ export function ChatView() {
       try {
         await streamAgentChat(
           {
-            sessionId: effectiveSessionId ?? undefined,
+            sessionId: opts.targetSessionId ?? effectiveSessionId ?? undefined,
             agentId: effectiveAgentId || undefined,
-            message: opts.message,
+            message: isResume ? undefined : opts.message,
+            resumeAfter: opts.resumeAfter,
             attachments: opts.attachments?.map(({ name, mimeType, previewUrl, extractedText, source }) => ({
               name,
               mimeType,
@@ -721,9 +830,37 @@ export function ChatView() {
             editContent: opts.editContent,
             skillId: opts.skillId,
             source: opts.source,
+            toolResults: opts.toolResults,
             ...streamConfig,
           },
           {
+            onSessionStart: (sid) => {
+              if (originSid === NEW_STREAM_KEY && sid) {
+                // 把待写 delta 先冲刷到 NEW_STREAM_KEY 状态，再整体迁移到真实 sessionId
+                flushStreamNow(NEW_STREAM_KEY);
+                const prev = streamStatesRef.current.get(NEW_STREAM_KEY);
+                if (prev) {
+                  streamStatesRef.current.set(sid, prev);
+                  streamStatesRef.current.delete(NEW_STREAM_KEY);
+                }
+                originSid = sid;
+              }
+              // 后台续传（refresh/切 tab/切 session）时不应抢占当前视图；
+              // 只有用户主动在当前视图发起的新流才需要把 URL/状态切到新 session。
+              if (!opts.isResume) {
+                // flushSync 保证 setSessionId 立即落盘，避免后续 onDone/invalidate
+                // 因 effectiveSessionId 还是 null 而刷到错误 session（或根本未启用查询）。
+                flushSync(() => setSessionId(sid));
+                applyView(sid);
+                // 同步 URL sessionId，刷新后仍能回到当前会话
+                const params = new URLSearchParams(searchParams.toString());
+                params.set("sessionId", sid);
+                if (params.get("agentId")) params.delete("agentId");
+                router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+              }
+              // 立即持久化，确保刷新前状态已落在真实 sessionId 下
+              saveStreamStatesToStorage(streamStatesRef.current);
+            },
             onRoundStart: (round) =>
               ssSet(originSid, "liveTimeline", (prev) => {
                 if (prev.length === 1 && prev[0]?.type === "thinking" && !prev[0].content) {
@@ -810,7 +947,11 @@ export function ChatView() {
               } else {
                 flushStreamNow(originSid);
               }
-              setSessionId(data.sessionId);
+              // 后台续传完成时只更新状态，不抢占用户当前视图
+              if (!opts.isResume) {
+                flushSync(() => setSessionId(data.sessionId));
+                applyView(data.sessionId);
+              }
               if (data.tokenUsage?.total) ssSet(originSid, "lastRoundTokens", data.tokenUsage.total);
               if (opts.skillPrompt) {
                 updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
@@ -829,6 +970,7 @@ export function ChatView() {
               if (opts.optimisticUser) {
                 ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
               }
+              ssSet(originSid, "isStreaming", false);
               void utils.session.list.invalidate();
             },
             onError: (message, sid, suggestion) => {
@@ -845,7 +987,12 @@ export function ChatView() {
               }
               if (opts.optimisticUser) ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
               ssSet(originSid, "error", message + (suggestion ? `\n${suggestion}` : ""));
-              if (sid) setSessionId(sid);
+              // 后台续传出错时只更新状态，不抢占用户当前视图
+              if (sid && !opts.isResume) {
+                flushSync(() => setSessionId(sid));
+                applyView(sid);
+              }
+              ssSet(originSid, "isStreaming", false);
               ssSet(originSid, "liveTimeline", []);
               ssSet(originSid, "streamingContent", "");
             },
@@ -854,8 +1001,13 @@ export function ChatView() {
         );
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") {
+          // 页面刷新/关闭导致的 abort：保留 isStreaming，让下次 mount 能续传
+          if (isPageUnloadingRef.current) {
+            return;
+          }
           // 用户点击停止：先把待写 token 落地（保留中断前的部分内容），再延后清空
           flushStreamNow(originSid);
+          ssSet(originSid, "isStreaming", false);
           // 保持当前流式 UI，等后端保存中断消息并刷新消息查询后再清空
           setTimeout(() => {
             // P0-1：刷新消息无限查询以显示中断后的 assistant 消息
@@ -877,7 +1029,10 @@ export function ChatView() {
         discardStreamFlush(originSid);
         const finSt = getStreamState(originSid);
         finSt.connected = false;
-        ssSet(originSid, "isStreaming", false);
+        // 页面卸载时保留 isStreaming，让刷新后 mount 能识别并续传
+        if (!isPageUnloadingRef.current) {
+          ssSet(originSid, "isStreaming", false);
+        }
         ssSet(originSid, "streamTargetUserId", null);
         const st = getStreamState(originSid);
         st.abort = null;
@@ -890,8 +1045,77 @@ export function ChatView() {
         consumeRef.current();
       }
     },
-    [effectiveAgentId, chatConfig, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, utils.message.listForChat, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush],
+    [effectiveAgentId, chatConfig, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, utils.message.listForChat, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush, applyView, pathname, router, searchParams],
   );
+
+  // 用 ref 保存最新的 runStream，供 mount 自动续传使用（避免把 runStream 本身放进 mount effect deps）
+  const runStreamRef = useRef(runStream);
+  useEffect(() => {
+    runStreamRef.current = runStream;
+  }, [runStream]);
+
+  // mount：从 sessionStorage 恢复流式状态，并自动续传刷新前正在运行的会话
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(STREAM_STATES_STORAGE_KEY);
+      console.log("[mount] restored raw:", raw?.slice(0, 200));
+      if (raw) {
+        const restored = deserializeStreamStates(raw);
+        for (const [sid, st] of restored) {
+          streamStatesRef.current.set(sid, st);
+        }
+        applyView(effectiveSessionId);
+        for (const [sid, st] of streamStatesRef.current) {
+          // 只要刷新前仍在运行（即使还没收到第一个事件 lastEventId=0）也尝试续传
+          if (sid !== NEW_STREAM_KEY && st.isStreaming) {
+            console.log("[mount] resuming", sid, "lastEventId", st.lastEventId);
+            queueMicrotask(() => {
+              runStreamRef.current({ targetSessionId: sid, resumeAfter: st.lastEventId, isResume: true });
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[mount] restore error", e);
+    }
+    // 只在 mount 执行一次；依赖项故意不写全
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 卸载 / 刷新前持久化流式状态，并标记正在卸载以阻止 runStream finally 清掉 isStreaming
+  useEffect(() => {
+    const states = streamStatesRef.current;
+    const onBeforeUnload = () => {
+      isPageUnloadingRef.current = true;
+      saveStreamStatesToStorage(states);
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      saveStreamStatesToStorage(states);
+    };
+  }, []);
+
+  // 切回浏览器标签页时：若后台有流式会话连接断开，自动续传；切出时持久化状态
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      const states = streamStatesRef.current;
+      if (document.hidden) {
+        saveStreamStatesToStorage(states);
+        return;
+      }
+      // 可见性恢复：任何 isStreaming 但没有 active abort 的会话都可能是连接丢失，尝试续传
+      for (const [sid, st] of states) {
+        if (sid !== NEW_STREAM_KEY && st.isStreaming && !st.abort) {
+          queueMicrotask(() => {
+            runStreamRef.current({ targetSessionId: sid, resumeAfter: st.lastEventId, isResume: true });
+          });
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
 
   const consumeQueue = useCallback(() => {
     const sid = effectiveSessionId ?? NEW_STREAM_KEY;
@@ -970,7 +1194,17 @@ export function ChatView() {
       attachments: streamAttachments?.length ? streamAttachments : undefined,
       skillId: task.skillId,
       skillPrompt: task.skillPrompt,
-      source: task.kind === "async-result" ? "super" : "user",
+      source: task.kind === "async-result" ? "sub" : "user",
+      toolResults:
+        task.kind === "async-result"
+          ? {
+              subagentResult: {
+                jobId: task.jobId,
+                subagentSessionId: task.subagentSessionId,
+                subagentName: task.subagentName ?? `子 Agent ${task.jobId?.slice(0, 6) ?? ""}`,
+              },
+            }
+          : undefined,
       optimisticUser: { id: optimisticId, text: optimisticText },
     });
   }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState]);
@@ -999,6 +1233,10 @@ export function ChatView() {
       rafMap.forEach((id) => cancelAnimationFrame(id));
       rafMap.clear();
       deltaMap.clear();
+      if (streamSaveTimeoutRef.current) {
+        clearTimeout(streamSaveTimeoutRef.current);
+        streamSaveTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -1186,6 +1424,14 @@ export function ChatView() {
     setEditingSessionId(null);
     setSelectedSkill(null);
     applyView(id);
+    // 如果目标 session 正在流式但连接已断开（切走期间网络/反代关闭 SSE），
+    // 立即触发续传，保证点回来时流式输出恢复。
+    const targetSt = streamStatesRef.current.get(id);
+    if (targetSt?.isStreaming && !targetSt.connected && !targetSt.abort) {
+      queueMicrotask(() => {
+        runStreamRef.current({ targetSessionId: id, resumeAfter: targetSt.lastEventId, isResume: true });
+      });
+    }
     // 切换会话后同步 URL sessionId，移除 agentId，避免 URL 参数覆盖用户选择
     const params = new URLSearchParams(searchParams.toString());
     params.set("sessionId", id);
@@ -1351,10 +1597,18 @@ export function ChatView() {
     const isLastUser = groupIdx === lastGroupIndex;
     const isEditing = editingUserId === group.userMessage.id;
     const msgSource = (group.userMessage as { source?: string }).source ?? "user";
+    const msgToolResults = (group.userMessage as { toolResults?: unknown }).toolResults;
+    const subagentName =
+      msgSource === "sub"
+        ? (msgToolResults as { subagentResult?: { subagentName?: string } } | undefined)?.subagentResult
+            ?.subagentName
+        : undefined;
     // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧），
-    // 但用角标标识为「父代理」；其他非 user 来源仍显示在左侧。
+    // source=sub（子 Agent 返回结果）也在右侧，模拟「子 Agent 发送」的消息。
+    // 其他非 user 来源显示在左侧。
     const isParentAgentTask = isSubagentSession && msgSource === "super";
-    const isAgentMessage = msgSource !== "user" && !isParentAgentTask;
+    const isUserLike = msgSource === "user" || msgSource === "sub" || isParentAgentTask;
+    const isAgentMessage = !isUserLike;
     return (
       <div className="flex flex-col">
         <div className={cn("flex w-full", isAgentMessage ? "justify-start" : "justify-end")}>
@@ -1400,7 +1654,8 @@ export function ChatView() {
               <MessageSourceLabel
                 source={msgSource}
                 isSubagentSession={isSubagentSession}
-                align={isParentAgentTask ? "right" : "left"}
+                align={isUserLike ? "right" : "left"}
+                subagentName={subagentName}
               />
               {group.userMessage.skillName && (
                 <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">

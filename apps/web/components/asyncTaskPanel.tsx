@@ -23,16 +23,20 @@ interface AsyncTaskBrief {
 
 const STATUS_COLOR: Record<string, string> = {
   running: "bg-blue-500 animate-pulse",
+  queued: "bg-amber-500 animate-pulse",
   pending: "bg-amber-500 animate-pulse",
   success: "bg-green-500",
   failed: "bg-red-500",
+  cancelled: "bg-gray-400",
 };
 
 const STATUS_LABEL: Record<string, string> = {
   running: "执行中",
+  queued: "排队中",
   pending: "排队中",
   success: "已完成",
   failed: "失败",
+  cancelled: "已取消",
 };
 
 function formatTime(date?: string | Date | null): string | null {
@@ -145,7 +149,7 @@ export function AsyncTaskPanel({ parentSessionId }: { parentSessionId?: string }
   );
 
   const items = useMemo(() => (query.data?.items as AsyncTaskBrief[] | undefined) ?? [], [query.data?.items]);
-  const runningCount = useMemo(() => items.filter((t) => t.status === "running" || t.status === "pending").length, [items]);
+  const runningCount = useMemo(() => items.filter((t) => t.status === "running" || t.status === "queued" || t.status === "pending").length, [items]);
 
   const refresh = () => {
     void query.refetch();

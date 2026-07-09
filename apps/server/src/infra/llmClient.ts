@@ -264,10 +264,15 @@ export async function chatCompletion(options: {
 
   const choice = data.choices?.[0];
   const usage = data.usage;
+  const reasoningContent = choice?.message?.reasoning_content ?? null;
+  const rawContent = choice?.message?.content ?? null;
+  // DeepSeek V4 在 thinking 模式下可能只返回 reasoning_content 而无 content；
+  // 将 reasoning_content 作为内容 fallback，避免 assistant 消息为空。
+  const content = rawContent?.trim() ? rawContent : (reasoningContent ?? null);
 
   return {
-    content: choice?.message?.content ?? null,
-    reasoningContent: choice?.message?.reasoning_content ?? null,
+    content,
+    reasoningContent,
     toolCalls: choice?.message?.tool_calls ?? [],
     tokenUsage: usage
       ? {
@@ -351,6 +356,8 @@ export async function* chatCompletionStream(options: {
   let finishReason: string | null = null;
   let usage: { prompt: number; completion: number; total: number } | undefined;
   let responseModel = model;
+  let reasoningAcc = "";
+  let hasContentToken = false;
 
   while (true) {
     if (options.signal?.aborted) {
@@ -397,6 +404,7 @@ export async function* chatCompletionStream(options: {
       if (choice.finish_reason) finishReason = choice.finish_reason;
 
       if (choice.delta?.reasoning_content) {
+        reasoningAcc += choice.delta.reasoning_content;
         yield {
           type: "reasoning",
           delta: choice.delta.reasoning_content,
@@ -406,6 +414,7 @@ export async function* chatCompletionStream(options: {
       }
 
       if (choice.delta?.content) {
+        hasContentToken = true;
         yield { type: "token", delta: choice.delta.content, model: responseModel, provider: provider.id };
       }
 
@@ -444,9 +453,12 @@ export async function* chatCompletionStream(options: {
       tokenUsage: usage,
     };
   } else {
+    // thinking 模式下 API 可能只返回 reasoning_content 而无 content；
+    // 无正式 token 时，将累积的 reasoning 作为内容 fallback 输出。
+    const fallbackContent = !hasContentToken && reasoningAcc.trim() ? reasoningAcc : "";
     yield {
       type: "token",
-      delta: "",
+      delta: fallbackContent,
       finishReason,
       model: responseModel,
       provider: provider.id,

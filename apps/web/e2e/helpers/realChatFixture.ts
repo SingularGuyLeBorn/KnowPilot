@@ -23,8 +23,38 @@ export async function sendChatMessage(page: Page, text: string): Promise<void> {
 
 export async function waitForStreamingComplete(page: Page): Promise<void> {
   const streamingBubble = page.getByTestId("streaming-assistant-bubble");
-  await streamingBubble.waitFor({ state: "visible", timeout: STREAMING_TIMEOUT });
-  await streamingBubble.waitFor({ state: "hidden", timeout: STREAMING_TIMEOUT });
+  const assistantBubbles = page.getByTestId("assistant-message-bubble");
+  const start = Date.now();
+  const prevCount = await assistantBubbles.count();
+  const prevText = prevCount > 0 ? await assistantBubbles.nth(prevCount - 1).innerText() : "";
+
+  const isResponseReady = async () => {
+    const currentCount = await assistantBubbles.count();
+    if (currentCount > prevCount) return true;
+    if (currentCount > 0 && currentCount >= prevCount) {
+      const currentText = await assistantBubbles.nth(currentCount - 1).innerText();
+      if (currentText !== prevText && currentText.trim().length > 0) return true;
+    }
+    return false;
+  };
+
+  while (Date.now() - start < STREAMING_TIMEOUT) {
+    // 正常路径：流式气泡出现后等待其消失，再确认最终消息已落地
+    const bubbleCount = await streamingBubble.count();
+    if (bubbleCount > 0) {
+      const visible = await streamingBubble.first().isVisible().catch(() => false);
+      if (visible) {
+        await streamingBubble.waitFor({ state: "hidden", timeout: STREAMING_TIMEOUT });
+        continue;
+      }
+    }
+
+    // 极快响应：流式气泡可能在我们检查前就已经完成，以 assistant 消息出现或内容变化视为结束
+    if (await isResponseReady()) return;
+
+    await page.waitForTimeout(100);
+  }
+  throw new Error("流式响应未在预期时间内完成");
 }
 
 export function countUserMessages(page: Page): Promise<number> {

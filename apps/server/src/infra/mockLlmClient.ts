@@ -51,6 +51,10 @@ function hasTool(opts: MockLlmOptions, name: string): boolean {
   return opts.tools?.some((t) => t.function.name === name) ?? false;
 }
 
+function firstToolName(opts: MockLlmOptions, ...names: string[]): string | undefined {
+  return opts.tools?.map((t) => t.function.name).find((n) => names.includes(n));
+}
+
 /**
  * 任意工具已返回结果 → 后续 probe 必须切到「最终回答」场景，
  * 否则会与 web_search / read_article 等场景互相命中导致 ReAct 死循环。
@@ -124,6 +128,67 @@ const scenarios: MockLlmScenario[] = [
       ...baseResult(opts),
       content: "我将先搜索相关资料，然后给出回答。",
       toolCalls: [makeToolCall("web_search", { query: "KnowPilot intermediate" })],
+    }),
+    stream: async function* (opts) {
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 后台异步任务：第一轮调用 async_task_run / run_async，收到工具结果后给出最终回复
+    name: "async_task_run",
+    match: (opts, forced) => {
+      if (forced === "async_task_run") return true;
+      const toolName = firstToolName(opts, "async_task_run", "run_async");
+      return !!toolName && /后台任务|异步任务|async task/i.test(lastUserText(opts)) && !hasAnyToolResult(opts);
+    },
+    completion: (opts) => {
+      const toolName = firstToolName(opts, "async_task_run", "run_async") ?? "async_task_run";
+      return {
+        ...baseResult(opts),
+        content: hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : null,
+        toolCalls: hasAnyToolResult(opts) ? [] : [makeToolCall(toolName, { task: "总结当前项目", label: "项目总结" })],
+      };
+    },
+    stream: async function* (opts) {
+      // 最终回复需要真实 token，否则 agentStream 不会生成 assistant 消息气泡
+      const content = hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : "";
+      if (content) {
+        for (const token of content.split("")) {
+          yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+        }
+      }
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 父 Agent 阻塞派生子 Agent（waitForResult=true），用于验证刷新/切 tab 后流式恢复
+    name: "spawn_subagent_wait",
+    match: (opts, forced) =>
+      forced === "spawn_subagent_wait" ||
+      (/派子 Agent|spawn subagent/i.test(lastUserText(opts)) &&
+        hasTool(opts, "spawn_subagent") &&
+        !hasAnyToolResult(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("spawn_subagent", { task: "执行慢速总结", waitForResult: true, label: "慢速总结" })],
+    }),
+    stream: async function* (opts) {
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 子 Agent 执行慢速任务（sleep 3s），给前端足够时间刷新/断连来测试续传
+    name: "subagent_slow",
+    match: (opts, forced) =>
+      forced === "subagent_slow" ||
+      (/执行慢速总结|subagent slow/i.test(lastUserText(opts)) &&
+        hasTool(opts, "sleep") &&
+        !hasAnyToolResult(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("sleep", { seconds: 3 })],
     }),
     stream: async function* (opts) {
       yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
@@ -232,6 +297,44 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("read_article", { url: "https://juejin.cn/post/mock" })],
     }),
     stream: async function* (opts) {
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 父 Agent 收到子 Agent 结果后继续生成最终回复
+    name: "spawn_subagent_final",
+    match: (opts, forced) =>
+      forced === "spawn_subagent_final" ||
+      (hasAnyToolResult(opts) && /派子 Agent|spawn subagent/i.test(lastUserText(opts))),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "父 Agent 已收到子 Agent 结果：慢速总结已完成。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      const content = "父 Agent 已收到子 Agent 结果：慢速总结已完成。";
+      for (const token of content.split("")) {
+        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+      }
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 子 Agent 完成慢速任务后返回结果
+    name: "subagent_slow_final",
+    match: (opts, forced) =>
+      forced === "subagent_slow_final" ||
+      (hasAnyToolResult(opts) && /执行慢速总结|subagent slow/i.test(lastUserText(opts))),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "子 Agent 慢速总结已完成。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      const content = "子 Agent 慢速总结已完成。";
+      for (const token of content.split("")) {
+        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+      }
       yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
     },
   },

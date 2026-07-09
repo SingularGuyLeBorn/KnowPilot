@@ -6,12 +6,13 @@
 
 import React from "react";
 import Link from "next/link";
-import { Cloud, Lock, Shield, ExternalLink } from "lucide-react";
+import { Cloud, Lock, Shield, ExternalLink, Palette } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { clearAuthToken } from "@/lib/auth";
 import { LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { useNativeCapabilities } from "@/lib/hooks";
+import { ThemeToggle } from "@/components/themeToggle";
 
 export default function SettingsPage() {
   const { data, isLoading, refetch } = trpc.auth.status.useQuery();
@@ -88,6 +89,17 @@ export default function SettingsPage() {
               Cloudflare Zero Trust 控制台
               <ExternalLink className="h-3 w-3" />
             </Link>
+          </section>
+
+          <section className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 p-6 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--vp-c-text-1)]">
+              <Palette className="h-4 w-4 text-[var(--vp-c-brand)]" />
+              外观主题
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-[var(--vp-c-text-2)]">选择浅色、深色或跟随系统</span>
+              <ThemeToggle />
+            </div>
           </section>
 
           <section className="md:col-span-2 rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 p-6">

@@ -154,7 +154,3 @@ export const publicProcedure = t.procedure.use(loggerMiddleware).use(authGuard);
 /** middleware 工具 */
 export const middleware = t.middleware;
 
-/**
- * 不带日志中间件的 procedure（用于日志自身的 Router，避免无限递归）
- */
-export const internalProcedure = t.procedure;

@@ -199,8 +199,10 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_refresh_token: feishuRefreshTokenTool,
   invoke_api: invokeApiTool,
   run_async: runAsyncTool,
+  async_task_run: runAsyncTool,
   spawn_subagent: spawnSubagentTool,
   task_status: taskStatusTool,
+  async_task_status: taskStatusTool,
   cancel_async: cancelAsyncTool,
   await_async: awaitAsyncTool,
   async_task_wait: awaitAsyncTool,
@@ -1250,7 +1252,7 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
     description:
-      "派生一个独立子 Agent（Subagent）执行长任务，不阻塞当前对话。子 Agent 在 UI 左侧面板有独立卡片，可查看进度/停止。任务完成后结果进入发送队列最前。适合：长时间研究、多步代码重构、并行子任务。",
+      "派生一个独立子 Agent（Subagent）执行长任务。默认不阻塞当前对话，结果进入发送队列最前。设 waitForResult=true 则阻塞等待子 Agent 完成，结果直接返回并写入父会话作为子 Agent 消息。适合：需要主 Agent 基于子 Agent 结果继续回复、长时间研究、并行子任务。",
     parameters: {
       type: "object",
       properties: {
@@ -1259,6 +1261,7 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         agentId: { type: "string", description: "指定子 Agent 使用的 Agent ID（不填则继承当前 Agent）" },
         model: { type: "string", description: "指定子代理使用的模型 ID（不填则用 Agent 默认模型）" },
         timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
+        waitForResult: { type: "boolean", description: "true=阻塞等待子 Agent 完成并返回结果；false(默认)=立即返回，结果进队列" },
         shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
       },
       required: ["task"],
@@ -1305,6 +1308,31 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         jobId: { type: "string", description: "要等待的任务 id" },
       },
       required: ["jobId"],
+    },
+  },
+  {
+    name: "async_task_run",
+    description: "启动后台异步任务（async_task_run 是 run_async 的新命名，语义完全一致）。不阻塞当前对话，任务完成后结果自动进入发送队列最前。设 waitForResult=true 则阻塞等待结果直接返回（受工具超时约束）。",
+    parameters: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "交给后台 Agent 执行的任务描述" },
+        label: { type: "string", description: "任务标签，用于前端展示" },
+        timeoutMs: { type: "number", description: "任务最大运行时长毫秒数，不填用全局默认值" },
+        waitForResult: { type: "boolean", description: "true=阻塞等待完成并返回结果；false(默认)=立即返回，结果进队列" },
+        shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
+      },
+      required: ["task"],
+    },
+  },
+  {
+    name: "async_task_status",
+    description: "查询异步任务状态（async_task_status 是 task_status 的新命名）。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长、结果/错误等。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "任务 id（async_task_run 返回的 jobId），不传则列出当前会话全部任务" },
+      },
     },
   },
   {
@@ -2957,12 +2985,13 @@ async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolCon
 }
 
 /** LLM 主动派生子 Agent：与 run_async 区别在于 spawn_subagent 语义明确为「派生一个独立子 Agent」，
- *  强制创建 subagent ChatSession（UI 卡片可见），且不阻塞当前对话（结果进发送队列最前） */
+ *  强制创建 subagent ChatSession（UI 卡片可见）。默认不阻塞（结果进发送队列最前）；
+ *  waitForResult=true 时阻塞等待，结果直接返回并写入父会话作为「子 Agent 发送」消息。 */
 async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.sessionId || !ctx.agentSnapshot) {
     throw new Error("spawn_subagent 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
   }
-  const { startAsyncAgentTask } = await import("./asyncJobManager.js");
+  const { startAsyncAgentTask, waitForAsyncJob } = await import("./asyncJobManager.js");
   const task = String(args.task || "");
   if (!task.trim()) throw new Error("spawn_subagent 需要 task（子 Agent 任务描述）");
   // 可选指定不同 Agent；缺省继承当前 Agent
@@ -2994,9 +3023,62 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
       ? (args.shareToSessionIds as unknown[]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)
       : undefined,
   });
+
+  if (args.waitForResult !== true) {
+    return {
+      ...started,
+      hint: `子 Agent 已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 task_status 查询进度，cancel_async 取消。`,
+    };
+  }
+
+  // 阻塞等待结果：Pause-on-Result 语义，主 Agent 暂停回复直到子 Agent 完成
+  const result = await waitForAsyncJob(started.jobId, ctx.config, ctx.services);
+  if (result.status !== "completed" || !result.asyncResult) {
+    return {
+      ...result,
+      hint: "子 Agent 任务失败，请告知用户失败原因并建议重试。",
+    };
+  }
+
+  // 把子 Agent 结果写入父会话作为 user 消息（source=sub），并在左上角角标显示子 Agent 名字
+  let subagentName: string | undefined;
+  if (started.subagentSessionId) {
+    try {
+      const subSession = await ctx.services.session.getById(started.subagentSessionId);
+      const subAgent = subSession?.agentId ? await ctx.services.agent.getById(subSession.agentId) : null;
+      subagentName = subAgent?.name;
+    } catch {
+      // 查不到名字也不阻塞
+    }
+  }
+  const resultContent = result.asyncResult;
+  try {
+    await ctx.services.message.create({
+      sessionId: ctx.sessionId,
+      role: "user",
+      content: resultContent,
+      source: "sub",
+      toolResults: {
+        subagentResult: {
+          jobId: started.jobId,
+          subagentSessionId: started.subagentSessionId,
+          subagentName: subagentName ?? `子 Agent ${started.jobId.slice(0, 6)}`,
+        },
+      },
+    });
+    // 结果已通过消息持久化，避免 async queue 再次投递同一条结果
+    await ctx.services.task.update({ id: started.jobId, delivered: true, deliveredAt: new Date() } as any);
+  } catch (err) {
+    console.warn(`[spawn_subagent] 写入父会话子 Agent 结果消息失败:`, err);
+  }
+
   return {
-    ...started,
-    hint: `子 Agent 已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 task_status 查询进度，cancel_async 取消。`,
+    ...result,
+    subagentName,
+    subagentSessionId: started.subagentSessionId,
+    hint: subagentName
+      ? `子 Agent「${subagentName}」已完成任务，结果已写入父会话。请基于上述结果继续生成最终回复。`
+      : "子 Agent 已完成任务，结果已写入父会话。请基于上述结果继续生成最终回复。",
   };
 }
 
