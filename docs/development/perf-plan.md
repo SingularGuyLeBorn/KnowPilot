@@ -547,6 +547,42 @@
 - **Agent/Skill list 裁剪**：Chat 依赖 agent.list 的 systemPrompt、skill.list 的 code，需配合 Chat 改用 getById，风险高，留待后续。
 - **apiKey 泄露**：属安全而非性能，单独处理。
 
+## R9. asyncQueueStats 5s 无条件轮询，改自适应
+
+- **位置**：`apps/web/components/chat.tsx` asyncQueueStatsQuery
+- **当前行为**：只要后端可用，每 5s 调 `agent.asyncQueueStats`（纯内存 orchestrator 统计），无任务时也持续。
+- **推荐**：自适应——有活跃任务（running/queued）5s，无任务 15s（探测新任务），错误 30s。
+- **风险**：低；新任务探测延迟由 5s 变 ≤15s，A8 的 pullAsyncQueue 联动随后恢复 2.5s。
+- **回答：同意。已实施。**
+
+## R10. Chat 页重复 agent.list（50 + 100），去重
+
+- **位置**：`apps/web/components/chat.tsx` agentsQuery(50) 与 `WorkspaceTree` 内 agent.list(100)
+- **当前行为**：同一 Chat 页两个不同 pageSize 的 agent.list 查询，后端 2 次 DB + 2 份含 systemPrompt 的载荷。
+- **推荐**：Chat agentsQuery 提升到 100 并把 items 作为 prop 传给 WorkspaceTree；WorkspaceTree 移除内部 agent.list，复用父组件数据。
+- **风险**：低；WorkspaceTree 仅在 Chat 内使用；agent CRUD 失效仍经 utils.agent.list.invalidate 刷新同一查询。
+- **回答：同意。已实施。**
+
+## 批次 8 自审记录
+
+### 实施项
+
+- **R9**：asyncQueueStats refetchInterval 改自适应（active 5s / idle 15s / error 30s）。
+- **R10**：Chat agentsQuery pageSize 50→100，传 `agents` prop 给 WorkspaceTree；WorkspaceTree 移除内部 `trpc.agent.list.useQuery`，superAgents/managerAgents/subAgents 改从 prop 派生。
+
+### 复核确认
+
+- **R9 联动**：A8 的 pullAsyncQueue 仍以 asyncQueueStatsQuery.data 判活跃；idle 期新任务探测 ≤15s 后 pullAsyncQueue 恢复 2.5s，可接受。
+- **R10 去重**：WorkspaceTree 仅 Chat 内使用，新增的 `agents` 必填 prop 仅影响 chat.tsx 调用点（已更新）；Agent[] 含 prop 子集字段，TS 通过；刷新语义不变（同一 utils.agent.list 失效）。
+- **无 server/shared 改动**：本批纯前端，server vitest 不受影响；web tsc + eslint + build 通过。
+
+### 已排除项（仍留待后续，需较大配套重构）
+
+- **session.getById 500 条全量消息（P0-1）**：需 session/message 分离 + Chat 增量 merge + 版本切换/NavRail/编辑重试一致性，回归面大。
+- **Agent/Skill list 裁剪（P0-3）**：Chat 依赖 systemPrompt/code，需配合 Chat 改用 getById。
+- **buildMemoryContext FTS（P1-3）**：记忆召回质量需回归测试，无现成覆盖。
+- **P2-4 历史复用**：edit 路径 items stale 正确性风险。
+
 ## 批次 5 自审记录
 
 ### 实施项

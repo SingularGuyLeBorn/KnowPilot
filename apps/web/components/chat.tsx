@@ -736,7 +736,8 @@ export function ChatView() {
   );
 
   const { useList: useAgentList } = useAgent();
-  const agentsQuery = useAgentList({ page: 1, pageSize: 50 });
+  // R10：pageSize 50→100，兼顾 WorkspaceTree 对全部 Agent 的需求；WorkspaceTree 复用本查询，不再各自发 agent.list(100)。
+  const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
   // A16：skill 列表极少变化，加 staleTime 5min，减少每次进 Chat 都重请求。
   // skill CRUD 后 useCRUDApi 会 invalidate utils.skill.list（按 key 失效全部 input），自动刷新。
   const skillsQuery = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true }, { staleTime: 5 * 60 * 1000 });
@@ -799,7 +800,14 @@ export function ChatView() {
 
   const asyncQueueStatsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
     enabled: !backendDown,
-    refetchInterval: (query) => (query.state.error ? 30000 : 5000),
+    // R9：自适应轮询——有活跃任务（running/queued）时 5s，无任务时 15s（仅用于探测新任务），
+    // 错误时 30s。减少 Chat 长驻页面无任务时的空轮询，同时保持新任务探测延迟可接受。
+    refetchInterval: (query) => {
+      if (query.state.error) return 30000;
+      const stats = query.state.data as { runningGlobal?: number; queued?: number } | undefined;
+      const hasActive = !!stats && ((stats.runningGlobal ?? 0) > 0 || (stats.queued ?? 0) > 0);
+      return hasActive ? 5000 : 15000;
+    },
   });
 
   // A8：仅在有活跃异步任务（running/queued）时才轮询 pullAsyncQueue，无任务时停止轮询，
@@ -1941,6 +1949,7 @@ export function ChatView() {
             /* Swarm 模式：Workspace → Agent → Session 三层树 */
             <WorkspaceTree
               effectiveSessionId={effectiveSessionId}
+              agents={agentsQuery.data?.items ?? []}
               onSelectSession={selectSession}
               onSelectAgent={(id) => {
                 selectAgent(id);
