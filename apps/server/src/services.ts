@@ -85,6 +85,7 @@ import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
+import { upsertFtsRow, deleteFtsRow } from "./infra/ftsIndex.js";
 import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
@@ -407,6 +408,22 @@ export abstract class FileSyncService<
     await super.afterDelete(existing);
   }
 
+  /* ─── P11：FTS 增量维护辅助（best-effort，失败不阻塞业务） ─── */
+  protected async syncFts(entityName: string, entityId: string, title: string, body: string): Promise<void> {
+    try {
+      await upsertFtsRow(this.prisma, entityName, entityId, title, body);
+    } catch (e) {
+      console.warn(`[FTS] upsert ${entityName}:${entityId} 失败:`, e instanceof Error ? e.message : e);
+    }
+  }
+  protected async removeFts(entityName: string, entityId: string): Promise<void> {
+    try {
+      await deleteFtsRow(this.prisma, entityName, entityId);
+    } catch (e) {
+      console.warn(`[FTS] delete ${entityName}:${entityId} 失败:`, e instanceof Error ? e.message : e);
+    }
+  }
+
   protected getExistingFileSlug(existing: any): string | null {
     try { return this.getFileSlug(this.formatEntity(existing)); } catch { return null; }
   }
@@ -507,6 +524,20 @@ ${entity.content}
   }
 
   protected getFileSlug(entity: PostEntity): string { return entity.slug; }
+
+  // P11：FTS 增量——create/update 后 upsert，delete 后 remove
+  protected override async afterCreate(entity: PostEntity, input: CreatePostInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    await this.syncFts("post", entity.id, entity.title, `${entity.slug}\n${entity.content ?? ""}`);
+  }
+  protected override async afterUpdate(entity: PostEntity, existing: any, input: UpdatePostInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    await this.syncFts("post", entity.id, entity.title, `${entity.slug}\n${entity.content ?? ""}`);
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    await this.removeFts("post", existing.id);
+  }
 
   protected override async validateCreate(input: CreatePostInput): Promise<void> {
     const slug = input.slug || this.generateSlug(input.title);
@@ -818,6 +849,41 @@ ${entity.systemPrompt}
 
   protected getFileSlug(entity: AgentEntity): string { return `${entity.name}-${entity.id.slice(-6)}`; }
 
+  // P11：FTS 增量
+  protected override async afterCreate(entity: AgentEntity, input: CreateAgentInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    await this.syncFts("agent", entity.id, entity.name, `${entity.description ?? ""}\n${entity.systemPrompt ?? ""}`);
+  }
+  protected override async afterUpdate(entity: AgentEntity, existing: any, input: UpdateAgentInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    await this.syncFts("agent", entity.id, entity.name, `${entity.description ?? ""}\n${entity.systemPrompt ?? ""}`);
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    await this.removeFts("agent", existing.id);
+  }
+
+  // A6：批量删除，保留文件清理 + FTS 移除语义。DB 删改 deleteMany 单次往返，
+  // 文件/FTS 仍按每条处理（best-effort）。
+  async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
+    const errors: string[] = [];
+    const existing = await this.prisma.agent.findMany({ where: { id: { in: ids } } });
+    const existingIds = new Set(existing.map((e: any) => e.id));
+    const result = await this.prisma.agent.deleteMany({ where: { id: { in: [...existingIds] } } });
+    for (const raw of existing) {
+      try {
+        this.deleteFile(this.formatEntity(raw));
+      } catch {
+        // 文件删除失败不阻塞
+      }
+      await this.removeFts("agent", raw.id);
+    }
+    for (const id of ids) {
+      if (!existingIds.has(id)) errors.push(`${id}: 不存在`);
+    }
+    return { deleted: result.count, errors };
+  }
+
   // name 不再 @unique（swarm 允许重名，#37），用 id 做全局唯一标识
   // sourceSlug 仍 @unique，由 getFileSlug 生成唯一 slug
 }
@@ -885,6 +951,20 @@ export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillI
   }
 
   protected getFileSlug(entity: SkillEntity): string { return entity.name; }
+
+  // P11：FTS 增量
+  protected override async afterCreate(entity: SkillEntity, input: CreateSkillInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
+  }
+  protected override async afterUpdate(entity: SkillEntity, existing: any, input: UpdateSkillInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    await this.removeFts("skill", existing.id);
+  }
 
   protected override async validateCreate(input: CreateSkillInput): Promise<void> {
     await this.assertUnique("name", input.name, "创建");
@@ -1039,6 +1119,20 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
   }
 
   protected getFileSlug(entity: MemoryEntity): string { return entity.id; }
+
+  // P11：FTS 增量
+  protected override async afterCreate(entity: MemoryEntity, input: CreateMemoryInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    await this.syncFts("memory", entity.id, entity.type, entity.content);
+  }
+  protected override async afterUpdate(entity: MemoryEntity, existing: any, input: UpdateMemoryInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    await this.syncFts("memory", entity.id, entity.type, entity.content);
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    await this.removeFts("memory", existing.id);
+  }
 }
 
 /** ChatSession 聊天会话 */
@@ -1115,6 +1209,14 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       where: { id },
       include: { messages: { orderBy: { createdAt: "asc" }, take: 500 } },
     });
+    if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
+    return session;
+  }
+
+  // A4：轻量 getById，不 include messages。供 stop/rerun 等只需 kind/status 的场景使用，
+  // 避免每次拉 500 条消息。
+  async getByIdLite(id: string): Promise<any> {
+    const session = await this.prisma.chatSession.findUnique({ where: { id } });
     if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
     return session;
   }

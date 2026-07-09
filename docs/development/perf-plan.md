@@ -345,6 +345,30 @@
 
 ---
 
+## 批次 2 自审记录
+
+### 实施项
+
+- **P7/P8**：writeSse 合并单次 res.write；SSE 加 `X-Accel-Buffering: no`。
+- **P11**：ftsIndex 新增 `upsertFtsRow`/`deleteFtsRow`（DELETE+INSERT 事务，幂等）；PostService/AgentService/SkillService/MemoryService afterCreate/afterUpdate/afterDelete 接入 best-effort FTS 同步；新增 2 个 FTS 增量测试（写入可搜/删除不可搜、幂等替换）。
+- **A4**：SessionService.getByIdLite（无 include messages）；session.stop/rerun 改用之。
+- **A5**：agentStream 编辑消息尾部删除改 `deleteMany({ id: { in: tailIds } })`。
+- **A6**：AgentService.bulkDelete（findMany + deleteMany + 逐条 deleteFile/removeFts，保留语义）；router agent.bulkDelete 改用之。
+- **A12**：agentStream 结束 message.create + run.create 合并为 `$transaction`（Json 字段 `as any`、`prepared!` 处理回调内窄化丢失）。
+
+### 复核确认
+
+- **A6 语义保留**：AgentService 为硬删（BaseService.delete 触发 afterDelete），bulkDelete 复刻 file 删除 + FTS 移除；关系字段均为 SetNull，deleteMany 不会因 FK 抛错。
+- **P11 一致性**：Agent/Skill/Memory 硬删触发 afterDelete → FTS 移除；PostService 为软删（不调 afterDelete），软删/永久删后 FTS 仍由 db:sync 收敛——与 P11 前行为一致，非回归；post create/update 已立即可搜（P11 主要收益）。
+- **A12 字段等价**：MessageService/RunService.buildCreateData 均原样透传 input，raw prisma create 与 service create 数据一致；`created.id` 等价原 `created.data?.id`。
+
+### 已知可接受项
+
+- Post 软删/永久删不即时移除 FTS（依赖 sync 收敛），与历史行为一致；如需即时可在 softDelete/permanentDelete 内补 `removeFts`，留待后续。
+- A12 版本追加路径（message.update + run.create）仍 2 次提交，仅新消息路径合并为 1 次；版本追加非热路径。
+
+---
+
 > 扫描结论摘要：后端最大单点开销是 **P1（createContext 每请求 3 次 DB 注入凭据）**；前端 Swarm UI 最大开销是 **A1（WorkspaceTree N+1）**；Agent 运行时最大开销是 **A2（Skill N+1）**。这三项 + **P5/A11（索引）** + **P2/P3（loggerMiddleware）** 构成「不影响功能、收益最大」的核心批次。
 
 
