@@ -43,6 +43,19 @@ export class HeartbeatEngine {
     if (this.started) return;
     this.started = true;
 
+    // 修复：清理历史未投递的心跳 Task（修复前的残留，避免 pullAsyncDeliveries 误触发）
+    try {
+      const cleaned = await this.prisma.task.updateMany({
+        where: { name: { startsWith: "[heartbeat]" }, delivered: false },
+        data: { delivered: true, deliveredAt: new Date() },
+      });
+      if (cleaned.count > 0) {
+        console.log(`  🧹 [HeartbeatEngine] 已清理 ${cleaned.count} 条历史未投递心跳 Task`);
+      }
+    } catch {
+      // 清理失败不阻塞启动
+    }
+
     await this.refresh();
 
     console.log(`  💓 [HeartbeatEngine] 启动完成，共 ${this.jobs.size} 个心跳任务`);
@@ -222,6 +235,9 @@ export class HeartbeatEngine {
               data: {
                 status: "success",
                 output: { asyncResult: loop.content, tokenUsage: loop.tokenUsage },
+                // 修复：心跳 Task 标记已投递，避免 pullAsyncDeliveries 误判为待投递异步结果
+                delivered: true,
+                deliveredAt: new Date(),
               },
             });
             await this.updateHeartbeatStatus(agentId, "success", hb);
@@ -234,6 +250,9 @@ export class HeartbeatEngine {
               data: {
                 status: "failed",
                 output: { error: err instanceof Error ? err.message : String(err) },
+                // 修复：心跳 Task 失败也标记已投递，避免 pullAsyncDeliveries 误判
+                delivered: true,
+                deliveredAt: new Date(),
               },
             }).catch(() => {});
             await this.updateHeartbeatStatus(agentId, reason, hb);
