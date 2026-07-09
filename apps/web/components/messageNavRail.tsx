@@ -16,18 +16,35 @@ export interface NavItem {
   preview: string;
   /** 对应 DOM 元素的 data-nav-id 属性值 */
   domId: string;
+  /** 在消息列表中的索引（用于虚拟列表滚动定位） */
+  index: number;
 }
 
-export function MessageNavRail({ items }: { items: NavItem[] }) {
+export function MessageNavRail({
+  items,
+  onScrollToIndex,
+}: {
+  items: NavItem[];
+  /** 虚拟列表模式下按索引滚动；未提供则回退到 DOM scrollIntoView */
+  onScrollToIndex?: (index: number) => void;
+}) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
 
-  const scrollToItem = useCallback((domId: string) => {
-    const el = document.querySelector(`[data-nav-id="${CSS.escape(domId)}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, []);
+  const scrollToItem = useCallback(
+    (item: NavItem) => {
+      if (onScrollToIndex) {
+        onScrollToIndex(item.index);
+        return;
+      }
+      // 回退：非虚拟列表时用 DOM scrollIntoView
+      const el = document.querySelector(`[data-nav-id="${CSS.escape(item.domId)}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    },
+    [onScrollToIndex],
+  );
 
   if (items.length === 0) return null;
 
@@ -45,7 +62,7 @@ export function MessageNavRail({ items }: { items: NavItem[] }) {
             className="group relative flex h-full max-h-[40px] min-h-[6px] flex-1 cursor-pointer items-center"
             onMouseEnter={() => setHoverIdx(idx)}
             onMouseLeave={() => setHoverIdx(null)}
-            onClick={() => scrollToItem(item.domId)}
+            onClick={() => scrollToItem(item)}
           >
             {/* 横杠：hover 时放大 + 变色 */}
             <div

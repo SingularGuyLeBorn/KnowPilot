@@ -77,6 +77,7 @@ import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 import { WorkspaceTree } from "@/components/workspaceTree";
 import { AgentTreeSelect } from "@/components/agentTreeSelect";
 import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
 /* ─── Sub-components ─── */
 
@@ -567,7 +568,8 @@ export function ChatView() {
     }
   };
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // 虚拟列表句柄：用于导航条按索引滚动 + 结构变化时强制滚到底部
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const consumeRef = useRef<() => void>(() => {});
 
   /* ─── 多 session 流式状态隔离 ───
@@ -876,7 +878,7 @@ export function ChatView() {
   // 右侧导航条：每条 assistant 回复一个横杠，hover 放大 + 预览，点击滚动定位
   const navItems = useMemo<NavItem[]>(() => {
     return messageGroups
-      .map((g) => {
+      .map((g, idx) => {
         if (!g.assistantMessage) return null;
         const active = getActiveVersion(g);
         if (!active) return null;
@@ -885,6 +887,8 @@ export function ChatView() {
           id: g.assistantMessage.id,
           preview: preview || "（空回复）",
           domId: g.assistantMessage.id,
+          // 记录在 messageGroups 中的索引，供虚拟列表 scrollToIndex 使用
+          index: idx,
         } satisfies NavItem;
       })
       .filter((x): x is NavItem => x !== null);
@@ -957,8 +961,8 @@ export function ChatView() {
   }, [effectiveSessionId, selectedAgent, sessionDetail?.model, sessionDetail?.systemPrompt]);
 
   useEffect(() => {
-    // 仅在会话结构变化时滚动；token 逐字更新不触发 smooth scroll（避免视觉抖动）
-    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    // 仅在会话结构变化时滚动到底部；token 逐字更新由 Virtuoso followOutput 处理（避免视觉抖动）
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
   }, [messageGroups.length, optimistic.length, isStreaming]);
 
   const updateConfig = useCallback(
@@ -1639,6 +1643,180 @@ export function ChatView() {
     </>
   );
 
+  // 单个消息组渲染（用户气泡 + 思考时间线/中间步骤 + assistant 气泡 或 原位流式块）
+  // 提取为函数供虚拟列表 itemContent 调用，仅可见项会执行。
+  const renderMessageGroup = (group: MessageGroup, groupIdx: number) => {
+    const isLastUser = groupIdx === lastGroupIndex;
+    const isEditing = editingUserId === group.userMessage.id;
+    const msgSource = (group.userMessage as { source?: string }).source ?? "user";
+    // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧），
+    // 但用角标标识为「父代理」；其他非 user 来源仍显示在左侧。
+    const isParentAgentTask = isSubagentSession && msgSource === "super";
+    const isAgentMessage = msgSource !== "user" && !isParentAgentTask;
+    return (
+      <div className="flex flex-col">
+        <div className={cn("flex w-full", isAgentMessage ? "justify-start" : "justify-end")}>
+          <motion.div
+            initial={false}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            data-testid="user-message-bubble"
+            className={cn(
+              "group/msg relative mb-3 flex max-w-[70%] flex-col gap-1",
+              isAgentMessage ? "items-start self-start" : "items-end self-end",
+            )}
+          >
+            {group.userMessage.attachments && group.userMessage.attachments.length > 0 && !isEditing && (
+              <div className="mb-1.5 flex flex-wrap justify-end gap-2">
+                {group.userMessage.attachments.map((att) => (
+                  <div
+                    key={att.previewUrl}
+                    className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
+                    title={att.extractedText ? `OCR 识别 · ${att.extractedText.slice(0, 120)}` : att.name}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={att.previewUrl}
+                      alt={att.name}
+                      loading="lazy"
+                      className="max-h-40 max-w-[min(100%,16rem)] object-contain"
+                    />
+                    {att.source === "ocr" && att.extractedText && (
+                      <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
+                        OCR <Check className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className={cn(
+              "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-sm shadow-sm",
+              isAgentMessage
+                ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
+                : "bg-[var(--kp-brand)] text-white",
+            )}>
+              <MessageSourceLabel
+                source={msgSource}
+                isSubagentSession={isSubagentSession}
+                align={isParentAgentTask ? "right" : "left"}
+              />
+              {group.userMessage.skillName && (
+                <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
+                  <LucideIconByName name={group.userMessage.skillIcon} className="h-3 w-3" />
+                  {group.userMessage.skillName}
+                </span>
+              )}
+              {isEditing ? (
+                <textarea
+                  value={editDraft}
+                  onChange={(e) => setEditDraft(e.target.value)}
+                  rows={Math.max(1, editDraft.split("\n").length)}
+                  className="block w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-white outline-none placeholder:text-white/50 [field-sizing:content]"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleEditConfirm(group.userMessage.id);
+                    }
+                    if (e.key === "Escape") setEditingUserId(null);
+                  }}
+                />
+              ) : (
+                <p className="whitespace-pre-wrap leading-relaxed">{group.userMessage.content}</p>
+              )}
+            </div>
+            <MessageActions
+              onCopy={() => void handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content)}
+              onShare={() => void handleShare(isEditing ? editDraft : group.userMessage.content)}
+              onEdit={() => {
+                setEditingUserId(group.userMessage.id);
+                setEditDraft(group.userMessage.content);
+              }}
+              onEditSave={() => handleEditConfirm(group.userMessage.id)}
+              onEditCancel={() => setEditingUserId(null)}
+              onRetry={() => handleRetry(group.userMessage.id)}
+              showEdit={isLastUser}
+              showRetry={!isEditing}
+              showRegenerate={false}
+              isEditing={isEditing}
+              disabled={isStreaming}
+              copied={copiedId === group.userMessage.id}
+            />
+          </motion.div>
+        </div>
+        {isStreaming && streamTargetUserId === group.userMessage.id
+          ? renderLiveStreamBlock()
+          : (
+              <>
+                {renderIntermediateSteps(group)}
+                <div className="flex w-full justify-start">
+                  {renderAssistantBubble(group)}
+                </div>
+              </>
+            )}
+      </div>
+    );
+  };
+
+  // 乐观消息渲染（用户发送后、流式落地前的占位气泡）
+  const renderOptimisticMessage = (msg: { id: string; content: string; attachments?: ChatImageAttachment[] }) => (
+    <div className="mb-4 flex justify-end">
+      <div className="flex max-w-[70%] flex-col items-end gap-1.5">
+        {msg.attachments && msg.attachments.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {msg.attachments.map((att) => (
+              <div
+                key={att.previewUrl}
+                className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={att.previewUrl}
+                  alt={att.name}
+                  loading="lazy"
+                  className="max-h-40 max-w-[min(100%,16rem)] object-contain opacity-80"
+                />
+                {att.source === "ocr" && att.extractedText && (
+                  <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
+                    OCR <Check className="h-2.5 w-2.5" />
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white opacity-80">
+          <p className="whitespace-pre-wrap">{msg.content}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 统一虚拟列表数据：消息组 + 乐观消息 + 尾部流式块（仅 !streamTargetUserId 时）
+  type ChatItem =
+    | { kind: "group"; key: string; group: MessageGroup; index: number }
+    | { kind: "optimistic"; key: string; msg: { id: string; content: string; attachments?: ChatImageAttachment[] } }
+    | { kind: "live"; key: "live-trailing" };
+  const chatItems = useMemo<ChatItem[]>(() => {
+    const items: ChatItem[] = messageGroups.map((group, index) => ({
+      kind: "group",
+      key: group.userMessage.id,
+      group,
+      index,
+    }));
+    for (const msg of optimistic) {
+      items.push({ kind: "optimistic", key: msg.id, msg });
+    }
+    if (showLiveStream && !streamTargetUserId) {
+      items.push({ kind: "live", key: "live-trailing" });
+    }
+    return items;
+  }, [messageGroups, optimistic, showLiveStream, streamTargetUserId]);
+
+  const handleNavScrollToIndex = useCallback((index: number) => {
+    virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: "smooth" });
+  }, []);
+
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
@@ -1900,9 +2078,8 @@ export function ChatView() {
         )}
 
         <div className="relative flex min-h-0 flex-1">
-          <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
-          {!hasMessages && !backendDown && (
-            <div className="flex h-full flex-col items-center justify-center gap-4 text-center text-[var(--kp-text-3)]">
+          {!hasMessages && !backendDown ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 text-center text-[var(--kp-text-3)] md:px-6">
               <Bot className="mb-1 h-12 w-12 opacity-40" />
               <p className="text-sm">发送第一条消息开始对话</p>
               {/* #12 Swarm 新手引导：无 Workspace 时展示（可关闭，localStorage 记忆） */}
@@ -1926,159 +2103,28 @@ export function ChatView() {
                 </div>
               )}
             </div>
+          ) : (
+            <Virtuoso
+              ref={virtuosoRef}
+              className="flex-1 min-h-0"
+              data={chatItems}
+              computeItemKey={(_, item) => item.key}
+              itemContent={(_, item) => (
+                <div className="px-4 py-1 md:px-6">
+                  {item.kind === "group" && renderMessageGroup(item.group, item.index)}
+                  {item.kind === "optimistic" && renderOptimisticMessage(item.msg)}
+                  {item.kind === "live" && renderLiveStreamBlock()}
+                </div>
+              )}
+              components={{
+                Header: () => <div className="h-4" />,
+                Footer: () => <div className="h-4" />,
+              }}
+              followOutput={(atBottom) => (atBottom ? "auto" : false)}
+              increaseViewportBy={{ top: 600, bottom: 600 }}
+            />
           )}
-
-          {messageGroups.map((group, groupIdx) => {
-            const isLastUser = groupIdx === lastGroupIndex;
-            const isEditing = editingUserId === group.userMessage.id;
-            const msgSource = (group.userMessage as { source?: string }).source ?? "user";
-            // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧），
-            // 但用角标标识为「父代理」；其他非 user 来源仍显示在左侧。
-            const isParentAgentTask = isSubagentSession && msgSource === "super";
-            const isAgentMessage = msgSource !== "user" && !isParentAgentTask;
-            return (
-              <div key={group.userMessage.id} className="flex flex-col">
-                <div className={cn("flex w-full", isAgentMessage ? "justify-start" : "justify-end")}>
-                <motion.div
-                  initial={false}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  data-testid="user-message-bubble"
-                  className={cn(
-                    "group/msg relative mb-3 flex max-w-[70%] flex-col gap-1",
-                    isAgentMessage ? "items-start self-start" : "items-end self-end",
-                  )}
-                >
-                  {group.userMessage.attachments && group.userMessage.attachments.length > 0 && !isEditing && (
-                    <div className="mb-1.5 flex flex-wrap justify-end gap-2">
-                      {group.userMessage.attachments.map((att) => (
-                        <div
-                          key={att.previewUrl}
-                          className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
-                          title={att.extractedText ? `OCR 识别 · ${att.extractedText.slice(0, 120)}` : att.name}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={att.previewUrl}
-                            alt={att.name}
-                            loading="lazy"
-                            className="max-h-40 max-w-[min(100%,16rem)] object-contain"
-                          />
-                          {att.source === "ocr" && att.extractedText && (
-                            <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
-                              OCR <Check className="h-2.5 w-2.5" />
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className={cn(
-                    "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-sm shadow-sm",
-                    isAgentMessage
-                      ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
-                      : "bg-[var(--kp-brand)] text-white",
-                  )}>
-                    <MessageSourceLabel
-                      source={msgSource}
-                      isSubagentSession={isSubagentSession}
-                      align={isParentAgentTask ? "right" : "left"}
-                    />
-                      {group.userMessage.skillName && (
-                        <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
-                          <LucideIconByName name={group.userMessage.skillIcon} className="h-3 w-3" />
-                          {group.userMessage.skillName}
-                        </span>
-                      )}
-                      {isEditing ? (
-                        <textarea
-                          value={editDraft}
-                          onChange={(e) => setEditDraft(e.target.value)}
-                          rows={Math.max(1, editDraft.split("\n").length)}
-                          className="block w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-white outline-none placeholder:text-white/50 [field-sizing:content]"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              handleEditConfirm(group.userMessage.id);
-                            }
-                            if (e.key === "Escape") setEditingUserId(null);
-                          }}
-                        />
-                      ) : (
-                        <p className="whitespace-pre-wrap leading-relaxed">{group.userMessage.content}</p>
-                      )}
-                    </div>
-                  <MessageActions
-                    onCopy={() => void handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content)}
-                    onShare={() => void handleShare(isEditing ? editDraft : group.userMessage.content)}
-                    onEdit={() => {
-                      setEditingUserId(group.userMessage.id);
-                      setEditDraft(group.userMessage.content);
-                    }}
-                    onEditSave={() => handleEditConfirm(group.userMessage.id)}
-                    onEditCancel={() => setEditingUserId(null)}
-                    onRetry={() => handleRetry(group.userMessage.id)}
-                    showEdit={isLastUser}
-                    showRetry={!isEditing}
-                    showRegenerate={false}
-                    isEditing={isEditing}
-                    disabled={isStreaming}
-                    copied={copiedId === group.userMessage.id}
-                  />
-                </motion.div>
-                </div>
-                {isStreaming && streamTargetUserId === group.userMessage.id
-                  ? renderLiveStreamBlock()
-                  : (
-                      <>
-                        {renderIntermediateSteps(group)}
-                        <div className="flex w-full justify-start">
-                        {renderAssistantBubble(group)}
-                        </div>
-                      </>
-                    )}
-              </div>
-            );
-          })}
-
-          {optimistic.map((msg) => (
-            <div key={msg.id} className="mb-4 flex justify-end">
-              <div className="flex max-w-[70%] flex-col items-end gap-1.5">
-                {msg.attachments && msg.attachments.length > 0 && (
-                  <div className="flex flex-wrap justify-end gap-2">
-                    {msg.attachments.map((att) => (
-                      <div
-                        key={att.previewUrl}
-                        className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={att.previewUrl}
-                          alt={att.name}
-                          loading="lazy"
-                          className="max-h-40 max-w-[min(100%,16rem)] object-contain opacity-80"
-                        />
-                        {att.source === "ocr" && att.extractedText && (
-                          <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
-                            OCR <Check className="h-2.5 w-2.5" />
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white opacity-80">
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {showLiveStream && !streamTargetUserId && renderLiveStreamBlock()}
-
-          <div ref={bottomRef} />
-          </div>
-          <MessageNavRail items={navItems} />
+          <MessageNavRail items={navItems} onScrollToIndex={handleNavScrollToIndex} />
         </div>
 
         {error && (
