@@ -1960,6 +1960,7 @@ export function ChatView() {
                           <img
                             src={att.previewUrl}
                             alt={att.name}
+                            loading="lazy"
                             className="max-h-40 max-w-[min(100%,16rem)] object-contain"
                           />
                           {att.source === "ocr" && att.extractedText && (
@@ -2054,6 +2055,7 @@ export function ChatView() {
                         <img
                           src={att.previewUrl}
                           alt={att.name}
+                          loading="lazy"
                           className="max-h-40 max-w-[min(100%,16rem)] object-contain opacity-80"
                         />
                         {att.source === "ocr" && att.extractedText && (

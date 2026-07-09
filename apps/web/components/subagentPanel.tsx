@@ -5,7 +5,7 @@
  * 卡片可展开：查看详情（跳转子会话）/ 停止 / 删除
  */
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, ChevronRight, Plus, Square, Trash2, ExternalLink, RotateCcw } from "lucide-react";
@@ -58,7 +58,7 @@ const STATUS_LABEL: Record<string, string> = {
   active: "活跃",
 };
 
-function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () => void }) {
+function SubagentCard({ sub, onRefresh, onOpenSubagent }: { sub: SubagentBrief; onRefresh: () => void; onOpenSubagent?: (sessionId: string) => void }) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const stopMut = trpc.session.stop.useMutation({ onSuccess: onRefresh });
@@ -115,6 +115,12 @@ function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () =>
               <div className="flex flex-wrap gap-1">
                 <Link
                   href={`/chat?sessionId=${sub.id}`}
+                  onClick={(e) => {
+                    if (onOpenSubagent) {
+                      e.preventDefault();
+                      onOpenSubagent(sub.id);
+                    }
+                  }}
                   className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
                 >
                   <ExternalLink className="h-3 w-3" /> 查看详情
@@ -169,24 +175,39 @@ function SubagentCard({ sub, onRefresh }: { sub: SubagentBrief; onRefresh: () =>
 export function SubagentPanel({
   parentSessionId,
   onCreate,
+  onOpenSubagent,
 }: {
   parentSessionId?: string;
   onCreate?: () => void;
+  onOpenSubagent?: (sessionId: string) => void;
 }) {
   const utils = trpc.useUtils();
+  // 连续轮询计数器：子代理持续 running/queued 时逐步拉长轮询间隔，降低后台压力
+  const runningPollsRef = useRef(0);
   const query = trpc.session.listChildren.useQuery(
     { parentSessionId: parentSessionId ?? "", pageSize: 20 },
     {
       enabled: !!parentSessionId,
+      // React Query 默认 refetchIntervalInBackground=false，标签页隐藏时轮询自动暂停。
+      // 此处显式声明意图，并在前台可见时按指数退避拉长间隔（1500ms → 上限 5000ms）。
+      refetchIntervalInBackground: false,
       refetchInterval: (q) => {
         const data = q.state.data as { items?: SubagentBrief[] } | undefined;
-        const items = data?.items ?? [];
-        return items.some((s) => s.status === "running" || s.status === "queued") ? 3000 : false;
+        const polled = data?.items ?? [];
+        const hasRunning = polled.some((s) => s.status === "running" || s.status === "queued");
+        if (!hasRunning) {
+          runningPollsRef.current = 0;
+          return false;
+        }
+        runningPollsRef.current += 1;
+        // 1500, 2000, 2500, … 上限 5000
+        return Math.min(1500 + runningPollsRef.current * 500, 5000);
       },
     },
   );
 
-  const items = (query.data?.items as SubagentBrief[] | undefined) ?? [];
+  const items = useMemo(() => (query.data?.items as SubagentBrief[] | undefined) ?? [], [query.data?.items]);
+
   const refresh = () => {
     void query.refetch();
     void utils.session.list.invalidate();
@@ -224,7 +245,7 @@ export function SubagentPanel({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ type: "spring", stiffness: 300, damping: 26 }}
               >
-                <SubagentCard sub={s} onRefresh={refresh} />
+                <SubagentCard sub={s} onRefresh={refresh} onOpenSubagent={onOpenSubagent} />
               </motion.div>
             ))}
           </AnimatePresence>
