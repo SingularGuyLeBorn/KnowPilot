@@ -412,16 +412,18 @@ export abstract class FileSyncService<
    * 没有 sourceSlug 字段的实体表（如 Post 用 slug）会静默跳过。
    */
   private async syncFileMetaToDb(entity: TEntity): Promise<void> {
+    const id = (entity as any).id;
+    if (!id) return;
+    // 只有带 sourceSlug 字段的实体才回写（Post 有 sourceMtime 但无 sourceSlug，不能更新 sourceSlug）
+    if ((entity as any).sourceSlug === undefined) return;
     try {
       const slug = this.getFileSlug(entity);
-      const id = (entity as any).id;
-      if (!id) return;
       const dir = this.getContentDir();
       const filePath = path.join(dir, `${slug}${this.fileExtension}`);
       const mtime = fs.existsSync(filePath) ? fs.statSync(filePath).mtime : new Date();
       await this.delegate.update({ where: { id }, data: { sourceSlug: slug, sourceMtime: mtime } });
     } catch {
-      // 实体表可能没有 sourceSlug/sourceMtime 字段（如 Post），静默跳过
+      // 忽略无 sourceSlug/sourceMtime 字段的实体
     }
   }
 
@@ -831,6 +833,7 @@ export interface AgentEntity {
   heartbeatModel: string | null;
   heartbeat: any;
   status: string;
+  source: string | null;
   deletedAt: Date | null;
   deletedBy: string | null;
   createdAt: Date;
@@ -861,7 +864,7 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     return {
       id: true, name: true, description: true, model: true, tools: true,
       tier: true, workspaceId: true, parentId: true, heartbeatModel: true,
-      heartbeat: true, status: true, deletedAt: true, deletedBy: true,
+      heartbeat: true, status: true, source: true, deletedAt: true, deletedBy: true,
       createdAt: true, updatedAt: true,
     };
   }
@@ -899,6 +902,7 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
       tier: input.tier ?? "sub",
       ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
       ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+      ...(input.source !== undefined ? { source: input.source } : {}),
       ...(input.apiKey !== undefined ? { apiKey: input.apiKey } : {}),
       ...(input.heartbeatModel !== undefined ? { heartbeatModel: input.heartbeatModel } : {}),
       ...(input.heartbeat !== undefined ? { heartbeat: input.heartbeat } : {}),
@@ -906,13 +910,14 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
   }
 
   protected buildUpdateData(input: UpdateAgentInput): any {
-    const { id: _id, tools, name, tier, workspaceId, parentId, apiKey, heartbeatModel, heartbeat, status, ...data } = input;
+    const { id: _id, tools, name, tier, workspaceId, parentId, source, apiKey, heartbeatModel, heartbeat, status, ...data } = input;
     const updateData: any = { ...data };
     if (name !== undefined) updateData.name = name;
     if (tools !== undefined) updateData.tools = materializeAgentTools(tools).join(",");
     if (tier !== undefined) updateData.tier = tier;
     if (workspaceId !== undefined) updateData.workspaceId = workspaceId;
     if (parentId !== undefined) updateData.parentId = parentId;
+    if (source !== undefined) updateData.source = source;
     if (apiKey !== undefined) updateData.apiKey = apiKey;
     if (heartbeatModel !== undefined) updateData.heartbeatModel = heartbeatModel;
     if (heartbeat !== undefined) updateData.heartbeat = heartbeat;
@@ -926,6 +931,7 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
 name: "${entity.name.replace(/"/g, '\\"')}"
 description: ${entity.description ? `"${entity.description.replace(/"/g, '\\"')}"` : "null"}
 model: "${entity.model}"${toolsYaml}
+source: ${entity.source ? `"${entity.source.replace(/"/g, '\\"')}"` : "null"}
 ---
 ${entity.systemPrompt}
 `;
@@ -1873,6 +1879,10 @@ export interface InfoSourceEntity {
   language: string;
   tags: string[];
   enabled: boolean;
+  fetchInterval: number | null;
+  lastFetchedAt: Date | null;
+  lastFetchStatus: string | null;
+  lastFetchError: string | null;
   sourceSlug: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -1933,6 +1943,7 @@ export class InfoSourceService extends FileSyncService<
       language: input.language,
       tags: input.tags?.join(",") || "",
       enabled: input.enabled ?? true,
+      fetchInterval: input.fetchInterval ?? 60,
       sourceSlug: slug,
     };
   }
@@ -1943,6 +1954,7 @@ export class InfoSourceService extends FileSyncService<
     if (name !== undefined) updateData.name = name.trim();
     if (url !== undefined) updateData.url = url.trim();
     if (tags !== undefined) updateData.tags = tags.join(",");
+    if (input.fetchInterval === null) updateData.fetchInterval = null;
     return updateData;
   }
 
@@ -1957,6 +1969,7 @@ export class InfoSourceService extends FileSyncService<
         language: entity.language,
         tags: entity.tags,
         enabled: entity.enabled,
+        fetchInterval: entity.fetchInterval,
       },
       null,
       2,

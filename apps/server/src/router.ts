@@ -288,6 +288,23 @@ const infoSourceRouter = router({
   list: publicProcedure.meta({ description: "列出信息源，支持类型/标签/可信度筛选。", aiReadable: true }).input(listInfoSourcesSchema).query(({ ctx, input }) => ctx.services.infoSource.list(input)),
   update: publicProcedure.meta({ description: "更新信息源配置。", aiReadable: true }).input(updateInfoSourceSchema).mutation(({ ctx, input }) => ctx.services.infoSource.update(input)),
   delete: publicProcedure.meta({ description: "删除信息源。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.infoSource.delete(input.id)),
+  fetch: publicProcedure
+    .meta({ description: "手动触发 RSS/Atom 信息源抓取。", aiReadable: true })
+    .input(z.object({ id: z.string().cuid(), maxItems: z.number().int().min(1).max(50).optional(), autoDraft: z.boolean().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { fetchRssSource } = await import("./infra/rssFetch.js");
+      return fetchRssSource(ctx.prisma, input.id, {
+        maxItems: input.maxItems ?? 20,
+        timeoutMs: 20000,
+      });
+    }),
+  fetchDue: publicProcedure
+    .meta({ description: "抓取所有到期的 RSS 信息源。", aiReadable: true })
+    .input(z.object({ maxItems: z.number().int().min(1).max(50).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { fetchDueRssSources } = await import("./infra/rssFetch.js");
+      return fetchDueRssSources(ctx.prisma, { maxItems: input.maxItems ?? 20, timeoutMs: 20000 });
+    }),
 });
 
 const sessionRouter = router({

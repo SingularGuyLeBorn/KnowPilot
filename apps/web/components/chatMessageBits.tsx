@@ -21,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: string; border: string }> = {
-  super: { label: "子代理任务", bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200" },
+  super: { label: "子 Agent 任务", bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200" },
   manager: { label: "管理 Agent", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
   sub: { label: "子 Agent", bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
   system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
@@ -39,7 +39,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   if (!source || source === "user") return null;
   const base = SOURCE_LABEL_STYLES[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" };
   const isParent = source === "super" && isSubagentSession;
-  const label = isParent ? "父代理" : base.label;
+  const label = isParent ? "父 Agent" : base.label;
   const bg = isParent ? "bg-[var(--kp-brand)]" : base.bg;
   const text = isParent ? "text-white" : base.text;
   const border = isParent ? "border-[var(--kp-brand-light)]" : base.border;

@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Globe,
   Plus,
+  RefreshCw,
   Rss,
   Search,
   Star,
@@ -33,6 +34,7 @@ type SourceForm = {
   language: string;
   tags: string;
   enabled: boolean;
+  fetchInterval: number | null;
 };
 
 const TYPE_OPTIONS = [
@@ -64,6 +66,7 @@ const EMPTY_FORM: SourceForm = {
   language: "auto",
   tags: "",
   enabled: true,
+  fetchInterval: null,
 };
 
 function ReliabilityStars({ value, size = "sm" }: { value: number; size?: "sm" | "md" }) {
@@ -83,7 +86,9 @@ function ReliabilityStars({ value, size = "sm" }: { value: number; size?: "sm" |
 }
 
 export default function SourcesPage() {
-  const { useList, useCreate, useUpdate, useDelete } = useInfoSource();
+  const { useList, useCreate, useUpdate, useDelete, useFetch, useFetchDue } = useInfoSource();
+  const fetchMutation = useFetch();
+  const fetchDueMutation = useFetchDue();
 
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState("");
@@ -97,6 +102,7 @@ export default function SourcesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<SourceForm>(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [fetchingId, setFetchingId] = useState<string | null>(null);
 
   const listInput = {
     page,
@@ -144,6 +150,7 @@ export default function SourcesPage() {
       language: source.language,
       tags: (source.tags ?? []).join(", "),
       enabled: source.enabled,
+      fetchInterval: source.fetchInterval ?? null,
     });
     setView("edit");
   };
@@ -164,6 +171,7 @@ export default function SourcesPage() {
       language: form.language,
       tags: parseTags(form.tags),
       enabled: form.enabled,
+      fetchInterval: form.fetchInterval,
     };
     if (!payload.name || !payload.url) return;
 
@@ -289,6 +297,40 @@ export default function SourcesPage() {
               />
               启用此信息源
             </label>
+            {form.type === "rss" && (
+              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-4">
+                <label className="mb-2 block text-xs font-medium text-[var(--kp-text-3)]">
+                  自动抓取间隔（分钟）
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={5}
+                    max={10080}
+                    step={5}
+                    value={form.fetchInterval ?? 60}
+                    onChange={(e) => setForm({ ...form, fetchInterval: Number(e.target.value) })}
+                    disabled={!form.enabled}
+                    className="flex-1 accent-[var(--kp-brand)]"
+                  />
+                  <span className="w-16 text-right text-xs text-[var(--kp-text-2)]">
+                    {form.fetchInterval ?? 60} 分
+                  </span>
+                </div>
+                <p className="mt-1 text-[10px] text-[var(--kp-text-3)]">
+                  留空或设为 0 表示不自动抓取；仅 type=RSS 时生效。
+                </p>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-[var(--kp-text-3)]">
+                  <input
+                    type="checkbox"
+                    checked={form.fetchInterval === null}
+                    onChange={(e) => setForm({ ...form, fetchInterval: e.target.checked ? null : 60 })}
+                    className="rounded accent-[var(--kp-brand)]"
+                  />
+                  不自动抓取
+                </label>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3">
@@ -325,6 +367,18 @@ export default function SourcesPage() {
         description="维护 Agent 检索与引用时可信任的外部来源。支持按类型、可信度与标签筛选，配置同步至 content/sources/。"
         action={{ label: "新建信息源", onClick: openCreate, icon: Plus }}
       />
+      <div className="-mt-4 flex items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void fetchDueMutation.mutateAsync({})}
+          disabled={fetchDueMutation.isPending}
+          className="gap-1 text-xs"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", fetchDueMutation.isPending && "animate-spin")} />
+          抓取全部到期 RSS
+        </Button>
+      </div>
 
       {caps && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
@@ -537,25 +591,67 @@ export default function SourcesPage() {
                   </div>
                 )}
 
-                <div className="mt-auto flex items-center justify-between border-t border-[var(--kp-divider-light)] pt-3">
-                  <span className="text-[10px] text-[var(--kp-text-3)]">
-                    {source.language === "zh" ? "中文" : source.language === "en" ? "英文" : "自动"}
-                  </span>
-                  <div className="flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(source)}
-                      className="text-xs text-[var(--kp-brand)] hover:underline"
-                    >
-                      编辑
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteId(source.id)}
-                      className="text-xs text-red-500 hover:underline"
-                    >
-                      删除
-                    </button>
+                <div className="mt-auto space-y-2 border-t border-[var(--kp-divider-light)] pt-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-[var(--kp-text-3)]">
+                        {source.language === "zh" ? "中文" : source.language === "en" ? "英文" : "自动"}
+                        {source.type === "rss" && source.fetchInterval && (
+                          <span className="ml-2">· 每 {source.fetchInterval} 分抓取</span>
+                        )}
+                      </span>
+                      {source.type === "rss" && source.lastFetchedAt && (
+                        <span
+                          className={cn(
+                            "text-[10px]",
+                            source.lastFetchStatus === "error"
+                              ? "text-red-500"
+                              : source.lastFetchStatus === "success"
+                                ? "text-green-600"
+                                : "text-[var(--kp-text-3)]",
+                          )}
+                        >
+                          {source.lastFetchStatus === "success" && "✓ "}
+                          {source.lastFetchStatus === "error" && "✗ "}
+                          上次抓取 {new Date(source.lastFetchedAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {source.lastFetchError ? ` · ${source.lastFetchError.slice(0, 40)}` : ""}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                      {source.type === "rss" && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setFetchingId(source.id);
+                            try {
+                              await fetchMutation.mutateAsync({ id: source.id });
+                            } finally {
+                              setFetchingId(null);
+                            }
+                          }}
+                          disabled={fetchingId === source.id || fetchMutation.isPending}
+                          className="flex items-center gap-1 text-xs text-[var(--kp-brand)] hover:underline disabled:opacity-50"
+                        >
+                          <RefreshCw className={cn("h-3 w-3", fetchingId === source.id && "animate-spin")} />
+                          抓取
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openEdit(source)}
+                        className="text-xs text-[var(--kp-brand)] hover:underline"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteId(source.id)}
+                        className="text-xs text-red-500 hover:underline"
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>

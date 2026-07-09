@@ -119,6 +119,8 @@ type NativeToolHandler = (args: Record<string, unknown>, ctx: NativeToolContext)
 
 const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   web_search: webSearch,
+  rss_fetch: rssFetchTool,
+  rss_draft_posts: rssDraftPostsTool,
   read_article: readArticleTool,
   scrape_web_page: scrapeWebPageTool,
   read_file: readFileTool,
@@ -245,6 +247,35 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "rss_fetch",
+    description:
+      "抓取指定 RSS/Atom 信息源的最新条目，自动去重。支持 sourceId 或 sourceName。可设置 autoDraft=true 自动生成 Post 草稿。",
+    parameters: {
+      type: "object",
+      properties: {
+        sourceId: { type: "string", description: "信息源 ID" },
+        sourceName: { type: "string", description: "信息源名称（sourceId 的替代）" },
+        maxItems: { type: "number", description: "最大抓取条数，默认 20，最大 50" },
+        autoDraft: { type: "boolean", description: "是否自动把新条目生成 Post 草稿" },
+        defaultCategory: { type: "string", description: "自动生成草稿时的分类，默认\"信息源\"" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "rss_draft_posts",
+    description: "把已抓取的 RSS 条目转成 Post 草稿。",
+    parameters: {
+      type: "object",
+      properties: {
+        sourceId: { type: "string", description: "信息源 ID" },
+        itemIds: { type: "array", items: { type: "string" }, description: "InfoSourceItem 的 id 列表" },
+        defaultCategory: { type: "string", description: "草稿分类，默认 \"信息源\"" },
+      },
+      required: ["sourceId", "itemIds"],
     },
   },
   {
@@ -1219,13 +1250,13 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
     description:
-      "派生一个独立子代理（Subagent）执行长任务，不阻塞当前对话。子代理在 UI 左侧面板有独立卡片，可查看进度/停止。任务完成后结果进入发送队列最前。适合：长时间研究、多步代码重构、并行子任务。",
+      "派生一个独立子 Agent（Subagent）执行长任务，不阻塞当前对话。子 Agent 在 UI 左侧面板有独立卡片，可查看进度/停止。任务完成后结果进入发送队列最前。适合：长时间研究、多步代码重构、并行子任务。",
     parameters: {
       type: "object",
       properties: {
-        task: { type: "string", description: "子代理要执行的任务描述（详细越好）" },
-        label: { type: "string", description: "子代理卡片/队列中显示的简短标签" },
-        agentId: { type: "string", description: "指定子代理使用的 Agent ID（不填则继承当前 Agent）" },
+        task: { type: "string", description: "子 Agent 要执行的任务描述（详细越好）" },
+        label: { type: "string", description: "子 Agent 卡片/队列中显示的简短标签" },
+        agentId: { type: "string", description: "指定子 Agent 使用的 Agent ID（不填则继承当前 Agent）" },
         model: { type: "string", description: "指定子代理使用的模型 ID（不填则用 Agent 默认模型）" },
         timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
         shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
@@ -1900,6 +1931,76 @@ async function webSearch(args: Record<string, unknown>, ctx: NativeToolContext) 
     }
     throw smartErr instanceof Error ? smartErr : new Error(String(smartErr));
   }
+}
+
+// ============================================================================
+// RSS / Atom Feed 抓取工具
+// ============================================================================
+
+async function rssFetchTool(args: Record<string, unknown>, ctx: NativeToolContext): Promise<unknown> {
+  const { prisma } = ctx;
+  if (!prisma) throw new Error("rss_fetch 需要 prisma");
+
+  const { fetchRssSource, draftPostsFromRssItems } = await import("./rssFetch.js");
+
+  let sourceId: string | undefined;
+  if (typeof args.sourceId === "string") sourceId = args.sourceId;
+  else if (typeof args.sourceName === "string") {
+    const found = await prisma.infoSource.findFirst({
+      where: { name: args.sourceName },
+      select: { id: true },
+    });
+    if (!found) return { error: `未找到名为 "${args.sourceName}" 的信息源` };
+    sourceId = found.id;
+  }
+  if (!sourceId) return { error: "需要提供 sourceId 或 sourceName" };
+
+  const maxItems = typeof args.maxItems === "number" ? Math.max(1, Math.min(50, args.maxItems)) : 20;
+  const autoDraft = args.autoDraft === true;
+
+  const result = await fetchRssSource(prisma, sourceId, { maxItems, timeoutMs: 20000 });
+  if (!result.success) return { error: result.error, sourceId, sourceName: result.sourceName };
+
+  let draftedIds: string[] = [];
+  if (autoDraft && result.newCount > 0) {
+    const itemIds = result.items.map((i) => i.guid); // guid here is actually the DB id? No, it's source:guid
+    // Need to fetch DB ids by guid
+    const items = await prisma.infoSourceItem.findMany({
+      where: { sourceId, guid: { in: itemIds } },
+      select: { id: true },
+    });
+    draftedIds = await draftPostsFromRssItems(
+      prisma,
+      sourceId,
+      items.map((i) => i.id),
+      typeof args.defaultCategory === "string" ? args.defaultCategory : "信息源",
+    );
+  }
+
+  return {
+    ...result,
+    autoDraft,
+    draftedIds,
+    message: `抓取成功：${result.fetchedCount} 条，新增 ${result.newCount} 条${autoDraft ? "，已生成 " + draftedIds.length + " 篇草稿" : ""}`,
+  };
+}
+
+async function rssDraftPostsTool(args: Record<string, unknown>, ctx: NativeToolContext): Promise<unknown> {
+  const { prisma } = ctx;
+  if (!prisma) throw new Error("rss_draft_posts 需要 prisma");
+  const { draftPostsFromRssItems } = await import("./rssFetch.js");
+
+  const sourceId = typeof args.sourceId === "string" ? args.sourceId : undefined;
+  const itemIds = Array.isArray(args.itemIds) ? args.itemIds.filter((id): id is string => typeof id === "string") : [];
+  if (!sourceId || itemIds.length === 0) return { error: "需要提供 sourceId 和 itemIds 数组" };
+
+  const draftedIds = await draftPostsFromRssItems(
+    prisma,
+    sourceId,
+    itemIds,
+    typeof args.defaultCategory === "string" ? args.defaultCategory : "信息源",
+  );
+  return { sourceId, draftedIds, draftedCount: draftedIds.length };
 }
 
 const READ_ARTICLE_MAX_CHARS = 16_000;
@@ -2855,7 +2956,7 @@ async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolCon
   return cancelAsyncJob(jobId, ctx.config, ctx.services);
 }
 
-/** LLM 主动派生子代理：与 run_async 区别在于 spawn_subagent 语义明确为「派生一个独立子代理」，
+/** LLM 主动派生子 Agent：与 run_async 区别在于 spawn_subagent 语义明确为「派生一个独立子 Agent」，
  *  强制创建 subagent ChatSession（UI 卡片可见），且不阻塞当前对话（结果进发送队列最前） */
 async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.sessionId || !ctx.agentSnapshot) {
@@ -2863,7 +2964,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   }
   const { startAsyncAgentTask } = await import("./asyncJobManager.js");
   const task = String(args.task || "");
-  if (!task.trim()) throw new Error("spawn_subagent 需要 task（子代理任务描述）");
+  if (!task.trim()) throw new Error("spawn_subagent 需要 task（子 Agent 任务描述）");
   // 可选指定不同 Agent；缺省继承当前 Agent
   let agent = ctx.agentSnapshot;
   if (args.agentId && typeof args.agentId === "string") {
@@ -2884,7 +2985,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   const started = await startAsyncAgentTask({
     sessionId: ctx.sessionId,
     task,
-    label: args.label ? String(args.label) : `子代理: ${task.slice(0, 40)}`,
+    label: args.label ? String(args.label) : `子 Agent: ${task.slice(0, 40)}`,
     timeoutMs: args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined,
     config: ctx.config,
     services: ctx.services,
@@ -2895,7 +2996,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   });
   return {
     ...started,
-    hint: `子代理已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 task_status 查询进度，cancel_async 取消。`,
+    hint: `子 Agent 已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 task_status 查询进度，cancel_async 取消。`,
   };
 }
 
@@ -2985,6 +3086,7 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
     tier: args.tier as "super" | "manager" | "sub" | undefined,
     workspaceId: args.workspaceId as string | undefined,
     parentId: args.parentId as string | undefined,
+    source: "native_tool:agent_create",
     apiKey: args.apiKey as string | undefined,
     heartbeatModel: args.heartbeatModel as string | undefined,
     heartbeat: args.heartbeat as any,
@@ -3146,6 +3248,7 @@ async function agentCreateSubTool(args: Record<string, unknown>, ctx: NativeTool
     tier: "sub",
     workspaceId: ctx.agentSnapshot?.workspaceId ?? undefined,
     parentId: ctx.agentSnapshot?.id,
+    source: "native_tool:agent_create_sub",
     apiKey: args.apiKey as string | undefined,
   });
   if (!created.success || !created.data) return { error: created.error?.message ?? "创建子 Agent 失败" };

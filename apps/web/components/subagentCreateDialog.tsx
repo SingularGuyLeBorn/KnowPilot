@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * 创建子代理任务弹窗 — 支持两种模式：
+ * 创建子 Agent 任务弹窗 — 支持两种模式：
  * 1. 选择现有 Agent 并指派任务（原 session.spawn）。
- * 2. 新建一个子代理 Agent（调用 agent.create，tier=sub），再用它启动任务。
+ * 2. 新建一个子 Agent（调用 agent.create，tier=sub），再用它启动任务。
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -42,7 +42,7 @@ export function SubagentCreateDialog({
     onSuccess: (res) => {
       if (res.success && res.data?.id) {
         void utils.agent.list.invalidate();
-        // 创建成功后继续用新 Agent 启动子代理任务
+        // 创建成功后继续用新 Agent 启动子 Agent 任务
         spawnWithAgent(res.data.id);
       }
     },
@@ -50,7 +50,7 @@ export function SubagentCreateDialog({
   const spawnMut = trpc.session.spawn.useMutation({
     onSuccess: (data, variables) => {
       const taskLabel = variables.task.trim().slice(0, 60);
-      // 乐观更新：子代理卡片立即出现在左侧面板，无需等待轮询
+      // 乐观更新：子 Agent 卡片立即出现在左侧面板，无需等待轮询
       if (data.subagentSessionId) {
         utils.session.listChildren.setData(
           { parentSessionId: variables.parentSessionId, pageSize: 20 },
@@ -91,7 +91,7 @@ export function SubagentCreateDialog({
   const [task, setTask] = useState("");
   const [model, setModel] = useState<string>("");
 
-  // 新建子代理 Agent 字段
+  // 新建子 Agent 字段
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -150,6 +150,7 @@ export function SubagentCreateDialog({
         tools: [],
         tier: "sub",
         parentId: parentAgentId,
+        source: "ui:subagent_panel",
       });
     }
   };
@@ -183,7 +184,7 @@ export function SubagentCreateDialog({
               <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
                 <Bot className="h-4 w-4" />
               </span>
-              <h2 className="text-sm font-bold text-[var(--kp-text-1)]">新建子代理任务</h2>
+              <h2 className="text-sm font-bold text-[var(--kp-text-1)]">新建子 Agent 任务</h2>
             </div>
 
             {/* 模式切换 */}
@@ -210,7 +211,7 @@ export function SubagentCreateDialog({
                     : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
                 )}
               >
-                新建子代理 Agent
+                新建子 Agent
               </button>
             </div>
 
@@ -244,7 +245,7 @@ export function SubagentCreateDialog({
                       type="text"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="一句话说明这个子代理的职责"
+                      placeholder="一句话说明这个子 Agent 的职责"
                       className="w-full rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-xs text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand)]"
                     />
                   </div>
@@ -254,7 +255,7 @@ export function SubagentCreateDialog({
                       value={systemPrompt}
                       onChange={(e) => setSystemPrompt(e.target.value)}
                       rows={3}
-                      placeholder="给子代理的通用角色与约束"
+                      placeholder="给子 Agent 的通用角色与约束"
                       className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-xs leading-relaxed text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand)]"
                     />
                   </div>

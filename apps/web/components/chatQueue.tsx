@@ -5,15 +5,14 @@
  */
 
 import { useCallback, useState } from "react";
-import Link from "next/link";
 import {
   ArrowDown,
   ArrowUp,
-  Bot,
   ExternalLink,
   GripVertical,
   Loader2,
   Maximize2,
+  MessageSquare,
   Minimize2,
   Pin,
   PinOff,
@@ -34,7 +33,6 @@ interface MessageQueueProps {
   onRemove: (id: string) => void;
   onCancel?: (jobId: string) => void;
   onRetry?: (jobId: string) => void;
-  onOpenSubagent?: (sessionId: string) => void;
   /** 异步队列实时统计 */
   asyncStats?: { queued: number; runningGlobal: number };
   /** 右侧设置 Panel 打开时向左偏移，避免重叠 */
@@ -66,7 +64,6 @@ function QueueCard({
   onTogglePin,
   onCancel,
   onRetry,
-  onOpenSubagent,
 }: {
   item: ChatQueueItem;
   expanded: boolean;
@@ -77,7 +74,6 @@ function QueueCard({
   onTogglePin: () => void;
   onCancel?: () => void;
   onRetry?: () => void;
-  onOpenSubagent?: (sessionId: string) => void;
 }) {
   const isAsyncResult = item.kind === "async-result";
   const isRunning = item.kind === "async-running";
@@ -117,20 +113,18 @@ function QueueCard({
             {item.pinned && (
               <span className="text-[10px] text-[var(--kp-brand-dark)]">已置顶</span>
             )}
-            {(isRunning || isAsyncResult) && item.subagentSessionId && onOpenSubagent && (
-              <Link
+            {(isRunning || isAsyncResult) && item.subagentSessionId && (
+              <a
                 href={`/chat?sessionId=${item.subagentSessionId}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onOpenSubagent(item.subagentSessionId!);
-                }}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
-                title="打开子代理会话"
+                title="在新标签页中与子 Agent 对话"
               >
-                <Bot className="h-3 w-3" />
-                子代理
+                <MessageSquare className="h-3 w-3" />
+                与之对话
                 <ExternalLink className="h-3 w-3" />
-              </Link>
+              </a>
             )}
           </div>
 
@@ -252,7 +246,6 @@ export function MessageQueue({
   onRemove,
   onCancel,
   onRetry,
-  onOpenSubagent,
   asyncStats,
   settingsPanelOpen = false,
   settingsPanelWidth = 360,
@@ -424,7 +417,7 @@ export function MessageQueue({
                     onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
                     onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
                     onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
-                    onOpenSubagent={onOpenSubagent}
+
                   />
                 </div>
               );

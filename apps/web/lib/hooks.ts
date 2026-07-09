@@ -179,7 +179,25 @@ export const useAgent = () => useCRUDApi<any, any, any, Agent>("agent");
 export const useSkill = () => useCRUDApi<any, any, any, Skill>("skill");
 export const useMcp = () => useCRUDApi<any, any, any, McpServer>("mcp");
 export const useMemory = () => useCRUDApi<any, any, any, Memory>("memory");
-export const useInfoSource = () => useCRUDApi<any, any, any, InfoSource>("infoSource");
+export const useInfoSource = () => {
+  const base = useCRUDApi<any, any, any, InfoSource>("infoSource");
+  const utils = trpc.useUtils();
+  const fetchMutation = trpc.infoSource.fetch.useMutation({
+    onSuccess: () => {
+      void utils.infoSource.list.invalidate();
+    },
+  });
+  const fetchDueMutation = trpc.infoSource.fetchDue.useMutation({
+    onSuccess: () => {
+      void utils.infoSource.list.invalidate();
+    },
+  });
+  return {
+    ...base,
+    useFetch: () => fetchMutation,
+    useFetchDue: () => fetchDueMutation,
+  };
+};
 export const useSession = () => useCRUDApi<any, any, any, ChatSession>("session");
 export const useMessage = () => useCRUDApi<any, any, any, ChatMessage>("message");
 

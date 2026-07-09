@@ -55,7 +55,7 @@ const navGroups: Record<string, NavGroup> = {
     icon: Cpu,
     items: [
       { href: "/agents", icon: Bot, label: "Agents" },
-      { href: "/subagents", icon: Bot, label: "子代理任务" },
+      { href: "/subagents", icon: Bot, label: "子 Agent 任务" },
       { href: "/skills", icon: Wand2, label: "Skill 管理" },
       { href: "/mcp", icon: Cpu, label: "MCP 服务器" },
       { href: "/sources", icon: Globe, label: "信息源" },

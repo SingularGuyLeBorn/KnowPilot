@@ -21,7 +21,8 @@ import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
 import { syncSearchEnvFromConfig } from "./infra/nativeTools.js";
 import { getServerCapabilities, getCachedEnrichedServerCapabilities } from "./infra/capabilities.js";
-import { handleAgentChatStream } from "./infra/agentStream.js";
+import { handleAgentChatStream, handleAgentChatStop } from "./infra/agentStream.js";
+import { SessionStreamHub } from "./infra/sessionStreamHub.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
 import { ensureIntegrationCredentialsInjected } from "./infra/credentialVault.js";
@@ -133,10 +134,16 @@ if (fs.existsSync(postsDir)) {
 app.use("/uploads", staticAuthMiddleware, express.static(uploadsDir));
 
 // Agent 流式聊天 SSE（不走 tRPC，避免 buffering）
+const streamHub = new SessionStreamHub();
 app.post(
   "/api/agent/chat/stream",
-  handleAgentChatStream(services, config, createTrpcInvoker({ services })),
+  handleAgentChatStream(services, config, createTrpcInvoker({ services }), streamHub),
 );
+app.get(
+  "/api/agent/chat/stream",
+  handleAgentChatStream(services, config, createTrpcInvoker({ services }), streamHub),
+);
+app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub));
 
 // tRPC 挂载
 app.use(

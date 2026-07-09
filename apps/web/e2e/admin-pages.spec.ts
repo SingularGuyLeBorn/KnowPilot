@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
 const ADMIN_PAGES: Array<{ path: string; heading: string }> = [
   { path: "/chat", heading: "Agent 对话" },
   { path: "/agents", heading: "我的 Agents" },
-  { path: "/subagents", heading: "子代理任务" },
+  { path: "/subagents", heading: "子 Agent 任务" },
   { path: "/skills", heading: "Skills 专属动作库" },
   { path: "/mcp", heading: "MCP 服务器接入" },
   { path: "/memories", heading: "Memories 记忆晶体" },

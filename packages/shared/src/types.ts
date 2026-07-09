@@ -118,6 +118,10 @@ export interface InfoSource {
   language: string;
   tags: string[];
   enabled: boolean;
+  fetchInterval: number | null;
+  lastFetchedAt: string | Date | null;
+  lastFetchStatus: string | null;
+  lastFetchError: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }

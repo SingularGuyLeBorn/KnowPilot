@@ -137,6 +137,8 @@ export function makeSkillEntity(partial: Partial<SkillEntity> & Pick<SkillEntity
 
 export const ALL_NATIVE_TOOL_NAMES = [
   "web_search",
+  "rss_fetch",
+  "rss_draft_posts",
   "read_article",
   "scrape_web_page",
   "read_file",

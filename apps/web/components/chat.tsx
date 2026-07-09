@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAgent } from "@/lib/hooks";
-import { streamAgentChat, copyToClipboard } from "@/lib/agentStream";
+import { streamAgentChat, stopAgentChat, copyToClipboard } from "@/lib/agentStream";
 import {
   buildStreamConfig,
   DEFAULT_CHAT_CONFIG,
@@ -63,6 +63,7 @@ import {
 } from "@/lib/chatQueueTypes";
 import { MessageQueue } from "@/components/chatQueue";
 import { SubagentPanel } from "@/components/subagentPanel";
+import { AsyncTaskPanel } from "@/components/asyncTaskPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 import { WorkspaceTree } from "@/components/workspaceTree";
 import { AgentTreeSelect } from "@/components/agentTreeSelect";
@@ -100,8 +101,8 @@ export function ChatView() {
   const [queuePanelOpen, setQueuePanelOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  // 左栏标签页：sessions=对话历史，subagents=子代理任务
-  const [leftTab, setLeftTab] = useState<"sessions" | "subagents">("sessions");
+  // 左栏标签页：sessions=对话历史，subagents=子 Agent，async=异步任务
+  const [leftTab, setLeftTab] = useState<"sessions" | "subagents" | "async">("sessions");
   const [chatConfig, setChatConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -165,6 +166,10 @@ export function ChatView() {
     error: string | null;
     lastRoundTokens: number;
     abort: AbortController | null;
+    // 断线续传状态
+    lastEventId: number;
+    lastEventAt: number;
+    connected: boolean;
     // 按 session 隔离的两个物理独立队列 + 异步投递消费记录
     userQueue: ChatQueueItem[];
     asyncOverlays: ChatQueueItem[];
@@ -188,6 +193,9 @@ export function ChatView() {
         error: null,
         lastRoundTokens: 0,
         abort: null,
+        lastEventId: 0,
+        lastEventAt: 0,
+        connected: false,
         userQueue: [],
         asyncOverlays: [],
         consumedDeliveries: new Set<string>(),
@@ -325,6 +333,17 @@ export function ChatView() {
   const deleteSession = trpc.session.delete.useMutation();
   const bulkDeleteMutation = trpc.session.bulkDelete.useMutation();
   const switchVersion = trpc.message.switchVersion.useMutation();
+  const spawnSubagentMut = trpc.session.spawn.useMutation({
+    onSuccess: (data) => {
+      void utils.task.list.invalidate();
+      void utils.session.list.invalidate();
+      void utils.session.listChildren.invalidate({ parentSessionId: effectiveSessionId ?? undefined });
+      setToast(`已启动子 Agent 任务：${data.message ?? ""}`);
+    },
+    onError: (err) => {
+      setToast(`启动子 Agent 任务失败：${err.message}`);
+    },
+  });
 
   const defaultAgentId = useMemo(() => {
     const items = agentsQuery.data?.items;
@@ -404,15 +423,23 @@ export function ChatView() {
     },
   });
 
-  // 左栏 tab 徽章：子代理活跃数（与 SubagentPanel 共享 React Query 缓存，不重复请求）
-  const subagentCountQuery = trpc.session.listChildren.useQuery(
-    { parentSessionId: effectiveSessionId ?? "", pageSize: 20 },
+  // 左栏 tab 徽章：子 Agent 数量 / 异步任务活跃数
+  const subagentCountQuery = trpc.agent.list.useQuery(
+    { page: 1, pageSize: 50, parentId: effectiveAgentId },
+    { enabled: !!effectiveAgentId },
+  );
+  const subagentCount = useMemo(
+    () => subagentCountQuery.data?.items?.length ?? 0,
+    [subagentCountQuery.data?.items],
+  );
+  const asyncTaskCountQuery = trpc.task.list.useQuery(
+    { page: 1, pageSize: 50, sessionId: effectiveSessionId ?? undefined },
     { enabled: !!effectiveSessionId },
   );
-  const subagentActiveCount = useMemo(() => {
-    const items = (subagentCountQuery.data?.items ?? []) as { status?: string }[];
-    return items.filter((s) => s.status === "running" || s.status === "queued").length;
-  }, [subagentCountQuery.data?.items]);
+  const asyncTaskActiveCount = useMemo(() => {
+    const items = (asyncTaskCountQuery.data?.items ?? []) as { status?: string }[];
+    return items.filter((t) => t.status === "running" || t.status === "pending").length;
+  }, [asyncTaskCountQuery.data?.items]);
 
   // A8：仅在有活跃异步任务（running/queued）时才轮询 pullAsyncQueue，无任务时停止轮询，
   // 避免每个会话固定 2.5s 空 poll（含 raw UPDATE + findMany）。参照 listChildren 的 running 判断。
@@ -531,22 +558,21 @@ export function ChatView() {
 
   const filteredSessions = useMemo(() => {
     const items = sessionsQuery.data?.items ?? [];
-    // #4 修复：按当前 Agent 过滤 session（agent 隔离）。
-    // 同时保留当前父会话的子代理任务会话，避免子代理卡片/会话被过滤掉。
+    // 对话历史只显示当前 Agent 的主会话；子 Agent 任务会话由「子 Agent / 异步任务」标签页隔离，
+    // 避免不同 Agent 的会话混在一起。
     const agentFiltered = effectiveAgentId
       ? items.filter(
           (s) =>
-            s.agentId === effectiveAgentId ||
-            !s.agentId ||
-            (s.kind === "subagent" && s.parentSessionId === effectiveSessionId),
+            s.kind !== "subagent" &&
+            (s.agentId === effectiveAgentId || !s.agentId),
         )
-      : items;
+      : items.filter((s) => s.kind !== "subagent");
     const q = sessionSearch.trim().toLowerCase();
     if (!q) return agentFiltered;
     return agentFiltered.filter(
       (s) => s.title.toLowerCase().includes(q) || s.model.toLowerCase().includes(q),
     );
-  }, [sessionsQuery.data?.items, sessionSearch, effectiveAgentId, effectiveSessionId]);
+  }, [sessionsQuery.data?.items, sessionSearch, effectiveAgentId]);
 
   const groupedSessions = useMemo(
     () => groupBySessionDate(filteredSessions),
@@ -658,6 +684,11 @@ export function ChatView() {
       );
       ssSet(originSid, "lastRoundTokens", 0);
       ssSet(originSid, "error", null);
+      // 断线续传状态初始化
+      const st = getStreamState(originSid);
+      st.lastEventId = 0;
+      st.lastEventAt = Date.now();
+      st.connected = true;
       setEditingUserId(null);
 
       const streamConfig = buildStreamConfig(
@@ -760,6 +791,11 @@ export function ChatView() {
                 }
               }
             },
+            onEventId: (id) => {
+              const sst = getStreamState(originSid);
+              sst.lastEventId = id;
+              sst.lastEventAt = Date.now();
+            },
             onDone: async (data) => {
               // 新会话首条消息：originSid 是临时键，拿到真实 sessionId 后迁移状态
               if (originSid === NEW_STREAM_KEY && data.sessionId) {
@@ -839,6 +875,8 @@ export function ChatView() {
       } finally {
         // 安全清理：onDone/onError 已处理过则此处为 no-op；streamAgentChat 抛错未触发回调时兜底
         discardStreamFlush(originSid);
+        const finSt = getStreamState(originSid);
+        finSt.connected = false;
         ssSet(originSid, "isStreaming", false);
         ssSet(originSid, "streamTargetUserId", null);
         const st = getStreamState(originSid);
@@ -1008,7 +1046,15 @@ export function ChatView() {
     [backendDown, ssSet, effectiveSessionId],
   );
 
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
+    if (effectiveSessionId) {
+      // 先通知后端真正停止运行，再 abort 本地连接
+      try {
+        await stopAgentChat(effectiveSessionId);
+      } catch {
+        // 后端停止失败也继续 abort 本地连接
+      }
+    }
     getAbort(effectiveSessionId)?.abort();
   }, [getAbort, effectiveSessionId]);
 
@@ -1062,6 +1108,9 @@ export function ChatView() {
 
   const startNewChat = useCallback(() => {
     // 新建对话不中止任何已有 session 的流式（多 session 并发隔离）
+    // 先把当前 effective Agent 固化到 state：如果从已有会话切过来，agentId state 可能
+    // 被清空，直接 setSessionId(null) 会让 effectiveAgentId 回退到 default assistant。
+    setAgentId((prev) => prev || effectiveAgentId);
     setSessionId(null);
     // 保持当前选中的 Agent，不清空——用户选了哪个 Agent，新会话继续用哪个
     // setAgentId("") 已移除，避免回退到 defaultAgentId(assistant)
@@ -1088,7 +1137,7 @@ export function ChatView() {
     if (changed) {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [selectedAgent, searchParams, pathname, router, applyView]);
+  }, [selectedAgent, effectiveAgentId, searchParams, pathname, router, applyView]);
 
   const handleRenameSession = useCallback(async (id: string, title: string) => {
     const trimmed = title.trim();
@@ -1511,11 +1560,29 @@ export function ChatView() {
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
               )}
             >
-              子代理
-              {subagentActiveCount > 0 && (
+              子 Agent
+              {subagentCount > 0 && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-bg-mute)] px-1 py-0 text-[9px] font-semibold text-[var(--kp-text-2)]">
+                  {subagentCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeftTab("async")}
+              data-testid="left-tab-async"
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                leftTab === "async"
+                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+              )}
+            >
+              异步任务
+              {asyncTaskActiveCount > 0 && (
                 <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1 py-0 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
-                  {subagentActiveCount}
+                  {asyncTaskActiveCount}
                 </span>
               )}
             </button>
@@ -1523,11 +1590,18 @@ export function ChatView() {
         </div>
         {leftTab === "subagents" ? (
           <SubagentPanel
+            parentAgentId={effectiveAgentId}
             parentSessionId={effectiveSessionId ?? undefined}
             onCreate={() => setShowCreateSubagent(true)}
-            onOpenSubagent={selectSession}
-            variant="tab"
+            onRunTask={(agentId) => {
+              if (!effectiveSessionId) return;
+              const task = window.prompt("请输入要派给子 Agent 的任务描述");
+              if (!task?.trim()) return;
+              spawnSubagentMut.mutate({ parentSessionId: effectiveSessionId, agentId, task: task.trim() });
+            }}
           />
+        ) : leftTab === "async" ? (
+          <AsyncTaskPanel parentSessionId={effectiveSessionId ?? undefined} />
         ) : (
           <>
         <div className="flex w-64 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
@@ -1709,7 +1783,7 @@ export function ChatView() {
             className="flex items-center gap-2 border-b border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-4 py-1.5 text-xs"
           >
             <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />
-            <span className="font-medium text-[var(--kp-brand-dark)]">子代理任务</span>
+            <span className="font-medium text-[var(--kp-brand-dark)]">子 Agent 任务</span>
             {sessionDetail?.taskDescription && (
               <span className="min-w-0 flex-1 truncate text-[var(--kp-text-2)]">
                 {sessionDetail.taskDescription}
@@ -1765,7 +1839,7 @@ export function ChatView() {
                     <li>· 右上角选择「KnowPilot 超级 Agent」，让它替你管理其他 Agent</li>
                     <li>· 对它说「创建一个 XX 工作区」，它会自动生成管理 Agent</li>
                     <li>· 也可以在 <Link href="/workspaces" className="text-[var(--kp-brand-dark)] underline">工作区管理页</Link> 手动创建</li>
-                    <li>· 长任务会派生子代理后台执行，完成后结果自动回到对话</li>
+                    <li>· 长任务会派生子 Agent 后台执行，完成后结果自动回到对话</li>
                   </ul>
                 </div>
               )}
@@ -1883,7 +1957,6 @@ export function ChatView() {
             ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
             retryAsyncJobMutation.mutate({ jobId });
           }}
-          onOpenSubagent={selectSession}
           asyncStats={asyncQueueStatsQuery.data}
           settingsPanelOpen={rightOpen}
           settingsPanelWidth={360}
@@ -1905,7 +1978,7 @@ export function ChatView() {
             supportsVision={!!modelOpt.supportsVision}
             sessionHint={
               isSubagentSession
-                ? "这是子代理任务会话。你直接发送的消息只在本会话内处理，不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话。"
+                ? "这是子 Agent 任务会话。你直接发送的消息只在本会话内处理，不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话。"
                 : undefined
             }
             sessionId={effectiveSessionId}
@@ -2003,7 +2076,7 @@ export function ChatView() {
         parentSessionId={effectiveSessionId ?? undefined}
         parentAgentId={effectiveAgentId}
         onClose={() => setShowCreateSubagent(false)}
-        onCreated={() => setToast("子代理任务已启动，结果完成后自动进入对话")}
+        onCreated={() => setToast("子 Agent 任务已启动，结果完成后自动进入对话")}
       />
 
       {toast && (

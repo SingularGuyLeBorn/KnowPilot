@@ -18,6 +18,7 @@ interface InfoSourceData {
   language: string;
   tags: string;
   enabled: boolean;
+  fetchInterval: number | null;
 }
 
 function normalizeType(raw: unknown): string {
@@ -67,6 +68,7 @@ export const infoSourceSyncer: Syncer<InfoSourceData> = {
           language: typeof data.language === "string" ? data.language : "auto",
           tags: readStringArray(data.tags).join(","),
           enabled: data.enabled !== false,
+          fetchInterval: readNumber(data.fetchInterval, 60),
         },
       };
     } catch (e: unknown) {
@@ -89,6 +91,7 @@ export const infoSourceSyncer: Syncer<InfoSourceData> = {
         language: data.language,
         tags: data.tags,
         enabled: data.enabled,
+        fetchInterval: data.fetchInterval,
         sourceMtime: mtime,
       },
       create: {
@@ -100,6 +103,7 @@ export const infoSourceSyncer: Syncer<InfoSourceData> = {
         language: data.language,
         tags: data.tags,
         enabled: data.enabled,
+        fetchInterval: data.fetchInterval,
         sourceSlug: slug,
         sourceMtime: mtime,
       },

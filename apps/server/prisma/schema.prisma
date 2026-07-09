@@ -45,6 +45,7 @@ model Agent {
   tier         String   @default("sub")  /// "super" | "manager" | "sub"
   workspaceId  String?                     /// 所属 Workspace（super 无）
   parentId     String?                     /// 上级 Agent id（super 无）
+  source       String?                     /// 创建来源：ui:subagent_panel / native_tool:agent_create_sub / heartbeat / manual 等
   apiKey       String?                     /// 专属 API Key（不设则用 env）
   heartbeatModel String?                   /// 心跳用便宜模型（不设则用 model）
   heartbeat    Json?                       /// { enabled, cron, goal, lastRunAt, lastRunStatus, consecutiveFailures }
@@ -222,22 +223,48 @@ model Task {
 
 /// 信息源 (InfoSource) — Agent 可信信息来源配置
 model InfoSource {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  url         String
-  type        String    @default("general") /// blog | paper | news | official | community | general | rss
-  description String    @default("")
-  reliability Int       @default(3) /// 1-5 可信度
-  language    String    @default("auto") /// zh | en | auto
-  tags        String    @default("") /// 逗号分隔
-  enabled     Boolean   @default(true)
-  sourceSlug  String?   @unique
-  sourceMtime DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  name            String    @unique
+  url             String
+  type            String    @default("general") /// blog | paper | news | official | community | general | rss
+  description     String    @default("")
+  reliability     Int       @default(3) /// 1-5 可信度
+  language        String    @default("auto") /// zh | en | auto
+  tags            String    @default("") /// 逗号分隔
+  enabled         Boolean   @default(true)
+  /// RSS/Atom Feed 抓取间隔（分钟），null 表示不自动抓取
+  fetchInterval   Int?
+  lastFetchedAt   DateTime?
+  lastFetchStatus String?   /// success | error | fetching
+  lastFetchError  String?   /// 最近一次错误信息
+  sourceSlug      String?   @unique
+  sourceMtime     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  items           InfoSourceItem[]
 
   @@index([type])
   @@index([enabled])
+}
+
+/// 信息源抓取条目 (InfoSourceItem) — 用于 RSS/Atom 等源内容去重与溯源
+model InfoSourceItem {
+  id          String    @id @default(cuid())
+  sourceId    String
+  source      InfoSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  guid        String    /// RSS/Atom 条目唯一标识
+  link        String    /// 原文链接
+  title       String
+  description String?   /// 摘要或全文
+  publishedAt DateTime? /// 原文发布时间
+  status      String    @default("fetched") /// fetched | drafted | ignored
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([sourceId, guid])
+  @@index([sourceId])
+  @@index([status])
 }
 
 /// 工作区管理 (Workspace)

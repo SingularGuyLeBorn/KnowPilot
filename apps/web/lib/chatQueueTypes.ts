@@ -31,7 +31,7 @@ export interface ChatQueueItem {
   asyncResult?: string;
   /** 用户对异步结果追加的说明（可编辑，LLM 会区分） */
   userAppend?: string;
-  /** 关联的子代理会话 id，用于跳转查看详情 */
+  /** 关联的子 Agent 会话 id，用于在新标签页中对话 */
   subagentSessionId?: string;
   createdAt: number;
 }
@@ -51,7 +51,7 @@ export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = fals
 
   if (item.kind === "async-result" && item.asyncResult) {
     // 修复：不再往消息内容里塞 [异步任务结果 · ... · 系统生成 · 不可修改] 日志前缀。
-    // source="super" 已标识来源，前端 MessageSourceLabel 显示「子代理任务」角标。
+    // source="super" 已标识来源，前端 MessageSourceLabel 显示「子 Agent 任务」角标。
     // LLM 上下文由 source 字段 + 消息位置传达，不需要在 content 里加日志行。
     parts.push(item.asyncResult);
     if (item.userAppend?.trim()) {

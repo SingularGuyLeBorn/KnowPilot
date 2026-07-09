@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Subagent 后台管理页 — 列出所有子代理任务会话，支持状态过滤与操作
+ * Subagent 后台管理页 — 列出所有子 Agent 任务会话，支持状态过滤与操作
  */
 
 import { useState } from "react";
 import Link from "next/link";
-import { Bot, ExternalLink, Square, Trash2, RotateCcw } from "lucide-react";
+import { Bot, ExternalLink, MessageSquare, Square, Trash2, RotateCcw } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -74,8 +74,8 @@ export default function SubagentsPage() {
             <Bot className="h-5 w-5" />
           </span>
           <div>
-            <h1 className="text-xl font-bold text-[var(--kp-text-1)]">子代理任务</h1>
-            <p className="text-xs text-[var(--kp-text-3)]">管理后台异步子代理会话</p>
+            <h1 className="text-xl font-bold text-[var(--kp-text-1)]">子 Agent 任务</h1>
+            <p className="text-xs text-[var(--kp-text-3)]">管理后台异步子 Agent 会话</p>
           </div>
         </div>
 
@@ -117,7 +117,7 @@ export default function SubagentsPage() {
       </div>
 
       {items.length === 0 ? (
-        <EmptyState icon={<Bot className="h-10 w-10 opacity-40" />} title="暂无子代理任务" description="在 Chat 中让 Agent 调用 run_async 即可创建子代理。" />
+        <EmptyState icon={<Bot className="h-10 w-10 opacity-40" />} title="暂无子 Agent 任务" description="在 Chat 中让 Agent 调用 run_async 即可创建子 Agent。" />
       ) : (
         <div className="overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]">
           <table className="w-full text-left text-xs">
@@ -162,12 +162,22 @@ export default function SubagentsPage() {
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
-                      <Link
+                      <a
                         href={`/chat?sessionId=${s.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-7 gap-1 px-2 text-[10px]")}
                       >
                         <ExternalLink className="h-3 w-3" /> 详情
-                      </Link>
+                      </a>
+                      <a
+                        href={`/chat?sessionId=${s.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-7 gap-1 px-2 text-[10px]")}
+                      >
+                        <MessageSquare className="h-3 w-3" /> 对话
+                      </a>
                       {(s.status === "running" || s.status === "queued") && (
                         <button
                           type="button"
@@ -210,7 +220,7 @@ export default function SubagentsPage() {
 
       <ConfirmDialog
         isOpen={!!confirmId}
-        title="删除子代理"
+        title="删除子 Agent"
         description={`确定删除「${confirmTarget?.title ?? ""}」？删除后无法恢复。`}
         confirmLabel="删除"
         isDestructive

@@ -291,7 +291,7 @@ function buildAsyncExecute(
           source: "super",
         });
       } catch (msgErr) {
-        console.warn(`[asyncJobManager] 保存子代理任务消息失败:`, msgErr);
+        console.warn(`[asyncJobManager] 保存子 Agent 任务消息失败:`, msgErr);
       }
     }
 
@@ -326,7 +326,7 @@ function buildAsyncExecute(
       const resultText = loop.content || "(无文本输出)";
       const tokenUsage = loop.tokenUsage;
 
-      // 保存子代理的结果到 ChatSession
+      // 保存子 Agent 的结果到 ChatSession
       if (subagentSessionId) {
         try {
           await services.message.create({
@@ -338,7 +338,7 @@ function buildAsyncExecute(
             source: "sub",
           });
         } catch (msgErr) {
-          console.warn(`[asyncJobManager] 保存子代理结果消息失败:`, msgErr);
+          console.warn(`[asyncJobManager] 保存子 Agent 结果消息失败:`, msgErr);
         }
       }
 
@@ -381,7 +381,7 @@ function buildAsyncExecute(
             source: "sub",
           });
         } catch (msgErr) {
-          console.warn(`[asyncJobManager] 保存子代理失败消息失败:`, msgErr);
+          console.warn(`[asyncJobManager] 保存子 Agent 失败消息失败:`, msgErr);
         }
       }
       await broadcastShare("failed", { error: errorText });
@@ -414,7 +414,7 @@ export async function startAsyncAgentTask(options: {
   });
   const limit = options.config.asyncJobs.maxSubagentsPerSession;
   if (activeCount >= limit) {
-    throw new Error(`已达到每会话子代理上限（${limit}），请先停止或等待已有任务完成后再启动新任务。`);
+    throw new Error(`已达到每会话子 Agent 上限（${limit}），请先停止或等待已有任务完成后再启动新任务。`);
   }
 
   // 预算检查：避免预算耗尽时还启动后台任务浪费资源
@@ -422,15 +422,16 @@ export async function startAsyncAgentTask(options: {
 
   const taskLabel = options.label?.trim() || task.slice(0, 80);
 
-  // #3 子代理独立 Agent 实例：spawn 时创建 tier=sub 的独立 Agent（不复用父 Agent 身份）。
+  // #3 子 Agent 独立 Agent 实例：spawn 时创建 tier=sub 的独立 Agent（不复用父 Agent 身份）。
   // 独立实例让 tier 权限、parentId 回报链、tombstone、审计都有正确语义。
   // 创建失败时降级复用父 Agent（保证任务不被阻塞）。
   const parentAgent = await prisma.agent.findUnique({ where: { id: options.agent.id } }).catch(() => null);
   let subAgentId = options.agent.id;
   try {
     const subAgentResult = await options.services.agent.create({
-      name: `${taskLabel.slice(0, 40)} 子代理`,
-      description: `由 ${parentAgent?.name ?? options.agent.id} 派生的子代理（任务：${taskLabel.slice(0, 60)}）`,
+      name: `${taskLabel.slice(0, 40)} 子 Agent`,
+      description: `由 ${parentAgent?.name ?? options.agent.id} 派生的子 Agent（任务：${taskLabel.slice(0, 60)}）`,
+      source: "native_tool:spawn_subagent",
       model: options.agent.model,
       systemPrompt: options.agent.systemPrompt,
       tools: options.agent.tools,

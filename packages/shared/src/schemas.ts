@@ -77,6 +77,7 @@ export const createAgentSchema = z.object({
   tier: agentTierSchema.optional(),
   workspaceId: z.string().cuid().optional(),
   parentId: z.string().cuid().optional(),
+  source: z.string().max(64).optional(),
   apiKey: z.string().optional(),
   heartbeatModel: z.string().optional(),
   heartbeat: heartbeatConfigSchema.optional(),
@@ -93,6 +94,7 @@ export const updateAgentSchema = z.object({
   tier: agentTierSchema.optional(),
   workspaceId: z.string().cuid().nullable().optional(),
   parentId: z.string().cuid().nullable().optional(),
+  source: z.string().max(64).nullable().optional(),
   apiKey: z.string().nullable().optional(),
   heartbeatModel: z.string().nullable().optional(),
   heartbeat: heartbeatConfigSchema.optional(),
@@ -465,6 +467,7 @@ export const createInfoSourceSchema = z.object({
   language: infoSourceLanguageSchema.default("auto"),
   tags: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
+  fetchInterval: z.number().int().min(5).max(10080).optional(), /// 5 分钟 ~ 1 周
 });
 
 export const updateInfoSourceSchema = z.object({
@@ -477,6 +480,7 @@ export const updateInfoSourceSchema = z.object({
   language: infoSourceLanguageSchema.optional(),
   tags: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
+  fetchInterval: z.number().int().min(5).max(10080).optional().nullable(),
 });
 
 export const listInfoSourcesSchema = z.object({

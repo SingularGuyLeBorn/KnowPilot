@@ -31,6 +31,7 @@ import {
   buildInitialVersionMeta,
   getActiveAssistantPayload,
 } from "./messageVersions.js";
+import { SessionStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 
 export type AgentStreamEvent =
   | { type: "round_start"; round: number }
@@ -55,9 +56,11 @@ export type AgentStreamEvent =
     }
   | { type: "error"; message: string; sessionId?: string; suggestion?: string };
 
-function writeSse(res: Response, event: AgentStreamEvent) {
+function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
-  res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+  // 增加 id 行以支持断线续传
+  const idLine = eventId ? `id: ${eventId}\n` : "";
+  res.write(`${idLine}event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
 // R5：历史消息加载统一分页上限。此前 prepareMessage 用 200、主流程用 100 不一致，
@@ -788,11 +791,12 @@ export async function switchAssistantMessageVersion(
   });
 }
 
-/** Express SSE handler: POST /api/agent/chat/stream */
+/** Express SSE handler: POST /api/agent/chat/stream（启动运行）/ GET（续传） */
 export function handleAgentChatStream(
   services: ServiceContainer,
   config: AppConfig,
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>,
+  hub: SessionStreamHub,
 ) {
   return async (req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -808,25 +812,57 @@ export function handleAgentChatStream(
       return;
     }
 
-    const body = req.body as AgentChatInput;
-    const valid =
-      body?.regenerate ||
-      body?.retryFromMessageId ||
-      body?.editMessageId ||
-      (typeof body?.message === "string" && body.message.trim().length > 0);
+    const isPost = req.method === "POST";
+    const body = (req.body ?? {}) as AgentChatInput & { resumeAfter?: number };
+    const sessionId = body.sessionId || String(req.query.sessionId || "");
+    const afterEventId = Number(body.resumeAfter ?? req.query.resumeAfter ?? 0);
 
-    if (!valid) {
-      writeSse(res, { type: "error", message: "message 不能为空" });
+    if (!sessionId && !isPost) {
+      writeSse(res, { type: "error", message: "缺少 sessionId" });
       res.end();
       return;
     }
 
-    const abortController = new AbortController();
-    const onClose = () => abortController.abort();
-    res.on("close", onClose);
+    if (isPost) {
+      const valid =
+        body?.regenerate ||
+        body?.retryFromMessageId ||
+        body?.editMessageId ||
+        (typeof body?.message === "string" && body.message.trim().length > 0);
 
-    // R2：token 事件合并 —— 累加 delta 到 buffer，16ms 定时器冲刷为单帧；
-    // 非 token 事件先冲刷 buffer 再发送，保证事件顺序；finally/关闭时冲刷不丢字。
+      if (!valid) {
+        writeSse(res, { type: "error", message: "message 不能为空" });
+        res.end();
+        return;
+      }
+
+      // 幂等：若已有运行中的任务，不再重复启动（可能是前端重连时误发了 POST）
+      if (!hub.isRunning(sessionId)) {
+        hub.start(sessionId, body, (emit, signal) =>
+          chatAgentStream(services, config, body, invokeTrpc, emit, signal),
+        );
+      }
+    }
+
+    if (!hub.isRunning(sessionId) && afterEventId === 0) {
+      // 不是 POST 且没有运行中的任务，也没有要续传的历史事件
+      writeSse(res, { type: "error", message: "该会话没有运行中的 Agent 流" });
+      res.end();
+      return;
+    }
+
+    // 订阅并续传
+    let ended = false;
+    const end = () => {
+      if (ended) return;
+      ended = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+      res.end();
+    };
+
+    // R2：token 事件合并 —— 累加 delta 到 tokenBuffer，16ms 定时器冲刷为单帧；
+    // 非 token 事件先冲刷 tokenBuffer 再发送，保证事件顺序。
     let tokenBuffer = "";
     let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
     const flushTokens = () => {
@@ -839,33 +875,60 @@ export function handleAgentChatStream(
         tokenBuffer = "";
       }
     };
-    const coalescedEmit = (event: AgentStreamEvent) => {
+
+    const unsubscribe = hub.subscribe(sessionId, afterEventId, (buffered: BufferedEvent) => {
+      const event = buffered.event;
       if (event.type === "token") {
         tokenBuffer += event.delta;
-        // R2：16ms 定时器冲刷 + buffer 字符数上限（满则立即冲），避免大模型吐字快时单帧过大、慢时 16ms 才出字（#13）
         if (tokenBuffer.length >= 512) {
           flushTokens();
         } else if (!tokenFlushTimer) {
           tokenFlushTimer = setTimeout(flushTokens, 16);
         }
       } else {
-        // 先冲掉待写 token，保证 thinking/tool/done/error 与 token 的相对顺序
         flushTokens();
-        writeSse(res, event);
+        writeSse(res, event, buffered.id);
       }
-    };
+      if (event.type === "done" || event.type === "error") {
+        flushTokens();
+        setTimeout(end, 0);
+      }
+    });
 
-    try {
-      await chatAgentStream(services, config, body, invokeTrpc, coalescedEmit, abortController.signal);
-    } finally {
-      res.off("close", onClose);
-      flushTokens(); // 冲刷残留 token，避免末尾字符丢失
-      if (tokenFlushTimer) {
-        clearTimeout(tokenFlushTimer);
-        tokenFlushTimer = null;
+    // 心跳：防止浏览器/反代因长时间无数据关闭空闲连接
+    const heartbeat = setInterval(() => {
+      if (!ended) {
+        flushTokens();
+        res.write(": keepalive\n\n");
       }
-      res.end();
+    }, 5000);
+
+    res.on("close", () => {
+      end();
+      // 关键：客户端断开只取消订阅，不 abort 后台运行
+    });
+
+    // 如果订阅时任务已经结束，需要主动关闭响应
+    if (!hub.isRunning(sessionId) && ended === false) {
+      // 给重放事件一点处理时间
+      setTimeout(() => {
+        flushTokens();
+        end();
+      }, 0);
     }
+  };
+}
+
+/** Express handler: POST /api/agent/chat/stop */
+export function handleAgentChatStop(hub: SessionStreamHub) {
+  return (req: Request, res: Response) => {
+    const sessionId = (req.body as { sessionId?: string }).sessionId;
+    if (!sessionId) {
+      res.status(400).json({ error: "缺少 sessionId" });
+      return;
+    }
+    const stopped = hub.stop(sessionId);
+    res.json({ stopped });
   };
 }
 

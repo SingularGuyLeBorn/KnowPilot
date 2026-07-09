@@ -1,73 +1,76 @@
 "use client";
 
 /**
- * Subagent 面板 — 左侧栏显示当前会话的子代理任务卡片（Kimi Code 风格）
- * 卡片可展开：查看详情（跳转子会话）/ 停止 / 删除
+ * 子 Agent 面板 — 左侧栏显示当前主 Agent 的子 Agent 实体（Agent tier=sub）
+ * 与异步任务面板分离：子 Agent 是 Agent 实体，异步任务由 AsyncTaskPanel 展示。
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, ChevronRight, Plus, Square, Trash2, ExternalLink, RotateCcw } from "lucide-react";
+import { Bot, ChevronRight, Plus, Trash2, ExternalLink, MessageSquare, Play } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared";
+import type { Agent } from "@knowpilot/shared";
 
-interface SubagentBrief {
+interface SubagentAgentBrief {
   id: string;
-  title: string;
+  name: string;
+  description?: string | null;
+  model: string;
   status: string;
-  taskDescription?: string | null;
-  model?: string | null;
-  updatedAt: string | Date;
-  createdAt?: string | Date;
-}
-
-/** 真实已运行时长文本（替代此前的假进度条估算） */
-function formatElapsed(createdAt?: string | Date | null): string | null {
-  if (!createdAt) return null;
-  const start = new Date(createdAt).getTime();
-  if (!Number.isFinite(start)) return null;
-  const elapsed = Math.max(0, Date.now() - start);
-  const totalSec = Math.floor(elapsed / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min >= 60) {
-    const hr = Math.floor(min / 60);
-    return `${hr}h ${min % 60}m`;
-  }
-  return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
+  source?: string | null;
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  running: "bg-blue-500 animate-pulse",
-  queued: "bg-amber-500 animate-pulse",
-  completed: "bg-green-500",
-  failed: "bg-red-500",
-  paused: "bg-gray-400",
   active: "bg-green-500",
+  idle: "bg-blue-400",
+  dormant: "bg-amber-400",
+  deleted: "bg-gray-400",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  running: "执行中",
-  queued: "排队中",
-  completed: "已完成",
-  failed: "失败",
-  paused: "已暂停",
   active: "活跃",
+  idle: "空闲",
+  dormant: "休眠",
+  deleted: "已删除",
 };
 
-function SubagentCard({ sub, onRefresh, onOpenSubagent }: { sub: SubagentBrief; onRefresh: () => void; onOpenSubagent?: (sessionId: string) => void }) {
+const SOURCE_LABEL: Record<string, string> = {
+  "ui:subagent_panel": "手动创建",
+  ui: "手动创建",
+  manual: "手动创建",
+  "native_tool:agent_create_sub": "工具创建",
+  "native_tool:agent_create": "工具创建",
+  tool: "工具创建",
+  heartbeat: "心跳",
+  import: "导入",
+};
+
+function formatSource(source?: string | null): string {
+  if (!source) return "未知来源";
+  return SOURCE_LABEL[source] ?? source;
+}
+
+function SubagentAgentCard({
+  agent,
+  parentSessionId,
+  onRefresh,
+  onRunTask,
+}: {
+  agent: SubagentAgentBrief;
+  parentSessionId?: string;
+  onRefresh: () => void;
+  onRunTask?: (agentId: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const stopMut = trpc.session.stop.useMutation({ onSuccess: onRefresh });
-  const deleteMut = trpc.session.delete.useMutation({ onSuccess: onRefresh });
-  const rerunMut = trpc.session.rerun.useMutation({ onSuccess: onRefresh });
+  const deleteMut = trpc.agent.delete.useMutation({ onSuccess: onRefresh });
   const utils = trpc.useUtils();
 
-  const statusColor = STATUS_COLOR[sub.status] ?? "bg-gray-400";
-  const isRunning = sub.status === "running" || sub.status === "queued";
+  const statusColor = STATUS_COLOR[agent.status] ?? "bg-gray-400";
 
   return (
     <div
@@ -79,11 +82,11 @@ function SubagentCard({ sub, onRefresh, onOpenSubagent }: { sub: SubagentBrief; 
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 text-left"
         aria-expanded={open}
-        aria-label={`子代理 ${sub.title}`}
+        aria-label={`子 Agent ${agent.name}`}
       >
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusColor)} title={STATUS_LABEL[sub.status] ?? sub.status} />
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusColor)} title={STATUS_LABEL[agent.status] ?? agent.status} />
         <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
-        <span className="min-w-0 flex-1 truncate font-medium text-[var(--kp-text-1)]">{sub.title}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-[var(--kp-text-1)]">{agent.name}</span>
         <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform", open && "rotate-90")} />
       </button>
       <AnimatePresence initial={false}>
@@ -96,53 +99,38 @@ function SubagentCard({ sub, onRefresh, onOpenSubagent }: { sub: SubagentBrief; 
             className="overflow-hidden"
           >
             <div className="mt-2 space-y-2 border-t border-[var(--kp-divider-light)] pt-2">
-              <div className="flex items-center gap-2 text-[10px] text-[var(--kp-text-3)]">
-                <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5">{STATUS_LABEL[sub.status] ?? sub.status}</span>
-                {sub.model && <span className="truncate">{sub.model}</span>}
-              </div>
-              {isRunning && (() => {
-                const elapsed = formatElapsed(sub.createdAt);
-                return elapsed ? (
-                  <div data-testid="subagent-progress" className="flex items-center gap-1.5 text-[10px] tabular-nums text-[var(--kp-text-3)]">
-                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
-                    已运行 {elapsed}
-                  </div>
-                ) : null;
-              })()}
-              {sub.taskDescription && (
-                <p className="line-clamp-3 text-[11px] leading-relaxed text-[var(--kp-text-3)]">{sub.taskDescription}</p>
+              {agent.description && (
+                <p className="line-clamp-3 text-[11px] leading-relaxed text-[var(--kp-text-3)]">{agent.description}</p>
               )}
+              <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--kp-text-3)]">
+                <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5">{STATUS_LABEL[agent.status] ?? agent.status}</span>
+                <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[var(--kp-brand-dark)]">{formatSource(agent.source)}</span>
+                <span className="truncate">{agent.model}</span>
+              </div>
               <div className="flex flex-wrap gap-1">
-                <Link
-                  href={`/chat?sessionId=${sub.id}`}
-                  onClick={(e) => {
-                    if (onOpenSubagent) {
-                      e.preventDefault();
-                      onOpenSubagent(sub.id);
-                    }
-                  }}
-                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
-                >
-                  <ExternalLink className="h-3 w-3" /> 查看详情
-                </Link>
-                {isRunning && (
+                {parentSessionId && onRunTask && (
                   <button
                     type="button"
-                    onClick={() => stopMut.mutate({ id: sub.id })}
-                    disabled={stopMut.isPending}
+                    onClick={() => onRunTask(agent.id)}
                     className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
                   >
-                    <Square className="h-3 w-3" /> 停止
+                    <Play className="h-3 w-3" /> 启动任务
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => rerunMut.mutate({ id: sub.id })}
-                  disabled={rerunMut.isPending}
+                <Link
+                  href={`/agents`}
                   className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
                 >
-                  <RotateCcw className="h-3 w-3" /> 重跑
-                </button>
+                  <ExternalLink className="h-3 w-3" /> 去管理页
+                </Link>
+                <a
+                  href={`/chat?agentId=${agent.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
+                >
+                  <MessageSquare className="h-3 w-3" /> 与之对话
+                </a>
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
@@ -157,13 +145,13 @@ function SubagentCard({ sub, onRefresh, onOpenSubagent }: { sub: SubagentBrief; 
       </AnimatePresence>
       <ConfirmDialog
         isOpen={confirmDelete}
-        title="删除子代理"
-        description={`确定删除「${sub.title}」？删除后无法恢复。`}
+        title="删除子 Agent"
+        description={`确定删除「${agent.name}」？删除后无法恢复。`}
         confirmLabel="删除"
         isDestructive
         onConfirm={() => {
-          deleteMut.mutate({ id: sub.id });
-          void utils.session.list.invalidate();
+          deleteMut.mutate({ id: agent.id });
+          void utils.agent.list.invalidate();
           setConfirmDelete(false);
         }}
         onCancel={() => setConfirmDelete(false)}
@@ -173,185 +161,66 @@ function SubagentCard({ sub, onRefresh, onOpenSubagent }: { sub: SubagentBrief; 
 }
 
 export function SubagentPanel({
+  parentAgentId,
   parentSessionId,
   onCreate,
-  onOpenSubagent,
-  variant = "collapsible",
+  onRunTask,
 }: {
+  parentAgentId?: string;
   parentSessionId?: string;
   onCreate?: () => void;
-  onOpenSubagent?: (sessionId: string) => void;
-  /** "collapsible"=左栏内嵌折叠块（默认）；"tab"=作为标签页内容填满高度 */
-  variant?: "collapsible" | "tab";
+  onRunTask?: (agentId: string) => void;
 }) {
   const utils = trpc.useUtils();
-  // 连续轮询计数器：子代理持续 running/queued 时逐步拉长轮询间隔，降低后台压力
-  const runningPollsRef = useRef(0);
-  const query = trpc.session.listChildren.useQuery(
-    { parentSessionId: parentSessionId ?? "", pageSize: 20 },
-    {
-      enabled: !!parentSessionId,
-      // React Query 默认 refetchIntervalInBackground=false，标签页隐藏时轮询自动暂停。
-      // 此处显式声明意图，并在前台可见时按指数退避拉长间隔（1500ms → 上限 5000ms）。
-      refetchIntervalInBackground: false,
-      refetchInterval: (q) => {
-        const data = q.state.data as { items?: SubagentBrief[] } | undefined;
-        const polled = data?.items ?? [];
-        const hasRunning = polled.some((s) => s.status === "running" || s.status === "queued");
-        if (!hasRunning) {
-          runningPollsRef.current = 0;
-          return false;
-        }
-        runningPollsRef.current += 1;
-        // 1500, 2000, 2500, … 上限 5000
-        return Math.min(1500 + runningPollsRef.current * 500, 5000);
-      },
-    },
+  const query = trpc.agent.list.useQuery(
+    { page: 1, pageSize: 50, parentId: parentAgentId },
+    { enabled: !!parentAgentId },
   );
 
-  const items = useMemo(() => (query.data?.items as SubagentBrief[] | undefined) ?? [], [query.data?.items]);
-  const activeCount = useMemo(
-    () => items.filter((s) => s.status === "running" || s.status === "queued").length,
-    [items],
-  );
-
-  // UX #1：默认折叠，节省左栏空间；存在活跃任务（running/queued）时自动展开。
-  // 用户手动折叠后不再被自动展开打扰（userToggledRef 记忆手动操作）。
-  const [expanded, setExpanded] = useState(false);
-  const userToggledRef = useRef(false);
-  useEffect(() => {
-    if (activeCount > 0 && !userToggledRef.current) {
-      setExpanded(true);
-    }
-  }, [activeCount]);
-
-  // 切换会话时重置手动折叠记忆
-  useEffect(() => {
-    userToggledRef.current = false;
-  }, [parentSessionId]);
+  const items = useMemo(() => (query.data?.items as Agent[] | undefined) ?? [], [query.data?.items]);
 
   const refresh = () => {
     void query.refetch();
-    void utils.session.list.invalidate();
+    void utils.agent.list.invalidate();
   };
 
-  if (!parentSessionId) {
-    return variant === "tab" ? (
-      <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-[var(--kp-text-3)]">
-        发送一条消息创建会话后，可在此查看子代理任务
-      </div>
-    ) : null;
-  }
-  // 无任何子代理任务时只显示一行极简 header（不占空间）
-  const hasItems = items.length > 0;
-
-  // tab 模式：无折叠 header，直接填满高度显示卡片列表
-  if (variant === "tab") {
+  if (!parentAgentId) {
     return (
-      <div className="flex w-full min-h-0 flex-1 flex-col" data-testid="subagent-panel">
-        {onCreate && (
-          <div className="flex shrink-0 items-center justify-end border-b border-[var(--kp-divider)] px-2 py-1.5">
-            <button
-              type="button"
-              onClick={onCreate}
-              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-7 gap-1 text-xs")}
-              aria-label="新建子代理"
-              title="新建子代理"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              新建
-            </button>
-          </div>
-        )}
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 pr-2.5">
-          {!hasItems ? (
-            <p className="px-1 py-6 text-center text-[10px] text-[var(--kp-text-3)]">暂无子代理任务</p>
-          ) : (
-            <AnimatePresence initial={false}>
-              {items.map((s) => (
-                <motion.div
-                  key={s.id}
-                  layout
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 26 }}
-                >
-                  <SubagentCard sub={s} onRefresh={refresh} onOpenSubagent={onOpenSubagent} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          )}
-        </div>
+      <div className="flex flex-1 items-center justify-center p-4 text-center text-xs text-[var(--kp-text-3)]">
+        当前没有主 Agent，<br />无法查看子 Agent。
       </div>
     );
   }
 
   return (
-    <div className="w-64 shrink-0 border-b border-[var(--kp-divider)]" data-testid="subagent-panel">
-      <div className="flex items-center gap-1 px-2 py-1.5">
-        <button
-          type="button"
-          onClick={() => {
-            userToggledRef.current = true;
-            setExpanded((v) => !v);
-          }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition hover:bg-[var(--kp-bg-mute)]"
-          aria-expanded={expanded}
-          aria-label={expanded ? "折叠子代理任务" : "展开子代理任务"}
-        >
-          <ChevronRight
-            className={cn(
-              "h-3 w-3 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200",
-              expanded && "rotate-90",
-            )}
-          />
-          <span className="text-xs font-medium text-[var(--kp-text-2)]">子代理任务</span>
-          {activeCount > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
-              {activeCount} 运行中
-            </span>
-          ) : hasItems ? (
-            <span className="rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px] tabular-nums text-[var(--kp-text-3)]">
-              {items.length}
-            </span>
-          ) : null}
-        </button>
+    <div className="flex h-full flex-col gap-2 overflow-y-auto p-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-[var(--kp-text-2)]">子 Agent · {items.length}</span>
         {onCreate && (
           <button
             type="button"
             onClick={onCreate}
-            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-6 w-6 shrink-0")}
-            aria-label="新建子代理"
-            title="新建子代理"
+            className="inline-flex items-center gap-1 rounded-md bg-[var(--kp-brand-soft)] px-2 py-1 text-[10px] font-medium text-[var(--kp-brand-dark)] transition hover:bg-[var(--kp-brand-light)]/30"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-3 w-3" />
+            新建
           </button>
         )}
       </div>
-      {expanded && (
-        <div className="max-h-[280px] space-y-2 overflow-y-auto px-2 pb-2 pr-2.5">
-          {!hasItems ? (
-            <p className="px-1 py-2 text-center text-[10px] text-[var(--kp-text-3)]">暂无子代理任务</p>
-          ) : (
-            <AnimatePresence initial={false}>
-              {items.map((s) => (
-                <motion.div
-                  key={s.id}
-                  layout
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 26 }}
-                >
-                  <SubagentCard sub={s} onRefresh={refresh} onOpenSubagent={onOpenSubagent} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          )}
+      {items.length === 0 && !query.isLoading && (
+        <div className="rounded-lg border border-dashed border-[var(--kp-divider)] p-4 text-center text-xs text-[var(--kp-text-3)]">
+          暂无子 Agent，点击右上角新建。
         </div>
       )}
+      {items.map((agent) => (
+        <SubagentAgentCard
+          key={agent.id}
+          agent={agent as SubagentAgentBrief}
+          parentSessionId={parentSessionId}
+          onRefresh={refresh}
+          onRunTask={onRunTask}
+        />
+      ))}
     </div>
   );
 }
