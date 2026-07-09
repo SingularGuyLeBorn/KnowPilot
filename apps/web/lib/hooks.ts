@@ -8,6 +8,7 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- 动态 tRPC router 名称绑定 */
+import { useCallback, useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import type {
   OperationResult,
@@ -298,6 +299,52 @@ export function useAIApi() {
       });
     },
   };
+}
+
+/* ─── 4. 实体卡片密度偏好 ─── */
+
+export type CardDensity = "comfortable" | "compact";
+
+const CARD_DENSITY_KEY = "kp-card-density";
+const CARD_DENSITY_CHANGE_EVENT = "kp-card-density-change";
+
+function readSavedDensity(): CardDensity {
+  try {
+    const saved = localStorage.getItem(CARD_DENSITY_KEY);
+    if (saved === "comfortable" || saved === "compact") return saved;
+  } catch {
+    // ignore
+  }
+  return "comfortable";
+}
+
+export function useCardDensity() {
+  const [density, setDensityState] = useState<CardDensity>(() => {
+    if (typeof window === "undefined") return "comfortable";
+    return readSavedDensity();
+  });
+
+  useEffect(() => {
+    const handler = () => setDensityState(readSavedDensity());
+    window.addEventListener(CARD_DENSITY_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(CARD_DENSITY_CHANGE_EVENT, handler);
+  }, []);
+
+  const setDensity = useCallback((d: CardDensity) => {
+    setDensityState(d);
+    try {
+      localStorage.setItem(CARD_DENSITY_KEY, d);
+    } catch {
+      // ignore
+    }
+    window.dispatchEvent(new CustomEvent(CARD_DENSITY_CHANGE_EVENT));
+  }, []);
+
+  const toggle = useCallback(() => {
+    setDensity(density === "compact" ? "comfortable" : "compact");
+  }, [density, setDensity]);
+
+  return { density, setDensity, toggle };
 }
 
 /** Agent 聊天（L2：Chat 作为 Agent 子集） */

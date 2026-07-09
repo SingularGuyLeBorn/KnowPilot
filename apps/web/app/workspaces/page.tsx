@@ -5,18 +5,20 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Bot, Folder, HardDrive, MapPin, Plus, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Workspace } from "@knowpilot/shared";
-import { useWorkspace } from "@/lib/hooks";
+import { useWorkspace, useCardDensity } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function WorkspacesPage() {
   const { useList, useCreate, useDelete } = useWorkspace();
+  const { density } = useCardDensity();
   const [page] = useState(1);
   const { data, isLoading, refetch } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
@@ -62,6 +64,7 @@ export default function WorkspacesPage() {
         title="Workspaces 工作空间"
         description="管理本地不同的 Markdown 目录和项目空间。每个 Workspace 自动创建一个管理 Agent，可包含多个子 Agent。"
         action={{ label: "创建新工作区", onClick: () => setShowCreate(true), icon: Plus }}
+        showDensityToggle
       />
 
       {isLoading ? (
@@ -70,7 +73,7 @@ export default function WorkspacesPage() {
         <EmptyState title="孤立的系统" description="目前还没有关联任何本地磁盘文件夹。点击下方按钮快速关联一个本地知识库。"
           actionLabel="关联本地工作区" onAction={() => setShowCreate(true)} />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((workspace: Workspace, idx: number) => {
             const wsAgents = agentsByWorkspace.get(workspace.id) ?? [];
             const manager = wsAgents.find((a) => a.tier === "manager");
@@ -78,7 +81,7 @@ export default function WorkspacesPage() {
               <motion.div key={workspace.id}
                 initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 } }}
-                className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}>
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-3">
                     <div className="flex items-center gap-2.5">

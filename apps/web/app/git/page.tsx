@@ -9,12 +9,13 @@ import { motion } from "framer-motion";
 import { GitBranch, Plus, GitCommit, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { GitRepo } from "@knowpilot/shared";
-import { useGit } from "@/lib/hooks";
+import { useGit, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
 export default function GitPage() {
   const { useList, useCreate, useDelete, useStatus, useLog } = useGit();
+  const { density } = useCardDensity();
   const [page] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { data, isLoading, refetch } = useList({ page, pageSize: 12 });
@@ -51,6 +52,7 @@ export default function GitPage() {
         title="Git 仓库"
         description="注册本地仓库后，可查看工作区状态与最近提交历史（只读）。"
         action={{ label: "关联本地仓库", onClick: handleCreateDemo, icon: Plus }}
+        showDensityToggle
       />
 
       {isLoading ? (
@@ -64,7 +66,7 @@ export default function GitPage() {
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
             {data.items.map((repo: GitRepo, idx: number) => (
               <motion.button
                 key={repo.id}

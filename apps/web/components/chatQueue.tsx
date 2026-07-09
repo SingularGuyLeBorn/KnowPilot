@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatQueueItem } from "@/lib/chatQueueTypes";
+import { Pagination } from "@/components/shared";
 
 interface MessageQueueProps {
   items: ChatQueueItem[];
@@ -258,6 +259,12 @@ export function MessageQueue({
 }: MessageQueueProps) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [barExpanded, setBarExpanded] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * pageSize;
+  const paginatedItems = items.slice(start, start + pageSize);
 
   const reorder = useCallback(
     (from: number, to: number) => {
@@ -341,7 +348,7 @@ export function MessageQueue({
                 barExpanded ? "max-h-[min(40vh,280px)]" : "max-h-[72px]",
               )}
             >
-              {items.map((item) => (
+              {items.slice(0, 3).map((item) => (
                 <div
                   key={item.id}
                   className="flex items-center gap-2 rounded-lg bg-[var(--kp-bg-mute)]/60 px-2 py-1"
@@ -356,6 +363,11 @@ export function MessageQueue({
                   </span>
                 </div>
               ))}
+              {items.length > 3 && (
+                <div className="flex items-center justify-center gap-1 rounded-lg bg-[var(--kp-bg-mute)]/40 px-2 py-1 text-[10px] text-[var(--kp-text-3)]">
+                  还有 <span className="font-medium text-[var(--kp-text-2)]">{items.length - 3}</span> 条，点击展开面板查看
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -389,32 +401,42 @@ export function MessageQueue({
             </button>
           </div>
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
-            {items.map((item, idx) => (
-              <div
-                key={item.id}
-                draggable={item.kind !== "async-running"}
-                onDragStart={() => setDragIdx(idx)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => {
-                  if (dragIdx !== null) reorder(dragIdx, idx);
-                  setDragIdx(null);
-                }}
-              >
-                <QueueCard
-                  item={item}
-                  expanded
-                  onUpdate={(patch) => updateItem(item.id, patch)}
-                  onRemove={() => onRemove(item.id)}
-                  onMoveUp={() => moveItem(item.id, -1)}
-                  onMoveDown={() => moveItem(item.id, 1)}
-                  onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
-                  onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
-                  onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
-                  onOpenSubagent={onOpenSubagent}
-                />
-              </div>
-            ))}
+            {paginatedItems.map((item, localIdx) => {
+              const globalIdx = start + localIdx;
+              return (
+                <div
+                  key={item.id}
+                  draggable={item.kind !== "async-running"}
+                  onDragStart={() => setDragIdx(globalIdx)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => {
+                    if (dragIdx !== null) reorder(dragIdx, globalIdx);
+                    setDragIdx(null);
+                  }}
+                >
+                  <QueueCard
+                    item={item}
+                    expanded
+                    onUpdate={(patch) => updateItem(item.id, patch)}
+                    onRemove={() => onRemove(item.id)}
+                    onMoveUp={() => moveItem(item.id, -1)}
+                    onMoveDown={() => moveItem(item.id, 1)}
+                    onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
+                    onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
+                    onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
+                    onOpenSubagent={onOpenSubagent}
+                  />
+                </div>
+              );
+            })}
           </div>
+          <Pagination
+            page={safePage}
+            pageSize={pageSize}
+            total={items.length}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </aside>
       )}
     </>

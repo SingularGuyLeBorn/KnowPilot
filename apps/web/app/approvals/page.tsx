@@ -9,7 +9,7 @@ import { motion } from "framer-motion";
 import { ShieldCheck, Check, X, Play, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Approval } from "@knowpilot/shared";
-import { useApproval } from "@/lib/hooks";
+import { useApproval, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, Pagination, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +29,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function ApprovalsPage() {
   const { useList, useUpdate, useExecute, useApproveAndExecute } = useApproval();
+  const { density } = useCardDensity();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const listInput = {
@@ -67,6 +68,7 @@ export default function ApprovalsPage() {
         icon={ShieldCheck}
         title="Approvals 审批队列"
         description="删除 Agent/文章、Git push 等危险操作会先进入此队列。批准后可在本页一键执行。"
+        showDensityToggle
       />
 
       <div className="flex flex-wrap gap-2">
@@ -109,7 +111,7 @@ export default function ApprovalsPage() {
                   y: 0,
                   transition: { delay: idx * 0.03, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5"
+                className={cn("rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40", density === "compact" ? "p-3" : "p-5")}
                 data-testid="approval-card"
               >
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">

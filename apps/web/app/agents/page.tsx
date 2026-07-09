@@ -21,13 +21,14 @@ import {
   ShieldCheck,
   Trash2,
   X,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Agent } from "@knowpilot/shared";
 import { CHAT_MODELS, materializeAgentTools } from "@knowpilot/shared";
-import { useAgent } from "@/lib/hooks";
-import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
+import { useAgent, useCardDensity, type CardDensity } from "@/lib/hooks";
+import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, CardDensityToggle } from "@/components/shared";
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
@@ -117,12 +118,14 @@ function useDebouncedValue<T>(value: T, delay = 300) {
 const AgentCard = memo(function AgentCard({
   agent,
   selected,
+  density,
   onToggleSelect,
   onEdit,
   onDelete,
 }: {
   agent: Agent;
   selected: boolean;
+  density: CardDensity;
   onToggleSelect: (id: string) => void;
   onEdit: (agent: Agent) => void;
   onDelete: (id: string) => void;
@@ -138,14 +141,15 @@ const AgentCard = memo(function AgentCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "group relative rounded-2xl border p-5 transition hover:shadow-lg",
+        "group relative rounded-2xl border transition hover:shadow-lg",
+        density === "compact" ? "p-3" : "p-5",
         isSuper
           ? "border-amber-200/60 bg-gradient-to-br from-amber-50/40 to-[var(--kp-bg-alt)]/60 hover:border-amber-300/80"
           : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 hover:border-[var(--kp-brand)]/30",
         selected && "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/30",
       )}
     >
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className={cn("flex items-start justify-between gap-3", density === "compact" ? "mb-2" : "mb-4")}>
         <div className="flex items-center gap-3">
           {/* 超级 Agent 不可批量选择（不可删除） */}
           {!isSuper && (
@@ -220,23 +224,23 @@ const AgentCard = memo(function AgentCard({
         </div>
       </div>
 
-      <p className="mb-4 min-h-[36px] text-xs leading-relaxed text-[var(--kp-text-3)]">{agent.description || "暂无描述"}</p>
+      <p className={cn("min-h-[36px] text-xs leading-relaxed text-[var(--kp-text-3)]", density === "compact" ? "mb-2" : "mb-4")}>{agent.description || "暂无描述"}</p>
 
       {/* Workspace 归属 */}
       {agent.workspaceId && (
-        <div className="mb-3 flex items-center gap-1.5 text-[10px] text-[var(--kp-text-3)]">
+        <div className={cn("flex items-center gap-1.5 text-[10px] text-[var(--kp-text-3)]", density === "compact" ? "mb-1.5" : "mb-3")}>
           <Folder className="h-3 w-3" />
           <span>Workspace: {agent.workspaceId.slice(0, 8)}…</span>
         </div>
       )}
       {isSuper && (
-        <div className="mb-3 flex items-center gap-1.5 text-[10px] text-amber-600">
+        <div className={cn("flex items-center gap-1.5 text-[10px] text-amber-600", density === "compact" ? "mb-1.5" : "mb-3")}>
           <Crown className="h-3 w-3" />
           <span>全局超级 Agent · 不属于任何 Workspace</span>
         </div>
       )}
 
-      <div className="mb-4 space-y-1 border-t border-[var(--kp-divider)] pt-3">
+      <div className={cn("space-y-1 border-t border-[var(--kp-divider)] pt-3", density === "compact" ? "mb-2" : "mb-4")}>
         <AgentToolSummaryCard tools={agent.tools ?? []} />
       </div>
 
@@ -274,6 +278,7 @@ const AgentCard = memo(function AgentCard({
 
 export default function AgentsPage() {
   const { useList, useCreate, useUpdate, useDelete } = useAgent();
+  const { density } = useCardDensity();
   const utils = trpc.useUtils();
 
   const [page, setPage] = useState(1);
@@ -591,10 +596,25 @@ export default function AgentsPage() {
             <p className="text-xs text-[var(--kp-text-3)]">选择一个 Agent 开始对话，或配置模型、Prompt 与工具授权</p>
           </div>
         </div>
-        <Button onClick={openCreate} className="shrink-0 gap-1.5">
-          <Plus className="h-4 w-4" />
-          新建 Agent
-        </Button>
+        <div className="flex items-center gap-2">
+          <CardDensityToggle />
+          <Button onClick={openCreate} className="shrink-0 gap-1.5">
+            <Plus className="h-4 w-4" />
+            新建 Agent
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 px-3 py-2 text-xs text-[var(--kp-text-2)]">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+        <div>
+          <span className="font-medium text-[var(--kp-text-1)]">心跳状态：</span>
+          卡片上的心跳徽章表示该 Agent 是否按 cron 自主运行。绿色=正常，红色=连续失败，无徽章=未启用。
+          定时任务去
+          <Link href="/tasks" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/tasks</Link>，
+          运行记录去
+          <Link href="/runs" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/runs</Link>。
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -693,6 +713,7 @@ export default function AgentsPage() {
                 key={agent.id}
                 agent={agent}
                 selected={selectedIds.has(agent.id)}
+                density={density}
                 onToggleSelect={toggleSelect}
                 onEdit={openEdit}
                 onDelete={setDeleteId}

@@ -11,8 +11,9 @@ import { motion } from "framer-motion";
 import { Wand2, Plus, Code } from "lucide-react";
 import Link from "next/link";
 import type { Skill } from "@knowpilot/shared";
-import { useSkill } from "@/lib/hooks";
+import { useSkill, useCardDensity } from "@/lib/hooks";
 import { LucideIconByName } from "@/lib/icons";
+import { cn } from "@/lib/utils";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 function parseSkillVersion(metaJson?: string | null): string {
@@ -27,6 +28,7 @@ function parseSkillVersion(metaJson?: string | null): string {
 
 export default function SkillsPage() {
   const { useList, useCreate, useDelete } = useSkill();
+  const { density } = useCardDensity();
   const [page] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
   const createMutation = useCreate();
@@ -58,6 +60,7 @@ export default function SkillsPage() {
         title="Skills 专属动作库"
         description="定义可被智能代理调用的原子化执行能力。Skill 支持 TypeScript 原生脚本或特定 Prompt 模板指令，赋予 Agent 精准的外部操作与自动化流程控制。"
         action={{ label: "新建插件技能", onClick: handleCreateDemo, icon: Plus }}
+        showDensityToggle
       />
 
       {/* 数据列表 */}
@@ -71,7 +74,7 @@ export default function SkillsPage() {
           onAction={handleCreateDemo}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((skill: Skill, idx: number) => (
             <motion.div
               key={skill.id}
@@ -81,7 +84,10 @@ export default function SkillsPage() {
                 y: 0,
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
-              className="group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 p-5 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300"
+              className={cn(
+                "group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300",
+                density === "compact" ? "p-3" : "p-5",
+              )}
             >
               <div className="flex justify-between items-start gap-4 mb-3">
                 <div className="flex items-center gap-3">
