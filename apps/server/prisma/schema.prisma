@@ -84,6 +84,8 @@ model Skill {
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([enabled])
 }
 
 /// 聊天会话
@@ -114,6 +116,7 @@ model ChatSession {
   children     ChatSession[] @relation("SessionChildren")
   @@index([parentSessionId, status, updatedAt])
   @@index([kind, status])
+  @@index([agentId, updatedAt])
 }
 
 /// 聊天消息
@@ -130,6 +133,8 @@ model ChatMessage {
   source       String      @default("user") /// "user" | "super" | "manager" | "sub" | "system"（心跳）
   createdAt    DateTime    @default(now())
   session      ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
 }
 
 /// 上传的文件元数据
@@ -152,6 +157,9 @@ model Log {
   message   String
   metadata  Json?
   createdAt DateTime @default(now())
+
+  @@index([level, createdAt])
+  @@index([component])
 }
 
 /// MCP 服务器配置
@@ -271,6 +279,8 @@ model Approval {
   status    String   @default("pending") /// "pending" | "approved" | "rejected"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
 }
 
 /// 工具注册表 (Tool)
@@ -304,6 +314,10 @@ model Run {
   // P1-8：外键，删 Agent/Session 时对应字段置 null
   agent      Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
   session    ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([agentId, status])
+  @@index([sessionId])
+  @@index([createdAt])
 }
 
 /// 提示词模板 (Prompt)
