@@ -679,6 +679,55 @@ export function ChatView() {
     [],
   );
 
+  // 流式 token rAF 合并：onToken 每字符触发一次 setState 会让 ChatView 高频重渲染。
+  // 将同帧内多个 delta 累积到 pendingStreamDeltaRef，由 requestAnimationFrame 在下一帧
+  // 合并为单次 streamingContent 更新，显著降低流式吐字时的 setState 频率与重排开销。
+  const pendingStreamDeltaRef = useRef<Map<string, string>>(new Map());
+  const streamRafRef = useRef<Map<string, number>>(new Map());
+
+  const scheduleStreamFlush = useCallback(
+    (sid: string) => {
+      if (streamRafRef.current.has(sid)) return;
+      const id = requestAnimationFrame(() => {
+        streamRafRef.current.delete(sid);
+        const delta = pendingStreamDeltaRef.current.get(sid);
+        if (delta) {
+          pendingStreamDeltaRef.current.delete(sid);
+          ssSet(sid, "streamingContent", (prev) => prev + delta);
+        }
+      });
+      streamRafRef.current.set(sid, id);
+    },
+    [ssSet],
+  );
+
+  /** 立即冲刷并取消该 session 的待写 delta（用于 onDone 等需要同步落地的场景） */
+  const flushStreamNow = useCallback(
+    (sid: string) => {
+      const rafId = streamRafRef.current.get(sid);
+      if (rafId !== undefined) {
+        cancelAnimationFrame(rafId);
+        streamRafRef.current.delete(sid);
+      }
+      const delta = pendingStreamDeltaRef.current.get(sid);
+      if (delta) {
+        pendingStreamDeltaRef.current.delete(sid);
+        ssSet(sid, "streamingContent", (prev) => prev + delta);
+      }
+    },
+    [ssSet],
+  );
+
+  /** 取消该 session 的 rAF 并丢弃未写 delta（用于 onError/finally 等清理场景） */
+  const discardStreamFlush = useCallback((sid: string) => {
+    const rafId = streamRafRef.current.get(sid);
+    if (rafId !== undefined) {
+      cancelAnimationFrame(rafId);
+      streamRafRef.current.delete(sid);
+    }
+    pendingStreamDeltaRef.current.delete(sid);
+  }, []);
+
   const getAbort = useCallback(
     (sid: string | null): AbortController | null => (sid ? streamStatesRef.current.get(sid)?.abort ?? null : null),
     [],
@@ -1022,7 +1071,14 @@ export function ChatView() {
                 return [...copy, { type: "thinking", content: delta, round: 1 }];
               });
             },
-            onToken: (delta) => ssSet(originSid, "streamingContent", (prev) => prev + delta),
+            onToken: (delta) => {
+              // rAF 合并：累积 delta 到下一帧单次写入，避免每字符一次 setState
+              pendingStreamDeltaRef.current.set(
+                originSid,
+                (pendingStreamDeltaRef.current.get(originSid) ?? "") + delta,
+              );
+              scheduleStreamFlush(originSid);
+            },
             onIntermediateContent: (content, round) => {
               // 工具轮次中的中间正式回复 → 进导轨时间线（无圆点），不进最终气泡
               ssSet(originSid, "liveTimeline", (prev) => {
@@ -1070,7 +1126,11 @@ export function ChatView() {
                   streamStatesRef.current.set(data.sessionId, prev);
                   streamStatesRef.current.delete(NEW_STREAM_KEY);
                 }
+                // 把待写 delta 的 rAF 键也迁移到真实 sessionId，避免最后一批 token 丢失
+                flushStreamNow(originSid);
                 originSid = data.sessionId;
+              } else {
+                flushStreamNow(originSid);
               }
               setSessionId(data.sessionId);
               if (data.tokenUsage?.total) ssSet(originSid, "lastRoundTokens", data.tokenUsage.total);
@@ -1101,7 +1161,10 @@ export function ChatView() {
                   streamStatesRef.current.set(sid, prev);
                   streamStatesRef.current.delete(NEW_STREAM_KEY);
                 }
+                discardStreamFlush(originSid);
                 originSid = sid;
+              } else {
+                discardStreamFlush(originSid);
               }
               if (opts.optimisticUser) ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
               ssSet(originSid, "error", message + (suggestion ? `\n${suggestion}` : ""));
@@ -1114,7 +1177,9 @@ export function ChatView() {
         );
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") {
-          // 用户点击停止：保持当前流式 UI，等后端保存中断消息并刷新会话后再清空
+          // 用户点击停止：先把待写 token 落地（保留中断前的部分内容），再延后清空
+          flushStreamNow(originSid);
+          // 保持当前流式 UI，等后端保存中断消息并刷新会话后再清空
           setTimeout(async () => {
             await refetchSession();
             ssSet(originSid, "liveTimeline", []);
@@ -1125,10 +1190,13 @@ export function ChatView() {
           }, 500);
           return;
         }
+        discardStreamFlush(originSid);
         ssSet(originSid, "error", err instanceof Error ? err.message : "对话请求失败");
         ssSet(originSid, "liveTimeline", []);
         ssSet(originSid, "streamingContent", "");
       } finally {
+        // 安全清理：onDone/onError 已处理过则此处为 no-op；streamAgentChat 抛错未触发回调时兜底
+        discardStreamFlush(originSid);
         ssSet(originSid, "isStreaming", false);
         ssSet(originSid, "streamTargetUserId", null);
         const st = getStreamState(originSid);
@@ -1142,7 +1210,7 @@ export function ChatView() {
         consumeRef.current();
       }
     },
-    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, selectedAgent, getStreamState, ssSet, getAbort],
+    [effectiveAgentId, chatConfig, refetchSession, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush],
   );
 
   const consumeQueue = useCallback(() => {
@@ -1242,6 +1310,17 @@ export function ChatView() {
   useEffect(() => {
     applyView(effectiveSessionId);
   }, [effectiveSessionId, applyView]);
+
+  // 流式 rAF 卸载清理：组件卸载时取消所有待处理动画帧，避免 setState after unmount
+  useEffect(() => {
+    const rafMap = streamRafRef.current;
+    const deltaMap = pendingStreamDeltaRef.current;
+    return () => {
+      rafMap.forEach((id) => cancelAnimationFrame(id));
+      rafMap.clear();
+      deltaMap.clear();
+    };
+  }, []);
 
   // Ctrl+Shift+S 快捷键打开新建子代理弹窗
   useEffect(() => {
