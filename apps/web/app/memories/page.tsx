@@ -4,7 +4,7 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Brain, Plus, Zap, Tag } from "lucide-react";
@@ -31,7 +31,99 @@ export default function MemoriesPage() {
     });
   };
 
-  const confirmDelete = () => {
+  function MemoryContentView({ content }: { content: string }) {
+  const parsed = useMemo(() => {
+    try {
+      const data = JSON.parse(content);
+      if (data && typeof data === "object" && !Array.isArray(data)) return data as Record<string, unknown>;
+    } catch {
+      // 不是 JSON，按纯文本展示
+    }
+    return null;
+  }, [content]);
+
+  if (!parsed) {
+    return (
+      <p className="text-xs text-[var(--vp-c-text-2)] leading-relaxed">
+        <span className="text-[var(--vp-c-text-3)]">&ldquo;</span>
+        {content}
+        <span className="text-[var(--vp-c-text-3)]">&rdquo;</span>
+      </p>
+    );
+  }
+
+  const taskDescription =
+    typeof parsed.taskDescription === "string" ? parsed.taskDescription : undefined;
+  const keyLearnings =
+    typeof parsed.keyLearnings === "string" ? parsed.keyLearnings : undefined;
+  const toolsUsed = Array.isArray(parsed.toolsUsed)
+    ? parsed.toolsUsed.filter((t): t is string => typeof t === "string")
+    : [];
+  const success = typeof parsed.success === "boolean" ? parsed.success : undefined;
+  const durationMs = typeof parsed.durationMs === "number" ? parsed.durationMs : undefined;
+  const tokenUsage =
+    parsed.tokenUsage && typeof parsed.tokenUsage === "object" && !Array.isArray(parsed.tokenUsage)
+      ? (parsed.tokenUsage as Record<string, unknown>)
+      : null;
+
+  return (
+    <div className="space-y-2.5">
+      {taskDescription && (
+        <p className="text-xs font-medium text-[var(--vp-c-text-1)] leading-relaxed">
+          <span className="text-[var(--vp-c-text-3)]">&ldquo;</span>
+          {taskDescription}
+          <span className="text-[var(--vp-c-text-3)]">&rdquo;</span>
+        </p>
+      )}
+      {keyLearnings && (
+        <div className="rounded-lg border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg)] px-2.5 py-2 text-[10px] leading-relaxed text-[var(--vp-c-text-2)]">
+          {keyLearnings}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {toolsUsed.length > 0 ? (
+          toolsUsed.map((t) => (
+            <span
+              key={t}
+              className="inline-flex items-center gap-0.5 rounded-full bg-[var(--vp-c-brand-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--vp-c-brand)]"
+            >
+              <Tag className="h-2 w-2" />
+              {t}
+            </span>
+          ))
+        ) : (
+          <span className="rounded-full bg-[var(--vp-c-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--vp-c-text-3)]">
+            无工具调用
+          </span>
+        )}
+        {success !== undefined && (
+          <span
+            className={cn(
+              "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
+              success ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600",
+            )}
+          >
+            {success ? "成功" : "失败"}
+          </span>
+        )}
+        {durationMs !== undefined && (
+          <span className="rounded-full bg-[var(--vp-c-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--vp-c-text-3)]">
+            {(durationMs / 1000).toFixed(1)}s
+          </span>
+        )}
+      </div>
+      {tokenUsage && (
+        <div className="flex flex-wrap items-center gap-x-2 text-[9px] text-[var(--vp-c-text-3)]">
+          <span>prompt {(tokenUsage.prompt as number) ?? "-"}</span>
+          <span>completion {(tokenUsage.completion as number) ?? "-"}</span>
+          <span className="font-medium text-[var(--vp-c-text-2)]">total {(tokenUsage.total as number) ?? "-"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const confirmDelete = () => {
     if (deleteId) {
       deleteMutation.mutate({ id: deleteId });
       setDeleteId(null);
@@ -92,9 +184,9 @@ export default function MemoriesPage() {
                   </div>
                 </div>
 
-                <p className="text-xs text-[var(--vp-c-text-2)] leading-relaxed mb-4">
-                  <span>&ldquo;{memory.content}&rdquo;</span>
-                </p>
+                <div className="mb-4">
+                  <MemoryContentView content={memory.content} />
+                </div>
               </div>
 
               <div className="space-y-2 pt-3 border-t border-[var(--vp-c-divider-light)]">
