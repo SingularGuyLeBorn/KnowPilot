@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { ArrowDown, ArrowUp, Gauge, X } from "lucide-react";
@@ -8,7 +8,8 @@ import type { ChatMessage } from "@knowpilot/shared";
 import { buildContextUsage, formatTokenCount, type ContextUsageSnapshot } from "@/lib/contextUsage";
 import { cn } from "@/lib/utils";
 
-export function SessionContextBar({
+// R15：memo 化——流式时 messages（无限查询，流式期间稳定）与 systemPrompt 稳定，跳过重渲染
+export const SessionContextBar = memo(function SessionContextBar({
   messages,
   systemPrompt,
   className,
@@ -107,7 +108,7 @@ export function SessionContextBar({
         )}
     </>
   );
-}
+});
 
 const ContextUsagePopover = forwardRef<
   HTMLDivElement,

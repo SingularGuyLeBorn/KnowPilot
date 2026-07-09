@@ -7,7 +7,7 @@
  * hover 时横杠放大 + 显示消息内容预览气泡，点击滚动到对应消息。
  */
 
-import { useState, useCallback, useRef } from "react";
+import { memo, useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -20,7 +20,8 @@ export interface NavItem {
   index: number;
 }
 
-export function MessageNavRail({
+// R15：memo 化——流式时 Chat 每帧重渲染，navItems（memo）与 onScrollToIndex（useCallback）稳定，可跳过 NavRail 重渲染
+export const MessageNavRail = memo(function MessageNavRail({
   items,
   onScrollToIndex,
 }: {
@@ -85,4 +86,4 @@ export function MessageNavRail({
       })}
     </div>
   );
-}
+});
