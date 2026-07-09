@@ -13,6 +13,7 @@ import {
   Cpu,
   Crown,
   HeartPulse,
+  Lock,
   MessageSquare,
   Plus,
   Search,
@@ -129,6 +130,7 @@ const AgentCard = memo(function AgentCard({
   const handleToggle = useCallback(() => onToggleSelect(agent.id), [agent.id, onToggleSelect]);
   const handleEdit = useCallback(() => onEdit(agent), [agent, onEdit]);
   const handleDelete = useCallback(() => onDelete(agent.id), [agent.id, onDelete]);
+  const isSuper = agent.tier === "super";
 
   return (
     <motion.div
@@ -136,45 +138,49 @@ const AgentCard = memo(function AgentCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "group relative rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-lg",
+        "group relative rounded-2xl border p-5 transition hover:shadow-lg",
+        isSuper
+          ? "border-amber-200/60 bg-gradient-to-br from-amber-50/40 to-[var(--kp-bg-alt)]/60 hover:border-amber-300/80"
+          : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 hover:border-[var(--kp-brand)]/30",
         selected && "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/30",
       )}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center">
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={handleToggle}
-              className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand)] focus:ring-[var(--kp-brand)]"
-            />
-          </label>
+          {/* 超级 Agent 不可批量选择（不可删除） */}
+          {!isSuper && (
+            <label className="flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={handleToggle}
+                className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand)] focus:ring-[var(--kp-brand)]"
+              />
+            </label>
+          )}
           <div
             className={cn(
               "flex h-11 w-11 items-center justify-center rounded-xl",
-              agent.tier === "super"
-                ? "bg-amber-100 text-amber-600"
+              isSuper
+                ? "bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md shadow-amber-500/30"
                 : agent.tier === "manager"
                   ? "bg-blue-100 text-blue-600"
                   : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]",
             )}
           >
-            {agent.tier === "super" ? <Crown className="h-5 w-5" /> : agent.tier === "manager" ? <ShieldCheck className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+            {isSuper ? <Crown className="h-5 w-5" /> : agent.tier === "manager" ? <ShieldCheck className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-[var(--kp-text-1)]">{agent.name}</h3>
-              {agent.tier && agent.tier !== "sub" && (
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
-                    agent.tier === "super" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700",
-                  )}
-                >
-                  {agent.tier === "super" ? "超级" : "管理"}
+              {isSuper ? (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                  <Lock className="h-2.5 w-2.5" />
+                  超级 · 受保护
                 </span>
-              )}
+              ) : agent.tier === "manager" ? (
+                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700">管理</span>
+              ) : null}
               {agent.status === "deleted" && (
                 <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] text-gray-500">已删除</span>
               )}
@@ -237,13 +243,16 @@ const AgentCard = memo(function AgentCard({
         >
           配置
         </button>
-        <button
-          type="button"
-          onClick={handleDelete}
-          className="rounded-xl px-2 py-2 text-red-500 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        {/* 超级 Agent 不可删除 */}
+        {!isSuper && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="rounded-xl px-2 py-2 text-red-500 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/10"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </motion.div>
   );

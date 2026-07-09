@@ -929,14 +929,35 @@ ${entity.systemPrompt}
     this.eventBus.emit("agent.deleted", existing);
   }
 
-  // A6：批量删除，保留文件清理 + FTS 移除语义。DB 删改 deleteMany 单次往返，
-  // 文件/FTS 仍按每条处理（best-effort）。
+  // 超级 Agent 不可删除——系统核心，删除会导致 Swarm 体系崩溃
+  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const existing = await this.delegate.findUnique({ where: { id } });
+    if (existing?.tier === "super") {
+      return failure({
+        code: "SUPER_AGENT_NOT_DELETABLE",
+        message: "超级 Agent 不可删除。它是 Swarm 体系的核心，删除将导致整个系统瘫痪。",
+        details: { id, tier: "super" },
+        retryable: false,
+        operation: "delete",
+        entity: this.entityName,
+      });
+    }
+    return super.delete(id);
+  }
+
+  // A6：批量删除，保留文件清理 + FTS 移除语义。超级 Agent 自动跳过。
   async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
     const errors: string[] = [];
     const existing = await this.prisma.agent.findMany({ where: { id: { in: ids } } });
-    const existingIds = new Set(existing.map((e: any) => e.id));
+    // 超级 Agent 不可删除，从删除列表中排除
+    const deletableAgents = existing.filter((a: any) => a.tier !== "super");
+    const superAgents = existing.filter((a: any) => a.tier === "super");
+    for (const sa of superAgents) {
+      errors.push(`${sa.id}: 超级 Agent 不可删除`);
+    }
+    const existingIds = new Set(deletableAgents.map((e: any) => e.id));
     const result = await this.prisma.agent.deleteMany({ where: { id: { in: [...existingIds] } } });
-    for (const raw of existing) {
+    for (const raw of deletableAgents) {
       try {
         this.deleteFile(this.formatEntity(raw));
       } catch (e) {
@@ -946,7 +967,7 @@ ${entity.systemPrompt}
       await this.removeFts("agent", raw.id);
     }
     for (const id of ids) {
-      if (!existingIds.has(id)) errors.push(`${id}: 不存在`);
+      if (!existingIds.has(id) && !superAgents.some((sa: any) => sa.id === id)) errors.push(`${id}: 不存在`);
     }
     return { deleted: result.count, errors };
   }
