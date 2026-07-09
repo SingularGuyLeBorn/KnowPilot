@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Check, Info, Loader2, Puzzle, Server, Wrench } from "lucide-react";
 import {
   DEFAULT_AGENT_NATIVE,
@@ -49,6 +49,7 @@ const NATIVE_LABELS: Record<string, string> = {
   run_async: "后台异步任务",
   run_shell: "执行 Shell 命令",
   wait: "等待/延迟",
+  sleep: "睡眠/定时器",
 };
 
 interface ToolSelection {
@@ -318,7 +319,7 @@ export function AgentToolsEditor({ tools, onChange }: AgentToolsEditorProps) {
 }
 
 /** 列表卡片上的工具摘要（人类可读） */
-export function AgentToolSummaryCard({ tools }: { tools: string[] }) {
+export const AgentToolSummaryCard = memo(function AgentToolSummaryCard({ tools }: { tools: string[] }) {
   const { data, isLoading } = trpc.agent.toolSummary.useQuery(
     { tools },
     { staleTime: 60_000 },
@@ -376,4 +377,4 @@ export function AgentToolSummaryCard({ tools }: { tools: string[] }) {
       </div>
     </div>
   );
-}
+});

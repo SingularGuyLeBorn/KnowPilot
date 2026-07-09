@@ -162,6 +162,7 @@ export const agentChatSchema = z
     editMessageId: z.string().cuid().optional(),
     editContent: z.string().min(1).optional(),
     skillId: z.string().cuid().optional(),
+    source: z.enum(["user", "super", "manager", "sub", "system"]).optional(),
   })
   .refine(
     (data) =>

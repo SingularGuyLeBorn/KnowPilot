@@ -6,6 +6,7 @@
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { runAgentLoop } from "./agentRuntime.js";
+import { waitMs } from "./shellRunner.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { prisma } from "../db.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
@@ -19,6 +20,7 @@ export interface AsyncQueueDelivery {
   asyncResult: string;
   status: "done" | "failed";
   error?: string;
+  subagentSessionId?: string;
   createdAt: number;
 }
 
@@ -27,6 +29,7 @@ export interface AsyncRunningJob {
   sessionId: string;
   taskLabel: string;
   status: "running";
+  subagentSessionId?: string;
   createdAt: number;
 }
 
@@ -97,6 +100,7 @@ function toDelivery(task: {
     asyncResult: failed ? "" : output.asyncResult || "(无文本输出)",
     status: failed ? "failed" : "done",
     error: output.error,
+    subagentSessionId: input.subagentSessionId,
     createdAt: task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime(),
   };
 }
@@ -180,16 +184,18 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
     orderBy: { createdAt: "desc" },
   });
   return rows
-    .map((row) => {
+    .map((row): AsyncRunningJob | null => {
       const input = parseAsyncInput(row.input);
       if (!input) return null;
-      return {
+      const base: AsyncRunningJob = {
         jobId: row.id,
         sessionId,
         taskLabel: input.taskLabel,
-        status: "running" as const,
+        status: "running",
         createdAt: row.createdAt.getTime(),
       };
+      if (input.subagentSessionId) base.subagentSessionId = input.subagentSessionId;
+      return base;
     })
     .filter((j): j is AsyncRunningJob => j !== null);
 }
@@ -274,6 +280,21 @@ function buildAsyncExecute(
     }
   };
   return async (signal) => {
+    // 任务开始时即把 user 任务写入 subagent ChatSession，
+    // 让 UI 在任务执行期间也能看到"父代理分配的任务"这条气泡。
+    if (subagentSessionId) {
+      try {
+        await services.message.create({
+          sessionId: subagentSessionId,
+          role: "user",
+          content: task,
+          source: "super",
+        });
+      } catch (msgErr) {
+        console.warn(`[asyncJobManager] 保存子代理任务消息失败:`, msgErr);
+      }
+    }
+
     try {
       if (signal.aborted) {
         throw new Error("异步任务已被取消");
@@ -297,20 +318,17 @@ function buildAsyncExecute(
         messages: [{ role: "user", content: task }],
         invokeTrpc,
         signal,
+        sessionId: subagentSessionId,
+        agentMeta: agentSnapshot,
+        runOrigin: "parent",
       });
 
       const resultText = loop.content || "(无文本输出)";
       const tokenUsage = loop.tokenUsage;
 
-      // 保存子代理的消息到 ChatSession（#1 修复：点击"查看详情"时能看到对话内容）
+      // 保存子代理的结果到 ChatSession
       if (subagentSessionId) {
         try {
-          await services.message.create({
-            sessionId: subagentSessionId,
-            role: "user",
-            content: task,
-            source: "super",
-          });
           await services.message.create({
             sessionId: subagentSessionId,
             role: "assistant",
@@ -320,7 +338,7 @@ function buildAsyncExecute(
             source: "sub",
           });
         } catch (msgErr) {
-          console.warn(`[asyncJobManager] 保存子代理消息失败:`, msgErr);
+          console.warn(`[asyncJobManager] 保存子代理结果消息失败:`, msgErr);
         }
       }
 
@@ -344,16 +362,30 @@ function buildAsyncExecute(
       const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
       const isTimeout = err instanceof Error && err.message.includes("超时");
       const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
+      const errorText = reason || (err instanceof Error ? err.message : String(err));
       await services.task.update({
         id: jobId,
         status: "failed",
         output: {
-          error: reason || (err instanceof Error ? err.message : String(err)),
+          error: errorText,
         } satisfies AsyncTaskOutput,
       });
       // 用户主动停止 → session 置 paused（不覆盖为 failed）；超时/异常 → failed
       await syncSubStatus(isAbort && !isTimeout ? "paused" : "failed");
-      await broadcastShare("failed", { error: reason || (err instanceof Error ? err.message : String(err)) });
+      // 失败也把原因写入 subagent ChatSession，避免点击进去一片空白
+      if (subagentSessionId) {
+        try {
+          await services.message.create({
+            sessionId: subagentSessionId,
+            role: "assistant",
+            content: `任务未能完成：${errorText}`,
+            source: "sub",
+          });
+        } catch (msgErr) {
+          console.warn(`[asyncJobManager] 保存子代理失败消息失败:`, msgErr);
+        }
+      }
+      await broadcastShare("failed", { error: errorText });
     }
   };
 }
@@ -487,6 +519,67 @@ export async function startAsyncAgentTask(options: {
     message: willQueue
       ? `已排队后台任务「${taskLabel}」（并发槽位已满，将在前序任务完成后执行）。`
       : `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
+  };
+}
+
+/** 轻量异步睡眠/定时器任务：不跑 LLM，到时间后把结果投递回父会话 */
+export async function startAsyncSleepTask(options: {
+  sessionId: string;
+  seconds: number;
+  config: AppConfig;
+  services: ServiceContainer;
+  agentSnapshot: AsyncTaskInput["agentSnapshot"];
+}): Promise<{ jobId: string; status: "queued" | "running"; message: string }> {
+  const seconds = Math.max(0, Math.min(options.seconds, 300));
+  const ms = seconds * 1000;
+  const taskLabel = `sleep ${seconds}s`;
+  const input: AsyncTaskInput = {
+    kind: ASYNC_KIND,
+    sessionId: options.sessionId,
+    task: `等待 ${seconds} 秒后返回`,
+    taskLabel,
+    agentSnapshot: options.agentSnapshot,
+  };
+
+  const created = await options.services.task.create({
+    name: `[async] ${taskLabel}`,
+    type: "oneshot",
+    status: "queued",
+    sessionId: options.sessionId,
+    input,
+  } as any);
+  if (!created.success || !created.data) {
+    throw new Error(created.error?.message ?? "创建异步定时器任务失败");
+  }
+  const jobId = (created.data as { id: string }).id;
+  const orchestrator = getAsyncJobOrchestrator(options.config);
+  orchestrator.enqueue({
+    jobId,
+    sessionId: options.sessionId,
+    timeoutMs: ms + 10_000,
+    execute: async (signal) => {
+      try {
+        await options.services.task.update({ id: jobId, status: "running" } as any);
+      } catch {
+        /* 状态回写失败不阻塞 */
+      }
+      await waitMs(ms);
+      if (signal.aborted) return;
+      await options.services.task.update({
+        id: jobId,
+        status: "success",
+        output: { asyncResult: `已等待 ${seconds} 秒（定时器到期）` } satisfies AsyncTaskOutput,
+      } as any);
+    },
+  });
+  const stats = orchestrator.getStats();
+  const willQueue = stats.runningGlobal >= stats.limits.maxGlobal;
+  return {
+    jobId,
+    status: willQueue ? "queued" : "running",
+    message: willQueue
+      ? `定时器已排队，将在获得槽位后等待 ${seconds} 秒。`
+      : `定时器已启动，${seconds} 秒后结果会进入发送队列最前。`,
   };
 }
 

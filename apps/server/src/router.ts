@@ -108,6 +108,22 @@ const agentRouter = router({
   delete: publicProcedure.meta({ description: "删除 Agent 及其本地配置文件。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
     withApprovalGuard(ctx.services, "agent.delete", { id: input.id }, input.approvalId, () => ctx.services.agent.delete(input.id)),
   ),
+  bulkDelete: publicProcedure
+    .meta({ description: "批量删除多个 Agent 及其本地配置文件。", aiReadable: false })
+    .input(z.object({ ids: z.array(z.string().cuid()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      let deleted = 0;
+      const errors: string[] = [];
+      for (const id of input.ids) {
+        try {
+          await ctx.services.agent.delete(id);
+          deleted++;
+        } catch (err) {
+          errors.push(`${id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return { deleted, errors: errors.length > 0 ? errors : undefined };
+    }),
   llmProviders: publicProcedure
     .meta({ description: "列出已配置 API Key 的 LLM 厂商。", aiReadable: true })
     .query(() => listConfiguredLlmProviders()),

@@ -204,6 +204,7 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   async_task_wait: awaitAsyncTool,
   run_shell: runShellTool,
   wait: waitTool,
+  sleep: sleepTool,
   session_clear: sessionClearTool,
   // Swarm 管理工具
   agent_create: agentCreateTool,
@@ -1298,6 +1299,18 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
       properties: {
         seconds: { type: "number", description: "等待秒数，默认 1，最大 300" },
         ms: { type: "number", description: "或直接指定毫秒数（与 seconds 二选一）" },
+      },
+    },
+  },
+  {
+    name: "sleep",
+    description:
+      "睡眠/定时器：阻塞等待 N 秒后返回（默认 10 秒，最大 300 秒）。设置 async=true 则不阻塞当前对话，改为创建后台异步任务，时间到后结果进入发送队列最前，可用于定时提醒。",
+    parameters: {
+      type: "object",
+      properties: {
+        seconds: { type: "number", description: "等待秒数，默认 10，最大 300" },
+        async: { type: "boolean", description: "true=不阻塞，创建后台异步任务；false(默认)=阻塞当前对话" },
       },
     },
   },
@@ -2919,6 +2932,34 @@ async function waitTool(args: Record<string, unknown>, _ctx: NativeToolContext) 
   if (!Number.isFinite(ms)) throw new Error("seconds/ms 必须是有效数字");
   const result = await waitMs(ms);
   return { ...result, waitedSeconds: result.waitedMs / 1000 };
+}
+
+async function sleepTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const seconds = Math.max(0, Math.min(Number(args.seconds !== undefined ? args.seconds : 10), 300));
+  if (!Number.isFinite(seconds)) throw new Error("seconds 必须是有效数字");
+
+  // 非阻塞模式：创建轻量异步定时器任务，时间到后结果进入发送队列
+  if (args.async === true) {
+    if (!ctx.sessionId || !ctx.agentSnapshot) {
+      throw new Error("sleep(async=true) 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
+    }
+    const { startAsyncSleepTask } = await import("./asyncJobManager.js");
+    return startAsyncSleepTask({
+      sessionId: ctx.sessionId,
+      seconds,
+      config: ctx.config,
+      services: ctx.services,
+      agentSnapshot: ctx.agentSnapshot,
+    });
+  }
+
+  const ms = Math.round(seconds * 1000);
+  const result = await waitMs(ms);
+  return {
+    ...result,
+    waitedSeconds: result.waitedMs / 1000,
+    hint: "睡眠结束，继续生成回复。",
+  };
 }
 
 async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolContext) {

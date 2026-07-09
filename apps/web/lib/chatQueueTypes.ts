@@ -31,6 +31,8 @@ export interface ChatQueueItem {
   asyncResult?: string;
   /** 用户对异步结果追加的说明（可编辑，LLM 会区分） */
   userAppend?: string;
+  /** 关联的子代理会话 id，用于跳转查看详情 */
+  subagentSessionId?: string;
   createdAt: number;
 }
 
@@ -65,7 +67,7 @@ export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = fals
 export function mergeAsyncPollIntoQueue(
   local: ChatQueueItem[],
   poll?: {
-    running?: Array<{ jobId: string; taskLabel: string; createdAt: number }>;
+    running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; createdAt: number }>;
     deliveries?: Array<{
       id: string;
       jobId: string;
@@ -73,6 +75,7 @@ export function mergeAsyncPollIntoQueue(
       asyncResult: string;
       status: "done" | "failed";
       error?: string;
+      subagentSessionId?: string;
       createdAt: number;
     }>;
   },
@@ -105,6 +108,7 @@ export function mergeAsyncPollIntoQueue(
       jobId: job.jobId,
       taskLabel: job.taskLabel,
       status: "running",
+      subagentSessionId: job.subagentSessionId,
       createdAt: job.createdAt,
     });
   }
@@ -123,6 +127,7 @@ export function mergeAsyncPollIntoQueue(
         del.status === "failed" ? `任务失败：${del.error || "未知错误"}` : del.asyncResult,
       status: del.status,
       userAppend: prev?.userAppend ?? "",
+      subagentSessionId: del.subagentSessionId ?? prev?.subagentSessionId,
       createdAt: del.createdAt,
     });
   }

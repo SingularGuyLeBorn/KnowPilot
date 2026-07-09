@@ -71,31 +71,69 @@ export function parseToolCall(call: LlmToolCall): { name: string; args: Record<s
   return { name: call.function.name, args };
 }
 
+const DEFAULT_ASSISTANT_TOOLS = [
+  "native:web_search",
+  "native:read_article",
+  "native:scrape_web_page",
+  "native:read_file",
+  "native:write_file",
+  "native:list_directory",
+  "native:invoke_api",
+  "native:spawn_subagent",
+  "native:run_async",
+  "native:sleep",
+  "native:git_status",
+  "skill:*",
+  "mcp:filesystem",
+];
+
+const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
+  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:run_async 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。";
+
+const LEGACY_ASSISTANT_SYSTEM_PROMPT =
+  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
+
 export async function resolveAgent(services: ServiceContainer, agentId?: string) {
   if (agentId) return services.agent.getById(agentId);
 
   const list = await services.agent.list({ page: 1, pageSize: 20, keyword: "assistant" });
-  const exact = list.items.find((a: { name: string }) => a.name === "assistant");
-  if (exact) return exact;
-  if (list.items[0]) return list.items[0];
+  let exact = list.items.find((a: { name: string }) => a.name === "assistant");
+  if (!exact && list.items[0]) exact = list.items[0];
+
+  // 自动补齐默认 assistant 的工具与系统提示，确保老数据库也能获得子代理/写文件能力
+  if (exact) {
+    const tools = Array.isArray(exact.tools) ? exact.tools : [];
+    const needsToolsUpdate =
+      !tools.includes("native:write_file") ||
+      !tools.includes("native:spawn_subagent") ||
+      !tools.includes("native:run_async");
+    // 仅当系统提示还是旧版默认（或空）时才自动升级，避免覆盖用户自定义提示词
+    const needsPromptUpdate =
+      !exact.systemPrompt || exact.systemPrompt === LEGACY_ASSISTANT_SYSTEM_PROMPT;
+    const needsUpdate = needsToolsUpdate || needsPromptUpdate;
+    if (needsUpdate) {
+      try {
+        const updated = await services.agent.update({
+          id: exact.id,
+          tools: Array.from(new Set([...tools, ...DEFAULT_ASSISTANT_TOOLS])),
+          ...(needsPromptUpdate ? { systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT } : {}),
+        });
+        if (updated.success && updated.data) {
+          return updated.data;
+        }
+      } catch (err) {
+        console.warn("[resolveAgent] 更新默认 assistant 工具失败:", err);
+      }
+    }
+    return exact;
+  }
 
   const created = await services.agent.create({
     name: "assistant",
     description: "KnowPilot 默认助手",
     model: "deepseek-v4-flash",
-    systemPrompt:
-      "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。",
-    tools: [
-      "native:web_search",
-      "native:read_article",
-      "native:scrape_web_page",
-      "native:read_file",
-      "native:list_directory",
-      "native:invoke_api",
-      "native:git_status",
-      "skill:*",
-      "mcp:filesystem",
-    ],
+    systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT,
+    tools: DEFAULT_ASSISTANT_TOOLS,
   });
   return created.data!;
 }
@@ -107,13 +145,21 @@ export async function runAgentLoop(options: {
   messages: LlmMessage[];
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
   signal?: AbortSignal;
+  /** 工具上下文：传入后 run_async / spawn_subagent / sleep(async) 等可在本循环内使用 */
+  sessionId?: string;
+  agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
+  runOrigin?: "user" | "parent" | "heartbeat";
 }): Promise<AgentLoopResult> {
   assertLlmBudget(options.config);
   const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
   const parsed = parseAgentTools(options.agent.tools);
   const registry = new Map<string, ToolRegistryEntry>();
   const toolSchemas = await buildAgentToolSchemas(options.services, parsed, registry);
-  const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed);
+  const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
+    sessionId: options.sessionId,
+    agentSnapshot: options.agentMeta,
+    runOrigin: options.runOrigin,
+  });
 
   let llmMessages: LlmMessage[] = [...options.messages];
   const compacted = await maybeCompactMessages(options.config, llmMessages, effectiveModel);

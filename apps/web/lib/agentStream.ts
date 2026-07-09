@@ -24,6 +24,7 @@ export interface AgentChatStreamInput {
   editMessageId?: string;
   editContent?: string;
   skillId?: string;
+  source?: "user" | "super" | "manager" | "sub" | "system";
 }
 
 export interface AgentStreamDone {
