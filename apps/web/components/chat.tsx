@@ -2165,25 +2165,26 @@ export function ChatView() {
                 </div>
               )}
               components={{
+                // 顶部加载更早消息时显示细条 spinner（无按钮，滚到顶部自动触发，见 startReached）
                 Header: () =>
-                  hasMoreMessages && (sessionDetail?.messages?.length ?? 0) >= 50 ? (
-                    <div className="flex justify-center py-3">
-                      <button
-                        type="button"
-                        onClick={() => void loadOlderMessages()}
-                        disabled={loadingOlder}
-                        className="rounded-full border border-[var(--kp-divider)] px-3 py-1 text-[11px] text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] disabled:opacity-50"
-                      >
-                        {loadingOlder ? "加载中…" : "加载更早消息"}
-                      </button>
+                  loadingOlder ? (
+                    <div className="flex justify-center py-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-text-3)]" />
                     </div>
                   ) : (
-                    <div className="h-4" />
+                    <div className="h-2" />
                   ),
                 Footer: () => <div className="h-4" />,
               }}
               followOutput={(atBottom) => (atBottom ? "auto" : false)}
               increaseViewportBy={{ top: 600, bottom: 600 }}
+              // P0-1：滚到顶部自动加载更早消息（业界标准 infinite-up-scroll，无按钮）；
+              // 仅在已加载满 50（初次 cap）且有更多时触发，Virtuoso 按稳定 key 自动保持滚动位置。
+              startReached={() => {
+                if (hasMoreMessages && !loadingOlder && (sessionDetail?.messages?.length ?? 0) >= 50) {
+                  void loadOlderMessages();
+                }
+              }}
             />
           )}
           <MessageNavRail items={navItems} onScrollToIndex={handleNavScrollToIndex} />
