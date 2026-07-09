@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -21,7 +22,11 @@ import type { AboutProfile } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
 import { FinalCta } from "@/components/home/FinalCta";
 import { RecentIntelligence } from "@/components/home/RecentIntelligence";
-import { StarField } from "@/components/home/StarField";
+// R14：three.js 改 client 懒加载，从 about 初始 bundle 拆出
+const StarField = dynamic(() => import("@/components/home/StarField").then((m) => m.StarField), {
+  ssr: false,
+  loading: () => null,
+});
 import { TechMarquee } from "@/components/home/TechMarquee";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";

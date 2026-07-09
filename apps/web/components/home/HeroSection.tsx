@@ -1,9 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { ArrowRight, PenLine, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { StarField } from "./StarField";
+
+// R14：three.js + @react-three/fiber（~600KB）改为 client 懒加载（ssr:false），
+// 从首页/about 初始 bundle 拆出，首屏 HTML/JS 不再背 three.js，StarField 在客户端异步挂载。
+const StarField = dynamic(() => import("./StarField").then((m) => m.StarField), {
+  ssr: false,
+  loading: () => null,
+});
 
 interface HeroSectionProps {
   postCount: number;
