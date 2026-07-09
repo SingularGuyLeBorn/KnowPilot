@@ -907,7 +907,21 @@ export function ChatView() {
 
   // 流式状态已按 session 隔离（streamStatesRef），不再需要全局 isStreamingRef 同步
 
-  const selectedAgent = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
+  // R19：agent.list 已裁剪 systemPrompt；Chat 用 agent.getById 取 systemPrompt/model，与 list metadata 合并
+  const selectedAgentMeta = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
+  const selectedAgentFull = trpc.agent.getById.useQuery(
+    { id: effectiveAgentId! },
+    { enabled: !!effectiveAgentId },
+  );
+  const selectedAgent = useMemo<Agent | undefined>(() => {
+    if (!selectedAgentMeta) return undefined;
+    const full = selectedAgentFull.data;
+    return {
+      ...selectedAgentMeta,
+      systemPrompt: full?.systemPrompt ?? "",
+      model: full?.model ?? selectedAgentMeta.model,
+    } as Agent;
+  }, [selectedAgentMeta, selectedAgentFull.data]);
   const modelOpt = getModelOption(chatConfig.model);
 
   const messageGroups = useMemo(
@@ -1550,9 +1564,11 @@ export function ChatView() {
 
   const selectAgent = useCallback((id: string) => {
     setAgentId(id);
+    // R19：systemPrompt 不再从 list 取（已裁剪），由 chatConfig effect 在 agent.getById 加载后自动设。
+    // model 仍从 list metadata 取。
     const agent = agentsQuery.data?.items.find((a: Agent) => a.id === id);
     if (agent && !chatConfig.customSystemPrompt) {
-      updateConfig({ systemPrompt: agent.systemPrompt, model: agent.model });
+      updateConfig({ model: agent.model });
     }
     // 同步 URL：用户显式选择后，移除可能覆盖选择的 agentId 参数
     const params = new URLSearchParams(searchParams.toString());
