@@ -833,6 +833,17 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     };
   }
 
+  // R19：列表裁剪——排除 systemPrompt（KB 级，Chat 用 agent.getById 取）、apiKey（安全）、
+  // sourceSlug/sourceMtime（同步用，列表不需要）。详情走 getById 取全量。
+  protected override getListSelect(): any {
+    return {
+      id: true, name: true, description: true, model: true, tools: true,
+      tier: true, workspaceId: true, parentId: true, heartbeatModel: true,
+      heartbeat: true, status: true, deletedAt: true, deletedBy: true,
+      createdAt: true, updatedAt: true,
+    };
+  }
+
   protected buildListWhere(input: ListAgentsInput): any {
     const where: any = {};
     if (input.keyword) {
