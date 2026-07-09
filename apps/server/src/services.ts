@@ -1259,18 +1259,11 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   }
 
   override async getById(id: string): Promise<any> {
-    // P0-1（高风险分支）：messages 由 take 500 改为最近 50 条，大幅降低长会话初次载荷。
-    // 更早的历史由前端「加载更早消息」按页 prepend（message.list 分页）补回。
-    // 编辑/重试只作用于最后一条用户消息（UI 本就如此），始终在最近 50 条内，无一致性回归。
+    // P0-1 彻底解耦：getById 只返会话元数据（title/model/agentId/kind/status...），不含 messages。
+    // 消息由前端 useInfiniteQuery 走 message.listForChat（cursor 分页）独立加载。
     const session = await this.prisma.chatSession.findUnique({ where: { id } });
     if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
-    const recent = await this.prisma.chatMessage.findMany({
-      where: { sessionId: id },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
-    recent.reverse(); // 恢复时间正序，供前端按序渲染
-    return { ...session, messages: recent };
+    return session;
   }
 
   // A4：轻量 getById，不 include messages。供 stop/rerun 等只需 kind/status 的场景使用，
@@ -1321,21 +1314,31 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   protected override get defaultOrderBy(): string { return "createdAt"; }
   protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
 
-  // P0-1：beforeId 游标分页——返回早于 beforeId 的 pageSize 条（时间正序），供前端「加载更早」prepend。
-  async list(input: ListMessagesInput): Promise<PaginatedResult<MessageEntity>> {
-    if (input.beforeId) {
-      const cursor = await this.prisma.chatMessage.findUnique({ where: { id: input.beforeId }, select: { createdAt: true } });
-      if (!cursor) return { items: [], total: 0, page: 1, pageSize: 0, totalPages: 0 };
-      const items = await this.prisma.chatMessage.findMany({
-        where: { sessionId: input.sessionId, createdAt: { lt: cursor.createdAt } },
+  // P0-1 彻底解耦：Chat 专用 cursor 无限查询。
+  // 无 cursor：返最近 limit 条（asc）。有 cursor：返早于 cursor(消息 id) 的 limit 条（asc）。
+  // nextCursor = 本页最旧消息 id（供下页继续向上翻），items.length < limit 时无 nextCursor（已到顶）。
+  async listForChat(input: { sessionId: string; cursor?: string; limit?: number }): Promise<{ items: MessageEntity[]; nextCursor?: string }> {
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+    let items: any[];
+    if (input.cursor) {
+      const cur = await this.prisma.chatMessage.findUnique({ where: { id: input.cursor }, select: { createdAt: true } });
+      if (!cur) return { items: [] };
+      items = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId, createdAt: { lt: cur.createdAt } },
         orderBy: { createdAt: "desc" },
-        take: input.pageSize,
+        take: limit,
       });
-      items.reverse();
-      const formatted = items.map((i: any) => this.formatEntity(i));
-      return { items: formatted, total: formatted.length, page: 1, pageSize: formatted.length, totalPages: 1 };
+    } else {
+      items = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
     }
-    return super.list(input);
+    items.reverse(); // asc，便于前端按序渲染
+    const formatted = items.map((i: any) => this.formatEntity(i));
+    const nextCursor = formatted.length >= limit ? formatted[0]?.id : undefined;
+    return { items: formatted, nextCursor };
   }
 }
 

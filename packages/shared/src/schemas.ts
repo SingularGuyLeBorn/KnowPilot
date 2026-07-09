@@ -321,8 +321,14 @@ export const listMessagesSchema = z.object({
   sessionId: z.string().cuid(),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(50),
-  // P0-1：游标分页——加载早于 beforeId 的消息（前端「加载更早」用），与最近尾部加载配合
-  beforeId: z.string().cuid().optional(),
+});
+
+// P0-1：Chat 专用 cursor 无限查询（session 元数据与消息解耦）
+export const listMessagesForChatSchema = z.object({
+  sessionId: z.string().cuid(),
+  /** cursor = 上一页最旧消息 id；省略时返最近 limit 条 */
+  cursor: z.string().cuid().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
 });
 
 /* ═══════════════════════════════════════════════════════

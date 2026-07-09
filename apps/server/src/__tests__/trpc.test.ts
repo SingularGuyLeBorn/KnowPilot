@@ -800,8 +800,9 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
       expect(res.state?.sessionId).toBeTruthy();
 
       const sessionId = res.state!.sessionId as string;
-      const session = await caller.session.getById({ id: sessionId });
-      expect(session.messages?.some((m: { role: string }) => m.role === "user")).toBe(true);
+      // P0-1 解耦：session.getById 不再含 messages，改用 message.listForChat 取消息
+      const msgs = await caller.message.listForChat({ sessionId, limit: 50 });
+      expect(msgs.items?.some((m: { role: string }) => m.role === "user")).toBe(true);
 
       await caller.session.delete({ id: sessionId });
     } finally {
