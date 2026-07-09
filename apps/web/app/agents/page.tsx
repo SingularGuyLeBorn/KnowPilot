@@ -341,7 +341,7 @@ export default function AgentsPage() {
       name: agent.name,
       description: agent.description ?? "",
       model: agent.model,
-      systemPrompt: agent.systemPrompt,
+      systemPrompt: agent.systemPrompt ?? "",
       tools: materializeAgentTools(agent.tools ?? []),
       heartbeatEnabled: hb?.enabled ?? false,
       heartbeatCron: hb?.cron ?? "0 9 * * *",
