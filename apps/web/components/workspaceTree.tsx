@@ -60,6 +60,8 @@ export function WorkspaceTree({
   // 拉取数据
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
   const archivedWorkspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "archived" });
+  // searchLower 提前计算（#5 queryAgentIds memo 依赖它）
+  const searchLower = searchQuery.trim().toLowerCase();
   // R10：agents 由父组件传入，不再内部 trpc.agent.list.useQuery
   const superAgents = useMemo(
     () => agents.filter((a) => a.tier === "super" && a.status !== "deleted"),
@@ -77,16 +79,21 @@ export function WorkspaceTree({
   const activeWorkspaces = workspacesQuery.data?.items ?? [];
   const archivedWorkspaces = archivedWorkspacesQuery.data?.items ?? [];
 
-  // A1：单次批量拉取所有 Agent 的会话，消除「每个展开 Agent 一次 session.list」的 N+1。
+  // A1 + #5：批量拉取**已展开** Agent 的会话（搜索时拉全部），消除 N+1 同时避免 over-fetch。
   // 复用 session.list 失效键，chat.tsx / subagentPanel 等现有的 utils.session.list.invalidate()
   // 会自动刷新本查询，无需额外接线。
   const allAgentIds = useMemo(
     () => [...superAgents, ...managerAgents, ...subAgents].map((a) => a.id),
     [superAgents, managerAgents, subAgents],
   );
+  // 搜索时所有 Agent 强制展开 → 拉全部；否则只拉已展开的，未展开的 Agent 展开时再触发 refetch
+  const queryAgentIds = useMemo(
+    () => (searchLower ? allAgentIds : [...expandedAgents]),
+    [searchLower, allAgentIds, expandedAgents],
+  );
   const sessionsBatchQuery = trpc.session.list.useQuery(
-    { page: 1, pageSize: 100, agentIds: allAgentIds },
-    { enabled: allAgentIds.length > 0 },
+    { page: 1, pageSize: 100, agentIds: queryAgentIds },
+    { enabled: queryAgentIds.length > 0 },
   );
   const sessionsByAgent = useMemo(() => {
     const m = new Map<string, ChatSession[]>();
@@ -116,7 +123,6 @@ export function WorkspaceTree({
     });
 
   // 搜索过滤
-  const searchLower = searchQuery.trim().toLowerCase();
   const matchesSearch = (text: string) => !searchLower || text.toLowerCase().includes(searchLower);
 
   return (
