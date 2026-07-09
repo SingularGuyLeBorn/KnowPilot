@@ -28,6 +28,13 @@ export interface Syncer<T = unknown> {
   /** 扫描目录并解析所有本地文件 */
   scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<T>[]>;
 
+  /**
+   * A13：仅解析单个文件并返回其 SyncRecord（解析失败返回 null）。
+   * 供 watch 模式 add/change 事件使用，避免每次变更都全目录扫描。
+   * 实现应与 scan 内的单文件解析逻辑一致（scan 通常委托本方法）。
+   */
+  scanFile?(filePath: string, contentDir: string): Promise<SyncRecord<T> | null>;
+
   /** 将单条记录 upsert 到数据库 */
   upsert(prisma: PrismaClient, record: SyncRecord<T>): Promise<void>;
 

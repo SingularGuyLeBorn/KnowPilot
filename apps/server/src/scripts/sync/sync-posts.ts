@@ -24,36 +24,41 @@ export const postSyncer: Syncer<PostData> = {
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<PostData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".md"]).filter((p) => !p.includes(`${contentDir}/.trash/`));
     const records: SyncRecord<PostData>[] = [];
-
     for (const filePath of filePaths) {
-      try {
-        const slug = filePathToSlug(contentDir, filePath);
-        const mtime = getFileMtime(filePath);
-        const { data, content, fileName } = parseMarkdownFile(filePath);
-
-        const title = typeof data.title === "string" ? data.title : slug;
-        const category = typeof data.category === "string" ? data.category : null;
-        const excerpt = typeof data.excerpt === "string" ? data.excerpt : null;
-        const published = typeof data.published === "boolean" ? data.published : true;
-
-        let tags = "";
-        if (Array.isArray(data.tags)) {
-          tags = data.tags.filter((t: unknown): t is string => typeof t === "string").map((t) => t.trim()).join(",");
-        } else if (typeof data.tags === "string") {
-          tags = data.tags;
-        }
-
-        records.push({
-          slug,
-          mtime,
-          data: { slug, title, content, excerpt, published, category, tags },
-        });
-      } catch (e: any) {
-        console.error(`  ❌ [Post 解析失败] ${filePath}:`, e.message);
-      }
+      const r = await this.scanFile!(filePath, contentDir);
+      if (r) records.push(r);
     }
-
     return records;
+  },
+
+  // A13：单文件解析，scan 委托本方法，watch 模式直接调用避免全目录扫描
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<PostData> | null> {
+    try {
+      const slug = filePathToSlug(contentDir, filePath);
+      const mtime = getFileMtime(filePath);
+      const { data, content, fileName } = parseMarkdownFile(filePath);
+
+      const title = typeof data.title === "string" ? data.title : slug;
+      const category = typeof data.category === "string" ? data.category : null;
+      const excerpt = typeof data.excerpt === "string" ? data.excerpt : null;
+      const published = typeof data.published === "boolean" ? data.published : true;
+
+      let tags = "";
+      if (Array.isArray(data.tags)) {
+        tags = data.tags.filter((t: unknown): t is string => typeof t === "string").map((t) => t.trim()).join(",");
+      } else if (typeof data.tags === "string") {
+        tags = data.tags;
+      }
+
+      return {
+        slug,
+        mtime,
+        data: { slug, title, content, excerpt, published, category, tags },
+      };
+    } catch (e: any) {
+      console.error(`  ❌ [Post 解析失败] ${filePath}:`, e.message);
+      return null;
+    }
   },
 
   async upsert(prisma: PrismaClient, record: SyncRecord<PostData>): Promise<void> {

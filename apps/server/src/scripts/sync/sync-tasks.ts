@@ -39,31 +39,36 @@ export const taskSyncer: Syncer<TaskData> = {
   async scan(_prisma: PrismaClient, contentDir: string): Promise<SyncRecord<TaskData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".json"]);
     const records: SyncRecord<TaskData>[] = [];
-
     for (const filePath of filePaths) {
-      try {
-        const slug = filePathToSlug(contentDir, filePath);
-        const mtime = getFileMtime(filePath);
-        const data = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Record<string, unknown>;
-
-        const name = typeof data.name === "string" ? data.name : slug;
-        records.push({
-          slug,
-          mtime,
-          data: {
-            name,
-            type: normalizeType(data.type),
-            status: normalizeStatus(data.status),
-            cronExpression: typeof data.cronExpression === "string" ? data.cronExpression : null,
-            input: data.input ?? {},
-          },
-        });
-      } catch (e: unknown) {
-        console.error(`  ❌ [Task 解析失败] ${filePath}:`, e instanceof Error ? e.message : e);
-      }
+      const r = await this.scanFile!(filePath, contentDir);
+      if (r) records.push(r);
     }
-
     return records;
+  },
+
+  // A13：单文件解析
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<TaskData> | null> {
+    try {
+      const slug = filePathToSlug(contentDir, filePath);
+      const mtime = getFileMtime(filePath);
+      const data = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+
+      const name = typeof data.name === "string" ? data.name : slug;
+      return {
+        slug,
+        mtime,
+        data: {
+          name,
+          type: normalizeType(data.type),
+          status: normalizeStatus(data.status),
+          cronExpression: typeof data.cronExpression === "string" ? data.cronExpression : null,
+          input: data.input ?? {},
+        },
+      };
+    } catch (e: unknown) {
+      console.error(`  ❌ [Task 解析失败] ${filePath}:`, e instanceof Error ? e.message : e);
+      return null;
+    }
   },
 
   async upsert(prisma: PrismaClient, record: SyncRecord<TaskData>): Promise<void> {

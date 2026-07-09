@@ -22,12 +22,16 @@ import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
+import { getEventBus, type EntityEventPayload } from "./eventBus.js";
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 
 export class HeartbeatEngine {
   private jobs = new Map<string, ScheduledTask>();
   private started = false;
+  // A14：事件驱动 refresh 的防抖句柄与监听器引用（stop 时清理）
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private eventHandler: ((payload: EntityEventPayload<unknown>) => void) | null = null;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -39,34 +43,38 @@ export class HeartbeatEngine {
     if (this.started) return;
     this.started = true;
 
-    const agents = await this.prisma.agent.findMany({
-      where: {
-        status: { in: ["active", "idle"] },
-        tier: { in: ["super", "manager", "sub"] },
-      },
-    });
+    await this.refresh();
 
-    let registered = 0;
-    for (const agent of agents) {
-      const hb = this.parseHeartbeat(agent.heartbeat);
-      if (!hb?.enabled || !hb.cron || !cron.validate(hb.cron)) continue;
+    console.log(`  💓 [HeartbeatEngine] 启动完成，共 ${this.jobs.size} 个心跳任务`);
 
-      const job = cron.schedule(hb.cron, () => {
-        void this.triggerHeartbeat(agent.id);
-      });
-      this.jobs.set(agent.id, job);
-      registered++;
+    // A14：监听 agent 配置变更事件，防抖后增量刷新 cron 注册，替代此前每 60s 全量轮询重建。
+    const bus = getEventBus();
+    this.eventHandler = () => {
+      if (this.refreshTimer) clearTimeout(this.refreshTimer);
+      this.refreshTimer = setTimeout(() => {
+        this.refreshTimer = null;
+        void this.refresh();
+      }, 500);
+    };
+    for (const ev of ["agent.created", "agent.updated", "agent.deleted"]) {
+      bus.on(ev as any, this.eventHandler);
     }
-
-    console.log(`  💓 [HeartbeatEngine] 启动完成，共 ${registered} 个心跳任务`);
-
-    // 监听 Agent 配置变更：重新注册心跳（简化版 — 每 60s 全量刷新）
-    setInterval(() => void this.refresh(), 60_000);
   }
 
   stop(): void {
     for (const job of this.jobs.values()) job.stop();
     this.jobs.clear();
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    if (this.eventHandler) {
+      const bus = getEventBus();
+      for (const ev of ["agent.created", "agent.updated", "agent.deleted"]) {
+        bus.off(ev as any, this.eventHandler);
+      }
+      this.eventHandler = null;
+    }
     this.started = false;
     console.log("  💓 [HeartbeatEngine] 已停止");
   }

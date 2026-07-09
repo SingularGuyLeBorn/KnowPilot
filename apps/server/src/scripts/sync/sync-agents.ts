@@ -26,30 +26,31 @@ export const agentSyncer: Syncer<AgentData> = {
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<AgentData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<AgentData>[] = [];
-
     for (const filePath of filePaths) {
-      try {
-        const slug = filePathToSlug(contentDir, filePath);
-        const mtime = getFileMtime(filePath);
-        const { data, content } = parseMarkdownFile(filePath);
-
-        const name = typeof data.name === "string" ? data.name : slug;
-        const description = typeof data.description === "string" ? data.description : null;
-        const model = typeof data.model === "string" ? data.model : "deepseek-chat";
-        const systemPrompt = content.trim();
-        const tools = readStringArray(data.tools).join(",");
-
-        records.push({
-          slug,
-          mtime,
-          data: { name, description, model, systemPrompt, tools },
-        });
-      } catch (e: any) {
-        console.error(`  ❌ [Agent 解析失败] ${filePath}:`, e.message);
-      }
+      const r = await this.scanFile!(filePath, contentDir);
+      if (r) records.push(r);
     }
-
     return records;
+  },
+
+  // A13：单文件解析
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<AgentData> | null> {
+    try {
+      const slug = filePathToSlug(contentDir, filePath);
+      const mtime = getFileMtime(filePath);
+      const { data, content } = parseMarkdownFile(filePath);
+
+      const name = typeof data.name === "string" ? data.name : slug;
+      const description = typeof data.description === "string" ? data.description : null;
+      const model = typeof data.model === "string" ? data.model : "deepseek-chat";
+      const systemPrompt = content.trim();
+      const tools = readStringArray(data.tools).join(",");
+
+      return { slug, mtime, data: { name, description, model, systemPrompt, tools } };
+    } catch (e: any) {
+      console.error(`  ❌ [Agent 解析失败] ${filePath}:`, e.message);
+      return null;
+    }
   },
 
   async upsert(prisma: PrismaClient, record: SyncRecord<AgentData>): Promise<void> {

@@ -150,8 +150,22 @@ async function runWatch(): Promise<void> {
       debounceMap.set(
         syncer.entityName,
         setTimeout(async () => {
-          const result = await syncEntity(syncer, prisma);
-          console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+          // A13：删除事件或不支持单文件解析的 syncer 走全量同步（含 cleanup）；
+          // 新增/变更走单文件解析 + upsert，避免每次变更全目录扫描。
+          if (eventType === "删除" || !syncer.scanFile) {
+            const result = await syncEntity(syncer, prisma);
+            console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+          } else {
+            try {
+              const record = await syncer.scanFile(eventPath, contentDir);
+              if (record) {
+                await syncer.upsert(prisma, record);
+                console.log(`  📊 [${syncer.entityName}] 单文件同步: ${path.relative(contentDir, eventPath)}`);
+              }
+            } catch (e: any) {
+              console.error(`  ❌ [${syncer.entityName}] 单文件同步失败:`, e.message);
+            }
+          }
         }, 300)
       );
     };
