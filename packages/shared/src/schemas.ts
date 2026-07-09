@@ -541,6 +541,8 @@ export const listTasksSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   status: z.enum(["pending", "running", "success", "failed"]).optional(),
   keyword: z.string().optional(),
+  // R7：按会话过滤（listSessionAsyncJobs 用），避免全局拉 50 条后 JS 过滤漏掉非 top-50 任务
+  sessionId: z.string().optional(),
 });
 
 /* ═══════════════════════════════════════════════════════

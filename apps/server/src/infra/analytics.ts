@@ -81,3 +81,27 @@ export async function getAnalyticsDashboard(
     tokens: { estimatedTotal },
   };
 }
+
+/* ─── R8：dashboard TTL 缓存 ───
+ * getAnalyticsDashboard 并行 13 个 count/findMany，dashboard 重载或多人查看时重复执行。
+ * 加 30s TTL 缓存（按 range 键），dashboard 指标容忍短时 stale。
+ */
+let dashboardCache: { key: string; at: number; value: AnalyticsDashboard } | null = null;
+const DASHBOARD_CACHE_TTL_MS = 30_000;
+
+export async function getCachedAnalyticsDashboard(
+  prisma: PrismaClient,
+  range?: { from?: string; to?: string },
+): Promise<AnalyticsDashboard> {
+  const key = `${range?.from ?? ""}|${range?.to ?? ""}`;
+  if (dashboardCache && dashboardCache.key === key && Date.now() - dashboardCache.at < DASHBOARD_CACHE_TTL_MS) {
+    return dashboardCache.value;
+  }
+  const value = await getAnalyticsDashboard(prisma, range);
+  dashboardCache = { key, at: Date.now(), value };
+  return value;
+}
+
+export function invalidateAnalyticsDashboardCache(): void {
+  dashboardCache = null;
+}

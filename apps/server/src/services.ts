@@ -1454,6 +1454,8 @@ export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, L
     const where: any = {};
     if (input.status) where.status = input.status;
     if (input.keyword) where.name = { contains: input.keyword };
+    // R7：按会话过滤，供 listSessionAsyncJobs 在 DB 层精准查询
+    if (input.sessionId) where.sessionId = input.sessionId;
     return where;
   }
   protected buildCreateData(input: CreateTaskInput) { return input; }

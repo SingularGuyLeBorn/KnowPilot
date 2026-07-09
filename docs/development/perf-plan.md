@@ -513,6 +513,40 @@
 - **P2-4 双查历史复用**：仅做 pageSize 统一（R5），未做 items 跨函数复用（改动 prepareMessage 返回签名，风险中等，留待后续）。
 - **dashboard 13 count 合并/缓存**：已并行，单 SQL/CTE 重写收益中等、风险中等，留待后续。
 
+## R7. listSessionAsyncJobs 全局拉 50 后 JS 过滤，应 DB 层按 sessionId 过滤
+
+- **位置**：`apps/server/src/infra/asyncJobManager.ts:629`；`listTasksSchema`/`TaskService.buildListWhere`
+- **当前行为**：`task.list({page:1,pageSize:50})` 全局拉 50 条，JS 过滤 `row.sessionId !== sessionId`。Task 表增大或某会话任务非 top-50 时**漏任务**。
+- **推荐**：listTasksSchema 加可选 `sessionId`，buildListWhere 用之，listSessionAsyncJobs 传 sessionId 在 DB 层过滤。
+- **风险**：低；前端 tasks 页不传 sessionId，行为不变；保留 JS 过滤作兜底。
+- **回答：同意。已实施。**
+
+## R8. dashboard 13 count 重复执行，加 TTL 缓存
+
+- **位置**：`apps/server/src/infra/analytics.ts` getAnalyticsDashboard；`router.ts` analytics.dashboard
+- **当前行为**：每次 dashboard 请求并行 13 个 count/findMany；重载/多人查看重复执行。
+- **推荐**：30s TTL 缓存（按 range 键），dashboard 指标容忍短时 stale。
+- **风险**：低；单用户本地应用，进程内缓存；提供 invalidate 函数供后续 CRUD 失效接入。
+- **回答：同意。已实施。**
+
+## 批次 7 自审记录
+
+### 实施项
+
+- **R7**：listTasksSchema 加 `sessionId`，TaskService.buildListWhere 用之，listSessionAsyncJobs 传 sessionId DB 层过滤。
+- **R8**：analytics.ts 加 `getCachedAnalyticsDashboard`（30s TTL，按 range 键）+ `invalidateAnalyticsDashboardCache`；router analytics.dashboard 改用缓存版。
+
+### 复核确认
+
+- **R7**：前端 tasks 页不传 sessionId（buildListWhere 跳过，行为不变）；listSessionAsyncJobs 仍保留 `row.sessionId !== sessionId` JS 过滤作兜底；task.list 仍返回 `input`（未裁剪），`parseAsyncInput(row.input)` 正常。
+- **R8**：缓存按 range 键区分不同时间范围；首次调用必计算；`getAnalyticsDashboard` 仍导出供内部/测试；单用户进程内缓存无并发问题；30s stale 对 dashboard 可接受。
+
+### 已排除项（本轮自审后不做）
+
+- **P2-4 双查历史复用**：edit 路径 prepareMessage 会 deleteMany 尾部消息并 update 被编辑消息，其加载的 `items` 在删除/更新后**已 stale**，主流程复用会拿到旧 assistant 消息（被删的仍存在）——**正确性风险**。仅做 pageSize 统一（R5），不做 items 复用。
+- **Agent/Skill list 裁剪**：Chat 依赖 agent.list 的 systemPrompt、skill.list 的 code，需配合 Chat 改用 getById，风险高，留待后续。
+- **apiKey 泄露**：属安全而非性能，单独处理。
+
 ## 批次 5 自审记录
 
 ### 实施项
