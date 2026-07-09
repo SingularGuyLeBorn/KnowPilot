@@ -9,7 +9,6 @@ import {
   Wand2,
   Cpu,
   Brain,
-  MessageSquare,
   HardDrive,
   Files,
   GitBranch,
@@ -123,8 +122,7 @@ export function Sidebar({ className }: SidebarProps) {
       title: "智能工作台",
       icon: Cpu,
       items: [
-        { href: "/chat", icon: MessageSquare, label: "Agent 对话" },
-        { href: "/agents", icon: Bot, label: "Agent 管理" },
+        { href: "/agents", icon: Bot, label: "Agents" },
         { href: "/subagents", icon: Bot, label: "子代理任务" },
         { href: "/skills", icon: Wand2, label: "Skill 管理" },
         { href: "/mcp", icon: Cpu, label: "MCP 服务器" },

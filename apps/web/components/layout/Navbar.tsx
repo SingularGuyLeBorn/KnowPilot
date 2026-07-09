@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { KnowPilotLogo } from "@/lib/icons";
 import { usePathname } from "next/navigation";
-import { Bot, Menu, MessageSquare, PenLine, PlusCircle, UserCircle } from "lucide-react";
+import { Bot, Menu, PenLine, PlusCircle, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "./CommandPalette";
 import type { LayoutMode } from "./layoutMode";
@@ -52,10 +52,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           <TopNavLink href="/editor" active={pathname.startsWith("/editor")} icon={<PlusCircle className="h-4 w-4" />}>
             写作
           </TopNavLink>
-          <TopNavLink href="/chat" active={pathname.startsWith("/chat")} icon={<MessageSquare className="h-4 w-4" />}>
-            对话
-          </TopNavLink>
-          <TopNavLink href="/agents" active={pathname.startsWith("/agents")} icon={<Bot className="h-4 w-4" />}>
+          <TopNavLink href="/agents" active={pathname.startsWith("/agents") || pathname.startsWith("/chat")} icon={<Bot className="h-4 w-4" />}>
             Agents
           </TopNavLink>
           <TopNavLink href="/about" active={pathname.startsWith("/about")} icon={<UserCircle className="h-4 w-4" />}>
