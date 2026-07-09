@@ -81,7 +81,7 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
 /* ─── Sub-components ─── */
 
-function ThinkingStep({
+const ThinkingStep = memo(function ThinkingStep({
   step,
   isLive = false,
 }: {
@@ -90,30 +90,27 @@ function ThinkingStep({
 }) {
   const content = step.content.trim();
   const isEmpty = !content;
-  // 默认折叠（历史思考步）；流式中仍展开（isLive），避免漏看实时输出
-  const [collapsed, setCollapsed] = useState(isLive ? false : true);
+  // 默认折叠（含流式）；用户可点击展开查看，流式中也可展开/折叠
+  const [collapsed, setCollapsed] = useState(true);
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
       <button
         type="button"
-        onClick={() => !isLive && setCollapsed((v) => !v)}
-        disabled={isLive}
-        className="flex w-full items-center gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-soft)] px-3 py-2 text-left text-[11px] font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] disabled:cursor-default disabled:hover:bg-[var(--kp-bg-soft)]"
+        onClick={() => setCollapsed((v) => !v)}
+        className="flex w-full items-center gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-soft)] px-3 py-2 text-left text-[11px] font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)]"
         aria-expanded={!collapsed}
         aria-label={collapsed ? "展开思考" : "折叠思考"}
       >
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
         <span>Thinking</span>
         {isLive && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
-        {!isLive && (
-          <ChevronRight
-            className={cn(
-              "ml-auto h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200",
-              collapsed ? "" : "rotate-90",
-            )}
-          />
-        )}
+        <ChevronRight
+          className={cn(
+            "ml-auto h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200",
+            collapsed ? "" : "rotate-90",
+          )}
+        />
       </button>
       {!collapsed && (
         <div className="max-h-[240vh] overflow-y-auto px-3 py-3">
@@ -130,10 +127,10 @@ function ThinkingStep({
       )}
     </div>
   );
-}
+});
 
 /** 中间正式回复（工具轮次中 probe 返回的 content，后续仍有工具调用）。进导轨，无圆点，无气泡包裹。 */
-function ContentStep({
+const ContentStep = memo(function ContentStep({
   step,
 }: {
   step: Extract<TimelineStep, { type: "content" }>;
@@ -145,9 +142,9 @@ function ContentStep({
       <PostContent content={content} className="prose-sm max-w-none" />
     </div>
   );
-}
+});
 
-function ToolStep({
+const ToolStep = memo(function ToolStep({
   step,
   isLive = false,
 }: {
@@ -162,6 +159,13 @@ function ToolStep({
     typeof step.result === "object" &&
     step.result !== null &&
     "error" in (step.result as Record<string, unknown>);
+
+  // R18：JSON.stringify 仅在展开时计算（折叠时不浪费 CPU），且 memo 化避免重复 stringify
+  const argsJson = useMemo(() => (open ? JSON.stringify(step.args, null, 2) : ""), [open, step.args]);
+  const resultJson = useMemo(
+    () => (open && step.result !== undefined ? JSON.stringify(step.result, null, 2) : ""),
+    [open, step.result],
+  );
 
   return (
     <div
@@ -197,20 +201,22 @@ function ToolStep({
           )}
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200 group-open/tool:rotate-90" />
         </summary>
-        <div className="border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/40 px-3 py-2">
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
-            {JSON.stringify(step.args, null, 2)}
-          </pre>
-          {step.result !== undefined && (
-            <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
-              {JSON.stringify(step.result, null, 2)}
+        {open && (
+          <div className="border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/40 px-3 py-2">
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
+              {argsJson}
             </pre>
-          )}
-        </div>
+            {step.result !== undefined && (
+              <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
+                {resultJson}
+              </pre>
+            )}
+          </div>
+        )}
       </details>
     </div>
   );
-}
+});
 
 /** 消息来源角标（#21 + #24）：非 user 来源的消息在气泡角上显示微型来源徽章 */
 const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: string; border: string }> = {
