@@ -90,8 +90,8 @@ function ThinkingStep({
 }) {
   const content = step.content.trim();
   const isEmpty = !content;
-  // 默认展开（不折叠）；流式中不允许折叠，避免漏看实时输出
-  const [collapsed, setCollapsed] = useState(false);
+  // 默认折叠（历史思考步）；流式中仍展开（isLive），避免漏看实时输出
+  const [collapsed, setCollapsed] = useState(isLive ? false : true);
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
@@ -116,7 +116,7 @@ function ThinkingStep({
         )}
       </button>
       {!collapsed && (
-        <div className="max-h-[60vh] overflow-y-auto px-3 py-3">
+        <div className="max-h-[240vh] overflow-y-auto px-3 py-3">
           {isEmpty ? (
             isLive ? (
               <p className="text-xs text-[var(--kp-text-3)]">等待模型输出…</p>
@@ -154,7 +154,8 @@ function ToolStep({
   step: Extract<TimelineStep, { type: "tool" }>;
   isLive?: boolean;
 }) {
-  const [open, setOpen] = useState(isLive && step.status === "running");
+  // 默认折叠（不展开详情）；用户可手动点击 summary 展开
+  const [open, setOpen] = useState(false);
   const displayName = step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
   const hasError =
     step.result &&
