@@ -6,6 +6,7 @@ import "dotenv/config";
 import fs from "fs";
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./router.js";
 import { createContext } from "./trpc/context.js";
@@ -19,7 +20,7 @@ import { closeBrowser } from "./infra/metablog/webScraper.js";
 import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
 import { syncSearchEnvFromConfig } from "./infra/nativeTools.js";
-import { getEnrichedServerCapabilities, getServerCapabilities } from "./infra/capabilities.js";
+import { getServerCapabilities, getCachedEnrichedServerCapabilities } from "./infra/capabilities.js";
 import { handleAgentChatStream } from "./infra/agentStream.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
@@ -73,12 +74,34 @@ app.use(
 // JSON body 解析
 app.use(express.json({ limit: "10mb" }));
 
+// P9：gzip/deflate 压缩大响应（session 详情、post 内容等）。排除 SSE（text/event-stream），
+// 避免压缩缓冲破坏流式实时性。
+app.use(
+  compression({
+    filter: (req, res) => {
+      const ct = res.getHeader("Content-Type");
+      if (typeof ct === "string" && ct.includes("text/event-stream")) return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
+
 // 健康检查 (非 tRPC)
 app.get("/health", async (_req, res) => {
+  // P10：保留轻量 DB 连通性检查（DB 挂时返回 503），capabilities 走缓存避免每次查 DB
   try {
-    const capabilities = await getEnrichedServerCapabilities(config, () =>
-      services.infoSource.list({ page: 1, pageSize: 1, enabled: true }),
-    );
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (err: unknown) {
+    res.status(503).json({
+      status: "error",
+      timestamp: Date.now(),
+      capabilities: getServerCapabilities(config),
+      message: err instanceof Error ? err.message : "DB 连通性检查失败",
+    });
+    return;
+  }
+  try {
+    const capabilities = await getCachedEnrichedServerCapabilities(config, prisma);
     res.json({
       status: "ok",
       timestamp: Date.now(),

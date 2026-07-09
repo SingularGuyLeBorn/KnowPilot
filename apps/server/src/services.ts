@@ -86,6 +86,7 @@ import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow } from "./infra/ftsIndex.js";
+import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
 import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
@@ -956,14 +957,18 @@ export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillI
   protected override async afterCreate(entity: SkillEntity, input: CreateSkillInput): Promise<void> {
     await super.afterCreate(entity, input);
     await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
+    // A9：通知 agentSchemaCache 失效
+    this.eventBus.emit("skill.created", entity);
   }
   protected override async afterUpdate(entity: SkillEntity, existing: any, input: UpdateSkillInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
     await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
+    this.eventBus.emit("skill.updated", entity);
   }
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
     await this.removeFts("skill", existing.id);
+    this.eventBus.emit("skill.deleted", existing);
   }
 
   protected override async validateCreate(input: CreateSkillInput): Promise<void> {
@@ -1039,6 +1044,20 @@ export class McpService extends FileSyncService<CreateMcpServerInput, UpdateMcpS
   }
 
   protected getFileSlug(entity: McpServerEntity): string { return entity.name; }
+
+  // A9：MCP CRUD 后 emit 事件，通知 agentSchemaCache / mcpClient 缓存失效
+  protected override async afterCreate(entity: McpServerEntity, input: CreateMcpServerInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    this.eventBus.emit("mcp.created", entity);
+  }
+  protected override async afterUpdate(entity: McpServerEntity, existing: any, input: UpdateMcpServerInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    this.eventBus.emit("mcp.updated", entity);
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    this.eventBus.emit("mcp.deleted", existing);
+  }
 
   protected override async validateCreate(input: CreateMcpServerInput): Promise<void> {
     await this.assertUnique("name", input.name, "创建");
@@ -1775,6 +1794,20 @@ export class InfoSourceService extends FileSyncService<
 
   protected getFileSlug(entity: InfoSourceEntity): string {
     return entity.sourceSlug || this.slugifyName(entity.name);
+  }
+
+  // P10：InfoSource CRUD 后失效 capabilities 缓存（infoSources.enabled 计数）
+  protected override async afterCreate(entity: InfoSourceEntity, input: CreateInfoSourceInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    invalidateCapabilitiesCache();
+  }
+  protected override async afterUpdate(entity: InfoSourceEntity, existing: any, input: UpdateInfoSourceInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    invalidateCapabilitiesCache();
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    invalidateCapabilitiesCache();
   }
 
   protected override async validateCreate(input: CreateInfoSourceInput): Promise<void> {

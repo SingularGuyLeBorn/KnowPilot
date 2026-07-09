@@ -737,7 +737,9 @@ export function ChatView() {
 
   const { useList: useAgentList } = useAgent();
   const agentsQuery = useAgentList({ page: 1, pageSize: 50 });
-  const skillsQuery = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true });
+  // A16：skill 列表极少变化，加 staleTime 5min，减少每次进 Chat 都重请求。
+  // skill CRUD 后 useCRUDApi 会 invalidate utils.skill.list（按 key 失效全部 input），自动刷新。
+  const skillsQuery = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true }, { staleTime: 5 * 60 * 1000 });
   const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
   const providers = trpc.agent.llmProviders.useQuery();
   // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
@@ -795,18 +797,25 @@ export function ChatView() {
 
   const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
 
-  const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
-    { sessionId: effectiveSessionId! },
-    {
-      enabled: !!effectiveSessionId && !backendDown,
-      refetchInterval: (query) => (query.state.error ? 10000 : 2500),
-    },
-  );
-
   const asyncQueueStatsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
     enabled: !backendDown,
     refetchInterval: (query) => (query.state.error ? 30000 : 5000),
   });
+
+  // A8：仅在有活跃异步任务（running/queued）时才轮询 pullAsyncQueue，无任务时停止轮询，
+  // 避免每个会话固定 2.5s 空 poll（含 raw UPDATE + findMany）。参照 listChildren 的 running 判断。
+  const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
+    { sessionId: effectiveSessionId! },
+    {
+      enabled: !!effectiveSessionId && !backendDown,
+      refetchInterval: (query) => {
+        if (query.state.error) return 10000;
+        const stats = asyncQueueStatsQuery.data;
+        const hasActive = !!stats && (stats.runningGlobal > 0 || stats.queued > 0);
+        return hasActive ? 2500 : false;
+      },
+    },
+  );
 
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {

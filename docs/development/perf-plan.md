@@ -369,6 +369,32 @@
 
 ---
 
+## 批次 3 自审记录
+
+### 实施项
+
+- **P9**：Express 加 compression 中间件，filter 排除 `text/event-stream`，避免 SSE 被压缩缓冲。
+- **P10**：/health 改 `prisma.$queryRaw\`SELECT 1\`` 连通性检查（DB 挂返回 503）+ capabilities 走 30s TTL 缓存。
+- **A10**：capabilities 计数改 `infoSource.count({where:{enabled:true}})`（原 list 多取一页）；InfoSourceService CRUD 后 `invalidateCapabilitiesCache`。
+- **A7**：probe 短路路径 `split("").逐字符 emit` 改为整段单次 `token` delta emit。
+- **A8**：pullAsyncQueue refetchInterval 仅在 `asyncQueueStats` 有 running/queued 时才 2.5s 轮询，无活跃任务时停止。
+- **A9**：agentTools 模块加载时订阅 EventBus skill.*/mcp.* 自动清 agentSchemaCache；SkillService/McpService CRUD 后 emit 对应事件。
+- **A16**：Chat 的 skill.list 加 `staleTime: 5min`。
+
+### 复核确认
+
+- **A9 与 TriggerEngine 共存**：TriggerEngine 监听 "*" 按 `source=entity.action` 匹配 Trigger 表，无匹配则 no-op。新增 skill.*/mcp.* 事件符合 eventBus 既定约定——此前 skill/mcp CRUD 不发事件是缺口，现补齐；仅可能激活用户已显式配置的对应 trigger（即其预期行为），非回归。
+- **A8 延迟权衡**：stats 5s 轮询，新建 run_async 后 pullAsyncQueue 最晚 ~5s+2.5s 才开始投递轮询；有活跃任务后恢复 2.5s。换来无任务时完全停止空 poll，符合「仅在有活跃异步任务时轮询」决策。
+- **A7 UX**：probe 短路回复由「逐字符伪流式」改为整段即时出现；非 probe 路径仍逐 token 流式。前端按 delta 累积，整段拼接正确。
+- **P9 SSE 排除**：compression filter 在首次 write 时按 Content-Type 判定；SSE handler 在 write 前已 setHeader，故 event-stream 不被压缩。
+
+### 已知可接受项
+
+- `getEnrichedServerCapabilities`（非缓存版）保留导出未删，无害；后续可清理。
+- A8 首次投递略有延迟（见上），符合决策。
+
+---
+
 > 扫描结论摘要：后端最大单点开销是 **P1（createContext 每请求 3 次 DB 注入凭据）**；前端 Swarm UI 最大开销是 **A1（WorkspaceTree N+1）**；Agent 运行时最大开销是 **A2（Skill N+1）**。这三项 + **P5/A11（索引）** + **P2/P3（loggerMiddleware）** 构成「不影响功能、收益最大」的核心批次。
 
 

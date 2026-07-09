@@ -3,6 +3,7 @@
  */
 
 import type { AppConfig } from "./config.js";
+import type { PrismaClient } from "@prisma/client";
 import { getEngineStatus, READ_ARTICLE_PLATFORMS } from "./metablog/index.js";
 import { getScraperStatus } from "./metablog/webScraper.js";
 import { isSharedBrowserReady } from "./metablog/browserPool.js";
@@ -89,4 +90,27 @@ export async function getEnrichedServerCapabilities(
     ...base,
     infoSources: { enabled: enabledSources.total },
   };
+}
+
+/* ─── P10/A10：capabilities 缓存 + infoSource.count ───
+ * /health 与 native.capabilities 低频变化，此前每次都查 DB（infoSource.list 还多取一页数据）。
+ * 改为 TTL 缓存 + infoSource.count 精确计数；InfoSource CRUD 后调 invalidateCapabilitiesCache。
+ */
+let capCache: { at: number; value: ServerCapabilities & { infoSources: { enabled: number } } } | null = null;
+const CAP_CACHE_TTL_MS = 30_000;
+
+export async function getCachedEnrichedServerCapabilities(
+  config: AppConfig,
+  prisma: PrismaClient,
+): Promise<ServerCapabilities & { infoSources: { enabled: number } }> {
+  if (capCache && Date.now() - capCache.at < CAP_CACHE_TTL_MS) return capCache.value;
+  const base = getServerCapabilities(config);
+  const enabled = await prisma.infoSource.count({ where: { enabled: true } });
+  const value = { ...base, infoSources: { enabled } };
+  capCache = { at: Date.now(), value };
+  return value;
+}
+
+export function invalidateCapabilitiesCache(): void {
+  capCache = null;
 }
