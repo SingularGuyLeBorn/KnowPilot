@@ -81,43 +81,48 @@ export const skillSyncer: Syncer<SkillData> = {
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<SkillData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<SkillData>[] = [];
-
     for (const filePath of filePaths) {
-      try {
-        const slug = filePathToSlug(contentDir, filePath);
-        const mtime = getFileMtime(filePath);
-        const { data, content } = parseMarkdownFile(filePath);
-        const fm = data as Record<string, unknown>;
-
-        const name = typeof fm.name === "string" ? fm.name : slug;
-        const description = typeof fm.description === "string" ? fm.description : "";
-        const code = content.trim();
-        const icon = typeof fm.icon === "string" ? fm.icon : "Wand2";
-        const meta = parseSkillFrontmatter(fm, filePath, contentDir);
-        const trigger = normalizeTrigger(fm, name);
-        let enabled = readBoolean(fm.enabled, true);
-        if (meta.kind === "reference") enabled = readBoolean(fm.enabled, false);
-
-        records.push({
-          slug,
-          mtime,
-          data: {
-            name,
-            description,
-            code,
-            icon,
-            trigger,
-            enabled,
-            metaJson: JSON.stringify({ ...meta, trigger }),
-          },
-        });
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`  ❌ [Skill 解析失败] ${filePath}:`, msg);
-      }
+      const r = await this.scanFile!(filePath, contentDir);
+      if (r) records.push(r);
     }
-
     return records;
+  },
+
+  // A13：单文件解析
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<SkillData> | null> {
+    try {
+      const slug = filePathToSlug(contentDir, filePath);
+      const mtime = getFileMtime(filePath);
+      const { data, content } = parseMarkdownFile(filePath);
+      const fm = data as Record<string, unknown>;
+
+      const name = typeof fm.name === "string" ? fm.name : slug;
+      const description = typeof fm.description === "string" ? fm.description : "";
+      const code = content.trim();
+      const icon = typeof fm.icon === "string" ? fm.icon : "Wand2";
+      const meta = parseSkillFrontmatter(fm, filePath, contentDir);
+      const trigger = normalizeTrigger(fm, name);
+      let enabled = readBoolean(fm.enabled, true);
+      if (meta.kind === "reference") enabled = readBoolean(fm.enabled, false);
+
+      return {
+        slug,
+        mtime,
+        data: {
+          name,
+          description,
+          code,
+          icon,
+          trigger,
+          enabled,
+          metaJson: JSON.stringify({ ...meta, trigger }),
+        },
+      };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`  ❌ [Skill 解析失败] ${filePath}:`, msg);
+      return null;
+    }
   },
 
   async upsert(prisma: PrismaClient, record: SyncRecord<SkillData>): Promise<void> {

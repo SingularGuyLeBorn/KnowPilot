@@ -558,7 +558,12 @@ ${entity.content}
   async getBySlug(slug: string): Promise<PostEntity> {
     const post = await this.prisma.post.findUnique({ where: { slug, deletedAt: null } });
     if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "文章不存在" });
-    await this.prisma.post.update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } });
+    // A15：浏览量自增改 fire-and-forget，不阻塞读取关键路径；返回的 post 仍是自增前的快照（与原行为一致）
+    void this.prisma.post
+      .update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } })
+      .catch(() => {
+        // 统计写入失败不影响文章读取
+      });
     return this.formatEntity(post);
   }
 
@@ -854,14 +859,18 @@ ${entity.systemPrompt}
   protected override async afterCreate(entity: AgentEntity, input: CreateAgentInput): Promise<void> {
     await super.afterCreate(entity, input);
     await this.syncFts("agent", entity.id, entity.name, `${entity.description ?? ""}\n${entity.systemPrompt ?? ""}`);
+    // A14：通知 heartbeatEngine / agentSchemaCache 等 agent 配置变更
+    this.eventBus.emit("agent.created", entity);
   }
   protected override async afterUpdate(entity: AgentEntity, existing: any, input: UpdateAgentInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
     await this.syncFts("agent", entity.id, entity.name, `${entity.description ?? ""}\n${entity.systemPrompt ?? ""}`);
+    this.eventBus.emit("agent.updated", entity);
   }
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
     await this.removeFts("agent", existing.id);
+    this.eventBus.emit("agent.deleted", existing);
   }
 
   // A6：批量删除，保留文件清理 + FTS 移除语义。DB 删改 deleteMany 单次往返，

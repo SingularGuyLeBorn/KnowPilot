@@ -26,33 +26,34 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<McpServerData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".yaml", ".yml", ".json"]);
     const records: SyncRecord<McpServerData>[] = [];
-
     for (const filePath of filePaths) {
-      try {
-        const slug = filePathToSlug(contentDir, filePath);
-        const mtime = getFileMtime(filePath);
-        const data =
-          filePath.endsWith(".json")
-            ? (JSON.parse(fs.readFileSync(filePath, "utf-8")) as Record<string, unknown>)
-            : parseYamlFile(filePath).data;
-
-        const name = typeof data.name === "string" ? data.name : slug;
-        const command = typeof data.command === "string" ? data.command : "";
-        const args = Array.isArray(data.args) ? JSON.stringify(data.args) : "[]";
-        const env = data.env && typeof data.env === "object" ? JSON.stringify(data.env) : "{}";
-        const enabled = readBoolean(data.enabled, true);
-
-        records.push({
-          slug,
-          mtime,
-          data: { name, command, args, env, enabled },
-        });
-      } catch (e: any) {
-        console.error(`  ❌ [MCP Server 解析失败] ${filePath}:`, e.message);
-      }
+      const r = await this.scanFile!(filePath, contentDir);
+      if (r) records.push(r);
     }
-
     return records;
+  },
+
+  // A13：单文件解析
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<McpServerData> | null> {
+    try {
+      const slug = filePathToSlug(contentDir, filePath);
+      const mtime = getFileMtime(filePath);
+      const data =
+        filePath.endsWith(".json")
+          ? (JSON.parse(fs.readFileSync(filePath, "utf-8")) as Record<string, unknown>)
+          : parseYamlFile(filePath).data;
+
+      const name = typeof data.name === "string" ? data.name : slug;
+      const command = typeof data.command === "string" ? data.command : "";
+      const args = Array.isArray(data.args) ? JSON.stringify(data.args) : "[]";
+      const env = data.env && typeof data.env === "object" ? JSON.stringify(data.env) : "{}";
+      const enabled = readBoolean(data.enabled, true);
+
+      return { slug, mtime, data: { name, command, args, env, enabled } };
+    } catch (e: any) {
+      console.error(`  ❌ [MCP Server 解析失败] ${filePath}:`, e.message);
+      return null;
+    }
   },
 
   async upsert(prisma: PrismaClient, record: SyncRecord<McpServerData>): Promise<void> {

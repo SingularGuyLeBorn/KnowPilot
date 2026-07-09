@@ -27,30 +27,35 @@ export const promptSyncer: Syncer<PromptData> = {
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<PromptData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<PromptData>[] = [];
-
     for (const filePath of filePaths) {
-      try {
-        const slug = filePathToSlug(contentDir, filePath);
-        const mtime = getFileMtime(filePath);
-        const { data, content } = parseMarkdownFile(filePath);
-
-        const name = typeof data.name === "string" ? data.name : slug;
-        const version = typeof data.version === "string" ? data.version : "1.0.0";
-        const description = typeof data.description === "string" ? data.description : null;
-        const variables = readStringArray(data.variables).join(",");
-        const tags = readStringArray(data.tags).join(",");
-
-        records.push({
-          slug,
-          mtime,
-          data: { name, version, description, variables, tags, content: content.trim() },
-        });
-      } catch (e: any) {
-        console.error(`  ❌ [Prompt 解析失败] ${filePath}:`, e.message);
-      }
+      const r = await this.scanFile!(filePath, contentDir);
+      if (r) records.push(r);
     }
-
     return records;
+  },
+
+  // A13：单文件解析
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<PromptData> | null> {
+    try {
+      const slug = filePathToSlug(contentDir, filePath);
+      const mtime = getFileMtime(filePath);
+      const { data, content } = parseMarkdownFile(filePath);
+
+      const name = typeof data.name === "string" ? data.name : slug;
+      const version = typeof data.version === "string" ? data.version : "1.0.0";
+      const description = typeof data.description === "string" ? data.description : null;
+      const variables = readStringArray(data.variables).join(",");
+      const tags = readStringArray(data.tags).join(",");
+
+      return {
+        slug,
+        mtime,
+        data: { name, version, description, variables, tags, content: content.trim() },
+      };
+    } catch (e: any) {
+      console.error(`  ❌ [Prompt 解析失败] ${filePath}:`, e.message);
+      return null;
+    }
   },
 
   async upsert(prisma: PrismaClient, record: SyncRecord<PromptData>): Promise<void> {

@@ -395,6 +395,31 @@
 
 ---
 
+## 批次 4 自审记录
+
+### 实施项
+
+- **A13**：Syncer 接口新增可选 `scanFile(filePath, contentDir)`；8 个 syncer（post/agent/skill/mcp/memory/prompt/task/infoSource）抽取单文件解析，`scan` 委托 `scanFile`（逻辑单点）。watch 模式 add/change 走 `scanFile + upsert`（不再全目录扫描），unlink 仍走全量 `syncEntity`（含 cleanup）。
+- **A14**：AgentService afterCreate/Update/Delete emit `agent.created/updated/deleted`；heartbeatEngine 订阅这些事件，500ms 防抖后 `refresh()`，移除此前每 60s 全量 `findMany + 重建所有 cron` 的轮询。
+- **A15**：post.getBySlug 的 viewCount 自增改 fire-and-forget，不阻塞读取；返回 post 仍是自增前快照（与原行为一致）。
+
+### 复核确认
+
+- **A13 等价性**：`scan` 改为 `for file: const r = await scanFile(...); if (r) push(r)`，与原内联解析逐句对应；解析失败/空内容返回 null（原为 continue），行为等价。trpc.test.ts 的 db:sync 用例（调 runContentSync→scan）全过，覆盖 scanFile 逻辑。watch 的 unlink 仍走全量 cleanup，删除语义保留。
+- **A14 与 TriggerEngine/agentSchemaCache 共存**：agent.* 事件被 TriggerEngine（"*" 监听，按 source 匹配 Trigger 表）与 agentSchemaCache（A9 仅订阅 skill.*/mcp.*，不订阅 agent.*）各自处理。heartbeatEngine 仅订阅 agent.*。refresh 防抖 500ms 合并连续 agent 更新（如 updateHeartbeatStatus 触发的 agent.updated），避免抖动。运行中的心跳 execute 在 orchestrator 内，refresh 只重建 cron 调度，不会中止运行中任务。
+- **A15**：`formatEntity(post)` 用的是 findUnique 的快照，自增在 fire-and-forget 中进行，响应内容与原一致；仅 viewCount 的持久化改为异步，统计精度不变。
+
+### 已知可接受项
+
+- A13 watch 的 scanFile 直接 upsert（跳过 mtime 判断）——文件刚变更，upsert 合理；极端情况（外部 touch 改 mtime 但内容未变）会多一次 upsert，无功能影响。
+- A14 事件驱动后，AgentService 的 updateHeartbeatStatus（心跳内部 `agent.update`）会触发一次 agent.updated → 防抖 refresh；属于预期内的一次额外刷新，开销可忽略。
+
+---
+
+> 全部 28 项（P1–P12 + A1–A16）已实施完成。汇总见文件顶部「已确认 ✅」表与各批次自审记录。
+
+---
+
 > 扫描结论摘要：后端最大单点开销是 **P1（createContext 每请求 3 次 DB 注入凭据）**；前端 Swarm UI 最大开销是 **A1（WorkspaceTree N+1）**；Agent 运行时最大开销是 **A2（Skill N+1）**。这三项 + **P5/A11（索引）** + **P2/P3（loggerMiddleware）** 构成「不影响功能、收益最大」的核心批次。
 
 

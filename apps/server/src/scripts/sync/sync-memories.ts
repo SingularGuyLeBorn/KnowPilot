@@ -27,49 +27,54 @@ export const memorySyncer: Syncer<MemoryData> = {
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<MemoryData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".md", ".json"]);
     const records: SyncRecord<MemoryData>[] = [];
-
     for (const filePath of filePaths) {
-      try {
-        const slug = filePathToSlug(contentDir, filePath);
-        const mtime = getFileMtime(filePath);
-        const ext = path.extname(filePath).toLowerCase();
-
-        let memoryContent: string;
-        let type: string;
-        let strength: number;
-        let keywords: string[];
-
-        if (ext === ".json") {
-          // 兼容旧版运行时生成的 .json 记忆文件
-          const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-          memoryContent = typeof parsed.content === "string" ? parsed.content : "";
-          type = typeof parsed.type === "string" ? parsed.type : "episodic";
-          strength = typeof parsed.strength === "number" ? parsed.strength : 1.0;
-          keywords = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: unknown) => typeof k === "string") : [];
-        } else {
-          const { data, content } = parseMarkdownFile(filePath);
-          memoryContent = typeof data.content === "string" ? data.content : content.trim();
-          type = typeof data.type === "string" ? data.type : "episodic";
-          strength = readNumber(data.strength, 1.0);
-          keywords = readStringArray(data.keywords);
-        }
-
-        if (!memoryContent) {
-          console.warn(`  ⚠️ [Memory 跳过] ${filePath}: content 为空`);
-          continue;
-        }
-
-        records.push({
-          slug,
-          mtime,
-          data: { content: memoryContent, type, strength, keywords: keywords.join(",") },
-        });
-      } catch (e: any) {
-        console.error(`  ❌ [Memory 解析失败] ${filePath}:`, e.message);
-      }
+      const r = await this.scanFile!(filePath, contentDir);
+      if (r) records.push(r);
     }
-
     return records;
+  },
+
+  // A13：单文件解析
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<MemoryData> | null> {
+    try {
+      const slug = filePathToSlug(contentDir, filePath);
+      const mtime = getFileMtime(filePath);
+      const ext = path.extname(filePath).toLowerCase();
+
+      let memoryContent: string;
+      let type: string;
+      let strength: number;
+      let keywords: string[];
+
+      if (ext === ".json") {
+        // 兼容旧版运行时生成的 .json 记忆文件
+        const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+        memoryContent = typeof parsed.content === "string" ? parsed.content : "";
+        type = typeof parsed.type === "string" ? parsed.type : "episodic";
+        strength = typeof parsed.strength === "number" ? parsed.strength : 1.0;
+        keywords = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: unknown) => typeof k === "string") : [];
+      } else {
+        const { data, content } = parseMarkdownFile(filePath);
+        memoryContent = typeof data.content === "string" ? data.content : content.trim();
+        type = typeof data.type === "string" ? data.type : "episodic";
+        strength = readNumber(data.strength, 1.0);
+        keywords = readStringArray(data.keywords);
+      }
+
+      if (!memoryContent) {
+        console.warn(`  ⚠️ [Memory 跳过] ${filePath}: content 为空`);
+        return null;
+      }
+
+      return {
+        slug,
+        mtime,
+        data: { content: memoryContent, type, strength, keywords: keywords.join(",") },
+      };
+    } catch (e: any) {
+      console.error(`  ❌ [Memory 解析失败] ${filePath}:`, e.message);
+      return null;
+    }
   },
 
   async upsert(prisma: PrismaClient, record: SyncRecord<MemoryData>): Promise<void> {
