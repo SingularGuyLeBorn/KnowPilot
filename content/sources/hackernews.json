@@ -1,0 +1,14 @@
+{
+  "name": "Hacker News",
+  "url": "https://news.ycombinator.com/",
+  "type": "news",
+  "description": "Y Combinator 技术新闻聚合，前沿技术讨论与趋势发现。",
+  "reliability": 3,
+  "language": "en",
+  "tags": [
+    "新闻",
+    "技术",
+    "社区"
+  ],
+  "enabled": true
+}

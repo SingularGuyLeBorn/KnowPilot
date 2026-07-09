@@ -1,0 +1,14 @@
+{
+  "name": "Playwright 文档",
+  "url": "https://playwright.dev/docs",
+  "type": "official",
+  "description": "Playwright 浏览器自动化与 E2E 测试官方文档。",
+  "reliability": 5,
+  "language": "en",
+  "tags": [
+    "测试",
+    "E2E",
+    "自动化"
+  ],
+  "enabled": true
+}

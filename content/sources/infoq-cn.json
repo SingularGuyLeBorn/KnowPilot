@@ -1,0 +1,14 @@
+{
+  "name": "InfoQ 中文站",
+  "url": "https://www.infoq.cn/",
+  "type": "news",
+  "description": "中文技术媒体，架构、微服务、AI 与工程实践深度报道。",
+  "reliability": 4,
+  "language": "zh",
+  "tags": [
+    "新闻",
+    "中文",
+    "架构"
+  ],
+  "enabled": true
+}

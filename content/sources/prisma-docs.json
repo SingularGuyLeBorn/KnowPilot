@@ -1,0 +1,14 @@
+{
+  "name": "Prisma 文档",
+  "url": "https://www.prisma.io/docs",
+  "type": "official",
+  "description": "Prisma ORM schema、查询 API 与迁移工具官方文档。",
+  "reliability": 5,
+  "language": "en",
+  "tags": [
+    "后端",
+    "ORM",
+    "数据库"
+  ],
+  "enabled": true
+}

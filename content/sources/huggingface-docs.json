@@ -1,0 +1,14 @@
+{
+  "name": "Hugging Face 文档",
+  "url": "https://huggingface.co/docs",
+  "type": "official",
+  "description": "Transformers、Diffusers、模型仓库与推理 API 文档。",
+  "reliability": 4,
+  "language": "en",
+  "tags": [
+    "AI",
+    "模型",
+    "开源"
+  ],
+  "enabled": true
+}

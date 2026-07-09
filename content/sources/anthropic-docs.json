@@ -1,0 +1,14 @@
+{
+  "name": "Anthropic Claude 文档",
+  "url": "https://docs.anthropic.com/",
+  "type": "official",
+  "description": "Claude 模型 API、Prompt 工程与工具调用官方文档。",
+  "reliability": 5,
+  "language": "en",
+  "tags": [
+    "AI",
+    "官方",
+    "Claude"
+  ],
+  "enabled": true
+}

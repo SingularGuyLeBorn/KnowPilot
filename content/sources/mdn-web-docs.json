@@ -1,0 +1,14 @@
+{
+  "name": "MDN Web Docs",
+  "url": "https://developer.mozilla.org/",
+  "type": "official",
+  "description": "Mozilla 开发者网络，Web API、CSS、HTML 与 JavaScript 权威参考。",
+  "reliability": 5,
+  "language": "en",
+  "tags": [
+    "前端",
+    "Web",
+    "参考"
+  ],
+  "enabled": true
+}

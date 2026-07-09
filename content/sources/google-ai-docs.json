@@ -1,0 +1,14 @@
+{
+  "name": "Google AI 文档",
+  "url": "https://ai.google.dev/",
+  "type": "official",
+  "description": "Gemini 模型与 Google AI Studio 官方文档。",
+  "reliability": 5,
+  "language": "en",
+  "tags": [
+    "AI",
+    "官方",
+    "Gemini"
+  ],
+  "enabled": true
+}

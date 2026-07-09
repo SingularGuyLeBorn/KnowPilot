@@ -1,0 +1,14 @@
+{
+  "name": "Vitest 文档",
+  "url": "https://vitest.dev/",
+  "type": "official",
+  "description": "Vitest 测试框架配置、API 与断言官方文档。",
+  "reliability": 4,
+  "language": "en",
+  "tags": [
+    "测试",
+    "Vitest",
+    "前端"
+  ],
+  "enabled": true
+}

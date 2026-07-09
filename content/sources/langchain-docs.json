@@ -1,0 +1,14 @@
+{
+  "name": "LangChain 文档",
+  "url": "https://python.langchain.com/docs/",
+  "type": "official",
+  "description": "LangChain 框架文档，涵盖 Agent、Chain、Memory 与工具集成。",
+  "reliability": 4,
+  "language": "en",
+  "tags": [
+    "AI",
+    "框架",
+    "Agent"
+  ],
+  "enabled": true
+}

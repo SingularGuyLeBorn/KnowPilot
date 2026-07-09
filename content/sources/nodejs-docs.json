@@ -1,0 +1,14 @@
+{
+  "name": "Node.js 官方文档",
+  "url": "https://nodejs.org/docs/latest/api/",
+  "type": "official",
+  "description": "Node.js 运行时 API、模块系统与内置模块官方文档。",
+  "reliability": 5,
+  "language": "en",
+  "tags": [
+    "后端",
+    "Node.js",
+    "官方"
+  ],
+  "enabled": true
+}

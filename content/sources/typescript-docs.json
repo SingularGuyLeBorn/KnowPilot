@@ -1,0 +1,14 @@
+{
+  "name": "TypeScript 文档",
+  "url": "https://www.typescriptlang.org/docs/",
+  "type": "official",
+  "description": "TypeScript 类型系统、工具配置与高级类型官方文档。",
+  "reliability": 5,
+  "language": "en",
+  "tags": [
+    "前端",
+    "TypeScript",
+    "官方"
+  ],
+  "enabled": true
+}

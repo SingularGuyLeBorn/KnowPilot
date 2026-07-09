@@ -1,0 +1,14 @@
+{
+  "name": "GitHub Blog",
+  "url": "https://github.blog/",
+  "type": "blog",
+  "description": "GitHub 工程博客，涵盖产品更新、工程实践与开源生态。",
+  "reliability": 4,
+  "language": "en",
+  "tags": [
+    "社区",
+    "工程",
+    "开源"
+  ],
+  "enabled": true
+}

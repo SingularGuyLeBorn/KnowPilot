@@ -1,0 +1,14 @@
+{
+  "name": "tRPC 文档",
+  "url": "https://trpc.io/docs",
+  "type": "official",
+  "description": "tRPC 端到端类型安全 API 框架官方文档。",
+  "reliability": 4,
+  "language": "en",
+  "tags": [
+    "后端",
+    "API",
+    "TypeScript"
+  ],
+  "enabled": true
+}
