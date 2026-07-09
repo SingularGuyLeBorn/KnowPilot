@@ -36,6 +36,8 @@ import type { ChatSession } from "@knowpilot/shared";
 
 interface WorkspaceTreeProps {
   effectiveSessionId: string | null;
+  /** R10：由父组件 Chat 传入已查的 Agent 列表，避免 WorkspaceTree 再各自发 agent.list(100) 重复查询 */
+  agents: { id: string; name: string; tier: string; status: string; model: string; workspaceId: string | null }[];
   onSelectSession: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   onNewChat: () => void;
@@ -44,6 +46,7 @@ interface WorkspaceTreeProps {
 
 export function WorkspaceTree({
   effectiveSessionId,
+  agents,
   onSelectSession,
   onSelectAgent,
   onNewChat,
@@ -57,18 +60,18 @@ export function WorkspaceTree({
   // 拉取数据
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
   const archivedWorkspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "archived" });
-  const agentsQuery = trpc.agent.list.useQuery({ page: 1, pageSize: 100 });
+  // R10：agents 由父组件传入，不再内部 trpc.agent.list.useQuery
   const superAgents = useMemo(
-    () => (agentsQuery.data?.items ?? []).filter((a) => a.tier === "super" && a.status !== "deleted"),
-    [agentsQuery.data],
+    () => agents.filter((a) => a.tier === "super" && a.status !== "deleted"),
+    [agents],
   );
   const managerAgents = useMemo(
-    () => (agentsQuery.data?.items ?? []).filter((a) => a.tier === "manager" && a.status !== "deleted"),
-    [agentsQuery.data],
+    () => agents.filter((a) => a.tier === "manager" && a.status !== "deleted"),
+    [agents],
   );
   const subAgents = useMemo(
-    () => (agentsQuery.data?.items ?? []).filter((a) => a.tier === "sub" && a.status !== "deleted"),
-    [agentsQuery.data],
+    () => agents.filter((a) => a.tier === "sub" && a.status !== "deleted"),
+    [agents],
   );
 
   const activeWorkspaces = workspacesQuery.data?.items ?? [];
