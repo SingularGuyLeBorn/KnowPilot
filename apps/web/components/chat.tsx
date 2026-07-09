@@ -1634,7 +1634,7 @@ export function ChatView() {
     );
   };
 
-  const renderAssistantBubble = (group: MessageGroup) => {
+  const renderAssistantBubble = (group: MessageGroup, isLastGroup: boolean) => {
     const active = getActiveVersion(group);
     if (!active || !group.assistantMessage) return null;
     const assistantId = group.assistantMessage.id;
@@ -1663,7 +1663,7 @@ export function ChatView() {
           onCopy={() => void handleCopy(assistantId, active.content)}
           onShare={() => void handleShare(active.content)}
           onRegenerate={() => handleRegenerate(group.userMessage.id)}
-          showRegenerate
+          showRegenerate={isLastGroup}
           showEdit={false}
           showRetry={false}
           disabled={isStreaming}
@@ -1810,7 +1810,7 @@ export function ChatView() {
               onEditCancel={() => setEditingUserId(null)}
               onRetry={() => handleRetry(group.userMessage.id)}
               showEdit={isLastUser}
-              showRetry={!isEditing}
+              showRetry={isLastUser && !isEditing}
               showRegenerate={false}
               isEditing={isEditing}
               disabled={isStreaming}
@@ -1824,7 +1824,7 @@ export function ChatView() {
               <>
                 {renderIntermediateSteps(group)}
                 <div className="flex w-full justify-start">
-                  {renderAssistantBubble(group)}
+                  {renderAssistantBubble(group, isLastUser)}
                 </div>
               </>
             )}
