@@ -1362,26 +1362,37 @@ export function ChatView() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const enqueueMessage = (
-    text: string,
-    skill?: SelectedSkill,
-    attachments?: ChatQueueItem["attachments"],
-  ) => {
-    const trimmed = text.trim();
-    if ((!trimmed && !attachments?.length) || backendDown) return;
-    // 输入框清空由 ChatInputArea 内部完成（value 状态已下放）
-    const skillPrompt = skill
-      ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
-      : undefined;
-    ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (prev) => [
-      ...prev,
-      createUserQueueItem(trimmed || "（见附件）", {
-        skillId: skill?.id,
-        skillPrompt,
-        attachments,
-      }),
-    ]);
-  };
+  // R16：useCallback 稳定化，使 ChatInputArea memo 后流式期间跳过重渲染
+  const enqueueMessage = useCallback(
+    (
+      text: string,
+      skill?: SelectedSkill,
+      attachments?: ChatQueueItem["attachments"],
+    ) => {
+      const trimmed = text.trim();
+      if ((!trimmed && !attachments?.length) || backendDown) return;
+      // 输入框清空由 ChatInputArea 内部完成（value 状态已下放）
+      const skillPrompt = skill
+        ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
+        : undefined;
+      ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (prev) => [
+        ...prev,
+        createUserQueueItem(trimmed || "（见附件）", {
+          skillId: skill?.id,
+          skillPrompt,
+          attachments,
+        }),
+      ]);
+    },
+    [backendDown, ssSet, effectiveSessionId],
+  );
+
+  const handleStop = useCallback(() => {
+    getAbort(effectiveSessionId)?.abort();
+  }, [getAbort, effectiveSessionId]);
+
+  // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
+  const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
 
   const handleRegenerate = (userMessageId: string) => {
     if (!effectiveSessionId || isSessionStreaming(effectiveSessionId)) return;
@@ -2229,11 +2240,11 @@ export function ChatView() {
           <ChatInputArea
             key={effectiveSessionId ?? "new"}
             onSend={enqueueMessage}
-            onStop={() => getAbort(effectiveSessionId)?.abort()}
+            onStop={handleStop}
             disabled={backendDown}
             isStreaming={isStreaming}
             queueLength={queue.filter((q) => q.kind === "user").length}
-            skills={skillsQuery.data?.items ?? []}
+            skills={skills}
             selectedSkill={selectedSkill}
             onSkillChange={setSelectedSkill}
             modelHint={modelOpt.inputHint ?? (modelOpt.supportsVision ? "多模态 · 支持图片" : "纯文本 · 图片将 OCR 后发送")}
