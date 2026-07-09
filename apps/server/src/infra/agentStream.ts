@@ -842,7 +842,10 @@ export function handleAgentChatStream(
     const coalescedEmit = (event: AgentStreamEvent) => {
       if (event.type === "token") {
         tokenBuffer += event.delta;
-        if (!tokenFlushTimer) {
+        // R2：16ms 定时器冲刷 + buffer 字符数上限（满则立即冲），避免大模型吐字快时单帧过大、慢时 16ms 才出字（#13）
+        if (tokenBuffer.length >= 512) {
+          flushTokens();
+        } else if (!tokenFlushTimer) {
           tokenFlushTimer = setTimeout(flushTokens, 16);
         }
       } else {

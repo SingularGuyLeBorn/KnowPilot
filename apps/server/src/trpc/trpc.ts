@@ -107,8 +107,9 @@ const loggerMiddleware = t.middleware(async (opts) => {
           metadata: JSON.stringify(baseMeta),
         },
       })
-      .catch(() => {
-        // 日志写入失败不影响业务
+      .catch((err) => {
+        // 日志写入失败不影响业务，但记录到 stderr 便于发现 Prisma 临时断开等问题（#14）
+        console.error("[loggerMiddleware] 审计日志写入失败:", err instanceof Error ? err.message : err);
       });
   } else {
     // 错误日志保留同步写入，确保可靠性（崩溃前能落库）

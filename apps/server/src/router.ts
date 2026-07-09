@@ -504,27 +504,40 @@ const analyticsRouter = router({
       const days = input?.days ?? 30;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
       const where = { createdAt: { gte: since }, ...(input?.agentId ? { agentId: input.agentId } : {}) };
-      // R4：加 take 上限避免高频 Agent 下无界加载全部 Run 进内存聚合；取最近 5000 条（dashboard 统计可接受近似）
-      const runs = await ctx.prisma.run.findMany({
-        where,
-        select: { agentId: true, status: true, durationMs: true, toolCallCount: true, tokenUsage: true },
-        take: 5000,
-        orderBy: { createdAt: "desc" },
-      });
 
-      // 按 agentId 分组聚合
+      // #9：计数/耗时/工具数用 SQL groupBy 精确聚合（走 Run(createdAt) 索引，无内存上限）；
+      // tokenUsage 是 JSON，SQL 无法聚合，仍用 bounded findMany 取最近 5000 条近似求和。
+      const [byAgentStatus, tokenRuns] = await Promise.all([
+        ctx.prisma.run.groupBy({
+          by: ["agentId", "status"],
+          where,
+          _count: { _all: true },
+          _sum: { durationMs: true, toolCallCount: true },
+        }),
+        ctx.prisma.run.findMany({
+          where,
+          select: { agentId: true, tokenUsage: true },
+          take: 5000,
+          orderBy: { createdAt: "desc" },
+        }),
+      ]);
+
       const byAgent = new Map<string, { total: number; success: number; failed: number; totalDurationMs: number; totalToolCalls: number; totalTokens: number }>();
-      for (const r of runs) {
-        const key = r.agentId ?? "unknown";
+      for (const row of byAgentStatus) {
+        const key = row.agentId ?? "unknown";
         const stats = byAgent.get(key) ?? { total: 0, success: 0, failed: 0, totalDurationMs: 0, totalToolCalls: 0, totalTokens: 0 };
-        stats.total++;
-        if (r.status === "success") stats.success++;
-        if (r.status === "failed") stats.failed++;
-        stats.totalDurationMs += r.durationMs ?? 0;
-        stats.totalToolCalls += r.toolCallCount ?? 0;
+        stats.total += row._count._all;
+        if (row.status === "success") stats.success += row._count._all;
+        if (row.status === "failed") stats.failed += row._count._all;
+        stats.totalDurationMs += row._sum.durationMs ?? 0;
+        stats.totalToolCalls += row._sum.toolCallCount ?? 0;
+        byAgent.set(key, stats);
+      }
+      for (const r of tokenRuns) {
+        const stats = byAgent.get(r.agentId ?? "unknown");
+        if (!stats) continue;
         const usage = r.tokenUsage as { total?: number } | null;
         stats.totalTokens += usage?.total ?? 0;
-        byAgent.set(key, stats);
       }
 
       // 查 Agent 名称
