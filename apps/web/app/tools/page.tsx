@@ -14,7 +14,6 @@ import {
   Puzzle,
   Search,
   Server,
-  Sparkles,
   Trash2,
   Wrench,
 } from "lucide-react";
@@ -23,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import type { Tool } from "@knowpilot/shared";
 import { useTool, useNativeCapabilities } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc";
-import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, NativeCapabilitiesPanel } from "@/components/shared";
+import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
 type ToolForm = {
@@ -363,32 +362,12 @@ export default function ToolsPage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-bg-alt)] to-[var(--kp-bg-mute)] p-8"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5">
-          <Wrench className="h-80 w-80 text-[var(--kp-brand)]" />
-        </div>
-        <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--kp-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--kp-brand-dark)]">
-              <Sparkles className="h-3.5 w-3.5" />
-              L4 · 工具注册表
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--kp-text-1)]">Tools 工具目录</h1>
-            <p className="max-w-xl text-sm text-[var(--kp-text-3)]">
-              像 MetaBlog 一样完整注册工具元数据：名称、类型、绑定目标、参数 Schema 与启用状态。Agent 通过
-              native:/skill:/mcp: 授权后才会在对话中可见。
-            </p>
-          </div>
-          <Button onClick={openCreate} className="shrink-0 gap-2 rounded-2xl px-5 py-6">
-            <Plus className="h-5 w-5" />
-            注册工具
-          </Button>
-        </div>
-      </motion.div>
+      <PageHeader
+        icon={Wrench}
+        title="Tools 工具目录"
+        description="像 MetaBlog 一样完整注册工具元数据：名称、类型、绑定目标、参数 Schema 与启用状态。Agent 通过 native:/skill:/mcp: 授权后才会在对话中可见。"
+        action={{ label: "注册工具", onClick: openCreate, icon: Plus }}
+      />
 
       {caps && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>

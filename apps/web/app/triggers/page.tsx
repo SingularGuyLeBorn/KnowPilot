@@ -6,11 +6,10 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Zap, Plus, Sparkles, ToggleLeft, ToggleRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Zap, Plus, ToggleLeft, ToggleRight } from "lucide-react";
 import type { Trigger } from "@knowpilot/shared";
 import { useTrigger } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 
 const EVENT_SOURCES = ["post.create", "post.update", "post.delete", "agent.create", "skill.create"];
 const ACTION_TYPES = ["run_agent", "run_task"] as const;
@@ -47,40 +46,13 @@ export default function TriggersPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <Zap className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              L4 · 事件自动化
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-              Triggers 触发器
-            </h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              当 post.create 等事件发生时，自动唤醒 Agent 或执行后台 Task。source 格式为 entity.action。
-            </p>
-          </div>
-
-          <Button
-            onClick={handleCreateDemo}
-            disabled={createMutation.isPending}
-            className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0"
-          >
-            <Plus className="w-5 h-5" />
-            新建触发器
-          </Button>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={Zap}
+        title="Triggers 触发器"
+        description="当 post.create 等事件发生时，自动唤醒 Agent 或执行后台 Task。source 格式为 entity.action。"
+        action={{ label: "新建触发器", onClick: handleCreateDemo, icon: Plus, disabled: createMutation.isPending }}
+      />
 
       <div className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/30 p-4 text-xs text-[var(--vp-c-text-3)]">
         <p className="font-semibold text-[var(--vp-c-text-2)] mb-1">常用事件源</p>

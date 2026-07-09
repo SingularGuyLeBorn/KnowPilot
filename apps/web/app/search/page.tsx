@@ -6,10 +6,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { Search, Sparkles, Clock } from "lucide-react";
+import { Search, Clock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { EmptyState, LoadingState } from "@/components/shared";
+import { EmptyState, LoadingState, PageHeader } from "@/components/shared";
 
 const ENTITY_LABELS: Record<string, string> = {
   post: "文章",
@@ -36,36 +35,29 @@ export default function SearchPage() {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8"
-      >
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)] mb-3">
-          <Sparkles className="w-3.5 h-3.5" />
-          L5 · 全局搜索
-        </div>
-        <h1 className="text-3xl font-extrabold text-[var(--vp-c-text-1)] mb-4">搜索 KnowPilot</h1>
-        <div className="relative max-w-xl">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--vp-c-text-3)]" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索文章、Agent、Skill、记忆、消息…"
-            data-testid="global-search-input"
-            className="w-full rounded-2xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg)] py-3 pl-10 pr-4 text-sm outline-none focus:border-[var(--vp-c-brand)]"
-            autoFocus
-          />
-        </div>
-        {data && (
-          <p className="mt-2 text-xs text-[var(--vp-c-text-3)] flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            {data.hits.length} 条结果 · {data.tookMs}ms
-          </p>
-        )}
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={Search}
+        title="搜索 KnowPilot"
+      />
+      <div className="relative max-w-xl">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--vp-c-text-3)]" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索文章、Agent、Skill、记忆、消息…"
+          data-testid="global-search-input"
+          className="w-full rounded-2xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg)] py-3 pl-10 pr-4 text-sm outline-none focus:border-[var(--vp-c-brand)]"
+          autoFocus
+        />
+      </div>
+      {data && (
+        <p className="text-xs text-[var(--vp-c-text-3)] flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          {data.hits.length} 条结果 · {data.tookMs}ms
+        </p>
+      )}
 
       {debounced.length < 2 ? (
         <EmptyState title="输入至少 2 个字符" description="将搜索文章、Agent、Skill、记忆、任务、MCP 与聊天消息。" />

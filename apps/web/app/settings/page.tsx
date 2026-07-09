@@ -6,11 +6,10 @@
 
 import React from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { Cloud, Lock, Shield, Sparkles, ExternalLink } from "lucide-react";
+import { Cloud, Lock, Shield, ExternalLink } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { clearAuthToken } from "@/lib/auth";
-import { LoadingState, NativeCapabilitiesPanel } from "@/components/shared";
+import { LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { useNativeCapabilities } from "@/lib/hooks";
 
@@ -25,21 +24,11 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8"
-      >
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)] mb-3">
-          <Sparkles className="w-3.5 h-3.5" />
-          L5 · 系统设置
-        </div>
-        <h1 className="text-3xl font-extrabold text-[var(--vp-c-text-1)]">远程访问与安全</h1>
-        <p className="text-sm text-[var(--vp-c-text-3)] mt-2 max-w-2xl">
-          通过 Cloudflare Tunnel 暴露公网时，建议同时启用 Access 或 AUTH_MODE 密码保护。
-        </p>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        title="远程访问与安全"
+        description="通过 Cloudflare Tunnel 暴露公网时，建议同时启用 Access 或 AUTH_MODE 密码保护。"
+      />
 
       {isLoading || !data ? (
         <LoadingState count={2} />

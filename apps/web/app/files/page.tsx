@@ -10,11 +10,10 @@
 import React, { useState, useRef } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { Files, Upload, Link, Sparkles, Database } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Files, Upload, Link, Database } from "lucide-react";
 import type { FileMeta } from "@knowpilot/shared";
 import { useFile } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function FilesPage() {
   const { useList, useDelete, useUpload } = useFile();
@@ -67,7 +66,7 @@ export default function FilesPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
       {/* Hidden File Input */}
       <input
         type="file"
@@ -77,39 +76,12 @@ export default function FilesPage() {
         accept="image/*,.pdf,.zip,.txt"
       />
 
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <Files className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              L3 阶段 · 文件资源管理
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-              资源与文件柜
-            </h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              为文章提供图片、图表或代码附件的集中托管。在这里上传的资源会被自动放置在本地上传文件夹，直接通过相对 URL 在 Markdown 中渲染引用。
-            </p>
-          </div>
-
-          <Button
-            onClick={triggerUpload}
-            disabled={uploadMutation.isPending}
-            className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0"
-          >
-            <Upload className="w-5 h-5" />
-            {uploadMutation.isPending ? "正在存盘..." : "上传本地资源"}
-          </Button>
-        </div>
-      </motion.div>
+      <PageHeader
+        icon={Files}
+        title="资源与文件柜"
+        description="为文章提供图片、图表或代码附件的集中托管。在这里上传的资源会被自动放置在本地上传文件夹，直接通过相对 URL 在 Markdown 中渲染引用。"
+        action={{ label: uploadMutation.isPending ? "正在存盘..." : "上传本地资源", onClick: triggerUpload, icon: Upload, disabled: uploadMutation.isPending }}
+      />
 
       {/* 数据列表 */}
       {isLoading ? (

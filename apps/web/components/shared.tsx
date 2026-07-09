@@ -16,7 +16,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Inbox, Plus, AlertTriangle, CheckCircle2, Globe, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "./ui/button";
+import { Button, buttonVariants } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 
 /* ═══════════════════════════════════════════════════════
@@ -689,6 +689,71 @@ export function NativeCapabilitiesPanel({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   9. PageHeader — 管理页紧凑标题头（替代各页整屏渐变 Hero banner）
+   统一 17+ 管理页视觉，少占一屏，h1 文案不变（E2E 断言 level=1 heading）
+   ═══════════════════════════════════════════════════════ */
+
+export interface PageHeaderAction {
+  label: string;
+  onClick?: () => void;
+  href?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  disabled?: boolean;
+}
+
+export function PageHeader({
+  icon: Icon,
+  title,
+  description,
+  action,
+  children,
+}: {
+  icon?: React.ComponentType<{ className?: string }>;
+  title: string;
+  description?: string;
+  action?: PageHeaderAction;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        {Icon && (
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+            <Icon className="h-5 w-5" />
+          </span>
+        )}
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight text-[var(--kp-text-1)]">{title}</h1>
+          {description && (
+            <p className="mt-0.5 truncate text-xs text-[var(--kp-text-3)]" title={description}>
+              {description}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {children}
+        {action &&
+          (action.href ? (
+            <Link
+              href={action.href}
+              className={cn(buttonVariants(), "gap-1.5")}
+            >
+              {action.icon && <action.icon className="h-4 w-4" />}
+              {action.label}
+            </Link>
+          ) : (
+            <Button onClick={action.onClick} disabled={action.disabled} className="gap-1.5">
+              {action.icon && <action.icon className="h-4 w-4" />}
+              {action.label}
+            </Button>
+          ))}
+      </div>
     </div>
   );
 }

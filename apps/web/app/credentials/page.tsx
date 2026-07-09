@@ -6,12 +6,12 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { KeyRound, Plus, ShieldAlert, Download } from "lucide-react";
+import { KeyRound, Plus, Download } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Credential } from "@knowpilot/shared";
 import { useCredential } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 
 const TYPE_LABEL: Record<Credential["type"], string> = {
   api_key: "API Key",
@@ -77,51 +77,23 @@ export default function CredentialsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={KeyRound}
+        title="Credentials 凭据库"
+        description="管理 API Key / Token 等敏感凭据，按 scope 隔离用途。启用 AUTH_MODE=password 时建议配合远程访问使用。"
+        action={{ label: "添加示例凭据", onClick: handleCreateDemo, icon: Plus, disabled: createMutation.isPending }}
       >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <KeyRound className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              敏感数据 · 本地存储
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-              Credentials 凭据库
-            </h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              管理 API Key / Token 等敏感凭据，按 scope 隔离用途。启用 AUTH_MODE=password 时建议配合远程访问使用。
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto shrink-0">
-            <Button
-              onClick={handleImportFromEnv}
-              disabled={importMutation.isPending}
-              variant="outline"
-              className="flex items-center gap-2 px-5 py-6 rounded-2xl border-[var(--vp-c-divider)] hover:bg-[var(--vp-c-bg-soft)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Download className="w-5 h-5" />
-              从 .env 导入
-            </Button>
-            <Button
-              onClick={handleCreateDemo}
-              disabled={createMutation.isPending}
-              className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Plus className="w-5 h-5" />
-              添加示例凭据
-            </Button>
-          </div>
-        </div>
-      </motion.div>
+        <Button
+          onClick={handleImportFromEnv}
+          disabled={importMutation.isPending}
+          variant="outline"
+          className="gap-1.5"
+        >
+          <Download className="h-4 w-4" />
+          从 .env 导入
+        </Button>
+      </PageHeader>
 
       {isLoading ? (
         <LoadingState count={3} />

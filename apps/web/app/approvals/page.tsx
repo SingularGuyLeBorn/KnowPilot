@@ -6,11 +6,11 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { ShieldCheck, Sparkles, Check, X, Play, Clock } from "lucide-react";
+import { ShieldCheck, Check, X, Play, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Approval } from "@knowpilot/shared";
 import { useApproval } from "@/lib/hooks";
-import { EmptyState, LoadingState, Pagination } from "@/components/shared";
+import { EmptyState, LoadingState, Pagination, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
 type StatusFilter = "all" | "pending" | "approved" | "rejected";
@@ -62,29 +62,12 @@ export default function ApprovalsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <ShieldCheck className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 space-y-2">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-            <Sparkles className="w-3.5 h-3.5" />
-            L4 · 人工审批
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-            Approvals 审批队列
-          </h1>
-          <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-            删除 Agent/文章、Git push 等危险操作会先进入此队列。批准后可在本页一键执行。
-          </p>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={ShieldCheck}
+        title="Approvals 审批队列"
+        description="删除 Agent/文章、Git push 等危险操作会先进入此队列。批准后可在本页一键执行。"
+      />
 
       <div className="flex flex-wrap gap-2">
         {(["pending", "approved", "rejected", "all"] as StatusFilter[]).map((s) => (

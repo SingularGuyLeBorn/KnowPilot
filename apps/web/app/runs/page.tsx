@@ -5,12 +5,11 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { Activity, Sparkles, Clock, Bot } from "lucide-react";
+import { Activity, Clock, Bot } from "lucide-react";
 import Link from "next/link";
 import type { Run } from "@knowpilot/shared";
 import { useRun } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog, Pagination } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 import { formatRelativeTime } from "@/lib/utils";
 
 const STATUS_STYLE: Record<Run["status"], string> = {
@@ -49,29 +48,12 @@ export default function RunsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <Activity className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 space-y-2">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-            <Sparkles className="w-3.5 h-3.5" />
-            L2 · Agent 执行追踪
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-            Runs 执行记录
-          </h1>
-          <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-            查看 Agent 对话与工作流的每次执行状态、耗时与 Token 消耗，便于调试与审计。
-          </p>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={Activity}
+        title="Runs 执行记录"
+        description="查看 Agent 对话与工作流的每次执行状态、耗时与 Token 消耗，便于调试与审计。"
+      />
 
       <div className="flex flex-wrap gap-2">
         {["", "success", "failed", "running", "pending"].map((s) => (

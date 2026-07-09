@@ -13,7 +13,6 @@ import {
   Plus,
   Rss,
   Search,
-  Sparkles,
   Star,
   Tag,
   Trash2,
@@ -22,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { InfoSource } from "@knowpilot/shared";
 import { useInfoSource, useNativeCapabilities } from "@/lib/hooks";
-import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, NativeCapabilitiesPanel } from "@/components/shared";
+import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
 type SourceForm = {
@@ -320,34 +319,12 @@ export default function SourcesPage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-bg-alt)] to-[var(--kp-bg-mute)] p-8"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5">
-          <Globe className="h-80 w-80 text-[var(--kp-brand)]" />
-        </div>
-        <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--kp-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--kp-brand)]">
-              <Sparkles className="h-3.5 w-3.5" />
-              L2 · 可信信息源
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--kp-text-1)]">信息源管理</h1>
-            <p className="max-w-xl text-sm text-[var(--kp-text-3)]">
-              维护 Agent 检索与引用时可信任的外部来源。支持按类型、可信度与标签筛选，配置同步至 content/sources/。
-            </p>
-          </div>
-          <Button
-            onClick={openCreate}
-            className="flex shrink-0 items-center gap-2 rounded-2xl bg-[var(--kp-brand)] px-5 py-6 text-white shadow-lg hover:bg-[var(--kp-brand-dark)]"
-          >
-            <Plus className="h-5 w-5" />
-            新建信息源
-          </Button>
-        </div>
-      </motion.div>
+      <PageHeader
+        icon={Globe}
+        title="信息源管理"
+        description="维护 Agent 检索与引用时可信任的外部来源。支持按类型、可信度与标签筛选，配置同步至 content/sources/。"
+        action={{ label: "新建信息源", onClick: openCreate, icon: Plus }}
+      />
 
       {caps && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">

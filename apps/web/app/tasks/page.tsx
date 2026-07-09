@@ -6,12 +6,12 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { CalendarClock, Plus, Play, Sparkles } from "lucide-react";
+import { CalendarClock, Plus, Play } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Task } from "@knowpilot/shared";
 import { useTask } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function TasksPage() {
   const { useList, useCreate, useDelete, useRun } = useTask();
@@ -41,39 +41,13 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <CalendarClock className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              L3 阶段 · 计划与后台作业
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-              Tasks 定时任务
-            </h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              配置定期备份、增量编译、健康检查或 AI 定期摘要的自动化脚本作业，让 KnowPilot 系统独立且持续地后台运营。
-            </p>
-          </div>
-
-          <Button
-            onClick={handleCreateDemo}
-            className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0"
-          >
-            <Plus className="w-5 h-5" />
-            新建定时任务
-          </Button>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={CalendarClock}
+        title="Tasks 定时任务"
+        description="配置定期备份、增量编译、健康检查或 AI 定期摘要的自动化脚本作业，让 KnowPilot 系统独立且持续地后台运营。"
+        action={{ label: "新建定时任务", onClick: handleCreateDemo, icon: Plus }}
+      />
 
       {isLoading ? (
         <LoadingState count={3} />

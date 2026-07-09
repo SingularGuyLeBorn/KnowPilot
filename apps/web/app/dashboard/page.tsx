@@ -9,7 +9,7 @@ import { motion } from "framer-motion";
 import { BarChart3, Bot, Crown, FileText, ShieldCheck, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, Activity, type LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useNativeCapabilities } from "@/lib/hooks";
-import { LoadingState, NativeCapabilitiesPanel } from "@/components/shared";
+import { LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 
 function StatCard({
   icon: Icon,
@@ -44,19 +44,11 @@ export default function DashboardPage() {
   const tierIcon = (tier: string) => (tier === "super" ? Crown : tier === "manager" ? ShieldCheck : Bot);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8"
-      >
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)] mb-3">
-          <Sparkles className="w-3.5 h-3.5" />
-          L5 · 系统看板
-        </div>
-        <h1 className="text-3xl font-extrabold text-[var(--vp-c-text-1)]">Analytics 概览</h1>
-        <p className="text-sm text-[var(--vp-c-text-3)] mt-2">文章、Agent 运行、Token 与日志错误趋势一览。</p>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        title="Analytics 概览"
+        description="文章、Agent 运行、Token 与日志错误趋势一览。"
+      />
 
       {caps && (
         <NativeCapabilitiesPanel

@@ -6,12 +6,11 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { GitBranch, Plus, GitCommit, Sparkles, RefreshCw } from "lucide-react";
+import { GitBranch, Plus, GitCommit, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import type { GitRepo } from "@knowpilot/shared";
 import { useGit } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
 export default function GitPage() {
@@ -46,32 +45,13 @@ export default function GitPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              L3 · Git 工作区
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">Git 仓库</h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              注册本地仓库后，可查看工作区状态与最近提交历史（只读）。
-            </p>
-          </div>
-          <Button
-            onClick={handleCreateDemo}
-            className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl"
-          >
-            <Plus className="w-5 h-5" />
-            关联本地仓库
-          </Button>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={GitBranch}
+        title="Git 仓库"
+        description="注册本地仓库后，可查看工作区状态与最近提交历史（只读）。"
+        action={{ label: "关联本地仓库", onClick: handleCreateDemo, icon: Plus }}
+      />
 
       {isLoading ? (
         <LoadingState count={3} />

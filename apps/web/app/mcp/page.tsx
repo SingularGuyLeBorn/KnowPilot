@@ -6,12 +6,11 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Cpu, Plus, Terminal, Sparkles } from "lucide-react";
+import { Cpu, Plus, Terminal } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import type { McpServer } from "@knowpilot/shared";
 import { useMcp } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function McpPage() {
   const { useList, useCreate, useDelete } = useMcp();
@@ -39,39 +38,13 @@ export default function McpPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <Cpu className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              L2 阶段 · 模型上下文协议
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-              MCP 服务器接入
-            </h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              Model Context Protocol (MCP) 让智能体安全、标准地读取本地数据源（如本地文件系统、数据库或外部 API 终端）。
-            </p>
-          </div>
-
-          <Button
-            onClick={handleCreateDemo}
-            className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0"
-          >
-            <Plus className="w-5 h-5" />
-            接入 MCP 服务
-          </Button>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={Cpu}
+        title="MCP 服务器接入"
+        description="Model Context Protocol (MCP) 让智能体安全、标准地读取本地数据源（如本地文件系统、数据库或外部 API 终端）。"
+        action={{ label: "接入 MCP 服务", onClick: handleCreateDemo, icon: Plus }}
+      />
 
       {isLoading ? (
         <LoadingState count={3} />

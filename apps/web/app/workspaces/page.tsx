@@ -6,14 +6,14 @@
 
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Bot, Folder, HardDrive, MapPin, Plus, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Bot, Folder, HardDrive, MapPin, Plus, ShieldCheck, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Workspace } from "@knowpilot/shared";
 import { useWorkspace } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc";
-import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function WorkspacesPage() {
   const { useList, useCreate, useDelete } = useWorkspace();
@@ -56,28 +56,13 @@ export default function WorkspacesPage() {
   const confirmDelete = () => { if (deleteId) { deleteMutation.mutate({ id: deleteId }); setDeleteId(null); } };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm">
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <HardDrive className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" /> L3 阶段 · 多工作区管理
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">Workspaces 工作空间</h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              管理本地不同的 Markdown 目录和项目空间。每个 Workspace 自动创建一个管理 Agent，可包含多个子 Agent。
-            </p>
-          </div>
-          <Button onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)] px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0">
-            <Plus className="w-5 h-5" /> 创建新工作区
-          </Button>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={HardDrive}
+        title="Workspaces 工作空间"
+        description="管理本地不同的 Markdown 目录和项目空间。每个 Workspace 自动创建一个管理 Agent，可包含多个子 Agent。"
+        action={{ label: "创建新工作区", onClick: () => setShowCreate(true), icon: Plus }}
+      />
 
       {isLoading ? (
         <LoadingState count={3} />

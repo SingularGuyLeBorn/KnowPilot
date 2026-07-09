@@ -7,11 +7,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion } from "framer-motion";
-import { ScrollText, Trash2, Sparkles, Filter } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ScrollText, Trash2, Filter } from "lucide-react";
 import { useLog } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog } from "@/components/shared";
+import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 import { trpc } from "@/lib/trpc";
 
 interface LogEntry {
@@ -49,40 +47,13 @@ export default function LogsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative overflow-hidden rounded-3xl border border-[var(--vp-c-divider)] bg-gradient-to-br from-[var(--vp-c-bg-alt)] to-[var(--vp-c-bg-soft)] p-8 shadow-sm"
-      >
-        <div className="absolute right-0 top-0 -translate-y-12 translate-x-12 opacity-5 blur-2xl">
-          <ScrollText className="w-80 h-80 text-[var(--vp-c-brand)]" />
-        </div>
-
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-[var(--vp-c-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--vp-c-brand)]">
-              <Sparkles className="w-3.5 h-3.5" />
-              L3 阶段 · 运行日志与追踪
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[var(--vp-c-text-1)]">
-              控制台与系统日志
-            </h1>
-            <p className="text-sm text-[var(--vp-c-text-3)] max-w-xl">
-              审计智能代理运行状况、外部 MCP 调用细节和触发器执行记录。日志信息专为 AI 和开发调试设计，精准记录每一个微服务轨迹。
-            </p>
-          </div>
-
-          <Button
-            onClick={handleClearAll}
-            disabled={clearAllMutation.isPending}
-            className="flex items-center gap-2 bg-red-500 text-white hover:bg-red-600 px-5 py-6 rounded-2xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98] w-full md:w-auto shrink-0 border-0"
-          >
-            <Trash2 className="w-5 h-5" />
-            {clearAllMutation.isPending ? "正在清理..." : "清空全部日志"}
-          </Button>
-        </div>
-      </motion.div>
+    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+      <PageHeader
+        icon={ScrollText}
+        title="控制台与系统日志"
+        description="审计智能代理运行状况、外部 MCP 调用细节和触发器执行记录。日志信息专为 AI 和开发调试设计，精准记录每一个微服务轨迹。"
+        action={{ label: clearAllMutation.isPending ? "正在清理..." : "清空全部日志", onClick: handleClearAll, icon: Trash2, disabled: clearAllMutation.isPending }}
+      />
 
       {/* 筛选菜单 */}
       <div className="flex flex-wrap items-center gap-2.5">
