@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { memo, useRef, useState, useCallback } from "react";
 import { Bot, ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
@@ -34,7 +34,8 @@ interface ChatInputAreaProps {
   sessionId?: string | null;
 }
 
-export function ChatInputArea({
+// R16：memo 化——onSend(onStop)已 useCallback、skills 已 useMemo 稳定，流式期间 props 稳定可跳过重渲染
+export const ChatInputArea = memo(function ChatInputArea({
   onSend,
   onStop,
   disabled,
@@ -483,4 +484,4 @@ export function ChatInputArea({
       )}
     </div>
   );
-}
+});

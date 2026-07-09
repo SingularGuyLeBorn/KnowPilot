@@ -4,7 +4,7 @@
  * Agent Chat 右侧设置 Panel — 标签页布局 · 莫兰迪玻璃拟态
  */
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
@@ -189,7 +189,8 @@ export interface ChatSettingsPanelProps {
   tokenBudget: TokenBudgetSnapshot;
 }
 
-export function ChatSettingsPanel({
+// R17：memo 化——resetPromptToAgent/onOpenPromptEditor 已 useCallback、skills 已 useMemo，流式期间跳过
+export const ChatSettingsPanel = memo(function ChatSettingsPanel({
   chatConfig,
   updateConfig,
   resetPromptToAgent,
@@ -554,7 +555,7 @@ export function ChatSettingsPanel({
       </div>
     </div>
   );
-}
+});
 
 /** 解析 Skill metaJson（与 sync frontmatter 对齐） */
 export function parseSkillMeta(skill: Skill & { metaJson?: string | null }): {
