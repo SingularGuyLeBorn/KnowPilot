@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useId, isValidElement, type ReactNode, type ReactElement, type ComponentPropsWithoutRef } from "react";
+import { memo, useMemo, useState, useId, isValidElement, type ReactNode, type ReactElement, type ComponentPropsWithoutRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -211,7 +211,7 @@ function ThinkingNode({
   );
 }
 
-export function PostContent({ content, className, postSlug }: PostContentProps) {
+export const PostContent = memo(function PostContent({ content, className, postSlug }: PostContentProps) {
   const processedContent = useMemo(
     () => memoizeMarkdownTransform(content, transformWikiLinks),
     [content],
@@ -296,4 +296,4 @@ export function PostContent({ content, className, postSlug }: PostContentProps) 
       </ReactMarkdown>
     </div>
   );
-}
+});
