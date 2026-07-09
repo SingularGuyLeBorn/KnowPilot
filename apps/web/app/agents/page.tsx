@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   Cpu,
   Crown,
+  Folder,
   HeartPulse,
   Lock,
   MessageSquare,
@@ -221,6 +222,20 @@ const AgentCard = memo(function AgentCard({
       </div>
 
       <p className="mb-4 min-h-[36px] text-xs leading-relaxed text-[var(--kp-text-3)]">{agent.description || "暂无描述"}</p>
+
+      {/* Workspace 归属 */}
+      {agent.workspaceId && (
+        <div className="mb-3 flex items-center gap-1.5 text-[10px] text-[var(--kp-text-3)]">
+          <Folder className="h-3 w-3" />
+          <span>Workspace: {agent.workspaceId.slice(0, 8)}…</span>
+        </div>
+      )}
+      {isSuper && (
+        <div className="mb-3 flex items-center gap-1.5 text-[10px] text-amber-600">
+          <Crown className="h-3 w-3" />
+          <span>全局超级 Agent · 不属于任何 Workspace</span>
+        </div>
+      )}
 
       <div className="mb-4 space-y-1 border-t border-[var(--kp-divider)] pt-3">
         <AgentToolSummaryCard tools={agent.tools ?? []} />
