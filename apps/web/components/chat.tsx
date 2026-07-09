@@ -570,6 +570,9 @@ export function ChatView() {
 
   // 虚拟列表句柄：用于导航条按索引滚动 + 结构变化时强制滚到底部
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  // P0-1：历史分页——加载更早消息
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const consumeRef = useRef<() => void>(() => {});
 
   /* ─── 多 session 流式状态隔离 ───
@@ -1834,6 +1837,33 @@ export function ChatView() {
     virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: "smooth" });
   }, []);
 
+  // P0-1：加载更早消息——取当前最早一条 id 作 beforeId 游标，拉 50 条 prepend 到 sessionDetail.messages
+  const loadOlderMessages = useCallback(async () => {
+    if (!effectiveSessionId || loadingOlder) return;
+    const oldest = sessionDetail?.messages?.[0];
+    if (!oldest?.id) return;
+    setLoadingOlder(true);
+    try {
+      const res = await utils.message.list.fetch({ sessionId: effectiveSessionId, beforeId: oldest.id, page: 1, pageSize: 50 });
+      if (res.items.length > 0) {
+        utils.session.getById.setData({ id: effectiveSessionId }, (old: typeof sessionDetail) =>
+          old ? { ...old, messages: [...res.items, ...(old.messages ?? [])] } : old,
+        );
+      }
+      if (res.items.length < 50) setHasMoreMessages(false);
+    } catch (e) {
+      console.error("[loadOlderMessages] 加载更早消息失败:", e);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [effectiveSessionId, loadingOlder, sessionDetail?.messages, utils.message.list, utils.session.getById]);
+
+  // 切换会话时重置分页状态
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHasMoreMessages(true);
+  }, [effectiveSessionId]);
+
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
@@ -2135,7 +2165,21 @@ export function ChatView() {
                 </div>
               )}
               components={{
-                Header: () => <div className="h-4" />,
+                Header: () =>
+                  hasMoreMessages && (sessionDetail?.messages?.length ?? 0) >= 50 ? (
+                    <div className="flex justify-center py-3">
+                      <button
+                        type="button"
+                        onClick={() => void loadOlderMessages()}
+                        disabled={loadingOlder}
+                        className="rounded-full border border-[var(--kp-divider)] px-3 py-1 text-[11px] text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] disabled:opacity-50"
+                      >
+                        {loadingOlder ? "加载中…" : "加载更早消息"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="h-4" />
+                  ),
                 Footer: () => <div className="h-4" />,
               }}
               followOutput={(atBottom) => (atBottom ? "auto" : false)}

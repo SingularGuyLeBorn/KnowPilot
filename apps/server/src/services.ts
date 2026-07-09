@@ -1259,13 +1259,18 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   }
 
   override async getById(id: string): Promise<any> {
-    // P1-7：messages 加分页上限，避免长会话一次性 include 全量消息 OOM
-    const session = await this.prisma.chatSession.findUnique({
-      where: { id },
-      include: { messages: { orderBy: { createdAt: "asc" }, take: 500 } },
-    });
+    // P0-1（高风险分支）：messages 由 take 500 改为最近 50 条，大幅降低长会话初次载荷。
+    // 更早的历史由前端「加载更早消息」按页 prepend（message.list 分页）补回。
+    // 编辑/重试只作用于最后一条用户消息（UI 本就如此），始终在最近 50 条内，无一致性回归。
+    const session = await this.prisma.chatSession.findUnique({ where: { id } });
     if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
-    return session;
+    const recent = await this.prisma.chatMessage.findMany({
+      where: { sessionId: id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    recent.reverse(); // 恢复时间正序，供前端按序渲染
+    return { ...session, messages: recent };
   }
 
   // A4：轻量 getById，不 include messages。供 stop/rerun 等只需 kind/status 的场景使用，
@@ -1315,6 +1320,23 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   }
   protected override get defaultOrderBy(): string { return "createdAt"; }
   protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
+
+  // P0-1：beforeId 游标分页——返回早于 beforeId 的 pageSize 条（时间正序），供前端「加载更早」prepend。
+  async list(input: ListMessagesInput): Promise<PaginatedResult<MessageEntity>> {
+    if (input.beforeId) {
+      const cursor = await this.prisma.chatMessage.findUnique({ where: { id: input.beforeId }, select: { createdAt: true } });
+      if (!cursor) return { items: [], total: 0, page: 1, pageSize: 0, totalPages: 0 };
+      const items = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId, createdAt: { lt: cursor.createdAt } },
+        orderBy: { createdAt: "desc" },
+        take: input.pageSize,
+      });
+      items.reverse();
+      const formatted = items.map((i: any) => this.formatEntity(i));
+      return { items: formatted, total: formatted.length, page: 1, pageSize: formatted.length, totalPages: 1 };
+    }
+    return super.list(input);
+  }
 }
 
 /** File 资源元数据 (带 Base64 上传) */

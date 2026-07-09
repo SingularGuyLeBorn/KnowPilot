@@ -321,6 +321,8 @@ export const listMessagesSchema = z.object({
   sessionId: z.string().cuid(),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(50),
+  // P0-1：游标分页——加载早于 beforeId 的消息（前端「加载更早」用），与最近尾部加载配合
+  beforeId: z.string().cuid().optional(),
 });
 
 /* ═══════════════════════════════════════════════════════
