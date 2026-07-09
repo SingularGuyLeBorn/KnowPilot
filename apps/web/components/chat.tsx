@@ -94,11 +94,14 @@ const ThinkingStep = memo(function ThinkingStep({
   const [collapsed, setCollapsed] = useState(true);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
+    <div className="w-full overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className="flex w-full items-center gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-soft)] px-3 py-2 text-left text-[11px] font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)]"
+        className={cn(
+          "flex w-full items-center gap-2 bg-[var(--kp-bg-soft)] px-3 py-2 text-left text-[11px] font-medium text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)]",
+          !collapsed && "border-b border-[var(--kp-divider-light)]",
+        )}
         aria-expanded={!collapsed}
         aria-label={collapsed ? "展开思考" : "折叠思考"}
       >
