@@ -71,15 +71,19 @@ const loggerMiddleware = t.middleware(async (opts) => {
   const path = opts.path;
   const type = opts.type;
 
+  const result = await opts.next();
+  const durationMs = Date.now() - start;
+
+  // P3：query 不记日志，跳过 getRawInput 以避免每个查询的无谓开销。
+  if (type !== "mutation") return result;
+
+  // 仅 mutation 取 rawInput（用于 ai.invoke 的 tool 元数据）
   let rawInput: unknown;
   try {
     rawInput = await opts.getRawInput();
   } catch {
     rawInput = undefined;
   }
-
-  const result = await opts.next();
-  const durationMs = Date.now() - start;
 
   const component = path === "ai.invoke" ? "ai.call" : path.split(".")[0] || "unknown";
   const baseMeta: Record<string, unknown> = { durationMs, type };
@@ -88,9 +92,10 @@ const loggerMiddleware = t.middleware(async (opts) => {
     baseMeta.success = result.ok;
   }
 
-  if (type === "mutation" && result.ok) {
-    try {
-      await opts.ctx.prisma.log.create({
+  if (result.ok) {
+    // P2：成功审计日志改 fire-and-forget，不阻塞请求关键路径。
+    void opts.ctx.prisma.log
+      .create({
         data: {
           level: "info",
           component,
@@ -101,13 +106,12 @@ const loggerMiddleware = t.middleware(async (opts) => {
               : `${path} 执行成功 (${durationMs}ms)`,
           metadata: JSON.stringify(baseMeta),
         },
+      })
+      .catch(() => {
+        // 日志写入失败不影响业务
       });
-    } catch {
-      // 日志写入失败不影响业务
-    }
-  }
-
-  if (type === "mutation" && !result.ok) {
+  } else {
+    // 错误日志保留同步写入，确保可靠性（崩溃前能落库）
     try {
       await opts.ctx.prisma.log.create({
         data: {

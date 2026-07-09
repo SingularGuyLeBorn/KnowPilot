@@ -200,6 +200,39 @@ export async function injectIntegrationCredentials(
   config.integrations.github = { ...config.integrations.github, ...creds.github };
 }
 
+/* ─── P1：凭据注入状态管理（避免每请求重复注入 + 改写共享 config） ───
+ * 此前 createContext 对每个 tRPC 请求都调用 injectIntegrationCredentials，
+ * 即便 listCredentialsByScope 有 30s 缓存，每请求仍做 3 次 Map 查 + 对象 spread
+ * 并改写共享 config（并发竞态）。改为：首次请求注入一次，后续请求零工作；
+ * 凭据 CRUD 后标记失效，下一次请求惰性重注入（CRUD 路径不额外读 DB）。
+ */
+let integrationInjected = false;
+let integrationInjectPromise: Promise<void> | null = null;
+
+/** 幂等注入：已注入则立即返回；首次或失效后执行一次注入（并发合并为单次）。 */
+export async function ensureIntegrationCredentialsInjected(
+  config: AppConfig,
+  prisma: PrismaClient,
+): Promise<void> {
+  if (integrationInjected) return;
+  if (!integrationInjectPromise) {
+    integrationInjectPromise = (async () => {
+      await injectIntegrationCredentials(config, prisma);
+      integrationInjected = true;
+      integrationInjectPromise = null;
+    })();
+  }
+  await integrationInjectPromise;
+}
+
+/** 凭据 CRUD 后调用：标记需要重注入 + 清 listCredentialsByScope 缓存。
+ *  下一个请求的 ensureIntegrationCredentialsInjected 会重新拉取并写入 config。 */
+export function invalidateIntegrationCredentials(): void {
+  integrationInjected = false;
+  integrationInjectPromise = null;
+  clearCredentialCache();
+}
+
 export async function touchCredentialLastUsed(
   prisma: PrismaClient,
   id: string,

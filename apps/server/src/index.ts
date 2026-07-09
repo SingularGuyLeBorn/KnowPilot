@@ -23,6 +23,7 @@ import { getEnrichedServerCapabilities, getServerCapabilities } from "./infra/ca
 import { handleAgentChatStream } from "./infra/agentStream.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
+import { ensureIntegrationCredentialsInjected } from "./infra/credentialVault.js";
 import { isAuthEnabled, verifyAuthHeader } from "./infra/auth.js";
 import { prisma } from "./db.js";
 
@@ -36,6 +37,11 @@ const config = getAppConfig();
 syncSearchEnvFromConfig(config);
 const eventBus = getEventBus();
 const services = getServiceContainer(prisma, eventBus, config);
+// P1：启动时尽早注入一次集成凭据到 config.integrations，后续请求零工作；
+// 凭据 CRUD 后由 invalidateIntegrationCredentials 标记失效，下次请求惰性重注入。
+void ensureIntegrationCredentialsInjected(config, prisma).catch((err) => {
+  console.warn("  ⚠️ [Credentials] 启动注入失败，将退回首次请求时注入:", err instanceof Error ? err.message : err);
+});
 const triggerEngine = getTriggerEngine(prisma, eventBus, services);
 const taskScheduler = getTaskScheduler(prisma, services);
 

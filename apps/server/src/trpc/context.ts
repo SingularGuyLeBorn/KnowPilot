@@ -10,13 +10,14 @@ import { prisma } from "../db.js";
 import { getEventBus, type AppEventBus } from "../infra/eventBus.js";
 import { getAppConfig, type AppConfig } from "../infra/config.js";
 import { getServiceContainer, type ServiceContainer } from "../infra/serviceContainer.js";
-import { injectIntegrationCredentials } from "../infra/credentialVault.js";
+import { ensureIntegrationCredentialsInjected } from "../infra/credentialVault.js";
 import type { Request, Response } from "express";
 
 export async function createContext({ req, res }: CreateExpressContextOptions): Promise<Context> {
   const eventBus = getEventBus();
   const config = getAppConfig();
-  await injectIntegrationCredentials(config, prisma);
+  // P1：凭据注入改为幂等（首次注入一次，CRUD 后失效重注入），不再每请求重复注入。
+  await ensureIntegrationCredentialsInjected(config, prisma);
   const services = getServiceContainer(prisma, eventBus, config);
 
   return {
@@ -33,7 +34,7 @@ export async function createContext({ req, res }: CreateExpressContextOptions): 
 export async function createContextInner() {
   const eventBus = getEventBus();
   const config = getAppConfig();
-  await injectIntegrationCredentials(config, prisma);
+  await ensureIntegrationCredentialsInjected(config, prisma);
   const services = getServiceContainer(prisma, eventBus, config);
 
   return {
