@@ -60,6 +60,10 @@ function writeSse(res: Response, event: AgentStreamEvent) {
   res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
+// R5：历史消息加载统一分页上限。此前 prepareMessage 用 200、主流程用 100 不一致，
+// >100 条历史时主流程会截断更早消息（LLM 上下文丢失早期轮次）。统一为 200。
+const HISTORY_PAGE_SIZE = 200;
+
 interface LlmCallOptions {
   temperature?: number;
   maxTokens?: number;
@@ -383,7 +387,7 @@ async function prepareMessage(
   input: AgentChatInput,
 ): Promise<PrepareResult> {
   const loadHistory = async (sessionId: string) => {
-    const res = await services.message.list({ sessionId, page: 1, pageSize: 200 });
+    const res = await services.message.list({ sessionId, page: 1, pageSize: HISTORY_PAGE_SIZE });
     return res.items;
   };
 
@@ -543,7 +547,7 @@ export async function chatAgentStream(
       });
     }
 
-    const history = await services.message.list({ sessionId, page: 1, pageSize: 100 });
+    const history = await services.message.list({ sessionId, page: 1, pageSize: HISTORY_PAGE_SIZE });
     const historyForLlm = prepared!.excludeAssistantId
       ? history.items.filter((m) => m.id !== prepared!.excludeAssistantId)
       : history.items;

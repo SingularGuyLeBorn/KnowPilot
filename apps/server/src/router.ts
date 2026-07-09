@@ -504,7 +504,13 @@ const analyticsRouter = router({
       const days = input?.days ?? 30;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
       const where = { createdAt: { gte: since }, ...(input?.agentId ? { agentId: input.agentId } : {}) };
-      const runs = await ctx.prisma.run.findMany({ where, select: { agentId: true, status: true, durationMs: true, toolCallCount: true, tokenUsage: true } });
+      // R4：加 take 上限避免高频 Agent 下无界加载全部 Run 进内存聚合；取最近 5000 条（dashboard 统计可接受近似）
+      const runs = await ctx.prisma.run.findMany({
+        where,
+        select: { agentId: true, status: true, durationMs: true, toolCallCount: true, tokenUsage: true },
+        take: 5000,
+        orderBy: { createdAt: "desc" },
+      });
 
       // 按 agentId 分组聚合
       const byAgent = new Map<string, { total: number; success: number; failed: number; totalDurationMs: number; totalToolCalls: number; totalTokens: number }>();
