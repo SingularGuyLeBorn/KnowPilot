@@ -420,6 +420,65 @@
 
 ---
 
+# 第二轮性能优化（round 2）
+
+> 第一轮 28 项已全部合并 master。本轮聚焦第一轮未覆盖的新问题，按 AGENTS.md Q&A 流程；
+> 因由同一 AI 自答，`回答：` 行直接给出判定与实现要点。
+
+## 已排除项（自审后判定不做，留痕）
+
+- **history 每轮重载**：agentStream 的 `history` 每请求只加载一次（`agentStream.ts:546`），ReAct 循环在内存 `llmMessages` 上增量，**非每轮重查**。非真问题，跳过。
+- **MemoryService list 字段裁剪**：memory 列表页（`memories/page.tsx:120`）展示完整 `content`，裁剪会破坏 UI，跳过。
+- **globalSearch N+1**：`mapFtsHits` 已按 post/message 批量 `findMany`（`globalSearch.ts:62-75`），无 N+1，跳过。
+- **message.list 字段裁剪**：agentStream 重建历史需 `toolCalls/toolResults/content`，裁剪会破坏 ReAct 回放，跳过。
+
+## R1. post.search 用 LIKE 全表扫，应改用 FTS
+
+- **位置**：`apps/server/src/services.ts:570-577` PostService.search
+- **当前行为**：`findMany({ where: { OR: [{ title: { contains: q } }, { content: { contains: q } }] } })`，对 title+content 做 `LIKE %q%` 全表扫，文章多/内容长时慢。
+- **问题**：已有 FTS5 索引覆盖 post（title+body=slug+content），但 blog 搜索走 LIKE，未用 FTS。
+- **推荐解决方式**：优先 `searchFts` 取 post 命中的 id，再 `findMany({ id: { in } , deletedAt: null })` 按 FTS rank 顺序返回；FTS 无命中时回退 LIKE（兼容索引未就绪/冷启动）。
+- **风险/兼容**：结果排序由「updatedAt desc」改为「FTS 相关度」——搜索场景相关度排序更合理，非功能回归；API 形状不变。
+- **回答：同意。实现：FTS 优先 + LIKE 回退；保留 API 形状。**
+
+## R2. 服务端 SSE 每个 token 一次 emit/写，应合并
+
+- **位置**：`apps/server/src/infra/agentStream.ts:301,343`（`options.emit({type:"token",delta})`）；`handleAgentChatStream` 的 emit=`writeSse`
+- **当前行为**：每个 LLM token chunk 一次 `writeSse`（P7 已合并 event+data 行，但仍每 token 一帧）。长回答数千 token → 数千次 `res.write`。
+- **问题**：服务端系统调用/序列化频率高；前端虽已 rAF 合并，但服务端仍逐帧发送。
+- **推荐解决方式**：在 `handleAgentChatStream` 包一层 token 合并 emit：token 事件累加到 buffer，16ms 定时器冲刷；非 token 事件（thinking/tool/done/error）先冲刷 buffer 再发送，保证顺序；finally/连接关闭时冲刷，不丢字。
+- **风险/兼容**：前端 `onToken` 按 delta 累加，接收合并大 delta 等价；`trackingEmit` 在合并前完成 finalContent 累积，内容正确。
+- **回答：同意。实现：handleAgentChatStream 内 coalescedEmit + 16ms flush + 顺序保证。**
+
+## 已确认 ✅（round 2）
+
+| 编号 | 决策 | 状态 |
+|---|---|---|
+| R1 | post.search FTS 优先 + LIKE 回退 | ✅ 已实施 |
+| R2 | 服务端 SSE token 16ms 合并 | ✅ 已实施 |
+
+## 批次 5 自审记录
+
+### 实施项
+
+- **R1**：PostService.search 改 FTS 优先（searchFts 取 post 命中 id → findMany 回填，按 rank 顺序返回），FTS 无命中/不可用时回退原 LIKE。trpc post.search 用例（创建后立即搜）通过——P11 afterCreate 已即时入 FTS。
+- **R2**：handleAgentChatStream 包 coalescedEmit：token 累加 buffer + 16ms 定时器冲刷为单帧；非 token 事件先 flushTokens 再发送保序；finally/关闭冲刷不丢字。
+
+### 复核确认
+
+- **R1 软删除安全**：FTS 索引含全部 post（rebuild 不过滤 deletedAt），findMany 回填时 `deletedAt: null` 过滤，软删 post 不会泄露；若 FTS 命中多为软删导致 ordered 为空，回退 LIKE。结果排序由 updatedAt 改为 FTS 相关度（搜索场景更合理，非功能回归）。
+- **R1 查询转义**：hyphenated 关键词经 escapeFtsQuery 拆分为 quoted term AND，trpc 测试 `galaxy-search-marker` 命中验证通过。
+- **R2 内容正确**：chatAgentStream 的 trackingEmit 在调用 coalescedEmit 前已完成 finalContent/streamingContent 累积，合并仅影响写帧；前端 onToken 按 delta 累加，合并大 delta 等价。
+- **R2 顺序**：非 token 事件先 flushTokens 再 writeSse，token 与 thinking/tool/done/error 相对顺序保持。
+- **R2 退出**：finally flushTokens 冲刷残留 token，避免末尾字符丢失；连接关闭时 onClose 触发 abort，chatAgentStream 捕获后走 finally。
+
+### 已知可接受项
+
+- R1 FTS 命中含软删 post 时返回数可能少于 limit（已 over-fetch limit*2 缓解）；回退 LIKE 兜底。
+- R2 仅合并 token 事件，thinking delta 仍逐帧（频率低，非热点）；后续可同样合并。
+
+---
+
 > 扫描结论摘要：后端最大单点开销是 **P1（createContext 每请求 3 次 DB 注入凭据）**；前端 Swarm UI 最大开销是 **A1（WorkspaceTree N+1）**；Agent 运行时最大开销是 **A2（Skill N+1）**。这三项 + **P5/A11（索引）** + **P2/P3（loggerMiddleware）** 构成「不影响功能、收益最大」的核心批次。
 
 

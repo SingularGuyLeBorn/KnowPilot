@@ -85,7 +85,7 @@ import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
-import { upsertFtsRow, deleteFtsRow } from "./infra/ftsIndex.js";
+import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
 import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 
@@ -568,6 +568,22 @@ ${entity.content}
   }
 
   async search(query: string, limit = 10): Promise<PostEntity[]> {
+    // R1：优先 FTS（索引覆盖 title+content，远快于 LIKE %q% 全表扫）。
+    // FTS 命中 post id 后按 rank 顺序 findMany 回填，保持 API 形状不变；FTS 无命中/不可用时回退 LIKE。
+    try {
+      const ftsHits = await searchFts(this.prisma, query, limit * 2);
+      const postIds = ftsHits.filter((h) => h.entity === "post").map((h) => h.entityId);
+      if (postIds.length > 0) {
+        const posts = await this.prisma.post.findMany({
+          where: { id: { in: postIds }, deletedAt: null },
+        });
+        const byId = new Map(posts.map((p: any) => [p.id, p] as const));
+        const ordered = postIds.map((id) => byId.get(id)).filter((p): p is any => !!p);
+        if (ordered.length > 0) return ordered.slice(0, limit).map((item: any) => this.formatEntity(item));
+      }
+    } catch {
+      // FTS 不可用（表未就绪等），回退 LIKE
+    }
     const rawItems = await this.prisma.post.findMany({
       where: { deletedAt: null, OR: [{ title: { contains: query } }, { content: { contains: query } }] },
       take: limit,
