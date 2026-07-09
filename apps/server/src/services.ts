@@ -472,12 +472,31 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
     };
   }
 
+  // R13：keyword 优先走 FTS 取 post id 再过滤，避免 LIKE 扫 title+content 全表；FTS 无命中/不可用回退 LIKE
+  async list(input: ListPostsInput): Promise<PaginatedResult<PostEntity>> {
+    if (input.keyword && !(input as any).ftsIds) {
+      try {
+        const hits = await searchFts(this.prisma, input.keyword, 200);
+        const ids = hits.filter((h) => h.entity === "post").map((h) => h.entityId);
+        if (ids.length > 0) {
+          return super.list({ ...input, ftsIds: ids } as any);
+        }
+      } catch {
+        // FTS 不可用，回退 LIKE
+      }
+    }
+    return super.list(input);
+  }
+
   protected buildListWhere(input: ListPostsInput): any {
     const where: any = { deletedAt: null };
     if (input.published !== undefined) where.published = input.published;
     if (input.category) where.category = input.category;
     if (input.tag) where.tags = { contains: input.tag };
-    if (input.keyword) {
+    // R13：FTS 命中时按 id 过滤；否则回退 LIKE
+    if ((input as any).ftsIds) {
+      where.id = { in: (input as any).ftsIds };
+    } else if (input.keyword) {
       where.OR = [{ title: { contains: input.keyword } }, { content: { contains: input.keyword } }];
     }
     return where;

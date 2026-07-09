@@ -15,6 +15,7 @@ import {
 import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.js";
 import { maybeCompactMessages } from "./autoCompact.js";
+import { searchFts } from "./ftsIndex.js";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
 
@@ -30,9 +31,23 @@ export interface AgentLoopResult {
 export async function buildMemoryContext(services: ServiceContainer, userText: string): Promise<string> {
   const keyword = userText.slice(0, 80).trim();
   if (!keyword) return "";
-  const memories = await services.memory.list({ page: 1, pageSize: 5, keyword });
-  if (!memories.items.length) return "";
-  const lines = memories.items.map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
+  // R11：优先 FTS 召回 memory（已索引，P11），避免 LIKE 扫 content 全表；FTS 无命中/不可用回退 LIKE
+  let memories: any[] = [];
+  try {
+    const hits = await searchFts(services.prisma, keyword, 5);
+    const memIds = hits.filter((h) => h.entity === "memory").map((h) => h.entityId);
+    if (memIds.length > 0) {
+      memories = await services.prisma.memory.findMany({ where: { id: { in: memIds } } });
+    }
+  } catch {
+    // FTS 未就绪等，回退 LIKE
+  }
+  if (memories.length === 0) {
+    const fb = await services.memory.list({ page: 1, pageSize: 5, keyword });
+    memories = fb.items;
+  }
+  if (!memories.length) return "";
+  const lines = memories.map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
   return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
 }
 
