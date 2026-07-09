@@ -821,10 +821,42 @@ export function handleAgentChatStream(
     const onClose = () => abortController.abort();
     res.on("close", onClose);
 
+    // R2：token 事件合并 —— 累加 delta 到 buffer，16ms 定时器冲刷为单帧；
+    // 非 token 事件先冲刷 buffer 再发送，保证事件顺序；finally/关闭时冲刷不丢字。
+    let tokenBuffer = "";
+    let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushTokens = () => {
+      if (tokenFlushTimer) {
+        clearTimeout(tokenFlushTimer);
+        tokenFlushTimer = null;
+      }
+      if (tokenBuffer) {
+        writeSse(res, { type: "token", delta: tokenBuffer });
+        tokenBuffer = "";
+      }
+    };
+    const coalescedEmit = (event: AgentStreamEvent) => {
+      if (event.type === "token") {
+        tokenBuffer += event.delta;
+        if (!tokenFlushTimer) {
+          tokenFlushTimer = setTimeout(flushTokens, 16);
+        }
+      } else {
+        // 先冲掉待写 token，保证 thinking/tool/done/error 与 token 的相对顺序
+        flushTokens();
+        writeSse(res, event);
+      }
+    };
+
     try {
-      await chatAgentStream(services, config, body, invokeTrpc, (event) => writeSse(res, event), abortController.signal);
+      await chatAgentStream(services, config, body, invokeTrpc, coalescedEmit, abortController.signal);
     } finally {
       res.off("close", onClose);
+      flushTokens(); // 冲刷残留 token，避免末尾字符丢失
+      if (tokenFlushTimer) {
+        clearTimeout(tokenFlushTimer);
+        tokenFlushTimer = null;
+      }
       res.end();
     }
   };
