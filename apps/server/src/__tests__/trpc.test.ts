@@ -136,6 +136,28 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     await expect(caller.agent.getById({ id: a2.data!.id })).rejects.toThrow();
   });
 
+  it("agent API 响应不返回明文 apiKey（安全回归 #20）", async () => {
+    const secret = `sk-secret-${Date.now()}`;
+    const created = await caller.agent.create({
+      name: `KeyAgent_${Date.now()}`,
+      model: "deepseek-chat",
+      apiKey: secret,
+    } as any);
+    expect(created.success).toBe(true);
+    // create 响应不回显明文
+    expect((created.data as any).apiKey).not.toBe(secret);
+
+    const fetched: any = await caller.agent.getById({ id: created.data!.id });
+    expect(fetched.apiKey).not.toBe(secret);
+
+    const list = await caller.agent.list({ page: 1, pageSize: 50, keyword: `KeyAgent_` });
+    const mine = list.items.find((i: any) => i.id === created.data!.id);
+    expect(mine).toBeTruthy();
+    expect((mine as any).apiKey).not.toBe(secret);
+
+    await caller.agent.delete({ id: created.data!.id });
+  });
+
   // 3. Skill (技能)
   it("should perform CRUD on Skill entity", async () => {
     const uniqueName = `Test Skill ${Date.now()}`;

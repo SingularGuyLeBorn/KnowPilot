@@ -198,3 +198,178 @@
 ---
 
 > 结论：两轮 38 项已把「安全高收益 + 中等风险可落地」区间穷尽，master 干净检出可构建、测试全绿。剩余最高收益项（Chat 消息加载，P0-1）属大重构，建议独立评审、拆分子 PR、前置 E2E 后再攻。第 1/2 优先的小项可随时穿插落地。
+
+
+---
+
+## 六、外部审计找茬记录
+
+> 本章节由 AI 助手以「挑毛病」视角复核 `perf-plan.md` 与 `perf-audit-report.md` 后补充，记录文档结构、实现方式、验证基线、风险控制等方面的存疑项，供后续决策者参考。
+
+### 6.1 文档与流程层面的问题
+
+#### 1. `perf-plan.md` 身兼「计划」与「实施日志」两职，结构混乱
+- `perf-plan.md` 前半部分是 Q&A 决策流程，中间插入「已确认 ✅」表，后面又塞入 8 个批次的自审记录、round 2 的 R1–R10 及另 8 个批次自审，文件定位不统一。
+- **建议**：`perf-plan.md` 只保留 Q&A + 已确认表；所有自审、实现细节、批次记录迁移到 `perf-audit-report.md`。
+
+#### 2. Round 2 的 R7–R10 未经过 Q&A 流程
+- R1–R6 在 `perf-plan.md` 中有条目和「回答：同意。已实施。」；R7–R10 直接出现在「批次 7/8 自审记录」中，没有前置问题描述与决策回答。
+- **建议**：补齐 R7–R10 的独立 Q&A 条目，或在「已确认 ✅」总表中补全这 4 项。
+
+#### 3. 「38 项」数字未在文档中清晰对应
+- 读者需手动计算 P1–P12(12) + A1–A16(16) + R1–R10(10) = 38，缺少一张总览表。
+- **建议**：`perf-audit-report.md` 开头增加总览表，列清编号、名称、状态、批次、风险等级。
+
+#### 4. Q&A 回答由 AI 自行填写，缺乏用户确认痕迹
+- 文档写着「你只需在每条 `回答：` 后写回复」，但实际由 AI 填写。后续审计无法区分人类确认与 AI 默认同意。
+- **建议**：在 `perf-plan.md` 中明确标注「回答由 AI 根据推荐方案默认填写，用户未逐条反驳即视为同意」，或让用户逐条确认。
+
+---
+
+### 6.2 实现方式上的「茬」
+
+#### 5. A1 WorkspaceTree 从「展开才查」退化成「一次性查全部」
+- 实现改为 Chat 层一次性拉所有 agent 的会话再分组传下，解决了 N+1，但变成 **over-fetch**。
+- **风险**：100 个 agent 只展开 2 个时仍要拉 100 个 agent 的会话。
+- **建议**：后端支持 `session.list({ agentIds })` 批量查询，前端仍按展开状态控制传入的 agentIds，或做按需加载。
+
+#### 6. A6 `AgentService.bulkDelete` 的 deleteMany 与文件清理非原子
+- 实现为 `findMany + deleteMany + 逐条文件/FTS 清理`。
+- **风险**：`deleteMany` 已提交后，若某条 Markdown 删除或 FTS 清理失败，DB 与文件/索引不一致。
+- **建议**：用 `$transaction([...deleteMany..., ...文件删除...])` 整体回滚，或先清理文件/FTS 再删 DB。
+
+#### 7. A13 sync watch 只优化 add/change，unlink 仍全量扫描
+- 文档明确「unlink 仍走全量 `syncEntity`（含 cleanup）」。
+- **风险**：批量删除文件时每次 unlink 都触发全目录扫描，仍是性能热点。
+- **建议**：unlink 也做增量——根据删除文件路径推断 affected slug，只做对应实体的 cleanup。
+
+#### 8. R5 把主流程 history pageSize 从 100 提到 200
+- 文档称这是为了与 prepareMessage 对齐的正确性修复。
+- **问题**：这**加剧**了历史加载负担。本来 stop/rerun 拉 500 条已过重，现在主流程也改成 200，每次 Agent 运行多加载一倍历史。
+- **建议**：两边都降到 100，或实现真正的分页/滑动窗口加载历史。
+
+#### 9. R4 `swarmStats` 用 `take: 5000` 封顶只是「创可贴」
+- 实现未解决 JS 聚合内存高的问题，只是把上限从无限改成 5000。
+- **风险**：5000 条 Run 的 tokenUsage JSON 仍可能占用大量内存。
+- **建议**：按文档自己提出的方向，用 SQL `groupBy` + `_count/_sum` 替代 JS 聚合。
+
+#### 10. P1 凭据缓存的 generation 计数器方案复杂且缺少实现细节
+- 文档仅描述「引入 generation 计数器；invalidate 自增 gen 使进行中的旧注入作废」。
+- **风险**：gen 的读取与 config 写入之间若缺乏原子性，仍可能竞态。
+- **建议**：在 `perf-audit-report.md` 补充 P1 的实现伪代码或关键代码路径，方便后续审计。
+
+#### 11. P11 FTS 增量更新后，软删/永久删的 Post 未即时移除 FTS
+- 文档承认这是「已知可接受项」。
+- **问题**：用户软删文章后搜索仍能搜到，直到下次 `db:sync`，属于**功能缺口**。
+- **建议**：在 `PostService.softDelete/permanentDelete` 内补 `removeFts`，不要长期接受。
+
+#### 12. R8 dashboard 缓存 miss 时仍是 13 路并行 count
+- 仅加了 30s TTL，缓存失效/首次调用时仍是 13 次 count。
+- **建议**：要么合并为单 SQL/CTE，要么不要把此项当作「已完成」性能优化来宣扬。
+
+#### 13. R2 SSE 16ms token 合并可能引入可感知延迟
+- token buffer + 16ms 定时器冲刷；Node.js 定时器精度不保证，实际可能 16–30ms。
+- **风险**：大模型吐字慢时用户会感觉「顿一下才出字」。
+- **建议**：增加 max buffer size 条件，buffer 满 N 字符或 16ms 先到先冲。
+
+#### 14. P2 fire-and-forget 日志没有错误处理/降级
+- 实现为 `void prisma.log.create(...).catch(()=>{})`。
+- **风险**：Prisma 临时断开时日志静默丢失，调用方完全不知。
+- **建议**：`catch` 中至少 `console.error` 或写入本地文件降级日志，不要完全吞掉。
+
+#### 15. P10 `/health` capabilities 缓存 30s，缺少主动失效
+- InfoSource/Skill/Agent 等 CRUD 后 capabilities 可能 30s 内 stale。
+- **建议**：在对应 CRUD 路径调用 `invalidateCapabilitiesCache`。
+
+---
+
+### 6.3 验证与测试层面的问题
+
+#### 16. 验证基线缺少 E2E 运行结果
+- `perf-audit-report.md` 只列了 tsc、Vitest、build、eslint，未列 `pnpm test:e2e:mock` 和真实 LLM E2E。
+- **风险**：R2 SSE 合并、P4 batchLink、A8/R9 轮询、R10 prop 传递都严重影响前端交互，unit test 和 build 无法覆盖。
+- **建议**：补充 E2E 运行结果，尤其是 chat 相关用例。
+
+#### 17. 没有性能基准（before/after）
+- 文档称「收益高」「最大单点开销」，但没有任何数字：请求延迟、HTTP 请求数、响应大小、count 耗时等。
+- **风险**：无法证明优化有效，也无法防止后续回退。
+- **建议**：至少补充一次手动 benchmark，把关键数字写入报告。
+
+#### 18. 未提及并发/压力测试
+- P1、P2、P4、A6 等涉及并发行为，Vitest 单线程测试无法发现竞态。
+- **建议**：对 P1 凭据缓存和 A6 bulkDelete 增加并发调用测试。
+
+---
+
+### 6.4 遗漏/未处理的真问题
+
+#### 19. Chat 消息全量加载仍是 P0 级问题，但未动
+- 审计报告承认这是「最高收益，最高回归风险」。
+- **建议**：把「补 Chat E2E」本身列为独立高优先级任务，而不是无限期挂起；否则最大卡顿源一直存在。
+
+#### 20. `agent.list` 仍返回 `apiKey` 明文
+- 审计报告第 1 优先建议做，但还没做。
+- **性质**：这首先是**安全漏洞**，不应只作为性能审计的「第 1 优先」轻描淡写。
+- **建议**：立即单独修复并补回归测试「list 响应不含明文密钥」。
+
+#### 21. `buildMemoryContext` 每条消息 LIKE 查 Memory 未改
+- Memory 已有 FTS（P11），但 Chat 运行时记忆召回仍走 LIKE，等于 FTS 没被充分利用。
+- **建议**：尽快改 FTS 召回 + 补中文短词召回测试。
+
+#### 22. dashboard 13 count 仍未合并
+- 同上，识别为瓶颈但未真正解决。
+
+---
+
+### 6.5 最严重的 5 个「茬」（按优先级排序）
+
+| 优先级 | 问题 | 理由 |
+|---|---|---|
+| 🔴 1 | `agent.list` 返回 `apiKey` 明文 | 安全漏洞，应立即修复 |
+| 🔴 2 | Chat 消息全量 500 条未解决 | 最大性能瓶颈，用户体验最卡 |
+| 🟠 3 | A13 unlink 仍全量扫描 | watch 删除场景性能没真正解决 |
+| 🟠 4 | R5 pageSize 100→200 | 以性能换正确性，方向反了 |
+| 🟠 5 | 缺少 E2E 与性能基准 | 无法证明优化有效，也无法防回归 |
+
+---
+
+### 6.6 总体评价
+
+- **分析能力**：8/10 — 识别到了大量真实问题。
+- **文档规范**：4/10 — 计划与审计混为一谈，Q&A 自答，R7–R10 缺决策流程。
+- **验证基线**：3/10 — 缺 E2E、缺性能基准、缺并发测试。
+- **工程严谨性**：5/10 — 部分实现是创可贴（R4/R5/A1/A13），正确性与原子性有隐患。
+
+> 结论：方向正确、覆盖面广，但建议先整理文档结构，补齐安全与 E2E 验证，再把「创可贴」方案替换为更彻底的实现。
+
+---
+
+## 七、批次 9 硬茬修复（针对第六章找茬）
+
+> 针对第六章「外部审计找茬记录」中可立即修的代码层硬茬，开 `perf/batch9-hardening` 分支闭环修复。
+
+| 找茬 # | 处置 | 实现 |
+|---|---|---|
+| #20 apiKey 明文（🔴 安全） | ✅ 修复 | `AgentService.formatEntity` 剥离 apiKey，API 响应（create/getById/list）永不返回明文；agent.apiKey 仍可经 create/update 写入 DB，LLM 实际用 config providers 的 env key，不受影响。新增回归测试「agent API 响应不返回明文 apiKey」 |
+| #11 软删/永久删 Post 未移 FTS | ✅ 修复 | `PostService.delete`(软删) 后 `removeFts`；`restore` 后 `syncFts` 重新入索引；`permanentDelete` 后 `removeFts`。软删文章不再被搜索命中 |
+| #14 P2 日志 catch 完全吞错 | ✅ 修复 | 成功审计日志 catch 改 `console.error` 降级，Prisma 临时断开等问题可见 |
+| #13 R2 SSE 16ms 可能顿 | ✅ 修复 | coalescedEmit 加 buffer 字符数上限（≥512 立即冲），快吐字时单帧不过大、慢吐字时满即出字，不再硬等 16ms |
+| #6 A6 bulkDelete 失败静默 | ✅ 修复 | 文件删除失败改 `console.error` 记录，DB 与文件不一致可见（文件/FTS 非 DB 事务，原子性限制本身仍在，但不再静默） |
+| #9 R4 swarmStats take:5000 创可贴 | ✅ 修复 | 改 SQL `run.groupBy(by:[agentId,status], _count, _sum durationMs/toolCallCount)` 精确聚合（走 Run(createdAt) 索引，无内存上限）；tokenUsage(JSON) 仍 bounded findMany 近似求和。计数/耗时/工具数现精确，仅 token 为最近 5000 条近似 |
+
+### 未在本批处理（留待后续，见第四章分级）
+
+- #5 A1 over-fetch：改按展开 agentIds 传参（后端已支持 agentIds，前端按 expanded 传）——可做，留批次 10
+- #7 A13 unlink 增量 cleanup——可做，留批次 10
+- #8 R5 pageSize 100→200：本质指向 P0-1 滑动窗口加载，属大重构
+- #16/#17/#18 E2E/性能基准/并发测试：流程改进，需单独安排
+- #1/#3 文档结构整理：编辑性，可随时做
+
+### 核对修正（第六章中描述与实际不符的）
+
+- **#2 R7–R10 缺 Q&A**：perf-plan round-2 段中 R7/R8/R9/R10 均有独立 Q&A 条目（问题描述/推荐/`回答：同意。已实施。`），且已补入「已确认 ✅」表。该找茬不成立。
+- **#15 P10 capabilities 无主动失效**：InfoSource CRUD 已接 `invalidateCapabilitiesCache`（A10/P10）；capabilities 的 DB 依赖部分仅 infoSources 计数，已失效。search/ocr/browser 读 env/进程状态，运行时不变。该找茬部分不成立。
+
+### 验证
+
+server tsc ✅ / web tsc ✅ / vitest **248 passed 5 skipped**（含新增 apiKey masking 回归测试）✅

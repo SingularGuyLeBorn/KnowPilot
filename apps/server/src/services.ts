@@ -672,6 +672,8 @@ ${entity.content}
       // P2-7：软删后显式触发 post.deleted 事件（不调继承的 afterDelete，因其会 deleteFileBySlug，
       // 而此处文件已 moveFileToTrash，避免重复处理）。TriggerEngine 等监听器依赖此事件联动。
       this.eventBus.emit("post.deleted", existing);
+      // #11：软删后即时移除 FTS，避免搜索仍命中回收站文章（恢复时再 re-index）
+      await this.removeFts("post", existing.id);
       return success({
         data: this.buildDeleteSummary(existing),
         state: await this.getState(),
@@ -704,6 +706,8 @@ ${entity.content}
       if (slug) this.moveFileFromTrash(slug);
       const raw = await this.delegate.update({ where: { id }, data: { deletedAt: null } });
       const entity = this.formatEntity(raw);
+      // #11：恢复后重新入 FTS，使文章可被搜索
+      await this.syncFts("post", entity.id, entity.title, `${entity.slug}\n${entity.content ?? ""}`);
       return success({
         data: entity,
         state: await this.getState(),
@@ -734,6 +738,8 @@ ${entity.content}
       const slug = this.getExistingFileSlug(existing);
       if (slug) this.deleteFileFromTrash(slug);
       await this.delegate.delete({ where: { id } });
+      // #11：永久删除后移除 FTS
+      await this.removeFts("post", existing.id);
       return success({
         data: this.buildDeleteSummary(existing),
         state: await this.getState(),
@@ -798,8 +804,12 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
   protected get delegate() { return this.prisma.agent; }
 
   protected formatEntity(raw: any): AgentEntity {
+    // 安全（#20）：API 响应永不返回明文 apiKey。agent.apiKey 字段仅供 DB 存储，
+    // LLM 实际使用 config providers 的 env key（llmClient provider.apiKey），不读此字段。
+    const { apiKey: _omitApiKey, ...rest } = raw;
     return {
-      ...raw,
+      ...rest,
+      apiKey: null,
       tools: raw.tools ? raw.tools.split(",").filter(Boolean).map((t: string) => t.trim()) : [],
     };
   }
@@ -899,8 +909,9 @@ ${entity.systemPrompt}
     for (const raw of existing) {
       try {
         this.deleteFile(this.formatEntity(raw));
-      } catch {
-        // 文件删除失败不阻塞
+      } catch (e) {
+        // #6：文件删除失败不阻塞，但记录到 stderr 便于发现 DB 与文件不一致
+        console.error(`[Agent.bulkDelete] 删除配置文件失败 agent=${raw.id}:`, e instanceof Error ? e.message : e);
       }
       await this.removeFts("agent", raw.id);
     }
