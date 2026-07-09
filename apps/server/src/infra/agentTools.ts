@@ -16,7 +16,7 @@ import {
 import {
   buildSkillToolSchema,
   executeSkill,
-  findSkillByName,
+  findSkillsByNames,
   parseSkillToolName,
   skillToolName,
 } from "./skillRunner.js";
@@ -234,15 +234,17 @@ export async function buildAgentToolSchemas(
     });
   }
 
+  // A2：批量加载所有 Skill（一次 list 查询），消除 N 次 findSkillByName 的 N+1。
+  const skillMap = await findSkillsByNames(services, skillNames);
   for (const skillName of skillNames) {
-    try {
-      const skill = await findSkillByName(services, skillName);
-      const schema = buildSkillToolSchema(skill);
-      registry.set(schema.function.name, { kind: "skill", skillName: skill.name, concurrencySafe: true });
-      schemas.push(schema);
-    } catch (err: unknown) {
-      console.warn(`[AgentTools] Skill ${skillName} 跳过:`, err instanceof Error ? err.message : err);
+    const skill = skillMap.get(skillName);
+    if (!skill) {
+      console.warn(`[AgentTools] Skill ${skillName} 跳过: 不存在或未启用`);
+      continue;
     }
+    const schema = buildSkillToolSchema(skill);
+    registry.set(schema.function.name, { kind: "skill", skillName: skill.name, concurrencySafe: true });
+    schemas.push(schema);
   }
 
   if (parsed.mcpServers.length > 0) {

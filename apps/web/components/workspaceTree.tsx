@@ -74,6 +74,28 @@ export function WorkspaceTree({
   const activeWorkspaces = workspacesQuery.data?.items ?? [];
   const archivedWorkspaces = archivedWorkspacesQuery.data?.items ?? [];
 
+  // A1：单次批量拉取所有 Agent 的会话，消除「每个展开 Agent 一次 session.list」的 N+1。
+  // 复用 session.list 失效键，chat.tsx / subagentPanel 等现有的 utils.session.list.invalidate()
+  // 会自动刷新本查询，无需额外接线。
+  const allAgentIds = useMemo(
+    () => [...superAgents, ...managerAgents, ...subAgents].map((a) => a.id),
+    [superAgents, managerAgents, subAgents],
+  );
+  const sessionsBatchQuery = trpc.session.list.useQuery(
+    { page: 1, pageSize: 100, agentIds: allAgentIds },
+    { enabled: allAgentIds.length > 0 },
+  );
+  const sessionsByAgent = useMemo(() => {
+    const m = new Map<string, ChatSession[]>();
+    for (const s of sessionsBatchQuery.data?.items ?? []) {
+      const key = s.agentId ?? "";
+      const arr = m.get(key);
+      if (arr) arr.push(s);
+      else m.set(key, [s]);
+    }
+    return m;
+  }, [sessionsBatchQuery.data]);
+
   const toggleWorkspace = (id: string) =>
     setExpandedWorkspaces((prev) => {
       const next = new Set(prev);
@@ -114,6 +136,7 @@ export function WorkspaceTree({
         <AgentNode
           key={agent.id}
           agent={agent}
+          sessions={sessionsByAgent.get(agent.id) ?? []}
           expanded={expandedAgents.has(agent.id) || !!searchLower}
           onToggle={() => toggleAgent(agent.id)}
           effectiveSessionId={effectiveSessionId}
@@ -149,6 +172,7 @@ export function WorkspaceTree({
                   <AgentNode
                     key={agent.id}
                     agent={agent}
+                    sessions={sessionsByAgent.get(agent.id) ?? []}
                     expanded={expandedAgents.has(agent.id) || !!searchLower}
                     onToggle={() => toggleAgent(agent.id)}
                     effectiveSessionId={effectiveSessionId}
@@ -202,6 +226,7 @@ export function WorkspaceTree({
 /** Agent 节点：图标按 tier 区分 + 可展开 session 列表 */
 function AgentNode({
   agent,
+  sessions,
   expanded,
   onToggle,
   effectiveSessionId,
@@ -210,6 +235,8 @@ function AgentNode({
   searchLower,
 }: {
   agent: { id: string; name: string; tier: string; status: string; model: string; workspaceId: string | null };
+  // A1：由父组件 WorkspaceTree 批量拉取后按 agentId 分组传入，节点不再各自发查询
+  sessions: ChatSession[];
   expanded: boolean;
   onToggle: () => void;
   effectiveSessionId: string | null;
@@ -218,11 +245,6 @@ function AgentNode({
   searchLower: string;
   matchesSearch: (text: string) => boolean;
 }) {
-  const sessionsQuery = trpc.session.list.useQuery(
-    { page: 1, pageSize: 50, agentId: agent.id },
-    { enabled: expanded },
-  );
-  const sessions = (sessionsQuery.data?.items ?? []) as ChatSession[];
   const filteredSessions = searchLower
     ? sessions.filter((s) => s.title.toLowerCase().includes(searchLower))
     : sessions;

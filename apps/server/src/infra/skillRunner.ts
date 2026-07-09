@@ -26,6 +26,32 @@ export async function findSkillByName(services: ServiceContainer, name: string):
   throw new Error(`Skill "${name}" 不存在或未启用。请先在 /skills 创建或在 content/skills/ 添加配置后 db:sync。`);
 }
 
+/**
+ * A2：批量按 name 加载多个 Skill，一次 list 查询替代 N 次 findSkillByName。
+ * 先精确匹配；未命中的 name 保留 fuzzy 兜底（与 findSkillByName 行为一致）。
+ * 返回 Map<请求的 name, SkillEntity>，未命中的 name 不在 Map 中。
+ */
+export async function findSkillsByNames(
+  services: ServiceContainer,
+  names: string[],
+): Promise<Map<string, SkillEntity>> {
+  const result = new Map<string, SkillEntity>();
+  if (names.length === 0) return result;
+  const list = await services.skill.list({ page: 1, pageSize: 200, enabled: true });
+  const byName = new Map<string, SkillEntity>();
+  for (const s of list.items) byName.set(s.name, s);
+  for (const name of names) {
+    const exact = byName.get(name);
+    if (exact) {
+      result.set(name, exact);
+      continue;
+    }
+    const fuzzy = list.items.find((s) => s.name.includes(name) || name.includes(s.name));
+    if (fuzzy) result.set(name, fuzzy);
+  }
+  return result;
+}
+
 export function buildSkillToolSchema(skill: SkillEntity) {
   return {
     type: "function" as const,

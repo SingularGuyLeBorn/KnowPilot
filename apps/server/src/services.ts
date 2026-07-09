@@ -1065,11 +1065,29 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   protected buildListWhere(input: ListSessionsInput): any {
     const where: any = {};
     if (input.keyword) where.title = { contains: input.keyword };
-    if (input.agentId) where.agentId = input.agentId;
+    // A1：agentIds 批量模式优先；单 agentId 兼容旧调用方
+    if (input.agentIds && input.agentIds.length > 0) where.agentId = { in: input.agentIds };
+    else if (input.agentId) where.agentId = input.agentId;
     if (input.parentSessionId !== undefined) where.parentSessionId = input.parentSessionId;
     if (input.kind) where.kind = input.kind;
     if (input.status) where.status = input.status;
     return where;
+  }
+
+  // A1：agentIds 批量模式不分页，一次拉回所有匹配会话（take 上限 500），
+  // 供 WorkspaceTree 在内存按 agentId 分组，消除「每个展开 Agent 一次查询」的 N+1。
+  async list(input: ListSessionsInput): Promise<PaginatedResult<SessionEntity>> {
+    if (input.agentIds && input.agentIds.length > 0) {
+      const where = this.buildListWhere(input);
+      const items = await this.delegate.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        take: 500,
+      });
+      const formatted = items.map((i: any) => this.formatEntity(i));
+      return { items: formatted, total: formatted.length, page: 1, pageSize: formatted.length, totalPages: 1 };
+    }
+    return super.list(input);
   }
 
   protected buildCreateData(input: CreateSessionInput): any {
@@ -1545,11 +1563,11 @@ export class CredentialService extends BaseService<CreateCredentialInput, Update
   protected override async validateUpdate(input: UpdateCredentialInput, existing: any): Promise<void> {
     if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
   }
-  // P1-5 / P1：CRUD 后清 credential vault 缓存 + 标记 integration 凭据需重注入，
-  // 下一个请求的 ensureIntegrationCredentialsInjected 会惰性拉取并刷新 config.integrations。
-  protected override async afterCreate(): Promise<void> { invalidateIntegrationCredentials(); }
-  protected override async afterUpdate(): Promise<void> { invalidateIntegrationCredentials(); }
-  protected override async afterDelete(): Promise<void> { invalidateIntegrationCredentials(); }
+  // P1-5 / P1：CRUD 后清 credential vault 缓存 + 立即重新注入 config.integrations，
+  // 用最新 DB 数据刷新（generation 计数器保证进行中的旧注入不会覆盖新值）。
+  protected override async afterCreate(): Promise<void> { await invalidateIntegrationCredentials(this.config, this.prisma); }
+  protected override async afterUpdate(): Promise<void> { await invalidateIntegrationCredentials(this.config, this.prisma); }
+  protected override async afterDelete(): Promise<void> { await invalidateIntegrationCredentials(this.config, this.prisma); }
 }
 
 /** InfoSource 信息源 — Agent 可信信息来源 */
