@@ -34,9 +34,14 @@ export function SubsessionPanel({
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
 }) {
+  // 与 SubagentCreateDialog 乐观更新使用同一 query key（pageSize 必须一致）
   const query = trpc.session.listChildren.useQuery(
-    { parentSessionId: parentSessionId! },
-    { enabled: !!parentSessionId },
+    { parentSessionId: parentSessionId!, pageSize: 20 },
+    {
+      enabled: !!parentSessionId,
+      // 子 Agent 运行状态需要实时刷新，2s 短轮询
+      refetchInterval: 2000,
+    },
   );
 
   if (!parentSessionId) {

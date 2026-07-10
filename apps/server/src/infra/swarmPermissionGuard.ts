@@ -39,15 +39,16 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "agent_delete",
     "agent_inspect",
   ],
-  // 管理 Agent 及以上（super 也可以用）
+  // 管理 Agent 及以上（super 也可以用）：管理子 Agent、向上转发、派生子 Agent
   manager: [
-    // 子 Agent 管理
     "agent_create_sub",
     "agent_update_sub",
     "agent_delete_sub",
     "agent_forward",
-    // 任务编排：子 Agent 只能直接执行，不能再派生/管理任务
     "spawn_subagent",
+  ],
+  // 子 Agent 及以上（manager/super 也可以用）：可执行异步任务，但不能再派生子 Agent
+  sub: [
     "run_async",
     "async_task_run",
     "cancel_async",

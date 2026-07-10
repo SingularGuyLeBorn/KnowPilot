@@ -476,7 +476,7 @@ export function ChatView() {
   const mainSessionId = isSubagentSession ? parentSessionId : effectiveSessionId;
   const subSessionsQuery = trpc.session.listChildren.useQuery(
     { parentSessionId: mainSessionId! },
-    { enabled: !!mainSessionId },
+    { enabled: !!mainSessionId, refetchInterval: 3000 },
   );
 
   const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
@@ -1228,33 +1228,34 @@ export function ChatView() {
       }),
     );
     const optimisticId = `opt-${task.id}`;
-    const optimisticText =
-      task.text.trim() ||
-      (task.kind === "async-result" ? `[后台任务完成] ${task.taskLabel ?? task.jobId ?? ""}` : "") ||
-      (task.attachments?.length ? "（见附件）" : "");
+    // 异步结果不再显示占位用户气泡（如「后台任务完成」），直接由 assistant 总结真实结果。
+    // 只有用户主动发送的消息才需要乐观占位。
+    const isAsyncResult = task.kind === "async-result";
+    const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
     const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
-    ssSet(sid, "optimistic", (o) =>
-      o.some((m) => m.id === optimisticId)
-        ? o
-        : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments }],
-    );
+    if (!isAsyncResult && (optimisticText || optimisticAttachments)) {
+      ssSet(sid, "optimistic", (o) =>
+        o.some((m) => m.id === optimisticId)
+          ? o
+          : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments }],
+      );
+    }
     void runStream({
       message: streamMessage,
       attachments: streamAttachments?.length ? streamAttachments : undefined,
       skillId: task.skillId,
       skillPrompt: task.skillPrompt,
-      source: task.kind === "async-result" ? "sub" : "user",
-      toolResults:
-        task.kind === "async-result"
-          ? {
-              subagentResult: {
-                jobId: task.jobId,
-                subagentSessionId: task.subagentSessionId,
-                subagentName: task.subagentName ?? `子 Agent ${task.jobId?.slice(0, 6) ?? ""}`,
-              },
-            }
-          : undefined,
-      optimisticUser: { id: optimisticId, text: optimisticText },
+      source: isAsyncResult ? "sub" : "user",
+      toolResults: isAsyncResult
+        ? {
+            subagentResult: {
+              jobId: task.jobId,
+              subagentSessionId: task.subagentSessionId,
+              subagentName: task.subagentName ?? `子 Agent ${task.jobId?.slice(0, 6) ?? ""}`,
+            },
+          }
+        : undefined,
+      optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
     });
   }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState]);
 
@@ -2215,7 +2216,11 @@ export function ChatView() {
         )}
 
         <div className="relative flex min-h-0 flex-1">
-          {!hasMessages && !backendDown ? (
+          {messagesInfinite.isLoading && !hasMessages ? (
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-[var(--kp-text-3)]" />
+            </div>
+          ) : !hasMessages && !backendDown ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 text-center text-[var(--kp-text-3)] md:px-6">
               <Bot className="mb-1 h-12 w-12 opacity-40" />
               <p className="text-sm">发送第一条消息开始对话</p>

@@ -1229,19 +1229,29 @@ describe("native:sleep", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("sub Agent 调用 run_async 因 tier 被拦截", async () => {
+  it("sub Agent 可调用 run_async 创建后台任务", async () => {
     const root = createTempProjectDir();
     const ctx = {
-      ...createNativeCtx(root),
+      ...createNativeCtx(root, {
+        services: {
+          task: {
+            create: vi.fn().mockResolvedValue({ success: true, data: { id: "task-123" } }),
+          },
+        } as any,
+        prisma: {
+          agent: { findUnique: vi.fn().mockResolvedValue(null) },
+        } as any,
+      }),
       sessionId: "sess-1",
       agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
     };
     const result = (await executeNativeTool("run_async", { task: "后台任务" }, ctx)) as {
+      jobId?: string;
       error?: string;
       permissionDenied?: boolean;
     };
-    expect(result.permissionDenied).toBe(true);
-    expect(result.error).toContain("TIER_INSUFFICIENT");
+    expect(result.permissionDenied).not.toBe(true);
+    expect(result.jobId).toBe("task-123");
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

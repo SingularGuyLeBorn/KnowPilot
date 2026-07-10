@@ -21,8 +21,8 @@ const ThinkingStep = memo(function ThinkingStep({
 }) {
   const content = step.content.trim();
   const isEmpty = !content;
-  // 默认折叠（含流式）；用户可点击展开查看，流式中也可展开/折叠
-  const [collapsed, setCollapsed] = useState(true);
+  // 默认展开；用户可点击折叠，流式中也可展开/折叠
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <div className="w-full overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
@@ -105,7 +105,7 @@ const ToolStep = memo(function ToolStep({
     <div
       data-testid="tool-pill"
       className={cn(
-        "overflow-hidden rounded-xl border shadow-sm transition-colors",
+        "w-full overflow-hidden rounded-xl border shadow-sm transition-colors",
         step.status === "running"
           ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30"
           : "border-[var(--kp-divider-light)] bg-[var(--kp-bg)]",

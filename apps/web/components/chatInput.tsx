@@ -67,6 +67,8 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [pendingImages, setPendingImages] = useState<ChatQueueAttachment[]>([]);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  // 发送按钮防抖/防重入：避免快速双击或快捷键重复触发导致重复气泡
+  const [isSending, setIsSending] = useState(false);
 
   // 上键历史恢复：按 sessionId 隔离，存 localStorage
   const historyKey = sessionId ? `kp-input-history:${sessionId}` : null;
@@ -173,7 +175,8 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   const handleSend = async () => {
     const text = input.trim();
-    if ((!text && pendingImages.length === 0) || disabled || ocrLoading) return;
+    if ((!text && pendingImages.length === 0) || disabled || ocrLoading || isSending) return;
+    setIsSending(true);
 
     let attachments = pendingImages;
     const needsOcr = !supportsVision && attachments.some((a) => !a.extractedText);
@@ -197,6 +200,8 @@ export const ChatInputArea = memo(function ChatInputArea({
     setPendingImages([]);
     setOcrError(null);
     setHistoryIdx(-1); // 退出历史浏览模式
+    // 短暂保持 isSending，防止快捷键/双击连发
+    setTimeout(() => setIsSending(false), 300);
   };
 
   const addImageFile = (file: File) => {
@@ -233,7 +238,7 @@ export const ChatInputArea = memo(function ChatInputArea({
     reader.readAsDataURL(file);
   };
 
-  const canSend = (!!input.trim() || pendingImages.length > 0) && !disabled && !ocrLoading;
+  const canSend = (!!input.trim() || pendingImages.length > 0) && !disabled && !ocrLoading && !isSending;
   const placeholderHint = disabled
     ? "后端未连接"
     : isStreaming

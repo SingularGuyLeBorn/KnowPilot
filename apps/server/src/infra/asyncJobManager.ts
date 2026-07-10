@@ -346,7 +346,7 @@ function buildAsyncExecute(
     : agentSnapshot.tools;
 
   const subagentHint = subagentOnly
-    ? "\n\n注意：你是被派来直接执行该任务的子 Agent，禁止调用 spawn_subagent、run_async、cancel_async、async_task_*、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
+    ? "\n\n注意：你是被派来直接执行该任务的子 Agent。你可以调用 run_async / async_task_* 等工具把耗时步骤放入后台执行，但禁止调用 spawn_subagent、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
     : "";
   const agentSystemPrompt = `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务${retryHint}。完成后用简洁中文汇总结果，不要继续追问用户。${subagentHint}`;
   const agentForLoop = { model: agentSnapshot.model, systemPrompt: agentSystemPrompt, tools: workerTools };
