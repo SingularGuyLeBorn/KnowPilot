@@ -23,7 +23,11 @@ export interface PermissionCheckContext {
   inToolRound: boolean;
 }
 
-/** Swarm 管理工具按 tier 限制 */
+/**
+ * 工具按 Agent tier 的最低要求映射。
+ * key = tier，value = 该 tier 及以上可使用的工具。
+ * 未列出的工具默认对所有 tier 开放（读写类工具仍受 allowedNative 白名单约束）。
+ */
 const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
   // 超级 Agent 专属
   super: [
@@ -35,19 +39,45 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "agent_delete",
     "agent_inspect",
   ],
-  // 管理 Agent 专属（本 Workspace 内）
+  // 管理 Agent 及以上（super 也可以用）
   manager: [
+    // 子 Agent 管理
     "agent_create_sub",
     "agent_update_sub",
     "agent_delete_sub",
     "agent_forward",
-    "spawn_subagent", // 子 Agent 可执行异步任务，但不能再派生下级子 Agent
+    // 任务编排：子 Agent 只能直接执行，不能再派生/管理任务
+    "spawn_subagent",
+    "run_async",
+    "async_task_run",
+    "cancel_async",
+    "await_async",
+    "async_task_wait",
+    "task_status",
+    "async_task_status",
   ],
 };
 
-/** 判断工具是否是 swarm 管理类工具（需要 tier 权限校验） */
-function isSwarmManagementTool(toolName: string): boolean {
-  return Object.values(TIER_RESTRICTED_TOOLS).flat().includes(toolName);
+/** 根据 tier 过滤工具列表：子 Agent 等低 tier 自动剔除无权限工具 */
+export function getAllowedToolsForTier(tier: string, tools: string[]): string[] {
+  return tools.filter((tool) => {
+    const requiredTier = getRequiredTierForTool(tool);
+    if (!requiredTier) return true;
+    return TIER_RANK[tier] >= TIER_RANK[requiredTier];
+  });
+}
+
+/** 工具 → 最低要求 tier */
+function getRequiredTierForTool(toolName: string): string | undefined {
+  for (const [tier, tools] of Object.entries(TIER_RESTRICTED_TOOLS)) {
+    if (tools.includes(toolName)) return tier;
+  }
+  return undefined;
+}
+
+/** 判断工具是否受 tier 限制 */
+function isTierRestrictedTool(toolName: string): boolean {
+  return getRequiredTierForTool(toolName) !== undefined;
 }
 
 /** 判断工具是否是 agent 间通信类工具（需要通信范围校验） */
@@ -64,22 +94,17 @@ export function checkToolPermission(
   args: Record<string, unknown>,
   ctx: PermissionCheckContext,
 ): PermissionError | null {
-  // 1. Swarm 管理工具：检查 tier 是否有权限
-  if (isSwarmManagementTool(toolName)) {
-    const allowedTiers = Object.entries(TIER_RESTRICTED_TOOLS)
-      .filter(([, tools]) => tools.includes(toolName))
-      .map(([tier]) => tier);
+  // 1. 按 tier 限制的工具：检查 Agent 层级是否满足最低要求
+  const requiredTier = getRequiredTierForTool(toolName);
+  if (requiredTier && TIER_RANK[ctx.agentTier] < TIER_RANK[requiredTier]) {
+    return {
+      code: "TIER_INSUFFICIENT",
+      reason: `工具 ${toolName} 需要 ${requiredTier} 及以上权限，当前 Agent 层级为 ${ctx.agentTier}。`,
+    };
+  }
 
-    // super 工具只有 super 能用；manager 工具 super 和 manager 都能用
-    const canUse = allowedTiers.some((t) => TIER_RANK[ctx.agentTier] >= TIER_RANK[t]);
-
-    if (!canUse) {
-      return {
-        code: "TIER_INSUFFICIENT",
-        reason: `工具 ${toolName} 需要 ${allowedTiers.join("/")} 权限，当前 Agent 层级为 ${ctx.agentTier}。`,
-      };
-    }
-
+  // 2. Swarm 管理工具特有校验（workspace 范围、自我删除等）
+  if (isTierRestrictedTool(toolName)) {
     // agent_create_sub / agent_update_sub / agent_delete_sub：管理 Agent 只能操作本 Workspace
     if (toolName.endsWith("_sub") && ctx.agentTier === "manager") {
       const targetWorkspaceId = args.workspaceId as string | undefined;
@@ -107,7 +132,7 @@ export function checkToolPermission(
     }
   }
 
-  // 2. Agent 间通信工具：检查通信范围 + 向上发消息时机约束
+  // 3. Agent 间通信工具：检查通信范围 + 向上发消息时机约束
   if (isAgentMessagingTool(toolName)) {
     const toAgentId = args.toAgentId as string | undefined;
     // agent_report_back 的目标在 args 里可能叫 toAgentId 或 parentId

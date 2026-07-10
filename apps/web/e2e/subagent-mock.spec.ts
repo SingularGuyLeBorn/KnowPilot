@@ -19,19 +19,20 @@ test.describe("Subagent Mock — 子 Agent 任务创建与展示", () => {
     await sendChatMessage(page, "你好");
     await waitForStreamingComplete(page);
 
-    // 打开创建弹窗（先切到左栏「子 Agent」标签页）
-    await page.getByTestId("left-tab-subagents").click();
+    // 打开创建弹窗（先切到「对话历史 -> 子 Agent」）
+    await page.getByTestId("left-tab-history").click();
+    await page.getByTestId("history-subtab-sub").click();
     await page.getByTestId("subagent-create-button").click();
     await expect(page.getByText("新建子 Agent 任务")).toBeVisible({ timeout: 5_000 });
 
     // 切换到「新建子 Agent」模式，填写名称与任务描述并提交
-    await page.getByRole("button", { name: "新建子 Agent" }).click();
+    await page.getByRole("button", { name: "新建子 Agent", exact: true }).click();
     await page.getByPlaceholder("例如：Research-Helper").fill("E2E-Test-Subagent");
     await page.getByPlaceholder(/搜索 KnowPilot 并整理/).fill("总结本地文章并生成摘要");
     await page.getByRole("button", { name: "创建并启动" }).click();
 
-    // 子 Agent 卡片应出现在左侧 SubagentPanel
-    await expect(page.getByTestId("subagent-card").first()).toBeVisible({ timeout: 15_000 });
+    // 子 Agent 会话应出现在左侧「子 Agent」面板
+    await expect(page.getByTestId("subsession-item").first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("/subagents 页应列出已创建的子 Agent", async ({ page }) => {

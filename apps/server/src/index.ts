@@ -134,7 +134,7 @@ if (fs.existsSync(postsDir)) {
 app.use("/uploads", staticAuthMiddleware, express.static(uploadsDir));
 
 // Agent 流式聊天 SSE（不走 tRPC，避免 buffering）
-const streamHub = new SessionStreamHub();
+const streamHub = new SessionStreamHub(config.stream);
 setStreamHub(streamHub);
 app.post(
   "/api/agent/chat/stream",

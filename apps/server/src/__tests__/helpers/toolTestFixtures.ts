@@ -84,6 +84,12 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       maxOutputChars: 12_000,
       shell: "auto",
     },
+    stream: {
+      ringSize: 100,
+      persist: false,
+      eventTtlMs: 0,
+      cleanupIntervalMs: 0,
+    },
     ...overrides,
   };
 }

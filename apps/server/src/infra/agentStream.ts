@@ -131,7 +131,7 @@ function pushIntermediateContent(
   }
 }
 
-async function runAgentLoopStream(options: {
+export async function runAgentLoopStream(options: {
   config: AppConfig;
   services: ServiceContainer;
   agent: { model: string; systemPrompt: string; tools: string[] };
@@ -142,6 +142,7 @@ async function runAgentLoopStream(options: {
   sessionId?: string;
   agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; workspaceId?: string | null; parentId?: string | null };
   signal?: AbortSignal;
+  runOrigin?: "user" | "parent" | "heartbeat";
 }): Promise<{
   content: string;
   toolCalls: StoredToolCall[];
@@ -156,9 +157,9 @@ async function runAgentLoopStream(options: {
   const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
     sessionId: options.sessionId,
     agentSnapshot: options.agentMeta,
-    // SSE 对话流始终由用户直接发起：禁止向上回传（agent_report_back 硬拦截）。
-    // 上级下发的任务走 buildAsyncExecute（runOrigin=parent），结果经 Task 投递回传。
-    runOrigin: "user",
+    // SSE 对话流默认由用户直接发起：禁止向上回传（agent_report_back 硬拦截）。
+    // 上级下发的任务传 runOrigin="parent"，结果经 Task 投递回传。
+    runOrigin: options.runOrigin ?? "user",
   });
   const maxRounds = options.config.llm.maxToolRounds;
 
@@ -844,10 +845,16 @@ export function handleAgentChatStream(
       }
 
       // 幂等：若已有运行中的任务，不再重复启动（可能是前端重连时误发了 POST）
-      if (!hub.isRunning(runSessionId)) {
-        hub.start(runSessionId, body, (emit, signal) =>
+      try {
+        await hub.startIfNotRunning(runSessionId, body, (emit, signal) =>
           chatAgentStream(services, config, body, invokeTrpc, emit, signal),
         );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[agentStream] 启动会话 ${runSessionId} Agent 流失败:`, err);
+        writeSse(res, { type: "error", message: `启动失败：${message}` });
+        res.end();
+        return;
       }
     }
 
@@ -883,12 +890,12 @@ export function handleAgentChatStream(
       }
     };
 
-    const unsubscribe = hub.subscribe(runSessionId, afterEventId, (buffered: BufferedEvent) => {
+    const unsubscribe = await hub.subscribe(runSessionId, afterEventId, async (buffered: BufferedEvent) => {
       const event = buffered.event;
       // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
       if (event.type === "session_start" && event.sessionId && !requestSessionId) {
         if (runSessionId !== event.sessionId) {
-          hub.migrateSessionId(runSessionId, event.sessionId);
+          await hub.migrateSessionId(runSessionId, event.sessionId);
           runSessionId = event.sessionId;
         }
       }

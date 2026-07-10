@@ -1,12 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "path";
 
-const rootDir = path.resolve(__dirname, "../..");
-
 const webPort = process.env.E2E_WEB_PORT ?? "3003";
 const serverPort = process.env.E2E_SERVER_PORT ?? "3011";
 const webBaseUrl = `http://127.0.0.1:${webPort}`;
-const serverHealthUrl = `http://127.0.0.1:${serverPort}/health`;
 const serverInternal = `http://127.0.0.1:${serverPort}`;
 
 // 让测试文件能读取到 mock server 地址
@@ -16,8 +13,11 @@ process.env.E2E_WEB_PORT = webPort;
 process.env.SERVER_INTERNAL_URL = serverInternal;
 process.env.NEXT_PUBLIC_SERVER_URL = serverInternal;
 
-// 与默认 E2E 一致：webServer 只负责启动，不在此处 build（否则每次跑 mock 都等 3–10 分钟像卡死）
-const webStartCommand = `pnpm --filter @knowpilot/web run start:mock`;
+// Mock 环境变量需在最外层设置，globalSetup 启动 server 时会继承
+process.env.MOCK_LLM = "true";
+process.env.MOCK_MCP = "true";
+process.env.MOCK_NATIVE_TOOLS = "true";
+process.env.REQUIRE_APPROVAL = "false";
 
 /**
  * Mock 模式 Playwright 配置：
@@ -27,6 +27,8 @@ const webStartCommand = `pnpm --filter @knowpilot/web run start:mock`;
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./e2e/test-results-mock",
+  globalSetup: path.resolve(__dirname, "e2e-global/setup.mjs"),
+  globalTeardown: path.resolve(__dirname, "e2e-global/teardown.mjs"),
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -50,33 +52,5 @@ export default defineConfig({
           name: "chrome",
           use: { ...devices["Desktop Chrome"], channel: "chrome" },
         },
-  ],
-  webServer: [
-    {
-      command: `pnpm --filter @knowpilot/server run dev:mock`,
-      url: serverHealthUrl,
-      cwd: rootDir,
-      reuseExistingServer: !process.env.CI,
-      timeout: 180_000,
-      env: {
-        SERVER_PORT: serverPort,
-        DATABASE_URL: process.env.DATABASE_URL ?? "file:./dev.db",
-        REQUIRE_APPROVAL: "false",
-        MOCK_LLM: "true",
-        MOCK_MCP: "true",
-        MOCK_NATIVE_TOOLS: "true",
-      },
-    },
-    {
-      command: webStartCommand,
-      url: webBaseUrl,
-      cwd: rootDir,
-      reuseExistingServer: !process.env.CI,
-      timeout: 300_000,
-      env: {
-        SERVER_INTERNAL_URL: serverInternal,
-        NEXT_PUBLIC_SERVER_URL: serverInternal,
-      },
-    },
   ],
 });

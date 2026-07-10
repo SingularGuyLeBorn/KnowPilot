@@ -6,11 +6,15 @@
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { runAgentLoop } from "./agentRuntime.js";
+import { runAgentLoopStream, type AgentStreamEvent } from "./agentStream.js";
+import { getStreamHub } from "./sessionStreamHub.js";
+import type { StoredToolCall } from "./chatHistory.js";
 import { waitMs } from "./shellRunner.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { prisma } from "../db.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
+import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 
 export interface AsyncQueueDelivery {
   id: string;
@@ -334,6 +338,120 @@ function buildAsyncExecute(
       }
     }
   };
+  // 子 Agent 只保留执行类工具，禁止再次派生/管理 Agent，否则会出现递归 spawn/run_async 的混乱输出。
+  // 工具权限以 swarmPermissionGuard 的 tier 映射为唯一事实源。
+  const subagentOnly = agentSnapshot.tier === "sub";
+  const workerTools = subagentOnly
+    ? getAllowedToolsForTier("sub", agentSnapshot.tools)
+    : agentSnapshot.tools;
+
+  const subagentHint = subagentOnly
+    ? "\n\n注意：你是被派来直接执行该任务的子 Agent，禁止调用 spawn_subagent、run_async、cancel_async、async_task_*、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
+    : "";
+  const agentSystemPrompt = `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务${retryHint}。完成后用简洁中文汇总结果，不要继续追问用户。${subagentHint}`;
+  const agentForLoop = { model: agentSnapshot.model, systemPrompt: agentSystemPrompt, tools: workerTools };
+  const runLoopOptions = {
+    config,
+    services,
+    agent: agentForLoop,
+    messages: [{ role: "user", content: task } as const],
+    invokeTrpc,
+    sessionId: subagentSessionId,
+    agentMeta: agentSnapshot,
+    runOrigin: "parent" as const,
+  };
+
+  const finalizeSuccess = async (
+    loop: {
+      content: string;
+      toolCalls: StoredToolCall[];
+      tokenUsage: { prompt: number; completion: number; total: number };
+      model: string;
+      provider: string;
+      roundsUsed: number;
+    },
+    emit?: (event: AgentStreamEvent) => void,
+  ) => {
+    const resultText = loop.content || "(无文本输出)";
+    const tokenUsage = loop.tokenUsage;
+
+    // 保存子 Agent 的结果到 ChatSession
+    if (subagentSessionId) {
+      try {
+        await services.message.create({
+          sessionId: subagentSessionId,
+          role: "assistant",
+          content: resultText,
+          toolCalls: loop.toolCalls as any,
+          tokenUsage: tokenUsage ?? undefined,
+          source: "sub",
+        });
+      } catch (msgErr) {
+        console.warn(`[asyncJobManager] 保存子 Agent 结果消息失败:`, msgErr);
+      }
+    }
+
+    await services.task.update({
+      id: jobId,
+      status: "success",
+      finishedAt: new Date(),
+      output: {
+        // 修复：asyncResult 只存干净的 LLM 回复文本，不追加 token 消耗日志（token 信息在 tokenUsage 字段里）
+        asyncResult: resultText,
+        tokenUsage,
+      } satisfies AsyncTaskOutput,
+    } as any);
+    await syncSubStatus("completed");
+    // 独立子 Agent 实例任务完成 → 自动休眠（#15：无任务+队列空+无心跳 → dormant）
+    if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
+      await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch(() => {});
+    }
+    await broadcastShare("success", { asyncResult: resultText, tokenUsage });
+    emit?.({
+      type: "done",
+      sessionId: subagentSessionId!,
+      agentId: agentSnapshot.id,
+      content: resultText,
+      toolCalls: loop.toolCalls,
+      model: loop.model,
+      provider: loop.provider,
+      roundsUsed: loop.roundsUsed,
+      tokenUsage,
+    });
+  };
+
+  const finalizeFailure = async (err: unknown, emit?: (event: AgentStreamEvent) => void) => {
+    const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
+    const isTimeout = err instanceof Error && err.message.includes("超时");
+    const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
+    const errorText = reason || (err instanceof Error ? err.message : String(err));
+    await services.task.update({
+      id: jobId,
+      status: "failed",
+      finishedAt: new Date(),
+      output: {
+        error: errorText,
+      } satisfies AsyncTaskOutput,
+    } as any);
+    // 用户主动停止 → session 置 paused（不覆盖为 failed）；超时/异常 → failed
+    await syncSubStatus(isAbort && !isTimeout ? "paused" : "failed");
+    // 失败也把原因写入 subagent ChatSession，避免点击进去一片空白
+    if (subagentSessionId) {
+      try {
+        await services.message.create({
+          sessionId: subagentSessionId,
+          role: "assistant",
+          content: `任务未能完成：${errorText}`,
+          source: "sub",
+        });
+      } catch (msgErr) {
+        console.warn(`[asyncJobManager] 保存子 Agent 失败消息失败:`, msgErr);
+      }
+    }
+    await broadcastShare("failed", { error: errorText });
+    emit?.({ type: "error", message: errorText, sessionId: subagentSessionId });
+  };
+
   return async (signal) => {
     // 任务开始时即把 user 任务写入 subagent ChatSession，
     // 让 UI 在任务执行期间也能看到"父代理分配的任务"这条气泡。
@@ -362,86 +480,42 @@ function buildAsyncExecute(
       } catch {
         /* 状态回写失败不阻塞执行 */
       }
-      const loop = await runAgentLoop({
-        config,
-        services,
-        agent: {
-          model: agentSnapshot.model,
-          systemPrompt: `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务${retryHint}。完成后用简洁中文汇总结果，不要继续追问用户。`,
-          tools: agentSnapshot.tools,
-        },
-        messages: [{ role: "user", content: task }],
-        invokeTrpc,
-        signal,
-        sessionId: subagentSessionId,
-        agentMeta: agentSnapshot,
-        runOrigin: "parent",
-      });
 
-      const resultText = loop.content || "(无文本输出)";
-      const tokenUsage = loop.tokenUsage;
-
-      // 保存子 Agent 的结果到 ChatSession
+      // 有 subagent 可视化载体时，接入 SessionStreamHub 实现实时流式 + 断线续传
       if (subagentSessionId) {
-        try {
-          await services.message.create({
+        const hub = getStreamHub();
+        if (hub) {
+          const hubInput = {
             sessionId: subagentSessionId,
-            role: "assistant",
-            content: resultText,
-            toolCalls: loop.toolCalls as any,
-            tokenUsage: tokenUsage ?? undefined,
-            source: "sub",
+            agentId: agentSnapshot.id,
+            message: task,
+          };
+          const started = await hub.startIfNotRunning(subagentSessionId, hubInput, async (emit, hubSignal) => {
+            try {
+              const loop = await runAgentLoopStream({
+                ...runLoopOptions,
+                llmOptions: {},
+                emit,
+                signal: hubSignal,
+              });
+              await finalizeSuccess(loop, emit);
+            } catch (runErr) {
+              await finalizeFailure(runErr, emit);
+            }
           });
-        } catch (msgErr) {
-          console.warn(`[asyncJobManager] 保存子 Agent 结果消息失败:`, msgErr);
+          if (started) {
+            signal.addEventListener("abort", () => hub.stop(subagentSessionId), { once: true });
+          }
+          await hub.waitFor(subagentSessionId);
+          return;
         }
       }
 
-      await services.task.update({
-        id: jobId,
-        status: "success",
-        finishedAt: new Date(),
-        output: {
-          // 修复：asyncResult 只存干净的 LLM 回复文本，不追加 token 消耗日志（token 信息在 tokenUsage 字段里）
-          asyncResult: resultText,
-          tokenUsage,
-        } satisfies AsyncTaskOutput,
-      } as any);
-      await syncSubStatus("completed");
-      // 独立子 Agent 实例任务完成 → 自动休眠（#15：无任务+队列空+无心跳 → dormant）
-      if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
-        await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch(() => {});
-      }
-      await broadcastShare("success", { asyncResult: resultText, tokenUsage });
+      // 无子会话可视化载体或 Hub 未初始化时回退到非流式执行
+      const loop = await runAgentLoop({ ...runLoopOptions, signal });
+      await finalizeSuccess(loop);
     } catch (err: unknown) {
-      const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
-      const isTimeout = err instanceof Error && err.message.includes("超时");
-      const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
-      const errorText = reason || (err instanceof Error ? err.message : String(err));
-      await services.task.update({
-        id: jobId,
-        status: "failed",
-        finishedAt: new Date(),
-        output: {
-          error: errorText,
-        } satisfies AsyncTaskOutput,
-      } as any);
-      // 用户主动停止 → session 置 paused（不覆盖为 failed）；超时/异常 → failed
-      await syncSubStatus(isAbort && !isTimeout ? "paused" : "failed");
-      // 失败也把原因写入 subagent ChatSession，避免点击进去一片空白
-      if (subagentSessionId) {
-        try {
-          await services.message.create({
-            sessionId: subagentSessionId,
-            role: "assistant",
-            content: `任务未能完成：${errorText}`,
-            source: "sub",
-          });
-        } catch (msgErr) {
-          console.warn(`[asyncJobManager] 保存子 Agent 失败消息失败:`, msgErr);
-        }
-      }
-      await broadcastShare("failed", { error: errorText });
+      await finalizeFailure(err);
     }
   };
 }
@@ -465,82 +539,100 @@ export async function startAsyncAgentTask(options: {
   if (!task) throw new Error("task 不能为空");
   if (!options.sessionId) throw new Error("run_async 需要有效 sessionId");
 
-  // 数量上限：防止同一父会话失控开太多 subagent
-  const activeCount = await prisma.chatSession.count({
-    where: {
-      parentSessionId: options.sessionId,
-      kind: "subagent",
-      status: { in: ["running", "queued"] },
-    },
-  });
-  const limit = options.config.asyncJobs.maxSubagentsPerSession;
-  if (activeCount >= limit) {
-    throw new Error(`已达到每会话子 Agent 上限（${limit}），请先停止或等待已有任务完成后再启动新任务。`);
-  }
-
   // 预算检查：避免预算耗尽时还启动后台任务浪费资源
   assertLlmBudget(options.config);
 
   const taskLabel = options.label?.trim() || task.slice(0, 80);
+  const isSubagent = options.isSubagent === true;
+  const orchestrator = getAsyncJobOrchestrator(options.config);
+  const stats = orchestrator.getStats();
+  const willQueue = stats.runningGlobal >= stats.limits.maxGlobal;
+  const initialStatus = willQueue ? "queued" : "running";
 
-  // #3 子 Agent 独立 Agent 实例：spawn 时创建 tier=sub 的独立 Agent（不复用父 Agent 身份）。
-  // 独立实例让 tier 权限、parentId 回报链、tombstone、审计都有正确语义。
-  // 创建失败时降级复用父 Agent（保证任务不被阻塞）。
   const parentAgent = await prisma.agent.findUnique({ where: { id: options.agent.id } }).catch(() => null);
-  let subAgentId = options.agent.id;
-  try {
-    const subAgentResult = await options.services.agent.create({
-      name: `${taskLabel.slice(0, 40)} 子 Agent`,
-      description: `由 ${parentAgent?.name ?? options.agent.id} 派生的子 Agent（任务：${taskLabel.slice(0, 60)}）`,
-      source: options.source ?? "native_tool:spawn_subagent",
+
+  // run_async：不创建新的 Agent/会话，直接复用父 Agent 身份跑后台任务。
+  // spawn_subagent：才创建独立的 tier=sub 子 Agent 和 subagent ChatSession。
+  let subAgentId: string | undefined;
+  let subagentSessionId: string | undefined;
+  let agentSnapshot: AsyncTaskInput["agentSnapshot"];
+
+  if (isSubagent) {
+    // 数量上限：防止同一父会话失控开太多 subagent
+    const activeCount = await prisma.chatSession.count({
+      where: {
+        parentSessionId: options.sessionId,
+        kind: "subagent",
+        status: { in: ["running", "queued"] },
+      },
+    });
+    const limit = options.config.asyncJobs.maxSubagentsPerSession;
+    if (activeCount >= limit) {
+      throw new Error(`已达到每会话子 Agent 上限（${limit}），请先停止或等待已有任务完成后再启动新任务。`);
+    }
+
+    // 子 Agent 只保留执行类工具，禁止继承 spawn/run_async/cancel 等编排工具
+    const subagentTools = getAllowedToolsForTier("sub", options.agent.tools);
+
+    try {
+      const subAgentResult = await options.services.agent.create({
+        name: `${taskLabel.slice(0, 40)} 子 Agent`,
+        description: `由 ${parentAgent?.name ?? options.agent.id} 派生的子 Agent（任务：${taskLabel.slice(0, 60)}）`,
+        source: options.source ?? "native_tool:spawn_subagent",
+        model: options.agent.model,
+        systemPrompt: options.agent.systemPrompt,
+        tools: subagentTools,
+        tier: "sub",
+        parentId: options.agent.id,
+        workspaceId: parentAgent?.workspaceId ?? undefined,
+      });
+      if (subAgentResult.success && subAgentResult.data) {
+        subAgentId = (subAgentResult.data as { id: string }).id;
+      }
+    } catch (err) {
+      console.warn(`[asyncJobManager] 创建独立子 Agent 失败，降级复用父 Agent:`, err);
+    }
+
+    const actualSubAgentId = subAgentId ?? options.agent.id;
+    const subagentName = `${taskLabel.slice(0, 40)} 子 Agent`;
+
+    try {
+      const sub = await options.services.session.create({
+        title: taskLabel.slice(0, 60),
+        model: options.agent.model,
+        systemPrompt: options.agent.systemPrompt,
+        agentId: actualSubAgentId,
+        parentSessionId: options.sessionId,
+        kind: "subagent",
+        taskDescription: task,
+        status: initialStatus,
+      } as any);
+      if (sub.success && sub.data) subagentSessionId = (sub.data as { id: string }).id;
+    } catch (err) {
+      console.warn(`[asyncJobManager] 创建 subagent session 失败，降级为无可视化载体继续执行:`, err);
+    }
+
+    agentSnapshot = {
+      id: actualSubAgentId,
       model: options.agent.model,
       systemPrompt: options.agent.systemPrompt,
       tools: options.agent.tools,
       tier: "sub",
       parentId: options.agent.id,
-      workspaceId: parentAgent?.workspaceId ?? undefined,
-    });
-    if (subAgentResult.success && subAgentResult.data) {
-      subAgentId = (subAgentResult.data as { id: string }).id;
-    }
-  } catch (err) {
-    console.warn(`[asyncJobManager] 创建独立子 Agent 失败，降级复用父 Agent:`, err);
-  }
-
-  const subagentName = `${taskLabel.slice(0, 40)} 子 Agent`;
-  const agentSnapshot = {
-    id: subAgentId,
-    model: options.agent.model,
-    systemPrompt: options.agent.systemPrompt,
-    tools: options.agent.tools,
-    tier: "sub",
-    parentId: options.agent.id,
-    workspaceId: parentAgent?.workspaceId ?? null,
-    name: subagentName,
-  };
-
-  // 创建 subagent ChatSession 作为任务的可视化载体（Phase 3 UI 显示卡片）
-  // 初始状态：queued（若 orchestrator 无空闲槽位）或 running（立即执行）
-  let subagentSessionId: string | undefined;
-  const orchestrator = getAsyncJobOrchestrator(options.config);
-  const stats = orchestrator.getStats();
-  const willQueue = stats.runningGlobal >= stats.limits.maxGlobal;
-  const initialStatus = willQueue ? "queued" : "running";
-  try {
-    const sub = await options.services.session.create({
-      title: taskLabel.slice(0, 60),
-      model: agentSnapshot.model,
-      systemPrompt: agentSnapshot.systemPrompt,
-      agentId: subAgentId, // 指向独立子 Agent 实例
-      parentSessionId: options.sessionId,
-      kind: "subagent",
-      taskDescription: task,
-      status: initialStatus,
-    } as any);
-    if (sub.success && sub.data) subagentSessionId = (sub.data as { id: string }).id;
-  } catch (err) {
-    // subagent session 创建失败不阻塞任务执行，但记录日志便于排查 UI 卡片缺失
-    console.warn(`[asyncJobManager] 创建 subagent session 失败，降级为无可视化载体继续执行:`, err);
+      workspaceId: parentAgent?.workspaceId ?? null,
+      name: subagentName,
+    };
+  } else {
+    agentSnapshot = {
+      id: options.agent.id,
+      model: options.agent.model,
+      systemPrompt: options.agent.systemPrompt,
+      tools: options.agent.tools,
+      tier: parentAgent?.tier ?? "sub",
+      parentId: parentAgent?.parentId ?? null,
+      workspaceId: parentAgent?.workspaceId ?? null,
+      name: parentAgent?.name ?? options.agent.id,
+    };
   }
 
   const created = await options.services.task.create({
@@ -559,7 +651,7 @@ export async function startAsyncAgentTask(options: {
       retryCount: 0,
       timeoutMs: options.timeoutMs,
       subagentSessionId,
-      isSubagent: options.isSubagent ?? false,
+      isSubagent,
       shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
     } satisfies AsyncTaskInput,
   } as any);
@@ -582,9 +674,13 @@ export async function startAsyncAgentTask(options: {
     jobId,
     status: willQueue ? "queued" : "running",
     subagentSessionId,
-    message: willQueue
-      ? `已排队后台任务「${taskLabel}」（并发槽位已满，将在前序任务完成后执行）。`
-      : `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
+    message: isSubagent
+      ? willQueue
+        ? `已排队子 Agent 任务「${taskLabel}」（并发槽位已满）。`
+        : `已启动子 Agent 任务「${taskLabel}」，可进入任务会话查看进度。`
+      : willQueue
+        ? `已排队后台任务「${taskLabel}」（并发槽位已满，将在前序任务完成后执行）。`
+        : `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
   };
 }
 
@@ -749,7 +845,10 @@ export function stopSubagentSession(
   config: AppConfig,
 ): { stopped: boolean; wasRunning: boolean; jobId?: string } {
   const orchestrator = getAsyncJobOrchestrator(config);
-  return orchestrator.stopSubagent(subagentSessionId);
+  const result = orchestrator.stopSubagent(subagentSessionId);
+  // 同时中断 SessionStreamHub 中的 SSE 运行，确保前端立即停止流式输出
+  getStreamHub()?.stop(subagentSessionId);
+  return result;
 }
 
 export async function retryAsyncJob(

@@ -252,6 +252,8 @@ pnpm test:e2e:headed   # 有界面调试
 pnpm --filter @knowpilot/server test
 ```
 
+> E2E server / web 进程统一由 `apps/web/e2e-global/setup.mjs` 启动（不再依赖 Playwright `webServer`），避免 `webServer` 与 `globalSetup` 并行导致的时序与端口冲突问题。
+
 ### 现有测试
 
 | 文件 | 覆盖 |
@@ -345,6 +347,21 @@ pnpm --filter @knowpilot/server run sync-free-keys:watch  # 定时刷新
 - SQLite 文件 `apps/server/prisma/dev.db` 被 `.gitignore` 忽略，但 `content/posts/` 下的 Markdown 源文件受 Git 跟踪，是数据的持久化真相源。
 
 ---
+
+## 运行时配置（config.yaml）
+
+业务行为参数统一放到项目根目录 `config.yaml`，与 `.env` 的部署/密钥配置分离，便于教学与版本管理：
+
+```yaml
+stream:
+  ringSize: 500          # SessionStreamHub 内存环形缓冲事件数
+  persist: true          # 是否持久化事件到 SQLite
+  eventTtlMs: 300000     # 持久化事件保留时长
+  cleanupIntervalMs: 60000 # 过期事件清理间隔
+```
+
+- `SessionStreamHub` 采用「内存热缓冲 + SQLite 事件日志」双写：低延迟推送走内存，断线续传 / 服务端重启恢复走数据库。
+- 运行中的 Agent 任务仍随服务端进程重启而丢失；长期后台任务的跨重启恢复属于后续扩展。
 
 ## 部署相关
 

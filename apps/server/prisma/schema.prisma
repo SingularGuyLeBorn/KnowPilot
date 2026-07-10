@@ -138,6 +138,18 @@ model ChatMessage {
   @@index([sessionId, createdAt])
 }
 
+/// Agent 流式事件日志（SessionStreamHub 持久化用）
+model SessionStreamEvent {
+  id        Int      @id @default(autoincrement())
+  sessionId String
+  eventType String   /// token | reasoning | tool_start | tool_end | intermediate_content | done | error | session_start | round_start
+  payload   Json     /// AgentStreamEvent 完整 JSON
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, id])
+  @@index([createdAt])
+}
+
 /// 上传的文件元数据
 model File {
   id        String   @id @default(cuid())

@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, ChevronRight, Plus, Trash2, ExternalLink, MessageSquare, Play } from "lucide-react";
+import { Bot, ChevronRight, Plus, Trash2, ExternalLink, Eye, Play } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -57,11 +57,13 @@ function formatSource(source?: string | null): string {
 function SubagentAgentCard({
   agent,
   parentSessionId,
+  subagentSessionId,
   onRefresh,
   onRunTask,
 }: {
   agent: SubagentAgentBrief;
   parentSessionId?: string;
+  subagentSessionId?: string;
   onRefresh: () => void;
   onRunTask?: (agentId: string) => void;
 }) {
@@ -117,20 +119,26 @@ function SubagentAgentCard({
                     <Play className="h-3 w-3" /> 启动任务
                   </button>
                 )}
+                {subagentSessionId ? (
+                  <a
+                    href={`/chat?sessionId=${subagentSessionId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
+                  >
+                    <Eye className="h-3 w-3" /> 查看任务进行
+                  </a>
+                ) : (
+                  <span className="inline-flex h-6 items-center gap-1 px-2 text-[10px] text-[var(--kp-text-3)]">
+                    <Eye className="h-3 w-3" /> 暂无进行中的任务会话
+                  </span>
+                )}
                 <Link
                   href={`/agents`}
                   className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
                 >
                   <ExternalLink className="h-3 w-3" /> 去管理页
                 </Link>
-                <a
-                  href={`/chat?agentId=${agent.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
-                >
-                  <MessageSquare className="h-3 w-3" /> 与之对话
-                </a>
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
@@ -182,11 +190,34 @@ export function SubagentPanel({
     },
   );
 
+  const childrenQuery = trpc.session.listChildren.useQuery(
+    { parentSessionId: parentSessionId!, pageSize: 100 },
+    {
+      enabled: !!parentSessionId,
+      refetchInterval: 5000,
+      refetchIntervalInBackground: false,
+    },
+  );
+
   const items = useMemo(() => (query.data?.items as Agent[] | undefined) ?? [], [query.data?.items]);
+
+  const sessionByAgentId = useMemo(() => {
+    const map = new Map<string, { id: string; status: string }>();
+    const childItems = (childrenQuery.data?.items as Array<{ id: string; agentId?: string | null; status?: string }> | undefined) ?? [];
+    for (const s of childItems) {
+      if (s.agentId && !map.has(s.agentId)) {
+        map.set(s.agentId, { id: s.id, status: s.status ?? "unknown" });
+      }
+    }
+    return map;
+  }, [childrenQuery.data?.items]);
 
   const refresh = () => {
     void query.refetch();
     void utils.agent.list.invalidate();
+    if (parentSessionId) {
+      void utils.session.listChildren.invalidate({ parentSessionId });
+    }
   };
 
   if (!parentAgentId) {
@@ -218,15 +249,19 @@ export function SubagentPanel({
           暂无子 Agent，点击右上角新建。
         </div>
       )}
-      {items.map((agent) => (
-        <SubagentAgentCard
-          key={agent.id}
-          agent={agent as SubagentAgentBrief}
-          parentSessionId={parentSessionId}
-          onRefresh={refresh}
-          onRunTask={onRunTask}
-        />
-      ))}
+      {items.map((agent) => {
+        const session = sessionByAgentId.get(agent.id);
+        return (
+          <SubagentAgentCard
+            key={agent.id}
+            agent={agent as SubagentAgentBrief}
+            parentSessionId={parentSessionId}
+            subagentSessionId={session?.id}
+            onRefresh={refresh}
+            onRunTask={onRunTask}
+          />
+        );
+      })}
     </div>
   );
 }

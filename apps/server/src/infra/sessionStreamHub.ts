@@ -1,18 +1,24 @@
 /**
- * SessionStreamHub — 把 Agent 运行与 SSE 连接解耦。
+ * SessionStreamHub —— 把 Agent 运行与 SSE 连接解耦，并支持持久化续传。
  *
- * 每个 session 的 Agent 运行在独立的 Promise 中（不随客户端断开而 abort），
- * 运行期间产生的事件进入环形缓冲并广播给所有订阅者。前端断线后可通过
- * `resumeAfter` 续传，只把漏掉的事件补回来。
+ * 架构：
+ * - 每个 session 的 Agent 运行在独立 Promise 中，客户端断线不 abort。
+ * - 事件同时进入「内存环形缓冲」（热数据、低延迟推送）和「SQLite 事件日志」
+ *   （持久化、服务端重启后可按 sessionId 续传）。
+ * - 订阅时优先重放内存缓冲；若运行已结束或进程已重启，则从 SQLite 重放。
  */
 
 import type { AgentStreamEvent } from "./agentStream.js";
 import type { AgentChatInput } from "@knowpilot/shared";
+import type { AppConfig } from "./config.js";
+import { prisma } from "../db.js";
 
 export type BufferedEvent = {
   id: number;
   event: AgentStreamEvent;
 };
+
+type StreamConfig = AppConfig["stream"];
 
 type RunState = {
   sessionId: string;
@@ -27,6 +33,12 @@ type RunState = {
   cleanupTimer?: ReturnType<typeof setTimeout>;
 };
 
+type PersistItem = {
+  sessionId: string;
+  eventType: string;
+  payload: AgentStreamEvent;
+};
+
 export type RunningSessionInfo = {
   sessionId: string;
   lastEventId: number;
@@ -35,8 +47,31 @@ export type RunningSessionInfo = {
 
 export class SessionStreamHub {
   private runs = new Map<string, RunState>();
+  private persistQueue: PersistItem[] = [];
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private maxBufferSize = 2000) {}
+  constructor(private config: StreamConfig = { ringSize: 500, persist: true, eventTtlMs: 300_000, cleanupIntervalMs: 60_000 }) {
+    if (this.config.persist && this.config.cleanupIntervalMs > 0) {
+      this.cleanupTimer = setInterval(() => this.deleteExpired(), this.config.cleanupIntervalMs);
+      // 启动时先清理一轮，避免上次崩溃残留过期数据
+      void this.deleteExpired();
+    }
+  }
+
+  private async maxEventIdFor(sessionId: string): Promise<number> {
+    if (!this.config.persist) return 0;
+    try {
+      const agg = await prisma.sessionStreamEvent.aggregate({
+        where: { sessionId },
+        _max: { id: true },
+      });
+      return agg._max.id ?? 0;
+    } catch (err) {
+      console.warn(`[SessionStreamHub] 查询 ${sessionId} 最大事件 id 失败:`, err);
+      return 0;
+    }
+  }
 
   isRunning(sessionId: string): boolean {
     const run = this.runs.get(sessionId);
@@ -44,14 +79,19 @@ export class SessionStreamHub {
   }
 
   getLastEventId(sessionId: string): number {
-    return this.runs.get(sessionId)?.nextId ?? 0;
+    const run = this.runs.get(sessionId);
+    if (run) return run.nextId - 1;
+    // 运行不在内存时，从持久化取最后 id（供客户端判断是否需要续传）
+    if (!this.config.persist) return 0;
+    // 同步接口不适合 await；调用方若需要精确值可改为 getLastEventIdAsync
+    return 0;
   }
 
   getStatus(sessionId: string): { running: boolean; lastEventId: number } {
     const run = this.runs.get(sessionId);
     return {
       running: !!run && !run.completed,
-      lastEventId: run?.nextId ?? 0,
+      lastEventId: run ? run.nextId - 1 : 0,
     };
   }
 
@@ -59,25 +99,38 @@ export class SessionStreamHub {
     const result: RunningSessionInfo[] = [];
     for (const [sessionId, run] of this.runs) {
       if (!run.completed) {
-        result.push({ sessionId, lastEventId: run.nextId, runningSince: run.runningSince });
+        result.push({ sessionId, lastEventId: run.nextId - 1, runningSince: run.runningSince });
       }
     }
     return result;
   }
 
   /**
-   * 启动一次新的 Agent 运行。若该 session 已有运行中的任务，则抛出异常。
-   * runner 负责调用 emit 产生事件；signal 由本 Hub 提供，stop() 会触发它。
+   * 幂等启动：若该 session 已在运行则返回 false；否则启动并返回 true。
    */
-  start(
+  async startIfNotRunning(
     sessionId: string,
     input: AgentChatInput,
     runner: (emit: (event: AgentStreamEvent) => void, signal: AbortSignal) => Promise<void>,
-  ): void {
+  ): Promise<boolean> {
+    if (this.isRunning(sessionId)) return false;
+    await this.start(sessionId, input, runner);
+    return true;
+  }
+
+  /**
+   * 启动一次新的 Agent 运行。若已有运行中的任务则抛异常。
+   */
+  async start(
+    sessionId: string,
+    input: AgentChatInput,
+    runner: (emit: (event: AgentStreamEvent) => void, signal: AbortSignal) => Promise<void>,
+  ): Promise<void> {
     if (this.isRunning(sessionId)) {
       throw new Error(`会话 ${sessionId} 已有运行中的 Agent 流`);
     }
 
+    const maxId = await this.maxEventIdFor(sessionId);
     const abortController = new AbortController();
     const state: RunState = {
       sessionId,
@@ -87,7 +140,7 @@ export class SessionStreamHub {
       subscribers: new Set(),
       promise: Promise.resolve(),
       completed: false,
-      nextId: 1,
+      nextId: maxId + 1,
       runningSince: Date.now(),
     };
     this.runs.set(sessionId, state);
@@ -96,14 +149,17 @@ export class SessionStreamHub {
       if (state.completed) return;
       const buffered: BufferedEvent = { id: state.nextId++, event };
       state.buffer.push(buffered);
-      if (state.buffer.length > this.maxBufferSize) {
+      if (state.buffer.length > this.config.ringSize) {
         state.buffer.shift();
       }
+      this.enqueuePersist(buffered, state.sessionId);
       for (const sub of state.subscribers) {
         try {
-          sub(buffered);
+          Promise.resolve(sub(buffered)).catch(() => {
+            // 单个订阅者失败不打扰其他订阅者
+          });
         } catch {
-          // 单个订阅者失败不打扰其他订阅者
+          /* ignore */
         }
       }
     };
@@ -117,66 +173,105 @@ export class SessionStreamHub {
       } finally {
         state.completed = true;
         // 运行结束后保留一段时间，方便刚断线的前端重连取到 done/error
+        await this.flushPersistQueue();
         state.cleanupTimer = setTimeout(() => {
           this.runs.delete(sessionId);
-        }, 5 * 60 * 1000);
+        }, this.config.eventTtlMs);
       }
     })();
   }
 
   /**
-   * 订阅指定 session 的事件流。会立即重放 buffer 中 afterEventId 之后的事件。
-   * 返回取消订阅函数；取消订阅不会中止运行。
+   * 等待指定 session 运行结束。
    */
-  subscribe(
-    sessionId: string,
-    afterEventId: number,
-    onEvent: (event: BufferedEvent) => void,
-  ): () => void {
-    const state = this.runs.get(sessionId);
-    if (!state) {
-      return () => {};
-    }
-
-    // 先重放已有事件
-    const replayed = state.buffer.filter((ev) => ev.id > afterEventId);
-    for (const ev of replayed) {
-      onEvent(ev);
-    }
-
-    // 若运行已结束且客户端已经追到最新（afterEventId >= 最后事件 id），
-    // 重放一次 terminal 事件，让客户端能干净地结束而不是反复重连。
-    if (state.completed && replayed.length === 0 && state.buffer.length > 0) {
-      const last = state.buffer[state.buffer.length - 1];
-      if (last.event.type === "done" || last.event.type === "error") {
-        onEvent(last);
-      }
-    }
-
-    if (state.completed) {
-      return () => {};
-    }
-
-    state.subscribers.add(onEvent);
-    return () => {
-      state.subscribers.delete(onEvent);
-    };
+  waitFor(sessionId: string): Promise<void> {
+    const run = this.runs.get(sessionId);
+    if (!run) return Promise.resolve();
+    return run.promise;
   }
 
   /**
-   * 将运行中的 sessionId 迁移到新 id（用于 POST 启动时前端尚未拿到真实 sessionId 的场景）。
+   * 订阅事件流。先重放历史（内存或 SQLite），再接入实时推送。
    */
-  migrateSessionId(oldId: string, newId: string): boolean {
+  async subscribe(
+    sessionId: string,
+    afterEventId: number,
+    onEvent: (event: BufferedEvent) => void,
+  ): Promise<() => void> {
+    const state = this.runs.get(sessionId);
+
+    if (state) {
+      const replayed = state.buffer.filter((ev) => ev.id > afterEventId);
+      for (const ev of replayed) onEvent(ev);
+
+      if (state.completed && replayed.length === 0 && state.buffer.length > 0) {
+        const last = state.buffer[state.buffer.length - 1];
+        if (last.event.type === "done" || last.event.type === "error") {
+          onEvent(last);
+        }
+      }
+
+      if (state.completed) {
+        return () => {};
+      }
+
+      state.subscribers.add(onEvent);
+      return () => {
+        state.subscribers.delete(onEvent);
+      };
+    }
+
+    // 内存中无运行：从持久化日志重放（服务端重启场景）
+    if (this.config.persist) {
+      try {
+        const rows = await prisma.sessionStreamEvent.findMany({
+          where: { sessionId, id: { gt: afterEventId } },
+          orderBy: { id: "asc" },
+        });
+        for (const row of rows) {
+          onEvent({ id: row.id, event: row.payload as AgentStreamEvent });
+        }
+      } catch (err) {
+        console.warn(`[SessionStreamHub] 重放 ${sessionId} 持久化事件失败:`, err);
+      }
+    }
+
+    return () => {};
+  }
+
+  /**
+   * 迁移运行中的 sessionId（POST 占位场景）。同时迁移已持久化事件。
+   */
+  async migrateSessionId(oldId: string, newId: string): Promise<boolean> {
     const state = this.runs.get(oldId);
     if (!state) return false;
+
     state.sessionId = newId;
     this.runs.set(newId, state);
     this.runs.delete(oldId);
+
+    // 已入队但尚未 flush 的事件也迁移 sessionId
+    for (const item of this.persistQueue) {
+      if (item.sessionId === oldId) item.sessionId = newId;
+    }
+
+    if (this.config.persist) {
+      try {
+        await prisma.sessionStreamEvent.updateMany({
+          where: { sessionId: oldId },
+          data: { sessionId: newId },
+        });
+        const maxId = await this.maxEventIdFor(newId);
+        if (state.nextId <= maxId) state.nextId = maxId + 1;
+      } catch (err) {
+        console.warn(`[SessionStreamHub] 迁移持久化事件 ${oldId} -> ${newId} 失败:`, err);
+      }
+    }
     return true;
   }
 
   /**
-   * 显式停止某个 session 的运行。返回是否成功触发 abort。
+   * 显式停止某个 session 的运行（触发 abort）。
    */
   stop(sessionId: string): boolean {
     const state = this.runs.get(sessionId);
@@ -186,9 +281,9 @@ export class SessionStreamHub {
   }
 
   /**
-   * 强制清理某个 session（主要用于测试或特殊管理）。
+   * 强制清理某个 session（包括内存运行与持久化事件）。
    */
-  clear(sessionId: string): void {
+  async clear(sessionId: string): Promise<void> {
     const state = this.runs.get(sessionId);
     if (state) {
       if (!state.completed) {
@@ -196,6 +291,77 @@ export class SessionStreamHub {
       }
       if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
       this.runs.delete(sessionId);
+    }
+    if (this.config.persist) {
+      try {
+        await prisma.sessionStreamEvent.deleteMany({ where: { sessionId } });
+      } catch (err) {
+        console.warn(`[SessionStreamHub] 清理 ${sessionId} 持久化事件失败:`, err);
+      }
+    }
+  }
+
+  /**
+   * 优雅关闭：停止清理定时器并刷盘剩余事件。
+   */
+  async dispose(): Promise<void> {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    await this.flushPersistQueue();
+  }
+
+  /* ─── 持久化 ─── */
+
+  private enqueuePersist(buffered: BufferedEvent, sessionId: string) {
+    if (!this.config.persist) return;
+    this.persistQueue.push({
+      sessionId,
+      eventType: buffered.event.type,
+      payload: buffered.event,
+    });
+    if (this.persistQueue.length >= 50) {
+      void this.flushPersistQueue();
+    } else if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => void this.flushPersistQueue(), 50);
+    }
+  }
+
+  private async flushPersistQueue(): Promise<void> {
+    if (!this.config.persist || this.persistQueue.length === 0) return;
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    const batch = this.persistQueue.splice(0, this.persistQueue.length);
+    try {
+      await prisma.sessionStreamEvent.createMany({
+        data: batch.map((item) => ({
+          sessionId: item.sessionId,
+          eventType: item.eventType,
+          payload: item.payload as unknown as import("@prisma/client").Prisma.InputJsonValue,
+        })),
+      });
+    } catch (err) {
+      console.warn(`[SessionStreamHub] 持久化 ${batch.length} 条事件失败:`, err);
+      // 失败时丢回队列，避免无限丢失；但注意顺序可能乱
+      this.persistQueue.unshift(...batch);
+    }
+  }
+
+  private async deleteExpired(): Promise<void> {
+    if (!this.config.persist || this.config.eventTtlMs <= 0) return;
+    const cutoff = new Date(Date.now() - this.config.eventTtlMs);
+    try {
+      const result = await prisma.sessionStreamEvent.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      if (result.count > 0) {
+        console.log(`[SessionStreamHub] 清理 ${result.count} 条过期流式事件`);
+      }
+    } catch (err) {
+      console.warn("[SessionStreamHub] 清理过期事件失败:", err);
     }
   }
 }

@@ -118,15 +118,17 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
   // 自动补齐默认 assistant 的工具与系统提示，确保老数据库也能获得子代理/写文件能力
   if (exact) {
     const tools = Array.isArray(exact.tools) ? exact.tools : [];
+    // 子 Agent 不自动追加 spawn/run_async 等编排工具，其工具集由创建/运行时的权限层过滤
     const needsToolsUpdate =
-      !tools.includes("native:write_file") ||
-      !tools.includes("native:spawn_subagent") ||
-      !tools.includes("native:run_async");
+      exact.tier !== "sub" &&
+      (!tools.includes("native:write_file") ||
+        !tools.includes("native:spawn_subagent") ||
+        !tools.includes("native:run_async"));
     // 仅当系统提示还是旧版默认（或空）时才自动升级，避免覆盖用户自定义提示词
     const needsPromptUpdate =
       !exact.systemPrompt || exact.systemPrompt === LEGACY_ASSISTANT_SYSTEM_PROMPT;
-    // 默认 assistant 必须是 manager 层级，否则 spawn_subagent / run_async 等工具会被权限层拦截
-    const needsTierUpdate = exact.tier !== "manager";
+    // 默认 assistant 必须是 manager 层级；已明确指定 super/manager/sub 的 Agent 不再改动
+    const needsTierUpdate = !exact.tier;
     const needsUpdate = needsToolsUpdate || needsPromptUpdate || needsTierUpdate;
     if (needsUpdate) {
       try {

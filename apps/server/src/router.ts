@@ -386,6 +386,8 @@ const sessionRouter = router({
         config: ctx.config,
         services: ctx.services,
         agent: { id: agent.id, model, systemPrompt: agent.systemPrompt, tools: agent.tools },
+        source: "session.spawn",
+        isSubagent: true,
       });
       return {
         subagentSessionId: started.subagentSessionId,
@@ -412,6 +414,8 @@ const sessionRouter = router({
         config: ctx.config,
         services: ctx.services,
         agent: { id: agent.id, model: orig.model ?? agent.model, systemPrompt: agent.systemPrompt, tools: agent.tools },
+        source: "session.rerun",
+        isSubagent: true,
       });
       return {
         subagentSessionId: started.subagentSessionId,

@@ -1229,20 +1229,19 @@ describe("native:sleep", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("sub Agent 调用 run_async 不因 tier 被拦截", async () => {
+  it("sub Agent 调用 run_async 因 tier 被拦截", async () => {
     const root = createTempProjectDir();
     const ctx = {
       ...createNativeCtx(root),
       sessionId: "sess-1",
       agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
     };
-    // 权限检查通过后会因缺少真实服务抛错，但不应是 TIER_INSUFFICIENT
-    await expect(executeNativeTool("run_async", { task: "后台任务" }, ctx)).rejects.toThrow();
-    try {
-      await executeNativeTool("run_async", { task: "后台任务" }, ctx);
-    } catch (err) {
-      expect((err as Error).message).not.toContain("TIER_INSUFFICIENT");
-    }
+    const result = (await executeNativeTool("run_async", { task: "后台任务" }, ctx)) as {
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain("TIER_INSUFFICIENT");
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

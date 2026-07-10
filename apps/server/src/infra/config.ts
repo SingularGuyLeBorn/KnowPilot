@@ -7,6 +7,7 @@
 
 import fs from "fs";
 import path from "path";
+import { load as loadYaml } from "js-yaml";
 import { buildEffectiveSearchPriorityString } from "./metablog/search/priority.js";
 
 /* ─── 类型定义 ─── */
@@ -112,6 +113,13 @@ export interface AppConfig {
     /** auto | powershell | cmd | bash */
     shell: string;
   };
+  /** SessionStreamHub 内存缓冲与持久化配置 */
+  stream: {
+    ringSize: number;
+    persist: boolean;
+    eventTtlMs: number;
+    cleanupIntervalMs: number;
+  };
 }
 
 /* ─── 环境变量 ─── */
@@ -148,6 +156,18 @@ function resolveProjectRoot(): string {
   }
 
   return path.resolve(process.cwd(), "../..");
+}
+
+function loadYamlConfig(projectRoot: string): Record<string, unknown> {
+  const yamlPath = path.join(projectRoot, "config.yaml");
+  if (!fs.existsSync(yamlPath)) return {};
+  try {
+    const raw = fs.readFileSync(yamlPath, "utf8");
+    return (loadYaml(raw) as Record<string, unknown>) || {};
+  } catch (err) {
+    console.warn("[config] 读取 config.yaml 失败，使用默认配置:", err instanceof Error ? err.message : err);
+    return {};
+  }
 }
 
 function resolveContentDir(projectRoot: string): string {
@@ -277,6 +297,8 @@ export function createAppConfig(): AppConfig {
   };
 
   const paddleCliDefault = path.join(projectRoot, "tools", "ocr", "paddleocr_cli.py");
+  const yamlConfig = loadYamlConfig(projectRoot);
+  const streamConfig = (yamlConfig.stream as Record<string, unknown>) || {};
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -388,6 +410,12 @@ export function createAppConfig(): AppConfig {
       timeoutMs: Math.max(1000, parseInt(readEnv("SHELL_TIMEOUT_MS") || "30000", 10)),
       maxOutputChars: Math.max(1000, parseInt(readEnv("SHELL_MAX_OUTPUT_CHARS") || "12000", 10)),
       shell: readEnv("SHELL_BINARY") || "auto",
+    },
+    stream: {
+      ringSize: Math.max(10, parseInt(String(streamConfig.ringSize ?? "500"), 10)),
+      persist: String(streamConfig.persist ?? "true") !== "false",
+      eventTtlMs: Math.max(0, parseInt(String(streamConfig.eventTtlMs ?? "300000"), 10)),
+      cleanupIntervalMs: Math.max(1000, parseInt(String(streamConfig.cleanupIntervalMs ?? "60000"), 10)),
     },
   };
 
