@@ -15,6 +15,7 @@ out/
 # IDE
 .idea/
 .vscode/
+.claude/skills/
 *.swp
 *.swo
 
@@ -59,6 +60,8 @@ content/posts/smoke-post-*.md
 content/agents/Smoke Agent*.md
 content/agents/ApprovalGate_*.md
 content/agents/*子代理*.md
+content/agents/*子 Agent*.md
+content/agents/*测试 Agent*.md
 content/skills/smoke_skill_*.md
 content/skills/Test Skill*.md
 content/mcp/smoke_mcp_*.json
@@ -91,6 +94,12 @@ pgdata/
 
 # Server runtime cache
 apps/server/content/
+
+# Runtime generated workspaces
+workspaces/
+
+# Stray shell artifact
+/^
 
 # OCR / TTS / ASR 模型权重（大文件，用 pnpm ocr:download 拉取）
 weights/ocr/
