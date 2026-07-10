@@ -944,7 +944,11 @@ export function ChatView() {
               });
             },
             onToolStart: (name, args, round, toolCallId) => {
-              ssSet(originSid, "liveTimeline", (prev) => [...prev, { type: "tool", toolCallId, name, args, round, status: "running" }]);
+              ssSet(originSid, "liveTimeline", (prev) => {
+                // 防御后端/网络导致同一 tool call 多次 start，避免 React key 重复
+                if (prev.some((s) => s.type === "tool" && s.toolCallId === toolCallId)) return prev;
+                return [...prev, { type: "tool", toolCallId, name, args, round, status: "running" }];
+              });
             },
             onToolEnd: (name, result, round, hint, toolCallId) => {
               ssSet(originSid, "liveTimeline", (prev) =>
