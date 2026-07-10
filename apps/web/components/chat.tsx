@@ -66,6 +66,7 @@ import { MessageQueue } from "@/components/chatQueue";
 import { SubsessionPanel } from "@/components/subsessionPanel";
 import { AsyncTaskPanel } from "@/components/asyncTaskPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
+import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { WorkspaceTree } from "@/components/workspaceTree";
 import { AgentTreeSelect } from "@/components/agentTreeSelect";
 import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
@@ -186,6 +187,8 @@ export function ChatView() {
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(() => new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [hoverMonitorSessionId, setHoverMonitorSessionId] = useState<string | null>(null);
+  const hoverMonitorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // #12 Swarm 新手引导（可关闭，localStorage 记忆）
   // 避免 SSR/客户端 localStorage 不一致导致 hydration mismatch：
   // 首次渲染始终输出 DOM（带 hidden），hydration 后通过 ref 读取 localStorage 再显示/移除
@@ -579,6 +582,34 @@ export function ChatView() {
     [asyncResultQueue, userQueue],
   );
 
+  // 父会话实时任务进度：从合并后的 asyncResultQueue 派生，
+  // run_async / async_task_run / spawn_subagent 返回 running 时立即显示，
+  // 任务完成后显示 done/failed，并在 DOM 中保留 5 秒后再由 removeAt 定时器清理。
+  const asyncProgressSteps = useMemo<TimelineStep[]>(() => {
+    const steps: TimelineStep[] = [];
+    for (const item of asyncResultQueue) {
+      if (item.kind === "async-running") {
+        steps.push({
+          type: "progress",
+          jobId: item.jobId ?? item.id,
+          label: item.taskLabel || `后台任务 ${item.jobId?.slice(0, 6) ?? ""}`,
+          round: 1,
+          status: item.status === "queued" ? "queued" : "running",
+        });
+      } else if (item.kind === "async-result" && item.status) {
+        steps.push({
+          type: "progress",
+          jobId: item.jobId ?? item.id,
+          label: item.taskLabel || `后台任务 ${item.jobId?.slice(0, 6) ?? ""}`,
+          round: 1,
+          status: item.status === "failed" ? "failed" : "done",
+          content: item.status === "failed" ? item.asyncResult : undefined,
+        });
+      }
+    }
+    return steps;
+  }, [asyncResultQueue]);
+
   // localQueueRef / consumedDeliveriesRef 已由按 session 的 streamStatesRef 取代
 
   // 按会话持久化已消费的异步投递，刷新页面后不再显示旧结果
@@ -921,19 +952,34 @@ export function ChatView() {
                     : s,
                 ),
               );
-              if (name === "run_async" && result && typeof result === "object") {
-                const r = result as { jobId?: string; status?: string; message?: string };
-                if (r.jobId && r.status === "running") {
+              if (
+                (name === "run_async" || name === "async_task_run" || name === "spawn_subagent") &&
+                result &&
+                typeof result === "object"
+              ) {
+                const r = result as {
+                  jobId?: string;
+                  status?: string;
+                  message?: string;
+                  subagentSessionId?: string;
+                  subagentName?: string;
+                };
+                if (r.jobId && (r.status === "running" || r.status === "queued")) {
+                  const jobId = r.jobId;
+                  const status = r.status;
                   ssSet(originSid, "asyncOverlays", (prev) => {
-                    if (prev.some((q) => q.jobId === r.jobId)) return prev;
+                    if (prev.some((q) => q.jobId === jobId)) return prev;
+                    const label = r.message || r.subagentName || `${name === "spawn_subagent" ? "子 Agent" : "后台任务"} ${jobId.slice(0, 6)}`;
                     return [
                       {
-                        id: `run-${r.jobId}`,
+                        id: `run-${jobId}`,
                         kind: "async-running" as const,
                         text: r.message || "",
-                        jobId: r.jobId,
-                        taskLabel: r.message?.slice(0, 60),
-                        status: "running" as const,
+                        jobId,
+                        taskLabel: label.slice(0, 60),
+                        status: status === "queued" ? ("queued" as const) : ("running" as const),
+                        subagentSessionId: r.subagentSessionId,
+                        subagentName: r.subagentName,
                         createdAt: Date.now(),
                       },
                       ...prev,
@@ -1057,7 +1103,9 @@ export function ChatView() {
         const finishedTaskId = st.activeQueueTaskId;
         if (finishedTaskId) {
           st.activeQueueTaskId = null;
-          ssSet(originSid, "asyncOverlays", (prev) => prev.filter((i) => i.id !== finishedTaskId));
+          // 不在这里删除 overlay：consumeQueue 已将 running 转为 done/failed 并设置 removeAt，
+          // 由专门的定时器在展示 5 秒后清理，保证父会话进度条稳定可见。
+          void finishedTaskId;
         }
         consumeRef.current();
       }
@@ -1204,10 +1252,31 @@ export function ChatView() {
       // 用户消息：从 userQueue 移除
       ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
     } else {
-      // async-result：标记 consumedDeliveries（已上面处理），asyncOverlays 中对应的 overlay 也清除
-      st.activeQueueTaskId = task.id;
+      // async-result：把本地 running overlay 转为 done/failed 并保留 5 秒，
+      // 让用户在父会话时间线看到「运行中 → 已完成/失败」的完整状态流转，避免一闪而过。
       if (task.jobId) {
-        ssSet(sid, "asyncOverlays", (prev) => prev.filter((o) => o.jobId !== task.jobId));
+        const finishedJobId = task.jobId;
+        const finishedStatus = task.status ?? "done";
+        const finishedResult = task.asyncResult ?? "";
+        ssSet(sid, "asyncOverlays", (prev) => {
+          const existing = prev.find((o) => o.jobId === finishedJobId);
+          if (!existing) {
+            st.activeQueueTaskId = task.id;
+            return prev;
+          }
+          const updated: ChatQueueItem = {
+            ...existing,
+            id: `run-${finishedJobId}`,
+            kind: "async-result",
+            status: finishedStatus,
+            asyncResult: finishedResult,
+            removeAt: Date.now() + 5000,
+          };
+          st.activeQueueTaskId = updated.id;
+          return prev.map((o) => (o.jobId === finishedJobId ? updated : o));
+        });
+      } else {
+        st.activeQueueTaskId = task.id;
       }
     }
 
@@ -1271,6 +1340,23 @@ export function ChatView() {
       queueMicrotask(() => consumeRef.current());
     }
   }, [isStreaming, queue.length, consumeQueue, effectiveSessionId, isSessionStreaming]);
+
+  // 清理已过期的已完成 async overlay，让进度条稳定展示 5 秒后自动消失
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+    const timer = setInterval(() => {
+      const sid = effectiveSessionId;
+      const current = streamStatesRef.current.get(sid)?.asyncOverlays ?? [];
+      const now = Date.now();
+      const hasExpired = current.some((o) => o.kind === "async-result" && o.removeAt && o.removeAt <= now);
+      if (hasExpired) {
+        ssSet(sid, "asyncOverlays", (prev) =>
+          prev.filter((o) => !(o.kind === "async-result" && o.removeAt && o.removeAt <= now)),
+        );
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [effectiveSessionId, ssSet]);
 
   // 切换视图 session 时，从后台状态 Map 镜像该 session 的流式状态到视图
   useEffect(() => {
@@ -1529,18 +1615,32 @@ export function ChatView() {
     }
   }, [bulkMode, selectSession]);
 
-  // 悬停会话时预加载消息，减少点击切换时的闪烁
+  // 悬停会话时预加载消息并显示右上角监控小窗口
   const handleSessionHover = useCallback(
     (id: string) => {
       if (!id || id === effectiveSessionId) return;
-      void utils.message.listForChat.prefetchInfinite(
-        { sessionId: id, limit: 50 },
-        { pages: 1, getNextPageParam: (last) => last.nextCursor },
-      );
+      if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
+      setHoverMonitorSessionId(id);
+      void utils.message.listForChat.prefetchInfinite({ sessionId: id, limit: 8 });
     },
     [utils, effectiveSessionId],
   );
 
+  const handleSessionHoverEnd = useCallback((id: string) => {
+    hoverMonitorTimeoutRef.current = setTimeout(() => {
+      setHoverMonitorSessionId((current) => (current === id ? null : current));
+    }, 200);
+  }, []);
+
+  const handleHoverMonitorEnter = useCallback(() => {
+    if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
+  }, []);
+
+  const handleHoverMonitorLeave = useCallback(() => {
+    hoverMonitorTimeoutRef.current = setTimeout(() => {
+      setHoverMonitorSessionId(null);
+    }, 200);
+  }, []);
   const handleStartRename = useCallback((id: string) => {
     setEditingSessionId(id);
     const s = sessionsQuery.data?.items.find((x) => x.id === id);
@@ -2000,6 +2100,7 @@ export function ChatView() {
                   agents={agentsQuery.data?.items ?? []}
                   onSelectSession={selectSession}
                   onHoverSession={handleSessionHover}
+                  onHoverSessionEnd={handleSessionHoverEnd}
                   onSelectAgent={(id) => {
                     selectAgent(id);
                   }}
@@ -2045,6 +2146,7 @@ export function ChatView() {
                               renameDraft={renameDraft}
                               onSelect={handleSessionSelect}
                               onHover={handleSessionHover}
+                              onHoverEnd={handleSessionHoverEnd}
                               onStartRename={handleStartRename}
                               onRenameDraftChange={setRenameDraft}
                               onConfirmRename={handleConfirmRename}
@@ -2083,6 +2185,7 @@ export function ChatView() {
     bulkSelected,
     handleSessionSelect,
     handleSessionHover,
+    handleSessionHoverEnd,
     handleStartRename,
     setRenameDraft,
     handleConfirmRename,
@@ -2149,6 +2252,13 @@ export function ChatView() {
         </div>
         {leftPanelBody}
       </aside>
+
+      <ChatHoverMonitor
+        sessionId={hoverMonitorSessionId}
+        onMouseEnter={handleHoverMonitorEnter}
+        onMouseLeave={handleHoverMonitorLeave}
+        onClose={() => setHoverMonitorSessionId(null)}
+      />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b border-[var(--kp-divider)] px-4 py-2.5">
@@ -2408,6 +2518,12 @@ export function ChatView() {
           settingsPanelOpen={rightOpen}
           settingsPanelWidth={360}
         />
+
+        {asyncProgressSteps.length > 0 && (
+          <div className="flex w-full justify-start px-4 pb-3 md:px-6" data-testid="async-progress-block">
+            <ThinkingTimeline steps={asyncProgressSteps} isLive />
+          </div>
+        )}
 
         <div className="border-t border-[var(--kp-divider)] px-4 py-3 md:px-6">
           <ChatInputArea

@@ -35,6 +35,8 @@ export interface ChatQueueItem {
   subagentSessionId?: string;
   /** 子 Agent 名字，用于消息来源角标 */
   subagentName?: string;
+  /** 已完成的 overlay 自动移除时间戳（ms），仅本地 async-result 使用 */
+  removeAt?: number;
   createdAt: number;
 }
 
@@ -101,9 +103,16 @@ export function mergeAsyncPollIntoQueue(
     local.filter((i) => i.jobId).map((i) => [i.jobId!, i] as const),
   );
 
+  // 本地已完成的 async-result overlay（带 removeAt）应继续展示到过期，并跳过 poll 重复投递
+  const localFinishedOverlayIds = new Set<string>();
+
   let next = local.filter((item) => {
     if (item.kind === "user") return true;
     if (item.kind === "async-running" && item.jobId && !pollJobIds.has(item.jobId)) return true;
+    if (item.kind === "async-result" && item.jobId && item.removeAt && Date.now() < item.removeAt) {
+      localFinishedOverlayIds.add(item.jobId);
+      return true;
+    }
     return false;
   });
 
@@ -137,6 +146,8 @@ export function mergeAsyncPollIntoQueue(
 
   for (const del of poll.deliveries ?? []) {
     if (skipDeliveries.has(del.jobId)) continue;
+    // 本地已完成 overlay 仍在展示窗口内，跳过 poll delivery 避免重复消费/闪烁
+    if (localFinishedOverlayIds.has(del.jobId)) continue;
     next = next.filter((q) => q.jobId !== del.jobId);
     const prev = localByJobId.get(del.jobId);
     next.unshift({

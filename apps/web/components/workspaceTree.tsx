@@ -40,6 +40,7 @@ interface WorkspaceTreeProps {
   agents: { id: string; name: string; tier: string; status: string; model: string; workspaceId: string | null }[];
   onSelectSession: (id: string) => void;
   onHoverSession?: (id: string) => void;
+  onHoverSessionEnd?: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   onNewChat: () => void;
   searchQuery: string;
@@ -50,6 +51,7 @@ export function WorkspaceTree({
   agents,
   onSelectSession,
   onHoverSession,
+  onHoverSessionEnd,
   onSelectAgent,
   onNewChat,
   searchQuery,
@@ -153,6 +155,7 @@ export function WorkspaceTree({
           effectiveSessionId={effectiveSessionId}
           onSelectSession={onSelectSession}
           onHoverSession={onHoverSession}
+          onHoverSessionEnd={onHoverSessionEnd}
           onSelectAgent={onSelectAgent}
           searchLower={searchLower}
           matchesSearch={matchesSearch}
@@ -245,6 +248,7 @@ function AgentNode({
   effectiveSessionId,
   onSelectSession,
   onHoverSession,
+  onHoverSessionEnd,
   onSelectAgent,
   searchLower,
 }: {
@@ -256,6 +260,7 @@ function AgentNode({
   effectiveSessionId: string | null;
   onSelectSession: (id: string) => void;
   onHoverSession?: (id: string) => void;
+  onHoverSessionEnd?: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   searchLower: string;
   matchesSearch: (text: string) => boolean;
@@ -301,6 +306,7 @@ function AgentNode({
               type="button"
               onClick={() => onSelectSession(s.id)}
               onMouseEnter={() => onHoverSession?.(s.id)}
+              onMouseLeave={() => onHoverSessionEnd?.(s.id)}
               className={cn(
                 "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition",
                 effectiveSessionId === s.id
