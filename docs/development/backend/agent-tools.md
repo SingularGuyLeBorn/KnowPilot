@@ -114,6 +114,38 @@ allowed-tools:
 
 ---
 
+## Swarm 消息与异步任务
+
+### 子 Agent（`spawn_subagent`）vs 异步任务（`async_task_run`）
+
+| 维度 | `spawn_subagent` | `async_task_run` |
+|---|---|---|
+| 本质 | 创建一个新的子 Agent，并给它发一条消息触发运行 | 在当前 Agent 的后台会话中执行一个任务 |
+| 实现 | `agent_create_sub` + `agent_send_message({ autoRun: true })` | `startAsyncAgentTask` |
+| 结果回传 | 子 Agent 运行结束后通过 `report_back`/Task 投递回父会话 | 后台任务完成后自动把结果插入当前会话 |
+| 适合 | 需要独立上下文、可暂停/恢复、长期跟踪的子任务 | 当前 Agent 内的短时后台计算/定时等待 |
+| 权限 | manager/super 可创建；sub 无权 | sub 只能使用 `mode="tool"`；manager/super 可用 `mode="llm"` |
+
+### Agent 间消息规则（`agent_send_message`）
+
+硬拦截位置：`apps/server/src/infra/nativeTools.ts` → `agentSendMessageTool` → `checkAgentSendMessagePermission`。
+
+1. **同级禁止**：相同 tier 的 Agent 之间不能直接发消息。
+2. **向下发**：
+   - **super** 可发给任何更低 tier 的 Agent，跨 Workspace 允许。
+   - **manager** 只能发给**本 Workspace 内**的下级 Agent。
+3. **向上发**：下级只能**回复**上级——必须存在来自目标上级的消息，且该消息比本 Agent 最后一条发给上级的消息更新。
+
+错误码：
+
+| 错误码 | 含义 |
+|---|---|
+| `SAME_TIER_MESSAGING_FORBIDDEN` | 同级 Agent 不能互发消息 |
+| `CROSS_WORKSPACE_FORBIDDEN` | manager 跨 Workspace 发消息 |
+| `UPWARD_REPLY_REQUIRED` | 下级未收到/未回复上级消息就主动向上发 |
+
+---
+
 ## 单元测试
 
 ```bash

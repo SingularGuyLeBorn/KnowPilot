@@ -13,6 +13,7 @@ import {
   resolveAllowedNativeTools,
   isUnreadableArticlePage,
 } from "../infra/nativeTools.js";
+import { resetSwarmBus } from "../infra/swarmBus.js";
 import {
   ALL_NATIVE_TOOL_NAMES,
   createNativeCtx,
@@ -1229,7 +1230,7 @@ describe("native:sleep", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("sub Agent 可调用 async_task_run 创建后台任务", async () => {
+  it("sub Agent 可调用 async_task_run 创建 mode=tool 后台任务", async () => {
     const root = createTempProjectDir();
     const ctx = {
       ...createNativeCtx(root, {
@@ -1245,13 +1246,141 @@ describe("native:sleep", () => {
       sessionId: "sess-1",
       agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
     };
-    const result = (await executeNativeTool("async_task_run", { task: "后台任务" }, ctx)) as {
+    const result = (await executeNativeTool("async_task_run", { task: "后台任务", mode: "tool", toolCall: { tool: "sleep", args: { ms: 1 } } }, ctx)) as {
       jobId?: string;
       error?: string;
       permissionDenied?: boolean;
+      sourceType?: string;
     };
     expect(result.permissionDenied).not.toBe(true);
     expect(result.jobId).toBe("task-123");
+    expect(result.sourceType).toBe("async_task_tool");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});
+
+function createMockPrismaForAgentSendMessage(opts: {
+  agent: Record<string, unknown>;
+  messages?: Array<{ fromAgentId: string; toAgentId: string; createdAt: Date }>;
+}) {
+  const messages = opts.messages ?? [];
+  return {
+    agent: {
+      findUnique: vi.fn().mockImplementation(({ where }: { where: { id: string } }) => {
+        return Promise.resolve((opts.agent as { id: string }).id === where.id ? opts.agent : null);
+      }),
+    },
+    agentMessage: {
+      findFirst: vi.fn().mockImplementation(({ where }: { where: { fromAgentId: string; toAgentId: string } }) => {
+        const match = messages
+          .filter((m) => m.fromAgentId === where.fromAgentId && m.toAgentId === where.toAgentId)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+        return Promise.resolve(match ?? null);
+      }),
+      count: vi.fn().mockResolvedValue(0),
+      create: vi.fn().mockResolvedValue({ id: "msg-1" }),
+    },
+    log: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  } as any;
+}
+
+describe("native:agent_send_message", () => {
+  beforeEach(() => {
+    resetSwarmBus();
+  });
+
+  it("super 可跨 Workspace 向下级 Agent 发消息", async () => {
+    const root = createTempProjectDir();
+    const prisma = createMockPrismaForAgentSendMessage({
+      agent: { id: "sub-1", tier: "sub", workspaceId: "ws-other", status: "active" },
+    });
+    const ctx = createNativeCtx(root, { prisma });
+    ctx.agentSnapshot = { id: "super-1", model: "m", systemPrompt: "", tools: [], tier: "super", workspaceId: null, parentId: null };
+    const result = (await executeNativeTool("agent_send_message", { toAgentId: "sub-1", content: "任务", autoRun: false }, ctx)) as {
+      success?: boolean;
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.success).toBe(true);
+    expect(prisma.agentMessage.create).toHaveBeenCalled();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("manager 只能给本 Workspace 内的下级发消息", async () => {
+    const root = createTempProjectDir();
+    const prisma = createMockPrismaForAgentSendMessage({
+      agent: { id: "sub-1", tier: "sub", workspaceId: "ws-a", status: "active" },
+    });
+    const ctx = createNativeCtx(root, { prisma });
+    ctx.agentSnapshot = { id: "mgr-1", model: "m", systemPrompt: "", tools: [], tier: "manager", workspaceId: "ws-b", parentId: "super-1" };
+    const result = (await executeNativeTool("agent_send_message", { toAgentId: "sub-1", content: "任务", autoRun: false }, ctx)) as {
+      success?: boolean;
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.success).not.toBe(true);
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain("CROSS_WORKSPACE_FORBIDDEN");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("sub 不能主动向上级发消息（无上级消息记录）", async () => {
+    const root = createTempProjectDir();
+    const prisma = createMockPrismaForAgentSendMessage({
+      agent: { id: "mgr-1", tier: "manager", workspaceId: "ws-a", status: "active" },
+    });
+    const ctx = createNativeCtx(root, { prisma });
+    ctx.agentSnapshot = { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", workspaceId: "ws-a", parentId: "mgr-1" };
+    const result = (await executeNativeTool("agent_send_message", { toAgentId: "mgr-1", content: "汇报", autoRun: false }, ctx)) as {
+      success?: boolean;
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain("UPWARD_REPLY_REQUIRED");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("sub 可在上级发来消息后向上级回复", async () => {
+    const root = createTempProjectDir();
+    const now = Date.now();
+    const prisma = createMockPrismaForAgentSendMessage({
+      agent: { id: "mgr-1", tier: "manager", workspaceId: "ws-a", status: "active" },
+      messages: [{ fromAgentId: "mgr-1", toAgentId: "sub-1", createdAt: new Date(now - 1000) }],
+    });
+    const ctx = createNativeCtx(root, { prisma });
+    ctx.agentSnapshot = { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", workspaceId: "ws-a", parentId: "mgr-1" };
+    const result = (await executeNativeTool("agent_send_message", { toAgentId: "mgr-1", content: "收到", autoRun: false }, ctx)) as {
+      success?: boolean;
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.success).toBe(true);
+    expect(prisma.agentMessage.create).toHaveBeenCalled();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("sub 连发两条消息给上级会被拦截", async () => {
+    const root = createTempProjectDir();
+    const now = Date.now();
+    const prisma = createMockPrismaForAgentSendMessage({
+      agent: { id: "mgr-1", tier: "manager", workspaceId: "ws-a", status: "active" },
+      messages: [
+        { fromAgentId: "mgr-1", toAgentId: "sub-1", createdAt: new Date(now - 2000) },
+        { fromAgentId: "sub-1", toAgentId: "mgr-1", createdAt: new Date(now - 1000) },
+      ],
+    });
+    const ctx = createNativeCtx(root, { prisma });
+    ctx.agentSnapshot = { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", workspaceId: "ws-a", parentId: "mgr-1" };
+    const result = (await executeNativeTool("agent_send_message", { toAgentId: "mgr-1", content: "又一条", autoRun: false }, ctx)) as {
+      success?: boolean;
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain("UPWARD_REPLY_REQUIRED");
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

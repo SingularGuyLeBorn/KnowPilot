@@ -142,6 +142,11 @@ export class LocalSwarmBus implements SwarmBus {
 
 let _bus: SwarmBus | null = null;
 
+/** 仅用于测试：重置 SwarmBus 单例，避免跨测试复用旧的 PrismaClient */
+export function resetSwarmBus(): void {
+  _bus = null;
+}
+
 export function getSwarmBus(prisma: PrismaClient, services: ServiceContainer, config?: any): SwarmBus {
   if (!_bus) {
     const mode = process.env.SWARM_MODE || "local";

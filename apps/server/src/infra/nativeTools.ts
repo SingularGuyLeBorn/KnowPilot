@@ -21,6 +21,9 @@ import {
   type SearchEngineName,
 } from "./metablog/index.js";
 import { runShellRestricted, waitMs } from "./shellRunner.js";
+import { runAgentLoop, buildMemoryContext, buildSystemPromptWithHints, resolveAgent } from "./agentRuntime.js";
+import { createTrpcInvoker } from "./trpcInvoker.js";
+import type { LlmMessage } from "./llmClient.js";
 import {
   getGitHubToken,
   parseRepo,
@@ -2919,6 +2922,15 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
   const shareToSessionIds = Array.isArray(args.shareToSessionIds)
     ? (args.shareToSessionIds as unknown[]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)
     : undefined;
+  const mode = args.mode === "tool" ? "tool" : "llm";
+  const rawToolCall = args.toolCall && typeof args.toolCall === "object" ? (args.toolCall as Record<string, unknown>) : undefined;
+  const toolCall = mode === "tool" && rawToolCall
+    ? { tool: String(rawToolCall.tool || ""), args: (rawToolCall.args ?? {}) as Record<string, unknown> }
+    : undefined;
+  if (mode === "tool" && !toolCall?.tool) {
+    throw new Error("async_task_run(mode=tool) 需要提供 toolCall.tool 参数");
+  }
+  const sourceType = mode === "tool" ? "async_task_tool" : "async_task_llm";
   const started = await startAsyncAgentTask({
     sessionId: ctx.sessionId,
     task: String(args.task || ""),
@@ -2929,12 +2941,14 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     agent: ctx.agentSnapshot,
     source: "native_tool:async_task_run",
     isSubagent: false,
+    mode,
+    toolCall,
     shareToSessionIds,
   });
-  if (!waitForResult) return started;
+  if (!waitForResult) return { ...started, sourceType };
   // 阻塞等待结果（受工具超时约束）：结果直接返回，不进发送队列
   const result = await waitForAsyncJob(started.jobId, ctx.config, ctx.services);
-  return result;
+  return { ...result, sourceType };
 }
 
 async function taskStatusTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -2952,76 +2966,88 @@ async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolCon
   return cancelAsyncJob(jobId, ctx.config, ctx.services);
 }
 
-/** LLM 主动派生子 Agent：与 async_task_run 区别在于 spawn_subagent 语义明确为「派生一个独立子 Agent」,
- *  强制创建 subagent ChatSession（UI 卡片可见）。默认不阻塞（结果进发送队列最前）；
- *  waitForResult=true 时阻塞等待，结果直接返回并写入父会话作为「子 Agent 发送」消息。 */
+/** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
+ *  底层实现 = agent_create_sub + agent_send_message({ autoRun: true })。
+ *  默认不阻塞；waitForResult=true 时阻塞等待子 Agent 完成，结果写入父会话。 */
 async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.sessionId || !ctx.agentSnapshot) {
     throw new Error("spawn_subagent 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
   }
-  const { startAsyncAgentTask, waitForAsyncJob } = await import("./asyncJobManager.js");
   const task = String(args.task || "");
   if (!task.trim()) throw new Error("spawn_subagent 需要 task（子 Agent 任务描述）");
-  // 可选指定不同 Agent；缺省继承当前 Agent
-  let agent = ctx.agentSnapshot;
-  if (args.agentId && typeof args.agentId === "string") {
-    try {
-      const resolved = await ctx.services.agent.getById(String(args.agentId));
-      if (resolved) {
-        agent = {
-          id: resolved.id,
-          model: args.model ? String(args.model) : resolved.model,
-          systemPrompt: resolved.systemPrompt,
-          tools: resolved.tools,
-        };
-      }
-    } catch (err) {
-      throw new Error(`spawn_subagent 指定的 Agent 不存在: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-  const started = await startAsyncAgentTask({
-    sessionId: ctx.sessionId,
-    task,
-    label: args.label ? String(args.label) : `子 Agent: ${task.slice(0, 40)}`,
-    timeoutMs: args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined,
-    config: ctx.config,
-    services: ctx.services,
-    agent,
-    source: "native_tool:spawn_subagent",
-    isSubagent: true,
-    shareToSessionIds: Array.isArray(args.shareToSessionIds)
-      ? (args.shareToSessionIds as unknown[]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)
-      : undefined,
-  });
 
+  // 1. 创建子 Agent（或复用指定 Agent）
+  let subagentId: string;
+  let subagentName: string;
+  if (args.agentId && typeof args.agentId === "string") {
+    const resolved = await ctx.services.agent.getById(String(args.agentId));
+    if (!resolved) throw new Error("spawn_subagent 指定的 Agent 不存在");
+    subagentId = resolved.id;
+    subagentName = resolved.name;
+  } else {
+    const createResult = await agentCreateSubTool(
+      {
+        name: args.name ? String(args.name) : `子 Agent ${Date.now().toString(36).slice(-4)}`,
+        description: args.description ? String(args.description) : undefined,
+        systemPrompt: args.systemPrompt
+          ? String(args.systemPrompt)
+          : `你是上级 Agent 派出的子 Agent。请完成下发的任务，必要时调用工具，最终使用 agent_report_back 向上级汇报结果。\n\n任务：${task}`,
+        tools: Array.isArray(args.tools) ? (args.tools as string[]) : ["agent_report_back"],
+        model: args.model ? String(args.model) : undefined,
+        apiKey: args.apiKey as string | undefined,
+      },
+      ctx,
+    );
+    if ("error" in createResult) throw new Error(createResult.error as string);
+    subagentId = (createResult as { agentId: string }).agentId;
+    subagentName = (createResult as { name: string }).name;
+  }
+
+  // 2. 立即派活并（可选）阻塞等待
+  const sendResult = await agentSendMessageTool(
+    {
+      toAgentId: subagentId,
+      content: task,
+      messageType: "command",
+      autoRun: true,
+      waitForRun: args.waitForResult === true,
+    },
+    ctx,
+  );
+
+  if ("error" in sendResult || !sendResult.success) {
+    return { error: (sendResult as { error?: string }).error ?? "派活失败" };
+  }
+
+  // 找到子 Agent 主会话 ID 用于 UI 跳转
+  const mainSession = await ctx.prisma?.chatSession.findFirst({
+    where: { agentId: subagentId, isMainSession: true, status: { not: "deleted" } },
+  });
+  const subagentSessionId = mainSession?.id;
+
+  // 非阻塞：直接返回，结果后续由子 Agent report_back 或异步投递
   if (args.waitForResult !== true) {
     return {
-      ...started,
-      hint: `子 Agent 已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 async_task_status 查询进度，async_task_cancel 取消。`,
+      success: true,
+      agentId: subagentId,
+      subagentName,
+      subagentSessionId,
+      message: `子 Agent「${subagentName}」已派生并启动，任务完成后结果会投递回父会话。`,
     };
   }
 
-  // 阻塞等待结果：Pause-on-Result 语义，主 Agent 暂停回复直到子 Agent 完成
-  const result = await waitForAsyncJob(started.jobId, ctx.config, ctx.services);
-  if (result.status !== "completed" || !result.asyncResult) {
+  // 阻塞等待：把子 Agent 最终回复写入父会话作为 user 消息（source=sub）
+  const resultContent = (sendResult as { content?: string }).content ?? "";
+  if (!resultContent) {
     return {
-      ...result,
-      hint: "子 Agent 任务失败，请告知用户失败原因并建议重试。",
+      success: true,
+      agentId: subagentId,
+      subagentName,
+      subagentSessionId,
+      hint: "子 Agent 未返回有效内容，请检查任务描述或重试。",
     };
   }
 
-  // 把子 Agent 结果写入父会话作为 user 消息（source=sub），并在左上角角标显示子 Agent 名字
-  let subagentName: string | undefined;
-  if (started.subagentSessionId) {
-    try {
-      const subSession = await ctx.services.session.getById(started.subagentSessionId);
-      const subAgent = subSession?.agentId ? await ctx.services.agent.getById(subSession.agentId) : null;
-      subagentName = subAgent?.name;
-    } catch {
-      // 查不到名字也不阻塞
-    }
-  }
-  const resultContent = result.asyncResult;
   try {
     await ctx.services.message.create({
       sessionId: ctx.sessionId,
@@ -3030,25 +3056,23 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
       source: "sub",
       toolResults: {
         subagentResult: {
-          jobId: started.jobId,
-          subagentSessionId: started.subagentSessionId,
-          subagentName: subagentName ?? `子 Agent ${started.jobId.slice(0, 6)}`,
+          agentId: subagentId,
+          subagentSessionId,
+          subagentName,
         },
       },
     });
-    // 结果已通过消息持久化，避免 async queue 再次投递同一条结果
-    await ctx.services.task.update({ id: started.jobId, delivered: true, deliveredAt: new Date() } as any);
   } catch (err) {
     console.warn(`[spawn_subagent] 写入父会话子 Agent 结果消息失败:`, err);
   }
 
   return {
-    ...result,
+    success: true,
+    agentId: subagentId,
     subagentName,
-    subagentSessionId: started.subagentSessionId,
-    hint: subagentName
-      ? `子 Agent「${subagentName}」已完成任务，结果已写入父会话。请基于上述结果继续生成最终回复。`
-      : "子 Agent 已完成任务，结果已写入父会话。请基于上述结果继续生成最终回复。",
+    subagentSessionId,
+    content: resultContent,
+    hint: `子 Agent「${subagentName}」已完成任务，结果已写入父会话。请基于上述结果继续生成最终回复。`,
   };
 }
 
@@ -3129,6 +3153,14 @@ async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolCo
 // ─── Swarm 管理工具实现 ───
 
 async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  // 超级 Agent 创建 Agent 未指定 workspaceId 时，默认挂到系统 Workspace
+  let workspaceId = args.workspaceId as string | undefined;
+  if (!workspaceId && ctx.agentSnapshot?.tier === "super") {
+    const systemWs = await ctx.services.prisma.workspace.findFirst({
+      where: { isSystem: true, systemType: "super", status: { not: "deleted" } },
+    });
+    if (systemWs) workspaceId = systemWs.id;
+  }
   const created = await ctx.services.agent.create({
     name: String(args.name || ""),
     description: args.description ? String(args.description) : undefined,
@@ -3136,7 +3168,7 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
     systemPrompt: args.systemPrompt ? String(args.systemPrompt) : "",
     tools: Array.isArray(args.tools) ? (args.tools as string[]) : [],
     tier: args.tier as "super" | "manager" | "sub" | undefined,
-    workspaceId: args.workspaceId as string | undefined,
+    workspaceId,
     parentId: args.parentId as string | undefined,
     source: "native_tool:agent_create",
     apiKey: args.apiKey as string | undefined,
@@ -3146,8 +3178,8 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
   if (!created.success || !created.data) {
     return { error: created.error?.message ?? "创建 Agent 失败" };
   }
-  // 管理 Agent：自动创建主 session
-  if (args.tier === "manager" && created.data.id) {
+  // 管理 Agent / 子 Agent：自动创建主 session
+  if ((args.tier === "manager" || args.tier === "sub") && created.data.id) {
     await ctx.services.session.create({
       title: `${args.name} 主会话`,
       model: args.model ? String(args.model) : "deepseek-v4-flash",
@@ -3237,15 +3269,126 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
   };
 }
 
+/** 防止同一 Agent 被并发触发自动运行 */
+const agentRunLocks = new Map<string, Promise<{ content: string; subagentSessionId: string }>>();
+
+async function triggerAgentRun(targetAgentId: string, input: string, ctx: NativeToolContext): Promise<{ content: string; subagentSessionId: string }> {
+  const existing = agentRunLocks.get(targetAgentId);
+  if (existing) await existing;
+
+  const runPromise = (async (): Promise<{ content: string; subagentSessionId: string }> => {
+    try {
+      const agent = await resolveAgent(ctx.services, targetAgentId);
+      if (!agent || agent.status === "deleted") throw new Error("目标 Agent 不存在或已删除");
+
+      let mainSession = await ctx.prisma?.chatSession.findFirst({
+        where: { agentId: targetAgentId, isMainSession: true, status: { not: "deleted" } },
+      });
+      if (!mainSession) {
+        const created = await ctx.services.session.create({
+          title: `${agent.name} 主会话`,
+          model: agent.model,
+          systemPrompt: agent.systemPrompt,
+          agentId: targetAgentId,
+          isMainSession: true,
+        });
+        if (created.success && created.data) {
+          mainSession = await ctx.prisma?.chatSession.findUnique({ where: { id: (created.data as { id: string }).id } }) ?? null;
+        }
+      }
+      if (!mainSession) throw new Error("无法创建或找到目标 Agent 的主会话");
+
+      const messageSource = (ctx.agentSnapshot?.tier ?? "super") as "super" | "manager" | "sub" | "user" | "system";
+      await ctx.services.message.create({
+        sessionId: mainSession.id,
+        role: "user",
+        content: input,
+        source: messageSource,
+      });
+
+      const memoryHint = await buildMemoryContext(ctx.services, input);
+      const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint);
+      const messages: LlmMessage[] = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: input },
+      ];
+      const invokeTrpc = createTrpcInvoker({ services: ctx.services });
+
+      const loop = await runAgentLoop({
+        config: ctx.config,
+        services: ctx.services,
+        agent: { model: agent.model, systemPrompt, tools: agent.tools },
+        messages,
+        invokeTrpc,
+        sessionId: mainSession.id,
+        agentMeta: {
+          id: agent.id,
+          model: agent.model,
+          systemPrompt,
+          tools: agent.tools,
+          tier: agent.tier,
+          parentId: agent.parentId,
+          workspaceId: agent.workspaceId,
+        },
+        runOrigin: "parent",
+      });
+
+      await ctx.services.message.create({
+        sessionId: mainSession.id,
+        role: "assistant",
+        content: loop.content,
+        toolCalls: loop.toolCalls as any,
+        tokenUsage: loop.tokenUsage,
+        source: "sub",
+      });
+
+      return { content: loop.content, subagentSessionId: mainSession.id };
+    } finally {
+      agentRunLocks.delete(targetAgentId);
+    }
+  })();
+
+  agentRunLocks.set(targetAgentId, runPromise);
+  return runPromise;
+}
+
 async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { getSwarmBus } = await import("./swarmBus.js");
+  const { checkAgentSendMessagePermission } = await import("./swarmPermissionGuard.js");
   if (!ctx.prisma) throw new Error("agent_send_message 需要 prisma 上下文");
   const bus = getSwarmBus(ctx.prisma, ctx.services);
+  const content = String(args.content || "");
+  const autoRun = args.autoRun !== false;
+  const waitForRun = args.waitForRun === true;
+  const toAgentId = String(args.toAgentId || "");
+
+  // 层级/范围权限硬拦截（#49）
+  const toAgent = await ctx.prisma.agent.findUnique({ where: { id: toAgentId } });
+  if (!toAgent || toAgent.status === "deleted") {
+    return {
+      success: false,
+      error: `目标 Agent ${toAgentId} 不存在或已删除。`,
+      permissionDenied: true,
+    };
+  }
+  const permissionError = await checkAgentSendMessagePermission(ctx.prisma, {
+    fromAgentId: ctx.agentSnapshot?.id ?? "",
+    fromTier: ctx.agentSnapshot?.tier ?? "sub",
+    fromWorkspaceId: ctx.agentSnapshot?.workspaceId,
+  }, toAgent);
+  if (permissionError) {
+    return {
+      success: false,
+      error: `[${permissionError.code}] ${permissionError.reason}`,
+      permissionDenied: true,
+    };
+  }
+
   const result = await bus.send(
     {
       fromAgentId: ctx.agentSnapshot?.id ?? "",
-      toAgentId: String(args.toAgentId || ""),
-      content: String(args.content || ""),
+      toAgentId,
+      content,
       messageType: args.messageType as any,
       source: ctx.agentSnapshot?.tier as any,
       taskRef: args.taskRef as string | undefined,
@@ -3254,6 +3397,24 @@ async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeTo
     ctx.agentSnapshot?.workspaceId ?? null,
     ctx.inToolRound ?? false,
   );
+
+  if (result.success && autoRun && content.trim()) {
+    const runPromise = triggerAgentRun(toAgentId, content, ctx).catch((err: unknown) => {
+      console.warn(`[agent_send_message] 自动触发目标 Agent ${toAgentId} 运行失败:`, err);
+      return { content: "", subagentSessionId: "" };
+    });
+    if (waitForRun) {
+      const runResult = await runPromise;
+      return {
+        success: true,
+        message: result.message,
+        content: runResult.content,
+        subagentSessionId: runResult.subagentSessionId,
+      };
+    }
+    void runPromise;
+  }
+
   return result.success ? { success: true, message: result.message } : { error: `[${result.error?.code}] ${result.error?.reason}` };
 }
 

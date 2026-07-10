@@ -200,9 +200,9 @@ const server = app.listen(PORT, () => {
   taskScheduler.start().catch((err) => {
     console.error("❌ [TaskScheduler] 启动失败:", err);
   });
-  // Swarm 初始化：首次启动自动创建超级 Agent（幂等）
+  // Swarm 初始化：首次启动自动创建系统 Workspace + 超级 Agent（幂等）
   import("./infra/swarmInitializer.js")
-    .then(({ initSwarm }) => initSwarm(prisma))
+    .then(({ initSwarm }) => initSwarm(prisma, services, config))
     .then(() => import("./infra/heartbeatEngine.js"))
     .then(({ getHeartbeatEngine }) => getHeartbeatEngine(prisma, services, config).start())
     .catch((err) => console.error("❌ [Swarm] 初始化/心跳启动失败:", err));

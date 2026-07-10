@@ -576,6 +576,8 @@ export const createWorkspaceSchema = z.object({
   description: z.string().optional(),
   path: safePathString,
   autoCreateManager: z.boolean().optional(), // 自动创建管理 Agent（不传则默认 true，由 service 处理）
+  isSystem: z.boolean().optional(), // 系统级 Workspace（内部使用）
+  systemType: z.string().optional(), // 系统 Workspace 类型，如 "super"
 });
 
 export const updateWorkspaceSchema = z.object({
@@ -584,6 +586,8 @@ export const updateWorkspaceSchema = z.object({
   description: z.string().optional(),
   path: safePathString.optional(),
   status: workspaceStatusSchema.optional(),
+  isSystem: z.boolean().optional(),
+  systemType: z.string().optional(),
 });
 
 export const listWorkspacesSchema = z.object({

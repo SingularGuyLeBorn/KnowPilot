@@ -6,6 +6,8 @@
  * 返回权限错误时包含错误码 + 错误原因（#44 用户要求）。
  */
 
+import type { PrismaClient } from "@prisma/client";
+
 /** Agent 层级排序：super > manager > sub */
 const TIER_RANK: Record<string, number> = { super: 3, manager: 2, sub: 1 };
 
@@ -103,6 +105,17 @@ export function checkToolPermission(
 
   // 2. Swarm 管理工具特有校验（workspace 范围、自我删除等）
   if (isTierRestrictedTool(toolName)) {
+    // async_task_run：子 Agent 只能使用 mode=tool（纯工具执行），禁止发起带 LLM 请求的异步任务
+    if (toolName === "async_task_run" && ctx.agentTier === "sub") {
+      const mode = args.mode === "tool" ? "tool" : "llm";
+      if (mode !== "tool") {
+        return {
+          code: "TIER_PROTECTED",
+          reason: "子 Agent 不能发起带 LLM 请求的异步任务，请将 async_task_run 的 mode 设为 \"tool\" 以执行纯工具/定时任务。",
+        };
+      }
+    }
+
     // agent_create_sub / agent_update_sub / agent_delete_sub：管理 Agent 只能操作本 Workspace
     if (toolName.endsWith("_sub") && ctx.agentTier === "manager") {
       const targetWorkspaceId = args.workspaceId as string | undefined;
@@ -203,4 +216,79 @@ export function checkCrossWorkspace(
     code: "CROSS_WORKSPACE_FORBIDDEN",
     reason: `只有超级 Agent 能跨 Workspace 协调。当前 Agent（Workspace: ${fromWorkspaceId ?? "无"}）不能向其他 Workspace（${toWorkspaceId}）的 Agent 发消息。`,
   };
+}
+
+/**
+ * 检查 agent_send_message 的层级/范围权限。
+ *
+ * 规则：
+ * 1. 同级 Agent 之间禁止直接发消息。
+ * 2. 向下发：super 可发给任何下级；manager 只能发给本 Workspace 内的下级。
+ * 3. 向上发：仅当上一条来自上级的消息存在且比本 Agent 最后一条发往上级的消息更新时允许（即只能回复）。
+ */
+export async function checkAgentSendMessagePermission(
+  prisma: PrismaClient,
+  ctx: {
+    fromAgentId: string;
+    fromTier: string;
+    fromWorkspaceId: string | null | undefined;
+  },
+  toAgent: { id: string; tier: string; workspaceId: string | null; status: string },
+): Promise<PermissionError | null> {
+  const fromRank = TIER_RANK[ctx.fromTier] ?? 0;
+  const toRank = TIER_RANK[toAgent.tier] ?? 0;
+
+  // 1. 同级禁止
+  if (fromRank === toRank) {
+    return {
+      code: "SAME_TIER_MESSAGING_FORBIDDEN",
+      reason: `同级 Agent（${ctx.fromTier}）之间不能直接发送消息。`,
+    };
+  }
+
+  // 2. 向下发
+  if (fromRank > toRank) {
+    if (ctx.fromTier === "super") return null;
+    if (ctx.fromTier === "manager") {
+      if (ctx.fromWorkspaceId && toAgent.workspaceId && ctx.fromWorkspaceId !== toAgent.workspaceId) {
+        return {
+          code: "CROSS_WORKSPACE_FORBIDDEN",
+          reason: "管理 Agent 只能向本 Workspace 内的下级 Agent 发消息。",
+        };
+      }
+      return null;
+    }
+    return {
+      code: "TIER_INSUFFICIENT",
+      reason: "子 Agent 不能向下级 Agent 发消息。",
+    };
+  }
+
+  // 3. 向上发：必须是对上一条来自上级的消息的回复
+  const [lastFromTarget, lastFromSender] = await Promise.all([
+    prisma.agentMessage.findFirst({
+      where: { fromAgentId: toAgent.id, toAgentId: ctx.fromAgentId },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.agentMessage.findFirst({
+      where: { fromAgentId: ctx.fromAgentId, toAgentId: toAgent.id },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  if (!lastFromTarget) {
+    return {
+      code: "UPWARD_REPLY_REQUIRED",
+      reason: `下级 Agent 只能在上级先发来消息并等待回复时，才能向上级（${toAgent.tier}）发送消息。当前没有来自该上级的消息记录。`,
+    };
+  }
+
+  if (lastFromSender && lastFromSender.createdAt.getTime() > lastFromTarget.createdAt.getTime()) {
+    return {
+      code: "UPWARD_REPLY_REQUIRED",
+      reason: "下级 Agent 已向上级发送过更新消息，需等待上级再次发起通信后才能回复。",
+    };
+  }
+
+  return null;
 }

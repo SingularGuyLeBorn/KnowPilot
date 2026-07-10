@@ -43,6 +43,7 @@
 | 37 | 实体用 UUID/cuid 全局唯一，name 可重复                                       |
 | 38 | heartbeatModel 字段，心跳用便宜模型                                          |
 | 39 | 消息支持文件路径引用，不做二进制附件                                         |
+| 49 | agent_send_message 层级/范围硬规则（同级禁、向下 workspace 限制、向上仅回复） |
 
 ---
 
@@ -289,5 +290,28 @@ Workspace 删除流程：
 ⏳ 你能提供 GitHub 项目 URL 吗？方案可以吗？
 
 回答：你自己多去搜搜 有的 
+
+---
+
+### 49. agent_send_message 的层级与范围硬规则？
+
+需要明确 Agent 间主动发消息的方向与范围，防止子 Agent 骚扰上级、管理 Agent 越权跨 Workspace 指挥。
+
+**规则**：
+
+1. **同级禁止**：相同 tier 的 Agent 之间不能直接用 `agent_send_message` 发消息。
+2. **向下发**：
+   - super 可发给任何更低 tier 的 Agent（manager/sub），不受 Workspace 限制。
+   - manager 只能发给**本 Workspace 内**的更低 tier Agent（sub）。
+3. **向上发**：下级 Agent 只能**回复**上级；即必须存在一条来自目标上级的消息，且该消息比本 Agent 最后一条发给上级的消息更新。否则拒绝。
+
+**实现**：在 `agent_send_message` 执行前调用 `checkAgentSendMessagePermission`，查询目标 Agent 与 `AgentMessage` 历史记录做硬拦截；违反时返回 `permissionDenied: true` 及错误码：
+- `SAME_TIER_MESSAGING_FORBIDDEN`
+- `CROSS_WORKSPACE_FORBIDDEN`
+- `UPWARD_REPLY_REQUIRED`
+
+⏳ 可以吗？
+
+回答：
 
 ---

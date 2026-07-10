@@ -7,6 +7,14 @@ import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { runAgentLoop } from "./agentRuntime.js";
 import { runAgentLoopStream, type AgentStreamEvent } from "./agentStream.js";
+import {
+  parseAgentTools,
+  buildAgentToolSchemas,
+  executeToolCallsBatch,
+  createAgentToolContext,
+  type ToolRegistryEntry,
+} from "./agentTools.js";
+import type { LlmToolCall } from "./llmClient.js";
 import { getStreamHub } from "./sessionStreamHub.js";
 import type { StoredToolCall } from "./chatHistory.js";
 import { waitMs } from "./shellRunner.js";
@@ -48,6 +56,8 @@ export interface AsyncRunningJob {
 
 const ASYNC_KIND = "async_agent";
 
+export type AsyncTaskSourceType = "async_task_llm" | "async_task_tool" | "subagent" | "sleep";
+
 interface AsyncTaskInput {
   kind: typeof ASYNC_KIND;
   sessionId: string;
@@ -57,8 +67,10 @@ interface AsyncTaskInput {
   retryCount?: number;
   timeoutMs?: number;
   subagentSessionId?: string;
-  /** 是否由 spawn_subagent 产生的子 Agent 会话（UI 据此决定是否显示“与之对话”入口） */
-  isSubagent?: boolean;
+  /** 任务来源类型（替代旧 isSubagent 布尔值，便于 UI 区分与后续扩展） */
+  sourceType?: AsyncTaskSourceType;
+  /** 纯工具异步任务时指定的一次性工具调用 */
+  toolCall?: { tool: string; args: Record<string, unknown> };
   /** swarm 协作：任务结果额外广播到这些会话（共享给其他父会话） */
   shareToSessionIds?: string[];
 }
@@ -317,6 +329,8 @@ function buildAsyncExecute(
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
   retryCount: number,
   subagentSessionId?: string,
+  mode: "llm" | "tool" = "llm",
+  toolCall?: { tool: string; args: Record<string, unknown> },
   shareToSessionIds?: string[],
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
@@ -326,20 +340,15 @@ function buildAsyncExecute(
     try {
       await services.session.update({ id: subagentSessionId, status });
     } catch (err) {
-      // subagent session 同步失败不阻塞任务，但记录日志便于排查
       console.warn(`[asyncJobManager] syncSubStatus(${status}) 失败 for ${subagentSessionId}:`, err);
     }
   };
-  // swarm 协作：结果广播到 shareToSessionIds 对应会话（复制一条 success Task 到目标 session，
-  // 各目标会话 pullAsyncDeliveries 会拉到，实现跨会话结果共享）
   const broadcastShare = async (status: "success" | "failed", output: AsyncTaskOutput) => {
     if (!shareToSessionIds?.length) return;
-    const input = parseAsyncInput(
-      (await services.task.getById(jobId))?.input,
-    );
+    const input = parseAsyncInput((await services.task.getById(jobId))?.input);
     if (!input) return;
     for (const targetSessionId of shareToSessionIds) {
-      if (targetSessionId === input.sessionId) continue; // 原会话已投递，跳过
+      if (targetSessionId === input.sessionId) continue;
       try {
         await services.task.create({
           name: `[async-share] ${input.taskLabel}`,
@@ -349,20 +358,15 @@ function buildAsyncExecute(
           input: { ...input, sessionId: targetSessionId, shareToSessionIds: undefined },
         } as any);
       } catch (err) {
-        // 单个目标广播失败不阻塞其他，但记录日志便于排查跨会话共享丢失
         console.warn(`[asyncJobManager] broadcastShare 到 ${targetSessionId} 失败:`, err);
       }
     }
   };
-  // 子 Agent 只保留执行类工具，禁止再次派生/管理 Agent，否则会出现递归 spawn/async_task_run 的混乱输出。
-  // 工具权限以 swarmPermissionGuard 的 tier 映射为唯一事实源。
   const subagentOnly = agentSnapshot.tier === "sub";
-  const workerTools = subagentOnly
-    ? getAllowedToolsForTier("sub", agentSnapshot.tools)
-    : agentSnapshot.tools;
+  const workerTools = subagentOnly ? getAllowedToolsForTier("sub", agentSnapshot.tools) : agentSnapshot.tools;
 
   const subagentHint = subagentOnly
-    ? "\n\n注意：你是被派来直接执行该任务的子 Agent。你可以调用 async_task_run / async_task_status / async_task_wait / async_task_cancel 等工具把耗时步骤放入后台执行，但禁止调用 spawn_subagent、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
+    ? "\n\n注意：你是被派来直接执行该任务的子 Agent。你可以调用 async_task_run(mode=tool) 把耗时步骤放入后台执行，但禁止调用 spawn_subagent、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
     : "";
   const agentSystemPrompt = `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务${retryHint}。完成后用简洁中文汇总结果，不要继续追问用户。${subagentHint}`;
   const agentForLoop = { model: agentSnapshot.model, systemPrompt: agentSystemPrompt, tools: workerTools };
@@ -391,8 +395,6 @@ function buildAsyncExecute(
     const resultText = loop.content || "(无文本输出)";
     const tokenUsage = loop.tokenUsage;
     await appendAsyncJobLog(jobId, { level: "info", message: `任务完成，共 ${loop.roundsUsed} 轮` }, services);
-
-    // 保存子 Agent 的结果到 ChatSession
     if (subagentSessionId) {
       try {
         await services.message.create({
@@ -407,21 +409,18 @@ function buildAsyncExecute(
         console.warn(`[asyncJobManager] 保存子 Agent 结果消息失败:`, msgErr);
       }
     }
-
     const existingOutput = parseAsyncOutput((await services.task.getById(jobId))?.output);
     await services.task.update({
       id: jobId,
       status: "success",
       finishedAt: new Date(),
       output: {
-        // 修复：asyncResult 只存干净的 LLM 回复文本，不追加 token 消耗日志（token 信息在 tokenUsage 字段里）
         asyncResult: resultText,
         tokenUsage,
         logs: existingOutput.logs,
       } satisfies AsyncTaskOutput,
     } as any);
     await syncSubStatus("completed");
-    // 独立子 Agent 实例任务完成 → 自动休眠（#15：无任务+队列空+无心跳 → dormant）
     if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
       await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch(() => {});
     }
@@ -455,9 +454,7 @@ function buildAsyncExecute(
         logs: existingOutputFailed.logs,
       } satisfies AsyncTaskOutput,
     } as any);
-    // 用户主动停止 → session 置 paused（不覆盖为 failed）；超时/异常 → failed
     await syncSubStatus(isAbort && !isTimeout ? "paused" : "failed");
-    // 失败也把原因写入 subagent ChatSession，避免点击进去一片空白
     if (subagentSessionId) {
       try {
         await services.message.create({
@@ -474,9 +471,43 @@ function buildAsyncExecute(
     emit?.({ type: "error", message: errorText, sessionId: subagentSessionId });
   };
 
+  const runToolOnly = async (signal: AbortSignal) => {
+    if (!toolCall) throw new Error("mode=tool 但未提供 toolCall");
+    const parsed = parseAgentTools(workerTools);
+    const registry = new Map<string, ToolRegistryEntry>();
+    await buildAgentToolSchemas(services, parsed, registry);
+    const toolCtx = createAgentToolContext(config, services, invokeTrpc, parsed, undefined, {
+      sessionId: subagentSessionId,
+      agentSnapshot,
+      runOrigin: "parent",
+    });
+    const call: LlmToolCall = {
+      id: `tool-${jobId.slice(0, 8)}`,
+      type: "function",
+      function: { name: toolCall.tool, arguments: JSON.stringify(toolCall.args ?? {}) },
+    };
+    const results = await executeToolCallsBatch([call], toolCtx, registry, parsed, signal);
+    const result = results[0]?.result;
+    const resultText = typeof result === "string" ? result : JSON.stringify(result ?? null);
+    if (subagentSessionId) {
+      await services.message.create({
+        sessionId: subagentSessionId,
+        role: "assistant",
+        content: resultText,
+        source: "sub",
+      }).catch(() => {});
+    }
+    await services.task.update({
+      id: jobId,
+      status: "success",
+      finishedAt: new Date(),
+      output: { asyncResult: resultText } satisfies AsyncTaskOutput,
+    } as any);
+    await syncSubStatus("completed");
+    await broadcastShare("success", { asyncResult: resultText });
+  };
+
   return async (signal) => {
-    // 任务开始时即把 user 任务写入 subagent ChatSession，
-    // 让 UI 在任务执行期间也能看到"父代理分配的任务"这条气泡。
     if (subagentSessionId) {
       try {
         await services.message.create({
@@ -494,17 +525,17 @@ function buildAsyncExecute(
       if (signal.aborted) {
         throw new Error("异步任务已被取消");
       }
-      // queued → running 状态同步：orchestrator 从队列取出开始执行时，
-      // 把 Task 与 subagent session 从 queued 升级为 running，并记录 startedAt
       await syncSubStatus("running");
       try {
         await services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
-      } catch {
-        /* 状态回写失败不阻塞执行 */
-      }
+      } catch {}
       await appendAsyncJobLog(jobId, { level: "info", message: "任务开始执行" }, services);
 
-      // 有 subagent 可视化载体时，接入 SessionStreamHub 实现实时流式 + 断线续传
+      if (mode === "tool") {
+        await runToolOnly(signal);
+        return;
+      }
+
       if (subagentSessionId) {
         const hub = getStreamHub();
         if (hub) {
@@ -534,7 +565,6 @@ function buildAsyncExecute(
         }
       }
 
-      // 无子会话可视化载体或 Hub 未初始化时回退到非流式执行
       const loop = await runAgentLoop({
         ...runLoopOptions,
         signal,
@@ -559,6 +589,10 @@ export async function startAsyncAgentTask(options: {
   source?: string;
   /** 是否属于 spawn_subagent 派生的子 Agent（UI 显示“与之对话”） */
   isSubagent?: boolean;
+  /** 异步任务模式：llm=后台 LLM 推理；tool=纯工具执行（不调用 LLM） */
+  mode?: "llm" | "tool";
+  /** mode=tool 时直接指定要执行的一次性工具调用 */
+  toolCall?: { tool: string; args: Record<string, unknown> };
   /** swarm 协作：结果额外广播到这些会话 */
   shareToSessionIds?: string[];
 }): Promise<{ jobId: string; status: "queued" | "running"; message: string; subagentSessionId?: string }> {
@@ -566,11 +600,26 @@ export async function startAsyncAgentTask(options: {
   if (!task) throw new Error("task 不能为空");
   if (!options.sessionId) throw new Error("async_task_run 需要有效 sessionId");
 
-  // 预算检查：避免预算耗尽时还启动后台任务浪费资源
-  assertLlmBudget(options.config);
+  const mode = options.mode ?? "llm";
+  const isSubagent = options.isSubagent === true;
+
+  if (mode === "tool" && options.toolCall && !options.toolCall.tool) {
+    throw new Error("mode=tool 时必须提供有效的 toolCall.tool");
+  }
+
+  // 预算检查：只有 LLM 模式才需要检查 LLM 预算
+  if (mode === "llm") {
+    assertLlmBudget(options.config);
+  }
 
   const taskLabel = options.label?.trim() || task.slice(0, 80);
-  const isSubagent = options.isSubagent === true;
+
+  // 确定任务来源类型
+  let sourceType: AsyncTaskSourceType;
+  if (isSubagent) sourceType = "subagent";
+  else if (mode === "tool") sourceType = "async_task_tool";
+  else sourceType = "async_task_llm";
+
   const orchestrator = getAsyncJobOrchestrator(options.config);
   const stats = orchestrator.getStats();
   const willQueue = stats.runningGlobal >= stats.limits.maxGlobal;
@@ -678,7 +727,8 @@ export async function startAsyncAgentTask(options: {
       retryCount: 0,
       timeoutMs: options.timeoutMs,
       subagentSessionId,
-      isSubagent,
+      sourceType,
+      toolCall: mode === "tool" ? options.toolCall : undefined,
       shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
     } satisfies AsyncTaskInput,
   } as any);
@@ -694,20 +744,19 @@ export async function startAsyncAgentTask(options: {
     sessionId: options.sessionId,
     timeoutMs: options.timeoutMs,
     metadata: subagentSessionId ? { subagentSessionId } : undefined,
-    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId, options.shareToSessionIds),
+    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId, mode, options.toolCall, options.shareToSessionIds),
   });
 
   return {
     jobId,
     status: willQueue ? "queued" : "running",
     subagentSessionId,
-    message: isSubagent
-      ? willQueue
-        ? `已排队子 Agent 任务「${taskLabel}」（并发槽位已满）。`
-        : `已启动子 Agent 任务「${taskLabel}」，可进入任务会话查看进度。`
-      : willQueue
-        ? `已排队后台任务「${taskLabel}」（并发槽位已满，将在前序任务完成后执行）。`
-        : `已启动后台任务「${taskLabel}」。你可以继续对话；完成后结果会进入发送队列最前。`,
+    message: (() => {
+      const typeLabel = isSubagent ? "子 Agent" : mode === "tool" ? "纯工具异步" : "后台 LLM";
+      return willQueue
+        ? `已排队${typeLabel}任务「${taskLabel}」（并发槽位已满）。`
+        : `已启动${typeLabel}任务「${taskLabel}」。${isSubagent ? "可进入任务会话查看进度。" : "你可以继续对话；完成后结果会进入发送队列最前。"}`;
+    })(),
   };
 }
 
@@ -728,6 +777,7 @@ export async function startAsyncSleepTask(options: {
     task: `等待 ${seconds} 秒后返回`,
     taskLabel,
     agentSnapshot: options.agentSnapshot,
+    sourceType: "sleep",
   };
 
   const created = await options.services.task.create({

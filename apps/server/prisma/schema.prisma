@@ -291,6 +291,8 @@ model Workspace {
   description    String?
   path           String   @unique /// 对应硬盘上的目录路径
   managerAgentId String?  @unique                /// 该 Workspace 的管理 Agent id
+  isSystem       Boolean  @default(false) /// 是否为系统级 Workspace（如超级 Agent 所属）
+  systemType     String?  /// 系统 Workspace 类型："super" | 其他扩展
   status         String   @default("active") /// "active" | "archived" | "deleted"（tombstone）
   deletedAt      DateTime?                 /// 删除时间
   deletedBy      String?                   /// 删除者
@@ -300,6 +302,7 @@ model Workspace {
   managerAgent   Agent?   @relation("WorkspaceManager", fields: [managerAgentId], references: [id], onDelete: SetNull)
   agents         Agent[]
   @@index([status])
+  @@index([isSystem])
 }
 
 /// 触发器配置 (Trigger)

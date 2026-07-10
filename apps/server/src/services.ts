@@ -1666,12 +1666,58 @@ export class WorkspaceService extends BaseService<CreateWorkspaceInput, UpdateWo
     const { id: _id, ...data } = input;
     return data;
   }
+  protected override getOrderBy(input: ListWorkspacesInput): any {
+    // 系统 Workspace 置顶，其余按创建时间倒序
+    if ((input as any).orderBy) return super.getOrderBy(input);
+    return [{ isSystem: "desc" }, { createdAt: "desc" }];
+  }
 
   protected override async validateCreate(input: CreateWorkspaceInput): Promise<void> {
     await this.assertUnique("path", input.path, "创建");
   }
   protected override async validateUpdate(input: UpdateWorkspaceInput, existing: any): Promise<void> {
+    if (existing.isSystem) {
+      if (input.status && input.status !== "active") {
+        throw new ServiceValidationError(
+          failure({
+            code: "SYSTEM_WORKSPACE_IMMUTABLE",
+            message: "系统 Workspace 不可归档或删除",
+            suggestion: "系统 Workspace 是 KnowPilot 运行所必需，无法修改其状态。",
+            retryable: false,
+            operation: "update",
+            entity: this.entityName,
+          }),
+        );
+      }
+      if (input.path && input.path !== existing.path) {
+        throw new ServiceValidationError(
+          failure({
+            code: "SYSTEM_WORKSPACE_IMMUTABLE",
+            message: "系统 Workspace 路径不可修改",
+            suggestion: "系统 Workspace 路径固定，无法变更。",
+            retryable: false,
+            operation: "update",
+            entity: this.entityName,
+          }),
+        );
+      }
+    }
     if (input.path && input.path !== existing.path) await this.assertUnique("path", input.path, "更新", input.id);
+  }
+
+  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const existing = await this.delegate.findUnique({ where: { id } });
+    if (existing?.isSystem) {
+      return failure({
+        code: "SYSTEM_WORKSPACE_NOT_DELETABLE",
+        message: "系统 Workspace 不可删除",
+        suggestion: "系统 Workspace 是 KnowPilot 运行所必需。",
+        retryable: false,
+        operation: "delete",
+        entity: this.entityName,
+      });
+    }
+    return super.delete(id);
   }
 }
 
