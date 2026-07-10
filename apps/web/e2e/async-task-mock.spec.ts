@@ -22,6 +22,9 @@ test.describe("Chat Mock — 异步任务队列", () => {
     await waitForChatReady(page);
     await sendChatMessage(page, "请启动一个后台任务总结当前项目");
 
+    // 异步任务进度在右侧「运行时」面板直接展示，先展开面板
+    await page.getByRole("button", { name: "运行时" }).click();
+
     // 父会话时间线应实时显示后台任务进度（在流式/结果消费期间任一时间点出现即可）
     try {
       await expect

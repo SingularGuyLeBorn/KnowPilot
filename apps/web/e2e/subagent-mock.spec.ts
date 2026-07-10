@@ -4,6 +4,7 @@ import {
   waitForChatReady,
   sendChatMessage,
   waitForStreamingComplete,
+  selectAssistantAgent,
 } from "./helpers/mockChatFixture";
 
 test.describe("Subagent Mock — 子 Agent 任务创建与展示", () => {
@@ -15,6 +16,7 @@ test.describe("Subagent Mock — 子 Agent 任务创建与展示", () => {
 
   test("通过弹窗创建子 Agent 后左侧出现卡片", async ({ page }) => {
     await waitForChatReady(page);
+    await selectAssistantAgent(page);
     // 先发一条消息以创建父会话（SubagentPanel 需 parentSessionId）
     await sendChatMessage(page, "你好");
     await waitForStreamingComplete(page);
@@ -32,7 +34,7 @@ test.describe("Subagent Mock — 子 Agent 任务创建与展示", () => {
     await page.getByRole("button", { name: "创建并启动" }).click();
 
     // 子 Agent 会话应出现在左侧「子 Agent」面板
-    await expect(page.getByTestId("subsession-item").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("subagent-item").first()).toBeVisible({ timeout: 15_000 });
   });
 
   test("/subagents 页应列出已创建的子 Agent", async ({ page }) => {

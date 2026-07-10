@@ -167,19 +167,47 @@ async function seedAssistantManager(serverPort) {
   if (!superAgent) {
     throw new Error("[e2e globalSetup] 未找到超级 Agent，无法创建默认 manager");
   }
-  const hasManager = items.some((a) => a.tier === "manager" && /assistant/i.test(a.name));
-  if (hasManager) return;
 
-  await trpcMutate(serverPort, "agent.create", {
+  // 确保存在 E2E 默认 Workspace
+  let defaultWorkspace;
+  try {
+    const createRes = await trpcMutate(serverPort, "workspace.create", {
+      name: "E2E 默认空间",
+      path: "workspaces/e2e-default",
+      description: "E2E 测试自动创建的默认 Workspace",
+    });
+    defaultWorkspace = createRes?.data;
+  } catch (err) {
+    const list = await trpcQuery(serverPort, "workspace.list", { page: 1, pageSize: 20 });
+    defaultWorkspace = (list?.items ?? []).find((w) => w.path === "workspaces/e2e-default");
+    if (!defaultWorkspace) throw err;
+  }
+
+  const existingManager = items.find((a) => a.tier === "manager" && /assistant/i.test(a.name));
+  if (existingManager) {
+    console.log("[e2e globalSetup] 发现现有 manager Agent", JSON.stringify({ id: existingManager.id, workspaceId: existingManager.workspaceId }));
+    if (!existingManager.workspaceId) {
+      // 修复旧数据：给已存在但无 Workspace 的 manager Agent 挂上默认 Workspace
+      await trpcMutate(serverPort, "agent.update", {
+        id: existingManager.id,
+        workspaceId: defaultWorkspace?.id,
+      });
+      console.log("[e2e globalSetup] 已给现有 manager Agent 关联默认 Workspace");
+    }
+    return;
+  }
+
+  const created = await trpcMutate(serverPort, "agent.create", {
     name: "assistant",
     tier: "manager",
     parentId: superAgent.id,
+    workspaceId: defaultWorkspace?.id,
     model: "deepseek-chat",
     systemPrompt: "你是 KnowPilot 默认助手，可以调用 spawn_subagent / async_task_run / sleep / read_article / web_search 等工具完成任务。",
     tools: ["native:spawn_subagent", "native:async_task_run", "native:async_task_status", "native:async_task_wait", "native:async_task_cancel", "native:sleep", "native:read_article", "native:web_search"],
     source: "e2e-seed",
   });
-  console.log("[e2e globalSetup] 已创建默认 manager Agent");
+  console.log("[e2e globalSetup] 已创建默认 Workspace 与 manager Agent", JSON.stringify({ workspaceId: defaultWorkspace.id, agentId: created?.data?.id, agentWorkspaceId: created?.data?.workspaceId }));
 }
 
 function spawnServer(serverPort) {

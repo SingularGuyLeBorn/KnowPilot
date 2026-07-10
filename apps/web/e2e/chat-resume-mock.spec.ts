@@ -7,6 +7,11 @@ import {
   expectAssistantAnswer,
 } from "./helpers/mockChatFixture";
 
+function currentSessionId(page: import("@playwright/test").Page): string | null {
+  const url = new URL(page.url());
+  return url.searchParams.get("sessionId");
+}
+
 test.describe("Chat Mock — 普通对话刷新后恢复", () => {
   test.beforeEach(async ({ request }) => {
     await expect.poll(async () => (await request.get(`${SERVER_URL}/health`)).ok()).toBe(true);
@@ -22,12 +27,18 @@ test.describe("Chat Mock — 普通对话刷新后恢复", () => {
     await waitForStreamingComplete(page);
     await expectAssistantAnswer(page, "Mock LLM");
 
+    // 记录当前会话 ID，避免列表污染导致点错
+    const parentSessionId = currentSessionId(page);
+    expect(parentSessionId).toBeTruthy();
+
     // 模拟刷新：丢失内存状态，sessionStorage 保留
     await page.reload();
     await page.getByTestId("chat-input").waitFor({ state: "visible", timeout: 30_000 });
 
-    // 刷新后点回最新会话，最终结果应仍在
-    await page.getByTestId("session-list-item").first().click();
+    // 刷新后通过 URL 直接回到原会话，最终结果应仍在
+    await page.goto(`/chat?sessionId=${parentSessionId}`);
+    await page.getByTestId("chat-input").waitFor({ state: "visible", timeout: 30_000 });
+    await expect(page.getByTestId("assistant-message-bubble").first()).toBeVisible({ timeout: 10_000 });
     await expectAssistantAnswer(page, "Mock LLM");
   });
 });

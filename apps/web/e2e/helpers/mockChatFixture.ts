@@ -8,6 +8,7 @@
  */
 
 import { expect, type Page } from "@playwright/test";
+import { trpcQuery } from "./trpcE2e";
 export { waitForChatReady, sendChatMessage, countAssistantMessages, lastAssistantText } from "./realChatFixture";
 
 /**
@@ -45,15 +46,27 @@ export async function expectAssistantAnswer(page: Page, text: string): Promise<v
   expect(last).toContain(text);
 }
 
-/** 确保当前选中的是默认 assistant Agent（manager 层级，拥有 spawn_subagent 等权限）。 */
+/** 确保当前选中的是 E2E 默认 Workspace（其中包含 manager 层级的 assistant Agent）。 */
 export async function selectAssistantAgent(page: Page): Promise<void> {
-  const selector = page.getByTestId("agent-tree-select");
+  const selector = page.getByTestId("workspace-select");
   const current = (await selector.textContent())?.trim() ?? "";
-  if (/assistant|默认智能助手/.test(current)) return;
-  await selector.click();
-  const menu = page.getByTestId("agent-tree-select-menu");
-  await menu.waitFor({ state: "visible", timeout: 10_000 });
-  const option = menu.locator("button[role='option']").filter({ hasText: /assistant|默认智能助手/ }).first();
-  await option.click();
-  await expect(selector).toContainText(/assistant|默认智能助手/, { timeout: 5000 });
+  if (/E2E 默认空间/.test(current)) return;
+
+  // 通过 tRPC 拿到 assistant 及其 workspace，再用 URL agentId 进入
+  const list = await trpcQuery<{ items: { id: string; name: string; tier: string; workspaceId: string | null }[] }>(
+    "agent.list",
+    { page: 1, pageSize: 20 },
+  );
+  const assistant =
+    list.items.find((a) => a.name === "assistant" && a.tier === "manager") ??
+    list.items.find((a) => a.tier === "manager") ??
+    list.items.find((a) => a.tier === "super");
+  if (!assistant) throw new Error("[e2e] 找不到可用的主 Agent");
+  if (!assistant.workspaceId) {
+    throw new Error(`[e2e] assistant(${assistant.id}) 没有 workspaceId，无法进入 E2E 默认空间`);
+  }
+
+  await page.goto(`/chat?agentId=${assistant.id}`);
+  await page.getByTestId("chat-input").waitFor({ state: "visible", timeout: 30_000 });
+  await expect(page.getByTestId("workspace-select")).toContainText(/E2E 默认空间/, { timeout: 10_000 });
 }
