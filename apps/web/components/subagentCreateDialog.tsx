@@ -71,7 +71,8 @@ export function SubagentCreateDialog({
   const createAgentMut = trpc.agent.create.useMutation({
     onSuccess: (res) => {
       if (res.success && res.data?.id) {
-        void utils.agent.list.invalidate();
+        void utils.agent.list.refetch();
+        void utils.session.list.refetch();
         // 创建成功后继续用新 Agent 启动子 Agent 任务
         spawnWithAgent(res.data.id);
       }
@@ -101,8 +102,9 @@ export function SubagentCreateDialog({
           },
         );
       }
-      void utils.session.list.invalidate();
-      void utils.session.listChildren.invalidate();
+      void utils.session.list.refetch();
+      void utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 });
+      void utils.agent.list.refetch();
       // 强制立即刷新子 Agent 列表，确保新卡片在面板中实时出现
       void utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 });
       onCreated?.({
@@ -117,6 +119,7 @@ export function SubagentCreateDialog({
   });
 
   const agents = useMemo(() => agentsQuery.data?.items ?? [], [agentsQuery.data?.items]);
+  const parentAgent = useMemo(() => agents.find((a) => a.id === parentAgentId), [agents, parentAgentId]);
 
   const [mode, setMode] = useState<"existing" | "new">("existing");
   const [agentId, setAgentId] = useState<string>("");
@@ -183,6 +186,7 @@ export function SubagentCreateDialog({
         tools: deriveSubagentTools(parentAgentTools),
         tier: "sub",
         parentId: parentAgentId,
+        workspaceId: parentAgent?.workspaceId ?? undefined,
         source: "ui:subagent_panel",
       });
     }

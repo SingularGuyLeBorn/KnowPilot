@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
-import { Bot, ImagePlus, ListOrdered, Loader2, Send, Square, X } from "lucide-react";
+import { Bot, ChevronDown, ImagePlus, Loader2, Send, Settings, Square, Wand2, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,8 @@ interface ChatInputAreaProps {
   modelHint?: string;
   modelId?: string;
   supportsVision?: boolean;
+  /** 点击模型 pill 时打开右侧配置面板 */
+  onOpenConfig?: () => void;
   /** 会话级提示（如子代理任务会话警告），显示在输入框上方 */
   sessionHint?: string;
   /** 当前会话 ID，用于隔离上键历史恢复 */
@@ -47,6 +49,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   modelHint,
   modelId = "",
   supportsVision = false,
+  onOpenConfig,
   sessionHint,
   sessionId,
 }: ChatInputAreaProps) {
@@ -286,7 +289,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       )}
 
       {skillOpen && filteredSkills.length > 0 && (
-        <div className="absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] py-1 shadow-lg">
+        <div className="absolute bottom-full left-0 z-20 mb-2 max-h-48 w-full overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] py-1 shadow-lg">
           <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase text-[var(--kp-text-3)]">
             选择 Skill
             <ShortcutSlashSkill />
@@ -313,38 +316,12 @@ export const ChatInputArea = memo(function ChatInputArea({
 
       <div
         className={cn(
-          "flex items-stretch overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-sm transition-[border-color,box-shadow]",
+          "overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-sm transition-[border-color,box-shadow]",
           "focus-within:border-[var(--kp-brand)] focus-within:shadow-[0_0_0_3px_rgba(184,160,144,0.12)]",
           disabled && "opacity-60",
         )}
       >
-        <button
-          type="button"
-          disabled={disabled || ocrLoading}
-          onClick={() => fileRef.current?.click()}
-          data-testid="chat-attach-image"
-          className="flex w-11 shrink-0 items-center justify-center border-r border-[var(--kp-divider-light)] text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
-          title="添加图片"
-        >
-          {ocrLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" data-testid="chat-ocr-loading" />
-          ) : (
-            <ImagePlus className="h-4 w-4" />
-          )}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          data-testid="chat-file-input"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) addImageFile(f);
-            e.target.value = "";
-          }}
-        />
-        <div className="relative min-w-0 flex-1">
+        <div className="relative">
           <textarea
             ref={textareaRef}
             value={input}
@@ -430,72 +407,124 @@ export const ChatInputArea = memo(function ChatInputArea({
               <ChatShortcutHints isStreaming={isStreaming} className="pointer-events-auto shrink-0" />
             </div>
           )}
-          {ocrError && (
-            <div
-              data-testid="chat-ocr-error"
-              className="border-t border-[var(--kp-divider-light)] px-3 py-2 text-xs text-red-600"
-            >
-              {ocrError}
-            </div>
-          )}
-          {pendingImages.length > 0 && (
-            <div
-              data-testid="chat-image-previews"
-              className="flex flex-wrap gap-2 border-t border-[var(--kp-divider-light)] px-3 py-2"
-            >
-              {pendingImages.map((img) => (
-                <div key={img.id} className="relative" data-testid="chat-image-preview">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.previewUrl} alt={img.name} className="h-14 w-14 rounded-lg object-cover" />
-                  {!supportsVision && img.extractedText && (
-                    <span
-                      data-testid="chat-ocr-ready"
-                      className="absolute bottom-0 left-0 right-0 truncate rounded-b-lg bg-emerald-600/80 px-1 text-[9px] text-white"
-                      title={img.extractedText.slice(0, 200)}
-                    >
-                      OCR ✓
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
-                    className="absolute -right-1 -top-1 rounded-full bg-black/60 p-0.5 text-white"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
-        <button
-          type="button"
-          onClick={isStreaming ? onStop : handleSend}
-          disabled={!canSend && !isStreaming}
-          data-testid={isStreaming ? "chat-stop" : "chat-send"}
-          title={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送"}
-          aria-label={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送消息"}
-          className={cn(
-            "relative flex w-[56px] shrink-0 flex-col items-center justify-center gap-1 border-l border-[var(--kp-divider-light)] transition-all duration-200",
-            isStreaming || canSend
-              ? "bg-gradient-to-b from-[var(--kp-brand-light)] to-[var(--kp-brand-dark)] text-white hover:from-[var(--kp-brand)] hover:to-[var(--kp-brand-dark)]"
-              : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
-          )}
-        >
-          {isStreaming ? (
-            <Square className="h-4 w-4 fill-current" />
-          ) : queueLength > 0 ? (
-            <>
-              <ListOrdered className="h-4 w-4" />
-              {queueLength > 0 && (
-                <span className="text-[9px] font-semibold tabular-nums">{queueLength}</span>
+        {ocrError && (
+          <div
+            data-testid="chat-ocr-error"
+            className="border-t border-[var(--kp-divider-light)] px-4 py-2 text-xs text-red-600"
+          >
+            {ocrError}
+          </div>
+        )}
+
+        {pendingImages.length > 0 && (
+          <div
+            data-testid="chat-image-previews"
+            className="flex flex-wrap gap-2 border-t border-[var(--kp-divider-light)] px-4 py-2"
+          >
+            {pendingImages.map((img) => (
+              <div key={img.id} className="relative" data-testid="chat-image-preview">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.previewUrl} alt={img.name} className="h-14 w-14 rounded-lg object-cover" />
+                {!supportsVision && img.extractedText && (
+                  <span
+                    data-testid="chat-ocr-ready"
+                    className="absolute bottom-0 left-0 right-0 truncate rounded-b-lg bg-emerald-600/80 px-1 text-[9px] text-white"
+                    title={img.extractedText.slice(0, 200)}
+                  >
+                    OCR ✓
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
+                  className="absolute -right-1 -top-1 rounded-full bg-black/60 p-0.5 text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 底部功能栏 */}
+        <div className="flex items-center justify-between gap-2 border-t border-[var(--kp-divider-light)] px-3 py-2">
+          <div className="flex items-center gap-0.5">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              data-testid="chat-file-input"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) addImageFile(f);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              disabled={disabled || ocrLoading}
+              onClick={() => fileRef.current?.click()}
+              data-testid="chat-attach-image"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)] disabled:opacity-50"
+              title="添加图片"
+            >
+              {ocrLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" data-testid="chat-ocr-loading" />
+              ) : (
+                <ImagePlus className="h-4 w-4" />
               )}
-            </>
-          ) : (
-            <Send className="h-5 w-5" />
-          )}
-        </button>
+              <span className="hidden sm:inline">图片</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                textareaRef.current?.focus();
+                setSkillQuery("");
+                setSkillOpen(true);
+                setHighlightIdx(0);
+              }}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
+              title="选择 Skill"
+            >
+              <Wand2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Skill</span>
+            </button>
+
+            {onOpenConfig && (
+              <button
+                type="button"
+                onClick={onOpenConfig}
+                className="inline-flex max-w-[160px] items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
+                title="模型与配置"
+              >
+                <Settings className="h-4 w-4" />
+                <span className="truncate">{modelId}</span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={isStreaming ? onStop : handleSend}
+            disabled={!canSend && !isStreaming}
+            data-testid={isStreaming ? "chat-stop" : "chat-send"}
+            title={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送"}
+            aria-label={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送消息"}
+            className={cn(
+              "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all duration-200",
+              isStreaming || canSend
+                ? "border-transparent bg-gradient-to-b from-[var(--kp-brand-light)] to-[var(--kp-brand-dark)] text-white hover:from-[var(--kp-brand)] hover:to-[var(--kp-brand-dark)]"
+                : "border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+            )}
+          >
+            {isStreaming ? <Square className="h-4 w-4 fill-current" /> : <Send className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
 
       {modelHint && (

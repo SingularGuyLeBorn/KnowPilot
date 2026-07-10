@@ -42,7 +42,12 @@ export function ChatHoverMonitor({ sessionId, onMouseEnter, onMouseLeave, onClos
   );
 
   const messages = useMemo(
-    () => ((messagesQuery.data?.pages ?? []).slice().reverse().flatMap((p) => p.items) as ChatMessage[]),
+    () =>
+      ((messagesQuery.data?.pages ?? []).slice().reverse().flatMap((p) => p.items) as ChatMessage[]).filter(
+        // 过滤掉非用户来源的 user 消息（如子 Agent report_back 写入父会话的 source="sub"），
+        // 避免 Hover 小窗里出现重复/混淆的用户气泡。
+        (m) => m.role !== "user" || m.source === "user" || m.source === null || m.source === undefined,
+      ),
     [messagesQuery.data],
   );
   const groups = useMemo(() => buildMessageGroups(messages), [messages]);

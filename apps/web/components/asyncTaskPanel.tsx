@@ -2,6 +2,8 @@
 
 /**
  * 异步任务面板 — 左侧栏显示当前会话派生的异步任务（Task 实体）
+ *
+ * 按 sourceType 分组：LLM 异步任务 / 纯工具异步任务 / 子 Agent / 休眠任务。
  */
 
 import { useMemo, useState } from "react";
@@ -12,11 +14,17 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared";
 
+type AsyncTaskSourceType = "async_task_llm" | "async_task_tool" | "subagent" | "sleep" | string | undefined;
+
 interface AsyncTaskBrief {
   id: string;
   name: string;
   status: string;
-  input?: { subagentSessionId?: string; isSubagent?: boolean } | null;
+  input?: {
+    subagentSessionId?: string;
+    sourceType?: AsyncTaskSourceType;
+    isSubagent?: boolean;
+  } | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -39,11 +47,32 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "已取消",
 };
 
+const SOURCE_LABEL: Record<string, string> = {
+  async_task_llm: "LLM 异步任务",
+  async_task_tool: "工具异步任务",
+  subagent: "子 Agent",
+  sleep: "休眠任务",
+};
+
+const SOURCE_SHORT_LABEL: Record<string, string> = {
+  async_task_llm: "LLM",
+  async_task_tool: "Tool",
+  subagent: "Sub",
+  sleep: "Sleep",
+};
+
 function formatTime(date?: string | Date | null): string | null {
   if (!date) return null;
   const d = new Date(date);
   if (!Number.isFinite(d.getTime())) return null;
   return d.toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function getSourceType(task: AsyncTaskBrief): string {
+  // 兼容旧数据：若显式有 isSubagent 但没有 sourceType，退化为 subagent
+  if (task.input?.sourceType) return task.input.sourceType;
+  if (task.input?.isSubagent === true) return "subagent";
+  return "async_task_llm";
 }
 
 function AsyncTaskCard({ task, onRefresh }: { task: AsyncTaskBrief; onRefresh: () => void }) {
@@ -54,7 +83,9 @@ function AsyncTaskCard({ task, onRefresh }: { task: AsyncTaskBrief; onRefresh: (
 
   const statusColor = STATUS_COLOR[task.status] ?? "bg-gray-400";
   const subagentSessionId = task.input?.subagentSessionId;
-  const isSubagent = task.input?.isSubagent === true;
+  const sourceType = getSourceType(task);
+  const sourceLabel = SOURCE_LABEL[sourceType] ?? "异步任务";
+  const sourceShort = SOURCE_SHORT_LABEL[sourceType] ?? sourceType;
 
   return (
     <div
@@ -71,6 +102,19 @@ function AsyncTaskCard({ task, onRefresh }: { task: AsyncTaskBrief; onRefresh: (
         <span className={cn("h-2 w-2 shrink-0 rounded-full", statusColor)} title={STATUS_LABEL[task.status] ?? task.status} />
         <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
         <span className="min-w-0 flex-1 truncate font-medium text-[var(--kp-text-1)]">{task.name}</span>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium",
+            sourceType === "subagent"
+              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+              : sourceType === "async_task_tool"
+                ? "bg-blue-500/10 text-blue-600"
+                : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+          )}
+          title={sourceLabel}
+        >
+          {sourceShort}
+        </span>
         <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform", open && "rotate-90")} />
       </button>
       <AnimatePresence initial={false}>
@@ -85,6 +129,7 @@ function AsyncTaskCard({ task, onRefresh }: { task: AsyncTaskBrief; onRefresh: (
             <div className="mt-2 space-y-2 border-t border-[var(--kp-divider-light)] pt-2">
               <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--kp-text-3)]">
                 <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5">{STATUS_LABEL[task.status] ?? task.status}</span>
+                <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5">{sourceLabel}</span>
                 {formatTime(task.createdAt) && (
                   <span className="inline-flex items-center gap-0.5">
                     <Clock className="h-3 w-3" />
@@ -103,7 +148,7 @@ function AsyncTaskCard({ task, onRefresh }: { task: AsyncTaskBrief; onRefresh: (
                     <ExternalLink className="h-3 w-3" /> 查看详情
                   </a>
                 )}
-                {isSubagent && subagentSessionId && (
+                {sourceType === "subagent" && subagentSessionId && (
                   <a
                     href={`/chat?sessionId=${subagentSessionId}`}
                     target="_blank"
@@ -150,7 +195,25 @@ export function AsyncTaskPanel({ parentSessionId }: { parentSessionId?: string }
   );
 
   const items = useMemo(() => (query.data?.items as AsyncTaskBrief[] | undefined) ?? [], [query.data?.items]);
-  const runningCount = useMemo(() => items.filter((t) => t.status === "running" || t.status === "queued" || t.status === "pending").length, [items]);
+  const runningCount = useMemo(
+    () => items.filter((t) => t.status === "running" || t.status === "queued" || t.status === "pending").length,
+    [items],
+  );
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, AsyncTaskBrief[]>();
+    for (const task of items) {
+      const key = getSourceType(task);
+      const list = map.get(key) ?? [];
+      list.push(task);
+      map.set(key, list);
+    }
+    // 固定顺序
+    const order = ["subagent", "async_task_llm", "async_task_tool", "sleep"];
+    return order
+      .filter((k) => map.has(k))
+      .map((key) => ({ key, label: SOURCE_LABEL[key] ?? key, tasks: map.get(key)! }));
+  }, [items]);
 
   const refresh = () => {
     void query.refetch();
@@ -178,8 +241,13 @@ export function AsyncTaskPanel({ parentSessionId }: { parentSessionId?: string }
           暂无异步任务
         </div>
       )}
-      {items.map((task) => (
-        <AsyncTaskCard key={task.id} task={task} onRefresh={refresh} />
+      {grouped.map((group) => (
+        <div key={group.key} className="space-y-1.5">
+          <p className="px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">{group.label}</p>
+          {group.tasks.map((task) => (
+            <AsyncTaskCard key={task.id} task={task} onRefresh={refresh} />
+          ))}
+        </div>
       ))}
     </div>
   );

@@ -1,326 +1,304 @@
 "use client";
 
 /**
- * WorkspaceTree — Swarm 模式左侧栏 Workspace → Agent → Session 三层树
- * (#33a 精细设计已确认)
+ * WorkspaceSessionTree — 当前 Workspace 下的会话导航
  *
- * 结构：
- *   👑 超级 Agent（全局）
- *     └─ 主 session
- *     └─ 会话 2
- *   📁 技术博客 Workspace
- *     🛡️ 管理 Agent
- *       └─ 📌 主 session
- *       └─ 会话 2
- *     🤖 爬虫 Agent
- *       └─ 📌 主 session
- *   📁 已归档 Workspace（折叠）
+ * 两种模式：
+ *   - main: 显示当前 Workspace 的主 Agent（super/manager）及其所有 sessions，按时间分组
+ *   - sub:  显示当前 Workspace 下所有子 Agent，每个子 Agent 绑定其唯一/最新 session
  */
 
-import { useState, useMemo } from "react";
-import {
-  Bot,
-  ChevronDown,
-  ChevronRight,
-  Crown,
-  FolderOpen,
-  FolderArchive,
-  Pin,
-  Plus,
-  ShieldCheck,
-} from "lucide-react";
+import { useCallback, useMemo } from "react";
+import { Bot, Crown, Loader2, Pin, ShieldCheck } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { cn, formatRelativeTime } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
 import type { ChatSession } from "@knowpilot/shared";
 
+interface WorkspaceAgent {
+  id: string;
+  name: string;
+  tier: string;
+  status: string;
+  model: string;
+  workspaceId: string | null;
+}
+
 interface WorkspaceTreeProps {
+  currentWorkspaceId: string | null;
   effectiveSessionId: string | null;
-  /** R10：由父组件 Chat 传入已查的 Agent 列表，避免 WorkspaceTree 再各自发 agent.list(100) 重复查询 */
-  agents: { id: string; name: string; tier: string; status: string; model: string; workspaceId: string | null }[];
+  /** 当前激活的 Agent ID；mode="sub" 时直接按 Agent 高亮，避免依赖 session 列表加载时机 */
+  effectiveAgentId?: string | null;
+  /** 由父组件传入已查的 Agent 列表 */
+  agents: WorkspaceAgent[];
   onSelectSession: (id: string) => void;
   onHoverSession?: (id: string) => void;
   onHoverSessionEnd?: (id: string) => void;
-  onSelectAgent: (agentId: string) => void;
   onNewChat: () => void;
   searchQuery: string;
+  /** 主 Agent / 子 Agent 两种视图 */
+  mode: "main" | "sub";
 }
 
 export function WorkspaceTree({
+  currentWorkspaceId,
   effectiveSessionId,
+  effectiveAgentId,
   agents,
   onSelectSession,
   onHoverSession,
   onHoverSessionEnd,
-  onSelectAgent,
   onNewChat,
   searchQuery,
+  mode,
 }: WorkspaceTreeProps) {
-  // 展开/折叠状态
-  const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set());
-  const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
-  const [showArchived, setShowArchived] = useState(false);
-
-  // 拉取数据
-  const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
-  const archivedWorkspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "archived" });
-  // searchLower 提前计算（#5 queryAgentIds memo 依赖它）
   const searchLower = searchQuery.trim().toLowerCase();
-  // R10：agents 由父组件传入，不再内部 trpc.agent.list.useQuery
-  const superAgents = useMemo(
-    () => agents.filter((a) => a.tier === "super" && a.status !== "deleted"),
-    [agents],
-  );
-  const managerAgents = useMemo(
-    () => agents.filter((a) => a.tier === "manager" && a.status !== "deleted"),
-    [agents],
-  );
-  const subAgents = useMemo(
-    () => agents.filter((a) => a.tier === "sub" && a.status !== "deleted"),
-    [agents],
+
+  const workspaceAgents = useMemo(() => {
+    return agents.filter((a) => a.workspaceId === currentWorkspaceId && a.status !== "deleted");
+  }, [agents, currentWorkspaceId]);
+
+  const mainAgents = useMemo(() => {
+    const tierRank: Record<string, number> = { super: 0, manager: 1, sub: 99 };
+    return workspaceAgents
+      .filter((a) => a.tier === "super" || a.tier === "manager")
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-CN") || (tierRank[a.tier] ?? 99) - (tierRank[b.tier] ?? 99));
+  }, [workspaceAgents]);
+
+  const subAgents = useMemo(() => {
+    return workspaceAgents
+      .filter((a) => a.tier === "sub")
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+  }, [workspaceAgents]);
+
+  const mainAgentId = mainAgents[0]?.id;
+  const subAgentIds = useMemo(() => subAgents.map((a) => a.id), [subAgents]);
+
+  const mainSessionsQuery = trpc.session.list.useQuery(
+    { page: 1, pageSize: 100, agentId: mainAgentId },
+    { enabled: mode === "main" && !!mainAgentId },
   );
 
-  const activeWorkspaces = workspacesQuery.data?.items ?? [];
-  const archivedWorkspaces = archivedWorkspacesQuery.data?.items ?? [];
+  const subSessionsQuery = trpc.session.list.useQuery(
+    { page: 1, pageSize: 100, agentIds: subAgentIds },
+    { enabled: mode === "sub" && subAgentIds.length > 0 },
+  );
 
-  // A1 + #5：批量拉取**已展开** Agent 的会话（搜索时拉全部），消除 N+1 同时避免 over-fetch。
-  // 复用 session.list 失效键，chat.tsx / subagentPanel 等现有的 utils.session.list.invalidate()
-  // 会自动刷新本查询，无需额外接线。
-  const allAgentIds = useMemo(
-    () => [...superAgents, ...managerAgents, ...subAgents].map((a) => a.id),
-    [superAgents, managerAgents, subAgents],
-  );
-  // 搜索时所有 Agent 强制展开 → 拉全部；否则只拉已展开的，未展开的 Agent 展开时再触发 refetch
-  const queryAgentIds = useMemo(
-    () => (searchLower ? allAgentIds : [...expandedAgents]),
-    [searchLower, allAgentIds, expandedAgents],
-  );
-  const sessionsBatchQuery = trpc.session.list.useQuery(
-    { page: 1, pageSize: 100, agentIds: queryAgentIds },
-    { enabled: queryAgentIds.length > 0 },
-  );
-  const sessionsByAgent = useMemo(() => {
-    const m = new Map<string, ChatSession[]>();
-    for (const s of sessionsBatchQuery.data?.items ?? []) {
-      const key = s.agentId ?? "";
-      const arr = m.get(key);
-      if (arr) arr.push(s);
-      else m.set(key, [s]);
+  const mainGroupedSessions = useMemo(() => {
+    const sessions = (mainSessionsQuery.data?.items ?? []) as ChatSession[];
+    const filtered = searchLower
+      ? sessions.filter((s) => s.title.toLowerCase().includes(searchLower))
+      : sessions;
+    return groupBySessionDate(filtered);
+  }, [mainSessionsQuery.data, searchLower]);
+
+  const subSessionsByAgent = useMemo(() => {
+    const map = new Map<string, ChatSession[]>();
+    for (const s of (subSessionsQuery.data?.items ?? []) as ChatSession[]) {
+      const agentId = s.agentId ?? "";
+      const list = map.get(agentId) ?? [];
+      list.push(s);
+      map.set(agentId, list);
     }
-    return m;
-  }, [sessionsBatchQuery.data]);
+    return map;
+  }, [subSessionsQuery.data]);
 
-  const toggleWorkspace = (id: string) =>
-    setExpandedWorkspaces((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const getSubAgentSession = useCallback(
+    (agentId: string) => {
+      const sessions = subSessionsByAgent.get(agentId) ?? [];
+      if (sessions.length === 0) return undefined;
+      // 当前 session 属于该子 Agent 时优先高亮当前 session
+      const current = sessions.find((s) => s.id === effectiveSessionId);
+      if (current) return current;
+      return sessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+    },
+    [subSessionsByAgent, effectiveSessionId],
+  );
+
+  const isSubAgentActive = (agentId: string) => {
+    if (effectiveAgentId && effectiveAgentId === agentId) return true;
+    const sessions = subSessionsByAgent.get(agentId) ?? [];
+    return sessions.some((s) => s.id === effectiveSessionId);
+  };
+
+  const filteredSubAgents = useMemo(() => {
+    if (!searchLower) return subAgents;
+    return subAgents.filter((a) => {
+      const session = getSubAgentSession(a.id);
+      return (
+        a.name.toLowerCase().includes(searchLower) ||
+        session?.title.toLowerCase().includes(searchLower)
+      );
     });
+  }, [subAgents, searchLower, getSubAgentSession]);
 
-  const toggleAgent = (id: string) =>
-    setExpandedAgents((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  if (!currentWorkspaceId) {
+    return (
+      <p className="px-2 py-4 text-center text-xs text-[var(--kp-text-3)]">
+        请先选择一个 Workspace
+      </p>
+    );
+  }
 
-  // 搜索过滤
-  const matchesSearch = (text: string) => !searchLower || text.toLowerCase().includes(searchLower);
-
-  return (
-    <div className="space-y-1" data-testid="workspace-tree">
-      {/* 新建对话按钮 */}
-      <button
-        type="button"
-        onClick={onNewChat}
-        className={cn(
-          buttonVariants({ variant: "ghost", size: "sm" }),
-          "w-full justify-start gap-2 text-xs text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
-        )}
-      >
-        <Plus className="h-3.5 w-3.5" />
-        新建对话
-      </button>
-
-      {/* 超级 Agent（全局，无 Workspace） */}
-      {superAgents.map((agent) => (
-        <AgentNode
-          key={agent.id}
-          agent={agent}
-          sessions={sessionsByAgent.get(agent.id) ?? []}
-          expanded={expandedAgents.has(agent.id) || !!searchLower}
-          onToggle={() => toggleAgent(agent.id)}
-          effectiveSessionId={effectiveSessionId}
-          onSelectSession={onSelectSession}
-          onHoverSession={onHoverSession}
-          onHoverSessionEnd={onHoverSessionEnd}
-          onSelectAgent={onSelectAgent}
-          searchLower={searchLower}
-          matchesSearch={matchesSearch}
-        />
-      ))}
-
-      {/* 活跃 Workspace 列表 */}
-      {activeWorkspaces.map((ws) => {
-        const wsManagers = managerAgents.filter((a) => a.workspaceId === ws.id);
-        const wsSubs = subAgents.filter((a) => a.workspaceId === ws.id);
-        const wsAgents = [...wsManagers, ...wsSubs];
-        if (wsAgents.length === 0 && !matchesSearch(ws.name)) return null;
-
-        const expanded = expandedWorkspaces.has(ws.id) || !!searchLower;
-        return (
-          <div key={ws.id}>
-            <button
-              type="button"
-              onClick={() => toggleWorkspace(ws.id)}
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-medium text-[var(--kp-text-1)] transition hover:bg-[var(--kp-bg-mute)]"
-            >
-              {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-[var(--kp-text-3)]" /> : <ChevronRight className="h-3 w-3 shrink-0 text-[var(--kp-text-3)]" />}
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-              <span className="truncate">{ws.name}</span>
-            </button>
-            {expanded && (
-              <div className="ml-3 space-y-0.5 border-l border-[var(--kp-divider-light)] pl-2">
-                {wsAgents.map((agent) => (
-                  <AgentNode
-                    key={agent.id}
-                    agent={agent}
-                    sessions={sessionsByAgent.get(agent.id) ?? []}
-                    expanded={expandedAgents.has(agent.id) || !!searchLower}
-                    onToggle={() => toggleAgent(agent.id)}
-                    effectiveSessionId={effectiveSessionId}
-                    onSelectSession={onSelectSession}
-                    onHoverSession={onHoverSession}
-                    onSelectAgent={onSelectAgent}
-                    searchLower={searchLower}
-                    matchesSearch={matchesSearch}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* 已归档 Workspace（折叠区） */}
-      {archivedWorkspaces.length > 0 && (
-        <div>
+  if (mode === "main") {
+    if (mainAgents.length === 0) {
+      return (
+        <div className="space-y-2 px-2 py-4 text-center">
+          <p className="text-xs text-[var(--kp-text-3)]">当前 Workspace 暂无主 Agent</p>
           <button
             type="button"
-            onClick={() => setShowArchived((v) => !v)}
-            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)]"
+            onClick={onNewChat}
+            className="text-xs text-[var(--kp-brand)] hover:underline"
           >
-            {showArchived ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            <FolderArchive className="h-3.5 w-3.5" />
-            <span>已归档 ({archivedWorkspaces.length})</span>
+            新建对话
           </button>
-          {showArchived && (
-            <div className="ml-3 space-y-0.5 border-l border-[var(--kp-divider-light)] pl-2 opacity-60">
-              {archivedWorkspaces.map((ws) => (
-                <div key={ws.id} className="flex items-center gap-1.5 px-2 py-1 text-xs text-[var(--kp-text-3)]">
-                  <FolderArchive className="h-3 w-3" />
-                  <span className="truncate">{ws.name}</span>
-                </div>
+        </div>
+      );
+    }
+
+    const mainAgent = mainAgents[0];
+    const isLoading = mainSessionsQuery.isLoading;
+
+    return (
+      <div className="space-y-2" data-testid="workspace-tree-main">
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <AgentIcon tier={mainAgent.tier} className="h-4 w-4" />
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--kp-text-1)]">
+            {mainAgent.name}
+          </span>
+        </div>
+
+        {isLoading && (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-4 w-4 animate-spin text-[var(--kp-text-3)]" />
+          </div>
+        )}
+
+        {!isLoading && mainGroupedSessions.length === 0 && (
+          <p className="px-2 py-4 text-center text-xs text-[var(--kp-text-3)]">
+            {searchLower ? "无匹配会话" : "暂无对话"}
+          </p>
+        )}
+
+        {mainGroupedSessions.map((group) => (
+          <div key={group.key} className="mb-2">
+            <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+              {group.label}
+            </p>
+            <div className="space-y-0.5">
+              {group.items.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  active={effectiveSessionId === s.id}
+                  onSelect={() => onSelectSession(s.id)}
+                  onHover={() => onHoverSession?.(s.id)}
+                  onHoverEnd={() => onHoverSessionEnd?.(s.id)}
+                  data-testid="session-list-item"
+                />
               ))}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
-      {/* 无 Workspace 的普通 Agent（回退：非 swarm 模式） */}
-      {activeWorkspaces.length === 0 && superAgents.length === 0 && (
-        <p className="px-2 py-4 text-center text-xs text-[var(--kp-text-3)]">
-          无 Workspace。通过超级 Agent 创建 Workspace 后此处显示 Agent 树。
+  // mode === "sub"
+  if (filteredSubAgents.length === 0) {
+    return (
+      <div className="space-y-2 px-2 py-4 text-center">
+        <p className="text-xs text-[var(--kp-text-3)]">
+          {searchLower ? "无匹配子 Agent" : "当前 Workspace 暂无子 Agent"}
         </p>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5" data-testid="workspace-tree-sub">
+      {filteredSubAgents.map((agent) => {
+        const session = getSubAgentSession(agent.id);
+        const active = isSubAgentActive(agent.id);
+        return (
+          <button
+            key={agent.id}
+            type="button"
+            disabled={!session}
+            data-testid="subagent-item"
+            onClick={() => session && onSelectSession(session.id)}
+            onMouseEnter={() => session && onHoverSession?.(session.id)}
+            onMouseLeave={() => session && onHoverSessionEnd?.(session.id)}
+            className={cn(
+              "flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs transition",
+              active
+                ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+                : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]",
+              !session && "opacity-60",
+            )}
+          >
+            <div className="flex items-center gap-1.5">
+              <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+              <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+              {agent.status === "dormant" && (
+                <span className="text-[9px] text-[var(--kp-text-3)]">休眠</span>
+              )}
+            </div>
+            {session && (
+              <div className="flex items-center gap-1.5 pl-5 text-[11px] text-[var(--kp-text-2)]">
+                {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
+                <span className="min-w-0 flex-1 truncate">{session.title}</span>
+                <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
+                  {formatRelativeTime(session.updatedAt)}
+                </span>
+              </div>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-/** Agent 节点：图标按 tier 区分 + 可展开 session 列表 */
-function AgentNode({
-  agent,
-  sessions,
-  expanded,
-  onToggle,
-  effectiveSessionId,
-  onSelectSession,
-  onHoverSession,
-  onHoverSessionEnd,
-  onSelectAgent,
-  searchLower,
+function AgentIcon({ tier, className }: { tier: string; className?: string }) {
+  if (tier === "super") return <Crown className={cn("text-amber-500", className)} />;
+  if (tier === "manager") return <ShieldCheck className={cn("text-blue-500", className)} />;
+  return <Bot className={cn("text-[var(--kp-brand)]", className)} />;
+}
+
+function SessionRow({
+  session,
+  active,
+  onSelect,
+  onHover,
+  onHoverEnd,
+  "data-testid": dataTestId,
 }: {
-  agent: { id: string; name: string; tier: string; status: string; model: string; workspaceId: string | null };
-  // A1：由父组件 WorkspaceTree 批量拉取后按 agentId 分组传入，节点不再各自发查询
-  sessions: ChatSession[];
-  expanded: boolean;
-  onToggle: () => void;
-  effectiveSessionId: string | null;
-  onSelectSession: (id: string) => void;
-  onHoverSession?: (id: string) => void;
-  onHoverSessionEnd?: (id: string) => void;
-  onSelectAgent: (agentId: string) => void;
-  searchLower: string;
-  matchesSearch: (text: string) => boolean;
+  session: ChatSession;
+  active: boolean;
+  onSelect: () => void;
+  onHover?: () => void;
+  onHoverEnd?: () => void;
+  "data-testid"?: string;
 }) {
-  const filteredSessions = searchLower
-    ? sessions.filter((s) => s.title.toLowerCase().includes(searchLower))
-    : sessions;
-
-  const tierIcon = agent.tier === "super" ? Crown : agent.tier === "manager" ? ShieldCheck : Bot;
-  const TierIcon = tierIcon;
-  const tierColor =
-    agent.tier === "super" ? "text-amber-500" : agent.tier === "manager" ? "text-blue-500" : "text-[var(--kp-brand)]";
-
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => {
-          onToggle();
-          onSelectAgent(agent.id);
-        }}
-        className={cn(
-          "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-[var(--kp-bg-mute)]",
-        )}
-      >
-        {filteredSessions.length > 0 || expanded ? (
-          expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-[var(--kp-text-3)]" /> : <ChevronRight className="h-3 w-3 shrink-0 text-[var(--kp-text-3)]" />
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
-        <TierIcon className={cn("h-3.5 w-3.5 shrink-0", tierColor)} />
-        <span className="truncate text-[var(--kp-text-1)]">{agent.name}</span>
-        {agent.status === "dormant" && <span className="text-[9px] text-[var(--kp-text-3)]">休眠</span>}
-      </button>
-      {expanded && (
-        <div className="ml-5 space-y-0.5 border-l border-[var(--kp-divider-light)] pl-2">
-          {filteredSessions.length === 0 && (
-            <p className="px-2 py-1 text-[10px] text-[var(--kp-text-3)]">无会话</p>
-          )}
-          {filteredSessions.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onSelectSession(s.id)}
-              onMouseEnter={() => onHoverSession?.(s.id)}
-              onMouseLeave={() => onHoverSessionEnd?.(s.id)}
-              className={cn(
-                "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition",
-                effectiveSessionId === s.id
-                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)] font-medium"
-                  : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
-              )}
-            >
-              {s.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
-              <span className="truncate">{s.title}</span>
-              <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">{formatRelativeTime(s.updatedAt)}</span>
-            </button>
-          ))}
-        </div>
+    <button
+      type="button"
+      data-testid={dataTestId}
+      onClick={onSelect}
+      onMouseEnter={onHover}
+      onMouseLeave={onHoverEnd}
+      className={cn(
+        "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition",
+        active
+          ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+          : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
       )}
-    </div>
+    >
+      {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
+      <span className="min-w-0 flex-1 truncate">{session.title}</span>
+      <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
+        {formatRelativeTime(session.updatedAt)}
+      </span>
+    </button>
   );
 }

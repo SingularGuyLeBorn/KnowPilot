@@ -1,46 +1,32 @@
 "use client";
 
 /**
- * Chat 发送队列 — 紧凑条 + 右侧展开 Panel（MetaBlog 风格）
+ * Chat 发送队列组件
+ *
+ * - UserSendQueueBar：输入区左上角的紧凑条，只显示用户待发消息。
+ * - QueueCard：右侧面板「运行时 → 用户发送消息队列 / 异步任务队列」的列表卡片。
  */
 
 import { useCallback, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
+  ChevronUp,
   ExternalLink,
   GripVertical,
   Loader2,
-  Maximize2,
   MessageSquare,
-  Minimize2,
   Pin,
   PinOff,
   Trash2,
-  X,
   Square,
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatQueueItem } from "@/lib/chatQueueTypes";
-import { Pagination } from "@/components/shared";
 
-interface MessageQueueProps {
-  items: ChatQueueItem[];
-  panelOpen: boolean;
-  onPanelOpenChange: (open: boolean) => void;
-  onChange: (items: ChatQueueItem[]) => void;
-  onRemove: (id: string) => void;
-  onCancel?: (jobId: string) => void;
-  onRetry?: (jobId: string) => void;
-  /** 异步队列实时统计 */
-  asyncStats?: { queued: number; runningGlobal: number };
-  /** 右侧设置 Panel 打开时向左偏移，避免重叠 */
-  settingsPanelOpen?: boolean;
-  settingsPanelWidth?: number;
-}
-
-function kindLabel(item: ChatQueueItem): string {
+export function kindLabel(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
     if (item.status === "queued") return "异步任务 · 排队中";
     return "异步任务 · 执行中";
@@ -49,7 +35,7 @@ function kindLabel(item: ChatQueueItem): string {
   return "待发消息";
 }
 
-function previewText(item: ChatQueueItem): string {
+export function previewText(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
     const suffix = item.status === "queued" && item.text ? ` · ${item.text}` : "";
     return (item.taskLabel || "后台任务…") + suffix;
@@ -60,9 +46,21 @@ function previewText(item: ChatQueueItem): string {
   return item.text.slice(0, 120) || "（附件）";
 }
 
-function QueueCard({
+interface QueueCardProps {
+  item: ChatQueueItem;
+  expanded?: boolean;
+  onUpdate?: (patch: Partial<ChatQueueItem>) => void;
+  onRemove?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onTogglePin?: () => void;
+  onCancel?: () => void;
+  onRetry?: () => void;
+}
+
+export function QueueCard({
   item,
-  expanded,
+  expanded = true,
   onUpdate,
   onRemove,
   onMoveUp,
@@ -70,17 +68,7 @@ function QueueCard({
   onTogglePin,
   onCancel,
   onRetry,
-}: {
-  item: ChatQueueItem;
-  expanded: boolean;
-  onUpdate: (patch: Partial<ChatQueueItem>) => void;
-  onRemove: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  onTogglePin: () => void;
-  onCancel?: () => void;
-  onRetry?: () => void;
-}) {
+}: QueueCardProps) {
   const isAsyncResult = item.kind === "async-result";
   const isRunning = item.kind === "async-running";
   const canEditMain = item.kind === "user";
@@ -116,9 +104,7 @@ function QueueCard({
               {kindLabel(item)}
             </span>
             {isRunning && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
-            {item.pinned && (
-              <span className="text-[10px] text-[var(--kp-brand-dark)]">已置顶</span>
-            )}
+            {item.pinned && <span className="text-[10px] text-[var(--kp-brand-dark)]">已置顶</span>}
             {(isRunning || isAsyncResult) && item.subagentSessionId && (
               <a
                 href={`/chat?sessionId=${item.subagentSessionId}`}
@@ -140,20 +126,16 @@ function QueueCard({
             <>
               {isAsyncResult && item.asyncResult && (
                 <div>
-                  <p className="mb-1 text-[10px] font-medium text-[var(--kp-text-3)]">
-                    系统结果（不可修改）
-                  </p>
+                  <p className="mb-1 text-[10px] font-medium text-[var(--kp-text-3)]">系统结果（不可修改）</p>
                   <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--kp-bg-mute)] p-2 text-xs text-[var(--kp-text-2)]">
                     {item.asyncResult}
                   </pre>
                 </div>
               )}
 
-              {canEditAppend && (
+              {canEditAppend && onUpdate && (
                 <div>
-                  <p className="mb-1 text-[10px] font-medium text-[var(--kp-text-3)]">
-                    你的补充说明（LLM 会区分）
-                  </p>
+                  <p className="mb-1 text-[10px] font-medium text-[var(--kp-text-3)]">你的补充说明（LLM 会区分）</p>
                   <textarea
                     value={item.userAppend ?? ""}
                     onChange={(e) => onUpdate({ userAppend: e.target.value })}
@@ -164,7 +146,7 @@ function QueueCard({
                 </div>
               )}
 
-              {(canEditMain || (isAsyncResult && item.text)) && (
+              {(canEditMain || (isAsyncResult && item.text)) && onUpdate && (
                 <div>
                   <p className="mb-1 text-[10px] font-medium text-[var(--kp-text-3)]">
                     {canEditMain ? "消息内容" : "附加上下文"}
@@ -203,18 +185,39 @@ function QueueCard({
         <div className="flex shrink-0 flex-col gap-0.5">
           {!isRunning && (
             <>
-              <button type="button" onClick={onTogglePin} className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]" title={item.pinned ? "取消置顶" : "置顶"}>
-                {item.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-              </button>
-              <button type="button" onClick={onMoveUp} className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]" title="上移">
-                <ArrowUp className="h-3.5 w-3.5" />
-              </button>
-              <button type="button" onClick={onMoveDown} className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]" title="下移">
-                <ArrowDown className="h-3.5 w-3.5" />
-              </button>
+              {onTogglePin && (
+                <button
+                  type="button"
+                  onClick={onTogglePin}
+                  className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+                  title={item.pinned ? "取消置顶" : "置顶"}
+                >
+                  {item.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                </button>
+              )}
+              {onMoveUp && (
+                <button
+                  type="button"
+                  onClick={onMoveUp}
+                  className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+                  title="上移"
+                >
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {onMoveDown && (
+                <button
+                  type="button"
+                  onClick={onMoveDown}
+                  className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+                  title="下移"
+                >
+                  <ArrowDown className="h-3.5 w-3.5" />
+                </button>
+              )}
             </>
           )}
-          {isRunning ? (
+          {isRunning && onCancel ? (
             <button
               type="button"
               onClick={onCancel}
@@ -224,9 +227,16 @@ function QueueCard({
               <Square className="h-3.5 w-3.5" />
             </button>
           ) : (
-            <button type="button" onClick={onRemove} className="rounded p-1 text-red-500 hover:bg-red-50" title="移除">
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            onRemove && (
+              <button
+                type="button"
+                onClick={onRemove}
+                className="rounded p-1 text-red-500 hover:bg-red-50"
+                title="移除"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )
           )}
           {item.kind === "async-result" && item.status === "failed" && onRetry && item.jobId && (
             <button
@@ -244,20 +254,132 @@ function QueueCard({
   );
 }
 
-export function MessageQueue({
-  items,
-  panelOpen,
-  onPanelOpenChange,
-  onChange,
-  onRemove,
-  onCancel,
-  onRetry,
-  asyncStats,
-  settingsPanelOpen = false,
-  settingsPanelWidth = 360,
-}: MessageQueueProps) {
+interface InlineQueueListProps {
+  items: ChatQueueItem[];
+  onChange: (items: ChatQueueItem[]) => void;
+  onRemove: (id: string) => void;
+}
+
+function InlineQueueList({ items, onChange, onRemove }: InlineQueueListProps) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [barExpanded, setBarExpanded] = useState(false);
+
+  const reorder = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return;
+    const next = [...items];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onChange(next);
+  };
+
+  const moveItem = (id: string, dir: -1 | 1) => {
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx < 0) return;
+    reorder(idx, idx + dir);
+  };
+
+  const updateItem = (id: string, patch: Partial<ChatQueueItem>) => {
+    onChange(items.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  };
+
+  return (
+    <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+      {items.map((item, idx) => (
+        <div
+          key={item.id}
+          draggable={item.kind !== "async-running"}
+          onDragStart={() => setDragIdx(idx)}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={() => {
+            if (dragIdx !== null) reorder(dragIdx, idx);
+            setDragIdx(null);
+          }}
+        >
+          <QueueCard
+            item={item}
+            expanded
+            onUpdate={(patch) => updateItem(item.id, patch)}
+            onRemove={() => onRemove(item.id)}
+            onMoveUp={() => moveItem(item.id, -1)}
+            onMoveDown={() => moveItem(item.id, 1)}
+            onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface UserSendQueuePanelProps {
+  items: ChatQueueItem[];
+  onChange: (items: ChatQueueItem[]) => void;
+  onRemove: (id: string) => void;
+  asyncStats?: { queued: number; runningGlobal: number };
+}
+
+export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: UserSendQueuePanelProps) {
+  const [expanded, setExpanded] = useState(false);
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mb-2" data-testid="chat-queue-panel">
+      {!expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/95 px-3 py-2 text-left text-xs shadow-sm transition hover:bg-[var(--kp-bg-mute)]"
+        >
+          <MessageSquare className="h-4 w-4 text-[var(--kp-brand)]" />
+          <span className="font-medium text-[var(--kp-text-2)]">
+            待发消息 {items.length}
+          </span>
+          {asyncStats && asyncStats.runningGlobal > 0 && (
+            <span className="text-[var(--kp-brand)]">· 运行 {asyncStats.runningGlobal}</span>
+          )}
+          {asyncStats && asyncStats.queued > 0 && (
+            <span className="text-[var(--kp-text-3)]">· 排队 {asyncStats.queued}</span>
+          )}
+          <span className="ml-auto text-[var(--kp-text-3)]">点击展开</span>
+          <ChevronDown className="h-4 w-4 text-[var(--kp-text-3)]" />
+        </button>
+      ) : (
+        <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/95 p-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-[var(--kp-text-2)]">
+              待发消息 {items.length}
+              {asyncStats && asyncStats.runningGlobal > 0 && (
+                <span className="ml-1.5 text-[var(--kp-brand)]">· 运行 {asyncStats.runningGlobal}</span>
+              )}
+              {asyncStats && asyncStats.queued > 0 && (
+                <span className="ml-1.5 text-[var(--kp-text-3)]">· 排队 {asyncStats.queued}</span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+              title="收起"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+          </div>
+          <InlineQueueList items={items} onChange={onChange} onRemove={onRemove} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface QueuePanelListProps {
+  items: ChatQueueItem[];
+  onChange: (items: ChatQueueItem[]) => void;
+  onRemove: (id: string) => void;
+  onCancel?: (jobId: string) => void;
+  onRetry?: (jobId: string) => void;
+  emptyText?: string;
+}
+
+export function QueuePanelList({ items, onChange, onRemove, onCancel, onRetry, emptyText }: QueuePanelListProps) {
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
@@ -286,158 +408,123 @@ export function MessageQueue({
     onChange(items.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   };
 
-  if (items.length === 0) return null;
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-10 text-[var(--kp-text-3)]">
+        <MessageSquare className="h-6 w-6 opacity-40" />
+        <p className="text-xs">{emptyText ?? "队列为空"}</p>
+      </div>
+    );
+  }
 
   return (
-    <>
-      {/* 紧凑条 — 点击列表区域展开/收起高度 */}
-      <div className="relative mx-auto mb-2 max-w-3xl" data-testid="chat-queue-bar">
-        <div className="flex items-stretch overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/95 shadow-sm backdrop-blur-sm">
-          <div className="flex min-w-0 flex-1 flex-col gap-1 p-2">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <button
-                type="button"
-                onClick={() => setBarExpanded((v) => !v)}
-                className="min-w-0 flex-1 text-left"
-                title={barExpanded ? "收起队列高度" : "展开队列高度"}
-                aria-expanded={barExpanded}
-              >
-                <span className="text-[11px] font-semibold text-[var(--kp-text-2)]">
-                  {(() => {
-                    const userCount = items.filter((i) => i.kind === "user").length;
-                    const asyncCount = items.length - userCount;
-                    const parts = [];
-                    if (userCount > 0) parts.push(`待发 ${userCount}`);
-                    if (asyncCount > 0) parts.push(`异步 ${asyncCount}`);
-                    return `队列 · ${parts.join(" · ") || items.length}`;
-                  })()}
-                  {asyncStats && asyncStats.runningGlobal > 0 && (
-                    <span className="ml-1.5 text-[var(--kp-brand)]">· 运行 {asyncStats.runningGlobal}</span>
-                  )}
-                  {asyncStats && asyncStats.queued > 0 && (
-                    <span className="ml-1.5 text-[var(--kp-text-3)]">· 排队 {asyncStats.queued}</span>
-                  )}
-                </span>
-                <span className="ml-2 text-[10px] text-[var(--kp-text-3)]">
-                  {barExpanded ? "点击收起" : "点击展开"}
-                </span>
-              </button>
-              <button
-                type="button"
-                data-testid="chat-queue-toggle"
-                onClick={() => onPanelOpenChange(!panelOpen)}
-                className="rounded-md p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
-                title={panelOpen ? "收起面板" : "展开队列面板"}
-              >
-                {panelOpen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </button>
-            </div>
+    <div className="flex h-full flex-col">
+      <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        {paginatedItems.map((item, localIdx) => {
+          const globalIdx = start + localIdx;
+          return (
             <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setBarExpanded((v) => !v)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setBarExpanded((v) => !v);
-                }
+              key={item.id}
+              draggable={item.kind !== "async-running"}
+              onDragStart={() => setDragIdx(globalIdx)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => {
+                if (dragIdx !== null) reorder(dragIdx, globalIdx);
+                setDragIdx(null);
               }}
-              className={cn(
-                "cursor-pointer space-y-1 overflow-y-auto px-0.5 transition-[max-height] duration-200",
-                barExpanded ? "max-h-[min(40vh,280px)]" : "max-h-[72px]",
-              )}
             >
-              {items.slice(0, 3).map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-2 rounded-lg bg-[var(--kp-bg-mute)]/60 px-2 py-1"
-                >
-                  {item.kind === "async-running" ? (
-                    <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[var(--kp-brand)]" />
-                  ) : (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--kp-brand)]" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--kp-text-2)]">
-                    {previewText(item)}
-                  </span>
-                </div>
-              ))}
-              {items.length > 3 && (
-                <div className="flex items-center justify-center gap-1 rounded-lg bg-[var(--kp-bg-mute)]/40 px-2 py-1 text-[10px] text-[var(--kp-text-3)]">
-                  还有 <span className="font-medium text-[var(--kp-text-2)]">{items.length - 3}</span> 条，点击展开面板查看
-                </div>
-              )}
+              <QueueCard
+                item={item}
+                expanded
+                onUpdate={(patch) => updateItem(item.id, patch)}
+                onRemove={() => onRemove(item.id)}
+                onMoveUp={() => moveItem(item.id, -1)}
+                onMoveDown={() => moveItem(item.id, 1)}
+                onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
+                onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
+                onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
+              />
             </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
-
-      {/* 右侧 Panel */}
-      {panelOpen && (
-        <aside
-          data-testid="chat-queue-panel"
-          style={{ right: settingsPanelOpen ? settingsPanelWidth : 0 }}
-          className="fixed inset-y-0 z-30 flex w-full max-w-md flex-col border-l border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/98 shadow-2xl backdrop-blur-md md:top-[var(--kp-header-offset,0px)]"
-        >
-          <div className="flex items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">发送队列</h2>
-              <p className="text-[11px] text-[var(--kp-text-3)]">
-                拖动/箭头调序 · 异步结果仅可追加说明
-                {asyncStats && (
-                  <span className="ml-2 text-[var(--kp-text-2)]">
-                    运行 {asyncStats.runningGlobal} · 排队 {asyncStats.queued}
-                  </span>
-                )}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onPanelOpenChange(false)}
-              className="rounded-lg p-1.5 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="flex-1 space-y-2 overflow-y-auto p-3">
-            {paginatedItems.map((item, localIdx) => {
-              const globalIdx = start + localIdx;
-              return (
-                <div
-                  key={item.id}
-                  draggable={item.kind !== "async-running"}
-                  onDragStart={() => setDragIdx(globalIdx)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => {
-                    if (dragIdx !== null) reorder(dragIdx, globalIdx);
-                    setDragIdx(null);
-                  }}
-                >
-                  <QueueCard
-                    item={item}
-                    expanded
-                    onUpdate={(patch) => updateItem(item.id, patch)}
-                    onRemove={() => onRemove(item.id)}
-                    onMoveUp={() => moveItem(item.id, -1)}
-                    onMoveDown={() => moveItem(item.id, 1)}
-                    onTogglePin={() => updateItem(item.id, { pinned: !item.pinned })}
-                    onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
-                    onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
-
-                  />
-                </div>
-              );
-            })}
-          </div>
-          <Pagination
-            page={safePage}
-            pageSize={pageSize}
-            total={items.length}
-            totalPages={totalPages}
-            onPageChange={setPage}
-          />
-        </aside>
+      {totalPages > 1 && (
+        <div className="border-t border-[var(--kp-divider)] px-3 py-2">
+          <SimplePagination page={safePage} totalPages={totalPages} onChange={setPage} />
+        </div>
       )}
-    </>
+    </div>
+  );
+}
+
+function SimplePagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
+  return (
+    <div className="flex items-center justify-center gap-2 text-xs text-[var(--kp-text-2)]">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onChange(page - 1)}
+        className="rounded px-2 py-1 hover:bg-[var(--kp-bg-mute)] disabled:opacity-40"
+      >
+        上一页
+      </button>
+      <span>
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onChange(page + 1)}
+        className="rounded px-2 py-1 hover:bg-[var(--kp-bg-mute)] disabled:opacity-40"
+      >
+        下一页
+      </button>
+    </div>
+  );
+}
+
+interface AsyncTaskQueueListProps {
+  items: ChatQueueItem[];
+  onCancel?: (jobId: string) => void;
+  onRetry?: (jobId: string) => void;
+  emptyText?: string;
+}
+
+export function AsyncTaskQueueList({ items, onCancel, onRetry, emptyText }: AsyncTaskQueueListProps) {
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * pageSize;
+  const paginatedItems = items.slice(start, start + pageSize);
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-10 text-[var(--kp-text-3)]">
+        <Loader2 className="h-6 w-6 opacity-40" />
+        <p className="text-xs">{emptyText ?? "暂无运行中的异步任务"}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        {paginatedItems.map((item) => (
+          <QueueCard
+            key={item.id}
+            item={item}
+            expanded
+            onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
+            onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
+          />
+        ))}
+      </div>
+      {totalPages > 1 && (
+        <div className="border-t border-[var(--kp-divider)] px-3 py-2">
+          <SimplePagination page={safePage} totalPages={totalPages} onChange={setPage} />
+        </div>
+      )}
+    </div>
   );
 }

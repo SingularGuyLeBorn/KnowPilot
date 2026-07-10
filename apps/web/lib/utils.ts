@@ -21,12 +21,14 @@ export function formatRelativeTime(date: string | Date): string {
   return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" })
 }
 
-export type SessionDateGroup = "today" | "yesterday" | "week" | "older";
+export type SessionDateGroup = "today" | "yesterday" | "thisWeekEarlier" | "lastWeek" | "lastMonth" | "older";
 
 const SESSION_GROUP_LABELS: Record<SessionDateGroup, string> = {
   today: "今天",
   yesterday: "昨天",
-  week: "过去 7 天",
+  thisWeekEarlier: "本周更早",
+  lastWeek: "一周之前",
+  lastMonth: "一月之前",
   older: "更早",
 };
 
@@ -36,20 +38,25 @@ export function getSessionDateGroup(date: string | Date): SessionDateGroup {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfYesterday = new Date(startOfToday);
   startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-  const startOfWeek = new Date(startOfToday);
-  startOfWeek.setDate(startOfWeek.getDate() - 7);
+  const startOfThisWeekEarlier = new Date(startOfYesterday);
+  startOfThisWeekEarlier.setDate(startOfThisWeekEarlier.getDate() - 6);
+  const startOfLastWeek = new Date(startOfThisWeekEarlier);
+  const startOfLastMonth = new Date(startOfToday);
+  startOfLastMonth.setDate(startOfLastMonth.getDate() - 30);
 
   if (d >= startOfToday) return "today";
   if (d >= startOfYesterday) return "yesterday";
-  if (d >= startOfWeek) return "week";
+  if (d >= startOfThisWeekEarlier) return "thisWeekEarlier";
+  if (d >= startOfLastWeek) return "lastWeek";
+  if (d >= startOfLastMonth) return "lastMonth";
   return "older";
 }
 
-/** 按更新时间将会话分组（OpenClaw 风格） */
+/** 按更新时间将会话分组（今天 / 昨天 / 本周更早 / 一周之前 / 一月之前 / 更早） */
 export function groupBySessionDate<T extends { updatedAt: string | Date }>(
   items: T[],
 ): { key: SessionDateGroup; label: string; items: T[] }[] {
-  const order: SessionDateGroup[] = ["today", "yesterday", "week", "older"];
+  const order: SessionDateGroup[] = ["today", "yesterday", "thisWeekEarlier", "lastWeek", "lastMonth", "older"];
   const buckets = new Map<SessionDateGroup, T[]>();
 
   for (const item of items) {
