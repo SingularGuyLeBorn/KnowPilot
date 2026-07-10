@@ -314,6 +314,9 @@ export default function AgentsPage() {
     [data?.items],
   );
 
+  const editingAgent = useMemo(() => sortedItems.find((a: Agent) => a.id === editingId), [sortedItems, editingId]);
+  const isEditingSuper = editingAgent?.tier === "super";
+
   const createMutation = useCreate();
   const updateMutation = useUpdate();
   const deleteMutation = useDelete();
@@ -565,10 +568,20 @@ export default function AgentsPage() {
               {editingId ? "保存修改" : "创建 Agent"}
             </Button>
             {editingId && (
-              <Button variant="destructive" onClick={() => setDeleteId(editingId)}>
-                <Trash2 className="mr-1 h-4 w-4" />
-                删除
-              </Button>
+              <span
+                className={cn(isEditingSuper && "cursor-not-allowed")}
+                title={isEditingSuper ? "超级 Agent 不可删除" : undefined}
+              >
+                <Button
+                  variant="destructive"
+                  onClick={() => setDeleteId(editingId)}
+                  disabled={isEditingSuper}
+                  className="disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
+                >
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  删除
+                </Button>
+              </span>
             )}
           </div>
         </div>
