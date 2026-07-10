@@ -49,13 +49,10 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
   ],
   // 子 Agent 及以上（manager/super 也可以用）：可执行异步任务，但不能再派生子 Agent
   sub: [
-    "run_async",
     "async_task_run",
-    "cancel_async",
-    "await_async",
-    "async_task_wait",
-    "task_status",
     "async_task_status",
+    "async_task_wait",
+    "async_task_cancel",
   ],
 };
 

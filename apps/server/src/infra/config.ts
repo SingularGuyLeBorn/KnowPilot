@@ -332,7 +332,7 @@ export function createAppConfig(): AppConfig {
       // #32a：单次运行总工具调用上限 168（用户确认）
       maxToolCallsPerRun: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_CALLS_PER_RUN") || "168", 10)),
       // 默认 30s 超时 + 并发 2：收紧以避免慢工具（fetch/MCP）长时间占槽导致卡死；
-      // 慢工具应由 run_async 转异步而非阻塞主循环
+      // 慢工具应由 async_task_run 转异步而非阻塞主循环
       toolCallTimeoutMs: Math.max(2000, parseInt(readEnv("AGENT_TOOL_CALL_TIMEOUT_MS") || "30000", 10)),
       toolCallConcurrency: Math.max(1, parseInt(readEnv("AGENT_TOOL_CALL_CONCURRENCY") || "2", 10)),
       providers,

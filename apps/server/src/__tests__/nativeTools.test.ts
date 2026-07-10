@@ -1229,7 +1229,7 @@ describe("native:sleep", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("sub Agent 可调用 run_async 创建后台任务", async () => {
+  it("sub Agent 可调用 async_task_run 创建后台任务", async () => {
     const root = createTempProjectDir();
     const ctx = {
       ...createNativeCtx(root, {
@@ -1245,7 +1245,7 @@ describe("native:sleep", () => {
       sessionId: "sess-1",
       agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
     };
-    const result = (await executeNativeTool("run_async", { task: "后台任务" }, ctx)) as {
+    const result = (await executeNativeTool("async_task_run", { task: "后台任务" }, ctx)) as {
       jobId?: string;
       error?: string;
       permissionDenied?: boolean;

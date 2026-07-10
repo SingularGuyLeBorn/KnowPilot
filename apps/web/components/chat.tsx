@@ -583,11 +583,12 @@ export function ChatView() {
   );
 
   // 父会话实时任务进度：从合并后的 asyncResultQueue 派生，
-  // run_async / async_task_run / spawn_subagent 返回 running 时立即显示，
+  // async_task_run / spawn_subagent 返回 running 时立即显示，
   // 任务完成后显示 done/failed，并在 DOM 中保留 5 秒后再由 removeAt 定时器清理。
   const asyncProgressSteps = useMemo<TimelineStep[]>(() => {
     const steps: TimelineStep[] = [];
     for (const item of asyncResultQueue) {
+      const latestLog = item.logs?.length ? item.logs[item.logs.length - 1] : undefined;
       if (item.kind === "async-running") {
         steps.push({
           type: "progress",
@@ -595,6 +596,7 @@ export function ChatView() {
           label: item.taskLabel || `后台任务 ${item.jobId?.slice(0, 6) ?? ""}`,
           round: 1,
           status: item.status === "queued" ? "queued" : "running",
+          content: latestLog?.message,
         });
       } else if (item.kind === "async-result" && item.status) {
         steps.push({
@@ -603,7 +605,7 @@ export function ChatView() {
           label: item.taskLabel || `后台任务 ${item.jobId?.slice(0, 6) ?? ""}`,
           round: 1,
           status: item.status === "failed" ? "failed" : "done",
-          content: item.status === "failed" ? item.asyncResult : undefined,
+          content: item.status === "failed" ? item.asyncResult : latestLog?.message,
         });
       }
     }
@@ -953,7 +955,7 @@ export function ChatView() {
                 ),
               );
               if (
-                (name === "run_async" || name === "async_task_run" || name === "spawn_subagent") &&
+                (name === "async_task_run" || name === "spawn_subagent") &&
                 result &&
                 typeof result === "object"
               ) {
@@ -2464,13 +2466,13 @@ export function ChatView() {
                   <button
                     type="button"
                     onClick={() => {
-                      // 超时 → 建议转后台任务：把上一条用户消息包装成 run_async 请求重新入队
+                      // 超时 → 建议转后台任务：把上一条用户消息包装成 async_task_run 请求重新入队
                       const lastGroup = messageGroups[messageGroups.length - 1];
                       const lastText = lastGroup?.userMessage.content;
                       if (lastText) {
                         ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (prev) => [
                           ...prev,
-                          createUserQueueItem(`请用 run_async 在后台执行这个任务（避免前台超时）：\n${lastText}`),
+                          createUserQueueItem(`请用 async_task_run 在后台执行这个任务（避免前台超时）：\n${lastText}`),
                         ]);
                         ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "error", null);
                       }

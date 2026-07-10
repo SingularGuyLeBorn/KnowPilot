@@ -68,23 +68,23 @@ const ASYNC_STATUS_LABEL: Record<string, string> = {
   not_found: "未找到",
 };
 
-/** task_status / await_async / cancel_async 工具结果摘要 */
+/** async_task_status / async_task_wait / async_task_cancel 工具结果摘要 */
 function formatAsyncJobHint(r: Record<string, unknown>): string | null {
-  // task_status 单个 / await_async 返回 { jobId, status, elapsedMs?, asyncResult?, error? }
+  // async_task_status 单个 / async_task_wait 返回 { jobId, status, elapsedMs?, asyncResult?, error? }
   if (typeof r.jobId === "string" && typeof r.status === "string") {
     const parts: string[] = [ASYNC_STATUS_LABEL[r.status] ?? r.status];
     if (typeof r.elapsedMs === "number") parts.push(formatDuration(r.elapsedMs));
     if (typeof r.taskLabel === "string" && r.taskLabel) parts.push(r.taskLabel.slice(0, 24));
     return parts.join(" · ");
   }
-  // task_status 列表 { items: [...] }
+  // async_task_status 列表 { items: [...] }
   if (Array.isArray(r.items)) {
     const n = r.items.length;
     if (n === 0) return "无任务";
     const running = (r.items as Array<{ status?: string }>).filter((x) => x.status === "running" || x.status === "queued").length;
     return running > 0 ? `${n} 个任务 · ${running} 进行中` : `${n} 个任务`;
   }
-  // cancel_async 返回 { cancelled, message }
+  // async_task_cancel 返回 { cancelled, message }
   if (typeof r.cancelled === "boolean") {
     const msg = typeof r.message === "string" ? r.message.slice(0, 36) : "";
     return r.cancelled ? `已取消${msg ? " · " + msg : ""}` : `取消失败${msg ? " · " + msg : ""}`;

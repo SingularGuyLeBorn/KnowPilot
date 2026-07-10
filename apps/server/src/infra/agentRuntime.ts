@@ -95,7 +95,7 @@ const DEFAULT_ASSISTANT_TOOLS = [
   "native:list_directory",
   "native:invoke_api",
   "native:spawn_subagent",
-  "native:run_async",
+  "native:async_task_run",
   "native:sleep",
   "native:git_status",
   "skill:*",
@@ -103,7 +103,7 @@ const DEFAULT_ASSISTANT_TOOLS = [
 ];
 
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
-  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:run_async 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。";
+  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。";
 
 const LEGACY_ASSISTANT_SYSTEM_PROMPT =
   "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
@@ -118,12 +118,12 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
   // 自动补齐默认 assistant 的工具与系统提示，确保老数据库也能获得子代理/写文件能力
   if (exact) {
     const tools = Array.isArray(exact.tools) ? exact.tools : [];
-    // 子 Agent 不自动追加 spawn/run_async 等编排工具，其工具集由创建/运行时的权限层过滤
+    // 子 Agent 不自动追加 spawn/async_task_run 等编排工具，其工具集由创建/运行时的权限层过滤
     const needsToolsUpdate =
       exact.tier !== "sub" &&
       (!tools.includes("native:write_file") ||
         !tools.includes("native:spawn_subagent") ||
-        !tools.includes("native:run_async"));
+        !tools.includes("native:async_task_run"));
     // 仅当系统提示还是旧版默认（或空）时才自动升级，避免覆盖用户自定义提示词
     const needsPromptUpdate =
       !exact.systemPrompt || exact.systemPrompt === LEGACY_ASSISTANT_SYSTEM_PROMPT;
@@ -166,10 +166,12 @@ export async function runAgentLoop(options: {
   messages: LlmMessage[];
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
   signal?: AbortSignal;
-  /** 工具上下文：传入后 run_async / spawn_subagent / sleep(async) 等可在本循环内使用 */
+  /** 工具上下文：传入后 async_task_run / spawn_subagent / sleep(async) 等可在本循环内使用 */
   sessionId?: string;
   agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
   runOrigin?: "user" | "parent" | "heartbeat";
+  /** 每完成一轮工具调用后回调，用于异步任务进度日志 */
+  onProgress?: (message: string) => void;
 }): Promise<AgentLoopResult> {
   assertLlmBudget(options.config);
   const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
@@ -248,6 +250,7 @@ export async function runAgentLoop(options: {
         content: JSON.stringify(result).slice(0, 16000),
       });
     }
+    options.onProgress?.(`第 ${round + 1} 轮工具调用完成，共调用 ${batchResults.length} 个工具`);
   }
 
   return {

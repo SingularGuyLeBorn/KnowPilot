@@ -16,6 +16,12 @@ import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 
+export interface AsyncTaskLogEntry {
+  timestamp: number;
+  level: "info" | "progress" | "error";
+  message: string;
+}
+
 export interface AsyncQueueDelivery {
   id: string;
   jobId: string;
@@ -26,6 +32,7 @@ export interface AsyncQueueDelivery {
   error?: string;
   subagentSessionId?: string;
   subagentName?: string;
+  logs?: AsyncTaskLogEntry[];
   createdAt: number;
 }
 
@@ -35,6 +42,7 @@ export interface AsyncRunningJob {
   taskLabel: string;
   status: "running";
   subagentSessionId?: string;
+  logs?: AsyncTaskLogEntry[];
   createdAt: number;
 }
 
@@ -60,6 +68,8 @@ interface AsyncTaskOutput {
   error?: string;
   /** 任务 token 消耗（纳入 LLM 预算闭环，便于审计） */
   tokenUsage?: { prompt: number; completion: number; total: number };
+  /** 执行过程中产生的进度/日志，供前端进度条与 LLM 状态查询使用 */
+  logs?: AsyncTaskLogEntry[];
 }
 
 function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
@@ -109,6 +119,7 @@ function toDelivery(task: {
     error: output.error,
     subagentSessionId: input.subagentSessionId,
     subagentName: input.agentSnapshot?.name ?? undefined,
+    logs: output.logs,
     createdAt: task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime(),
   };
 }
@@ -203,11 +214,13 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
     .map((row): AsyncRunningJob | null => {
       const input = parseAsyncInput(row.input);
       if (!input) return null;
+      const output = parseAsyncOutput(row.output);
       const base: AsyncRunningJob = {
         jobId: row.id,
         sessionId,
         taskLabel: input.taskLabel,
         status: "running",
+        logs: output.logs,
         createdAt: row.createdAt.getTime(),
       };
       if (input.subagentSessionId) base.subagentSessionId = input.subagentSessionId;
@@ -223,6 +236,7 @@ export interface AsyncQueuedJob {
   status: "queued";
   position?: number;
   subagentSessionId?: string;
+  logs?: AsyncTaskLogEntry[];
   createdAt: number;
 }
 
@@ -243,12 +257,14 @@ export async function listQueuedAsyncJobs(
     .map((row): AsyncQueuedJob | null => {
       const input = parseAsyncInput(row.input);
       if (!input) return null;
+      const output = parseAsyncOutput(row.output);
       const base: AsyncQueuedJob = {
         jobId: row.id,
         sessionId,
         taskLabel: input.taskLabel,
         status: "queued",
         position: orchestrator.getPosition(row.id),
+        logs: output.logs,
         createdAt: row.createdAt.getTime(),
       };
       if (input.subagentSessionId) base.subagentSessionId = input.subagentSessionId;
@@ -338,7 +354,7 @@ function buildAsyncExecute(
       }
     }
   };
-  // 子 Agent 只保留执行类工具，禁止再次派生/管理 Agent，否则会出现递归 spawn/run_async 的混乱输出。
+  // 子 Agent 只保留执行类工具，禁止再次派生/管理 Agent，否则会出现递归 spawn/async_task_run 的混乱输出。
   // 工具权限以 swarmPermissionGuard 的 tier 映射为唯一事实源。
   const subagentOnly = agentSnapshot.tier === "sub";
   const workerTools = subagentOnly
@@ -346,7 +362,7 @@ function buildAsyncExecute(
     : agentSnapshot.tools;
 
   const subagentHint = subagentOnly
-    ? "\n\n注意：你是被派来直接执行该任务的子 Agent。你可以调用 run_async / async_task_* 等工具把耗时步骤放入后台执行，但禁止调用 spawn_subagent、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
+    ? "\n\n注意：你是被派来直接执行该任务的子 Agent。你可以调用 async_task_run / async_task_status / async_task_wait / async_task_cancel 等工具把耗时步骤放入后台执行，但禁止调用 spawn_subagent、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
     : "";
   const agentSystemPrompt = `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务${retryHint}。完成后用简洁中文汇总结果，不要继续追问用户。${subagentHint}`;
   const agentForLoop = { model: agentSnapshot.model, systemPrompt: agentSystemPrompt, tools: workerTools };
@@ -374,6 +390,7 @@ function buildAsyncExecute(
   ) => {
     const resultText = loop.content || "(无文本输出)";
     const tokenUsage = loop.tokenUsage;
+    await appendAsyncJobLog(jobId, { level: "info", message: `任务完成，共 ${loop.roundsUsed} 轮` }, services);
 
     // 保存子 Agent 的结果到 ChatSession
     if (subagentSessionId) {
@@ -391,6 +408,7 @@ function buildAsyncExecute(
       }
     }
 
+    const existingOutput = parseAsyncOutput((await services.task.getById(jobId))?.output);
     await services.task.update({
       id: jobId,
       status: "success",
@@ -399,6 +417,7 @@ function buildAsyncExecute(
         // 修复：asyncResult 只存干净的 LLM 回复文本，不追加 token 消耗日志（token 信息在 tokenUsage 字段里）
         asyncResult: resultText,
         tokenUsage,
+        logs: existingOutput.logs,
       } satisfies AsyncTaskOutput,
     } as any);
     await syncSubStatus("completed");
@@ -425,12 +444,15 @@ function buildAsyncExecute(
     const isTimeout = err instanceof Error && err.message.includes("超时");
     const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
     const errorText = reason || (err instanceof Error ? err.message : String(err));
+    await appendAsyncJobLog(jobId, { level: "error", message: errorText }, services);
+    const existingOutputFailed = parseAsyncOutput((await services.task.getById(jobId))?.output);
     await services.task.update({
       id: jobId,
       status: "failed",
       finishedAt: new Date(),
       output: {
         error: errorText,
+        logs: existingOutputFailed.logs,
       } satisfies AsyncTaskOutput,
     } as any);
     // 用户主动停止 → session 置 paused（不覆盖为 failed）；超时/异常 → failed
@@ -480,6 +502,7 @@ function buildAsyncExecute(
       } catch {
         /* 状态回写失败不阻塞执行 */
       }
+      await appendAsyncJobLog(jobId, { level: "info", message: "任务开始执行" }, services);
 
       // 有 subagent 可视化载体时，接入 SessionStreamHub 实现实时流式 + 断线续传
       if (subagentSessionId) {
@@ -512,7 +535,11 @@ function buildAsyncExecute(
       }
 
       // 无子会话可视化载体或 Hub 未初始化时回退到非流式执行
-      const loop = await runAgentLoop({ ...runLoopOptions, signal });
+      const loop = await runAgentLoop({
+        ...runLoopOptions,
+        signal,
+        onProgress: (message) => appendAsyncJobLog(jobId, { level: "progress", message }, services),
+      });
       await finalizeSuccess(loop);
     } catch (err: unknown) {
       await finalizeFailure(err);
@@ -528,7 +555,7 @@ export async function startAsyncAgentTask(options: {
   config: AppConfig;
   services: ServiceContainer;
   agent: { id: string; model: string; systemPrompt: string; tools: string[] };
-  /** 调用来源，用于 Agent.source 与审计区分 run_async / spawn_subagent */
+  /** 调用来源，用于 Agent.source 与审计区分 async_task_run / spawn_subagent */
   source?: string;
   /** 是否属于 spawn_subagent 派生的子 Agent（UI 显示“与之对话”） */
   isSubagent?: boolean;
@@ -537,7 +564,7 @@ export async function startAsyncAgentTask(options: {
 }): Promise<{ jobId: string; status: "queued" | "running"; message: string; subagentSessionId?: string }> {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
-  if (!options.sessionId) throw new Error("run_async 需要有效 sessionId");
+  if (!options.sessionId) throw new Error("async_task_run 需要有效 sessionId");
 
   // 预算检查：避免预算耗尽时还启动后台任务浪费资源
   assertLlmBudget(options.config);
@@ -551,7 +578,7 @@ export async function startAsyncAgentTask(options: {
 
   const parentAgent = await prisma.agent.findUnique({ where: { id: options.agent.id } }).catch(() => null);
 
-  // run_async：不创建新的 Agent/会话，直接复用父 Agent 身份跑后台任务。
+  // async_task_run：不创建新的 Agent/会话，直接复用父 Agent 身份跑后台任务。
   // spawn_subagent：才创建独立的 tier=sub 子 Agent 和 subagent ChatSession。
   let subAgentId: string | undefined;
   let subagentSessionId: string | undefined;
@@ -571,7 +598,7 @@ export async function startAsyncAgentTask(options: {
       throw new Error(`已达到每会话子 Agent 上限（${limit}），请先停止或等待已有任务完成后再启动新任务。`);
     }
 
-    // 子 Agent 只保留执行类工具，禁止继承 spawn/run_async/cancel 等编排工具
+    // 子 Agent 只保留执行类工具，禁止继承 spawn/async_task_run/async_task_cancel 等编排工具
     const subagentTools = getAllowedToolsForTier("sub", options.agent.tools);
 
     try {
@@ -747,6 +774,25 @@ export async function startAsyncSleepTask(options: {
   };
 }
 
+/** 向运行中/排队中的异步任务追加一条日志。任务执行过程中工具/Agent 可调用此函数写入进度。 */
+export async function appendAsyncJobLog(
+  jobId: string,
+  entry: Omit<AsyncTaskLogEntry, "timestamp">,
+  services: ServiceContainer,
+): Promise<void> {
+  const task = await services.task.getById(jobId);
+  if (!task) return;
+  const output = parseAsyncOutput(task.output);
+  const logs: AsyncTaskLogEntry[] = output.logs ?? [];
+  logs.push({ ...entry, timestamp: Date.now() });
+  // 保留最近 50 条，避免 output JSON 过大
+  const trimmed = logs.length > 50 ? logs.slice(logs.length - 50) : logs;
+  await services.task.update({
+    id: jobId,
+    output: { ...output, logs: trimmed },
+  } as any).catch(() => undefined);
+}
+
 /** 查询单个异步任务状态（含 subagent session 与已执行时长） */
 export async function getAsyncJobStatus(
   jobId: string,
@@ -762,6 +808,7 @@ export async function getAsyncJobStatus(
   subagentSessionId?: string;
   tokenUsage?: { prompt: number; completion: number; total: number };
   timeoutMs?: number;
+  logs?: AsyncTaskLogEntry[];
 }> {
   const task = await services.task.getById(jobId);
   if (!task) return { jobId, status: "not_found" };
@@ -781,6 +828,7 @@ export async function getAsyncJobStatus(
     subagentSessionId: input?.subagentSessionId,
     tokenUsage: output.tokenUsage,
     timeoutMs: input?.timeoutMs ?? config.asyncJobs.taskTimeoutMs,
+    logs: output.logs,
   };
 }
 
@@ -789,11 +837,11 @@ export async function listSessionAsyncJobs(
   sessionId: string,
   config: AppConfig,
   services: ServiceContainer,
-): Promise<Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }>> {
+): Promise<Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string; logs?: AsyncTaskLogEntry[] }>> {
   // R7：DB 层按 sessionId 过滤，避免全局 task.list(50) 后 JS 过滤漏掉非 top-50 的任务
   const rows = await services.task.list({ page: 1, pageSize: 50, sessionId } as any);
   const orchestrator = getAsyncJobOrchestrator(config);
-  const items: Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }> = [];
+  const items: Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string; logs?: AsyncTaskLogEntry[] }> = [];
   for (const row of (rows as any).items ?? []) {
     if (row.sessionId !== sessionId) continue;
     const input = parseAsyncInput(row.input);
@@ -801,19 +849,21 @@ export async function listSessionAsyncJobs(
     const running = orchestrator.isRunning(row.id);
     const queued = orchestrator.isQueued(row.id);
     const status = running ? "running" : queued ? "queued" : row.status === "success" ? "completed" : row.status === "failed" ? "failed" : row.status;
+    const output = parseAsyncOutput(row.output);
     items.push({
       jobId: row.id,
       status,
       taskLabel: input.taskLabel,
       elapsedMs: running ? Date.now() - (row.createdAt instanceof Date ? row.createdAt.getTime() : new Date(row.createdAt).getTime()) : undefined,
       subagentSessionId: input.subagentSessionId,
+      logs: output.logs,
     });
   }
   return items;
 }
 
 /**
- * 阻塞等待一个异步任务结束，返回最终结果（用于 run_async(waitForResult) / await_async）。
+ * 阻塞等待一个异步任务结束，返回最终结果（用于 async_task_run(waitForResult) / async_task_wait）。
  * 受 toolCallTimeoutMs 约束（由调用方的 withToolTimeout race 兜底），此处轮询最长 10 分钟。
  */
 export async function waitForAsyncJob(

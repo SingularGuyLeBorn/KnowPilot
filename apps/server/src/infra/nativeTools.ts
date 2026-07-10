@@ -98,7 +98,7 @@ export interface NativeToolContext {
   services: ServiceContainer;
   prisma?: PrismaClient;
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
-  /** 当前 Chat 会话 — run_async 等需要 */
+  /** 当前 Chat 会话 — async_task_run 等需要 */
   sessionId?: string;
   agentSnapshot?: {
     id: string;
@@ -198,14 +198,11 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_token_status: feishuTokenStatusTool,
   feishu_refresh_token: feishuRefreshTokenTool,
   invoke_api: invokeApiTool,
-  run_async: runAsyncTool,
   async_task_run: runAsyncTool,
-  spawn_subagent: spawnSubagentTool,
-  task_status: taskStatusTool,
   async_task_status: taskStatusTool,
-  cancel_async: cancelAsyncTool,
-  await_async: awaitAsyncTool,
   async_task_wait: awaitAsyncTool,
+  async_task_cancel: cancelAsyncTool,
+  spawn_subagent: spawnSubagentTool,
   run_shell: runShellTool,
   wait: waitTool,
   sleep: sleepTool,
@@ -1234,22 +1231,6 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
     },
   },
   {
-    name: "run_async",
-    description:
-      "启动后台异步任务（不阻塞当前对话）。任务完成后结果会自动进入发送队列最前，你可继续与用户聊天。设 waitForResult=true 则阻塞等待结果直接返回（受工具超时约束）。",
-    parameters: {
-      type: "object",
-      properties: {
-        task: { type: "string", description: "交给后台 Agent 执行的任务描述" },
-        label: { type: "string", description: "队列中显示的简短标签" },
-        timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
-        waitForResult: { type: "boolean", description: "true=阻塞等待任务完成直接返回结果；false(默认)=立即返回 running，结果进队列" },
-        shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id（跨会话共享）" },
-      },
-      required: ["task"],
-    },
-  },
-  {
     name: "spawn_subagent",
     description:
       "派生一个独立子 Agent（Subagent）执行长任务。默认不阻塞当前对话，结果进入发送队列最前。设 waitForResult=true 则阻塞等待子 Agent 完成，结果直接返回并写入父会话作为子 Agent 消息。适合：需要主 Agent 基于子 Agent 结果继续回复、长时间研究、并行子任务。",
@@ -1268,51 +1249,8 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
     },
   },
   {
-    name: "task_status",
-    description: "查询异步任务/Subagent 的状态（排队中/执行中/已完成/失败）与已执行时长。可传 jobId 查单个，不传则列当前会话全部。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "任务 id（run_async 返回的 jobId），不传则列出当前会话全部任务" },
-      },
-    },
-  },
-  {
-    name: "cancel_async",
-    description: "取消一条运行中或排队中的异步任务/Subagent。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "要取消的任务 id" },
-      },
-      required: ["jobId"],
-    },
-  },
-  {
-    name: "await_async",
-    description: "显式等待一个已启动的异步任务结束（阻塞当前轮，不受默认 30s 工具超时限制，最长等待 10 分钟）。任务完成后返回最终结果，LLM 基于结果继续生成最终答案。这是 Pause-on-Result 语义：表达等待意图 → 阻塞等结果 → 拿到结果后回复。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "要等待的任务 id" },
-      },
-      required: ["jobId"],
-    },
-  },
-  {
-    name: "async_task_wait",
-    description: "async_task_wait 是 await_async 的语义别名：显式等待异步任务完成（阻塞当前轮，最长 10 分钟，不受默认工具超时限制）。任务完成后返回结果，LLM 基于结果继续生成最终答案。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "要等待的任务 id" },
-      },
-      required: ["jobId"],
-    },
-  },
-  {
     name: "async_task_run",
-    description: "启动后台异步任务（async_task_run 是 run_async 的新命名，语义完全一致）。不阻塞当前对话，任务完成后结果自动进入发送队列最前。设 waitForResult=true 则阻塞等待结果直接返回（受工具超时约束）。",
+    description: "启动后台异步任务。不阻塞当前对话，任务完成后结果自动进入发送队列最前。设 waitForResult=true 则阻塞等待结果直接返回（受工具超时约束）。",
     parameters: {
       type: "object",
       properties: {
@@ -1327,12 +1265,34 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   },
   {
     name: "async_task_status",
-    description: "查询异步任务状态（async_task_status 是 task_status 的新命名）。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长、结果/错误等。",
+    description: "查询异步任务状态。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长、结果/错误、执行日志等。",
     parameters: {
       type: "object",
       properties: {
         jobId: { type: "string", description: "任务 id（async_task_run 返回的 jobId），不传则列出当前会话全部任务" },
       },
+    },
+  },
+  {
+    name: "async_task_wait",
+    description: "显式等待异步任务完成（阻塞当前轮，最长 10 分钟，不受默认工具超时限制）。任务完成后返回结果，LLM 基于结果继续生成最终答案。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "要等待的任务 id" },
+      },
+      required: ["jobId"],
+    },
+  },
+  {
+    name: "async_task_cancel",
+    description: "取消一条运行中或排队中的异步任务/Subagent。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "要取消的任务 id" },
+      },
+      required: ["jobId"],
     },
   },
   {
@@ -1603,11 +1563,17 @@ export function listNativeTools(): NativeToolDefinition[] {
   return NATIVE_TOOL_DEFINITIONS;
 }
 
+/** 异步任务工具统一命名空间：async_task_{run|status|wait|cancel}。
+ * 旧名 run_async/task_status/await_async/cancel_async 已废弃并移除。 */
+export const TOOL_NAME_ALIASES: Record<string, string> = {};
+
 export async function executeNativeTool(
   name: string,
   args: Record<string, unknown>,
   ctx: NativeToolContext,
 ): Promise<unknown> {
+  const resolvedName = TOOL_NAME_ALIASES[name] ?? name;
+
   // Swarm 权限硬拦截：检查 agent 是否有权调用此工具
   if (ctx.agentSnapshot?.tier) {
     const { checkToolPermission } = await import("./swarmPermissionGuard.js");
@@ -1633,9 +1599,9 @@ export async function executeNativeTool(
     }
   }
 
-  const handler = TOOL_HANDLERS[name];
+  const handler = TOOL_HANDLERS[resolvedName];
   if (!handler) {
-    throw new Error(`未知原生工具 "${name}"。可用：${Object.keys(TOOL_HANDLERS).join(", ")}`);
+    throw new Error(`未知原生工具 "${resolvedName}"（原始名 "${name}"）。可用：${Object.keys(TOOL_HANDLERS).join(", ")}`);
   }
   const started = Date.now();
   const raw = await handler(args, ctx);
@@ -2944,7 +2910,7 @@ async function invokeApiTool(args: Record<string, unknown>, ctx: NativeToolConte
 
 async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.sessionId || !ctx.agentSnapshot) {
-    throw new Error("run_async 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
+    throw new Error("async_task_run 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
   }
   const { startAsyncAgentTask, waitForAsyncJob } = await import("./asyncJobManager.js");
   const timeoutMs =
@@ -2961,7 +2927,7 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     config: ctx.config,
     services: ctx.services,
     agent: ctx.agentSnapshot,
-    source: "native_tool:run_async",
+    source: "native_tool:async_task_run",
     isSubagent: false,
     shareToSessionIds,
   });
@@ -2982,11 +2948,11 @@ async function taskStatusTool(args: Record<string, unknown>, ctx: NativeToolCont
 async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { cancelAsyncJob } = await import("./asyncJobManager.js");
   const jobId = String(args.jobId || "");
-  if (!jobId) throw new Error("cancel_async 需要 jobId");
+  if (!jobId) throw new Error("async_task_cancel 需要 jobId");
   return cancelAsyncJob(jobId, ctx.config, ctx.services);
 }
 
-/** LLM 主动派生子 Agent：与 run_async 区别在于 spawn_subagent 语义明确为「派生一个独立子 Agent」，
+/** LLM 主动派生子 Agent：与 async_task_run 区别在于 spawn_subagent 语义明确为「派生一个独立子 Agent」,
  *  强制创建 subagent ChatSession（UI 卡片可见）。默认不阻塞（结果进发送队列最前）；
  *  waitForResult=true 时阻塞等待，结果直接返回并写入父会话作为「子 Agent 发送」消息。 */
 async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -3031,7 +2997,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   if (args.waitForResult !== true) {
     return {
       ...started,
-      hint: `子 Agent 已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 task_status 查询进度，cancel_async 取消。`,
+      hint: `子 Agent 已派生（${started.subagentSessionId ? "UI 卡片可见" : "无可视化载体"}），任务完成后结果会进入发送队列最前。可用 async_task_status 查询进度，async_task_cancel 取消。`,
     };
   }
 
@@ -3086,14 +3052,14 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   };
 }
 
-/** await_async / async_task_wait：Pause-on-Result 语义。
+/** async_task_wait：Pause-on-Result 语义。
  *  LLM 表达等待意图 → 阻塞等任务完成（最长 10 分钟，由 agentTools 豁免默认 30s 超时）→
  *  拿到结果后 LLM 基于结果继续生成最终答案。
  *  agentTools 的 LONG_WAIT_TOOLS 集合确保本工具不受默认 toolCallTimeoutMs 限制。 */
 async function awaitAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { waitForAsyncJob } = await import("./asyncJobManager.js");
   const jobId = String(args.jobId || "");
-  if (!jobId) throw new Error("await_async / async_task_wait 需要 jobId");
+  if (!jobId) throw new Error("async_task_wait 需要 jobId");
   const result = await waitForAsyncJob(jobId, ctx.config, ctx.services);
   return {
     ...result,

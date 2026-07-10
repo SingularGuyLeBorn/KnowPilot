@@ -100,10 +100,10 @@ const CONCURRENCY_CLASS_NATIVE: Record<string, "A" | "B" | "C" | "D"> = {
   feishu_token_status: "B",
   // C: 本地进程 / OCR / shell（重资源）
   run_shell: "C",
-  run_async: "A",
-  task_status: "A",
-  cancel_async: "A",
-  await_async: "B",
+  async_task_run: "A",
+  async_task_status: "A",
+  async_task_wait: "B",
+  async_task_cancel: "A",
   // D: 写入 / 副作用（串行）
   write_file: "D",
   append_to_file: "D",
@@ -129,7 +129,7 @@ const CLASS_CONCURRENCY: Record<"A" | "B" | "C" | "D", number> = { A: 8, B: 4, C
 
 /** 长等待工具：不受默认 30s 工具超时限制，使用 10 分钟等待上限（与 waitForAsyncJob 对齐）。
  *  这些工具实现 Pause-on-Result 语义：LLM 表达等待意图 → 阻塞等任务完成 → 拿到结果继续生成最终答案 */
-const LONG_WAIT_TOOLS = new Set(["await_async", "async_task_wait", "spawn_subagent", "sleep"]);
+const LONG_WAIT_TOOLS = new Set(["async_task_wait", "spawn_subagent", "sleep"]);
 const LONG_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getToolConcurrencyClass(name: string, registry: Map<string, ToolRegistryEntry>): "A" | "B" | "C" | "D" {
@@ -345,7 +345,7 @@ export async function executeToolCallsBatch(
   const defaultTimeoutMs = ctx.config.llm.toolCallTimeoutMs;
 
   // 单工具执行包裹超时 + abort：超时或被中断时返回错误结果，绝不永久挂起
-  // 长等待工具（await_async / async_task_wait）豁免默认超时，使用 10 分钟上限
+  // 长等待工具（async_task_wait）豁免默认超时，使用 10 分钟上限
   const runOne = async (item: { call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> } }) => {
     const started = Date.now();
     const isLongWait = LONG_WAIT_TOOLS.has(item.parsed.name);
@@ -361,10 +361,10 @@ export async function executeToolCallsBatch(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       const isTimeout = msg.includes("执行超时");
-      // 慢工具自动转异步建议：超时后提示 LLM 用 run_async / spawn_subagent 重试，
+      // 慢工具自动转异步建议：超时后提示 LLM 用 async_task_run / spawn_subagent 重试，
       // 而非直接报错让用户手动处理
       const suggestion = isTimeout && !isLongWait
-        ? `（该工具超过 ${timeoutMs / 1000}s 超时。建议改用 run_async 异步执行，或 spawn_subagent 派生子代理处理长任务，避免阻塞主对话。）`
+        ? `（该工具超过 ${timeoutMs / 1000}s 超时。建议改用 async_task_run 异步执行，或 spawn_subagent 派生子代理处理长任务，避免阻塞主对话。）`
         : "";
       return {
         ...item,

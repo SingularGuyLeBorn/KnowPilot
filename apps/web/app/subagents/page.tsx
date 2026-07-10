@@ -117,7 +117,7 @@ export default function SubagentsPage() {
       </div>
 
       {items.length === 0 ? (
-        <EmptyState icon={<Bot className="h-10 w-10 opacity-40" />} title="暂无子 Agent 任务" description="在 Chat 中让 Agent 调用 run_async 即可创建子 Agent。" />
+        <EmptyState icon={<Bot className="h-10 w-10 opacity-40" />} title="暂无子 Agent 任务" description="在 Chat 中让 Agent 调用 async_task_run 即可创建后台任务。" />
       ) : (
         <div className="overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]">
           <table className="w-full text-left text-xs">

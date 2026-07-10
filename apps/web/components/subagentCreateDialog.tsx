@@ -25,13 +25,10 @@ type CreateResult = {
 };
 
 const ASYNC_TOOL_NAMES = new Set([
-  "native:run_async",
   "native:async_task_run",
   "native:async_task_status",
   "native:async_task_wait",
-  "native:cancel_async",
-  "native:await_async",
-  "native:task_status",
+  "native:async_task_cancel",
 ]);
 const SUBAGENT_FORBIDDEN_TOOLS = new Set([
   "native:spawn_subagent",

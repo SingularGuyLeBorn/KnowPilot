@@ -134,21 +134,17 @@ const scenarios: MockLlmScenario[] = [
     },
   },
   {
-    // 后台异步任务：第一轮调用 async_task_run / run_async，收到工具结果后给出最终回复
+    // 后台异步任务：第一轮调用 async_task_run，收到工具结果后给出最终回复
     name: "async_task_run",
     match: (opts, forced) => {
       if (forced === "async_task_run") return true;
-      const toolName = firstToolName(opts, "async_task_run", "run_async");
-      return !!toolName && /后台任务|异步任务|async task/i.test(lastUserText(opts)) && !hasAnyToolResult(opts);
+      return hasTool(opts, "async_task_run") && /后台任务|异步任务|async task/i.test(lastUserText(opts)) && !hasAnyToolResult(opts);
     },
-    completion: (opts) => {
-      const toolName = firstToolName(opts, "async_task_run", "run_async") ?? "async_task_run";
-      return {
-        ...baseResult(opts),
-        content: hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : null,
-        toolCalls: hasAnyToolResult(opts) ? [] : [makeToolCall(toolName, { task: "总结当前项目", label: "项目总结" })],
-      };
-    },
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : null,
+      toolCalls: hasAnyToolResult(opts) ? [] : [makeToolCall("async_task_run", { task: "总结当前项目", label: "项目总结" })],
+    }),
     stream: async function* (opts) {
       // 最终回复需要真实 token，否则 agentStream 不会生成 assistant 消息气泡
       const content = hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : "";

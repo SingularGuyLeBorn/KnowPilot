@@ -37,6 +37,8 @@ export interface ChatQueueItem {
   subagentName?: string;
   /** 已完成的 overlay 自动移除时间戳（ms），仅本地 async-result 使用 */
   removeAt?: number;
+  /** 任务执行过程中的进度/日志 */
+  logs?: Array<{ timestamp: number; level: "info" | "progress" | "error"; message: string }>;
   createdAt: number;
 }
 
@@ -74,8 +76,8 @@ export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = fals
 export function mergeAsyncPollIntoQueue(
   local: ChatQueueItem[],
   poll?: {
-    running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; createdAt: number }>;
-    queued?: Array<{ jobId: string; taskLabel: string; position?: number; subagentSessionId?: string; createdAt: number }>;
+    running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number }>;
+    queued?: Array<{ jobId: string; taskLabel: string; position?: number; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number }>;
     deliveries?: Array<{
       id: string;
       jobId: string;
@@ -85,6 +87,7 @@ export function mergeAsyncPollIntoQueue(
       error?: string;
       subagentSessionId?: string;
       subagentName?: string;
+      logs?: ChatQueueItem["logs"];
       createdAt: number;
     }>;
   },
@@ -126,6 +129,7 @@ export function mergeAsyncPollIntoQueue(
       taskLabel: job.taskLabel,
       status: "running",
       subagentSessionId: job.subagentSessionId,
+      logs: job.logs,
       createdAt: job.createdAt,
     });
   }
@@ -140,6 +144,7 @@ export function mergeAsyncPollIntoQueue(
       taskLabel: job.taskLabel,
       status: "queued",
       subagentSessionId: job.subagentSessionId,
+      logs: job.logs,
       createdAt: job.createdAt,
     });
   }
@@ -162,6 +167,7 @@ export function mergeAsyncPollIntoQueue(
       userAppend: prev?.userAppend ?? "",
       subagentSessionId: del.subagentSessionId ?? prev?.subagentSessionId,
       subagentName: del.subagentName ?? prev?.subagentName,
+      logs: del.logs ?? prev?.logs,
       createdAt: del.createdAt,
     });
   }

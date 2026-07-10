@@ -1,0 +1,12 @@
+# KnowPilot 运行时配置（本地优先，教学/产品向）
+# 环境变量仍可覆盖敏感项与部署相关项；此处放与业务行为相关的可调参数。
+
+stream:
+  # 每个运行中 session 的内存环形缓冲事件数（热缓冲，用于低延迟推送）
+  ringSize: 500
+  # 是否将事件持久化到 SQLite（服务端重启后可按 sessionId 续传）
+  persist: true
+  # 持久化事件保留时长（毫秒），超过后由定时清理任务删除
+  eventTtlMs: 300000
+  # 过期事件清理间隔（毫秒）
+  cleanupIntervalMs: 60000
