@@ -16,7 +16,7 @@ interface AsyncTaskBrief {
   id: string;
   name: string;
   status: string;
-  input?: { subagentSessionId?: string } | null;
+  input?: { subagentSessionId?: string; isSubagent?: boolean } | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -54,6 +54,7 @@ function AsyncTaskCard({ task, onRefresh }: { task: AsyncTaskBrief; onRefresh: (
 
   const statusColor = STATUS_COLOR[task.status] ?? "bg-gray-400";
   const subagentSessionId = task.input?.subagentSessionId;
+  const isSubagent = task.input?.isSubagent === true;
 
   return (
     <div
@@ -93,24 +94,24 @@ function AsyncTaskCard({ task, onRefresh }: { task: AsyncTaskBrief; onRefresh: (
               </div>
               <div className="flex flex-wrap gap-1">
                 {subagentSessionId && (
-                  <>
-                    <a
-                      href={`/chat?sessionId=${subagentSessionId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
-                    >
-                      <ExternalLink className="h-3 w-3" /> 查看详情
-                    </a>
-                    <a
-                      href={`/chat?sessionId=${subagentSessionId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
-                    >
-                      <MessageSquare className="h-3 w-3" /> 与之对话
-                    </a>
-                  </>
+                  <a
+                    href={`/chat?sessionId=${subagentSessionId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
+                  >
+                    <ExternalLink className="h-3 w-3" /> 查看详情
+                  </a>
+                )}
+                {isSubagent && subagentSessionId && (
+                  <a
+                    href={`/chat?sessionId=${subagentSessionId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-6 gap-1 px-2 text-[10px]")}
+                  >
+                    <MessageSquare className="h-3 w-3" /> 与之对话
+                  </a>
                 )}
                 <button
                   type="button"

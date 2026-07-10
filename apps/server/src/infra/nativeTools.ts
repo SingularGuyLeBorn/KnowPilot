@@ -2961,6 +2961,8 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     config: ctx.config,
     services: ctx.services,
     agent: ctx.agentSnapshot,
+    source: "native_tool:run_async",
+    isSubagent: false,
     shareToSessionIds,
   });
   if (!waitForResult) return started;
@@ -3019,6 +3021,8 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     config: ctx.config,
     services: ctx.services,
     agent,
+    source: "native_tool:spawn_subagent",
+    isSubagent: true,
     shareToSessionIds: Array.isArray(args.shareToSessionIds)
       ? (args.shareToSessionIds as unknown[]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)
       : undefined,

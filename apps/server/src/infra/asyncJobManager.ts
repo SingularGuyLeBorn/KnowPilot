@@ -45,6 +45,8 @@ interface AsyncTaskInput {
   retryCount?: number;
   timeoutMs?: number;
   subagentSessionId?: string;
+  /** 是否由 spawn_subagent 产生的子 Agent 会话（UI 据此决定是否显示“与之对话”入口） */
+  isSubagent?: boolean;
   /** swarm 协作：任务结果额外广播到这些会话（共享给其他父会话） */
   shareToSessionIds?: string[];
 }
@@ -452,6 +454,10 @@ export async function startAsyncAgentTask(options: {
   config: AppConfig;
   services: ServiceContainer;
   agent: { id: string; model: string; systemPrompt: string; tools: string[] };
+  /** 调用来源，用于 Agent.source 与审计区分 run_async / spawn_subagent */
+  source?: string;
+  /** 是否属于 spawn_subagent 派生的子 Agent（UI 显示“与之对话”） */
+  isSubagent?: boolean;
   /** swarm 协作：结果额外广播到这些会话 */
   shareToSessionIds?: string[];
 }): Promise<{ jobId: string; status: "queued" | "running"; message: string; subagentSessionId?: string }> {
@@ -486,7 +492,7 @@ export async function startAsyncAgentTask(options: {
     const subAgentResult = await options.services.agent.create({
       name: `${taskLabel.slice(0, 40)} 子 Agent`,
       description: `由 ${parentAgent?.name ?? options.agent.id} 派生的子 Agent（任务：${taskLabel.slice(0, 60)}）`,
-      source: "native_tool:spawn_subagent",
+      source: options.source ?? "native_tool:spawn_subagent",
       model: options.agent.model,
       systemPrompt: options.agent.systemPrompt,
       tools: options.agent.tools,
@@ -553,6 +559,7 @@ export async function startAsyncAgentTask(options: {
       retryCount: 0,
       timeoutMs: options.timeoutMs,
       subagentSessionId,
+      isSubagent: options.isSubagent ?? false,
       shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
     } satisfies AsyncTaskInput,
   } as any);
