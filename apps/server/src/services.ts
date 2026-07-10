@@ -1717,6 +1717,19 @@ export class WorkspaceService extends BaseService<CreateWorkspaceInput, UpdateWo
         entity: this.entityName,
       });
     }
+    const hasSuperAgent = await this.prisma.agent.findFirst({
+      where: { workspaceId: id, tier: "super", status: { not: "deleted" } },
+    });
+    if (hasSuperAgent) {
+      return failure({
+        code: "WORKSPACE_HAS_SUPER_AGENT",
+        message: "该 Workspace 包含超级 Agent，不可删除",
+        suggestion: "请先迁移或删除该 Workspace 下的超级 Agent 后再注销 Workspace。",
+        retryable: false,
+        operation: "delete",
+        entity: this.entityName,
+      });
+    }
     return super.delete(id);
   }
 }

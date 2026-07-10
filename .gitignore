@@ -95,8 +95,8 @@ pgdata/
 # Server runtime cache
 apps/server/content/
 
-# Runtime generated workspaces
-workspaces/
+# Runtime generated workspaces (root only)
+/workspaces/
 
 # Stray shell artifact
 /^

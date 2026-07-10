@@ -95,8 +95,20 @@ export default function WorkspacesPage() {
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link href={`/workspaces/edit/${workspace.id}`}
                         className="text-xs text-[var(--kp-brand)] hover:text-[var(--kp-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]">编辑</Link>
-                      <button onClick={() => setDeleteId(workspace.id)}
-                        className="text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10">注销</button>
+                      {(() => {
+                        const hasSuper = wsAgents.some((a) => a.tier === "super");
+                        return (
+                          <span className={cn(hasSuper && "cursor-not-allowed")} title={hasSuper ? "该 Workspace 包含超级 Agent，不可注销" : undefined}>
+                            <button
+                              onClick={() => setDeleteId(workspace.id)}
+                              disabled={hasSuper}
+                              className="text-xs text-red-500 hover:text-red-600 transition-opacity px-2 py-0.5 rounded hover:bg-red-500/10 disabled:text-gray-400 disabled:hover:text-gray-400 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                            >
+                              注销
+                            </button>
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                   <p className="text-xs text-[var(--vp-c-text-3)] min-h-[30px] mb-4">{workspace.description || "暂无描述。"}</p>
