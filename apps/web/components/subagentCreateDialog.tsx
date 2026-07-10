@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSearchParams } from "next/navigation";
 import { Bot, Loader2, Sparkles, Plus } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -23,19 +24,51 @@ type CreateResult = {
   model?: string;
 };
 
+const ASYNC_TOOL_NAMES = new Set([
+  "native:run_async",
+  "native:async_task_run",
+  "native:async_task_status",
+  "native:async_task_wait",
+  "native:cancel_async",
+  "native:await_async",
+  "native:task_status",
+]);
+const SUBAGENT_FORBIDDEN_TOOLS = new Set([
+  "native:spawn_subagent",
+  "native:agent_create_sub",
+  "native:agent_update_sub",
+  "native:agent_delete_sub",
+  "native:agent_forward",
+  "native:agent_send_message",
+  "native:agent_report_back",
+]);
+
+function deriveSubagentTools(parentTools: string[] = []): string[] {
+  const base = parentTools.filter((t) => !SUBAGENT_FORBIDDEN_TOOLS.has(t));
+  for (const t of ASYNC_TOOL_NAMES) {
+    if (!base.includes(t)) base.push(t);
+  }
+  return base;
+}
+
 export function SubagentCreateDialog({
   open,
   parentSessionId,
   parentAgentId,
+  parentAgentTools,
   onClose,
   onCreated,
 }: {
   open: boolean;
   parentSessionId?: string;
   parentAgentId?: string;
+  parentAgentTools?: string[];
   onClose: () => void;
   onCreated?: (result: CreateResult) => void;
 }) {
+  const searchParams = useSearchParams();
+  // 容错：props 未传入时从 URL 取当前 sessionId，避免弹窗打开后 parentSessionId 为空导致提交无响应
+  const effectiveParentSessionId = parentSessionId || searchParams.get("sessionId") || undefined;
   const utils = trpc.useUtils();
   const agentsQuery = trpc.agent.list.useQuery({ page: 1, pageSize: 50 });
   const createAgentMut = trpc.agent.create.useMutation({
@@ -73,6 +106,8 @@ export function SubagentCreateDialog({
       }
       void utils.session.list.invalidate();
       void utils.session.listChildren.invalidate();
+      // 强制立即刷新子 Agent 列表，确保新卡片在面板中实时出现
+      void utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 });
       onCreated?.({
         subagentSessionId: data.subagentSessionId,
         status: data.status,
@@ -124,9 +159,9 @@ export function SubagentCreateDialog({
 
   const spawnWithAgent = (targetAgentId: string) => {
     const trimmed = task.trim();
-    if (!trimmed || !parentSessionId || !targetAgentId) return;
+    if (!trimmed || !effectiveParentSessionId || !targetAgentId) return;
     spawnMut.mutate({
-      parentSessionId,
+      parentSessionId: effectiveParentSessionId,
       agentId: targetAgentId,
       task: trimmed,
       model: model || undefined,
@@ -135,7 +170,7 @@ export function SubagentCreateDialog({
 
   const handleSubmit = () => {
     const trimmed = task.trim();
-    if (!trimmed || !parentSessionId) return;
+    if (!trimmed || !effectiveParentSessionId) return;
     if (mode === "existing") {
       if (!agentId) return;
       spawnWithAgent(agentId);
@@ -147,7 +182,8 @@ export function SubagentCreateDialog({
         description: description.trim() || undefined,
         model: model || undefined,
         systemPrompt: systemPrompt.trim(),
-        tools: [],
+        // 子 Agent 继承父 Agent 工具（剔除派生/管理类），并确保拥有异步任务工具。
+        tools: deriveSubagentTools(parentAgentTools),
         tier: "sub",
         parentId: parentAgentId,
         source: "ui:subagent_panel",
@@ -158,6 +194,7 @@ export function SubagentCreateDialog({
   const isPending = spawnMut.isPending || createAgentMut.isPending;
   const canSubmit =
     task.trim() &&
+    !!effectiveParentSessionId &&
     (mode === "existing" ? !!agentId : name.trim() && !isPending);
 
   const error = spawnMut.error?.message ?? createAgentMut.error?.message ?? null;
@@ -184,7 +221,7 @@ export function SubagentCreateDialog({
               <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
                 <Bot className="h-4 w-4" />
               </span>
-              <h2 className="text-sm font-bold text-[var(--kp-text-1)]">新建子 Agent 任务</h2>
+              <h2 className="text-sm font-bold text-[var(--kp-text-1)]">新建子 Agent 任务 [debug]</h2>
             </div>
 
             {/* 模式切换 */}

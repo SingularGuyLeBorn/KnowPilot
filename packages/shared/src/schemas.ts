@@ -166,6 +166,7 @@ export const agentChatSchema = z
     skillId: z.string().cuid().optional(),
     source: z.enum(["user", "super", "manager", "sub", "system"]).optional(),
     toolResults: z.record(z.unknown()).optional(),
+    clientMessageId: z.string().optional(),
     resumeAfter: z.number().int().min(0).optional(),
   })
   .refine(

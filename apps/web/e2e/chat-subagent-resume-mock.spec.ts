@@ -68,8 +68,8 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
       // 父 Agent 基于子 Agent 结果给出最终回复
       await expectAssistantAnswer(page, "父 Agent 已收到子 Agent 结果");
 
-      // 子 Agent 结果消息出现在父会话（source=sub）
-      await expect(page.getByText("子 Agent 慢速总结已完成")).toBeVisible({ timeout: 10_000 });
+      // 子 Agent 结果通过 assistant 总结展示，不再显示原始 source=sub 占位气泡。
+      await expectAssistantAnswer(page, "慢速总结已完成");
     } finally {
       const logPath = path.join(testInfo.outputDir, "browser-logs.txt");
       fs.mkdirSync(testInfo.outputDir, { recursive: true });
@@ -83,7 +83,8 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
     await sendChatMessage(page, "派子 Agent 慢速总结");
     await waitForStreamingComplete(page);
     await expectAssistantAnswer(page, "父 Agent 已收到子 Agent 结果");
-    await expect(page.getByText("子 Agent 慢速总结已完成")).toBeVisible({ timeout: 10_000 });
+    // 子 Agent 结果通过 assistant 总结展示，不再显示原始 source=sub 占位气泡。
+    await expectAssistantAnswer(page, "慢速总结已完成");
   });
 
   test("spawn_subagent waitForResult=true 时切到别的 session 再切回，父会话应恢复并完成", async ({ page }) => {
@@ -108,7 +109,8 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
     // 父会话应继续流式并完成
     await waitForStreamingComplete(page);
     await expectAssistantAnswer(page, "父 Agent 已收到子 Agent 结果");
-    await expect(page.getByText("子 Agent 慢速总结已完成")).toBeVisible({ timeout: 10_000 });
+    // 子 Agent 结果通过 assistant 总结展示，不再显示原始 source=sub 占位气泡。
+    await expectAssistantAnswer(page, "慢速总结已完成");
   });
 
   test("spawn_subagent waitForResult=true 时切换 Agent 再切回，父会话仍应在后台更新并完成", async ({ page }) => {
@@ -157,6 +159,7 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
 
     await waitForStreamingComplete(page);
     await expectAssistantAnswer(page, "父 Agent 已收到子 Agent 结果");
-    await expect(page.getByText("子 Agent 慢速总结已完成")).toBeVisible({ timeout: 10_000 });
+    // 子 Agent 结果通过 assistant 总结展示，不再显示原始 source=sub 占位气泡。
+    await expectAssistantAnswer(page, "慢速总结已完成");
   });
 });

@@ -2,10 +2,10 @@
 
 /**
  * 子会话面板 —— 列出当前父会话派生的 kind="subagent" 子会话入口。
+ * 数据由父组件通过 trpc.session.listChildren 查询提供，保证与乐观更新/轮询同源。
  */
 
 import { Loader2 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import type { ChatSession } from "@knowpilot/shared";
 
@@ -26,33 +26,17 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 export function SubsessionPanel({
-  parentSessionId,
+  items,
+  isLoading,
   activeSessionId,
   onSelectSession,
 }: {
-  parentSessionId: string | undefined;
+  items: ChatSession[];
+  isLoading?: boolean;
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
 }) {
-  // 与 SubagentCreateDialog 乐观更新使用同一 query key（pageSize 必须一致）
-  const query = trpc.session.listChildren.useQuery(
-    { parentSessionId: parentSessionId!, pageSize: 20 },
-    {
-      enabled: !!parentSessionId,
-      // 子 Agent 运行状态需要实时刷新，2s 短轮询
-      refetchInterval: 2000,
-    },
-  );
-
-  if (!parentSessionId) {
-    return (
-      <div className="px-4 py-6 text-center text-xs text-[var(--kp-text-3)]">
-        先选择一个会话，才能查看其子 Agent 会话。
-      </div>
-    );
-  }
-
-  if (query.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center py-6">
         <Loader2 className="h-4 w-4 animate-spin text-[var(--kp-text-3)]" />
@@ -60,11 +44,9 @@ export function SubsessionPanel({
     );
   }
 
-  const items = (query.data?.items ?? []) as ChatSession[];
-
   if (items.length === 0) {
     return (
-      <div className="px-4 py-6 text-center text-xs text-[var(--kp-text-3)]">
+      <div className="px-4 py-6 text-center text-xs text-[var(--kp-text-3)]" data-testid="subsession-empty">
         暂无子 Agent 会话
       </div>
     );

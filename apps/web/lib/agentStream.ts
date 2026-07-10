@@ -27,6 +27,8 @@ export interface AgentChatStreamInput {
   source?: "user" | "super" | "manager" | "sub" | "system";
   /** 额外元数据，会作为用户消息的 toolResults 持久化（如子 Agent 名字） */
   toolResults?: Record<string, unknown>;
+  /** 前端生成的用户消息 ID，用于后端持久化后去重/替换乐观气泡 */
+  clientMessageId?: string;
   /** 断线续传：从该事件 ID 之后开始接收 */
   resumeAfter?: number;
 }

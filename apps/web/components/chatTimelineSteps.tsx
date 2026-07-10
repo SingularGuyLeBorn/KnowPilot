@@ -72,7 +72,7 @@ const ContentStep = memo(function ContentStep({
   const content = step.content.trim();
   if (!content) return null;
   return (
-    <div data-testid="intermediate-content-step" className="px-1 py-1 text-sm text-[var(--kp-text-1)]">
+    <div data-testid="intermediate-content-step" className="w-full px-1 py-1 text-sm text-[var(--kp-text-1)]">
       <PostContent content={content} className="prose-sm max-w-none" />
     </div>
   );
@@ -162,11 +162,11 @@ export function ThinkingTimeline({
   if (!steps.length) return null;
 
   return (
-    <div className="mb-2 flex max-w-[88%] gap-0" data-testid="thinking-timeline">
+    <div className="mb-2 flex w-full max-w-[88%] gap-0" data-testid="thinking-timeline">
       <div className="relative flex w-6 shrink-0 justify-center pt-2">
         <div className="absolute top-2 bottom-2 w-0.5 bg-[var(--kp-brand-light)]/40" />
       </div>
-      <div className="min-w-0 flex-1 space-y-3">
+      <div className="min-w-0 w-full flex-1 space-y-3">
         {steps.map((step, i) => {
           const key =
             step.type === "tool"

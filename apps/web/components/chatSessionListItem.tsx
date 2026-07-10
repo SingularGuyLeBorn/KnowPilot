@@ -16,6 +16,7 @@ export const SessionListItem = memo(function SessionListItem({
   editing,
   renameDraft,
   onSelect,
+  onHover,
   onStartRename,
   onRenameDraftChange,
   onConfirmRename,
@@ -27,6 +28,7 @@ export const SessionListItem = memo(function SessionListItem({
   editing: boolean;
   renameDraft: string;
   onSelect: (id: string) => void;
+  onHover?: (id: string) => void;
   onStartRename: (id: string) => void;
   onRenameDraftChange: (v: string) => void;
   onConfirmRename: (id: string) => void;
@@ -79,6 +81,7 @@ export const SessionListItem = memo(function SessionListItem({
       <button
         type="button"
         onClick={() => onSelect(session.id)}
+        onMouseEnter={() => onHover?.(session.id)}
         className={cn(
           "min-w-0 flex-1 px-3 py-2 text-left text-sm transition",
           active ? "text-[var(--kp-brand-dark)]" : "text-[var(--kp-text-2)]",

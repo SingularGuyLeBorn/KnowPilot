@@ -39,6 +39,7 @@ interface WorkspaceTreeProps {
   /** R10：由父组件 Chat 传入已查的 Agent 列表，避免 WorkspaceTree 再各自发 agent.list(100) 重复查询 */
   agents: { id: string; name: string; tier: string; status: string; model: string; workspaceId: string | null }[];
   onSelectSession: (id: string) => void;
+  onHoverSession?: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   onNewChat: () => void;
   searchQuery: string;
@@ -48,6 +49,7 @@ export function WorkspaceTree({
   effectiveSessionId,
   agents,
   onSelectSession,
+  onHoverSession,
   onSelectAgent,
   onNewChat,
   searchQuery,
@@ -150,6 +152,7 @@ export function WorkspaceTree({
           onToggle={() => toggleAgent(agent.id)}
           effectiveSessionId={effectiveSessionId}
           onSelectSession={onSelectSession}
+          onHoverSession={onHoverSession}
           onSelectAgent={onSelectAgent}
           searchLower={searchLower}
           matchesSearch={matchesSearch}
@@ -186,6 +189,7 @@ export function WorkspaceTree({
                     onToggle={() => toggleAgent(agent.id)}
                     effectiveSessionId={effectiveSessionId}
                     onSelectSession={onSelectSession}
+                    onHoverSession={onHoverSession}
                     onSelectAgent={onSelectAgent}
                     searchLower={searchLower}
                     matchesSearch={matchesSearch}
@@ -240,6 +244,7 @@ function AgentNode({
   onToggle,
   effectiveSessionId,
   onSelectSession,
+  onHoverSession,
   onSelectAgent,
   searchLower,
 }: {
@@ -250,6 +255,7 @@ function AgentNode({
   onToggle: () => void;
   effectiveSessionId: string | null;
   onSelectSession: (id: string) => void;
+  onHoverSession?: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   searchLower: string;
   matchesSearch: (text: string) => boolean;
@@ -294,6 +300,7 @@ function AgentNode({
               key={s.id}
               type="button"
               onClick={() => onSelectSession(s.id)}
+              onMouseEnter={() => onHoverSession?.(s.id)}
               className={cn(
                 "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition",
                 effectiveSessionId === s.id

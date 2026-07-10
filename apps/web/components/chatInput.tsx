@@ -52,6 +52,8 @@ export const ChatInputArea = memo(function ChatInputArea({
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 发送防重入锁：ref 在同步阶段立即生效，避免 React state 批处理导致双击/双快捷键穿透
+  const sendLockRef = useRef(false);
 
   // UX #6：进入 / 切换会话后自动聚焦输入框，从 Agent 卡片「对话」直达可立即打字。
   // key={sessionId} 使切会话时组件重挂载，此 effect 每次挂载执行一次。
@@ -67,7 +69,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [pendingImages, setPendingImages] = useState<ChatQueueAttachment[]>([]);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
-  // 发送按钮防抖/防重入：避免快速双击或快捷键重复触发导致重复气泡
+  // 发送按钮防抖/防重入：用 ref 锁 + state 同步禁用按钮，避免 React state 批处理导致双击/双快捷键穿透
   const [isSending, setIsSending] = useState(false);
 
   // 上键历史恢复：按 sessionId 隔离，存 localStorage
@@ -173,9 +175,15 @@ export const ChatInputArea = memo(function ChatInputArea({
     };
   };
 
+  const releaseSendLock = () => {
+    sendLockRef.current = false;
+    setIsSending(false);
+  };
+
   const handleSend = async () => {
     const text = input.trim();
-    if ((!text && pendingImages.length === 0) || disabled || ocrLoading || isSending) return;
+    if ((!text && pendingImages.length === 0) || disabled || ocrLoading || sendLockRef.current) return;
+    sendLockRef.current = true;
     setIsSending(true);
 
     let attachments = pendingImages;
@@ -187,6 +195,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         attachments = await Promise.all(attachments.map(runOcrForAttachment));
       } catch (err: unknown) {
         setOcrError(err instanceof Error ? err.message : "OCR 识别失败");
+        releaseSendLock();
         return;
       } finally {
         setOcrLoading(false);
@@ -200,8 +209,9 @@ export const ChatInputArea = memo(function ChatInputArea({
     setPendingImages([]);
     setOcrError(null);
     setHistoryIdx(-1); // 退出历史浏览模式
-    // 短暂保持 isSending，防止快捷键/双击连发
-    setTimeout(() => setIsSending(false), 300);
+    // 同步释放 ref 锁；isSending 继续保留 300ms，让按钮保持禁用，防止连击/快捷键穿透。
+    sendLockRef.current = false;
+    setTimeout(releaseSendLock, 300);
   };
 
   const addImageFile = (file: File) => {

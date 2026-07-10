@@ -550,8 +550,12 @@ export async function chatAgentStream(
         content: prepared.messageText,
         attachments: prepared.attachments?.length ? prepared.attachments : undefined,
         toolResults: skillResolved.meta
-          ? { skill: skillResolved.meta.skill, ...(input.toolResults ?? {}) }
-          : (input.toolResults ?? undefined),
+          ? { skill: skillResolved.meta.skill, ...(input.toolResults ?? {}), ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}) }
+          : (input.toolResults
+            ? { ...input.toolResults, ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}) }
+            : input.clientMessageId
+              ? { clientMessageId: input.clientMessageId }
+              : undefined),
         source: input.source ?? "user",
       });
     }

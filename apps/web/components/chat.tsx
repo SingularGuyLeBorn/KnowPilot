@@ -46,7 +46,7 @@ import {
 } from "@/lib/chatMessageUtils";
 import { LucideIconByName } from "@/lib/icons";
 import { cn, groupBySessionDate } from "@/lib/utils";
-import { type Agent, type ChatSessionConfig, type ChatImageAttachment, type ChatMessage } from "@knowpilot/shared";
+import { type Agent, type ChatSession, type ChatSessionConfig, type ChatImageAttachment, type ChatMessage } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { PostContent } from "@/components/post/PostContent";
 import { ConfirmDialog } from "@/components/shared";
@@ -76,7 +76,7 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
 /* ─── 模块级类型与流式状态持久化 ─── */
 
-type OptimisticMsg = { id: string; content: string; attachments?: ChatImageAttachment[] };
+type OptimisticMsg = { id: string; content: string; attachments?: ChatImageAttachment[]; createdAt?: number };
 
 interface SessionStreamState {
   isStreaming: boolean;
@@ -227,6 +227,8 @@ export function ChatView() {
   const effectiveSessionIdRef = useRef<string | null>(null);
   // 页面刷新/关闭时阻止 runStream finally 把 isStreaming 清为 false，保证下次 mount 能续传
   const isPageUnloadingRef = useRef(false);
+  // 防止极短时间重复入队（如发送按钮/快捷键连发）
+  const lastEnqueueRef = useRef<{ text: string; at: number } | null>(null);
 
   const getStreamState = useCallback((sid: string): SessionStreamState => {
     let s = streamStatesRef.current.get(sid);
@@ -439,15 +441,12 @@ export function ChatView() {
       enabled: !!effectiveSessionId,
       getNextPageParam: (last) => last.nextCursor,
       refetchOnMount: false,
+      staleTime: 30_000,
     },
   );
-  // 切回某个 session 时强制刷新消息：确保子 Agent 在后台完成写入的消息能立刻出现，
-  // 同时避免 useInfiniteQuery 缓存导致切换会话时显示旧 session 的空白/过期消息。
-  useEffect(() => {
-    if (!effectiveSessionId) return;
-    void messagesInfinite.refetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSessionId]);
+  // 注：切换 session 时不再强制 refetch；useInfiniteQuery 会在 queryKey 变化时自动取新数据，
+  // 配合 placeholderData 保持上一会话消息避免空白闪烁。子 Agent 后台完成写入后通过
+  // asyncQueueQuery → consumeQueue → runStream 结束后的 invalidate 自动刷新消息列表。
   // pages 顺序为 [最近页, 更早页, ...]，展示需倒序拼接（更早在前 + 最近在后）成时间正序
   // cast ChatMessage[]：listForChat 返 MessageEntity(role:string)，运行时 role 为合法联合值，与 ChatMessage 同形
   const messages = useMemo(
@@ -474,9 +473,10 @@ export function ChatView() {
     ? (parentSession?.agentId ?? effectiveAgentId)
     : effectiveAgentId;
   const mainSessionId = isSubagentSession ? parentSessionId : effectiveSessionId;
+  // 与 SubagentCreateDialog 乐观更新使用同一 query key（pageSize 必须一致）
   const subSessionsQuery = trpc.session.listChildren.useQuery(
-    { parentSessionId: mainSessionId! },
-    { enabled: !!mainSessionId, refetchInterval: 3000 },
+    { parentSessionId: mainSessionId!, pageSize: 20 },
+    { enabled: !!mainSessionId, refetchInterval: 2000 },
   );
 
   const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
@@ -622,6 +622,7 @@ export function ChatView() {
       ...selectedAgentMeta,
       systemPrompt: full?.systemPrompt ?? "",
       model: full?.model ?? selectedAgentMeta.model,
+      tools: full?.tools ?? selectedAgentMeta.tools ?? [],
     } as Agent;
   }, [selectedAgentMeta, selectedAgentFull.data]);
   const modelOpt = getModelOption(chatConfig.model);
@@ -843,6 +844,7 @@ export function ChatView() {
             skillId: opts.skillId,
             source: opts.source,
             toolResults: opts.toolResults,
+            clientMessageId: opts.optimisticUser?.id,
             ...streamConfig,
           },
           {
@@ -1237,7 +1239,7 @@ export function ChatView() {
       ssSet(sid, "optimistic", (o) =>
         o.some((m) => m.id === optimisticId)
           ? o
-          : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments }],
+          : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments, createdAt: Date.now() }],
       );
     }
     void runStream({
@@ -1318,6 +1320,14 @@ export function ChatView() {
     ) => {
       const trimmed = text.trim();
       if ((!trimmed && !attachments?.length) || backendDown) return;
+      // 500ms 内相同文本（含空附件）视为重复发送，直接丢弃，避免重复气泡。
+      const now = Date.now();
+      const last = lastEnqueueRef.current;
+      const attachmentsKey = attachments?.map((a) => a.name).join("\n") ?? "";
+      if (last && now - last.at < 500 && last.text === `${trimmed}\n${attachmentsKey}`) {
+        return;
+      }
+      lastEnqueueRef.current = { text: `${trimmed}\n${attachmentsKey}`, at: now };
       // 输入框清空由 ChatInputArea 内部完成（value 状态已下放）
       const skillPrompt = skill
         ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
@@ -1519,6 +1529,18 @@ export function ChatView() {
     }
   }, [bulkMode, selectSession]);
 
+  // 悬停会话时预加载消息，减少点击切换时的闪烁
+  const handleSessionHover = useCallback(
+    (id: string) => {
+      if (!id || id === effectiveSessionId) return;
+      void utils.message.listForChat.prefetchInfinite(
+        { sessionId: id, limit: 50 },
+        { pages: 1, getNextPageParam: (last) => last.nextCursor },
+      );
+    },
+    [utils, effectiveSessionId],
+  );
+
   const handleStartRename = useCallback((id: string) => {
     setEditingSessionId(id);
     const s = sessionsQuery.data?.items.find((x) => x.id === id);
@@ -1657,7 +1679,10 @@ export function ChatView() {
     // source=sub（子 Agent 返回结果）也在右侧，模拟「子 Agent 发送」的消息。
     // 其他非 user 来源显示在左侧。
     const isParentAgentTask = isSubagentSession && msgSource === "super";
-    const isUserLike = msgSource === "user" || msgSource === "sub" || isParentAgentTask;
+    // 异步结果投递（source=sub + toolResults.subagentResult）不再显示原始结果占位用户气泡，
+    // 只保留下方 assistant 总结，避免先出现「[异步任务完成] xxx」的破窗体验。
+    const isAsyncResultDelivery = msgSource === "sub" && !!(msgToolResults as { subagentResult?: unknown } | undefined)?.subagentResult;
+    const isUserLike = msgSource === "user" || (msgSource === "sub" && !isAsyncResultDelivery) || isParentAgentTask;
     const isAgentMessage = !isUserLike;
     return (
       <div className="flex flex-col">
@@ -1700,6 +1725,7 @@ export function ChatView() {
               isAgentMessage
                 ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
                 : "bg-[var(--kp-brand)] text-white",
+              isAsyncResultDelivery && "hidden",
             )}>
               <MessageSourceLabel
                 source={msgSource}
@@ -1802,8 +1828,17 @@ export function ChatView() {
   // 统一虚拟列表数据：消息组 + 乐观消息 + 尾部流式块（仅 !streamTargetUserId 时）
   type ChatItem =
     | { kind: "group"; key: string; group: MessageGroup; index: number }
-    | { kind: "optimistic"; key: string; msg: { id: string; content: string; attachments?: ChatImageAttachment[] } }
+    | { kind: "optimistic"; key: string; msg: { id: string; content: string; attachments?: ChatImageAttachment[]; createdAt?: number } }
     | { kind: "live"; key: "live-trailing" };
+  // 后端已持久化的用户消息如果带有 clientMessageId，则隐藏对应的乐观气泡，避免重复显示。
+  const materializedClientIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of messages) {
+      const cid = (m as { toolResults?: { clientMessageId?: string } | null }).toolResults?.clientMessageId;
+      if (cid) set.add(cid);
+    }
+    return set;
+  }, [messages]);
   const chatItems = useMemo<ChatItem[]>(() => {
     const items: ChatItem[] = messageGroups.map((group, index) => ({
       kind: "group",
@@ -1812,13 +1847,14 @@ export function ChatView() {
       index,
     }));
     for (const msg of optimistic) {
+      if (materializedClientIds.has(msg.id)) continue;
       items.push({ kind: "optimistic", key: msg.id, msg });
     }
     if (showLiveStream && !streamTargetUserId) {
       items.push({ kind: "live", key: "live-trailing" });
     }
     return items;
-  }, [messageGroups, optimistic, showLiveStream, streamTargetUserId]);
+  }, [messageGroups, optimistic, showLiveStream, streamTargetUserId, materializedClientIds]);
 
   const handleNavScrollToIndex = useCallback((index: number) => {
     virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: "smooth" });
@@ -1881,7 +1917,8 @@ export function ChatView() {
               </button>
             </div>
             <SubsessionPanel
-              parentSessionId={mainSessionId ?? undefined}
+              items={(subSessionsQuery.data?.items ?? []) as ChatSession[]}
+              isLoading={subSessionsQuery.isLoading}
               activeSessionId={effectiveSessionId}
               onSelectSession={selectSession}
             />
@@ -1962,6 +1999,7 @@ export function ChatView() {
                   effectiveSessionId={effectiveSessionId}
                   agents={agentsQuery.data?.items ?? []}
                   onSelectSession={selectSession}
+                  onHoverSession={handleSessionHover}
                   onSelectAgent={(id) => {
                     selectAgent(id);
                   }}
@@ -2006,6 +2044,7 @@ export function ChatView() {
                               editing={editingSessionId === s.id}
                               renameDraft={renameDraft}
                               onSelect={handleSessionSelect}
+                              onHover={handleSessionHover}
                               onStartRename={handleStartRename}
                               onRenameDraftChange={setRenameDraft}
                               onConfirmRename={handleConfirmRename}
@@ -2043,6 +2082,7 @@ export function ChatView() {
     groupedSessions,
     bulkSelected,
     handleSessionSelect,
+    handleSessionHover,
     handleStartRename,
     setRenameDraft,
     handleConfirmRename,
@@ -2053,6 +2093,7 @@ export function ChatView() {
     agentsQuery.data?.items,
     selectAgent,
     startNewChat,
+    subSessionsQuery.isLoading,
   ]);
 
   return (
@@ -2116,9 +2157,14 @@ export function ChatView() {
           </button>
           <Bot className="h-5 w-5 shrink-0 text-[var(--kp-brand)]" />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold">
-              {sessionDetail?.title ?? "Agent 对话"}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-sm font-semibold">
+                {sessionDetail?.title ?? "Agent 对话"}
+              </h1>
+              {messagesInfinite.isFetching && !isStreaming && (
+                <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-text-3)]" />
+              )}
+            </div>
             <p className="truncate text-xs text-[var(--kp-text-3)]">
               {selectedAgent?.name ?? "—"} · {chatConfig.model}
               {queue.length > 0 && ` · 队列 ${queue.length}`}
@@ -2476,6 +2522,7 @@ export function ChatView() {
         open={showCreateSubagent}
         parentSessionId={mainSessionId ?? undefined}
         parentAgentId={mainAgentId}
+        parentAgentTools={selectedAgent?.tools}
         onClose={() => setShowCreateSubagent(false)}
         onCreated={() => setToast("子 Agent 任务已启动，结果完成后自动进入对话")}
       />
