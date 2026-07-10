@@ -390,4 +390,4 @@ pnpm --filter @knowpilot/server run sync-free-keys:watch  # 定时刷新
 
 ---
 
-> 最后更新：2026-07-10。L1–L5 已全部落地；REMEDIATION_PLAN.md 与性能优化计划 28 项已收尾；Async Task Queue Phase 1–5、子 Agent 会话恢复、深色模式主题切换已落地。lint 0 error + Vitest 256 passed + Playwright Mock E2E 全绿。
+> 最后更新：2026-07-10。L1–L5 已全部落地；REMEDIATION_PLAN.md 与性能优化计划 28 项已收尾；Async Task Queue Phase 1–5、子 Agent 会话恢复、深色模式主题切换、普通对话刷新恢复已落地。`pnpm validate` 全绿：lint 0 error + Vitest 256 passed + 真实 LLM E2E 46 passed / 1 skipped + Mock E2E 18 passed。
