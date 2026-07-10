@@ -313,6 +313,14 @@ const sessionRouter = router({
   create: publicProcedure.meta({ description: "创建聊天会话。", aiReadable: true }).input(createSessionSchema).mutation(({ ctx, input }) => ctx.services.session.create(input)),
   getById: publicProcedure.meta({ description: "获取会话详情（含消息列表）。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.session.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有聊天会话。", aiReadable: true }).input(listSessionsSchema).query(({ ctx, input }) => ctx.services.session.list(input)),
+  listRunning: publicProcedure
+    .meta({ description: "列出当前服务器上正在运行的 Agent 流式会话（用于前端断线/跨标签恢复）。", aiReadable: false })
+    .input(z.void().optional())
+    .output(z.object({ items: z.array(z.object({ sessionId: z.string(), lastEventId: z.number().int().min(0), runningSince: z.number().int() })) }))
+    .query(({ ctx }) => {
+      const hub = ctx.streamHub;
+      return { items: hub ? hub.listRunning() : [] };
+    }),
   listChildren: publicProcedure
     .meta({ description: "列出指定父会话的子代理会话（Subagent）。", aiReadable: true })
     .input(z.object({ parentSessionId: z.string().cuid(), pageSize: z.number().int().min(1).max(100).optional() }))

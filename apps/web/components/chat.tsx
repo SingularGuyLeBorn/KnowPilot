@@ -451,13 +451,11 @@ export function ChatView() {
       refetchOnMount: false,
     },
   );
-  // 切回某个 session 时强制刷新消息：确保子 Agent 在后台完成写入的消息能立刻出现
+  // 切回某个 session 时强制刷新消息：确保子 Agent 在后台完成写入的消息能立刻出现，
+  // 同时避免 useInfiniteQuery 缓存导致切换会话时显示旧 session 的空白/过期消息。
   useEffect(() => {
     if (!effectiveSessionId) return;
-    const st = streamStatesRef.current.get(effectiveSessionId);
-    if (st && (st.isStreaming || st.asyncOverlays.length > 0 || st.userQueue.length > 0)) {
-      void messagesInfinite.refetch();
-    }
+    void messagesInfinite.refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveSessionId]);
   // pages 顺序为 [最近页, 更早页, ...]，展示需倒序拼接（更早在前 + 最近在后）成时间正序
@@ -481,6 +479,12 @@ export function ChatView() {
     agentId || sessionDetail?.agentId || agentFromUrl || defaultAgentId;
 
   const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
+
+  // 轮询后端正在运行的 Agent 流式会话：即使 sessionStorage 被清空/跨标签，也能自动发现并续传
+  const runningSessionsQuery = trpc.session.listRunning.useQuery(undefined, {
+    enabled: !backendDown,
+    refetchInterval: 5000,
+  });
 
   const asyncQueueStatsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
     enabled: !backendDown,
@@ -1116,6 +1120,22 @@ export function ChatView() {
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
+
+  // 后端主动发现运行中会话并续传：覆盖 sessionStorage 丢失、跨标签、切换 Agent 等场景
+  useEffect(() => {
+    const items = runningSessionsQuery.data?.items;
+    if (!items || items.length === 0) return;
+    for (const item of items) {
+      const sid = item.sessionId;
+      if (!sid || sid === NEW_STREAM_KEY) continue;
+      const st = getStreamState(sid);
+      // 已存在 active stream（abort 非空）说明已自行恢复或在运行中，无需重复 resume
+      if (st.abort) continue;
+      queueMicrotask(() => {
+        runStreamRef.current({ targetSessionId: sid, resumeAfter: item.lastEventId, isResume: true });
+      });
+    }
+  }, [runningSessionsQuery.data, getStreamState]);
 
   const consumeQueue = useCallback(() => {
     const sid = effectiveSessionId ?? NEW_STREAM_KEY;

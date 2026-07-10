@@ -14,6 +14,7 @@ export function createTrpcInvoker(ctx: Partial<Context> & { services: Context["s
       services: ctx.services,
       eventBus: ctx.eventBus!,
       config,
+      streamHub: ctx.streamHub ?? null,
       req: ctx.req ?? ({ headers: {} } as Context["req"]),
       res: ctx.res ?? ({} as Context["res"]),
     } satisfies Context;

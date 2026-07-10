@@ -8,6 +8,7 @@ import {
   waitForStreamingComplete,
   expectToolPill,
   expectAssistantAnswer,
+  selectAssistantAgent,
 } from "./helpers/mockChatFixture";
 
 test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
@@ -29,6 +30,7 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
 
     try {
       await waitForChatReady(page);
+      await selectAssistantAgent(page);
 
       await page.evaluate(() => {
         sessionStorage.setItem("kp:test", "hello");
@@ -77,6 +79,7 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
 
   test("spawn_subagent waitForResult=true 不刷新也应正常完成", async ({ page }) => {
     await waitForChatReady(page);
+    await selectAssistantAgent(page);
     await sendChatMessage(page, "派子 Agent 慢速总结");
     await waitForStreamingComplete(page);
     await expectAssistantAnswer(page, "父 Agent 已收到子 Agent 结果");
@@ -85,6 +88,7 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
 
   test("spawn_subagent waitForResult=true 时切到别的 session 再切回，父会话应恢复并完成", async ({ page }) => {
     await waitForChatReady(page);
+    await selectAssistantAgent(page);
 
     // 父会话开始派生子 Agent
     await sendChatMessage(page, "派子 Agent 慢速总结");
@@ -109,6 +113,7 @@ test.describe("Subagent Mock — 刷新后父会话流式恢复", () => {
 
   test("spawn_subagent waitForResult=true 时切换 Agent 再切回，父会话仍应在后台更新并完成", async ({ page }) => {
     await waitForChatReady(page);
+    await selectAssistantAgent(page);
 
     // 父会话开始派生子 Agent
     await sendChatMessage(page, "派子 Agent 慢速总结");

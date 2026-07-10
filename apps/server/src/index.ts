@@ -22,7 +22,7 @@ import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
 import { syncSearchEnvFromConfig } from "./infra/nativeTools.js";
 import { getServerCapabilities, getCachedEnrichedServerCapabilities } from "./infra/capabilities.js";
 import { handleAgentChatStream, handleAgentChatStop } from "./infra/agentStream.js";
-import { SessionStreamHub } from "./infra/sessionStreamHub.js";
+import { SessionStreamHub, setStreamHub } from "./infra/sessionStreamHub.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
 import { ensureIntegrationCredentialsInjected } from "./infra/credentialVault.js";
@@ -135,6 +135,7 @@ app.use("/uploads", staticAuthMiddleware, express.static(uploadsDir));
 
 // Agent 流式聊天 SSE（不走 tRPC，避免 buffering）
 const streamHub = new SessionStreamHub();
+setStreamHub(streamHub);
 app.post(
   "/api/agent/chat/stream",
   handleAgentChatStream(services, config, createTrpcInvoker({ services }), streamHub),

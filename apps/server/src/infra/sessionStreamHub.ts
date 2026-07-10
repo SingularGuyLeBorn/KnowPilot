@@ -23,7 +23,14 @@ type RunState = {
   promise: Promise<void>;
   completed: boolean;
   nextId: number;
+  runningSince: number;
   cleanupTimer?: ReturnType<typeof setTimeout>;
+};
+
+export type RunningSessionInfo = {
+  sessionId: string;
+  lastEventId: number;
+  runningSince: number;
 };
 
 export class SessionStreamHub {
@@ -46,6 +53,16 @@ export class SessionStreamHub {
       running: !!run && !run.completed,
       lastEventId: run?.nextId ?? 0,
     };
+  }
+
+  listRunning(): RunningSessionInfo[] {
+    const result: RunningSessionInfo[] = [];
+    for (const [sessionId, run] of this.runs) {
+      if (!run.completed) {
+        result.push({ sessionId, lastEventId: run.nextId, runningSince: run.runningSince });
+      }
+    }
+    return result;
   }
 
   /**
@@ -71,6 +88,7 @@ export class SessionStreamHub {
       promise: Promise.resolve(),
       completed: false,
       nextId: 1,
+      runningSince: Date.now(),
     };
     this.runs.set(sessionId, state);
 
@@ -180,4 +198,14 @@ export class SessionStreamHub {
       this.runs.delete(sessionId);
     }
   }
+}
+
+let globalStreamHub: SessionStreamHub | null = null;
+
+export function setStreamHub(hub: SessionStreamHub): void {
+  globalStreamHub = hub;
+}
+
+export function getStreamHub(): SessionStreamHub | null {
+  return globalStreamHub;
 }

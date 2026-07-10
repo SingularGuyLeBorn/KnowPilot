@@ -930,7 +930,8 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     return `---
 name: "${entity.name.replace(/"/g, '\\"')}"
 description: ${entity.description ? `"${entity.description.replace(/"/g, '\\"')}"` : "null"}
-model: "${entity.model}"${toolsYaml}
+model: "${entity.model}"
+tier: "${entity.tier}"${toolsYaml}
 source: ${entity.source ? `"${entity.source.replace(/"/g, '\\"')}"` : "null"}
 ---
 ${entity.systemPrompt}

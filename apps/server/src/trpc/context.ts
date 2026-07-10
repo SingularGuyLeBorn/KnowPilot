@@ -11,6 +11,7 @@ import { getEventBus, type AppEventBus } from "../infra/eventBus.js";
 import { getAppConfig, type AppConfig } from "../infra/config.js";
 import { getServiceContainer, type ServiceContainer } from "../infra/serviceContainer.js";
 import { ensureIntegrationCredentialsInjected } from "../infra/credentialVault.js";
+import { getStreamHub, type SessionStreamHub } from "../infra/sessionStreamHub.js";
 import type { Request, Response } from "express";
 
 export async function createContext({ req, res }: CreateExpressContextOptions): Promise<Context> {
@@ -20,11 +21,14 @@ export async function createContext({ req, res }: CreateExpressContextOptions): 
   await ensureIntegrationCredentialsInjected(config, prisma);
   const services = getServiceContainer(prisma, eventBus, config);
 
+  const streamHub = getStreamHub();
+
   return {
     prisma,
     services,
     eventBus,
     config,
+    streamHub,
     req,
     res,
   };
@@ -37,11 +41,14 @@ export async function createContextInner() {
   await ensureIntegrationCredentialsInjected(config, prisma);
   const services = getServiceContainer(prisma, eventBus, config);
 
+  const streamHub = getStreamHub();
+
   return {
     prisma,
     services,
     eventBus,
     config,
+    streamHub,
     req: undefined as unknown as Request,
     res: undefined as unknown as Response,
   };
@@ -52,6 +59,7 @@ export type Context = {
   services: ServiceContainer;
   eventBus: AppEventBus;
   config: AppConfig;
+  streamHub: SessionStreamHub | null;
   req: Request;
   res: Response;
 };

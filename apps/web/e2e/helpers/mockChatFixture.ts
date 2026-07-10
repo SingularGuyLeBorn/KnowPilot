@@ -44,3 +44,16 @@ export async function expectAssistantAnswer(page: Page, text: string): Promise<v
   const last = await (await import("./realChatFixture")).lastAssistantText(page);
   expect(last).toContain(text);
 }
+
+/** 确保当前选中的是默认 assistant Agent（manager 层级，拥有 spawn_subagent 等权限）。 */
+export async function selectAssistantAgent(page: Page): Promise<void> {
+  const selector = page.getByTestId("agent-tree-select");
+  const current = (await selector.textContent())?.trim() ?? "";
+  if (/assistant|默认智能助手/.test(current)) return;
+  await selector.click();
+  const menu = page.getByTestId("agent-tree-select-menu");
+  await menu.waitFor({ state: "visible", timeout: 10_000 });
+  const option = menu.locator("button[role='option']").filter({ hasText: /assistant|默认智能助手/ }).first();
+  await option.click();
+  await expect(selector).toContainText(/assistant|默认智能助手/, { timeout: 5000 });
+}
