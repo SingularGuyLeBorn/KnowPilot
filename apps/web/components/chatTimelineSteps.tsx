@@ -7,7 +7,7 @@
  */
 
 import { memo, useMemo, useState } from "react";
-import { ChevronRight, Loader2, Sparkles, Wrench } from "lucide-react";
+import { Check, ChevronRight, Clock, Loader2, Sparkles, Wrench, X } from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
 import { cn } from "@/lib/utils";
 import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils";
@@ -152,6 +152,53 @@ const ToolStep = memo(function ToolStep({
   );
 });
 
+const ProgressStep = memo(function ProgressStep({
+  step,
+  isLive = false,
+}: {
+  step: Extract<TimelineStep, { type: "progress" }>;
+  isLive?: boolean;
+}) {
+  const status = step.status;
+  const icon =
+    status === "failed" ? (
+      <X className="h-3.5 w-3.5 shrink-0 text-red-500" />
+    ) : status === "done" ? (
+      <Check className="h-3.5 w-3.5 shrink-0 text-green-500" />
+    ) : status === "queued" ? (
+      <Clock className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+    ) : (
+      <Loader2 className={cn("h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]", isLive && "animate-spin")} />
+    );
+  return (
+    <div
+      data-testid="async-progress-step"
+      className={cn(
+        "w-full overflow-hidden rounded-xl border px-3 py-2 text-[11px] shadow-sm transition-colors",
+        status === "failed"
+          ? "border-red-200 bg-red-50"
+          : status === "done"
+            ? "border-green-200 bg-green-50"
+            : "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30",
+      )}
+    >
+      <div className="flex items-center gap-2 font-medium text-[var(--kp-text-2)]">
+        {icon}
+        <span className="min-w-0 truncate">{step.label}</span>
+        <span className="ml-auto shrink-0 text-[10px] text-[var(--kp-text-3)]">
+          {status === "queued" && "排队中"}
+          {status === "running" && "运行中"}
+          {status === "done" && "已完成"}
+          {status === "failed" && "失败"}
+        </span>
+      </div>
+      {step.content && (
+        <p className="mt-1 line-clamp-2 text-[10px] text-[var(--kp-text-3)]">{step.content}</p>
+      )}
+    </div>
+  );
+});
+
 export function ThinkingTimeline({
   steps,
   isLive = false,
@@ -171,9 +218,11 @@ export function ThinkingTimeline({
           const key =
             step.type === "tool"
               ? step.toolCallId
-              : step.type === "content"
-                ? `content-${step.round}-${i}`
-                : `thinking-${step.round}-${i}`;
+              : step.type === "progress"
+                ? `progress-${step.jobId}`
+                : step.type === "content"
+                  ? `content-${step.round}-${i}`
+                  : `thinking-${step.round}-${i}`;
           // 圆点仅给 thinking；content / tool 共享竖线但不画圆点（对标 Kimi Code）
           return (
             <div key={key} className="relative">
@@ -184,6 +233,8 @@ export function ThinkingTimeline({
                 <ThinkingStep step={step} isLive={isLive && i === steps.length - 1} />
               ) : step.type === "content" ? (
                 <ContentStep step={step} />
+              ) : step.type === "progress" ? (
+                <ProgressStep step={step} isLive={isLive} />
               ) : (
                 <ToolStep step={step} isLive={isLive} />
               )}

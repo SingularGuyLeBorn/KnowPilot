@@ -118,6 +118,14 @@ export type TimelineStep =
       hint?: string | null;
       round: number;
       status: "running" | "done";
+    }
+  | {
+      type: "progress";
+      jobId: string;
+      label: string;
+      content?: string;
+      round: number;
+      status: "queued" | "running" | "done" | "failed";
     };
 
 export { formatToolResultHint, formatToolTimingHint };
