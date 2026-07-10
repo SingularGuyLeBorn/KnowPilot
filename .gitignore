@@ -71,6 +71,16 @@ content/sources/smoke-source-*.json
 content/memories/*.md
 .dev-log/llm-budget.json
 .dev-log/oschina-sample.html
+.dev-log/project-summary.md
+.dev-log/test-write*.md
+.dev-log/mock-*.log
+.dev-log/validate-*.log
+
+# E2E / dev screenshots and markers
+dev-*.png
+e2e-setup-marker.txt
+undefined
+.test-content-e2e/
 
 # Python virtual env / cache
 experiments/.venv/
