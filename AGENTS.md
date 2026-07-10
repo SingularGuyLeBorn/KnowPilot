@@ -273,6 +273,7 @@ pnpm --filter @knowpilot/server test
 | `e2e/chat-tool-hint-real.spec.ts` / `chat-ocr-real.spec.ts` / `chat-queue-real.spec.ts` | 真实 LLM 工具/OCR/异步队列 |
 | `e2e/chat-mock.spec.ts` / `chat-thinking-mock.spec.ts` / `chat-tool-error-mock.spec.ts` | Mock E2E（全离线，MOCK_LLM/MCP/NATIVE_TOOLS） |
 | `e2e/chat-subagent-resume-mock.spec.ts` | 刷新 / 切 session / 切 Agent 后父会话流式恢复 |
+| `e2e/chat-resume-mock.spec.ts` | 普通对话刷新后最终结果不丢失 |
 | `e2e/async-task-mock.spec.ts` | Mock 异步任务结果自动插入对话 |
 | `e2e/theme-toggle-mock.spec.ts` | Navbar 主题切换 light/dark |
 | `e2e/post-trash.spec.ts` | 文章回收站删除/恢复（try/finally 强制清理） |
