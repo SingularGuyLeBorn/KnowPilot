@@ -20,6 +20,7 @@
   --kp-brand-1: #b8a090;
   --kp-brand-light: #c9b8b3;
   --kp-brand-dark: #a89080;
+  --kp-brand-deep: #6e5c4a;
   --kp-brand-rgb: 184, 160, 144;
   --kp-brand-soft: rgba(184, 160, 144, 0.12);
 
@@ -131,6 +132,7 @@ html.dark,
   --kp-brand-1: #d4c4be;
   --kp-brand-light: #e0d2cd;
   --kp-brand-dark: #a89080;
+  --kp-brand-deep: #7e6a55;
   --kp-brand-rgb: 201, 184, 179;
   --kp-brand-soft: rgba(201, 184, 179, 0.14);
 
@@ -264,11 +266,17 @@ html {
   -webkit-backdrop-filter: blur(14px);
 }
 
-.gradient-text {
-  background: linear-gradient(135deg, var(--kp-text-1) 0%, var(--kp-brand-1) 55%, var(--kp-brand-light) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+/* 实心卡片基底 —— 替代 glass-card 默认装饰。
+   finesse anti-cheap：glassmorphism 不作默认；实心表面 + 半透明边框 + 品牌色投影。
+   glass-card 仅保留给「叠在 imagery 之上」的 ghost 控件（如 Hero 次按钮）。 */
+.kp-card {
+  background: var(--kp-bg-alt);
+  border: 1px solid var(--kp-divider);
+  box-shadow: 0 1px 2px rgba(120, 104, 88, 0.05), 0 6px 20px rgba(120, 104, 88, 0.05);
+}
+html.dark .kp-card,
+.dark .kp-card {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 
 /* Markdown 渲染：代码块 / 行内代码 / 数学公式 —— 莫兰迪主题 */

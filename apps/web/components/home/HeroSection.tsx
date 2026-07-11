@@ -57,19 +57,19 @@ export function HeroSection({ postCount, categoryCount }: HeroSectionProps) {
         animate="visible"
       >
         <motion.div variants={itemVariants} className="mb-8 flex justify-center">
-          <span className="glass-card inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium tracking-wide text-[var(--kp-brand-dark)] shadow-sm">
-            <Sparkles className="h-3.5 w-3.5" />
-            KNOWLEDGE ENGINE v1.0
+          <span className="inline-flex items-center gap-2 rounded-full bg-[var(--kp-bg-mute)] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--kp-text-2)]">
+            <Sparkles className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
+            Knowledge Engine
           </span>
         </motion.div>
 
         <motion.h1
           variants={itemVariants}
-          className="mb-6 text-5xl font-bold leading-[1.05] tracking-tight md:text-7xl lg:text-8xl"
+          className="mb-6 text-5xl font-extrabold leading-[0.95] tracking-[-0.03em] text-[var(--kp-text-1)] md:text-7xl lg:text-8xl"
         >
-          <span className="gradient-text">KnowPilot</span>
+          KnowPilot
           <br />
-          <span className="text-[var(--kp-text-1)]">Agentic Knowledge OS</span>
+          <span className="text-[var(--kp-text-2)]">Agentic Knowledge OS</span>
         </motion.h1>
 
         <motion.p
@@ -87,7 +87,7 @@ export function HeroSection({ postCount, categoryCount }: HeroSectionProps) {
         >
           <Link
             href="/posts"
-            className="group inline-flex h-12 items-center gap-2 rounded-full bg-[var(--kp-brand)] px-7 text-sm font-semibold text-white shadow-lg shadow-[rgba(184,160,144,0.35)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[rgba(184,160,144,0.45)]"
+            className="group inline-flex h-12 items-center gap-2 rounded-full bg-[var(--kp-brand-deep)] px-7 text-sm font-semibold text-white shadow-lg shadow-[rgba(110,92,74,0.35)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[rgba(110,92,74,0.45)]"
           >
             浏览文章
             <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />

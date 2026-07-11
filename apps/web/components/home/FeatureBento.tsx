@@ -46,7 +46,7 @@ const features: {
 ];
 
 const cardBase =
-  "group relative overflow-hidden rounded-3xl glass-card p-6 transition-all duration-500 hover:-translate-y-1 hover:shadow-xl hover:shadow-[rgba(184,160,144,0.18)]";
+  "group relative overflow-hidden rounded-3xl kp-card p-6 transition-all duration-500 hover:-translate-y-1 hover:shadow-xl hover:shadow-[rgba(184,160,144,0.18)]";
 
 export function FeatureBento() {
   return (

@@ -31,7 +31,7 @@ export function TechMarquee({ tags = DEFAULT_TAGS, label = "Powered by modern st
       {displayTags.map((tag) => (
         <span
           key={tag}
-          className="flex-shrink-0 rounded-full glass-card px-5 py-2.5 text-sm font-medium text-[var(--kp-text-2)] transition-colors duration-300 hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-text-1)]"
+          className="flex-shrink-0 rounded-full kp-card px-5 py-2.5 text-sm font-medium text-[var(--kp-text-2)] transition-colors duration-300 hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-text-1)]"
         >
           {tag}
         </span>
@@ -51,7 +51,7 @@ export function TechMarquee({ tags = DEFAULT_TAGS, label = "Powered by modern st
         transition={{ duration: 0.8 }}
         className="mb-10 text-center"
       >
-        <p className="text-sm font-medium tracking-widest text-[var(--kp-text-3)] uppercase">
+        <p className="text-sm font-medium text-[var(--kp-text-3)]">
           {label}
         </p>
       </motion.div>

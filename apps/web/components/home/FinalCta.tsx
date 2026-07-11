@@ -13,7 +13,7 @@ export function FinalCta() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] as const }}
-          className="relative overflow-hidden rounded-[2.5rem] glass-card px-8 py-16 text-center md:px-16 md:py-24"
+          className="relative overflow-hidden rounded-[2.5rem] kp-card px-8 py-16 text-center md:px-16 md:py-24"
         >
           <div className="pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(184,160,144,0.22),transparent_70%)] blur-2xl" />
           <div className="pointer-events-none absolute -bottom-20 -right-20 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(184,160,144,0.18),transparent_70%)] blur-2xl" />
@@ -31,7 +31,7 @@ export function FinalCta() {
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link
                 href="/editor"
-                className="group inline-flex h-12 items-center gap-2 rounded-full bg-[var(--kp-brand)] px-8 text-sm font-semibold text-white shadow-lg shadow-[rgba(184,160,144,0.35)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[rgba(184,160,144,0.45)]"
+                className="group inline-flex h-12 items-center gap-2 rounded-full bg-[var(--kp-brand-deep)] px-8 text-sm font-semibold text-white shadow-lg shadow-[rgba(110,92,74,0.35)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[rgba(110,92,74,0.45)]"
               >
                 创建第一篇文章
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
