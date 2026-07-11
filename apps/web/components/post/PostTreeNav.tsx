@@ -220,7 +220,7 @@ function TreeNodeItem({
 
   const iconNode = hasChildren ? (
     isExpanded ? (
-      <FolderOpen className="h-4 w-4 shrink-0 text-[var(--kp-brand)]" />
+      <FolderOpen className="h-4 w-4 shrink-0 text-[var(--kp-brand-deep)]" />
     ) : (
       <FolderClosed className="h-4 w-4 shrink-0 text-[var(--kp-brand-light)]" />
     )

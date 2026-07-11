@@ -77,7 +77,7 @@ export function PostSidebar({ className }: PostSidebarProps) {
     >
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
         <div className="flex items-center gap-2">
-          <FolderOpen className="h-4 w-4 text-[var(--kp-brand)]" />
+          <FolderOpen className="h-4 w-4 text-[var(--kp-brand-deep)]" />
           <span className="text-sm font-semibold text-[var(--kp-text-1)]">文档目录</span>
         </div>
         <Link

@@ -25,7 +25,7 @@ export function ThemeToggle({ className }: { className?: string }) {
           aria-label={opt.label}
           className={cn(
             "flex h-7 w-7 items-center justify-center rounded-md text-[var(--kp-text-3)] transition",
-            theme === opt.value && "bg-[var(--kp-bg)] text-[var(--kp-brand)] shadow-sm",
+            theme === opt.value && "bg-[var(--kp-bg)] text-[var(--kp-brand-deep)] shadow-sm",
           )}
         >
           {opt.icon}

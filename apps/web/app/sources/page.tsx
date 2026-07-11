@@ -530,7 +530,7 @@ export default function SourcesPage() {
               >
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                       {source.type === "rss" ? <Rss className="h-5 w-5" /> : <Globe className="h-5 w-5" />}
                     </div>
                     <div className="min-w-0">
@@ -571,7 +571,7 @@ export default function SourcesPage() {
                   href={source.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mb-3 flex items-center gap-1 truncate text-[11px] text-[var(--kp-brand)] hover:underline"
+                  className="mb-3 flex items-center gap-1 truncate text-[11px] text-[var(--kp-brand-deep)] hover:underline"
                 >
                   <ExternalLink className="h-3 w-3 shrink-0" />
                   {source.url}
@@ -631,7 +631,7 @@ export default function SourcesPage() {
                             }
                           }}
                           disabled={fetchingId === source.id || fetchMutation.isPending}
-                          className="flex items-center gap-1 text-xs text-[var(--kp-brand)] hover:underline disabled:opacity-50"
+                          className="flex items-center gap-1 text-xs text-[var(--kp-brand-deep)] hover:underline disabled:opacity-50"
                         >
                           <RefreshCw className={cn("h-3 w-3", fetchingId === source.id && "animate-spin")} />
                           抓取
@@ -640,7 +640,7 @@ export default function SourcesPage() {
                       <button
                         type="button"
                         onClick={() => openEdit(source)}
-                        className="text-xs text-[var(--kp-brand)] hover:underline"
+                        className="text-xs text-[var(--kp-brand-deep)] hover:underline"
                       >
                         编辑
                       </button>

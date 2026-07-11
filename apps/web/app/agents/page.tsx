@@ -162,7 +162,7 @@ const AgentCard = memo(function AgentCard({
                 type="checkbox"
                 checked={selected}
                 onChange={handleToggle}
-                className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand)] focus:ring-[var(--kp-brand)]"
+                className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand-deep)] focus:ring-[var(--kp-brand)]"
               />
             </label>
           )}
@@ -498,7 +498,7 @@ export default function AgentsPage() {
             <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <HeartPulse className="h-4 w-4 text-[var(--kp-brand)]" />
+                  <HeartPulse className="h-4 w-4 text-[var(--kp-brand-deep)]" />
                   <span className="text-xs font-medium text-[var(--kp-text-1)]">心跳（定时自主运行）</span>
                 </div>
                 <button
@@ -719,7 +719,7 @@ export default function AgentsPage() {
                 type="checkbox"
                 checked={selectedIds.size === sortedItems.length && sortedItems.length > 0}
                 onChange={toggleSelectAll}
-                className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand)] focus:ring-[var(--kp-brand)]"
+                className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand-deep)] focus:ring-[var(--kp-brand)]"
               />
               全选本页
             </label>

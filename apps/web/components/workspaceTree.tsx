@@ -151,7 +151,7 @@ export function WorkspaceTree({
           <button
             type="button"
             onClick={onNewChat}
-            className="text-xs text-[var(--kp-brand)] hover:underline"
+            className="text-xs text-[var(--kp-brand-deep)] hover:underline"
           >
             新建对话
           </button>
@@ -250,7 +250,7 @@ export function WorkspaceTree({
             </div>
             {session && (
               <div className="flex items-center gap-1.5 pl-5 text-[11px] text-[var(--kp-text-2)]">
-                {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
+                {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand-deep)]" />}
                 <span className="min-w-0 flex-1 truncate">{session.autoName || session.title}</span>
                 <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
                   {formatRelativeTime(session.updatedAt)}
@@ -288,7 +288,7 @@ export function WorkspaceTree({
 function AgentIcon({ tier, className }: { tier: string; className?: string }) {
   if (tier === "super") return <Crown className={cn("text-amber-500", className)} />;
   if (tier === "manager") return <ShieldCheck className={cn("text-blue-500", className)} />;
-  return <Bot className={cn("text-[var(--kp-brand)]", className)} />;
+  return <Bot className={cn("text-[var(--kp-brand-deep)]", className)} />;
 }
 
 function SessionRow({
@@ -325,7 +325,7 @@ function SessionRow({
         onMouseLeave={onHoverEnd}
         className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
       >
-        {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
+        {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand-deep)]" />}
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
         <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
           {formatRelativeTime(session.updatedAt)}

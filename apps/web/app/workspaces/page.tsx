@@ -85,7 +85,7 @@ export default function WorkspacesPage() {
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-3">
                     <div className="flex items-center gap-2.5">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                         <Folder className="w-4 h-4" />
                       </div>
                       <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--kp-brand-dark)] transition-colors text-sm">
@@ -94,7 +94,7 @@ export default function WorkspacesPage() {
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link href={`/workspaces/edit/${workspace.id}`}
-                        className="text-xs text-[var(--kp-brand)] hover:text-[var(--kp-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]">编辑</Link>
+                        className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]">编辑</Link>
                       {(() => {
                         const hasSuper = wsAgents.some((a) => a.tier === "super");
                         return (
@@ -124,7 +124,7 @@ export default function WorkspacesPage() {
                     </div>
                   )}
                   <div className="flex items-center gap-2 px-2 py-1">
-                    <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+                    <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
                     <span className="text-[11px] text-[var(--kp-text-2)]">
                       {wsAgents.length > 0 ? (
                         <>
@@ -166,7 +166,7 @@ export default function WorkspacesPage() {
               <div><label className="mb-1 block text-xs text-[var(--kp-text-3)]">本地路径</label><Input value={createForm.path} onChange={(e) => setCreateForm({ ...createForm, path: e.target.value })} placeholder="D:/MyDocs" /></div>
               <div><label className="mb-1 block text-xs text-[var(--kp-text-3)]">描述</label><Input value={createForm.description} onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })} placeholder="可选" /></div>
               <label className="flex items-center gap-2 text-xs text-[var(--kp-text-2)]">
-                <input type="checkbox" checked={createForm.autoCreateManager} onChange={(e) => setCreateForm({ ...createForm, autoCreateManager: e.target.checked })} className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand)]" />
+                <input type="checkbox" checked={createForm.autoCreateManager} onChange={(e) => setCreateForm({ ...createForm, autoCreateManager: e.target.checked })} className="h-4 w-4 rounded border-[var(--kp-divider)] text-[var(--kp-brand-deep)]" />
                 自动创建管理 Agent（推荐）
               </label>
               {createError && <p className="text-xs text-red-600">{createError}</p>}

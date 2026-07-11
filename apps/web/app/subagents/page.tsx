@@ -141,7 +141,7 @@ export default function SubagentsPage() {
                     {s.parentSessionId ? (
                       <Link
                         href={`/chat?sessionId=${s.parentSessionId}`}
-                        className="text-[var(--kp-brand)] hover:underline"
+                        className="text-[var(--kp-brand-deep)] hover:underline"
                       >
                         {s.parentSessionId.slice(-6)}
                       </Link>

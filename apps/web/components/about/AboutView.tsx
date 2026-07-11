@@ -298,7 +298,7 @@ function ProfileCard({
       className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6"
     >
       <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
-        <Icon className="h-4 w-4 text-[var(--kp-brand)]" />
+        <Icon className="h-4 w-4 text-[var(--kp-brand-deep)]" />
         {title}
       </h2>
       <ul className="flex flex-wrap gap-2">

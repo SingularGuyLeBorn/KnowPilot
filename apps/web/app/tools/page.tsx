@@ -430,7 +430,7 @@ export default function ToolsPage() {
                 >
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                         <Icon className="h-5 w-5" />
                       </div>
                       <div>

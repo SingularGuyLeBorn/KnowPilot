@@ -752,7 +752,7 @@ export function NativeCapabilitiesPanel({
         {detailHref && (
           <Link
             href={detailHref}
-            className="text-[10px] font-medium text-[var(--kp-brand)] hover:underline"
+            className="text-[10px] font-medium text-[var(--kp-brand-deep)] hover:underline"
           >
             {detailLabel} →
           </Link>
