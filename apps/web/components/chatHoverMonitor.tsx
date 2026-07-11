@@ -163,7 +163,7 @@ export function ChatHoverMonitor({ sessionId, onMouseEnter, onMouseLeave, onClos
                   return (
                     <div key={group.userMessage.id} className="space-y-1.5">
                       <div className="flex justify-end">
-                        <div className="max-w-[85%] rounded-xl bg-[var(--kp-brand)] px-2.5 py-1.5 text-[11px] text-white">
+                        <div className="max-w-[85%] rounded-xl bg-[var(--kp-brand-deep)] px-2.5 py-1.5 text-[11px] text-white">
                           <p className="line-clamp-3 break-words">{userText}</p>
                         </div>
                       </div>

@@ -59,8 +59,8 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
         className={cn(
           "pointer-events-none absolute -top-2.5 z-10 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
           align === "right" ? "right-3" : "left-3",
-          // 与气泡底色（brand）同色系，不再用 teal/green
-          "border-[var(--kp-brand-light)] bg-[var(--kp-brand)] text-white",
+          // 与气泡底色（brand-deep）同色系，不再用 teal/green
+          "border-[var(--kp-brand-light)] bg-[var(--kp-brand-deep)] text-white",
         )}
       >
         <Bot className="h-3.5 w-3.5" />
@@ -71,7 +71,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   const base = SOURCE_LABEL_STYLES[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" };
   const isParent = (source === "super" || source === "manager") && isSubagentSession;
   const label = isParent ? "父 Agent" : subagentName && source === "sub" ? `${base.label} · ${subagentName}` : base.label;
-  const bg = isParent ? "bg-[var(--kp-brand)]" : base.bg;
+  const bg = isParent ? "bg-[var(--kp-brand-deep)]" : base.bg;
   const text = isParent ? "text-white" : base.text;
   const border = isParent ? "border-[var(--kp-brand-light)]" : base.border;
   return (

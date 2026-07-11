@@ -21,6 +21,7 @@
   --kp-brand-light: #c9b8b3;
   --kp-brand-dark: #a89080;
   --kp-brand-deep: #6e5c4a;
+  --kp-brand-darker: #5e4d3e;
   --kp-brand-rgb: 184, 160, 144;
   --kp-brand-soft: rgba(184, 160, 144, 0.12);
 
@@ -133,6 +134,7 @@ html.dark,
   --kp-brand-light: #e0d2cd;
   --kp-brand-dark: #a89080;
   --kp-brand-deep: #7e6a55;
+  --kp-brand-darker: #6e5c4a;
   --kp-brand-rgb: 201, 184, 179;
   --kp-brand-soft: rgba(201, 184, 179, 0.14);
 

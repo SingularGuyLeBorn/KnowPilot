@@ -2404,9 +2404,9 @@ export function ChatView() {
               isAgentMessage
                 ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
                 : isAsyncResultDelivery
-                  // 子 Agent 返回结果：比正常用户气泡（--kp-brand）略微深一点点（--kp-brand-dark）
-                  ? "bg-[var(--kp-brand-dark)] text-white"
-                  : "bg-[var(--kp-brand)] text-white",
+                  // 子 Agent 返回结果：比正常用户气泡（--kp-brand-deep）略微深一点点（--kp-brand-darker），均达 AA
+                  ? "bg-[var(--kp-brand-darker)] text-white"
+                  : "bg-[var(--kp-brand-deep)] text-white",
             )}>
               <MessageSourceLabel
                 source={msgSource}
@@ -2511,7 +2511,7 @@ export function ChatView() {
             ))}
           </div>
         )}
-        <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand)] px-4 py-3 text-sm text-white opacity-80">
+        <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand-deep)] px-4 py-3 text-sm text-white opacity-80">
           <p className="whitespace-pre-wrap">{msg.content}</p>
         </div>
       </div>
@@ -3025,7 +3025,7 @@ export function ChatView() {
             </span>
             <button
               type="button"
-              className="shrink-0 rounded-md bg-[var(--kp-brand)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90"
+              className="shrink-0 rounded-md bg-[var(--kp-brand-deep)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90"
               onClick={() => {
                 const id = rotateBanner?.newSessionId ?? sessionDetail?.rotatedToSessionId;
                 if (!id) return;
