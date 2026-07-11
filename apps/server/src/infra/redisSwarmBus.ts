@@ -53,7 +53,7 @@ export class RedisSwarmBus implements SwarmBus {
     fromTier: string,
     fromWorkspaceId: string | null,
     inToolRound: boolean,
-  ): Promise<{ success: boolean; error?: PermissionError; message?: string }> {
+  ): Promise<{ success: boolean; error?: PermissionError; message?: string; messageId?: string }> {
     // 查目标 Agent
     const toAgent = await this.prisma.agent.findUnique({ where: { id: msg.toAgentId } });
     if (!toAgent || toAgent.status === "deleted") {
@@ -119,7 +119,7 @@ export class RedisSwarmBus implements SwarmBus {
       },
     }).catch(() => {});
 
-    return { success: true, message: "消息已发送（Redis 队列）。" };
+    return { success: true, message: "消息已发送（Redis 队列）。", messageId: created?.id };
   }
 
   async poll(toAgentId: string): Promise<AgentMessageRecord[]> {

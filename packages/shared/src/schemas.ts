@@ -272,6 +272,8 @@ export const updateSessionSchema = z.object({
   // Swarm/Subagent
   status: sessionStatusSchema.optional(),
   taskDescription: z.string().max(2000).optional(),
+  kind: z.enum(["chat", "subagent"]).optional(),
+  parentSessionId: z.string().cuid().nullable().optional(),
 });
 
 export const listSessionsSchema = z.object({
@@ -335,6 +337,43 @@ export const listMessagesForChatSchema = z.object({
   /** cursor = 上一页最旧消息 id；省略时返最近 limit 条 */
   cursor: z.string().cuid().optional(),
   limit: z.number().int().min(1).max(100).optional(),
+});
+
+/* ═══════════════════════════════════════════════════════
+   SessionQueueItem（会话发送队列）
+   ═══════════════════════════════════════════════════════ */
+
+export const createSessionQueueItemSchema = z.object({
+  sessionId: z.string().cuid(),
+  kind: z.enum(["user", "superior"]),
+  content: z.string().min(1, "队列项内容不能为空"),
+  source: z.string().min(1),
+  sourceName: z.string().optional(),
+  agentMessageId: z.string().cuid().optional(),
+  attachments: z.any().optional(),
+  skillId: z.string().optional(),
+  skillPrompt: z.string().optional(),
+});
+
+export const updateSessionQueueItemSchema = z.object({
+  id: z.string().cuid(),
+  content: z.string().min(1).optional(),
+  order: z.number().int().optional(),
+  attachments: z.any().optional(),
+  skillId: z.string().optional(),
+  skillPrompt: z.string().optional(),
+});
+
+export const listSessionQueueItemsSchema = z.object({
+  sessionId: z.string().cuid(),
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(200).default(100),
+});
+
+export const reorderSessionQueueItemsSchema = z.object({
+  sessionId: z.string().cuid(),
+  /** 有序的 item id 数组，按新顺序排列 */
+  orderedIds: z.array(z.string().cuid()).min(1),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -894,6 +933,11 @@ export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;
 export type ListMessagesInput = z.infer<typeof listMessagesSchema>;
+
+export type CreateSessionQueueItemInput = z.infer<typeof createSessionQueueItemSchema>;
+export type UpdateSessionQueueItemInput = z.infer<typeof updateSessionQueueItemSchema>;
+export type ListSessionQueueItemsInput = z.infer<typeof listSessionQueueItemsSchema>;
+export type ReorderSessionQueueItemsInput = z.infer<typeof reorderSessionQueueItemsSchema>;
 
 export type CreateFileInput = z.infer<typeof createFileSchema>;
 export type UploadFileInput = z.infer<typeof uploadFileSchema>;

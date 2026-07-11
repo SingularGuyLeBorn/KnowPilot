@@ -25,14 +25,27 @@ export interface AgentToolSelection {
 
 /** 解析 tools 配置为结构化选择（含 UI/运行时隐式默认） */
 export function parseAgentToolSelection(tools: string[]): AgentToolSelection {
-  const native = tools.filter((t) => t.startsWith("native:")).map((t) => t.slice(7));
-  const skillWildcard = tools.includes("skill:*");
-  const skills = tools
-    .filter((t) => t.startsWith("skill:") && t !== "skill:*")
-    .map((t) => t.slice(6));
-  const mcp = tools.filter((t) => t.startsWith("mcp:")).map((t) => t.slice(4));
+  const nativeSet = new Set<string>();
+  const skills: string[] = [];
+  let skillWildcard = false;
+  const mcp: string[] = [];
 
-  const nativeSet = new Set(native);
+  for (const t of tools) {
+    if (t.startsWith("native:")) {
+      nativeSet.add(t.slice(7));
+    } else if (t === "skill:*") {
+      skillWildcard = true;
+    } else if (t.startsWith("skill:")) {
+      skills.push(t.slice(6));
+    } else if (t.startsWith("mcp:")) {
+      mcp.push(t.slice(4));
+    } else if (t.includes(":")) {
+      // 未知前缀忽略，避免误当成 native
+    } else if (t.trim()) {
+      // 裸名（如 sleep / agent_report_back）视为 native，避免物化成空数组后被运行时当成 native:all
+      nativeSet.add(t.trim());
+    }
+  }
 
   if (tools.length === 0) {
     for (const name of DEFAULT_AGENT_NATIVE) nativeSet.add(name);

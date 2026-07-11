@@ -32,6 +32,7 @@ export function kindLabel(item: ChatQueueItem): string {
     return "异步任务 · 执行中";
   }
   if (item.kind === "async-result") return "异步结果";
+  if (item.kind === "superior") return item.sourceName ? `上级 · ${item.sourceName}` : "上级 Agent";
   return "待发消息";
 }
 
@@ -487,10 +488,11 @@ interface AsyncTaskQueueListProps {
   items: ChatQueueItem[];
   onCancel?: (jobId: string) => void;
   onRetry?: (jobId: string) => void;
+  onTogglePin?: (jobId: string, pinned: boolean) => void;
   emptyText?: string;
 }
 
-export function AsyncTaskQueueList({ items, onCancel, onRetry, emptyText }: AsyncTaskQueueListProps) {
+export function AsyncTaskQueueList({ items, onCancel, onRetry, onTogglePin, emptyText }: AsyncTaskQueueListProps) {
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
@@ -517,6 +519,11 @@ export function AsyncTaskQueueList({ items, onCancel, onRetry, emptyText }: Asyn
             expanded
             onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
             onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
+            onTogglePin={
+              item.kind === "async-result" && item.jobId && onTogglePin
+                ? () => onTogglePin(item.jobId!, !item.pinned)
+                : undefined
+            }
           />
         ))}
       </div>

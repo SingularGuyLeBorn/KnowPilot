@@ -58,12 +58,14 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
   ],
 };
 
-/** 根据 tier 过滤工具列表：子 Agent 等低 tier 自动剔除无权限工具 */
+/** 根据 tier 过滤工具列表：子 Agent 等低 tier 自动剔除无权限工具。
+ *  支持 `native:xxx` 与裸名两种写法。 */
 export function getAllowedToolsForTier(tier: string, tools: string[]): string[] {
   return tools.filter((tool) => {
-    const requiredTier = getRequiredTierForTool(tool);
+    const bare = tool.startsWith("native:") ? tool.slice("native:".length) : tool;
+    const requiredTier = getRequiredTierForTool(bare);
     if (!requiredTier) return true;
-    return TIER_RANK[tier] >= TIER_RANK[requiredTier];
+    return (TIER_RANK[tier] ?? 0) >= (TIER_RANK[requiredTier] ?? 0);
   });
 }
 

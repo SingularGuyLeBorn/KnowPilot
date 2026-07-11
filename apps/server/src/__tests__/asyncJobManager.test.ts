@@ -6,6 +6,7 @@ import {
   listRunningAsyncJobs,
   listQueuedAsyncJobs,
   pullAsyncDeliveries,
+  markAsyncDeliveryConsumed,
   recoverStaleAsyncJobs,
   cleanupDeliveredAsyncJobs,
   cancelAsyncJob,
@@ -73,7 +74,7 @@ describe("asyncJobManager 持久化", () => {
     expect(jobs.some((j) => j.taskLabel === "运行中 A")).toBe(true);
   });
 
-  it("pullAsyncDeliveries 拉取 success 并标记 delivered", async () => {
+  it("pullAsyncDeliveries 拉取 success 但不 CLAIM；ack 后才标记 delivered", async () => {
     const task = await createAsyncTask({
       status: "success",
       taskLabel: "已完成 B",
@@ -85,8 +86,16 @@ describe("asyncJobManager 持久化", () => {
     expect(first[0].jobId).toBe(task.id);
     expect(first[0].asyncResult).toBe("结果文本");
 
+    // 推优先语义：pull 只读不 CLAIM，可重复拉取直到前端 ack
     const second = await pullAsyncDeliveries(sessionId);
-    expect(second).toHaveLength(0);
+    expect(second).toHaveLength(1);
+
+    const beforeAck = await prisma.task.findUnique({ where: { id: task.id } });
+    expect(beforeAck?.delivered).toBe(false);
+
+    await markAsyncDeliveryConsumed(task.id);
+    const third = await pullAsyncDeliveries(sessionId);
+    expect(third).toHaveLength(0);
 
     const row = await prisma.task.findUnique({ where: { id: task.id } });
     expect(row?.delivered).toBe(true);

@@ -73,4 +73,12 @@ describe("materializeAgentTools", () => {
     expect(DEFAULT_AGENT_NATIVE).toContain("session_clear");
     expect(DEFAULT_AGENT_NATIVE).toHaveLength(5);
   });
+
+  it("裸工具名视为 native，避免物化成空数组", () => {
+    expect(materializeAgentTools(["sleep", "agent_report_back", "web_search"])).toEqual([
+      "native:web_search",
+      "native:agent_report_back",
+      "native:sleep",
+    ]);
+  });
 });

@@ -21,7 +21,8 @@ import {
   type SearchEngineName,
 } from "./metablog/index.js";
 import { runShellRestricted, waitMs } from "./shellRunner.js";
-import { runAgentLoop, buildMemoryContext, buildSystemPromptWithHints, resolveAgent } from "./agentRuntime.js";
+import { runAgentLoop, buildMemoryContext, buildSystemPromptWithHints, resolveAgent, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
+import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import type { LlmMessage } from "./llmClient.js";
 import {
@@ -1236,14 +1237,18 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
     description:
-      "派生一个独立子 Agent（Subagent）执行长任务。默认不阻塞当前对话，结果进入发送队列最前。设 waitForResult=true 则阻塞等待子 Agent 完成，结果直接返回并写入父会话作为子 Agent 消息。适合：需要主 Agent 基于子 Agent 结果继续回复、长时间研究、并行子任务。",
+      "派生一个独立子 Agent（Subagent）执行长任务。默认不阻塞当前对话，结果进入发送队列最前。设 waitForResult=true 则阻塞等待子 Agent 完成，结果直接作为工具返回值传入上下文。适合：需要主 Agent 基于子 Agent 结果继续回复、长时间研究、并行子任务。",
     parameters: {
       type: "object",
       properties: {
         task: { type: "string", description: "子 Agent 要执行的任务描述（详细越好）" },
         label: { type: "string", description: "子 Agent 卡片/队列中显示的简短标签" },
-        agentId: { type: "string", description: "指定子 Agent 使用的 Agent ID（不填则继承当前 Agent）" },
+        agentId: { type: "string", description: "指定子 Agent 使用的 Agent ID（不填则新建）" },
         model: { type: "string", description: "指定子代理使用的模型 ID（不填则用 Agent 默认模型）" },
+        workspaceId: {
+          type: "string",
+          description: "目标 Workspace（仅超级 Agent 可跨 Workspace；默认落在当前父 Agent 所在 Workspace）",
+        },
         timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
         waitForResult: { type: "boolean", description: "true=阻塞等待子 Agent 完成并返回结果；false(默认)=立即返回，结果进队列" },
         shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
@@ -1445,7 +1450,8 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   },
   {
     name: "agent_create_sub",
-    description: "管理 Agent 在本 Workspace 内创建子 Agent（仅本 Workspace）。",
+    description:
+      "创建子 Agent。默认落在当前父 Agent 所在 Workspace；超级 Agent 可传 workspaceId 跨 Workspace 创建。",
     parameters: {
       type: "object",
       properties: {
@@ -1454,6 +1460,10 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         model: { type: "string" },
         systemPrompt: { type: "string" },
         tools: { type: "array", items: { type: "string" } },
+        workspaceId: {
+          type: "string",
+          description: "目标 Workspace（仅超级 Agent 可跨 Workspace；默认=父 Agent 所在 Workspace）",
+        },
         apiKey: { type: "string" },
       },
       required: ["name"],
@@ -2992,9 +3002,16 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
         systemPrompt: args.systemPrompt
           ? String(args.systemPrompt)
           : `你是上级 Agent 派出的子 Agent。请完成下发的任务，必要时调用工具，最终使用 agent_report_back 向上级汇报结果。\n\n任务：${task}`,
-        tools: Array.isArray(args.tools) ? (args.tools as string[]) : ["agent_report_back"],
+        // 默认执行类工具（native: 前缀）；再按 sub tier 裁剪，杜绝物化成空 → native:all
+        tools: getAllowedToolsForTier(
+          "sub",
+          Array.isArray(args.tools) && (args.tools as string[]).length > 0
+            ? (args.tools as string[])
+            : [...DEFAULT_SUBAGENT_TOOLS],
+        ),
         model: args.model ? String(args.model) : undefined,
         apiKey: args.apiKey as string | undefined,
+        workspaceId: args.workspaceId,
       },
       ctx,
     );
@@ -3025,18 +3042,59 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   });
   const subagentSessionId = mainSession?.id;
 
-  // 非阻塞：直接返回，结果后续由子 Agent report_back 或异步投递
+  // 非阻塞：在父会话创建 running 跟踪 Task，供异步列表展示 + report_back 完成后投递
   if (args.waitForResult !== true) {
+    let jobId: string | undefined;
+    if (ctx.sessionId && typeof ctx.services.task?.create === "function") {
+      try {
+        const taskLabel = subagentName || `子 Agent ${subagentId.slice(0, 6)}`;
+        const created = await ctx.services.task.create({
+          name: `[async] ${taskLabel}`,
+          type: "async_agent",
+          status: "running",
+          sessionId: ctx.sessionId,
+          startedAt: new Date(),
+          input: {
+            kind: "async_agent",
+            sessionId: ctx.sessionId,
+            task: task.slice(0, 500),
+            taskLabel,
+            agentSnapshot: {
+              id: subagentId,
+              model: ctx.agentSnapshot.model,
+              systemPrompt: "",
+              tools: [],
+              tier: "sub",
+              parentId: ctx.agentSnapshot.id,
+              workspaceId: ctx.agentSnapshot.workspaceId,
+              name: subagentName,
+            },
+            subagentSessionId,
+            sourceType: "subagent",
+          },
+        } as any);
+        if (created.success && created.data) {
+          jobId = (created.data as { id: string }).id;
+        }
+      } catch (err) {
+        console.warn("[spawn_subagent] 创建父会话跟踪 Task 失败:", err);
+      }
+    }
     return {
       success: true,
       agentId: subagentId,
       subagentName,
       subagentSessionId,
+      jobId,
+      status: jobId ? "running" : undefined,
       message: `子 Agent「${subagentName}」已派生并启动，任务完成后结果会投递回父会话。`,
     };
   }
 
-  // 阻塞等待：把子 Agent 最终回复写入父会话作为 user 消息（source=sub）
+  // 阻塞等待：子 Agent 最终回复作为本次 tool result 直接返回给父 Agent LLM，
+  // 不再写入父会话 ChatMessage（避免幻影 user 气泡 + 消息分组错位）。
+  // tool result 经 agentStream.ts 的 role:"tool" 消息进入 LLM 上下文，
+  // 并持久化到 assistant 消息的 toolCalls[*].result，刷新后历史重建不丢。
   const resultContent = (sendResult as { content?: string }).content ?? "";
   if (!resultContent) {
     return {
@@ -3048,31 +3106,13 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     };
   }
 
-  try {
-    await ctx.services.message.create({
-      sessionId: ctx.sessionId,
-      role: "user",
-      content: resultContent,
-      source: "sub",
-      toolResults: {
-        subagentResult: {
-          agentId: subagentId,
-          subagentSessionId,
-          subagentName,
-        },
-      },
-    });
-  } catch (err) {
-    console.warn(`[spawn_subagent] 写入父会话子 Agent 结果消息失败:`, err);
-  }
-
   return {
     success: true,
     agentId: subagentId,
     subagentName,
     subagentSessionId,
     content: resultContent,
-    hint: `子 Agent「${subagentName}」已完成任务，结果已写入父会话。请基于上述结果继续生成最终回复。`,
+    hint: `子 Agent「${subagentName}」已完成任务，结果已作为工具返回值传入上下文，请基于上述结果继续生成最终回复。`,
   };
 }
 
@@ -3291,23 +3331,72 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
           systemPrompt: agent.systemPrompt,
           agentId: targetAgentId,
           isMainSession: true,
+          kind: "subagent",
+          parentSessionId: ctx.sessionId ?? undefined,
+          status: "running",
+          taskDescription: input.slice(0, 200),
         });
         if (created.success && created.data) {
           mainSession = await ctx.prisma?.chatSession.findUnique({ where: { id: (created.data as { id: string }).id } }) ?? null;
+        }
+      } else {
+        // 已有主会话：补齐 kind/parentSessionId，便于前端识别子 Agent 会话与列表关联
+        const patch: Record<string, unknown> = { status: "running" };
+        if (mainSession.kind !== "subagent") patch.kind = "subagent";
+        if (!mainSession.parentSessionId && ctx.sessionId) patch.parentSessionId = ctx.sessionId;
+        if (Object.keys(patch).length > 0) {
+          try {
+            await ctx.services.session.update({ id: mainSession.id, ...patch } as any);
+            mainSession = { ...mainSession, ...patch } as typeof mainSession;
+          } catch {
+            /* 补齐失败不阻塞运行 */
+          }
         }
       }
       if (!mainSession) throw new Error("无法创建或找到目标 Agent 的主会话");
 
       const messageSource = (ctx.agentSnapshot?.tier ?? "super") as "super" | "manager" | "sub" | "user" | "system";
-      await ctx.services.message.create({
-        sessionId: mainSession.id,
-        role: "user",
-        content: input,
-        source: messageSource,
+      // 幂等：同内容父任务只写一次；若已有对应 assistant 则直接返回，避免双写/双跑
+      const dupUser = await ctx.prisma?.chatMessage.findFirst({
+        where: {
+          sessionId: mainSession.id,
+          role: "user",
+          content: input,
+        },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
       });
+      if (dupUser) {
+        const lastAssistant = await ctx.prisma?.chatMessage.findFirst({
+          where: {
+            sessionId: mainSession.id,
+            role: "assistant",
+            createdAt: { gte: dupUser.createdAt },
+          },
+          select: { content: true },
+          orderBy: { createdAt: "desc" },
+        });
+        if (lastAssistant) {
+          try {
+            await ctx.services.session.update({ id: mainSession.id, status: "completed" } as any);
+          } catch { /* ignore */ }
+          return { content: lastAssistant.content || "(无文本输出)", subagentSessionId: mainSession.id };
+        }
+      } else {
+        await ctx.services.message.create({
+          sessionId: mainSession.id,
+          role: "user",
+          content: input,
+          source: messageSource,
+        });
+      }
 
       const memoryHint = await buildMemoryContext(ctx.services, input);
-      const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint);
+      const tierTools = resolveToolsForAgentTier(agent.tier, agent.tools);
+      const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, tierTools, memoryHint, {
+        tier: agent.tier,
+        name: agent.name,
+      });
       const messages: LlmMessage[] = [
         { role: "system", content: systemPrompt },
         { role: "user", content: input },
@@ -3317,7 +3406,7 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
       const loop = await runAgentLoop({
         config: ctx.config,
         services: ctx.services,
-        agent: { model: agent.model, systemPrompt, tools: agent.tools },
+        agent: { model: agent.model, systemPrompt, tools: tierTools },
         messages,
         invokeTrpc,
         sessionId: mainSession.id,
@@ -3325,7 +3414,7 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
           id: agent.id,
           model: agent.model,
           systemPrompt,
-          tools: agent.tools,
+          tools: tierTools,
           tier: agent.tier,
           parentId: agent.parentId,
           workspaceId: agent.workspaceId,
@@ -3333,16 +3422,31 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
         runOrigin: "parent",
       });
 
+      const assistantContent =
+        (loop.content && loop.content.trim()) ||
+        loop.toolCalls
+          .filter((t) => t.kind === "content")
+          .map((t) => String(t.result ?? ""))
+          .join("\n")
+          .trim() ||
+        "(无文本输出)";
+
       await ctx.services.message.create({
         sessionId: mainSession.id,
         role: "assistant",
-        content: loop.content,
+        content: assistantContent,
         toolCalls: loop.toolCalls as any,
         tokenUsage: loop.tokenUsage,
         source: "sub",
       });
 
-      return { content: loop.content, subagentSessionId: mainSession.id };
+      try {
+        await ctx.services.session.update({ id: mainSession.id, status: "completed" } as any);
+      } catch {
+        /* ignore */
+      }
+
+      return { content: assistantContent, subagentSessionId: mainSession.id };
     } finally {
       agentRunLocks.delete(targetAgentId);
     }
@@ -3384,6 +3488,28 @@ async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeTo
     };
   }
 
+  // autoRun：只走 triggerAgentRun（写 ChatMessage + 执行），绝不先写 pending AgentMessage。
+  // 否则前端 pullAgentMessages → SessionQueueItem → consumeQueue → runStream
+  // 会与 triggerAgentRun 各写一条同内容 user 气泡，并可能二次跑 Agent。
+  if (autoRun && content.trim()) {
+    const runPromise = triggerAgentRun(toAgentId, content, ctx).catch((err: unknown) => {
+      console.warn(`[agent_send_message] 自动触发目标 Agent ${toAgentId} 运行失败:`, err);
+      return { content: "", subagentSessionId: "" };
+    });
+    if (waitForRun) {
+      const runResult = await runPromise;
+      return {
+        success: true,
+        message: "已派活并自动运行。",
+        content: runResult.content,
+        subagentSessionId: runResult.subagentSessionId,
+      };
+    }
+    void runPromise;
+    return { success: true, message: "已派活并自动运行。" };
+  }
+
+  // 非 autoRun：写入收件箱，由子会话 UI 队列消费后再 runStream
   const result = await bus.send(
     {
       fromAgentId: ctx.agentSnapshot?.id ?? "",
@@ -3398,68 +3524,175 @@ async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeTo
     ctx.inToolRound ?? false,
   );
 
-  if (result.success && autoRun && content.trim()) {
-    const runPromise = triggerAgentRun(toAgentId, content, ctx).catch((err: unknown) => {
-      console.warn(`[agent_send_message] 自动触发目标 Agent ${toAgentId} 运行失败:`, err);
-      return { content: "", subagentSessionId: "" };
-    });
-    if (waitForRun) {
-      const runResult = await runPromise;
-      return {
-        success: true,
-        message: result.message,
-        content: runResult.content,
-        subagentSessionId: runResult.subagentSessionId,
-      };
-    }
-    void runPromise;
-  }
-
   return result.success ? { success: true, message: result.message } : { error: `[${result.error?.code}] ${result.error?.reason}` };
 }
 
 async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  // 硬拦截：用户直接发起的对话不回传上级（只有上级下发的任务才需要回报，
-  // 而上级下发的任务结果经 Task 投递机制自动回传，无需调用本工具）
+  // 硬拦截：用户直接发起的对话不回传上级（只有上级下发的任务才需要回报）
   if (ctx.runOrigin === "user") {
     return {
       error: "[USER_ORIGIN_NO_REPORT] 这是用户直接发起的对话，回复只保留在当前会话内，不回传上级。只有上级 Agent 下发的任务才会将结果投递回上级。",
       permissionDenied: true,
     };
   }
-  // report_back = 向上级发消息。目标 = parentId
   if (!ctx.agentSnapshot?.parentId) {
     return { error: "当前 Agent 无上级（parentId 为空），无法 report_back。" };
   }
   const { getSwarmBus } = await import("./swarmBus.js");
   if (!ctx.prisma) throw new Error("agent_report_back 需要 prisma 上下文");
+  const content = String(args.content || "");
   const bus = getSwarmBus(ctx.prisma, ctx.services);
   const result = await bus.send(
     {
       fromAgentId: ctx.agentSnapshot.id,
       toAgentId: ctx.agentSnapshot.parentId,
-      content: String(args.content || ""),
+      content,
       messageType: (args.messageType as any) ?? "report",
       source: ctx.agentSnapshot.tier as any,
       taskRef: args.taskRef as string | undefined,
     },
     ctx.agentSnapshot?.tier ?? "sub",
     ctx.agentSnapshot?.workspaceId ?? null,
-    ctx.inToolRound ?? false, // report_back 应在正式回复中调用（inToolRound=false）
+    ctx.inToolRound ?? false,
   );
-  return result.success ? { success: true, message: "已向上级回报。" } : { error: `[${result.error?.code}] ${result.error?.reason}` };
+  if (!result.success) {
+    return { error: `[${result.error?.code}] ${result.error?.reason}` };
+  }
+
+  // 桥接：完成父会话跟踪 Task（spawn 时创建）或新建投递，供 pullAsyncQueue / 异步列表消费
+  try {
+    let parentSessionId: string | undefined;
+    if (ctx.sessionId) {
+      const subSession = await ctx.prisma.chatSession.findUnique({
+        where: { id: ctx.sessionId },
+        select: { parentSessionId: true },
+      });
+      parentSessionId = subSession?.parentSessionId ?? undefined;
+    }
+    if (!parentSessionId) {
+      const parentMain = await ctx.prisma.chatSession.findFirst({
+        where: {
+          agentId: ctx.agentSnapshot.parentId,
+          isMainSession: true,
+          status: { not: "deleted" },
+        },
+        select: { id: true },
+      });
+      parentSessionId = parentMain?.id;
+    }
+
+    if (parentSessionId) {
+      const snapshot = ctx.agentSnapshot!;
+      let fromName: string | undefined;
+      try {
+        const me = await ctx.services.agent.getById(snapshot.id);
+        fromName = (me as { name?: string })?.name;
+      } catch { /* ignore */ }
+      const taskLabel = fromName
+        ? `子 Agent 回报 · ${fromName}`
+        : `子 Agent 回报 · ${snapshot.id.slice(0, 6)}`;
+
+      // 优先完成 spawn 时挂在父会话上的 running 跟踪 Task
+      let jobId: string | undefined;
+      const candidates = await ctx.prisma.task.findMany({
+        where: {
+          sessionId: parentSessionId,
+          status: { in: ["running", "queued"] },
+          OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      });
+      const matched = candidates.find((row) => {
+        const input = row.input as { subagentSessionId?: string; agentSnapshot?: { id?: string } } | null;
+        if (!input || typeof input !== "object") return false;
+        if (ctx.sessionId && input.subagentSessionId === ctx.sessionId) return true;
+        return input.agentSnapshot?.id === snapshot.id;
+      });
+
+      if (matched) {
+        await ctx.services.task.update({
+          id: matched.id,
+          status: "success",
+          finishedAt: new Date(),
+          output: { asyncResult: content },
+        } as any);
+        jobId = matched.id;
+      } else {
+        const created = await ctx.services.task.create({
+          name: `[async] ${taskLabel}`,
+          type: "async_agent",
+          status: "success",
+          sessionId: parentSessionId,
+          finishedAt: new Date(),
+          delivered: false,
+          input: {
+            kind: "async_agent",
+            sessionId: parentSessionId,
+            task: content.slice(0, 200),
+            taskLabel,
+            agentSnapshot: {
+              id: snapshot.id,
+              model: snapshot.model,
+              systemPrompt: "",
+              tools: [],
+              tier: snapshot.tier,
+              parentId: snapshot.parentId,
+              workspaceId: snapshot.workspaceId,
+              name: fromName,
+            },
+            subagentSessionId: ctx.sessionId,
+            sourceType: "subagent",
+          },
+          output: { asyncResult: content },
+        } as any);
+        if (created.success && created.data) {
+          jobId = (created.data as { id: string }).id;
+        }
+      }
+
+      if (jobId) {
+        const { getStreamHub } = await import("./sessionStreamHub.js");
+        getStreamHub()?.pushExternalEvent(parentSessionId, {
+          type: "async_delivery",
+          sessionId: parentSessionId,
+          jobId,
+          status: "done",
+          taskLabel,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("[agent_report_back] 桥接父会话异步投递失败:", err);
+  }
+
+  return { success: true, message: "已向上级回报。" };
 }
 
 async function agentCreateSubTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  // 管理 Agent 在本 Workspace 内创建子 Agent
+  // 默认落在当前父 Agent 所在 Workspace；仅超级 Agent 可通过 workspaceId 跨 Workspace 创建
+  const callerTier = ctx.agentSnapshot?.tier ?? "sub";
+  let workspaceId = ctx.agentSnapshot?.workspaceId ?? undefined;
+  if (callerTier === "super" && args.workspaceId) {
+    workspaceId = String(args.workspaceId);
+  }
+  if (!workspaceId && ctx.prisma) {
+    const systemWs = await ctx.prisma.workspace.findFirst({
+      where: { isSystem: true, status: { not: "deleted" } },
+      select: { id: true },
+    });
+    workspaceId = systemWs?.id;
+  }
+  const rawTools = Array.isArray(args.tools) ? (args.tools as string[]) : [];
+  const tools = getAllowedToolsForTier("sub", resolveToolsForAgentTier("sub", rawTools));
   const created = await ctx.services.agent.create({
     name: String(args.name || ""),
     description: args.description ? String(args.description) : undefined,
     model: args.model ? String(args.model) : "deepseek-v4-flash",
     systemPrompt: args.systemPrompt ? String(args.systemPrompt) : "",
-    tools: Array.isArray(args.tools) ? (args.tools as string[]) : [],
+    tools,
     tier: "sub",
-    workspaceId: ctx.agentSnapshot?.workspaceId ?? undefined,
+    workspaceId,
     parentId: ctx.agentSnapshot?.id,
     source: "native_tool:agent_create_sub",
     apiKey: args.apiKey as string | undefined,

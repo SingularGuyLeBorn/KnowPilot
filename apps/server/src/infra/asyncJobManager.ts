@@ -42,6 +42,8 @@ export interface AsyncQueueDelivery {
   subagentName?: string;
   logs?: AsyncTaskLogEntry[];
   createdAt: number;
+  /** pinned 的结果不被自动 CLAIM，仅供前端展示 */
+  pinned?: boolean;
 }
 
 export interface AsyncRunningJob {
@@ -116,11 +118,13 @@ function toDelivery(task: {
   output: unknown;
   status: string;
   createdAt: Date;
+  pinned?: number | boolean;
 }): AsyncQueueDelivery | null {
   const input = parseAsyncInput(task.input);
   if (!input) return null;
   const output = parseAsyncOutput(task.output);
   const failed = task.status === "failed";
+  const pinned = task.pinned === true || task.pinned === 1;
   return {
     id: `del-${task.id}`,
     jobId: task.id,
@@ -133,7 +137,32 @@ function toDelivery(task: {
     subagentName: input.agentSnapshot?.name ?? undefined,
     logs: output.logs,
     createdAt: task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime(),
+    pinned,
   };
+}
+
+/** 推送 async_delivery 事件给有活跃 SSE 连接的父会话（推优先） */
+async function notifyAsyncDelivery(
+  sessionId: string,
+  jobId: string,
+  status: "done" | "failed",
+  taskLabel: string,
+): Promise<void> {
+  try {
+    const { getStreamHub } = await import("./sessionStreamHub.js");
+    const hub = getStreamHub();
+    if (hub) {
+      hub.pushExternalEvent(sessionId, {
+        type: "async_delivery",
+        sessionId,
+        jobId,
+        status,
+        taskLabel,
+      });
+    }
+  } catch (err) {
+    console.warn(`[asyncJobManager] notifyAsyncDelivery 失败:`, err);
+  }
 }
 
 /** 服务启动时：将遗留 async_agent running/queued 任务标为 failed，并同步其 subagent ChatSession 状态 */
@@ -185,7 +214,8 @@ export async function cleanupDeliveredAsyncJobs(olderThanMs = 7 * 24 * 60 * 60 *
   return count;
 }
 
-/** 拉取并标记已投递的异步结果（前端轮询）— 原子 CLAIM，防止重复投递 */
+/** 拉取未投递的异步结果（不 CLAIM）。消费时再 markAsyncDeliveryConsumed。
+ *  pinned 的结果也会返回，供前端展示，但 consumeQueue 会跳过。 */
 export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueueDelivery[]> {
   const rows = await prisma.$queryRaw<
     Array<{
@@ -194,15 +224,16 @@ export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueue
       output: unknown;
       status: string;
       createdAt: Date;
+      pinned: number;
     }>
   >`
-    UPDATE "Task"
-    SET delivered = 1, deliveredAt = datetime('now')
+    SELECT id, input, output, status, createdAt, pinned
+    FROM "Task"
     WHERE sessionId = ${sessionId}
       AND (name LIKE '[async]%' OR type = 'async_agent')
       AND status IN ('success', 'failed')
       AND delivered = 0
-    RETURNING id, input, output, status, createdAt
+    ORDER BY createdAt ASC
   `;
 
   const deliveries: AsyncQueueDelivery[] = [];
@@ -211,6 +242,14 @@ export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueue
     if (delivery) deliveries.push(delivery);
   }
   return deliveries;
+}
+
+/** 消费时标记异步结果已投递（CLAIM） */
+export async function markAsyncDeliveryConsumed(jobId: string): Promise<void> {
+  await prisma.task.updateMany({
+    where: { id: jobId, delivered: false },
+    data: { delivered: true, deliveredAt: new Date() },
+  });
 }
 
 export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunningJob[]> {
@@ -425,6 +464,10 @@ function buildAsyncExecute(
       await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch(() => {});
     }
     await broadcastShare("success", { asyncResult: resultText, tokenUsage });
+    const parentInput = parseAsyncInput((await services.task.getById(jobId))?.input);
+    if (parentInput?.sessionId) {
+      await notifyAsyncDelivery(parentInput.sessionId, jobId, "done", parentInput.taskLabel);
+    }
     emit?.({
       type: "done",
       sessionId: subagentSessionId!,
@@ -468,6 +511,10 @@ function buildAsyncExecute(
       }
     }
     await broadcastShare("failed", { error: errorText });
+    const parentInputFailed = parseAsyncInput((await services.task.getById(jobId))?.input);
+    if (parentInputFailed?.sessionId) {
+      await notifyAsyncDelivery(parentInputFailed.sessionId, jobId, "failed", parentInputFailed.taskLabel);
+    }
     emit?.({ type: "error", message: errorText, sessionId: subagentSessionId });
   };
 
@@ -505,6 +552,10 @@ function buildAsyncExecute(
     } as any);
     await syncSubStatus("completed");
     await broadcastShare("success", { asyncResult: resultText });
+    const parentInputTool = parseAsyncInput((await services.task.getById(jobId))?.input);
+    if (parentInputTool?.sessionId) {
+      await notifyAsyncDelivery(parentInputTool.sessionId, jobId, "done", parentInputTool.taskLabel);
+    }
   };
 
   return async (signal) => {
@@ -811,6 +862,7 @@ export async function startAsyncSleepTask(options: {
         finishedAt: new Date(),
         output: { asyncResult: `已等待 ${seconds} 秒（定时器到期）` } satisfies AsyncTaskOutput,
       } as any);
+      await notifyAsyncDelivery(options.sessionId, jobId, "done", taskLabel);
     },
   });
   const stats = orchestrator.getStats();

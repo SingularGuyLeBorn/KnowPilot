@@ -2,7 +2,7 @@
  * Chat 发送队列 — 类型与 LLM 正文拼装（参考 MetaBlog 异步任务 + 发送队列）
  */
 
-export type ChatQueueItemKind = "user" | "async-running" | "async-result";
+export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "superior";
 
 export interface ChatQueueAttachment {
   id: string;
@@ -40,6 +40,14 @@ export interface ChatQueueItem {
   /** 任务执行过程中的进度/日志 */
   logs?: Array<{ timestamp: number; level: "info" | "progress" | "error"; message: string }>;
   createdAt: number;
+  /** DB SessionQueueItem.id（持久化后回填；消费/删除/重排时用） */
+  dbId?: string;
+  /** 上级 Agent 消息镜像：关联的 AgentMessage id */
+  agentMessageId?: string;
+  /** 来源标识：user | superior Agent id */
+  source?: string;
+  /** 来源显示名（superior 专用） */
+  sourceName?: string;
 }
 
 export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = false): string {
@@ -89,6 +97,7 @@ export function mergeAsyncPollIntoQueue(
       subagentName?: string;
       logs?: ChatQueueItem["logs"];
       createdAt: number;
+      pinned?: boolean;
     }>;
   },
   opts?: { skipDeliveryJobIds?: ReadonlySet<string> },
@@ -110,7 +119,7 @@ export function mergeAsyncPollIntoQueue(
   const localFinishedOverlayIds = new Set<string>();
 
   let next = local.filter((item) => {
-    if (item.kind === "user") return true;
+    if (item.kind === "user" || item.kind === "superior") return true;
     if (item.kind === "async-running" && item.jobId && !pollJobIds.has(item.jobId)) return true;
     if (item.kind === "async-result" && item.jobId && item.removeAt && Date.now() < item.removeAt) {
       localFinishedOverlayIds.add(item.jobId);
@@ -169,6 +178,7 @@ export function mergeAsyncPollIntoQueue(
       subagentName: del.subagentName ?? prev?.subagentName,
       logs: del.logs ?? prev?.logs,
       createdAt: del.createdAt,
+      pinned: del.pinned ?? prev?.pinned,
     });
   }
 
@@ -187,7 +197,7 @@ export function extractLocalQueueFromMerged(
     ...(poll?.running ?? []).map((j) => j.jobId),
     ...(poll?.queued ?? []).map((j) => j.jobId),
   ]);
-  const userItems = merged.filter((i) => i.kind === "user");
+  const userItems = merged.filter((i) => i.kind === "user" || i.kind === "superior");
   const overlays: ChatQueueItem[] = [];
 
   for (const item of merged) {
@@ -222,7 +232,7 @@ export function splitQueueByKind(
     ...(poll?.running ?? []).map((j) => j.jobId),
     ...(poll?.queued ?? []).map((j) => j.jobId),
   ]);
-  const userQueue = merged.filter((i) => i.kind === "user");
+  const userQueue = merged.filter((i) => i.kind === "user" || i.kind === "superior");
   const asyncOverlays: ChatQueueItem[] = [];
 
   for (const item of merged) {
@@ -254,7 +264,7 @@ export function sortQueueItems(items: ChatQueueItem[]): ChatQueueItem[] {
 
 export function createUserQueueItem(
   text: string,
-  opts?: { skillId?: string; skillPrompt?: string; attachments?: ChatQueueAttachment[] },
+  opts?: { skillId?: string; skillPrompt?: string; attachments?: ChatQueueAttachment[]; dbId?: string },
 ): ChatQueueItem {
   return {
     id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -265,5 +275,43 @@ export function createUserQueueItem(
     skillPrompt: opts?.skillPrompt,
     attachments: opts?.attachments,
     createdAt: Date.now(),
+    dbId: opts?.dbId,
+    source: "user",
+  };
+}
+
+/** 把 DB SessionQueueItem 转成前端 ChatQueueItem */
+export function sessionQueueItemToChatItem(row: {
+  id: string;
+  kind: string;
+  content: string;
+  source: string;
+  sourceName?: string | null;
+  agentMessageId?: string | null;
+  order: number;
+  attachments?: unknown;
+  skillId?: string | null;
+  skillPrompt?: string | null;
+  createdAt: string | Date | number;
+}): ChatQueueItem {
+  const createdAt =
+    typeof row.createdAt === "number"
+      ? row.createdAt
+      : row.createdAt instanceof Date
+        ? row.createdAt.getTime()
+        : new Date(row.createdAt).getTime();
+  return {
+    id: row.kind === "superior" ? `sup-${row.id}` : `q-${row.id}`,
+    kind: row.kind === "superior" ? "superior" : "user",
+    text: row.content,
+    status: "pending",
+    skillId: row.skillId ?? undefined,
+    skillPrompt: row.skillPrompt ?? undefined,
+    attachments: Array.isArray(row.attachments) ? (row.attachments as ChatQueueAttachment[]) : undefined,
+    createdAt,
+    dbId: row.id,
+    agentMessageId: row.agentMessageId ?? undefined,
+    source: row.source,
+    sourceName: row.sourceName ?? undefined,
   };
 }

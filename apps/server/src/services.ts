@@ -39,6 +39,9 @@ import {
   type CreateMessageInput,
   type UpdateMessageInput,
   type ListMessagesInput,
+  type CreateSessionQueueItemInput,
+  type UpdateSessionQueueItemInput,
+  type ListSessionQueueItemsInput,
   type CreateFileInput,
   type UpdateFileInput,
   type ListFilesInput,
@@ -1452,6 +1455,136 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
     const formatted = items.map((i: any) => this.formatEntity(i));
     const nextCursor = formatted.length >= limit ? formatted[0]?.id : undefined;
     return { items: formatted, nextCursor };
+  }
+}
+
+export interface SessionQueueItemEntity {
+  id: string;
+  sessionId: string;
+  kind: string;
+  content: string;
+  source: string;
+  sourceName: string | null;
+  agentMessageId: string | null;
+  order: number;
+  attachments: any;
+  skillId: string | null;
+  skillPrompt: string | null;
+  createdAt: Date;
+}
+
+export class SessionQueueItemService extends BaseService<
+  CreateSessionQueueItemInput,
+  UpdateSessionQueueItemInput,
+  ListSessionQueueItemsInput,
+  SessionQueueItemEntity
+> {
+  readonly entityName = "sessionQueueItem";
+  protected get delegate() { return this.prisma.sessionQueueItem; }
+  protected formatEntity(raw: any): SessionQueueItemEntity { return raw; }
+  protected buildListWhere(input: ListSessionQueueItemsInput): any { return { sessionId: input.sessionId }; }
+  protected buildCreateData(input: CreateSessionQueueItemInput): any {
+    return {
+      sessionId: input.sessionId,
+      kind: input.kind,
+      content: input.content,
+      source: input.source,
+      sourceName: input.sourceName ?? null,
+      agentMessageId: input.agentMessageId ?? null,
+      attachments: input.attachments ?? null,
+      skillId: input.skillId ?? null,
+      skillPrompt: input.skillPrompt ?? null,
+    };
+  }
+  protected buildUpdateData(input: UpdateSessionQueueItemInput): any {
+    const { id: _id, ...data } = input;
+    return data;
+  }
+  protected override get defaultOrderBy(): string { return "order"; }
+  protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
+
+  /** 创建时自动赋 order = 当前最大 order + 10；superior 幂等（同 agentMessageId 不重复） */
+  override async create(input: CreateSessionQueueItemInput): Promise<OperationResult<SessionQueueItemEntity>> {
+    const start = Date.now();
+    try {
+      if (input.kind === "superior" && input.agentMessageId) {
+        const existing = await this.prisma.sessionQueueItem.findFirst({
+          where: { sessionId: input.sessionId, agentMessageId: input.agentMessageId },
+        });
+        if (existing) {
+          return success({
+            data: this.formatEntity(existing),
+            operation: "create",
+            entity: this.entityName,
+            durationMs: Date.now() - start,
+          });
+        }
+      }
+
+      const maxOrder = await this.prisma.sessionQueueItem.aggregate({
+        where: { sessionId: input.sessionId },
+        _max: { order: true },
+      });
+      const order = (maxOrder._max.order ?? -10) + 10;
+      const raw = await this.prisma.sessionQueueItem.create({
+        data: { ...this.buildCreateData(input), order },
+      });
+      const entity = this.formatEntity(raw);
+      await this.afterCreate(entity, input);
+      return success({
+        data: entity,
+        operation: "create",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
+    }
+  }
+
+  /** 按 session 列出全部队列项（按 order 升序），供 Chat UI 一次拉齐 */
+  async listBySession(sessionId: string): Promise<SessionQueueItemEntity[]> {
+    const rows = await this.prisma.sessionQueueItem.findMany({
+      where: { sessionId },
+      orderBy: { order: "asc" },
+    });
+    return rows.map((r) => this.formatEntity(r));
+  }
+
+  /** 消费一条队列项：删除 SessionQueueItem + 标记 AgentMessage consumed（如适用） */
+  async consume(id: string): Promise<{ success: boolean }> {
+    const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
+    if (!item) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "队列项不存在" });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.sessionQueueItem.delete({ where: { id } });
+      if (item.kind === "superior" && item.agentMessageId) {
+        try {
+          await tx.agentMessage.update({
+            where: { id: item.agentMessageId },
+            data: { status: "consumed", deliveredAt: new Date() },
+          });
+        } catch {
+          // AgentMessage 可能已被删除或已 consumed，忽略
+        }
+      }
+    });
+    return { success: true };
+  }
+
+  /** 批量重排序：按 orderedIds 顺序依次赋 order = index * 10 */
+  async reorder(sessionId: string, orderedIds: string[]): Promise<{ success: boolean }> {
+    await this.prisma.$transaction(async (tx) => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        await tx.sessionQueueItem.updateMany({
+          where: { id: orderedIds[i], sessionId },
+          data: { order: i * 10 },
+        });
+      }
+    });
+    return { success: true };
   }
 }
 

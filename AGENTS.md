@@ -98,7 +98,7 @@ KnowPilot/
 
 ### 实体矩阵（当前实现状态）
 
-详见 `docs/development/entities/entity-matrix.md`。关键事实：
+详见 `docs/development/README.md`。关键事实：
 
 - **Post**：L1 已封板（博客、编辑器、同步、删除、Command Palette、图片上传含粘贴）。
 - **Agent / Skill / McpServer / Memory / Prompt**：L2 后端 CRUD、内容双向写回、`db:sync`、管理页已完成；Agent ReAct + SSE 流式 `/chat`（三栏 UI）、`skill:*` 双路径、MCP 截断重连、auto-compact 已实现。
@@ -184,7 +184,7 @@ pnpm test         # 全仓库运行 Vitest
 
 ### 后端 API 设计（tRPC）
 
-规范来源：`docs/development/backend/api-design.md`、`docs/development/backend/error-handling.md`
+规范来源：`docs/development/README.md`
 
 - 每个实体 router 必备 `create`、`getById`、`list`、`update`、`delete`。
 - procedure 名使用 camelCase，动词统一。
@@ -204,11 +204,11 @@ pnpm test         # 全仓库运行 Vitest
 - 使用 `cn()` 工具（`clsx` + `tailwind-merge`）合并 Tailwind 类名，位于 `apps/web/lib/utils.ts`。
 - 颜色变量同时存在 `--kp-*`（项目自定义莫兰迪色）与 shadcn/ui 标准 CSS variables。
 - 动画偏好：Framer Motion `type: "spring", stiffness: 260, damping: 26`（Chat 等）；旧页面可用 180/20。
-- **图标**：统一 Lucide 或 `apps/web/lib/icons.tsx` 自绘 SVG；**禁止**用 emoji / 键盘可直接输入字符当 UI 图标。详见 `docs/development/frontend/ui-design.md`。
+- **图标**：统一 Lucide 或 `apps/web/lib/icons.tsx` 自绘 SVG；**禁止**用 emoji / 键盘可直接输入字符当 UI 图标。
 
 ### Markdown ↔ SQLite 同步约定
 
-来源：`MIGRATION_PLAN.md`、`docs/development/backend/entity-sync.md`
+来源：`MIGRATION_PLAN.md`、`docs/development/README.md`
 
 1. 文章源文件位于 `content/posts/{slug}.md`。
 2. Frontmatter 规范字段：
@@ -281,9 +281,8 @@ pnpm --filter @knowpilot/server test
 | `e2e/post-trash.spec.ts` | 文章回收站删除/恢复（try/finally 强制清理） |
 | `e2e/ui-components.spec.ts` | 通用组件冒烟 |
 
-Agent 工具链：`docs/development/backend/agent-tools.md`  
-Chat UX 对标：`docs/development/frontend/agent-ux-reference.md`  
-E2E 说明：`docs/development/frontend/e2e-testing.md`
+使用场景：`docs/development/scenarios.md`  
+并发与竞态防护：`docs/development/concurrency.md`
 
 ### Lint
 
@@ -298,7 +297,7 @@ pnpm lint
 
 ## Swarm 架构（三层 Agent 层级 + 心跳自主运行）
 
-KnowPilot 已落地完整的 Swarm 能力，设计决策详见 `docs/development/swarmplan.md`（48 项决策全部确认）。
+KnowPilot 已落地完整的 Swarm 能力，设计决策详见 `docs/development/design-decisions.md`。
 
 ### 三层 Agent 层级
 
@@ -379,13 +378,13 @@ stream:
 | 了解产品背景与快速开始 | `README.md` |
 | 了解迁移/重构原则与同步机制 | `MIGRATION_PLAN.md` |
 | 了解 L1-L5 阶段划分与当前状态 | `docs/development/README.md` |
-| Swarm 架构设计决策 | `docs/development/swarmplan.md` |
-| 设计新的后端接口 | `docs/development/backend/api-design.md`、`docs/development/backend/error-handling.md` |
-| 让 AI 调用某个实体 | `docs/development/backend/ai-callable-api.md` |
-| 查看实体实现状态矩阵 | `docs/development/entities/entity-matrix.md` |
+| Swarm 架构设计决策 | `docs/development/design-decisions.md` |
+| 项目模块 / 实体 / CRUD / 前端用法 | `docs/development/README.md` |
+| 具体使用场景（Agent / 子 Agent / 异步任务） | `docs/development/scenarios.md` |
+| 并发 / 阻塞 / 竞态条件防护 | `docs/development/concurrency.md` |
+| 未来功能规划 | `docs/development/future-features.md` |
 | 修改前端样式/组件 | `apps/web/components/`、`apps/web/app/globals.css` |
-| Chat / About / UX 对标 | `docs/development/frontend/agent-ux-reference.md`、`ui-design.md` |
-| 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts`、`docs/development/backend/agent-tools.md` |
+| 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts` |
 | 新增或修改 tRPC Router | `apps/server/src/router.ts`、`packages/shared/src/schemas.ts` |
 | 新增内容同步逻辑 | `apps/server/src/scripts/sync.ts`、`apps/server/src/scripts/sync/sync-*.ts` |
 
@@ -395,7 +394,7 @@ stream:
 
 当遇到需要用户决策的设计问题时，遵循以下流程：
 
-1. **AI 把问题写入文件**（如 `docs/development/swarmplan.md`），每条问题包含：
+1. **AI 把问题写入文件**（如 `docs/development/design-decisions.md`），每条问题包含：
    - 问题描述
    - 推荐的解决方式
    - `回答：` 占位行
@@ -407,4 +406,18 @@ stream:
 
 ---
 
-> 最后更新：2026-07-10。L1–L5 已全部落地；REMEDIATION_PLAN.md 与性能优化计划 28 项已收尾；Async Task Queue Phase 1–5、子 Agent 会话恢复、深色模式主题切换、普通对话刷新恢复已落地。`pnpm validate` 全绿：lint 0 error + Vitest 256 passed + 真实 LLM E2E 46 passed / 1 skipped + Mock E2E 18 passed。
+## 当前状态与近期变更（2026-07-10）
+
+- **重复超级 Agent 已清理**：文件 `content/agents/KnowPilot 超级 Agent-v5wh3v.md` 已删除，数据库副本已软删除；`sync-agents.ts` 已加入 `tier === "super"` 跳过逻辑。
+- **分支**：`feat/agent-message-user-queue` 承载父 Agent 消息进子 Agent 队列的改造。
+- **设计决策文档**：本轮讨论沉淀在 `docs/development/design-decisions.md` 中。
+- **docs 目录重构中**：已删除 `docs/deployment/`，保留 `docs/development/` 和 `docs/assets/`；其余文档将逐步重写为面向用户/开发者的完整指南。
+
+## 未来功能
+
+1. **Agent 自动开启新 Session**：当 Agent 判断当前会话交互轮数过多时，可生成总结文档，结束当前 session，启动同一 Agent 的新 session，并将总结作为第一条消息。若用户当前正查看旧 session，不自动切换，仅提示“新 session 已创建”。
+2. **自动压缩（Auto-Compact）**：当 token 或轮数超过阈值时，Agent 自动压缩历史上下文并继续对话（尚未实现）。
+
+---
+
+> 最后更新：2026-07-10。L1–L5 已全部落地；Swarm 父 Agent 消息投递设计决策进行中；docs 目录正在重构。

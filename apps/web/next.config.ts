@@ -23,6 +23,14 @@ const nextConfig: NextConfig = {
         destination: `${serverInternal}/api/agent/chat/stream`,
       },
       {
+        source: "/api/agent/async-stream",
+        destination: `${serverInternal}/api/agent/async-stream`,
+      },
+      {
+        source: "/api/agent/chat/stop",
+        destination: `${serverInternal}/api/agent/chat/stop`,
+      },
+      {
         source: "/api/posts/assets/:path*",
         destination: `${serverInternal}/api/posts/assets/:path*`,
       },

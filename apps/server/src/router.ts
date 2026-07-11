@@ -18,6 +18,7 @@ import {
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
   createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
+  createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
   createLogSchema, updateLogSchema, listLogsSchema,
   createGitRepoSchema, updateGitRepoSchema, listGitReposSchema, gitRepoPathSchema, gitLogSchema, gitDiffSchema, gitCommitSchema,
@@ -51,6 +52,7 @@ import { getCachedAnalyticsDashboard } from "./infra/analytics.js";
 import { loadAboutProfile } from "./infra/aboutProfile.js";
 import {
   pullAsyncDeliveries,
+  markAsyncDeliveryConsumed,
   listRunningAsyncJobs,
   cancelAsyncJob,
   retryAsyncJob,
@@ -154,6 +156,43 @@ const agentRouter = router({
   asyncQueueStats: publicProcedure
     .meta({ description: "获取异步任务队列实时统计。", aiReadable: false })
     .query(({ ctx }) => getAsyncQueueStats(ctx.config)),
+  toggleAsyncJobPinned: publicProcedure
+    .meta({ description: "切换异步任务的 pinned 状态。pinned 的结果不被自动消费。", aiReadable: false })
+    .input(z.object({ jobId: z.string().cuid(), pinned: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.task.update({
+        where: { id: input.jobId },
+        data: { pinned: input.pinned },
+      });
+      return { success: true };
+    }),
+  ackAsyncDelivery: publicProcedure
+    .meta({ description: "确认异步结果已消费（标记 delivered）。", aiReadable: false })
+    .input(z.object({ jobId: z.string().cuid() }))
+    .mutation(async ({ input }) => {
+      await markAsyncDeliveryConsumed(input.jobId);
+      return { success: true };
+    }),
+  listSessionQueueItems: publicProcedure
+    .meta({ description: "列出指定会话的发送队列项（user + superior 合并）。", aiReadable: false })
+    .input(z.object({ sessionId: z.string().cuid() }))
+    .query(({ ctx, input }) => ctx.services.sessionQueueItem.listBySession(input.sessionId)),
+  createSessionQueueItem: publicProcedure
+    .meta({ description: "创建一条会话发送队列项。", aiReadable: false })
+    .input(createSessionQueueItemSchema)
+    .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.create(input)),
+  consumeSessionQueueItem: publicProcedure
+    .meta({ description: "消费（删除）一条会话发送队列项，同时标记关联 AgentMessage 已消费。", aiReadable: false })
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.consume(input.id)),
+  reorderSessionQueueItems: publicProcedure
+    .meta({ description: "批量重排会话发送队列项顺序。", aiReadable: false })
+    .input(reorderSessionQueueItemsSchema)
+    .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.reorder(input.sessionId, input.orderedIds)),
+  deleteSessionQueueItem: publicProcedure
+    .meta({ description: "删除一条会话发送队列项（用户手动移除，不消费）。", aiReadable: false })
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.delete(input.id)),
   // Swarm：Agent 间消息轮询
   pullAgentMessages: publicProcedure
     .meta({ description: "拉取发给指定 Agent 的待投递消息（Swarm 通信）。", aiReadable: false })

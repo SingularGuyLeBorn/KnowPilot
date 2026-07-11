@@ -22,7 +22,7 @@ import {
 import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
-import { resolveAgent, buildMemoryContext, parseToolCall, buildSystemPromptWithHints } from "./agentRuntime.js";
+import { resolveAgent, buildMemoryContext, parseToolCall, buildSystemPromptWithHints, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
 import { maybeCompactMessages } from "./autoCompact.js";
 import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
 import { verifyAuthHeader, isAuthEnabled } from "./auth.js";
@@ -55,7 +55,8 @@ export type AgentStreamEvent =
       versionCount?: number;
       tokenUsage?: { prompt: number; completion: number; total: number };
     }
-  | { type: "error"; message: string; sessionId?: string; suggestion?: string };
+  | { type: "error"; message: string; sessionId?: string; suggestion?: string }
+  | { type: "async_delivery"; sessionId: string; jobId: string; status: "done" | "failed"; taskLabel: string };
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
@@ -151,12 +152,18 @@ export async function runAgentLoopStream(options: {
   provider: string;
   roundsUsed: number;
 }> {
-  const parsed = parseAgentTools(options.agent.tools);
+  const tierTools = resolveToolsForAgentTier(options.agentMeta?.tier, options.agent.tools);
+  const parsed = parseAgentTools(tierTools);
+  if (parsed.native === "all" && (options.agentMeta?.tier === "sub" || !options.agentMeta?.tier)) {
+    parsed.native = DEFAULT_SUBAGENT_TOOLS.map((t) => t.replace(/^native:/, ""));
+  }
   const registry = new Map<string, ToolRegistryEntry>();
   const toolSchemas = await buildAgentToolSchemas(options.services, parsed, registry);
   const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
     sessionId: options.sessionId,
-    agentSnapshot: options.agentMeta,
+    agentSnapshot: options.agentMeta
+      ? { ...options.agentMeta, tools: tierTools }
+      : options.agentMeta,
     // SSE 对话流默认由用户直接发起：禁止向上回传（agent_report_back 硬拦截）。
     // 上级下发的任务传 runOrigin="parent"，结果经 Task 投递回传。
     runOrigin: options.runOrigin ?? "user",
@@ -544,6 +551,47 @@ export async function chatAgentStream(
     }
 
     if (!prepared.skipUserCreate) {
+      const src = input.source ?? "user";
+      // 上级任务：若 triggerAgentRun 已写入同内容 user 消息，禁止再写第二条气泡
+      if ((src === "super" || src === "manager") && sessionId) {
+        const dup = await services.prisma.chatMessage.findFirst({
+          where: { sessionId, role: "user", content: prepared.messageText },
+          select: { id: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        });
+        if (dup) {
+          prepared.skipUserCreate = true;
+          const alreadyAssistant = await services.prisma.chatMessage.findFirst({
+            where: {
+              sessionId,
+              role: "assistant",
+              createdAt: { gte: dup.createdAt },
+            },
+            select: { id: true, content: true, toolCalls: true },
+            orderBy: { createdAt: "desc" },
+          });
+          if (alreadyAssistant) {
+            // 任务已被 autoRun 处理完：直接结束，避免二次跑 LLM
+            emit({
+              type: "done",
+              sessionId,
+              agentId: agent.id,
+              content: alreadyAssistant.content || "",
+              toolCalls: (alreadyAssistant.toolCalls as any) ?? [],
+              model: effectiveModel,
+              provider: config.llm.defaultProvider,
+              roundsUsed: 0,
+              assistantMessageId: alreadyAssistant.id,
+              versionIndex: 0,
+              versionCount: 1,
+            });
+            return;
+          }
+        }
+      }
+    }
+
+    if (!prepared.skipUserCreate) {
       await services.message.create({
         sessionId,
         role: "user",
@@ -567,7 +615,10 @@ export async function chatAgentStream(
 
     const memoryHint = await buildMemoryContext(services, prepared.messageText);
     const messages = buildLlmMessagesFromHistory(
-      buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint),
+      buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint, {
+        tier: (agent as { tier?: string }).tier,
+        name: (agent as { name?: string }).name,
+      }),
       historyForLlm,
       { modelId: effectiveModel },
     );

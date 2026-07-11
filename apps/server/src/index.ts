@@ -146,6 +146,44 @@ app.get(
 );
 app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub));
 
+// 异步任务推送 SSE（独立于 Agent 运行流，用于推优先的 async_delivery 事件）
+app.get("/api/agent/async-stream", (req, res) => {
+  const sessionId = String(req.query.sessionId || "");
+  if (!sessionId) {
+    res.status(400).json({ error: "缺少 sessionId" });
+    return;
+  }
+  // EventSource 无法设 Authorization header，允许 ?token= 兜底
+  const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+  const authHeader =
+    req.headers.authorization || (queryToken ? `Bearer ${queryToken}` : undefined);
+  if (isAuthEnabled(config) && !verifyAuthHeader(config, authHeader)) {
+    res.status(401).json({ error: "UNAUTHORIZED", message: "未授权" });
+    return;
+  }
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  const unsubscribe = streamHub.subscribeExternal(sessionId, (event) => {
+    if (!res.destroyed) {
+      res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    }
+  });
+
+  const heartbeat = setInterval(() => {
+    if (!res.destroyed) res.write(": keepalive\n\n");
+  }, 5000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+    if (!res.destroyed) res.end();
+  });
+});
+
 // tRPC 挂载
 app.use(
   "/api/trpc",

@@ -40,7 +40,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
 }) {
   if (!source || source === "user") return null;
   const base = SOURCE_LABEL_STYLES[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" };
-  const isParent = source === "super" && isSubagentSession;
+  const isParent = (source === "super" || source === "manager") && isSubagentSession;
   const label = isParent ? "父 Agent" : subagentName && source === "sub" ? `${base.label} · ${subagentName}` : base.label;
   const bg = isParent ? "bg-[var(--kp-brand)]" : base.bg;
   const text = isParent ? "text-white" : base.text;

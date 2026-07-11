@@ -18,6 +18,7 @@ import {
   MemoryService,
   SessionService,
   MessageService,
+  SessionQueueItemService,
   FileService,
   LogService,
   GitService,
@@ -41,6 +42,7 @@ export class ServiceContainer {
   readonly memory: MemoryService;
   readonly session: SessionService;
   readonly message: MessageService;
+  readonly sessionQueueItem: SessionQueueItemService;
   readonly file: FileService;
   readonly log: LogService;
   readonly git: GitService;
@@ -63,6 +65,7 @@ export class ServiceContainer {
     this.memory = new MemoryService(prisma, eventBus, config);
     this.session = new SessionService(prisma, eventBus, config);
     this.message = new MessageService(prisma, eventBus, config);
+    this.sessionQueueItem = new SessionQueueItemService(prisma, eventBus, config);
     this.file = new FileService(prisma, eventBus, config);
     this.log = new LogService(prisma, eventBus, config);
     this.git = new GitService(prisma, eventBus, config);

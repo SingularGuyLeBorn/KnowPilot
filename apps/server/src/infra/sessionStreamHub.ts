@@ -50,6 +50,8 @@ export class SessionStreamHub {
   private persistQueue: PersistItem[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+  /** 独立于 Agent 运行流的外部事件订阅者（如 async_delivery） */
+  private externalSubs = new Map<string, Set<(event: AgentStreamEvent) => void>>();
 
   constructor(private config: StreamConfig = { ringSize: 500, persist: true, eventTtlMs: 300_000, cleanupIntervalMs: 60_000 }) {
     if (this.config.persist && this.config.cleanupIntervalMs > 0) {
@@ -103,6 +105,52 @@ export class SessionStreamHub {
       }
     }
     return result;
+  }
+
+  /**
+   * 推送外部事件（非 Agent 运行产生的事件，如异步任务完成）。
+   * 若该 session 有活跃 Agent 流，走流的 subscribers；否则走 externalSubs。
+   */
+  pushExternalEvent(sessionId: string, event: AgentStreamEvent): void {
+    const run = this.runs.get(sessionId);
+    if (run && !run.completed) {
+      const buffered: BufferedEvent = { id: run.nextId++, event };
+      run.buffer.push(buffered);
+      if (run.buffer.length > this.config.ringSize) run.buffer.shift();
+      this.enqueuePersist(buffered, run.sessionId);
+      for (const sub of run.subscribers) {
+        try {
+          Promise.resolve(sub(buffered)).catch(() => {});
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+    const subs = this.externalSubs.get(sessionId);
+    if (subs) {
+      for (const sub of subs) {
+        try {
+          sub(event);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  /** 订阅外部事件（独立于 Agent 运行流）。返回 unsubscribe 函数。 */
+  subscribeExternal(sessionId: string, onEvent: (event: AgentStreamEvent) => void): () => void {
+    let subs = this.externalSubs.get(sessionId);
+    if (!subs) {
+      subs = new Set();
+      this.externalSubs.set(sessionId, subs);
+    }
+    subs.add(onEvent);
+    return () => {
+      subs!.delete(onEvent);
+      if (subs!.size === 0) this.externalSubs.delete(sessionId);
+    };
   }
 
   /**

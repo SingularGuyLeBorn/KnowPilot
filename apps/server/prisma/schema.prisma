@@ -112,6 +112,7 @@ model ChatSession {
   agent        Agent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
   messages     ChatMessage[]
   runs         Run[]
+  queueItems   SessionQueueItem[]
   // Swarm：父子会话层级，删父会话时 parentSessionId 置 null
   parent       ChatSession?  @relation("SessionChildren", fields: [parentSessionId], references: [id], onDelete: SetNull)
   children     ChatSession[] @relation("SessionChildren")
@@ -136,6 +137,35 @@ model ChatMessage {
   session      ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
+}
+
+/// 会话级发送队列项（用户消息 + 上级 Agent 消息镜像）
+model SessionQueueItem {
+  id             String   @id @default(cuid())
+  sessionId      String
+  /// 队列项类型："user"（用户消息）| "superior"（上级 Agent 消息镜像）
+  kind           String
+  /// 消息文本内容
+  content        String
+  /// 来源标识：user 消息存 "user"；superior 消息存来源 Agent id
+  source         String
+  /// 来源 Agent 的名字（superior 专用，UI 显示「来自父 Agent · xxx」）
+  sourceName     String?
+  /// 关联的 AgentMessage id（kind=superior 时必填，消费时用来 markConsumed）
+  agentMessageId String?
+  /// 排序权重（越小越靠前），用户拖拽后批量更新
+  order          Int      @default(0)
+  /// 附件 JSON（user 消息可能有图片附件）
+  attachments    Json?
+  /// skill 关联（user 消息可能带 skillId）
+  skillId        String?
+  skillPrompt    String?
+  createdAt      DateTime @default(now())
+
+  session        ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, order])
+  @@unique([sessionId, agentMessageId])
 }
 
 /// Agent 流式事件日志（SessionStreamHub 持久化用）
@@ -222,6 +252,7 @@ model Task {
   sessionId      String?   /// 异步 Agent 任务归属的 ChatSession id
   delivered      Boolean   @default(false) /// 异步结果是否已投递给前端
   deliveredAt    DateTime? /// 异步结果投递时间
+  pinned         Boolean   @default(false) /// 异步结果是否被用户钉住（pinned 的不被自动消费）
   queuedAt       DateTime? /// 进入编排器队列的时间
   startedAt      DateTime? /// 真正开始执行的时间
   finishedAt     DateTime? /// 执行结束（成功/失败/取消）的时间

@@ -59,9 +59,11 @@ import {
   createUserQueueItem,
   formatQueueItemForLlm,
   mergeAsyncPollIntoQueue,
+  sessionQueueItemToChatItem,
   splitQueueByKind,
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
+import { getAuthToken } from "@/lib/auth";
 import { UserSendQueuePanel, AsyncTaskQueueList } from "@/components/chatQueue";
 import { AsyncTaskPanel } from "@/components/asyncTaskPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
@@ -439,8 +441,9 @@ export function ChatView() {
     {
       enabled: !!effectiveSessionId,
       getNextPageParam: (last) => last.nextCursor,
-      refetchOnMount: false,
-      staleTime: 30_000,
+      // 子会话要立刻看到 triggerAgentRun 写入的父任务消息，避免队列去重读到空缓存
+      refetchOnMount: "always",
+      staleTime: sessionDetail?.kind === "subagent" ? 0 : 30_000,
     },
   );
   // 注：切换 session 时不再强制 refetch；useInfiniteQuery 会在 queryKey 变化时自动取新数据，
@@ -453,7 +456,9 @@ export function ChatView() {
     [messagesInfinite.data],
   );
   // 当前会话是否为子代理任务会话；若是则查父会话标题用于返回提示
-  const isSubagentSession = sessionDetail?.kind === "subagent";
+  // spawn_subagent 可能只建 isMainSession 而未设 kind=subagent，用 Agent.tier 兜底
+  const selectedAgentTier = agentsQuery.data?.items.find((a: Agent) => a.id === (agentFromUrl || agentId || sessionDetail?.agentId))?.tier;
+  const isSubagentSession = sessionDetail?.kind === "subagent" || selectedAgentTier === "sub";
   const parentSessionId = sessionDetail?.parentSessionId ?? null;
   const { data: parentSession } = trpc.session.getById.useQuery(
     { id: parentSessionId! },
@@ -527,6 +532,11 @@ export function ChatView() {
   // 避免每个会话固定 2.5s 空 poll（含 raw UPDATE + findMany）。参照 listChildren 的 running 判断。
   // 同时监听本地 async-running overlay：任务可能在全球 stats 刷新前就已开始并完成，
   // 必须靠 overlay 触发至少一次 poll，否则结果可能永远投递不到前端。
+  // 推优先后有活跃任务时降为 10s 兜底轮询（SSE async_delivery 即时通知）。
+  // spawn 无 jobId 的 overlay 也要轮询，否则 report_back 投递后前端永远不 refetch。
+  const hasLocalAsyncRunning = asyncOverlays.some(
+    (o) => o.kind === "async-running" && (o.status === "running" || o.status === "queued"),
+  );
   const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
     { sessionId: effectiveSessionId! },
     {
@@ -537,27 +547,50 @@ export function ChatView() {
         const hasActive =
           !!data &&
           ((data.running?.length ?? 0) > 0 || (data.queued?.length ?? 0) > 0);
-        return hasActive ? 2500 : false;
+        if (hasActive || hasLocalAsyncRunning) return 10000;
+        return false;
       },
     },
   );
 
+  const sessionQueueQuery = trpc.agent.listSessionQueueItems.useQuery(
+    { sessionId: effectiveSessionId! },
+    { enabled: !!effectiveSessionId && !backendDown },
+  );
+  const createSessionQueueItemMutation = trpc.agent.createSessionQueueItem.useMutation();
+  const consumeSessionQueueItemMutation = trpc.agent.consumeSessionQueueItem.useMutation();
+  const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
+  const reorderSessionQueueItemsMutation = trpc.agent.reorderSessionQueueItems.useMutation();
+  const toggleAsyncJobPinnedMutation = trpc.agent.toggleAsyncJobPinned.useMutation({
+    onSuccess: () => {
+      void asyncQueueQuery.refetch();
+    },
+  });
+  const ackAsyncDeliveryMutation = trpc.agent.ackAsyncDelivery.useMutation();
+  const pullAgentMessagesQuery = trpc.agent.pullAgentMessages.useQuery(
+    { agentId: effectiveAgentId! },
+    {
+      enabled: !!effectiveAgentId && !!isSubagentSession && !backendDown,
+      refetchInterval: isSubagentSession ? 5000 : false,
+    },
+  );
+
   // 当工具调用产生 async-running overlay 时立即触发一次 poll，防止任务在 stats 轮询间隙完成而漏投。
+  // 无 jobId 的 spawn overlay 用 subagentSessionId / overlay.id 去重触发。
   const asyncPollTriggerRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!effectiveSessionId) return;
-    const runningIds = asyncOverlays
+    const keys = asyncOverlays
       .filter(
         (o) =>
           o.kind === "async-running" &&
-          (o.status === "running" || o.status === "queued") &&
-          o.jobId,
+          (o.status === "running" || o.status === "queued"),
       )
-      .map((o) => o.jobId!);
+      .map((o) => o.jobId || o.subagentSessionId || o.id);
     let shouldPoll = false;
-    for (const id of runningIds) {
-      if (!asyncPollTriggerRef.current.has(id)) {
-        asyncPollTriggerRef.current.add(id);
+    for (const key of keys) {
+      if (!asyncPollTriggerRef.current.has(key)) {
+        asyncPollTriggerRef.current.add(key);
         shouldPoll = true;
       }
     }
@@ -575,6 +608,89 @@ export function ChatView() {
       void asyncQueueQuery.refetch();
     },
   });
+
+  // 从 DB 水合发送队列（仅在切换会话时一次，避免覆盖本地编辑）
+  const hydratedSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!effectiveSessionId) {
+      hydratedSessionRef.current = null;
+      return;
+    }
+    if (!sessionQueueQuery.data) return;
+    if (hydratedSessionRef.current === effectiveSessionId) return;
+    hydratedSessionRef.current = effectiveSessionId;
+    const items = sessionQueueQuery.data.map(sessionQueueItemToChatItem);
+    ssSet(effectiveSessionId, "userQueue", items);
+  }, [effectiveSessionId, sessionQueueQuery.data, ssSet]);
+
+  // 子 Agent 会话：把 pending AgentMessage 镜像进 SessionQueueItem（幂等）
+  // 若 triggerAgentRun 已写入同内容 ChatMessage，则直接 markConsumed，避免队列再消费导致「消息发两遍」
+  const markAgentMessageConsumedMutation = trpc.agent.markAgentMessageConsumed.useMutation();
+  useEffect(() => {
+    if (!effectiveSessionId || !isSubagentSession || !pullAgentMessagesQuery.data?.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const msg of pullAgentMessagesQuery.data) {
+        if (cancelled) return;
+        const alreadyInChat = messages.some(
+          (m) => m.role === "user" && m.content.trim() === String(msg.content ?? "").trim(),
+        );
+        if (alreadyInChat) {
+          try {
+            await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id });
+          } catch {
+            /* ignore */
+          }
+          continue;
+        }
+        try {
+          await createSessionQueueItemMutation.mutateAsync({
+            sessionId: effectiveSessionId,
+            kind: "superior",
+            content: msg.content,
+            // AgentMessage.source 是 tier（super/manager），不是 fromAgentId
+            source: msg.source || "manager",
+            agentMessageId: msg.id,
+          });
+        } catch {
+          // 幂等冲突或网络错误忽略
+        }
+      }
+      if (!cancelled) void sessionQueueQuery.refetch();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveSessionId, isSubagentSession, pullAgentMessagesQuery.data, messages]);
+
+  // 推优先：监听 async_delivery SSE，收到后立即 refetch pullAsyncQueue
+  useEffect(() => {
+    if (!effectiveSessionId || backendDown) return;
+    const token = getAuthToken();
+    const qs = new URLSearchParams({ sessionId: effectiveSessionId });
+    if (token) qs.set("token", token);
+    const es = new EventSource(`/api/agent/async-stream?${qs.toString()}`);
+    es.addEventListener("async_delivery", () => {
+      void asyncQueueQuery.refetch();
+    });
+    return () => es.close();
+  }, [effectiveSessionId, backendDown, asyncQueueQuery]);
+
+  // 拖拽重排防抖写 DB
+  const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistQueueOrder = useCallback(
+    (items: ChatQueueItem[]) => {
+      if (!effectiveSessionId) return;
+      const orderedIds = items.map((i) => i.dbId).filter((id): id is string => !!id);
+      if (orderedIds.length === 0) return;
+      if (reorderTimerRef.current) clearTimeout(reorderTimerRef.current);
+      reorderTimerRef.current = setTimeout(() => {
+        reorderSessionQueueItemsMutation.mutate({ sessionId: effectiveSessionId, orderedIds });
+      }, 500);
+    },
+    [effectiveSessionId, reorderSessionQueueItemsMutation],
+  );
 
   // 两个物理独立队列：
   // - asyncResultQueue: 从 poll 数据派生（async-running + async-result），合并 asyncOverlays（用户追加编辑）
@@ -902,6 +1018,31 @@ export function ChatView() {
                   streamStatesRef.current.delete(NEW_STREAM_KEY);
                 }
                 originSid = sid;
+                // 新会话首条消息期间入队的项尚无 dbId，迁移后补写 DB
+                const pending = streamStatesRef.current.get(sid)?.userQueue ?? [];
+                for (const item of pending) {
+                  if (item.dbId || (item.kind !== "user" && item.kind !== "superior")) continue;
+                  createSessionQueueItemMutation
+                    .mutateAsync({
+                      sessionId: sid,
+                      kind: item.kind === "superior" ? "superior" : "user",
+                      content: item.text,
+                      source: item.source ?? "user",
+                      sourceName: item.sourceName,
+                      agentMessageId: item.agentMessageId,
+                      attachments: item.attachments,
+                      skillId: item.skillId,
+                      skillPrompt: item.skillPrompt,
+                    })
+                    .then((res) => {
+                      const dbId = (res as { data?: { id?: string } })?.data?.id;
+                      if (!dbId) return;
+                      ssSet(sid, "userQueue", (q) =>
+                        q.map((i) => (i.id === item.id ? { ...i, dbId } : i)),
+                      );
+                    })
+                    .catch(() => {});
+                }
               }
               // 后台续传（refresh/切 tab/切 session）时不应抢占当前视图；
               // 只有用户主动在当前视图发起的新流才需要把 URL/状态切到新 session。
@@ -980,7 +1121,48 @@ export function ChatView() {
                   message?: string;
                   subagentSessionId?: string;
                   subagentName?: string;
+                  agentId?: string;
+                  success?: boolean;
                 };
+                // 派生子 Agent 后立刻刷新左栏：乐观写入 + invalidate/refetch，避免必须手动刷新
+                if (name === "spawn_subagent" && (r.success || r.agentId || r.subagentSessionId)) {
+                  if (r.agentId) {
+                    const wsId = selectedWorkspaceId ?? null;
+                    const optimistic = {
+                      id: r.agentId,
+                      name: r.subagentName || `子 Agent ${r.agentId.slice(0, 4)}`,
+                      description: null,
+                      model: chatConfig.model || "deepseek-v4-flash",
+                      tools: [] as string[],
+                      tier: "sub",
+                      workspaceId: wsId,
+                      parentId: effectiveAgentId ?? null,
+                      heartbeatModel: null,
+                      heartbeat: null,
+                      status: "active",
+                      source: "native_tool:spawn_subagent",
+                      deletedAt: null,
+                      deletedBy: null,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                      apiKey: null,
+                      systemPrompt: "",
+                    };
+                    utils.agent.list.setData({ page: 1, pageSize: 100 }, (old: { items?: Agent[]; total?: number; page?: number; pageSize?: number; totalPages?: number } | undefined) => {
+                      if (!old?.items) {
+                        return { items: [optimistic as Agent], total: 1, page: 1, pageSize: 100, totalPages: 1 };
+                      }
+                      if (old.items.some((a) => a.id === r.agentId)) return old;
+                      return {
+                        ...old,
+                        items: [optimistic as Agent, ...old.items],
+                        total: (old.total ?? old.items.length) + 1,
+                      };
+                    });
+                  }
+                  void utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => undefined);
+                  void utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => undefined);
+                }
                 if (r.jobId && (r.status === "running" || r.status === "queued")) {
                   const jobId = r.jobId;
                   const status = r.status;
@@ -995,6 +1177,26 @@ export function ChatView() {
                         jobId,
                         taskLabel: label.slice(0, 60),
                         status: status === "queued" ? ("queued" as const) : ("running" as const),
+                        subagentSessionId: r.subagentSessionId,
+                        subagentName: r.subagentName,
+                        createdAt: Date.now(),
+                      },
+                      ...prev,
+                    ];
+                  });
+                } else if (name === "spawn_subagent" && r.subagentSessionId && !r.jobId) {
+                  // 非阻塞 spawn 无 jobId 时也建一条本地 running overlay，等 report_back 投递
+                  const overlayId = `spawn-${r.agentId ?? r.subagentSessionId}`;
+                  ssSet(originSid, "asyncOverlays", (prev) => {
+                    if (prev.some((q) => q.id === overlayId || q.subagentSessionId === r.subagentSessionId)) return prev;
+                    const label = r.subagentName || r.message || "子 Agent 任务";
+                    return [
+                      {
+                        id: overlayId,
+                        kind: "async-running" as const,
+                        text: r.message || "",
+                        taskLabel: label.slice(0, 60),
+                        status: "running" as const,
                         subagentSessionId: r.subagentSessionId,
                         subagentName: r.subagentName,
                         createdAt: Date.now(),
@@ -1066,6 +1268,14 @@ export function ChatView() {
                 discardStreamFlush(originSid);
               }
               if (opts.optimisticUser) ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+              // 续传时会话并无 StreamHub 运行（例如 spawn 走非流式 triggerAgentRun）——静默结束，不弹红条
+              const isNoStream =
+                typeof message === "string" && message.includes("没有运行中的 Agent 流");
+              if (opts.isResume && isNoStream) {
+                ssSet(originSid, "isStreaming", false);
+                ssSet(originSid, "error", null);
+                return;
+              }
               ssSet(originSid, "error", message + (suggestion ? `\n${suggestion}` : ""));
               // 后台续传出错时只更新状态，不抢占用户当前视图
               if (sid && !opts.isResume) {
@@ -1127,7 +1337,7 @@ export function ChatView() {
         consumeRef.current();
       }
     },
-    [effectiveAgentId, chatConfig, effectiveSessionId, updateConfig, utils.session.list, utils.session.getById, utils.message.listForChat, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush, applyView, pathname, router, searchParams],
+    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.message.listForChat, utils.agent.list, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush, applyView, pathname, router, searchParams, createSessionQueueItemMutation],
   );
 
   // 用 ref 保存最新的 runStream，供 mount 自动续传使用（避免把 runStream 本身放进 mount effect deps）
@@ -1200,6 +1410,7 @@ export function ChatView() {
   }, []);
 
   // 后端主动发现运行中会话并续传：覆盖 sessionStorage 丢失、跨标签、切换 Agent 等场景
+  // 仅信任 StreamHub.listRunning()——DB 里 status=running 可能来自非流式 triggerAgentRun，不能据此 GET 续传。
   useEffect(() => {
     const items = runningSessionsQuery.data?.items;
     if (!items || items.length === 0) return;
@@ -1215,24 +1426,6 @@ export function ChatView() {
     }
   }, [runningSessionsQuery.data, getStreamState]);
 
-  // 进入运行中的子会话时立即续传，避免等 runningSessionsQuery 的 5 秒轮询
-  useEffect(() => {
-    if (!effectiveSessionId || sessionDetail?.kind !== "subagent") return;
-    if (sessionDetail?.status !== "running") return;
-    const st = getStreamState(effectiveSessionId);
-    // 未连接且无 active abort 时尝试 resume；若 Hub 尚未启动，streamAgentChat 会快速失败，
-    // 随后 runningSessionsQuery 轮询到会再次尝试。
-    if (!st.connected && !st.abort) {
-      queueMicrotask(() => {
-        runStreamRef.current({
-          targetSessionId: effectiveSessionId,
-          resumeAfter: st.lastEventId,
-          isResume: true,
-        });
-      });
-    }
-  }, [effectiveSessionId, sessionDetail?.kind, sessionDetail?.status, getStreamState]);
-
   const consumeQueue = useCallback(() => {
     const sid = effectiveSessionId ?? NEW_STREAM_KEY;
     const st = getStreamState(sid);
@@ -1244,30 +1437,56 @@ export function ChatView() {
       t.kind !== "async-running" &&
       (t.text.trim() || t.asyncResult || t.attachments?.length);
 
-    // 1. 先查 asyncResultQueue 中的可消费 async-result
+    // 1. 先查 asyncResultQueue 中的可消费 async-result（跳过 pinned）
     let asyncReady: ChatQueueItem | undefined;
     for (const t of asyncResultQueue) {
-      if (t.kind === "async-result" && isReady(t)) { asyncReady = t; break; }
+      if (t.kind === "async-result" && isReady(t) && !t.pinned) { asyncReady = t; break; }
     }
-    // 2. 再查 userQueue 中的可消费 user 消息
+    // 2. 再查 userQueue 中的可消费 user / superior 消息
     let userReady: ChatQueueItem | undefined;
     if (!asyncReady) {
       for (const t of st.userQueue) {
-        if (t.kind === "user" && isReady(t)) { userReady = t; break; }
+        if ((t.kind === "user" || t.kind === "superior") && isReady(t)) { userReady = t; break; }
       }
     }
     const task = asyncReady ?? userReady;
     if (!task) return;
 
+    // 上级消息：必须等消息列表就绪，否则会在 stale/空 messages 下误判「未写入」而二次 runStream
+    if (task.kind === "superior") {
+      if (!effectiveSessionId || messagesInfinite.isLoading || !messagesInfinite.isFetched) {
+        return;
+      }
+    }
+
     st.queueDraining = true;
 
     if (task.kind === "async-result" && task.jobId) {
       ssSet(sid, "consumedDeliveries", (s: Set<string>) => new Set(s).add(task.jobId!));
+      ackAsyncDeliveryMutation.mutate({ jobId: task.jobId });
     }
 
-    if (task.kind === "user") {
-      // 用户消息：从 userQueue 移除
+    if (task.kind === "user" || task.kind === "superior") {
+      // 上级消息若已由 triggerAgentRun 写入 ChatMessage，只清队列、不再 runStream（避免双气泡 + 二次执行）
+      if (task.kind === "superior") {
+        const already = messages.some(
+          (m) => m.role === "user" && m.content.trim() === task.text.trim(),
+        );
+        if (already) {
+          ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
+          if (task.dbId) {
+            consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+          }
+          st.queueDraining = false;
+          queueMicrotask(() => consumeRef.current());
+          return;
+        }
+      }
+      // 用户/上级消息：从 userQueue 移除，并消费 DB 队列项
       ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
+      if (task.dbId) {
+        consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+      }
     } else {
       // async-result：把本地 running overlay 转为 done/failed 并保留 5 秒，
       // 让用户在父会话时间线看到「运行中 → 已完成/失败」的完整状态流转，避免一闪而过。
@@ -1333,7 +1552,13 @@ export function ChatView() {
       attachments: streamAttachments?.length ? streamAttachments : undefined,
       skillId: task.skillId,
       skillPrompt: task.skillPrompt,
-      source: isAsyncResult ? "sub" : "user",
+      source: isAsyncResult
+        ? "sub"
+        : task.kind === "superior"
+          ? (["super", "manager", "sub", "system"].includes(String(task.source))
+              ? (task.source as "super" | "manager" | "sub" | "system")
+              : "manager")
+          : "user",
       toolResults: isAsyncResult
         ? {
             subagentResult: {
@@ -1345,7 +1570,7 @@ export function ChatView() {
         : undefined,
       optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
     });
-  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState]);
+  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, messages, messagesInfinite.isLoading, messagesInfinite.isFetched]);
 
   useEffect(() => {
     consumeRef.current = consumeQueue;
@@ -1356,7 +1581,7 @@ export function ChatView() {
       // queueMicrotask 避免在 effect 同步阶段调用 setState，防止级联渲染
       queueMicrotask(() => consumeRef.current());
     }
-  }, [isStreaming, queue.length, consumeQueue, effectiveSessionId, isSessionStreaming]);
+  }, [isStreaming, queue.length, consumeQueue, effectiveSessionId, isSessionStreaming, messagesInfinite.isFetched, messages.length]);
 
   // 清理已过期的已完成 async overlay，让进度条稳定展示 5 秒后自动消失
   useEffect(() => {
@@ -1431,20 +1656,61 @@ export function ChatView() {
         return;
       }
       lastEnqueueRef.current = { text: `${trimmed}\n${attachmentsKey}`, at: now };
-      // 输入框清空由 ChatInputArea 内部完成（value 状态已下放）
       const skillPrompt = skill
         ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
         : undefined;
-      ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (prev) => [
-        ...prev,
-        createUserQueueItem(trimmed || "（见附件）", {
-          skillId: skill?.id,
-          skillPrompt,
-          attachments,
-        }),
-      ]);
+      const sid = effectiveSessionId ?? NEW_STREAM_KEY;
+      const localItem = createUserQueueItem(trimmed || "（见附件）", {
+        skillId: skill?.id,
+        skillPrompt,
+        attachments,
+      });
+
+      // 有真实 sessionId 时：必须先写 DB 拿到 dbId 再入队。
+      // 否则消费时无法删除 DB 项，刷新/水合会把同一条再送一遍。
+      if (effectiveSessionId) {
+        void (async () => {
+          try {
+            const res = await createSessionQueueItemMutation.mutateAsync({
+              sessionId: effectiveSessionId,
+              kind: "user",
+              content: localItem.text,
+              source: "user",
+              attachments: localItem.attachments,
+              skillId: localItem.skillId,
+              skillPrompt: localItem.skillPrompt,
+            });
+            const dbId = (res as { data?: { id?: string } })?.data?.id;
+            if (!dbId) {
+              console.warn("[enqueueMessage] createSessionQueueItem 未返回 id，跳过入队以防重复发送");
+              return;
+            }
+            ssSet(effectiveSessionId, "userQueue", (prev) => {
+              if (prev.some((i) => i.dbId === dbId || i.id === localItem.id)) return prev;
+              // 同内容且尚无 dbId 的本地项也去重（极端竞态）
+              if (prev.some((i) => !i.dbId && i.text === localItem.text && i.kind === "user")) {
+                return prev.map((i) =>
+                  !i.dbId && i.text === localItem.text && i.kind === "user"
+                    ? { ...i, dbId }
+                    : i,
+                );
+              }
+              return [...prev, { ...localItem, dbId }];
+            });
+          } catch (err) {
+            console.warn("[enqueueMessage] 持久化失败，本会话仍入队（无 dbId）:", err);
+            ssSet(effectiveSessionId, "userQueue", (prev) => {
+              if (prev.some((i) => i.id === localItem.id || i.text === localItem.text)) return prev;
+              return [...prev, localItem];
+            });
+          }
+        })();
+        return;
+      }
+
+      ssSet(sid, "userQueue", (prev) => [...prev, localItem]);
     },
-    [backendDown, ssSet, effectiveSessionId],
+    [backendDown, ssSet, effectiveSessionId, createSessionQueueItemMutation],
   );
 
   const handleStop = useCallback(async () => {
@@ -1803,14 +2069,18 @@ export function ChatView() {
         ? (msgToolResults as { subagentResult?: { subagentName?: string } } | undefined)?.subagentResult
             ?.subagentName
         : undefined;
-    // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧），
-    // source=sub（子 Agent 返回结果）也在右侧，模拟「子 Agent 发送」的消息。
-    // 其他非 user 来源显示在左侧。
-    const isParentAgentTask = isSubagentSession && msgSource === "super";
+    // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧）。
+    // source 可能是 super / manager（取决于父 Agent tier）。
+    const isParentAgentTask =
+      isSubagentSession && (msgSource === "super" || msgSource === "manager");
     // 异步结果投递（source=sub + toolResults.subagentResult）不再显示原始结果占位用户气泡，
     // 只保留下方 assistant 总结，避免先出现「[异步任务完成] xxx」的破窗体验。
     const isAsyncResultDelivery = msgSource === "sub" && !!(msgToolResults as { subagentResult?: unknown } | undefined)?.subagentResult;
-    const isUserLike = msgSource === "user" || (msgSource === "sub" && !isAsyncResultDelivery) || isParentAgentTask;
+    // 子会话内：仅「用户 / 父 Agent 任务」靠右；子 Agent 自己的 source=sub 用户气泡不应靠右抢位。
+    // 父会话内：source=sub 的异步投递占位靠右逻辑由 isAsyncResultDelivery 隐藏，其余 sub 仍可作投递展示。
+    const isUserLike = isSubagentSession
+      ? msgSource === "user" || isParentAgentTask
+      : msgSource === "user" || (msgSource === "sub" && !isAsyncResultDelivery) || isParentAgentTask;
     const isAgentMessage = !isUserLike;
     return (
       <div className="flex flex-col">
@@ -2529,10 +2799,15 @@ export function ChatView() {
               const { userQueue: uq, asyncOverlays: ao } = splitQueueByKind(items, asyncQueueQuery.data);
               ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", uq);
               ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", ao);
+              persistQueueOrder(uq);
             }}
             onRemove={(id) => {
+              const target = userQueue.find((t) => t.id === id);
               ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (q) => q.filter((t) => t.id !== id));
               ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", (q) => q.filter((t) => t.id !== id));
+              if (target?.dbId) {
+                deleteSessionQueueItemMutation.mutate({ id: target.dbId });
+              }
             }}
             asyncStats={asyncQueueStatsQuery.data}
           />
@@ -2643,6 +2918,13 @@ export function ChatView() {
                     onRetry={(jobId) => {
                       ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
                       retryAsyncJobMutation.mutate({ jobId });
+                    }}
+                    onTogglePin={(jobId, pinned) => {
+                      toggleAsyncJobPinnedMutation.mutate({ jobId, pinned });
+                      // 乐观更新本地 overlay pinned，避免等 poll
+                      ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", (prev) =>
+                        prev.map((i) => (i.jobId === jobId ? { ...i, pinned } : i)),
+                      );
                     }}
                   />
                 </div>

@@ -18,6 +18,7 @@ import { maybeCompactMessages } from "./autoCompact.js";
 import { searchFts } from "./ftsIndex.js";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
+import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 
 export interface AgentLoopResult {
   content: string;
@@ -66,14 +67,65 @@ export function buildAgentToolGuide(tools: string[]): string {
   return "";
 }
 
+/** 按层级注入身份约束，防止子 Agent 误认自己是超级/管理 Agent */
+export function buildTierIdentityHint(tier?: string | null, name?: string | null): string {
+  if (tier === "sub") {
+    const who = name ? `「${name}」` : "";
+    return `\n\n## 你的身份（硬约束）
+你是子 Agent${who}，**不是**超级 Agent，也**不是**管理 Agent。
+- 只执行上级下发的当前任务；完成后必须调用 agent_report_back 向上级汇报。
+- 禁止创建/派生子 Agent 或管理其他 Agent（不得使用 spawn_subagent、agent_create、agent_create_sub 等）。
+- 禁止创建或归档 Workspace；不要自称超级 Agent / 管理 Agent。
+- 可用 sleep / 读写 / 搜索等执行类工具完成任务本身。`;
+  }
+  if (tier === "manager") {
+    const who = name ? `「${name}」` : "";
+    return `\n\n## 你的身份
+你是管理 Agent${who}，负责**当前 Workspace** 内的子 Agent。
+- 可在本 Workspace 创建/派生子 Agent；不可跨 Workspace，也不可创建 Workspace。
+- 不要自称超级 Agent。`;
+  }
+  if (tier === "super") {
+    const who = name ? `「${name}」` : "";
+    return `\n\n## 你的身份
+你是超级 Agent${who}，可跨 Workspace 管理；创建子 Agent 时应指定目标 Workspace（默认落在当前上下文 Workspace）。`;
+  }
+  return "";
+}
+
 export function buildSystemPromptWithHints(
   basePrompt: string,
   tools: string[],
   memoryHint: string,
+  identity?: { tier?: string | null; name?: string | null },
 ): string {
-  const base = (basePrompt || "你是 KnowPilot 助手。") + memoryHint;
+  const identityHint = buildTierIdentityHint(identity?.tier, identity?.name);
+  const base = (basePrompt || "你是 KnowPilot 助手。") + identityHint + memoryHint;
   const guide = buildAgentToolGuide(tools);
   return guide ? `${base}\n\n${guide}` : base;
+}
+
+/** 子 Agent 默认执行工具（带 native: 前缀，避免物化成空 → native:all） */
+export const DEFAULT_SUBAGENT_TOOLS = [
+  "native:sleep",
+  "native:agent_report_back",
+  "native:read_file",
+  "native:list_directory",
+  "native:web_search",
+] as const;
+
+/** 规范化 + 按 tier 裁剪工具列表，供 runAgentLoop / stream 使用 */
+export function resolveToolsForAgentTier(tier: string | undefined | null, tools: string[]): string[] {
+  const t = tier || "sub";
+  let normalized = (tools ?? []).map((tool) => {
+    if (tool.startsWith("native:") || tool.startsWith("skill:") || tool.startsWith("mcp:")) return tool;
+    if (tool.includes(":")) return tool;
+    return `native:${tool}`;
+  });
+  if (normalized.length === 0 && t === "sub") {
+    normalized = [...DEFAULT_SUBAGENT_TOOLS];
+  }
+  return getAllowedToolsForTier(t, normalized);
 }
 
 export function parseToolCall(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
@@ -175,12 +227,19 @@ export async function runAgentLoop(options: {
 }): Promise<AgentLoopResult> {
   assertLlmBudget(options.config);
   const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
-  const parsed = parseAgentTools(options.agent.tools);
+  const tierTools = resolveToolsForAgentTier(options.agentMeta?.tier, options.agent.tools);
+  const parsed = parseAgentTools(tierTools);
+  // 双保险：子 Agent 绝不能拿到 native:all
+  if (parsed.native === "all" && (options.agentMeta?.tier === "sub" || !options.agentMeta?.tier)) {
+    parsed.native = DEFAULT_SUBAGENT_TOOLS.map((t) => t.replace(/^native:/, ""));
+  }
   const registry = new Map<string, ToolRegistryEntry>();
   const toolSchemas = await buildAgentToolSchemas(options.services, parsed, registry);
   const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
     sessionId: options.sessionId,
-    agentSnapshot: options.agentMeta,
+    agentSnapshot: options.agentMeta
+      ? { ...options.agentMeta, tools: tierTools }
+      : options.agentMeta,
     runOrigin: options.runOrigin,
   });
 
@@ -197,6 +256,42 @@ export async function runAgentLoop(options: {
   let lastProvider = options.config.llm.defaultProvider;
   let roundsUsed = 0;
   const maxRounds = options.config.llm.maxToolRounds;
+
+  /** 与 agentStream.pushThinking 对齐：把思考链写入 toolCalls，供 Chat UI 时间线渲染 */
+  const pushThinking = (round: number, delta: string) => {
+    if (!delta) return;
+    const id = `think_${round}`;
+    const existing = executedTools.find((t) => t.id === id);
+    if (existing) {
+      existing.result = String(existing.result ?? "") + delta;
+    } else {
+      executedTools.push({
+        id,
+        name: "__thinking__",
+        args: { round },
+        result: delta,
+        kind: "thinking",
+      });
+    }
+  };
+
+  /** 工具轮次中的中间正式回复，进导轨时间线（与 agentStream.pushIntermediateContent 对齐） */
+  const pushIntermediateContent = (round: number, content: string) => {
+    if (!content?.trim()) return;
+    const id = `content_${round}`;
+    const existing = executedTools.find((t) => t.id === id);
+    if (existing) {
+      existing.result = String(existing.result ?? "") + content;
+    } else {
+      executedTools.push({
+        id,
+        name: "__content__",
+        args: { round },
+        result: content,
+        kind: "content",
+      });
+    }
+  };
 
   for (let round = 0; round < maxRounds; round++) {
     roundsUsed = round + 1;
@@ -217,6 +312,11 @@ export async function runAgentLoop(options: {
       recordTokenUsage(options.config, completion.tokenUsage);
     }
 
+    // 非流式路径也必须持久化思考链，否则 spawn/triggerAgentRun 子会话只剩工具调用
+    if (completion.reasoningContent) {
+      pushThinking(roundsUsed, completion.reasoningContent);
+    }
+
     if (!completion.toolCalls.length) {
       return {
         content: completion.content || "",
@@ -226,6 +326,11 @@ export async function runAgentLoop(options: {
         provider: lastProvider,
         roundsUsed,
       };
+    }
+
+    // 本轮仍有工具调用时，把中间正文也写入时间线（最终轮正文走 content 字段）
+    if (completion.content?.trim()) {
+      pushIntermediateContent(roundsUsed, completion.content);
     }
 
     llmMessages.push({
@@ -276,7 +381,10 @@ export async function runAgent(
     const messages: LlmMessage[] = [
       {
         role: "system",
-        content: buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint),
+        content: buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint, {
+          tier: agent.tier,
+          name: agent.name,
+        }),
       },
     ];
 
@@ -367,7 +475,10 @@ export async function chatAgent(
     const history = await services.message.list({ sessionId, page: 1, pageSize: 50 });
     const memoryHint = await buildMemoryContext(services, displayText);
     const messages = buildLlmMessagesFromHistory(
-      buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint),
+      buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint, {
+        tier: agent.tier,
+        name: agent.name,
+      }),
       history.items,
       { modelId: effectiveModel },
     );
@@ -378,6 +489,16 @@ export async function chatAgent(
       agent: { ...agent, model: input.model || agent.model },
       messages,
       invokeTrpc,
+      sessionId,
+      agentMeta: {
+        id: agent.id,
+        model: input.model || agent.model,
+        systemPrompt: agent.systemPrompt,
+        tools: agent.tools,
+        tier: agent.tier,
+        parentId: agent.parentId,
+        workspaceId: agent.workspaceId,
+      },
     });
 
     const assistantMsg = await services.message.create({
