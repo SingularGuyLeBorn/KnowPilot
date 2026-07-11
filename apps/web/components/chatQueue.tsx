@@ -4,7 +4,7 @@
  * Chat 发送队列组件
  *
  * - UserSendQueueBar：输入区左上角的紧凑条，只显示用户待发消息。
- * - QueueCard：右侧面板「运行时 → 用户发送消息队列 / 异步任务队列」的列表卡片。
+ * - QueueCard：发送队列列表卡片（用户待发 / 异步结果等）。
  */
 
 import { useCallback, useState } from "react";
@@ -28,10 +28,18 @@ import type { ChatQueueItem } from "@/lib/chatQueueTypes";
 
 export function kindLabel(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
+    if (item.sourceType === "sleep" || /^sleep\b/i.test(item.taskLabel ?? "")) {
+      return item.status === "queued" ? "async sleep · 排队" : "async sleep · 执行中";
+    }
     if (item.status === "queued") return "异步任务 · 排队中";
     return "异步任务 · 执行中";
   }
-  if (item.kind === "async-result") return "异步结果";
+  if (item.kind === "async-result") {
+    if (item.sourceType === "sleep" || /^sleep\b/i.test(item.taskLabel ?? "")) return "async sleep";
+    if (item.sourceType === "subagent") return "async subagent";
+    if (item.sourceType === "async_task_tool") return "async tool";
+    return "async task";
+  }
   if (item.kind === "superior") return item.sourceName ? `上级 · ${item.sourceName}` : "上级 Agent";
   return "待发消息";
 }

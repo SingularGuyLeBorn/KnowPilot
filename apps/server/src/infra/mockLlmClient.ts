@@ -97,6 +97,42 @@ async function* delayYield<T>(items: T[], ms = 8): AsyncGenerator<T> {
   }
 }
 
+/** 将 completion 结果转为 stream chunks（stream-first ReAct 依赖此路径产出 tool_calls） */
+async function* streamFromCompletion(
+  opts: MockLlmOptions,
+  result: LlmCompletionResult,
+): AsyncGenerator<StreamChunk> {
+  if (result.reasoningContent) {
+    for (const token of result.reasoningContent.split("")) {
+      yield { type: "reasoning", delta: token, model: opts.model || "mock-llm", provider: "mock" };
+    }
+  }
+  if (result.content) {
+    for (const token of result.content.split("")) {
+      yield { type: "token", delta: token, model: opts.model || "mock-llm", provider: "mock" };
+    }
+  }
+  if (result.toolCalls.length > 0) {
+    yield {
+      type: "tool_calls",
+      toolCalls: result.toolCalls,
+      finishReason: "tool_calls",
+      model: opts.model || "mock-llm",
+      provider: "mock",
+      tokenUsage: result.tokenUsage ?? { prompt: 10, completion: 12, total: 22 },
+    };
+    return;
+  }
+  yield {
+    type: "token",
+    delta: "",
+    finishReason: "stop",
+    model: opts.model || "mock-llm",
+    provider: "mock",
+    tokenUsage: result.tokenUsage ?? { prompt: 10, completion: 12, total: 22 },
+  };
+}
+
 const scenarios: MockLlmScenario[] = [
   {
     name: "intermediate_content_final",
@@ -130,7 +166,11 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("web_search", { query: "KnowPilot intermediate" })],
     }),
     stream: async function* (opts) {
-      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: "我将先搜索相关资料，然后给出回答。",
+        toolCalls: [makeToolCall("web_search", { query: "KnowPilot intermediate" })],
+      });
     },
   },
   {
@@ -146,14 +186,11 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: hasAnyToolResult(opts) ? [] : [makeToolCall("async_task_run", { task: "总结当前项目", label: "项目总结" })],
     }),
     stream: async function* (opts) {
-      // 最终回复需要真实 token，否则 agentStream 不会生成 assistant 消息气泡
-      const content = hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : "";
-      if (content) {
-        for (const token of content.split("")) {
-          yield { type: "token", delta: token, model: opts.model, provider: "mock" };
-        }
-      }
-      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : null,
+        toolCalls: hasAnyToolResult(opts) ? [] : [makeToolCall("async_task_run", { task: "总结当前项目", label: "项目总结" })],
+      });
     },
   },
   {
@@ -170,7 +207,11 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("spawn_subagent", { task: "执行慢速总结", waitForResult: true, label: "慢速总结" })],
     }),
     stream: async function* (opts) {
-      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("spawn_subagent", { task: "执行慢速总结", waitForResult: true, label: "慢速总结" })],
+      });
     },
   },
   {
@@ -187,7 +228,11 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("sleep", { seconds: 3 })],
     }),
     stream: async function* (opts) {
-      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("sleep", { seconds: 3 })],
+      });
     },
   },
   {
@@ -257,10 +302,13 @@ const scenarios: MockLlmScenario[] = [
       content: null,
       toolCalls: [makeToolCall("web_search", { query: "KnowPilot" })],
     }),
-    // agentStream 在 probe 返回 tool_calls 时不会调用 stream；stream 仅作单元测试直接调用兜底，
-    // 不再 yield tool_calls chunk（agentStream stream 路径不处理它，是死代码）
+    // stream-first：必须在 stream 中产出 tool_calls（不再依赖非流式 probe）
     stream: async function* (opts) {
-      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("web_search", { query: "KnowPilot" })],
+      });
     },
   },
   {
@@ -277,7 +325,11 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("read_article", { url: "https://example.com/broken" })],
     }),
     stream: async function* (opts) {
-      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("read_article", { url: "https://example.com/broken" })],
+      });
     },
   },
   {
@@ -293,7 +345,11 @@ const scenarios: MockLlmScenario[] = [
       toolCalls: [makeToolCall("read_article", { url: "https://juejin.cn/post/mock" })],
     }),
     stream: async function* (opts) {
-      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("read_article", { url: "https://juejin.cn/post/mock" })],
+      });
     },
   },
   {

@@ -13,18 +13,25 @@ export const SessionContextBar = memo(function SessionContextBar({
   messages,
   systemPrompt,
   className,
+  contextSummary,
+  onCompact,
+  compactPending,
 }: {
   messages: ChatMessage[];
   systemPrompt: string;
   className?: string;
+  contextSummary?: string | null;
+  onCompact?: () => void;
+  compactPending?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
-  const usage = buildContextUsage({ messages, systemPrompt });
+  const usage = buildContextUsage({ messages, systemPrompt, contextSummary });
   const pct = Math.round(usage.ratio * 100);
+  const compactPct = Math.round(usage.compactRatio * 100);
 
   const updatePos = useCallback(() => {
     const el = triggerRef.current;
@@ -101,8 +108,11 @@ export const SessionContextBar = memo(function SessionContextBar({
           <ContextUsagePopover
             ref={panelRef}
             usage={usage}
+            compactPct={compactPct}
             style={{ top: pos.top, left: pos.left }}
             onClose={() => setOpen(false)}
+            onCompact={onCompact}
+            compactPending={compactPending}
           />,
           document.body,
         )}
@@ -114,13 +124,15 @@ const ContextUsagePopover = forwardRef<
   HTMLDivElement,
   {
     usage: ContextUsageSnapshot;
+    compactPct: number;
     style: { top: number; left: number };
     onClose: () => void;
+    onCompact?: () => void;
+    compactPending?: boolean;
   }
->(function ContextUsagePopover({ usage, style, onClose }, ref) {
-  const pct = Math.round(usage.ratio * 100);
-  const warn = usage.ratio >= 0.75;
-  const critical = usage.ratio >= 0.92;
+>(function ContextUsagePopover({ usage, compactPct, style, onClose, onCompact, compactPending }, ref) {
+  const warn = usage.compactRatio >= 0.75;
+  const critical = usage.compactRatio >= 0.92;
   const ringColor = critical ? "#ef4444" : warn ? "#f59e0b" : "var(--kp-brand)";
 
   return (
@@ -157,18 +169,18 @@ const ContextUsagePopover = forwardRef<
                 <circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--kp-bg-mute)" strokeWidth="3" />
                 <circle
                   cx="18" cy="18" r="15.5" fill="none" stroke={ringColor} strokeWidth="3"
-                  strokeDasharray={`${usage.ratio * 97.4} 97.4`}
+                  strokeDasharray={`${usage.compactRatio * 97.4} 97.4`}
                   strokeLinecap="round"
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-lg font-bold tabular-nums text-[var(--kp-text-1)]">{pct}%</span>
+                <span className="text-lg font-bold tabular-nums text-[var(--kp-text-1)]">{compactPct}%</span>
               </div>
             </div>
             <div className="min-w-0 flex-1 space-y-1">
-              <div className="text-xs text-[var(--kp-text-3)]">已用 / 上限</div>
+              <div className="text-xs text-[var(--kp-text-3)]">压缩进度 / 模型上下文</div>
               <div className="text-sm font-semibold tabular-nums text-[var(--kp-text-1)]">
-                ~{formatTokenCount(usage.estimatedTotal)} / {formatTokenCount(usage.maxContextTokens)}
+                压缩 {compactPct}% · 上下文 ~{formatTokenCount(usage.estimatedTotal)} / {formatTokenCount(usage.maxContextTokens)}
               </div>
               <div className="flex gap-3 text-[10px] text-[var(--kp-text-3)]">
                 <span className="inline-flex items-center gap-0.5">
@@ -207,20 +219,33 @@ const ContextUsagePopover = forwardRef<
             <div className="rounded-xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30 px-3 py-2.5">
               <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-[var(--kp-brand-dark)]">
                 <Gauge className="h-3 w-3" />
-                自动压缩已启用
+                已保存上下文摘要
               </div>
               <div className="text-[10px] leading-relaxed text-[var(--kp-text-2)]">
-                {usage.compression.summarizedCount} 条旧消息已被摘要压缩，占用 ~{formatTokenCount(usage.compression.summarizedTokens)} tokens。
-                {usage.compression.originalCount} 条原始消息占用 ~{formatTokenCount(usage.compression.originalTokens)} tokens。
-                超过 75% 时服务端自动摘要更早的对话。
+                {usage.compression.summaryPreview
+                  ? `摘要预览：${usage.compression.summaryPreview}${usage.compression.summaryPreview.length >= 160 ? "…" : ""}`
+                  : `${usage.compression.summarizedCount} 条旧消息已被摘要压缩。`}
+                {" "}超过压缩阈值时会自动更新摘要，无需每轮重新调用 LLM。
               </div>
             </div>
           ) : (
             <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 px-3 py-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
-              {pct >= 75
-                ? "⚠ 接近自动压缩阈值（75%）。继续对话将触发旧消息摘要。"
-                : "未触发自动压缩。超过 75% 时服务端自动摘要更早的对话以节省上下文。"}
+              {compactPct >= 75
+                ? "⚠ 接近自动压缩阈值。继续对话将触发旧消息摘要。"
+                : "未触发自动压缩。超过压缩阈值时服务端会自动摘要更早的对话。"}
             </div>
+          )}
+
+          {onCompact && (
+            <button
+              type="button"
+              disabled={compactPending}
+              onClick={() => onCompact()}
+              className="w-full rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-xs font-medium text-[var(--kp-text-1)] transition hover:border-[var(--kp-brand)] hover:bg-[var(--kp-brand-soft)]/40 disabled:opacity-50"
+              data-testid="manual-compact-button"
+            >
+              {compactPending ? "压缩中…" : "立即压缩上下文"}
+            </button>
           )}
 
           {/* Top 消耗消息 */}

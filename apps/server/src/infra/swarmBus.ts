@@ -68,7 +68,10 @@ export class LocalSwarmBus implements SwarmBus {
     }
 
     // 向上发消息时机约束（#41）
-    const timingError = checkUpwardMessageTiming(fromTier, toAgent.tier, inToolRound);
+    // messageType=report（agent_report_back）是正式回报通道，允许在工具轮次中发送
+    const timingError = checkUpwardMessageTiming(fromTier, toAgent.tier, inToolRound, {
+      allowReportTool: msg.messageType === "report",
+    });
     if (timingError) return { success: false, error: timingError };
 
     // 跨 Workspace 校验（#19）
@@ -120,7 +123,53 @@ export class LocalSwarmBus implements SwarmBus {
       },
     }).catch(() => { /* 审计日志失败不阻塞 */ });
 
+    void this.notifyAgentMessage({
+      toAgentId: msg.toAgentId,
+      messageId: created.id,
+      content: msg.content,
+      fromAgentId: msg.fromAgentId,
+      source: msg.source ?? fromTier,
+    });
+
     return { success: true, message: "消息已发送。", messageId: created.id };
+  }
+
+  /** 推送 agent_message 到目标 Agent 的活跃子会话（推优先，替代前端轮询） */
+  private async notifyAgentMessage(params: {
+    toAgentId: string;
+    messageId: string;
+    content: string;
+    fromAgentId: string;
+    source?: string;
+  }): Promise<void> {
+    try {
+      const { getStreamHub } = await import("./sessionStreamHub.js");
+      const hub = getStreamHub();
+      if (!hub) return;
+      const sessions = await this.prisma.chatSession.findMany({
+        where: {
+          agentId: params.toAgentId,
+          kind: "subagent",
+          status: { in: ["active", "running", "queued", "paused"] },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+        select: { id: true },
+      });
+      for (const s of sessions) {
+        hub.pushExternalEvent(s.id, {
+          type: "agent_message",
+          sessionId: s.id,
+          agentId: params.toAgentId,
+          messageId: params.messageId,
+          content: params.content,
+          source: params.source,
+          fromAgentId: params.fromAgentId,
+        });
+      }
+    } catch (err) {
+      console.warn(`[swarmBus] agent_message 推送失败:`, err);
+    }
   }
 
   async poll(toAgentId: string): Promise<AgentMessageRecord[]> {

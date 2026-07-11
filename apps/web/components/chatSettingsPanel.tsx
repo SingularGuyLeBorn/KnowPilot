@@ -106,10 +106,10 @@ function KpToggle({
   hint?: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)]/50 px-3 py-2.5">
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)]/50 px-2.5 py-2">
       <div className="min-w-0 flex-1 pr-2">
-        <div className="text-xs font-medium text-[var(--kp-text-1)]">{label}</div>
-        {hint && <p className="mt-0.5 text-[10px] leading-relaxed text-[var(--kp-text-3)]">{hint}</p>}
+        <div className="text-[11px] font-medium text-[var(--kp-text-1)]">{label}</div>
+        {hint && <p className="mt-0.5 text-[10px] leading-snug text-[var(--kp-text-3)]">{hint}</p>}
       </div>
       <button
         type="button"
@@ -235,20 +235,20 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
 
   return (
     <div className="flex h-full w-[360px] flex-col">
-      <div className="relative shrink-0 overflow-hidden border-b border-[var(--kp-divider)] px-4 py-4">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-[var(--kp-brand-soft)] blur-2xl" />
-        <div className="relative flex items-center gap-3">
+      <div className="relative shrink-0 overflow-hidden border-b border-[var(--kp-divider)] px-3 py-2.5">
+        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[var(--kp-brand-soft)] blur-2xl" />
+        <div className="relative flex items-center gap-2.5">
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={spring}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--kp-brand-light)] to-[var(--kp-brand-dark)] text-white shadow-lg shadow-[rgba(184,160,144,0.35)]"
+            className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--kp-brand-light)] to-[var(--kp-brand-dark)] text-white shadow-md shadow-[rgba(184,160,144,0.3)]"
           >
-            <SlidersHorizontal className="h-5 w-5" />
+            <SlidersHorizontal className="h-4 w-4" />
           </motion.div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-bold tracking-tight text-[var(--kp-text-1)]">对话设置</h2>
-            <p className="truncate text-xs text-[var(--kp-text-3)]">
+            <h2 className="text-sm font-bold tracking-tight text-[var(--kp-text-1)]">对话设置</h2>
+            <p className="truncate text-[11px] text-[var(--kp-text-3)]">
               {PRIMARY_CHAT_MODELS.find((m) => m.id === chatConfig.model)?.label ?? chatConfig.model}
               {thinkingOn ? " · 思考开" : " · 思考关"}
             </p>
@@ -258,7 +258,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
 
       <PanelTabBar tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <AnimatePresence mode="wait">
           {activeTab === "model" && (
             <motion.div
@@ -267,11 +267,11 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.2 }}
-              className="space-y-4"
+              className="space-y-3"
             >
               <div>
-                <p className="mb-2 text-[11px] font-medium text-[var(--kp-text-3)]">选择模型</p>
-                <div className="grid grid-cols-3 gap-2">
+                <p className="mb-1.5 text-[11px] font-medium text-[var(--kp-text-3)]">选择模型</p>
+                <div className="grid grid-cols-3 gap-1.5">
                   {PRIMARY_CHAT_MODELS.map((m) => {
                     const active = chatConfig.model === m.id;
                     return (
@@ -286,7 +286,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                           })
                         }
                         className={cn(
-                          "flex min-h-[88px] flex-col items-start rounded-2xl border px-2.5 py-3 text-left transition-colors",
+                          "flex min-h-[64px] flex-col items-start rounded-xl border px-2 py-2 text-left transition-colors",
                           active
                             ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] shadow-sm"
                             : "border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]",
@@ -300,12 +300,12 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                         >
                           {modelCardTitle(m.label)}
                         </span>
-                        <span className="mt-1.5 line-clamp-3 text-[9px] leading-relaxed text-[var(--kp-text-3)]">
+                        <span className="mt-1 line-clamp-2 text-[9px] leading-snug text-[var(--kp-text-3)]">
                           {MODEL_HINTS[m.id] ?? m.provider}
                         </span>
                         {active && (
-                          <span className="mt-auto pt-2 text-[10px] font-medium text-[var(--kp-brand-dark)]">
-                            当前使用
+                          <span className="mt-auto pt-1 text-[9px] font-medium text-[var(--kp-brand-dark)]">
+                            当前
                           </span>
                         )}
                       </motion.button>
@@ -313,20 +313,20 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                   })}
                 </div>
                 {legacyModel && (
-                  <p className="mt-2 rounded-lg bg-[var(--kp-bg-mute)]/60 px-2.5 py-1.5 text-[10px] text-[var(--kp-text-3)]">
+                  <p className="mt-1.5 rounded-lg bg-[var(--kp-bg-mute)]/60 px-2 py-1 text-[10px] text-[var(--kp-text-3)]">
                     当前会话模型 <code className="text-[var(--kp-text-2)]">{legacyModel}</code> 为旧 ID，请选择上方模型切换。
                   </p>
                 )}
               </div>
 
-              <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-3 shadow-sm backdrop-blur-md">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
-                    <Brain className="h-3.5 w-3.5" />
+              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                    <Brain className="h-3 w-3" />
                   </span>
-                  <span className="text-xs font-semibold text-[var(--kp-text-1)]">思考模式</span>
+                  <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">思考模式</span>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <KpToggle
                     checked={thinkingOn}
                     disabled={modelReasoningRequired || !thinkingSupported}
@@ -350,9 +350,6 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                       { value: "max", label: "Max · 更深" },
                     ]}
                   />
-                  <p className="text-[10px] leading-relaxed text-[var(--kp-text-3)]">
-                    思考开启时 temperature 等参数由模型忽略。结构对所有模型一致，不可用项会自动禁用。
-                  </p>
                 </div>
               </div>
             </motion.div>
@@ -365,21 +362,21 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.2 }}
-              className="space-y-4"
+              className="space-y-3"
             >
-              <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-3 shadow-sm backdrop-blur-md">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
-                    <Gauge className="h-3.5 w-3.5" />
+              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                    <Gauge className="h-3 w-3" />
                   </span>
-                  <span className="text-xs font-semibold text-[var(--kp-text-1)]">Token 预算</span>
+                  <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">Token 预算</span>
                 </div>
                 <TokenBudgetBar snapshot={tokenBudget} dailyBudget={dailyBudget} />
               </div>
 
-              <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-3 shadow-sm backdrop-blur-md">
-                <div className="mb-3 text-xs font-semibold text-[var(--kp-text-1)]">生成参数</div>
-                <div className="space-y-4">
+              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
+                <div className="mb-2 text-[11px] font-semibold text-[var(--kp-text-1)]">生成参数</div>
+                <div className="space-y-3">
                   <MorandiSlider
                     label="温度"
                     value={chatConfig.temperature}
@@ -401,14 +398,14 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-3 shadow-sm backdrop-blur-md">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
-                    <Wrench className="h-3.5 w-3.5" />
+              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                    <Wrench className="h-3 w-3" />
                   </span>
-                  <span className="text-xs font-semibold text-[var(--kp-text-1)]">工具调用</span>
+                  <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">工具调用</span>
                 </div>
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <MorandiSlider
                     label="单工具超时"
                     value={chatConfig.toolCallTimeoutMs ?? 0}
@@ -427,8 +424,8 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                     display={(chatConfig.maxToolRounds ?? 0) === 0 ? "默认" : String(chatConfig.maxToolRounds ?? 0)}
                     onChange={(maxToolRounds) => updateConfig({ maxToolRounds })}
                   />
-                  <p className="text-[10px] leading-relaxed text-[var(--kp-text-3)]">
-                    超时设为 0 走后端默认（60s）；轮数设为 0 走后端默认（12）。超时后该工具返回错误结果而非永久挂起。
+                  <p className="text-[10px] leading-snug text-[var(--kp-text-3)]">
+                    超时/轮数设为 0 走后端默认。
                   </p>
                 </div>
               </div>

@@ -16,7 +16,7 @@ import {
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
-  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema,
+  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, compactSessionSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
@@ -52,6 +52,7 @@ import { getCachedAnalyticsDashboard } from "./infra/analytics.js";
 import { loadAboutProfile } from "./infra/aboutProfile.js";
 import {
   pullAsyncDeliveries,
+  pullConsumedAsyncDeliveries,
   markAsyncDeliveryConsumed,
   listRunningAsyncJobs,
   cancelAsyncJob,
@@ -138,12 +139,13 @@ const agentRouter = router({
     .meta({ description: "获取今日 LLM 美元预算消耗状态。", aiReadable: true })
     .query(({ ctx }) => getLlmBudgetStatus(ctx.config)),
   pullAsyncQueue: publicProcedure
-    .meta({ description: "拉取会话内后台异步任务队列（结果 + 运行中 + 排队中）。", aiReadable: false })
+    .meta({ description: "拉取会话内后台异步任务队列（结果 + 运行中 + 排队中 + 已消费）。", aiReadable: false })
     .input(z.object({ sessionId: z.string().cuid() }))
     .query(async ({ input, ctx }) => ({
       deliveries: await pullAsyncDeliveries(input.sessionId),
       running: await listRunningAsyncJobs(input.sessionId),
       queued: await listQueuedAsyncJobs(input.sessionId, ctx.config),
+      consumed: await pullConsumedAsyncDeliveries(input.sessionId),
     })),
   cancelAsyncJob: publicProcedure
     .meta({ description: "取消运行中或排队中的后台异步任务。", aiReadable: false })
@@ -167,11 +169,11 @@ const agentRouter = router({
       return { success: true };
     }),
   ackAsyncDelivery: publicProcedure
-    .meta({ description: "确认异步结果已消费（标记 delivered）。", aiReadable: false })
+    .meta({ description: "确认异步结果已消费（标记 delivered）。返回 claimed：是否抢到 CLAIM（与服务端自动消费竞态）。", aiReadable: false })
     .input(z.object({ jobId: z.string().cuid() }))
     .mutation(async ({ input }) => {
-      await markAsyncDeliveryConsumed(input.jobId);
-      return { success: true };
+      const claimed = await markAsyncDeliveryConsumed(input.jobId);
+      return { success: true, claimed };
     }),
   listSessionQueueItems: publicProcedure
     .meta({ description: "列出指定会话的发送队列项（user + superior 合并）。", aiReadable: false })
@@ -372,6 +374,40 @@ const sessionRouter = router({
       }),
     ),
   update: publicProcedure.meta({ description: "更新会话标题或系统提示。", aiReadable: true }).input(updateSessionSchema).mutation(({ ctx, input }) => ctx.services.session.update(input)),
+  compact: publicProcedure
+    .meta({ description: "手动压缩会话上下文：生成摘要并写入 ChatSession.contextSummary。", aiReadable: true })
+    .input(compactSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = await ctx.services.session.getByIdLite(input.id);
+      const history = await ctx.services.message.list({ sessionId: input.id, page: 1, pageSize: 200 });
+      const { buildLlmMessagesFromHistory } = await import("./infra/chatHistory.js");
+      const { compactSessionHistory } = await import("./infra/autoCompact.js");
+      const messages = buildLlmMessagesFromHistory(
+        session.systemPrompt || "你是 KnowPilot 助手。",
+        history.items,
+        { modelId: session.model },
+      );
+      const result = await compactSessionHistory(
+        ctx.config,
+        messages,
+        session.model || "deepseek-v4-flash",
+        session.contextSummary,
+      );
+      if (!result.compacted || !result.summaryText) {
+        return { success: true as const, compacted: false, message: "消息较少，无需压缩。" };
+      }
+      await ctx.services.session.update({
+        id: input.id,
+        contextSummary: result.summaryText,
+        contextCompactedAt: new Date(),
+      } as any);
+      return {
+        success: true as const,
+        compacted: true,
+        summaryPreview: result.summaryText.slice(0, 200),
+        message: "上下文已压缩并保存。",
+      };
+    }),
   stop: publicProcedure
     .meta({ description: "停止子代理会话（状态置为 paused 并真正 abort 运行中后台任务）。", aiReadable: false })
     .input(stopSessionSchema)

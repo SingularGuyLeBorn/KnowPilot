@@ -27,18 +27,46 @@ const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: str
   system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
 };
 
+export function asyncResultLabel(sourceType?: string, taskLabel?: string, subagentName?: string): string {
+  if (sourceType === "sleep" || /^sleep\b/i.test(taskLabel ?? "")) return "async sleep";
+  if (sourceType === "subagent") return subagentName ? `async · ${subagentName}` : "async subagent";
+  if (sourceType === "async_task_tool") return "async tool";
+  if (taskLabel?.trim()) return `async · ${taskLabel.trim().slice(0, 24)}`;
+  return "async task";
+}
+
 export const MessageSourceLabel = memo(function MessageSourceLabel({
   source,
   isSubagentSession,
   align = "left",
   subagentName,
+  asyncKind,
+  taskLabel,
 }: {
   source?: string;
   isSubagentSession?: boolean;
   align?: "left" | "right";
   subagentName?: string;
+  /** 异步投递角标：sleep / async_task_llm / ... */
+  asyncKind?: string;
+  taskLabel?: string;
 }) {
   if (!source || source === "user") return null;
+  if (asyncKind || (source === "sub" && taskLabel)) {
+    const label = asyncResultLabel(asyncKind, taskLabel, subagentName);
+    return (
+      <span
+        className={cn(
+          "pointer-events-none absolute -top-2 z-10 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-[1px] text-[9px] font-medium shadow-sm",
+          align === "right" ? "right-3" : "left-3",
+          "border-teal-200 bg-teal-50 text-teal-800",
+        )}
+      >
+        <Bot className="h-2.5 w-2.5" />
+        {label}
+      </span>
+    );
+  }
   const base = SOURCE_LABEL_STYLES[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" };
   const isParent = (source === "super" || source === "manager") && isSubagentSession;
   const label = isParent ? "父 Agent" : subagentName && source === "sub" ? `${base.label} · ${subagentName}` : base.label;

@@ -416,7 +416,7 @@ export class SessionStreamHub {
 
 let globalStreamHub: SessionStreamHub | null = null;
 
-export function setStreamHub(hub: SessionStreamHub): void {
+export function setStreamHub(hub: SessionStreamHub | null): void {
   globalStreamHub = hub;
 }
 

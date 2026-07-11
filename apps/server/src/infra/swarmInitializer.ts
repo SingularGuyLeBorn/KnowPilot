@@ -62,6 +62,7 @@ const SUPER_AGENT_TOOLS = [
   "native:async_task_wait",
   "native:async_task_cancel",
   "native:spawn_subagent",
+  "native:session_rotate",
   "native:agent_create",
   "native:agent_update",
   "native:agent_delete",

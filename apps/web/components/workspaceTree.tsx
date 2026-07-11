@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useMemo } from "react";
-import { Bot, Crown, Loader2, Pin, ShieldCheck } from "lucide-react";
+import { Bot, Crown, Loader2, Pin, ShieldCheck, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
 import type { ChatSession } from "@knowpilot/shared";
@@ -33,6 +33,7 @@ interface WorkspaceTreeProps {
   onSelectSession: (id: string) => void;
   onHoverSession?: (id: string) => void;
   onHoverSessionEnd?: (id: string) => void;
+  onDeleteSession?: (id: string) => void;
   onNewChat: () => void;
   searchQuery: string;
   /** 主 Agent / 子 Agent 两种视图 */
@@ -47,6 +48,7 @@ export function WorkspaceTree({
   onSelectSession,
   onHoverSession,
   onHoverSessionEnd,
+  onDeleteSession,
   onNewChat,
   searchQuery,
   mode,
@@ -193,6 +195,7 @@ export function WorkspaceTree({
                   onSelect={() => onSelectSession(s.id)}
                   onHover={() => onHoverSession?.(s.id)}
                   onHoverEnd={() => onHoverSessionEnd?.(s.id)}
+                  onDelete={onDeleteSession ? () => onDeleteSession(s.id) : undefined}
                   data-testid="session-list-item"
                 />
               ))}
@@ -250,6 +253,27 @@ export function WorkspaceTree({
                 <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
                   {formatRelativeTime(session.updatedAt)}
                 </span>
+                {onDeleteSession && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="删除会话"
+                    className="rounded p-0.5 text-[var(--kp-text-3)] hover:bg-red-50 hover:text-red-600"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteSession(session.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDeleteSession(session.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </span>
+                )}
               </div>
             )}
           </button>
@@ -271,6 +295,7 @@ function SessionRow({
   onSelect,
   onHover,
   onHoverEnd,
+  onDelete,
   "data-testid": dataTestId,
 }: {
   session: ChatSession;
@@ -278,27 +303,45 @@ function SessionRow({
   onSelect: () => void;
   onHover?: () => void;
   onHoverEnd?: () => void;
+  onDelete?: () => void;
   "data-testid"?: string;
 }) {
   return (
-    <button
-      type="button"
-      data-testid={dataTestId}
-      onClick={onSelect}
-      onMouseEnter={onHover}
-      onMouseLeave={onHoverEnd}
+    <div
       className={cn(
-        "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition",
+        "group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition",
         active
           ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
           : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
       )}
     >
-      {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
-      <span className="min-w-0 flex-1 truncate">{session.title}</span>
-      <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
-        {formatRelativeTime(session.updatedAt)}
-      </span>
-    </button>
+      <button
+        type="button"
+        data-testid={dataTestId}
+        onClick={onSelect}
+        onMouseEnter={onHover}
+        onMouseLeave={onHoverEnd}
+        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+      >
+        {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
+        <span className="min-w-0 flex-1 truncate">{session.title}</span>
+        <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
+          {formatRelativeTime(session.updatedAt)}
+        </span>
+      </button>
+      {onDelete && (
+        <button
+          type="button"
+          title="删除会话"
+          className="shrink-0 rounded p-0.5 text-[var(--kp-text-3)] opacity-0 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-600"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
+    </div>
   );
 }

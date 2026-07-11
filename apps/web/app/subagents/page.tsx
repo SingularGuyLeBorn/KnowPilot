@@ -43,12 +43,10 @@ export default function SubagentsPage() {
     kind: "subagent",
     ...(status ? { status: status as SessionStatus } : {}),
   });
-  // orchestrator 全局统计（排队/运行/上限），有 running/queued 时 3s 轮询
+  // orchestrator 全局统计：Chat SSE 会更新；本页无 SSE，focus + 30s 兜底
   const statsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
-    refetchInterval: (q) => {
-      const s = q.state.data as { runningGlobal?: number; queued?: number } | undefined;
-      return (s?.runningGlobal ?? 0) > 0 || (s?.queued ?? 0) > 0 ? 3000 : false;
-    },
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
   const stats = statsQuery.data;
   const stopMut = trpc.session.stop.useMutation({

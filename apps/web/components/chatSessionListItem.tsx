@@ -90,7 +90,14 @@ export const SessionListItem = memo(function SessionListItem({
           active ? "text-[var(--kp-brand-dark)]" : "text-[var(--kp-text-2)]",
         )}
       >
-        <div className="truncate font-medium">{session.title}</div>
+        <div className="truncate font-medium">
+          {session.title}
+          {session.status === "archived" && (
+            <span className="ml-1.5 rounded bg-[var(--kp-bg-mute)] px-1 py-0.5 text-[10px] font-normal text-[var(--kp-text-3)]">
+              已归档
+            </span>
+          )}
+        </div>
         <div className="truncate text-xs text-[var(--kp-text-3)]">
           {session.model} · {formatRelativeTime(session.updatedAt)}
         </div>

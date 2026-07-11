@@ -13,9 +13,11 @@ import {
   retryAsyncJob,
   startAsyncAgentTask,
   getAsyncQueueStats,
+  autoConsumeAsyncDelivery,
 } from "../infra/asyncJobManager.js";
 import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
 import { createTestConfig } from "./helpers/toolTestFixtures.js";
+import { setStreamHub, SessionStreamHub } from "../infra/sessionStreamHub.js";
 
 const ASYNC_KIND = "async_agent";
 const sessionId = "cltestasyncjobsession001";
@@ -364,5 +366,128 @@ describe("asyncJobManager 持久化", () => {
     expect(stats.taskTimeoutMs).toBeGreaterThanOrEqual(1);
     expect(typeof stats.queued).toBe("number");
     expect(typeof stats.runningGlobal).toBe("number");
+  });
+
+  it("markAsyncDeliveryConsumed：pinned 不可 CLAIM；二次 CLAIM 返回 false", async () => {
+    const task = await createAsyncTask({ status: "success", taskLabel: "pin 测", asyncResult: "x" });
+    await prisma.task.update({ where: { id: task.id }, data: { pinned: true } });
+    expect(await markAsyncDeliveryConsumed(task.id)).toBe(false);
+
+    await prisma.task.update({ where: { id: task.id }, data: { pinned: false } });
+    expect(await markAsyncDeliveryConsumed(task.id)).toBe(true);
+    expect(await markAsyncDeliveryConsumed(task.id)).toBe(false);
+  });
+
+  it("autoConsumeAsyncDelivery：无前端时也能 CLAIM 并启动会话流", async () => {
+    const agentStream = await import("../infra/agentStream.js");
+    const chatSpy = vi.spyOn(agentStream, "chatAgentStream").mockImplementation(async (_s, _c, input, _inv, emit) => {
+      emit({
+        type: "done",
+        sessionId: input.sessionId!,
+        agentId: "agent-auto",
+        content: "已消化异步结果",
+        toolCalls: [],
+        model: "m",
+        provider: "p",
+        roundsUsed: 1,
+      });
+    });
+
+    const hub = new SessionStreamHub({ ringSize: 50, persist: false, eventTtlMs: 1000, cleanupIntervalMs: 60_000 });
+    setStreamHub(hub);
+
+    const ctx = await createContextInner();
+    const agent = await ctx.services.agent.create({
+      name: `AutoConsume Agent ${Date.now()}`,
+      model: "deepseek-chat",
+      systemPrompt: "test",
+      tools: [],
+    });
+    const agentId = (agent.data as { id: string }).id;
+    const session = await ctx.services.session.create({
+      title: "auto-consume 父会话",
+      model: "deepseek-chat",
+      agentId,
+    });
+    const sid = (session.data as { id: string }).id;
+
+    const task = await prisma.task.create({
+      data: {
+        name: "[async] 后台 sleep",
+        type: "async_agent",
+        status: "success",
+        sessionId: sid,
+        delivered: false,
+        input: {
+          kind: ASYNC_KIND,
+          sessionId: sid,
+          task: "sleep",
+          taskLabel: "后台 sleep",
+          agentSnapshot: { id: agentId, model: "m", systemPrompt: "", tools: [] },
+          sourceType: "sleep",
+        },
+        output: { asyncResult: "已等待 1 秒（定时器到期）" },
+      },
+    });
+
+    try {
+      const result = await autoConsumeAsyncDelivery({
+        sessionId: sid,
+        jobId: task.id,
+        status: "done",
+        taskLabel: "后台 sleep",
+        services: ctx.services,
+        config: ctx.config,
+      });
+      expect(result).toBe("started");
+
+      await vi.waitFor(
+        async () => {
+          const row = await prisma.task.findUnique({ where: { id: task.id } });
+          expect(row?.delivered).toBe(true);
+          expect(chatSpy).toHaveBeenCalled();
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      expect(await markAsyncDeliveryConsumed(task.id)).toBe(false);
+      expect(await pullAsyncDeliveries(sid)).toHaveLength(0);
+
+      const pinned = await prisma.task.create({
+        data: {
+          name: "[async] pinned",
+          type: "async_agent",
+          status: "success",
+          sessionId: sid,
+          delivered: false,
+          pinned: true,
+          input: {
+            kind: ASYNC_KIND,
+            sessionId: sid,
+            task: "p",
+            taskLabel: "pinned",
+            agentSnapshot: { id: agentId, model: "m", systemPrompt: "", tools: [] },
+          },
+          output: { asyncResult: "pin" },
+        },
+      });
+      expect(
+        await autoConsumeAsyncDelivery({
+          sessionId: sid,
+          jobId: pinned.id,
+          status: "done",
+          taskLabel: "pinned",
+          services: ctx.services,
+          config: ctx.config,
+        }),
+      ).toBe("skipped");
+    } finally {
+      setStreamHub(null);
+      chatSpy.mockRestore();
+      await prisma.task.deleteMany({ where: { sessionId: sid } });
+      await prisma.chatMessage.deleteMany({ where: { sessionId: sid } }).catch(() => {});
+      await prisma.chatSession.delete({ where: { id: sid } }).catch(() => {});
+      await ctx.services.agent.delete(agentId).catch(() => {});
+    }
   });
 });

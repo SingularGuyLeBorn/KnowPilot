@@ -266,9 +266,9 @@ export async function chatCompletion(options: {
   const usage = data.usage;
   const reasoningContent = choice?.message?.reasoning_content ?? null;
   const rawContent = choice?.message?.content ?? null;
-  // DeepSeek V4 在 thinking 模式下可能只返回 reasoning_content 而无 content；
-  // 将 reasoning_content 作为内容 fallback，避免 assistant 消息为空。
-  const content = rawContent?.trim() ? rawContent : (reasoningContent ?? null);
+  // 思考与正文分离：不要把 reasoning_content 填进 content，否则会与正式回复串台，
+  // 并误导上层再走一遍「有思考 → 二次 stream」路径。
+  const content = rawContent?.trim() ? rawContent : null;
 
   return {
     content,
@@ -356,9 +356,6 @@ export async function* chatCompletionStream(options: {
   let finishReason: string | null = null;
   let usage: { prompt: number; completion: number; total: number } | undefined;
   let responseModel = model;
-  let reasoningAcc = "";
-  let hasContentToken = false;
-
   while (true) {
     if (options.signal?.aborted) {
       const err = new Error("流式输出已被用户中断");
@@ -404,7 +401,6 @@ export async function* chatCompletionStream(options: {
       if (choice.finish_reason) finishReason = choice.finish_reason;
 
       if (choice.delta?.reasoning_content) {
-        reasoningAcc += choice.delta.reasoning_content;
         yield {
           type: "reasoning",
           delta: choice.delta.reasoning_content,
@@ -414,7 +410,6 @@ export async function* chatCompletionStream(options: {
       }
 
       if (choice.delta?.content) {
-        hasContentToken = true;
         yield { type: "token", delta: choice.delta.content, model: responseModel, provider: provider.id };
       }
 
@@ -453,12 +448,11 @@ export async function* chatCompletionStream(options: {
       tokenUsage: usage,
     };
   } else {
-    // thinking 模式下 API 可能只返回 reasoning_content 而无 content；
-    // 无正式 token 时，将累积的 reasoning 作为内容 fallback 输出。
-    const fallbackContent = !hasContentToken && reasoningAcc.trim() ? reasoningAcc : "";
+    // 思考已通过 type:"reasoning" 逐片输出；此处不要把 reasoningAcc 再当正式 token，
+    // 否则思考会灌进正式回复气泡，造成「思考/正文串台」。
     yield {
       type: "token",
-      delta: fallbackContent,
+      delta: "",
       finishReason,
       model: responseModel,
       provider: provider.id,

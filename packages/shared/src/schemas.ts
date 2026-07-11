@@ -165,6 +165,8 @@ export const agentChatSchema = z
     editContent: z.string().min(1).optional(),
     skillId: z.string().cuid().optional(),
     source: z.enum(["user", "super", "manager", "sub", "system"]).optional(),
+    /** 工具权限血统：parent=上级任务/异步续跑（允许 report_back）；user=用户直接对话 */
+    runOrigin: z.enum(["user", "parent", "heartbeat"]).optional(),
     toolResults: z.record(z.unknown()).optional(),
     clientMessageId: z.string().optional(),
     resumeAfter: z.number().int().min(0).optional(),
@@ -248,7 +250,7 @@ export const listSkillsSchema = z.object({
    Session (会话)
    ═══════════════════════════════════════════════════════ */
 
-export const sessionStatusSchema = z.enum(["active", "queued", "running", "paused", "completed", "failed"]);
+export const sessionStatusSchema = z.enum(["active", "queued", "running", "paused", "completed", "failed", "archived"]);
 
 export const createSessionSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
@@ -274,6 +276,14 @@ export const updateSessionSchema = z.object({
   taskDescription: z.string().max(2000).optional(),
   kind: z.enum(["chat", "subagent"]).optional(),
   parentSessionId: z.string().cuid().nullable().optional(),
+  // Auto-Compact 持久化摘要
+  contextSummary: z.string().max(20000).nullable().optional(),
+  contextCompactedAt: z.coerce.date().nullable().optional(),
+  rotatedToSessionId: z.string().cuid().nullable().optional(),
+});
+
+export const compactSessionSchema = z.object({
+  id: z.string().cuid(),
 });
 
 export const listSessionsSchema = z.object({

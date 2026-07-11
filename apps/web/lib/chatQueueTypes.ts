@@ -48,6 +48,8 @@ export interface ChatQueueItem {
   source?: string;
   /** 来源显示名（superior 专用） */
   sourceName?: string;
+  /** 异步任务来源类型：sleep / async_task_llm / async_task_tool / subagent */
+  sourceType?: string;
 }
 
 export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = false): string {
@@ -84,8 +86,8 @@ export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = fals
 export function mergeAsyncPollIntoQueue(
   local: ChatQueueItem[],
   poll?: {
-    running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number }>;
-    queued?: Array<{ jobId: string; taskLabel: string; position?: number; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number }>;
+    running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number; sourceType?: string }>;
+    queued?: Array<{ jobId: string; taskLabel: string; position?: number; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number; sourceType?: string }>;
     deliveries?: Array<{
       id: string;
       jobId: string;
@@ -98,6 +100,21 @@ export function mergeAsyncPollIntoQueue(
       logs?: ChatQueueItem["logs"];
       createdAt: number;
       pinned?: boolean;
+      sourceType?: string;
+    }>;
+    consumed?: Array<{
+      id: string;
+      jobId: string;
+      taskLabel: string;
+      asyncResult: string;
+      status: "done" | "failed";
+      error?: string;
+      subagentSessionId?: string;
+      subagentName?: string;
+      logs?: ChatQueueItem["logs"];
+      createdAt: number;
+      pinned?: boolean;
+      sourceType?: string;
     }>;
   },
   opts?: { skipDeliveryJobIds?: ReadonlySet<string> },
@@ -140,6 +157,7 @@ export function mergeAsyncPollIntoQueue(
       subagentSessionId: job.subagentSessionId,
       logs: job.logs,
       createdAt: job.createdAt,
+      sourceType: job.sourceType,
     });
   }
 
@@ -155,6 +173,7 @@ export function mergeAsyncPollIntoQueue(
       subagentSessionId: job.subagentSessionId,
       logs: job.logs,
       createdAt: job.createdAt,
+      sourceType: job.sourceType,
     });
   }
 
@@ -179,6 +198,7 @@ export function mergeAsyncPollIntoQueue(
       logs: del.logs ?? prev?.logs,
       createdAt: del.createdAt,
       pinned: del.pinned ?? prev?.pinned,
+      sourceType: del.sourceType ?? prev?.sourceType,
     });
   }
 

@@ -3,7 +3,7 @@
  */
 
 import type { ChatMessage } from "@knowpilot/shared";
-import { CONTEXT_TOKEN_HINT, formatTokenCount } from "@/lib/tokenBudget";
+import { COMPACT_CHAR_THRESHOLD, CONTEXT_TOKEN_HINT, formatTokenCount } from "@/lib/tokenBudget";
 
 export interface ContextUsageSegment {
   id: string;
@@ -25,21 +25,20 @@ export interface ContextUsageSnapshot {
   segments: ContextUsageSegment[];
   estimatedTotal: number;
   ratio: number;
+  /** 相对 Auto-Compact 字符阈值的进度 0–1 */
+  compactRatio: number;
   inputTokens: number;
   outputTokens: number;
   maxContextTokens: number;
-  /** 按 token 消耗降序排列的消息（Top N 由调用方截取） */
+  compactCharThreshold: number;
   topMessages: ContextUsageMessageInfo[];
-  /** 压缩状态 */
   compression: {
     summarizedCount: number;
     originalCount: number;
-    /** 摘要消息的 token 数 */
     summarizedTokens: number;
-    /** 原始消息的 token 数 */
     originalTokens: number;
-    /** 是否已触发自动压缩 */
     hasAutoCompacted: boolean;
+    summaryPreview?: string;
   };
 }
 
@@ -53,13 +52,18 @@ export function buildContextUsage(params: {
   messages: ChatMessage[];
   systemPrompt: string;
   maxContextTokens?: number;
+  compactCharThreshold?: number;
+  /** 会话表持久化的摘要（优先于消息内标记） */
+  contextSummary?: string | null;
 }): ContextUsageSnapshot {
   const maxContextTokens = params.maxContextTokens ?? CONTEXT_TOKEN_HINT;
+  const compactCharThreshold = params.compactCharThreshold ?? COMPACT_CHAR_THRESHOLD;
+  const persistedSummary = params.contextSummary?.trim() || "";
 
   const systemChars = params.systemPrompt.length;
   let conversationChars = 0;
   let toolChars = 0;
-  let summaryChars = 0;
+  let summaryChars = persistedSummary.length;
 
   for (const m of params.messages) {
     const content = m.content ?? "";
@@ -95,13 +99,17 @@ export function buildContextUsage(params: {
 
   const estimatedTotal = segments.reduce((sum, s) => sum + s.tokens, 0);
   const ratio = Math.min(1, estimatedTotal / maxContextTokens);
+  const estimatedChars = systemChars + conversationChars + toolChars + summaryChars;
+  const compactRatio = Math.min(1, estimatedChars / compactCharThreshold);
 
-  // Per-message token 排行
   const topMessages: ContextUsageMessageInfo[] = params.messages
     .map((m) => {
       const content = m.content ?? "";
       const isSummarized = content.includes(SUMMARY_MARKER);
-      const msgChars = content.length + (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) + (m.toolResults ? JSON.stringify(m.toolResults).length : 0);
+      const msgChars =
+        content.length +
+        (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) +
+        (m.toolResults ? JSON.stringify(m.toolResults).length : 0);
       return {
         id: m.id,
         role: m.role,
@@ -115,15 +123,17 @@ export function buildContextUsage(params: {
     .sort((a, b) => b.tokens - a.tokens)
     .slice(0, 10);
 
-  // 压缩状态
-  let summarizedCount = 0;
+  let summarizedCount = persistedSummary ? 1 : 0;
   let originalCount = 0;
-  let summarizedTokens = 0;
+  let summarizedTokens = persistedSummary ? charsToTokens(persistedSummary.length) : 0;
   let originalTokens = 0;
   for (const m of params.messages) {
     const content = m.content ?? "";
     const isSummarized = content.includes(SUMMARY_MARKER);
-    const msgChars = content.length + (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) + (m.toolResults ? JSON.stringify(m.toolResults).length : 0);
+    const msgChars =
+      content.length +
+      (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) +
+      (m.toolResults ? JSON.stringify(m.toolResults).length : 0);
     const tokens = charsToTokens(msgChars);
     if (isSummarized) {
       summarizedCount++;
@@ -151,16 +161,19 @@ export function buildContextUsage(params: {
     segments,
     estimatedTotal,
     ratio,
+    compactRatio,
     inputTokens,
     outputTokens,
     maxContextTokens,
+    compactCharThreshold,
     topMessages,
     compression: {
       summarizedCount,
       originalCount,
       summarizedTokens,
       originalTokens,
-      hasAutoCompacted: summarizedCount > 0,
+      hasAutoCompacted: !!persistedSummary || summarizedCount > 0,
+      summaryPreview: persistedSummary ? persistedSummary.slice(0, 160) : undefined,
     },
   };
 }

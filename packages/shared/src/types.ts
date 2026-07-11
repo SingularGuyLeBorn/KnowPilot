@@ -158,6 +158,10 @@ export interface ChatSession {
   status?: import("./schemas.js").SessionStatus;
   taskDescription?: string | null;
   isMainSession?: boolean;
+  /** Auto-Compact 持久化摘要 */
+  contextSummary?: string | null;
+  contextCompactedAt?: string | Date | null;
+  rotatedToSessionId?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
   messages?: ChatMessage[];

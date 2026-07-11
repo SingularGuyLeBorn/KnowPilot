@@ -188,13 +188,16 @@ export function checkUpwardMessageTiming(
   fromTier: string,
   toTier: string,
   inToolRound: boolean,
+  options?: { allowReportTool?: boolean },
 ): PermissionError | null {
+  // agent_report_back 是专门的向上回报工具，必须允许在工具轮次中调用
+  if (options?.allowReportTool) return null;
   // 向上发：目标 tier > 发送方 tier
   const isUpward = TIER_RANK[toTier] > TIER_RANK[fromTier];
   if (isUpward && inToolRound) {
     return {
       code: "UPWARD_MESSAGE_IN_TOOL_ROUND",
-      reason: `向上级（${toTier}）发送消息只能在正式回复中进行，不能在工具调用轮次中发送。请完成工具调用后在最终回复中发送。`,
+      reason: `向上级（${toTier}）发送消息只能在正式回复中进行，不能在工具调用轮次中发送。请使用 agent_report_back 工具回报，或完成工具调用后在最终回复中发送。`,
     };
   }
   return null;

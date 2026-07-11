@@ -21,7 +21,7 @@ import {
   type SearchEngineName,
 } from "./metablog/index.js";
 import { runShellRestricted, waitMs } from "./shellRunner.js";
-import { runAgentLoop, buildMemoryContext, buildSystemPromptWithHints, resolveAgent, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
+import { buildMemoryContext, buildSystemPromptWithHints, resolveAgent, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import type { LlmMessage } from "./llmClient.js";
@@ -211,6 +211,7 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   wait: waitTool,
   sleep: sleepTool,
   session_clear: sessionClearTool,
+  session_rotate: sessionRotateTool,
   // Swarm 管理工具
   agent_create: agentCreateTool,
   agent_update: agentUpdateTool,
@@ -1354,6 +1355,34 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         },
       },
       required: ["confirm"],
+    },
+  },
+  {
+    name: "session_rotate",
+    description:
+      "当当前会话轮数过多、话题切换或用户要求换干净上下文时调用：归档当前会话，创建同一 Agent 的新会话，并把你写的总结作为新会话第一条用户消息。用户若仍在看旧会话，不会自动跳转，只会收到提示。",
+    parameters: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "string",
+          description: "给新会话用的中文总结（Markdown），需保留目标、决策、未完成事项与关键结论",
+        },
+        reason: {
+          type: "string",
+          description: "轮换原因，如「轮数过多」「话题切换」「用户要求」",
+        },
+        title: {
+          type: "string",
+          description: "新会话标题（可选，默认基于旧标题生成）",
+        },
+        carryMemoryIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "需要在新会话首条消息中提及的 Memory id（可选）",
+        },
+      },
+      required: ["summary"],
     },
   },
   // ─── Swarm 管理工具 ───
@@ -2954,6 +2983,8 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     mode,
     toolCall,
     shareToSessionIds,
+    // 阻塞等待时结果直接作为工具返回值，禁止再进队列自动消费（避免二次喂给 Agent）
+    deliverToQueue: !waitForResult,
   });
   if (!waitForResult) return { ...started, sourceType };
   // 阻塞等待结果（受工具超时约束）：结果直接返回，不进发送队列
@@ -3155,8 +3186,15 @@ async function sleepTool(args: Record<string, unknown>, ctx: NativeToolContext) 
   const seconds = Math.max(0, Math.min(Number(args.seconds !== undefined ? args.seconds : 10), 300));
   if (!Number.isFinite(seconds)) throw new Error("seconds 必须是有效数字");
 
+  // LLM 常把 async 写成字符串 "true"，必须兼容，否则会同步阻塞几十秒看起来像卡死
+  const asyncRaw = args.async;
+  const isAsync =
+    asyncRaw === true ||
+    asyncRaw === 1 ||
+    (typeof asyncRaw === "string" && ["true", "1", "yes"].includes(asyncRaw.trim().toLowerCase()));
+
   // 非阻塞模式：创建轻量异步定时器任务，时间到后结果进入发送队列
-  if (args.async === true) {
+  if (isAsync) {
     if (!ctx.sessionId || !ctx.agentSnapshot) {
       throw new Error("sleep(async=true) 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
     }
@@ -3175,7 +3213,8 @@ async function sleepTool(args: Record<string, unknown>, ctx: NativeToolContext) 
   return {
     ...result,
     waitedSeconds: result.waitedMs / 1000,
-    hint: "睡眠结束，继续生成回复。",
+    message: `定时时间${seconds}s到了，请继续完成任务`,
+    hint: `定时时间${seconds}s到了，请继续完成任务`,
   };
 }
 
@@ -3188,6 +3227,145 @@ async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolCo
   }
   const result = await ctx.services.session.deleteMany();
   return { deletedSessions: result.count };
+}
+
+/**
+ * 归档当前会话并开启同 Agent 新会话；总结写入 content/sessions/ 与新会话首条消息。
+ * 不自动切换前端视图——通过 SSE session_rotated 提示用户手动跳转。
+ */
+async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const summary = String(args.summary ?? "").trim();
+  if (!summary) throw new Error("session_rotate 需要非空的 summary");
+  if (!ctx.sessionId) throw new Error("session_rotate 需要在 Chat 会话中调用（缺少 sessionId）");
+  if (!ctx.services?.session || !ctx.services?.message) {
+    throw new Error("当前上下文未提供 Session/Message Service，无法执行 session_rotate");
+  }
+
+  const oldSession = await ctx.services.session.getByIdLite(ctx.sessionId);
+  if (!oldSession) throw new Error("当前会话不存在");
+  if (oldSession.status === "archived") {
+    return {
+      success: false,
+      error: "当前会话已归档，请勿重复调用 session_rotate。",
+      oldSessionId: oldSession.id,
+      newSessionId: oldSession.rotatedToSessionId ?? undefined,
+    };
+  }
+  if (oldSession.kind === "subagent") {
+    throw new Error("子 Agent 任务会话不支持 session_rotate；请在主对话会话中轮换。");
+  }
+
+  const agentId = oldSession.agentId ?? ctx.agentSnapshot?.id ?? null;
+  if (!agentId) throw new Error("无法确定 Agent，无法创建新会话");
+
+  const reason = args.reason ? String(args.reason).trim() : undefined;
+  const carryMemoryIds = Array.isArray(args.carryMemoryIds)
+    ? (args.carryMemoryIds as unknown[]).map((id) => String(id)).filter(Boolean)
+    : [];
+
+  const oldTitle = String(oldSession.title || "对话").slice(0, 40);
+  const newTitle =
+    (args.title ? String(args.title).trim() : "") ||
+    `${oldTitle} · 续`.slice(0, 60);
+
+  // 1) 写总结文件
+  const sessionsDir = path.join(ctx.config.contentDir, "sessions");
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  const summaryFileName = `${oldSession.id}-summary.md`;
+  const summaryPath = path.join(sessionsDir, summaryFileName);
+  const summaryDoc = [
+    "---",
+    `title: "${newTitle} 会话摘要"`,
+    `oldSessionId: "${oldSession.id}"`,
+    `agentId: "${agentId}"`,
+    `reason: "${(reason ?? "session_rotate").replace(/"/g, "'")}"`,
+    `rotatedAt: "${new Date().toISOString()}"`,
+    "---",
+    "",
+    summary,
+    "",
+  ].join("\n");
+  fs.writeFileSync(summaryPath, summaryDoc, "utf8");
+  const relativeSummaryPath = path
+    .relative(ctx.config.projectRoot, summaryPath)
+    .split(path.sep)
+    .join("/");
+
+  // 2) 创建新会话
+  const created = await ctx.services.session.create({
+    title: newTitle,
+    model: oldSession.model || "deepseek-v4-flash",
+    systemPrompt: oldSession.systemPrompt ?? undefined,
+    agentId,
+    kind: "chat",
+    status: "active",
+  } as any);
+  if (!created.success || !created.data) {
+    throw new Error(created.error?.message ?? "创建新会话失败");
+  }
+  const newSession = created.data as { id: string; title: string };
+
+  // 3) 新会话首条用户消息 = 总结（可选附带 Memory 引用）
+  let firstMessage = `【上一会话摘要】\n\n${summary}`;
+  if (carryMemoryIds.length > 0) {
+    firstMessage += `\n\n【需继续参考的 Memory】\n${carryMemoryIds.map((id) => `- ${id}`).join("\n")}`;
+  }
+  if (reason) {
+    firstMessage += `\n\n（轮换原因：${reason}）`;
+  }
+  await ctx.services.message.create({
+    sessionId: newSession.id,
+    role: "user",
+    content: firstMessage,
+    source: "system",
+  } as any);
+
+  // 4) 归档旧会话并记录跳转
+  await ctx.services.session.update({
+    id: oldSession.id,
+    status: "archived",
+    contextSummary: summary.slice(0, 20000),
+    contextCompactedAt: new Date(),
+    rotatedToSessionId: newSession.id,
+  } as any);
+
+  // 5) SSE 通知旧会话页面（不自动切换）
+  try {
+    const { getStreamHub } = await import("./sessionStreamHub.js");
+    const hub = getStreamHub();
+    hub?.pushExternalEvent(oldSession.id, {
+      type: "session_rotated",
+      oldSessionId: oldSession.id,
+      newSessionId: newSession.id,
+      newTitle: newSession.title || newTitle,
+      reason,
+    });
+  } catch (err) {
+    console.warn("[session_rotate] SSE 推送失败:", err);
+  }
+
+  await ctx.services.log?.create?.({
+    level: "info",
+    component: "session",
+    event: "session_rotated",
+    message: `会话 ${oldSession.id} → ${newSession.id}`,
+    metadata: {
+      oldSessionId: oldSession.id,
+      newSessionId: newSession.id,
+      reason,
+      summaryPath: relativeSummaryPath,
+      agentId,
+    },
+  }).catch(() => {});
+
+  return {
+    success: true,
+    oldSessionId: oldSession.id,
+    newSessionId: newSession.id,
+    newTitle: newSession.title || newTitle,
+    summaryPath: relativeSummaryPath,
+    message: "已归档当前会话并创建新会话。请告知用户可点击提示跳转；不要假设页面已自动切换。",
+  };
 }
 
 // ─── Swarm 管理工具实现 ───
@@ -3317,6 +3495,7 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
   if (existing) await existing;
 
   const runPromise = (async (): Promise<{ content: string; subagentSessionId: string }> => {
+    let sessionIdForCleanup: string | undefined;
     try {
       const agent = await resolveAgent(ctx.services, targetAgentId);
       if (!agent || agent.status === "deleted") throw new Error("目标 Agent 不存在或已删除");
@@ -3340,10 +3519,10 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
           mainSession = await ctx.prisma?.chatSession.findUnique({ where: { id: (created.data as { id: string }).id } }) ?? null;
         }
       } else {
-        // 已有主会话：补齐 kind/parentSessionId，便于前端识别子 Agent 会话与列表关联
+        // 已有主会话：每次派活都刷新 parentSessionId，保证 report_back 回到「本次 spawn 的父会话」
         const patch: Record<string, unknown> = { status: "running" };
         if (mainSession.kind !== "subagent") patch.kind = "subagent";
-        if (!mainSession.parentSessionId && ctx.sessionId) patch.parentSessionId = ctx.sessionId;
+        if (ctx.sessionId) patch.parentSessionId = ctx.sessionId;
         if (Object.keys(patch).length > 0) {
           try {
             await ctx.services.session.update({ id: mainSession.id, ...patch } as any);
@@ -3354,6 +3533,7 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
         }
       }
       if (!mainSession) throw new Error("无法创建或找到目标 Agent 的主会话");
+      sessionIdForCleanup = mainSession.id;
 
       const messageSource = (ctx.agentSnapshot?.tier ?? "super") as "super" | "manager" | "sub" | "user" | "system";
       // 幂等：同内容父任务只写一次；若已有对应 assistant 则直接返回，避免双写/双跑
@@ -3391,6 +3571,27 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
         });
       }
 
+      const { getStreamHub } = await import("./sessionStreamHub.js");
+      const { runAgentLoopStream } = await import("./agentStream.js");
+      const hub = getStreamHub();
+      if (!hub) {
+        throw new Error("SessionStreamHub 未初始化，无法启动子 Agent 流式运行");
+      }
+
+      // 已有同会话流在跑：等待其结束，再读最终 assistant（避免双跑）
+      if (hub.isRunning(mainSession.id)) {
+        await hub.waitFor(mainSession.id);
+        const lastAssistant = await ctx.prisma?.chatMessage.findFirst({
+          where: { sessionId: mainSession.id, role: "assistant" },
+          select: { content: true },
+          orderBy: { createdAt: "desc" },
+        });
+        return {
+          content: lastAssistant?.content || "(无文本输出)",
+          subagentSessionId: mainSession.id,
+        };
+      }
+
       const memoryHint = await buildMemoryContext(ctx.services, input);
       const tierTools = resolveToolsForAgentTier(agent.tier, agent.tools);
       const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, tierTools, memoryHint, {
@@ -3402,51 +3603,112 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
         { role: "user", content: input },
       ];
       const invokeTrpc = createTrpcInvoker({ services: ctx.services });
+      const agentMeta = {
+        id: agent.id,
+        model: agent.model,
+        systemPrompt,
+        tools: tierTools,
+        tier: agent.tier,
+        parentId: agent.parentId,
+        workspaceId: agent.workspaceId,
+      };
 
-      const loop = await runAgentLoop({
-        config: ctx.config,
-        services: ctx.services,
-        agent: { model: agent.model, systemPrompt, tools: tierTools },
-        messages,
-        invokeTrpc,
+      let assistantContent = "(无文本输出)";
+
+      await hub.start(mainSession.id, {
         sessionId: mainSession.id,
-        agentMeta: {
-          id: agent.id,
-          model: agent.model,
-          systemPrompt,
-          tools: tierTools,
-          tier: agent.tier,
-          parentId: agent.parentId,
-          workspaceId: agent.workspaceId,
-        },
-        runOrigin: "parent",
+        agentId: agent.id,
+        message: input,
+      }, async (emit, hubSignal) => {
+        try {
+          const loop = await runAgentLoopStream({
+            config: ctx.config,
+            services: ctx.services,
+            agent: { model: agent.model, systemPrompt, tools: tierTools },
+            messages,
+            llmOptions: {},
+            invokeTrpc,
+            emit,
+            sessionId: mainSession!.id,
+            agentMeta,
+            signal: hubSignal,
+            runOrigin: "parent",
+          });
+
+          assistantContent =
+            (loop.content && loop.content.trim()) ||
+            loop.toolCalls
+              .filter((t) => t.kind === "content")
+              .map((t) => String(t.result ?? ""))
+              .join("\n")
+              .trim() ||
+            "(无文本输出)";
+
+          await ctx.services.message.create({
+            sessionId: mainSession!.id,
+            role: "assistant",
+            content: assistantContent,
+            toolCalls: loop.toolCalls as any,
+            tokenUsage: loop.tokenUsage,
+            source: "sub",
+          });
+
+          try {
+            await ctx.services.session.update({ id: mainSession!.id, status: "completed" } as any);
+          } catch { /* ignore */ }
+
+          emit({
+            type: "done",
+            sessionId: mainSession!.id,
+            agentId: agent.id,
+            content: assistantContent,
+            toolCalls: loop.toolCalls,
+            model: loop.model,
+            provider: loop.provider,
+            roundsUsed: loop.roundsUsed,
+            tokenUsage: loop.tokenUsage,
+          });
+        } catch (err: unknown) {
+          const errorText = err instanceof Error ? err.message : String(err);
+          try {
+            await ctx.services.message.create({
+              sessionId: mainSession!.id,
+              role: "assistant",
+              content: `任务未能完成：${errorText}`,
+              source: "sub",
+            });
+          } catch { /* ignore */ }
+          try {
+            await ctx.services.session.update({ id: mainSession!.id, status: "failed" } as any);
+          } catch { /* ignore */ }
+          emit({ type: "error", message: errorText, sessionId: mainSession!.id });
+          throw err;
+        }
       });
 
-      const assistantContent =
-        (loop.content && loop.content.trim()) ||
-        loop.toolCalls
-          .filter((t) => t.kind === "content")
-          .map((t) => String(t.result ?? ""))
-          .join("\n")
-          .trim() ||
-        "(无文本输出)";
-
-      await ctx.services.message.create({
+      // 通知前端立刻挂接子会话流（避免切到子页后空白、刷新才出现）
+      hub.pushExternalEvent(mainSession.id, {
+        type: "session_run_started",
         sessionId: mainSession.id,
-        role: "assistant",
-        content: assistantContent,
-        toolCalls: loop.toolCalls as any,
-        tokenUsage: loop.tokenUsage,
-        source: "sub",
+        reason: "subagent_start",
       });
-
-      try {
-        await ctx.services.session.update({ id: mainSession.id, status: "completed" } as any);
-      } catch {
-        /* ignore */
+      if (ctx.sessionId && ctx.sessionId !== mainSession.id) {
+        hub.pushExternalEvent(ctx.sessionId, {
+          type: "session_run_started",
+          sessionId: mainSession.id,
+          reason: "subagent_start",
+        });
       }
 
+      await hub.waitFor(mainSession.id);
       return { content: assistantContent, subagentSessionId: mainSession.id };
+    } catch (err) {
+      if (sessionIdForCleanup) {
+        try {
+          await ctx.services.session.update({ id: sessionIdForCleanup, status: "failed" } as any);
+        } catch { /* ignore */ }
+      }
+      throw err;
     } finally {
       agentRunLocks.delete(targetAgentId);
     }
@@ -3492,7 +3754,7 @@ async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeTo
   // 否则前端 pullAgentMessages → SessionQueueItem → consumeQueue → runStream
   // 会与 triggerAgentRun 各写一条同内容 user 气泡，并可能二次跑 Agent。
   if (autoRun && content.trim()) {
-    const runPromise = triggerAgentRun(toAgentId, content, ctx).catch((err: unknown) => {
+    const runPromise = triggerAgentRun(toAgentId, content, ctx).catch(async (err: unknown) => {
       console.warn(`[agent_send_message] 自动触发目标 Agent ${toAgentId} 运行失败:`, err);
       return { content: "", subagentSessionId: "" };
     });
@@ -3505,8 +3767,9 @@ async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeTo
         subagentSessionId: runResult.subagentSessionId,
       };
     }
+    // 非阻塞：后台跑 StreamHub；失败时 triggerAgentRun 内部会写 failed + 错误气泡
     void runPromise;
-    return { success: true, message: "已派活并自动运行。" };
+    return { success: true, message: "已派活并自动运行（子会话可实时查看流式输出）。" };
   }
 
   // 非 autoRun：写入收件箱，由子会话 UI 队列消费后再 runStream
@@ -3528,13 +3791,8 @@ async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeTo
 }
 
 async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  // 硬拦截：用户直接发起的对话不回传上级（只有上级下发的任务才需要回报）
-  if (ctx.runOrigin === "user") {
-    return {
-      error: "[USER_ORIGIN_NO_REPORT] 这是用户直接发起的对话，回复只保留在当前会话内，不回传上级。只有上级 Agent 下发的任务才会将结果投递回上级。",
-      permissionDenied: true,
-    };
-  }
+  // 软限制：有上级即可回报。异步续跑 / 用户在子会话补充后也应能 report_back。
+  // 投递目标由 parentSessionId（spawn 绑定）决定，见下方桥接逻辑。
   if (!ctx.agentSnapshot?.parentId) {
     return { error: "当前 Agent 无上级（parentId 为空），无法 report_back。" };
   }
@@ -3542,6 +3800,7 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
   if (!ctx.prisma) throw new Error("agent_report_back 需要 prisma 上下文");
   const content = String(args.content || "");
   const bus = getSwarmBus(ctx.prisma, ctx.services);
+  // report_back 本身就是正式向上回报通道，即使在工具轮次中也必须放行
   const result = await bus.send(
     {
       fromAgentId: ctx.agentSnapshot.id,
@@ -3553,7 +3812,7 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
     },
     ctx.agentSnapshot?.tier ?? "sub",
     ctx.agentSnapshot?.workspaceId ?? null,
-    ctx.inToolRound ?? false,
+    false,
   );
   if (!result.success) {
     return { error: `[${result.error?.code}] ${result.error?.reason}` };
@@ -3569,16 +3828,37 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
       });
       parentSessionId = subSession?.parentSessionId ?? undefined;
     }
-    if (!parentSessionId) {
-      const parentMain = await ctx.prisma.chatSession.findFirst({
+
+    // 子会话未绑 parentSessionId 时：按「跟踪 Task」反查 spawn 时的父 session（多父会话场景）
+    if (!parentSessionId && ctx.prisma) {
+      const trackers = await ctx.prisma.task.findMany({
         where: {
-          agentId: ctx.agentSnapshot.parentId,
-          isMainSession: true,
-          status: { not: "deleted" },
+          OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+          status: { in: ["running", "queued", "success"] },
         },
-        select: { id: true },
+        orderBy: { createdAt: "desc" },
+        take: 40,
       });
-      parentSessionId = parentMain?.id;
+      const bySubSession = trackers.find((row) => {
+        const input = row.input as { subagentSessionId?: string } | null;
+        return !!ctx.sessionId && input?.subagentSessionId === ctx.sessionId;
+      });
+      if (bySubSession?.sessionId) {
+        parentSessionId = bySubSession.sessionId;
+      } else {
+        const byAgent = trackers.find((row) => {
+          const input = row.input as { agentSnapshot?: { id?: string } } | null;
+          return input?.agentSnapshot?.id === ctx.agentSnapshot?.id;
+        });
+        if (byAgent?.sessionId) parentSessionId = byAgent.sessionId;
+      }
+    }
+
+    // 仍找不到则跳过队列桥接（SwarmBus 消息已发出）；不再回退到父 Agent isMainSession，避免投错会话
+    if (!parentSessionId) {
+      console.warn(
+        `[agent_report_back] 无法解析父 session（子会话 ${ctx.sessionId ?? "?"} 无 parentSessionId 且无跟踪 Task），跳过异步队列投递`,
+      );
     }
 
     if (parentSessionId) {
@@ -3652,13 +3932,14 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
       }
 
       if (jobId) {
-        const { getStreamHub } = await import("./sessionStreamHub.js");
-        getStreamHub()?.pushExternalEvent(parentSessionId, {
-          type: "async_delivery",
+        const { notifyAndAutoConsumeAsyncDelivery } = await import("./asyncJobManager.js");
+        await notifyAndAutoConsumeAsyncDelivery({
           sessionId: parentSessionId,
           jobId,
           status: "done",
           taskLabel,
+          services: ctx.services,
+          config: ctx.config,
         });
       }
     }

@@ -6,7 +6,7 @@
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { runAgentLoop } from "./agentRuntime.js";
-import { runAgentLoopStream, type AgentStreamEvent } from "./agentStream.js";
+import { runAgentLoopStream, chatAgentStream, type AgentStreamEvent } from "./agentStream.js";
 import {
   parseAgentTools,
   buildAgentToolSchemas,
@@ -44,6 +44,7 @@ export interface AsyncQueueDelivery {
   createdAt: number;
   /** pinned 的结果不被自动 CLAIM，仅供前端展示 */
   pinned?: boolean;
+  sourceType?: AsyncTaskSourceType;
 }
 
 export interface AsyncRunningJob {
@@ -54,6 +55,7 @@ export interface AsyncRunningJob {
   subagentSessionId?: string;
   logs?: AsyncTaskLogEntry[];
   createdAt: number;
+  sourceType?: AsyncTaskSourceType;
 }
 
 const ASYNC_KIND = "async_agent";
@@ -75,6 +77,12 @@ interface AsyncTaskInput {
   toolCall?: { tool: string; args: Record<string, unknown> };
   /** swarm 协作：任务结果额外广播到这些会话（共享给其他父会话） */
   shareToSessionIds?: string[];
+  /**
+   * 是否投递到会话异步队列并由服务端自动消费续跑。
+   * waitForResult=true 时应为 false（结果已作为工具返回值，避免二次喂给 Agent）。
+   * 默认 true。
+   */
+  deliverToQueue?: boolean;
 }
 
 interface AsyncTaskOutput {
@@ -138,18 +146,129 @@ function toDelivery(task: {
     logs: output.logs,
     createdAt: task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime(),
     pinned,
+    sourceType: input.sourceType,
   };
 }
 
-/** 推送 async_delivery 事件给有活跃 SSE 连接的父会话（推优先） */
+/** 同一 session 的自动续跑串行化，避免多条 delivery 并发双跑 */
+const sessionAutoConsumeChains = new Map<string, Promise<void>>();
+
+function enqueueSessionAutoConsume(sessionId: string, work: () => Promise<void>): void {
+  const prev = sessionAutoConsumeChains.get(sessionId) ?? Promise.resolve();
+  const next = prev.then(work, work).finally(() => {
+    if (sessionAutoConsumeChains.get(sessionId) === next) {
+      sessionAutoConsumeChains.delete(sessionId);
+    }
+  });
+  sessionAutoConsumeChains.set(sessionId, next);
+}
+
+/**
+ * 服务端自动消费异步结果：CLAIM → 注入消息 → 启动 Agent 续跑。
+ * 不依赖前端是否打开该 session；与前端 consumeQueue 通过原子 CLAIM 竞态，先到者执行。
+ */
+export async function autoConsumeAsyncDelivery(options: {
+  sessionId: string;
+  jobId: string;
+  status: "done" | "failed";
+  taskLabel: string;
+  services: ServiceContainer;
+  config: AppConfig;
+}): Promise<"skipped" | "started"> {
+  const { sessionId, jobId, status, taskLabel, services, config } = options;
+
+  const task = await prisma.task.findUnique({ where: { id: jobId } });
+  if (!task) return "skipped";
+  if (task.delivered || task.pinned) return "skipped";
+  if (task.status !== "success" && task.status !== "failed") return "skipped";
+
+  const input = parseAsyncInput(task.input);
+  if (input?.deliverToQueue === false) return "skipped";
+
+  const hub = getStreamHub();
+  if (!hub) return "skipped";
+
+  let session: { agentId?: string | null; status?: string | null; parentSessionId?: string | null; kind?: string | null } | null = null;
+  try {
+    session = await services.session.getByIdLite(sessionId);
+  } catch {
+    return "skipped";
+  }
+  if (!session?.agentId || session.status === "archived" || session.status === "deleted") {
+    return "skipped";
+  }
+
+  const claimed = await prisma.task.updateMany({
+    where: { id: jobId, delivered: false, pinned: false },
+    data: { delivered: true, deliveredAt: new Date() },
+  });
+  if (claimed.count === 0) return "skipped";
+
+  const output = parseAsyncOutput(task.output);
+  const failed = status === "failed" || task.status === "failed";
+  const message = failed
+    ? `任务失败：${output.error || "未知错误"}`
+    : output.asyncResult || "(无文本输出)";
+
+  // 子任务会话（有 parentSessionId）上的异步续跑视为任务血统，允许 report_back
+  const runOrigin =
+    session.parentSessionId || session.kind === "subagent" || input?.sourceType === "sleep"
+      ? ("parent" as const)
+      : ("user" as const);
+
+  const body = {
+    sessionId,
+    agentId: session.agentId as string,
+    message,
+    source: "sub" as const,
+    runOrigin,
+    toolResults: {
+      subagentResult: {
+        jobId,
+        subagentSessionId: input?.subagentSessionId,
+        subagentName: input?.agentSnapshot?.name ?? taskLabel,
+        sourceType: input?.sourceType ?? "async_task_llm",
+        taskLabel,
+      },
+    },
+  };
+
+  const invokeTrpc = createTrpcInvoker({ services });
+
+  enqueueSessionAutoConsume(sessionId, async () => {
+    try {
+      if (hub.isRunning(sessionId)) {
+        await hub.waitFor(sessionId);
+      }
+      const started = await hub.startIfNotRunning(sessionId, body, (emit, signal) =>
+        chatAgentStream(services, config, body, invokeTrpc, emit, signal),
+      );
+      if (started) {
+        hub.pushExternalEvent(sessionId, {
+          type: "session_run_started",
+          sessionId,
+          reason: "async_auto_consume",
+          jobId,
+        });
+      }
+    } catch (err) {
+      console.warn(`[asyncJobManager] autoConsume 续跑失败 session=${sessionId} job=${jobId}:`, err);
+    }
+  });
+
+  return "started";
+}
+
+/** 推送 async_delivery 事件，并在有 services/config 时触发服务端自动消费续跑 */
 async function notifyAsyncDelivery(
   sessionId: string,
   jobId: string,
   status: "done" | "failed",
   taskLabel: string,
+  services?: ServiceContainer,
+  config?: AppConfig,
 ): Promise<void> {
   try {
-    const { getStreamHub } = await import("./sessionStreamHub.js");
     const hub = getStreamHub();
     if (hub) {
       hub.pushExternalEvent(sessionId, {
@@ -163,6 +282,100 @@ async function notifyAsyncDelivery(
   } catch (err) {
     console.warn(`[asyncJobManager] notifyAsyncDelivery 失败:`, err);
   }
+
+  if (services && config) {
+    void autoConsumeAsyncDelivery({ sessionId, jobId, status, taskLabel, services, config }).catch((err) => {
+      console.warn(`[asyncJobManager] autoConsumeAsyncDelivery 失败:`, err);
+    });
+  }
+}
+
+/** 供 report_back 等外部路径：推送 + 自动消费（与 finalizeSuccess 同源） */
+export async function notifyAndAutoConsumeAsyncDelivery(options: {
+  sessionId: string;
+  jobId: string;
+  status: "done" | "failed";
+  taskLabel: string;
+  services: ServiceContainer;
+  config: AppConfig;
+}): Promise<void> {
+  await notifyAsyncDelivery(
+    options.sessionId,
+    options.jobId,
+    options.status,
+    options.taskLabel,
+    options.services,
+    options.config,
+  );
+}
+
+/** 推送子会话状态变更到父会话 SSE */
+export async function notifySubagentSessionUpdate(params: {
+  parentSessionId: string;
+  subagentSessionId: string;
+  status: string;
+  title?: string;
+  agentId?: string | null;
+}): Promise<void> {
+  try {
+    const { getStreamHub } = await import("./sessionStreamHub.js");
+    const hub = getStreamHub();
+    if (!hub) return;
+    hub.pushExternalEvent(params.parentSessionId, {
+      type: "subagent_session_update",
+      parentSessionId: params.parentSessionId,
+      subagentSessionId: params.subagentSessionId,
+      status: params.status,
+      title: params.title,
+      agentId: params.agentId,
+    });
+  } catch (err) {
+    console.warn(`[asyncJobManager] notifySubagentSessionUpdate 失败:`, err);
+  }
+}
+
+let _asyncPushWired = false;
+
+/**
+ * 将 AsyncJobOrchestrator 生命周期事件桥接到 SessionStreamHub（推优先）。
+ * 幂等：进程内只注册一次。
+ */
+export function wireAsyncJobPush(config: AppConfig): void {
+  if (_asyncPushWired) return;
+  _asyncPushWired = true;
+  const orchestrator = getAsyncJobOrchestrator(config);
+  orchestrator.onAny((ev) => {
+    void (async () => {
+      try {
+        const { getStreamHub } = await import("./sessionStreamHub.js");
+        const hub = getStreamHub();
+        if (!hub) return;
+        const statusMap = {
+          queued: "queued",
+          started: "running",
+          completed: "done",
+          cancelled: "cancelled",
+          failed: "failed",
+          timeout: "failed",
+        } as const;
+        const stats = getAsyncQueueStats(config);
+        hub.pushExternalEvent(ev.sessionId, {
+          type: "async_job_update",
+          sessionId: ev.sessionId,
+          jobId: ev.jobId,
+          status: statusMap[ev.type],
+          stats,
+        });
+      } catch (err) {
+        console.warn(`[asyncJobManager] async_job_update 推送失败:`, err);
+      }
+    })();
+  });
+}
+
+/** 单测重置推送接线标志 */
+export function resetAsyncJobPushWireForTests(): void {
+  _asyncPushWired = false;
 }
 
 /** 服务启动时：将遗留 async_agent running/queued 任务标为 failed，并同步其 subagent ChatSession 状态 */
@@ -244,12 +457,36 @@ export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueue
   return deliveries;
 }
 
-/** 消费时标记异步结果已投递（CLAIM） */
-export async function markAsyncDeliveryConsumed(jobId: string): Promise<void> {
-  await prisma.task.updateMany({
-    where: { id: jobId, delivered: false },
+/** 拉取已消费的异步结果（供右侧「已消费」标签追溯，默认最近 30 条） */
+export async function pullConsumedAsyncDeliveries(
+  sessionId: string,
+  limit = 30,
+): Promise<AsyncQueueDelivery[]> {
+  const rows = await prisma.task.findMany({
+    where: {
+      sessionId,
+      delivered: true,
+      OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+      status: { in: ["success", "failed"] },
+    },
+    orderBy: { deliveredAt: "desc" },
+    take: Math.max(1, Math.min(limit, 100)),
+  });
+  const deliveries: AsyncQueueDelivery[] = [];
+  for (const row of rows) {
+    const delivery = toDelivery(row);
+    if (delivery) deliveries.push(delivery);
+  }
+  return deliveries;
+}
+
+/** 消费时标记异步结果已投递（CLAIM）。返回是否成功抢到（与服务端 autoConsume 竞态）。pinned 不可 CLAIM。 */
+export async function markAsyncDeliveryConsumed(jobId: string): Promise<boolean> {
+  const result = await prisma.task.updateMany({
+    where: { id: jobId, delivered: false, pinned: false },
     data: { delivered: true, deliveredAt: new Date() },
   });
+  return result.count > 0;
 }
 
 export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunningJob[]> {
@@ -273,6 +510,7 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
         status: "running",
         logs: output.logs,
         createdAt: row.createdAt.getTime(),
+        sourceType: input.sourceType,
       };
       if (input.subagentSessionId) base.subagentSessionId = input.subagentSessionId;
       return base;
@@ -289,6 +527,7 @@ export interface AsyncQueuedJob {
   subagentSessionId?: string;
   logs?: AsyncTaskLogEntry[];
   createdAt: number;
+  sourceType?: AsyncTaskSourceType;
 }
 
 export async function listQueuedAsyncJobs(
@@ -317,6 +556,7 @@ export async function listQueuedAsyncJobs(
         position: orchestrator.getPosition(row.id),
         logs: output.logs,
         createdAt: row.createdAt.getTime(),
+        sourceType: input.sourceType,
       };
       if (input.subagentSessionId) base.subagentSessionId = input.subagentSessionId;
       return base;
@@ -371,6 +611,7 @@ function buildAsyncExecute(
   mode: "llm" | "tool" = "llm",
   toolCall?: { tool: string; args: Record<string, unknown> },
   shareToSessionIds?: string[],
+  parentSessionId?: string,
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
   const retryHint = retryCount > 0 ? `（第 ${retryCount} 次重试）` : "";
@@ -378,6 +619,13 @@ function buildAsyncExecute(
     if (!subagentSessionId) return;
     try {
       await services.session.update({ id: subagentSessionId, status });
+      if (parentSessionId) {
+        await notifySubagentSessionUpdate({
+          parentSessionId,
+          subagentSessionId,
+          status,
+        });
+      }
     } catch (err) {
       console.warn(`[asyncJobManager] syncSubStatus(${status}) 失败 for ${subagentSessionId}:`, err);
     }
@@ -465,8 +713,8 @@ function buildAsyncExecute(
     }
     await broadcastShare("success", { asyncResult: resultText, tokenUsage });
     const parentInput = parseAsyncInput((await services.task.getById(jobId))?.input);
-    if (parentInput?.sessionId) {
-      await notifyAsyncDelivery(parentInput.sessionId, jobId, "done", parentInput.taskLabel);
+    if (parentInput?.sessionId && parentInput.deliverToQueue !== false) {
+      await notifyAsyncDelivery(parentInput.sessionId, jobId, "done", parentInput.taskLabel, services, config);
     }
     emit?.({
       type: "done",
@@ -512,8 +760,8 @@ function buildAsyncExecute(
     }
     await broadcastShare("failed", { error: errorText });
     const parentInputFailed = parseAsyncInput((await services.task.getById(jobId))?.input);
-    if (parentInputFailed?.sessionId) {
-      await notifyAsyncDelivery(parentInputFailed.sessionId, jobId, "failed", parentInputFailed.taskLabel);
+    if (parentInputFailed?.sessionId && parentInputFailed.deliverToQueue !== false) {
+      await notifyAsyncDelivery(parentInputFailed.sessionId, jobId, "failed", parentInputFailed.taskLabel, services, config);
     }
     emit?.({ type: "error", message: errorText, sessionId: subagentSessionId });
   };
@@ -553,8 +801,8 @@ function buildAsyncExecute(
     await syncSubStatus("completed");
     await broadcastShare("success", { asyncResult: resultText });
     const parentInputTool = parseAsyncInput((await services.task.getById(jobId))?.input);
-    if (parentInputTool?.sessionId) {
-      await notifyAsyncDelivery(parentInputTool.sessionId, jobId, "done", parentInputTool.taskLabel);
+    if (parentInputTool?.sessionId && parentInputTool.deliverToQueue !== false) {
+      await notifyAsyncDelivery(parentInputTool.sessionId, jobId, "done", parentInputTool.taskLabel, services, config);
     }
   };
 
@@ -610,6 +858,21 @@ function buildAsyncExecute(
           });
           if (started) {
             signal.addEventListener("abort", () => hub.stop(subagentSessionId), { once: true });
+            // 通知前端挂接子会话流（切到子页时不必等刷新）
+            hub.pushExternalEvent(subagentSessionId, {
+              type: "session_run_started",
+              sessionId: subagentSessionId,
+              reason: "subagent_start",
+              jobId,
+            });
+            if (parentSessionId) {
+              hub.pushExternalEvent(parentSessionId, {
+                type: "session_run_started",
+                sessionId: subagentSessionId,
+                reason: "subagent_start",
+                jobId,
+              });
+            }
           }
           await hub.waitFor(subagentSessionId);
           return;
@@ -646,6 +909,11 @@ export async function startAsyncAgentTask(options: {
   toolCall?: { tool: string; args: Record<string, unknown> };
   /** swarm 协作：结果额外广播到这些会话 */
   shareToSessionIds?: string[];
+  /**
+   * 是否投递到会话队列并自动消费。waitForResult 场景传 false。
+   * 默认 true。
+   */
+  deliverToQueue?: boolean;
 }): Promise<{ jobId: string; status: "queued" | "running"; message: string; subagentSessionId?: string }> {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
@@ -735,6 +1003,15 @@ export async function startAsyncAgentTask(options: {
         status: initialStatus,
       } as any);
       if (sub.success && sub.data) subagentSessionId = (sub.data as { id: string }).id;
+      if (subagentSessionId) {
+        void notifySubagentSessionUpdate({
+          parentSessionId: options.sessionId,
+          subagentSessionId,
+          status: initialStatus,
+          title: taskLabel.slice(0, 60),
+          agentId: actualSubAgentId,
+        });
+      }
     } catch (err) {
       console.warn(`[asyncJobManager] 创建 subagent session 失败，降级为无可视化载体继续执行:`, err);
     }
@@ -781,6 +1058,7 @@ export async function startAsyncAgentTask(options: {
       sourceType,
       toolCall: mode === "tool" ? options.toolCall : undefined,
       shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
+      deliverToQueue: options.deliverToQueue !== false,
     } satisfies AsyncTaskInput,
   } as any);
 
@@ -795,7 +1073,7 @@ export async function startAsyncAgentTask(options: {
     sessionId: options.sessionId,
     timeoutMs: options.timeoutMs,
     metadata: subagentSessionId ? { subagentSessionId } : undefined,
-    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId, mode, options.toolCall, options.shareToSessionIds),
+    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId, mode, options.toolCall, options.shareToSessionIds, options.sessionId),
   });
 
   return {
@@ -860,9 +1138,9 @@ export async function startAsyncSleepTask(options: {
         id: jobId,
         status: "success",
         finishedAt: new Date(),
-        output: { asyncResult: `已等待 ${seconds} 秒（定时器到期）` } satisfies AsyncTaskOutput,
+        output: { asyncResult: `定时时间${seconds}s到了，请继续完成任务` } satisfies AsyncTaskOutput,
       } as any);
-      await notifyAsyncDelivery(options.sessionId, jobId, "done", taskLabel);
+      await notifyAsyncDelivery(options.sessionId, jobId, "done", taskLabel, options.services, options.config);
     },
   });
   const stats = orchestrator.getStats();
@@ -1049,7 +1327,19 @@ export async function retryAsyncJob(
     jobId: newJobId,
     sessionId: input.sessionId,
     timeoutMs: input.timeoutMs,
-    execute: buildAsyncExecute(config, services, newJobId, input.task, agentSnapshot, retryCount),
+    execute: buildAsyncExecute(
+      config,
+      services,
+      newJobId,
+      input.task,
+      agentSnapshot,
+      retryCount,
+      input.subagentSessionId,
+      input.toolCall ? "tool" : "llm",
+      input.toolCall,
+      input.shareToSessionIds,
+      input.sessionId,
+    ),
   });
 
   return {

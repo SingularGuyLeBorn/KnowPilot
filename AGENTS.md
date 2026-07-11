@@ -415,9 +415,10 @@ stream:
 
 ## 未来功能
 
-1. **Agent 自动开启新 Session**：当 Agent 判断当前会话交互轮数过多时，可生成总结文档，结束当前 session，启动同一 Agent 的新 session，并将总结作为第一条消息。若用户当前正查看旧 session，不自动切换，仅提示“新 session 已创建”。
-2. **自动压缩（Auto-Compact）**：当 token 或轮数超过阈值时，Agent 自动压缩历史上下文并继续对话（尚未实现）。
+1. ~~**Agent 自动开启新 Session**~~：已落地 `session_rotate`（归档旧会话 + 同 Agent 新会话 + 总结首条消息；旧页提示跳转不自动切换）。
+2. **自动压缩（Auto-Compact）**：已产品化（`config.yaml` compact + `ChatSession.contextSummary` + 手动压缩）。
+3. ~~**推送替代轮询**~~：Chat 侧已推优先（`async_job_update` / `agent_message` / `subagent_session_update`），轮询降为兜底。
 
 ---
 
-> 最后更新：2026-07-10。L1–L5 已全部落地；Swarm 父 Agent 消息投递设计决策进行中；docs 目录正在重构。
+> 最后更新：2026-07-11。L1–L5 已全部落地；Auto-Compact / 推送收尾 / session_rotate 已落地。

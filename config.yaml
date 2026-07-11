@@ -10,3 +10,11 @@ stream:
   eventTtlMs: 300000
   # 过期事件清理间隔（毫秒）
   cleanupIntervalMs: 60000
+
+# 长对话自动压缩（Auto-Compact）
+compact:
+  enabled: true
+  # 上下文字符阈值（粗算，约 token×4）；超过后摘要旧消息
+  charThreshold: 48000
+  # 压缩后保留的最近消息条数
+  keepRecent: 8

@@ -1305,6 +1305,10 @@ export interface SessionEntity {
   kind?: "chat" | "subagent";
   status?: import("@knowpilot/shared").SessionStatus;
   taskDescription?: string | null;
+  isMainSession?: boolean;
+  contextSummary?: string | null;
+  contextCompactedAt?: Date | string | null;
+  rotatedToSessionId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1378,8 +1382,29 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   }
 
   async deleteMany(_input?: Record<string, never>): Promise<{ count: number }> {
+    // 先清无 FK 级联的附属数据，再删会话（ChatMessage / SessionQueueItem 会 cascade）
+    await this.prisma.sessionStreamEvent.deleteMany({}).catch(() => ({ count: 0 }));
+    await this.prisma.task.deleteMany({
+      where: { OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }] },
+    }).catch(() => ({ count: 0 }));
     const result = await this.prisma.chatSession.deleteMany({});
     return { count: result.count };
+  }
+
+  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    // 删父会话时一并删子会话，避免 parentSessionId 断链后「删不干净」
+    const children = await this.prisma.chatSession.findMany({
+      where: { parentSessionId: id },
+      select: { id: true },
+    });
+    for (const child of children) {
+      await this.prisma.task.deleteMany({ where: { sessionId: child.id } }).catch(() => {});
+      await this.prisma.sessionStreamEvent.deleteMany({ where: { sessionId: child.id } }).catch(() => {});
+      await super.delete(child.id);
+    }
+    await this.prisma.task.deleteMany({ where: { sessionId: id } }).catch(() => {});
+    await this.prisma.sessionStreamEvent.deleteMany({ where: { sessionId: id } }).catch(() => {});
+    return super.delete(id);
   }
 
   protected override getCreateNextSteps(entity: SessionEntity): NextStep[] {

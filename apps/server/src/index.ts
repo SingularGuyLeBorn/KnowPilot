@@ -15,7 +15,7 @@ import { getEventBus } from "./infra/eventBus.js";
 import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
 import { getTaskScheduler } from "./infra/taskScheduler.js";
-import { recoverStaleAsyncJobs, cleanupDeliveredAsyncJobs } from "./infra/asyncJobManager.js";
+import { recoverStaleAsyncJobs, cleanupDeliveredAsyncJobs, wireAsyncJobPush } from "./infra/asyncJobManager.js";
 import { closeBrowser } from "./infra/metablog/webScraper.js";
 import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
@@ -136,6 +136,7 @@ app.use("/uploads", staticAuthMiddleware, express.static(uploadsDir));
 // Agent 流式聊天 SSE（不走 tRPC，避免 buffering）
 const streamHub = new SessionStreamHub(config.stream);
 setStreamHub(streamHub);
+wireAsyncJobPush(config);
 app.post(
   "/api/agent/chat/stream",
   handleAgentChatStream(services, config, createTrpcInvoker({ services }), streamHub),

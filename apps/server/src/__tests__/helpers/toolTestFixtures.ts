@@ -90,6 +90,11 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       eventTtlMs: 0,
       cleanupIntervalMs: 0,
     },
+    compact: {
+      enabled: true,
+      charThreshold: 48_000,
+      keepRecent: 8,
+    },
     ...overrides,
   };
 }
@@ -231,6 +236,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "wait",
   "sleep",
   "session_clear",
+  "session_rotate",
   // Swarm 管理工具
   "agent_create",
   "agent_update",

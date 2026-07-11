@@ -74,6 +74,8 @@ export function buildTierIdentityHint(tier?: string | null, name?: string | null
     return `\n\n## 你的身份（硬约束）
 你是子 Agent${who}，**不是**超级 Agent，也**不是**管理 Agent。
 - 只执行上级下发的当前任务；完成后必须调用 agent_report_back 向上级汇报。
+- 异步任务（如 sleep async）到期后续跑时，仍应继续完成任务并 agent_report_back，不要把续跑当成「用户闲聊」。
+- 用户在本会话直接发消息时，也可酌情 report_back（补充汇报），但请在内容中说明这是补充。
 - 禁止创建/派生子 Agent 或管理其他 Agent（不得使用 spawn_subagent、agent_create、agent_create_sub 等）。
 - 禁止创建或归档 Workspace；不要自称超级 Agent / 管理 Agent。
 - 可用 sleep / 读写 / 搜索等执行类工具完成任务本身。`;
@@ -108,6 +110,7 @@ export function buildSystemPromptWithHints(
 /** 子 Agent 默认执行工具（带 native: 前缀，避免物化成空 → native:all） */
 export const DEFAULT_SUBAGENT_TOOLS = [
   "native:sleep",
+  "native:async_task_run",
   "native:agent_report_back",
   "native:read_file",
   "native:list_directory",
@@ -148,6 +151,7 @@ const DEFAULT_ASSISTANT_TOOLS = [
   "native:invoke_api",
   "native:spawn_subagent",
   "native:async_task_run",
+  "native:session_rotate",
   "native:sleep",
   "native:git_status",
   "skill:*",
@@ -155,7 +159,7 @@ const DEFAULT_ASSISTANT_TOOLS = [
 ];
 
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
-  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。";
+  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。当对话轮数过多、话题明显切换或用户要求换干净上下文时，先写好总结再调用 native:session_rotate 归档当前会话并开启新会话。";
 
 const LEGACY_ASSISTANT_SYSTEM_PROMPT =
   "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
@@ -175,7 +179,8 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
       exact.tier !== "sub" &&
       (!tools.includes("native:write_file") ||
         !tools.includes("native:spawn_subagent") ||
-        !tools.includes("native:async_task_run"));
+        !tools.includes("native:async_task_run") ||
+        !tools.includes("native:session_rotate"));
     // 仅当系统提示还是旧版默认（或空）时才自动升级，避免覆盖用户自定义提示词
     const needsPromptUpdate =
       !exact.systemPrompt || exact.systemPrompt === LEGACY_ASSISTANT_SYSTEM_PROMPT;
@@ -244,10 +249,33 @@ export async function runAgentLoop(options: {
   });
 
   let llmMessages: LlmMessage[] = [...options.messages];
-  const compacted = await maybeCompactMessages(options.config, llmMessages, effectiveModel);
+  let existingSummary: string | null = null;
+  if (options.sessionId) {
+    try {
+      const sess = await options.services.session.getByIdLite?.(options.sessionId)
+        ?? await options.services.session.getById(options.sessionId);
+      existingSummary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? null;
+    } catch {
+      /* ignore */
+    }
+  }
+  const compacted = await maybeCompactMessages(options.config, llmMessages, effectiveModel, {
+    existingSummary,
+  });
   llmMessages = compacted.messages;
   if (compacted.compacted) {
     console.log("[Agent] 长对话已自动压缩上下文");
+    if (compacted.summaryText && options.sessionId && !compacted.reused) {
+      try {
+        await options.services.session.update({
+          id: options.sessionId,
+          contextSummary: compacted.summaryText,
+          contextCompactedAt: new Date(),
+        } as any);
+      } catch (err) {
+        console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
+      }
+    }
   }
 
   const executedTools: StoredToolCall[] = [];

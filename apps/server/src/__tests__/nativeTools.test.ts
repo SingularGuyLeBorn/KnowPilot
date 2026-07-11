@@ -43,33 +43,55 @@ describe("Native 工具注册表", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("agent_report_back 在用户直接对话(runOrigin=user)中被硬拦截", async () => {
+  it("agent_report_back 在用户直接对话(runOrigin=user)时不再硬拦截（有上级即可回报）", async () => {
     const root = createTempProjectDir();
     const ctx = {
       ...createNativeCtx(root),
       runOrigin: "user" as const,
+      // 无 prisma：会在 bus 前因缺少 prisma 抛错，或走到无上级——此处验证不再返回 USER_ORIGIN_NO_REPORT
       agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: "mgr-1" },
+      prisma: undefined,
     };
-    const result = (await executeNativeTool("agent_report_back", { content: "汇报" }, ctx)) as {
-      error?: string;
-      permissionDenied?: boolean;
-    };
-    expect(result.permissionDenied).toBe(true);
-    expect(result.error).toContain("USER_ORIGIN_NO_REPORT");
+    await expect(executeNativeTool("agent_report_back", { content: "汇报" }, ctx)).rejects.toThrow(/prisma/);
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("agent_report_back 在上级下发任务(runOrigin=parent)中不被 user 拦截", async () => {
+  it("agent_report_back 无上级时仍拒绝", async () => {
     const root = createTempProjectDir();
     const ctx = {
       ...createNativeCtx(root),
       runOrigin: "parent" as const,
-      // 无 parentId：走到"无上级"分支而非 USER_ORIGIN_NO_REPORT 拦截
       agentSnapshot: { id: "sub-1", model: "m", systemPrompt: "", tools: [], tier: "sub", parentId: null },
     };
     const result = (await executeNativeTool("agent_report_back", { content: "汇报" }, ctx)) as { error?: string };
     expect(result.error).not.toContain("USER_ORIGIN_NO_REPORT");
     expect(result.error).toContain("无上级");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("checkUpwardMessageTiming：report 工具允许在工具轮次向上发送", async () => {
+    const { checkUpwardMessageTiming } = await import("../infra/swarmPermissionGuard.js");
+    expect(checkUpwardMessageTiming("sub", "manager", true)).toMatchObject({ code: "UPWARD_MESSAGE_IN_TOOL_ROUND" });
+    expect(checkUpwardMessageTiming("sub", "manager", true, { allowReportTool: true })).toBeNull();
+  });
+
+  it("sleep(async=\"true\") 字符串应走非阻塞路径而非同步阻塞", async () => {
+    const root = createTempProjectDir();
+    const startAsyncSleepTask = vi.fn().mockResolvedValue({ jobId: "j1", status: "queued" });
+    vi.doMock("../infra/asyncJobManager.js", () => ({ startAsyncSleepTask }));
+    vi.resetModules();
+    const { executeNativeTool: exec } = await import("../infra/nativeTools.js");
+    const ctx = {
+      ...createNativeCtx(root),
+      sessionId: "clxxxxxxxxxxxxxxxxxxxx01",
+      agentSnapshot: { id: "a1", model: "m", systemPrompt: "", tools: [], tier: "sub" as const },
+    };
+    const t0 = Date.now();
+    const result = await exec("sleep", { seconds: 60, async: "true" }, ctx as any);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(startAsyncSleepTask).toHaveBeenCalled();
+    expect(result).toMatchObject({ jobId: "j1" });
+    vi.doUnmock("../infra/asyncJobManager.js");
     fs.rmSync(root, { recursive: true, force: true });
   });
 

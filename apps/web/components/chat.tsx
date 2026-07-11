@@ -102,6 +102,48 @@ interface SessionStreamState {
 }
 
 const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessionId 时的临时键
+const CHAT_UI_STORAGE_KEY = "kp-chat-ui-v1";
+
+type ChatUiPrefs = {
+  leftOpen: boolean;
+  rightOpen: boolean;
+  leftTab: "history" | "async";
+  historySubTab: "main" | "sub";
+  rightTab: "config" | "runtime";
+};
+
+function readChatUiPrefs(): ChatUiPrefs {
+  const defaults: ChatUiPrefs = {
+    leftOpen: true,
+    rightOpen: true,
+    leftTab: "history",
+    historySubTab: "main",
+    rightTab: "config",
+  };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const raw = localStorage.getItem(CHAT_UI_STORAGE_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Partial<ChatUiPrefs>;
+    return {
+      leftOpen: parsed.leftOpen ?? true,
+      rightOpen: parsed.rightOpen ?? true,
+      leftTab: parsed.leftTab === "async" ? "async" : "history",
+      historySubTab: parsed.historySubTab === "sub" ? "sub" : "main",
+      rightTab: parsed.rightTab === "runtime" ? "runtime" : "config",
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function writeChatUiPrefs(prefs: ChatUiPrefs) {
+  try {
+    localStorage.setItem(CHAT_UI_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    /* ignore */
+  }
+}
 const STREAM_STATES_STORAGE_KEY = "kp:chat-stream-states";
 
 function serializeStreamStates(map: Map<string, SessionStreamState>): string {
@@ -168,12 +210,13 @@ export function ChatView() {
   const [consumedDeliveries, setConsumedDeliveries] = useState<Set<string>>(() => new Set());
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  // 右栏顶层标签页：config=配置，runtime=异步任务队列
-  const [rightTab, setRightTab] = useState<"config" | "runtime">("config");
-  // 左栏顶层标签页：history=对话历史，async=异步任务
+  // 左栏：history=对话历史，async=异步任务运行记录（追溯，不消费）
   const [leftTab, setLeftTab] = useState<"history" | "async">("history");
   // 对话历史下的子标签页：main=主 Agent，sub=子 Agent
   const [historySubTab, setHistorySubTab] = useState<"main" | "sub">("main");
+  // 右栏：config=配置，runtime=待消费的异步队列结果
+  const [rightTab, setRightTab] = useState<"config" | "runtime">("config");
+  const chatUiHydratedRef = useRef(false);
   const [chatConfig, setChatConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -186,6 +229,11 @@ export function ChatView() {
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; title: string } | null>(null);
   const [showCreateSubagent, setShowCreateSubagent] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  /** session_rotate 后的跳转提示（不自动切换会话） */
+  const [rotateBanner, setRotateBanner] = useState<{
+    newSessionId: string;
+    newTitle: string;
+  } | null>(null);
   // #11 会话批量管理
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(() => new Set());
@@ -399,6 +447,11 @@ export function ChatView() {
   const deleteSession = trpc.session.delete.useMutation();
   const bulkDeleteMutation = trpc.session.bulkDelete.useMutation();
   const switchVersion = trpc.message.switchVersion.useMutation();
+  const compactSession = trpc.session.compact.useMutation({
+    onSuccess: async (_data, variables) => {
+      await utils.session.getById.invalidate({ id: variables.id });
+    },
+  });
 
   const defaultAgentId = useMemo(() => {
     const items = agentsQuery.data?.items;
@@ -415,16 +468,69 @@ export function ChatView() {
   //    避免 stale sessionFromUrl 把刚清空的 state 又拉回去（用户感知的“点两次才新建”）。
   const effectiveSessionId = sessionId ?? sessionFromUrl;
   const prevSessionFromUrlRef = useRef<string | null>(sessionFromUrl);
+
+  // 刷新后恢复面板状态：URL view/panel 优先，否则用 localStorage 里用户上次切换后的值。
+  // 不要根据「当前是不是子会话」去改 view——用户切到主 Agent 后刷新，应仍停在主 Agent。
+  useEffect(() => {
+    if (chatUiHydratedRef.current) return;
+    chatUiHydratedRef.current = true;
+    const prefs = readChatUiPrefs();
+    const view = searchParams.get("view");
+    const panel = searchParams.get("panel");
+    setLeftOpen(prefs.leftOpen);
+    setRightOpen(prefs.rightOpen);
+    setLeftTab(panel === "async" || panel === "history" ? panel : prefs.leftTab);
+    setHistorySubTab(view === "sub" || view === "main" ? view : prefs.historySubTab);
+    setRightTab(prefs.rightTab);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!chatUiHydratedRef.current) return;
+    writeChatUiPrefs({ leftOpen, rightOpen, leftTab, historySubTab, rightTab });
+  }, [leftOpen, rightOpen, leftTab, historySubTab, rightTab]);
+
+  const syncChatUiToUrl = useCallback(
+    (patch: { view?: "main" | "sub"; panel?: "history" | "async" }) => {
+      const params = new URLSearchParams(searchParams.toString());
+      let changed = false;
+      if (patch.view === "sub" || patch.view === "main") {
+        // 主/子都显式写入 URL，刷新后恢复的是用户最后一次切换的值
+        if (params.get("view") !== patch.view) {
+          params.set("view", patch.view);
+          changed = true;
+        }
+      }
+      if (patch.panel === "async") {
+        if (params.get("panel") !== "async") {
+          params.set("panel", "async");
+          changed = true;
+        }
+      } else if (patch.panel === "history") {
+        if (params.has("panel")) {
+          params.delete("panel");
+          changed = true;
+        }
+      }
+      if (changed) {
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      }
+    },
+    [searchParams, pathname, router],
+  );
+
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== sessionId && sessionFromUrl !== prevSessionFromUrlRef.current) {
       // 同步 URL 到 state：用 queueMicrotask 避免在 effect 同步阶段触发级联渲染
+      const sid = sessionFromUrl;
       queueMicrotask(() => {
-        setSessionId(sessionFromUrl);
-        applyView(sessionFromUrl);
+        setSessionId(sid);
+        applyView(sid);
+        // 子会话可能已在服务端跑流：立刻发现并挂接，避免空白到刷新才出现
+        void utils.session.listRunning.invalidate();
       });
     }
     prevSessionFromUrlRef.current = sessionFromUrl;
-  }, [sessionFromUrl, sessionId, applyView]);
+  }, [sessionFromUrl, sessionId, applyView, utils.session.listRunning]);
   // 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
   useEffect(() => {
     effectiveSessionIdRef.current = effectiveSessionId;
@@ -455,11 +561,13 @@ export function ChatView() {
     () => ((messagesInfinite.data?.pages ?? []).slice().reverse().flatMap((p) => p.items) as ChatMessage[]),
     [messagesInfinite.data],
   );
-  // 当前会话是否为子代理任务会话；若是则查父会话标题用于返回提示
-  // spawn_subagent 可能只建 isMainSession 而未设 kind=subagent，用 Agent.tier 兜底
-  const selectedAgentTier = agentsQuery.data?.items.find((a: Agent) => a.id === (agentFromUrl || agentId || sessionDetail?.agentId))?.tier;
-  const isSubagentSession = sessionDetail?.kind === "subagent" || selectedAgentTier === "sub";
+  // 当前会话是否为子代理「任务」会话（用于任务条 / 父会话锚点等）。
+  // 只用 kind / parentSessionId，不要用 Agent.tier===sub 兜底——
+  // 否则子 Agent 的「主会话」也会被当成任务会话，并和标签页状态纠缠。
+  const isSubagentSession =
+    sessionDetail?.kind === "subagent" || !!sessionDetail?.parentSessionId;
   const parentSessionId = sessionDetail?.parentSessionId ?? null;
+
   const { data: parentSession } = trpc.session.getById.useQuery(
     { id: parentSessionId! },
     { enabled: !!parentSessionId },
@@ -493,29 +601,26 @@ export function ChatView() {
     : effectiveAgentId;
   const mainSessionId = isSubagentSession ? parentSessionId : effectiveSessionId;
   // 与 SubagentCreateDialog 乐观更新使用同一 query key（pageSize 必须一致）
+  // 推优先：子会话状态走 SSE subagent_session_update，仅 mount/focus 兜底拉取
   trpc.session.listChildren.useQuery(
     { parentSessionId: mainSessionId!, pageSize: 20 },
-    { enabled: !!mainSessionId, refetchInterval: 2000 },
+    { enabled: !!mainSessionId, refetchInterval: false, refetchOnWindowFocus: true },
   );
 
   const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
 
-  // 轮询后端正在运行的 Agent 流式会话：即使 sessionStorage 被清空/跨标签，也能自动发现并续传
+  // 发现运行中会话：改 focus/mount 拉取，不再 5s 空轮询（visibilitychange 已覆盖切回标签）
   const runningSessionsQuery = trpc.session.listRunning.useQuery(undefined, {
     enabled: !backendDown,
-    refetchInterval: 5000,
+    refetchInterval: false,
+    refetchOnWindowFocus: true,
   });
 
   const asyncQueueStatsQuery = trpc.agent.asyncQueueStats.useQuery(undefined, {
     enabled: !backendDown,
-    // R9：自适应轮询——有活跃任务（running/queued）时 5s，无任务时 15s（仅用于探测新任务），
-    // 错误时 30s。减少 Chat 长驻页面无任务时的空轮询，同时保持新任务探测延迟可接受。
-    refetchInterval: (query) => {
-      if (query.state.error) return 30000;
-      const stats = query.state.data as { runningGlobal?: number; queued?: number } | undefined;
-      const hasActive = !!stats && ((stats.runningGlobal ?? 0) > 0 || (stats.queued ?? 0) > 0);
-      return hasActive ? 5000 : 15000;
-    },
+    // 推优先：SSE async_job_update 带 stats；60s 兜底防漏
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   // 异步任务活跃数（子 Agent 会话下以父会话为锚点）
@@ -528,28 +633,13 @@ export function ChatView() {
     return items.filter((t) => t.status === "running" || t.status === "queued").length;
   }, [asyncTaskCountQuery.data?.items]);
 
-  // A8：仅在有活跃异步任务（running/queued）时才轮询 pullAsyncQueue，无任务时停止轮询，
-  // 避免每个会话固定 2.5s 空 poll（含 raw UPDATE + findMany）。参照 listChildren 的 running 判断。
-  // 同时监听本地 async-running overlay：任务可能在全球 stats 刷新前就已开始并完成，
-  // 必须靠 overlay 触发至少一次 poll，否则结果可能永远投递不到前端。
-  // 推优先后有活跃任务时降为 10s 兜底轮询（SSE async_delivery 即时通知）。
-  // spawn 无 jobId 的 overlay 也要轮询，否则 report_back 投递后前端永远不 refetch。
-  const hasLocalAsyncRunning = asyncOverlays.some(
-    (o) => o.kind === "async-running" && (o.status === "running" || o.status === "queued"),
-  );
+  // 推优先：SSE 即时通知；仅错误时短轮询兜底，正常不再 interval
   const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
     { sessionId: effectiveSessionId! },
     {
       enabled: !!effectiveSessionId && !backendDown,
-      refetchInterval: (query) => {
-        if (query.state.error) return 10000;
-        const data = query.state.data as { running?: unknown[]; queued?: unknown[] } | undefined;
-        const hasActive =
-          !!data &&
-          ((data.running?.length ?? 0) > 0 || (data.queued?.length ?? 0) > 0);
-        if (hasActive || hasLocalAsyncRunning) return 10000;
-        return false;
-      },
+      refetchInterval: (query) => (query.state.error ? 15_000 : false),
+      refetchOnWindowFocus: true,
     },
   );
 
@@ -561,17 +651,15 @@ export function ChatView() {
   const consumeSessionQueueItemMutation = trpc.agent.consumeSessionQueueItem.useMutation();
   const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
   const reorderSessionQueueItemsMutation = trpc.agent.reorderSessionQueueItems.useMutation();
-  const toggleAsyncJobPinnedMutation = trpc.agent.toggleAsyncJobPinned.useMutation({
-    onSuccess: () => {
-      void asyncQueueQuery.refetch();
-    },
-  });
   const ackAsyncDeliveryMutation = trpc.agent.ackAsyncDelivery.useMutation();
+  // 推优先：agent_message SSE 触发 refetch；仅错误时兜底轮询
   const pullAgentMessagesQuery = trpc.agent.pullAgentMessages.useQuery(
     { agentId: effectiveAgentId! },
     {
       enabled: !!effectiveAgentId && !!isSubagentSession && !backendDown,
-      refetchInterval: isSubagentSession ? 5000 : false,
+      refetchInterval: (query) =>
+        isSubagentSession && query.state.error ? 10_000 : false,
+      refetchOnWindowFocus: true,
     },
   );
 
@@ -604,6 +692,12 @@ export function ChatView() {
   });
 
   const retryAsyncJobMutation = trpc.agent.retryAsyncJob.useMutation({
+    onSuccess: () => {
+      void asyncQueueQuery.refetch();
+    },
+  });
+
+  const pinAsyncJobMutation = trpc.agent.toggleAsyncJobPinned.useMutation({
     onSuccess: () => {
       void asyncQueueQuery.refetch();
     },
@@ -664,18 +758,117 @@ export function ChatView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveSessionId, isSubagentSession, pullAgentMessagesQuery.data, messages]);
 
-  // 推优先：监听 async_delivery SSE，收到后立即 refetch pullAsyncQueue
+  // 推优先：监听 async-stream SSE（当前会话 + 父会话），收到后立即刷新相关查询
   useEffect(() => {
     if (!effectiveSessionId || backendDown) return;
     const token = getAuthToken();
-    const qs = new URLSearchParams({ sessionId: effectiveSessionId });
-    if (token) qs.set("token", token);
-    const es = new EventSource(`/api/agent/async-stream?${qs.toString()}`);
-    es.addEventListener("async_delivery", () => {
+    const sessionIds = new Set<string>([effectiveSessionId]);
+    if (mainSessionId) sessionIds.add(mainSessionId);
+
+    const refreshAsync = () => {
       void asyncQueueQuery.refetch();
-    });
-    return () => es.close();
-  }, [effectiveSessionId, backendDown, asyncQueueQuery]);
+      void asyncQueueStatsQuery.refetch();
+      if (mainSessionId) {
+        void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
+        void utils.task.list.invalidate();
+        // 子会话页收到父会话投递事件时，也要刷新父会话队列缓存
+        if (mainSessionId !== effectiveSessionId) {
+          void utils.agent.pullAsyncQueue.invalidate({ sessionId: mainSessionId });
+        }
+      }
+    };
+
+    const sources: EventSource[] = [];
+    for (const sid of sessionIds) {
+      const qs = new URLSearchParams({ sessionId: sid });
+      if (token) qs.set("token", token);
+      const es = new EventSource(`/api/agent/async-stream?${qs.toString()}`);
+      es.addEventListener("async_delivery", refreshAsync);
+      es.addEventListener("session_run_started", (ev) => {
+        // 服务端已启动会话流（autoConsume / 子 Agent）：挂接 listRunning，刷新队列
+        try {
+          const data = JSON.parse((ev as MessageEvent).data) as { sessionId?: string };
+          void utils.session.listRunning.invalidate();
+          refreshAsync();
+          if (data.sessionId) {
+            void utils.message.listForChat.invalidate({ sessionId: data.sessionId });
+          }
+        } catch {
+          void utils.session.listRunning.invalidate();
+          refreshAsync();
+        }
+      });
+      es.addEventListener("async_job_update", (ev) => {
+        try {
+          const data = JSON.parse((ev as MessageEvent).data) as {
+            stats?: {
+              queued: number;
+              runningGlobal: number;
+              maxGlobal: number;
+              maxPerSession: number;
+              taskTimeoutMs: number;
+            };
+          };
+          if (data.stats) {
+            utils.agent.asyncQueueStats.setData(undefined, data.stats);
+          }
+        } catch {
+          /* ignore parse */
+        }
+        refreshAsync();
+      });
+      es.addEventListener("agent_message", () => {
+        if (isSubagentSession) void pullAgentMessagesQuery.refetch();
+      });
+      es.addEventListener("subagent_session_update", (ev) => {
+        if (mainSessionId) {
+          void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
+        }
+        void utils.session.listRunning.invalidate();
+        try {
+          const data = JSON.parse((ev as MessageEvent).data) as {
+            subagentSessionId?: string;
+            status?: string;
+          };
+          if (data.subagentSessionId) {
+            void utils.message.listForChat.invalidate({ sessionId: data.subagentSessionId });
+          }
+        } catch {
+          /* ignore */
+        }
+      });
+      es.addEventListener("session_rotated", (ev) => {
+        try {
+          const data = JSON.parse((ev as MessageEvent).data) as {
+            oldSessionId?: string;
+            newSessionId: string;
+            newTitle: string;
+          };
+          // 仅当用户仍在看被归档的旧会话时提示跳转，不自动切换
+          if (data.oldSessionId && data.oldSessionId === effectiveSessionId) {
+            setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
+          }
+          void utils.session.list.invalidate();
+          void utils.session.getById.invalidate({ id: data.oldSessionId ?? effectiveSessionId });
+        } catch {
+          /* ignore */
+        }
+      });
+      sources.push(es);
+    }
+    return () => {
+      for (const es of sources) es.close();
+    };
+  }, [
+    effectiveSessionId,
+    mainSessionId,
+    backendDown,
+    asyncQueueQuery,
+    asyncQueueStatsQuery,
+    pullAgentMessagesQuery,
+    isSubagentSession,
+    utils,
+  ]);
 
   // 拖拽重排防抖写 DB
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -703,6 +896,43 @@ export function ChatView() {
       }),
     [asyncOverlays, asyncQueueQuery.data, consumedDeliveries],
   );
+
+  // 右侧「运行时」：未消费 = running/queued + 待消费结果；已消费单独标签
+  const runtimePendingItems = useMemo(
+    () => asyncResultQueue.filter((i) => i.kind === "async-running" || i.kind === "async-result"),
+    [asyncResultQueue],
+  );
+  const runtimeConsumedItems = useMemo(() => {
+    const consumed = (asyncQueueQuery.data as { consumed?: Array<{
+      id: string;
+      jobId: string;
+      taskLabel: string;
+      asyncResult: string;
+      status: "done" | "failed";
+      error?: string;
+      subagentSessionId?: string;
+      subagentName?: string;
+      logs?: ChatQueueItem["logs"];
+      createdAt: number;
+      sourceType?: string;
+    }> } | undefined)?.consumed ?? [];
+    return consumed.map((del): ChatQueueItem => ({
+      id: `consumed-${del.jobId}`,
+      kind: "async-result",
+      text: "",
+      jobId: del.jobId,
+      taskLabel: del.taskLabel,
+      asyncResult: del.status === "failed" ? `任务失败：${del.error || "未知错误"}` : del.asyncResult,
+      status: del.status,
+      subagentSessionId: del.subagentSessionId,
+      subagentName: del.subagentName,
+      logs: del.logs,
+      createdAt: del.createdAt,
+      sourceType: del.sourceType,
+    }));
+  }, [asyncQueueQuery.data]);
+  const [runtimeSubTab, setRuntimeSubTab] = useState<"pending" | "consumed">("pending");
+  const runtimeQueueItems = runtimeSubTab === "pending" ? runtimePendingItems : runtimeConsumedItems;
 
   const queue = useMemo(
     () => [...sortQueueItems(asyncResultQueue), ...sortQueueItems(userQueue)],
@@ -1089,13 +1319,26 @@ export function ChatView() {
               scheduleStreamFlush(originSid);
             },
             onIntermediateContent: (content, round) => {
-              // 工具轮次中的中间正式回复 → 进导轨时间线（无圆点），不进最终气泡
+              // 工具轮次中的中间正式回复 → 进导轨时间线（无圆点），不进最终气泡。
+              // 此前 token 已写入 streamingContent，必须清空，否则会与时间线重复、并串进最终气泡。
+              discardStreamFlush(originSid);
+              ssSet(originSid, "streamingContent", "");
               ssSet(originSid, "liveTimeline", (prev) => {
                 if (prev.some((s) => s.type === "content" && s.round === round)) return prev;
                 return [...prev, { type: "content" as const, content, round }];
               });
             },
             onToolStart: (name, args, round, toolCallId) => {
+              // 工具轮开始：若仍有未转入时间线的流式正文，挪走并清空，避免与最终回复串台
+              flushStreamNow(originSid);
+              const leftover = streamStatesRef.current.get(originSid)?.streamingContent?.trim();
+              if (leftover) {
+                ssSet(originSid, "liveTimeline", (prev) => {
+                  if (prev.some((s) => s.type === "content" && s.round === round)) return prev;
+                  return [...prev, { type: "content" as const, content: leftover, round }];
+                });
+                ssSet(originSid, "streamingContent", "");
+              }
               ssSet(originSid, "liveTimeline", (prev) => {
                 // 防御后端/网络导致同一 tool call 多次 start，避免 React key 重复
                 if (prev.some((s) => s.type === "tool" && s.toolCallId === toolCallId)) return prev;
@@ -1274,6 +1517,8 @@ export function ChatView() {
               if (opts.isResume && isNoStream) {
                 ssSet(originSid, "isStreaming", false);
                 ssSet(originSid, "error", null);
+                // 流已结束：补拉消息，避免子会话页空白到手动刷新才出现
+                void utils.message.listForChat.invalidate({ sessionId: originSid });
                 return;
               }
               ssSet(originSid, "error", message + (suggestion ? `\n${suggestion}` : ""));
@@ -1410,7 +1655,7 @@ export function ChatView() {
   }, []);
 
   // 后端主动发现运行中会话并续传：覆盖 sessionStorage 丢失、跨标签、切换 Agent 等场景
-  // 仅信任 StreamHub.listRunning()——DB 里 status=running 可能来自非流式 triggerAgentRun，不能据此 GET 续传。
+  // 仅信任 StreamHub.listRunning()（含 spawn_subagent / triggerAgentRun 的流式运行）
   useEffect(() => {
     const items = runningSessionsQuery.data?.items;
     if (!items || items.length === 0) return;
@@ -1461,116 +1706,127 @@ export function ChatView() {
 
     st.queueDraining = true;
 
-    if (task.kind === "async-result" && task.jobId) {
-      ssSet(sid, "consumedDeliveries", (s: Set<string>) => new Set(s).add(task.jobId!));
-      ackAsyncDeliveryMutation.mutate({ jobId: task.jobId });
-    }
-
-    if (task.kind === "user" || task.kind === "superior") {
-      // 上级消息若已由 triggerAgentRun 写入 ChatMessage，只清队列、不再 runStream（避免双气泡 + 二次执行）
-      if (task.kind === "superior") {
-        const already = messages.some(
-          (m) => m.role === "user" && m.content.trim() === task.text.trim(),
-        );
-        if (already) {
-          ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
-          if (task.dbId) {
-            consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+    void (async () => {
+      // 异步结果：与服务端 autoConsume 原子 CLAIM 竞态；未抢到则挂接已启动的流，不再 runStream
+      if (task.kind === "async-result" && task.jobId) {
+        ssSet(sid, "consumedDeliveries", (s: Set<string>) => new Set(s).add(task.jobId!));
+        try {
+          const ack = await ackAsyncDeliveryMutation.mutateAsync({ jobId: task.jobId });
+          if (!ack.claimed) {
+            st.queueDraining = false;
+            void utils.session.listRunning.invalidate();
+            void asyncQueueQuery.refetch();
+            queueMicrotask(() => consumeRef.current());
+            return;
           }
+        } catch {
           st.queueDraining = false;
-          queueMicrotask(() => consumeRef.current());
           return;
         }
       }
-      // 用户/上级消息：从 userQueue 移除，并消费 DB 队列项
-      ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
-      if (task.dbId) {
-        consumeSessionQueueItemMutation.mutate({ id: task.dbId });
-      }
-    } else {
-      // async-result：把本地 running overlay 转为 done/failed 并保留 5 秒，
-      // 让用户在父会话时间线看到「运行中 → 已完成/失败」的完整状态流转，避免一闪而过。
-      if (task.jobId) {
-        const finishedJobId = task.jobId;
-        const finishedStatus = task.status ?? "done";
-        const finishedResult = task.asyncResult ?? "";
-        ssSet(sid, "asyncOverlays", (prev) => {
-          const existing = prev.find((o) => o.jobId === finishedJobId);
-          if (!existing) {
-            st.activeQueueTaskId = task.id;
-            return prev;
+
+      if (task.kind === "user" || task.kind === "superior") {
+        // 上级消息若已由 triggerAgentRun 写入 ChatMessage，只清队列、不再 runStream（避免双气泡 + 二次执行）
+        if (task.kind === "superior") {
+          const already = messages.some(
+            (m) => m.role === "user" && m.content.trim() === task.text.trim(),
+          );
+          if (already) {
+            ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
+            if (task.dbId) {
+              consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+            }
+            st.queueDraining = false;
+            queueMicrotask(() => consumeRef.current());
+            return;
           }
-          const updated: ChatQueueItem = {
-            ...existing,
-            id: `run-${finishedJobId}`,
-            kind: "async-result",
-            status: finishedStatus,
-            asyncResult: finishedResult,
-            removeAt: Date.now() + 5000,
-          };
-          st.activeQueueTaskId = updated.id;
-          return prev.map((o) => (o.jobId === finishedJobId ? updated : o));
-        });
+        }
+        // 用户/上级消息：从 userQueue 移除，并消费 DB 队列项
+        ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
+        if (task.dbId) {
+          consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+        }
       } else {
-        st.activeQueueTaskId = task.id;
+        // async-result：把本地 running overlay 转为 done/failed 并保留 5 秒，
+        // 让用户在父会话时间线看到「运行中 → 已完成/失败」的完整状态流转，避免一闪而过。
+        if (task.jobId) {
+          const finishedJobId = task.jobId;
+          const finishedStatus = task.status ?? "done";
+          const finishedResult = task.asyncResult ?? "";
+          ssSet(sid, "asyncOverlays", (prev) => {
+            const existing = prev.find((o) => o.jobId === finishedJobId);
+            if (!existing) {
+              st.activeQueueTaskId = task.id;
+              return prev;
+            }
+            const updated: ChatQueueItem = {
+              ...existing,
+              id: `run-${finishedJobId}`,
+              kind: "async-result",
+              status: finishedStatus,
+              asyncResult: finishedResult,
+              removeAt: Date.now() + 5000,
+            };
+            st.activeQueueTaskId = updated.id;
+            return prev.map((o) => (o.jobId === finishedJobId ? updated : o));
+          });
+        } else {
+          st.activeQueueTaskId = task.id;
+        }
       }
-    }
 
-    // runStream 会在开头设置 isStreaming=true；此处无需预置（多 session 隔离下避免污染其他 session）
-
-    const supportsVision = !!getModelOption(chatConfig.model).supportsVision;
-    // 统一走 formatQueueItemForLlm：async-result 的 asyncResult 块 + OCR 附件文本都由它拼装。
-    // 之前非 vision 分支只取 task.text，导致异步结果内容被整体丢弃（空消息报错，主 Agent 收不到结果）。
-    const streamMessage =
-      formatQueueItemForLlm(task, supportsVision) ||
-      (task.attachments?.length ? "（见附件）" : "");
-    const streamAttachments = task.attachments?.map(
-      ({ id, name, mimeType, previewUrl, extractedText, source }) => ({
-        id,
-        name,
-        mimeType,
-        previewUrl: previewUrl ?? "",
-        extractedText,
-        source,
-      }),
-    );
-    const optimisticId = `opt-${task.id}`;
-    // 异步结果不再显示占位用户气泡（如「后台任务完成」），直接由 assistant 总结真实结果。
-    // 只有用户主动发送的消息才需要乐观占位。
-    const isAsyncResult = task.kind === "async-result";
-    const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
-    const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
-    if (!isAsyncResult && (optimisticText || optimisticAttachments)) {
-      ssSet(sid, "optimistic", (o) =>
-        o.some((m) => m.id === optimisticId)
-          ? o
-          : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments, createdAt: Date.now() }],
+      const supportsVision = !!getModelOption(chatConfig.model).supportsVision;
+      const streamMessage =
+        formatQueueItemForLlm(task, supportsVision) ||
+        (task.attachments?.length ? "（见附件）" : "");
+      const streamAttachments = task.attachments?.map(
+        ({ id, name, mimeType, previewUrl, extractedText, source }) => ({
+          id,
+          name,
+          mimeType,
+          previewUrl: previewUrl ?? "",
+          extractedText,
+          source,
+        }),
       );
-    }
-    void runStream({
-      message: streamMessage,
-      attachments: streamAttachments?.length ? streamAttachments : undefined,
-      skillId: task.skillId,
-      skillPrompt: task.skillPrompt,
-      source: isAsyncResult
-        ? "sub"
-        : task.kind === "superior"
-          ? (["super", "manager", "sub", "system"].includes(String(task.source))
-              ? (task.source as "super" | "manager" | "sub" | "system")
-              : "manager")
-          : "user",
-      toolResults: isAsyncResult
-        ? {
-            subagentResult: {
-              jobId: task.jobId,
-              subagentSessionId: task.subagentSessionId,
-              subagentName: task.subagentName ?? `子 Agent ${task.jobId?.slice(0, 6) ?? ""}`,
-            },
-          }
-        : undefined,
-      optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
-    });
-  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, messages, messagesInfinite.isLoading, messagesInfinite.isFetched]);
+      const optimisticId = `opt-${task.id}`;
+      const isAsyncResult = task.kind === "async-result";
+      const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
+      const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
+      if (!isAsyncResult && (optimisticText || optimisticAttachments)) {
+        ssSet(sid, "optimistic", (o) =>
+          o.some((m) => m.id === optimisticId)
+            ? o
+            : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments, createdAt: Date.now() }],
+        );
+      }
+      void runStream({
+        message: streamMessage,
+        attachments: streamAttachments?.length ? streamAttachments : undefined,
+        skillId: task.skillId,
+        skillPrompt: task.skillPrompt,
+        source: isAsyncResult
+          ? "sub"
+          : task.kind === "superior"
+            ? (["super", "manager", "sub", "system"].includes(String(task.source))
+                ? (task.source as "super" | "manager" | "sub" | "system")
+                : "manager")
+            : "user",
+        toolResults: isAsyncResult
+          ? {
+              subagentResult: {
+                jobId: task.jobId,
+                subagentSessionId: task.subagentSessionId,
+                subagentName: task.subagentName ?? `子 Agent ${task.jobId?.slice(0, 6) ?? ""}`,
+                sourceType: task.sourceType,
+                taskLabel: task.taskLabel,
+              },
+            }
+          : undefined,
+        optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
+      });
+    })();
+  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, messages, messagesInfinite.isLoading, messagesInfinite.isFetched, utils.session.listRunning, asyncQueueQuery]);
 
   useEffect(() => {
     consumeRef.current = consumeQueue;
@@ -1648,6 +1904,10 @@ export function ChatView() {
     ) => {
       const trimmed = text.trim();
       if ((!trimmed && !attachments?.length) || backendDown) return;
+      if (sessionDetail?.status === "archived") {
+        setToast("此会话已归档，请跳转到新会话继续对话");
+        return;
+      }
       // 500ms 内相同文本（含空附件）视为重复发送，直接丢弃，避免重复气泡。
       const now = Date.now();
       const last = lastEnqueueRef.current;
@@ -1710,7 +1970,7 @@ export function ChatView() {
 
       ssSet(sid, "userQueue", (prev) => [...prev, localItem]);
     },
-    [backendDown, ssSet, effectiveSessionId, createSessionQueueItemMutation],
+    [backendDown, ssSet, effectiveSessionId, createSessionQueueItemMutation, sessionDetail?.status],
   );
 
   const handleStop = useCallback(async () => {
@@ -1790,7 +2050,7 @@ export function ChatView() {
     streamStatesRef.current.delete(NEW_STREAM_KEY);
     // 视图切到空会话（applyView(null) 会读取已清空的 NEW_STREAM_KEY）
     applyView(null);
-    // 清除 URL 中的 sessionId/agentId，确保新建对话不受旧参数束缚
+    // 清除 URL 中的 sessionId/agentId/view，确保新建对话不受旧参数束缚
     const params = new URLSearchParams(searchParams.toString());
     let changed = false;
     if (params.get("sessionId")) {
@@ -1801,9 +2061,14 @@ export function ChatView() {
       params.delete("agentId");
       changed = true;
     }
+    if (params.get("view") !== "main") {
+      params.set("view", "main");
+      changed = true;
+    }
     if (changed) {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
+    setHistorySubTab("main");
   }, [selectedAgent, effectiveAgentId, searchParams, pathname, router, applyView]);
 
   const handleRenameSession = useCallback(async (id: string, title: string) => {
@@ -1854,20 +2119,33 @@ export function ChatView() {
     setEditingSessionId(null);
     setSelectedSkill(null);
     applyView(id);
-    // 如果目标 session 正在流式但连接已断开（切走期间网络/反代关闭 SSE），
-    // 立即触发续传，保证点回来时流式输出恢复。
+    // 目标 session 可能是服务端已启动的子 Agent 流：本地未必有 isStreaming。
+    // 刷新 listRunning，由下方 effect 自动 resume；同时对本地断线流立即续传。
+    void utils.session.listRunning.invalidate();
     const targetSt = streamStatesRef.current.get(id);
     if (targetSt?.isStreaming && !targetSt.connected && !targetSt.abort) {
       queueMicrotask(() => {
         runStreamRef.current({ targetSessionId: id, resumeAfter: targetSt.lastEventId, isResume: true });
       });
     }
-    // 切换会话后同步 URL sessionId，移除 agentId，避免 URL 参数覆盖用户选择
+    // 切换会话后同步 URL sessionId。
+    // 只有「点进某个会话」时才按会话类型带上 view——这是用户显式导航，不是后台强制。
+    // 用户在同一会话内点「主/子 Agent」标签时，只改 view/localStorage，不走这里。
     const params = new URLSearchParams(searchParams.toString());
     params.set("sessionId", id);
     if (params.get("agentId")) params.delete("agentId");
+    const targetMeta = (sessionsQuery.data?.items ?? []).find((s) => s.id === id);
+    const targetIsSub =
+      targetMeta?.kind === "subagent" || !!targetMeta?.parentSessionId;
+    if (targetIsSub) {
+      params.set("view", "sub");
+      setHistorySubTab("sub");
+    } else {
+      params.set("view", "main");
+      setHistorySubTab("main");
+    }
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [effectiveSessionId, applyView, searchParams, pathname, router]);
+  }, [effectiveSessionId, applyView, searchParams, pathname, router, sessionsQuery.data?.items, utils.session.listRunning]);
 
   const selectWorkspace = useCallback((workspaceId: string) => {
     setUserSelectedWorkspaceId(workspaceId);
@@ -1955,7 +2233,12 @@ export function ChatView() {
 
   const handleRequestDelete = useCallback((id: string) => {
     const s = sessionsQuery.data?.items.find((x) => x.id === id);
-    if (s) setDeleteSessionTarget({ id: s.id, title: s.title });
+    if (s) {
+      setDeleteSessionTarget({ id: s.id, title: s.title });
+      return;
+    }
+    // WorkspaceTree 子 Agent 会话可能不在主 sessionsQuery 里
+    setDeleteSessionTarget({ id, title: "该会话" });
   }, [sessionsQuery.data?.items]);
 
   const hasMessages = messageGroups.length > 0 || optimistic.length > 0 || isStreaming;
@@ -2064,23 +2347,23 @@ export function ChatView() {
     const isEditing = editingUserId === group.userMessage.id;
     const msgSource = (group.userMessage as { source?: string }).source ?? "user";
     const msgToolResults = (group.userMessage as { toolResults?: unknown }).toolResults;
-    const subagentName =
-      msgSource === "sub"
-        ? (msgToolResults as { subagentResult?: { subagentName?: string } } | undefined)?.subagentResult
-            ?.subagentName
-        : undefined;
+    const subResult = (msgToolResults as {
+      subagentResult?: {
+        subagentName?: string;
+        sourceType?: string;
+        taskLabel?: string;
+      };
+    } | undefined)?.subagentResult;
+    const subagentName = msgSource === "sub" ? subResult?.subagentName : undefined;
     // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧）。
     // source 可能是 super / manager（取决于父 Agent tier）。
     const isParentAgentTask =
       isSubagentSession && (msgSource === "super" || msgSource === "manager");
-    // 异步结果投递（source=sub + toolResults.subagentResult）不再显示原始结果占位用户气泡，
-    // 只保留下方 assistant 总结，避免先出现「[异步任务完成] xxx」的破窗体验。
-    const isAsyncResultDelivery = msgSource === "sub" && !!(msgToolResults as { subagentResult?: unknown } | undefined)?.subagentResult;
-    // 子会话内：仅「用户 / 父 Agent 任务」靠右；子 Agent 自己的 source=sub 用户气泡不应靠右抢位。
-    // 父会话内：source=sub 的异步投递占位靠右逻辑由 isAsyncResultDelivery 隐藏，其余 sub 仍可作投递展示。
+    // 异步结果投递：右侧气泡 + async sleep / async task 角标
+    const isAsyncResultDelivery = msgSource === "sub" && !!subResult;
     const isUserLike = isSubagentSession
-      ? msgSource === "user" || isParentAgentTask
-      : msgSource === "user" || (msgSource === "sub" && !isAsyncResultDelivery) || isParentAgentTask;
+      ? msgSource === "user" || isParentAgentTask || isAsyncResultDelivery
+      : msgSource === "user" || msgSource === "sub" || isParentAgentTask;
     const isAgentMessage = !isUserLike;
     return (
       <div className="flex flex-col">
@@ -2122,14 +2405,17 @@ export function ChatView() {
               "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-sm shadow-sm",
               isAgentMessage
                 ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
-                : "bg-[var(--kp-brand)] text-white",
-              isAsyncResultDelivery && "hidden",
+                : isAsyncResultDelivery
+                  ? "border border-teal-200/80 bg-teal-50 text-[var(--kp-text-1)]"
+                  : "bg-[var(--kp-brand)] text-white",
             )}>
               <MessageSourceLabel
                 source={msgSource}
                 isSubagentSession={isSubagentSession}
                 align={isUserLike ? "right" : "left"}
                 subagentName={subagentName}
+                asyncKind={isAsyncResultDelivery ? subResult?.sourceType : undefined}
+                taskLabel={isAsyncResultDelivery ? subResult?.taskLabel : undefined}
               />
               {group.userMessage.skillName && (
                 <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
@@ -2268,7 +2554,23 @@ export function ChatView() {
   // 左栏内容：避免 JSX 内嵌多层三元表达式导致解析/维护困难
   const leftPanelBody = useMemo(() => {
     if (leftTab === "async") {
-      return <AsyncTaskPanel parentSessionId={mainSessionId ?? undefined} />;
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {asyncProgressSteps.length > 0 && (
+            <div className="border-b border-[var(--kp-divider)] px-3 pt-3" data-testid="async-progress-block">
+              <ThinkingTimeline steps={asyncProgressSteps} isLive />
+            </div>
+          )}
+          <AsyncTaskPanel
+            parentSessionId={mainSessionId ?? undefined}
+            onCancelJob={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
+            onRetryJob={(jobId) => {
+              ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
+              retryAsyncJobMutation.mutate({ jobId });
+            }}
+          />
+        </div>
+      );
     }
     const isMain = historySubTab === "main";
     return (
@@ -2277,7 +2579,14 @@ export function ChatView() {
         <div className="flex gap-1 border-b border-[var(--kp-divider)] px-3 py-2">
           <button
             type="button"
-            onClick={() => setHistorySubTab("main")}
+            onClick={() => {
+              setHistorySubTab("main");
+              syncChatUiToUrl({ view: "main" });
+              // 当前停在子会话时，顺带切回父会话，避免中栏仍卡在失败的子任务页
+              if (isSubagentSession && parentSessionId) {
+                selectSession(parentSessionId);
+              }
+            }}
             data-testid="history-subtab-main"
             className={cn(
               "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
@@ -2290,7 +2599,10 @@ export function ChatView() {
           </button>
           <button
             type="button"
-            onClick={() => setHistorySubTab("sub")}
+            onClick={() => {
+              setHistorySubTab("sub");
+              syncChatUiToUrl({ view: "sub" });
+            }}
             data-testid="history-subtab-sub"
             className={cn(
               "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
@@ -2415,6 +2727,7 @@ export function ChatView() {
               onSelectSession={selectSession}
               onHoverSession={handleSessionHover}
               onHoverSessionEnd={handleSessionHoverEnd}
+              onDeleteSession={handleRequestDelete}
               onNewChat={startNewChat}
               searchQuery={sessionSearch}
               mode={isMain ? "main" : "sub"}
@@ -2500,6 +2813,9 @@ export function ChatView() {
     handleStartRename,
     setRenameDraft,
     handleConfirmRename,
+    isSubagentSession,
+    parentSessionId,
+    syncChatUiToUrl,
     handleCancelRename,
     handleRequestDelete,
     editingSessionId,
@@ -2510,6 +2826,11 @@ export function ChatView() {
     workspacesQuery.data?.items,
     workspacesQuery.isLoading,
     startNewChat,
+    asyncProgressSteps,
+    cancelAsyncJobMutation,
+    retryAsyncJobMutation,
+    ssSet,
+    syncChatUiToUrl,
   ]);
 
   return (
@@ -2531,7 +2852,10 @@ export function ChatView() {
           <div className="mt-2 flex gap-1 rounded-lg bg-[var(--kp-bg-mute)] p-0.5">
             <button
               type="button"
-              onClick={() => setLeftTab("history")}
+              onClick={() => {
+                setLeftTab("history");
+                syncChatUiToUrl({ panel: "history" });
+              }}
               data-testid="left-tab-history"
               className={cn(
                 "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
@@ -2544,7 +2868,10 @@ export function ChatView() {
             </button>
             <button
               type="button"
-              onClick={() => setLeftTab("async")}
+              onClick={() => {
+                setLeftTab("async");
+                syncChatUiToUrl({ panel: "async" });
+              }}
               data-testid="left-tab-async"
               className={cn(
                 "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
@@ -2597,6 +2924,9 @@ export function ChatView() {
             <SessionContextBar
               messages={messages}
               systemPrompt={chatConfig.systemPrompt}
+              contextSummary={sessionDetail.contextSummary}
+              onCompact={() => compactSession.mutate({ id: effectiveSessionId })}
+              compactPending={compactSession.isPending}
               className="hidden shrink-0 lg:flex"
             />
           )}
@@ -2658,6 +2988,9 @@ export function ChatView() {
             <SessionContextBar
               messages={messages}
               systemPrompt={chatConfig.systemPrompt}
+              contextSummary={sessionDetail.contextSummary}
+              onCompact={() => compactSession.mutate({ id: effectiveSessionId })}
+              compactPending={compactSession.isPending}
             />
           </div>
         )}
@@ -2666,6 +2999,40 @@ export function ChatView() {
           <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>后端未连接，请运行 <code className="rounded bg-amber-100 px-1">pnpm dev</code></span>
+          </div>
+        )}
+
+        {(rotateBanner || (sessionDetail?.status === "archived" && sessionDetail.rotatedToSessionId)) && (
+          <div
+            data-testid="session-rotate-banner"
+            className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-2 text-xs text-[var(--kp-brand-dark)]"
+          >
+            <span className="min-w-0 flex-1 truncate">
+              新 session 已创建：
+              {rotateBanner?.newTitle ?? "续写会话"}
+            </span>
+            <button
+              type="button"
+              className="shrink-0 rounded-md bg-[var(--kp-brand)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90"
+              onClick={() => {
+                const id = rotateBanner?.newSessionId ?? sessionDetail?.rotatedToSessionId;
+                if (!id) return;
+                setRotateBanner(null);
+                selectSession(id);
+              }}
+            >
+              点击跳转
+            </button>
+            {rotateBanner && (
+              <button
+                type="button"
+                className="shrink-0 rounded-md px-1.5 py-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+                aria-label="关闭提示"
+                onClick={() => setRotateBanner(null)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )}
 
@@ -2815,7 +3182,7 @@ export function ChatView() {
             key={effectiveSessionId ?? "new"}
             onSend={enqueueMessage}
             onStop={handleStop}
-            disabled={backendDown}
+            disabled={backendDown || sessionDetail?.status === "archived"}
             isStreaming={isStreaming}
             queueLength={userQueue.length}
             skills={skills}
@@ -2829,9 +3196,13 @@ export function ChatView() {
               setRightTab("config");
             }}
             sessionHint={
-              isSubagentSession
-                ? "这是子 Agent 任务会话。你直接发送的消息只在本会话内处理，不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话。"
-                : undefined
+              sessionDetail?.status === "archived"
+                ? sessionDetail.rotatedToSessionId
+                  ? "此会话已归档。请点击上方提示跳转到新会话继续对话。"
+                  : "此会话已归档，无法继续发送消息。"
+                : isSubagentSession
+                  ? "这是子 Agent 任务会话。你直接发送的消息只在本会话内处理，不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话。"
+                  : undefined
             }
             sessionId={effectiveSessionId}
           />
@@ -2854,81 +3225,115 @@ export function ChatView() {
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               className="flex h-full flex-col"
             >
-              {/* 顶部 Tab：配置 / 运行时 */}
-              <div className="flex items-center border-b border-[var(--kp-divider)]">
-                <button
-                  type="button"
-                  onClick={() => setRightTab("config")}
-                  className={cn(
-                    "flex-1 px-3 py-2.5 text-xs font-medium transition",
-                    rightTab === "config"
-                      ? "border-b-2 border-[var(--kp-brand)] text-[var(--kp-brand-dark)]"
-                      : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
-                  )}
-                >
-                  配置
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRightTab("runtime")}
-                  className={cn(
-                    "flex-1 px-3 py-2.5 text-xs font-medium transition",
-                    rightTab === "runtime"
-                      ? "border-b-2 border-[var(--kp-brand)] text-[var(--kp-brand-dark)]"
-                      : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
-                  )}
-                >
-                  运行时
-                </button>
+              <div className="flex items-center justify-between border-b border-[var(--kp-divider)] px-3 py-2.5">
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setRightTab("config")}
+                    data-testid="right-tab-config"
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-[11px] font-medium transition",
+                      rightTab === "config"
+                        ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                        : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+                    )}
+                  >
+                    配置
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRightTab("runtime")}
+                    data-testid="right-tab-runtime"
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-[11px] font-medium transition",
+                      rightTab === "runtime"
+                        ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                        : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+                    )}
+                  >
+                    运行时
+                    {runtimePendingItems.length > 0 && (
+                      <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
+                        {runtimePendingItems.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setRightOpen(false)}
-                  className="px-3 py-2.5 text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]"
+                  className="text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]"
                   title="收起面板"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
-
-              {rightTab === "config" ? (
-                <div className="flex-1 overflow-y-auto">
-                  <ChatSettingsPanel
-                    chatConfig={chatConfig}
-                    updateConfig={updateConfig}
-                    resetPromptToAgent={resetPromptToAgent}
-                    onOpenPromptEditor={handleOpenPromptEditor}
-                    skills={skills}
-                    selectedSkill={selectedSkill}
-                    onSelectSkill={setSelectedSkill}
-                    modelSupportsReasoning={!!(modelOpt.supportsThinking ?? modelOpt.supportsReasoning)}
-                    modelReasoningRequired={!!modelOpt.reasoningRequired}
-                    tokenBudget={tokenBudget}
-                  />
-                </div>
-              ) : (
-                <div className="flex h-full flex-col overflow-y-auto">
-                  {asyncProgressSteps.length > 0 && (
-                    <div className="px-3 pt-3" data-testid="async-progress-block">
-                      <ThinkingTimeline steps={asyncProgressSteps} isLive />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                {rightTab === "config" ? (
+                  <div className="flex-1 overflow-y-auto">
+                    <ChatSettingsPanel
+                      chatConfig={chatConfig}
+                      updateConfig={updateConfig}
+                      resetPromptToAgent={resetPromptToAgent}
+                      onOpenPromptEditor={handleOpenPromptEditor}
+                      skills={skills}
+                      selectedSkill={selectedSkill}
+                      onSelectSkill={setSelectedSkill}
+                      modelSupportsReasoning={!!(modelOpt.supportsThinking ?? modelOpt.supportsReasoning)}
+                      modelReasoningRequired={!!modelOpt.reasoningRequired}
+                      tokenBudget={tokenBudget}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-runtime-queue">
+                    <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2 py-1.5">
+                      <button
+                        type="button"
+                        data-testid="runtime-tab-pending"
+                        onClick={() => setRuntimeSubTab("pending")}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-[10px] font-medium transition",
+                          runtimeSubTab === "pending"
+                            ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                            : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+                        )}
+                      >
+                        未消费
+                        {runtimePendingItems.length > 0 && (
+                          <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
+                            {runtimePendingItems.length}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="runtime-tab-consumed"
+                        onClick={() => setRuntimeSubTab("consumed")}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-[10px] font-medium transition",
+                          runtimeSubTab === "consumed"
+                            ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                            : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+                        )}
+                      >
+                        已消费
+                        {runtimeConsumedItems.length > 0 && (
+                          <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-bg-mute)] px-1 text-[9px] font-semibold text-[var(--kp-text-3)]">
+                            {runtimeConsumedItems.length}
+                          </span>
+                        )}
+                      </button>
                     </div>
-                  )}
-                  <AsyncTaskQueueList
-                    items={sortQueueItems(asyncResultQueue)}
-                    onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
-                    onRetry={(jobId) => {
-                      ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
-                      retryAsyncJobMutation.mutate({ jobId });
-                    }}
-                    onTogglePin={(jobId, pinned) => {
-                      toggleAsyncJobPinnedMutation.mutate({ jobId, pinned });
-                      // 乐观更新本地 overlay pinned，避免等 poll
-                      ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", (prev) =>
-                        prev.map((i) => (i.jobId === jobId ? { ...i, pinned } : i)),
-                      );
-                    }}
-                  />
-                </div>
-              )}
+                    <AsyncTaskQueueList
+                      items={runtimeQueueItems}
+                      onCancel={runtimeSubTab === "pending" ? (jobId) => cancelAsyncJobMutation.mutate({ jobId }) : undefined}
+                      onRetry={runtimeSubTab === "pending" ? (jobId) => retryAsyncJobMutation.mutate({ jobId }) : undefined}
+                      onTogglePin={runtimeSubTab === "pending" ? (jobId, pinned) => pinAsyncJobMutation.mutate({ jobId, pinned }) : undefined}
+                      emptyText={runtimeSubTab === "pending" ? "暂无进行中或待消费的异步任务" : "暂无已消费记录"}
+                    />
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

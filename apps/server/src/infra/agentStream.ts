@@ -7,7 +7,6 @@ import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import {
   chatCompletionStream,
-  chatCompletion,
   resolveEffectiveAgentModel,
   type LlmMessage,
   type LlmToolCall,
@@ -56,7 +55,57 @@ export type AgentStreamEvent =
       tokenUsage?: { prompt: number; completion: number; total: number };
     }
   | { type: "error"; message: string; sessionId?: string; suggestion?: string }
-  | { type: "async_delivery"; sessionId: string; jobId: string; status: "done" | "failed"; taskLabel: string };
+  | { type: "async_delivery"; sessionId: string; jobId: string; status: "done" | "failed"; taskLabel: string }
+  /** 异步任务生命周期（入队/开始/取消等），替代 pullAsyncQueue 运行态轮询 */
+  | {
+      type: "async_job_update";
+      sessionId: string;
+      jobId: string;
+      status: "queued" | "running" | "done" | "cancelled" | "failed";
+      taskLabel?: string;
+      subagentSessionId?: string;
+      stats?: {
+        queued: number;
+        runningGlobal: number;
+        maxGlobal: number;
+        maxPerSession: number;
+        taskTimeoutMs: number;
+      };
+    }
+  /** Swarm 上级消息到达，替代 pullAgentMessages 轮询 */
+  | {
+      type: "agent_message";
+      sessionId: string;
+      agentId: string;
+      messageId: string;
+      content: string;
+      source?: string;
+      fromAgentId?: string;
+    }
+  /** 子会话状态变更，替代 listChildren 轮询 */
+  | {
+      type: "subagent_session_update";
+      parentSessionId: string;
+      subagentSessionId: string;
+      status: string;
+      title?: string;
+      agentId?: string | null;
+    }
+  /** Agent 轮换会话：旧会话归档，新会话已创建（前端提示跳转，不自动切换） */
+  | {
+      type: "session_rotated";
+      oldSessionId: string;
+      newSessionId: string;
+      newTitle: string;
+      reason?: string;
+    }
+  /** 服务端自动消费异步结果后启动了会话流（前端应挂接 listRunning / resume） */
+  | {
+      type: "session_run_started";
+      sessionId: string;
+      reason: "async_auto_consume" | "subagent_start";
+      jobId?: string;
+    };
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
@@ -108,7 +157,7 @@ function pushThinking(
   }
 }
 
-/** 捕获工具轮次中 probe 返回的中间正式回复（后续仍有 tool_calls），进导轨时间线 */
+/** 捕获工具轮次中的中间正式回复（后续仍有 tool_calls），进导轨时间线 */
 function pushIntermediateContent(
   executedTools: StoredToolCall[],
   round: number,
@@ -171,8 +220,31 @@ export async function runAgentLoopStream(options: {
   const maxRounds = options.config.llm.maxToolRounds;
 
   let llmMessages: LlmMessage[] = [...options.messages];
-  const compacted = await maybeCompactMessages(options.config, llmMessages, options.agent.model);
+  let existingSummary: string | null = null;
+  if (options.sessionId) {
+    try {
+      const sess = await options.services.session.getByIdLite?.(options.sessionId)
+        ?? await options.services.session.getById(options.sessionId);
+      existingSummary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? null;
+    } catch {
+      /* ignore */
+    }
+  }
+  const compacted = await maybeCompactMessages(options.config, llmMessages, options.agent.model, {
+    existingSummary,
+  });
   llmMessages = compacted.messages;
+  if (compacted.summaryText && options.sessionId && compacted.compacted && !compacted.reused) {
+    try {
+      await options.services.session.update({
+        id: options.sessionId,
+        contextSummary: compacted.summaryText,
+        contextCompactedAt: new Date(),
+      } as any);
+    } catch (err) {
+      console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
+    }
+  }
 
   const executedTools: StoredToolCall[] = [];
   let totalUsage = { prompt: 0, completion: 0, total: 0 };
@@ -185,7 +257,12 @@ export async function runAgentLoopStream(options: {
     roundsUsed = round + 1;
     options.emit({ type: "round_start", round: roundsUsed });
 
-    const probe = await chatCompletion({
+    // 流式优先：边收边推思考/正文，避免「非流式 probe 干等 → 整块倾倒 → 有思考再二次 stream」的双倍延迟与串台。
+    let roundContent = "";
+    let roundReasoning = "";
+    let roundToolCalls: LlmToolCall[] = [];
+
+    for await (const chunk of chatCompletionStream({
       config: options.config,
       model: options.agent.model,
       messages: llmMessages,
@@ -195,44 +272,44 @@ export async function runAgentLoopStream(options: {
       enableReasoning: options.llmOptions.enableReasoning,
       reasoningEffort: options.llmOptions.reasoningEffort,
       signal: options.signal,
-    });
-
-    lastModel = probe.model;
-    lastProvider = probe.provider;
-    if (probe.tokenUsage) {
-      totalUsage.prompt += probe.tokenUsage.prompt;
-      totalUsage.completion += probe.tokenUsage.completion;
-      totalUsage.total += probe.tokenUsage.total;
-      recordTokenUsage(options.config, probe.tokenUsage);
-    }
-
-    if (probe.reasoningContent) {
-      pushThinking(executedTools, roundsUsed, probe.reasoningContent, options.emit);
-    }
-
-    if (probe.toolCalls.length > 0) {
-      // 工具轮次中 probe 可能同时返回 content（中间正式回复，后续仍有工具调用）
-      // 捕获并 emit，使其进入左侧导轨时间线（对标 Kimi Code / Cursor）
-      if (probe.content && probe.content.trim()) {
-        pushIntermediateContent(executedTools, roundsUsed, probe.content, options.emit);
+    })) {
+      if (chunk.model) lastModel = chunk.model;
+      if (chunk.provider) lastProvider = chunk.provider;
+      if (chunk.tokenUsage) {
+        totalUsage.prompt += chunk.tokenUsage.prompt;
+        totalUsage.completion += chunk.tokenUsage.completion;
+        totalUsage.total += chunk.tokenUsage.total;
+        recordTokenUsage(options.config, chunk.tokenUsage);
       }
 
-      const roundReasoning =
-        probe.reasoningContent ||
-        executedTools
-          .filter((t) => t.kind === "thinking" && t.id === `think_${roundsUsed}`)
-          .map((t) => String(t.result ?? ""))
-          .join("") ||
-        null;
+      if (chunk.type === "reasoning" && chunk.delta) {
+        roundReasoning += chunk.delta;
+        pushThinking(executedTools, roundsUsed, chunk.delta, options.emit);
+      }
+      if (chunk.type === "token" && chunk.delta) {
+        roundContent += chunk.delta;
+        // 正式正文边收边推；若本轮最终是 tool_calls，前端在 tool_start 时会把已推正文转入时间线
+        options.emit({ type: "token", delta: chunk.delta });
+      }
+      if (chunk.type === "tool_calls" && chunk.toolCalls?.length) {
+        roundToolCalls = chunk.toolCalls;
+      }
+    }
+
+    if (roundToolCalls.length > 0) {
+      if (roundContent.trim()) {
+        // 工具轮次的中间正文：写入时间线持久化（SSE 上的 token 已推过，再发 intermediate 供历史重建）
+        pushIntermediateContent(executedTools, roundsUsed, roundContent, options.emit);
+      }
 
       llmMessages.push({
         role: "assistant",
-        content: probe.content,
-        reasoning_content: roundReasoning,
-        tool_calls: probe.toolCalls,
+        content: roundContent || null,
+        reasoning_content: roundReasoning || null,
+        tool_calls: roundToolCalls,
       });
 
-      for (const call of probe.toolCalls) {
+      for (const call of roundToolCalls) {
         const parsedCall = parseToolCall(call);
         options.emit({
           type: "tool_start",
@@ -249,9 +326,8 @@ export async function runAgentLoopStream(options: {
         throw err;
       }
 
-      // 工具调用轮次中：标记 inToolRound=true，向上发消息被权限层拦截（#41）
       toolCtx.inToolRound = true;
-      const batchResults = await executeToolCallsBatch(probe.toolCalls, toolCtx, registry, parsed, options.signal);
+      const batchResults = await executeToolCallsBatch(roundToolCalls, toolCtx, registry, parsed, options.signal);
       toolCtx.inToolRound = false;
       for (const { call, parsed: parsedCall, result } of batchResults) {
         executedTools.push({
@@ -280,52 +356,8 @@ export async function runAgentLoopStream(options: {
       continue;
     }
 
-    // probe 无 tool_calls：复用 probe.content 作为最终答案，避免二次 chatCompletionStream
-    // 调用浪费 token/延迟（probe 已是完整 LLM 响应）。
-    // 仅当 probe 无 reasoningContent 时短路：有思考链的场景走 stream 路径以保留 token-by-token
-    // 的思考流式 UX（reasoningContent 已通过 pushThinking 单次 emit，但流式版渐进输出体验更好）。
-    if (probe.content && probe.content.trim() && !probe.reasoningContent) {
-      finalContent = probe.content;
-      // A7：整段一次性 emit，避免 split("") 逐字符形成 SSE 风暴（前端按 delta 累积，整段可正确拼接）
-      options.emit({ type: "token", delta: probe.content });
-      return {
-        content: finalContent,
-        toolCalls: executedTools,
-        tokenUsage: totalUsage,
-        model: lastModel,
-        provider: lastProvider,
-        roundsUsed,
-      };
-    }
-
-    finalContent = "";
-    for await (const chunk of chatCompletionStream({
-      config: options.config,
-      model: options.agent.model,
-      messages: llmMessages,
-      temperature: options.llmOptions.temperature,
-      maxTokens: options.llmOptions.maxTokens,
-      enableReasoning: options.llmOptions.enableReasoning,
-      reasoningEffort: options.llmOptions.reasoningEffort,
-      signal: options.signal,
-    })) {
-      if (chunk.type === "reasoning" && chunk.delta) {
-        pushThinking(executedTools, roundsUsed, chunk.delta, options.emit);
-      }
-      if (chunk.type === "token" && chunk.delta) {
-        finalContent += chunk.delta;
-        options.emit({ type: "token", delta: chunk.delta });
-      }
-      if (chunk.model) lastModel = chunk.model;
-      if (chunk.provider) lastProvider = chunk.provider;
-      if (chunk.tokenUsage) {
-        totalUsage.prompt += chunk.tokenUsage.prompt;
-        totalUsage.completion += chunk.tokenUsage.completion;
-        totalUsage.total += chunk.tokenUsage.total;
-        recordTokenUsage(options.config, chunk.tokenUsage);
-      }
-    }
-
+    // 无 tool_calls：本轮即为最终回答（思考已在上方逐片推送）
+    finalContent = roundContent;
     return {
       content: finalContent,
       toolCalls: executedTools,
@@ -696,6 +728,7 @@ export async function chatAgentStream(
         parentId: (agent as any).parentId ?? null,
       },
       signal,
+      runOrigin: input.runOrigin,
     });
 
     let assistantMessageId: string | undefined;
@@ -897,6 +930,27 @@ export function handleAgentChatStream(
         writeSse(res, { type: "error", message: "message 不能为空" });
         res.end();
         return;
+      }
+
+      // 已归档会话禁止继续发消息（session_rotate 后应去新会话）
+      if (requestSessionId) {
+        try {
+          const sess = await services.session.getByIdLite(requestSessionId);
+          if (sess?.status === "archived") {
+            writeSse(res, {
+              type: "error",
+              message: "该会话已归档，请前往新会话继续对话。",
+              sessionId: requestSessionId,
+              suggestion: sess.rotatedToSessionId
+                ? `新会话 id：${sess.rotatedToSessionId}`
+                : "请在左侧会话列表打开续写会话。",
+            });
+            res.end();
+            return;
+          }
+        } catch {
+          /* 会话不存在时交给后续逻辑报错 */
+        }
       }
 
       // 幂等：若已有运行中的任务，不再重复启动（可能是前端重连时误发了 POST）

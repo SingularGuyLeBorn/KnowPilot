@@ -184,9 +184,9 @@ export function SubagentPanel({
     { page: 1, pageSize: 50, parentId: parentAgentId },
     {
       enabled: !!parentAgentId,
-      // 子 Agent 面板实时刷新：工具创建子 Agent 后立即反映到左侧面板
-      refetchInterval: 5000,
-      refetchIntervalInBackground: false,
+      // 推优先：子会话 SSE 会 invalidate；此处仅 focus 兜底
+      refetchInterval: false,
+      refetchOnWindowFocus: true,
     },
   );
 
@@ -194,8 +194,8 @@ export function SubagentPanel({
     { parentSessionId: parentSessionId!, pageSize: 100 },
     {
       enabled: !!parentSessionId,
-      refetchInterval: 5000,
-      refetchIntervalInBackground: false,
+      refetchInterval: false,
+      refetchOnWindowFocus: true,
     },
   );
 

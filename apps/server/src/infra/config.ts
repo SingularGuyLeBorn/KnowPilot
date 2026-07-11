@@ -120,6 +120,12 @@ export interface AppConfig {
     eventTtlMs: number;
     cleanupIntervalMs: number;
   };
+  /** 长对话 Auto-Compact */
+  compact: {
+    enabled: boolean;
+    charThreshold: number;
+    keepRecent: number;
+  };
 }
 
 /* ─── 环境变量 ─── */
@@ -299,6 +305,7 @@ export function createAppConfig(): AppConfig {
   const paddleCliDefault = path.join(projectRoot, "tools", "ocr", "paddleocr_cli.py");
   const yamlConfig = loadYamlConfig(projectRoot);
   const streamConfig = (yamlConfig.stream as Record<string, unknown>) || {};
+  const compactConfig = (yamlConfig.compact as Record<string, unknown>) || {};
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -416,6 +423,11 @@ export function createAppConfig(): AppConfig {
       persist: String(streamConfig.persist ?? "true") !== "false",
       eventTtlMs: Math.max(0, parseInt(String(streamConfig.eventTtlMs ?? "300000"), 10)),
       cleanupIntervalMs: Math.max(1000, parseInt(String(streamConfig.cleanupIntervalMs ?? "60000"), 10)),
+    },
+    compact: {
+      enabled: String(compactConfig.enabled ?? "true") !== "false",
+      charThreshold: Math.max(8000, parseInt(String(compactConfig.charThreshold ?? "48000"), 10)),
+      keepRecent: Math.max(2, parseInt(String(compactConfig.keepRecent ?? "8"), 10)),
     },
   };
 
