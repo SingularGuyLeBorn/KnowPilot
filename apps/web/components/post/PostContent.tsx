@@ -202,7 +202,7 @@ function ThinkingNode({
       className="my-4 rounded-xl border border-[var(--kp-brand)]/20 bg-[var(--kp-brand)]/5 px-4 py-3 not-prose"
     >
       {category && (
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--kp-brand-dark)]">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--kp-brand-deep)]">
           {category}
         </div>
       )}
@@ -265,7 +265,7 @@ export const PostContent = memo(function PostContent({ content, className, postS
       }
 
       return (
-        <code className="bg-[var(--kp-bg-mute)] text-[var(--kp-brand-dark)]" {...props}>
+        <code className="bg-[var(--kp-bg-mute)] text-[var(--kp-brand-deep)]" {...props}>
           {children}
         </code>
       );

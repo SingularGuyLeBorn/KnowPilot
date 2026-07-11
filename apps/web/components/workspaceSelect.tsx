@@ -116,13 +116,13 @@ export function WorkspaceSelect({
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors",
                   active
-                    ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+                    ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
                     : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
                 )}
               >
                 <Icon className={cn("h-3.5 w-3.5 shrink-0", iconColor)} />
                 <span className="min-w-0 flex-1 truncate">{ws.name}</span>
-                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />}
+                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />}
               </button>
             );
           })}

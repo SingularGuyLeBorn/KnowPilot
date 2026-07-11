@@ -87,7 +87,7 @@ function TopNavLink({
       className={cn(
         "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition",
         active
-          ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+          ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
           : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
       )}
     >

@@ -165,7 +165,7 @@ export function Sidebar({ className }: SidebarProps) {
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
                 isActive
-                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                   : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
               )}
             >
@@ -209,7 +209,7 @@ export function Sidebar({ className }: SidebarProps) {
                   className={cn(
                     "flex flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-medium transition",
                     activeTab === key
-                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                       : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
                   )}
                 >

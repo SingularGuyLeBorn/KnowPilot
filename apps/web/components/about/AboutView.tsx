@@ -67,14 +67,14 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           className="relative z-10 mx-auto w-full max-w-4xl"
         >
           <div className="rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-8 shadow-lg md:p-10">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[var(--kp-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--kp-brand-dark)]">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[var(--kp-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--kp-brand-deep)]">
               <Sparkles className="h-3.5 w-3.5" />
               About Me
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-5xl">
               {profile.name}
             </h1>
-            <p className="mt-2 text-lg text-[var(--kp-brand-dark)] md:text-xl">{profile.title}</p>
+            <p className="mt-2 text-lg text-[var(--kp-brand-deep)] md:text-xl">{profile.title}</p>
             <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[var(--kp-text-2)] md:text-base">
               {profile.tagline}
             </p>
@@ -90,7 +90,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
                   href={profile.github}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[var(--kp-brand-dark)] transition hover:text-[var(--kp-text-1)]"
+                  className="inline-flex items-center gap-1.5 text-[var(--kp-brand-deep)] transition hover:text-[var(--kp-text-1)]"
                 >
                   <Github className="h-4 w-4" />
                   GitHub
@@ -102,7 +102,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
                   href={profile.site}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[var(--kp-brand-dark)] transition hover:text-[var(--kp-text-1)]"
+                  className="inline-flex items-center gap-1.5 text-[var(--kp-brand-deep)] transition hover:text-[var(--kp-text-1)]"
                 >
                   <Globe className="h-4 w-4" />
                   个人站点
@@ -111,7 +111,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
               )}
               <Link
                 href="/chat"
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-3 py-1 text-[var(--kp-brand-dark)] transition hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-3 py-1 text-[var(--kp-brand-deep)] transition hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
               >
                 <MessageSquare className="h-4 w-4" />
                 开始对话
@@ -162,7 +162,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
                 {p.href ? (
                   <Link
                     href={p.href}
-                    className="font-semibold text-[var(--kp-text-1)] hover:text-[var(--kp-brand-dark)]"
+                    className="font-semibold text-[var(--kp-text-1)] hover:text-[var(--kp-brand-deep)]"
                   >
                     {p.name}
                   </Link>

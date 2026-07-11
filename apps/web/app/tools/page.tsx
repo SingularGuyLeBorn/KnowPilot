@@ -313,7 +313,7 @@ export default function ToolsPage() {
                 <button
                   type="button"
                   onClick={() => applyNativeTemplate(form.targetId)}
-                  className="mt-2 text-xs text-[var(--kp-brand-dark)] hover:underline"
+                  className="mt-2 text-xs text-[var(--kp-brand-deep)] hover:underline"
                 >
                   从内置工具「{form.targetId}」重新填充 Schema
                 </button>

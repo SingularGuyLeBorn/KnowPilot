@@ -240,7 +240,7 @@ export function TableOfContents({ content, className }: { content: string; class
                     className={cn(
                       "group flex flex-1 items-start rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
                       isActiveGroup
-                        ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                        ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                         : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]"
                     )}
                   >
@@ -268,7 +268,7 @@ export function TableOfContents({ content, className }: { content: string; class
                               child.level === 3 && "pl-3",
                               child.level === 4 && "pl-5 text-[var(--kp-text-2)]",
                               isActive
-                                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                                 : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
                             )}
                           >

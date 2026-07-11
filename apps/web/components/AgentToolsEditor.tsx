@@ -105,7 +105,7 @@ function ToolPreview({ tools }: { tools: string[] }) {
 
   return (
     <div className="space-y-2 rounded-xl border border-[var(--kp-brand)]/20 bg-[var(--kp-brand-soft)]/50 p-3">
-      <div className="flex items-start gap-2 text-xs text-[var(--kp-brand-dark)]">
+      <div className="flex items-start gap-2 text-xs text-[var(--kp-brand-deep)]">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <div>
           <p className="font-medium">
@@ -163,7 +163,7 @@ function ToggleChip({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-left text-xs transition",
         checked
-          ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+          ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
           : "border-[var(--kp-divider)] bg-[var(--kp-bg)] text-[var(--kp-text-2)] hover:border-[var(--kp-brand-light)]",
       )}
       title={hint}

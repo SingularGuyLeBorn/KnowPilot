@@ -48,7 +48,7 @@ export function RecentIntelligence({ posts }: RecentIntelligenceProps) {
           </div>
           <Link
             href="/posts"
-            className="group inline-flex items-center gap-1.5 text-sm font-medium text-[var(--kp-brand-dark)] transition-colors hover:text-[var(--kp-text-1)]"
+            className="group inline-flex items-center gap-1.5 text-sm font-medium text-[var(--kp-brand-deep)] transition-colors hover:text-[var(--kp-text-1)]"
           >
             查看全部
             <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
@@ -86,7 +86,7 @@ export function RecentIntelligence({ posts }: RecentIntelligenceProps) {
 
                   <div className="mb-4 flex items-center gap-3 text-xs text-[var(--kp-text-3)]">
                     {post.category ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-1 font-medium text-[var(--kp-brand-dark)]">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-1 font-medium text-[var(--kp-brand-deep)]">
                         <Tag className="h-3 w-3" />
                         {post.category}
                       </span>
@@ -97,7 +97,7 @@ export function RecentIntelligence({ posts }: RecentIntelligenceProps) {
                     </span>
                   </div>
 
-                  <h3 className="mb-3 line-clamp-2 text-xl font-semibold text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-brand-dark)]">
+                  <h3 className="mb-3 line-clamp-2 text-xl font-semibold text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-brand-deep)]">
                     {post.title}
                   </h3>
 

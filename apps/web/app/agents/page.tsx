@@ -628,9 +628,9 @@ export default function AgentsPage() {
           <span className="font-medium text-[var(--kp-text-1)]">心跳状态：</span>
           卡片上的心跳徽章表示该 Agent 是否按 cron 自主运行。绿色=正常，红色=连续失败，无徽章=未启用。
           定时任务去
-          <Link href="/tasks" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/tasks</Link>，
+          <Link href="/tasks" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/tasks</Link>，
           运行记录去
-          <Link href="/runs" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/runs</Link>。
+          <Link href="/runs" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/runs</Link>。
         </div>
       </div>
 

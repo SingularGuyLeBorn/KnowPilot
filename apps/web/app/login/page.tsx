@@ -36,14 +36,14 @@ function LoginForm() {
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-3xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg-alt)] p-8 shadow-lg"
+        className="w-full max-w-md rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-8 shadow-lg"
       >
         <div className="mb-6 space-y-2 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
             <Lock className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-bold text-[var(--vp-c-text-1)]">KnowPilot 登录</h1>
-          <p className="text-xs text-[var(--vp-c-text-3)]">
+          <h1 className="text-xl font-bold text-[var(--kp-text-1)]">KnowPilot 登录</h1>
+          <p className="text-xs text-[var(--kp-text-3)]">
             远程访问已启用密码保护（AUTH_MODE=password）
           </p>
         </div>
@@ -55,20 +55,20 @@ function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="输入访问密码"
             data-testid="login-password"
-            className="w-full rounded-xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg)] px-4 py-3 text-sm outline-none focus:border-[var(--vp-c-brand)]"
+            className="w-full rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-sm outline-none focus:border-[var(--kp-brand-deep)]"
             autoFocus
           />
           {error && <p className="text-xs text-red-600">{error}</p>}
           <Button
             type="submit"
             disabled={login.isPending || !password}
-            className="w-full rounded-xl bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)]"
+            className="w-full rounded-xl bg-[var(--kp-brand-deep)] text-white hover:opacity-90"
           >
             {login.isPending ? "验证中…" : "进入控制台"}
           </Button>
         </form>
 
-        <p className="mt-6 flex items-center justify-center gap-1 text-[10px] text-[var(--vp-c-text-3)]">
+        <p className="mt-6 flex items-center justify-center gap-1 text-[10px] text-[var(--kp-text-3)]">
           <Sparkles className="h-3 w-3" />
           本地开发可在 .env 设置 AUTH_MODE=none 关闭鉴权
         </p>
@@ -81,7 +81,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[70vh] items-center justify-center text-sm text-[var(--vp-c-text-3)]">
+        <div className="flex min-h-[70vh] items-center justify-center text-sm text-[var(--kp-text-3)]">
           加载登录页…
         </div>
       }

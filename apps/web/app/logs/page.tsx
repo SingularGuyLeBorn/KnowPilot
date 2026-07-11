@@ -68,7 +68,7 @@ export default function LogsPage() {
             onClick={() => { setLevel(lvl); setPage(1); }}
             className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
               level === lvl
-                ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)] shadow-sm"
+                ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] shadow-sm"
                 : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] text-[var(--kp-text-2)] hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]"
             }`}
           >
@@ -116,7 +116,7 @@ export default function LogsPage() {
                         </span>
                       </td>
                       <td className="p-4 text-[var(--kp-text-2)]">{log.component}</td>
-                      <td className="p-4 text-[var(--kp-brand-dark)]">{log.event}</td>
+                      <td className="p-4 text-[var(--kp-brand-deep)]">{log.event}</td>
                       <td className="p-4 text-[var(--kp-text-1)] truncate max-w-xs md:max-w-md" title={log.message}>
                         {log.message}
                       </td>

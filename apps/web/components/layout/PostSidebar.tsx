@@ -85,7 +85,7 @@ export function PostSidebar({ className }: PostSidebarProps) {
           className={cn(
             "flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition",
             pathname.startsWith("/editor")
-              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
               : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
           )}
           title="新建文章"

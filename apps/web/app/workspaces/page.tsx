@@ -88,13 +88,13 @@ export default function WorkspacesPage() {
                       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                         <Folder className="w-4 h-4" />
                       </div>
-                      <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--kp-brand-dark)] transition-colors text-sm">
+                      <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors text-sm">
                         {workspace.name}
                       </h3>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link href={`/workspaces/edit/${workspace.id}`}
-                        className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]">编辑</Link>
+                        className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]">编辑</Link>
                       {(() => {
                         const hasSuper = wsAgents.some((a) => a.tier === "super");
                         return (

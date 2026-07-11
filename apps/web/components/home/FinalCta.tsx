@@ -19,7 +19,7 @@ export function FinalCta() {
           <div className="pointer-events-none absolute -bottom-20 -right-20 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(184,160,144,0.18),transparent_70%)] blur-2xl" />
 
           <div className="relative z-10">
-            <div className="mx-auto mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+            <div className="mx-auto mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
               <Rocket className="h-7 w-7" />
             </div>
             <h2 className="mb-4 text-3xl font-bold tracking-tight text-[var(--kp-text-1)] md:text-5xl">

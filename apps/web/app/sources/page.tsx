@@ -537,7 +537,7 @@ export default function SourcesPage() {
                       <button
                         type="button"
                         onClick={() => openEdit(source)}
-                        className="text-left text-sm font-bold text-[var(--kp-text-1)] hover:text-[var(--kp-brand-dark)]"
+                        className="text-left text-sm font-bold text-[var(--kp-text-1)] hover:text-[var(--kp-brand-deep)]"
                       >
                         {source.name}
                       </button>

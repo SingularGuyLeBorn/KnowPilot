@@ -57,11 +57,11 @@ export default function TasksPage() {
         <div>
           <span className="font-medium text-[var(--kp-text-1)]">查看指南：</span>
           Task 是周期性后台脚本；运行记录去
-          <Link href="/runs" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/runs</Link>，
+          <Link href="/runs" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/runs</Link>，
           事件触发去
-          <Link href="/triggers" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/triggers</Link>，
+          <Link href="/triggers" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/triggers</Link>，
           Agent 自主心跳去
-          <Link href="/agents" className="mx-1 text-[var(--kp-brand-dark)] hover:underline">/agents</Link>。
+          <Link href="/agents" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/agents</Link>。
           详情见 <code className="rounded bg-[var(--kp-bg-mute)] px-1 py-0.5">docs/development/scheduled-tasks-and-heartbeat.md</code>。
         </div>
       </div>

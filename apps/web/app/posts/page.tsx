@@ -132,7 +132,7 @@ export default function PostsPage() {
                 className={cn(
                   "rounded-lg px-3 py-1.5 text-sm font-medium transition",
                   publishFilter === key
-                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                     : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
                 )}
               >
@@ -228,7 +228,7 @@ function PostRow({
           </div>
           <Link
             href={`/posts/${encodeURIComponent(post.slug)}`}
-            className="block text-lg font-semibold text-[var(--kp-text-1)] transition hover:text-[var(--kp-brand-dark)]"
+            className="block text-lg font-semibold text-[var(--kp-text-1)] transition hover:text-[var(--kp-brand-deep)]"
           >
             {post.title}
           </Link>

@@ -86,7 +86,7 @@ export function FeatureBento() {
                   : "lg:col-span-1",
               ].join(" ")}
             >
-              <div className="mb-4 inline-flex rounded-2xl bg-[var(--kp-brand-soft)] p-3 text-[var(--kp-brand-dark)] transition-transform duration-500 group-hover:scale-110">
+              <div className="mb-4 inline-flex rounded-2xl bg-[var(--kp-brand-soft)] p-3 text-[var(--kp-brand-deep)] transition-transform duration-500 group-hover:scale-110">
                 {feature.icon}
               </div>
               <h3

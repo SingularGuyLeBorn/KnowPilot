@@ -236,7 +236,7 @@ export function WorkspaceTree({
             className={cn(
               "flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs transition",
               active
-                ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+                ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
                 : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]",
               !session && "opacity-60",
             )}
@@ -313,7 +313,7 @@ function SessionRow({
       className={cn(
         "group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition",
         active
-          ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+          ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
           : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
       )}
     >

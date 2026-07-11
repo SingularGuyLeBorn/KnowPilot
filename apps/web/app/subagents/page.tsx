@@ -68,7 +68,7 @@ export default function SubagentsPage() {
     <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8">
       <div className="mx-auto max-w-5xl space-y-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
             <Bot className="h-5 w-5" />
           </span>
           <div>

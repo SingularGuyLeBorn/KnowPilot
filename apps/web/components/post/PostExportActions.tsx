@@ -55,7 +55,7 @@ export function PostExportActions({ post, articleRef }: PostExportActionsProps) 
           onClick={() => void handleExportPdf()}
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "inline-flex items-center gap-1 text-[var(--kp-text-2)] hover:text-[var(--kp-brand-dark)]",
+            "inline-flex items-center gap-1 text-[var(--kp-text-2)] hover:text-[var(--kp-brand-deep)]",
           )}
           title="导出 PDF"
         >
@@ -72,7 +72,7 @@ export function PostExportActions({ post, articleRef }: PostExportActionsProps) 
           onClick={() => void handleExportMd()}
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
-            "inline-flex items-center gap-1 text-[var(--kp-text-2)] hover:text-[var(--kp-brand-dark)]",
+            "inline-flex items-center gap-1 text-[var(--kp-text-2)] hover:text-[var(--kp-brand-deep)]",
           )}
           title="导出 Markdown（含图片 ZIP）"
         >

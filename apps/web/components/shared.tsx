@@ -100,7 +100,7 @@ export function Pagination({
                 onClick={() => onPageChange(p)}
                 className={`h-8 w-8 rounded-lg text-xs ${
                   p === page
-                    ? "border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+                    ? "border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
                     : "border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]"
                 }`}
               >
@@ -314,7 +314,7 @@ export function ConfirmDialog({
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                 isDestructive 
                   ? "bg-red-500/10 text-red-500" 
-                  : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                  : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
               }`}>
                 <AlertTriangle className="h-5 w-5" />
               </div>
@@ -522,12 +522,12 @@ export function KpSelect<T extends string = string>({
                 className={cn(
                   "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors",
                   active
-                    ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+                    ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
                     : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
                 )}
               >
                 <span className="truncate">{opt.label}</span>
-                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />}
+                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />}
               </button>
             );
           })}
