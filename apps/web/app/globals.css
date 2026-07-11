@@ -314,12 +314,18 @@ html.dark .kp-card,
 
 .prose code {
   background: var(--kp-bg-soft);
-  color: var(--kp-brand-dark);
+  color: var(--kp-brand-deep);
   padding: 0.15rem 0.4rem;
   border-radius: 0.375rem;
   border: 1px solid var(--kp-divider-light);
   font-size: 0.875em;
   font-weight: 600;
+}
+
+/* 暗色模式：inline code 提亮为 brand-light，在深底 bg-soft 上达 WCAG AA
+   （brand-deep #7e6a55 在暗底仅 ~3.4:1 不达标；brand-light #e0d2cd 达 ~11:1） */
+.dark .prose code {
+  color: var(--kp-brand-light);
 }
 
 .prose code::before,
@@ -353,7 +359,11 @@ html.dark .kp-card,
 
 .kp-code-toolbar button:hover {
   background: var(--kp-brand-soft);
-  color: var(--kp-brand-dark);
+  color: var(--kp-brand-deep);
+}
+
+.dark .kp-code-toolbar button:hover {
+  color: var(--kp-brand-light);
 }
 
 /* KaTeX 公式 */

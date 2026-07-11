@@ -265,7 +265,7 @@ export const PostContent = memo(function PostContent({ content, className, postS
       }
 
       return (
-        <code className="bg-[var(--kp-bg-mute)] text-[var(--kp-brand-deep)]" {...props}>
+        <code {...props}>
           {children}
         </code>
       );
@@ -285,7 +285,7 @@ export const PostContent = memo(function PostContent({ content, className, postS
   );
 
   return (
-    <div className={`prose prose-stone max-w-none ${className || ""}`}>
+    <div className={`prose prose-stone dark:prose-invert max-w-none ${className || ""}`}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
