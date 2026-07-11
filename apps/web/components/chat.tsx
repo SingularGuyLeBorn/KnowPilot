@@ -1427,11 +1427,22 @@ export function ChatView() {
           }
           flushStreamNow(originSid);
           const leftover = streamLifecycleStore.get(originSid).streamingContent;
+          // INV-1：abort 时只 completeStream（phase=done，live 块继续显示 leftover），
+          // 不立即 commit。服务端保存 partial assistant 后会广播 message_upserted
+          // （或下方 hydrate 拉回）→ tryCommitAfterAssistant/Hydrate → tryCommitStream
+          // 对齐后才 commit → idle。这样 live 块拆除与 stored 气泡出现原子切换，
+          // 消除「中断后回复先消失再出现」的空窗。
           streamLifecycleActions.completeStream(originSid, leftover);
-          // abort：立即 commit，队列可继续；hydrate 仅断线兜底
-          streamLifecycleActions.commitStream(originSid);
           const hydrateSid = originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? "") : originSid;
           if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
+          // 兜底：服务端可能无 partial 内容（abort 极早）→ 不会发 message_upserted，
+          // done phase 会卡住队列。2s 后仍未 commit 则强制释放。
+          window.setTimeout(() => {
+            const st = streamLifecycleStore.get(originSid);
+            if (st.phase === "done") {
+              streamLifecycleActions.commitStream(originSid);
+            }
+          }, 2000);
           if (opts.optimisticUser) {
             sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
           }
