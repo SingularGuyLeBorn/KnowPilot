@@ -66,7 +66,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           transition={{ duration: 0.8, ease: easeOut }}
           className="relative z-10 mx-auto w-full max-w-4xl"
         >
-          <div className="rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-8 shadow-lg backdrop-blur-md md:p-10">
+          <div className="rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-8 shadow-lg md:p-10">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[var(--kp-brand-soft)] px-3 py-1 text-xs font-semibold text-[var(--kp-brand-dark)]">
               <Sparkles className="h-3.5 w-3.5" />
               About Me
@@ -143,7 +143,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-60px" }}
           transition={{ ...spring, delay: 0.12 }}
-          className="mt-6 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/80 p-6 backdrop-blur-sm"
+          className="mt-6 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6"
         >
           <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
             <BookOpen className="h-4 w-4" />
@@ -180,7 +180,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-60px" }}
           transition={{ ...spring, delay: 0.18 }}
-          className="prose-kp mt-6 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/80 p-6 backdrop-blur-sm md:p-8"
+          className="prose-kp mt-6 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6 md:p-8"
         >
           <PostContent content={profile.bodyMarkdown} />
         </motion.section>
@@ -245,7 +245,7 @@ function AboutLiveStats({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2, duration: 0.7, ease: easeOut }}
-      className="mt-6 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)]/80 p-4 backdrop-blur-md md:p-6"
+      className="mt-6 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 md:p-6"
     >
       <p className="mb-4 text-center text-xs font-medium tracking-widest text-[var(--kp-text-3)] uppercase">
         KnowPilot 实时数据
@@ -265,7 +265,7 @@ function AboutLiveStats({
               transition={{ delay: 0.25 + i * 0.05, ...spring }}
               className="flex flex-col items-center gap-1 text-center"
             >
-              <stat.icon className="mb-1 h-4 w-4 text-[var(--kp-brand)]" />
+              <stat.icon className="mb-1 h-4 w-4 text-[var(--kp-brand-deep)]" />
               <span className="text-2xl font-bold tabular-nums text-[var(--kp-text-1)]">
                 {stat.value ?? "—"}
               </span>
@@ -295,7 +295,7 @@ function ProfileCard({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-60px" }}
       transition={{ ...spring, delay }}
-      className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/80 p-6 backdrop-blur-sm"
+      className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6"
     >
       <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
         <Icon className="h-4 w-4 text-[var(--kp-brand)]" />
