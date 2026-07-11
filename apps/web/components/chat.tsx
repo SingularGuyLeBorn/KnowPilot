@@ -1174,6 +1174,9 @@ export function ChatView() {
                   router.replace(`${pathname}?${params.toString()}`, { scroll: false });
                 }
               }
+              // session 一建立就刷新侧边栏列表，不要等 onDone——用户发首条消息后
+              // 新会话应立即可见，而非等第一条回复结束才出现。
+              void utils.session.list.invalidate();
               scheduleStreamSave(true);
             },
             onRoundStart: (round) => {
