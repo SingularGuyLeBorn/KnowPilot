@@ -22,11 +22,13 @@ export async function autoNameSession(sessionId: string, firstMessage: string): 
     const { getAppConfig } = await import("./config.js");
     const { chatCompletion } = await import("./llmClient.js");
     const { getStreamHub } = await import("./sessionStreamHub.js");
-    // 幂等：autoName 已有值就跳过；且仅首条消息时命名（msgCount<=1），避免老 session 被追溯命名
+    // 幂等唯一守卫：autoName 已有值就跳过（命名过就不再命名）。
+    // 不要用 msgCount>1 守卫——autoNameSession 与 agent 流并发，assistant 消息可能在
+    // 本检查前写入 DB，使 msgCount 变成 2 → 误判为「非首条」跳过命名。
+    // 快回复会话因此竞态输给 assistant 消息、永远不被命名；带工具的慢会话才赢得竞态。
+    // autoName=null 的老会话被追溯命名一次是期望行为（用户重新打开时补名字）。
     const session = await prisma.chatSession.findUnique({ where: { id: sessionId }, select: { autoName: true } });
     if (!session || session.autoName) return;
-    const msgCount = await prisma.chatMessage.count({ where: { sessionId } });
-    if (msgCount > 1) return;
     const { content } = await chatCompletion({
       config: getAppConfig(),
       model: MODEL,

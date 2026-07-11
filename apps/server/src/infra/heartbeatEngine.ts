@@ -254,7 +254,9 @@ export class HeartbeatEngine {
                 delivered: true,
                 deliveredAt: new Date(),
               },
-            }).catch(() => {});
+            }).catch((err) => {
+              console.warn(`  💓 [HeartbeatEngine] 标记心跳任务 failed 失败 task=${task.id}:`, err instanceof Error ? err.message : err);
+            });
             await this.updateHeartbeatStatus(agentId, reason, hb);
 
             // 连续失败 3 次 → 邮件通知（#4）
@@ -307,15 +309,31 @@ export class HeartbeatEngine {
         },
         status: status === "success" ? "active" : "idle",
       },
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn(`  💓 [HeartbeatEngine] 更新心跳状态失败 agent=${agentId}:`, err instanceof Error ? err.message : err);
+    });
   }
 }
 
 let _engine: HeartbeatEngine | null = null;
+let _enginePrisma: PrismaClient | null = null;
 
 export function getHeartbeatEngine(prisma: PrismaClient, services: ServiceContainer, config: AppConfig): HeartbeatEngine {
+  // 测试隔离：prisma 不匹配时重建
+  if (_engine && _enginePrisma !== prisma) {
+    _engine.stop();
+    _engine = null;
+    _enginePrisma = null;
+  }
   if (!_engine) {
     _engine = new HeartbeatEngine(prisma, services, config);
+    _enginePrisma = prisma;
   }
   return _engine;
+}
+
+export function resetHeartbeatEngineForTests(): void {
+  if (_engine) _engine.stop();
+  _engine = null;
+  _enginePrisma = null;
 }

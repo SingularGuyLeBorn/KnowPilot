@@ -200,14 +200,28 @@ export class TriggerEngine {
 }
 
 let _engine: TriggerEngine | null = null;
+let _enginePrisma: PrismaClient | null = null;
 
 export function getTriggerEngine(
   prisma: PrismaClient,
   eventBus: AppEventBus,
   services: ServiceContainer,
 ): TriggerEngine {
+  // 测试隔离：prisma 不匹配时重建
+  if (_engine && _enginePrisma !== prisma) {
+    _engine.stop();
+    _engine = null;
+    _enginePrisma = null;
+  }
   if (!_engine) {
     _engine = new TriggerEngine(prisma, eventBus, services);
+    _enginePrisma = prisma;
   }
   return _engine;
+}
+
+export function resetTriggerEngineForTests(): void {
+  if (_engine) _engine.stop();
+  _engine = null;
+  _enginePrisma = null;
 }

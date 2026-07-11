@@ -70,10 +70,24 @@ export class TaskScheduler {
 }
 
 let _scheduler: TaskScheduler | null = null;
+let _schedulerPrisma: PrismaClient | null = null;
 
 export function getTaskScheduler(prisma: PrismaClient, services: ServiceContainer): TaskScheduler {
+  // 测试隔离：prisma 不匹配时重建
+  if (_scheduler && _schedulerPrisma !== prisma) {
+    _scheduler.stop();
+    _scheduler = null;
+    _schedulerPrisma = null;
+  }
   if (!_scheduler) {
     _scheduler = new TaskScheduler(prisma, services);
+    _schedulerPrisma = prisma;
   }
   return _scheduler;
+}
+
+export function resetTaskSchedulerForTests(): void {
+  if (_scheduler) _scheduler.stop();
+  _scheduler = null;
+  _schedulerPrisma = null;
 }

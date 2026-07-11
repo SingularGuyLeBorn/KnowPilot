@@ -84,14 +84,26 @@ export class ServiceContainer {
 /* ─── 全局单例 ─── */
 
 let _container: ServiceContainer | null = null;
+let _containerPrisma: PrismaClient | null = null;
 
 export function getServiceContainer(
   prisma: PrismaClient,
   eventBus: AppEventBus,
   config: AppConfig,
 ): ServiceContainer {
+  // 测试隔离：prisma 不匹配时重建（每个 test 传不同 mock prisma，单例不能复用旧实例）
+  if (_container && _containerPrisma !== prisma) {
+    _container = null;
+    _containerPrisma = null;
+  }
   if (!_container) {
     _container = new ServiceContainer(prisma, eventBus, config);
+    _containerPrisma = prisma;
   }
   return _container;
+}
+
+export function resetServiceContainerForTests(): void {
+  _container = null;
+  _containerPrisma = null;
 }

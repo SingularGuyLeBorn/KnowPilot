@@ -98,3 +98,9 @@ export function getEventBus(): AppEventBus {
   }
   return globalForEventBus.__eventBus;
 }
+
+/** 测试隔离：重置全局 eventBus 单例 */
+export function resetEventBusForTests(): void {
+  if (globalForEventBus.__eventBus) globalForEventBus.__eventBus.destroy();
+  globalForEventBus.__eventBus = undefined as unknown as AppEventBus;
+}

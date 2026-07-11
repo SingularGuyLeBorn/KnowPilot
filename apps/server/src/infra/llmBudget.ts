@@ -93,3 +93,8 @@ export function recordTokenUsage(
   globalBudget.__llmBudget = state;
   saveState(config.projectRoot, state);
 }
+
+/** 测试隔离：重置全局预算缓存 */
+export function resetLlmBudgetForTests(): void {
+  globalBudget.__llmBudget = undefined;
+}

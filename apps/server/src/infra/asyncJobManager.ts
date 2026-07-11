@@ -709,7 +709,9 @@ function buildAsyncExecute(
     } as any);
     await syncSubStatus("completed");
     if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
-      await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch(() => {});
+      await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch((err) => {
+        console.warn(`[asyncJobManager] 标记子 Agent dormant 失败 agent=${agentSnapshot.id}:`, err instanceof Error ? err.message : err);
+      });
     }
     await broadcastShare("success", { asyncResult: resultText, tokenUsage });
     const parentInput = parseAsyncInput((await services.task.getById(jobId))?.input);
@@ -827,7 +829,9 @@ function buildAsyncExecute(
       await syncSubStatus("running");
       try {
         await services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
-      } catch {}
+      } catch (err) {
+        console.warn(`[asyncJobManager] 标记任务 running 失败 job=${jobId}:`, err instanceof Error ? err.message : err);
+      }
       await appendAsyncJobLog(jobId, { level: "info", message: "任务开始执行" }, services);
 
       if (mode === "tool") {

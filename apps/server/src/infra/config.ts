@@ -487,6 +487,11 @@ export function getAppConfig(): AppConfig {
   return globalForConfig.__appConfig;
 }
 
+/** 测试隔离：重置全局 config 单例（测试改 env 后需重新生成） */
+export function resetAppConfigForTests(): void {
+  globalForConfig.__appConfig = undefined as unknown as AppConfig;
+}
+
 /** 列出已配置 API Key 的 LLM 厂商 */
 export function listConfiguredLlmProviders(config: AppConfig = getAppConfig()): string[] {
   return Object.entries(config.llm.providers)

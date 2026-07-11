@@ -337,12 +337,12 @@ function readSavedDensity(): CardDensity {
 }
 
 export function useCardDensity() {
-  const [density, setDensityState] = useState<CardDensity>(() => {
-    if (typeof window === "undefined") return "comfortable";
-    return readSavedDensity();
-  });
+  // 水合约束：SSR 与客户端首帧必须渲染相同结果，localStorage 只能在挂载后（effect 里）读，
+  // 否则存了 compact 的浏览器首帧图标/title 与服务端 HTML 不一致 → hydration mismatch
+  const [density, setDensityState] = useState<CardDensity>("comfortable");
 
   useEffect(() => {
+    setDensityState(readSavedDensity());
     const handler = () => setDensityState(readSavedDensity());
     window.addEventListener(CARD_DENSITY_CHANGE_EVENT, handler);
     return () => window.removeEventListener(CARD_DENSITY_CHANGE_EVENT, handler);
