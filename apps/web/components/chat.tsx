@@ -2070,7 +2070,10 @@ export function ChatView() {
       return;
     }
     try {
-      const res = await updateSession.mutateAsync({ id, title: trimmed });
+      // 写 autoName（显示优先字段），而非 title。否则自动命名过的 session
+      // autoName 已有值，改 title 被 autoName 屏蔽 → 重命名「屁都没有」。
+      // 写 autoName 后 autoNameSession 的幂等检查（autoName 已有值跳过）也保证不会被自动命名覆盖。
+      const res = await updateSession.mutateAsync({ id, autoName: trimmed });
       if (!res.success) {
         setError(res.error?.message ?? "重命名失败");
         return;
@@ -2208,7 +2211,8 @@ export function ChatView() {
   const handleStartRename = useCallback((id: string) => {
     setEditingSessionId(id);
     const s = sessionsQuery.data?.items.find((x) => x.id === id);
-    setRenameDraft(s?.title ?? "");
+    // 预填当前显示名（autoName 优先于 title），否则编辑框显示旧 title 误导用户
+    setRenameDraft(s?.autoName || s?.title || "");
   }, [sessionsQuery.data?.items]);
 
   const renameDraftRef = useRef(renameDraft);
@@ -2769,7 +2773,7 @@ export function ChatView() {
                             });
                           }}
                           className="ml-1 h-3.5 w-3.5 shrink-0 accent-[var(--kp-brand)]"
-                          aria-label={`选择会话 ${s.title}`}
+                          aria-label={`选择会话 ${s.autoName || s.title}`}
                         />
                       )}
                       <div className={cn(bulkMode && "min-w-0 flex-1")}>
@@ -2917,7 +2921,7 @@ export function ChatView() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h1 className="truncate text-sm font-semibold">
-                {sessionDetail?.title ?? "Agent 对话"}
+                {sessionDetail?.autoName || sessionDetail?.title || "Agent 对话"}
               </h1>
               {isLoadingOlderMessages && !isStreaming && (
                 <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-text-3)]" />

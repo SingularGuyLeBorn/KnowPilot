@@ -1297,6 +1297,7 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
 export interface SessionEntity {
   id: string;
   title: string;
+  autoName?: string | null;
   model: string;
   systemPrompt: string | null;
   agentId: string | null;

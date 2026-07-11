@@ -268,6 +268,7 @@ export const createSessionSchema = z.object({
 export const updateSessionSchema = z.object({
   id: z.string().cuid(),
   title: z.string().min(1).max(200).optional(),
+  autoName: z.string().max(200).nullable().optional(), // 手动重命名写此字段，显示优先于 title
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
   agentId: z.string().cuid().optional(),
