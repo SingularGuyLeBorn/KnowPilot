@@ -418,7 +418,7 @@ function renderGroupedItems(
                 className={cn(
                   "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition",
                   selected
-                    ? "bg-[var(--kp-brand)] text-white"
+                    ? "bg-[var(--kp-brand-deep)] text-white"
                     : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]"
                 )}
               >

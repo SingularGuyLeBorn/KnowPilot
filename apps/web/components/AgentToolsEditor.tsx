@@ -171,7 +171,7 @@ function ToggleChip({
       <span
         className={cn(
           "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-          checked ? "border-[var(--kp-brand)] bg-[var(--kp-brand)] text-white" : "border-[var(--kp-divider)]",
+          checked ? "border-[var(--kp-brand)] bg-[var(--kp-brand-deep)] text-white" : "border-[var(--kp-divider)]",
         )}
       >
         {checked && <Check className="h-2.5 w-2.5" />}

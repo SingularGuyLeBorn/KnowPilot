@@ -125,7 +125,7 @@ export default function NewPostPage() {
             <button
               onClick={() => handleSave(true)}
               disabled={create.isPending || !title.trim()}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--kp-brand)] px-4 py-2 text-sm font-medium text-white transition hover:bg-[var(--kp-brand-dark)] disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--kp-brand-deep)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
               发布

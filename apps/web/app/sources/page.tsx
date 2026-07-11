@@ -424,7 +424,7 @@ export default function SourcesPage() {
             className={cn(
               "rounded-full px-3 py-1 text-xs font-medium transition-colors",
               !typeFilter
-                ? "bg-[var(--kp-brand)] text-white"
+                ? "bg-[var(--kp-brand-deep)] text-white"
                 : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
             )}
           >
@@ -438,7 +438,7 @@ export default function SourcesPage() {
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-medium transition-colors",
                 typeFilter === opt.value
-                  ? "bg-[var(--kp-brand)] text-white"
+                  ? "bg-[var(--kp-brand-deep)] text-white"
                   : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
               )}
             >
@@ -457,7 +457,7 @@ export default function SourcesPage() {
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-medium transition-colors",
                 minReliability === level
-                  ? "bg-[var(--kp-brand)] text-white"
+                  ? "bg-[var(--kp-brand-deep)] text-white"
                   : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
               )}
             >
@@ -478,7 +478,7 @@ export default function SourcesPage() {
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-medium transition-colors",
                 enabledFilter === opt.value
-                  ? "bg-[var(--kp-brand)] text-white"
+                  ? "bg-[var(--kp-brand-deep)] text-white"
                   : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
               )}
             >

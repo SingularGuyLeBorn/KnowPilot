@@ -508,7 +508,7 @@ export default function AgentsPage() {
                   onClick={() => setForm({ ...form, heartbeatEnabled: !form.heartbeatEnabled })}
                   className={cn(
                     "relative h-5 w-9 rounded-full transition-colors",
-                    form.heartbeatEnabled ? "bg-[var(--kp-brand)]" : "bg-[var(--kp-bg-mute)]",
+                    form.heartbeatEnabled ? "bg-[var(--kp-brand-deep)]" : "bg-[var(--kp-bg-mute)]",
                   )}
                 >
                   <span

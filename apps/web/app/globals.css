@@ -62,7 +62,7 @@
 
   --popover-foreground: var(--kp-text-1);
 
-  --primary: var(--kp-brand-dark);
+  --primary: var(--kp-brand-deep);
 
   --primary-foreground: oklch(0.985 0 0);
 
@@ -384,7 +384,7 @@ html.dark .kp-card,
     --card-foreground: var(--kp-text-1);
     --popover: var(--kp-bg-alt);
     --popover-foreground: var(--kp-text-1);
-    --primary: var(--kp-brand);
+    --primary: var(--kp-brand-deep);
     --primary-foreground: #ffffff;
     --secondary: var(--kp-bg-soft);
     --secondary-foreground: var(--kp-text-1);
@@ -399,10 +399,10 @@ html.dark .kp-card,
     --radius: 0.625rem;
     --sidebar: var(--kp-bg-alt);
     --sidebar-foreground: var(--kp-text-1);
-    --sidebar-primary: var(--kp-brand-1);
+    --sidebar-primary: var(--kp-brand-deep);
     --sidebar-primary-foreground: #ffffff;
     --sidebar-accent: var(--kp-brand-soft);
-    --sidebar-accent-foreground: var(--kp-brand-dark);
+    --sidebar-accent-foreground: var(--kp-brand-deep);
     --sidebar-border: var(--kp-divider);
     --sidebar-ring: var(--kp-brand-1);
   }
@@ -414,7 +414,7 @@ html.dark .kp-card,
     --card-foreground: var(--kp-text-1);
     --popover: var(--kp-bg-alt);
     --popover-foreground: var(--kp-text-1);
-    --primary: var(--kp-brand);
+    --primary: var(--kp-brand-deep);
     --primary-foreground: #ffffff;
     --secondary: var(--kp-bg-soft);
     --secondary-foreground: var(--kp-text-1);
@@ -428,10 +428,10 @@ html.dark .kp-card,
     --ring: var(--kp-brand-1);
     --sidebar: var(--kp-bg-alt);
     --sidebar-foreground: var(--kp-text-1);
-    --sidebar-primary: var(--kp-brand-1);
+    --sidebar-primary: var(--kp-brand-deep);
     --sidebar-primary-foreground: #ffffff;
     --sidebar-accent: var(--kp-brand-soft);
-    --sidebar-accent-foreground: var(--kp-brand-dark);
+    --sidebar-accent-foreground: var(--kp-brand-deep);
     --sidebar-border: var(--kp-divider);
     --sidebar-ring: var(--kp-brand-1);
   }

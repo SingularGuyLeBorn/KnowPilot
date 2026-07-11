@@ -105,7 +105,7 @@ export default function SubagentsPage() {
             className={cn(
               "rounded-full px-3 py-1 text-xs transition",
               status === s
-                ? "bg-[var(--kp-brand)] text-white"
+                ? "bg-[var(--kp-brand-deep)] text-white"
                 : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-soft)]",
             )}
           >
