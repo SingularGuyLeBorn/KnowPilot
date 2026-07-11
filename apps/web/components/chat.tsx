@@ -64,7 +64,7 @@ import {
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
 import { getAuthToken } from "@/lib/auth";
-import { UserSendQueuePanel, AsyncTaskQueueList } from "@/components/chatQueue";
+import { UserSendQueuePanel, RuntimeStatusPanel } from "@/components/chatQueue";
 import { AsyncTaskPanel } from "@/components/asyncTaskPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
@@ -897,9 +897,13 @@ export function ChatView() {
     [asyncOverlays, asyncQueueQuery.data, consumedDeliveries],
   );
 
-  // 右侧「运行时」：未消费 = running/queued + 待消费结果；已消费单独标签
+  // 右侧「状态」：未消费 = 仅待开始/运行中；已结束不进未消费；已消费带滑入
   const runtimePendingItems = useMemo(
-    () => asyncResultQueue.filter((i) => i.kind === "async-running" || i.kind === "async-result"),
+    () => asyncResultQueue.filter((i) => i.kind === "async-running"),
+    [asyncResultQueue],
+  );
+  const runtimeHeldItems = useMemo(
+    () => asyncResultQueue.filter((i) => i.kind === "async-result" && i.pinned),
     [asyncResultQueue],
   );
   const runtimeConsumedItems = useMemo(() => {
@@ -932,7 +936,6 @@ export function ChatView() {
     }));
   }, [asyncQueueQuery.data]);
   const [runtimeSubTab, setRuntimeSubTab] = useState<"pending" | "consumed">("pending");
-  const runtimeQueueItems = runtimeSubTab === "pending" ? runtimePendingItems : runtimeConsumedItems;
 
   const queue = useMemo(
     () => [...sortQueueItems(asyncResultQueue), ...sortQueueItems(userQueue)],
@@ -3251,7 +3254,7 @@ export function ChatView() {
                         : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
                     )}
                   >
-                    运行时
+                    状态
                     {runtimePendingItems.length > 0 && (
                       <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
                         {runtimePendingItems.length}
@@ -3285,53 +3288,15 @@ export function ChatView() {
                     />
                   </div>
                 ) : (
-                  <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-runtime-queue">
-                    <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2 py-1.5">
-                      <button
-                        type="button"
-                        data-testid="runtime-tab-pending"
-                        onClick={() => setRuntimeSubTab("pending")}
-                        className={cn(
-                          "rounded-md px-2 py-1 text-[10px] font-medium transition",
-                          runtimeSubTab === "pending"
-                            ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                            : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-                        )}
-                      >
-                        未消费
-                        {runtimePendingItems.length > 0 && (
-                          <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
-                            {runtimePendingItems.length}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="runtime-tab-consumed"
-                        onClick={() => setRuntimeSubTab("consumed")}
-                        className={cn(
-                          "rounded-md px-2 py-1 text-[10px] font-medium transition",
-                          runtimeSubTab === "consumed"
-                            ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                            : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-                        )}
-                      >
-                        已消费
-                        {runtimeConsumedItems.length > 0 && (
-                          <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-bg-mute)] px-1 text-[9px] font-semibold text-[var(--kp-text-3)]">
-                            {runtimeConsumedItems.length}
-                          </span>
-                        )}
-                      </button>
-                    </div>
-                    <AsyncTaskQueueList
-                      items={runtimeQueueItems}
-                      onCancel={runtimeSubTab === "pending" ? (jobId) => cancelAsyncJobMutation.mutate({ jobId }) : undefined}
-                      onRetry={runtimeSubTab === "pending" ? (jobId) => retryAsyncJobMutation.mutate({ jobId }) : undefined}
-                      onTogglePin={runtimeSubTab === "pending" ? (jobId, pinned) => pinAsyncJobMutation.mutate({ jobId, pinned }) : undefined}
-                      emptyText={runtimeSubTab === "pending" ? "暂无进行中或待消费的异步任务" : "暂无已消费记录"}
-                    />
-                  </div>
+                  <RuntimeStatusPanel
+                    tab={runtimeSubTab}
+                    onTabChange={setRuntimeSubTab}
+                    pendingItems={runtimePendingItems}
+                    consumedItems={runtimeConsumedItems}
+                    heldItems={runtimeHeldItems}
+                    onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
+                    onTogglePin={(jobId, pinned) => pinAsyncJobMutation.mutate({ jobId, pinned })}
+                  />
                 )}
               </div>
             </motion.div>
