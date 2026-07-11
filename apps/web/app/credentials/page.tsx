@@ -79,7 +79,7 @@ export default function CredentialsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={KeyRound}
         title="Credentials 凭据库"
@@ -119,17 +119,17 @@ export default function CredentialsPage() {
                   y: 0,
                   transition: { delay: idx * 0.04, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:shadow-lg transition-all", density === "compact" ? "p-3" : "p-5")}
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:shadow-lg transition-all", density === "compact" ? "p-3" : "p-5")}
               >
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <h3 className="font-bold text-sm text-[var(--vp-c-text-1)]">{cred.name}</h3>
-                    <span className="text-[10px] text-[var(--vp-c-text-3)]">{TYPE_LABEL[cred.type]}</span>
+                    <h3 className="font-bold text-sm text-[var(--kp-text-1)]">{cred.name}</h3>
+                    <span className="text-[10px] text-[var(--kp-text-3)]">{TYPE_LABEL[cred.type]}</span>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Link
                       href={`/credentials/edit/${cred.id}`}
-                      className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                      className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]"
                     >
                       编辑
                     </Link>
@@ -143,7 +143,7 @@ export default function CredentialsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 rounded-lg bg-[var(--vp-c-bg-soft)] px-3 py-2 font-mono text-xs text-[var(--vp-c-text-2)] mb-3">
+                <div className="flex items-center gap-2 rounded-lg bg-[var(--kp-bg-soft)] px-3 py-2 font-mono text-xs text-[var(--kp-text-2)] mb-3">
                   <span className="flex-1 truncate">{maskValue(cred.valuePreview)}</span>
                 </div>
 
@@ -151,17 +151,17 @@ export default function CredentialsPage() {
                   {(cred.scope ?? []).map((s) => (
                     <span
                       key={s}
-                      className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${SCOPE_COLORS[s] || "bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]"}`}
+                      className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${SCOPE_COLORS[s] || "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"}`}
                     >
                       {s}
                     </span>
                   ))}
                   {(!cred.scope || cred.scope.length === 0) && (
-                    <span className="text-[10px] text-[var(--vp-c-text-3)]">无 scope</span>
+                    <span className="text-[10px] text-[var(--kp-text-3)]">无 scope</span>
                   )}
                 </div>
                 {cred.expiresAt && (
-                  <div className="text-[10px] text-[var(--vp-c-text-3)]">
+                  <div className="text-[10px] text-[var(--kp-text-3)]">
                     {formatExpiresAt(cred.expiresAt)}
                   </div>
                 )}

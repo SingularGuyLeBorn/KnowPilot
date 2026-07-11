@@ -3059,7 +3059,7 @@ export function ChatView() {
               <p className="text-sm">发送第一条消息开始对话</p>
               {/* #12 Swarm 新手引导：无 Workspace 时展示（可关闭，localStorage 记忆） */}
               {!hasWorkspaces && showOnboarding && (
-                <div className="relative max-w-md rounded-2xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30 p-4 text-left" data-testid="swarm-onboarding">
+                <div className="relative max-w-md rounded-2xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)] p-4 text-left" data-testid="swarm-onboarding">
                   <button
                     type="button"
                     onClick={dismissSwarmOnboarding}

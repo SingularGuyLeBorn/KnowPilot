@@ -48,7 +48,7 @@ export default function RunsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={Activity}
         title="Runs 执行记录"
@@ -66,8 +66,8 @@ export default function RunsPage() {
             }}
             className={`rounded-full px-3 py-1 text-xs font-medium transition ${
               statusFilter === s
-                ? "bg-[var(--vp-c-brand)] text-white"
-                : "bg-[var(--vp-c-bg-soft)] text-[var(--vp-c-text-2)] hover:bg-[var(--vp-c-brand-soft)]"
+                ? "bg-[var(--kp-brand-deep)] text-white"
+                : "bg-[var(--kp-bg-soft)] text-[var(--kp-text-2)] hover:bg-[var(--kp-brand-soft)]"
             }`}
           >
             {s === "" ? "全部" : STATUS_LABEL[s as Run["status"]]}
@@ -84,10 +84,10 @@ export default function RunsPage() {
         />
       ) : (
         <>
-          <div className="rounded-2xl border border-[var(--vp-c-divider-light)] overflow-hidden">
+          <div className="rounded-2xl border border-[var(--kp-divider-light)] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-[var(--vp-c-bg-soft)] text-left text-xs text-[var(--vp-c-text-3)]">
+                <thead className="bg-[var(--kp-bg-soft)] text-left text-xs text-[var(--kp-text-3)]">
                   <tr>
                     <th className="px-4 py-3 font-semibold">状态</th>
                     <th className="px-4 py-3 font-semibold">Agent / Session</th>
@@ -96,36 +96,36 @@ export default function RunsPage() {
                     <th className="px-4 py-3 font-semibold w-16" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--vp-c-divider-light)]">
+                <tbody className="divide-y divide-[var(--kp-divider-light)]">
                   {data.items.map((run: Run) => (
-                    <tr key={run.id} className="hover:bg-[var(--vp-c-bg-soft)]/50">
+                    <tr key={run.id} className="hover:bg-[var(--kp-bg-soft)]/50">
                       <td className="px-4 py-3">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[run.status]}`}>
                           {STATUS_LABEL[run.status]}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 text-[var(--vp-c-text-2)]">
-                          <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--vp-c-brand)]" />
+                        <div className="flex items-center gap-2 text-[var(--kp-text-2)]">
+                          <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
                           <span className="font-mono text-xs truncate max-w-[200px]">
                             {run.agentId?.slice(0, 8) ?? "—"} / {run.sessionId?.slice(0, 8) ?? "—"}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-[var(--vp-c-text-3)]">
+                      <td className="px-4 py-3 text-[var(--kp-text-3)]">
                         <span className="inline-flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {run.durationMs != null ? `${run.durationMs} ms` : "—"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-[var(--vp-c-text-3)]">
+                      <td className="px-4 py-3 text-xs text-[var(--kp-text-3)]">
                         {formatRelativeTime(run.createdAt)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Link
                             href={`/runs/edit/${run.id}`}
-                            className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)]"
+                            className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)]"
                           >
                             详情
                           </Link>

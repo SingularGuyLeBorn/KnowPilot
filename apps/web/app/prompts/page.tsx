@@ -41,7 +41,7 @@ export default function PromptsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={FileCode2}
         title="Prompts 提示词库"
@@ -71,20 +71,20 @@ export default function PromptsPage() {
                   y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
               >
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-3">
                     <div>
-                      <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--vp-c-brand-dark)] transition-colors">
+                      <h3 className="font-bold text-[var(--kp-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors">
                         {prompt.name}
                       </h3>
-                      <p className="text-[10px] text-[var(--vp-c-text-3)]">v{prompt.version}</p>
+                      <p className="text-[10px] text-[var(--kp-text-3)]">v{prompt.version}</p>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link
                         href={`/prompts/edit/${prompt.id}`}
-                        className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                        className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]"
                       >
                         编辑
                       </Link>
@@ -98,19 +98,19 @@ export default function PromptsPage() {
                   </div>
 
                   {prompt.description && (
-                    <p className="text-xs text-[var(--vp-c-text-2)] mb-3 line-clamp-2">{prompt.description}</p>
+                    <p className="text-xs text-[var(--kp-text-2)] mb-3 line-clamp-2">{prompt.description}</p>
                   )}
 
-                  <pre className="text-[10px] text-[var(--vp-c-text-3)] bg-[var(--vp-c-bg-mute)] rounded-lg p-2 max-h-24 overflow-hidden line-clamp-4 font-mono whitespace-pre-wrap">
+                  <pre className="text-[10px] text-[var(--kp-text-3)] bg-[var(--kp-bg-mute)] rounded-lg p-2 max-h-24 overflow-hidden line-clamp-4 font-mono whitespace-pre-wrap">
                     {prompt.content}
                   </pre>
                 </div>
 
-                <div className="pt-3 mt-3 border-t border-[var(--vp-c-divider-light)] flex flex-wrap gap-1">
+                <div className="pt-3 mt-3 border-t border-[var(--kp-divider-light)] flex flex-wrap gap-1">
                   {prompt.tags?.map((tag) => (
                     <span
                       key={tag}
-                      className="inline-flex items-center gap-0.5 rounded bg-[var(--vp-c-bg-soft)] px-1.5 py-0.5 text-[8px] text-[var(--vp-c-text-3)]"
+                      className="inline-flex items-center gap-0.5 rounded bg-[var(--kp-bg-soft)] px-1.5 py-0.5 text-[8px] text-[var(--kp-text-3)]"
                     >
                       <Tag className="w-2 h-2" />
                       {tag}

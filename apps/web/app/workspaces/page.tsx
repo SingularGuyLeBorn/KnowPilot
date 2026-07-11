@@ -58,7 +58,7 @@ export default function WorkspacesPage() {
   const confirmDelete = () => { if (deleteId) { deleteMutation.mutate({ id: deleteId }); setDeleteId(null); } };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={HardDrive}
         title="Workspaces 工作空间"
@@ -81,14 +81,14 @@ export default function WorkspacesPage() {
               <motion.div key={workspace.id}
                 initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 } }}
-                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}>
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}>
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-3">
                     <div className="flex items-center gap-2.5">
                       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                         <Folder className="w-4 h-4" />
                       </div>
-                      <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors text-sm">
+                      <h3 className="font-bold text-[var(--kp-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors text-sm">
                         {workspace.name}
                       </h3>
                     </div>
@@ -111,7 +111,7 @@ export default function WorkspacesPage() {
                       })()}
                     </div>
                   </div>
-                  <p className="text-xs text-[var(--vp-c-text-3)] min-h-[30px] mb-4">{workspace.description || "暂无描述。"}</p>
+                  <p className="text-xs text-[var(--kp-text-3)] min-h-[30px] mb-4">{workspace.description || "暂无描述。"}</p>
                 </div>
 
                 {/* Agent 关联信息 */}
@@ -138,11 +138,11 @@ export default function WorkspacesPage() {
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-[var(--vp-c-divider-light)] space-y-1">
-                  <div className="text-[9px] uppercase font-bold text-[var(--vp-c-text-3)] flex items-center gap-1">
+                <div className="pt-3 border-t border-[var(--kp-divider-light)] space-y-1">
+                  <div className="text-[9px] uppercase font-bold text-[var(--kp-text-3)] flex items-center gap-1">
                     <MapPin className="w-3 h-3" /> 本地绝对路径
                   </div>
-                  <code className="text-[10px] block p-1.5 rounded bg-[var(--vp-c-bg-mute)] font-mono text-[var(--vp-c-text-2)] truncate">{workspace.path}</code>
+                  <code className="text-[10px] block p-1.5 rounded bg-[var(--kp-bg-mute)] font-mono text-[var(--kp-text-2)] truncate">{workspace.path}</code>
                 </div>
               </motion.div>
             );

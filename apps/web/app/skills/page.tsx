@@ -54,7 +54,7 @@ export default function SkillsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={Wand2}
         title="Skills 专属动作库"
@@ -85,21 +85,21 @@ export default function SkillsPage() {
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
               className={cn(
-                "group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300",
+                "group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300",
                 density === "compact" ? "p-3" : "p-5",
               )}
             >
               <div className="flex justify-between items-start gap-4 mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                     <LucideIconByName name={skill.icon} className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--vp-c-brand-dark)] transition-colors text-sm">
+                    <h3 className="font-bold text-[var(--kp-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors text-sm">
                       {skill.name}
                     </h3>
-                    <span className="text-[10px] text-[var(--vp-c-text-3)] font-mono">{skill.trigger || "无触发词"}</span>
-                    <span className="ml-1 rounded bg-[var(--vp-c-brand-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--vp-c-brand)]">
+                    <span className="text-[10px] text-[var(--kp-text-3)] font-mono">{skill.trigger || "无触发词"}</span>
+                    <span className="ml-1 rounded bg-[var(--kp-brand-soft)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--kp-brand-deep)]">
                       v{parseSkillVersion(skill.metaJson)}
                     </span>
                   </div>
@@ -108,7 +108,7 @@ export default function SkillsPage() {
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Link
                     href={`/skills/edit/${skill.id}`}
-                    className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                    className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]"
                   >
                     编辑
                   </Link>
@@ -121,14 +121,14 @@ export default function SkillsPage() {
                 </div>
               </div>
 
-              <p className="text-xs text-[var(--vp-c-text-3)] min-h-[35px] mb-4">
+              <p className="text-xs text-[var(--kp-text-3)] min-h-[35px] mb-4">
                 {skill.description}
               </p>
 
               {/* 动作属性 */}
-              <div className="flex items-center justify-between border-t border-[var(--vp-c-divider-light)] pt-3 text-[10px] text-[var(--vp-c-text-3)]">
+              <div className="flex items-center justify-between border-t border-[var(--kp-divider-light)] pt-3 text-[10px] text-[var(--kp-text-3)]">
                 <span className="flex items-center gap-1">
-                  <Code className="w-3 h-3 text-[var(--vp-c-brand)]" />
+                  <Code className="w-3 h-3 text-[var(--kp-brand-deep)]" />
                   TypeScript 实装
                 </span>
                 <span className={`px-2 py-0.5 rounded-full font-medium ${

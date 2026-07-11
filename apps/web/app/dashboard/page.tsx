@@ -54,7 +54,7 @@ export default function DashboardPage() {
         <NativeCapabilitiesPanel
           data={caps}
           compact
-          className="border-[var(--vp-c-divider)]"
+          className="border-[var(--kp-divider)]"
           detailHref="/tools"
         />
       )}

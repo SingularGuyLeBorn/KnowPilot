@@ -46,7 +46,7 @@ export default function GitPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={GitBranch}
         title="Git 仓库"
@@ -77,16 +77,16 @@ export default function GitPage() {
                 className={cn(
                   "group relative overflow-hidden rounded-2xl border p-5 text-left transition-all",
                   activeId === repo.id
-                    ? "border-[var(--vp-c-brand)] bg-white shadow-lg dark:bg-[var(--vp-c-bg-soft)]"
-                    : "border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:shadow-md",
+                    ? "border-[var(--kp-brand-deep)] bg-white shadow-lg dark:bg-[var(--kp-bg-soft)]"
+                    : "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:shadow-md",
                 )}
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <GitBranch className="w-4 h-4 text-[var(--vp-c-brand)]" />
-                  <h3 className="font-bold text-sm text-[var(--vp-c-text-1)]">{repo.name}</h3>
+                  <GitBranch className="w-4 h-4 text-[var(--kp-brand-deep)]" />
+                  <h3 className="font-bold text-sm text-[var(--kp-text-1)]">{repo.name}</h3>
                 </div>
-                <code className="block truncate text-[10px] text-[var(--vp-c-text-3)]">{repo.path}</code>
-                <span className="mt-2 inline-flex items-center gap-1 rounded bg-[var(--vp-c-bg-soft)] px-2 py-0.5 text-xs font-mono">
+                <code className="block truncate text-[10px] text-[var(--kp-text-3)]">{repo.path}</code>
+                <span className="mt-2 inline-flex items-center gap-1 rounded bg-[var(--kp-bg-soft)] px-2 py-0.5 text-xs font-mono">
                   <GitCommit className="w-3 h-3" />
                   {repo.branch}
                 </span>
@@ -108,14 +108,14 @@ export default function GitPage() {
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg-alt)] p-5 space-y-4"
+              className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5 space-y-4"
             >
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-bold text-[var(--vp-c-text-1)]">{selected.name} · 详情</h2>
+                <h2 className="text-sm font-bold text-[var(--kp-text-1)]">{selected.name} · 详情</h2>
                 <div className="flex items-center gap-2">
                   <Link
                     href={`/git/edit/${selected.id}`}
-                    className="inline-flex items-center rounded-lg border border-[var(--vp-c-divider)] px-2 py-1 text-[10px] hover:bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]"
+                    className="inline-flex items-center rounded-lg border border-[var(--kp-divider)] px-2 py-1 text-[10px] hover:bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                   >
                     编辑
                   </Link>
@@ -126,7 +126,7 @@ export default function GitPage() {
                     void logQuery.refetch();
                     void refetch();
                   }}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--vp-c-divider)] px-2 py-1 text-[10px] hover:bg-[var(--vp-c-bg-soft)]"
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--kp-divider)] px-2 py-1 text-[10px] hover:bg-[var(--kp-bg-soft)]"
                 >
                   <RefreshCw className="h-3 w-3" />
                   刷新
@@ -135,26 +135,26 @@ export default function GitPage() {
               </div>
 
               <div>
-                <div className="mb-1 text-[10px] font-bold uppercase text-[var(--vp-c-text-3)]">工作区状态</div>
+                <div className="mb-1 text-[10px] font-bold uppercase text-[var(--kp-text-3)]">工作区状态</div>
                 {statusQuery.isLoading ? (
-                  <p className="text-xs text-[var(--vp-c-text-3)]">加载中…</p>
+                  <p className="text-xs text-[var(--kp-text-3)]">加载中…</p>
                 ) : statusQuery.error ? (
                   <p className="text-xs text-red-600">{statusQuery.error.message}</p>
                 ) : (
-                  <pre className="max-h-40 overflow-auto rounded-lg bg-[var(--vp-c-bg-mute)] p-3 text-[10px] font-mono whitespace-pre-wrap text-[var(--vp-c-text-2)]">
+                  <pre className="max-h-40 overflow-auto rounded-lg bg-[var(--kp-bg-mute)] p-3 text-[10px] font-mono whitespace-pre-wrap text-[var(--kp-text-2)]">
                     {(statusQuery.data as { status?: string })?.status || "（干净工作区）"}
                   </pre>
                 )}
               </div>
 
               <div>
-                <div className="mb-1 text-[10px] font-bold uppercase text-[var(--vp-c-text-3)]">最近提交</div>
+                <div className="mb-1 text-[10px] font-bold uppercase text-[var(--kp-text-3)]">最近提交</div>
                 {logQuery.isLoading ? (
-                  <p className="text-xs text-[var(--vp-c-text-3)]">加载中…</p>
+                  <p className="text-xs text-[var(--kp-text-3)]">加载中…</p>
                 ) : logQuery.error ? (
                   <p className="text-xs text-red-600">{logQuery.error.message}</p>
                 ) : (
-                  <pre className="max-h-48 overflow-auto rounded-lg bg-[var(--vp-c-bg-mute)] p-3 text-[10px] font-mono whitespace-pre-wrap text-[var(--vp-c-text-2)]">
+                  <pre className="max-h-48 overflow-auto rounded-lg bg-[var(--kp-bg-mute)] p-3 text-[10px] font-mono whitespace-pre-wrap text-[var(--kp-text-2)]">
                     {((logQuery.data as { log?: string[] })?.log ?? []).join("\n") || "（无提交）"}
                   </pre>
                 )}

@@ -229,7 +229,7 @@ const ContextUsagePopover = forwardRef<
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 px-3 py-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+            <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-3 py-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
               {compactPct >= 75
                 ? "⚠ 接近自动压缩阈值。继续对话将触发旧消息摘要。"
                 : "未触发自动压缩。超过压缩阈值时服务端会自动摘要更早的对话。"}

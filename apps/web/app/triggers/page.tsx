@@ -48,7 +48,7 @@ export default function TriggersPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={Zap}
         title="Triggers 触发器"
@@ -57,10 +57,10 @@ export default function TriggersPage() {
         showDensityToggle
       />
 
-      <div className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/30 p-4 text-xs text-[var(--vp-c-text-3)]">
-        <p className="font-semibold text-[var(--vp-c-text-2)] mb-1">常用事件源</p>
+      <div className="rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 text-xs text-[var(--kp-text-3)]">
+        <p className="font-semibold text-[var(--kp-text-2)] mb-1">常用事件源</p>
         <code className="text-[10px]">{EVENT_SOURCES.join(" · ")}</code>
-        <p className="mt-2 font-semibold text-[var(--vp-c-text-2)] mb-1">动作类型</p>
+        <p className="mt-2 font-semibold text-[var(--kp-text-2)] mb-1">动作类型</p>
         <code className="text-[10px]">{ACTION_TYPES.join(" · ")}</code>
       </div>
 
@@ -85,25 +85,25 @@ export default function TriggersPage() {
                   y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className={cn("group rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:shadow-lg transition-all", density === "compact" ? "p-3" : "p-5")}
+                className={cn("group rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:shadow-lg transition-all", density === "compact" ? "p-3" : "p-5")}
               >
                 <div className="flex justify-between items-start gap-4 mb-4">
                   <div>
-                    <h3 className="font-bold text-[var(--vp-c-text-1)]">{trigger.name}</h3>
-                    <p className="text-[10px] text-[var(--vp-c-text-3)] mt-1">
+                    <h3 className="font-bold text-[var(--kp-text-1)]">{trigger.name}</h3>
+                    <p className="text-[10px] text-[var(--kp-text-3)] mt-1">
                       {trigger.type} · {trigger.actionType}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => toggleEnabled(trigger)}
-                    className="flex items-center gap-1 text-xs text-[var(--vp-c-brand)]"
+                    className="flex items-center gap-1 text-xs text-[var(--kp-brand-deep)]"
                     aria-label={trigger.enabled ? "禁用" : "启用"}
                   >
                     {trigger.enabled ? (
                       <ToggleRight className="w-5 h-5 text-green-500" />
                     ) : (
-                      <ToggleLeft className="w-5 h-5 text-[var(--vp-c-text-3)]" />
+                      <ToggleLeft className="w-5 h-5 text-[var(--kp-text-3)]" />
                     )}
                     {trigger.enabled ? "已启用" : "已禁用"}
                   </button>
@@ -111,16 +111,16 @@ export default function TriggersPage() {
 
                 <div className="space-y-2 text-xs">
                   <div>
-                    <span className="text-[var(--vp-c-text-3)]">事件源 </span>
-                    <code className="bg-[var(--vp-c-bg-mute)] px-1.5 py-0.5 rounded font-mono">{trigger.source}</code>
+                    <span className="text-[var(--kp-text-3)]">事件源 </span>
+                    <code className="bg-[var(--kp-bg-mute)] px-1.5 py-0.5 rounded font-mono">{trigger.source}</code>
                   </div>
                   <div>
-                    <span className="text-[var(--vp-c-text-3)]">动作 ID </span>
-                    <code className="bg-[var(--vp-c-bg-mute)] px-1.5 py-0.5 rounded font-mono text-[10px]">{trigger.actionId}</code>
+                    <span className="text-[var(--kp-text-3)]">动作 ID </span>
+                    <code className="bg-[var(--kp-bg-mute)] px-1.5 py-0.5 rounded font-mono text-[10px]">{trigger.actionId}</code>
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-[var(--vp-c-divider-light)] flex justify-end">
+                <div className="mt-4 pt-3 border-t border-[var(--kp-divider-light)] flex justify-end">
                   <button
                     onClick={() => setDeleteId(trigger.id)}
                     className="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded hover:bg-red-500/10"

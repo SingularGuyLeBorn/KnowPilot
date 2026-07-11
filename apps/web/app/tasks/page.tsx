@@ -43,7 +43,7 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={CalendarClock}
         title="Tasks 定时任务"
@@ -93,15 +93,15 @@ export default function TasksPage() {
                   y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
                 }}
-                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
+                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
               >
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-3">
                     <div className="flex items-center gap-2">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                         <CalendarClock className="w-4 h-4" />
                       </div>
-                      <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--vp-c-brand-dark)] transition-colors text-xs truncate max-w-[150px]">
+                      <h3 className="font-bold text-[var(--kp-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors text-xs truncate max-w-[150px]">
                         {task.name}
                       </h3>
                     </div>
@@ -109,7 +109,7 @@ export default function TasksPage() {
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link
                         href={`/tasks/edit/${task.id}`}
-                        className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                        className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]"
                       >
                         编辑
                       </Link>
@@ -123,14 +123,14 @@ export default function TasksPage() {
                   </div>
 
                   <div className="space-y-1 mb-4 text-[10px]">
-                    <div className="text-[9px] uppercase font-bold text-[var(--vp-c-text-3)]">Cron 表达式</div>
-                    <code className="block p-1 bg-[var(--vp-c-bg-mute)] font-mono text-[var(--vp-c-text-2)] rounded">
+                    <div className="text-[9px] uppercase font-bold text-[var(--kp-text-3)]">Cron 表达式</div>
+                    <code className="block p-1 bg-[var(--kp-bg-mute)] font-mono text-[var(--kp-text-2)] rounded">
                       {task.cronExpression || "单次执行"}
                     </code>
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-[var(--vp-c-divider-light)] flex justify-between items-center text-[10px]">
+                <div className="pt-3 border-t border-[var(--kp-divider-light)] flex justify-between items-center text-[10px]">
                   <span className={`px-2 py-0.5 rounded-full font-medium ${statusColors[task.status as keyof typeof statusColors]}`}>
                     {task.status.toUpperCase()}
                   </span>
@@ -138,7 +138,7 @@ export default function TasksPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 gap-1 text-[10px] text-[var(--vp-c-brand)] hover:bg-[var(--vp-c-brand-soft)]"
+                    className="h-6 gap-1 text-[10px] text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
                     onClick={() => runMutation.mutate({ id: task.id })}
                     disabled={runMutation.isPending || task.status === "running"}
                   >

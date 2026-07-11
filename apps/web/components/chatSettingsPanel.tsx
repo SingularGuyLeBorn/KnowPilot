@@ -106,7 +106,7 @@ function KpToggle({
   hint?: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)]/50 px-2.5 py-2">
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-2.5 py-2">
       <div className="min-w-0 flex-1 pr-2">
         <div className="text-[11px] font-medium text-[var(--kp-text-1)]">{label}</div>
         {hint && <p className="mt-0.5 text-[10px] leading-snug text-[var(--kp-text-3)]">{hint}</p>}
@@ -530,7 +530,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                         "flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs transition-all duration-200",
                         active
                           ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] shadow-sm"
-                          : "border-[var(--kp-divider)] bg-[var(--kp-bg)]/50 hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]",
+                          : "border-[var(--kp-divider)] bg-[var(--kp-bg)] hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]",
                       )}
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">

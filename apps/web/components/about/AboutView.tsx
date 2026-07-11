@@ -111,7 +111,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
               )}
               <Link
                 href="/chat"
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-3 py-1 text-[var(--kp-brand-deep)] transition hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-1 text-[var(--kp-brand-deep)] transition hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
               >
                 <MessageSquare className="h-4 w-4" />
                 开始对话
@@ -157,7 +157,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.08 + i * 0.04, ...spring }}
-                className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 p-4 transition hover:border-[var(--kp-brand-light)] hover:shadow-md"
+                className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] p-4 transition hover:border-[var(--kp-brand-light)] hover:shadow-md"
               >
                 {p.href ? (
                   <Link

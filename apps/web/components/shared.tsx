@@ -63,10 +63,10 @@ export function Pagination({
   if (totalPages <= 1) return null;
 
   return (
-    <div className="flex items-center justify-between px-2 py-4 border-t border-[var(--vp-c-divider-light)]">
-      <div className="text-sm text-[var(--vp-c-text-3)]">
-        共 <span className="font-medium text-[var(--vp-c-text-1)]">{total}</span> 条记录，
-        每页 <span className="font-medium text-[var(--vp-c-text-1)]">{pageSize}</span> 条
+    <div className="flex items-center justify-between px-2 py-4 border-t border-[var(--kp-divider-light)]">
+      <div className="text-sm text-[var(--kp-text-3)]">
+        共 <span className="font-medium text-[var(--kp-text-1)]">{total}</span> 条记录，
+        每页 <span className="font-medium text-[var(--kp-text-1)]">{pageSize}</span> 条
       </div>
       <div className="flex items-center space-x-2">
         <Button
@@ -74,7 +74,7 @@ export function Pagination({
           size="icon"
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={page === 1}
-          className="h-8 w-8 rounded-lg border-[var(--vp-c-divider)] text-[var(--vp-c-text-2)] hover:text-[var(--vp-c-text-1)] hover:bg-[var(--vp-c-bg-soft)]"
+          className="h-8 w-8 rounded-lg border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-soft)]"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -84,7 +84,7 @@ export function Pagination({
             if (totalPages > 6 && Math.abs(p - page) > 2 && p !== 1 && p !== totalPages) {
               if (p === 2 || p === totalPages - 1) {
                 return (
-                  <span key={p} className="px-2 text-[var(--vp-c-text-3)] text-xs">
+                  <span key={p} className="px-2 text-[var(--kp-text-3)] text-xs">
                     ...
                   </span>
                 );
@@ -115,7 +115,7 @@ export function Pagination({
           size="icon"
           onClick={() => onPageChange(Math.min(totalPages, page + 1))}
           disabled={page === totalPages}
-          className="h-8 w-8 rounded-lg border-[var(--vp-c-divider)] text-[var(--vp-c-text-2)] hover:text-[var(--vp-c-text-1)] hover:bg-[var(--vp-c-bg-soft)]"
+          className="h-8 w-8 rounded-lg border-[var(--kp-divider)] text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-soft)]"
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
@@ -227,16 +227,16 @@ export function LoadingState({ count = 3 }: LoadingStateProps) {
       {Array.from({ length: count }).map((_, idx) => (
         <div
           key={idx}
-          className="p-5 border border-[var(--vp-c-divider-light)] rounded-2xl bg-[var(--vp-c-bg-alt)]/30 space-y-3 animate-pulse"
+          className="p-5 border border-[var(--kp-divider-light)] rounded-2xl bg-[var(--kp-bg-alt)] space-y-3 animate-pulse"
         >
           <div className="flex items-center justify-between">
-            <Skeleton className="h-5 w-1/4 rounded-lg bg-[var(--vp-c-bg-mute)]" />
-            <Skeleton className="h-4 w-12 rounded-lg bg-[var(--vp-c-bg-mute)]" />
+            <Skeleton className="h-5 w-1/4 rounded-lg bg-[var(--kp-bg-mute)]" />
+            <Skeleton className="h-4 w-12 rounded-lg bg-[var(--kp-bg-mute)]" />
           </div>
-          <Skeleton className="h-4 w-2/3 rounded-lg bg-[var(--vp-c-bg-mute)]" />
+          <Skeleton className="h-4 w-2/3 rounded-lg bg-[var(--kp-bg-mute)]" />
           <div className="flex items-center space-x-2 pt-2">
-            <Skeleton className="h-3 w-16 rounded-md bg-[var(--vp-c-bg-mute)]" />
-            <Skeleton className="h-3 w-20 rounded-md bg-[var(--vp-c-bg-mute)]" />
+            <Skeleton className="h-3 w-16 rounded-md bg-[var(--kp-bg-mute)]" />
+            <Skeleton className="h-3 w-20 rounded-md bg-[var(--kp-bg-mute)]" />
           </div>
         </div>
       ))}
@@ -583,7 +583,7 @@ export function VirtualFlatList<T>({
 
   if (items.length === 0) {
     return (
-      <div className={cn("flex flex-1 items-center justify-center p-4 text-sm text-[var(--vp-c-text-3)]", className)}>
+      <div className={cn("flex flex-1 items-center justify-center p-4 text-sm text-[var(--kp-text-3)]", className)}>
         {emptyMessage}
       </div>
     );

@@ -44,10 +44,10 @@ export default function MemoriesPage() {
 
   if (!parsed) {
     return (
-      <p className="text-xs text-[var(--vp-c-text-2)] leading-relaxed">
-        <span className="text-[var(--vp-c-text-3)]">&ldquo;</span>
+      <p className="text-xs text-[var(--kp-text-2)] leading-relaxed">
+        <span className="text-[var(--kp-text-3)]">&ldquo;</span>
         {content}
-        <span className="text-[var(--vp-c-text-3)]">&rdquo;</span>
+        <span className="text-[var(--kp-text-3)]">&rdquo;</span>
       </p>
     );
   }
@@ -69,14 +69,14 @@ export default function MemoriesPage() {
   return (
     <div className="space-y-2.5">
       {taskDescription && (
-        <p className="text-xs font-medium text-[var(--vp-c-text-1)] leading-relaxed">
-          <span className="text-[var(--vp-c-text-3)]">&ldquo;</span>
+        <p className="text-xs font-medium text-[var(--kp-text-1)] leading-relaxed">
+          <span className="text-[var(--kp-text-3)]">&ldquo;</span>
           {taskDescription}
-          <span className="text-[var(--vp-c-text-3)]">&rdquo;</span>
+          <span className="text-[var(--kp-text-3)]">&rdquo;</span>
         </p>
       )}
       {keyLearnings && (
-        <div className="rounded-lg border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg)] px-2.5 py-2 text-[10px] leading-relaxed text-[var(--vp-c-text-2)]">
+        <div className="rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-2.5 py-2 text-[10px] leading-relaxed text-[var(--kp-text-2)]">
           {keyLearnings}
         </div>
       )}
@@ -85,14 +85,14 @@ export default function MemoriesPage() {
           toolsUsed.map((t) => (
             <span
               key={t}
-              className="inline-flex items-center gap-0.5 rounded-full bg-[var(--vp-c-brand-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--vp-c-brand)]"
+              className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--kp-brand-deep)]"
             >
               <Tag className="h-2 w-2" />
               {t}
             </span>
           ))
         ) : (
-          <span className="rounded-full bg-[var(--vp-c-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--vp-c-text-3)]">
+          <span className="rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--kp-text-3)]">
             无工具调用
           </span>
         )}
@@ -107,16 +107,16 @@ export default function MemoriesPage() {
           </span>
         )}
         {durationMs !== undefined && (
-          <span className="rounded-full bg-[var(--vp-c-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--vp-c-text-3)]">
+          <span className="rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--kp-text-3)]">
             {(durationMs / 1000).toFixed(1)}s
           </span>
         )}
       </div>
       {tokenUsage && (
-        <div className="flex flex-wrap items-center gap-x-2 text-[9px] text-[var(--vp-c-text-3)]">
+        <div className="flex flex-wrap items-center gap-x-2 text-[9px] text-[var(--kp-text-3)]">
           <span>prompt {(tokenUsage.prompt as number) ?? "-"}</span>
           <span>completion {(tokenUsage.completion as number) ?? "-"}</span>
-          <span className="font-medium text-[var(--vp-c-text-2)]">total {(tokenUsage.total as number) ?? "-"}</span>
+          <span className="font-medium text-[var(--kp-text-2)]">total {(tokenUsage.total as number) ?? "-"}</span>
         </div>
       )}
     </div>
@@ -131,7 +131,7 @@ const confirmDelete = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={Brain}
         title="Memories 记忆晶体"
@@ -160,18 +160,18 @@ const confirmDelete = () => {
                 y: 0,
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
-              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
+              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
             >
               <div>
                 <div className="flex justify-between items-start gap-4 mb-3">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--vp-c-brand-soft)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--vp-c-brand)]">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--kp-brand-deep)]">
                     {memory.type === "preference" ? "个性偏好" : "客观事实"}
                   </span>
                   
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Link
                       href={`/memories/edit/${memory.id}`}
-                      className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                      className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]"
                     >
                       编辑
                     </Link>
@@ -189,10 +189,10 @@ const confirmDelete = () => {
                 </div>
               </div>
 
-              <div className="space-y-2 pt-3 border-t border-[var(--vp-c-divider-light)]">
-                <div className="flex justify-between items-center text-[10px] text-[var(--vp-c-text-3)]">
+              <div className="space-y-2 pt-3 border-t border-[var(--kp-divider-light)]">
+                <div className="flex justify-between items-center text-[10px] text-[var(--kp-text-3)]">
                   <span className="flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-[var(--vp-c-brand)]" />
+                    <Zap className="w-3 h-3 text-[var(--kp-brand-deep)]" />
                     记忆强度: {memory.strength * 100}%
                   </span>
                 </div>
@@ -200,7 +200,7 @@ const confirmDelete = () => {
                   {memory.keywords?.map((k: string) => (
                     <span
                       key={k}
-                      className="inline-flex items-center gap-0.5 rounded bg-[var(--vp-c-bg-soft)] px-1.5 py-0.5 text-[8px] text-[var(--vp-c-text-3)] font-medium"
+                      className="inline-flex items-center gap-0.5 rounded bg-[var(--kp-bg-soft)] px-1.5 py-0.5 text-[8px] text-[var(--kp-text-3)] font-medium"
                     >
                       <Tag className="w-2 h-2" />
                       {k}

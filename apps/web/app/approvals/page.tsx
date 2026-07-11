@@ -63,7 +63,7 @@ export default function ApprovalsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={ShieldCheck}
         title="Approvals 审批队列"
@@ -83,8 +83,8 @@ export default function ApprovalsPage() {
             className={cn(
               "rounded-full px-3 py-1 text-xs font-medium transition",
               statusFilter === s
-                ? "bg-[var(--vp-c-brand)] text-white"
-                : "bg-[var(--vp-c-bg-soft)] text-[var(--vp-c-text-2)] hover:bg-[var(--vp-c-bg-mute)]",
+                ? "bg-[var(--kp-brand-deep)] text-white"
+                : "bg-[var(--kp-bg-soft)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
             )}
           >
             {s === "all" ? "全部" : STATUS_LABELS[s]}
@@ -111,13 +111,13 @@ export default function ApprovalsPage() {
                   y: 0,
                   transition: { delay: idx * 0.03, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className={cn("rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40", density === "compact" ? "p-3" : "p-5")}
+                className={cn("rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]", density === "compact" ? "p-3" : "p-5")}
                 data-testid="approval-card"
               >
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                   <div className="space-y-2 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <code className="text-sm font-bold text-[var(--vp-c-text-1)]">{approval.toolName}</code>
+                      <code className="text-sm font-bold text-[var(--kp-text-1)]">{approval.toolName}</code>
                       <span
                         className={cn(
                           "px-2 py-0.5 rounded-full text-[10px] font-medium",
@@ -127,10 +127,10 @@ export default function ApprovalsPage() {
                         {STATUS_LABELS[approval.status] ?? approval.status}
                       </span>
                     </div>
-                    <pre className="text-[10px] font-mono bg-[var(--vp-c-bg-mute)] rounded-lg p-3 overflow-x-auto max-h-32 text-[var(--vp-c-text-2)]">
+                    <pre className="text-[10px] font-mono bg-[var(--kp-bg-mute)] rounded-lg p-3 overflow-x-auto max-h-32 text-[var(--kp-text-2)]">
                       {formatArgs(approval.args)}
                     </pre>
-                    <p className="text-[10px] text-[var(--vp-c-text-3)] flex items-center gap-1">
+                    <p className="text-[10px] text-[var(--kp-text-3)] flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {new Date(approval.createdAt).toLocaleString("zh-CN")}
                     </p>
@@ -160,7 +160,7 @@ export default function ApprovalsPage() {
                       </Button>
                       <Button
                         size="sm"
-                        className="gap-1 bg-[var(--vp-c-brand)] text-white hover:bg-[var(--vp-c-brand-dark)]"
+                        className="gap-1 bg-[var(--kp-brand-deep)] text-white hover:bg-[var(--kp-brand-deep)]"
                         onClick={() => handleApproveAndExecute(approval.id)}
                         disabled={approveExecuteMutation.isPending}
                         data-testid="approval-approve-execute"

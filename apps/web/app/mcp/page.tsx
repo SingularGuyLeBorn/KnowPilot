@@ -40,7 +40,7 @@ export default function McpPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={Cpu}
         title="MCP 服务器接入"
@@ -69,25 +69,25 @@ export default function McpPage() {
                 y: 0,
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
-              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/40 hover:bg-white dark:hover:bg-[var(--vp-c-bg-soft)] hover:border-[var(--vp-c-divider)] hover:shadow-xl transition-all duration-300", density === "compact" ? "p-3" : "p-5")}
+              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300", density === "compact" ? "p-3" : "p-5")}
             >
               <div className="flex justify-between items-start gap-4 mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                     <Cpu className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-[var(--vp-c-text-1)] group-hover:text-[var(--vp-c-brand-dark)] transition-colors text-sm">
+                    <h3 className="font-bold text-[var(--kp-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors text-sm">
                       {server.name}
                     </h3>
-                    <span className="text-[10px] text-[var(--vp-c-text-3)] font-mono">运行环境: Node</span>
+                    <span className="text-[10px] text-[var(--kp-text-3)] font-mono">运行环境: Node</span>
                   </div>
                 </div>
                 
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Link
                     href={`/mcp/edit/${server.id}`}
-                    className="text-xs text-[var(--vp-c-brand)] hover:text-[var(--vp-c-brand-dark)] px-2 py-0.5 rounded hover:bg-[var(--vp-c-brand-soft)]"
+                    className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]"
                   >
                     编辑
                   </Link>
@@ -101,15 +101,15 @@ export default function McpPage() {
               </div>
 
               <div className="space-y-1 mb-4">
-                <div className="text-[9px] uppercase font-bold text-[var(--vp-c-text-3)]">命令</div>
-                <code className="text-[11px] block p-2 rounded-lg bg-[var(--vp-c-bg-mute)] font-mono text-[var(--vp-c-text-2)] truncate">
+                <div className="text-[9px] uppercase font-bold text-[var(--kp-text-3)]">命令</div>
+                <code className="text-[11px] block p-2 rounded-lg bg-[var(--kp-bg-mute)] font-mono text-[var(--kp-text-2)] truncate">
                   {server.command} {server.args?.join(" ")}
                 </code>
               </div>
 
-              <div className="flex items-center justify-between border-t border-[var(--vp-c-divider-light)] pt-3 text-[10px] text-[var(--vp-c-text-3)]">
+              <div className="flex items-center justify-between border-t border-[var(--kp-divider-light)] pt-3 text-[10px] text-[var(--kp-text-3)]">
                 <span className="flex items-center gap-1">
-                  <Terminal className="w-3 h-3 text-[var(--vp-c-brand)]" />
+                  <Terminal className="w-3 h-3 text-[var(--kp-brand-deep)]" />
                   协议规范: Stdio
                 </span>
                 <span className={`px-2 py-0.5 rounded-full font-medium ${

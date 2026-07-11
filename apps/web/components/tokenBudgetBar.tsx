@@ -32,7 +32,7 @@ export function TokenBudgetBar({
 
   return (
     <div
-      className={cn("rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 p-3", className)}
+      className={cn("rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-3", className)}
       data-testid="token-budget-bar"
     >
       <div className="mb-2 flex items-center gap-2 text-xs">

@@ -47,7 +47,7 @@ export default function LogsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         icon={ScrollText}
         title="控制台与系统日志"
@@ -57,7 +57,7 @@ export default function LogsPage() {
 
       {/* 筛选菜单 */}
       <div className="flex flex-wrap items-center gap-2.5">
-        <span className="text-xs font-bold uppercase tracking-wider text-[var(--vp-c-text-3)] flex items-center gap-1">
+        <span className="text-xs font-bold uppercase tracking-wider text-[var(--kp-text-3)] flex items-center gap-1">
           <Filter className="w-3.5 h-3.5" />
           级别过滤
         </span>
@@ -86,11 +86,11 @@ export default function LogsPage() {
           description="目前没有任何系统执行痕迹。所有的 tRPC 变更操作（如创建文章、上传文件等）都会被自动记录日志。"
         />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/20 shadow-inner">
+        <div className="overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]/20 shadow-inner">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-[var(--vp-c-divider)] text-[10px] uppercase font-bold tracking-wider text-[var(--vp-c-text-3)] bg-[var(--kp-bg-alt)]">
+                <tr className="border-b border-[var(--kp-divider)] text-[10px] uppercase font-bold tracking-wider text-[var(--kp-text-3)] bg-[var(--kp-bg-alt)]">
                   <th className="p-4 w-28">级别</th>
                   <th className="p-4 w-32">组件</th>
                   <th className="p-4 w-36">事件</th>
@@ -98,7 +98,7 @@ export default function LogsPage() {
                   <th className="p-4 w-40 text-right">时间戳</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--vp-c-divider-light)] font-mono text-[11px]">
+              <tbody className="divide-y divide-[var(--kp-divider-light)] font-mono text-[11px]">
                 {data.items.map((log: LogEntry) => {
                   const levelKey = log.level.toLowerCase();
                   const levelBadge: Record<string, string> = {
