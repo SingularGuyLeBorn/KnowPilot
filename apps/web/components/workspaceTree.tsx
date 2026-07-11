@@ -12,6 +12,7 @@ import { useCallback, useMemo } from "react";
 import { Bot, Crown, Loader2, Pin, ShieldCheck, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
+import { AgentAvatar } from "./agentAvatar";
 import type { ChatSession } from "@knowpilot/shared";
 
 interface WorkspaceAgent {
@@ -241,7 +242,7 @@ export function WorkspaceTree({
             )}
           >
             <div className="flex items-center gap-1.5">
-              <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+              <AgentAvatar id={agent.id} name={agent.name} size={16} className="rounded-full" />
               <span className="min-w-0 flex-1 truncate">{agent.autoName || agent.name}</span>
               {agent.status === "dormant" && (
                 <span className="text-[9px] text-[var(--kp-text-3)]">休眠</span>

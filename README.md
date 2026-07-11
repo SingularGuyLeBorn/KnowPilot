@@ -2,7 +2,8 @@
   <img src="docs/assets/readme-banner.svg" alt="KnowPilot" width="100%">
 
   <p align="center">
-    <strong>智能知识管理与博客平台</strong> — 以 Markdown 为原子、AI 为引擎的本地优先数字花园。
+    <strong>智能知识管理与博客平台</strong><br>
+    以 Markdown 为原子、AI 为引擎的本地优先数字花园。
   </p>
 
   <p align="center">
@@ -12,106 +13,204 @@
     <img src="https://img.shields.io/badge/Prisma-6-2d3748?logo=prisma&logoColor=white&color=2d2a26&labelColor=b8a090" alt="Prisma">
     <img src="https://img.shields.io/badge/SQLite-3-003b57?logo=sqlite&logoColor=white&color=2d2a26&labelColor=b8a090" alt="SQLite">
     <img src="https://img.shields.io/badge/Tailwind_CSS-v4-06b6d4?logo=tailwindcss&logoColor=white&color=2d2a26&labelColor=b8a090" alt="Tailwind CSS v4">
+    <img src="https://img.shields.io/badge/License-MIT-green?color=2d2a26&labelColor=b8a090" alt="MIT">
+  </p>
+
+  <p align="center">
+    <a href="#快速开始">快速开始</a> ·
+    <a href="#核心能力">核心能力</a> ·
+    <a href="#技术栈">技术栈</a> ·
+    <a href="#项目结构">项目结构</a> ·
+    <a href="#架构亮点">架构亮点</a> ·
+    <a href="#路线图">路线图</a> ·
+    <a href="docs/development/README.md">开发文档</a>
   </p>
 </div>
 
 ---
 
-## <img src="docs/assets/icons/sparkles.svg" width="24" align="absmiddle" alt=""> 核心特性
+## 项目简介
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3><img src="docs/assets/icons/markdown.svg" width="20" align="absmiddle" alt=""> Markdown 原生</h3>
-      <p>文章以 Markdown 文件为单一事实来源，Git 可跟踪、可随时离线编辑。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注等全语法。</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3><img src="docs/assets/icons/ai.svg" width="20" align="absmiddle" alt=""> AI 核心</h3>
-      <p>Agent、Skill、MCP Server、Memory、Chat Session 全部内置。让 AI 不仅能聊天，还能读文章、调技能、记记忆、执行工作流。</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3><img src="docs/assets/icons/palette.svg" width="20" align="absmiddle" alt=""> MetaBlog 星河设计</h3>
-      <p>莫兰迪暖色系 + 玻璃拟态 + 星空 Hero + Bento 网格。首页采用 Three.js 星空背景与旋转星球，营造沉浸式知识宇宙。</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3><img src="docs/assets/icons/database.svg" width="20" align="absmiddle" alt=""> 本地优先</h3>
-      <p>内容首先落盘到本地文件，再同步到 SQLite。数据永远属于你，无需担心云端锁定或网络波动。</p>
-    </td>
-  </tr>
-</table>
+KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」。
+
+它把博客、AI 对话和自主 Agent 收拢在同一张桌面：文章以本地 Markdown 文件为唯一事实源，SQLite 只作查询与缓存层；Agent 不仅能聊天，还能读文章、调技能、记记忆、跑工作流，并通过三层 Swarm 层级自主协作。所有数据落盘在你自己的机器上，Git 可跟踪、可离线编辑，没有云端锁定。
+
+> 本文件面向新接触项目的开发者。背景与规范另见 [`AGENTS.md`](AGENTS.md)、[`MIGRATION_PLAN.md`](MIGRATION_PLAN.md)、[`docs/development/`](docs/development/)。
 
 ---
 
-## <img src="docs/assets/icons/rocket.svg" width="24" align="absmiddle" alt=""> 快速开始
+## 核心能力
+
+| 能力 | 说明 |
+|------|------|
+| <img src="docs/assets/icons/markdown.svg" width="18" align="absmiddle" alt=""> **Markdown 原生** | 文章以 `.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑，粘贴/拖拽上传图片。 |
+| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考过程时间线、工具调用同步/异步标识、auto-compact 上下文压缩。 |
+| <img src="docs/assets/icons/sparkles.svg" width="18" align="absmiddle" alt=""> **Swarm 三层 Agent** | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。 |
+| <img src="docs/assets/icons/palette.svg" width="18" align="absmiddle" alt=""> **莫兰迪星河设计** | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。 |
+| <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。19 实体 CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
+| <img src="docs/assets/icons/wrench.svg" width="18" align="absmiddle" alt=""> **自动化流** | Trigger 事件触发 + Approval 审批拦截 + Agent Loop。异步任务队列 `async_task_run/status/wait`，后台运行结果自动回流对话。 |
+| <img src="docs/assets/icons/map.svg" width="18" align="absmiddle" alt=""> **全局搜索** | FTS5 全文索引 `search.global`，跨文章 / Agent / Skill / Memory / Prompt 统一检索。 |
+| <img src="docs/assets/icons/hourglass.svg" width="18" align="absmiddle" alt=""> **可选鉴权与部署** | `AUTH_MODE=none/password` 本地或远程部署。Docker + CI + `db:backup` 一键备份。 |
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Node.js 20+
+- pnpm（包管理器，monorepo `workspace:*` 协议）
+
+### 安装与启动
 
 ```bash
-# 1. 安装依赖
+# 1. 克隆仓库
+git clone <repository-url>
+cd KnowPilot
+
+# 2. 安装依赖
 pnpm install
 
-# 2. 同步 Markdown 文章到 SQLite
+# 3. 同步 Markdown 文章到 SQLite
 pnpm db:sync
 
-# 3. 启动开发服务
+# 4. 启动开发服务（并行启动 server + web）
 pnpm dev
 ```
 
-- 前端：`http://localhost:3000`
-- 后端：`http://localhost:3010`
-- tRPC 端点：`http://localhost:3010/api/trpc`
+- 前端：<http://localhost:3000>
+- 后端：<http://localhost:3010>
+- tRPC 端点：<http://localhost:3010/api/trpc>
 
-### 测试与验收
+### 环境变量
+
+复制 `.env.example` 为 `.env`，按需配置：
+
+```env
+# 后端端口（默认 3010）
+SERVER_PORT=3010
+
+# SQLite 数据库路径
+DATABASE_URL="file:./dev.db"
+
+# 凭据加密主密钥（AES-256-GCM 加密 Credential 表）
+# 生成：node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+CREDENTIAL_MASTER_KEY=
+
+# LLM API Key（至少一个）
+DEEPSEEK_API_KEY=
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+
+# 可选鉴权：none（默认，本地）/ password（远程部署）
+AUTH_MODE=none
+```
+
+> `CREDENTIAL_MASTER_KEY` 是凭据库的加密主密钥，不是 LLM API Key。开发模式不设则凭据明文落库（启动告警）；生产模式必须配置，否则拒绝启动。丢失后已加密凭据无法解密。
+
+### 常用命令
 
 ```bash
-pnpm lint          # 全仓 lint（0 error）
-pnpm test          # Vitest：88 passed / 3 skipped
-pnpm build         # Next.js 生产构建
-pnpm test:e2e      # Playwright：26 passed（web:3002 + server:3010）
-pnpm validate      # 以上四步一键验收
-pnpm db:backup     # SQLite 备份到 backups/
+pnpm dev            # 同步文章 + 并行启动 server / web
+pnpm dev:web        # 单独启动前端
+pnpm dev:server     # 单独启动后端
+
+pnpm db:sync        # content/ → SQLite 同步（支持 --watch）
+pnpm db:backup      # dev.db 备份到 backups/
+pnpm db:migrate     # Prisma migrate dev
+pnpm db:studio      # 打开 Prisma Studio
+
+pnpm lint           # 全仓 lint（server/shared 用 tsc，web 用 eslint）
+pnpm test           # Vitest 全 package
+pnpm test:e2e       # Playwright E2E（web:3002 + server:3010）
+pnpm build          # Next.js 生产构建
+pnpm validate       # lint → test → build → e2e 一键验收
 ```
 
 ---
 
-## <img src="docs/assets/icons/wrench.svg" width="24" align="absmiddle" alt=""> 技术栈
+## 技术栈
 
 | 层级 | 技术 |
 |---|---|
-| 前端 | Next.js 16 + React 19 + Tailwind CSS 4 |
-| 动画 | Framer Motion + Three.js |
-| 编辑器 | Milkdown (Markdown WYSIWYG) |
-| 通信 | tRPC 11（端到端类型安全） |
-| 数据库 | SQLite + Prisma 6 |
-| 状态 | React Query + Zustand |
-| 测试 | Vitest + React Testing Library + Playwright |
+| 语言 / 运行时 | TypeScript 5.8、Node.js（server 通过 `tsx` 运行） |
+| 包管理 | pnpm monorepo（`workspace:*`） |
+| 前端 | Next.js 16 + React 19（App Router） |
+| 样式 | Tailwind CSS 4 + shadcn/ui + `@tailwindcss/typography` + Framer Motion + Three.js |
+| 编辑器 | Milkdown 7（Markdown WYSIWYG） |
+| 通信 | tRPC 11 + `@trpc/react-query` + superjson |
+| 数据获取 | TanStack React Query 5 |
+| 后端 | Express 5 + CORS |
+| ORM / 数据库 | Prisma 6 + SQLite |
+| 校验 / 共享类型 | Zod 3，集中定义在 `packages/shared` |
+| 测试 | Vitest 3（server / shared）+ Playwright（web Chat E2E） |
 
 ---
 
-## <img src="docs/assets/icons/folder.svg" width="24" align="absmiddle" alt=""> 项目结构
+## 项目结构
 
 ```text
 KnowPilot/
 ├── apps/
-│   ├── web/                  # Next.js 16 前端
-│   └── server/               # Express + tRPC 后端
+│   ├── web/                 # Next.js 16 前端（App Router）
+│   └── server/              # Express + tRPC + Prisma 后端
+│       ├── prisma/schema.prisma   # 19 实体模型
+│       └── src/
+│           ├── router.ts          # 唯一 API 路由文件（20 业务路由）
+│           ├── services.ts        # 唯一业务服务层
+│           └── infra/             # agentTools / nativeTools / mcpClient /
+│                                 # agentStream / sessionStreamHub / heartbeatEngine /
+│                                 / swarmBus / swarmPermissionGuard / asyncJobManager ...
 ├── packages/
-│   └── shared/               # 前后端共享类型和 Zod schema
-├── content/
-│   ├── posts/                # 文章 Markdown 源文件
-│   ├── agents/               # Agent 配置（占位）
-│   ├── skills/               # Skill 配置（占位）
-│   ├── memories/             # 记忆配置（占位）
-│   ├── tasks/                # 任务配置（占位）
-│   └── mcp/                  # MCP Server 配置（YAML + sync）
-├── docs/development/         # L1-L5 分阶段开发文档
-├── docker-compose.yml        # 可选：PostgreSQL 等外部服务
-└── README.md                 # 本文件
+│   └── shared/              # 前后端共享 Zod schema + TS 类型 + 常量
+├── content/                 # Git 跟踪的文本数据源
+│   ├── posts/               # 文章 Markdown 源文件
+│   ├── agents/ skills/ memories/ prompts/   # Agent / Skill / Memory / Prompt 配置
+│   ├── tasks/               # Task 配置（JSON + db:sync）
+│   ├── mcp/                 # MCP Server 配置（YAML）
+│   └── uploads/             # 上传文件
+├── docs/development/        # L1-L5 阶段开发文档与 API 规范
+├── config.yaml              # 运行时业务参数（stream / compact 等）
+└── README.md                # 本文件
 ```
+
+> 项目遵循「单文件逻辑收拢」原则：后端业务层合并到 `services.ts`、路由层合并到 `router.ts`；前端 hooks 合并到 `lib/hooks.ts`、通用组件合并到 `components/shared.tsx`。禁止创建零散的 `services/`、`trpc/routers/`、`hooks/`、`components/shared/` 子目录。
 
 ---
 
-## <img src="docs/assets/icons/map.svg" width="24" align="absmiddle" alt=""> 路线图
+## 架构亮点
+
+### 本地优先：Markdown 是事实源，SQLite 是缓存
+
+文章、Agent、Skill、Memory、Prompt 等内容首先以本地 Markdown/YAML 文件存在，受 Git 跟踪；`pnpm db:sync` 把它们 upsert 到 SQLite 作为查询与缓存层。`create` / `update` / `delete` 会同步写回 `content/` 文件。数据永远属于你。
+
+### Swarm：三层 Agent 层级 + 心跳自主运行
+
+| 层级 | tier | 权限 | 说明 |
+|---|---|---|---|
+| 超级 Agent | `super` | 全局 CRUD + 跨 Workspace | 首次启动自动创建，心跳自主运行 |
+| 管理 Agent | `manager` | Workspace 内 CRUD 子 Agent | 每个 Workspace 一个，自动创建主 session |
+| 子 Agent | `sub` | 执行任务 + report_back | 由管理 Agent 或用户创建 |
+
+权限硬拦截（`swarmPermissionGuard`）、Agent 间消息总线（`swarmBus`）、node-cron 心跳引擎、向上发消息时机与 depth 防循环都在 `infra/` 内闭环。
+
+### Chat 状态架构：三层 Store + 不变量
+
+为根治聊天界面「闪烁 / 错位 / 需刷新」的整类 bug，前端采用三层 Store 设计并显式声明不变量：
+
+- **MessageStore** — 持久化消息的唯一事实源（DB 驱动，经 SSE `message_upserted` 更新）
+- **StreamLifecycle** — 显式状态机（`idle → streaming → done → idle`）管理流式 UI
+- **Compose Store** — 瞬态 UI（输入队列、乐观气泡、异步任务覆盖层）
+
+七条不变量（INV-1 ~ INV-7）覆盖流提交、渲染单一所有权、挂接进度一致性、消息持久化广播一致性、切会话即对账等。详见 [`docs/development/chat-state-architecture.md`](docs/development/chat-state-architecture.md)。
+
+### 100 个几何 SVG Agent 头像
+
+每个 Agent 按 cuid 稳定哈希到 100 个预设之一（20 套莫兰迪配色 × 5 种几何 motif），纯 SVG 渲染、零图片资源、任意尺寸清晰。见 [`apps/web/components/agentAvatar.tsx`](apps/web/components/agentAvatar.tsx)。
+
+---
+
+## 路线图
 
 项目按 **L1 ~ L5** 五个阶段演进，详细设计见 [`docs/development/`](docs/development/)。
 
@@ -123,8 +222,36 @@ KnowPilot/
 | **L4** | 自动化流：Trigger / Approval / Agent Loop | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
 | **L5** | 打磨与规模化：搜索、鉴权、统计、部署 | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
 
+后续规划见 [`docs/development/future-features.md`](docs/development/future-features.md)。
+
 ---
 
-## 📄 许可证
+## 部署
+
+```bash
+# Docker 一键起
+docker compose up --build
+
+# 生产构建前先同步
+pnpm db:sync && pnpm build
+
+# 备份
+pnpm db:backup    # dev.db → backups/
+```
+
+> 远程部署请设 `AUTH_MODE=password` 并增加反向代理与限流。SQLite 文件不进 Git，但 `content/posts/` 下的 Markdown 源文件受 Git 跟踪，是数据的持久化真相源。
+
+---
+
+## 安全与敏感信息
+
+- `.env` 被 `.gitignore` 忽略，不得提交。`.env.example` 仅含占位值。
+- `CREDENTIAL_MASTER_KEY` 用于 AES-256-GCM 加密 Credential 表，丢失后已加密凭据无法解密。
+- 默认 `AUTH_MODE=none` 无鉴权，仅适合本地。暴露公网必须启用鉴权。
+- `apps/server/prisma/dev.db` 不进 Git；数据持久化依赖 `content/` 下的 Markdown 源文件。
+
+---
+
+## 许可证
 
 [MIT](LICENSE)

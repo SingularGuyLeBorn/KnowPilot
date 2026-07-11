@@ -8,8 +8,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, ChevronRight, Plus, Trash2, ExternalLink, Eye, Play } from "lucide-react";
+import { ChevronRight, Plus, Trash2, ExternalLink, Eye, Play } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { AgentAvatar } from "./agentAvatar";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared";
@@ -88,7 +89,7 @@ function SubagentAgentCard({
         aria-label={`子 Agent ${agent.autoName || agent.name}`}
       >
         <span className={cn("h-2 w-2 shrink-0 rounded-full", statusColor)} title={STATUS_LABEL[agent.status] ?? agent.status} />
-        <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
+        <AgentAvatar id={agent.id} name={agent.name} size={18} className="rounded-full" />
         <span className="min-w-0 flex-1 truncate font-medium text-[var(--kp-text-1)]">{agent.autoName || agent.name}</span>
         <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform", open && "rotate-90")} />
       </button>

@@ -47,71 +47,71 @@
   --vp-c-divider: var(--kp-divider);
   --vp-c-divider-light: var(--kp-divider-light);
 
-  /* Tailwind v4 theme tokens */
+  /* Tailwind v4 theme tokens — 映射到莫兰迪 kp 主题，避免 shadcn 组件渲染纯白/纯黑
+     与 --kp-* 底色脱节（finesse substrate：no pure #fff / #000，所有中性色向品牌色微调） */
+  --background: var(--kp-bg);
 
-  --background: oklch(1 0 0);
+  --foreground: var(--kp-text-1);
 
-  --foreground: oklch(0.145 0 0);
+  --card: var(--kp-bg-alt);
 
-  --card: oklch(1 0 0);
+  --card-foreground: var(--kp-text-1);
 
-  --card-foreground: oklch(0.145 0 0);
+  --popover: var(--kp-bg-alt);
 
-  --popover: oklch(1 0 0);
+  --popover-foreground: var(--kp-text-1);
 
-  --popover-foreground: oklch(0.145 0 0);
-
-  --primary: oklch(0.205 0 0);
+  --primary: var(--kp-brand-dark);
 
   --primary-foreground: oklch(0.985 0 0);
 
-  --secondary: oklch(0.97 0 0);
+  --secondary: var(--kp-bg-soft);
 
-  --secondary-foreground: oklch(0.205 0 0);
+  --secondary-foreground: var(--kp-text-1);
 
-  --muted: oklch(0.97 0 0);
+  --muted: var(--kp-bg-mute);
 
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: var(--kp-text-2);
 
-  --accent: oklch(0.97 0 0);
+  --accent: var(--kp-bg-soft);
 
-  --accent-foreground: oklch(0.205 0 0);
+  --accent-foreground: var(--kp-text-1);
 
   --destructive: oklch(0.577 0.245 27.325);
 
-  --border: oklch(0.922 0 0);
+  --border: var(--kp-divider);
 
-  --input: oklch(0.922 0 0);
+  --input: var(--kp-bg-mute);
 
-  --ring: oklch(0.708 0 0);
+  --ring: var(--kp-brand);
 
-  --chart-1: oklch(0.87 0 0);
+  --chart-1: var(--kp-brand);
 
-  --chart-2: oklch(0.556 0 0);
+  --chart-2: var(--kp-brand-dark);
 
-  --chart-3: oklch(0.439 0 0);
+  --chart-3: var(--kp-text-2);
 
-  --chart-4: oklch(0.371 0 0);
+  --chart-4: var(--kp-brand-light);
 
-  --chart-5: oklch(0.269 0 0);
+  --chart-5: var(--kp-text-3);
 
   --radius: 0.625rem;
 
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: var(--kp-bg-alt);
 
-  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-foreground: var(--kp-text-1);
 
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary: var(--kp-brand-dark);
 
   --sidebar-primary-foreground: oklch(0.985 0 0);
 
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: var(--kp-bg-soft);
 
-  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-accent-foreground: var(--kp-text-1);
 
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: var(--kp-divider);
 
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: var(--kp-brand);
 }
 
 /* 深色模式覆盖 KnowPilot 莫兰迪色系 */
@@ -670,4 +670,91 @@ mark.kp-page-search-mark.kp-page-search-current {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================
+ * finesse Premium Substrate — 让界面「读起来贵」的物理层
+ * 参考 finesse design-dna：颗粒 / 暗角 / 字体张力 / 半透明边框 /
+ * focus ring / reduced-motion。在莫兰迪基调上叠加，不替换既有令牌。
+ * ============================================================ */
+
+/* 颗粒：固定 feTurbulence 噪点层，极低透明度，消除「扁平矢量 slop」观感 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.03; /* 暖色浅底略高一点；深色模式下方覆盖调低 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+html.dark body::before,
+.dark body::before {
+  opacity: 0.022;
+}
+
+/* 暗角：给深色 Hero / 卡片一个光学焦点。consumer 显式加 .kp-vignette */
+.kp-vignette {
+  position: relative;
+}
+.kp-vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 90% 70% at 50% 46%, transparent 46%, rgba(28, 26, 24, 0.42) 100%);
+}
+html.dark .kp-vignette::after,
+.dark .kp-vignette::after {
+  background: radial-gradient(ellipse 90% 70% at 50% 46%, transparent 46%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* 字体张力：display 标题——负字距 + 紧行高 + 重量对比，干脆利落 */
+.kp-display {
+  letter-spacing: -0.025em;
+  line-height: 0.95;
+  font-weight: 800;
+}
+.kp-display-tight {
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+}
+
+/* 半透明发丝边框：替代硬 #333 线 */
+.kp-hairline {
+  border: 1px solid var(--kp-divider);
+}
+.kp-hairline-b {
+  border-bottom: 1px solid var(--kp-divider);
+}
+.kp-hairline-t {
+  border-top: 1px solid var(--kp-divider);
+}
+
+/* 统一 focus-visible：莫兰迪品牌环 + 足够对比，键盘可达性 */
+:where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--kp-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* 卡片内阴影向品牌色微调，避免纯黑投影在浅底上发脏 */
+.kp-shadow-soft {
+  box-shadow: 0 1px 2px rgba(120, 104, 88, 0.06), 0 4px 12px rgba(120, 104, 88, 0.05);
+}
+html.dark .kp-shadow-soft,
+.dark .kp-shadow-soft {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+/* 标题克制的 eyebrow：finesse 要求每 3 个 section 最多 1 个 eyebrow。
+   提供 .kp-eyebrow 工具类，需要时显式使用，禁止默认每个标题都加。 */
+.kp-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--kp-text-3);
 }
