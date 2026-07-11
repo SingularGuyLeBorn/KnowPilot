@@ -30,6 +30,7 @@ import { CHAT_MODELS, materializeAgentTools } from "@knowpilot/shared";
 import { useAgent, useCardDensity, type CardDensity } from "@/lib/hooks";
 import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, CardDensityToggle } from "@/components/shared";
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
+import { AgentAvatar } from "@/components/agentAvatar";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
@@ -147,8 +148,8 @@ const AgentCard = memo(function AgentCard({
         "group relative rounded-2xl border transition hover:shadow-lg",
         density === "compact" ? "p-3" : "p-5",
         isSuper
-          ? "border-amber-200/60 bg-gradient-to-br from-amber-50/40 to-[var(--kp-bg-alt)]/60 hover:border-amber-300/80"
-          : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 hover:border-[var(--kp-brand)]/30",
+          ? "border-amber-200/60 bg-gradient-to-br from-amber-50/50 to-[var(--kp-bg-alt)] hover:border-amber-300/80"
+          : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] hover:border-[var(--kp-brand)]/30",
         selected && "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/30",
       )}
     >
@@ -172,10 +173,10 @@ const AgentCard = memo(function AgentCard({
                 ? "bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md shadow-amber-500/30"
                 : agent.tier === "manager"
                   ? "bg-blue-100 text-blue-600"
-                  : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]",
+                  : "bg-[var(--kp-bg-mute)]",
             )}
           >
-            {isSuper ? <Crown className="h-5 w-5" /> : agent.tier === "manager" ? <ShieldCheck className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+            {isSuper ? <Crown className="h-5 w-5" /> : agent.tier === "manager" ? <ShieldCheck className="h-5 w-5" /> : <AgentAvatar id={agent.id} name={agent.name} size={44} />}
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -251,7 +252,7 @@ const AgentCard = memo(function AgentCard({
         <Link
           href={`/chat?agentId=${agent.id}`}
           className={cn(
-            "flex flex-1 items-center justify-center gap-1 rounded-xl bg-[var(--kp-brand)] py-2 text-xs font-medium text-white transition hover:opacity-90",
+            "flex flex-1 items-center justify-center gap-1 rounded-xl bg-[var(--kp-brand-deep)] py-2 text-xs font-medium text-white transition hover:opacity-90",
           )}
         >
           <MessageSquare className="h-3.5 w-3.5" />
@@ -604,7 +605,7 @@ export default function AgentsPage() {
       {/* UX #3：compact header——去掉整屏渐变 banner，标题与新建按钮同行，卡片直接可见 */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
             <Bot className="h-5 w-5" />
           </span>
           <div>
@@ -621,8 +622,8 @@ export default function AgentsPage() {
         </div>
       </div>
 
-      <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 px-3 py-2 text-xs text-[var(--kp-text-2)]">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+      <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3 py-2 text-xs text-[var(--kp-text-2)]">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
         <div>
           <span className="font-medium text-[var(--kp-text-1)]">心跳状态：</span>
           卡片上的心跳徽章表示该 Agent 是否按 cron 自主运行。绿色=正常，红色=连续失败，无徽章=未启用。

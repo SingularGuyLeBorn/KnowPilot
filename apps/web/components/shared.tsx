@@ -142,7 +142,7 @@ export function EntityCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 transition hover:shadow-lg",
+        "group relative overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition hover:shadow-lg",
         density === "compact" ? "p-3" : "p-5",
         className,
       )}
@@ -738,7 +738,7 @@ export function NativeCapabilitiesPanel({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/70 space-y-3",
+        "rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] space-y-3",
         compact ? "p-4" : "p-5 space-y-4",
         className,
       )}
@@ -746,7 +746,7 @@ export function NativeCapabilitiesPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
-          <Globe className="h-4 w-4 text-[var(--kp-brand)]" />
+          <Globe className="h-4 w-4 text-[var(--kp-brand-deep)]" />
           {title}
         </div>
         {detailHref && (

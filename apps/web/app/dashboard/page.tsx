@@ -23,15 +23,15 @@ function StatCard({
   sub?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 p-5">
+    <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5">
       <div className="flex items-center gap-2 mb-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)]">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
           <Icon className="h-4 w-4" />
         </div>
-        <span className="text-xs font-medium text-[var(--vp-c-text-3)]">{label}</span>
+        <span className="text-xs font-medium text-[var(--kp-text-3)]">{label}</span>
       </div>
-      <p className="text-2xl font-bold text-[var(--vp-c-text-1)]">{value}</p>
-      {sub && <p className="text-[10px] text-[var(--vp-c-text-3)] mt-1">{sub}</p>}
+      <p className="text-2xl font-bold text-[var(--kp-text-1)]">{value}</p>
+      {sub && <p className="text-[10px] text-[var(--kp-text-3)] mt-1">{sub}</p>}
     </div>
   );
 }
@@ -44,7 +44,7 @@ export default function DashboardPage() {
   const tierIcon = (tier: string) => (tier === "super" ? Crown : tier === "manager" ? ShieldCheck : Bot);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--vp-c-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
       <PageHeader
         title="Analytics 概览"
         description="文章、Agent 运行、Token 与日志错误趋势一览。"
@@ -107,16 +107,16 @@ export default function DashboardPage() {
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-[var(--vp-c-divider)] bg-[var(--vp-c-bg-alt)]/50 p-6"
+          className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6"
         >
           <div className="flex items-center gap-2 mb-4">
-            <Activity className="h-4 w-4 text-[var(--vp-c-brand)]" />
-            <h2 className="text-sm font-bold text-[var(--vp-c-text-1)]">Swarm Agent 运行统计（近 30 天）</h2>
+            <Activity className="h-4 w-4 text-[var(--kp-brand-deep)]" />
+            <h2 className="text-sm font-bold text-[var(--kp-text-1)]">Swarm Agent 运行统计（近 30 天）</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-[var(--vp-c-divider)] text-[var(--vp-c-text-3)]">
+                <tr className="border-b border-[var(--kp-divider)] text-[var(--kp-text-3)]">
                   <th className="px-3 py-2 text-left font-medium">Agent</th>
                   <th className="px-3 py-2 text-right font-medium">对话轮数</th>
                   <th className="px-3 py-2 text-right font-medium">工具调用</th>
@@ -129,24 +129,24 @@ export default function DashboardPage() {
                 {swarmStats.map((stat: { agentId: string; agentName: string; agentTier: string; conversationRounds: number; toolCallCount: number; successRate: number; avgDurationMs: number; totalTokens: number }) => {
                   const TierIcon = tierIcon(stat.agentTier);
                   return (
-                    <tr key={stat.agentId} className="border-b border-[var(--vp-c-divider-light)] hover:bg-[var(--vp-c-bg-soft)]">
+                    <tr key={stat.agentId} className="border-b border-[var(--kp-divider-light)] hover:bg-[var(--kp-bg-soft)]">
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5">
-                          <TierIcon className="h-3 w-3 shrink-0 text-[var(--vp-c-brand)]" />
-                          <span className="text-[var(--vp-c-text-1)]">{stat.agentName}</span>
+                          <TierIcon className="h-3 w-3 shrink-0 text-[var(--kp-brand-deep)]" />
+                          <span className="text-[var(--kp-text-1)]">{stat.agentName}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">{stat.conversationRounds}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">{stat.toolCallCount}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">{stat.conversationRounds}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">{stat.toolCallCount}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         <span className={stat.successRate >= 80 ? "text-green-600" : stat.successRate >= 50 ? "text-amber-600" : "text-red-600"}>
                           {stat.successRate}%
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">
                         {stat.avgDurationMs > 1000 ? `${(stat.avgDurationMs / 1000).toFixed(1)}s` : `${stat.avgDurationMs}ms`}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--vp-c-text-2)]">{stat.totalTokens.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">{stat.totalTokens.toLocaleString()}</td>
                     </tr>
                   );
                 })}
