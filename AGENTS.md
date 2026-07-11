@@ -233,6 +233,60 @@ pnpm test         # 全仓库运行 Vitest
 3. **前端 Hooks 合并**：禁止创建 `hooks/` 子目录及零散数据 hooks 文件。所有 React Query hooks 统一放在 `apps/web/lib/hooks.ts` 中。
 4. **前端通用组件合并**：禁止创建 `components/shared/` 目录及零散小组件。通用的页面基础 UI 组件（如分页、空状态、骨架屏、确认弹窗）统一放在 `apps/web/components/shared.tsx` 中。
 
+### 架构纪律：禁止打补丁，必须从架构层面根治
+
+> 这一条是**铁律**，不是建议。违反就是失职。看不懂这条的人没资格改本项目的状态机 / 编排层。
+
+#### 反模式：补丁栈
+
+什么叫打补丁？就是**在编排层（callbacks、useEffect、try/finally）用时序猜测去弥补 store 没强制的不变量**。典型症状：
+
+- 「`onDone` 里 `await hydrate` 一下，赌消息已经落库」
+- 「清 UI 前先 `queueMicrotask` 看一眼 phase，是 streaming 就跳过」
+- 「`finally` 里再 hydrate 一次保险，然后再 consume 一次」
+- 「`useEffect` 监听 `!isSessionStreaming` 就 `consumeRef()`」
+- 「加个 `setTimeout` / debounce 缓一缓，让两路 SSE 谁先谁后不重要」
+
+**这不是修复，这是把一个 bug 拆成五个时序依赖的 bug。**回调顺序变一次、SSE 抖一下、用户切个 session、刷新一下——补丁立刻破。然后你再加一个补丁压住它。然后第三个补丁压第二个的边界 case。**几十个场景就几十个补丁，最后谁都不敢动，重构白做。**
+
+#### 正模式：架构层根治
+
+架构层根治 = **把不变量收进 store 的 reducer / action，编排层写错也打不破**。判断标准只有一条：
+
+> **删掉你这段编排层补丁，bug 还会不会复现？**
+> - 会复现 → 你的不变量没收进 store，你打的还是补丁，只是包装得更精致。
+> - 不会复现 → 编排层再怎么写错时序，reducer 都会拒绝非法转移，这才是架构落地。
+
+具体怎么做：
+
+1. **先画状态机**：哪些 phase、哪些转移合法、哪些非法。画不出来就别写代码。
+2. **不变量写进 reducer，不是写进注释**：
+   - 非法转移直接 no-op 或断言（开发期 `console.error`，生产期静默）。
+   - 「done→idle 必须经 commitStream 且 MS 已对齐」这种规则，**必须由 reducer 强制**，不能靠编排层「记得」调用顺序。
+3. **副作用集中到转移点**：进入/离开某个 phase 的清理只在 reducer 或 transition 函数里写一遍，**禁止** 4 个回调各清一遍然后互相救火。
+4. **跨层通信走显式事件**：Layer A 进入某状态后要通知 Layer B？走 `onStreamCommitted(cb)` 这种显式钩子，**不要**让 B 用 `useEffect` 猜 A 的状态变化。
+5. **双通道竞态用幂等消除，不要用时序赌**：两路 SSE 无 happens-before？让后到达的一路做幂等 upsert / 幂等 commit，**不要**用 `await hydrate` refetch 赌谁先到。
+
+#### 自检清单（提交前必过）
+
+改任何状态机 / 编排层 / 多层 store 协作之前，先回答：
+
+- [ ] 这次 bug 的**根因**属于哪一层职责越界 / 不变量缺失？说不清楚就别动手。
+- [ ] 我的修复是改 store 的 reducer / action，还是又加了一段编排层时序猜测？后者一律打回。
+- [ ] 删掉我新加的编排层代码，reducer 还能不能保证正确？不能就是补丁。
+- [ ] 我有没有新增 `await hydrate` / `setTimeout` / `queueMicrotask` / `phase === "xxx"` 守卫？有就是**正在打补丁的信号**，停下来重新设计。
+- [ ] 这个不变量能不能写成一句中文，让半年后的自己 / 别的 AI 看懂？写不出就是没想清楚。
+
+#### 本项目已落地的范例（参照执行）
+
+- **Stream Commit 不变量**（Chat 三层 store）：`done → idle` 只经 `commitStream`，`BEGIN_STREAM` 在 occupied 时 reducer 拒绝，`onStreamCommitted` 是 Compose drain 的唯一钩子。详见 `docs/development/chat-state-architecture.md` §4.2 与 `docs/development/chat-scenario-states.md`。**这就是「删掉编排层补丁，bug 不复现」的样板。**
+
+#### 给 AI 助手的死命令
+
+**如果你（AI）在改 Chat / Swarm / 任何状态机时，第一反应是「加个 await」「加个 setTimeout」「加个 phase 守卫」——立刻停手，你在打补丁。**回去先想：这个 bug 的根因是哪个不变量没被强制？把它收进 reducer。如果做不到，说明你对这个模块的理解还不够，**继续读代码，别动手写补丁**。
+
+几十个场景靠几十个补丁维护的项目，不是工程，是债务堆。本项目不接受这种债务。
+
 ---
 
 ## 测试说明

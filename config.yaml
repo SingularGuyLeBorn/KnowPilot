@@ -18,3 +18,20 @@ compact:
   charThreshold: 48000
   # 压缩后保留的最近消息条数
   keepRecent: 8
+
+# 后台任务池（async_task_run / spawn 跟踪任务等共享）
+# 注意：池只控制并发调度（queued → running）；是否「异步投递」由工具的 waitForResult 决定。
+# 环境变量 AGENT_ASYNC_* 可覆盖下列默认值。
+asyncJobs:
+  # 全局同时 running 上限（所有 session 共享）
+  maxConcurrent: 2
+  # 单 session 同时 running 上限
+  maxPerSession: 2
+  # 单任务执行超时（毫秒）
+  taskTimeoutMs: 300000
+  # 排队超时（毫秒）；0 = 不限制
+  queuedTimeoutMs: 0
+  # 失败重试次数
+  maxRetries: 3
+  # 每个父会话允许的 subagent 数量上限
+  maxSubagentsPerSession: 10

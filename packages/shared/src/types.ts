@@ -27,6 +27,7 @@ export interface Post {
 export interface Agent {
   id: string;
   name: string;
+  autoName?: string | null;
   description: string | null;
   model: string;
   systemPrompt: string;
@@ -149,6 +150,7 @@ export interface ChatSessionConfig {
 export interface ChatSession {
   id: string;
   title: string;
+  autoName?: string | null;
   model: string;
   systemPrompt: string | null;
   agentId?: string | null;

@@ -57,12 +57,13 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
     return (
       <span
         className={cn(
-          "pointer-events-none absolute -top-2 z-10 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-[1px] text-[9px] font-medium shadow-sm",
+          "pointer-events-none absolute -top-2.5 z-10 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
           align === "right" ? "right-3" : "left-3",
-          "border-teal-200 bg-teal-50 text-teal-800",
+          // 与气泡底色（brand）同色系，不再用 teal/green
+          "border-[var(--kp-brand-light)] bg-[var(--kp-brand)] text-white",
         )}
       >
-        <Bot className="h-2.5 w-2.5" />
+        <Bot className="h-3.5 w-3.5" />
         {label}
       </span>
     );
@@ -76,14 +77,14 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   return (
     <span
       className={cn(
-        "pointer-events-none absolute -top-2 z-10 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-[1px] text-[9px] font-medium shadow-sm",
+        "pointer-events-none absolute -top-2.5 z-10 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
         align === "right" ? "right-3" : "left-3",
         bg,
         text,
         border,
       )}
     >
-      <Bot className="h-2.5 w-2.5" />
+      <Bot className="h-3.5 w-3.5" />
       {label}
     </span>
   );

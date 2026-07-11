@@ -109,9 +109,22 @@ export class SessionStreamHub {
 
   /**
    * 推送外部事件（非 Agent 运行产生的事件，如异步任务完成）。
-   * 若该 session 有活跃 Agent 流，走流的 subscribers；否则走 externalSubs。
+   * - 始终推给 async-stream 的 externalSubs（否则 autoConsume 开跑后
+   *   session_run_started / async_job_update 会只进 Agent 流，前端 EventSource 收不到、只能刷新才续上）。
+   * - 若该 session 有活跃 Agent 流，同时写入环形缓冲并推给流 subscribers。
    */
   pushExternalEvent(sessionId: string, event: AgentStreamEvent): void {
+    const subs = this.externalSubs.get(sessionId);
+    if (subs) {
+      for (const sub of subs) {
+        try {
+          sub(event);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
     const run = this.runs.get(sessionId);
     if (run && !run.completed) {
       const buffered: BufferedEvent = { id: run.nextId++, event };
@@ -121,17 +134,6 @@ export class SessionStreamHub {
       for (const sub of run.subscribers) {
         try {
           Promise.resolve(sub(buffered)).catch(() => {});
-        } catch {
-          /* ignore */
-        }
-      }
-      return;
-    }
-    const subs = this.externalSubs.get(sessionId);
-    if (subs) {
-      for (const sub of subs) {
-        try {
-          sub(event);
         } catch {
           /* ignore */
         }

@@ -117,11 +117,13 @@ export function mergeAsyncPollIntoQueue(
       sourceType?: string;
     }>;
   },
-  opts?: { skipDeliveryJobIds?: ReadonlySet<string> },
+  opts?: { skipDeliveryJobIds?: ReadonlySet<string>; completedJobIds?: ReadonlySet<string> },
 ): ChatQueueItem[] {
   if (!poll) return local;
 
   const skipDeliveries = opts?.skipDeliveryJobIds ?? new Set<string>();
+  const completedJobIds = new Set<string>(opts?.completedJobIds ?? []);
+  for (const c of poll.consumed ?? []) completedJobIds.add(c.jobId);
 
   const pollJobIds = new Set<string>();
   for (const j of poll.running ?? []) pollJobIds.add(j.jobId);
@@ -137,7 +139,14 @@ export function mergeAsyncPollIntoQueue(
 
   let next = local.filter((item) => {
     if (item.kind === "user" || item.kind === "superior") return true;
-    if (item.kind === "async-running" && item.jobId && !pollJobIds.has(item.jobId)) return true;
+    if (item.kind === "async-running" && item.jobId) {
+      // 已消费 / 已投递完成：不要幽灵留在「运行中」（autoConsume 后 poll 不再含该 job）
+      if (completedJobIds.has(item.jobId) || skipDeliveries.has(item.jobId)) return false;
+      // 仍在 poll 活跃集：丢弃本地，由下方 poll 重建，避免分叉
+      if (pollJobIds.has(item.jobId)) return false;
+      // poll 尚未跟上（工具刚返回）：短时保留；超时仍不在 poll 则视为已结束并清理
+      return Date.now() - item.createdAt < 15_000;
+    }
     if (item.kind === "async-result" && item.jobId && item.removeAt && Date.now() < item.removeAt) {
       localFinishedOverlayIds.add(item.jobId);
       return true;

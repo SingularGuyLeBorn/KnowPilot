@@ -30,6 +30,19 @@ export function formatToolTimingHint(result: unknown): string | null {
   }
   if (typeof r.suggestedTool === "string" && r.suggestedTool) parts.push(`→${r.suggestedTool}`);
   if (typeof r.total === "number" && typeof r.query === "string") parts.push(`${r.total} 条`);
+  // sleep / wait 结果
+  if (typeof r.waitedMs === "number" || typeof r.waitedSeconds === "number") {
+    const ms =
+      typeof r.waitedMs === "number"
+        ? r.waitedMs
+        : Math.round(Number(r.waitedSeconds) * 1000);
+    if (Number.isFinite(ms) && ms >= 0) parts.push(`等待 ${formatDuration(ms)}`);
+  }
+  if (typeof r.message === "string" && r.message && parts.length === 0) {
+    // 纯 sleep 结果常只有 message + waited*
+    const msg = r.message.trim();
+    if (msg) parts.push(msg.slice(0, 48));
+  }
   return parts.length ? parts.join(" · ") : null;
 }
 

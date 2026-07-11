@@ -31,6 +31,7 @@ import {
   getActiveAssistantPayload,
 } from "./messageVersions.js";
 import { SessionStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
+import { autoNameSession } from "./sessionAutoName.js";
 
 export type AgentStreamEvent =
   | { type: "session_start"; sessionId: string }
@@ -105,7 +106,33 @@ export type AgentStreamEvent =
       sessionId: string;
       reason: "async_auto_consume" | "subagent_start";
       jobId?: string;
-    };
+    }
+  /** ChatMessage 写入后广播：前端 reducer 直接 patch messages[]，不再靠 invalidate→refetch 闪烁刷新 */
+  | {
+      type: "message_upserted";
+      sessionId: string;
+      message: {
+        id: string;
+        role: string;
+        content: string;
+        toolCalls?: unknown;
+        toolResults?: unknown;
+        tokenUsage?: unknown;
+        attachments?: unknown;
+        source?: string | null;
+        createdAt: string;
+      };
+    }
+  /** ChatMessage 删除后广播：前端 reducer 删对应条目 */
+  | {
+      type: "message_deleted";
+      sessionId: string;
+      messageId: string;
+    }
+  /** Session 自动命名完成：前端刷新侧边栏标题 */
+  | { type: "session_title_updated"; sessionId: string; title: string }
+  /** Agent 自动命名完成：前端刷新 Agent 树 */
+  | { type: "agent_renamed"; agentId: string; name: string };
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
@@ -446,6 +473,23 @@ async function prepareMessage(
     const tailIds = items.slice(idx + 1).map((m) => m.id);
     if (tailIds.length > 0) {
       await services.prisma.chatMessage.deleteMany({ where: { id: { in: tailIds } } });
+      // deleteMany 绕过 MessageService.afterDelete，需手动推 message_deleted SSE，
+      // 否则前端 MessageStore 残留被删消息直到 hydrate 兜底才消失
+      try {
+        const { getStreamHub } = await import("./sessionStreamHub.js");
+        const hub = getStreamHub();
+        if (hub) {
+          for (const tailId of tailIds) {
+            hub.pushExternalEvent(input.sessionId, {
+              type: "message_deleted",
+              sessionId: input.sessionId,
+              messageId: tailId,
+            });
+          }
+        }
+      } catch {
+        /* ignore SSE */
+      }
     }
     return { messageText: newContent, skipUserCreate: true };
   }
@@ -564,15 +608,37 @@ export async function chatAgentStream(
     };
 
     if (!sessionId) {
-      const created = await services.session.create({
-        title: prepared.messageText.slice(0, 40) || "新对话",
-        model: effectiveModel,
-        systemPrompt: effectiveSystemPrompt,
-        agentId: agent.id,
+      // 若该 Agent 已有空的主 session（管理 Agent / 超级 Agent 启动时自动创建），
+      // 首条对话复用它，避免「空主会话 + 又新建一个会话」并存。
+      const mainSession = await services.prisma.chatSession.findFirst({
+        where: {
+          agentId: agent.id,
+          isMainSession: true,
+          status: { notIn: ["deleted", "archived"] },
+        },
+        select: { id: true, title: true, _count: { select: { messages: true } } },
       });
-      sessionId = created.data!.id;
-      // 让前端尽早拿到 sessionId，以便刷新/切 tab 后能按真实 sessionId 恢复流式状态
-      emit({ type: "session_start", sessionId });
+      if (mainSession && mainSession._count.messages === 0) {
+        sessionId = mainSession.id;
+        const nextTitle = prepared.messageText.slice(0, 40) || mainSession.title || "新对话";
+        await services.session.update({
+          id: sessionId,
+          title: nextTitle,
+          model: effectiveModel,
+          ...(effectiveSystemPrompt !== undefined ? { systemPrompt: effectiveSystemPrompt } : {}),
+        });
+        emit({ type: "session_start", sessionId });
+      } else {
+        const created = await services.session.create({
+          title: prepared.messageText.slice(0, 40) || "新对话",
+          model: effectiveModel,
+          systemPrompt: effectiveSystemPrompt,
+          agentId: agent.id,
+        });
+        sessionId = created.data!.id;
+        // 让前端尽早拿到 sessionId，以便刷新/切 tab 后能按真实 sessionId 恢复流式状态
+        emit({ type: "session_start", sessionId });
+      }
     } else if (input.model || input.config?.systemPrompt !== undefined || skillResolved.prompt || input.agentId) {
       await services.session.update({
         id: sessionId,
@@ -581,6 +647,10 @@ export async function chatAgentStream(
         ...(input.agentId ? { agentId: input.agentId } : {}),
       });
     }
+
+    // 自动命名：不管新建还是已有 session，都 fire-and-forget。
+    // autoNameSession 内部幂等：autoName 已有值 或 msgCount>1 都跳过，不会重复命名。
+    void autoNameSession(sessionId, prepared.messageText);
 
     if (!prepared.skipUserCreate) {
       const src = input.source ?? "user";
@@ -1040,10 +1110,20 @@ export function handleAgentChatStream(
 
     // 如果订阅时任务已经结束，需要主动关闭响应
     if (!hub.isRunning(runSessionId) && ended === false) {
-      // 运行已结束，响应会在重放完成后关闭
-      // 给重放事件一点处理时间
+      // 运行已结束，重放完缓冲事件后发 done 让前端从 streaming → idle
+      // 不发 done 的话前端会进入重连循环（12 次 ~2min），期间一直卡 "Thinking..."
       setTimeout(() => {
         flushTokens();
+        writeSse(res, {
+          type: "done",
+          sessionId: runSessionId,
+          agentId: "",
+          content: "",
+          toolCalls: [],
+          model: "",
+          provider: "",
+          roundsUsed: 0,
+        } as AgentStreamEvent);
         end();
       }, 0);
     }

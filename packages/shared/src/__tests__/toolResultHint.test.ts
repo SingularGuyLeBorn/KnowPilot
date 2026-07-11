@@ -98,4 +98,14 @@ describe("formatToolTimingHint", () => {
     expect(hint).toContain("playwright");
     expect(hint).toContain("2899 字");
   });
+
+  it("sleep 结果摘要含等待时长", () => {
+    const hint = formatToolTimingHint({
+      waitedMs: 20000,
+      waitedSeconds: 20,
+      message: "定时时间20s到了，请继续完成任务",
+    });
+    expect(hint).toContain("等待");
+    expect(hint).toMatch(/20s|20\.0s/);
+  });
 });

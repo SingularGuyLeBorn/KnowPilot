@@ -50,16 +50,60 @@ function run(args, opts = {}) {
 
 const execAsync = promisify(exec);
 
+function listeningPidOnPort(netstatStdout, port) {
+  return netstatStdout
+    .split("\n")
+    .map((l) => l.trim().split(/\s+/))
+    .filter((parts) => parts.length >= 5 && parts[parts.length - 2] === "LISTENING")
+    .filter((parts) => parts[1]?.endsWith(`:${port}`) || parts[1] === `0.0.0.0:${port}` || parts[1] === `[::]:${port}` || parts[1]?.includes(`:${port}`))
+    .map((parts) => parts[parts.length - 1])[0];
+}
+
+/** 清理遗留的 KnowPilot server（占用 3010 会导致 health 误判旧进程、新 tsx watch 起不来） */
+async function killOrphanServer(serverPort = 3010) {
+  if (process.platform !== "win32") {
+    try {
+      const { stdout } = await execAsync(`lsof -tiTCP:${serverPort} -sTCP:LISTEN`).catch(() => ({ stdout: "" }));
+      const pid = stdout.trim().split(/\n/)[0];
+      if (!pid) return;
+      const { stdout: cmd } = await execAsync(`ps -p ${pid} -o args=`).catch(() => ({ stdout: "" }));
+      if (!cmd.includes("tsx") && !cmd.includes("index.ts")) return;
+      if (!cmd.includes("KnowPilot") && !cmd.includes("apps/server")) return;
+      console.log(`\n  ⚠️  检测到遗留 Server 进程 PID ${pid}，正在清理…`);
+      await execAsync(`kill -9 ${pid}`).catch(() => {});
+      await new Promise((r) => setTimeout(r, 500));
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  try {
+    const { stdout } = await execAsync(`netstat -ano | findstr ":${serverPort}"`);
+    const listeningPid = listeningPidOnPort(stdout, serverPort);
+    if (!listeningPid) return;
+
+    const { stdout: cmdStdout } = await execAsync(
+      `wmic process where "ProcessId=${listeningPid}" get CommandLine /format:csv`,
+    );
+    const isKnowPilotServer =
+      (cmdStdout.includes("tsx") || cmdStdout.includes("index.ts")) &&
+      (cmdStdout.includes(root) || cmdStdout.includes("KnowPilot") || cmdStdout.includes("apps\\server") || cmdStdout.includes("apps/server"));
+    if (!isKnowPilotServer) return;
+
+    console.log(`\n  ⚠️  检测到遗留 Server 进程 PID ${listeningPid}，正在清理…`);
+    await execAsync(`taskkill /pid ${listeningPid} /T /F`).catch(() => {});
+    await new Promise((r) => setTimeout(r, 800));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 清理遗留的 Next.js dev 进程（Windows 下异常退出时 next dev 子进程可能存活并占用 3000 端口） */
 async function killOrphanNextDev(webPort = 3000) {
   if (process.platform !== "win32") return;
   try {
     const { stdout } = await execAsync(`netstat -ano | findstr ":${webPort}"`);
-    const listeningPid = stdout
-      .split("\n")
-      .map((l) => l.trim().split(/\s+/))
-      .filter((parts) => parts.length >= 5 && parts[parts.length - 2] === "LISTENING")
-      .map((parts) => parts[parts.length - 1])[0];
+    const listeningPid = listeningPidOnPort(stdout, webPort);
     if (!listeningPid) return;
 
     // 仅清理确认为本项目的 Next.js dev server
@@ -80,8 +124,12 @@ function spawnService(label, args) {
   console.log(`\n  ▶ [${label}] 启动…\n`);
   const child = spawnPnpm(args);
   child.on("exit", (code, signal) => {
-    if (signal) return;
-    if (code !== 0) {
+    if (signal) {
+      console.error(`\n  ✖ [${label}] 被信号终止 (${signal})`);
+      shutdown("EXIT");
+      return;
+    }
+    if (code !== 0 && code !== null) {
       console.error(`\n  ✖ [${label}] 意外退出 (code=${code})`);
       shutdown("EXIT");
     }
@@ -134,6 +182,9 @@ async function main() {
     console.log("  📦 同步 content/ → SQLite（含 FTS）…\n");
     await run(["--filter", "@knowpilot/server", "db:sync"]);
   }
+
+  // 先清遗留 3010，避免 health 命中僵尸进程、新 server 绑定失败却误报「就绪」
+  await killOrphanServer(3010);
 
   spawnService("server", ["--filter", "@knowpilot/server", "dev"]);
   await waitForHealth(healthUrl);

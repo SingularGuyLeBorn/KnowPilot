@@ -306,6 +306,7 @@ export function createAppConfig(): AppConfig {
   const yamlConfig = loadYamlConfig(projectRoot);
   const streamConfig = (yamlConfig.stream as Record<string, unknown>) || {};
   const compactConfig = (yamlConfig.compact as Record<string, unknown>) || {};
+  const asyncJobsConfig = (yamlConfig.asyncJobs as Record<string, unknown>) || {};
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -345,12 +346,47 @@ export function createAppConfig(): AppConfig {
       providers,
     },
     asyncJobs: {
-      maxConcurrent: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_CONCURRENT") || "2", 10)),
-      maxPerSession: Math.max(1, parseInt(readEnv("AGENT_ASYNC_MAX_PER_SESSION") || "2", 10)),
-      taskTimeoutMs: Math.max(10_000, parseInt(readEnv("AGENT_ASYNC_TASK_TIMEOUT_MS") || "300000", 10)),
-      queuedTimeoutMs: Math.max(0, parseInt(readEnv("AGENT_ASYNC_QUEUED_TIMEOUT_MS") || "0", 10)),
-      maxRetries: Math.max(0, parseInt(readEnv("AGENT_ASYNC_MAX_RETRIES") || "3", 10)),
-      maxSubagentsPerSession: Math.max(1, parseInt(readEnv("AGENT_MAX_SUBAGENTS_PER_SESSION") || "10", 10)),
+      // yaml 为教学默认；AGENT_ASYNC_* 环境变量可覆盖
+      maxConcurrent: Math.max(
+        1,
+        parseInt(
+          readEnv("AGENT_ASYNC_MAX_CONCURRENT") || String(asyncJobsConfig.maxConcurrent ?? "2"),
+          10,
+        ),
+      ),
+      maxPerSession: Math.max(
+        1,
+        parseInt(
+          readEnv("AGENT_ASYNC_MAX_PER_SESSION") || String(asyncJobsConfig.maxPerSession ?? "2"),
+          10,
+        ),
+      ),
+      taskTimeoutMs: Math.max(
+        10_000,
+        parseInt(
+          readEnv("AGENT_ASYNC_TASK_TIMEOUT_MS") || String(asyncJobsConfig.taskTimeoutMs ?? "300000"),
+          10,
+        ),
+      ),
+      queuedTimeoutMs: Math.max(
+        0,
+        parseInt(
+          readEnv("AGENT_ASYNC_QUEUED_TIMEOUT_MS") || String(asyncJobsConfig.queuedTimeoutMs ?? "0"),
+          10,
+        ),
+      ),
+      maxRetries: Math.max(
+        0,
+        parseInt(readEnv("AGENT_ASYNC_MAX_RETRIES") || String(asyncJobsConfig.maxRetries ?? "3"), 10),
+      ),
+      maxSubagentsPerSession: Math.max(
+        1,
+        parseInt(
+          readEnv("AGENT_MAX_SUBAGENTS_PER_SESSION") ||
+            String(asyncJobsConfig.maxSubagentsPerSession ?? "10"),
+          10,
+        ),
+      ),
     },
     ocr: {
       paddleCliPath: readEnv("PADDLEOCR_CLI_PATH") || paddleCliDefault,

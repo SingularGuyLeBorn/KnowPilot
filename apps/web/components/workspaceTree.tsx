@@ -17,6 +17,7 @@ import type { ChatSession } from "@knowpilot/shared";
 interface WorkspaceAgent {
   id: string;
   name: string;
+  autoName?: string | null;
   tier: string;
   status: string;
   model: string;
@@ -241,7 +242,7 @@ export function WorkspaceTree({
           >
             <div className="flex items-center gap-1.5">
               <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
-              <span className="min-w-0 flex-1 truncate">{agent.name}</span>
+              <span className="min-w-0 flex-1 truncate">{agent.autoName || agent.name}</span>
               {agent.status === "dormant" && (
                 <span className="text-[9px] text-[var(--kp-text-3)]">休眠</span>
               )}
@@ -249,7 +250,7 @@ export function WorkspaceTree({
             {session && (
               <div className="flex items-center gap-1.5 pl-5 text-[11px] text-[var(--kp-text-2)]">
                 {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand)]" />}
-                <span className="min-w-0 flex-1 truncate">{session.title}</span>
+                <span className="min-w-0 flex-1 truncate">{session.autoName || session.title}</span>
                 <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
                   {formatRelativeTime(session.updatedAt)}
                 </span>

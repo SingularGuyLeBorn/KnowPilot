@@ -1281,6 +1281,141 @@ describe("native:sleep", () => {
   });
 });
 
+describe("native:spawn_subagent 同步等待系统抓取", () => {
+  beforeEach(() => {
+    resetSwarmBus();
+  });
+  afterEach(() => {
+    resetSwarmBus();
+  });
+
+  it("waitForResult=true：无 report_back 时抓取子会话最后一条 assistant", async () => {
+    const root = createTempProjectDir();
+    const subAgentId = "sub-agent-1";
+    const subSessionId = "sub-sess-1";
+    let trackerStatus = "running";
+
+    const prisma = {
+      chatSession: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: subSessionId,
+          agentId: subAgentId,
+          isMainSession: true,
+          kind: "subagent",
+          status: "running",
+        }),
+        findUnique: vi.fn(),
+      },
+      agent: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: subAgentId,
+          name: "调研员",
+          tier: "sub",
+          status: "active",
+          parentId: "mgr-1",
+          workspaceId: null,
+        }),
+      },
+      chatMessage: {
+        findFirst: vi.fn().mockImplementation(async ({ where }: { where: { role?: string } }) => {
+          if (where.role === "user") {
+            return { id: "u1", createdAt: new Date(Date.now() - 5000) };
+          }
+          if (where.role === "assistant") {
+            return { content: "系统抓取的最终答复" };
+          }
+          return null;
+        }),
+      },
+      task: {
+        count: vi.fn().mockResolvedValue(0),
+      },
+      agentMessage: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        count: vi.fn().mockResolvedValue(0),
+        create: vi.fn().mockResolvedValue({ id: "msg-spawn-1" }),
+      },
+      log: { create: vi.fn().mockResolvedValue({}) },
+    };
+
+    const services = {
+      agent: {
+        getById: vi.fn().mockResolvedValue({
+          id: subAgentId,
+          name: "调研员",
+          model: "mock-model",
+          systemPrompt: "sp",
+          tools: ["native:wait"],
+          status: "active",
+          tier: "sub",
+          parentId: "mgr-1",
+          workspaceId: null,
+        }),
+      },
+      task: {
+        create: vi.fn().mockResolvedValue({ success: true, data: { id: "track-1" } }),
+        getById: vi.fn().mockImplementation(async () => ({
+          id: "track-1",
+          status: trackerStatus,
+          output: {},
+        })),
+        update: vi.fn().mockImplementation(async (args: { status?: string }) => {
+          if (args.status) trackerStatus = args.status;
+          return { success: true };
+        }),
+      },
+      session: {
+        update: vi.fn().mockResolvedValue({ success: true }),
+        create: vi.fn(),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({ success: true }),
+      },
+    };
+
+    const ctx = {
+      ...createNativeCtx(root, { services: services as any, prisma: prisma as any }),
+      sessionId: "parent-sess",
+      agentSnapshot: {
+        id: "mgr-1",
+        model: "m",
+        systemPrompt: "",
+        tools: [],
+        tier: "manager" as const,
+        workspaceId: null,
+        parentId: "super-1",
+      },
+    };
+
+    const result = (await executeNativeTool(
+      "spawn_subagent",
+      { task: "调研 React 19", waitForResult: true, agentId: subAgentId },
+      ctx,
+    )) as {
+      content?: string;
+      status?: string;
+      success?: boolean;
+      error?: string;
+      jobId?: string;
+    };
+
+    expect(result.error).toBeUndefined();
+    expect(result.success).toBe(true);
+    expect(result.content).toBe("系统抓取的最终答复");
+    expect(result.status).toBe("success");
+    expect(result.jobId).toBe("track-1");
+    expect(services.task.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "track-1",
+        status: "success",
+        delivered: true,
+        output: { asyncResult: "系统抓取的最终答复" },
+      }),
+    );
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 15_000);
+});
+
 function createMockPrismaForAgentSendMessage(opts: {
   agent: Record<string, unknown>;
   messages?: Array<{ fromAgentId: string; toAgentId: string; createdAt: Date }>;

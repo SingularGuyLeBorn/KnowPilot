@@ -18,6 +18,7 @@ import type { Agent } from "@knowpilot/shared";
 interface SubagentAgentBrief {
   id: string;
   name: string;
+  autoName?: string | null;
   description?: string | null;
   model: string;
   status: string;
@@ -84,11 +85,11 @@ function SubagentAgentCard({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 text-left"
         aria-expanded={open}
-        aria-label={`子 Agent ${agent.name}`}
+        aria-label={`子 Agent ${agent.autoName || agent.name}`}
       >
         <span className={cn("h-2 w-2 shrink-0 rounded-full", statusColor)} title={STATUS_LABEL[agent.status] ?? agent.status} />
         <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
-        <span className="min-w-0 flex-1 truncate font-medium text-[var(--kp-text-1)]">{agent.name}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-[var(--kp-text-1)]">{agent.autoName || agent.name}</span>
         <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform", open && "rotate-90")} />
       </button>
       <AnimatePresence initial={false}>

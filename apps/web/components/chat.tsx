@@ -75,34 +75,28 @@ import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import { MessageActions, MessageSourceLabel, MessageVersions } from "@/components/chatMessageBits";
 import { SessionListItem } from "@/components/chatSessionListItem";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import {
+  useSessionMessages,
+  sessionMessagesStore,
+} from "@/lib/useSessionMessages";
+import {
+  useStreamLifecycle,
+  streamLifecycleActions,
+  streamLifecycleStore,
+  type StreamLifecycleState,
+} from "@/lib/useStreamLifecycle";
+import {
+  useSessionComposeState,
+  sessionComposeActions,
+  sessionComposeStore,
+} from "@/lib/useSessionComposeState";
 
-/* ─── 模块级类型与流式状态持久化 ─── */
-
-type OptimisticMsg = { id: string; content: string; attachments?: ChatImageAttachment[]; createdAt?: number };
-
-interface SessionStreamState {
-  isStreaming: boolean;
-  streamingContent: string;
-  liveTimeline: TimelineStep[];
-  streamTargetUserId: string | null;
-  optimistic: OptimisticMsg[];
-  error: string | null;
-  lastRoundTokens: number;
-  abort: AbortController | null;
-  // 断线续传状态
-  lastEventId: number;
-  lastEventAt: number;
-  connected: boolean;
-  // 按 session 隔离的两个物理独立队列 + 异步投递消费记录
-  userQueue: ChatQueueItem[];
-  asyncOverlays: ChatQueueItem[];
-  consumedDeliveries: Set<string>;
-  queueDraining: boolean;
-  activeQueueTaskId: string | null;
-}
+/* ─── 模块级常量与 UI 偏好持久化 ─── */
 
 const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessionId 时的临时键
 const CHAT_UI_STORAGE_KEY = "kp-chat-ui-v1";
+const LIFECYCLE_STORAGE_KEY = "kp:chat-lifecycle-states";
+const COMPOSE_STORAGE_KEY = "kp:chat-compose-states";
 
 type ChatUiPrefs = {
   leftOpen: boolean;
@@ -144,39 +138,14 @@ function writeChatUiPrefs(prefs: ChatUiPrefs) {
     /* ignore */
   }
 }
-const STREAM_STATES_STORAGE_KEY = "kp:chat-stream-states";
-
-function serializeStreamStates(map: Map<string, SessionStreamState>): string {
-  const obj: Record<string, unknown> = {};
-  for (const [k, v] of map) {
-    if (k === NEW_STREAM_KEY) continue; // 不持久化临时新会话状态
-    const { abort, ...rest } = v;
-    void abort;
-    obj[k] = { ...rest, consumedDeliveries: [...rest.consumedDeliveries] };
-  }
-  return JSON.stringify(obj);
-}
-
-function deserializeStreamStates(raw: string): Map<string, SessionStreamState> {
-  const map = new Map<string, SessionStreamState>();
+function saveChatStoresToStorage() {
   try {
-    const parsed = JSON.parse(raw) as Record<string, SessionStreamState>;
-    for (const [k, v] of Object.entries(parsed)) {
-      map.set(k, {
-        ...v,
-        abort: null,
-        consumedDeliveries: new Set(v.consumedDeliveries ?? []),
-      });
-    }
-  } catch {
-    // ignore
-  }
-  return map;
-}
-
-function saveStreamStatesToStorage(map: Map<string, SessionStreamState>) {
-  try {
-    sessionStorage.setItem(STREAM_STATES_STORAGE_KEY, serializeStreamStates(map));
+    const life = streamLifecycleStore.serialize();
+    delete life[NEW_STREAM_KEY];
+    sessionStorage.setItem(LIFECYCLE_STORAGE_KEY, JSON.stringify(life));
+    const compose = sessionComposeStore.serialize();
+    delete compose[NEW_STREAM_KEY];
+    sessionStorage.setItem(COMPOSE_STORAGE_KEY, JSON.stringify(compose));
   } catch {
     // ignore
   }
@@ -194,20 +163,8 @@ export function ChatView() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState("");
   const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [optimistic, setOptimistic] = useState<{ id: string; content: string; attachments?: ChatImageAttachment[] }[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [liveTimeline, setLiveTimeline] = useState<TimelineStep[]>([]);
-  // 当前流式目标所属的 user 消息 id（重试/重生成/编辑时定位到原 group 原位渲染，
-  // 避免旧 assistant 气泡与新流式气泡并存）。新消息流式时为 null，流式气泡落列表底部。
-  const [streamTargetUserId, setStreamTargetUserId] = useState<string | null>(null);
-  const [lastRoundTokens, setLastRoundTokens] = useState(0);
-  // 两个物理独立的队列：userQueue（用户主动消息）+ asyncOverlays（异步结果的用户追加编辑）
-  // asyncResultQueue（运行中+已完成投递）由 poll 数据派生，不存入 session state
-  const [userQueue, setUserQueue] = useState<ChatQueueItem[]>([]);
-  const [asyncOverlays, setAsyncOverlays] = useState<ChatQueueItem[]>([]);
-  const [consumedDeliveries, setConsumedDeliveries] = useState<Set<string>>(() => new Set());
+  // 视图级非流式错误（如重命名失败）；流式 error 来自 lifecycleState.error
+  const [viewError, setViewError] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   // 左栏：history=对话历史，async=异步任务运行记录（追溯，不消费）
@@ -241,15 +198,17 @@ export function ChatView() {
   const [hoverMonitorSessionId, setHoverMonitorSessionId] = useState<string | null>(null);
   const hoverMonitorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // #12 Swarm 新手引导（可关闭，localStorage 记忆）
-  // 用 lazy initial state 读取 localStorage，避免 SSR/客户端不一致导致 hydration mismatch
-  const [showOnboarding, setShowOnboarding] = useState(() => {
-    if (typeof window === "undefined") return false;
+  // 初始恒为 false，mount 后再读 localStorage，避免 SSR/首屏 hydration 不一致
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  useEffect(() => {
     try {
-      return localStorage.getItem("kp-swarm-onboarding-dismissed") !== "1";
+      if (localStorage.getItem("kp-swarm-onboarding-dismissed") !== "1") {
+        setShowOnboarding(true);
+      }
     } catch {
-      return true;
+      setShowOnboarding(true);
     }
-  });
+  }, []);
   const dismissSwarmOnboarding = () => {
     setShowOnboarding(false);
     try {
@@ -261,162 +220,77 @@ export function ChatView() {
 
   // 虚拟列表句柄：用于导航条按索引滚动 + 结构变化时强制滚到底部
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const consumeRef = useRef<() => void>(() => {});
+  /** 可指定 session：流结束后应消费该 session，而不是当前视图 */
+  const consumeRef = useRef<(preferredSessionId?: string) => void>(() => {});
 
-  /* ─── 多 session 流式状态隔离 ───
-   * 每个 session 拥有独立的流式状态(isStreaming/streamingContent/liveTimeline/optimistic/error/abort/...)，
-   * 支持多 session 并发流式(为 agent swarm 铺路)：
-   *   - 切换 session 只切视图，不 abort 旧 session 的流式
-   *   - 切回原 session 时从 Map 取回其流式状态继续展示
-   *   - 流式回调用闭包捕获的 originSid 只更新该 session 的状态，不污染当前视图
-   * 视图 useState(isStreaming/streamingContent/...)作为"当前 effectiveSessionId 的镜像"，
-   * 由 applyView() 在切换时同步；helper setter 同步写 ref Map + 视图(若是当前 session)。
+  /* ─── 多 session 状态隔离（三层 store）───
+   * 消息：sessionMessagesStore / useSessionMessages
+   * 流式：streamLifecycleStore / useStreamLifecycle
+   * 编排：sessionComposeStore / useSessionComposeState（队列 / optimistic / abort）
+   * 切换 session 只改 sessionId；hooks 自动订阅新切片，不再 applyView 镜像。
    */
-  const streamStatesRef = useRef<Map<string, SessionStreamState>>(new Map());
   const effectiveSessionIdRef = useRef<string | null>(null);
-  // 页面刷新/关闭时阻止 runStream finally 把 isStreaming 清为 false，保证下次 mount 能续传
+  // 页面刷新/关闭时阻止 runStream finally 清掉 streaming phase，保证下次 mount 能续传
   const isPageUnloadingRef = useRef(false);
   // 防止极短时间重复入队（如发送按钮/快捷键连发）
   const lastEnqueueRef = useRef<{ text: string; at: number } | null>(null);
-
-  const getStreamState = useCallback((sid: string): SessionStreamState => {
-    let s = streamStatesRef.current.get(sid);
-    if (!s) {
-      s = {
-        isStreaming: false,
-        streamingContent: "",
-        liveTimeline: [],
-        streamTargetUserId: null,
-        optimistic: [],
-        error: null,
-        lastRoundTokens: 0,
-        abort: null,
-        lastEventId: 0,
-        lastEventAt: 0,
-        connected: false,
-        userQueue: [],
-        asyncOverlays: [],
-        consumedDeliveries: new Set<string>(),
-        queueDraining: false,
-        activeQueueTaskId: null,
-      };
-      streamStatesRef.current.set(sid, s);
-    }
-    return s;
-  }, []);
-
-  // 把指定 session 的后台状态镜像到视图 useState（切换 session 时调用）
-  // sid 为 null 时镜像 NEW_STREAM_KEY，保证新会话首条消息期间用户也能看到乐观消息/流式状态
-  const applyView = useCallback(
-    (sid: string | null) => {
-      const s = streamStatesRef.current.get(sid ?? NEW_STREAM_KEY);
-      setIsStreaming(s?.isStreaming ?? false);
-      setStreamingContent(s?.streamingContent ?? "");
-      setLiveTimeline(s?.liveTimeline ?? []);
-      setStreamTargetUserId(s?.streamTargetUserId ?? null);
-      setOptimistic(s?.optimistic ?? []);
-      setError(s?.error ?? null);
-      setLastRoundTokens(s?.lastRoundTokens ?? 0);
-      setUserQueue(s?.userQueue ?? []);
-      setAsyncOverlays(s?.asyncOverlays ?? []);
-      setConsumedDeliveries(s?.consumedDeliveries ?? new Set<string>());
-    },
-    [],
-  );
-
-  // 流式状态防抖持久化：每次状态变更后 100ms 内无新变更则写入 sessionStorage，
-  // 确保刷新、崩溃、异常关闭时尽可能不丢状态。isStreaming 等关键状态会立即保存。
   const streamSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleStreamSave = useCallback((immediate?: boolean) => {
     if (streamSaveTimeoutRef.current) clearTimeout(streamSaveTimeoutRef.current);
     if (immediate) {
-      saveStreamStatesToStorage(streamStatesRef.current);
+      saveChatStoresToStorage();
       return;
     }
     streamSaveTimeoutRef.current = setTimeout(() => {
-      saveStreamStatesToStorage(streamStatesRef.current);
+      saveChatStoresToStorage();
       streamSaveTimeoutRef.current = null;
     }, 100);
   }, []);
 
-  // session-aware setter：更新 ref Map[originSid]，若它是当前视图则同步 useState
-  const ssSet = useCallback(
-    <K extends keyof SessionStreamState>(
-      originSid: string,
-      key: K,
-      value: SessionStreamState[K] | ((prev: SessionStreamState[K]) => SessionStreamState[K]),
-    ) => {
-      const s = getStreamState(originSid);
-      const next = typeof value === "function" ? (value as (p: SessionStreamState[K]) => SessionStreamState[K])(s[key]) : value;
-      (s as SessionStreamState)[key] = next;
-      const isCurrentView =
-        originSid === effectiveSessionIdRef.current ||
-        (effectiveSessionIdRef.current === null && originSid === NEW_STREAM_KEY);
-      if (isCurrentView) {
-        switch (key) {
-          case "isStreaming": setIsStreaming(next as boolean); break;
-          case "streamingContent": setStreamingContent(next as string); break;
-          case "liveTimeline": setLiveTimeline(next as TimelineStep[]); break;
-          case "streamTargetUserId": setStreamTargetUserId(next as string | null); break;
-          case "optimistic": setOptimistic(next as OptimisticMsg[]); break;
-          case "error": setError(next as string | null); break;
-          case "lastRoundTokens": setLastRoundTokens(next as number); break;
-          case "userQueue": setUserQueue(next as ChatQueueItem[]); break;
-          case "asyncOverlays": setAsyncOverlays(next as ChatQueueItem[]); break;
-          case "consumedDeliveries": setConsumedDeliveries(next as Set<string>); break;
-          default: break;
-        }
-      }
-      scheduleStreamSave();
-    },
-    [getStreamState, scheduleStreamSave],
-  );
-
   const isSessionStreaming = useCallback(
-    (sid: string | null): boolean => (sid ? streamStatesRef.current.get(sid)?.isStreaming ?? false : false),
+    (sid: string | null): boolean => streamLifecycleStore.isStreaming(sid),
+    [],
+  );
+  /** INV-2：streaming|done 均占用，Compose 不得开新流 */
+  const isSessionRunOccupied = useCallback(
+    (sid: string | null): boolean => streamLifecycleStore.isRunOccupied(sid),
     [],
   );
 
-  // 流式 token rAF 合并：onToken 每字符触发一次 setState 会让 ChatView 高频重渲染。
-  // 将同帧内多个 delta 累积到 pendingStreamDeltaRef，由 requestAnimationFrame 在下一帧
-  // 合并为单次 streamingContent 更新，显著降低流式吐字时的 setState 频率与重排开销。
+  // 流式 token rAF 合并：onToken 每字符触发一次会让 ChatView 高频重渲染。
   const pendingStreamDeltaRef = useRef<Map<string, string>>(new Map());
   const streamRafRef = useRef<Map<string, number>>(new Map());
 
-  const scheduleStreamFlush = useCallback(
-    (sid: string) => {
-      if (streamRafRef.current.has(sid)) return;
-      const id = requestAnimationFrame(() => {
-        streamRafRef.current.delete(sid);
-        const delta = pendingStreamDeltaRef.current.get(sid);
-        if (delta) {
-          pendingStreamDeltaRef.current.delete(sid);
-          ssSet(sid, "streamingContent", (prev) => prev + delta);
-        }
-      });
-      streamRafRef.current.set(sid, id);
-    },
-    [ssSet],
-  );
-
-  /** 立即冲刷并取消该 session 的待写 delta（用于 onDone 等需要同步落地的场景） */
-  const flushStreamNow = useCallback(
-    (sid: string) => {
-      const rafId = streamRafRef.current.get(sid);
-      if (rafId !== undefined) {
-        cancelAnimationFrame(rafId);
-        streamRafRef.current.delete(sid);
-      }
+  const scheduleStreamFlush = useCallback((sid: string) => {
+    if (streamRafRef.current.has(sid)) return;
+    const id = requestAnimationFrame(() => {
+      streamRafRef.current.delete(sid);
       const delta = pendingStreamDeltaRef.current.get(sid);
       if (delta) {
         pendingStreamDeltaRef.current.delete(sid);
-        ssSet(sid, "streamingContent", (prev) => prev + delta);
+        streamLifecycleActions.appendTokenDelta(sid, delta);
+        scheduleStreamSave();
       }
-    },
-    [ssSet],
-  );
+    });
+    streamRafRef.current.set(sid, id);
+  }, [scheduleStreamSave]);
 
-  /** 取消该 session 的 rAF 并丢弃未写 delta（用于 onError/finally 等清理场景） */
+  /** 立即冲刷并取消该 session 的待写 delta */
+  const flushStreamNow = useCallback((sid: string) => {
+    const rafId = streamRafRef.current.get(sid);
+    if (rafId !== undefined) {
+      cancelAnimationFrame(rafId);
+      streamRafRef.current.delete(sid);
+    }
+    const delta = pendingStreamDeltaRef.current.get(sid);
+    if (delta) {
+      pendingStreamDeltaRef.current.delete(sid);
+      streamLifecycleActions.appendTokenDelta(sid, delta);
+      scheduleStreamSave();
+    }
+  }, [scheduleStreamSave]);
+
+  /** 取消该 session 的 rAF 并丢弃未写 delta */
   const discardStreamFlush = useCallback((sid: string) => {
     const rafId = streamRafRef.current.get(sid);
     if (rafId !== undefined) {
@@ -425,11 +299,6 @@ export function ChatView() {
     }
     pendingStreamDeltaRef.current.delete(sid);
   }, []);
-
-  const getAbort = useCallback(
-    (sid: string | null): AbortController | null => (sid ? streamStatesRef.current.get(sid)?.abort ?? null : null),
-    [],
-  );
 
   const { useList: useAgentList } = useAgent();
   // R10：pageSize 50→100，兼顾 WorkspaceTree 对全部 Agent 的需求；WorkspaceTree 复用本查询，不再各自发 agent.list(100)。
@@ -524,42 +393,67 @@ export function ChatView() {
       const sid = sessionFromUrl;
       queueMicrotask(() => {
         setSessionId(sid);
-        applyView(sid);
         // 子会话可能已在服务端跑流：立刻发现并挂接，避免空白到刷新才出现
         void utils.session.listRunning.invalidate();
       });
     }
     prevSessionFromUrlRef.current = sessionFromUrl;
-  }, [sessionFromUrl, sessionId, applyView, utils.session.listRunning]);
-  // 同步当前视图 session 到 ref，供 runStream 回调判断"是否当前视图"
+  }, [sessionFromUrl, sessionId, utils.session.listRunning]);
+  // 同步当前视图 session 到 ref
   useEffect(() => {
     effectiveSessionIdRef.current = effectiveSessionId;
   }, [effectiveSessionId]);
 
+  // 三层 store 订阅：sessionId 变化后自动切切片，无需 applyView
+  const lifecycleKey = effectiveSessionId ?? NEW_STREAM_KEY;
+  const {
+    messages,
+    isMessagesHydrated,
+    hasOlderMessages,
+    isLoadingOlderMessages,
+    loadOlderMessages,
+    hydrateFromServer,
+  } = useSessionMessages(effectiveSessionId);
+  const { state: lifecycleState, isStreaming } = useStreamLifecycle(lifecycleKey);
+  const streamingContent = lifecycleState.streamingContent;
+  const liveTimeline = lifecycleState.liveTimeline;
+  const streamTargetUserId = lifecycleState.streamTargetUserId;
+  // INV-4：本轮流式期间提前 upsert 的 assistant id，其 stored 渲染被屏蔽（live 块独占）
+  const inFlightAssistantId =
+    lifecycleState.phase === "streaming" || lifecycleState.phase === "done"
+      ? lifecycleState.inFlightAssistantId
+      : null;
+  const lastRoundTokens = lifecycleState.lastRoundTokens;
+  const streamError = lifecycleState.error;
+  const error = viewError ?? streamError;
+  const setError = setViewError;
+  const { state: composeState } = useSessionComposeState(lifecycleKey);
+  const optimistic = composeState.optimistic;
+  const userQueue = composeState.userQueue;
+  const asyncOverlays = composeState.asyncOverlays;
+  const consumedDeliveries = composeState.consumedDeliveries;
+
+  /** 任意 session 的消息兜底重拉（当前会话走 hook，其它走 store） */
+  const hydrateSessionMessagesFallback = useCallback(
+    async (sid: string) => {
+      if (!sid || sid === NEW_STREAM_KEY) return;
+      if (sid === effectiveSessionId) {
+        await hydrateFromServer();
+        return;
+      }
+      try {
+        const res = await utils.message.listForChat.fetch({ sessionId: sid, limit: 50 });
+        sessionMessagesStore.hydrateSessionMessages(sid, res.items as ChatMessage[]);
+      } catch {
+        /* ignore */
+      }
+    },
+    [effectiveSessionId, hydrateFromServer, utils.message.listForChat],
+  );
+
   const { data: sessionDetail, refetch: refetchSession } = trpc.session.getById.useQuery(
     { id: effectiveSessionId! },
     { enabled: !!effectiveSessionId },
-  );
-  // P0-1 彻底解耦：消息独立走 message.listForChat 无限查询（cursor 分页），session.getById 只返元数据。
-  // 第一页 = 最近 limit 条；向上滚（startReached）fetchNextPage 加载更早，Virtuoso 稳定 key 保持滚动位置。
-  const messagesInfinite = trpc.message.listForChat.useInfiniteQuery(
-    { sessionId: effectiveSessionId!, limit: 50 },
-    {
-      enabled: !!effectiveSessionId,
-      getNextPageParam: (last) => last.nextCursor,
-      // 子会话要立刻看到 triggerAgentRun 写入的父任务消息，避免队列去重读到空缓存
-      refetchOnMount: "always",
-      staleTime: sessionDetail?.kind === "subagent" ? 0 : 30_000,
-    },
-  );
-  // 注：切换 session 时不再强制 refetch；useInfiniteQuery 会在 queryKey 变化时自动取新数据，
-  // 配合 placeholderData 保持上一会话消息避免空白闪烁。子 Agent 后台完成写入后通过
-  // asyncQueueQuery → consumeQueue → runStream 结束后的 invalidate 自动刷新消息列表。
-  // pages 顺序为 [最近页, 更早页, ...]，展示需倒序拼接（更早在前 + 最近在后）成时间正序
-  // cast ChatMessage[]：listForChat 返 MessageEntity(role:string)，运行时 role 为合法联合值，与 ChatMessage 同形
-  const messages = useMemo(
-    () => ((messagesInfinite.data?.pages ?? []).slice().reverse().flatMap((p) => p.items) as ChatMessage[]),
-    [messagesInfinite.data],
   );
   // 当前会话是否为子代理「任务」会话（用于任务条 / 父会话锚点等）。
   // 只用 kind / parentSessionId，不要用 Agent.tier===sub 兜底——
@@ -714,8 +608,8 @@ export function ChatView() {
     if (hydratedSessionRef.current === effectiveSessionId) return;
     hydratedSessionRef.current = effectiveSessionId;
     const items = sessionQueueQuery.data.map(sessionQueueItemToChatItem);
-    ssSet(effectiveSessionId, "userQueue", items);
-  }, [effectiveSessionId, sessionQueueQuery.data, ssSet]);
+    sessionComposeActions.setUserQueue(effectiveSessionId, items);
+  }, [effectiveSessionId, sessionQueueQuery.data]);
 
   // 子 Agent 会话：把 pending AgentMessage 镜像进 SessionQueueItem（幂等）
   // 若 triggerAgentRun 已写入同内容 ChatMessage，则直接 markConsumed，避免队列再消费导致「消息发两遍」
@@ -724,33 +618,40 @@ export function ChatView() {
     if (!effectiveSessionId || !isSubagentSession || !pullAgentMessagesQuery.data?.length) return;
     let cancelled = false;
     (async () => {
-      for (const msg of pullAgentMessagesQuery.data) {
-        if (cancelled) return;
-        const alreadyInChat = messages.some(
-          (m) => m.role === "user" && m.content.trim() === String(msg.content ?? "").trim(),
-        );
-        if (alreadyInChat) {
-          try {
-            await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id });
-          } catch {
-            /* ignore */
+      if (cancelled) return;
+      // 并行镜像：N 条 pending 消息同时发，不串行阻塞渲染（旧实现顺序 await 导致进入子会话卡死）
+      const results = await Promise.allSettled(
+        pullAgentMessagesQuery.data.map(async (msg) => {
+          const alreadyInChat = messages.some(
+            (m) => m.role === "user" && m.content.trim() === String(msg.content ?? "").trim(),
+          );
+          if (alreadyInChat) {
+            try {
+              await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id });
+            } catch {
+              /* ignore */
+            }
+            return;
           }
-          continue;
-        }
-        try {
-          await createSessionQueueItemMutation.mutateAsync({
-            sessionId: effectiveSessionId,
-            kind: "superior",
-            content: msg.content,
-            // AgentMessage.source 是 tier（super/manager），不是 fromAgentId
-            source: msg.source || "manager",
-            agentMessageId: msg.id,
-          });
-        } catch {
-          // 幂等冲突或网络错误忽略
-        }
+          try {
+            await createSessionQueueItemMutation.mutateAsync({
+              sessionId: effectiveSessionId,
+              kind: "superior",
+              content: msg.content,
+              // AgentMessage.source 是 tier（super/manager），不是 fromAgentId
+              source: msg.source || "manager",
+              agentMessageId: msg.id,
+            });
+          } catch {
+            // 幂等冲突或网络错误忽略
+          }
+        }),
+      );
+      if (cancelled) return;
+      // 仅当至少有一条实际处理（非全 rejected）才 refetch
+      if (results.some((r) => r.status === "fulfilled")) {
+        void sessionQueueQuery.refetch();
       }
-      if (!cancelled) void sessionQueueQuery.refetch();
     })();
     return () => {
       cancelled = true;
@@ -791,7 +692,7 @@ export function ChatView() {
           void utils.session.listRunning.invalidate();
           refreshAsync();
           if (data.sessionId) {
-            void utils.message.listForChat.invalidate({ sessionId: data.sessionId });
+            sessionMessagesStore.watchSession(data.sessionId);
           }
         } catch {
           void utils.session.listRunning.invalidate();
@@ -831,7 +732,7 @@ export function ChatView() {
             status?: string;
           };
           if (data.subagentSessionId) {
-            void utils.message.listForChat.invalidate({ sessionId: data.subagentSessionId });
+            sessionMessagesStore.watchSession(data.subagentSessionId);
           }
         } catch {
           /* ignore */
@@ -853,6 +754,14 @@ export function ChatView() {
         } catch {
           /* ignore */
         }
+      });
+      // Session 自动命名完成：刷新侧边栏标题
+      es.addEventListener("session_title_updated", () => {
+        void utils.session.list.invalidate();
+      });
+      // Agent 自动命名完成：刷新 Agent 树
+      es.addEventListener("agent_renamed", () => {
+        void utils.agent.list.invalidate();
       });
       sources.push(es);
     }
@@ -972,8 +881,6 @@ export function ChatView() {
     return steps;
   }, [asyncResultQueue]);
 
-  // localQueueRef / consumedDeliveriesRef 已由按 session 的 streamStatesRef 取代
-
   // 按会话持久化已消费的异步投递，刷新页面后不再显示旧结果
   useEffect(() => {
     if (!effectiveSessionId) return;
@@ -981,14 +888,15 @@ export function ChatView() {
     try {
       const saved = localStorage.getItem(key);
       if (saved) {
-        // 从外部存储恢复已消费的异步投递；写到该 session 的后台状态
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        ssSet(effectiveSessionId, "consumedDeliveries", new Set<string>(JSON.parse(saved)));
+        sessionComposeActions.setConsumedDeliveries(
+          effectiveSessionId,
+          new Set<string>(JSON.parse(saved)),
+        );
       }
     } catch {
       // ignore
     }
-  }, [effectiveSessionId, ssSet]);
+  }, [effectiveSessionId]);
 
   useEffect(() => {
     if (!effectiveSessionId) return;
@@ -999,8 +907,6 @@ export function ChatView() {
       // ignore
     }
   }, [effectiveSessionId, consumedDeliveries]);
-
-  // 流式状态已按 session 隔离（streamStatesRef），不再需要全局 isStreamingRef 同步
 
   // R19：agent.list 已裁剪 systemPrompt；Chat 用 agent.getById 取 systemPrompt/model，与 list metadata 合并
   const selectedAgentMeta = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
@@ -1115,20 +1021,6 @@ export function ChatView() {
     virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
   }, [messageGroups.length, optimistic.length, isStreaming]);
 
-  // 流式最终答案已写入 DB 后，用真实 assistant 气泡替换临时流式气泡，防止重复。
-  useEffect(() => {
-    if (isStreaming || !effectiveSessionId) return;
-    const current = streamStatesRef.current.get(effectiveSessionId)?.streamingContent;
-    if (!current) return;
-    const lastGroup = messageGroups[messageGroups.length - 1];
-    if (!lastGroup?.assistantMessage) return;
-    const active = getActiveVersion(lastGroup);
-    if (active && active.content.trim() === current.trim()) {
-      ssSet(effectiveSessionId, "streamingContent", "");
-      ssSet(effectiveSessionId, "liveTimeline", []);
-    }
-  }, [messageGroups, isStreaming, effectiveSessionId, ssSet]);
-
   const updateConfig = useCallback(
     (patch: Partial<ChatSessionConfig>) => {
       setChatConfig((prev) => {
@@ -1173,36 +1065,33 @@ export function ChatView() {
       resumeAfter?: number;
       isResume?: boolean;
       targetSessionId?: string;
+      /** 后台消费队列时：不抢占当前视图 / URL */
+      keepCurrentView?: boolean;
+      /** 覆盖 agentId（后台消费其它 session 时用该 session 的 Agent） */
+      agentId?: string;
     }) => {
-      // 捕获本次流式所属的 session（新会话首条消息时为 null，onDone 拿到 sessionId 后迁移键）
+      // 捕获本次流式所属的 session（新会话首条消息时为 NEW_STREAM_KEY，onDone 拿到 sessionId 后迁移）
       let originSid = opts.targetSessionId ?? effectiveSessionId ?? NEW_STREAM_KEY;
-      // 仅中止同一 session 上已有的流式（支持多 session 并发流式，互不干扰）
-      getAbort(originSid)?.abort();
+      // 视图不变量：流回调不依赖闭包 keepCurrentView，改用 effectiveSessionIdRef 运行时判断
+      // keepCurrentView 参数仅保留给 consumeQueue 标记后台消费，不再在回调里使用
+      void opts.keepCurrentView;
+      sessionComposeActions.getActiveAbortController(originSid)?.abort();
       const ac = new AbortController();
-      getStreamState(originSid).abort = ac;
+      sessionComposeActions.setActiveAbortController(originSid, ac);
 
       const isResume = opts.isResume === true;
-      ssSet(originSid, "isStreaming", true);
-      // 流式一开始立即持久化，避免极快刷新/崩溃时状态未落盘
-      saveStreamStatesToStorage(streamStatesRef.current);
-      if (!isResume) {
-        ssSet(originSid, "streamingContent", "");
-        ssSet(originSid, "liveTimeline", [{ type: "thinking", content: "", round: 1 }]);
-        // 重试/重生成/编辑：定位到原 user 消息所在 group 原位流式，替换旧 assistant 气泡；
-        // 新消息：null，流式气泡落列表底部。
-        ssSet(originSid, "streamTargetUserId",
+      streamLifecycleActions.beginStream(originSid, {
+        streamTargetUserId:
           opts.retryFromMessageId ?? opts.regenerateUserMessageId ?? opts.editMessageId ?? null,
-        );
-        ssSet(originSid, "lastRoundTokens", 0);
+        resume: isResume,
+      });
+      // INV-2：非 resume 时若仍 occupied，beginStream 已 no-op，禁止继续发请求
+      if (!isResume && streamLifecycleStore.get(originSid).phase !== "streaming") {
+        sessionComposeActions.setActiveAbortController(originSid, null);
+        sessionComposeActions.setQueueDraining(originSid, false);
+        return;
       }
-      ssSet(originSid, "error", null);
-      // 断线续传状态初始化（resume 时保留 lastEventId / streamingContent / liveTimeline）
-      const st = getStreamState(originSid);
-      if (!isResume) {
-        st.lastEventId = 0;
-      }
-      st.lastEventAt = Date.now();
-      st.connected = true;
+      scheduleStreamSave(true);
       setEditingUserId(null);
 
       const streamConfig = buildStreamConfig(
@@ -1219,7 +1108,7 @@ export function ChatView() {
         await streamAgentChat(
           {
             sessionId: opts.targetSessionId ?? effectiveSessionId ?? undefined,
-            agentId: effectiveAgentId || undefined,
+            agentId: opts.agentId || effectiveAgentId || undefined,
             message: isResume ? undefined : opts.message,
             resumeAfter: opts.resumeAfter,
             attachments: opts.attachments?.map(({ name, mimeType, previewUrl, extractedText, source }) => ({
@@ -1243,16 +1132,12 @@ export function ChatView() {
           {
             onSessionStart: (sid) => {
               if (originSid === NEW_STREAM_KEY && sid) {
-                // 把待写 delta 先冲刷到 NEW_STREAM_KEY 状态，再整体迁移到真实 sessionId
                 flushStreamNow(NEW_STREAM_KEY);
-                const prev = streamStatesRef.current.get(NEW_STREAM_KEY);
-                if (prev) {
-                  streamStatesRef.current.set(sid, prev);
-                  streamStatesRef.current.delete(NEW_STREAM_KEY);
-                }
+                streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, sid);
+                sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, sid);
                 originSid = sid;
                 // 新会话首条消息期间入队的项尚无 dbId，迁移后补写 DB
-                const pending = streamStatesRef.current.get(sid)?.userQueue ?? [];
+                const pending = sessionComposeStore.get(sid).userQueue;
                 for (const item of pending) {
                   if (item.dbId || (item.kind !== "user" && item.kind !== "superior")) continue;
                   createSessionQueueItemMutation
@@ -1270,51 +1155,45 @@ export function ChatView() {
                     .then((res) => {
                       const dbId = (res as { data?: { id?: string } })?.data?.id;
                       if (!dbId) return;
-                      ssSet(sid, "userQueue", (q) =>
+                      sessionComposeActions.patchUserQueue(sid, (q) =>
                         q.map((i) => (i.id === item.id ? { ...i, dbId } : i)),
                       );
                     })
                     .catch(() => {});
                 }
               }
-              // 后台续传（refresh/切 tab/切 session）时不应抢占当前视图；
-              // 只有用户主动在当前视图发起的新流才需要把 URL/状态切到新 session。
+              // 视图不变量：流回调只在「用户仍在新对话页」时 adopt 新 session，
+              // 用户已切走则绝不抢视图（effectiveSessionIdRef 运行时读，不用闭包 keepCurrentView）
               if (!opts.isResume) {
-                // flushSync 保证 setSessionId 立即落盘，避免后续 onDone/invalidate
-                // 因 effectiveSessionId 还是 null 而刷到错误 session（或根本未启用查询）。
-                flushSync(() => setSessionId(sid));
-                applyView(sid);
-                // 同步 URL sessionId，刷新后仍能回到当前会话
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("sessionId", sid);
-                if (params.get("agentId")) params.delete("agentId");
-                router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+                const current = effectiveSessionIdRef.current;
+                if (current === null || current === sid) {
+                  flushSync(() => setSessionId(sid));
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("sessionId", sid);
+                  if (params.get("agentId")) params.delete("agentId");
+                  router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+                }
               }
-              // 立即持久化，确保刷新前状态已落在真实 sessionId 下
-              saveStreamStatesToStorage(streamStatesRef.current);
+              scheduleStreamSave(true);
             },
-            onRoundStart: (round) =>
-              ssSet(originSid, "liveTimeline", (prev) => {
-                if (prev.length === 1 && prev[0]?.type === "thinking" && !prev[0].content) {
-                  return [{ type: "thinking" as const, content: "", round }];
-                }
-                return [...prev, { type: "thinking" as const, content: "", round }];
-              }),
+            onRoundStart: (round) => {
+              const prev = streamLifecycleStore.get(originSid).liveTimeline;
+              if (prev.length === 1 && prev[0]?.type === "thinking" && !prev[0].content) {
+                streamLifecycleActions.replaceTimeline(originSid, [
+                  { type: "thinking" as const, content: "", round },
+                ]);
+              } else {
+                streamLifecycleActions.appendTimelineStep(originSid, {
+                  type: "thinking" as const,
+                  content: "",
+                  round,
+                });
+              }
+            },
             onThinking: (delta) => {
-              ssSet(originSid, "liveTimeline", (prev) => {
-                const copy = [...prev];
-                for (let i = copy.length - 1; i >= 0; i--) {
-                  const step = copy[i];
-                  if (step.type === "thinking") {
-                    copy[i] = { type: "thinking", content: step.content + delta, round: step.round };
-                    return copy;
-                  }
-                }
-                return [...copy, { type: "thinking", content: delta, round: 1 }];
-              });
+              streamLifecycleActions.appendThinkingDelta(originSid, delta);
             },
             onToken: (delta) => {
-              // rAF 合并：累积 delta 到下一帧单次写入，避免每字符一次 setState
               pendingStreamDeltaRef.current.set(
                 originSid,
                 (pendingStreamDeltaRef.current.get(originSid) ?? "") + delta,
@@ -1322,39 +1201,38 @@ export function ChatView() {
               scheduleStreamFlush(originSid);
             },
             onIntermediateContent: (content, round) => {
-              // 工具轮次中的中间正式回复 → 进导轨时间线（无圆点），不进最终气泡。
-              // 此前 token 已写入 streamingContent，必须清空，否则会与时间线重复、并串进最终气泡。
               discardStreamFlush(originSid);
-              ssSet(originSid, "streamingContent", "");
-              ssSet(originSid, "liveTimeline", (prev) => {
-                if (prev.some((s) => s.type === "content" && s.round === round)) return prev;
-                return [...prev, { type: "content" as const, content, round }];
-              });
+              streamLifecycleActions.clearStreamingContent(originSid);
+              const prev = streamLifecycleStore.get(originSid).liveTimeline;
+              if (!prev.some((step) => step.type === "content" && step.round === round)) {
+                streamLifecycleActions.appendTimelineStep(originSid, {
+                  type: "content" as const,
+                  content,
+                  round,
+                });
+              }
             },
             onToolStart: (name, args, round, toolCallId) => {
-              // 工具轮开始：若仍有未转入时间线的流式正文，挪走并清空，避免与最终回复串台
               flushStreamNow(originSid);
-              const leftover = streamStatesRef.current.get(originSid)?.streamingContent?.trim();
-              if (leftover) {
-                ssSet(originSid, "liveTimeline", (prev) => {
-                  if (prev.some((s) => s.type === "content" && s.round === round)) return prev;
-                  return [...prev, { type: "content" as const, content: leftover, round }];
-                });
-                ssSet(originSid, "streamingContent", "");
-              }
-              ssSet(originSid, "liveTimeline", (prev) => {
-                // 防御后端/网络导致同一 tool call 多次 start，避免 React key 重复
-                if (prev.some((s) => s.type === "tool" && s.toolCallId === toolCallId)) return prev;
-                return [...prev, { type: "tool", toolCallId, name, args, round, status: "running" }];
+              streamLifecycleActions.moveStreamingContentToTimeline(originSid, round);
+              const prev = streamLifecycleStore.get(originSid).liveTimeline;
+              if (prev.some((step) => step.type === "tool" && step.toolCallId === toolCallId)) return;
+              streamLifecycleActions.appendTimelineStep(originSid, {
+                type: "tool",
+                toolCallId,
+                name,
+                args,
+                round,
+                status: "running",
+                startedAt: Date.now(),
               });
             },
             onToolEnd: (name, result, round, hint, toolCallId) => {
-              ssSet(originSid, "liveTimeline", (prev) =>
-                prev.map((s) =>
-                  s.type === "tool" && s.toolCallId === toolCallId && s.status === "running"
-                    ? { ...s, result, hint: hint ?? formatToolResultHint(result), status: "done" }
-                    : s,
-                ),
+              streamLifecycleActions.updateTimelineStep(
+                originSid,
+                (step) =>
+                  step.type === "tool" && step.toolCallId === toolCallId && step.status === "running",
+                { result, hint: hint ?? formatToolResultHint(result), status: "done" },
               );
               if (
                 (name === "async_task_run" || name === "spawn_subagent") &&
@@ -1370,17 +1248,16 @@ export function ChatView() {
                   agentId?: string;
                   success?: boolean;
                 };
-                // 派生子 Agent 后立刻刷新左栏：乐观写入 + invalidate/refetch，避免必须手动刷新
                 if (name === "spawn_subagent" && (r.success || r.agentId || r.subagentSessionId)) {
                   if (r.agentId) {
                     const wsId = selectedWorkspaceId ?? null;
-                    const optimistic = {
+                    const optimisticAgent = {
                       id: r.agentId,
                       name: r.subagentName || `子 Agent ${r.agentId.slice(0, 4)}`,
                       description: null,
                       model: chatConfig.model || "deepseek-v4-flash",
                       tools: [] as string[],
-                      tier: "sub",
+                      tier: "sub" as const,
                       workspaceId: wsId,
                       parentId: effectiveAgentId ?? null,
                       heartbeatModel: null,
@@ -1389,19 +1266,19 @@ export function ChatView() {
                       source: "native_tool:spawn_subagent",
                       deletedAt: null,
                       deletedBy: null,
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
+                      createdAt: new Date(),
+                      updatedAt: new Date(),
                       apiKey: null,
                       systemPrompt: "",
                     };
-                    utils.agent.list.setData({ page: 1, pageSize: 100 }, (old: { items?: Agent[]; total?: number; page?: number; pageSize?: number; totalPages?: number } | undefined) => {
+                    utils.agent.list.setData({ page: 1, pageSize: 100 }, (old) => {
                       if (!old?.items) {
-                        return { items: [optimistic as Agent], total: 1, page: 1, pageSize: 100, totalPages: 1 };
+                        return { items: [optimisticAgent], total: 1, page: 1, pageSize: 100, totalPages: 1 };
                       }
                       if (old.items.some((a) => a.id === r.agentId)) return old;
                       return {
                         ...old,
-                        items: [optimistic as Agent, ...old.items],
+                        items: [optimisticAgent, ...old.items],
                         total: (old.total ?? old.items.length) + 1,
                       };
                     });
@@ -1412,7 +1289,7 @@ export function ChatView() {
                 if (r.jobId && (r.status === "running" || r.status === "queued")) {
                   const jobId = r.jobId;
                   const status = r.status;
-                  ssSet(originSid, "asyncOverlays", (prev) => {
+                  sessionComposeActions.patchAsyncOverlays(originSid, (prev) => {
                     if (prev.some((q) => q.jobId === jobId)) return prev;
                     const label = r.message || r.subagentName || `${name === "spawn_subagent" ? "子 Agent" : "后台任务"} ${jobId.slice(0, 6)}`;
                     return [
@@ -1431,9 +1308,8 @@ export function ChatView() {
                     ];
                   });
                 } else if (name === "spawn_subagent" && r.subagentSessionId && !r.jobId) {
-                  // 非阻塞 spawn 无 jobId 时也建一条本地 running overlay，等 report_back 投递
                   const overlayId = `spawn-${r.agentId ?? r.subagentSessionId}`;
-                  ssSet(originSid, "asyncOverlays", (prev) => {
+                  sessionComposeActions.patchAsyncOverlays(originSid, (prev) => {
                     if (prev.some((q) => q.id === overlayId || q.subagentSessionId === r.subagentSessionId)) return prev;
                     const label = r.subagentName || r.message || "子 Agent 任务";
                     return [
@@ -1454,138 +1330,137 @@ export function ChatView() {
               }
             },
             onEventId: (id) => {
-              const sst = getStreamState(originSid);
-              sst.lastEventId = id;
-              sst.lastEventAt = Date.now();
+              streamLifecycleActions.setLastEventId(originSid, id);
             },
-            onDone: async (data) => {
-              // 新会话首条消息：originSid 是临时键，拿到真实 sessionId 后迁移状态
+            onDone: (data) => {
               if (originSid === NEW_STREAM_KEY && data.sessionId) {
-                const prev = streamStatesRef.current.get(NEW_STREAM_KEY);
-                if (prev) {
-                  streamStatesRef.current.set(data.sessionId, prev);
-                  streamStatesRef.current.delete(NEW_STREAM_KEY);
-                }
-                // 把待写 delta 的 rAF 键也迁移到真实 sessionId，避免最后一批 token 丢失
                 flushStreamNow(originSid);
+                streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, data.sessionId);
+                sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, data.sessionId);
                 originSid = data.sessionId;
               } else {
                 flushStreamNow(originSid);
               }
-              // 后台续传完成时只更新状态，不抢占用户当前视图
               if (!opts.isResume) {
-                flushSync(() => setSessionId(data.sessionId));
-                applyView(data.sessionId);
+                // 视图不变量：onDone 不抢视图。adopt 已在 onSessionStart 完成；
+                // 若用户已切走，结果写入该 session 的 MessageStore，用户切回时自然看到。
               }
-              if (data.tokenUsage?.total) ssSet(originSid, "lastRoundTokens", data.tokenUsage.total);
+              if (data.tokenUsage?.total) {
+                streamLifecycleActions.setLastRoundTokens(originSid, data.tokenUsage.total);
+              }
               if (opts.skillPrompt) {
                 updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
               }
-              // P0-1 解耦：session.getById 不再含 messages。流结束后刷新会话元数据 + 消息无限查询
-              // （invalidate listForChat → 重拉最近页，新 user/assistant 消息出现；已加载的更早页保留）。
               if (data.sessionId) {
                 void utils.session.getById.invalidate({ id: data.sessionId }).catch(() => undefined);
-                void utils.message.listForChat.invalidate().catch(() => undefined);
               }
-              // 子 Agent / 普通对话：最终答案写入 DB 后，消息查询会刷新出真实 assistant 气泡。
-              // 在此之前保留最终内容作为流式气泡，避免中间时间线/内容被清空后页面出现空白闪烁。
-              setTimeout(() => {
-                ssSet(originSid, "liveTimeline", []);
-                if (data.content) {
-                  ssSet(originSid, "streamingContent", data.content);
-                }
-              }, 0);
+              const content = data.content ?? "";
+              const assistantMessageId = data.assistantMessageId ?? null;
+              // INV-1：先进入 done+pending，再幂等 upsert；MS upsert 会 tryCommit → idle → onStreamCommitted
+              streamLifecycleActions.completeStream(originSid, content, { assistantMessageId });
+              if (assistantMessageId) {
+                sessionMessagesStore.upsertAssistantFromDone(originSid, {
+                  assistantMessageId,
+                  content,
+                  toolCalls: data.toolCalls,
+                  tokenUsage: data.tokenUsage ?? null,
+                });
+                // SSE 可能已先 upsert：再试一次 content/id 匹配
+                streamLifecycleActions.tryCommitStream(originSid, {
+                  messageId: assistantMessageId,
+                  content,
+                });
+              } else {
+                // 无 id（空回复等）：立即 commit，避免队列永久卡住
+                streamLifecycleActions.commitStream(originSid);
+              }
               if (opts.optimisticUser) {
-                ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
+                sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
               }
-              ssSet(originSid, "isStreaming", false);
               void utils.session.list.invalidate();
             },
             onError: (message, sid, suggestion) => {
               if (originSid === NEW_STREAM_KEY && sid) {
-                const prev = streamStatesRef.current.get(NEW_STREAM_KEY);
-                if (prev) {
-                  streamStatesRef.current.set(sid, prev);
-                  streamStatesRef.current.delete(NEW_STREAM_KEY);
-                }
                 discardStreamFlush(originSid);
+                streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, sid);
+                sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, sid);
                 originSid = sid;
               } else {
                 discardStreamFlush(originSid);
               }
-              if (opts.optimisticUser) ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
-              // 续传时会话并无 StreamHub 运行（例如 spawn 走非流式 triggerAgentRun）——静默结束，不弹红条
+              if (opts.optimisticUser) {
+                sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
+              }
               const isNoStream =
                 typeof message === "string" && message.includes("没有运行中的 Agent 流");
               if (opts.isResume && isNoStream) {
-                ssSet(originSid, "isStreaming", false);
-                ssSet(originSid, "error", null);
-                // 流已结束：补拉消息，避免子会话页空白到手动刷新才出现
-                void utils.message.listForChat.invalidate({ sessionId: originSid });
+                streamLifecycleActions.clearError(originSid);
+                streamLifecycleActions.commitStream(originSid);
+                void hydrateSessionMessagesFallback(originSid);
                 return;
               }
-              ssSet(originSid, "error", message + (suggestion ? `\n${suggestion}` : ""));
-              // 后台续传出错时只更新状态，不抢占用户当前视图
+              streamLifecycleActions.failStream(
+                originSid,
+                message + (suggestion ? `\n${suggestion}` : ""),
+              );
+              // error 仍占用队列语义上需释放 → commit 到 idle（保留 error 字段供 UI）
+              streamLifecycleActions.commitStream(originSid);
               if (sid && !opts.isResume) {
-                flushSync(() => setSessionId(sid));
-                applyView(sid);
+                // 视图不变量：onError 不抢视图。错误存在该 session 的 lifecycle.error，
+                // 用户若仍在新对话页则 adopt 让他看到错误；已切走则不抢。
+                const current = effectiveSessionIdRef.current;
+                if (current === null || current === sid) {
+                  flushSync(() => setSessionId(sid));
+                }
               }
-              ssSet(originSid, "isStreaming", false);
-              ssSet(originSid, "liveTimeline", []);
-              ssSet(originSid, "streamingContent", "");
             },
           },
           ac.signal,
         );
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") {
-          // 页面刷新/关闭导致的 abort：保留 isStreaming，让下次 mount 能续传
           if (isPageUnloadingRef.current) {
             return;
           }
-          // 用户点击停止：先把待写 token 落地（保留中断前的部分内容），再延后清空
           flushStreamNow(originSid);
-          ssSet(originSid, "isStreaming", false);
-          // 保持当前流式 UI，等后端保存中断消息并刷新消息查询后再清空
-          setTimeout(() => {
-            // P0-1：刷新消息无限查询以显示中断后的 assistant 消息
-            void utils.message.listForChat.invalidate();
-            ssSet(originSid, "liveTimeline", []);
-            ssSet(originSid, "streamingContent", "");
-            if (opts.optimisticUser) {
-              ssSet(originSid, "optimistic", (prev) => prev.filter((m) => m.id !== opts.optimisticUser!.id));
-            }
-          }, 500);
+          const leftover = streamLifecycleStore.get(originSid).streamingContent;
+          streamLifecycleActions.completeStream(originSid, leftover);
+          // abort：立即 commit，队列可继续；hydrate 仅断线兜底
+          streamLifecycleActions.commitStream(originSid);
+          const hydrateSid = originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? "") : originSid;
+          if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
+          if (opts.optimisticUser) {
+            sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
+          }
           return;
         }
         discardStreamFlush(originSid);
-        ssSet(originSid, "error", err instanceof Error ? err.message : "对话请求失败");
-        ssSet(originSid, "liveTimeline", []);
-        ssSet(originSid, "streamingContent", "");
+        streamLifecycleActions.failStream(
+          originSid,
+          err instanceof Error ? err.message : "对话请求失败",
+        );
+        streamLifecycleActions.commitStream(originSid);
       } finally {
-        // 安全清理：onDone/onError 已处理过则此处为 no-op；streamAgentChat 抛错未触发回调时兜底
         discardStreamFlush(originSid);
-        const finSt = getStreamState(originSid);
-        finSt.connected = false;
-        // 页面卸载时保留 isStreaming，让刷新后 mount 能识别并续传
+        streamLifecycleActions.setConnected(originSid, false);
         if (!isPageUnloadingRef.current) {
-          ssSet(originSid, "isStreaming", false);
+          const phase = streamLifecycleStore.get(originSid).phase;
+          // 异常退出仍停在 streaming：强制 commit 释放占用
+          if (phase === "streaming") {
+            streamLifecycleActions.commitStream(originSid);
+          }
         }
-        ssSet(originSid, "streamTargetUserId", null);
-        const st = getStreamState(originSid);
-        st.abort = null;
-        st.queueDraining = false;
-        const finishedTaskId = st.activeQueueTaskId;
+        sessionComposeActions.setActiveAbortController(originSid, null);
+        sessionComposeActions.setQueueDraining(originSid, false);
+        const finishedTaskId = sessionComposeStore.get(originSid).activeQueueTaskId;
         if (finishedTaskId) {
-          st.activeQueueTaskId = null;
-          // 不在这里删除 overlay：consumeQueue 已将 running 转为 done/failed 并设置 removeAt，
-          // 由专门的定时器在展示 5 秒后清理，保证父会话进度条稳定可见。
+          sessionComposeActions.setActiveQueueTaskId(originSid, null);
           void finishedTaskId;
         }
-        consumeRef.current();
+        // 队列消费改由 onStreamCommitted（INV-1/2）驱动，finally 不再 hydrate+consume
       }
     },
-    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.message.listForChat, utils.agent.list, selectedAgent, getStreamState, ssSet, getAbort, scheduleStreamFlush, flushStreamNow, discardStreamFlush, applyView, pathname, router, searchParams, createSessionQueueItemMutation],
+    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback],
   );
 
   // 用 ref 保存最新的 runStream，供 mount 自动续传使用（避免把 runStream 本身放进 mount effect deps）
@@ -1594,23 +1469,65 @@ export function ChatView() {
     runStreamRef.current = runStream;
   }, [runStream]);
 
-  // mount：从 sessionStorage 恢复流式状态，并自动续传刷新前正在运行的会话
+  // mount：从 sessionStorage 恢复 compose + lifecycle，并自动续传刷新前正在运行的会话
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(STREAM_STATES_STORAGE_KEY);
-      console.log("[mount] restored raw:", raw?.slice(0, 200));
-      if (raw) {
-        const restored = deserializeStreamStates(raw);
-        for (const [sid, st] of restored) {
-          streamStatesRef.current.set(sid, st);
+      const composeRaw = sessionStorage.getItem(COMPOSE_STORAGE_KEY);
+      if (composeRaw) {
+        const parsed = JSON.parse(composeRaw) as Record<string, Parameters<typeof sessionComposeStore.hydrate>[0][string]>;
+        sessionComposeStore.hydrate(parsed);
+      }
+      // 兼容旧键：若仍有 kp:chat-stream-states，尝试抽出队列字段
+      const legacyRaw = sessionStorage.getItem("kp:chat-stream-states");
+      if (legacyRaw && !composeRaw) {
+        try {
+          const legacy = JSON.parse(legacyRaw) as Record<string, {
+            optimistic?: Parameters<typeof sessionComposeStore.hydrate>[0][string]["optimistic"];
+            userQueue?: ChatQueueItem[];
+            asyncOverlays?: ChatQueueItem[];
+            consumedDeliveries?: string[];
+          }>;
+          const mapped: Record<string, Parameters<typeof sessionComposeStore.hydrate>[0][string]> = {};
+          for (const [k, v] of Object.entries(legacy)) {
+            mapped[k] = {
+              optimistic: v.optimistic ?? [],
+              userQueue: v.userQueue ?? [],
+              asyncOverlays: v.asyncOverlays ?? [],
+              consumedDeliveries: new Set(v.consumedDeliveries ?? []),
+            };
+          }
+          sessionComposeStore.hydrate(mapped);
+        } catch {
+          /* ignore legacy */
         }
-        applyView(effectiveSessionId);
-        for (const [sid, st] of streamStatesRef.current) {
-          // 只要刷新前仍在运行（即使还没收到第一个事件 lastEventId=0）也尝试续传
-          if (sid !== NEW_STREAM_KEY && st.isStreaming) {
+      }
+      const lifeRaw = sessionStorage.getItem(LIFECYCLE_STORAGE_KEY);
+      if (lifeRaw) {
+        const parsed = JSON.parse(lifeRaw) as Record<string, StreamLifecycleState & { isStreaming?: boolean }>;
+        for (const [sid, st] of Object.entries(parsed)) {
+          if (sid === NEW_STREAM_KEY) continue;
+          const wasStreaming = st.phase === "streaming" || st.isStreaming === true;
+          if (wasStreaming) {
+            streamLifecycleActions.beginStream(sid, {
+              streamTargetUserId: st.streamTargetUserId,
+              resume: true,
+            });
+            if (st.streamingContent) {
+              streamLifecycleActions.setStreamingContent(sid, st.streamingContent);
+            }
+            if (st.liveTimeline?.length) {
+              streamLifecycleActions.replaceTimeline(sid, st.liveTimeline);
+            }
+            if (st.lastEventId) {
+              streamLifecycleActions.setLastEventId(sid, st.lastEventId);
+            }
             console.log("[mount] resuming", sid, "lastEventId", st.lastEventId);
             queueMicrotask(() => {
-              runStreamRef.current({ targetSessionId: sid, resumeAfter: st.lastEventId, isResume: true });
+              runStreamRef.current({
+                targetSessionId: sid,
+                resumeAfter: st.lastEventId ?? 0,
+                isResume: true,
+              });
             });
           }
         }
@@ -1618,35 +1535,33 @@ export function ChatView() {
     } catch (e) {
       console.error("[mount] restore error", e);
     }
-    // 只在 mount 执行一次；依赖项故意不写全
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 卸载 / 刷新前持久化流式状态，并标记正在卸载以阻止 runStream finally 清掉 isStreaming
+  // 卸载 / 刷新前持久化，并标记正在卸载以阻止 finally 清掉 streaming phase
   useEffect(() => {
-    const states = streamStatesRef.current;
     const onBeforeUnload = () => {
       isPageUnloadingRef.current = true;
-      saveStreamStatesToStorage(states);
+      saveChatStoresToStorage();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
-      saveStreamStatesToStorage(states);
+      saveChatStoresToStorage();
     };
   }, []);
 
   // 切回浏览器标签页时：若后台有流式会话连接断开，自动续传；切出时持久化状态
   useEffect(() => {
     const onVisibilityChange = () => {
-      const states = streamStatesRef.current;
       if (document.hidden) {
-        saveStreamStatesToStorage(states);
+        saveChatStoresToStorage();
         return;
       }
-      // 可见性恢复：任何 isStreaming 但没有 active abort 的会话都可能是连接丢失，尝试续传
-      for (const [sid, st] of states) {
-        if (sid !== NEW_STREAM_KEY && st.isStreaming && !st.abort) {
+      const life = streamLifecycleStore.serialize();
+      for (const [sid, st] of Object.entries(life)) {
+        if (sid === NEW_STREAM_KEY) continue;
+        if (st.phase === "streaming" && !sessionComposeActions.getActiveAbortController(sid)) {
           queueMicrotask(() => {
             runStreamRef.current({ targetSessionId: sid, resumeAfter: st.lastEventId, isResume: true });
           });
@@ -1665,101 +1580,116 @@ export function ChatView() {
     for (const item of items) {
       const sid = item.sessionId;
       if (!sid || sid === NEW_STREAM_KEY) continue;
-      const st = getStreamState(sid);
       // 已存在 active stream（abort 非空）说明已自行恢复或在运行中，无需重复 resume
-      if (st.abort) continue;
+      if (sessionComposeActions.getActiveAbortController(sid)) continue;
+      // 架构不变量：挂接进度必须与本地状态一致。
+      // - 本地无该运行任何进度（服务端启动的运行：子 Agent triggerAgentRun / report_back 后父会话 autoConsume）：
+      //   必须 resumeAfter=0 从头重放事件缓冲重建完整 liveTimeline。
+      //   若从尾巴（item.lastEventId）接，thinking/tool 事件全被跳过 → 空 Thinking 卡住、
+      //   done 后只有正式回复文本、hydrate 再闪烁重建完整时间线。
+      // - 本地已有进度（断线重连）：接在本地 lastEventId 之后，避免重放重复拼接。
+      const st = streamLifecycleStore.get(sid);
+      const hasLocalProgress =
+        st.phase === "streaming" && (st.lastEventId > 0 || st.liveTimeline.some((s) => s.type !== "thinking" || s.content));
+      const resumeAfter = hasLocalProgress ? st.lastEventId : 0;
       queueMicrotask(() => {
-        runStreamRef.current({ targetSessionId: sid, resumeAfter: item.lastEventId, isResume: true });
+        runStreamRef.current({ targetSessionId: sid, resumeAfter, isResume: true });
       });
     }
-  }, [runningSessionsQuery.data, getStreamState]);
+  }, [runningSessionsQuery.data]);
 
-  const consumeQueue = useCallback(() => {
-    const sid = effectiveSessionId ?? NEW_STREAM_KEY;
-    const st = getStreamState(sid);
-    if (isSessionStreaming(effectiveSessionId) || st.queueDraining) return;
+  const consumeQueue = useCallback((targetSessionId?: string) => {
+    const viewSid = effectiveSessionId ?? NEW_STREAM_KEY;
+    const sid = targetSessionId ?? viewSid;
+    const compose = sessionComposeStore.get(sid);
+    // INV-2：streaming|done 均占用，禁止开新流
+    if (isSessionRunOccupied(sid) || compose.queueDraining) return;
 
-    // 两阶段优先消费：asyncResultQueue（异步任务结果）优先于 userQueue（用户消息）
-    // 两个物理独立队列，不混排，保证优先级绝对正确
     const isReady = (t: ChatQueueItem) =>
       t.kind !== "async-running" &&
       (t.text.trim() || t.asyncResult || t.attachments?.length);
 
-    // 1. 先查 asyncResultQueue 中的可消费 async-result（跳过 pinned）
+    // 当前视图：可用 poll 合并后的 asyncResultQueue；后台 session：仅看本地 overlays
+    // （异步投递的后台续跑主要由服务端 autoConsumeAsyncDelivery 完成）
+    const asyncCandidates =
+      sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
+
     let asyncReady: ChatQueueItem | undefined;
-    for (const t of asyncResultQueue) {
-      if (t.kind === "async-result" && isReady(t) && !t.pinned) { asyncReady = t; break; }
+    for (const t of asyncCandidates) {
+      if (t.kind === "async-result" && isReady(t) && !t.pinned) {
+        asyncReady = t;
+        break;
+      }
     }
-    // 2. 再查 userQueue 中的可消费 user / superior 消息
     let userReady: ChatQueueItem | undefined;
     if (!asyncReady) {
-      for (const t of st.userQueue) {
-        if ((t.kind === "user" || t.kind === "superior") && isReady(t)) { userReady = t; break; }
+      for (const t of compose.userQueue) {
+        if ((t.kind === "user" || t.kind === "superior") && isReady(t)) {
+          userReady = t;
+          break;
+        }
       }
     }
     const task = asyncReady ?? userReady;
     if (!task) return;
 
-    // 上级消息：必须等消息列表就绪，否则会在 stale/空 messages 下误判「未写入」而二次 runStream
-    if (task.kind === "superior") {
-      if (!effectiveSessionId || messagesInfinite.isLoading || !messagesInfinite.isFetched) {
-        return;
-      }
+    if (task.kind === "superior" && sid === NEW_STREAM_KEY) {
+      return;
     }
 
-    st.queueDraining = true;
+    const keepCurrentView = sid !== viewSid;
+    const sessionMeta = (sessionsQuery.data?.items ?? []).find((s) => s.id === sid);
+    const streamAgentId = sessionMeta?.agentId || undefined;
+
+    sessionComposeActions.setQueueDraining(sid, true);
 
     void (async () => {
-      // 异步结果：与服务端 autoConsume 原子 CLAIM 竞态；未抢到则挂接已启动的流，不再 runStream
       if (task.kind === "async-result" && task.jobId) {
-        ssSet(sid, "consumedDeliveries", (s: Set<string>) => new Set(s).add(task.jobId!));
+        sessionComposeActions.markDeliveryConsumed(sid, task.jobId);
         try {
           const ack = await ackAsyncDeliveryMutation.mutateAsync({ jobId: task.jobId });
           if (!ack.claimed) {
-            st.queueDraining = false;
+            sessionComposeActions.setQueueDraining(sid, false);
             void utils.session.listRunning.invalidate();
-            void asyncQueueQuery.refetch();
-            queueMicrotask(() => consumeRef.current());
+            if (sid === viewSid) void asyncQueueQuery.refetch();
+            queueMicrotask(() => consumeRef.current(sid));
             return;
           }
         } catch {
-          st.queueDraining = false;
+          sessionComposeActions.setQueueDraining(sid, false);
           return;
         }
       }
 
       if (task.kind === "user" || task.kind === "superior") {
-        // 上级消息若已由 triggerAgentRun 写入 ChatMessage，只清队列、不再 runStream（避免双气泡 + 二次执行）
         if (task.kind === "superior") {
-          const already = messages.some(
+          const sessionMessages = sessionMessagesStore.getMessages(sid);
+          const already = sessionMessages.some(
             (m) => m.role === "user" && m.content.trim() === task.text.trim(),
           );
           if (already) {
-            ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
+            sessionComposeActions.removeUserQueueItem(sid, task.id);
             if (task.dbId) {
               consumeSessionQueueItemMutation.mutate({ id: task.dbId });
             }
-            st.queueDraining = false;
-            queueMicrotask(() => consumeRef.current());
+            sessionComposeActions.setQueueDraining(sid, false);
+            queueMicrotask(() => consumeRef.current(sid));
             return;
           }
         }
-        // 用户/上级消息：从 userQueue 移除，并消费 DB 队列项
-        ssSet(sid, "userQueue", (prev) => prev.filter((i) => i.id !== task.id));
+        sessionComposeActions.removeUserQueueItem(sid, task.id);
         if (task.dbId) {
           consumeSessionQueueItemMutation.mutate({ id: task.dbId });
         }
       } else {
-        // async-result：把本地 running overlay 转为 done/failed 并保留 5 秒，
-        // 让用户在父会话时间线看到「运行中 → 已完成/失败」的完整状态流转，避免一闪而过。
         if (task.jobId) {
           const finishedJobId = task.jobId;
           const finishedStatus = task.status ?? "done";
           const finishedResult = task.asyncResult ?? "";
-          ssSet(sid, "asyncOverlays", (prev) => {
+          sessionComposeActions.patchAsyncOverlays(sid, (prev) => {
             const existing = prev.find((o) => o.jobId === finishedJobId);
             if (!existing) {
-              st.activeQueueTaskId = task.id;
+              sessionComposeActions.setActiveQueueTaskId(sid, task.id);
               return prev;
             }
             const updated: ChatQueueItem = {
@@ -1770,11 +1700,11 @@ export function ChatView() {
               asyncResult: finishedResult,
               removeAt: Date.now() + 5000,
             };
-            st.activeQueueTaskId = updated.id;
+            sessionComposeActions.setActiveQueueTaskId(sid, updated.id);
             return prev.map((o) => (o.jobId === finishedJobId ? updated : o));
           });
         } else {
-          st.activeQueueTaskId = task.id;
+          sessionComposeActions.setActiveQueueTaskId(sid, task.id);
         }
       }
 
@@ -1797,11 +1727,15 @@ export function ChatView() {
       const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
       const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
       if (!isAsyncResult && (optimisticText || optimisticAttachments)) {
-        ssSet(sid, "optimistic", (o) =>
-          o.some((m) => m.id === optimisticId)
-            ? o
-            : [...o, { id: optimisticId, content: optimisticText, attachments: optimisticAttachments, createdAt: Date.now() }],
-        );
+        const existing = sessionComposeStore.get(sid).optimistic;
+        if (!existing.some((m) => m.id === optimisticId)) {
+          sessionComposeActions.addOptimisticUserBubble(sid, {
+            id: optimisticId,
+            content: optimisticText,
+            attachments: optimisticAttachments,
+            createdAt: Date.now(),
+          });
+        }
       }
       void runStream({
         message: streamMessage,
@@ -1827,42 +1761,85 @@ export function ChatView() {
             }
           : undefined,
         optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
+        targetSessionId: sid === NEW_STREAM_KEY ? undefined : sid,
+        keepCurrentView,
+        agentId: streamAgentId,
       });
     })();
-  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionStreaming, ssSet, getStreamState, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, messages, messagesInfinite.isLoading, messagesInfinite.isFetched, utils.session.listRunning, asyncQueueQuery]);
+  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils.session.listRunning, asyncQueueQuery, sessionsQuery.data?.items]);
+
+  /** 优先消费 preferredSessionId，再扫描其它有待消费项的 session（后台不抢视图） */
+  const drainAllPendingQueues = useCallback(
+    (preferredSessionId?: string) => {
+      const viewSid = effectiveSessionId ?? NEW_STREAM_KEY;
+      const ordered: string[] = [];
+      const seen = new Set<string>();
+      const push = (id: string) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        ordered.push(id);
+      };
+      if (preferredSessionId) push(preferredSessionId);
+      push(viewSid);
+      for (const id of sessionComposeStore.listSessionIds()) push(id);
+
+      for (const sid of ordered) {
+        const compose = sessionComposeStore.get(sid);
+        // INV-2：streaming|done 均占用，跳过
+        if (isSessionRunOccupied(sid) || compose.queueDraining) continue;
+        const hasUser = compose.userQueue.some(
+          (t) =>
+            (t.kind === "user" || t.kind === "superior") &&
+            (t.text.trim() || t.attachments?.length),
+        );
+        const asyncCandidates = sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
+        const hasAsync = asyncCandidates.some(
+          (t) => t.kind === "async-result" && !t.pinned && (t.text.trim() || t.asyncResult),
+        );
+        if (!hasUser && !hasAsync) continue;
+        consumeQueue(sid);
+      }
+    },
+    [consumeQueue, effectiveSessionId, isSessionRunOccupied, asyncResultQueue],
+  );
 
   useEffect(() => {
-    consumeRef.current = consumeQueue;
-  }, [consumeQueue]);
+    consumeRef.current = drainAllPendingQueues;
+  }, [drainAllPendingQueues]);
 
+  // INV-1/2：drain 唯一驱动 = Lifecycle 进入 idle（onStreamCommitted）。
+  // 不再用 !isSessionStreaming 触发——done 也会满足该条件导致过早开新流。
   useEffect(() => {
-    if (!isSessionStreaming(effectiveSessionId)) {
-      // queueMicrotask 避免在 effect 同步阶段调用 setState，防止级联渲染
+    const off = streamLifecycleActions.onStreamCommitted((sid) => {
+      queueMicrotask(() => consumeRef.current(sid));
+    });
+    return off;
+  }, []);
+
+  // 兜底：hydrate 完成 / 队列变化 / 切会话时，若当前 session 已 idle 也尝试 drain
+  // （覆盖页面首次挂载、服务端 autoConsume 已完成而前端无 commit 信号的场景）
+  useEffect(() => {
+    if (streamLifecycleStore.canBeginNewRun(effectiveSessionId)) {
       queueMicrotask(() => consumeRef.current());
     }
-  }, [isStreaming, queue.length, consumeQueue, effectiveSessionId, isSessionStreaming, messagesInfinite.isFetched, messages.length]);
+  }, [isStreaming, queue.length, drainAllPendingQueues, effectiveSessionId, isMessagesHydrated, messages.length]);
 
   // 清理已过期的已完成 async overlay，让进度条稳定展示 5 秒后自动消失
   useEffect(() => {
     if (!effectiveSessionId) return;
     const timer = setInterval(() => {
       const sid = effectiveSessionId;
-      const current = streamStatesRef.current.get(sid)?.asyncOverlays ?? [];
+      const current = sessionComposeStore.get(sid).asyncOverlays;
       const now = Date.now();
       const hasExpired = current.some((o) => o.kind === "async-result" && o.removeAt && o.removeAt <= now);
       if (hasExpired) {
-        ssSet(sid, "asyncOverlays", (prev) =>
+        sessionComposeActions.patchAsyncOverlays(sid, (prev) =>
           prev.filter((o) => !(o.kind === "async-result" && o.removeAt && o.removeAt <= now)),
         );
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [effectiveSessionId, ssSet]);
-
-  // 切换视图 session 时，从后台状态 Map 镜像该 session 的流式状态到视图
-  useEffect(() => {
-    applyView(effectiveSessionId);
-  }, [effectiveSessionId, applyView]);
+  }, [effectiveSessionId]);
 
   // 流式 rAF 卸载清理：组件卸载时取消所有待处理动画帧，避免 setState after unmount
   useEffect(() => {
@@ -1948,9 +1925,8 @@ export function ChatView() {
               console.warn("[enqueueMessage] createSessionQueueItem 未返回 id，跳过入队以防重复发送");
               return;
             }
-            ssSet(effectiveSessionId, "userQueue", (prev) => {
+            sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
               if (prev.some((i) => i.dbId === dbId || i.id === localItem.id)) return prev;
-              // 同内容且尚无 dbId 的本地项也去重（极端竞态）
               if (prev.some((i) => !i.dbId && i.text === localItem.text && i.kind === "user")) {
                 return prev.map((i) =>
                   !i.dbId && i.text === localItem.text && i.kind === "user"
@@ -1962,7 +1938,7 @@ export function ChatView() {
             });
           } catch (err) {
             console.warn("[enqueueMessage] 持久化失败，本会话仍入队（无 dbId）:", err);
-            ssSet(effectiveSessionId, "userQueue", (prev) => {
+            sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
               if (prev.some((i) => i.id === localItem.id || i.text === localItem.text)) return prev;
               return [...prev, localItem];
             });
@@ -1971,9 +1947,9 @@ export function ChatView() {
         return;
       }
 
-      ssSet(sid, "userQueue", (prev) => [...prev, localItem]);
+      sessionComposeActions.enqueueUserQueueItem(sid, localItem);
     },
-    [backendDown, ssSet, effectiveSessionId, createSessionQueueItemMutation, sessionDetail?.status],
+    [backendDown, effectiveSessionId, createSessionQueueItemMutation, sessionDetail?.status],
   );
 
   const handleStop = useCallback(async () => {
@@ -1985,33 +1961,34 @@ export function ChatView() {
         // 后端停止失败也继续 abort 本地连接
       }
     }
-    getAbort(effectiveSessionId)?.abort();
-  }, [getAbort, effectiveSessionId]);
+    sessionComposeActions.getActiveAbortController(effectiveSessionId)?.abort();
+  }, [effectiveSessionId]);
 
   // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
   const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
 
   const handleRegenerate = (userMessageId: string) => {
-    if (!effectiveSessionId || isSessionStreaming(effectiveSessionId)) return;
+    if (!effectiveSessionId || isSessionRunOccupied(effectiveSessionId)) return;
     void runStream({ regenerate: true, regenerateUserMessageId: userMessageId });
   };
 
   const handleRetry = (messageId: string) => {
-    if (!effectiveSessionId || isSessionStreaming(effectiveSessionId)) return;
+    if (!effectiveSessionId || isSessionRunOccupied(effectiveSessionId)) return;
     void runStream({ retryFromMessageId: messageId });
   };
 
   const handleEditConfirm = (userMessageId: string) => {
     const content = editDraft.trim();
-    if (!content || isSessionStreaming(effectiveSessionId)) return;
+    if (!content || isSessionRunOccupied(effectiveSessionId)) return;
     void runStream({ editMessageId: userMessageId, editContent: content });
   };
 
   const handleSwitchVersion = async (assistantMessageId: string, versionIndex: number) => {
+    // 切版本只读 MS，不开新流；但仍需避免与 streaming 冲突
     if (isSessionStreaming(effectiveSessionId)) return;
     await switchVersion.mutateAsync({ messageId: assistantMessageId, versionIndex });
-    // P0-1：版本切换改变 assistant 消息内容，刷新消息无限查询
-    void utils.message.listForChat.invalidate();
+    // 服务端 afterUpdate 会推 message_upserted；hydrate 作兜底
+    void hydrateFromServer();
   };
 
   const handleCopy = async (id: string, content: string) => {
@@ -2049,10 +2026,8 @@ export function ChatView() {
     setSelectedSkill(null);
     setEditingSessionId(null);
     setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
-    // 清空新会话临时状态，避免上一次新建会话的残留 optimistic/queue 污染下一次
-    streamStatesRef.current.delete(NEW_STREAM_KEY);
-    // 视图切到空会话（applyView(null) 会读取已清空的 NEW_STREAM_KEY）
-    applyView(null);
+    streamLifecycleActions.resetSession(NEW_STREAM_KEY);
+    sessionComposeActions.resetComposeSession(NEW_STREAM_KEY);
     // 清除 URL 中的 sessionId/agentId/view，确保新建对话不受旧参数束缚
     const params = new URLSearchParams(searchParams.toString());
     let changed = false;
@@ -2072,7 +2047,7 @@ export function ChatView() {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
     setHistorySubTab("main");
-  }, [selectedAgent, effectiveAgentId, searchParams, pathname, router, applyView]);
+  }, [selectedAgent, effectiveAgentId, searchParams, pathname, router]);
 
   const handleRenameSession = useCallback(async (id: string, title: string) => {
     const trimmed = title.trim();
@@ -2113,20 +2088,19 @@ export function ChatView() {
 
   const selectSession = useCallback((id: string) => {
     if (effectiveSessionId === id) return;
-    // 多 session 隔离：切换会话只切视图，不中止任何 session 的流式。
-    // 流式状态 + 队列按 sessionId 存在 streamStatesRef，applyView 镜像目标 session 的状态到视图。
-    // 切回仍在流式的 session 时能看到流式继续；已完成的能看到从 DB 加载的完整回复。
+    // 多 session 隔离：切换会话只改 sessionId，三层 hook 自动订阅新切片。
     setSessionId(id);
     setAgentId("");
     setUserSelectedWorkspaceId(null);
     setEditingSessionId(null);
     setSelectedSkill(null);
-    applyView(id);
-    // 目标 session 可能是服务端已启动的子 Agent 流：本地未必有 isStreaming。
-    // 刷新 listRunning，由下方 effect 自动 resume；同时对本地断线流立即续传。
     void utils.session.listRunning.invalidate();
-    const targetSt = streamStatesRef.current.get(id);
-    if (targetSt?.isStreaming && !targetSt.connected && !targetSt.abort) {
+    const targetSt = streamLifecycleStore.get(id);
+    if (
+      targetSt.phase === "streaming" &&
+      !targetSt.connected &&
+      !sessionComposeActions.getActiveAbortController(id)
+    ) {
       queueMicrotask(() => {
         runStreamRef.current({ targetSessionId: id, resumeAfter: targetSt.lastEventId, isResume: true });
       });
@@ -2148,7 +2122,7 @@ export function ChatView() {
       setHistorySubTab("main");
     }
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [effectiveSessionId, applyView, searchParams, pathname, router, sessionsQuery.data?.items, utils.session.listRunning]);
+  }, [effectiveSessionId, searchParams, pathname, router, sessionsQuery.data?.items, utils.session.listRunning]);
 
   const selectWorkspace = useCallback((workspaceId: string) => {
     setUserSelectedWorkspaceId(workspaceId);
@@ -2168,13 +2142,14 @@ export function ChatView() {
     if (!currentAgentInWorkspace) {
       setAgentId(mainAgent?.id ?? "");
       setSessionId(null);
-      applyView(null);
+      streamLifecycleActions.resetSession(NEW_STREAM_KEY);
+      sessionComposeActions.resetComposeSession(NEW_STREAM_KEY);
       const params = new URLSearchParams(searchParams.toString());
       params.delete("sessionId");
       params.delete("agentId");
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [agentsQuery.data?.items, effectiveAgentId, applyView, searchParams, pathname, router]);
+  }, [agentsQuery.data?.items, effectiveAgentId, searchParams, pathname, router]);
 
   // 会话列表项交互回调：保持引用稳定，避免每次输入都触发所有 SessionListItem 重渲染
   const handleSessionSelect = useCallback((id: string) => {
@@ -2376,7 +2351,9 @@ export function ChatView() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             data-testid="user-message-bubble"
             className={cn(
-              "group/msg relative mb-3 flex max-w-[70%] flex-col gap-1",
+              "group/msg relative mb-3 flex flex-col gap-1",
+              // 异步投递 / 父 Agent 任务含 markdown 表格，需更宽
+              isAsyncResultDelivery || isParentAgentTask ? "max-w-[92%]" : "max-w-[70%]",
               isAgentMessage ? "items-start self-start" : "items-end self-end",
             )}
           >
@@ -2409,7 +2386,8 @@ export function ChatView() {
               isAgentMessage
                 ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
                 : isAsyncResultDelivery
-                  ? "border border-teal-200/80 bg-teal-50 text-[var(--kp-text-1)]"
+                  // 子 Agent 返回结果：比正常用户气泡（--kp-brand）略微深一点点（--kp-brand-dark）
+                  ? "bg-[var(--kp-brand-dark)] text-white"
                   : "bg-[var(--kp-brand)] text-white",
             )}>
               <MessageSourceLabel
@@ -2441,6 +2419,13 @@ export function ChatView() {
                     if (e.key === "Escape") setEditingUserId(null);
                   }}
                 />
+              ) : isAsyncResultDelivery || isParentAgentTask ? (
+                // 子 Agent 异步投递 / 父 Agent 下发任务：内容是 markdown（报告、表格、列表），用 PostContent 渲染
+                // 气泡底色与正常用户气泡一致（bg-brand + text-white），prose-invert 让 markdown 文字/边框在深色背景上可读
+                <PostContent
+                  content={group.userMessage.content}
+                  className="prose-sm prose-invert max-w-none [&_table]:text-xs [&_th]:px-2 [&_td]:px-2 [&_a]:text-white [&_strong]:text-white [&_code]:bg-white/15 [&_pre]:bg-white/10 [&_blockquote]:border-white/40 [&_blockquote]:text-white/80"
+                />
               ) : (
                 <p className="whitespace-pre-wrap leading-relaxed">{group.userMessage.content}</p>
               )}
@@ -2464,8 +2449,11 @@ export function ChatView() {
             />
           </motion.div>
         </div>
-        {isStreaming && streamTargetUserId === group.userMessage.id
-          ? renderLiveStreamBlock()
+        {(isStreaming && streamTargetUserId === group.userMessage.id) ||
+        (!!group.assistantMessage && group.assistantMessage.id === inFlightAssistantId)
+          ? // INV-4：本轮流式的组（重试原位 / assistant 提前 upsert）由 live 块独占渲染，
+            // stored timeline+气泡在 commit 前不渲染 → live→stored 在同一列表项内原子切换，无双渲染闪烁
+            renderLiveStreamBlock()
           : (
               <>
                 {renderIntermediateSteps(group)}
@@ -2537,11 +2525,15 @@ export function ChatView() {
       if (materializedClientIds.has(msg.id)) continue;
       items.push({ kind: "optimistic", key: msg.id, msg });
     }
-    if (showLiveStream && !streamTargetUserId) {
+    // INV-4：in-flight assistant 已物化进组（live 块在组内原位渲染）时，不再渲染尾部 live 项
+    const inFlightMaterialized =
+      !!inFlightAssistantId &&
+      messageGroups.some((g) => g.assistantMessage?.id === inFlightAssistantId);
+    if (showLiveStream && !streamTargetUserId && !inFlightMaterialized) {
       items.push({ kind: "live", key: "live-trailing" });
     }
     return items;
-  }, [messageGroups, optimistic, showLiveStream, streamTargetUserId, materializedClientIds]);
+  }, [messageGroups, optimistic, showLiveStream, streamTargetUserId, materializedClientIds, inFlightAssistantId]);
 
   const handleNavScrollToIndex = useCallback((index: number) => {
     virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: "smooth" });
@@ -2568,7 +2560,7 @@ export function ChatView() {
             parentSessionId={mainSessionId ?? undefined}
             onCancelJob={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
             onRetryJob={(jobId) => {
-              ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "consumedDeliveries", (prev: Set<string>) => new Set([...prev, jobId]));
+              sessionComposeActions.markDeliveryConsumed(effectiveSessionId ?? NEW_STREAM_KEY, jobId);
               retryAsyncJobMutation.mutate({ jobId });
             }}
           />
@@ -2832,8 +2824,7 @@ export function ChatView() {
     asyncProgressSteps,
     cancelAsyncJobMutation,
     retryAsyncJobMutation,
-    ssSet,
-    syncChatUiToUrl,
+    effectiveSessionId,
   ]);
 
   return (
@@ -2914,7 +2905,7 @@ export function ChatView() {
               <h1 className="truncate text-sm font-semibold">
                 {sessionDetail?.title ?? "Agent 对话"}
               </h1>
-              {messagesInfinite.isFetching && !isStreaming && (
+              {isLoadingOlderMessages && !isStreaming && (
                 <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-text-3)]" />
               )}
             </div>
@@ -3040,7 +3031,7 @@ export function ChatView() {
         )}
 
         <div className="relative flex min-h-0 flex-1">
-          {messagesInfinite.isLoading && !hasMessages ? (
+          {!isMessagesHydrated && !!effectiveSessionId && !hasMessages ? (
             <div className="flex flex-1 items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-[var(--kp-text-3)]" />
             </div>
@@ -3085,7 +3076,7 @@ export function ChatView() {
               components={{
                 // 顶部加载更早时显示细条 spinner（无按钮，滚到顶部自动触发，见 startReached）
                 Header: () =>
-                  messagesInfinite.isFetchingNextPage ? (
+                  isLoadingOlderMessages ? (
                     <div className="flex justify-center py-2">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-text-3)]" />
                     </div>
@@ -3099,8 +3090,8 @@ export function ChatView() {
               // P0-1：滚到顶部自动 fetchNextPage 加载更早消息（业界标准 infinite-up-scroll，无按钮）；
               // Virtuoso 按 computeItemKey 稳定 id 在 prepend 时自动保持滚动位置。
               startReached={() => {
-                if (messagesInfinite.hasNextPage && !messagesInfinite.isFetchingNextPage) {
-                  void messagesInfinite.fetchNextPage();
+                if (hasOlderMessages && !isLoadingOlderMessages) {
+                  void loadOlderMessages();
                 }
               }}
             />
@@ -3136,11 +3127,12 @@ export function ChatView() {
                       const lastGroup = messageGroups[messageGroups.length - 1];
                       const lastText = lastGroup?.userMessage.content;
                       if (lastText) {
-                        ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (prev) => [
+                        sessionComposeActions.patchUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, (prev) => [
                           ...prev,
                           createUserQueueItem(`请用 async_task_run 在后台执行这个任务（避免前台超时）：\n${lastText}`),
                         ]);
-                        ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "error", null);
+                        streamLifecycleActions.clearError(effectiveSessionId ?? NEW_STREAM_KEY);
+                        setViewError(null);
                       }
                     }}
                     className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
@@ -3167,14 +3159,16 @@ export function ChatView() {
             items={sortQueueItems(userQueue)}
             onChange={(items) => {
               const { userQueue: uq, asyncOverlays: ao } = splitQueueByKind(items, asyncQueueQuery.data);
-              ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", uq);
-              ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", ao);
+              sessionComposeActions.setUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, uq);
+              sessionComposeActions.setAsyncOverlays(effectiveSessionId ?? NEW_STREAM_KEY, ao);
               persistQueueOrder(uq);
             }}
             onRemove={(id) => {
               const target = userQueue.find((t) => t.id === id);
-              ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "userQueue", (q) => q.filter((t) => t.id !== id));
-              ssSet(effectiveSessionId ?? NEW_STREAM_KEY, "asyncOverlays", (q) => q.filter((t) => t.id !== id));
+              sessionComposeActions.removeUserQueueItem(effectiveSessionId ?? NEW_STREAM_KEY, id);
+              sessionComposeActions.patchAsyncOverlays(effectiveSessionId ?? NEW_STREAM_KEY, (q) =>
+                q.filter((t) => t.id !== id),
+              );
               if (target?.dbId) {
                 deleteSessionQueueItemMutation.mutate({ id: target.dbId });
               }

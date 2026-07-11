@@ -190,13 +190,20 @@ export class LocalSwarmBus implements SwarmBus {
 }
 
 let _bus: SwarmBus | null = null;
+let _busPrisma: PrismaClient | null = null;
 
 /** 仅用于测试：重置 SwarmBus 单例，避免跨测试复用旧的 PrismaClient */
 export function resetSwarmBus(): void {
   _bus = null;
+  _busPrisma = null;
 }
 
 export function getSwarmBus(prisma: PrismaClient, services: ServiceContainer, config?: any): SwarmBus {
+  // prasma 不匹配时重建（测试场景：每个 test 传入不同 mock prisma，单例不能复用旧实例）
+  if (_bus && _busPrisma !== prisma) {
+    _bus = null;
+    _busPrisma = null;
+  }
   if (!_bus) {
     const mode = process.env.SWARM_MODE || "local";
     if (mode === "redis") {
@@ -205,17 +212,21 @@ export function getSwarmBus(prisma: PrismaClient, services: ServiceContainer, co
         .then(({ RedisSwarmBus }) => {
           if (!_bus) {
             _bus = new RedisSwarmBus(prisma, services, config);
+            _busPrisma = prisma;
             console.log("  🔗 [SwarmBus] 已切换到 Redis 模式（BullMQ）");
           }
         })
         .catch((err) => {
           console.warn("  ⚠️ [SwarmBus] Redis 模式加载失败，回退到 Local:", err);
           _bus = new LocalSwarmBus(prisma, services);
+          _busPrisma = prisma;
         });
       // 异步初始化期间临时用 Local 兜底
       _bus = new LocalSwarmBus(prisma, services);
+      _busPrisma = prisma;
     } else {
       _bus = new LocalSwarmBus(prisma, services);
+      _busPrisma = prisma;
     }
   }
   return _bus;

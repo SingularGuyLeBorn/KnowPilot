@@ -118,6 +118,8 @@ export type TimelineStep =
       hint?: string | null;
       round: number;
       status: "running" | "done";
+      /** 工具开始执行的本地时间戳，用于 sleep 等长等待的倒计时 */
+      startedAt?: number;
     }
   | {
       type: "progress";

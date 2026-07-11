@@ -91,7 +91,7 @@ export const SessionListItem = memo(function SessionListItem({
         )}
       >
         <div className="truncate font-medium">
-          {session.title}
+          {session.autoName || session.title}
           {session.status === "archived" && (
             <span className="ml-1.5 rounded bg-[var(--kp-bg-mute)] px-1 py-0.5 text-[10px] font-normal text-[var(--kp-text-3)]">
               已归档

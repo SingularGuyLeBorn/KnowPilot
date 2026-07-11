@@ -558,6 +558,14 @@ function statusKindLabel(item: ChatQueueItem): string {
   return "async task";
 }
 
+function formatElapsed(createdAt: number): string {
+  const sec = Math.max(0, Math.round((Date.now() - createdAt) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
 function StatusRow({
   item,
   tone,
@@ -575,8 +583,11 @@ function StatusRow({
   const title = item.taskLabel || previewText(item);
   const preview =
     tone === "consumed" || tone === "held"
-      ? (item.asyncResult ?? item.text).slice(0, 80)
+      ? (item.asyncResult ?? item.text).slice(0, 220)
       : item.text || (item.logs?.length ? item.logs[item.logs.length - 1]?.message : "");
+  const latestLog = item.logs?.length ? item.logs[item.logs.length - 1]?.message : undefined;
+  const toneLabel =
+    tone === "queued" ? "待开始" : tone === "running" ? "运行中" : tone === "held" ? "钉住" : "已消费";
 
   return (
     <motion.div
@@ -587,7 +598,7 @@ function StatusRow({
       exit={{ opacity: 0, x: 16, scale: 0.98, transition: { duration: 0.18 } }}
       transition={STATUS_SPRING}
       className={cn(
-        "group relative overflow-hidden rounded-lg border px-2.5 py-2 transition-colors",
+        "group relative overflow-hidden rounded-xl border px-3 py-2.5 transition-colors",
         tone === "running" && "border-[var(--kp-brand)]/25 bg-[var(--kp-brand-soft)]/40",
         tone === "queued" && "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]",
         tone === "consumed" && "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]",
@@ -599,10 +610,10 @@ function StatusRow({
       {tone === "running" && (
         <span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-[var(--kp-brand)]" />
       )}
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2.5">
         <span
           className={cn(
-            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md",
+            "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
             tone === "running" && "text-[var(--kp-brand)]",
             tone === "queued" && "text-[var(--kp-text-3)]",
             tone === "consumed" && "text-emerald-600",
@@ -610,33 +621,42 @@ function StatusRow({
           )}
         >
           {tone === "running" ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" />
           ) : tone === "queued" ? (
-            <Clock className="h-3.5 w-3.5" />
+            <Clock className="h-4 w-4" />
           ) : (
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-4 w-4" />
           )}
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+            <span className="rounded-md bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-[var(--kp-text-2)]">
               {label}
             </span>
+            <span className="text-[11px] font-medium text-[var(--kp-text-3)]">{toneLabel}</span>
             {tone === "held" && (
-              <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-medium text-amber-700">
-                钉住·未喂入
+              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+                未喂入
               </span>
             )}
             {item.status === "failed" && (
-              <span className="rounded bg-red-500/10 px-1 py-0.5 text-[9px] font-medium text-red-600">失败</span>
+              <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[11px] font-medium text-red-600">失败</span>
             )}
           </div>
-          <p className="mt-0.5 truncate text-[11px] font-medium text-[var(--kp-text-1)]" title={title}>
+          <p className="truncate text-[13px] font-semibold text-[var(--kp-text-1)]" title={title}>
             {title}
           </p>
           {preview ? (
-            <p className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">{preview}</p>
+            <p className="line-clamp-4 text-xs leading-relaxed text-[var(--kp-text-2)]">{preview}</p>
           ) : null}
+          {latestLog && tone === "running" && latestLog !== preview ? (
+            <p className="line-clamp-2 text-[11px] text-[var(--kp-text-3)]">日志 · {latestLog}</p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--kp-text-3)]">
+            {item.createdAt ? <span>已过 {formatElapsed(item.createdAt)}</span> : null}
+            {item.jobId ? <span className="font-mono">#{item.jobId.slice(0, 8)}</span> : null}
+            {item.subagentName ? <span>{item.subagentName}</span> : null}
+          </div>
         </div>
         <div className="flex shrink-0 flex-col gap-0.5 opacity-70 transition group-hover:opacity-100">
           {item.subagentSessionId && (
@@ -647,7 +667,7 @@ function StatusRow({
               className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
               title="与之对话"
             >
-              <ExternalLink className="h-3 w-3" />
+              <ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}
           {onTogglePin && (
@@ -657,7 +677,7 @@ function StatusRow({
               className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
               title={item.pinned ? "取消置顶" : "置顶"}
             >
-              {item.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+              {item.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
             </button>
           )}
           {onCancel && (
@@ -667,7 +687,7 @@ function StatusRow({
               className="rounded p-1 text-amber-600 hover:bg-amber-50"
               title="取消"
             >
-              <Square className="h-3 w-3" />
+              <Square className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -688,15 +708,15 @@ function StatusSection({
   emptyHint?: string;
 }) {
   return (
-    <section className="space-y-1.5">
+    <section className="space-y-2">
       <div className="sticky top-0 z-[1] flex items-center gap-1.5 bg-[var(--kp-bg)]/90 px-0.5 py-1 backdrop-blur-sm">
-        <h4 className="text-[10px] font-semibold tracking-wide text-[var(--kp-text-3)]">{title}</h4>
-        <span className="tabular-nums text-[10px] text-[var(--kp-text-3)]">{count}</span>
+        <h4 className="text-xs font-semibold tracking-wide text-[var(--kp-text-2)]">{title}</h4>
+        <span className="tabular-nums text-xs text-[var(--kp-text-3)]">{count}</span>
       </div>
       {count === 0 ? (
-        emptyHint ? <p className="px-0.5 pb-1 text-[10px] text-[var(--kp-text-3)]/70">{emptyHint}</p> : null
+        emptyHint ? <p className="px-0.5 pb-1 text-xs text-[var(--kp-text-3)]/70">{emptyHint}</p> : null
       ) : (
-        <div className="space-y-1.5">{children}</div>
+        <div className="space-y-2">{children}</div>
       )}
     </section>
   );
@@ -775,13 +795,13 @@ export function RuntimeStatusPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-runtime-queue">
-      <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2 py-1.5">
+      <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2.5 py-2">
         <button
           type="button"
           data-testid="runtime-tab-pending"
           onClick={() => onTabChange("pending")}
           className={cn(
-            "rounded-md px-2 py-1 text-[10px] font-medium transition",
+            "rounded-md px-2.5 py-1 text-xs font-medium transition",
             tab === "pending"
               ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
               : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
@@ -789,7 +809,7 @@ export function RuntimeStatusPanel({
         >
           未消费
           {pendingCount > 0 && (
-            <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
+            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-dark)]">
               {pendingCount}
             </span>
           )}
@@ -799,7 +819,7 @@ export function RuntimeStatusPanel({
           data-testid="runtime-tab-consumed"
           onClick={() => onTabChange("consumed")}
           className={cn(
-            "relative rounded-md px-2 py-1 text-[10px] font-medium transition",
+            "relative rounded-md px-2.5 py-1 text-xs font-medium transition",
             tab === "consumed"
               ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
               : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
@@ -808,7 +828,7 @@ export function RuntimeStatusPanel({
         >
           已消费
           {consumedCount > 0 && (
-            <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-bg-mute)] px-1 text-[9px] font-semibold text-[var(--kp-text-3)]">
+            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-bg-mute)] px-1.5 text-[10px] font-semibold text-[var(--kp-text-3)]">
               {consumedCount}
             </span>
           )}

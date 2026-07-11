@@ -6,11 +6,78 @@
  * 纯展示型，无外部状态依赖，可独立 memo / chunk。
  */
 
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Check, ChevronRight, Clock, Loader2, Sparkles, Wrench, X } from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
 import { cn } from "@/lib/utils";
 import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils";
+
+/** 从 sleep / wait 工具参数推断目标时长（ms） */
+function sleepTargetMs(name: string, args: unknown): number | null {
+  const base = name.replace(/^skill__/, "").replace(/^mcp__/, "");
+  if (base === "sleep" || base === "wait") {
+    return sleepDurationFromArgs(args);
+  }
+  // async_task_run(mode=tool, toolCall={tool:sleep,args:{seconds}})
+  if (base === "async_task_run" && args && typeof args === "object") {
+    const a = args as Record<string, unknown>;
+    const toolCall = a.toolCall && typeof a.toolCall === "object"
+      ? (a.toolCall as Record<string, unknown>)
+      : null;
+    const toolName = String(toolCall?.tool ?? a.tool ?? "");
+    if (toolName !== "sleep" && toolName !== "wait") return null;
+    const nested = (toolCall?.args ?? a.args ?? a.toolArgs) as unknown;
+    return sleepDurationFromArgs(nested ?? a);
+  }
+  return null;
+}
+
+function sleepDurationFromArgs(args: unknown): number | null {
+  if (!args || typeof args !== "object") return null;
+  const a = args as Record<string, unknown>;
+  if (typeof a.ms === "number" && Number.isFinite(a.ms)) return Math.max(0, a.ms);
+  if (typeof a.seconds === "number" && Number.isFinite(a.seconds)) {
+    return Math.max(0, Math.round(a.seconds * 1000));
+  }
+  return null;
+}
+
+function formatSleepCountdown(elapsedMs: number, targetMs: number | null): string {
+  if (targetMs != null && targetMs > 0) {
+    const remain = Math.max(0, targetMs - elapsedMs);
+    const remainSec = Math.ceil(remain / 1000);
+    const totalSec = Math.round(targetMs / 1000);
+    if (remain <= 0) return `完成 · ${totalSec}s`;
+    return `剩余 ${remainSec}s / ${totalSec}s`;
+  }
+  const sec = Math.floor(elapsedMs / 1000);
+  return `已等待 ${sec}s`;
+}
+
+/**
+ * 从工具名 + 参数推断执行模式（同步 / 异步）。
+ * - sleep / wait：args.async === true → 异步；否则同步（默认阻塞）
+ * - spawn_subagent / async_task_run：args.waitForResult === true → 同步；否则异步（默认投递）
+ * 其余工具返回 null（不展示徽标）。
+ */
+function inferToolExecutionMode(
+  name: string,
+  args: unknown,
+): { mode: "sync" | "async"; label: string } | null {
+  const base = name.replace(/^skill__/, "").replace(/^mcp__/, "");
+  if (!args || typeof args !== "object") return null;
+  const a = args as Record<string, unknown>;
+
+  if (base === "sleep" || base === "wait") {
+    const isAsync = a.async === true || a.async === "true";
+    return { mode: isAsync ? "async" : "sync", label: isAsync ? "异步" : "同步" };
+  }
+  if (base === "spawn_subagent" || base === "async_task_run") {
+    const waitForResult = a.waitForResult === true || a.waitForResult === "true";
+    return { mode: waitForResult ? "sync" : "async", label: waitForResult ? "同步" : "异步" };
+  }
+  return null;
+}
 
 const ThinkingStep = memo(function ThinkingStep({
   step,
@@ -53,9 +120,10 @@ const ThinkingStep = memo(function ThinkingStep({
               <p className="text-xs text-[var(--kp-text-3)]">等待模型输出…</p>
             ) : null
           ) : (
-            <pre className="whitespace-pre-wrap text-xs leading-relaxed text-[var(--kp-text-2)]">
-              {content}
-            </pre>
+            <PostContent
+              content={content}
+              className="prose-sm max-w-none text-xs text-[var(--kp-text-2)] [&_p]:text-xs [&_li]:text-xs"
+            />
           )}
         </div>
       )}
@@ -94,6 +162,28 @@ const ToolStep = memo(function ToolStep({
     step.result !== null &&
     "error" in (step.result as Record<string, unknown>);
 
+  const targetMs = useMemo(() => sleepTargetMs(step.name, step.args), [step.name, step.args]);
+  const showSleepTimer =
+    step.status === "running" &&
+    (targetMs != null || /(?:^|__)(?:sleep|wait)$/.test(step.name.replace(/^skill__|^mcp__/, "")));
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!showSleepTimer || !step.startedAt) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [showSleepTimer, step.startedAt, step.toolCallId]);
+
+  const sleepHint =
+    showSleepTimer && step.startedAt
+      ? formatSleepCountdown(Math.max(0, now - step.startedAt), targetMs)
+      : null;
+
+  const execMode = useMemo(
+    () => inferToolExecutionMode(step.name, step.args),
+    [step.name, step.args],
+  );
+
   // R18：JSON.stringify 仅在展开时计算（折叠时不浪费 CPU），且 memo 化避免重复 stringify
   const argsJson = useMemo(() => (open ? JSON.stringify(step.args, null, 2) : ""), [open, step.args]);
   const resultJson = useMemo(
@@ -121,7 +211,29 @@ const ToolStep = memo(function ToolStep({
           />
           <Wrench className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
           <span className="min-w-0 truncate">{displayName}</span>
+          {execMode && (
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-none",
+                execMode.mode === "async"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-sky-100 text-sky-700",
+              )}
+              data-testid="tool-exec-mode"
+            >
+              {execMode.label}
+            </span>
+          )}
           {step.status === "running" && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[var(--kp-brand)]" />}
+          {sleepHint && (
+            <span
+              className="ml-auto inline-flex items-center gap-1 text-[10px] tabular-nums text-[var(--kp-brand)]"
+              data-testid="tool-sleep-countdown"
+            >
+              <Clock className="h-3 w-3" />
+              {sleepHint}
+            </span>
+          )}
           {step.status === "done" && !isLive && (
             <span
               className={cn(
@@ -208,12 +320,15 @@ export function ThinkingTimeline({
 }) {
   if (!steps.length) return null;
 
+  // 宽度与左对齐与 assistant 气泡一致：ml-6 + max-w-[88%]
+  // 竖线导轨改 absolute，不再占用布局宽度，确保 thinking / content / tool / 正式回复共享同一内容宽度
   return (
-    <div className="mb-2 flex w-full max-w-[88%] gap-0" data-testid="thinking-timeline">
-      <div className="relative flex w-6 shrink-0 justify-center pt-2">
-        <div className="absolute top-2 bottom-2 w-0.5 bg-[var(--kp-brand-light)]/40" />
-      </div>
-      <div className="min-w-0 w-full flex-1 space-y-3">
+    <div
+      className="relative mb-2 ml-6 w-full max-w-[88%] pl-6"
+      data-testid="thinking-timeline"
+    >
+      <div className="absolute bottom-2 left-2 top-2 w-0.5 bg-[var(--kp-brand-light)]/40" />
+      <div className="min-w-0 space-y-3">
         {steps.map((step, i) => {
           const key =
             step.type === "tool"

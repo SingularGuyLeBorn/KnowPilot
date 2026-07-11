@@ -829,7 +829,7 @@ export interface AgentEntity {
   systemPrompt: string;
   tools: string[];
   // Swarm 层级
-  tier: string;
+  tier: "super" | "manager" | "sub";
   workspaceId: string | null;
   parentId: string | null;
   apiKey: string | null;
@@ -865,7 +865,7 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
   // sourceSlug/sourceMtime（同步用，列表不需要）。详情走 getById 取全量。
   protected override getListSelect(): any {
     return {
-      id: true, name: true, description: true, model: true, tools: true,
+      id: true, name: true, autoName: true, description: true, model: true, tools: true,
       tier: true, workspaceId: true, parentId: true, heartbeatModel: true,
       heartbeat: true, status: true, source: true, deletedAt: true, deletedBy: true,
       createdAt: true, updatedAt: true,
@@ -1426,6 +1426,8 @@ export interface MessageEntity {
   toolCalls: any;
   toolResults: any;
   tokenUsage: any;
+  finishReason?: string | null;
+  source?: string;
   createdAt: Date;
 }
 
@@ -1453,6 +1455,73 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
       // 会话可能已被删除，忽略
     }
     await super.afterCreate(entity, input);
+    // 广播 message_upserted：前端 reducer 直接 patch messages[]，不再靠 invalidate→refetch 闪烁刷新。
+    // 动态 import 避免与 sessionStreamHub 循环依赖。
+    try {
+      const { getStreamHub } = await import("./infra/sessionStreamHub.js");
+      const hub = getStreamHub();
+      hub?.pushExternalEvent(entity.sessionId, {
+        type: "message_upserted",
+        sessionId: entity.sessionId,
+        message: {
+          id: entity.id,
+          role: entity.role,
+          content: entity.content,
+          toolCalls: entity.toolCalls ?? undefined,
+          toolResults: entity.toolResults ?? undefined,
+          tokenUsage: entity.tokenUsage ?? undefined,
+          attachments: entity.attachments ?? undefined,
+          source: entity.source ?? null,
+          createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
+        },
+      });
+    } catch {
+      /* StreamHub 未初始化或会话已清理，忽略 */
+    }
+  }
+
+  protected override async afterUpdate(entity: MessageEntity, _existing: any, _input: UpdateMessageInput): Promise<void> {
+    await super.afterUpdate(entity, _existing, _input);
+    // update（如 switchVersion）也推 message_upserted，前端 MessageStore 直接 patch
+    try {
+      const { getStreamHub } = await import("./infra/sessionStreamHub.js");
+      const hub = getStreamHub();
+      hub?.pushExternalEvent(entity.sessionId, {
+        type: "message_upserted",
+        sessionId: entity.sessionId,
+        message: {
+          id: entity.id,
+          role: entity.role,
+          content: entity.content,
+          toolCalls: entity.toolCalls ?? undefined,
+          toolResults: entity.toolResults ?? undefined,
+          tokenUsage: entity.tokenUsage ?? undefined,
+          attachments: entity.attachments ?? undefined,
+          source: entity.source ?? null,
+          createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
+        },
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    const sessionId: string | undefined = existing?.sessionId;
+    const messageId: string | undefined = existing?.id;
+    if (!sessionId || !messageId) return;
+    try {
+      const { getStreamHub } = await import("./infra/sessionStreamHub.js");
+      const hub = getStreamHub();
+      hub?.pushExternalEvent(sessionId, {
+        type: "message_deleted",
+        sessionId,
+        messageId,
+      });
+    } catch {
+      /* ignore */
+    }
   }
 
   // P0-1 彻底解耦：Chat 专用 cursor 无限查询。
