@@ -38,7 +38,7 @@ export function FinalCta() {
               </Link>
               <Link
                 href="/posts"
-                className="inline-flex h-12 items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/60 px-8 text-sm font-semibold text-[var(--kp-text-1)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
+                className="inline-flex h-12 items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-8 text-sm font-semibold text-[var(--kp-text-1)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-brand-soft)]"
               >
                 浏览示例
               </Link>
