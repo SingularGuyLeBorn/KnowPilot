@@ -863,6 +863,32 @@ export async function chatAgentStream(
       return assistantMessageId;
     });
 
+    // 契约对齐：assistant 消息走裸 tx.chatMessage.create 绕过了 MessageService.afterCreate，
+    // 必须补发 message_upserted，否则 async-stream EventSource 收不到 →
+    // 服务端自启动的运行（autoConsume / 心跳 / 触发器）在前端没消费 agent 流时，
+    // assistant 消息只能靠刷新重 hydrate 才出现（DB 有、store 没有）。
+    // done 事件只投递给「正在消费 agent 流」的订阅者；message_upserted 才是 MessageStore 的统一入口。
+    try {
+      const { getStreamHub } = await import("./sessionStreamHub.js");
+      getStreamHub()?.pushExternalEvent(sessionId!, {
+        type: "message_upserted",
+        sessionId: sessionId!,
+        message: {
+          id: assistantMessageId,
+          role: "assistant",
+          content: result.content,
+          toolCalls: result.toolCalls ?? undefined,
+          toolResults: undefined,
+          tokenUsage: result.tokenUsage ?? undefined,
+          attachments: undefined,
+          source: null,
+          createdAt: new Date().toISOString(),
+        },
+      });
+    } catch {
+      /* StreamHub 未初始化，忽略 */
+    }
+
     // Agent 进化：经验自动积累（每次 Run 完成后写入 Memory）
     import("./agentEvolution.js")
       .then(({ accumulateExperience }) =>

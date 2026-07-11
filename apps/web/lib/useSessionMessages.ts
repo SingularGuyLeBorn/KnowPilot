@@ -319,6 +319,21 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
     const already = hydratedSessionsRef.current.has(sessionId);
     if (already) {
       setIsMessagesHydrated(true);
+      // 对账不变量：切回已 hydrate 的会话时静默重拉一页与 store 合并。
+      // 幂等（hydrate reducer 按 id 合并、无变化返回同 state）、不阻塞、不闪烁。
+      // 兜底所有「SSE message_upserted 漏推」场景（async-stream externalSubs 不缓冲、
+      // EventSource 重连瞬间错过、服务端自启动运行前端没消费 agent 流）——
+      // 任何漏推都能在切回会话时自愈，不再依赖手动刷新。
+      void (async () => {
+        try {
+          const res = await utils.message.listForChat.fetch({ sessionId, limit: 50 });
+          store.hydrateSessionMessages(sessionId, res.items as ChatMessage[]);
+          cursorRef.current = res.nextCursor;
+          setHasOlderMessages(!!res.nextCursor);
+        } catch {
+          /* 对账失败不阻塞，SSE 仍会继续推 */
+        }
+      })();
       return;
     }
     setIsMessagesHydrated(false);

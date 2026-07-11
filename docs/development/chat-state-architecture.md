@@ -9,7 +9,7 @@
 > - `apps/web/components/chat.tsx`（编排层）
 > - `apps/server/src/services.ts` MessageService.afterCreate/Update/Delete → SSE
 >
-> 最后更新：2026-07-12（新增 §13：INV-4 渲染单一所有权 / INV-5 挂接进度一致性）
+> 最后更新：2026-07-12（新增 §13 INV-4/5；§14 INV-6 消息持久化广播一致性 / INV-7 切会话即对账）
 
 ---
 
@@ -552,3 +552,41 @@ messageGroups（MessageStore）  ← 渲染源 ②（assistant 提前进组）
 | 又出现双气泡 / 闪烁 | 找时序、加 setTimeout / flushSync | 查「谁违反了 INV-4：是不是有第二个渲染源在 occupied 期渲染了 in-flight 消息」 |
 | 又出现空 Thinking / 需刷新 | 加轮询、加 invalidate | 查「谁违反了 INV-5：挂接时 resumeAfter 是不是和本地进度脱节」 |
 | 新增消息来源（新 SSE 事件 / 新运行类型） | 每处单独处理渲染与挂接 | 数据进 MessageStore、渲染权走 INV-4、挂接走 INV-5，零新增渲染逻辑 |
+
+## 14. 架构复盘（2026-07-12）：父会话 autoConsume 后「消息在 DB、前端没有、需刷新」的根因与两条不变量
+
+> 现象：父 Agent 异步派生子 Agent → 用户切到子 Agent 等其回复结束 → 切回父会话 → 看到子 Agent 的投递气泡，但父 Agent 对投递的响应（autoConsume 跑出的 assistant 消息）不显示，刷新才出现。
+> 复盘结论：**消息持久化有两条路径，只有一条广播 SSE**；**MessageStore 信任 SSE 后不再对账**。两条加起来 = 「DB 有、store 没有」的整类 bug。
+
+### 14.1 根因 C：assistant 消息持久化绕过 MessageService（→ INV-6）
+
+**机制**：`chatAgentStream` 正常成功路径用裸 `tx.chatMessage.create`（agentStream.ts ~L830）写 assistant 消息，**绕过 `MessageService.afterCreate`**，所以不广播 `message_upserted`。
+
+- abort 路径走 `services.message.create`（~L908）→ 有广播。
+- 正常成功路径走裸 `tx.chatMessage.create` → **无广播**。
+
+前端拿 assistant 消息只有两条路：
+1. 正在消费 agent 流 → `done` 事件带 `assistantMessageId` → `upsertAssistantFromDone`。
+2. `async-stream` EventSource 收到 `message_upserted` → store upsert。
+
+服务端自启动的运行（autoConsume / 心跳 / 触发器）前端**没消费 agent 流**，路 1 走不到；路 2 又因为根因 C 没广播 → 消息只在 DB，store 拿不到 → 切回会话不显示 → 刷新重 hydrate 才出现。
+
+**修复（INV-6：消息持久化广播一致性）**：`chatAgentStream` 事务提交后补发 `message_upserted` 到 StreamHub，与 `MessageService.afterCreate` 对齐。`done` 事件只投递给「正在消费 agent 流」的订阅者；`message_upserted` 才是 MessageStore 的统一入口。两条路并存时 store upsert 按 id 幂等合并，INV-4 处理竞态。
+
+**好处**：以后任何「服务端自启动运行产出的消息」都自动进 MessageStore，不需要每种运行类型在前端单独处理。新增运行类型（新触发器、新心跳任务）零前端改动。
+
+### 14.2 根因 D：MessageStore 信任 SSE 后不再对账（→ INV-7）
+
+**机制**：`useSessionMessages` 的 `hydratedSessionsRef` 命中后直接 `return`，不再拉服务端。完全信任 SSE 增量。但 `async-stream` 的 `subscribeExternal` **只推实时事件、不缓冲**（不同于 agent 流的 ring buffer）——EventSource 重连瞬间错过的 `message_upserted` 永久丢失，store 永久缺这条，直到手动刷新。
+
+**修复（INV-7：切会话即对账）**：切回已 hydrate 的会话时，后台静默重拉一页 `listForChat` 与 store 合并。`hydrate` reducer 按 id 幂等合并、无变化返回同 state → 不闪烁、不阻塞。SSE 漏推任何一条，切回会话即自愈。
+
+**好处**：把「SSE 是否可靠送达」从「用户是否需要手动刷新」解耦。SSE 仍是一切日常增量的低延迟通道，但对账兜底保证了「最坏情况切一下会话就好」，不再出现「必须 F5」。
+
+### 14.3 这两条不变量如何减少未来打补丁
+
+| 未来症状 | 旧做法（补丁） | 新做法（查不变量） |
+|---|---|---|
+| 服务端自启动运行的响应前端看不到 | 每种运行类型单独加前端监听 / 加轮询 | 查「谁违反了 INV-6：是不是又有一条消息持久化路径没广播 message_upserted」 |
+| 切会话后某条消息偶发缺失、刷新才有 | 加 refetchInterval / 加 invalidate 赌时序 | 查「谁违反了 INV-7：切会话对账是不是被某处短路了」 |
+
