@@ -119,7 +119,7 @@ function AsyncTaskCard({
             className={cn(
               "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium",
               sourceType === "subagent"
-                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                 : sourceType === "async_task_tool"
                   ? "bg-blue-500/10 text-blue-600"
                   : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",

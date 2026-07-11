@@ -108,7 +108,7 @@ export function QueueCard({
               className={cn(
                 "rounded-full px-2 py-0.5 text-[10px] font-semibold",
                 isRunning
-                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                   : isAsyncResult
                     ? "bg-amber-500/10 text-amber-700"
                     : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
@@ -117,13 +117,13 @@ export function QueueCard({
               {kindLabel(item)}
             </span>
             {isRunning && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
-            {item.pinned && <span className="text-[10px] text-[var(--kp-brand-dark)]">已置顶</span>}
+            {item.pinned && <span className="text-[10px] text-[var(--kp-brand-deep)]">已置顶</span>}
             {(isRunning || isAsyncResult) && item.subagentSessionId && (
               <a
                 href={`/chat?sessionId=${item.subagentSessionId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+                className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
                 title="在新标签页中与子 Agent 对话"
               >
                 <MessageSquare className="h-3 w-3" />
@@ -255,7 +255,7 @@ export function QueueCard({
             <button
               type="button"
               onClick={onRetry}
-              className="rounded p-1 text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+              className="rounded p-1 text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
               title="重试"
             >
               <RotateCcw className="h-3.5 w-3.5" />
@@ -664,7 +664,7 @@ function StatusRow({
               href={`/chat?sessionId=${item.subagentSessionId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
+              className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
               title="与之对话"
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -809,7 +809,7 @@ export function RuntimeStatusPanel({
         >
           未消费
           {pendingCount > 0 && (
-            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-dark)]">
+            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
               {pendingCount}
             </span>
           )}
@@ -823,7 +823,7 @@ export function RuntimeStatusPanel({
             tab === "consumed"
               ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
               : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-            freshIds.size > 0 && tab !== "consumed" && "text-[var(--kp-brand-dark)]",
+            freshIds.size > 0 && tab !== "consumed" && "text-[var(--kp-brand-deep)]",
           )}
         >
           已消费

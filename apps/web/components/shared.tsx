@@ -346,7 +346,7 @@ export function ConfirmDialog({
                 className={`rounded-xl text-white transition-all ${
                   isDestructive
                     ? "bg-red-500 hover:bg-red-600 focus:ring-red-500"
-                    : "bg-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-dark)] focus:ring-[var(--kp-brand)]"
+                    : "bg-[var(--kp-brand-deep)] hover:opacity-90 focus:ring-[var(--kp-brand)]"
                 }`}
               >
                 {confirmLabel}

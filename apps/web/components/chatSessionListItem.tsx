@@ -53,7 +53,7 @@ export const SessionListItem = memo(function SessionListItem({
         <button
           type="button"
           onClick={() => onConfirmRename(session.id)}
-          className="rounded-md p-1 text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+          className="rounded-md p-1 text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
           aria-label="确认重命名"
         >
           <Check className="h-3.5 w-3.5" />
@@ -87,7 +87,7 @@ export const SessionListItem = memo(function SessionListItem({
         onMouseLeave={() => onHoverEnd?.(session.id)}
         className={cn(
           "min-w-0 flex-1 px-3 py-2 text-left text-sm transition",
-          active ? "text-[var(--kp-brand-dark)]" : "text-[var(--kp-text-2)]",
+          active ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-2)]",
         )}
       >
         <div className="truncate font-medium">

@@ -2659,7 +2659,7 @@ export function ChatView() {
                   className={cn(
                     buttonVariants({ variant: "ghost", size: "icon" }),
                     "h-8 w-8",
-                    bulkMode && "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]",
+                    bulkMode && "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
                   )}
                   aria-label="批量管理"
                   title="批量管理会话"
@@ -2850,7 +2850,7 @@ export function ChatView() {
       <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
         <div className="w-64 shrink-0 border-b border-[var(--kp-divider)] px-3 py-2.5" data-testid="chat-left-panel-header">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
               <Bot className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0 flex-1">
@@ -2894,7 +2894,7 @@ export function ChatView() {
             >
               异步任务
               {asyncTaskActiveCount > 0 && (
-                <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1 py-0 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1 py-0 text-[9px] font-semibold text-[var(--kp-brand-deep)]">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
                   {asyncTaskActiveCount}
                 </span>
@@ -2953,8 +2953,8 @@ export function ChatView() {
             data-testid="subagent-context-bar"
             className="flex items-center gap-2 border-b border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-4 py-1.5 text-xs"
           >
-            <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />
-            <span className="font-medium text-[var(--kp-brand-dark)]">子 Agent 任务</span>
+            <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
+            <span className="font-medium text-[var(--kp-brand-deep)]">子 Agent 任务</span>
             {sessionDetail?.status && (
               <span
                 className={cn(
@@ -2985,7 +2985,7 @@ export function ChatView() {
             {parentSessionId && (
               <Link
                 href={`/chat?sessionId=${parentSessionId}`}
-                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand-soft)]"
+                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
                 title="返回父会话"
               >
                 <ArrowLeft className="h-3 w-3" />
@@ -3017,7 +3017,7 @@ export function ChatView() {
         {(rotateBanner || (sessionDetail?.status === "archived" && sessionDetail.rotatedToSessionId)) && (
           <div
             data-testid="session-rotate-banner"
-            className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-2 text-xs text-[var(--kp-brand-dark)]"
+            className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-2 text-xs text-[var(--kp-brand-deep)]"
           >
             <span className="min-w-0 flex-1 truncate">
               新 session 已创建：
@@ -3072,7 +3072,7 @@ export function ChatView() {
                   <ul className="space-y-1 text-[11px] leading-relaxed text-[var(--kp-text-2)]">
                     <li>· 右上角选择「KnowPilot 超级 Agent」，让它替你管理其他 Agent</li>
                     <li>· 对它说「创建一个 XX 工作区」，它会自动生成管理 Agent</li>
-                    <li>· 也可以在 <Link href="/workspaces" className="text-[var(--kp-brand-dark)] underline">工作区管理页</Link> 手动创建</li>
+                    <li>· 也可以在 <Link href="/workspaces" className="text-[var(--kp-brand-deep)] underline">工作区管理页</Link> 手动创建</li>
                     <li>· 长任务会派生子 Agent 后台执行，完成后结果自动回到对话</li>
                   </ul>
                 </div>
@@ -3268,7 +3268,7 @@ export function ChatView() {
                   >
                     状态
                     {runtimePendingItems.length > 0 && (
-                      <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-dark)]">
+                      <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-deep)]">
                         {runtimePendingItems.length}
                       </span>
                     )}

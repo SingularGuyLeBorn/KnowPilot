@@ -217,7 +217,7 @@ const ContextUsagePopover = forwardRef<
           {/* 压缩状态 */}
           {usage.compression.hasAutoCompacted ? (
             <div className="rounded-xl border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30 px-3 py-2.5">
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-[var(--kp-brand-dark)]">
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-[var(--kp-brand-deep)]">
                 <Gauge className="h-3 w-3" />
                 已保存上下文摘要
               </div>
@@ -267,14 +267,14 @@ const ContextUsagePopover = forwardRef<
                           className={cn(
                             "shrink-0 rounded px-1 py-0.5 text-[9px] font-medium",
                             msg.role === "user"
-                              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                               : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
                           )}
                         >
                           {msg.role === "user" ? "用户" : msg.role === "assistant" ? "AI" : msg.role}
                         </span>
                         {msg.isSummarized && (
-                          <span className="shrink-0 rounded bg-[var(--kp-brand-light)]/30 px-1 py-0.5 text-[9px] text-[var(--kp-brand-dark)]">
+                          <span className="shrink-0 rounded bg-[var(--kp-brand-light)]/30 px-1 py-0.5 text-[9px] text-[var(--kp-brand-deep)]">
                             已压缩
                           </span>
                         )}

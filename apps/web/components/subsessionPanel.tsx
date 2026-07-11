@@ -66,7 +66,7 @@ export function SubsessionPanel({
             className={cn(
               "flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition",
               active
-                ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand)]/10 text-[var(--kp-brand-dark)]"
+                ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand)]/10 text-[var(--kp-brand-deep)]"
                 : "border-transparent hover:border-[var(--kp-divider)] hover:bg-[var(--kp-bg-mute)]/50 text-[var(--kp-text-2)]",
             )}
           >

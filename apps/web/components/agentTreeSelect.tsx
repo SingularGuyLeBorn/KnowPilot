@@ -196,7 +196,7 @@ export function AgentTreeSelect({
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-left text-xs transition-colors",
                   active
-                    ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-dark)]"
+                    ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
                     : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
                 )}
               >
@@ -208,7 +208,7 @@ export function AgentTreeSelect({
                     {item.status === "dormant" && " · 休眠"}
                   </span>
                 </span>
-                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-dark)]" />}
+                {active && <Check className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />}
               </button>
             );
           })}

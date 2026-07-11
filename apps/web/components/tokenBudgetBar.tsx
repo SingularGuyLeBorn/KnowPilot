@@ -49,7 +49,7 @@ export function TokenBudgetBar({
           <div className="font-semibold tabular-nums text-[var(--kp-text-1)]">
             {formatTokenCount(snapshot.sessionTokens)}
             {snapshot.lastRoundTokens > 0 && (
-              <span className="ml-1 font-normal text-[var(--kp-brand-dark)]">
+              <span className="ml-1 font-normal text-[var(--kp-brand-deep)]">
                 +{formatTokenCount(snapshot.lastRoundTokens)}
               </span>
             )}

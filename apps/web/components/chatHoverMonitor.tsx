@@ -202,7 +202,7 @@ function StatusBadge({ status }: { status: string }) {
         ? "bg-amber-500/10 text-amber-600"
         : status === "failed" || status === "paused"
           ? "bg-red-500/10 text-red-600"
-          : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]";
+          : "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]";
   const label: Record<string, string> = {
     running: "运行中",
     queued: "排队中",

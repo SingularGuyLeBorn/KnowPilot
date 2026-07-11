@@ -219,7 +219,7 @@ export function SubagentCreateDialog({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                 <Bot className="h-4 w-4" />
               </span>
               <h2 className="text-sm font-bold text-[var(--kp-text-1)]">新建子 Agent 任务 [debug]</h2>
@@ -233,7 +233,7 @@ export function SubagentCreateDialog({
                 className={cn(
                   "flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition",
                   mode === "existing"
-                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                     : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
                 )}
               >
@@ -245,7 +245,7 @@ export function SubagentCreateDialog({
                 className={cn(
                   "flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition",
                   mode === "new"
-                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                     : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
                 )}
               >

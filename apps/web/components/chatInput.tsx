@@ -265,7 +265,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       {sessionHint && (
         <div
           data-testid="session-hint"
-          className="mb-2 flex items-center gap-1.5 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-1.5 text-[11px] text-[var(--kp-brand-dark)]"
+          className="mb-2 flex items-center gap-1.5 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-1.5 text-[11px] text-[var(--kp-brand-deep)]"
         >
           <Bot className="h-3 w-3 shrink-0" />
           <span>{sessionHint}</span>
@@ -273,7 +273,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       )}
       {selectedSkill && (
         <div className="mb-2 flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-1 text-xs font-medium text-[var(--kp-brand-dark)]">
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-1 text-xs font-medium text-[var(--kp-brand-deep)]">
             <LucideIconByName name={selectedSkill.icon} className="h-3 w-3" />
             {selectedSkill.name}
           </span>
@@ -468,7 +468,7 @@ export const ChatInputArea = memo(function ChatInputArea({
               disabled={disabled || ocrLoading}
               onClick={() => fileRef.current?.click()}
               data-testid="chat-attach-image"
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)] disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)] disabled:opacity-50"
               title="添加图片"
             >
               {ocrLoading ? (
@@ -487,7 +487,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                 setSkillOpen(true);
                 setHighlightIdx(0);
               }}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
               title="选择 Skill"
             >
               <Wand2 className="h-4 w-4" />
@@ -498,7 +498,7 @@ export const ChatInputArea = memo(function ChatInputArea({
               <button
                 type="button"
                 onClick={onOpenConfig}
-                className="inline-flex max-w-[160px] items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-dark)]"
+                className="inline-flex max-w-[160px] items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
                 title="模型与配置"
               >
                 <Settings className="h-4 w-4" />

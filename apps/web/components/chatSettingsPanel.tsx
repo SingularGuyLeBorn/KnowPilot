@@ -62,7 +62,7 @@ function MorandiSlider({
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs">
         <span className="font-medium text-[var(--kp-text-2)]">{label}</span>
-        <span className="tabular-nums font-semibold text-[var(--kp-brand-dark)]">{display}</span>
+        <span className="tabular-nums font-semibold text-[var(--kp-brand-deep)]">{display}</span>
       </div>
       <div className="relative h-2 rounded-full bg-[var(--kp-bg-mute)]">
         <motion.div
@@ -156,7 +156,7 @@ function PanelTabBar({
             className={cn(
               "relative flex flex-1 items-center justify-center gap-1.5 rounded-t-xl px-2 py-2.5 text-[11px] font-medium transition-colors",
               isActive
-                ? "text-[var(--kp-brand-dark)]"
+                ? "text-[var(--kp-brand-deep)]"
                 : "text-[var(--kp-text-3)] hover:bg-[var(--kp-brand-soft)]/30 hover:text-[var(--kp-text-2)]",
             )}
           >
@@ -295,7 +295,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                         <span
                           className={cn(
                             "text-[11px] font-semibold leading-tight",
-                            active ? "text-[var(--kp-brand-dark)]" : "text-[var(--kp-text-1)]",
+                            active ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-1)]",
                           )}
                         >
                           {modelCardTitle(m.label)}
@@ -304,7 +304,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                           {MODEL_HINTS[m.id] ?? m.provider}
                         </span>
                         {active && (
-                          <span className="mt-auto pt-1 text-[9px] font-medium text-[var(--kp-brand-dark)]">
+                          <span className="mt-auto pt-1 text-[9px] font-medium text-[var(--kp-brand-deep)]">
                             当前
                           </span>
                         )}
@@ -321,7 +321,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
 
               <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
                 <div className="mb-2 flex items-center gap-1.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                     <Brain className="h-3 w-3" />
                   </span>
                   <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">思考模式</span>
@@ -366,7 +366,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
             >
               <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
                 <div className="mb-2 flex items-center gap-1.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                     <Gauge className="h-3 w-3" />
                   </span>
                   <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">Token 预算</span>
@@ -400,7 +400,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
 
               <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
                 <div className="mb-2 flex items-center gap-1.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                     <Wrench className="h-3 w-3" />
                   </span>
                   <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">工具调用</span>
@@ -460,7 +460,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                   className={cn(
                     "rounded-full px-2.5 py-0.5 text-[10px] font-medium",
                     chatConfig.customSystemPrompt
-                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]"
+                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                       : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
                   )}
                 >
@@ -533,7 +533,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                           : "border-[var(--kp-divider)] bg-[var(--kp-bg)]/50 hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]",
                       )}
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)]">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                         <LucideIconByName name={s.icon} className="h-4 w-4" />
                       </span>
                       <span className="min-w-0 flex-1">

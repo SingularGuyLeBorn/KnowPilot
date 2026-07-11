@@ -108,7 +108,7 @@ function SubagentAgentCard({
               )}
               <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--kp-text-3)]">
                 <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5">{STATUS_LABEL[agent.status] ?? agent.status}</span>
-                <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[var(--kp-brand-dark)]">{formatSource(agent.source)}</span>
+                <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[var(--kp-brand-deep)]">{formatSource(agent.source)}</span>
                 <span className="truncate">{agent.model}</span>
               </div>
               <div className="flex flex-wrap gap-1">
@@ -239,7 +239,7 @@ export function SubagentPanel({
             type="button"
             data-testid="subagent-create-button"
             onClick={onCreate}
-            className="inline-flex items-center gap-1 rounded-md bg-[var(--kp-brand-soft)] px-2 py-1 text-[10px] font-medium text-[var(--kp-brand-dark)] transition hover:bg-[var(--kp-brand-light)]/30"
+            className="inline-flex items-center gap-1 rounded-md bg-[var(--kp-brand-soft)] px-2 py-1 text-[10px] font-medium text-[var(--kp-brand-deep)] transition hover:bg-[var(--kp-brand-light)]/30"
           >
             <Plus className="h-3 w-3" />
             新建
