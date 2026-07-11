@@ -141,6 +141,15 @@ html.dark,
 
   --kp-glass-bg: rgba(28, 26, 24, 0.80);
   --kp-glass-border: rgba(255, 255, 255, 0.10);
+
+  /* 暗色模式：primary 提亮为浅 brand，保证 text-primary 链接在深底上达 WCAG AA
+     （brand-deep #7e6a55 在暗底仅 ~3.4:1 不达标；brand-light #e0d2cd 达 ~11:1）。
+     primary-foreground 同步改深色，使 bg-primary 按钮=浅底深字亦达 AA。 */
+  --primary: var(--kp-brand-light);
+  --primary-foreground: var(--kp-bg);
+  --sidebar-primary: var(--kp-brand-light);
+  --sidebar-primary-foreground: var(--kp-bg);
+  --sidebar-accent-foreground: var(--kp-brand-light);
 }
 
 @theme inline {
