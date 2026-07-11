@@ -190,20 +190,20 @@ export function EmptyState({
   onAction,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center p-8 text-center border border-dashed border-[var(--vp-c-divider)] rounded-2xl bg-[var(--vp-c-bg-alt)]/50 backdrop-blur-sm min-h-[300px]">
-      <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--vp-c-bg-soft)] text-[var(--vp-c-text-3)] mb-4">
+    <div className="flex flex-col items-center justify-center p-8 text-center border border-dashed border-[var(--kp-divider)] rounded-2xl bg-[var(--kp-bg-alt)] min-h-[300px]">
+      <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--kp-bg-soft)] text-[var(--kp-text-3)] mb-4">
         {icon || <Inbox className="w-6 h-6" />}
       </div>
-      <h3 className="text-base font-semibold text-[var(--vp-c-text-1)] mb-1">
+      <h3 className="text-base font-semibold text-[var(--kp-text-1)] mb-1">
         {title}
       </h3>
-      <p className="text-sm text-[var(--vp-c-text-3)] max-w-sm mb-6">
+      <p className="text-sm text-[var(--kp-text-3)] max-w-sm mb-6">
         {description}
       </p>
       {onAction && actionLabel && (
         <Button
           onClick={onAction}
-          className="flex items-center gap-2 border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-dark)] hover:bg-[var(--kp-brand)]/20 transition-all rounded-xl"
+          className="flex items-center gap-2 border border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand)]/15 transition-all rounded-xl"
         >
           <Plus className="w-4 h-4" />
           {actionLabel}
@@ -346,7 +346,7 @@ export function ConfirmDialog({
                 className={`rounded-xl text-white transition-all ${
                   isDestructive
                     ? "bg-red-500 hover:bg-red-600 focus:ring-red-500"
-                    : "bg-[var(--kp-brand)] hover:bg-[var(--kp-brand-dark)]"
+                    : "bg-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-dark)] focus:ring-[var(--kp-brand)]"
                 }`}
               >
                 {confirmLabel}
@@ -849,7 +849,7 @@ export function PageHeader({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
         {Icon && (
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand)]">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
             <Icon className="h-5 w-5" />
           </span>
         )}
