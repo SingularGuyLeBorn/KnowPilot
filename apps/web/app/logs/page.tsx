@@ -90,7 +90,7 @@ export default function LogsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-[var(--vp-c-divider)] text-[10px] uppercase font-bold tracking-wider text-[var(--vp-c-text-3)] bg-[var(--vp-c-bg-alt)]/60">
+                <tr className="border-b border-[var(--vp-c-divider)] text-[10px] uppercase font-bold tracking-wider text-[var(--vp-c-text-3)] bg-[var(--kp-bg-alt)]">
                   <th className="p-4 w-28">级别</th>
                   <th className="p-4 w-32">组件</th>
                   <th className="p-4 w-36">事件</th>

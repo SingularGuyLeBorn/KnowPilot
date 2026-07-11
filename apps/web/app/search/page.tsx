@@ -71,7 +71,7 @@ export default function SearchPage() {
             <li key={`${hit.entity}-${hit.id}`}>
               <Link
                 href={hit.href}
-                className="block rounded-xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 px-4 py-3 hover:border-[var(--vp-c-brand)]/30 hover:shadow-sm transition"
+                className="block rounded-xl border border-[var(--vp-c-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-3 hover:border-[var(--vp-c-brand)]/30 hover:shadow-sm transition"
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-medium rounded-full bg-[var(--vp-c-brand-soft)] text-[var(--vp-c-brand)] px-2 py-0.5">

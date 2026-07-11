@@ -526,7 +526,7 @@ export default function SourcesPage() {
                   y: 0,
                   transition: { delay: idx * 0.04, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className="group flex flex-col rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]/60 p-5 transition-all hover:border-[var(--kp-divider)] hover:shadow-lg"
+                className="group flex flex-col rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-5 transition-all hover:border-[var(--kp-divider)] hover:shadow-lg"
               >
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">

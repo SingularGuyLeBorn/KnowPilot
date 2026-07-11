@@ -52,7 +52,7 @@ export default function TasksPage() {
         showDensityToggle
       />
 
-      <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 px-3 py-2 text-xs text-[var(--kp-text-2)]">
+      <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3 py-2 text-xs text-[var(--kp-text-2)]">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
         <div>
           <span className="font-medium text-[var(--kp-text-1)]">查看指南：</span>

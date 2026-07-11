@@ -426,7 +426,7 @@ export default function ToolsPage() {
                   key={tool.id}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0, transition: { delay: idx * 0.04 } }}
-                  className="group relative rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/60 p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-lg"
+                  className="group relative rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5 transition hover:border-[var(--kp-brand)]/30 hover:shadow-lg"
                 >
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">

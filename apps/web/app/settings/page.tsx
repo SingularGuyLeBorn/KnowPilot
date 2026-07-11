@@ -35,7 +35,7 @@ export default function SettingsPage() {
         <LoadingState count={2} />
       ) : (
         <div className="grid gap-6 md:grid-cols-2">
-          <section className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 p-6 space-y-4">
+          <section className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--kp-bg-alt)] p-6 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--vp-c-text-1)]">
               <Lock className="h-4 w-4 text-[var(--vp-c-brand)]" />
               应用鉴权
@@ -62,7 +62,7 @@ export default function SettingsPage() {
             )}
           </section>
 
-          <section className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 p-6 space-y-4">
+          <section className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--kp-bg-alt)] p-6 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--vp-c-text-1)]">
               <Cloud className="h-4 w-4 text-[var(--vp-c-brand)]" />
               Cloudflare Tunnel
@@ -91,7 +91,7 @@ export default function SettingsPage() {
             </Link>
           </section>
 
-          <section className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 p-6 space-y-4">
+          <section className="rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--kp-bg-alt)] p-6 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--vp-c-text-1)]">
               <Palette className="h-4 w-4 text-[var(--vp-c-brand)]" />
               外观主题
@@ -102,7 +102,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="md:col-span-2 rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--vp-c-bg-alt)]/50 p-6">
+          <section className="md:col-span-2 rounded-2xl border border-[var(--vp-c-divider-light)] bg-[var(--kp-bg-alt)] p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--vp-c-text-1)] mb-3">
               <Shield className="h-4 w-4 text-[var(--vp-c-brand)]" />
               Cloudflare Access 建议步骤
