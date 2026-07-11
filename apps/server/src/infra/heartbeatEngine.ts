@@ -161,13 +161,13 @@ export class HeartbeatEngine {
       }
 
       // 注入心跳消息（source="system"）
-      await this.prisma.chatMessage.create({
-        data: {
-          sessionId: session.id,
-          role: "user",
-          content: `[心跳触发] ${hb.goal}`,
-          source: "system",
-        },
+      // 走 MessageService.create 以广播 message_upserted（INV-6：消息持久化广播一致性），
+      // 否则心跳消息只在 DB、前端 MessageStore 收不到 → 心跳触发的会话前端看不到触发消息直到刷新。
+      await this.services.message.create({
+        sessionId: session.id,
+        role: "user",
+        content: `[心跳触发] ${hb.goal}`,
+        source: "system",
       });
 
       // 通过 asyncJobOrchestrator 启动 Agent 执行（并发控制 #13）

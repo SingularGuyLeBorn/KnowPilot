@@ -164,8 +164,14 @@ export class SessionStreamHub {
     runner: (emit: (event: AgentStreamEvent) => void, signal: AbortSignal) => Promise<void>,
   ): Promise<boolean> {
     if (this.isRunning(sessionId)) return false;
-    await this.start(sessionId, input, runner);
-    return true;
+    try {
+      await this.start(sessionId, input, runner);
+      return true;
+    } catch (err) {
+      // 并发竞态：start 内同步占位后，第二个调用方的 isRunning 检查会抛「已运行」→ 视作未启动
+      if (err instanceof Error && /已有运行中的 Agent 流/.test(err.message)) return false;
+      throw err;
+    }
   }
 
   /**
@@ -180,7 +186,11 @@ export class SessionStreamHub {
       throw new Error(`会话 ${sessionId} 已有运行中的 Agent 流`);
     }
 
-    const maxId = await this.maxEventIdFor(sessionId);
+    // TOCTOU 修复：先同步占位 runs.set，再 await maxEventIdFor。
+    // 原实现 isRunning 检查 → await maxEventId（DB 异步）→ runs.set 之间有窗口，
+    // 两个并发调用方（autoConsume + 用户发消息 / 多个异步投递）都能过 isRunning 检查，
+    // 第二个 start 覆盖第一个 runs.set，第一个 run 被孤立泄漏、信号/队列状态错乱。
+    // nextId 占位 0，await 后再赋值；runner 在 nextId 赋值后才启动，期间不会发事件，安全。
     const abortController = new AbortController();
     const state: RunState = {
       sessionId,
@@ -190,10 +200,13 @@ export class SessionStreamHub {
       subscribers: new Set(),
       promise: Promise.resolve(),
       completed: false,
-      nextId: maxId + 1,
+      nextId: 0,
       runningSince: Date.now(),
     };
     this.runs.set(sessionId, state);
+
+    const maxId = await this.maxEventIdFor(sessionId);
+    state.nextId = maxId + 1;
 
     const emit = (event: AgentStreamEvent) => {
       if (state.completed) return;
@@ -328,6 +341,15 @@ export class SessionStreamHub {
     if (!state || state.completed) return false;
     state.abortController.abort();
     return true;
+  }
+
+  /** 进程退出时清理：停 cleanup interval，避免句柄泄漏阻止退出 */
+  destroy(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    void this.flushPersistQueue().catch(() => undefined);
   }
 
   /**

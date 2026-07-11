@@ -243,7 +243,10 @@ const server = app.listen(PORT, () => {
   import("./infra/swarmInitializer.js")
     .then(({ initSwarm }) => initSwarm(prisma, services, config))
     .then(() => import("./infra/heartbeatEngine.js"))
-    .then(({ getHeartbeatEngine }) => getHeartbeatEngine(prisma, services, config).start())
+    .then(({ getHeartbeatEngine }) => {
+      heartbeatEngineRef = getHeartbeatEngine(prisma, services, config);
+      return heartbeatEngineRef.start();
+    })
     .catch((err) => console.error("❌ [Swarm] 初始化/心跳启动失败:", err));
   recoverStaleAsyncJobs()
     .then((n) => {
@@ -268,9 +271,13 @@ const server = app.listen(PORT, () => {
 });
 
 // 优雅退出处理
+let heartbeatEngineRef: { start: () => void; stop: () => void } | null = null;
 const handleShutdown = () => {
   console.log("\n  💾 [Shutdown] 正在关闭服务，清理资源...");
   triggerEngine.stop();
+  taskScheduler.stop();
+  heartbeatEngineRef?.stop();
+  streamHub.destroy();
   void closeBrowser().catch(() => undefined);
   server.close(() => {
     prisma.$disconnect().then(() => {

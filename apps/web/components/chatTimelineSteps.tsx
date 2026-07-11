@@ -131,7 +131,9 @@ const ThinkingStep = memo(function ThinkingStep({
   );
 });
 
-/** 中间正式回复（工具轮次中 probe 返回的 content，后续仍有工具调用）。进导轨，无圆点，无气泡包裹。 */
+/** 中间正式回复（工具轮次中 probe 返回的 content，后续仍有工具调用）。进导轨，无圆点。
+ *  样式与流式气泡 / 最终 assistant 气泡一致（rounded-2xl border px-4 py-3 prose-sm），
+ *  避免「流式时大气泡 → 进时间线变平铺塌缩」的字体/块跳变。 */
 const ContentStep = memo(function ContentStep({
   step,
 }: {
@@ -140,7 +142,10 @@ const ContentStep = memo(function ContentStep({
   const content = step.content.trim();
   if (!content) return null;
   return (
-    <div data-testid="intermediate-content-step" className="w-full px-1 py-1 text-sm text-[var(--kp-text-1)]">
+    <div
+      data-testid="intermediate-content-step"
+      className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm"
+    >
       <PostContent content={content} className="prose-sm max-w-none" />
     </div>
   );
