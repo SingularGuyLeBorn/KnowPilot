@@ -374,6 +374,8 @@ export class SessionStreamHub {
       if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
       this.runs.delete(sessionId);
     }
+    // 清理外部订阅者，避免已删除 session 的 EventSource listener 残留
+    this.externalSubs.delete(sessionId);
     if (this.config.persist) {
       try {
         await prisma.sessionStreamEvent.deleteMany({ where: { sessionId } });
