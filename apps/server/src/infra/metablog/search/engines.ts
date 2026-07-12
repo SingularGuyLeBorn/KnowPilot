@@ -571,6 +571,7 @@ export async function searchSearXNG(query: string, limit: number): Promise<Searc
   const shuffled = [...SEARXNG_INSTANCES].sort(() => Math.random() - 0.5);
 
   for (const instance of shuffled) {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const url = new URL(`${instance}/search`);
       url.searchParams.set("q", query);
@@ -579,7 +580,7 @@ export async function searchSearXNG(query: string, limit: number): Promise<Searc
       url.searchParams.set("categories", "general");
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const res = await fetch(url.toString(), {
         signal: controller.signal,
@@ -615,6 +616,7 @@ export async function searchSearXNG(query: string, limit: number): Promise<Searc
           source: `searxng(${r.engine || "unknown"})`,
         }));
     } catch (error: any) {
+      if (timeoutId) clearTimeout(timeoutId);
       errors.push(`${instance}: ${error.message}`);
       continue;
     }
