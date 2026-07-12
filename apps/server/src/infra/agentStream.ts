@@ -22,7 +22,7 @@ import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
 import { resolveAgent, buildMemoryContext, parseToolCall, buildSystemPromptWithHints, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
-import { maybeCompactMessages } from "./autoCompact.js";
+import { maybeCompactMessages, resolveMicroCompactToolMaxChars } from "./autoCompact.js";
 import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
 import { verifyAuthHeader, isAuthEnabled } from "./auth.js";
 import {
@@ -259,6 +259,9 @@ export async function runAgentLoopStream(options: {
   }
   const compacted = await maybeCompactMessages(options.config, llmMessages, options.agent.model, {
     existingSummary,
+    flushContext: options.sessionId
+      ? { services: options.services, sessionId: options.sessionId }
+      : undefined,
   });
   llmMessages = compacted.messages;
   if (compacted.summaryText && options.sessionId && compacted.compacted && !compacted.reused) {
@@ -377,7 +380,7 @@ export async function runAgentLoopStream(options: {
           role: "tool",
           tool_call_id: call.id,
           name: parsedCall.name,
-          content: JSON.stringify(result).slice(0, 16000),
+          content: JSON.stringify(result).slice(0, resolveMicroCompactToolMaxChars(options.config)),
         });
       }
       continue;
@@ -722,7 +725,10 @@ export async function chatAgentStream(
         name: (agent as { name?: string }).name,
       }),
       historyForLlm,
-      { modelId: effectiveModel },
+      {
+        modelId: effectiveModel,
+        microCompactToolMaxChars: resolveMicroCompactToolMaxChars(effectiveConfig),
+      },
     );
 
     let currentRound = 1;

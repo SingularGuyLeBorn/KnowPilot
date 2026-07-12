@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import { Brain, Plus, Zap, Tag } from "lucide-react";
 import Link from "next/link";
 import type { Memory } from "@knowpilot/shared";
+import { MEMORY_TYPE_LABELS } from "@knowpilot/shared";
 import { useMemory, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
@@ -165,7 +166,7 @@ const confirmDelete = () => {
               <div>
                 <div className="flex justify-between items-start gap-4 mb-3">
                   <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--kp-brand-deep)]">
-                    {memory.type === "preference" ? "个性偏好" : "客观事实"}
+                    {MEMORY_TYPE_LABELS[memory.type as keyof typeof MEMORY_TYPE_LABELS] ?? memory.type}
                   </span>
                   
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

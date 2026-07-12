@@ -123,8 +123,19 @@ export interface AppConfig {
   /** 长对话 Auto-Compact */
   compact: {
     enabled: boolean;
+    /** 占模型 context window 的触发比例（0.1–0.95） */
+    triggerRatio: number;
+    /** @deprecated 仅作文档参考；实际阈值由 triggerRatio × model window 计算 */
     charThreshold: number;
     keepRecent: number;
+    microCompact: {
+      enabled: boolean;
+      toolResultMaxChars: number;
+    };
+    memoryFlush: {
+      enabled: boolean;
+      maxFacts: number;
+    };
   };
 }
 
@@ -462,8 +473,29 @@ export function createAppConfig(): AppConfig {
     },
     compact: {
       enabled: String(compactConfig.enabled ?? "true") !== "false",
+      triggerRatio: Math.min(
+        0.95,
+        Math.max(0.05, parseFloat(String(compactConfig.triggerRatio ?? "0.75"))),
+      ),
       charThreshold: Math.max(8000, parseInt(String(compactConfig.charThreshold ?? "48000"), 10)),
       keepRecent: Math.max(2, parseInt(String(compactConfig.keepRecent ?? "8"), 10)),
+      microCompact: {
+        enabled: String((compactConfig.microCompact as Record<string, unknown> | undefined)?.enabled ?? "true") !== "false",
+        toolResultMaxChars: Math.max(
+          500,
+          parseInt(
+            String((compactConfig.microCompact as Record<string, unknown> | undefined)?.toolResultMaxChars ?? "4000"),
+            10,
+          ),
+        ),
+      },
+      memoryFlush: {
+        enabled: String((compactConfig.memoryFlush as Record<string, unknown> | undefined)?.enabled ?? "true") !== "false",
+        maxFacts: Math.max(
+          1,
+          parseInt(String((compactConfig.memoryFlush as Record<string, unknown> | undefined)?.maxFacts ?? "5"), 10),
+        ),
+      },
     },
   };
 

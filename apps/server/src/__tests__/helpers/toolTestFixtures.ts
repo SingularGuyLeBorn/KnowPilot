@@ -92,8 +92,11 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
     },
     compact: {
       enabled: true,
+      triggerRatio: 0.75,
       charThreshold: 48_000,
       keepRecent: 8,
+      microCompact: { enabled: true, toolResultMaxChars: 4000 },
+      memoryFlush: { enabled: true, maxFacts: 5 },
     },
     ...overrides,
   };

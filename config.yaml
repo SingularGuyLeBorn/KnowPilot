@@ -14,10 +14,20 @@ stream:
 # 长对话自动压缩（Auto-Compact）
 compact:
   enabled: true
-  # 上下文字符阈值（粗算，约 token×4）；超过后摘要旧消息
-  charThreshold: 48000
+  # 占模型 context window 的触发比例（0.1–0.95）；默认 75% 时 macro 摘要
+  triggerRatio: 0.75
   # 压缩后保留的最近消息条数
   keepRecent: 8
+  # micro-compact：先清超大 tool result，延缓触顶（学 Claude Code）
+  microCompact:
+    enabled: true
+    toolResultMaxChars: 4000
+  # memory flush：macro 摘要前静默提取事实写入 Memory（学 OpenClaw）
+  memoryFlush:
+    enabled: true
+    maxFacts: 5
+  # 已废弃：仅文档参考；实际阈值 = triggerRatio × 模型 context window
+  charThreshold: 48000
 
 # 后台任务池（async_task_run / spawn 跟踪任务等共享）
 # 注意：池只控制并发调度（queued → running）；是否「异步投递」由工具的 waitForResult 决定。

@@ -16,6 +16,7 @@ import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.js";
 import { maybeCompactMessages } from "./autoCompact.js";
 import { searchFts } from "./ftsIndex.js";
+import { isMemoryInjectable } from "@knowpilot/shared";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
@@ -38,17 +39,21 @@ export async function buildMemoryContext(services: ServiceContainer, userText: s
     const hits = await searchFts(services.prisma, keyword, 5);
     const memIds = hits.filter((h) => h.entity === "memory").map((h) => h.entityId);
     if (memIds.length > 0) {
-      memories = await services.prisma.memory.findMany({ where: { id: { in: memIds } } });
+      memories = await services.prisma.memory.findMany({
+        where: { id: { in: memIds }, type: { not: "experience" } },
+      });
     }
   } catch {
     // FTS 未就绪等，回退 LIKE
   }
   if (memories.length === 0) {
-    const fb = await services.memory.list({ page: 1, pageSize: 5, keyword });
-    memories = fb.items;
+    const fb = await services.memory.list({ page: 1, pageSize: 8, keyword });
+    memories = fb.items.filter((m) => isMemoryInjectable(m.type));
+  } else {
+    memories = memories.filter((m) => isMemoryInjectable(m.type));
   }
   if (!memories.length) return "";
-  const lines = memories.map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
+  const lines = memories.slice(0, 5).map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
   return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
 }
 
@@ -261,6 +266,9 @@ export async function runAgentLoop(options: {
   }
   const compacted = await maybeCompactMessages(options.config, llmMessages, effectiveModel, {
     existingSummary,
+    flushContext: options.sessionId
+      ? { services: options.services, sessionId: options.sessionId }
+      : undefined,
   });
   llmMessages = compacted.messages;
   if (compacted.compacted) {

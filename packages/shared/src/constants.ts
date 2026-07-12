@@ -66,11 +66,55 @@ export const ERROR_CODES = {
 
 export type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
 
+/* ─── Memory 类型（对齐 Claude Code / OpenClaw 分层，experience 仅内部） ─── */
+
+export const MEMORY_TYPES = {
+  PREFERENCE: "preference",
+  SEMANTIC: "semantic",
+  EPISODIC: "episodic",
+  NOTE: "note",
+  PROCEDURAL: "procedural",
+  EXPERIENCE: "experience",
+} as const;
+
+export type MemoryType = (typeof MEMORY_TYPES)[keyof typeof MEMORY_TYPES];
+
+/** Agent / 用户可创建的 Memory 类型 */
+export const MEMORY_USER_CREATABLE_TYPES = [
+  MEMORY_TYPES.PREFERENCE,
+  MEMORY_TYPES.SEMANTIC,
+  MEMORY_TYPES.EPISODIC,
+  MEMORY_TYPES.NOTE,
+  MEMORY_TYPES.PROCEDURAL,
+] as const;
+
+export type MemoryUserCreatableType = (typeof MEMORY_USER_CREATABLE_TYPES)[number];
+
+/** 可注入 Chat system prompt 的类型（排除 experience） */
+export const MEMORY_INJECTABLE_TYPES = [...MEMORY_USER_CREATABLE_TYPES] as const;
+
+export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
+  preference: "用户偏好",
+  semantic: "稳定事实",
+  episodic: "经历事件",
+  note: "笔记",
+  procedural: "操作流程",
+  experience: "运行经验（内部）",
+};
+
+/** Auto-Compact 默认：占模型 context window 的触发比例 */
+export const DEFAULT_COMPACT_TRIGGER_RATIO = 0.75;
+export const DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS = 128_000;
+export const DEFAULT_COMPACT_KEEP_RECENT = 8;
+export const DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS = 4_000;
+
 /** Chat 可选模型（对齐 DeepSeek V4 API：https://api-docs.deepseek.com/guides/thinking_mode） */
 export interface ChatModelOption {
   id: string;
   label: string;
   provider: string;
+  /** 模型上下文窗口（token），用于 Auto-Compact 动态阈值 */
+  contextWindowTokens?: number;
   /** 支持 thinking.type enabled/disabled */
   supportsThinking?: boolean;
   /** @deprecated 使用 supportsThinking + enableReasoning */
@@ -91,6 +135,7 @@ export const CHAT_MODELS: ChatModelOption[] = [
     id: "deepseek-v4-flash",
     label: "DeepSeek V4 Flash",
     provider: "deepseek",
+    contextWindowTokens: 128_000,
     supportsThinking: true,
     supportsReasoning: true,
     supportsVision: false,
@@ -102,6 +147,7 @@ export const CHAT_MODELS: ChatModelOption[] = [
     id: "deepseek-v4-pro",
     label: "DeepSeek V4 Pro",
     provider: "deepseek",
+    contextWindowTokens: 128_000,
     supportsThinking: true,
     supportsReasoning: true,
     supportsVision: false,
@@ -113,6 +159,7 @@ export const CHAT_MODELS: ChatModelOption[] = [
     id: "deepseek-vl2",
     label: "DeepSeek VL2（识图）",
     provider: "deepseek",
+    contextWindowTokens: 64_000,
     supportsThinking: false,
     supportsVision: true,
     ocrFallback: false,
@@ -172,4 +219,35 @@ export function resolveModelSupportsVision(modelId: string): boolean {
     lower.includes("4o") ||
     lower.includes("glm-4")
   );
+}
+
+/** 解析模型 context window（token），用于 Auto-Compact 百分比阈值 */
+export function resolveModelContextWindowTokens(modelId: string): number {
+  const found = CHAT_MODELS.find((m) => m.id === modelId);
+  if (found?.contextWindowTokens) return found.contextWindowTokens;
+  const lower = modelId.toLowerCase();
+  if (lower.includes("200k") || lower.includes("128k")) return 128_000;
+  if (lower.includes("64k")) return 64_000;
+  if (lower.includes("32k")) return 32_000;
+  if (lower.includes("16k")) return 16_000;
+  if (lower.includes("8k")) return 8_000;
+  return DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS;
+}
+
+/** 字符 ≈ token×4 粗算，得到 Auto-Compact 触发字符阈值 */
+export function resolveCompactCharThreshold(
+  modelId: string,
+  triggerRatio = DEFAULT_COMPACT_TRIGGER_RATIO,
+): number {
+  const ratio = Math.min(0.95, Math.max(0.05, triggerRatio));
+  const windowTokens = resolveModelContextWindowTokens(modelId);
+  return Math.max(8_000, Math.floor(windowTokens * ratio * 4));
+}
+
+export function isMemoryInjectable(type: string): boolean {
+  return (MEMORY_INJECTABLE_TYPES as readonly string[]).includes(type);
+}
+
+export function isMemoryUserCreatable(type: string): boolean {
+  return (MEMORY_USER_CREATABLE_TYPES as readonly string[]).includes(type);
 }

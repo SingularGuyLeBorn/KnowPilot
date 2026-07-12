@@ -3,7 +3,6 @@
 import { Gauge } from "lucide-react";
 import {
   buildTokenBudget,
-  COMPACT_CHAR_THRESHOLD,
   formatTokenCount,
   type TokenBudgetSnapshot,
 } from "@/lib/tokenBudget";
@@ -13,6 +12,7 @@ export function TokenBudgetBar({
   snapshot,
   dailyBudget,
   compact = false,
+  embedded = false,
   className,
 }: {
   snapshot: TokenBudgetSnapshot;
@@ -23,7 +23,10 @@ export function TokenBudgetBar({
     warn: boolean;
     exceeded: boolean;
   };
+  /** 隐藏底部说明文案 */
   compact?: boolean;
+  /** 嵌入设置面板：无外框/无重复标题（由外层 Section 提供） */
+  embedded?: boolean;
   className?: string;
 }) {
   const pct = Math.round(snapshot.compactRatio * 100);
@@ -32,16 +35,21 @@ export function TokenBudgetBar({
 
   return (
     <div
-      className={cn("rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-3", className)}
+      className={cn(
+        embedded ? "min-w-0" : "rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-3",
+        className,
+      )}
       data-testid="token-budget-bar"
     >
-      <div className="mb-2 flex items-center gap-2 text-xs">
-        <Gauge className={cn("h-3.5 w-3.5", critical ? "text-red-600" : warn ? "text-amber-600" : "text-[var(--kp-brand)]")} />
-        <span className="font-semibold text-[var(--kp-text-1)]">Token 预算</span>
-        {!compact && (
-          <span className="ml-auto text-[10px] text-[var(--kp-text-3)]">对标 Codex 上下文条</span>
-        )}
-      </div>
+      {!embedded && (
+        <div className="mb-2 flex min-w-0 items-center gap-2 text-xs">
+          <Gauge className={cn("h-3.5 w-3.5 shrink-0", critical ? "text-red-600" : warn ? "text-amber-600" : "text-[var(--kp-brand)]")} />
+          <span className="font-semibold text-[var(--kp-text-1)]">Token 预算</span>
+          {!compact && (
+            <span className="ml-auto truncate text-[10px] text-[var(--kp-text-3)]">对标 Codex 上下文条</span>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2 text-[10px] text-[var(--kp-text-2)]">
         <div>
@@ -79,8 +87,8 @@ export function TokenBudgetBar({
         </div>
         {!compact && (
           <p className="text-[10px] leading-relaxed text-[var(--kp-text-3)]">
-            约 {formatTokenCount(snapshot.estimatedContextChars)} 字符 · 超过{" "}
-            {formatTokenCount(COMPACT_CHAR_THRESHOLD)} 时服务端自动摘要旧消息
+            约 {formatTokenCount(snapshot.estimatedContextChars)} 字符 · 达模型窗口{" "}
+            {Math.round(snapshot.compactTriggerRatio * 100)}%（≈{formatTokenCount(snapshot.compactCharThreshold)} 字符）时自动摘要
           </p>
         )}
       </div>

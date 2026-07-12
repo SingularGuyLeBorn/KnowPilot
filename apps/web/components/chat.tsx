@@ -994,8 +994,8 @@ export function ChatView() {
   );
 
   const tokenBudget = useMemo(
-    () => buildTokenBudget(messages, chatConfig.maxTokens, lastRoundTokens),
-    [messages, chatConfig.maxTokens, lastRoundTokens],
+    () => buildTokenBudget(messages, chatConfig.maxTokens, lastRoundTokens, chatConfig.model),
+    [messages, chatConfig.maxTokens, chatConfig.model, lastRoundTokens],
   );
 
   const lastUserMessageId = useMemo(() => {
@@ -2972,6 +2972,7 @@ export function ChatView() {
             <SessionContextBar
               messages={messages}
               systemPrompt={chatConfig.systemPrompt}
+              modelId={chatConfig.model}
               contextSummary={sessionDetail.contextSummary}
               onCompact={() => compactSession.mutate({ id: effectiveSessionId })}
               compactPending={compactSession.isPending}
@@ -3036,6 +3037,7 @@ export function ChatView() {
             <SessionContextBar
               messages={messages}
               systemPrompt={chatConfig.systemPrompt}
+              modelId={chatConfig.model}
               contextSummary={sessionDetail.contextSummary}
               onCompact={() => compactSession.mutate({ id: effectiveSessionId })}
               compactPending={compactSession.isPending}
@@ -3262,7 +3264,7 @@ export function ChatView() {
 
       <aside
         className={cn(
-          "relative z-40 flex shrink-0 flex-col border-l border-[var(--kp-divider)] bg-[var(--kp-bg)]/80 backdrop-blur-xl transition-[width] duration-300 ease-[var(--kp-spring-gentle)]",
+          "relative z-40 flex shrink-0 flex-col overflow-x-hidden border-l border-[var(--kp-divider)] bg-[var(--kp-bg)]/80 backdrop-blur-xl transition-[width] duration-300 ease-[var(--kp-spring-gentle)]",
           rightOpen ? "w-[360px]" : "w-0 overflow-hidden border-l-0",
         )}
       >
@@ -3274,7 +3276,7 @@ export function ChatView() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 24 }}
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="flex h-full flex-col"
+              className="flex h-full min-w-0 flex-col overflow-x-hidden"
             >
               <div className="flex items-center justify-between border-b border-[var(--kp-divider)] px-3 py-2.5">
                 <div className="flex gap-1">
@@ -3321,7 +3323,7 @@ export function ChatView() {
               </div>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {rightTab === "config" ? (
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
                     <ChatSettingsPanel
                       chatConfig={chatConfig}
                       updateConfig={updateConfig}

@@ -87,7 +87,7 @@ import {
 import { captureZhihuLoginState } from "./metablog/auth/zhihuLogin.js";
 import { listSavedCookiePlatforms } from "./cookieJar.js";
 
-import { DEFAULT_AGENT_NATIVE } from "@knowpilot/shared";
+import { DEFAULT_AGENT_NATIVE, isMemoryUserCreatable, type MemoryUserCreatableType } from "@knowpilot/shared";
 import { isSmokeInfoSource } from "./smokeArtifacts.js";
 
 const execFileAsync = promisify(execFile);
@@ -509,14 +509,19 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   },
   {
     name: "memory_create",
-    description: "创建一条记忆（写入 content/memories）。",
+    description:
+      "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。不要记可从代码/git/文档直接查到的内容。",
     parameters: {
       type: "object",
       properties: {
         content: { type: "string", description: "记忆内容" },
-        type: { type: "string", description: "类型，默认 note" },
+        type: {
+          type: "string",
+          enum: ["preference", "semantic", "episodic", "note", "procedural"],
+          description: "记忆类型",
+        },
         strength: { type: "number", description: "强度 0-1，默认 1" },
-        keywords: { type: "array", items: { type: "string" }, description: "关键词列表" },
+        keywords: { type: "array", items: { type: "string" }, description: "检索关键词" },
       },
       required: ["content"],
     },
@@ -2521,9 +2526,15 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
   const content = String(args.content || "").trim();
   if (!content) throw new Error("content 不能为空");
   const strength = Number(args.strength ?? 1);
+  const rawType = args.type ? String(args.type) : "note";
+  if (!isMemoryUserCreatable(rawType)) {
+    throw new Error(
+      `type 无效：${rawType}。允许：preference（偏好）、semantic（事实）、episodic（经历）、note（笔记）、procedural（流程）。不要记可从代码/文档直接查到的内容。`,
+    );
+  }
   const input = {
     content,
-    type: args.type ? String(args.type) : "note",
+    type: rawType as MemoryUserCreatableType,
     strength: Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1,
     keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : [],
   };
@@ -3076,7 +3087,9 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     subagentName = (createResult as { name: string }).name;
     // 默认名时 fire-and-forget 调 LLM 起个正常名字；cuid 不变，父 Agent 仍能靠 agentId 找到
     if (!args.name && /^子\s*Agent\s+[a-z0-9]+$/i.test(subagentName)) {
-      void import("./sessionAutoName.js").then(({ autoNameAgent }) => autoNameAgent(subagentId, task));
+      void import("./sessionAutoName.js")
+        .then(({ autoNameAgent }) => autoNameAgent(subagentId, task))
+        .catch(() => undefined);
     }
   }
 

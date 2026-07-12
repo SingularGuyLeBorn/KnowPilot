@@ -392,6 +392,7 @@ const sessionRouter = router({
         messages,
         session.model || "deepseek-v4-flash",
         session.contextSummary,
+        { services: ctx.services, sessionId: input.id },
       );
       if (!result.compacted || !result.summaryText) {
         return { success: true as const, compacted: false, message: "消息较少，无需压缩。" };

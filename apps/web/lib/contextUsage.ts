@@ -3,7 +3,13 @@
  */
 
 import type { ChatMessage } from "@knowpilot/shared";
-import { COMPACT_CHAR_THRESHOLD, CONTEXT_TOKEN_HINT, formatTokenCount } from "@/lib/tokenBudget";
+import {
+  DEFAULT_COMPACT_TRIGGER_RATIO,
+  resolveCompactCharThreshold,
+  resolveModelContextWindowTokens,
+} from "@knowpilot/shared";
+import { formatTokenCount } from "@/lib/tokenBudget";
+import { COMPACT_BOUNDARY_PREFIX, SUMMARY_MARKER } from "@/lib/compactMarkers";
 
 export interface ContextUsageSegment {
   id: string;
@@ -31,6 +37,7 @@ export interface ContextUsageSnapshot {
   outputTokens: number;
   maxContextTokens: number;
   compactCharThreshold: number;
+  compactTriggerRatio: number;
   topMessages: ContextUsageMessageInfo[];
   compression: {
     summarizedCount: number;
@@ -42,22 +49,26 @@ export interface ContextUsageSnapshot {
   };
 }
 
-const SUMMARY_MARKER = "[此前对话摘要 — 自动压缩]";
-
 function charsToTokens(chars: number): number {
   return Math.max(0, Math.ceil(chars / 4));
+}
+
+function isSummaryContent(content: string): boolean {
+  return content.includes(SUMMARY_MARKER) || content.includes(COMPACT_BOUNDARY_PREFIX);
 }
 
 export function buildContextUsage(params: {
   messages: ChatMessage[];
   systemPrompt: string;
-  maxContextTokens?: number;
-  compactCharThreshold?: number;
+  modelId?: string;
+  triggerRatio?: number;
   /** 会话表持久化的摘要（优先于消息内标记） */
   contextSummary?: string | null;
 }): ContextUsageSnapshot {
-  const maxContextTokens = params.maxContextTokens ?? CONTEXT_TOKEN_HINT;
-  const compactCharThreshold = params.compactCharThreshold ?? COMPACT_CHAR_THRESHOLD;
+  const modelId = params.modelId ?? "deepseek-v4-flash";
+  const compactTriggerRatio = params.triggerRatio ?? DEFAULT_COMPACT_TRIGGER_RATIO;
+  const maxContextTokens = resolveModelContextWindowTokens(modelId);
+  const compactCharThreshold = resolveCompactCharThreshold(modelId, compactTriggerRatio);
   const persistedSummary = params.contextSummary?.trim() || "";
 
   const systemChars = params.systemPrompt.length;
@@ -67,7 +78,7 @@ export function buildContextUsage(params: {
 
   for (const m of params.messages) {
     const content = m.content ?? "";
-    if (content.includes(SUMMARY_MARKER)) {
+    if (isSummaryContent(content)) {
       summaryChars += content.length;
       continue;
     }
@@ -105,7 +116,7 @@ export function buildContextUsage(params: {
   const topMessages: ContextUsageMessageInfo[] = params.messages
     .map((m) => {
       const content = m.content ?? "";
-      const isSummarized = content.includes(SUMMARY_MARKER);
+      const isSummarized = isSummaryContent(content);
       const msgChars =
         content.length +
         (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) +
@@ -114,7 +125,7 @@ export function buildContextUsage(params: {
         id: m.id,
         role: m.role,
         tokens: charsToTokens(msgChars),
-        preview: content.replace(SUMMARY_MARKER, "").trim().slice(0, 80) || "(空)",
+        preview: content.replace(SUMMARY_MARKER, "").replace(/\[kp-compact-boundary:[^\]]+\]/g, "").trim().slice(0, 80) || "(空)",
         isSummarized,
         createdAt: m.createdAt,
       };
@@ -129,7 +140,7 @@ export function buildContextUsage(params: {
   let originalTokens = 0;
   for (const m of params.messages) {
     const content = m.content ?? "";
-    const isSummarized = content.includes(SUMMARY_MARKER);
+    const isSummarized = isSummaryContent(content);
     const msgChars =
       content.length +
       (m.toolCalls ? JSON.stringify(m.toolCalls).length : 0) +
@@ -166,6 +177,7 @@ export function buildContextUsage(params: {
     outputTokens,
     maxContextTokens,
     compactCharThreshold,
+    compactTriggerRatio,
     topMessages,
     compression: {
       summarizedCount,

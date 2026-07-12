@@ -3,7 +3,7 @@
  */
 
 import type { ChatImageAttachment } from "@knowpilot/shared";
-import { resolveModelSupportsVision } from "@knowpilot/shared";
+import { resolveModelSupportsVision, DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS } from "@knowpilot/shared";
 import type { LlmContentPart, LlmMessage } from "./llmClient.js";
 import { getActiveAssistantPayload } from "./messageVersions.js";
 
@@ -100,9 +100,10 @@ export function buildUserMessageContentForLlm(
 export function buildLlmMessagesFromHistory(
   systemContent: string,
   history: Array<{ role: string; content: string; attachments?: unknown; toolCalls?: unknown; toolResults?: unknown }>,
-  options?: { modelId?: string },
+  options?: { modelId?: string; microCompactToolMaxChars?: number },
 ): LlmMessage[] {
   const supportsVision = options?.modelId ? resolveModelSupportsVision(options.modelId) : false;
+  const toolMaxChars = options?.microCompactToolMaxChars ?? DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS;
   const messages: LlmMessage[] = [{ role: "system", content: systemContent }];
 
   for (const msg of history) {
@@ -148,7 +149,7 @@ export function buildLlmMessagesFromHistory(
           role: "tool",
           tool_call_id: tc.id,
           name: tc.name,
-          content: JSON.stringify(tc.result ?? {}).slice(0, 16000),
+          content: JSON.stringify(tc.result ?? {}).slice(0, toolMaxChars),
         });
       }
       // 最终答案作为独立 assistant 消息（aborted 等空 content 情况跳过）

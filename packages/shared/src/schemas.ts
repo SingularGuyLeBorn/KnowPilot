@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import { MEMORY_USER_CREATABLE_TYPES } from "./constants.js";
 
 /* ═══════════════════════════════════════════════════════
    Post (文章)
@@ -259,7 +260,7 @@ export const createSessionSchema = z.object({
   agentId: z.string().cuid().optional(),
   // Swarm/Subagent
   parentSessionId: z.string().cuid().optional(),
-  kind: z.enum(["chat", "subagent"]).optional(),
+  kind: z.enum(["chat", "subagent", "heartbeat"]).optional(),
   taskDescription: z.string().max(2000).optional(),
   status: sessionStatusSchema.optional(),
   isMainSession: z.boolean().optional(), // 管理 Agent 的主 session
@@ -275,7 +276,7 @@ export const updateSessionSchema = z.object({
   // Swarm/Subagent
   status: sessionStatusSchema.optional(),
   taskDescription: z.string().max(2000).optional(),
-  kind: z.enum(["chat", "subagent"]).optional(),
+  kind: z.enum(["chat", "subagent", "heartbeat"]).optional(),
   parentSessionId: z.string().cuid().nullable().optional(),
   // Auto-Compact 持久化摘要
   contextSummary: z.string().max(20000).nullable().optional(),
@@ -296,7 +297,7 @@ export const listSessionsSchema = z.object({
   agentIds: z.array(z.string()).optional(),
   // Swarm/Subagent 过滤
   parentSessionId: z.string().cuid().optional(),
-  kind: z.enum(["chat", "subagent"]).optional(),
+  kind: z.enum(["chat", "subagent", "heartbeat"]).optional(),
   status: sessionStatusSchema.optional(),
 });
 
@@ -474,9 +475,11 @@ export const listMcpServersSchema = z.object({
    Memory (长期记忆)
    ═══════════════════════════════════════════════════════ */
 
+export const memoryUserTypeSchema = z.enum(MEMORY_USER_CREATABLE_TYPES);
+
 export const createMemorySchema = z.object({
   content: z.string().min(1),
-  type: z.string().default("episodic"),
+  type: memoryUserTypeSchema.default("note"),
   strength: z.number().min(0).max(1).default(1.0),
   keywords: z.array(z.string()).default([]),
 });
@@ -484,7 +487,7 @@ export const createMemorySchema = z.object({
 export const updateMemorySchema = z.object({
   id: z.string().cuid(),
   content: z.string().min(1).optional(),
-  type: z.string().optional(),
+  type: memoryUserTypeSchema.optional(),
   strength: z.number().min(0).max(1).optional(),
   keywords: z.array(z.string()).optional(),
 });

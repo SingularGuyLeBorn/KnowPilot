@@ -3,17 +3,30 @@
  */
 
 import type { ChatMessage } from "@knowpilot/shared";
+import {
+  DEFAULT_COMPACT_TRIGGER_RATIO,
+  resolveCompactCharThreshold,
+  resolveModelContextWindowTokens,
+} from "@knowpilot/shared";
 
-/** 与 autoCompact.ts COMPACT_CHAR_THRESHOLD 对齐（字符 ≈ token×4 粗算） */
-export const COMPACT_CHAR_THRESHOLD = 48_000;
-export const CONTEXT_TOKEN_HINT = 128_000;
+/** @deprecated 使用 resolveCompactCharThreshold(modelId) */
+export const COMPACT_CHAR_THRESHOLD = resolveCompactCharThreshold("deepseek-v4-flash");
+
+export const DEFAULT_COMPACT_TRIGGER_RATIO_EXPORT = DEFAULT_COMPACT_TRIGGER_RATIO;
 
 export interface TokenBudgetSnapshot {
   sessionTokens: number;
   lastRoundTokens: number;
   maxOutputTokens: number;
   estimatedContextChars: number;
+  /** 相对 Auto-Compact 触发阈值的进度 0–1 */
   compactRatio: number;
+  /** 当前模型 context window（token） */
+  maxContextTokens: number;
+  /** 触发 macro-compact 的字符阈值 */
+  compactCharThreshold: number;
+  /** 配置的触发比例 */
+  compactTriggerRatio: number;
 }
 
 export function sumMessageTokens(messages: ChatMessage[]): number {
@@ -29,16 +42,23 @@ export function buildTokenBudget(
   messages: ChatMessage[],
   maxOutputTokens: number,
   lastRoundTokens = 0,
+  modelId = "deepseek-v4-flash",
+  triggerRatio = DEFAULT_COMPACT_TRIGGER_RATIO,
 ): TokenBudgetSnapshot {
   const sessionTokens = sumMessageTokens(messages);
   const estimatedContextChars = estimateContextChars(messages);
-  const compactRatio = Math.min(1, estimatedContextChars / COMPACT_CHAR_THRESHOLD);
+  const maxContextTokens = resolveModelContextWindowTokens(modelId);
+  const compactCharThreshold = resolveCompactCharThreshold(modelId, triggerRatio);
+  const compactRatio = Math.min(1, estimatedContextChars / compactCharThreshold);
   return {
     sessionTokens,
     lastRoundTokens,
     maxOutputTokens,
     estimatedContextChars,
     compactRatio,
+    maxContextTokens,
+    compactCharThreshold,
+    compactTriggerRatio: triggerRatio,
   };
 }
 

@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 export const SessionContextBar = memo(function SessionContextBar({
   messages,
   systemPrompt,
+  modelId,
   className,
   contextSummary,
   onCompact,
@@ -19,6 +20,7 @@ export const SessionContextBar = memo(function SessionContextBar({
 }: {
   messages: ChatMessage[];
   systemPrompt: string;
+  modelId?: string;
   className?: string;
   contextSummary?: string | null;
   onCompact?: () => void;
@@ -29,7 +31,7 @@ export const SessionContextBar = memo(function SessionContextBar({
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
-  const usage = buildContextUsage({ messages, systemPrompt, contextSummary });
+  const usage = buildContextUsage({ messages, systemPrompt, modelId, contextSummary });
   const pct = Math.round(usage.ratio * 100);
   const compactPct = Math.round(usage.compactRatio * 100);
 
