@@ -405,12 +405,15 @@ async function embedOcrIntoMarkdown(content: string, images: string[]): Promise<
     const batchResults = await Promise.all(
       batch.map(async (url) => {
         try {
-          const result = await Promise.race([
-            ocrRemoteImage(url, "auto"),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("OCR 超时")), OCR_TIMEOUT_MS)
-            ),
-          ]);
+          // 修复：原 Promise.race + setTimeout 模式在 OCR 成功后未 clearTimeout，
+          // timer 持有 reject 闭包 20s 不被 GC。改为手动清除。
+          const result = await new Promise<{ success: boolean; text: string }>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("OCR 超时")), OCR_TIMEOUT_MS);
+            ocrRemoteImage(url, "auto").then(
+              (r) => { clearTimeout(timer); resolve(r); },
+              (err) => { clearTimeout(timer); reject(err); },
+            );
+          });
           return { url, text: result.success ? result.text : "" };
         } catch (err: any) {
           console.error(`[OCR Embed] 图片 OCR 失败 ${url}: ${err.message}`);
