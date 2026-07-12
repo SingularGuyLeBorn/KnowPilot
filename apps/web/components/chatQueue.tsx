@@ -754,6 +754,7 @@ export function RuntimeStatusPanel({
 
   const seenConsumedRef = useRef<Set<string>>(new Set());
   const recentPendingRef = useRef<Set<string>>(new Set());
+  const freshTimersRef = useRef<Set<number>>(new Set());
   const [freshIds, setFreshIds] = useState<Set<string>>(() => new Set());
 
   // 跟踪近期出现在「未消费」的 job，用于判断是否从运行中滑入已消费
@@ -762,6 +763,15 @@ export function RuntimeStatusPanel({
       if (item.jobId) recentPendingRef.current.add(item.jobId);
     }
   }, [pendingItems]);
+
+  // 组件卸载时清除所有 fresh 高亮定时器，防止 setState on unmounted + 定时器泄漏
+  useEffect(() => {
+    const timers = freshTimersRef.current;
+    return () => {
+      for (const t of timers) window.clearTimeout(t);
+      timers.clear();
+    };
+  }, []);
 
   useEffect(() => {
     const ids = consumedItems.map((i) => i.jobId ?? i.id);
@@ -780,14 +790,16 @@ export function RuntimeStatusPanel({
       return next;
     });
     onTabChange("consumed");
+    // 每批 fromPending 独立定时器，不随 effect 重跑被清除，否则快速连续完成时首批高亮永不消失
     const timer = window.setTimeout(() => {
       setFreshIds((prev) => {
         const next = new Set(prev);
         for (const id of fromPending) next.delete(id);
         return next;
       });
+      freshTimersRef.current.delete(timer);
     }, 2200);
-    return () => window.clearTimeout(timer);
+    freshTimersRef.current.add(timer);
   }, [consumedItems, onTabChange]);
 
   const pendingCount = pendingItems.length;

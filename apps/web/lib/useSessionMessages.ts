@@ -334,7 +334,9 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
   const sessionKey = sessionId ?? "";
   const utils = trpc.useUtils();
   const utilsRef = useRef(utils);
-  utilsRef.current = utils;
+  useEffect(() => {
+    utilsRef.current = utils;
+  }, [utils]);
   const [isMessagesHydrated, setIsMessagesHydrated] = useState(() =>
     !!sessionId && (hydratedSessionsGlobal.has(sessionId) || store.getMessages(sessionId).length > 0),
   );
