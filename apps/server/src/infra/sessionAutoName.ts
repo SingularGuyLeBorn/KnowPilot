@@ -13,7 +13,12 @@ const AGENT_PROMPT =
   "根据任务给子 Agent 起名。2-8 字中文，正常名字，不能含特殊符号/引号/括号/emoji，不能以「子 Agent」开头。直接输出名字。";
 
 function clean(s: string, max: number): string {
-  return s.replace(/[\r\n"]/g, "").trim().slice(0, max);
+  return s
+    .replace(/[\r\n"`]/g, "")
+    .replace(/[\[\]{}()【】（）]/g, "")
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "")
+    .trim()
+    .slice(0, max);
 }
 
 export async function autoNameSession(sessionId: string, firstMessage: string): Promise<void> {
@@ -40,7 +45,7 @@ export async function autoNameSession(sessionId: string, firstMessage: string): 
     const title = clean(content ?? "", 40);
     if (!title) return;
     await prisma.chatSession.update({ where: { id: sessionId }, data: { autoName: title } });
-    getStreamHub()?.pushExternalEvent(sessionId, { type: "session_title_updated", sessionId, title } as any);
+    getStreamHub()?.pushExternalEvent(sessionId, { type: "session_title_updated", sessionId, title });
   } catch (e) {
     console.warn(`[autoNameSession] ${sessionId}:`, e instanceof Error ? e.message : e);
   }
@@ -71,7 +76,7 @@ export async function autoNameAgent(agentId: string, task: string): Promise<void
       select: { id: true },
     });
     if (mainSession) {
-      getStreamHub()?.pushExternalEvent(mainSession.id, { type: "agent_renamed", agentId, name } as any);
+      getStreamHub()?.pushExternalEvent(mainSession.id, { type: "agent_renamed", agentId, name });
     }
   } catch (e) {
     console.warn(`[autoNameAgent] ${agentId}:`, e instanceof Error ? e.message : e);
