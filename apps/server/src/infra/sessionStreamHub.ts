@@ -393,6 +393,12 @@ export class SessionStreamHub {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
+    // 显式清除 flushTimer：flushPersistQueue 在队列为空时提前 return 不清 timer，
+    // 若异步 flush 刚 drain 完队列、新 timer 又被 enqueue 但尚未触发，dispose 会漏清。
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
     await this.flushPersistQueue();
   }
 
