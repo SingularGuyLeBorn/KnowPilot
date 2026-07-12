@@ -675,6 +675,8 @@ export function ChatView() {
     if (!effectiveSessionId || backendDown) return;
     const sessionIds = new Set<string>([effectiveSessionId]);
     if (mainSessionId) sessionIds.add(mainSessionId);
+    // 捕获 ref 值到 effect 局部变量，避免 cleanup 时 ref 已变更（react-hooks/exhaustive-deps）
+    const extraWatched = extraWatchedSessionsRef.current;
 
     const refreshAsync = () => {
       void asyncQueueQuery.refetch();
@@ -780,10 +782,10 @@ export function ChatView() {
         sessionMessagesStore.closeSessionWatch(sid);
       }
       // 清理事件回调里动态 watch 的子 Agent session
-      for (const sid of extraWatchedSessionsRef.current) {
+      for (const sid of extraWatched) {
         sessionMessagesStore.closeSessionWatch(sid);
       }
-      extraWatchedSessionsRef.current.clear();
+      extraWatched.clear();
     };
   }, [
     effectiveSessionId,
@@ -1566,7 +1568,6 @@ export function ChatView() {
     } catch (e) {
       console.error("[mount] restore error", e);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 卸载 / 刷新前持久化，并标记正在卸载以阻止 finally 清掉 streaming phase
@@ -2109,7 +2110,7 @@ export function ChatView() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "重命名失败");
     }
-  }, [updateSession, utils.session.list, effectiveSessionId, refetchSession]);
+  }, [updateSession, utils.session.list, effectiveSessionId, refetchSession, setError]);
 
   const handleDeleteSession = useCallback(async (id: string) => {
     try {
@@ -2132,7 +2133,7 @@ export function ChatView() {
       setError(err instanceof Error ? err.message : "删除失败");
       setDeleteSessionTarget(null);
     }
-  }, [deleteSession, effectiveSessionId, startNewChat, utils.session.list]);
+  }, [deleteSession, effectiveSessionId, startNewChat, utils.session.list, setError]);
 
   const selectSession = useCallback((id: string) => {
     if (effectiveSessionId === id) return;
@@ -2877,7 +2878,6 @@ export function ChatView() {
     asyncProgressSteps,
     cancelAsyncJobMutation,
     retryAsyncJobMutation,
-    effectiveSessionId,
   ]);
 
   return (
