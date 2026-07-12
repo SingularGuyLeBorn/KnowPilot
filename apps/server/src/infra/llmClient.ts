@@ -350,6 +350,7 @@ export async function* chatCompletionStream(options: {
   if (!res.body) throw new Error("LLM 流式响应无 body");
 
   const reader = res.body.getReader();
+  try {
   const decoder = new TextDecoder();
   let buffer = "";
   const toolCallsAcc = new Map<number, LlmToolCall>();
@@ -458,5 +459,11 @@ export async function* chatCompletionStream(options: {
       provider: provider.id,
       tokenUsage: usage,
     };
+  }
+  } finally {
+    // 消费者提前 break / throw 时释放 reader 锁并取消底层流，
+    // 避免 HTTP 连接泄漏（fetch body stream 不自动关闭）。
+    reader.releaseLock();
+    try { await res.body?.cancel(); } catch { /* already closed */ }
   }
 }
