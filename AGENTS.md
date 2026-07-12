@@ -90,6 +90,7 @@ KnowPilot/
 │   ├── mcp/                    # MCP Server 配置（YAML）
 │   └── uploads/                # 上传文件（file.upload）
 ├── docs/development/           # L1-L5 阶段开发文档与 API 规范
+├── docs/surveys-2026/          # 2026 综述 PDF（记忆/Harness/Agent）+ KnowPilot 对比分析
 ├── scripts/
 │   └── clean-content.mjs       # 清理 emoji、规范化数学公式
 ├── .dev-log/                   # 开发日志
@@ -436,6 +437,7 @@ stream:
 | 项目模块 / 实体 / CRUD / 前端用法 | `docs/development/README.md` |
 | 具体使用场景（Agent / 子 Agent / 异步任务） | `docs/development/scenarios.md` |
 | 并发 / 阻塞 / 竞态条件防护 | `docs/development/concurrency.md` |
+| 开发踩坑与教训（战地笔记） | `docs/development/开发心路历程.md` |
 | 未来功能规划 | `docs/development/future-features.md` |
 | 修改前端样式/组件 | `apps/web/components/`、`apps/web/app/globals.css` |
 | 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts` |
