@@ -5,6 +5,7 @@
  */
 
 const MODEL = "deepseek-v4-flash";
+const AUTO_NAME_TIMEOUT_MS = 30_000; // 命名是 fire-and-forget，LLM 挂起时不能无限占用连接
 
 const SESSION_PROMPT =
   "根据用户消息生成 6-12 字中文标题。直接输出标题，不要引号/句号/emoji/前缀。";
@@ -41,6 +42,7 @@ export async function autoNameSession(sessionId: string, firstMessage: string): 
       maxTokens: 80,
       temperature: 0.3,
       enableReasoning: false, // 推理模型会把 token 全花在 reasoningContent 上，content 返回 null
+      signal: AbortSignal.timeout(AUTO_NAME_TIMEOUT_MS),
     });
     const title = clean(content ?? "", 40);
     if (!title) return;
@@ -67,6 +69,7 @@ export async function autoNameAgent(agentId: string, task: string): Promise<void
       maxTokens: 60,
       temperature: 0.4,
       enableReasoning: false, // 推理模型会把 token 全花在 reasoningContent 上，content 返回 null
+      signal: AbortSignal.timeout(AUTO_NAME_TIMEOUT_MS),
     });
     const name = clean(content ?? "", 30);
     if (!name || /^子\s*Agent/i.test(name)) return;
