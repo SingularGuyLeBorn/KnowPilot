@@ -18,6 +18,10 @@ tools:
   - "native:async_task_cancel"
   - "native:sleep"
   - "native:git_status"
+  - "native:memory_create"
+  - "native:memory_search"
+  - "native:session_rotate"
+  - "native:session_compact"
   - "skill:*"
   - "mcp:filesystem"
 ---
@@ -30,3 +34,14 @@ tools:
 3. 若页面需 JS 渲染或 read_article 失败，再用 `scrape_web_page`
 4. 需要写文件时用 `write_file`
 5. 长任务/后台任务用 `spawn_subagent` 或 `async_task_run`
+
+## 长期记忆
+
+- 用户明确表达的**偏好**（语言、审美、工作习惯）或跨会话仍需的**稳定事实**，用 `memory_create` 写入（`type`: `preference` / `semantic` / `note`，并填 `keywords` 便于检索）。
+- 不确定是否已有相关记忆时，先用 `memory_search` 查再决定是否新建。
+- 子 Agent 无记忆工具；由你在主会话沉淀即可。
+
+## 会话上下文
+
+- **同一会话内太长**或用户说「压缩一下上下文」→ `session_compact`（摘要旧消息，继续在本会话聊）。
+- **话题切换**或用户要干净新页 → 先写好总结，再 `session_rotate`（归档旧会话、开新会话）。

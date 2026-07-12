@@ -48,6 +48,11 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "agent_delete_sub",
     "agent_forward",
     "spawn_subagent",
+    "memory_create",
+    "memory_search",
+    "memory_delete",
+    "session_compact",
+    "session_rotate",
   ],
   // 子 Agent 及以上（manager/super 也可以用）：可执行异步任务，但不能再派生子 Agent
   sub: [

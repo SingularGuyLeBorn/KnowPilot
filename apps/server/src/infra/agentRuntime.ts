@@ -14,7 +14,7 @@ import {
 } from "./agentTools.js";
 import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.js";
-import { maybeCompactMessages } from "./autoCompact.js";
+import { maybeCompactMessages, persistCompactResult } from "./autoCompact.js";
 import { searchFts } from "./ftsIndex.js";
 import { isMemoryInjectable } from "@knowpilot/shared";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
@@ -157,14 +157,17 @@ const DEFAULT_ASSISTANT_TOOLS = [
   "native:spawn_subagent",
   "native:async_task_run",
   "native:session_rotate",
+  "native:session_compact",
   "native:sleep",
   "native:git_status",
+  "native:memory_create",
+  "native:memory_search",
   "skill:*",
   "mcp:filesystem",
 ];
 
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
-  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。当对话轮数过多、话题明显切换或用户要求换干净上下文时，先写好总结再调用 native:session_rotate 归档当前会话并开启新会话。";
+  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。用户偏好与跨会话稳定事实请用 native:memory_create 沉淀（必要时先 memory_search）；子 Agent 无记忆工具。当前会话上下文过长或用户要求压缩时，调用 native:session_compact（不换会话）；话题明显切换或用户要求换干净上下文时，先写好总结再调用 native:session_rotate 归档并开新会话。";
 
 const LEGACY_ASSISTANT_SYSTEM_PROMPT =
   "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
@@ -185,7 +188,10 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
       (!tools.includes("native:write_file") ||
         !tools.includes("native:spawn_subagent") ||
         !tools.includes("native:async_task_run") ||
-        !tools.includes("native:session_rotate"));
+        !tools.includes("native:session_rotate") ||
+        !tools.includes("native:session_compact") ||
+        !tools.includes("native:memory_create") ||
+        !tools.includes("native:memory_search"));
     // 仅当系统提示还是旧版默认（或空）时才自动升级，避免覆盖用户自定义提示词
     const needsPromptUpdate =
       !exact.systemPrompt || exact.systemPrompt === LEGACY_ASSISTANT_SYSTEM_PROMPT;
@@ -275,11 +281,7 @@ export async function runAgentLoop(options: {
     console.log("[Agent] 长对话已自动压缩上下文");
     if (compacted.summaryText && options.sessionId && !compacted.reused) {
       try {
-        await options.services.session.update({
-          id: options.sessionId,
-          contextSummary: compacted.summaryText,
-          contextCompactedAt: new Date(),
-        } as any);
+        await persistCompactResult(options.services, options.sessionId, compacted, { trigger: "auto" });
       } catch (err) {
         console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
       }
