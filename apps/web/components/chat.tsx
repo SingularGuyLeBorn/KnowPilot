@@ -2266,7 +2266,7 @@ export function ChatView() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         data-testid="assistant-message-bubble"
         data-nav-id={assistantId}
-        className="group/msg relative mb-6 ml-6 flex max-w-[88%] flex-col items-start gap-1"
+        className="group/msg relative mb-6 ml-12 flex max-w-[88%] flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
           <PostContent content={active.content} className="prose-sm max-w-none" />
@@ -2315,7 +2315,7 @@ export function ChatView() {
         <div className="flex w-full justify-start">
           <div
             className={cn(
-              "group/msg ml-6 flex max-w-[88%] flex-col items-start gap-1",
+              "group/msg ml-12 flex max-w-[88%] flex-col items-start gap-1",
               streamingContent ? "mb-6" : "mb-4",
             )}
             data-testid="streaming-assistant-bubble"

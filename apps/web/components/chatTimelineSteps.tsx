@@ -325,7 +325,8 @@ export function ThinkingTimeline({
 }) {
   if (!steps.length) return null;
 
-  // 宽度与左对齐与 assistant 气泡一致：ml-6 + max-w-[88%]
+  // 左对齐与 assistant 气泡一致：timeline 内容左缘 = ml-6 + pl-6 = 3rem，
+  // assistant 气泡 ml-12 = 3rem，两者左缘共线（对标 Kimi Code 单列布局）。
   // 竖线导轨改 absolute，不再占用布局宽度，确保 thinking / content / tool / 正式回复共享同一内容宽度
   return (
     <div
