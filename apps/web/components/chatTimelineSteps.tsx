@@ -144,9 +144,9 @@ const ContentStep = memo(function ContentStep({
   return (
     <div
       data-testid="intermediate-content-step"
-      className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm"
+      className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm"
     >
-      <PostContent content={content} className="prose-sm max-w-none" />
+      <PostContent content={content} className="prose-sm max-w-none text-left" />
     </div>
   );
 });
@@ -174,6 +174,8 @@ const ToolStep = memo(function ToolStep({
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!showSleepTimer || !step.startedAt) return;
+    // 立即同步 now，让计时器从 0 开始而非上次 render 的值；属外部时钟同步
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(id);

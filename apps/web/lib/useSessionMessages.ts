@@ -352,6 +352,8 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
 
   useEffect(() => {
     if (!sessionId) {
+      // 切走 / 清空 session 时重置 hydration 标记，属外部状态同步非派生数据
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsMessagesHydrated(false);
       setHasOlderMessages(false);
       return;

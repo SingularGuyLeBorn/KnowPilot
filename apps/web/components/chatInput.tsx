@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
-import { Bot, ChevronDown, ImagePlus, Loader2, Send, Settings, Square, Wand2, X } from "lucide-react";
+import { Bot, ImagePlus, Loader2, Send, Settings, Square, Wand2, X } from "lucide-react";
 import type { Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -498,12 +498,11 @@ export const ChatInputArea = memo(function ChatInputArea({
               <button
                 type="button"
                 onClick={onOpenConfig}
-                className="inline-flex max-w-[160px] items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
-                title="模型与配置"
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
+                title="模型与配置（右侧面板）"
+                aria-label="打开对话设置"
               >
                 <Settings className="h-4 w-4" />
-                <span className="truncate">{modelId}</span>
-                <ChevronDown className="h-3 w-3 shrink-0" />
               </button>
             )}
           </div>

@@ -342,6 +342,8 @@ export function useCardDensity() {
   const [density, setDensityState] = useState<CardDensity>("comfortable");
 
   useEffect(() => {
+    // mount 后读 localStorage 同步到 React state（SSR hydration 安全），非派生数据
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDensityState(readSavedDensity());
     const handler = () => setDensityState(readSavedDensity());
     window.addEventListener(CARD_DENSITY_CHANGE_EVENT, handler);
@@ -363,6 +365,45 @@ export function useCardDensity() {
   }, [density, setDensity]);
 
   return { density, setDensity, toggle };
+}
+
+/* ─── 4b. 会话列表 hover 预览悬浮窗（默认关闭） ─── */
+
+const SESSION_HOVER_PREVIEW_KEY = "kp-session-hover-preview";
+const SESSION_HOVER_PREVIEW_EVENT = "kp-session-hover-preview-change";
+
+function readSessionHoverPreview(): boolean {
+  try {
+    return localStorage.getItem(SESSION_HOVER_PREVIEW_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** 会话 hover 监控小窗：默认关，可在对话设置 → 参数里开启 */
+export function useSessionHoverPreview() {
+  const [enabled, setEnabledState] = useState(false);
+
+  useEffect(() => {
+    // mount 后读 localStorage 同步到 React state（SSR hydration 安全），非派生数据
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEnabledState(readSessionHoverPreview());
+    const handler = () => setEnabledState(readSessionHoverPreview());
+    window.addEventListener(SESSION_HOVER_PREVIEW_EVENT, handler);
+    return () => window.removeEventListener(SESSION_HOVER_PREVIEW_EVENT, handler);
+  }, []);
+
+  const setEnabled = useCallback((next: boolean) => {
+    setEnabledState(next);
+    try {
+      localStorage.setItem(SESSION_HOVER_PREVIEW_KEY, next ? "1" : "0");
+    } catch {
+      // ignore
+    }
+    window.dispatchEvent(new CustomEvent(SESSION_HOVER_PREVIEW_EVENT));
+  }, []);
+
+  return { enabled, setEnabled };
 }
 
 /** Agent 聊天（L2：Chat 作为 Agent 子集） */

@@ -197,6 +197,8 @@ export function ChatView() {
   const [hoverMonitorSessionId, setHoverMonitorSessionId] = useState<string | null>(null);
   const { enabled: sessionHoverPreviewEnabled } = useSessionHoverPreview();
   useEffect(() => {
+    // 外部状态（hover preview 开关）变更时同步清理 UI 状态，非派生数据
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!sessionHoverPreviewEnabled) setHoverMonitorSessionId(null);
   }, [sessionHoverPreviewEnabled]);
   const hoverMonitorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -204,6 +206,8 @@ export function ChatView() {
   // 初始恒为 false，mount 后再读 localStorage，避免 SSR/首屏 hydration 不一致
   const [showOnboarding, setShowOnboarding] = useState(false);
   useEffect(() => {
+    // mount 后读 localStorage 同步到 React state（SSR 安全），非派生数据
+    /* eslint-disable react-hooks/set-state-in-effect */
     try {
       if (localStorage.getItem("kp-swarm-onboarding-dismissed") !== "1") {
         setShowOnboarding(true);
@@ -211,6 +215,7 @@ export function ChatView() {
     } catch {
       setShowOnboarding(true);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   const dismissSwarmOnboarding = () => {
     setShowOnboarding(false);
