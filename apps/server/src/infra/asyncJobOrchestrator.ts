@@ -79,6 +79,7 @@ export class AsyncJobOrchestrator {
         spec.jobId,
         setTimeout(() => {
           const idx = this.queue.findIndex((s) => s.jobId === spec.jobId);
+          this.queuedTimeouts.delete(spec.jobId);
           if (idx >= 0) {
             this.queue.splice(idx, 1);
             this.emit({ type: "timeout", jobId: spec.jobId, sessionId: spec.sessionId });
