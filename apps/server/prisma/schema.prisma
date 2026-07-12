@@ -126,6 +126,8 @@ model ChatSession {
   @@index([parentSessionId, status, updatedAt])
   @@index([kind, status])
   @@index([agentId, updatedAt])
+  // 会话侧栏列表 ORDER BY updatedAt DESC（无 status 过滤时走此索引避免全表排序）
+  @@index([updatedAt])
 }
 
 /// 聊天消息

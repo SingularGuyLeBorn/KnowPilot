@@ -1318,6 +1318,9 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   readonly entityName = "session";
   protected get delegate() { return this.prisma.chatSession; }
   protected formatEntity(raw: any): SessionEntity { return raw; }
+  // 会话列表按 updatedAt 排序：用户在旧会话发消息后，MessageService.afterCreate 会刷新
+  // session.updatedAt，使该会话浮到侧栏顶部。原默认 createdAt 排序导致旧会话永远停在原位。
+  protected override get defaultOrderBy(): string { return "updatedAt"; }
 
   protected buildListWhere(input: ListSessionsInput): any {
     const where: any = {};
