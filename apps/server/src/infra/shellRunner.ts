@@ -159,8 +159,18 @@ export async function runShellRestricted(
   }
 }
 
-export async function waitMs(ms: number): Promise<{ waitedMs: number }> {
+export async function waitMs(ms: number, signal?: AbortSignal): Promise<{ waitedMs: number; aborted: boolean }> {
   const clamped = Math.max(0, Math.min(ms, 300_000));
-  await new Promise((r) => setTimeout(r, clamped));
-  return { waitedMs: clamped };
+  if (signal?.aborted) return { waitedMs: 0, aborted: true };
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve({ waitedMs: clamped, aborted: false });
+    }, clamped);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve({ waitedMs: clamped, aborted: true });
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }

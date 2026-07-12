@@ -1136,8 +1136,16 @@ export async function startAsyncSleepTask(options: {
       } catch {
         /* 状态回写失败不阻塞 */
       }
-      await waitMs(ms);
-      if (signal.aborted) return;
+      const { aborted } = await waitMs(ms, signal);
+      if (aborted || signal.aborted) {
+        await options.services.task.update({
+          id: jobId,
+          status: "failed",
+          finishedAt: new Date(),
+          output: { error: "定时器已取消" } satisfies AsyncTaskOutput,
+        } as any).catch(() => undefined);
+        return;
+      }
       await options.services.task.update({
         id: jobId,
         status: "success",
