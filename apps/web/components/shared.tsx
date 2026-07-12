@@ -689,7 +689,7 @@ const ENGINE_STYLES: Record<
   searxng: { label: "SearXNG", bg: "bg-lime-50", text: "text-lime-700", border: "border-lime-200", icon: Globe },
 };
 
-function SearchEnginePill({ engine }: { engine: string }) {
+function SearchEnginePill({ engine, dense = false }: { engine: string; dense?: boolean }) {
   const style = ENGINE_STYLES[engine];
   const Icon = style?.icon ?? Search;
   const label = style?.label ?? engine;
@@ -697,21 +697,62 @@ function SearchEnginePill({ engine }: { engine: string }) {
     <span
       title={engine}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:opacity-80",
+        "inline-flex max-w-full items-center gap-1 rounded-full border font-medium transition hover:opacity-80",
+        dense ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-0.5 text-[10px]",
         style?.bg ?? "bg-[var(--kp-bg-mute)]",
         style?.text ?? "text-[var(--kp-text-2)]",
         style?.border ?? "border-[var(--kp-divider)]",
       )}
     >
-      <Icon className="h-3 w-3" />
-      {label}
+      <Icon className={cn("shrink-0", dense ? "h-2.5 w-2.5" : "h-3 w-3")} />
+      <span className="truncate">{label}</span>
     </span>
+  );
+}
+
+/** 侧栏用：纵向优先级列表，避免药丸 + 长字符串横向撑破面板 */
+function SearchEnginePriorityList({ engines }: { engines: string[] }) {
+  if (engines.length === 0) return null;
+  return (
+    <ol className="min-w-0 space-y-1" aria-label="搜索引擎优先级">
+      {engines.map((engine, index) => {
+        const style = ENGINE_STYLES[engine];
+        const label = style?.label ?? engine;
+        return (
+          <li
+            key={`${engine}-${index}`}
+            className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/80 px-2 py-1"
+          >
+            <span
+              className={cn(
+                "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold tabular-nums",
+                index === 0
+                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+                  : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+              )}
+              aria-hidden
+            >
+              {index + 1}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-[var(--kp-text-1)]" title={engine}>
+              {label}
+            </span>
+            {index === 0 && (
+              <span className="shrink-0 rounded bg-[var(--kp-brand-soft)] px-1 py-px text-[8px] font-medium text-[var(--kp-brand-deep)]">
+                首选
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
 export function NativeCapabilitiesPanel({
   data,
   compact = false,
+  sidebar = false,
   className,
   title = "原生运行时能力",
   detailHref,
@@ -720,6 +761,8 @@ export function NativeCapabilitiesPanel({
 }: {
   data: NativeCapabilitiesData;
   compact?: boolean;
+  /** Chat 右栏窄面板：纵向优先级 + 禁止横向溢出 */
+  sidebar?: boolean;
   className?: string;
   title?: string;
   detailHref?: string;
@@ -735,30 +778,33 @@ export function NativeCapabilitiesPanel({
       ] as const)
     : [];
 
+  const showEngineList = sidebar || showSearchEnginesInCompact || !compact;
+  const usePriorityList = sidebar || (compact && showSearchEnginesInCompact);
+
   return (
     <div
       className={cn(
-        "rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] space-y-3",
-        compact ? "p-4" : "p-5 space-y-4",
+        "min-w-0 max-w-full overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]",
+        sidebar ? "space-y-2.5 p-2.5" : compact ? "space-y-3 p-4" : "space-y-4 p-5",
         className,
       )}
       data-testid="native-capabilities-panel"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
-          <Globe className="h-4 w-4 text-[var(--kp-brand-deep)]" />
-          {title}
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
+          <Globe className="h-4 w-4 shrink-0 text-[var(--kp-brand-deep)]" />
+          <span className="truncate">{title}</span>
         </div>
         {detailHref && (
           <Link
             href={detailHref}
-            className="text-[10px] font-medium text-[var(--kp-brand-deep)] hover:underline"
+            className="shrink-0 text-[10px] font-medium text-[var(--kp-brand-deep)] hover:underline"
           >
             {detailLabel} →
           </Link>
         )}
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className={cn(sidebar ? "grid grid-cols-2 gap-1.5" : "flex flex-wrap gap-2")}>
         <CapabilityStatusDot
           ok={data.search.engines.length > 0}
           label={`搜索 ${data.search.engines.length}`}
@@ -773,24 +819,37 @@ export function NativeCapabilitiesPanel({
           />
         )}
       </div>
-      {(showSearchEnginesInCompact || !compact) && data.search.engines.length > 0 && (
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-[var(--kp-text-3)]">引擎：</span>
-            {data.search.engines.map((engine) => (
-              <SearchEnginePill key={engine} engine={engine} />
-            ))}
-            <span
-              className="ml-1 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)]/50 px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]"
-              title="搜索优先级策略"
-            >
-              {data.search.priority}
-            </span>
-          </div>
+      {showEngineList && data.search.engines.length > 0 && (
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[10px] font-medium text-[var(--kp-text-2)]">搜索引擎优先级</p>
+          {usePriorityList ? (
+            <SearchEnginePriorityList engines={data.search.engines} />
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-1.5">
+                {data.search.engines.map((engine) => (
+                  <SearchEnginePill key={engine} engine={engine} />
+                ))}
+              </div>
+              {data.search.priority && (
+                <p
+                  className="break-all text-[10px] leading-relaxed text-[var(--kp-text-3)]"
+                  title="SEARCH_ENGINE_PRIORITY"
+                >
+                  {data.search.priority}
+                </p>
+              )}
+            </>
+          )}
+          {sidebar && data.search.priority && (
+            <p className="text-[9px] leading-snug text-[var(--kp-text-3)]">
+              顺序由服务端 <code className="text-[var(--kp-text-2)]">SEARCH_ENGINE_PRIORITY</code> 决定，详见 Tools 页。
+            </p>
+          )}
         </div>
       )}
       {cookieEntries.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className={cn(sidebar ? "grid grid-cols-2 gap-1.5" : "flex flex-wrap gap-1.5")}>
           {cookieEntries.map(([key, label, ok]) => (
             <CapabilityStatusDot key={key} ok={ok} label={label} />
           ))}

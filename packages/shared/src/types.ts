@@ -156,7 +156,7 @@ export interface ChatSession {
   agentId?: string | null;
   // Swarm/Subagent 扩展字段
   parentSessionId?: string | null;
-  kind?: "chat" | "subagent";
+  kind?: "chat" | "subagent" | "heartbeat";
   status?: import("./schemas.js").SessionStatus;
   taskDescription?: string | null;
   isMainSession?: boolean;

@@ -95,29 +95,33 @@ export class HeartbeatEngine {
   /** 全量刷新心跳注册（Agent 配置变更后生效） */
   async refresh(): Promise<void> {
     if (!this.started) return;
-    // 停止所有现有任务
-    for (const job of this.jobs.values()) job.stop();
-    this.jobs.clear();
+    try {
+      // 停止所有现有任务
+      for (const job of this.jobs.values()) job.stop();
+      this.jobs.clear();
 
-    // 重新加载
-    const agents = await this.prisma.agent.findMany({
-      where: {
-        status: { in: ["active", "idle"] },
-        tier: { in: ["super", "manager", "sub"] },
-      },
-    });
-
-    // stop() 可能在 await 期间被调用，此时不应再注册新 cron job
-    if (!this.started) return;
-
-    for (const agent of agents) {
-      const hb = this.parseHeartbeat(agent.heartbeat);
-      if (!hb?.enabled || !hb.cron || !cron.validate(hb.cron)) continue;
-
-      const job = cron.schedule(hb.cron, () => {
-        void this.triggerHeartbeat(agent.id);
+      // 重新加载
+      const agents = await this.prisma.agent.findMany({
+        where: {
+          status: { in: ["active", "idle"] },
+          tier: { in: ["super", "manager", "sub"] },
+        },
       });
-      this.jobs.set(agent.id, job);
+
+      // stop() 可能在 await 期间被调用，此时不应再注册新 cron job
+      if (!this.started) return;
+
+      for (const agent of agents) {
+        const hb = this.parseHeartbeat(agent.heartbeat);
+        if (!hb?.enabled || !hb.cron || !cron.validate(hb.cron)) continue;
+
+        const job = cron.schedule(hb.cron, () => {
+          void this.triggerHeartbeat(agent.id);
+        });
+        this.jobs.set(agent.id, job);
+      }
+    } catch (err) {
+      console.warn(`  💓 [HeartbeatEngine] refresh 失败:`, err instanceof Error ? err.message : err);
     }
   }
 

@@ -4,11 +4,14 @@
  * Agent Chat 右侧设置 Panel — 标签页布局 · 莫兰迪玻璃拟态
  */
 
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
   Cpu,
+  ExternalLink,
+  Eye,
   Gauge,
   Sparkles,
   SlidersHorizontal,
@@ -24,7 +27,7 @@ import { KpSelect, NativeCapabilitiesPanel } from "@/components/shared";
 import type { SelectedSkill } from "@/components/chatInput";
 import { TokenBudgetBar, type TokenBudgetSnapshot } from "@/components/tokenBudgetBar";
 import { trpc } from "@/lib/trpc";
-import { useNativeCapabilities } from "@/lib/hooks";
+import { useNativeCapabilities, useSessionHoverPreview } from "@/lib/hooks";
 
 const spring = { type: "spring" as const, stiffness: 260, damping: 26 };
 
@@ -39,6 +42,61 @@ function modelCardTitle(label: string): string {
 }
 
 type SettingsTab = "model" | "params" | "prompt" | "skills";
+
+function SettingsSection({
+  title,
+  icon: Icon,
+  children,
+  action,
+}: {
+  title: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  children: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <section className="min-w-0 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
+      <div className="mb-2 flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {Icon && (
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+              <Icon className="h-3 w-3" />
+            </span>
+          )}
+          <span className="truncate text-[11px] font-semibold text-[var(--kp-text-1)]">{title}</span>
+        </div>
+        {action}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </section>
+  );
+}
+
+function SettingsFooterLinks() {
+  const links = [
+    { href: "/tools", label: "工具与搜索引擎" },
+    { href: "/memories", label: "长期记忆" },
+    { href: "/settings", label: "远程访问与安全" },
+  ] as const;
+  return (
+    <div className="min-w-0 space-y-1 border-t border-[var(--kp-divider)] pt-3">
+      <p className="text-[10px] font-medium text-[var(--kp-text-3)]">更多系统设置</p>
+      <ul className="space-y-1">
+        {links.map((item) => (
+          <li key={item.href}>
+            <Link
+              href={item.href}
+              className="flex min-w-0 items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-[11px] text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-soft)] hover:text-[var(--kp-brand-deep)]"
+            >
+              <span className="truncate">{item.label}</span>
+              <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function MorandiSlider({
   label,
@@ -59,7 +117,7 @@ function MorandiSlider({
 }) {
   const pct = ((value - min) / (max - min)) * 100;
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <div className="flex items-center justify-between text-xs">
         <span className="font-medium text-[var(--kp-text-2)]">{label}</span>
         <span className="tabular-nums font-semibold text-[var(--kp-brand-deep)]">{display}</span>
@@ -189,6 +247,18 @@ export interface ChatSettingsPanelProps {
   tokenBudget: TokenBudgetSnapshot;
 }
 
+function SessionHoverPreviewToggle() {
+  const { enabled, setEnabled } = useSessionHoverPreview();
+  return (
+    <KpToggle
+      checked={enabled}
+      onChange={setEnabled}
+      label="会话 hover 预览"
+      hint="开启后，悬停左侧会话会出现右上角监控小窗（默认关闭）"
+    />
+  );
+}
+
 // R17：memo 化——resetPromptToAgent/onOpenPromptEditor 已 useCallback、skills 已 useMemo，流式期间跳过
 export const ChatSettingsPanel = memo(function ChatSettingsPanel({
   chatConfig,
@@ -234,7 +304,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
     !PRIMARY_CHAT_MODELS.some((m) => m.id === chatConfig.model) ? chatConfig.model : null;
 
   return (
-    <div className="flex h-full w-[360px] flex-col">
+    <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-x-hidden">
       <div className="relative shrink-0 overflow-hidden border-b border-[var(--kp-divider)] px-3 py-2.5">
         <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-[var(--kp-brand-soft)] blur-2xl" />
         <div className="relative flex items-center gap-2.5">
@@ -258,7 +328,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
 
       <PanelTabBar tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3">
         <AnimatePresence mode="wait">
           {activeTab === "model" && (
             <motion.div
@@ -271,7 +341,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
             >
               <div>
                 <p className="mb-1.5 text-[11px] font-medium text-[var(--kp-text-3)]">选择模型</p>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="flex flex-col gap-1.5">
                   {PRIMARY_CHAT_MODELS.map((m) => {
                     const active = chatConfig.model === m.id;
                     return (
@@ -286,25 +356,28 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                           })
                         }
                         className={cn(
-                          "flex min-h-[64px] flex-col items-start rounded-xl border px-2 py-2 text-left transition-colors",
+                          "flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
                           active
                             ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] shadow-sm"
                             : "border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]",
                         )}
                       >
-                        <span
-                          className={cn(
-                            "text-[11px] font-semibold leading-tight",
-                            active ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-1)]",
-                          )}
-                        >
-                          {modelCardTitle(m.label)}
-                        </span>
-                        <span className="mt-1 line-clamp-2 text-[9px] leading-snug text-[var(--kp-text-3)]">
-                          {MODEL_HINTS[m.id] ?? m.provider}
-                        </span>
+                        <Cpu className={cn("h-4 w-4 shrink-0", active ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-3)]")} />
+                        <div className="min-w-0 flex-1">
+                          <span
+                            className={cn(
+                              "block text-[12px] font-semibold leading-tight",
+                              active ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-1)]",
+                            )}
+                          >
+                            {modelCardTitle(m.label)}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[10px] leading-snug text-[var(--kp-text-3)]">
+                            {MODEL_HINTS[m.id] ?? m.provider}
+                          </span>
+                        </div>
                         {active && (
-                          <span className="mt-auto pt-1 text-[9px] font-medium text-[var(--kp-brand-deep)]">
+                          <span className="shrink-0 rounded-full bg-[var(--kp-brand-deep)] px-2 py-0.5 text-[9px] font-medium text-white">
                             当前
                           </span>
                         )}
@@ -321,7 +394,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
 
               <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
                 <div className="mb-2 flex items-center gap-1.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
                     <Brain className="h-3 w-3" />
                   </span>
                   <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">思考模式</span>
@@ -362,20 +435,13 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.2 }}
-              className="space-y-3"
+              className="min-w-0 space-y-3"
             >
-              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
-                <div className="mb-2 flex items-center gap-1.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-                    <Gauge className="h-3 w-3" />
-                  </span>
-                  <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">Token 预算</span>
-                </div>
-                <TokenBudgetBar snapshot={tokenBudget} dailyBudget={dailyBudget} />
-              </div>
+              <SettingsSection title="上下文与预算" icon={Gauge}>
+                <TokenBudgetBar snapshot={tokenBudget} dailyBudget={dailyBudget} embedded />
+              </SettingsSection>
 
-              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
-                <div className="mb-2 text-[11px] font-semibold text-[var(--kp-text-1)]">生成参数</div>
+              <SettingsSection title="生成参数" icon={SlidersHorizontal}>
                 <div className="space-y-3">
                   <MorandiSlider
                     label="温度"
@@ -396,15 +462,9 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                     onChange={(maxTokens) => updateConfig({ maxTokens })}
                   />
                 </div>
-              </div>
+              </SettingsSection>
 
-              <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] p-2.5 shadow-sm backdrop-blur-md">
-                <div className="mb-2 flex items-center gap-1.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-                    <Wrench className="h-3 w-3" />
-                  </span>
-                  <span className="text-[11px] font-semibold text-[var(--kp-text-1)]">工具调用</span>
-                </div>
+              <SettingsSection title="工具调用" icon={Wrench}>
                 <div className="space-y-3">
                   <MorandiSlider
                     label="单工具超时"
@@ -425,23 +485,29 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                     onChange={(maxToolRounds) => updateConfig({ maxToolRounds })}
                   />
                   <p className="text-[10px] leading-snug text-[var(--kp-text-3)]">
-                    超时/轮数设为 0 走后端默认。
+                    设为 0 时使用服务端默认（config.yaml / 环境变量）。
                   </p>
                 </div>
-              </div>
+              </SettingsSection>
+
+              <SettingsSection title="界面" icon={Eye}>
+                <SessionHoverPreviewToggle />
+              </SettingsSection>
 
               {runtimeCaps && (
-                <div data-testid="chat-runtime-capabilities">
+                <div className="min-w-0" data-testid="chat-runtime-capabilities">
                   <NativeCapabilitiesPanel
                     data={runtimeCaps}
                     compact
+                    sidebar
                     title="网络工具运行时"
-                    showSearchEnginesInCompact
                     detailHref="/tools"
                     detailLabel="能力详情"
                   />
                 </div>
               )}
+
+              <SettingsFooterLinks />
             </motion.div>
           )}
 

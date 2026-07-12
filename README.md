@@ -44,7 +44,7 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 | 能力 | 说明 |
 |------|------|
 | <img src="docs/assets/icons/markdown.svg" width="18" align="absmiddle" alt=""> **Markdown 原生** | 文章以 `.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑，粘贴/拖拽上传图片。 |
-| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考过程时间线、工具调用同步/异步标识、auto-compact 上下文压缩。 |
+| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。 |
 | <img src="docs/assets/icons/sparkles.svg" width="18" align="absmiddle" alt=""> **Swarm 三层 Agent** | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。 |
 | <img src="docs/assets/icons/palette.svg" width="18" align="absmiddle" alt=""> **莫兰迪星河设计** | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。 |
 | <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。19 实体 CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
@@ -169,7 +169,9 @@ KnowPilot/
 │   ├── tasks/               # Task 配置（JSON + db:sync）
 │   ├── mcp/                 # MCP Server 配置（YAML）
 │   └── uploads/             # 上传文件
-├── docs/development/        # L1-L5 阶段开发文档与 API 规范
+├── docs/
+│   ├── development/        # L1-L5 阶段开发文档与 API 规范
+│   └── surveys-2026/       # 2026 记忆 / Harness / Agent 综述与 KnowPilot 对比分析
 ├── config.yaml              # 运行时业务参数（stream / compact 等）
 └── README.md                # 本文件
 ```
@@ -203,6 +205,20 @@ KnowPilot/
 - **Compose Store** — 瞬态 UI（输入队列、乐观气泡、异步任务覆盖层）
 
 七条不变量（INV-1 ~ INV-7）覆盖流提交、渲染单一所有权、挂接进度一致性、消息持久化广播一致性、切会话即对账等。详见 [`docs/development/chat-state-architecture.md`](docs/development/chat-state-architecture.md)。
+
+### Auto-Compact：摘要单源，防重复暴露
+
+对标 Claude Code 的 `compact_boundary` + `getMessagesAfterCompactBoundary` 实践，压缩后摘要**只经一条路径**进入 LLM：
+
+| 存储 / 通道 | 作用 |
+|---|---|
+| `ChatSession.contextSummary` | 摘要唯一权威源 |
+| `maybeCompactMessages` | 每轮最多注入一份摘要 + 最近消息 |
+| 边界消息 `__context_compact__` | UI 时间线与元数据，**不含**完整摘要正文 |
+| `session_compact` 工具返回值 | 仅 `success` / 条数，**无** `summaryPreview` |
+| Agent 确认回复 | 代码层强制「压缩已完成」，禁止复述摘要 |
+
+手动压缩：`/compact`、侧栏「立即压缩」→ 普通用户消息 → Agent → `session_compact`。程序化调用可走 tRPC `session.compact`（`aiReadable`，不经 Agent 回合）。详见 [`docs/development/开发心路历程.md`](docs/development/开发心路历程.md) 与 [`docs/surveys-2026/对比分析-记忆-Harness-Agent.md`](docs/surveys-2026/对比分析-记忆-Harness-Agent.md)。
 
 ### 100 个几何 SVG Agent 头像
 

@@ -92,6 +92,11 @@ export const SessionListItem = memo(function SessionListItem({
       >
         <div className="truncate font-medium">
           {session.autoName || session.title}
+          {session.kind === "heartbeat" && (
+            <span className="ml-1.5 rounded bg-orange-100 px-1 py-0.5 text-[10px] font-normal text-orange-700">
+              心跳
+            </span>
+          )}
           {session.status === "archived" && (
             <span className="ml-1.5 rounded bg-[var(--kp-bg-mute)] px-1 py-0.5 text-[10px] font-normal text-[var(--kp-text-3)]">
               已归档

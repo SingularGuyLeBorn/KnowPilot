@@ -326,7 +326,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/30 p-4 pt-[15vh] backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 p-4 pt-[12vh]"
       onClick={() => setOpen(false)}
     >
       <div
@@ -337,7 +337,7 @@ export function CommandPalette() {
         aria-modal="true"
       >
         <div className="flex items-center gap-3 border-b border-[var(--kp-divider)] px-4 py-3">
-          <Search className="h-5 w-5 text-[var(--kp-text-3)]" />
+          <Search className="h-5 w-5 shrink-0 text-[var(--kp-text-3)]" />
           <Input
             ref={inputRef}
             value={query}
@@ -345,7 +345,7 @@ export function CommandPalette() {
             placeholder="搜索文章、Agent、Skill、分类…"
             className="h-auto border-0 bg-transparent px-0 text-base text-[var(--kp-text-1)] shadow-none placeholder:text-[var(--kp-text-3)] focus-visible:ring-0"
           />
-          <span className="hidden sm:inline-block">
+          <span className="hidden shrink-0 sm:inline-block">
             <ShortcutEsc />
           </span>
         </div>
@@ -362,19 +362,19 @@ export function CommandPalette() {
           </div>
         </ScrollArea>
 
-        <div className="flex items-center justify-between border-t border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-3)]">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-t border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-2.5 text-xs text-[var(--kp-text-3)]">
+          <div className="flex shrink-0 items-center gap-4">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <KbdKey icon={ChevronUp} label="上" />
               <KbdKey icon={ChevronDown} label="下" />
-              选择
+              <span className="hidden sm:inline">选择</span>
             </span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
               <KbdKey icon={CornerDownLeft} label="确认" />
-              确认
+              <span className="hidden sm:inline">确认</span>
             </span>
           </div>
-          <span>{items.length} 个结果</span>
+          <span className="shrink-0 whitespace-nowrap tabular-nums">{items.length} 个结果</span>
         </div>
       </div>
     </div>
