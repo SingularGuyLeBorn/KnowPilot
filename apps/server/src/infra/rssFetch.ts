@@ -152,14 +152,12 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<string>
         Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
       },
     });
-    clearTimeout(timer);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const text = await res.text();
     if (!text || text.length < 50) throw new Error("响应内容过短");
     return text;
-  } catch (err) {
+  } finally {
     clearTimeout(timer);
-    throw err;
   }
 }
 
