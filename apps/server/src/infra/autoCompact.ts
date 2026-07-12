@@ -9,6 +9,8 @@
 import type { AppConfig } from "./config.js";
 import { chatCompletion, type LlmMessage } from "./llmClient.js";
 import type { ServiceContainer } from "./serviceContainer.js";
+// type-only：避免运行时循环依赖（agentStream 反向 import maybeCompactMessages）
+import type { AgentStreamEvent } from "./agentStream.js";
 import {
   DEFAULT_COMPACT_KEEP_RECENT,
   DEFAULT_COMPACT_TRIGGER_RATIO,
@@ -120,6 +122,14 @@ export interface CompactResult {
   memoriesFlushed?: number;
   /** 实际使用的字符阈值 */
   charThresholdUsed?: number;
+  /** 本次压缩代数（用于边界消息与 UI 时间线） */
+  generation?: number;
+  /** 被摘要的旧消息条数 */
+  messagesSummarized?: number;
+  /** 压缩前字符数（用于 UI 展示降幅） */
+  charBefore?: number;
+  /** 压缩后字符数 */
+  charAfter?: number;
 }
 
 export interface CompactOptions {
@@ -128,6 +138,8 @@ export interface CompactOptions {
     services: ServiceContainer;
     sessionId?: string;
   };
+  /** 压缩阶段事件回调；仅在真正 macro 压缩时触发，reused / 未触发不 emit */
+  emit?: (event: AgentStreamEvent) => void;
 }
 
 /**
@@ -197,6 +209,10 @@ export async function maybeCompactMessages(
     );
   }
 
+  const charBefore = estimateChars(messages);
+  const estimatedRatio = charThreshold > 0 ? Math.min(1, charBefore / charThreshold) : 1;
+  options?.emit?.({ type: "compact_start", generation, estimatedRatio, round: 0 });
+
   try {
     const summary = await chatCompletion({
       config,
@@ -215,46 +231,74 @@ export async function maybeCompactMessages(
 
     const summaryBody = summary.content?.trim();
     if (!summaryBody) {
+      const trimmed = trimOldest(working, settings.keepRecent);
+      options?.emit?.({
+        type: "compact_error",
+        message: "摘要 LLM 返回空内容，已降级裁剪最早消息",
+        fallback: "trim",
+        generation,
+      });
       return {
-        messages: trimOldest(working, settings.keepRecent),
+        messages: trimmed,
         compacted: true,
         memoriesFlushed,
         charThresholdUsed: charThreshold,
+        generation,
+        messagesSummarized: toSummarize.length,
+        charBefore,
+        charAfter: estimateChars(trimmed),
       };
     }
 
     const boundary = buildCompactBoundaryMarker(generation);
     const summaryText = summaryBody;
     const compactedMessages: LlmMessage[] = [...system, ...buildSummaryPair(summaryBody, generation), ...recent];
+    const charAfter = estimateChars(compactedMessages);
     console.log(
-      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${estimateChars(messages)} → ${estimateChars(compactedMessages)} 字符，阈值 ${charThreshold}，flush ${memoriesFlushed}）`,
+      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${charBefore} → ${charAfter} 字符，阈值 ${charThreshold}，flush ${memoriesFlushed}）`,
     );
+    // compact_end 由调用方（agentStream）在写入边界消息后 emit，避免此处提前发完又重发。
     return {
       messages: compactedMessages,
       compacted: true,
       summaryText,
       memoriesFlushed,
       charThresholdUsed: charThreshold,
+      generation,
+      messagesSummarized: toSummarize.length,
+      charBefore,
+      charAfter,
     };
   } catch (err) {
     console.warn("[AutoCompact] 压缩失败，降级裁剪最早消息:", err instanceof Error ? err.message : err);
+    const trimmed = trimOldest(working, settings.keepRecent);
+    options?.emit?.({
+      type: "compact_error",
+      message: err instanceof Error ? err.message : String(err),
+      fallback: "trim",
+      generation,
+    });
     return {
-      messages: trimOldest(working, settings.keepRecent),
+      messages: trimmed,
       compacted: true,
       memoriesFlushed,
       charThresholdUsed: charThreshold,
+      generation,
+      messagesSummarized: toSummarize.length,
+      charBefore,
+      charAfter: estimateChars(trimmed),
     };
   }
 }
 
-/** 手动压缩：基于完整历史生成摘要文本（供 tRPC session.compact） */
+/** 手动压缩：基于完整历史生成摘要（供 tRPC / session_compact 工具） */
 export async function compactSessionHistory(
   config: AppConfig,
   messages: LlmMessage[],
   model: string,
   existingSummary?: string | null,
-  flushContext?: CompactOptions["flushContext"],
-): Promise<{ summaryText: string; compacted: boolean; memoriesFlushed?: number }> {
+  options?: CompactOptions,
+): Promise<CompactResult> {
   const base = getCompactSettings(config);
   const forced = await maybeCompactMessages(
     {
@@ -276,12 +320,175 @@ export async function compactSessionHistory(
     },
     messages,
     model,
-    { existingSummary, flushContext },
+    options,
   );
-  if (forced.summaryText) {
-    return { summaryText: forced.summaryText, compacted: true, memoriesFlushed: forced.memoriesFlushed };
+  if (forced.compacted && forced.summaryText) {
+    return forced;
   }
-  return { summaryText: existingSummary?.trim() || "", compacted: false };
+  return {
+    messages,
+    compacted: false,
+    summaryText: existingSummary?.trim() || undefined,
+    charThresholdUsed: forced.charThresholdUsed,
+  };
+}
+
+export type CompactPersistTrigger = "auto" | "manual" | "agent";
+
+const COMPACT_TRIGGER_LABEL: Record<CompactPersistTrigger, string> = {
+  auto: "已自动压缩上下文",
+  manual: "已手动压缩上下文",
+  agent: "已压缩上下文（由助手触发）",
+};
+
+/** 压缩结果落库：contextSummary + 边界 ChatMessage（手动/自动/工具共用） */
+export async function persistCompactResult(
+  services: ServiceContainer,
+  sessionId: string,
+  compacted: CompactResult,
+  options?: { trigger?: CompactPersistTrigger; emit?: (event: AgentStreamEvent) => void },
+): Promise<{ boundaryMessageId?: string; skipped: boolean }> {
+  if (!compacted.compacted || compacted.reused || !compacted.summaryText?.trim()) {
+    return { skipped: true };
+  }
+  const trigger = options?.trigger ?? "auto";
+  const generation = compacted.generation ?? 1;
+
+  await services.session.update({
+    id: sessionId,
+    contextSummary: compacted.summaryText,
+    contextCompactedAt: new Date(),
+  } as any);
+
+  const boundaryMarker = buildCompactBoundaryMarker(generation);
+  const summarized = compacted.messagesSummarized ?? 0;
+  const boundaryContent = `${boundaryMarker}\n${COMPACT_TRIGGER_LABEL[trigger]}：${summarized} 条旧消息已摘要，模型从本轮起只看到「摘要 + 最近消息」。原文仍在上方可滚动查看。`;
+  const boundaryToolCalls = [
+    {
+      id: `compact_v${generation}_${Date.now()}`,
+      name: "__context_compact__",
+      args: {
+        trigger,
+        generation,
+        messagesSummarized: summarized,
+        charBefore: compacted.charBefore ?? 0,
+        charAfter: compacted.charAfter ?? 0,
+        memoriesFlushed: compacted.memoriesFlushed ?? 0,
+      },
+      result: {
+        summary: compacted.summaryText,
+        boundary: boundaryMarker,
+        memoriesFlushed: compacted.memoriesFlushed ?? 0,
+        trigger,
+      },
+      kind: "compact",
+    },
+  ];
+
+  const boundaryMsg = await services.message.create({
+    sessionId,
+    role: "assistant",
+    content: boundaryContent,
+    toolCalls: boundaryToolCalls,
+    source: "system",
+  });
+  const boundaryMessageId = boundaryMsg?.success ? (boundaryMsg.data as { id?: string })?.id : undefined;
+
+  if (boundaryMessageId && options?.emit) {
+    options.emit({
+      type: "compact_end",
+      generation,
+      summaryPreview: compacted.summaryText.slice(0, 200),
+      messagesSummarized: summarized,
+      memoriesFlushed: compacted.memoriesFlushed ?? 0,
+      charBefore: compacted.charBefore ?? 0,
+      charAfter: compacted.charAfter ?? 0,
+      boundaryMessageId,
+    });
+  }
+
+  return { boundaryMessageId, skipped: false };
+}
+
+const SESSION_HISTORY_PAGE_SIZE = 200;
+
+export interface RunSessionCompactResult {
+  compacted: boolean;
+  message: string;
+  summaryPreview?: string;
+  boundaryMessageId?: string;
+  memoriesFlushed?: number;
+  messagesSummarized?: number;
+  generation?: number;
+}
+
+/** 手动 / Agent 工具 / tRPC 共用的会话压缩入口 */
+export async function runSessionCompact(params: {
+  config: AppConfig;
+  services: ServiceContainer;
+  sessionId: string;
+  model: string;
+  systemPrompt: string;
+  existingSummary?: string | null;
+  trigger: CompactPersistTrigger;
+  emit?: (event: AgentStreamEvent) => void;
+}): Promise<RunSessionCompactResult> {
+  const history = await params.services.message.list({
+    sessionId: params.sessionId,
+    page: 1,
+    pageSize: SESSION_HISTORY_PAGE_SIZE,
+  });
+  const { buildLlmMessagesFromHistory } = await import("./chatHistory.js");
+  const messages = buildLlmMessagesFromHistory(
+    params.systemPrompt || "你是 KnowPilot 助手。",
+    history.items,
+    { modelId: params.model },
+  );
+
+  const charThreshold = resolveCompactThresholdForModel(params.config, params.model);
+  const charBefore = estimateChars(messages);
+  const estimatedRatio = charThreshold > 0 ? Math.min(1, charBefore / charThreshold) : 1;
+  const generation = nextCompactGeneration(params.existingSummary);
+
+  if (params.trigger !== "auto") {
+    params.emit?.({ type: "compact_start", generation, estimatedRatio, round: 0 });
+  }
+
+  const compacted = await compactSessionHistory(
+    params.config,
+    messages,
+    params.model,
+    params.existingSummary,
+    {
+      flushContext: { services: params.services, sessionId: params.sessionId },
+      emit: params.trigger === "auto" ? params.emit : undefined,
+    },
+  );
+
+  if (!compacted.compacted || !compacted.summaryText) {
+    return { compacted: false, message: "消息较少，无需压缩。" };
+  }
+
+  const { boundaryMessageId, skipped } = await persistCompactResult(
+    params.services,
+    params.sessionId,
+    compacted,
+    { trigger: params.trigger, emit: params.emit },
+  );
+
+  if (skipped) {
+    return { compacted: false, message: "压缩未生效（可能已复用摘要）。" };
+  }
+
+  return {
+    compacted: true,
+    message: "上下文已压缩并保存。",
+    summaryPreview: compacted.summaryText.slice(0, 200),
+    boundaryMessageId,
+    memoriesFlushed: compacted.memoriesFlushed,
+    messagesSummarized: compacted.messagesSummarized,
+    generation: compacted.generation,
+  };
 }
 
 /** 供 chatHistory / agentStream 对齐的 tool result 截断上限 */

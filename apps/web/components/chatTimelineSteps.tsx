@@ -160,7 +160,14 @@ const ToolStep = memo(function ToolStep({
 }) {
   // 默认折叠（不展开详情）；用户可手动点击 summary 展开
   const [open, setOpen] = useState(false);
-  const displayName = step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
+  const displayName =
+    step.name === "__context_compact__" || step.name === "session_compact"
+      ? "上下文压缩"
+      : step.name === "__thinking__"
+        ? "思考"
+        : step.name === "__content__"
+          ? "中间回复"
+          : step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
   const hasError =
     step.result &&
     typeof step.result === "object" &&

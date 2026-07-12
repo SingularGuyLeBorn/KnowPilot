@@ -375,38 +375,29 @@ const sessionRouter = router({
     ),
   update: publicProcedure.meta({ description: "更新会话标题或系统提示。", aiReadable: true }).input(updateSessionSchema).mutation(({ ctx, input }) => ctx.services.session.update(input)),
   compact: publicProcedure
-    .meta({ description: "手动压缩会话上下文：生成摘要并写入 ChatSession.contextSummary。", aiReadable: true })
+    .meta({ description: "手动压缩会话上下文：生成摘要、写入 contextSummary 并落库边界消息。", aiReadable: true })
     .input(compactSessionSchema)
     .mutation(async ({ ctx, input }) => {
       const session = await ctx.services.session.getByIdLite(input.id);
-      const history = await ctx.services.message.list({ sessionId: input.id, page: 1, pageSize: 200 });
-      const { buildLlmMessagesFromHistory } = await import("./infra/chatHistory.js");
-      const { compactSessionHistory } = await import("./infra/autoCompact.js");
-      const messages = buildLlmMessagesFromHistory(
-        session.systemPrompt || "你是 KnowPilot 助手。",
-        history.items,
-        { modelId: session.model },
-      );
-      const result = await compactSessionHistory(
-        ctx.config,
-        messages,
-        session.model || "deepseek-v4-flash",
-        session.contextSummary,
-        { services: ctx.services, sessionId: input.id },
-      );
-      if (!result.compacted || !result.summaryText) {
-        return { success: true as const, compacted: false, message: "消息较少，无需压缩。" };
+      const { runSessionCompact } = await import("./infra/autoCompact.js");
+      const result = await runSessionCompact({
+        config: ctx.config,
+        services: ctx.services,
+        sessionId: input.id,
+        model: session.model || "deepseek-v4-flash",
+        systemPrompt: session.systemPrompt || "你是 KnowPilot 助手。",
+        existingSummary: session.contextSummary,
+        trigger: "manual",
+      });
+      if (!result.compacted) {
+        return { success: true as const, compacted: false, message: result.message };
       }
-      await ctx.services.session.update({
-        id: input.id,
-        contextSummary: result.summaryText,
-        contextCompactedAt: new Date(),
-      } as any);
       return {
         success: true as const,
         compacted: true,
-        summaryPreview: result.summaryText.slice(0, 200),
-        message: "上下文已压缩并保存。",
+        summaryPreview: result.summaryPreview,
+        boundaryMessageId: result.boundaryMessageId,
+        message: result.message,
       };
     }),
   stop: publicProcedure

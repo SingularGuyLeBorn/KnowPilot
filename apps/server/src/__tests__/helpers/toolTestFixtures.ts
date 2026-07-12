@@ -240,6 +240,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "sleep",
   "session_clear",
   "session_rotate",
+  "session_compact",
   // Swarm 管理工具
   "agent_create",
   "agent_update",

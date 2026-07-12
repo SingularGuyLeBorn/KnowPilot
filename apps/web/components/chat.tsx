@@ -324,11 +324,6 @@ export function ChatView() {
   const deleteSession = trpc.session.delete.useMutation();
   const bulkDeleteMutation = trpc.session.bulkDelete.useMutation();
   const switchVersion = trpc.message.switchVersion.useMutation();
-  const compactSession = trpc.session.compact.useMutation({
-    onSuccess: async (_data, variables) => {
-      await utils.session.getById.invalidate({ id: variables.id });
-    },
-  });
 
   const defaultAgentId = useMemo(() => {
     const items = agentsQuery.data?.items;
@@ -1922,8 +1917,22 @@ export function ChatView() {
       skill?: SelectedSkill,
       attachments?: ChatQueueItem["attachments"],
     ) => {
-      const trimmed = text.trim();
-      if ((!trimmed && !attachments?.length) || backendDown) return;
+      let messageText = text.trim();
+      if ((!messageText && !attachments?.length) || backendDown) return;
+
+      // 斜杠指令：/compact → 作为普通用户消息交给 Agent，由 session_compact 工具执行
+      if (/^\/compact\s*$/i.test(messageText) && !attachments?.length) {
+        if (!effectiveSessionId) {
+          setToast("请先选择或创建一个会话");
+          return;
+        }
+        if (sessionDetail?.status === "archived") {
+          setToast("此会话已归档，无法压缩");
+          return;
+        }
+        messageText = "请压缩当前会话上下文";
+      }
+
       if (sessionDetail?.status === "archived") {
         setToast("此会话已归档，请跳转到新会话继续对话");
         return;
@@ -1932,15 +1941,15 @@ export function ChatView() {
       const now = Date.now();
       const last = lastEnqueueRef.current;
       const attachmentsKey = attachments?.map((a) => a.name).join("\n") ?? "";
-      if (last && now - last.at < 500 && last.text === `${trimmed}\n${attachmentsKey}`) {
+      if (last && now - last.at < 500 && last.text === `${messageText}\n${attachmentsKey}`) {
         return;
       }
-      lastEnqueueRef.current = { text: `${trimmed}\n${attachmentsKey}`, at: now };
+      lastEnqueueRef.current = { text: `${messageText}\n${attachmentsKey}`, at: now };
       const skillPrompt = skill
         ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
         : undefined;
       const sid = effectiveSessionId ?? NEW_STREAM_KEY;
-      const localItem = createUserQueueItem(trimmed || "（见附件）", {
+      const localItem = createUserQueueItem(messageText || "（见附件）", {
         skillId: skill?.id,
         skillPrompt,
         attachments,
@@ -2974,8 +2983,8 @@ export function ChatView() {
               systemPrompt={chatConfig.systemPrompt}
               modelId={chatConfig.model}
               contextSummary={sessionDetail.contextSummary}
-              onCompact={() => compactSession.mutate({ id: effectiveSessionId })}
-              compactPending={compactSession.isPending}
+              onCompact={() => enqueueMessage("请压缩当前会话上下文")}
+              compactPending={isSessionRunOccupied(effectiveSessionId ?? "")}
               className="hidden shrink-0 lg:flex"
             />
           )}
@@ -3039,8 +3048,8 @@ export function ChatView() {
               systemPrompt={chatConfig.systemPrompt}
               modelId={chatConfig.model}
               contextSummary={sessionDetail.contextSummary}
-              onCompact={() => compactSession.mutate({ id: effectiveSessionId })}
-              compactPending={compactSession.isPending}
+              onCompact={() => enqueueMessage("请压缩当前会话上下文")}
+              compactPending={isSessionRunOccupied(effectiveSessionId ?? "")}
             />
           </div>
         )}

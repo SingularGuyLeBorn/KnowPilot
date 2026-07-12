@@ -262,6 +262,12 @@ export function ChatShortcutHints({
           </TooltipTrigger>
           <TooltipContent side="top">输入 / 选择 Skill</TooltipContent>
         </Tooltip>
+        <Tooltip>
+          <TooltipTrigger className={hintTriggerClass}>
+            <kbd className={kbdBoxClass}>/compact</kbd>
+          </TooltipTrigger>
+          <TooltipContent side="top">输入 /compact 发送压缩指令（由 Agent 调用 session_compact）</TooltipContent>
+        </Tooltip>
       </div>
     </TooltipProvider>
   );

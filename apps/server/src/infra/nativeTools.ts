@@ -223,6 +223,7 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   sleep: sleepTool,
   session_clear: sessionClearTool,
   session_rotate: sessionRotateTool,
+  session_compact: sessionCompactTool,
   // Swarm 管理工具
   agent_create: agentCreateTool,
   agent_update: agentUpdateTool,
@@ -1401,6 +1402,20 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         },
       },
       required: ["summary"],
+    },
+  },
+  {
+    name: "session_compact",
+    description:
+      "当用户要求压缩上下文、或当前会话过长需要释放 token 时调用：摘要更早的对话并写入会话摘要，保留最近消息继续聊。与 session_rotate 不同，不会换新会话。",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: "压缩原因，如「用户要求」「上下文过长」",
+        },
+      },
     },
   },
   // ─── Swarm 管理工具 ───
@@ -3372,6 +3387,44 @@ async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolCo
   }
   const result = await ctx.services.session.deleteMany();
   return { deletedSessions: result.count };
+}
+
+async function sessionCompactTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) throw new Error("session_compact 需要在 Chat 会话中调用（缺少 sessionId）");
+  if (!ctx.services?.session || !ctx.services?.message) {
+    throw new Error("当前上下文未提供 Session/Message Service，无法执行 session_compact");
+  }
+
+  const session = await ctx.services.session.getByIdLite(ctx.sessionId);
+  if (!session) throw new Error("当前会话不存在");
+  if (session.status === "archived") {
+    return { success: false, error: "当前会话已归档，无法压缩。" };
+  }
+
+  const { runSessionCompact } = await import("./autoCompact.js");
+  const result = await runSessionCompact({
+    config: ctx.config,
+    services: ctx.services,
+    sessionId: ctx.sessionId,
+    model: session.model || ctx.agentSnapshot?.model || "deepseek-v4-flash",
+    systemPrompt: session.systemPrompt || ctx.agentSnapshot?.systemPrompt || "你是 KnowPilot 助手。",
+    existingSummary: (session as { contextSummary?: string | null }).contextSummary ?? null,
+    trigger: "agent",
+  });
+
+  if (!result.compacted) {
+    return { success: false, message: result.message };
+  }
+
+  return {
+    success: true,
+    message: result.message,
+    summaryPreview: result.summaryPreview,
+    boundaryMessageId: result.boundaryMessageId,
+    messagesSummarized: result.messagesSummarized,
+    memoriesFlushed: result.memoriesFlushed,
+    generation: result.generation,
+  };
 }
 
 /**

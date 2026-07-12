@@ -1252,6 +1252,54 @@ describe("native:sleep", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  it("sub Agent 无权调用 memory_create / memory_search", async () => {
+    const root = createTempProjectDir();
+    const ctx = {
+      ...createNativeCtx(root),
+      sessionId: "sess-1",
+      agentSnapshot: {
+        id: "sub-1",
+        model: "m",
+        systemPrompt: "",
+        tools: ["native:memory_create", "native:memory_search"],
+        tier: "sub",
+        parentId: "mgr-1",
+      },
+    };
+    for (const tool of ["memory_create", "memory_search"] as const) {
+      const result = (await executeNativeTool(tool, { content: "记住", keyword: "x" }, ctx)) as {
+        error?: string;
+        permissionDenied?: boolean;
+      };
+      expect(result.permissionDenied).toBe(true);
+      expect(result.error).toContain("TIER_INSUFFICIENT");
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("sub Agent 无权调用 session_compact", async () => {
+    const root = createTempProjectDir();
+    const ctx = {
+      ...createNativeCtx(root),
+      sessionId: "sess-1",
+      agentSnapshot: {
+        id: "sub-1",
+        model: "m",
+        systemPrompt: "",
+        tools: ["native:session_compact"],
+        tier: "sub",
+        parentId: "mgr-1",
+      },
+    };
+    const result = (await executeNativeTool("session_compact", {}, ctx)) as {
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain("TIER_INSUFFICIENT");
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   it("sub Agent 可调用 async_task_run 创建 mode=tool 后台任务", async () => {
     const root = createTempProjectDir();
     const ctx = {

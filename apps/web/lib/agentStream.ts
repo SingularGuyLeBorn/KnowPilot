@@ -105,6 +105,44 @@ async function parseSseBlock(
       case "tool_end":
         callbacks.onToolEnd?.(payload.name, payload.result, payload.round ?? 1, payload.hint, payload.toolCallId ?? "");
         break;
+      case "compact_start": {
+        // Auto-Compact 阶段：映射成 __context_compact__ 工具条，复用时间线转圈 UI
+        const gen = payload.generation ?? 1;
+        callbacks.onToolStart?.(
+          "__context_compact__",
+          { generation: gen, estimatedRatio: payload.estimatedRatio },
+          0,
+          `compact_v${gen}`,
+        );
+        break;
+      }
+      case "compact_end": {
+        const gen = payload.generation ?? 1;
+        const toolCallId = `compact_v${gen}`;
+        const result = {
+          generation: gen,
+          summary: payload.summaryPreview ?? "",
+          messagesSummarized: payload.messagesSummarized ?? 0,
+          memoriesFlushed: payload.memoriesFlushed ?? 0,
+          charBefore: payload.charBefore ?? 0,
+          charAfter: payload.charAfter ?? 0,
+          boundaryMessageId: payload.boundaryMessageId,
+        };
+        const hint = `已压缩 ${payload.messagesSummarized ?? 0} 条旧消息`;
+        callbacks.onToolEnd?.("__context_compact__", result, 0, hint, toolCallId);
+        break;
+      }
+      case "compact_error": {
+        const gen = (payload as { generation?: number }).generation ?? 1;
+        callbacks.onToolEnd?.(
+          "__context_compact__",
+          { error: payload.message ?? "压缩失败", fallback: payload.fallback ?? "trim" },
+          0,
+          "压缩失败（降级裁剪）",
+          `compact_v${gen}`,
+        );
+        break;
+      }
       case "done":
         await callbacks.onDone?.(payload as AgentStreamDone);
         return { finished: true, eventId };

@@ -22,7 +22,7 @@ import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
 import { resolveAgent, buildMemoryContext, parseToolCall, buildSystemPromptWithHints, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
-import { maybeCompactMessages, resolveMicroCompactToolMaxChars } from "./autoCompact.js";
+import { maybeCompactMessages, resolveMicroCompactToolMaxChars, persistCompactResult } from "./autoCompact.js";
 import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
 import { verifyAuthHeader, isAuthEnabled } from "./auth.js";
 import {
@@ -92,6 +92,19 @@ export type AgentStreamEvent =
       title?: string;
       agentId?: string | null;
     }
+  /** Auto-Compact 阶段：像工具一样在时间线显示，避免静默阻塞 */
+  | { type: "compact_start"; generation: number; estimatedRatio: number; round: 0 }
+  | {
+      type: "compact_end";
+      generation: number;
+      summaryPreview: string;
+      messagesSummarized: number;
+      memoriesFlushed: number;
+      charBefore: number;
+      charAfter: number;
+      boundaryMessageId?: string;
+    }
+  | { type: "compact_error"; message: string; fallback: "trim" | "none"; generation: number }
   /** Agent 轮换会话：旧会话归档，新会话已创建（前端提示跳转，不自动切换） */
   | {
       type: "session_rotated";
@@ -262,15 +275,15 @@ export async function runAgentLoopStream(options: {
     flushContext: options.sessionId
       ? { services: options.services, sessionId: options.sessionId }
       : undefined,
+    emit: options.emit,
   });
   llmMessages = compacted.messages;
   if (compacted.summaryText && options.sessionId && compacted.compacted && !compacted.reused) {
     try {
-      await options.services.session.update({
-        id: options.sessionId,
-        contextSummary: compacted.summaryText,
-        contextCompactedAt: new Date(),
-      } as any);
+      await persistCompactResult(options.services, options.sessionId, compacted, {
+        trigger: "auto",
+        emit: options.emit,
+      });
     } catch (err) {
       console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
     }
