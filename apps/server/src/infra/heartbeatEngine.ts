@@ -7,8 +7,8 @@
  * 触发时：
  * 1. 检查 Agent 状态（active/idle 才触发，dormant/deleted 跳过）
  * 2. 检查 LLM 预算（耗尽则跳过 + 记录 budget_exceeded）
- * 3. 找到或创建该 Agent 的主 session
- * 4. 向主 session 注入一条 source="system" 的心跳消息
+ * 3. 找到或创建该 Agent 的心跳专用 session（kind="heartbeat"，与主会话/用户对话隔离）
+ * 4. 向心跳 session 注入一条 source="system" 的心跳消息
  * 5. 自动触发 agentStream（无需用户发起）
  * 6. 更新 heartbeat.lastRunAt + lastRunStatus + consecutiveFailures
  * 7. 连续失败 3 次 → 邮件通知用户（#4）
@@ -94,6 +94,7 @@ export class HeartbeatEngine {
 
   /** 全量刷新心跳注册（Agent 配置变更后生效） */
   async refresh(): Promise<void> {
+    if (!this.started) return;
     // 停止所有现有任务
     for (const job of this.jobs.values()) job.stop();
     this.jobs.clear();
@@ -105,6 +106,9 @@ export class HeartbeatEngine {
         tier: { in: ["super", "manager", "sub"] },
       },
     });
+
+    // stop() 可能在 await 期间被调用，此时不应再注册新 cron job
+    if (!this.started) return;
 
     for (const agent of agents) {
       const hb = this.parseHeartbeat(agent.heartbeat);
@@ -135,17 +139,19 @@ export class HeartbeatEngine {
         return;
       }
 
-      // 找到或创建主 session
+      // 找到或创建心跳专用 session（与 isMainSession 主会话隔离，避免污染用户对话）
       let session = await this.prisma.chatSession.findFirst({
-        where: { agentId: agent.id, isMainSession: true },
+        where: { agentId: agent.id, kind: "heartbeat" },
+        orderBy: { updatedAt: "desc" },
       });
       if (!session) {
         session = await this.prisma.chatSession.create({
           data: {
-            title: `${agent.name} 主会话`,
+            title: `${agent.name} 心跳`,
             model: agent.heartbeatModel || agent.model,
             agentId: agent.id,
-            isMainSession: true,
+            kind: "heartbeat",
+            isMainSession: false,
             status: "active",
           },
         });
