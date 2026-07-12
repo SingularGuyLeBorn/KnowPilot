@@ -7,10 +7,11 @@
  */
 
 import { memo, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, Clock, Loader2, Sparkles, Wrench, X } from "lucide-react";
+import { Check, ChevronRight, Clock, Loader2, Sparkles, X } from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
 import { cn } from "@/lib/utils";
 import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils";
+import { ToolStepIcon, type ToolIconStatus } from "@/lib/toolIcons";
 
 /** 从 sleep / wait 工具参数推断目标时长（ms） */
 function sleepTargetMs(name: string, args: unknown): number | null {
@@ -205,6 +206,9 @@ const ToolStep = memo(function ToolStep({
     [open, step.result],
   );
 
+  const iconStatus: ToolIconStatus =
+    step.status === "running" ? "running" : hasError ? "error" : step.status === "done" ? "done" : "idle";
+
   return (
     <div
       data-testid="tool-pill"
@@ -223,7 +227,7 @@ const ToolStep = memo(function ToolStep({
               step.status === "running" ? "animate-pulse bg-[var(--kp-brand)]" : hasError ? "bg-red-500" : "bg-green-500",
             )}
           />
-          <Wrench className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
+          <ToolStepIcon toolName={step.name} status={iconStatus} />
           <span className="min-w-0 truncate">{displayName}</span>
           {execMode && (
             <span
@@ -238,7 +242,6 @@ const ToolStep = memo(function ToolStep({
               {execMode.label}
             </span>
           )}
-          {step.status === "running" && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-[var(--kp-brand)]" />}
           {sleepHint && (
             <span
               className="ml-auto inline-flex items-center gap-1 text-[10px] tabular-nums text-[var(--kp-brand)]"
