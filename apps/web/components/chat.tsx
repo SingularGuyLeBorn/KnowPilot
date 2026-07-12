@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { useAgent } from "@/lib/hooks";
+import { useAgent, useSessionHoverPreview } from "@/lib/hooks";
 import { streamAgentChat, stopAgentChat, copyToClipboard } from "@/lib/agentStream";
 import {
   buildStreamConfig,
@@ -63,7 +63,6 @@ import {
   splitQueueByKind,
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
-import { getAuthToken } from "@/lib/auth";
 import { UserSendQueuePanel, RuntimeStatusPanel } from "@/components/chatQueue";
 import { AsyncTaskPanel } from "@/components/asyncTaskPanel";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
@@ -196,6 +195,10 @@ export function ChatView() {
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(() => new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [hoverMonitorSessionId, setHoverMonitorSessionId] = useState<string | null>(null);
+  const { enabled: sessionHoverPreviewEnabled } = useSessionHoverPreview();
+  useEffect(() => {
+    if (!sessionHoverPreviewEnabled) setHoverMonitorSessionId(null);
+  }, [sessionHoverPreviewEnabled]);
   const hoverMonitorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // #12 Swarm 新手引导（可关闭，localStorage 记忆）
   // 初始恒为 false，mount 后再读 localStorage，避免 SSR/首屏 hydration 不一致
@@ -659,10 +662,12 @@ export function ChatView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveSessionId, isSubagentSession, pullAgentMessagesQuery.data, messages]);
 
-  // 推优先：监听 async-stream SSE（当前会话 + 父会话），收到后立即刷新相关查询
+  // 推优先：通过 store 统一监听 async-stream SSE（当前会话 + 父会话）。
+  // 不再自建 EventSource——复用 useSessionMessages 的 watchSession 连接，消除双连接浪费。
+  // 事件回调里 watchSession 的子 Agent session 在 cleanup 时统一 close。
+  const extraWatchedSessionsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!effectiveSessionId || backendDown) return;
-    const token = getAuthToken();
     const sessionIds = new Set<string>([effectiveSessionId]);
     if (mainSessionId) sessionIds.add(mainSessionId);
 
@@ -672,36 +677,38 @@ export function ChatView() {
       if (mainSessionId) {
         void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
         void utils.task.list.invalidate();
-        // 子会话页收到父会话投递事件时，也要刷新父会话队列缓存
         if (mainSessionId !== effectiveSessionId) {
           void utils.agent.pullAsyncQueue.invalidate({ sessionId: mainSessionId });
         }
       }
     };
 
-    const sources: EventSource[] = [];
+    const cleanups: Array<() => void> = [];
     for (const sid of sessionIds) {
-      const qs = new URLSearchParams({ sessionId: sid });
-      if (token) qs.set("token", token);
-      const es = new EventSource(`/api/agent/async-stream?${qs.toString()}`);
-      es.addEventListener("async_delivery", refreshAsync);
-      es.addEventListener("session_run_started", (ev) => {
-        // 服务端已启动会话流（autoConsume / 子 Agent）：挂接 listRunning，刷新队列
+      // 确保该 session 已 watch（引用计数 +1），并注册额外事件监听
+      sessionMessagesStore.watchSession(sid);
+      const register = (eventType: string, handler: (ev: MessageEvent) => void) => {
+        cleanups.push(sessionMessagesStore.addSessionEventListener(sid, eventType, handler));
+      };
+
+      register("async_delivery", refreshAsync);
+      register("session_run_started", (ev) => {
         try {
-          const data = JSON.parse((ev as MessageEvent).data) as { sessionId?: string };
+          const data = JSON.parse(ev.data) as { sessionId?: string };
           void utils.session.listRunning.invalidate();
           refreshAsync();
-          if (data.sessionId) {
+          if (data.sessionId && data.sessionId !== sid) {
             sessionMessagesStore.watchSession(data.sessionId);
+            extraWatchedSessionsRef.current.add(data.sessionId);
           }
         } catch {
           void utils.session.listRunning.invalidate();
           refreshAsync();
         }
       });
-      es.addEventListener("async_job_update", (ev) => {
+      register("async_job_update", (ev) => {
         try {
-          const data = JSON.parse((ev as MessageEvent).data) as {
+          const data = JSON.parse(ev.data) as {
             stats?: {
               queued: number;
               runningGlobal: number;
@@ -718,34 +725,34 @@ export function ChatView() {
         }
         refreshAsync();
       });
-      es.addEventListener("agent_message", () => {
+      register("agent_message", () => {
         if (isSubagentSession) void pullAgentMessagesQuery.refetch();
       });
-      es.addEventListener("subagent_session_update", (ev) => {
+      register("subagent_session_update", (ev) => {
         if (mainSessionId) {
           void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
         }
         void utils.session.listRunning.invalidate();
         try {
-          const data = JSON.parse((ev as MessageEvent).data) as {
+          const data = JSON.parse(ev.data) as {
             subagentSessionId?: string;
             status?: string;
           };
-          if (data.subagentSessionId) {
+          if (data.subagentSessionId && data.subagentSessionId !== sid) {
             sessionMessagesStore.watchSession(data.subagentSessionId);
+            extraWatchedSessionsRef.current.add(data.subagentSessionId);
           }
         } catch {
           /* ignore */
         }
       });
-      es.addEventListener("session_rotated", (ev) => {
+      register("session_rotated", (ev) => {
         try {
-          const data = JSON.parse((ev as MessageEvent).data) as {
+          const data = JSON.parse(ev.data) as {
             oldSessionId?: string;
             newSessionId: string;
             newTitle: string;
           };
-          // 仅当用户仍在看被归档的旧会话时提示跳转，不自动切换
           if (data.oldSessionId && data.oldSessionId === effectiveSessionId) {
             setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
           }
@@ -755,18 +762,23 @@ export function ChatView() {
           /* ignore */
         }
       });
-      // Session 自动命名完成：刷新侧边栏标题
-      es.addEventListener("session_title_updated", () => {
+      register("session_title_updated", () => {
         void utils.session.list.invalidate();
       });
-      // Agent 自动命名完成：刷新 Agent 树
-      es.addEventListener("agent_renamed", () => {
+      register("agent_renamed", () => {
         void utils.agent.list.invalidate();
       });
-      sources.push(es);
     }
     return () => {
-      for (const es of sources) es.close();
+      for (const fn of cleanups) fn();
+      for (const sid of sessionIds) {
+        sessionMessagesStore.closeSessionWatch(sid);
+      }
+      // 清理事件回调里动态 watch 的子 Agent session
+      for (const sid of extraWatchedSessionsRef.current) {
+        sessionMessagesStore.closeSessionWatch(sid);
+      }
+      extraWatchedSessionsRef.current.clear();
     };
   }, [
     effectiveSessionId,
@@ -1855,7 +1867,7 @@ export function ChatView() {
     return () => clearInterval(timer);
   }, [effectiveSessionId]);
 
-  // 流式 rAF 卸载清理：组件卸载时取消所有待处理动画帧，避免 setState after unmount
+  // 流式 rAF 卸载清理：组件卸载时取消所有待处理动画帧 / 残留定时器，避免 setState after unmount
   useEffect(() => {
     const rafMap = streamRafRef.current;
     const deltaMap = pendingStreamDeltaRef.current;
@@ -1866,6 +1878,14 @@ export function ChatView() {
       if (streamSaveTimeoutRef.current) {
         clearTimeout(streamSaveTimeoutRef.current);
         streamSaveTimeoutRef.current = null;
+      }
+      if (reorderTimerRef.current) {
+        clearTimeout(reorderTimerRef.current);
+        reorderTimerRef.current = null;
+      }
+      if (hoverMonitorTimeoutRef.current) {
+        clearTimeout(hoverMonitorTimeoutRef.current);
+        hoverMonitorTimeoutRef.current = null;
       }
     };
   }, []);
@@ -2094,6 +2114,12 @@ export function ChatView() {
         setDeleteSessionTarget(null);
         return;
       }
+      // 清理 MessageStore 缓存 + 关闭 EventSource + 忘记 hydrate 标记，否则删除后残留数据 / 连接泄漏
+      sessionMessagesStore.clearSession(id);
+      sessionMessagesStore.forgetSession(id);
+      // 三层 store 统一清理：StreamLifecycle + Compose 也会残留已删 session 的 state
+      streamLifecycleActions.deleteSession(id);
+      sessionComposeActions.deleteComposeSession(id);
       void utils.session.list.invalidate();
       if (effectiveSessionId === id) startNewChat();
       setDeleteSessionTarget(null);
@@ -2182,15 +2208,16 @@ export function ChatView() {
     }
   }, [bulkMode, selectSession]);
 
-  // 悬停会话时预加载消息并显示右上角监控小窗口
+  // 悬停会话时预加载消息并显示右上角监控小窗口（默认关闭，对话设置可开）
   const handleSessionHover = useCallback(
     (id: string) => {
+      if (!sessionHoverPreviewEnabled) return;
       if (!id || id === effectiveSessionId) return;
       if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
       setHoverMonitorSessionId(id);
       void utils.message.listForChat.prefetchInfinite({ sessionId: id, limit: 8 });
     },
-    [utils, effectiveSessionId],
+    [utils, effectiveSessionId, sessionHoverPreviewEnabled],
   );
 
   const handleSessionHoverEnd = useCallback((id: string) => {
@@ -2268,8 +2295,8 @@ export function ChatView() {
         data-nav-id={assistantId}
         className="group/msg relative mb-6 ml-12 flex max-w-[88%] flex-col items-start gap-1"
       >
-        <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
-          <PostContent content={active.content} className="prose-sm max-w-none" />
+        <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
+          <PostContent content={active.content} className="prose-sm max-w-none text-left" />
           {isInterrupted && (
             <div className="mt-3 flex items-center gap-1.5 text-[11px] text-amber-600">
               <Ban className="h-3 w-3" />
@@ -2321,8 +2348,8 @@ export function ChatView() {
             data-testid="streaming-assistant-bubble"
           >
             {streamingContent ? (
-              <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-sm text-[var(--kp-text-1)] shadow-sm">
-                <PostContent content={streamingContent} className="prose-sm max-w-none" />
+              <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
+                <PostContent content={streamingContent} className="prose-sm max-w-none text-left" />
               </div>
             ) : liveTimeline.length === 0 ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">
@@ -2357,13 +2384,16 @@ export function ChatView() {
       isSubagentSession && (msgSource === "super" || msgSource === "manager");
     // 异步结果投递：右侧气泡 + async sleep / async task 角标
     const isAsyncResultDelivery = msgSource === "sub" && !!subResult;
-    const isUserLike = isSubagentSession
-      ? msgSource === "user" || isParentAgentTask || isAsyncResultDelivery
-      : msgSource === "user" || msgSource === "sub" || isParentAgentTask;
-    const isAgentMessage = !isUserLike;
+    // 心跳触发：放右侧（通知位），气泡内文字仍左对齐；视觉用灰底+橙标，不走 brand 用户色
+    const isHeartbeat = msgSource === "system";
+    const isRightSide = isHeartbeat
+      || (isSubagentSession
+        ? msgSource === "user" || isParentAgentTask || isAsyncResultDelivery
+        : msgSource === "user" || msgSource === "sub" || isParentAgentTask);
+    const isAgentMessage = !isRightSide;
     return (
       <div className="flex flex-col">
-        <div className={cn("flex w-full", isAgentMessage ? "justify-start" : "justify-end")}>
+        <div className={cn("flex w-full", isRightSide ? "justify-end" : "justify-start")}>
           <motion.div
             initial={false}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -2372,7 +2402,7 @@ export function ChatView() {
               "group/msg relative mb-3 flex flex-col gap-1",
               // 异步投递 / 父 Agent 任务含 markdown 表格，需更宽
               isAsyncResultDelivery || isParentAgentTask ? "max-w-[92%]" : "max-w-[70%]",
-              isAgentMessage ? "items-start self-start" : "items-end self-end",
+              isRightSide ? "items-end self-end" : "items-start self-start",
             )}
           >
             {group.userMessage.attachments && group.userMessage.attachments.length > 0 && !isEditing && (
@@ -2400,8 +2430,8 @@ export function ChatView() {
               </div>
             )}
             <div className={cn(
-              "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-sm shadow-sm",
-              isAgentMessage
+              "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-left text-sm shadow-sm",
+              isHeartbeat || isAgentMessage
                 ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
                 : isAsyncResultDelivery
                   // 子 Agent 返回结果：比正常用户气泡（--kp-brand-deep）略微深一点点（--kp-brand-darker），均达 AA
@@ -2411,7 +2441,7 @@ export function ChatView() {
               <MessageSourceLabel
                 source={msgSource}
                 isSubagentSession={isSubagentSession}
-                align={isUserLike ? "right" : "left"}
+                align={isRightSide ? "right" : "left"}
                 subagentName={subagentName}
                 asyncKind={isAsyncResultDelivery ? subResult?.sourceType : undefined}
                 taskLabel={isAsyncResultDelivery ? subResult?.taskLabel : undefined}
@@ -2427,7 +2457,7 @@ export function ChatView() {
                   value={editDraft}
                   onChange={(e) => setEditDraft(e.target.value)}
                   rows={Math.max(1, editDraft.split("\n").length)}
-                  className="block w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-white outline-none placeholder:text-white/50 [field-sizing:content]"
+                  className="block w-full resize-none border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-white outline-none placeholder:text-white/50 [field-sizing:content]"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -2442,10 +2472,10 @@ export function ChatView() {
                 // 气泡底色与正常用户气泡一致（bg-brand + text-white），prose-invert 让 markdown 文字/边框在深色背景上可读
                 <PostContent
                   content={group.userMessage.content}
-                  className="prose-sm prose-invert max-w-none [&_table]:text-xs [&_th]:px-2 [&_td]:px-2 [&_a]:text-white [&_strong]:text-white [&_code]:bg-white/15 [&_pre]:bg-white/10 [&_blockquote]:border-white/40 [&_blockquote]:text-white/80"
+                  className="prose-sm prose-invert max-w-none text-left [&_table]:text-xs [&_th]:px-2 [&_td]:px-2 [&_a]:text-white [&_strong]:text-white [&_code]:bg-white/15 [&_pre]:bg-white/10 [&_blockquote]:border-white/40 [&_blockquote]:text-white/80"
                 />
               ) : (
-                <p className="whitespace-pre-wrap leading-relaxed">{group.userMessage.content}</p>
+                <p className="whitespace-pre-wrap text-left leading-relaxed">{group.userMessage.content}</p>
               )}
             </div>
             <MessageActions
@@ -2458,8 +2488,8 @@ export function ChatView() {
               onEditSave={() => handleEditConfirm(group.userMessage.id)}
               onEditCancel={() => setEditingUserId(null)}
               onRetry={() => handleRetry(group.userMessage.id)}
-              showEdit={isLastUser}
-              showRetry={isLastUser && !isEditing}
+              showEdit={isLastUser && !isHeartbeat}
+              showRetry={isLastUser && !isEditing && !isHeartbeat}
               showRegenerate={false}
               isEditing={isEditing}
               disabled={isStreaming}
@@ -2905,13 +2935,14 @@ export function ChatView() {
         {leftPanelBody}
       </aside>
 
-      <ChatHoverMonitor
-        sessionId={hoverMonitorSessionId}
-        onMouseEnter={handleHoverMonitorEnter}
-        onMouseLeave={handleHoverMonitorLeave}
-        onClose={() => setHoverMonitorSessionId(null)}
-      />
-
+      {sessionHoverPreviewEnabled && (
+        <ChatHoverMonitor
+          sessionId={hoverMonitorSessionId}
+          onMouseEnter={handleHoverMonitorEnter}
+          onMouseLeave={handleHoverMonitorLeave}
+          onClose={() => setHoverMonitorSessionId(null)}
+        />
+      )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b border-[var(--kp-divider)] px-4 py-2.5">
           <button type="button" onClick={() => setLeftOpen((v) => !v)} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}>

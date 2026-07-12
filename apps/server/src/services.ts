@@ -1398,6 +1398,20 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       where: { parentSessionId: id },
       select: { id: true },
     });
+    // 先停所有运行中的 Agent 流 / 清理 StreamHub 内存状态，否则删除 DB 记录后
+    // zombie stream 仍在后台跑、消耗 LLM token，且 cleanupTimer 触发时 runs.delete 找不到对应条目
+    try {
+      const { getStreamHub } = await import("./infra/sessionStreamHub.js");
+      const hub = getStreamHub();
+      for (const child of children) {
+        hub?.stop(child.id);
+        await hub?.clear(child.id).catch(() => {});
+      }
+      hub?.stop(id);
+      await hub?.clear(id).catch(() => {});
+    } catch {
+      /* StreamHub 未初始化，忽略 */
+    }
     for (const child of children) {
       await this.prisma.task.deleteMany({ where: { sessionId: child.id } }).catch(() => {});
       await this.prisma.sessionStreamEvent.deleteMany({ where: { sessionId: child.id } }).catch(() => {});

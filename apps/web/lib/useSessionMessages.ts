@@ -135,9 +135,11 @@ function reducer(state: MessageMap, action: Action): MessageMap {
 class SessionMessageStore {
   private state: MessageMap = new Map();
   private listeners = new Set<Listener>();
-  private subscribedSessions = new Set<string>();
+  private sessionRefcounts = new Map<string, number>();
   private eventSources = new Map<string, EventSource>();
   private upsertCallbacks = new Map<string, (event: ChatMessage) => void>();
+  /** sessionId → eventType → Set<EventListener>（closeSessionWatch 时批量清理） */
+  private extraListeners = new Map<string, Map<string, Set<EventListener>>>();
 
   getState = (): MessageMap => this.state;
 
@@ -176,10 +178,11 @@ class SessionMessageStore {
     };
   };
 
-  /** 确保该会话的 SSE 已连接（幂等）。父会话监听子会话时也调此方法。 */
+  /** 确保该会话的 SSE 已连接（引用计数，幂等）。多个组件 watch 同一 session 只开一个 EventSource。 */
   watchSession(sessionId: string): void {
-    if (this.subscribedSessions.has(sessionId)) return;
-    this.subscribedSessions.add(sessionId);
+    const count = this.sessionRefcounts.get(sessionId) ?? 0;
+    this.sessionRefcounts.set(sessionId, count + 1);
+    if (count > 0) return; // 已有连接，只增计数
     const token = getAuthToken();
     const qs = new URLSearchParams({ sessionId });
     if (token) qs.set("token", token);
@@ -217,17 +220,47 @@ class SessionMessageStore {
     this.eventSources.set(sessionId, es);
   }
 
+  /** 在已 watch 的 session 的 EventSource 上注册额外事件监听（如 async_delivery / session_run_started）。
+   *  返回取消注册函数。chat.tsx 用此替代自建 EventSource，消除双连接。 */
+  addSessionEventListener(sessionId: string, eventType: string, handler: (ev: MessageEvent) => void): () => void {
+    this.watchSession(sessionId);
+    const es = this.eventSources.get(sessionId);
+    if (!es) return () => {};
+    const listener = handler as EventListener;
+    es.addEventListener(eventType, listener);
+    if (!this.extraListeners.has(sessionId)) this.extraListeners.set(sessionId, new Map());
+    const typeMap = this.extraListeners.get(sessionId)!;
+    if (!typeMap.has(eventType)) typeMap.set(eventType, new Set());
+    typeMap.get(eventType)!.add(listener);
+    // cleanup 必须配对 closeSessionWatch：addSessionEventListener 内部 watchSession 做了 refcount +1，
+    // 若不配对减 1，refcount 永不归零 → EventSource 永不关闭 → HTTP/1.1 6 连接耗尽 → session 转圈
+    return () => {
+      es.removeEventListener(eventType, listener);
+      typeMap.get(eventType)?.delete(listener);
+      this.closeSessionWatch(sessionId);
+    };
+  }
+
   closeSessionWatch(sessionId: string): void {
+    const count = this.sessionRefcounts.get(sessionId);
+    if (!count) return;
+    if (count > 1) {
+      this.sessionRefcounts.set(sessionId, count - 1);
+      return; // 还有其他组件在用，不关
+    }
+    // 引用计数归零，真正关闭
+    this.sessionRefcounts.delete(sessionId);
     const es = this.eventSources.get(sessionId);
     if (es) {
       es.close();
       this.eventSources.delete(sessionId);
     }
-    this.subscribedSessions.delete(sessionId);
+    this.extraListeners.delete(sessionId);
   }
 
   clearSession(sessionId: string): void {
     this.dispatch({ type: "clear", sessionId });
+    this.upsertCallbacks.delete(sessionId);
     this.closeSessionWatch(sessionId);
   }
 
@@ -275,6 +308,9 @@ function getStore(): SessionMessageStore {
 
 const EMPTY_ARRAY: ChatMessage[] = [];
 
+/** 跨组件重挂载 / Fast Refresh 仍保留，避免偶发永久 spinner */
+const hydratedSessionsGlobal = new Set<string>();
+
 export type UseSessionMessagesResult = {
   messages: ChatMessage[];
   /** 首屏是否已从服务端 hydrate 完成 */
@@ -297,11 +333,14 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
   const store = getStore();
   const sessionKey = sessionId ?? "";
   const utils = trpc.useUtils();
-  const [isMessagesHydrated, setIsMessagesHydrated] = useState(false);
+  const utilsRef = useRef(utils);
+  utilsRef.current = utils;
+  const [isMessagesHydrated, setIsMessagesHydrated] = useState(() =>
+    !!sessionId && (hydratedSessionsGlobal.has(sessionId) || store.getMessages(sessionId).length > 0),
+  );
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const cursorRef = useRef<string | undefined>(undefined);
-  const hydratedSessionsRef = useRef<Set<string>>(new Set());
 
   const messages = useSyncExternalStore(
     store.subscribe,
@@ -316,52 +355,56 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
       return;
     }
     store.watchSession(sessionId);
-    const already = hydratedSessionsRef.current.has(sessionId);
+
+    // 本地已有缓存或曾 hydrate 成功 → 立刻出屏，后台对账（HMR/重挂载不闪 spinner）
+    const cached = store.getMessages(sessionId);
+    const already = hydratedSessionsGlobal.has(sessionId) || cached.length > 0;
     if (already) {
       setIsMessagesHydrated(true);
-      // 对账不变量：切回已 hydrate 的会话时静默重拉一页与 store 合并。
-      // 幂等（hydrate reducer 按 id 合并、无变化返回同 state）、不阻塞、不闪烁。
-      // 兜底所有「SSE message_upserted 漏推」场景（async-stream externalSubs 不缓冲、
-      // EventSource 重连瞬间错过、服务端自启动运行前端没消费 agent 流）——
-      // 任何漏推都能在切回会话时自愈，不再依赖手动刷新。
       void (async () => {
         try {
-          const res = await utils.message.listForChat.fetch({ sessionId, limit: 50 });
+          const res = await utilsRef.current.message.listForChat.fetch({ sessionId, limit: 50 });
           store.hydrateSessionMessages(sessionId, res.items as ChatMessage[]);
           cursorRef.current = res.nextCursor;
           setHasOlderMessages(!!res.nextCursor);
+          hydratedSessionsGlobal.add(sessionId);
         } catch {
-          /* 对账失败不阻塞，SSE 仍会继续推 */
+          /* 对账失败不阻塞 */
         }
       })();
       return;
     }
+
     setIsMessagesHydrated(false);
     let cancelled = false;
+
     void (async () => {
       try {
-        const res = await utils.message.listForChat.fetch({ sessionId, limit: 50 });
+        const res = await utilsRef.current.message.listForChat.fetch({ sessionId, limit: 50 });
         if (cancelled) return;
         store.hydrateSessionMessages(sessionId, res.items as ChatMessage[]);
-        hydratedSessionsRef.current.add(sessionId);
+        hydratedSessionsGlobal.add(sessionId);
         cursorRef.current = res.nextCursor;
         setHasOlderMessages(!!res.nextCursor);
         setIsMessagesHydrated(true);
       } catch (err) {
         console.warn(`[useSessionMessages] hydrate ${sessionId} 失败:`, err);
-        if (!cancelled) setIsMessagesHydrated(true); // 避免永久 loading
+        if (!cancelled) setIsMessagesHydrated(true);
       }
     })();
     return () => {
       cancelled = true;
+      // 根因修复：切走时关闭旧 session 的 EventSource，防止 HTTP/1.1 6 连接上限耗尽
+      // 导致后续 session 的 listForChat fetch 排队挂起 → 永久转圈
+      store.closeSessionWatch(sessionId);
     };
-  }, [sessionId, store, utils]);
+  }, [sessionId, store]);
 
   const loadOlderMessages = useCallback(async () => {
     if (!sessionId || !cursorRef.current || isLoadingOlderMessages) return;
     setIsLoadingOlderMessages(true);
     try {
-      const res = await utils.message.listForChat.fetch({
+      const res = await utilsRef.current.message.listForChat.fetch({
         sessionId,
         cursor: cursorRef.current,
         limit: 50,
@@ -378,16 +421,17 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
     } finally {
       setIsLoadingOlderMessages(false);
     }
-  }, [sessionId, store, utils, isLoadingOlderMessages]);
+  }, [sessionId, store, isLoadingOlderMessages]);
 
   const hydrateFromServer = useCallback(async () => {
     if (!sessionId) return;
-    const res = await utils.message.listForChat.fetch({ sessionId, limit: 50 });
+    const res = await utilsRef.current.message.listForChat.fetch({ sessionId, limit: 50 });
     store.hydrateSessionMessages(sessionId, res.items as ChatMessage[]);
+    hydratedSessionsGlobal.add(sessionId);
     cursorRef.current = res.nextCursor;
     setHasOlderMessages(!!res.nextCursor);
     setIsMessagesHydrated(true);
-  }, [sessionId, store, utils]);
+  }, [sessionId, store]);
 
   return {
     messages,
@@ -404,7 +448,12 @@ export const sessionMessagesStore = {
   getMessages: (sessionId: string) => getStore().getMessages(sessionId),
   watchSession: (sessionId: string) => getStore().watchSession(sessionId),
   closeSessionWatch: (sessionId: string) => getStore().closeSessionWatch(sessionId),
+  addSessionEventListener: (sessionId: string, eventType: string, handler: (ev: MessageEvent) => void) =>
+    getStore().addSessionEventListener(sessionId, eventType, handler),
   clearSession: (sessionId: string) => getStore().clearSession(sessionId),
+  forgetSession: (sessionId: string) => {
+    hydratedSessionsGlobal.delete(sessionId);
+  },
   onMessageUpserted: (sessionId: string, cb: (m: ChatMessage) => void) =>
     getStore().onMessageUpserted(sessionId, cb),
   hydrateSessionMessages: (sessionId: string, messages: ChatMessage[]) =>

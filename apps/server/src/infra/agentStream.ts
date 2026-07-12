@@ -1076,6 +1076,10 @@ export function handleAgentChatStream(
       if (ended) return;
       ended = true;
       clearInterval(heartbeat);
+      if (tokenFlushTimer) {
+        clearTimeout(tokenFlushTimer);
+        tokenFlushTimer = null;
+      }
       unsubscribe();
       res.end();
     };

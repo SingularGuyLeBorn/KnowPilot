@@ -191,6 +191,16 @@ export class SessionStreamHub {
     // 两个并发调用方（autoConsume + 用户发消息 / 多个异步投递）都能过 isRunning 检查，
     // 第二个 start 覆盖第一个 runs.set，第一个 run 被孤立泄漏、信号/队列状态错乱。
     // nextId 占位 0，await 后再赋值；runner 在 nextId 赋值后才启动，期间不会发事件，安全。
+    //
+    // cleanupTimer 覆盖竞态：上一轮 run 完成后设了 cleanupTimer（eventTtlMs 后 runs.delete），
+    // 若本轮 start 在 cleanupTimer 触发前覆盖 runs 条目，旧 timer 触发时会删掉本轮 run。
+    // 必须先清掉旧 run 的 cleanupTimer。
+    const prevRun = this.runs.get(sessionId);
+    if (prevRun?.cleanupTimer) {
+      clearTimeout(prevRun.cleanupTimer);
+      prevRun.cleanupTimer = undefined;
+    }
+
     const abortController = new AbortController();
     const state: RunState = {
       sessionId,
