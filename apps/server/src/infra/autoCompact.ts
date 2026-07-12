@@ -375,11 +375,12 @@ export async function persistCompactResult(
         charAfter: compacted.charAfter ?? 0,
         memoriesFlushed: compacted.memoriesFlushed ?? 0,
       },
+      // 摘要仅存 ChatSession.contextSummary；勿写入 tool result，避免 rebuild 时重复送入 LLM
       result: {
-        summary: compacted.summaryText,
         boundary: boundaryMarker,
         memoriesFlushed: compacted.memoriesFlushed ?? 0,
         trigger,
+        messagesSummarized: summarized,
       },
       kind: "compact",
     },
@@ -438,10 +439,10 @@ export async function runSessionCompact(params: {
     page: 1,
     pageSize: SESSION_HISTORY_PAGE_SIZE,
   });
-  const { buildLlmMessagesFromHistory } = await import("./chatHistory.js");
+  const { buildLlmMessagesFromHistory, sliceHistoryAfterCompactBoundary } = await import("./chatHistory.js");
   const messages = buildLlmMessagesFromHistory(
     params.systemPrompt || "你是 KnowPilot 助手。",
-    history.items,
+    sliceHistoryAfterCompactBoundary(history.items),
     { modelId: params.model },
   );
 

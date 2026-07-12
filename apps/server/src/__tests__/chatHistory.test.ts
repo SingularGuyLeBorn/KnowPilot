@@ -4,6 +4,10 @@ import {
   buildUserMessageContentForLlm,
   parseAttachmentsFromToolResults,
   parseStoredToolCalls,
+  sliceHistoryAfterCompactBoundary,
+  sanitizePostCompactAssistantContent,
+  formatPostCompactAssistantReply,
+  COMPACT_BOUNDARY_PREFIX,
 } from "../infra/chatHistory.js";
 
 describe("chatHistory 工具回放", () => {
@@ -141,5 +145,34 @@ describe("chatHistory 工具回放", () => {
     expect(messages[2].tool_calls?.[0].id).toBe("call_1");
     expect(messages[2].tool_calls?.some((tc) => tc.id === "content_1")).toBe(false);
     expect(messages[4].content).toBe("最终回答");
+  });
+
+  it("sliceHistoryAfterCompactBoundary 从最后一条边界消息起裁剪（对标 Claude Code）", () => {
+    const boundary = `${COMPACT_BOUNDARY_PREFIX}v1@2026-01-01T00:00:00.000Z]\n已压缩。`;
+    const history = [
+      { role: "user", content: "旧问题含 SECRET_OLD" },
+      { role: "assistant", content: "旧回答" },
+      {
+        role: "assistant",
+        content: boundary,
+        toolCalls: [{ id: "c1", name: "__context_compact__", kind: "compact", args: {}, result: {} }],
+      },
+      { role: "user", content: "新问题" },
+      { role: "assistant", content: "新回答" },
+    ];
+    const sliced = sliceHistoryAfterCompactBoundary(history);
+    expect(sliced).toHaveLength(3);
+    expect(sliced[0].content).toContain(COMPACT_BOUNDARY_PREFIX);
+    expect(JSON.stringify(sliced)).not.toContain("SECRET_OLD");
+  });
+
+  it("sanitizePostCompactAssistantContent 在 session_compact 成功时强制简短确认", () => {
+    const echoed = "压缩已完成，摘要预览：用户密码是 abc123";
+    const out = sanitizePostCompactAssistantContent(echoed, [
+      { name: "session_compact", result: { success: true, messagesSummarized: 9 } },
+    ]);
+    expect(out).toBe(formatPostCompactAssistantReply(9));
+    expect(out).not.toContain("abc123");
+    expect(out).not.toContain("摘要预览");
   });
 });

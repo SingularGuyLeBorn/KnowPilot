@@ -7,12 +7,15 @@ import { resolveModelSupportsVision, DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS } from
 import type { LlmContentPart, LlmMessage } from "./llmClient.js";
 import { getActiveAssistantPayload } from "./messageVersions.js";
 
+/** 与 autoCompact / 前端 compactMarkers 对齐 */
+export const COMPACT_BOUNDARY_PREFIX = "[kp-compact-boundary:";
+
 export interface StoredToolCall {
   id: string;
   name: string;
   args: unknown;
   result: unknown;
-  kind?: "tool" | "thinking" | "content";
+  kind?: "tool" | "thinking" | "content" | "compact";
 }
 
 export function parseStoredToolCalls(raw: unknown): StoredToolCall[] {
@@ -25,9 +28,11 @@ export function parseStoredToolCalls(raw: unknown): StoredToolCall[] {
     kind:
       tc?.kind === "thinking"
         ? "thinking"
-        : tc?.kind === "content" || tc?.name === "__content__"
-          ? "content"
-          : "tool",
+        : tc?.kind === "compact" || tc?.name === "__context_compact__"
+          ? "compact"
+          : tc?.kind === "content" || tc?.name === "__content__"
+            ? "content"
+            : "tool",
   }));
 }
 
@@ -97,9 +102,40 @@ export function buildUserMessageContentForLlm(
   return parts;
 }
 
+export type HistoryMessageLike = {
+  role: string;
+  content: string;
+  attachments?: unknown;
+  toolCalls?: unknown;
+  toolResults?: unknown;
+};
+
+/** 是否为压缩边界消息（对标 Claude Code compact_boundary） */
+export function isCompactBoundaryHistoryItem(msg: Pick<HistoryMessageLike, "content" | "toolCalls">): boolean {
+  if (msg.content.includes(COMPACT_BOUNDARY_PREFIX)) return true;
+  return parseStoredToolCalls(msg.toolCalls).some(
+    (tc) => tc.kind === "compact" || tc.name === "__context_compact__",
+  );
+}
+
+/** 从最后一条压缩边界起裁剪历史（对标 Claude Code getMessagesAfterCompactBoundary） */
+export function findLastCompactBoundaryIndex<T extends Pick<HistoryMessageLike, "content" | "toolCalls">>(
+  history: T[],
+): number {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (isCompactBoundaryHistoryItem(history[i]!)) return i;
+  }
+  return -1;
+}
+
+export function sliceHistoryAfterCompactBoundary<T extends HistoryMessageLike>(history: T[]): T[] {
+  const idx = findLastCompactBoundaryIndex(history);
+  return idx === -1 ? history : history.slice(idx);
+}
+
 export function buildLlmMessagesFromHistory(
   systemContent: string,
-  history: Array<{ role: string; content: string; attachments?: unknown; toolCalls?: unknown; toolResults?: unknown }>,
+  history: HistoryMessageLike[],
   options?: { modelId?: string; microCompactToolMaxChars?: number },
 ): LlmMessage[] {
   const supportsVision = options?.modelId ? resolveModelSupportsVision(options.modelId) : false;
@@ -122,7 +158,9 @@ export function buildLlmMessagesFromHistory(
 
     const active = getActiveAssistantPayload(msg);
     const allCalls = parseStoredToolCalls(active.toolCalls);
-    const tools = allCalls.filter((tc) => tc.kind !== "thinking" && tc.kind !== "content");
+    const tools = allCalls.filter(
+      (tc) => tc.kind !== "thinking" && tc.kind !== "content" && tc.kind !== "compact",
+    );
     // R3：复用已解析的 allCalls 派生 reasoningContent，避免 buildReasoningContentFromStored 内部再次 parseStoredToolCalls
     const reasoningParts = allCalls.filter((tc) => tc.kind === "thinking").map((tc) => String(tc.result ?? "")).filter(Boolean);
     const reasoningContent = reasoningParts.join("") || undefined;
@@ -166,4 +204,25 @@ export function buildLlmMessagesFromHistory(
   }
 
   return messages;
+}
+
+/** session_compact 成功后强制简短确认，禁止 Agent 复述摘要（对标 Claude Code suppressFollowUpQuestions） */
+export function formatPostCompactAssistantReply(messagesSummarized?: number): string {
+  const n = messagesSummarized ?? 0;
+  return n > 0 ? `压缩已完成，已摘要 ${n} 条旧消息。` : "压缩已完成。";
+}
+
+export function sanitizePostCompactAssistantContent(
+  content: string,
+  toolCalls: Array<{ name?: string; result?: unknown }>,
+): string {
+  const compactTc = toolCalls.find(
+    (tc) => tc.name === "session_compact" && !(tc.result && typeof tc.result === "object" && "error" in (tc.result as object)),
+  );
+  if (!compactTc) return content;
+  const summarized =
+    compactTc.result && typeof compactTc.result === "object"
+      ? (compactTc.result as { messagesSummarized?: number }).messagesSummarized
+      : undefined;
+  return formatPostCompactAssistantReply(summarized);
 }

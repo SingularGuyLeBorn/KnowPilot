@@ -13,7 +13,7 @@ import {
   type ToolRegistryEntry,
 } from "./agentTools.js";
 import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
-import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.js";
+import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import { maybeCompactMessages, persistCompactResult } from "./autoCompact.js";
 import { searchFts } from "./ftsIndex.js";
 import { isMemoryInjectable } from "@knowpilot/shared";
@@ -167,7 +167,7 @@ const DEFAULT_ASSISTANT_TOOLS = [
 ];
 
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
-  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。用户偏好与跨会话稳定事实请用 native:memory_create 沉淀（必要时先 memory_search）；子 Agent 无记忆工具。当前会话上下文过长或用户要求压缩时，调用 native:session_compact（不换会话）；话题明显切换或用户要求换干净上下文时，先写好总结再调用 native:session_rotate 归档并开新会话。";
+  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。用户偏好与跨会话稳定事实请用 native:memory_create 沉淀（必要时先 memory_search）；子 Agent 无记忆工具。当前会话上下文过长或用户要求压缩时，调用 native:session_compact（不换会话）；压缩成功后仅简短确认（如「压缩已完成」及条数），切勿复述摘要正文。话题明显切换或用户要求换干净上下文时，先写好总结再调用 native:session_rotate 归档并开新会话。";
 
 const LEGACY_ASSISTANT_SYSTEM_PROMPT =
   "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
@@ -357,7 +357,7 @@ export async function runAgentLoop(options: {
 
     if (!completion.toolCalls.length) {
       return {
-        content: completion.content || "",
+        content: sanitizePostCompactAssistantContent(completion.content || "", executedTools),
         toolCalls: executedTools,
         tokenUsage: totalUsage,
         model: lastModel,
@@ -517,7 +517,7 @@ export async function chatAgent(
         tier: agent.tier,
         name: agent.name,
       }),
-      history.items,
+      sliceHistoryAfterCompactBoundary(history.items),
       { modelId: effectiveModel },
     );
 
@@ -542,7 +542,7 @@ export async function chatAgent(
     const assistantMsg = await services.message.create({
       sessionId,
       role: "assistant",
-      content: result.content,
+      content: sanitizePostCompactAssistantContent(result.content, result.toolCalls),
       toolCalls: result.toolCalls,
       tokenUsage: result.tokenUsage,
     });

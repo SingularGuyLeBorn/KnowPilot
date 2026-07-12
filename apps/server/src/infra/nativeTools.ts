@@ -3419,7 +3419,6 @@ async function sessionCompactTool(_args: Record<string, unknown>, ctx: NativeToo
   return {
     success: true,
     message: result.message,
-    summaryPreview: result.summaryPreview,
     boundaryMessageId: result.boundaryMessageId,
     messagesSummarized: result.messagesSummarized,
     memoriesFlushed: result.memoriesFlushed,

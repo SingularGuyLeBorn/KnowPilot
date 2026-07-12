@@ -18,7 +18,7 @@ import {
   createAgentToolContext,
   type ToolRegistryEntry,
 } from "./agentTools.js";
-import { buildLlmMessagesFromHistory, type StoredToolCall } from "./chatHistory.js";
+import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
 import { resolveAgent, buildMemoryContext, parseToolCall, buildSystemPromptWithHints, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
@@ -402,7 +402,7 @@ export async function runAgentLoopStream(options: {
     // 无 tool_calls：本轮即为最终回答（思考已在上方逐片推送）
     finalContent = roundContent;
     return {
-      content: finalContent,
+      content: sanitizePostCompactAssistantContent(finalContent, executedTools),
       toolCalls: executedTools,
       tokenUsage: totalUsage,
       model: lastModel,
@@ -444,7 +444,7 @@ export async function runAgentLoopStream(options: {
       }
       if (finalContent.trim()) {
         return {
-          content: finalContent,
+          content: sanitizePostCompactAssistantContent(finalContent, executedTools),
           toolCalls: executedTools,
           tokenUsage: totalUsage,
           model: lastModel,
@@ -727,9 +727,10 @@ export async function chatAgentStream(
     }
 
     const history = await services.message.list({ sessionId, page: 1, pageSize: HISTORY_PAGE_SIZE });
-    const historyForLlm = prepared!.excludeAssistantId
+    const historyBase = prepared!.excludeAssistantId
       ? history.items.filter((m) => m.id !== prepared!.excludeAssistantId)
       : history.items;
+    const historyForLlm = sliceHistoryAfterCompactBoundary(historyBase);
 
     const memoryHint = await buildMemoryContext(services, prepared.messageText);
     const messages = buildLlmMessagesFromHistory(
