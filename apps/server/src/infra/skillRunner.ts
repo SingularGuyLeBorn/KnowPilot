@@ -128,12 +128,18 @@ __fn(input, context);
   const run = () => {
     const value = script.runInNewContext(sandbox, { timeout: SKILL_TIMEOUT_MS });
     if (value && typeof (value as Promise<unknown>).then === "function") {
-      return Promise.race([
-        value as Promise<unknown>,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Skill「${skill.name}」执行超时（${SKILL_TIMEOUT_MS}ms）`)), SKILL_TIMEOUT_MS),
-        ),
-      ]);
+      // 修复：原实现用 Promise.race + setTimeout，但 setTimeout 在 skill 正常完成后
+      // 仍未清除，导致 timer 持有 reject 闭包 8 秒不被 GC。改为手动 clearTimeout。
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`Skill「${skill.name}」执行超时（${SKILL_TIMEOUT_MS}ms）`)),
+          SKILL_TIMEOUT_MS,
+        );
+        (value as Promise<unknown>).then(
+          (result) => { clearTimeout(timer); resolve(result); },
+          (err) => { clearTimeout(timer); reject(err); },
+        );
+      });
     }
     return value;
   };

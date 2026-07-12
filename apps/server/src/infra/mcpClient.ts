@@ -22,12 +22,13 @@ const MCP_CONNECT_TIMEOUT_MS = 12_000;
 const MCP_MAX_RESULT_CHARS = 12_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} 连接超时（${ms}ms）`)), ms),
-    ),
-  ]);
+  // 修复：原实现 setTimeout 在 promise 正常完成后未清除，timer 持有 reject 闭包
+  // 12 秒不被 GC。改为 .finally 清除 timer。
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} 连接超时（${ms}ms）`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 export function mcpToolName(serverName: string, toolName: string): string {
