@@ -37,6 +37,9 @@ const webScript = process.argv.includes("--remote") ? "dev:remote" : "dev";
 /** @type {import('child_process').ChildProcess[]} */
 const children = [];
 
+/** shutdown 时调用的清理函数集合（阻止 spawnService 的重启定时器在退出后 spawn 孤儿进程） */
+const disposedServices = new Set();
+
 function run(args, opts = {}) {
   return new Promise((resolve, reject) => {
     const child = spawnPnpm(args, opts);
@@ -120,22 +123,61 @@ async function killOrphanNextDev(webPort = 3000) {
   }
 }
 
-function spawnService(label, args) {
-  console.log(`\n  ▶ [${label}] 启动…\n`);
-  const child = spawnPnpm(args);
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      console.error(`\n  ✖ [${label}] 被信号终止 (${signal})`);
-      shutdown("EXIT");
-      return;
-    }
-    if (code !== 0 && code !== null) {
+/**
+ * @param {string} label
+ * @param {string[]} args
+ * @param {{ fatal?: boolean; restart?: boolean; maxRestarts?: number }} [opts]
+ * - fatal: 退出则整栈关闭（仅 server）
+ * - restart: 非 0 退出时自动重启（web 常用；避免 next 被孤儿互杀后拖死后端）
+ */
+function spawnService(label, args, opts = {}) {
+  const fatal = opts.fatal !== false;
+  const restart = opts.restart === true;
+  const maxRestarts = opts.maxRestarts ?? 3;
+  let restarts = 0;
+  let disposed = false;
+
+  const start = () => {
+    if (disposed) return;
+    console.log(`\n  ▶ [${label}] 启动…\n`);
+    const child = spawnPnpm(args);
+    child.on("exit", (code, signal) => {
+      const idx = children.indexOf(child);
+      if (idx >= 0) children.splice(idx, 1);
+
+      if (signal) {
+        console.error(`\n  ✖ [${label}] 被信号终止 (${signal})`);
+        if (fatal) shutdown("EXIT");
+        return;
+      }
+      if (code === 0 || code === null) return;
+
       console.error(`\n  ✖ [${label}] 意外退出 (code=${code})`);
-      shutdown("EXIT");
-    }
-  });
-  children.push(child);
-  return child;
+      if (fatal) {
+        shutdown("EXIT");
+        return;
+      }
+      // web / sync：不拖死 server。常见根因是「Another next already running」多实例互杀。
+      if (restart && restarts < maxRestarts && !disposed) {
+        restarts += 1;
+        console.error(
+          `  ↻ [${label}] ${restarts}/${maxRestarts} 秒后重启…（若反复失败：关掉其他 pnpm/IDE 终端里的 next，再 taskkill /F /T 清 3000 端口）`,
+        );
+        setTimeout(start, 1500);
+        return;
+      }
+      console.error(
+        `  ⚠️  [${label}] 已退出但后端继续运行。请检查是否有多个 next / pnpm dev 在抢端口 3000。`,
+      );
+    });
+    children.push(child);
+    return child;
+  };
+
+  // shutdown 时标记 disposed，阻止重启定时器在进程退出后仍 spawn 新子进程（孤儿进程）
+  disposedServices.add(() => { disposed = true; });
+
+  return start();
 }
 
 async function waitForHealth(url, timeoutMs = 90_000) {
@@ -159,6 +201,12 @@ async function waitForHealth(url, timeoutMs = 90_000) {
 }
 
 function shutdown(reason) {
+  // 先标记所有 spawnService disposed，阻止重启定时器在进程退出后 spawn 新子进程
+  for (const dispose of disposedServices) {
+    try { dispose(); } catch { /* ignore */ }
+  }
+  disposedServices.clear();
+
   if (children.length === 0) process.exit(0);
   console.log(`\n  👋 停止开发服务 (${reason})…`);
   for (const child of children) {
@@ -186,14 +234,20 @@ async function main() {
   // 先清遗留 3010，避免 health 命中僵尸进程、新 server 绑定失败却误报「就绪」
   await killOrphanServer(3010);
 
-  spawnService("server", ["--filter", "@knowpilot/server", "dev"]);
+  spawnService("server", ["--filter", "@knowpilot/server", "dev"], { fatal: true });
   await waitForHealth(healthUrl);
 
   await killOrphanNextDev();
-  spawnService("web", ["--filter", "@knowpilot/web", webScript]);
+  // web 挂了自动重启，不拖死 server（多实例互杀时常见）
+  spawnService("web", ["--filter", "@knowpilot/web", webScript], {
+    fatal: false,
+    restart: true,
+    maxRestarts: 5,
+  });
 
   if (!quick) {
-    spawnService("sync", ["--filter", "@knowpilot/server", "db:sync:watch"]);
+    // sync watch 挂了只告警，不拖死整栈
+    spawnService("sync", ["--filter", "@knowpilot/server", "db:sync:watch"], { fatal: false });
   }
 
   console.log("  ✅ 开发环境已就绪");
