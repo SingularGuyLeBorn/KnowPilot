@@ -10,6 +10,10 @@ stream:
   eventTtlMs: 300000
   # 过期事件清理间隔（毫秒）
   cleanupIntervalMs: 60000
+  # Steering：工具批结束后注入；one-at-a-time | all
+  steeringMode: one-at-a-time
+  # Follow-up：本会停止时注入续轮；one-at-a-time | all
+  followUpMode: one-at-a-time
 
 # 长对话自动压缩（Auto-Compact）
 compact:
@@ -45,3 +49,11 @@ asyncJobs:
   maxRetries: 3
   # 每个父会话允许的 subagent 数量上限
   maxSubagentsPerSession: 10
+
+# 超级 Agent 心跳 Loop Contract（控制平面；不替换 ReAct）
+heartbeat:
+  loopContract:
+    # 连续 N 轮无新 evidence → handoff=false，跳过后续触发直至 resume
+    maxStaleRounds: 3
+    # evidence 环形保留条数
+    maxEvidence: 50

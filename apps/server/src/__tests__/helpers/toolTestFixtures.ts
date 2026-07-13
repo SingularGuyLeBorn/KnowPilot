@@ -89,6 +89,8 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       persist: false,
       eventTtlMs: 0,
       cleanupIntervalMs: 0,
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
     },
     compact: {
       enabled: true,
@@ -97,6 +99,9 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       keepRecent: 8,
       microCompact: { enabled: true, toolResultMaxChars: 4000 },
       memoryFlush: { enabled: true, maxFacts: 5 },
+    },
+    heartbeat: {
+      loopContract: { maxStaleRounds: 3, maxEvidence: 50 },
     },
     ...overrides,
   };

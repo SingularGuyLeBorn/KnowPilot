@@ -6,24 +6,17 @@ import type { Request, Response } from "express";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import {
-  chatCompletionStream,
   resolveEffectiveAgentModel,
   type LlmMessage,
   type LlmToolCall,
 } from "./llmClient.js";
-import {
-  parseAgentTools,
-  buildAgentToolSchemas,
-  executeToolCallsBatch,
-  createAgentToolContext,
-  type ToolRegistryEntry,
-} from "./agentTools.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
-import { resolveAgent, buildMemoryContext, parseToolCall, buildSystemPromptWithHints, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
-import { maybeCompactMessages, resolveMicroCompactToolMaxChars, persistCompactResult } from "./autoCompact.js";
-import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
+import { resolveAgent, buildMemoryContext, buildSystemPromptWithHints } from "./agentRuntime.js";
+import { resolveMicroCompactToolMaxChars } from "./autoCompact.js";
+import { runReactLoop, createStreamTransport } from "./loop/index.js";
+import { assertLlmBudget } from "./llmBudget.js";
 import { verifyAuthHeader, isAuthEnabled } from "./auth.js";
 import {
   appendAssistantVersion,
@@ -174,53 +167,6 @@ interface PrepareResult {
   userMessageMeta?: { skill?: { id: string; name: string; icon?: string | null } };
 }
 
-function pushThinking(
-  executedTools: StoredToolCall[],
-  round: number,
-  delta: string,
-  emit: (event: AgentStreamEvent) => void,
-) {
-  if (!delta) return;
-  emit({ type: "thinking", delta });
-  const id = `think_${round}`;
-  const existing = executedTools.find((t) => t.id === id);
-  if (existing) {
-    existing.result = String(existing.result ?? "") + delta;
-  } else {
-    executedTools.push({
-      id,
-      name: "__thinking__",
-      args: { round },
-      result: delta,
-      kind: "thinking",
-    });
-  }
-}
-
-/** 捕获工具轮次中的中间正式回复（后续仍有 tool_calls），进导轨时间线 */
-function pushIntermediateContent(
-  executedTools: StoredToolCall[],
-  round: number,
-  content: string,
-  emit: (event: AgentStreamEvent) => void,
-) {
-  if (!content?.trim()) return;
-  emit({ type: "intermediate_content", content, round });
-  const id = `content_${round}`;
-  const existing = executedTools.find((t) => t.id === id);
-  if (existing) {
-    existing.result = String(existing.result ?? "") + content;
-  } else {
-    executedTools.push({
-      id,
-      name: "__content__",
-      args: { round },
-      result: content,
-      kind: "content",
-    });
-  }
-}
-
 export async function runAgentLoopStream(options: {
   config: AppConfig;
   services: ServiceContainer;
@@ -241,231 +187,74 @@ export async function runAgentLoopStream(options: {
   provider: string;
   roundsUsed: number;
 }> {
-  const tierTools = resolveToolsForAgentTier(options.agentMeta?.tier, options.agent.tools);
-  const parsed = parseAgentTools(tierTools);
-  if (parsed.native === "all" && (options.agentMeta?.tier === "sub" || !options.agentMeta?.tier)) {
-    parsed.native = DEFAULT_SUBAGENT_TOOLS.map((t) => t.replace(/^native:/, ""));
-  }
-  const registry = new Map<string, ToolRegistryEntry>();
-  const toolSchemas = await buildAgentToolSchemas(options.services, parsed, registry);
-  const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
+  const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
+  const roundRef = { current: 0 };
+  const hub = options.sessionId
+    ? (await import("./sessionStreamHub.js")).getStreamHub()
+    : null;
+  const transport = createStreamTransport(
+    options.config,
+    effectiveModel,
+    options.llmOptions,
+    {
+      onThinking: (_round, delta) => options.emit({ type: "thinking", delta }),
+      onToken: (delta) => options.emit({ type: "token", delta }),
+    },
+    () => roundRef.current,
+  );
+
+  const result = await runReactLoop({
+    config: options.config,
+    services: options.services,
+    agent: { ...options.agent, model: effectiveModel },
+    messages: options.messages,
+    invokeTrpc: options.invokeTrpc,
+    signal: options.signal,
     sessionId: options.sessionId,
-    agentSnapshot: options.agentMeta
-      ? { ...options.agentMeta, tools: tierTools }
-      : options.agentMeta,
-    // SSE 对话流默认由用户直接发起：禁止向上回传（agent_report_back 硬拦截）。
-    // 上级下发的任务传 runOrigin="parent"，结果经 Task 投递回传。
+    agentMeta: options.agentMeta,
     runOrigin: options.runOrigin ?? "user",
-  });
-  const maxRounds = options.config.llm.maxToolRounds;
-
-  let llmMessages: LlmMessage[] = [...options.messages];
-  let existingSummary: string | null = null;
-  if (options.sessionId) {
-    try {
-      const sess = await options.services.session.getByIdLite?.(options.sessionId)
-        ?? await options.services.session.getById(options.sessionId);
-      existingSummary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? null;
-    } catch {
-      /* ignore */
-    }
-  }
-  const compacted = await maybeCompactMessages(options.config, llmMessages, options.agent.model, {
-    existingSummary,
-    flushContext: options.sessionId
-      ? { services: options.services, sessionId: options.sessionId }
-      : undefined,
-    emit: options.emit,
-  });
-  llmMessages = compacted.messages;
-  if (compacted.summaryText && options.sessionId && compacted.compacted && !compacted.reused) {
-    try {
-      await persistCompactResult(options.services, options.sessionId, compacted, {
-        trigger: "auto",
-        emit: options.emit,
-      });
-    } catch (err) {
-      console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
-    }
-  }
-
-  const executedTools: StoredToolCall[] = [];
-  let totalUsage = { prompt: 0, completion: 0, total: 0 };
-  let lastModel = options.agent.model;
-  let lastProvider = options.config.llm.defaultProvider;
-  let roundsUsed = 0;
-  let finalContent = "";
-
-  for (let round = 0; round < maxRounds; round++) {
-    roundsUsed = round + 1;
-    options.emit({ type: "round_start", round: roundsUsed });
-
-    // 流式优先：边收边推思考/正文，避免「非流式 probe 干等 → 整块倾倒 → 有思考再二次 stream」的双倍延迟与串台。
-    let roundContent = "";
-    let roundReasoning = "";
-    let roundToolCalls: LlmToolCall[] = [];
-
-    for await (const chunk of chatCompletionStream({
-      config: options.config,
-      model: options.agent.model,
-      messages: llmMessages,
-      tools: toolSchemas,
-      temperature: options.llmOptions.temperature,
-      maxTokens: options.llmOptions.maxTokens,
-      enableReasoning: options.llmOptions.enableReasoning,
-      reasoningEffort: options.llmOptions.reasoningEffort,
-      signal: options.signal,
-    })) {
-      if (chunk.model) lastModel = chunk.model;
-      if (chunk.provider) lastProvider = chunk.provider;
-      if (chunk.tokenUsage) {
-        totalUsage.prompt += chunk.tokenUsage.prompt;
-        totalUsage.completion += chunk.tokenUsage.completion;
-        totalUsage.total += chunk.tokenUsage.total;
-        recordTokenUsage(options.config, chunk.tokenUsage);
-      }
-
-      if (chunk.type === "reasoning" && chunk.delta) {
-        roundReasoning += chunk.delta;
-        pushThinking(executedTools, roundsUsed, chunk.delta, options.emit);
-      }
-      if (chunk.type === "token" && chunk.delta) {
-        roundContent += chunk.delta;
-        // 正式正文边收边推；若本轮最终是 tool_calls，前端在 tool_start 时会把已推正文转入时间线
-        options.emit({ type: "token", delta: chunk.delta });
-      }
-      if (chunk.type === "tool_calls" && chunk.toolCalls?.length) {
-        roundToolCalls = chunk.toolCalls;
-      }
-    }
-
-    if (roundToolCalls.length > 0) {
-      if (roundContent.trim()) {
-        // 工具轮次的中间正文：写入时间线持久化（SSE 上的 token 已推过，再发 intermediate 供历史重建）
-        pushIntermediateContent(executedTools, roundsUsed, roundContent, options.emit);
-      }
-
-      llmMessages.push({
-        role: "assistant",
-        content: roundContent || null,
-        reasoning_content: roundReasoning || null,
-        tool_calls: roundToolCalls,
-      });
-
-      for (const call of roundToolCalls) {
-        const parsedCall = parseToolCall(call);
-        options.emit({
-          type: "tool_start",
-          toolCallId: call.id,
-          name: parsedCall.name,
-          args: parsedCall.args,
-          round: roundsUsed,
-        });
-      }
-
-      if (options.signal?.aborted) {
-        const err = new Error("流式输出已被用户中断");
-        err.name = "AbortError";
-        throw err;
-      }
-
-      toolCtx.inToolRound = true;
-      const batchResults = await executeToolCallsBatch(roundToolCalls, toolCtx, registry, parsed, options.signal);
-      toolCtx.inToolRound = false;
-      for (const { call, parsed: parsedCall, result } of batchResults) {
-        executedTools.push({
-          id: call.id,
-          name: parsedCall.name,
-          args: parsedCall.args,
-          result,
-          kind: "tool",
-        });
+    transport,
+    toolResultMaxChars: resolveMicroCompactToolMaxChars(options.config),
+    compactEmit: options.emit,
+    runQueues:
+      options.sessionId && hub
+        ? {
+            takeSteer: () => hub.takeInject(options.sessionId!, "steer"),
+            takeFollowUp: () => hub.takeInject(options.sessionId!, "follow_up"),
+          }
+        : undefined,
+    hooks: {
+      onRoundStart: (round) => {
+        roundRef.current = round;
+        options.emit({ type: "round_start", round });
+      },
+      onIntermediateContent: (round, content) => {
+        options.emit({ type: "intermediate_content", content, round });
+      },
+      onToolStart: ({ toolCallId, name, args, round }) => {
+        options.emit({ type: "tool_start", toolCallId, name, args, round });
+      },
+      onToolEnd: ({ toolCallId, name, result, round }) => {
         options.emit({
           type: "tool_end",
-          toolCallId: call.id,
-          name: parsedCall.name,
+          toolCallId,
+          name,
           result,
-          round: roundsUsed,
+          round,
           hint: formatToolResultHint(result) ?? undefined,
         });
+      },
+      // 注入落库后 MessageService 会广播 message_upserted，无需额外 SSE
+    },
+  });
 
-        llmMessages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          name: parsedCall.name,
-          content: JSON.stringify(result).slice(0, resolveMicroCompactToolMaxChars(options.config)),
-        });
-      }
-      continue;
-    }
-
-    // 无 tool_calls：本轮即为最终回答（思考已在上方逐片推送）
-    finalContent = roundContent;
-    return {
-      content: sanitizePostCompactAssistantContent(finalContent, executedTools),
-      toolCalls: executedTools,
-      tokenUsage: totalUsage,
-      model: lastModel,
-      provider: lastProvider,
-      roundsUsed,
-    };
-  }
-
-  // maxRounds 耗尽：若末轮执行过工具，再做一次无 tools 的合成调用读取 tool 结果，
-  // 而不是直接吐兜底文案（用户至少能看到基于工具结果的最终回答）
-  if (executedTools.some((t) => t.kind === "tool") && !options.signal?.aborted) {
-    try {
-      finalContent = "";
-      for await (const chunk of chatCompletionStream({
-        config: options.config,
-        model: options.agent.model,
-        messages: llmMessages,
-        temperature: options.llmOptions.temperature,
-        maxTokens: options.llmOptions.maxTokens,
-        enableReasoning: options.llmOptions.enableReasoning,
-        reasoningEffort: options.llmOptions.reasoningEffort,
-        signal: options.signal,
-      })) {
-        if (chunk.type === "reasoning" && chunk.delta) {
-          pushThinking(executedTools, maxRounds, chunk.delta, options.emit);
-        }
-        if (chunk.type === "token" && chunk.delta) {
-          finalContent += chunk.delta;
-          options.emit({ type: "token", delta: chunk.delta });
-        }
-        if (chunk.model) lastModel = chunk.model;
-        if (chunk.provider) lastProvider = chunk.provider;
-        if (chunk.tokenUsage) {
-          totalUsage.prompt += chunk.tokenUsage.prompt;
-          totalUsage.completion += chunk.tokenUsage.completion;
-          totalUsage.total += chunk.tokenUsage.total;
-          recordTokenUsage(options.config, chunk.tokenUsage);
-        }
-      }
-      if (finalContent.trim()) {
-        return {
-          content: sanitizePostCompactAssistantContent(finalContent, executedTools),
-          toolCalls: executedTools,
-          tokenUsage: totalUsage,
-          model: lastModel,
-          provider: lastProvider,
-          roundsUsed: maxRounds,
-        };
-      }
-    } catch {
-      // 合成失败则落兜底文案
-    }
-  }
-
-  finalContent = `已达到最大工具调用轮次（${maxRounds}）。`;
-  options.emit({ type: "token", delta: finalContent });
   return {
-    content: finalContent,
-    toolCalls: executedTools,
-    tokenUsage: totalUsage,
-    model: lastModel,
-    provider: lastProvider,
-    roundsUsed: maxRounds,
+    content: result.content,
+    toolCalls: result.toolCalls,
+    tokenUsage: result.tokenUsage,
+    model: result.model,
+    provider: result.provider,
+    roundsUsed: result.roundsUsed,
   };
 }
 

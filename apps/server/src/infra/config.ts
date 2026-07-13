@@ -119,6 +119,10 @@ export interface AppConfig {
     persist: boolean;
     eventTtlMs: number;
     cleanupIntervalMs: number;
+    /** Steering 投递：one-at-a-time | all */
+    steeringMode: "one-at-a-time" | "all";
+    /** Follow-up 投递：one-at-a-time | all */
+    followUpMode: "one-at-a-time" | "all";
   };
   /** 长对话 Auto-Compact */
   compact: {
@@ -135,6 +139,13 @@ export interface AppConfig {
     memoryFlush: {
       enabled: boolean;
       maxFacts: number;
+    };
+  };
+  /** 超级 Agent 心跳 Loop Contract 默认 */
+  heartbeat: {
+    loopContract: {
+      maxStaleRounds: number;
+      maxEvidence: number;
     };
   };
 }
@@ -318,6 +329,8 @@ export function createAppConfig(): AppConfig {
   const streamConfig = (yamlConfig.stream as Record<string, unknown>) || {};
   const compactConfig = (yamlConfig.compact as Record<string, unknown>) || {};
   const asyncJobsConfig = (yamlConfig.asyncJobs as Record<string, unknown>) || {};
+  const heartbeatYaml = (yamlConfig.heartbeat as Record<string, unknown>) || {};
+  const loopContractYaml = (heartbeatYaml.loopContract as Record<string, unknown>) || {};
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -470,6 +483,8 @@ export function createAppConfig(): AppConfig {
       persist: String(streamConfig.persist ?? "true") !== "false",
       eventTtlMs: Math.max(0, parseInt(String(streamConfig.eventTtlMs ?? "300000"), 10)),
       cleanupIntervalMs: Math.max(1000, parseInt(String(streamConfig.cleanupIntervalMs ?? "60000"), 10)),
+      steeringMode: String(streamConfig.steeringMode ?? "one-at-a-time") === "all" ? "all" : "one-at-a-time",
+      followUpMode: String(streamConfig.followUpMode ?? "one-at-a-time") === "all" ? "all" : "one-at-a-time",
     },
     compact: {
       enabled: String(compactConfig.enabled ?? "true") !== "false",
@@ -495,6 +510,12 @@ export function createAppConfig(): AppConfig {
           1,
           parseInt(String((compactConfig.memoryFlush as Record<string, unknown> | undefined)?.maxFacts ?? "5"), 10),
         ),
+      },
+    },
+    heartbeat: {
+      loopContract: {
+        maxStaleRounds: Math.max(1, parseInt(String(loopContractYaml.maxStaleRounds ?? "3"), 10)),
+        maxEvidence: Math.max(5, parseInt(String(loopContractYaml.maxEvidence ?? "50"), 10)),
       },
     },
   };

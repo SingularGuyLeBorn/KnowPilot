@@ -4,22 +4,18 @@
 
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import { chatCompletion, resolveEffectiveAgentModel, type LlmMessage, type LlmToolCall } from "./llmClient.js";
-import {
-  parseAgentTools,
-  buildAgentToolSchemas,
-  executeToolCallsBatch,
-  createAgentToolContext,
-  type ToolRegistryEntry,
-} from "./agentTools.js";
-import { assertLlmBudget, recordTokenUsage } from "./llmBudget.js";
+import { resolveEffectiveAgentModel, type LlmMessage } from "./llmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
-import { maybeCompactMessages, persistCompactResult } from "./autoCompact.js";
 import { searchFts } from "./ftsIndex.js";
 import { isMemoryInjectable } from "@knowpilot/shared";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
-import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
+import { runReactLoop, createSyncTransport } from "./loop/index.js";
+export {
+  DEFAULT_SUBAGENT_TOOLS,
+  resolveToolsForAgentTier,
+  parseToolCall,
+} from "./loop/setup.js";
 
 export interface AgentLoopResult {
   content: string;
@@ -110,40 +106,6 @@ export function buildSystemPromptWithHints(
   const base = (basePrompt || "你是 KnowPilot 助手。") + identityHint + memoryHint;
   const guide = buildAgentToolGuide(tools);
   return guide ? `${base}\n\n${guide}` : base;
-}
-
-/** 子 Agent 默认执行工具（带 native: 前缀，避免物化成空 → native:all） */
-export const DEFAULT_SUBAGENT_TOOLS = [
-  "native:sleep",
-  "native:async_task_run",
-  "native:agent_report_back",
-  "native:read_file",
-  "native:list_directory",
-  "native:web_search",
-] as const;
-
-/** 规范化 + 按 tier 裁剪工具列表，供 runAgentLoop / stream 使用 */
-export function resolveToolsForAgentTier(tier: string | undefined | null, tools: string[]): string[] {
-  const t = tier || "sub";
-  let normalized = (tools ?? []).map((tool) => {
-    if (tool.startsWith("native:") || tool.startsWith("skill:") || tool.startsWith("mcp:")) return tool;
-    if (tool.includes(":")) return tool;
-    return `native:${tool}`;
-  });
-  if (normalized.length === 0 && t === "sub") {
-    normalized = [...DEFAULT_SUBAGENT_TOOLS];
-  }
-  return getAllowedToolsForTier(t, normalized);
-}
-
-export function parseToolCall(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
-  let args: Record<string, unknown> = {};
-  try {
-    args = JSON.parse(call.function.arguments || "{}");
-  } catch {
-    args = { raw: call.function.arguments };
-  }
-  return { name: call.function.name, args };
 }
 
 const DEFAULT_ASSISTANT_TOOLS = [
@@ -241,168 +203,29 @@ export async function runAgentLoop(options: {
   /** 每完成一轮工具调用后回调，用于异步任务进度日志 */
   onProgress?: (message: string) => void;
 }): Promise<AgentLoopResult> {
-  assertLlmBudget(options.config);
   const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
-  const tierTools = resolveToolsForAgentTier(options.agentMeta?.tier, options.agent.tools);
-  const parsed = parseAgentTools(tierTools);
-  // 双保险：子 Agent 绝不能拿到 native:all
-  if (parsed.native === "all" && (options.agentMeta?.tier === "sub" || !options.agentMeta?.tier)) {
-    parsed.native = DEFAULT_SUBAGENT_TOOLS.map((t) => t.replace(/^native:/, ""));
-  }
-  const registry = new Map<string, ToolRegistryEntry>();
-  const toolSchemas = await buildAgentToolSchemas(options.services, parsed, registry);
-  const toolCtx = createAgentToolContext(options.config, options.services, options.invokeTrpc, parsed, undefined, {
+  const result = await runReactLoop({
+    config: options.config,
+    services: options.services,
+    agent: options.agent,
+    messages: options.messages,
+    invokeTrpc: options.invokeTrpc,
+    signal: options.signal,
     sessionId: options.sessionId,
-    agentSnapshot: options.agentMeta
-      ? { ...options.agentMeta, tools: tierTools }
-      : options.agentMeta,
+    agentMeta: options.agentMeta,
     runOrigin: options.runOrigin,
+    transport: createSyncTransport(options.config, effectiveModel),
+    hooks: {
+      onProgress: options.onProgress,
+    },
   });
-
-  let llmMessages: LlmMessage[] = [...options.messages];
-  let existingSummary: string | null = null;
-  if (options.sessionId) {
-    try {
-      const sess = await options.services.session.getByIdLite?.(options.sessionId)
-        ?? await options.services.session.getById(options.sessionId);
-      existingSummary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? null;
-    } catch {
-      /* ignore */
-    }
-  }
-  const compacted = await maybeCompactMessages(options.config, llmMessages, effectiveModel, {
-    existingSummary,
-    flushContext: options.sessionId
-      ? { services: options.services, sessionId: options.sessionId }
-      : undefined,
-  });
-  llmMessages = compacted.messages;
-  if (compacted.compacted) {
-    console.log("[Agent] 长对话已自动压缩上下文");
-    if (compacted.summaryText && options.sessionId && !compacted.reused) {
-      try {
-        await persistCompactResult(options.services, options.sessionId, compacted, { trigger: "auto" });
-      } catch (err) {
-        console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
-      }
-    }
-  }
-
-  const executedTools: StoredToolCall[] = [];
-  let totalUsage = { prompt: 0, completion: 0, total: 0 };
-  let lastModel = effectiveModel;
-  let lastProvider = options.config.llm.defaultProvider;
-  let roundsUsed = 0;
-  const maxRounds = options.config.llm.maxToolRounds;
-
-  /** 与 agentStream.pushThinking 对齐：把思考链写入 toolCalls，供 Chat UI 时间线渲染 */
-  const pushThinking = (round: number, delta: string) => {
-    if (!delta) return;
-    const id = `think_${round}`;
-    const existing = executedTools.find((t) => t.id === id);
-    if (existing) {
-      existing.result = String(existing.result ?? "") + delta;
-    } else {
-      executedTools.push({
-        id,
-        name: "__thinking__",
-        args: { round },
-        result: delta,
-        kind: "thinking",
-      });
-    }
-  };
-
-  /** 工具轮次中的中间正式回复，进导轨时间线（与 agentStream.pushIntermediateContent 对齐） */
-  const pushIntermediateContent = (round: number, content: string) => {
-    if (!content?.trim()) return;
-    const id = `content_${round}`;
-    const existing = executedTools.find((t) => t.id === id);
-    if (existing) {
-      existing.result = String(existing.result ?? "") + content;
-    } else {
-      executedTools.push({
-        id,
-        name: "__content__",
-        args: { round },
-        result: content,
-        kind: "content",
-      });
-    }
-  };
-
-  for (let round = 0; round < maxRounds; round++) {
-    roundsUsed = round + 1;
-    const completion = await chatCompletion({
-      config: options.config,
-      model: effectiveModel,
-      messages: llmMessages,
-      tools: toolSchemas,
-      signal: options.signal,
-    });
-
-    lastModel = completion.model;
-    lastProvider = completion.provider;
-    if (completion.tokenUsage) {
-      totalUsage.prompt += completion.tokenUsage.prompt;
-      totalUsage.completion += completion.tokenUsage.completion;
-      totalUsage.total += completion.tokenUsage.total;
-      recordTokenUsage(options.config, completion.tokenUsage);
-    }
-
-    // 非流式路径也必须持久化思考链，否则 spawn/triggerAgentRun 子会话只剩工具调用
-    if (completion.reasoningContent) {
-      pushThinking(roundsUsed, completion.reasoningContent);
-    }
-
-    if (!completion.toolCalls.length) {
-      return {
-        content: sanitizePostCompactAssistantContent(completion.content || "", executedTools),
-        toolCalls: executedTools,
-        tokenUsage: totalUsage,
-        model: lastModel,
-        provider: lastProvider,
-        roundsUsed,
-      };
-    }
-
-    // 本轮仍有工具调用时，把中间正文也写入时间线（最终轮正文走 content 字段）
-    if (completion.content?.trim()) {
-      pushIntermediateContent(roundsUsed, completion.content);
-    }
-
-    llmMessages.push({
-      role: "assistant",
-      content: completion.content,
-      reasoning_content: completion.reasoningContent ?? null,
-      tool_calls: completion.toolCalls,
-    });
-
-    const batchResults = await executeToolCallsBatch(completion.toolCalls, toolCtx, registry, parsed);
-    for (const { call, parsed: parsedCall, result } of batchResults) {
-      executedTools.push({
-        id: call.id,
-        name: parsedCall.name,
-        args: parsedCall.args,
-        result,
-      });
-      llmMessages.push({
-        role: "tool",
-        tool_call_id: call.id,
-        name: parsedCall.name,
-        content: JSON.stringify(result).slice(0, 16000),
-      });
-    }
-    options.onProgress?.(`第 ${round + 1} 轮工具调用完成，共调用 ${batchResults.length} 个工具`);
-  }
-
   return {
-    content: `已达到最大工具调用轮次（${maxRounds}）。可通过环境变量 AGENT_MAX_TOOL_ROUNDS 调整上限。`,
-    toolCalls: executedTools,
-    tokenUsage: totalUsage,
-    model: lastModel,
-    provider: lastProvider,
-    roundsUsed: maxRounds,
+    content: result.content,
+    toolCalls: result.toolCalls,
+    tokenUsage: result.tokenUsage,
+    model: result.model,
+    provider: result.provider,
+    roundsUsed: result.roundsUsed,
   };
 }
 

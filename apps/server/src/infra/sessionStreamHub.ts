@@ -20,6 +20,13 @@ export type BufferedEvent = {
 
 type StreamConfig = AppConfig["stream"];
 
+/** 运行中注入的用户消息（Steering / Follow-up） */
+export type RunInjectMessage = {
+  id: string;
+  content: string;
+  createdAt: number;
+};
+
 type RunState = {
   sessionId: string;
   input: AgentChatInput;
@@ -31,6 +38,10 @@ type RunState = {
   nextId: number;
   runningSince: number;
   cleanupTimer?: ReturnType<typeof setTimeout>;
+  /** tool_batch 结束后、下一轮 LLM 前注入 */
+  steeringQueue: RunInjectMessage[];
+  /** 本会停止时注入并续轮 */
+  followUpQueue: RunInjectMessage[];
 };
 
 type PersistItem = {
@@ -52,8 +63,18 @@ export class SessionStreamHub {
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   /** 独立于 Agent 运行流的外部事件订阅者（如 async_delivery） */
   private externalSubs = new Map<string, Set<(event: AgentStreamEvent) => void>>();
+  private config: StreamConfig;
 
-  constructor(private config: StreamConfig = { ringSize: 500, persist: true, eventTtlMs: 300_000, cleanupIntervalMs: 60_000 }) {
+  constructor(config: Partial<StreamConfig> = {}) {
+    this.config = {
+      ringSize: 500,
+      persist: true,
+      eventTtlMs: 300_000,
+      cleanupIntervalMs: 60_000,
+      steeringMode: "one-at-a-time",
+      followUpMode: "one-at-a-time",
+      ...config,
+    };
     if (this.config.persist && this.config.cleanupIntervalMs > 0) {
       this.cleanupTimer = setInterval(() => this.deleteExpired(), this.config.cleanupIntervalMs);
       // 启动时先清理一轮，避免上次崩溃残留过期数据
@@ -212,6 +233,8 @@ export class SessionStreamHub {
       completed: false,
       nextId: 0,
       runningSince: Date.now(),
+      steeringQueue: [],
+      followUpQueue: [],
     };
     this.runs.set(sessionId, state);
 
@@ -344,11 +367,64 @@ export class SessionStreamHub {
   }
 
   /**
+   * 运行中注入 Steering / Follow-up。
+   * @returns false 若 session 无活跃 run
+   */
+  enqueueInject(
+    sessionId: string,
+    kind: "steer" | "follow_up",
+    content: string,
+  ): { ok: true; id: string; kind: "steer" | "follow_up"; queued: number } | { ok: false; reason: string } {
+    const state = this.runs.get(sessionId);
+    if (!state || state.completed) {
+      return { ok: false, reason: "会话当前没有运行中的 Agent，无法注入。请使用普通发送。" };
+    }
+    const text = content.trim();
+    if (!text) return { ok: false, reason: "内容不能为空" };
+    const item: RunInjectMessage = {
+      id: `inj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      content: text,
+      createdAt: Date.now(),
+    };
+    const queue = kind === "steer" ? state.steeringQueue : state.followUpQueue;
+    queue.push(item);
+    return { ok: true, id: item.id, kind, queued: queue.length };
+  }
+
+  /**
+   * 取出待注入消息（按 config mode）。
+   * one-at-a-time：只取队首一条；all：取全部。
+   */
+  takeInject(
+    sessionId: string,
+    kind: "steer" | "follow_up",
+  ): RunInjectMessage[] {
+    const state = this.runs.get(sessionId);
+    if (!state) return [];
+    const queue = kind === "steer" ? state.steeringQueue : state.followUpQueue;
+    if (queue.length === 0) return [];
+    const mode = kind === "steer" ? this.config.steeringMode : this.config.followUpMode;
+    if (mode === "all") {
+      return queue.splice(0, queue.length);
+    }
+    return [queue.shift()!];
+  }
+
+  /** abort 时清空未注入队列（已落库消息不删） */
+  clearInjectQueues(sessionId: string): void {
+    const state = this.runs.get(sessionId);
+    if (!state) return;
+    state.steeringQueue.length = 0;
+    state.followUpQueue.length = 0;
+  }
+
+  /**
    * 显式停止某个 session 的运行（触发 abort）。
    */
   stop(sessionId: string): boolean {
     const state = this.runs.get(sessionId);
     if (!state || state.completed) return false;
+    this.clearInjectQueues(sessionId);
     state.abortController.abort();
     return true;
   }
