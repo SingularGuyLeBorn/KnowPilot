@@ -545,6 +545,7 @@ export function ChatView() {
     { enabled: !!effectiveSessionId && !backendDown },
   );
   const createSessionQueueItemMutation = trpc.agent.createSessionQueueItem.useMutation();
+  const submitInjectMutation = trpc.agent.submitInject.useMutation();
   const consumeSessionQueueItemMutation = trpc.agent.consumeSessionQueueItem.useMutation();
   const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
   const reorderSessionQueueItemsMutation = trpc.agent.reorderSessionQueueItems.useMutation();
@@ -1916,6 +1917,7 @@ export function ChatView() {
       text: string,
       skill?: SelectedSkill,
       attachments?: ChatQueueItem["attachments"],
+      delivery?: "steer" | "follow_up",
     ) => {
       let messageText = text.trim();
       if ((!messageText && !attachments?.length) || backendDown) return;
@@ -1937,6 +1939,31 @@ export function ChatView() {
         setToast("此会话已归档，请跳转到新会话继续对话");
         return;
       }
+
+      // 运行中：默认 Steering；显式 follow_up 走停前续问（不改 phase，不 beginStream）
+      if (effectiveSessionId && isSessionRunOccupied(effectiveSessionId)) {
+        const kind = delivery === "follow_up" ? "follow_up" : "steer";
+        if (!messageText) return;
+        void (async () => {
+          try {
+            await submitInjectMutation.mutateAsync({
+              sessionId: effectiveSessionId,
+              content: messageText,
+              kind,
+            });
+            setToast(
+              kind === "steer"
+                ? "已加入纠偏，将在当前工具批结束后生效"
+                : "已加入后续提问，将在本轮结束后继续",
+            );
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            setToast(msg || "注入失败");
+          }
+        })();
+        return;
+      }
+
       // 500ms 内相同文本（含空附件）视为重复发送，直接丢弃，避免重复气泡。
       const now = Date.now();
       const last = lastEnqueueRef.current;
@@ -1998,7 +2025,7 @@ export function ChatView() {
 
       sessionComposeActions.enqueueUserQueueItem(sid, localItem);
     },
-    [backendDown, effectiveSessionId, createSessionQueueItemMutation, sessionDetail?.status],
+    [backendDown, effectiveSessionId, createSessionQueueItemMutation, submitInjectMutation, sessionDetail?.status, isSessionRunOccupied],
   );
 
   const handleStop = useCallback(async () => {
