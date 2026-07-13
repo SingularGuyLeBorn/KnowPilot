@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod";
-import { MEMORY_USER_CREATABLE_TYPES } from "./constants.js";
+import { MEMORY_USER_CREATABLE_TYPES } from "./constants";
 
 /* ═══════════════════════════════════════════════════════
    Post (文章)
@@ -59,6 +59,24 @@ export const agentTierSchema = z.enum(["super", "manager", "sub"]);
 export const agentStatusSchema = z.enum(["active", "idle", "dormant", "deleted"]);
 export const workspaceStatusSchema = z.enum(["active", "archived", "deleted"]);
 
+export const loopContractEvidenceSchema = z.object({
+  at: z.string(),
+  summary: z.string(),
+  fingerprint: z.string(),
+  taskId: z.string().optional(),
+  status: z.enum(["success", "failed", "cancelled", "budget_exceeded", "skipped"]),
+});
+
+export const loopContractSchema = z.object({
+  goal: z.string().default(""),
+  handoff: z.boolean().default(true),
+  gateOpen: z.boolean().default(true),
+  evidence: z.array(loopContractEvidenceSchema).default([]),
+  stopRule: z.object({ maxStaleRounds: z.number().int().min(1).default(3) }).default({ maxStaleRounds: 3 }),
+  staleRounds: z.number().int().min(0).default(0),
+  stoppedReason: z.string().nullable().default(null),
+});
+
 export const heartbeatConfigSchema = z.object({
   enabled: z.boolean().default(false),
   cron: z.string().default("0 9 * * *"),
@@ -66,6 +84,8 @@ export const heartbeatConfigSchema = z.object({
   lastRunAt: z.string().nullable().optional(),
   lastRunStatus: z.string().nullable().optional(),
   consecutiveFailures: z.number().default(0),
+  /** LoopX 式控制平面（Phase 1：超级 Agent 心跳） */
+  loopContract: loopContractSchema.optional(),
 });
 
 export const createAgentSchema = z.object({
@@ -365,6 +385,13 @@ export const createSessionQueueItemSchema = z.object({
   attachments: z.any().optional(),
   skillId: z.string().optional(),
   skillPrompt: z.string().optional(),
+});
+
+/** 运行中注入 Steering / Follow-up（Pi 语义） */
+export const submitAgentInjectSchema = z.object({
+  sessionId: z.string().cuid(),
+  content: z.string().min(1, "注入内容不能为空"),
+  kind: z.enum(["steer", "follow_up"]).default("steer"),
 });
 
 export const updateSessionQueueItemSchema = z.object({
@@ -949,6 +976,7 @@ export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;
 export type ListMessagesInput = z.infer<typeof listMessagesSchema>;
 
 export type CreateSessionQueueItemInput = z.infer<typeof createSessionQueueItemSchema>;
+export type SubmitAgentInjectInput = z.infer<typeof submitAgentInjectSchema>;
 export type UpdateSessionQueueItemInput = z.infer<typeof updateSessionQueueItemSchema>;
 export type ListSessionQueueItemsInput = z.infer<typeof listSessionQueueItemsSchema>;
 export type ReorderSessionQueueItemsInput = z.infer<typeof reorderSessionQueueItemsSchema>;
