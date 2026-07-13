@@ -12,7 +12,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {
   createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema,
-  createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema,
+  createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema,
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
@@ -38,6 +38,7 @@ import {
   authLoginSchema,
 } from "@knowpilot/shared";
 import { listConfiguredLlmProviders } from "./infra/config.js";
+import { getStreamHub } from "./infra/sessionStreamHub.js";
 import { listNativeTools, executeNativeTool } from "./infra/nativeTools.js";
 import { getEnvCredentialCandidates } from "./infra/credentialVault.js";
 import { getCachedEnrichedServerCapabilities } from "./infra/capabilities.js";
@@ -95,7 +96,9 @@ const postRouter = router({
   getById: publicProcedure.meta({ description: "按 id 获取文章，用于编辑器加载。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.post.getById(input.id)),
   create: publicProcedure.meta({ description: "创建新文章，自动同步到本地 Markdown 文件。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
   update: publicProcedure.meta({ description: "更新文章内容，自动同步到本地 Markdown 文件。", aiReadable: true }).input(updatePostSchema).mutation(({ ctx, input }) => ctx.services.post.update(input)),
-  delete: publicProcedure.meta({ description: "删除文章到回收站。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.delete(input.id)),
+  delete: publicProcedure.meta({ description: "删除文章到回收站。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
+    withApprovalGuard(ctx.services, "post.delete", { id: input.id }, input.approvalId, () => ctx.services.post.delete(input.id)),
+  ),
   restore: publicProcedure.meta({ description: "从回收站恢复文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.restore(input.id)),
   permanentDelete: publicProcedure.meta({ description: "从回收站永久删除文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.permanentDelete(input.id)),
   listDeleted: publicProcedure.meta({ description: "列出回收站中的文章。", aiReadable: true }).query(({ ctx }) => ctx.services.post.listDeleted()),
@@ -131,6 +134,62 @@ const agentRouter = router({
     .meta({ description: "Agent 聊天：持久化会话并自动调用工具（Chat 是 Agent 子集）。", aiReadable: true })
     .input(agentChatSchema)
     .mutation(({ ctx, input }) => chatAgent(ctx.services, ctx.config, input, createTrpcInvokerForCtx(ctx))),
+  submitInject: publicProcedure
+    .meta({
+      description: "向运行中的 Agent 注入 Steering（工具批后纠偏）或 Follow-up（停前续问）。",
+      aiReadable: false,
+    })
+    .input(submitAgentInjectSchema)
+    .mutation(({ input }) => {
+      const hub = getStreamHub();
+      if (!hub) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "StreamHub 未初始化" });
+      }
+      const result = hub.enqueueInject(input.sessionId, input.kind, input.content);
+      if (!result.ok) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: result.reason });
+      }
+      return success({ data: result, operation: "create", entity: "agentInject" });
+    }),
+  getLoopContract: publicProcedure
+    .meta({ description: "读取超级 Agent 心跳 Loop Contract（控制平面只读）。", aiReadable: true })
+    .input(z.object({ agentId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const { getHeartbeatEngine } = await import("./infra/heartbeatEngine.js");
+      const engine = getHeartbeatEngine(ctx.prisma, ctx.services, ctx.config);
+      const contract = await engine.getLoopContract(input.agentId);
+      return contract;
+    }),
+  resumeLoopContract: publicProcedure
+    .meta({ description: "人工恢复超级 Agent Loop Contract（开 gate + handoff）。", aiReadable: false })
+    .input(z.object({ agentId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getHeartbeatEngine } = await import("./infra/heartbeatEngine.js");
+      const engine = getHeartbeatEngine(ctx.prisma, ctx.services, ctx.config);
+      try {
+        return await engine.resumeLoopContract(input.agentId);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
+  closeLoopGate: publicProcedure
+    .meta({ description: "人工关闭超级 Agent Loop Contract gate（停心跳触发）。", aiReadable: false })
+    .input(z.object({ agentId: z.string().cuid(), reason: z.string().max(200).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getHeartbeatEngine } = await import("./infra/heartbeatEngine.js");
+      const engine = getHeartbeatEngine(ctx.prisma, ctx.services, ctx.config);
+      try {
+        return await engine.closeLoopGate(input.agentId, input.reason);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
   toolSummary: publicProcedure
     .meta({ description: "解析 Agent tools 授权并统计 LLM 可见工具规模。", aiReadable: true })
     .input(z.object({ tools: z.array(z.string()) }))
@@ -322,7 +381,9 @@ const memoryRouter = router({
   getById: publicProcedure.meta({ description: "获取记忆详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.memory.getById(input.id)),
   list: publicProcedure.meta({ description: "列出记忆，支持按 type/keyword 过滤。", aiReadable: true }).input(listMemoriesSchema).query(({ ctx, input }) => ctx.services.memory.list(input)),
   update: publicProcedure.meta({ description: "更新记忆条目。", aiReadable: true }).input(updateMemorySchema).mutation(({ ctx, input }) => ctx.services.memory.update(input)),
-  delete: publicProcedure.meta({ description: "删除记忆条目。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.memory.delete(input.id)),
+  delete: publicProcedure.meta({ description: "删除记忆条目。", aiReadable: true }).input(z.object({ id: z.string().cuid(), approvalId: z.string().cuid().optional() })).mutation(({ ctx, input }) =>
+    withApprovalGuard(ctx.services, "memory.delete", { id: input.id }, input.approvalId, () => ctx.services.memory.delete(input.id)),
+  ),
 });
 
 const infoSourceRouter = router({

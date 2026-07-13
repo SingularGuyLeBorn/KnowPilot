@@ -46,6 +46,24 @@ export interface Agent {
   updatedAt: string | Date;
 }
 
+export interface LoopContractEvidence {
+  at: string;
+  summary: string;
+  fingerprint: string;
+  taskId?: string;
+  status: "success" | "failed" | "cancelled" | "budget_exceeded" | "skipped";
+}
+
+export interface LoopContract {
+  goal: string;
+  handoff: boolean;
+  gateOpen: boolean;
+  evidence: LoopContractEvidence[];
+  stopRule: { maxStaleRounds: number };
+  staleRounds: number;
+  stoppedReason: string | null;
+}
+
 export interface HeartbeatConfig {
   enabled: boolean;
   cron: string;
@@ -53,6 +71,7 @@ export interface HeartbeatConfig {
   lastRunAt: string | null;
   lastRunStatus: string | null;
   consecutiveFailures: number;
+  loopContract?: LoopContract;
 }
 
 /** Agent 间消息 */

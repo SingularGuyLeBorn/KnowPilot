@@ -23,8 +23,26 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
+import {
+  closeLoopGate,
+  ensureLoopContract,
+  recordEvidence,
+  resumeLoopContract,
+  shouldSkipHeartbeat,
+  type LoopContract,
+} from "./loopContract.js";
 
 const MAX_CONSECUTIVE_FAILURES = 3;
+
+type HeartbeatState = {
+  enabled: boolean;
+  cron: string;
+  goal: string;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  consecutiveFailures: number;
+  loopContract?: LoopContract;
+};
 
 export class HeartbeatEngine {
   private jobs = new Map<string, ScheduledTask>();
@@ -134,11 +152,29 @@ export class HeartbeatEngine {
       const hb = this.parseHeartbeat(agent.heartbeat);
       if (!hb?.enabled || !hb.goal) return;
 
+      // Phase 1：仅超级 Agent 走 Loop Contract 门禁
+      if (agent.tier === "super") {
+        const defaults = this.config.heartbeat.loopContract;
+        const contract = ensureLoopContract(hb.goal, hb.loopContract, defaults);
+        const gate = shouldSkipHeartbeat(contract);
+        if (gate.skip) {
+          console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳跳过（${gate.reason}）`);
+          return;
+        }
+        // 首次确保 contract 落库（goal 对齐）
+        if (!hb.loopContract) {
+          await this.persistHeartbeat(agentId, { ...hb, loopContract: contract });
+        }
+      }
+
       // 预算检查（#14）
       try {
         assertLlmBudget(this.config);
       } catch {
-        await this.updateHeartbeatStatus(agentId, "budget_exceeded", hb);
+        await this.updateHeartbeatStatus(agentId, "budget_exceeded", hb, {
+          evidenceSummary: "LLM 预算耗尽，跳过本轮",
+          applyLoopContract: agent.tier === "super",
+        });
         console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳跳过（LLM 预算耗尽）`);
         return;
       }
@@ -250,7 +286,11 @@ export class HeartbeatEngine {
                 deliveredAt: new Date(),
               },
             });
-            await this.updateHeartbeatStatus(agentId, "success", hb);
+            await this.updateHeartbeatStatus(agentId, "success", hb, {
+              evidenceSummary: typeof loop.content === "string" ? loop.content.slice(0, 500) : "心跳完成",
+              taskId: task.id,
+              applyLoopContract: agent.tier === "super",
+            });
             console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳完成`);
           } catch (err: unknown) {
             const isAbort = err instanceof Error && err.name === "AbortError";
@@ -267,7 +307,11 @@ export class HeartbeatEngine {
             }).catch((err) => {
               console.warn(`  💓 [HeartbeatEngine] 标记心跳任务 failed 失败 task=${task.id}:`, err instanceof Error ? err.message : err);
             });
-            await this.updateHeartbeatStatus(agentId, reason, hb);
+            await this.updateHeartbeatStatus(agentId, reason, hb, {
+              evidenceSummary: err instanceof Error ? err.message : String(err),
+              taskId: task.id,
+              applyLoopContract: agent.tier === "super",
+            });
 
             // 连续失败 3 次 → 邮件通知（#4）
             if (reason === "failed") {
@@ -287,7 +331,7 @@ export class HeartbeatEngine {
     }
   }
 
-  private parseHeartbeat(raw: unknown): { enabled: boolean; cron: string; goal: string; lastRunAt: string | null; lastRunStatus: string | null; consecutiveFailures: number } | null {
+  private parseHeartbeat(raw: unknown): HeartbeatState | null {
     if (!raw || typeof raw !== "object") return null;
     const hb = raw as Record<string, unknown>;
     return {
@@ -297,26 +341,103 @@ export class HeartbeatEngine {
       lastRunAt: (hb.lastRunAt as string | null) ?? null,
       lastRunStatus: (hb.lastRunStatus as string | null) ?? null,
       consecutiveFailures: Number(hb.consecutiveFailures ?? 0),
+      loopContract: hb.loopContract as LoopContract | undefined,
     };
+  }
+
+  private async persistHeartbeat(agentId: string, hb: HeartbeatState): Promise<void> {
+    await this.prisma.agent.update({
+      where: { id: agentId },
+      data: { heartbeat: hb as object },
+    });
+  }
+
+  /**
+   * 读取超级 Agent 的 Loop Contract（无则按 goal 生成默认，不落库）
+   */
+  async getLoopContract(agentId: string): Promise<LoopContract | null> {
+    const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent || agent.tier !== "super") return null;
+    const hb = this.parseHeartbeat(agent.heartbeat);
+    if (!hb?.goal) return null;
+    return ensureLoopContract(hb.goal, hb.loopContract, this.config.heartbeat.loopContract);
+  }
+
+  /** 人工恢复：开 gate + handoff，清 stop 原因 */
+  async resumeLoopContract(agentId: string): Promise<LoopContract> {
+    const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) throw new Error(`Agent 不存在: ${agentId}`);
+    if (agent.tier !== "super") throw new Error("Loop Contract Phase 1 仅支持超级 Agent");
+    const hb = this.parseHeartbeat(agent.heartbeat);
+    if (!hb?.goal) throw new Error("Agent 未配置心跳 goal");
+    const next = resumeLoopContract(
+      ensureLoopContract(hb.goal, hb.loopContract, this.config.heartbeat.loopContract),
+    );
+    await this.persistHeartbeat(agentId, { ...hb, loopContract: next });
+    return next;
+  }
+
+  /** 人工关 gate（停心跳触发，直至 resume） */
+  async closeLoopGate(agentId: string, reason?: string): Promise<LoopContract> {
+    const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) throw new Error(`Agent 不存在: ${agentId}`);
+    if (agent.tier !== "super") throw new Error("Loop Contract Phase 1 仅支持超级 Agent");
+    const hb = this.parseHeartbeat(agent.heartbeat);
+    if (!hb?.goal) throw new Error("Agent 未配置心跳 goal");
+    const next = closeLoopGate(
+      ensureLoopContract(hb.goal, hb.loopContract, this.config.heartbeat.loopContract),
+      reason,
+    );
+    await this.persistHeartbeat(agentId, { ...hb, loopContract: next });
+    return next;
   }
 
   private async updateHeartbeatStatus(
     agentId: string,
     status: "success" | "failed" | "cancelled" | "budget_exceeded",
-    prevHb: { consecutiveFailures: number },
+    prevHb: HeartbeatState,
+    opts?: {
+      evidenceSummary?: string;
+      taskId?: string;
+      applyLoopContract?: boolean;
+    },
   ): Promise<void> {
     const consecutiveFailures =
       status === "success" ? 0 : status === "failed" ? prevHb.consecutiveFailures + 1 : prevHb.consecutiveFailures;
+
+    const current = this.parseHeartbeat(
+      (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
+    );
+
+    let loopContract = current?.loopContract ?? prevHb.loopContract;
+    if (opts?.applyLoopContract) {
+      const defaults = this.config.heartbeat.loopContract;
+      const base = ensureLoopContract(prevHb.goal, loopContract, defaults);
+      loopContract = recordEvidence(
+        base,
+        {
+          at: new Date().toISOString(),
+          summary: opts.evidenceSummary ?? status,
+          taskId: opts.taskId,
+          status,
+        },
+        defaults,
+      );
+      if (!loopContract.handoff) {
+        console.warn(`  💓 [HeartbeatEngine] Loop Contract 停止交回: ${loopContract.stoppedReason}`);
+      }
+    }
 
     await this.prisma.agent.update({
       where: { id: agentId },
       data: {
         heartbeat: {
-          ...this.parseHeartbeat((await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat),
+          ...(current ?? prevHb),
           lastRunAt: new Date().toISOString(),
           lastRunStatus: status,
           consecutiveFailures,
-        },
+          ...(loopContract ? { loopContract } : {}),
+        } as object,
         status: status === "success" ? "active" : "idle",
       },
     }).catch((err) => {
