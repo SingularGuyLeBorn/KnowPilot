@@ -1,5 +1,7 @@
 /**
  * 原生工具注册表 — Agent 可直接调用的内置能力
+ *
+ * PR-4a：fs / web / shell 已迁至 infra/tools/native/*，此处保留其余域 + 兼容出口。
  */
 
 import fs from "fs";
@@ -11,16 +13,6 @@ import { resolveSafePath, assertPathWithinProjectRoot } from "./safePath.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { PostEntity, MemoryEntity } from "../services.js";
 import type { PrismaClient } from "@prisma/client";
-import {
-  smartSearch,
-  parsePlatformUrl,
-  scrapePage,
-  resetSearchEngineConfigs,
-  detectPlatform,
-  isArticleFetchFatalError,
-  type SearchEngineName,
-} from "./metablog/index.js";
-import { runShellRestricted, waitMs } from "./shellRunner.js";
 import { buildMemoryContext, buildSystemPromptWithHints, resolveAgent, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
@@ -88,67 +80,29 @@ import { captureZhihuLoginState } from "./metablog/auth/zhihuLogin.js";
 import { listSavedCookiePlatforms } from "./cookieJar.js";
 
 import { DEFAULT_AGENT_NATIVE, isMemoryUserCreatable, type MemoryUserCreatableType } from "@knowpilot/shared";
-import { isSmokeInfoSource } from "./smokeArtifacts.js";
+import { registerTool, getTool, listTools } from "./tools/registry.js";
+import type { ToolCommand } from "./tools/types.js";
+import {
+  coerceToolBoolean,
+  type NativeToolContext,
+  type NativeToolDefinition,
+} from "./tools/native/types.js";
+
+// PR-4a 域副作用注册（fs/web/shell）
+import { registerNativeDomains } from "./tools/native/index.js";
+
+export type { NativeToolContext, NativeToolDefinition } from "./tools/native/types.js";
+export {
+  syncSearchEnvFromConfig,
+  isUnreadableArticlePage,
+  readArticleContentWarning,
+} from "./tools/native/web.js";
 
 const execFileAsync = promisify(execFile);
-
-/** LLM 常把 boolean 写成字符串 "true"/"false"，严格 === true 会误判为异步投递 */
-function coerceToolBoolean(value: unknown): boolean {
-  if (value === true || value === 1) return true;
-  if (typeof value === "string") {
-    const s = value.trim().toLowerCase();
-    return s === "true" || s === "1" || s === "yes";
-  }
-  return false;
-}
-
-export interface NativeToolDefinition {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
-
-export interface NativeToolContext {
-  config: AppConfig;
-  services: ServiceContainer;
-  prisma?: PrismaClient;
-  invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
-  /** 当前 Chat 会话 — async_task_run 等需要 */
-  sessionId?: string;
-  agentSnapshot?: {
-    id: string;
-    model: string;
-    systemPrompt: string;
-    tools: string[];
-    tier?: string;
-    workspaceId?: string | null;
-    parentId?: string | null;
-  };
-  /** 当前 ReAct 轮次是否仍在工具调用中（向上发消息时机约束 #41） */
-  inToolRound?: boolean;
-  /** 本次运行的触发来源：user=用户直接对话（禁止向上回传）；parent=上级下发任务（结果经 Task 投递回传）；heartbeat=心跳 */
-  runOrigin?: "user" | "parent" | "heartbeat";
-}
 
 type NativeToolHandler = (args: Record<string, unknown>, ctx: NativeToolContext) => Promise<unknown>;
 
 const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
-  web_search: webSearch,
-  rss_fetch: rssFetchTool,
-  rss_draft_posts: rssDraftPostsTool,
-  read_article: readArticleTool,
-  scrape_web_page: scrapeWebPageTool,
-  read_file: readFileTool,
-  write_file: writeFileTool,
-  append_to_file: appendToFileTool,
-  list_directory: listDirectoryTool,
-  file_rename: fileRenameTool,
-  file_move: fileMoveTool,
-  file_copy: fileCopyTool,
-  search_files: searchFilesTool,
-  directory_create: directoryCreateTool,
-  directory_delete: directoryDeleteTool,
-  file_stat: fileStatTool,
   post_create: postCreateTool,
   post_update: postUpdateTool,
   post_delete: postDeleteTool,
@@ -164,7 +118,6 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   git_commit: gitCommitTool,
   git_pull: gitPullTool,
   git_push: gitPushTool,
-  file_delete: fileDeleteTool,
   task_run: taskRunTool,
   yuque_get_doc: yuqueGetDocTool,
   yuque_list_books: yuqueListBooksTool,
@@ -213,14 +166,7 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_token_status: feishuTokenStatusTool,
   feishu_refresh_token: feishuRefreshTokenTool,
   invoke_api: invokeApiTool,
-  async_task_run: runAsyncTool,
-  async_task_status: taskStatusTool,
-  async_task_wait: awaitAsyncTool,
-  async_task_cancel: cancelAsyncTool,
   spawn_subagent: spawnSubagentTool,
-  run_shell: runShellTool,
-  wait: waitTool,
-  sleep: sleepTool,
   session_clear: sessionClearTool,
   session_rotate: sessionRotateTool,
   session_compact: sessionCompactTool,
@@ -248,218 +194,6 @@ const TOOL_HANDLERS: Record<string, NativeToolHandler> = {
 };
 
 export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
-  {
-    name: "web_search",
-    description:
-      "搜索互联网（MetaBlog smartSearch 多引擎；/sources 信息源启用后 Tavily/SerpAPI 优先 scoped 到信息源域名）。",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "搜索关键词" },
-        maxResults: { type: "number", description: "最大结果数，默认 5" },
-        engine: {
-          type: "string",
-          description: "优先引擎：baidu_qianfan|metaso|bocha|tavily|bing_crawler|duckduckgo|searxng|serpapi 等",
-        },
-      },
-      required: ["query"],
-    },
-  },
-  {
-    name: "rss_fetch",
-    description:
-      "抓取指定 RSS/Atom 信息源的最新条目，自动去重。支持 sourceId 或 sourceName。可设置 autoDraft=true 自动生成 Post 草稿。",
-    parameters: {
-      type: "object",
-      properties: {
-        sourceId: { type: "string", description: "信息源 ID" },
-        sourceName: { type: "string", description: "信息源名称（sourceId 的替代）" },
-        maxItems: { type: "number", description: "最大抓取条数，默认 20，最大 50" },
-        autoDraft: { type: "boolean", description: "是否自动把新条目生成 Post 草稿" },
-        defaultCategory: { type: "string", description: "自动生成草稿时的分类，默认\"信息源\"" },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "rss_draft_posts",
-    description: "把已抓取的 RSS 条目转成 Post 草稿。",
-    parameters: {
-      type: "object",
-      properties: {
-        sourceId: { type: "string", description: "信息源 ID" },
-        itemIds: { type: "array", items: { type: "string" }, description: "InfoSourceItem 的 id 列表" },
-        defaultCategory: { type: "string", description: "草稿分类，默认 \"信息源\"" },
-      },
-      required: ["sourceId", "itemIds"],
-    },
-  },
-  {
-    name: "read_article",
-    description:
-      "读取网页文章为 Markdown（MetaBlog readArticle）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书等；InfoQ 走官方 API；SPA 站 HTTP→Playwright→DOM→Jina 降级；404/壳页明确报错；正文偏短返回 contentWarning。",
-    parameters: {
-      type: "object",
-      properties: {
-        url: { type: "string", description: "文章 URL" },
-        timeout: { type: "number", description: "超时毫秒，默认 30000" },
-        platform: { type: "string", description: "可选平台：zhihu、wechat、xiaohongshu、bilibili 等" },
-        method: { type: "string", enum: ["playwright"], description: "强制 Playwright 渲染" },
-        embedOcr: { type: "boolean", description: "是否 OCR 嵌入图片文字，默认 true" },
-        maxChars: { type: "number", description: "返回正文最大字符数，默认 16000" },
-        minChars: { type: "number", description: "可读正文下限，低于且标题像 404 则报错，默认 80" },
-      },
-      required: ["url"],
-    },
-  },
-  {
-    name: "scrape_web_page",
-    description: "Playwright 采集网页正文、链接与元数据（MetaBlog scrapeWebPage）。",
-    parameters: {
-      type: "object",
-      properties: {
-        url: { type: "string", description: "目标 URL" },
-        timeout: { type: "number", description: "超时毫秒，默认 30000" },
-        waitFor: { type: "string", description: "可选 CSS 选择器" },
-        extractArticle: { type: "boolean", description: "启发式提取正文，默认 true" },
-      },
-      required: ["url"],
-    },
-  },
-  {
-    name: "read_file",
-    description: "读取项目根目录内的文本文件（相对路径），支持偏移与最大长度。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对项目根的路径，如 content/posts/foo.md" },
-        maxChars: { type: "number", description: "最大读取字符数，默认 12000" },
-        offset: { type: "number", description: "起始字符偏移，默认 0" },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "write_file",
-    description: "写入项目根目录内的文本文件（相对路径）。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对项目根的路径" },
-        content: { type: "string", description: "文件内容" },
-      },
-      required: ["path", "content"],
-    },
-  },
-  {
-    name: "append_to_file",
-    description: "在项目根目录内的文本文件末尾追加内容（文件不存在则创建）。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对项目根的路径" },
-        content: { type: "string", description: "追加内容" },
-      },
-      required: ["path", "content"],
-    },
-  },
-  {
-    name: "list_directory",
-    description: "列出项目内目录内容，可选递归。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对目录，默认 ." },
-        recursive: { type: "boolean", description: "是否递归列出子目录，默认 false" },
-      },
-    },
-  },
-  {
-    name: "file_rename",
-    description: "重命名项目根目录内的文件。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "原相对路径" },
-        newName: { type: "string", description: "新文件名（不含目录）" },
-      },
-      required: ["path", "newName"],
-    },
-  },
-  {
-    name: "file_move",
-    description: "移动项目根目录内的文件到另一个相对路径。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "原相对路径" },
-        dest: { type: "string", description: "目标相对路径（含文件名）" },
-      },
-      required: ["path", "dest"],
-    },
-  },
-  {
-    name: "file_copy",
-    description: "复制项目根目录内的文件到另一个相对路径。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "原相对路径" },
-        dest: { type: "string", description: "目标相对路径（含文件名）" },
-      },
-      required: ["path", "dest"],
-    },
-  },
-  {
-    name: "search_files",
-    description: "在项目根目录内搜索包含指定关键词的文本文件，返回文件路径、行号与片段。",
-    parameters: {
-      type: "object",
-      properties: {
-        pattern: { type: "string", description: "搜索关键词或正则表达式" },
-        path: { type: "string", description: "相对起始目录，默认 ." },
-        isRegex: { type: "boolean", description: "是否将 pattern 视为正则表达式，默认 false（字面量匹配）" },
-        caseSensitive: { type: "boolean", description: "是否区分大小写，默认 false" },
-        glob: { type: "string", description: "文件名通配过滤，如 *.md" },
-        maxResults: { type: "number", description: "最大返回结果数，默认 30" },
-      },
-      required: ["pattern"],
-    },
-  },
-  {
-    name: "directory_create",
-    description: "在项目根目录内创建目录（自动创建父目录）。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对目录路径" },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "file_stat",
-    description: "获取项目根目录内文件或目录的元信息。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对路径" },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "directory_delete",
-    description: "删除项目根目录内的空目录；设置 recursive=true 可递归删除。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对目录路径" },
-        recursive: { type: "boolean", description: "是否递归删除非空目录，默认 false" },
-      },
-      required: ["path"],
-    },
-  },
   {
     name: "post_create",
     description: "在本地知识库中创建一篇 Markdown 文章（content/posts）。",
@@ -657,17 +391,6 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         repoId: { type: "string" },
         repoPath: { type: "string" },
       },
-    },
-  },
-  {
-    name: "file_delete",
-    description: "删除项目根目录内的文件（相对路径）。",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "相对项目根的路径" },
-      },
-      required: ["path"],
     },
   },
   {
@@ -1275,93 +998,6 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
     },
   },
   {
-    name: "async_task_run",
-    description: "启动后台任务（入全局任务池 queued→running）。waitForResult=false（默认）=异步投递：立刻返回，完成后结果进会话异步任务结果队列。waitForResult=true=同步等待：父流挂起直到任务完成，结果作为工具返回值（不进异步队列）。子 Agent 只能用 mode=tool（纯工具执行），不可发起带 LLM 的后台任务。",
-    parameters: {
-      type: "object",
-      properties: {
-        task: { type: "string", description: "交给后台 Agent 执行的任务描述" },
-        label: { type: "string", description: "任务标签，用于前端展示" },
-        mode: { type: "string", enum: ["llm", "tool"], description: "llm=后台 Agent 跑 LLM 循环（仅主/管理 Agent 可用）；tool=纯工具一次性执行（子 Agent 必须用此模式）。默认 llm" },
-        toolCall: { type: "object", description: "mode=tool 时必填：{ tool: 工具名, args: 工具参数 }", properties: { tool: { type: "string" }, args: { type: "object" } } },
-        timeoutMs: { type: "number", description: "任务最大运行时长毫秒数，不填用全局默认值" },
-        waitForResult: { type: "boolean", description: "true=同步等待完成并作为工具返回值；false(默认)=异步投递，立刻返回，结果进队列" },
-        shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
-      },
-      required: ["task"],
-    },
-  },
-  {
-    name: "async_task_status",
-    description: "查询异步任务状态。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长、结果/错误、执行日志等。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "任务 id（async_task_run 返回的 jobId），不传则列出当前会话全部任务" },
-      },
-    },
-  },
-  {
-    name: "async_task_wait",
-    description: "显式等待异步任务完成（阻塞当前轮，最长 10 分钟，不受默认工具超时限制）。任务完成后返回结果，LLM 基于结果继续生成最终答案。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "要等待的任务 id" },
-      },
-      required: ["jobId"],
-    },
-  },
-  {
-    name: "async_task_cancel",
-    description: "取消一条运行中或排队中的异步任务/Subagent。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "要取消的任务 id" },
-      },
-      required: ["jobId"],
-    },
-  },
-  {
-    name: "run_shell",
-    description:
-      "在项目根目录内执行 Shell 命令（host_restricted：超时/输出上限/危险命令拦截）。Windows 默认 PowerShell，Linux/macOS 默认 bash。",
-    parameters: {
-      type: "object",
-      properties: {
-        command: { type: "string", description: "要执行的命令，如 pnpm test 或 dir" },
-        cwd: { type: "string", description: "相对项目根的工作目录，默认 ." },
-        shell: { type: "string", enum: ["auto", "powershell", "cmd", "bash"], description: "Shell 类型，默认 auto" },
-        timeoutMs: { type: "number", description: "命令超时毫秒数，不填则使用全局默认值" },
-      },
-      required: ["command"],
-    },
-  },
-  {
-    name: "wait",
-    description: "等待指定时间（用于安装、服务启动、轮询前的延迟）。最多 300 秒。",
-    parameters: {
-      type: "object",
-      properties: {
-        seconds: { type: "number", description: "等待秒数，默认 1，最大 300" },
-        ms: { type: "number", description: "或直接指定毫秒数（与 seconds 二选一）" },
-      },
-    },
-  },
-  {
-    name: "sleep",
-    description:
-      "睡眠/定时器：阻塞等待 N 秒后返回（默认 10 秒，最大 300 秒）。设置 async=true 则不阻塞当前对话，改为创建后台异步任务，时间到后结果进入发送队列最前，可用于定时提醒。",
-    parameters: {
-      type: "object",
-      properties: {
-        seconds: { type: "number", description: "等待秒数，默认 10，最大 300" },
-        async: { type: "boolean", description: "true=不阻塞，创建后台异步任务；false(默认)=阻塞当前对话" },
-      },
-    },
-  },
-  {
     name: "session_clear",
     description:
       "删除所有 ChatSession 及其关联的 ChatMessage（级联清空）。这是一个破坏性操作，调用时必须将 confirm 显式设为 true。",
@@ -1631,11 +1267,47 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
       },
       required: ["agentId", "skillName", "skillDescription"],
     },
-  },
+  }
 ];
 
+/** 将剩余 TOOL_HANDLERS + 域模块一并灌入统一注册表 */
+let nativeToolsRegistered = false;
+function ensureNativeToolsRegistered(): void {
+  // 测试清空 registry 后需能重新灌入（域工具 + 本文件剩余工具）
+  const probeRemaining = NATIVE_TOOL_DEFINITIONS[0]?.name;
+  if (nativeToolsRegistered && probeRemaining && getTool(probeRemaining) && getTool("read_file")) return;
+
+  registerNativeDomains();
+
+  for (const def of NATIVE_TOOL_DEFINITIONS) {
+    const handler = TOOL_HANDLERS[def.name];
+    if (!handler) {
+      console.warn(`[nativeTools] 定义了 schema 但无 handler: ${def.name}`);
+      continue;
+    }
+    const cmd: ToolCommand<NativeToolContext> = {
+      name: def.name,
+      kind: "native",
+      schema: () => ({ description: def.description, parameters: def.parameters }),
+      execute: (args, ctx) => handler(args, ctx),
+    };
+    registerTool(cmd);
+  }
+  for (const name of Object.keys(TOOL_HANDLERS)) {
+    if (!getTool(name)) {
+      console.warn(`[nativeTools] 有 handler 但无 schema，跳过注册: ${name}`);
+    }
+  }
+  nativeToolsRegistered = true;
+}
+ensureNativeToolsRegistered();
+
 export function listNativeTools(): NativeToolDefinition[] {
-  return NATIVE_TOOL_DEFINITIONS;
+  ensureNativeToolsRegistered();
+  return listTools("native").map((t) => {
+    const s = t.schema();
+    return { name: t.name, description: s.description, parameters: s.parameters };
+  });
 }
 
 /** 异步任务工具统一命名空间：async_task_{run|status|wait|cancel}。
@@ -1647,6 +1319,7 @@ export async function executeNativeTool(
   args: Record<string, unknown>,
   ctx: NativeToolContext,
 ): Promise<unknown> {
+  ensureNativeToolsRegistered();
   const resolvedName = TOOL_NAME_ALIASES[name] ?? name;
 
   // Swarm 权限硬拦截：检查 agent 是否有权调用此工具
@@ -1674,12 +1347,16 @@ export async function executeNativeTool(
     }
   }
 
-  const handler = TOOL_HANDLERS[resolvedName];
-  if (!handler) {
-    throw new Error(`未知原生工具 "${resolvedName}"（原始名 "${name}"）。可用：${Object.keys(TOOL_HANDLERS).join(", ")}`);
+  const cmd = getTool(resolvedName);
+  if (!cmd || cmd.kind !== "native") {
+    throw new Error(
+      `未知原生工具 "${resolvedName}"（原始名 "${name}"）。可用：${listTools("native")
+        .map((t) => t.name)
+        .join(", ")}`,
+    );
   }
   const started = Date.now();
-  const raw = await handler(args, ctx);
+  const raw = await cmd.execute(args, ctx);
   if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.elapsedMs !== "number") {
@@ -1712,548 +1389,7 @@ async function runGit(cwd: string, args: string[]): Promise<string> {
   return (stdout || stderr || "").trim();
 }
 
-interface InfoSourceSnapshot {
-  name: string;
-  slug?: string | null;
-  url: string;
-  type: string;
-  description: string;
-  reliability: number;
-}
 
-async function loadEnabledInfoSources(ctx: NativeToolContext): Promise<InfoSourceSnapshot[]> {
-  if (!ctx.services?.infoSource?.list) return [];
-  try {
-    const items: Array<{
-      name: string;
-      url: string;
-      type: string;
-      description: string | null;
-      reliability: number;
-      sourceSlug?: string | null;
-    }> = [];
-    let page = 1;
-    while (true) {
-      const result = await ctx.services.infoSource.list({ page, pageSize: 100, enabled: true });
-      items.push(...result.items);
-      if (page >= result.totalPages) break;
-      page += 1;
-    }
-    return items
-      .filter((s) => !isSmokeInfoSource(s.name, s.sourceSlug))
-      .slice()
-      .sort((a, b) => b.reliability - a.reliability)
-      .map((s) => ({
-        name: s.name,
-        slug: s.sourceSlug,
-        url: s.url,
-        type: s.type,
-        description: s.description ?? "",
-        reliability: s.reliability,
-      }));
-  } catch {
-    return [];
-  }
-}
-
-function extractDomain(url: string): string | null {
-  try {
-    return new URL(url).hostname.replace(/^www\./i, "");
-  } catch {
-    return null;
-  }
-}
-
-function getInfoSourceDomains(sources: InfoSourceSnapshot[]): string[] {
-  const domains = new Set<string>();
-  for (const source of sources) {
-    const domain = extractDomain(source.url);
-    if (domain) domains.add(domain);
-  }
-  return [...domains];
-}
-
-function summarizeInfoSources(sources: InfoSourceSnapshot[]) {
-  return sources.map((s) => ({ name: s.name, url: s.url, reliability: s.reliability, type: s.type }));
-}
-
-function scoreInfoSourceMatch(source: InfoSourceSnapshot, query: string): number {
-  const q = query.toLowerCase().trim();
-  let score = source.reliability;
-  const haystack = `${source.name} ${source.description} ${source.url} ${source.type}`.toLowerCase();
-  if (q && haystack.includes(q)) score += 10;
-  for (const word of q.split(/\s+/).filter((w) => w.length > 1)) {
-    if (haystack.includes(word)) score += 2;
-  }
-  return score;
-}
-
-function buildInfoSourceCatalogResults(
-  sources: InfoSourceSnapshot[],
-  query: string,
-  maxResults: number,
-) {
-  return sources
-    .map((source) => ({ source, score: scoreInfoSourceMatch(source, query) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxResults)
-    .map(({ source }) => ({
-      title: source.name,
-      url: source.url,
-      content: source.description,
-      reliability: source.reliability,
-      type: source.type,
-    }));
-}
-
-async function tavilySearch(
-  apiKey: string,
-  query: string,
-  maxResults: number,
-  includeDomains?: string[],
-) {
-  const body: Record<string, unknown> = {
-    api_key: apiKey,
-    query,
-    max_results: maxResults,
-    include_answer: true,
-  };
-  if (includeDomains?.length) body.include_domains = includeDomains;
-
-  const res = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Tavily 搜索失败: HTTP ${res.status}`);
-  const data = (await res.json()) as {
-    answer?: string;
-    results?: Array<{ title: string; url: string; content: string }>;
-  };
-  return {
-    provider: "tavily" as const,
-    answer: data.answer,
-    results: (data.results || []).slice(0, maxResults),
-  };
-}
-
-async function serpApiSearch(apiKey: string, query: string, maxResults: number) {
-  const url = new URL("https://serpapi.com/search.json");
-  url.searchParams.set("engine", "google");
-  url.searchParams.set("q", query);
-  url.searchParams.set("api_key", apiKey);
-  url.searchParams.set("num", String(maxResults));
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`SerpAPI 搜索失败: HTTP ${res.status}`);
-  const data = (await res.json()) as { organic_results?: Array<{ title: string; link: string; snippet: string }> };
-  return {
-    provider: "serpapi" as const,
-    results: (data.organic_results || []).slice(0, maxResults).map((r) => ({
-      title: r.title,
-      url: r.link,
-      content: r.snippet,
-    })),
-  };
-}
-
-export function syncSearchEnvFromConfig(config: AppConfig) {
-  const entries: Array<[string, string | undefined]> = [
-    ["SEARCH_BAIDU_QIANFAN_API_KEY", config.search.baiduQianfanApiKey],
-    ["SEARCH_TAVILY_API_KEY", config.search.tavilyApiKey],
-    ["SEARCH_SERPAPI_API_KEY", config.search.serpApiKey],
-    ["SEARCH_METASO_API_KEY", config.search.metasoApiKey],
-    ["SEARCH_BOCHA_API_KEY", config.search.bochaApiKey],
-    ["SEARCH_LANGSEARCH_API_KEY", config.search.langsearchApiKey],
-    ["SEARCH_BRAVE_API_KEY", config.search.braveApiKey],
-    ["SEARCH_BING_API_KEY", config.search.bingApiKey],
-  ];
-  for (const [key, val] of entries) {
-    if (val) process.env[key] = val;
-  }
-  process.env.SEARCH_ENGINE_PRIORITY = config.search.enginePriority;
-  resetSearchEngineConfigs();
-}
-
-function mapSmartSearchResponse(data: Awaited<ReturnType<typeof smartSearch>>, maxResults: number) {
-  return {
-    provider: data.engine,
-    engine: data.engine,
-    query: data.query,
-    total: data.total,
-    elapsedMs: data.elapsedMs,
-    enginesAttempted: data.enginesAttempted,
-    results: data.results.slice(0, maxResults).map((r) => ({
-      title: r.title,
-      url: r.url,
-      content: r.snippet,
-      snippet: r.snippet,
-      source: r.source,
-    })),
-  };
-}
-
-async function tryScopedInfoSourceSearch(
-  args: { query: string; maxResults: number },
-  ctx: NativeToolContext,
-  infoSources: InfoSourceSnapshot[],
-) {
-  if (infoSources.length === 0) return null;
-
-  const { query, maxResults } = args;
-  const domains = getInfoSourceDomains(infoSources);
-  const infoSourcesUsed = summarizeInfoSources(infoSources);
-  const { tavilyApiKey, serpApiKey } = ctx.config.search;
-
-  if (tavilyApiKey && domains.length > 0) {
-    try {
-      const scoped = await tavilySearch(tavilyApiKey, query, maxResults, domains);
-      if (scoped.results.length > 0) {
-        return { ...scoped, infoSourcesUsed, searchPhase: "infoSource-scoped" as const };
-      }
-    } catch {
-      /* continue */
-    }
-  }
-
-  if (serpApiKey && domains.length > 0) {
-    try {
-      const siteQuery = domains.map((d) => `site:${d}`).join(" OR ");
-      const scoped = await serpApiSearch(serpApiKey, `${query} (${siteQuery})`, maxResults);
-      if (scoped.results.length > 0) {
-        return { ...scoped, infoSourcesUsed, searchPhase: "infoSource-scoped" as const };
-      }
-    } catch {
-      /* continue */
-    }
-  }
-
-  return null;
-}
-
-async function fallbackInfoSourceSearch(
-  args: { query: string; maxResults: number },
-  ctx: NativeToolContext,
-  infoSources: InfoSourceSnapshot[],
-) {
-  const { query, maxResults } = args;
-  const infoSourcesUsed = summarizeInfoSources(infoSources);
-  const { tavilyApiKey, serpApiKey } = ctx.config.search;
-
-  if (infoSources.length > 0) {
-    return {
-      provider: "infoSource" as const,
-      query,
-      results: buildInfoSourceCatalogResults(infoSources, query, maxResults),
-      infoSourcesUsed,
-      searchPhase: "infoSource-catalog" as const,
-      note: "MetaBlog 多引擎搜索失败，回退至已启用信息源目录。",
-    };
-  }
-
-  if (tavilyApiKey) {
-    return {
-      ...(await tavilySearch(tavilyApiKey, query, maxResults)),
-      searchPhase: "general-fallback" as const,
-    };
-  }
-
-  if (serpApiKey) {
-    return {
-      ...(await serpApiSearch(serpApiKey, query, maxResults)),
-      searchPhase: "general-fallback" as const,
-    };
-  }
-
-  return null;
-}
-
-async function webSearch(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const query = String(args.query || "");
-  const maxResults = Number(args.maxResults || 5);
-  const preferredEngine = args.engine ? (String(args.engine) as SearchEngineName) : undefined;
-  if (!query) throw new Error("query 不能为空");
-
-  const infoSources = await loadEnabledInfoSources(ctx);
-  const infoSourcesUsed = summarizeInfoSources(infoSources);
-
-  syncSearchEnvFromConfig(ctx.config);
-
-  const started = Date.now();
-
-  const scopedFirst = await tryScopedInfoSourceSearch({ query, maxResults }, ctx, infoSources);
-  if (scopedFirst) {
-    return { ...scopedFirst, elapsedMs: Date.now() - started };
-  }
-
-  try {
-    const data = await smartSearch(query, maxResults, preferredEngine);
-    return {
-      ...mapSmartSearchResponse(data, maxResults),
-      infoSourcesUsed: infoSources.length > 0 ? infoSourcesUsed : undefined,
-      searchPhase: "smart-search" as const,
-      elapsedMs: data.elapsedMs ?? Date.now() - started,
-    };
-  } catch (smartErr) {
-    const fallback = await fallbackInfoSourceSearch({ query, maxResults }, ctx, infoSources);
-    if (fallback) {
-      return { ...fallback, elapsedMs: Date.now() - started };
-    }
-    throw smartErr instanceof Error ? smartErr : new Error(String(smartErr));
-  }
-}
-
-// ============================================================================
-// RSS / Atom Feed 抓取工具
-// ============================================================================
-
-async function rssFetchTool(args: Record<string, unknown>, ctx: NativeToolContext): Promise<unknown> {
-  const { prisma } = ctx;
-  if (!prisma) throw new Error("rss_fetch 需要 prisma");
-
-  const { fetchRssSource, draftPostsFromRssItems } = await import("./rssFetch.js");
-
-  let sourceId: string | undefined;
-  if (typeof args.sourceId === "string") sourceId = args.sourceId;
-  else if (typeof args.sourceName === "string") {
-    const found = await prisma.infoSource.findFirst({
-      where: { name: args.sourceName },
-      select: { id: true },
-    });
-    if (!found) return { error: `未找到名为 "${args.sourceName}" 的信息源` };
-    sourceId = found.id;
-  }
-  if (!sourceId) return { error: "需要提供 sourceId 或 sourceName" };
-
-  const maxItems = typeof args.maxItems === "number" ? Math.max(1, Math.min(50, args.maxItems)) : 20;
-  const autoDraft = args.autoDraft === true;
-
-  const result = await fetchRssSource(prisma, sourceId, { maxItems, timeoutMs: 20000 });
-  if (!result.success) return { error: result.error, sourceId, sourceName: result.sourceName };
-
-  let draftedIds: string[] = [];
-  if (autoDraft && result.newCount > 0) {
-    const itemIds = result.items.map((i) => i.guid); // guid here is actually the DB id? No, it's source:guid
-    // Need to fetch DB ids by guid
-    const items = await prisma.infoSourceItem.findMany({
-      where: { sourceId, guid: { in: itemIds } },
-      select: { id: true },
-    });
-    draftedIds = await draftPostsFromRssItems(
-      prisma,
-      sourceId,
-      items.map((i) => i.id),
-      typeof args.defaultCategory === "string" ? args.defaultCategory : "信息源",
-    );
-  }
-
-  return {
-    ...result,
-    autoDraft,
-    draftedIds,
-    message: `抓取成功：${result.fetchedCount} 条，新增 ${result.newCount} 条${autoDraft ? "，已生成 " + draftedIds.length + " 篇草稿" : ""}`,
-  };
-}
-
-async function rssDraftPostsTool(args: Record<string, unknown>, ctx: NativeToolContext): Promise<unknown> {
-  const { prisma } = ctx;
-  if (!prisma) throw new Error("rss_draft_posts 需要 prisma");
-  const { draftPostsFromRssItems } = await import("./rssFetch.js");
-
-  const sourceId = typeof args.sourceId === "string" ? args.sourceId : undefined;
-  const itemIds = Array.isArray(args.itemIds) ? args.itemIds.filter((id): id is string => typeof id === "string") : [];
-  if (!sourceId || itemIds.length === 0) return { error: "需要提供 sourceId 和 itemIds 数组" };
-
-  const draftedIds = await draftPostsFromRssItems(
-    prisma,
-    sourceId,
-    itemIds,
-    typeof args.defaultCategory === "string" ? args.defaultCategory : "信息源",
-  );
-  return { sourceId, draftedIds, draftedCount: draftedIds.length };
-}
-
-const READ_ARTICLE_MAX_CHARS = 16_000;
-/** 低于此字数且已通过 minReadable 校验时，提示 Agent 正文可能不完整 */
-const READ_ARTICLE_SHORT_WARN_CHARS = 150;
-
-/** read_article 是否应视为失效页（404 标题 / 平台壳页 + 正文过短） */
-export function isUnreadableArticlePage(
-  title: string,
-  contentLength: number,
-  minReadable = 80,
-  content = "",
-): boolean {
-  if (content.includes("简书系信息发布平台") && content.includes("著作权归作者所有") && contentLength < 200) {
-    return true;
-  }
-  if (contentLength >= minReadable) return false;
-  if (/404|页面不存在|not found|找不到页面|http 404|page not found/i.test(title)) return true;
-  if (content.includes("简书系信息发布平台") && content.includes("著作权归作者所有")) return true;
-  return false;
-}
-
-export function readArticleContentWarning(contentLength: number, minReadable = 80): string | undefined {
-  if (contentLength < minReadable || contentLength >= READ_ARTICLE_SHORT_WARN_CHARS) return undefined;
-  return "正文较短";
-}
-
-function formatReadArticleFatalError(url: string, err: unknown): Error {
-  const msg = err instanceof Error ? err.message : String(err);
-  let platform = "unknown";
-  try {
-    platform = detectPlatform(new URL(url).hostname);
-  } catch {
-    /* ignore */
-  }
-  const hostMatch = msg.match(/\(([^)]+)\)\s*$/);
-  const detail = (hostMatch?.[1] ?? msg.replace(/^页面(?:不可用|不存在)或已删除\s*/i, "").trim()) || msg;
-  return new Error(`页面不可用或已删除 · ${platform} · ${detail.slice(0, 80)}`);
-}
-
-async function readArticleTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
-  const url = String(args.url || "");
-  if (!url) throw new Error("url 不能为空");
-
-  const started = Date.now();
-  let result;
-  try {
-    result = await parsePlatformUrl({
-      url,
-      timeout: args.timeout !== undefined ? Number(args.timeout) : 30000,
-      platform: args.platform ? String(args.platform) : undefined,
-      method: args.method === "playwright" ? "playwright" : undefined,
-      embedOcr: args.embedOcr !== false,
-      fetchImageFiles: false,
-    });
-  } catch (err: unknown) {
-    if (isArticleFetchFatalError(err)) throw formatReadArticleFatalError(url, err);
-    throw err;
-  }
-
-  const maxChars = Number(args.maxChars || READ_ARTICLE_MAX_CHARS);
-  const content = result.content ?? "";
-  const truncated = content.length > maxChars;
-  const title = result.title ?? "";
-  const minReadable = Number(args.minChars ?? 80);
-  const platform = result.platform ?? "unknown";
-  const contentWarning = readArticleContentWarning(content.length, minReadable);
-  if (isUnreadableArticlePage(title, content.length, minReadable, content)) {
-    throw new Error(`页面不可用或已删除 · ${platform} · ${title.slice(0, 80)}`);
-  }
-
-  return {
-    title: result.title,
-    author: result.author,
-    platform: result.platform,
-    url: result.url,
-    method: result.method,
-    content: truncated ? content.slice(0, maxChars) : content,
-    contentTruncated: truncated,
-    contentChars: content.length,
-    contentWarning,
-    suggestedTool: contentWarning ? "scrape_web_page" : undefined,
-    elapsedMs: Date.now() - started,
-    images: result.images?.slice(0, 20),
-    videos: result.videos,
-    metadata: result.metadata,
-  };
-}
-
-async function scrapeWebPageTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
-  const url = String(args.url || "");
-  if (!url) throw new Error("url 不能为空");
-
-  const started = Date.now();
-  const result = await scrapePage({
-    url,
-    timeout: args.timeout !== undefined ? Number(args.timeout) : 30000,
-    waitFor: args.waitFor ? String(args.waitFor) : undefined,
-    extractArticle: args.extractArticle !== false,
-  });
-
-  if (!result.success || !result.data) {
-    throw new Error(result.error || "网页采集失败");
-  }
-
-  const { data } = result;
-  let platform = "unknown";
-  try {
-    platform = detectPlatform(new URL(url).hostname);
-  } catch {
-    /* ignore */
-  }
-
-  return {
-    url: data.url,
-    title: data.title,
-    description: data.description,
-    text: data.text.slice(0, 12000),
-    textChars: data.text.length,
-    textTruncated: data.text.length > 12000,
-    method: "playwright",
-    platform,
-    elapsedMs: Date.now() - started,
-    links: data.links.slice(0, 30),
-    images: data.images.slice(0, 20),
-    metadata: data.metadata,
-    scrapedAt: data.scrapedAt,
-  };
-}
-
-async function readFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  if (!fs.statSync(abs).isFile()) throw new Error("目标不是文件");
-  const maxChars = Number(args.maxChars || 12000);
-  const offset = Math.max(0, Number(args.offset || 0));
-  const content = fs.readFileSync(abs, "utf8");
-  const totalChars = content.length;
-  const slice = content.slice(offset, offset + maxChars);
-  return {
-    path: args.path,
-    offset,
-    totalChars,
-    truncated: totalChars > offset + maxChars,
-    content: slice,
-  };
-}
-
-async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  const dir = path.dirname(abs);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(abs, String(args.content ?? ""), "utf8");
-  return { path: args.path, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
-}
-
-async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  const dir = path.dirname(abs);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(abs, String(args.content ?? ""), "utf8");
-  return { path: args.path, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
-}
-
-async function listDirectoryTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path || "."));
-  if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${args.path || "."}`);
-  if (args.recursive === true) {
-    const entries: Array<{ path: string; type: "file" | "directory" }> = [];
-    function walk(dir: string, prefix: string) {
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const rel = prefix ? `${prefix}/${e.name}` : e.name;
-        entries.push({ path: rel.replace(/\\/g, "/"), type: e.isDirectory() ? "directory" : "file" });
-        if (e.isDirectory()) walk(path.join(dir, e.name), rel);
-      }
-    }
-    walk(abs, path.relative(ctx.config.projectRoot, abs).replace(/\\/g, "/"));
-    return entries;
-  }
-  return fs.readdirSync(abs, { withFileTypes: true }).map((e) => ({
-    name: e.name,
-    type: e.isDirectory() ? "directory" : "file",
-  }));
-}
 
 async function gitStatusTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const cwd = await resolveRepoPath(ctx, args.repoId as string | undefined, args.repoPath as string | undefined);
@@ -2292,161 +1428,6 @@ async function gitPushTool(args: Record<string, unknown>, ctx: NativeToolContext
   return { path: cwd, output: await runGit(cwd, ["push"]) };
 }
 
-async function fileDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  const stat = fs.statSync(abs);
-  if (stat.isDirectory()) throw new Error(`不支持删除目录，请指定文件: ${args.path}`);
-  fs.unlinkSync(abs);
-  return { path: args.path, deleted: true };
-}
-
-async function fileRenameTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  const stat = fs.statSync(abs);
-  if (stat.isDirectory()) throw new Error(`不支持重命名目录: ${args.path}`);
-  const newName = String(args.newName || "").trim();
-  if (!newName) throw new Error("newName 不能为空");
-  if (newName.includes("/") || newName.includes("\\")) throw new Error("newName 不能包含目录分隔符");
-  const dest = path.join(path.dirname(abs), newName);
-  if (!dest.startsWith(path.resolve(ctx.config.projectRoot))) throw new Error("目标路径超出项目根目录范围");
-  if (fs.existsSync(dest)) throw new Error(`目标已存在: ${newName}`);
-  fs.renameSync(abs, dest);
-  return { from: args.path, to: path.relative(ctx.config.projectRoot, dest).replace(/\\/g, "/") };
-}
-
-async function fileMoveTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  const stat = fs.statSync(abs);
-  if (stat.isDirectory()) throw new Error(`不支持移动目录: ${args.path}`);
-  const destRel = String(args.dest || "").trim();
-  if (!destRel) throw new Error("dest 不能为空");
-  const destAbs = resolveSafePath(ctx.config, destRel);
-  if (fs.existsSync(destAbs)) throw new Error(`目标已存在: ${destRel}`);
-  const destDir = path.dirname(destAbs);
-  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-  fs.renameSync(abs, destAbs);
-  return { from: args.path, to: destRel };
-}
-
-async function fileCopyTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  if (!fs.statSync(abs).isFile()) throw new Error(`只能复制文件: ${args.path}`);
-  const destRel = String(args.dest || "").trim();
-  if (!destRel) throw new Error("dest 不能为空");
-  const destAbs = resolveSafePath(ctx.config, destRel);
-  if (fs.existsSync(destAbs)) throw new Error(`目标已存在: ${destRel}`);
-  const destDir = path.dirname(destAbs);
-  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-  fs.copyFileSync(abs, destAbs);
-  return { from: args.path, to: destRel };
-}
-
-async function searchFilesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const root = resolveSafePath(ctx.config, String(args.path || "."));
-  if (!fs.existsSync(root)) throw new Error(`目录不存在: ${args.path || "."}`);
-  const rawPattern = String(args.pattern || "");
-  if (!rawPattern) throw new Error("pattern 不能为空");
-  const isRegex = args.isRegex === true;
-  const caseSensitive = args.caseSensitive === true;
-  const flags = caseSensitive ? "" : "i";
-  const regex = isRegex
-    ? new RegExp(rawPattern, flags)
-    : new RegExp(rawPattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), flags);
-  const maxResults = Math.min(200, Math.max(1, Number(args.maxResults || 30)));
-  const glob = args.glob ? String(args.glob) : undefined;
-  const globRegex = glob
-    ? new RegExp(
-        "^" +
-          glob
-            .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-            .replace(/\*/g, ".*")
-            .replace(/\?/g, ".") +
-          "$",
-        flags,
-      )
-    : undefined;
-  const results: Array<{ file: string; line: number; snippet: string }> = [];
-  const skipDirs = new Set(["node_modules", ".git", ".next", "dist", "out", "tmp", "weights", "backups"]);
-
-  function walk(dir: string) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith(".")) continue;
-      const abs = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (skipDirs.has(entry.name)) continue;
-        walk(abs);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      if (globRegex && !globRegex.test(entry.name)) continue;
-      const ext = path.extname(entry.name).toLowerCase();
-      if (
-        [".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".mp4", ".mp3", ".pdf", ".zip", ".gz", ".exe", ".dll", ".db", ".db-wal", ".db-shm"].includes(ext)
-      ) {
-        continue;
-      }
-      try {
-        const text = fs.readFileSync(abs, "utf8");
-        const lines = text.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (line && regex.test(line)) {
-            results.push({
-              file: path.relative(ctx.config.projectRoot, abs).replace(/\\/g, "/"),
-              line: i + 1,
-              snippet: line.slice(0, 160),
-            });
-            if (results.length >= maxResults) return;
-          }
-        }
-      } catch {
-        // 跳过无法读取的文件
-      }
-    }
-  }
-
-  walk(root);
-  return { pattern: rawPattern, isRegex, caseSensitive, glob: glob ?? null, total: results.length, results };
-}
-
-async function directoryCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (fs.existsSync(abs)) throw new Error(`路径已存在: ${args.path}`);
-  fs.mkdirSync(abs, { recursive: true });
-  return { path: args.path, created: true };
-}
-
-async function fileStatTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件或目录不存在: ${args.path}`);
-  const stat = fs.statSync(abs);
-  return {
-    path: args.path,
-    exists: true,
-    isFile: stat.isFile(),
-    isDirectory: stat.isDirectory(),
-    size: stat.size,
-    modifiedAt: stat.mtime.toISOString(),
-    createdAt: stat.birthtime.toISOString(),
-  };
-}
-
-async function directoryDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${args.path}`);
-  const stat = fs.statSync(abs);
-  if (!stat.isDirectory()) throw new Error(`目标不是目录: ${args.path}`);
-  if (args.recursive === true) {
-    fs.rmSync(abs, { recursive: true, force: true });
-  } else {
-    fs.rmdirSync(abs);
-  }
-  return { path: args.path, deleted: true };
-}
 
 async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const title = String(args.title || "").trim();
@@ -2989,71 +1970,6 @@ async function invokeApiTool(args: Record<string, unknown>, ctx: NativeToolConte
   return ctx.invokeTrpc(String(args.tool), args.args ?? {});
 }
 
-async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  if (!ctx.sessionId || !ctx.agentSnapshot) {
-    throw new Error("async_task_run 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
-  }
-  const { startAsyncAgentTask, waitForAsyncJob } = await import("./asyncJobManager.js");
-  const timeoutMs =
-    args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined;
-  const waitForResult = coerceToolBoolean(args.waitForResult);
-  const shareToSessionIds = Array.isArray(args.shareToSessionIds)
-    ? (args.shareToSessionIds as unknown[]).filter((x): x is string => typeof x === "string" && x.trim().length > 0)
-    : undefined;
-  const mode = args.mode === "tool" ? "tool" : "llm";
-  const rawToolCall = args.toolCall && typeof args.toolCall === "object" ? (args.toolCall as Record<string, unknown>) : undefined;
-  const toolCall = mode === "tool" && rawToolCall
-    ? { tool: String(rawToolCall.tool || ""), args: (rawToolCall.args ?? {}) as Record<string, unknown> }
-    : undefined;
-  if (mode === "tool" && !toolCall?.tool) {
-    throw new Error("async_task_run(mode=tool) 需要提供 toolCall.tool 参数");
-  }
-  const sourceType = mode === "tool" ? "async_task_tool" : "async_task_llm";
-  const started = await startAsyncAgentTask({
-    sessionId: ctx.sessionId,
-    task: String(args.task || ""),
-    label: args.label ? String(args.label) : undefined,
-    timeoutMs,
-    config: ctx.config,
-    services: ctx.services,
-    agent: ctx.agentSnapshot,
-    source: "native_tool:async_task_run",
-    isSubagent: false,
-    mode,
-    toolCall,
-    shareToSessionIds,
-    // 阻塞等待时结果直接作为工具返回值，禁止再进队列自动消费（避免二次喂给 Agent）
-    deliverToQueue: !waitForResult,
-  });
-  if (!waitForResult) return { ...started, sourceType };
-  // 同步等待：结果直接返回。标记 delivered，杜绝 worker 侧误投递 / 竞态二次消费
-  const result = await waitForAsyncJob(started.jobId, ctx.config, ctx.services);
-  try {
-    await ctx.services.task.update({
-      id: started.jobId,
-      delivered: true,
-      deliveredAt: new Date(),
-    } as any);
-  } catch {
-    /* ignore */
-  }
-  return { ...result, sourceType };
-}
-
-async function taskStatusTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { getAsyncJobStatus, listSessionAsyncJobs } = await import("./asyncJobManager.js");
-  const jobId = args.jobId ? String(args.jobId) : undefined;
-  if (jobId) return getAsyncJobStatus(jobId, ctx.config, ctx.services);
-  if (!ctx.sessionId) return { items: [] };
-  return { items: await listSessionAsyncJobs(ctx.sessionId, ctx.config, ctx.services) };
-}
-
-async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { cancelAsyncJob } = await import("./asyncJobManager.js");
-  const jobId = String(args.jobId || "");
-  if (!jobId) throw new Error("async_task_cancel 需要 jobId");
-  return cancelAsyncJob(jobId, ctx.config, ctx.services);
-}
 
 /** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
  *  底层实现 = agent_create_sub + agent_send_message({ autoRun: true })。
@@ -3311,73 +2227,6 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   };
 }
 
-/** async_task_wait：Pause-on-Result 语义。
- *  LLM 表达等待意图 → 阻塞等任务完成（最长 10 分钟，由 agentTools 豁免默认 30s 超时）→
- *  拿到结果后 LLM 基于结果继续生成最终答案。
- *  agentTools 的 LONG_WAIT_TOOLS 集合确保本工具不受默认 toolCallTimeoutMs 限制。 */
-async function awaitAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { waitForAsyncJob } = await import("./asyncJobManager.js");
-  const jobId = String(args.jobId || "");
-  if (!jobId) throw new Error("async_task_wait 需要 jobId");
-  const result = await waitForAsyncJob(jobId, ctx.config, ctx.services);
-  return {
-    ...result,
-    hint: result.status === "completed"
-      ? "任务已完成，请基于上述结果继续生成最终回复。"
-      : "任务失败，请告知用户失败原因并建议重试或改用其他方式。",
-  };
-}
-
-async function runShellTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  return runShellRestricted(ctx.config, String(args.command || ""), {
-    cwd: args.cwd ? String(args.cwd) : undefined,
-    shell: args.shell ? String(args.shell) : undefined,
-    timeoutMs: args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined,
-  });
-}
-
-async function waitTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
-  const ms =
-    args.ms !== undefined
-      ? Number(args.ms)
-      : Math.round(Number(args.seconds !== undefined ? args.seconds : 1) * 1000);
-  if (!Number.isFinite(ms)) throw new Error("seconds/ms 必须是有效数字");
-  const result = await waitMs(ms);
-  return { ...result, waitedSeconds: result.waitedMs / 1000 };
-}
-
-async function sleepTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const seconds = Math.max(0, Math.min(Number(args.seconds !== undefined ? args.seconds : 10), 300));
-  if (!Number.isFinite(seconds)) throw new Error("seconds 必须是有效数字");
-
-  // LLM 常把 async 写成字符串 "true"，必须兼容，否则会同步阻塞几十秒看起来像卡死
-  const isAsync = coerceToolBoolean(args.async);
-
-  // 非阻塞模式：创建轻量异步定时器任务，时间到后结果进入发送队列
-  if (isAsync) {
-    if (!ctx.sessionId || !ctx.agentSnapshot) {
-      throw new Error("sleep(async=true) 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
-    }
-    const { startAsyncSleepTask } = await import("./asyncJobManager.js");
-    return startAsyncSleepTask({
-      sessionId: ctx.sessionId,
-      seconds,
-      config: ctx.config,
-      services: ctx.services,
-      agentSnapshot: ctx.agentSnapshot,
-    });
-  }
-
-  const ms = Math.round(seconds * 1000);
-  const result = await waitMs(ms);
-  return {
-    ...result,
-    waitedSeconds: result.waitedMs / 1000,
-    message: `定时时间${seconds}s到了，请继续完成任务`,
-    hint: `定时时间${seconds}s到了，请继续完成任务`,
-  };
-}
-
 async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (args.confirm !== true) {
     throw new Error("缺少确认：请将 confirm 设为 true 以删除全部 Chat 会话");
@@ -3480,8 +2329,8 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     "---",
     "",
     summary,
-    "",
-  ].join("\n");
+    ""
+].join("\n");
   fs.writeFileSync(summaryPath, summaryDoc, "utf8");
   const relativeSummaryPath = path
     .relative(ctx.config.projectRoot, summaryPath)
@@ -3841,8 +2690,8 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
       });
       const messages: LlmMessage[] = [
         { role: "system", content: systemPrompt },
-        { role: "user", content: input },
-      ];
+        { role: "user", content: input }
+];
       const invokeTrpc = createTrpcInvoker({ services: ctx.services });
       const agentMeta = {
         id: agent.id,
@@ -4512,9 +3361,16 @@ export function resolveAllowedNativeTools(agentTools: string[]): string[] | "all
 }
 
 export function buildNativeToolSchemas(allowed: string[] | "all") {
-  const defs = allowed === "all" ? NATIVE_TOOL_DEFINITIONS : NATIVE_TOOL_DEFINITIONS.filter((d) => allowed.includes(d.name));
-  return defs.map((d) => ({
-    type: "function" as const,
-    function: { name: d.name, description: d.description, parameters: d.parameters },
-  }));
+  ensureNativeToolsRegistered();
+  const cmds =
+    allowed === "all"
+      ? listTools("native")
+      : listTools("native").filter((t) => allowed.includes(t.name));
+  return cmds.map((t) => {
+    const s = t.schema();
+    return {
+      type: "function" as const,
+      function: { name: t.name, description: s.description, parameters: s.parameters },
+    };
+  });
 }
