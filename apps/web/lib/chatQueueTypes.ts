@@ -37,6 +37,8 @@ export interface ChatQueueItem {
   subagentName?: string;
   /** 已完成的 overlay 自动移除时间戳（ms），仅本地 async-result 使用 */
   removeAt?: number;
+  /** 服务端 autoConsume 赢得原子 CLAIM 后由 merge 纯派生的完成态展示项：只展示，不可再被 consumeQueue 消费 */
+  serverConsumed?: boolean;
   /** 任务执行过程中的进度/日志 */
   logs?: Array<{ timestamp: number; level: "info" | "progress" | "error"; message: string }>;
   createdAt: number;
@@ -117,18 +119,19 @@ export function mergeAsyncPollIntoQueue(
       sourceType?: string;
     }>;
   },
-  opts?: { skipDeliveryJobIds?: ReadonlySet<string>; completedJobIds?: ReadonlySet<string> },
+  opts?: { skipDeliveryJobIds?: ReadonlySet<string> },
 ): ChatQueueItem[] {
   if (!poll) return local;
 
   const skipDeliveries = opts?.skipDeliveryJobIds ?? new Set<string>();
-  const completedJobIds = new Set<string>(opts?.completedJobIds ?? []);
-  for (const c of poll.consumed ?? []) completedJobIds.add(c.jobId);
 
   const pollJobIds = new Set<string>();
   for (const j of poll.running ?? []) pollJobIds.add(j.jobId);
   for (const j of poll.queued ?? []) pollJobIds.add(j.jobId);
   for (const d of poll.deliveries ?? []) pollJobIds.add(d.jobId);
+  // 服务端已消费（autoConsume 赢得 CLAIM）的 job → 完成态数据，供本地 overlay 纯派生转换
+  const consumedByJobId = new Map<string, NonNullable<typeof poll.consumed>[number]>();
+  for (const c of poll.consumed ?? []) consumedByJobId.set(c.jobId, c);
 
   const localByJobId = new Map(
     local.filter((i) => i.jobId).map((i) => [i.jobId!, i] as const),
@@ -137,15 +140,40 @@ export function mergeAsyncPollIntoQueue(
   // 本地已完成的 async-result overlay（带 removeAt）应继续展示到过期，并跳过 poll 重复投递
   const localFinishedOverlayIds = new Set<string>();
 
+  // 本地 async-running overlay 被 poll 标记已消费时纯派生出的完成态展示项
+  const derivedFinished: ChatQueueItem[] = [];
+
   let next = local.filter((item) => {
     if (item.kind === "user" || item.kind === "superior") return true;
     if (item.kind === "async-running" && item.jobId) {
-      // 已消费 / 已投递完成：不要幽灵留在「运行中」（autoConsume 后 poll 不再含该 job）
-      if (completedJobIds.has(item.jobId) || skipDeliveries.has(item.jobId)) return false;
-      // 仍在 poll 活跃集：丢弃本地，由下方 poll 重建，避免分叉
+      // 仍在 poll 活跃集（含 retry 重跑）：丢弃本地，由下方 poll 重建，避免分叉
       if (pollJobIds.has(item.jobId)) return false;
-      // poll 尚未跟上（工具刚返回）：短时保留；超时仍不在 poll 则视为已结束并清理
-      return Date.now() - item.createdAt < 15_000;
+      // 前端已消费（本地标记）：完成态由 consume 路径的 patchAsyncOverlays 负责；
+      // retry 场景等 poll 活跃集重建，不能在此滞留旧完成态
+      if (skipDeliveries.has(item.jobId)) return false;
+      // overlay 生命周期结束（createdAt + 15s）：无论是否完成都不再展示
+      if (Date.now() - item.createdAt >= 15_000) return false;
+      // poll 显示已被服务端消费（autoConsume 赢得原子 CLAIM 的常态场景）：
+      // 不变量——本地 overlay 必须转为 done/failed 完成态继续展示到生命周期结束，
+      // 而不是静默丢弃。「任务完成后进度步骤保留展示」不依赖前端赢得 CLAIM 竞态。
+      // 纯派生（removeAt 由 createdAt 决定，不取 Date.now()，render 幂等）。
+      const del = consumedByJobId.get(item.jobId);
+      if (del) {
+        derivedFinished.push({
+          ...item,
+          id: `run-${item.jobId}`,
+          kind: "async-result",
+          status: del.status,
+          asyncResult:
+            del.status === "failed" ? `任务失败：${del.error || "未知错误"}` : del.asyncResult,
+          logs: del.logs ?? item.logs,
+          removeAt: item.createdAt + 15_000,
+          serverConsumed: true,
+        });
+        return false;
+      }
+      // poll 尚未跟上（工具刚返回）：保留运行态
+      return true;
     }
     if (item.kind === "async-result" && item.jobId && item.removeAt && Date.now() < item.removeAt) {
       localFinishedOverlayIds.add(item.jobId);
@@ -153,6 +181,10 @@ export function mergeAsyncPollIntoQueue(
     }
     return false;
   });
+
+  if (derivedFinished.length > 0) {
+    next = [...derivedFinished, ...next];
+  }
 
   for (const job of poll.running ?? []) {
     if (next.some((q) => q.jobId === job.jobId)) continue;

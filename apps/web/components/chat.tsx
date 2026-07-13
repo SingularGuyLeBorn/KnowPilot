@@ -682,6 +682,9 @@ export function ChatView() {
     const refreshAsync = () => {
       // INV-8 ④：异步队列刷新完成（async_delivery / async_job_update / session_run_started 触发）
       // = 显式 drain 请求。投递到达时视图空闲则立即消费；占用中由 commit 兑底。
+      // 注意：完成态展示不在这里做——poll 显示 job 已被服务端消费时，由
+      // mergeAsyncPollIntoQueue 纯派生把本地 overlay 转为 done/failed（createdAt+15s），
+      // 覆盖初始 fetch / refetch / SSE 全部数据到达路径，不依赖哪个事件先到。
       void asyncQueueQuery.refetch().then(() => {
         if (effectiveSessionId) streamLifecycleActions.hydrateDone(effectiveSessionId);
       });
@@ -877,7 +880,12 @@ export function ChatView() {
 
   // 父会话实时任务进度：从合并后的 asyncResultQueue 派生，
   // async_task_run / spawn_subagent 返回 running 时立即显示，
-  // 任务完成后显示 done/failed，并在 DOM 中保留 5 秒后再由 removeAt 定时器清理。
+  // 任务完成后显示 done/failed，展示窗口结束后自动消失
+  // （store overlay 由 removeAt 定时器清理；纯派生项随 overlay 15s 生命周期过期不再派生）。
+  // 完成态转换由两条互斥路径保证，显示不依赖谁赢得原子 CLAIM 竞态：
+  // ① 前端 consume 赢得 CLAIM → consumeQueue 内 patchAsyncOverlays 转完成态（removeAt=now+5s）；
+  // ② 服务端 autoConsume 赢得 CLAIM → mergeAsyncPollIntoQueue 纯派生转换
+  //    （serverConsumed 展示项，removeAt=createdAt+15s，覆盖初始 fetch/refetch/SSE 全部数据路径）。
   const asyncProgressSteps = useMemo<TimelineStep[]>(() => {
     const steps: TimelineStep[] = [];
     for (const item of asyncResultQueue) {
@@ -1666,7 +1674,8 @@ export function ChatView() {
 
     let asyncReady: ChatQueueItem | undefined;
     for (const t of asyncCandidates) {
-      if (t.kind === "async-result" && isReady(t) && !t.pinned) {
+      // serverConsumed = 服务端 autoConsume 已消费，纯展示，前端不再参与 CLAIM
+      if (t.kind === "async-result" && !t.serverConsumed && isReady(t) && !t.pinned) {
         asyncReady = t;
         break;
       }
@@ -1846,7 +1855,11 @@ export function ChatView() {
         );
         const asyncCandidates = sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
         const hasAsync = asyncCandidates.some(
-          (t) => t.kind === "async-result" && !t.pinned && (t.text.trim() || t.asyncResult),
+          (t) =>
+            t.kind === "async-result" &&
+            !t.serverConsumed &&
+            !t.pinned &&
+            (t.text.trim() || t.asyncResult),
         );
         if (!hasUser && !hasAsync) continue;
         consumeQueue(sid);
