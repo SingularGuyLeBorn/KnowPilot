@@ -786,7 +786,8 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
   });
 
   it("agent.chat 失败时仍保留 sessionId，用户消息不丢失", async () => {
-    const spy = vi.spyOn(llmClient, "chatCompletion").mockRejectedValueOnce(
+    // W2 弹性层引入后，单次 reject 会触发重试；需持续 reject 才能走到最终失败分支
+    const spy = vi.spyOn(llmClient, "chatCompletion").mockRejectedValue(
       new Error("LLM mock failure for unit test"),
     );
 

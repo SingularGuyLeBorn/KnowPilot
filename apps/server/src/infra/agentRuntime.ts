@@ -5,6 +5,7 @@
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { resolveEffectiveAgentModel, type LlmMessage } from "./llmClient.js";
+import { describeLlmError } from "./resilientLlmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import { searchFts } from "./ftsIndex.js";
 import { isMemoryInjectable } from "@knowpilot/shared";
@@ -286,11 +287,12 @@ export async function runAgent(
       durationMs: Date.now() - start,
     });
   } catch (err: unknown) {
+    const llm = describeLlmError(err, "检查 .env 中 LLM API Key 是否有效。");
     return failure({
       code: "AGENT_RUN_FAILED",
       message: err instanceof Error ? err.message : String(err),
-      suggestion: "检查 .env 中 LLM API Key 是否有效。",
-      retryable: true,
+      suggestion: llm.suggestion,
+      retryable: llm.retryable,
       operation: "run",
       entity: "agent",
       durationMs: Date.now() - start,
@@ -397,11 +399,12 @@ export async function chatAgent(
       durationMs: Date.now() - start,
     });
   } catch (err: unknown) {
+    const llm = describeLlmError(err, "检查 LLM 配置与会话 ID 是否有效。");
     return failure({
       code: "AGENT_CHAT_FAILED",
       message: err instanceof Error ? err.message : String(err),
-      suggestion: "检查 LLM 配置与会话 ID 是否有效。",
-      retryable: true,
+      suggestion: llm.suggestion,
+      retryable: llm.retryable,
       operation: "chat",
       entity: "agent",
       durationMs: Date.now() - start,

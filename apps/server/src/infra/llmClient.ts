@@ -6,6 +6,18 @@ import type { AppConfig, LlmProviderConfig } from "./config.js";
 import type { ReasoningEffort } from "@knowpilot/shared";
 import { mockChatCompletion, mockChatCompletionStream } from "./mockLlmClient.js";
 
+/** LLM HTTP 错误：携带状态码与响应体，供弹性层（resilientLlmClient）分类 */
+export class LlmHttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly body: string,
+  ) {
+    super(message);
+    this.name = "LlmHttpError";
+  }
+}
+
 export interface LlmContentPart {
   type: "text" | "image_url";
   text?: string;
@@ -246,7 +258,11 @@ export async function chatCompletion(options: {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`LLM 请求失败 (${provider.id}, HTTP ${res.status}): ${text.slice(0, 500)}`);
+    throw new LlmHttpError(
+      `LLM 请求失败 (${provider.id}, HTTP ${res.status}): ${text.slice(0, 500)}`,
+      res.status,
+      text.slice(0, 500),
+    );
   }
 
   const data = (await res.json()) as {
@@ -344,7 +360,11 @@ export async function* chatCompletionStream(options: {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`LLM 流式请求失败 (${provider.id}, HTTP ${res.status}): ${text.slice(0, 500)}`);
+    throw new LlmHttpError(
+      `LLM 流式请求失败 (${provider.id}, HTTP ${res.status}): ${text.slice(0, 500)}`,
+      res.status,
+      text.slice(0, 500),
+    );
   }
 
   if (!res.body) throw new Error("LLM 流式响应无 body");

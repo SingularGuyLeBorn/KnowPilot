@@ -10,6 +10,7 @@ import {
   type LlmMessage,
   type LlmToolCall,
 } from "./llmClient.js";
+import { describeLlmError } from "./resilientLlmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
@@ -48,7 +49,7 @@ export type AgentStreamEvent =
       versionCount?: number;
       tokenUsage?: { prompt: number; completion: number; total: number };
     }
-  | { type: "error"; message: string; sessionId?: string; suggestion?: string }
+  | { type: "error"; message: string; sessionId?: string; suggestion?: string; retryable?: boolean }
   | { type: "async_delivery"; sessionId: string; jobId: string; status: "done" | "failed"; taskLabel: string }
   /** 异步任务生命周期（入队/开始/取消等），替代 pullAsyncQueue 运行态轮询 */
   | {
@@ -755,13 +756,15 @@ export async function chatAgentStream(
     }
     const message = err instanceof Error ? err.message : String(err);
     const isBudget = message.includes("LLM 预算");
+    const llm = describeLlmError(err, "检查 LLM 配置与会话 ID 是否有效。");
     emit({
       type: "error",
       message,
       sessionId,
+      retryable: isBudget ? false : llm.retryable,
       suggestion: isBudget
         ? "可在 .env 提高 LLM_DAILY_BUDGET，或明日再试。"
-        : "检查 LLM 配置与会话 ID 是否有效。",
+        : llm.suggestion,
     });
   }
 }

@@ -3,18 +3,24 @@
  */
 
 import type { AppConfig } from "../config.js";
-import {
-  chatCompletion,
-  chatCompletionStream,
-  type LlmMessage,
-  type LlmToolDefinition,
-} from "../llmClient.js";
+import * as llmClient from "../llmClient.js";
+import type { LlmMessage, LlmToolDefinition } from "../llmClient.js";
+import { withResilience } from "../resilientLlmClient.js";
 import type { LlmTransport, LlmTurnResult, LoopHooks, StreamLlmOptions } from "./types.js";
+
+/**
+ * 弹性客户端单例：无状态装饰器，重试/降级策略在每次调用时从 options.config.llm 读取。
+ * 经模块命名空间委托（而非捕获函数引用），保证 vi.spyOn(llmClient, ...) 等测试拦截依然生效。
+ */
+const resilientLlm = withResilience({
+  chatCompletion: (options) => llmClient.chatCompletion(options),
+  chatCompletionStream: (options) => llmClient.chatCompletionStream(options),
+});
 
 export function createSyncTransport(config: AppConfig, model: string): LlmTransport {
   return {
     async complete({ messages, tools, signal, withTools }): Promise<LlmTurnResult> {
-      const completion = await chatCompletion({
+      const completion = await resilientLlm.chatCompletion({
         config,
         model,
         messages,
@@ -51,7 +57,7 @@ export function createStreamTransport(
       let lastProvider = config.llm.defaultProvider;
       const round = getRound?.() ?? 0;
 
-      for await (const chunk of chatCompletionStream({
+      for await (const chunk of resilientLlm.chatCompletionStream({
         config,
         model,
         messages,

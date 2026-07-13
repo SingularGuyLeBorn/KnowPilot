@@ -8,7 +8,15 @@
 import fs from "fs";
 import path from "path";
 import { load as loadYaml } from "js-yaml";
+import { z } from "zod";
 import { buildEffectiveSearchPriorityString } from "./metablog/search/priority.js";
+
+/** config.yaml llm 段：弹性调用参数（缺失时给默认值，向后兼容旧 config.yaml） */
+const LlmYamlSchema = z.object({
+  maxRetries: z.coerce.number().int().min(0).default(3),
+  baseDelayMs: z.coerce.number().int().min(0).default(1000),
+  fallbackModels: z.array(z.string()).default([]),
+});
 
 /* ─── 类型定义 ─── */
 
@@ -49,6 +57,12 @@ export interface AppConfig {
     toolCallTimeoutMs: number;
     /** 单轮内并发执行的工具数上限，避免一次开太多工具调用拖垮后端/触发限流 */
     toolCallConcurrency: number;
+    /** 弹性调用：失败重试次数（config.yaml llm.maxRetries） */
+    maxRetries: number;
+    /** 弹性调用：指数退避基数毫秒 */
+    baseDelayMs: number;
+    /** 弹性调用：重试耗尽后按序降级的备用模型（provider 由模型名推导） */
+    fallbackModels: string[];
     providers: Record<string, LlmProviderConfig>;
   };
   /** 异步 Agent 后台任务并发、超时与重试 */
@@ -331,6 +345,9 @@ export function createAppConfig(): AppConfig {
   const asyncJobsConfig = (yamlConfig.asyncJobs as Record<string, unknown>) || {};
   const heartbeatYaml = (yamlConfig.heartbeat as Record<string, unknown>) || {};
   const loopContractYaml = (heartbeatYaml.loopContract as Record<string, unknown>) || {};
+  // llm 段 zod 解析：解析失败（如字段类型错误）回退默认值，不阻断启动
+  const llmYamlParsed = LlmYamlSchema.safeParse(yamlConfig.llm ?? {});
+  const llmYaml = llmYamlParsed.success ? llmYamlParsed.data : LlmYamlSchema.parse({});
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -367,6 +384,9 @@ export function createAppConfig(): AppConfig {
       // 慢工具应由 async_task_run 转异步而非阻塞主循环
       toolCallTimeoutMs: Math.max(2000, parseInt(readEnv("AGENT_TOOL_CALL_TIMEOUT_MS") || "30000", 10)),
       toolCallConcurrency: Math.max(1, parseInt(readEnv("AGENT_TOOL_CALL_CONCURRENCY") || "2", 10)),
+      maxRetries: llmYaml.maxRetries,
+      baseDelayMs: llmYaml.baseDelayMs,
+      fallbackModels: llmYaml.fallbackModels,
       providers,
     },
     asyncJobs: {

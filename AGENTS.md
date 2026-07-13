@@ -466,6 +466,8 @@ stream:
 
 ## 当前状态与近期变更（2026-07-13）
 
+- **W2 LLM 弹性客户端已落地**：`infra/resilientLlmClient.ts` 装饰器包装 llmClient（错误分类 fatal/retryable/degradable + 指数退避 jitter 重试 + `config.yaml` `llm.fallbackModels` 按序降级）；`agentRuntime`/`agentStream` error 事件的 `retryable` 改为按分类真实填充；`llmBudget.ts` 预算状态改为模块级内存 + 防抖异步落盘（LLM 调用路径零同步 IO）。
+
 - **P0 Agent 架构（分支 `fix/p0-agent-budget-hitl`）**：PR-1～3、PR-4a、PR-5～7 已落地；PR-4a 将 FS/WEB/SHELL 抽至 `infra/tools/native/{fs,web,shell}.ts`，`nativeTools.ts` 保留其余域 + 兼容 re-export。见 `docs/development/p0-agent-arch-pr-split.md`。
 - **重复超级 Agent 已清理**：文件 `content/agents/KnowPilot 超级 Agent-v5wh3v.md` 已删除；`sync-agents.ts` 跳过 `tier === "super"`。
 - **设计决策文档**：沉淀在 `docs/development/design-decisions.md`。

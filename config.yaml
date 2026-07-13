@@ -1,6 +1,16 @@
 # KnowPilot 运行时配置（本地优先，教学/产品向）
 # 环境变量仍可覆盖敏感项与部署相关项；此处放与业务行为相关的可调参数。
 
+# LLM 弹性调用（错误分类 + 指数退避重试 + fallback 降级）
+llm:
+  # 同一模型失败重试次数（指数退避 + jitter；429/5xx/网络抖动可重试，401/400 直接失败）
+  maxRetries: 3
+  # 退避基数（毫秒）；实际等待 = baseDelayMs × 2^attempt × jitter
+  baseDelayMs: 1000
+  # 重试耗尽后按序降级的备用模型（provider 由模型名自动推导，需对应厂商已配置 API Key）
+  # 例：fallbackModels: ["kimi-k2", "glm-4-flash"]
+  fallbackModels: []
+
 stream:
   # 每个运行中 session 的内存环形缓冲事件数（热缓冲，用于低延迟推送）
   ringSize: 500
