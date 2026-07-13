@@ -165,7 +165,7 @@ describe("compact 数据暴露审计", () => {
       existingSummary: existing,
     });
 
-    expect(result.compacted, result.message).toBe(true);
+    expect(result.compacted).toBe(true);
     expect(result.reused).toBe(true);
     expect(countSummaryOccurrences(result.messages, SECRET)).toBe(1);
     expect(countSummaryOccurrences(result.messages, SUMMARY_MARKER)).toBe(1);
@@ -207,6 +207,7 @@ describe("compact 数据暴露审计", () => {
       projectRoot: root,
       services: services as unknown as ServiceContainer,
       sessionId: "sess-1",
+      invokeTrpc: vi.fn(),
       agentSnapshot: {
         id: "mgr-1",
         model: "deepseek-v4-flash",
@@ -258,7 +259,7 @@ describe("compact 数据暴露审计", () => {
       trigger: "manual",
     });
 
-    expect(result.compacted, result.message).toBe(true);
+    expect(result.compacted).toBe(true);
     expect(result.summaryPreview).toContain(SECRET);
     const boundaryCreate = (services.message.create as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
       toolCalls?: Array<{ result?: Record<string, unknown> }>;
