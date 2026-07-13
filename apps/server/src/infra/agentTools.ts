@@ -27,6 +27,7 @@ import {
 } from "./mcpClient.js";
 import { getEventBus } from "./eventBus.js";
 import { assertApprovalOrProceed } from "./approvalGate.js";
+import { resolveAgent } from "./agentResolver.js";
 
 function parseToolCallArgs(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
   let args: Record<string, unknown> = {};
@@ -471,6 +472,8 @@ export function createAgentToolContext(
     sessionId: meta?.sessionId,
     agentSnapshot: meta?.agentSnapshot,
     runOrigin: meta?.runOrigin,
+    // W4：向工具层注入 Agent 解析（agentResolver 是叶子模块，不重建循环依赖）
+    resolveAgent,
     allowedNative: parsed.native,
     allowedSkills: skillNames ?? parsed.skills,
     allowedMcpServers: parsed.mcpServers,

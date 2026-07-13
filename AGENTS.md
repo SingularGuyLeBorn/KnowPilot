@@ -466,6 +466,8 @@ stream:
 
 ## 当前状态与近期变更（2026-07-13）
 
+- **W4 循环依赖环已打断**：原环 `agentRuntime → loop/index → reactLoop → agentTools → nativeTools → agentRuntime`。新增叶子模块 `infra/promptBuilder.ts`（buildMemoryContext / buildSystemPromptWithHints / buildTierIdentityHint / buildAgentToolGuide）与 `infra/agentResolver.ts`（resolveAgent）；agentRuntime 仅保留兼容 re-export，新代码直接引叶子模块。resolveAgent 经 `NativeToolContext.resolveAgent` 注入（createAgentToolContext 填充，缺省回退 agentResolver）。nativeTools 动态 import 15→3（仅 agentStream / asyncJobManager 两个环内模块 + nodemailer 可选依赖）。防线测试：`apps/server/src/__tests__/importOrder.test.ts`（import 顺序冒烟 + 源码防线）。
+
 - **W2 LLM 弹性客户端已落地**：`infra/resilientLlmClient.ts` 装饰器包装 llmClient（错误分类 fatal/retryable/degradable + 指数退避 jitter 重试 + `config.yaml` `llm.fallbackModels` 按序降级）；`agentRuntime`/`agentStream` error 事件的 `retryable` 改为按分类真实填充；`llmBudget.ts` 预算状态改为模块级内存 + 防抖异步落盘（LLM 调用路径零同步 IO）。
 
 - **P0 Agent 架构（分支 `fix/p0-agent-budget-hitl`）**：PR-1～3、PR-4a、PR-5～7 已落地；PR-4a 将 FS/WEB/SHELL 抽至 `infra/tools/native/{fs,web,shell}.ts`，`nativeTools.ts` 保留其余域 + 兼容 re-export。见 `docs/development/p0-agent-arch-pr-split.md`。

@@ -4,6 +4,7 @@
 
 import type { AppConfig } from "../../config.js";
 import type { ServiceContainer } from "../../serviceContainer.js";
+import type { ResolveAgentFn } from "../../agentResolver.js";
 import type { PrismaClient } from "@prisma/client";
 
 export interface NativeToolDefinition {
@@ -32,6 +33,11 @@ export interface NativeToolContext {
   inToolRound?: boolean;
   /** 本次运行的触发来源：user=用户直接对话；parent=上级下发；heartbeat=心跳 */
   runOrigin?: "user" | "parent" | "heartbeat";
+  /**
+   * Agent 解析（默认 assistant 查找/补齐/创建）— W4 起由 createAgentToolContext 注入，
+   * 工具层不再直接 import agentRuntime（环内模块）。缺省时回退到 agentResolver 默认实现。
+   */
+  resolveAgent?: ResolveAgentFn;
 }
 
 export type NativeToolHandler = (

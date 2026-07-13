@@ -7,16 +7,25 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import { resolveEffectiveAgentModel, type LlmMessage } from "./llmClient.js";
 import { describeLlmError } from "./resilientLlmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
-import { searchFts } from "./ftsIndex.js";
-import { isMemoryInjectable } from "@knowpilot/shared";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
 import { runReactLoop, createSyncTransport } from "./loop/index.js";
+import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
+import { resolveAgent } from "./agentResolver.js";
 export {
   DEFAULT_SUBAGENT_TOOLS,
   resolveToolsForAgentTier,
   parseToolCall,
 } from "./loop/setup.js";
+// W4：兼容 re-export。新代码请直接引 ./promptBuilder.js / ./agentResolver.js（叶子模块），
+// 不要经 agentRuntime 中转——本文件在 ReAct 环内，经它引用会重建循环依赖。
+export {
+  buildMemoryContext,
+  buildAgentToolGuide,
+  buildTierIdentityHint,
+  buildSystemPromptWithHints,
+} from "./promptBuilder.js";
+export { resolveAgent } from "./agentResolver.js";
 
 export interface AgentLoopResult {
   content: string;
@@ -27,168 +36,6 @@ export interface AgentLoopResult {
   roundsUsed: number;
 }
 
-export async function buildMemoryContext(services: ServiceContainer, userText: string): Promise<string> {
-  const keyword = userText.slice(0, 80).trim();
-  if (!keyword) return "";
-  // R11：优先 FTS 召回 memory（已索引，P11），避免 LIKE 扫 content 全表；FTS 无命中/不可用回退 LIKE
-  let memories: any[] = [];
-  try {
-    const hits = await searchFts(services.prisma, keyword, 5);
-    const memIds = hits.filter((h) => h.entity === "memory").map((h) => h.entityId);
-    if (memIds.length > 0) {
-      memories = await services.prisma.memory.findMany({
-        where: { id: { in: memIds }, type: { not: "experience" } },
-      });
-    }
-  } catch {
-    // FTS 未就绪等，回退 LIKE
-  }
-  if (memories.length === 0) {
-    const fb = await services.memory.list({ page: 1, pageSize: 8, keyword });
-    memories = fb.items.filter((m) => isMemoryInjectable(m.type));
-  } else {
-    memories = memories.filter((m) => isMemoryInjectable(m.type));
-  }
-  if (!memories.length) return "";
-  const lines = memories.slice(0, 5).map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
-  return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
-}
-
-const WEB_TOOL_GUIDE = `## 网络工具用法
-- web_search：查最新信息、文档、新闻；返回标题+URL+摘要，优先用结果中的 URL 继续深挖。已配置 Tavily/SerpAPI 时按 SEARCH_ENGINE_PRIORITY 自动降级；在 /sources 启用信息源后，Tavily/SerpAPI 会优先在信息源域名内 scoped 搜索（hint 含 infoSource-scoped / N 信息源）。
-- read_article：读取单篇网页正文（Markdown）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书/GitHub 等；GitHub blob→raw + jsDelivr/API（~1s）；InfoQ/OSChina API；SegmentFault/CSDN/掘金/博客园 SSR HTTP；简书 Mobile HTTP；知乎 Cookie HTTP（~1s，需 ZHIHU_COOKIE）；HTTP 404 秒级报错；正文偏短（<150 字）时返回 contentWarning 并建议 scrape_web_page。
-- scrape_web_page：Playwright 采集复杂 SPA/需 JS 渲染页面；返回 method=playwright 与 platform；read_article 失败或页面高度动态时再试。
-建议流程：web_search 找 URL → read_article 读正文 → 必要时 scrape_web_page。知乎/微信/小红书/抖音若被登录墙拦截，可在 .env 配置 ZHIHU_COOKIE / WECHAT_COOKIE / XHS_COOKIE / DOUYIN_COOKIE；GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
-
-/** 根据 Agent 已授权工具追加简短使用指引 */
-export function buildAgentToolGuide(tools: string[]): string {
-  const has = (name: string) => tools.some((t) => t === `native:${name}` || t === name);
-  if (has("web_search") || has("read_article") || has("scrape_web_page")) {
-    return WEB_TOOL_GUIDE;
-  }
-  return "";
-}
-
-/** 按层级注入身份约束，防止子 Agent 误认自己是超级/管理 Agent */
-export function buildTierIdentityHint(tier?: string | null, name?: string | null): string {
-  if (tier === "sub") {
-    const who = name ? `「${name}」` : "";
-    return `\n\n## 你的身份（硬约束）
-你是子 Agent${who}，**不是**超级 Agent，也**不是**管理 Agent。
-- 只执行上级下发的当前任务；完成后必须调用 agent_report_back 向上级汇报。
-- 异步任务（如 sleep async）到期后续跑时，仍应继续完成任务并 agent_report_back，不要把续跑当成「用户闲聊」。
-- 用户在本会话直接发消息时，也可酌情 report_back（补充汇报），但请在内容中说明这是补充。
-- 禁止创建/派生子 Agent 或管理其他 Agent（不得使用 spawn_subagent、agent_create、agent_create_sub 等）。
-- 禁止创建或归档 Workspace；不要自称超级 Agent / 管理 Agent。
-- 可用 sleep / 读写 / 搜索等执行类工具完成任务本身。`;
-  }
-  if (tier === "manager") {
-    const who = name ? `「${name}」` : "";
-    return `\n\n## 你的身份
-你是管理 Agent${who}，负责**当前 Workspace** 内的子 Agent。
-- 可在本 Workspace 创建/派生子 Agent；不可跨 Workspace，也不可创建 Workspace。
-- 不要自称超级 Agent。`;
-  }
-  if (tier === "super") {
-    const who = name ? `「${name}」` : "";
-    return `\n\n## 你的身份
-你是超级 Agent${who}，可跨 Workspace 管理；创建子 Agent 时应指定目标 Workspace（默认落在当前上下文 Workspace）。`;
-  }
-  return "";
-}
-
-export function buildSystemPromptWithHints(
-  basePrompt: string,
-  tools: string[],
-  memoryHint: string,
-  identity?: { tier?: string | null; name?: string | null },
-): string {
-  const identityHint = buildTierIdentityHint(identity?.tier, identity?.name);
-  const base = (basePrompt || "你是 KnowPilot 助手。") + identityHint + memoryHint;
-  const guide = buildAgentToolGuide(tools);
-  return guide ? `${base}\n\n${guide}` : base;
-}
-
-const DEFAULT_ASSISTANT_TOOLS = [
-  "native:web_search",
-  "native:read_article",
-  "native:scrape_web_page",
-  "native:read_file",
-  "native:write_file",
-  "native:list_directory",
-  "native:invoke_api",
-  "native:spawn_subagent",
-  "native:async_task_run",
-  "native:session_rotate",
-  "native:session_compact",
-  "native:sleep",
-  "native:git_status",
-  "native:memory_create",
-  "native:memory_search",
-  "skill:*",
-  "mcp:filesystem",
-];
-
-const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
-  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。对于需要多步骤研究、耗时较长或需要并行的复杂任务，请使用 native:spawn_subagent 或 native:async_task_run 派生子代理执行，而不是在单轮对话中连续调用 read_article/web_search。用户偏好与跨会话稳定事实请用 native:memory_create 沉淀（必要时先 memory_search）；子 Agent 无记忆工具。当前会话上下文过长或用户要求压缩时，调用 native:session_compact（不换会话）；压缩成功后仅简短确认（如「压缩已完成」及条数），切勿复述摘要正文。话题明显切换或用户要求换干净上下文时，先写好总结再调用 native:session_rotate 归档并开新会话。";
-
-const LEGACY_ASSISTANT_SYSTEM_PROMPT =
-  "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
-
-export async function resolveAgent(services: ServiceContainer, agentId?: string) {
-  if (agentId) return services.agent.getById(agentId);
-
-  const list = await services.agent.list({ page: 1, pageSize: 20, keyword: "assistant" });
-  let exact = list.items.find((a: { name: string }) => a.name === "assistant");
-  if (!exact && list.items[0]) exact = list.items[0];
-
-  // 自动补齐默认 assistant 的工具与系统提示，确保老数据库也能获得子代理/写文件能力
-  if (exact) {
-    const tools = Array.isArray(exact.tools) ? exact.tools : [];
-    // 子 Agent 不自动追加 spawn/async_task_run 等编排工具，其工具集由创建/运行时的权限层过滤
-    const needsToolsUpdate =
-      exact.tier !== "sub" &&
-      (!tools.includes("native:write_file") ||
-        !tools.includes("native:spawn_subagent") ||
-        !tools.includes("native:async_task_run") ||
-        !tools.includes("native:session_rotate") ||
-        !tools.includes("native:session_compact") ||
-        !tools.includes("native:memory_create") ||
-        !tools.includes("native:memory_search"));
-    // 仅当系统提示还是旧版默认（或空）时才自动升级，避免覆盖用户自定义提示词
-    const needsPromptUpdate =
-      !exact.systemPrompt || exact.systemPrompt === LEGACY_ASSISTANT_SYSTEM_PROMPT;
-    // 默认 assistant 必须是 manager 层级；已明确指定 super/manager/sub 的 Agent 不再改动
-    const needsTierUpdate = !exact.tier;
-    const needsUpdate = needsToolsUpdate || needsPromptUpdate || needsTierUpdate;
-    if (needsUpdate) {
-      try {
-        const updated = await services.agent.update({
-          id: exact.id,
-          tools: Array.from(new Set([...tools, ...DEFAULT_ASSISTANT_TOOLS])),
-          ...(needsPromptUpdate ? { systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT } : {}),
-          ...(needsTierUpdate ? { tier: "manager" } : {}),
-        });
-        if (updated.success && updated.data) {
-          return updated.data;
-        }
-      } catch (err) {
-        console.warn("[resolveAgent] 更新默认 assistant 工具/层级失败:", err);
-      }
-    }
-    return exact;
-  }
-
-  const created = await services.agent.create({
-    name: "assistant",
-    description: "KnowPilot 默认助手",
-    model: "deepseek-v4-flash",
-    systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT,
-    tools: DEFAULT_ASSISTANT_TOOLS,
-    tier: "manager",
-  });
-  return created.data!;
-}
 
 export async function runAgentLoop(options: {
   config: AppConfig;

@@ -13,8 +13,22 @@ import { resolveSafePath, assertPathWithinProjectRoot } from "./safePath.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { PostEntity, MemoryEntity } from "../services.js";
 import type { PrismaClient } from "@prisma/client";
-import { buildMemoryContext, buildSystemPromptWithHints, resolveAgent, resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./agentRuntime.js";
-import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
+import { resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "./loop/setup.js";
+import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
+import { resolveAgent as defaultResolveAgent } from "./agentResolver.js";
+// W4：以下模块均为叶子/环外模块（不 import nativeTools/agentTools/loop），可安全静态导入，
+// 无需再用动态 import() 躲环。仍保留动态 import 的三处见各自行内注释。
+import {
+  getAllowedToolsForTier,
+  checkToolPermission,
+  checkAgentSendMessagePermission,
+} from "./swarmPermissionGuard.js";
+import { getStreamHub } from "./sessionStreamHub.js";
+import { runSessionCompact } from "./autoCompact.js";
+import { getSwarmBus } from "./swarmBus.js";
+import { provisionWorkspace } from "./workspaceProvision.js";
+import { optimizeAgentPrompt, generateSkillFromExperience } from "./agentEvolution.js";
+import { hasMockNativeTool, executeMockNativeTool } from "./mockNativeTools.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import type { LlmMessage } from "./llmClient.js";
 import {
@@ -1324,7 +1338,6 @@ export async function executeNativeTool(
 
   // Swarm 权限硬拦截：检查 agent 是否有权调用此工具
   if (ctx.agentSnapshot?.tier) {
-    const { checkToolPermission } = await import("./swarmPermissionGuard.js");
     const permError = checkToolPermission(name, args, {
       agentTier: ctx.agentSnapshot.tier,
       agentId: ctx.agentSnapshot.id,
@@ -1341,7 +1354,6 @@ export async function executeNativeTool(
 
   // Mock 模式：命中已覆盖的 native 工具则走 Mock 实现，避免真实网络调用
   if (process.env.MOCK_NATIVE_TOOLS === "true") {
-    const { hasMockNativeTool, executeMockNativeTool } = await import("./mockNativeTools.js");
     if (hasMockNativeTool(name)) {
       return executeMockNativeTool(name, args, ctx);
     }
@@ -2017,6 +2029,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     subagentId = (createResult as { agentId: string }).agentId;
     subagentName = (createResult as { name: string }).name;
     // 默认名时 fire-and-forget 调 LLM 起个正常名字；cuid 不变，父 Agent 仍能靠 agentId 找到
+    // （动态 import：后台锦上添花路径，主链路无需加载 sessionAutoName 及其 LLM 依赖）
     if (!args.name && /^子\s*Agent\s+[a-z0-9]+$/i.test(subagentName)) {
       void import("./sessionAutoName.js")
         .then(({ autoNameAgent }) => autoNameAgent(subagentId, task))
@@ -2032,7 +2045,8 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     where: { agentId: subagentId, isMainSession: true, status: { not: "deleted" } },
   });
   if (!mainSession) {
-    const subAgent = await resolveAgent(ctx.services, subagentId);
+    // W4：与下文一致，优先 ctx 注入的 resolveAgent，缺省回退 agentResolver 叶子模块
+    const subAgent = await (ctx.resolveAgent ?? defaultResolveAgent)(ctx.services, subagentId);
     const created = await ctx.services.session.create({
       title: `${subAgent?.name ?? subagentName} 主会话`,
       model: subAgent?.model ?? ctx.agentSnapshot.model,
@@ -2160,7 +2174,6 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     let streaming = false;
     if (subagentSessionId) {
       try {
-        const { getStreamHub } = await import("./sessionStreamHub.js");
         const hub = getStreamHub();
         streaming = !!hub?.isRunning(subagentSessionId);
       } catch {
@@ -2273,7 +2286,6 @@ async function sessionCompactTool(_args: Record<string, unknown>, ctx: NativeToo
     return { success: false, error: "当前会话已归档，无法压缩。" };
   }
 
-  const { runSessionCompact } = await import("./autoCompact.js");
   const result = await runSessionCompact({
     config: ctx.config,
     services: ctx.services,
@@ -2400,7 +2412,6 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
 
   // 5) SSE 通知旧会话页面（不自动切换）
   try {
-    const { getStreamHub } = await import("./sessionStreamHub.js");
     const hub = getStreamHub();
     hub?.pushExternalEvent(oldSession.id, {
       type: "session_rotated",
@@ -2610,6 +2621,8 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
   const runPromise = (async (): Promise<{ content: string; subagentSessionId: string }> => {
     let sessionIdForCleanup: string | undefined;
     try {
+      // W4：优先用 ctx 注入的 resolveAgent（见 createAgentToolContext），缺省回退到 agentResolver 叶子模块
+      const resolveAgent = ctx.resolveAgent ?? defaultResolveAgent;
       const agent = await resolveAgent(ctx.services, targetAgentId);
       if (!agent || agent.status === "deleted") throw new Error("目标 Agent 不存在或已删除");
 
@@ -2684,7 +2697,7 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
         });
       }
 
-      const { getStreamHub } = await import("./sessionStreamHub.js");
+      // 动态 import：agentStream 经 agentRuntime/loop 处于 ReAct 环内，静态导入会重建循环依赖
       const { runAgentLoopStream } = await import("./agentStream.js");
       const hub = getStreamHub();
       if (!hub) {
@@ -2832,8 +2845,6 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
 }
 
 async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { getSwarmBus } = await import("./swarmBus.js");
-  const { checkAgentSendMessagePermission } = await import("./swarmPermissionGuard.js");
   if (!ctx.prisma) throw new Error("agent_send_message 需要 prisma 上下文");
   const bus = getSwarmBus(ctx.prisma, ctx.services);
   const content = String(args.content || "");
@@ -2909,7 +2920,6 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
   if (!ctx.agentSnapshot?.parentId) {
     return { error: "当前 Agent 无上级（parentId 为空），无法 report_back。" };
   }
-  const { getSwarmBus } = await import("./swarmBus.js");
   if (!ctx.prisma) throw new Error("agent_report_back 需要 prisma 上下文");
   const content = String(args.content || "");
   const bus = getSwarmBus(ctx.prisma, ctx.services);
@@ -3050,6 +3060,7 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
         if (matchedInput?.deliverToQueue === false) {
           /* skip notify */
         } else {
+          // 动态 import：asyncJobManager 经 agentRuntime/agentStream/agentTools 处于 ReAct 环内，静态导入会重建循环依赖
           const { notifyAndAutoConsumeAsyncDelivery } = await import("./asyncJobManager.js");
           await notifyAndAutoConsumeAsyncDelivery({
             sessionId: parentSessionId,
@@ -3112,7 +3123,6 @@ async function workspaceCreateTool(args: Record<string, unknown>, ctx: NativeToo
   const path = String(args.path || "");
   if (!name || !path) return { error: "workspace_create 需要 name 和 path" };
   // 复用 workspaceProvision 编排（与 workspace.create tRPC 路由共享逻辑）
-  const { provisionWorkspace } = await import("./workspaceProvision.js");
   const result = await provisionWorkspace(ctx.config, ctx.services, {
     name,
     path,
@@ -3349,7 +3359,6 @@ async function skillPromoteTool(args: Record<string, unknown>, ctx: NativeToolCo
 
 async function optimizeAgentPromptTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.prisma) return { error: "需要 prisma 上下文" };
-  const { optimizeAgentPrompt } = await import("./agentEvolution.js");
   const result = await optimizeAgentPrompt(
     ctx.prisma,
     ctx.services,
@@ -3363,7 +3372,6 @@ async function optimizeAgentPromptTool(args: Record<string, unknown>, ctx: Nativ
 
 async function generateSkillFromExperienceTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.prisma) return { error: "需要 prisma 上下文" };
-  const { generateSkillFromExperience } = await import("./agentEvolution.js");
   const result = await generateSkillFromExperience(
     ctx.prisma,
     ctx.services,
