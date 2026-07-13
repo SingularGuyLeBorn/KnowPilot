@@ -255,6 +255,14 @@ const server = app.listen(PORT, () => {
     .catch((err) => {
       console.error("❌ [AsyncJobs] 恢复检查失败:", err);
     });
+  import("./infra/approvalGate.js")
+    .then(({ expireStaleApprovals }) => expireStaleApprovals(services))
+    .then((n) => {
+      if (n > 0) console.log(`  ⚠️ [Approval] 已将 ${n} 条过期 pending 审批标为 rejected`);
+    })
+    .catch((err) => {
+      console.error("❌ [Approval] 过期清理失败:", err);
+    });
   cleanupDeliveredAsyncJobs()
     .then((n) => {
       if (n > 0) console.log(`  🧹 [AsyncJobs] 已清理 ${n} 条过期已投递任务`);

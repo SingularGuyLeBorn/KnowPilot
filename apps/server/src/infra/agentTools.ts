@@ -26,6 +26,7 @@ import {
   parseMcpToolName,
 } from "./mcpClient.js";
 import { getEventBus } from "./eventBus.js";
+import { assertApprovalOrProceed } from "./approvalGate.js";
 
 function parseToolCallArgs(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
   let args: Record<string, unknown> = {};
@@ -317,7 +318,29 @@ export async function executeAgentTool(
   if (ctx.allowedNative !== "all" && !ctx.allowedNative.includes(nativeName)) {
     throw new Error(`Agent 未授权使用原生工具 ${nativeName}`);
   }
+
+  // HITL：native 危险操作与 tRPC 审批走同一闸门（AGENT_DESTRUCTIVE_APPROVAL / APPROVAL_REQUIRED_OPS）
+  const approvalId = typeof args.approvalId === "string" ? args.approvalId : undefined;
+  await assertApprovalOrProceed(ctx.services, nativeName, args, approvalId);
+
   return executeNativeTool(nativeName, args, ctx);
+}
+
+/** 因工具调用预算未执行时的统一结果（须仍回写 tool 消息以匹配 tool_call_id） */
+export const TOOL_BUDGET_SKIP_RESULT = {
+  error: "TOOL_BUDGET_EXCEEDED",
+  message: "已达本轮运行工具调用上限（AGENT_MAX_TOOL_CALLS_PER_RUN），本工具未执行。",
+} as const;
+
+/** 按 maxToolCallsPerRun 剩余额度切分本批工具调用 */
+export function partitionToolCallsByBudget(
+  toolCalls: LlmToolCall[],
+  used: number,
+  max: number,
+): { runnable: LlmToolCall[]; deferred: LlmToolCall[] } {
+  const room = Math.max(0, max - used);
+  if (room >= toolCalls.length) return { runnable: toolCalls, deferred: [] };
+  return { runnable: toolCalls.slice(0, room), deferred: toolCalls.slice(room) };
 }
 
 /** 批量执行工具调用：只读并发（带超时与并发上限），写入串行 */
