@@ -2011,7 +2011,15 @@ export class ApprovalService extends BaseService<CreateApprovalInput, UpdateAppr
     return where;
   }
   protected buildCreateData(input: CreateApprovalInput) { return input; }
-  protected buildUpdateData(input: UpdateApprovalInput) { const { id: _id, ...data } = input; return data; }
+  protected buildUpdateData(input: UpdateApprovalInput) {
+    const { id: _id, ...data } = input;
+    // 审批决策审计：进入决策终态（approved/rejected）时统一盖决策者与时间戳。
+    // 当前单用户本地场景固定 "local-user"（AUTH_MODE=password 亦为同一本地账户）。
+    if (input.status === "approved" || input.status === "rejected") {
+      return { ...data, decidedBy: "local-user", decidedAt: new Date() };
+    }
+    return data;
+  }
 }
 
 /** Tool 工具注册表 */

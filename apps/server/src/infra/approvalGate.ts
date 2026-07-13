@@ -103,20 +103,18 @@ function argsMatch(stored: unknown, requested: Record<string, unknown>): boolean
 export async function expireStaleApprovals(services: ServiceContainer): Promise<number> {
   const ttl = getApprovalPendingTtlMs();
   if (ttl <= 0) return 0;
-  const cutoff = Date.now() - ttl;
-  const list = await services.approval.list({ page: 1, pageSize: 100, status: "pending" });
-  let n = 0;
-  for (const item of list.items) {
-    const created = new Date(item.createdAt).getTime();
-    if (Number.isFinite(created) && created < cutoff) {
-      await services.approval.update({
-        id: item.id,
-        status: "rejected",
-      });
-      n += 1;
-    }
-  }
-  return n;
+  const cutoff = new Date(Date.now() - ttl);
+  // 单条 updateMany 全量清理，避免分页 pageSize 漏扫；同时落审计字段
+  const result = await services.prisma.approval.updateMany({
+    where: { status: "pending", createdAt: { lt: cutoff } },
+    data: {
+      status: "rejected",
+      decidedBy: "system-ttl",
+      decidedAt: new Date(),
+      decisionNote: "审批超时，自动拒绝。",
+    },
+  });
+  return result.count;
 }
 
 /**
@@ -182,7 +180,7 @@ export async function assertApprovalOrProceed(
   });
 }
 
-/** 执行已批准的审批请求，成功后删除审批记录 */
+/** 执行已批准的审批请求，成功后软删除审批记录（status=executed，保留审计痕迹） */
 export async function executeApprovedOperation(
   ctx: { services: ServiceContainer },
   approvalId: string,
@@ -239,7 +237,11 @@ export async function executeApprovedOperation(
       });
     }
 
-    await ctx.services.approval.delete(approval.id);
+    // 软删除：永不物理删除审批记录，标记 executed + 执行时间以保留审计痕迹
+    await ctx.services.prisma.approval.update({
+      where: { id: approval.id },
+      data: { status: "executed", executedAt: new Date() },
+    });
     return success({
       data: execResult,
       operation: "execute",

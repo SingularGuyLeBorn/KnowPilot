@@ -13,18 +13,20 @@ import { useApproval, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, Pagination, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | "pending" | "approved" | "rejected";
+type StatusFilter = "all" | "pending" | "approved" | "rejected" | "executed";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "待审批",
   approved: "已通过",
   rejected: "已拒绝",
+  executed: "已执行",
 };
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-500/10 text-amber-600",
   approved: "bg-green-500/10 text-green-600",
   rejected: "bg-red-500/10 text-red-600",
+  executed: "bg-slate-500/10 text-slate-600",
 };
 
 export default function ApprovalsPage() {
@@ -72,7 +74,7 @@ export default function ApprovalsPage() {
       />
 
       <div className="flex flex-wrap gap-2">
-        {(["pending", "approved", "rejected", "all"] as StatusFilter[]).map((s) => (
+        {(["pending", "approved", "rejected", "executed", "all"] as StatusFilter[]).map((s) => (
           <button
             key={s}
             type="button"

@@ -286,7 +286,11 @@ export interface Approval {
   id: string;
   toolName: string;
   args: any;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "executed";
+  decidedBy?: string | null;
+  decidedAt?: string | Date | null;
+  decisionNote?: string | null;
+  executedAt?: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
