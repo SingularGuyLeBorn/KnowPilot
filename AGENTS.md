@@ -54,9 +54,9 @@ KnowPilot/
 │   │       ├── router.ts       # 唯一 API 路由文件（20 业务路由 + about + ai 反射）
 │   │       ├── services.ts     # 唯一业务服务层文件（收拢全部 Service 逻辑）
 │   │       ├── db.ts           # Prisma 单例
-│   │       ├── infra/          # agentTools、nativeTools、mcpClient、autoCompact、agentStream、
-│   │       │                  # swarmPermissionGuard、swarmBus、swarmInitializer、heartbeatEngine、
-│   │       │                  # asyncJobManager、asyncJobOrchestrator、safePath 等
+│   │       ├── infra/          # agentTools、nativeTools、tools/{registry,native/*}、loop/、
+│   │       │                  # mcpClient、autoCompact、agentStream、swarm*、heartbeatEngine、
+│   │       │                  # asyncJobManager、safePath 等
 │   │       ├── scripts/
 │   │       │   ├── sync.ts     # Markdown/YAML ↔ SQLite 同步入口
 │   │       │   ├── sync-free-keys.ts  # 免费 API Key 同步（GitHub → Credential 表）
@@ -379,7 +379,8 @@ KnowPilot 已落地完整的 Swarm 能力，设计决策详见 `docs/development
 | `SWARM_MODE` | `local` | `local`（零依赖）/ `redis`（BullMQ，Phase 4） |
 | `EMAIL_PROVIDER` | `none` | `none` / `smtp` / `agentemail` |
 | `AGENT_MAX_TOOL_CALLS_PER_RUN` | `168` | 单次运行工具调用上限 |
-| `AGENT_DESTRUCTIVE_APPROVAL` | `false` | true 时删除操作走审批 |
+| `AGENT_DESTRUCTIVE_APPROVAL` | `false` | `true` 时删除类操作走审批（native + 对齐的 tRPC `memory.delete`/`post.delete`）；见 `approvalGate.ts` |
+| `APPROVAL_PENDING_TTL_MS` | `86400000`（24h） | pending 审批过期后标 rejected；`0` 关闭 TTL |
 
 ### 启用免费 API Key 同步
 
@@ -434,13 +435,14 @@ stream:
 | 了解迁移/重构原则与同步机制 | `MIGRATION_PLAN.md` |
 | 了解 L1-L5 阶段划分与当前状态 | `docs/development/README.md` |
 | Swarm 架构设计决策 | `docs/development/design-decisions.md` |
+| P0 Agent 架构 PR 拆分（工具/HITL/Steering/LoopContract） | `docs/development/p0-agent-arch-pr-split.md` |
 | 项目模块 / 实体 / CRUD / 前端用法 | `docs/development/README.md` |
 | 具体使用场景（Agent / 子 Agent / 异步任务） | `docs/development/scenarios.md` |
 | 并发 / 阻塞 / 竞态条件防护 | `docs/development/concurrency.md` |
 | 开发踩坑与教训（战地笔记） | `docs/development/开发心路历程.md` |
 | 未来功能规划 | `docs/development/future-features.md` |
 | 修改前端样式/组件 | `apps/web/components/`、`apps/web/app/globals.css` |
-| 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts` |
+| 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts`、`apps/server/src/infra/tools/`（ToolCommand 注册表 + `native/{fs,web,shell}`）、`apps/server/src/infra/loop/`（统一 ReAct 内核） |
 | 新增或修改 tRPC Router | `apps/server/src/router.ts`、`packages/shared/src/schemas.ts` |
 | 新增内容同步逻辑 | `apps/server/src/scripts/sync.ts`、`apps/server/src/scripts/sync/sync-*.ts` |
 
@@ -462,19 +464,19 @@ stream:
 
 ---
 
-## 当前状态与近期变更（2026-07-10）
+## 当前状态与近期变更（2026-07-13）
 
-- **重复超级 Agent 已清理**：文件 `content/agents/KnowPilot 超级 Agent-v5wh3v.md` 已删除，数据库副本已软删除；`sync-agents.ts` 已加入 `tier === "super"` 跳过逻辑。
-- **分支**：`feat/agent-message-user-queue` 承载父 Agent 消息进子 Agent 队列的改造。
-- **设计决策文档**：本轮讨论沉淀在 `docs/development/design-decisions.md` 中。
-- **docs 目录重构中**：已删除 `docs/deployment/`，保留 `docs/development/` 和 `docs/assets/`；其余文档将逐步重写为面向用户/开发者的完整指南。
+- **P0 Agent 架构（分支 `fix/p0-agent-budget-hitl`）**：PR-1～3、PR-4a、PR-5～7 已落地；PR-4a 将 FS/WEB/SHELL 抽至 `infra/tools/native/{fs,web,shell}.ts`，`nativeTools.ts` 保留其余域 + 兼容 re-export。见 `docs/development/p0-agent-arch-pr-split.md`。
+- **重复超级 Agent 已清理**：文件 `content/agents/KnowPilot 超级 Agent-v5wh3v.md` 已删除；`sync-agents.ts` 跳过 `tier === "super"`。
+- **设计决策文档**：沉淀在 `docs/development/design-decisions.md`。
 
 ## 未来功能
 
 1. ~~**Agent 自动开启新 Session**~~：已落地 `session_rotate`（归档旧会话 + 同 Agent 新会话 + 总结首条消息；旧页提示跳转不自动切换）。
 2. **自动压缩（Auto-Compact）**：已产品化（`config.yaml` compact + `ChatSession.contextSummary` + 手动压缩）。
 3. ~~**推送替代轮询**~~：Chat 侧已推优先（`async_job_update` / `agent_message` / `subagent_session_update`），轮询降为兜底。
+4. **PR-4b / 4c**：继续按域拆分 swarm/session/memory 与第三方集成工具。
 
 ---
 
-> 最后更新：2026-07-11。L1–L5 已全部落地；Auto-Compact / 推送收尾 / session_rotate 已落地。
+> 最后更新：2026-07-13。L1–L5 已全部落地；P0 PR-4a（native fs/web/shell 域拆分）已验收。
