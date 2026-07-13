@@ -392,13 +392,14 @@ export function ChatView() {
 
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== sessionId && sessionFromUrl !== prevSessionFromUrlRef.current) {
-      // 同步 URL 到 state：用 queueMicrotask 避免在 effect 同步阶段触发级联渲染
+      // URL→state 在同一个事件处理（本 effect）内同步完成，不用 queueMicrotask 推迟：
+      // 推迟只会制造「URL 已变、sessionId 未变」的中间帧，无任何收益。
       const sid = sessionFromUrl;
-      queueMicrotask(() => {
-        setSessionId(sid);
-        // 子会话可能已在服务端跑流：立刻发现并挂接，避免空白到刷新才出现
-        void utils.session.listRunning.invalidate();
-      });
+      setSessionId(sid);
+      // 子会话可能已在服务端跑流：立刻发现并挂接，避免空白到刷新才出现
+      void utils.session.listRunning.invalidate();
+      // INV-8 ③：会话切换完成 → 显式 drain（该会话可能有恢复/镜像的待发队列项）
+      consumeRef.current(sid);
     }
     prevSessionFromUrlRef.current = sessionFromUrl;
   }, [sessionFromUrl, sessionId, utils.session.listRunning]);
@@ -441,7 +442,9 @@ export function ChatView() {
     async (sid: string) => {
       if (!sid || sid === NEW_STREAM_KEY) return;
       if (sid === effectiveSessionId) {
-        await hydrateFromServer();
+        // 不 await：hydrate → store dispatch → tryCommitAfterHydrate（INV-1 对账）
+        // + hydrateDone（INV-8 ④）全部经 store 事件流转，不把 await 挂在流式回调上。
+        void hydrateFromServer();
         return;
       }
       try {
@@ -613,6 +616,8 @@ export function ChatView() {
     hydratedSessionRef.current = effectiveSessionId;
     const items = sessionQueueQuery.data.map(sessionQueueItemToChatItem);
     sessionComposeActions.setUserQueue(effectiveSessionId, items);
+    // INV-8 ④：发送队列 DB hydrate 完成 → 显式 drain 请求（覆盖切会话后有待发项的场景）
+    streamLifecycleActions.hydrateDone(effectiveSessionId);
   }, [effectiveSessionId, sessionQueueQuery.data]);
 
   // 子 Agent 会话：把 pending AgentMessage 镜像进 SessionQueueItem（幂等）
@@ -675,7 +680,11 @@ export function ChatView() {
     const extraWatched = extraWatchedSessionsRef.current;
 
     const refreshAsync = () => {
-      void asyncQueueQuery.refetch();
+      // INV-8 ④：异步队列刷新完成（async_delivery / async_job_update / session_run_started 触发）
+      // = 显式 drain 请求。投递到达时视图空闲则立即消费；占用中由 commit 兑底。
+      void asyncQueueQuery.refetch().then(() => {
+        if (effectiveSessionId) streamLifecycleActions.hydrateDone(effectiveSessionId);
+      });
       void asyncQueueStatsQuery.refetch();
       if (mainSessionId) {
         void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
@@ -1530,6 +1539,22 @@ export function ChatView() {
           /* ignore legacy */
         }
       }
+      // INV-8 ④：sessionStorage 恢复完成 = 显式 drain 请求。
+      // drain 钩子在后面的 effect 才订阅——drainRequested 标记 + takeDrainRequests
+      // 晚订阅补偿保证不丢，不依赖订阅时序。
+      for (const sid of sessionComposeStore.listSessionIds()) {
+        const compose = sessionComposeStore.get(sid);
+        const hasPending =
+          compose.userQueue.some(
+            (t) =>
+              (t.kind === "user" || t.kind === "superior") &&
+              (t.text.trim() || t.attachments?.length),
+          ) ||
+          compose.asyncOverlays.some(
+            (t) => t.kind === "async-result" && (t.text.trim() || t.asyncResult),
+          );
+        if (hasPending) streamLifecycleActions.hydrateDone(sid);
+      }
       const lifeRaw = sessionStorage.getItem(LIFECYCLE_STORAGE_KEY);
       if (lifeRaw) {
         const parsed = JSON.parse(lifeRaw) as Record<string, StreamLifecycleState & { isStreaming?: boolean }>;
@@ -1551,12 +1576,11 @@ export function ChatView() {
               streamLifecycleActions.setLastEventId(sid, st.lastEventId);
             }
             console.log("[mount] resuming", sid, "lastEventId", st.lastEventId);
-            queueMicrotask(() => {
-              runStreamRef.current({
-                targetSessionId: sid,
-                resumeAfter: st.lastEventId ?? 0,
-                isResume: true,
-              });
+            // runStreamRef 已由先声明的 effect 赋值，事件处理内同步续传，无需 microtask
+            void runStreamRef.current({
+              targetSessionId: sid,
+              resumeAfter: st.lastEventId ?? 0,
+              isResume: true,
             });
           }
         }
@@ -1590,9 +1614,8 @@ export function ChatView() {
       for (const [sid, st] of Object.entries(life)) {
         if (sid === NEW_STREAM_KEY) continue;
         if (st.phase === "streaming" && !sessionComposeActions.getActiveAbortController(sid)) {
-          queueMicrotask(() => {
-            runStreamRef.current({ targetSessionId: sid, resumeAfter: st.lastEventId, isResume: true });
-          });
+          // 事件处理内同步续传，无需 microtask
+          void runStreamRef.current({ targetSessionId: sid, resumeAfter: st.lastEventId, isResume: true });
         }
       }
     };
@@ -1620,9 +1643,8 @@ export function ChatView() {
       const hasLocalProgress =
         st.phase === "streaming" && (st.lastEventId > 0 || st.liveTimeline.some((s) => s.type !== "thinking" || s.content));
       const resumeAfter = hasLocalProgress ? st.lastEventId : 0;
-      queueMicrotask(() => {
-        runStreamRef.current({ targetSessionId: sid, resumeAfter, isResume: true });
-      });
+      // runStreamRef 已由先声明的 effect 赋值，同步挂接，无需 microtask
+      void runStreamRef.current({ targetSessionId: sid, resumeAfter, isResume: true });
     }
   }, [runningSessionsQuery.data]);
 
@@ -1680,7 +1702,8 @@ export function ChatView() {
             sessionComposeActions.setQueueDraining(sid, false);
             void utils.session.listRunning.invalidate();
             if (sid === viewSid) void asyncQueueQuery.refetch();
-            queueMicrotask(() => consumeRef.current(sid));
+            // 已释放 drain 锁且在 async 续体内（调用栈已 unwind），直接重试下一项
+            consumeRef.current(sid);
             return;
           }
         } catch {
@@ -1701,7 +1724,8 @@ export function ChatView() {
               consumeSessionQueueItemMutation.mutate({ id: task.dbId });
             }
             sessionComposeActions.setQueueDraining(sid, false);
-            queueMicrotask(() => consumeRef.current(sid));
+            // 已释放 drain 锁且在 async 续体内，直接重试下一项
+            consumeRef.current(sid);
             return;
           }
         }
@@ -1835,22 +1859,23 @@ export function ChatView() {
     consumeRef.current = drainAllPendingQueues;
   }, [drainAllPendingQueues]);
 
-  // INV-1/2：drain 唯一驱动 = Lifecycle 进入 idle（onStreamCommitted）。
-  // 不再用 !isSessionStreaming 触发——done 也会满足该条件导致过早开新流。
+  // INV-8：drain 的 ②（onStreamCommitted）④（HYDRATE_DONE）消费点。
+  // ① 用户入队 / ③ 会话切换在各自事件处理里直接调 consumeRef，不再有任何
+  // 「useEffect 监听状态变化 → drain」的兑底驱动。
   useEffect(() => {
-    const off = streamLifecycleActions.onStreamCommitted((sid) => {
+    const drain = (sid: string) => {
+      streamLifecycleActions.clearDrainRequest(sid);
+      // 本文件唯一保留的 queueMicrotask：onStreamCommitted 在 Lifecycle store 的 dispatch
+      // 同步栈内触发，consumeQueue → runStream → beginStream 会重入同一个 dispatch。
+      // microtask 是重入边界（等 dispatch 栈清空再消费），不是时序猜测补丁——
+      // 删掉它任何场景都不丢，只是 drain 会在 store dispatch 内重入执行。
       queueMicrotask(() => consumeRef.current(sid));
-    });
+    };
+    const off = streamLifecycleActions.onStreamCommitted(drain);
+    // 晚订阅补偿：sessionStorage 恢复等早于本钩子订阅的 INV-8 ④ 请求，一次性吃掉存量
+    for (const sid of streamLifecycleStore.takeDrainRequests()) drain(sid);
     return off;
   }, []);
-
-  // 兜底：hydrate 完成 / 队列变化 / 切会话时，若当前 session 已 idle 也尝试 drain
-  // （覆盖页面首次挂载、服务端 autoConsume 已完成而前端无 commit 信号的场景）
-  useEffect(() => {
-    if (streamLifecycleStore.canBeginNewRun(effectiveSessionId)) {
-      queueMicrotask(() => consumeRef.current());
-    }
-  }, [isStreaming, queue.length, drainAllPendingQueues, effectiveSessionId, isMessagesHydrated, messages.length]);
 
   // 清理已过期的已完成 async overlay，让进度条稳定展示 5 秒后自动消失
   useEffect(() => {
@@ -2012,18 +2037,24 @@ export function ChatView() {
               }
               return [...prev, { ...localItem, dbId }];
             });
+            // INV-8 ①：用户入队 → 显式 drain
+            consumeRef.current(effectiveSessionId);
           } catch (err) {
             console.warn("[enqueueMessage] 持久化失败，本会话仍入队（无 dbId）:", err);
             sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
               if (prev.some((i) => i.id === localItem.id || i.text === localItem.text)) return prev;
               return [...prev, localItem];
             });
+            // INV-8 ①：用户入队 → 显式 drain
+            consumeRef.current(effectiveSessionId);
           }
         })();
         return;
       }
 
       sessionComposeActions.enqueueUserQueueItem(sid, localItem);
+      // INV-8 ①：用户入队 → 显式 drain
+      consumeRef.current(sid);
     },
     [backendDown, effectiveSessionId, createSessionQueueItemMutation, submitInjectMutation, sessionDetail?.status, isSessionRunOccupied],
   );
@@ -2186,10 +2217,11 @@ export function ChatView() {
       !targetSt.connected &&
       !sessionComposeActions.getActiveAbortController(id)
     ) {
-      queueMicrotask(() => {
-        runStreamRef.current({ targetSessionId: id, resumeAfter: targetSt.lastEventId, isResume: true });
-      });
+      // 事件处理内同步续传，无需 microtask
+      void runStreamRef.current({ targetSessionId: id, resumeAfter: targetSt.lastEventId, isResume: true });
     }
+    // INV-8 ③：会话切换完成 → 显式 drain（恢复/镜像的待发队列项立即开跑；占用中 drain 自动跳过）
+    consumeRef.current(id);
     // 切换会话后同步 URL sessionId。
     // 只有「点进某个会话」时才按会话类型带上 view——这是用户显式导航，不是后台强制。
     // 用户在同一会话内点「主/子 Agent」标签时，只改 view/localStorage，不走这里。
@@ -3225,6 +3257,9 @@ export function ChatView() {
                         ]);
                         streamLifecycleActions.clearError(effectiveSessionId ?? NEW_STREAM_KEY);
                         setViewError(null);
+                        // INV-8 ①：用户点击入队 → 显式 drain
+                        // （clearError 在已是 idle 时无转移，不会触发 ②）
+                        consumeRef.current(effectiveSessionId ?? NEW_STREAM_KEY);
                       }
                     }}
                     className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"

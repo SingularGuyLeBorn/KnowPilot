@@ -163,6 +163,8 @@ class SessionMessageStore {
       tryCommitAfterAssistant(action.sessionId, normalizeMessage(action.message));
     } else if (action.type === "hydrate") {
       tryCommitAfterHydrate(action.sessionId, action.messages.map(normalizeMessage));
+      // INV-8 ④：消息 hydrate 完成 = 显式 drain 请求（reducer 转移点置 drainRequested）
+      streamLifecycleActions.hydrateDone(action.sessionId);
     }
   };
 
@@ -373,7 +375,8 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
           setHasOlderMessages(!!res.nextCursor);
           hydratedSessionsGlobal.add(sessionId);
         } catch {
-          /* 对账失败不阻塞 */
+          /* 对账失败不阻塞；hydrate 流程结束（含失败）同样发出 INV-8 ④ drain 请求 */
+          streamLifecycleActions.hydrateDone(sessionId);
         }
       })();
       return;
@@ -394,6 +397,8 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
       } catch (err) {
         console.warn(`[useSessionMessages] hydrate ${sessionId} 失败:`, err);
         if (!cancelled) setIsMessagesHydrated(true);
+        // hydrate 流程结束（含失败）同样发出 INV-8 ④ drain 请求
+        streamLifecycleActions.hydrateDone(sessionId);
       }
     })();
     return () => {

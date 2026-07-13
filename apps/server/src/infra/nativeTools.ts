@@ -2024,10 +2024,33 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     }
   }
 
-  // 子 Agent 主会话（UI 跳转 + 跟踪 Task 绑定）
-  const mainSession = await ctx.prisma?.chatSession.findFirst({
+  // 子 Agent 主会话（UI 跳转 + 跟踪 Task 绑定 + 同步等待的完成判定锚点）。
+  // 必须在此 find-or-create：triggerAgentRun 在后台异步建会话，若这里只 findFirst，
+  // 首次 spawn 时拿到 undefined → 同步等待循环失去完成判定锚点（只能等 10 分钟超时）。
+  // triggerAgentRun 侧 findFirst 会复用此会话（isMainSession 唯一），不会重复创建。
+  let mainSession = await ctx.prisma?.chatSession.findFirst({
     where: { agentId: subagentId, isMainSession: true, status: { not: "deleted" } },
   });
+  if (!mainSession) {
+    const subAgent = await resolveAgent(ctx.services, subagentId);
+    const created = await ctx.services.session.create({
+      title: `${subAgent?.name ?? subagentName} 主会话`,
+      model: subAgent?.model ?? ctx.agentSnapshot.model,
+      systemPrompt: subAgent?.systemPrompt ?? "",
+      agentId: subagentId,
+      isMainSession: true,
+      kind: "subagent",
+      parentSessionId: ctx.sessionId ?? undefined,
+      status: "running",
+      taskDescription: task.slice(0, 200),
+    });
+    if (created.success && created.data) {
+      mainSession =
+        (await ctx.prisma?.chatSession.findUnique({
+          where: { id: (created.data as { id: string }).id },
+        })) ?? null;
+    }
+  }
   const subagentSessionId = mainSession?.id;
 
   // 2. 立即派活。同步等待时创建跟踪 Task（deliverToQueue=false，结果走 tool return）。

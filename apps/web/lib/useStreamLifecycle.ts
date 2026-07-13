@@ -14,6 +14,17 @@
  *   message_upserted 先于 done 到达时记入 inFlightAssistantId，渲染层据此屏蔽
  *   MessageStore 里的同一条消息，直到 commit 后才由 MessageStore 独占。
  *   否则会出现「正式回复先出现 → done 后闪烁重建完整时间线」的双渲染竞态。
+ * - INV-8（drain 单驱动）：Compose 队列的 drain 只能由四个显式事件触发——
+ *   ① 用户入队（enqueueMessage / 转后台重试按钮）；
+ *   ② onStreamCommitted（Lifecycle 进入 idle）；
+ *   ③ 会话切换完成（selectSession / URL→state 同步，同一事件处理内同步触发）；
+ *   ④ 数据 hydrate 完成（HYDRATE_DONE：消息 hydrate、发送队列 hydrate、
+ *      异步队列刷新、sessionStorage 恢复）。
+ *   禁止用 useEffect 监听 store 状态（queue.length / isStreaming / messages.length /
+ *   isMessagesHydrated）隐式触发 drain——状态变化不是事件，时序变了就破。
+ *   HYDRATE_DONE 在 reducer 转移点置 drainRequested 标记（仅 phase=idle 时置位；
+ *   占用中由 ② commit 兜底），由 onStreamCommitted 同款显式钩子消费；
+ *   晚于请求才订阅的钩子用 takeDrainRequests() 一次性吃掉存量，不依赖订阅时序。
  *
  * 公开 API 全部语义化（beginStream / appendTokenDelta / completeStream / commitStream …），禁止 ssSet。
  * 队列、optimistic、abort 不进本 store（见 useSessionComposeState）。
@@ -40,6 +51,8 @@ export interface StreamLifecycleState {
   pendingAssistantContent: string | null;
   /** INV-4：本轮流式期间 message_upserted 提前到达的 assistant id，渲染层屏蔽其 stored 渲染 */
   inFlightAssistantId: string | null;
+  /** INV-8：数据 hydrate 完成请求 drain 的标记（仅 idle 置位；进入 idle 的转移自身即驱动 drain，故 commit 时清除） */
+  drainRequested: boolean;
 }
 
 const IDLE_STATE: StreamLifecycleState = {
@@ -55,6 +68,7 @@ const IDLE_STATE: StreamLifecycleState = {
   pendingAssistantMessageId: null,
   pendingAssistantContent: null,
   inFlightAssistantId: null,
+  drainRequested: false,
 };
 
 type LifecycleMap = Map<string, StreamLifecycleState>;
@@ -85,6 +99,8 @@ type Action =
   | { type: "COMMIT_STREAM"; sessionId: string }
   | { type: "CLEAR_STREAMING_UI"; sessionId: string }
   | { type: "MARK_INFLIGHT_ASSISTANT"; sessionId: string; messageId: string }
+  | { type: "HYDRATE_DONE"; sessionId: string }
+  | { type: "CLEAR_DRAIN_REQUEST"; sessionId: string }
   | { type: "MIGRATE_STREAM_SESSION"; fromKey: string; toSessionId: string }
   | { type: "RESET"; sessionId: string }
   | { type: "DELETE"; sessionId: string };
@@ -217,6 +233,7 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         pendingAssistantMessageId: null,
         pendingAssistantContent: null,
         inFlightAssistantId: null,
+        drainRequested: false,
       });
     }
     case "CLEAR_ERROR": {
@@ -225,11 +242,14 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         ...s,
         error: null,
         phase: s.phase === "error" ? "idle" : s.phase,
+        // error→idle 转移自身触发 notifyCommit（INV-8 ②），存量请求视为已消费
+        drainRequested: s.phase === "error" ? false : s.drainRequested,
       });
     }
     case "COMMIT_STREAM":
     case "CLEAR_STREAMING_UI":
       // INV-1：done→idle 的唯一清 UI 入口（CLEAR_STREAMING_UI 保留别名兼容 abort/error 路径）
+      // 进入 idle 的转移自身触发 notifyCommit（INV-8 ②），drainRequested 视为已消费
       return set(action.sessionId, {
         ...get(action.sessionId),
         liveTimeline: [],
@@ -240,6 +260,7 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         pendingAssistantContent: null,
         inFlightAssistantId: null,
         connected: false,
+        drainRequested: false,
       });
     case "MARK_INFLIGHT_ASSISTANT": {
       // INV-4：仅流式占用期间记录；idle 时到达的 upsert 是正常 stored 渲染，不屏蔽
@@ -247,6 +268,18 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
       if (!isOccupiedPhase(s.phase)) return state;
       if (s.inFlightAssistantId === action.messageId) return state;
       return set(action.sessionId, { ...s, inFlightAssistantId: action.messageId });
+    }
+    case "HYDRATE_DONE": {
+      // INV-8 ④：数据 hydrate 完成 = 显式 drain 请求。
+      // 仅 idle 置位；占用中不置位——commit 进入 idle 时 notifyCommit 会驱动 drain（INV-8 ②）。
+      const s = get(action.sessionId);
+      if (s.phase !== "idle" || s.drainRequested) return state;
+      return set(action.sessionId, { ...s, drainRequested: true });
+    }
+    case "CLEAR_DRAIN_REQUEST": {
+      const s = get(action.sessionId);
+      if (!s.drainRequested) return state;
+      return set(action.sessionId, { ...s, drainRequested: false });
     }
     case "MIGRATE_STREAM_SESSION": {
       const from = state.get(action.fromKey);
@@ -302,8 +335,10 @@ class StreamLifecycleStore {
 
   dispatch = (action: Action): void => {
     const occupiedBefore = new Map<string, StreamPhase>();
+    const drainBefore = new Map<string, boolean>();
     for (const [sid, st] of this.state) {
       occupiedBefore.set(sid, st.phase);
+      drainBefore.set(sid, st.drainRequested);
     }
     this.state = reducer(this.state, action);
     for (const listener of this.listeners) {
@@ -313,9 +348,13 @@ class StreamLifecycleStore {
         /* ignore */
       }
     }
-    // 任意 session 进入 idle 时通知 Compose drain（INV-2）
+    // 任意 session 进入 idle 时通知 Compose drain（INV-2 / INV-8 ②）
     for (const [sid, st] of this.state) {
       if (st.phase === "idle" && occupiedBefore.get(sid) !== "idle") {
+        this.notifyCommit(sid);
+      }
+      // INV-8 ④：drainRequested 置位（false→true）走同一显式钩子消费
+      if (st.drainRequested && !drainBefore.get(sid)) {
         this.notifyCommit(sid);
       }
     }
@@ -344,6 +383,21 @@ class StreamLifecycleStore {
   canBeginNewRun = (sessionId: string | null | undefined): boolean => {
     if (!sessionId) return true;
     return (this.state.get(sessionId)?.phase ?? "idle") === "idle";
+  };
+
+  /**
+   * INV-8：吃掉所有已置位但尚未被钩子消费的 drain 请求（晚订阅补偿）。
+   * 钩子 mount 晚于 HYDRATE_DONE 置位时（如 sessionStorage 恢复），靠它兜底，不依赖订阅时序。
+   */
+  takeDrainRequests = (): string[] => {
+    const sids: string[] = [];
+    for (const [sid, st] of this.state) {
+      if (st.drainRequested) sids.push(sid);
+    }
+    for (const sid of sids) {
+      this.dispatch({ type: "CLEAR_DRAIN_REQUEST", sessionId: sid });
+    }
+    return sids;
   };
 }
 
@@ -464,6 +518,18 @@ export const streamLifecycleActions = {
   markInFlightAssistant(sessionId: string, messageId: string) {
     getStore().dispatch({ type: "MARK_INFLIGHT_ASSISTANT", sessionId, messageId });
   },
+  /**
+   * INV-8 ④：数据 hydrate 完成（消息 / 发送队列 / 异步队列刷新 / sessionStorage 恢复）→
+   * 在 reducer 转移点置 drainRequested，由 onStreamCommitted 同款钩子消费。
+   * 占用中调用为 no-op（commit 进入 idle 时自会驱动 drain）。
+   */
+  hydrateDone(sessionId: string) {
+    getStore().dispatch({ type: "HYDRATE_DONE", sessionId });
+  },
+  /** INV-8：drain 钩子消费请求后清除标记，使下一次 hydrate 可再次置位 */
+  clearDrainRequest(sessionId: string) {
+    getStore().dispatch({ type: "CLEAR_DRAIN_REQUEST", sessionId });
+  },
   failStream(sessionId: string, message: string) {
     getStore().dispatch({ type: "FAIL_STREAM", sessionId, message });
   },
@@ -494,6 +560,7 @@ export const streamLifecycleStore = {
   isStreaming: (sessionId: string | null | undefined) => getStore().isStreaming(sessionId),
   isRunOccupied: (sessionId: string | null | undefined) => getStore().isRunOccupied(sessionId),
   canBeginNewRun: (sessionId: string | null | undefined) => getStore().canBeginNewRun(sessionId),
+  takeDrainRequests: () => getStore().takeDrainRequests(),
   serialize: (): Record<string, StreamLifecycleState> => {
     const obj: Record<string, StreamLifecycleState> = {};
     for (const [k, v] of getStore().getState()) {
