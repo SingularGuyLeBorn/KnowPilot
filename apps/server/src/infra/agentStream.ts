@@ -522,7 +522,9 @@ export async function chatAgentStream(
       : history.items;
     const historyForLlm = sliceHistoryAfterCompactBoundary(historyBase);
 
-    const memoryHint = await buildMemoryContext(services, prepared.messageText);
+    const memoryHint = await buildMemoryContext(services, prepared.messageText, {
+      agentId: (agent as { id?: string }).id,
+    });
     const messages = buildLlmMessagesFromHistory(
       buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint, {
         tier: (agent as { tier?: string }).tier,

@@ -86,7 +86,7 @@ export async function runAgent(
   const start = Date.now();
   try {
     const agent = await resolveAgent(services, input.agentId);
-    const memoryHint = input.input ? await buildMemoryContext(services, input.input) : "";
+    const memoryHint = input.input ? await buildMemoryContext(services, input.input, { agentId: agent.id }) : "";
     const messages: LlmMessage[] = [
       {
         role: "system",
@@ -183,7 +183,7 @@ export async function chatAgent(
     });
 
     const history = await services.message.list({ sessionId, page: 1, pageSize: 50 });
-    const memoryHint = await buildMemoryContext(services, displayText);
+    const memoryHint = await buildMemoryContext(services, displayText, { agentId: agent.id });
     const messages = buildLlmMessagesFromHistory(
       buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint, {
         tier: agent.tier,

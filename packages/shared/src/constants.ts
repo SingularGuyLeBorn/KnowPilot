@@ -93,6 +93,21 @@ export type MemoryUserCreatableType = (typeof MEMORY_USER_CREATABLE_TYPES)[numbe
 /** 可注入 Chat system prompt 的类型（排除 experience） */
 export const MEMORY_INJECTABLE_TYPES = [...MEMORY_USER_CREATABLE_TYPES] as const;
 
+/** Memory scope：global 全局共享；agent:{agentId} 归属特定 Agent；workspace:{workspaceId} 归属 Workspace */
+export const MEMORY_SCOPE_GLOBAL = "global";
+export function memoryAgentScope(agentId: string): string {
+  return `agent:${agentId}`;
+}
+
+/** Memory Flush 默认强度：用户偏好 / 一般事实（原 memoryFlush.ts 魔法数字收敛） */
+export const MEMORY_FLUSH_STRENGTH_PREFERENCE = 0.95;
+export const MEMORY_FLUSH_STRENGTH_DEFAULT = 0.85;
+
+/** 长期记忆每日衰减系数（decayMemories，挂 heartbeat 每日 cron） */
+export const MEMORY_DECAY_FACTOR_PER_DAY = 0.95;
+/** 衰减后低于该强度的记忆归档删除 */
+export const MEMORY_ARCHIVE_THRESHOLD = 0.1;
+
 export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   preference: "用户偏好",
   semantic: "稳定事实",

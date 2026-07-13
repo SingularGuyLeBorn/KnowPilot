@@ -6,8 +6,13 @@ import * as llmClient from "../infra/llmClient.js";
 function makeServices() {
   const items: Array<{ content: string; type: string; strength: number; keywords: string[] }> = [];
   return {
+    // W5：flush 改走 MemoryRepository（dedupe 查 contentHash，写入仍经 MemoryService.create）
+    prisma: {
+      memory: {
+        findFirst: vi.fn(async () => null),
+      },
+    },
     memory: {
-      list: vi.fn(async () => ({ items: [], total: 0, page: 1, pageSize: 1 })),
       create: vi.fn(async (input: { content: string; type: string; strength: number; keywords: string[] }) => {
         items.push(input);
         return { success: true, data: { id: `mem_${items.length}`, ...input } };

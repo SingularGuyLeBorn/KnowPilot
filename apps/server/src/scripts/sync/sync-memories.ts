@@ -17,6 +17,7 @@ interface MemoryData {
   type: string;
   strength: number;
   keywords: string; // 逗号分隔
+  scope?: string; // W5：缺省 global
 }
 
 export const memorySyncer: Syncer<MemoryData> = {
@@ -45,6 +46,7 @@ export const memorySyncer: Syncer<MemoryData> = {
       let type: string;
       let strength: number;
       let keywords: string[];
+      let scope: string | undefined;
 
       if (ext === ".json") {
         // 兼容旧版运行时生成的 .json 记忆文件
@@ -53,12 +55,14 @@ export const memorySyncer: Syncer<MemoryData> = {
         type = typeof parsed.type === "string" ? parsed.type : "episodic";
         strength = typeof parsed.strength === "number" ? parsed.strength : 1.0;
         keywords = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: unknown) => typeof k === "string") : [];
+        scope = typeof parsed.scope === "string" ? parsed.scope : undefined;
       } else {
         const { data, content } = parseMarkdownFile(filePath);
         memoryContent = typeof data.content === "string" ? data.content : content.trim();
         type = typeof data.type === "string" ? data.type : "episodic";
         strength = readNumber(data.strength, 1.0);
         keywords = readStringArray(data.keywords);
+        scope = typeof data.scope === "string" ? data.scope : undefined;
       }
 
       if (!memoryContent) {
@@ -69,7 +73,7 @@ export const memorySyncer: Syncer<MemoryData> = {
       return {
         slug,
         mtime,
-        data: { content: memoryContent, type, strength, keywords: keywords.join(",") },
+        data: { content: memoryContent, type, strength, keywords: keywords.join(","), scope },
       };
     } catch (e: any) {
       console.error(`  ❌ [Memory 解析失败] ${filePath}:`, e.message);
@@ -94,6 +98,8 @@ export const memorySyncer: Syncer<MemoryData> = {
           strength: data.strength,
           keywords: data.keywords,
           sourceMtime: mtime,
+          // scope 仅在文件显式声明时覆盖，否则保留 DB 现值（衰减/运行时写入不丢）
+          ...(data.scope ? { scope: data.scope } : {}),
         },
       });
     } else {
@@ -103,6 +109,7 @@ export const memorySyncer: Syncer<MemoryData> = {
           type: data.type,
           strength: data.strength,
           keywords: data.keywords,
+          ...(data.scope ? { scope: data.scope } : {}),
           sourceSlug: slug,
           sourceMtime: mtime,
         },

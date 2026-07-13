@@ -235,6 +235,9 @@ model Memory {
   type      String   @default("episodic") /// "episodic" | "semantic"
   strength  Float    @default(1.0)
   keywords    String   @default("") /// 逗号分隔的关键字
+  scope       String   @default("global") /// "global" | "agent:{agentId}" | "workspace:{workspaceId}"（W5 写时隔离，替代读时过滤）
+  agentId     String?  /// scope=agent:{id} 时的冗余列，便于按 Agent 查询
+  contentHash String?  /// 内容全量 sha256（W5 去重，替代 slice(0,40) 前缀匹配）
   sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())

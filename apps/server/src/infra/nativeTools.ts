@@ -28,6 +28,7 @@ import { runSessionCompact } from "./autoCompact.js";
 import { getSwarmBus } from "./swarmBus.js";
 import { provisionWorkspace } from "./workspaceProvision.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "./agentEvolution.js";
+import { createMemoryRepository } from "./memoryRepository.js";
 import { hasMockNativeTool, executeMockNativeTool } from "./mockNativeTools.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import type { LlmMessage } from "./llmClient.js";
@@ -93,7 +94,7 @@ import {
 import { captureZhihuLoginState } from "./metablog/auth/zhihuLogin.js";
 import { listSavedCookiePlatforms } from "./cookieJar.js";
 
-import { DEFAULT_AGENT_NATIVE, isMemoryUserCreatable, type MemoryUserCreatableType } from "@knowpilot/shared";
+import { DEFAULT_AGENT_NATIVE, isMemoryUserCreatable, MEMORY_SCOPE_GLOBAL, memoryAgentScope, type MemoryUserCreatableType } from "@knowpilot/shared";
 import { registerTool, getTool, listTools } from "./tools/registry.js";
 import type { ToolCommand } from "./tools/types.js";
 import {
@@ -1555,14 +1556,22 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
 async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const keyword = String(args.keyword || "");
   const type = args.type ? String(args.type) : undefined;
-  const page = Math.max(1, Number(args.page || 1));
   const pageSize = Math.min(50, Math.max(1, Number(args.pageSize || 20)));
-  const result = await ctx.services.memory.list({ page, pageSize, keyword: keyword || undefined, type });
+  // W5：统一走 MemoryRepository，按调用 Agent 注入 scopes（global + 本 Agent），
+  // 其他 Agent 的 experience 等私有记忆不可见。仓储不按页返回，page 参数保留兼容但不再翻页。
+  const scopes = [MEMORY_SCOPE_GLOBAL, ...(ctx.agentSnapshot?.id ? [memoryAgentScope(ctx.agentSnapshot.id)] : [])];
+  const repo = createMemoryRepository(ctx.services);
+  const items = await repo.read({
+    keyword: keyword || undefined,
+    types: type ? [type] : undefined,
+    scopes,
+    limit: pageSize,
+  });
   return {
-    total: result.total,
-    page: result.page,
-    pageSize: result.pageSize,
-    items: result.items.map((m: MemoryEntity) => ({
+    total: items.length,
+    page: 1,
+    pageSize,
+    items: items.map((m) => ({
       id: m.id,
       content: m.content.slice(0, 200),
       type: m.type,
@@ -2558,26 +2567,19 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
   });
   let memories: unknown[] = [];
   if (includeMemory) {
-    const rows =
-      (await ctx.prisma?.memory.findMany({
-        where: { type: { in: ["preference", "semantic", "episodic"] } },
-        take: 8,
-        orderBy: { updatedAt: "desc" },
-      })) ?? [];
-    // 过滤 experience 风格的 JSON 任务日志，只保留可读长期记忆
-    memories = rows
-      .filter((m) => {
-        const c = (m.content || "").trim();
-        if (c.startsWith("{") && c.includes("taskDescription")) return false;
-        if (m.type === "experience") return false;
-        return true;
-      })
-      .slice(0, 5)
-      .map((m) => ({
-        id: m.id,
-        type: m.type,
-        content: m.content.slice(0, 200),
-      }));
+    // W5：走 MemoryRepository 按 type 字段查（删除 startsWith("{") 猜 JSON 启发式），
+    // scopes = global + 目标 Agent，experience 等其他 Agent 私有记忆天然隔离
+    const repo = createMemoryRepository(ctx.services);
+    const rows = await repo.read({
+      types: ["preference", "semantic", "episodic"],
+      scopes: [MEMORY_SCOPE_GLOBAL, memoryAgentScope(targetId)],
+      limit: 5,
+    });
+    memories = rows.map((m) => ({
+      id: m.id,
+      type: m.type,
+      content: m.content.slice(0, 200),
+    }));
   }
   return {
     agent: {
@@ -2718,7 +2720,7 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
         };
       }
 
-      const memoryHint = await buildMemoryContext(ctx.services, input);
+      const memoryHint = await buildMemoryContext(ctx.services, input, { agentId: agent.id });
       const tierTools = resolveToolsForAgentTier(agent.tier, agent.tools);
       const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, tierTools, memoryHint, {
         tier: agent.tier,

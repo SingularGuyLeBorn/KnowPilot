@@ -1220,6 +1220,7 @@ export interface MemoryEntity {
   type: string;
   strength: number;
   keywords: string[];
+  scope: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1248,12 +1249,19 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
   }
 
   protected buildCreateData(input: CreateMemoryInput): any {
-    return {
+    const data: any = {
       content: input.content,
       type: input.type,
       strength: input.strength,
       keywords: input.keywords.join(","),
     };
+    // W5：scope/agentId/contentHash 不在 tRPC schema 内（外部 API 不可指定），
+    // 由 MemoryRepository 等内部调用方透传
+    const extra = input as any;
+    if (extra.scope) data.scope = extra.scope;
+    if (extra.agentId) data.agentId = extra.agentId;
+    if (extra.contentHash) data.contentHash = extra.contentHash;
+    return data;
   }
 
   protected buildUpdateData(input: UpdateMemoryInput): any {
@@ -1270,6 +1278,7 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
         type: entity.type,
         strength: entity.strength,
         keywords: entity.keywords,
+        ...(entity.scope && entity.scope !== "global" ? { scope: entity.scope } : {}),
       },
       { lineWidth: -1, noRefs: true },
     );

@@ -720,23 +720,31 @@ describe("native:memory_create / memory_search", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("memory_search 调用 memory.list 并返回摘要", async () => {
+  it("memory_search 经 MemoryRepository 按 scope 过滤并返回摘要（W5）", async () => {
     const root = createTempProjectDir();
-    const memoryService = {
-      list: vi.fn(async () => ({
-        items: [{ id: "m1", content: "这是一段很长的记忆内容...", type: "note", strength: 1, keywords: ["a"] }],
-        total: 1,
-        page: 1,
-        pageSize: 20,
-        totalPages: 1,
-      })),
-    };
-    const ctx = createNativeCtx(root, { services: { memory: memoryService } as never });
+    const findMany = vi.fn(async () => [
+      {
+        id: "m1",
+        content: "这是一段很长的记忆内容...",
+        type: "note",
+        strength: 1,
+        keywords: "a",
+        scope: "global",
+        agentId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+    const ctx = createNativeCtx(root, {
+      services: { prisma: { memory: { findMany } } } as never,
+    });
     const result = (await executeNativeTool("memory_search", { keyword: "记忆" }, ctx)) as {
       total: number;
       items: Array<{ content: string }>;
     };
-    expect(memoryService.list).toHaveBeenCalledWith(expect.objectContaining({ keyword: "记忆", page: 1, pageSize: 20 }));
+    expect(findMany).toHaveBeenCalled();
+    const firstCall = (findMany.mock.calls as unknown as Array<[{ where: { scope: { in: string[] } } }]>)[0]?.[0];
+    expect(firstCall?.where.scope.in).toContain("global");
     expect(result.total).toBe(1);
     expect(result.items[0]?.content).toContain("这是一段很长的记忆内容");
     fs.rmSync(root, { recursive: true, force: true });

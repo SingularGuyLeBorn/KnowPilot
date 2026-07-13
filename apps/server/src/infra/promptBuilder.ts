@@ -8,33 +8,31 @@
  */
 
 import type { ServiceContainer } from "./serviceContainer.js";
-import { searchFts } from "./ftsIndex.js";
-import { isMemoryInjectable } from "@knowpilot/shared";
+import { MEMORY_INJECTABLE_TYPES, memoryAgentScope, MEMORY_SCOPE_GLOBAL } from "@knowpilot/shared";
+import { createMemoryRepository } from "./memoryRepository.js";
 
-export async function buildMemoryContext(services: ServiceContainer, userText: string): Promise<string> {
+/**
+ * 构建注入 system prompt 的长期记忆片段。
+ * W5：统一走 MemoryRepository（FTS 优先 / LIKE 回退收进仓储，strength×recency 排序）；
+ * scope 写时隔离：只读 global + 当前 Agent scope，其他 Agent 的 experience 天然不可见。
+ */
+export async function buildMemoryContext(
+  services: ServiceContainer,
+  userText: string,
+  options?: { agentId?: string | null },
+): Promise<string> {
   const keyword = userText.slice(0, 80).trim();
   if (!keyword) return "";
-  // R11：优先 FTS 召回 memory（已索引，P11），避免 LIKE 扫 content 全表；FTS 无命中/不可用回退 LIKE
-  let memories: any[] = [];
-  try {
-    const hits = await searchFts(services.prisma, keyword, 5);
-    const memIds = hits.filter((h) => h.entity === "memory").map((h) => h.entityId);
-    if (memIds.length > 0) {
-      memories = await services.prisma.memory.findMany({
-        where: { id: { in: memIds }, type: { not: "experience" } },
-      });
-    }
-  } catch {
-    // FTS 未就绪等，回退 LIKE
-  }
-  if (memories.length === 0) {
-    const fb = await services.memory.list({ page: 1, pageSize: 8, keyword });
-    memories = fb.items.filter((m) => isMemoryInjectable(m.type));
-  } else {
-    memories = memories.filter((m) => isMemoryInjectable(m.type));
-  }
+  const scopes = [MEMORY_SCOPE_GLOBAL, ...(options?.agentId ? [memoryAgentScope(options.agentId)] : [])];
+  const repo = createMemoryRepository(services);
+  const memories = await repo.read({
+    keyword,
+    types: [...MEMORY_INJECTABLE_TYPES],
+    scopes,
+    limit: 5,
+  });
   if (!memories.length) return "";
-  const lines = memories.slice(0, 5).map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
+  const lines = memories.map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
   return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
 }
 

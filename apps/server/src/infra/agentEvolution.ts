@@ -15,6 +15,8 @@
 import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { StoredToolCall } from "./chatHistory.js";
+import { createMemoryRepository } from "./memoryRepository.js";
+import { MEMORY_TYPES, memoryAgentScope } from "@knowpilot/shared";
 
 interface ExperienceSummary {
   taskDescription: string;
@@ -60,14 +62,15 @@ export async function accumulateExperience(
         : `任务可能失败。内容为空或被中断。使用了 ${toolNames.length} 次工具调用。`,
     };
 
-    // 写入 Memory（kind="experience"）
-    await prisma.memory.create({
-      data: {
-        content: JSON.stringify(experience),
-        type: "experience",
-        strength: success ? 1.0 : 0.5,
-        keywords: [...new Set(toolNames), input.trigger ?? "user", success ? "success" : "failed"].join(","),
-      },
+    // 写入 Memory（type="experience"，scope=agent:{id} 写时隔离——W5：不再直查 Prisma，
+    // 统一走 MemoryRepository，保证文件回写 + FTS 增量同步，且其他 Agent 上下文不可见）
+    const repo = createMemoryRepository(services);
+    await repo.write({
+      content: JSON.stringify(experience),
+      type: MEMORY_TYPES.EXPERIENCE,
+      scope: memoryAgentScope(agentId),
+      strength: success ? 1.0 : 0.5,
+      keywords: [...new Set(toolNames), input.trigger ?? "user", success ? "success" : "failed"],
     });
 
     // 更新 Agent 状态（活跃度）
@@ -99,11 +102,12 @@ export async function optimizeAgentPrompt(
       return { success: false, reason: "不能优化超级 Agent 的 prompt" };
     }
 
-    // 查最近 20 条经验
-    const experiences = await prisma.memory.findMany({
-      where: { type: "experience" },
-      orderBy: { updatedAt: "desc" },
-      take: 20,
+    // 查该 Agent 最近 20 条经验（global 兼容历史数据 + 本 Agent scope）
+    const repo = createMemoryRepository(services);
+    const experiences = await repo.read({
+      types: [MEMORY_TYPES.EXPERIENCE],
+      scopes: [memoryAgentScope(targetAgentId), "global"],
+      limit: 20,
     });
 
     if (experiences.length < 5) {
@@ -174,11 +178,12 @@ export async function generateSkillFromExperience(
   skillDescription: string,
 ): Promise<{ success: boolean; skillId?: string; reason?: string }> {
   try {
-    // 查该 Agent 的经验
-    const experiences = await prisma.memory.findMany({
-      where: { type: "experience" },
-      orderBy: { updatedAt: "desc" },
-      take: 30,
+    // 查该 Agent 的经验（global 兼容历史数据 + 本 Agent scope）
+    const repo = createMemoryRepository(services);
+    const experiences = await repo.read({
+      types: [MEMORY_TYPES.EXPERIENCE],
+      scopes: [memoryAgentScope(agentId), "global"],
+      limit: 30,
     });
 
     if (experiences.length < 3) {

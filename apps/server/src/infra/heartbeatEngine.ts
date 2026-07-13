@@ -23,6 +23,7 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
+import { createMemoryRepository, decayMemories } from "./memoryRepository.js";
 import {
   closeLoopGate,
   ensureLoopContract,
@@ -33,6 +34,9 @@ import {
 } from "./loopContract.js";
 
 const MAX_CONSECUTIVE_FAILURES = 3;
+
+/** W5：记忆衰减维护任务 cron（每日 03:17，避开心跳高峰） */
+const MEMORY_DECAY_CRON = "17 3 * * *";
 
 type HeartbeatState = {
   enabled: boolean;
@@ -47,6 +51,8 @@ type HeartbeatState = {
 export class HeartbeatEngine {
   private jobs = new Map<string, ScheduledTask>();
   private started = false;
+  // W5：记忆衰减等维护任务独立于 Agent 心跳 jobs（refresh 全量重建时不被动）
+  private maintenanceJob: ScheduledTask | null = null;
   // A14：事件驱动 refresh 的防抖句柄与监听器引用（stop 时清理）
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private eventHandler: ((payload: EntityEventPayload<unknown>) => void) | null = null;
@@ -76,6 +82,13 @@ export class HeartbeatEngine {
 
     await this.refresh();
 
+    // W5：记忆衰减维护任务（strength 按日复利衰减 + 低分归档）
+    if (!this.maintenanceJob) {
+      this.maintenanceJob = cron.schedule(MEMORY_DECAY_CRON, () => {
+        void this.runMemoryDecay();
+      });
+    }
+
     console.log(`  💓 [HeartbeatEngine] 启动完成，共 ${this.jobs.size} 个心跳任务`);
 
     // A14：监听 agent 配置变更事件，防抖后增量刷新 cron 注册，替代此前每 60s 全量轮询重建。
@@ -95,6 +108,10 @@ export class HeartbeatEngine {
   stop(): void {
     for (const job of this.jobs.values()) job.stop();
     this.jobs.clear();
+    if (this.maintenanceJob) {
+      this.maintenanceJob.stop();
+      this.maintenanceJob = null;
+    }
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -140,6 +157,21 @@ export class HeartbeatEngine {
       }
     } catch (err) {
       console.warn(`  💓 [HeartbeatEngine] refresh 失败:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** W5：每日记忆衰减（失败不阻塞心跳主流程） */
+  async runMemoryDecay(): Promise<{ decayed: number; archived: number }> {
+    try {
+      const repo = createMemoryRepository(this.services);
+      const result = await decayMemories(repo, this.prisma);
+      if (result.decayed > 0 || result.archived > 0) {
+        console.log(`  🧠 [MemoryDecay] 衰减 ${result.decayed} 条，归档删除 ${result.archived} 条`);
+      }
+      return result;
+    } catch (err) {
+      console.warn(`  🧠 [MemoryDecay] 执行失败:`, err instanceof Error ? err.message : err);
+      return { decayed: 0, archived: 0 };
     }
   }
 

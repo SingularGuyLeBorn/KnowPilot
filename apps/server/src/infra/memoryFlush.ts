@@ -7,9 +7,13 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import { chatCompletion } from "./llmClient.js";
 import {
   isMemoryUserCreatable,
+  MEMORY_FLUSH_STRENGTH_DEFAULT,
+  MEMORY_FLUSH_STRENGTH_PREFERENCE,
+  MEMORY_SCOPE_GLOBAL,
   MEMORY_TYPES,
   type MemoryUserCreatableType,
 } from "@knowpilot/shared";
+import { createMemoryRepository } from "./memoryRepository.js";
 
 const FLUSH_SYSTEM = `你是 KnowPilot 记忆提取助手。从对话 transcript 中提取应长期保存的信息。
 
@@ -83,20 +87,21 @@ export async function flushMemoriesBeforeCompact(
       maxTokens: 1024,
     });
     const facts = parseFlushFacts(resp.content ?? "").slice(0, maxFacts);
+    // W5：统一走 MemoryRepository，contentHash 全量 hash 去重（替代 slice(0,40) 前缀 + N+1 查询）
+    const repo = createMemoryRepository(services);
     let written = 0;
     for (const fact of facts) {
-      const dup = await services.memory.list({ page: 1, pageSize: 1, keyword: fact.content.slice(0, 40) });
-      if (dup.items.some((m) => m.content.trim() === fact.content.trim())) continue;
-      const result = await services.memory.create({
+      await repo.write({
         content: fact.content,
         type: fact.type,
-        strength: fact.type === MEMORY_TYPES.PREFERENCE ? 0.95 : 0.85,
+        scope: MEMORY_SCOPE_GLOBAL,
+        strength: fact.type === MEMORY_TYPES.PREFERENCE ? MEMORY_FLUSH_STRENGTH_PREFERENCE : MEMORY_FLUSH_STRENGTH_DEFAULT,
         keywords: fact.keywords,
       });
-      if (result.success) written++;
+      written++;
     }
     if (written > 0) {
-      console.log(`[MemoryFlush] compact 前写入 ${written} 条长期记忆`);
+      console.log(`[MemoryFlush] compact 前写入/刷新 ${written} 条长期记忆`);
     }
     return written;
   } catch (err) {
