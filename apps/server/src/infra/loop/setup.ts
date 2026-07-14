@@ -4,16 +4,10 @@
 
 import type { LlmToolCall } from "../llmClient.js";
 import { getAllowedToolsForTier } from "../swarmPermissionGuard.js";
+import { TIER_DEFAULT_TOOLS } from "@knowpilot/shared";
 
-/** 子 Agent 默认执行工具（带 native: 前缀，避免物化成空 → native:all） */
-export const DEFAULT_SUBAGENT_TOOLS = [
-  "native:sleep",
-  "native:async_task_run",
-  "native:agent_report_back",
-  "native:read_file",
-  "native:list_directory",
-  "native:web_search",
-] as const;
+/** 子 Agent 默认执行工具（带 native: 前缀，避免物化成空 → native:all）。单点定义在 shared（TIER_DEFAULT_TOOLS.sub） */
+export const DEFAULT_SUBAGENT_TOOLS: readonly string[] = TIER_DEFAULT_TOOLS.sub;
 
 /** 规范化 + 按 tier 裁剪工具列表 */
 export function resolveToolsForAgentTier(tier: string | undefined | null, tools: string[]): string[] {

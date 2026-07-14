@@ -422,6 +422,9 @@ pnpm --filter @knowpilot/server run sync-free-keys:watch  # 定时刷新
 业务行为参数统一放到项目根目录 `config.yaml`，与 `.env` 的部署/密钥配置分离，便于教学与版本管理：
 
 ```yaml
+llm:
+  defaultModel: deepseek-v4-flash  # 全局默认模型 id；env DEFAULT_LLM_MODEL 可覆盖，缺省回退 shared DEFAULT_LLM_MODEL 常量
+
 stream:
   ringSize: 500          # SessionStreamHub 内存环形缓冲事件数
   persist: true          # 是否持久化事件到 SQLite
@@ -486,6 +489,7 @@ reflection:
 
 ## 当前状态与近期变更（2026-07-14）
 
+- **W8 常量化收敛已落地**：模型名/分层工具清单/深度上限/截断值单点定义到 `packages/shared/src/constants.ts`——`LLM_MODEL_IDS` / `LLM_PROVIDER_DEEPSEEK` / `DEFAULT_LLM_MODEL`（server 生效值 = env `DEFAULT_LLM_MODEL` > `config.yaml` `llm.defaultModel` > shared 常量，解析在 `config.ts`）、`TIER_DEFAULT_TOOLS: Record<AgentTier, string[]>`（super=swarmInitializer、manager=workspaceProvision、sub=loop/setup 三处清单收敛；assistant 清单为 `ASSISTANT_DEFAULT_TOOLS`，agentResolver 创建与补齐检查共用）、`SWARM_MAX_DEPTH`/`SWARM_MAX_QUEUE_SIZE`（swarmBus/redisSwarmBus/swarmPermissionGuard 同源）、`AGENT_TOOL_RESULT_MAX_CHARS=16000`（reactLoop snapshot 与 read_article 同源）、`MEMORY_INITIAL_STRENGTH`、`HEARTBEAT_MAX_CONSECUTIVE_FAILURES`、`APPROVAL_DEFAULT_TTL_MS`。心跳连续失败告警不再是「Phase 5」僵尸：发送通道抽为 `infra/emailNotifier.ts`（send_email 工具与 HeartbeatEngine 复用同一实现），streak 达阈值时邮件告警一次（`EMAIL_PROVIDER=none` 时降级为日志）。
 - **W7 反思装饰器已落地**：`infra/loop/reflection.ts` `withReflection(transport, opts)` 在「即将 done」终轮（withTools 且零 toolCalls）用 criticModel 跑一票 JSON critic（`{passed, issues}`），verdict 附到 `LlmTurnResult.reflection`；**评估在 transport 装饰器、决策在 reactLoop done 转移点**——不通过且轮数未满经既有 `injectUserMessages`（kind=follow_up）回注重修，轮数耗尽带 `[未经反思通过]` 标记放行（不阻断用户）。critic 经内部 `createSyncTransport(config, criticModel)` 走 W2 弹性客户端；critic 失败/解析失败 = 静默跳过。`config.yaml` `reflection: { enabled: false, maxRounds: 1, criticModel: "" }` 默认关闭；仅接入 agentRuntime sync 链路，stream 链路另立跟进。单测 `__tests__/reflection.test.ts`（5 例）。
 - **W6 D 类工具幂等 rollback 已落地**：`infra/tools/rollback.ts` 新增 `RunRollbackStack`——reactLoop 每 run 建栈注入 `NativeToolContext.rollbackStack`；`executeNativeTool` 对注册处标记 `destructive` 的工具执行前 capture、成功后 commit；run failed 且非用户 abort 时逆序补偿，报告写 failed Run 的 `output.rollback`。补偿语义：`write_file` 快照还原（run 级 10MB 上限）；`post_create`/`memory_create` 走 Service 删 id；`file_delete`/`directory_delete` 执行时移项目根 `.trash/`（用户手动清理），rollback 移回；`git_commit` 等不可逆操作如实 warn「需人工 revert」。单测 `toolRollback.test.ts`；详见 `docs/development/p0-agent-arch-pr-split.md` PR-4 节。
 - **W5-followup 记忆三层落地**：scope 三层（`global` / `workspace:{wid}` / `agent:{aid}`）读写全通——`buildMemoryContext` 与 native `memory_search` 注入三层 scopes（Agent 有 Workspace 时）；`memory_create` 加可选 scope 参数，越权由 `memoryRepository.resolveMemoryWriteScope` 硬拦（仅 super 写 global、禁止伪造他 Agent/他 Workspace）；`accumulateExperience` 对属于 Workspace 的 Agent 双写 agent + workspace 两层经验（sub 无 memory 工具权限，workspace 层供管理/超级 Agent 检索）。

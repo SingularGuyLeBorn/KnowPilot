@@ -7,6 +7,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { LLM_MODEL_IDS } from "@knowpilot/shared";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, getFileMtime } from "./utils.js";
 
@@ -44,7 +45,7 @@ export const agentSyncer: Syncer<AgentData> = {
 
       const name = typeof data.name === "string" ? data.name : slug;
       const description = typeof data.description === "string" ? data.description : null;
-      const model = typeof data.model === "string" ? data.model : "deepseek-chat";
+      const model = typeof data.model === "string" ? data.model : LLM_MODEL_IDS.DEEPSEEK_CHAT;
       const systemPrompt = content.trim();
       const tools = readStringArray(data.tools).join(",");
       const tier = typeof data.tier === "string" ? data.tier : "sub";

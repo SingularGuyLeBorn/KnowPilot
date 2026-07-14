@@ -3,6 +3,7 @@
  */
 
 import { trpcMutate, trpcQuery } from "./trpcE2e";
+import { LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 
 export interface UserOnlySessionFixture {
   sessionId: string;
@@ -383,7 +384,7 @@ export async function createSessionWithScrapeHint(): Promise<ToolHintSessionFixt
     {
       id: "call_fixture_scrape",
       name: "scrape_web_page",
-      args: { url: "https://api-docs.deepseek.com/" },
+      args: { url: `https://api-docs.${LLM_PROVIDER_DEEPSEEK}.com/` },
       result: {
         elapsedMs: 900,
         method: "playwright",

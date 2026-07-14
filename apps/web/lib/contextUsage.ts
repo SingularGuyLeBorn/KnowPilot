@@ -5,6 +5,7 @@
 import type { ChatMessage } from "@knowpilot/shared";
 import {
   DEFAULT_COMPACT_TRIGGER_RATIO,
+  DEFAULT_LLM_MODEL,
   resolveCompactCharThreshold,
   resolveModelContextWindowTokens,
 } from "@knowpilot/shared";
@@ -65,7 +66,7 @@ export function buildContextUsage(params: {
   /** 会话表持久化的摘要（优先于消息内标记） */
   contextSummary?: string | null;
 }): ContextUsageSnapshot {
-  const modelId = params.modelId ?? "deepseek-v4-flash";
+  const modelId = params.modelId ?? DEFAULT_LLM_MODEL;
   const compactTriggerRatio = params.triggerRatio ?? DEFAULT_COMPACT_TRIGGER_RATIO;
   const maxContextTokens = resolveModelContextWindowTokens(modelId);
   const compactCharThreshold = resolveCompactCharThreshold(modelId, compactTriggerRatio);

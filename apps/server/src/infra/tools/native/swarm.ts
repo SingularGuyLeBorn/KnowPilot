@@ -17,7 +17,7 @@ import { buildMemoryContext, buildSystemPromptWithHints } from "../../promptBuil
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
 import { createTrpcInvoker } from "../../trpcInvoker.js";
 import { createMemoryRepository } from "../../memoryRepository.js";
-import { MEMORY_SCOPE_GLOBAL, memoryAgentScope } from "@knowpilot/shared";
+import { MEMORY_SCOPE_GLOBAL, memoryAgentScope, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 import type { LlmMessage } from "../../llmClient.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
@@ -36,7 +36,7 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
   const created = await ctx.services.agent.create({
     name: String(args.name || ""),
     description: args.description ? String(args.description) : undefined,
-    model: args.model ? String(args.model) : "deepseek-v4-flash",
+    model: args.model ? String(args.model) : ctx.config.llm.defaultModel,
     systemPrompt: args.systemPrompt ? String(args.systemPrompt) : "",
     tools: Array.isArray(args.tools) ? (args.tools as string[]) : [],
     tier: args.tier as "super" | "manager" | "sub" | undefined,
@@ -54,7 +54,7 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
   if ((args.tier === "manager" || args.tier === "sub") && created.data.id) {
     await ctx.services.session.create({
       title: `${args.name} 主会话`,
-      model: args.model ? String(args.model) : "deepseek-v4-flash",
+      model: args.model ? String(args.model) : ctx.config.llm.defaultModel,
       agentId: created.data.id,
       isMainSession: true,
     }).catch(() => { /* 主 session 创建失败不阻塞 */ });
@@ -666,7 +666,7 @@ export async function agentCreateSubTool(args: Record<string, unknown>, ctx: Nat
   const created = await ctx.services.agent.create({
     name: String(args.name || ""),
     description: args.description ? String(args.description) : undefined,
-    model: args.model ? String(args.model) : "deepseek-v4-flash",
+    model: args.model ? String(args.model) : ctx.config.llm.defaultModel,
     systemPrompt: args.systemPrompt ? String(args.systemPrompt) : "",
     tools,
     tier: "sub",
@@ -1030,7 +1030,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
     description: "获取一个可用的免费 API Key（轮询分配，标记 lastUsedAt）。用于 Agent 无专属 key 时获取临时 key。",
     parameters: zodParams(
       z.object({
-        provider: z.string().describe("偏好提供商（如 deepseek/openai），不填则随机分配").optional(),
+        provider: z.string().describe(`偏好提供商（如 ${LLM_PROVIDER_DEEPSEEK}/openai），不填则随机分配`).optional(),
       }),
     ),
   },

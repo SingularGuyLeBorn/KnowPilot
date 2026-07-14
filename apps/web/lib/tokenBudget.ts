@@ -5,12 +5,13 @@
 import type { ChatMessage } from "@knowpilot/shared";
 import {
   DEFAULT_COMPACT_TRIGGER_RATIO,
+  DEFAULT_LLM_MODEL,
   resolveCompactCharThreshold,
   resolveModelContextWindowTokens,
 } from "@knowpilot/shared";
 
 /** @deprecated 使用 resolveCompactCharThreshold(modelId) */
-export const COMPACT_CHAR_THRESHOLD = resolveCompactCharThreshold("deepseek-v4-flash");
+export const COMPACT_CHAR_THRESHOLD = resolveCompactCharThreshold(DEFAULT_LLM_MODEL);
 
 export const DEFAULT_COMPACT_TRIGGER_RATIO_EXPORT = DEFAULT_COMPACT_TRIGGER_RATIO;
 
@@ -42,7 +43,7 @@ export function buildTokenBudget(
   messages: ChatMessage[],
   maxOutputTokens: number,
   lastRoundTokens = 0,
-  modelId = "deepseek-v4-flash",
+  modelId = DEFAULT_LLM_MODEL,
   triggerRatio = DEFAULT_COMPACT_TRIGGER_RATIO,
 ): TokenBudgetSnapshot {
   const sessionTokens = sumMessageTokens(messages);

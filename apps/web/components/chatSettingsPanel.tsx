@@ -19,7 +19,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { Skill, ChatSessionConfig } from "@knowpilot/shared";
-import { PRIMARY_CHAT_MODELS } from "@knowpilot/shared";
+import { PRIMARY_CHAT_MODELS, LLM_MODEL_IDS } from "@knowpilot/shared";
 import { LucideIconByName } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -32,8 +32,8 @@ import { useNativeCapabilities, useSessionHoverPreview } from "@/lib/hooks";
 const spring = { type: "spring" as const, stiffness: 260, damping: 26 };
 
 const MODEL_HINTS: Record<string, string> = {
-  "deepseek-v4-flash": "更快响应，适合日常对话与工具调用",
-  "deepseek-v4-pro": "更强推理，适合复杂分析与长链路任务",
+  [LLM_MODEL_IDS.DEEPSEEK_V4_FLASH]: "更快响应，适合日常对话与工具调用",
+  [LLM_MODEL_IDS.DEEPSEEK_V4_PRO]: "更强推理，适合复杂分析与长链路任务",
   kimi: "Moonshot 长上下文，模型 ID 来自 VITE_KIMI_MODEL",
 };
 

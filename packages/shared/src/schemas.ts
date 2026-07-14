@@ -6,7 +6,13 @@
  */
 
 import { z } from "zod";
-import { MEMORY_USER_CREATABLE_TYPES } from "./constants";
+import {
+  AGENT_TIERS,
+  DEFAULT_LLM_MODEL,
+  LLM_MODEL_IDS,
+  MEMORY_INITIAL_STRENGTH,
+  MEMORY_USER_CREATABLE_TYPES,
+} from "./constants";
 
 /* ═══════════════════════════════════════════════════════
    Post (文章)
@@ -55,7 +61,7 @@ export const searchPostsSchema = z.object({
    Agent (AI 代理)
    ═══════════════════════════════════════════════════════ */
 
-export const agentTierSchema = z.enum(["super", "manager", "sub"]);
+export const agentTierSchema = z.enum(AGENT_TIERS);
 export const agentStatusSchema = z.enum(["active", "idle", "dormant", "deleted"]);
 export const workspaceStatusSchema = z.enum(["active", "archived", "deleted"]);
 
@@ -91,7 +97,7 @@ export const heartbeatConfigSchema = z.object({
 export const createAgentSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(100),
   description: z.string().optional(),
-  model: z.string().default("deepseek-chat"),
+  model: z.string().default(LLM_MODEL_IDS.DEEPSEEK_CHAT),
   systemPrompt: z.string().default(""),
   tools: z.array(z.string()).default([]),
   // Swarm 层级（不传则 service 层默认 "sub"）
@@ -275,7 +281,7 @@ export const sessionStatusSchema = z.enum(["active", "queued", "running", "pause
 
 export const createSessionSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
-  model: z.string().default("deepseek-v4-flash"),
+  model: z.string().default(DEFAULT_LLM_MODEL),
   systemPrompt: z.string().optional(),
   agentId: z.string().cuid().optional(),
   // Swarm/Subagent
@@ -507,7 +513,7 @@ export const memoryUserTypeSchema = z.enum(MEMORY_USER_CREATABLE_TYPES);
 export const createMemorySchema = z.object({
   content: z.string().min(1),
   type: memoryUserTypeSchema.default("note"),
-  strength: z.number().min(0).max(1).default(1.0),
+  strength: z.number().min(0).max(1).default(MEMORY_INITIAL_STRENGTH),
   keywords: z.array(z.string()).default([]),
 });
 

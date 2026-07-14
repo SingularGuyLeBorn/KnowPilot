@@ -445,7 +445,7 @@ const sessionRouter = router({
         config: ctx.config,
         services: ctx.services,
         sessionId: input.id,
-        model: session.model || "deepseek-v4-flash",
+        model: session.model || ctx.config.llm.defaultModel,
         systemPrompt: session.systemPrompt || "你是 KnowPilot 助手。",
         existingSummary: session.contextSummary,
         trigger: "manual",

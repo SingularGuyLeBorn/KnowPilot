@@ -11,7 +11,7 @@
  * 4. 向心跳 session 注入一条 source="system" 的心跳消息
  * 5. 自动触发 agentStream（无需用户发起）
  * 6. 更新 heartbeat.lastRunAt + lastRunStatus + consecutiveFailures
- * 7. 连续失败 3 次 → 邮件通知用户（#4）
+ * 7. 连续失败达 HEARTBEAT_MAX_CONSECUTIVE_FAILURES → 邮件告警用户一次（#4，复用 send_email 通道）
  *
  * 并发控制：心跳任务走 asyncJobOrchestrator，与手动启动的任务共享并发池（#13）
  */
@@ -24,6 +24,8 @@ import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
 import { createMemoryRepository, decayMemories } from "./memoryRepository.js";
+import { sendEmailNotification } from "./emailNotifier.js";
+import { HEARTBEAT_MAX_CONSECUTIVE_FAILURES } from "@knowpilot/shared";
 import {
   closeLoopGate,
   ensureLoopContract,
@@ -33,7 +35,7 @@ import {
   type LoopContract,
 } from "./loopContract.js";
 
-const MAX_CONSECUTIVE_FAILURES = 3;
+const MAX_CONSECUTIVE_FAILURES = HEARTBEAT_MAX_CONSECUTIVE_FAILURES;
 
 /** W5：记忆衰减维护任务 cron（每日 03:17，避开心跳高峰） */
 const MEMORY_DECAY_CRON = "17 3 * * *";
@@ -345,14 +347,24 @@ export class HeartbeatEngine {
               applyLoopContract: agent.tier === "super",
             });
 
-            // 连续失败 3 次 → 邮件通知（#4）
+            // 连续失败达阈值 → 邮件告警（#4）。=== 判定：每个失败 streak 只告警一次，
+            // 避免第 4、5… 次失败重复轰炸收件箱；streak 清零（success）后再次达阈值会重新告警
             if (reason === "failed") {
               const updatedHb = this.parseHeartbeat(
                 (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
               );
-              if (updatedHb && updatedHb.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，应邮件通知用户`);
-                // 邮件通知在 Phase 5 实现（send_email 工具），此处仅记日志
+              if (updatedHb && updatedHb.consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
+                const lastError = err instanceof Error ? err.message : String(err);
+                const notify = await sendEmailNotification(this.config, this.services.log, {
+                  subject: `[KnowPilot] Agent「${agent.name}」心跳连续失败 ${updatedHb.consecutiveFailures} 次`,
+                  body: `Agent「${agent.name}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态，必要时在 /agents 页调整或停用心跳。`,
+                  agentId,
+                });
+                if ("error" in notify) {
+                  console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，邮件告警未发送：${notify.error}`);
+                } else {
+                  console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，已邮件告警用户`);
+                }
               }
             }
           }

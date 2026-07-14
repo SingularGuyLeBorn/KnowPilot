@@ -2,13 +2,13 @@
  * Chat 会话配置 — localStorage 持久化扩展参数
  */
 
-import { CHAT_MODELS, type ChatSessionConfig } from "@knowpilot/shared";
+import { CHAT_MODELS, DEFAULT_LLM_MODEL, LLM_PROVIDER_DEEPSEEK, type ChatSessionConfig } from "@knowpilot/shared";
 
 const DEFAULT_KEY = "kp-chat-default-config";
 const sessionKey = (id: string) => `kp-chat-session-${id}`;
 
 export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
-  model: "deepseek-v4-flash",
+  model: DEFAULT_LLM_MODEL,
   temperature: 0.7,
   maxTokens: 8192,
   systemPrompt: "",
@@ -23,12 +23,12 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 export function getModelOption(modelId: string) {
   const found = CHAT_MODELS.find((m) => m.id === modelId);
   if (found) return found;
-  const isDeepSeek = modelId.includes("deepseek");
+  const isDeepSeek = modelId.includes(LLM_PROVIDER_DEEPSEEK);
   const isVision = modelId.includes("vl") || modelId.includes("vision");
   return {
     id: modelId,
     label: modelId,
-    provider: isDeepSeek ? "deepseek" : "openai",
+    provider: isDeepSeek ? LLM_PROVIDER_DEEPSEEK : "openai",
     supportsThinking: isDeepSeek && !isVision,
     supportsReasoning: isDeepSeek && !isVision,
     supportsVision: isVision,

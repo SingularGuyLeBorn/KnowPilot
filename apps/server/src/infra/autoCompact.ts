@@ -14,6 +14,7 @@ import type { AgentStreamEvent } from "./agentStream.js";
 import {
   DEFAULT_COMPACT_KEEP_RECENT,
   DEFAULT_COMPACT_TRIGGER_RATIO,
+  DEFAULT_LLM_MODEL,
   DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS,
   DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS,
   resolveCompactCharThreshold,
@@ -25,7 +26,7 @@ export const SUMMARY_MARKER = "[此前对话摘要 — 自动压缩]";
 export const COMPACT_BOUNDARY_PREFIX = "[kp-compact-boundary:";
 
 export const DEFAULT_COMPACT_CHAR_THRESHOLD = resolveCompactCharThreshold(
-  "deepseek-v4-flash",
+  DEFAULT_LLM_MODEL,
   DEFAULT_COMPACT_TRIGGER_RATIO,
 );
 

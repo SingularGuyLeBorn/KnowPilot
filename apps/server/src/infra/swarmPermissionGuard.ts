@@ -7,6 +7,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
+import { SWARM_MAX_DEPTH } from "@knowpilot/shared";
 
 /** Agent 层级排序：super > manager > sub */
 const TIER_RANK: Record<string, number> = { super: 3, manager: 2, sub: 1 };
@@ -171,10 +172,10 @@ export function checkToolPermission(
 
     // depth 校验（#12 防循环）
     const depth = args.depth as number | undefined;
-    if (depth !== undefined && depth > 10) {
+    if (depth !== undefined && depth > SWARM_MAX_DEPTH) {
       return {
         code: "DELEGATION_DEPTH_EXCEEDED",
-        reason: `委托层级 ${depth} 超过上限 10，可能存在循环委托。`,
+        reason: `委托层级 ${depth} 超过上限 ${SWARM_MAX_DEPTH}，可能存在循环委托。`,
       };
     }
   }

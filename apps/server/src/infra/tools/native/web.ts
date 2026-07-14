@@ -12,6 +12,7 @@ import {
   type SearchEngineName,
 } from "../../metablog/index.js";
 import { isSmokeInfoSource } from "../../smokeArtifacts.js";
+import { AGENT_TOOL_RESULT_MAX_CHARS } from "@knowpilot/shared";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
@@ -375,7 +376,8 @@ async function rssDraftPostsTool(args: Record<string, unknown>, ctx: NativeToolC
   return { sourceId, draftedIds, draftedCount: draftedIds.length };
 }
 
-const READ_ARTICLE_MAX_CHARS = 16_000;
+// 与 reactLoop snapshot.toolResultMaxChars 同源（shared AGENT_TOOL_RESULT_MAX_CHARS）
+const READ_ARTICLE_MAX_CHARS = AGENT_TOOL_RESULT_MAX_CHARS;
 /** 低于此字数且已通过 minReadable 校验时，提示 Agent 正文可能不完整 */
 const READ_ARTICLE_SHORT_WARN_CHARS = 150;
 
@@ -564,7 +566,7 @@ const WEB_DEFS: NativeToolDefinition[] = [
         platform: { type: "string", description: "可选平台：zhihu、wechat、xiaohongshu、bilibili 等" },
         method: { type: "string", enum: ["playwright"], description: "强制 Playwright 渲染" },
         embedOcr: { type: "boolean", description: "是否 OCR 嵌入图片文字，默认 true" },
-        maxChars: { type: "number", description: "返回正文最大字符数，默认 16000" },
+        maxChars: { type: "number", description: `返回正文最大字符数，默认 ${AGENT_TOOL_RESULT_MAX_CHARS}` },
         minChars: { type: "number", description: "可读正文下限，低于且标题像 404 则报错，默认 80" },
       },
       required: ["url"],

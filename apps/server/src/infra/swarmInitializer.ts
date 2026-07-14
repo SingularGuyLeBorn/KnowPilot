@@ -18,6 +18,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { AppConfig } from "./config.js";
 import { resolveSafePath } from "./safePath.js";
+import { DEFAULT_LLM_MODEL, TIER_DEFAULT_TOOLS } from "@knowpilot/shared";
 
 const SUPER_AGENT_NAME = "KnowPilot 超级 Agent";
 const SYSTEM_WORKSPACE_NAME = "KnowPilot 系统";
@@ -51,26 +52,8 @@ const SUPER_AGENT_HEARTBEAT = {
   consecutiveFailures: 0,
 };
 
-const SUPER_AGENT_TOOLS = [
-  "native:web_search",
-  "native:read_file",
-  "native:write_file",
-  "native:list_directory",
-  "native:invoke_api",
-  "native:async_task_run",
-  "native:async_task_status",
-  "native:async_task_wait",
-  "native:async_task_cancel",
-  "native:spawn_subagent",
-  "native:session_rotate",
-  "native:agent_create",
-  "native:agent_update",
-  "native:agent_delete",
-  "native:agent_inspect",
-  "native:agent_send_message",
-  "native:workspace_create",
-  "native:workspace_archive",
-];
+/** 超级 Agent 默认工具清单：单点定义在 shared（TIER_DEFAULT_TOOLS.super） */
+const SUPER_AGENT_TOOLS = TIER_DEFAULT_TOOLS.super;
 
 /**
  * 确保系统 Workspace 存在。
@@ -161,7 +144,7 @@ export async function initSwarm(
       });
       console.log(`  🔗 [Swarm] 已把超级 Agent 关联到系统 Workspace`);
     }
-    await ensureMainSession(prisma, existing.id, `${SUPER_AGENT_NAME} 主会话`, existing.model ?? "deepseek-v4-flash");
+    await ensureMainSession(prisma, existing.id, `${SUPER_AGENT_NAME} 主会话`, existing.model ?? config?.llm.defaultModel ?? DEFAULT_LLM_MODEL);
     return;
   }
 
@@ -170,7 +153,7 @@ export async function initSwarm(
     data: {
       name: SUPER_AGENT_NAME,
       description: "KnowPilot 默认超级 Agent，首次启动自动创建。拥有全部 Agent CRUD 权限与心跳自主运行能力。",
-      model: "deepseek-v4-flash",
+      model: config?.llm.defaultModel ?? DEFAULT_LLM_MODEL,
       systemPrompt: SUPER_AGENT_SYSTEM_PROMPT,
       tools: SUPER_AGENT_TOOLS.join(","),
       tier: "super",

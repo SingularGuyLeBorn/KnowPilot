@@ -38,6 +38,7 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
     emailProvider: "none",
     llm: {
       defaultProvider: "deepseek",
+      defaultModel: "deepseek-v4-flash",
       dailyBudget: 0,
       maxToolRounds: 8,
       maxToolCallsPerRun: 168,

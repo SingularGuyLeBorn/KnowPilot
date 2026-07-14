@@ -26,6 +26,7 @@ import { searchFts } from "./ftsIndex.js";
 import {
   MEMORY_ARCHIVE_THRESHOLD,
   MEMORY_DECAY_FACTOR_PER_DAY,
+  MEMORY_INITIAL_STRENGTH,
   MEMORY_SCOPE_GLOBAL,
   MEMORY_SCOPE_PREFIX,
   memoryAgentScope,
@@ -189,7 +190,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
     const createInput = {
       content: input.content,
       type: input.type,
-      strength: input.strength ?? 1.0,
+      strength: input.strength ?? MEMORY_INITIAL_STRENGTH,
       keywords: input.keywords ?? [],
       // 以下字段不在 tRPC createMemorySchema 内，由 MemoryService.buildCreateData 透传
       scope,

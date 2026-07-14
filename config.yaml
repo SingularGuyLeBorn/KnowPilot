@@ -3,6 +3,8 @@
 
 # LLM 弹性调用（错误分类 + 指数退避重试 + fallback 降级）
 llm:
+  # 全局默认模型 id（Agent/会话未指定模型时生效）；env DEFAULT_LLM_MODEL 可覆盖，缺省回退内置常量
+  defaultModel: deepseek-v4-flash
   # 同一模型失败重试次数（指数退避 + jitter；429/5xx/网络抖动可重试，401/400 直接失败）
   maxRetries: 3
   # 退避基数（毫秒）；实际等待 = baseDelayMs × 2^attempt × jitter

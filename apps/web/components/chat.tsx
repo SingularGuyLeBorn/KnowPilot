@@ -46,7 +46,7 @@ import {
 } from "@/lib/chatMessageUtils";
 import { LucideIconByName } from "@/lib/icons";
 import { cn, groupBySessionDate } from "@/lib/utils";
-import { type Agent, type ChatSessionConfig, type ChatImageAttachment, type ChatMessage } from "@knowpilot/shared";
+import { type Agent, type ChatSessionConfig, type ChatImageAttachment, type ChatMessage, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { PostContent } from "@/components/post/PostContent";
 import { ConfirmDialog } from "@/components/shared";
@@ -1290,7 +1290,7 @@ export function ChatView() {
                       id: r.agentId,
                       name: r.subagentName || `子 Agent ${r.agentId.slice(0, 4)}`,
                       description: null,
-                      model: chatConfig.model || "deepseek-v4-flash",
+                      model: chatConfig.model || DEFAULT_LLM_MODEL,
                       tools: [] as string[],
                       tier: "sub" as const,
                       workspaceId: wsId,

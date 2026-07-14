@@ -4,7 +4,6 @@
  * 幂等：autoName 已有值就跳过，不会重复命名。
  */
 
-const MODEL = "deepseek-v4-flash";
 const AUTO_NAME_TIMEOUT_MS = 30_000; // 命名是 fire-and-forget，LLM 挂起时不能无限占用连接
 
 const SESSION_PROMPT =
@@ -35,9 +34,10 @@ export async function autoNameSession(sessionId: string, firstMessage: string): 
     // autoName=null 的老会话被追溯命名一次是期望行为（用户重新打开时补名字）。
     const session = await prisma.chatSession.findUnique({ where: { id: sessionId }, select: { autoName: true } });
     if (!session || session.autoName) return;
+    const config = getAppConfig();
     const { content } = await chatCompletion({
-      config: getAppConfig(),
-      model: MODEL,
+      config,
+      model: config.llm.defaultModel,
       messages: [{ role: "system", content: SESSION_PROMPT }, { role: "user", content: firstMessage.slice(0, 500) }],
       maxTokens: 80,
       temperature: 0.3,
@@ -62,9 +62,10 @@ export async function autoNameAgent(agentId: string, task: string): Promise<void
     // 幂等：autoName 已有值就跳过
     const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { autoName: true, name: true } });
     if (!agent || agent.autoName) return;
+    const config = getAppConfig();
     const { content } = await chatCompletion({
-      config: getAppConfig(),
-      model: MODEL,
+      config,
+      model: config.llm.defaultModel,
       messages: [{ role: "system", content: AGENT_PROMPT }, { role: "user", content: task.slice(0, 500) }],
       maxTokens: 60,
       temperature: 0.4,

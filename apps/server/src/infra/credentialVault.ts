@@ -9,6 +9,7 @@
 import crypto from "crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { AppConfig } from "./config.js";
+import { LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 
 const ENC_PREFIX = "enc:";
 
@@ -332,7 +333,7 @@ export function getEnvCredentialCandidates(): Array<{
   push("yuque_ctoken", readEnv("YUQUE_CTOKEN"), "token", "yuque");
   push("tavily_api_key", readEnv("SEARCH_TAVILY_API_KEY", "TAVILY_API_KEY"), "api_key", "search");
   push("serpapi_api_key", readEnv("SEARCH_SERPAPI_API_KEY", "SERPAPI_API_KEY"), "api_key", "search");
-  push("deepseek_api_key", readEnv("VITE_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"), "api_key", "llm");
+  push(`${LLM_PROVIDER_DEEPSEEK}_api_key`, readEnv("VITE_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"), "api_key", "llm");
   push("kimi_api_key", readEnv("VITE_KIMI_API_KEY", "KIMI_API_KEY"), "api_key", "llm");
 
   return candidates;

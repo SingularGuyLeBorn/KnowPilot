@@ -329,7 +329,7 @@ async function sessionCompactTool(_args: Record<string, unknown>, ctx: NativeToo
     config: ctx.config,
     services: ctx.services,
     sessionId: ctx.sessionId,
-    model: session.model || ctx.agentSnapshot?.model || "deepseek-v4-flash",
+    model: session.model || ctx.agentSnapshot?.model || ctx.config.llm.defaultModel,
     systemPrompt: session.systemPrompt || ctx.agentSnapshot?.systemPrompt || "你是 KnowPilot 助手。",
     existingSummary: (session as { contextSummary?: string | null }).contextSummary ?? null,
     trigger: "agent",
@@ -414,7 +414,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
   // 2) 创建新会话
   const created = await ctx.services.session.create({
     title: newTitle,
-    model: oldSession.model || "deepseek-v4-flash",
+    model: oldSession.model || ctx.config.llm.defaultModel,
     systemPrompt: oldSession.systemPrompt ?? undefined,
     agentId,
     kind: "chat",

@@ -10,6 +10,7 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { success, failureFromError } from "../trpc/result.js";
 import type { OperationResult } from "@knowpilot/shared";
+import { APPROVAL_DEFAULT_TTL_MS } from "@knowpilot/shared";
 
 /** 默认需要人工审批的 tRPC 工具路径 */
 const APPROVAL_REQUIRED_OPS = new Set([
@@ -42,12 +43,12 @@ export function isDestructiveApprovalEnabled(): boolean {
   return process.env.AGENT_DESTRUCTIVE_APPROVAL === "true";
 }
 
-/** pending 审批过期毫秒；0 或未解析出有效值时关闭 TTL（默认 24h） */
+/** pending 审批过期毫秒；0 或未解析出有效值时关闭 TTL（默认 24h，见 shared APPROVAL_DEFAULT_TTL_MS） */
 export function getApprovalPendingTtlMs(): number {
   const raw = process.env.APPROVAL_PENDING_TTL_MS;
-  if (raw === undefined || raw === "") return 24 * 60 * 60 * 1000;
+  if (raw === undefined || raw === "") return APPROVAL_DEFAULT_TTL_MS;
   const n = parseInt(raw, 10);
-  if (!Number.isFinite(n) || n < 0) return 24 * 60 * 60 * 1000;
+  if (!Number.isFinite(n) || n < 0) return APPROVAL_DEFAULT_TTL_MS;
   return n;
 }
 

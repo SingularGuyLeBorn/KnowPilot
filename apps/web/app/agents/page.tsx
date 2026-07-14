@@ -26,7 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Agent } from "@knowpilot/shared";
-import { CHAT_MODELS, materializeAgentTools } from "@knowpilot/shared";
+import { CHAT_MODELS, DEFAULT_LLM_MODEL, materializeAgentTools } from "@knowpilot/shared";
 import { useAgent, useCardDensity, type CardDensity } from "@/lib/hooks";
 import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, CardDensityToggle } from "@/components/shared";
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
@@ -76,7 +76,7 @@ const DEFAULT_AGENT_TOOLS = [
 const EMPTY_FORM: AgentForm = {
   name: "",
   description: "",
-  model: "deepseek-v4-flash",
+  model: DEFAULT_LLM_MODEL,
   systemPrompt: "你是 KnowPilot 智能助手，擅长知识管理与 Markdown 写作。",
   tools: [...DEFAULT_AGENT_TOOLS],
   heartbeatEnabled: false,

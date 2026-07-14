@@ -4,6 +4,7 @@
 
 import type { AppConfig, LlmProviderConfig } from "./config.js";
 import type { ReasoningEffort } from "@knowpilot/shared";
+import { LLM_MODEL_IDS, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 import { mockChatCompletion, mockChatCompletionStream } from "./mockLlmClient.js";
 
 /** LLM HTTP 错误：携带状态码与响应体，供弹性层（resilientLlmClient）分类 */
@@ -75,7 +76,8 @@ export interface ResolvedDeepSeekRequest {
 }
 
 const DEFAULT_BASE_URLS: Record<string, string> = {
-  deepseek: "https://api.deepseek.com/v1",
+  // 值为各厂商 API 域名（属配置数据，非模型名硬编码）
+  [LLM_PROVIDER_DEEPSEEK]: "https://api.deepseek.com/v1",
   kimi: "https://api.moonshot.cn/v1",
   zhipu: "https://open.bigmodel.cn/api/paas/v4",
   openai: "https://api.openai.com/v1",
@@ -104,15 +106,15 @@ export function resolveProvider(config: AppConfig, modelOrProvider?: string): Ll
 
 /**
  * 解析 Agent/Session 实际使用的 model id。
- * `.env` 的 DEEPSEEK_MODEL / VITE_DEEPSEEK_MODEL 在仍为 legacy `deepseek-chat` 时覆盖。
+ * `.env` 的 DEEPSEEK_MODEL / VITE_DEEPSEEK_MODEL 在仍为 legacy chat id 时覆盖。
  */
 export function resolveEffectiveAgentModel(config: AppConfig, model: string): string {
   const trimmed = model.trim();
-  const envDeepseek = config.llm.providers.deepseek?.model?.trim();
-  if ((trimmed === "deepseek-chat" || !trimmed) && envDeepseek) {
+  const envDeepseek = config.llm.providers[LLM_PROVIDER_DEEPSEEK]?.model?.trim();
+  if ((trimmed === LLM_MODEL_IDS.DEEPSEEK_CHAT || !trimmed) && envDeepseek) {
     return envDeepseek;
   }
-  return trimmed || envDeepseek || "deepseek-v4-flash";
+  return trimmed || envDeepseek || config.llm.defaultModel;
 }
 
 /** API 文档：low/medium → high，xhigh → max；此处仅暴露 high/max */
@@ -122,14 +124,14 @@ export function normalizeReasoningEffort(effort?: ReasoningEffort): "high" | "ma
 
 export function isDeepSeekFamily(model: string): boolean {
   const m = model.toLowerCase();
-  return m.includes("deepseek");
+  return m.includes(LLM_PROVIDER_DEEPSEEK);
 }
 
 /**
  * 对齐 DeepSeek V4 Thinking Mode 文档：
  * - thinking.type: enabled | disabled（V4 默认 enabled）
  * - reasoning_effort: high | max
- * - legacy deepseek-chat / deepseek-reasoner 映射到 v4-flash
+ * - legacy chat / reasoner id 映射到 V4 Flash
  */
 export function resolveDeepSeekRequest(
   config: AppConfig,
@@ -139,12 +141,12 @@ export function resolveDeepSeekRequest(
   let model = resolveEffectiveAgentModel(config, requestedModel);
   const effort = normalizeReasoningEffort(options.reasoningEffort);
 
-  if (model === "deepseek-reasoner") {
-    return { apiModel: "deepseek-v4-flash", thinking: "enabled", reasoningEffort: effort, isDeepSeek: true };
+  if (model === LLM_MODEL_IDS.DEEPSEEK_REASONER) {
+    return { apiModel: LLM_MODEL_IDS.DEEPSEEK_V4_FLASH, thinking: "enabled", reasoningEffort: effort, isDeepSeek: true };
   }
 
-  if (model === "deepseek-chat") {
-    model = "deepseek-v4-flash";
+  if (model === LLM_MODEL_IDS.DEEPSEEK_CHAT) {
+    model = LLM_MODEL_IDS.DEEPSEEK_V4_FLASH;
   }
 
   if (model.toLowerCase().includes("vl")) {
@@ -187,10 +189,10 @@ function applyDeepSeekThinkingBody(
   }
 }
 
-/** 根据 model 字段推断 provider（agent.model 可能是 deepseek-chat / kimi-k2.5 等） */
+/** 根据 model 字段推断 provider（agent.model 可能是 v4-flash / kimi-k2.5 等各厂商模型 id） */
 export function inferProviderFromModel(config: AppConfig, model: string): LlmProviderConfig & { id: string } {
   const lower = model.toLowerCase();
-  if (lower.includes("deepseek")) return resolveProvider(config, "deepseek");
+  if (lower.includes(LLM_PROVIDER_DEEPSEEK)) return resolveProvider(config, LLM_PROVIDER_DEEPSEEK);
   if (lower.includes("kimi") || lower.includes("moonshot")) return resolveProvider(config, "kimi");
   if (lower.includes("glm")) return resolveProvider(config, "zhipu");
   if (lower.includes("gpt") || lower.includes("o1") || lower.includes("o3") || lower.includes("o4")) {

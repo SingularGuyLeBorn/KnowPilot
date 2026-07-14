@@ -27,6 +27,7 @@ import {
   resolveToolsForAgentTier,
   parseToolCall,
 } from "./setup.js";
+import { AGENT_TOOL_RESULT_MAX_CHARS } from "@knowpilot/shared";
 import { createPhaseMachine } from "./phase.js";
 import { REFLECTION_UNPASSED_MARK } from "./reflection.js";
 import type { ReactLoopInput, ReactLoopResult, TurnSnapshot } from "./types.js";
@@ -132,7 +133,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     tools: tierTools,
     maxRounds: input.config.llm.maxToolRounds,
     maxToolCalls: input.config.llm.maxToolCallsPerRun,
-    toolResultMaxChars: input.toolResultMaxChars ?? 16000,
+    toolResultMaxChars: input.toolResultMaxChars ?? AGENT_TOOL_RESULT_MAX_CHARS,
   };
 
   const machine = createPhaseMachine((to, from) => input.hooks?.onPhase?.(to, from));

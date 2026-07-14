@@ -3,6 +3,7 @@
  */
 
 import { trpcMutate } from "./trpcE2e";
+import { DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 
 const ASYNC_KIND = "async_agent";
 
@@ -19,7 +20,7 @@ export async function seedAsyncQueueTasks(
 ) {
   const agentSnapshot = {
     id: "e2e-agent",
-    model: "deepseek-v4-flash",
+    model: DEFAULT_LLM_MODEL,
     systemPrompt: "E2E 测试",
     tools: [] as string[],
   };

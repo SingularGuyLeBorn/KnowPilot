@@ -5,7 +5,7 @@
 
 import path from "path";
 import fs from "fs";
-import { formatToolResultHint } from "@knowpilot/shared";
+import { formatToolResultHint, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 import { loadRootEnv, getAppConfig } from "../infra/config.js";
 import { performOcrFromFile, getOcrStatus, probeOcrPython } from "../infra/ocrService.js";
 import { executeNativeTool, syncSearchEnvFromConfig } from "../infra/nativeTools.js";
@@ -267,7 +267,7 @@ async function main() {
   const t2 = Date.now();
   const article = await executeNativeTool(
     "read_article",
-    { url: "https://api-docs.deepseek.com/", timeout: 25000, embedOcr: false },
+    { url: `https://api-docs.${LLM_PROVIDER_DEEPSEEK}.com/`, timeout: 25000, embedOcr: false },
     ctx,
   );
   const a = article as { title?: string; platform?: string; method?: string; contentChars?: number; elapsedMs?: number };
@@ -291,7 +291,7 @@ async function main() {
     await optionalStep("read_article (GitHub README)", async () => {
     const githubUrl =
       process.env.GITHUB_SMOKE_URL?.trim() ||
-      "https://raw.githubusercontent.com/deepseek-ai/DeepSeek-V3/main/README.md";
+      `https://raw.githubusercontent.com/${LLM_PROVIDER_DEEPSEEK}-ai/DeepSeek-V3/main/README.md`;
     console.log("\n=== read_article (GitHub) ===");
     const t = Date.now();
     const gh = await executeNativeTool(
@@ -343,7 +343,7 @@ async function main() {
       {
         label: "GitHub",
         envVar: "GITHUB_SMOKE_URL",
-        defaultUrl: "https://raw.githubusercontent.com/deepseek-ai/DeepSeek-V3/main/README.md",
+        defaultUrl: `https://raw.githubusercontent.com/${LLM_PROVIDER_DEEPSEEK}-ai/DeepSeek-V3/main/README.md`,
         minChars: 80,
         timeout: 35000,
       },
@@ -461,7 +461,7 @@ async function main() {
   const t3 = Date.now();
   const scraped = await executeNativeTool(
     "scrape_web_page",
-    { url: "https://api-docs.deepseek.com/", timeout: 25000 },
+    { url: `https://api-docs.${LLM_PROVIDER_DEEPSEEK}.com/`, timeout: 25000 },
     ctx,
   );
   const s = scraped as { title?: string; textTruncated?: boolean; text?: string; textChars?: number; elapsedMs?: number };

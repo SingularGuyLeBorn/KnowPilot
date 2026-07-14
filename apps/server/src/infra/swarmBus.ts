@@ -12,14 +12,15 @@
 
 import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
+import { SWARM_MAX_DEPTH, SWARM_MAX_QUEUE_SIZE } from "@knowpilot/shared";
 import {
   checkUpwardMessageTiming,
   checkCrossWorkspace,
   type PermissionError,
 } from "./swarmPermissionGuard.js";
 
-const MAX_DEPTH = 10;
-const MAX_QUEUE_SIZE = 100;
+const MAX_DEPTH = SWARM_MAX_DEPTH;
+const MAX_QUEUE_SIZE = SWARM_MAX_QUEUE_SIZE;
 
 export interface AgentMessageInput {
   fromAgentId: string;

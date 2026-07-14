@@ -12,23 +12,10 @@
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { resolveSafePath } from "./safePath.js";
+import { TIER_DEFAULT_TOOLS } from "@knowpilot/shared";
 
-const MANAGER_DEFAULT_TOOLS = [
-  "native:web_search",
-  "native:read_file",
-  "native:write_file",
-  "native:list_directory",
-  "native:invoke_api",
-  "native:async_task_run",
-  "native:async_task_status",
-  "native:async_task_wait",
-  "native:async_task_cancel",
-  "native:spawn_subagent",
-  "native:session_rotate",
-  "native:agent_create_sub",
-  "native:agent_send_message",
-  "native:agent_report_back",
-];
+/** 管理 Agent 默认工具清单：单点定义在 shared（TIER_DEFAULT_TOOLS.manager） */
+const MANAGER_DEFAULT_TOOLS = TIER_DEFAULT_TOOLS.manager;
 
 export interface ProvisionWorkspaceInput {
   name: string;
@@ -80,7 +67,7 @@ export async function provisionWorkspace(
     const mgrResult = await services.agent.create({
       name: `${name} 管理 Agent`,
       description: `${name} Workspace 的管理 Agent`,
-      model: input.managerModel ?? "deepseek-v4-flash",
+      model: input.managerModel ?? config.llm.defaultModel,
       systemPrompt: managerPrompt,
       tools: MANAGER_DEFAULT_TOOLS,
       tier: "manager",
@@ -98,7 +85,7 @@ export async function provisionWorkspace(
       await services.session
         .create({
           title: `${name} 管理主会话`,
-          model: input.managerModel ?? "deepseek-v4-flash",
+          model: input.managerModel ?? config.llm.defaultModel,
           agentId: managerAgentId,
           isMainSession: true,
         })

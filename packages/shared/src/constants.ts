@@ -114,6 +114,9 @@ export function memoryWorkspaceScope(workspaceId: string): string {
 export const MEMORY_FLUSH_STRENGTH_PREFERENCE = 0.95;
 export const MEMORY_FLUSH_STRENGTH_DEFAULT = 0.85;
 
+/** 新记忆初始强度（memoryRepository.create / createMemorySchema 默认值同源） */
+export const MEMORY_INITIAL_STRENGTH = 1.0;
+
 /** 长期记忆每日衰减系数（decayMemories，挂 heartbeat 每日 cron） */
 export const MEMORY_DECAY_FACTOR_PER_DAY = 0.95;
 /** 衰减后低于该强度的记忆归档删除 */
@@ -133,6 +136,29 @@ export const DEFAULT_COMPACT_TRIGGER_RATIO = 0.75;
 export const DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS = 128_000;
 export const DEFAULT_COMPACT_KEEP_RECENT = 8;
 export const DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS = 4_000;
+
+/* ─── LLM 模型与厂商（W8 常量化收敛：全仓引用此处，禁止裸字符串） ─── */
+
+/** DeepSeek 厂商 id（config.llm.providers key、provider 嗅探、credential key 共用） */
+export const LLM_PROVIDER_DEEPSEEK = "deepseek";
+
+/** 内置模型 id（与下方 CHAT_MODELS 注册表对齐；legacy id 由 llmClient 映射到 V4 Flash） */
+export const LLM_MODEL_IDS = {
+  DEEPSEEK_V4_FLASH: "deepseek-v4-flash",
+  DEEPSEEK_V4_PRO: "deepseek-v4-pro",
+  DEEPSEEK_VL2: "deepseek-vl2",
+  /** legacy：映射到 V4 Flash 非思考 */
+  DEEPSEEK_CHAT: "deepseek-chat",
+  /** legacy：映射到 V4 Flash 思考 */
+  DEEPSEEK_REASONER: "deepseek-reasoner",
+} as const;
+
+/**
+ * 全局默认 LLM 模型 id 的最终兜底常量。
+ * server 侧实际生效值见 config.llm.defaultModel（解析优先级：env DEFAULT_LLM_MODEL
+ * > config.yaml llm.defaultModel > 本常量）；web / 纯静态场景直接用本常量。
+ */
+export const DEFAULT_LLM_MODEL = LLM_MODEL_IDS.DEEPSEEK_V4_FLASH;
 
 /** Chat 可选模型（对齐 DeepSeek V4 API：https://api-docs.deepseek.com/guides/thinking_mode） */
 export interface ChatModelOption {
@@ -158,9 +184,9 @@ export interface ChatModelOption {
 
 export const CHAT_MODELS: ChatModelOption[] = [
   {
-    id: "deepseek-v4-flash",
+    id: LLM_MODEL_IDS.DEEPSEEK_V4_FLASH,
     label: "DeepSeek V4 Flash",
-    provider: "deepseek",
+    provider: LLM_PROVIDER_DEEPSEEK,
     contextWindowTokens: 128_000,
     supportsThinking: true,
     supportsReasoning: true,
@@ -170,9 +196,9 @@ export const CHAT_MODELS: ChatModelOption[] = [
     defaultTemperature: 0.7,
   },
   {
-    id: "deepseek-v4-pro",
+    id: LLM_MODEL_IDS.DEEPSEEK_V4_PRO,
     label: "DeepSeek V4 Pro",
-    provider: "deepseek",
+    provider: LLM_PROVIDER_DEEPSEEK,
     contextWindowTokens: 128_000,
     supportsThinking: true,
     supportsReasoning: true,
@@ -182,9 +208,9 @@ export const CHAT_MODELS: ChatModelOption[] = [
     defaultTemperature: 0.7,
   },
   {
-    id: "deepseek-vl2",
+    id: LLM_MODEL_IDS.DEEPSEEK_VL2,
     label: "DeepSeek VL2（识图）",
-    provider: "deepseek",
+    provider: LLM_PROVIDER_DEEPSEEK,
     contextWindowTokens: 64_000,
     supportsThinking: false,
     supportsVision: true,
@@ -193,17 +219,17 @@ export const CHAT_MODELS: ChatModelOption[] = [
     defaultTemperature: 0.7,
   },
   {
-    id: "deepseek-chat",
+    id: LLM_MODEL_IDS.DEEPSEEK_CHAT,
     label: "DeepSeek Chat（旧 ID → V4 Flash 非思考）",
-    provider: "deepseek",
+    provider: LLM_PROVIDER_DEEPSEEK,
     supportsThinking: true,
     supportsReasoning: true,
     defaultTemperature: 0.7,
   },
   {
-    id: "deepseek-reasoner",
+    id: LLM_MODEL_IDS.DEEPSEEK_REASONER,
     label: "DeepSeek Reasoner（旧 ID → V4 Flash 思考）",
-    provider: "deepseek",
+    provider: LLM_PROVIDER_DEEPSEEK,
     supportsThinking: true,
     supportsReasoning: true,
     reasoningRequired: true,
@@ -224,9 +250,9 @@ export const CHAT_MODELS: ChatModelOption[] = [
 
 /** Chat 设置面板可选模型（V4 Flash / Pro / VL2 + Kimi） */
 export const PRIMARY_CHAT_MODEL_IDS = [
-  "deepseek-v4-flash",
-  "deepseek-v4-pro",
-  "deepseek-vl2",
+  LLM_MODEL_IDS.DEEPSEEK_V4_FLASH,
+  LLM_MODEL_IDS.DEEPSEEK_V4_PRO,
+  LLM_MODEL_IDS.DEEPSEEK_VL2,
   "kimi",
 ] as const;
 
@@ -277,3 +303,98 @@ export function isMemoryInjectable(type: string): boolean {
 export function isMemoryUserCreatable(type: string): boolean {
   return (MEMORY_USER_CREATABLE_TYPES as readonly string[]).includes(type);
 }
+
+/* ─── Swarm 分层与队列上限（W8 单点定义，原 swarmBus / redisSwarmBus / swarmPermissionGuard 三处漂移） ─── */
+
+/** Agent 间委托最大深度（防循环） */
+export const SWARM_MAX_DEPTH = 10;
+/** 单个 Agent 待处理消息队列上限 */
+export const SWARM_MAX_QUEUE_SIZE = 100;
+
+/** Swarm Agent 层级（与 schemas.agentTierSchema 同源） */
+export const AGENT_TIERS = ["super", "manager", "sub"] as const;
+export type AgentTier = (typeof AGENT_TIERS)[number];
+
+/**
+ * 各 tier 新建 Agent 的默认工具清单（单点定义，原 swarmInitializer / workspaceProvision /
+ * loop/setup 三处独立维护）。使用处：swarmInitializer（super）、workspaceProvision（manager）、
+ * loop/setup resolveToolsForAgentTier（sub 兜底）。
+ */
+export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
+  super: [
+    "native:web_search",
+    "native:read_file",
+    "native:write_file",
+    "native:list_directory",
+    "native:invoke_api",
+    "native:async_task_run",
+    "native:async_task_status",
+    "native:async_task_wait",
+    "native:async_task_cancel",
+    "native:spawn_subagent",
+    "native:session_rotate",
+    "native:agent_create",
+    "native:agent_update",
+    "native:agent_delete",
+    "native:agent_inspect",
+    "native:agent_send_message",
+    "native:workspace_create",
+    "native:workspace_archive",
+  ],
+  manager: [
+    "native:web_search",
+    "native:read_file",
+    "native:write_file",
+    "native:list_directory",
+    "native:invoke_api",
+    "native:async_task_run",
+    "native:async_task_status",
+    "native:async_task_wait",
+    "native:async_task_cancel",
+    "native:spawn_subagent",
+    "native:session_rotate",
+    "native:agent_create_sub",
+    "native:agent_send_message",
+    "native:agent_report_back",
+  ],
+  sub: [
+    "native:sleep",
+    "native:async_task_run",
+    "native:agent_report_back",
+    "native:read_file",
+    "native:list_directory",
+    "native:web_search",
+  ],
+};
+
+/** 内置 assistant（用户默认助手，manager tier）的工具清单 —— agentResolver 创建与补齐检查共用同一份 */
+export const ASSISTANT_DEFAULT_TOOLS: string[] = [
+  "native:web_search",
+  "native:read_article",
+  "native:scrape_web_page",
+  "native:read_file",
+  "native:write_file",
+  "native:list_directory",
+  "native:invoke_api",
+  "native:spawn_subagent",
+  "native:async_task_run",
+  "native:session_rotate",
+  "native:session_compact",
+  "native:sleep",
+  "native:git_status",
+  "native:memory_create",
+  "native:memory_search",
+  "skill:*",
+  "mcp:filesystem",
+];
+
+/* ─── Agent 运行时阈值（W8 常量化收敛） ─── */
+
+/** Agent 工具结果进 LLM 上下文的单条截断上限（reactLoop snapshot 与 read_article 同源） */
+export const AGENT_TOOL_RESULT_MAX_CHARS = 16_000;
+
+/** 心跳连续失败达到该次数时邮件告警一次（复用 send_email 通道） */
+export const HEARTBEAT_MAX_CONSECUTIVE_FAILURES = 3;
+
+/** pending 审批默认过期毫秒（24h；env APPROVAL_PENDING_TTL_MS 可覆盖，0 关闭 TTL） */
+export const APPROVAL_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;

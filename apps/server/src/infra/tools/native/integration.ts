@@ -49,6 +49,7 @@ import {
   refreshUserAccessToken,
 } from "../../feishuClient.js";
 import { getCredentialValue } from "../../credentialVault.js";
+import { sendEmailNotification } from "../../emailNotifier.js";
 import { refreshTokenManually as refreshFileToken } from "../../external/larkTokenManager.js";
 import {
   getYuqueCredentials,
@@ -565,54 +566,13 @@ async function feishuRefreshTokenTool(args: Record<string, unknown>, ctx: Native
 // ─── 邮件通知工具 ───
 
 async function sendEmailTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const subject = String(args.subject || "");
-  const body = String(args.body || "");
-  if (!subject || !body) return { error: "send_email 需要 subject 和 body" };
-
-  const provider = ctx.config.emailProvider || process.env.EMAIL_PROVIDER || "none";
-  if (provider === "none" || !provider) {
-    return { error: "邮件未配置（EMAIL_PROVIDER=none），请设置 EMAIL_PROVIDER=smtp 或 agentemail。" };
-  }
-  const to = (args.to as string) || process.env.EMAIL_TO || "";
-  if (!to) return { error: "未配置收件人（EMAIL_TO 环境变量或 to 参数）" };
-
-  try {
-    if (provider === "smtp") {
-      // SMTP 发送（需 nodemailer，动态导入避免未安装时崩溃）
-      // @ts-ignore — nodemailer 可选依赖，未安装时 catch 返回 null
-      const nodemailer: any = await import("nodemailer").catch(() => null);
-      if (!nodemailer?.default?.createTransport && !nodemailer?.createTransport) return { error: "nodemailer 未安装，无法通过 SMTP 发送邮件。" };
-      const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_SMTP_HOST,
-        port: Number(process.env.EMAIL_SMTP_PORT || "587"),
-        secure: process.env.EMAIL_SMTP_SECURE === "true",
-        auth: { user: process.env.EMAIL_SMTP_USER, pass: process.env.EMAIL_SMTP_PASS },
-      });
-      await transporter.sendMail({ from: process.env.EMAIL_SMTP_USER, to, subject, text: body });
-    } else if (provider === "agentemail") {
-      // AgentEmail API（简单 fetch）
-      const apiKey = process.env.AGENTEMAIL_API_KEY;
-      if (!apiKey) return { error: "AGENTEMAIL_API_KEY 未配置。" };
-      const res = await fetch("https://api.agentemail.com/v1/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ to, subject, body }),
-        signal: undefined,
-      });
-      if (!res.ok) return { error: `AgentEmail 发送失败: HTTP ${res.status}` };
-    } else {
-      return { error: `未知的邮件提供商: ${provider}` };
-    }
-
-    await ctx.services.log?.create?.({
-      level: "info", component: "swarm", event: "email_sent",
-      message: `邮件已发送: ${subject} → ${to}`,
-      metadata: { subject, to, provider, agentId: ctx.agentSnapshot?.id },
-    }).catch(() => {});
-    return { success: true, message: `邮件已发送到 ${to}` };
-  } catch (err) {
-    return { error: `邮件发送失败: ${err instanceof Error ? err.message : String(err)}` };
-  }
+  // 发送通道单点实现见 infra/emailNotifier.ts（HeartbeatEngine 失败告警复用同一通道）
+  return sendEmailNotification(ctx.config, ctx.services.log, {
+    subject: String(args.subject || ""),
+    body: String(args.body || ""),
+    to: (args.to as string) || undefined,
+    agentId: ctx.agentSnapshot?.id,
+  });
 }
 
 const INTEGRATION_DEFS: NativeToolDefinition[] = [

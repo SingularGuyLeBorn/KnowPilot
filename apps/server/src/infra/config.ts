@@ -9,10 +9,13 @@ import fs from "fs";
 import path from "path";
 import { load as loadYaml } from "js-yaml";
 import { z } from "zod";
+import { DEFAULT_LLM_MODEL, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 import { buildEffectiveSearchPriorityString } from "./metablog/search/priority.js";
 
 /** config.yaml llm 段：弹性调用参数（缺失时给默认值，向后兼容旧 config.yaml） */
 const LlmYamlSchema = z.object({
+  /** 全局默认模型 id（空 = 回退 shared 常量 DEFAULT_LLM_MODEL；env DEFAULT_LLM_MODEL 优先） */
+  defaultModel: z.string().default(""),
   maxRetries: z.coerce.number().int().min(0).default(3),
   baseDelayMs: z.coerce.number().int().min(0).default(1000),
   fallbackModels: z.array(z.string()).default([]),
@@ -56,6 +59,8 @@ export interface AppConfig {
   emailProvider: string;
   llm: {
     defaultProvider: string;
+    /** 全局默认模型 id：env DEFAULT_LLM_MODEL > config.yaml llm.defaultModel > shared DEFAULT_LLM_MODEL 常量 */
+    defaultModel: string;
     dailyBudget: number;
     maxToolRounds: number;
     /** 单次 Agent 运行的总工具调用次数上限（#32a：用户确认 168） */
@@ -273,11 +278,11 @@ export function createAppConfig(): AppConfig {
   const contentDir = resolveContentDir(projectRoot);
 
   const providers: Record<string, LlmProviderConfig> = {
-    deepseek: readProvider(
+    [LLM_PROVIDER_DEEPSEEK]: readProvider(
       ["DEEPSEEK_MODEL", "VITE_DEEPSEEK_MODEL"],
       ["DEEPSEEK_API_KEY", "VITE_DEEPSEEK_API_KEY"],
       ["DEEPSEEK_BASE_URL", "VITE_DEEPSEEK_BASE_URL"],
-      "deepseek-v4-flash",
+      DEFAULT_LLM_MODEL,
     ),
     kimi: readProvider(
       ["KIMI_MODEL", "VITE_KIMI_MODEL"],
@@ -394,7 +399,8 @@ export function createAppConfig(): AppConfig {
     webHost: readEnv("WEB_HOST") || "127.0.0.1",
     emailProvider: readEnv("EMAIL_PROVIDER") || "none",
     llm: {
-      defaultProvider: readEnv("LLM_DEFAULT_PROVIDER") || "deepseek",
+      defaultProvider: readEnv("LLM_DEFAULT_PROVIDER") || LLM_PROVIDER_DEEPSEEK,
+      defaultModel: readEnv("DEFAULT_LLM_MODEL") || llmYaml.defaultModel || DEFAULT_LLM_MODEL,
       dailyBudget: parseFloat(readEnv("LLM_DAILY_BUDGET") || "10"),
       // 默认 12 轮：覆盖绝大多数 ReAct 场景，避免坏 LLM 空转到 100 轮长时间转圈
       maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "12", 10)),
