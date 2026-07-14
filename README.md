@@ -118,6 +118,35 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 **我的前三**：Augmote（语义完整 + 零撞名）、Mote（极简直译）、Loupe（工具隐喻最贴知识管理）。
 **你的首选**：PrismWeave。
 
+### D2. PrismWeave 风格二词复合（追加 20）
+
+> 公式：前半取「见微」（光/镜/微尘），后半取「知著」（织机/经纬/典籍）。⭐ 为本组推荐。
+
+| # | 名字 | 构成 | 意象 / 备注 |
+|---|---|---|---|
+| 52 | ⭐ **MoteLoom** | Mote + Loom | 微尘 + 织机；loom 双关「隐约浮现」（loom on the horizon）——见微知著的压缩包，比 Augmote 更温润 |
+| 53 | ⭐ **PrismLoom** | Prism + Loom | 棱镜 + 织机/预兆浮现；与你首选同源，「织」感更强 |
+| 54 | ⭐ **IrisWeave** | Iris + Weave | 虹膜（看见）+ 鳶尾花（花园）+ 编织，一词三意，极贴本项目 |
+| 55 | ⭐ **GlyphWeave** | Glyph + Weave | 字符/符文 + 编织，知识感最强的一组 |
+| 56 | MoteWeave | Mote + Weave | 微尘编织，直译「见微」+ 织，最朴素的对仗 |
+| 57 | LumenWeave | Lumen + Weave | 光通量单位 + 编织，流畅好读；撞 Laravel Lumen 框架 |
+| 58 | WarpWeft | Warp + Weft | 经线 + 纬线，「经纬」直译，全头韵；丢了「微」但格局大 |
+| 59 | LoupeLoom | Loupe + Loom | 珠宝镜 + 织机，全头韵，工具感 |
+| 60 | GlimmerWeave | Glimmer + Weave | 微光编织，柔和 |
+| 61 | SpectraWeave | Spectra + Weave | 光谱编织，学术感 |
+| 62 | OpalWeave | Opal + Weave | 蛋白石变彩效应 + 编织，华美 |
+| 63 | KaleidoWeave | Kaleido + Weave | 万花筒编织，绚丽但偏长 |
+| 64 | LensWeave | Lens + Weave | 透镜编织，最短平快 |
+| 65 | HaloWeave | Halo + Weave | 光晕编织；撞游戏 Halo |
+| 66 | RefractLoom | Refract + Loom | 折射 + 织机，物理感 |
+| 67 | SporeWeave | Spore + Weave | 孢子 + 编织，数字花园生长感 |
+| 68 | CodexWeave | Codex + Weave | 古抄本 + 编织；撞 OpenAI Codex |
+| 69 | FolioWeave | Folio + Weave | 对开本 + 编织，书卷气 |
+| 70 | QuillWeave | Quill + Weave | 羽毛笔 + 编织；撞 Quill.js 编辑器 |
+| 71 | AtlasWeave | Atlas + Weave | 地图集 + 编织，「织出全局地图」；撞 MongoDB Atlas |
+
+**本组前三**：MoteLoom（loom 的「预兆浮现」双关是神来之笔）、IrisWeave（虹膜+鳶尾+编织三意叠加）、GlyphWeave（知识感最直给）。
+
 ---
 
 ## 核心能力
