@@ -102,7 +102,7 @@ KnowPilot/
 详见 `docs/development/README.md`。关键事实：
 
 - **Post**：L1 已封板（博客、编辑器、同步、删除、Command Palette、图片上传含粘贴）。
-- **Agent / Skill / McpServer / Memory / Prompt**：L2 后端 CRUD、内容双向写回、`db:sync`、管理页已完成；Agent ReAct + SSE 流式 `/chat`（三栏 UI）、`skill:*` 双路径、MCP 截断重连、auto-compact 已实现。
+- **Agent / Skill / McpServer / Memory / Prompt**：L2 后端 CRUD、内容双向写回、`db:sync`、管理页已完成；Agent ReAct + SSE 流式 `/chat`（三栏 UI）、`skill:*` 双路径、MCP 截断重连熔断（W12 断路器）、auto-compact 已实现。
 - **ChatSession / ChatMessage**：`/chat` 会话 UI + 后端 CRUD + Agent 运行时已接入。
 - **File / GitRepo / Task / Log / Workspace**：L3 后端 CRUD + 管理页 + Task sync/Scheduler 已完成。
 - **Trigger / Approval**：L4 后端 + 前端页（`/triggers`、`/approvals`）+ 审批拦截已通。
@@ -338,6 +338,7 @@ pnpm --filter @knowpilot/server test
 | `chatHistory.test.ts` | 扁平存储重建多轮 ReAct 消息链 |
 | `async-task-queue.test.ts` | `async_task_run/status/wait` 与队列状态 |
 | `capabilities.test.ts` / `platformFetch.test.ts` | 运行时能力 / 平台 fetch |
+| `circuitBreaker.test.ts` | W12：断路器三态/非法转移拒绝、MCP open 零真实连接、审批清理 cron 挂载、心跳 suspended 暂停/恢复 |
 | `e2e/blog-smoke.spec.ts` | L1 博客冒烟（/posts、/editor、/、/posts/[slug]） |
 | `e2e/admin-pages.spec.ts` | 管理页冒烟（20 路由 + /about） |
 | `e2e/chat-thinking-real.spec.ts` | 真实 LLM Chat 发消息/重试、思考时间线不重复 |
@@ -490,6 +491,7 @@ reflection:
 
 ## 当前状态与近期变更（2026-07-15）
 
+- **W12 MCP 断路器 + 审批清理定时化 + 心跳熔断暂停已落地**：新增 `infra/circuitBreaker.ts` 通用三态断路器（closed→open→half-open；`transition()` 转移表拒绝非法转移 open→closed / closed→half-open；open 期陈旧成功不合闸、陈旧失败不重计时；half-open 单探测）。接入 `executeMcpTool`：每 MCP server 一实例（模块级 Map + `__resetMcpCircuitBreakersForTests`），首试+重连重试整体计一次失败，open 期零真实连接、返回 `MCP_CIRCUIT_OPEN` 结构化结果喂回 LLM（不抛）。审批过期清理每日 cron（`3 4 * * *`）挂 HeartbeatEngine maintenance 通道（不随 refresh 重建；启动一次性清理仍在 index.ts）。心跳 streak 达 `HEARTBEAT_MAX_CONSECUTIVE_FAILURES` → 引擎内存态 suspended 暂停并摘除 cron job（恢复：下次 refresh() 或 `resumeHeartbeat()`，告警邮件同步说明）。测试 `__tests__/circuitBreaker.test.ts`（11 例）。
 - **W11 Run 活状态 + awaiting_human 已落地**：reactLoop 内核统一接管 Run 生命周期——入口落 `status:"running"` 行、每轮 tool_batch 后 `{ phase, roundsUsed, executedToolsCount }` 快照写 `Run.output`（5s 节流，phase 转移点强制写）、终态统一 update（success/failed，用户 abort 标 cancelled），调用方（agentStream/agentRuntime）不再自建终态行。新增 `awaiting_human` phase（合法转移 `tool_batch → awaiting_human → llm`）：工具触发审批 pending 时 loop 挂起，等 `approval_resolved` 显式事件（approvalGate 等待注册表 `waitApprovalResolution`/`notifyApprovalResolved`，waiter 自带 TTL 截止与 expireStaleApprovals 同规则）唤醒，续跑消息复用 W7 injectUserMessages 注入原 session（kind=approval）；拒绝/过期注入消息让 LLM 收尾、run 正常结束。`recoverStaleRuns` 启动挂载（index.ts，recoverStaleAsyncJobs 旁）把遗留 running Run 标 `interrupted`（如实不续跑）；/runs 页补 interrupted chips。测试：`runLifecycle.test.ts`（5 例）+ `agentRunPhase.test.ts` 扩充。
 
 - **W10 SwarmOrchestrator 中介者已落地**：新增叶子模块 `infra/swarmOrchestrator.ts`（仅依赖 asyncJobOrchestrator/swarmPermissionGuard，无环），统一 `dispatch(taskSpec) → swarmPermissionGuard 校验 → 60s spawn 去重（agentId+hash(taskText)）→ 并发池/inline 执行 → 结果聚合 → Log 审计` 公共骨架。四入口改为调用方：`spawn_subagent`（inline，同步等待语义不动）、`async_task_run`（startAsyncAgentTask 内走 pool）、`heartbeatEngine`（**已删除返回 undefined 的 invokeTrpc 桩**，心跳 Agent 与 trigger/async 共用 createTrpcInvoker 真实通道）、`TriggerEngine`（run_agent 从直跑改为 pool + await completion 保住 per-trigger 互斥）。`swarmPermissionGuard.ts` 空块检查已删，#41 时机约束单点归属 swarmBus.send → checkUpwardMessageTiming。防线测试 `__tests__/swarmOrchestrator.test.ts`（dispatch 双路 spy / spawn 去重 / guard / 在途幂等）。

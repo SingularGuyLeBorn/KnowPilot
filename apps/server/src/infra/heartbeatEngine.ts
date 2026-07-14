@@ -5,15 +5,20 @@
  *   { enabled: true, cron: "0 9 * * *", goal: "检查并整理..." }
  *
  * 触发时：
- * 1. 检查 Agent 状态（active/idle 才触发，dormant/deleted 跳过）
+ * 1. 检查 Agent 状态（active/idle 才触发，dormant/deleted 跳过；W12 suspended 暂停态跳过）
  * 2. 检查 LLM 预算（耗尽则跳过 + 记录 budget_exceeded）
  * 3. 找到或创建该 Agent 的心跳专用 session（kind="heartbeat"，与主会话/用户对话隔离）
  * 4. 向心跳 session 注入一条 source="system" 的心跳消息
  * 5. 自动触发 agentStream（无需用户发起）
  * 6. 更新 heartbeat.lastRunAt + lastRunStatus + consecutiveFailures
  * 7. 连续失败达 HEARTBEAT_MAX_CONSECUTIVE_FAILURES → 邮件告警用户一次（#4，复用 send_email 通道）
+ *    + W12：暂停该 Agent 心跳（suspended 熔断，见 suspendHeartbeat 注释的恢复语义）
  *
  * 并发控制：心跳任务走 asyncJobOrchestrator，与手动启动的任务共享并发池（#13）
+ *
+ * 维护任务（独立于 Agent 心跳 jobs，refresh() 重建不触碰）：
+ * - W5 记忆衰减（每日 03:17）
+ * - W12 审批过期清理（每日 04:03，复用 W1 expireStaleApprovals 的 updateMany 实现）
  */
 
 import cron, { type ScheduledTask } from "node-cron";
@@ -41,6 +46,9 @@ const MAX_CONSECUTIVE_FAILURES = HEARTBEAT_MAX_CONSECUTIVE_FAILURES;
 /** W5：记忆衰减维护任务 cron（每日 03:17，避开心跳高峰） */
 const MEMORY_DECAY_CRON = "17 3 * * *";
 
+/** W12：审批过期清理维护任务 cron（每日 04:03，与记忆衰减错开） */
+const APPROVAL_CLEANUP_CRON = "3 4 * * *";
+
 type HeartbeatState = {
   enabled: boolean;
   cron: string;
@@ -56,6 +64,10 @@ export class HeartbeatEngine {
   private started = false;
   // W5：记忆衰减等维护任务独立于 Agent 心跳 jobs（refresh 全量重建时不被动）
   private maintenanceJob: ScheduledTask | null = null;
+  // W12：审批过期清理维护任务（同 maintenanceJob 通道，不随 refresh 重建）
+  private approvalCleanupJob: ScheduledTask | null = null;
+  // W12：连续失败熔断暂停集（纯内存态，恢复语义见 suspendHeartbeat 注释）
+  private suspendedAgents = new Set<string>();
   // A14：事件驱动 refresh 的防抖句柄与监听器引用（stop 时清理）
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private eventHandler: ((payload: EntityEventPayload<unknown>) => void) | null = null;
@@ -92,6 +104,13 @@ export class HeartbeatEngine {
       });
     }
 
+    // W12：审批过期清理维护任务（启动时的一次性清理在 index.ts，这里负责每日定时清扫）
+    if (!this.approvalCleanupJob) {
+      this.approvalCleanupJob = cron.schedule(APPROVAL_CLEANUP_CRON, () => {
+        void this.runApprovalCleanup();
+      });
+    }
+
     console.log(`  💓 [HeartbeatEngine] 启动完成，共 ${this.jobs.size} 个心跳任务`);
 
     // A14：监听 agent 配置变更事件，防抖后增量刷新 cron 注册，替代此前每 60s 全量轮询重建。
@@ -115,6 +134,10 @@ export class HeartbeatEngine {
       this.maintenanceJob.stop();
       this.maintenanceJob = null;
     }
+    if (this.approvalCleanupJob) {
+      this.approvalCleanupJob.stop();
+      this.approvalCleanupJob = null;
+    }
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -137,6 +160,9 @@ export class HeartbeatEngine {
       // 停止所有现有任务
       for (const job of this.jobs.values()) job.stop();
       this.jobs.clear();
+      // W12：refresh 重建即恢复——清空 suspended 暂停集，被熔断暂停的 Agent 随本轮重新注册
+      //（若依旧连续失败达阈值会再次暂停；这是「下次 refresh() 恢复」的唯一实现点）
+      this.suspendedAgents.clear();
 
       // 重新加载
       const agents = await this.prisma.agent.findMany({
@@ -178,11 +204,32 @@ export class HeartbeatEngine {
     }
   }
 
+  /** W12：每日审批过期清理（复用 W1 expireStaleApprovals；失败不阻塞心跳主流程） */
+  async runApprovalCleanup(): Promise<number> {
+    try {
+      const { expireStaleApprovals } = await import("./approvalGate.js");
+      const n = await expireStaleApprovals(this.services);
+      if (n > 0) {
+        console.log(`  ⚠️ [ApprovalCleanup] 已将 ${n} 条过期 pending 审批标为 rejected`);
+      }
+      return n;
+    } catch (err) {
+      console.warn(`  ⚠️ [ApprovalCleanup] 执行失败:`, err instanceof Error ? err.message : err);
+      return 0;
+    }
+  }
+
   /** 手动触发某个 Agent 的心跳（测试/手动用） */
   async triggerHeartbeat(agentId: string): Promise<void> {
     try {
       const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
       if (!agent || agent.status === "deleted" || agent.status === "dormant") return;
+
+      // W12：suspended 熔断暂停态跳过（恢复：下次 refresh() 或 resumeHeartbeat()）
+      if (this.suspendedAgents.has(agentId)) {
+        console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳已 suspended（连续失败达阈值），跳过`);
+        return;
+      }
 
       const hb = this.parseHeartbeat(agent.heartbeat);
       if (!hb?.enabled || !hb.goal) return;
@@ -364,7 +411,7 @@ export class HeartbeatEngine {
                 const lastError = err instanceof Error ? err.message : String(err);
                 const notify = await sendEmailNotification(this.config, this.services.log, {
                   subject: `[KnowPilot] Agent「${agent.name}」心跳连续失败 ${updatedHb.consecutiveFailures} 次`,
-                  body: `Agent「${agent.name}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态，必要时在 /agents 页调整或停用心跳。`,
+                  body: `Agent「${agent.name}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次，心跳已自动暂停（suspended）。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态；修复后更新任意 Agent 配置触发 refresh() 即自动恢复，或重启服务。`,
                   agentId,
                 });
                 if ("error" in notify) {
@@ -372,6 +419,10 @@ export class HeartbeatEngine {
                 } else {
                   console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，已邮件告警用户`);
                 }
+              }
+              // W12：达阈值（含恢复后再失败）→ 暂停该 Agent 心跳（幂等）
+              if (updatedHb && updatedHb.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                this.suspendHeartbeat(agentId, agent.name);
               }
             }
             return { status: "failed", error: err instanceof Error ? err.message : String(err) };
@@ -442,6 +493,41 @@ export class HeartbeatEngine {
     );
     await this.persistHeartbeat(agentId, { ...hb, loopContract: next });
     return next;
+  }
+
+  /**
+   * W12：连续失败达阈值 → 暂停该 Agent 心跳（熔断置 suspended）。
+   *
+   * 语义：纯引擎内存态，不落库——
+   * - 立即摘除 cron job；triggerHeartbeat 对 suspended Agent 直接跳过；
+   * - 恢复机制（勿过度设计，二选一）：
+   *   ① 下次 refresh()：Agent 配置变更（agent.created/updated/deleted 事件防抖触发）或服务重启
+   *      都会全量重建注册并清空暂停集——用户收到告警邮件后修复配置即自动恢复；
+   *   ② 手动 resumeHeartbeat(agentId)（cron 注册随下次 refresh() 重建）。
+   * - 恢复后若再失败，streak ≥ 阈值会立即重新暂停（邮件仍只在 === 阈值时发一次）。
+   */
+  private suspendHeartbeat(agentId: string, agentName: string): void {
+    if (this.suspendedAgents.has(agentId)) return;
+    this.suspendedAgents.add(agentId);
+    const job = this.jobs.get(agentId);
+    if (job) {
+      job.stop();
+      this.jobs.delete(agentId);
+    }
+    console.error(
+      `  💓 [HeartbeatEngine] Agent ${agentName} 心跳连续失败达阈值，已暂停（suspended）。` +
+        `下次 refresh() 或 resumeHeartbeat() 恢复。`,
+    );
+  }
+
+  /** W12：手动恢复被暂停的心跳（从暂停集摘除；cron 注册随下次 refresh() 重建） */
+  resumeHeartbeat(agentId: string): void {
+    this.suspendedAgents.delete(agentId);
+  }
+
+  /** W12：观测/测试用——该 Agent 心跳是否处于 suspended 暂停态 */
+  isHeartbeatSuspended(agentId: string): boolean {
+    return this.suspendedAgents.has(agentId);
   }
 
   private async updateHeartbeatStatus(

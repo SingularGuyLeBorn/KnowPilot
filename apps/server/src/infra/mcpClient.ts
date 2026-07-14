@@ -1,6 +1,6 @@
 /**
  * MCP Client — 连接 content/mcp 配置的 MCP Server，桥接工具到 Agent
- * 含：结果截断 · 断线重连 · 单次重试
+ * 含：结果截断 · 断线重连 · 单次重试 · W12 断路器熔断
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -8,6 +8,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { McpServerEntity } from "../services.js";
 import { executeMockMcpTool, getMockMcpToolSchemas } from "./mockMcpRegistry.js";
+import { CircuitBreaker } from "./circuitBreaker.js";
 
 interface McpToolMeta {
   serverName: string;
@@ -18,8 +19,30 @@ const clientCache = new Map<string, Client>();
 const toolRegistry = new Map<string, McpToolMeta>();
 const schemaCache = new Map<string, Array<{ type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }>>();
 
+/** W12：每个 MCP server 一个断路器实例（模块级；进程重启自然重置） */
+const circuitBreakers = new Map<string, CircuitBreaker>();
+
 const MCP_CONNECT_TIMEOUT_MS = 12_000;
 const MCP_MAX_RESULT_CHARS = 12_000;
+
+function getMcpCircuitBreaker(serverName: string): CircuitBreaker {
+  let breaker = circuitBreakers.get(serverName);
+  if (!breaker) {
+    breaker = new CircuitBreaker(); // 默认 failureThreshold=5 / openDurationMs=60s
+    circuitBreakers.set(serverName, breaker);
+  }
+  return breaker;
+}
+
+/** 测试隔离：清空全部 MCP 断路器实例 */
+export function __resetMcpCircuitBreakersForTests(): void {
+  circuitBreakers.clear();
+}
+
+/** 测试/观测用：读取某 MCP server 的断路器实例（未创建过则为 undefined） */
+export function __getMcpCircuitBreakerForTests(serverName: string): CircuitBreaker | undefined {
+  return circuitBreakers.get(serverName);
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   // 修复：原实现 setTimeout 在 promise 正常完成后未清除，timer 持有 reject 闭包
@@ -185,16 +208,34 @@ export async function executeMcpTool(
   const server = await findMcpServer(services, meta.serverName);
   if (!server.enabled) throw new Error(`MCP Server "${meta.serverName}" 已禁用`);
 
+  // W12 断路器：open 期间零真实连接尝试，结构化错误结果直接喂回 LLM（不抛）
+  const breaker = getMcpCircuitBreaker(server.name);
+  const permit = breaker.tryAcquire();
+  if (!permit.allowed) {
+    const retryAfterSec = Math.ceil(permit.retryAfterMs / 1000);
+    console.warn(`[MCP] ${server.name} 熔断中，跳过 ${meta.toolName} 真实调用（${retryAfterSec}s 后重试）`);
+    return {
+      error: "MCP_CIRCUIT_OPEN",
+      message: `MCP 服务「${server.name}」熔断中（连续失败已达阈值），约 ${retryAfterSec} 秒后自动半开探测恢复，请稍后重试。`,
+      circuitOpen: true,
+      retryAfterMs: permit.retryAfterMs,
+    };
+  }
+
   try {
     const result = await callToolOnce(server, meta.toolName, args, false);
+    breaker.recordSuccess();
     return truncateMcpResult(result);
   } catch (firstErr) {
     console.warn(`[MCP] ${meta.serverName}.${meta.toolName} 失败，尝试重连…`, firstErr instanceof Error ? firstErr.message : firstErr);
     evictClient(server.name);
     try {
       const result = await callToolOnce(server, meta.toolName, args, true);
+      breaker.recordSuccess();
       return truncateMcpResult(result);
     } catch (retryErr) {
+      // 首试 + 重连重试整体计一次失败（避免一次调用双重计数提前开闸）
+      breaker.recordFailure();
       throw new Error(
         `MCP 工具 ${meta.toolName} 调用失败（已重连）：${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
       );
