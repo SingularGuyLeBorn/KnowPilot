@@ -190,7 +190,7 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
     try {
       // W4：优先用 ctx 注入的 resolveAgent（见 createAgentToolContext），缺省回退到 agentResolver 叶子模块
       const resolveAgent = ctx.resolveAgent ?? defaultResolveAgent;
-      const agent = await resolveAgent(ctx.services, targetAgentId);
+      const { agent } = await resolveAgent(ctx.services, targetAgentId);
       if (!agent || agent.status === "deleted") throw new Error("目标 Agent 不存在或已删除");
 
       let mainSession = await ctx.prisma?.chatSession.findFirst({

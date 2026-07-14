@@ -131,8 +131,9 @@ async function runWatch(): Promise<void> {
     const contentDir = getContentDir(syncer.contentDirName);
     if (!fs.existsSync(contentDir)) continue;
 
+    // 忽略点开头目录/文件 与 `_` 开头目录（如 agents/_templates/ 模板目录，W9）
     const watcher = chokidar.watch(contentDir, {
-      ignored: /(^|[/\\])\../,
+      ignored: /(^|[/\\])(\.|_)/,
       persistent: true,
       ignoreInitial: true,
     });

@@ -14,7 +14,8 @@ import { describeLlmError } from "./resilientLlmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
-import { resolveAgent, buildMemoryContext, buildSystemPromptWithHints } from "./agentRuntime.js";
+import { buildMemoryContext, buildSystemPromptWithHints } from "./agentRuntime.js";
+import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 import { resolveMicroCompactToolMaxChars } from "./autoCompact.js";
 import { runReactLoop, createStreamTransport } from "./loop/index.js";
 import { assertLlmBudget } from "./llmBudget.js";
@@ -394,7 +395,8 @@ export async function chatAgentStream(
 
   try {
     assertLlmBudget(config);
-    const agent = await resolveAgent(services, input.agentId);
+    const { agent, drift } = await resolveAgent(services, input.agentId);
+    logAgentDrift(agent.name, drift);
     const skillResolved = await resolveSkillPrompt(services, input.skillId);
     prepared = await prepareMessage(services, input);
 

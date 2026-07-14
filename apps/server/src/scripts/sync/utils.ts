@@ -19,7 +19,11 @@ export function getContentDir(dirName: string): string {
   return dir;
 }
 
-/** 递归获取目录下所有指定扩展名的文件 */
+/**
+ * 递归获取目录下所有指定扩展名的文件。
+ * `_` 开头的目录（如 content/agents/_templates/）是模板/元数据目录，
+ * 一律跳过，不同步为实体（W9）。
+ */
 export function getFilesRecursive(dir: string, extensions: string[], ignoreDirs: string[] = ["images", "public", "assets"]): string[] {
   if (!fs.existsSync(dir)) return [];
 
@@ -31,7 +35,7 @@ export function getFilesRecursive(dir: string, extensions: string[], ignoreDirs:
     const stat = fs.statSync(filePath);
 
     if (stat.isDirectory()) {
-      if (!ignoreDirs.includes(file)) {
+      if (!file.startsWith("_") && !ignoreDirs.includes(file)) {
         results = results.concat(getFilesRecursive(filePath, extensions, ignoreDirs));
       }
     } else if (extensions.some((ext) => file.endsWith(ext))) {

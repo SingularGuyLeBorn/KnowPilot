@@ -62,7 +62,7 @@ import {
   startAsyncAgentTask,
   listQueuedAsyncJobs,
 } from "./infra/asyncJobManager.js";
-import { resolveAgent } from "./infra/agentRuntime.js";
+import { resolveAgent } from "./infra/agentResolver.js";
 
 import { extractTextFromImage, getOcrStatus, probeOcrPython } from "./infra/ocrService.js";
 import {
@@ -505,7 +505,7 @@ const sessionRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const agent = await resolveAgent(ctx.services, input.agentId);
+      const { agent } = await resolveAgent(ctx.services, input.agentId);
       const model = input.model || agent.model;
       const started = await startAsyncAgentTask({
         sessionId: input.parentSessionId,
@@ -533,7 +533,7 @@ const sessionRouter = router({
       if (!original) throw new Error("原子代理会话不存在");
       const orig = original as { parentSessionId?: string | null; agentId?: string | null; model?: string; taskDescription?: string | null };
       if (!orig.parentSessionId) throw new Error("该会话不是子代理，无法重跑");
-      const agent = await resolveAgent(ctx.services, orig.agentId ?? undefined);
+      const { agent } = await resolveAgent(ctx.services, orig.agentId ?? undefined);
       const task = input.taskDescription ?? orig.taskDescription ?? "重跑任务";
       const started = await startAsyncAgentTask({
         sessionId: orig.parentSessionId,

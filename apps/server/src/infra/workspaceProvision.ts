@@ -12,10 +12,7 @@
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { resolveSafePath } from "./safePath.js";
-import { TIER_DEFAULT_TOOLS } from "@knowpilot/shared";
-
-/** 管理 Agent 默认工具清单：单点定义在 shared（TIER_DEFAULT_TOOLS.manager） */
-const MANAGER_DEFAULT_TOOLS = TIER_DEFAULT_TOOLS.manager;
+import { getTierTemplate } from "./agentFactory.js";
 
 export interface ProvisionWorkspaceInput {
   name: string;
@@ -60,16 +57,16 @@ export async function provisionWorkspace(
   // 2. 自动创建管理 Agent（可关）
   let managerAgentId: string | undefined;
   if (input.autoCreateManager !== false) {
-    const managerPrompt =
-      input.managerSystemPrompt ??
-      `你是 ${name} 的管理 Agent。\n你的职责是管理本 Workspace 内的子 Agent，接收来自超级 Agent 或用户的命令并执行/分配。\n你可以创建子 Agent，可以与子 Agent 通信，可以向上级回报结果。`;
+    // W9：默认值（提示词/工具清单）走 AgentFactory 模板 content/agents/_templates/manager.md
+    const managerTemplate = getTierTemplate("manager", { vars: { name } });
+    const managerPrompt = input.managerSystemPrompt ?? managerTemplate.systemPrompt;
 
     const mgrResult = await services.agent.create({
       name: `${name} 管理 Agent`,
       description: `${name} Workspace 的管理 Agent`,
       model: input.managerModel ?? config.llm.defaultModel,
       systemPrompt: managerPrompt,
-      tools: MANAGER_DEFAULT_TOOLS,
+      tools: managerTemplate.tools,
       tier: "manager",
       workspaceId: wsId,
       parentId: input.managerParentId,

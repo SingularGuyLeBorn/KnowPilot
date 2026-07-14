@@ -11,7 +11,7 @@ import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
 import { runReactLoop, createSyncTransport, withReflection } from "./loop/index.js";
 import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
-import { resolveAgent } from "./agentResolver.js";
+import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 export {
   DEFAULT_SUBAGENT_TOOLS,
   resolveToolsForAgentTier,
@@ -91,7 +91,8 @@ export async function runAgent(
 ) {
   const start = Date.now();
   try {
-    const agent = await resolveAgent(services, input.agentId);
+    const { agent, drift } = await resolveAgent(services, input.agentId);
+    logAgentDrift(agent.name, drift);
     const memoryHint = input.input ? await buildMemoryContext(services, input.input, { agentId: agent.id }) : "";
     const messages: LlmMessage[] = [
       {
@@ -168,7 +169,8 @@ export async function chatAgent(
   }
   const displayText = messageText || "（见附件）";
   try {
-    const agent = await resolveAgent(services, input.agentId);
+    const { agent, drift } = await resolveAgent(services, input.agentId);
+    logAgentDrift(agent.name, drift);
     const effectiveModel = input.model || agent.model;
 
     if (!sessionId) {

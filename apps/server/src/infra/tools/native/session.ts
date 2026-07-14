@@ -85,7 +85,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   });
   if (!mainSession) {
     // W4：与下文一致，优先 ctx 注入的 resolveAgent，缺省回退 agentResolver 叶子模块
-    const subAgent = await (ctx.resolveAgent ?? defaultResolveAgent)(ctx.services, subagentId);
+    const { agent: subAgent } = await (ctx.resolveAgent ?? defaultResolveAgent)(ctx.services, subagentId);
     const created = await ctx.services.session.create({
       title: `${subAgent?.name ?? subagentName} 主会话`,
       model: subAgent?.model ?? ctx.agentSnapshot.model,
