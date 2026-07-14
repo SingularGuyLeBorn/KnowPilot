@@ -8,13 +8,19 @@
  */
 
 import type { ServiceContainer } from "./serviceContainer.js";
-import { MEMORY_INJECTABLE_TYPES, memoryAgentScope, MEMORY_SCOPE_GLOBAL } from "@knowpilot/shared";
+import {
+  MEMORY_INJECTABLE_TYPES,
+  memoryAgentScope,
+  memoryWorkspaceScope,
+  MEMORY_SCOPE_GLOBAL,
+} from "@knowpilot/shared";
 import { createMemoryRepository } from "./memoryRepository.js";
 
 /**
  * 构建注入 system prompt 的长期记忆片段。
  * W5：统一走 MemoryRepository（FTS 优先 / LIKE 回退收进仓储，strength×recency 排序）；
- * scope 写时隔离：只读 global + 当前 Agent scope，其他 Agent 的 experience 天然不可见。
+ * W5-followup：三层 scope 读路径——global + workspace:{wid}（Agent 有 Workspace 时）+ agent:{aid}，
+ * 其他 Agent / 其他 Workspace 的私有记忆天然不可见。
  */
 export async function buildMemoryContext(
   services: ServiceContainer,
@@ -23,7 +29,15 @@ export async function buildMemoryContext(
 ): Promise<string> {
   const keyword = userText.slice(0, 80).trim();
   if (!keyword) return "";
-  const scopes = [MEMORY_SCOPE_GLOBAL, ...(options?.agentId ? [memoryAgentScope(options.agentId)] : [])];
+  const scopes = [MEMORY_SCOPE_GLOBAL];
+  if (options?.agentId) {
+    const agent = await services.prisma.agent.findUnique({
+      where: { id: options.agentId },
+      select: { workspaceId: true },
+    });
+    if (agent?.workspaceId) scopes.push(memoryWorkspaceScope(agent.workspaceId));
+    scopes.push(memoryAgentScope(options.agentId));
+  }
   const repo = createMemoryRepository(services);
   const memories = await repo.read({
     keyword,

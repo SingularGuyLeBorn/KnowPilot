@@ -707,6 +707,8 @@ export async function chatAgentStream(
         accumulateExperience(services.prisma, services, agent.id, sessionId!, result, {
           message: prepared!.messageText,
           trigger: "user",
+          // W5-followup：传入 Agent 所属 Workspace，经验同步沉淀到 workspace 层（兄弟 Agent 可见）
+          workspaceId: (agent as any).workspaceId ?? null,
         }, Date.now() - start),
       )
       .catch(() => { /* 经验积累失败不阻塞 */ });

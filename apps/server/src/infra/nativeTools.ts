@@ -28,7 +28,7 @@ import { runSessionCompact } from "./autoCompact.js";
 import { getSwarmBus } from "./swarmBus.js";
 import { provisionWorkspace } from "./workspaceProvision.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "./agentEvolution.js";
-import { createMemoryRepository } from "./memoryRepository.js";
+import { createMemoryRepository, resolveMemoryWriteScope } from "./memoryRepository.js";
 import { hasMockNativeTool, executeMockNativeTool } from "./mockNativeTools.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import type { LlmMessage } from "./llmClient.js";
@@ -94,7 +94,7 @@ import {
 import { captureZhihuLoginState } from "./metablog/auth/zhihuLogin.js";
 import { listSavedCookiePlatforms } from "./cookieJar.js";
 
-import { DEFAULT_AGENT_NATIVE, isMemoryUserCreatable, MEMORY_SCOPE_GLOBAL, memoryAgentScope, type MemoryUserCreatableType } from "@knowpilot/shared";
+import { DEFAULT_AGENT_NATIVE, isMemoryUserCreatable, MEMORY_SCOPE_GLOBAL, memoryAgentScope, memoryWorkspaceScope, type MemoryUserCreatableType } from "@knowpilot/shared";
 import { registerTool, getTool, listTools } from "./tools/registry.js";
 import type { ToolCommand } from "./tools/types.js";
 import {
@@ -260,7 +260,7 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
   {
     name: "memory_create",
     description:
-      "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。不要记可从代码/git/文档直接查到的内容。",
+      "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。scope：agent=仅自己可见（默认）；workspace=同 Workspace 的 Agent 共享；global=全局共享（仅超级 Agent）。不要记可从代码/git/文档直接查到的内容。",
     parameters: {
       type: "object",
       properties: {
@@ -272,6 +272,11 @@ export const NATIVE_TOOL_DEFINITIONS: NativeToolDefinition[] = [
         },
         strength: { type: "number", description: "强度 0-1，默认 1" },
         keywords: { type: "array", items: { type: "string" }, description: "检索关键词" },
+        scope: {
+          type: "string",
+          enum: ["agent", "workspace", "global"],
+          description: "可见范围：agent=仅自己（默认）；workspace=同 Workspace 共享；global=全局（仅超级 Agent）",
+        },
       },
       required: ["content"],
     },
@@ -1541,25 +1546,31 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
       `type 无效：${rawType}。允许：preference（偏好）、semantic（事实）、episodic（经历）、note（笔记）、procedural（流程）。不要记可从代码/文档直接查到的内容。`,
     );
   }
-  const input = {
+  const scope = resolveMemoryWriteScope(args.scope ? String(args.scope) : undefined, {
+    agentId: ctx.agentSnapshot?.id,
+    workspaceId: ctx.agentSnapshot?.workspaceId,
+    tier: ctx.agentSnapshot?.tier,
+  });
+  const repo = createMemoryRepository(ctx.services);
+  const memory = await repo.write({
     content,
     type: rawType as MemoryUserCreatableType,
+    scope,
     strength: Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1,
     keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : [],
-  };
-  const result = await ctx.services.memory.create(input);
-  if (!result.success) throw new Error(result.error?.message || "创建记忆失败");
-  const memory = result.data as MemoryEntity;
-  return { id: memory.id, type: memory.type, strength: memory.strength, keywords: memory.keywords };
+  });
+  return { id: memory.id, type: memory.type, strength: memory.strength, keywords: memory.keywords, scope: memory.scope };
 }
 
 async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const keyword = String(args.keyword || "");
   const type = args.type ? String(args.type) : undefined;
   const pageSize = Math.min(50, Math.max(1, Number(args.pageSize || 20)));
-  // W5：统一走 MemoryRepository，按调用 Agent 注入 scopes（global + 本 Agent），
-  // 其他 Agent 的 experience 等私有记忆不可见。仓储不按页返回，page 参数保留兼容但不再翻页。
-  const scopes = [MEMORY_SCOPE_GLOBAL, ...(ctx.agentSnapshot?.id ? [memoryAgentScope(ctx.agentSnapshot.id)] : [])];
+  // W5-followup：三层 scope 读路径（global + 本 Agent 所在 Workspace + 本 Agent），
+  // 其他 Agent / 其他 Workspace 的私有记忆不可见。仓储不按页返回，page 参数保留兼容但不再翻页。
+  const scopes = [MEMORY_SCOPE_GLOBAL];
+  if (ctx.agentSnapshot?.workspaceId) scopes.push(memoryWorkspaceScope(ctx.agentSnapshot.workspaceId));
+  if (ctx.agentSnapshot?.id) scopes.push(memoryAgentScope(ctx.agentSnapshot.id));
   const repo = createMemoryRepository(ctx.services);
   const items = await repo.read({
     keyword: keyword || undefined,

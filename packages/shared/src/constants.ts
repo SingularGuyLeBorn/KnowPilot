@@ -95,8 +95,19 @@ export const MEMORY_INJECTABLE_TYPES = [...MEMORY_USER_CREATABLE_TYPES] as const
 
 /** Memory scope：global 全局共享；agent:{agentId} 归属特定 Agent；workspace:{workspaceId} 归属 Workspace */
 export const MEMORY_SCOPE_GLOBAL = "global";
+
+/** scope 前缀常量（避免散落模板字符串） */
+export const MEMORY_SCOPE_PREFIX = {
+  AGENT: "agent:",
+  WORKSPACE: "workspace:",
+} as const;
+
 export function memoryAgentScope(agentId: string): string {
-  return `agent:${agentId}`;
+  return `${MEMORY_SCOPE_PREFIX.AGENT}${agentId}`;
+}
+
+export function memoryWorkspaceScope(workspaceId: string): string {
+  return `${MEMORY_SCOPE_PREFIX.WORKSPACE}${workspaceId}`;
 }
 
 /** Memory Flush 默认强度：用户偏好 / 一般事实（原 memoryFlush.ts 魔法数字收敛） */

@@ -16,7 +16,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { StoredToolCall } from "./chatHistory.js";
 import { createMemoryRepository } from "./memoryRepository.js";
-import { MEMORY_TYPES, memoryAgentScope } from "@knowpilot/shared";
+import { MEMORY_TYPES, memoryAgentScope, memoryWorkspaceScope } from "@knowpilot/shared";
 
 interface ExperienceSummary {
   taskDescription: string;
@@ -42,7 +42,7 @@ export async function accumulateExperience(
     tokenUsage: { prompt: number; completion: number; total: number } | null;
     roundsUsed: number;
   },
-  input: { message: string; trigger?: string },
+  input: { message: string; trigger?: string; workspaceId?: string | null },
   durationMs: number,
 ): Promise<void> {
   try {
@@ -65,13 +65,21 @@ export async function accumulateExperience(
     // 写入 Memory（type="experience"，scope=agent:{id} 写时隔离——W5：不再直查 Prisma，
     // 统一走 MemoryRepository，保证文件回写 + FTS 增量同步，且其他 Agent 上下文不可见）
     const repo = createMemoryRepository(services);
-    await repo.write({
+    const memoryBase = {
       content: JSON.stringify(experience),
       type: MEMORY_TYPES.EXPERIENCE,
-      scope: memoryAgentScope(agentId),
       strength: success ? 1.0 : 0.5,
       keywords: [...new Set(toolNames), input.trigger ?? "user", success ? "success" : "failed"],
-    });
+    };
+    await repo.write({ ...memoryBase, scope: memoryAgentScope(agentId) });
+
+    // W5-followup 三层落地：Agent 属于 Workspace 时，经验同步沉淀到 workspace 层——
+    // 管理/超级 Agent 一次 memory_search 即可看到全 Workspace 的经验（sub 无 memory 工具权限，
+    // 见 swarmPermissionGuard）；agent 层私有副本保留，供按 Agent 审查
+    // （optimize_sub_agent_prompt / generate_skill_from_experience）。
+    if (input.workspaceId) {
+      await repo.write({ ...memoryBase, scope: memoryWorkspaceScope(input.workspaceId) });
+    }
 
     // 更新 Agent 状态（活跃度）
     await prisma.agent.update({

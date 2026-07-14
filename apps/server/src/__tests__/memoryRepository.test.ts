@@ -5,6 +5,8 @@
  * 1. scope 隔离：agent:A 的经验/记忆不出现在 agent:B 的 context（写时隔离）
  * 2. contentHash 去重：同 scope 同内容幂等刷新，不产生重复行
  * 3. strength 衰减：decayMemories 按日复利衰减，低分归档删除
+ * 4. 三层 scope（W5-followup）：workspace 记忆同 Workspace 兄弟可见、外部不可见；
+ *    resolveMemoryWriteScope 越权伪造抛错；accumulateExperience 双写 agent + workspace 层
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -16,14 +18,17 @@ import {
   createMemoryRepository,
   decayMemories,
   hashMemoryContent,
+  resolveMemoryWriteScope,
   type MemoryRepository,
 } from "../infra/memoryRepository.js";
+import { accumulateExperience } from "../infra/agentEvolution.js";
 import { buildMemoryContext } from "../infra/promptBuilder.js";
 import {
   MEMORY_ARCHIVE_THRESHOLD,
   MEMORY_DECAY_FACTOR_PER_DAY,
   MEMORY_TYPES,
   memoryAgentScope,
+  memoryWorkspaceScope,
 } from "@knowpilot/shared";
 
 const RUN = `w5test-${Date.now()}`;
@@ -33,6 +38,8 @@ describe("MemoryRepository（W5）", () => {
   let services: ServiceContainer;
   let repo: MemoryRepository;
   const createdIds: string[] = [];
+  const createdAgentIds: string[] = [];
+  const createdWorkspaceIds: string[] = [];
 
   beforeAll(() => {
     services = getServiceContainer(prisma, getEventBus(), getAppConfig());
@@ -43,6 +50,13 @@ describe("MemoryRepository（W5）", () => {
     // 走 MemoryService.delete 清理 DB + content/ 文件 + FTS 行
     for (const id of createdIds) {
       await services.memory.delete(id).catch(() => undefined);
+    }
+    // 先删 Agent（workspaceId 外键 SetNull），再删 Workspace
+    for (const id of createdAgentIds) {
+      await prisma.agent.delete({ where: { id } }).catch(() => undefined);
+    }
+    for (const id of createdWorkspaceIds) {
+      await prisma.workspace.delete({ where: { id } }).catch(() => undefined);
     }
   });
 
@@ -192,5 +206,107 @@ describe("MemoryRepository（W5）", () => {
     expect(ids.indexOf(strong.id)).toBeGreaterThanOrEqual(0);
     expect(ids.indexOf(weak.id)).toBeGreaterThanOrEqual(0);
     expect(ids.indexOf(strong.id)).toBeLessThan(ids.indexOf(weak.id));
+  });
+
+  /* ─── 三层 scope（W5-followup） ─── */
+
+  it("三层 scope：同 Workspace 兄弟 Agent 可见 workspace 记忆，外 Workspace / 无 Workspace Agent 不可见", async () => {
+    const wsA = await prisma.workspace.create({ data: { name: `${RUN}-wsA`, path: `/tmp/${RUN}-wsA` } });
+    const wsB = await prisma.workspace.create({ data: { name: `${RUN}-wsB`, path: `/tmp/${RUN}-wsB` } });
+    createdWorkspaceIds.push(wsA.id, wsB.id);
+    const agentA1 = await prisma.agent.create({ data: { name: `${RUN}-a1`, workspaceId: wsA.id, tier: "sub" } });
+    const agentA2 = await prisma.agent.create({ data: { name: `${RUN}-a2`, workspaceId: wsA.id, tier: "sub" } });
+    const agentB1 = await prisma.agent.create({ data: { name: `${RUN}-b1`, workspaceId: wsB.id, tier: "sub" } });
+    const agentSolo = await prisma.agent.create({ data: { name: `${RUN}-solo`, tier: "sub" } });
+    createdAgentIds.push(agentA1.id, agentA2.id, agentB1.id, agentSolo.id);
+
+    const token = `${RUN}-ws-token`;
+    await track(
+      await repo.write({
+        content: `Workspace A 的共享语义记忆 ${token}`,
+        type: MEMORY_TYPES.SEMANTIC,
+        scope: memoryWorkspaceScope(wsA.id),
+        keywords: [token],
+      }),
+    );
+
+    // 同 Workspace 兄弟（A2）与写入者（A1）都可见
+    const ctxSibling = await buildMemoryContext(services, token, { agentId: agentA2.id });
+    expect(ctxSibling.includes(token)).toBe(true);
+    const ctxSelf = await buildMemoryContext(services, token, { agentId: agentA1.id });
+    expect(ctxSelf.includes(token)).toBe(true);
+    // 外 Workspace（B1）与无 Workspace 的 Agent 不可见
+    const ctxOutside = await buildMemoryContext(services, token, { agentId: agentB1.id });
+    expect(ctxOutside.includes(token)).toBe(false);
+    const ctxSolo = await buildMemoryContext(services, token, { agentId: agentSolo.id });
+    expect(ctxSolo.includes(token)).toBe(false);
+  });
+
+  it("resolveMemoryWriteScope：默认归属本 Agent，越权伪造其他 Agent/Workspace 直接抛错", () => {
+    const ws = `${RUN}-guard-ws`;
+    const sub = { agentId: `${RUN}-guard-sub`, workspaceId: ws, tier: "sub" };
+
+    // 未指定 scope：有 Agent → agent 层；无 Agent（用户级聊天）→ 保持 global
+    expect(resolveMemoryWriteScope(undefined, sub)).toBe(memoryAgentScope(sub.agentId));
+    expect(resolveMemoryWriteScope(undefined, {})).toBe("global");
+    // 简写解析到本 Agent / 本 Workspace
+    expect(resolveMemoryWriteScope("agent", sub)).toBe(memoryAgentScope(sub.agentId));
+    expect(resolveMemoryWriteScope("workspace", sub)).toBe(memoryWorkspaceScope(ws));
+    // 显式全量 scope 与简写等价
+    expect(resolveMemoryWriteScope(`workspace:${ws}`, sub)).toBe(memoryWorkspaceScope(ws));
+
+    // 越权：伪造其他 Agent / 其他 Workspace
+    expect(() => resolveMemoryWriteScope("agent:someone-else", sub)).toThrow(/越权/);
+    expect(() => resolveMemoryWriteScope("workspace:other-ws", sub)).toThrow(/越权/);
+    // 非 super 写 global 被拒；super 与无 Agent 的用户级聊天可写
+    expect(() => resolveMemoryWriteScope("global", sub)).toThrow(/仅超级 Agent/);
+    expect(resolveMemoryWriteScope("global", { agentId: "x", tier: "super" })).toBe("global");
+    expect(resolveMemoryWriteScope("global", {})).toBe("global");
+    // 无 Workspace 的 Agent 写 workspace 层被拒
+    expect(() => resolveMemoryWriteScope("workspace", { agentId: "x", tier: "sub" })).toThrow(/不属于任何 Workspace/);
+    // 非法值
+    expect(() => resolveMemoryWriteScope("project:abc", sub)).toThrow(/无效的 memory scope/);
+  });
+
+  it("accumulateExperience：Agent 属于 Workspace 时经验双写 agent + workspace 两层，无 Workspace 只写 agent 层", async () => {
+    const ws = await prisma.workspace.create({ data: { name: `${RUN}-exp-ws`, path: `/tmp/${RUN}-exp-ws` } });
+    createdWorkspaceIds.push(ws.id);
+    const agentInWs = await prisma.agent.create({ data: { name: `${RUN}-exp-inws`, workspaceId: ws.id, tier: "sub" } });
+    const agentNoWs = await prisma.agent.create({ data: { name: `${RUN}-exp-nows`, tier: "sub" } });
+    createdAgentIds.push(agentInWs.id, agentNoWs.id);
+
+    const token = `${RUN}-dualwrite`;
+    const runResult = {
+      content: `任务完成 ${token}`,
+      toolCalls: [{ id: "t1", name: "web_search", args: {}, result: "ok", kind: "tool" as const }],
+      tokenUsage: null,
+      roundsUsed: 1,
+    };
+
+    // 有 Workspace：agent 层私有副本 + workspace 层共享副本
+    await accumulateExperience(prisma, services, agentInWs.id, `${RUN}-sess-1`, runResult, {
+      message: `调研 ${token}`,
+      trigger: "user",
+      workspaceId: ws.id,
+    }, 1234);
+    const agentLayer = await repo.read({ types: [MEMORY_TYPES.EXPERIENCE], scopes: [memoryAgentScope(agentInWs.id)], keyword: token });
+    expect(agentLayer.length).toBe(1);
+    createdIds.push(...agentLayer.map((m) => m.id));
+    const wsLayer = await repo.read({ types: [MEMORY_TYPES.EXPERIENCE], scopes: [memoryWorkspaceScope(ws.id)], keyword: token });
+    expect(wsLayer.length).toBe(1);
+    createdIds.push(...wsLayer.map((m) => m.id));
+    expect(wsLayer[0]!.id).not.toBe(agentLayer[0]!.id);
+
+    // 无 Workspace：只写 agent 层，不产生 workspace 记忆
+    const token2 = `${RUN}-dualwrite-nows`;
+    await accumulateExperience(prisma, services, agentNoWs.id, `${RUN}-sess-2`, {
+      ...runResult,
+      content: `任务完成 ${token2}`,
+    }, { message: `调研 ${token2}`, trigger: "user", workspaceId: null }, 1234);
+    const soloAgentLayer = await repo.read({ types: [MEMORY_TYPES.EXPERIENCE], scopes: [memoryAgentScope(agentNoWs.id)], keyword: token2 });
+    expect(soloAgentLayer.length).toBe(1);
+    createdIds.push(...soloAgentLayer.map((m) => m.id));
+    const allRows = await prisma.memory.findMany({ where: { content: { contains: token2 } } });
+    expect(allRows.every((r) => r.scope === memoryAgentScope(agentNoWs.id))).toBe(true);
   });
 });

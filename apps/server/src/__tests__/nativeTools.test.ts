@@ -708,7 +708,10 @@ describe("native:memory_create / memory_search", () => {
     const memoryService = {
       create: vi.fn(async () => ({ success: true, data: { id: "m1", type: "note", strength: 0.8, keywords: ["a", "b"] } })),
     };
-    const ctx = createNativeCtx(root, { services: { memory: memoryService } as never });
+    // W5-followup：memory_create 改走 MemoryRepository（去重 + scope 守卫），
+    // 需补 prisma mock 应答 contentHash 去重查询（无重复 → null）
+    const prismaMock = { memory: { findFirst: vi.fn(async () => null) } };
+    const ctx = createNativeCtx(root, { services: { memory: memoryService, prisma: prismaMock } as never });
     const result = (await executeNativeTool("memory_create", { content: "记住这件事", type: "note", strength: 0.8, keywords: ["a", "b"] }, ctx)) as {
       id: string;
       strength: number;

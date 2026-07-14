@@ -480,6 +480,7 @@ stream:
 
 ## 当前状态与近期变更（2026-07-13）
 
+- **W5-followup 记忆三层落地**：scope 三层（`global` / `workspace:{wid}` / `agent:{aid}`）读写全通——`buildMemoryContext` 与 native `memory_search` 注入三层 scopes（Agent 有 Workspace 时）；`memory_create` 加可选 scope 参数，越权由 `memoryRepository.resolveMemoryWriteScope` 硬拦（仅 super 写 global、禁止伪造他 Agent/他 Workspace）；`accumulateExperience` 对属于 Workspace 的 Agent 双写 agent + workspace 两层经验（sub 无 memory 工具权限，workspace 层供管理/超级 Agent 检索）。
 - **W4 循环依赖环已打断**：原环 `agentRuntime → loop/index → reactLoop → agentTools → nativeTools → agentRuntime`。新增叶子模块 `infra/promptBuilder.ts`（buildMemoryContext / buildSystemPromptWithHints / buildTierIdentityHint / buildAgentToolGuide）与 `infra/agentResolver.ts`（resolveAgent）；agentRuntime 仅保留兼容 re-export，新代码直接引叶子模块。resolveAgent 经 `NativeToolContext.resolveAgent` 注入（createAgentToolContext 填充，缺省回退 agentResolver）。nativeTools 动态 import 15→3（仅 agentStream / asyncJobManager 两个环内模块 + nodemailer 可选依赖）。防线测试：`apps/server/src/__tests__/importOrder.test.ts`（import 顺序冒烟 + 源码防线）。
 
 - **W2 LLM 弹性客户端已落地**：`infra/resilientLlmClient.ts` 装饰器包装 llmClient（错误分类 fatal/retryable/degradable + 指数退避 jitter 重试 + `config.yaml` `llm.fallbackModels` 按序降级）；`agentRuntime`/`agentStream` error 事件的 `retryable` 改为按分类真实填充；`llmBudget.ts` 预算状态改为模块级内存 + 防抖异步落盘（LLM 调用路径零同步 IO）。
@@ -497,4 +498,4 @@ stream:
 
 ---
 
-> 最后更新：2026-07-13。L1–L5 已全部落地；P0 PR-4a（native fs/web/shell 域拆分）已验收。
+> 最后更新：2026-07-14。L1–L5 已全部落地；P0 PR-4a（native fs/web/shell 域拆分）已验收；W5-followup 记忆三层已落地。

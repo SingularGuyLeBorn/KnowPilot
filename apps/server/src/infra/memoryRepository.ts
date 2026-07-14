@@ -27,6 +27,9 @@ import {
   MEMORY_ARCHIVE_THRESHOLD,
   MEMORY_DECAY_FACTOR_PER_DAY,
   MEMORY_SCOPE_GLOBAL,
+  MEMORY_SCOPE_PREFIX,
+  memoryAgentScope,
+  memoryWorkspaceScope,
 } from "@knowpilot/shared";
 
 export interface MemoryItem {
@@ -77,7 +80,9 @@ export function hashMemoryContent(content: string): string {
 
 /** scope=agent:{id} 时提取冗余 agentId 列 */
 function agentIdFromScope(scope: string): string | null {
-  return scope.startsWith("agent:") ? scope.slice("agent:".length) || null : null;
+  return scope.startsWith(MEMORY_SCOPE_PREFIX.AGENT)
+    ? scope.slice(MEMORY_SCOPE_PREFIX.AGENT.length) || null
+    : null;
 }
 
 function recencyScore(updatedAt: Date, nowMs: number): number {
@@ -239,6 +244,52 @@ export class PrismaMemoryRepository implements MemoryRepository {
 
 export function createMemoryRepository(services: ServiceContainer): MemoryRepository {
   return new PrismaMemoryRepository(services.prisma, services.memory);
+}
+
+/* ─── 三层 scope 写路径守卫（W5-followup） ─── */
+
+/** 记忆写入方的身份（来自调用 Agent 快照；无 Agent 时表示用户级聊天） */
+export interface MemoryScopeActor {
+  agentId?: string | null;
+  workspaceId?: string | null;
+  tier?: string | null;
+}
+
+/**
+ * 解析并校验记忆写入 scope（三层隔离的写路径守卫，native memory_create 与测试共用）。
+ *
+ * 规则（越权直接抛错，不写库）：
+ * - 未指定 scope：有调用 Agent → agent 层；无 Agent（用户级聊天）→ 保持原 global 行为。
+ * - agent / agent:{id}：只能写自己的 agent scope，禁止伪造其他 Agent。
+ * - workspace / workspace:{id}：只能写自己所在 Workspace 的 scope，禁止伪造其他 Workspace。
+ * - global：仅 super tier 可写（无 Agent 的用户级聊天不受 tier 约束）。
+ */
+export function resolveMemoryWriteScope(requested: string | undefined | null, actor: MemoryScopeActor): string {
+  const req = (requested ?? "").trim();
+  if (!req) {
+    return actor.agentId ? memoryAgentScope(actor.agentId) : MEMORY_SCOPE_GLOBAL;
+  }
+  if (req === MEMORY_SCOPE_GLOBAL) {
+    if (!actor.agentId || actor.tier === "super") return MEMORY_SCOPE_GLOBAL;
+    throw new Error("仅超级 Agent 可写 global 层记忆；请改用 agent 或 workspace 层");
+  }
+  if (req === "agent" || req.startsWith(MEMORY_SCOPE_PREFIX.AGENT)) {
+    if (!actor.agentId) throw new Error("当前没有调用 Agent，无法写入 agent 层记忆");
+    const aid = req === "agent" ? actor.agentId : req.slice(MEMORY_SCOPE_PREFIX.AGENT.length);
+    if (aid !== actor.agentId) {
+      throw new Error(`越权：只能写入自己的 agent 层记忆，不能伪造 agent:${aid}`);
+    }
+    return memoryAgentScope(aid);
+  }
+  if (req === "workspace" || req.startsWith(MEMORY_SCOPE_PREFIX.WORKSPACE)) {
+    const wid = req === "workspace" ? actor.workspaceId : req.slice(MEMORY_SCOPE_PREFIX.WORKSPACE.length);
+    if (!wid) throw new Error("当前 Agent 不属于任何 Workspace，无法写入 workspace 层记忆");
+    if (actor.agentId && wid !== actor.workspaceId) {
+      throw new Error(`越权：只能写入自己所在 Workspace 的记忆，不能伪造 workspace:${wid}`);
+    }
+    return memoryWorkspaceScope(wid);
+  }
+  throw new Error(`无效的 memory scope：${req}。允许：agent / workspace / global`);
 }
 
 /**
