@@ -106,6 +106,7 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
     heartbeat: {
       loopContract: { maxStaleRounds: 3, maxEvidence: 50 },
     },
+    reflection: { enabled: false, maxRounds: 1, criticModel: "" },
     ...overrides,
   };
 }

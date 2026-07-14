@@ -10,10 +10,12 @@ export type {
   LoopHooks,
   ReactLoopInput,
   ReactLoopResult,
+  ReflectionVerdict,
   StreamLlmOptions,
 } from "./types.js";
 export { runReactLoop } from "./reactLoop.js";
 export { createSyncTransport, createStreamTransport } from "./transports.js";
+export { withReflection, REFLECTION_UNPASSED_MARK, type ReflectionOptions } from "./reflection.js";
 export {
   DEFAULT_SUBAGENT_TOOLS,
   resolveToolsForAgentTier,

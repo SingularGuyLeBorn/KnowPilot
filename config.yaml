@@ -60,6 +60,16 @@ asyncJobs:
   # 每个父会话允许的 subagent 数量上限
   maxSubagentsPerSession: 10
 
+# W7 反思（默认关闭）：loop 进入 done 前用 criticModel 对终稿做一票结构化 critic（JSON: passed/issues）；
+# 不通过则把意见作为 user 消息经 injectUserMessages 回注，loop 重修一轮；
+# 轮数耗尽则带 [未经反思通过] 标记放行（不阻断用户）；critic 失败 = 静默跳过。
+reflection:
+  enabled: false
+  # 最大反思重修轮数；0 = 只审不修（不通过直接标记放行）
+  maxRounds: 1
+  # critic 使用的便宜模型（空 = 与主 Agent 模型相同）
+  criticModel: ""
+
 # 超级 Agent 心跳 Loop Contract（控制平面；不替换 ReAct）
 heartbeat:
   loopContract:

@@ -28,6 +28,7 @@ import {
   parseToolCall,
 } from "./setup.js";
 import { createPhaseMachine } from "./phase.js";
+import { REFLECTION_UNPASSED_MARK } from "./reflection.js";
 import type { ReactLoopInput, ReactLoopResult, TurnSnapshot } from "./types.js";
 
 function pushThinking(executedTools: StoredToolCall[], round: number, delta: string) {
@@ -158,6 +159,8 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
   let roundsUsed = 0;
   let toolCallsUsed = 0;
   let hitToolBudget = false;
+  // W7：反思重修已消耗轮数（策略上限随 verdict.maxRounds 携带，消耗计数在本状态机内）
+  let reflectionRoundsUsed = 0;
 
   const accumulateUsage = (u?: { prompt: number; completion: number; total: number }) => {
     if (!u) return;
@@ -257,7 +260,39 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           continue;
         }
 
-        const content = sanitizePostCompactAssistantContent(turn.content || "", executedTools);
+        // W7 反思：withReflection 附着的 critic verdict 在 done 转移点消费。
+        // 决策（重试/放行）只发生在这里——transport 层只评估，不持有状态机。
+        const reflection = turn.reflection;
+        if (reflection && !reflection.passed && reflectionRoundsUsed < reflection.maxRounds) {
+          reflectionRoundsUsed++;
+          // 被拒终稿先记入时间线，再经既有 injectUserMessages 显式机制回注，loop 再走一轮
+          if (turn.content?.trim()) {
+            pushIntermediateContent(executedTools, roundsUsed, turn.content);
+            input.hooks?.onIntermediateContent?.(roundsUsed, turn.content);
+          }
+          llmMessages.push({
+            role: "assistant",
+            content: turn.content,
+            reasoning_content: turn.reasoningContent ?? null,
+          });
+          await injectUserMessages(
+            input,
+            llmMessages,
+            [{ id: `reflection_${reflectionRoundsUsed}`, content: reflection.feedback }],
+            "follow_up",
+          );
+          input.hooks?.onProgress?.(
+            `反思复核未通过，已回注重修（第 ${reflectionRoundsUsed}/${reflection.maxRounds} 轮）`,
+          );
+          continue;
+        }
+
+        let content = sanitizePostCompactAssistantContent(turn.content || "", executedTools);
+        // 反思轮数耗尽仍未通过：带标记放行，不阻断用户
+        if (reflection && !reflection.passed) {
+          content = REFLECTION_UNPASSED_MARK + content;
+          input.hooks?.onProgress?.("反思重修轮数已耗尽，内容未经反思通过，标记放行");
+        }
         machine.transition("done");
         return {
           content,

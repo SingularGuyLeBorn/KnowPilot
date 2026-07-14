@@ -427,6 +427,12 @@ stream:
   persist: true          # 是否持久化事件到 SQLite
   eventTtlMs: 300000     # 持久化事件保留时长
   cleanupIntervalMs: 60000 # 过期事件清理间隔
+
+# W7 反思（默认关闭）：done 前一票结构化 critic，不通过经 injectUserMessages 回注重修
+reflection:
+  enabled: false
+  maxRounds: 1           # 反思重修轮数；轮数耗尽带 [未经反思通过] 标记放行
+  criticModel: ""        # critic 便宜模型；空 = 与主 Agent 模型相同
 ```
 
 - `SessionStreamHub` 采用「内存热缓冲 + SQLite 事件日志」双写：低延迟推送走内存，断线续传 / 服务端重启恢复走数据库。
@@ -480,6 +486,7 @@ stream:
 
 ## 当前状态与近期变更（2026-07-14）
 
+- **W7 反思装饰器已落地**：`infra/loop/reflection.ts` `withReflection(transport, opts)` 在「即将 done」终轮（withTools 且零 toolCalls）用 criticModel 跑一票 JSON critic（`{passed, issues}`），verdict 附到 `LlmTurnResult.reflection`；**评估在 transport 装饰器、决策在 reactLoop done 转移点**——不通过且轮数未满经既有 `injectUserMessages`（kind=follow_up）回注重修，轮数耗尽带 `[未经反思通过]` 标记放行（不阻断用户）。critic 经内部 `createSyncTransport(config, criticModel)` 走 W2 弹性客户端；critic 失败/解析失败 = 静默跳过。`config.yaml` `reflection: { enabled: false, maxRounds: 1, criticModel: "" }` 默认关闭；仅接入 agentRuntime sync 链路，stream 链路另立跟进。单测 `__tests__/reflection.test.ts`（5 例）。
 - **W6 D 类工具幂等 rollback 已落地**：`infra/tools/rollback.ts` 新增 `RunRollbackStack`——reactLoop 每 run 建栈注入 `NativeToolContext.rollbackStack`；`executeNativeTool` 对注册处标记 `destructive` 的工具执行前 capture、成功后 commit；run failed 且非用户 abort 时逆序补偿，报告写 failed Run 的 `output.rollback`。补偿语义：`write_file` 快照还原（run 级 10MB 上限）；`post_create`/`memory_create` 走 Service 删 id；`file_delete`/`directory_delete` 执行时移项目根 `.trash/`（用户手动清理），rollback 移回；`git_commit` 等不可逆操作如实 warn「需人工 revert」。单测 `toolRollback.test.ts`；详见 `docs/development/p0-agent-arch-pr-split.md` PR-4 节。
 - **W5-followup 记忆三层落地**：scope 三层（`global` / `workspace:{wid}` / `agent:{aid}`）读写全通——`buildMemoryContext` 与 native `memory_search` 注入三层 scopes（Agent 有 Workspace 时）；`memory_create` 加可选 scope 参数，越权由 `memoryRepository.resolveMemoryWriteScope` 硬拦（仅 super 写 global、禁止伪造他 Agent/他 Workspace）；`accumulateExperience` 对属于 Workspace 的 Agent 双写 agent + workspace 两层经验（sub 无 memory 工具权限，workspace 层供管理/超级 Agent 检索）。
 - **W4 循环依赖环已打断**：原环 `agentRuntime → loop/index → reactLoop → agentTools → nativeTools → agentRuntime`。新增叶子模块 `infra/promptBuilder.ts`（buildMemoryContext / buildSystemPromptWithHints / buildTierIdentityHint / buildAgentToolGuide）与 `infra/agentResolver.ts`（resolveAgent）；agentRuntime 仅保留兼容 re-export，新代码直接引叶子模块。resolveAgent 经 `NativeToolContext.resolveAgent` 注入（createAgentToolContext 填充，缺省回退 agentResolver）。nativeTools 动态 import 15→3（仅 agentStream / asyncJobManager 两个环内模块 + nodemailer 可选依赖）。防线测试：`apps/server/src/__tests__/importOrder.test.ts`（import 顺序冒烟 + 源码防线）。
@@ -499,4 +506,4 @@ stream:
 
 ---
 
-> 最后更新：2026-07-14。L1–L5 已全部落地；P0 PR-1～7（含 PR-4b/4c native 全域拆分）已验收；W5-followup 记忆三层已落地。
+> 最后更新：2026-07-14。L1–L5 已全部落地；P0 PR-1～7（含 PR-4b/4c native 全域拆分）已验收；W5-followup 记忆三层、W6 rollback、W7 反思装饰器（sync 链路）已落地。

@@ -30,6 +30,23 @@ export interface LlmTurnResult {
   tokenUsage?: { prompt: number; completion: number; total: number };
   model: string;
   provider: string;
+  /**
+   * W7 反思 verdict：由 withReflection 装饰器在「即将 done」的终轮附着，
+   * reactLoop 在 done 转移点消费（回注重修 / 标记放行）。未接反思时为 undefined。
+   */
+  reflection?: ReflectionVerdict;
+}
+
+/** W7 反思 verdict：评估由 transport 装饰器产出，决策（重试/放行）由 reactLoop 做出 */
+export interface ReflectionVerdict {
+  /** critic 是否通过 */
+  passed: boolean;
+  /** 不通过时的具体问题清单 */
+  issues: string[];
+  /** 回注给主模型的反思意见（由 issues 组装；passed=true 时为空串） */
+  feedback: string;
+  /** 配置的最大反思轮数：策略随 verdict 携带，消耗计数在 reactLoop 的 done 转移点 */
+  maxRounds: number;
 }
 
 /**

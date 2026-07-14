@@ -9,7 +9,7 @@ import { describeLlmError } from "./resilientLlmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
-import { runReactLoop, createSyncTransport } from "./loop/index.js";
+import { runReactLoop, createSyncTransport, withReflection } from "./loop/index.js";
 import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
 import { resolveAgent } from "./agentResolver.js";
 export {
@@ -62,7 +62,13 @@ export async function runAgentLoop(options: {
     sessionId: options.sessionId,
     agentMeta: options.agentMeta,
     runOrigin: options.runOrigin,
-    transport: createSyncTransport(options.config, effectiveModel),
+    // W7：sync 链路接入反思装饰器（默认关闭）；stream 链路（agentStream）另立跟进，不在本工单
+    transport: withReflection(createSyncTransport(options.config, effectiveModel), {
+      enabled: options.config.reflection.enabled,
+      maxRounds: options.config.reflection.maxRounds,
+      criticModel: options.config.reflection.criticModel || effectiveModel,
+      config: options.config,
+    }),
     hooks: {
       onProgress: options.onProgress,
     },

@@ -18,6 +18,13 @@ const LlmYamlSchema = z.object({
   fallbackModels: z.array(z.string()).default([]),
 });
 
+/** config.yaml reflection 段：W7 反思（缺失时给默认值，向后兼容旧 config.yaml） */
+const ReflectionYamlSchema = z.object({
+  enabled: z.boolean().default(false),
+  maxRounds: z.coerce.number().int().min(0).default(1),
+  criticModel: z.string().default(""),
+});
+
 /* ─── 类型定义 ─── */
 
 export interface LlmProviderConfig {
@@ -161,6 +168,14 @@ export interface AppConfig {
       maxStaleRounds: number;
       maxEvidence: number;
     };
+  };
+  /** W7 反思：loop 进入 done 前一票结构化 critic（默认关闭） */
+  reflection: {
+    enabled: boolean;
+    /** 最大反思重修轮数；0 = 只审不修（不通过直接标记放行） */
+    maxRounds: number;
+    /** critic 使用的便宜模型；空 = 与主 Agent 模型相同 */
+    criticModel: string;
   };
 }
 
@@ -348,6 +363,11 @@ export function createAppConfig(): AppConfig {
   // llm 段 zod 解析：解析失败（如字段类型错误）回退默认值，不阻断启动
   const llmYamlParsed = LlmYamlSchema.safeParse(yamlConfig.llm ?? {});
   const llmYaml = llmYamlParsed.success ? llmYamlParsed.data : LlmYamlSchema.parse({});
+  // reflection 段同上：旧 config.yaml 无此段 → 默认关闭
+  const reflectionYamlParsed = ReflectionYamlSchema.safeParse(yamlConfig.reflection ?? {});
+  const reflectionYaml = reflectionYamlParsed.success
+    ? reflectionYamlParsed.data
+    : ReflectionYamlSchema.parse({});
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -538,6 +558,7 @@ export function createAppConfig(): AppConfig {
         maxEvidence: Math.max(5, parseInt(String(loopContractYaml.maxEvidence ?? "50"), 10)),
       },
     },
+    reflection: reflectionYaml,
   };
 
   for (const dir of Object.values(config.contentPaths)) {
