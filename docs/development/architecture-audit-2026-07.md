@@ -4,6 +4,8 @@
 > 审查范围：`apps/server/src/`（重点 `infra/`）、`apps/web/components/chat.tsx`、`packages/shared/`
 > 审查分支：`fix/p0-agent-budget-hitl`（含未提交改动）
 > 审查方式：两路并行只读代码审查，所有证据精确到文件:行号
+>
+> **修复状态更新（2026-07-15 DoD 收尾）**：W1–W12 修复工单已全部提交并验收（分支 `fix/p0-agent-budget-hitl`，lint/test/build/e2e 全绿）。下文「Top 5」「10 维度总评」与各维度节的**状态与修复备注为最新**，违规证据原文保留作审查快照。工单 Commit 对照：W1 `f2f889d4` / W2 `a4faf89b` / W3 `209ac858`+`b4208022` / W4 `a60511aa` / W5 `3fc4be4d`+`546fac51` / W6 `458607e8`+`0798811a`+`beda7459` / W7 `8044b6f9` / W8 `da19f546`+`663da846` / W9 `136d3220` / W10 `320772a0` / W11 `a8b87f3a` / W12 `94959cf0`。
 
 ---
 
@@ -11,28 +13,30 @@
 
 **当前架构处于「骨架优秀、血肉欠债」阶段**：ReAct 内核（phase 状态机）、Swarm 权限代理、配置外置是教科书级样板；但记忆层和反思层完全缺位，LLM 调用零重试零降级，审批审计有合规硬伤，两个 3400 行上帝文件 + 一个真运行时循环依赖环是必须偿还的债务。
 
+**修复后（2026-07-15）**：Top 5 问题已全部根治——审批审计（W1）、LLM 弹性（W2）、记忆层（W5）、循环依赖环（W4）、chat.tsx 编排层补丁（W3，drain 单驱动 INV-8）。10 维度终态：**6 ✅ / 4 ⚠️ / 0 ❌**（原 0 ✅ / 7 ⚠️ / 3 ❌）；剩余尾巴见各维度修复备注与 `design-decisions.md`「W1–W12 不做/跟进项登记」。
+
 ## Top 5 问题（按 ROI 排序）
 
-1. **审批审计硬伤（HITL，半天工作量）**：`Approval` 无 `decidedBy/decidedAt`，且 `approvalGate.ts:242` 审批执行成功后**物理删除审批记录**——审计痕迹被销毁。
-2. **LLM 调用零重试零降级（错误恢复）**：`llmClient.ts:247-250,345-348` 遇 `!res.ok` 直接 throw，429/5xx/网络抖动无指数退避；配置了 14 个 provider 却从不 failover。
-3. **记忆层全面缺位（Memory）**：无 `MemoryRepository` 抽象，`agentRuntime.ts:29-54` 等多处直查 Prisma；`Memory` 模型**无 `agentId/sessionId` 字段**导致跨 Agent 上下文污染；`strength` 字段无任何衰减逻辑消费。
-4. **运行时循环依赖环**：`agentRuntime → reactLoop → agentTools → nativeTools → agentRuntime`，靠函数提升侥幸不炸，代码里 10+ 处 `await import()` 动态导入打补丁躲环。
-5. **前端 chat.tsx 残留编排层补丁**：`chat.tsx:1849-1854` `queueMicrotask` 兜底 drain 与 `onStreamCommitted` 正规钩子**双驱动并存**，直接违反 AGENTS.md「禁止打补丁」铁律；另有 4 处 microtask + 1 处 `await hydrate`。
+1. **审批审计硬伤（HITL，半天工作量）**：`Approval` 无 `decidedBy/decidedAt`，且 `approvalGate.ts:242` 审批执行成功后**物理删除审批记录**——审计痕迹被销毁。→ **✅ 已修复（W1 `f2f889d4`）**
+2. **LLM 调用零重试零降级（错误恢复）**：`llmClient.ts:247-250,345-348` 遇 `!res.ok` 直接 throw，429/5xx/网络抖动无指数退避；配置了 14 个 provider 却从不 failover。→ **✅ 已修复（W2 `a4faf89b`）**
+3. **记忆层全面缺位（Memory）**：无 `MemoryRepository` 抽象，`agentRuntime.ts:29-54` 等多处直查 Prisma；`Memory` 模型**无 `agentId/sessionId` 字段**导致跨 Agent 上下文污染；`strength` 字段无任何衰减逻辑消费。→ **✅ 已修复（W5 `3fc4be4d`+`546fac51`）**
+4. **运行时循环依赖环**：`agentRuntime → reactLoop → agentTools → nativeTools → agentRuntime`，靠函数提升侥幸不炸，代码里 10+ 处 `await import()` 动态导入打补丁躲环。→ **✅ 已修复（W4 `a60511aa`）**
+5. **前端 chat.tsx 残留编排层补丁**：`chat.tsx:1849-1854` `queueMicrotask` 兜底 drain 与 `onStreamCommitted` 正规钩子**双驱动并存**，直接违反 AGENTS.md「禁止打补丁」铁律；另有 4 处 microtask + 1 处 `await hydrate`。→ **✅ 已修复（W3 `209ac858`，回归修复 `b4208022`）**
 
 ## 10 维度总评
 
 | # | 维度 | 状态 | 一句话 |
 |---|---|---|---|
-| 1 | LLM 调用层 — 策略模式 | ⚠️ | 单一出口 + 14 厂商配置切换达标；但无 Provider 接口、DeepSeek 特判渗入通用层、推理策略不可插拔 |
-| 2 | 工具层 — 适配器+命令模式 | ⚠️ | ToolCommand + 注册表 + PR-4a 三域落地；但 ~80 个遗留工具仍堆 3376 行、**rollback 全仓零实现**、并发分级双真相 |
-| 3 | 记忆层 — 仓储+缓存 | ❌ | 无仓储抽象、无 session/agent 隔离、无淘汰策略，prompt 拼接处直查 Prisma |
-| 4 | 状态管理 — 状态机 | ⚠️ | 后端 phase 机是样板（`loop/phase.ts:9-53`）；前端基本达标但残留补丁；Run 表是死日志；无 checkpoint、无 AWAITING_HUMAN |
-| 5 | 反思层 — 装饰器模式 | ❌ | 完全不存在，无任何 critic/verify 模块或 LLM 调用装饰器 |
-| 6 | 多 Agent 协作 — 中介者+代理 | ⚠️ | Guard 扎实、Bus 有抽象；但中介者缺位（四个入口各自为政），heartbeat 已在绕过体系 |
-| 7 | 错误恢复 — 断路器+补偿 | ⚠️ | 超时/预算/审批/重启恢复齐全；但无断路器、LLM 零重试、错误不分类、无 saga |
-| 8 | HITL — 拦截器模式 | ⚠️ | 闸门收敛双路径共用；但 tRPC 侧手动包装 9 处易漏、审计字段缺失且执行后删记录 |
-| 9 | 配置与实例化 — 工厂/建造者 | ⚠️ | 配置三层外置 + DI 容器优秀；但三 tier 实例化无工厂（三处硬编码）、配置无热更新 |
-| 10 | 通用代码质量 — 反模式 | ❌ | 两个 3400 行上帝文件、一个运行时循环依赖环、globalThis 状态、模型名硬编码 31 处 |
+| 1 | LLM 调用层 — 策略模式 | ⚠️ | 单一出口 + 14 厂商配置切换 + W2 弹性客户端（分类/退避/降级）达标；Provider 策略接口、DeepSeek 特判、推理策略可插拔未做 |
+| 2 | 工具层 — 适配器+命令模式 | ✅ | W6：PR-4b/4c 全域拆分（nativeTools 3420→123 行）+ D 类工具幂等 rollback + 并发分级单真相 + 四域 Zod 化 |
+| 3 | 记忆层 — 仓储+缓存 | ✅ | W5：MemoryRepository 仓储 + scope 三层隔离 + contentHash 幂等去重 + strength 衰减归档，调用方全走接口 |
+| 4 | 状态管理 — 状态机 | ✅ | 后端 phase 机样板；W3 前端 drain 单驱动（INV-8）补丁清零；W11 Run 活状态 + phase 快照 + AWAITING_HUMAN 审批续跑 |
+| 5 | 反思层 — 装饰器模式 | ⚠️ | W7 withReflection 落地（done 前结构化 critic + 回注重试）；但默认关闭且仅接 sync 链路，stream 链路另立跟进 |
+| 6 | 多 Agent 协作 — 中介者+代理 | ✅ | W10 SwarmOrchestrator 统一四入口调度 + spawn 去重 + heartbeat 桩删除；W8 MAX_DEPTH 单点化 |
+| 7 | 错误恢复 — 断路器+补偿 | ✅ | W2 LLM 重试/降级/错误分类 + W12 MCP 断路器/心跳熔断暂停 + W6 rollback 逆序补偿 |
+| 8 | HITL — 拦截器模式 | ⚠️ | W1 审计字段 + 软删除、W11 审批续跑、W12 清理定时化已修；tRPC 手动包装 11 处 + 规则硬编码 Set 未修 |
+| 9 | 配置与实例化 — 工厂/建造者 | ⚠️ | W9 AgentFactory 模板化三 tier + resolveAgent 只读化已修；配置热更新明确不做（重启生效） |
+| 10 | 通用代码质量 — 反模式 | ⚠️ | W4 断环 + W6 拆 nativeTools + W8 常量化 + W2 预算去 globalThis 已修；chat.tsx 3515 行单组件未拆 |
 
 ---
 
@@ -51,7 +55,9 @@
 - 推理策略不可插拔：ReAct 硬编码在 `runReactLoop`（`reactLoop.ts:118`），无法切换 Plan-Execute / CoT-only。
 - mock 开关裸读 env：`process.env.MOCK_LLM` 在 :212,308 直接分支。
 
-### 维度 2：工具层 ⚠️
+**修复备注（2026-07-15，状态维持 ⚠️）**：W2（`a4faf89b`）补齐了调用健壮性（错误分类/指数退避/按序降级，详见维度 7），但本维度核心差距——`LlmProvider` 策略接口、DeepSeek 特判收编进 Provider 实现、推理策略可插拔——不在 W1–W12 工单范围，维持 ⚠️（6→7 分）。
+
+### 维度 2：工具层 ✅（W6 修复）
 
 **达标**：
 - `ToolCommand` 接口存在（`tools/types.ts:20-28`，含可选 `rollback`），全局注册表（`tools/registry.ts:7-42`）。
@@ -64,14 +70,18 @@
 - ~80 个遗留工具仍堆在 `nativeTools.ts`（3376 行）：handler（:105-194）+ 手写 JSON schema 字面量（:196-1271，非 Zod 生成）。PR-4b/4c 未做。
 - 并发分级双真相：`CONCURRENCY_CLASS_NATIVE`（`agentTools.ts:75-127`）与接口的 `concurrencyClass?` 字段并存，注册时从不填后者。
 
-### 维度 3：记忆层 ❌
+**修复备注（2026-07-15，状态 ⚠️→✅）**：三条违规全部由 W6 消除——`458607e8` 完成 PR-4b/4c 域拆分（swarm/session/memory/integration 四域迁出，`nativeTools.ts` 3420→123 行仅留注册+分发，`TOOL_HANDLERS` 双轨注册层拆除）；`0798811a` 将 concurrencyClass 并入注册字段单真相（`CONCURRENCY_CLASS_NATIVE` 双真相删除），memory/swarm/session/integration 四域 parameters 改 Zod + `zodParams` 生成（与 `router.ts` 同一 `zodToJsonSchema` 转换器）；`beda7459` 落地 D 类工具幂等 rollback（`infra/tools/rollback.ts` `RunRollbackStack`：执行前 capture、成功后 commit、run failed 且非用户 abort 时逆序补偿，报告写 failed Run 的 `output.rollback`）。遗留（另立跟进，不阻塞升 ✅）：PR-4a 先行的 fs/web/shell 三域仍手写 JSON schema，Zod 化统一见 `design-decisions.md` 不做/跟进项 #3。
+
+### 维度 3：记忆层 ✅（W5 修复）
 
 - 全仓 0 处 `MemoryRepository` 定义。prompt 拼接处直查 Prisma：`agentRuntime.ts:29-54` `buildMemoryContext()`（两条路径绕过统一接口）、`agentEvolution.ts:64-70,103,178` 直读直写（绕过 MemoryService 的 FTS 同步与文件回写）、`nativeTools.ts:2528` 又一次直查 + `startsWith("{")` 猜 JSON（:2530-2544 面条代码）。
 - 短期（ChatMessage + `contextSummary`）与长期（Memory 表）完全异构，唯一桥梁是 `memoryFlush.ts:56-106` 单向管道。
 - **无隔离**：`Memory` 模型（`schema.prisma:232-242`）无 `agentId/sessionId/workspaceId`——子 Agent 经验、用户偏好全局共享，注入任意 Agent 的 system prompt（`agentRuntime.ts:241,337`）。代码自己在 `nativeTools.ts:2522` 注释承认「experience 会污染父 Agent 上下文」，但治理手段是读时手工过滤而非写时隔离。
 - **无淘汰**：`strength` 字段无任何 decay/LRU/TTL 逻辑消费；去重是 `content.slice(0,40)` 前缀匹配（`memoryFlush.ts:88-89`，挡不住语义重复且 N+1 查询）。
 
-### 维度 4：状态管理 ⚠️
+**修复备注（2026-07-15，状态 ❌→✅）**：W5（`3fc4be4d`+`546fac51`）落地 `infra/memoryRepository.ts`——`MemoryRepository` 接口（read/write/forget）+ Prisma 实现，read 收拢 FTS 优先/LIKE 回退双路径并按 strength×recency 排序，write 经 MemoryService 保住文件回写与 FTS 增量同步；`Memory` 模型加 `scope`（`global`/`workspace:{id}`/`agent:{id}`）+ agentId 冗余列 + `contentHash`（sha256 替代 `slice(0,40)` 前缀去重，同 scope 同 hash 幂等刷新强度而非重复插入）；`decayMemories` 按日复利衰减（`strength *= 0.95^days`）且低于阈值经 forget 归档（同步清文件与 FTS）。prompt 拼接（`promptBuilder.buildMemoryContext`）、agentEvolution、native `memory_*` 全部改走接口；W5-followup 完成 workspace scope 上下文注入与跨 Agent 共享（越权写由 `resolveMemoryWriteScope` 硬拦）。
+
+### 维度 4：状态管理 ✅（W3+W11 修复）
 
 - ✅ 后端：`loop/phase.ts:9-53` 教科书实现，`TRANSITIONS` 表 + 非法转移直接抛错（:42）；`reactLoop.ts:4-9` 文件头明确 4 条不变量。
 - ✅ 前端三层 store：`useStreamLifecycle.ts:119-126` reducer 强制 INV-2（occupied 拒绝 BEGIN_STREAM）、:230-243 INV-1（done→idle 唯一入口 COMMIT_STREAM）、显式 `onStreamCommitted` 钩子（:286-301）。
@@ -79,21 +89,27 @@
 - ❌ Run 表是死日志：所有写入点都是终态一次性写（`agentRuntime.ts:274`、`agentStream.ts:652-670`），无 `status:"running"` 落库、无 phase 快照 → 无 checkpoint 恢复（`config.yaml` 注释自认「运行中的 Agent 任务随重启丢失」）。
 - ❌ 无 `AWAITING_HUMAN` phase：审批以工具报错建模，审批通过后 `approveAndExecute`（`router.ts:825-828`）只执行操作**不续跑原会话**——ReAct 链断裂，要等用户下一轮消息。对照组 `sleep` 工具已有真正的挂起/唤醒（Task + scheduler 续跑）却未复用。
 
-### 维度 5：反思层 ❌
+**修复备注（2026-07-15，状态 ⚠️→✅）**：前端补丁由 W3（`209ac858`）根治——INV-8「drain 单驱动」不变量收进 reducer（`drainRequested` 标记 + `HYDRATE_DONE` action + 四个显式触发事件），双驱动 effect 删除，`queueMicrotask` 6→1（仅留 dispatch 重入边界）、`onDone` 不再 `await hydrateFromServer` 赌落库；引入的 async-task 回归由 `b4208022` 修复（异步送达接入 INV-8 显式 drain 事件）。Run 死日志与挂起/续跑由 W11（`a8b87f3a`）消除——reactLoop 内核统一接管 Run 生命周期（入口落 `status:"running"` 行、每轮 tool_batch 后 `{phase, roundsUsed, executedToolsCount}` 快照 5s 节流写 `Run.output`、终态统一 update）；新增 `awaiting_human` phase（合法转移 `tool_batch → awaiting_human → llm`），审批 pending 时 loop 挂起、`approval_resolved` 显式事件唤醒并经 `injectUserMessages`（kind=approval）注入原 session 续跑。遗留（W11 明确的设计决策）：重启后遗留 running Run 标 `interrupted` 如实不续跑，checkpoint 重建恢复仍为未来扩展。
+
+### 维度 5：反思层 ⚠️（W7 部分修复）
 
 - 全 `infra/` 搜索 `reflect|critic|review|self.?correct` 零命中相关模块。
 - LLM 调用链无装饰器：`transports.ts:14,36` 直接调 llmClient。
 - 最接近的质量门是 Auto-Compact 与 Loop Contract 停滞检测（`loopContract.ts`），管上下文/进度，不评估输出质量。
 - 后果：工具结果错误/幻觉答案无人复核直接进 `done`；纠错只能靠用户人工点 retry（`agentStream.ts:328-331`）。
 
-### 维度 6：多 Agent 协作 ⚠️
+**修复备注（2026-07-15，状态 ❌→⚠️）**：W7（`8044b6f9`）落地 `infra/loop/reflection.ts` `withReflection(transport, opts)`——「即将 done」终轮（withTools 且零 toolCalls）用 criticModel 跑一票结构化 JSON critic（`{passed, issues}`）；**评估在 transport 装饰器、决策在 reactLoop done 转移点**：不通过且轮数未满经既有 `injectUserMessages`（kind=follow_up）回注重修，轮数耗尽带 `[未经反思通过]` 标记放行（不阻断用户）；critic 经内部 `createSyncTransport` 走 W2 弹性客户端，critic 失败/解析失败静默跳过。升 ⚠️ 而非 ✅ 的两条尾巴：`config.yaml` `reflection.enabled` 默认 false（产品决策，省 token 开销）；仅接入 agentRuntime sync 链路，SSE stream 链路（agentStream）未接，另立跟进（见 `design-decisions.md` 不做/跟进项 #1）。
+
+### 维度 6：多 Agent 协作 ✅（W10+W8 修复）
 
 - ✅ 权限代理扎实：`swarmPermissionGuard.ts:33-64` `TIER_RESTRICT_TOOLS` 按 tier 声明 + `checkToolPermission`（:99-183）硬拦截；纵深防御细致（sub 强制 `mode=tool` :116-124、manager 锁本 Workspace :127-135、禁自删 :138-150）。
 - ✅ 通信有总线抽象：`swarmBus.ts:49-53` `SwarmBus` 接口 + Local 实现 + 预留 Redis；深度防循环（:82-88）、容量上限（:90-99）、审计日志（:116-124）、推优先（:138-173）。
 - ❌ 无统一中介者：任务分发在 `nativeTools.ts:1978` spawnSubagentTool、执行调度在 `asyncJobOrchestrator.ts`、结果聚合在 `asyncJobManager.ts`、心跳触发在 `heartbeatEngine.ts:253-328`（**自己内联一个返回 undefined 的 invokeTrpc 桩** :260-264）——四个入口各自为政。心跳路径甚至绕过 swarm 消息体系直接 `runAgentLoop`（:266-277）。
 - ❌ spawn 层面无任务去重；`MAX_DEPTH=10` 在 `swarmBus.ts:21` 与 `swarmPermissionGuard.ts:174` 两处独立定义。
 
-### 维度 7：错误恢复 ⚠️
+**修复备注（2026-07-15，状态 ⚠️→✅）**：W10（`320772a0`）落地 `infra/swarmOrchestrator.ts` 中介者——统一 `dispatch(taskSpec) → guard 校验 → 60s spawn 去重（agentId+hash(taskText)）→ 并发池/inline 执行 → 结果聚合 → Log 审计` 公共骨架，四入口（`spawn_subagent`/`async_task_run`/`heartbeatEngine`/`TriggerEngine`）改为调用方；**heartbeat 返回 undefined 的 invokeTrpc 桩已删**，与 trigger/async 共用真实 `createTrpcInvoker` 通道，不再绕过 swarm 体系。`MAX_DEPTH` 两处定义由 W8（`da19f546`）收敛为 `SWARM_MAX_DEPTH` 单点（`packages/shared/constants.ts`，swarmBus/redisSwarmBus/swarmPermissionGuard 同源）。防线测试 `swarmOrchestrator.test.ts`（dispatch 双路 spy / spawn 去重 / guard / 在途幂等）。
+
+### 维度 7：错误恢复 ✅（W2+W12+W6 修复）
 
 **已有**：工具超时兜底（`agentTools.ts:427-442`，默认 30s）、MCP 单次重连重试（`mcpClient.ts:173-203`）、LLM 预算硬闸（`llmBudget.ts:75-83`）、重启后遗留任务收口（`asyncJobManager.ts:382-415`）、异步任务手动重试（:1296-1362）。
 
@@ -103,26 +119,34 @@
 - 错误不分类：`retryable` 一律写死 `true`（`agentRuntime.ts:293,404`），不区分 401/429/400。
 - 无 saga：`asyncJobManager.ts` 20+ 处 `console.warn(...失败)` 吞错（:254,282,332,629,712,832…），失败无反向操作。
 
-### 维度 8：HITL ⚠️
+**修复备注（2026-07-15，状态 ⚠️→✅）**：四条缺失全部补齐——LLM 零重试零降级：W2（`a4faf89b`）`infra/resilientLlmClient.ts` 装饰器（错误分类 fatal/retryable/degradable + 指数退避 jitter 重试 + `config.yaml` `llm.fallbackModels` 按序降级），`retryable` 改按分类真实填充；无断路器：W12（`94959cf0`）`infra/circuitBreaker.ts` 通用三态断路器（closed→open→half-open，转移表拒非法转移）接入 `executeMcpTool`，open 期零真实连接、返回 `MCP_CIRCUIT_OPEN` 结构化结果喂回 LLM；心跳连续失败达 `HEARTBEAT_MAX_CONSECUTIVE_FAILURES` 阈值→ suspended 熔断暂停并摘除 cron job（恢复：`refresh()`/`resumeHeartbeat()`，告警邮件同步说明）；无 saga：W6（`beda7459`）`RunRollbackStack` 逆序补偿（`write_file` 快照还原、`file_delete`/`directory_delete` 移 `.trash/` 后移回、`post_create`/`memory_create` 删 id、`git_commit` 等不可逆操作如实 warn 需人工 revert）。
+
+### 维度 8：HITL ⚠️（W1+W11+W12 部分修复）
 
 - ⚠️ tRPC 侧是手动包装而非自动拦截器：`withApprovalGuard()` 逐个 procedure 手包 9 处（`router.ts:100,116,365,375,384-385,599,622-631,777`），新增危险 procedure 忘包无任何机制能发现。Agent 侧单点（`agentTools.ts:322-324`）是真拦截器 ✅。
 - ⚠️ 审批规则硬编码 Set（`approvalGate.ts:15-39`），仅两个 env 开关，`config.yaml` 无审批规则段。
 - ✅ 超时默认拒绝（24h TTL，:46-52），但清理是惰性触发（:134-138）且 `pageSize:100` 漏扫。
 - ❌ **审计硬伤**：`Approval` 模型无 `decidedBy/decidedAt/rejectReason`；`executeApprovedOperation` 成功后 :242 **直接删除审批记录**。对比 `swarmBus.ts:116-124` 有 Log 审计——项目知道该怎么做，审批域没对齐。
 
-### 维度 9：配置与实例化 ⚠️
+**修复备注（2026-07-15，状态维持 ⚠️）**：审计硬伤已由 W1（`f2f889d4`）根治——`Approval` 加 `decidedBy/decidedAt/decisionNote/executedAt`，执行后软删除 `status=executed` **永不物理删除**，过期清理改 `updateMany` 批量不再 `pageSize:100` 漏扫；审批不续跑由 W11（`a8b87f3a`）消除（见维度 4）；清理惰性触发由 W12（`94959cf0`）消除（每日 cron `3 4 * * *` 挂 HeartbeatEngine maintenance 通道）。维持 ⚠️ 的两条遗留：tRPC 侧 `withApprovalGuard` 仍手动包装 11 处（未改 `meta({approval:true})` 自动拦截 middleware，新增危险 procedure 忘包仍无机制发现）；审批规则仍硬编码 Set（`APPROVAL_REQUIRED_OPS`/`DESTRUCTIVE_NATIVE_OPS`），`config.yaml` 无审批规则段。
+
+### 维度 9：配置与实例化 ⚠️（W9 部分修复）
 
 - ✅ Agent 配置外置（`content/agents/*.md` frontmatter + 双向写回）、`.env` / `config.yaml` 三层分离、`ServiceContainer` DI（`serviceContainer.ts:36-82`）、Turn Snapshot 冻结（`reactLoop.ts:128-134`）。
 - ❌ 无 Agent 工厂：三 tier 实例化是三处手写常量 + 直写 Prisma——super（`swarmInitializer.ts:27-73,169-181`）、manager（`agentRuntime.ts:111-190`，且 :145-177 读路径带写副作用，静默自动改用户数据）、sub（`loop/setup.ts:9-16`）。
 - ❌ 无热更新：`getAppConfig` 是 globalThis 单例（`config.ts:533-541`），改模型/温度须重启进程。
 
-### 维度 10：反模式 ❌
+**修复备注（2026-07-15，状态维持 ⚠️）**：工厂缺位已由 W9（`136d3220`）根治——`infra/agentFactory.ts`（`getTierTemplate`/`createAgentForTier`）+ `content/agents/_templates/{tier}.md` 模板（mtime 缓存，缺失回退 shared 常量并 warn 一次/tier），super/manager/sub 三处创建全走工厂，三处硬编码清单由 W8 `TIER_DEFAULT_TOOLS` 收敛；`resolveAgent` 只读化（返回 `{agent, drift}`，读路径不再写库，老库默认 assistant 修复走一次性脚本 `scripts/migrate-assistant-tools.ts`）。维持 ⚠️ 的一条遗留：**配置热更新明确不做**——`getAppConfig` 仍为进程级单例，改模型/温度需重启；单用户本地场景重启成本可接受，热更新（reloadAppConfig + fs.watch）暂不值得引入（见 `design-decisions.md` 不做/跟进项 #2）。
+
+### 维度 10：反模式 ⚠️（W4+W6+W8+W2 部分修复）
 
 - **上帝文件**：`chat.tsx` 3467 行（`ChatView` 单组件 ~3300 行、28 个 useEffect）；`nativeTools.ts` 3376 行（PR-4a 拆走 1317 行后仍是巨兽）。`services.ts` 2328 / `router.ts` 998 属 AGENTS.md 明文约定的知情决策 ⚠️。
 - **运行时循环依赖环**：`agentRuntime → loop/index → reactLoop → agentTools → nativeTools → agentRuntime`（nativeTools.ts:16 值导入 agentRuntime 三个函数）。10+ 处 `await import()` 躲环（`nativeTools.ts:1327,2140,2253,2380,2664,2812,2889,3030`…）。
 - **隐式全局状态**：`llmBudget.ts:16` 预算状态挂 globalThis 且 LLM 调用路径上**同步 fs 读写** `.dev-log/llm-budget.json`（:35-44）；模块级可变单例 10+ 处，每个配套 `__reset*ForTests`——全局状态多到测试需逐一重置本身就是信号。
 - **重复代码**：工具清单三处独立维护（`agentRuntime.ts:111-129` / `swarmInitializer.ts:54-73` / `loop/setup.ts:9-16`，加上 `resolveAgent:148-156` 是第四处枚举）；兜底 prompt `"你是 KnowPilot 助手。"` 在 `nativeTools.ts:2259` 与 `router.ts:449` 重复。
 - **魔法数字**：`"deepseek-v4-flash"` 硬编码 31 处 / 14 个文件（而 `packages/shared/src/constants.ts:135` 明明有模型注册表）；39 处 `.slice(0, N)` 硬截断（16000 同值出现在 `reactLoop.ts:133` 与 `web.ts:378` 不同源）；`heartbeatEngine.ts:322` 连续失败 3 次后只 console.warn——注释「邮件通知在 Phase 5 实现」的僵尸功能。
+
+**修复备注（2026-07-15，状态 ❌→⚠️）**：四条反模式中三条半根治——循环依赖环：W4（`a60511aa`）抽 `promptBuilder.ts`/`agentResolver.ts` 打断，nativeTools 动态 import 15→3，防线测试 `importOrder.test.ts`；nativeTools 上帝文件：W6（`458607e8`）3420→123 行全域拆分；魔法数字/重复清单：W8（`da19f546`）收敛 `packages/shared/constants.ts` 单点（`LLM_MODEL_IDS`/`DEFAULT_LLM_MODEL`/`TIER_DEFAULT_TOOLS`/`SWARM_MAX_DEPTH`/`AGENT_TOOL_RESULT_MAX_CHARS` 等），心跳告警僵尸功能落地为 `infra/emailNotifier.ts`（send_email 工具与 HeartbeatEngine 复用）；globalThis 预算状态 + LLM 路径同步 IO：W2（`a4faf89b`）改模块级内存 + 防抖异步落盘。升 ⚠️ 而非 ✅ 的遗留：`chat.tsx` 3515 行单组件未拆（W3 只收编排层补丁、不拆组件，组件拆分属下轮前端重构）；`services.ts`/`router.ts` 大文件为 AGENTS.md 明文约定的知情决策，不计入。
 
 ---
 
@@ -210,6 +234,27 @@
   "architecture_adr": {
     "recommended_patterns": ["Strategy (LlmProvider/AgentLoopStrategy)", "Decorator (withReflection/ResilientLlmClient)", "Repository (MemoryRepository)", "Mediator (SwarmOrchestrator)", "Interceptor (approval middleware)", "Factory (AgentFactory)", "Circuit Breaker (MCP/外部工具)"],
     "suggested_directory_structure": "保持 AGENTS.md「单文件逻辑收拢」约定不变；新增限于：infra/promptBuilder.ts（打断循环）、infra/memoryRepository.ts、infra/agentFactory.ts、infra/swarmOrchestrator.ts、infra/resilientLlmClient.ts、infra/tools/native/{swarm,session,memory,integration}.ts（PR-4b/4c 域拆分）"
+  },
+  "fix_status_2026_07_15": {
+    "branch": "fix/p0-agent-budget-hitl",
+    "note": "上方 dimensions 为 2026-07-13 审查快照；本块为 W1-W12 修复后的维度终态（DoD 收尾复核：lint/test/build/e2e 全绿）",
+    "work_order_commits": {
+      "W1": ["f2f889d4"], "W2": ["a4faf89b"], "W3": ["209ac858", "b4208022"], "W4": ["a60511aa"],
+      "W5": ["3fc4be4d", "546fac51"], "W6": ["458607e8", "0798811a", "beda7459"], "W7": ["8044b6f9"],
+      "W8": ["da19f546", "663da846"], "W9": ["136d3220"], "W10": ["320772a0"], "W11": ["a8b87f3a"], "W12": ["94959cf0"]
+    },
+    "dimensions": [
+      { "id": "llm_strategy", "status": "⚠️", "score": 7, "fixed_by": ["W2"], "remaining": "LlmProvider 策略接口 / DeepSeek 特判收编 / 推理策略可插拔未做（非本轮工单范围）" },
+      { "id": "tool_command", "status": "✅", "score": 9, "fixed_by": ["W6"], "remaining": "fs/web/shell 三域手写 JSON schema 的 Zod 化另立跟进" },
+      { "id": "memory_repository", "status": "✅", "score": 9, "fixed_by": ["W5"], "remaining": "" },
+      { "id": "state_machine", "status": "✅", "score": 9, "fixed_by": ["W3", "W11"], "remaining": "重启后 running Run 标 interrupted 如实不续跑（设计决策），checkpoint 重建恢复为未来扩展" },
+      { "id": "reflection", "status": "⚠️", "score": 6, "fixed_by": ["W7"], "remaining": "reflection.enabled 默认 false；仅 sync 链路接入，stream 链路另立跟进" },
+      { "id": "multi_agent", "status": "✅", "score": 9, "fixed_by": ["W10", "W8"], "remaining": "" },
+      { "id": "error_recovery", "status": "✅", "score": 9, "fixed_by": ["W2", "W12", "W6"], "remaining": "" },
+      { "id": "hitl", "status": "⚠️", "score": 7, "fixed_by": ["W1", "W11", "W12"], "remaining": "tRPC withApprovalGuard 手动包装 11 处未改 middleware 自动拦截；审批规则硬编码 Set，config.yaml 无审批段" },
+      { "id": "config_factory", "status": "⚠️", "score": 7, "fixed_by": ["W9"], "remaining": "配置热更新明确不做（getAppConfig 进程级单例，改配置需重启）" },
+      { "id": "antipatterns", "status": "⚠️", "score": 7, "fixed_by": ["W4", "W6", "W8", "W2"], "remaining": "chat.tsx 3515 行单组件未拆（下轮前端重构）；services.ts/router.ts 为 AGENTS.md 知情决策" }
+    ]
   }
 }
 ```
