@@ -19,6 +19,8 @@ import { createTrpcInvoker } from "../../trpcInvoker.js";
 import { createMemoryRepository } from "../../memoryRepository.js";
 import { MEMORY_SCOPE_GLOBAL, memoryAgentScope } from "@knowpilot/shared";
 import type { LlmMessage } from "../../llmClient.js";
+import { z } from "zod";
+import { zodParams } from "./zodParams.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
@@ -900,203 +902,177 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   {
     name: "agent_create",
     description: "创建一个新 Agent（需超级权限）。可指定 tier/workspaceId/parentId。创建管理 Agent 时会自动生成主 session。",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Agent 名称（可重复，id 全局唯一）" },
-        description: { type: "string" },
-        model: { type: "string", description: "模型 ID" },
-        systemPrompt: { type: "string" },
-        tools: { type: "array", items: { type: "string" }, description: "工具列表" },
-        tier: { type: "string", enum: ["super", "manager", "sub"], description: "层级" },
-        workspaceId: { type: "string", description: "所属 Workspace id（super 不需要）" },
-        parentId: { type: "string", description: "上级 Agent id" },
-        apiKey: { type: "string", description: "专属 API Key" },
-        heartbeatModel: { type: "string", description: "心跳用便宜模型" },
-        heartbeat: { type: "object", description: "心跳配置 { enabled, cron, goal }" },
-      },
-      required: ["name"],
-    },
+    parameters: zodParams(
+      z.object({
+        name: z.string().describe("Agent 名称（可重复，id 全局唯一）"),
+        description: z.string().optional(),
+        model: z.string().describe("模型 ID").optional(),
+        systemPrompt: z.string().optional(),
+        tools: z.array(z.string()).describe("工具列表").optional(),
+        tier: z.enum(["super", "manager", "sub"]).describe("层级").optional(),
+        workspaceId: z.string().describe("所属 Workspace id（super 不需要）").optional(),
+        parentId: z.string().describe("上级 Agent id").optional(),
+        apiKey: z.string().describe("专属 API Key").optional(),
+        heartbeatModel: z.string().describe("心跳用便宜模型").optional(),
+        heartbeat: z.record(z.unknown()).describe("心跳配置 { enabled, cron, goal }").optional(),
+      }),
+    ),
   },
   {
     name: "agent_update",
     description: "更新 Agent 配置（需超级权限，不能改自己 tier）。运行中的 Agent 用旧配置跑完，下次启动用新配置。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "目标 Agent id" },
-        name: { type: "string" },
-        description: { type: "string" },
-        model: { type: "string" },
-        systemPrompt: { type: "string" },
-        tools: { type: "array", items: { type: "string" } },
-        apiKey: { type: "string" },
-        heartbeatModel: { type: "string" },
-        heartbeat: { type: "object", description: "心跳配置" },
-        status: { type: "string", enum: ["active", "idle", "dormant"], description: "Agent 状态" },
-      },
-      required: ["id"],
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("目标 Agent id"),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        model: z.string().optional(),
+        systemPrompt: z.string().optional(),
+        tools: z.array(z.string()).optional(),
+        apiKey: z.string().optional(),
+        heartbeatModel: z.string().optional(),
+        heartbeat: z.record(z.unknown()).describe("心跳配置").optional(),
+        status: z.enum(["active", "idle", "dormant"]).describe("Agent 状态").optional(),
+      }),
+    ),
   },
   {
     name: "agent_delete",
     description: "删除 Agent（需超级权限，不能删自己或其他 super）。先停止运行中任务，再级联删 session/message/memory，留 tombstone。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "目标 Agent id" },
-      },
-      required: ["id"],
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("目标 Agent id"),
+      }),
+    ),
   },
   {
     name: "agent_inspect",
     description: "获取任意 Agent 的完整上下文（需超级权限）。包括 session 消息、memory、运行记录。默认管理 Agent 运行过程对超级不可见，此工具用于越级查看。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "目标 Agent id" },
-        includeMemory: { type: "boolean", description: "是否包含 memory（默认 true）" },
-      },
-      required: ["id"],
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("目标 Agent id"),
+        includeMemory: z.boolean().describe("是否包含 memory（默认 true）").optional(),
+      }),
+    ),
   },
   {
     name: "agent_send_message",
     description: "向另一个 Agent 发送消息。向下发（super→manager、manager→sub）可在工具调用中发；向上发（sub→manager、manager→super）只能在正式回复中发。跨 Workspace 只有超级能发。",
-    parameters: {
-      type: "object",
-      properties: {
-        toAgentId: { type: "string", description: "目标 Agent id" },
-        content: { type: "string", description: "消息内容（纯文本或含文件路径引用）" },
-        messageType: { type: "string", enum: ["command", "query", "report", "forward"], description: "消息类型" },
-        taskRef: { type: "string", description: "关联的 taskId（可选）" },
-      },
-      required: ["toAgentId", "content"],
-    },
+    parameters: zodParams(
+      z.object({
+        toAgentId: z.string().describe("目标 Agent id"),
+        content: z.string().describe("消息内容（纯文本或含文件路径引用）"),
+        messageType: z.enum(["command", "query", "report", "forward"]).describe("消息类型").optional(),
+        taskRef: z.string().describe("关联的 taskId（可选）").optional(),
+      }),
+    ),
   },
   {
     name: "agent_report_back",
     description: "向上级 Agent 回报结果（默认工具，所有 Agent 可用）。只能在正式回复中调用（不能在工具调用轮次中）。",
-    parameters: {
-      type: "object",
-      properties: {
-        content: { type: "string", description: "回报内容" },
-        messageType: { type: "string", enum: ["report", "query"], description: "回报或请求帮助" },
-        taskRef: { type: "string", description: "关联的 taskId" },
-      },
-      required: ["content"],
-    },
+    parameters: zodParams(
+      z.object({
+        content: z.string().describe("回报内容"),
+        messageType: z.enum(["report", "query"]).describe("回报或请求帮助").optional(),
+        taskRef: z.string().describe("关联的 taskId").optional(),
+      }),
+    ),
   },
   {
     name: "agent_create_sub",
     description:
       "创建子 Agent。默认落在当前父 Agent 所在 Workspace；超级 Agent 可传 workspaceId 跨 Workspace 创建。",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        description: { type: "string" },
-        model: { type: "string" },
-        systemPrompt: { type: "string" },
-        tools: { type: "array", items: { type: "string" } },
-        workspaceId: {
-          type: "string",
-          description: "目标 Workspace（仅超级 Agent 可跨 Workspace；默认=父 Agent 所在 Workspace）",
-        },
-        apiKey: { type: "string" },
-      },
-      required: ["name"],
-    },
+    parameters: zodParams(
+      z.object({
+        name: z.string(),
+        description: z.string().optional(),
+        model: z.string().optional(),
+        systemPrompt: z.string().optional(),
+        tools: z.array(z.string()).optional(),
+        workspaceId: z
+          .string()
+          .describe("目标 Workspace（仅超级 Agent 可跨 Workspace；默认=父 Agent 所在 Workspace）")
+          .optional(),
+        apiKey: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "workspace_create",
     description: "创建 Workspace（需超级权限）。自动创建该 Workspace 的管理 Agent + 主 session + .knowpilot/ 目录结构。",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Workspace 名称" },
-        description: { type: "string" },
-        path: { type: "string", description: "磁盘目录路径" },
-        managerModel: { type: "string", description: "管理 Agent 的模型" },
-        managerSystemPrompt: { type: "string", description: "管理 Agent 的 system prompt（不填用默认模板）" },
-      },
-      required: ["name", "path"],
-    },
+    parameters: zodParams(
+      z.object({
+        name: z.string().describe("Workspace 名称"),
+        description: z.string().optional(),
+        path: z.string().describe("磁盘目录路径"),
+        managerModel: z.string().describe("管理 Agent 的模型").optional(),
+        managerSystemPrompt: z.string().describe("管理 Agent 的 system prompt（不填用默认模板）").optional(),
+      }),
+    ),
   },
   {
     name: "workspace_archive",
     description: "归档 Workspace（需超级权限）。归档 = 所有 Agent 设为 dormant，不跑心跳，不接收消息。可恢复。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Workspace id" },
-      },
-      required: ["id"],
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("Workspace id"),
+      }),
+    ),
   },
   {
     name: "free_api_keys_list",
     description: "列出可用的免费 API Key（从 Credential 表中 scope=llm 且 metadata.source=free 的记录）。",
-    parameters: { type: "object", properties: {} },
+    parameters: zodParams(z.object({})),
   },
   {
     name: "free_api_keys_fetch",
     description: "获取一个可用的免费 API Key（轮询分配，标记 lastUsedAt）。用于 Agent 无专属 key 时获取临时 key。",
-    parameters: {
-      type: "object",
-      properties: {
-        provider: { type: "string", description: "偏好提供商（如 deepseek/openai），不填则随机分配" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        provider: z.string().describe("偏好提供商（如 deepseek/openai），不填则随机分配").optional(),
+      }),
+    ),
   },
   {
     name: "skill_discover",
     description: "发现跨 Workspace 的优秀 Skill（超级 Agent 专用，Hermes 进化 #45）。扫描所有 Skill，按使用频率/成功率排序，返回值得推广的候选。",
-    parameters: {
-      type: "object",
-      properties: {
-        minSuccessRate: { type: "number", description: "最低成功率阈值（0-100），默认 80" },
-        limit: { type: "number", description: "返回数量上限，默认 10" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        minSuccessRate: z.number().describe("最低成功率阈值（0-100），默认 80").optional(),
+        limit: z.number().describe("返回数量上限，默认 10").optional(),
+      }),
+    ),
   },
   {
     name: "skill_promote",
     description: "将一个优秀 Skill 推广到其他 Workspace（超级 Agent 专用，Hermes 进化 #45）。把 Skill 复制到目标 Workspace 的 Agent 工具列表中。",
-    parameters: {
-      type: "object",
-      properties: {
-        skillId: { type: "string", description: "要推广的 Skill id" },
-        targetAgentIds: { type: "array", items: { type: "string" }, description: "目标 Agent id 列表（将 Skill 加入其工具列表）" },
-      },
-      required: ["skillId", "targetAgentIds"],
-    },
+    parameters: zodParams(
+      z.object({
+        skillId: z.string().describe("要推广的 Skill id"),
+        targetAgentIds: z.array(z.string()).describe("目标 Agent id 列表（将 Skill 加入其工具列表）"),
+      }),
+    ),
   },
   {
     name: "optimize_agent_prompt",
     description: "自动优化子 Agent 的 system prompt（管理 Agent 专用，Agent 进化高级版）。基于近期运行经验分析成功率与工具使用模式，追加优化建议到 prompt。",
-    parameters: {
-      type: "object",
-      properties: {
-        agentId: { type: "string", description: "目标子 Agent id" },
-      },
-      required: ["agentId"],
-    },
+    parameters: zodParams(
+      z.object({
+        agentId: z.string().describe("目标子 Agent id"),
+      }),
+    ),
   },
   {
     name: "generate_skill_from_experience",
     description: "从 Agent 运行经验中自动生成 Skill（管理 Agent 专用，Agent 进化高级版）。分析高频工具组合，提炼为可复用的 Skill。",
-    parameters: {
-      type: "object",
-      properties: {
-        agentId: { type: "string", description: "分析哪个 Agent 的经验" },
-        skillName: { type: "string", description: "新 Skill 的名称" },
-        skillDescription: { type: "string", description: "新 Skill 的描述" },
-      },
-      required: ["agentId", "skillName", "skillDescription"],
-    },
-  }
+    parameters: zodParams(
+      z.object({
+        agentId: z.string().describe("分析哪个 Agent 的经验"),
+        skillName: z.string().describe("新 Skill 的名称"),
+        skillDescription: z.string().describe("新 Skill 的描述"),
+      }),
+    ),
+  },
 ];
 
 const SWARM_HANDLERS: Record<string, NativeToolHandler> = {

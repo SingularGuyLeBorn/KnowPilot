@@ -12,6 +12,8 @@ import {
 } from "@knowpilot/shared";
 import type { PostEntity } from "../../../services.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
+import { z } from "zod";
+import { zodParams } from "./zodParams.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
@@ -129,99 +131,91 @@ async function memoryDeleteTool(args: Record<string, unknown>, ctx: NativeToolCo
 const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "post_create",
+    concurrencyClass: "D",
     description: "在本地知识库中创建一篇 Markdown 文章（content/posts）。",
-    parameters: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "文章标题" },
-        content: { type: "string", description: "Markdown 正文" },
-        slug: { type: "string", description: "URL 标识，不填则自动生成" },
-        excerpt: { type: "string", description: "摘要" },
-        coverImage: { type: "string", description: "封面图 URL" },
-        category: { type: "string", description: "分类" },
-        tags: { type: "array", items: { type: "string" }, description: "标签列表" },
-        published: { type: "boolean", description: "是否发布" },
-      },
-      required: ["title"],
-    },
+    parameters: zodParams(
+      z.object({
+        title: z.string().describe("文章标题"),
+        content: z.string().describe("Markdown 正文").optional(),
+        slug: z.string().describe("URL 标识，不填则自动生成").optional(),
+        excerpt: z.string().describe("摘要").optional(),
+        coverImage: z.string().describe("封面图 URL").optional(),
+        category: z.string().describe("分类").optional(),
+        tags: z.array(z.string()).describe("标签列表").optional(),
+        published: z.boolean().describe("是否发布").optional(),
+      }),
+    ),
   },
   {
     name: "post_update",
+    concurrencyClass: "D",
     description: "更新本地知识库中的 Markdown 文章。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "文章 id" },
-        title: { type: "string", description: "文章标题" },
-        content: { type: "string", description: "Markdown 正文" },
-        slug: { type: "string", description: "URL 标识" },
-        excerpt: { type: "string", description: "摘要" },
-        coverImage: { type: "string", description: "封面图 URL" },
-        category: { type: "string", description: "分类" },
-        tags: { type: "array", items: { type: "string" }, description: "标签列表" },
-        published: { type: "boolean", description: "是否发布" },
-      },
-      required: ["id"],
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("文章 id"),
+        title: z.string().describe("文章标题").optional(),
+        content: z.string().describe("Markdown 正文").optional(),
+        slug: z.string().describe("URL 标识").optional(),
+        excerpt: z.string().describe("摘要").optional(),
+        coverImage: z.string().describe("封面图 URL").optional(),
+        category: z.string().describe("分类").optional(),
+        tags: z.array(z.string()).describe("标签列表").optional(),
+        published: z.boolean().describe("是否发布").optional(),
+      }),
+    ),
   },
   {
     name: "post_delete",
+    concurrencyClass: "D",
     description: "删除本地知识库中的 Markdown 文章。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "文章 id" },
-      },
-      required: ["id"],
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("文章 id"),
+      }),
+    ),
   },
   {
     name: "memory_create",
+    concurrencyClass: "D",
     description:
       "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。scope：agent=仅自己可见（默认）；workspace=同 Workspace 的 Agent 共享；global=全局共享（仅超级 Agent）。不要记可从代码/git/文档直接查到的内容。",
-    parameters: {
-      type: "object",
-      properties: {
-        content: { type: "string", description: "记忆内容" },
-        type: {
-          type: "string",
-          enum: ["preference", "semantic", "episodic", "note", "procedural"],
-          description: "记忆类型",
-        },
-        strength: { type: "number", description: "强度 0-1，默认 1" },
-        keywords: { type: "array", items: { type: "string" }, description: "检索关键词" },
-        scope: {
-          type: "string",
-          enum: ["agent", "workspace", "global"],
-          description: "可见范围：agent=仅自己（默认）；workspace=同 Workspace 共享；global=全局（仅超级 Agent）",
-        },
-      },
-      required: ["content"],
-    },
+    parameters: zodParams(
+      z.object({
+        content: z.string().describe("记忆内容"),
+        type: z
+          .enum(["preference", "semantic", "episodic", "note", "procedural"])
+          .describe("记忆类型")
+          .optional(),
+        strength: z.number().describe("强度 0-1，默认 1").optional(),
+        keywords: z.array(z.string()).describe("检索关键词").optional(),
+        scope: z
+          .enum(["agent", "workspace", "global"])
+          .describe("可见范围：agent=仅自己（默认）；workspace=同 Workspace 共享；global=全局（仅超级 Agent）")
+          .optional(),
+      }),
+    ),
   },
   {
     name: "memory_search",
     description: "搜索本地记忆库。",
-    parameters: {
-      type: "object",
-      properties: {
-        keyword: { type: "string", description: "关键词" },
-        type: { type: "string", description: "按类型过滤" },
-        page: { type: "number", description: "页码，默认 1" },
-        pageSize: { type: "number", description: "每页条数，默认 20" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        keyword: z.string().describe("关键词").optional(),
+        type: z.string().describe("按类型过滤").optional(),
+        page: z.number().describe("页码，默认 1").optional(),
+        pageSize: z.number().describe("每页条数，默认 20").optional(),
+      }),
+    ),
   },
   {
     name: "memory_delete",
+    concurrencyClass: "D",
     description: "删除本地记忆库中的一条记忆。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "记忆 id" },
-      },
-      required: ["id"],
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("记忆 id"),
+      }),
+    ),
   },
 ];
 

@@ -137,6 +137,7 @@ async function sleepTool(args: Record<string, unknown>, ctx: NativeToolContext) 
 const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "async_task_run",
+    concurrencyClass: "A",
     description: "启动后台任务（入全局任务池 queued→running）。waitForResult=false（默认）=异步投递：立刻返回，完成后结果进会话异步任务结果队列。waitForResult=true=同步等待：父流挂起直到任务完成，结果作为工具返回值（不进异步队列）。子 Agent 只能用 mode=tool（纯工具执行），不可发起带 LLM 的后台任务。",
     parameters: {
       type: "object",
@@ -154,6 +155,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "async_task_status",
+    concurrencyClass: "A",
     description: "查询异步任务状态。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长、结果/错误、执行日志等。",
     parameters: {
       type: "object",
@@ -164,6 +166,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "async_task_wait",
+    concurrencyClass: "B",
     description: "显式等待异步任务完成（阻塞当前轮，最长 10 分钟，不受默认工具超时限制）。任务完成后返回结果，LLM 基于结果继续生成最终答案。",
     parameters: {
       type: "object",
@@ -175,6 +178,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "async_task_cancel",
+    concurrencyClass: "A",
     description: "取消一条运行中或排队中的异步任务/Subagent。",
     parameters: {
       type: "object",
@@ -186,6 +190,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "run_shell",
+    concurrencyClass: "C",
     description:
       "在项目根目录内执行 Shell 命令（host_restricted：超时/输出上限/危险命令拦截）。Windows 默认 PowerShell，Linux/macOS 默认 bash。",
     parameters: {
@@ -201,6 +206,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "wait",
+    concurrencyClass: "A",
     description: "等待指定时间（用于安装、服务启动、轮询前的延迟）。最多 300 秒。",
     parameters: {
       type: "object",
@@ -212,6 +218,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "sleep",
+    concurrencyClass: "A",
     description:
       "睡眠/定时器：阻塞等待 N 秒后返回（默认 10 秒，最大 300 秒）。设置 async=true 则不阻塞当前对话，改为创建后台异步任务，时间到后结果进入发送队列最前，可用于定时提醒。",
     parameters: {

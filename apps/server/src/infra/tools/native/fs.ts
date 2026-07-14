@@ -220,6 +220,7 @@ async function directoryDeleteTool(args: Record<string, unknown>, ctx: NativeToo
 const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "read_file",
+    concurrencyClass: "A",
     description: "读取项目根目录内的文本文件（相对路径），支持偏移与最大长度。",
     parameters: {
       type: "object",
@@ -233,6 +234,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "write_file",
+    concurrencyClass: "D",
     description: "写入项目根目录内的文本文件（相对路径）。",
     parameters: {
       type: "object",
@@ -245,6 +247,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "append_to_file",
+    concurrencyClass: "D",
     description: "在项目根目录内的文本文件末尾追加内容（文件不存在则创建）。",
     parameters: {
       type: "object",
@@ -257,6 +260,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "list_directory",
+    concurrencyClass: "A",
     description: "列出项目内目录内容，可选递归。",
     parameters: {
       type: "object",
@@ -268,6 +272,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "file_rename",
+    concurrencyClass: "D",
     description: "重命名项目根目录内的文件。",
     parameters: {
       type: "object",
@@ -280,6 +285,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "file_move",
+    concurrencyClass: "D",
     description: "移动项目根目录内的文件到另一个相对路径。",
     parameters: {
       type: "object",
@@ -292,6 +298,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "file_copy",
+    concurrencyClass: "D",
     description: "复制项目根目录内的文件到另一个相对路径。",
     parameters: {
       type: "object",
@@ -304,6 +311,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "search_files",
+    concurrencyClass: "A",
     description: "在项目根目录内搜索包含指定关键词的文本文件，返回文件路径、行号与片段。",
     parameters: {
       type: "object",
@@ -320,6 +328,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "directory_create",
+    concurrencyClass: "D",
     description: "在项目根目录内创建目录（自动创建父目录）。",
     parameters: {
       type: "object",
@@ -331,6 +340,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "file_stat",
+    concurrencyClass: "A",
     description: "获取项目根目录内文件或目录的元信息。",
     parameters: {
       type: "object",
@@ -342,6 +352,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "directory_delete",
+    concurrencyClass: "D",
     description: "删除项目根目录内的空目录；设置 recursive=true 可递归删除。",
     parameters: {
       type: "object",
@@ -354,6 +365,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "file_delete",
+    concurrencyClass: "D",
     description: "删除项目根目录内的文件（相对路径）。",
     parameters: {
       type: "object",

@@ -18,6 +18,8 @@ import {
   type NativeToolDefinition,
   type NativeToolHandler,
 } from "./types.js";
+import { z } from "zod";
+import { zodParams } from "./zodParams.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
 /** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
@@ -512,103 +514,79 @@ const SESSION_DEFS: NativeToolDefinition[] = [
     name: "spawn_subagent",
     description:
       "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 作为工具返回值（不强制 report_back，也不进异步队列）。",
-    parameters: {
-      type: "object",
-      properties: {
-        task: { type: "string", description: "子 Agent 要执行的任务描述（详细越好）" },
-        label: { type: "string", description: "子 Agent 卡片/队列中显示的简短标签" },
-        agentId: { type: "string", description: "指定子 Agent 使用的 Agent ID（不填则新建）" },
-        model: { type: "string", description: "指定子代理使用的模型 ID（不填则用 Agent 默认模型）" },
-        workspaceId: {
-          type: "string",
-          description: "目标 Workspace（仅超级 Agent 可跨 Workspace；默认落在当前父 Agent 所在 Workspace）",
-        },
-        timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
-        waitForResult: { type: "boolean", description: "true=同步等待子 Agent 完成并作为工具返回值；false(默认)=异步投递，立刻返回，结果经 report_back 进父异步队列" },
-        shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
-      },
-      required: ["task"],
-    },
+    parameters: zodParams(
+      z.object({
+        task: z.string().describe("子 Agent 要执行的任务描述（详细越好）"),
+        label: z.string().describe("子 Agent 卡片/队列中显示的简短标签").optional(),
+        agentId: z.string().describe("指定子 Agent 使用的 Agent ID（不填则新建）").optional(),
+        model: z.string().describe("指定子代理使用的模型 ID（不填则用 Agent 默认模型）").optional(),
+        workspaceId: z
+          .string()
+          .describe("目标 Workspace（仅超级 Agent 可跨 Workspace；默认落在当前父 Agent 所在 Workspace）")
+          .optional(),
+        timeoutMs: z.number().describe("任务超时毫秒数，不填则使用全局默认值").optional(),
+        waitForResult: z
+          .boolean()
+          .describe("true=同步等待子 Agent 完成并作为工具返回值；false(默认)=异步投递，立刻返回，结果经 report_back 进父异步队列")
+          .optional(),
+        shareToSessionIds: z.array(z.string()).describe("swarm 协作：结果额外广播到这些会话 id").optional(),
+      }),
+    ),
   },
   {
     name: "session_clear",
+    concurrencyClass: "D",
     description:
       "删除所有 ChatSession 及其关联的 ChatMessage（级联清空）。这是一个破坏性操作，调用时必须将 confirm 显式设为 true。",
-    parameters: {
-      type: "object",
-      properties: {
-        confirm: {
-          type: "boolean",
-          description: "必须设为 true 才会执行清空，否则拒绝调用",
-        },
-      },
-      required: ["confirm"],
-    },
+    parameters: zodParams(
+      z.object({
+        confirm: z.boolean().describe("必须设为 true 才会执行清空，否则拒绝调用"),
+      }),
+    ),
   },
   {
     name: "session_rotate",
     description:
       "当当前会话轮数过多、话题切换或用户要求换干净上下文时调用：归档当前会话，创建同一 Agent 的新会话，并把你写的总结作为新会话第一条用户消息。用户若仍在看旧会话，不会自动跳转，只会收到提示。",
-    parameters: {
-      type: "object",
-      properties: {
-        summary: {
-          type: "string",
-          description: "给新会话用的中文总结（Markdown），需保留目标、决策、未完成事项与关键结论",
-        },
-        reason: {
-          type: "string",
-          description: "轮换原因，如「轮数过多」「话题切换」「用户要求」",
-        },
-        title: {
-          type: "string",
-          description: "新会话标题（可选，默认基于旧标题生成）",
-        },
-        carryMemoryIds: {
-          type: "array",
-          items: { type: "string" },
-          description: "需要在新会话首条消息中提及的 Memory id（可选）",
-        },
-      },
-      required: ["summary"],
-    },
+    parameters: zodParams(
+      z.object({
+        summary: z.string().describe("给新会话用的中文总结（Markdown），需保留目标、决策、未完成事项与关键结论"),
+        reason: z.string().describe("轮换原因，如「轮数过多」「话题切换」「用户要求」").optional(),
+        title: z.string().describe("新会话标题（可选，默认基于旧标题生成）").optional(),
+        carryMemoryIds: z.array(z.string()).describe("需要在新会话首条消息中提及的 Memory id（可选）").optional(),
+      }),
+    ),
   },
   {
     name: "session_compact",
     description:
       "当用户要求压缩上下文、或当前会话过长需要释放 token 时调用：摘要更早的对话并写入会话摘要，保留最近消息继续聊。与 session_rotate 不同，不会换新会话。",
-    parameters: {
-      type: "object",
-      properties: {
-        reason: {
-          type: "string",
-          description: "压缩原因，如「用户要求」「上下文过长」",
-        },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        reason: z.string().describe("压缩原因，如「用户要求」「上下文过长」").optional(),
+      }),
+    ),
   },
   {
     name: "task_run",
     description: "立即执行一条已注册的后台 Task（如 db:sync）。",
-    parameters: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Task id" },
-        name: { type: "string", description: "或按任务名称匹配" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("Task id").optional(),
+        name: z.string().describe("或按任务名称匹配").optional(),
+      }),
+    ),
   },
   {
     name: "invoke_api",
+    concurrencyClass: "B",
     description: "调用 KnowPilot 后端 tRPC 工具（如 post.list、memory.list）。tool 格式：post.list",
-    parameters: {
-      type: "object",
-      properties: {
-        tool: { type: "string" },
-        args: { type: "object", description: "JSON 参数对象" },
-      },
-      required: ["tool"],
-    },
+    parameters: zodParams(
+      z.object({
+        tool: z.string(),
+        args: z.record(z.unknown()).describe("JSON 参数对象").optional(),
+      }),
+    ),
   },
 ];
 

@@ -6,11 +6,14 @@ import type { AppConfig } from "../../config.js";
 import type { ServiceContainer } from "../../serviceContainer.js";
 import type { ResolveAgentFn } from "../../agentResolver.js";
 import type { PrismaClient } from "@prisma/client";
+import type { ToolConcurrencyClass } from "../types.js";
 
 export interface NativeToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  /** 并发分级：A=纯CPU/内存高并发 B=网络只读中并发 C=本地进程低并发 D=写入/副作用串行（缺省按 B） */
+  concurrencyClass?: ToolConcurrencyClass;
 }
 
 export interface NativeToolContext {

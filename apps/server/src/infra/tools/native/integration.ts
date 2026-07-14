@@ -67,6 +67,8 @@ import {
 import { captureZhihuLoginState } from "../../metablog/auth/zhihuLogin.js";
 import { listSavedCookiePlatforms } from "../../cookieJar.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
+import { z } from "zod";
+import { zodParams } from "./zodParams.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
 const execFileAsync = promisify(execFile);
@@ -617,682 +619,605 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   {
     name: "git_branch",
     description: "查看 Git 仓库分支列表。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string", description: "已注册 GitRepo 的 id" },
-        repoPath: { type: "string", description: "或直接指定本地仓库路径" },
-        all: { type: "boolean", description: "是否包含远程分支，默认 false" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().describe("已注册 GitRepo 的 id").optional(),
+        repoPath: z.string().describe("或直接指定本地仓库路径").optional(),
+        all: z.boolean().describe("是否包含远程分支，默认 false").optional(),
+      }),
+    ),
   },
   {
     name: "git_checkout",
     description: "切换或新建并切换 Git 分支。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string", description: "已注册 GitRepo 的 id" },
-        repoPath: { type: "string", description: "或直接指定本地仓库路径" },
-        branch: { type: "string", description: "分支名" },
-        create: { type: "boolean", description: "是否新建分支，默认 false" },
-      },
-      required: ["branch"],
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().describe("已注册 GitRepo 的 id").optional(),
+        repoPath: z.string().describe("或直接指定本地仓库路径").optional(),
+        branch: z.string().describe("分支名"),
+        create: z.boolean().describe("是否新建分支，默认 false").optional(),
+      }),
+    ),
   },
   {
     name: "git_clone",
     description: "克隆远程 Git 仓库到项目根目录内的指定子目录。",
-    parameters: {
-      type: "object",
-      properties: {
-        url: { type: "string", description: "仓库 HTTPS/SSH URL" },
-        dest: { type: "string", description: "项目内目标相对目录，如 repos/foo" },
-      },
-      required: ["url", "dest"],
-    },
+    parameters: zodParams(
+      z.object({
+        url: z.string().describe("仓库 HTTPS/SSH URL"),
+        dest: z.string().describe("项目内目标相对目录，如 repos/foo"),
+      }),
+    ),
   },
   {
     name: "git_status",
     description: "查看 Git 仓库工作区状态。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string", description: "已注册 GitRepo 的 id" },
-        repoPath: { type: "string", description: "或直接指定本地仓库路径" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().describe("已注册 GitRepo 的 id").optional(),
+        repoPath: z.string().describe("或直接指定本地仓库路径").optional(),
+      }),
+    ),
   },
   {
     name: "git_log",
     description: "查看 Git 提交历史。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string" },
-        repoPath: { type: "string" },
-        limit: { type: "number", description: "条数，默认 10" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().optional(),
+        repoPath: z.string().optional(),
+        limit: z.number().describe("条数，默认 10").optional(),
+      }),
+    ),
   },
   {
     name: "git_diff",
     description: "查看 Git 工作区 diff。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string" },
-        repoPath: { type: "string" },
-        staged: { type: "boolean", description: "是否只看暂存区" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().optional(),
+        repoPath: z.string().optional(),
+        staged: z.boolean().describe("是否只看暂存区").optional(),
+      }),
+    ),
   },
   {
     name: "git_commit",
+    concurrencyClass: "D",
     description: "Git add -A 并提交当前仓库变更。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string", description: "已注册 GitRepo 的 id" },
-        repoPath: { type: "string", description: "或直接指定本地仓库路径" },
-        message: { type: "string", description: "提交信息" },
-      },
-      required: ["message"],
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().describe("已注册 GitRepo 的 id").optional(),
+        repoPath: z.string().describe("或直接指定本地仓库路径").optional(),
+        message: z.string().describe("提交信息"),
+      }),
+    ),
   },
   {
     name: "git_pull",
     description: "Git pull 拉取远程更新。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string" },
-        repoPath: { type: "string" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().optional(),
+        repoPath: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "git_push",
     description: "Git push 推送本地提交到远程。",
-    parameters: {
-      type: "object",
-      properties: {
-        repoId: { type: "string" },
-        repoPath: { type: "string" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        repoId: z.string().optional(),
+        repoPath: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "yuque_get_doc",
     description: "通过语雀 Open API v2 获取文档内容（需配置 YUQUE_SESSION 或 Credential scope=yuque）。",
-    parameters: {
-      type: "object",
-      properties: {
-        namespace: { type: "string", description: "知识库 namespace，如 user/repo" },
-        slug: { type: "string", description: "文档 slug" },
-      },
-      required: ["namespace", "slug"],
-    },
+    parameters: zodParams(
+      z.object({
+        namespace: z.string().describe("知识库 namespace，如 user/repo"),
+        slug: z.string().describe("文档 slug"),
+      }),
+    ),
   },
   {
     name: "yuque_list_books",
     description: "列出语雀知识库（内部 Web API，需 Cookie）。",
-    parameters: { type: "object", properties: {} },
+    parameters: zodParams(z.object({})),
   },
   {
     name: "yuque_get_book_toc",
     description: "获取语雀知识库目录（内部 Web API，需 Cookie）。",
-    parameters: {
-      type: "object",
-      properties: {
-        bookId: { type: "string" },
-      },
-      required: ["bookId"],
-    },
+    parameters: zodParams(
+      z.object({
+        bookId: z.string(),
+      }),
+    ),
   },
   {
     name: "yuque_create_doc",
     description: "在语雀知识库创建文档（内部 Web API，需 Cookie）。",
-    parameters: {
-      type: "object",
-      properties: {
-        bookId: { type: "string" },
-        title: { type: "string" },
-        body: { type: "string", description: "Markdown 内容" },
-      },
-      required: ["bookId", "title", "body"],
-    },
+    parameters: zodParams(
+      z.object({
+        bookId: z.string(),
+        title: z.string(),
+        body: z.string().describe("Markdown 内容"),
+      }),
+    ),
   },
   {
     name: "yuque_update_doc",
     description: "更新语雀文档（内部 Web API，需 Cookie）。",
-    parameters: {
-      type: "object",
-      properties: {
-        docId: { type: "string" },
-        bookId: { type: "string" },
-        title: { type: "string" },
-        body: { type: "string" },
-      },
-      required: ["docId", "title", "body"],
-    },
+    parameters: zodParams(
+      z.object({
+        docId: z.string(),
+        bookId: z.string().optional(),
+        title: z.string(),
+        body: z.string(),
+      }),
+    ),
   },
   {
     name: "yuque_delete_doc",
     description: "删除语雀文档（内部 Web API，需 Cookie）。",
-    parameters: {
-      type: "object",
-      properties: {
-        docId: { type: "string" },
-        bookId: { type: "string" },
-      },
-      required: ["docId", "bookId"],
-    },
+    parameters: zodParams(
+      z.object({
+        docId: z.string(),
+        bookId: z.string(),
+      }),
+    ),
   },
   {
     name: "yuque_list_repos",
     description: "列出语雀知识库（Open API v2，需 Token）。",
-    parameters: { type: "object", properties: {} },
+    parameters: zodParams(z.object({})),
   },
   {
     name: "yuque_list_docs",
     description: "列出语雀知识库文档（Open API v2，需 Token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        namespace: { type: "string" },
-      },
-      required: ["namespace"],
-    },
+    parameters: zodParams(
+      z.object({
+        namespace: z.string(),
+      }),
+    ),
   },
   {
     name: "yuque_create_doc_v2",
     description: "创建语雀文档（Open API v2，需 Token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        namespace: { type: "string" },
-        title: { type: "string" },
-        body: { type: "string" },
-      },
-      required: ["namespace", "title", "body"],
-    },
+    parameters: zodParams(
+      z.object({
+        namespace: z.string(),
+        title: z.string(),
+        body: z.string(),
+      }),
+    ),
   },
   {
     name: "yuque_update_doc_v2",
     description: "更新语雀文档（Open API v2，需 Token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        namespace: { type: "string" },
-        slug: { type: "string" },
-        title: { type: "string" },
-        body: { type: "string" },
-      },
-      required: ["namespace", "slug", "title", "body"],
-    },
+    parameters: zodParams(
+      z.object({
+        namespace: z.string(),
+        slug: z.string(),
+        title: z.string(),
+        body: z.string(),
+      }),
+    ),
   },
   {
     name: "yuque_delete_doc_v2",
     description: "删除语雀文档（Open API v2，需 Token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        namespace: { type: "string" },
-        slug: { type: "string" },
-      },
-      required: ["namespace", "slug"],
-    },
+    parameters: zodParams(
+      z.object({
+        namespace: z.string(),
+        slug: z.string(),
+      }),
+    ),
   },
   {
     name: "capture_zhihu_login",
     description: "弹出浏览器窗口让用户登录知乎，完成后保存登录态到 content/cookies/zhihu_storage_state.json。",
-    parameters: {
-      type: "object",
-      properties: {
-        timeoutSec: { type: "number", description: "等待超时秒数，默认 120" },
-      },
-    },
+    parameters: zodParams(
+      z.object({
+        timeoutSec: z.number().describe("等待超时秒数，默认 120").optional(),
+      }),
+    ),
   },
   {
     name: "browser_login_status",
     description: "列出当前已保存的浏览器登录态平台。",
-    parameters: { type: "object", properties: {} },
+    parameters: zodParams(z.object({})),
   },
   {
     name: "github_search_repos",
     description: "在 GitHub 搜索公开仓库。",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string" },
-        limit: { type: "number", description: "默认 5" },
-      },
-      required: ["query"],
-    },
+    parameters: zodParams(
+      z.object({
+        query: z.string(),
+        limit: z.number().describe("默认 5").optional(),
+      }),
+    ),
   },
   {
     name: "github_get_repo",
     description: "获取 GitHub 仓库详情。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-      },
-      required: ["repo"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+      }),
+    ),
   },
   {
     name: "github_create_repo",
     description: "创建 GitHub 仓库（需要 token 有 repo 或 public_repo 权限）。",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        description: { type: "string" },
-        private: { type: "boolean", description: "默认 false" },
-        autoInit: { type: "boolean", description: "是否自动初始化 README，默认 false" },
-      },
-      required: ["name"],
-    },
+    parameters: zodParams(
+      z.object({
+        name: z.string(),
+        description: z.string().optional(),
+        private: z.boolean().describe("默认 false").optional(),
+        autoInit: z.boolean().describe("是否自动初始化 README，默认 false").optional(),
+      }),
+    ),
   },
   {
     name: "github_update_repo",
     description: "更新 GitHub 仓库元信息。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        description: { type: "string" },
-        private: { type: "boolean" },
-        defaultBranch: { type: "string" },
-      },
-      required: ["repo"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        description: z.string().optional(),
+        private: z.boolean().optional(),
+        defaultBranch: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "github_get_file",
     description: "读取 GitHub 仓库文件内容（Base64 自动解码）。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        path: { type: "string" },
-        ref: { type: "string", description: "分支/tag/sha，默认默认分支" },
-      },
-      required: ["repo", "path"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        path: z.string(),
+        ref: z.string().describe("分支/tag/sha，默认默认分支").optional(),
+      }),
+    ),
   },
   {
     name: "github_create_file",
     description: "在 GitHub 仓库创建文件。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        path: { type: "string" },
-        content: { type: "string" },
-        message: { type: "string" },
-        branch: { type: "string" },
-      },
-      required: ["repo", "path", "content", "message"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        path: z.string(),
+        content: z.string(),
+        message: z.string(),
+        branch: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "github_update_file",
     description: "更新 GitHub 仓库文件（需要先获取 sha）。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        path: { type: "string" },
-        content: { type: "string" },
-        message: { type: "string" },
-        sha: { type: "string" },
-        branch: { type: "string" },
-      },
-      required: ["repo", "path", "content", "message", "sha"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        path: z.string(),
+        content: z.string(),
+        message: z.string(),
+        sha: z.string(),
+        branch: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "github_delete_file",
     description: "删除 GitHub 仓库文件。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        path: { type: "string" },
-        message: { type: "string" },
-        sha: { type: "string" },
-        branch: { type: "string" },
-      },
-      required: ["repo", "path", "message", "sha"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        path: z.string(),
+        message: z.string(),
+        sha: z.string(),
+        branch: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "github_list_issues",
+    concurrencyClass: "B",
     description: "列出 GitHub 仓库 Issues。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        state: { type: "string", enum: ["open", "closed", "all"], description: "默认 open" },
-        perPage: { type: "number", description: "默认 30" },
-        page: { type: "number", description: "默认 1" },
-      },
-      required: ["repo"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        state: z.enum(["open", "closed", "all"]).describe("默认 open").optional(),
+        perPage: z.number().describe("默认 30").optional(),
+        page: z.number().describe("默认 1").optional(),
+      }),
+    ),
   },
   {
     name: "github_get_issue",
+    concurrencyClass: "B",
     description: "获取单个 GitHub Issue 详情。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        number: { type: "number" },
-      },
-      required: ["repo", "number"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        number: z.number(),
+      }),
+    ),
   },
   {
     name: "github_create_issue",
     description: "创建 GitHub Issue。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        title: { type: "string" },
-        body: { type: "string" },
-        labels: { type: "array", items: { type: "string" } },
-      },
-      required: ["repo", "title"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        title: z.string(),
+        body: z.string().optional(),
+        labels: z.array(z.string()).optional(),
+      }),
+    ),
   },
   {
     name: "github_update_issue",
     description: "更新 GitHub Issue（状态/标题/正文/标签）。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        number: { type: "number" },
-        title: { type: "string" },
-        body: { type: "string" },
-        state: { type: "string", enum: ["open", "closed"] },
-        labels: { type: "array", items: { type: "string" } },
-      },
-      required: ["repo", "number"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        number: z.number(),
+        title: z.string().optional(),
+        body: z.string().optional(),
+        state: z.enum(["open", "closed"]).optional(),
+        labels: z.array(z.string()).optional(),
+      }),
+    ),
   },
   {
     name: "github_list_pull_requests",
+    concurrencyClass: "B",
     description: "列出 GitHub 仓库 Pull Requests。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        state: { type: "string", enum: ["open", "closed", "all"], description: "默认 open" },
-        perPage: { type: "number", description: "默认 30" },
-        page: { type: "number", description: "默认 1" },
-      },
-      required: ["repo"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        state: z.enum(["open", "closed", "all"]).describe("默认 open").optional(),
+        perPage: z.number().describe("默认 30").optional(),
+        page: z.number().describe("默认 1").optional(),
+      }),
+    ),
   },
   {
     name: "github_get_pull_request",
+    concurrencyClass: "B",
     description: "获取单个 GitHub Pull Request 详情。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        number: { type: "number" },
-      },
-      required: ["repo", "number"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        number: z.number(),
+      }),
+    ),
   },
   {
     name: "github_create_pull_request",
+    concurrencyClass: "D",
     description: "创建 GitHub Pull Request。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        title: { type: "string" },
-        head: { type: "string", description: "源分支" },
-        base: { type: "string", description: "目标分支" },
-        body: { type: "string" },
-      },
-      required: ["repo", "title", "head", "base"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        title: z.string(),
+        head: z.string().describe("源分支"),
+        base: z.string().describe("目标分支"),
+        body: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "github_list_branches",
+    concurrencyClass: "B",
     description: "列出 GitHub 仓库分支。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        perPage: { type: "number", description: "默认 30" },
-        page: { type: "number", description: "默认 1" },
-      },
-      required: ["repo"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        perPage: z.number().describe("默认 30").optional(),
+        page: z.number().describe("默认 1").optional(),
+      }),
+    ),
   },
   {
     name: "github_get_branch",
+    concurrencyClass: "B",
     description: "获取 GitHub 分支详情。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        branch: { type: "string" },
-      },
-      required: ["repo", "branch"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        branch: z.string(),
+      }),
+    ),
   },
   {
     name: "github_create_branch",
+    concurrencyClass: "D",
     description: "基于已有分支创建新分支。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        newBranch: { type: "string" },
-        fromBranch: { type: "string", description: "默认 main" },
-      },
-      required: ["repo", "newBranch"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        newBranch: z.string(),
+        fromBranch: z.string().describe("默认 main").optional(),
+      }),
+    ),
   },
   {
     name: "github_list_workflows",
+    concurrencyClass: "B",
     description: "列出 GitHub Actions 工作流。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-      },
-      required: ["repo"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+      }),
+    ),
   },
   {
     name: "github_trigger_workflow",
+    concurrencyClass: "D",
     description: "触发 GitHub Actions 工作流 dispatch 事件。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        workflowId: { type: "string", description: "工作流 ID 或文件名" },
-        ref: { type: "string", description: "触发分支，默认 main" },
-        inputs: { type: "object", description: "工作流输入参数" },
-      },
-      required: ["repo", "workflowId"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        workflowId: z.string().describe("工作流 ID 或文件名"),
+        ref: z.string().describe("触发分支，默认 main").optional(),
+        inputs: z.record(z.unknown()).describe("工作流输入参数").optional(),
+      }),
+    ),
   },
   {
     name: "github_create_release",
+    concurrencyClass: "D",
     description: "创建 GitHub Release。",
-    parameters: {
-      type: "object",
-      properties: {
-        repo: { type: "string", description: "仓库，格式 owner/repo" },
-        tagName: { type: "string" },
-        name: { type: "string" },
-        body: { type: "string" },
-        targetCommitish: { type: "string", description: "目标分支或 commit" },
-      },
-      required: ["repo", "tagName", "name"],
-    },
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        tagName: z.string(),
+        name: z.string(),
+        body: z.string().optional(),
+        targetCommitish: z.string().describe("目标分支或 commit").optional(),
+      }),
+    ),
   },
   {
     name: "github_tool",
+    concurrencyClass: "D",
     description: `调用完整版 GitHub 工具集（MetaBlog 全量）。可用 tool 名称：${listGitHubTools().join(", ")}。`,
-    parameters: {
-      type: "object",
-      properties: {
-        tool: { type: "string", description: "GitHub 工具名，如 github_create_issue" },
-        params: { type: "object", description: "该工具所需参数" },
-      },
-      required: ["tool", "params"],
-    },
+    parameters: zodParams(
+      z.object({
+        tool: z.string().describe("GitHub 工具名，如 github_create_issue"),
+        params: z.record(z.unknown()).describe("该工具所需参数"),
+      }),
+    ),
   },
   {
     name: "feishu_send_text",
+    concurrencyClass: "D",
     description: "向飞书用户/群发送文本（优先 tenant token；也支持 user token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        receiveId: { type: "string", description: "接收者 open_id / chat_id" },
-        receiveIdType: { type: "string", enum: ["open_id", "chat_id", "user_id"], description: "默认 open_id" },
-        text: { type: "string" },
-      },
-      required: ["receiveId", "text"],
-    },
+    parameters: zodParams(
+      z.object({
+        receiveId: z.string().describe("接收者 open_id / chat_id"),
+        receiveIdType: z.enum(["open_id", "chat_id", "user_id"]).describe("默认 open_id").optional(),
+        text: z.string(),
+      }),
+    ),
   },
   {
     name: "feishu_send_message",
+    concurrencyClass: "D",
     description: "向飞书发送任意类型消息（text/post/image/interactive 等）。",
-    parameters: {
-      type: "object",
-      properties: {
-        receiveId: { type: "string" },
-        receiveIdType: { type: "string", enum: ["open_id", "chat_id", "user_id"], description: "默认 open_id" },
-        msgType: { type: "string", description: "消息类型：text/post/image/interactive" },
-        content: { type: "object", description: "消息内容对象" },
-      },
-      required: ["receiveId", "msgType", "content"],
-    },
+    parameters: zodParams(
+      z.object({
+        receiveId: z.string(),
+        receiveIdType: z.enum(["open_id", "chat_id", "user_id"]).describe("默认 open_id").optional(),
+        msgType: z.string().describe("消息类型：text/post/image/interactive"),
+        content: z.record(z.unknown()).describe("消息内容对象"),
+      }),
+    ),
   },
   {
     name: "feishu_get_doc",
+    concurrencyClass: "B",
     description: "获取飞书文档详情（需 user_access_token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        documentId: { type: "string" },
-      },
-      required: ["documentId"],
-    },
+    parameters: zodParams(
+      z.object({
+        documentId: z.string(),
+      }),
+    ),
   },
   {
     name: "feishu_create_doc",
+    concurrencyClass: "D",
     description: "创建飞书文档（需 user_access_token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        folderToken: { type: "string", description: "可选父文件夹 token" },
-      },
-      required: ["title"],
-    },
+    parameters: zodParams(
+      z.object({
+        title: z.string(),
+        folderToken: z.string().describe("可选父文件夹 token").optional(),
+      }),
+    ),
   },
   {
     name: "feishu_search_docs",
+    concurrencyClass: "B",
     description: "搜索飞书文档（需 user_access_token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string" },
-      },
-      required: ["query"],
-    },
+    parameters: zodParams(
+      z.object({
+        query: z.string(),
+      }),
+    ),
   },
   {
     name: "feishu_get_wiki_space",
+    concurrencyClass: "B",
     description: "获取飞书 Wiki 空间信息（需 user_access_token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        spaceId: { type: "string" },
-      },
-      required: ["spaceId"],
-    },
+    parameters: zodParams(
+      z.object({
+        spaceId: z.string(),
+      }),
+    ),
   },
   {
     name: "feishu_get_wiki_nodes",
+    concurrencyClass: "B",
     description: "获取飞书 Wiki 节点列表（需 user_access_token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        spaceId: { type: "string" },
-        parentNodeToken: { type: "string", description: "可选父节点 token" },
-      },
-      required: ["spaceId"],
-    },
+    parameters: zodParams(
+      z.object({
+        spaceId: z.string(),
+        parentNodeToken: z.string().describe("可选父节点 token").optional(),
+      }),
+    ),
   },
   {
     name: "feishu_create_spreadsheet",
+    concurrencyClass: "D",
     description: "创建飞书表格（需 user_access_token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        folderToken: { type: "string" },
-      },
-      required: ["title"],
-    },
+    parameters: zodParams(
+      z.object({
+        title: z.string(),
+        folderToken: z.string().optional(),
+      }),
+    ),
   },
   {
     name: "feishu_append_spreadsheet_values",
+    concurrencyClass: "D",
     description: "向飞书表格追加数据（需 user_access_token）。",
-    parameters: {
-      type: "object",
-      properties: {
-        spreadsheetToken: { type: "string" },
-        range: { type: "string", description: "如 sheet1!A1" },
-        values: { type: "array", description: "二维数组" },
-      },
-      required: ["spreadsheetToken", "range", "values"],
-    },
+    parameters: zodParams(
+      z.object({
+        spreadsheetToken: z.string(),
+        range: z.string().describe("如 sheet1!A1"),
+        values: z.array(z.unknown()).describe("二维数组"),
+      }),
+    ),
   },
   {
     name: "feishu_token_status",
+    concurrencyClass: "B",
     description: "查询飞书 user_access_token 状态（Credential 表或文件缓存）。",
-    parameters: {
-      type: "object",
-      properties: {},
-    },
+    parameters: zodParams(z.object({})),
   },
   {
     name: "feishu_refresh_token",
+    concurrencyClass: "D",
     description: "手动刷新飞书 user_access_token。",
-    parameters: {
-      type: "object",
-      properties: {},
-    },
+    parameters: zodParams(z.object({})),
   },
   {
     name: "send_email",
     description: "发送邮件通知用户（任务完成、预算耗尽、心跳失败等）。需配置 EMAIL_PROVIDER 环境变量。",
-    parameters: {
-      type: "object",
-      properties: {
-        subject: { type: "string", description: "邮件主题" },
-        body: { type: "string", description: "邮件正文（纯文本）" },
-        to: { type: "string", description: "收件人邮箱（不填则用 EMAIL_TO 环境变量）" },
-      },
-      required: ["subject", "body"],
-    },
+    parameters: zodParams(
+      z.object({
+        subject: z.string().describe("邮件主题"),
+        body: z.string().describe("邮件正文（纯文本）"),
+        to: z.string().describe("收件人邮箱（不填则用 EMAIL_TO 环境变量）").optional(),
+      }),
+    ),
   },
 ];
 

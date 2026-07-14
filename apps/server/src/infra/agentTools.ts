@@ -13,6 +13,7 @@ import {
   listNativeTools,
   type NativeToolContext,
 } from "./nativeTools.js";
+import { getTool } from "./tools/registry.js";
 import {
   buildSkillToolSchema,
   executeSkill,
@@ -69,64 +70,6 @@ const DEFAULT_NATIVE = [...DEFAULT_AGENT_NATIVE];
 /** 可并发执行的工具（只读 / 无副作用） */
 const READ_ONLY_NATIVE = new Set(["web_search", "read_article", "scrape_web_page", "read_file", "list_directory", "wait", "sleep"]);
 
-/**
- * 工具并发分级（用于 executeToolCallsBatch 分桶，避免三四个慢工具拖垮快工具）：
- * A 纯 CPU/内存（高并发 8）、B 网络只读（中并发 4）、C 本地进程（低并发 2）、D 写入/副作用（串行 1）
- */
-const CONCURRENCY_CLASS_NATIVE: Record<string, "A" | "B" | "C" | "D"> = {
-  // A: 纯本地只读/等待，几乎不占资源
-  read_article: "A",
-  read_file: "A",
-  list_directory: "A",
-  search_files: "A",
-  wait: "A",
-  sleep: "A",
-  file_stat: "A",
-  directory_create: "D",
-  search_global: "A",
-  // B: 网络只读
-  web_search: "B",
-  scrape_web_page: "B",
-  invoke_api: "B",
-  github_list_issues: "B",
-  github_get_issue: "B",
-  github_list_pull_requests: "B",
-  github_get_pull_request: "B",
-  github_list_branches: "B",
-  github_get_branch: "B",
-  github_list_workflows: "B",
-  feishu_search_docs: "B",
-  feishu_get_wiki_space: "B",
-  feishu_get_wiki_nodes: "B",
-  feishu_get_doc: "B",
-  feishu_token_status: "B",
-  // C: 本地进程 / OCR / shell（重资源）
-  run_shell: "C",
-  async_task_run: "A",
-  async_task_status: "A",
-  async_task_wait: "B",
-  async_task_cancel: "A",
-  // D: 写入 / 副作用（串行）
-  write_file: "D",
-  append_to_file: "D",
-  file_rename: "D",
-  file_move: "D",
-  file_copy: "D",
-  directory_delete: "D",
-  github_create_pull_request: "D",
-  github_create_branch: "D",
-  github_trigger_workflow: "D",
-  github_create_release: "D",
-  github_tool: "D",
-  feishu_send_text: "D",
-  feishu_send_message: "D",
-  feishu_create_doc: "D",
-  feishu_create_spreadsheet: "D",
-  feishu_append_spreadsheet_values: "D",
-  feishu_refresh_token: "D",
-  session_clear: "D",
-};
-
 const CLASS_CONCURRENCY: Record<"A" | "B" | "C" | "D", number> = { A: 8, B: 4, C: 2, D: 1 };
 
 /** 长等待工具：不受默认 30s 工具超时限制，使用 10 分钟等待上限（与 waitForAsyncJob 对齐）。
@@ -139,8 +82,9 @@ function getToolConcurrencyClass(name: string, registry: Map<string, ToolRegistr
   if (entry?.concurrencyClass) return entry.concurrencyClass;
   if (entry?.kind === "mcp") return "B"; // MCP 默认网络类
   if (entry?.kind === "skill") return "B"; // skill 默认网络类
+  // 唯一真相：各域注册时声明的 concurrencyClass（见 tools/native/* 的 def.concurrencyClass）
   const nativeName = entry?.nativeName || name;
-  return CONCURRENCY_CLASS_NATIVE[nativeName] ?? "B";
+  return getTool(nativeName)?.concurrencyClass ?? "B";
 }
 
 const agentSchemaCache = new Map<
@@ -250,6 +194,7 @@ export async function buildAgentToolSchemas(
       kind: "native",
       nativeName,
       concurrencySafe: READ_ONLY_NATIVE.has(nativeName),
+      concurrencyClass: getTool(nativeName)?.concurrencyClass,
     });
   }
 

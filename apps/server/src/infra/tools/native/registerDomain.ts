@@ -18,6 +18,7 @@ export function registerNativeDomain(
     registerTool<NativeToolContext>({
       name: def.name,
       kind: "native",
+      concurrencyClass: def.concurrencyClass,
       schema: () => ({ description: def.description, parameters: def.parameters }),
       execute: (args, ctx) => handler(args, ctx),
     });
