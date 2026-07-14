@@ -84,8 +84,13 @@ export async function executeNativeTool(
         .join(", ")}`,
     );
   }
+  // D 类工具回滚栈（W6）：本 run 携带 rollbackStack 时，执行前快照、成功后入栈；
+  // 执行失败的工具不入栈（未产生副作用，无需补偿）
+  const stack = cmd.destructive ? ctx.rollbackStack : undefined;
+  const artifact = stack ? await stack.capture(cmd, args, ctx) : undefined;
   const started = Date.now();
   const raw = await cmd.execute(args, ctx);
+  if (stack && artifact) stack.commit(cmd, args, raw, artifact);
   if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.elapsedMs !== "number") {

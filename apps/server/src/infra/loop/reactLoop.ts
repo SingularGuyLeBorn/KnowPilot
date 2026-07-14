@@ -21,6 +21,7 @@ import {
 import { assertLlmBudget, recordTokenUsage } from "../llmBudget.js";
 import { maybeCompactMessages, persistCompactResult } from "../autoCompact.js";
 import { sanitizePostCompactAssistantContent, type StoredToolCall } from "../chatHistory.js";
+import { RunRollbackStack, type RunRollbackReport } from "../tools/rollback.js";
 import {
   DEFAULT_SUBAGENT_TOOLS,
   resolveToolsForAgentTier,
@@ -137,12 +138,16 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
   const registry = new Map<string, ToolRegistryEntry>();
   const toolSchemas = await buildAgentToolSchemas(input.services, parsed, registry);
+  // W6：run 级 D 类工具回滚栈——本 run 执行的 destructive 工具在此记录，
+  // run 进入 failed 且非用户 abort 时在 catch 中逆序补偿
+  const rollbackStack = new RunRollbackStack();
   const toolCtx = createAgentToolContext(input.config, input.services, input.invokeTrpc, parsed, undefined, {
     sessionId: input.sessionId,
     agentSnapshot: input.agentMeta
       ? { ...input.agentMeta, tools: tierTools }
       : input.agentMeta,
     runOrigin: input.runOrigin ?? "user",
+    rollbackStack,
   });
 
   let llmMessages: LlmMessage[] = [...input.messages];
@@ -449,6 +454,46 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       }
     } catch {
       /* phase 已终态 */
+    }
+
+    // W6：D 类工具补偿——run 进入 failed 且非用户 abort 时逆序回滚本 run 已执行的写入工具。
+    // 回滚报告挂在错误对象上供上层（agentStream/agentRuntime）透传，并写入 failed Run 的
+    // output.rollback（Run 活状态/running 快照归 W11，此处只写终态 rollback 结果字段）。
+    const isAbort =
+      input.signal?.aborted === true || (err instanceof Error && err.name === "AbortError");
+    if (!isAbort) {
+      let report: RunRollbackReport | null = null;
+      try {
+        report = await rollbackStack.rollbackAll(toolCtx);
+      } catch (rbErr) {
+        console.warn("[ReactLoop] 回滚栈执行异常:", rbErr instanceof Error ? rbErr.message : rbErr);
+      }
+      if (report) {
+        (err as Error & { rollbackReport?: RunRollbackReport }).rollbackReport = report;
+        input.hooks?.onProgress?.(
+          `运行失败：已回滚 ${report.rolledBack} 个写入操作` +
+            (report.warned > 0 ? `，${report.warned} 个不可逆操作需人工 revert/检查` : "") +
+            (report.failed > 0 ? `，${report.failed} 个回滚失败需人工处理` : ""),
+        );
+        try {
+          const created = await input.services.run.create({
+            agentId: input.agentMeta?.id,
+            sessionId: input.sessionId,
+            status: "failed",
+            input: { runOrigin: input.runOrigin ?? "user" },
+            output: {
+              error: err instanceof Error ? err.message : String(err),
+              rollback: report,
+            },
+            toolCalls: executedTools,
+          });
+          if (!created.success) {
+            console.warn("[ReactLoop] 回滚报告写 Run 失败:", created.error?.message);
+          }
+        } catch (runErr) {
+          console.warn("[ReactLoop] 回滚报告写 Run 异常:", runErr instanceof Error ? runErr.message : runErr);
+        }
+      }
     }
     throw err;
   }

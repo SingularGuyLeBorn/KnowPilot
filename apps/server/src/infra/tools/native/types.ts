@@ -7,6 +7,7 @@ import type { ServiceContainer } from "../../serviceContainer.js";
 import type { ResolveAgentFn } from "../../agentResolver.js";
 import type { PrismaClient } from "@prisma/client";
 import type { ToolConcurrencyClass } from "../types.js";
+import type { RunRollbackStack } from "../rollback.js";
 
 export interface NativeToolDefinition {
   name: string;
@@ -14,6 +15,11 @@ export interface NativeToolDefinition {
   parameters: Record<string, unknown>;
   /** 并发分级：A=纯CPU/内存高并发 B=网络只读中并发 C=本地进程低并发 D=写入/副作用串行（缺省按 B） */
   concurrencyClass?: ToolConcurrencyClass;
+  /**
+   * D 类（写入/副作用）标记：run 失败（非用户 abort）时逆序补偿。
+   * 与 approvalGate.DESTRUCTIVE_NATIVE_OPS 对齐；补偿实现经 registerNativeDomain 第三参数挂入。
+   */
+  destructive?: boolean;
 }
 
 export interface NativeToolContext {
@@ -41,6 +47,10 @@ export interface NativeToolContext {
    * 工具层不再直接 import agentRuntime（环内模块）。缺省时回退到 agentResolver 默认实现。
    */
   resolveAgent?: ResolveAgentFn;
+  /**
+   * 本 run 的 D 类工具回滚栈（reactLoop 注入；缺省 = 不跟踪，如审批直执/单测直接调工具）。
+   */
+  rollbackStack?: RunRollbackStack;
 }
 
 export type NativeToolHandler = (

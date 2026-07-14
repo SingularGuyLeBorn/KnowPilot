@@ -407,7 +407,13 @@ export function createAgentToolContext(
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>,
   parsed: ParsedAgentTools,
   skillNames?: string[],
-  meta?: { sessionId?: string; agentSnapshot?: NativeToolContext["agentSnapshot"]; runOrigin?: NativeToolContext["runOrigin"] },
+  meta?: {
+    sessionId?: string;
+    agentSnapshot?: NativeToolContext["agentSnapshot"];
+    runOrigin?: NativeToolContext["runOrigin"];
+    /** W6：本 run 的 D 类工具回滚栈（reactLoop 注入） */
+    rollbackStack?: NativeToolContext["rollbackStack"];
+  },
 ): AgentToolContext {
   return {
     config,
@@ -417,6 +423,7 @@ export function createAgentToolContext(
     sessionId: meta?.sessionId,
     agentSnapshot: meta?.agentSnapshot,
     runOrigin: meta?.runOrigin,
+    rollbackStack: meta?.rollbackStack,
     // W4：向工具层注入 Agent 解析（agentResolver 是叶子模块，不重建循环依赖）
     resolveAgent,
     allowedNative: parsed.native,

@@ -53,6 +53,8 @@ content/posts/search-test-*.md
 content/posts/draft-search-test-*.md
 content/posts/e2e-trash-*.md
 content/posts/.trash/
+# W6：file_delete/directory_delete 回收站（项目根），由用户手动清理
+/.trash/
 content/uploads/vitest-test-file-*
 # 测试数据隔离（#2）：Vitest 用 test.db + .test-content，以下为 E2E/漏网 smoke 产物防御
 .test-content/

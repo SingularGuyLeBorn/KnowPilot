@@ -1,11 +1,35 @@
 /**
  * Native FS 域 — read/write/list/search/directory
+ *
+ * D 类工具回滚（W6）：write_file 执行前快照旧内容；file_delete/directory_delete
+ * 执行时移入项目根 `.trash/` 回收站（而非物理删除），run 失败回滚 = 移回。
+ * .trash 清理策略：run 成功后回收站内容保留，由用户手动清理（不在进程内自动清，
+ * 避免误删用户还想恢复的文件）；已在回收站内的目标再删会嵌套入站，无害。
  */
 import fs from "fs";
 import path from "path";
 import { resolveSafePath } from "../../safePath.js";
+import type { AppConfig } from "../../config.js";
+import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
+
+/** 回收站根目录名（projectRoot 下，safePath 沙箱内） */
+const TRASH_DIR_NAME = ".trash";
+
+/** 计算回收站目标：`.trash/<时间戳>-<随机>/<原相对路径>`，时间戳段避免跨 run 同路径碰撞 */
+function moveToTrash(config: AppConfig, abs: string, relPath: string): string {
+  const stamp =
+    new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14) +
+    "-" +
+    Math.random().toString(36).slice(2, 8);
+  const normalized = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
+  const trashRel = `${TRASH_DIR_NAME}/${stamp}/${normalized}`;
+  const trashAbs = resolveSafePath(config, trashRel);
+  fs.mkdirSync(path.dirname(trashAbs), { recursive: true });
+  fs.renameSync(abs, trashAbs);
+  return trashRel;
+}
 
 async function readFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const abs = resolveSafePath(ctx.config, String(args.path));
@@ -66,8 +90,8 @@ async function fileDeleteTool(args: Record<string, unknown>, ctx: NativeToolCont
   if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
   const stat = fs.statSync(abs);
   if (stat.isDirectory()) throw new Error(`不支持删除目录，请指定文件: ${args.path}`);
-  fs.unlinkSync(abs);
-  return { path: args.path, deleted: true };
+  const trashPath = moveToTrash(ctx.config, abs, String(args.path));
+  return { path: args.path, deleted: true, trashPath };
 }
 
 async function fileRenameTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -209,12 +233,12 @@ async function directoryDeleteTool(args: Record<string, unknown>, ctx: NativeToo
   if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${args.path}`);
   const stat = fs.statSync(abs);
   if (!stat.isDirectory()) throw new Error(`目标不是目录: ${args.path}`);
-  if (args.recursive === true) {
-    fs.rmSync(abs, { recursive: true, force: true });
-  } else {
-    fs.rmdirSync(abs);
+  // 语义保持：非 recursive 只允许删空目录（原 rmdirSync 行为），recursive 才删非空
+  if (args.recursive !== true && fs.readdirSync(abs).length > 0) {
+    throw new Error(`目录非空，需 recursive=true 才能删除: ${args.path}`);
   }
-  return { path: args.path, deleted: true };
+  const trashPath = moveToTrash(ctx.config, abs, String(args.path));
+  return { path: args.path, deleted: true, trashPath };
 }
 
 const FS_DEFS: NativeToolDefinition[] = [
@@ -235,6 +259,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "write_file",
     concurrencyClass: "D",
+    destructive: true,
     description: "写入项目根目录内的文本文件（相对路径）。",
     parameters: {
       type: "object",
@@ -353,7 +378,8 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "directory_delete",
     concurrencyClass: "D",
-    description: "删除项目根目录内的空目录；设置 recursive=true 可递归删除。",
+    destructive: true,
+    description: "删除项目根目录内的空目录（移入 .trash 回收站）；设置 recursive=true 可递归删除。",
     parameters: {
       type: "object",
       properties: {
@@ -366,7 +392,8 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "file_delete",
     concurrencyClass: "D",
-    description: "删除项目根目录内的文件（相对路径）。",
+    destructive: true,
+    description: "删除项目根目录内的文件（移入 .trash 回收站，可恢复）。",
     parameters: {
       type: "object",
       properties: {
@@ -392,6 +419,57 @@ const FS_HANDLERS = {
   file_delete: fileDeleteTool,
 };
 
+/**
+ * D 类工具幂等补偿（W6）：
+ * - write_file：capture 快照旧内容（不存在记 existed=false），compensate 写回快照/删除新建文件；
+ * - file_delete / directory_delete：执行时已移入 .trash（trashPath 在结果里），compensate 移回。
+ * 幂等保证：快照写回天然幂等；回收站移回在副本已不存在时视为已回滚跳过。
+ */
+const FS_ROLLBACKS: Record<string, ToolRollback<NativeToolContext>> = {
+  write_file: {
+    capture: async (args, ctx) => {
+      const abs = resolveSafePath(ctx.config, String(args.path));
+      if (!fs.existsSync(abs)) return { existed: false };
+      return { existed: true, content: fs.readFileSync(abs, "utf8") };
+    },
+    compensate: async (args, _result, captured, ctx) => {
+      const abs = resolveSafePath(ctx.config, String(args.path));
+      const data = captured as { existed?: boolean; content?: string } | undefined;
+      if (!data?.existed) {
+        if (fs.existsSync(abs)) fs.unlinkSync(abs);
+        return "已删除本 run 新建的文件";
+      }
+      fs.writeFileSync(abs, data.content ?? "", "utf8");
+      return "已还原写入前快照";
+    },
+  },
+  file_delete: {
+    compensate: async (args, result, _captured, ctx) => moveBackFromTrash(ctx, args, result),
+  },
+  directory_delete: {
+    compensate: async (args, result, _captured, ctx) => moveBackFromTrash(ctx, args, result),
+  },
+};
+
+/** file_delete / directory_delete 共用补偿：把回收站副本移回原路径（幂等） */
+async function moveBackFromTrash(
+  ctx: NativeToolContext,
+  args: Record<string, unknown>,
+  result: unknown,
+): Promise<string> {
+  const trashPath = (result as { trashPath?: string } | undefined)?.trashPath;
+  if (!trashPath) return "无回收站路径（可能已恢复），幂等跳过";
+  const trashAbs = resolveSafePath(ctx.config, trashPath);
+  if (!fs.existsSync(trashAbs)) return "回收站副本已不存在（视为已回滚），幂等跳过";
+  const origAbs = resolveSafePath(ctx.config, String(args.path));
+  if (fs.existsSync(origAbs)) {
+    throw new Error(`原路径已存在新内容（${args.path}），为避免覆盖未移回；回收站副本保留于 ${trashPath}，需人工合并`);
+  }
+  fs.mkdirSync(path.dirname(origAbs), { recursive: true });
+  fs.renameSync(trashAbs, origAbs);
+  return "已从回收站移回原路径";
+}
+
 export function registerFsTools(): void {
-  registerNativeDomain(FS_DEFS, FS_HANDLERS);
+  registerNativeDomain(FS_DEFS, FS_HANDLERS, FS_ROLLBACKS);
 }

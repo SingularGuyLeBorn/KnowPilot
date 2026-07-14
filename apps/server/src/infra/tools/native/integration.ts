@@ -684,6 +684,8 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   {
     name: "git_commit",
     concurrencyClass: "D",
+    // 不可逆：run 失败只记 warn「需人工 revert」，如实声明不假装能回滚
+    destructive: true,
     description: "Git add -A 并提交当前仓库变更。",
     parameters: zodParams(
       z.object({
@@ -762,6 +764,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_delete_doc",
+    destructive: true,
     description: "删除语雀文档（内部 Web API，需 Cookie）。",
     parameters: zodParams(
       z.object({
@@ -809,6 +812,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_delete_doc_v2",
+    destructive: true,
     description: "删除语雀文档（Open API v2，需 Token）。",
     parameters: zodParams(
       z.object({
@@ -914,6 +918,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_delete_file",
+    destructive: true,
     description: "删除 GitHub 仓库文件。",
     parameters: zodParams(
       z.object({

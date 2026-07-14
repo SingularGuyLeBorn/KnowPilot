@@ -938,6 +938,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "agent_delete",
+    destructive: true,
     description: "删除 Agent（需超级权限，不能删自己或其他 super）。先停止运行中任务，再级联删 session/message/memory，留 tombstone。",
     parameters: zodParams(
       z.object({

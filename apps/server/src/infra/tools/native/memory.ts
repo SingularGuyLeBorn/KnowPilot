@@ -14,6 +14,7 @@ import type { PostEntity } from "../../../services.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
+import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
@@ -132,6 +133,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "post_create",
     concurrencyClass: "D",
+    destructive: true,
     description: "在本地知识库中创建一篇 Markdown 文章（content/posts）。",
     parameters: zodParams(
       z.object({
@@ -167,6 +169,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "post_delete",
     concurrencyClass: "D",
+    destructive: true,
     description: "删除本地知识库中的 Markdown 文章。",
     parameters: zodParams(
       z.object({
@@ -177,6 +180,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "memory_create",
     concurrencyClass: "D",
+    destructive: true,
     description:
       "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。scope：agent=仅自己可见（默认）；workspace=同 Workspace 的 Agent 共享；global=全局共享（仅超级 Agent）。不要记可从代码/git/文档直接查到的内容。",
     parameters: zodParams(
@@ -210,6 +214,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "memory_delete",
     concurrencyClass: "D",
+    destructive: true,
     description: "删除本地记忆库中的一条记忆。",
     parameters: zodParams(
       z.object({
@@ -228,6 +233,35 @@ const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
   memory_delete: memoryDeleteTool,
 };
 
+/** create 类补偿共用：按结果 id 走 Service 删除（保证文件回写 / FTS 同步）；NOT_FOUND 幂等跳过 */
+async function deleteByIdCompensate(
+  entity: "post" | "memory",
+  result: unknown,
+  ctx: NativeToolContext,
+): Promise<string> {
+  const id = (result as { id?: string } | undefined)?.id;
+  if (!id) return "执行结果无 id，幂等跳过";
+  const del = await ctx.services[entity].delete(id);
+  if (!del.success) {
+    if (del.error?.code?.includes("NOT_FOUND")) return "记录已不存在（视为已回滚），幂等跳过";
+    throw new Error(del.error?.message || `${entity} 删除回补失败`);
+  }
+  return `已删除本 run 创建的 ${entity}（id=${id}）`;
+}
+
+/**
+ * D 类工具幂等补偿（W6）：post_create / memory_create 回滚 = 删除该 id（走 Service）。
+ * post_delete / memory_delete 为不可逆删除，不挂补偿（run 失败时如实 warn「需人工 revert」）。
+ */
+const MEMORY_ROLLBACKS: Record<string, ToolRollback<NativeToolContext>> = {
+  post_create: {
+    compensate: async (_args, result, _captured, ctx) => deleteByIdCompensate("post", result, ctx),
+  },
+  memory_create: {
+    compensate: async (_args, result, _captured, ctx) => deleteByIdCompensate("memory", result, ctx),
+  },
+};
+
 export function registerMemoryTools(): void {
-  registerNativeDomain(MEMORY_DEFS, MEMORY_HANDLERS);
+  registerNativeDomain(MEMORY_DEFS, MEMORY_HANDLERS, MEMORY_ROLLBACKS);
 }

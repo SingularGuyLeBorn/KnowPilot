@@ -202,7 +202,14 @@ registerTool({ name: "read_file", kind: "native", schema: () => (...), execute: 
 
 **纪律**：禁止借拆分之机改工具语义。
 
-**状态**：✅ PR-4a（2026-07-13，fs/web/shell）；✅ PR-4b/4c（2026-07-14，swarm/session/memory/integration，`nativeTools.ts` 3420 → 118 行，仅余注册 + 分发；`TOOL_HANDLERS`/`NATIVE_TOOL_DEFINITIONS` 双轨注册层已拆除）。
+**状态**：✅ PR-4a（2026-07-13，fs/web/shell）；✅ PR-4b/4c（2026-07-14，swarm/session/memory/integration，`nativeTools.ts` 3420 → 118 行，仅余注册 + 分发；`TOOL_HANDLERS`/`NATIVE_TOOL_DEFINITIONS` 双轨注册层已拆除）；✅ W6 D 类工具 rollback（2026-07-14，见下）。
+
+**W6 rollback 落地（2026-07-14）**：
+
+- run 级回滚栈 `infra/tools/rollback.ts`（`RunRollbackStack`）：reactLoop 每 run 建栈经 `NativeToolContext.rollbackStack` 注入；`executeNativeTool` 对 `destructive` 工具执行前 capture、成功后 commit；run 进入 failed 且非用户 abort 时逆序补偿，报告写 failed Run 的 `output.rollback` 并挂 `err.rollbackReport`。
+- 补偿实现：`write_file` 执行前快照旧内容（run 级 10MB 上限，超出标记不可回滚并 warn），rollback = 写回快照 / 删除新建文件；`post_create`/`memory_create` rollback = 走 Service 删该 id（保证文件回写 / FTS 同步）；`file_delete`/`directory_delete` 执行时移项目根 `.trash/` 回收站，rollback = 移回（回收站由用户手动清理）；`git_commit` / `post_delete` / `memory_delete` / `agent_delete` 等不可逆操作不挂补偿，run 失败如实记 warn「需人工 revert」。
+- `destructive` 标记单点收敛在域注册（`ToolCommand.destructive` / `NativeToolDefinition.destructive`），补偿经 `registerNativeDomain` 第三参数挂入；rollback 侧不新建真相列表。
+- 单测 `toolRollback.test.ts`（7 例：快照还原 / 新建删除 / 逆序多工具 / git_commit warn / 容量上限 / Service 删除回补 / 用户 abort 不回滚）。
 
 ---
 
@@ -335,6 +342,7 @@ type AgentRunPhase =
 > 2026-07-13：PR-6 Steering/Follow-up — RunState 内存队列 + reactLoop 投递点 + `agent.submitInject` + 前端 streaming 默认 steer。  
 > 2026-07-13：PR-3 ToolCommand 注册表 + PR-7 心跳 LoopContract Phase 1（`infra/loopContract.ts` + 超级 Agent 门禁）。  
 > 2026-07-13：PR-4a — `infra/tools/native/{fs,web,shell}.ts`；`nativeTools.ts` 瘦身为其余域 + 兼容出口。  
-> 2026-07-14：PR-4b/4c — 剩余 handler 全量迁至 `infra/tools/native/{swarm,session,memory,integration}.ts`；`nativeTools.ts` 3420 → 118 行只留注册 + 分发；新增工具指南见 `docs/development/README.md` §6。
+> 2026-07-14：PR-4b/4c — 剩余 handler 全量迁至 `infra/tools/native/{swarm,session,memory,integration}.ts`；`nativeTools.ts` 3420 → 118 行只留注册 + 分发；新增工具指南见 `docs/development/README.md` §6。  
+> 2026-07-14：W6 rollback — D 类工具幂等补偿落地（`RunRollbackStack` + 域注册 `destructive` 标记 + `registerNativeDomain` 补偿挂参），详见 PR-4 节「W6 rollback 落地」。
 
 落地后把「已确认」表从 `design-decisions.md` 迁入本节，并更新 `AGENTS.md`「当前状态」一行。
