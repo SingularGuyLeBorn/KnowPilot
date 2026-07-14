@@ -43,7 +43,9 @@ export function buildTokenBudget(
   messages: ChatMessage[],
   maxOutputTokens: number,
   lastRoundTokens = 0,
-  modelId = DEFAULT_LLM_MODEL,
+  // 显式标注 string：DEFAULT_LLM_MODEL 是字面量类型，默认参数推断会把形参收窄成字面量，
+  // 导致传入 ChatSessionConfig.model（string）时类型报错（W8 常量化后的回归）。
+  modelId: string = DEFAULT_LLM_MODEL,
   triggerRatio = DEFAULT_COMPACT_TRIGGER_RATIO,
 ): TokenBudgetSnapshot {
   const sessionTokens = sumMessageTokens(messages);
