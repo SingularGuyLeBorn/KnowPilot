@@ -21,6 +21,7 @@ import { waitMs } from "./shellRunner.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { prisma } from "../db.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
+import { getSwarmOrchestrator, type SwarmTaskSpec } from "./swarmOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 
@@ -918,6 +919,8 @@ export async function startAsyncAgentTask(options: {
    * 默认 true。
    */
   deliverToQueue?: boolean;
+  /** W10：中介者权限校验描述（仅 native 工具入口传入；tRPC 用户入口无调用方 tier 概念，不传） */
+  guard?: SwarmTaskSpec["guard"];
 }): Promise<{ jobId: string; status: "queued" | "running"; message: string; subagentSessionId?: string }> {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
@@ -1072,12 +1075,43 @@ export async function startAsyncAgentTask(options: {
 
   const jobId = (created.data as { id: string }).id;
 
-  orchestrator.enqueue({
-    jobId,
+  // W10：统一走 SwarmOrchestrator 中介者（并发池/结果聚合/Log 审计公共骨架）；
+  // 执行体仍是 buildAsyncExecute（轮询/推送/落库/子会话状态同步语义不动）。
+  const swarm = getSwarmOrchestrator(options.config, options.services);
+  await swarm.dispatch({
+    origin: isSubagent ? "spawn_subagent" : "async_task_run",
+    schedule: "pool",
     sessionId: options.sessionId,
+    jobId,
+    taskLabel,
     timeoutMs: options.timeoutMs,
     metadata: subagentSessionId ? { subagentSessionId } : undefined,
-    execute: buildAsyncExecute(options.config, options.services, jobId, task, agentSnapshot, 0, subagentSessionId, mode, options.toolCall, options.shareToSessionIds, options.sessionId),
+    guard: options.guard,
+    execute: async (signal) => {
+      await buildAsyncExecute(
+        options.config,
+        options.services,
+        jobId,
+        task,
+        agentSnapshot,
+        0,
+        subagentSessionId,
+        mode,
+        options.toolCall,
+        options.shareToSessionIds,
+        options.sessionId,
+      )(signal);
+      // 结果聚合：buildAsyncExecute 内部已落库/投递，读回终态供中介者审计
+      try {
+        const row = await options.services.task.getById(jobId);
+        return row?.status === "failed"
+          ? { status: "failed" as const, error: parseAsyncOutput(row?.output).error }
+          : { status: "success" as const };
+      } catch {
+        // 任务行已被清理（测试/手动删除）：不阻塞聚合收口
+        return { status: "success" as const };
+      }
+    },
   });
 
   return {
@@ -1172,7 +1206,14 @@ export async function appendAsyncJobLog(
   entry: Omit<AsyncTaskLogEntry, "timestamp">,
   services: ServiceContainer,
 ): Promise<void> {
-  const task = await services.task.getById(jobId);
+  let task: Awaited<ReturnType<ServiceContainer["task"]["getById"]>> | null = null;
+  try {
+    task = await services.task.getById(jobId);
+  } catch {
+    // 任务行已删除（测试清理/手动删除）：进度日志是尽力而为，不得向上抛
+    // （getById 对缺失行抛 NOT_FOUND；reactLoop 的 onProgress 不 await，抛了就是 unhandled rejection）
+    return;
+  }
   if (!task) return;
   const output = parseAsyncOutput(task.output);
   const logs: AsyncTaskLogEntry[] = output.logs ?? [];

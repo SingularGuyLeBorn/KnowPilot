@@ -11,6 +11,7 @@ import { runSessionCompact } from "../../autoCompact.js";
 import { getAllowedToolsForTier } from "../../swarmPermissionGuard.js";
 import { resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "../../loop/setup.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
+import { getSwarmOrchestrator, type SwarmTaskOutcome } from "../../swarmOrchestrator.js";
 import { agentCreateSubTool, agentSendMessageTool } from "./swarm.js";
 import {
   coerceToolBoolean,
@@ -25,7 +26,10 @@ import { registerNativeDomain } from "./registerDomain.js";
 /** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
  *  底层实现 = agent_create_sub + agent_send_message({ autoRun: true })。
  *  waitForResult=false（默认）= 异步投递：工具立刻返回，子 Agent 自行 report_back 进父异步队列。
- *  waitForResult=true = 同步等待：父流挂起，子会话空闲后系统抓取最后一条 assistant（不强制 report_back）。 */
+ *  waitForResult=true = 同步等待：父流挂起，子会话空闲后系统抓取最后一条 assistant（不强制 report_back）。
+ *
+ *  W10：入口统一走 SwarmOrchestrator 中介者（权限校验 + 60s spawn 去重 + 审计）；
+ *  执行体 spawnSubagentExecute 保留原语义（同步等待/report_back/跟踪 Task 均不动）。 */
 async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.sessionId || !ctx.agentSnapshot) {
     throw new Error("spawn_subagent 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
@@ -33,6 +37,52 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   const task = String(args.task || "");
   if (!task.trim()) throw new Error("spawn_subagent 需要 task（子 Agent 任务描述）");
   const waitForResult = coerceToolBoolean(args.waitForResult);
+
+  const orchestrator = getSwarmOrchestrator(ctx.config, ctx.services);
+  const handle = await orchestrator.dispatch({
+    origin: "spawn_subagent",
+    // inline：spawn 编排段同步执行（其真执行在 SessionStreamHub，不进并发池，语义不动）
+    schedule: "inline",
+    sessionId: ctx.sessionId,
+    taskLabel: task.slice(0, 80),
+    // 中介者权限校验层（与 executeNativeTool 工具层同源输入，纵深防御；tier 缺省时与工具层一致跳过）
+    guard: ctx.agentSnapshot.tier
+      ? {
+          toolName: "spawn_subagent",
+          args,
+          ctx: {
+            agentTier: ctx.agentSnapshot.tier,
+            agentId: ctx.agentSnapshot.id,
+            agentWorkspaceId: ctx.agentSnapshot.workspaceId,
+            inToolRound: ctx.inToolRound ?? false,
+          },
+        }
+      : undefined,
+    dedup: { agentId: ctx.agentSnapshot.id, taskText: task },
+    execute: () => spawnSubagentExecute(args, ctx, task, waitForResult),
+  });
+
+  const payload = { ...(handle.outcome?.attach ?? {}) };
+  if (handle.deduped) {
+    return {
+      ...payload,
+      deduped: true,
+      message: `60 秒去重窗口内检测到同 Agent 同任务的重复派生，已返回已有子 Agent 任务（jobId=${(payload.jobId as string | undefined) ?? handle.jobId}），未重复创建。`,
+    };
+  }
+  return payload;
+}
+
+/** spawn_subagent 执行体（W10 抽为 SwarmOrchestrator dispatch 的 execute 闭包；逻辑与原实现逐行一致） */
+async function spawnSubagentExecute(
+  args: Record<string, unknown>,
+  ctx: NativeToolContext,
+  task: string,
+  waitForResult: boolean,
+): Promise<SwarmTaskOutcome> {
+  // dispatch 包装层已校验 agentSnapshot 存在；此处防御性兜底以满足类型收窄
+  const parentSnapshot = ctx.agentSnapshot;
+  if (!parentSnapshot) throw new Error("spawn_subagent 需要 Agent 上下文");
 
   // 1. 创建子 Agent（或复用指定 Agent）
   let subagentId: string;
@@ -88,7 +138,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
     const { agent: subAgent } = await (ctx.resolveAgent ?? defaultResolveAgent)(ctx.services, subagentId);
     const created = await ctx.services.session.create({
       title: `${subAgent?.name ?? subagentName} 主会话`,
-      model: subAgent?.model ?? ctx.agentSnapshot.model,
+      model: subAgent?.model ?? parentSnapshot.model,
       systemPrompt: subAgent?.systemPrompt ?? "",
       agentId: subagentId,
       isMainSession: true,
@@ -124,12 +174,12 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
           taskLabel,
           agentSnapshot: {
             id: subagentId,
-            model: ctx.agentSnapshot.model,
+            model: parentSnapshot.model,
             systemPrompt: "",
             tools: [],
             tier: "sub",
-            parentId: ctx.agentSnapshot.id,
-            workspaceId: ctx.agentSnapshot.workspaceId,
+            parentId: parentSnapshot.id,
+            workspaceId: parentSnapshot.workspaceId,
             name: subagentName,
           },
           subagentSessionId,
@@ -169,18 +219,21 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
         } as any)
         .catch(() => undefined);
     }
-    return { error: (sendResult as { error?: string }).error ?? "派活失败" };
+    return { status: "failed", attach: { error: (sendResult as { error?: string }).error ?? "派活失败" } };
   }
 
   if (!waitForResult) {
     return {
-      success: true,
-      agentId: subagentId,
-      subagentName,
-      subagentSessionId,
-      jobId,
-      status: jobId ? "running" : undefined,
-      message: `子 Agent「${subagentName}」(agentId=${subagentId}) 已派生并启动，任务完成后结果会投递回父会话。请牢记返回的 agentId / jobId，勿编造 ID。`,
+      status: "success",
+      attach: {
+        success: true,
+        agentId: subagentId,
+        subagentName,
+        subagentSessionId,
+        jobId,
+        status: jobId ? "running" : undefined,
+        message: `子 Agent「${subagentName}」(agentId=${subagentId}) 已派生并启动，任务完成后结果会投递回父会话。请牢记返回的 agentId / jobId，勿编造 ID。`,
+      },
     };
   }
 
@@ -277,28 +330,35 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
 
   if (!finalContent) {
     return {
-      success: finalStatus === "success",
+      status: finalStatus === "success" ? "success" : "failed",
+      attach: {
+        success: finalStatus === "success",
+        agentId: subagentId,
+        subagentName,
+        subagentSessionId,
+        jobId,
+        status: finalStatus,
+        hint:
+          finalStatus === "timeout"
+            ? `子 Agent「${subagentName}」(agentId=${subagentId}) 在时限内未完成。可用 agent_inspect(id=该 agentId) 查看进度（勿编造 ID）。`
+            : `子 Agent「${subagentName}」未返回有效内容。`,
+      },
+    };
+  }
+
+  return {
+    status: finalStatus !== "failed" ? "success" : "failed",
+    content: finalContent.slice(0, 500),
+    attach: {
+      success: finalStatus !== "failed",
       agentId: subagentId,
       subagentName,
       subagentSessionId,
       jobId,
       status: finalStatus,
-      hint:
-        finalStatus === "timeout"
-          ? `子 Agent「${subagentName}」(agentId=${subagentId}) 在时限内未完成。可用 agent_inspect(id=该 agentId) 查看进度（勿编造 ID）。`
-          : `子 Agent「${subagentName}」未返回有效内容。`,
-    };
-  }
-
-  return {
-    success: finalStatus !== "failed",
-    agentId: subagentId,
-    subagentName,
-    subagentSessionId,
-    jobId,
-    status: finalStatus,
-    content: finalContent,
-    hint: `子 Agent「${subagentName}」(agentId=${subagentId}) 已完成。请基于 content 字段生成最终回复；标识请用返回的 agentId/jobId，不要编造 memory key 或虚构 ID。`,
+      content: finalContent,
+      hint: `子 Agent「${subagentName}」(agentId=${subagentId}) 已完成。请基于 content 字段生成最终回复；标识请用返回的 agentId/jobId，不要编造 memory key 或虚构 ID。`,
+    },
   };
 }
 

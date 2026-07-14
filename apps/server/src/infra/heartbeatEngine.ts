@@ -20,7 +20,8 @@ import cron, { type ScheduledTask } from "node-cron";
 import type { PrismaClient } from "@prisma/client";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
+import { getSwarmOrchestrator, type SwarmTaskOutcome } from "./swarmOrchestrator.js";
+import { createTrpcInvoker } from "./trpcInvoker.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
 import { createMemoryRepository, decayMemories } from "./memoryRepository.js";
@@ -250,8 +251,6 @@ export class HeartbeatEngine {
         source: "system",
       });
 
-      // 通过 asyncJobOrchestrator 启动 Agent 执行（并发控制 #13）
-      const orchestrator = getAsyncJobOrchestrator(this.config);
       const heartbeatModel = agent.heartbeatModel || agent.model;
       const agentSnapshot = {
         id: agent.id,
@@ -280,22 +279,21 @@ export class HeartbeatEngine {
         },
       });
 
-      // 通过 orchestrator 执行（复用 asyncJobManager 的执行逻辑）
-      const { startAsyncAgentTask } = await import("./asyncJobManager.js");
-      // 心跳不通过 startAsyncAgentTask（那个会创建 subagent session），
-      // 而是直接通过 orchestrator 跑一个简化的 agent loop
-      orchestrator.enqueue({
-        jobId: task.id,
+      // W10：心跳执行统一走 SwarmOrchestrator 中介者（并发池/结果聚合/Log 审计公共骨架，#13 并发控制不变）；
+      // LoopContract、预算检查、心跳状态回写等入口语义保留在本闭包内，不搬进中介者。
+      const orchestrator = getSwarmOrchestrator(this.config, this.services);
+      await orchestrator.dispatch({
+        origin: "heartbeat",
+        schedule: "pool",
         sessionId: session.id,
-        execute: async (signal) => {
+        jobId: task.id,
+        taskLabel: `[heartbeat] ${agent.name}`,
+        execute: async (signal): Promise<SwarmTaskOutcome> => {
           try {
             const { runAgentLoop } = await import("./agentRuntime.js");
-            // 心跳执行的 tRPC 调用：直接用 service container 构造简化 caller
-            const invokeTrpc = async (tool: string, args?: unknown) => {
-              // 简化：心跳触发的 Agent 主要用 native 工具，不走 tRPC 路由
-              // 如果需要调用 tRPC，由 agentTools 内部的 invokeTrpc 处理
-              return undefined;
-            };
+            // W10：删除返回 undefined 的 invokeTrpc 桩——心跳 Agent 与 trigger/async 入口
+            // 共用同一 invokeTrpc 通道，invoke_api 等工具调用拿到真实 tRPC 结果回传 ReAct 循环。
+            const invokeTrpc = createTrpcInvoker({ services: this.services, prisma: this.prisma });
 
             const loop = await runAgentLoop({
               config: this.config,
@@ -326,6 +324,10 @@ export class HeartbeatEngine {
               applyLoopContract: agent.tier === "super",
             });
             console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳完成`);
+            return {
+              status: "success",
+              content: typeof loop.content === "string" ? loop.content.slice(0, 500) : "心跳完成",
+            };
           } catch (err: unknown) {
             const isAbort = err instanceof Error && err.name === "AbortError";
             const reason = isAbort ? "cancelled" : "failed";
@@ -367,6 +369,7 @@ export class HeartbeatEngine {
                 }
               }
             }
+            return { status: "failed", error: err instanceof Error ? err.message : String(err) };
           }
         },
       });

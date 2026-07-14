@@ -151,25 +151,11 @@ export function checkToolPermission(
     }
   }
 
-  // 3. Agent 间通信工具：检查通信范围 + 向上发消息时机约束
+  // 3. Agent 间通信工具：depth 防循环校验（#12）。
+  // 向上发消息时机约束（#41）不在本层做——guard 拿不到目标 Agent 的 tier（需查 DB），
+  // 此处预检注定是做一半的「标记了但没做」。其唯一完整实现归属 swarmBus.send →
+  // checkUpwardMessageTiming（执行层可查 DB 获取目标 tier 做完整方向判断），单点收口。
   if (isAgentMessagingTool(toolName)) {
-    const toAgentId = args.toAgentId as string | undefined;
-    // agent_report_back 的目标在 args 里可能叫 toAgentId 或 parentId
-    const targetId = toAgentId || (args.parentId as string | undefined);
-
-    if (targetId) {
-      // 向上发消息时机约束（#41）：在工具调用轮次中不能向上级发消息
-      // 向下发（super→manager、manager→sub）允许在工具轮次中
-      // 向上发（sub→manager、manager→super）只能在正式回复中（inToolRound=false）
-      if (ctx.inToolRound) {
-        // 工具轮次中：需要判断方向。由于此处不知道目标 agent 的 tier，
-        // 保守策略：工具轮次中只允许向下（目标 tier < 调用方 tier）。
-        // 目标 tier 需要在工具执行时查 DB 验证，此处先标记，由工具执行层完成完整校验。
-        // 这里只做基本检查：向上发消息在工具轮次中被拦截。
-        // 完整的方向判断在 swarmMessaging 工具执行中做（可查 DB 获取目标 tier）
-      }
-    }
-
     // depth 校验（#12 防循环）
     const depth = args.depth as number | undefined;
     if (depth !== undefined && depth > SWARM_MAX_DEPTH) {

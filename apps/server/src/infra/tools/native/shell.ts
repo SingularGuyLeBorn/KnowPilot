@@ -41,6 +41,20 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     shareToSessionIds,
     // 阻塞等待时结果直接作为工具返回值，禁止再进队列自动消费（避免二次喂给 Agent）
     deliverToQueue: !waitForResult,
+    // W10：SwarmOrchestrator 中介者权限校验层（与 executeNativeTool 工具层同源输入，纵深防御；
+    // tier 缺省时与工具层一致跳过校验）
+    guard: ctx.agentSnapshot.tier
+      ? {
+          toolName: "async_task_run",
+          args: { mode },
+          ctx: {
+            agentTier: ctx.agentSnapshot.tier,
+            agentId: ctx.agentSnapshot.id,
+            agentWorkspaceId: ctx.agentSnapshot.workspaceId,
+            inToolRound: ctx.inToolRound ?? false,
+          },
+        }
+      : undefined,
   });
   if (!waitForResult) return { ...started, sourceType };
   // 同步等待：结果直接返回。标记 delivered，杜绝 worker 侧误投递 / 竞态二次消费

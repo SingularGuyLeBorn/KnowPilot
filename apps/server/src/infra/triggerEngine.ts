@@ -9,6 +9,7 @@ import { getAppConfig } from "./config.js";
 import { runAgent } from "./agentRuntime.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { executeTaskJob } from "./taskRunner.js";
+import { getSwarmOrchestrator, type SwarmTaskOutcome } from "./swarmOrchestrator.js";
 
 /** 脱敏事件 payload 中的敏感字段，防止凭据/密钥被写入 Log.metadata。 */
 function sanitizePayloadForLog(payload: unknown): unknown {
@@ -181,21 +182,33 @@ export class TriggerEngine {
     console.log(`    🤖 [TriggerEngine] 自动唤醒 Agent: ${agent.name}`);
 
     const config = getAppConfig();
-    const invokeTrpc = createTrpcInvoker({ services: this.services });
+    const invokeTrpc = createTrpcInvoker({ services: this.services, prisma: this.prisma });
     const prompt = `事件 "${triggerPayload.entity}.${triggerPayload.action}" 被触发。请根据关联数据采取适当行动。\n\n数据摘要：\n${JSON.stringify(triggerPayload.data ?? triggerPayload, null, 2).slice(0, 4000)}`;
 
-    const result = await runAgent(
-      this.services,
-      config,
-      { agentId: agent.id, input: prompt },
-      invokeTrpc,
-    );
+    // W10：统一走 SwarmOrchestrator 中介者（此前绕过并发池直跑 runAgent）。
+    // await completion 保住 per-trigger 互斥语义（runningTriggers 执行完才释放）。
+    const orchestrator = getSwarmOrchestrator(config, this.services);
+    const handle = await orchestrator.dispatch({
+      origin: "trigger",
+      schedule: "pool",
+      // 无 Chat 会话：以 trigger:agentId 作为并发池 per-session 限流维度
+      sessionId: `trigger:${agent.id}`,
+      taskLabel: `trigger:${agent.name}`,
+      execute: async (): Promise<SwarmTaskOutcome> => {
+        const result = await runAgent(
+          this.services,
+          config,
+          { agentId: agent.id, input: prompt },
+          invokeTrpc,
+        );
+        if (!result.success) throw new Error(result.error?.message ?? "Agent 执行失败");
+        return { status: "success", content: result.data?.content?.slice(0, 200) };
+      },
+    });
+    const outcome = await handle.completion;
+    if (outcome?.status === "failed") throw new Error(outcome.error ?? "Agent 执行失败");
 
-    if (!result.success) {
-      throw new Error(result.error?.message ?? "Agent 执行失败");
-    }
-
-    console.log(`    ✅ [TriggerEngine] Agent 执行完成: ${result.data?.content?.slice(0, 120) ?? ""}`);
+    console.log(`    ✅ [TriggerEngine] Agent 执行完成: ${outcome?.content?.slice(0, 120) ?? ""}`);
   }
 }
 
