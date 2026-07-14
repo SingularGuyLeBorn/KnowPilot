@@ -456,7 +456,7 @@ stream:
 | 开发踩坑与教训（战地笔记） | `docs/development/开发心路历程.md` |
 | 未来功能规划 | `docs/development/future-features.md` |
 | 修改前端样式/组件 | `apps/web/components/`、`apps/web/app/globals.css` |
-| 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts`、`apps/server/src/infra/tools/`（ToolCommand 注册表 + `native/{fs,web,shell}`）、`apps/server/src/infra/loop/`（统一 ReAct 内核） |
+| 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts`、`apps/server/src/infra/tools/`（ToolCommand 注册表 + `native/{fs,web,shell,swarm,session,memory,integration}`）、`apps/server/src/infra/loop/`（统一 ReAct 内核） |
 | 新增或修改 tRPC Router | `apps/server/src/router.ts`、`packages/shared/src/schemas.ts` |
 | 新增内容同步逻辑 | `apps/server/src/scripts/sync.ts`、`apps/server/src/scripts/sync/sync-*.ts` |
 
@@ -485,7 +485,7 @@ stream:
 
 - **W2 LLM 弹性客户端已落地**：`infra/resilientLlmClient.ts` 装饰器包装 llmClient（错误分类 fatal/retryable/degradable + 指数退避 jitter 重试 + `config.yaml` `llm.fallbackModels` 按序降级）；`agentRuntime`/`agentStream` error 事件的 `retryable` 改为按分类真实填充；`llmBudget.ts` 预算状态改为模块级内存 + 防抖异步落盘（LLM 调用路径零同步 IO）。
 
-- **P0 Agent 架构（分支 `fix/p0-agent-budget-hitl`）**：PR-1～3、PR-4a、PR-5～7 已落地；PR-4a 将 FS/WEB/SHELL 抽至 `infra/tools/native/{fs,web,shell}.ts`，`nativeTools.ts` 保留其余域 + 兼容 re-export。见 `docs/development/p0-agent-arch-pr-split.md`。
+- **P0 Agent 架构（分支 `fix/p0-agent-budget-hitl`）**：PR-1～7 已全部落地；native 工具已全量按域拆至 `infra/tools/native/{fs,web,shell,swarm,session,memory,integration}.ts`，`nativeTools.ts`（118 行）只留注册 + 分发。见 `docs/development/p0-agent-arch-pr-split.md`。
 - **重复超级 Agent 已清理**：文件 `content/agents/KnowPilot 超级 Agent-v5wh3v.md` 已删除；`sync-agents.ts` 跳过 `tier === "super"`。
 - **设计决策文档**：沉淀在 `docs/development/design-decisions.md`。
 
@@ -494,8 +494,8 @@ stream:
 1. ~~**Agent 自动开启新 Session**~~：已落地 `session_rotate`（归档旧会话 + 同 Agent 新会话 + 总结首条消息；旧页提示跳转不自动切换）。
 2. **自动压缩（Auto-Compact）**：已产品化（`config.yaml` compact + `ChatSession.contextSummary` + 手动压缩）。
 3. ~~**推送替代轮询**~~：Chat 侧已推优先（`async_job_update` / `agent_message` / `subagent_session_update`），轮询降为兜底。
-4. **PR-4b / 4c**：继续按域拆分 swarm/session/memory 与第三方集成工具。
+4. ~~**PR-4b / 4c**~~：已落地（W6）——swarm/session/memory/integration 四域拆分，`nativeTools.ts` 3420 → 118 行。
 
 ---
 
-> 最后更新：2026-07-14。L1–L5 已全部落地；P0 PR-4a（native fs/web/shell 域拆分）已验收；W5-followup 记忆三层已落地。
+> 最后更新：2026-07-14。L1–L5 已全部落地；P0 PR-1～7（含 PR-4b/4c native 全域拆分）已验收；W5-followup 记忆三层已落地。

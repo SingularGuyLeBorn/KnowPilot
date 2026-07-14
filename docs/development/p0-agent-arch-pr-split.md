@@ -194,15 +194,15 @@ registerTool({ name: "read_file", kind: "native", schema: () => (...), execute: 
 **验收**：
 
 - [x] PR-4a：`infra/tools/native/{fs,web,shell}.ts` 落地；`nativeTools.ts` 兼容 re-export
-- [ ] `nativeTools.ts` < 300 行（或删除，仅留兼容 export）— 4b/4c 继续
-- [ ] 新增工具文档：`docs/development/` 补一节「如何加 native 工具」
+- [x] `nativeTools.ts` < 300 行（或删除，仅留兼容 export）— 4b/4c 继续
+- [x] 新增工具文档：`docs/development/` 补一节「如何加 native 工具」
 - [x] 相关 server test 绿（nativeTools / toolRegistry）
 
 **风险**：高（大 diff）。必须子 PR 拆开；每子 PR 只搬迁、不改行为。
 
 **纪律**：禁止借拆分之机改工具语义。
 
-**状态（2026-07-13）**：✅ PR-4a 已落地（fs/web/shell）；⬜ 4b swarm/session/memory、4c 第三方集成。
+**状态**：✅ PR-4a（2026-07-13，fs/web/shell）；✅ PR-4b/4c（2026-07-14，swarm/session/memory/integration，`nativeTools.ts` 3420 → 118 行，仅余注册 + 分发；`TOOL_HANDLERS`/`NATIVE_TOOL_DEFINITIONS` 双轨注册层已拆除）。
 
 ---
 
@@ -325,7 +325,7 @@ type AgentRunPhase =
 - [x] PR-2 HITL
 - [x] PR-3 注册表骨架
 - [x] PR-4a fs/web/shell 域拆分
-- [ ] PR-4b / 4c 域拆分
+- [x] PR-4b / 4c 域拆分
 - [x] PR-5 RunPhase + Strategy
 - [x] PR-6 Steering / Follow-up
 - [x] PR-7 Loop Contract
@@ -334,6 +334,7 @@ type AgentRunPhase =
 > 2026-07-13：同一分支落地 PR-5 — `infra/loop/` 统一 ReAct 内核 + `AgentRunPhase`；`runAgentLoop` / `runAgentLoopStream` 变为 transport facade。  
 > 2026-07-13：PR-6 Steering/Follow-up — RunState 内存队列 + reactLoop 投递点 + `agent.submitInject` + 前端 streaming 默认 steer。  
 > 2026-07-13：PR-3 ToolCommand 注册表 + PR-7 心跳 LoopContract Phase 1（`infra/loopContract.ts` + 超级 Agent 门禁）。  
-> 2026-07-13：PR-4a — `infra/tools/native/{fs,web,shell}.ts`；`nativeTools.ts` 瘦身为其余域 + 兼容出口。
+> 2026-07-13：PR-4a — `infra/tools/native/{fs,web,shell}.ts`；`nativeTools.ts` 瘦身为其余域 + 兼容出口。  
+> 2026-07-14：PR-4b/4c — 剩余 handler 全量迁至 `infra/tools/native/{swarm,session,memory,integration}.ts`；`nativeTools.ts` 3420 → 118 行只留注册 + 分发；新增工具指南见 `docs/development/README.md` §6。
 
 落地后把「已确认」表从 `design-decisions.md` 迁入本节，并更新 `AGENTS.md`「当前状态」一行。

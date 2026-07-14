@@ -1,0 +1,626 @@
+/**
+ * Native 会话与运行时域 — session_* / spawn_subagent / task_run / invoke_api
+ *
+ * PR-4b：从 nativeTools.ts 迁出，handler 与 schema 保持原语义不变。
+ * spawn_subagent 复用 swarm 域的 agentCreateSubTool / agentSendMessageTool（单向依赖，无环）。
+ */
+import fs from "fs";
+import path from "path";
+import { getStreamHub } from "../../sessionStreamHub.js";
+import { runSessionCompact } from "../../autoCompact.js";
+import { getAllowedToolsForTier } from "../../swarmPermissionGuard.js";
+import { resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "../../loop/setup.js";
+import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
+import { agentCreateSubTool, agentSendMessageTool } from "./swarm.js";
+import {
+  coerceToolBoolean,
+  type NativeToolContext,
+  type NativeToolDefinition,
+  type NativeToolHandler,
+} from "./types.js";
+import { registerNativeDomain } from "./registerDomain.js";
+
+/** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
+ *  底层实现 = agent_create_sub + agent_send_message({ autoRun: true })。
+ *  waitForResult=false（默认）= 异步投递：工具立刻返回，子 Agent 自行 report_back 进父异步队列。
+ *  waitForResult=true = 同步等待：父流挂起，子会话空闲后系统抓取最后一条 assistant（不强制 report_back）。 */
+async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId || !ctx.agentSnapshot) {
+    throw new Error("spawn_subagent 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
+  }
+  const task = String(args.task || "");
+  if (!task.trim()) throw new Error("spawn_subagent 需要 task（子 Agent 任务描述）");
+  const waitForResult = coerceToolBoolean(args.waitForResult);
+
+  // 1. 创建子 Agent（或复用指定 Agent）
+  let subagentId: string;
+  let subagentName: string;
+  if (args.agentId && typeof args.agentId === "string") {
+    const resolved = await ctx.services.agent.getById(String(args.agentId));
+    if (!resolved) throw new Error("spawn_subagent 指定的 Agent 不存在");
+    subagentId = resolved.id;
+    subagentName = resolved.name;
+  } else {
+    const defaultPrompt = waitForResult
+      ? `你是上级 Agent 派出的子 Agent。请完成下发的任务，必要时调用工具，并给出最终答复。上级正在同步等待你的回复，无需调用 agent_report_back；写完最终答复即可。\n\n任务：${task}`
+      : `你是上级 Agent 派出的子 Agent。请完成下发的任务，必要时调用工具，最终使用 agent_report_back 向上级汇报结果。\n\n任务：${task}`;
+    const createResult = await agentCreateSubTool(
+      {
+        name: args.name ? String(args.name) : `子 Agent ${Date.now().toString(36).slice(-4)}`,
+        description: args.description ? String(args.description) : undefined,
+        systemPrompt: args.systemPrompt ? String(args.systemPrompt) : defaultPrompt,
+        // 默认执行类工具（native: 前缀）；再按 sub tier 裁剪，杜绝物化成空 → native:all
+        tools: getAllowedToolsForTier(
+          "sub",
+          Array.isArray(args.tools) && (args.tools as string[]).length > 0
+            ? (args.tools as string[])
+            : [...DEFAULT_SUBAGENT_TOOLS],
+        ),
+        model: args.model ? String(args.model) : undefined,
+        apiKey: args.apiKey as string | undefined,
+        workspaceId: args.workspaceId,
+      },
+      ctx,
+    );
+    if ("error" in createResult) throw new Error(createResult.error as string);
+    subagentId = (createResult as { agentId: string }).agentId;
+    subagentName = (createResult as { name: string }).name;
+    // 默认名时 fire-and-forget 调 LLM 起个正常名字；cuid 不变，父 Agent 仍能靠 agentId 找到
+    // （动态 import：后台锦上添花路径，主链路无需加载 sessionAutoName 及其 LLM 依赖）
+    if (!args.name && /^子\s*Agent\s+[a-z0-9]+$/i.test(subagentName)) {
+      void import("../../sessionAutoName.js")
+        .then(({ autoNameAgent }) => autoNameAgent(subagentId, task))
+        .catch(() => undefined);
+    }
+  }
+
+  // 子 Agent 主会话（UI 跳转 + 跟踪 Task 绑定 + 同步等待的完成判定锚点）。
+  // 必须在此 find-or-create：triggerAgentRun 在后台异步建会话，若这里只 findFirst，
+  // 首次 spawn 时拿到 undefined → 同步等待循环失去完成判定锚点（只能等 10 分钟超时）。
+  // triggerAgentRun 侧 findFirst 会复用此会话（isMainSession 唯一），不会重复创建。
+  let mainSession = await ctx.prisma?.chatSession.findFirst({
+    where: { agentId: subagentId, isMainSession: true, status: { not: "deleted" } },
+  });
+  if (!mainSession) {
+    // W4：与下文一致，优先 ctx 注入的 resolveAgent，缺省回退 agentResolver 叶子模块
+    const subAgent = await (ctx.resolveAgent ?? defaultResolveAgent)(ctx.services, subagentId);
+    const created = await ctx.services.session.create({
+      title: `${subAgent?.name ?? subagentName} 主会话`,
+      model: subAgent?.model ?? ctx.agentSnapshot.model,
+      systemPrompt: subAgent?.systemPrompt ?? "",
+      agentId: subagentId,
+      isMainSession: true,
+      kind: "subagent",
+      parentSessionId: ctx.sessionId ?? undefined,
+      status: "running",
+      taskDescription: task.slice(0, 200),
+    });
+    if (created.success && created.data) {
+      mainSession =
+        (await ctx.prisma?.chatSession.findUnique({
+          where: { id: (created.data as { id: string }).id },
+        })) ?? null;
+    }
+  }
+  const subagentSessionId = mainSession?.id;
+
+  // 2. 立即派活。同步等待时创建跟踪 Task（deliverToQueue=false，结果走 tool return）。
+  let jobId: string | undefined;
+  if (ctx.sessionId && typeof ctx.services.task?.create === "function") {
+    try {
+      const taskLabel = subagentName || `子 Agent ${subagentId.slice(0, 6)}`;
+      const created = await ctx.services.task.create({
+        name: `[async] ${taskLabel}`,
+        type: "async_agent",
+        status: "running",
+        sessionId: ctx.sessionId,
+        startedAt: new Date(),
+        input: {
+          kind: "async_agent",
+          sessionId: ctx.sessionId,
+          task: task.slice(0, 500),
+          taskLabel,
+          agentSnapshot: {
+            id: subagentId,
+            model: ctx.agentSnapshot.model,
+            systemPrompt: "",
+            tools: [],
+            tier: "sub",
+            parentId: ctx.agentSnapshot.id,
+            workspaceId: ctx.agentSnapshot.workspaceId,
+            name: subagentName,
+          },
+          subagentSessionId,
+          sourceType: "subagent",
+          // 同步等待：结果走 tool return，禁止 autoConsume 二次喂给父会话
+          deliverToQueue: !waitForResult,
+        },
+      } as any);
+      if (created.success && created.data) {
+        jobId = (created.data as { id: string }).id;
+      }
+    } catch (err) {
+      console.warn("[spawn_subagent] 创建父会话跟踪 Task 失败:", err);
+    }
+  }
+
+  const sendResult = await agentSendMessageTool(
+    {
+      toAgentId: subagentId,
+      content: task,
+      messageType: "command",
+      autoRun: true,
+      // 始终非阻塞首轮；同步等待在下方轮询子会话空闲 / report_back
+      waitForRun: false,
+    },
+    ctx,
+  );
+
+  if ("error" in sendResult || !sendResult.success) {
+    if (jobId) {
+      await ctx.services.task
+        .update({
+          id: jobId,
+          status: "failed",
+          finishedAt: new Date(),
+          output: { error: (sendResult as { error?: string }).error ?? "派活失败" },
+        } as any)
+        .catch(() => undefined);
+    }
+    return { error: (sendResult as { error?: string }).error ?? "派活失败" };
+  }
+
+  if (!waitForResult) {
+    return {
+      success: true,
+      agentId: subagentId,
+      subagentName,
+      subagentSessionId,
+      jobId,
+      status: jobId ? "running" : undefined,
+      message: `子 Agent「${subagentName}」(agentId=${subagentId}) 已派生并启动，任务完成后结果会投递回父会话。请牢记返回的 agentId / jobId，勿编造 ID。`,
+    };
+  }
+
+  // 同步等待：父流挂起。完成条件：
+  // 1) 子 Agent 主动 report_back → 跟踪 Task success/failed（提前结束，不进异步队列）
+  // 2) 否则：子会话曾运行过（或暖机后）且当前无流、无子会话内 running/queued Task → 抓取最后一条 assistant
+  const waitDeadline = Date.now() + 10 * 60 * 1000;
+  const waitStartedAt = Date.now();
+  let finalContent = "";
+  let finalStatus: "success" | "failed" | "timeout" = "timeout";
+  let sawSubStream = false;
+
+  while (Date.now() < waitDeadline) {
+    if (jobId) {
+      const row = await ctx.services.task.getById(jobId);
+      if (row && (row.status === "success" || row.status === "failed")) {
+        finalStatus = row.status as "success" | "failed";
+        const out = (row.output ?? {}) as { asyncResult?: string; error?: string };
+        finalContent =
+          row.status === "success"
+            ? out.asyncResult || ""
+            : `任务失败：${out.error || "未知错误"}`;
+        await ctx.services.task
+          .update({ id: jobId, delivered: true, deliveredAt: new Date() } as any)
+          .catch(() => undefined);
+        break;
+      }
+    }
+
+    let streaming = false;
+    if (subagentSessionId) {
+      try {
+        const hub = getStreamHub();
+        streaming = !!hub?.isRunning(subagentSessionId);
+      } catch {
+        streaming = false;
+      }
+    }
+    if (streaming) sawSubStream = true;
+
+    let nestedActive = 0;
+    if (subagentSessionId && ctx.prisma) {
+      nestedActive = await ctx.prisma.task.count({
+        where: {
+          sessionId: subagentSessionId,
+          status: { in: ["running", "queued"] },
+        },
+      });
+    }
+
+    // 暖机：避免 autoRun 尚未起流时被误判为空闲
+    const warmedUp = sawSubStream || Date.now() - waitStartedAt >= 2000;
+    if (warmedUp && !streaming && nestedActive === 0 && subagentSessionId && ctx.prisma) {
+      const last = await ctx.prisma.chatMessage.findFirst({
+        where: { sessionId: subagentSessionId, role: "assistant" },
+        orderBy: { createdAt: "desc" },
+        select: { content: true },
+      });
+      const text = (last?.content ?? "").trim();
+      if (text) {
+        finalContent = text;
+        finalStatus = "success";
+        if (jobId) {
+          await ctx.services.task
+            .update({
+              id: jobId,
+              status: "success",
+              finishedAt: new Date(),
+              delivered: true,
+              deliveredAt: new Date(),
+              output: { asyncResult: finalContent },
+            } as any)
+            .catch(() => undefined);
+        }
+        break;
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
+  // 无跟踪 Task 且超时前未抓到：最后再尝试一次抓取
+  if (!finalContent && subagentSessionId && ctx.prisma) {
+    const last = await ctx.prisma.chatMessage.findFirst({
+      where: { sessionId: subagentSessionId, role: "assistant" },
+      orderBy: { createdAt: "desc" },
+      select: { content: true },
+    });
+    if (last?.content?.trim()) {
+      finalContent = last.content;
+      finalStatus = "success";
+    }
+  }
+
+  if (!finalContent) {
+    return {
+      success: finalStatus === "success",
+      agentId: subagentId,
+      subagentName,
+      subagentSessionId,
+      jobId,
+      status: finalStatus,
+      hint:
+        finalStatus === "timeout"
+          ? `子 Agent「${subagentName}」(agentId=${subagentId}) 在时限内未完成。可用 agent_inspect(id=该 agentId) 查看进度（勿编造 ID）。`
+          : `子 Agent「${subagentName}」未返回有效内容。`,
+    };
+  }
+
+  return {
+    success: finalStatus !== "failed",
+    agentId: subagentId,
+    subagentName,
+    subagentSessionId,
+    jobId,
+    status: finalStatus,
+    content: finalContent,
+    hint: `子 Agent「${subagentName}」(agentId=${subagentId}) 已完成。请基于 content 字段生成最终回复；标识请用返回的 agentId/jobId，不要编造 memory key 或虚构 ID。`,
+  };
+}
+
+async function sessionClearTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (args.confirm !== true) {
+    throw new Error("缺少确认：请将 confirm 设为 true 以删除全部 Chat 会话");
+  }
+  if (!ctx.services?.session?.deleteMany) {
+    throw new Error("当前上下文未提供 SessionService，无法执行 session_clear");
+  }
+  const result = await ctx.services.session.deleteMany();
+  return { deletedSessions: result.count };
+}
+
+async function sessionCompactTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) throw new Error("session_compact 需要在 Chat 会话中调用（缺少 sessionId）");
+  if (!ctx.services?.session || !ctx.services?.message) {
+    throw new Error("当前上下文未提供 Session/Message Service，无法执行 session_compact");
+  }
+
+  const session = await ctx.services.session.getByIdLite(ctx.sessionId);
+  if (!session) throw new Error("当前会话不存在");
+  if (session.status === "archived") {
+    return { success: false, error: "当前会话已归档，无法压缩。" };
+  }
+
+  const result = await runSessionCompact({
+    config: ctx.config,
+    services: ctx.services,
+    sessionId: ctx.sessionId,
+    model: session.model || ctx.agentSnapshot?.model || "deepseek-v4-flash",
+    systemPrompt: session.systemPrompt || ctx.agentSnapshot?.systemPrompt || "你是 KnowPilot 助手。",
+    existingSummary: (session as { contextSummary?: string | null }).contextSummary ?? null,
+    trigger: "agent",
+  });
+
+  if (!result.compacted) {
+    return { success: false, message: result.message };
+  }
+
+  return {
+    success: true,
+    message: result.message,
+    boundaryMessageId: result.boundaryMessageId,
+    messagesSummarized: result.messagesSummarized,
+    memoriesFlushed: result.memoriesFlushed,
+    generation: result.generation,
+  };
+}
+
+/**
+ * 归档当前会话并开启同 Agent 新会话；总结写入 content/sessions/ 与新会话首条消息。
+ * 不自动切换前端视图——通过 SSE session_rotated 提示用户手动跳转。
+ */
+async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const summary = String(args.summary ?? "").trim();
+  if (!summary) throw new Error("session_rotate 需要非空的 summary");
+  if (!ctx.sessionId) throw new Error("session_rotate 需要在 Chat 会话中调用（缺少 sessionId）");
+  if (!ctx.services?.session || !ctx.services?.message) {
+    throw new Error("当前上下文未提供 Session/Message Service，无法执行 session_rotate");
+  }
+
+  const oldSession = await ctx.services.session.getByIdLite(ctx.sessionId);
+  if (!oldSession) throw new Error("当前会话不存在");
+  if (oldSession.status === "archived") {
+    return {
+      success: false,
+      error: "当前会话已归档，请勿重复调用 session_rotate。",
+      oldSessionId: oldSession.id,
+      newSessionId: oldSession.rotatedToSessionId ?? undefined,
+    };
+  }
+  if (oldSession.kind === "subagent") {
+    throw new Error("子 Agent 任务会话不支持 session_rotate；请在主对话会话中轮换。");
+  }
+
+  const agentId = oldSession.agentId ?? ctx.agentSnapshot?.id ?? null;
+  if (!agentId) throw new Error("无法确定 Agent，无法创建新会话");
+
+  const reason = args.reason ? String(args.reason).trim() : undefined;
+  const carryMemoryIds = Array.isArray(args.carryMemoryIds)
+    ? (args.carryMemoryIds as unknown[]).map((id) => String(id)).filter(Boolean)
+    : [];
+
+  const oldTitle = String(oldSession.title || "对话").slice(0, 40);
+  const newTitle =
+    (args.title ? String(args.title).trim() : "") ||
+    `${oldTitle} · 续`.slice(0, 60);
+
+  // 1) 写总结文件
+  const sessionsDir = path.join(ctx.config.contentDir, "sessions");
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  const summaryFileName = `${oldSession.id}-summary.md`;
+  const summaryPath = path.join(sessionsDir, summaryFileName);
+  const summaryDoc = [
+    "---",
+    `title: "${newTitle} 会话摘要"`,
+    `oldSessionId: "${oldSession.id}"`,
+    `agentId: "${agentId}"`,
+    `reason: "${(reason ?? "session_rotate").replace(/"/g, "'")}"`,
+    `rotatedAt: "${new Date().toISOString()}"`,
+    "---",
+    "",
+    summary,
+    ""
+].join("\n");
+  fs.writeFileSync(summaryPath, summaryDoc, "utf8");
+  const relativeSummaryPath = path
+    .relative(ctx.config.projectRoot, summaryPath)
+    .split(path.sep)
+    .join("/");
+
+  // 2) 创建新会话
+  const created = await ctx.services.session.create({
+    title: newTitle,
+    model: oldSession.model || "deepseek-v4-flash",
+    systemPrompt: oldSession.systemPrompt ?? undefined,
+    agentId,
+    kind: "chat",
+    status: "active",
+  } as any);
+  if (!created.success || !created.data) {
+    throw new Error(created.error?.message ?? "创建新会话失败");
+  }
+  const newSession = created.data as { id: string; title: string };
+
+  // 3) 新会话首条用户消息 = 总结（可选附带 Memory 引用）
+  let firstMessage = `【上一会话摘要】\n\n${summary}`;
+  if (carryMemoryIds.length > 0) {
+    firstMessage += `\n\n【需继续参考的 Memory】\n${carryMemoryIds.map((id) => `- ${id}`).join("\n")}`;
+  }
+  if (reason) {
+    firstMessage += `\n\n（轮换原因：${reason}）`;
+  }
+  await ctx.services.message.create({
+    sessionId: newSession.id,
+    role: "user",
+    content: firstMessage,
+    source: "system",
+  } as any);
+
+  // 4) 归档旧会话并记录跳转
+  await ctx.services.session.update({
+    id: oldSession.id,
+    status: "archived",
+    contextSummary: summary.slice(0, 20000),
+    contextCompactedAt: new Date(),
+    rotatedToSessionId: newSession.id,
+  } as any);
+
+  // 5) SSE 通知旧会话页面（不自动切换）
+  try {
+    const hub = getStreamHub();
+    hub?.pushExternalEvent(oldSession.id, {
+      type: "session_rotated",
+      oldSessionId: oldSession.id,
+      newSessionId: newSession.id,
+      newTitle: newSession.title || newTitle,
+      reason,
+    });
+  } catch (err) {
+    console.warn("[session_rotate] SSE 推送失败:", err);
+  }
+
+  await ctx.services.log?.create?.({
+    level: "info",
+    component: "session",
+    event: "session_rotated",
+    message: `会话 ${oldSession.id} → ${newSession.id}`,
+    metadata: {
+      oldSessionId: oldSession.id,
+      newSessionId: newSession.id,
+      reason,
+      summaryPath: relativeSummaryPath,
+      agentId,
+    },
+  }).catch(() => {});
+
+  return {
+    success: true,
+    oldSessionId: oldSession.id,
+    newSessionId: newSession.id,
+    newTitle: newSession.title || newTitle,
+    summaryPath: relativeSummaryPath,
+    message: "已归档当前会话并创建新会话。请告知用户可点击提示跳转；不要假设页面已自动切换。",
+  };
+}
+
+async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = args.id ? String(args.id) : undefined;
+  const name = args.name ? String(args.name) : undefined;
+  if (!id && !name) throw new Error("必须提供 task id 或 name");
+
+  let taskId = id;
+  if (!taskId && name) {
+    const result = await ctx.services.task.list({ page: 1, pageSize: 50 });
+    const matched = result.items.find((t) => t.name === name);
+    if (!matched) throw new Error(`未找到名称为 "${name}" 的 Task`);
+    taskId = matched.id;
+  }
+
+  const runResult = await ctx.services.task.run(taskId!);
+  if (!runResult.success) throw new Error(runResult.error?.message || "Task 执行失败");
+  return { taskId, output: runResult.data };
+}
+
+async function invokeApiTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  return ctx.invokeTrpc(String(args.tool), args.args ?? {});
+}
+
+const SESSION_DEFS: NativeToolDefinition[] = [
+  {
+    name: "spawn_subagent",
+    description:
+      "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 作为工具返回值（不强制 report_back，也不进异步队列）。",
+    parameters: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "子 Agent 要执行的任务描述（详细越好）" },
+        label: { type: "string", description: "子 Agent 卡片/队列中显示的简短标签" },
+        agentId: { type: "string", description: "指定子 Agent 使用的 Agent ID（不填则新建）" },
+        model: { type: "string", description: "指定子代理使用的模型 ID（不填则用 Agent 默认模型）" },
+        workspaceId: {
+          type: "string",
+          description: "目标 Workspace（仅超级 Agent 可跨 Workspace；默认落在当前父 Agent 所在 Workspace）",
+        },
+        timeoutMs: { type: "number", description: "任务超时毫秒数，不填则使用全局默认值" },
+        waitForResult: { type: "boolean", description: "true=同步等待子 Agent 完成并作为工具返回值；false(默认)=异步投递，立刻返回，结果经 report_back 进父异步队列" },
+        shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
+      },
+      required: ["task"],
+    },
+  },
+  {
+    name: "session_clear",
+    description:
+      "删除所有 ChatSession 及其关联的 ChatMessage（级联清空）。这是一个破坏性操作，调用时必须将 confirm 显式设为 true。",
+    parameters: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          description: "必须设为 true 才会执行清空，否则拒绝调用",
+        },
+      },
+      required: ["confirm"],
+    },
+  },
+  {
+    name: "session_rotate",
+    description:
+      "当当前会话轮数过多、话题切换或用户要求换干净上下文时调用：归档当前会话，创建同一 Agent 的新会话，并把你写的总结作为新会话第一条用户消息。用户若仍在看旧会话，不会自动跳转，只会收到提示。",
+    parameters: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "string",
+          description: "给新会话用的中文总结（Markdown），需保留目标、决策、未完成事项与关键结论",
+        },
+        reason: {
+          type: "string",
+          description: "轮换原因，如「轮数过多」「话题切换」「用户要求」",
+        },
+        title: {
+          type: "string",
+          description: "新会话标题（可选，默认基于旧标题生成）",
+        },
+        carryMemoryIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "需要在新会话首条消息中提及的 Memory id（可选）",
+        },
+      },
+      required: ["summary"],
+    },
+  },
+  {
+    name: "session_compact",
+    description:
+      "当用户要求压缩上下文、或当前会话过长需要释放 token 时调用：摘要更早的对话并写入会话摘要，保留最近消息继续聊。与 session_rotate 不同，不会换新会话。",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: "压缩原因，如「用户要求」「上下文过长」",
+        },
+      },
+    },
+  },
+  {
+    name: "task_run",
+    description: "立即执行一条已注册的后台 Task（如 db:sync）。",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task id" },
+        name: { type: "string", description: "或按任务名称匹配" },
+      },
+    },
+  },
+  {
+    name: "invoke_api",
+    description: "调用 KnowPilot 后端 tRPC 工具（如 post.list、memory.list）。tool 格式：post.list",
+    parameters: {
+      type: "object",
+      properties: {
+        tool: { type: "string" },
+        args: { type: "object", description: "JSON 参数对象" },
+      },
+      required: ["tool"],
+    },
+  },
+];
+
+const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
+  spawn_subagent: spawnSubagentTool,
+  session_clear: sessionClearTool,
+  session_rotate: sessionRotateTool,
+  session_compact: sessionCompactTool,
+  task_run: taskRunTool,
+  invoke_api: invokeApiTool,
+};
+
+export function registerSessionTools(): void {
+  registerNativeDomain(SESSION_DEFS, SESSION_HANDLERS);
+}

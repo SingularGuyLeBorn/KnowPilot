@@ -3,7 +3,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { createTestConfig, createNativeCtx } from "./helpers/toolTestFixtures.js";
-import { executeNativeTool, NATIVE_TOOL_DEFINITIONS } from "../infra/nativeTools.js";
+import { executeNativeTool, listNativeTools } from "../infra/nativeTools.js";
 
 describe("session_rotate", () => {
   let tmpRoot: string;
@@ -25,7 +25,7 @@ describe("session_rotate", () => {
   });
 
   it("工具定义已注册", () => {
-    const def = NATIVE_TOOL_DEFINITIONS.find((d) => d.name === "session_rotate");
+    const def = listNativeTools().find((d) => d.name === "session_rotate");
     expect(def).toBeTruthy();
     expect(def?.parameters.required).toContain("summary");
   });
