@@ -51,8 +51,12 @@ function stubServices() {
     success: true,
     data: { id: "run-stub" },
   }));
-  const services = { run: { create: runCreate } } as unknown as ServiceContainer;
-  return { services, runCreate };
+  const runUpdate = vi.fn(async (_input: Record<string, unknown>) => ({
+    success: true,
+    data: { id: "run-stub" },
+  }));
+  const services = { run: { create: runCreate, update: runUpdate } } as unknown as ServiceContainer;
+  return { services, runCreate, runUpdate };
 }
 
 function loopInput(
@@ -87,7 +91,7 @@ describe("W6 D 类工具 rollback", () => {
 
   it("write_file 后 run failed → 内容还原为执行前快照，failed Run 落 output.rollback", async () => {
     fs.writeFileSync(path.join(root, "target.txt"), "old content", "utf8");
-    const { services, runCreate } = stubServices();
+    const { services, runCreate, runUpdate } = stubServices();
     const transport = scriptedTransport([
       { toolCalls: [tc("c1", "write_file", { path: "target.txt", content: "corrupted" })] },
       { throwError: "LLM boom" },
@@ -109,15 +113,15 @@ describe("W6 D 类工具 rollback", () => {
     expect(report).toBeDefined();
     expect(report!.rolledBack).toBe(1);
     expect(report!.entries[0]).toMatchObject({ toolName: "write_file", status: "rolled_back" });
-    // failed Run 终态写入 output.rollback
+    // W11：入口落 running 行，终态经 update 写回 output.rollback
     expect(runCreate).toHaveBeenCalledTimes(1);
-    const runArg = runCreate.mock.calls[0][0] as unknown as {
-      status: string;
-      output: { error: string; rollback: { rolledBack: number } };
-    };
-    expect(runArg.status).toBe("failed");
-    expect(runArg.output.error).toContain("LLM boom");
-    expect(runArg.output.rollback.rolledBack).toBe(1);
+    expect((runCreate.mock.calls[0][0] as { status: string }).status).toBe("running");
+    const failedUpdate = runUpdate.mock.calls
+      .map((c) => c[0] as unknown as { status?: string; output?: { error?: string; rollback?: { rolledBack: number } } })
+      .find((u) => u.status === "failed");
+    expect(failedUpdate).toBeDefined();
+    expect(failedUpdate!.output!.error).toContain("LLM boom");
+    expect(failedUpdate!.output!.rollback!.rolledBack).toBe(1);
   });
 
   it("write_file 新建文件后 run failed → 回滚为删除该新建文件", async () => {
@@ -235,7 +239,7 @@ describe("W6 D 类工具 rollback", () => {
 
   it("用户 abort → run failed 但不触发回滚", async () => {
     fs.writeFileSync(path.join(root, "keep.txt"), "old", "utf8");
-    const { services, runCreate } = stubServices();
+    const { services, runUpdate } = stubServices();
     const controller = new AbortController();
     // 第一轮执行 write_file；第二轮 complete 前 abort 并抛 AbortError
     let calls = 0;
@@ -260,8 +264,14 @@ describe("W6 D 类工具 rollback", () => {
     const input = loopInput(root, services, transport, ["native:write_file"]);
     input.signal = controller.signal;
     await expect(runReactLoop(input)).rejects.toThrow("用户中断");
-    // abort 不回滚：文件保持已修改状态，也不写 failed Run
+    // abort 不回滚：文件保持已修改状态
     expect(fs.readFileSync(path.join(root, "keep.txt"), "utf8")).toBe("modified");
-    expect(runCreate).not.toHaveBeenCalled();
+    // W11：abort 终态经 update 标 cancelled（不是 failed，也不带 rollback）
+    const cancelledUpdate = runUpdate.mock.calls
+      .map((c) => c[0] as unknown as { status?: string; output?: { rollback?: unknown } })
+      .find((u) => u.status === "cancelled");
+    expect(cancelledUpdate).toBeDefined();
+    expect(cancelledUpdate!.output!.rollback).toBeUndefined();
+    expect(runUpdate.mock.calls.some((c) => (c[0] as { status?: string }).status === "failed")).toBe(false);
   });
 });

@@ -22,6 +22,7 @@ import { assertLlmBudget, recordTokenUsage } from "../llmBudget.js";
 import { maybeCompactMessages, persistCompactResult } from "../autoCompact.js";
 import { sanitizePostCompactAssistantContent, type StoredToolCall } from "../chatHistory.js";
 import { RunRollbackStack, type RunRollbackReport } from "../tools/rollback.js";
+import { waitApprovalResolution, type ApprovalResolution } from "../approvalGate.js";
 import {
   DEFAULT_SUBAGENT_TOOLS,
   resolveToolsForAgentTier,
@@ -31,6 +32,52 @@ import { AGENT_TOOL_RESULT_MAX_CHARS } from "@knowpilot/shared";
 import { createPhaseMachine } from "./phase.js";
 import { REFLECTION_UNPASSED_MARK } from "./reflection.js";
 import type { ReactLoopInput, ReactLoopResult, TurnSnapshot } from "./types.js";
+
+/** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
+const RUN_SNAPSHOT_THROTTLE_MS = 5000;
+
+/** W11：审批执行结果注入消息的最大长度（超出截断，防爆上下文） */
+const APPROVAL_RESULT_MAX_CHARS = 2000;
+
+/** W11：从工具结果中读取审批 pending 标记（agentTools runOne 捕获 PENDING_APPROVAL 时写入） */
+function readApprovalPendingMarker(result: unknown): { approvalId: string; toolName?: string } | null {
+  if (!result || typeof result !== "object") return null;
+  const marker = (result as { approvalPending?: unknown }).approvalPending;
+  if (
+    marker &&
+    typeof marker === "object" &&
+    typeof (marker as { approvalId?: unknown }).approvalId === "string"
+  ) {
+    return marker as { approvalId: string; toolName?: string };
+  }
+  return null;
+}
+
+function truncateForMessage(value: unknown): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value ?? null);
+  return text.length > APPROVAL_RESULT_MAX_CHARS ? `${text.slice(0, APPROVAL_RESULT_MAX_CHARS)}…` : text;
+}
+
+/** W11：审批决策后的续跑注入消息（经 injectUserMessages 显式机制进入原 session 与 llmMessages） */
+function buildApprovalResumeMessage(resolution: ApprovalResolution): string {
+  const base = `approvalId=${resolution.approvalId}，操作：${resolution.toolName}`;
+  if (resolution.outcome === "approved") {
+    const result = resolution.execResult;
+    const failed =
+      result &&
+      typeof result === "object" &&
+      ("error" in (result as Record<string, unknown>) ||
+        (result as { success?: unknown }).success === false);
+    if (failed) {
+      return `人工审批已通过但执行失败（${base}）。失败信息：${truncateForMessage(result)}\n该操作未生效，请向用户说明情况并收尾，或改用其他方案。`;
+    }
+    return `人工审批已通过（${base}），该操作已由审批流程执行完成。执行结果：${truncateForMessage(result)}\n请基于该结果继续完成任务，不要重复调用同一工具。`;
+  }
+  if (resolution.outcome === "expired") {
+    return `人工审批超时已过期（${base}），该操作未执行。请向用户说明情况并收尾，或改用其他不需要审批的方案。`;
+  }
+  return `人工审批被拒绝（${base}），该操作未执行。请向用户说明情况并收尾，或改用其他不需要审批的方案。`;
+}
 
 function pushThinking(executedTools: StoredToolCall[], round: number, delta: string) {
   if (!delta) return;
@@ -94,7 +141,7 @@ async function injectUserMessages(
   input: ReactLoopInput,
   llmMessages: LlmMessage[],
   items: Array<{ id: string; content: string }>,
-  kind: "steer" | "follow_up",
+  kind: "steer" | "follow_up" | "approval",
 ): Promise<void> {
   for (const item of items) {
     let messageId: string | undefined;
@@ -169,6 +216,67 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     totalUsage.completion += u.completion;
     totalUsage.total += u.total;
     recordTokenUsage(input.config, u);
+  };
+
+  // ── W11：Run 活状态——入口落 running 行，tool_batch 后节流快照，终态由内核统一 update ──
+  // 落库是尽力而为的可观测性写路径：失败只告警，不得打断本次运行。
+  const runStartedAt = Date.now();
+  let runId: string | undefined;
+  let lastRunSnapshotAt = 0;
+  const countExecutedTools = () => executedTools.filter((t) => t.kind === "tool").length;
+  const runSvc = input.services?.run;
+  const canCreateRun = typeof runSvc?.create === "function";
+  const canUpdateRun = typeof runSvc?.update === "function";
+
+  if (canCreateRun) {
+    try {
+      const created = await runSvc.create({
+        agentId: input.agentMeta?.id,
+        sessionId: input.sessionId,
+        status: "running",
+        input: input.runInput ?? { runOrigin: input.runOrigin ?? "user" },
+        output: { phase: "idle", roundsUsed: 0, executedToolsCount: 0 },
+      });
+      if (created.success && created.data && typeof created.data === "object" && "id" in created.data) {
+        runId = String((created.data as { id: string }).id);
+      }
+    } catch (err) {
+      console.warn("[ReactLoop] running Run 落库失败（不影响本次运行）:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** tool_batch 结束后节流快照 { phase, roundsUsed, executedToolsCount }；phase 转移点（如 awaiting_human）强制写 */
+  const writeRunSnapshot = async (force = false) => {
+    if (!runId || !canUpdateRun || !runSvc) return;
+    const now = Date.now();
+    if (!force && now - lastRunSnapshotAt < RUN_SNAPSHOT_THROTTLE_MS) return;
+    lastRunSnapshotAt = now;
+    try {
+      await runSvc.update({
+        id: runId,
+        output: { phase: machine.phase, roundsUsed, executedToolsCount: countExecutedTools() },
+      });
+    } catch (err) {
+      console.warn("[ReactLoop] Run 快照写回失败:", err instanceof Error ? err.message : err);
+    }
+  };
+
+  /** 终态统一收口：success / failed / cancelled（用户 abort），output 携带 phase 终态快照与业务字段 */
+  const finalizeRun = async (terminal: "success" | "failed" | "cancelled", patch: Record<string, unknown>) => {
+    if (!runId || !canUpdateRun || !runSvc) return;
+    try {
+      await runSvc.update({
+        id: runId,
+        status: terminal,
+        output: { ...patch, phase: machine.phase, roundsUsed, executedToolsCount: countExecutedTools() },
+        toolCalls: executedTools,
+        tokenUsage: totalUsage,
+        durationMs: Date.now() - runStartedAt,
+        toolCallCount: countExecutedTools(),
+      });
+    } catch (err) {
+      console.warn("[ReactLoop] Run 终态写回失败:", err instanceof Error ? err.message : err);
+    }
   };
 
   try {
@@ -295,6 +403,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           input.hooks?.onProgress?.("反思重修轮数已耗尽，内容未经反思通过，标记放行");
         }
         machine.transition("done");
+        await finalizeRun("success", { content });
         return {
           content,
           toolCalls: executedTools,
@@ -304,6 +413,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           roundsUsed,
           phase: machine.phase,
           hitToolBudget: false,
+          runId,
         };
       }
 
@@ -398,10 +508,38 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           (deferred.length ? `，预算跳过 ${deferred.length} 个` : ""),
       );
 
+      // W11：每轮 tool_batch 结束后写活状态快照（节流：RUN_SNAPSHOT_THROTTLE_MS 内至多一次）
+      await writeRunSnapshot();
+
       if (toolCallsUsed >= snapshot.maxToolCalls) {
         hitToolBudget = true;
         machine.transition("synthesizing");
         break;
+      }
+
+      // W11 HITL：本批有工具触发审批 pending → 挂起（tool_batch → awaiting_human），
+      // 等 approval_resolved 显式事件唤醒后回 llm。唤醒靠事件不靠轮询；注入复用 W7 injectUserMessages。
+      const pendingApprovals = executedItems
+        .map((item) => readApprovalPendingMarker(item.result))
+        .filter((m): m is { approvalId: string; toolName?: string } => m !== null);
+      if (pendingApprovals.length > 0) {
+        machine.transition("awaiting_human");
+        await writeRunSnapshot(true); // 挂起态必须可查：phase=awaiting_human 强制快照
+        input.hooks?.onProgress?.(
+          `等待人工审批（${pendingApprovals.map((m) => m.approvalId).join(", ")}），运行已挂起`,
+        );
+        for (const pending of pendingApprovals) {
+          const resolution = await waitApprovalResolution(input.services, pending.approvalId, {
+            signal: input.signal,
+          });
+          await injectUserMessages(
+            input,
+            llmMessages,
+            [{ id: `approval_${pending.approvalId}`, content: buildApprovalResumeMessage(resolution) }],
+            "approval",
+          );
+        }
+        // 落入迭代末尾统一 machine.transition("llm")——awaiting_human → llm 合法转移
       }
 
       // AFTER_TOOL_BATCH：Steering 注入后再进入下一轮 LLM
@@ -438,8 +576,10 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           }
           if (synthesis.content?.trim()) {
             machine.transition("done");
+            const finalContent = sanitizePostCompactAssistantContent(synthesis.content, executedTools);
+            await finalizeRun("success", { content: finalContent });
             return {
-              content: sanitizePostCompactAssistantContent(synthesis.content, executedTools),
+              content: finalContent,
               toolCalls: executedTools,
               tokenUsage: totalUsage,
               model: lastModel,
@@ -447,6 +587,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
               roundsUsed,
               phase: machine.phase,
               hitToolBudget,
+              runId,
             };
           }
         } catch {
@@ -460,6 +601,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       // 流式：兜底文案也推给前端
       input.hooks?.onToken?.(fallback);
       machine.transition("done");
+      await finalizeRun("success", { content: fallback });
       return {
         content: fallback,
         toolCalls: executedTools,
@@ -469,10 +611,12 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         roundsUsed: hitToolBudget ? roundsUsed : snapshot.maxRounds,
         phase: machine.phase,
         hitToolBudget,
+        runId,
       };
     }
 
     machine.transition("done");
+    await finalizeRun("success", { content: "" });
     return {
       content: "",
       toolCalls: executedTools,
@@ -482,6 +626,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       roundsUsed,
       phase: machine.phase,
       hitToolBudget,
+      runId,
     };
   } catch (err) {
     try {
@@ -494,11 +639,11 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
     // W6：D 类工具补偿——run 进入 failed 且非用户 abort 时逆序回滚本 run 已执行的写入工具。
     // 回滚报告挂在错误对象上供上层（agentStream/agentRuntime）透传，并写入 failed Run 的
-    // output.rollback（Run 活状态/running 快照归 W11，此处只写终态 rollback 结果字段）。
+    // output.rollback（W11：终态由 finalizeRun 统一 update 到入口创建的 running 行）。
     const isAbort =
       input.signal?.aborted === true || (err instanceof Error && err.name === "AbortError");
+    let report: RunRollbackReport | null = null;
     if (!isAbort) {
-      let report: RunRollbackReport | null = null;
       try {
         report = await rollbackStack.rollbackAll(toolCtx);
       } catch (rbErr) {
@@ -511,26 +656,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             (report.warned > 0 ? `，${report.warned} 个不可逆操作需人工 revert/检查` : "") +
             (report.failed > 0 ? `，${report.failed} 个回滚失败需人工处理` : ""),
         );
-        try {
-          const created = await input.services.run.create({
-            agentId: input.agentMeta?.id,
-            sessionId: input.sessionId,
-            status: "failed",
-            input: { runOrigin: input.runOrigin ?? "user" },
-            output: {
-              error: err instanceof Error ? err.message : String(err),
-              rollback: report,
-            },
-            toolCalls: executedTools,
-          });
-          if (!created.success) {
-            console.warn("[ReactLoop] 回滚报告写 Run 失败:", created.error?.message);
-          }
-        } catch (runErr) {
-          console.warn("[ReactLoop] 回滚报告写 Run 异常:", runErr instanceof Error ? runErr.message : runErr);
-        }
       }
     }
+    // W11：终态收口——abort 标 cancelled，其余标 failed；回滚报告并入 output
+    await finalizeRun(isAbort ? "cancelled" : "failed", {
+      error: err instanceof Error ? err.message : String(err),
+      ...(report ? { rollback: report } : {}),
+    });
     throw err;
   }
 }

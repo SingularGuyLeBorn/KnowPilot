@@ -15,7 +15,7 @@ import { getEventBus } from "./infra/eventBus.js";
 import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
 import { getTaskScheduler } from "./infra/taskScheduler.js";
-import { recoverStaleAsyncJobs, cleanupDeliveredAsyncJobs, wireAsyncJobPush } from "./infra/asyncJobManager.js";
+import { recoverStaleAsyncJobs, recoverStaleRuns, cleanupDeliveredAsyncJobs, wireAsyncJobPush } from "./infra/asyncJobManager.js";
 import { closeBrowser } from "./infra/metablog/webScraper.js";
 import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
@@ -254,6 +254,14 @@ const server = app.listen(PORT, () => {
     })
     .catch((err) => {
       console.error("❌ [AsyncJobs] 恢复检查失败:", err);
+    });
+  // W11：遗留 running Run 标 interrupted（如实声明不续跑；与 recoverStaleAsyncJobs 同款启动挂载点）
+  recoverStaleRuns()
+    .then((n) => {
+      if (n > 0) console.log(`  ⚠️ [Run] 已将 ${n} 个中断的运行标为 interrupted`);
+    })
+    .catch((err) => {
+      console.error("❌ [Run] 中断恢复检查失败:", err);
     });
   import("./infra/approvalGate.js")
     .then(({ expireStaleApprovals }) => expireStaleApprovals(services))

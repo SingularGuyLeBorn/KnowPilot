@@ -77,8 +77,8 @@ export interface LoopHooks {
     round: number;
   }): void;
   onProgress?(message: string): void;
-  /** Steering / Follow-up 已注入到 messages（落库后调用） */
-  onInjected?(info: { kind: "steer" | "follow_up"; content: string; messageId?: string }): void;
+  /** Steering / Follow-up / 审批续跑 已注入到 messages（落库后调用） */
+  onInjected?(info: { kind: "steer" | "follow_up" | "approval"; content: string; messageId?: string }): void;
 }
 
 export interface ReactLoopInput {
@@ -102,6 +102,8 @@ export interface ReactLoopInput {
     workspaceId?: string | null;
   };
   runOrigin?: "user" | "parent" | "heartbeat";
+  /** W11：Run 活状态——run 入口落库时写入 Run.input 的业务描述（消息/触发源等） */
+  runInput?: unknown;
   /** 覆盖 snapshot.toolResultMaxChars（stream 用 micro-compact 阈值） */
   toolResultMaxChars?: number;
   /** 压缩阶段 SSE（仅 stream 传入；type-only 依赖 AgentStreamEvent） */
@@ -127,6 +129,8 @@ export interface ReactLoopResult {
   phase: AgentRunPhase;
   /** 是否因工具预算触发合成/停止 */
   hitToolBudget: boolean;
+  /** W11：内核在 run 入口创建的 Run 行 id（活状态/终态已由内核写回）；创建失败时为 undefined */
+  runId?: string;
 }
 
 /** Stream facade 传入 transport 的 LLM 选项 */

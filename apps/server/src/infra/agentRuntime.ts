@@ -34,6 +34,8 @@ export interface AgentLoopResult {
   model: string;
   provider: string;
   roundsUsed: number;
+  /** W11：内核在 run 入口创建的 Run 行 id（活状态/终态已由内核写回） */
+  runId?: string;
 }
 
 
@@ -48,6 +50,8 @@ export async function runAgentLoop(options: {
   sessionId?: string;
   agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
   runOrigin?: "user" | "parent" | "heartbeat";
+  /** W11：Run.input 业务描述（触发消息等），run 入口落库时写入 */
+  runInput?: unknown;
   /** 每完成一轮工具调用后回调，用于异步任务进度日志 */
   onProgress?: (message: string) => void;
 }): Promise<AgentLoopResult> {
@@ -62,6 +66,7 @@ export async function runAgentLoop(options: {
     sessionId: options.sessionId,
     agentMeta: options.agentMeta,
     runOrigin: options.runOrigin,
+    runInput: options.runInput,
     // W7：sync 链路接入反思装饰器（默认关闭）；stream 链路（agentStream）另立跟进，不在本工单
     transport: withReflection(createSyncTransport(options.config, effectiveModel), {
       enabled: options.config.reflection.enabled,
@@ -80,6 +85,7 @@ export async function runAgentLoop(options: {
     model: result.model,
     provider: result.provider,
     roundsUsed: result.roundsUsed,
+    runId: result.runId,
   };
 }
 
@@ -122,20 +128,27 @@ export async function runAgent(
       });
     }
 
-    const result = await runAgentLoop({ config, services, agent, messages, invokeTrpc });
-    const runRecord = await services.run.create({
-      agentId: agent.id,
+    const result = await runAgentLoop({
+      config,
+      services,
+      agent,
+      messages,
+      invokeTrpc,
       sessionId: input.sessionId,
-      status: "success",
-      input: input.input ? { input: input.input } : { messages: input.messages },
-      output: { content: result.content },
-      toolCalls: result.toolCalls,
-      tokenUsage: result.tokenUsage,
-      durationMs: Date.now() - start,
+      agentMeta: {
+        id: agent.id,
+        model: agent.model,
+        systemPrompt: agent.systemPrompt,
+        tools: agent.tools,
+        tier: (agent as { tier?: string }).tier,
+        parentId: (agent as { parentId?: string | null }).parentId ?? null,
+        workspaceId: (agent as { workspaceId?: string | null }).workspaceId ?? null,
+      },
+      runInput: input.input ? { input: input.input } : { messages: input.messages },
     });
-
+    // W11：Run 行由内核入口创建（running）并在终态写回；此处仅透传 runId
     return success({
-      data: { agentId: agent.id, runId: runRecord.data?.id, ...result },
+      data: { agentId: agent.id, runId: result.runId, ...result },
       operation: "run",
       entity: "agent",
       durationMs: Date.now() - start,
@@ -217,6 +230,10 @@ export async function chatAgent(
         parentId: agent.parentId,
         workspaceId: agent.workspaceId,
       },
+      runInput: {
+        message: displayText,
+        attachments: input.attachments?.length ? input.attachments : undefined,
+      },
     });
 
     const assistantMsg = await services.message.create({
@@ -225,17 +242,6 @@ export async function chatAgent(
       content: sanitizePostCompactAssistantContent(result.content, result.toolCalls),
       toolCalls: result.toolCalls,
       tokenUsage: result.tokenUsage,
-    });
-
-    await services.run.create({
-      agentId: agent.id,
-      sessionId,
-      status: "success",
-      input: { message: displayText, attachments: input.attachments?.length ? input.attachments : undefined },
-      output: { content: result.content },
-      toolCalls: result.toolCalls,
-      tokenUsage: result.tokenUsage,
-      durationMs: Date.now() - start,
     });
 
     return success({

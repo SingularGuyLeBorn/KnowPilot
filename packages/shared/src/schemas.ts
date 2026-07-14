@@ -772,23 +772,25 @@ export const listToolsSchema = z.object({
 export const createRunSchema = z.object({
   agentId: z.string().cuid().optional(),
   sessionId: z.string().cuid().optional(),
-  status: z.enum(["pending", "running", "success", "failed", "cancelled"]).default("pending"),
+  status: z.enum(["pending", "running", "success", "failed", "cancelled", "interrupted"]).default("pending"),
   input: z.any().optional(),
   output: z.any().optional(),
   toolCalls: z.any().optional(),
   tokenUsage: z.any().optional(),
   error: z.any().optional(),
   durationMs: z.number().int().nonnegative().optional(),
+  toolCallCount: z.number().int().nonnegative().optional(),
 });
 
 export const updateRunSchema = z.object({
   id: z.string().cuid(),
-  status: z.enum(["pending", "running", "success", "failed", "cancelled"]).optional(),
+  status: z.enum(["pending", "running", "success", "failed", "cancelled", "interrupted"]).optional(),
   output: z.any().optional(),
   toolCalls: z.any().optional(),
   tokenUsage: z.any().optional(),
   error: z.any().optional(),
   durationMs: z.number().int().nonnegative().optional(),
+  toolCallCount: z.number().int().nonnegative().optional(),
 });
 
 export const listRunsSchema = z.object({
@@ -796,7 +798,7 @@ export const listRunsSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   agentId: z.string().optional(),
   sessionId: z.string().optional(),
-  status: z.enum(["pending", "running", "success", "failed", "cancelled"]).optional(),
+  status: z.enum(["pending", "running", "success", "failed", "cancelled", "interrupted"]).optional(),
   keyword: z.string().optional(),
 });
 

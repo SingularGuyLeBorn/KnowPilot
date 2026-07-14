@@ -18,6 +18,7 @@ const STATUS_STYLE: Record<Run["status"], string> = {
   success: "bg-green-500/10 text-green-600",
   failed: "bg-red-500/10 text-red-600",
   cancelled: "bg-gray-500/10 text-gray-500",
+  interrupted: "bg-orange-500/10 text-orange-600",
 };
 
 const STATUS_LABEL: Record<Run["status"], string> = {
@@ -26,6 +27,7 @@ const STATUS_LABEL: Record<Run["status"], string> = {
   success: "成功",
   failed: "失败",
   cancelled: "已取消",
+  interrupted: "已中断",
 };
 
 export default function RunsPage() {
@@ -56,7 +58,7 @@ export default function RunsPage() {
       />
 
       <div className="flex flex-wrap gap-2">
-        {["", "success", "failed", "running", "pending"].map((s) => (
+        {["", "success", "failed", "running", "interrupted", "pending", "cancelled"].map((s) => (
           <button
             key={s || "all"}
             type="button"

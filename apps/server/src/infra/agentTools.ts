@@ -27,7 +27,7 @@ import {
   parseMcpToolName,
 } from "./mcpClient.js";
 import { getEventBus } from "./eventBus.js";
-import { assertApprovalOrProceed } from "./approvalGate.js";
+import { assertApprovalOrProceed, getPendingApprovalCause } from "./approvalGate.js";
 import { resolveAgent } from "./agentResolver.js";
 
 function parseToolCallArgs(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
@@ -329,6 +329,19 @@ export async function executeToolCallsBatch(
       return { ...item, result };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      // W11：审批 pending 不是普通工具错误——附结构化标记，reactLoop 据此进入 awaiting_human 挂起
+      const pendingApproval = getPendingApprovalCause(err);
+      if (pendingApproval) {
+        return {
+          ...item,
+          result: {
+            error: msg,
+            elapsedMs: Date.now() - started,
+            timedOut: false,
+            approvalPending: { approvalId: pendingApproval.approvalId, toolName: item.parsed.name },
+          },
+        };
+      }
       const isTimeout = msg.includes("执行超时");
       // 慢工具自动转异步建议：超时后提示 LLM 用 async_task_run / spawn_subagent 重试，
       // 而非直接报错让用户手动处理

@@ -47,6 +47,36 @@ describe("createPhaseMachine", () => {
     m.transition("llm");
     expect(log).toEqual(["idle->compacting", "compacting->llm"]);
   });
+
+  it("W11：允许 HITL 挂起路径 tool_batch→awaiting_human→llm", () => {
+    const m = createPhaseMachine();
+    m.transition("llm");
+    m.transition("tool_batch");
+    m.transition("awaiting_human");
+    expect(m.phase).toBe("awaiting_human");
+    m.transition("llm");
+    m.transition("done");
+    expect(m.phase).toBe("done");
+  });
+
+  it("W11：awaiting_human 可失败收尾（用户中断/服务异常）", () => {
+    const m = createPhaseMachine();
+    m.transition("llm");
+    m.transition("tool_batch");
+    m.transition("awaiting_human");
+    m.transition("failed");
+    expect(m.phase).toBe("failed");
+  });
+
+  it("W11：awaiting_human 非法转移抛错（不可直接 done / 不可从 llm 跳入）", () => {
+    const m = createPhaseMachine();
+    m.transition("llm");
+    expect(() => m.transition("awaiting_human")).toThrow(/非法转移/);
+    m.transition("tool_batch");
+    m.transition("awaiting_human");
+    expect(() => m.transition("done")).toThrow(/非法转移/);
+    expect(() => m.transition("synthesizing")).toThrow(/非法转移/);
+  });
 });
 
 describe("budget + phase 契约（文档级）", () => {

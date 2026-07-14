@@ -313,7 +313,7 @@ export interface Run {
   id: string;
   agentId: string | null;
   sessionId: string | null;
-  status: "pending" | "running" | "success" | "failed" | "cancelled";
+  status: "pending" | "running" | "success" | "failed" | "cancelled" | "interrupted";
   input?: unknown;
   output?: unknown;
   toolCalls?: unknown;

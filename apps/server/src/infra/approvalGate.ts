@@ -52,6 +52,163 @@ export function getApprovalPendingTtlMs(): number {
   return n;
 }
 
+/* ─── W11：approval_resolved 显式事件 + 等待注册表（awaiting_human 唤醒机制） ───
+ *
+ * 不变量：
+ * 1. 审批决策只有一个事实源（Approval 行状态）；本注册表只是「决策已发生」的进程内显式事件通道。
+ * 2. 唤醒靠事件，不靠轮询：waitApprovalResolution 注册后挂起，由以下来源 resolve：
+ *    - executeApprovedOperation 执行后（approved，携带执行结果）
+ *    - ApprovalService.afterUpdate 决策为 rejected（人工拒绝）
+ *    - expireStaleApprovals 批量清扫 / waiter 自带 TTL 截止（expired）
+ * 3. 幂等消除竞态：wait 入口先读当前状态，已决直接返回，消除「resolve 先于 wait 注册」的双通道竞态。
+ */
+
+export type ApprovalResolution = {
+  outcome: "approved" | "rejected" | "expired";
+  approvalId: string;
+  toolName: string;
+  /** outcome=approved 时由 executeApprovedOperation 透传的执行结果（可能为失败结果） */
+  execResult?: unknown;
+};
+
+interface ApprovalWaiter {
+  resolve: (r: ApprovalResolution) => void;
+  timer?: ReturnType<typeof setTimeout>;
+  signal?: AbortSignal;
+  onAbort?: () => void;
+}
+
+const approvalWaiters = new Map<string, Set<ApprovalWaiter>>();
+
+function removeApprovalWaiter(approvalId: string, waiter: ApprovalWaiter): void {
+  if (waiter.timer) clearTimeout(waiter.timer);
+  if (waiter.signal && waiter.onAbort) waiter.signal.removeEventListener("abort", waiter.onAbort);
+  const set = approvalWaiters.get(approvalId);
+  if (set) {
+    set.delete(waiter);
+    if (set.size === 0) approvalWaiters.delete(approvalId);
+  }
+}
+
+/** 审批决策发生后调用：唤醒所有挂在该审批上的 run（无 waiter 时静默 no-op） */
+export function notifyApprovalResolved(approvalId: string, resolution: ApprovalResolution): void {
+  const set = approvalWaiters.get(approvalId);
+  if (!set) return;
+  for (const waiter of [...set]) {
+    removeApprovalWaiter(approvalId, waiter);
+    waiter.resolve(resolution);
+  }
+}
+
+/** 从工具执行错误中提取 PENDING_APPROVAL 标记（assertApprovalOrProceed 抛出的 TRPCError cause） */
+export function getPendingApprovalCause(err: unknown): { approvalId: string } | null {
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  if (
+    cause &&
+    typeof cause === "object" &&
+    (cause as { reason?: unknown }).reason === "PENDING_APPROVAL" &&
+    typeof (cause as { approvalId?: unknown }).approvalId === "string"
+  ) {
+    return { approvalId: (cause as { approvalId: string }).approvalId };
+  }
+  return null;
+}
+
+/** 将超时仍 pending 的单条审批翻转为 rejected（守卫式：仅当仍 pending，与人工决策/批量清扫竞态安全） */
+async function expireApprovalIfPending(services: ServiceContainer, approvalId: string): Promise<boolean> {
+  const result = await services.prisma.approval.updateMany({
+    where: { id: approvalId, status: "pending" },
+    data: {
+      status: "rejected",
+      decidedBy: "system-ttl",
+      decidedAt: new Date(),
+      decisionNote: "审批超时，自动拒绝。",
+    },
+  });
+  return result.count > 0;
+}
+
+/**
+ * 挂起等待审批决策（awaiting_human 的唯一唤醒通道）。
+ * 返回决策结果；signal 中断时以 AbortError 拒绝（run 走 failed 收尾）。
+ */
+export async function waitApprovalResolution(
+  services: ServiceContainer,
+  approvalId: string,
+  opts?: { signal?: AbortSignal },
+): Promise<ApprovalResolution> {
+  // 幂等入口：已决状态直接映射返回，消除「决策先于等待注册」的竞态
+  let toolName = "unknown";
+  let createdAtMs: number | null = null;
+  try {
+    const approval = (await services.approval.getById(approvalId)) as {
+      toolName: string;
+      status: string;
+      createdAt?: Date | string;
+      decidedBy?: string | null;
+    };
+    toolName = approval.toolName;
+    createdAtMs = approval.createdAt ? new Date(approval.createdAt).getTime() : null;
+    if (approval.status === "executed") {
+      return { outcome: "approved", approvalId, toolName };
+    }
+    if (approval.status === "rejected") {
+      return {
+        outcome: approval.decidedBy === "system-ttl" ? "expired" : "rejected",
+        approvalId,
+        toolName,
+      };
+    }
+    // status=approved（尚未 execute）：继续等 executeApprovedOperation 的显式事件，不提前放行
+  } catch {
+    // 审批行不存在：当作拒绝处理，让 LLM 收尾而不是永久挂起
+    return { outcome: "rejected", approvalId, toolName };
+  }
+
+  return new Promise<ApprovalResolution>((resolvePromise, rejectPromise) => {
+    const waiter: ApprovalWaiter = { resolve: resolvePromise, signal: opts?.signal };
+    waiter.onAbort = () => {
+      removeApprovalWaiter(approvalId, waiter);
+      const err = new Error("流式输出已被用户中断");
+      err.name = "AbortError";
+      rejectPromise(err);
+    };
+
+    const set = approvalWaiters.get(approvalId) ?? new Set<ApprovalWaiter>();
+    set.add(waiter);
+    approvalWaiters.set(approvalId, set);
+
+    if (opts?.signal) {
+      if (opts.signal.aborted) {
+        waiter.onAbort();
+        return;
+      }
+      opts.signal.addEventListener("abort", waiter.onAbort, { once: true });
+    }
+
+    // TTL 截止机制：与 expireStaleApprovals 同一条 TTL 规则的两个执行点——
+    // 批量清扫管「无 run 挂起的堆积」，本定时器管「本条有 run 挂起的审批」。
+    // 到期时间与审批自身 createdAt+TTL 对齐，是领域截止而非时序猜测。
+    const ttl = getApprovalPendingTtlMs();
+    if (ttl > 0 && createdAtMs !== null) {
+      const remaining = createdAtMs + ttl - Date.now();
+      waiter.timer = setTimeout(() => {
+        void (async () => {
+          try {
+            await expireApprovalIfPending(services, approvalId);
+          } catch (err) {
+            console.warn("[ApprovalGate] waiter TTL 过期落库失败:", err instanceof Error ? err.message : err);
+          }
+          removeApprovalWaiter(approvalId, waiter);
+          resolvePromise({ outcome: "expired", approvalId, toolName });
+        })();
+      }, Math.max(remaining, 0));
+      // 不阻断进程退出（测试/CLI 场景）
+      if (typeof waiter.timer === "object" && "unref" in waiter.timer) waiter.timer.unref();
+    }
+  });
+}
+
 export function toolRequiresApproval(toolName: string): boolean {
   if (process.env.REQUIRE_APPROVAL === "false") return false;
   if (APPROVAL_REQUIRED_OPS.has(toolName)) return true;
@@ -105,6 +262,12 @@ export async function expireStaleApprovals(services: ServiceContainer): Promise<
   const ttl = getApprovalPendingTtlMs();
   if (ttl <= 0) return 0;
   const cutoff = new Date(Date.now() - ttl);
+  // 先取出将被翻转的行（W11：需逐条发 approval_resolved 事件唤醒挂起的 run）
+  const stale = await services.prisma.approval.findMany({
+    where: { status: "pending", createdAt: { lt: cutoff } },
+    select: { id: true, toolName: true },
+  });
+  if (stale.length === 0) return 0;
   // 单条 updateMany 全量清理，避免分页 pageSize 漏扫；同时落审计字段
   const result = await services.prisma.approval.updateMany({
     where: { status: "pending", createdAt: { lt: cutoff } },
@@ -115,6 +278,9 @@ export async function expireStaleApprovals(services: ServiceContainer): Promise<
       decisionNote: "审批超时，自动拒绝。",
     },
   });
+  for (const row of stale) {
+    notifyApprovalResolved(row.id, { outcome: "expired", approvalId: row.id, toolName: row.toolName });
+  }
   return result.count;
 }
 
@@ -186,6 +352,8 @@ export async function executeApprovedOperation(
   ctx: { services: ServiceContainer },
   approvalId: string,
 ): Promise<OperationResult<unknown>> {
+  // 提升作用域：catch 里唤醒等待方时需要 toolName
+  let resolvedToolName = "unknown";
   try {
     let approval: { id: string; toolName: string; args: unknown; status: string };
     try {
@@ -195,6 +363,7 @@ export async function executeApprovedOperation(
         args: unknown;
         status: string;
       };
+      resolvedToolName = approval.toolName;
     } catch {
       return failureFromError(
         new TRPCError({ code: "NOT_FOUND", message: "审批记录不存在。" }),
@@ -243,12 +412,30 @@ export async function executeApprovedOperation(
       where: { id: approval.id },
       data: { status: "executed", executedAt: new Date() },
     });
+    // W11：approval_resolved 显式事件——唤醒挂在该审批上的 run（awaiting_human → llm）
+    notifyApprovalResolved(approval.id, {
+      outcome: "approved",
+      approvalId: approval.id,
+      toolName: approval.toolName,
+      execResult,
+    });
     return success({
       data: execResult,
       operation: "execute",
       entity: "approval",
     });
   } catch (err) {
+    // W11：审批通过但执行失败也唤醒等待方（携带失败结果让 LLM 收尾，避免挂起到 TTL）
+    try {
+      notifyApprovalResolved(approvalId, {
+        outcome: "approved",
+        approvalId,
+        toolName: resolvedToolName,
+        execResult: { error: err instanceof Error ? err.message : String(err) },
+      });
+    } catch {
+      /* 唤醒失败不阻塞原错误返回 */
+    }
     return failureFromError(err, "execute", "approval");
   }
 }

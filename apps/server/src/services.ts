@@ -87,6 +87,7 @@ import {
 import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
+import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
@@ -2028,6 +2029,22 @@ export class ApprovalService extends BaseService<CreateApprovalInput, UpdateAppr
       return { ...data, decidedBy: "local-user", decidedAt: new Date() };
     }
     return data;
+  }
+
+  /**
+   * W11：人工拒绝是审批决策点——发 approval_resolved 显式事件，
+   * 唤醒挂在该审批上的 run（awaiting_human → llm，注入拒绝消息让 LLM 收尾）。
+   * approved 不在此发：执行完成（executeApprovedOperation）才发，携带执行结果。
+   */
+  protected override async afterUpdate(entity: any, existing: any, input: UpdateApprovalInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    if (input.status === "rejected") {
+      notifyApprovalResolved(entity.id, {
+        outcome: "rejected",
+        approvalId: entity.id,
+        toolName: entity.toolName ?? "unknown",
+      });
+    }
   }
 }
 

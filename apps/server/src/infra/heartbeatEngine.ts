@@ -306,6 +306,11 @@ export class HeartbeatEngine {
               messages: [{ role: "user", content: hb.goal }],
               invokeTrpc,
               signal,
+              // W11：补全 run 上下文，心跳 Run 行可溯源（agent/session/runOrigin）
+              sessionId: session.id,
+              agentMeta: agentSnapshot,
+              runOrigin: "heartbeat",
+              runInput: { heartbeat: true, goal: hb.goal, taskId: task.id },
             });
 
             await this.prisma.task.update({

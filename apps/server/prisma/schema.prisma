@@ -395,7 +395,7 @@ model Run {
   id         String   @id @default(cuid())
   agentId    String?
   sessionId  String?
-  status     String   /// "pending" | "running" | "success" | "failed" | "cancelled"
+  status     String   /// "pending" | "running" | "success" | "failed" | "cancelled" | "interrupted"
   input      Json?
   output     Json?
   toolCalls  Json?

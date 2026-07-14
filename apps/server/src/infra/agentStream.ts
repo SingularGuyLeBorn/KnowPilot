@@ -181,6 +181,8 @@ export async function runAgentLoopStream(options: {
   agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; workspaceId?: string | null; parentId?: string | null };
   signal?: AbortSignal;
   runOrigin?: "user" | "parent" | "heartbeat";
+  /** W11：Run.input 业务描述（触发消息等），run 入口落库时写入 */
+  runInput?: unknown;
 }): Promise<{
   content: string;
   toolCalls: StoredToolCall[];
@@ -188,6 +190,8 @@ export async function runAgentLoopStream(options: {
   model: string;
   provider: string;
   roundsUsed: number;
+  /** W11：内核在 run 入口创建的 Run 行 id（活状态/终态已由内核写回） */
+  runId?: string;
 }> {
   const effectiveModel = resolveEffectiveAgentModel(options.config, options.agent.model);
   const roundRef = { current: 0 };
@@ -215,6 +219,7 @@ export async function runAgentLoopStream(options: {
     sessionId: options.sessionId,
     agentMeta: options.agentMeta,
     runOrigin: options.runOrigin ?? "user",
+    runInput: options.runInput,
     transport,
     toolResultMaxChars: resolveMicroCompactToolMaxChars(options.config),
     compactEmit: options.emit,
@@ -257,6 +262,7 @@ export async function runAgentLoopStream(options: {
     model: result.model,
     provider: result.provider,
     roundsUsed: result.roundsUsed,
+    runId: result.runId,
   };
 }
 
@@ -613,6 +619,13 @@ export async function chatAgentStream(
       },
       signal,
       runOrigin: input.runOrigin,
+      runInput: {
+        message: prepared!.messageText,
+        regenerate: input.regenerate,
+        edit: input.editMessageId,
+        skillId: input.skillId,
+        trigger: "user", // #42：标记触发来源
+      },
     });
 
     let assistantMessageId: string | undefined;
@@ -637,7 +650,10 @@ export async function chatAgentStream(
       }
     }
 
-    // A12：assistant 消息写入 + run 记录写入合并为单次 $transaction，减少 SQLite 单连接下的 commit 次数
+    // A12：assistant 消息写入 + Run 终态合并写合并为单次 $transaction，减少 SQLite 单连接下的 commit 次数。
+    // W11：Run 行已由内核在 run 入口创建（running）并在 done 终态写回；此处仅把 assistantMessageId
+    // 合并进既有 output（读-改-写保内核字段不丢）。
+    const runId = result.runId;
     assistantMessageId = await services.prisma.$transaction(async (tx) => {
       if (!assistantMessageId) {
         const initial = buildInitialVersionMeta(result.content, result.toolCalls);
@@ -654,26 +670,17 @@ export async function chatAgentStream(
         assistantMessageId = created.id;
       }
 
-      await tx.run.create({
-        data: {
-          agentId: agent.id,
-          sessionId,
-          status: "success",
-          input: {
-            message: prepared!.messageText,
-            regenerate: input.regenerate,
-            edit: input.editMessageId,
-            skillId: input.skillId,
-            trigger: "user", // #42：标记触发来源
-          },
-          output: { content: result.content, assistantMessageId },
-          toolCalls: result.toolCalls,
-          tokenUsage: result.tokenUsage,
-          durationMs: Date.now() - start,
-          // #46：记录工具调用总次数（排除 thinking/content kind）
-          toolCallCount: result.toolCalls.filter((t) => t.kind === "tool").length,
-        } as any,
-      });
+      if (runId) {
+        const existingRun = await tx.run.findUnique({ where: { id: runId }, select: { output: true } });
+        const baseOutput =
+          existingRun?.output && typeof existingRun.output === "object"
+            ? (existingRun.output as Record<string, unknown>)
+            : {};
+        await tx.run.update({
+          where: { id: runId },
+          data: { output: { ...baseOutput, assistantMessageId } },
+        });
+      }
       return assistantMessageId;
     });
 

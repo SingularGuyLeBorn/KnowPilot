@@ -379,6 +379,18 @@ export function resetAsyncJobPushWireForTests(): void {
   _asyncPushWired = false;
 }
 
+/**
+ * W11：服务启动时将遗留 running 的 Run 标为 interrupted（与 recoverStaleAsyncJobs 同款机制）。
+ * 如实声明不假装能续跑——运行中的 ReAct 状态随进程丢失，完整 checkpoint 重建另立设计。
+ */
+export async function recoverStaleRuns(): Promise<number> {
+  const result = await prisma.run.updateMany({
+    where: { status: "running" },
+    data: { status: "interrupted" },
+  });
+  return result.count;
+}
+
 /** 服务启动时：将遗留 async_agent running/queued 任务标为 failed，并同步其 subagent ChatSession 状态 */
 export async function recoverStaleAsyncJobs(): Promise<number> {
   const stale = await prisma.task.findMany({
