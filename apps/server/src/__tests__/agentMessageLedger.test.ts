@@ -8,7 +8,7 @@
  * - delivered：Task 管道原子认领成功（CLAIM 同事务）
  * - consumed：注入气泡随会话历史被 ReAct 循环读入上下文（chatAgentStream 挂点）
  * - 幂等防线：superior 镜像投递前对账（已记账 / 滞留 pending + 同内容消息 → 不重复注入）
- * - 存量修复脚本对账（fix-agent-message-ledger.ts）
+ * - 存量对账 reconcileAgentMessageLedger（infra/agentMessageLedger.ts）
  */
 
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
@@ -22,9 +22,9 @@ import { setStreamHub, SessionStreamHub } from "../infra/sessionStreamHub.js";
 import {
   markAgentMessageConsumedByTaskRef,
   markAgentMessageDeliveredByTaskRef,
+  reconcileAgentMessageLedger,
 } from "../infra/agentMessageLedger.js";
 import { getSwarmBus } from "../infra/swarmBus.js";
-import { reconcileAgentMessageLedger } from "../scripts/fix-agent-message-ledger.js";
 
 type Ctx = Awaited<ReturnType<typeof createContextInner>>;
 
@@ -604,7 +604,7 @@ describe("W14 AgentMessage 投递记账回写", () => {
     }
   });
 
-  it("waitForResult（deliverToQueue=false）：report_back 直接终结 AgentMessage 为 consumed，修复脚本零告警", async () => {
+  it("waitForResult（deliverToQueue=false）：report_back 直接终结 AgentMessage 为 consumed，存量对账零告警", async () => {
     const ctx = await createContextInner();
     const fx = await createSwarmFixture(ctx, { deliverToQueue: false });
     try {
@@ -637,7 +637,7 @@ describe("W14 AgentMessage 投递记账回写", () => {
       });
       expect(bubble).toBeNull();
 
-      // 修复脚本对这类消息零告警：即使创建时间回拨到阈值之前，consumed 终态使其不进扫描集
+      // 存量对账对这类消息零告警：即使创建时间回拨到阈值之前，consumed 终态使其不进扫描集
       await prisma.agentMessage.update({
         where: { id: agentMsg!.id },
         data: { createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
@@ -721,7 +721,7 @@ describe("W14 AgentMessage 投递记账回写", () => {
     }
   });
 
-  it("存量修复脚本：已注入的滞留 pending 置 consumed，未注入的保持 pending 并告警", async () => {
+  it("存量对账 reconcile：已注入的滞留 pending 置 consumed，未注入的保持 pending 并告警", async () => {
     const ctx = await createContextInner();
     const fx = await createSwarmFixture(ctx);
     try {
@@ -781,7 +781,7 @@ describe("W14 AgentMessage 投递记账回写", () => {
       expect((await prisma.agentMessage.findUnique({ where: { id: fresh.id } }))?.status).toBe("pending");
       expect(result.warnings.some((w) => w.messageId === fresh.id)).toBe(false);
     } finally {
-      // 脚本对账是全局扫描：把本测试已 consumed 的遗留清掉，避免影响其它用例计数断言
+      // 存量对账是全局扫描：把本测试已 consumed 的遗留清掉，避免影响其它用例计数断言
       await cleanupSwarmFixture(fx);
     }
   });

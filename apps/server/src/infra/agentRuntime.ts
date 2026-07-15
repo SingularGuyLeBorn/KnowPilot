@@ -12,11 +12,6 @@ import { success, failure } from "../trpc/result.js";
 import { runReactLoop, createSyncTransport, withReflection } from "./loop/index.js";
 import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
-export {
-  DEFAULT_SUBAGENT_TOOLS,
-  resolveToolsForAgentTier,
-  parseToolCall,
-} from "./loop/setup.js";
 
 export interface AgentLoopResult {
   content: string;

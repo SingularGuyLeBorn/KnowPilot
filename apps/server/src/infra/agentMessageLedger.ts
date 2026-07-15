@@ -11,6 +11,9 @@
  *
  * 与 Task 侧消费语义（问题 G 的 consumedBy）解耦：AgentMessage 记「消息链路」，
  * Task 记「结果内容」，两条账各记各的。
+ *
+ * 另含存量对账 reconcileAgentMessageLedger：原一次性脚本 scripts/fix-agent-message-ledger.ts
+ * 的核心逻辑（W16c 随脚本退役迁入，脚本执行 0 命中后已删除）。
  */
 
 import type { PrismaClient, Prisma } from "@prisma/client";
@@ -55,4 +58,136 @@ export async function markAgentMessageConsumedByTaskRef(
     data: { status: "consumed", deliveredAt: new Date() },
   });
   return fromDelivered.count + fromPending.count;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* 存量对账（W14 一次性脚本退役后保留的对账核心） */
+
+/** 存量判定阈值：创建超 1 小时仍 pending 才纳入对账（避免误伤飞行中的正常投递） */
+const STALE_PENDING_MS = 60 * 60 * 1000;
+
+export interface ReconcileWarning {
+  messageId: string;
+  reason: string;
+  contentPreview: string;
+}
+
+export interface ReconcileResult {
+  scanned: number;
+  markedConsumed: number;
+  keptPending: number;
+  warnings: ReconcileWarning[];
+  dryRun: boolean;
+}
+
+type ReconcileDb = Pick<PrismaClient, "agentMessage" | "task" | "chatMessage" | "chatSession">;
+
+function parseTaskSessionId(rawInput: unknown): string | null {
+  let value = rawInput;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const sessionId = (value as { sessionId?: unknown }).sessionId;
+  return typeof sessionId === "string" && sessionId ? sessionId : null;
+}
+
+/** 解析 AgentMessage 的目标会话：taskRef → Task.input.sessionId → 自身 sessionId → toAgent 最近活跃会话 */
+async function resolveTargetSessionId(
+  db: ReconcileDb,
+  msg: { sessionId: string | null; taskRef: string | null; toAgentId: string },
+): Promise<string | null> {
+  if (msg.taskRef) {
+    const task = await db.task.findUnique({
+      where: { id: msg.taskRef },
+      select: { input: true },
+    });
+    const fromTask = task ? parseTaskSessionId(task.input) : null;
+    if (fromTask) return fromTask;
+  }
+  if (msg.sessionId) return msg.sessionId;
+  const latest = await db.chatSession.findFirst({
+    where: { agentId: msg.toAgentId, status: { notIn: ["deleted", "archived"] } },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true },
+  });
+  return latest?.id ?? null;
+}
+
+/**
+ * 存量对账核心（可测试）：扫滞留 pending → 已注入置 consumed，未注入保持 pending 并告警。
+ * dryRun=true 时只扫描与判定，不写库。
+ */
+export async function reconcileAgentMessageLedger(
+  db: ReconcileDb,
+  opts: { olderThanMs?: number; dryRun?: boolean } = {},
+): Promise<ReconcileResult> {
+  const olderThanMs = opts.olderThanMs ?? STALE_PENDING_MS;
+  const dryRun = opts.dryRun === true;
+  const before = new Date(Date.now() - olderThanMs);
+
+  const stale = await db.agentMessage.findMany({
+    where: { status: "pending", createdAt: { lt: before } },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      content: true,
+      sessionId: true,
+      taskRef: true,
+      toAgentId: true,
+      fromAgentId: true,
+      createdAt: true,
+    },
+  });
+
+  const result: ReconcileResult = {
+    scanned: stale.length,
+    markedConsumed: 0,
+    keptPending: 0,
+    warnings: [],
+    dryRun,
+  };
+
+  for (const msg of stale) {
+    const preview = msg.content.replace(/\s+/g, " ").slice(0, 60);
+    const sessionId = await resolveTargetSessionId(db, msg);
+    if (!sessionId) {
+      result.keptPending++;
+      result.warnings.push({
+        messageId: msg.id,
+        reason: "无法定位目标会话（无 taskRef / sessionId / toAgent 活跃会话），保持 pending",
+        contentPreview: preview,
+      });
+      continue;
+    }
+
+    const injected = await db.chatMessage.findFirst({
+      where: { sessionId, content: msg.content },
+      select: { id: true },
+    });
+    if (!injected) {
+      result.keptPending++;
+      result.warnings.push({
+        messageId: msg.id,
+        reason: `目标会话 ${sessionId} 无同内容消息（疑似未注入），保持 pending`,
+        contentPreview: preview,
+      });
+      continue;
+    }
+
+    if (!dryRun) {
+      await db.agentMessage.update({
+        where: { id: msg.id },
+        data: { status: "consumed", deliveredAt: new Date() },
+      });
+    }
+    result.markedConsumed++;
+  }
+
+  return result;
 }

@@ -27,7 +27,6 @@
     "cleanup:smoke-artifacts": "tsx src/scripts/cleanup-smoke-artifacts.ts",
     "cleanup:duplicate-agents": "tsx src/scripts/cleanup-duplicate-agents.ts",
     "reset:runtime": "tsx src/scripts/reset-runtime-data.ts",
-    "fix:agent-message-ledger": "tsx src/scripts/fix-agent-message-ledger.ts",
     "integration:smoke": "tsx src/scripts/integration-smoke.ts",
     "integration:smoke:platform": "tsx src/scripts/integration-smoke.ts --platform",
     "integration:smoke:platform:quick": "tsx src/scripts/integration-smoke.ts --quick-platform",
