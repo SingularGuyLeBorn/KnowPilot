@@ -96,7 +96,7 @@ async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolCo
   const type = args.type ? String(args.type) : undefined;
   const pageSize = Math.min(50, Math.max(1, Number(args.pageSize || 20)));
   // W5-followup：三层 scope 读路径（global + 本 Agent 所在 Workspace + 本 Agent），
-  // 其他 Agent / 其他 Workspace 的私有记忆不可见。仓储不按页返回，page 参数保留兼容但不再翻页。
+  // 其他 Agent / 其他 Workspace 的私有记忆不可见。仓储一次返回 limit 条，不分页。
   const scopes = [MEMORY_SCOPE_GLOBAL];
   if (ctx.agentSnapshot?.workspaceId) scopes.push(memoryWorkspaceScope(ctx.agentSnapshot.workspaceId));
   if (ctx.agentSnapshot?.id) scopes.push(memoryAgentScope(ctx.agentSnapshot.id));
@@ -109,7 +109,6 @@ async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolCo
   });
   return {
     total: items.length,
-    page: 1,
     pageSize,
     items: items.map((m) => ({
       id: m.id,
@@ -206,8 +205,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
       z.object({
         keyword: z.string().describe("关键词").optional(),
         type: z.string().describe("按类型过滤").optional(),
-        page: z.number().describe("页码，默认 1").optional(),
-        pageSize: z.number().describe("每页条数，默认 20").optional(),
+        pageSize: z.number().describe("返回条数上限，默认 20").optional(),
       }),
     ),
   },
