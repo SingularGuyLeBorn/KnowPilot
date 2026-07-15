@@ -469,24 +469,7 @@ async function githubTool(args: Record<string, unknown>, ctx: NativeToolContext)
 // ─── 飞书 ───
 
 async function feishuSendTextTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  if (!ctx.prisma) {
-    // 无 prisma 时保持向后兼容：直接用 config 中的 tenant token
-    const token = ctx.config.integrations.feishu.tenantAccessToken;
-    if (!token) throw new Error("未配置 FEISHU_TENANT_ACCESS_TOKEN");
-    const receiveIdType = String(args.receiveIdType || "open_id");
-    const res = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        receive_id: String(args.receiveId),
-        msg_type: "text",
-        content: JSON.stringify({ text: String(args.text) }),
-      }),
-    });
-    const data = (await res.json()) as { code?: number; msg?: string; data?: unknown };
-    if (!res.ok || data.code !== 0) throw new Error(`飞书发送失败: ${data.msg || res.status}`);
-    return data.data;
-  }
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
   return feishuSendText(
     String(args.receiveId),
     String(args.receiveIdType || "open_id"),

@@ -1676,9 +1676,9 @@ describe("native:feishu_send_text", () => {
     vi.unstubAllGlobals();
   });
 
-  it("未配置 FEISHU_TENANT_ACCESS_TOKEN 时抛错", async () => {
+  it("未配置飞书凭证时抛错", async () => {
     const root = createTempProjectDir();
-    const ctx = createNativeCtx(root);
+    const ctx = createNativeCtx(root, { prisma: {} as never });
     await expect(
       executeNativeTool("feishu_send_text", { receiveId: "x", text: "hi" }, ctx),
     ).rejects.toThrow(/FEISHU_TENANT_ACCESS_TOKEN/);
@@ -1688,6 +1688,7 @@ describe("native:feishu_send_text", () => {
   it("飞书 API 成功返回 data", async () => {
     const root = createTempProjectDir();
     const ctx = createNativeCtx(root, {
+      prisma: {} as never,
       config: {
         integrations: {
           feishu: { appId: "", appSecret: "", userAccessToken: "", tenantAccessToken: "tok" },
