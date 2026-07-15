@@ -1756,15 +1756,21 @@ export class SessionQueueItemService extends BaseService<
     return rows.map((r) => this.formatEntity(r));
   }
 
-  /** 消费一条队列项：删除 SessionQueueItem + 标记 AgentMessage consumed（如适用） */
-  async consume(id: string): Promise<{ success: boolean }> {
+  /**
+   * 消费一条队列项（软认领）：删除 SessionQueueItem + 标记 AgentMessage consumed（如适用）。
+   * 删除即认领——item 不存在或并发落选（前端 drain 与服务端 superior drain 同抢一条）时
+   * 返回 claimed:false，落选方静默跳过，不抛错。
+   */
+  async consume(id: string): Promise<{ success: boolean; claimed: boolean }> {
     const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
     if (!item) {
-      throw new TRPCError({ code: "NOT_FOUND", message: "队列项不存在" });
+      return { success: true, claimed: false };
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.sessionQueueItem.delete({ where: { id } });
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      // 删除即认领：deleteMany 原子返回受影响行数，并发双 consume 落选方 count=0
+      const del = await tx.sessionQueueItem.deleteMany({ where: { id } });
+      if (del.count === 0) return false;
       if (item.kind === "superior" && item.agentMessageId) {
         // W16a-1：delivered → consumed 不动 deliveredAt（CLAIM 真账）；pending 直跳 consumed 兜底补齐。
         // 已 consumed / 已删除均为幂等 no-op。
@@ -1779,8 +1785,9 @@ export class SessionQueueItemService extends BaseService<
           });
         }
       }
+      return true;
     });
-    return { success: true };
+    return { success: true, claimed };
   }
 
   /** 批量重排序：按 orderedIds 顺序依次赋 order = index * 10 */

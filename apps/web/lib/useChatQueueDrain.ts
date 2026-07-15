@@ -131,7 +131,24 @@ export function useChatQueueDrain({
         }
         sessionComposeActions.removeUserQueueItem(sid, task.id);
         if (task.dbId) {
-          consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+          if (task.kind === "superior") {
+            // W-E 软认领：与服务端 superior drain 竞态同抢一条队列项（consume 删除即认领），
+            // 落选方（claimed=false）静默跳过——该项由认领方负责起流，绝不双跑
+            try {
+              const claim = await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
+              if (!claim.claimed) {
+                sessionComposeActions.setQueueDraining(sid, false);
+                // 已释放 drain 锁且在 async 续体内，直接重试下一项
+                consumeRef.current(sid);
+                return;
+              }
+            } catch {
+              sessionComposeActions.setQueueDraining(sid, false);
+              return;
+            }
+          } else {
+            consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+          }
         }
       } else {
         if (task.jobId) {

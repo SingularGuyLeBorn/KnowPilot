@@ -252,7 +252,11 @@ const agentRouter = router({
     .input(createSessionQueueItemSchema)
     .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.create(input)),
   consumeSessionQueueItem: publicProcedure
-    .meta({ description: "消费（删除）一条会话发送队列项，同时标记关联 AgentMessage 已消费。", aiReadable: false })
+    .meta({
+      description:
+        "消费（删除）一条会话发送队列项，同时标记关联 AgentMessage 已消费。返回 claimed：是否抢到认领（前端 drain 与服务端 superior drain 竞态，落选 false 静默跳过）。",
+      aiReadable: false,
+    })
     .input(z.object({ id: z.string().cuid() }))
     .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.consume(input.id)),
   reorderSessionQueueItems: publicProcedure
