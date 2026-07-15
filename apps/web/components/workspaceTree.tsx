@@ -78,7 +78,7 @@ export function WorkspaceTree({
   const subAgentIds = useMemo(() => subAgents.map((a) => a.id), [subAgents]);
 
   const mainSessionsQuery = trpc.session.list.useQuery(
-    { page: 1, pageSize: 100, agentId: mainAgentId },
+    { agentIds: mainAgentId ? [mainAgentId] : [] },
     { enabled: mode === "main" && !!mainAgentId },
   );
 

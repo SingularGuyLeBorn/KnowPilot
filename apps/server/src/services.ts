@@ -1335,9 +1335,7 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   protected buildListWhere(input: ListSessionsInput): any {
     const where: any = {};
     if (input.keyword) where.title = { contains: input.keyword };
-    // A1：agentIds 批量模式优先；单 agentId 兼容旧调用方
     if (input.agentIds && input.agentIds.length > 0) where.agentId = { in: input.agentIds };
-    else if (input.agentId) where.agentId = input.agentId;
     if (input.parentSessionId !== undefined) where.parentSessionId = input.parentSessionId;
     if (input.kind) where.kind = input.kind;
     if (input.status) where.status = input.status;
