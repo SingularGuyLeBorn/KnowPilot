@@ -62,7 +62,7 @@ import {
   startAsyncAgentTask,
   listQueuedAsyncJobs,
 } from "./infra/asyncJobManager.js";
-import { resolveAgent } from "./infra/agentResolver.js";
+import { resolveAgent, getAssistantDriftStatus } from "./infra/agentResolver.js";
 
 import { extractTextFromImage, getOcrStatus, probeOcrPython } from "./infra/ocrService.js";
 import {
@@ -151,6 +151,13 @@ const agentRouter = router({
       }
       return success({ data: result, operation: "create", entity: "agentInject" });
     }),
+  driftStatus: publicProcedure
+    .meta({
+      description:
+        "检测默认 assistant 相对内置默认配置的漂移（W9 只读，不创建不修改）；供 /agents 管理页横幅展示，含一次性迁移脚本提示。",
+      aiReadable: true,
+    })
+    .query(({ ctx }) => getAssistantDriftStatus(ctx.services)),
   getLoopContract: publicProcedure
     .meta({ description: "读取超级 Agent 心跳 Loop Contract（控制平面只读）。", aiReadable: true })
     .input(z.object({ agentId: z.string().cuid() }))

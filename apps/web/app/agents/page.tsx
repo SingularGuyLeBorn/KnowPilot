@@ -31,6 +31,7 @@ import { useAgent, useCardDensity, type CardDensity } from "@/lib/hooks";
 import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, CardDensityToggle } from "@/components/shared";
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { AgentAvatar } from "@/components/agentAvatar";
+import { AssistantDriftBanner } from "@/components/assistantDriftBanner";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
@@ -309,6 +310,8 @@ export default function AgentsPage() {
     [page, keyword, tier, status],
   );
   const { data, isLoading, refetch } = useList(listInput);
+  // W16d-3：默认 assistant 配置漂移横幅（drift 为空时组件渲染 null）
+  const { data: driftStatus } = trpc.agent.driftStatus.useQuery(undefined, { staleTime: 60_000 });
 
   const sortedItems = useMemo(
     () => [...(data?.items ?? [])].sort((a: Agent, b: Agent) => (TIER_RANK[a.tier ?? "sub"] ?? 2) - (TIER_RANK[b.tier ?? "sub"] ?? 2)),
@@ -621,6 +624,14 @@ export default function AgentsPage() {
           </Button>
         </div>
       </div>
+
+      {driftStatus && (
+        <AssistantDriftBanner
+          agentName={driftStatus.agentName}
+          drift={driftStatus.drift}
+          migrationHint={driftStatus.migrationHint}
+        />
+      )}
 
       <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3 py-2 text-xs text-[var(--kp-text-2)]">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />

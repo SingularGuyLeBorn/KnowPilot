@@ -68,11 +68,16 @@ export function logAgentDrift(agentName: string, drift: string[]): void {
   );
 }
 
+/** 默认 assistant 候选查找（keyword 搜索 + 精确名优先；不存在返回 null） */
+async function findAssistantCandidate(services: ServiceContainer): Promise<AgentEntity | null> {
+  const list = await services.agent.list({ page: 1, pageSize: 20, keyword: "assistant" });
+  return list.items.find((a: { name: string }) => a.name === "assistant") ?? list.items[0] ?? null;
+}
+
 export async function resolveAgent(services: ServiceContainer, agentId?: string): Promise<ResolveAgentResult> {
   if (agentId) return { agent: await services.agent.getById(agentId), drift: [] };
 
-  const list = await services.agent.list({ page: 1, pageSize: 20, keyword: "assistant" });
-  const candidate = list.items.find((a: { name: string }) => a.name === "assistant") ?? list.items[0];
+  const candidate = await findAssistantCandidate(services);
 
   // W9：只读 + drift 提示，不再顺手 update 数据库。
   // 注意：list 按 R19 裁剪了 systemPrompt，必须取全量实体才能做漂移检测，
@@ -96,6 +101,35 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
     tier: "manager",
   });
   return { agent: created.data!, drift: [] };
+}
+
+/**
+ * W16d-3：默认 assistant 漂移状态的只读查询（不创建、不修改），
+ * 供 tRPC 通道暴露给 /agents 管理页横幅（drift 不再只有 server console.warn）。
+ * 与 resolveAgent 不同：assistant 不存在时返回 agentId=null，绝不引导创建（管理页查询不得有写副作用）。
+ */
+export async function getAssistantDriftStatus(services: ServiceContainer): Promise<{
+  agentId: string | null;
+  agentName: string | null;
+  drift: string[];
+  migrationHint: string;
+}> {
+  const candidate = await findAssistantCandidate(services);
+  if (!candidate) {
+    return { agentId: null, agentName: null, drift: [], migrationHint: ASSISTANT_MIGRATION_HINT };
+  }
+  let exact = candidate;
+  try {
+    exact = await services.agent.getById(candidate.id);
+  } catch {
+    // 并发删除时回退列表项
+  }
+  return {
+    agentId: exact.id,
+    agentName: exact.name,
+    drift: detectAssistantDrift(exact),
+    migrationHint: ASSISTANT_MIGRATION_HINT,
+  };
 }
 
 /** ctx 注入用函数类型（见 NativeToolContext.resolveAgent） */
