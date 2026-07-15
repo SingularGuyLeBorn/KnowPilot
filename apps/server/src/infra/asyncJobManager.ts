@@ -824,7 +824,7 @@ function buildAsyncExecute(
   const workerTools = subagentOnly ? getAllowedToolsForTier("sub", agentSnapshot.tools) : agentSnapshot.tools;
 
   const subagentHint = subagentOnly
-    ? "\n\n注意：你是被派来直接执行该任务的子 Agent。你可以调用 async_task_run(mode=tool) 把耗时步骤放入后台执行，但禁止调用 spawn_subagent、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
+    ? "\n\n注意：你是被派来直接执行该任务的子 Agent。你可以调用 async_task_run（toolCall 指定要执行的工具）把耗时步骤放入后台执行，但禁止调用 spawn_subagent、agent_create*、agent_send_message、agent_report_back 等再次派生或管理 Agent 的工具。请直接使用其他可用工具完成任务，不要继续追问用户。"
     : "";
   const agentSystemPrompt = `${agentSnapshot.systemPrompt}\n\n你正在执行后台异步任务${retryHint}。完成后用简洁中文汇总结果，不要继续追问用户。${subagentHint}`;
   const agentForLoop = { model: agentSnapshot.model, systemPrompt: agentSystemPrompt, tools: workerTools };

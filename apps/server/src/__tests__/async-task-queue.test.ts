@@ -6,6 +6,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { prisma } from "../db.js";
 import { appRouter } from "../router.js";
 import { executeNativeTool } from "../infra/nativeTools.js";
@@ -401,6 +404,15 @@ describe("W-A 同步任务通道", () => {
     } finally {
       await prisma.task.deleteMany({ where: { sessionId } });
     }
+  });
+
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+  it("P4 防线：子 Agent 提示词不再引导传已删除的 mode=tool 参数", () => {
+    // W-D 已删除 async_task_run 的 mode 入参（schema 无此字段、handler 不读 args.mode）；
+    // 提示词若仍教 LLM 传 mode=tool 属残留漏网（终审 P4），此处防线防回归。
+    const src = readFileSync(path.resolve(__dirname, "../infra/asyncJobManager.ts"), "utf-8");
+    expect(src).not.toContain("async_task_run(mode=tool)");
   });
 
   it("T4: agent.pullAsyncQueue caller 返回含 syncTasks 数组", async () => {
