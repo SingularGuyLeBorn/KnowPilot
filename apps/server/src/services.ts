@@ -1580,6 +1580,13 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   }
 }
 
+/**
+ * W14 幂等防线：superior 镜像（AgentMessage → 会话发送队列）投递前的对账阈值。
+ * 滞留 pending 超过该时长的 AgentMessage 视为「疑似已被其它管道投递过」，
+ * 镜像入队前先查目标会话是否已有同内容消息。
+ */
+const SUPERIOR_MIRROR_STALE_MS = 5 * 60 * 1000;
+
 export interface SessionQueueItemEntity {
   id: string;
   sessionId: string;
@@ -1641,6 +1648,17 @@ export class SessionQueueItemService extends BaseService<
             durationMs: Date.now() - start,
           });
         }
+
+        // W14 幂等防线：投递前先对账，命中则只回写状态、不再镜像注入（防重复投递）。
+        // 返回 success 但无 data——前端各调用方（mirror / enqueue / runStream 迁移补写）
+        // 对缺失 id 均有兜底（跳过入队 / 不补 dbId），不会当成错误。
+        if (await this.shouldSkipSuperiorMirror(input)) {
+          return success({
+            operation: "create",
+            entity: this.entityName,
+            durationMs: Date.now() - start,
+          });
+        }
       }
 
       const maxOrder = await this.prisma.sessionQueueItem.aggregate({
@@ -1662,6 +1680,38 @@ export class SessionQueueItemService extends BaseService<
     } catch (error) {
       return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
     }
+  }
+
+  /**
+   * W14 幂等防线：AgentMessage 镜像入会话队列前的对账。返回 true = 跳过本次镜像。
+   * - 已 delivered/consumed：Task 管道已认领投递过该消息（report_back 旁路邮箱），
+   *   再镜像就是重复注入，直接跳过（账已记过，无需回写）。
+   * - 滞留 pending 超 SUPERIOR_MIRROR_STALE_MS 且目标会话已有同 content 消息：
+   *   只把 AgentMessage 回写 consumed，不再注入（taskRef 缺失时按内容兜底对账）。
+   */
+  private async shouldSkipSuperiorMirror(input: CreateSessionQueueItemInput): Promise<boolean> {
+    if (!input.agentMessageId) return false;
+    const agentMsg = await this.prisma.agentMessage.findUnique({
+      where: { id: input.agentMessageId },
+      select: { id: true, status: true, content: true, createdAt: true },
+    });
+    if (!agentMsg) return false;
+    if (agentMsg.status !== "pending") return true;
+    if (Date.now() - agentMsg.createdAt.getTime() <= SUPERIOR_MIRROR_STALE_MS) return false;
+    const dup = await this.prisma.chatMessage.findFirst({
+      where: { sessionId: input.sessionId, content: agentMsg.content },
+      select: { id: true },
+    });
+    if (!dup) return false;
+    await this.prisma.agentMessage
+      .update({
+        where: { id: agentMsg.id },
+        data: { status: "consumed", deliveredAt: new Date() },
+      })
+      .catch(() => {
+        /* 可能已被并发回写或删除，忽略 */
+      });
+    return true;
   }
 
   /** 按 session 列出全部队列项（按 order 升序），供 Chat UI 一次拉齐 */

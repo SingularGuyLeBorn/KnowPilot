@@ -622,6 +622,18 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
       }
 
       if (jobId) {
+        // W14：AgentMessage ↔ 跟踪 Task 关联（taskRef=jobId）。report_back 的消费发生在 Task 管道，
+        // 投递记账（delivered/consumed 回写）全靠这个关联按 taskRef 对账；关联失败不阻塞投递。
+        if (result.messageId) {
+          try {
+            await ctx.prisma.agentMessage.update({
+              where: { id: result.messageId },
+              data: { taskRef: jobId },
+            });
+          } catch (ledgerErr) {
+            console.warn("[agent_report_back] AgentMessage taskRef 关联失败（不阻塞投递）:", ledgerErr);
+          }
+        }
         const matchedInput = (matched?.input ?? null) as { deliverToQueue?: boolean } | null;
         // waitForResult 的跟踪 Task 已约定由 spawn 工具返回结果，勿再 autoConsume
         if (matchedInput?.deliverToQueue === false) {

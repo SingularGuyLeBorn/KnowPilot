@@ -27,6 +27,7 @@ import {
 } from "./messageVersions.js";
 import { SessionStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 import { autoNameSession } from "./sessionAutoName.js";
+import { markAgentMessageConsumedByTaskRef } from "./agentMessageLedger.js";
 
 export type AgentStreamEvent =
   | { type: "session_start"; sessionId: string }
@@ -544,6 +545,20 @@ export async function chatAgentStream(
         microCompactToolMaxChars: resolveMicroCompactToolMaxChars(effectiveConfig),
       },
     );
+
+    // W14：异步结果气泡已随会话历史进入本轮 ReAct 上下文 → 关联 AgentMessage 记账 consumed。
+    // 核实路径：两条认领路径（服务端 autoConsumeAsyncDelivery / 前端 drain consumeQueue）都把
+    // toolResults.subagentResult.jobId 带进 chatAgentStream，在此处（历史加载 + LLM messages 构建完成、
+    // 即将交给 runAgentLoopStream）是「被读入上下文」的唯一精确挂点。按 taskRef=jobId 幂等。
+    const subagentJobId = (input.toolResults as { subagentResult?: { jobId?: unknown } } | undefined)
+      ?.subagentResult?.jobId;
+    if (typeof subagentJobId === "string" && subagentJobId) {
+      try {
+        await markAgentMessageConsumedByTaskRef(services.prisma, subagentJobId);
+      } catch (ledgerErr) {
+        console.warn(`[agentStream] AgentMessage consumed 记账失败 job=${subagentJobId}:`, ledgerErr);
+      }
+    }
 
     let currentRound = 1;
     const toolArgsMap = new Map<string, unknown>();

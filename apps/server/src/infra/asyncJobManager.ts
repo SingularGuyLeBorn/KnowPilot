@@ -24,6 +24,7 @@ import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { getSwarmOrchestrator, type SwarmTaskSpec } from "./swarmOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
+import { markAgentMessageDeliveredByTaskRef } from "./agentMessageLedger.js";
 
 export interface AsyncTaskLogEntry {
   timestamp: number;
@@ -199,9 +200,17 @@ export async function autoConsumeAsyncDelivery(options: {
     return "skipped";
   }
 
-  const claimed = await prisma.task.updateMany({
-    where: { id: jobId, delivered: false, pinned: false },
-    data: { delivered: true, deliveredAt: new Date() },
+  // W14：原子 CLAIM 与 AgentMessage 投递记账（delivered）同事务——认领成功即完成对账，
+  // 不存在「Task 已 delivered 但旁路邮箱仍 pending」的中间态。记账按 taskRef=jobId 幂等。
+  const claimed = await prisma.$transaction(async (tx) => {
+    const c = await tx.task.updateMany({
+      where: { id: jobId, delivered: false, pinned: false },
+      data: { delivered: true, deliveredAt: new Date() },
+    });
+    if (c.count > 0) {
+      await markAgentMessageDeliveredByTaskRef(tx, jobId);
+    }
+    return c;
   });
   if (claimed.count === 0) return "skipped";
 
@@ -495,9 +504,17 @@ export async function pullConsumedAsyncDeliveries(
 
 /** 消费时标记异步结果已投递（CLAIM）。返回是否成功抢到（与服务端 autoConsume 竞态）。pinned 不可 CLAIM。 */
 export async function markAsyncDeliveryConsumed(jobId: string): Promise<boolean> {
-  const result = await prisma.task.updateMany({
-    where: { id: jobId, delivered: false, pinned: false },
-    data: { delivered: true, deliveredAt: new Date() },
+  // W14：前端认领路径与服务端 autoConsume 是同一条 Task 管道的两个竞态认领方，
+  // delivered 记账必须同样落在 CLAIM 事务里，否则前端抢到 claim 时旁路邮箱又会残留 pending。
+  const result = await prisma.$transaction(async (tx) => {
+    const r = await tx.task.updateMany({
+      where: { id: jobId, delivered: false, pinned: false },
+      data: { delivered: true, deliveredAt: new Date() },
+    });
+    if (r.count > 0) {
+      await markAgentMessageDeliveredByTaskRef(tx, jobId);
+    }
+    return r;
   });
   return result.count > 0;
 }
