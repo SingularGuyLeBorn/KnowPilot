@@ -133,7 +133,7 @@ describe("async-task-queue 工具协议", () => {
     }
   });
 
-  it("async_task_status 查询单个任务", async () => {
+  it("async_task_status 查询单个任务（W-B：终态也不回全文/日志）", async () => {
     const ctx = await createContextInner();
     const toolCtx = { ...ctx, invokeTrpc: async () => ({ ok: true }) };
     const session = await ctx.services.session.create({ title: "父会话", model: "deepseek-chat" });
@@ -159,6 +159,24 @@ describe("async-task-queue 工具协议", () => {
 
       expect(status.jobId).toBe(started.jobId);
       expect(["running", "queued"]).toContain(status.status as string);
+
+      // 等任务结束后再次查询：W-B 负向断言——返回里不得携带结果全文与日志
+      await vi.waitFor(
+        async () => {
+          const row = await prisma.task.findUnique({ where: { id: started.jobId } });
+          expect(row?.status).toBe("success");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      const done = (await executeNativeTool(
+        "async_task_status",
+        { jobId: started.jobId },
+        { ...toolCtx, sessionId, agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: [] } },
+      )) as Record<string, unknown>;
+      expect(done.status).toBe("completed");
+      expect(done).not.toHaveProperty("asyncResult");
+      expect(done).not.toHaveProperty("logs");
+      expect(done).not.toHaveProperty("error");
     } finally {
       await cleanupSessionTasks(sessionId, parentAgentId);
     }

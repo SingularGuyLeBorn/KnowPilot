@@ -1255,7 +1255,7 @@ export async function appendAsyncJobLog(
   } as any).catch(() => undefined);
 }
 
-/** 查询单个异步任务状态（含 subagent session 与已执行时长） */
+/** 查询单个异步任务状态（W-B：只回状态，不回结果全文/日志——结果完成后经队列唯一通道投递） */
 export async function getAsyncJobStatus(
   jobId: string,
   config: AppConfig,
@@ -1265,12 +1265,8 @@ export async function getAsyncJobStatus(
   status: string;
   taskLabel?: string;
   elapsedMs?: number;
-  error?: string;
-  asyncResult?: string;
   subagentSessionId?: string;
-  tokenUsage?: { prompt: number; completion: number; total: number };
   timeoutMs?: number;
-  logs?: AsyncTaskLogEntry[];
 }> {
   const task = await services.task.getById(jobId);
   if (!task) return { jobId, status: "not_found" };
@@ -1279,31 +1275,26 @@ export async function getAsyncJobStatus(
   const running = orchestrator.isRunning(jobId);
   const queued = orchestrator.isQueued(jobId);
   const status = running ? "running" : queued ? "queued" : task.status === "success" ? "completed" : task.status === "failed" ? "failed" : task.status;
-  const output = parseAsyncOutput(task.output);
   return {
     jobId,
     status,
     taskLabel: input?.taskLabel,
     elapsedMs: running || task.status === "running" ? Date.now() - (task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime()) : undefined,
-    error: output.error,
-    asyncResult: output.asyncResult,
     subagentSessionId: input?.subagentSessionId,
-    tokenUsage: output.tokenUsage,
     timeoutMs: input?.timeoutMs ?? config.asyncJobs.taskTimeoutMs,
-    logs: output.logs,
   };
 }
 
-/** 列出某会话的全部异步任务状态 */
+/** 列出某会话的全部异步任务状态（W-B：只回状态，不含日志/结果） */
 export async function listSessionAsyncJobs(
   sessionId: string,
   config: AppConfig,
   services: ServiceContainer,
-): Promise<Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string; logs?: AsyncTaskLogEntry[] }>> {
+): Promise<Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }>> {
   // R7：DB 层按 sessionId 过滤，避免全局 task.list(50) 后 JS 过滤漏掉非 top-50 的任务
   const rows = await services.task.list({ page: 1, pageSize: 50, sessionId } as any);
   const orchestrator = getAsyncJobOrchestrator(config);
-  const items: Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string; logs?: AsyncTaskLogEntry[] }> = [];
+  const items: Array<{ jobId: string; status: string; taskLabel?: string; elapsedMs?: number; subagentSessionId?: string }> = [];
   for (const row of (rows as any).items ?? []) {
     if (row.sessionId !== sessionId) continue;
     const input = parseAsyncInput(row.input);
@@ -1311,14 +1302,12 @@ export async function listSessionAsyncJobs(
     const running = orchestrator.isRunning(row.id);
     const queued = orchestrator.isQueued(row.id);
     const status = running ? "running" : queued ? "queued" : row.status === "success" ? "completed" : row.status === "failed" ? "failed" : row.status;
-    const output = parseAsyncOutput(row.output);
     items.push({
       jobId: row.id,
       status,
       taskLabel: input.taskLabel,
       elapsedMs: running ? Date.now() - (row.createdAt instanceof Date ? row.createdAt.getTime() : new Date(row.createdAt).getTime()) : undefined,
       subagentSessionId: input.subagentSessionId,
-      logs: output.logs,
     });
   }
   return items;

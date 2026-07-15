@@ -142,7 +142,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "async_task_status",
     concurrencyClass: "A",
-    description: "查询异步任务状态。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长、结果/错误、执行日志等。",
+    description: "查询异步任务状态（不含结果内容与执行日志——结果完成后自动进队列投递）。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长等。",
     parameters: {
       type: "object",
       properties: {
