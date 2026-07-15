@@ -21,9 +21,7 @@ import { buildTokenBudget } from "@/components/tokenBudgetBar";
 import {
   type ChatQueueItem,
   createUserQueueItem,
-  mergeAsyncPollIntoQueue,
   sessionQueueItemToChatItem,
-  sortQueueItems,
 } from "@/lib/chatQueueTypes";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { type ChatMessageListProps } from "@/components/chatMessageList";
@@ -53,6 +51,9 @@ import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
 import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
 import { saveChatStoresToStorage, useChatRunStream } from "@/lib/useChatRunStream";
 import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
+import { useChatEnqueue } from "@/lib/useChatEnqueue";
+import { useChatSseSubscriptions } from "@/lib/useChatSseSubscriptions";
+import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
 
 /* ─── 模块级常量与 UI 偏好持久化 ─── */
 
@@ -130,8 +131,6 @@ export function ChatView() {
   const effectiveSessionIdRef = useRef<string | null>(null);
   // 页面刷新/关闭时阻止 runStream finally 清掉 streaming phase，保证下次 mount 能续传
   const isPageUnloadingRef = useRef(false);
-  // 防止极短时间重复入队（如发送按钮/快捷键连发）
-  const lastEnqueueRef = useRef<{ text: string; at: number } | null>(null);
   const streamSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSessionStreaming = useCallback(
@@ -440,132 +439,9 @@ export function ChatView() {
   // 【SSE 订阅与事件分发 · 心脏区】推优先：通过 store 统一监听 async-stream SSE（当前会话 + 父会话）。
   // 不再自建 EventSource——复用 useSessionMessages 的 watchSession 连接，消除双连接浪费。
   // 事件回调里 watchSession 的子 Agent session 在 cleanup 时统一 close。
-  // effect 体未改：8 类事件注册/分发中枢，cleanup 的 closeSessionWatch 引用计数时序不可动。
-  const extraWatchedSessionsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!effectiveSessionId || backendDown) return;
-    const sessionIds = new Set<string>([effectiveSessionId]);
-    if (mainSessionId) sessionIds.add(mainSessionId);
-    // 捕获 ref 值到 effect 局部变量，避免 cleanup 时 ref 已变更（react-hooks/exhaustive-deps）
-    const extraWatched = extraWatchedSessionsRef.current;
-
-    const refreshAsync = () => {
-      // INV-8 ④：异步队列刷新完成（async_delivery / async_job_update / session_run_started 触发）
-      // = 显式 drain 请求。投递到达时视图空闲则立即消费；占用中由 commit 兑底。
-      // 注意：完成态展示不在这里做——poll 显示 job 已被服务端消费时，由
-      // mergeAsyncPollIntoQueue 纯派生把本地 overlay 转为 done/failed（createdAt+15s），
-      // 覆盖初始 fetch / refetch / SSE 全部数据到达路径，不依赖哪个事件先到。
-      void asyncQueueQuery.refetch().then(() => {
-        if (effectiveSessionId) streamLifecycleActions.hydrateDone(effectiveSessionId);
-      });
-      void asyncQueueStatsQuery.refetch();
-      if (mainSessionId) {
-        void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
-        void utils.task.list.invalidate();
-        if (mainSessionId !== effectiveSessionId) {
-          void utils.agent.pullAsyncQueue.invalidate({ sessionId: mainSessionId });
-        }
-      }
-    };
-
-    const cleanups: Array<() => void> = [];
-    for (const sid of sessionIds) {
-      // 确保该 session 已 watch（引用计数 +1），并注册额外事件监听
-      sessionMessagesStore.watchSession(sid);
-      const register = (eventType: string, handler: (ev: MessageEvent) => void) => {
-        cleanups.push(sessionMessagesStore.addSessionEventListener(sid, eventType, handler));
-      };
-
-      register("async_delivery", refreshAsync);
-      register("session_run_started", (ev) => {
-        try {
-          const data = JSON.parse(ev.data) as { sessionId?: string };
-          void utils.session.listRunning.invalidate();
-          refreshAsync();
-          if (data.sessionId && data.sessionId !== sid) {
-            sessionMessagesStore.watchSession(data.sessionId);
-            extraWatchedSessionsRef.current.add(data.sessionId);
-          }
-        } catch {
-          void utils.session.listRunning.invalidate();
-          refreshAsync();
-        }
-      });
-      register("async_job_update", (ev) => {
-        try {
-          const data = JSON.parse(ev.data) as {
-            stats?: {
-              queued: number;
-              runningGlobal: number;
-              maxGlobal: number;
-              maxPerSession: number;
-              taskTimeoutMs: number;
-            };
-          };
-          if (data.stats) {
-            utils.agent.asyncQueueStats.setData(undefined, data.stats);
-          }
-        } catch {
-          /* ignore parse */
-        }
-        refreshAsync();
-      });
-      register("agent_message", () => {
-        if (isSubagentSession) void pullAgentMessagesQuery.refetch();
-      });
-      register("subagent_session_update", (ev) => {
-        if (mainSessionId) {
-          void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
-        }
-        void utils.session.listRunning.invalidate();
-        try {
-          const data = JSON.parse(ev.data) as {
-            subagentSessionId?: string;
-            status?: string;
-          };
-          if (data.subagentSessionId && data.subagentSessionId !== sid) {
-            sessionMessagesStore.watchSession(data.subagentSessionId);
-            extraWatchedSessionsRef.current.add(data.subagentSessionId);
-          }
-        } catch {
-          /* ignore */
-        }
-      });
-      register("session_rotated", (ev) => {
-        try {
-          const data = JSON.parse(ev.data) as {
-            oldSessionId?: string;
-            newSessionId: string;
-            newTitle: string;
-          };
-          if (data.oldSessionId && data.oldSessionId === effectiveSessionId) {
-            setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
-          }
-          void utils.session.list.invalidate();
-          void utils.session.getById.invalidate({ id: data.oldSessionId ?? effectiveSessionId });
-        } catch {
-          /* ignore */
-        }
-      });
-      register("session_title_updated", () => {
-        void utils.session.list.invalidate();
-      });
-      register("agent_renamed", () => {
-        void utils.agent.list.invalidate();
-      });
-    }
-    return () => {
-      for (const fn of cleanups) fn();
-      for (const sid of sessionIds) {
-        sessionMessagesStore.closeSessionWatch(sid);
-      }
-      // 清理事件回调里动态 watch 的子 Agent session
-      for (const sid of extraWatched) {
-        sessionMessagesStore.closeSessionWatch(sid);
-      }
-      extraWatched.clear();
-    };
-  }, [
+  // effect 体逐字迁入 useChatSseSubscriptions（W13e），调用位置即原 effect 位置，
+  // 挂载顺序与 cleanup 的 closeSessionWatch 引用计数时序不变。
+  useChatSseSubscriptions({
     effectiveSessionId,
     mainSessionId,
     backendDown,
@@ -573,8 +449,8 @@ export function ChatView() {
     asyncQueueStatsQuery,
     pullAgentMessagesQuery,
     isSubagentSession,
-    utils,
-  ]);
+    setRotateBanner,
+  });
 
   // 拖拽重排防抖写 DB
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -591,62 +467,11 @@ export function ChatView() {
     [effectiveSessionId, reorderSessionQueueItemsMutation],
   );
 
-  // 两个物理独立队列：
-  // - asyncResultQueue: 从 poll 数据派生（async-running + async-result），合并 asyncOverlays（用户追加编辑）
-  // - userQueue: 用户主动发送的消息（存入 session state）
-  // 显示队列 = asyncResultQueue + userQueue（async 在前，符合优先级语义）
-  const asyncResultQueue = useMemo(
-    () =>
-      mergeAsyncPollIntoQueue(asyncOverlays, asyncQueueQuery.data, {
-        skipDeliveryJobIds: consumedDeliveries,
-      }),
-    [asyncOverlays, asyncQueueQuery.data, consumedDeliveries],
-  );
-
-  // 右侧「状态」：未消费 = 仅待开始/运行中；已结束不进未消费；已消费带滑入
-  const runtimePendingItems = useMemo(
-    () => asyncResultQueue.filter((i) => i.kind === "async-running"),
-    [asyncResultQueue],
-  );
-  const runtimeHeldItems = useMemo(
-    () => asyncResultQueue.filter((i) => i.kind === "async-result" && i.pinned),
-    [asyncResultQueue],
-  );
-  const runtimeConsumedItems = useMemo(() => {
-    const consumed = (asyncQueueQuery.data as { consumed?: Array<{
-      id: string;
-      jobId: string;
-      taskLabel: string;
-      asyncResult: string;
-      status: "done" | "failed";
-      error?: string;
-      subagentSessionId?: string;
-      subagentName?: string;
-      logs?: ChatQueueItem["logs"];
-      createdAt: number;
-      sourceType?: string;
-    }> } | undefined)?.consumed ?? [];
-    return consumed.map((del): ChatQueueItem => ({
-      id: `consumed-${del.jobId}`,
-      kind: "async-result",
-      text: "",
-      jobId: del.jobId,
-      taskLabel: del.taskLabel,
-      asyncResult: del.status === "failed" ? `任务失败：${del.error || "未知错误"}` : del.asyncResult,
-      status: del.status,
-      subagentSessionId: del.subagentSessionId,
-      subagentName: del.subagentName,
-      logs: del.logs,
-      createdAt: del.createdAt,
-      sourceType: del.sourceType,
-    }));
-  }, [asyncQueueQuery.data]);
+  // 【派生队列群】asyncResultQueue / runtime 三态 / 显示队列的 useMemo 派生收拢于
+  // useChatDerivedQueues（W13e 拆出；useMemo 体与 deps 逐字未改）
+  const { asyncResultQueue, runtimePendingItems, runtimeHeldItems, runtimeConsumedItems, queue } =
+    useChatDerivedQueues({ asyncOverlays, asyncQueueQuery, consumedDeliveries, userQueue });
   const [runtimeSubTab, setRuntimeSubTab] = useState<"pending" | "consumed">("pending");
-
-  const queue = useMemo(
-    () => [...sortQueueItems(asyncResultQueue), ...sortQueueItems(userQueue)],
-    [asyncResultQueue, userQueue],
-  );
 
   // R19：agent.list 已裁剪 systemPrompt；Chat 用 agent.getById 取 systemPrompt/model，与 list metadata 合并
   const selectedAgentMeta = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
@@ -942,127 +767,19 @@ export function ChatView() {
   }, []);
 
   // R16：useCallback 稳定化，使 ChatInputArea memo 后流式期间跳过重渲染
-  const enqueueMessage = useCallback(
-    (
-      text: string,
-      skill?: SelectedSkill,
-      attachments?: ChatQueueItem["attachments"],
-      delivery?: "steer" | "follow_up",
-    ) => {
-      let messageText = text.trim();
-      if ((!messageText && !attachments?.length) || backendDown) return;
-
-      // 斜杠指令：/compact → 作为普通用户消息交给 Agent，由 session_compact 工具执行
-      if (/^\/compact\s*$/i.test(messageText) && !attachments?.length) {
-        if (!effectiveSessionId) {
-          showToast("请先选择或创建一个会话");
-          return;
-        }
-        if (sessionDetail?.status === "archived") {
-          showToast("此会话已归档，无法压缩");
-          return;
-        }
-        messageText = "请压缩当前会话上下文";
-      }
-
-      if (sessionDetail?.status === "archived") {
-        showToast("此会话已归档，请跳转到新会话继续对话");
-        return;
-      }
-
-      // 运行中：默认 Steering；显式 follow_up 走停前续问（不改 phase，不 beginStream）
-      if (effectiveSessionId && isSessionRunOccupied(effectiveSessionId)) {
-        const kind = delivery === "follow_up" ? "follow_up" : "steer";
-        if (!messageText) return;
-        void (async () => {
-          try {
-            await submitInjectMutation.mutateAsync({
-              sessionId: effectiveSessionId,
-              content: messageText,
-              kind,
-            });
-            showToast(
-              kind === "steer"
-                ? "已加入纠偏，将在当前工具批结束后生效"
-                : "已加入后续提问，将在本轮结束后继续",
-            );
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            showToast(msg || "注入失败");
-          }
-        })();
-        return;
-      }
-
-      // 500ms 内相同文本（含空附件）视为重复发送，直接丢弃，避免重复气泡。
-      const now = Date.now();
-      const last = lastEnqueueRef.current;
-      const attachmentsKey = attachments?.map((a) => a.name).join("\n") ?? "";
-      if (last && now - last.at < 500 && last.text === `${messageText}\n${attachmentsKey}`) {
-        return;
-      }
-      lastEnqueueRef.current = { text: `${messageText}\n${attachmentsKey}`, at: now };
-      const skillPrompt = skill
-        ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
-        : undefined;
-      const sid = effectiveSessionId ?? NEW_STREAM_KEY;
-      const localItem = createUserQueueItem(messageText || "（见附件）", {
-        skillId: skill?.id,
-        skillPrompt,
-        attachments,
-      });
-
-      // 有真实 sessionId 时：必须先写 DB 拿到 dbId 再入队。
-      // 否则消费时无法删除 DB 项，刷新/水合会把同一条再送一遍。
-      if (effectiveSessionId) {
-        void (async () => {
-          try {
-            const res = await createSessionQueueItemMutation.mutateAsync({
-              sessionId: effectiveSessionId,
-              kind: "user",
-              content: localItem.text,
-              source: "user",
-              attachments: localItem.attachments,
-              skillId: localItem.skillId,
-              skillPrompt: localItem.skillPrompt,
-            });
-            const dbId = (res as { data?: { id?: string } })?.data?.id;
-            if (!dbId) {
-              console.warn("[enqueueMessage] createSessionQueueItem 未返回 id，跳过入队以防重复发送");
-              return;
-            }
-            sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
-              if (prev.some((i) => i.dbId === dbId || i.id === localItem.id)) return prev;
-              if (prev.some((i) => !i.dbId && i.text === localItem.text && i.kind === "user")) {
-                return prev.map((i) =>
-                  !i.dbId && i.text === localItem.text && i.kind === "user"
-                    ? { ...i, dbId }
-                    : i,
-                );
-              }
-              return [...prev, { ...localItem, dbId }];
-            });
-            // INV-8 ①：用户入队 → 显式 drain
-            consumeRef.current(effectiveSessionId);
-          } catch (err) {
-            console.warn("[enqueueMessage] 持久化失败，本会话仍入队（无 dbId）:", err);
-            sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
-              if (prev.some((i) => i.id === localItem.id || i.text === localItem.text)) return prev;
-              return [...prev, localItem];
-            });
-            // INV-8 ①：用户入队 → 显式 drain
-            consumeRef.current(effectiveSessionId);
-          }
-        })();
-        return;
-      }
-
-      sessionComposeActions.enqueueUserQueueItem(sid, localItem);
-      // INV-8 ①：用户入队 → 显式 drain
-      consumeRef.current(sid);
-    },
-    [backendDown, effectiveSessionId, createSessionQueueItemMutation, submitInjectMutation, sessionDetail?.status, isSessionRunOccupied, showToast],
-  );
+  // 【enqueue 编排簇】enqueueMessage + 500ms 防重 lastEnqueueRef 收拢于 useChatEnqueue
+  // （W13e 拆出；useCallback 体与 deps 逐字未改，仅 sessionDetail?.status 解构重命名为
+  // sessionStatus）。INV-8 ① 用户入队显式 drain 仍经 consumeRef 调用。
+  const { enqueueMessage } = useChatEnqueue({
+    backendDown,
+    effectiveSessionId,
+    sessionStatus: sessionDetail?.status,
+    createSessionQueueItemMutation,
+    submitInjectMutation,
+    isSessionRunOccupied,
+    showToast,
+    consumeRef,
+  });
 
   const handleStop = useCallback(async () => {
     if (effectiveSessionId) {
