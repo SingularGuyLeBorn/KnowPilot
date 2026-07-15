@@ -558,7 +558,8 @@ export async function agentSendMessageTool(args: Record<string, unknown>, ctx: N
       // 非阻塞派活语义保持「已派活」返回（spawn_subagent 的 fire-and-forget 依赖此契约）
       console.warn(`[agent_send_message] 自动触发目标 Agent ${toAgentId} 运行失败:`, err);
       if (waitForRun) {
-        return { success: true, message: "已派活并自动运行。", content: "", subagentSessionId: "" };
+        // S4：同步等待语义必须如实报错——success:true + 空 content 会让 LLM 误以为等待成功、拿到空结果
+        return { success: false, error: `派活准备失败：${err instanceof Error ? err.message : String(err)}` };
       }
       return { success: true, message: "已派活并自动运行（子会话可实时查看流式输出）。" };
     }

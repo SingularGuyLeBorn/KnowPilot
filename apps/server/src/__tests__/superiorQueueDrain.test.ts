@@ -399,6 +399,27 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
     }
   });
 
+  it("S4：waitForRun=true 准备段失败如实返回错误（不再 success:true + 空 content）", async () => {
+    const ctx = await createContextInner();
+    const fx = await createDrainFixture(ctx);
+    try {
+      // 制造准备段失败：StreamHub 不可用（起流前 !hub 检查抛错）
+      setStreamHub(null);
+      const result = (await executeNativeTool(
+        "agent_send_message",
+        { toAgentId: fx.subAgentId, content: "S4 同步等待消息", waitForRun: true },
+        makeSendCtx(ctx, fx),
+      )) as { success?: boolean; content?: string; error?: string };
+
+      // 负向断言（旧实现即红）：同步等待语义下返回 success:true + content:"" 会让 LLM 误以为等待成功、拿到空结果
+      expect(result.success).toBe(false);
+      expect(result.error).toBeTruthy();
+      expect(result.content).toBeUndefined();
+    } finally {
+      await cleanupDrainFixture(fx);
+    }
+  });
+
   it("consume 软认领：不存在 item 返回 claimed:false 不抛错；竞态双 consume 一胜一静默", async () => {
     const ctx = await createContextInner();
     const fx = await createDrainFixture(ctx);
