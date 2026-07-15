@@ -597,6 +597,9 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
     .map((row): AsyncRunningJob | null => {
       const input = parseAsyncInput(row.input);
       if (!input) return null;
+      // 两级分组隔离：sync 任务（deliverToQueue=false）专属「同步任务」区，
+      // 不进异步 running 列表（否则 running 期间双分组重复展示，同 :538/:563 的过滤）
+      if (input.deliverToQueue === false) return null;
       const output = parseAsyncOutput(row.output);
       const base: AsyncRunningJob = {
         jobId: row.id,
@@ -642,6 +645,8 @@ export async function listQueuedAsyncJobs(
     .map((row): AsyncQueuedJob | null => {
       const input = parseAsyncInput(row.input);
       if (!input) return null;
+      // 两级分组隔离：sync 任务（deliverToQueue=false）专属「同步任务」区，不进异步 queued 列表
+      if (input.deliverToQueue === false) return null;
       const output = parseAsyncOutput(row.output);
       const base: AsyncQueuedJob = {
         jobId: row.id,

@@ -423,6 +423,36 @@ describe("W-A 同步任务通道", () => {
     expect(src).not.toMatch(/guard\?:\s*SwarmTaskSpec\["guard"\]/);
   });
 
+  it("T5: running/queued sync 任务不进 listRunningAsyncJobs/listQueuedAsyncJobs（P3 双分组隔离）", async () => {
+    const ctx = await createContextInner();
+    const session = await ctx.services.session.create({ title: "T5 会话", model: "deepseek-chat" });
+    const sessionId = (session.data as { id: string }).id;
+    try {
+      const runningSync = await seedAsyncRow({ sessionId, taskLabel: "T5 同步运行中", status: "running", deliverToQueue: false });
+      const queuedSync = await seedAsyncRow({ sessionId, taskLabel: "T5 同步排队", status: "queued", deliverToQueue: false });
+      const runningAsync = await seedAsyncRow({ sessionId, taskLabel: "T5 异步运行对照", status: "running", deliverToQueue: true });
+      const queuedAsync = await seedAsyncRow({ sessionId, taskLabel: "T5 异步排队对照", status: "queued", deliverToQueue: true });
+
+      // 负向断言（旧实现即红）：sync 任务 running/queued 期间同时出现在异步列表与同步列表，双分组重复展示
+      const runningIds = (await listRunningAsyncJobs(sessionId)).map((j) => j.jobId);
+      expect(runningIds).toContain(runningAsync.id);
+      expect(runningIds).not.toContain(runningSync.id);
+
+      const queuedIds = (await listQueuedAsyncJobs(sessionId, ctx.config)).map((j) => j.jobId);
+      expect(queuedIds).toContain(queuedAsync.id);
+      expect(queuedIds).not.toContain(queuedSync.id);
+
+      // sync 专属通道不受影响：两条 sync 均在「同步任务」列表，异步对照不在
+      const syncIds = (await listSyncAsyncJobs(sessionId, ctx.config)).map((j) => j.jobId);
+      expect(syncIds).toContain(runningSync.id);
+      expect(syncIds).toContain(queuedSync.id);
+      expect(syncIds).not.toContain(runningAsync.id);
+      expect(syncIds).not.toContain(queuedAsync.id);
+    } finally {
+      await prisma.task.deleteMany({ where: { sessionId } });
+    }
+  });
+
   it("T4: agent.pullAsyncQueue caller 返回含 syncTasks 数组", async () => {
     const ctx = await createContextInner();
     const caller = appRouter.createCaller(ctx);
