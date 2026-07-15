@@ -92,8 +92,10 @@ export function ChatView() {
   const [renameDraft, setRenameDraft] = useState("");
   const [showCreateSubagent, setShowCreateSubagent] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  // toast 自动消失：showToast 内联重置定时器（重复调用重新计时、传 null 停表），
-  // 与原「toast state 变化 → useEffect 重置计时」逐点等价，替代独立 effect。
+  // toast 自动消失：showToast 内联重置定时器（重复调用重新计时、传 null 停表）。
+  // 与原「toast state 变化 → useEffect 重置计时」相比：不同文案路径逐点等价；
+  // 相同文案连续触发时行为改善——原实现 setToast(同值) 被 React bailout、effect 不重跑、
+  // 定时不重置，第二条相同 toast 会随第一条的定时提前消失；内联后每次调用都重新计时。
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((msg: string | null) => {
     if (toastTimerRef.current) {
@@ -594,7 +596,9 @@ export function ChatView() {
               streamLifecycleActions.setLastEventId(sid, st.lastEventId);
             }
             console.log("[mount] resuming", sid, "lastEventId", st.lastEventId);
-            // runStreamRef 已由先声明的 effect 赋值，事件处理内同步续传，无需 microtask
+            // runStreamRef.current 此时读到的是 useRef(runStream) 首帧初始值
+            // （镜像 effect 声明在下方、mount 批内此时尚未执行，但它要赋的也是同一个首帧 runStream）；
+            // 事件处理内同步续传，无需 microtask
             void runStreamRef.current({
               targetSessionId: sid,
               resumeAfter: st.lastEventId ?? 0,
@@ -695,7 +699,8 @@ export function ChatView() {
       const hasLocalProgress =
         st.phase === "streaming" && (st.lastEventId > 0 || st.liveTimeline.some((s) => s.type !== "thinking" || s.content));
       const resumeAfter = hasLocalProgress ? st.lastEventId : 0;
-      // runStreamRef 已由先声明的 effect 赋值，同步挂接，无需 microtask
+      // runStreamRef.current 读到 useRef 首帧初始值（mount 首跑时镜像 effect 尚未执行，
+      // 其镜像赋值也是同一个首帧 runStream）；同步挂接，无需 microtask
       void runStreamRef.current({ targetSessionId: sid, resumeAfter, isResume: true });
     }
   }, [runningSessionsQuery.data]);

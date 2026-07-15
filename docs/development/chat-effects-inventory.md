@@ -6,6 +6,10 @@
 > 结果（已实施完成）：`chat.tsx` 2294 行、内 **8 个 useEffect**（每个带归属注释）+ 抽出 5 个 `lib/useChat*.ts`（合计 8 个），
 > **总计 23 → 16，只减不增**；`queueMicrotask()` 调用不新增（全文仍 1 处，drain 重入边界）；
 > INV-1~8 / drain 触发链 / 状态机语义零改动。
+>
+> 验证口径（W16b-3 如实订正）：mock e2e 18/18 **零回归**；另含 **4 处静默改善**
+> （见 §4 末尾清单）。早期文本中「逐点等价 / 语义等价」的 blanket 声称以该清单为准——
+> 等价的是 INV 状态机语义与最终持久化内容，不是每个中间态都逐点相同。
 
 ---
 
@@ -16,7 +20,7 @@
 | # | 原行号 | 职责 | 依赖 | 处置 | 理由 / 等价性 |
 |---|---|---|---|---|---|
 | 1 | :175 | hover preview 开关关闭时清理监控窗 | `[sessionHoverPreviewEnabled]` | **搬走** → `useChatHoverMonitor` | 纯悬停预览域，随该域 state/handler 一并抽出 |
-| 2 | :294 | mount 水合三栏 UI 偏好（URL view/panel 优先） | `[searchParams]`（ref 守卫单次） | **归并搬走** → `useChatUiPrefs`（读写合一） | 存储持久化群；水合分支 return 不写，第二轮起写回，幂等等价 |
+| 2 | :294 | mount 水合三栏 UI 偏好（URL view/panel 优先） | `[searchParams]`（ref 守卫单次） | **归并搬走** → `useChatUiPrefs`（读写合一） | 存储持久化群；水合分支 return 不写，第二轮起写回；最终持久化内容等价，且消除 mount 先写默认值的中间态（§4 改善 1） |
 | 3 | :307 | UI 偏好变化写回 localStorage | `[leftOpen,rightOpen,leftTab,historySubTab,rightTab]` | **归并搬走** → `useChatUiPrefs`（同上 1 个） | 同上 |
 | 4 | :341 | URL sessionId → state（外部跳转 / 前进后退） | `[sessionFromUrl,sessionId,utils.session.listRunning]` | **保留**（URL 同步群） | 含 INV-8 ③ drain 调用 + listRunning 发现挂接，属编排主干 |
 | 5 | :355 | effectiveSessionId → ref 镜像 | `[effectiveSessionId]` | **归并** → ref 镜像群（1 个） | 与 :1369/:1726 同为「render 期值镜像到 ref」，赋值幂等 |
@@ -37,7 +41,7 @@
 | 20 | :1749 | 过期 async overlay 1s 节拍清理 | `[effectiveSessionId]` | **搬走** → `useChatAsyncOverlayEffects` | 独立 effect 保留：interval 不可与高频 deps 混（重建永不到点） |
 | 21 | :1766 | unmount 清理 rAF / 防抖定时器 | `[]` | **归并** → 页面生命周期群（1 个） | 见 #15 |
 | 22 | :1789 | Ctrl+Shift+S 快捷键 | `[]` | **归并** → 页面生命周期群（同上） | 见 #15 |
-| 23 | :1801 | toast 2.5s 自动消失 | `[toast]` | **删除** | 改为 `showToast` 内联重置定时器（重复调用重新计时、传 null 停表，语义等价） |
+| 23 | :1801 | toast 2.5s 自动消失 | `[toast]` | **删除** | 改为 `showToast` 内联重置定时器（传 null 停表）：不同文案路径语义等价；相同文案连续触发改为重新计时（§4 改善 3） |
 
 ---
 
@@ -87,9 +91,23 @@
 
 - **ref 镜像群（3→1）**：三个赋值互不依赖、均幂等；合并 effect 位于 drainAllPendingQueues 定义后，mount 批内先于 :1733 的 `takeDrainRequests → queueMicrotask` 消费点（microtask 在全部 mount effects 后执行），时序等价。
 - **页面生命周期群（4→1）**：原四 effect 均 deps []，注册只发生在 mount、清理只发生在 unmount，彼此无交互；合并后注册/清理逐条一一对应。hover/toast 定时器清理随域调整（hover 段入 `useChatHoverMonitor`，toast 段入 `showToast` 配套 ref）。
-- **UI 偏好 / 消费记录「读写合一」**：统一采用「首轮水合 return 不写；水合引发的 state 更新触发第二轮起走写回分支」模式。消除了原实现 mount 时「先写默认值/空集再写回水合值」的中间态，最终持久化内容一致。
-- **toast effect 删除**：`showToast(msg)` 内联 `clearTimeout + setTimeout(2500)`，重复调用重新计时、传 null 停表清除；与原「toast state 变化 → effect 重置计时」逐点等价（含 chatSidebar 自持的 `setToast(null)` 路径，经 prop 类型 `(msg: string | null) => void` 兼容）。
+- **UI 偏好 / 消费记录「读写合一」**：统一采用「首轮水合 return 不写；水合引发的 state 更新触发第二轮起走写回分支」模式。消除了原实现 mount 时「先写默认值/空集再写回水合值」的中间态，最终持久化内容一致（静默改善 1/2）。
+- **toast effect 删除**：`showToast(msg)` 内联 `clearTimeout + setTimeout(2500)`，传 null 停表清除。不同文案路径与原「toast state 变化 → effect 重置计时」逐点等价（含 chatSidebar 自持的 `setToast(null)` 路径，经 prop 类型 `(msg: string | null) => void` 兼容）；**相同文案连续触发时不等价、为改善**：原实现 `setToast(同值)` 被 React bailout、`[toast]` effect 不重跑、定时不重置，第二条相同 toast 会随第一条的定时提前消失；内联后每次调用都重新计时（静默改善 3）。
 - **:1749 保持独立**：setInterval 若与 asyncOverlays/consumedDeliveries 等高频 deps 合并，interval 会被反复 clear/重建而永不到点，故单设 effect，deps 仅 `[effectiveSessionId]`。
+
+### 4 处静默改善（W16b-3 如实补记：相对 W13c 基线的行为 Delta，均经 e2e 验证非回归）
+
+1. **UI 偏好 localStorage 读写合一**（原 :294+:307 → `useChatUiPrefs`）：原实现 mount 批内
+   写回 effect 在水合 setState 生效前先把**默认值**写入 localStorage，第二轮才覆写为水合值；
+   读写合一后该中间态消除，mount 期间 localStorage 不再被默认值污染。
+2. **consumedDeliveries 读写合一**（原 :820+:836 → `useChatAsyncOverlayEffects` ③）：
+   原实现切会话时先把**空集**写回 localStorage、再写回水合值；中间态消除后，
+   窗口期刷新不再丢失已消费记录（旧异步结果不再因记录丢失而重复展示）。
+3. **toast 相同文案连续触发重新计时**（原 :1801 effect 删除 → `showToast` 内联）：
+   原实现 `setToast(同值)` 触发 React bailout、`[toast]` effect 不重跑、定时不重置，
+   第二条相同 toast 会随第一条的定时提前消失；内联后每次 `showToast` 调用都重新计时。
+4. **effect 总数 23 → 16（净减 7）**：每次提交期的 effect 注册 / deps 比对开销净减
+   （结构性运行时收益，不改语义）。
 
 ## 5. 验证记录（归并实施实际执行）
 
