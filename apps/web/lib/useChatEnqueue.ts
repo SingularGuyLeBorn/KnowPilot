@@ -15,8 +15,7 @@ import { trpc } from "@/lib/trpc";
 import { type ChatQueueItem, createUserQueueItem } from "@/lib/chatQueueTypes";
 import { type SelectedSkill } from "@/components/chatInput";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
-
-const NEW_STREAM_KEY = "__new__"; // 与 chat.tsx 同值：新会话首条消息发起时尚无 sessionId 的临时键
+import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
 export interface UseChatEnqueueParams {
   backendDown: boolean;

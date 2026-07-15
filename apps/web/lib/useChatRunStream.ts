@@ -21,13 +21,10 @@ import { buildStreamConfig } from "@/lib/chatConfig";
 import { formatToolResultHint } from "@/lib/chatMessageUtils";
 import { type Agent, type ChatSessionConfig, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 import { type ChatQueueItem } from "@/lib/chatQueueTypes";
+import { COMPOSE_STORAGE_KEY, LIFECYCLE_STORAGE_KEY, NEW_STREAM_KEY } from "@/lib/chatKeys";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions, streamLifecycleStore } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
-
-const NEW_STREAM_KEY = "__new__"; // 与 chat.tsx 同值：新会话首条消息发起时尚无 sessionId 的临时键
-const LIFECYCLE_STORAGE_KEY = "kp:chat-lifecycle-states"; // 与 chat.tsx 同值
-const COMPOSE_STORAGE_KEY = "kp:chat-compose-states"; // 与 chat.tsx 同值
 
 export function saveChatStoresToStorage() {
   try {

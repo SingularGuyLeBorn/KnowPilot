@@ -30,8 +30,7 @@ import { useAsyncProgressSteps } from "@/lib/useAsyncProgressSteps";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
-
-const NEW_STREAM_KEY = "__new__"; // 与 chat.tsx 同值：新会话首条消息发起时尚无 sessionId 的临时键
+import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
 export interface ChatSidebarProps {
   // 布局与左栏标签受控态：URL/localStorage 持久化 effect 与 selectSession/startNewChat

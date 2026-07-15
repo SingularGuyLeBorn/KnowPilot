@@ -18,23 +18,31 @@ import {
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
 
-// pullAsyncQueue 的 poll 数据：mergeAsyncPollIntoQueue 入参与 consumed 已消费列表的交叉
-// （consumed 元素形状与原 chat.tsx 内联 cast 逐字一致）
-type AsyncQueueData = Parameters<typeof mergeAsyncPollIntoQueue>[1] & {
-  consumed?: Array<{
-    id: string;
-    jobId: string;
-    taskLabel: string;
-    asyncResult: string;
-    status: "done" | "failed";
-    error?: string;
-    subagentSessionId?: string;
-    subagentName?: string;
-    logs?: ChatQueueItem["logs"];
-    createdAt: number;
-    sourceType?: string;
-  }>;
+// 服务端已消费 delivery 的元素形状 —— 单一事实源（W16b 单源化）：
+// AsyncQueueData 与下方 runtimeConsumedItems 读取路径共用，取代原同文件两份内联 cast。
+type ConsumedDelivery = {
+  id: string;
+  jobId: string;
+  taskLabel: string;
+  asyncResult: string;
+  status: "done" | "failed";
+  error?: string;
+  subagentSessionId?: string;
+  subagentName?: string;
+  logs?: ChatQueueItem["logs"];
+  createdAt: number;
+  sourceType?: string;
 };
+
+// pullAsyncQueue 的 poll 数据：mergeAsyncPollIntoQueue 入参与 consumed 已消费列表的交叉
+type AsyncQueueData = Parameters<typeof mergeAsyncPollIntoQueue>[1] & {
+  consumed?: ConsumedDelivery[];
+};
+
+// 共享取值守卫：poll 数据可能为 undefined 或不含 consumed，统一兜底为空数组
+function getConsumedDeliveries(data: AsyncQueueData | undefined): ConsumedDelivery[] {
+  return data?.consumed ?? [];
+}
 
 export function useChatDerivedQueues({
   asyncOverlays,
@@ -70,19 +78,7 @@ export function useChatDerivedQueues({
     [asyncResultQueue],
   );
   const runtimeConsumedItems = useMemo(() => {
-    const consumed = (asyncQueueQuery.data as { consumed?: Array<{
-      id: string;
-      jobId: string;
-      taskLabel: string;
-      asyncResult: string;
-      status: "done" | "failed";
-      error?: string;
-      subagentSessionId?: string;
-      subagentName?: string;
-      logs?: ChatQueueItem["logs"];
-      createdAt: number;
-      sourceType?: string;
-    }> } | undefined)?.consumed ?? [];
+    const consumed = getConsumedDeliveries(asyncQueueQuery.data);
     return consumed.map((del): ChatQueueItem => ({
       id: `consumed-${del.jobId}`,
       kind: "async-result",

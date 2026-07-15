@@ -18,8 +18,7 @@ import { type ChatQueueItem, formatQueueItemForLlm } from "@/lib/chatQueueTypes"
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { type RunStreamOptions } from "@/lib/useChatRunStream";
-
-const NEW_STREAM_KEY = "__new__"; // 与 chat.tsx 同值：新会话首条消息发起时尚无 sessionId 的临时键
+import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
 export interface UseChatQueueDrainParams {
   effectiveSessionId: string | null;

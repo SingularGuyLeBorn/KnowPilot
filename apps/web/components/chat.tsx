@@ -54,13 +54,7 @@ import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
 import { useChatEnqueue } from "@/lib/useChatEnqueue";
 import { useChatSseSubscriptions } from "@/lib/useChatSseSubscriptions";
 import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
-
-/* ─── 模块级常量与 UI 偏好持久化 ─── */
-
-const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessionId 时的临时键
-const LIFECYCLE_STORAGE_KEY = "kp:chat-lifecycle-states";
-const COMPOSE_STORAGE_KEY = "kp:chat-compose-states";
-
+import { COMPOSE_STORAGE_KEY, LIFECYCLE_STORAGE_KEY, NEW_STREAM_KEY } from "@/lib/chatKeys";
 
 /* ─── Main ─── */
 
