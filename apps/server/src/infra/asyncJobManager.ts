@@ -21,7 +21,7 @@ import { waitMs } from "./shellRunner.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { prisma } from "../db.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
-import { getSwarmOrchestrator, type SwarmTaskSpec } from "./swarmOrchestrator.js";
+import { getSwarmOrchestrator } from "./swarmOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
 import { markAgentMessageDeliveredByTaskRef } from "./agentMessageLedger.js";
@@ -1089,8 +1089,6 @@ export async function startAsyncAgentTask(options: {
    * 默认 true。
    */
   deliverToQueue?: boolean;
-  /** W10：中介者权限校验描述（仅 native 工具入口传入；tRPC 用户入口无调用方 tier 概念，不传） */
-  guard?: SwarmTaskSpec["guard"];
 }): Promise<{ jobId: string; status: "queued" | "running"; message: string; subagentSessionId?: string }> {
   const task = options.task.trim();
   if (!task) throw new Error("task 不能为空");
@@ -1256,7 +1254,6 @@ export async function startAsyncAgentTask(options: {
     taskLabel,
     timeoutMs: options.timeoutMs,
     metadata: subagentSessionId ? { subagentSessionId } : undefined,
-    guard: options.guard,
     execute: async (signal) => {
       await buildAsyncExecute(
         options.config,

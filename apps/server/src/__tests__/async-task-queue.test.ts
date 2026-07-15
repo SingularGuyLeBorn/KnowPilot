@@ -415,6 +415,14 @@ describe("W-A 同步任务通道", () => {
     expect(src).not.toContain("async_task_run(mode=tool)");
   });
 
+  it("P5 防线：startAsyncAgentTask 不再保留无调用方的 guard 死参数", () => {
+    // W-D 删除唯一传参方后 options.guard 恒为 undefined（终审 P5）。
+    // 零兼容纪律：死参数不留（dispatch 层 guard 机制本身保留，spawn/trigger/heartbeat 直传）。
+    const src = readFileSync(path.resolve(__dirname, "../infra/asyncJobManager.ts"), "utf-8");
+    expect(src).not.toMatch(/guard:\s*options\.guard/);
+    expect(src).not.toMatch(/guard\?:\s*SwarmTaskSpec\["guard"\]/);
+  });
+
   it("T4: agent.pullAsyncQueue caller 返回含 syncTasks 数组", async () => {
     const ctx = await createContextInner();
     const caller = appRouter.createCaller(ctx);
