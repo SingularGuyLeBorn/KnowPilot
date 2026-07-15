@@ -23,7 +23,13 @@ import {
 } from "../infra/asyncJobOrchestrator.js";
 import { resetSwarmOrchestratorForTests } from "../infra/swarmOrchestrator.js";
 import { resetSwarmBus } from "../infra/swarmBus.js";
-import { autoConsumeAsyncDelivery, startAsyncAgentTask } from "../infra/asyncJobManager.js";
+import {
+  autoConsumeAsyncDelivery,
+  cancelAsyncJob,
+  startAsyncAgentTask,
+} from "../infra/asyncJobManager.js";
+import { registerMockLlmScenario } from "../infra/mockLlmClient.js";
+import type { LlmToolCall } from "../infra/llmClient.js";
 import { createTestConfig } from "./helpers/toolTestFixtures.js";
 
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
@@ -257,7 +263,7 @@ async function rmSpawnFixture(fx: SpawnFixture) {
   await prisma.agent.deleteMany({ where: { id: { in: [fx.subAgentId, fx.parentAgentId] } } }).catch(() => {});
 }
 
-function makeSpawnCtx(ctx: Ctx, narrow: Ctx["config"], fx: SpawnFixture) {
+function makeSpawnCtx(ctx: Ctx, narrow: Ctx["config"], fx: Pick<SpawnFixture, "parentAgentId" | "parentSessionId">) {
   return {
     ...ctx,
     config: narrow,
@@ -654,6 +660,684 @@ describe("TP-1 消费续跑池准入", () => {
       await prisma.task.deleteMany({ where: { id: job.id } }).catch(() => {});
       await prisma.chatSession.deleteMany({ where: { id: sessionId } }).catch(() => {});
       await prisma.agent.deleteMany({ where: { id: agentId } }).catch(() => {});
+    }
+  }, 15_000);
+});
+
+/* ─────────────────────── TP-4 防崩压测（负向断言：每条旧实现必挂） ─────────────────────── */
+
+/**
+ * TP-4 压测专用 mock 场景：子 Agent 第一轮调 agent_report_back、第二轮给最终答复。
+ * 窄 match（唯一 marker + agent_report_back 工具在场），不干扰本进程其他测试/场景
+ * （registerMockLlmScenario 无 unregister：注册一次，marker 唯一即隔离）。
+ */
+const TP4_STRESS_MARKER = "TP4压测";
+let tp4MockCallSeq = 0;
+
+function tp4ReportBackCall(): LlmToolCall {
+  tp4MockCallSeq += 1;
+  return {
+    id: `mock_call_tp4_report_${tp4MockCallSeq}`,
+    type: "function",
+    function: { name: "agent_report_back", arguments: JSON.stringify({ content: "压测子任务完成回报" }) },
+  };
+}
+
+registerMockLlmScenario({
+  name: "tp4_stress_report_back",
+  match: (opts, forced) => {
+    if (forced) return false;
+    if (!opts.tools?.some((t) => t.function.name === "agent_report_back")) return false;
+    for (let i = opts.messages.length - 1; i >= 0; i--) {
+      const m = opts.messages[i];
+      if (m.role === "user" && typeof m.content === "string") {
+        return m.content.includes(TP4_STRESS_MARKER);
+      }
+    }
+    return false;
+  },
+  completion: (opts) => {
+    const hasToolResult = opts.messages.some((m) => m.role === "tool");
+    return {
+      content: hasToolResult ? "压测子任务最终答复" : null,
+      reasoningContent: null,
+      toolCalls: hasToolResult ? [] : [tp4ReportBackCall()],
+      finishReason: "stop",
+      model: opts.model || "mock-llm",
+      provider: "mock",
+      tokenUsage: { prompt: 10, completion: 12, total: 22 },
+    };
+  },
+  stream: async function* (opts) {
+    const hasToolResult = opts.messages.some((m) => m.role === "tool");
+    if (hasToolResult) {
+      for (const delta of "压测子任务最终答复") {
+        yield { type: "token" as const, delta, model: opts.model, provider: "mock" };
+      }
+      yield {
+        type: "token" as const,
+        delta: "",
+        finishReason: "stop",
+        model: opts.model,
+        provider: "mock",
+        tokenUsage: { prompt: 10, completion: 12, total: 22 },
+      };
+      return;
+    }
+    yield {
+      type: "tool_calls" as const,
+      toolCalls: [tp4ReportBackCall()],
+      finishReason: "tool_calls",
+      model: opts.model,
+      provider: "mock",
+      tokenUsage: { prompt: 10, completion: 12, total: 22 },
+    };
+  },
+});
+
+interface ParentFixture {
+  parentAgentId: string;
+  parentSessionId: string;
+}
+
+async function mkParentFixture(ctx: Ctx, tag: string): Promise<ParentFixture> {
+  const parent = await ctx.services.agent.create({
+    name: `TP4父-${tag}`,
+    model: "deepseek-chat",
+    systemPrompt: "p",
+    tools: [],
+    tier: "manager",
+  });
+  const parentAgentId = (parent.data as { id: string }).id;
+  const parentSession = await ctx.services.session.create({
+    title: `TP4父会话-${tag}`,
+    model: "deepseek-chat",
+    agentId: parentAgentId,
+  } as any);
+  return { parentAgentId, parentSessionId: (parentSession.data as { id: string }).id };
+}
+
+/** 在既有父 fixture 下追加一个子 Agent + 其子主会话（需要预占子会话的场景） */
+async function mkSubAgentFixture(
+  ctx: Ctx,
+  fx: ParentFixture,
+  tag: string,
+): Promise<{ subAgentId: string; subSessionId: string }> {
+  const sub = await ctx.services.agent.create({
+    name: `TP4子-${tag}`,
+    model: "deepseek-chat",
+    systemPrompt: "s",
+    tools: [],
+    tier: "sub",
+    parentId: fx.parentAgentId,
+  });
+  const subAgentId = (sub.data as { id: string }).id;
+  const subSession = await ctx.services.session.create({
+    title: `TP4子主会话-${tag}`,
+    model: "deepseek-chat",
+    agentId: subAgentId,
+    isMainSession: true,
+    kind: "subagent",
+    parentSessionId: fx.parentSessionId,
+  } as any);
+  return { subAgentId, subSessionId: (subSession.data as { id: string }).id };
+}
+
+/** 父 fixture 级联清理（含压测产生的全部子 Agent/子会话/跟踪 Task/消息/队列项/旁路邮箱） */
+async function rmParentFixture(fx: ParentFixture) {
+  const children = await prisma.chatSession
+    .findMany({ where: { parentSessionId: fx.parentSessionId }, select: { id: true, agentId: true } })
+    .catch(() => [] as Array<{ id: string; agentId: string | null }>);
+  const childSessionIds = children.map((c) => c.id);
+  const childAgentIds = children.map((c) => c.agentId).filter((x): x is string => !!x);
+  const sessionIds = [fx.parentSessionId, ...childSessionIds];
+  await prisma.agentMessage
+    .deleteMany({
+      where: {
+        OR: [
+          { fromAgentId: fx.parentAgentId },
+          { toAgentId: fx.parentAgentId },
+          { fromAgentId: { in: childAgentIds } },
+          { toAgentId: { in: childAgentIds } },
+        ],
+      },
+    })
+    .catch(() => {});
+  await prisma.sessionQueueItem.deleteMany({ where: { sessionId: { in: sessionIds } } }).catch(() => {});
+  await prisma.chatMessage.deleteMany({ where: { sessionId: { in: sessionIds } } }).catch(() => {});
+  await prisma.task.deleteMany({ where: { sessionId: { in: sessionIds } } }).catch(() => {});
+  await prisma.chatSession.deleteMany({ where: { id: { in: sessionIds } } }).catch(() => {});
+  await prisma.agent
+    .deleteMany({ where: { OR: [{ id: fx.parentAgentId }, { parentId: fx.parentAgentId }] } })
+    .catch(() => {});
+}
+
+describe("TP-4 防崩压测", () => {
+  beforeEach(() => {
+    resetSwarmBus();
+    resetSwarmOrchestratorForTests();
+    resetAsyncJobOrchestratorForTests();
+    process.env.MOCK_LLM = "true";
+    setStreamHub(new SessionStreamHub({ ringSize: 100, persist: false, eventTtlMs: 1000, cleanupIntervalMs: 0 }));
+  });
+
+  afterEach(() => {
+    setStreamHub(null);
+    delete process.env.MOCK_LLM;
+    resetAsyncJobOrchestratorForTests();
+    resetSwarmOrchestratorForTests();
+    vi.restoreAllMocks();
+  });
+
+  it("50 spawn 压测：峰值 running ≤ maxGlobal、queued position 连续无空洞、reason=global、50 终态", async () => {
+    // 旧实现挂点：spawn 不入池（各入口直起）→ 峰值 running 远超 maxGlobal（peak 断言必红）、
+    // 无 queued/position/reason 语义（快照断言同红）；若旧实现入池但无全局上限 → 50 并发直跑，peak 仍红。
+    const ctx = await createContextInner();
+    const narrow = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: {
+        ...ctx.config.asyncJobs,
+        maxConcurrent: 2,
+        maxPerSession: 100,
+        maxQueued: 100,
+        maxSubagentsPerSession: 200,
+      },
+    });
+    const fx = await mkParentFixture(ctx, "压测");
+    const orch = getAsyncJobOrchestrator(narrow);
+    const toolCtx = makeSpawnCtx(ctx, narrow, fx);
+
+    const SPAWN_COUNT = 50;
+    const blocker1 = makeGate();
+    const blocker2 = makeGate();
+    // 采样器：事件 + 定时双通道采样 runningGlobal 峰值（不变量：任一时刻 ≤ maxGlobal）
+    let peakRunning = 0;
+    const sample = () => {
+      peakRunning = Math.max(peakRunning, orch.getStats().runningGlobal);
+    };
+    const offSample = orch.onAny(sample);
+    const sampler = setInterval(sample, 5);
+
+    try {
+      // 1) 两个 blocker 占满 maxGlobal=2 → 之后 50 个 spawn 全部只能排队
+      orch.enqueue({ jobId: "tp4-blocker-1", sessionId: "other-1", execute: () => blocker1.gate });
+      orch.enqueue({ jobId: "tp4-blocker-2", sessionId: "other-2", execute: () => blocker2.gate });
+
+      // 2) 同一父会话连续 spawn 50 个子 Agent（waitForResult=false，各自独立子 Agent/会话；
+      //    任务文本互异 → 不触发 60s dedup；显式 name → 跳过 fire-and-forget 自动命名）
+      const spawned: Array<{ jobId: string; subagentSessionId?: string }> = [];
+      for (let i = 0; i < SPAWN_COUNT; i++) {
+        const r = (await executeNativeTool(
+          "spawn_subagent",
+          { task: `${TP4_STRESS_MARKER}-${i}`, name: `TP4压测子-${i}` },
+          toolCtx,
+        )) as { success?: boolean; status?: string; jobId?: string; subagentSessionId?: string };
+        expect(r.success).toBe(true);
+        expect(r.status).toBe("queued");
+        expect(r.jobId).toBeTruthy();
+        spawned.push({ jobId: r.jobId!, subagentSessionId: r.subagentSessionId });
+      }
+
+      // 3) 排队快照：50 个全在队列；position 恰好 0..49 连续无空洞（UI 侧展示 1..50）；
+      //    前 2 个槽被 blocker 占满 → 之后全部 reason=global
+      expect(orch.getStats().queued).toBe(SPAWN_COUNT);
+      const positions = spawned.map((s) => orch.getPosition(s.jobId));
+      expect(positions.every((p) => p !== undefined)).toBe(true);
+      expect([...positions].sort((a, b) => a! - b!)).toEqual(Array.from({ length: SPAWN_COUNT }, (_, i) => i));
+      for (const s of spawned) expect(orch.getQueuedReason(s.jobId)).toBe("global");
+
+      // 4) 放行 → 全部跑完：report_back 桥接把 50 个跟踪 Task 全部落到终态
+      blocker1.release();
+      blocker2.release();
+      const jobIds = spawned.map((s) => s.jobId);
+      await vi.waitFor(
+        async () => {
+          const rows = await prisma.task.findMany({ where: { id: { in: jobIds } }, select: { status: true } });
+          expect(rows).toHaveLength(SPAWN_COUNT);
+          expect(rows.every((r) => r.status === "success" || r.status === "failed")).toBe(true);
+        },
+        { timeout: 90_000, interval: 200 },
+      );
+      const terminal = await prisma.task.findMany({ where: { id: { in: jobIds } }, select: { status: true } });
+      expect(terminal.filter((r) => r.status === "success")).toHaveLength(SPAWN_COUNT);
+
+      // 5) 池与流全部排空（含 report_back 触发的父会话 autoConsume 续跑），不留后台活动
+      await vi.waitFor(
+        () => {
+          const s = orch.getStats();
+          expect(s.runningGlobal).toBe(0);
+          expect(s.queued).toBe(0);
+        },
+        { timeout: 60_000, interval: 100 },
+      );
+      await vi.waitFor(() => expect(getStreamHub()!.runningCount()).toBe(0), { timeout: 30_000, interval: 100 });
+
+      // 6) 峰值断言：任一时刻全局 running 未越上限；且确实打满过双槽（压测真实制造了并发压力）
+      expect(peakRunning).toBeLessThanOrEqual(2);
+      expect(peakRunning).toBe(2);
+    } finally {
+      clearInterval(sampler);
+      offSample();
+      blocker1.release();
+      blocker2.release();
+      await rmParentFixture(fx);
+    }
+  }, 150_000);
+
+  it("池满 + maxQueued 打满后再 spawn：明确拒绝（队列已满），不留垃圾 Task/会话行", async () => {
+    // 旧实现挂点：无限入队 → 第二个 spawn 成功返回 queued（rejects 断言必红），
+    // 其跟踪 Task 永远挂 queued（垃圾行断言同红）。
+    const ctx = await createContextInner();
+    const narrow = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: { ...ctx.config.asyncJobs, maxConcurrent: 1, maxPerSession: 100, maxQueued: 1, maxSubagentsPerSession: 100 },
+    });
+    const fx = await mkParentFixture(ctx, "拒绝");
+    const orch = getAsyncJobOrchestrator(narrow);
+    const toolCtx = makeSpawnCtx(ctx, narrow, fx);
+    const blocker = makeGate();
+    orch.enqueue({ jobId: "tp4-blocker", sessionId: "other", execute: () => blocker.gate });
+
+    try {
+      // 第一个 spawn：占满唯一排队位（maxQueued=1）
+      const first = (await executeNativeTool(
+        "spawn_subagent",
+        { task: "TP4拒绝-1", name: "TP4拒绝子-1" },
+        toolCtx,
+      )) as { success?: boolean; status?: string; jobId?: string };
+      expect(first.success).toBe(true);
+      expect(first.status).toBe("queued");
+      expect(orch.getStats().queued).toBe(1);
+
+      // 第二个 spawn：池满 + 队列满 → 明确拒绝
+      await expect(
+        executeNativeTool("spawn_subagent", { task: "TP4拒绝-2", name: "TP4拒绝子-2" }, toolCtx),
+      ).rejects.toThrow(/队列已满（maxQueued=1），请稍后再派/);
+
+      // 不留垃圾：#2 的 Phase A 产物被回收——跟踪 Task 落 failed 终态（错误如实记录）、
+      // 子会话落 failed；唯一的非终态行是 #1（合法在队，非垃圾）
+      const tasks = await prisma.task.findMany({ where: { sessionId: fx.parentSessionId } });
+      expect(tasks).toHaveLength(2);
+      const taskOf = (marker: string) => tasks.find((t) => JSON.stringify(t.input).includes(marker));
+      expect(taskOf("TP4拒绝-1")?.status).toBe("queued");
+      const rejected = taskOf("TP4拒绝-2");
+      expect(rejected?.status).toBe("failed");
+      expect(JSON.stringify(rejected?.output)).toMatch(/队列已满/);
+
+      const subSessions = await prisma.chatSession.findMany({
+        where: { parentSessionId: fx.parentSessionId, kind: "subagent" },
+      });
+      expect(subSessions).toHaveLength(2);
+      expect(subSessions.map((s) => s.status).sort()).toEqual(["failed", "queued"]);
+
+      // #2 从未进队：队列仍只有 #1；#1 可正常取消（在队任务取消语义）
+      expect(orch.getStats().queued).toBe(1);
+      expect(orch.isQueued(first.jobId!)).toBe(true);
+      const cancel = await cancelAsyncJob(first.jobId!, narrow, ctx.services);
+      expect(cancel.cancelled).toBe(true);
+      expect(orch.getStats().queued).toBe(0);
+    } finally {
+      blocker.release();
+      await tick(50);
+      await rmParentFixture(fx);
+    }
+  }, 20_000);
+
+  it("cancel 级联：取消父跟踪 Task → queued 子任务从队列消失、running 子流被 signal abort", async () => {
+    // 旧实现挂点：spawn 不经池 → 跟踪 Task 与池任务不同源，cancel 只改 DB 不动执行体：
+    // running 子流收不到 abort（childAborted 恒 false → 红）；queued 语义不存在，
+    // 「从队列消失」无从谈起（isQueued 断言同红）。
+    const ctx = await createContextInner();
+    const narrow = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: { ...ctx.config.asyncJobs, maxConcurrent: 1, maxPerSession: 100, maxSubagentsPerSession: 100 },
+    });
+    const fx = await mkParentFixture(ctx, "级联");
+    const subA = await mkSubAgentFixture(ctx, fx, "级联A");
+    const subB = await mkSubAgentFixture(ctx, fx, "级联B");
+    const orch = getAsyncJobOrchestrator(narrow);
+    const hub = getStreamHub()!;
+    const toolCtx = makeSpawnCtx(ctx, narrow, fx);
+
+    const gateA = makeGate();
+    let childAborted = false;
+    let releasePlaceholderClaim: () => void = () => {};
+
+    try {
+      // 1) 预占 A 的子会话（占位流卡 gate）：A 获槽后派活走 busy 分支，池任务挂在 waitFor 上保持 running。
+      //    占位流先 claim 占用（模拟池内起流场景，不计 hub 交互 running）——否则 maxGlobal=1 下
+      //    占位流本身就占满全局容量，A 永远获不了槽。
+      releasePlaceholderClaim = orch.claimOccupancy(subA.subSessionId);
+      await hub.start(
+        subA.subSessionId,
+        { sessionId: subA.subSessionId, agentId: subA.subAgentId, message: "占位" },
+        async (_emit, signal) => {
+          await Promise.race([
+            gateA.gate,
+            new Promise<void>((resolve) =>
+              signal.addEventListener(
+                "abort",
+                () => {
+                  childAborted = true;
+                  resolve();
+                },
+                { once: true },
+              ),
+            ),
+          ]);
+        },
+      );
+
+      // 2) A 获唯一槽（maxGlobal=1）保持 running
+      const a = (await executeNativeTool(
+        "spawn_subagent",
+        { task: "TP4级联-A", agentId: subA.subAgentId },
+        toolCtx,
+      )) as { success?: boolean; status?: string; jobId?: string };
+      expect(a.success).toBe(true);
+      expect(a.status).toBe("running");
+      await vi.waitFor(
+        async () => {
+          expect((await prisma.task.findUnique({ where: { id: a.jobId! } }))?.status).toBe("running");
+        },
+        { timeout: 3000, interval: 20 },
+      );
+
+      // 3) B 只能排队（reason=global）
+      const b = (await executeNativeTool(
+        "spawn_subagent",
+        { task: "TP4级联-B", agentId: subB.subAgentId },
+        toolCtx,
+      )) as { success?: boolean; status?: string; jobId?: string };
+      expect(b.success).toBe(true);
+      expect(b.status).toBe("queued");
+      expect(orch.isQueued(b.jobId!)).toBe(true);
+      expect(orch.getQueuedReason(b.jobId!)).toBe("global");
+
+      // 4) 取消 B（排队中）：从队列消失 + Task 落 failed 终态
+      const cancelB = await cancelAsyncJob(b.jobId!, narrow, ctx.services);
+      expect(cancelB.cancelled).toBe(true);
+      expect(orch.isQueued(b.jobId!)).toBe(false);
+      expect(orch.getPosition(b.jobId!)).toBeUndefined();
+      const bRow = await prisma.task.findUnique({ where: { id: b.jobId! } });
+      expect(bRow?.status).toBe("failed");
+      expect(JSON.stringify(bRow?.output)).toMatch(/取消/);
+
+      // 5) 取消 A（运行中）：signal abort 级联到子会话流（占位流被 hub.stop）
+      const cancelA = await cancelAsyncJob(a.jobId!, narrow, ctx.services);
+      expect(cancelA.cancelled).toBe(true);
+      await vi.waitFor(() => expect(childAborted).toBe(true), { timeout: 3000, interval: 20 });
+      await vi.waitFor(() => expect(orch.isRunning(a.jobId!)).toBe(false), { timeout: 3000, interval: 20 });
+      expect(hub.isRunning(subA.subSessionId)).toBe(false);
+      await vi.waitFor(
+        async () => {
+          expect((await prisma.task.findUnique({ where: { id: a.jobId! } }))?.status).toBe("failed");
+        },
+        { timeout: 3000, interval: 20 },
+      );
+    } finally {
+      // 清掉 busy 分支入队的 superior 项再结束占位流，避免 drain 续跑干扰后续测试
+      await prisma.sessionQueueItem.deleteMany({ where: { sessionId: subA.subSessionId } }).catch(() => {});
+      gateA.release();
+      releasePlaceholderClaim();
+      await tick(80);
+      await rmParentFixture(fx);
+    }
+  }, 20_000);
+
+  it("queuedTimeoutMs 到期回收：排队超时出队 + timeout 事件 + onQueuedDrop，execute 未运行", async () => {
+    // 旧实现挂点：无排队超时回收 → 任务永远停在队列（dropped 恒 false → waitFor 超时红；
+    // isQueued 恒 true → 同红）。
+    const orch = new AsyncJobOrchestrator({ maxGlobal: 1, maxPerSession: 5, taskTimeoutMs: 500 });
+    const blocker = makeGate();
+    orch.enqueue({ jobId: "blocker", sessionId: "s0", execute: () => blocker.gate });
+    const events: string[] = [];
+    orch.onAny((ev) => events.push(`${ev.type}:${ev.jobId}`));
+    const execute = vi.fn(async () => {});
+    let dropped = false;
+
+    orch.enqueue({
+      jobId: "slow",
+      sessionId: "s1",
+      queuedTimeoutMs: 60,
+      onQueuedDrop: () => {
+        dropped = true;
+      },
+      execute,
+    });
+    expect(orch.isQueued("slow")).toBe(true);
+
+    await vi.waitFor(() => expect(dropped).toBe(true), { timeout: 2000, interval: 10 });
+    expect(orch.isQueued("slow")).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    expect(events).toContain("timeout:slow");
+    expect(orch.getStats().queued).toBe(0);
+
+    blocker.release();
+    await tick(50);
+  });
+
+  it("queuedTimeout 回收不丢 delivery：等槽超时放弃（落告警）→ 下次触发成功 CLAIM 续跑", async () => {
+    // 旧实现挂点：autoConsume 无池准入（直起）→ 第一轮 delivered 立即为 true
+    // （「未 CLAIM 不丢」断言必红），也不存在「等槽超时放弃本轮」告警（告警断言同红）。
+    const ctx = await createContextInner();
+    const narrow = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: { ...ctx.config.asyncJobs, maxConcurrent: 1, queuedTimeoutMs: 100 },
+    });
+    const orch = getAsyncJobOrchestrator(narrow);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const agent = await ctx.services.agent.create({
+      name: `TP4回收-${Date.now()}`,
+      model: "deepseek-chat",
+      systemPrompt: "p",
+      tools: [],
+      tier: "manager",
+    });
+    const agentId = (agent.data as { id: string }).id;
+    const session = await ctx.services.session.create({
+      title: "TP4回收会话",
+      model: "deepseek-chat",
+      agentId,
+      status: "active",
+    } as any);
+    const sessionId = (session.data as { id: string }).id;
+
+    const job = await prisma.task.create({
+      data: {
+        name: "[async] T-requeue",
+        type: "async_agent",
+        status: "success",
+        sessionId,
+        input: {
+          kind: "async_agent",
+          sessionId,
+          task: "t",
+          taskLabel: "T-requeue",
+          agentSnapshot: { id: agentId, model: "m", systemPrompt: "", tools: [] },
+          deliverToQueue: true,
+        },
+        output: { asyncResult: "回收验证结果" },
+      },
+    });
+
+    const blocker = makeGate();
+    orch.enqueue({ jobId: "blocker", sessionId: "other", execute: () => blocker.gate });
+
+    try {
+      // 第一轮：池满 → 等槽 100ms 超时放弃本轮：delivery 未 CLAIM（不丢）+ 落日志告警
+      const r1 = await autoConsumeAsyncDelivery({
+        sessionId,
+        jobId: job.id,
+        status: "done",
+        taskLabel: "T-requeue",
+        services: ctx.services,
+        config: narrow,
+      });
+      expect(r1).toBe("started");
+      await tick(400);
+      expect((await prisma.task.findUnique({ where: { id: job.id } }))?.delivered).toBe(false);
+      expect(warnSpy.mock.calls.some((c) => String(c[0]).includes("等槽超时放弃本轮"))).toBe(true);
+      expect(orch.getStats().queued).toBe(0);
+
+      // 第二轮：放槽后再次触发 → 成功 CLAIM + 真实续跑（delivery 不丢的完整闭环）
+      blocker.release();
+      const r2 = await autoConsumeAsyncDelivery({
+        sessionId,
+        jobId: job.id,
+        status: "done",
+        taskLabel: "T-requeue",
+        services: ctx.services,
+        config: narrow,
+      });
+      expect(r2).toBe("started");
+      await vi.waitFor(
+        async () => {
+          expect((await prisma.task.findUnique({ where: { id: job.id } }))?.delivered).toBe(true);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      // 续跑真实发生：结果文本被注入为用户消息，mock 答复落 assistant
+      await vi.waitFor(
+        async () => {
+          const injected = await prisma.chatMessage.findFirst({
+            where: { sessionId, role: "user", content: "回收验证结果" },
+          });
+          expect(injected).toBeTruthy();
+          const reply = await prisma.chatMessage.findFirst({ where: { sessionId, role: "assistant" } });
+          expect(reply).toBeTruthy();
+        },
+        { timeout: 5000, interval: 50 },
+      );
+    } finally {
+      blocker.release();
+      await tick(50);
+      await prisma.task.deleteMany({ where: { id: job.id } }).catch(() => {});
+      await prisma.chatMessage.deleteMany({ where: { sessionId } }).catch(() => {});
+      await prisma.chatSession.deleteMany({ where: { id: sessionId } }).catch(() => {});
+      await prisma.agent.deleteMany({ where: { id: agentId } }).catch(() => {});
+    }
+  }, 20_000);
+
+  it("Q4 死锁回归：maxGlobal=1 池内 Agent waitForResult=true 派子，子不占新槽跑完", async () => {
+    // 旧实现挂点：waitForResult=true 的子执行也入池抢槽 → 父持唯一槽等子、子排队等父 → 死锁；
+    // 本测试以 waitFor(parentDone, 12s) 为自身超时上限，旧实现必在此变红，不会真挂死套件。
+    const ctx = await createContextInner();
+    const narrow = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: { ...ctx.config.asyncJobs, maxConcurrent: 1 },
+    });
+    const fx = await mkSpawnFixture(ctx, "q4");
+    const orch = getAsyncJobOrchestrator(narrow);
+    const toolCtx = makeSpawnCtx(ctx, narrow, fx);
+
+    let spawnResult: { success?: boolean; status?: string; content?: string } | undefined;
+    let spawnError: unknown;
+    let parentDone = false;
+    let peakRunning = 0;
+    const offSample = orch.onAny(() => {
+      peakRunning = Math.max(peakRunning, orch.getStats().runningGlobal);
+    });
+
+    try {
+      // 父执行体在池内（持唯一槽）发起同步派子——血统让渡必须让子 inline 跑完且不抢新槽
+      orch.enqueue({
+        jobId: "tp4-parent-run",
+        sessionId: fx.parentSessionId,
+        execute: async () => {
+          try {
+            spawnResult = (await executeNativeTool(
+              "spawn_subagent",
+              { task: "TP4死锁回归验证", agentId: fx.subAgentId, waitForResult: true },
+              toolCtx,
+            )) as typeof spawnResult;
+          } catch (err) {
+            spawnError = err;
+          } finally {
+            parentDone = true;
+          }
+        },
+      });
+
+      await vi.waitFor(() => expect(parentDone).toBe(true), { timeout: 12_000, interval: 25 });
+
+      expect(spawnError).toBeUndefined();
+      expect(spawnResult?.success).toBe(true);
+      expect(spawnResult?.status).toBe("success");
+      expect(spawnResult?.content).toBeTruthy();
+      // 子不占新槽：全程只有父 job 一个池内执行体（峰值恰为 1）
+      expect(peakRunning).toBe(1);
+      // claim 不泄漏（泄漏会低估全局占用、阻塞后续 admit）
+      expect(orch.isOccupancyClaimed(fx.subSessionId)).toBe(false);
+    } finally {
+      offSample();
+      orch.cancel("tp4-parent-run");
+      await tick(50);
+      await rmSpawnFixture(fx);
+    }
+  }, 20_000);
+
+  it("Q2 口径：真 hub 交互流占用收紧池 admit（maxGlobal=2 仅 admit 1），交互结束恢复", async () => {
+    // 旧实现挂点：旧口径只看池内 running → 交互流期间 job2 也被 admit
+    // （isQueued(job2) 恒 false → 红；peak 直接到 2 → 同红）。
+    const ctx = await createContextInner();
+    const narrow = createTestConfig(ctx.config.projectRoot, {
+      ...ctx.config,
+      asyncJobs: { ...ctx.config.asyncJobs, maxConcurrent: 2, maxPerSession: 10 },
+    });
+    const orch = getAsyncJobOrchestrator(narrow);
+    const hub = getStreamHub()!;
+
+    const chatGate = makeGate();
+    const g1 = makeGate();
+    const g2 = makeGate();
+    let peakRunning = 0;
+    const offSample = orch.onAny(() => {
+      peakRunning = Math.max(peakRunning, orch.getStats().runningGlobal);
+    });
+
+    try {
+      // 1) 起 1 条真交互流（非池任务、未被 claim）→ 计入全局占用
+      await hub.start(
+        "tp4-interactive",
+        { sessionId: "tp4-interactive", agentId: "tp4-agent", message: "交互占用" },
+        async (emit) => {
+          await chatGate.gate;
+          emit({
+            type: "done",
+            sessionId: "tp4-interactive",
+            agentId: "tp4-agent",
+            content: "ok",
+            toolCalls: [],
+            model: "m",
+            provider: "p",
+            roundsUsed: 1,
+          });
+        },
+      );
+
+      // 2) maxGlobal=2：占用 = 1 池 + 1 交互 = 2 → 池只能再 admit 1 个
+      orch.enqueue({ jobId: "tp4-job-1", sessionId: "s1", execute: () => g1.gate });
+      orch.enqueue({ jobId: "tp4-job-2", sessionId: "s2", execute: () => g2.gate });
+      await tick();
+      expect(orch.isRunning("tp4-job-1")).toBe(true);
+      expect(orch.isQueued("tp4-job-2")).toBe(true);
+      expect(orch.getQueuedReason("tp4-job-2")).toBe("global");
+      expect(orch.getStats().hubInteractiveRunning).toBe(1);
+      expect(peakRunning).toBe(1);
+
+      // 3) 交互流结束 → 占用口径回落 → job2 获槽（恢复 admit 2 个）
+      chatGate.release();
+      await vi.waitFor(() => expect(orch.isRunning("tp4-job-2")).toBe(true), { timeout: 3000, interval: 20 });
+      expect(peakRunning).toBe(2);
+      expect(orch.getStats().hubInteractiveRunning).toBe(0);
+    } finally {
+      offSample();
+      chatGate.release();
+      g1.release();
+      g2.release();
+      await tick(50);
     }
   }, 15_000);
 });
