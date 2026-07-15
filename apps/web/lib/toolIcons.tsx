@@ -62,6 +62,7 @@ import {
   Server,
   Settings,
   Shield,
+  ShieldCheck,
   Sparkles,
   Table,
   Terminal,
@@ -87,6 +88,7 @@ const EXACT_TOOL_ICONS: Record<string, LucideIcon> = {
   __context_compact__: Gauge,
   __thinking__: Sparkles,
   __content__: MessageSquare,
+  __reflection__: ShieldCheck,
 
   web_search: Search,
   read_article: Newspaper,

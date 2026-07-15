@@ -168,7 +168,9 @@ const ToolStep = memo(function ToolStep({
         ? "思考"
         : step.name === "__content__"
           ? "中间回复"
-          : step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
+          : step.name === "__reflection__"
+            ? "反思复核"
+            : step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
   const hasError =
     step.result &&
     typeof step.result === "object" &&

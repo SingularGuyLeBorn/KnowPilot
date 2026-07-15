@@ -105,6 +105,22 @@ async function parseSseBlock(
       case "tool_end":
         callbacks.onToolEnd?.(payload.name, payload.result, payload.round ?? 1, payload.hint, payload.toolCallId ?? "");
         break;
+      case "reflection": {
+        // W7 反思 verdict（仅未通过时服务端推送）：映射成 __reflection__ 伪工具条，复用时间线 UI
+        const round = payload.round ?? 0;
+        const action = payload.action === "marked" ? "marked" : "retry";
+        const issues: string[] = Array.isArray(payload.issues) ? payload.issues : [];
+        const toolCallId = `reflection_r${round}_${action}`;
+        callbacks.onToolStart?.("__reflection__", { issues }, round, toolCallId);
+        callbacks.onToolEnd?.(
+          "__reflection__",
+          { passed: false, issues, action },
+          round,
+          action === "retry" ? "复核未通过，已回注重修" : "复核未通过，轮数耗尽标记放行",
+          toolCallId,
+        );
+        break;
+      }
       case "compact_start": {
         // Auto-Compact 阶段：映射成 __context_compact__ 工具条，复用时间线转圈 UI
         const gen = payload.generation ?? 1;

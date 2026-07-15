@@ -137,8 +137,9 @@ export function withReflection(transport: LlmTransport, opts: ReflectionOptions)
   return {
     async complete(args) {
       const result = await transport.complete(args);
-      // 「即将 done」感知：reactLoop 唯一的正常 done 进入点 = withTools 轮返回零 toolCalls
-      // （sync 路径无 runQueues，不存在 followUp 抢先续轮的形态）。
+      // 「即将 done」感知：reactLoop 唯一的正常 done 进入点 = withTools 轮返回零 toolCalls。
+      // stream 路径存在 runQueues followUp 抢先续轮的形态：此时 verdict 已附着但 loop 不消费
+      // （白跑一票 critic，无正确性问题）——followUp 注入后的新终轮会再次评估。
       // 无正文内容（空回答）不审——没什么可评的，避免空转 critic。
       if (!args.withTools || result.toolCalls.length > 0 || !result.content?.trim()) {
         return result;

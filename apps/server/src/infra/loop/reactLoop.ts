@@ -384,6 +384,8 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             content: turn.content,
             reasoning_content: turn.reasoningContent ?? null,
           });
+          // verdict 消费显式事件（在回注前发出：时间线上反思条目先于回注气泡出现）
+          input.hooks?.onReflection?.({ round: roundsUsed, issues: reflection.issues, action: "retry" });
           await injectUserMessages(
             input,
             llmMessages,
@@ -400,6 +402,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         // 反思轮数耗尽仍未通过：带标记放行，不阻断用户
         if (reflection && !reflection.passed) {
           content = REFLECTION_UNPASSED_MARK + content;
+          input.hooks?.onReflection?.({ round: roundsUsed, issues: reflection.issues, action: "marked" });
           input.hooks?.onProgress?.("反思重修轮数已耗尽，内容未经反思通过，标记放行");
         }
         machine.transition("done");

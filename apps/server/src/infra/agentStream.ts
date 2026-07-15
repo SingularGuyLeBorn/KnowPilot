@@ -17,7 +17,7 @@ import { formatToolResultHint } from "@knowpilot/shared";
 import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 import { resolveMicroCompactToolMaxChars } from "./autoCompact.js";
-import { runReactLoop, createStreamTransport } from "./loop/index.js";
+import { runReactLoop, createStreamTransport, withReflection } from "./loop/index.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { verifyAuthHeader, isAuthEnabled } from "./auth.js";
 import {
@@ -89,6 +89,11 @@ export type AgentStreamEvent =
       agentId?: string | null;
     }
   /** Auto-Compact 阶段：像工具一样在时间线显示，避免静默阻塞 */
+  /**
+   * W7 反思 verdict（仅 critic 未通过时推送；通过 = 正常路径零噪音）。
+   * 前端映射为 __reflection__ 伪工具条进时间线（参照 compact 事件的伪工具模式）。
+   */
+  | { type: "reflection"; round: number; issues: string[]; action: "retry" | "marked" }
   | { type: "compact_start"; generation: number; estimatedRatio: number; round: 0 }
   | {
       type: "compact_end";
@@ -199,15 +204,25 @@ export async function runAgentLoopStream(options: {
   const hub = options.sessionId
     ? (await import("./sessionStreamHub.js")).getStreamHub()
     : null;
-  const transport = createStreamTransport(
-    options.config,
-    effectiveModel,
-    options.llmOptions,
+  // W7：stream 链路接入反思装饰器（默认关闭，开启后与 sync 链路同一评估点/消费点：
+  // withTools 且零 toolCalls 的终轮 = reactLoop 唯一正常 done 进入点，verdict 消费在 loop 内核）
+  const transport = withReflection(
+    createStreamTransport(
+      options.config,
+      effectiveModel,
+      options.llmOptions,
+      {
+        onThinking: (_round, delta) => options.emit({ type: "thinking", delta }),
+        onToken: (delta) => options.emit({ type: "token", delta }),
+      },
+      () => roundRef.current,
+    ),
     {
-      onThinking: (_round, delta) => options.emit({ type: "thinking", delta }),
-      onToken: (delta) => options.emit({ type: "token", delta }),
+      enabled: options.config.reflection.enabled,
+      maxRounds: options.config.reflection.maxRounds,
+      criticModel: options.config.reflection.criticModel || effectiveModel,
+      config: options.config,
     },
-    () => roundRef.current,
   );
 
   const result = await runReactLoop({
@@ -251,6 +266,9 @@ export async function runAgentLoopStream(options: {
           round,
           hint: formatToolResultHint(result) ?? undefined,
         });
+      },
+      onReflection: ({ round, issues, action }) => {
+        options.emit({ type: "reflection", round, issues, action });
       },
       // 注入落库后 MessageService 会广播 message_upserted，无需额外 SSE
     },

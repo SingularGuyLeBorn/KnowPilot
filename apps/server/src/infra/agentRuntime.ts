@@ -53,7 +53,7 @@ export async function runAgentLoop(options: {
     agentMeta: options.agentMeta,
     runOrigin: options.runOrigin,
     runInput: options.runInput,
-    // W7：sync 链路接入反思装饰器（默认关闭）；stream 链路（agentStream）另立跟进，不在本工单
+    // W7：sync 链路接入反思装饰器（默认关闭）；stream 链路接入点见 agentStream.runAgentLoopStream
     transport: withReflection(createSyncTransport(options.config, effectiveModel), {
       enabled: options.config.reflection.enabled,
       maxRounds: options.config.reflection.maxRounds,
