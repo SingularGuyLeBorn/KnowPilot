@@ -709,23 +709,42 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
         ? `子 Agent 回报 · ${fromName}`
         : `子 Agent 回报 · ${snapshot.id.slice(0, 6)}`;
 
-      // 优先完成 spawn 时挂在父会话上的 running 跟踪 Task
+      // 优先完成 spawn 时挂在父会话上的 running 跟踪 Task。
+      // 关联键是 subagentSessionId（spawn Phase A 写入 input）——必须按血缘键精确匹配，
+      // 不能用「最新 N 条活跃任务」时间窗：高并发 spawn（活跃跟踪任务超过窗口）会把
+      // 早完成子 Agent 的跟踪 Task 挤出窗口 → 失配后僵尸 running + 重复投递行（TP-4 压测暴露）。
       let jobId: string | undefined;
-      const candidates = await ctx.prisma.task.findMany({
-        where: {
-          sessionId: parentSessionId,
-          status: { in: ["running", "queued"] },
-          OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
-        },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-      });
-      const matched = candidates.find((row) => {
-        const input = row.input as { subagentSessionId?: string; agentSnapshot?: { id?: string } } | null;
-        if (!input || typeof input !== "object") return false;
-        if (ctx.sessionId && input.subagentSessionId === ctx.sessionId) return true;
-        return input.agentSnapshot?.id === snapshot.id;
-      });
+      let matched: { id: string; input: unknown } | null = null;
+      if (ctx.sessionId) {
+        matched = await ctx.prisma.task.findFirst({
+          where: {
+            sessionId: parentSessionId,
+            status: { in: ["running", "queued"] },
+            OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+            input: { path: "$.subagentSessionId", equals: ctx.sessionId },
+          },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, input: true },
+        });
+      }
+      if (!matched) {
+        // 兜底：无 subagentSessionId 的旧数据，按 agentSnapshot.id 匹配（原时间窗语义保留）
+        const candidates = await ctx.prisma.task.findMany({
+          where: {
+            sessionId: parentSessionId,
+            status: { in: ["running", "queued"] },
+            OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        });
+        matched = candidates.find((row) => {
+          const input = row.input as { subagentSessionId?: string; agentSnapshot?: { id?: string } } | null;
+          if (!input || typeof input !== "object") return false;
+          if (ctx.sessionId && input.subagentSessionId === ctx.sessionId) return true;
+          return input.agentSnapshot?.id === snapshot.id;
+        }) ?? null;
+      }
 
       if (matched) {
         await ctx.services.task.update({

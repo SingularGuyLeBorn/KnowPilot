@@ -296,6 +296,8 @@ export class SessionStreamHub {
         emit({ type: "error", message, sessionId });
       } finally {
         state.completed = true;
+        // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
+        emitHubRunSettled(sessionId);
         // 运行结束后保留一段时间，方便刚断线的前端重连取到 done/error
         await this.flushPersistQueue();
         state.cleanupTimer = setTimeout(() => {
@@ -568,4 +570,28 @@ export function setStreamHub(hub: SessionStreamHub | null): void {
 
 export function getStreamHub(): SessionStreamHub | null {
   return globalStreamHub;
+}
+
+/**
+ * hub 运行结束事件（模块级订阅，与 globalStreamHub 同生命周期模式）。
+ * 典型订阅方：全局任务池——Q2 pull 口径解决「怎么算占用」，不解决「何时重排」；
+ * 交互流结束必须显式通知池重新调度，否则 queued 任务在下一次池事件前无人唤醒（TP-4 暴露）。
+ */
+type HubRunSettledListener = (sessionId: string) => void;
+const runSettledListeners = new Set<HubRunSettledListener>();
+
+export function onHubRunSettled(listener: HubRunSettledListener): () => void {
+  runSettledListeners.add(listener);
+  return () => runSettledListeners.delete(listener);
+}
+
+/** 运行收尾时触发（completed 已置位，此刻 listRunning 已不含本流） */
+export function emitHubRunSettled(sessionId: string): void {
+  for (const listener of runSettledListeners) {
+    try {
+      listener(sessionId);
+    } catch {
+      /* 监听失败不阻塞 hub 收尾 */
+    }
+  }
 }

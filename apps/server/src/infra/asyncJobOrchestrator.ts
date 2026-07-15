@@ -6,6 +6,8 @@
  * 1. 全局占用口径（Q2）：`全局占用 = 池内 running + hub 交互 running`。
  *    hub 交互 running = hub 活跃流中未被 occupancy claim 的部分——池内任务起流的会话、
  *    血缘让渡的子会话都在 admit 前 claim，因此不会被双算。
+ *    活性：pull 口径只解决「怎么算」，hub 交互流结束经 `onHubRunSettled` 显式通知池
+ *    重排（drain 幂等），解决「何时重排」——否则 queued 任务在下一次池事件前无人唤醒。
  * 2. 槽位血缘继承（Q4）：`waitForResult=true` 的子执行视为父槽位让渡——调用方用
  *    `claimOccupancy(子会话)` 把子会话的 hub 流从「交互 running」中剔除，子执行走 inline
  *    不占新槽。不变量一句话：同一血缘同时只有一个执行体占槽。
@@ -23,7 +25,7 @@
  */
 
 import type { AppConfig } from "./config.js";
-import { getStreamHub } from "./sessionStreamHub.js";
+import { getStreamHub, onHubRunSettled } from "./sessionStreamHub.js";
 
 /** 排队阻塞原因：哪个上限卡住（queuedByReason 统计与 UI「第 N 位 · 因 X 上限排队」共用） */
 export type AsyncJobQueuedReason = "global" | "session" | "workspace";
@@ -336,6 +338,11 @@ export class AsyncJobOrchestrator {
     return this.runningJobs.has(jobId);
   }
 
+  /** 外部事件触发的重新调度（如 hub 交互流结束）。drain 幂等：无可 admit 项时无副作用。 */
+  reevaluateQueue(): void {
+    this.drain();
+  }
+
   /** 任务是否在队列等待槽位 */
   isQueued(jobId: string): boolean {
     return this.queue.some((q) => q.spec.jobId === jobId);
@@ -426,7 +433,23 @@ export function getAsyncJobOrchestrator(config: AppConfig): AsyncJobOrchestrator
       () => getStreamHub()?.listRunning().map((r) => r.sessionId) ?? [],
     );
   }
+  wireHubSettledOnce();
   return _orchestrator;
+}
+
+/**
+ * Q2 活性接线：hub 交互流结束 → 池重新调度（drain 幂等，重复触发无副作用）。
+ * pull 口径只解决「怎么算占用」，不解决「何时重排」——没有本钩子，交互流结束后
+ * queued 任务要等下一次池事件才被唤醒（TP-4 Q2 压测暴露）。
+ * 闭包读模块级 _orchestrator（延迟绑定）：reset 重建实例后无需重接线。
+ */
+let _hubSettleWired = false;
+function wireHubSettledOnce(): void {
+  if (_hubSettleWired) return;
+  _hubSettleWired = true;
+  onHubRunSettled(() => {
+    _orchestrator?.reevaluateQueue();
+  });
 }
 
 /** 单测重置 */
