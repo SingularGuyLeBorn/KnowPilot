@@ -153,7 +153,7 @@
 ### 系统行为
 
 1. 父 Agent 收到任务，判断需要后台运行。
-2. LLM 调用 `async_task_run` 工具，参数类似：`command="ls content/posts | wc -l"` 或引用已有 Task。
+2. LLM 调用 `async_task_run` 工具（专职非 LLM 纯工具任务；带 LLM 的子任务走 `spawn_subagent`），参数类似：`task="统计文章数"` + `toolCall={ tool: "run_shell", args: { command: "ls content/posts | wc -l" } }`。
 3. 后端创建异步 job，返回 `jobId`。
 4. 父 Agent 本轮说明“已启动后台任务，完成后通知你。”
 5. 后台 job 完成后：

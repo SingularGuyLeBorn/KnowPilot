@@ -1,9 +1,9 @@
 # 异步任务结果重复消费：方案调研与推荐（问题 G）
 
-> - 状态：**待拍板**（对应 `design-decisions.md` 问题 G；用户在「回答」中要求详细优缺点与推荐实现）
+> - 状态：**已落地（变体）**（2026-07-16，v7 工单 W-0/W-A/W-E/W-F；见文末「落地状态」节）
 > - 调研日期：2026-07-15（分支 `fix/p0-agent-budget-hitl`，W1–W15 已验收）
 > - 证据来源：`design-decisions.md` 问题 G 及补充节、`开发心路历程.md` 2026-07-15 条、`swarm.ts` / `asyncJobManager.ts` / `session.ts` / `shell.ts` / `agentMessageLedger.ts` / `router.ts` / `useSubagentMessageMirror.ts` 源码核实
-> - 本文只做调研与推荐，不含实现代码；拍板后另立工单执行
+> - 本文 §1–§6 为调研与方案对比的历史记录；最终落地形态与本文推荐（方案三）的差异见文末「落地状态」
 
 ---
 
@@ -203,10 +203,24 @@ W14（`agentMessageLedger.ts`）落地前，问题 G 把 AgentMessage「永远 p
 
 ---
 
-## 7. 待拍板问题
+## 7. 待拍板问题（已结案）
 
-1. 是否接受 `async_task_status` 去全文（breaking，已核实无前端面）？——推荐：接受。
-2. wait 落选分支策略：完全不返回全文（推荐，双重表示机制上不可能）vs 返回全文 + 「已投递」hint（更宽容但有重复总结风险）？——推荐：前者。
-3. 是否顺手加 `deliveredBy` 纯审计列（记录 wait/bubble/poll 谁领取）？——推荐：不加，本期无消费方，需要时再加（claim 事务内一处赋值）。
+1. 是否接受 `async_task_status` 去全文（breaking，已核实无前端面）？——推荐：接受。**结案：已接受并落地（W-B）。**
+2. wait 落选分支策略：完全不返回全文（推荐，双重表示机制上不可能）vs 返回全文 + 「已投递」hint（更宽容但有重复总结风险）？——推荐：前者。**结案：用户拍板更激进的变体——`async_task_wait` 工具整体删除，落选分支不复存在（见 §8）。**
+3. 是否顺手加 `deliveredBy` 纯审计列（记录 wait/bubble/poll 谁领取）？——推荐：不加，本期无消费方，需要时再加（claim 事务内一处赋值）。**结案：不加。wait 删除后「谁领取」只剩队列气泡一条路径，审计列永久失去消费方。**
 
-**回答**：
+**回答**：（已结案，无需回答）
+
+---
+
+## 8. 落地状态（2026-07-16，v7 工单 W-0/W-A/W-E/W-F）：已落地（变体）
+
+本文推荐的方案三（wait 变认领参与者）在拍板时被用户改为更激进的变体：**`async_task_wait` 不是改认领语义，而是整体删除**。最终落地形态：
+
+1. **A1 撞车面消除（按本文推荐执行）**：`async_task_status` 去全文——`getAsyncJobStatus` / `listSessionAsyncJobs` 只回 status/taskLabel/elapsedMs/subagentSessionId/timeoutMs，不回 asyncResult/logs/error；轮询读全文在机制上不可能。
+2. **A2 撞车面消除（变体）**：`async_task_wait` 工具删除（def/handler/注册/权限清单/UI 条目全清），「阻塞等结果」不再作为独立通道存在；同步等待语义由两个分工工具的 `waitForResult=true` 承担（`spawn_subagent` / `async_task_run`，结果走 tool return、不进队列）。`waitForAsyncJob` 函数保留，唯一调用方为 `async_task_run(waitForResult=true)`。
+3. **claim 唯一锁已为现状**：全文交付唯一通道 = `Task.delivered` 原子 claim（`updateMany delivered=false→true`），认领方 = 服务端 `autoConsumeAsyncDelivery` / 前端 `ackAsyncDelivery`（B1×B2 同一把锁，W14 已有竞态测试）；同步直返路径 `deliverToQueue=false` 天然绕过队列。本文方案三的「wait 作第三认领方」与 `claimAsyncDelivery` 抽取随 wait 删除而作废。
+4. **无需 `deliveredBy`**：认领方只剩队列路径，审计列无消费方；§2.4 小洞 3（`pullAsyncDeliveries` 未过滤 `deliverToQueue=false`）已在 W-A 顺手收口（两处 pull 均过滤 + 新增 `listSyncAsyncJobs` 右栏「同步任务」视图）。
+5. **存量硬删**：dev.db 历史 `sourceType="async_task_llm"` Task 行一次性物理删除（W-F，执行结果 0 行命中——存量库已无此类行）。
+
+结论：问题 G 的 A1/A2 两个「读全文不留痕」撞车面均已机制性消除，残留风险面归零；决策记录同步于 `design-decisions.md` 文末 v7 节。
