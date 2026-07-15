@@ -1520,15 +1520,9 @@ export async function retryAsyncJob(
     status: "running",
     sessionId: input.sessionId,
     startedAt: new Date(),
-    input: {
-      kind: ASYNC_KIND,
-      sessionId: input.sessionId,
-      task: input.task,
-      taskLabel,
-      agentSnapshot,
-      retryCount,
-      timeoutMs: input.timeoutMs,
-    } satisfies AsyncTaskInput,
+    // 原 input 全量保留（sourceType/deliverToQueue/toolCall/subagentSessionId/shareToSessionIds），
+    // 仅推进 retryCount——否则 sync 任务重试后 deliverToQueue 缺省为 true，结果漂移进异步队列（S8）
+    input: { ...input, retryCount } satisfies AsyncTaskInput,
   });
 
   if (!created.success || !created.data) {

@@ -19,6 +19,7 @@ import {
   listRunningAsyncJobs,
   listQueuedAsyncJobs,
   listSyncAsyncJobs,
+  retryAsyncJob,
 } from "../infra/asyncJobManager.js";
 import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
 import { createTestConfig } from "./helpers/toolTestFixtures.js";
@@ -448,6 +449,58 @@ describe("W-A 同步任务通道", () => {
       expect(syncIds).toContain(queuedSync.id);
       expect(syncIds).not.toContain(runningAsync.id);
       expect(syncIds).not.toContain(queuedAsync.id);
+    } finally {
+      await prisma.task.deleteMany({ where: { sessionId } });
+    }
+  });
+
+  it("T6: retryAsyncJob 保留 sourceType/deliverToQueue/toolCall（S8：sync 重试不漂移进异步队列）", async () => {
+    const ctx = await createContextInner();
+    const session = await ctx.services.session.create({ title: "T6 会话", model: "deepseek-chat" });
+    const sessionId = (session.data as { id: string }).id;
+    try {
+      // 失败的 sync 纯工具任务（waitForResult=true → deliverToQueue=false，结果应走 tool return）
+      const failed = await prisma.task.create({
+        data: {
+          name: "[async] T6 失败同步任务",
+          type: "async_agent",
+          status: "failed",
+          sessionId,
+          input: {
+            kind: "async_agent",
+            sessionId,
+            task: "T6 同步任务",
+            taskLabel: "T6 失败同步任务",
+            agentSnapshot: { id: "test-agent", model: "deepseek-chat", systemPrompt: "test", tools: ["native:wait"] },
+            deliverToQueue: false,
+            sourceType: "async_task_tool",
+            toolCall: WAIT_TOOL_CALL,
+          },
+        },
+      });
+
+      const retried = await retryAsyncJob(failed.id, ctx.config, ctx.services);
+      await vi.waitFor(
+        async () => {
+          const row = await prisma.task.findUnique({ where: { id: retried.jobId } });
+          expect(row?.status).toBe("success");
+        },
+        { timeout: 5000, interval: 50 },
+      );
+
+      // 负向断言（旧实现即红）：新 Task input 丢 sourceType/deliverToQueue/toolCall → 语义漂移
+      const newRow = await prisma.task.findUnique({ where: { id: retried.jobId } });
+      const newInput = newRow!.input as Record<string, unknown>;
+      expect(newInput.deliverToQueue).toBe(false);
+      expect(newInput.sourceType).toBe("async_task_tool");
+      expect(newInput.toolCall).toEqual(WAIT_TOOL_CALL);
+      expect(newInput.retryCount).toBe(1);
+
+      // 行为断言：重试结果不进异步队列（sync 语义保持），出现在「同步任务」列表
+      const deliveryIds = (await pullAsyncDeliveries(sessionId)).map((d) => d.jobId);
+      expect(deliveryIds).not.toContain(retried.jobId);
+      const syncIds = (await listSyncAsyncJobs(sessionId, ctx.config)).map((j) => j.jobId);
+      expect(syncIds).toContain(retried.jobId);
     } finally {
       await prisma.task.deleteMany({ where: { sessionId } });
     }
