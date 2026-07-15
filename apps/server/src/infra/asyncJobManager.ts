@@ -473,6 +473,9 @@ export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueue
 
   const deliveries: AsyncQueueDelivery[] = [];
   for (const row of rows) {
+    // 同步任务（deliverToQueue=false）结果走 tool return，永不进异步队列；
+    // 修窗口漏洞：sync 任务完成落库到 tool return 标 delivered 之间会被误拉进队列
+    if (parseAsyncInput(row.input)?.deliverToQueue === false) continue;
     const delivery = toDelivery(row);
     if (delivery) deliveries.push(delivery);
   }
@@ -496,6 +499,8 @@ export async function pullConsumedAsyncDeliveries(
   });
   const deliveries: AsyncQueueDelivery[] = [];
   for (const row of rows) {
+    // 同步任务（deliverToQueue=false）在 tool return 时被标 delivered=true，不属于「已消费」
+    if (parseAsyncInput(row.input)?.deliverToQueue === false) continue;
     const delivery = toDelivery(row);
     if (delivery) deliveries.push(delivery);
   }
@@ -592,6 +597,82 @@ export async function listQueuedAsyncJobs(
       return base;
     })
     .filter((j): j is AsyncQueuedJob => j !== null);
+}
+
+export interface SyncAsyncJob {
+  jobId: string;
+  taskLabel: string;
+  status: "queued" | "running" | "completed" | "failed";
+  elapsedMs?: number;
+  asyncResult?: string;
+  error?: string;
+  logs?: AsyncTaskLogEntry[];
+  createdAt: number;
+  finishedAt?: number;
+  subagentSessionId?: string;
+  sourceType?: AsyncTaskSourceType;
+}
+
+/**
+ * 列出会话的同步任务（waitForResult=true → deliverToQueue=false），供右栏「同步任务」区展示。
+ * 同步任务结果走 tool return 返回父流，不进异步队列、不进气泡、不可 pin/consume。
+ * status 判定与 getAsyncJobStatus 同源：orchestrator isRunning/isQueued 优先，DB 状态兜底。
+ */
+export async function listSyncAsyncJobs(
+  sessionId: string,
+  config: AppConfig,
+  limit = 30,
+): Promise<SyncAsyncJob[]> {
+  const take = Math.max(1, Math.min(limit, 100));
+  const rows = await prisma.task.findMany({
+    where: {
+      sessionId,
+      OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+    },
+    orderBy: { createdAt: "desc" },
+    take: take * 2,
+  });
+  const orchestrator = getAsyncJobOrchestrator(config);
+  const items: SyncAsyncJob[] = [];
+  for (const row of rows) {
+    const input = parseAsyncInput(row.input);
+    if (!input || input.deliverToQueue !== false) continue;
+    const output = parseAsyncOutput(row.output);
+    const running = orchestrator.isRunning(row.id);
+    const queued = orchestrator.isQueued(row.id);
+    const createdAtMs =
+      row.createdAt instanceof Date ? row.createdAt.getTime() : new Date(row.createdAt).getTime();
+    const status: SyncAsyncJob["status"] = running
+      ? "running"
+      : queued
+        ? "queued"
+        : row.status === "success"
+          ? "completed"
+          : row.status === "failed"
+            ? "failed"
+            : row.status === "running" || row.status === "queued"
+              ? row.status
+              : "failed";
+    items.push({
+      jobId: row.id,
+      taskLabel: input.taskLabel,
+      status,
+      elapsedMs: running || row.status === "running" ? Date.now() - createdAtMs : undefined,
+      asyncResult: output.asyncResult,
+      error: output.error,
+      logs: output.logs,
+      createdAt: createdAtMs,
+      finishedAt: row.finishedAt
+        ? row.finishedAt instanceof Date
+          ? row.finishedAt.getTime()
+          : new Date(row.finishedAt).getTime()
+        : undefined,
+      subagentSessionId: input.subagentSessionId,
+      sourceType: input.sourceType,
+    });
+    if (items.length >= take) break;
+  }
+  return items;
 }
 
 /** 取消一条运行中或排队中的异步任务 */
