@@ -311,6 +311,36 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
     }
   });
 
+  it("S1：busy 分支 DB 异常时不误标健康 running 会话 failed（运行状态归 runner 所有）", async () => {
+    const ctx = await createContextInner();
+    const fx = await createDrainFixture(ctx);
+    const release = await occupySession(fx.subSessionId, fx.subAgentId);
+    const autoRelease = setTimeout(release, 3000);
+    try {
+      // 制造 busy 分支 DB 异常：bus.send 成功（AgentMessage pending）后 sessionQueueItem.create 抛错
+      vi.spyOn(ctx.services.sessionQueueItem, "create").mockRejectedValueOnce(new Error("注入 DB 异常"));
+
+      const result = (await executeNativeTool(
+        "agent_send_message",
+        { toAgentId: fx.subAgentId, content: "S1 异常注入消息" },
+        makeSendCtx(ctx, fx),
+      )) as { success?: boolean; error?: string };
+
+      // fire-and-forget 契约：派活方仍收成功（准备段异常只记 warn）
+      expect(result.success).toBe(true);
+
+      // 负向断言（旧实现即红）：prepareAgentRun catch 无条件把会话标 failed——
+      // 但会话仍健康 running（hub 闸门持有中），状态归 runner 所有，prepare 段异常不得覆盖
+      const session = await prisma.chatSession.findUnique({ where: { id: fx.subSessionId } });
+      expect(session?.status).not.toBe("failed");
+      expect(getStreamHub()!.isRunning(fx.subSessionId)).toBe(true);
+    } finally {
+      clearTimeout(autoRelease);
+      release();
+      await cleanupDrainFixture(fx);
+    }
+  });
+
   it("consume 软认领：不存在 item 返回 claimed:false 不抛错；竞态双 consume 一胜一静默", async () => {
     const ctx = await createContextInner();
     const fx = await createDrainFixture(ctx);

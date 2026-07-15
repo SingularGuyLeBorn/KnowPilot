@@ -492,10 +492,19 @@ async function prepareAgentRun(
       })();
       return { kind: "started", subagentSessionId: mainSession.id, completion };
     } catch (err) {
+      // S1：运行中的会话状态归 runner 所有——prepare 段失败（busy 分支 DB 异常，或起流
+      // TOCTOU 被「已有运行中的 Agent 流」拒绝）不得把健康 running 会话误标 failed；
+      // 仅当无活跃流（失败真实发生在起流前）才由 prepare 段兜底标 failed
       if (sessionIdForCleanup) {
+        let hasLiveRun = false;
         try {
-          await ctx.services.session.update({ id: sessionIdForCleanup, status: "failed" } as any);
+          hasLiveRun = getStreamHub()?.isRunning(sessionIdForCleanup) ?? false;
         } catch { /* ignore */ }
+        if (!hasLiveRun) {
+          try {
+            await ctx.services.session.update({ id: sessionIdForCleanup, status: "failed" } as any);
+          } catch { /* ignore */ }
+        }
       }
       throw err;
     } finally {
