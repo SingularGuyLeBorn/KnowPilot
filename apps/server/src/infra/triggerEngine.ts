@@ -193,6 +193,7 @@ export class TriggerEngine {
       schedule: "pool",
       // 无 Chat 会话：以 trigger:agentId 作为并发池 per-session 限流维度
       sessionId: `trigger:${agent.id}`,
+      workspaceId: agent.workspaceId ?? null,
       taskLabel: `trigger:${agent.name}`,
       execute: async (): Promise<SwarmTaskOutcome> => {
         const result = await runAgent(

@@ -348,6 +348,7 @@ export class HeartbeatEngine {
         origin: "heartbeat",
         schedule: "pool",
         sessionId: session.id,
+        workspaceId: agent.workspaceId ?? null,
         jobId: task.id,
         taskLabel: `[heartbeat] ${agent.name}`,
         execute: async (signal): Promise<SwarmTaskOutcome> => {

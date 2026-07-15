@@ -209,6 +209,8 @@ describe("async-task-queue 工具协议", () => {
     const narrowConfig = createTestConfig(ctx.config.projectRoot, {
       ...ctx.config,
       asyncJobs: {
+        maxPerWorkspace: 0,
+        maxQueued: 100,
         maxConcurrent: 1,
         maxPerSession: 2,
         taskTimeoutMs: 60_000,

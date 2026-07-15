@@ -81,6 +81,10 @@ export interface AppConfig {
   asyncJobs: {
     maxConcurrent: number;
     maxPerSession: number;
+    /** per-workspace 公平配额（0 = 不限；不是容量权威，全局池才是） */
+    maxPerWorkspace: number;
+    /** 排队总数上限，满则入池拒绝并给调用方明确错误 */
+    maxQueued: number;
     taskTimeoutMs: number;
     queuedTimeoutMs: number;
     maxRetries: number;
@@ -428,6 +432,17 @@ export function createAppConfig(): AppConfig {
           readEnv("AGENT_ASYNC_MAX_PER_SESSION") || String(asyncJobsConfig.maxPerSession ?? "2"),
           10,
         ),
+      ),
+      maxPerWorkspace: Math.max(
+        0,
+        parseInt(
+          readEnv("AGENT_ASYNC_MAX_PER_WORKSPACE") || String(asyncJobsConfig.maxPerWorkspace ?? "0"),
+          10,
+        ),
+      ),
+      maxQueued: Math.max(
+        1,
+        parseInt(readEnv("AGENT_ASYNC_MAX_QUEUED") || String(asyncJobsConfig.maxQueued ?? "100"), 10),
       ),
       taskTimeoutMs: Math.max(
         10_000,

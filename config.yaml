@@ -43,14 +43,21 @@ compact:
     enabled: true
     maxFacts: 5
 
-# 后台任务池（async_task_run / spawn 跟踪任务等共享）
+# 后台任务池（async_task_run / spawn 跟踪任务 / heartbeat / trigger 等共享）
 # 注意：池只控制并发调度（queued → running）；是否「异步投递」由工具的 waitForResult 决定。
 # 环境变量 AGENT_ASYNC_* 可覆盖下列默认值。
 asyncJobs:
-  # 全局同时 running 上限（所有 session 共享）
+  # 全局同时 running 上限（所有 session 共享）。
+  # 口径：全局占用 = 池内 running + hub 交互 running（用户聊天流不打标计入池，但占用全局容量）
   maxConcurrent: 2
   # 单 session 同时 running 上限
   maxPerSession: 2
+  # per-workspace 公平配额（0 = 不限；公平策略不是容量权威，全局池才是）
+  # env AGENT_ASYNC_MAX_PER_WORKSPACE 可覆盖
+  maxPerWorkspace: 0
+  # 排队总数上限，满则入池拒绝，调用方（LLM 工具/UI）收到「队列已满，请稍后再派」明确错误
+  # env AGENT_ASYNC_MAX_QUEUED 可覆盖
+  maxQueued: 100
   # 单任务执行超时（毫秒）
   taskTimeoutMs: 300000
   # 排队超时（毫秒）；0 = 不限制
