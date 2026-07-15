@@ -3,14 +3,14 @@
 > 审查范围：`faf51bf6..HEAD`（W-0 三例 + W-A 两例 + W-E 两例 + W-F + docs，共 9 commits）。
 > 审查方式：逐 commit diff 精读 + 关键源码通读 + 亲自实跑（lint / vitest 全量 / 定向 vitest / mock e2e / dev.db 副本只读查询 / grep 残留扫描）。未修改任何非 .md 文件，未做任何 git 写操作。
 
-## 总结论：**有条件通过**
+## 总结论：**通过**（2026-07-14 复审升级，原为「有条件通过」）
 
 主链路全部正确、六条决策全部落地、测试不注水、实证全绿（lint 0 错、server 425 passed/5 skipped、mock e2e 19/19、dev.db purge 实证 0 行）。未发现高危/阻断问题。
 
-**通过条件（建议在本分支内消化，均为小改）**：
-1. P4（必修，一行文案）：`asyncJobManager.ts:827` 子 Agent 提示词仍教 LLM 传已删除的 `mode=tool` 参数——残留清扫漏网。
-2. P5（必修，删死参数）：`startAsyncAgentTask` 的 `guard` 选项在 W-D 后已无生产调用方，违反零兼容纪律「不留死参数」。
-3. P2/P3（建议修，可登记跟进）：见下。
+**通过条件（已全部在本分支消化并经复审实证，见文末「复审记录（修复复核）」节）**：
+1. ~~P4（必修，一行文案）~~ → 已修（`cf2c03c3`）。
+2. ~~P5（必修，删死参数）~~ → 已修（`5789e2ca`）。
+3. ~~P2/P3（建议修）~~ → 已修（`1e8dd630` / `6ea1e714`）。
 
 ---
 
@@ -139,4 +139,56 @@
 
 ---
 
-> 审查人：终审架构师（subagent）。本报告为唯一产出物；P2~P5 与 S1~S10 的处置权交还主会话/用户。
+## 复审记录（修复复核，2026-07-14 追加）
+
+> 复审范围：`68511e03..f94d6a84`（9 个 fix commit + docs 提交，共 11 文件 +506/-23，web 侧零改动）。复审方式：逐 commit diff 精读 + 亲自实跑 + grep 防线复核。未修改任何非 .md 文件，未做任何 git 写操作。
+
+### 实跑复核（亲自运行，非转述）
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `pnpm lint` | EXIT=0（shared/server `tsc --noEmit` + web `eslint` 全过）——`coerceToolBoolean` 新 import 无循环依赖实证 |
+| 2 | `pnpm --filter @knowpilot/server test` | EXIT=0；**43 文件 437 passed / 5 skipped**（38.9s）——与上文声称的基线 425 + 新增 12 = 437 逐字一致 |
+| 3 | 定向 `vitest run async-task-queue / superiorQueueDrain / agentTools / agentMessageLedger`（apps/server） | EXIT=0；4 文件 **57 passed**（含 T5/T6、S1/S2/S4、超时档 4 例、W14 账本断言） |
+| 4 | `cd apps/web && pnpm run test:e2e:mock`（既有 .next build） | EXIT=0；**19/19 passed**（52.6s），含「右栏同步任务分组」与 spawn 链路 6 例 |
+
+### 逐条复核结论
+
+**确认问题（P2~P5）**
+
+| # | 复核结论 | 复核证据 |
+|---|---|---|
+| P2 | ✅ 修复成立 | `resolveToolCallTimeoutMs(name,args,default)` 按「工具名+args」判定：`async_task_run(waitForResult=true)`/`agent_send_message(waitForRun=true)` 经 `coerceToolBoolean` 容忍字符串 `"true"` 纳入 600000ms 档；`isLongWait` 由 timeoutMs 派生，超时误导文案随之抑制。`agentTools.test.ts` 4 例（true/"true"/false/缺省 + spawn/sleep 不变）通过 |
+| P3 | ✅ 修复成立 | `listRunningAsyncJobs`/`listQueuedAsyncJobs` 各加 `deliverToQueue === false` 跳过（:607/:654），与既有两处（:543/:568）同款，共 4 处 grep 实证；T5 行为测试（running/queued sync 不进两异步列表、进 sync 列表、异步对照组保留）通过 |
+| P4 | ✅ 修复成立 | `async_task_run(mode=tool` 全仓 grep 零命中；新文案「toolCall 指定要执行的工具」与双工具分工一致；附源码防线测试 |
+| P5 | ✅ 修复成立 | `guard` 在 asyncJobManager.ts 零命中（选项、透传、`SwarmTaskSpec` import 一并删除）；dispatch 层 guard 机制保留未动；tsc 编译即调用方核查；附源码防线测试 |
+
+**疑似项（S1~S10）**
+
+- **S1 ✅ 修复成立**：catch 内先查 `getStreamHub()?.isRunning`，仅无活跃流才标 failed——「运行中会话状态归 runner 所有」不变量收进 catch，非时序补丁。行为测试（busy 分支注入 `sessionQueueItem.create` 异常 → 会话不标 failed、hub 仍 running）通过。
+- **S2 ✅ 修复成立（机制层，非时序补丁）**：「即将起流」标记对称性核查通过——asyncJobManager 1 处 mark + finally 1 处 unmark；`hub.start` 的 `runs.set` 后 `startingSessions.delete` 完成「isRunning 接管」，三条路径（正常起流/异常 finally/接管清除）无泄漏（Set 幂等，双 unmark 无害）。`isSubagentSessionSettled` 单点收拢四条件（`!streaming && !runStarting && nestedActive===0 && queuedItems===0`），claim→mark 之间同步无 await 交错点，「已认领未起流」窗口闭合成立。闸门行为测试（卡住 runItem 构造确定态，断言 isRunStarting=true 且 settled=false，放行后恢复）通过。**残留边界复审同意接受**：前端 drain 认领路径未接旗标——需子会话页打开 + 一轮 HTTP 间隙，概率低一个量级且失败方向同 pre-existing，登记不阻塞。
+- **S3 ✅ 接受理由成立**：TOCTOU 低概率 + 消息已落 AgentMessage 账（前端 mirror 同 agentMessageId 幂等键可重建）+ 非永久丢失 + 非回归 + S1 修复后伴随副作用（误标 failed）已消除。
+- **S4 ✅ 修复成立**：`waitForRun=true` 准备段失败改返 `success:false + error`（fire-and-forget 分支契约不动）；行为测试（`setStreamHub(null)` 注入）通过。
+- **S5 ✅ 修复成立**：30s 破灭与 P2 同根同修（`agent_send_message(waitForRun=true)` 纳入 10 分钟档）；「等整条 drain 链而非该 item」维持现状的论证成立——FIFO 保证本 item 先于链尾被处理，await 链即等到本 item 完成，保守多等后排项语义正确，类型注释已如实更正；不做 per-item deferred 的代价收益判断同意。
+- **S6 ✅ 接受理由成立**：需 DB 异常（低概率）+ 前端 mirror / 下次发送 drain 双重兜底 + `SWARM_MAX_QUEUE_SIZE` 拒新（失败方向安全）+ 跨服务事务补偿代价远大于收益。
+- **S7 ✅ 接受理由成立**：pre-existing 结构 + busy 判定与 `hub.start` 同步占位拒绝双跑兜底 + S1 修复后最坏副作用（被拒路径误标 failed）已消除；重写公平队列锁收益不抵复杂度。
+- **S8 ✅ 修复成立**：`input: { ...input, retryCount }` 全量保留原字段；T6 行为测试（重试保留 deliverToQueue=false/sourceType/toolCall、不进异步队列、出现在 sync 列表）通过。
+- **S9 ✅ 修复成立**：默认 assistant 提示词已更正（spawn_subagent 派生 / async_task_run 仅纯工具不跑 LLM 不派生）；防线测试通过。
+- **S10 ✅ 接受理由成立**：`docs/surveys-2026/` 为历史综述，不属本分支必更范围，保留知情注记。
+
+### 新问题终查
+
+逐 commit diff 精读 + grep 防线复核，**未发现新问题**：
+
+- **无夹带**：9 个 fix commit 全部改动可映射到已声明修复项（server src 7 文件 + 测试 4 文件 + agentResolver），web 侧零改动。
+- **循环依赖排除**：`tools/native/types.ts` 仅含 `import type`（纯类型叶子，无运行时依赖），agentTools.ts 运行时 import `coerceToolBoolean` 不构成环——tsc（lint）与 vitest 运行双重实证。
+- **标记对称性**：mark/unmark/接管清除三路径核对无泄漏（见 S2 条）。
+- **登记知情的理论边界（不阻塞）**：① `isLongWait = timeoutMs === LONG_WAIT_TIMEOUT_MS` 的派生——若用户把默认超时配成 600000 会全档误判为长等待（仅影响超时建议文案抑制，trivial）；② spawn 轮询 `queuedItems` 读取 catch→0（出错视为闲），与既有模式一致。
+
+### 复审总结论
+
+原「有条件通过」三条通过条件（P4/P5 必修、P2/P3 建议修）已全部在本分支消化，S1~S10 处置（9 修 1 接受 + S3/S6/S7/S10 接受现状）逐条复核成立，实跑全绿，无新问题。**总结论升级为「通过」**，本分支可合入。
+
+---
+
+> 审查人：终审架构师（subagent）。本报告为唯一产出物；Round 1 终审 + Round 2 修复复核均已完成，P2~P5 与 S1~S10 全部闭环。
