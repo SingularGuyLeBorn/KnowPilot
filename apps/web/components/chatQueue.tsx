@@ -28,7 +28,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ChatQueueItem } from "@/lib/chatQueueTypes";
+import type { ChatQueueItem, SyncTaskItem } from "@/lib/chatQueueTypes";
 
 export function kindLabel(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
@@ -505,12 +505,16 @@ function statusKindLabel(item: ChatQueueItem): string {
   return "async task";
 }
 
-function formatElapsed(createdAt: number): string {
-  const sec = Math.max(0, Math.round((Date.now() - createdAt) / 1000));
+function formatElapsedMs(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
   if (sec < 60) return `${sec}s`;
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function formatElapsed(createdAt: number): string {
+  return formatElapsedMs(Date.now() - createdAt);
 }
 
 function StatusRow({
@@ -672,21 +676,135 @@ function StatusSection({
 export interface RuntimeStatusPanelProps {
   tab: "pending" | "consumed";
   onTabChange: (tab: "pending" | "consumed") => void;
+  /** 一级分组：异步队列 / 同步任务（W-A） */
+  groupTab: "async" | "sync";
+  onGroupTabChange: (tab: "async" | "sync") => void;
   /** 仅 async-running：queued=待开始，running=运行中 */
   pendingItems: ChatQueueItem[];
   consumedItems: ChatQueueItem[];
   /** 已结束但钉住未喂入（不进「未消费」主列表） */
   heldItems?: ChatQueueItem[];
+  /** 同步任务（deliverToQueue=false）：只展示，无 pin/消费/气泡发送 */
+  syncTaskItems?: SyncTaskItem[];
   onCancel?: (jobId: string) => void;
   onTogglePin?: (jobId: string, pinned: boolean) => void;
+}
+
+/** 同步任务行（W-A 局部组件，不导出）：结果走 tool return 的任务只展示——无 pin、无消费、无气泡发送 */
+function SyncTaskRow({
+  item,
+  onCancel,
+}: {
+  item: SyncTaskItem;
+  onCancel?: (jobId: string) => void;
+}) {
+  const active = item.status === "queued" || item.status === "running";
+  const [logsOpen, setLogsOpen] = useState(false);
+  const statusLabel =
+    item.status === "queued" ? "排队中" : item.status === "running" ? "运行中" : item.status === "completed" ? "已完成" : "失败";
+  const preview = active
+    ? undefined
+    : (item.status === "failed" ? item.error : item.asyncResult)?.slice(0, 120);
+  const elapsed = active && item.elapsedMs != null ? formatElapsedMs(item.elapsedMs) : formatElapsed(item.createdAt);
+
+  return (
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-xl border px-3 py-2.5 transition-colors",
+        item.status === "running" && "border-[var(--kp-brand)]/25 bg-[var(--kp-brand-soft)]/40",
+        item.status === "queued" && "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]",
+        item.status === "completed" && "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]",
+        item.status === "failed" && "border-red-500/25 bg-red-500/5",
+      )}
+      data-testid="sync-task-card"
+    >
+      {item.status === "running" && (
+        <span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-[var(--kp-brand)]" />
+      )}
+      <div className="flex items-start gap-2.5">
+        <span
+          className={cn(
+            "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+            item.status === "running" && "text-[var(--kp-brand)]",
+            item.status === "queued" && "text-[var(--kp-text-3)]",
+            item.status === "completed" && "text-emerald-600",
+            item.status === "failed" && "text-red-600",
+          )}
+        >
+          {item.status === "running" ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : item.status === "queued" ? (
+            <Clock className="h-4 w-4" />
+          ) : (
+            <Check className="h-4 w-4" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-md bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-[var(--kp-text-2)]">
+              同步任务
+            </span>
+            <span
+              className={cn(
+                "text-[11px] font-medium",
+                item.status === "failed" ? "text-red-600" : item.status === "completed" ? "text-emerald-600" : "text-[var(--kp-text-3)]",
+              )}
+            >
+              {statusLabel}
+            </span>
+          </div>
+          <p className="truncate text-[13px] font-semibold text-[var(--kp-text-1)]" title={item.taskLabel}>
+            {item.taskLabel}
+          </p>
+          {preview ? <p className="line-clamp-4 text-xs leading-relaxed text-[var(--kp-text-2)]">{preview}</p> : null}
+          {active && item.logs?.length ? (
+            <div>
+              <button
+                type="button"
+                onClick={() => setLogsOpen((v) => !v)}
+                className="inline-flex items-center gap-0.5 text-[11px] text-[var(--kp-text-3)] transition hover:text-[var(--kp-text-2)]"
+              >
+                日志 {item.logs.length}
+                {logsOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+              {logsOpen && (
+                <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--kp-bg-mute)] p-2 text-[11px] text-[var(--kp-text-2)]">
+                  {item.logs.map((l) => l.message).join("\n")}
+                </pre>
+              )}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--kp-text-3)]">
+            <span>已过 {elapsed}</span>
+            <span className="font-mono">#{item.jobId.slice(0, 8)}</span>
+          </div>
+        </div>
+        {active && onCancel ? (
+          <div className="flex shrink-0 flex-col gap-0.5 opacity-70 transition group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => onCancel(item.jobId)}
+              className="rounded p-1 text-amber-600 hover:bg-amber-50"
+              title="取消"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 export function RuntimeStatusPanel({
   tab,
   onTabChange,
+  groupTab,
+  onGroupTabChange,
   pendingItems,
   consumedItems,
   heldItems = [],
+  syncTaskItems = [],
   onCancel,
   onTogglePin,
 }: RuntimeStatusPanelProps) {
@@ -752,8 +870,80 @@ export function RuntimeStatusPanel({
   const pendingCount = pendingItems.length;
   const consumedCount = consumedItems.length + heldItems.length;
 
+  // 同步任务（W-A）：进行中 = queued/running；已结束 = completed/failed
+  const syncActiveItems = useMemo(
+    () => syncTaskItems.filter((t) => t.status === "queued" || t.status === "running"),
+    [syncTaskItems],
+  );
+  const syncFinishedItems = useMemo(
+    () => syncTaskItems.filter((t) => t.status !== "queued" && t.status !== "running"),
+    [syncTaskItems],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-runtime-queue">
+      {/* 一级分组：异步队列 / 同步任务 */}
+      <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2.5 py-2">
+        <button
+          type="button"
+          data-testid="runtime-group-async"
+          onClick={() => onGroupTabChange("async")}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-xs font-medium transition",
+            groupTab === "async"
+              ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+              : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+          )}
+        >
+          异步队列
+          <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
+            {pendingCount}
+          </span>
+        </button>
+        <button
+          type="button"
+          data-testid="runtime-group-sync"
+          onClick={() => onGroupTabChange("sync")}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-xs font-medium transition",
+            groupTab === "sync"
+              ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+              : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+          )}
+        >
+          同步任务
+          {syncActiveItems.length > 0 && (
+            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
+              {syncActiveItems.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {groupTab === "sync" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2" data-testid="sync-task-list">
+          {syncTaskItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-[var(--kp-text-3)]">
+              <Clock className="h-5 w-5 opacity-40" />
+              <p className="text-xs">暂无同步任务</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <StatusSection title="进行中" count={syncActiveItems.length} emptyHint="无进行中任务">
+                {syncActiveItems.map((item) => (
+                  <SyncTaskRow key={item.jobId} item={item} onCancel={onCancel} />
+                ))}
+              </StatusSection>
+              <StatusSection title="已结束" count={syncFinishedItems.length} emptyHint="无已结束任务">
+                {syncFinishedItems.map((item) => (
+                  <SyncTaskRow key={item.jobId} item={item} />
+                ))}
+              </StatusSection>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
       <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2.5 py-2">
         <button
           type="button"
@@ -902,6 +1092,8 @@ export function RuntimeStatusPanel({
           )}
         </AnimatePresence>
       </div>
+        </>
+      )}
     </div>
   );
 }

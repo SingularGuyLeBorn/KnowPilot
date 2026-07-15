@@ -19,7 +19,7 @@ import { X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { type ChatSessionConfig, type Skill } from "@knowpilot/shared";
-import { type ChatQueueItem } from "@/lib/chatQueueTypes";
+import { type ChatQueueItem, type SyncTaskItem } from "@/lib/chatQueueTypes";
 import { ChatSettingsPanel } from "@/components/chatSettingsPanel";
 import { RuntimeStatusPanel } from "@/components/chatQueue";
 import { type SelectedSkill } from "@/components/chatInput";
@@ -45,6 +45,10 @@ export interface ChatRightPanelProps {
   // 状态页（RuntimeStatusPanel）：派生数组的 useMemo 留在 ChatView，受控注入
   runtimeSubTab: "pending" | "consumed";
   setRuntimeSubTab: (tab: "pending" | "consumed") => void;
+  // W-A 一级分组：异步队列 / 同步任务
+  runtimeGroupTab: "async" | "sync";
+  setRuntimeGroupTab: (tab: "async" | "sync") => void;
+  syncTaskItems: SyncTaskItem[];
   runtimePendingItems: ChatQueueItem[];
   runtimeConsumedItems: ChatQueueItem[];
   runtimeHeldItems: ChatQueueItem[];
@@ -70,6 +74,9 @@ export const ChatRightPanel = memo(function ChatRightPanel({
   tokenBudget,
   runtimeSubTab,
   setRuntimeSubTab,
+  runtimeGroupTab,
+  setRuntimeGroupTab,
+  syncTaskItems,
   runtimePendingItems,
   runtimeConsumedItems,
   runtimeHeldItems,
@@ -156,9 +163,12 @@ export const ChatRightPanel = memo(function ChatRightPanel({
                 <RuntimeStatusPanel
                   tab={runtimeSubTab}
                   onTabChange={setRuntimeSubTab}
+                  groupTab={runtimeGroupTab}
+                  onGroupTabChange={setRuntimeGroupTab}
                   pendingItems={runtimePendingItems}
                   consumedItems={runtimeConsumedItems}
                   heldItems={runtimeHeldItems}
+                  syncTaskItems={syncTaskItems}
                   onCancel={(jobId) => cancelAsyncJobMutate({ jobId })}
                   onTogglePin={(jobId, pinned) => pinAsyncJobMutate({ jobId, pinned })}
                 />

@@ -340,7 +340,7 @@ pnpm --filter @knowpilot/server test
 | `mcpClient.test.ts` | MCP 截断 |
 | `chatHistory.test.ts` | 扁平存储重建多轮 ReAct 消息链 |
 | `apps/web/components/__tests__/chatSidebarRender.test.tsx` | ChatSidebar memo 渲染屏障：10×50ms token 更新下函数体仅执行 1 次（W16b） |
-| `async-task-queue.test.ts` | `async_task_run/status/wait` 与队列状态 |
+| `async-task-queue.test.ts` | `async_task_run/status/wait` 与队列状态；同步任务通道（deliverToQueue=false：pull 过滤 + listSyncAsyncJobs + pullAsyncQueue.syncTasks） |
 | `capabilities.test.ts` / `platformFetch.test.ts` | 运行时能力 / 平台 fetch |
 | `circuitBreaker.test.ts` | W12：断路器三态/非法转移拒绝、MCP open 零真实连接、审批清理 cron 挂载、心跳 suspended 暂停/恢复 |
 | `e2e/blog-smoke.spec.ts` | L1 博客冒烟（/posts、/editor、/、/posts/[slug]） |
@@ -350,7 +350,7 @@ pnpm --filter @knowpilot/server test
 | `e2e/chat-mock.spec.ts` / `chat-thinking-mock.spec.ts` / `chat-tool-error-mock.spec.ts` | Mock E2E（全离线，MOCK_LLM/MCP/NATIVE_TOOLS） |
 | `e2e/chat-subagent-resume-mock.spec.ts` | 刷新 / 切 session / 切 Agent 后父会话流式恢复 |
 | `e2e/chat-resume-mock.spec.ts` | 普通对话刷新后最终结果不丢失 |
-| `e2e/async-task-mock.spec.ts` | Mock 异步任务结果自动插入对话 |
+| `e2e/async-task-mock.spec.ts` | Mock 异步任务结果自动插入对话；右栏状态页两级分组（异步队列/同步任务） |
 | `e2e/theme-toggle-mock.spec.ts` | Navbar 主题切换 light/dark |
 | `e2e/post-trash.spec.ts` | 文章回收站删除/恢复（try/finally 强制清理） |
 | `e2e/ui-components.spec.ts` | 通用组件冒烟 |

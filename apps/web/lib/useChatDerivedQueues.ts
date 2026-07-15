@@ -14,6 +14,7 @@
 import { useMemo } from "react";
 import {
   type ChatQueueItem,
+  type SyncTaskItem,
   mergeAsyncPollIntoQueue,
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
@@ -37,6 +38,8 @@ type ConsumedDelivery = {
 // pullAsyncQueue 的 poll 数据：mergeAsyncPollIntoQueue 入参与 consumed 已消费列表的交叉
 type AsyncQueueData = Parameters<typeof mergeAsyncPollIntoQueue>[1] & {
   consumed?: ConsumedDelivery[];
+  /** W-A 同步任务（deliverToQueue=false）：只展示，纯透传 */
+  syncTasks?: SyncTaskItem[];
 };
 
 // 共享取值守卫：poll 数据可能为 undefined 或不含 consumed，统一兜底为空数组
@@ -100,5 +103,11 @@ export function useChatDerivedQueues({
     [asyncResultQueue, userQueue],
   );
 
-  return { asyncResultQueue, runtimePendingItems, runtimeHeldItems, runtimeConsumedItems, queue };
+  // 右栏「同步任务」：deliverToQueue=false 的任务，纯透传只展示（无 pin/消费/气泡发送）
+  const syncTaskItems = useMemo(
+    () => asyncQueueQuery.data?.syncTasks ?? [],
+    [asyncQueueQuery.data],
+  );
+
+  return { asyncResultQueue, runtimePendingItems, runtimeHeldItems, runtimeConsumedItems, queue, syncTaskItems };
 }

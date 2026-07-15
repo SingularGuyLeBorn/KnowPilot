@@ -16,6 +16,8 @@ export async function seedAsyncQueueTasks(
   opts: {
     running?: Array<{ taskLabel: string }>;
     pendingDeliveries?: Array<{ taskLabel: string; asyncResult: string }>;
+    /** W-A 同步任务（deliverToQueue=false）：结果走 tool return，不进异步队列 */
+    syncTasks?: Array<{ taskLabel: string; status: "running" | "success" | "failed"; asyncResult?: string; error?: string }>;
   },
 ) {
   const agentSnapshot = {
@@ -32,6 +34,7 @@ export async function seedAsyncQueueTasks(
       name: `[async] ${item.taskLabel}`,
       type: "oneshot",
       status: "running",
+      sessionId,
       input: {
         kind: ASYNC_KIND,
         sessionId,
@@ -52,6 +55,7 @@ export async function seedAsyncQueueTasks(
       name: `[async] ${item.taskLabel}`,
       type: "oneshot",
       status: "success",
+      sessionId,
       input: {
         kind: ASYNC_KIND,
         sessionId,
@@ -61,6 +65,28 @@ export async function seedAsyncQueueTasks(
         delivered: false,
       },
       output: { asyncResult: item.asyncResult },
+    });
+    if (!res.success || !res.data) {
+      throw new Error(res.error?.message ?? `task.create 失败: ${item.taskLabel}`);
+    }
+    ids.push(res.data.id);
+  }
+
+  for (const item of opts.syncTasks ?? []) {
+    const res = await trpcMutate<ApiResult<{ id: string }>>("task.create", {
+      name: `[async] ${item.taskLabel}`,
+      type: "oneshot",
+      status: item.status,
+      sessionId,
+      input: {
+        kind: ASYNC_KIND,
+        sessionId,
+        task: item.taskLabel,
+        taskLabel: item.taskLabel,
+        agentSnapshot,
+        deliverToQueue: false,
+      },
+      output: item.status === "failed" ? { error: item.error ?? "任务失败" } : { asyncResult: item.asyncResult },
     });
     if (!res.success || !res.data) {
       throw new Error(res.error?.message ?? `task.create 失败: ${item.taskLabel}`);

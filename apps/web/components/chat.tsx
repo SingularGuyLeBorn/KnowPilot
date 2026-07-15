@@ -468,9 +468,11 @@ export function ChatView() {
 
   // 【派生队列群】asyncResultQueue / runtime 三态 / 显示队列的 useMemo 派生收拢于
   // useChatDerivedQueues（W13e 拆出；useMemo 体与 deps 逐字未改）
-  const { asyncResultQueue, runtimePendingItems, runtimeHeldItems, runtimeConsumedItems, queue } =
+  const { asyncResultQueue, runtimePendingItems, runtimeHeldItems, runtimeConsumedItems, queue, syncTaskItems } =
     useChatDerivedQueues({ asyncOverlays, asyncQueueQuery, consumedDeliveries, userQueue });
   const [runtimeSubTab, setRuntimeSubTab] = useState<"pending" | "consumed">("pending");
+  // W-A 右栏「状态」一级分组（不持久化）
+  const [runtimeGroupTab, setRuntimeGroupTab] = useState<"async" | "sync">("async");
 
   // R19：agent.list 已裁剪 systemPrompt；Chat 用 agent.getById 取 systemPrompt/model，与 list metadata 合并
   const selectedAgentMeta = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
@@ -1088,6 +1090,9 @@ export function ChatView() {
         tokenBudget={tokenBudget}
         runtimeSubTab={runtimeSubTab}
         setRuntimeSubTab={setRuntimeSubTab}
+        runtimeGroupTab={runtimeGroupTab}
+        setRuntimeGroupTab={setRuntimeGroupTab}
+        syncTaskItems={syncTaskItems}
         runtimePendingItems={runtimePendingItems}
         runtimeConsumedItems={runtimeConsumedItems}
         runtimeHeldItems={runtimeHeldItems}

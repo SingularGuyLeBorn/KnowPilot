@@ -54,6 +54,25 @@ export interface ChatQueueItem {
   sourceType?: string;
 }
 
+/**
+ * 右栏「同步任务」元素（W-A）—— 服务端 SyncAsyncJob（asyncJobManager.listSyncAsyncJobs）一一对应。
+ * waitForResult=true 的任务：结果走 tool return，不进异步队列/气泡，此列表只展示
+ * （无 pin、无消费、无气泡发送）。
+ */
+export interface SyncTaskItem {
+  jobId: string;
+  taskLabel: string;
+  status: "queued" | "running" | "completed" | "failed";
+  elapsedMs?: number;
+  asyncResult?: string;
+  error?: string;
+  logs?: ChatQueueItem["logs"];
+  createdAt: number;
+  finishedAt?: number;
+  subagentSessionId?: string;
+  sourceType?: string;
+}
+
 export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = false): string {
   const parts: string[] = [];
 
