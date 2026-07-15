@@ -135,6 +135,15 @@ export class SessionStreamHub {
     };
   }
 
+  /** 运行中流总数（全部活跃 run；Q2「交互 running」口径由任务池用 occupancy claim 过滤，见 asyncJobOrchestrator） */
+  runningCount(): number {
+    let n = 0;
+    for (const run of this.runs.values()) {
+      if (!run.completed) n++;
+    }
+    return n;
+  }
+
   listRunning(): RunningSessionInfo[] {
     const result: RunningSessionInfo[] = [];
     for (const [sessionId, run] of this.runs) {

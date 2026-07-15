@@ -12,6 +12,7 @@ import { getAllowedToolsForTier } from "../../swarmPermissionGuard.js";
 import { resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "../../loop/setup.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
 import { getSwarmOrchestrator, type SwarmTaskOutcome } from "../../swarmOrchestrator.js";
+import { getAsyncJobOrchestrator } from "../../asyncJobOrchestrator.js";
 import { agentCreateSubTool, agentSendMessageTool } from "./swarm.js";
 import {
   coerceToolBoolean,
@@ -40,13 +41,25 @@ export function isSubagentSessionSettled(opts: {
   return !opts.streaming && !opts.runStarting && opts.nestedActive === 0 && opts.queuedItems === 0;
 }
 
+/** spawn Phase A 产物：子 Agent / 主会话 / 跟踪 Task 的 ids */
+interface SpawnPrepared {
+  subagentId: string;
+  subagentName: string;
+  subagentSessionId?: string;
+  jobId?: string;
+}
+
 /** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
  *  底层实现 = agent_create_sub + agent_send_message({ autoRun: true })。
  *  waitForResult=false（默认）= 异步投递：工具立刻返回，子 Agent 自行 report_back 进父异步队列。
  *  waitForResult=true = 同步等待：父流挂起，子会话空闲后系统抓取最后一条 assistant（不强制 report_back）。
  *
- *  W10：入口统一走 SwarmOrchestrator 中介者（权限校验 + 60s spawn 去重 + 审计）；
- *  执行体 spawnSubagentExecute 保留原语义（同步等待/report_back/跟踪 Task 均不动）。 */
+ *  v8 TP-1 执行入口统一收口（W10 中介者骨架不动）：
+ *  - waitForResult=false：**入池**（schedule pool，Q1 全局池是容量权威）。pool slot 从起流
+ *    持有到 hub.waitFor(子会话) 解析；queued 期间跟踪 Task / 子会话状态落 queued（右栏可见「agent 未启动」）。
+ *  - waitForResult=true：**槽位血缘继承**（Q4）走 inline 不占新槽——claimOccupancy 把子会话
+ *    hub 流从「hub 交互 running」中剔除（父槽位让渡），父流挂起轮询语义不动。
+ *  执行体 spawnSubagent* 保留原语义（同步等待/report_back/跟踪 Task 均不动）。 */
 async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.sessionId || !ctx.agentSnapshot) {
     throw new Error("spawn_subagent 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
@@ -54,50 +67,150 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   const task = String(args.task || "");
   if (!task.trim()) throw new Error("spawn_subagent 需要 task（子 Agent 任务描述）");
   const waitForResult = coerceToolBoolean(args.waitForResult);
+  const parentSnapshot = ctx.agentSnapshot;
+
+  // TP-1：maxSubagentsPerSession 数量检查（manual path 此前无检查——
+  // 与 startAsyncAgentTask isSubagent 分支同口径：running/queued 的子会话计数）
+  if (ctx.prisma) {
+    const limit = ctx.config.asyncJobs.maxSubagentsPerSession;
+    const activeCount = await ctx.prisma.chatSession.count({
+      where: { parentSessionId: ctx.sessionId, kind: "subagent", status: { in: ["running", "queued"] } },
+    });
+    if (activeCount >= limit) {
+      throw new Error(`已达到每会话子 Agent 上限（${limit}），请先停止或等待已有子 Agent 完成后再派生。`);
+    }
+  }
 
   const orchestrator = getSwarmOrchestrator(ctx.config, ctx.services);
-  const handle = await orchestrator.dispatch({
-    origin: "spawn_subagent",
-    // inline：spawn 编排段同步执行（其真执行在 SessionStreamHub，不进并发池，语义不动）
-    schedule: "inline",
-    sessionId: ctx.sessionId,
-    taskLabel: task.slice(0, 80),
-    // 中介者权限校验层（与 executeNativeTool 工具层同源输入，纵深防御；tier 缺省时与工具层一致跳过）
-    guard: ctx.agentSnapshot.tier
-      ? {
-          toolName: "spawn_subagent",
-          args,
-          ctx: {
-            agentTier: ctx.agentSnapshot.tier,
-            agentId: ctx.agentSnapshot.id,
-            agentWorkspaceId: ctx.agentSnapshot.workspaceId,
-            inToolRound: ctx.inToolRound ?? false,
-          },
-        }
-      : undefined,
-    dedup: { agentId: ctx.agentSnapshot.id, taskText: task },
-    execute: () => spawnSubagentExecute(args, ctx, task, waitForResult),
-  });
+  // 中介者权限校验层（与 executeNativeTool 工具层同源输入，纵深防御；tier 缺省时与工具层一致跳过）
+  const guard = parentSnapshot.tier
+    ? {
+        toolName: "spawn_subagent",
+        args,
+        ctx: {
+          agentTier: parentSnapshot.tier,
+          agentId: parentSnapshot.id,
+          agentWorkspaceId: parentSnapshot.workspaceId,
+          inToolRound: ctx.inToolRound ?? false,
+        },
+      }
+    : undefined;
 
-  const payload = { ...(handle.outcome?.attach ?? {}) };
-  if (handle.deduped) {
+  // 经闭包写入：用 getter 防 TS 控制流把 prepared 窄化为 null
+  let preparedSlot: SpawnPrepared | null = null;
+  const getPrepared = () => preparedSlot;
+  const setPrepared = (p: SpawnPrepared) => {
+    preparedSlot = p;
+    return p;
+  };
+  const buildAttach = (p: SpawnPrepared) => ({
+    success: true,
+    agentId: p.subagentId,
+    subagentName: p.subagentName,
+    subagentSessionId: p.subagentSessionId,
+    jobId: p.jobId,
+  });
+  const dedupedPayload = (handle: { jobId: string; outcome?: SwarmTaskOutcome }) => {
+    const payload = { ...(handle.outcome?.attach ?? {}) };
     return {
       ...payload,
       deduped: true,
       message: `60 秒去重窗口内检测到同 Agent 同任务的重复派生，已返回已有子 Agent 任务（jobId=${(payload.jobId as string | undefined) ?? handle.jobId}），未重复创建。`,
     };
+  };
+
+  if (!waitForResult) {
+    // ── 异步投递：入池。准备段落 queued 载体；执行体获槽后起流，槽位持有到子会话本轮流结束 ──
+    let handle;
+    try {
+      handle = await orchestrator.dispatch({
+        origin: "spawn_subagent",
+        schedule: "pool",
+        sessionId: ctx.sessionId,
+        workspaceId: parentSnapshot.workspaceId ?? null,
+        taskLabel: task.slice(0, 80),
+        timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
+        guard,
+        dedup: {
+          agentId: parentSnapshot.id,
+          taskText: task,
+          // 早结 attach：dedup 命中方拿 ids 即返回，不等池任务收口（fire-and-forget）
+          earlyOutcome: () => ({ status: "success", attach: buildAttach(getPrepared()!) }),
+        },
+        prepare: async () => {
+          const p = setPrepared(await spawnSubagentPrepare(args, ctx, task, false));
+          // 池任务 id = 跟踪 Task id：session.stop / async_task_cancel 同源可取消
+          return {
+            jobId: p.jobId,
+            metadata: p.subagentSessionId ? { subagentSessionId: p.subagentSessionId } : undefined,
+          };
+        },
+        execute: (signal) => spawnSubagentPooledRun(ctx, task, getPrepared()!, signal),
+      });
+    } catch (err) {
+      // 入池拒绝（maxQueued 满）/准备失败：回收 Phase A 产物，避免永远挂在 queued
+      const msg = err instanceof Error ? err.message : String(err);
+      const prepared = getPrepared();
+      if (prepared?.jobId) {
+        await ctx.services.task
+          .update({ id: prepared.jobId, status: "failed", finishedAt: new Date(), output: { error: msg } } as any)
+          .catch(() => undefined);
+      }
+      if (prepared?.subagentSessionId) {
+        await ctx.services.session.update({ id: prepared.subagentSessionId, status: "failed" } as any).catch(() => undefined);
+      }
+      throw err;
+    }
+
+    if (handle.deduped) return dedupedPayload(handle);
+    const p = getPrepared()!;
+    const queued = handle.status === "queued";
+    return {
+      ...buildAttach(p),
+      jobId: p.jobId ?? handle.jobId,
+      status: handle.status,
+      message: queued
+        ? `子 Agent「${p.subagentName}」(agentId=${p.subagentId}) 已派生并入池排队（全局任务池槽位紧张，获槽后自动启动）；完成后结果会投递回父会话。请牢记返回的 agentId / jobId，勿编造 ID。`
+        : `子 Agent「${p.subagentName}」(agentId=${p.subagentId}) 已派生并启动，任务完成后结果会投递回父会话。请牢记返回的 agentId / jobId，勿编造 ID。`,
+    };
   }
-  return payload;
+
+  // ── 同步等待：槽位血缘继承（Q4）。inline 不占新槽；claim 子会话占用（父槽位让渡），
+  // 子会话 hub 流不计入全局占用（Q2 口径），同一血缘同时只有一个执行体占槽 ──
+  const pool = getAsyncJobOrchestrator(ctx.config);
+  let releaseClaim: () => void = () => {};
+  let handle;
+  try {
+    handle = await orchestrator.dispatch({
+      origin: "spawn_subagent",
+      schedule: "inline",
+      sessionId: ctx.sessionId,
+      taskLabel: task.slice(0, 80),
+      guard,
+      dedup: { agentId: parentSnapshot.id, taskText: task },
+      prepare: async () => {
+        const p = setPrepared(await spawnSubagentPrepare(args, ctx, task, true));
+        if (p.subagentSessionId) releaseClaim = pool.claimOccupancy(p.subagentSessionId);
+        return { jobId: p.jobId };
+      },
+      execute: () => spawnSubagentSyncWait(ctx, task, getPrepared()!),
+    });
+  } finally {
+    releaseClaim();
+  }
+
+  if (handle.deduped) return dedupedPayload(handle);
+  return { ...(handle.outcome?.attach ?? {}) };
 }
 
-/** spawn_subagent 执行体（W10 抽为 SwarmOrchestrator dispatch 的 execute 闭包；逻辑与原实现逐行一致） */
-async function spawnSubagentExecute(
+/** spawn Phase A（dispatch 准备段）：创建/解析子 Agent + find-or-create 主会话 + 跟踪 Task。
+ *  dedup 命中时不运行（不重复创建）；pool 路径载体落 queued（右栏可见「agent 未启动」）。 */
+async function spawnSubagentPrepare(
   args: Record<string, unknown>,
   ctx: NativeToolContext,
   task: string,
   waitForResult: boolean,
-): Promise<SwarmTaskOutcome> {
-  // dispatch 包装层已校验 agentSnapshot 存在；此处防御性兜底以满足类型收窄
+): Promise<SpawnPrepared> {
   const parentSnapshot = ctx.agentSnapshot;
   if (!parentSnapshot) throw new Error("spawn_subagent 需要 Agent 上下文");
 
@@ -147,6 +260,9 @@ async function spawnSubagentExecute(
   // 必须在此 find-or-create：prepareAgentRun（agent_send_message autoRun 内）在后台异步建会话，
   // 若这里只 findFirst，首次 spawn 时拿到 undefined → 同步等待循环失去完成判定锚点（只能等 10 分钟超时）。
   // prepareAgentRun 侧 findFirst 会复用此会话（isMainSession 唯一），不会重复创建。
+  // pool 路径落 queued（右栏可见「agent 未启动」），获槽后 prepareAgentRun 置 running；
+  // inline 路径维持 running（同步等待语义不变）。
+  const initialStatus = waitForResult ? "running" : "queued";
   let mainSession = await ctx.prisma?.chatSession.findFirst({
     where: { agentId: subagentId, isMainSession: true, status: { not: "deleted" } },
   });
@@ -161,7 +277,7 @@ async function spawnSubagentExecute(
       isMainSession: true,
       kind: "subagent",
       parentSessionId: ctx.sessionId ?? undefined,
-      status: "running",
+      status: initialStatus,
       taskDescription: task.slice(0, 200),
     });
     if (created.success && created.data) {
@@ -170,10 +286,19 @@ async function spawnSubagentExecute(
           where: { id: (created.data as { id: string }).id },
         })) ?? null;
     }
+  } else if (!waitForResult) {
+    // 复用已有主会话的 pool 路径：获槽前落 queued；busy 场景下 prepareAgentRun 会按 FIFO 接管状态
+    try {
+      await ctx.services.session.update({ id: mainSession.id, status: "queued" } as any);
+      mainSession = { ...mainSession, status: "queued" };
+    } catch {
+      /* 状态补齐失败不阻塞派生 */
+    }
   }
   const subagentSessionId = mainSession?.id;
 
-  // 2. 立即派活。同步等待时创建跟踪 Task（deliverToQueue=false，结果走 tool return）。
+  // 2. 跟踪 Task：pool 路径 queued + queuedAt；inline 路径 running + startedAt（原语义）。
+  // 同步等待时 deliverToQueue=false（结果走 tool return，不进异步队列）。
   let jobId: string | undefined;
   if (ctx.sessionId && typeof ctx.services.task?.create === "function") {
     try {
@@ -181,9 +306,10 @@ async function spawnSubagentExecute(
       const created = await ctx.services.task.create({
         name: `[async] ${taskLabel}`,
         type: "async_agent",
-        status: "running",
+        status: initialStatus,
         sessionId: ctx.sessionId,
-        startedAt: new Date(),
+        queuedAt: waitForResult ? null : new Date(),
+        startedAt: waitForResult ? new Date() : null,
         input: {
           kind: "async_agent",
           sessionId: ctx.sessionId,
@@ -213,6 +339,87 @@ async function spawnSubagentExecute(
     }
   }
 
+  return { subagentId, subagentName, subagentSessionId, jobId };
+}
+
+/** spawn 池内执行体（waitForResult=false）：获槽后起流，槽位持有到 hub.waitFor(子会话) 解析。
+ *  跟踪 Task 的终态仍由 report_back 桥接回写（语义不动）；本闭包只覆盖「本轮流」的槽位占用，
+ *  子空闲后的 drain 续跑由消费通道各自占槽。 */
+async function spawnSubagentPooledRun(
+  ctx: NativeToolContext,
+  task: string,
+  prepared: SpawnPrepared,
+  signal: AbortSignal,
+): Promise<SwarmTaskOutcome> {
+  const { subagentId, subagentName, subagentSessionId, jobId } = prepared;
+  const failOutcome = async (error: string): Promise<SwarmTaskOutcome> => {
+    if (jobId) {
+      await ctx.services.task
+        .update({ id: jobId, status: "failed", finishedAt: new Date(), output: { error } } as any)
+        .catch(() => undefined);
+    }
+    return { status: "failed", error, attach: { success: false, agentId: subagentId, subagentName, subagentSessionId, jobId, error } };
+  };
+
+  // 获槽起流：跟踪 Task queued → running（右栏从「agent 未启动」转「执行中」）
+  if (jobId) {
+    await ctx.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any).catch(() => undefined);
+  }
+
+  // Q2 不双算：子会话起流期间 claim 占用（池槽位已计）；release 前 waitFor 已解析，无窗口
+  const releaseClaim = subagentSessionId
+    ? getAsyncJobOrchestrator(ctx.config).claimOccupancy(subagentSessionId)
+    : () => {};
+  try {
+    if (signal.aborted) return failOutcome("异步任务已取消（未启动）");
+
+    const sendResult = await agentSendMessageTool(
+      {
+        toAgentId: subagentId,
+        content: task,
+        messageType: "command",
+        autoRun: true,
+        // 始终非阻塞首轮；槽位占用在下方 waitFor 闭环
+        waitForRun: false,
+      },
+      ctx,
+    );
+    if ("error" in sendResult || !sendResult.success) {
+      return failOutcome((sendResult as { error?: string }).error ?? "派活失败");
+    }
+
+    // 中断/超时（session.stop / async_task_cancel / 池超时）：abort 真正停子会话流
+    if (subagentSessionId) {
+      const stop = () => getStreamHub()?.stop(subagentSessionId);
+      if (signal.aborted) stop();
+      else signal.addEventListener("abort", stop, { once: true });
+    }
+
+    // 槽位持有到子会话本轮流结束（TP-1）
+    const hub = getStreamHub();
+    if (hub && subagentSessionId) {
+      await hub.waitFor(subagentSessionId);
+    }
+    if (signal.aborted) return failOutcome("异步任务已取消");
+    return { status: "success", attach: { success: true, agentId: subagentId, subagentName, subagentSessionId, jobId } };
+  } catch (err) {
+    return failOutcome(err instanceof Error ? err.message : String(err));
+  } finally {
+    releaseClaim();
+  }
+}
+
+/** spawn 同步等待执行体（waitForResult=true，inline 血缘让渡）：父流挂起。完成条件：
+ *  1) 子 Agent 主动 report_back → 跟踪 Task success/failed（提前结束，不进异步队列）
+ *  2) 否则：子会话曾运行过（或暖机后）且判定空闲（isSubagentSessionSettled：无流、无「即将起流」
+ *     标记、无子会话内 running/queued Task、无待处理队列项）→ 抓取最后一条 assistant */
+async function spawnSubagentSyncWait(
+  ctx: NativeToolContext,
+  task: string,
+  prepared: SpawnPrepared,
+): Promise<SwarmTaskOutcome> {
+  const { subagentId, subagentName, subagentSessionId, jobId } = prepared;
+
   const sendResult = await agentSendMessageTool(
     {
       toAgentId: subagentId,
@@ -239,25 +446,6 @@ async function spawnSubagentExecute(
     return { status: "failed", attach: { error: (sendResult as { error?: string }).error ?? "派活失败" } };
   }
 
-  if (!waitForResult) {
-    return {
-      status: "success",
-      attach: {
-        success: true,
-        agentId: subagentId,
-        subagentName,
-        subagentSessionId,
-        jobId,
-        status: jobId ? "running" : undefined,
-        message: `子 Agent「${subagentName}」(agentId=${subagentId}) 已派生并启动，任务完成后结果会投递回父会话。请牢记返回的 agentId / jobId，勿编造 ID。`,
-      },
-    };
-  }
-
-  // 同步等待：父流挂起。完成条件：
-  // 1) 子 Agent 主动 report_back → 跟踪 Task success/failed（提前结束，不进异步队列）
-  // 2) 否则：子会话曾运行过（或暖机后）且判定空闲（isSubagentSessionSettled：无流、无「即将起流」
-  //    标记、无子会话内 running/queued Task、无待处理队列项）→ 抓取最后一条 assistant
   const waitDeadline = Date.now() + 10 * 60 * 1000;
   const waitStartedAt = Date.now();
   let finalContent = "";

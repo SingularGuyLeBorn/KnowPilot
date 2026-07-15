@@ -363,6 +363,7 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
       });
       const drainPromise = enqueueSuperiorQueueDrain({
         sessionId: fx.subSessionId,
+        config: ctx.config,
         services: ctx.services,
         runItem: async () => {
           await gate;

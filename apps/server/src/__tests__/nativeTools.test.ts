@@ -1364,6 +1364,8 @@ describe("native:spawn_subagent 同步等待系统抓取", () => {
           status: "running",
         }),
         findUnique: vi.fn(),
+        // v8 TP-1：spawn maxSubagentsPerSession 检查走 count（mock 无活跃子会话）
+        count: vi.fn().mockResolvedValue(0),
       },
       agent: {
         findUnique: vi.fn().mockResolvedValue({

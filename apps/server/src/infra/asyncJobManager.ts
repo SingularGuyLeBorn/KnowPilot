@@ -20,7 +20,7 @@ import type { StoredToolCall } from "./chatHistory.js";
 import { waitMs } from "./shellRunner.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { prisma } from "../db.js";
-import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
+import { getAsyncJobOrchestrator, consumeQueuedTimeoutMs } from "./asyncJobOrchestrator.js";
 import { getSwarmOrchestrator } from "./swarmOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
@@ -189,19 +189,25 @@ export interface SuperiorQueueDrainItem {
  * 只处理 kind=superior 项：user 项归前端 drain 管（可能带附件/skill，服务端重放会丢语义），
  * 遇到即停——前端 drain 消费后会连带处理后续 superior 项；下次发消息也会重新注册本 drain。
  *
+ * v8 TP-1 池准入：drain 续跑属「交付消费」高优通道（runConsumeJob 队首优先 + 全局占用约束）。
+ * 不变量：禁止「等槽无限挂起消费链」——等槽超时则放弃本轮 drain，队列项未 claim、
+ * 原样留在持久队列（不丢），下次触发（busy/idle 再入队或前端 drain）续上。
+ *
  * 已知限制：链是进程内的，服务端重启后丢失；pending 队列项跨重启留存于 SQLite，
  * 靠下次发送（busy/idle 都会再入队并触发本 drain）或前端打开会话 drain 兜底
  * （与 AGENTS.md「运行中任务随重启丢失」一致）。
  */
 export function enqueueSuperiorQueueDrain(options: {
   sessionId: string;
+  config: AppConfig;
   services: ServiceContainer;
   runItem: (item: SuperiorQueueDrainItem) => Promise<void>;
 }): Promise<void> {
-  const { sessionId, services, runItem } = options;
+  const { sessionId, config, services, runItem } = options;
   return enqueueSessionAutoConsume(sessionId, async () => {
     const hub = getStreamHub();
     if (!hub) return;
+    const orchestrator = getAsyncJobOrchestrator(config);
     try {
       for (;;) {
         if (hub.isRunning(sessionId)) {
@@ -211,17 +217,34 @@ export function enqueueSuperiorQueueDrain(options: {
         const head = (await services.sessionQueueItem.listBySession(sessionId))[0];
         if (!head) return;
         if (head.kind !== "superior") return;
-        const claim = await services.sessionQueueItem.consume(head.id);
-        if (!claim.claimed) continue;
-        // S2：认领后同步宣告「即将起流」——consume 删行到 runItem 内 hub.start 之间无 await 交错点
-        // （本 continuation 同步执行到 mark），spawn 同步等待轮询据此判定「忙」，不会抓前轮旧 assistant
-        hub.markRunStarting(sessionId);
-        try {
-          await runItem({ id: head.id, kind: head.kind, content: head.content });
-        } catch (err) {
-          console.warn(`[asyncJobManager] superior 队列 drain 处理失败 session=${sessionId} item=${head.id}:`, err);
-        } finally {
-          hub.unmarkRunStarting(sessionId);
+        // 池准入放在 claim 之前：未获槽不 claim，队列项原样留待下次触发（不丢）
+        const admitted = await orchestrator.runConsumeJob({
+          jobId: `drain-${head.id}`,
+          sessionId,
+          queuedTimeoutMs: consumeQueuedTimeoutMs(config),
+          execute: async () => {
+            const claim = await services.sessionQueueItem.consume(head.id);
+            if (!claim.claimed) return;
+            // S2：认领后同步宣告「即将起流」——consume 删行到 runItem 内 hub.start 之间无 await 交错点
+            // （本 continuation 同步执行到 mark），spawn 同步等待轮询据此判定「忙」，不会抓前轮旧 assistant
+            hub.markRunStarting(sessionId);
+            // Q2 不双算：drain 续跑流挂在池槽位下，不计入 hub 交互 running
+            const releaseClaim = orchestrator.claimOccupancy(sessionId);
+            try {
+              await runItem({ id: head.id, kind: head.kind, content: head.content });
+            } catch (err) {
+              console.warn(`[asyncJobManager] superior 队列 drain 处理失败 session=${sessionId} item=${head.id}:`, err);
+            } finally {
+              releaseClaim();
+              hub.unmarkRunStarting(sessionId);
+            }
+          },
+        });
+        if (!admitted) {
+          console.warn(
+            `[asyncJobManager] superior 队列 drain 等槽超时放弃本轮 session=${sessionId} item=${head.id}（队列项未动，留待下次触发）`,
+          );
+          return;
         }
       }
     } catch (err) {
@@ -265,20 +288,6 @@ export async function autoConsumeAsyncDelivery(options: {
     return "skipped";
   }
 
-  // W14：原子 CLAIM 与 AgentMessage 投递记账（delivered）同事务——认领成功即完成对账，
-  // 不存在「Task 已 delivered 但旁路邮箱仍 pending」的中间态。记账按 taskRef=jobId 幂等。
-  const claimed = await prisma.$transaction(async (tx) => {
-    const c = await tx.task.updateMany({
-      where: { id: jobId, delivered: false, pinned: false },
-      data: { delivered: true, deliveredAt: new Date() },
-    });
-    if (c.count > 0) {
-      await markAgentMessageDeliveredByTaskRef(tx, jobId);
-    }
-    return c;
-  });
-  if (claimed.count === 0) return "skipped";
-
   const output = parseAsyncOutput(task.output);
   const failed = status === "failed" || task.status === "failed";
   const message = failed
@@ -312,19 +321,59 @@ export async function autoConsumeAsyncDelivery(options: {
 
   enqueueSessionAutoConsume(sessionId, async () => {
     try {
-      if (hub.isRunning(sessionId)) {
-        await hub.waitFor(sessionId);
-      }
-      const started = await hub.startIfNotRunning(sessionId, body, (emit, signal) =>
-        chatAgentStream(services, config, body, invokeTrpc, emit, signal),
-      );
-      if (started) {
-        hub.pushExternalEvent(sessionId, {
-          type: "session_run_started",
-          sessionId,
-          reason: "async_auto_consume",
-          jobId,
-        });
+      // v8 TP-1：交付消费走高优池准入（队首优先 + 全局占用约束）。
+      // 不变量：禁止「等槽无限挂起消费链」——等槽超时未获槽则放弃本轮；
+      // CLAIM 在获槽后执行，未获槽则 delivered 保持 false，delivery 原样留待下次触发（不丢）。
+      // hub 交互流不依赖池槽位 ⇒ 等 hub 空闲不会与池形成循环等待。
+      const orchestrator = getAsyncJobOrchestrator(config);
+      const admitted = await orchestrator.runConsumeJob({
+        jobId: `consume-${jobId}`,
+        sessionId,
+        queuedTimeoutMs: consumeQueuedTimeoutMs(config),
+        execute: async () => {
+          if (hub.isRunning(sessionId)) {
+            await hub.waitFor(sessionId);
+          }
+          // 获槽后才 CLAIM（W14：原子 CLAIM 与 AgentMessage 投递记账同事务——认领成功即完成对账，
+          // 不存在「Task 已 delivered 但旁路邮箱仍 pending」的中间态。记账按 taskRef=jobId 幂等）。
+          // 与前端 consumeQueue 竞态：落选方 count=0 静默跳过。
+          const claimed = await prisma.$transaction(async (tx) => {
+            const c = await tx.task.updateMany({
+              where: { id: jobId, delivered: false, pinned: false },
+              data: { delivered: true, deliveredAt: new Date() },
+            });
+            if (c.count > 0) {
+              await markAgentMessageDeliveredByTaskRef(tx, jobId);
+            }
+            return c;
+          });
+          if (claimed.count === 0) return;
+
+          // Q2 不双算：续跑流挂在池槽位下，不计入 hub 交互 running
+          const releaseClaim = orchestrator.claimOccupancy(sessionId);
+          try {
+            const started = await hub.startIfNotRunning(sessionId, body, (emit, signal) =>
+              chatAgentStream(services, config, body, invokeTrpc, emit, signal),
+            );
+            if (started) {
+              hub.pushExternalEvent(sessionId, {
+                type: "session_run_started",
+                sessionId,
+                reason: "async_auto_consume",
+                jobId,
+              });
+              // 槽位持有到续跑结束（与 spawn 池任务同口径）
+              await hub.waitFor(sessionId);
+            }
+          } finally {
+            releaseClaim();
+          }
+        },
+      });
+      if (!admitted) {
+        console.warn(
+          `[asyncJobManager] autoConsume 等槽超时放弃本轮 session=${sessionId} job=${jobId}（delivery 未 CLAIM，留待下次触发）`,
+        );
       }
     } catch (err) {
       console.warn(`[asyncJobManager] autoConsume 续跑失败 session=${sessionId} job=${jobId}:`, err);
@@ -1023,44 +1072,54 @@ function buildAsyncExecute(
       if (subagentSessionId) {
         const hub = getStreamHub();
         if (hub) {
-          const hubInput = {
-            sessionId: subagentSessionId,
-            agentId: agentSnapshot.id,
-            message: task,
-          };
-          const started = await hub.startIfNotRunning(subagentSessionId, hubInput, async (emit, hubSignal) => {
-            try {
-              const loop = await runAgentLoopStream({
-                ...runLoopOptions,
-                llmOptions: {},
-                emit,
-                signal: hubSignal,
-              });
-              await finalizeSuccess(loop, emit);
-            } catch (runErr) {
-              await finalizeFailure(runErr, emit);
-            }
-          });
-          if (started) {
-            signal.addEventListener("abort", () => hub.stop(subagentSessionId), { once: true });
-            // 通知前端挂接子会话流（切到子页时不必等刷新）
-            hub.pushExternalEvent(subagentSessionId, {
-              type: "session_run_started",
+          // Q2 不双算：池内任务起流的子会话在起流前 claim 占用（池槽位已计 runningGlobal，
+          // 不 claim 则同一执行体被 hub 交互 running 再计一次）。claim → startIfNotRunning 之间
+          // 无 await 交错点；release 在 waitFor 解析之后（completed=true 已不计交互 running），无窗口。
+          // 本闭包是所有 isSubagent 池任务（session.spawn / rerun / retry）唯一执行体工厂，
+          // 不变量收在此处，不靠各入口自觉。
+          const releaseClaim = getAsyncJobOrchestrator(config).claimOccupancy(subagentSessionId);
+          try {
+            const hubInput = {
               sessionId: subagentSessionId,
-              reason: "subagent_start",
-              jobId,
+              agentId: agentSnapshot.id,
+              message: task,
+            };
+            const started = await hub.startIfNotRunning(subagentSessionId, hubInput, async (emit, hubSignal) => {
+              try {
+                const loop = await runAgentLoopStream({
+                  ...runLoopOptions,
+                  llmOptions: {},
+                  emit,
+                  signal: hubSignal,
+                });
+                await finalizeSuccess(loop, emit);
+              } catch (runErr) {
+                await finalizeFailure(runErr, emit);
+              }
             });
-            if (parentSessionId) {
-              hub.pushExternalEvent(parentSessionId, {
+            if (started) {
+              signal.addEventListener("abort", () => hub.stop(subagentSessionId), { once: true });
+              // 通知前端挂接子会话流（切到子页时不必等刷新）
+              hub.pushExternalEvent(subagentSessionId, {
                 type: "session_run_started",
                 sessionId: subagentSessionId,
                 reason: "subagent_start",
                 jobId,
               });
+              if (parentSessionId) {
+                hub.pushExternalEvent(parentSessionId, {
+                  type: "session_run_started",
+                  sessionId: subagentSessionId,
+                  reason: "subagent_start",
+                  jobId,
+                });
+              }
             }
+            await hub.waitFor(subagentSessionId);
+            return;
+          } finally {
+            releaseClaim();
           }
-          await hub.waitFor(subagentSessionId);
-          return;
         }
       }
 
@@ -1126,7 +1185,8 @@ export async function startAsyncAgentTask(options: {
 
   const orchestrator = getAsyncJobOrchestrator(options.config);
   const stats = orchestrator.getStats();
-  const willQueue = stats.runningGlobal >= stats.limits.maxGlobal;
+  // 初始状态标签与池准入口径同源（Q2：全局占用 = 池内 running + hub 交互 running）
+  const willQueue = stats.runningGlobal + stats.hubInteractiveRunning >= stats.limits.maxGlobal;
   const initialStatus = willQueue ? "queued" : "running";
 
   const parentAgent = await prisma.agent.findUnique({ where: { id: options.agent.id } }).catch(() => null);
@@ -1256,40 +1316,54 @@ export async function startAsyncAgentTask(options: {
   // W10：统一走 SwarmOrchestrator 中介者（并发池/结果聚合/Log 审计公共骨架）；
   // 执行体仍是 buildAsyncExecute（轮询/推送/落库/子会话状态同步语义不动）。
   const swarm = getSwarmOrchestrator(options.config, options.services);
-  await swarm.dispatch({
-    origin: isSubagent ? "spawn_subagent" : "async_task_run",
-    schedule: "pool",
-    sessionId: options.sessionId,
-    jobId,
-    taskLabel,
-    timeoutMs: options.timeoutMs,
-    metadata: subagentSessionId ? { subagentSessionId } : undefined,
-    execute: async (signal) => {
-      await buildAsyncExecute(
-        options.config,
-        options.services,
-        jobId,
-        task,
-        agentSnapshot,
-        0,
-        subagentSessionId,
-        mode,
-        options.toolCall,
-        options.shareToSessionIds,
-        options.sessionId,
-      )(signal);
-      // 结果聚合：buildAsyncExecute 内部已落库/投递，读回终态供中介者审计
-      try {
-        const row = await options.services.task.getById(jobId);
-        return row?.status === "failed"
-          ? { status: "failed" as const, error: parseAsyncOutput(row?.output).error }
-          : { status: "success" as const };
-      } catch {
-        // 任务行已被清理（测试/手动删除）：不阻塞聚合收口
-        return { status: "success" as const };
-      }
-    },
-  });
+  try {
+    await swarm.dispatch({
+      origin: isSubagent ? "spawn_subagent" : "async_task_run",
+      schedule: "pool",
+      sessionId: options.sessionId,
+      workspaceId: agentSnapshot.workspaceId ?? null,
+      jobId,
+      taskLabel,
+      timeoutMs: options.timeoutMs,
+      metadata: subagentSessionId ? { subagentSessionId } : undefined,
+      execute: async (signal) => {
+        await buildAsyncExecute(
+          options.config,
+          options.services,
+          jobId,
+          task,
+          agentSnapshot,
+          0,
+          subagentSessionId,
+          mode,
+          options.toolCall,
+          options.shareToSessionIds,
+          options.sessionId,
+        )(signal);
+        // 结果聚合：buildAsyncExecute 内部已落库/投递，读回终态供中介者审计
+        try {
+          const row = await options.services.task.getById(jobId);
+          return row?.status === "failed"
+            ? { status: "failed" as const, error: parseAsyncOutput(row?.output).error }
+            : { status: "success" as const };
+        } catch {
+          // 任务行已被清理（测试/手动删除）：不阻塞聚合收口
+          return { status: "success" as const };
+        }
+      },
+    });
+  } catch (err) {
+    // 入池拒绝（maxQueued 满）：回收 Task 行，错误上抛（LLM 工具返回「队列已满，请稍后再派」）
+    await options.services.task
+      .update({
+        id: jobId,
+        status: "failed",
+        finishedAt: new Date(),
+        output: { error: err instanceof Error ? err.message : String(err) } satisfies AsyncTaskOutput,
+      } as any)
+      .catch(() => undefined);
+    throw err;
+  }
 
   return {
     jobId,
@@ -1337,37 +1411,51 @@ export async function startAsyncSleepTask(options: {
   }
   const jobId = (created.data as { id: string }).id;
   const orchestrator = getAsyncJobOrchestrator(options.config);
-  orchestrator.enqueue({
-    jobId,
-    sessionId: options.sessionId,
-    timeoutMs: ms + 10_000,
-    execute: async (signal) => {
-      try {
-        await options.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
-      } catch {
-        /* 状态回写失败不阻塞 */
-      }
-      const { aborted } = await waitMs(ms, signal);
-      if (aborted || signal.aborted) {
+  try {
+    orchestrator.enqueue({
+      jobId,
+      sessionId: options.sessionId,
+      timeoutMs: ms + 10_000,
+      execute: async (signal) => {
+        try {
+          await options.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
+        } catch {
+          /* 状态回写失败不阻塞 */
+        }
+        const { aborted } = await waitMs(ms, signal);
+        if (aborted || signal.aborted) {
+          await options.services.task.update({
+            id: jobId,
+            status: "failed",
+            finishedAt: new Date(),
+            output: { error: "定时器已取消" } satisfies AsyncTaskOutput,
+          } as any).catch(() => undefined);
+          return;
+        }
         await options.services.task.update({
           id: jobId,
-          status: "failed",
+          status: "success",
           finishedAt: new Date(),
-          output: { error: "定时器已取消" } satisfies AsyncTaskOutput,
-        } as any).catch(() => undefined);
-        return;
-      }
-      await options.services.task.update({
+          output: { asyncResult: `定时时间${seconds}s到了，请继续完成任务` } satisfies AsyncTaskOutput,
+        } as any);
+        await notifyAsyncDelivery(options.sessionId, jobId, "done", taskLabel, options.services, options.config);
+      },
+    });
+  } catch (err) {
+    // 入池拒绝（maxQueued 满）：回收 Task 行，错误上抛
+    await options.services.task
+      .update({
         id: jobId,
-        status: "success",
+        status: "failed",
         finishedAt: new Date(),
-        output: { asyncResult: `定时时间${seconds}s到了，请继续完成任务` } satisfies AsyncTaskOutput,
-      } as any);
-      await notifyAsyncDelivery(options.sessionId, jobId, "done", taskLabel, options.services, options.config);
-    },
-  });
+        output: { error: err instanceof Error ? err.message : String(err) } satisfies AsyncTaskOutput,
+      } as any)
+      .catch(() => undefined);
+    throw err;
+  }
   const stats = orchestrator.getStats();
-  const willQueue = stats.runningGlobal >= stats.limits.maxGlobal;
+  // 初始状态标签与池准入口径同源（Q2：全局占用 = 池内 running + hub 交互 running）
+  const willQueue = stats.runningGlobal + stats.hubInteractiveRunning >= stats.limits.maxGlobal;
   return {
     jobId,
     status: willQueue ? "queued" : "running",
@@ -1537,24 +1625,37 @@ export async function retryAsyncJob(
   const newJobId = (created.data as { id: string }).id;
   const orchestrator = getAsyncJobOrchestrator(config);
 
-  orchestrator.enqueue({
-    jobId: newJobId,
-    sessionId: input.sessionId,
-    timeoutMs: input.timeoutMs,
-    execute: buildAsyncExecute(
-      config,
-      services,
-      newJobId,
-      input.task,
-      agentSnapshot,
-      retryCount,
-      input.subagentSessionId,
-      input.toolCall ? "tool" : "llm",
-      input.toolCall,
-      input.shareToSessionIds,
-      input.sessionId,
-    ),
-  });
+  try {
+    orchestrator.enqueue({
+      jobId: newJobId,
+      sessionId: input.sessionId,
+      timeoutMs: input.timeoutMs,
+      execute: buildAsyncExecute(
+        config,
+        services,
+        newJobId,
+        input.task,
+        agentSnapshot,
+        retryCount,
+        input.subagentSessionId,
+        input.toolCall ? "tool" : "llm",
+        input.toolCall,
+        input.shareToSessionIds,
+        input.sessionId,
+      ),
+    });
+  } catch (err) {
+    // 入池拒绝（maxQueued 满）：回收重试 Task 行，错误上抛
+    await services.task
+      .update({
+        id: newJobId,
+        status: "failed",
+        finishedAt: new Date(),
+        output: { error: err instanceof Error ? err.message : String(err) } satisfies AsyncTaskOutput,
+      } as any)
+      .catch(() => undefined);
+    throw err;
+  }
 
   return {
     jobId: newJobId,
@@ -1568,7 +1669,16 @@ export interface AsyncQueueStats {
   runningGlobal: number;
   maxGlobal: number;
   maxPerSession: number;
+  /** per-workspace 公平配额（0 = 不限） */
+  maxPerWorkspace: number;
+  /** 排队总数上限 */
+  maxQueued: number;
   taskTimeoutMs: number;
+  /** Q2 口径：hub 交互 running（未被池/血缘 claim 的活跃流），准入 = runningGlobal + 它 < maxGlobal */
+  hubInteractiveRunning: number;
+  runningByWorkspace: Record<string, number>;
+  /** 排队任务的阻塞原因分类计数（哪个上限卡住） */
+  queuedByReason: Record<"global" | "session" | "workspace", number>;
 }
 
 /** 获取异步任务队列实时统计（全局排队数与运行数） */
@@ -1579,6 +1689,11 @@ export function getAsyncQueueStats(config: AppConfig): AsyncQueueStats {
     runningGlobal: stats.runningGlobal,
     maxGlobal: stats.limits.maxGlobal,
     maxPerSession: stats.limits.maxPerSession,
+    maxPerWorkspace: stats.limits.maxPerWorkspace,
+    maxQueued: stats.limits.maxQueued,
     taskTimeoutMs: stats.limits.taskTimeoutMs,
+    hubInteractiveRunning: stats.hubInteractiveRunning,
+    runningByWorkspace: stats.runningByWorkspace,
+    queuedByReason: stats.queuedByReason,
   };
 }

@@ -308,7 +308,14 @@ describe("W14 AgentMessage 投递记账回写", () => {
         config: ctx.config,
       });
       expect(first).toBe("started");
-      expect((await prisma.agentMessage.findUnique({ where: { id: agentMsg.id } }))?.status).toBe("delivered");
+      // v8 TP-1：CLAIM 移到池准入之后（未获槽不 CLAIM，delivery 不丢）——「started」表示已入消费链，
+      // 记账（AgentMessage delivered）在获槽后的 CLAIM 事务里落，轮询等待其完成
+      await vi.waitFor(
+        async () => {
+          expect((await prisma.agentMessage.findUnique({ where: { id: agentMsg.id } }))?.status).toBe("delivered");
+        },
+        { timeout: 8000, interval: 50 },
+      );
 
       // 二次认领：原子 CLAIM 拒绝 → skipped；AgentMessage 状态不被重复改写
       const second = await autoConsumeAsyncDelivery({

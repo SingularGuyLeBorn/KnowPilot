@@ -316,6 +316,7 @@ async function prepareAgentRun(
         const { enqueueSuperiorQueueDrain } = await import("../../asyncJobManager.js");
         const drainPromise = enqueueSuperiorQueueDrain({
           sessionId: mainSession.id,
+          config: ctx.config,
           services: ctx.services,
           runItem: async (item) => {
             const next = await prepareAgentRun(targetAgentId, item.content, ctx, { fromDrain: true });

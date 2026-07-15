@@ -46,6 +46,8 @@ export interface SwarmTaskSpec {
   taskLabel: string;
   /** 并发池 per-session 限流维度 / 审计归属 */
   sessionId: string;
+  /** per-workspace 公平配额维度（maxPerWorkspace > 0 时生效）；缺省 = 不参与 workspace 配额 */
+  workspaceId?: string | null;
   /** 已有 Task 记录 id（async/heartbeat 路径由入口自建）；缺省由中介者生成 */
   jobId?: string;
   /**
@@ -64,8 +66,14 @@ export interface SwarmTaskSpec {
     args: Record<string, unknown>;
     ctx: PermissionCheckContext;
   };
-  /** 60s 短窗口去重：同 (agentId, hash(taskText)) 重复 dispatch 直接返回已有 task */
-  dedup?: { agentId: string; taskText: string; windowMs?: number };
+  /** 60s 短窗口去重：同 (agentId, hash(taskText)) 重复 dispatch 直接返回已有 task。
+   *  earlyOutcome：准备段完成后立即生成的轻量结果（ids 等）——pool 任务 fire-and-forget，
+   *  dedup 命中方拿它即返回，不等执行收口（可能数分钟）。 */
+  dedup?: { agentId: string; taskText: string; windowMs?: number; earlyOutcome?: () => SwarmTaskOutcome };
+  /** 准备段（可选）：guard/去重之后、调度之前执行；throw = 拒绝（去重键放行，错误上抛）。
+   *  用于入池前落「queued 可见」的载体（跟踪 Task / 子会话），不放进 execute（execute 获槽后才运行）。
+   *  返回的 jobId/metadata 覆盖默认值——池任务 id = 跟踪 Task id（session.stop / async_task_cancel 同源可取消）。 */
+  prepare?: () => Promise<{ jobId?: string; metadata?: { subagentSessionId?: string } } | void>;
   /** 真正执行体：入口既有逻辑闭包，自落库后回传聚合结果 */
   execute: (signal: AbortSignal) => Promise<SwarmTaskOutcome>;
 }
@@ -90,6 +98,8 @@ interface DedupEntry {
   /** 在途任务的收口 promise：去重命中方 await 它拿到同一份结果（幂等消费，不赌时序） */
   completion?: Promise<SwarmTaskOutcome>;
   outcome?: SwarmTaskOutcome;
+  /** 准备段收口：dedup 命中方 await 它拿早结 attach（pool fire-and-forget 不等执行收口） */
+  prepared?: Promise<void>;
 }
 
 function errorMessage(err: unknown): string {
@@ -127,8 +137,10 @@ export class SwarmOrchestrator {
           jobId: existing.jobId,
           taskLabel: spec.taskLabel,
         });
-        // 在途任务：等同一次 dispatch 收口，返回同一份结果（幂等，不重复执行）
-        const outcome = existing.completion ? await existing.completion : existing.outcome;
+        // 在途任务：等同一次 dispatch 收口，返回同一份结果（幂等，不重复执行）。
+        // pool 命中：先等准备段（快，仅 DB），有早结 outcome 立即返回——不等执行收口（fire-and-forget，可能数分钟）。
+        if (existing.prepared) await existing.prepared.catch(() => {});
+        const outcome = existing.outcome ?? (existing.completion ? await existing.completion : undefined);
         return { jobId: existing.jobId, origin: spec.origin, status: "duplicate", deduped: true, outcome };
       }
     }
@@ -147,9 +159,42 @@ export class SwarmOrchestrator {
         completion,
       });
     }
+
+    // 2.5 准备段（可选）：入池前落「queued 可见」载体；失败 = 放行去重键 + 收口失败 + 上抛
+    let finalJobId = jobId;
+    let resolvedMetadata = spec.metadata;
+    if (spec.prepare) {
+      const preparedPromise = (async () => {
+        const preparedResult = await spec.prepare!();
+        if (preparedResult?.jobId) {
+          finalJobId = preparedResult.jobId;
+          if (dedupKey) {
+            const entry = this.dedupEntries.get(dedupKey);
+            if (entry) entry.jobId = preparedResult.jobId;
+          }
+        }
+        if (preparedResult?.metadata) resolvedMetadata = preparedResult.metadata;
+        // 早结 attach：dedup 命中方不等执行收口即可拿到 ids（pool fire-and-forget）
+        if (dedupKey && spec.dedup?.earlyOutcome) {
+          this.settleDedupOutcome(dedupKey, spec.dedup.earlyOutcome());
+        }
+      })();
+      if (dedupKey) {
+        const entry = this.dedupEntries.get(dedupKey);
+        if (entry) entry.prepared = preparedPromise;
+      }
+      try {
+        await preparedPromise;
+      } catch (err) {
+        if (dedupKey) this.dedupEntries.delete(dedupKey);
+        settleCompletion({ status: "failed", error: errorMessage(err) });
+        throw err;
+      }
+    }
+
     this.audit("info", "swarm_dispatch", `已受理 ${spec.origin} 任务「${spec.taskLabel}」（${spec.schedule === "pool" ? "并发池" : "同步"}）`, {
       origin: spec.origin,
-      jobId,
+      jobId: finalJobId,
       sessionId: spec.sessionId,
       taskLabel: spec.taskLabel,
       schedule: spec.schedule,
@@ -161,9 +206,9 @@ export class SwarmOrchestrator {
         const outcome = await spec.execute(new AbortController().signal);
         this.settleDedupOutcome(dedupKey, outcome);
         settleCompletion?.(outcome);
-        this.auditOutcome(spec, jobId, outcome);
+        this.auditOutcome(spec, finalJobId, outcome);
         return {
-          jobId,
+          jobId: finalJobId,
           origin: spec.origin,
           status: outcome.status === "success" ? "completed" : "failed",
           deduped: false,
@@ -175,36 +220,46 @@ export class SwarmOrchestrator {
         if (dedupKey) this.dedupEntries.delete(dedupKey);
         const outcome: SwarmTaskOutcome = { status: "failed", error: errorMessage(err) };
         settleCompletion?.(outcome);
-        this.auditOutcome(spec, jobId, outcome);
+        this.auditOutcome(spec, finalJobId, outcome);
         throw err;
       }
     }
 
     // pool：共享 AsyncJobOrchestrator 并发池
     const pool = getAsyncJobOrchestrator(this.deps.config);
-    pool.enqueue({
-      jobId,
-      sessionId: spec.sessionId,
-      timeoutMs: spec.timeoutMs,
-      metadata: spec.metadata,
-      execute: async (signal) => {
-        let outcome: SwarmTaskOutcome;
-        try {
-          outcome = await spec.execute(signal);
-        } catch (err) {
-          // 入口闭包一般已自捕异常落库；此兜底保证聚合/审计/去重必然收口
-          // （pool 对 execute 的 reject 只静默吞掉，不兜底就会漏审计、去重键永远停留在在途态）
-          outcome = { status: "failed", error: errorMessage(err) };
-        }
-        this.settleDedupOutcome(dedupKey, outcome);
-        settleCompletion?.(outcome);
-        this.auditOutcome(spec, jobId, outcome);
-      },
-    });
+    try {
+      pool.enqueue({
+        jobId: finalJobId,
+        sessionId: spec.sessionId,
+        workspaceId: spec.workspaceId,
+        timeoutMs: spec.timeoutMs,
+        metadata: resolvedMetadata,
+        execute: async (signal) => {
+          let outcome: SwarmTaskOutcome;
+          try {
+            outcome = await spec.execute(signal);
+          } catch (err) {
+            // 入口闭包一般已自捕异常落库；此兜底保证聚合/审计/去重必然收口
+            // （pool 对 execute 的 reject 只静默吞掉，不兜底就会漏审计、去重键永远停留在在途态）
+            outcome = { status: "failed", error: errorMessage(err) };
+          }
+          this.settleDedupOutcome(dedupKey, outcome);
+          settleCompletion?.(outcome);
+          this.auditOutcome(spec, finalJobId, outcome);
+        },
+      });
+    } catch (err) {
+      // 入池拒绝（maxQueued 满）：去重键立即放行（允许稍后重派），completion 以失败收口，错误上抛给调用方
+      if (dedupKey) this.dedupEntries.delete(dedupKey);
+      const outcome: SwarmTaskOutcome = { status: "failed", error: errorMessage(err) };
+      settleCompletion?.(outcome);
+      this.auditOutcome(spec, finalJobId, outcome);
+      throw err;
+    }
     return {
-      jobId,
+      jobId: finalJobId,
       origin: spec.origin,
-      status: pool.isRunning(jobId) ? "running" : "queued",
+      status: pool.isRunning(finalJobId) ? "running" : "queued",
       deduped: false,
       completion,
     };
