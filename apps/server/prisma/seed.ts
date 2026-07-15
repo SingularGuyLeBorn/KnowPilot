@@ -1,5 +1,5 @@
 /**
- * Prisma Seed — 初始化示例文章数据 (SQLite 兼容版)
+ * Prisma Seed — 初始化示例文章数据（SQLite）
  */
 
 import { PrismaClient } from "@prisma/client";

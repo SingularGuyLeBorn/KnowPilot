@@ -16,7 +16,7 @@ import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
 import { getTaskScheduler } from "./infra/taskScheduler.js";
 import { recoverStaleAsyncJobs, recoverStaleRuns, cleanupDeliveredAsyncJobs, wireAsyncJobPush } from "./infra/asyncJobManager.js";
-import { closeBrowser } from "./infra/metablog/webScraper.js";
+import { closeSharedBrowser } from "./infra/metablog/browserPool.js";
 import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
 import { syncSearchEnvFromConfig } from "./infra/nativeTools.js";
@@ -294,7 +294,7 @@ const handleShutdown = () => {
   taskScheduler.stop();
   heartbeatEngineRef?.stop();
   streamHub.destroy();
-  void closeBrowser().catch(() => undefined);
+  void closeSharedBrowser().catch(() => undefined);
   server.close(() => {
     prisma.$disconnect().then(() => {
       console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");

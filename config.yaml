@@ -42,8 +42,6 @@ compact:
   memoryFlush:
     enabled: true
     maxFacts: 5
-  # 已废弃：仅文档参考；实际阈值 = triggerRatio × 模型 context window
-  charThreshold: 48000
 
 # 后台任务池（async_task_run / spawn 跟踪任务等共享）
 # 注意：池只控制并发调度（queued → running）；是否「异步投递」由工具的 waitForResult 决定。

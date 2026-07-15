@@ -2,7 +2,7 @@
  * 统一配置管理
  *
  * 集中管理路径、端口、LLM、搜索与第三方集成配置。
- * 环境变量优先读取无前缀键，其次 VITE_ 前缀（兼容前端 .env 写法）。
+ * 环境变量优先读取无前缀键，其次 VITE_ 前缀（本机 .env 沿用 VITE_ 前缀写法）。
  */
 
 import fs from "fs";
@@ -12,7 +12,7 @@ import { z } from "zod";
 import { DEFAULT_LLM_MODEL, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 import { buildEffectiveSearchPriorityString } from "./metablog/search/priority.js";
 
-/** config.yaml llm 段：弹性调用参数（缺失时给默认值，向后兼容旧 config.yaml） */
+/** config.yaml llm 段：弹性调用参数（缺省时走默认值） */
 const LlmYamlSchema = z.object({
   /** 全局默认模型 id（空 = 回退 shared 常量 DEFAULT_LLM_MODEL；env DEFAULT_LLM_MODEL 优先） */
   defaultModel: z.string().default(""),
@@ -21,7 +21,7 @@ const LlmYamlSchema = z.object({
   fallbackModels: z.array(z.string()).default([]),
 });
 
-/** config.yaml reflection 段：W7 反思（缺失时给默认值，向后兼容旧 config.yaml） */
+/** config.yaml reflection 段：W7 反思（缺省时走默认值） */
 const ReflectionYamlSchema = z.object({
   enabled: z.boolean().default(false),
   maxRounds: z.coerce.number().int().min(0).default(1),
@@ -155,8 +155,6 @@ export interface AppConfig {
     enabled: boolean;
     /** 占模型 context window 的触发比例（0.1–0.95） */
     triggerRatio: number;
-    /** @deprecated 仅作文档参考；实际阈值由 triggerRatio × model window 计算 */
-    charThreshold: number;
     keepRecent: number;
     microCompact: {
       enabled: boolean;
@@ -538,7 +536,6 @@ export function createAppConfig(): AppConfig {
         0.95,
         Math.max(0.05, parseFloat(String(compactConfig.triggerRatio ?? "0.75"))),
       ),
-      charThreshold: Math.max(8000, parseInt(String(compactConfig.charThreshold ?? "48000"), 10)),
       keepRecent: Math.max(2, parseInt(String(compactConfig.keepRecent ?? "8"), 10)),
       microCompact: {
         enabled: String((compactConfig.microCompact as Record<string, unknown> | undefined)?.enabled ?? "true") !== "false",

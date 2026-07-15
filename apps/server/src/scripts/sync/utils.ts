@@ -9,7 +9,7 @@ import { load as loadYaml } from "js-yaml";
 
 /**
  * 定位 content 子目录（自适应执行路径）
- * 优先从当前工作目录找，找不到则向上回退两级（兼容 pnpm 脚本在 apps/server 下执行）
+ * 优先从当前工作目录找，找不到则向上回退两级（适配 pnpm 脚本在 apps/server 下执行时 cwd 不同）
  */
 export function getContentDir(dirName: string): string {
   let dir = path.resolve(process.cwd(), `content/${dirName}`);

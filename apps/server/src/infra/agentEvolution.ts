@@ -110,7 +110,7 @@ export async function optimizeAgentPrompt(
       return { success: false, reason: "不能优化超级 Agent 的 prompt" };
     }
 
-    // 查该 Agent 最近 20 条经验（global 兼容历史数据 + 本 Agent scope）
+    // 查该 Agent 最近 20 条经验（global 共享经验 + 本 Agent scope）
     const repo = createMemoryRepository(services);
     const experiences = await repo.read({
       types: [MEMORY_TYPES.EXPERIENCE],
@@ -186,7 +186,7 @@ export async function generateSkillFromExperience(
   skillDescription: string,
 ): Promise<{ success: boolean; skillId?: string; reason?: string }> {
   try {
-    // 查该 Agent 的经验（global 兼容历史数据 + 本 Agent scope）
+    // 查该 Agent 的经验（global 共享经验 + 本 Agent scope）
     const repo = createMemoryRepository(services);
     const experiences = await repo.read({
       types: [MEMORY_TYPES.EXPERIENCE],

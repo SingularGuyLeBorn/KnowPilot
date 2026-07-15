@@ -10,7 +10,7 @@
  */
 
 import type { Page, BrowserContext } from "playwright";
-import { closeSharedBrowser, getSharedBrowser, isSharedBrowserReady } from "./browserPool.js";
+import { getSharedBrowser, isSharedBrowserReady } from "./browserPool.js";
 import {
   PW_SCROLL_HALF,
   PW_EXTRACT_METADATA,
@@ -63,9 +63,6 @@ const DEFAULT_TIMEOUT = 30_000;
 const DEFAULT_CONCURRENCY = 3;
 
 // ==================== 核心函数 ====================
-
-/** @deprecated 使用 closeSharedBrowser，保留别名供 index 导出 */
-export const closeBrowser = closeSharedBrowser;
 
 function extractMetadata(page: Page): Promise<Record<string, string>> {
   return page.evaluate(PW_EXTRACT_METADATA);

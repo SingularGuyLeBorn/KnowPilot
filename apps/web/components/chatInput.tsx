@@ -169,7 +169,6 @@ export const ChatInputArea = memo(function ChatInputArea({
     const res = await ocrMutation.mutateAsync({
       base64,
       mimeType: att.mimeType,
-      chatSupportsVision: supportsVision,
     });
     if (!res.success || !res.data?.text?.trim()) {
       const msg =

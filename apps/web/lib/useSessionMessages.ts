@@ -329,7 +329,7 @@ export type UseSessionMessagesResult = {
 
 /**
  * 订阅某会话的消息列表。
- * 返回语义化字段，禁止伪造 messagesInfinite 兼容对象。
+ * 返回语义化字段，禁止伪造 messagesInfinite 外形对象。
  */
 export function useSessionMessages(sessionId: string | null | undefined): UseSessionMessagesResult {
   const store = getStore();

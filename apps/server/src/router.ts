@@ -295,7 +295,6 @@ const agentRouter = router({
       z.object({
         base64: z.string().min(1),
         mimeType: z.string().default("image/png"),
-        chatSupportsVision: z.boolean().default(false),
         visionModelId: z.string().optional(),
       }),
     )
@@ -304,7 +303,6 @@ const agentRouter = router({
         const result = await extractTextFromImage(ctx.config, {
           base64: input.base64,
           mimeType: input.mimeType,
-          chatSupportsVision: input.chatSupportsVision,
           visionModelId: input.visionModelId,
         });
         return success({ data: result, operation: "ocr", entity: "agent" });

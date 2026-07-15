@@ -305,9 +305,13 @@ export function PostTreeNav({ className }: { className?: string }) {
     try {
       const saved = localStorage.getItem(EXPANDED_KEY);
       if (saved) {
-        // 兼容旧格式（数组=展开的key列表）→ 转为 Map（key=true）
-        const arr = JSON.parse(saved) as string[];
-        return new Map(arr.map((k) => [k, true]));
+        // 存储格式与 persistExpanded 写入一致：{ key: boolean } 对象
+        const parsed = JSON.parse(saved) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return new Map(
+            Object.entries(parsed as Record<string, unknown>).filter((e): e is [string, boolean] => typeof e[1] === "boolean"),
+          );
+        }
       }
       return new Map();
     } catch {

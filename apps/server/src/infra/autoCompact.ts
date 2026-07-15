@@ -14,21 +14,15 @@ import type { AgentStreamEvent } from "./agentStream.js";
 import {
   DEFAULT_COMPACT_KEEP_RECENT,
   DEFAULT_COMPACT_TRIGGER_RATIO,
-  DEFAULT_LLM_MODEL,
   DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS,
   DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS,
   resolveCompactCharThreshold,
 } from "@knowpilot/shared";
 import { flushMemoriesBeforeCompact } from "./memoryFlush.js";
 
-/** @deprecated 兼容旧检测；新摘要使用 buildCompactBoundaryMarker */
+/** 摘要内容标记：压缩边界消息的正文前缀（边界行由 buildCompactBoundaryMarker 生成） */
 export const SUMMARY_MARKER = "[此前对话摘要 — 自动压缩]";
 export const COMPACT_BOUNDARY_PREFIX = "[kp-compact-boundary:";
-
-export const DEFAULT_COMPACT_CHAR_THRESHOLD = resolveCompactCharThreshold(
-  DEFAULT_LLM_MODEL,
-  DEFAULT_COMPACT_TRIGGER_RATIO,
-);
 
 export { DEFAULT_COMPACT_KEEP_RECENT };
 
@@ -48,7 +42,6 @@ export function getCompactSettings(config: AppConfig) {
   return {
     enabled: compact.enabled !== false,
     triggerRatio: Math.min(0.95, Math.max(0.05, compact.triggerRatio ?? DEFAULT_COMPACT_TRIGGER_RATIO)),
-    charThreshold: Math.max(8_000, compact.charThreshold ?? DEFAULT_COMPACT_CHAR_THRESHOLD),
     keepRecent: Math.max(2, compact.keepRecent ?? DEFAULT_COMPACT_KEEP_RECENT),
     microCompactEnabled: compact.microCompact?.enabled !== false,
     microCompactToolMaxChars: Math.max(
@@ -307,7 +300,6 @@ export async function compactSessionHistory(
       compact: {
         enabled: true,
         triggerRatio: base.triggerRatio,
-        charThreshold: 1,
         keepRecent: base.keepRecent,
         microCompact: {
           enabled: base.microCompactEnabled,

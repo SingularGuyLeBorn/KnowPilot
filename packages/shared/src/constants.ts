@@ -142,14 +142,14 @@ export const DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS = 4_000;
 /** DeepSeek 厂商 id（config.llm.providers key、provider 嗅探、credential key 共用） */
 export const LLM_PROVIDER_DEEPSEEK = "deepseek";
 
-/** 内置模型 id（与下方 CHAT_MODELS 注册表对齐；legacy id 由 llmClient 映射到 V4 Flash） */
+/** 内置模型 id（与下方 CHAT_MODELS 注册表对齐；旧 id 由 llmClient 映射到 V4 Flash） */
 export const LLM_MODEL_IDS = {
   DEEPSEEK_V4_FLASH: "deepseek-v4-flash",
   DEEPSEEK_V4_PRO: "deepseek-v4-pro",
   DEEPSEEK_VL2: "deepseek-vl2",
-  /** legacy：映射到 V4 Flash 非思考 */
+  /** 旧 id：映射到 V4 Flash 非思考 */
   DEEPSEEK_CHAT: "deepseek-chat",
-  /** legacy：映射到 V4 Flash 思考 */
+  /** 旧 id：映射到 V4 Flash 思考 */
   DEEPSEEK_REASONER: "deepseek-reasoner",
 } as const;
 
@@ -169,8 +169,6 @@ export interface ChatModelOption {
   contextWindowTokens?: number;
   /** 支持 thinking.type enabled/disabled */
   supportsThinking?: boolean;
-  /** @deprecated 使用 supportsThinking + enableReasoning */
-  supportsReasoning?: boolean;
   /** 旧版 reasoner：强制思考模式 */
   reasoningRequired?: boolean;
   defaultTemperature?: number;
@@ -189,7 +187,6 @@ export const CHAT_MODELS: ChatModelOption[] = [
     provider: LLM_PROVIDER_DEEPSEEK,
     contextWindowTokens: 128_000,
     supportsThinking: true,
-    supportsReasoning: true,
     supportsVision: false,
     ocrFallback: true,
     inputHint: "纯文本模型 · 图片将 OCR 识别后以文字附在消息中发送",
@@ -201,7 +198,6 @@ export const CHAT_MODELS: ChatModelOption[] = [
     provider: LLM_PROVIDER_DEEPSEEK,
     contextWindowTokens: 128_000,
     supportsThinking: true,
-    supportsReasoning: true,
     supportsVision: false,
     ocrFallback: true,
     inputHint: "纯文本模型 · 图片将 OCR 识别后以文字附在消息中发送",
@@ -223,7 +219,6 @@ export const CHAT_MODELS: ChatModelOption[] = [
     label: "DeepSeek Chat（旧 ID → V4 Flash 非思考）",
     provider: LLM_PROVIDER_DEEPSEEK,
     supportsThinking: true,
-    supportsReasoning: true,
     defaultTemperature: 0.7,
   },
   {
@@ -231,11 +226,10 @@ export const CHAT_MODELS: ChatModelOption[] = [
     label: "DeepSeek Reasoner（旧 ID → V4 Flash 思考）",
     provider: LLM_PROVIDER_DEEPSEEK,
     supportsThinking: true,
-    supportsReasoning: true,
     reasoningRequired: true,
     defaultTemperature: 0.7,
   },
-  { id: "moonshot-v1-auto", label: "Kimi Auto", provider: "kimi", supportsReasoning: true, supportsVision: true, inputHint: "多模态 · 支持图片与文本", defaultTemperature: 0.6 },
+  { id: "moonshot-v1-auto", label: "Kimi Auto", provider: "kimi", supportsThinking: true, supportsVision: true, inputHint: "多模态 · 支持图片与文本", defaultTemperature: 0.6 },
   {
     id: "kimi",
     label: "Kimi",

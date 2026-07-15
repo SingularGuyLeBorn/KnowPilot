@@ -2,7 +2,7 @@
  * sync-free-keys.ts — 从 GitHub 免费 API Key 项目同步 key 到 Credential 表
  *
  * 来源：https://github.com/alistaitsacle/free-llm-api-keys
- * 该项目每天 3-5 次更新免费 LLM API Key，兼容 OpenAI SDK 格式。
+ * 该项目每天 3-5 次更新免费 LLM API Key，符合 OpenAI SDK 格式。
  * 每个 key 有 $20-$100 预算，24-48 小时后过期。
  *
  * key 列表写在 README.md 的 markdown 表格里（非 JSON 文件），格式：
@@ -20,7 +20,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// 所有 key 共用的 OpenAI 兼容端点
+// 所有 key 共用的 OpenAI 协议端点
 const FREE_KEYS_BASE_URL = "https://aiapiv2.pekpik.com/v1";
 
 // 可通过环境变量配置代理前缀（国内访问 raw.githubusercontent.com 常被墙）
@@ -116,7 +116,7 @@ function parseExpiresDate(raw: string): string | undefined {
   return /Z|[+-]\d{2}:?\d{2}$/.test(s) ? s : `${s}Z`;
 }
 
-/** 兼容旧 JSON 格式（数组 / {keys:[]} / {providers:[{keys:[]}]} / 键值对） */
+/** 解析上游仓库出现过的多种 JSON 形态（数组 / {keys:[]} / {providers:[{keys:[]}]} / 键值对） */
 function parseJsonKeys(data: unknown): FreeKeyEntry[] {
   const out: FreeKeyEntry[] = [];
   const push = (k: Partial<FreeKeyEntry> & { key?: string; apiKey?: string }) => {

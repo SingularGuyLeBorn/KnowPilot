@@ -96,7 +96,7 @@ function toItem(raw: {
   content: string;
   type: string;
   strength: number;
-  /** Prisma 原始行是逗号分隔字符串；MemoryService.formatEntity 后是数组，两者兼容 */
+  /** Prisma 原始行是逗号分隔字符串；MemoryService.formatEntity 后是数组，本函数两种入参形态都接受 */
   keywords: string | string[];
   scope: string;
   agentId: string | null;

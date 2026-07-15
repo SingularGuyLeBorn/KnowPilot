@@ -10,7 +10,7 @@ import { loadRootEnv, getAppConfig } from "../infra/config.js";
 import { performOcrFromFile, getOcrStatus, probeOcrPython } from "../infra/ocrService.js";
 import { executeNativeTool, syncSearchEnvFromConfig } from "../infra/nativeTools.js";
 import { getServerCapabilities } from "../infra/capabilities.js";
-import { smartSearch, getEngineStatus, closeBrowser } from "../infra/metablog/index.js";
+import { smartSearch, getEngineStatus, closeSharedBrowser } from "../infra/metablog/index.js";
 import { hasSystemChrome } from "../infra/metablog/playwrightChrome.js";
 import { prisma } from "../db.js";
 import { getEventBus } from "../infra/eventBus.js";
@@ -116,7 +116,7 @@ async function runPlatformSmokesParallel(
       const index = next++;
       const spec = specs[index]!;
       if (spec.refreshBrowser) {
-        await closeBrowser().catch(() => undefined);
+        await closeSharedBrowser().catch(() => undefined);
       }
       results[index] = { label: spec.label, ...(await optionalReadArticleSmoke(spec)) };
     }
@@ -429,7 +429,7 @@ async function main() {
     );
 
     console.log("\n=== read_article (404 应抛错) ===");
-    await closeBrowser().catch(() => undefined);
+    await closeSharedBrowser().catch(() => undefined);
     try {
       await executeNativeTool(
         "read_article",
@@ -522,6 +522,6 @@ main()
     process.exit(1);
   })
   .finally(() => {
-    void closeBrowser().catch(() => undefined);
+    void closeSharedBrowser().catch(() => undefined);
     void prisma.$disconnect().catch(() => undefined);
   });

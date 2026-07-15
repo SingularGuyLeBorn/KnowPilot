@@ -364,8 +364,6 @@ export async function extractTextFromImage(
     base64: string;
     mimeType: string;
     language?: string;
-    /** 保留兼容；Chat OCR 始终走本地/云端 OCR 引擎，不走 LLM 识图 */
-    chatSupportsVision?: boolean;
     visionModelId?: string;
   },
 ): Promise<{ text: string; source: "ocr" | "vision"; engine?: string }> {

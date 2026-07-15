@@ -6,7 +6,7 @@
 import { formatToolResultHint } from "@knowpilot/shared";
 import { loadRootEnv, getAppConfig } from "../infra/config.js";
 import { executeNativeTool, syncSearchEnvFromConfig } from "../infra/nativeTools.js";
-import { closeBrowser } from "../infra/metablog/index.js";
+import { closeSharedBrowser } from "../infra/metablog/index.js";
 import { prisma } from "../db.js";
 import { getEventBus } from "../infra/eventBus.js";
 import { getServiceContainer } from "../infra/serviceContainer.js";
@@ -44,6 +44,6 @@ main()
     process.exit(1);
   })
   .finally(() => {
-    void closeBrowser().catch(() => undefined);
+    void closeSharedBrowser().catch(() => undefined);
     void prisma.$disconnect().catch(() => undefined);
   });

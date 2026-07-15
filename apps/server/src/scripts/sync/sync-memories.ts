@@ -6,8 +6,6 @@
  * 正文：content（如 frontmatter 未提供则使用正文）
  */
 
-import fs from "fs";
-import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, readNumber, getFileMtime } from "./utils.js";
@@ -23,10 +21,10 @@ interface MemoryData {
 export const memorySyncer: Syncer<MemoryData> = {
   entityName: "Memory",
   contentDirName: "memories",
-  extensions: [".md", ".json"],
+  extensions: [".md"],
 
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<MemoryData>[]> {
-    const filePaths = getFilesRecursive(contentDir, [".md", ".json"]);
+    const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<MemoryData>[] = [];
     for (const filePath of filePaths) {
       const r = await this.scanFile!(filePath, contentDir);
@@ -40,30 +38,13 @@ export const memorySyncer: Syncer<MemoryData> = {
     try {
       const slug = filePathToSlug(contentDir, filePath);
       const mtime = getFileMtime(filePath);
-      const ext = path.extname(filePath).toLowerCase();
 
-      let memoryContent: string;
-      let type: string;
-      let strength: number;
-      let keywords: string[];
-      let scope: string | undefined;
-
-      if (ext === ".json") {
-        // 兼容旧版运行时生成的 .json 记忆文件
-        const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-        memoryContent = typeof parsed.content === "string" ? parsed.content : "";
-        type = typeof parsed.type === "string" ? parsed.type : "episodic";
-        strength = typeof parsed.strength === "number" ? parsed.strength : 1.0;
-        keywords = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: unknown) => typeof k === "string") : [];
-        scope = typeof parsed.scope === "string" ? parsed.scope : undefined;
-      } else {
-        const { data, content } = parseMarkdownFile(filePath);
-        memoryContent = typeof data.content === "string" ? data.content : content.trim();
-        type = typeof data.type === "string" ? data.type : "episodic";
-        strength = readNumber(data.strength, 1.0);
-        keywords = readStringArray(data.keywords);
-        scope = typeof data.scope === "string" ? data.scope : undefined;
-      }
+      const { data, content } = parseMarkdownFile(filePath);
+      const memoryContent = typeof data.content === "string" ? data.content : content.trim();
+      const type = typeof data.type === "string" ? data.type : "episodic";
+      const strength = readNumber(data.strength, 1.0);
+      const keywords = readStringArray(data.keywords);
+      const scope = typeof data.scope === "string" ? data.scope : undefined;
 
       if (!memoryContent) {
         console.warn(`  ⚠️ [Memory 跳过] ${filePath}: content 为空`);

@@ -97,7 +97,6 @@ type Action =
   | { type: "FAIL_STREAM"; sessionId: string; message: string }
   | { type: "CLEAR_ERROR"; sessionId: string }
   | { type: "COMMIT_STREAM"; sessionId: string }
-  | { type: "CLEAR_STREAMING_UI"; sessionId: string }
   | { type: "MARK_INFLIGHT_ASSISTANT"; sessionId: string; messageId: string }
   | { type: "HYDRATE_DONE"; sessionId: string }
   | { type: "CLEAR_DRAIN_REQUEST"; sessionId: string }
@@ -247,8 +246,7 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
       });
     }
     case "COMMIT_STREAM":
-    case "CLEAR_STREAMING_UI":
-      // INV-1：done→idle 的唯一清 UI 入口（CLEAR_STREAMING_UI 保留别名兼容 abort/error 路径）
+      // INV-1：done→idle 的唯一清 UI 入口
       // 进入 idle 的转移自身触发 notifyCommit（INV-8 ②），drainRequested 视为已消费
       return set(action.sessionId, {
         ...get(action.sessionId),
@@ -535,10 +533,6 @@ export const streamLifecycleActions = {
   },
   clearError(sessionId: string) {
     getStore().dispatch({ type: "CLEAR_ERROR", sessionId });
-  },
-  /** @deprecated 优先用 commitStream / tryCommitStream；保留给 abort 等强制清 UI */
-  clearStreamingUi(sessionId: string) {
-    getStore().dispatch({ type: "CLEAR_STREAMING_UI", sessionId });
   },
   migrateStreamSession(fromKey: string, toSessionId: string) {
     getStore().dispatch({ type: "MIGRATE_STREAM_SESSION", fromKey, toSessionId });

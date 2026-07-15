@@ -30,7 +30,6 @@ export function getModelOption(modelId: string) {
     label: modelId,
     provider: isDeepSeek ? LLM_PROVIDER_DEEPSEEK : "openai",
     supportsThinking: isDeepSeek && !isVision,
-    supportsReasoning: isDeepSeek && !isVision,
     supportsVision: isVision,
     ocrFallback: isDeepSeek && !isVision,
     inputHint: isVision

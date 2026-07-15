@@ -496,59 +496,6 @@ function SimplePagination({ page, totalPages, onChange }: { page: number; totalP
   );
 }
 
-interface AsyncTaskQueueListProps {
-  items: ChatQueueItem[];
-  onCancel?: (jobId: string) => void;
-  onRetry?: (jobId: string) => void;
-  onTogglePin?: (jobId: string, pinned: boolean) => void;
-  emptyText?: string;
-}
-
-/** @deprecated 优先用 RuntimeStatusPanel；保留给兼容调用 */
-export function AsyncTaskQueueList({ items, onCancel, onRetry, onTogglePin, emptyText }: AsyncTaskQueueListProps) {
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const start = (safePage - 1) * pageSize;
-  const paginatedItems = items.slice(start, start + pageSize);
-
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-10 text-[var(--kp-text-3)]">
-        <Loader2 className="h-6 w-6 opacity-40" />
-        <p className="text-xs">{emptyText ?? "暂无运行中的异步任务"}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-2 overflow-y-auto p-3">
-        {paginatedItems.map((item) => (
-          <QueueCard
-            key={item.id}
-            item={item}
-            expanded
-            onCancel={item.kind === "async-running" && item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
-            onRetry={item.kind === "async-result" && item.jobId && onRetry ? () => onRetry(item.jobId!) : undefined}
-            onTogglePin={
-              item.kind === "async-result" && item.jobId && onTogglePin
-                ? () => onTogglePin(item.jobId!, !item.pinned)
-                : undefined
-            }
-          />
-        ))}
-      </div>
-      {totalPages > 1 && (
-        <div className="border-t border-[var(--kp-divider)] px-3 py-2">
-          <SimplePagination page={safePage} totalPages={totalPages} onChange={setPage} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 const STATUS_SPRING = { type: "spring" as const, stiffness: 320, damping: 28 };
 
 function statusKindLabel(item: ChatQueueItem): string {

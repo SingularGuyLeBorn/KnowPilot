@@ -10,9 +10,6 @@ import {
   resolveModelContextWindowTokens,
 } from "@knowpilot/shared";
 
-/** @deprecated 使用 resolveCompactCharThreshold(modelId) */
-export const COMPACT_CHAR_THRESHOLD = resolveCompactCharThreshold(DEFAULT_LLM_MODEL);
-
 export const DEFAULT_COMPACT_TRIGGER_RATIO_EXPORT = DEFAULT_COMPACT_TRIGGER_RATIO;
 
 export interface TokenBudgetSnapshot {

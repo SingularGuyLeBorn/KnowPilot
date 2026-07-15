@@ -1,5 +1,5 @@
 /**
- * OpenAI 兼容 LLM 客户端 — 支持多厂商与 Function Calling
+ * OpenAI 协议 LLM 客户端 — 支持多厂商与 Function Calling
  */
 
 import type { AppConfig, LlmProviderConfig } from "./config.js";
@@ -106,7 +106,7 @@ export function resolveProvider(config: AppConfig, modelOrProvider?: string): Ll
 
 /**
  * 解析 Agent/Session 实际使用的 model id。
- * `.env` 的 DEEPSEEK_MODEL / VITE_DEEPSEEK_MODEL 在仍为 legacy chat id 时覆盖。
+ * `.env` 的 DEEPSEEK_MODEL / VITE_DEEPSEEK_MODEL 在仍为旧 chat id 时覆盖。
  */
 export function resolveEffectiveAgentModel(config: AppConfig, model: string): string {
   const trimmed = model.trim();
@@ -131,7 +131,7 @@ export function isDeepSeekFamily(model: string): boolean {
  * 对齐 DeepSeek V4 Thinking Mode 文档：
  * - thinking.type: enabled | disabled（V4 默认 enabled）
  * - reasoning_effort: high | max
- * - legacy chat / reasoner id 映射到 V4 Flash
+ * - 旧 chat / reasoner id 映射到 V4 Flash
  */
 export function resolveDeepSeekRequest(
   config: AppConfig,
@@ -315,7 +315,7 @@ export interface StreamChunk {
   tokenUsage?: { prompt: number; completion: number; total: number };
 }
 
-/** OpenAI 兼容 SSE 流式补全（仅文本 delta；tool_calls 在流结束后一次性返回） */
+/** OpenAI 协议 SSE 流式补全（仅文本 delta；tool_calls 在流结束后一次性返回） */
 export async function* chatCompletionStream(options: {
   config: AppConfig;
   model?: string;

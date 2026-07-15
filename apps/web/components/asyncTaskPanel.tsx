@@ -69,10 +69,7 @@ function formatTime(date?: string | Date | null): string | null {
 }
 
 function getSourceType(task: AsyncTaskBrief): string {
-  // 兼容旧数据：若显式有 isSubagent 但没有 sourceType，退化为 subagent
-  if (task.input?.sourceType) return task.input.sourceType;
-  if (task.input?.isSubagent === true) return "subagent";
-  return "async_task_llm";
+  return task.input?.sourceType || "async_task_llm";
 }
 
 function AsyncTaskCard({

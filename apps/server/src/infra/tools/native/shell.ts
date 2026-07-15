@@ -120,7 +120,7 @@ async function sleepTool(args: Record<string, unknown>, ctx: NativeToolContext) 
   const seconds = Math.max(0, Math.min(Number(args.seconds !== undefined ? args.seconds : 10), 300));
   if (!Number.isFinite(seconds)) throw new Error("seconds 必须是有效数字");
 
-  // LLM 常把 async 写成字符串 "true"，必须兼容，否则会同步阻塞几十秒看起来像卡死
+  // LLM 常把 async 写成字符串 "true"，必须容忍并做 coercion，否则会同步阻塞几十秒看起来像卡死
   const isAsync = coerceToolBoolean(args.async);
 
   // 非阻塞模式：创建轻量异步定时器任务，时间到后结果进入发送队列

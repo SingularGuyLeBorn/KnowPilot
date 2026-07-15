@@ -300,7 +300,7 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
     return base;
   }, [actionableSkills.length]);
 
-  const legacyModel =
+  const outdatedModel =
     !PRIMARY_CHAT_MODELS.some((m) => m.id === chatConfig.model) ? chatConfig.model : null;
 
   return (
@@ -385,9 +385,9 @@ export const ChatSettingsPanel = memo(function ChatSettingsPanel({
                     );
                   })}
                 </div>
-                {legacyModel && (
+                {outdatedModel && (
                   <p className="mt-1.5 rounded-lg bg-[var(--kp-bg-mute)]/60 px-2 py-1 text-[10px] text-[var(--kp-text-3)]">
-                    当前会话模型 <code className="text-[var(--kp-text-2)]">{legacyModel}</code> 为旧 ID，请选择上方模型切换。
+                    当前会话模型 <code className="text-[var(--kp-text-2)]">{outdatedModel}</code> 为旧 ID，请选择上方模型切换。
                   </p>
                 )}
               </div>

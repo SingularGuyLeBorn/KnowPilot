@@ -554,30 +554,6 @@ export function ChatView() {
         const parsed = JSON.parse(composeRaw) as Record<string, Parameters<typeof sessionComposeStore.hydrate>[0][string]>;
         sessionComposeStore.hydrate(parsed);
       }
-      // 兼容旧键：若仍有 kp:chat-stream-states，尝试抽出队列字段
-      const legacyRaw = sessionStorage.getItem("kp:chat-stream-states");
-      if (legacyRaw && !composeRaw) {
-        try {
-          const legacy = JSON.parse(legacyRaw) as Record<string, {
-            optimistic?: Parameters<typeof sessionComposeStore.hydrate>[0][string]["optimistic"];
-            userQueue?: ChatQueueItem[];
-            asyncOverlays?: ChatQueueItem[];
-            consumedDeliveries?: string[];
-          }>;
-          const mapped: Record<string, Parameters<typeof sessionComposeStore.hydrate>[0][string]> = {};
-          for (const [k, v] of Object.entries(legacy)) {
-            mapped[k] = {
-              optimistic: v.optimistic ?? [],
-              userQueue: v.userQueue ?? [],
-              asyncOverlays: v.asyncOverlays ?? [],
-              consumedDeliveries: new Set(v.consumedDeliveries ?? []),
-            };
-          }
-          sessionComposeStore.hydrate(mapped);
-        } catch {
-          /* ignore legacy */
-        }
-      }
       // INV-8 ④：sessionStorage 恢复完成 = 显式 drain 请求。
       // drain 钩子在后面的 effect 才订阅——drainRequested 标记 + takeDrainRequests
       // 晚订阅补偿保证不丢，不依赖订阅时序。
@@ -1087,7 +1063,7 @@ export function ChatView() {
         skills={skills}
         selectedSkill={selectedSkill}
         setSelectedSkill={setSelectedSkill}
-        modelSupportsReasoning={!!(modelOpt.supportsThinking ?? modelOpt.supportsReasoning)}
+        modelSupportsReasoning={!!modelOpt.supportsThinking}
         modelReasoningRequired={!!modelOpt.reasoningRequired}
         tokenBudget={tokenBudget}
         runtimeSubTab={runtimeSubTab}

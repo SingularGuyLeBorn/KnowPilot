@@ -41,17 +41,12 @@ export function listNativeTools(): NativeToolDefinition[] {
   });
 }
 
-/** 异步任务工具统一命名空间：async_task_{run|status|wait|cancel}。
- * 旧名 run_async/task_status/await_async/cancel_async 已废弃并移除。 */
-export const TOOL_NAME_ALIASES: Record<string, string> = {};
-
 export async function executeNativeTool(
   name: string,
   args: Record<string, unknown>,
   ctx: NativeToolContext,
 ): Promise<unknown> {
   ensureNativeToolsRegistered();
-  const resolvedName = TOOL_NAME_ALIASES[name] ?? name;
 
   // Swarm 权限硬拦截：检查 agent 是否有权调用此工具
   if (ctx.agentSnapshot?.tier) {
@@ -76,10 +71,10 @@ export async function executeNativeTool(
     }
   }
 
-  const cmd = getTool(resolvedName);
+  const cmd = getTool(name);
   if (!cmd || cmd.kind !== "native") {
     throw new Error(
-      `未知原生工具 "${resolvedName}"（原始名 "${name}"）。可用：${listTools("native")
+      `未知原生工具 "${name}"。可用：${listTools("native")
         .map((t) => t.name)
         .join(", ")}`,
     );

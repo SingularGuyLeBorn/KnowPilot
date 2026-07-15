@@ -43,7 +43,6 @@ export async function runRealOcrApi(): Promise<{ text: string; engine?: string }
   >("agent.ocrImage", {
     base64: readOcrSampleBase64(),
     mimeType: "image/png",
-    chatSupportsVision: false,
   });
   if (!res.success || !res.data?.text?.trim()) {
     throw new Error(res.error?.message ?? "agent.ocrImage 未返回文字");
