@@ -9,6 +9,15 @@ import { describe, it, expect } from "vitest";
 import { appRouter } from "../router.js";
 import { createContextInner } from "../trpc/context.js";
 import { ASSISTANT_DEFAULT_TOOLS } from "@knowpilot/shared";
+import { DEFAULT_ASSISTANT_SYSTEM_PROMPT } from "../infra/agentResolver.js";
+
+describe("S9 防线：默认 assistant 提示词与双工具分工一致", () => {
+  it("不再把 async_task_run 描述为派生子代理（纯工具执行，不跑 LLM）", () => {
+    // W-D 后派生子代理唯一通道 = spawn_subagent；async_task_run 仅后台执行纯工具调用。
+    // 提示词若仍引导用 async_task_run 派生子代理属过时契约文案（终审 S9），防线防回归。
+    expect(DEFAULT_ASSISTANT_SYSTEM_PROMPT).not.toContain("或 native:async_task_run 派生子代理");
+  });
+});
 
 describe("W16d-3 agent.driftStatus tRPC 通道", () => {
   it("返回漂移摘要 + 迁移提示；制造漂移后 drift 增长并点名缺失工具，恢复后回到基线", async () => {
