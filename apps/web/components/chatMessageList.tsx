@@ -5,9 +5,14 @@
  * 包含消息组（用户气泡 + 思考时间线/中间步骤 + assistant 气泡 / 原位流式块）、
  * 乐观气泡、尾部流式块、虚拟列表与右侧导航条、空态/加载态。
  * 纯渲染：数据与回调全部经 props 传入；INV-1~8 流式状态机逻辑仍留在 chat.tsx。
+ *
+ * W16b：React.memo——流式期本组件必须随 token 重渲染（streamingContent 是 prop，
+ * memo 不拦截）；屏障价值在非流式的 ChatView 重渲染（toast / 重命名输入等）
+ * 不再连带整棵消息列表。前提是 chat.tsx 的 messageListProps 已 useMemo 打包、
+ * 回调全部 useCallback 稳定。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Ban, Bot, Check, Loader2, X } from "lucide-react";
@@ -57,7 +62,7 @@ export interface ChatMessageListProps {
   setEditDraft: (draft: string) => void;
 }
 
-export function ChatMessageList({
+export const ChatMessageList = memo(function ChatMessageList({
   messageGroups,
   messages,
   optimistic,
@@ -90,8 +95,10 @@ export function ChatMessageList({
   // 初始恒为 false，mount 后再读 localStorage，避免 SSR/首屏 hydration 不一致
   const [showOnboarding, setShowOnboarding] = useState(false);
   useEffect(() => {
-    // mount 后读 localStorage 同步到 React state（SSR 安全），非派生数据
-    /* eslint-disable react-hooks/set-state-in-effect */
+    // mount 后读 localStorage 同步到 React state（SSR 安全），非派生数据。
+    // 故意在 effect 里 setState；react-hooks/set-state-in-effect（v6 编译器规则）
+    // 不分析 memo 组件，原 eslint-disable 已随 W16b memo 化移除——若将来摘掉
+    // memo，该规则报错时再把 disable 加回来。
     try {
       if (localStorage.getItem("kp-swarm-onboarding-dismissed") !== "1") {
         setShowOnboarding(true);
@@ -99,7 +106,6 @@ export function ChatMessageList({
     } catch {
       setShowOnboarding(true);
     }
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
   const dismissSwarmOnboarding = () => {
     setShowOnboarding(false);
@@ -530,4 +536,4 @@ export function ChatMessageList({
       <MessageNavRail items={navItems} onScrollToIndex={handleNavScrollToIndex} />
     </div>
   );
-}
+});

@@ -5,8 +5,11 @@
  * 包含 System Prompt 编辑器弹窗、新建子 Agent 弹窗（SubagentCreateDialog）、toast。
  * 纯结构拆分：open/close 受控态与 chatConfig/updateConfig 仍留在 chat.tsx，经 props 注入；
  * 保持 fixed 层叠顺序不变（prompt 编辑器 → 子 Agent 弹窗 → toast）。
+ *
+ * W16b：React.memo 渲染屏障——浮层群 props 不含流式派生值，流式期跳过重渲染。
  */
 
+import { memo } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type ChatSessionConfig } from "@knowpilot/shared";
@@ -30,7 +33,7 @@ export interface ChatOverlaysProps {
   toast: string | null;
 }
 
-export function ChatOverlays({
+export const ChatOverlays = memo(function ChatOverlays({
   showPromptEditor,
   setShowPromptEditor,
   systemPrompt,
@@ -82,4 +85,4 @@ export function ChatOverlays({
       )}
     </>
   );
-}
+});

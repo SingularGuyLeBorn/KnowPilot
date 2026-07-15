@@ -6,9 +6,13 @@
  * 批量管理、会话搜索、异步任务面板，以及随左栏外提的删除/批量删除确认弹窗。
  * 纯结构拆分：INV-1~8 流式状态机、面板 UI 的 URL/localStorage 持久化、toast、
  * 悬停预览监控窗（ChatHoverMonitor）、子 Agent 弹窗仍留在 chat.tsx，经 props 受控注入。
+ *
+ * W16b：React.memo 渲染屏障——左栏 props 不含任何流式派生值，流式期 ChatView
+ * 每 token 重渲染时左栏整树跳过。前提是 ChatView 侧 props 全部引用稳定
+ * （mutation 只注入稳定的 .mutate 函数，不注入每渲染新建的 mutation 对象）。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, ListChecks, Plus, Search } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAgent } from "@/lib/hooks";
@@ -67,12 +71,14 @@ export interface ChatSidebarProps {
   setError: (msg: string | null) => void;
   setToast: (msg: string | null) => void;
   refetchSession: () => void;
-  // 异步任务 mutations：onSuccess 绑定 ChatView 的 asyncQueueQuery.refetch，保留单例
-  cancelAsyncJobMutation: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>;
-  retryAsyncJobMutation: ReturnType<typeof trpc.agent.retryAsyncJob.useMutation>;
+  // 异步任务 mutate：mutation 单例（onSuccess 绑定 ChatView 的 asyncQueueQuery.refetch）留在
+  // ChatView，仅注入稳定的 .mutate 函数引用——React Query useMutation 返回对象每渲染新建，
+  // 整个注入会击穿 memo
+  cancelAsyncJobMutate: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>["mutate"];
+  retryAsyncJobMutate: ReturnType<typeof trpc.agent.retryAsyncJob.useMutation>["mutate"];
 }
 
-export function ChatSidebar({
+export const ChatSidebar = memo(function ChatSidebar({
   leftOpen,
   leftTab,
   setLeftTab,
@@ -102,8 +108,8 @@ export function ChatSidebar({
   setError,
   setToast,
   refetchSession,
-  cancelAsyncJobMutation,
-  retryAsyncJobMutation,
+  cancelAsyncJobMutate,
+  retryAsyncJobMutate,
 }: ChatSidebarProps) {
   // 与 ChatView 相同 key 的查询订阅：React Query 按 key 共享缓存并去重请求，无额外网络开销
   const { useList: useAgentList } = useAgent();
@@ -271,10 +277,10 @@ export function ChatSidebar({
           )}
           <AsyncTaskPanel
             parentSessionId={mainSessionId ?? undefined}
-            onCancelJob={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
+            onCancelJob={(jobId) => cancelAsyncJobMutate({ jobId })}
             onRetryJob={(jobId) => {
               sessionComposeActions.markDeliveryConsumed(effectiveSessionId ?? NEW_STREAM_KEY, jobId);
-              retryAsyncJobMutation.mutate({ jobId });
+              retryAsyncJobMutate({ jobId });
             }}
           />
         </div>
@@ -596,4 +602,4 @@ export function ChatSidebar({
       />
     </>
   );
-}
+});

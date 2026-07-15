@@ -7,8 +7,13 @@
  * 纯结构拆分：面板开关与标签的 URL/localStorage 持久化 effect、runtime 三组派生数组
  * （runtimePendingItems / runtimeConsumedItems / runtimeHeldItems）的 useMemo、异步任务
  * mutation 单例仍留在 chat.tsx，经 props 受控注入；INV-1~8 流式状态机不涉及本组件。
+ *
+ * W16b：React.memo 渲染屏障——右栏 props 不含流式派生值（tokenBudget / runtime 三组
+ * 均为 useMemo 派生，token 更新不变），流式期右栏整树跳过重渲染。mutation 同
+ * ChatSidebar 只注入稳定的 .mutate 函数。
  */
 
+import { memo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -43,12 +48,12 @@ export interface ChatRightPanelProps {
   runtimePendingItems: ChatQueueItem[];
   runtimeConsumedItems: ChatQueueItem[];
   runtimeHeldItems: ChatQueueItem[];
-  // 异步任务 mutations：onSuccess 绑定 ChatView 的 asyncQueueQuery.refetch，保留单例
-  cancelAsyncJobMutation: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>;
-  pinAsyncJobMutation: ReturnType<typeof trpc.agent.toggleAsyncJobPinned.useMutation>;
+  // 异步任务 mutate：mutation 单例留在 ChatView，仅注入稳定的 .mutate 函数（同 ChatSidebar）
+  cancelAsyncJobMutate: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>["mutate"];
+  pinAsyncJobMutate: ReturnType<typeof trpc.agent.toggleAsyncJobPinned.useMutation>["mutate"];
 }
 
-export function ChatRightPanel({
+export const ChatRightPanel = memo(function ChatRightPanel({
   rightOpen,
   setRightOpen,
   rightTab,
@@ -68,8 +73,8 @@ export function ChatRightPanel({
   runtimePendingItems,
   runtimeConsumedItems,
   runtimeHeldItems,
-  cancelAsyncJobMutation,
-  pinAsyncJobMutation,
+  cancelAsyncJobMutate,
+  pinAsyncJobMutate,
 }: ChatRightPanelProps) {
   return (
     <aside
@@ -154,8 +159,8 @@ export function ChatRightPanel({
                   pendingItems={runtimePendingItems}
                   consumedItems={runtimeConsumedItems}
                   heldItems={runtimeHeldItems}
-                  onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
-                  onTogglePin={(jobId, pinned) => pinAsyncJobMutation.mutate({ jobId, pinned })}
+                  onCancel={(jobId) => cancelAsyncJobMutate({ jobId })}
+                  onTogglePin={(jobId, pinned) => pinAsyncJobMutate({ jobId, pinned })}
                 />
               )}
             </div>
@@ -164,4 +169,4 @@ export function ChatRightPanel({
       </AnimatePresence>
     </aside>
   );
-}
+});

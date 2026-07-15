@@ -8,6 +8,11 @@
  * composer 接线（UserSendQueuePanel + ChatInputArea）。
  * 纯结构拆分：enqueueMessage/consumeQueue/runStream 编排与 INV-1~8 状态机仍留在 chat.tsx，
  * 数据与回调全部经 props 受控注入（沿用 ChatSidebarProps 模式）。
+ *
+ * W16b memo 判定：不包 React.memo——本组件就是「消息列表相关组件」（messageListProps
+ * 流式期每 token 真变），按「token 更新只触发消息列表相关组件重渲染」标准它应当随
+ * token 重渲染；memo 永远不会命中，加了只是误导。屏障设在 ChatSidebar /
+ * ChatRightPanel / ChatOverlays / ChatMessageList。
  */
 
 import Link from "next/link";

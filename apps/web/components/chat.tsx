@@ -161,6 +161,9 @@ export function ChatView() {
   const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
   const utils = trpc.useUtils();
   const switchVersion = trpc.message.switchVersion.useMutation();
+  // W16b：.mutateAsync 是 observer 绑定的稳定引用（整个 mutation 对象每渲染新建），
+  // 供 useCallback deps 使用
+  const switchVersionMutateAsync = switchVersion.mutateAsync;
 
   const defaultAgentId = useMemo(() => {
     const items = agentsQuery.data?.items;
@@ -516,6 +519,12 @@ export function ChatView() {
 
   const handleOpenPromptEditor = useCallback(() => setShowPromptEditor(true), []);
 
+  // W16b：ChatOverlays memo 屏障要求 props 引用稳定，内联箭头每渲染新建会击穿 memo
+  const handleSubagentCreated = useCallback(
+    () => showToast("子 Agent 任务已启动，结果完成后自动进入对话"),
+    [showToast],
+  );
+
   // 【runStream 流式编排内核】runStream + rAF token 合帧三件套 + 持久化调度收拢于
   // useChatRunStream（W13e 拆出；useCallback 体与 deps 逐字未改）。rAF/定时器 refs 留在
   // 本文件，供【页面生命周期与全局监听群】的 unmount 清理 effect 统一回收。
@@ -772,15 +781,17 @@ export function ChatView() {
   // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
   const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
 
-  const handleRegenerate = (userMessageId: string) => {
+  // W16b：以下 6 个消息列表回调全部 useCallback 稳定化——messageListProps 已 useMemo 打包，
+  // 回调若每渲染新建会让 ChatMessageList 的 memo 屏障形同虚设（deps 均为稳定引用，见各数组）。
+  const handleRegenerate = useCallback((userMessageId: string) => {
     if (!effectiveSessionId || isSessionRunOccupied(effectiveSessionId)) return;
     void runStream({ regenerate: true, regenerateUserMessageId: userMessageId });
-  };
+  }, [effectiveSessionId, isSessionRunOccupied, runStream]);
 
-  const handleRetry = (messageId: string) => {
+  const handleRetry = useCallback((messageId: string) => {
     if (!effectiveSessionId || isSessionRunOccupied(effectiveSessionId)) return;
     void runStream({ retryFromMessageId: messageId });
-  };
+  }, [effectiveSessionId, isSessionRunOccupied, runStream]);
 
   // 错误条「转后台重试」：把上一条用户消息包装成 async_task_run 请求重新入队
   const handleTimeoutRetryInBackground = (lastText: string) => {
@@ -795,28 +806,28 @@ export function ChatView() {
     consumeRef.current(effectiveSessionId ?? NEW_STREAM_KEY);
   };
 
-  const handleEditConfirm = (userMessageId: string) => {
+  const handleEditConfirm = useCallback((userMessageId: string) => {
     const content = editDraft.trim();
     if (!content || isSessionRunOccupied(effectiveSessionId)) return;
     void runStream({ editMessageId: userMessageId, editContent: content });
-  };
+  }, [editDraft, effectiveSessionId, isSessionRunOccupied, runStream]);
 
-  const handleSwitchVersion = async (assistantMessageId: string, versionIndex: number) => {
+  const handleSwitchVersion = useCallback(async (assistantMessageId: string, versionIndex: number) => {
     // 切版本只读 MS，不开新流；但仍需避免与 streaming 冲突
     if (isSessionStreaming(effectiveSessionId)) return;
-    await switchVersion.mutateAsync({ messageId: assistantMessageId, versionIndex });
+    await switchVersionMutateAsync({ messageId: assistantMessageId, versionIndex });
     // 服务端 afterUpdate 会推 message_upserted；hydrate 作兜底
     void hydrateFromServer();
-  };
+  }, [effectiveSessionId, isSessionStreaming, switchVersionMutateAsync, hydrateFromServer]);
 
-  const handleCopy = async (id: string, content: string) => {
+  const handleCopy = useCallback(async (id: string, content: string) => {
     if (await copyToClipboard(content)) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 1500);
     }
-  };
+  }, []);
 
-  const handleShare = async (content: string) => {
+  const handleShare = useCallback(async (content: string) => {
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
         await navigator.share({ text: content });
@@ -829,7 +840,7 @@ export function ChatView() {
       setCopiedId("share");
       setTimeout(() => setCopiedId(null), 1500);
     }
-  };
+  }, []);
 
   const startNewChat = useCallback(() => {
     // 新建对话不中止任何已有 session 的流式（多 session 并发隔离）
@@ -933,8 +944,11 @@ export function ChatView() {
     }
   }, [agentsQuery.data?.items, effectiveAgentId, searchParams, pathname, router]);
 
-  // ChatMessageList 的 props 打包（W13e 随中栏外提至 ChatCenterPane，字段与原内联 JSX 一致）
-  const messageListProps: ChatMessageListProps = {
+  // ChatMessageList 的 props 打包（W13e 随中栏外提至 ChatCenterPane，字段与原内联 JSX 一致）。
+  // W16b：useMemo 打包——原实现每渲染新建对象，ChatMessageList memo 屏障永远失效；
+  // 现仅在字段真变时换引用（流式期仅 streamingContent/liveTimeline 等消息字段触发，
+  // toast / 重命名输入等非消息更新不再连带整棵消息列表）。
+  const messageListProps: ChatMessageListProps = useMemo(() => ({
     messageGroups,
     messages,
     optimistic,
@@ -962,7 +976,14 @@ export function ChatView() {
     onRetry: handleRetry,
     setEditingUserId,
     setEditDraft,
-  };
+  }), [
+    messageGroups, messages, optimistic, liveTimeline, streamingContent, isStreaming,
+    streamTargetUserId, inFlightAssistantId, isSubagentSession, copiedId, editingUserId,
+    editDraft, isMessagesHydrated, effectiveSessionId, backendDown, hasWorkspaces,
+    hasOlderMessages, isLoadingOlderMessages, loadOlderMessages, handleCopy, handleShare,
+    handleRegenerate, handleSwitchVersion, handleEditConfirm, handleRetry,
+    setEditingUserId, setEditDraft,
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -996,8 +1017,8 @@ export function ChatView() {
         setError={setError}
         setToast={showToast}
         refetchSession={refetchSession}
-        cancelAsyncJobMutation={cancelAsyncJobMutation}
-        retryAsyncJobMutation={retryAsyncJobMutation}
+        cancelAsyncJobMutate={cancelAsyncJobMutation.mutate}
+        retryAsyncJobMutate={retryAsyncJobMutation.mutate}
       />
 
       {sessionHoverPreviewEnabled && (
@@ -1071,8 +1092,8 @@ export function ChatView() {
         runtimePendingItems={runtimePendingItems}
         runtimeConsumedItems={runtimeConsumedItems}
         runtimeHeldItems={runtimeHeldItems}
-        cancelAsyncJobMutation={cancelAsyncJobMutation}
-        pinAsyncJobMutation={pinAsyncJobMutation}
+        cancelAsyncJobMutate={cancelAsyncJobMutation.mutate}
+        pinAsyncJobMutate={pinAsyncJobMutation.mutate}
       />
 
       <ChatOverlays
@@ -1085,7 +1106,7 @@ export function ChatView() {
         parentSessionId={mainSessionId ?? undefined}
         parentAgentId={mainAgentId}
         parentAgentTools={selectedAgent?.tools}
-        onSubagentCreated={() => showToast("子 Agent 任务已启动，结果完成后自动进入对话")}
+        onSubagentCreated={handleSubagentCreated}
         toast={toast}
       />
     </div>

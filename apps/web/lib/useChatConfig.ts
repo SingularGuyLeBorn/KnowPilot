@@ -29,6 +29,9 @@ export function useChatConfig(opts: {
   const { effectiveSessionId, selectedAgent, sessionDetailModel, sessionDetailSystemPrompt } = opts;
   const [chatConfig, setChatConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
   const updateSession = trpc.session.update.useMutation();
+  // W16b：.mutate 是 observer 绑定的稳定引用（整个 mutation 对象每渲染新建），
+  // 进 useCallback deps 用稳定引用，否则 updateConfig 每渲染换引用、R17 memo 承诺失效
+  const updateSessionMutate = updateSession.mutate;
 
   // 【会话配置域】会话模型/systemPrompt 配置加载与派生（effect 体自 chat.tsx 原样迁入）
   useEffect(() => {
@@ -70,7 +73,7 @@ export function useChatConfig(opts: {
         if (effectiveSessionId) saveSessionChatConfig(effectiveSessionId, next);
         else saveDefaultChatConfig(next);
         if (effectiveSessionId && (patch.model || patch.systemPrompt !== undefined)) {
-          updateSession.mutate({
+          updateSessionMutate({
             id: effectiveSessionId,
             ...(patch.model ? { model: patch.model } : {}),
             ...(patch.systemPrompt !== undefined ? { systemPrompt: patch.systemPrompt } : {}),
@@ -79,7 +82,7 @@ export function useChatConfig(opts: {
         return next;
       });
     },
-    [effectiveSessionId, updateSession],
+    [effectiveSessionId, updateSessionMutate],
   );
 
   // R17：useCallback 稳定化，使 ChatSettingsPanel memo 后流式期间跳过重渲染
