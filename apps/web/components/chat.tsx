@@ -8,7 +8,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, startTransition } fr
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
   ArrowLeft,
@@ -41,7 +40,6 @@ import { type Agent, type ChatSessionConfig, type ChatMessage, DEFAULT_LLM_MODEL
 import { buttonVariants } from "@/components/ui/button";
 import { SessionContextBar } from "@/components/sessionContextUsage";
 import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
-import { ChatSettingsPanel } from "@/components/chatSettingsPanel";
 import { buildTokenBudget } from "@/components/tokenBudgetBar";
 import {
   type ChatQueueItem,
@@ -52,10 +50,11 @@ import {
   splitQueueByKind,
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
-import { UserSendQueuePanel, RuntimeStatusPanel } from "@/components/chatQueue";
+import { UserSendQueuePanel } from "@/components/chatQueue";
 import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { ChatMessageList } from "@/components/chatMessageList";
+import { ChatRightPanel } from "@/components/chatRightPanel";
 import { ChatSidebar } from "@/components/chatSidebar";
 import {
   useSessionMessages,
@@ -2441,97 +2440,29 @@ export function ChatView() {
         </div>
       </div>
 
-      <aside
-        className={cn(
-          "relative z-40 flex shrink-0 flex-col overflow-x-hidden border-l border-[var(--kp-divider)] bg-[var(--kp-bg)]/80 backdrop-blur-xl transition-[width] duration-300 ease-[var(--kp-spring-gentle)]",
-          rightOpen ? "w-[360px]" : "w-0 overflow-hidden border-l-0",
-        )}
-      >
-        <AnimatePresence mode="wait">
-          {rightOpen && (
-            <motion.div
-              key="right-panel"
-              initial={{ opacity: 0, x: 24 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 24 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="flex h-full min-w-0 flex-col overflow-x-hidden"
-            >
-              <div className="flex items-center justify-between border-b border-[var(--kp-divider)] px-3 py-2.5">
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setRightTab("config")}
-                    data-testid="right-tab-config"
-                    className={cn(
-                      "rounded-md px-2.5 py-1 text-[11px] font-medium transition",
-                      rightTab === "config"
-                        ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                        : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-                    )}
-                  >
-                    配置
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRightTab("runtime")}
-                    data-testid="right-tab-runtime"
-                    className={cn(
-                      "rounded-md px-2.5 py-1 text-[11px] font-medium transition",
-                      rightTab === "runtime"
-                        ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                        : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-                    )}
-                  >
-                    状态
-                    {runtimePendingItems.length > 0 && (
-                      <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-deep)]">
-                        {runtimePendingItems.length}
-                      </span>
-                    )}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setRightOpen(false)}
-                  className="text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]"
-                  title="收起面板"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                {rightTab === "config" ? (
-                  <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-                    <ChatSettingsPanel
-                      chatConfig={chatConfig}
-                      updateConfig={updateConfig}
-                      resetPromptToAgent={resetPromptToAgent}
-                      onOpenPromptEditor={handleOpenPromptEditor}
-                      skills={skills}
-                      selectedSkill={selectedSkill}
-                      onSelectSkill={setSelectedSkill}
-                      modelSupportsReasoning={!!(modelOpt.supportsThinking ?? modelOpt.supportsReasoning)}
-                      modelReasoningRequired={!!modelOpt.reasoningRequired}
-                      tokenBudget={tokenBudget}
-                    />
-                  </div>
-                ) : (
-                  <RuntimeStatusPanel
-                    tab={runtimeSubTab}
-                    onTabChange={setRuntimeSubTab}
-                    pendingItems={runtimePendingItems}
-                    consumedItems={runtimeConsumedItems}
-                    heldItems={runtimeHeldItems}
-                    onCancel={(jobId) => cancelAsyncJobMutation.mutate({ jobId })}
-                    onTogglePin={(jobId, pinned) => pinAsyncJobMutation.mutate({ jobId, pinned })}
-                  />
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </aside>
+      <ChatRightPanel
+        rightOpen={rightOpen}
+        setRightOpen={setRightOpen}
+        rightTab={rightTab}
+        setRightTab={setRightTab}
+        chatConfig={chatConfig}
+        updateConfig={updateConfig}
+        resetPromptToAgent={resetPromptToAgent}
+        onOpenPromptEditor={handleOpenPromptEditor}
+        skills={skills}
+        selectedSkill={selectedSkill}
+        setSelectedSkill={setSelectedSkill}
+        modelSupportsReasoning={!!(modelOpt.supportsThinking ?? modelOpt.supportsReasoning)}
+        modelReasoningRequired={!!modelOpt.reasoningRequired}
+        tokenBudget={tokenBudget}
+        runtimeSubTab={runtimeSubTab}
+        setRuntimeSubTab={setRuntimeSubTab}
+        runtimePendingItems={runtimePendingItems}
+        runtimeConsumedItems={runtimeConsumedItems}
+        runtimeHeldItems={runtimeHeldItems}
+        cancelAsyncJobMutation={cancelAsyncJobMutation}
+        pinAsyncJobMutation={pinAsyncJobMutation}
+      />
 
       {showPromptEditor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
