@@ -3,9 +3,9 @@
 /**
  * ChatRightPanel —— 右栏（W13c 从 chat.tsx 拆出）。
  * 包含右栏宽度动画容器、「配置 / 状态」标签页头、ChatSettingsPanel（模型/参数/Prompt/Skill 配置）
- * 与 RuntimeStatusPanel（异步队列运行状态：未消费 / 已消费 / 钉住）。
+ * 与 RuntimeStatusPanel（TP-3 三组状态模型：进行中 / 待消费（含钉住子组）/ 已消费）。
  * 纯结构拆分：面板开关与标签的 URL/localStorage 持久化 effect、runtime 三组派生数组
- * （runtimePendingItems / runtimeConsumedItems / runtimeHeldItems）的 useMemo、异步任务
+ * （runtimeActiveItems / runtimeToConsumeItems / runtimeConsumedItems）的 useMemo、异步任务
  * mutation 单例仍留在 chat.tsx，经 props 受控注入；INV-1~8 流式状态机不涉及本组件。
  *
  * W16b：React.memo 渲染屏障——右栏 props 不含流式派生值（tokenBudget / runtime 三组
@@ -43,15 +43,16 @@ export interface ChatRightPanelProps {
   modelReasoningRequired: boolean;
   tokenBudget: TokenBudgetSnapshot;
   // 状态页（RuntimeStatusPanel）：派生数组的 useMemo 留在 ChatView，受控注入
-  runtimeSubTab: "pending" | "consumed";
-  setRuntimeSubTab: (tab: "pending" | "consumed") => void;
   // W-A 一级分组：异步队列 / 同步任务
   runtimeGroupTab: "async" | "sync";
   setRuntimeGroupTab: (tab: "async" | "sync") => void;
   syncTaskItems: SyncTaskItem[];
-  runtimePendingItems: ChatQueueItem[];
+  /** TP-3 三组：进行中（queued+running） */
+  runtimeActiveItems: ChatQueueItem[];
+  /** TP-3 三组：待消费（终态未 delivered，含 pinned 子组） */
+  runtimeToConsumeItems: ChatQueueItem[];
+  /** TP-3 三组：已消费（delivered=true） */
   runtimeConsumedItems: ChatQueueItem[];
-  runtimeHeldItems: ChatQueueItem[];
   // 异步任务 mutate：mutation 单例留在 ChatView，仅注入稳定的 .mutate 函数（同 ChatSidebar）
   cancelAsyncJobMutate: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>["mutate"];
   pinAsyncJobMutate: ReturnType<typeof trpc.agent.toggleAsyncJobPinned.useMutation>["mutate"];
@@ -72,14 +73,12 @@ export const ChatRightPanel = memo(function ChatRightPanel({
   modelSupportsReasoning,
   modelReasoningRequired,
   tokenBudget,
-  runtimeSubTab,
-  setRuntimeSubTab,
   runtimeGroupTab,
   setRuntimeGroupTab,
   syncTaskItems,
-  runtimePendingItems,
+  runtimeActiveItems,
+  runtimeToConsumeItems,
   runtimeConsumedItems,
-  runtimeHeldItems,
   cancelAsyncJobMutate,
   pinAsyncJobMutate,
 }: ChatRightPanelProps) {
@@ -127,9 +126,9 @@ export const ChatRightPanel = memo(function ChatRightPanel({
                   )}
                 >
                   状态
-                  {runtimePendingItems.length > 0 && (
+                  {runtimeActiveItems.length > 0 && (
                     <span className="ml-1 inline-flex min-w-[1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1 text-[9px] font-semibold text-[var(--kp-brand-deep)]">
-                      {runtimePendingItems.length}
+                      {runtimeActiveItems.length}
                     </span>
                   )}
                 </button>
@@ -161,13 +160,11 @@ export const ChatRightPanel = memo(function ChatRightPanel({
                 </div>
               ) : (
                 <RuntimeStatusPanel
-                  tab={runtimeSubTab}
-                  onTabChange={setRuntimeSubTab}
                   groupTab={runtimeGroupTab}
                   onGroupTabChange={setRuntimeGroupTab}
-                  pendingItems={runtimePendingItems}
+                  activeItems={runtimeActiveItems}
+                  toConsumeItems={runtimeToConsumeItems}
                   consumedItems={runtimeConsumedItems}
-                  heldItems={runtimeHeldItems}
                   syncTaskItems={syncTaskItems}
                   onCancel={(jobId) => cancelAsyncJobMutate({ jobId })}
                   onTogglePin={(jobId, pinned) => pinAsyncJobMutate({ jobId, pinned })}

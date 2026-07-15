@@ -340,6 +340,9 @@ describe("asyncJobManager 持久化", () => {
     const queued = await listQueuedAsyncJobs(sessionId, narrowConfig);
     expect(queued.map((q) => q.jobId).sort()).toEqual([second.jobId, third.jobId].sort());
     expect(queued.every((q) => q.status === "queued")).toBe(true);
+    // TP-3：position/reason 来自 orchestrator 真实统计（maxConcurrent=1 满 → 首个卡住的上限为 global）
+    expect(queued.every((q) => q.position !== undefined)).toBe(true);
+    expect(queued.every((q) => q.reason === "global")).toBe(true);
 
     await cancelAsyncJob(first.jobId, narrowConfig, ctx.services);
     await cancelAsyncJob(second.jobId, narrowConfig, ctx.services);

@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import type { AsyncQueueStats } from "@knowpilot/server";
 import { trpc } from "@/lib/trpc";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
@@ -91,15 +92,8 @@ export function useChatSseSubscriptions({
       });
       register("async_job_update", (ev) => {
         try {
-          const data = JSON.parse(ev.data) as {
-            stats?: {
-              queued: number;
-              runningGlobal: number;
-              maxGlobal: number;
-              maxPerSession: number;
-              taskTimeoutMs: number;
-            };
-          };
+          // stats 形状用服务端导出的 AsyncQueueStats（单一事实源），不再本地内联重复声明
+          const data = JSON.parse(ev.data) as { stats?: AsyncQueueStats };
           if (data.stats) {
             utils.agent.asyncQueueStats.setData(undefined, data.stats);
           }

@@ -5,7 +5,7 @@
  *
  * - UserSendQueueBar：输入区左上角的紧凑条，只显示用户待发消息。
  * - QueueCard：发送队列列表卡片（用户待发 / 异步结果等）。
- * - RuntimeStatusPanel：右侧「状态」面板（未消费=待开始/运行中；已消费滑入）。
+ * - RuntimeStatusPanel：右侧「状态」面板（TP-3 三组：进行中=queued+running / 待消费=终态未喂入 / 已消费滑入）。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -28,7 +28,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ChatQueueItem, SyncTaskItem } from "@/lib/chatQueueTypes";
+import { formatQueuedHint, type ChatQueueItem, type SyncTaskItem } from "@/lib/chatQueueTypes";
 
 export function kindLabel(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
@@ -50,7 +50,8 @@ export function kindLabel(item: ChatQueueItem): string {
 
 export function previewText(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
-    const suffix = item.status === "queued" && item.text ? ` · ${item.text}` : "";
+    const hint = item.status === "queued" ? formatQueuedHint(item) : "";
+    const suffix = item.status === "queued" && (hint || item.text) ? ` · ${hint || item.text}` : "";
     return (item.taskLabel || "后台任务…") + suffix;
   }
   if (item.kind === "async-result") {
@@ -525,20 +526,31 @@ function StatusRow({
   fresh,
 }: {
   item: ChatQueueItem;
-  tone: "queued" | "running" | "consumed" | "held";
+  tone: "queued" | "running" | "ready" | "consumed" | "held";
   onCancel?: () => void;
   onTogglePin?: () => void;
   fresh?: boolean;
 }) {
   const label = statusKindLabel(item);
   const title = item.taskLabel || previewText(item);
+  const lastLog = item.logs?.length ? item.logs[item.logs.length - 1]?.message : "";
   const preview =
-    tone === "consumed" || tone === "held"
+    tone === "consumed" || tone === "held" || tone === "ready"
       ? (item.asyncResult ?? item.text).slice(0, 220)
-      : item.text || (item.logs?.length ? item.logs[item.logs.length - 1]?.message : "");
+      : tone === "queued"
+        ? formatQueuedHint(item) || item.text || lastLog
+        : item.text || lastLog;
   const latestLog = item.logs?.length ? item.logs[item.logs.length - 1]?.message : undefined;
   const toneLabel =
-    tone === "queued" ? "待开始" : tone === "running" ? "运行中" : tone === "held" ? "钉住" : "已消费";
+    tone === "queued"
+      ? "排队中"
+      : tone === "running"
+        ? "运行中"
+        : tone === "ready"
+          ? "待消费"
+          : tone === "held"
+            ? "钉住"
+            : "已消费";
 
   return (
     <motion.div
@@ -552,6 +564,7 @@ function StatusRow({
         "group relative overflow-hidden rounded-xl border px-3 py-2.5 transition-colors",
         tone === "running" && "border-[var(--kp-brand)]/25 bg-[var(--kp-brand-soft)]/40",
         tone === "queued" && "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]",
+        tone === "ready" && "border-amber-500/20 bg-[var(--kp-bg-alt)]",
         tone === "consumed" && "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]",
         tone === "held" && "border-amber-500/30 bg-amber-500/5",
         fresh && "ring-1 ring-[var(--kp-brand)]/40",
@@ -567,6 +580,7 @@ function StatusRow({
             "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
             tone === "running" && "text-[var(--kp-brand)]",
             tone === "queued" && "text-[var(--kp-text-3)]",
+            tone === "ready" && "text-amber-600",
             tone === "consumed" && "text-emerald-600",
             tone === "held" && "text-amber-600",
           )}
@@ -674,16 +688,15 @@ function StatusSection({
 }
 
 export interface RuntimeStatusPanelProps {
-  tab: "pending" | "consumed";
-  onTabChange: (tab: "pending" | "consumed") => void;
   /** 一级分组：异步队列 / 同步任务（W-A） */
   groupTab: "async" | "sync";
   onGroupTabChange: (tab: "async" | "sync") => void;
-  /** 仅 async-running：queued=待开始，running=运行中 */
-  pendingItems: ChatQueueItem[];
+  /** 进行中：async-running（queued 排队 + running 执行） */
+  activeItems: ChatQueueItem[];
+  /** 待消费：终态（success/failed）且 delivered=false；pinned 为子组「钉住·未喂入」 */
+  toConsumeItems: ChatQueueItem[];
+  /** 已消费：delivered=true（success/failed badge） */
   consumedItems: ChatQueueItem[];
-  /** 已结束但钉住未喂入（不进「未消费」主列表） */
-  heldItems?: ChatQueueItem[];
   /** 同步任务（deliverToQueue=false）：只展示，无 pin/消费/气泡发送 */
   syncTaskItems?: SyncTaskItem[];
   onCancel?: (jobId: string) => void;
@@ -797,37 +810,42 @@ function SyncTaskRow({
 }
 
 export function RuntimeStatusPanel({
-  tab,
-  onTabChange,
   groupTab,
   onGroupTabChange,
-  pendingItems,
+  activeItems,
+  toConsumeItems,
   consumedItems,
-  heldItems = [],
   syncTaskItems = [],
   onCancel,
   onTogglePin,
 }: RuntimeStatusPanelProps) {
+  // 进行中：running 在前（执行体），queued 在后按池位置升序（position 缺失的排末尾，保持稳定 createdAt）
   const queued = useMemo(
-    () => pendingItems.filter((i) => i.status === "queued"),
-    [pendingItems],
+    () =>
+      activeItems
+        .filter((i) => i.status === "queued")
+        .sort((a, b) => (a.queuePosition ?? Number.MAX_SAFE_INTEGER) - (b.queuePosition ?? Number.MAX_SAFE_INTEGER)),
+    [activeItems],
   );
   const running = useMemo(
-    () => pendingItems.filter((i) => i.status !== "queued"),
-    [pendingItems],
+    () => activeItems.filter((i) => i.status !== "queued"),
+    [activeItems],
   );
+  // 待消费：pinned 为子组「钉住·未喂入」，主列表为未钉住的待喂入结果
+  const toConsume = useMemo(() => toConsumeItems.filter((i) => !i.pinned), [toConsumeItems]);
+  const held = useMemo(() => toConsumeItems.filter((i) => i.pinned), [toConsumeItems]);
 
   const seenConsumedRef = useRef<Set<string>>(new Set());
-  const recentPendingRef = useRef<Set<string>>(new Set());
+  const recentActiveRef = useRef<Set<string>>(new Set());
   const freshTimersRef = useRef<Set<number>>(new Set());
   const [freshIds, setFreshIds] = useState<Set<string>>(() => new Set());
 
-  // 跟踪近期出现在「未消费」的 job，用于判断是否从运行中滑入已消费
+  // 跟踪近期出现在「进行中」的 job，用于判断是否从运行中滑入已消费
   useEffect(() => {
-    for (const item of pendingItems) {
-      if (item.jobId) recentPendingRef.current.add(item.jobId);
+    for (const item of activeItems) {
+      if (item.jobId) recentActiveRef.current.add(item.jobId);
     }
-  }, [pendingItems]);
+  }, [activeItems]);
 
   // 组件卸载时清除所有 fresh 高亮定时器，防止 setState on unmounted + 定时器泄漏
   useEffect(() => {
@@ -844,31 +862,30 @@ export function RuntimeStatusPanel({
     for (const id of ids) seenConsumedRef.current.add(id);
     if (newcomers.length === 0) return;
 
-    // 仅当该任务曾出现在未消费（待开始/运行中）时，才做滑入并切到已消费
-    const fromPending = newcomers.filter((id) => recentPendingRef.current.has(id));
-    if (fromPending.length === 0) return;
+    // 仅当该任务曾出现在「进行中」（queued/running）时，才做滑入高亮
+    const fromActive = newcomers.filter((id) => recentActiveRef.current.has(id));
+    if (fromActive.length === 0) return;
 
-    for (const id of fromPending) recentPendingRef.current.delete(id);
+    for (const id of fromActive) recentActiveRef.current.delete(id);
     setFreshIds((prev) => {
       const next = new Set(prev);
-      for (const id of fromPending) next.add(id);
+      for (const id of fromActive) next.add(id);
       return next;
     });
-    onTabChange("consumed");
-    // 每批 fromPending 独立定时器，不随 effect 重跑被清除，否则快速连续完成时首批高亮永不消失
+    // 每批 fromActive 独立定时器，不随 effect 重跑被清除，否则快速连续完成时首批高亮永不消失
     const timer = window.setTimeout(() => {
       setFreshIds((prev) => {
         const next = new Set(prev);
-        for (const id of fromPending) next.delete(id);
+        for (const id of fromActive) next.delete(id);
         return next;
       });
       freshTimersRef.current.delete(timer);
     }, 2200);
     freshTimersRef.current.add(timer);
-  }, [consumedItems, onTabChange]);
+  }, [consumedItems]);
 
-  const pendingCount = pendingItems.length;
-  const consumedCount = consumedItems.length + heldItems.length;
+  const activeCount = activeItems.length;
+  const toConsumeCount = toConsumeItems.length;
 
   // 同步任务（W-A）：进行中 = queued/running；已结束 = completed/failed
   const syncActiveItems = useMemo(
@@ -897,7 +914,7 @@ export function RuntimeStatusPanel({
         >
           异步队列
           <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
-            {pendingCount}
+            {activeCount + toConsumeCount}
           </span>
         </button>
         <button
@@ -943,156 +960,89 @@ export function RuntimeStatusPanel({
           )}
         </div>
       ) : (
-        <>
-      <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2.5 py-2">
-        <button
-          type="button"
-          data-testid="runtime-tab-pending"
-          onClick={() => onTabChange("pending")}
-          className={cn(
-            "rounded-md px-2.5 py-1 text-xs font-medium transition",
-            tab === "pending"
-              ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-              : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-          )}
-        >
-          未消费
-          {pendingCount > 0 && (
-            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
-              {pendingCount}
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          data-testid="runtime-tab-consumed"
-          onClick={() => onTabChange("consumed")}
-          className={cn(
-            "relative rounded-md px-2.5 py-1 text-xs font-medium transition",
-            tab === "consumed"
-              ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-              : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-            freshIds.size > 0 && tab !== "consumed" && "text-[var(--kp-brand-deep)]",
-          )}
-        >
-          已消费
-          {consumedCount > 0 && (
-            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-bg-mute)] px-1.5 text-[10px] font-semibold text-[var(--kp-text-3)]">
-              {consumedCount}
-            </span>
-          )}
-          {freshIds.size > 0 && (
-            <motion.span
-              layoutId="runtime-fresh-dot"
-              className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--kp-brand)]"
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-            />
-          )}
-        </button>
-      </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+          <div className="space-y-3">
+            {/* 进行中：queued（第 N 位 · 因 X 上限排队）+ running */}
+            <StatusSection title="进行中" count={activeCount} emptyHint="无进行中任务">
+              <AnimatePresence initial={false}>
+                {running.map((item) => (
+                  <StatusRow
+                    key={item.jobId ?? item.id}
+                    item={item}
+                    tone="running"
+                    onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
+                  />
+                ))}
+                {queued.map((item) => (
+                  <StatusRow
+                    key={item.jobId ?? item.id}
+                    item={item}
+                    tone="queued"
+                    onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
+                  />
+                ))}
+              </AnimatePresence>
+            </StatusSection>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
-        <AnimatePresence mode="wait" initial={false}>
-          {tab === "pending" ? (
-            <motion.div
-              key="pending"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18 }}
-              className="space-y-3"
-            >
-              {pendingCount === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-10 text-[var(--kp-text-3)]">
-                  <Clock className="h-5 w-5 opacity-40" />
-                  <p className="text-xs">暂无待开始或运行中的任务</p>
+            {/* 待消费：终态未 delivered；pinned 为子组「钉住·未喂入」；failed 是 badge 不是独立组 */}
+            <StatusSection title="待消费" count={toConsumeCount} emptyHint="无待消费结果">
+              <AnimatePresence initial={false}>
+                {toConsume.map((item) => (
+                  <StatusRow
+                    key={item.jobId ?? item.id}
+                    item={item}
+                    tone="ready"
+                    onTogglePin={
+                      item.jobId && onTogglePin
+                        ? () => onTogglePin(item.jobId!, !item.pinned)
+                        : undefined
+                    }
+                  />
+                ))}
+              </AnimatePresence>
+              {held.length > 0 && (
+                <div className="mt-2 space-y-2" data-testid="runtime-held-group">
+                  <div className="flex items-center gap-1.5 px-0.5">
+                    <Pin className="h-3 w-3 text-amber-600" />
+                    <span className="text-[11px] font-medium text-amber-700">钉住·未喂入</span>
+                    <span className="tabular-nums text-[11px] text-[var(--kp-text-3)]">{held.length}</span>
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {held.map((item) => (
+                      <StatusRow
+                        key={item.jobId ?? item.id}
+                        item={item}
+                        tone="held"
+                        onTogglePin={
+                          item.jobId && onTogglePin
+                            ? () => onTogglePin(item.jobId!, !item.pinned)
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </AnimatePresence>
                 </div>
-              ) : (
-                <>
-                  <StatusSection title="待开始" count={queued.length} emptyHint="无排队任务">
-                    <AnimatePresence initial={false}>
-                      {queued.map((item) => (
-                        <StatusRow
-                          key={item.jobId ?? item.id}
-                          item={item}
-                          tone="queued"
-                          onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
-                        />
-                      ))}
-                    </AnimatePresence>
-                  </StatusSection>
-                  <StatusSection title="运行中" count={running.length} emptyHint="无运行中任务">
-                    <AnimatePresence initial={false}>
-                      {running.map((item) => (
-                        <StatusRow
-                          key={item.jobId ?? item.id}
-                          item={item}
-                          tone="running"
-                          onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
-                        />
-                      ))}
-                    </AnimatePresence>
-                  </StatusSection>
-                </>
               )}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="consumed"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18 }}
-              className="space-y-3"
-            >
-              {consumedCount === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-10 text-[var(--kp-text-3)]">
-                  <Check className="h-5 w-5 opacity-40" />
-                  <p className="text-xs">暂无已消费记录</p>
-                </div>
-              ) : (
-                <>
-                  {heldItems.length > 0 && (
-                    <StatusSection title="钉住·未喂入" count={heldItems.length}>
-                      <AnimatePresence initial={false}>
-                        {heldItems.map((item) => (
-                          <StatusRow
-                            key={item.jobId ?? item.id}
-                            item={item}
-                            tone="held"
-                            onTogglePin={
-                              item.jobId && onTogglePin
-                                ? () => onTogglePin(item.jobId!, !item.pinned)
-                                : undefined
-                            }
-                          />
-                        ))}
-                      </AnimatePresence>
-                    </StatusSection>
-                  )}
-                  <StatusSection title="已消费" count={consumedItems.length} emptyHint="尚无消费记录">
-                    <AnimatePresence initial={false}>
-                      {consumedItems.map((item) => {
-                        const id = item.jobId ?? item.id;
-                        return (
-                          <StatusRow
-                            key={id}
-                            item={item}
-                            tone="consumed"
-                            fresh={freshIds.has(id)}
-                          />
-                        );
-                      })}
-                    </AnimatePresence>
-                  </StatusSection>
-                </>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-        </>
+            </StatusSection>
+
+            {/* 已消费：delivered=true（success/failed badge），fresh 滑入 */}
+            <StatusSection title="已消费" count={consumedItems.length} emptyHint="尚无消费记录">
+              <AnimatePresence initial={false}>
+                {consumedItems.map((item) => {
+                  const id = item.jobId ?? item.id;
+                  return (
+                    <StatusRow
+                      key={id}
+                      item={item}
+                      tone="consumed"
+                      fresh={freshIds.has(id)}
+                    />
+                  );
+                })}
+              </AnimatePresence>
+            </StatusSection>
+          </div>
+        </div>
       )}
     </div>
   );

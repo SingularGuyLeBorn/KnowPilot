@@ -4,6 +4,26 @@
 
 export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "superior";
 
+/** 排队阻塞原因：哪个上限卡住（与服务端 AsyncJobQueuedReason 一致，orchestrator 真实判定） */
+export type AsyncQueuedReason = "global" | "session" | "workspace";
+
+const ASYNC_QUEUED_REASON_LABEL: Record<AsyncQueuedReason, string> = {
+  global: "全局上限",
+  session: "会话上限",
+  workspace: "workspace 上限",
+};
+
+/** queued 条目的排队提示：「第 N 位 · 因 X 上限排队」（数据均来自池统计，缺哪段省哪段） */
+export function formatQueuedHint(item: {
+  queuePosition?: number;
+  queuedReason?: AsyncQueuedReason;
+}): string {
+  const parts: string[] = [];
+  if (item.queuePosition !== undefined) parts.push(`第 ${item.queuePosition + 1} 位`);
+  if (item.queuedReason) parts.push(`因${ASYNC_QUEUED_REASON_LABEL[item.queuedReason]}排队`);
+  return parts.join(" · ");
+}
+
 export interface ChatQueueAttachment {
   id: string;
   name: string;
@@ -27,6 +47,10 @@ export interface ChatQueueItem {
   jobId?: string;
   taskLabel?: string;
   status?: "pending" | "queued" | "running" | "done" | "failed"; // user 仅 pending；async 用 queued/running/done/failed
+  /** queued 任务在池队列中的位置（0-based，来自 orchestrator.getPosition） */
+  queuePosition?: number;
+  /** queued 任务的排队原因：哪个上限卡住（来自 orchestrator.getQueuedReason） */
+  queuedReason?: AsyncQueuedReason;
   /** 异步原始结果（不可编辑） */
   asyncResult?: string;
   /** 用户对异步结果追加的说明（可编辑，LLM 会区分） */
@@ -108,7 +132,7 @@ export function mergeAsyncPollIntoQueue(
   local: ChatQueueItem[],
   poll?: {
     running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number; sourceType?: string }>;
-    queued?: Array<{ jobId: string; taskLabel: string; position?: number; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number; sourceType?: string }>;
+    queued?: Array<{ jobId: string; taskLabel: string; position?: number; reason?: AsyncQueuedReason; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number; sourceType?: string }>;
     deliveries?: Array<{
       id: string;
       jobId: string;
@@ -226,10 +250,12 @@ export function mergeAsyncPollIntoQueue(
     next.unshift({
       id: `queued-${job.jobId}`,
       kind: "async-running",
-      text: job.position !== undefined ? `排队第 ${job.position + 1}` : "",
+      text: "",
       jobId: job.jobId,
       taskLabel: job.taskLabel,
       status: "queued",
+      queuePosition: job.position,
+      queuedReason: job.reason,
       subagentSessionId: job.subagentSessionId,
       logs: job.logs,
       createdAt: job.createdAt,

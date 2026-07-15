@@ -307,5 +307,6 @@ process.on("SIGINT", handleShutdown);
 process.on("SIGTERM", handleShutdown);
 
 export type { AppRouter } from "./router.js";
+export type { AsyncQueueStats } from "./infra/asyncJobManager.js";
 
 

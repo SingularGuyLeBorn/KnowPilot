@@ -7,7 +7,10 @@
  * - asyncResultQueue: 从 poll 数据派生（async-running + async-result），合并 asyncOverlays（用户追加编辑）
  * - userQueue: 用户主动发送的消息（存入 session state）
  * 显示队列 = asyncResultQueue + userQueue（async 在前，符合优先级语义）。
- * 右侧「状态」：未消费 = 仅待开始/运行中；已结束不进未消费；已消费带滑入。
+ * 右侧「状态」三组状态模型（TP-3，执行×消费两正交维度）：
+ *   进行中 = async-running（queued 排队 + running 执行）；
+ *   待消费 = 终态且 delivered=false 的 delivery（removeAt/serverConsumed 的完成态展示项已被消费，不进）；
+ *   已消费 = poll.consumed（delivered=true），带 fresh 滑入。
  * 纯结构拆分：useMemo 体与 deps 逐字未改。本 hook 不含任何 useEffect。
  */
 
@@ -71,13 +74,15 @@ export function useChatDerivedQueues({
     [asyncOverlays, asyncQueueQuery.data, consumedDeliveries],
   );
 
-  // 右侧「状态」：未消费 = 仅待开始/运行中；已结束不进未消费；已消费带滑入
-  const runtimePendingItems = useMemo(
+  // 右侧「状态」三组（TP-3）：进行中 = async-running（queued+running）；
+  // 待消费 = 终态未 delivered 的 delivery（removeAt/serverConsumed 的完成态展示项已被消费，不进）；
+  // 已消费 = poll.consumed，带滑入
+  const runtimeActiveItems = useMemo(
     () => asyncResultQueue.filter((i) => i.kind === "async-running"),
     [asyncResultQueue],
   );
-  const runtimeHeldItems = useMemo(
-    () => asyncResultQueue.filter((i) => i.kind === "async-result" && i.pinned),
+  const runtimeToConsumeItems = useMemo(
+    () => asyncResultQueue.filter((i) => i.kind === "async-result" && !i.removeAt && !i.serverConsumed),
     [asyncResultQueue],
   );
   const runtimeConsumedItems = useMemo(() => {
@@ -109,5 +114,5 @@ export function useChatDerivedQueues({
     [asyncQueueQuery.data],
   );
 
-  return { asyncResultQueue, runtimePendingItems, runtimeHeldItems, runtimeConsumedItems, queue, syncTaskItems };
+  return { asyncResultQueue, runtimeActiveItems, runtimeToConsumeItems, runtimeConsumedItems, queue, syncTaskItems };
 }

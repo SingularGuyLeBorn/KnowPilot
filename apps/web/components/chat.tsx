@@ -466,11 +466,10 @@ export function ChatView() {
     [effectiveSessionId, reorderSessionQueueItemsMutation],
   );
 
-  // 【派生队列群】asyncResultQueue / runtime 三态 / 显示队列的 useMemo 派生收拢于
+  // 【派生队列群】asyncResultQueue / runtime 三组（TP-3）/ 显示队列的 useMemo 派生收拢于
   // useChatDerivedQueues（W13e 拆出；useMemo 体与 deps 逐字未改）
-  const { asyncResultQueue, runtimePendingItems, runtimeHeldItems, runtimeConsumedItems, queue, syncTaskItems } =
+  const { asyncResultQueue, runtimeActiveItems, runtimeToConsumeItems, runtimeConsumedItems, queue, syncTaskItems } =
     useChatDerivedQueues({ asyncOverlays, asyncQueueQuery, consumedDeliveries, userQueue });
-  const [runtimeSubTab, setRuntimeSubTab] = useState<"pending" | "consumed">("pending");
   // W-A 右栏「状态」一级分组（不持久化）
   const [runtimeGroupTab, setRuntimeGroupTab] = useState<"async" | "sync">("async");
 
@@ -1088,14 +1087,12 @@ export function ChatView() {
         modelSupportsReasoning={!!modelOpt.supportsThinking}
         modelReasoningRequired={!!modelOpt.reasoningRequired}
         tokenBudget={tokenBudget}
-        runtimeSubTab={runtimeSubTab}
-        setRuntimeSubTab={setRuntimeSubTab}
         runtimeGroupTab={runtimeGroupTab}
         setRuntimeGroupTab={setRuntimeGroupTab}
         syncTaskItems={syncTaskItems}
-        runtimePendingItems={runtimePendingItems}
+        runtimeActiveItems={runtimeActiveItems}
+        runtimeToConsumeItems={runtimeToConsumeItems}
         runtimeConsumedItems={runtimeConsumedItems}
-        runtimeHeldItems={runtimeHeldItems}
         cancelAsyncJobMutate={cancelAsyncJobMutation.mutate}
         pinAsyncJobMutate={pinAsyncJobMutation.mutate}
       />

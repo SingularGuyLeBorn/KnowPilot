@@ -20,7 +20,11 @@ import type { StoredToolCall } from "./chatHistory.js";
 import { waitMs } from "./shellRunner.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { prisma } from "../db.js";
-import { getAsyncJobOrchestrator, consumeQueuedTimeoutMs } from "./asyncJobOrchestrator.js";
+import {
+  getAsyncJobOrchestrator,
+  consumeQueuedTimeoutMs,
+  type AsyncJobQueuedReason,
+} from "./asyncJobOrchestrator.js";
 import { getSwarmOrchestrator } from "./swarmOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
@@ -676,6 +680,8 @@ export interface AsyncQueuedJob {
   taskLabel: string;
   status: "queued";
   position?: number;
+  /** 排队原因：首个卡住的上限（orchestrator 真实判定，TP-2）；不在池内存队列时为 undefined（如重启后 DB 残留 queued） */
+  reason?: AsyncJobQueuedReason;
   subagentSessionId?: string;
   logs?: AsyncTaskLogEntry[];
   createdAt: number;
@@ -708,6 +714,7 @@ export async function listQueuedAsyncJobs(
         taskLabel: input.taskLabel,
         status: "queued",
         position: orchestrator.getPosition(row.id),
+        reason: orchestrator.getQueuedReason(row.id),
         logs: output.logs,
         createdAt: row.createdAt.getTime(),
         sourceType: input.sourceType,
