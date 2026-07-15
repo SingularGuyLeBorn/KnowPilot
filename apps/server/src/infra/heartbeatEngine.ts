@@ -29,6 +29,7 @@ import { getSwarmOrchestrator, type SwarmTaskOutcome } from "./swarmOrchestrator
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
+import { expireStaleApprovals } from "./approvalGate.js";
 import { createMemoryRepository, decayMemories } from "./memoryRepository.js";
 import { sendEmailNotification } from "./emailNotifier.js";
 import { HEARTBEAT_MAX_CONSECUTIVE_FAILURES } from "@knowpilot/shared";
@@ -66,8 +67,6 @@ export class HeartbeatEngine {
   private maintenanceJob: ScheduledTask | null = null;
   // W12：审批过期清理维护任务（同 maintenanceJob 通道，不随 refresh 重建）
   private approvalCleanupJob: ScheduledTask | null = null;
-  // W12：连续失败熔断暂停集（纯内存态，恢复语义见 suspendHeartbeat 注释）
-  private suspendedAgents = new Set<string>();
   // A14：事件驱动 refresh 的防抖句柄与监听器引用（stop 时清理）
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private eventHandler: ((payload: EntityEventPayload<unknown>) => void) | null = null;
@@ -160,9 +159,25 @@ export class HeartbeatEngine {
       // 停止所有现有任务
       for (const job of this.jobs.values()) job.stop();
       this.jobs.clear();
-      // W12：refresh 重建即恢复——清空 suspended 暂停集，被熔断暂停的 Agent 随本轮重新注册
-      //（若依旧连续失败达阈值会再次暂停；这是「下次 refresh() 恢复」的唯一实现点）
-      this.suspendedAgents.clear();
+
+      // W12/W16d-2：suspended 持久化在 Agent 行（heartbeatSuspendedAt），refresh 不再连坐恢复。
+      // 个体化恢复：仅摘除「连续失败计数已清零」的个体——计数清零只可能来自
+      // ① AgentService.update 检测到心跳配置变更（人工修复信号）；② 上次成功运行。
+      // 依旧达阈值的个体保持 suspended（重启/无关 Agent 变更不再误恢复）。
+      const suspendedRows = await this.prisma.agent.findMany({
+        where: { heartbeatSuspendedAt: { not: null } },
+        select: { id: true, heartbeat: true },
+      });
+      for (const row of suspendedRows) {
+        const hb = this.parseHeartbeat(row.heartbeat);
+        if ((hb?.consecutiveFailures ?? 0) < MAX_CONSECUTIVE_FAILURES) {
+          await this.prisma.agent.update({
+            where: { id: row.id },
+            data: { heartbeatSuspendedAt: null },
+          });
+          console.log(`  💓 [HeartbeatEngine] Agent ${row.id} 连续失败计数已清零，心跳 suspended 已摘除`);
+        }
+      }
 
       // 重新加载
       const agents = await this.prisma.agent.findMany({
@@ -207,7 +222,6 @@ export class HeartbeatEngine {
   /** W12：每日审批过期清理（复用 W1 expireStaleApprovals；失败不阻塞心跳主流程） */
   async runApprovalCleanup(): Promise<number> {
     try {
-      const { expireStaleApprovals } = await import("./approvalGate.js");
       const n = await expireStaleApprovals(this.services);
       if (n > 0) {
         console.log(`  ⚠️ [ApprovalCleanup] 已将 ${n} 条过期 pending 审批标为 rejected`);
@@ -225,8 +239,9 @@ export class HeartbeatEngine {
       const agent = await this.prisma.agent.findUnique({ where: { id: agentId } });
       if (!agent || agent.status === "deleted" || agent.status === "dormant") return;
 
-      // W12：suspended 熔断暂停态跳过（恢复：下次 refresh() 或 resumeHeartbeat()）
-      if (this.suspendedAgents.has(agentId)) {
+      // W12/W16d-2：suspended 熔断暂停态跳过（持久化在 Agent 行；恢复：resumeHeartbeat() 或
+      // 心跳配置变更清零计数后由 refresh() 个体化摘除）
+      if (agent.heartbeatSuspendedAt) {
         console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳已 suspended（连续失败达阈值），跳过`);
         return;
       }
@@ -411,7 +426,7 @@ export class HeartbeatEngine {
                 const lastError = err instanceof Error ? err.message : String(err);
                 const notify = await sendEmailNotification(this.config, this.services.log, {
                   subject: `[KnowPilot] Agent「${agent.name}」心跳连续失败 ${updatedHb.consecutiveFailures} 次`,
-                  body: `Agent「${agent.name}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次，心跳已自动暂停（suspended）。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态；修复后更新任意 Agent 配置触发 refresh() 即自动恢复，或重启服务。`,
+                  body: `Agent「${agent.name}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次，心跳已自动暂停（suspended，已持久化）。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态；修复后保存该 Agent 的心跳配置（cron/goal/心跳模型变更会清零失败计数并自动恢复），重启服务不再自动恢复。`,
                   agentId,
                 });
                 if ("error" in notify) {
@@ -422,7 +437,7 @@ export class HeartbeatEngine {
               }
               // W12：达阈值（含恢复后再失败）→ 暂停该 Agent 心跳（幂等）
               if (updatedHb && updatedHb.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                this.suspendHeartbeat(agentId, agent.name);
+                await this.suspendHeartbeat(agentId, agent.name);
               }
             }
             return { status: "failed", error: err instanceof Error ? err.message : String(err) };
@@ -496,38 +511,50 @@ export class HeartbeatEngine {
   }
 
   /**
-   * W12：连续失败达阈值 → 暂停该 Agent 心跳（熔断置 suspended）。
+   * W12/W16d-2：连续失败达阈值 → 暂停该 Agent 心跳（熔断置 suspended，持久化到 Agent 行）。
    *
-   * 语义：纯引擎内存态，不落库——
+   * 语义：heartbeatSuspendedAt 是唯一事实源（重启不失）——
    * - 立即摘除 cron job；triggerHeartbeat 对 suspended Agent 直接跳过；
-   * - 恢复机制（勿过度设计，二选一）：
-   *   ① 下次 refresh()：Agent 配置变更（agent.created/updated/deleted 事件防抖触发）或服务重启
-   *      都会全量重建注册并清空暂停集——用户收到告警邮件后修复配置即自动恢复；
+   * - 恢复机制（两条显式路径，不再连坐）：
+   *   ① 心跳配置变更：AgentService.update 检测到 enabled/cron/goal/heartbeatModel 变更时清零
+   *      consecutiveFailures（人工修复信号），随后 refresh() 个体化摘除 suspended；
    *   ② 手动 resumeHeartbeat(agentId)（cron 注册随下次 refresh() 重建）。
    * - 恢复后若再失败，streak ≥ 阈值会立即重新暂停（邮件仍只在 === 阈值时发一次）。
    */
-  private suspendHeartbeat(agentId: string, agentName: string): void {
-    if (this.suspendedAgents.has(agentId)) return;
-    this.suspendedAgents.add(agentId);
+  private async suspendHeartbeat(agentId: string, agentName: string): Promise<void> {
     const job = this.jobs.get(agentId);
     if (job) {
       job.stop();
       this.jobs.delete(agentId);
     }
-    console.error(
-      `  💓 [HeartbeatEngine] Agent ${agentName} 心跳连续失败达阈值，已暂停（suspended）。` +
-        `下次 refresh() 或 resumeHeartbeat() 恢复。`,
-    );
+    // 幂等：只在未 suspended 时写入（保留首次熔断时刻）
+    const res = await this.prisma.agent.updateMany({
+      where: { id: agentId, heartbeatSuspendedAt: null },
+      data: { heartbeatSuspendedAt: new Date() },
+    });
+    if (res.count > 0) {
+      console.error(
+        `  💓 [HeartbeatEngine] Agent ${agentName} 心跳连续失败达阈值，已暂停（suspended，已持久化）。` +
+          `恢复：保存该 Agent 心跳配置（计数清零）或 resumeHeartbeat()。`,
+      );
+    }
   }
 
-  /** W12：手动恢复被暂停的心跳（从暂停集摘除；cron 注册随下次 refresh() 重建） */
-  resumeHeartbeat(agentId: string): void {
-    this.suspendedAgents.delete(agentId);
+  /** W12：手动恢复被暂停的心跳（摘除 suspended 标记；cron 注册随下次 refresh() 重建） */
+  async resumeHeartbeat(agentId: string): Promise<void> {
+    await this.prisma.agent.update({
+      where: { id: agentId },
+      data: { heartbeatSuspendedAt: null },
+    });
   }
 
   /** W12：观测/测试用——该 Agent 心跳是否处于 suspended 暂停态 */
-  isHeartbeatSuspended(agentId: string): boolean {
-    return this.suspendedAgents.has(agentId);
+  async isHeartbeatSuspended(agentId: string): Promise<boolean> {
+    const row = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { heartbeatSuspendedAt: true },
+    });
+    return row?.heartbeatSuspendedAt != null;
   }
 
   private async updateHeartbeatStatus(

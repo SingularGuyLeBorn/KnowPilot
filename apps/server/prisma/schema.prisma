@@ -50,6 +50,7 @@ model Agent {
   apiKey       String?                     /// 专属 API Key（不设则用 env）
   heartbeatModel String?                   /// 心跳用便宜模型（不设则用 model）
   heartbeat    Json?                       /// { enabled, cron, goal, lastRunAt, lastRunStatus, consecutiveFailures }
+  heartbeatSuspendedAt DateTime?           /// W12/W16d-2：连续失败熔断暂停时刻（持久化；null = 未暂停）。恢复语义见 heartbeatEngine
   status       String   @default("active") /// "active" | "idle" | "dormant" | "deleted"（tombstone）
   deletedAt    DateTime?                   /// 删除时间（tombstone）
   deletedBy    String?                     /// 删除者（"user" | agentId）

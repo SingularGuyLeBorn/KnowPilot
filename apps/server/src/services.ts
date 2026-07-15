@@ -982,6 +982,39 @@ ${entity.systemPrompt}
     if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
   }
 
+  /**
+   * W16d-2：心跳配置变更 = 人工修复信号 → consecutiveFailures 清零，
+   * suspended 标记随后由 heartbeatEngine.refresh() 个体化摘除（计数清零是其唯一恢复条件）。
+   * 判定字段：heartbeat.enabled/cron/goal + heartbeatModel（改模型常是修 LLM 配置）；
+   * 仅「值确实变化」才清零——原样保存不算修复，不把 suspended 变成形式检查。
+   */
+  override async update(input: UpdateAgentInput): Promise<OperationResult<AgentEntity>> {
+    if (input.heartbeat !== undefined || input.heartbeatModel !== undefined) {
+      const existing = await this.delegate.findUnique({
+        where: { id: input.id },
+        select: { heartbeat: true, heartbeatModel: true },
+      });
+      if (existing) {
+        const prev = (existing.heartbeat ?? null) as {
+          enabled?: boolean;
+          cron?: string;
+          goal?: string;
+        } | null;
+        const next = input.heartbeat as { enabled?: boolean; cron?: string; goal?: string } | undefined;
+        const heartbeatChanged =
+          next !== undefined &&
+          (next.enabled !== prev?.enabled || next.cron !== prev?.cron || next.goal !== prev?.goal);
+        const modelChanged =
+          input.heartbeatModel !== undefined && input.heartbeatModel !== existing.heartbeatModel;
+        if ((heartbeatChanged || modelChanged) && (next ?? prev)) {
+          const base = (next ?? prev) as NonNullable<UpdateAgentInput["heartbeat"]>;
+          input = { ...input, heartbeat: { ...base, consecutiveFailures: 0 } };
+        }
+      }
+    }
+    return super.update(input);
+  }
+
   // 超级 Agent 不可删除——系统核心，删除会导致 Swarm 体系崩溃
   override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
     const existing = await this.delegate.findUnique({ where: { id } });

@@ -4,7 +4,8 @@
  * 1. CircuitBreaker 单元：三态转移 / 半开恢复 / 非法转移拒绝（状态机不变量收进类内部）
  * 2. MCP 接入：连续失败开闸后，open 期间零真实连接尝试，结构化错误结果喂回 LLM（不抛）
  * 3. 审批过期清理定时化：每日 cron 挂载在 maintenance 通道（不随 refresh 重建）+ runApprovalCleanup 真实清扫
- * 4. 心跳连续失败熔断暂停：streak 达阈值 → suspended，refresh() / resumeHeartbeat() 恢复
+ * 4. 心跳连续失败熔断暂停（W16d-2 持久化语义）：streak 达阈值 → suspended 落 Agent 行，
+ *    refresh() 个体化恢复（仅计数清零者）/ resumeHeartbeat() / 重启不失
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -280,7 +281,7 @@ describe("W12 审批过期清理定时化", () => {
   });
 });
 
-/* ─────────────────── 4. 心跳连续失败熔断暂停（suspended） ─────────────────── */
+/* ─────────── 4. 心跳连续失败熔断暂停（suspended，W16d-2 持久化 + 个体化恢复） ─────────── */
 
 describe("W12 心跳连续失败熔断暂停", () => {
   async function readStreak(agentId: string): Promise<number> {
@@ -296,12 +297,12 @@ describe("W12 心跳连续失败熔断暂停", () => {
         expect(await readStreak(agentId)).toBe(i);
       });
     }
-    await vi.waitFor(() => {
-      expect(engine.isHeartbeatSuspended(agentId)).toBe(true);
+    await vi.waitFor(async () => {
+      expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
     });
   }
 
-  it("streak 达阈值 → suspended 暂停并摘除触发；refresh() / resumeHeartbeat() 恢复", async () => {
+  it("streak 达阈值 → suspended 落库；refresh 不再连坐恢复；配置变更清零计数后个体化摘除；重启不失", async () => {
     vi.spyOn(agentRuntime, "runAgentLoop").mockRejectedValue(new Error("W12 模拟心跳失败"));
 
     const ctx = await createContextInner();
@@ -323,8 +324,13 @@ describe("W12 心跳连续失败熔断暂停", () => {
     await engine.start();
 
     try {
-      // ── 达阈值 → suspended ──
+      // ── 达阈值 → suspended 持久化到 Agent 行 ──
       await triggerUntilSuspended(engine, agentId);
+      const row = await prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { heartbeatSuspendedAt: true },
+      });
+      expect(row?.heartbeatSuspendedAt).not.toBeNull();
 
       // suspended 后触发被跳过：不再创建新心跳 Task
       const before = await prisma.task.count({ where: { name: `[heartbeat] W12-suspend-${suffix}` } });
@@ -332,19 +338,85 @@ describe("W12 心跳连续失败熔断暂停", () => {
       const after = await prisma.task.count({ where: { name: `[heartbeat] W12-suspend-${suffix}` } });
       expect(after).toBe(before);
 
-      // ── 恢复路径 1：refresh() 重建即恢复 ──
+      // ── refresh() 不再连坐恢复（计数仍达阈值 → 保持 suspended） ──
       await engine.refresh();
-      expect(engine.isHeartbeatSuspended(agentId)).toBe(false);
+      expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
 
-      // 恢复后再失败（streak 已 ≥ 阈值）→ 立即重新暂停
-      await engine.triggerHeartbeat(agentId);
-      await vi.waitFor(() => {
-        expect(engine.isHeartbeatSuspended(agentId)).toBe(true);
+      // ── 重启不失：新引擎实例（内存态全清）仍 suspended（DB 是唯一事实源） ──
+      resetHeartbeatEngineForTests();
+      const engine2 = getHeartbeatEngine(prisma, ctx.services, hbConfig);
+      expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
+      await engine2.start();
+      await engine2.triggerHeartbeat(agentId);
+      const afterRestart = await prisma.task.count({ where: { name: `[heartbeat] W12-suspend-${suffix}` } });
+      expect(afterRestart).toBe(before);
+
+      // ── 恢复路径 1：心跳配置变更（cron 改动）→ 计数清零 → refresh 个体化摘除 ──
+      const hbRow = await prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } });
+      const hb = hbRow!.heartbeat as Record<string, unknown>;
+      const updated = await ctx.services.agent.update({
+        id: agentId,
+        heartbeat: { ...hb, cron: "0 10 * * *" } as any,
       });
+      if (!updated.success) throw new Error(`更新 Agent 失败：${updated.error?.message}`);
+      expect(await readStreak(agentId)).toBe(0);
+      await engine2.refresh();
+      expect(await engine2.isHeartbeatSuspended(agentId)).toBe(false);
 
       // ── 恢复路径 2：手动 resumeHeartbeat ──
-      engine.resumeHeartbeat(agentId);
-      expect(engine.isHeartbeatSuspended(agentId)).toBe(false);
+      // 先再熔断一次（streak 从 0 重新累计到达阈值）
+      await triggerUntilSuspended(engine2, agentId);
+      expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
+      await engine2.resumeHeartbeat(agentId);
+      expect(await engine2.isHeartbeatSuspended(agentId)).toBe(false);
+
+      // resume 不清计数：恢复后再失败（streak 仍 ≥ 阈值）→ 立即重新暂停
+      await engine2.triggerHeartbeat(agentId);
+      await vi.waitFor(async () => {
+        expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
+      });
+    } finally {
+      await prisma.task.deleteMany({ where: { name: { contains: "W12-suspend" } } });
+      await prisma.chatSession.deleteMany({ where: { agentId } });
+      await prisma.agent.deleteMany({ where: { id: agentId } });
+    }
+  });
+
+  it("心跳配置原样保存（cron/goal 未变）不清零计数、不解除 suspended", async () => {
+    vi.spyOn(agentRuntime, "runAgentLoop").mockRejectedValue(new Error("W12 模拟心跳失败"));
+
+    const ctx = await createContextInner();
+    const suffix = `${Date.now()}-same`;
+    const created = await ctx.services.agent.create({
+      name: `W12-suspend-${suffix}`,
+      model: "deepseek-chat",
+      systemPrompt: "test",
+      tools: [],
+      tier: "manager",
+      heartbeat: { enabled: true, cron: "0 9 * * *", goal: "W12 原样保存验证" } as any,
+    });
+    if (!created.success) throw new Error(`创建 Agent 失败：${created.error?.message}`);
+    const agentId = (created.data as { id: string }).id;
+
+    const hbConfig = { ...ctx.config, llm: { ...ctx.config.llm, dailyBudget: 0 } };
+    const engine = getHeartbeatEngine(prisma, ctx.services, hbConfig);
+    await engine.start();
+
+    try {
+      await triggerUntilSuspended(engine, agentId);
+
+      // 原样保存（heartbeat 全字段不变 + 无关字段 name 变更）→ 计数保持、suspended 保持
+      const hbRow = await prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } });
+      const hb = hbRow!.heartbeat as Record<string, unknown>;
+      const updated = await ctx.services.agent.update({
+        id: agentId,
+        description: "无关字段变更",
+        heartbeat: hb as any,
+      });
+      if (!updated.success) throw new Error(`更新 Agent 失败：${updated.error?.message}`);
+      expect(await readStreak(agentId)).toBe(HEARTBEAT_MAX_CONSECUTIVE_FAILURES);
+      await engine.refresh();
+      expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
     } finally {
       await prisma.task.deleteMany({ where: { name: { contains: "W12-suspend" } } });
       await prisma.chatSession.deleteMany({ where: { agentId } });
