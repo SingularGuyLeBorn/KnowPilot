@@ -23,6 +23,23 @@ import { z } from "zod";
 import { zodParams } from "./zodParams.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
+/**
+ * spawn waitForResult 轮询的空闲判定（S2）。仅「无流」不够，必须四条件同时满足：
+ * - streaming=false：无活跃流；
+ * - runStarting=false：无「即将起流」标记（drain 已认领队列项、prepare 段尚未 hub.start——
+ *   此间隙队列已空、流未起，缺该条件会被误判空闲，抓到前轮旧 assistant 当本轮派活结果）；
+ * - nestedActive=0：子会话内无 running/queued Task；
+ * - queuedItems=0：无待处理队列项（前轮结束到 drain 认领之间的窗口由该条件覆盖）。
+ */
+export function isSubagentSessionSettled(opts: {
+  streaming: boolean;
+  runStarting: boolean;
+  nestedActive: number;
+  queuedItems: number;
+}): boolean {
+  return !opts.streaming && !opts.runStarting && opts.nestedActive === 0 && opts.queuedItems === 0;
+}
+
 /** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
  *  底层实现 = agent_create_sub + agent_send_message({ autoRun: true })。
  *  waitForResult=false（默认）= 异步投递：工具立刻返回，子 Agent 自行 report_back 进父异步队列。
@@ -239,7 +256,8 @@ async function spawnSubagentExecute(
 
   // 同步等待：父流挂起。完成条件：
   // 1) 子 Agent 主动 report_back → 跟踪 Task success/failed（提前结束，不进异步队列）
-  // 2) 否则：子会话曾运行过（或暖机后）且当前无流、无子会话内 running/queued Task → 抓取最后一条 assistant
+  // 2) 否则：子会话曾运行过（或暖机后）且判定空闲（isSubagentSessionSettled：无流、无「即将起流」
+  //    标记、无子会话内 running/queued Task、无待处理队列项）→ 抓取最后一条 assistant
   const waitDeadline = Date.now() + 10 * 60 * 1000;
   const waitStartedAt = Date.now();
   let finalContent = "";
@@ -264,10 +282,12 @@ async function spawnSubagentExecute(
     }
 
     let streaming = false;
+    let runStarting = false;
     if (subagentSessionId) {
       try {
         const hub = getStreamHub();
         streaming = !!hub?.isRunning(subagentSessionId);
+        runStarting = !!hub?.isRunStarting(subagentSessionId);
       } catch {
         streaming = false;
       }
@@ -284,9 +304,24 @@ async function spawnSubagentExecute(
       });
     }
 
+    // S2：待处理队列项也算忙——前轮结束到 drain 认领之间队列非空，此时判空闲会抓前轮旧 assistant
+    let queuedItems = 0;
+    if (subagentSessionId) {
+      try {
+        queuedItems = ((await ctx.services.sessionQueueItem?.listBySession(subagentSessionId)) ?? []).length;
+      } catch {
+        queuedItems = 0;
+      }
+    }
+
     // 暖机：避免 autoRun 尚未起流时被误判为空闲
     const warmedUp = sawSubStream || Date.now() - waitStartedAt >= 2000;
-    if (warmedUp && !streaming && nestedActive === 0 && subagentSessionId && ctx.prisma) {
+    if (
+      warmedUp &&
+      subagentSessionId &&
+      ctx.prisma &&
+      isSubagentSessionSettled({ streaming, runStarting, nestedActive, queuedItems })
+    ) {
       const last = await ctx.prisma.chatMessage.findFirst({
         where: { sessionId: subagentSessionId, role: "assistant" },
         orderBy: { createdAt: "desc" },

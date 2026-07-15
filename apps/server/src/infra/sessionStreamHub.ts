@@ -101,6 +101,23 @@ export class SessionStreamHub {
     return !!run && !run.completed;
   }
 
+  /** drain 已认领、prepare 段尚未起流的会话（S2）：同步等待类轮询的空闲判定必须把它算作「忙」 */
+  private startingSessions = new Set<string>();
+
+  /** drain 认领队列项后同步宣告「即将起流」，闭合「consume 删行 → prepare 段 DB 工作 → hub.start」
+   *  间隙被 spawn waitForResult 轮询误判空闲（抓前轮旧 assistant 当本轮结果）的窗口 */
+  markRunStarting(sessionId: string): void {
+    this.startingSessions.add(sessionId);
+  }
+
+  unmarkRunStarting(sessionId: string): void {
+    this.startingSessions.delete(sessionId);
+  }
+
+  isRunStarting(sessionId: string): boolean {
+    return this.startingSessions.has(sessionId);
+  }
+
   getLastEventId(sessionId: string): number {
     const run = this.runs.get(sessionId);
     if (run) return run.nextId - 1;
@@ -237,6 +254,8 @@ export class SessionStreamHub {
       followUpQueue: [],
     };
     this.runs.set(sessionId, state);
+    // 起流占位成功后「忙」由 isRunning 接管，清除 drain 宣告的「即将起流」标记（S2）
+    this.startingSessions.delete(sessionId);
 
     const maxId = await this.maxEventIdFor(sessionId);
     state.nextId = maxId + 1;

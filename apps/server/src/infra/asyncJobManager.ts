@@ -213,10 +213,15 @@ export function enqueueSuperiorQueueDrain(options: {
         if (head.kind !== "superior") return;
         const claim = await services.sessionQueueItem.consume(head.id);
         if (!claim.claimed) continue;
+        // S2：认领后同步宣告「即将起流」——consume 删行到 runItem 内 hub.start 之间无 await 交错点
+        // （本 continuation 同步执行到 mark），spawn 同步等待轮询据此判定「忙」，不会抓前轮旧 assistant
+        hub.markRunStarting(sessionId);
         try {
           await runItem({ id: head.id, kind: head.kind, content: head.content });
         } catch (err) {
           console.warn(`[asyncJobManager] superior 队列 drain 处理失败 session=${sessionId} item=${head.id}:`, err);
+        } finally {
+          hub.unmarkRunStarting(sessionId);
         }
       }
     } catch (err) {

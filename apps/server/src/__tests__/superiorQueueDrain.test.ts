@@ -19,6 +19,8 @@ import { executeNativeTool } from "../infra/nativeTools.js";
 import { createContextInner } from "../trpc/context.js";
 import { setStreamHub, getStreamHub, SessionStreamHub } from "../infra/sessionStreamHub.js";
 import { resetSwarmBus } from "../infra/swarmBus.js";
+import { enqueueSuperiorQueueDrain } from "../infra/asyncJobManager.js";
+import { isSubagentSessionSettled } from "../infra/tools/native/session.js";
 
 type Ctx = Awaited<ReturnType<typeof createContextInner>>;
 
@@ -337,6 +339,62 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
     } finally {
       clearTimeout(autoRelease);
       release();
+      await cleanupDrainFixture(fx);
+    }
+  });
+
+  it("S2：drain 认领后即标「即将起流」——claim→start 间隙不被 spawn 轮询误判为空闲", async () => {
+    const ctx = await createContextInner();
+    const fx = await createDrainFixture(ctx);
+    const hub = getStreamHub()!;
+    try {
+      // 种一条 superior 队列项（模拟 busy 期入队、前轮刚结束待 drain 的场景）
+      await ctx.services.sessionQueueItem.create({
+        sessionId: fx.subSessionId,
+        kind: "superior",
+        content: "S2 间隙消息",
+        source: fx.parentAgentId,
+      });
+
+      // 闸门卡住 runItem：构造「已认领、未起流」确定态（即 drain claim→start 间隙）
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((r) => {
+        releaseGate = r;
+      });
+      const drainPromise = enqueueSuperiorQueueDrain({
+        sessionId: fx.subSessionId,
+        services: ctx.services,
+        runItem: async () => {
+          await gate;
+        },
+      });
+
+      // 负向断言（旧实现即红：无「即将起流」标记，间隙期间会话被判定为空闲 → 抓前轮旧 assistant）
+      await vi.waitFor(
+        () => {
+          expect(hub.isRunStarting(fx.subSessionId)).toBe(true);
+        },
+        { timeout: 3000, interval: 20 },
+      );
+      expect(hub.isRunning(fx.subSessionId)).toBe(false);
+      expect(
+        isSubagentSessionSettled({ streaming: false, runStarting: true, nestedActive: 0, queuedItems: 0 }),
+      ).toBe(false);
+
+      // 放行 drain 完成：标记清除，settle 判定恢复空闲
+      releaseGate();
+      await drainPromise;
+      expect(hub.isRunStarting(fx.subSessionId)).toBe(false);
+      expect(
+        isSubagentSessionSettled({ streaming: false, runStarting: false, nestedActive: 0, queuedItems: 0 }),
+      ).toBe(true);
+      expect(await ctx.services.sessionQueueItem.listBySession(fx.subSessionId)).toHaveLength(0);
+
+      // 空闲判定全条件：队列残留 / 即将起流 / 嵌套任务 / 流式中 任一存在都不算空闲
+      expect(isSubagentSessionSettled({ streaming: false, runStarting: false, nestedActive: 0, queuedItems: 1 })).toBe(false);
+      expect(isSubagentSessionSettled({ streaming: false, runStarting: false, nestedActive: 1, queuedItems: 0 })).toBe(false);
+      expect(isSubagentSessionSettled({ streaming: true, runStarting: false, nestedActive: 0, queuedItems: 0 })).toBe(false);
+    } finally {
       await cleanupDrainFixture(fx);
     }
   });
