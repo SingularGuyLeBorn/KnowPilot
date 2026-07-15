@@ -188,7 +188,8 @@ const agentRunLocks = new Map<string, Promise<PrepareAgentRunResult>>();
 type PrepareAgentRunResult =
   /** 已起流（或 dedup 命中已有答案）：completion 解析为本轮最终 assistant 文本 */
   | { kind: "started"; subagentSessionId: string; completion: Promise<string> }
-  /** 子会话忙（或队列有残留）：消息已入服务端持久队列，drainPromise 为该 item 被处理完成的链 promise */
+  /** 子会话忙（或队列有残留）：消息已入服务端持久队列；drainPromise 为 per-session 串行 drain 链 promise
+   * （随队列排空解析——FIFO 保证本 item 先于链尾被处理，await 它即等到「本 item 处理完成」，可能多等后排入队项） */
   | { kind: "queued"; subagentSessionId: string; drainPromise: Promise<void> }
   /** 入队被守卫拒绝（QUEUE_FULL / DELEGATION_DEPTH_EXCEEDED 等） */
   | { kind: "failed"; subagentSessionId: string; error: string };

@@ -8,6 +8,7 @@ import {
   executeToolCallsBatch,
   createAgentToolContext,
   formatAgentToolRef,
+  resolveToolCallTimeoutMs,
   DEFAULT_NATIVE,
 } from "../infra/agentTools.js";
 import { skillToolName, parseSkillToolName, buildSkillToolSchema, executeSkill } from "../infra/skillRunner.js";
@@ -272,5 +273,36 @@ describe("Skill executeSkill", () => {
     };
     expect(result.mode).toBe("prompt");
     expect(result.instructions).toContain("Design guidelines");
+  });
+});
+
+describe("长等待超时预算（P2/S5）", () => {
+  const DEFAULT_MS = 30_000;
+  const LONG_WAIT_MS = 10 * 60 * 1000;
+
+  it("P2：async_task_run(waitForResult=true) 拿长等待档而非默认 30s", () => {
+    // 负向断言（旧实现即红）：waitForResult=true 是同步等待语义（结果走 tool return），
+    // 内层 waitForAsyncJob 轮询上限 10 分钟；外层 30s race 会让 >30s 任务拿超时错误而非结果。
+    expect(resolveToolCallTimeoutMs("async_task_run", { waitForResult: true }, DEFAULT_MS)).toBe(LONG_WAIT_MS);
+    // LLM 常把 boolean 写成字符串 "true"（与 shell.ts 的 coerceToolBoolean 同款容忍，否则误判为异步投递）
+    expect(resolveToolCallTimeoutMs("async_task_run", { waitForResult: "true" }, DEFAULT_MS)).toBe(LONG_WAIT_MS);
+  });
+
+  it("P2 对照：async_task_run 默认异步投递（waitForResult 缺省/false）不豁免", () => {
+    expect(resolveToolCallTimeoutMs("async_task_run", {}, DEFAULT_MS)).toBe(DEFAULT_MS);
+    expect(resolveToolCallTimeoutMs("async_task_run", { waitForResult: false }, DEFAULT_MS)).toBe(DEFAULT_MS);
+  });
+
+  it("S5：agent_send_message(waitForRun=true) 拿长等待档；默认 fire-and-forget 不豁免", () => {
+    // waitForRun=true 父流挂起等子会话 drain 处理完成，子的当前轮 + 排队项可远超 30s
+    expect(resolveToolCallTimeoutMs("agent_send_message", { waitForRun: true }, DEFAULT_MS)).toBe(LONG_WAIT_MS);
+    expect(resolveToolCallTimeoutMs("agent_send_message", { waitForRun: "true" }, DEFAULT_MS)).toBe(LONG_WAIT_MS);
+    expect(resolveToolCallTimeoutMs("agent_send_message", {}, DEFAULT_MS)).toBe(DEFAULT_MS);
+  });
+
+  it("既有按名豁免不变：spawn_subagent / sleep 长等待档；普通工具默认档", () => {
+    expect(resolveToolCallTimeoutMs("spawn_subagent", {}, DEFAULT_MS)).toBe(LONG_WAIT_MS);
+    expect(resolveToolCallTimeoutMs("sleep", { seconds: 60 }, DEFAULT_MS)).toBe(LONG_WAIT_MS);
+    expect(resolveToolCallTimeoutMs("web_search", {}, DEFAULT_MS)).toBe(DEFAULT_MS);
   });
 });

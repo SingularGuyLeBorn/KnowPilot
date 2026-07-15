@@ -29,6 +29,7 @@ import {
 import { getEventBus } from "./eventBus.js";
 import { assertApprovalOrProceed, getPendingApprovalCause } from "./approvalGate.js";
 import { resolveAgent } from "./agentResolver.js";
+import { coerceToolBoolean } from "./tools/native/types.js";
 
 function parseToolCallArgs(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
   let args: Record<string, unknown> = {};
@@ -76,6 +77,26 @@ const CLASS_CONCURRENCY: Record<"A" | "B" | "C" | "D", number> = { A: 8, B: 4, C
  *  这些工具实现 Pause-on-Result 语义：LLM 表达等待意图 → 阻塞等任务完成 → 拿到结果继续生成最终答案。 */
 const LONG_WAIT_TOOLS = new Set(["spawn_subagent", "sleep"]);
 const LONG_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * 工具调用超时预算（P2/S5）：同步等待语义的调用必须拿 10 分钟长等待档，
+ * 否则外层 30s race 会让「同步等结果」在 >30s 任务上破灭——底层任务继续跑完，
+ * 结果落库却永远到不了 LLM（内层 waitForAsyncJob / spawn 轮询上限本就是 10 分钟）。
+ * - spawn_subagent / sleep：按工具名豁免；
+ * - async_task_run(waitForResult=true)：结果走 tool return，父流挂起等任务完成；
+ * - agent_send_message(waitForRun=true)：父流挂起等子会话 drain 处理完成。
+ * waitForResult/waitForRun 经 coerceToolBoolean 容忍字符串 "true"（与 shell.ts handler 同款）。
+ */
+export function resolveToolCallTimeoutMs(
+  name: string,
+  args: Record<string, unknown>,
+  defaultTimeoutMs: number,
+): number {
+  if (LONG_WAIT_TOOLS.has(name)) return LONG_WAIT_TIMEOUT_MS;
+  if (name === "async_task_run" && coerceToolBoolean(args.waitForResult)) return LONG_WAIT_TIMEOUT_MS;
+  if (name === "agent_send_message" && coerceToolBoolean(args.waitForRun)) return LONG_WAIT_TIMEOUT_MS;
+  return defaultTimeoutMs;
+}
 
 function getToolConcurrencyClass(name: string, registry: Map<string, ToolRegistryEntry>): "A" | "B" | "C" | "D" {
   const entry = registry.get(name);
@@ -314,11 +335,12 @@ export async function executeToolCallsBatch(
   const defaultTimeoutMs = ctx.config.llm.toolCallTimeoutMs;
 
   // 单工具执行包裹超时 + abort：超时或被中断时返回错误结果，绝不永久挂起
-  // 长等待工具（spawn_subagent / sleep）豁免默认超时，使用 10 分钟上限
+  // 长等待调用（spawn_subagent / sleep / async_task_run 同步等待 / agent_send_message 同步等待）
+  // 豁免默认超时，使用 10 分钟上限
   const runOne = async (item: { call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> } }) => {
     const started = Date.now();
-    const isLongWait = LONG_WAIT_TOOLS.has(item.parsed.name);
-    const timeoutMs = isLongWait ? LONG_WAIT_TIMEOUT_MS : defaultTimeoutMs;
+    const timeoutMs = resolveToolCallTimeoutMs(item.parsed.name, item.parsed.args, defaultTimeoutMs);
+    const isLongWait = timeoutMs === LONG_WAIT_TIMEOUT_MS;
     try {
       const result = await withToolTimeout(
         executeAgentTool(item.parsed.name, item.parsed.args, ctx, registry),
