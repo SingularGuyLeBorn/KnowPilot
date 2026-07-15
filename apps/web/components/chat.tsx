@@ -5,51 +5,30 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import {
-  AlertCircle,
-  ArrowLeft,
-  Bot,
-  Check,
-  Loader2,
-  PanelLeft,
-  PanelRight,
-  X,
-} from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAgent } from "@/lib/hooks";
-import { streamAgentChat, stopAgentChat, copyToClipboard } from "@/lib/agentStream";
+import { stopAgentChat, copyToClipboard } from "@/lib/agentStream";
 import {
-  buildStreamConfig,
   getModelOption,
   loadDefaultChatConfig,
   resolveNewChatConfig,
 } from "@/lib/chatConfig";
-import {
-  buildMessageGroups,
-  formatToolResultHint,
-} from "@/lib/chatMessageUtils";
-import { cn } from "@/lib/utils";
-import { type Agent, type ChatMessage, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
-import { buttonVariants } from "@/components/ui/button";
-import { SessionContextBar } from "@/components/sessionContextUsage";
-import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
+import { buildMessageGroups } from "@/lib/chatMessageUtils";
+import { type Agent, type ChatMessage } from "@knowpilot/shared";
+import { type SelectedSkill } from "@/components/chatInput";
 import { buildTokenBudget } from "@/components/tokenBudgetBar";
 import {
   type ChatQueueItem,
   createUserQueueItem,
-  formatQueueItemForLlm,
   mergeAsyncPollIntoQueue,
   sessionQueueItemToChatItem,
-  splitQueueByKind,
   sortQueueItems,
 } from "@/lib/chatQueueTypes";
-import { UserSendQueuePanel } from "@/components/chatQueue";
-import { SubagentCreateDialog } from "@/components/subagentCreateDialog";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
-import { ChatMessageList } from "@/components/chatMessageList";
+import { type ChatMessageListProps } from "@/components/chatMessageList";
+import { ChatCenterPane } from "@/components/chatCenterPane";
+import { ChatOverlays } from "@/components/chatOverlays";
 import { ChatRightPanel } from "@/components/chatRightPanel";
 import { ChatSidebar } from "@/components/chatSidebar";
 import {
@@ -72,6 +51,8 @@ import { useChatConfig } from "@/lib/useChatConfig";
 import { useChatHoverMonitor } from "@/lib/useChatHoverMonitor";
 import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
 import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
+import { saveChatStoresToStorage, useChatRunStream } from "@/lib/useChatRunStream";
+import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
 
 /* ─── 模块级常量与 UI 偏好持久化 ─── */
 
@@ -79,18 +60,6 @@ const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessio
 const LIFECYCLE_STORAGE_KEY = "kp:chat-lifecycle-states";
 const COMPOSE_STORAGE_KEY = "kp:chat-compose-states";
 
-function saveChatStoresToStorage() {
-  try {
-    const life = streamLifecycleStore.serialize();
-    delete life[NEW_STREAM_KEY];
-    sessionStorage.setItem(LIFECYCLE_STORAGE_KEY, JSON.stringify(life));
-    const compose = sessionComposeStore.serialize();
-    delete compose[NEW_STREAM_KEY];
-    sessionStorage.setItem(COMPOSE_STORAGE_KEY, JSON.stringify(compose));
-  } catch {
-    // ignore
-  }
-}
 
 /* ─── Main ─── */
 
@@ -164,17 +133,6 @@ export function ChatView() {
   // 防止极短时间重复入队（如发送按钮/快捷键连发）
   const lastEnqueueRef = useRef<{ text: string; at: number } | null>(null);
   const streamSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleStreamSave = useCallback((immediate?: boolean) => {
-    if (streamSaveTimeoutRef.current) clearTimeout(streamSaveTimeoutRef.current);
-    if (immediate) {
-      saveChatStoresToStorage();
-      return;
-    }
-    streamSaveTimeoutRef.current = setTimeout(() => {
-      saveChatStoresToStorage();
-      streamSaveTimeoutRef.current = null;
-    }, 100);
-  }, []);
 
   const isSessionStreaming = useCallback(
     (sid: string | null): boolean => streamLifecycleStore.isStreaming(sid),
@@ -190,44 +148,6 @@ export function ChatView() {
   const pendingStreamDeltaRef = useRef<Map<string, string>>(new Map());
   const streamRafRef = useRef<Map<string, number>>(new Map());
 
-  const scheduleStreamFlush = useCallback((sid: string) => {
-    if (streamRafRef.current.has(sid)) return;
-    const id = requestAnimationFrame(() => {
-      streamRafRef.current.delete(sid);
-      const delta = pendingStreamDeltaRef.current.get(sid);
-      if (delta) {
-        pendingStreamDeltaRef.current.delete(sid);
-        streamLifecycleActions.appendTokenDelta(sid, delta);
-        scheduleStreamSave();
-      }
-    });
-    streamRafRef.current.set(sid, id);
-  }, [scheduleStreamSave]);
-
-  /** 立即冲刷并取消该 session 的待写 delta */
-  const flushStreamNow = useCallback((sid: string) => {
-    const rafId = streamRafRef.current.get(sid);
-    if (rafId !== undefined) {
-      cancelAnimationFrame(rafId);
-      streamRafRef.current.delete(sid);
-    }
-    const delta = pendingStreamDeltaRef.current.get(sid);
-    if (delta) {
-      pendingStreamDeltaRef.current.delete(sid);
-      streamLifecycleActions.appendTokenDelta(sid, delta);
-      scheduleStreamSave();
-    }
-  }, [scheduleStreamSave]);
-
-  /** 取消该 session 的 rAF 并丢弃未写 delta */
-  const discardStreamFlush = useCallback((sid: string) => {
-    const rafId = streamRafRef.current.get(sid);
-    if (rafId !== undefined) {
-      cancelAnimationFrame(rafId);
-      streamRafRef.current.delete(sid);
-    }
-    pendingStreamDeltaRef.current.delete(sid);
-  }, []);
 
   const { useList: useAgentList } = useAgent();
   // R10：pageSize 50→100，兼顾 WorkspaceTree 对全部 Agent 的需求；WorkspaceTree 复用本查询，不再各自发 agent.list(100)。
@@ -771,434 +691,29 @@ export function ChatView() {
 
   const handleOpenPromptEditor = useCallback(() => setShowPromptEditor(true), []);
 
-  const runStream = useCallback(
-    async (opts: {
-      message?: string;
-      attachments?: ChatQueueItem["attachments"];
-      regenerate?: boolean;
-      regenerateUserMessageId?: string;
-      retryFromMessageId?: string;
-      editMessageId?: string;
-      editContent?: string;
-      skillId?: string;
-      skillPrompt?: string;
-      source?: "user" | "super" | "manager" | "sub" | "system";
-      toolResults?: Record<string, unknown>;
-      optimisticUser?: { id: string; text: string };
-      resumeAfter?: number;
-      isResume?: boolean;
-      targetSessionId?: string;
-      /** 后台消费队列时：不抢占当前视图 / URL */
-      keepCurrentView?: boolean;
-      /** 覆盖 agentId（后台消费其它 session 时用该 session 的 Agent） */
-      agentId?: string;
-    }) => {
-      // 捕获本次流式所属的 session（新会话首条消息时为 NEW_STREAM_KEY，onDone 拿到 sessionId 后迁移）
-      let originSid = opts.targetSessionId ?? effectiveSessionId ?? NEW_STREAM_KEY;
-      // 视图不变量：流回调不依赖闭包 keepCurrentView，改用 effectiveSessionIdRef 运行时判断
-      // keepCurrentView 参数仅保留给 consumeQueue 标记后台消费，不再在回调里使用
-      void opts.keepCurrentView;
-      sessionComposeActions.getActiveAbortController(originSid)?.abort();
-      const ac = new AbortController();
-      sessionComposeActions.setActiveAbortController(originSid, ac);
-
-      const isResume = opts.isResume === true;
-      streamLifecycleActions.beginStream(originSid, {
-        streamTargetUserId:
-          opts.retryFromMessageId ?? opts.regenerateUserMessageId ?? opts.editMessageId ?? null,
-        resume: isResume,
-      });
-      // INV-2：非 resume 时若仍 occupied，beginStream 已 no-op，禁止继续发请求
-      if (!isResume && streamLifecycleStore.get(originSid).phase !== "streaming") {
-        sessionComposeActions.setActiveAbortController(originSid, null);
-        sessionComposeActions.setQueueDraining(originSid, false);
-        return;
-      }
-      scheduleStreamSave(true);
-      setEditingUserId(null);
-
-      const streamConfig = buildStreamConfig(
-        {
-          ...chatConfig,
-          ...(opts.skillPrompt
-            ? { systemPrompt: opts.skillPrompt, customSystemPrompt: true }
-            : {}),
-        },
-        selectedAgent ? { systemPrompt: selectedAgent.systemPrompt } : undefined,
-      );
-
-      try {
-        await streamAgentChat(
-          {
-            sessionId: opts.targetSessionId ?? effectiveSessionId ?? undefined,
-            agentId: opts.agentId || effectiveAgentId || undefined,
-            message: isResume ? undefined : opts.message,
-            resumeAfter: opts.resumeAfter,
-            attachments: opts.attachments?.map(({ name, mimeType, previewUrl, extractedText, source }) => ({
-              name,
-              mimeType,
-              previewUrl: previewUrl ?? "",
-              extractedText,
-              source,
-            })),
-            regenerate: opts.regenerate,
-            regenerateUserMessageId: opts.regenerateUserMessageId,
-            retryFromMessageId: opts.retryFromMessageId,
-            editMessageId: opts.editMessageId,
-            editContent: opts.editContent,
-            skillId: opts.skillId,
-            source: opts.source,
-            toolResults: opts.toolResults,
-            clientMessageId: opts.optimisticUser?.id,
-            ...streamConfig,
-          },
-          {
-            onSessionStart: (sid) => {
-              if (originSid === NEW_STREAM_KEY && sid) {
-                flushStreamNow(NEW_STREAM_KEY);
-                streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, sid);
-                sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, sid);
-                originSid = sid;
-                // 新会话首条消息期间入队的项尚无 dbId，迁移后补写 DB
-                const pending = sessionComposeStore.get(sid).userQueue;
-                for (const item of pending) {
-                  if (item.dbId || (item.kind !== "user" && item.kind !== "superior")) continue;
-                  createSessionQueueItemMutation
-                    .mutateAsync({
-                      sessionId: sid,
-                      kind: item.kind === "superior" ? "superior" : "user",
-                      content: item.text,
-                      source: item.source ?? "user",
-                      sourceName: item.sourceName,
-                      agentMessageId: item.agentMessageId,
-                      attachments: item.attachments,
-                      skillId: item.skillId,
-                      skillPrompt: item.skillPrompt,
-                    })
-                    .then((res) => {
-                      const dbId = (res as { data?: { id?: string } })?.data?.id;
-                      if (!dbId) return;
-                      sessionComposeActions.patchUserQueue(sid, (q) =>
-                        q.map((i) => (i.id === item.id ? { ...i, dbId } : i)),
-                      );
-                    })
-                    .catch(() => {});
-                }
-              }
-              // 视图不变量：流回调只在「用户仍在新对话页」时 adopt 新 session，
-              // 用户已切走则绝不抢视图（effectiveSessionIdRef 运行时读，不用闭包 keepCurrentView）
-              if (!opts.isResume) {
-                const current = effectiveSessionIdRef.current;
-                if (current === null || current === sid) {
-                  flushSync(() => setSessionId(sid));
-                  const params = new URLSearchParams(searchParams.toString());
-                  params.set("sessionId", sid);
-                  if (params.get("agentId")) params.delete("agentId");
-                  router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-                }
-              }
-              // session 一建立就刷新侧边栏列表，不要等 onDone——用户发首条消息后
-              // 新会话应立即可见，而非等第一条回复结束才出现。
-              void utils.session.list.invalidate();
-              scheduleStreamSave(true);
-            },
-            onRoundStart: (round) => {
-              const prev = streamLifecycleStore.get(originSid).liveTimeline;
-              if (prev.length === 1 && prev[0]?.type === "thinking" && !prev[0].content) {
-                streamLifecycleActions.replaceTimeline(originSid, [
-                  { type: "thinking" as const, content: "", round },
-                ]);
-              } else {
-                streamLifecycleActions.appendTimelineStep(originSid, {
-                  type: "thinking" as const,
-                  content: "",
-                  round,
-                });
-              }
-            },
-            onThinking: (delta) => {
-              streamLifecycleActions.appendThinkingDelta(originSid, delta);
-            },
-            onToken: (delta) => {
-              pendingStreamDeltaRef.current.set(
-                originSid,
-                (pendingStreamDeltaRef.current.get(originSid) ?? "") + delta,
-              );
-              scheduleStreamFlush(originSid);
-            },
-            onIntermediateContent: (content, round) => {
-              discardStreamFlush(originSid);
-              streamLifecycleActions.clearStreamingContent(originSid);
-              const prev = streamLifecycleStore.get(originSid).liveTimeline;
-              if (!prev.some((step) => step.type === "content" && step.round === round)) {
-                streamLifecycleActions.appendTimelineStep(originSid, {
-                  type: "content" as const,
-                  content,
-                  round,
-                });
-              }
-            },
-            onToolStart: (name, args, round, toolCallId) => {
-              flushStreamNow(originSid);
-              streamLifecycleActions.moveStreamingContentToTimeline(originSid, round);
-              const prev = streamLifecycleStore.get(originSid).liveTimeline;
-              if (prev.some((step) => step.type === "tool" && step.toolCallId === toolCallId)) return;
-              streamLifecycleActions.appendTimelineStep(originSid, {
-                type: "tool",
-                toolCallId,
-                name,
-                args,
-                round,
-                status: "running",
-                startedAt: Date.now(),
-              });
-            },
-            onToolEnd: (name, result, round, hint, toolCallId) => {
-              streamLifecycleActions.updateTimelineStep(
-                originSid,
-                (step) =>
-                  step.type === "tool" && step.toolCallId === toolCallId && step.status === "running",
-                { result, hint: hint ?? formatToolResultHint(result), status: "done" },
-              );
-              if (
-                (name === "async_task_run" || name === "spawn_subagent") &&
-                result &&
-                typeof result === "object"
-              ) {
-                const r = result as {
-                  jobId?: string;
-                  status?: string;
-                  message?: string;
-                  subagentSessionId?: string;
-                  subagentName?: string;
-                  agentId?: string;
-                  success?: boolean;
-                };
-                if (name === "spawn_subagent" && (r.success || r.agentId || r.subagentSessionId)) {
-                  if (r.agentId) {
-                    const wsId = selectedWorkspaceId ?? null;
-                    const optimisticAgent = {
-                      id: r.agentId,
-                      name: r.subagentName || `子 Agent ${r.agentId.slice(0, 4)}`,
-                      description: null,
-                      model: chatConfig.model || DEFAULT_LLM_MODEL,
-                      tools: [] as string[],
-                      tier: "sub" as const,
-                      workspaceId: wsId,
-                      parentId: effectiveAgentId ?? null,
-                      heartbeatModel: null,
-                      heartbeat: null,
-                      status: "active",
-                      source: "native_tool:spawn_subagent",
-                      deletedAt: null,
-                      deletedBy: null,
-                      createdAt: new Date(),
-                      updatedAt: new Date(),
-                      apiKey: null,
-                      systemPrompt: "",
-                    };
-                    utils.agent.list.setData({ page: 1, pageSize: 100 }, (old) => {
-                      if (!old?.items) {
-                        return { items: [optimisticAgent], total: 1, page: 1, pageSize: 100, totalPages: 1 };
-                      }
-                      if (old.items.some((a) => a.id === r.agentId)) return old;
-                      return {
-                        ...old,
-                        items: [optimisticAgent, ...old.items],
-                        total: (old.total ?? old.items.length) + 1,
-                      };
-                    });
-                  }
-                  void utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => undefined);
-                  void utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => undefined);
-                }
-                if (r.jobId && (r.status === "running" || r.status === "queued")) {
-                  const jobId = r.jobId;
-                  const status = r.status;
-                  sessionComposeActions.patchAsyncOverlays(originSid, (prev) => {
-                    if (prev.some((q) => q.jobId === jobId)) return prev;
-                    const label = r.message || r.subagentName || `${name === "spawn_subagent" ? "子 Agent" : "后台任务"} ${jobId.slice(0, 6)}`;
-                    return [
-                      {
-                        id: `run-${jobId}`,
-                        kind: "async-running" as const,
-                        text: r.message || "",
-                        jobId,
-                        taskLabel: label.slice(0, 60),
-                        status: status === "queued" ? ("queued" as const) : ("running" as const),
-                        subagentSessionId: r.subagentSessionId,
-                        subagentName: r.subagentName,
-                        createdAt: Date.now(),
-                      },
-                      ...prev,
-                    ];
-                  });
-                } else if (name === "spawn_subagent" && r.subagentSessionId && !r.jobId) {
-                  const overlayId = `spawn-${r.agentId ?? r.subagentSessionId}`;
-                  sessionComposeActions.patchAsyncOverlays(originSid, (prev) => {
-                    if (prev.some((q) => q.id === overlayId || q.subagentSessionId === r.subagentSessionId)) return prev;
-                    const label = r.subagentName || r.message || "子 Agent 任务";
-                    return [
-                      {
-                        id: overlayId,
-                        kind: "async-running" as const,
-                        text: r.message || "",
-                        taskLabel: label.slice(0, 60),
-                        status: "running" as const,
-                        subagentSessionId: r.subagentSessionId,
-                        subagentName: r.subagentName,
-                        createdAt: Date.now(),
-                      },
-                      ...prev,
-                    ];
-                  });
-                }
-              }
-            },
-            onEventId: (id) => {
-              streamLifecycleActions.setLastEventId(originSid, id);
-            },
-            onDone: (data) => {
-              if (originSid === NEW_STREAM_KEY && data.sessionId) {
-                flushStreamNow(originSid);
-                streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, data.sessionId);
-                sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, data.sessionId);
-                originSid = data.sessionId;
-              } else {
-                flushStreamNow(originSid);
-              }
-              if (!opts.isResume) {
-                // 视图不变量：onDone 不抢视图。adopt 已在 onSessionStart 完成；
-                // 若用户已切走，结果写入该 session 的 MessageStore，用户切回时自然看到。
-              }
-              if (data.tokenUsage?.total) {
-                streamLifecycleActions.setLastRoundTokens(originSid, data.tokenUsage.total);
-              }
-              if (opts.skillPrompt) {
-                updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
-              }
-              if (data.sessionId) {
-                void utils.session.getById.invalidate({ id: data.sessionId }).catch(() => undefined);
-              }
-              const content = data.content ?? "";
-              const assistantMessageId = data.assistantMessageId ?? null;
-              // INV-1：先进入 done+pending，再幂等 upsert；MS upsert 会 tryCommit → idle → onStreamCommitted
-              streamLifecycleActions.completeStream(originSid, content, { assistantMessageId });
-              if (assistantMessageId) {
-                sessionMessagesStore.upsertAssistantFromDone(originSid, {
-                  assistantMessageId,
-                  content,
-                  toolCalls: data.toolCalls,
-                  tokenUsage: data.tokenUsage ?? null,
-                });
-                // SSE 可能已先 upsert：再试一次 content/id 匹配
-                streamLifecycleActions.tryCommitStream(originSid, {
-                  messageId: assistantMessageId,
-                  content,
-                });
-              } else {
-                // 无 id（空回复等）：立即 commit，避免队列永久卡住
-                streamLifecycleActions.commitStream(originSid);
-              }
-              if (opts.optimisticUser) {
-                sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
-              }
-              void utils.session.list.invalidate();
-            },
-            onError: (message, sid, suggestion) => {
-              if (originSid === NEW_STREAM_KEY && sid) {
-                discardStreamFlush(originSid);
-                streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, sid);
-                sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, sid);
-                originSid = sid;
-              } else {
-                discardStreamFlush(originSid);
-              }
-              if (opts.optimisticUser) {
-                sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
-              }
-              const isNoStream =
-                typeof message === "string" && message.includes("没有运行中的 Agent 流");
-              if (opts.isResume && isNoStream) {
-                streamLifecycleActions.clearError(originSid);
-                streamLifecycleActions.commitStream(originSid);
-                void hydrateSessionMessagesFallback(originSid);
-                return;
-              }
-              streamLifecycleActions.failStream(
-                originSid,
-                message + (suggestion ? `\n${suggestion}` : ""),
-              );
-              // error 仍占用队列语义上需释放 → commit 到 idle（保留 error 字段供 UI）
-              streamLifecycleActions.commitStream(originSid);
-              if (sid && !opts.isResume) {
-                // 视图不变量：onError 不抢视图。错误存在该 session 的 lifecycle.error，
-                // 用户若仍在新对话页则 adopt 让他看到错误；已切走则不抢。
-                const current = effectiveSessionIdRef.current;
-                if (current === null || current === sid) {
-                  flushSync(() => setSessionId(sid));
-                }
-              }
-            },
-          },
-          ac.signal,
-        );
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") {
-          if (isPageUnloadingRef.current) {
-            return;
-          }
-          flushStreamNow(originSid);
-          const leftover = streamLifecycleStore.get(originSid).streamingContent;
-          // INV-1：abort 时只 completeStream（phase=done，live 块继续显示 leftover），
-          // 不立即 commit。服务端保存 partial assistant 后会广播 message_upserted
-          // （或下方 hydrate 拉回）→ tryCommitAfterAssistant/Hydrate → tryCommitStream
-          // 对齐后才 commit → idle。这样 live 块拆除与 stored 气泡出现原子切换，
-          // 消除「中断后回复先消失再出现」的空窗。
-          streamLifecycleActions.completeStream(originSid, leftover);
-          const hydrateSid = originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? "") : originSid;
-          if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
-          // 兜底：服务端可能无 partial 内容（abort 极早）→ 不会发 message_upserted，
-          // done phase 会卡住队列。2s 后仍未 commit 则强制释放。
-          window.setTimeout(() => {
-            const st = streamLifecycleStore.get(originSid);
-            if (st.phase === "done") {
-              streamLifecycleActions.commitStream(originSid);
-            }
-          }, 2000);
-          if (opts.optimisticUser) {
-            sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
-          }
-          return;
-        }
-        discardStreamFlush(originSid);
-        streamLifecycleActions.failStream(
-          originSid,
-          err instanceof Error ? err.message : "对话请求失败",
-        );
-        streamLifecycleActions.commitStream(originSid);
-      } finally {
-        discardStreamFlush(originSid);
-        streamLifecycleActions.setConnected(originSid, false);
-        if (!isPageUnloadingRef.current) {
-          const phase = streamLifecycleStore.get(originSid).phase;
-          // 异常退出仍停在 streaming：强制 commit 释放占用
-          if (phase === "streaming") {
-            streamLifecycleActions.commitStream(originSid);
-          }
-        }
-        sessionComposeActions.setActiveAbortController(originSid, null);
-        sessionComposeActions.setQueueDraining(originSid, false);
-        const finishedTaskId = sessionComposeStore.get(originSid).activeQueueTaskId;
-        if (finishedTaskId) {
-          sessionComposeActions.setActiveQueueTaskId(originSid, null);
-          void finishedTaskId;
-        }
-        // 队列消费改由 onStreamCommitted（INV-1/2）驱动，finally 不再 hydrate+consume
-      }
-    },
-    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback],
-  );
+  // 【runStream 流式编排内核】runStream + rAF token 合帧三件套 + 持久化调度收拢于
+  // useChatRunStream（W13e 拆出；useCallback 体与 deps 逐字未改）。rAF/定时器 refs 留在
+  // 本文件，供【页面生命周期与全局监听群】的 unmount 清理 effect 统一回收。
+  const { runStream } = useChatRunStream({
+    effectiveSessionId,
+    effectiveAgentId,
+    chatConfig,
+    selectedWorkspaceId,
+    selectedAgent,
+    updateConfig,
+    createSessionQueueItemMutation,
+    hydrateSessionMessagesFallback,
+    effectiveSessionIdRef,
+    isPageUnloadingRef,
+    pendingStreamDeltaRef,
+    streamRafRef,
+    streamSaveTimeoutRef,
+    setSessionId,
+    setEditingUserId,
+    searchParams,
+    pathname,
+    router,
+  });
 
   // 用 ref 保存最新的 runStream，供 mount 自动续传使用（避免把 runStream 本身放进 mount effect deps）
   // 镜像赋值已归并进下方【ref 镜像群】；mount 批读到的是 useRef(runStream) 首帧初始值，
@@ -1381,217 +896,21 @@ export function ChatView() {
     }
   }, [runningSessionsQuery.data]);
 
-  const consumeQueue = useCallback((targetSessionId?: string) => {
-    const viewSid = effectiveSessionId ?? NEW_STREAM_KEY;
-    const sid = targetSessionId ?? viewSid;
-    const compose = sessionComposeStore.get(sid);
-    // INV-2：streaming|done 均占用，禁止开新流
-    if (isSessionRunOccupied(sid) || compose.queueDraining) return;
-
-    const isReady = (t: ChatQueueItem) =>
-      t.kind !== "async-running" &&
-      (t.text.trim() || t.asyncResult || t.attachments?.length);
-
-    // 当前视图：可用 poll 合并后的 asyncResultQueue；后台 session：仅看本地 overlays
-    // （异步投递的后台续跑主要由服务端 autoConsumeAsyncDelivery 完成）
-    const asyncCandidates =
-      sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
-
-    let asyncReady: ChatQueueItem | undefined;
-    for (const t of asyncCandidates) {
-      // serverConsumed = 服务端 autoConsume 已消费，纯展示，前端不再参与 CLAIM
-      if (t.kind === "async-result" && !t.serverConsumed && isReady(t) && !t.pinned) {
-        asyncReady = t;
-        break;
-      }
-    }
-    let userReady: ChatQueueItem | undefined;
-    if (!asyncReady) {
-      for (const t of compose.userQueue) {
-        if ((t.kind === "user" || t.kind === "superior") && isReady(t)) {
-          userReady = t;
-          break;
-        }
-      }
-    }
-    const task = asyncReady ?? userReady;
-    if (!task) return;
-
-    if (task.kind === "superior" && sid === NEW_STREAM_KEY) {
-      return;
-    }
-
-    const keepCurrentView = sid !== viewSid;
-    const sessionMeta = (sessionsQuery.data?.items ?? []).find((s) => s.id === sid);
-    const streamAgentId = sessionMeta?.agentId || undefined;
-
-    sessionComposeActions.setQueueDraining(sid, true);
-
-    void (async () => {
-      if (task.kind === "async-result" && task.jobId) {
-        sessionComposeActions.markDeliveryConsumed(sid, task.jobId);
-        try {
-          const ack = await ackAsyncDeliveryMutation.mutateAsync({ jobId: task.jobId });
-          if (!ack.claimed) {
-            sessionComposeActions.setQueueDraining(sid, false);
-            void utils.session.listRunning.invalidate();
-            if (sid === viewSid) void asyncQueueQuery.refetch();
-            // 已释放 drain 锁且在 async 续体内（调用栈已 unwind），直接重试下一项
-            consumeRef.current(sid);
-            return;
-          }
-        } catch {
-          sessionComposeActions.setQueueDraining(sid, false);
-          return;
-        }
-      }
-
-      if (task.kind === "user" || task.kind === "superior") {
-        if (task.kind === "superior") {
-          const sessionMessages = sessionMessagesStore.getMessages(sid);
-          const already = sessionMessages.some(
-            (m) => m.role === "user" && m.content.trim() === task.text.trim(),
-          );
-          if (already) {
-            sessionComposeActions.removeUserQueueItem(sid, task.id);
-            if (task.dbId) {
-              consumeSessionQueueItemMutation.mutate({ id: task.dbId });
-            }
-            sessionComposeActions.setQueueDraining(sid, false);
-            // 已释放 drain 锁且在 async 续体内，直接重试下一项
-            consumeRef.current(sid);
-            return;
-          }
-        }
-        sessionComposeActions.removeUserQueueItem(sid, task.id);
-        if (task.dbId) {
-          consumeSessionQueueItemMutation.mutate({ id: task.dbId });
-        }
-      } else {
-        if (task.jobId) {
-          const finishedJobId = task.jobId;
-          const finishedStatus = task.status ?? "done";
-          const finishedResult = task.asyncResult ?? "";
-          sessionComposeActions.patchAsyncOverlays(sid, (prev) => {
-            const existing = prev.find((o) => o.jobId === finishedJobId);
-            if (!existing) {
-              sessionComposeActions.setActiveQueueTaskId(sid, task.id);
-              return prev;
-            }
-            const updated: ChatQueueItem = {
-              ...existing,
-              id: `run-${finishedJobId}`,
-              kind: "async-result",
-              status: finishedStatus,
-              asyncResult: finishedResult,
-              removeAt: Date.now() + 5000,
-            };
-            sessionComposeActions.setActiveQueueTaskId(sid, updated.id);
-            return prev.map((o) => (o.jobId === finishedJobId ? updated : o));
-          });
-        } else {
-          sessionComposeActions.setActiveQueueTaskId(sid, task.id);
-        }
-      }
-
-      const supportsVision = !!getModelOption(chatConfig.model).supportsVision;
-      const streamMessage =
-        formatQueueItemForLlm(task, supportsVision) ||
-        (task.attachments?.length ? "（见附件）" : "");
-      const streamAttachments = task.attachments?.map(
-        ({ id, name, mimeType, previewUrl, extractedText, source }) => ({
-          id,
-          name,
-          mimeType,
-          previewUrl: previewUrl ?? "",
-          extractedText,
-          source,
-        }),
-      );
-      const optimisticId = `opt-${task.id}`;
-      const isAsyncResult = task.kind === "async-result";
-      const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");
-      const optimisticAttachments = streamAttachments?.length ? streamAttachments : undefined;
-      if (!isAsyncResult && (optimisticText || optimisticAttachments)) {
-        const existing = sessionComposeStore.get(sid).optimistic;
-        if (!existing.some((m) => m.id === optimisticId)) {
-          sessionComposeActions.addOptimisticUserBubble(sid, {
-            id: optimisticId,
-            content: optimisticText,
-            attachments: optimisticAttachments,
-            createdAt: Date.now(),
-          });
-        }
-      }
-      void runStream({
-        message: streamMessage,
-        attachments: streamAttachments?.length ? streamAttachments : undefined,
-        skillId: task.skillId,
-        skillPrompt: task.skillPrompt,
-        source: isAsyncResult
-          ? "sub"
-          : task.kind === "superior"
-            ? (["super", "manager", "sub", "system"].includes(String(task.source))
-                ? (task.source as "super" | "manager" | "sub" | "system")
-                : "manager")
-            : "user",
-        toolResults: isAsyncResult
-          ? {
-              subagentResult: {
-                jobId: task.jobId,
-                subagentSessionId: task.subagentSessionId,
-                subagentName: task.subagentName ?? `子 Agent ${task.jobId?.slice(0, 6) ?? ""}`,
-                sourceType: task.sourceType,
-                taskLabel: task.taskLabel,
-              },
-            }
-          : undefined,
-        optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
-        targetSessionId: sid === NEW_STREAM_KEY ? undefined : sid,
-        keepCurrentView,
-        agentId: streamAgentId,
-      });
-    })();
-  }, [runStream, chatConfig.model, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils.session.listRunning, asyncQueueQuery, sessionsQuery.data?.items]);
-
-  /** 优先消费 preferredSessionId，再扫描其它有待消费项的 session（后台不抢视图） */
-  const drainAllPendingQueues = useCallback(
-    (preferredSessionId?: string) => {
-      const viewSid = effectiveSessionId ?? NEW_STREAM_KEY;
-      const ordered: string[] = [];
-      const seen = new Set<string>();
-      const push = (id: string) => {
-        if (seen.has(id)) return;
-        seen.add(id);
-        ordered.push(id);
-      };
-      if (preferredSessionId) push(preferredSessionId);
-      push(viewSid);
-      for (const id of sessionComposeStore.listSessionIds()) push(id);
-
-      for (const sid of ordered) {
-        const compose = sessionComposeStore.get(sid);
-        // INV-2：streaming|done 均占用，跳过
-        if (isSessionRunOccupied(sid) || compose.queueDraining) continue;
-        const hasUser = compose.userQueue.some(
-          (t) =>
-            (t.kind === "user" || t.kind === "superior") &&
-            (t.text.trim() || t.attachments?.length),
-        );
-        const asyncCandidates = sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
-        const hasAsync = asyncCandidates.some(
-          (t) =>
-            t.kind === "async-result" &&
-            !t.serverConsumed &&
-            !t.pinned &&
-            (t.text.trim() || t.asyncResult),
-        );
-        if (!hasUser && !hasAsync) continue;
-        consumeQueue(sid);
-      }
-    },
-    [consumeQueue, effectiveSessionId, isSessionRunOccupied, asyncResultQueue],
-  );
+  // 【队列 drain 编排簇】consumeQueue + drainAllPendingQueues 收拢于 useChatQueueDrain
+  // （W13e 拆出；useCallback 体与 deps 逐字未改，仅解构重命名）。drain 触发链唯一钩子
+  // 仍是下方【drain 订阅 · INV-8 ②④】effect，经 consumeRef 镜像调用。
+  const { drainAllPendingQueues } = useChatQueueDrain({
+    effectiveSessionId,
+    asyncResultQueue,
+    chatConfigModel: chatConfig.model,
+    isSessionRunOccupied,
+    sessionsItems: sessionsQuery.data?.items,
+    consumeSessionQueueItemMutation,
+    ackAsyncDeliveryMutation,
+    asyncQueueQuery,
+    runStream,
+    consumeRef,
+  });
 
   // 【ref 镜像群】latest-ref 模式：把 render 期值镜像到 ref，供 mount-once 编排
   // （mount 恢复 / visibilitychange 续传 / drain 消费）在事件处理内运行时读取。
@@ -1770,6 +1089,19 @@ export function ChatView() {
     void runStream({ retryFromMessageId: messageId });
   };
 
+  // 错误条「转后台重试」：把上一条用户消息包装成 async_task_run 请求重新入队
+  const handleTimeoutRetryInBackground = (lastText: string) => {
+    sessionComposeActions.patchUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, (prev) => [
+      ...prev,
+      createUserQueueItem(`请用 async_task_run 在后台执行这个任务（避免前台超时）：\n${lastText}`),
+    ]);
+    streamLifecycleActions.clearError(effectiveSessionId ?? NEW_STREAM_KEY);
+    setViewError(null);
+    // INV-8 ①：用户点击入队 → 显式 drain
+    // （clearError 在已是 idle 时无转移，不会触发 ②）
+    consumeRef.current(effectiveSessionId ?? NEW_STREAM_KEY);
+  };
+
   const handleEditConfirm = (userMessageId: string) => {
     const content = editDraft.trim();
     if (!content || isSessionRunOccupied(effectiveSessionId)) return;
@@ -1908,6 +1240,37 @@ export function ChatView() {
     }
   }, [agentsQuery.data?.items, effectiveAgentId, searchParams, pathname, router]);
 
+  // ChatMessageList 的 props 打包（W13e 随中栏外提至 ChatCenterPane，字段与原内联 JSX 一致）
+  const messageListProps: ChatMessageListProps = {
+    messageGroups,
+    messages,
+    optimistic,
+    liveTimeline,
+    streamingContent,
+    isStreaming,
+    streamTargetUserId,
+    inFlightAssistantId,
+    isSubagentSession,
+    copiedId,
+    editingUserId,
+    editDraft,
+    isMessagesHydrated,
+    effectiveSessionId,
+    backendDown,
+    hasWorkspaces,
+    hasOlderMessages,
+    isLoadingOlderMessages,
+    loadOlderMessages,
+    onCopy: handleCopy,
+    onShare: handleShare,
+    onRegenerate: handleRegenerate,
+    onSwitchVersion: handleSwitchVersion,
+    onEditConfirm: handleEditConfirm,
+    onRetry: handleRetry,
+    setEditingUserId,
+    setEditDraft,
+  };
+
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <ChatSidebar
@@ -1952,283 +1315,48 @@ export function ChatView() {
           onClose={() => setHoverMonitorSessionId(null)}
         />
       )}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b border-[var(--kp-divider)] px-4 py-2.5">
-          <button type="button" onClick={() => setLeftOpen((v) => !v)} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}>
-            <PanelLeft className="h-4 w-4" />
-          </button>
-          <Bot className="h-5 w-5 shrink-0 text-[var(--kp-brand)]" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-sm font-semibold">
-                {sessionDetail?.autoName || sessionDetail?.title || "Agent 对话"}
-              </h1>
-              {isLoadingOlderMessages && !isStreaming && (
-                <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-text-3)]" />
-              )}
-            </div>
-            <p className="truncate text-xs text-[var(--kp-text-3)]">
-              {selectedAgent?.name ?? "—"} · {chatConfig.model}
-              {queue.length > 0 && ` · 队列 ${queue.length}`}
-            </p>
-          </div>
-          {effectiveSessionId && sessionDetail && (
-            <SessionContextBar
-              messages={messages}
-              systemPrompt={chatConfig.systemPrompt}
-              modelId={chatConfig.model}
-              contextSummary={sessionDetail.contextSummary}
-              onCompact={() => enqueueMessage("请压缩当前会话上下文")}
-              compactPending={isSessionRunOccupied(effectiveSessionId ?? "")}
-              className="hidden shrink-0 lg:flex"
-            />
-          )}
-          <Link href="/agents" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:flex text-xs")}>Agent 管理</Link>
-          <button type="button" onClick={() => setRightOpen((v) => !v)} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}>
-            <PanelRight className="h-4 w-4" />
-          </button>
-        </header>
-
-        {isSubagentSession && (
-          <div
-            data-testid="subagent-context-bar"
-            className="flex items-center gap-2 border-b border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-4 py-1.5 text-xs"
-          >
-            <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
-            <span className="font-medium text-[var(--kp-brand-deep)]">子 Agent 任务</span>
-            {sessionDetail?.status && (
-              <span
-                className={cn(
-                  "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                  sessionDetail.status === "running" || sessionDetail.status === "queued"
-                    ? "bg-blue-100 text-blue-700"
-                    : sessionDetail.status === "completed"
-                      ? "bg-green-100 text-green-700"
-                      : sessionDetail.status === "failed"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-amber-100 text-amber-700",
-                )}
-              >
-                {sessionDetail.status === "running" && "运行中"}
-                {sessionDetail.status === "queued" && "排队中"}
-                {sessionDetail.status === "completed" && "已完成"}
-                {sessionDetail.status === "failed" && "失败"}
-                {sessionDetail.status === "paused" && "已暂停"}
-                {sessionDetail.status === "active" && "活跃"}
-                {!["running", "queued", "completed", "failed", "paused", "active"].includes(sessionDetail.status) && sessionDetail.status}
-              </span>
-            )}
-            {sessionDetail?.taskDescription && (
-              <span className="min-w-0 flex-1 truncate text-[var(--kp-text-2)]">
-                {sessionDetail.taskDescription}
-              </span>
-            )}
-            {parentSessionId && (
-              <Link
-                href={`/chat?sessionId=${parentSessionId}`}
-                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
-                title="返回父会话"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                来自会话{parentSession?.title ? ` · ${parentSession.title.slice(0, 16)}` : ""}
-              </Link>
-            )}
-          </div>
-        )}
-
-        {effectiveSessionId && sessionDetail && (
-          <div className="flex border-b border-[var(--kp-divider)] px-4 py-2 lg:hidden">
-            <SessionContextBar
-              messages={messages}
-              systemPrompt={chatConfig.systemPrompt}
-              modelId={chatConfig.model}
-              contextSummary={sessionDetail.contextSummary}
-              onCompact={() => enqueueMessage("请压缩当前会话上下文")}
-              compactPending={isSessionRunOccupied(effectiveSessionId ?? "")}
-            />
-          </div>
-        )}
-
-        {backendDown && (
-          <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>后端未连接，请运行 <code className="rounded bg-amber-100 px-1">pnpm dev</code></span>
-          </div>
-        )}
-
-        {(rotateBanner || (sessionDetail?.status === "archived" && sessionDetail.rotatedToSessionId)) && (
-          <div
-            data-testid="session-rotate-banner"
-            className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-2 text-xs text-[var(--kp-brand-deep)]"
-          >
-            <span className="min-w-0 flex-1 truncate">
-              新 session 已创建：
-              {rotateBanner?.newTitle ?? "续写会话"}
-            </span>
-            <button
-              type="button"
-              className="shrink-0 rounded-md bg-[var(--kp-brand-deep)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90"
-              onClick={() => {
-                const id = rotateBanner?.newSessionId ?? sessionDetail?.rotatedToSessionId;
-                if (!id) return;
-                setRotateBanner(null);
-                selectSession(id);
-              }}
-            >
-              点击跳转
-            </button>
-            {rotateBanner && (
-              <button
-                type="button"
-                className="shrink-0 rounded-md px-1.5 py-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
-                aria-label="关闭提示"
-                onClick={() => setRotateBanner(null)}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        )}
-
-        <ChatMessageList
-          messageGroups={messageGroups}
-          messages={messages}
-          optimistic={optimistic}
-          liveTimeline={liveTimeline}
-          streamingContent={streamingContent}
-          isStreaming={isStreaming}
-          streamTargetUserId={streamTargetUserId}
-          inFlightAssistantId={inFlightAssistantId}
-          isSubagentSession={isSubagentSession}
-          copiedId={copiedId}
-          editingUserId={editingUserId}
-          editDraft={editDraft}
-          isMessagesHydrated={isMessagesHydrated}
-          effectiveSessionId={effectiveSessionId}
-          backendDown={backendDown}
-          hasWorkspaces={hasWorkspaces}
-          hasOlderMessages={hasOlderMessages}
-          isLoadingOlderMessages={isLoadingOlderMessages}
-          loadOlderMessages={loadOlderMessages}
-          onCopy={handleCopy}
-          onShare={handleShare}
-          onRegenerate={handleRegenerate}
-          onSwitchVersion={handleSwitchVersion}
-          onEditConfirm={handleEditConfirm}
-          onRetry={handleRetry}
-          setEditingUserId={setEditingUserId}
-          setEditDraft={setEditDraft}
-        />
-
-        {error && (
-          <div
-            className="mx-4 mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-800"
-            data-testid="chat-error-banner"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="font-semibold">请求失败</p>
-                <p className="whitespace-pre-wrap leading-relaxed opacity-90">{error}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {/* 错误可操作化：按错误类型提供针对性动作（#14） */}
-                {error.includes("预算") && (
-                  <Link
-                    href="/settings"
-                    className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
-                  >
-                    查看预算设置
-                  </Link>
-                )}
-                {(error.includes("超时") || error.includes("timeout")) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // 超时 → 建议转后台任务：把上一条用户消息包装成 async_task_run 请求重新入队
-                      const lastGroup = messageGroups[messageGroups.length - 1];
-                      const lastText = lastGroup?.userMessage.content;
-                      if (lastText) {
-                        sessionComposeActions.patchUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, (prev) => [
-                          ...prev,
-                          createUserQueueItem(`请用 async_task_run 在后台执行这个任务（避免前台超时）：\n${lastText}`),
-                        ]);
-                        streamLifecycleActions.clearError(effectiveSessionId ?? NEW_STREAM_KEY);
-                        setViewError(null);
-                        // INV-8 ①：用户点击入队 → 显式 drain
-                        // （clearError 在已是 idle 时无转移，不会触发 ②）
-                        consumeRef.current(effectiveSessionId ?? NEW_STREAM_KEY);
-                      }
-                    }}
-                    className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
-                  >
-                    转后台重试
-                  </button>
-                )}
-                {lastUserMessageId && (
-                  <button
-                    type="button"
-                    onClick={() => handleRetry(lastUserMessageId)}
-                    className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium hover:bg-red-100"
-                  >
-                    重试
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="border-t border-[var(--kp-divider)] px-4 pt-3 md:px-6">
-          <UserSendQueuePanel
-            items={sortQueueItems(userQueue)}
-            onChange={(items) => {
-              const { userQueue: uq, asyncOverlays: ao } = splitQueueByKind(items, asyncQueueQuery.data);
-              sessionComposeActions.setUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, uq);
-              sessionComposeActions.setAsyncOverlays(effectiveSessionId ?? NEW_STREAM_KEY, ao);
-              persistQueueOrder(uq);
-            }}
-            onRemove={(id) => {
-              const target = userQueue.find((t) => t.id === id);
-              sessionComposeActions.removeUserQueueItem(effectiveSessionId ?? NEW_STREAM_KEY, id);
-              sessionComposeActions.patchAsyncOverlays(effectiveSessionId ?? NEW_STREAM_KEY, (q) =>
-                q.filter((t) => t.id !== id),
-              );
-              if (target?.dbId) {
-                deleteSessionQueueItemMutation.mutate({ id: target.dbId });
-              }
-            }}
-            asyncStats={asyncQueueStatsQuery.data}
-          />
-          <ChatInputArea
-            key={effectiveSessionId ?? "new"}
-            onSend={enqueueMessage}
-            onStop={handleStop}
-            disabled={backendDown || sessionDetail?.status === "archived"}
-            isStreaming={isStreaming}
-            queueLength={userQueue.length}
-            skills={skills}
-            selectedSkill={selectedSkill}
-            onSkillChange={setSelectedSkill}
-            modelHint={modelOpt.inputHint ?? (modelOpt.supportsVision ? "多模态 · 支持图片" : "纯文本 · 图片将 OCR 后发送")}
-            modelId={chatConfig.model}
-            supportsVision={!!modelOpt.supportsVision}
-            onOpenConfig={() => {
-              setRightOpen(true);
-              setRightTab("config");
-            }}
-            sessionHint={
-              sessionDetail?.status === "archived"
-                ? sessionDetail.rotatedToSessionId
-                  ? "此会话已归档。请点击上方提示跳转到新会话继续对话。"
-                  : "此会话已归档，无法继续发送消息。"
-                : isSubagentSession
-                  ? "这是子 Agent 任务会话。你直接发送的消息只在本会话内处理，不会回传父会话；只有父 Agent 下发的任务结果才会投递回父会话。"
-                  : undefined
-            }
-            sessionId={effectiveSessionId}
-          />
-        </div>
-      </div>
+      <ChatCenterPane
+        effectiveSessionId={effectiveSessionId}
+        sessionDetail={sessionDetail}
+        isLoadingOlderMessages={isLoadingOlderMessages}
+        isStreaming={isStreaming}
+        selectedAgentName={selectedAgent?.name}
+        chatConfigModel={chatConfig.model}
+        chatConfigSystemPrompt={chatConfig.systemPrompt}
+        queueLength={queue.length}
+        compactPending={isSessionRunOccupied(effectiveSessionId ?? "")}
+        onCompact={() => enqueueMessage("请压缩当前会话上下文")}
+        setLeftOpen={setLeftOpen}
+        setRightOpen={setRightOpen}
+        isSubagentSession={isSubagentSession}
+        parentSessionId={parentSessionId}
+        parentSessionTitle={parentSession?.title}
+        backendDown={backendDown}
+        rotateBanner={rotateBanner}
+        setRotateBanner={setRotateBanner}
+        selectSession={selectSession}
+        messageListProps={messageListProps}
+        error={error}
+        lastUserMessageId={lastUserMessageId}
+        onRetry={handleRetry}
+        onTimeoutRetryInBackground={handleTimeoutRetryInBackground}
+        userQueue={userQueue}
+        asyncQueueData={asyncQueueQuery.data}
+        asyncStats={asyncQueueStatsQuery.data}
+        persistQueueOrder={persistQueueOrder}
+        deleteSessionQueueItemMutation={deleteSessionQueueItemMutation}
+        onSend={enqueueMessage}
+        onStop={handleStop}
+        skills={skills}
+        selectedSkill={selectedSkill}
+        onSkillChange={setSelectedSkill}
+        modelHint={modelOpt.inputHint ?? (modelOpt.supportsVision ? "多模态 · 支持图片" : "纯文本 · 图片将 OCR 后发送")}
+        supportsVision={!!modelOpt.supportsVision}
+        onOpenConfig={() => {
+          setRightOpen(true);
+          setRightTab("config");
+        }}
+      />
 
       <ChatRightPanel
         rightOpen={rightOpen}
@@ -2254,41 +1382,19 @@ export function ChatView() {
         pinAsyncJobMutation={pinAsyncJobMutation}
       />
 
-      {showPromptEditor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-xl">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <h3 className="font-semibold">编辑 System Prompt</h3>
-              <button type="button" onClick={() => setShowPromptEditor(false)}><X className="h-4 w-4" /></button>
-            </div>
-            <textarea value={chatConfig.systemPrompt} onChange={(e) => updateConfig({ systemPrompt: e.target.value, customSystemPrompt: true })} rows={12} className="m-4 flex-1 resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-3 text-sm outline-none" />
-            <div className="flex justify-end border-t px-4 py-3">
-              <button type="button" onClick={() => setShowPromptEditor(false)} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>完成</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <SubagentCreateDialog
-        open={showCreateSubagent}
+      <ChatOverlays
+        showPromptEditor={showPromptEditor}
+        setShowPromptEditor={setShowPromptEditor}
+        systemPrompt={chatConfig.systemPrompt}
+        updateConfig={updateConfig}
+        showCreateSubagent={showCreateSubagent}
+        setShowCreateSubagent={setShowCreateSubagent}
         parentSessionId={mainSessionId ?? undefined}
         parentAgentId={mainAgentId}
         parentAgentTools={selectedAgent?.tools}
-        onClose={() => setShowCreateSubagent(false)}
-        onCreated={() => showToast("子 Agent 任务已启动，结果完成后自动进入对话")}
+        onSubagentCreated={() => showToast("子 Agent 任务已启动，结果完成后自动进入对话")}
+        toast={toast}
       />
-
-      {toast && (
-        <div
-          data-testid="chat-toast"
-          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-[var(--kp-brand-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-1)] shadow-lg"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <Check className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
-            {toast}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
