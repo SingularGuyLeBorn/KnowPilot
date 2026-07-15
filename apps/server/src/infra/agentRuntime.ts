@@ -17,15 +17,6 @@ export {
   resolveToolsForAgentTier,
   parseToolCall,
 } from "./loop/setup.js";
-// W4：兼容 re-export。新代码请直接引 ./promptBuilder.js / ./agentResolver.js（叶子模块），
-// 不要经 agentRuntime 中转——本文件在 ReAct 环内，经它引用会重建循环依赖。
-export {
-  buildMemoryContext,
-  buildAgentToolGuide,
-  buildTierIdentityHint,
-  buildSystemPromptWithHints,
-} from "./promptBuilder.js";
-export { resolveAgent } from "./agentResolver.js";
 
 export interface AgentLoopResult {
   content: string;

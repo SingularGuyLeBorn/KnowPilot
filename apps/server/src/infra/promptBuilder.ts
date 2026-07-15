@@ -4,7 +4,7 @@
  * 背景：历史循环依赖环 agentRuntime → loop/index → reactLoop → agentTools → nativeTools → agentRuntime，
  * 根因是 nativeTools 值导入 agentRuntime 的 prompt 构建函数。本文件是叶子模块：
  * 仅依赖 ServiceContainer 类型、FTS 索引与 shared 常量，**不依赖** loop/reactLoop/agentTools/nativeTools。
- * 新代码请直接引本文件，不要再从 agentRuntime 引入（agentRuntime 仅保留兼容 re-export）。
+ * prompt 构建函数一律从本文件引入，不要经 agentRuntime 中转（本文件是叶子模块，agentRuntime 在环内）。
  */
 
 import type { ServiceContainer } from "./serviceContainer.js";

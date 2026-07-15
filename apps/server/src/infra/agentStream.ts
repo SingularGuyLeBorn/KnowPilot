@@ -14,7 +14,7 @@ import { describeLlmError } from "./resilientLlmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
-import { buildMemoryContext, buildSystemPromptWithHints } from "./agentRuntime.js";
+import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 import { resolveMicroCompactToolMaxChars } from "./autoCompact.js";
 import { runReactLoop, createStreamTransport } from "./loop/index.js";

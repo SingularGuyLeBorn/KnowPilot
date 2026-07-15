@@ -38,20 +38,6 @@ describe("W4 import 顺序冒烟（循环依赖防线）", () => {
     });
   }
 
-  it("agentRuntime 兼容 re-export 仍然可用（promptBuilder / agentResolver）", async () => {
-    vi.resetModules();
-    const ar = (await import("../infra/agentRuntime.js")) as Record<string, unknown>;
-    for (const key of [
-      "buildMemoryContext",
-      "buildAgentToolGuide",
-      "buildTierIdentityHint",
-      "buildSystemPromptWithHints",
-      "resolveAgent",
-    ]) {
-      expect(typeof ar[key], `agentRuntime 兼容 re-export ${key} 丢失`).toBe("function");
-    }
-  });
-
   it("源码防线：nativeTools 不得再值导入 agentRuntime（环内模块）", () => {
     const src = readFileSync(path.resolve(__dirname, "../infra/nativeTools.ts"), "utf-8");
     expect(src).not.toMatch(/from\s+["']\.\/agentRuntime\.js["']/);
