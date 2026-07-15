@@ -22,6 +22,8 @@ import {
 const MAX_DEPTH = SWARM_MAX_DEPTH;
 const MAX_QUEUE_SIZE = SWARM_MAX_QUEUE_SIZE;
 
+// taskRef（对账键）只允许服务端内部赋值（W16a-3：report_back 桥接强制写 jobId），
+// 故不在 AgentMessageInput 上开放——两个调用方（send_message/report_back）均不接收 LLM 入参。
 export interface AgentMessageInput {
   fromAgentId: string;
   toAgentId: string;
@@ -29,7 +31,6 @@ export interface AgentMessageInput {
   messageType?: "command" | "query" | "report" | "forward";
   source?: "super" | "manager" | "sub" | "user" | "system";
   depth?: number;
-  taskRef?: string;
 }
 
 export interface AgentMessageRecord {
@@ -108,7 +109,6 @@ export class LocalSwarmBus implements SwarmBus {
         messageType: msg.messageType ?? "command",
         source: msg.source ?? fromTier,
         depth,
-        taskRef: msg.taskRef ?? null,
         status: "pending",
       },
     });

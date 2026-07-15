@@ -464,6 +464,7 @@ export async function agentSendMessageTool(args: Record<string, unknown>, ctx: N
   }
 
   // 非 autoRun：写入收件箱，由子会话 UI 队列消费后再 runStream
+  // taskRef 是对账键，只允许服务端内部赋值（W16a-3），不接受 LLM 入参
   const result = await bus.send(
     {
       fromAgentId: ctx.agentSnapshot?.id ?? "",
@@ -471,7 +472,6 @@ export async function agentSendMessageTool(args: Record<string, unknown>, ctx: N
       content,
       messageType: args.messageType as any,
       source: ctx.agentSnapshot?.tier as any,
-      taskRef: args.taskRef as string | undefined,
     },
     ctx.agentSnapshot?.tier ?? "sub",
     ctx.agentSnapshot?.workspaceId ?? null,
@@ -490,7 +490,8 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
   if (!ctx.prisma) throw new Error("agent_report_back 需要 prisma 上下文");
   const content = String(args.content || "");
   const bus = getSwarmBus(ctx.prisma, ctx.services);
-  // report_back 本身就是正式向上回报通道，即使在工具轮次中也必须放行
+  // report_back 本身就是正式向上回报通道，即使在工具轮次中也必须放行。
+  // taskRef 不接受 LLM 入参（W16a-3）：桥接找到跟踪 Task 后由服务端强制写 jobId（下方）
   const result = await bus.send(
     {
       fromAgentId: ctx.agentSnapshot.id,
@@ -498,7 +499,6 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
       content,
       messageType: (args.messageType as any) ?? "report",
       source: ctx.agentSnapshot.tier as any,
-      taskRef: args.taskRef as string | undefined,
     },
     ctx.agentSnapshot?.tier ?? "sub",
     ctx.agentSnapshot?.workspaceId ?? null,
@@ -988,7 +988,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
         toAgentId: z.string().describe("目标 Agent id"),
         content: z.string().describe("消息内容（纯文本或含文件路径引用）"),
         messageType: z.enum(["command", "query", "report", "forward"]).describe("消息类型").optional(),
-        taskRef: z.string().describe("关联的 taskId（可选）").optional(),
       }),
     ),
   },
@@ -999,7 +998,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
       z.object({
         content: z.string().describe("回报内容"),
         messageType: z.enum(["report", "query"]).describe("回报或请求帮助").optional(),
-        taskRef: z.string().describe("关联的 taskId").optional(),
       }),
     ),
   },

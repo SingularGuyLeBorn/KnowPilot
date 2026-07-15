@@ -14,7 +14,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { prisma } from "../db.js";
 import * as agentStream from "../infra/agentStream.js";
-import { executeNativeTool } from "../infra/nativeTools.js";
+import { executeNativeTool, listNativeTools } from "../infra/nativeTools.js";
 import { createContextInner } from "../trpc/context.js";
 import { autoConsumeAsyncDelivery, markAsyncDeliveryConsumed } from "../infra/asyncJobManager.js";
 import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
@@ -645,6 +645,77 @@ describe("W14 AgentMessage 投递记账回写", () => {
       const recon = await reconcileAgentMessageLedger(prisma);
       expect(recon.warnings.some((w) => w.messageId === agentMsg!.id)).toBe(false);
       expect((await prisma.agentMessage.findUnique({ where: { id: agentMsg!.id } }))?.status).toBe("consumed");
+    } finally {
+      await cleanupSwarmFixture(fx);
+    }
+  });
+
+  it("负向断言：taskRef 对账键只由服务端赋值——LLM 入参伪造不落库、schema 不可见", async () => {
+    // ① schema 层：agent_send_message / agent_report_back 的 LLM 可见 parameters 无 taskRef
+    const defs = listNativeTools();
+    for (const name of ["agent_send_message", "agent_report_back"]) {
+      const def = defs.find((d) => d.name === name);
+      expect(def).toBeTruthy();
+      const properties = (def!.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+      expect(Object.keys(properties)).not.toContain("taskRef");
+    }
+
+    const ctx = await createContextInner();
+    const fx = await createSwarmFixture(ctx, { withTrackingTask: false });
+    try {
+      // ② agent_send_message：LLM 入参带伪造 taskRef 也不落库
+      const sendCtx = {
+        ...ctx,
+        sessionId: fx.parentSessionId,
+        agentSnapshot: {
+          id: fx.parentAgentId,
+          model: "deepseek-chat",
+          systemPrompt: "test parent",
+          tools: [],
+          tier: "manager" as const,
+          workspaceId: null,
+          parentId: null,
+        },
+        invokeTrpc: async () => ({ ok: true }),
+      };
+      const sent = (await executeNativeTool(
+        "agent_send_message",
+        { toAgentId: fx.subAgentId, content: "W16a 伪造 taskRef 派活", taskRef: "w16a-forged-job", autoRun: false },
+        sendCtx,
+      )) as { success?: boolean; error?: string };
+      expect(sent.error).toBeUndefined();
+      expect(sent.success).toBe(true);
+      const sentMsg = await prisma.agentMessage.findFirst({
+        where: { fromAgentId: fx.parentAgentId, toAgentId: fx.subAgentId },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(sentMsg).toBeTruthy();
+      expect(sentMsg!.taskRef).toBeNull();
+
+      // ③ agent_report_back：伪造 taskRef 在无桥接（无法解析父 session）时同样不落库
+      //    （旧实现此处会把 LLM 伪造值原样留在库里——W14 后伪造对账键会串账）
+      const orphanSession = await ctx.services.session.create({
+        title: "W16a 无父绑定子会话",
+        model: "deepseek-chat",
+        agentId: fx.subAgentId,
+        kind: "subagent",
+      } as any);
+      const orphanSessionId = (orphanSession.data as { id: string }).id;
+      const reported = (await executeNativeTool(
+        "agent_report_back",
+        { content: "W16a 伪造 taskRef 回报（无桥接）", taskRef: "w16a-forged-job" },
+        { ...makeReportCtx(ctx, fx), sessionId: orphanSessionId },
+      )) as { success?: boolean; error?: string };
+      expect(reported.error).toBeUndefined();
+      expect(reported.success).toBe(true);
+      const reportMsg = await prisma.agentMessage.findFirst({
+        where: { fromAgentId: fx.subAgentId, toAgentId: fx.parentAgentId, content: "W16a 伪造 taskRef 回报（无桥接）" },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(reportMsg).toBeTruthy();
+      expect(reportMsg!.taskRef).toBeNull();
+
+      await prisma.chatSession.deleteMany({ where: { id: orphanSessionId } }).catch(() => {});
     } finally {
       await cleanupSwarmFixture(fx);
     }

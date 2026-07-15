@@ -88,7 +88,6 @@ export class RedisSwarmBus implements SwarmBus {
         messageType: msg.messageType ?? "command",
         source: msg.source ?? fromTier,
         depth,
-        taskRef: msg.taskRef ?? null,
         status: "pending",
       },
     });
