@@ -4,7 +4,7 @@
  * Agent Chat — 三栏布局 · 多版本 · 消息编辑 · Skill / 触发
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
@@ -19,24 +19,20 @@ import {
   X,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { useAgent, useSessionHoverPreview } from "@/lib/hooks";
+import { useAgent } from "@/lib/hooks";
 import { streamAgentChat, stopAgentChat, copyToClipboard } from "@/lib/agentStream";
 import {
   buildStreamConfig,
-  DEFAULT_CHAT_CONFIG,
   getModelOption,
   loadDefaultChatConfig,
-  loadSessionChatConfig,
   resolveNewChatConfig,
-  saveDefaultChatConfig,
-  saveSessionChatConfig,
 } from "@/lib/chatConfig";
 import {
   buildMessageGroups,
   formatToolResultHint,
 } from "@/lib/chatMessageUtils";
 import { cn } from "@/lib/utils";
-import { type Agent, type ChatSessionConfig, type ChatMessage, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
+import { type Agent, type ChatMessage, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { SessionContextBar } from "@/components/sessionContextUsage";
 import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
@@ -71,54 +67,18 @@ import {
   sessionComposeActions,
   sessionComposeStore,
 } from "@/lib/useSessionComposeState";
+import { useChatUiPrefs } from "@/lib/useChatUiPrefs";
+import { useChatConfig } from "@/lib/useChatConfig";
+import { useChatHoverMonitor } from "@/lib/useChatHoverMonitor";
+import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
+import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
 
 /* ─── 模块级常量与 UI 偏好持久化 ─── */
 
 const NEW_STREAM_KEY = "__new__"; // 新会话首条消息发起时尚无 sessionId 时的临时键
-const CHAT_UI_STORAGE_KEY = "kp-chat-ui-v1";
 const LIFECYCLE_STORAGE_KEY = "kp:chat-lifecycle-states";
 const COMPOSE_STORAGE_KEY = "kp:chat-compose-states";
 
-type ChatUiPrefs = {
-  leftOpen: boolean;
-  rightOpen: boolean;
-  leftTab: "history" | "async";
-  historySubTab: "main" | "sub";
-  rightTab: "config" | "runtime";
-};
-
-function readChatUiPrefs(): ChatUiPrefs {
-  const defaults: ChatUiPrefs = {
-    leftOpen: true,
-    rightOpen: true,
-    leftTab: "history",
-    historySubTab: "main",
-    rightTab: "config",
-  };
-  if (typeof window === "undefined") return defaults;
-  try {
-    const raw = localStorage.getItem(CHAT_UI_STORAGE_KEY);
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw) as Partial<ChatUiPrefs>;
-    return {
-      leftOpen: parsed.leftOpen ?? true,
-      rightOpen: parsed.rightOpen ?? true,
-      leftTab: parsed.leftTab === "async" ? "async" : "history",
-      historySubTab: parsed.historySubTab === "sub" ? "sub" : "main",
-      rightTab: parsed.rightTab === "runtime" ? "runtime" : "config",
-    };
-  } catch {
-    return defaults;
-  }
-}
-
-function writeChatUiPrefs(prefs: ChatUiPrefs) {
-  try {
-    localStorage.setItem(CHAT_UI_STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    /* ignore */
-  }
-}
 function saveChatStoresToStorage() {
   try {
     const life = streamLifecycleStore.serialize();
@@ -146,16 +106,19 @@ export function ChatView() {
   const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState<string | null>(null);
   // 视图级非流式错误（如重命名失败）；流式 error 来自 lifecycleState.error
   const [viewError, setViewError] = useState<string | null>(null);
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
-  // 左栏：history=对话历史，async=异步任务运行记录（追溯，不消费）
-  const [leftTab, setLeftTab] = useState<"history" | "async">("history");
-  // 对话历史下的子标签页：main=主 Agent，sub=子 Agent
-  const [historySubTab, setHistorySubTab] = useState<"main" | "sub">("main");
-  // 右栏：config=配置，runtime=待消费的异步队列结果
-  const [rightTab, setRightTab] = useState<"config" | "runtime">("config");
-  const chatUiHydratedRef = useRef(false);
-  const [chatConfig, setChatConfig] = useState<ChatSessionConfig>(DEFAULT_CHAT_CONFIG);
+  // 【存储持久化群】三栏 UI 偏好（localStorage 读写合一）收拢于 useChatUiPrefs
+  const {
+    leftOpen,
+    setLeftOpen,
+    rightOpen,
+    setRightOpen,
+    leftTab,
+    setLeftTab,
+    historySubTab,
+    setHistorySubTab,
+    rightTab,
+    setRightTab,
+  } = useChatUiPrefs(searchParams);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null);
@@ -165,19 +128,27 @@ export function ChatView() {
   const [renameDraft, setRenameDraft] = useState("");
   const [showCreateSubagent, setShowCreateSubagent] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // toast 自动消失：showToast 内联重置定时器（重复调用重新计时、传 null 停表），
+  // 与原「toast state 变化 → useEffect 重置计时」逐点等价，替代独立 effect。
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((msg: string | null) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast(msg);
+    if (msg !== null) {
+      toastTimerRef.current = setTimeout(() => {
+        setToast(null);
+        toastTimerRef.current = null;
+      }, 2500);
+    }
+  }, []);
   /** session_rotate 后的跳转提示（不自动切换会话） */
   const [rotateBanner, setRotateBanner] = useState<{
     newSessionId: string;
     newTitle: string;
   } | null>(null);
-  const [hoverMonitorSessionId, setHoverMonitorSessionId] = useState<string | null>(null);
-  const { enabled: sessionHoverPreviewEnabled } = useSessionHoverPreview();
-  useEffect(() => {
-    // 外部状态（hover preview 开关）变更时同步清理 UI 状态，非派生数据
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!sessionHoverPreviewEnabled) setHoverMonitorSessionId(null);
-  }, [sessionHoverPreviewEnabled]);
-  const hoverMonitorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 可指定 session：流结束后应消费该 session，而不是当前视图 */
   const consumeRef = useRef<(preferredSessionId?: string) => void>(() => {});
 
@@ -270,7 +241,6 @@ export function ChatView() {
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
   const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
   const utils = trpc.useUtils();
-  const updateSession = trpc.session.update.useMutation();
   const switchVersion = trpc.message.switchVersion.useMutation();
 
   const defaultAgentId = useMemo(() => {
@@ -289,25 +259,17 @@ export function ChatView() {
   const effectiveSessionId = sessionId ?? sessionFromUrl;
   const prevSessionFromUrlRef = useRef<string | null>(sessionFromUrl);
 
-  // 刷新后恢复面板状态：URL view/panel 优先，否则用 localStorage 里用户上次切换后的值。
-  // 不要根据「当前是不是子会话」去改 view——用户切到主 Agent 后刷新，应仍停在主 Agent。
-  useEffect(() => {
-    if (chatUiHydratedRef.current) return;
-    chatUiHydratedRef.current = true;
-    const prefs = readChatUiPrefs();
-    const view = searchParams.get("view");
-    const panel = searchParams.get("panel");
-    setLeftOpen(prefs.leftOpen);
-    setRightOpen(prefs.rightOpen);
-    setLeftTab(panel === "async" || panel === "history" ? panel : prefs.leftTab);
-    setHistorySubTab(view === "sub" || view === "main" ? view : prefs.historySubTab);
-    setRightTab(prefs.rightTab);
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!chatUiHydratedRef.current) return;
-    writeChatUiPrefs({ leftOpen, rightOpen, leftTab, historySubTab, rightTab });
-  }, [leftOpen, rightOpen, leftTab, historySubTab, rightTab]);
+  // 【悬停预览域】hover preview 开关、监控窗 state、防抖定时器与四个 handler
+  // 收拢于 useChatHoverMonitor（含原开关清理 effect 与卸载定时器清理）
+  const {
+    sessionHoverPreviewEnabled,
+    hoverMonitorSessionId,
+    setHoverMonitorSessionId,
+    handleSessionHover,
+    handleSessionHoverEnd,
+    handleHoverMonitorEnter,
+    handleHoverMonitorLeave,
+  } = useChatHoverMonitor({ effectiveSessionId });
 
   const syncChatUiToUrl = useCallback(
     (patch: { view?: "main" | "sub"; panel?: "history" | "async" }) => {
@@ -338,6 +300,9 @@ export function ChatView() {
     [searchParams, pathname, router],
   );
 
+  // 【URL 同步群】URL → state（外部跳转 / 浏览器前进后退；反向 state → URL 在
+  // selectSession / startNewChat / onSessionStart 事件处理内）。含 INV-8 ③ drain 调用
+  // 与 listRunning 挂接发现，属编排主干，保留在 chat.tsx。
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== sessionId && sessionFromUrl !== prevSessionFromUrlRef.current) {
       // URL→state 在同一个事件处理（本 effect）内同步完成，不用 queueMicrotask 推迟：
@@ -351,10 +316,7 @@ export function ChatView() {
     }
     prevSessionFromUrlRef.current = sessionFromUrl;
   }, [sessionFromUrl, sessionId, utils.session.listRunning]);
-  // 同步当前视图 session 到 ref
-  useEffect(() => {
-    effectiveSessionIdRef.current = effectiveSessionId;
-  }, [effectiveSessionId]);
+  // 同步当前视图 session 到 ref（见下方【ref 镜像群】，赋值幂等、归并为一个 effect）
 
   // 三层 store 订阅：sessionId 变化后自动切切片，无需 applyView
   const lifecycleKey = effectiveSessionId ?? NEW_STREAM_KEY;
@@ -502,27 +464,14 @@ export function ChatView() {
     },
   );
 
-  // 当工具调用产生 async-running overlay 时立即触发一次 poll，防止任务在 stats 轮询间隙完成而漏投。
-  // 无 jobId 的 spawn overlay 用 subagentSessionId / overlay.id 去重触发。
-  const asyncPollTriggerRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!effectiveSessionId) return;
-    const keys = asyncOverlays
-      .filter(
-        (o) =>
-          o.kind === "async-running" &&
-          (o.status === "running" || o.status === "queued"),
-      )
-      .map((o) => o.jobId || o.subagentSessionId || o.id);
-    let shouldPoll = false;
-    for (const key of keys) {
-      if (!asyncPollTriggerRef.current.has(key)) {
-        asyncPollTriggerRef.current.add(key);
-        shouldPoll = true;
-      }
-    }
-    if (shouldPoll) void asyncQueueQuery.refetch();
-  }, [asyncOverlays, effectiveSessionId, asyncQueueQuery]);
+  // 【异步 overlay 域】poll 补触发 / 过期 overlay 节拍清理 / consumedDeliveries 读写合一
+  // 三个 effect 收拢于 useChatAsyncOverlayEffects（体未改，读写合一归并见该文件头注）
+  useChatAsyncOverlayEffects({
+    effectiveSessionId,
+    asyncOverlays,
+    consumedDeliveries,
+    asyncQueueQuery,
+  });
 
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {
@@ -542,7 +491,8 @@ export function ChatView() {
     },
   });
 
-  // 从 DB 水合发送队列（仅在切换会话时一次，避免覆盖本地编辑）
+  // 【队列水合 · INV-8 ④】从 DB 水合发送队列（仅在切换会话时一次，避免覆盖本地编辑）；
+  // hydrateDone 显式 drain 请求是 INV-8 ④ 触发链关键节点，保留在编排层。
   const hydratedSessionRef = useRef<string | null>(null);
   useEffect(() => {
     if (!effectiveSessionId) {
@@ -558,57 +508,19 @@ export function ChatView() {
     streamLifecycleActions.hydrateDone(effectiveSessionId);
   }, [effectiveSessionId, sessionQueueQuery.data]);
 
-  // 子 Agent 会话：把 pending AgentMessage 镜像进 SessionQueueItem（幂等）
-  // 若 triggerAgentRun 已写入同内容 ChatMessage，则直接 markConsumed，避免队列再消费导致「消息发两遍」
-  const markAgentMessageConsumedMutation = trpc.agent.markAgentMessageConsumed.useMutation();
-  useEffect(() => {
-    if (!effectiveSessionId || !isSubagentSession || !pullAgentMessagesQuery.data?.length) return;
-    let cancelled = false;
-    (async () => {
-      if (cancelled) return;
-      // 并行镜像：N 条 pending 消息同时发，不串行阻塞渲染（旧实现顺序 await 导致进入子会话卡死）
-      const results = await Promise.allSettled(
-        pullAgentMessagesQuery.data.map(async (msg) => {
-          const alreadyInChat = messages.some(
-            (m) => m.role === "user" && m.content.trim() === String(msg.content ?? "").trim(),
-          );
-          if (alreadyInChat) {
-            try {
-              await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id });
-            } catch {
-              /* ignore */
-            }
-            return;
-          }
-          try {
-            await createSessionQueueItemMutation.mutateAsync({
-              sessionId: effectiveSessionId,
-              kind: "superior",
-              content: msg.content,
-              // AgentMessage.source 是 tier（super/manager），不是 fromAgentId
-              source: msg.source || "manager",
-              agentMessageId: msg.id,
-            });
-          } catch {
-            // 幂等冲突或网络错误忽略
-          }
-        }),
-      );
-      if (cancelled) return;
-      // 仅当至少有一条实际处理（非全 rejected）才 refetch
-      if (results.some((r) => r.status === "fulfilled")) {
-        void sessionQueueQuery.refetch();
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSessionId, isSubagentSession, pullAgentMessagesQuery.data, messages]);
+  // 【子 Agent 镜像域】pending AgentMessage 幂等镜像入队收拢于 useSubagentMessageMirror（体未改）
+  useSubagentMessageMirror({
+    effectiveSessionId,
+    isSubagentSession,
+    pendingAgentMessages: pullAgentMessagesQuery.data,
+    messages,
+    refetchSessionQueue: sessionQueueQuery.refetch,
+  });
 
-  // 推优先：通过 store 统一监听 async-stream SSE（当前会话 + 父会话）。
+  // 【SSE 订阅与事件分发 · 心脏区】推优先：通过 store 统一监听 async-stream SSE（当前会话 + 父会话）。
   // 不再自建 EventSource——复用 useSessionMessages 的 watchSession 连接，消除双连接浪费。
   // 事件回调里 watchSession 的子 Agent session 在 cleanup 时统一 close。
+  // effect 体未改：8 类事件注册/分发中枢，cleanup 的 closeSessionWatch 引用计数时序不可动。
   const extraWatchedSessionsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!effectiveSessionId || backendDown) return;
@@ -816,33 +728,6 @@ export function ChatView() {
     [asyncResultQueue, userQueue],
   );
 
-  // 按会话持久化已消费的异步投递，刷新页面后不再显示旧结果
-  useEffect(() => {
-    if (!effectiveSessionId) return;
-    const key = `kp:consumed-deliveries:${effectiveSessionId}`;
-    try {
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        sessionComposeActions.setConsumedDeliveries(
-          effectiveSessionId,
-          new Set<string>(JSON.parse(saved)),
-        );
-      }
-    } catch {
-      // ignore
-    }
-  }, [effectiveSessionId]);
-
-  useEffect(() => {
-    if (!effectiveSessionId) return;
-    const key = `kp:consumed-deliveries:${effectiveSessionId}`;
-    try {
-      localStorage.setItem(key, JSON.stringify([...consumedDeliveries]));
-    } catch {
-      // ignore
-    }
-  }, [effectiveSessionId, consumedDeliveries]);
-
   // R19：agent.list 已裁剪 systemPrompt；Chat 用 agent.getById 取 systemPrompt/model，与 list metadata 合并
   const selectedAgentMeta = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
   const selectedAgentFull = trpc.agent.getById.useQuery(
@@ -859,6 +744,14 @@ export function ChatView() {
       tools: full?.tools ?? selectedAgentMeta.tools ?? [],
     } as Agent;
   }, [selectedAgentMeta, selectedAgentFull.data]);
+
+  // 【会话配置域】模型 / systemPrompt 的加载、派生与持久化收拢于 useChatConfig
+  const { chatConfig, setChatConfig, updateConfig, resetPromptToAgent } = useChatConfig({
+    effectiveSessionId,
+    selectedAgent,
+    sessionDetailModel: sessionDetail?.model,
+    sessionDetailSystemPrompt: sessionDetail?.systemPrompt,
+  });
   const modelOpt = getModelOption(chatConfig.model);
 
   const messageGroups = useMemo(
@@ -875,63 +768,6 @@ export function ChatView() {
     if (messageGroups.length === 0) return null;
     return messageGroups[messageGroups.length - 1].userMessage.id;
   }, [messageGroups]);
-
-  useEffect(() => {
-    if (effectiveSessionId) {
-      if (!selectedAgent) return;
-      const saved = loadSessionChatConfig(effectiveSessionId);
-      startTransition(() => {
-        if (saved) {
-          // 已有会话保留用户选择的模型，只同步 systemPrompt（如果用户没自定义）
-          setChatConfig({
-            ...saved,
-            systemPrompt: saved.customSystemPrompt
-              ? saved.systemPrompt
-              : (saved.systemPrompt || selectedAgent.systemPrompt),
-          });
-          return;
-        }
-        setChatConfig((prev) => ({
-          ...prev,
-          model: sessionDetail?.model ?? selectedAgent.model,
-          systemPrompt:
-            sessionDetail?.systemPrompt?.trim() || selectedAgent.systemPrompt,
-          customSystemPrompt:
-            !!sessionDetail?.systemPrompt?.trim() &&
-            sessionDetail.systemPrompt !== selectedAgent.systemPrompt,
-        }));
-      });
-    } else {
-      startTransition(() => {
-        setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
-      });
-    }
-  }, [effectiveSessionId, selectedAgent, sessionDetail?.model, sessionDetail?.systemPrompt]);
-
-  const updateConfig = useCallback(
-    (patch: Partial<ChatSessionConfig>) => {
-      setChatConfig((prev) => {
-        const next = { ...prev, ...patch };
-        if (effectiveSessionId) saveSessionChatConfig(effectiveSessionId, next);
-        else saveDefaultChatConfig(next);
-        if (effectiveSessionId && (patch.model || patch.systemPrompt !== undefined)) {
-          updateSession.mutate({
-            id: effectiveSessionId,
-            ...(patch.model ? { model: patch.model } : {}),
-            ...(patch.systemPrompt !== undefined ? { systemPrompt: patch.systemPrompt } : {}),
-          });
-        }
-        return next;
-      });
-    },
-    [effectiveSessionId, updateSession],
-  );
-
-  // R17：useCallback 稳定化，使 ChatSettingsPanel memo 后流式期间跳过重渲染
-  const resetPromptToAgent = useCallback(() => {
-    if (!selectedAgent) return;
-    updateConfig({ systemPrompt: selectedAgent.systemPrompt, customSystemPrompt: false });
-  }, [selectedAgent, updateConfig]);
 
   const handleOpenPromptEditor = useCallback(() => setShowPromptEditor(true), []);
 
@@ -1365,12 +1201,12 @@ export function ChatView() {
   );
 
   // 用 ref 保存最新的 runStream，供 mount 自动续传使用（避免把 runStream 本身放进 mount effect deps）
+  // 镜像赋值已归并进下方【ref 镜像群】；mount 批读到的是 useRef(runStream) 首帧初始值，
+  // 与原实现（原镜像 effect 在 mount 批内赋的也是首帧 runStream）完全一致。
   const runStreamRef = useRef(runStream);
-  useEffect(() => {
-    runStreamRef.current = runStream;
-  }, [runStream]);
 
-  // mount：从 sessionStorage 恢复 compose + lifecycle，并自动续传刷新前正在运行的会话
+  // 【mount 恢复与续传 · 心脏区】从 sessionStorage 恢复 compose + lifecycle，并自动续传
+  // 刷新前正在运行的会话（INV-8 ④ drain 请求源；续传时序经 chat-resume/subagent-resume e2e 覆盖；effect 体未改）
   useEffect(() => {
     try {
       const composeRaw = sessionStorage.getItem(COMPOSE_STORAGE_KEY);
@@ -1453,21 +1289,19 @@ export function ChatView() {
     }
   }, []);
 
-  // 卸载 / 刷新前持久化，并标记正在卸载以阻止 finally 清掉 streaming phase
+  // 【页面生命周期与全局监听群】beforeunload 持久化 + visibilitychange 断流续传 +
+  // Ctrl+Shift+S 快捷键 + unmount 清理（原 4 个 deps [] 独立 effect 归并为 1 个）。
+  // 原四者注册只发生在 mount、清理只发生在 unmount，两边界互不交互；
+  // 合并后注册/清理逐条一一对应，时序语义不变。
   useEffect(() => {
+    // 卸载 / 刷新前持久化，并标记正在卸载以阻止 finally 清掉 streaming phase
     const onBeforeUnload = () => {
       isPageUnloadingRef.current = true;
       saveChatStoresToStorage();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      saveChatStoresToStorage();
-    };
-  }, []);
 
-  // 切回浏览器标签页时：若后台有流式会话连接断开，自动续传；切出时持久化状态
-  useEffect(() => {
+    // 切回浏览器标签页时：若后台有流式会话连接断开，自动续传；切出时持久化状态
     const onVisibilityChange = () => {
       if (document.hidden) {
         saveChatStoresToStorage();
@@ -1483,11 +1317,47 @@ export function ChatView() {
       }
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+
+    // Ctrl+Shift+S 快捷键打开新建子代理弹窗
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "S" || e.key === "s")) {
+        e.preventDefault();
+        setShowCreateSubagent(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    // 捕获 ref 值到 effect 局部变量，供卸载清理（react-hooks/exhaustive-deps）
+    const rafMap = streamRafRef.current;
+    const deltaMap = pendingStreamDeltaRef.current;
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("keydown", onKeyDown);
+      saveChatStoresToStorage();
+      // 流式 rAF / 残留定时器清理：组件卸载时取消所有待处理动画帧，避免 setState after unmount
+      rafMap.forEach((id) => cancelAnimationFrame(id));
+      rafMap.clear();
+      deltaMap.clear();
+      if (streamSaveTimeoutRef.current) {
+        clearTimeout(streamSaveTimeoutRef.current);
+        streamSaveTimeoutRef.current = null;
+      }
+      if (reorderTimerRef.current) {
+        clearTimeout(reorderTimerRef.current);
+        reorderTimerRef.current = null;
+      }
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
   }, []);
 
-  // 后端主动发现运行中会话并续传：覆盖 sessionStorage 丢失、跨标签、切换 Agent 等场景
-  // 仅信任 StreamHub.listRunning()（含 spawn_subagent / triggerAgentRun 的流式运行）
+  // 【listRunning 挂接 · INV-5 · 心脏区】后端主动发现运行中会话并续传：
+  // 覆盖 sessionStorage 丢失、跨标签、切换 Agent 等场景。
+  // 仅信任 StreamHub.listRunning()（含 spawn_subagent / triggerAgentRun 的流式运行）。
+  // 挂接进度一致性（INV-5）所在，effect 体一行未改。
   useEffect(() => {
     const items = runningSessionsQuery.data?.items;
     if (!items || items.length === 0) return;
@@ -1723,13 +1593,20 @@ export function ChatView() {
     [consumeQueue, effectiveSessionId, isSessionRunOccupied, asyncResultQueue],
   );
 
+  // 【ref 镜像群】latest-ref 模式：把 render 期值镜像到 ref，供 mount-once 编排
+  // （mount 恢复 / visibilitychange 续传 / drain 消费）在事件处理内运行时读取。
+  // 原 3 个镜像 effect（effectiveSessionIdRef / runStreamRef / consumeRef）归并为 1 个：
+  // 三处赋值互不依赖、均幂等；本 effect 仍在 mount 批内先于 drain 订阅的
+  // queueMicrotask 消费点执行（microtask 在全部 mount effects 之后），时序等价。
   useEffect(() => {
+    effectiveSessionIdRef.current = effectiveSessionId;
+    runStreamRef.current = runStream;
     consumeRef.current = drainAllPendingQueues;
-  }, [drainAllPendingQueues]);
+  }, [effectiveSessionId, runStream, drainAllPendingQueues]);
 
-  // INV-8：drain 的 ②（onStreamCommitted）④（HYDRATE_DONE）消费点。
+  // 【drain 订阅 · INV-8 ②④ · 心脏区】drain 的 ②（onStreamCommitted）④（HYDRATE_DONE）消费点。
   // ① 用户入队 / ③ 会话切换在各自事件处理里直接调 consumeRef，不再有任何
-  // 「useEffect 监听状态变化 → drain」的兑底驱动。
+  // 「useEffect 监听状态变化 → drain」的兑底驱动。effect 体未改：drain 触发链唯一钩子。
   useEffect(() => {
     const drain = (sid: string) => {
       streamLifecycleActions.clearDrainRequest(sid);
@@ -1745,65 +1622,6 @@ export function ChatView() {
     return off;
   }, []);
 
-  // 清理已过期的已完成 async overlay，让进度条稳定展示 5 秒后自动消失
-  useEffect(() => {
-    if (!effectiveSessionId) return;
-    const timer = setInterval(() => {
-      const sid = effectiveSessionId;
-      const current = sessionComposeStore.get(sid).asyncOverlays;
-      const now = Date.now();
-      const hasExpired = current.some((o) => o.kind === "async-result" && o.removeAt && o.removeAt <= now);
-      if (hasExpired) {
-        sessionComposeActions.patchAsyncOverlays(sid, (prev) =>
-          prev.filter((o) => !(o.kind === "async-result" && o.removeAt && o.removeAt <= now)),
-        );
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [effectiveSessionId]);
-
-  // 流式 rAF 卸载清理：组件卸载时取消所有待处理动画帧 / 残留定时器，避免 setState after unmount
-  useEffect(() => {
-    const rafMap = streamRafRef.current;
-    const deltaMap = pendingStreamDeltaRef.current;
-    return () => {
-      rafMap.forEach((id) => cancelAnimationFrame(id));
-      rafMap.clear();
-      deltaMap.clear();
-      if (streamSaveTimeoutRef.current) {
-        clearTimeout(streamSaveTimeoutRef.current);
-        streamSaveTimeoutRef.current = null;
-      }
-      if (reorderTimerRef.current) {
-        clearTimeout(reorderTimerRef.current);
-        reorderTimerRef.current = null;
-      }
-      if (hoverMonitorTimeoutRef.current) {
-        clearTimeout(hoverMonitorTimeoutRef.current);
-        hoverMonitorTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  // Ctrl+Shift+S 快捷键打开新建子代理弹窗
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && (e.key === "S" || e.key === "s")) {
-        e.preventDefault();
-        setShowCreateSubagent(true);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  // toast 自动消失
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   // R16：useCallback 稳定化，使 ChatInputArea memo 后流式期间跳过重渲染
   const enqueueMessage = useCallback(
     (
@@ -1818,18 +1636,18 @@ export function ChatView() {
       // 斜杠指令：/compact → 作为普通用户消息交给 Agent，由 session_compact 工具执行
       if (/^\/compact\s*$/i.test(messageText) && !attachments?.length) {
         if (!effectiveSessionId) {
-          setToast("请先选择或创建一个会话");
+          showToast("请先选择或创建一个会话");
           return;
         }
         if (sessionDetail?.status === "archived") {
-          setToast("此会话已归档，无法压缩");
+          showToast("此会话已归档，无法压缩");
           return;
         }
         messageText = "请压缩当前会话上下文";
       }
 
       if (sessionDetail?.status === "archived") {
-        setToast("此会话已归档，请跳转到新会话继续对话");
+        showToast("此会话已归档，请跳转到新会话继续对话");
         return;
       }
 
@@ -1844,14 +1662,14 @@ export function ChatView() {
               content: messageText,
               kind,
             });
-            setToast(
+            showToast(
               kind === "steer"
                 ? "已加入纠偏，将在当前工具批结束后生效"
                 : "已加入后续提问，将在本轮结束后继续",
             );
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
-            setToast(msg || "注入失败");
+            showToast(msg || "注入失败");
           }
         })();
         return;
@@ -1924,7 +1742,7 @@ export function ChatView() {
       // INV-8 ①：用户入队 → 显式 drain
       consumeRef.current(sid);
     },
-    [backendDown, effectiveSessionId, createSessionQueueItemMutation, submitInjectMutation, sessionDetail?.status, isSessionRunOccupied],
+    [backendDown, effectiveSessionId, createSessionQueueItemMutation, submitInjectMutation, sessionDetail?.status, isSessionRunOccupied, showToast],
   );
 
   const handleStop = useCallback(async () => {
@@ -2022,7 +1840,7 @@ export function ChatView() {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
     setHistorySubTab("main");
-  }, [selectedAgent, effectiveAgentId, searchParams, pathname, router]);
+  }, [selectedAgent, effectiveAgentId, searchParams, pathname, router, setChatConfig, setHistorySubTab]);
 
   const selectSession = useCallback((id: string) => {
     if (effectiveSessionId === id) return;
@@ -2061,7 +1879,7 @@ export function ChatView() {
       setHistorySubTab("main");
     }
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [effectiveSessionId, searchParams, pathname, router, sessionsQuery.data?.items, utils.session.listRunning]);
+  }, [effectiveSessionId, searchParams, pathname, router, sessionsQuery.data?.items, utils.session.listRunning, setHistorySubTab]);
 
   const selectWorkspace = useCallback((workspaceId: string) => {
     setUserSelectedWorkspaceId(workspaceId);
@@ -2089,34 +1907,6 @@ export function ChatView() {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
   }, [agentsQuery.data?.items, effectiveAgentId, searchParams, pathname, router]);
-
-  // 悬停会话时预加载消息并显示右上角监控小窗口（默认关闭，对话设置可开）
-  const handleSessionHover = useCallback(
-    (id: string) => {
-      if (!sessionHoverPreviewEnabled) return;
-      if (!id || id === effectiveSessionId) return;
-      if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
-      setHoverMonitorSessionId(id);
-      void utils.message.listForChat.prefetchInfinite({ sessionId: id, limit: 8 });
-    },
-    [utils, effectiveSessionId, sessionHoverPreviewEnabled],
-  );
-
-  const handleSessionHoverEnd = useCallback((id: string) => {
-    hoverMonitorTimeoutRef.current = setTimeout(() => {
-      setHoverMonitorSessionId((current) => (current === id ? null : current));
-    }, 200);
-  }, []);
-
-  const handleHoverMonitorEnter = useCallback(() => {
-    if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
-  }, []);
-
-  const handleHoverMonitorLeave = useCallback(() => {
-    hoverMonitorTimeoutRef.current = setTimeout(() => {
-      setHoverMonitorSessionId(null);
-    }, 200);
-  }, []);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -2148,7 +1938,7 @@ export function ChatView() {
         handleSessionHoverEnd={handleSessionHoverEnd}
         setShowCreateSubagent={setShowCreateSubagent}
         setError={setError}
-        setToast={setToast}
+        setToast={showToast}
         refetchSession={refetchSession}
         cancelAsyncJobMutation={cancelAsyncJobMutation}
         retryAsyncJobMutation={retryAsyncJobMutation}
@@ -2485,7 +2275,7 @@ export function ChatView() {
         parentAgentId={mainAgentId}
         parentAgentTools={selectedAgent?.tools}
         onClose={() => setShowCreateSubagent(false)}
-        onCreated={() => setToast("子 Agent 任务已启动，结果完成后自动进入对话")}
+        onCreated={() => showToast("子 Agent 任务已启动，结果完成后自动进入对话")}
       />
 
       {toast && (

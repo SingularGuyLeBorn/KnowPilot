@@ -69,7 +69,10 @@ KnowPilot/
 │       ├── app/                # 页面：博客 + agents/skills/mcp/memories/prompts/triggers/approvals/search/dashboard/...
 │       ├── components/         # 布局与页面组件
 │       │   └── shared.tsx      # 唯一共享通用 UI 组件库 (分页、空态、骨架屏、弹窗)
-│       ├── lib/                # trpc.tsx、hooks.ts、icons.tsx、aboutProfile.ts
+│       ├── lib/                # trpc.tsx、hooks.ts、icons.tsx、aboutProfile.ts；
+│       │                       # Chat 三层 store（useSessionMessages/useStreamLifecycle/useSessionComposeState）
+│       │                       # + useChat* 域 hooks（W13d：useChatUiPrefs/useChatConfig/useChatHoverMonitor/
+│       │                       #   useChatAsyncOverlayEffects/useSubagentMessageMirror）
 │       ├── public/
 │       └── 配置文件
 ├── packages/
@@ -491,6 +494,7 @@ reflection:
 
 ## 当前状态与近期变更（2026-07-15）
 
+- **W13 chat.tsx 拆分已收官**：W13a/b/c（消息列表 → `chatMessageList.tsx`、左栏 → `chatSidebar.tsx`、右栏/异步进度 → `chatRightPanel.tsx` + `useAsyncProgressSteps.ts`）后，W13d 完成 effect 群落清点归并——`chat.tsx` 内 useEffect 23 → **8**（每个带归属注释；SSE 订阅 / mount 恢复 / listRunning 挂接 / drain 订阅四个心脏区 effect 体未改），另 8 个收进 5 个 `lib/useChat*.ts` 域 hook（UI 偏好读写合一、会话配置、悬停预览、异步 overlay 三 effect、子 Agent 消息镜像），合计 23 → 16 只减不增；toast 自动消失改为 `showToast` 内联定时器。造册与等价性论证：`docs/development/chat-effects-inventory.md`。
 - **W12 MCP 断路器 + 审批清理定时化 + 心跳熔断暂停已落地**：新增 `infra/circuitBreaker.ts` 通用三态断路器（closed→open→half-open；`transition()` 转移表拒绝非法转移 open→closed / closed→half-open；open 期陈旧成功不合闸、陈旧失败不重计时；half-open 单探测）。接入 `executeMcpTool`：每 MCP server 一实例（模块级 Map + `__resetMcpCircuitBreakersForTests`），首试+重连重试整体计一次失败，open 期零真实连接、返回 `MCP_CIRCUIT_OPEN` 结构化结果喂回 LLM（不抛）。审批过期清理每日 cron（`3 4 * * *`）挂 HeartbeatEngine maintenance 通道（不随 refresh 重建；启动一次性清理仍在 index.ts）。心跳 streak 达 `HEARTBEAT_MAX_CONSECUTIVE_FAILURES` → 引擎内存态 suspended 暂停并摘除 cron job（恢复：下次 refresh() 或 `resumeHeartbeat()`，告警邮件同步说明）。测试 `__tests__/circuitBreaker.test.ts`（11 例）。
 - **W11 Run 活状态 + awaiting_human 已落地**：reactLoop 内核统一接管 Run 生命周期——入口落 `status:"running"` 行、每轮 tool_batch 后 `{ phase, roundsUsed, executedToolsCount }` 快照写 `Run.output`（5s 节流，phase 转移点强制写）、终态统一 update（success/failed，用户 abort 标 cancelled），调用方（agentStream/agentRuntime）不再自建终态行。新增 `awaiting_human` phase（合法转移 `tool_batch → awaiting_human → llm`）：工具触发审批 pending 时 loop 挂起，等 `approval_resolved` 显式事件（approvalGate 等待注册表 `waitApprovalResolution`/`notifyApprovalResolved`，waiter 自带 TTL 截止与 expireStaleApprovals 同规则）唤醒，续跑消息复用 W7 injectUserMessages 注入原 session（kind=approval）；拒绝/过期注入消息让 LLM 收尾、run 正常结束。`recoverStaleRuns` 启动挂载（index.ts，recoverStaleAsyncJobs 旁）把遗留 running Run 标 `interrupted`（如实不续跑）；/runs 页补 interrupted chips。测试：`runLifecycle.test.ts`（5 例）+ `agentRunPhase.test.ts` 扩充。
 
