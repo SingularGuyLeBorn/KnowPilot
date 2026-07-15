@@ -36,16 +36,23 @@ export async function markAgentMessageDeliveredByTaskRef(
 
 /**
  * consumed：气泡被读入父 Agent 上下文 → pending/delivered 一律置 consumed。
- * deliveredAt 兜底补齐（直跳 consumed 时与 swarmBus.markConsumed 语义一致）。
+ * 转移语义（W16a-1，真账保护）：
+ * - delivered → consumed：deliveredAt 是 CLAIM 落账的真账，不得覆写；
+ * - pending → consumed 直跳（竞态/存量兜底）：deliveredAt 原本为空，按消费时刻补齐
+ *   （消息既已被读入上下文，交付必然已发生，此刻是可得的最真实时间）。
  * 重复调用幂等 no-op。返回命中条数。
  */
 export async function markAgentMessageConsumedByTaskRef(
   db: AgentMessageLedgerDb,
   taskRef: string,
 ): Promise<number> {
-  const result = await db.agentMessage.updateMany({
-    where: { taskRef, status: { in: ["pending", "delivered"] } },
+  const fromDelivered = await db.agentMessage.updateMany({
+    where: { taskRef, status: "delivered" },
+    data: { status: "consumed" },
+  });
+  const fromPending = await db.agentMessage.updateMany({
+    where: { taskRef, status: "pending" },
     data: { status: "consumed", deliveredAt: new Date() },
   });
-  return result.count;
+  return fromDelivered.count + fromPending.count;
 }

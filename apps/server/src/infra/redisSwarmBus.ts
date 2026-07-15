@@ -134,8 +134,14 @@ export class RedisSwarmBus implements SwarmBus {
   }
 
   async markConsumed(messageId: string): Promise<void> {
-    await this.prisma.agentMessage.update({
-      where: { id: messageId },
+    // W16a-1：delivered → consumed 不动 deliveredAt（真账）；pending 直跳 consumed 兜底补齐
+    const fromDelivered = await this.prisma.agentMessage.updateMany({
+      where: { id: messageId, status: "delivered" },
+      data: { status: "consumed" },
+    });
+    if (fromDelivered.count > 0) return;
+    await this.prisma.agentMessage.updateMany({
+      where: { id: messageId, status: "pending" },
       data: { status: "consumed", deliveredAt: new Date() },
     });
   }

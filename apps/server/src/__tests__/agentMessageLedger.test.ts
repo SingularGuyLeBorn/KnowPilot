@@ -23,6 +23,7 @@ import {
   markAgentMessageConsumedByTaskRef,
   markAgentMessageDeliveredByTaskRef,
 } from "../infra/agentMessageLedger.js";
+import { getSwarmBus } from "../infra/swarmBus.js";
 import { reconcileAgentMessageLedger } from "../scripts/fix-agent-message-ledger.js";
 
 type Ctx = Awaited<ReturnType<typeof createContextInner>>;
@@ -504,18 +505,95 @@ describe("W14 AgentMessage 投递记账回写", () => {
       });
 
       expect(await markAgentMessageDeliveredByTaskRef(prisma, "w14-fake-job")).toBe(1);
-      expect((await prisma.agentMessage.findUnique({ where: { id: msg.id } }))?.status).toBe("delivered");
+      const deliveredRow = await prisma.agentMessage.findUnique({ where: { id: msg.id } });
+      expect(deliveredRow?.status).toBe("delivered");
+      const deliveredAt = deliveredRow?.deliveredAt;
+      expect(deliveredAt).toBeTruthy();
       // 重复 delivered：no-op
       expect(await markAgentMessageDeliveredByTaskRef(prisma, "w14-fake-job")).toBe(0);
-      // consumed：delivered → consumed
+      // consumed：delivered → consumed（W16a-1：deliveredAt 是真账，consumed 不得覆写）
       expect(await markAgentMessageConsumedByTaskRef(prisma, "w14-fake-job")).toBe(1);
-      expect((await prisma.agentMessage.findUnique({ where: { id: msg.id } }))?.status).toBe("consumed");
+      const consumedRow = await prisma.agentMessage.findUnique({ where: { id: msg.id } });
+      expect(consumedRow?.status).toBe("consumed");
+      expect(consumedRow?.deliveredAt?.getTime()).toBe(deliveredAt!.getTime());
       // 乱序/重复：consumed 后 delivered 不再生效
       expect(await markAgentMessageDeliveredByTaskRef(prisma, "w14-fake-job")).toBe(0);
       expect(await markAgentMessageConsumedByTaskRef(prisma, "w14-fake-job")).toBe(0);
       expect((await prisma.agentMessage.findUnique({ where: { id: msg.id } }))?.status).toBe("consumed");
       // taskRef 无匹配：安全 no-op
       expect(await markAgentMessageDeliveredByTaskRef(prisma, "w14-no-such-job")).toBe(0);
+    } finally {
+      await cleanupSwarmFixture(fx);
+    }
+  });
+
+  it("负向断言：delivered → consumed 不覆写 deliveredAt（ledger / swarmBus / consume() 三处真账保留）", async () => {
+    const ctx = await createContextInner();
+    const fx = await createSwarmFixture(ctx, { withTrackingTask: false });
+    try {
+      // T1 = 真实投递时刻（CLAIM 落账时间），T2 = 之后的消费时刻
+      const T1 = new Date(Date.now() - 30 * 60 * 1000);
+      const base = {
+        fromAgentId: fx.subAgentId,
+        toAgentId: fx.parentAgentId,
+        messageType: "report",
+        source: "sub",
+        status: "delivered",
+        deliveredAt: T1,
+      };
+
+      // ① markAgentMessageConsumedByTaskRef（agentStream consumed 挂点）
+      const m1 = await prisma.agentMessage.create({
+        data: { ...base, content: "W16a ledger 真账", taskRef: "w16a-job-1" },
+      });
+      expect(await markAgentMessageConsumedByTaskRef(prisma, "w16a-job-1")).toBe(1);
+      const r1 = await prisma.agentMessage.findUnique({ where: { id: m1.id } });
+      expect(r1?.status).toBe("consumed");
+      expect(r1?.deliveredAt?.getTime()).toBe(T1.getTime());
+
+      // ② swarmBus.markConsumed（前端 markAgentMessageConsumed 认领路径）
+      const m2 = await prisma.agentMessage.create({
+        data: { ...base, content: "W16a bus 真账" },
+      });
+      await getSwarmBus(prisma, ctx.services).markConsumed(m2.id);
+      const r2 = await prisma.agentMessage.findUnique({ where: { id: m2.id } });
+      expect(r2?.status).toBe("consumed");
+      expect(r2?.deliveredAt?.getTime()).toBe(T1.getTime());
+
+      // ③ sessionQueueItem.consume()（superior 镜像队列消费路径）
+      const m3 = await prisma.agentMessage.create({
+        data: { ...base, content: "W16a queue 真账" },
+      });
+      const item = await prisma.sessionQueueItem.create({
+        data: {
+          sessionId: fx.subSessionId,
+          kind: "superior",
+          content: m3.content,
+          source: "manager",
+          agentMessageId: m3.id,
+        },
+      });
+      await ctx.services.sessionQueueItem.consume(item.id);
+      const r3 = await prisma.agentMessage.findUnique({ where: { id: m3.id } });
+      expect(r3?.status).toBe("consumed");
+      expect(r3?.deliveredAt?.getTime()).toBe(T1.getTime());
+
+      // ④ 语义不退化：pending 直跳 consumed（deliveredAt 原本为空）仍按消费时刻兜底补齐
+      const m4 = await prisma.agentMessage.create({
+        data: {
+          fromAgentId: fx.subAgentId,
+          toAgentId: fx.parentAgentId,
+          content: "W16a 直跳兜底",
+          messageType: "report",
+          source: "sub",
+          taskRef: "w16a-job-4",
+          status: "pending",
+        },
+      });
+      expect(await markAgentMessageConsumedByTaskRef(prisma, "w16a-job-4")).toBe(1);
+      const r4 = await prisma.agentMessage.findUnique({ where: { id: m4.id } });
+      expect(r4?.status).toBe("consumed");
+      expect(r4?.deliveredAt).toBeTruthy();
     } finally {
       await cleanupSwarmFixture(fx);
     }

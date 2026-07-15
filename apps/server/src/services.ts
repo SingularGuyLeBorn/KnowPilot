@@ -1701,9 +1701,11 @@ export class SessionQueueItemService extends BaseService<
       select: { id: true },
     });
     if (!dup) return false;
+    // W16a-1：条件写在 where 里（而非先读后写）——仅 pending → consumed 直跳时兜底补 deliveredAt，
+    // 并发竞态下已被 CLAIM 置 delivered 的真账 deliveredAt 不会被本回写覆写。
     await this.prisma.agentMessage
-      .update({
-        where: { id: agentMsg.id },
+      .updateMany({
+        where: { id: agentMsg.id, status: "pending" },
         data: { status: "consumed", deliveredAt: new Date() },
       })
       .catch(() => {
@@ -1731,13 +1733,17 @@ export class SessionQueueItemService extends BaseService<
     await this.prisma.$transaction(async (tx) => {
       await tx.sessionQueueItem.delete({ where: { id } });
       if (item.kind === "superior" && item.agentMessageId) {
-        try {
-          await tx.agentMessage.update({
-            where: { id: item.agentMessageId },
+        // W16a-1：delivered → consumed 不动 deliveredAt（CLAIM 真账）；pending 直跳 consumed 兜底补齐。
+        // 已 consumed / 已删除均为幂等 no-op。
+        const fromDelivered = await tx.agentMessage.updateMany({
+          where: { id: item.agentMessageId, status: "delivered" },
+          data: { status: "consumed" },
+        });
+        if (fromDelivered.count === 0) {
+          await tx.agentMessage.updateMany({
+            where: { id: item.agentMessageId, status: "pending" },
             data: { status: "consumed", deliveredAt: new Date() },
           });
-        } catch {
-          // AgentMessage 可能已被删除或已 consumed，忽略
         }
       }
     });
