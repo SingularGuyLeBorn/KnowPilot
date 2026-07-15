@@ -112,17 +112,6 @@ export function checkToolPermission(
 
   // 2. Swarm 管理工具特有校验（workspace 范围、自我删除等）
   if (isTierRestrictedTool(toolName)) {
-    // async_task_run：子 Agent 只能使用 mode=tool（纯工具执行），禁止发起带 LLM 请求的异步任务
-    if (toolName === "async_task_run" && ctx.agentTier === "sub") {
-      const mode = args.mode === "tool" ? "tool" : "llm";
-      if (mode !== "tool") {
-        return {
-          code: "TIER_PROTECTED",
-          reason: "子 Agent 不能发起带 LLM 请求的异步任务，请将 async_task_run 的 mode 设为 \"tool\" 以执行纯工具/定时任务。",
-        };
-      }
-    }
-
     // agent_create_sub / agent_update_sub / agent_delete_sub：管理 Agent 只能操作本 Workspace
     if (toolName.endsWith("_sub") && ctx.agentTier === "manager") {
       const targetWorkspaceId = args.workspaceId as string | undefined;

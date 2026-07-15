@@ -141,7 +141,6 @@ describe("W10 SwarmOrchestrator 中介者", () => {
 
   it("async_task_run 走 dispatch（pool）+ Log 审计落库", async () => {
     const dispatchSpy = vi.spyOn(SwarmOrchestrator.prototype, "dispatch");
-    vi.spyOn(agentRuntime, "runAgentLoop").mockResolvedValue({ ...MOCK_LOOP_RESULT });
 
     const ctx = await createContextInner();
     const suffix = `${Date.now()}`;
@@ -153,12 +152,12 @@ describe("W10 SwarmOrchestrator 中介者", () => {
     try {
       started = (await executeNativeTool(
         "async_task_run",
-        { task: "W10 异步调度验证", label: "W10 异步调度验证" },
+        { task: "W10 异步调度验证", label: "W10 异步调度验证", toolCall: { tool: "wait", args: { ms: 10 } } },
         {
           ...ctx,
           invokeTrpc: async () => ({ ok: true }),
           sessionId,
-          agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: [], tier: "manager" },
+          agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: ["native:wait"], tier: "manager" },
         },
       )) as { jobId: string; status: string };
       const startedResult = started!;

@@ -241,7 +241,7 @@ const SMOKE_ARG_OVERRIDES: Record<string, unknown> = {
   "native.git_diff": { repoPath: "." },
   "native.write_file": { path: `content/uploads/smoke-${Date.now()}.txt`, content: "smoke" },
   "native.run_shell": { command: "echo smoke" },
-  "native.async_task_run": { task: "smoke noop", label: "smoke" },
+  "native.async_task_run": { task: "smoke noop", label: "smoke", toolCall: { tool: "wait", args: { ms: 1 } } },
   "native.yuque_get_doc": { namespace: "user/repo", slug: "doc" },
   "native.github_search_repos": { query: "knowpilot", limit: 2 },
   "native.feishu_send_text": { receiveId: "smoke", text: "smoke" },

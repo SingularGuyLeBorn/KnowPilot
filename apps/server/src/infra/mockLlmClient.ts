@@ -174,7 +174,7 @@ const scenarios: MockLlmScenario[] = [
     },
   },
   {
-    // 后台异步任务：第一轮调用 async_task_run，收到工具结果后给出最终回复
+    // 后台异步任务：第一轮调用 async_task_run（纯工具，toolCall 必填），收到工具结果后给出最终回复
     name: "async_task_run",
     match: (opts, forced) => {
       if (forced === "async_task_run") return true;
@@ -183,13 +183,17 @@ const scenarios: MockLlmScenario[] = [
     completion: (opts) => ({
       ...baseResult(opts),
       content: hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : null,
-      toolCalls: hasAnyToolResult(opts) ? [] : [makeToolCall("async_task_run", { task: "总结当前项目", label: "项目总结" })],
+      toolCalls: hasAnyToolResult(opts)
+        ? []
+        : [makeToolCall("async_task_run", { task: "总结当前项目", label: "项目总结", toolCall: { tool: "sleep", args: { seconds: 1 } } })],
     }),
     stream: async function* (opts) {
       yield* streamFromCompletion(opts, {
         ...baseResult(opts),
         content: hasAnyToolResult(opts) ? "已为你启动后台任务，结果会稍后自动插入对话。" : null,
-        toolCalls: hasAnyToolResult(opts) ? [] : [makeToolCall("async_task_run", { task: "总结当前项目", label: "项目总结" })],
+        toolCalls: hasAnyToolResult(opts)
+          ? []
+          : [makeToolCall("async_task_run", { task: "总结当前项目", label: "项目总结", toolCall: { tool: "sleep", args: { seconds: 1 } } })],
       });
     },
   },
