@@ -27,7 +27,6 @@ type CreateResult = {
 const ASYNC_TOOL_NAMES = new Set([
   "native:async_task_run",
   "native:async_task_status",
-  "native:async_task_wait",
   "native:async_task_cancel",
 ]);
 const SUBAGENT_FORBIDDEN_TOOLS = new Set([

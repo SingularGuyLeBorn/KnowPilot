@@ -10,7 +10,6 @@ tools:
   - "native:invoke_api"
   - "native:async_task_run"
   - "native:async_task_status"
-  - "native:async_task_wait"
   - "native:async_task_cancel"
   - "native:spawn_subagent"
   - "native:session_rotate"

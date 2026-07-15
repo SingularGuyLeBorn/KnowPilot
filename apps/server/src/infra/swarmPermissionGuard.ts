@@ -59,7 +59,6 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
   sub: [
     "async_task_run",
     "async_task_status",
-    "async_task_wait",
     "async_task_cancel",
   ],
 };

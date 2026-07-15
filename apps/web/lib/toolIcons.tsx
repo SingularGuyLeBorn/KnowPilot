@@ -180,7 +180,6 @@ const EXACT_TOOL_ICONS: Record<string, LucideIcon> = {
   spawn_subagent: Network,
   async_task_run: Play,
   async_task_status: Activity,
-  async_task_wait: Clock,
   async_task_cancel: CircleX,
   task_run: ListTodo,
 

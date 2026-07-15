@@ -85,18 +85,6 @@ async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolCon
   if (!jobId) throw new Error("async_task_cancel 需要 jobId");
   return cancelAsyncJob(jobId, ctx.config, ctx.services);
 }
-async function awaitAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { waitForAsyncJob } = await import("../../asyncJobManager.js");
-  const jobId = String(args.jobId || "");
-  if (!jobId) throw new Error("async_task_wait 需要 jobId");
-  const result = await waitForAsyncJob(jobId, ctx.config, ctx.services);
-  return {
-    ...result,
-    hint: result.status === "completed"
-      ? "任务已完成，请基于上述结果继续生成最终回复。"
-      : "任务失败，请告知用户失败原因并建议重试或改用其他方式。",
-  };
-}
 
 async function runShellTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   return runShellRestricted(ctx.config, String(args.command || ""), {
@@ -179,18 +167,6 @@ const SHELL_DEFS: NativeToolDefinition[] = [
     },
   },
   {
-    name: "async_task_wait",
-    concurrencyClass: "B",
-    description: "显式等待异步任务完成（阻塞当前轮，最长 10 分钟，不受默认工具超时限制）。任务完成后返回结果，LLM 基于结果继续生成最终答案。",
-    parameters: {
-      type: "object",
-      properties: {
-        jobId: { type: "string", description: "要等待的任务 id" },
-      },
-      required: ["jobId"],
-    },
-  },
-  {
     name: "async_task_cancel",
     concurrencyClass: "A",
     description: "取消一条运行中或排队中的异步任务/Subagent。",
@@ -248,7 +224,6 @@ const SHELL_DEFS: NativeToolDefinition[] = [
 const SHELL_HANDLERS = {
   async_task_run: runAsyncTool,
   async_task_status: taskStatusTool,
-  async_task_wait: awaitAsyncTool,
   async_task_cancel: cancelAsyncTool,
   run_shell: runShellTool,
   wait: waitTool,

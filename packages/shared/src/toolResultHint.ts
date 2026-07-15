@@ -81,9 +81,9 @@ const ASYNC_STATUS_LABEL: Record<string, string> = {
   not_found: "未找到",
 };
 
-/** async_task_status / async_task_wait / async_task_cancel 工具结果摘要 */
+/** async_task_status / async_task_cancel 工具结果摘要 */
 function formatAsyncJobHint(r: Record<string, unknown>): string | null {
-  // async_task_status 单个 / async_task_wait 返回 { jobId, status, elapsedMs?, asyncResult?, error? }
+  // async_task_status 单个返回 { jobId, status, elapsedMs?, taskLabel? }
   if (typeof r.jobId === "string" && typeof r.status === "string") {
     const parts: string[] = [ASYNC_STATUS_LABEL[r.status] ?? r.status];
     if (typeof r.elapsedMs === "number") parts.push(formatDuration(r.elapsedMs));

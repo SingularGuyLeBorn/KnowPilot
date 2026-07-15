@@ -139,16 +139,7 @@ describe("async-task-queue 工具协议", () => {
     }
   });
 
-  it("async_task_wait 返回最终结果", async () => {
-    vi.spyOn(agentRuntime, "runAgentLoop").mockResolvedValue({
-      content: "等待任务结果",
-      toolCalls: [],
-      tokenUsage: { prompt: 1, completion: 2, total: 3 },
-      model: "deepseek-chat",
-      provider: "deepseek",
-      roundsUsed: 1,
-    });
-
+  it("async_task_wait 已从注册表移除（W-C）", async () => {
     const ctx = await createContextInner();
     const toolCtx = { ...ctx, invokeTrpc: async () => ({ ok: true }) };
     const session = await ctx.services.session.create({ title: "父会话", model: "deepseek-chat" });
@@ -156,24 +147,17 @@ describe("async-task-queue 工具协议", () => {
     const parentAgentId = await createParentAgent(ctx);
 
     try {
-      const started = (await executeNativeTool(
-        "async_task_run",
-        { task: "可等待任务", label: "可等待任务" },
-        {
-          ...toolCtx,
-          sessionId,
-          agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: [] },
-        },
-      )) as { jobId: string; status: string };
-
-      const wait = (await executeNativeTool(
-        "async_task_wait",
-        { jobId: started.jobId },
-        { ...toolCtx, sessionId, agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: [] } },
-      )) as { status?: string; asyncResult?: string; error?: string };
-
-      expect(wait.status).toBe("completed");
-      expect(wait.asyncResult).toContain("等待任务结果");
+      await expect(
+        executeNativeTool(
+          "async_task_wait",
+          { jobId: "whatever" },
+          {
+            ...toolCtx,
+            sessionId,
+            agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: [] },
+          },
+        ),
+      ).rejects.toThrow(/未知原生工具/);
     } finally {
       await cleanupSessionTasks(sessionId, parentAgentId);
     }

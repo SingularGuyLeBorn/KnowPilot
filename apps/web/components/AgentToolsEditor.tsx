@@ -48,7 +48,6 @@ const NATIVE_LABELS: Record<string, string> = {
   invoke_api: "调用后端 API",
   async_task_run: "后台异步任务",
   async_task_status: "异步任务状态",
-  async_task_wait: "等待异步任务",
   async_task_cancel: "取消异步任务",
   run_shell: "执行 Shell 命令",
   wait: "等待/延迟",

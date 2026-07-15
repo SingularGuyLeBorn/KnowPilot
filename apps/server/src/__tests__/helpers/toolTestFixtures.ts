@@ -242,7 +242,6 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "async_task_run",
   "spawn_subagent",
   "async_task_status",
-  "async_task_wait",
   "async_task_cancel",
   "run_shell",
   "wait",

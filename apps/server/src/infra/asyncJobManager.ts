@@ -1325,7 +1325,8 @@ export async function listSessionAsyncJobs(
 }
 
 /**
- * 阻塞等待一个异步任务结束，返回最终结果（用于 async_task_run(waitForResult) / async_task_wait）。
+ * 阻塞等待一个异步任务结束，返回最终结果（唯一调用方：async_task_run(waitForResult=true)。
+ * spawn_subagent 的同步等待在 session.ts 自行轮询子会话，不经此函数）。
  * 受 toolCallTimeoutMs 约束（由调用方的 withToolTimeout race 兜底），此处轮询最长 10 分钟。
  */
 export async function waitForAsyncJob(

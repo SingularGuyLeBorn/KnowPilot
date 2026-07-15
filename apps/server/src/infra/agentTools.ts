@@ -73,8 +73,8 @@ const READ_ONLY_NATIVE = new Set(["web_search", "read_article", "scrape_web_page
 const CLASS_CONCURRENCY: Record<"A" | "B" | "C" | "D", number> = { A: 8, B: 4, C: 2, D: 1 };
 
 /** 长等待工具：不受默认 30s 工具超时限制，使用 10 分钟等待上限（与 waitForAsyncJob 对齐）。
- *  这些工具实现 Pause-on-Result 语义：LLM 表达等待意图 → 阻塞等任务完成 → 拿到结果继续生成最终答案 */
-const LONG_WAIT_TOOLS = new Set(["async_task_wait", "spawn_subagent", "sleep"]);
+ *  这些工具实现 Pause-on-Result 语义：LLM 表达等待意图 → 阻塞等任务完成 → 拿到结果继续生成最终答案。 */
+const LONG_WAIT_TOOLS = new Set(["spawn_subagent", "sleep"]);
 const LONG_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 
 function getToolConcurrencyClass(name: string, registry: Map<string, ToolRegistryEntry>): "A" | "B" | "C" | "D" {
@@ -314,7 +314,7 @@ export async function executeToolCallsBatch(
   const defaultTimeoutMs = ctx.config.llm.toolCallTimeoutMs;
 
   // 单工具执行包裹超时 + abort：超时或被中断时返回错误结果，绝不永久挂起
-  // 长等待工具（async_task_wait）豁免默认超时，使用 10 分钟上限
+  // 长等待工具（spawn_subagent / sleep）豁免默认超时，使用 10 分钟上限
   const runOne = async (item: { call: LlmToolCall; parsed: { name: string; args: Record<string, unknown> } }) => {
     const started = Date.now();
     const isLongWait = LONG_WAIT_TOOLS.has(item.parsed.name);

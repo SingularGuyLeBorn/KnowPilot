@@ -204,7 +204,7 @@ async function seedAssistantManager(serverPort) {
     workspaceId: defaultWorkspace?.id,
     model: "deepseek-chat",
     systemPrompt: "你是 KnowPilot 默认助手，可以调用 spawn_subagent / async_task_run / sleep / read_article / web_search 等工具完成任务。",
-    tools: ["native:spawn_subagent", "native:async_task_run", "native:async_task_status", "native:async_task_wait", "native:async_task_cancel", "native:sleep", "native:read_article", "native:web_search"],
+    tools: ["native:spawn_subagent", "native:async_task_run", "native:async_task_status", "native:async_task_cancel", "native:sleep", "native:read_article", "native:web_search"],
     source: "e2e-seed",
   });
   console.log("[e2e globalSetup] 已创建默认 Workspace 与 manager Agent", JSON.stringify({ workspaceId: defaultWorkspace.id, agentId: created?.data?.id, agentWorkspaceId: created?.data?.workspaceId }));

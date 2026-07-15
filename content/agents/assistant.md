@@ -14,7 +14,6 @@ tools:
   - "native:spawn_subagent"
   - "native:async_task_run"
   - "native:async_task_status"
-  - "native:async_task_wait"
   - "native:async_task_cancel"
   - "native:sleep"
   - "native:git_status"
