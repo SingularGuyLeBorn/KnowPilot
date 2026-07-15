@@ -38,7 +38,10 @@ interface SwarmFixture {
 
 const RUN_ID = `w14${Date.now().toString(36)}`;
 
-async function createSwarmFixture(ctx: Ctx, opts?: { withTrackingTask?: boolean }): Promise<SwarmFixture> {
+async function createSwarmFixture(
+  ctx: Ctx,
+  opts?: { withTrackingTask?: boolean; deliverToQueue?: boolean },
+): Promise<SwarmFixture> {
   const parent = await ctx.services.agent.create({
     name: `W14父Agent-${RUN_ID}-${Math.random().toString(36).slice(2, 6)}`,
     model: "deepseek-chat",
@@ -97,6 +100,8 @@ async function createSwarmFixture(ctx: Ctx, opts?: { withTrackingTask?: boolean 
           },
           subagentSessionId: subSessionId,
           sourceType: "subagent",
+          // 同步 spawn（waitForResult）场景：结果走 tool return，跟踪 Task 不投递队列
+          ...(opts?.deliverToQueue === false ? { deliverToQueue: false } : {}),
         },
       },
     });
@@ -594,6 +599,52 @@ describe("W14 AgentMessage 投递记账回写", () => {
       const r4 = await prisma.agentMessage.findUnique({ where: { id: m4.id } });
       expect(r4?.status).toBe("consumed");
       expect(r4?.deliveredAt).toBeTruthy();
+    } finally {
+      await cleanupSwarmFixture(fx);
+    }
+  });
+
+  it("waitForResult（deliverToQueue=false）：report_back 直接终结 AgentMessage 为 consumed，修复脚本零告警", async () => {
+    const ctx = await createContextInner();
+    const fx = await createSwarmFixture(ctx, { deliverToQueue: false });
+    try {
+      const before = Date.now();
+      const report = (await executeNativeTool(
+        "agent_report_back",
+        { content: "W16a 同步 spawn 回报：结果走 tool return" },
+        makeReportCtx(ctx, fx),
+      )) as { success?: boolean; error?: string };
+      expect(report.error).toBeUndefined();
+      expect(report.success).toBe(true);
+      const after = Date.now();
+
+      // 旁路邮箱仍落账（审计 + taskRef 对账键），但消息链路在 report_back 时刻终结：不留 pending
+      const agentMsg = await prisma.agentMessage.findFirst({
+        where: { fromAgentId: fx.subAgentId, toAgentId: fx.parentAgentId },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(agentMsg).toBeTruthy();
+      expect(agentMsg!.taskRef).toBe(fx.trackingTaskId);
+      expect(agentMsg!.status).toBe("consumed");
+      // deliveredAt 如实记为 report_back 时刻（tool return 交付发生在此时）
+      expect(agentMsg!.deliveredAt).toBeTruthy();
+      expect(agentMsg!.deliveredAt!.getTime()).toBeGreaterThanOrEqual(before);
+      expect(agentMsg!.deliveredAt!.getTime()).toBeLessThanOrEqual(after);
+
+      // 结果走 tool return，不落父会话气泡（content 匹配永远 MISS 正是旧账告警不消解的根因）
+      const bubble = await prisma.chatMessage.findFirst({
+        where: { sessionId: fx.parentSessionId, content: "W16a 同步 spawn 回报：结果走 tool return" },
+      });
+      expect(bubble).toBeNull();
+
+      // 修复脚本对这类消息零告警：即使创建时间回拨到阈值之前，consumed 终态使其不进扫描集
+      await prisma.agentMessage.update({
+        where: { id: agentMsg!.id },
+        data: { createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+      });
+      const recon = await reconcileAgentMessageLedger(prisma);
+      expect(recon.warnings.some((w) => w.messageId === agentMsg!.id)).toBe(false);
+      expect((await prisma.agentMessage.findUnique({ where: { id: agentMsg!.id } }))?.status).toBe("consumed");
     } finally {
       await cleanupSwarmFixture(fx);
     }

@@ -635,9 +635,21 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
           }
         }
         const matchedInput = (matched?.input ?? null) as { deliverToQueue?: boolean } | null;
-        // waitForResult 的跟踪 Task 已约定由 spawn 工具返回结果，勿再 autoConsume
         if (matchedInput?.deliverToQueue === false) {
-          /* skip notify */
+          // waitForResult（W16a-2）：结果已由 spawn 工具同步返回（tool return 即交付，此刻发生），
+          // 消息链路就此终结——直接把旁路邮箱记账 consumed，deliveredAt 如实记为 report_back 时刻。
+          // 不终结的话：Task 永不 CLAIM → 回写永不触发 → AgentMessage 永远 pending，
+          // 修复脚本 content 匹配永远 MISS 告警不消解，且 pending 计入 SWARM_MAX_QUEUE_SIZE 会堵到 QUEUE_FULL。
+          if (result.messageId) {
+            try {
+              await ctx.prisma.agentMessage.update({
+                where: { id: result.messageId },
+                data: { status: "consumed", deliveredAt: new Date() },
+              });
+            } catch (ledgerErr) {
+              console.warn("[agent_report_back] waitForResult 消息终结记账失败（不阻塞回报）:", ledgerErr);
+            }
+          }
         } else {
           // 动态 import：asyncJobManager 经 agentRuntime/agentStream/agentTools 处于 ReAct 环内，静态导入会重建循环依赖
           const { notifyAndAutoConsumeAsyncDelivery } = await import("../../asyncJobManager.js");
