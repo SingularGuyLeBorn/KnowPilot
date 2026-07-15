@@ -487,7 +487,7 @@ export async function chatAgentStream(
 
     if (!prepared.skipUserCreate) {
       const src = input.source ?? "user";
-      // 上级任务：若 triggerAgentRun 已写入同内容 user 消息，禁止再写第二条气泡
+      // 上级任务：若 prepareAgentRun（agent_send_message autoRun）已写入同内容 user 消息，禁止再写第二条气泡
       if ((src === "super" || src === "manager") && sessionId) {
         const dup = await services.prisma.chatMessage.findFirst({
           where: { sessionId, role: "user", content: prepared.messageText },

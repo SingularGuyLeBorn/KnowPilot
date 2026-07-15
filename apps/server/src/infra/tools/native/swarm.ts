@@ -178,14 +178,45 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
   };
 }
 
-/** 防止同一 Agent 被并发触发自动运行 */
-const agentRunLocks = new Map<string, Promise<{ content: string; subagentSessionId: string }>>();
+/**
+ * 防止同一 Agent 被并发触发自动运行。
+ * 锁仅覆盖 prepare 段（会话 find-or-create / busy 判定 / dedup / 写消息 / 起流），
+ * 不覆盖运行本身——运行期间再次派活走 busy 判定入队（W-E），而不是在锁上干等。
+ */
+const agentRunLocks = new Map<string, Promise<PrepareAgentRunResult>>();
 
-async function triggerAgentRun(targetAgentId: string, input: string, ctx: NativeToolContext): Promise<{ content: string; subagentSessionId: string }> {
+type PrepareAgentRunResult =
+  /** 已起流（或 dedup 命中已有答案）：completion 解析为本轮最终 assistant 文本 */
+  | { kind: "started"; subagentSessionId: string; completion: Promise<string> }
+  /** 子会话忙（或队列有残留）：消息已入服务端持久队列，drainPromise 为该 item 被处理完成的链 promise */
+  | { kind: "queued"; subagentSessionId: string; drainPromise: Promise<void> }
+  /** 入队被守卫拒绝（QUEUE_FULL / DELEGATION_DEPTH_EXCEEDED 等） */
+  | { kind: "failed"; subagentSessionId: string; error: string };
+
+/**
+ * 派活准备段：解析 Agent → 主会话 find-or-create → busy 判定 → 入队 或（dedup/写消息/起流）。
+ *
+ * W-E busy 分支（写 ChatMessage 之前判定）：
+ * - hub.isRunning(主会话) → 消息进服务端持久队列（bus.send 写 AgentMessage 走 depth/queue-size
+ *   守卫 + sessionQueueItem.create superior 镜像，幂等），注册服务端 drain，子等闲自动处理；
+ *   不写 ChatMessage（本轮结束前消息不进子历史）。旧实现是等本轮结束直接返回旧 assistant，
+ *   新消息躺在历史里无人处理。
+ * - idle 但队列有残留（服务端重启链丢失场景）：新消息同样入队尾，drain 立即触发，FIFO 保序。
+ *   已知限制：pending 项跨重启留存，靠下次发送或前端打开会话 drain 兜底
+ *   （与 AGENTS.md「运行中任务随重启丢失」一致）。
+ * - opts.fromDrain（drain 重入）跳过残留检查：残留项由 drain 循环自身按序处理，
+ *   否则「认领队首 → 见残留再入队尾」会活锁。
+ */
+async function prepareAgentRun(
+  targetAgentId: string,
+  input: string,
+  ctx: NativeToolContext,
+  opts?: { messageType?: "command" | "query" | "report" | "forward"; fromDrain?: boolean },
+): Promise<PrepareAgentRunResult> {
   const existing = agentRunLocks.get(targetAgentId);
   if (existing) await existing;
 
-  const runPromise = (async (): Promise<{ content: string; subagentSessionId: string }> => {
+  const preparePromise = (async (): Promise<PrepareAgentRunResult> => {
     let sessionIdForCleanup: string | undefined;
     try {
       // W4：优先用 ctx 注入的 resolveAgent（见 createAgentToolContext），缺省回退到 agentResolver 叶子模块
@@ -228,6 +259,77 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
       if (!mainSession) throw new Error("无法创建或找到目标 Agent 的主会话");
       sessionIdForCleanup = mainSession.id;
 
+      // W-E busy 判定（写 ChatMessage 之前）。hub 缺失时跳过判定，idle 路径在起流前再报错（原语义）
+      const hub = getStreamHub();
+      let shouldQueue = false;
+      if (hub) {
+        shouldQueue = hub.isRunning(mainSession.id);
+        if (!shouldQueue && !opts?.fromDrain) {
+          const residual = (await ctx.services.sessionQueueItem?.listBySession(mainSession.id)) ?? [];
+          shouldQueue = residual.length > 0;
+        }
+      }
+
+      if (shouldQueue && hub) {
+        if (!ctx.prisma) throw new Error("agent_send_message 需要 prisma 上下文");
+        const bus = getSwarmBus(ctx.prisma, ctx.services);
+        // 走 bus.send（depth/queue-size/向上时机守卫）——旧 autoRun 路绕过守卫，此路径顺带补上
+        const sent = await bus.send(
+          {
+            fromAgentId: ctx.agentSnapshot?.id ?? "",
+            toAgentId: targetAgentId,
+            content: input,
+            messageType: opts?.messageType,
+            source: ctx.agentSnapshot?.tier as any,
+          },
+          ctx.agentSnapshot?.tier ?? "sub",
+          ctx.agentSnapshot?.workspaceId ?? null,
+          ctx.inToolRound ?? false,
+        );
+        if (!sent.success || !sent.messageId) {
+          return {
+            kind: "failed",
+            subagentSessionId: mainSession.id,
+            error: `[${sent.error?.code ?? "SEND_FAILED"}] ${sent.error?.reason ?? "消息入队失败"}`,
+          };
+        }
+        // 发送方名称（队列项展示用），解析失败不阻塞
+        let sourceName: string | undefined;
+        if (ctx.agentSnapshot?.id) {
+          try {
+            const fromAgent = await ctx.services.agent.getById(ctx.agentSnapshot.id);
+            sourceName = (fromAgent as { name?: string } | null)?.name;
+          } catch { /* ignore */ }
+        }
+        // superior 镜像入队：同 agentMessageId 幂等不重复；shouldSkipSuperiorMirror 对账逻辑不动
+        await ctx.services.sessionQueueItem.create({
+          sessionId: mainSession.id,
+          kind: "superior",
+          content: input,
+          source: ctx.agentSnapshot?.id ?? "unknown",
+          sourceName,
+          agentMessageId: sent.messageId,
+        });
+        // 服务端 drain：子等闲时按 FIFO 自动处理（复用 per-session 串行链）。
+        // 动态 import：asyncJobManager 经 agentRuntime/agentStream/agentTools 处于 ReAct 环内
+        const { enqueueSuperiorQueueDrain } = await import("../../asyncJobManager.js");
+        const drainPromise = enqueueSuperiorQueueDrain({
+          sessionId: mainSession.id,
+          services: ctx.services,
+          runItem: async (item) => {
+            const next = await prepareAgentRun(targetAgentId, item.content, ctx, { fromDrain: true });
+            if (next.kind === "started") {
+              await next.completion;
+            } else if (next.kind === "failed") {
+              // 守卫拒绝（QUEUE_FULL 等）：不重试，记日志（item 已认领，消息终结于此）
+              console.warn(`[agent_send_message] drain 重入被守卫拒绝 target=${targetAgentId}: ${next.error}`);
+            }
+            // kind=queued：claim 后、start 前会话又被占的极端竞态——内容已重新入队尾，交给链后续迭代
+          },
+        });
+        return { kind: "queued", subagentSessionId: mainSession.id, drainPromise };
+      }
+
       const messageSource = (ctx.agentSnapshot?.tier ?? "super") as "super" | "manager" | "sub" | "user" | "system";
       // 幂等：同内容父任务只写一次；若已有对应 assistant 则直接返回，避免双写/双跑
       const dupUser = await ctx.prisma?.chatMessage.findFirst({
@@ -253,7 +355,11 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
           try {
             await ctx.services.session.update({ id: mainSession.id, status: "completed" } as any);
           } catch { /* ignore */ }
-          return { content: lastAssistant.content || "(无文本输出)", subagentSessionId: mainSession.id };
+          return {
+            kind: "started",
+            subagentSessionId: mainSession.id,
+            completion: Promise.resolve(lastAssistant.content || "(无文本输出)"),
+          };
         }
       } else {
         await ctx.services.message.create({
@@ -266,23 +372,8 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
 
       // 动态 import：agentStream 经 agentRuntime/loop 处于 ReAct 环内，静态导入会重建循环依赖
       const { runAgentLoopStream } = await import("../../agentStream.js");
-      const hub = getStreamHub();
       if (!hub) {
         throw new Error("SessionStreamHub 未初始化，无法启动子 Agent 流式运行");
-      }
-
-      // 已有同会话流在跑：等待其结束，再读最终 assistant（避免双跑）
-      if (hub.isRunning(mainSession.id)) {
-        await hub.waitFor(mainSession.id);
-        const lastAssistant = await ctx.prisma?.chatMessage.findFirst({
-          where: { sessionId: mainSession.id, role: "assistant" },
-          select: { content: true },
-          orderBy: { createdAt: "desc" },
-        });
-        return {
-          content: lastAssistant?.content || "(无文本输出)",
-          subagentSessionId: mainSession.id,
-        };
       }
 
       const memoryHint = await buildMemoryContext(ctx.services, input, { agentId: agent.id });
@@ -393,8 +484,12 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
         });
       }
 
-      await hub.waitFor(mainSession.id);
-      return { content: assistantContent, subagentSessionId: mainSession.id };
+      // completion 独立成 promise：调用方决定等（waitForRun / drain runItem）或后台跑
+      const completion = (async () => {
+        await hub.waitFor(mainSession.id);
+        return assistantContent;
+      })();
+      return { kind: "started", subagentSessionId: mainSession.id, completion };
     } catch (err) {
       if (sessionIdForCleanup) {
         try {
@@ -407,8 +502,8 @@ async function triggerAgentRun(targetAgentId: string, input: string, ctx: Native
     }
   })();
 
-  agentRunLocks.set(targetAgentId, runPromise);
-  return runPromise;
+  agentRunLocks.set(targetAgentId, preparePromise);
+  return preparePromise;
 }
 
 export async function agentSendMessageTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -441,25 +536,65 @@ export async function agentSendMessageTool(args: Record<string, unknown>, ctx: N
     };
   }
 
-  // autoRun：只走 triggerAgentRun（写 ChatMessage + 执行），绝不先写 pending AgentMessage。
-  // 否则前端 pullAgentMessages → SessionQueueItem → consumeQueue → runStream
-  // 会与 triggerAgentRun 各写一条同内容 user 气泡，并可能二次跑 Agent。
+  // autoRun：走 prepareAgentRun（busy 判定 → 入队 或 写 ChatMessage + 起流），绝不先写 pending AgentMessage
+  // 再直接起流。否则前端 pullAgentMessages → SessionQueueItem → consumeQueue → runStream
+  // 会与起流路径各写一条同内容 user 气泡，并可能二次跑 Agent。
   if (autoRun && content.trim()) {
-    const runPromise = triggerAgentRun(toAgentId, content, ctx).catch(async (err: unknown) => {
+    let prepared: PrepareAgentRunResult;
+    try {
+      prepared = await prepareAgentRun(toAgentId, content, ctx, { messageType: args.messageType as any });
+    } catch (err: unknown) {
+      // 准备段失败（会话/StreamHub 不可用、起流竞态等）：runner 已把会话标 failed + 错误气泡，
+      // 非阻塞派活语义保持「已派活」返回（spawn_subagent 的 fire-and-forget 依赖此契约）
       console.warn(`[agent_send_message] 自动触发目标 Agent ${toAgentId} 运行失败:`, err);
-      return { content: "", subagentSessionId: "" };
-    });
+      if (waitForRun) {
+        return { success: true, message: "已派活并自动运行。", content: "", subagentSessionId: "" };
+      }
+      return { success: true, message: "已派活并自动运行（子会话可实时查看流式输出）。" };
+    }
+
+    // 入队被 depth/queue-size 等守卫拒绝：如实回传，调用方（LLM）需感知并换策略
+    if (prepared.kind === "failed") {
+      return { success: false, error: prepared.error };
+    }
+
+    if (prepared.kind === "queued") {
+      if (!waitForRun) {
+        return {
+          success: true,
+          queued: true,
+          message: "子 Agent 正在运行，消息已入队，其空闲时自动处理。",
+        };
+      }
+      // waitForRun=true + busy：等该 item 的 drain 完成（链 promise），再读子会话最后 assistant
+      await prepared.drainPromise;
+      const lastAssistant = await ctx.prisma.chatMessage.findFirst({
+        where: { sessionId: prepared.subagentSessionId, role: "assistant" },
+        select: { content: true },
+        orderBy: { createdAt: "desc" },
+      });
+      return {
+        success: true,
+        queued: true,
+        message: "子 Agent 正在运行，消息已入队并已在空闲时处理。",
+        content: lastAssistant?.content || "(无文本输出)",
+        subagentSessionId: prepared.subagentSessionId,
+      };
+    }
+
     if (waitForRun) {
-      const runResult = await runPromise;
+      const content = await prepared.completion;
       return {
         success: true,
         message: "已派活并自动运行。",
-        content: runResult.content,
-        subagentSessionId: runResult.subagentSessionId,
+        content,
+        subagentSessionId: prepared.subagentSessionId,
       };
     }
-    // 非阻塞：后台跑 StreamHub；失败时 triggerAgentRun 内部会写 failed + 错误气泡
-    void runPromise;
+    // 非阻塞：后台跑 StreamHub；失败时 runner 内部会写 failed + 错误气泡
+    void prepared.completion.catch((err: unknown) => {
+      console.warn(`[agent_send_message] 目标 Agent ${toAgentId} 后台运行失败:`, err);
+    });
     return { success: true, message: "已派活并自动运行（子会话可实时查看流式输出）。" };
   }
 
@@ -982,7 +1117,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "agent_send_message",
-    description: "向另一个 Agent 发送消息。向下发（super→manager、manager→sub）可在工具调用中发；向上发（sub→manager、manager→super）只能在正式回复中发。跨 Workspace 只有超级能发。",
+    description: "向另一个 Agent 发送消息。向下发（super→manager、manager→sub）可在工具调用中发；向上发（sub→manager、manager→super）只能在正式回复中发。跨 Workspace 只有超级能发。目标正在运行时消息进入其服务端持久队列（返回 queued=true），其空闲时自动处理。",
     parameters: zodParams(
       z.object({
         toAgentId: z.string().describe("目标 Agent id"),

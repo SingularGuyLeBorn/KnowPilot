@@ -681,7 +681,7 @@ export function ChatView() {
 
   // 【listRunning 挂接 · INV-5 · 心脏区】后端主动发现运行中会话并续传：
   // 覆盖 sessionStorage 丢失、跨标签、切换 Agent 等场景。
-  // 仅信任 StreamHub.listRunning()（含 spawn_subagent / triggerAgentRun 的流式运行）。
+  // 仅信任 StreamHub.listRunning()（含 spawn_subagent / prepareAgentRun 的流式运行）。
   // 挂接进度一致性（INV-5）所在，effect 体一行未改。
   useEffect(() => {
     const items = runningSessionsQuery.data?.items;
@@ -692,7 +692,7 @@ export function ChatView() {
       // 已存在 active stream（abort 非空）说明已自行恢复或在运行中，无需重复 resume
       if (sessionComposeActions.getActiveAbortController(sid)) continue;
       // 架构不变量：挂接进度必须与本地状态一致。
-      // - 本地无该运行任何进度（服务端启动的运行：子 Agent triggerAgentRun / report_back 后父会话 autoConsume）：
+      // - 本地无该运行任何进度（服务端启动的运行：子 Agent prepareAgentRun / report_back 后父会话 autoConsume）：
       //   必须 resumeAfter=0 从头重放事件缓冲重建完整 liveTimeline。
       //   若从尾巴（item.lastEventId）接，thinking/tool 事件全被跳过 → 空 Thinking 卡住、
       //   done 后只有正式回复文本、hydrate 再闪烁重建完整时间线。

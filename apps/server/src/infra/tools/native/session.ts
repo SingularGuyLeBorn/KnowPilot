@@ -127,9 +127,9 @@ async function spawnSubagentExecute(
   }
 
   // 子 Agent 主会话（UI 跳转 + 跟踪 Task 绑定 + 同步等待的完成判定锚点）。
-  // 必须在此 find-or-create：triggerAgentRun 在后台异步建会话，若这里只 findFirst，
-  // 首次 spawn 时拿到 undefined → 同步等待循环失去完成判定锚点（只能等 10 分钟超时）。
-  // triggerAgentRun 侧 findFirst 会复用此会话（isMainSession 唯一），不会重复创建。
+  // 必须在此 find-or-create：prepareAgentRun（agent_send_message autoRun 内）在后台异步建会话，
+  // 若这里只 findFirst，首次 spawn 时拿到 undefined → 同步等待循环失去完成判定锚点（只能等 10 分钟超时）。
+  // prepareAgentRun 侧 findFirst 会复用此会话（isMainSession 唯一），不会重复创建。
   let mainSession = await ctx.prisma?.chatSession.findFirst({
     where: { agentId: subagentId, isMainSession: true, status: { not: "deleted" } },
   });

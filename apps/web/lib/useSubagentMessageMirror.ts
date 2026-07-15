@@ -4,7 +4,7 @@
  * useSubagentMessageMirror —— 子 Agent 会话：把 pending AgentMessage 幂等镜像进 SessionQueueItem。
  *
  * 【子 Agent 镜像域】effect 体自 chat.tsx 原样迁入（含 exhaustive-deps 豁免）。
- * 若 triggerAgentRun 已写入同内容 ChatMessage，则直接 markConsumed，
+ * 若 prepareAgentRun（agent_send_message autoRun 空闲路径）已写入同内容 ChatMessage，则直接 markConsumed，
  * 避免队列再消费导致「消息发两遍」。
  */
 

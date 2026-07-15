@@ -155,7 +155,11 @@ function toDelivery(task: {
 /** 同一 session 的自动续跑串行化，避免多条 delivery 并发双跑 */
 const sessionAutoConsumeChains = new Map<string, Promise<void>>();
 
-function enqueueSessionAutoConsume(sessionId: string, work: () => Promise<void>): void {
+/**
+ * per-session 串行链：同会话的自动续跑（异步投递 / superior 队列 drain）全部串行。
+ * 返回链 promise（含本次 work），供 waitForRun 等调用方等待「该次入队工作完成」。
+ */
+function enqueueSessionAutoConsume(sessionId: string, work: () => Promise<void>): Promise<void> {
   const prev = sessionAutoConsumeChains.get(sessionId) ?? Promise.resolve();
   const next = prev.then(work, work).finally(() => {
     if (sessionAutoConsumeChains.get(sessionId) === next) {
@@ -163,6 +167,62 @@ function enqueueSessionAutoConsume(sessionId: string, work: () => Promise<void>)
     }
   });
   sessionAutoConsumeChains.set(sessionId, next);
+  return next;
+}
+
+/** superior 队列 drain 单次处理项（SessionQueueItem 的最小结构） */
+export interface SuperiorQueueDrainItem {
+  id: string;
+  kind: string;
+  content: string;
+}
+
+/**
+ * W-E 服务端 superior 队列 drain：running 子 Agent 收到的上级消息先入持久队列
+ *（SessionQueueItem，swarm.ts prepareAgentRun busy 分支写入），空闲时按 FIFO 自动续跑。
+ * 复用 enqueueSessionAutoConsume 的 per-session 串行链——同会话的异步投递续跑与本 drain
+ * 全部串行，「同会话同时至多一条流」不变量不破。
+ *
+ * 链上循环：hub.isRunning → waitFor；取队首（listBySession[0]）；无则结束；
+ * consume 原子认领（删除即认领，落选 = 前端 drain 抢先，静默跳过看下一项）；
+ * runItem 重入 prepareAgentRun（dedup 防重写、写消息、起流）；等该轮结束；取下一项。
+ * 只处理 kind=superior 项：user 项归前端 drain 管（可能带附件/skill，服务端重放会丢语义），
+ * 遇到即停——前端 drain 消费后会连带处理后续 superior 项；下次发消息也会重新注册本 drain。
+ *
+ * 已知限制：链是进程内的，服务端重启后丢失；pending 队列项跨重启留存于 SQLite，
+ * 靠下次发送（busy/idle 都会再入队并触发本 drain）或前端打开会话 drain 兜底
+ * （与 AGENTS.md「运行中任务随重启丢失」一致）。
+ */
+export function enqueueSuperiorQueueDrain(options: {
+  sessionId: string;
+  services: ServiceContainer;
+  runItem: (item: SuperiorQueueDrainItem) => Promise<void>;
+}): Promise<void> {
+  const { sessionId, services, runItem } = options;
+  return enqueueSessionAutoConsume(sessionId, async () => {
+    const hub = getStreamHub();
+    if (!hub) return;
+    try {
+      for (;;) {
+        if (hub.isRunning(sessionId)) {
+          await hub.waitFor(sessionId);
+          continue;
+        }
+        const head = (await services.sessionQueueItem.listBySession(sessionId))[0];
+        if (!head) return;
+        if (head.kind !== "superior") return;
+        const claim = await services.sessionQueueItem.consume(head.id);
+        if (!claim.claimed) continue;
+        try {
+          await runItem({ id: head.id, kind: head.kind, content: head.content });
+        } catch (err) {
+          console.warn(`[asyncJobManager] superior 队列 drain 处理失败 session=${sessionId} item=${head.id}:`, err);
+        }
+      }
+    } catch (err) {
+      console.warn(`[asyncJobManager] superior 队列 drain 异常 session=${sessionId}:`, err);
+    }
+  });
 }
 
 /**
