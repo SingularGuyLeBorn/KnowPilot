@@ -272,6 +272,12 @@ model Task {
   input          Json?
   output         Json?
   cronExpression String?
+  /// 自动重跑计数（crash-loop 闸）：可重入任务崩溃恢复自动重跑 +1；手动 retry 清零重来
+  retryCount     Int       @default(0)
+  /// 自动重跑上限：入队时物化 = config.asyncJobs.maxRetries；列默认 2 仅存量行兜底
+  maxRetries     Int       @default(2)
+  /// 可重入标记：入队时按工具声明（ToolCommand.reentrant）推断物化；存量行 false = 保守不重跑
+  reentrant      Boolean   @default(false)
   sourceSlug     String?   @unique /// 本地源文件 slug（content/tasks/）
   sourceMtime    DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt      DateTime  @default(now())

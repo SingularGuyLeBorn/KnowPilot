@@ -142,6 +142,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "async_task_status",
     concurrencyClass: "A",
+    reentrant: true, // 只读状态查询
     description: "查询异步任务状态（不含结果内容与执行日志——结果完成后自动进队列投递）。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长等。",
     parameters: {
       type: "object",
@@ -181,6 +182,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "wait",
     concurrencyClass: "A",
+    reentrant: true, // 纯延迟零副作用，重跑只是再等一次
     description: "等待指定时间（用于安装、服务启动、轮询前的延迟）。最多 300 秒。",
     parameters: {
       type: "object",

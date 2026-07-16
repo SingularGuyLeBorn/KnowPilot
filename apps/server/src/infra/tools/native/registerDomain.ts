@@ -26,6 +26,7 @@ export function registerNativeDomain(
       kind: "native",
       concurrencyClass: def.concurrencyClass,
       destructive: def.destructive,
+      reentrant: def.reentrant,
       schema: () => ({ description: def.description, parameters: def.parameters }),
       execute: (args, ctx) => handler(args, ctx),
       captureRollback: rb?.capture,

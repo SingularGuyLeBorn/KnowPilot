@@ -264,7 +264,7 @@ describe("asyncJobManager 持久化", () => {
 
     const retried = await retryAsyncJob(first.jobId, ctx.config, ctx.services);
     expect(retried.status).toBe("running");
-    expect(retried.message).toContain("第 1 次重试");
+    expect(retried.message).toContain("手动重试");
 
     await vi.waitFor(
       async () => {
@@ -348,17 +348,6 @@ describe("asyncJobManager 持久化", () => {
     await cancelAsyncJob(second.jobId, narrowConfig, ctx.services);
     await cancelAsyncJob(third.jobId, narrowConfig, ctx.services);
     vi.restoreAllMocks();
-  });
-
-  it("retryAsyncJob 超过最大重试次数时报错", async () => {
-    const task = await createAsyncTask({ status: "failed", taskLabel: "超限", error: "fail" });
-    await prisma.task.update({
-      where: { id: task.id },
-      data: { input: { kind: ASYNC_KIND, sessionId, task: "超限", taskLabel: "超限", agentSnapshot: { id: "t", model: "m", systemPrompt: "", tools: [] }, retryCount: 3 } },
-    });
-
-    const ctx = await createContextInner();
-    await expect(retryAsyncJob(task.id, ctx.config, ctx.services)).rejects.toThrow(/最多只能重试/);
   });
 
   it("getAsyncQueueStats 返回队列统计", async () => {

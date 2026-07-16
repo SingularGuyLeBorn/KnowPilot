@@ -32,6 +32,7 @@ import {
   markAgentMessageDeliveredByTaskRef,
   rollbackAgentMessageDeliveredByTaskRef,
 } from "./agentMessageLedger.js";
+import { getTool } from "./tools/registry.js";
 
 export interface AsyncTaskLogEntry {
   timestamp: number;
@@ -77,7 +78,6 @@ interface AsyncTaskInput {
   task: string;
   taskLabel: string;
   agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null; name?: string | null };
-  retryCount?: number;
   timeoutMs?: number;
   subagentSessionId?: string;
   /** 任务来源类型（替代旧 isSubagent 布尔值，便于 UI 区分与后续扩展） */
@@ -116,6 +116,32 @@ function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
   const o = value as AsyncTaskInput;
   if (o.kind !== ASYNC_KIND || typeof o.sessionId !== "string") return null;
   return o;
+}
+
+/**
+ * 推断任务级可重入性（物化到 Task.reentrant 列；唯一声明源 = 工具注册表 reentrant 字段，禁止再造列表）。
+ *
+ * - mode "tool"：按 toolCall.tool 查注册表；查不到 = false（保守）。
+ * - mode "llm"：agentSnapshot.tools 全体取最严——任一工具未声明 reentrant 或查不到
+ *   （skill:* / mcp:* / 未知名，副作用未知一律保守）则整体 false；
+ *   空数组 = true（纯 LLM 无工具，at-least-once 重跑最坏只是重新生成一遍回复）。
+ * - 工具名归一化：注册表存裸名（web_search），Agent tools 可能带 native: 前缀，先剥前缀再查。
+ */
+export function inferTaskReentrant(input: {
+  mode: "llm" | "tool";
+  toolCall?: { tool: string; args: Record<string, unknown> };
+  agentTools?: string[];
+}): boolean {
+  const lookup = (name: string): boolean => {
+    const bare = name.startsWith("native:") ? name.slice("native:".length) : name;
+    return getTool(bare)?.reentrant === true;
+  };
+  if (input.mode === "tool") {
+    return input.toolCall ? lookup(input.toolCall.tool) : false;
+  }
+  const tools = input.agentTools ?? [];
+  if (tools.length === 0) return true;
+  return tools.every((t) => lookup(t));
 }
 
 function parseAsyncOutput(raw: unknown): AsyncTaskOutput {
@@ -1155,7 +1181,8 @@ function buildAsyncExecute(
   jobId: string,
   task: string,
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
-  retryCount: number,
+  // 是否手动重试（仅用于系统提示文案；自动重跑计数唯一事实源 = Task.retryCount 列，源头传入不再读 input）
+  isRetry: boolean,
   subagentSessionId?: string,
   mode: "llm" | "tool" = "llm",
   toolCall?: { tool: string; args: Record<string, unknown> },
@@ -1163,7 +1190,7 @@ function buildAsyncExecute(
   parentSessionId?: string,
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
-  const retryHint = retryCount > 0 ? `（第 ${retryCount} 次重试）` : "";
+  const retryHint = isRetry ? "（手动重试）" : "";
   const syncSubStatus = async (status: "completed" | "failed" | "paused" | "running") => {
     if (!subagentSessionId) return;
     try {
@@ -1616,7 +1643,6 @@ export async function startAsyncAgentTask(options: {
       task,
       taskLabel,
       agentSnapshot,
-      retryCount: 0,
       timeoutMs: options.timeoutMs,
       subagentSessionId,
       sourceType,
@@ -1624,6 +1650,11 @@ export async function startAsyncAgentTask(options: {
       shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
       deliverToQueue: options.deliverToQueue !== false,
     } satisfies AsyncTaskInput,
+    // 可重入三列入队物化（单一事实源 = Task 列）：retryCount 从零起步；
+    // maxRetries 取 config 快照；reentrant 按工具注册表声明推断
+    retryCount: 0,
+    maxRetries: options.config.asyncJobs.maxRetries,
+    reentrant: inferTaskReentrant({ mode, toolCall: options.toolCall, agentTools: agentSnapshot.tools }),
   } as any);
 
   if (!created.success || !created.data) {
@@ -1652,7 +1683,7 @@ export async function startAsyncAgentTask(options: {
           jobId,
           task,
           agentSnapshot,
-          0,
+          false,
           subagentSessionId,
           mode,
           options.toolCall,
@@ -1919,12 +1950,9 @@ export async function retryAsyncJob(
   const input = parseAsyncInput(existing.input);
   if (!input) throw new Error("不是有效的异步 Agent 任务");
 
-  const retryCount = (input.retryCount ?? 0) + 1;
-  if (retryCount > config.asyncJobs.maxRetries) {
-    throw new Error(`该异步任务最多只能重试 ${config.asyncJobs.maxRetries} 次`);
-  }
   const taskLabel = input.taskLabel;
   const agentSnapshot = input.agentSnapshot;
+  const mode = input.toolCall ? "tool" : "llm";
 
   const created = await services.task.create({
     name: `[async] ${taskLabel}`,
@@ -1932,10 +1960,15 @@ export async function retryAsyncJob(
     status: "running",
     sessionId: input.sessionId,
     startedAt: new Date(),
+    // 手动 retry 决策：人工是最后一道闸，不受自动重跑计数堵死——retryCount 清零重来、
+    // 不再设手动次数上限（原 config.maxRetries 拦截删除）；maxRetries/reentrant 按 config+工具声明重新物化
+    retryCount: 0,
+    maxRetries: config.asyncJobs.maxRetries,
+    reentrant: inferTaskReentrant({ mode, toolCall: input.toolCall, agentTools: agentSnapshot.tools }),
     // 原 input 全量保留（sourceType/deliverToQueue/toolCall/subagentSessionId/shareToSessionIds），
-    // 仅推进 retryCount——否则 sync 任务重试后 deliverToQueue 缺省为 true，结果漂移进异步队列（S8）
-    input: { ...input, retryCount } satisfies AsyncTaskInput,
-  });
+    // 否则 sync 任务重试后 deliverToQueue 缺省为 true，结果漂移进异步队列（S8）
+    input,
+  } as any);
 
   if (!created.success || !created.data) {
     throw new Error(created.error?.message ?? "创建重试任务失败");
@@ -1955,9 +1988,9 @@ export async function retryAsyncJob(
         newJobId,
         input.task,
         agentSnapshot,
-        retryCount,
+        true,
         input.subagentSessionId,
-        input.toolCall ? "tool" : "llm",
+        mode,
         input.toolCall,
         input.shareToSessionIds,
         input.sessionId,
@@ -1979,7 +2012,7 @@ export async function retryAsyncJob(
   return {
     jobId: newJobId,
     status: "running",
-    message: `已启动后台任务「${taskLabel}」的第 ${retryCount} 次重试。`,
+    message: `已启动后台任务「${taskLabel}」的手动重试。`,
   };
 }
 

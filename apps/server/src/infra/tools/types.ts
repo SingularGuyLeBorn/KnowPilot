@@ -41,6 +41,11 @@ export interface ToolCommand<Ctx = unknown> {
    * 与 approvalGate.DESTRUCTIVE_NATIVE_OPS 对齐，单点在域注册处声明，禁止再造列表。
    */
   destructive?: boolean;
+  /**
+   * 可重入标记：无写副作用、at-least-once 重跑安全（崩溃恢复可自动重跑，最坏只是再读一次）。
+   * 与 destructive 同处单点声明（域注册处），禁止再造列表；默认 false = 保守不重跑。
+   */
+  reentrant?: boolean;
   schema(): ToolSchema;
   execute(params: Record<string, unknown>, ctx: Ctx): Promise<unknown>;
   /** 执行前快照（destructive 工具按需实现）；返回值原样透传给 rollback */

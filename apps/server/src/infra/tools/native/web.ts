@@ -509,6 +509,8 @@ const WEB_DEFS: NativeToolDefinition[] = [
   {
     name: "web_search",
     concurrencyClass: "B",
+    // 纯搜索只读（syncSearchEnvFromConfig 只写进程内 env 且幂等）
+    reentrant: true,
     description:
       "搜索互联网（MetaBlog smartSearch 多引擎；/sources 信息源启用后 Tavily/SerpAPI 优先 scoped 到信息源域名）。",
     parameters: {
@@ -556,6 +558,8 @@ const WEB_DEFS: NativeToolDefinition[] = [
   {
     name: "read_article",
     concurrencyClass: "A",
+    // 只读抓取网页正文，无本地写副作用
+    reentrant: true,
     description:
       "读取网页文章为 Markdown（MetaBlog readArticle）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书等；InfoQ 走官方 API；SPA 站 HTTP→Playwright→DOM→Jina 降级；404/壳页明确报错；正文偏短返回 contentWarning。",
     parameters: {
@@ -575,6 +579,8 @@ const WEB_DEFS: NativeToolDefinition[] = [
   {
     name: "scrape_web_page",
     concurrencyClass: "B",
+    // 只读 Playwright 采集，无本地写副作用
+    reentrant: true,
     description: "Playwright 采集网页正文、链接与元数据（MetaBlog scrapeWebPage）。",
     parameters: {
       type: "object",

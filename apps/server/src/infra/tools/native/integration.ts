@@ -561,6 +561,7 @@ async function sendEmailTool(args: Record<string, unknown>, ctx: NativeToolConte
 const INTEGRATION_DEFS: NativeToolDefinition[] = [
   {
     name: "git_branch",
+    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 仓库分支列表。",
     parameters: zodParams(
       z.object({
@@ -594,6 +595,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "git_status",
+    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 仓库工作区状态。",
     parameters: zodParams(
       z.object({
@@ -604,6 +606,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "git_log",
+    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 提交历史。",
     parameters: zodParams(
       z.object({
@@ -615,6 +618,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "git_diff",
+    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 工作区 diff。",
     parameters: zodParams(
       z.object({
@@ -660,6 +664,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_get_doc",
+    reentrant: true, // 远端 GET 只读（凭证只读不刷新）
     description: "通过语雀 Open API v2 获取文档内容（需配置 YUQUE_SESSION 或 Credential scope=yuque）。",
     parameters: zodParams(
       z.object({
@@ -670,11 +675,13 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_list_books",
+    reentrant: true, // 远端 GET 只读
     description: "列出语雀知识库（内部 Web API，需 Cookie）。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "yuque_get_book_toc",
+    reentrant: true, // 远端 GET 只读
     description: "获取语雀知识库目录（内部 Web API，需 Cookie）。",
     parameters: zodParams(
       z.object({
@@ -718,11 +725,13 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_list_repos",
+    reentrant: true, // 远端 GET 只读
     description: "列出语雀知识库（Open API v2，需 Token）。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "yuque_list_docs",
+    reentrant: true, // 远端 GET 只读
     description: "列出语雀知识库文档（Open API v2，需 Token）。",
     parameters: zodParams(
       z.object({
@@ -775,11 +784,13 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "browser_login_status",
+    reentrant: true, // 只读 cookieJar 状态
     description: "列出当前已保存的浏览器登录态平台。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "github_search_repos",
+    reentrant: true, // 远端 GET 只读
     description: "在 GitHub 搜索公开仓库。",
     parameters: zodParams(
       z.object({
@@ -790,6 +801,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_get_repo",
+    reentrant: true, // 远端 GET 只读
     description: "获取 GitHub 仓库详情。",
     parameters: zodParams(
       z.object({
@@ -823,6 +835,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_get_file",
+    reentrant: true, // 远端 GET 只读
     description: "读取 GitHub 仓库文件内容（Base64 自动解码）。",
     parameters: zodParams(
       z.object({
@@ -875,6 +888,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_list_issues",
+    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub 仓库 Issues。",
     parameters: zodParams(
@@ -888,6 +902,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_get_issue",
+    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "获取单个 GitHub Issue 详情。",
     parameters: zodParams(
@@ -925,6 +940,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_list_pull_requests",
+    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub 仓库 Pull Requests。",
     parameters: zodParams(
@@ -938,6 +954,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_get_pull_request",
+    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "获取单个 GitHub Pull Request 详情。",
     parameters: zodParams(
@@ -963,6 +980,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_list_branches",
+    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub 仓库分支。",
     parameters: zodParams(
@@ -975,6 +993,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_get_branch",
+    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "获取 GitHub 分支详情。",
     parameters: zodParams(
@@ -998,6 +1017,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "github_list_workflows",
+    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub Actions 工作流。",
     parameters: zodParams(
@@ -1146,6 +1166,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "feishu_token_status",
+    reentrant: true, // 只读 credential 状态（getUserAccessTokenStatus 不触发刷新写库）
     concurrencyClass: "B",
     description: "查询飞书 user_access_token 状态（Credential 表或文件缓存）。",
     parameters: zodParams(z.object({})),

@@ -245,6 +245,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "read_file",
     concurrencyClass: "A",
+    reentrant: true, // 只读
     description: "读取项目根目录内的文本文件（相对路径），支持偏移与最大长度。",
     parameters: {
       type: "object",
@@ -286,6 +287,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "list_directory",
     concurrencyClass: "A",
+    reentrant: true, // 只读
     description: "列出项目内目录内容，可选递归。",
     parameters: {
       type: "object",
@@ -337,6 +339,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "search_files",
     concurrencyClass: "A",
+    reentrant: true, // 只读
     description: "在项目根目录内搜索包含指定关键词的文本文件，返回文件路径、行号与片段。",
     parameters: {
       type: "object",
@@ -366,6 +369,7 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "file_stat",
     concurrencyClass: "A",
+    reentrant: true, // 只读
     description: "获取项目根目录内文件或目录的元信息。",
     parameters: {
       type: "object",

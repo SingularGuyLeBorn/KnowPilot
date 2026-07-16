@@ -20,6 +20,11 @@ export interface NativeToolDefinition {
    * 与 approvalGate.DESTRUCTIVE_NATIVE_OPS 对齐；补偿实现经 registerNativeDomain 第三参数挂入。
    */
   destructive?: boolean;
+  /**
+   * 可重入标记：无写副作用、at-least-once 重跑安全（与 ToolCommand.reentrant 同义，经 registerNativeDomain 透传）。
+   * 默认 false = 保守；拿不准一律不标（false）。
+   */
+  reentrant?: boolean;
 }
 
 export interface NativeToolContext {

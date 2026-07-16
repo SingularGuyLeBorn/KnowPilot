@@ -1195,6 +1195,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "agent_inspect",
+    reentrant: true, // 只读：agent/session/memory 查询
     description: "获取任意 Agent 的完整上下文（需超级权限）。包括 session 消息、memory、运行记录。默认管理 Agent 运行过程对超级不可见，此工具用于越级查看。",
     parameters: zodParams(
       z.object({
@@ -1267,6 +1268,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "free_api_keys_list",
+    reentrant: true, // 只读：Credential findMany（不触碰 lastUsedAt）
     description: "列出可用的免费 API Key（从 Credential 表中 scope=llm 且 metadata.source=free 的记录）。",
     parameters: zodParams(z.object({})),
   },
@@ -1281,6 +1283,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "skill_discover",
+    reentrant: true, // 只读：Skill/Run 统计扫描
     description: "发现跨 Workspace 的优秀 Skill（超级 Agent 专用，Hermes 进化 #45）。扫描所有 Skill，按使用频率/成功率排序，返回值得推广的候选。",
     parameters: zodParams(
       z.object({

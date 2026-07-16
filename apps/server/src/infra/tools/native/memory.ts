@@ -200,6 +200,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "memory_search",
+    reentrant: true, // 只读搜索
     description: "搜索本地记忆库。",
     parameters: zodParams(
       z.object({
