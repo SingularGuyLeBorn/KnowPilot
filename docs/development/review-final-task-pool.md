@@ -3,12 +3,12 @@
 > 审查范围：`master(0e1ffd6d)..HEAD`（TP-1~TP-5，共 6 commits：ac3560cf / be9e988f / e37ad920 / a8edf451 / 7a29deb8 / cf0418e7，28 文件 +2661/-523）。
 > 审查方式：逐 commit diff 精读 + 关键源码通读（asyncJobOrchestrator / asyncJobManager / sessionStreamHub / swarmOrchestrator / session.ts / swarm.ts 全部 v8 改动面）+ 亲自实跑（lint / server 全量 vitest / globalTaskPool 定向分组实跑 / web vitest / mock e2e 全量 / grep 残留扫描）。未修改任何非 .md 源文件，未做任何 git 写操作，未动 dev.db / content/。
 
-## 总结论：**有条件通过**
+## 总结论：**通过**（2026-07-16 复审升级，原为「有条件通过」）
 
 主链路全部正确：容量/互斥不变量确实收进了执行层（orchestrator），Q1~Q4 四条决策全部落地且机制成立（非时序补丁），18 例测试逐例反注水有效，v7 不变量零回归，实证全绿（lint 0 错、server 44 文件 455 passed/5 skipped、web 4 passed、mock e2e 19/19）。
 
 **通过条件（1 条，必修）**：
-1. **P2-1（零兼容铁律违规）**：`agentReportBackTool` 保留了「无 subagentSessionId 旧数据」的兜底匹配分支（老时间窗语义）——铁律要求删（或给出「这是有意保留的防御」的明确书面决策）。详见问题清单。
+1. ~~**P2-1（零兼容铁律违规）**：`agentReportBackTool` 保留了「无 subagentSessionId 旧数据」的兜底匹配分支（老时间窗语义）~~ → **已修（`0c0aa370`），复审实证关闭**（见文末「复审记录」节）。
 
 **登记不阻塞**：S1（CLAIM→起流 TOCTOU，pre-existing）、S2（waitForRun + 池饱和 drain 放弃后读旧 assistant，v8 新边缘）、S3（cancel 级联杀共享会话流）、S4（hub.start 幻影 run 泄漏，pre-existing）、S5（reason 入队时快照不刷新，已文档化）。
 
@@ -137,4 +137,34 @@
 
 ---
 
-> 审查人：终审架构师（只读审查 subagent）。本报告为唯一产出物；唯一必修项 = P2-1（删除 report_back 旧数据兜底分支），S1~S5 登记不阻塞，修复后可升级为「通过」。
+## 复审记录（P2-1 修复复核，2026-07-16 追加）
+
+> 复审范围：`0c0aa370`（fix: [review] 删除 report_back 桥接的 take:20 时间窗兜底分支，2 文件 +77/-18）。
+> 复审方式：commit diff 精读 + 修复后代码通读 + 亲自实跑（定向 vitest + 相关 4 套件回归 + server lint）。未修改任何非 .md 文件，未做任何 git 写操作。
+
+### P2-1 复核结论：✅ 修复成立，关闭
+
+| 复核点 | 证据 |
+|---|---|
+| 兼容分支已删 | `swarm.ts:730-732`：原 `if (!matched)` 兜底块（take:20 时间窗 + `agentSnapshot.id` 模糊匹配）整体删除，替换为零兼容纪律注释；血缘键精确匹配（`input.path=$.subagentSessionId`）为**唯一**匹配方式 |
+| miss 路径不丢 | `matched=null` 走下方既有 `create` 新 success Task 分支（`delivered:false`）——结果仍经正常 Task 管道投递（autoConsume/前端 CLAIM），不丢、不误投；`matchedInput?.deliverToQueue === false` 分支在 matched=null 时为 null 正确跳过，不会误走 waitForResult consumed 记账 |
+| 负向断言有效 | 新用例「report_back 桥接零模糊兜底」（`agentMessageLedger.test.ts:218-290`）：干扰项 = 同子 Agent、异血缘键（`other-sub-session-*`）的 running 跟踪 Task。推演旧实现：候选窗必含该 intruder（running + [async] 名 + 最新），`subagentSessionId` 不等但 `agentSnapshot.id === snapshot.id` 命中 → 误标 success → 断言①（intruder 保持 running）必红，断言②（新建投递行存在）同红——两条断言均能区分新旧实现 |
+| 实测全绿 | `npx vitest run src/__tests__/agentMessageLedger.test.ts`：**13/13 passed**（2.63s） |
+| 无副作用 | 相关 4 套件回归（globalTaskPool 18 例含 50 spawn 压测 / superiorQueueDrain 7 例 / nativeTools / async-task-queue）：**129 passed / 5 skipped** 全绿；`pnpm --filter @knowpilot/server lint`（tsc --noEmit）EXIT=0。修复面仅 agentReportBackTool 的 matched=null 分支，matched 命中路径（含 W14 taskRef 关联、deliverToQueue=false consumed 记账）逐行未动 |
+
+### 实跑复核（亲自运行，非转述）
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 1 | `git show 0c0aa370` diff 精读（swarm.ts + agentMessageLedger.test.ts） | 兜底块删除、注释如实、用例构造与断言如上表 |
+| 2 | `cd apps/server && npx vitest run src/__tests__/agentMessageLedger.test.ts` | EXIT=0；**13 passed**（含新负向用例） |
+| 3 | `npx vitest run globalTaskPool superiorQueueDrain nativeTools async-task-queue`（apps/server） | EXIT=0；4 文件 **129 passed / 5 skipped**（14.0s） |
+| 4 | `pnpm --filter @knowpilot/server lint` | EXIT=0（tsc --noEmit） |
+
+### 复审总结论
+
+唯一必修项 P2-1 已在本分支消化（`0c0aa370`），修复符合零兼容铁律（删分支而非留兼容），负向断言新旧可区分且实测全绿，相关套件无回归。**总结论升级为「通过」**，本分支可合入。S1~S5 维持原登记不阻塞（S2 为 v8 新边缘、S1/S3/S4 为 pre-existing 边界、S5 已文档化），建议后续工单跟进 S2。
+
+---
+
+> 审查人：终审架构师（只读审查 subagent）。本报告为唯一产出物；Round 1 终审（8 条必查 + P2-1 + S1~S5）与 Round 2 修复复核均已完成，全部闭环。
