@@ -5,7 +5,7 @@
  * 2. 人为制造漂移（摘掉一个内置默认工具）→ drift 增长并点名缺失工具；恢复后回到基线
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { appRouter } from "../router.js";
 import { createContextInner } from "../trpc/context.js";
 import { prisma } from "../db.js";
@@ -21,8 +21,14 @@ describe("S9 防线：默认 assistant 提示词与双工具分工一致", () =>
 });
 
 describe("W16d-3 agent.driftStatus tRPC 通道", () => {
+  // test.db 全量共享：不依赖文件执行顺序，每个用例前清掉 assistant 保证前置态密闭
+  // （v9 终审 P1：原实现依赖「本文件字母序最先跑」的脆弱前置，全量套件间歇性 2 failed——
+  // assistant 已被其他文件创建时 null 断言红 + fixture 唯一约束撞车）
+  beforeEach(async () => {
+    await prisma.agent.deleteMany({ where: { name: "assistant" } });
+  });
+
   it("无 assistant 时如实返回 null 且不引导创建（管理页查询零写副作用）", async () => {
-    // 前置依赖：本文件字母序在会创建 assistant 的测试文件之前，此用例跑时库中无 assistant。
     const ctx = await createContextInner();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.agent.driftStatus();
