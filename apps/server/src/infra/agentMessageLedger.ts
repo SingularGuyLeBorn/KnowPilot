@@ -60,6 +60,25 @@ export async function markAgentMessageConsumedByTaskRef(
   return fromDelivered.count + fromPending.count;
 }
 
+/**
+ * delivered 回滚（R-1 S3）：注入确定未发生 / 对账判定孤儿 → delivered 退回 pending。
+ * 仅命中 status="delivered"：
+ * - 已 consumed 的消息 = 气泡已被读入上下文，绝不可回滚（回滚会导致重复投喂）；
+ * - 仍 pending 的消息无需回滚。
+ * 条件写幂等：与 markDelivered / markConsumed 并发竞态安全，落选 no-op。
+ * deliveredAt 清空：交付事实上未完成，真账不保留伪时间；下次成功 CLAIM 重新落账。
+ */
+export async function rollbackAgentMessageDeliveredByTaskRef(
+  db: AgentMessageLedgerDb,
+  taskRef: string,
+): Promise<number> {
+  const result = await db.agentMessage.updateMany({
+    where: { taskRef, status: "delivered" },
+    data: { status: "pending", deliveredAt: null },
+  });
+  return result.count;
+}
+
 
 /* -------------------------------------------------------------------------- */
 /* 存量对账（W14 一次性脚本退役后保留的对账核心） */

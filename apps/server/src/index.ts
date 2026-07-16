@@ -15,7 +15,14 @@ import { getEventBus } from "./infra/eventBus.js";
 import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
 import { getTaskScheduler } from "./infra/taskScheduler.js";
-import { recoverStaleAsyncJobs, recoverStaleRuns, cleanupDeliveredAsyncJobs, wireAsyncJobPush } from "./infra/asyncJobManager.js";
+import {
+  recoverStaleAsyncJobs,
+  recoverStaleRuns,
+  cleanupDeliveredAsyncJobs,
+  wireAsyncJobPush,
+  startAsyncDeliveryReconciler,
+  stopAsyncDeliveryReconciler,
+} from "./infra/asyncJobManager.js";
 import { closeSharedBrowser } from "./infra/metablog/browserPool.js";
 import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
@@ -278,6 +285,9 @@ const server = app.listen(PORT, () => {
     .catch((err) => {
       console.error("❌ [AsyncJobs] 清理过期任务失败:", err);
     });
+  // R-1 S3：投递对账者——启动即扫一轮 + 周期扫（周期 = stream.cleanupIntervalMs 量级），
+  // 兜底「认领了但气泡没进会话」的孤儿交付（回滚 delivered + 重新走 notify/autoConsume）
+  startAsyncDeliveryReconciler(config, services);
 
   if (hasSystemChrome() && process.env.BROWSER_WARMUP !== "0") {
     void getSharedBrowser()
@@ -293,6 +303,7 @@ const handleShutdown = () => {
   triggerEngine.stop();
   taskScheduler.stop();
   heartbeatEngineRef?.stop();
+  stopAsyncDeliveryReconciler();
   streamHub.destroy();
   void closeSharedBrowser().catch(() => undefined);
   server.close(() => {

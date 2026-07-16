@@ -28,7 +28,10 @@ import {
 import { getSwarmOrchestrator } from "./swarmOrchestrator.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getAllowedToolsForTier } from "./swarmPermissionGuard.js";
-import { markAgentMessageDeliveredByTaskRef } from "./agentMessageLedger.js";
+import {
+  markAgentMessageDeliveredByTaskRef,
+  rollbackAgentMessageDeliveredByTaskRef,
+} from "./agentMessageLedger.js";
 
 export interface AsyncTaskLogEntry {
   timestamp: number;
@@ -258,6 +261,30 @@ export function enqueueSuperiorQueueDrain(options: {
 }
 
 /**
+ * R-1 S3：delivered 条件写回滚（同链即时回滚与 reconciler 对账者共用的唯一回滚入口）。
+ * `updateMany where delivered=true` 是与正常消费/前端 ack 竞态原子的互斥点：
+ * - CLAIM 类写入（autoConsume / markAsyncDeliveryConsumed）只命中 delivered=false，
+ *   与本回滚的条件互斥——同一行同一时刻至多一个写方生效，无丢失更新；
+ * - 期间已被正常消费的记录条件写天然不命中（count=0），调用方据此放弃回滚。
+ * 同事务回滚 W14 账本（delivered→pending），与 CLAIM 侧的 delivered 记账对称。
+ * 返回是否回滚成功（false = 已被他人消费/回滚，调用方不得再补投）。
+ */
+async function rollbackAsyncDeliveryClaim(jobId: string): Promise<boolean> {
+  const result = await prisma.$transaction(async (tx) => {
+    const r = await tx.task.updateMany({
+      where: { id: jobId, delivered: true },
+      // deliveredAt 清空：交付事实上未完成，不保留伪时间；下次成功 CLAIM 重新落账
+      data: { delivered: false, deliveredAt: null },
+    });
+    if (r.count > 0) {
+      await rollbackAgentMessageDeliveredByTaskRef(tx, jobId);
+    }
+    return r;
+  });
+  return result.count > 0;
+}
+
+/**
  * 服务端自动消费异步结果：CLAIM → 注入消息 → 启动 Agent 续跑。
  * 不依赖前端是否打开该 session；与前端 consumeQueue 通过原子 CLAIM 竞态，先到者执行。
  */
@@ -323,13 +350,19 @@ export async function autoConsumeAsyncDelivery(options: {
 
   const invokeTrpc = createTrpcInvoker({ services });
 
-  enqueueSessionAutoConsume(sessionId, async () => {
+  // R-1 S3 第一层——同链即时回滚：CLAIM 之后注入失败的「确定未写消息」唯一路径是
+  // startIfNotRunning 返回 false（别的流占线，runner/chatAgentStream 未执行，消息必然未写入）。
+  // 该路径同事务回滚 delivered + W14 账本，并把 delivery 重挂消费链队尾（不丢、不重复）。
+  // 其它失败一律不回滚（宁漏回滚勿错回滚）：如 started=true 后 chatAgentStream 中途抛错，
+  // 消息可能已写入，回滚会导致重复投喂——交由 reconciler（第二层）以 ChatMessage 为 ground truth 对账。
+  const consumeWork = async (): Promise<void> => {
     try {
       // v8 TP-1：交付消费走高优池准入（队首优先 + 全局占用约束）。
       // 不变量：禁止「等槽无限挂起消费链」——等槽超时未获槽则放弃本轮；
       // CLAIM 在获槽后执行，未获槽则 delivered 保持 false，delivery 原样留待下次触发（不丢）。
       // hub 交互流不依赖池槽位 ⇒ 等 hub 空闲不会与池形成循环等待。
       const orchestrator = getAsyncJobOrchestrator(config);
+      let requeue = false;
       const admitted = await orchestrator.runConsumeJob({
         jobId: `consume-${jobId}`,
         sessionId,
@@ -368,7 +401,24 @@ export async function autoConsumeAsyncDelivery(options: {
               });
               // 槽位持有到续跑结束（与 spawn 池任务同口径）
               await hub.waitFor(sessionId);
+            } else {
+              // 被抢线：消息确定未写入 → 条件写回滚并重挂链尾。
+              // 回滚落选（false）= 期间已被正常消费/对账者处理，不得再补投。
+              requeue = await rollbackAsyncDeliveryClaim(jobId);
+              if (requeue) {
+                console.warn(
+                  `[asyncJobManager] autoConsume 被抢线（started=false），已回滚 delivered 并重挂链尾 session=${sessionId} job=${jobId}`,
+                );
+              }
             }
+          } catch (err) {
+            // 非「占线」异常（如 DB 抖动导致 start 抛错）：无法判定消息未写入，不回滚——
+            // 交付保持 delivered=true，由 reconciler 对账兜底；此处仅留可观测日志。
+            console.warn(
+              `[asyncJobManager] autoConsume 起流异常 session=${sessionId} job=${jobId}（未回滚，留 reconciler 对账）:`,
+              err,
+            );
+            throw err;
           } finally {
             releaseClaim();
           }
@@ -378,11 +428,18 @@ export async function autoConsumeAsyncDelivery(options: {
         console.warn(
           `[asyncJobManager] autoConsume 等槽超时放弃本轮 session=${sessionId} job=${jobId}（delivery 未 CLAIM，留待下次触发）`,
         );
+        return;
+      }
+      if (requeue) {
+        // 重挂消费链队尾：新一轮走完整高优通道（等 hub 空闲 → 再 CLAIM → 注入），不丢、不重复
+        enqueueSessionAutoConsume(sessionId, consumeWork);
       }
     } catch (err) {
       console.warn(`[asyncJobManager] autoConsume 续跑失败 session=${sessionId} job=${jobId}:`, err);
     }
-  });
+  };
+
+  enqueueSessionAutoConsume(sessionId, consumeWork);
 
   return "started";
 }
@@ -435,6 +492,146 @@ export async function notifyAndAutoConsumeAsyncDelivery(options: {
     options.services,
     options.config,
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* R-1 S3 第二层：投递对账者（reconciler）
+ *
+ * 洞 S3：CLAIM（delivered=true + 账本 delivered）之后、气泡注入之前失败/重启 →
+ * 「认领了但气泡没进会话」，结果永久丢失。第一层（同链即时回滚）只覆盖进程内可判定的
+ * 抢线路径；进程重启、起流异常等无法即时判定的残留由本对账者兜底。
+ *
+ * 不变量（全部收在执行层，条件写原子，不靠时序自觉）：
+ * 1. ChatMessage 是唯一 ground truth：会话里存在 toolResults.subagentResult.jobId=X 的
+ *    气泡 = 已注入，零动作（正常已消费记录天然零误伤）；
+ * 2. 回滚走 rollbackAsyncDeliveryClaim 条件写（delivered=true→false），与正常消费/前端 ack
+ *    竞态原子——同一行同一时刻至多一个写方生效，幂等，连跑多轮结果一致；
+ * 3. 补投重新走 notify/autoConsume 正常管道（与任务完成时同一入口），不另造投递路径；
+ * 4. 宁漏勿错：deliveredAt 未超龄的记录视为「注入进行中」跳过（真孤儿下一轮再收），
+ *    绝不误回滚在途交付。
+ */
+
+/** reconciler 每轮处理量上限（防爆库；剩余下一轮继续） */
+export const RECONCILER_BATCH_LIMIT = 50;
+
+/**
+ * 孤儿判定超龄阈值：deliveredAt 距今不足该值的 delivered=true 记录视为注入进行中，本轮跳过。
+ * CLAIM → 气泡落库正常在秒级完成，60s 足够保守；该阈值只影响补投时机，不影响正确性。
+ */
+export const RECONCILER_MIN_DELIVERED_AGE_MS = 60_000;
+
+export interface ReconcileAsyncDeliveriesResult {
+  /** 本轮扫描到的 delivered=true 终态候选数（含被过滤/跳过的） */
+  scanned: number;
+  /** 判定为孤儿并回滚成功的条数 */
+  rolledBack: number;
+  /** 回滚后重新 notify 的条数 */
+  renotified: number;
+  /** 已有气泡（ground truth 命中）跳过的条数 */
+  skippedHasMessage: number;
+}
+
+/**
+ * 投递对账单轮（可测试）：扫「delivered=true 且终态（success/failed）、超龄、未 pinned、
+ * deliverToQueue≠false，但会话消息里找不到 toolResults.subagentResult.jobId=X 气泡」的孤儿 Task
+ * → 条件写回滚 → 重新 notify/autoConsume。全部动作幂等，可任意重跑。
+ */
+export async function reconcileOrphanedAsyncDeliveries(options: {
+  services: ServiceContainer;
+  config: AppConfig;
+  limit?: number;
+  /** 测试可传 0 关闭超龄过滤；缺省 RECONCILER_MIN_DELIVERED_AGE_MS */
+  minDeliveredAgeMs?: number;
+}): Promise<ReconcileAsyncDeliveriesResult> {
+  const { services, config } = options;
+  const limit = Math.max(1, Math.min(options.limit ?? RECONCILER_BATCH_LIMIT, 500));
+  const minAge = Math.max(0, options.minDeliveredAgeMs ?? RECONCILER_MIN_DELIVERED_AGE_MS);
+  const cutoff = new Date(Date.now() - minAge);
+
+  const candidates = await prisma.task.findMany({
+    where: {
+      OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+      status: { in: ["success", "failed"] },
+      delivered: true,
+      pinned: false,
+      deliveredAt: { lt: cutoff },
+    },
+    orderBy: { deliveredAt: "asc" },
+    take: limit,
+  });
+
+  const result: ReconcileAsyncDeliveriesResult = {
+    scanned: candidates.length,
+    rolledBack: 0,
+    renotified: 0,
+    skippedHasMessage: 0,
+  };
+
+  for (const task of candidates) {
+    const input = parseAsyncInput(task.input);
+    // 同步任务（deliverToQueue=false）结果走 tool return，永不进气泡——不属于对账范围
+    if (!input || input.deliverToQueue === false) continue;
+    const sessionId = input.sessionId;
+
+    // ground truth：会话里是否已有携带该 jobId 台账的气泡（Prisma SQLite 不支持 JSON 路径过滤，
+    // 用 json_extract 裸查；toolResults 为 NULL 时 json_extract 返回 NULL 天然不命中）
+    const bubble = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "ChatMessage"
+      WHERE sessionId = ${sessionId}
+        AND json_extract(toolResults, '$.subagentResult.jobId') = ${task.id}
+      LIMIT 1
+    `;
+    if (bubble.length > 0) {
+      result.skippedHasMessage++;
+      continue;
+    }
+
+    // 孤儿：条件写回滚（同事务回滚 W14 账本）。落选 = 期间已被正常消费/并行对账处理，跳过
+    const rolledBack = await rollbackAsyncDeliveryClaim(task.id);
+    if (!rolledBack) continue;
+    result.rolledBack++;
+    console.warn(`[reconciler] 补投 jobId=${task.id} session=${sessionId}（delivered 回滚，重新走 notify/autoConsume 管道）`);
+    await notifyAsyncDelivery(
+      sessionId,
+      task.id,
+      task.status === "failed" ? "failed" : "done",
+      input.taskLabel,
+      services,
+      config,
+    );
+    result.renotified++;
+  }
+
+  return result;
+}
+
+let reconcilerTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * 挂载投递对账者：启动即跑一轮 + 周期跑（周期复用 stream.cleanupIntervalMs 量级——
+ * 与 SessionStreamHub 事件清理同节拍，不新增 config 面）。
+ * 重复调用先停旧定时器（幂等）。返回停止函数（优雅退出用）。
+ */
+export function startAsyncDeliveryReconciler(config: AppConfig, services: ServiceContainer): () => void {
+  stopAsyncDeliveryReconciler();
+  const intervalMs = Math.max(1000, config.stream.cleanupIntervalMs);
+  const runRound = () => {
+    void reconcileOrphanedAsyncDeliveries({ services, config }).catch((err) => {
+      console.warn("[reconciler] 对账轮次失败（下轮重试）:", err);
+    });
+  };
+  runRound();
+  reconcilerTimer = setInterval(runRound, intervalMs);
+  // 不阻止进程退出（测试/脚本场景忘记 stop 也不悬挂）
+  reconcilerTimer.unref?.();
+  return stopAsyncDeliveryReconciler;
+}
+
+export function stopAsyncDeliveryReconciler(): void {
+  if (reconcilerTimer) {
+    clearInterval(reconcilerTimer);
+    reconcilerTimer = null;
+  }
 }
 
 /** 推送子会话状态变更到父会话 SSE */
