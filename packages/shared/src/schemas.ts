@@ -333,6 +333,9 @@ export const rerunSessionSchema = z.object({
   taskDescription: z.string().max(2000).optional(),
 });
 
+// C-3 会话手动恢复（v10）：仅恢复 paused 会话，幂等（并发/重复调用不报错）
+export const resumeSessionSchema = z.object({ id: z.string().cuid() });
+
 /* ═══════════════════════════════════════════════════════
    Message (消息)
    ═══════════════════════════════════════════════════════ */
@@ -977,6 +980,7 @@ export type UpdateSessionInput = z.infer<typeof updateSessionSchema>;
 export type ListSessionsInput = z.infer<typeof listSessionsSchema>;
 export type StopSessionInput = z.infer<typeof stopSessionSchema>;
 export type RerunSessionInput = z.infer<typeof rerunSessionSchema>;
+export type ResumeSessionInput = z.infer<typeof resumeSessionSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;

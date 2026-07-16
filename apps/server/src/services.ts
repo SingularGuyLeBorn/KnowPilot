@@ -87,6 +87,8 @@ import {
 import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
+// type-only：编译期擦除，不构成运行时循环依赖（resume 的 runner emit 追踪用）
+import type { AgentStreamEvent } from "./infra/agentStream.js";
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
@@ -1424,6 +1426,148 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     const session = await this.prisma.chatSession.findUnique({ where: { id } });
     if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "会话不存在" });
     return session;
+  }
+
+  /**
+   * C-3 会话手动恢复（v10）：paused → running 续跑未完成的 ReAct 轮。
+   *
+   * 背景：服务端重启后 R-2 把僵尸 running 会话标 paused（进程内 ReAct 状态随进程死亡，
+   * 消息链在 ChatMessage 表扁平存储，chatAgentStream 从扁平链重建上下文续跑，
+   * 不重复生成已有 assistant 消息）。设计：手动恢复，不做自动恢复。
+   *
+   * 不变量（全部收条件写/原子操作，不靠编排层时序猜测）：
+   * 1. 仅 status="paused" 可恢复；active/failed/archived/completed 等 → BAD_REQUEST（说明原因）。
+   * 2. 唯一互斥点 = 条件写 updateMany where {id, status:"paused"} → {status:"running"}：
+   *    count=1 获得恢复权；count=0 重读——已 running → 幂等返回（并发 double-resume
+   *    落选方不报错、不重复起流）；其它 → BAD_REQUEST。全仓只有这一处 paused→running，
+   *    并发下至多一个调用方起流，不加第二层锁。
+   * 3. 系统提示消息（role:"user", source:"system"）由 chatAgentStream 在起流后写入——
+   *    注入与起流同源，不存在「消息已写、流未起」的孤儿窗口，故回滚无需删消息。
+   * 4. 起流失败回滚（宁漏勿错）：startIfNotRunning 返回 false = 已有活跃流接管
+   *    （竞态幂等，状态维持 running，不算失败）；抛错 → 条件写回滚 running→paused。
+   *    可判定依据：hub.start 的全部抛错点都在 runs 占位与 runner 执行之前
+   *    （isRunning 检查；maxEventIdFor 内部已吞错不抛），抛错 ⟹ runner 未执行
+   *    ⟹ 消息必然未写入 ⟹ 回滚安全完整。回滚同走条件写 where status:"running"：
+   *    期间已被 stop/接管则 count=0 不误滚。
+   * 5. 终态归位挂在 runner 内部：run 结束时若状态仍 running——
+   *    done → subagent 会话 "completed" / 其它 "active"；error/中断 → "paused"
+   *    （瞬时错误不判死刑，保留再次手动恢复的闭环）。写在 runner 内、hub 标 completed
+   *    之前，与 superior drain 链的 waitFor 形成 happens-before（drain 只会在本 runner
+   *    结束后才可能把状态重新置 running），无 check-then-act 窗口；条件写 where
+   *    status:"running" 保证期间被 stop（paused）/ report_back（completed）接管时不覆盖。
+   */
+  async resume(input: { id: string }): Promise<{
+    id: string;
+    status: string;
+    resumed: boolean;
+    streamStarted: boolean;
+  }> {
+    const session = await this.getByIdLite(input.id); // 不存在 → NOT_FOUND
+
+    // 互斥点（唯一）：条件写抢占恢复权
+    const claim = await this.prisma.chatSession.updateMany({
+      where: { id: input.id, status: "paused" },
+      data: { status: "running" },
+    });
+
+    if (claim.count === 0) {
+      // 未获得恢复权：重读当前状态，区分「幂等」与「拒绝」
+      const current = await this.getByIdLite(input.id);
+      if (current.status === "running") {
+        // 并发 double-resume 落选方 / 重复调用：不报错、不重复起流
+        return { id: input.id, status: "running", resumed: false, streamStarted: false };
+      }
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          `恢复会话失败：仅「已暂停（paused）」的会话可恢复运行，当前状态为「${current.status}」。` +
+          (current.status === "archived" ? "已归档会话请前往续写会话。" : "请刷新会话列表确认状态后重试。"),
+      });
+    }
+
+    // 获得恢复权。起流走交互式通道（v8 Q2 口径：不入池但计入全局占用——
+    // hub.runningCount() 即交互 running 计数，池准入据此约束，不新造限流层）。
+    // infra 全部动态 import 防环（agentStream 处于 ReAct 依赖环内，与 SessionService.delete 同模式）。
+    const { getStreamHub } = await import("./infra/sessionStreamHub.js");
+    const hub = getStreamHub();
+    if (!hub) {
+      // 未起流（runner 未执行、消息未写入）→ 安全回滚
+      await this.prisma.chatSession.updateMany({
+        where: { id: input.id, status: "running" },
+        data: { status: "paused" },
+      });
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "恢复会话失败：StreamHub 未初始化，已回滚为 paused，请重试。",
+      });
+    }
+
+    const body: AgentChatInput = {
+      sessionId: input.id,
+      agentId: session.agentId ?? undefined,
+      message: "（服务已重启，请继续完成未完成的任务）",
+      source: "system",
+      // 子任务血统允许 report_back（与 asyncJobManager autoConsume 同口径）
+      runOrigin: session.parentSessionId || session.kind === "subagent" ? "parent" : "user",
+    };
+
+    const { getServiceContainer } = await import("./infra/serviceContainer.js");
+    const services = getServiceContainer(this.prisma, this.eventBus, this.config);
+    const { createTrpcInvoker } = await import("./infra/trpcInvoker.js");
+    const invokeTrpc = createTrpcInvoker({ services });
+    const { chatAgentStream } = await import("./infra/agentStream.js");
+    const config = this.config;
+
+    try {
+      const started = await hub.startIfNotRunning(input.id, body, async (emit, signal) => {
+        // chatAgentStream 自身吞错并 emit error 事件（不 rethrow），
+        // 只能追踪事件流判定终局；防御性 catch 兜底未来改动。
+        // 用对象持有终局标记：绕过 TS 对闭包捕获变量的窄化（闭包内赋值不被 CFA 追踪）
+        const track = { terminal: "error" as "done" | "error" };
+        const trackingEmit = (event: AgentStreamEvent) => {
+          if (event.type === "done") track.terminal = "done";
+          else if (event.type === "error") track.terminal = "error";
+          emit(event);
+        };
+        try {
+          await chatAgentStream(services, config, body, invokeTrpc, trackingEmit, signal);
+        } catch {
+          track.terminal = "error";
+        }
+        // 终态归位（runner 内、hub 标 completed 之前，见头注 5）。
+        const nextStatus =
+          track.terminal === "done" ? (session.kind === "subagent" ? "completed" : "active") : "paused";
+        try {
+          await this.prisma.chatSession.updateMany({
+            where: { id: input.id, status: "running" },
+            data: { status: nextStatus },
+          });
+        } catch (settleErr) {
+          // 归位失败不阻塞流本身：R-2 重启首扫会把尸体 running 再标 paused，留人工恢复
+          console.warn(`[session.resume] 终态归位失败 session=${input.id}:`, settleErr);
+        }
+      });
+
+      if (!started) {
+        // 已有活跃流接管（如前端断线重连先一步 POST 起流）：竞态幂等，状态维持 running
+        return { id: input.id, status: "running", resumed: true, streamStarted: false };
+      }
+      return { id: input.id, status: "running", resumed: true, streamStarted: true };
+    } catch (err) {
+      // startIfNotRunning 抛错 ⟹ runner 未执行 ⟹ 系统消息必然未写入 ⟹ 安全回滚（头注 4）
+      await this.prisma.chatSession
+        .updateMany({
+          where: { id: input.id, status: "running" },
+          data: { status: "paused" },
+        })
+        .catch((rbErr) => {
+          console.warn(`[session.resume] 回滚 paused 失败 session=${input.id}:`, rbErr);
+        });
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `恢复会话失败：启动续跑流异常（${err instanceof Error ? err.message : String(err)}），已回滚为 paused，请重试。`,
+      });
+    }
   }
 
   async deleteMany(_input?: Record<string, never>): Promise<{ count: number }> {

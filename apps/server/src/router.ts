@@ -16,7 +16,7 @@ import {
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
-  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, compactSessionSchema,
+  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, compactSessionSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
@@ -504,6 +504,12 @@ const sessionRouter = router({
       }
       return ctx.services.session.update({ id: input.id, status: "paused" });
     }),
+  // C-3（v10）：paused 会话手动恢复闭环——条件写抢占恢复权 → 注入系统提示 → 交互式续跑；
+  // 不变量全部收在 SessionService.resume（条件写互斥/回滚/终态归位），此处仅薄壳转发。
+  resume: publicProcedure
+    .meta({ description: "手动恢复已暂停（paused）会话：续跑服务端重启前未完成的 ReAct 轮。幂等——并发/重复调用不报错、不重复起流。", aiReadable: false })
+    .input(resumeSessionSchema)
+    .mutation(({ ctx, input }) => ctx.services.session.resume(input)),
   spawn: publicProcedure
     .meta({ description: "创建并启动子代理任务（subagent）。返回 subagentSessionId 与 jobId。", aiReadable: false })
     .input(
