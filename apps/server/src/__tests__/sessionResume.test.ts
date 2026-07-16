@@ -219,4 +219,40 @@ describe("C-3 会话手动恢复（session.resume）", () => {
       await cleanup({ agentIds: [agentId], sessionIds: [sActive, sFailed, sArchived, sRunning] });
     }
   }, 20_000);
+
+  it("T9 重复 resume 不重复注入 source:system 续跑提示消息（S1 修复负向回归）", async () => {
+    process.env.MOCK_LLM = "true";
+    const ctx = await createContextInner();
+    const caller = appRouter.createCaller(ctx);
+    const agentId = await createAgent(ctx, "T9");
+    const sessionId = await createSessionWithStatus(ctx, agentId, "paused");
+
+    try {
+      // 第一次恢复：注入系统提示消息，流完成后状态 active
+      await caller.session.resume({ id: sessionId });
+      await getStreamHub()!.waitFor(sessionId);
+      expect((await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status).toBe("active");
+      const msgs1 = await prisma.chatMessage.findMany({
+        where: { sessionId, role: "user", source: "system" },
+        orderBy: { createdAt: "asc" },
+      });
+      expect(msgs1).toHaveLength(1);
+
+      // 模拟服务恢复流中途失败/中断：会话再次回到 paused（如 chatAgentStream 抛出 error 事件时 resume 会归位 paused）
+      await prisma.chatSession.update({ where: { id: sessionId }, data: { status: "paused" } });
+
+      // 第二次恢复：不应再注入一条同内容系统消息
+      await caller.session.resume({ id: sessionId });
+      await getStreamHub()!.waitFor(sessionId);
+      expect((await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status).toBe("active");
+      const msgs2 = await prisma.chatMessage.findMany({
+        where: { sessionId, role: "user", source: "system" },
+        orderBy: { createdAt: "asc" },
+      });
+      // 负向断言：旧实现（无 system 源去重）会重复注入，本条必红
+      expect(msgs2).toHaveLength(1);
+    } finally {
+      await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
+    }
+  }, 20_000);
 });

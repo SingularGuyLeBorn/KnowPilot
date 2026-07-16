@@ -487,8 +487,10 @@ export async function chatAgentStream(
 
     if (!prepared.skipUserCreate) {
       const src = input.source ?? "user";
-      // 上级任务：若 prepareAgentRun（agent_send_message autoRun）已写入同内容 user 消息，禁止再写第二条气泡
-      if ((src === "super" || src === "manager") && sessionId) {
+      // 上级任务 / 系统恢复消息：若已存在同内容 user 消息，禁止再写第二条气泡。
+      // 系统恢复消息（src=system）只在 resume 流程注入；重复 resume 时跳过写入即可，
+      // 但不应因已有 assistant 回复而早退——服务恢复后仍要继续跑 LLM 推进对话。
+      if ((src === "super" || src === "manager" || src === "system") && sessionId) {
         const dup = await services.prisma.chatMessage.findFirst({
           where: { sessionId, role: "user", content: prepared.messageText },
           select: { id: true, createdAt: true },
@@ -496,31 +498,33 @@ export async function chatAgentStream(
         });
         if (dup) {
           prepared.skipUserCreate = true;
-          const alreadyAssistant = await services.prisma.chatMessage.findFirst({
-            where: {
-              sessionId,
-              role: "assistant",
-              createdAt: { gte: dup.createdAt },
-            },
-            select: { id: true, content: true, toolCalls: true },
-            orderBy: { createdAt: "desc" },
-          });
-          if (alreadyAssistant) {
-            // 任务已被 autoRun 处理完：直接结束，避免二次跑 LLM
-            emit({
-              type: "done",
-              sessionId,
-              agentId: agent.id,
-              content: alreadyAssistant.content || "",
-              toolCalls: (alreadyAssistant.toolCalls as any) ?? [],
-              model: effectiveModel,
-              provider: config.llm.defaultProvider,
-              roundsUsed: 0,
-              assistantMessageId: alreadyAssistant.id,
-              versionIndex: 0,
-              versionCount: 1,
+          if (src !== "system") {
+            const alreadyAssistant = await services.prisma.chatMessage.findFirst({
+              where: {
+                sessionId,
+                role: "assistant",
+                createdAt: { gte: dup.createdAt },
+              },
+              select: { id: true, content: true, toolCalls: true },
+              orderBy: { createdAt: "desc" },
             });
-            return;
+            if (alreadyAssistant) {
+              // 任务已被 autoRun 处理完：直接结束，避免二次跑 LLM
+              emit({
+                type: "done",
+                sessionId,
+                agentId: agent.id,
+                content: alreadyAssistant.content || "",
+                toolCalls: (alreadyAssistant.toolCalls as any) ?? [],
+                model: effectiveModel,
+                provider: config.llm.defaultProvider,
+                roundsUsed: 0,
+                assistantMessageId: alreadyAssistant.id,
+                versionIndex: 0,
+                versionCount: 1,
+              });
+              return;
+            }
           }
         }
       }
