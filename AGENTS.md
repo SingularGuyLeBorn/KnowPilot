@@ -537,4 +537,4 @@ reflection:
 
 ---
 
-> 最后更新：2026-07-16。L1–L5 已全部落地；P0 PR-1～7（含 PR-4b/4c native 全域拆分）已验收；W1–W12 架构修复工单全部落地（审计报告 10 维度终态 6✅/4⚠️/0❌，见 `docs/development/architecture-audit-2026-07.md`），不做/跟进项已登记 `design-decisions.md`；v4 工单（W13 chat.tsx 拆分至 1117 行、W14 AgentMessage 记账回写、W15 兼容清零）已完成；v7 异步工具体系收敛（W-0/W-A/W-E/W-F：双工具分工、`async_task_wait` 删除、status 去全文、C7 服务端队列、存量硬删）已落地；v8 全局任务池（TP-1/TP-2：容量不变量 + Q1~Q4 决策）已落地；v9 投递可靠性（R-1 S3 两层根治 + R-2 重启恢复四动作 + R-3 历史闭环）已落地；v10 可重入与续跑（C-1 基座 + C-2 僵尸任务自动续跑 + C-3 会话手动恢复闭环 + C-4 文档）已落地。
+> 最后更新：2026-07-17。L1–L5 已全部落地；P0 PR-1～7（含 PR-4b/4c native 全域拆分）已验收；W1–W12 架构修复工单全部落地（审计报告 10 维度终态 6✅/4⚠️/0❌，见 `docs/development/architecture-audit-2026-07.md`），不做/跟进项已登记 `design-decisions.md`；v4 工单（W13 chat.tsx 拆分至 1117 行、W14 AgentMessage 记账回写、W15 兼容清零）已完成；v7 异步工具体系收敛（W-0/W-A/W-E/W-F：双工具分工、`async_task_wait` 删除、status 去全文、C7 服务端队列、存量硬删）已落地；v8 全局任务池（TP-1/TP-2：容量不变量 + Q1~Q4 决策）已落地；v9 投递可靠性（R-1 S3 两层根治 + R-2 重启恢复四动作 + R-3 历史闭环）已落地；v10 可重入与续跑（C-1 基座 + C-2 僵尸任务自动续跑 + C-3 会话手动恢复闭环 + C-4 文档；P2 S1 重复 system 消息去重修复已合入 master）已落地。
