@@ -101,11 +101,14 @@ function makeStreamFetchMock(steps: Array<{ status: number; sse?: string; stream
 
 beforeEach(() => {
   delete process.env.MOCK_LLM;
+  // 防止外部环境强制 MOCK_LLM_SCENARIO 改变 mock 场景命中，污染 greeting 文案断言
+  delete process.env.MOCK_LLM_SCENARIO;
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.MOCK_LLM;
+  delete process.env.MOCK_LLM_SCENARIO;
 });
 
 /* ─── classifyLlmError ─── */
@@ -258,7 +261,13 @@ describe("withResilience(chatCompletion)", () => {
 
     expect(mock.count()).toBe(0);
     expect(Date.now() - started).toBeLessThan(1000);
-    expect(typeof result.content === "string" || result.content === null).toBe(true);
+    // R-3c 假绿修复：原断言 `typeof content === "string" || content === null` 恒为 true，
+    // 任何实现（含未直通 mock、返回 null、返回包装文案的错误实现）都能通过。
+    // mock 客户端对无关键词消息命中 greeting 兜底场景（mockLlmClient.ts），必须返回确定文案。
+    // 负向验证：把下两行改成任何其他文案 / provider 即红；旧恒真断言在同样错误实现下仍绿。
+    expect(result.content).toBe("你好！我是 Mock LLM，正在为你服务。");
+    expect(result.provider).toBe("mock");
+    expect(result.finishReason).toBe("stop");
   });
 });
 
