@@ -182,6 +182,8 @@ export interface SuperiorQueueDrainItem {
   id: string;
   kind: string;
   content: string;
+  /** 发送方 Agent id（superior 项）；R-2 启动恢复重建发送方上下文（注入消息 source 标识）用 */
+  source?: string;
 }
 
 /**
@@ -238,7 +240,7 @@ export function enqueueSuperiorQueueDrain(options: {
             // Q2 不双算：drain 续跑流挂在池槽位下，不计入 hub 交互 running
             const releaseClaim = orchestrator.claimOccupancy(sessionId);
             try {
-              await runItem({ id: head.id, kind: head.kind, content: head.content });
+              await runItem({ id: head.id, kind: head.kind, content: head.content, source: head.source });
             } catch (err) {
               console.warn(`[asyncJobManager] superior 队列 drain 处理失败 session=${sessionId} item=${head.id}:`, err);
             } finally {
@@ -529,14 +531,23 @@ export interface ReconcileAsyncDeliveriesResult {
   renotified: number;
   /** 已有气泡（ground truth 命中）跳过的条数 */
   skippedHasMessage: number;
+  /** R-2 动作 2：本轮扫描到的 delivered=false 终态未投递候选数 */
+  scannedUndelivered: number;
+  /** R-2 动作 2：重新 notify 的未投递条数 */
+  renotifiedUndelivered: number;
+  /** R-2 动作 2：会话已删除/归档而跳过的条数（autoConsume 必然 skipped，避免每轮空转） */
+  skippedSessionGone: number;
 }
 
 /**
- * 投递对账单轮（可测试）：扫「delivered=true 且终态（success/failed）、超龄、未 pinned、
- * deliverToQueue≠false，但会话消息里找不到 toolResults.subagentResult.jobId=X 气泡」的孤儿 Task
- * → 条件写回滚 → 重新 notify/autoConsume。全部动作幂等，可任意重跑。
+ * 投递对账单轮（可测试），两条扫描同一幂等入口（不另造第二条恢复路径）：
+ * Pass 1（R-1）：扫「delivered=true 且终态、超龄、未 pinned、deliverToQueue≠false，但会话
+ *   消息里找不到 toolResults.subagentResult.jobId=X 气泡」的孤儿 → 条件写回滚 → 重新 notify。
+ * Pass 2（R-2 动作 2）：扫「delivered=false 终态、超龄、未 pinned、deliverToQueue≠false」
+ *   的未投递（重启丢失 notify / 消费链放弃后无再触发）→ 直接重新 notify。
+ * 两条扫描共用 CLAIM 原子互斥与 notify/autoConsume 管道，全部动作幂等，可任意重跑。
  */
-export async function reconcileOrphanedAsyncDeliveries(options: {
+export async function reconcileAsyncDeliveries(options: {
   services: ServiceContainer;
   config: AppConfig;
   limit?: number;
@@ -565,6 +576,9 @@ export async function reconcileOrphanedAsyncDeliveries(options: {
     rolledBack: 0,
     renotified: 0,
     skippedHasMessage: 0,
+    scannedUndelivered: 0,
+    renotifiedUndelivered: 0,
+    skippedSessionGone: 0,
   };
 
   for (const task of candidates) {
@@ -602,6 +616,52 @@ export async function reconcileOrphanedAsyncDeliveries(options: {
     result.renotified++;
   }
 
+  /* ── Pass 2（R-2 动作 2）：delivered=false 终态未投递 → 直接重新 notify ──
+   * 与 Pass 1 同一幂等入口：认领由 Task.delivered 原子 CLAIM 互斥（重复 notify 不重复投递）；
+   * 超龄阈值同在途保护——刚完成的任务 notify 在途，本轮跳过、真丢失下一轮再收（宁漏勿错）。 */
+  const undelivered = await prisma.task.findMany({
+    where: {
+      AND: [
+        { OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }] },
+        // 终态时间超龄：finishedAt 优先；老数据 finishedAt 可能为 NULL 时回退 createdAt
+        { OR: [{ finishedAt: { lt: cutoff } }, { finishedAt: null, createdAt: { lt: cutoff } }] },
+      ],
+      status: { in: ["success", "failed"] },
+      delivered: false,
+      pinned: false,
+    },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  });
+  result.scannedUndelivered = undelivered.length;
+  for (const task of undelivered) {
+    const input = parseAsyncInput(task.input);
+    // 同步任务（deliverToQueue=false）结果走 tool return，永不进队列——不属于补投范围
+    if (!input || input.deliverToQueue === false) continue;
+    const sessionId = input.sessionId;
+    // 会话已删除/归档：autoConsume 必然 skipped，跳过避免每轮空转补投（任务行保持原状）
+    let session: { status?: string | null } | null = null;
+    try {
+      session = await services.session.getByIdLite(sessionId);
+    } catch {
+      session = null;
+    }
+    if (!session || session.status === "archived" || session.status === "deleted") {
+      result.skippedSessionGone++;
+      continue;
+    }
+    console.warn(`[reconciler] 补投未投递终态 jobId=${task.id} session=${sessionId}（重新走 notify/autoConsume 管道）`);
+    await notifyAsyncDelivery(
+      sessionId,
+      task.id,
+      task.status === "failed" ? "failed" : "done",
+      input.taskLabel,
+      services,
+      config,
+    );
+    result.renotifiedUndelivered++;
+  }
+
   return result;
 }
 
@@ -616,7 +676,7 @@ export function startAsyncDeliveryReconciler(config: AppConfig, services: Servic
   stopAsyncDeliveryReconciler();
   const intervalMs = Math.max(1000, config.stream.cleanupIntervalMs);
   const runRound = () => {
-    void reconcileOrphanedAsyncDeliveries({ services, config }).catch((err) => {
+    void reconcileAsyncDeliveries({ services, config }).catch((err) => {
       console.warn("[reconciler] 对账轮次失败（下轮重试）:", err);
     });
   };
@@ -632,6 +692,61 @@ export function stopAsyncDeliveryReconciler(): void {
     clearInterval(reconcilerTimer);
     reconcilerTimer = null;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* R-2 重启恢复（启动首扫，四动作，全部条件写幂等，DB 为 ground truth） */
+
+export interface StartupRecoveryResult {
+  /** 动作 1：僵尸 running/queued async Task 标 failed 数 */
+  staleTasksFailed: number;
+  /** 动作 4：僵尸 running ChatSession 标 paused 数 */
+  zombieSessionsPaused: number;
+  /** 动作 3：superior 孤儿队列项重注册 drain 的会话数 */
+  superiorDrainsRegistered: number;
+  /** 动作 2 + R-1 孤儿：合并对账首轮（delivered=false 未投递补投 + delivered=true 孤儿回滚补投） */
+  reconcile: ReconcileAsyncDeliveriesResult;
+}
+
+/**
+ * 服务重启恢复首扫（启动序列一次性执行；周期对账由 startAsyncDeliveryReconciler 负责）。
+ * 不是第三条并行恢复路径——动作 1 收拢既有 recoverStaleAsyncJobs，动作 2 与 R-1 孤儿共用
+ * reconcileAsyncDeliveries 同一幂等入口（CLAIM 原子互斥 + notify/autoConsume 管道）。
+ *
+ * 四动作（顺序敏感）：
+ * 1. 僵尸 running/queued async Task → failed「服务重启，任务中断」。**不自动重跑**：tool
+ *    任务有副作用（写文件/发请求），进程死亡时执行进度未知，盲目重跑可能重复执行；
+ *    retryAsyncJob 保留手动重试。
+ * 2. 僵尸 running ChatSession → paused（条件写 updateMany）：重启后 hub 无任何活跃流，
+ *    仍 running 的会话都是尸体。先于动作 3 执行——drain 重注册会把有真实积压的会话重新置 running。
+ * 3. superior 孤儿 SessionQueueItem → 重新注册 drain（v7 W-E 机制，swarm.ts 叶子实现；
+ *    进程内 drain 链随重启丢失，pending 队列项跨重启留存于 SQLite）。
+ * 4. delivered=false 终态未投递 → 重新 notify（reconcileAsyncDeliveries Pass 2）。
+ * AgentMessage pending 超龄走 W14 既有 reconcileAgentMessageLedger 对账，不在此新造逻辑。
+ */
+export async function runStartupRecovery(options: {
+  config: AppConfig;
+  services: ServiceContainer;
+}): Promise<StartupRecoveryResult> {
+  const { config, services } = options;
+  // 动作 1（含同步其 subagent ChatSession 标 failed）
+  const staleTasksFailed = await recoverStaleAsyncJobs();
+  // 动作 2（Q2 动作 4）：僵尸 running 会话 → paused
+  const zombieSessions = await prisma.chatSession.updateMany({
+    where: { status: "running" },
+    data: { status: "paused" },
+  });
+  // 动作 3：动态 import——swarm.ts 处于 ReAct 环内（agentStream/agentRuntime 依赖链），静态导入成环
+  const { requeueOrphanedSuperiorDrains } = await import("./tools/native/swarm.js");
+  const superiorDrainsRegistered = await requeueOrphanedSuperiorDrains(config, services);
+  // 动作 4（Q2 动作 2）+ R-1 孤儿：合并对账首轮
+  const reconcile = await reconcileAsyncDeliveries({ services, config });
+  return {
+    staleTasksFailed,
+    zombieSessionsPaused: zombieSessions.count,
+    superiorDrainsRegistered,
+    reconcile,
+  };
 }
 
 /** 推送子会话状态变更到父会话 SSE */

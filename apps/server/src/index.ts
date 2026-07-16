@@ -16,12 +16,12 @@ import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
 import { getTaskScheduler } from "./infra/taskScheduler.js";
 import {
-  recoverStaleAsyncJobs,
   recoverStaleRuns,
   cleanupDeliveredAsyncJobs,
   wireAsyncJobPush,
   startAsyncDeliveryReconciler,
   stopAsyncDeliveryReconciler,
+  runStartupRecovery,
 } from "./infra/asyncJobManager.js";
 import { closeSharedBrowser } from "./infra/metablog/browserPool.js";
 import { getSharedBrowser } from "./infra/metablog/browserPool.js";
@@ -255,12 +255,21 @@ const server = app.listen(PORT, () => {
       return heartbeatEngineRef.start();
     })
     .catch((err) => console.error("❌ [Swarm] 初始化/心跳启动失败:", err));
-  recoverStaleAsyncJobs()
-    .then((n) => {
-      if (n > 0) console.log(`  ⚠️ [AsyncJobs] 已将 ${n} 个中断的后台任务标为 failed`);
+  // R-2 重启恢复首扫（四动作，条件写幂等，DB 为 ground truth）：僵尸 Task→failed（不自动重跑）
+  // + 僵尸 running 会话→paused + superior 孤儿队列项重注册 drain + 未投递终态/孤儿交付合并对账
+  // （动作 2 与 R-1 reconciler 同一幂等入口；周期对账由下方 startAsyncDeliveryReconciler 负责）
+  runStartupRecovery({ config, services })
+    .then((r) => {
+      if (r.staleTasksFailed > 0) console.log(`  ⚠️ [AsyncJobs] 已将 ${r.staleTasksFailed} 个中断的后台任务标为 failed`);
+      if (r.zombieSessionsPaused > 0) console.log(`  ⚠️ [Session] 已将 ${r.zombieSessionsPaused} 个僵尸 running 会话标为 paused`);
+      if (r.superiorDrainsRegistered > 0) console.log(`  ♻️ [Session] 已为 ${r.superiorDrainsRegistered} 个会话重注册 superior 队列 drain`);
+      const healed = r.reconcile.renotified + r.reconcile.renotifiedUndelivered;
+      if (healed > 0) {
+        console.log(`  ♻️ [reconciler] 启动首扫补投 ${healed} 条交付（孤儿回滚 ${r.reconcile.rolledBack} / 未投递 ${r.reconcile.renotifiedUndelivered}）`);
+      }
     })
     .catch((err) => {
-      console.error("❌ [AsyncJobs] 恢复检查失败:", err);
+      console.error("❌ [StartupRecovery] 启动恢复失败:", err);
     });
   // W11：遗留 running Run 标 interrupted（如实声明不续跑；与 recoverStaleAsyncJobs 同款启动挂载点）
   recoverStaleRuns()

@@ -29,7 +29,7 @@ import {
   autoConsumeAsyncDelivery,
   markAsyncDeliveryConsumed,
   pullAsyncDeliveries,
-  reconcileOrphanedAsyncDeliveries,
+  reconcileAsyncDeliveries,
 } from "../infra/asyncJobManager.js";
 import {
   getAsyncJobOrchestrator,
@@ -204,7 +204,7 @@ describe("R-1 S3 投递可靠性（同链即时回滚 + reconciler 对账者）"
       // S3 现场（新旧实现一致）：孤儿对前端/自动管道永久隐形——delivered=true 永不进拉取队列
       expect(await pullAsyncDeliveries(fx.sessionId)).toHaveLength(0);
 
-      const round1 = await reconcileOrphanedAsyncDeliveries({
+      const round1 = await reconcileAsyncDeliveries({
         services: ctx.services,
         config: ctx.config,
         minDeliveredAgeMs: 0,
@@ -230,7 +230,7 @@ describe("R-1 S3 投递可靠性（同链即时回滚 + reconciler 对账者）"
       expect(msgRow!.deliveredAt!.getTime()).toBeGreaterThan(originalDeliveredAt.getTime());
 
       // 第二轮：气泡已成 ground truth → 幂等零动作
-      const round2 = await reconcileOrphanedAsyncDeliveries({
+      const round2 = await reconcileAsyncDeliveries({
         services: ctx.services,
         config: ctx.config,
         minDeliveredAgeMs: 0,
@@ -302,7 +302,7 @@ describe("R-1 S3 投递可靠性（同链即时回滚 + reconciler 对账者）"
       // 默认超龄阈值连跑三轮：任何一轮误回滚/误补投，后续断言即红
       // （旧实现下本用例无法运行——reconciler 不存在；本用例防的是 reconciler 误伤正常记录）
       for (let round = 1; round <= 3; round++) {
-        const result = await reconcileOrphanedAsyncDeliveries({ services: ctx.services, config: ctx.config });
+        const result = await reconcileAsyncDeliveries({ services: ctx.services, config: ctx.config });
         expect(result.rolledBack).toBe(0);
         expect(result.renotified).toBe(0);
       }
@@ -341,7 +341,7 @@ describe("R-1 S3 投递可靠性（同链即时回滚 + reconciler 对账者）"
 
       // ② reconciler 判定孤儿 → 条件写回滚成功；补投链因会话占线停在 waitFor，不会抢先 CLAIM
       //    旧实现无回滚：delivered 恒 true，本断言与 ③ 必红
-      const round = await reconcileOrphanedAsyncDeliveries({
+      const round = await reconcileAsyncDeliveries({
         services: ctx.services,
         config: ctx.config,
         minDeliveredAgeMs: 0,
