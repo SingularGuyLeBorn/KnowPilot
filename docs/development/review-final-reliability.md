@@ -141,4 +141,34 @@ R-1/R-2 两条主链路（S3 两层闭环、重启恢复四动作）在代码、
 
 ---
 
-> 审查人：终审架构师（只读审查 subagent）。本报告 `docs/development/review-final-reliability.md` 为唯一产出物；8 条必查全部逐项实测闭环，S1（P1）必修，S2~S4（P3）登记观察。S1 修复后建议复审单条闭环、总结论升级为「通过」。
+## 复审记录（S1/P1 修复复核，2026-07-16 追加）
+
+> 复审范围：`63419d99`（fix: [review] agentDrift 测试密闭化，1 生产侧文件 +8/-2 + 本报告入库）。
+> 复审方式：commit diff 精读 + 修复后代码通读 + 亲自实跑（单文件定向 + 全量 vitest 连续 2 轮 + server lint）。未修改任何非 .md 文件，未做任何 git 写操作，未动 dev.db / content/。
+
+### S1 复核结论：✅ 修复成立，关闭；总结论升级为「通过」
+
+| 复核点 | 证据 |
+|---|---|
+| 修法与原处方一致 | `agentDrift.test.ts:28-30`：describe("W16d-3 agent.driftStatus tRPC 通道") 级 `beforeEach(async () => { await prisma.agent.deleteMany({ where: { name: "assistant" } }); })`——与本报告 S1 修复建议逐字一致；原「依赖字母序」脆弱注释已删除，替换为密闭化说明注释 |
+| 前置态不再依赖执行序 | null 用例：beforeEach 清库 → `agentId===null` 断言在任何污染态下都确定成立（从「赌环境干净」变「自己保证干净」，负向性反而更硬——预置 assistant 后 null 断言仍绿，删掉 beforeEach 则必红）；fixture 用例：beforeEach 清库 → 创建不再撞唯一约束，用例尾部 `prisma.agent.delete({ id: fixtureId })` 自清仍在（:93-95） |
+| 密闭逻辑无副作用 | 单 fork 串行（vitest.config.ts `pool: "forks", singleFork: true`，Round 1 已核实）下 deleteMany 只在本文件执行窗口内生效：①本文件跑完无 assistant 残留（fixture 尾删 + null 用例不创建），后续文件状态与修复前一致；②其他需要 assistant 的文件不受损——agentFactory.test.ts:170 本就有自家 deleteMany 守卫 + 自建 legacy fixture，trpcSmoke/trpc 的 agent.chat 链路 resolveAgent（agentResolver.ts:95-103）在 assistant 缺失时按需创建；③deleteMany 只匹配 `name: "assistant"`，不触碰任何其他 Agent 行 |
+| 实测稳定复现 | 单文件 `npx vitest run src/__tests__/agentDrift.test.ts`：**3 passed**；全量连续 2 轮（本人亲自第 6、7 次全量）：均 **46 文件 469 passed**，agentDrift 每轮 3/3 绿——与修复方声明的「连续 2 轮 469」一致，Round 1 的 5 轮 1 确认红 + 1 疑红不再出现 |
+| 无副作用面 | `pnpm --filter @knowpilot/server lint`（tsc --noEmit）EXIT=0；diff 仅测试文件 +8/-2（import 加 beforeEach、beforeEach 块、注释替换），零生产代码改动 |
+
+### 实跑复核（亲自运行，非转述）
+
+| # | 命令 | 结果 |
+|---|---|---|
+| 13 | `git show 63419d99` diff 精读 | agentDrift.test.ts +8/-2（beforeEach 密闭 + 注释换写）；本报告入库 |
+| 14 | `npx vitest run src/__tests__/agentDrift.test.ts`（apps/server） | EXIT=0；**3 passed** |
+| 15 | `npx vitest run` 全量 ×2（apps/server，第 6、7 轮） | 两轮均 EXIT=0；**46 文件 469 passed**，agentDrift 3/3 绿 |
+| 16 | `pnpm --filter @knowpilot/server lint` | EXIT=0（tsc --noEmit） |
+
+### 复审总结论
+
+唯一必修项 S1（P1）已在本分支消化（`63419d99`），修复与原处方一致、密闭逻辑经单 fork 串行语义与跨文件影响推演无副作用、全量基线连续 2 轮稳定复现 469 passed。**总结论升级为「通过」**，本分支可合入。S2~S4（均 P3 微）维持登记不阻塞：S2 同轮双 notify 幂等无害、S3 >60s stall 残窗属设计权衡、S4 抛错路径被 T2 间接覆盖，建议后续工单视情况跟进。
+
+---
+
+> 审查人：终审架构师（只读审查 subagent）。本报告 `docs/development/review-final-reliability.md` 为唯一产出物；Round 1 终审（8 条必查 + S1~S4）与 Round 2 S1 修复复核均已完成，全部闭环。
