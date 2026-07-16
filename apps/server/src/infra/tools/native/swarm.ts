@@ -727,24 +727,9 @@ async function agentReportBackTool(args: Record<string, unknown>, ctx: NativeToo
           select: { id: true, input: true },
         });
       }
-      if (!matched) {
-        // 兜底：无 subagentSessionId 的旧数据，按 agentSnapshot.id 匹配（原时间窗语义保留）
-        const candidates = await ctx.prisma.task.findMany({
-          where: {
-            sessionId: parentSessionId,
-            status: { in: ["running", "queued"] },
-            OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
-          },
-          orderBy: { createdAt: "desc" },
-          take: 20,
-        });
-        matched = candidates.find((row) => {
-          const input = row.input as { subagentSessionId?: string; agentSnapshot?: { id?: string } } | null;
-          if (!input || typeof input !== "object") return false;
-          if (ctx.sessionId && input.subagentSessionId === ctx.sessionId) return true;
-          return input.agentSnapshot?.id === snapshot.id;
-        }) ?? null;
-      }
+      // 零兼容纪律：精确匹配是唯一匹配方式，miss 时**不做**任何模糊兜底（旧「take:20 时间窗 +
+      // agentSnapshot.id」语义已删除）——同 Agent 并发任务的跟踪 Task 会被误完成。matched=null
+      // 走下方 create 新 success Task 投递结果：不丢、不误投。
 
       if (matched) {
         await ctx.services.task.update({

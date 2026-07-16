@@ -215,6 +215,80 @@ describe("W14 AgentMessage 投递记账回写", () => {
     }
   }, 15_000);
 
+  it("report_back 桥接零模糊兜底：血缘键 miss 时不得误完成同 Agent 兄弟任务的跟踪 Task", async () => {
+    // chatAgentStream 打桩：autoConsume 会认领新建的 success Task 并起流，桩住避免真 LLM
+    vi.spyOn(agentStream, "chatAgentStream").mockImplementation(async (_s, _c, input, _inv, emit) => {
+      emit({
+        type: "done",
+        sessionId: input.sessionId!,
+        agentId: "w14-spy",
+        content: "已消化",
+        toolCalls: [],
+        model: "m",
+        provider: "p",
+        roundsUsed: 1,
+      });
+    });
+
+    const ctx = await createContextInner();
+    // withTrackingTask:false —— 本会话没有自己的 running 跟踪 Task，血缘键精确匹配必 miss
+    const fx = await createSwarmFixture(ctx, { withTrackingTask: false });
+    try {
+      // 干扰项：同一子 Agent、另一个子会话血缘键的 running 跟踪 Task（并发兄弟任务）
+      const intruder = await prisma.task.create({
+        data: {
+          name: "[async] W14 兄弟任务",
+          type: "async_agent",
+          status: "running",
+          sessionId: fx.parentSessionId,
+          delivered: false,
+          input: {
+            kind: "async_agent",
+            sessionId: fx.parentSessionId,
+            task: "W14 兄弟任务",
+            taskLabel: "W14 兄弟任务",
+            agentSnapshot: {
+              id: fx.subAgentId,
+              model: "deepseek-chat",
+              systemPrompt: "",
+              tools: [],
+              tier: "sub",
+              parentId: fx.parentAgentId,
+            },
+            subagentSessionId: `other-sub-session-${RUN_ID}`,
+            sourceType: "subagent",
+          },
+        },
+      });
+
+      const report = (await executeNativeTool(
+        "agent_report_back",
+        { content: "W14 无跟踪 Task 的回报" },
+        makeReportCtx(ctx, fx),
+      )) as { success?: boolean; error?: string };
+      expect(report.error).toBeUndefined();
+      expect(report.success).toBe(true);
+
+      // ① 负向断言：兄弟任务的跟踪 Task 必须保持 running——旧「take:20 时间窗 + agentSnapshot.id」
+      //    模糊兜底会把它误标 success，本断言在旧实现下必红
+      const intruderAfter = await prisma.task.findUnique({ where: { id: intruder.id } });
+      expect(intruderAfter?.status).toBe("running");
+
+      // ② 结果不丢：matched=null 时新建 success Task 走正常投递管道（旧实现走误配分支不会新建）
+      const created = await prisma.task.findFirst({
+        where: {
+          sessionId: fx.parentSessionId,
+          status: "success",
+          name: { startsWith: "[async] 子 Agent 回报" },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(created).toBeTruthy();
+    } finally {
+      await cleanupSwarmFixture(fx);
+    }
+  }, 15_000);
+
   it("report_back → Task 管道消费全链路：delivered → consumed（MOCK_LLM 真实 chatAgentStream）", async () => {
     process.env.MOCK_LLM = "true";
 
