@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc";
-import { useAgent } from "@/lib/hooks";
+import { useAgent, useResumeSession } from "@/lib/hooks";
 import { stopAgentChat, copyToClipboard } from "@/lib/agentStream";
 import {
   getModelOption,
@@ -778,6 +778,16 @@ export function ChatView() {
     sessionComposeActions.getActiveAbortController(effectiveSessionId)?.abort();
   }, [effectiveSessionId]);
 
+  // C-3：paused 会话「恢复运行」。成功后由 hook 内 invalidate listRunning，
+  // 上方 INV-5 挂接 effect 发现运行中会话自动 runStream 续传（既有 SSE 订阅机制）。
+  const { mutate: resumeSession, isPending: resumePending } = useResumeSession({
+    onError: (msg) => showToast(`恢复会话失败：${msg}`),
+  });
+  const handleResumeSession = useCallback(() => {
+    if (!effectiveSessionId) return;
+    resumeSession({ id: effectiveSessionId });
+  }, [effectiveSessionId, resumeSession]);
+
   // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
   const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
 
@@ -1061,6 +1071,8 @@ export function ChatView() {
         deleteSessionQueueItemMutation={deleteSessionQueueItemMutation}
         onSend={enqueueMessage}
         onStop={handleStop}
+        onResumeSession={handleResumeSession}
+        resumePending={resumePending}
         skills={skills}
         selectedSkill={selectedSkill}
         onSkillChange={setSelectedSkill}

@@ -196,6 +196,8 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
       execute: () => spawnSubagentSyncWait(ctx, task, getPrepared()!),
     });
   } finally {
+    // 为什么 finally 还槽：claim 期间子会话 hub 流退出「交互 running」口径（Q4 父槽位让渡），
+    // dedup 早返 / prepare 或 execute 抛错任何路径漏还，都会让该会话后续交互流永久不计入全局占用（口径失真）。
     releaseClaim();
   }
 
@@ -452,6 +454,9 @@ async function spawnSubagentSyncWait(
   let finalStatus: "success" | "failed" | "timeout" = "timeout";
   let sawSubStream = false;
 
+  // 为什么轮询而非订阅事件：完成判定有两条路径（report_back 写 Task 终态 / 子会话空闲抓 assistant），
+  // 分属 DB 与 StreamHub 两个模块、无统一事件源；400ms 轮询 + 10 分钟硬上限（防父流永久挂起，
+  // 与 waitForAsyncJob 同量级）是同时覆盖两条路径的最简判定。
   while (Date.now() < waitDeadline) {
     if (jobId) {
       const row = await ctx.services.task.getById(jobId);
@@ -462,6 +467,9 @@ async function spawnSubagentSyncWait(
           row.status === "success"
             ? out.asyncResult || ""
             : `任务失败：${out.error || "未知错误"}`;
+        // v7 通道收敛：deliverToQueue=false 的结果唯一通道是 tool return，永不走队列 CLAIM
+        // （autoConsume / pull / reconciler 均以 deliverToQueue≠false 排除）。直接落 delivered=true
+        // 闭环交付语义（与 async_task_run 同步路径同口径）；cleanup 只回收 delivered=true 的行。
         await ctx.services.task
           .update({ id: jobId, delivered: true, deliveredAt: new Date() } as any)
           .catch(() => undefined);
@@ -519,6 +527,8 @@ async function spawnSubagentSyncWait(
       if (text) {
         finalContent = text;
         finalStatus = "success";
+        // 落终态 + delivered=true：同上的 v7 sync 通道交付闭环；asyncResult 供右栏「同步任务」区
+        // 与审计追溯，父 Agent 拿到的全文经下方 attach.content 返回。
         if (jobId) {
           await ctx.services.task
             .update({

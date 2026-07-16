@@ -199,6 +199,26 @@ export const useInfoSource = () => {
   };
 };
 export const useSession = () => useCRUDApi<any, any, any, ChatSession>("session");
+
+/**
+ * C-3 会话手动恢复（v10）：paused 会话点「恢复运行」。
+ * 成功后 invalidate listRunning —— chat.tsx 的 INV-5 挂接 effect 发现运行中会话
+ * 会自动 runStream 续传（既有 SSE 订阅机制，不加 setTimeout/轮询补丁）；
+ * getById/list/listChildren 同步刷新状态标签。
+ */
+export function useResumeSession(options?: { onError?: (message: string) => void }) {
+  const utils = trpc.useUtils();
+  return trpc.session.resume.useMutation({
+    onSuccess: (_res, vars) => {
+      void utils.session.getById.invalidate({ id: vars.id });
+      void utils.session.list.invalidate();
+      void utils.session.listChildren.invalidate();
+      void utils.session.listRunning.invalidate();
+    },
+    onError: (err) => options?.onError?.(err.message),
+  });
+}
+
 export const useMessage = () => useCRUDApi<any, any, any, ChatMessage>("message");
 
 export const useFile = () => {

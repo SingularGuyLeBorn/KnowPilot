@@ -24,6 +24,7 @@ import {
   Loader2,
   PanelLeft,
   PanelRight,
+  Play,
   X,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -82,6 +83,9 @@ export interface ChatCenterPaneProps {
   deleteSessionQueueItemMutation: ReturnType<typeof trpc.agent.deleteSessionQueueItem.useMutation>;
   onSend: ComponentProps<typeof ChatInputArea>["onSend"];
   onStop: () => void;
+  // C-3：paused 会话「恢复运行」入口（子 Agent 任务条状态标签处 + 普通会话横幅）
+  onResumeSession: () => void;
+  resumePending: boolean;
   skills: Skill[];
   selectedSkill: SelectedSkill | null;
   onSkillChange: (skill: SelectedSkill | null) => void;
@@ -122,6 +126,8 @@ export function ChatCenterPane({
   deleteSessionQueueItemMutation,
   onSend,
   onStop,
+  onResumeSession,
+  resumePending,
   skills,
   selectedSkill,
   onSkillChange,
@@ -197,6 +203,19 @@ export function ChatCenterPane({
               {!["running", "queued", "completed", "failed", "paused", "active"].includes(sessionDetail.status) && sessionDetail.status}
             </span>
           )}
+          {/* C-3：paused 子会话「恢复运行」入口（状态标签处） */}
+          {sessionDetail?.status === "paused" && (
+            <button
+              type="button"
+              data-testid="resume-session-button"
+              disabled={resumePending}
+              onClick={onResumeSession}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--kp-brand-deep)] px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+            >
+              {resumePending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              恢复运行
+            </button>
+          )}
           {sessionDetail?.taskDescription && (
             <span className="min-w-0 flex-1 truncate text-[var(--kp-text-2)]">
               {sessionDetail.taskDescription}
@@ -266,6 +285,26 @@ export function ChatCenterPane({
               <X className="h-3.5 w-3.5" />
             </button>
           )}
+        </div>
+      )}
+
+      {/* C-3：paused 普通会话「恢复运行」横幅（子会话入口在上方任务条状态标签处） */}
+      {!isSubagentSession && sessionDetail?.status === "paused" && (
+        <div
+          data-testid="session-resume-banner"
+          className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-2 text-xs text-[var(--kp-brand-deep)]"
+        >
+          <span className="min-w-0 flex-1 truncate">会话已暂停（服务重启前未完成的轮次可继续）</span>
+          <button
+            type="button"
+            data-testid="resume-session-button"
+            disabled={resumePending}
+            onClick={onResumeSession}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--kp-brand-deep)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+          >
+            {resumePending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            恢复运行
+          </button>
         </div>
       )}
 
