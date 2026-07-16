@@ -113,9 +113,62 @@ if (pendingCount >= MAX_QUEUE_SIZE) {
 
 ---
 
-## 6. 数据库写入事务
+## 6. 全局任务池（asyncJobOrchestrator）
 
-### 6.1 assistant 消息 + Run 记录
+v8 TP-1/TP-2 落地。`apps/server/src/infra/asyncJobOrchestrator.ts` 是全系统**后台任务并发容量的单一事实源**——容量/互斥不变量收在执行层，不靠各入口自觉。设计决策（Q1~Q4）见 `design-decisions.md` 文末。
+
+### 6.1 容量与互斥不变量
+
+| 不变量 | 配置（`config.yaml` `asyncJobs` 节） | 语义 |
+| --- | --- | --- |
+| 全局并发上限 | `maxConcurrent`（→ `maxGlobal`） | 全局占用 = 池内 running + hub 交互 running（Q2 口径） |
+| 单会话上限 | `maxPerSession` | 同 session 同时 running 的池任务数 |
+| 单工作区公平配额 | `maxPerWorkspace`（0 = 不限） | 公平策略，不是容量权威；全局池才是 |
+| 排队总数上限 | `maxQueued` | 满则入池拒绝（throw），调用方给 LLM/UI 明确错误「队列已满，请稍后再派」 |
+| 执行超时 | `taskTimeoutMs` | 单任务 running 超时 → AbortController 中断 |
+| 排队超时 | `queuedTimeoutMs`（0 = 不限） | queued 超时未获槽 → 移出队列并回调 `onQueuedDrop` |
+
+### 6.2 准入判定链
+
+drain 时对每个排队任务逐条求值，**首个命中的上限即排队原因**（记录 `reason: global|session|workspace`，供统计与 UI 展示）：
+
+1. `global`：`runningGlobal + hubInteractiveRunning >= maxGlobal`
+2. `session`：`runningBySession[sessionId] >= maxPerSession`
+3. `workspace`：`maxPerWorkspace > 0 且 runningByWorkspace[workspaceId] >= maxPerWorkspace`
+4. 全部通过才 `start`。
+
+排队任务携带 `reason` + `position`（`getQueuedReason` / `getPosition`），前端右栏「进行中」组展示「第 N 位 · 因 X 上限排队」。
+
+### 6.3 交互式运行的占用口径（Q2）
+
+- 交互式运行（用户在 Chat 直发消息，hub 主链路）**不入池、零排队**，但计入全局占用：
+  `hub 交互 running = hub 活跃流中未被 occupancy claim 的部分`。
+- 池内任务起流前 `claimOccupancy(sessionId)`（refcount）把自己的 hub 流从「交互 running」剔除，避免双算。
+- 活性：pull 口径只解决「怎么算」；hub 交互流结束经 `onHubRunSettled` 显式通知池 `reevaluateQueue()`（drain 幂等），解决「何时重排」——否则 queued 任务在下一次池事件前无人唤醒。
+
+### 6.4 血缘槽位继承（Q4 防死锁）
+
+- `spawn_subagent(waitForResult=true)` 的同步等待路径：父持有池槽位挂起等待，子若再入池等槽 → 池满时「父占槽等子、子等父腾槽」循环等待死锁。
+- 解法：子执行视为**父槽位让渡**——`claimOccupancy(子会话)` 把子会话 hub 流从「交互 running」剔除，子走 inline **不占新槽**。
+- 不变量一句话：**同一血缘同时只有一个执行体占槽**。
+
+### 6.5 消费续跑高优通道（Q3，与执行正交）
+
+- 交付消费（`autoConsumeAsyncDelivery` / superior 队列 drain 续跑）与「任务执行」正交：走 `runConsumeJob` 高优通道——插到队首（同类 FIFO），admit 优先级高于普通排队任务，**但仍受全局占用上限约束**（普通任务不插队到消费前面，消费也不把全局容量打爆）。
+- **禁止等槽无限挂起消费链**：`queuedTimeoutMs`（缺省兜底 30s）内未获槽则 resolve false 放弃本轮——CLAIM（`Task.delivered` 原子认领 / SessionQueueItem consume）移到**获槽后**执行，未获槽则 delivery 原样留待下次触发（不丢）。
+- hub 交互流不依赖池槽位 ⇒ 消费任务等 hub 空闲不会与池形成循环等待。
+
+### 6.6 回收器
+
+- 池的 queue/running 是进程内存态，服务端重启即清空。
+- `recoverStaleAsyncJobs()`（启动时挂载）把遗留 `running/queued` 的 async_agent Task 标 `failed` 并同步子会话状态——如实宣告失败，不假装能续跑（与 `recoverStaleRuns` 同款机制）。
+- 与 AGENTS.md「运行中的 Agent 任务随服务端进程重启而丢失」一致；跨重启恢复属后续扩展。
+
+---
+
+## 7. 数据库写入事务
+
+### 7.1 assistant 消息 + Run 记录
 
 `chatAgentStream` 在 SSE 结束时，用一次 `$transaction` 同时写入：
 
@@ -124,7 +177,7 @@ if (pendingCount >= MAX_QUEUE_SIZE) {
 
 **作用**：避免只写了一半数据（例如只写了 assistant 消息但没写 Run 记录）。
 
-### 6.2 SQLite 单连接限制
+### 7.2 SQLite 单连接限制
 
 SQLite 是文件级锁，并发写会串行化。KnowPilot 默认单用户、单进程，因此不会遇到严重的写并发冲突。
 
@@ -135,9 +188,9 @@ SQLite 是文件级锁，并发写会串行化。KnowPilot 默认单用户、单
 
 ---
 
-## 7. Agent 间消息的防循环
+## 8. Agent 间消息的防循环
 
-### 7.1 `depth` 字段
+### 8.1 `depth` 字段
 
 `AgentMessage` 有 `depth` 字段，默认 1，每次转发递增。
 
@@ -151,7 +204,7 @@ if (depth > MAX_DEPTH) {
 
 **作用**：防止 Agent 之间无限循环委派。
 
-### 7.2 向上发消息时机约束
+### 8.2 向上发消息时机约束
 
 `swarmPermissionGuard.checkUpwardMessageTiming` 保证：
 
@@ -162,9 +215,9 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 8. 刷新/断线恢复
+## 9. 刷新/断线恢复
 
-### 8.1 前端流式状态持久化
+### 9.1 前端流式状态持久化
 
 前端把每个 session 的流式状态写入 `sessionStorage`：
 
@@ -178,7 +231,7 @@ if (depth > MAX_DEPTH) {
 1. 从 `sessionStorage` 恢复状态。
 2. 如果 `isStreaming` 为 true，自动调用 `runStream({ isResume: true, resumeAfter: lastEventId })` 续传。
 
-### 8.2 后端事件日志
+### 9.2 后端事件日志
 
 后端 `SessionStreamHub` 双写：
 
@@ -189,7 +242,7 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 9. 典型竞态场景与防护
+## 10. 典型竞态场景与防护
 
 | 场景 | 风险 | 防护 |
 | --- | --- | --- |
@@ -203,7 +256,7 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 10. 未来改进
+## 11. 未来改进
 
 1. **分布式锁**：多实例部署时用 Redis 替代进程内 `agentRunLocks`。
 2. **推送替代轮询**：`pullAsyncQueue`、`pullAgentMessages` 改为 SSE 推送（详见 `future-features.md`）。

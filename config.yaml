@@ -43,7 +43,15 @@ compact:
     enabled: true
     maxFacts: 5
 
-# 后台任务池（async_task_run / spawn 跟踪任务 / heartbeat / trigger 等共享）
+# ══ 全局任务池（v8 TP-1/TP-2；实现：apps/server/src/infra/asyncJobOrchestrator.ts）══
+# 池目标：全局并发上限的单一事实源 + 公平排队 + 永不丢任务。
+#   · 单一事实源：maxConcurrent 是全系统后台 LLM 并发的唯一容量权威（Q1 全局单池）；
+#     per-session / per-workspace 只是池内公平配额维度，不是容量权威。
+#   · 公平排队：准入判定链 global → session → workspace，首个命中的上限即排队原因；
+#     queued 记录 reason + position，右栏「进行中」组展示「第 N 位 · 因 X 上限排队」。
+#   · 永不丢任务：消费续跑未获槽则原样留待下次触发（CLAIM 移到获槽后），拒绝等槽无限挂起。
+# 入池 = 交付优先的异步执行（async_task_run / spawn 跟踪任务 / heartbeat / trigger 等共享）；
+# 不入池 = 交互式运行（用户直发消息走 hub 即时起流零排队，但计入全局占用，Q2）。
 # 注意：池只控制并发调度（queued → running）；是否「异步投递」由工具的 waitForResult 决定。
 # 环境变量 AGENT_ASYNC_* 可覆盖下列默认值。
 asyncJobs:
