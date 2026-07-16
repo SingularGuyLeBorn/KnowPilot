@@ -194,7 +194,10 @@ const sessionAutoConsumeChains = new Map<string, Promise<void>>();
  */
 function enqueueSessionAutoConsume(sessionId: string, work: () => Promise<void>): Promise<void> {
   const prev = sessionAutoConsumeChains.get(sessionId) ?? Promise.resolve();
+  // work 同挂 then 双分支 = 失败隔离：前序环节 reject 也必须继续跑本次，
+  // 否则一条坏消息会毒死整条会话链（同会话后续投递全部永久阻塞）。
   const next = prev.then(work, work).finally(() => {
+    // identity 比对后才删：本次执行期间新 work 可能已挂链尾（Map 里已是新链头），误删会砍断新链 → 并发双跑
     if (sessionAutoConsumeChains.get(sessionId) === next) {
       sessionAutoConsumeChains.delete(sessionId);
     }
@@ -332,6 +335,7 @@ export async function autoConsumeAsyncDelivery(options: {
   if (task.status !== "success" && task.status !== "failed") return "skipped";
 
   const input = parseAsyncInput(task.input);
+  // v7 通道收敛：deliverToQueue=false 的结果已走 tool return 直返父 Agent，此处若放行 = 二次投喂
   if (input?.deliverToQueue === false) return "skipped";
 
   const hub = getStreamHub();
@@ -365,6 +369,8 @@ export async function autoConsumeAsyncDelivery(options: {
     message,
     source: "sub" as const,
     runOrigin,
+    // toolResults.subagentResult.jobId 是 reconciler 判孤儿的 ground truth 台账（json_extract 按此路径匹配）；
+    // 字段形状改动必须同步对账查询，否则全体已注入记录被误判孤儿 → 回滚重投 = 重复投喂。
     toolResults: {
       subagentResult: {
         jobId,
@@ -585,6 +591,8 @@ export async function reconcileAsyncDeliveries(options: {
   const minAge = Math.max(0, options.minDeliveredAgeMs ?? RECONCILER_MIN_DELIVERED_AGE_MS);
   const cutoff = new Date(Date.now() - minAge);
 
+  // 为什么 name 前缀 + type 双条件 OR：`[async-share]` 广播行 type=oneshot，只能靠 name 前缀扫到；
+  // type=async_agent 则兜住命名不规范的存量/直建行。两个条件各管一类，缺一不可（下同）。
   const candidates = await prisma.task.findMany({
     where: {
       OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
@@ -724,8 +732,10 @@ export function stopAsyncDeliveryReconciler(): void {
 /* R-2 重启恢复（启动首扫，四动作，全部条件写幂等，DB 为 ground truth） */
 
 export interface StartupRecoveryResult {
-  /** 动作 1：僵尸 running/queued async Task 标 failed 数 */
+  /** 动作 1：僵尸 running/queued async Task 标 failed 数（不可重入 + 已达自动重跑上限） */
   staleTasksFailed: number;
+  /** 动作 1：僵尸中 reentrant=true 且未达上限、已重建执行体自动续跑入池数（C-2） */
+  staleTasksResumed: number;
   /** 动作 4：僵尸 running ChatSession 标 paused 数 */
   zombieSessionsPaused: number;
   /** 动作 3：superior 孤儿队列项重注册 drain 的会话数 */
@@ -740,9 +750,10 @@ export interface StartupRecoveryResult {
  * reconcileAsyncDeliveries 同一幂等入口（CLAIM 原子互斥 + notify/autoConsume 管道）。
  *
  * 四动作（顺序敏感）：
- * 1. 僵尸 running/queued async Task → failed「服务重启，任务中断」。**不自动重跑**：tool
- *    任务有副作用（写文件/发请求），进程死亡时执行进度未知，盲目重跑可能重复执行；
- *    retryAsyncJob 保留手动重试。
+ * 1. 僵尸 running/queued async Task 两态分叉（C-2）：reentrant=true 且 retryCount<maxRetries
+ *    → retryCount+1 先落库（crash-loop 防护即账本）并重建执行体自动续跑入 v8 全局池；
+ *    否则 → failed（reentrant=false「服务重启，任务中断」/ 超上限「需人工介入」）。
+ *    副作用未知的任务不盲目重跑（进程死亡时进度未知），retryAsyncJob 保留手动重试。
  * 2. 僵尸 running ChatSession → paused（条件写 updateMany）：重启后 hub 无任何活跃流，
  *    仍 running 的会话都是尸体。先于动作 3 执行——drain 重注册会把有真实积压的会话重新置 running。
  * 3. superior 孤儿 SessionQueueItem → 重新注册 drain（v7 W-E 机制，swarm.ts 叶子实现；
@@ -755,8 +766,8 @@ export async function runStartupRecovery(options: {
   services: ServiceContainer;
 }): Promise<StartupRecoveryResult> {
   const { config, services } = options;
-  // 动作 1（含同步其 subagent ChatSession 标 failed）
-  const staleTasksFailed = await recoverStaleAsyncJobs();
+  // 动作 1（含同步其 subagent ChatSession 标 failed；reentrant 僵尸自动续跑）
+  const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
   // 动作 2（Q2 动作 4）：僵尸 running 会话 → paused
   const zombieSessions = await prisma.chatSession.updateMany({
     where: { status: "running" },
@@ -769,6 +780,7 @@ export async function runStartupRecovery(options: {
   const reconcile = await reconcileAsyncDeliveries({ services, config });
   return {
     staleTasksFailed,
+    staleTasksResumed,
     zombieSessionsPaused: zombieSessions.count,
     superiorDrainsRegistered,
     reconcile,
@@ -856,26 +868,94 @@ export async function recoverStaleRuns(): Promise<number> {
   return result.count;
 }
 
-/** 服务启动时：将遗留 async_agent running/queued 任务标为 failed，并同步其 subagent ChatSession 状态 */
-export async function recoverStaleAsyncJobs(): Promise<number> {
+/**
+ * 服务启动时扫描僵尸 async 任务（status running/queued 且 [async]/async_agent），同函数内两态分叉（C-2）：
+ *
+ * - 自动续跑（reentrant=true 且 retryCount < maxRetries）：retryCount+1 **先落库**
+ *   （crash-loop 防护即账本——崩在入池前也计数），状态重置 queued（queuedAt 刷新、
+ *   startedAt/finishedAt 置空），从 input 重建执行体入 v8 全局池。
+ *   恢复风暴不设新限流层：调度/背压全交池（maxGlobal/queuedTimeoutMs）。
+ *   入池被拒（maxQueued 满）：retryCount 已 +1，Task 维持 queued 不标 failed——
+ *   下次启动恢复只要 retryCount<maxRetries 会再尝试入池（如实状态，不假装已调度）。
+ * - 标 failed（R-2 语义）：reentrant=false「服务重启，任务中断」；
+ *   reentrant=true 但 retryCount>=maxRetries「已达自动重试上限（N 次），需人工介入」。
+ *   子会话同步标 failed 的既有行为保持。
+ *
+ * 幂等：启动一次+测试可能重复调用——逐条条件写认领（updateMany where id + status in
+ * (running,queued) 当前快照），落选（count=0）跳过，重入/并发安全。
+ */
+export async function recoverStaleAsyncJobs(
+  config: AppConfig,
+  services: ServiceContainer,
+): Promise<{ failed: number; resumed: number }> {
   const stale = await prisma.task.findMany({
     where: {
       status: { in: ["running", "queued"] },
       OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
     },
   });
-  let count = 0;
+  let failed = 0;
+  let resumed = 0;
   for (const task of stale) {
     const input = parseAsyncInput(task.input);
     if (!input) continue;
-    await prisma.task.update({
-      where: { id: task.id },
+
+    if (task.reentrant && task.retryCount < task.maxRetries) {
+      // 自动续跑分支：先落库计数 + 状态重置（条件写认领），再入池
+      const claimed = await prisma.task.updateMany({
+        where: { id: task.id, status: { in: ["running", "queued"] } },
+        data: {
+          retryCount: { increment: 1 },
+          status: "queued",
+          queuedAt: new Date(),
+          startedAt: null,
+          finishedAt: null,
+        },
+      });
+      if (claimed.count === 0) continue; // 并发落选：已被其他恢复调用处理
+      try {
+        getAsyncJobOrchestrator(config).enqueue({
+          jobId: task.id,
+          sessionId: input.sessionId,
+          timeoutMs: input.timeoutMs,
+          execute: buildAsyncExecute(
+            config,
+            services,
+            task.id,
+            input.task,
+            input.agentSnapshot,
+            "auto",
+            input.subagentSessionId,
+            input.toolCall ? "tool" : "llm",
+            input.toolCall,
+            input.shareToSessionIds,
+            input.sessionId,
+          ),
+        });
+        resumed++;
+      } catch (err) {
+        // 入池被拒（maxQueued 满）：不标 failed、不回滚计数——维持 queued 等下轮恢复（见 docstring）
+        console.warn(
+          `[recoverStaleAsyncJobs] 僵尸任务 ${task.id} 续跑入池被拒，维持 queued 待下次恢复:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+      continue;
+    }
+
+    // R-2 语义：标 failed（error 文案两态区分），条件写认领保证幂等
+    const errorText = task.reentrant
+      ? `已达自动重试上限（${task.maxRetries} 次），需人工介入`
+      : "服务重启，任务中断";
+    const claimedFailed = await prisma.task.updateMany({
+      where: { id: task.id, status: { in: ["running", "queued"] } },
       data: {
         status: "failed",
         finishedAt: new Date(),
-        output: { error: "服务重启，后台任务已中断" },
+        output: { error: errorText },
       },
     });
+    if (claimedFailed.count === 0) continue; // 并发落选
     // 同步 subagent ChatSession 状态为 failed（避免卡片永久停在 running/queued）
     if (input.subagentSessionId) {
       try {
@@ -887,9 +967,9 @@ export async function recoverStaleAsyncJobs(): Promise<number> {
         // subagent session 可能已删除，忽略
       }
     }
-    count++;
+    failed++;
   }
-  return count;
+  return { failed, resumed };
 }
 
 /** 清理已投递且过期的异步任务，防止 Task 表无限膨胀（默认保留 7 天） */
@@ -1181,8 +1261,9 @@ function buildAsyncExecute(
   jobId: string,
   task: string,
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
-  // 是否手动重试（仅用于系统提示文案；自动重跑计数唯一事实源 = Task.retryCount 列，源头传入不再读 input）
-  isRetry: boolean,
+  // 重跑来源（仅系统提示文案；自动重跑计数唯一事实源 = Task.retryCount 列）：
+  // null=首发；"manual"=手动 retryAsyncJob；"auto"=重启恢复自动续跑
+  retryKind: "manual" | "auto" | null,
   subagentSessionId?: string,
   mode: "llm" | "tool" = "llm",
   toolCall?: { tool: string; args: Record<string, unknown> },
@@ -1190,7 +1271,7 @@ function buildAsyncExecute(
   parentSessionId?: string,
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
-  const retryHint = isRetry ? "（手动重试）" : "";
+  const retryHint = retryKind === "manual" ? "（手动重试）" : retryKind === "auto" ? "（服务重启自动续跑）" : "";
   const syncSubStatus = async (status: "completed" | "failed" | "paused" | "running") => {
     if (!subagentSessionId) return;
     try {
@@ -1258,6 +1339,8 @@ function buildAsyncExecute(
     const resultText = loop.content || "(无文本输出)";
     const tokenUsage = loop.tokenUsage;
     await appendAsyncJobLog(jobId, { level: "info", message: `任务完成，共 ${loop.roundsUsed} 轮` }, services);
+    // 为什么结果要落一条 assistant 消息：子会话消息链是 ReAct 上下文的事实源
+    //（agentRuntime/agentStream 均按 sessionId 从消息表扁平重建多轮上下文），只写 Task.output 会断链；同时供子会话页可视化。
     if (subagentSessionId) {
       try {
         await services.message.create({
@@ -1291,6 +1374,7 @@ function buildAsyncExecute(
     }
     await broadcastShare("success", { asyncResult: resultText, tokenUsage });
     const parentInput = parseAsyncInput((await services.task.getById(jobId))?.input);
+    // v7 唯一投递闸：deliverToQueue=false（同步等待）时结果唯一通道是 tool return，禁止 notify 进队列二次投喂
     if (parentInput?.sessionId && parentInput.deliverToQueue !== false) {
       await notifyAsyncDelivery(parentInput.sessionId, jobId, "done", parentInput.taskLabel, services, config);
     }
@@ -1338,6 +1422,7 @@ function buildAsyncExecute(
     }
     await broadcastShare("failed", { error: errorText });
     const parentInputFailed = parseAsyncInput((await services.task.getById(jobId))?.input);
+    // 同 finalizeSuccess 的 v7 投递闸：sync 任务的失败结果同样走 tool return，不进队列
     if (parentInputFailed?.sessionId && parentInputFailed.deliverToQueue !== false) {
       await notifyAsyncDelivery(parentInputFailed.sessionId, jobId, "failed", parentInputFailed.taskLabel, services, config);
     }
@@ -1379,12 +1464,14 @@ function buildAsyncExecute(
     await syncSubStatus("completed");
     await broadcastShare("success", { asyncResult: resultText });
     const parentInputTool = parseAsyncInput((await services.task.getById(jobId))?.input);
+    // 同 finalizeSuccess 的 v7 投递闸（纯工具路径）
     if (parentInputTool?.sessionId && parentInputTool.deliverToQueue !== false) {
       await notifyAsyncDelivery(parentInputTool.sessionId, jobId, "done", parentInputTool.taskLabel, services, config);
     }
   };
 
   return async (signal) => {
+    // 任务原文落 user 消息：与 finalizeSuccess 的 assistant 结果消息配对，构成子会话 ReAct 上下文事实链（同上）
     if (subagentSessionId) {
       try {
         await services.message.create({
@@ -1444,6 +1531,7 @@ function buildAsyncExecute(
               }
             });
             if (started) {
+              // 池 abort（超时/取消）必须传导到 hub 真正停子会话流，否则 LLM 在后台继续空转烧钱
               signal.addEventListener("abort", () => hub.stop(subagentSessionId), { once: true });
               // 通知前端挂接子会话流（切到子页时不必等刷新）
               hub.pushExternalEvent(subagentSessionId, {
@@ -1683,7 +1771,7 @@ export async function startAsyncAgentTask(options: {
           jobId,
           task,
           agentSnapshot,
-          false,
+          null,
           subagentSessionId,
           mode,
           options.toolCall,
@@ -1988,7 +2076,7 @@ export async function retryAsyncJob(
         newJobId,
         input.task,
         agentSnapshot,
-        true,
+        "manual",
         input.subagentSessionId,
         mode,
         input.toolCall,

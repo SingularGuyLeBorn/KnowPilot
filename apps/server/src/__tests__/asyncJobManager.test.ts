@@ -114,7 +114,8 @@ describe("asyncJobManager 持久化", () => {
       },
     });
 
-    const n = await recoverStaleAsyncJobs();
+    const ctx = await createContextInner();
+    const { failed: n } = await recoverStaleAsyncJobs(ctx.config, ctx.services);
     expect(n).toBeGreaterThanOrEqual(1);
 
     const asyncRow = await prisma.task.findUnique({ where: { id: asyncTask.id } });
