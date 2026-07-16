@@ -166,9 +166,46 @@ drain 时对每个排队任务逐条求值，**首个命中的上限即排队原
 
 ---
 
-## 7. 数据库写入事务
+## 7. 投递可靠性（v9 R-1/R-2）
 
-### 7.1 assistant 消息 + Run 记录
+v9 落地。异步结果从「任务完成」到「气泡进会话」的链路是：CLAIM（认领交付）→ 注入（写 ChatMessage + 起流续跑）→ 对账（兜底自愈）。三段的不变量全部收在服务端（`asyncJobManager.ts`），编排层写错也打不破。设计决策（Q1~Q2）见 `design-decisions.md` 文末「投递可靠性」。
+
+### 7.1 CLAIM：`Task.delivered` 原子认领是唯一互斥点
+
+- 全文交付的互斥点只有一个：`updateMany where delivered=false → delivered=true`（条件写天然竞态原子，落选方 count=0 静默跳过）。两处 CLAIM——服务端 `autoConsumeAsyncDelivery` 与前端 ack `markAsyncDeliveryConsumed`——共用同一把锁，先认领者注入，后到者空手返回。
+- 两处 CLAIM 均在**同一事务**内完成 W14 账本记账（`markAgentMessageDeliveredByTaskRef`，按 `taskRef=jobId` 幂等），不存在「Task 已 delivered 但旁路邮箱仍 pending」的中间态。
+- CLAIM 必须发生在注入**之前**：挪到注入之后会造出两个各自注入的消费者，同一结果双注气泡。
+
+### 7.2 注入失败：确定未写消息才同链回滚（宁漏勿错）
+
+- CLAIM 与气泡写入之间隔着无法同事务的 SSE 起流，失败分两类：
+  - **确定未写消息**（唯一可判路径）：`startIfNotRunning` 返回 false（别的流占线，runner/chatAgentStream 未执行）→ `rollbackAsyncDeliveryClaim` 事务回滚 `delivered=false` + 同事务回滚 W14 账本（delivered→pending）+ 重挂消费链队尾。不丢、不重复。
+  - **无法判定**（如 `started=true` 后 `chatAgentStream` 中途抛错）：消息可能已写入，回滚会导致重复投喂——**一律不回滚**，交 7.3 对账兜底。
+- 原则一句话：**宁漏回滚勿错回滚**。漏回滚有对账者补，错回滚必重复投喂。
+- 回滚本身是条件写（`updateMany where delivered=true`），与正常 CLAIM / 前端 ack 条件互斥：期间已被正常消费的记录条件写不命中（count=0），调用方放弃回滚，不补投。
+
+### 7.3 对账：ChatMessage 是 ground truth，reconciler 全幂等
+
+- 对账者 reconciler（`reconcileAsyncDeliveries` / `startAsyncDeliveryReconciler`）：启动即扫 + 周期扫（周期复用 `config.stream.cleanupIntervalMs`，无新增 config 面）。
+- 扫描面：`delivered=true` 且终态、超龄（`RECONCILER_MIN_DELIVERED_AGE_MS=60s`，CLAIM→落库正常在秒级完成，该阈值只影响补投时机不影响正确性）、未 pinned、`deliverToQueue≠false`（同步任务结果走 tool return，永不进队列，不属补投范围）、且会话内无 `toolResults.subagentResult.jobId=X` 的 ChatMessage 的孤儿交付。
+- **ChatMessage 是唯一 ground truth**：交付是否完成只看气泡在不在，不看 Task 标志位。有气泡 → 跳过；无气泡 → 条件写回滚（同 7.2 互斥语义）→ `notifyAsyncDelivery` 重走正常 notify/autoConsume 管道补投（`[reconciler] 补投 jobId=...`，每轮上限 `RECONCILER_BATCH_LIMIT=50`）。补投不另造投递路径，对账者跑多少轮、与其他写方如何交错都不会出错（幂等）。
+
+### 7.4 重启恢复四动作：全部条件写、不自动重跑
+
+`runStartupRecovery` 启动首扫（index.ts 启动序列挂载，shutdown 停 reconciler），DB 为 ground truth：
+
+1. 僵尸 running/queued async Task → failed「服务重启，任务中断」。**不自动重跑**：tool 任务有副作用（写文件/发请求），进程死亡时执行进度未知，盲目重跑可能重复执行；`retryAsyncJob` 保留手动重试，把「要不要承担重复副作用」的决定权交还给人。
+2. 僵尸 running ChatSession → paused（`updateMany` 条件写；重启后 hub 无任何活跃流，仍 running 的都是尸体）。先于动作 3 执行——drain 重注册会把有真实积压的会话重新置 running。
+3. superior 孤儿 SessionQueueItem → 重注册 drain（v7 W-E 机制；进程内 drain 链随重启丢失，pending 队列项跨重启留存于 SQLite）。
+4. `delivered=false` 终态未投递 → 重新 notify——与 R-1 reconciler **同一幂等入口** `reconcileAsyncDeliveries`，不造第二条恢复路径。
+
+AgentMessage pending 超龄走 W14 既有 stale 对账（`SUPERIOR_MIRROR_STALE_MS`），不在此新造逻辑。
+
+---
+
+## 8. 数据库写入事务
+
+### 8.1 assistant 消息 + Run 记录
 
 `chatAgentStream` 在 SSE 结束时，用一次 `$transaction` 同时写入：
 
@@ -177,7 +214,7 @@ drain 时对每个排队任务逐条求值，**首个命中的上限即排队原
 
 **作用**：避免只写了一半数据（例如只写了 assistant 消息但没写 Run 记录）。
 
-### 7.2 SQLite 单连接限制
+### 8.2 SQLite 单连接限制
 
 SQLite 是文件级锁，并发写会串行化。KnowPilot 默认单用户、单进程，因此不会遇到严重的写并发冲突。
 
@@ -188,9 +225,9 @@ SQLite 是文件级锁，并发写会串行化。KnowPilot 默认单用户、单
 
 ---
 
-## 8. Agent 间消息的防循环
+## 9. Agent 间消息的防循环
 
-### 8.1 `depth` 字段
+### 9.1 `depth` 字段
 
 `AgentMessage` 有 `depth` 字段，默认 1，每次转发递增。
 
@@ -204,7 +241,7 @@ if (depth > MAX_DEPTH) {
 
 **作用**：防止 Agent 之间无限循环委派。
 
-### 8.2 向上发消息时机约束
+### 9.2 向上发消息时机约束
 
 `swarmPermissionGuard.checkUpwardMessageTiming` 保证：
 
@@ -215,9 +252,9 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 9. 刷新/断线恢复
+## 10. 刷新/断线恢复
 
-### 9.1 前端流式状态持久化
+### 10.1 前端流式状态持久化
 
 前端把每个 session 的流式状态写入 `sessionStorage`：
 
@@ -231,7 +268,7 @@ if (depth > MAX_DEPTH) {
 1. 从 `sessionStorage` 恢复状态。
 2. 如果 `isStreaming` 为 true，自动调用 `runStream({ isResume: true, resumeAfter: lastEventId })` 续传。
 
-### 9.2 后端事件日志
+### 10.2 后端事件日志
 
 后端 `SessionStreamHub` 双写：
 
@@ -242,7 +279,7 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 10. 典型竞态场景与防护
+## 11. 典型竞态场景与防护
 
 | 场景 | 风险 | 防护 |
 | --- | --- | --- |
@@ -256,7 +293,7 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 11. 未来改进
+## 12. 未来改进
 
 1. **分布式锁**：多实例部署时用 Redis 替代进程内 `agentRunLocks`。
 2. **推送替代轮询**：`pullAsyncQueue`、`pullAgentMessages` 改为 SSE 推送（详见 `future-features.md`）。
