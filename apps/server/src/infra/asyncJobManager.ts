@@ -736,11 +736,11 @@ export interface StartupRecoveryResult {
   staleTasksFailed: number;
   /** 动作 1：僵尸中 reentrant=true 且未达上限、已重建执行体自动续跑入池数（C-2） */
   staleTasksResumed: number;
-  /** 动作 4：僵尸 running ChatSession 标 paused 数 */
+  /** 动作 2：僵尸 running ChatSession 标 paused 数 */
   zombieSessionsPaused: number;
   /** 动作 3：superior 孤儿队列项重注册 drain 的会话数 */
   superiorDrainsRegistered: number;
-  /** 动作 2 + R-1 孤儿：合并对账首轮（delivered=false 未投递补投 + delivered=true 孤儿回滚补投） */
+  /** 动作 4 + R-1 孤儿：合并对账首轮（delivered=false 未投递补投 + delivered=true 孤儿回滚补投） */
   reconcile: ReconcileAsyncDeliveriesResult;
 }
 
@@ -768,7 +768,7 @@ export async function runStartupRecovery(options: {
   const { config, services } = options;
   // 动作 1（含同步其 subagent ChatSession 标 failed；reentrant 僵尸自动续跑）
   const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
-  // 动作 2（Q2 动作 4）：僵尸 running 会话 → paused
+  // 动作 2：僵尸 running 会话 → paused
   const zombieSessions = await prisma.chatSession.updateMany({
     where: { status: "running" },
     data: { status: "paused" },
@@ -776,7 +776,7 @@ export async function runStartupRecovery(options: {
   // 动作 3：动态 import——swarm.ts 处于 ReAct 环内（agentStream/agentRuntime 依赖链），静态导入成环
   const { requeueOrphanedSuperiorDrains } = await import("./tools/native/swarm.js");
   const superiorDrainsRegistered = await requeueOrphanedSuperiorDrains(config, services);
-  // 动作 4（Q2 动作 2）+ R-1 孤儿：合并对账首轮
+  // 动作 4 + R-1 孤儿：合并对账首轮
   const reconcile = await reconcileAsyncDeliveries({ services, config });
   return {
     staleTasksFailed,
