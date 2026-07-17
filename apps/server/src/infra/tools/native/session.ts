@@ -49,17 +49,17 @@ interface SpawnPrepared {
   jobId?: string;
 }
 
-/** LLM 主动派生子 Agent：语义明确为「派生一个独立子 Agent 并立即派活」。
- *  底层实现 = agent_create_sub + agent_send_message({ autoRun: true })。
- *  waitForResult=false（默认）= 异步投递：工具立刻返回，子 Agent 自行 report_back 进父异步队列。
- *  waitForResult=true = 同步等待：父流挂起，子会话空闲后系统抓取最后一条 assistant（不强制 report_back）。
+/** v8 TP-1/Q4：LLM 主动派生子 Agent。
  *
- *  v8 TP-1 执行入口统一收口（W10 中介者骨架不动）：
- *  - waitForResult=false：**入池**（schedule pool，Q1 全局池是容量权威）。pool slot 从起流
- *    持有到 hub.waitFor(子会话) 解析；queued 期间跟踪 Task / 子会话状态落 queued（右栏可见「agent 未启动」）。
- *  - waitForResult=true：**槽位血缘继承**（Q4）走 inline 不占新槽——claimOccupancy 把子会话
- *    hub 流从「hub 交互 running」中剔除（父槽位让渡），父流挂起轮询语义不动。
- *  执行体 spawnSubagent* 保留原语义（同步等待/report_back/跟踪 Task 均不动）。 */
+ * 不变量：
+ * - waitForResult=false（默认）：异步投递，入全局任务池（Q1 容量权威）。pool slot 从起流持有到
+ *   hub.waitFor(子会话) 解析；queued 期间跟踪 Task / 子会话状态落 queued（右栏可见「agent 未启动」）。
+ * - waitForResult=true：同步等待，走槽位血缘继承（Q4）inline 不占新槽——claimOccupancy 把子会话
+ *   hub 流从「hub 交互 running」中剔除（父槽位让渡）。父流挂起轮询，子会话空闲后抓最后一条 assistant。
+ * - 底层实现仍是 agent_create_sub + agent_send_message({ autoRun: true })，但执行入口统一收口到
+ *   SwarmOrchestrator.dispatch，禁止各调用方私自起流。
+ *
+ * 执行体 spawnSubagent* 保留原语义（同步等待/report_back/跟踪 Task 均不动）。 */
 async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.sessionId || !ctx.agentSnapshot) {
     throw new Error("spawn_subagent 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
@@ -329,7 +329,7 @@ async function spawnSubagentPrepare(
           },
           subagentSessionId,
           sourceType: "subagent",
-          // 同步等待：结果走 tool return，禁止 autoConsume 二次喂给父会话
+          // v7 通道收敛：waitForResult=true 时 deliverToQueue=false，结果唯一通道 = tool return
           deliverToQueue: !waitForResult,
         },
       } as any);
@@ -548,7 +548,7 @@ async function spawnSubagentSyncWait(
     await new Promise((r) => setTimeout(r, 400));
   }
 
-  // 无跟踪 Task 且超时前未抓到：最后再尝试一次抓取
+  // 兜底：跟踪 Task 缺失或轮询超时时仍抓最后一条 assistant，避免空返回让父 Agent 误判子 Agent 无输出
   if (!finalContent && subagentSessionId && ctx.prisma) {
     const last = await ctx.prisma.chatMessage.findFirst({
       where: { sessionId: subagentSessionId, role: "assistant" },
@@ -681,7 +681,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     (args.title ? String(args.title).trim() : "") ||
     `${oldTitle} · 续`.slice(0, 60);
 
-  // 1) 写总结文件
+  // 先把摘要写入本地文件，作为未来恢复与审计的事实源（与 content/ 源优先原则一致）
   const sessionsDir = path.join(ctx.config.contentDir, "sessions");
   fs.mkdirSync(sessionsDir, { recursive: true });
   const summaryFileName = `${oldSession.id}-summary.md`;
@@ -704,7 +704,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     .split(path.sep)
     .join("/");
 
-  // 2) 创建新会话
+  // 再创建新会话；失败时旧会话仍未 archived，保留人工重试/排查的闭环
   const created = await ctx.services.session.create({
     title: newTitle,
     model: oldSession.model || ctx.config.llm.defaultModel,
@@ -718,7 +718,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
   }
   const newSession = created.data as { id: string; title: string };
 
-  // 3) 新会话首条用户消息 = 总结（可选附带 Memory 引用）
+  // 用 summary 作为新会话首条用户消息，使新上下文直接继承轮换前的决策、未完事项与关键结论
   let firstMessage = `【上一会话摘要】\n\n${summary}`;
   if (carryMemoryIds.length > 0) {
     firstMessage += `\n\n【需继续参考的 Memory】\n${carryMemoryIds.map((id) => `- ${id}`).join("\n")}`;
@@ -733,7 +733,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     source: "system",
   } as any);
 
-  // 4) 归档旧会话并记录跳转
+  // 归档旧会话并记录 rotatedToSessionId：既防止重复轮换，也保留用户手动跳转的链路
   await ctx.services.session.update({
     id: oldSession.id,
     status: "archived",
@@ -742,7 +742,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     rotatedToSessionId: newSession.id,
   } as any);
 
-  // 5) SSE 通知旧会话页面（不自动切换）
+  // 通过 SSE 提示旧会话页面可跳转；不自动切换前端视图，避免打断用户当前操作
   try {
     const hub = getStreamHub();
     hub?.pushExternalEvent(oldSession.id, {

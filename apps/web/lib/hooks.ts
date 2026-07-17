@@ -1,10 +1,9 @@
 /**
- * KnowPilot 前端 React Hooks 数据层 (Hooks Layer)
+ * 前端 React Query hooks 单文件收拢层。
  *
- * 【扁平化单文件设计】：
- * 1. 包含通用 CRUD React Query hooks 工厂 (useCRUDApi)。
- * 2. 包含文章专属 hooks 扩展、文件 Base64 上传及 AI 反射调用 hooks。
- * 3. 彻底删除 hooks/ 子目录，杜绝深层结构命名冲突。
+ * 设计不变量：
+ * - 禁止新增 hooks/ 子目录；所有数据 hook 集中于此，避免同名文件冲突。
+ * - useResumeSession 成功后失效 listRunning，由 chat.tsx 的 INV-5 自动 runStream 续传。
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- 动态 tRPC router 名称绑定 */
@@ -201,10 +200,8 @@ export const useInfoSource = () => {
 export const useSession = () => useCRUDApi<any, any, any, ChatSession>("session");
 
 /**
- * C-3 会话手动恢复（v10）：paused 会话点「恢复运行」。
- * 成功后 invalidate listRunning —— chat.tsx 的 INV-5 挂接 effect 发现运行中会话
- * 会自动 runStream 续传（既有 SSE 订阅机制，不加 setTimeout/轮询补丁）；
- * getById/list/listChildren 同步刷新状态标签。
+ * C-3 不变量：恢复按钮触发 resume mutation 后，立即失效 listRunning /
+ * session.getById / list / listChildren，chat.tsx INV-5 挂接 effect 发现运行中会话自动 runStream 续传。
  */
 export function useResumeSession(options?: { onError?: (message: string) => void }) {
   const utils = trpc.useUtils();
@@ -426,7 +423,7 @@ export function useSessionHoverPreview() {
   return { enabled, setEnabled };
 }
 
-/** Agent 聊天（L2：Chat 作为 Agent 子集） */
+/** L2 遗留入口：Chat 是 Agent 聊天的子集。 */
 export function useAgentChat() {
   const utils = trpc.useUtils();
   const chat = trpc.agent.chat.useMutation({

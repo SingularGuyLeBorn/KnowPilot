@@ -1,16 +1,10 @@
 "use client";
 
 /**
- * ChatRightPanel —— 右栏（W13c 从 chat.tsx 拆出）。
- * 包含右栏宽度动画容器、「配置 / 状态」标签页头、ChatSettingsPanel（模型/参数/Prompt/Skill 配置）
- * 与 RuntimeStatusPanel（TP-3 三组状态模型：进行中 / 待消费（含钉住子组）/ 已消费）。
- * 纯结构拆分：面板开关与标签的 URL/localStorage 持久化 effect、runtime 三组派生数组
- * （runtimeActiveItems / runtimeToConsumeItems / runtimeConsumedItems）的 useMemo、异步任务
- * mutation 单例仍留在 chat.tsx，经 props 受控注入；INV-1~8 流式状态机不涉及本组件。
- *
- * W16b：React.memo 渲染屏障——右栏 props 不含流式派生值（tokenBudget / runtime 三组
- * 均为 useMemo 派生，token 更新不变），流式期右栏整树跳过重渲染。mutation 同
- * ChatSidebar 只注入稳定的 .mutate 函数。
+ * ChatRightPanel —— 右栏结构组件（W13c 从 chat.tsx 拆出）。
+ * 负责宽度动画、「配置 / 状态」标签切换与受控渲染。
+ * 状态页使用两级分组：异步队列可消费 / 同步任务只展示。
+ * React.memo 屏障：props 不含流式派生值，token 更新期右栏整树跳过重渲染。
  */
 
 import { memo } from "react";

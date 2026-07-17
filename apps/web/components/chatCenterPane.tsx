@@ -1,18 +1,9 @@
 "use client";
 
 /**
- * ChatCenterPane —— 中栏（W13e 从 chat.tsx 拆出）。
- * 包含中栏 header（面板开关 / 标题 / 模型摘要 / SessionContextBar / Agent 管理链接）、
- * 子 Agent 任务条、移动端 SessionContextBar、后端离线 banner、session_rotate 跳转 banner、
- * 消息列表（ChatMessageList props 原样透传）、错误条（预算/超时/重试动作）、
- * composer 接线（UserSendQueuePanel + ChatInputArea）。
- * 纯结构拆分：enqueueMessage/consumeQueue/runStream 编排与 INV-1~8 状态机仍留在 chat.tsx，
- * 数据与回调全部经 props 受控注入（沿用 ChatSidebarProps 模式）。
- *
- * W16b memo 判定：不包 React.memo——本组件就是「消息列表相关组件」（messageListProps
- * 流式期每 token 真变），按「token 更新只触发消息列表相关组件重渲染」标准它应当随
- * token 重渲染；memo 永远不会命中，加了只是误导。屏障设在 ChatSidebar /
- * ChatRightPanel / ChatOverlays / ChatMessageList。
+ * ChatCenterPane —— 中栏结构组件（W13e 从 chat.tsx 拆出）。
+ * 纯渲染透传：所有状态、派生、mutation 单例与 INV 状态机留在 chat.tsx，经 props 注入。
+ * 不包 React.memo：messageListProps 流式期每 token 真变，memo 永远不会命中。
  */
 
 import Link from "next/link";
@@ -203,7 +194,7 @@ export function ChatCenterPane({
               {!["running", "queued", "completed", "failed", "paused", "active"].includes(sessionDetail.status) && sessionDetail.status}
             </span>
           )}
-          {/* C-3：paused 子会话「恢复运行」入口（状态标签处） */}
+          {/* C-3：恢复按钮触发 resume mutation → chat.tsx INV-5 自动 runStream 续传 */}
           {sessionDetail?.status === "paused" && (
             <button
               type="button"
@@ -288,7 +279,7 @@ export function ChatCenterPane({
         </div>
       )}
 
-      {/* C-3：paused 普通会话「恢复运行」横幅（子会话入口在上方任务条状态标签处） */}
+      {/* C-3：恢复按钮触发 resume mutation → chat.tsx INV-5 自动 runStream 续传 */}
       {!isSubagentSession && sessionDetail?.status === "paused" && (
         <div
           data-testid="session-resume-banner"

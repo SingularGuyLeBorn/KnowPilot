@@ -108,7 +108,7 @@ export class AsyncJobOrchestrator {
     this.maxQueued = Math.max(1, limits.maxQueued ?? 100);
   }
 
-  /** 订阅任务生命周期事件 */
+  /** 生命周期事件：解耦状态统计、SSE 推送与调度逻辑；listener 抛错不阻塞编排。 */
   on(event: AsyncJobEventType, listener: AsyncJobEventListener): () => void {
     const wrapper: AsyncJobEventListener = (ev) => {
       if (ev.type === event) listener(ev);
@@ -294,7 +294,7 @@ export class AsyncJobOrchestrator {
     return this.queue.find((q) => q.spec.jobId === jobId)?.reason;
   }
 
-  /** 取消一条运行中的任务；若未运行则忽略 */
+  /** cancel 幂等：运行中 abort 信号；排队中移出队列并触发 cancelled 事件。同一 jobId 多次调用无副作用。 */
   cancel(jobId: string): boolean {
     const running = this.runningJobs.get(jobId);
     if (running) {
@@ -312,8 +312,8 @@ export class AsyncJobOrchestrator {
     return false;
   }
 
-  /** 根据 subagent sessionId 中断其后台任务。
-   *  返回 stopped=是否命中、wasRunning=是否正在执行（否则为排队中）、jobId=关联任务 ID（用于回写 Task 状态） */
+  /** subagent session 停止必须同时清掉 orchestrator 槽位与 subagentControllers，否则 signal 中断不到后台任务。
+   *  返回 stopped=是否命中、wasRunning=是否正在执行（否则为排队中）、jobId=关联任务 ID（用于回写 Task 状态）。 */
   stopSubagent(subagentSessionId: string): { stopped: boolean; wasRunning: boolean; jobId?: string } {
     const controller = this.subagentControllers.get(subagentSessionId);
     if (controller) {
@@ -333,7 +333,7 @@ export class AsyncJobOrchestrator {
     return { stopped: false, wasRunning: false };
   }
 
-  /** 任务是否正在执行 */
+  /** 判定 jobId 是否已获槽并正在执行（只看 runningJobs，不看 queued）。 */
   isRunning(jobId: string): boolean {
     return this.runningJobs.has(jobId);
   }
@@ -343,7 +343,7 @@ export class AsyncJobOrchestrator {
     this.drain();
   }
 
-  /** 任务是否在队列等待槽位 */
+  /** 判定 jobId 是否仍在排队（未获槽）。running 与 queued 互斥。 */
   isQueued(jobId: string): boolean {
     return this.queue.some((q) => q.spec.jobId === jobId);
   }
@@ -356,6 +356,7 @@ export class AsyncJobOrchestrator {
     }
   }
 
+  /** 调度排水口：容量变化/新任务/占用释放/hub 流结束时触发；逐项 admit 直到 blockReason 命中。幂等。 */
   private drain(): void {
     let i = 0;
     while (i < this.queue.length) {
@@ -372,6 +373,7 @@ export class AsyncJobOrchestrator {
     }
   }
 
+  /** 获槽启动：增加全局/会话/工作区计数，execute 在 AbortSignal 下运行；finally 必须释放计数并再次 drain。 */
   private start(spec: AsyncJobRunSpec): void {
     const controller = new AbortController();
     this.runningGlobal++;
@@ -452,7 +454,7 @@ function wireHubSettledOnce(): void {
   });
 }
 
-/** 单测重置 */
+/** 单测重置全局 orchestrator 单例与 hub settled 接线（状态清零，避免测试污染）。 */
 export function resetAsyncJobOrchestratorForTests(): void {
   _orchestrator = null;
 }

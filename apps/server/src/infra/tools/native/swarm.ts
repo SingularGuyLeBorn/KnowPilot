@@ -432,6 +432,7 @@ async function prepareAgentRun(
               .trim() ||
             "(无文本输出)";
 
+          // 运行成功：把最终文本落库为 assistant 消息，供 report_back / 同步等待抓取
           await ctx.services.message.create({
             sessionId: mainSession!.id,
             role: "assistant",
@@ -442,6 +443,7 @@ async function prepareAgentRun(
           });
 
           try {
+            // 子 Agent 运行完成：主会话进入 completed，释放后续 drain 的 idle 条件
             await ctx.services.session.update({ id: mainSession!.id, status: "completed" } as any);
           } catch { /* ignore */ }
 
@@ -467,6 +469,7 @@ async function prepareAgentRun(
             });
           } catch { /* ignore */ }
           try {
+            // 运行异常：标 failed 阻止重复 drain，保留人工排查现场
             await ctx.services.session.update({ id: mainSession!.id, status: "failed" } as any);
           } catch { /* ignore */ }
           emit({ type: "error", message: errorText, sessionId: mainSession!.id });

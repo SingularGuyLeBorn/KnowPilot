@@ -1506,6 +1506,7 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       sessionId: input.id,
       agentId: session.agentId ?? undefined,
       message: "（服务已重启，请继续完成未完成的任务）",
+      // source="system" 标记服务恢复注入：chatAgentStream 会按系统恢复路径去重，不混入用户消息
       source: "system",
       // 子任务血统允许 report_back（与 asyncJobManager autoConsume 同口径）
       runOrigin: session.parentSessionId || session.kind === "subagent" ? "parent" : "user",

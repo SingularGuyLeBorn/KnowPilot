@@ -3,15 +3,10 @@
 /**
  * useChatDerivedQueues —— Chat 派生队列 memos（W13e 从 chat.tsx 拆出）。
  *
- * 两个物理独立队列：
- * - asyncResultQueue: 从 poll 数据派生（async-running + async-result），合并 asyncOverlays（用户追加编辑）
- * - userQueue: 用户主动发送的消息（存入 session state）
- * 显示队列 = asyncResultQueue + userQueue（async 在前，符合优先级语义）。
- * 右侧「状态」三组状态模型（TP-3，执行×消费两正交维度）：
- *   进行中 = async-running（queued 排队 + running 执行）；
- *   待消费 = 终态且 delivered=false 的 delivery（removeAt/serverConsumed 的完成态展示项已被消费，不进）；
- *   已消费 = poll.consumed（delivered=true），带 fresh 滑入。
- * 纯结构拆分：useMemo 体与 deps 逐字未改。本 hook 不含任何 useEffect。
+ * 不变量：
+ * - asyncResultQueue 与 userQueue 物理隔离；显示队列 = async 在前 + user 在后。
+ * - 右栏「状态」两级分组：异步队列按 TP-3 执行×消费三态分组；同步任务（deliverToQueue=false）仅透传展示。
+ * - 已消费列表以服务端 poll.consumed 为唯一事实源。
  */
 
 import { useMemo } from "react";
@@ -61,11 +56,6 @@ export function useChatDerivedQueues({
   consumedDeliveries: Set<string>;
   userQueue: ChatQueueItem[];
 }) {
-
-  // 两个物理独立队列：
-  // - asyncResultQueue: 从 poll 数据派生（async-running + async-result），合并 asyncOverlays（用户追加编辑）
-  // - userQueue: 用户主动发送的消息（存入 session state）
-  // 显示队列 = asyncResultQueue + userQueue（async 在前，符合优先级语义）
   const asyncResultQueue = useMemo(
     () =>
       mergeAsyncPollIntoQueue(asyncOverlays, asyncQueueQuery.data, {
@@ -74,9 +64,6 @@ export function useChatDerivedQueues({
     [asyncOverlays, asyncQueueQuery.data, consumedDeliveries],
   );
 
-  // 右侧「状态」三组（TP-3）：进行中 = async-running（queued+running）；
-  // 待消费 = 终态未 delivered 的 delivery（removeAt/serverConsumed 的完成态展示项已被消费，不进）；
-  // 已消费 = poll.consumed，带滑入
   const runtimeActiveItems = useMemo(
     () => asyncResultQueue.filter((i) => i.kind === "async-running"),
     [asyncResultQueue],

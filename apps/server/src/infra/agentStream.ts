@@ -997,13 +997,12 @@ export function handleAgentChatStream(
 
     res.on("close", () => {
       end();
-      // 关键：客户端断开只取消订阅，不 abort 后台运行
+      // 为什么只取消订阅：后台 Agent 运行可能承载异步任务/子 Agent，abort 会随前端关闭而强制中断它们
     });
 
-    // 如果订阅时任务已经结束，需要主动关闭响应
+    // 订阅时运行已结束：必须显式发 done 让前端从 streaming 归位到 idle，
+    // 否则前端会进入无意义重连循环（12 次 ~2min），期间一直卡 "Thinking..."
     if (!hub.isRunning(runSessionId) && ended === false) {
-      // 运行已结束，重放完缓冲事件后发 done 让前端从 streaming → idle
-      // 不发 done 的话前端会进入重连循环（12 次 ~2min），期间一直卡 "Thinking..."
       setTimeout(() => {
         flushTokens();
         writeSse(res, {

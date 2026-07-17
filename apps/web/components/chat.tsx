@@ -70,7 +70,7 @@ export function ChatView() {
   const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState<string | null>(null);
   // 视图级非流式错误（如重命名失败）；流式 error 来自 lifecycleState.error
   const [viewError, setViewError] = useState<string | null>(null);
-  // 【存储持久化群】三栏 UI 偏好（localStorage 读写合一）收拢于 useChatUiPrefs
+  // 三栏 UI 偏好收拢于 useChatUiPrefs：读写 localStorage，避免多个 consumer 自行订阅
   const {
     leftOpen,
     setLeftOpen,
@@ -351,7 +351,7 @@ export function ChatView() {
     refetchOnWindowFocus: true,
   });
 
-  // 推优先：SSE 即时通知；仅错误时短轮询兜底，正常不再 interval
+  // 推优先 + 错误时 15s 轮询兜底：SSE 正常即时推送，query 出错时降级为 15s 轮询
   const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
     { sessionId: effectiveSessionId! },
     {
@@ -451,7 +451,7 @@ export function ChatView() {
     setRotateBanner,
   });
 
-  // 拖拽重排防抖写 DB
+  // 拖拽重排 500ms 防抖写 DB：避免连续 drag-over 触发大量 reorder mutation
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persistQueueOrder = useCallback(
     (items: ChatQueueItem[]) => {
@@ -470,7 +470,7 @@ export function ChatView() {
   // useChatDerivedQueues（W13e 拆出；useMemo 体与 deps 逐字未改）
   const { asyncResultQueue, runtimeActiveItems, runtimeToConsumeItems, runtimeConsumedItems, queue, syncTaskItems } =
     useChatDerivedQueues({ asyncOverlays, asyncQueueQuery, consumedDeliveries, userQueue });
-  // W-A 右栏「状态」一级分组（不持久化）
+  // W-A 右栏「状态」一级分组：异步队列可消费 / 同步任务只展示；不持久化到 URL
   const [runtimeGroupTab, setRuntimeGroupTab] = useState<"async" | "sync">("async");
 
   // R19：agent.list 已裁剪 systemPrompt；Chat 用 agent.getById 取 systemPrompt/model，与 list metadata 合并
@@ -778,8 +778,8 @@ export function ChatView() {
     sessionComposeActions.getActiveAbortController(effectiveSessionId)?.abort();
   }, [effectiveSessionId]);
 
-  // C-3：paused 会话「恢复运行」。成功后由 hook 内 invalidate listRunning，
-  // 上方 INV-5 挂接 effect 发现运行中会话自动 runStream 续传（既有 SSE 订阅机制）。
+  // C-3 不变量：恢复按钮触发 resume mutation → hook 内失效 listRunning →
+  // 上方 INV-5 挂接 effect 发现运行中会话自动 runStream 续传。
   const { mutate: resumeSession, isPending: resumePending } = useResumeSession({
     onError: (msg) => showToast(`恢复会话失败：${msg}`),
   });

@@ -1,5 +1,9 @@
 /**
- * Native Shell / Async 域 — run_shell, wait, sleep, async_task_*
+ * Native Shell / Async 域 — run_shell, wait, sleep, async_task_*。
+ *
+ * v7 通道收敛锚点：async_task_run(waitForResult=true) 时 deliverToQueue=false，
+ * 结果唯一通道 = tool return；waitForResult=false（默认）时 deliverToQueue=true，
+ * 结果经异步队列 + 原子 CLAIM 后注入会话。两条通道互斥，防止结果二次投喂。
  */
 import { runShellRestricted, waitMs } from "../../shellRunner.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
@@ -39,7 +43,7 @@ async function runAsyncTool(args: Record<string, unknown>, ctx: NativeToolContex
     mode: "tool",
     toolCall,
     shareToSessionIds,
-    // 阻塞等待时结果直接作为工具返回值，禁止再进队列自动消费（避免二次喂给 Agent）
+    // v7 同步等待结果唯一通道：tool return；deliverToQueue=false 阻止结果进异步队列/气泡，避免二次投喂。
     deliverToQueue: !waitForResult,
   });
   if (!waitForResult) return { ...started, sourceType };
@@ -96,7 +100,7 @@ async function sleepTool(args: Record<string, unknown>, ctx: NativeToolContext) 
   // LLM 常把 async 写成字符串 "true"，必须容忍并做 coercion，否则会同步阻塞几十秒看起来像卡死
   const isAsync = coerceToolBoolean(args.async);
 
-  // 非阻塞模式：创建轻量异步定时器任务，时间到后结果进入发送队列
+  // v7 异步路径：deliverToQueue 默认 true，到时间后结果走 notifyAsyncDelivery 唯一投递闸。
   if (isAsync) {
     if (!ctx.sessionId || !ctx.agentSnapshot) {
       throw new Error("sleep(async=true) 需要在 Chat 会话中调用（缺少 sessionId 或 Agent 上下文）");
@@ -142,7 +146,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "async_task_status",
     concurrencyClass: "A",
-    reentrant: true, // 只读状态查询
+    reentrant: true, // 只读状态查询，重入幂等
     description: "查询异步任务状态（不含结果内容与执行日志——结果完成后自动进队列投递）。可传 jobId 查单个，不传则列当前会话全部任务。返回状态、已执行/排队时长等。",
     parameters: {
       type: "object",
@@ -182,7 +186,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "wait",
     concurrencyClass: "A",
-    reentrant: true, // 纯延迟零副作用，重跑只是再等一次
+    reentrant: true, // 纯延迟零副作用，重入不会破坏语义
     description: "等待指定时间（用于安装、服务启动、轮询前的延迟）。最多 300 秒。",
     parameters: {
       type: "object",

@@ -3,9 +3,10 @@
 /**
  * Chat 发送队列组件
  *
- * - UserSendQueueBar：输入区左上角的紧凑条，只显示用户待发消息。
- * - QueueCard：发送队列列表卡片（用户待发 / 异步结果等）。
- * - RuntimeStatusPanel：右侧「状态」面板（TP-3 三组：进行中=queued+running / 待消费=终态未喂入 / 已消费滑入）。
+ * 不变量：
+ * - 队列预览统一截断至 120 字符（previewText）。
+ * - 右栏「状态」两级分组：异步队列可消费（钉住/待消费/已消费）/ 同步任务只展示。
+ * - RuntimeStatusPanel 按 TP-3 执行×消费维度分组：进行中 / 待消费（含钉住子组）/ 已消费。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -48,6 +49,7 @@ export function kindLabel(item: ChatQueueItem): string {
   return "待发消息";
 }
 
+/** 队列预览统一截断至 120 字符：超过部分不展示，保持卡片高度一致。 */
 export function previewText(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
     const hint = item.status === "queued" ? formatQueuedHint(item) : "";

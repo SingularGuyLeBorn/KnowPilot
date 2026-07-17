@@ -318,7 +318,7 @@ export class SwarmOrchestrator {
   }
 
   private audit(level: "info" | "warn", event: string, message: string, metadata: Record<string, unknown>): void {
-    // 审计尽力而为：log 服务缺失/写库失败不阻塞调度（与 swarmBus 审计同策略）
+    // 为什么尽力而为：审计失败若阻塞调度，日志服务抖动会拖垮所有任务入口；与 swarmBus 同策略
     void this.deps.services.log
       ?.create?.({ level, component: "swarm.orchestrator", event, message, metadata })
       .catch(() => {});

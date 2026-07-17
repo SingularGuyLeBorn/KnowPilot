@@ -332,6 +332,7 @@ export class SessionStreamHub {
 
       if (state.completed && replayed.length === 0 && state.buffer.length > 0) {
         const last = state.buffer[state.buffer.length - 1];
+        // 订阅方错过了最终事件：补发 done/error，否则前端会卡在重连循环等不到 streaming→idle 归位
         if (last.event.type === "done" || last.event.type === "error") {
           onEvent(last);
         }
@@ -508,7 +509,7 @@ export class SessionStreamHub {
     await this.flushPersistQueue();
   }
 
-  /* ─── 持久化 ─── */
+  /* 持久化：事件双写内存缓冲与 SQLite，支持断线续传和服务端重启恢复 */
 
   private enqueuePersist(buffered: BufferedEvent, sessionId: string) {
     if (!this.config.persist) return;

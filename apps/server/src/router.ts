@@ -504,8 +504,8 @@ const sessionRouter = router({
       }
       return ctx.services.session.update({ id: input.id, status: "paused" });
     }),
-  // C-3（v10）：paused 会话手动恢复闭环——条件写抢占恢复权 → 注入系统提示 → 交互式续跑；
-  // 不变量全部收在 SessionService.resume（条件写互斥/回滚/终态归位），此处仅薄壳转发。
+  // C-3（v10）：paused 会话手动恢复闭环。所有不变量（条件写抢占/回滚/终态归位）
+  // 已收进 SessionService.resume；router 只做薄壳转发，禁止在此叠加任何状态判断。
   resume: publicProcedure
     .meta({ description: "手动恢复已暂停（paused）会话：续跑服务端重启前未完成的 ReAct 轮。幂等——并发/重复调用不报错、不重复起流。", aiReadable: false })
     .input(resumeSessionSchema)

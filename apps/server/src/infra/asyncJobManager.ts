@@ -1,6 +1,13 @@
 /**
- * 异步 Agent 任务 — 后台执行，完成后投递到会话队列（MetaBlog 风格）
- * 持久化到 Task 表；执行由 asyncJobOrchestrator 限流调度
+ * 异步 Agent 任务执行层。
+ *
+ * 不变量（由本文件强制，调用方不依赖时序自觉）：
+ * - v7 通道收敛：deliverToQueue 决定结果唯一通道（true→异步队列+原子 CLAIM；false→tool return）。
+ * - v8 全局任务池：Q2 占用口径 = 池内 running + hub 交互 running；Q4 血缘让渡 inline 不占新槽。
+ * - v9 投递可靠性：R-1 原子 CLAIM + 同链即时回滚 + reconciler 对账 + runStartupRecovery 四动作。
+ * - v10 可重入续跑：reentrant 按工具注册表取最严、retryCount 先落库、maxRetries 防 crash-loop。
+ *
+ * 数据持久化到 Task 表；执行调度收口到 asyncJobOrchestrator。
  */
 
 import type { AppConfig } from "./config.js";
@@ -80,15 +87,15 @@ interface AsyncTaskInput {
   agentSnapshot: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null; name?: string | null };
   timeoutMs?: number;
   subagentSessionId?: string;
-  /** 任务来源类型（替代旧 isSubagent 布尔值，便于 UI 区分与后续扩展） */
+  /** v7 分类锚点：持久化层即区分 spawn_subagent / async_task_run / sleep，不依赖运行时推断。 */
   sourceType?: AsyncTaskSourceType;
-  /** 纯工具异步任务时指定的一次性工具调用 */
+  /** v7 纯工具路径：一次性的后台工具调用（不带 LLM），避免 async_task_run 再暴露 mode 参数。 */
   toolCall?: { tool: string; args: Record<string, unknown> };
   /** swarm 协作：任务结果额外广播到这些会话（共享给其他父会话） */
   shareToSessionIds?: string[];
   /**
-   * 是否投递到会话异步队列并由服务端自动消费续跑。
-   * waitForResult=true 时应为 false（结果已作为工具返回值，避免二次喂给 Agent）。
+   * v7 通道收敛锚点：true = 结果进异步队列，经原子 CLAIM 后 autoConsume 注入会话；
+   * false = 结果走 tool return 直返父 Agent（如 waitForResult=true），永不进队列/气泡。
    * 默认 true。
    */
   deliverToQueue?: boolean;
@@ -119,7 +126,7 @@ function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
 }
 
 /**
- * 推断任务级可重入性（物化到 Task.reentrant 列；唯一声明源 = 工具注册表 reentrant 字段，禁止再造列表）。
+ * v10 可重入推断：物化到 Task.reentrant 列；唯一声明源 = 工具注册表 reentrant 字段，禁止再造列表。
  *
  * - mode "tool"：按 toolCall.tool 查注册表；查不到 = false（保守）。
  * - mode "llm"：agentSnapshot.tools 全体取最严——任一工具未声明 reentrant 或查不到
@@ -292,7 +299,7 @@ export function enqueueSuperiorQueueDrain(options: {
 }
 
 /**
- * R-1 S3：delivered 条件写回滚（同链即时回滚与 reconciler 对账者共用的唯一回滚入口）。
+ * v9 R-1 S3：delivered 条件写回滚（同链即时回滚与 reconciler 对账者共用的唯一回滚入口）。
  * `updateMany where delivered=true` 是与正常消费/前端 ack 竞态原子的互斥点：
  * - CLAIM 类写入（autoConsume / markAsyncDeliveryConsumed）只命中 delivered=false，
  *   与本回滚的条件互斥——同一行同一时刻至多一个写方生效，无丢失更新；
@@ -478,7 +485,7 @@ export async function autoConsumeAsyncDelivery(options: {
   return "started";
 }
 
-/** 推送 async_delivery 事件，并在有 services/config 时触发服务端自动消费续跑 */
+/** 任务终态后唯一通知入口：推 async_delivery 事件并触发服务端 autoConsume。绕过本函数会漏掉消费链与对账。 */
 async function notifyAsyncDelivery(
   sessionId: string,
   jobId: string,
@@ -740,7 +747,7 @@ export interface StartupRecoveryResult {
   zombieSessionsPaused: number;
   /** 动作 3：superior 孤儿队列项重注册 drain 的会话数 */
   superiorDrainsRegistered: number;
-  /** 动作 4 + R-1 孤儿：合并对账首轮（delivered=false 未投递补投 + delivered=true 孤儿回滚补投） */
+  /** 动作 4：合并对账首轮（R-2 动作 2 补投 delivered=false + R-1 孤儿回滚补投 delivered=true） */
   reconcile: ReconcileAsyncDeliveriesResult;
 }
 
@@ -758,8 +765,9 @@ export interface StartupRecoveryResult {
  *    仍 running 的会话都是尸体。先于动作 3 执行——drain 重注册会把有真实积压的会话重新置 running。
  * 3. superior 孤儿 SessionQueueItem → 重新注册 drain（v7 W-E 机制，swarm.ts 叶子实现；
  *    进程内 drain 链随重启丢失，pending 队列项跨重启留存于 SQLite）。
- * 4. delivered=false 终态未投递 → 重新 notify（reconcileAsyncDeliveries Pass 2）。
- * AgentMessage pending 超龄走 W14 既有 reconcileAgentMessageLedger 对账，不在此新造逻辑。
+ * 4. 合并对账首轮（reconcileAsyncDeliveries）：R-2 动作 2 补投 delivered=false 终态未投递
+ *    + R-1 孤儿回滚补投 delivered=true 但会话无气泡的记录。全部走同一 notify/autoConsume 管道，
+ *    不另造投递路径。AgentMessage pending 超龄走 W14 既有 reconcileAgentMessageLedger 对账。
  */
 export async function runStartupRecovery(options: {
   config: AppConfig;
@@ -787,7 +795,7 @@ export async function runStartupRecovery(options: {
   };
 }
 
-/** 推送子会话状态变更到父会话 SSE */
+/** 子会话状态变更必须广播到父会话 SSE：父会话任务卡片/列表依赖此外部事件刷新，不依赖前端轮询。 */
 export async function notifySubagentSessionUpdate(params: {
   parentSessionId: string;
   subagentSessionId: string;
@@ -869,7 +877,8 @@ export async function recoverStaleRuns(): Promise<number> {
 }
 
 /**
- * 服务启动时扫描僵尸 async 任务（status running/queued 且 [async]/async_agent），同函数内两态分叉（C-2）：
+ * v10 可重入续跑：服务启动时扫描僵尸 async 任务（status running/queued 且 [async]/async_agent），
+ * 同函数内两态分叉（C-2）——reentrant=true 续跑 / 否则 failed：
  *
  * - 自动续跑（reentrant=true 且 retryCount < maxRetries）：retryCount+1 **先落库**
  *   （crash-loop 防护即账本——崩在入池前也计数），状态重置 queued（queuedAt 刷新、
@@ -972,7 +981,7 @@ export async function recoverStaleAsyncJobs(
   return { failed, resumed };
 }
 
-/** 清理已投递且过期的异步任务，防止 Task 表无限膨胀（默认保留 7 天） */
+/** 投递后 Task 行默认保留 7 天供 UI 追溯；超期物理删除，已删行不再参与对账与队列展示。 */
 export async function cleanupDeliveredAsyncJobs(olderThanMs = 7 * 24 * 60 * 60 * 1000): Promise<number> {
   const before = new Date(Date.now() - olderThanMs);
   const { count } = await prisma.task.deleteMany({
@@ -1009,8 +1018,8 @@ export async function pullAsyncDeliveries(sessionId: string): Promise<AsyncQueue
 
   const deliveries: AsyncQueueDelivery[] = [];
   for (const row of rows) {
-    // 同步任务（deliverToQueue=false）结果走 tool return，永不进异步队列；
-    // 修窗口漏洞：sync 任务完成落库到 tool return 标 delivered 之间会被误拉进队列
+    // v7 两级分组隔离：deliverToQueue=false 同步任务结果走 tool return，永不进异步队列/气泡。
+    // 过滤窗口：sync 任务完成落库到 tool return 标 delivered 之间，防止被误拉进队列。
     if (parseAsyncInput(row.input)?.deliverToQueue === false) continue;
     const delivery = toDelivery(row);
     if (delivery) deliveries.push(delivery);
@@ -1035,7 +1044,7 @@ export async function pullConsumedAsyncDeliveries(
   });
   const deliveries: AsyncQueueDelivery[] = [];
   for (const row of rows) {
-    // 同步任务（deliverToQueue=false）在 tool return 时被标 delivered=true，不属于「已消费」
+    // v7 两级分组隔离：deliverToQueue=false 同步任务在 tool return 时标 delivered=true，但不属于异步队列的「已消费」，跳过。
     if (parseAsyncInput(row.input)?.deliverToQueue === false) continue;
     const delivery = toDelivery(row);
     if (delivery) deliveries.push(delivery);
@@ -1043,7 +1052,7 @@ export async function pullConsumedAsyncDeliveries(
   return deliveries;
 }
 
-/** 消费时标记异步结果已投递（CLAIM）。返回是否成功抢到（与服务端 autoConsume 竞态）。pinned 不可 CLAIM。 */
+/** v9 原子 CLAIM：消费时把 Task.delivered 与 AgentMessage 账本同事务标为已投递。与 autoConsume 竞态，先到者执行；pinned 不可 CLAIM。 */
 export async function markAsyncDeliveryConsumed(jobId: string): Promise<boolean> {
   // W14：前端认领路径与服务端 autoConsume 是同一条 Task 管道的两个竞态认领方，
   // delivered 记账必须同样落在 CLAIM 事务里，否则前端抢到 claim 时旁路邮箱又会残留 pending。
@@ -1060,6 +1069,7 @@ export async function markAsyncDeliveryConsumed(jobId: string): Promise<boolean>
   return result.count > 0;
 }
 
+/** 列出会话运行中的异步任务（v7 两级分组：deliverToQueue=false 同步任务不进入 running 列表，避免双分组重复展示）。 */
 export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunningJob[]> {
   const rows = await prisma.task.findMany({
     where: {
@@ -1073,8 +1083,8 @@ export async function listRunningAsyncJobs(sessionId: string): Promise<AsyncRunn
     .map((row): AsyncRunningJob | null => {
       const input = parseAsyncInput(row.input);
       if (!input) return null;
-      // 两级分组隔离：sync 任务（deliverToQueue=false）专属「同步任务」区，
-      // 不进异步 running 列表（否则 running 期间双分组重复展示，同 :538/:563 的过滤）
+      // v7 两级分组隔离：deliverToQueue=false 同步任务专属「同步任务」区，
+      // 不进异步 running 列表，防止 running 期间双分组重复展示。
       if (input.deliverToQueue === false) return null;
       const output = parseAsyncOutput(row.output);
       const base: AsyncRunningJob = {
@@ -1123,7 +1133,7 @@ export async function listQueuedAsyncJobs(
     .map((row): AsyncQueuedJob | null => {
       const input = parseAsyncInput(row.input);
       if (!input) return null;
-      // 两级分组隔离：sync 任务（deliverToQueue=false）专属「同步任务」区，不进异步 queued 列表
+      // v7 两级分组隔离：deliverToQueue=false 同步任务专属「同步任务」区，不进异步 queued 列表。
       if (input.deliverToQueue === false) return null;
       const output = parseAsyncOutput(row.output);
       const base: AsyncQueuedJob = {
@@ -1219,7 +1229,7 @@ export async function listSyncAsyncJobs(
   return items;
 }
 
-/** 取消一条运行中或排队中的异步任务 */
+/** 取消必须幂等：运行中 abort 信号；排队中移出队列且手动回写 failed。只清队列不会触发 execute finally，不能漏状态回写。 */
 export async function cancelAsyncJob(
   jobId: string,
   config: AppConfig,
@@ -1588,7 +1598,8 @@ export async function startAsyncAgentTask(options: {
   /** swarm 协作：结果额外广播到这些会话 */
   shareToSessionIds?: string[];
   /**
-   * 是否投递到会话队列并自动消费。waitForResult 场景传 false。
+   * v7 通道收敛锚点：true = 结果进异步队列，经原子 CLAIM 后注入会话；
+   * false = 结果走 tool return 直返父 Agent（如 waitForResult=true）。两条通道互斥，禁止同时开闸。
    * 默认 true。
    */
   deliverToQueue?: boolean;
@@ -1611,7 +1622,6 @@ export async function startAsyncAgentTask(options: {
 
   const taskLabel = options.label?.trim() || task.slice(0, 80);
 
-  // 确定任务来源类型
   let sourceType: AsyncTaskSourceType;
   if (isSubagent) sourceType = "subagent";
   else if (mode === "tool") sourceType = "async_task_tool";
@@ -1816,7 +1826,7 @@ export async function startAsyncAgentTask(options: {
   };
 }
 
-/** 轻量异步睡眠/定时器任务：不跑 LLM，到时间后把结果投递回父会话 */
+/** 轻量异步睡眠：不跑 LLM；到时间后结果强制走 notifyAsyncDelivery 唯一投递闸（v7 通道收敛）。 */
 export async function startAsyncSleepTask(options: {
   sessionId: string;
   seconds: number;
@@ -2014,8 +2024,8 @@ export async function waitForAsyncJob(
   return { jobId, status: "failed", error: "等待超时（10 分钟）" };
 }
 
-/** 停止指定 subagent session 对应的后台任务（真正 abort）。
- *  返回详细信息：wasRunning 区分运行中/排队中，jobId 供调用方回写 Task 状态。 */
+/** 停止 subagent session 对应后台任务：必须同时 abort orchestrator 任务并 hub.stop 前端流。
+ *  wasRunning 区分运行中/排队中，jobId 供调用方回写 Task 状态。 */
 export function stopSubagentSession(
   subagentSessionId: string,
   config: AppConfig,
@@ -2114,14 +2124,14 @@ export interface AsyncQueueStats {
   /** 排队总数上限 */
   maxQueued: number;
   taskTimeoutMs: number;
-  /** Q2 口径：hub 交互 running（未被池/血缘 claim 的活跃流），准入 = runningGlobal + 它 < maxGlobal */
+  /** v8 Q2 口径：hub 交互 running（未被池/血缘 claim 的活跃流），准入 = runningGlobal + 它 < maxGlobal */
   hubInteractiveRunning: number;
   runningByWorkspace: Record<string, number>;
   /** 排队任务的阻塞原因分类计数（哪个上限卡住） */
   queuedByReason: Record<"global" | "session" | "workspace", number>;
 }
 
-/** 获取异步任务队列实时统计（全局排队数与运行数） */
+/** 获取异步任务队列实时统计（Q2 口径：runningGlobal = 池内 running + hub 交互 running）。 */
 export function getAsyncQueueStats(config: AppConfig): AsyncQueueStats {
   const stats = getAsyncJobOrchestrator(config).getStats();
   return {
