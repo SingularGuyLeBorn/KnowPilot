@@ -1,17 +1,30 @@
 /**
- * Swarm 健康快照 — 供 agent_inspect(includeSwarm) 与只读 API 同源消费。
+ * Swarm 健康快照 — 供 agent_inspect(includeSwarm) / swarm_brief / 只读 API 同源消费。
  * 只聚合查询，不改状态。
  */
 
 import type { PrismaClient } from "@prisma/client";
 import { listAllAskUserPending, listAskUserPendingForSession } from "./askUserGate.js";
+import { listNotifyBreakerStatuses, type NotifyChannelStatus } from "./emailNotifier.js";
+
+export type SwarmInboxPreviewItem = {
+  id: string;
+  fromAgentId: string;
+  content: string;
+  messageType: string;
+  createdAt: string;
+};
 
 export type SwarmHealthSnapshot = {
   agentId: string;
+  agentName?: string;
+  tier?: string;
   inbox: {
     pending: number;
     delivered: number;
     consumedRecent: number;
+    /** pending 最近几条预览（Chat / brief 用） */
+    preview: SwarmInboxPreviewItem[];
   };
   sessions: {
     running: number;
@@ -43,40 +56,61 @@ export type SwarmAlertsOverview = {
   askUserSamples: Array<{ askId: string; sessionId: string; question: string; agentId?: string }>;
   suspendedAgents: Array<{ id: string; name: string; suspendedAt: string }>;
   highInboxAgents: Array<{ id: string; name: string; pending: number }>;
+  notifyChannels: NotifyChannelStatus[];
   needsAttention: boolean;
+};
+
+export type SwarmBrief = {
+  markdown: string;
+  agents: SwarmHealthSnapshot[];
+  notifyChannels: NotifyChannelStatus[];
+  generatedAt: string;
 };
 
 export async function getSwarmHealthSnapshot(
   prisma: PrismaClient,
   agentId: string,
 ): Promise<SwarmHealthSnapshot> {
-  const [pendingMsg, deliveredMsg, consumedMsg, sessions, agent, queueItems] = await Promise.all([
-    prisma.agentMessage.count({ where: { toAgentId: agentId, status: "pending" } }),
-    prisma.agentMessage.count({ where: { toAgentId: agentId, status: "delivered" } }),
-    prisma.agentMessage.count({
-      where: {
-        toAgentId: agentId,
-        status: "consumed",
-        deliveredAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-      },
-    }),
-    prisma.chatSession.findMany({
-      where: { agentId, status: { not: "deleted" } },
-      select: { id: true, status: true },
-      take: 50,
-      orderBy: { updatedAt: "desc" },
-    }),
-    prisma.agent.findUnique({
-      where: { id: agentId },
-      select: { heartbeatSuspendedAt: true, heartbeat: true },
-    }),
-    prisma.sessionQueueItem.count({
-      where: {
-        session: { agentId },
-        kind: { in: ["superior", "child_notify"] },
-      },
-    }),
-  ]);
+  const [pendingMsg, deliveredMsg, consumedMsg, sessions, agent, queueItems, inboxRows] =
+    await Promise.all([
+      prisma.agentMessage.count({ where: { toAgentId: agentId, status: "pending" } }),
+      prisma.agentMessage.count({ where: { toAgentId: agentId, status: "delivered" } }),
+      prisma.agentMessage.count({
+        where: {
+          toAgentId: agentId,
+          status: "consumed",
+          deliveredAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+      }),
+      prisma.chatSession.findMany({
+        where: { agentId, status: { not: "deleted" } },
+        select: { id: true, status: true },
+        take: 50,
+        orderBy: { updatedAt: "desc" },
+      }),
+      prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { name: true, tier: true, heartbeatSuspendedAt: true, heartbeat: true },
+      }),
+      prisma.sessionQueueItem.count({
+        where: {
+          session: { agentId },
+          kind: { in: ["superior", "child_notify"] },
+        },
+      }),
+      prisma.agentMessage.findMany({
+        where: { toAgentId: agentId, status: "pending" },
+        select: {
+          id: true,
+          fromAgentId: true,
+          content: true,
+          messageType: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+    ]);
 
   const running = sessions.filter((s) => s.status === "running").length;
   const paused = sessions.filter((s) => s.status === "paused").length;
@@ -108,10 +142,19 @@ export async function getSwarmHealthSnapshot(
 
   return {
     agentId,
+    agentName: agent?.name,
+    tier: agent?.tier ?? undefined,
     inbox: {
       pending: pendingMsg,
       delivered: deliveredMsg,
       consumedRecent: consumedMsg,
+      preview: inboxRows.map((r) => ({
+        id: r.id,
+        fromAgentId: r.fromAgentId,
+        content: r.content.slice(0, 160),
+        messageType: r.messageType,
+        createdAt: r.createdAt.toISOString(),
+      })),
     },
     sessions: { running, paused, active },
     askUserPending,
@@ -175,14 +218,101 @@ export async function getSwarmAlertsOverview(prisma: PrismaClient): Promise<Swar
     pending: g._count._all,
   }));
 
+  const notifyChannels = listNotifyBreakerStatuses();
+  const notifyOpen = notifyChannels.some((c) => c.state === "open" || c.state === "half-open");
+
   const needsAttention =
-    asks.length > 0 || suspendedAgents.length > 0 || highInboxAgents.length > 0;
+    asks.length > 0 ||
+    suspendedAgents.length > 0 ||
+    highInboxAgents.length > 0 ||
+    notifyOpen;
 
   return {
     askUserPendingCount: asks.length,
     askUserSamples,
     suspendedAgents,
     highInboxAgents,
+    notifyChannels,
     needsAttention,
+  };
+}
+
+/**
+ * 给 manager/super 的可读 Swarm 简报（markdown + 结构化快照）。
+ * workspaceId 缺省：调用方应传入作用域；null = 全局（仅 super 语义由调用方保证）。
+ */
+export async function buildSwarmBrief(
+  prisma: PrismaClient,
+  options?: { workspaceId?: string | null; limit?: number },
+): Promise<SwarmBrief> {
+  const limit = Math.min(30, Math.max(1, options?.limit ?? 12));
+  const where =
+    options?.workspaceId != null && options.workspaceId !== ""
+      ? { workspaceId: options.workspaceId, status: { not: "deleted" as const } }
+      : { status: { not: "deleted" as const } };
+
+  const agents = await prisma.agent.findMany({
+    where,
+    select: { id: true, name: true, tier: true },
+    orderBy: [{ tier: "asc" }, { updatedAt: "desc" }],
+    take: limit,
+  });
+
+  const snapshots: SwarmHealthSnapshot[] = [];
+  for (const a of agents) {
+    snapshots.push(await getSwarmHealthSnapshot(prisma, a.id));
+  }
+
+  const notifyChannels = listNotifyBreakerStatuses();
+  const attention = snapshots.filter((s) => s.needsAttention);
+  const lines: string[] = [
+    `# Swarm 简报`,
+    ``,
+    `生成时间：${new Date().toISOString()}`,
+    `扫描 Agent：${snapshots.length} · 需关注：${attention.length}`,
+    ``,
+  ];
+
+  if (notifyChannels.some((c) => c.state !== "closed")) {
+    lines.push(`## 通知通道`);
+    for (const c of notifyChannels) {
+      if (c.state === "closed" && c.failures === 0) continue;
+      lines.push(`- ${c.channel}: **${c.state}**（连续失败 ${c.failures}）`);
+    }
+    lines.push(``);
+  }
+
+  if (attention.length === 0) {
+    lines.push(`各 Agent 暂无积压 / 熔断 / 待答复。可继续派任务。`);
+  } else {
+    lines.push(`## 需关注`);
+    for (const s of attention) {
+      const name = s.agentName ?? s.agentId.slice(0, 8);
+      const bits: string[] = [];
+      if (s.inbox.pending > 0) bits.push(`inbox pending=${s.inbox.pending}`);
+      if (s.superiorQueue.pendingItems > 0) bits.push(`superior队列=${s.superiorQueue.pendingItems}`);
+      if (s.askUserPending.length > 0) bits.push(`ask_user=${s.askUserPending.length}`);
+      if (s.sessions.paused > 0) bits.push(`paused会话=${s.sessions.paused}`);
+      if (s.heartbeat.suspendedAt) bits.push(`心跳熔断`);
+      lines.push(`### ${name}（${s.tier ?? "?"} · \`${s.agentId}\`)`);
+      lines.push(`- ${bits.join("；") || "需关注"}`);
+      if (s.inbox.preview[0]) {
+        lines.push(`- 最近 inbox：${s.inbox.preview[0].content.slice(0, 100)}`);
+      }
+      if (s.askUserPending[0]) {
+        lines.push(
+          `- 等人答复：${s.askUserPending[0].question.slice(0, 80)}（session \`${s.askUserPending[0].sessionId}\`）`,
+        );
+      }
+      lines.push(`- 建议：先消费 inbox / 等 ask_user / 恢复 paused，再派新任务。`);
+      lines.push(``);
+    }
+  }
+
+  return {
+    markdown: lines.join("\n"),
+    agents: snapshots,
+    notifyChannels,
+    generatedAt: new Date().toISOString(),
   };
 }

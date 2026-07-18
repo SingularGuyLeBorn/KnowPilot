@@ -49,6 +49,21 @@ export function __resetNotifyBreakersForTests(): void {
   notifyBreakers.clear();
 }
 
+export type NotifyChannelStatus = {
+  channel: string;
+  state: "closed" | "open" | "half-open";
+  failures: number;
+};
+
+/** 已触碰过的通知通道熔断状态（供 swarmAlerts 展示） */
+export function listNotifyBreakerStatuses(): NotifyChannelStatus[] {
+  return [...notifyBreakers.entries()].map(([channel, b]) => ({
+    channel,
+    state: b.getState(),
+    failures: b.getFailureCount(),
+  }));
+}
+
 async function runWithNotifyBreaker(
   channel: string,
   run: () => Promise<EmailSendResult>,

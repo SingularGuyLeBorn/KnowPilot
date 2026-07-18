@@ -809,6 +809,7 @@ export default function AgentsPage() {
           askUserSamples={swarmAlerts.askUserSamples}
           suspendedAgents={swarmAlerts.suspendedAgents}
           highInboxAgents={swarmAlerts.highInboxAgents}
+          notifyChannels={swarmAlerts.notifyChannels}
         />
       )}
 

@@ -152,6 +152,46 @@ async function agentDeleteTool(args: Record<string, unknown>, ctx: NativeToolCon
   return { success: true, message: `Agent ${existing.name} 已标记为 deleted（tombstone 保留）。session/message/memory 将级联清理。` };
 }
 
+/**
+ * Swarm 作战简报：manager/super 一览作用域内 Agent 健康，便于先消费再派活。
+ */
+async function swarmBriefTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const tier = ctx.agentSnapshot?.tier ?? "sub";
+  if (tier !== "super" && tier !== "manager") {
+    return { error: "[TIER_DENIED] swarm_brief 仅超级 / 管理 Agent 可用。" };
+  }
+  if (!ctx.prisma) return { error: "swarm_brief 需要 prisma 上下文" };
+
+  let workspaceId: string | null | undefined =
+    typeof args.workspaceId === "string" && args.workspaceId.trim()
+      ? args.workspaceId.trim()
+      : undefined;
+  if (tier === "manager") {
+    workspaceId = ctx.agentSnapshot?.workspaceId ?? null;
+    if (!workspaceId) {
+      return { error: "管理 Agent 无 workspaceId，无法生成作用域简报。" };
+    }
+  } else if (workspaceId === undefined) {
+    // super 默认全局；可显式传 workspaceId 收窄
+    workspaceId = null;
+  }
+
+  const limit = typeof args.limit === "number" ? args.limit : 12;
+  const { buildSwarmBrief } = await import("../../swarmHealth.js");
+  const brief = await buildSwarmBrief(ctx.prisma, {
+    workspaceId: workspaceId === null ? null : workspaceId,
+    limit,
+  });
+  return {
+    markdown: brief.markdown,
+    agentCount: brief.agents.length,
+    attentionCount: brief.agents.filter((a) => a.needsAttention).length,
+    notifyChannels: brief.notifyChannels,
+    generatedAt: brief.generatedAt,
+    hint: "先处理「需关注」项（inbox / ask_user / paused / 熔断），再派新任务。markdown 可直接给用户看。",
+  };
+}
+
 async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const targetId = String(args.id || "");
   // 默认不附带全局 Memory：experience 会污染父 Agent 上下文，导致把「旧任务经验」当成当前结果
@@ -1455,6 +1495,22 @@ const SWARM_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "swarm_brief",
+    reentrant: true,
+    description:
+      "生成 Swarm 作战简报（markdown）：作用域内各 Agent 的 inbox/ask_user/paused/心跳/superior 队列与通知通道熔断。" +
+      "超级默认全局，可传 workspaceId；管理 Agent 仅本 Workspace。派活前建议先调用，优先处理积压。",
+    parameters: zodParams(
+      z.object({
+        workspaceId: z
+          .string()
+          .describe("收窄到某 Workspace（仅超级；管理 Agent 忽略并强制本空间）")
+          .optional(),
+        limit: z.number().describe("最多扫描多少个 Agent（默认 12，上限 30）").optional(),
+      }),
+    ),
+  },
+  {
     name: "agent_send_message",
     description: "向另一个 Agent 发送消息。向下发（super→manager、manager→sub）可在工具调用中发；向上发（sub→manager、manager→super）只能在正式回复中发。跨 Workspace 只有超级能发。目标正在运行时消息进入其服务端持久队列（返回 queued=true），其空闲时自动处理。",
     parameters: zodParams(
@@ -1629,6 +1685,7 @@ const SWARM_HANDLERS: Record<string, NativeToolHandler> = {
   agent_update_sub: agentUpdateTool,
   agent_delete_sub: agentDeleteTool,
   agent_inspect: agentInspectTool,
+  swarm_brief: swarmBriefTool,
   agent_send_message: agentSendMessageTool,
   agent_report_back: agentReportBackTool,
   agent_create_sub: agentCreateSubTool,

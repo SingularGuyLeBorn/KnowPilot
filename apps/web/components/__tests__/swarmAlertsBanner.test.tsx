@@ -35,6 +35,7 @@ describe("SwarmAlertsBanner", () => {
           ]}
           suspendedAgents={[{ id: "ag1", name: "超级 Agent" }]}
           highInboxAgents={[]}
+          notifyChannels={[{ channel: "ntfy", state: "open", failures: 3 }]}
         />,
       );
     });
@@ -44,6 +45,7 @@ describe("SwarmAlertsBanner", () => {
     expect(banner!.textContent).toContain("2 个 ask_user");
     expect(banner!.textContent).toContain("超级 Agent");
     expect(banner!.textContent).toContain("选哪个模型");
+    expect(banner!.textContent).toContain("ntfy");
     expect(banner!.querySelector('a[href*="sessionId="]')).not.toBeNull();
   });
 
@@ -56,6 +58,7 @@ describe("SwarmAlertsBanner", () => {
           askUserSamples={[]}
           suspendedAgents={[]}
           highInboxAgents={[]}
+          notifyChannels={[]}
         />,
       );
     });

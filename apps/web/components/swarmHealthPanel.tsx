@@ -89,6 +89,16 @@ export function SwarmHealthPanel({
           心跳熔断于 {new Date(data.heartbeat.suspendedAt).toLocaleString("zh-CN", { hour12: false })}
         </p>
       )}
+      {data.inbox.preview.length > 0 && (
+        <ul className="max-h-24 space-y-1 overflow-y-auto text-[10px] text-[var(--kp-text-2)]">
+          {data.inbox.preview.slice(0, 3).map((m) => (
+            <li key={m.id} className="truncate rounded bg-[var(--kp-bg-mute)] px-2 py-1" title={m.content}>
+              <span className="text-[var(--kp-text-3)]">[{m.messageType}] </span>
+              {m.content}
+            </li>
+          ))}
+        </ul>
+      )}
       {data.askUserPending.length > 0 && (
         <ul className="max-h-28 space-y-1 overflow-y-auto text-[10px] text-[var(--kp-text-2)]">
           {data.askUserPending.slice(0, 5).map((a) => (

@@ -11,6 +11,7 @@ export function SwarmAlertsBanner(props: {
   askUserSamples: Array<{ askId: string; sessionId: string; question: string }>;
   suspendedAgents: Array<{ id: string; name: string }>;
   highInboxAgents: Array<{ id: string; name: string; pending: number }>;
+  notifyChannels?: Array<{ channel: string; state: string; failures: number }>;
   needsAttention: boolean;
 }) {
   if (!props.needsAttention) return null;
@@ -33,6 +34,14 @@ export function SwarmAlertsBanner(props: {
         .slice(0, 2)
         .map((a) => `${a.name}(${a.pending})`)
         .join("、")}`,
+    );
+  }
+  const openNotify = (props.notifyChannels ?? []).filter(
+    (c) => c.state === "open" || c.state === "half-open",
+  );
+  if (openNotify.length > 0) {
+    bits.push(
+      `通知通道熔断：${openNotify.map((c) => `${c.channel}(${c.state})`).join("、")}`,
     );
   }
 
