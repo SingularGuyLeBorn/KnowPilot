@@ -11,6 +11,7 @@ import {
 import { getStreamHub } from "../../sessionStreamHub.js";
 import { getSwarmBus } from "../../swarmBus.js";
 import { getAgentRunLock } from "../../agentRunLock.js";
+import { isSessionRunningClaimed } from "../../sessionRunningSignal.js";
 import { provisionWorkspace } from "../../workspaceProvision.js";
 import { checkWorkspaceAgentAccess } from "../../swarmPermissionGuard.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "../../agentEvolution.js";
@@ -302,10 +303,14 @@ async function prepareAgentRun(
       sessionIdForCleanup = mainSession.id;
 
       // W-E busy 判定（写 ChatMessage 之前）。hub 缺失时跳过判定，idle 路径在起流前再报错（原语义）
+      // SWARM_MODE=redis 时再看跨实例 running 宣称（本进程 hub 看不到他机内存 runs）
       const hub = getStreamHub();
       let shouldQueue = false;
       if (hub) {
         shouldQueue = hub.isRunning(mainSession.id);
+        if (!shouldQueue) {
+          shouldQueue = await isSessionRunningClaimed(mainSession.id);
+        }
         if (!shouldQueue && !opts?.fromDrain) {
           const residual = (await ctx.services.sessionQueueItem?.listBySession(mainSession.id)) ?? [];
           shouldQueue = residual.length > 0;
