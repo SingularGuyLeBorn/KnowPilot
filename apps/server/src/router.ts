@@ -17,6 +17,7 @@ import {
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
   createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, ensureMainSessionSchema, openNewSessionSchema, compactSessionSchema,
+  setSessionGoalSchema, sessionGoalControlSchema, listSideRunsSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
@@ -533,6 +534,116 @@ const sessionRouter = router({
         kind: "subagent",
       }),
     ),
+  listSideRuns: publicProcedure
+    .meta({
+      description: "列出父会话下的旁路复盘会话（kind=skill_review），供 Chat 运行栏展示。",
+      aiReadable: true,
+    })
+    .input(listSideRunsSchema)
+    .query(async ({ ctx, input }) => {
+      const { listSkillReviewSideRuns } = await import("./infra/skillBackgroundReview.js");
+      return listSkillReviewSideRuns(ctx.services, input.parentSessionId, input.pageSize);
+    }),
+  setGoal: publicProcedure
+    .meta({ description: "设定会话 Goal 或 Deep Research，可选立刻起第一轮。", aiReadable: true })
+    .input(setSessionGoalSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { setSessionGoal, buildGoalKickoffMessage } = await import("./infra/goalLoop.js");
+      const goal = await setSessionGoal({
+        services: ctx.services,
+        config: ctx.config,
+        sessionId: input.sessionId,
+        text: input.text,
+        mode: input.mode,
+        maxTurns: input.maxTurns,
+        judgeModel: input.judgeModel,
+        execModel: input.execModel,
+      });
+      let streamStarted = false;
+      if (input.startNow) {
+        const hub = getStreamHub();
+        if (hub) {
+          const body = {
+            sessionId: input.sessionId,
+            message: buildGoalKickoffMessage(goal),
+            model: goal.execModel,
+            source: "system" as const,
+          };
+          const session = await ctx.services.session.getByIdLite(input.sessionId);
+          const fullBody = {
+            ...body,
+            agentId: session.agentId ?? undefined,
+            model: goal.execModel || session.model,
+          };
+          const invoke = createTrpcInvoker({
+            services: ctx.services,
+            config: ctx.config,
+            prisma: ctx.prisma,
+          });
+          streamStarted = await hub.startIfNotRunning(input.sessionId, fullBody, (emit, signal) =>
+            import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+              chatAgentStream(ctx.services, ctx.config, fullBody, invoke, emit, signal),
+            ),
+          );
+        }
+      }
+      return { goal, streamStarted };
+    }),
+  pauseGoal: publicProcedure
+    .meta({ description: "暂停会话 Goal 自动续跑。", aiReadable: true })
+    .input(sessionGoalControlSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { pauseSessionGoal } = await import("./infra/goalLoop.js");
+      const goal = await pauseSessionGoal(ctx.services, input.sessionId);
+      return { goal };
+    }),
+  resumeGoal: publicProcedure
+    .meta({ description: "恢复会话 Goal（重置 turnsUsed）。", aiReadable: true })
+    .input(sessionGoalControlSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { resumeSessionGoal, buildGoalContinueMessage } = await import("./infra/goalLoop.js");
+      const goal = await resumeSessionGoal(ctx.services, input.sessionId);
+      if (!goal) return { goal: null, streamStarted: false };
+      const hub = getStreamHub();
+      let streamStarted = false;
+      if (hub) {
+        const session = await ctx.services.session.getByIdLite(input.sessionId);
+        const message = buildGoalContinueMessage(goal, "Resumed by user.");
+        const body = {
+          sessionId: input.sessionId,
+          agentId: session.agentId ?? undefined,
+          message,
+          model: goal.execModel || session.model,
+          source: "system" as const,
+        };
+        const invoke = createTrpcInvoker({
+          services: ctx.services,
+          config: ctx.config,
+          prisma: ctx.prisma,
+        });
+        streamStarted = await hub.startIfNotRunning(input.sessionId, body, (emit, signal) =>
+          import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+            chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
+          ),
+        );
+      }
+      return { goal, streamStarted };
+    }),
+  clearGoal: publicProcedure
+    .meta({ description: "清除会话 Goal / Deep Research。", aiReadable: true })
+    .input(sessionGoalControlSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { clearSessionGoal } = await import("./infra/goalLoop.js");
+      await clearSessionGoal(ctx.services, input.sessionId);
+      return { ok: true as const };
+    }),
+  getGoal: publicProcedure
+    .meta({ description: "读取会话当前 Goal 状态。", aiReadable: true })
+    .input(sessionGoalControlSchema)
+    .query(async ({ input }) => {
+      const { readGoalStateRaw } = await import("./infra/goalLoop.js");
+      return { goal: await readGoalStateRaw(input.sessionId) };
+    }),
   update: publicProcedure.meta({ description: "更新会话标题或系统提示。", aiReadable: true }).input(updateSessionSchema).mutation(({ ctx, input }) => ctx.services.session.update(input)),
   compact: publicProcedure
     .meta({ description: "手动压缩会话上下文：生成摘要、写入 contextSummary 并落库边界消息。", aiReadable: true })

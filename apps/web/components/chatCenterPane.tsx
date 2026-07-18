@@ -30,6 +30,7 @@ import {
 } from "@/lib/chatQueueTypes";
 import { UserSendQueuePanel } from "@/components/chatQueue";
 import { ChatMessageList, type ChatMessageListProps } from "@/components/chatMessageList";
+import { ChatGoalBar } from "@/components/chatGoalBar";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
@@ -53,6 +54,9 @@ export interface ChatCenterPaneProps {
   isSubagentSession: boolean;
   parentSessionId: string | null;
   parentSessionTitle: string | undefined;
+  /** 空主会话才允许深度调研入口 */
+  allowDeepResearch: boolean;
+  showToast: (msg: string | null) => void;
   // 横幅群：后端离线 / session_rotate 跳转
   backendDown: boolean;
   rotateBanner: { newSessionId: string; newTitle: string } | null;
@@ -105,6 +109,8 @@ export function ChatCenterPane({
   isSubagentSession,
   parentSessionId,
   parentSessionTitle,
+  allowDeepResearch,
+  showToast,
   backendDown,
   rotateBanner,
   setRotateBanner,
@@ -262,6 +268,17 @@ export function ChatCenterPane({
         </div>
       )}
 
+      {/* Goal 进度 / 深度调研闸：子会话永不展示；Goal 入口走 /goal */}
+      {!isSubagentSession &&
+        (sessionDetail?.kind ?? "chat") === "chat" &&
+        !sessionDetail?.parentSessionId && (
+          <ChatGoalBar
+            sessionId={effectiveSessionId}
+            allowDeepResearch={allowDeepResearch}
+            onToast={showToast}
+          />
+        )}
+
       {(rotateBanner || (sessionDetail?.status === "archived" && sessionDetail.rotatedToSessionId)) && (
         <div
           data-testid="session-rotate-banner"
@@ -390,7 +407,6 @@ export function ChatCenterPane({
           asyncStats={asyncStats}
         />
         <ChatInputArea
-          key={effectiveSessionId ?? "new"}
           onSend={onSend}
           onStop={onStop}
           disabled={backendDown || sessionDetail?.status === "archived"}
@@ -418,6 +434,8 @@ export function ChatCenterPane({
                 : undefined
           }
           sessionId={effectiveSessionId}
+          isSubagentSession={isSubagentSession}
+          canStartDeepResearch={allowDeepResearch}
         />
       </div>
     </div>

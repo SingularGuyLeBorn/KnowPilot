@@ -1512,21 +1512,23 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
   }
 
   protected buildCreateData(input: CreateSessionInput): any {
-    const { parentSessionId, kind, taskDescription, status, ...rest } = input;
+    const { parentSessionId, kind, taskDescription, status, goalState, ...rest } = input;
     return {
       ...rest,
       ...(parentSessionId !== undefined ? { parentSessionId } : {}),
       ...(kind ? { kind } : {}),
       ...(taskDescription !== undefined ? { taskDescription } : {}),
       ...(status ? { status } : {}),
+      ...(goalState !== undefined ? { goalState: goalState ?? undefined } : {}),
     };
   }
   protected buildUpdateData(input: UpdateSessionInput): any {
-    const { id: _id, status, taskDescription, ...data } = input;
+    const { id: _id, status, taskDescription, goalState, ...data } = input;
     return {
       ...data,
       ...(status ? { status } : {}),
       ...(taskDescription !== undefined ? { taskDescription } : {}),
+      ...(goalState !== undefined ? { goalState: goalState === null ? null : goalState } : {}),
     };
   }
 

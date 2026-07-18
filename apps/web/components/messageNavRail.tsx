@@ -3,11 +3,10 @@
 /**
  * MessageNavRail — 右侧消息导航条（对标 DeepSeek）
  *
- * 消息区域右侧竖向排列短横杠，每条代表一次 assistant 回复。
- * hover 时横杠放大 + 显示消息内容预览气泡，点击滚动到对应消息。
+ * 横杠默认聚在竖直中线，条数增多时向两侧延展；当前可视回复用更深色标出。
  */
 
-import { memo, useState, useCallback, useRef } from "react";
+import { memo, useState, useCallback, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -20,17 +19,27 @@ export interface NavItem {
   index: number;
 }
 
-// R15：memo 化——流式时 Chat 每帧重渲染，navItems（memo）与 onScrollToIndex（useCallback）稳定，可跳过 NavRail 重渲染
 export const MessageNavRail = memo(function MessageNavRail({
   items,
+  activeIndex,
   onScrollToIndex,
 }: {
   items: NavItem[];
+  /** 当前视口对应的 nav 下标；未传则默认最后一条 */
+  activeIndex?: number | null;
   /** 虚拟列表模式下按索引滚动；未提供则回退到 DOM scrollIntoView */
   onScrollToIndex?: (index: number) => void;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
+  const activeBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  const resolvedActive =
+    activeIndex != null && activeIndex >= 0 && activeIndex < items.length
+      ? activeIndex
+      : items.length > 0
+        ? items.length - 1
+        : -1;
 
   const scrollToItem = useCallback(
     (item: NavItem) => {
@@ -38,7 +47,6 @@ export const MessageNavRail = memo(function MessageNavRail({
         onScrollToIndex(item.index);
         return;
       }
-      // 回退：非虚拟列表时用 DOM scrollIntoView
       const el = document.querySelector(`[data-nav-id="${CSS.escape(item.domId)}"]`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -47,43 +55,58 @@ export const MessageNavRail = memo(function MessageNavRail({
     [onScrollToIndex],
   );
 
+  // 当前项变化时，若栈过高则把当前横杠滚进可视区（不打乱居中布局）
+  useEffect(() => {
+    activeBtnRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [resolvedActive]);
+
   if (items.length === 0) return null;
 
   return (
     <div
       ref={railRef}
-      className="absolute right-1 top-4 bottom-4 z-10 flex w-5 flex-col items-center justify-start gap-0.5"
+      className="pointer-events-none absolute right-3 top-4 bottom-4 z-10 flex w-6 flex-col items-center justify-center"
       data-testid="message-nav-rail"
     >
-      {items.map((item, idx) => {
-        const isHovered = hoverIdx === idx;
-        return (
-          <div
-            key={item.id}
-            className="group relative flex h-full max-h-[40px] min-h-[6px] flex-1 cursor-pointer items-center"
-            onMouseEnter={() => setHoverIdx(idx)}
-            onMouseLeave={() => setHoverIdx(null)}
-            onClick={() => scrollToItem(item)}
-          >
-            {/* 横杠：hover 时放大 + 变色 */}
-            <div
-              className={cn(
-                "rounded-full transition-all duration-200",
-                isHovered
-                  ? "h-1 w-4 bg-[var(--kp-brand)]"
-                  : "h-0.5 w-2.5 bg-[var(--kp-divider)] hover:bg-[var(--kp-brand-light)]",
+      {/* 居中堆叠：少时聚中，多了向上下延展；过高时可滚 */}
+      <div className="pointer-events-auto flex max-h-full flex-col items-center justify-center gap-1.5 overflow-y-auto overscroll-contain py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {items.map((item, idx) => {
+          const isHovered = hoverIdx === idx;
+          const isActive = idx === resolvedActive;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              ref={isActive ? activeBtnRef : undefined}
+              className="group relative flex h-3 w-6 shrink-0 cursor-pointer items-center justify-center"
+              onMouseEnter={() => setHoverIdx(idx)}
+              onMouseLeave={() => setHoverIdx(null)}
+              onClick={() => scrollToItem(item)}
+              aria-label={`第 ${idx + 1} 条回复`}
+              aria-current={isActive ? "true" : undefined}
+            >
+              <span
+                className={cn(
+                  "rounded-full transition-all duration-200",
+                  isActive
+                    ? "h-1.5 w-4 bg-[var(--kp-text-1)]"
+                    : isHovered
+                      ? "h-1 w-3.5 bg-[var(--kp-brand-deep)]"
+                      : "h-[3px] w-2.5 bg-[var(--kp-text-3)]/55 hover:bg-[var(--kp-text-2)]",
+                )}
+              />
+              {isHovered && (
+                <div className="pointer-events-none absolute right-full top-1/2 z-20 mr-2 w-64 -translate-y-1/2 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-3 text-left text-xs leading-relaxed text-[var(--kp-text-2)] shadow-lg">
+                  <div className="line-clamp-4">{item.preview}</div>
+                  <div className="mt-1.5 text-[10px] text-[var(--kp-text-3)]">
+                    第 {idx + 1} 条回复{isActive ? " · 当前" : ""}
+                  </div>
+                </div>
               )}
-            />
-            {/* hover 预览气泡 */}
-            {isHovered && (
-              <div className="pointer-events-none absolute right-full mr-2 top-1/2 z-20 w-64 -translate-y-1/2 rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-3 text-xs leading-relaxed text-[var(--kp-text-2)] shadow-lg">
-                <div className="line-clamp-4">{item.preview}</div>
-                <div className="mt-1.5 text-[10px] text-[var(--kp-text-3)]">第 {idx + 1} 条回复</div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 });

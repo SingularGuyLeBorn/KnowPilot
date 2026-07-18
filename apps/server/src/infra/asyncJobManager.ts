@@ -383,6 +383,22 @@ export async function autoConsumeAsyncDelivery(options: {
       ? ("parent" as const)
       : ("user" as const);
 
+  // 投递时再读一次 Agent：优先 autoName（后台起名），避免角标冻住「子 Agent xxxx」占位名
+  const snapshotAgentId = input?.agentSnapshot?.id;
+  let resolvedSubagentName = input?.agentSnapshot?.name ?? taskLabel;
+  if (snapshotAgentId) {
+    try {
+      const agentRow = await prisma.agent.findUnique({
+        where: { id: snapshotAgentId },
+        select: { autoName: true, name: true },
+      });
+      const display = agentRow?.autoName?.trim() || agentRow?.name?.trim();
+      if (display) resolvedSubagentName = display;
+    } catch {
+      /* 读名失败仍用快照名 */
+    }
+  }
+
   const body = {
     sessionId,
     agentId: session.agentId as string,
@@ -395,7 +411,8 @@ export async function autoConsumeAsyncDelivery(options: {
       subagentResult: {
         jobId,
         subagentSessionId: input?.subagentSessionId,
-        subagentName: input?.agentSnapshot?.name ?? taskLabel,
+        subagentAgentId: snapshotAgentId,
+        subagentName: resolvedSubagentName,
         sourceType: input?.sourceType ?? "async_task_llm",
         taskLabel,
       },

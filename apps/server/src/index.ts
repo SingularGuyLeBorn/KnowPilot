@@ -239,6 +239,13 @@ const server = app.listen(PORT, () => {
     }
   }
 
+  // Goal 外环：hub run settled → 若有 pendingContinue 则起下一轮（显式事件，非定时器）
+  import("./infra/goalLoop.js")
+    .then(({ registerGoalLoopSettledHook }) => {
+      registerGoalLoopSettledHook(services, config);
+    })
+    .catch((err) => console.error("❌ [GoalLoop] 挂载 settled 钩子失败:", err));
+
   // listen 后再启后台任务；FTS 仅由 pnpm db:sync / sync:watch 重建
   triggerEngine.start().catch((err) => {
     console.error("❌ [TriggerEngine] 启动失败:", err);

@@ -1,15 +1,23 @@
 /**
  * 回合后 Skill 后台审查（对标 Hermes agent/background_review.py + turn_finalizer nudge）
  *
- * 主 SSE onDone 之后 fire-and-forget：不阻塞用户、不写用户会话气泡。
- * 审查 Agent 工具白名单：skills_list / skill_view / skill_manage。
+ * 主 SSE onDone 之后 fire-and-forget：不阻塞用户。
+ * 独立 skill_review 会话（parent=用户会话），工具白名单仅 skills_*；跑完 completed 可打开查看。
  */
 
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { StoredToolCall } from "./chatHistory.js";
+import { resolveAuxiliaryModel } from "./auxiliaryModel.js";
 
 const reviewLocks = new Set<string>();
+
+/** 复盘旁路仅允许的工具（带 native: 前缀，与 Agent.tools 约定一致） */
+export const SKILL_REVIEW_TOOLS = [
+  "native:skills_list",
+  "native:skill_view",
+  "native:skill_manage",
+] as const;
 
 export const SKILL_REVIEW_PROMPT = `Review the conversation tool trace above and update the skill library. Be ACTIVE — most complex sessions produce at least one skill update.
 
@@ -107,11 +115,29 @@ export function __resetSkillReviewLocksForTests(): void {
 async function runDefaultSkillReview(args: SkillReviewSpawnArgs, message: string): Promise<void> {
   const { chatAgent } = await import("./agentRuntime.js");
   const { createTrpcInvoker } = await import("./trpcInvoker.js");
-  // 独立审查会话：不污染用户主会话气泡
+
+  let mainModel = "";
+  try {
+    const agent = (await args.services.agent.getById(args.agentId)) as { model?: string };
+    mainModel = typeof agent?.model === "string" ? agent.model : "";
+  } catch {
+    mainModel = "";
+  }
+  const reviewModel = resolveAuxiliaryModel(args.config, {
+    configured: args.config.skills?.reviewModel ?? "auto",
+    mainModel: mainModel || "deepseek-chat",
+    preference: "strong_free",
+  });
+
   const title = `[skill-review] ${new Date().toISOString().slice(0, 16)}`;
   const created = await args.services.session.create({
     title,
     agentId: args.agentId,
+    model: reviewModel,
+    kind: "skill_review",
+    parentSessionId: args.sessionId,
+    status: "running",
+    taskDescription: "Skill background review",
   } as never);
   if (!created.success || !created.data) {
     throw new Error(created.error?.message ?? "无法创建 skill-review 会话");
@@ -122,12 +148,66 @@ async function runDefaultSkillReview(args: SkillReviewSpawnArgs, message: string
     await chatAgent(
       args.services,
       args.config,
-      { agentId: args.agentId, sessionId: reviewSessionId, message },
+      { agentId: args.agentId, sessionId: reviewSessionId, message, model: reviewModel },
       invoke,
+      { toolsOverride: [...SKILL_REVIEW_TOOLS] },
     );
-  } finally {
     await args.services.session
-      .update({ id: reviewSessionId, status: "archived" } as never)
+      .update({ id: reviewSessionId, status: "completed" } as never)
       .catch(() => {});
+  } catch (err) {
+    await args.services.session
+      .update({ id: reviewSessionId, status: "failed" } as never)
+      .catch(() => {});
+    throw err;
   }
+}
+
+/** 列出某父会话下的旁路复盘会话（供运行栏） */
+export async function listSkillReviewSideRuns(
+  services: ServiceContainer,
+  parentSessionId: string,
+  pageSize = 30,
+): Promise<{
+  items: Array<{
+    id: string;
+    title: string;
+    status: string;
+    model: string;
+    updatedAt: string;
+    kind: string;
+  }>;
+}> {
+  const res = await services.session.list({
+    page: 1,
+    pageSize,
+    parentSessionId,
+    kind: "skill_review",
+  });
+  return {
+    items: res.items.map((s) => {
+      const row = s as {
+        id: string;
+        title?: string;
+        status?: string;
+        model?: string;
+        updatedAt?: Date | string;
+        kind?: string;
+      };
+      const updatedAt =
+        typeof row.updatedAt === "string"
+          ? row.updatedAt
+          : row.updatedAt instanceof Date
+            ? row.updatedAt.toISOString()
+            : new Date().toISOString();
+      return {
+        id: row.id,
+        title: row.title ?? "[skill-review]",
+        status: row.status ?? "active",
+        model: row.model ?? "",
+        updatedAt,
+        kind: row.kind ?? "skill_review",
+      };
+    }),
+  };
 }

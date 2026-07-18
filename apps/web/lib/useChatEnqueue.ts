@@ -1,13 +1,10 @@
 "use client";
 
 /**
- * useChatEnqueue —— 用户消息入队编排簇（W13e 从 chat.tsx 拆出）。
+ * useChatEnqueue —— 用户消息入队本仓（W13e 从 chat.tsx 抽出）。
  *
- * enqueueMessage：/compact 斜杠指令改写、归档会话拦截、运行中 Steering/follow_up 注入、
- * 500ms 防重（lastEnqueueRef）、写 DB 拿 dbId 后入队 + INV-8 ① 显式 drain。
- * 纯结构拆分：useCallback 体与 deps 逐字未改，仅 sessionDetail?.status 解构重命名为
- * sessionStatus，并追加注入的稳定 ref（identity 恒定，行为等价）。本 hook 不新增任何
- * useEffect；drain 触发链唯一钩子仍在 chat.tsx【drain 订阅 · INV-8 ②④】。
+ * enqueueMessage：/goal|/research 斜杠指令、/compact 改写、归档拦截、运行中 Steering/follow_up 注入、
+ * 500ms 防重（lastEnqueueRef）、写 DB 得 dbId 回填 + INV-8 ④ 显式 drain。
  */
 
 import { useCallback, useRef, type RefObject } from "react";
@@ -21,6 +18,10 @@ export interface UseChatEnqueueParams {
   backendDown: boolean;
   effectiveSessionId: string | null;
   sessionStatus: string | undefined;
+  /** 子 Agent 会话禁用 Goal / 深度调研 */
+  isSubagentSession: boolean;
+  /** 是否允许启动深度调研（仅空会话 / 新会话） */
+  canStartDeepResearch: boolean;
   createSessionQueueItemMutation: ReturnType<typeof trpc.agent.createSessionQueueItem.useMutation>;
   submitInjectMutation: ReturnType<typeof trpc.agent.submitInject.useMutation>;
   isSessionRunOccupied: (sid: string | null) => boolean;
@@ -32,14 +33,20 @@ export function useChatEnqueue({
   backendDown,
   effectiveSessionId,
   sessionStatus,
+  isSubagentSession,
+  canStartDeepResearch,
   createSessionQueueItemMutation,
   submitInjectMutation,
   isSessionRunOccupied,
   showToast,
   consumeRef,
 }: UseChatEnqueueParams) {
-  // 防止极短时间重复入队（如发送按钮/快捷键连发）
   const lastEnqueueRef = useRef<{ text: string; at: number } | null>(null);
+  const setGoalMutation = trpc.session.setGoal.useMutation();
+  const pauseGoalMutation = trpc.session.pauseGoal.useMutation();
+  const resumeGoalMutation = trpc.session.resumeGoal.useMutation();
+  const clearGoalMutation = trpc.session.clearGoal.useMutation();
+  const utils = trpc.useUtils();
 
   const enqueueMessage = useCallback(
     (
@@ -51,7 +58,81 @@ export function useChatEnqueue({
       let messageText = text.trim();
       if ((!messageText && !attachments?.length) || backendDown) return;
 
-      // 斜杠指令：/compact → 作为普通用户消息交给 Agent，由 session_compact 工具执行
+      // 斜杠指令：/goal|/research|/deepresearch …
+      if (!attachments?.length) {
+        const goalMatch = messageText.match(/^\/(goal|research|deepresearch|deep-research)(?:\s+(.*))?$/i);
+        if (goalMatch) {
+          const cmd = goalMatch[1]!.toLowerCase();
+          const rest = (goalMatch[2] ?? "").trim();
+          const isResearch = cmd === "research" || cmd === "deepresearch" || cmd === "deep-research";
+
+          if (isSubagentSession) {
+            showToast("子 Agent 会话不支持 Goal / 深度调研");
+            return;
+          }
+          if (!effectiveSessionId) {
+            showToast(
+              isResearch
+                ? "请先打开主会话（或先发一条消息创建会话）再启动深度调研"
+                : "请先打开会话，然后输入 /goal 你的目标",
+            );
+            return;
+          }
+          if (isResearch && !canStartDeepResearch) {
+            showToast("深度调研只能在新会话发送第一条消息之前选择");
+            return;
+          }
+
+          void (async () => {
+            try {
+              if (!rest || /^status$/i.test(rest)) {
+                if (isResearch && !rest) {
+                  showToast("用法：/research 调研主题（仅新会话首条前）");
+                  return;
+                }
+                if (!rest) {
+                  showToast("用法：/goal 目标内容 · 也可用 /goal pause|resume|clear|status");
+                  return;
+                }
+                const g = await utils.session.getGoal.fetch({ sessionId: effectiveSessionId });
+                const goal = g.goal;
+                showToast(
+                  goal
+                    ? `${goal.mode === "deep_research" ? "调研" : "Goal"} ${goal.status} ${goal.turnsUsed}/${goal.maxTurns}：${goal.text.slice(0, 80)}`
+                    : "当前会话没有活跃目标",
+                );
+                return;
+              }
+              if (/^pause$/i.test(rest)) {
+                await pauseGoalMutation.mutateAsync({ sessionId: effectiveSessionId });
+                showToast("目标已暂停");
+                return;
+              }
+              if (/^resume$/i.test(rest)) {
+                await resumeGoalMutation.mutateAsync({ sessionId: effectiveSessionId });
+                showToast("目标已恢复");
+                return;
+              }
+              if (/^clear$/i.test(rest)) {
+                await clearGoalMutation.mutateAsync({ sessionId: effectiveSessionId });
+                showToast("目标已清除");
+                return;
+              }
+              await setGoalMutation.mutateAsync({
+                sessionId: effectiveSessionId,
+                text: rest,
+                mode: isResearch ? "deep_research" : "goal",
+                startNow: true,
+              });
+              showToast(isResearch ? "深度调研已启动" : "目标已设定并开始");
+            } catch (err) {
+              showToast(err instanceof Error ? err.message : "Goal 操作失败");
+            }
+          })();
+          return;
+        }
+      }
+
       if (/^\/compact\s*$/i.test(messageText) && !attachments?.length) {
         if (!effectiveSessionId) {
           showToast("请先选择或创建一个会话");
@@ -69,7 +150,6 @@ export function useChatEnqueue({
         return;
       }
 
-      // 运行中：默认 Steering；显式 follow_up 走停前续问（不改 phase，不 beginStream）
       if (effectiveSessionId && isSessionRunOccupied(effectiveSessionId)) {
         const kind = delivery === "follow_up" ? "follow_up" : "steer";
         if (!messageText) return;
@@ -82,8 +162,8 @@ export function useChatEnqueue({
             });
             showToast(
               kind === "steer"
-                ? "已加入纠偏，将在当前工具批结束后生效"
-                : "已加入后续提问，将在本轮结束后继续",
+                ? "已注入偏转，将在当前轮尽快生效"
+                : "已加入后续追问，将在本轮结束后处理",
             );
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -93,7 +173,6 @@ export function useChatEnqueue({
         return;
       }
 
-      // 500ms 内相同文本（含空附件）视为重复发送，直接丢弃，避免重复气泡。
       const now = Date.now();
       const last = lastEnqueueRef.current;
       const attachmentsKey = attachments?.map((a) => a.name).join("\n") ?? "";
@@ -111,8 +190,6 @@ export function useChatEnqueue({
         attachments,
       });
 
-      // 有真实 sessionId 时：必须先写 DB 拿到 dbId 再入队。
-      // 否则消费时无法删除 DB 项，刷新/水合会把同一条再送一遍。
       if (effectiveSessionId) {
         void (async () => {
           try {
@@ -141,15 +218,13 @@ export function useChatEnqueue({
               }
               return [...prev, { ...localItem, dbId }];
             });
-            // INV-8 ①：用户入队 → 显式 drain
             consumeRef.current(effectiveSessionId);
           } catch (err) {
-            console.warn("[enqueueMessage] 持久化失败，本会话仍入队（无 dbId）:", err);
+            console.warn("[enqueueMessage] 持久化失败，仅本地入队（无 dbId）:", err);
             sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
               if (prev.some((i) => i.id === localItem.id || i.text === localItem.text)) return prev;
               return [...prev, localItem];
             });
-            // INV-8 ①：用户入队 → 显式 drain
             consumeRef.current(effectiveSessionId);
           }
         })();
@@ -157,10 +232,25 @@ export function useChatEnqueue({
       }
 
       sessionComposeActions.enqueueUserQueueItem(sid, localItem);
-      // INV-8 ①：用户入队 → 显式 drain
       consumeRef.current(sid);
     },
-    [backendDown, effectiveSessionId, createSessionQueueItemMutation, submitInjectMutation, sessionStatus, isSessionRunOccupied, showToast, consumeRef],
+    [
+      backendDown,
+      effectiveSessionId,
+      isSubagentSession,
+      canStartDeepResearch,
+      createSessionQueueItemMutation,
+      submitInjectMutation,
+      isSessionRunOccupied,
+      showToast,
+      consumeRef,
+      sessionStatus,
+      setGoalMutation,
+      pauseGoalMutation,
+      resumeGoalMutation,
+      clearGoalMutation,
+      utils.session.getGoal,
+    ],
   );
 
   return { enqueueMessage };

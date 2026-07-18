@@ -58,7 +58,6 @@ vi.mock("@/components/workspaceSelect", () => ({
   },
 }));
 vi.mock("@/components/workspaceTree", () => ({ WorkspaceTree: () => null }));
-vi.mock("@/components/asyncTaskPanel", () => ({ AsyncTaskPanel: () => null }));
 vi.mock("@/components/chatQueue", () => ({ RuntimeStatusPanel: () => null }));
 vi.mock("@/components/chatTimelineSteps", () => ({ ThinkingTimeline: () => null }));
 vi.mock("@/components/chatSessionListItem", () => ({ SessionListItem: () => null }));
@@ -103,7 +102,6 @@ const stableProps: ChatSidebarProps = {
   setToast: noop,
   refetchSession: noop,
   cancelAsyncJobMutate: noop,
-  retryAsyncJobMutate: noop,
   pinAsyncJobMutate: noop,
   runtimeGroupTab: "async",
   setRuntimeGroupTab: noop,

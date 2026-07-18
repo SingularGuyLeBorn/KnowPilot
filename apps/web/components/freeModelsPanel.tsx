@@ -315,6 +315,8 @@ export function FreeModelsPanel() {
                 const long = text.length > 140;
                 const open = !!expandedDesc[m.id];
                 const multi = isMultimodal(m.modality);
+                const globalIndex = (orPageSafe - 1) * OPENROUTER_PAGE_SIZE + i + 1;
+                const publisher = m.id.includes("/") ? m.id.slice(0, m.id.indexOf("/")) : "—";
                 return (
                   <li
                     key={m.id}
@@ -327,6 +329,10 @@ export function FreeModelsPanel() {
                     <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-[11px] text-[var(--kp-text-3)]">
+                            #{globalIndex}
+                          </span>
+                          <StatusPill tone="brand">{publisher}</StatusPill>
                           <h3 className="text-sm font-semibold leading-snug text-[var(--kp-text-1)]">
                             {m.name}
                           </h3>

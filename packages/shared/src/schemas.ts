@@ -279,6 +279,36 @@ export const listSkillsSchema = z.object({
 
 export const sessionStatusSchema = z.enum(["active", "queued", "running", "paused", "completed", "failed", "archived"]);
 
+export const sessionKindSchema = z.enum(["chat", "subagent", "heartbeat", "skill_review"]);
+
+export const sessionGoalModeSchema = z.enum(["goal", "deep_research"]);
+export const sessionGoalStatusSchema = z.enum(["active", "paused", "done", "exhausted"]);
+
+export const sessionGoalStateSchema = z.object({
+  mode: sessionGoalModeSchema,
+  text: z.string().min(1).max(8000),
+  status: sessionGoalStatusSchema,
+  turnsUsed: z.number().int().min(0).default(0),
+  maxTurns: z.number().int().min(1).max(200),
+  judgeModel: z.string().default("auto"),
+  execModel: z.string().optional(),
+  lastVerdict: z
+    .object({
+      done: z.boolean(),
+      reason: z.string(),
+    })
+    .optional(),
+  /** 本轮 done 后待 settled 钩子续跑（架构事件，非定时器） */
+  pendingContinue: z
+    .object({
+      reason: z.string(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export type SessionGoalState = z.infer<typeof sessionGoalStateSchema>;
+
 export const createSessionSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
   model: z.string().default(DEFAULT_LLM_MODEL),
@@ -286,10 +316,11 @@ export const createSessionSchema = z.object({
   agentId: z.string().cuid().optional(),
   // Swarm/Subagent
   parentSessionId: z.string().cuid().optional(),
-  kind: z.enum(["chat", "subagent", "heartbeat"]).optional(),
+  kind: sessionKindSchema.optional(),
   taskDescription: z.string().max(2000).optional(),
   status: sessionStatusSchema.optional(),
   isMainSession: z.boolean().optional(), // 管理 Agent 的主 session
+  goalState: sessionGoalStateSchema.nullable().optional(),
 });
 
 export const updateSessionSchema = z.object({
@@ -302,12 +333,33 @@ export const updateSessionSchema = z.object({
   // Swarm/Subagent
   status: sessionStatusSchema.optional(),
   taskDescription: z.string().max(2000).optional(),
-  kind: z.enum(["chat", "subagent", "heartbeat"]).optional(),
+  kind: sessionKindSchema.optional(),
   parentSessionId: z.string().cuid().nullable().optional(),
   // Auto-Compact 持久化摘要
   contextSummary: z.string().max(20000).nullable().optional(),
   contextCompactedAt: z.coerce.date().nullable().optional(),
   rotatedToSessionId: z.string().cuid().nullable().optional(),
+  goalState: sessionGoalStateSchema.nullable().optional(),
+});
+
+export const setSessionGoalSchema = z.object({
+  sessionId: z.string().cuid(),
+  text: z.string().min(1).max(8000),
+  mode: sessionGoalModeSchema.default("goal"),
+  maxTurns: z.number().int().min(1).max(200).optional(),
+  judgeModel: z.string().optional(),
+  execModel: z.string().optional(),
+  /** 设置后是否立刻以 goal 文本起第一轮（默认 true） */
+  startNow: z.boolean().default(true),
+});
+
+export const sessionGoalControlSchema = z.object({
+  sessionId: z.string().cuid(),
+});
+
+export const listSideRunsSchema = z.object({
+  parentSessionId: z.string().cuid(),
+  pageSize: z.number().int().min(1).max(100).default(30),
 });
 
 export const compactSessionSchema = z.object({
@@ -322,7 +374,7 @@ export const listSessionsSchema = z.object({
   agentIds: z.array(z.string()).optional(),
   // Swarm/Subagent 过滤
   parentSessionId: z.string().cuid().optional(),
-  kind: z.enum(["chat", "subagent", "heartbeat"]).optional(),
+  kind: sessionKindSchema.optional(),
   status: sessionStatusSchema.optional(),
 });
 
@@ -1085,6 +1137,9 @@ export type ResumeSessionInput = z.infer<typeof resumeSessionSchema>;
 export type EnsureMainSessionInput = z.infer<typeof ensureMainSessionSchema>;
 export type OpenNewSessionInput = z.infer<typeof openNewSessionSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
+export type SetSessionGoalInput = z.infer<typeof setSessionGoalSchema>;
+export type SessionGoalControlInput = z.infer<typeof sessionGoalControlSchema>;
+export type ListSideRunsInput = z.infer<typeof listSideRunsSchema>;
 
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;

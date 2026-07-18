@@ -31,9 +31,19 @@ const ReflectionYamlSchema = z.object({
 /** config.yaml skills 段：Hermes 闭环 nudge / curator */
 const SkillsYamlSchema = z.object({
   nudgeInterval: z.coerce.number().int().min(0).default(10),
+  /** background skill review 用模型；auto = OpenRouter 最强 :free（见 auxiliaryModel） */
+  reviewModel: z.string().default("auto"),
   staleAfterDays: z.coerce.number().int().min(1).default(30),
   archiveAfterDays: z.coerce.number().int().min(1).default(90),
   curatorIntervalHours: z.coerce.number().int().min(1).default(168),
+});
+
+/** config.yaml goal 段：Chat Goal / Deep Research 外环 */
+const GoalYamlSchema = z.object({
+  maxTurns: z.coerce.number().int().min(1).max(200).default(20),
+  deepResearchMaxTurns: z.coerce.number().int().min(1).max(200).default(30),
+  /** 裁判模型；auto = OpenRouter strong_free */
+  judgeModel: z.string().default("auto"),
 });
 
 /* ─── 类型定义 ─── */
@@ -204,12 +214,23 @@ export interface AppConfig {
   skills: {
     /** 本轮 tool 调用次数 ≥ 此值则触发 background skill review；0 = 关闭 */
     nudgeInterval: number;
+    /**
+     * 审查旁路模型（对标 Hermes auxiliary.background_review）。
+     * auto = OpenRouter 目录里按 strong_free 打分挑最强 :free；也可钉死具体 id。
+     */
+    reviewModel: string;
     /** curator：闲置超过 N 天标 stale */
     staleAfterDays: number;
     /** curator：闲置超过 N 天归档（非硬删） */
     archiveAfterDays: number;
     /** curator 最小间隔小时 */
     curatorIntervalHours: number;
+  };
+  /** Chat Goal / Deep Research 外环 */
+  goal: {
+    maxTurns: number;
+    deepResearchMaxTurns: number;
+    judgeModel: string;
   };
 }
 
@@ -404,6 +425,8 @@ export function createAppConfig(): AppConfig {
     : ReflectionYamlSchema.parse({});
   const skillsYamlParsed = SkillsYamlSchema.safeParse(yamlConfig.skills ?? {});
   const skillsYaml = skillsYamlParsed.success ? skillsYamlParsed.data : SkillsYamlSchema.parse({});
+  const goalYamlParsed = GoalYamlSchema.safeParse(yamlConfig.goal ?? {});
+  const goalYaml = goalYamlParsed.success ? goalYamlParsed.data : GoalYamlSchema.parse({});
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -609,6 +632,7 @@ export function createAppConfig(): AppConfig {
     },
     reflection: reflectionYaml,
     skills: skillsYaml,
+    goal: goalYaml,
   };
 
   for (const dir of Object.values(config.contentPaths)) {

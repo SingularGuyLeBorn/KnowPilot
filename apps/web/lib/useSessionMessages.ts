@@ -327,10 +327,51 @@ export type UseSessionMessagesResult = {
   hydrateFromServer: () => Promise<void>;
 };
 
+/** 进行中的预取/水合，按 session 去重 */
+const inflightHydrate = new Map<string, Promise<void>>();
+
+type ListForChatPage = {
+  items: unknown[];
+  nextCursor?: string | null;
+};
+
+async function fetchAndHydrateSession(
+  sessionId: string,
+  fetchPage: (opts: { sessionId: string; limit: number }) => Promise<ListForChatPage>,
+): Promise<{ nextCursor?: string | null }> {
+  const existing = inflightHydrate.get(sessionId);
+  if (existing) {
+    await existing;
+    return {};
+  }
+  const store = getStore();
+  let nextCursor: string | null | undefined;
+  const p = (async () => {
+    const page = await fetchPage({ sessionId, limit: 50 });
+    store.hydrateSessionMessages(sessionId, page.items as ChatMessage[]);
+    hydratedSessionsGlobal.add(sessionId);
+    nextCursor = page.nextCursor;
+  })();
+  inflightHydrate.set(
+    sessionId,
+    p.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  try {
+    await p;
+    return { nextCursor };
+  } finally {
+    inflightHydrate.delete(sessionId);
+  }
+}
+
 /**
  * 订阅某会话的消息列表。
  * 返回语义化字段，禁止伪造 messagesInfinite 外形对象。
  */
+
 export function useSessionMessages(sessionId: string | null | undefined): UseSessionMessagesResult {
   const store = getStore();
   const sessionKey = sessionId ?? "";
@@ -339,8 +380,15 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
   useEffect(() => {
     utilsRef.current = utils;
   }, [utils]);
-  const [isMessagesHydrated, setIsMessagesHydrated] = useState(() =>
-    !!sessionId && (hydratedSessionsGlobal.has(sessionId) || store.getMessages(sessionId).length > 0),
+
+  /**
+   * 仅记录「已对账完成」的 sessionId。
+   * 切会话时绝不能沿用上一会话的 boolean——否则会把 hold 上一屏冲成空白。
+   */
+  const [hydratedForSessionId, setHydratedForSessionId] = useState<string | null>(() =>
+    sessionId && (hydratedSessionsGlobal.has(sessionId) || store.getMessages(sessionId).length > 0)
+      ? sessionId
+      : null,
   );
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
@@ -352,52 +400,54 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
     () => EMPTY_ARRAY,
   );
 
+  // 同步按「当前 session」派生：缓存命中 / 全局已水合 / 本 session 对账完成
+  const isMessagesHydrated =
+    !!sessionId &&
+    (hydratedSessionsGlobal.has(sessionId) ||
+      messages.length > 0 ||
+      hydratedForSessionId === sessionId);
+
   useEffect(() => {
     if (!sessionId) {
-      // 切走 / 清空 session 时重置 hydration 标记，属外部状态同步非派生数据
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsMessagesHydrated(false);
       setHasOlderMessages(false);
       return;
     }
     store.watchSession(sessionId);
 
-    // 本地已有缓存或曾 hydrate 成功 → 立刻出屏，后台对账（HMR/重挂载不闪 spinner）
     const cached = store.getMessages(sessionId);
     const already = hydratedSessionsGlobal.has(sessionId) || cached.length > 0;
     if (already) {
-      setIsMessagesHydrated(true);
+      setHydratedForSessionId(sessionId);
       void (async () => {
         try {
-          const res = await utilsRef.current.message.listForChat.fetch({ sessionId, limit: 50 });
-          store.hydrateSessionMessages(sessionId, res.items as ChatMessage[]);
-          cursorRef.current = res.nextCursor;
-          setHasOlderMessages(!!res.nextCursor);
-          hydratedSessionsGlobal.add(sessionId);
+          const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
+            utilsRef.current.message.listForChat.fetch(opts),
+          );
+          if (nextCursor !== undefined) {
+            cursorRef.current = nextCursor ?? undefined;
+            setHasOlderMessages(!!nextCursor);
+          }
         } catch {
-          /* 对账失败不阻塞；hydrate 流程结束（含失败）同样发出 INV-8 ④ drain 请求 */
           streamLifecycleActions.hydrateDone(sessionId);
         }
       })();
       return;
     }
 
-    setIsMessagesHydrated(false);
+    // 冷会话：保持 hydratedForSessionId !== sessionId，直到 fetch 完成
     let cancelled = false;
-
     void (async () => {
       try {
-        const res = await utilsRef.current.message.listForChat.fetch({ sessionId, limit: 50 });
+        const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
+          utilsRef.current.message.listForChat.fetch(opts),
+        );
         if (cancelled) return;
-        store.hydrateSessionMessages(sessionId, res.items as ChatMessage[]);
-        hydratedSessionsGlobal.add(sessionId);
-        cursorRef.current = res.nextCursor;
-        setHasOlderMessages(!!res.nextCursor);
-        setIsMessagesHydrated(true);
+        cursorRef.current = nextCursor ?? undefined;
+        setHasOlderMessages(!!nextCursor);
+        setHydratedForSessionId(sessionId);
       } catch (err) {
         console.warn(`[useSessionMessages] hydrate ${sessionId} 失败:`, err);
-        if (!cancelled) setIsMessagesHydrated(true);
-        // hydrate 流程结束（含失败）同样发出 INV-8 ④ drain 请求
+        if (!cancelled) setHydratedForSessionId(sessionId);
         streamLifecycleActions.hydrateDone(sessionId);
       }
     })();
@@ -434,13 +484,13 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
 
   const hydrateFromServer = useCallback(async () => {
     if (!sessionId) return;
-    const res = await utilsRef.current.message.listForChat.fetch({ sessionId, limit: 50 });
-    store.hydrateSessionMessages(sessionId, res.items as ChatMessage[]);
-    hydratedSessionsGlobal.add(sessionId);
-    cursorRef.current = res.nextCursor;
-    setHasOlderMessages(!!res.nextCursor);
-    setIsMessagesHydrated(true);
-  }, [sessionId, store]);
+    const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
+      utilsRef.current.message.listForChat.fetch(opts),
+    );
+    cursorRef.current = nextCursor ?? undefined;
+    setHasOlderMessages(!!nextCursor);
+    setHydratedForSessionId(sessionId);
+  }, [sessionId]);
 
   return {
     messages,
@@ -467,6 +517,17 @@ export const sessionMessagesStore = {
     getStore().onMessageUpserted(sessionId, cb),
   hydrateSessionMessages: (sessionId: string, messages: ChatMessage[]) =>
     getStore().hydrateSessionMessages(sessionId, messages),
+  /** 悬停/即将切换时预热 MessageStore，切过去首帧即可出屏 */
+  prefetchSessionMessages: (
+    sessionId: string,
+    fetchPage: (opts: { sessionId: string; limit: number }) => Promise<ListForChatPage>,
+  ) => {
+    if (!sessionId) return Promise.resolve();
+    if (hydratedSessionsGlobal.has(sessionId) || getStore().getMessages(sessionId).length > 0) {
+      return Promise.resolve();
+    }
+    return fetchAndHydrateSession(sessionId, fetchPage).then(() => undefined);
+  },
   upsertAssistantFromDone: (
     sessionId: string,
     data: {

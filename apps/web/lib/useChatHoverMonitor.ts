@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useSessionHoverPreview } from "@/lib/hooks";
+import { sessionMessagesStore } from "@/lib/useSessionMessages";
 
 export function useChatHoverMonitor(opts: { effectiveSessionId: string | null }) {
   const { effectiveSessionId } = opts;
@@ -34,14 +35,16 @@ export function useChatHoverMonitor(opts: { effectiveSessionId: string | null })
     };
   }, []);
 
-  // 悬停会话时预加载消息并显示右上角监控小窗口
+  // 悬停即预热 MessageStore（不依赖预览开关）；预览窗另开
   const handleSessionHover = useCallback(
     (id: string) => {
-      if (!sessionHoverPreviewEnabled) return;
       if (!id || id === effectiveSessionId) return;
+      void sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
+        utils.message.listForChat.fetch(opts),
+      );
+      if (!sessionHoverPreviewEnabled) return;
       if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
       setHoverMonitorSessionId(id);
-      void utils.message.listForChat.prefetchInfinite({ sessionId: id, limit: 8 });
     },
     [utils, effectiveSessionId, sessionHoverPreviewEnabled],
   );

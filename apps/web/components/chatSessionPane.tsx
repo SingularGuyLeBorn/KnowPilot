@@ -134,6 +134,15 @@ export function ChatSessionPane({
   const [editDraft, setEditDraft] = useState("");
   const error = viewError ?? streamError;
 
+  // pane 稳定挂载后，切会话清掉本会话专属 UI 态（不再靠 remount 重置）
+  useEffect(() => {
+    setSelectedSkill(null);
+    setEditingUserId(null);
+    setEditDraft("");
+    setViewError(null);
+    setCopiedId(null);
+  }, [sessionId]);
+
   const { data: sessionDetail } = trpc.session.getById.useQuery(
     { id: sessionId! },
     { enabled: !!sessionId },
@@ -250,10 +259,22 @@ export function ChatSessionPane({
     [],
   );
 
+  const canStartDeepResearch =
+    !!sessionId &&
+    !isSubagentSession &&
+    isMessagesHydrated &&
+    messages.every((m) => {
+      if (m.role !== "user") return true;
+      const src = (m as { source?: string | null }).source ?? "user";
+      return src !== "user";
+    });
+
   const { enqueueMessage } = useChatEnqueue({
     backendDown,
     effectiveSessionId: sessionId,
     sessionStatus: sessionDetail?.status,
+    isSubagentSession: !!isSubagentSession,
+    canStartDeepResearch,
     createSessionQueueItemMutation,
     submitInjectMutation,
     isSessionRunOccupied,
@@ -469,6 +490,8 @@ export function ChatSessionPane({
         isSubagentSession={!!isSubagentSession}
         parentSessionId={parentSessionId}
         parentSessionTitle={parentSession ? sessionLabel(parentSession) : undefined}
+        allowDeepResearch={canStartDeepResearch}
+        showToast={showToast}
         backendDown={backendDown}
         rotateBanner={isFocused ? rotateBanner : null}
         setRotateBanner={setRotateBanner}

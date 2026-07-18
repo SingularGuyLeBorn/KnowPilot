@@ -6,6 +6,8 @@ import {
   maybeSpawnSkillBackgroundReview,
   shouldNudgeSkillReview,
   __resetSkillReviewLocksForTests,
+  SKILL_REVIEW_TOOLS,
+  listSkillReviewSideRuns,
 } from "../infra/skillBackgroundReview.js";
 import {
   archiveSkillPackage,
@@ -165,7 +167,9 @@ kind: procedural
     ])).toBe(1);
 
     const runReview = vi.fn(async () => ({}));
-    const config = createTestConfig(root, { skills: { nudgeInterval: 2, staleAfterDays: 30, archiveAfterDays: 90, curatorIntervalHours: 1 } });
+    const config = createTestConfig(root, {
+      skills: { nudgeInterval: 2, reviewModel: "auto", staleAfterDays: 30, archiveAfterDays: 90, curatorIntervalHours: 1 },
+    });
     const spawned = maybeSpawnSkillBackgroundReview({
       config,
       services: {} as never,
@@ -182,7 +186,9 @@ kind: procedural
     expect(runReview).toHaveBeenCalledOnce();
 
     const notSpawned = maybeSpawnSkillBackgroundReview({
-      config: createTestConfig(root, { skills: { nudgeInterval: 10, staleAfterDays: 30, archiveAfterDays: 90, curatorIntervalHours: 1 } }),
+      config: createTestConfig(root, {
+        skills: { nudgeInterval: 10, reviewModel: "auto", staleAfterDays: 30, archiveAfterDays: 90, curatorIntervalHours: 1 },
+      }),
       services: {} as never,
       agentId: "a1",
       sessionId: "s2",
@@ -190,6 +196,38 @@ kind: procedural
       runReview,
     });
     expect(notSpawned).toBe(false);
+
+    expect(SKILL_REVIEW_TOOLS).toEqual([
+      "native:skills_list",
+      "native:skill_view",
+      "native:skill_manage",
+    ]);
+    const side = await listSkillReviewSideRuns(
+      {
+        session: {
+          list: vi.fn(async () => ({
+            items: [
+              {
+                id: "sr1",
+                title: "[skill-review] x",
+                status: "completed",
+                model: "x:free",
+                updatedAt: new Date().toISOString(),
+                kind: "skill_review",
+              },
+            ],
+            total: 1,
+            page: 1,
+            pageSize: 30,
+            totalPages: 1,
+          })),
+        },
+      } as never,
+      "parent-1",
+    );
+    expect(side.items).toHaveLength(1);
+    expect(side.items[0]!.kind).toBe("skill_review");
+    expect(side.items[0]!.status).toBe("completed");
   });
 
   it("curator 归档闲置 agent-created skill（非硬删）", async () => {
@@ -215,7 +253,7 @@ kind: procedural
       }),
     );
     const config = createTestConfig(root, {
-      skills: { nudgeInterval: 10, staleAfterDays: 30, archiveAfterDays: 90, curatorIntervalHours: 1 },
+      skills: { nudgeInterval: 10, reviewModel: "auto", staleAfterDays: 30, archiveAfterDays: 90, curatorIntervalHours: 1 },
     });
     const skill = makeSkillEntity({
       id: "sk-old",

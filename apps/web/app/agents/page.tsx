@@ -44,6 +44,7 @@ import { AssistantDriftBanner } from "@/components/assistantDriftBanner";
 import { AgentLoopContractPanel } from "@/components/agentLoopContractPanel";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
+import { describeCron, describeCronOption } from "@/lib/cronDescribe";
 
 type AgentForm = {
   name: string;
@@ -71,7 +72,7 @@ const HEARTBEAT_CRON_PRESETS = [
 
 function formatHeartbeatCron(cron: string | undefined | null): string {
   if (!cron) return "未设置";
-  return HEARTBEAT_CRON_PRESETS.find((p) => p.value === cron)?.label ?? cron;
+  return HEARTBEAT_CRON_PRESETS.find((p) => p.value === cron)?.label ?? describeCron(cron);
 }
 
 function formatHeartbeatLastRun(iso: string | null | undefined): string {
@@ -606,25 +607,45 @@ export default function AgentsPage() {
             </div>
             {/* 心跳配置 */}
             <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-4">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <HeartPulse className="h-4 w-4 text-[var(--kp-brand-deep)]" />
                   <span className="text-xs font-medium text-[var(--kp-text-1)]">心跳（定时自主运行）</span>
+                  <span
+                    className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                      form.heartbeatEnabled
+                        ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                        : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+                    )}
+                  >
+                    {form.heartbeatEnabled ? "已开启" : "已关闭"}
+                  </span>
                 </div>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={form.heartbeatEnabled}
+                  aria-label={form.heartbeatEnabled ? "关闭心跳" : "开启心跳"}
                   onClick={() => setForm({ ...form, heartbeatEnabled: !form.heartbeatEnabled })}
+                  onKeyDown={(e) => {
+                    if (e.key === " " || e.key === "Enter") {
+                      e.preventDefault();
+                      setForm({ ...form, heartbeatEnabled: !form.heartbeatEnabled });
+                    }
+                  }}
                   className={cn(
-                    "relative h-5 w-9 rounded-full transition-colors",
-                    form.heartbeatEnabled ? "bg-[var(--kp-brand-deep)]" : "bg-[var(--kp-bg-mute)]",
+                    "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-2",
+                    form.heartbeatEnabled
+                      ? "bg-emerald-600"
+                      : "bg-[var(--kp-bg-mute)] ring-1 ring-inset ring-[var(--kp-divider)]",
                   )}
                 >
                   <span
                     className={cn(
-                      "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform",
-                      form.heartbeatEnabled ? "translate-x-4" : "translate-x-0.5",
+                      "pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200",
+                      form.heartbeatEnabled && "translate-x-5",
                     )}
                   />
                 </button>
@@ -640,7 +661,7 @@ export default function AgentsPage() {
                         ...HEARTBEAT_CRON_PRESETS,
                         ...(HEARTBEAT_CRON_PRESETS.some((p) => p.value === form.heartbeatCron)
                           ? []
-                          : [{ value: "custom", label: `自定义（${form.heartbeatCron}）` }]),
+                          : [{ value: "custom", label: describeCronOption(form.heartbeatCron) }]),
                       ]}
                       className="w-full"
                       aria-label="心跳频率"
@@ -653,6 +674,10 @@ export default function AgentsPage() {
                     />
                     <p className="mt-1 text-[10px] text-[var(--kp-text-3)]">
                       当前：{formatHeartbeatCron(form.heartbeatCron)}
+                      {HEARTBEAT_CRON_PRESETS.every((p) => p.value !== form.heartbeatCron) &&
+                        formatHeartbeatCron(form.heartbeatCron) !== form.heartbeatCron && (
+                          <span className="ml-1 font-mono opacity-70">（{form.heartbeatCron}）</span>
+                        )}
                     </p>
                   </div>
                   <div>

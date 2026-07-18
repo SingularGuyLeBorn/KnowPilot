@@ -769,6 +769,20 @@ export async function chatAgentStream(
       )
       .catch(() => { /* 经验积累失败不阻塞 */ });
 
+    // Goal 外环：回合后裁判；CONTINUE 写 pendingContinue，由 onHubRunSettled 起下一轮
+    try {
+      const { evaluateGoalAfterTurn } = await import("./goalLoop.js");
+      await evaluateGoalAfterTurn({
+        services,
+        config: effectiveConfig,
+        sessionId: sessionId!,
+        lastAssistantText: result.content ?? "",
+        mainModel: result.model || effectiveModel,
+      });
+    } catch {
+      /* goal 裁判失败不阻塞 done */
+    }
+
     // Hermes：回合后 skill background review（达 nudge 阈值才调度；不阻塞 done）
     try {
       const { maybeSpawnSkillBackgroundReview } = await import("./skillBackgroundReview.js");

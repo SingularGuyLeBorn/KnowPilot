@@ -15,6 +15,18 @@ export function createTempProjectDir(): string {
 }
 
 export function createTestConfig(projectRoot: string, overrides?: Partial<AppConfig>): AppConfig {
+  const skillsDefaults = {
+    nudgeInterval: 10,
+    reviewModel: "auto",
+    staleAfterDays: 30,
+    archiveAfterDays: 90,
+    curatorIntervalHours: 168,
+  };
+  const goalDefaults = {
+    maxTurns: 20,
+    deepResearchMaxTurns: 30,
+    judgeModel: "auto",
+  };
   return {
     port: 3010,
     projectRoot,
@@ -108,13 +120,16 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       loopContract: { maxStaleRounds: 3, maxEvidence: 50 },
     },
     reflection: { enabled: false, maxRounds: 1, criticModel: "" },
-    skills: {
-      nudgeInterval: 10,
-      staleAfterDays: 30,
-      archiveAfterDays: 90,
-      curatorIntervalHours: 168,
-    },
     ...overrides,
+    // 浅合并会整段覆盖 skills/goal，这里补回默认字段
+    skills: {
+      ...skillsDefaults,
+      ...(overrides?.skills ?? {}),
+    },
+    goal: {
+      ...goalDefaults,
+      ...(overrides?.goal ?? {}),
+    },
   };
 }
 

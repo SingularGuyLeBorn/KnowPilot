@@ -12,7 +12,7 @@
  * 回调全部 useCallback 稳定。
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Ban, Bot, Check, Loader2, X } from "lucide-react";
@@ -31,6 +31,7 @@ import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import { MessageActions, MessageSourceLabel, MessageVersions } from "@/components/chatMessageBits";
 import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
 import { type OptimisticUserBubble } from "@/lib/useSessionComposeState";
+import { registerDeliveryLocateHandler } from "@/lib/deliveryLocate";
 
 export interface ChatMessageListProps {
   messageGroups: MessageGroup[];
@@ -118,6 +119,14 @@ export const ChatMessageList = memo(function ChatMessageList({
 
   // 虚拟列表句柄：用于导航条按索引滚动 + 结构变化时强制滚到底部
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  /** 运行栏定位投递气泡时短暂高亮 */
+  const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
+  /** 右侧导航：当前视口对应的回复横杠下标 */
+  const [navActiveIdx, setNavActiveIdx] = useState<number | null>(null);
+  useEffect(() => {
+    setNavActiveIdx(null);
+  }, [effectiveSessionId]);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 右侧导航条：每条 assistant 回复一个横杠，hover 放大 + 预览，点击滚动定位
   const navItems = useMemo<NavItem[]>(() => {
@@ -138,12 +147,7 @@ export const ChatMessageList = memo(function ChatMessageList({
       .filter((x): x is NavItem => x !== null);
   }, [messageGroups]);
 
-  useEffect(() => {
-    // 仅在会话结构变化时滚动到底部；token 逐字更新由 Virtuoso followOutput 处理（避免视觉抖动）
-    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
-  }, [messageGroups.length, optimistic.length, isStreaming]);
-
-  const hasMessages = messageGroups.length > 0 || optimistic.length > 0 || isStreaming;
+  // 流式续写交给 followOutput；切会话落底见下方 useLayoutEffect（禁止 Virtuoso key remount）。
   const showLiveStream = isStreaming || liveTimeline.length > 0 || !!streamingContent;
   const lastGroupIndex = messageGroups.length - 1;
 
@@ -251,6 +255,7 @@ export const ChatMessageList = memo(function ChatMessageList({
     const msgToolResults = (group.userMessage as { toolResults?: unknown }).toolResults;
     const subResult = (msgToolResults as {
       subagentResult?: {
+        jobId?: string;
         subagentName?: string;
         sourceType?: string;
         taskLabel?: string;
@@ -266,6 +271,7 @@ export const ChatMessageList = memo(function ChatMessageList({
       isSubagentSession && (msgSource === "super" || msgSource === "manager");
     // 异步结果投递：右侧气泡 + async sleep / async task 角标
     const isAsyncResultDelivery = msgSource === "sub" && !!subResult;
+    const deliveryJobId = isAsyncResultDelivery ? subResult?.jobId : undefined;
     // 子 Agent 主动通知父会话（agent_notify_parent）
     const isChildNotify = !!childNotify;
     // 心跳触发：放右侧（通知位），气泡内文字仍左对齐；视觉用灰底+橙标，不走 brand 用户色
@@ -281,11 +287,15 @@ export const ChatMessageList = memo(function ChatMessageList({
             initial={false}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             data-testid="user-message-bubble"
+            data-delivery-job-id={deliveryJobId || undefined}
             className={cn(
               "group/msg relative mb-3 flex flex-col gap-1",
               // 异步投递 / 父 Agent 任务含 markdown 表格，需更宽
               isAsyncResultDelivery || isParentAgentTask ? "max-w-[92%]" : "max-w-[70%]",
               isRightSide ? "items-end self-end" : "items-start self-start",
+              deliveryJobId &&
+                highlightJobId === deliveryJobId &&
+                "rounded-2xl ring-2 ring-[var(--kp-brand)] ring-offset-2 ring-offset-[var(--kp-bg)]",
             )}
           >
             {group.userMessage.attachments && group.userMessage.attachments.length > 0 && !isEditing && (
@@ -313,7 +323,12 @@ export const ChatMessageList = memo(function ChatMessageList({
               </div>
             )}
             <div
-              className="relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm"
+              className={cn(
+                "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm",
+                deliveryJobId &&
+                  highlightJobId === deliveryJobId &&
+                  "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/30",
+              )}
             >
               <MessageSourceLabel
                 source={msgSource}
@@ -460,17 +475,81 @@ export const ChatMessageList = memo(function ChatMessageList({
     return items;
   }, [messageGroups, optimistic, showLiveStream, streamTargetUserId, materializedClientIds, inFlightAssistantId]);
 
+  // 冷加载：当前 session 尚未就绪时保留上一屏（禁止用「上一会话的 hydrated=true」冲掉 hold）
+  const holdRef = useRef<{ sessionId: string | null; items: ChatItem[] }>({
+    sessionId: effectiveSessionId,
+    items: [],
+  });
+  const sessionReady =
+    !effectiveSessionId ||
+    isMessagesHydrated ||
+    chatItems.length > 0 ||
+    isStreaming ||
+    optimistic.length > 0;
+  const isColdLoading = !!effectiveSessionId && !sessionReady;
+  if (sessionReady) {
+    holdRef.current = { sessionId: effectiveSessionId, items: chatItems };
+  }
+  const showingStale = isColdLoading && holdRef.current.items.length > 0;
+  const displayItems = showingStale ? holdRef.current.items : chatItems;
+  const hasDisplay = displayItems.length > 0;
+
   const handleNavScrollToIndex = useCallback((index: number) => {
     virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: "smooth" });
   }, []);
 
+  // 切会话落底：不 remount Virtuoso（禁止 key=sessionId 白屏），只在会话真正就绪后 scroll
+  const scrolledForSidRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (showingStale) return;
+    const sid = effectiveSessionId ?? "new";
+    if (scrolledForSidRef.current === sid) return;
+    if (chatItems.length === 0) {
+      if (isMessagesHydrated || !effectiveSessionId) scrolledForSidRef.current = sid;
+      return;
+    }
+    virtuosoRef.current?.scrollToIndex({
+      index: chatItems.length - 1,
+      align: "end",
+      behavior: "auto",
+    });
+    scrolledForSidRef.current = sid;
+  }, [effectiveSessionId, showingStale, isMessagesHydrated, chatItems.length]);
+
+  // 运行栏「已消费」卡片 → 滚动到带 toolResults.subagentResult.jobId 的投递气泡
+  useEffect(() => {
+    return registerDeliveryLocateHandler((jobId) => {
+      const listIndex = displayItems.findIndex((item) => {
+        if (item.kind !== "group") return false;
+        const tr = (item.group.userMessage as { toolResults?: { subagentResult?: { jobId?: string } } })
+          .toolResults;
+        return tr?.subagentResult?.jobId === jobId;
+      });
+      if (listIndex < 0) return false;
+      virtuosoRef.current?.scrollToIndex({ index: listIndex, align: "center", behavior: "smooth" });
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      setHighlightJobId(jobId);
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightJobId(null);
+        highlightTimerRef.current = null;
+      }, 2200);
+      return true;
+    });
+  }, [displayItems]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
   return (
     <div className="relative flex min-h-0 flex-1">
-      {!isMessagesHydrated && !!effectiveSessionId && !hasMessages ? (
+      {!hasDisplay && isColdLoading ? (
         <div className="flex flex-1 items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-[var(--kp-text-3)]" />
         </div>
-      ) : !hasMessages && !backendDown ? (
+      ) : !hasDisplay && !backendDown ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-4 text-center text-[var(--kp-text-3)] md:px-6">
           <Bot className="mb-1 h-12 w-12 opacity-40" />
           <p className="text-sm">发送第一条消息开始对话</p>
@@ -496,42 +575,77 @@ export const ChatMessageList = memo(function ChatMessageList({
           )}
         </div>
       ) : (
-        <Virtuoso
-          ref={virtuosoRef}
-          className="flex-1 min-h-0"
-          data={chatItems}
-          computeItemKey={(_, item) => item.key}
-          itemContent={(_, item) => (
-            <div className="px-4 py-1 md:px-6">
-              {item.kind === "group" && renderMessageGroup(item.group, item.index)}
-              {item.kind === "optimistic" && renderOptimisticMessage(item.msg)}
-              {item.kind === "live" && renderLiveStreamBlock()}
+        <>
+          <Virtuoso
+            ref={virtuosoRef}
+            className={cn("flex-1 min-h-0", showingStale && "opacity-60")}
+            data={displayItems}
+            // 仅首次挂载落底；切会话改走上面的 useLayoutEffect，避免 key remount 白屏
+            initialTopMostItemIndex={
+              displayItems.length > 0
+                ? { index: displayItems.length - 1, align: "end" }
+                : 0
+            }
+            computeItemKey={(_, item) => item.key}
+            itemContent={(_, item) => (
+              <div className="py-1 pl-4 pr-9 md:pl-6 md:pr-12">
+                {item.kind === "group" && renderMessageGroup(item.group, item.index)}
+                {item.kind === "optimistic" && renderOptimisticMessage(item.msg)}
+                {item.kind === "live" && renderLiveStreamBlock()}
+              </div>
+            )}
+            components={{
+              // 顶部加载更早时显示细条 spinner（无按钮，滚到顶部自动触发，见 startReached）
+              Header: () =>
+                isLoadingOlderMessages ? (
+                  <div className="flex justify-center py-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-text-3)]" />
+                  </div>
+                ) : (
+                  <div className="h-2" />
+                ),
+              Footer: () => <div className="h-4" />,
+            }}
+            followOutput={(atBottom) => (atBottom ? "auto" : false)}
+            rangeChanged={(range) => {
+              if (navItems.length === 0) return;
+              const mid = (range.startIndex + range.endIndex) / 2;
+              let best = 0;
+              let bestDist = Number.POSITIVE_INFINITY;
+              for (let i = 0; i < navItems.length; i++) {
+                const dist = Math.abs(navItems[i]!.index - mid);
+                if (dist < bestDist) {
+                  bestDist = dist;
+                  best = i;
+                }
+              }
+              setNavActiveIdx((prev) => (prev === best ? prev : best));
+            }}
+            increaseViewportBy={{ top: 600, bottom: 600 }}
+            // P0-1：滚到顶部自动 fetchNextPage 加载更早消息（业界标准 infinite-up-scroll，无按钮）；
+            // Virtuoso 按 computeItemKey 稳定 id 在 prepend 时自动保持滚动位置。
+            startReached={() => {
+              if (showingStale) return;
+              if (hasOlderMessages && !isLoadingOlderMessages) {
+                void loadOlderMessages();
+              }
+            }}
+          />
+          {showingStale && (
+            <div
+              className="pointer-events-none absolute inset-0 flex items-start justify-center pt-6"
+              aria-hidden
+            >
+              <Loader2 className="h-5 w-5 animate-spin text-[var(--kp-text-3)]" />
             </div>
           )}
-          components={{
-            // 顶部加载更早时显示细条 spinner（无按钮，滚到顶部自动触发，见 startReached）
-            Header: () =>
-              isLoadingOlderMessages ? (
-                <div className="flex justify-center py-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--kp-text-3)]" />
-                </div>
-              ) : (
-                <div className="h-2" />
-              ),
-            Footer: () => <div className="h-4" />,
-          }}
-          followOutput={(atBottom) => (atBottom ? "auto" : false)}
-          increaseViewportBy={{ top: 600, bottom: 600 }}
-          // P0-1：滚到顶部自动 fetchNextPage 加载更早消息（业界标准 infinite-up-scroll，无按钮）；
-          // Virtuoso 按 computeItemKey 稳定 id 在 prepend 时自动保持滚动位置。
-          startReached={() => {
-            if (hasOlderMessages && !isLoadingOlderMessages) {
-              void loadOlderMessages();
-            }
-          }}
-        />
+        </>
       )}
-      <MessageNavRail items={navItems} onScrollToIndex={handleNavScrollToIndex} />
+      <MessageNavRail
+        items={showingStale ? [] : navItems}
+        activeIndex={navActiveIdx}
+        onScrollToIndex={handleNavScrollToIndex}
+      />
     </div>
   );
 });

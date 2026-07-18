@@ -28,11 +28,25 @@ const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: str
   childNotify: { label: "来自子 Agent", bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-200" },
 };
 
+/** 占位默认名「子 Agent xxxx」（时间戳/id 片段）→ 展示时去掉后缀，避免角标像 uuid */
+const PLACEHOLDER_SUBAGENT_NAME = /^子\s*Agent\s+[a-z0-9]+$/i;
+
+export function formatSubagentDisplayName(name?: string | null): string | undefined {
+  const t = name?.trim();
+  if (!t) return undefined;
+  if (PLACEHOLDER_SUBAGENT_NAME.test(t)) return "子 Agent";
+  return t;
+}
+
 export function asyncResultLabel(sourceType?: string, taskLabel?: string, subagentName?: string): string {
   if (sourceType === "sleep" || /^sleep\b/i.test(taskLabel ?? "")) return "async sleep";
-  if (sourceType === "subagent") return subagentName ? `async · ${subagentName}` : "async subagent";
+  if (sourceType === "subagent") {
+    const display = formatSubagentDisplayName(subagentName);
+    return display ? `async · ${display}` : "async subagent";
+  }
   if (sourceType === "async_task_tool") return "async tool";
-  if (taskLabel?.trim()) return `async · ${taskLabel.trim().slice(0, 24)}`;
+  const labelDisplay = formatSubagentDisplayName(taskLabel) ?? taskLabel?.trim();
+  if (labelDisplay) return `async · ${labelDisplay.slice(0, 24)}`;
   return "async task";
 }
 
@@ -57,7 +71,8 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
 }) {
   if (!source || source === "user") return null;
   if (childNotify) {
-    const label = childNotify.sourceName ? `来自子 Agent · ${childNotify.sourceName}` : "来自子 Agent";
+    const notifyName = formatSubagentDisplayName(childNotify.sourceName);
+    const label = notifyName ? `来自子 Agent · ${notifyName}` : "来自子 Agent";
     return (
       <span
         className={cn(
@@ -88,7 +103,8 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   }
   const base = SOURCE_LABEL_STYLES[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" };
   const isParent = (source === "super" || source === "manager") && isSubagentSession;
-  const label = isParent ? "父 Agent" : subagentName && source === "sub" ? `${base.label} · ${subagentName}` : base.label;
+  const displaySubName = formatSubagentDisplayName(subagentName);
+  const label = isParent ? "父 Agent" : displaySubName && source === "sub" ? `${base.label} · ${displaySubName}` : base.label;
   // 父 Agent 角标用浅底深字，与统一白色气泡搭配
   const bg = isParent ? "bg-[var(--kp-brand-soft)]" : base.bg;
   const text = isParent ? "text-[var(--kp-brand-deep)]" : base.text;
