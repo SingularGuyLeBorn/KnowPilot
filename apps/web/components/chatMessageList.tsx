@@ -14,7 +14,6 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { Ban, Bot, Check, Loader2, X } from "lucide-react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
@@ -171,10 +170,8 @@ export const ChatMessageList = memo(function ChatMessageList({
     const isInterrupted = group.assistantMessage.finishReason === "aborted";
 
     return (
-      <motion.div
+      <div
         key={`a-${assistantId}`}
-        initial={false}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
         data-testid="assistant-message-bubble"
         data-nav-id={assistantId}
         className="group/msg relative mb-6 ml-12 flex max-w-[88%] flex-col items-start gap-1"
@@ -209,7 +206,7 @@ export const ChatMessageList = memo(function ChatMessageList({
             ) : null
           }
         />
-      </motion.div>
+      </div>
     );
   };
 
@@ -288,9 +285,7 @@ export const ChatMessageList = memo(function ChatMessageList({
     return (
       <div className="flex flex-col">
         <div className={cn("flex w-full", isRightSide ? "justify-end" : "justify-start")}>
-          <motion.div
-            initial={false}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
+          <div
             data-testid="user-message-bubble"
             data-delivery-job-id={deliveryJobId || undefined}
             className={cn(
@@ -392,7 +387,7 @@ export const ChatMessageList = memo(function ChatMessageList({
               disabled={isStreaming}
               copied={copiedId === group.userMessage.id}
             />
-          </motion.div>
+          </div>
         </div>
         {(isStreaming && streamTargetUserId === group.userMessage.id) ||
         (!!group.assistantMessage && group.assistantMessage.id === inFlightAssistantId)
@@ -626,7 +621,7 @@ export const ChatMessageList = memo(function ChatMessageList({
               }
               setNavActiveIdx((prev) => (prev === best ? prev : best));
             }}
-            increaseViewportBy={{ top: 600, bottom: 600 }}
+            increaseViewportBy={{ top: 200, bottom: 200 }}
             // P0-1：滚到顶部自动 fetchNextPage 加载更早消息（业界标准 infinite-up-scroll，无按钮）；
             // Virtuoso 按 computeItemKey 稳定 id 在 prepend 时自动保持滚动位置。
             startReached={() => {
