@@ -1,0 +1,9 @@
+{
+  "name": "remote-example",
+  "transport": "http",
+  "url": "https://example.com/mcp",
+  "headers": {
+    "Authorization": "Bearer YOUR_TOKEN"
+  },
+  "enabled": false
+}

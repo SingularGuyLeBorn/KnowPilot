@@ -110,9 +110,13 @@ export interface Skill {
 export interface McpServer {
   id: string;
   name: string;
+  /** stdio（本地子进程）| http（Streamable HTTP） */
+  transport: "stdio" | "http";
   command: string;
   args: string[];
   env: Record<string, string>;
+  url?: string | null;
+  headers?: Record<string, string>;
   enabled: boolean;
   createdAt: string | Date;
   updatedAt: string | Date;

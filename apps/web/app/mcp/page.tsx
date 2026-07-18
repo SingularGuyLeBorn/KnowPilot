@@ -25,9 +25,11 @@ export default function McpPage() {
   const handleCreateDemo = () => {
     createMutation.mutate({
       name: `filesystem_${Math.random().toString(36).substring(2, 6)}`,
+      transport: "stdio",
       command: "npx",
       args: ["-y", "@modelcontextprotocol/server-filesystem", "D:\\ALL IN AI\\KnowPilot"],
       env: {},
+      headers: {},
       enabled: true,
     });
   };
@@ -80,7 +82,9 @@ export default function McpPage() {
                     <h3 className="font-bold text-[var(--kp-text-1)] group-hover:text-[var(--kp-brand-deep)] transition-colors text-sm">
                       {server.name}
                     </h3>
-                    <span className="text-[10px] text-[var(--kp-text-3)] font-mono">运行环境: Node</span>
+                    <span className="text-[10px] text-[var(--kp-text-3)] font-mono">
+                      {(server.transport ?? "stdio") === "http" ? "远程 HTTP" : "本地 Stdio"}
+                    </span>
                   </div>
                 </div>
                 
@@ -101,16 +105,20 @@ export default function McpPage() {
               </div>
 
               <div className="space-y-1 mb-4">
-                <div className="text-[9px] uppercase font-bold text-[var(--kp-text-3)]">命令</div>
+                <div className="text-[9px] uppercase font-bold text-[var(--kp-text-3)]">
+                  {(server.transport ?? "stdio") === "http" ? "URL" : "命令"}
+                </div>
                 <code className="text-[11px] block p-2 rounded-lg bg-[var(--kp-bg-mute)] font-mono text-[var(--kp-text-2)] truncate">
-                  {server.command} {server.args?.join(" ")}
+                  {(server.transport ?? "stdio") === "http"
+                    ? server.url || "（未配置 url）"
+                    : `${server.command} ${server.args?.join(" ") ?? ""}`}
                 </code>
               </div>
 
               <div className="flex items-center justify-between border-t border-[var(--kp-divider-light)] pt-3 text-[10px] text-[var(--kp-text-3)]">
                 <span className="flex items-center gap-1">
                   <Terminal className="w-3 h-3 text-[var(--kp-brand-deep)]" />
-                  协议规范: Stdio
+                  {(server.transport ?? "stdio") === "http" ? "Streamable HTTP" : "Stdio"}
                 </span>
                 <span className={`px-2 py-0.5 rounded-full font-medium ${
                   server.enabled ? "bg-green-500/10 text-green-500" : "bg-gray-500/10 text-gray-500"

@@ -2,7 +2,7 @@
  * MCP Server 同步器
  *
  * 文件格式：content/mcp/{slug}.yaml 或 {slug}.json
- * 字段：name, command, args, env, enabled
+ * 字段：name, transport(stdio|http), command, args, env, url, headers, enabled
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -12,10 +12,18 @@ import { getFilesRecursive, parseYamlFile, filePathToSlug, readBoolean, getFileM
 
 interface McpServerData {
   name: string;
+  transport: string;
   command: string;
   args: string; // JSON string
   env: string; // JSON string
+  url: string | null;
+  headers: string; // JSON string
   enabled: boolean;
+}
+
+function parseHeadersOrEnv(raw: unknown): string {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) return JSON.stringify(raw);
+  return "{}";
 }
 
 export const mcpServerSyncer: Syncer<McpServerData> = {
@@ -33,10 +41,11 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
     return records;
   },
 
-  // A13：单文件解析
   async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<McpServerData> | null> {
     try {
       const slug = filePathToSlug(contentDir, filePath);
+      // 跳过 _ 开头（模板/示例说明）
+      if (slug.startsWith("_") || slug.includes("/_")) return null;
       const mtime = getFileMtime(filePath);
       const data =
         filePath.endsWith(".json")
@@ -44,12 +53,28 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
           : parseYamlFile(filePath).data;
 
       const name = typeof data.name === "string" ? data.name : slug;
+      const transport = data.transport === "http" ? "http" : "stdio";
       const command = typeof data.command === "string" ? data.command : "";
       const args = Array.isArray(data.args) ? JSON.stringify(data.args) : "[]";
-      const env = data.env && typeof data.env === "object" ? JSON.stringify(data.env) : "{}";
+      const env = parseHeadersOrEnv(data.env);
+      const url = typeof data.url === "string" && data.url.trim() ? data.url.trim() : null;
+      const headers = parseHeadersOrEnv(data.headers);
       const enabled = readBoolean(data.enabled, true);
 
-      return { slug, mtime, data: { name, command, args, env, enabled } };
+      if (transport === "stdio" && !command.trim()) {
+        console.error(`  ❌ [MCP Server] ${filePath}: stdio 缺少 command`);
+        return null;
+      }
+      if (transport === "http" && !url) {
+        console.error(`  ❌ [MCP Server] ${filePath}: http 缺少 url`);
+        return null;
+      }
+
+      return {
+        slug,
+        mtime,
+        data: { name, transport, command, args, env, url, headers, enabled },
+      };
     } catch (e: any) {
       console.error(`  ❌ [MCP Server 解析失败] ${filePath}:`, e.message);
       return null;
@@ -62,18 +87,24 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
     await prisma.mcpServer.upsert({
       where: { name: data.name },
       update: {
+        transport: data.transport,
         command: data.command,
         args: data.args,
         env: data.env,
+        url: data.url,
+        headers: data.headers,
         enabled: data.enabled,
         sourceSlug: slug,
         sourceMtime: mtime,
       },
       create: {
         name: data.name,
+        transport: data.transport,
         command: data.command,
         args: data.args,
         env: data.env,
+        url: data.url,
+        headers: data.headers,
         enabled: data.enabled,
         sourceSlug: slug,
         sourceMtime: mtime,
@@ -81,7 +112,6 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
     });
   },
 
-  // #7：unlink 增量硬删 by sourceSlug
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
     const r = await prisma.mcpServer.deleteMany({ where: { sourceSlug: slug } });
     return r.count;
@@ -98,11 +128,10 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
     for (const dbServer of allInDb) {
       if (dbServer.sourceSlug && !activeSlugs.includes(dbServer.sourceSlug)) {
         await prisma.mcpServer.delete({ where: { id: dbServer.id } });
-        console.log(`  🗑️ [MCP Server 已清理] "${dbServer.sourceSlug}" (本地文件已被删除)`);
+        console.log(`  🗑 [MCP Server 已清理] "${dbServer.sourceSlug}" (本地文件已被删除)`);
         deleted++;
       }
     }
-
     return deleted;
   },
 
