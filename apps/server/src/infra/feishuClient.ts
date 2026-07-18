@@ -113,6 +113,10 @@ export async function getUserAccessToken(
     return credToken;
   }
 
+  // fallback：.env FEISHU_USER_ACCESS_TOKEN（与 tenant 一样允许本地直配）
+  const envUser = getFeishuCredentials(config).userAccessToken?.trim();
+  if (envUser) return envUser;
+
   // fallback：MetaBlog 风格的文件缓存
   try {
     return await getFileCachedUserToken();
@@ -227,7 +231,15 @@ export async function feishuApi<T = unknown>(
   }
 
   const res = await fetch(url.toString(), init);
-  const data = (await res.json()) as { code?: number; msg?: string; data?: T };
+  const raw = await res.text();
+  let data: { code?: number; msg?: string; data?: T };
+  try {
+    data = JSON.parse(raw) as { code?: number; msg?: string; data?: T };
+  } catch {
+    throw new Error(
+      `飞书 API 返回非 JSON（HTTP ${res.status} ${res.statusText}）：${raw.slice(0, 120).replace(/\s+/g, " ")}`,
+    );
+  }
   if (!res.ok || data.code !== 0) {
     throw new Error(`飞书 API 失败: ${data.msg || res.statusText} (${res.status})`);
   }
