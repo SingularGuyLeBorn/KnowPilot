@@ -12,6 +12,11 @@ import type { AgentStreamEvent } from "./agentStream.js";
 import type { AgentChatInput } from "@knowpilot/shared";
 import type { AppConfig } from "./config.js";
 import { prisma } from "../db.js";
+import {
+  isSessionRunningClaimed,
+  releaseSessionRunning,
+  tryClaimSessionRunning,
+} from "./sessionRunningSignal.js";
 
 export type BufferedEvent = {
   id: number;
@@ -233,6 +238,7 @@ export class SessionStreamHub {
     runner: (emit: (event: AgentStreamEvent) => void, signal: AbortSignal) => Promise<void>,
   ): Promise<boolean> {
     if (this.isRunning(sessionId)) return false;
+    if (await isSessionRunningClaimed(sessionId)) return false;
     try {
       await this.start(sessionId, input, runner);
       return true;
@@ -255,6 +261,12 @@ export class SessionStreamHub {
       throw new Error(`会话 ${sessionId} 已有运行中的 Agent 流`);
     }
 
+    // 多实例：先抢 Redis 宣称，避免实例 B 看不到实例 A 的内存 runs
+    const claimed = await tryClaimSessionRunning(sessionId);
+    if (!claimed) {
+      throw new Error(`会话 ${sessionId} 已有运行中的 Agent 流`);
+    }
+
     // TOCTOU 修复：先同步占位 runs.set，再 await maxEventIdFor。
     // 原实现 isRunning 检查 → await maxEventId（DB 异步）→ runs.set 之间有窗口，
     // 两个并发调用方（autoConsume + 用户发消息 / 多个异步投递）都能过 isRunning 检查，
@@ -264,69 +276,76 @@ export class SessionStreamHub {
     // cleanupTimer 覆盖竞态：上一轮 run 完成后设了 cleanupTimer（eventTtlMs 后 runs.delete），
     // 若本轮 start 在 cleanupTimer 触发前覆盖 runs 条目，旧 timer 触发时会删掉本轮 run。
     // 必须先清掉旧 run 的 cleanupTimer。
-    const prevRun = this.runs.get(sessionId);
-    if (prevRun?.cleanupTimer) {
-      clearTimeout(prevRun.cleanupTimer);
-      prevRun.cleanupTimer = undefined;
-    }
-
-    const abortController = new AbortController();
-    const state: RunState = {
-      sessionId,
-      input,
-      abortController,
-      buffer: [],
-      subscribers: new Set(),
-      promise: Promise.resolve(),
-      completed: false,
-      nextId: 0,
-      runningSince: Date.now(),
-      steeringQueue: [],
-      followUpQueue: [],
-    };
-    this.runs.set(sessionId, state);
-    // 起流占位成功后「忙」由 isRunning 接管，清除 drain 宣告的「即将起流」标记（S2）
-    this.startingSessions.delete(sessionId);
-
-    const maxId = await this.maxEventIdFor(sessionId);
-    state.nextId = maxId + 1;
-
-    const emit = (event: AgentStreamEvent) => {
-      if (state.completed) return;
-      const buffered: BufferedEvent = { id: state.nextId++, event };
-      state.buffer.push(buffered);
-      if (state.buffer.length > this.config.ringSize) {
-        state.buffer.shift();
+    try {
+      const prevRun = this.runs.get(sessionId);
+      if (prevRun?.cleanupTimer) {
+        clearTimeout(prevRun.cleanupTimer);
+        prevRun.cleanupTimer = undefined;
       }
-      this.enqueuePersist(buffered, state.sessionId);
-      for (const sub of state.subscribers) {
-        try {
-          Promise.resolve(sub(buffered)).catch(() => {
-            // 单个订阅者失败不打扰其他订阅者
-          });
-        } catch {
-          /* ignore */
+
+      const abortController = new AbortController();
+      const state: RunState = {
+        sessionId,
+        input,
+        abortController,
+        buffer: [],
+        subscribers: new Set(),
+        promise: Promise.resolve(),
+        completed: false,
+        nextId: 0,
+        runningSince: Date.now(),
+        steeringQueue: [],
+        followUpQueue: [],
+      };
+      this.runs.set(sessionId, state);
+      // 起流占位成功后「忙」由 isRunning 接管，清除 drain 宣告的「即将起流」标记（S2）
+      this.startingSessions.delete(sessionId);
+
+      const maxId = await this.maxEventIdFor(sessionId);
+      state.nextId = maxId + 1;
+
+      const emit = (event: AgentStreamEvent) => {
+        if (state.completed) return;
+        const buffered: BufferedEvent = { id: state.nextId++, event };
+        state.buffer.push(buffered);
+        if (state.buffer.length > this.config.ringSize) {
+          state.buffer.shift();
         }
-      }
-    };
+        this.enqueuePersist(buffered, state.sessionId);
+        for (const sub of state.subscribers) {
+          try {
+            Promise.resolve(sub(buffered)).catch(() => {
+              // 单个订阅者失败不打扰其他订阅者
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+      };
 
-    state.promise = (async () => {
-      try {
-        await runner(emit, abortController.signal);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        emit({ type: "error", message, sessionId });
-      } finally {
-        state.completed = true;
-        // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
-        emitHubRunSettled(sessionId);
-        // 运行结束后保留一段时间，方便刚断线的前端重连取到 done/error
-        await this.flushPersistQueue();
-        state.cleanupTimer = setTimeout(() => {
-          this.runs.delete(sessionId);
-        }, this.config.eventTtlMs);
-      }
-    })();
+      state.promise = (async () => {
+        try {
+          await runner(emit, abortController.signal);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          emit({ type: "error", message, sessionId });
+        } finally {
+          state.completed = true;
+          await releaseSessionRunning(sessionId);
+          // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
+          emitHubRunSettled(sessionId);
+          // 运行结束后保留一段时间，方便刚断线的前端重连取到 done/error
+          await this.flushPersistQueue();
+          state.cleanupTimer = setTimeout(() => {
+            this.runs.delete(sessionId);
+          }, this.config.eventTtlMs);
+        }
+      })();
+    } catch (err) {
+      await releaseSessionRunning(sessionId);
+      this.runs.delete(sessionId);
+      throw err;
+    }
   }
 
   /**
@@ -504,6 +523,7 @@ export class SessionStreamHub {
       if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
       this.runs.delete(sessionId);
     }
+    await releaseSessionRunning(sessionId);
     // 清理外部订阅者，避免已删除 session 的 EventSource listener 残留
     this.externalSubs.delete(sessionId);
     if (this.config.persist) {
