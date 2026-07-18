@@ -25,6 +25,10 @@ export const metadata: Metadata = {
     title: "KnowPilot",
     statusBarStyle: "default",
   },
+  icons: {
+    icon: [{ url: "/icons/robot.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icons/robot.svg", type: "image/svg+xml" }],
+  },
   formatDetection: {
     telephone: false,
   },

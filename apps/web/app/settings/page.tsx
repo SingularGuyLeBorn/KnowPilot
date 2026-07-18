@@ -142,16 +142,40 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="space-y-3 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:space-y-4 sm:p-6 md:col-span-2">
+          <section
+            className="space-y-3 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:space-y-4 sm:p-6 md:col-span-2"
+            data-testid="settings-pwa-guide"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
               <Smartphone className="h-4 w-4 text-[var(--kp-brand-deep)]" />
-              手机使用要点
+              手机使用与添加到主屏幕
             </div>
             <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-[var(--kp-text-2)]">
               <li>只用 Tunnel 的 https 地址，不要指望家里局域网 IP 穿网。</li>
               <li>底部导航：首页 / 博客 / Chat / 更多；Chat 左栏在手机上是全屏叠层。</li>
-              <li>可「添加到主屏幕」做成类 App 入口；不支持离线（见下方 PWA 说明或文档）。</li>
             </ul>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 p-3">
+                <p className="text-xs font-medium text-[var(--kp-text-1)]">iPhone / iPad（Safari）</p>
+                <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[var(--kp-text-2)]">
+                  <li>用 Safari 打开 Tunnel 地址并登录</li>
+                  <li>点底部分享 →「添加到主屏幕」</li>
+                  <li>从主屏幕图标进入（standalone，无完整浏览器栏）</li>
+                </ol>
+              </div>
+              <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/60 p-3">
+                <p className="text-xs font-medium text-[var(--kp-text-1)]">Android（Chrome）</p>
+                <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-[var(--kp-text-2)]">
+                  <li>用 Chrome 打开 Tunnel 地址并登录</li>
+                  <li>菜单 ⋮ →「安装应用」或「添加到主屏幕」</li>
+                  <li>确认后从桌面图标打开</li>
+                </ol>
+              </div>
+            </div>
+            <p className="text-[11px] leading-relaxed text-[var(--kp-text-3)]">
+              这是轻量 PWA（有 manifest，无 Service Worker）：<strong className="font-medium text-[var(--kp-text-2)]">不支持离线</strong>
+              ，断网后无法打开已缓存页面。图标目前为 SVG，部分系统主屏幕预览可能偏简陋。
+            </p>
           </section>
 
           <section className="space-y-4 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:p-6">

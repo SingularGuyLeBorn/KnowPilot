@@ -173,7 +173,10 @@ docker compose --profile cloudflare up -d cloudflare
 1. 只用 Tunnel 的 `https://…` 地址，不要指望家里局域网 IP 穿网。
 2. 首次打开会要求登录（`AUTH_MODE=password`）。
 3. 窄屏有底栏：首页 / 博客 / Chat / 更多；Chat 左栏为全屏叠层。
-4. 浏览器菜单可「添加到主屏幕」（轻量 PWA，**不支持离线**）。
+4. **添加到主屏幕**（轻量 PWA，有 `manifest`，**无 Service Worker / 不支持离线**）：
+   - **iOS Safari**：分享 →「添加到主屏幕」→ 从主屏幕图标进入。
+   - **Android Chrome**：菜单 ⋮ →「安装应用」或「添加到主屏幕」。
+   - 引导文案也在 `/settings`「手机使用与添加到主屏幕」卡片。
 5. 状态与告警：打开 `/settings` →「远程就绪检查清单」（AUTH / PUBLIC_URL / Tunnel Token）与 Access 步骤。
 
 ---
