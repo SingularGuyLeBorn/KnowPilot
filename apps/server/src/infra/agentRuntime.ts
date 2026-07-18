@@ -248,6 +248,30 @@ export async function chatAgent(
       tokenUsage: result.tokenUsage,
     });
 
+    // Hermes：有工具调用时沉淀 experience（与 agentStream onDone 同语义）
+    void import("./agentEvolution.js")
+      .then(({ accumulateExperience }) =>
+        accumulateExperience(
+          services.prisma,
+          services,
+          agent.id,
+          sessionId!,
+          {
+            content: result.content,
+            toolCalls: result.toolCalls ?? [],
+            tokenUsage: result.tokenUsage ?? null,
+            roundsUsed: result.roundsUsed ?? 0,
+          },
+          {
+            message: displayText,
+            trigger: "chat",
+            workspaceId: agent.workspaceId ?? null,
+          },
+          Date.now() - start,
+        ),
+      )
+      .catch(() => {});
+
     return success({
       data: {
         sessionId,
