@@ -3,6 +3,7 @@ import {
   checkCrossWorkspace,
   checkWorkspaceAgentAccess,
   checkToolPermission,
+  getAllowedToolsForTier,
 } from "../infra/swarmPermissionGuard.js";
 import { AsyncJobOrchestrator, resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
 import { afterEach } from "vitest";
@@ -60,6 +61,52 @@ describe("Workspace 出域硬拦（Q3）", () => {
       inToolRound: true,
     });
     expect(err?.code).toBe("TIER_INSUFFICIENT");
+  });
+
+  it("free_api_keys_* / free_models_list 仅 manager 及以上：sub 硬拦，manager/super 放行", () => {
+    for (const tool of ["free_api_keys_list", "free_api_keys_fetch", "free_models_list"] as const) {
+      expect(
+        checkToolPermission(tool, {}, {
+          agentTier: "sub",
+          agentId: "s1",
+          agentWorkspaceId: "ws-a",
+          inToolRound: true,
+        })?.code,
+      ).toBe("TIER_INSUFFICIENT");
+      expect(
+        checkToolPermission(tool, {}, {
+          agentTier: "manager",
+          agentId: "m1",
+          agentWorkspaceId: "ws-a",
+          inToolRound: true,
+        }),
+      ).toBeNull();
+      expect(
+        checkToolPermission(tool, {}, {
+          agentTier: "super",
+          agentId: "sup1",
+          agentWorkspaceId: null,
+          inToolRound: true,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("getAllowedToolsForTier 从 sub 清单剔除 free_api_keys_* / free_models_list", () => {
+    const filtered = getAllowedToolsForTier("sub", [
+      "native:free_api_keys_list",
+      "native:free_api_keys_fetch",
+      "native:free_models_list",
+      "native:web_search",
+    ]);
+    expect(filtered).toEqual(["native:web_search"]);
+    expect(
+      getAllowedToolsForTier("manager", [
+        "native:free_api_keys_list",
+        "native:free_models_list",
+        "native:web_search",
+      ]),
+    ).toEqual(["native:free_api_keys_list", "native:free_models_list", "native:web_search"]);
   });
 });
 

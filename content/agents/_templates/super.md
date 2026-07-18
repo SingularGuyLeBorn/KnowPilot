@@ -25,6 +25,9 @@ tools:
   - "native:agent_send_message"
   - "native:workspace_create"
   - "native:workspace_archive"
+  - "native:free_api_keys_list"
+  - "native:free_api_keys_fetch"
+  - "native:free_models_list"
 heartbeat:
   enabled: true
   cron: "0 9 * * *"

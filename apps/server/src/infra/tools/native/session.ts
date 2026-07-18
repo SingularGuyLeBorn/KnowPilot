@@ -217,6 +217,9 @@ async function spawnSubagentPrepare(
   if (!parentSnapshot) throw new Error("spawn_subagent 需要 Agent 上下文");
 
   // 1. 创建子 Agent（或复用指定 Agent）
+  const modelOverride = args.model ? String(args.model).trim() : "";
+  let resolvedSubModel = modelOverride || parentSnapshot.model;
+
   let subagentId: string;
   let subagentName: string;
   if (args.agentId && typeof args.agentId === "string") {
@@ -224,6 +227,7 @@ async function spawnSubagentPrepare(
     if (!resolved) throw new Error("spawn_subagent 指定的 Agent 不存在");
     subagentId = resolved.id;
     subagentName = resolved.name;
+    if (!modelOverride && resolved.model) resolvedSubModel = String(resolved.model);
   } else {
     const defaultPrompt = waitForResult
       ? `你是上级 Agent 派出的子 Agent。请完成下发的任务，必要时调用工具，并给出最终答复。上级正在同步等待你的回复，无需调用 agent_report_back；写完最终答复即可。\n\n任务：${task}`
@@ -240,7 +244,7 @@ async function spawnSubagentPrepare(
             ? (args.tools as string[])
             : [...DEFAULT_SUBAGENT_TOOLS],
         ),
-        model: args.model ? String(args.model) : undefined,
+        model: modelOverride || parentSnapshot.model,
         apiKey: args.apiKey as string | undefined,
         workspaceId: args.workspaceId,
       },
@@ -273,7 +277,7 @@ async function spawnSubagentPrepare(
     const { agent: subAgent } = await (ctx.resolveAgent ?? defaultResolveAgent)(ctx.services, subagentId);
     const created = await ctx.services.session.create({
       title: `${subAgent?.name ?? subagentName} 主会话`,
-      model: subAgent?.model ?? parentSnapshot.model,
+      model: resolvedSubModel || subAgent?.model || parentSnapshot.model,
       systemPrompt: subAgent?.systemPrompt ?? "",
       agentId: subagentId,
       isMainSession: true,
@@ -288,13 +292,19 @@ async function spawnSubagentPrepare(
           where: { id: (created.data as { id: string }).id },
         })) ?? null;
     }
-  } else if (!waitForResult) {
-    // 复用已有主会话的 pool 路径：获槽前落 queued；busy 场景下 prepareAgentRun 会按 FIFO 接管状态
-    try {
-      await ctx.services.session.update({ id: mainSession.id, status: "queued" } as any);
-      mainSession = { ...mainSession, status: "queued" };
-    } catch {
-      /* 状态补齐失败不阻塞派生 */
+  } else {
+    // 复用已有主会话：pool 路径标 queued / inline 标 running；若本次指定了 model，覆盖会话模型（本轮起生效）
+    const patch: Record<string, unknown> = {};
+    if (!waitForResult) patch.status = "queued";
+    else if (mainSession.status !== "running") patch.status = "running";
+    if (modelOverride && mainSession.model !== modelOverride) patch.model = modelOverride;
+    if (Object.keys(patch).length > 0) {
+      try {
+        await ctx.services.session.update({ id: mainSession.id, ...patch } as any);
+        mainSession = { ...mainSession, ...patch } as typeof mainSession;
+      } catch {
+        /* 状态/模型补齐失败不阻塞派生 */
+      }
     }
   }
   const subagentSessionId = mainSession?.id;
@@ -319,7 +329,7 @@ async function spawnSubagentPrepare(
           taskLabel,
           agentSnapshot: {
             id: subagentId,
-            model: parentSnapshot.model,
+            model: resolvedSubModel,
             systemPrompt: "",
             tools: [],
             tier: "sub",
@@ -925,7 +935,7 @@ const SESSION_DEFS: NativeToolDefinition[] = [
         task: z.string().describe("子 Agent 要执行的任务描述（详细越好）"),
         label: z.string().describe("子 Agent 卡片/队列中显示的简短标签").optional(),
         agentId: z.string().describe("指定子 Agent 使用的 Agent ID（不填则新建）").optional(),
-        model: z.string().describe("指定子代理使用的模型 ID（不填则用 Agent 默认模型）").optional(),
+        model: z.string().describe("指定子代理使用的模型 ID；新建时不填则继承父 Agent 模型；复用 agentId 时也可覆盖该子会话模型").optional(),
         workspaceId: z
           .string()
           .describe("目标 Workspace（仅超级 Agent 可跨 Workspace；默认落在当前父 Agent 所在 Workspace）")

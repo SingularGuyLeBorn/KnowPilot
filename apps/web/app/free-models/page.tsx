@@ -4,17 +4,21 @@
 
 "use client";
 
+import { Sparkles } from "lucide-react";
 import { AdminPage, PageHeader } from "@/components/shared";
 import { FreeModelsPanel } from "@/components/freeModelsPanel";
 
 export default function FreeModelsPage() {
   return (
     <AdminPage>
-      <PageHeader
-        title="免费模型目录"
-        description="浏览 OpenRouter :free 模型详情与 freellm 已探活网关通道。复制模型 id 后可在 Chat 会话配置中使用。"
-      />
-      <FreeModelsPanel />
+      <div className="mx-auto w-full max-w-5xl space-y-5">
+        <PageHeader
+          icon={Sparkles}
+          title="免费模型目录"
+          description="OpenRouter :free 与 freellm 通道 · 复制模型 id 即可在 Chat / 压缩摘要中使用"
+        />
+        <FreeModelsPanel />
+      </div>
     </AdminPage>
   );
 }

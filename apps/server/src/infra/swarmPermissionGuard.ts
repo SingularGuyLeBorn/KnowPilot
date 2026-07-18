@@ -59,6 +59,10 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "pinned_memory_write",
     "session_compact",
     "session_rotate",
+    // 免费 API Key：含明文 fetch，仅 manager+（sub 即使白名单挂了也会被拦）
+    "free_api_keys_list",
+    "free_api_keys_fetch",
+    "free_models_list",
   ],
   // 子 Agent 及以上（manager/super 也可以用）：可执行异步任务，但不能再派生子 Agent
   sub: [
