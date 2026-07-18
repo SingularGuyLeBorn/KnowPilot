@@ -1,28 +1,28 @@
 /**
- * RedisSwarmBus — 基于 BullMQ + Redis 的 Agent 间消息系统
+ * RedisSwarmBus — SQLite AgentMessage 邮箱 + BullMQ 持久化旁路（SWARM_MODE=redis）
  *
- * SWARM_MODE=redis 时启用。提供完整 swarm 能力：
- * - 持久化消息队列（进程重启不丢）
- * - Worker 进程隔离（每个 Agent 可在独立进程跑）
- * - 优先级队列（心跳 < 命令 < 用户消息）
- * - 任务依赖图（FlowProducer）
- * - Bull Board 可视化（可选）
+ * 与 LocalSwarmBus 语义对齐：
+ * - 权限 / depth / 向上时机（含 allowReportTool）/ 跨 Workspace
+ * - 队列容量按 **目标 Agent** pending 计数（非全局 BullMQ waiting）
+ * - 写入后 notifyAgentMessage → SessionStreamHub
  *
- * 与 LocalSwarmBus 接口完全一致，通过 getSwarmBus() 工厂切换。
+ * BullMQ 用于跨进程可观测与未来 Worker；当前消费仍走 DB + superior drain（与 local 同路径）。
+ * startWorker 暂不挂载到启动序列（共享队列 + 按 toAgentId 过滤会吞消息）。
  */
 
-import { Queue, Worker, type Job } from "bullmq";
-import IORedis from "ioredis";
+import { Queue } from "bullmq";
 import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { AppConfig } from "./config.js";
 import type { AgentMessageInput, AgentMessageRecord, SwarmBus } from "./swarmBus.js";
+// 仅 type import，避免与 swarmBus 静态 import RedisSwarmBus 形成运行时环
 import { SWARM_MAX_DEPTH, SWARM_MAX_QUEUE_SIZE } from "@knowpilot/shared";
 import {
   checkUpwardMessageTiming,
   checkCrossWorkspace,
   type PermissionError,
 } from "./swarmPermissionGuard.js";
+import { getRedisUrl } from "./redisClient.js";
 
 const MAX_DEPTH = SWARM_MAX_DEPTH;
 const MAX_QUEUE_SIZE = SWARM_MAX_QUEUE_SIZE;
@@ -30,16 +30,15 @@ const QUEUE_NAME = "swarm-agent-messages";
 
 export class RedisSwarmBus implements SwarmBus {
   private queue: Queue;
-  private connection: IORedis;
-  private workers = new Map<string, Worker>();
 
   constructor(
     private readonly prisma: PrismaClient,
     private readonly services: ServiceContainer,
-    private readonly config: AppConfig,
+    private readonly _config: AppConfig | undefined,
   ) {
-    const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
-    this.connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+    void this.services;
+    void this._config;
+    const redisUrl = getRedisUrl();
     this.queue = new Queue(QUEUE_NAME, {
       connection: { url: redisUrl } as any,
       defaultJobOptions: {
@@ -55,14 +54,17 @@ export class RedisSwarmBus implements SwarmBus {
     fromWorkspaceId: string | null,
     inToolRound: boolean,
   ): Promise<{ success: boolean; error?: PermissionError; message?: string; messageId?: string }> {
-    // 查目标 Agent
     const toAgent = await this.prisma.agent.findUnique({ where: { id: msg.toAgentId } });
     if (!toAgent || toAgent.status === "deleted") {
-      return { success: false, error: { code: "TARGET_NOT_FOUND", reason: `目标 Agent ${msg.toAgentId} 不存在或已删除。` } };
+      return {
+        success: false,
+        error: { code: "TARGET_NOT_FOUND", reason: `目标 Agent ${msg.toAgentId} 不存在或已删除。` },
+      };
     }
 
-    // 权限校验（与 LocalSwarmBus 相同）
-    const timingError = checkUpwardMessageTiming(fromTier, toAgent.tier, inToolRound);
+    const timingError = checkUpwardMessageTiming(fromTier, toAgent.tier, inToolRound, {
+      allowReportTool: msg.messageType === "report",
+    });
     if (timingError) return { success: false, error: timingError };
 
     const crossError = checkCrossWorkspace(fromTier, fromWorkspaceId, toAgent.workspaceId, {
@@ -72,16 +74,28 @@ export class RedisSwarmBus implements SwarmBus {
 
     const depth = msg.depth ?? 1;
     if (depth > MAX_DEPTH) {
-      return { success: false, error: { code: "DELEGATION_DEPTH_EXCEEDED", reason: `委托层级 ${depth} 超过上限 ${MAX_DEPTH}。` } };
+      return {
+        success: false,
+        error: {
+          code: "DELEGATION_DEPTH_EXCEEDED",
+          reason: `委托层级 ${depth} 超过上限 ${MAX_DEPTH}，可能存在循环委托。`,
+        },
+      };
     }
 
-    // 队列容量校验
-    const waitingCount = await this.queue.getWaitingCount();
-    if (waitingCount >= MAX_QUEUE_SIZE) {
-      return { success: false, error: { code: "QUEUE_FULL", reason: `目标 Agent 队列已满（${MAX_QUEUE_SIZE}）。` } };
+    const pendingCount = await this.prisma.agentMessage.count({
+      where: { toAgentId: msg.toAgentId, status: "pending" },
+    });
+    if (pendingCount >= MAX_QUEUE_SIZE) {
+      return {
+        success: false,
+        error: {
+          code: "QUEUE_FULL",
+          reason: `目标 Agent 队列已满（${MAX_QUEUE_SIZE} 条），请先处理已有消息。`,
+        },
+      };
     }
 
-    // 写入 DB（持久化）
     const created = await this.prisma.agentMessage.create({
       data: {
         fromAgentId: msg.fromAgentId,
@@ -94,38 +108,93 @@ export class RedisSwarmBus implements SwarmBus {
       },
     });
 
-    // 加入 BullMQ 队列（优先级：command > query > report）
     const priority = msg.messageType === "command" ? 1 : msg.messageType === "query" ? 5 : 10;
-    await this.queue.add(
-      "agent-message",
-      {
-        messageId: created.id,
-        fromAgentId: msg.fromAgentId,
-        toAgentId: msg.toAgentId,
-        content: msg.content,
-        messageType: msg.messageType ?? "command",
-        source: msg.source ?? fromTier,
-        depth,
-      },
-      { priority },
-    );
+    try {
+      await this.queue.add(
+        "agent-message",
+        {
+          messageId: created.id,
+          fromAgentId: msg.fromAgentId,
+          toAgentId: msg.toAgentId,
+          content: msg.content,
+          messageType: msg.messageType ?? "command",
+          source: msg.source ?? fromTier,
+          depth,
+        },
+        { priority },
+      );
+    } catch (err) {
+      console.warn("[RedisSwarmBus] BullMQ enqueue 失败（DB 消息已落库，继续 Local 等价路径）:", err);
+    }
 
-    // 审计日志
-    await this.prisma.log.create({
-      data: {
-        level: "info",
-        component: "swarm",
-        event: "agent_message_sent_redis",
-        message: `${msg.fromAgentId} → ${msg.toAgentId}: ${msg.content.slice(0, 80)}`,
-        metadata: { messageId: created.id, fromTier, toTier: toAgent.tier, depth, priority },
-      },
-    }).catch(() => {});
+    await this.prisma.log
+      .create({
+        data: {
+          level: "info",
+          component: "swarm",
+          event: "agent_message_sent_redis",
+          message: `${msg.fromAgentId} → ${msg.toAgentId}: ${msg.content.slice(0, 80)}`,
+          metadata: {
+            messageId: created.id,
+            fromTier,
+            toTier: toAgent.tier,
+            depth,
+            priority,
+            messageType: msg.messageType ?? "command",
+          },
+        },
+      })
+      .catch(() => {});
 
-    return { success: true, message: "消息已发送（Redis 队列）。", messageId: created?.id };
+    void this.notifyAgentMessage({
+      toAgentId: msg.toAgentId,
+      messageId: created.id,
+      content: msg.content,
+      fromAgentId: msg.fromAgentId,
+      source: msg.source ?? fromTier,
+    });
+
+    return { success: true, message: "消息已发送（Redis 旁路）。", messageId: created.id };
+  }
+
+  private async notifyAgentMessage(params: {
+    toAgentId: string;
+    messageId: string;
+    content: string;
+    fromAgentId: string;
+    source?: string;
+  }): Promise<void> {
+    try {
+      const { getStreamHub } = await import("./sessionStreamHub.js");
+      const hub = getStreamHub();
+      if (!hub) return;
+      const sessions = await this.prisma.chatSession.findMany({
+        where: {
+          agentId: params.toAgentId,
+          kind: "subagent",
+          status: { in: ["active", "running", "queued", "paused"] },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+        select: { id: true },
+      });
+      for (const s of sessions) {
+        hub.pushExternalEvent(s.id, {
+          type: "agent_message",
+          sessionId: s.id,
+          agentId: params.toAgentId,
+          messageId: params.messageId,
+          content: params.content,
+          source: params.source,
+          fromAgentId: params.fromAgentId,
+        });
+      }
+    } catch (err) {
+      console.warn(`[RedisSwarmBus] agent_message 推送失败:`, err);
+    }
   }
 
   async poll(toAgentId: string): Promise<AgentMessageRecord[]> {
-    // 从 DB 查 pending 消息（BullMQ 的 Worker 会处理执行，但 poll 仍从 DB 读供前端展示）
     const messages = await this.prisma.agentMessage.findMany({
       where: { toAgentId, status: "pending" },
       orderBy: { createdAt: "asc" },
@@ -135,7 +204,6 @@ export class RedisSwarmBus implements SwarmBus {
   }
 
   async markConsumed(messageId: string): Promise<void> {
-    // W16a-1：delivered → consumed 不动 deliveredAt（真账）；pending 直跳 consumed 兜底补齐
     const fromDelivered = await this.prisma.agentMessage.updateMany({
       where: { id: messageId, status: "delivered" },
       data: { status: "consumed" },
@@ -147,32 +215,7 @@ export class RedisSwarmBus implements SwarmBus {
     });
   }
 
-  /** 启动 Worker 监听指定 Agent 的消息（进程隔离模式） */
-  startWorker(agentId: string, handler: (msg: AgentMessageInput) => Promise<void>): Worker {
-    const worker = new Worker(
-      QUEUE_NAME,
-      async (job: Job) => {
-        const data = job.data as AgentMessageInput & { messageId: string };
-        if (data.toAgentId !== agentId) return; // 只处理发给本 Agent 的消息
-        await handler(data);
-        await this.markConsumed(data.messageId);
-      },
-      {
-        connection: { url: process.env.REDIS_URL || "redis://127.0.0.1:6379" } as any,
-        concurrency: 1, // 每个 Agent 同时只处理一条消息（#9）
-      },
-    );
-    this.workers.set(agentId, worker);
-    return worker;
-  }
-
-  /** 停止所有 Worker */
   async close(): Promise<void> {
-    for (const worker of this.workers.values()) {
-      await worker.close();
-    }
-    this.workers.clear();
     await this.queue.close();
-    await this.connection.quit();
   }
 }

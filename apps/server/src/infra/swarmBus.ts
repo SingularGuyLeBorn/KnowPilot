@@ -18,6 +18,7 @@ import {
   checkCrossWorkspace,
   type PermissionError,
 } from "./swarmPermissionGuard.js";
+import { RedisSwarmBus } from "./redisSwarmBus.js";
 
 const MAX_DEPTH = SWARM_MAX_DEPTH;
 const MAX_QUEUE_SIZE = SWARM_MAX_QUEUE_SIZE;
@@ -201,44 +202,26 @@ export class LocalSwarmBus implements SwarmBus {
 
 let _bus: SwarmBus | null = null;
 let _busPrisma: PrismaClient | null = null;
-let _redisUpgradeInProgress = false;
 
 /** 仅用于测试：重置 SwarmBus 单例，避免跨测试复用旧的 PrismaClient */
 export function resetSwarmBus(): void {
   _bus = null;
   _busPrisma = null;
-  _redisUpgradeInProgress = false;
 }
 
 export function getSwarmBus(prisma: PrismaClient, services: ServiceContainer, config?: any): SwarmBus {
-  // prasma 不匹配时重建（测试场景：每个 test 传入不同 mock prisma，单例不能复用旧实例）
+  // prisma 不匹配时重建（测试场景：每个 test 传入不同 mock prisma，单例不能复用旧实例）
   if (_bus && _busPrisma !== prisma) {
     _bus = null;
     _busPrisma = null;
   }
   if (!_bus) {
-    const mode = process.env.SWARM_MODE || "local";
+    const mode = (process.env.SWARM_MODE || "local").trim().toLowerCase();
     if (mode === "redis") {
-      // 动态导入避免未安装 Redis 时崩溃
-      // 修复：原实现 import 完成后检查 `if (!_bus)`，但此时 _bus 已被临时 LocalSwarmBus 赋值，
-      // 导致 RedisSwarmBus 永远不会被使用。改为无条件替换，同时加锁避免并发重复 import。
-      _bus = new LocalSwarmBus(prisma, services);
+      // 同步构造：禁止先挂 Local 再 async 替换（启动窗口语义不一致）
+      _bus = new RedisSwarmBus(prisma, services, config);
       _busPrisma = prisma;
-      if (!_redisUpgradeInProgress) {
-        _redisUpgradeInProgress = true;
-        import("./redisSwarmBus.js")
-          .then(({ RedisSwarmBus }) => {
-            _bus = new RedisSwarmBus(prisma, services, config);
-            _busPrisma = prisma;
-            console.log("  🔗 [SwarmBus] 已切换到 Redis 模式（BullMQ）");
-          })
-          .catch((err) => {
-            console.warn("  ⚠️ [SwarmBus] Redis 模式加载失败，回退到 Local:", err);
-          })
-          .finally(() => {
-            _redisUpgradeInProgress = false;
-          });
-      }
+      console.log("  🔗 [SwarmBus] Redis 模式（BullMQ 旁路 + SQLite 邮箱）");
     } else {
       _bus = new LocalSwarmBus(prisma, services);
       _busPrisma = prisma;
