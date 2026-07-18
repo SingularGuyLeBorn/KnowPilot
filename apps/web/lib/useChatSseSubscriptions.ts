@@ -59,17 +59,19 @@ export function useChatSseSubscriptions({
     // 捕获 ref 值到 effect 局部变量，避免 cleanup 时 ref 已变更（react-hooks/exhaustive-deps）
     const extraWatched = extraWatchedSessionsRef.current;
 
-    const refreshAsync = () => {
-      // INV-8 ④：异步队列刷新完成（async_delivery / async_job_update / session_run_started 触发）
-      // = 显式 drain 请求。投递到达时视图空闲则立即消费；占用中由 commit 兑底。
-      // 注意：完成态展示不在这里做——poll 显示 job 已被服务端消费时，由
-      // mergeAsyncPollIntoQueue 纯派生把本地 overlay 转为 done/failed（createdAt+15s），
-      // 覆盖初始 fetch / refetch / SSE 全部数据到达路径，不依赖哪个事件先到。
+    const refreshAsyncQueueOnly = () => {
       void asyncQueueQuery.refetch().then(() => {
         if (effectiveSessionId) streamLifecycleActions.hydrateDone(effectiveSessionId);
       });
+      // stats 优先走 SSE setData；无 stats 时再 refetch
       void asyncQueueStatsQuery.refetch();
-      if (mainSessionId) {
+    };
+
+    const refreshAsync = (opts?: { heavy?: boolean }) => {
+      // INV-8 ④：异步队列刷新完成 = 显式 drain 请求
+      refreshAsyncQueueOnly();
+      // heavy：终态才 invalidate 子会话列表 / task.list，避免 running 进度抖整批
+      if (opts?.heavy && mainSessionId) {
         void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
         void utils.task.list.invalidate();
         if (mainSessionId !== effectiveSessionId) {
@@ -86,32 +88,41 @@ export function useChatSseSubscriptions({
         cleanups.push(sessionMessagesStore.addSessionEventListener(sid, eventType, handler));
       };
 
-      register("async_delivery", refreshAsync);
+      register("async_delivery", () => refreshAsync({ heavy: true }));
       register("session_run_started", (ev) => {
         try {
           const data = JSON.parse(ev.data) as { sessionId?: string };
           void utils.session.listRunning.invalidate();
-          refreshAsync();
+          refreshAsync({ heavy: true });
           if (data.sessionId && data.sessionId !== sid) {
             sessionMessagesStore.watchSession(data.sessionId);
             extraWatchedSessionsRef.current.add(data.sessionId);
           }
         } catch {
           void utils.session.listRunning.invalidate();
-          refreshAsync();
+          refreshAsync({ heavy: true });
         }
       });
       register("async_job_update", (ev) => {
+        let status: string | undefined;
         try {
           // stats 形状用服务端导出的 AsyncQueueStats（单一事实源），不再本地内联重复声明
-          const data = JSON.parse(ev.data) as { stats?: AsyncQueueStats };
+          const data = JSON.parse(ev.data) as { stats?: AsyncQueueStats; status?: string };
+          status = data.status;
           if (data.stats) {
             utils.agent.asyncQueueStats.setData(undefined, data.stats);
           }
         } catch {
           /* ignore parse */
         }
-        refreshAsync();
+        const terminal =
+          status === "done" || status === "failed" || status === "cancelled";
+        if (terminal) {
+          refreshAsync({ heavy: true });
+        } else {
+          // queued/running：只刷队列切片，不 invalidate task.list / listChildren
+          refreshAsyncQueueOnly();
+        }
       });
       register("agent_message", () => {
         if (isSubagentSession) void pullAgentMessagesQuery.refetch();

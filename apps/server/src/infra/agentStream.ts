@@ -29,6 +29,24 @@ import { SessionStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 import { autoNameSession } from "./sessionAutoName.js";
 import { markAgentMessageConsumedByTaskRef } from "./agentMessageLedger.js";
 
+/** SSE 热路径截断：全文仍随 message 落库；timeline 只需要 hint + 预览 */
+const TOOL_END_SSE_MAX_CHARS = 2_000;
+
+function truncateToolResultForSse(result: unknown): unknown {
+  if (result == null) return result;
+  try {
+    const raw = typeof result === "string" ? result : JSON.stringify(result);
+    if (raw.length <= TOOL_END_SSE_MAX_CHARS) return result;
+    return {
+      truncated: true,
+      preview: raw.slice(0, TOOL_END_SSE_MAX_CHARS),
+      originalChars: raw.length,
+    };
+  } catch {
+    return { truncated: true, preview: String(result).slice(0, TOOL_END_SSE_MAX_CHARS) };
+  }
+}
+
 export type AgentStreamEvent =
   | { type: "session_start"; sessionId: string }
   | { type: "round_start"; round: number }
@@ -264,7 +282,7 @@ export async function runAgentLoopStream(options: {
           type: "tool_end",
           toolCallId,
           name,
-          result,
+          result: truncateToolResultForSse(result),
           round,
           hint: formatToolResultHint(result) ?? undefined,
         });
