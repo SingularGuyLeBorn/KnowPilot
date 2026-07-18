@@ -166,26 +166,35 @@ session_rotate({
 
 ---
 
-## 6. Agent 进化（Hermes 风格）
+## 6. Agent 进化（Hermes 风格）— 真闭环对标
 
-> **决策（2026-07-18，已纠偏）**：**需要**自动 Skill 进化闭环，但**必须** draft + 审批上线，禁止无统计假繁荣、禁止无审批跨 Workspace 推广。
+> **决策（2026-07-18）**：对照 `NousResearch/hermes-agent` 源码做**运行时 Closed Learning Loop**。  
+> **假对标已撤回**：此前 `generate_skill_from_experience` + `enabled=false` + `skill_enable/promote` **不是** Hermes（无 `skill_manage`、无回合后 review、无渐进披露、无 curator、无 GEPA）。  
+> **本期范围**：主仓闭环（procedural SKILL.md + list/view/manage + background review + usage/curator）。  
+> **后续**：`hermes-agent-self-evolution` DSPy/GEPA 离线进化（另立工单）。
 
-### 6.1 已落地
+### 6.1 Hermes 模块对照
 
-| 环节 | 状态 |
-|---|---|
-| Run 后写 experience（跳过纯闲聊；stream + sync） | ✅ |
-| `generate_skill_from_experience` → `enabled=false` draft + 可执行 `run()` 骨架 | ✅ |
-| manager/super 默认工具接线 + tier 硬拦 | ✅ |
-| `executeSkill` 回写 `metaJson.stats`（usageCount/successRate） | ✅ |
-| `skill_discover` 仅收录有真实统计的已启用 Skill | ✅ |
-| `skill_enable` / `skill_promote` 默认走审批闸（与 git 同档） | ✅ |
-| 模板：manager 审 experience→draft；super 可 discover/promote | ✅ |
+| Hermes 模块 | KnowPilot 目标 | 状态 |
+|---|---|---|
+| `skills_list` / `skill_view` 渐进披露 | native + procedural 不进 `skill__*` schema | ✅ |
+| `skill_manage` create/patch/write_file/archive | native + `content/skills/{name}/SKILL.md` | ✅ |
+| `SKILLS_GUIDANCE` + 回合后 skill review | `promptBuilder` + `skillBackgroundReview` | ✅ |
+| `.usage.json` + curator 生命周期 | `skillUsage` + `skillCurator`（心跳 maintenance） | ✅ |
+| experience Memory（陈述事实） | 保留；**≠** Skill 生成主路径 | ✅ |
+| DSPy/GEPA `evolve_skill` | 后续工单 | 未做 |
 
-### 6.2 明确不做（当前阶段）
+### 6.2 双形态 Skill
 
-- 心跳里**无人值守**自动 `generate`→`enable`→`promote`（可建议，不可跳过审批）。
-- 把进化逻辑塞进 `consolidateMemories`。
+- **procedural**（主路径）：`content/skills/{name}/SKILL.md` + references/templates/scripts；经 list/view 加载。  
+- **executable**（旁路）：扁平 `{slug}.md` + 沙箱 `run()`；仍可 `skill__*` 注册。  
+- Memory = 用户/情境事实；Skill = 程序记忆。**禁止**把 experience Memory 拼 JS 冒充 Hermes。
+
+### 6.3 明确不做（本期）
+
+- DSPy/GEPA / 连续离线进化管道。  
+- 心跳无人值守 generate→enable→promote。  
+- 把进化塞进 `consolidateMemories`。
 
 ---
 

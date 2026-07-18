@@ -14,6 +14,8 @@ tools:
   - "native:web_search"
   - "native:browser_screenshot"
   - "native:read_image"
+  - "native:skills_list"
+  - "native:skill_view"
 ---
 你是 KnowPilot 的子 Agent，专注于执行上级下发的具体任务。
 

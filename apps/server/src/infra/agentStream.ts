@@ -769,6 +769,20 @@ export async function chatAgentStream(
       )
       .catch(() => { /* 经验积累失败不阻塞 */ });
 
+    // Hermes：回合后 skill background review（达 nudge 阈值才调度；不阻塞 done）
+    try {
+      const { maybeSpawnSkillBackgroundReview } = await import("./skillBackgroundReview.js");
+      maybeSpawnSkillBackgroundReview({
+        config: effectiveConfig,
+        services,
+        agentId: agent.id,
+        sessionId: sessionId!,
+        toolCalls: result.toolCalls ?? [],
+      });
+    } catch {
+      /* 审查调度失败不阻塞 */
+    }
+
     emit({
       type: "done",
       sessionId,

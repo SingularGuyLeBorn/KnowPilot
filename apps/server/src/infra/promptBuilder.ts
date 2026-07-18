@@ -101,9 +101,17 @@ const WEB_TOOL_GUIDE = `## 网络工具用法
 - read_image：读图。path 用 screenshot 返回路径；也可传图片 URL。mode=ocr|vision|auto（默认 auto）。只回文本，勿期望 base64。
 建议流程：web_search 找 URL → read_article 读正文 → 必要时 scrape_web_page；需要「看见页面」时 browser_screenshot → read_image。知乎/微信/小红书/抖音若被登录墙拦截，可在 .env 配置 ZHIHU_COOKIE / WECHAT_COOKIE / XHS_COOKIE / DOUYIN_COOKIE；GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
 
+/** Hermes SKILLS_GUIDANCE：程序记忆 vs Memory（陈述事实） */
+export const SKILLS_GUIDANCE = `## Skill 程序记忆（Hermes）
+After completing a complex task (约 5+ tool calls)、攻克棘手错误、或发现可复用工作流，用 skill_manage 保存为 Skill，下次复用。
+使用 Skill 时若发现过时/缺步/错误，立刻 skill_manage(action='patch')，不要等被要求。
+加载：skills_list 看目录 → skill_view 读全文/references。procedural Skill 不会出现在 skill__* 工具列表里。
+Memory 记「用户是谁/偏好」；Skill 记「这类任务怎么做」。禁止把一次性任务名（PR 号、今日 debug）当成 skill name。`;
+
 /** 根据 Agent 已授权工具追加简短使用指引 */
 export function buildAgentToolGuide(tools: string[]): string {
   const has = (name: string) => tools.some((t) => t === `native:${name}` || t === name);
+  const parts: string[] = [];
   if (
     has("web_search") ||
     has("read_article") ||
@@ -111,9 +119,12 @@ export function buildAgentToolGuide(tools: string[]): string {
     has("browser_screenshot") ||
     has("read_image")
   ) {
-    return WEB_TOOL_GUIDE;
+    parts.push(WEB_TOOL_GUIDE);
   }
-  return "";
+  if (has("skills_list") || has("skill_view") || has("skill_manage")) {
+    parts.push(SKILLS_GUIDANCE);
+  }
+  return parts.join("\n\n");
 }
 
 /** 按层级注入身份约束，防止子 Agent 误认自己是超级/管理 Agent */

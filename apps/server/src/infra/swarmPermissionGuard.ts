@@ -65,7 +65,8 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "free_api_keys_list",
     "free_api_keys_fetch",
     "free_models_list",
-    // Hermes：经验→Skill draft / 启用 draft / prompt 优化（sub 不可；enable/promote 另走审批闸）
+    // Hermes：skill_manage + 旧进化工具（sub 不可 manage；list/view 对 sub 开放）
+    "skill_manage",
     "optimize_agent_prompt",
     "generate_skill_from_experience",
     "skill_enable",
@@ -78,6 +79,8 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "agent_notify_parent",
     "todo_write",
     "todo_read",
+    "skills_list",
+    "skill_view",
   ],
 };
 

@@ -28,6 +28,14 @@ const ReflectionYamlSchema = z.object({
   criticModel: z.string().default(""),
 });
 
+/** config.yaml skills 段：Hermes 闭环 nudge / curator */
+const SkillsYamlSchema = z.object({
+  nudgeInterval: z.coerce.number().int().min(0).default(10),
+  staleAfterDays: z.coerce.number().int().min(1).default(30),
+  archiveAfterDays: z.coerce.number().int().min(1).default(90),
+  curatorIntervalHours: z.coerce.number().int().min(1).default(168),
+});
+
 /* ─── 类型定义 ─── */
 
 export interface LlmProviderConfig {
@@ -191,6 +199,17 @@ export interface AppConfig {
     maxRounds: number;
     /** critic 使用的便宜模型；空 = 与主 Agent 模型相同 */
     criticModel: string;
+  };
+  /** Hermes Skill 闭环：回合后审查阈值 + curator */
+  skills: {
+    /** 本轮 tool 调用次数 ≥ 此值则触发 background skill review；0 = 关闭 */
+    nudgeInterval: number;
+    /** curator：闲置超过 N 天标 stale */
+    staleAfterDays: number;
+    /** curator：闲置超过 N 天归档（非硬删） */
+    archiveAfterDays: number;
+    /** curator 最小间隔小时 */
+    curatorIntervalHours: number;
   };
 }
 
@@ -383,6 +402,8 @@ export function createAppConfig(): AppConfig {
   const reflectionYaml = reflectionYamlParsed.success
     ? reflectionYamlParsed.data
     : ReflectionYamlSchema.parse({});
+  const skillsYamlParsed = SkillsYamlSchema.safeParse(yamlConfig.skills ?? {});
+  const skillsYaml = skillsYamlParsed.success ? skillsYamlParsed.data : SkillsYamlSchema.parse({});
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -587,6 +608,7 @@ export function createAppConfig(): AppConfig {
       },
     },
     reflection: reflectionYaml,
+    skills: skillsYaml,
   };
 
   for (const dir of Object.values(config.contentPaths)) {

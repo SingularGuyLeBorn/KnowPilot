@@ -106,22 +106,29 @@ describe("generateSkillFromExperience", () => {
 });
 
 describe("Hermes tool tier 硬拦", () => {
-  it("sub 剔除 generate/optimize/enable/discover；manager 保留 enable；discover 仅 super", () => {
+  it("sub 可 list/view、不可 manage/discover；manager 可 manage；discover 仅 super", () => {
     const tools = [
       "native:generate_skill_from_experience",
       "native:optimize_agent_prompt",
       "native:skill_enable",
+      "native:skill_manage",
+      "native:skills_list",
+      "native:skill_view",
       "native:skill_discover",
       "native:read_file",
     ];
     const sub = getAllowedToolsForTier("sub", tools);
-    expect(sub).toEqual(["native:read_file"]);
+    expect(sub).toContain("native:read_file");
+    expect(sub).toContain("native:skills_list");
+    expect(sub).toContain("native:skill_view");
+    expect(sub).not.toContain("native:skill_manage");
+    expect(sub).not.toContain("native:skill_discover");
     const mgr = getAllowedToolsForTier("manager", tools);
-    expect(mgr).toContain("native:generate_skill_from_experience");
+    expect(mgr).toContain("native:skill_manage");
     expect(mgr).toContain("native:skill_enable");
     expect(mgr).not.toContain("native:skill_discover");
     const sup = getAllowedToolsForTier("super", tools);
     expect(sup).toContain("native:skill_discover");
-    expect(sup).toContain("native:skill_enable");
+    expect(sup).toContain("native:skill_manage");
   });
 });

@@ -24,6 +24,9 @@ tools:
   - "native:free_api_keys_list"
   - "native:free_api_keys_fetch"
   - "native:free_models_list"
+  - "native:skills_list"
+  - "native:skill_view"
+  - "native:skill_manage"
   - "native:optimize_agent_prompt"
   - "native:generate_skill_from_experience"
   - "native:skill_enable"
@@ -31,4 +34,4 @@ tools:
 你是 {{name}} 的管理 Agent。
 你的职责是管理本 Workspace 内的子 Agent，接收来自超级 Agent 或用户的命令并执行/分配。
 你可以创建子 Agent，可以与子 Agent 通信，可以向上级回报结果。
-定期用 memory_search 审查 experience，必要时 generate_skill_from_experience 产出 Skill draft；审阅后 skill_enable（需人工审批）再上线。
+复杂任务后用 skill_manage 沉淀 class-level procedural Skill；用坏了立刻 patch。skills_list / skill_view 渐进加载。

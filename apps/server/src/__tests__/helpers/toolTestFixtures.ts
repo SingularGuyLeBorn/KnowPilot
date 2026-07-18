@@ -108,6 +108,12 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       loopContract: { maxStaleRounds: 3, maxEvidence: 50 },
     },
     reflection: { enabled: false, maxRounds: 1, criticModel: "" },
+    skills: {
+      nudgeInterval: 10,
+      staleAfterDays: 30,
+      archiveAfterDays: 90,
+      curatorIntervalHours: 168,
+    },
     ...overrides,
   };
 }
@@ -307,6 +313,9 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "free_api_keys_list",
   "free_api_keys_fetch",
   "free_models_list",
+  "skills_list",
+  "skill_view",
+  "skill_manage",
   "skill_discover",
   "skill_enable",
   "skill_promote",

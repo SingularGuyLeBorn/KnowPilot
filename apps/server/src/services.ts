@@ -94,6 +94,7 @@ import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateI
 import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
 import { resolveSafePath } from "./infra/safePath.js";
+import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
 
@@ -1132,6 +1133,10 @@ export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillI
     return data;
   }
 
+  private skillKindOf(entity: SkillEntity): "procedural" | "executable" | "reference" {
+    return parseSkillKind(entity.metaJson, "executable");
+  }
+
   protected serializeToFile(entity: SkillEntity): string {
     let meta: Record<string, unknown> = {};
     if (entity.metaJson) {
@@ -1141,23 +1146,27 @@ export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillI
         meta = {};
       }
     }
+    const kind = this.skillKindOf(entity);
     const lines = [
       `name: "${entity.name.replace(/"/g, '\\"')}"`,
       `description: "${entity.description.replace(/"/g, '\\"')}"`,
       `icon: ${entity.icon ? `"${entity.icon}"` : "null"}`,
       `trigger: ${entity.trigger ? `"${entity.trigger}"` : "null"}`,
       `enabled: ${entity.enabled}`,
+      `kind: ${kind}`,
     ];
     if (meta.model) lines.push(`model: "${meta.model}"`);
     if (meta.context) lines.push(`context: ${meta.context}`);
-    if (meta.kind) lines.push(`kind: ${meta.kind}`);
     if (Array.isArray(meta.allowedTools) && meta.allowedTools.length) {
       lines.push(`allowed-tools:\n${(meta.allowedTools as string[]).map((t) => `  - ${t}`).join("\n")}`);
     }
     return `---\n${lines.join("\n")}\n---\n${entity.code}\n`;
   }
 
-  protected getFileSlug(entity: SkillEntity): string { return entity.name; }
+  /** procedural → `{name}/SKILL.md`；其余扁平 `{name}.md` */
+  protected getFileSlug(entity: SkillEntity): string {
+    return skillFileSlug(entity.name, this.skillKindOf(entity));
+  }
 
   // P11：FTS 增量
   protected override async afterCreate(entity: SkillEntity, input: CreateSkillInput): Promise<void> {

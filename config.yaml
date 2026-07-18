@@ -89,6 +89,16 @@ reflection:
   # critic 使用的便宜模型（空 = 与主 Agent 模型相同）
   criticModel: ""
 
+# Hermes Skill 闭环（主仓 Closed Learning Loop）
+skills:
+  # 本轮 tool 调用次数 ≥ 此值 → 回合后 background skill review；0 = 关闭
+  nudgeInterval: 10
+  # curator：闲置 N 天标 stale / 再闲置归档到 content/skills/.archive（非硬删）
+  staleAfterDays: 30
+  archiveAfterDays: 90
+  # curator 最小运行间隔（小时）；默认 7 天
+  curatorIntervalHours: 168
+
 # 超级 Agent 心跳 Loop Contract（控制平面；不替换 ReAct）
 heartbeat:
   loopContract:

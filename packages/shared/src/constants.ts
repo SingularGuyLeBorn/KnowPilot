@@ -358,6 +358,9 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:free_api_keys_list",
     "native:free_api_keys_fetch",
     "native:free_models_list",
+    "native:skills_list",
+    "native:skill_view",
+    "native:skill_manage",
     "native:skill_discover",
     "native:skill_enable",
     "native:skill_promote",
@@ -392,6 +395,9 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:free_api_keys_list",
     "native:free_api_keys_fetch",
     "native:free_models_list",
+    "native:skills_list",
+    "native:skill_view",
+    "native:skill_manage",
     "native:optimize_agent_prompt",
     "native:generate_skill_from_experience",
     "native:skill_enable",
@@ -408,6 +414,8 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:web_search",
     "native:browser_screenshot",
     "native:read_image",
+    "native:skills_list",
+    "native:skill_view",
   ],
 };
 
@@ -442,6 +450,9 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:pinned_memory_write",
   "native:todo_write",
   "native:todo_read",
+  "native:skills_list",
+  "native:skill_view",
+  "native:skill_manage",
   // GitHub：repo / issue / PR / branch / file CRUD（删仓/合 PR/删分支走审批）
   "native:github_search_repos",
   "native:github_get_repo",

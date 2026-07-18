@@ -16,6 +16,8 @@ import { provisionWorkspace } from "../../workspaceProvision.js";
 import { checkWorkspaceAgentAccess } from "../../swarmPermissionGuard.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "../../agentEvolution.js";
 import { parseSkillUsageStats } from "../../skillRunner.js";
+import { getSkillUsage, latestActivityAt } from "../../skillUsage.js";
+import { parseSkillKind } from "../../skillPackage.js";
 import { resolveToolsForAgentTier } from "../../loop/setup.js";
 import { buildAllMemoryHints, buildSystemPromptWithHints } from "../../promptBuilder.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
@@ -1183,19 +1185,31 @@ async function skillDiscoverTool(args: Record<string, unknown>, ctx: NativeToolC
   const minSuccessRate = (args.minSuccessRate as number) ?? 80;
   const minUsageCount = Math.max(1, (args.minUsageCount as number) ?? 1);
   const limit = (args.limit as number) ?? 10;
+  const skillsRoot = ctx.config.contentPaths.skills;
   const skills = await ctx.prisma.skill.findMany({
     where: { enabled: true },
     select: { id: true, name: true, description: true, icon: true, metaJson: true },
   });
-  // 只用 executeSkill 回写的 metaJson.stats；无真实调用不进榜（杜绝默认 100% 假繁荣）
+  // 真实用量：.usage.json（view/patch）+ executable metaJson.stats；无统计不进榜
   const candidates = skills
     .map((s) => {
-      const stats = parseSkillUsageStats(s.metaJson);
-      if (!stats) return null;
-      return { ...s, ...stats };
+      const kind = parseSkillKind(s.metaJson, "executable");
+      if (kind === "reference") return null;
+      const side = getSkillUsage(s.name, skillsRoot);
+      const execStats = parseSkillUsageStats(s.metaJson);
+      const usageCount = Math.max(side?.viewCount ?? 0, side?.patchCount ?? 0, execStats?.usageCount ?? 0);
+      if (usageCount < minUsageCount) return null;
+      const successRate = execStats?.successRate ?? (usageCount > 0 ? 100 : 0);
+      if (successRate < minSuccessRate) return null;
+      return {
+        ...s,
+        kind,
+        usageCount,
+        successRate,
+        lastUsedAt: latestActivityAt(side ?? { state: "active", viewCount: 0, patchCount: 0, createCount: 0 }) || execStats?.lastUsedAt,
+      };
     })
     .filter((s): s is NonNullable<typeof s> => !!s)
-    .filter((s) => s.usageCount >= minUsageCount && s.successRate >= minSuccessRate)
     .sort((a, b) => b.usageCount - a.usageCount || b.successRate - a.successRate)
     .slice(0, limit);
 
@@ -1206,11 +1220,12 @@ async function skillDiscoverTool(args: Record<string, unknown>, ctx: NativeToolC
       name: s.name,
       description: s.description,
       icon: s.icon,
+      kind: s.kind,
       usageCount: s.usageCount,
       successRate: s.successRate,
       lastUsedAt: s.lastUsedAt || undefined,
     })),
-    hint: "仅含有真实调用统计的已启用 Skill。推广前确认目标 Agent；skill_promote 需人工审批。",
+    hint: "仅含有真实调用/查看统计的已启用 Skill。skill_promote 需审批；主路径是 skill_manage 维护 procedural 包。",
   };
 }
 
@@ -1323,7 +1338,9 @@ async function generateSkillFromExperienceTool(args: Record<string, unknown>, ct
         success: true,
         skillId: result.skillId,
         draft: true,
-        message: `Skill draft 已生成（enabled=false）。请人工审阅后启用，再 skill_promote。`,
+        message:
+          `已生成 executable draft（enabled=false）。注意：这不是 Hermes 主路径；` +
+          `程序记忆请用 skill_manage 写 procedural SKILL.md 包，并经 skills_list/skill_view 加载。`,
       }
     : { error: result.reason ?? "生成失败" };
 }

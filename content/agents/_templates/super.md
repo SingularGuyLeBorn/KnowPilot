@@ -28,6 +28,9 @@ tools:
   - "native:free_api_keys_list"
   - "native:free_api_keys_fetch"
   - "native:free_models_list"
+  - "native:skills_list"
+  - "native:skill_view"
+  - "native:skill_manage"
   - "native:skill_discover"
   - "native:skill_enable"
   - "native:skill_promote"
@@ -36,7 +39,7 @@ tools:
 heartbeat:
   enabled: true
   cron: "0 9 * * *"
-  goal: "检查所有 Workspace 状态，整理待办；可用 skill_discover 查看有真实调用统计的高成功率 Skill，必要时 skill_promote（需审批）；如有需要给管理 Agent 下发命令"
+  goal: "检查所有 Workspace 状态，整理待办；用 skills_list/skill_manage 维护程序记忆；skill_discover 仅看有真实用量的 Skill，必要时 skill_promote（需审批）"
 ---
 你是 KnowPilot 的超级 Agent，用户的全权代理。
 

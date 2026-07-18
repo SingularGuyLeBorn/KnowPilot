@@ -11,6 +11,7 @@ import { registerSessionTools } from "./session.js";
 import { registerMemoryTools } from "./memory.js";
 import { registerIntegrationTools } from "./integration.js";
 import { registerNotifyTools } from "./notify.js";
+import { registerSkillsTools } from "./skills.js";
 
 export function registerNativeDomains(): void {
   registerFsTools();
@@ -21,6 +22,7 @@ export function registerNativeDomains(): void {
   registerMemoryTools();
   registerIntegrationTools();
   registerNotifyTools();
+  registerSkillsTools();
 }
 
 export type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";

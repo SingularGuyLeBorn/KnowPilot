@@ -58,7 +58,7 @@ describe("Skill usage stats（Hermes discover 账本）", () => {
     const result = await executeSkill(services as never, "calc", { input: "hi" });
     expect((result as { result: number }).result).toBe(2);
     expect(update).toHaveBeenCalledOnce();
-    const arg = update.mock.calls[0][0] as { id: string; metaJson: string };
+    const arg = (update.mock.calls as unknown as Array<[{ id: string; metaJson: string }]>)[0]![0]!;
     expect(arg.id).toBe("sk-1");
     const stats = parseSkillUsageStats(arg.metaJson);
     expect(stats).toMatchObject({ usageCount: 1, successCount: 1, successRate: 100 });
@@ -85,7 +85,9 @@ describe("Skill usage stats（Hermes discover 账本）", () => {
     };
     const result = (await executeSkill(services as never, "bad", { input: "x" })) as { error: string };
     expect(result.error).toMatch(/boom/);
-    const stats = parseSkillUsageStats((update.mock.calls[0][0] as { metaJson: string }).metaJson);
+    const stats = parseSkillUsageStats(
+      (update.mock.calls as unknown as Array<[{ metaJson: string }]>)[0]![0]!.metaJson,
+    );
     expect(stats).toMatchObject({ usageCount: 1, successCount: 0, failCount: 1, successRate: 0 });
   });
 });

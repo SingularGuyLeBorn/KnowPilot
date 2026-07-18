@@ -97,9 +97,11 @@ export class HeartbeatEngine {
     await this.refresh();
 
     // W5：记忆衰减维护任务（strength 按日复利衰减 + 低分归档）
+    // Hermes：同通道挂 skill curator（stale/archive，非硬删）
     if (!this.maintenanceJob) {
       this.maintenanceJob = cron.schedule(MEMORY_DECAY_CRON, () => {
         void this.runMemoryDecay();
+        void this.runSkillCurator();
       });
     }
 
@@ -232,6 +234,21 @@ export class HeartbeatEngine {
     } catch (err) {
       console.warn(`  🧠 [MemoryDecay] 执行失败:`, err instanceof Error ? err.message : err);
       return { decayed: 0, archived: 0, expired: 0, duplicatesRemoved: 0 };
+    }
+  }
+
+  /** Hermes：Skill curator（agent-created 闲置 → stale/archive） */
+  async runSkillCurator(): Promise<void> {
+    try {
+      const { maybeRunSkillCurator } = await import("./skillCurator.js");
+      const r = await maybeRunSkillCurator(this.services, this.config);
+      if (r.ran && (r.archived.length > 0 || r.staleMarked.length > 0)) {
+        console.log(
+          `  📚 [SkillCurator] stale=${r.staleMarked.length} archived=${r.archived.length}`,
+        );
+      }
+    } catch (err) {
+      console.warn(`  📚 [SkillCurator] 执行失败:`, err instanceof Error ? err.message : err);
     }
   }
 

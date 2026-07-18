@@ -176,7 +176,8 @@ async function resolveSkillNames(services: ServiceContainer, parsed: ParsedAgent
         if (!s.metaJson) return true;
         try {
           const meta = JSON.parse(s.metaJson) as { kind?: string };
-          return meta.kind !== "reference";
+          // wildcard 只自动挂 executable；procedural 走 list/view
+          return meta.kind !== "reference" && meta.kind !== "procedural";
         } catch {
           return true;
         }
@@ -232,7 +233,8 @@ export async function buildAgentToolSchemas(
     });
   }
 
-  // A2：批量加载所有 Skill（一次 list 查询），消除 N 次 findSkillByName 的 N+1。
+  // A2：批量加载 Skill。Hermes 渐进披露：procedural/reference 不注册 skill__* schema，
+  // 经 skills_list / skill_view 加载；仅 executable（沙箱）进 function calling。
   const skillMap = await findSkillsByNames(services, skillNames);
   for (const skillName of skillNames) {
     const skill = skillMap.get(skillName);
@@ -240,6 +242,18 @@ export async function buildAgentToolSchemas(
       console.warn(`[AgentTools] Skill ${skillName} 跳过: 不存在或未启用`);
       continue;
     }
+    let kind = "executable";
+    if (skill.metaJson) {
+      try {
+        const meta = JSON.parse(skill.metaJson) as { kind?: string };
+        if (meta.kind === "procedural" || meta.kind === "reference") kind = meta.kind;
+        else if (meta.kind === "skill") kind = "executable";
+        else if (meta.kind === "executable") kind = "executable";
+      } catch {
+        /* ignore */
+      }
+    }
+    if (kind === "procedural" || kind === "reference") continue;
     const schema = buildSkillToolSchema(skill);
     registry.set(schema.function.name, { kind: "skill", skillName: skill.name, concurrencySafe: true });
     schemas.push(schema);

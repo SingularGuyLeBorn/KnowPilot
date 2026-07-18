@@ -1,22 +1,29 @@
 /**
  * Skill 同步器
  *
- * 文件格式：content/skills/{slug}.md
- * frontmatter: name, description, icon, trigger, enabled, model, context, allowed-tools, kind
- * 正文：code / prompt
+ * - procedural: content/skills/{name}/SKILL.md（+ references/templates/scripts）
+ * - executable: content/skills/{slug}.md
+ * - reference: design-references/ 等
  */
 
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readBoolean, getFileMtime } from "./utils.js";
+import {
+  inferKindFromScanPath,
+  shouldSkipSkillScanPath,
+  skillFileSlug,
+  type SkillKind,
+} from "../../infra/skillPackage.js";
 
 export interface SkillMeta {
   model?: string;
   context?: "inline" | "fork";
   allowedTools?: string[];
-  kind?: "skill" | "reference";
+  kind?: SkillKind;
   version?: string;
+  package?: boolean;
 }
 
 interface SkillData {
@@ -37,16 +44,13 @@ function readStringArray(value: unknown): string[] | undefined {
   return undefined;
 }
 
-function parseSkillFrontmatter(data: Record<string, unknown>, filePath: string, contentDir: string): SkillMeta {
+function parseSkillFrontmatter(
+  data: Record<string, unknown>,
+  filePath: string,
+  contentDir: string,
+): SkillMeta {
   const rel = path.relative(contentDir, filePath).replace(/\\/g, "/");
-  const isReferenceDir = rel.startsWith("design-references/");
-
-  const kind =
-    data.kind === "reference" || data.kind === "skill"
-      ? (data.kind as SkillMeta["kind"])
-      : isReferenceDir
-        ? "reference"
-        : "skill";
+  const kind = inferKindFromScanPath(rel, typeof data.kind === "string" ? data.kind : undefined);
 
   const context =
     data.context === "fork" || data.context === "inline" ? (data.context as SkillMeta["context"]) : undefined;
@@ -64,6 +68,7 @@ function parseSkillFrontmatter(data: Record<string, unknown>, filePath: string, 
     allowedTools: readStringArray(data["allowed-tools"] ?? data.allowedTools),
     kind,
     version,
+    package: kind === "procedural",
   };
 }
 
@@ -82,28 +87,39 @@ export const skillSyncer: Syncer<SkillData> = {
     const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<SkillData>[] = [];
     for (const filePath of filePaths) {
+      const rel = path.relative(contentDir, filePath).replace(/\\/g, "/");
+      if (shouldSkipSkillScanPath(rel)) continue;
       const r = await this.scanFile!(filePath, contentDir);
       if (r) records.push(r);
     }
     return records;
   },
 
-  // A13：单文件解析
   async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<SkillData> | null> {
     try {
-      const slug = filePathToSlug(contentDir, filePath);
+      const rel = path.relative(contentDir, filePath).replace(/\\/g, "/");
+      if (shouldSkipSkillScanPath(rel)) return null;
+
       const mtime = getFileMtime(filePath);
       const { data, content } = parseMarkdownFile(filePath);
       const fm = data as Record<string, unknown>;
+      const meta = parseSkillFrontmatter(fm, filePath, contentDir);
 
-      const name = typeof fm.name === "string" ? fm.name : slug;
+      const baseName =
+        path.basename(filePath) === "SKILL.md"
+          ? path.basename(path.dirname(filePath))
+          : filePathToSlug(contentDir, filePath);
+
+      const name = typeof fm.name === "string" ? fm.name : baseName;
       const description = typeof fm.description === "string" ? fm.description : "";
       const code = content.trim();
       const icon = typeof fm.icon === "string" ? fm.icon : "Wand2";
-      const meta = parseSkillFrontmatter(fm, filePath, contentDir);
       const trigger = normalizeTrigger(fm, name);
       let enabled = readBoolean(fm.enabled, true);
       if (meta.kind === "reference") enabled = readBoolean(fm.enabled, false);
+      if (fm.archived === true) enabled = false;
+
+      const slug = skillFileSlug(name, meta.kind ?? "executable");
 
       return {
         slug,
@@ -154,7 +170,6 @@ export const skillSyncer: Syncer<SkillData> = {
     });
   },
 
-  // #7：unlink 增量硬删 by sourceSlug
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
     const r = await prisma.skill.deleteMany({ where: { sourceSlug: slug } });
     return r.count;
