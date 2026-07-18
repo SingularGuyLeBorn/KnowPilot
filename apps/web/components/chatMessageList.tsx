@@ -27,6 +27,7 @@ import { LucideIconByName } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { type ChatImageAttachment, type ChatMessage } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
+import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import { MessageActions, MessageSourceLabel, MessageVersions } from "@/components/chatMessageBits";
 import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
@@ -232,7 +233,11 @@ export const ChatMessageList = memo(function ChatMessageList({
           >
             {streamingContent ? (
               <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
-                <PostContent content={streamingContent} className="prose-sm max-w-none text-left" />
+                {/* 流式期轻量渲染；落库后的 assistant 气泡仍走完整 PostContent */}
+                <StreamingPlainContent
+                  content={streamingContent}
+                  className="prose-sm max-w-none text-left"
+                />
               </div>
             ) : liveTimeline.length === 0 ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">

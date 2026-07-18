@@ -164,6 +164,8 @@ export function ChatView() {
   // 流式 token rAF 合并：onToken 每字符触发一次会让 ChatView 高频重渲染。
   const pendingStreamDeltaRef = useRef<Map<string, string>>(new Map());
   const streamRafRef = useRef<Map<string, number>>(new Map());
+  const pendingThinkingDeltaRef = useRef<Map<string, string>>(new Map());
+  const thinkingRafRef = useRef<Map<string, number>>(new Map());
 
 
   const { useList: useAgentList } = useAgent();
@@ -617,6 +619,8 @@ export function ChatView() {
     isPageUnloadingRef,
     pendingStreamDeltaRef,
     streamRafRef,
+    pendingThinkingDeltaRef,
+    thinkingRafRef,
     streamSaveTimeoutRef,
     setSessionId,
     setEditingUserId: () => {},
@@ -733,6 +737,8 @@ export function ChatView() {
     // 捕获 ref 值到 effect 局部变量，供卸载清理（react-hooks/exhaustive-deps）
     const rafMap = streamRafRef.current;
     const deltaMap = pendingStreamDeltaRef.current;
+    const thinkRafMap = thinkingRafRef.current;
+    const thinkDeltaMap = pendingThinkingDeltaRef.current;
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("visibilitychange", onVisibilityChange);
@@ -742,6 +748,9 @@ export function ChatView() {
       rafMap.forEach((id) => cancelAnimationFrame(id));
       rafMap.clear();
       deltaMap.clear();
+      thinkRafMap.forEach((id) => cancelAnimationFrame(id));
+      thinkRafMap.clear();
+      thinkDeltaMap.clear();
       if (streamSaveTimeoutRef.current) {
         clearTimeout(streamSaveTimeoutRef.current);
         streamSaveTimeoutRef.current = null;
