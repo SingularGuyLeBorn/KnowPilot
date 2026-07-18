@@ -458,6 +458,26 @@ export function buildAskUserResumeMessage(resolution: AskUserResolution): string
   return `ask_user 等待超时，用户未在时限内答复（askId=${resolution.askId}）。请向用户说明并收尾，或改用其他不需要用户确认的方案。`;
 }
 
+/**
+ * 会话 resume（服务重启后）时：若仍有未答复的 ask_user，注入引导文案，
+ * 避免盲目「继续任务」导致重复调用 ask_user。
+ * 无 pending → 返回 null（调用方用默认恢复文案）。
+ */
+export function buildResumeHintIfAskPending(sessionId: string): string | null {
+  const pending = listAskUserPendingForSession(sessionId);
+  if (pending.length === 0) return null;
+  const lines = pending.map((p, i) => {
+    const q = p.question.length > 160 ? `${p.question.slice(0, 160)}…` : p.question;
+    const ch = p.channel === "email" ? "邮件/Chat" : "Chat 弹框";
+    return `${i + 1}. askId=${p.askId}（经 ${ch}）\n   问题：${q}`;
+  });
+  return (
+    `（服务已重启。本会话仍有 ${pending.length} 个未答复的 ask_user，请勿重复调用 ask_user；` +
+    `等待用户在弹框或邮件中答复后，再基于答复继续任务。）\n\n` +
+    `待答复列表：\n${lines.join("\n")}`
+  );
+}
+
 /** 启动时从 SQLite 灌回内存 pending，并重挂提醒 */
 export async function hydrateAskUserGateFromDb(
   config: AppConfig,

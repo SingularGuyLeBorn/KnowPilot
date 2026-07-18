@@ -19,9 +19,14 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { prisma } from "../db.js";
 import * as agentStream from "../infra/agentStream.js";
+import {
+  __resetAskUserGateForTests,
+  createAskUserPending,
+} from "../infra/askUserGate.js";
 import { appRouter } from "../router.js";
 import { createContextInner } from "../trpc/context.js";
 import { setStreamHub, getStreamHub, SessionStreamHub } from "../infra/sessionStreamHub.js";
+import type { AppConfig } from "../infra/config.js";
 
 type Ctx = Awaited<ReturnType<typeof createContextInner>>;
 
@@ -64,6 +69,7 @@ describe("C-3 会话手动恢复（session.resume）", () => {
   afterEach(() => {
     setStreamHub(null);
     vi.restoreAllMocks();
+    __resetAskUserGateForTests();
     delete process.env.MOCK_LLM;
   });
 
@@ -252,6 +258,40 @@ describe("C-3 会话手动恢复（session.resume）", () => {
       // 负向断言：旧实现（无 system 源去重）会重复注入，本条必红
       expect(msgs2).toHaveLength(1);
     } finally {
+      await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
+    }
+  }, 20_000);
+
+  it("T9 paused + ask_user pending → resume 注入勿重复提问文案（含 askId）", async () => {
+    process.env.MOCK_LLM = "true";
+    const ctx = await createContextInner();
+    const caller = appRouter.createCaller(ctx);
+    const agentId = await createAgent(ctx, "T9");
+    const sessionId = await createSessionWithStatus(ctx, agentId, "paused");
+    const pending = await createAskUserPending({
+      sessionId,
+      question: "恢复后还要再问一遍吗？",
+      channel: "ui",
+      config: ctx.config as AppConfig,
+    });
+
+    try {
+      const res = await caller.session.resume({ id: sessionId });
+      expect(res).toMatchObject({ resumed: true, streamStarted: true });
+      await getStreamHub()!.waitFor(sessionId);
+
+      const sysMsgs = await prisma.chatMessage.findMany({
+        where: { sessionId, role: "user", source: "system" },
+      });
+      expect(sysMsgs.length).toBeGreaterThanOrEqual(1);
+      const content = sysMsgs.map((m) => m.content).join("\n");
+      expect(content).toContain("勿重复调用 ask_user");
+      expect(content).toContain(pending.askId);
+      expect(content).toContain("恢复后还要再问一遍吗");
+      // 默认「请继续完成未完成的任务」在有 pending 时不应单独作为全文
+      expect(content).not.toBe("（服务已重启，请继续完成未完成的任务）");
+    } finally {
+      await prisma.askUserRequest.deleteMany({ where: { sessionId } }).catch(() => {});
       await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
     }
   }, 20_000);

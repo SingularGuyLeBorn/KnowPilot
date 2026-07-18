@@ -7,6 +7,7 @@ import {
   __resetAskUserGateForTests,
   bindAskUserMailIds,
   buildAskUserResumeMessage,
+  buildResumeHintIfAskPending,
   createAskUserPending,
   listAskUserPendingForSession,
   resolveAskUser,
@@ -124,6 +125,22 @@ describe("askUserGate", () => {
     const resolution = await waitAskUserResolution(pending.askId);
     expect(resolution.outcome).toBe("answered");
     expect(resolution.answer).toBe("先答");
+  });
+
+  it("buildResumeHintIfAskPending：有 pending 时禁止盲目续跑文案", async () => {
+    expect(buildResumeHintIfAskPending("clxxxxxxxxxxxxxxxxxxxx")).toBeNull();
+    const pending = await createAskUserPending({
+      sessionId: "clxxxxxxxxxxxxxxxxxxxx",
+      question: "要用哪个模型？",
+      channel: "ui",
+      config,
+    });
+    const hint = buildResumeHintIfAskPending("clxxxxxxxxxxxxxxxxxxxx");
+    expect(hint).toBeTruthy();
+    expect(hint!).toContain("服务已重启");
+    expect(hint!).toContain("勿重复调用 ask_user");
+    expect(hint!).toContain(pending.askId);
+    expect(hint!).toContain("要用哪个模型");
   });
 
   it("TTL 超时以 expired 唤醒", async () => {

@@ -174,6 +174,17 @@ const agentRouter = router({
       aiReadable: true,
     })
     .query(({ ctx }) => getAssistantDriftStatus(ctx.services)),
+  swarmHealth: publicProcedure
+    .meta({
+      description:
+        "只读 Swarm 健康快照（inbox/会话态/ask_user pending/心跳熔断/superior 队列）；与 agent_inspect(includeSwarm) 同源。",
+      aiReadable: true,
+    })
+    .input(z.object({ agentId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const { getSwarmHealthSnapshot } = await import("./infra/swarmHealth.js");
+      return getSwarmHealthSnapshot(ctx.prisma, input.agentId);
+    }),
   getLoopContract: publicProcedure
     .meta({ description: "读取超级 Agent 心跳 Loop Contract（控制平面只读）。", aiReadable: true })
     .input(z.object({ agentId: z.string().cuid() }))
