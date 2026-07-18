@@ -6,6 +6,7 @@ import type { AppConfig, LlmProviderConfig } from "./config.js";
 import type { ReasoningEffort } from "@knowpilot/shared";
 import { LLM_MODEL_IDS, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 import { mockChatCompletion, mockChatCompletionStream } from "./mockLlmClient.js";
+import { getFreellmGatewayRuntime, withFreellmGatewayFallback } from "./freeLlmRuntime.js";
 import { makeAbortError } from "./abortReason.js";
 
 /** LLM HTTP 错误：携带状态码与响应体，供弹性层（resilientLlmClient）分类 */
@@ -96,10 +97,10 @@ const DEFAULT_BASE_URLS: Record<string, string> = {
 export function resolveProvider(config: AppConfig, modelOrProvider?: string): LlmProviderConfig & { id: string } {
   const raw = (modelOrProvider || config.llm.defaultProvider).trim();
   const providerId = config.llm.providers[raw] ? raw : config.llm.defaultProvider;
-  const provider = config.llm.providers[providerId];
+  const provider = withFreellmGatewayFallback(config.llm.providers[providerId] ?? { apiKey: "", model: "", baseUrl: "" });
   if (!provider?.apiKey) {
     throw new Error(
-      `LLM 厂商 "${providerId}" 未配置 API Key。请在项目根目录 .env 中设置对应密钥（如 VITE_DEEPSEEK_API_KEY 或 DEEPSEEK_API_KEY）。`,
+      `LLM 厂商 "${providerId}" 未配置 API Key。请在 .env 设置对应密钥，或等待免费 key 同步（freeKeysSync）注入 freellm 网关。`,
     );
   }
   return { id: providerId, ...provider };
@@ -193,6 +194,10 @@ function applyDeepSeekThinkingBody(
 /** 根据 model 字段推断 provider（agent.model 可能是 v4-flash / kimi-k2.5 等各厂商模型 id） */
 export function inferProviderFromModel(config: AppConfig, model: string): LlmProviderConfig & { id: string } {
   const lower = model.toLowerCase();
+  // 官方 OpenRouter 免费模型（需 OPENROUTER_API_KEY）；优先于名称里的 vendor 关键字
+  if (lower.endsWith(":free") && config.llm.providers.openrouter?.apiKey?.trim()) {
+    return resolveProvider(config, "openrouter");
+  }
   if (lower.includes(LLM_PROVIDER_DEEPSEEK)) return resolveProvider(config, LLM_PROVIDER_DEEPSEEK);
   if (lower.includes("kimi") || lower.includes("moonshot")) return resolveProvider(config, "kimi");
   if (lower.includes("glm")) return resolveProvider(config, "zhipu");
@@ -207,12 +212,24 @@ export function inferProviderFromModel(config: AppConfig, model: string): LlmPro
   return resolveProvider(config, config.llm.defaultProvider);
 }
 
-function resolveEffectiveModel(requested: string | undefined, providerDefault: string): string {
+function resolveEffectiveModel(
+  requested: string | undefined,
+  providerDefault: string,
+  providerId: string,
+): string {
   if (!requested?.trim()) return providerDefault;
   const r = requested.trim();
   const lower = r.toLowerCase();
   if (lower === "kimi" || lower === "moonshot-v1-auto" || lower.includes("moonshot")) {
     return providerDefault;
+  }
+  // OpenRouter / freellm 网关使用 org/model 与 :free 形态，必须原样传给上游
+  if (
+    providerId === "openrouter" ||
+    r.includes(":free") ||
+    (r.includes("/") && !!getFreellmGatewayRuntime()?.apiKey)
+  ) {
+    return r;
   }
   return r.includes("/") ? providerDefault : r;
 }
@@ -232,7 +249,7 @@ export async function chatCompletion(options: {
     : resolveProvider(options.config);
 
   const ds = resolveDeepSeekRequest(options.config, options.model || provider.model, options);
-  const model = resolveEffectiveModel(ds.apiModel, provider.model);
+  const model = resolveEffectiveModel(ds.apiModel, provider.model, provider.id);
   const baseUrl = (provider.baseUrl || DEFAULT_BASE_URLS[provider.id] || DEFAULT_BASE_URLS.openai).replace(/\/$/, "");
 
   const body: Record<string, unknown> = {
@@ -333,7 +350,7 @@ export async function* chatCompletionStream(options: {
     : resolveProvider(options.config);
 
   const ds = resolveDeepSeekRequest(options.config, options.model || provider.model, options);
-  const model = resolveEffectiveModel(ds.apiModel, provider.model);
+  const model = resolveEffectiveModel(ds.apiModel, provider.model, provider.id);
   const baseUrl = (provider.baseUrl || DEFAULT_BASE_URLS[provider.id] || DEFAULT_BASE_URLS.openai).replace(/\/$/, "");
 
   const body: Record<string, unknown> = {

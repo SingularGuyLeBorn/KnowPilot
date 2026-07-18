@@ -1091,10 +1091,19 @@ async function freeApiKeysFetchTool(args: Record<string, unknown>, ctx: NativeTo
     where: { id: picked.id },
     data: { lastUsedAt: new Date() },
   }).catch(() => {});
+  let meta: Record<string, unknown> = {};
+  try {
+    meta = JSON.parse(picked.metadata || "{}") as Record<string, unknown>;
+  } catch {
+    /* ignore */
+  }
   return {
     apiKey: picked.value,
     credentialId: picked.id,
     name: picked.name,
+    baseUrl: typeof meta.baseUrl === "string" ? meta.baseUrl : undefined,
+    model: typeof meta.model === "string" ? meta.model : undefined,
+    provider: typeof meta.provider === "string" ? meta.provider : undefined,
     hint: "使用后请勿持久化此 key，每次需要时重新获取。",
   };
 }

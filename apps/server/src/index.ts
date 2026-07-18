@@ -298,6 +298,11 @@ const server = app.listen(PORT, () => {
   // 兜底「认领了但气泡没进会话」的孤儿交付（回滚 delivered + 重新走 notify/autoConsume）
   startAsyncDeliveryReconciler(config, services);
 
+  // 免费 API Key：默认启动即同步（freellm GitHub + OpenRouter :free），FREE_KEYS_AUTO_SYNC=0 关闭
+  import("./infra/freeKeysSync.js")
+    .then(({ startFreeKeysAutoSync }) => startFreeKeysAutoSync(prisma, config))
+    .catch((err) => console.warn("  ⚠️ [freeKeysSync] 启动失败:", err instanceof Error ? err.message : err));
+
   if (hasSystemChrome() && process.env.BROWSER_WARMUP !== "0") {
     void getSharedBrowser()
       .then(() => console.log("  🌐 [Browser] Playwright 共享实例已预热"))
@@ -313,6 +318,7 @@ const handleShutdown = () => {
   taskScheduler.stop();
   heartbeatEngineRef?.stop();
   stopAsyncDeliveryReconciler();
+  void import("./infra/freeKeysSync.js").then(({ stopFreeKeysAutoSync }) => stopFreeKeysAutoSync());
   streamHub.destroy();
   void closeSharedBrowser().catch(() => undefined);
   server.close(() => {

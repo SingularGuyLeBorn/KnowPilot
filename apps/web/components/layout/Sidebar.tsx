@@ -24,6 +24,7 @@ import {
   Activity,
   KeyRound,
   Globe,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { KnowPilotLogo } from "@/lib/icons";
@@ -84,6 +85,7 @@ const navGroups: Record<string, NavGroup> = {
       { href: "/tasks", icon: CalendarClock, label: "后台任务" },
       { href: "/logs", icon: ScrollText, label: "运行日志" },
       { href: "/credentials", icon: KeyRound, label: "凭据管理" },
+      { href: "/free-models", icon: Sparkles, label: "免费模型" },
       { href: "/dashboard", icon: BarChart3, label: "系统看板" },
       { href: "/settings", icon: Settings, label: "系统设置" },
     ],

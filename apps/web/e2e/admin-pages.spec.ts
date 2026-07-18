@@ -23,6 +23,7 @@ const ADMIN_PAGES: Array<{ path: string; heading: string }> = [
   { path: "/sources", heading: "信息源管理" },
   { path: "/runs", heading: "Runs 执行记录" },
   { path: "/credentials", heading: "Credentials 凭据库" },
+  { path: "/free-models", heading: "免费模型目录" },
   { path: "/settings", heading: "远程访问与安全" },
   { path: "/approvals", heading: "Approvals 审批队列" },
   { path: "/triggers", heading: "Triggers 触发器" },

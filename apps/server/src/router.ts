@@ -64,6 +64,14 @@ import {
   listSyncAsyncJobs,
 } from "./infra/asyncJobManager.js";
 import { resolveAgent, getAssistantDriftStatus } from "./infra/agentResolver.js";
+import {
+  getFreellmGatewayRuntime,
+  getOpenRouterFreeModelCatalog,
+  getOpenRouterFreeSyncedAt,
+  filterOpenRouterFreeModels,
+  loadOpenRouterFreeCatalogFromDisk,
+} from "./infra/freeLlmRuntime.js";
+import { listFreellmChannels, syncFreeKeys } from "./infra/freeKeysSync.js";
 
 import { extractTextFromImage, getOcrStatus, probeOcrPython } from "./infra/ocrService.js";
 import {
@@ -1108,6 +1116,79 @@ const aiRouter = router({
     }),
 });
 
+const llmRouter = router({
+  freeModelsStatus: publicProcedure
+    .meta({ description: "免费模型同步状态（OpenRouter :free + freellm 网关）。", aiReadable: false })
+    .query(async ({ ctx }) => {
+      if (!getOpenRouterFreeModelCatalog()) {
+        loadOpenRouterFreeCatalogFromDisk(ctx.config.projectRoot);
+      }
+      const catalog = getOpenRouterFreeModelCatalog();
+      const channels = await listFreellmChannels(ctx.prisma);
+      const runtime = getFreellmGatewayRuntime();
+      return {
+        openRouter: {
+          hasApiKey: !!ctx.config.llm.providers.openrouter?.apiKey?.trim(),
+          syncedAt: getOpenRouterFreeSyncedAt(),
+          count: catalog?.models.length ?? 0,
+        },
+        freellm: {
+          runtimeModel: runtime?.model ?? null,
+          runtimeBaseUrl: runtime?.baseUrl ?? null,
+          credentialCount: channels.length,
+        },
+      };
+    }),
+
+  listFreeModels: publicProcedure
+    .meta({ description: "列出 OpenRouter :free 模型目录（含上下文/定价/模态）。", aiReadable: false })
+    .input(
+      z
+        .object({
+          q: z.string().optional(),
+          modality: z.enum(["text", "multimodal", "all"]).default("all"),
+          sort: z.enum(["context_desc", "context_asc", "name"]).default("context_desc"),
+        })
+        .default({}),
+    )
+    .query(({ ctx, input }) => {
+      if (!getOpenRouterFreeModelCatalog()) {
+        loadOpenRouterFreeCatalogFromDisk(ctx.config.projectRoot);
+      }
+      const items = filterOpenRouterFreeModels({
+        q: input.q,
+        modality: input.modality,
+        sort: input.sort,
+      });
+      return {
+        syncedAt: getOpenRouterFreeSyncedAt(),
+        hasApiKey: !!ctx.config.llm.providers.openrouter?.apiKey?.trim(),
+        total: items.length,
+        items,
+      };
+    }),
+
+  listFreellmChannels: publicProcedure
+    .meta({ description: "列出已探活的 freellm 网关通道（不含明文 key）。", aiReadable: false })
+    .query(async ({ ctx }) => {
+      const items = await listFreellmChannels(ctx.prisma);
+      const runtime = getFreellmGatewayRuntime();
+      return {
+        runtimeModel: runtime?.model ?? null,
+        runtimeBaseUrl: runtime?.baseUrl ?? null,
+        total: items.length,
+        items,
+      };
+    }),
+
+  refreshFreeModels: publicProcedure
+    .meta({ description: "立即同步 freellm key + OpenRouter :free 目录。", aiReadable: false })
+    .mutation(async ({ ctx }) => {
+      const result = await syncFreeKeys(ctx.prisma, ctx.config);
+      return { success: true as const, ...result };
+    }),
+});
+
 /* ─── 编译出口 ─── */
 
 export const appRouter = router({
@@ -1135,6 +1216,7 @@ export const appRouter = router({
   run: runRouter,
   prompt: promptRouter,
   credential: credentialRouter,
+  llm: llmRouter,
   ai: aiRouter,
 });
 

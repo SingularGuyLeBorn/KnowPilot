@@ -23,6 +23,7 @@ import {
   Wrench,
   Activity,
   KeyRound,
+  Sparkles,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -135,6 +136,13 @@ export function CommandPalette() {
         title: "凭据管理",
         href: "/credentials",
         icon: <KeyRound className="h-4 w-4" />,
+      },
+      {
+        id: "action:free-models",
+        type: "action",
+        title: "免费模型目录",
+        href: "/free-models",
+        icon: <Sparkles className="h-4 w-4" />,
       },
       {
         id: "action:triggers",

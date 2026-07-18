@@ -11,6 +11,7 @@ import { trpc } from "@/lib/trpc";
 import { useNativeCapabilities } from "@/lib/hooks";
 import { AdminPage, LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { AsyncPoolPanel } from "@/components/asyncPoolPanel";
+import { FreeModelsSummaryCard } from "@/components/freeModelsPanel";
 
 function StatCard({
   icon: Icon,
@@ -61,6 +62,8 @@ export default function DashboardPage() {
       />
 
       <AsyncPoolPanel workspaceNames={workspaceNames} />
+
+      <FreeModelsSummaryCard />
 
       {llmBudget && (
         <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 md:p-5">

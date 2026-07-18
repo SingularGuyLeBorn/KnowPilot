@@ -75,6 +75,7 @@ content/sources/smoke-source-*.json
 # Runtime generated memory / trash files
 content/memories/*.md
 .dev-log/llm-budget.json
+.dev-log/openrouter-free-models.json
 .dev-log/oschina-sample.html
 .dev-log/project-summary.md
 .dev-log/test-write*.md
