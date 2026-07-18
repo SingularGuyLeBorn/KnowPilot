@@ -25,6 +25,7 @@ function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
       enabled: true,
       triggerRatio: 0.05,
       keepRecent: 4,
+      summaryModel: "auto",
       microCompact: { enabled: true, toolResultMaxChars: 4000 },
       memoryFlush: { enabled: false, maxFacts: 5 },
       ...overrides,

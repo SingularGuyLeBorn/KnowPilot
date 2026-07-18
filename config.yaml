@@ -34,6 +34,9 @@ compact:
   triggerRatio: 0.75
   # 压缩后保留的最近消息条数
   keepRecent: 8
+  # 摘要专用模型（与主对话解耦，避免用付费主模型烧钱压缩）
+  # auto = 优先 OpenRouter :free → freellm 网关模型 → 回退主对话模型；也可写死具体 id
+  summaryModel: auto
   # micro-compact：先清超大 tool result，延缓触顶（学 Claude Code）
   microCompact:
     enabled: true

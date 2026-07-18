@@ -20,6 +20,10 @@ import {
 } from "@knowpilot/shared";
 import { flushMemoriesBeforeCompact } from "./memoryFlush.js";
 import {
+  filterOpenRouterFreeModels,
+  getFreellmGatewayRuntime,
+} from "./freeLlmRuntime.js";
+import {
   buildLlmMessagesFromHistory,
   historySinceLastCompactBoundary,
   type HistoryMessageLike,
@@ -48,6 +52,7 @@ export function getCompactSettings(config: AppConfig) {
     enabled: compact.enabled !== false,
     triggerRatio: Math.min(0.95, Math.max(0.05, compact.triggerRatio ?? DEFAULT_COMPACT_TRIGGER_RATIO)),
     keepRecent: Math.max(2, compact.keepRecent ?? DEFAULT_COMPACT_KEEP_RECENT),
+    summaryModel: String(compact.summaryModel ?? "auto").trim() || "auto",
     microCompactEnabled: compact.microCompact?.enabled !== false,
     microCompactToolMaxChars: Math.max(
       500,
@@ -55,6 +60,39 @@ export function getCompactSettings(config: AppConfig) {
     ),
     memoryFlushEnabled: compact.memoryFlush?.enabled !== false,
   };
+}
+
+/**
+ * 解析压缩/memory-flush 用的摘要模型。
+ * 触发阈值仍按主对话 `mainModel` 的 context window 计算；此处只决定「谁写摘要」。
+ *
+ * auto 策略：
+ * 1. 有 OpenRouter key + 已同步 `:free` 目录 → 挑轻量免费模型
+ * 2. 否则若 freellm 网关正在兜底默认 provider（无正式 key）→ 用网关模型
+ * 3. 否则回退主对话模型（避免有付费 key 时把 freellm 模型误打到付费通道）
+ */
+export function resolveCompactSummaryModel(config: AppConfig, mainModel: string): string {
+  const configured = getCompactSettings(config).summaryModel;
+  if (configured.toLowerCase() !== "auto") return configured;
+
+  const providers = config.llm?.providers;
+  const hasOpenRouter = !!providers?.openrouter?.apiKey?.trim();
+  if (hasOpenRouter) {
+    const textFree = filterOpenRouterFreeModels({ modality: "text", sort: "context_desc" });
+    const allFree = textFree.length > 0 ? textFree : filterOpenRouterFreeModels({ sort: "context_desc" });
+    const preferred =
+      allFree.find((m) => /flash|mini|lite|haiku|small|nano|gemma|qwen/i.test(m.id)) ?? allFree[0];
+    if (preferred?.id) return preferred.id;
+  }
+
+  const freellm = getFreellmGatewayRuntime();
+  const freellmModel = freellm?.model?.trim();
+  const defaultProviderId = config.llm?.defaultProvider;
+  const defaultProvider = defaultProviderId ? providers?.[defaultProviderId] : undefined;
+  const freellmBackingDefault = !!freellm?.apiKey && !defaultProvider?.apiKey?.trim();
+  if (freellmBackingDefault && freellmModel) return freellmModel;
+
+  return mainModel;
 }
 
 export function resolveCompactThresholdForModel(config: AppConfig, modelId: string): number {
@@ -253,6 +291,7 @@ export async function maybeCompactMessages(
     transcriptParts.push(`[${role}]\n${text}`);
   }
   const transcript = transcriptParts.join("\n\n---\n\n");
+  const summaryModel = resolveCompactSummaryModel(config, model);
 
   let memoriesFlushed = 0;
   if (settings.memoryFlushEnabled && options?.flushContext?.services) {
@@ -260,7 +299,7 @@ export async function maybeCompactMessages(
       config,
       options.flushContext.services,
       transcript,
-      model,
+      summaryModel,
       {
         existingSummary: existing,
         actor: {
@@ -279,7 +318,7 @@ export async function maybeCompactMessages(
   try {
     const summary = await chatCompletion({
       config,
-      model,
+      model: summaryModel,
       messages: [
         {
           role: "system",
@@ -318,7 +357,7 @@ export async function maybeCompactMessages(
     const compactedMessages: LlmMessage[] = [...system, ...buildSummaryPair(summaryBody, generation), ...recent];
     const charAfter = estimateChars(compactedMessages);
     console.log(
-      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${charBefore} → ${charAfter} 字符，阈值 ${charThreshold}，flush ${memoriesFlushed}）`,
+      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${charBefore} → ${charAfter} 字符，阈值 ${charThreshold}，摘要模型 ${summaryModel}，flush ${memoriesFlushed}）`,
     );
     // compact_end 由调用方（agentStream）在写入边界消息后 emit，避免此处提前发完又重发。
     return {
@@ -370,6 +409,7 @@ export async function compactSessionHistory(
         enabled: true,
         triggerRatio: base.triggerRatio,
         keepRecent: base.keepRecent,
+        summaryModel: base.summaryModel,
         microCompact: {
           enabled: base.microCompactEnabled,
           toolResultMaxChars: base.microCompactToolMaxChars,
