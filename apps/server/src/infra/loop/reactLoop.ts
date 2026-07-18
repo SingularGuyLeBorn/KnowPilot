@@ -24,6 +24,12 @@ import { sanitizePostCompactAssistantContent, type StoredToolCall } from "../cha
 import { RunRollbackStack, type RunRollbackReport } from "../tools/rollback.js";
 import { waitApprovalResolution, type ApprovalResolution } from "../approvalGate.js";
 import {
+  buildAskUserResumeMessage,
+  waitAskUserResolution,
+  type AskUserResolution,
+} from "../askUserGate.js";
+import { getStreamHub } from "../sessionStreamHub.js";
+import {
   DEFAULT_SUBAGENT_TOOLS,
   resolveToolsForAgentTier,
   parseToolCall,
@@ -50,6 +56,20 @@ function readApprovalPendingMarker(result: unknown): { approvalId: string; toolN
     typeof (marker as { approvalId?: unknown }).approvalId === "string"
   ) {
     return marker as { approvalId: string; toolName?: string };
+  }
+  return null;
+}
+
+/** ask_user：工具成功返回时附带 askUserPending 标记 */
+function readAskUserPendingMarker(result: unknown): { askId: string } | null {
+  if (!result || typeof result !== "object") return null;
+  const marker = (result as { askUserPending?: unknown }).askUserPending;
+  if (
+    marker &&
+    typeof marker === "object" &&
+    typeof (marker as { askId?: unknown }).askId === "string"
+  ) {
+    return { askId: (marker as { askId: string }).askId };
   }
   return null;
 }
@@ -142,7 +162,7 @@ async function injectUserMessages(
   input: ReactLoopInput,
   llmMessages: LlmMessage[],
   items: Array<{ id: string; content: string }>,
-  kind: "steer" | "follow_up" | "approval",
+  kind: "steer" | "follow_up" | "approval" | "ask_user",
 ): Promise<void> {
   for (const item of items) {
     let messageId: string | undefined;
@@ -546,6 +566,39 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           );
         }
         // 落入迭代末尾统一 machine.transition("llm")——awaiting_human → llm 合法转移
+      }
+
+      // ask_user：工具返回 askUserPending → 同 phase 挂起，等 UI/邮件 resolve
+      const pendingAsks = executedItems
+        .map((item) => readAskUserPendingMarker(item.result))
+        .filter((m): m is { askId: string } => m !== null);
+      if (pendingAsks.length > 0) {
+        if (machine.phase !== "awaiting_human") {
+          machine.transition("awaiting_human");
+          await writeRunSnapshot(true);
+        }
+        input.hooks?.onProgress?.(
+          `等待用户答复 ask_user（${pendingAsks.map((m) => m.askId).join(", ")}），运行已挂起`,
+        );
+        for (const pending of pendingAsks) {
+          const resolution: AskUserResolution = await waitAskUserResolution(pending.askId, {
+            signal: input.signal,
+          });
+          if (input.sessionId) {
+            getStreamHub()?.pushExternalEvent(input.sessionId, {
+              type: "ask_user_resolved",
+              sessionId: input.sessionId,
+              askId: pending.askId,
+              outcome: resolution.outcome,
+            });
+          }
+          await injectUserMessages(
+            input,
+            llmMessages,
+            [{ id: `ask_user_${pending.askId}`, content: buildAskUserResumeMessage(resolution) }],
+            "ask_user",
+          );
+        }
       }
 
       // AFTER_TOOL_BATCH：Steering 注入后再进入下一轮 LLM

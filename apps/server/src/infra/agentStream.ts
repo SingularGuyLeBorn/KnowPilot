@@ -166,7 +166,24 @@ export type AgentStreamEvent =
   /** Agent 自动命名完成：前端刷新 Agent 树 */
   | { type: "agent_renamed"; agentId: string; name: string }
   /** SessionQueueItem 增删改：前端按 dbId 幂等合并发送队列（superior / child_notify / user） */
-  | { type: "session_queue_update"; sessionId: string; kind: string };
+  | { type: "session_queue_update"; sessionId: string; kind: string }
+  /** ask_user 挂起：Chat 渲染弹框；邮件通道也会推以便 UI 显示「等待邮件回复」 */
+  | {
+      type: "ask_user_pending";
+      sessionId: string;
+      askId: string;
+      question: string;
+      options?: string[];
+      channel: "ui" | "email";
+      subject?: string;
+    }
+  /** ask_user 已答复/超时/中止：前端收起弹框 */
+  | {
+      type: "ask_user_resolved";
+      sessionId: string;
+      askId: string;
+      outcome: "answered" | "expired" | "aborted";
+    };
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）

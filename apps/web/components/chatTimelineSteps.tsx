@@ -209,6 +209,35 @@ const ToolStep = memo(function ToolStep({
 
   const toolBaseName = step.name.replace(/^skill__/, "").replace(/^mcp__/, "");
   const isTodoWrite = toolBaseName === "todo_write";
+  const askUserPending = useMemo(() => {
+    if (toolBaseName !== "ask_user" || !step.result || typeof step.result !== "object") return null;
+    const r = step.result as {
+      askUserPending?: {
+        askId?: string;
+        question?: string;
+        options?: string[];
+        channel?: "ui" | "email";
+      };
+      askId?: string;
+      question?: string;
+      options?: string[];
+      channel?: "ui" | "email";
+      status?: string;
+      error?: unknown;
+    };
+    if (r.error) return null;
+    const marker = r.askUserPending;
+    const askId = marker?.askId || r.askId;
+    const question = marker?.question || r.question;
+    if (!askId || !question) return null;
+    if (r.status && r.status !== "waiting_for_user") return null;
+    return {
+      askId: String(askId),
+      question: String(question),
+      options: marker?.options ?? r.options,
+      channel: marker?.channel ?? r.channel ?? "ui",
+    };
+  }, [toolBaseName, step.result]);
   const todoItems = useMemo(() => {
     if (!isTodoWrite || !step.result || typeof step.result !== "object") return null;
     const todos = (step.result as { todos?: unknown }).todos;
@@ -240,12 +269,16 @@ const ToolStep = memo(function ToolStep({
     cancelled: "取消",
   };
 
+  const displayNameAsk =
+    toolBaseName === "ask_user" ? "向用户提问" : displayName;
+  const waitingAsk = Boolean(askUserPending);
+
   return (
     <div
       data-testid="tool-pill"
       className={cn(
         "w-full overflow-hidden rounded-xl border shadow-sm transition-colors",
-        step.status === "running"
+        step.status === "running" || waitingAsk
           ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30"
           : "border-[var(--kp-divider-light)] bg-[var(--kp-bg)]",
       )}
@@ -255,11 +288,15 @@ const ToolStep = memo(function ToolStep({
           <span
             className={cn(
               "h-2 w-2 shrink-0 rounded-full",
-              step.status === "running" ? "animate-pulse bg-[var(--kp-brand)]" : hasError ? "bg-red-500" : "bg-green-500",
+              step.status === "running" || waitingAsk
+                ? "animate-pulse bg-[var(--kp-brand)]"
+                : hasError
+                  ? "bg-red-500"
+                  : "bg-green-500",
             )}
           />
           <ToolStepIcon toolName={step.name} status={iconStatus} />
-          <span className="min-w-0 truncate">{displayName}</span>
+          <span className="min-w-0 truncate">{displayNameAsk}</span>
           {execMode && (
             <span
               className={cn(
@@ -406,12 +443,11 @@ export function ThinkingTimeline({
 }) {
   if (!steps.length) return null;
 
-  // 左对齐与 assistant 气泡一致：timeline 内容左缘 = ml-6 + pl-6 = 3rem，
-  // assistant 气泡 ml-12 = 3rem，两者左缘共线（对标 Kimi Code 单列布局）。
-  // 竖线导轨改 absolute，不再占用布局宽度，确保 thinking / content / tool / 正式回复共享同一内容宽度
+  // 左对齐与 assistant 气泡一致（对标 Kimi Code 接近全宽单列）。
+  // 竖线导轨 absolute，不占布局宽度。
   return (
     <div
-      className="relative mb-2 ml-6 w-full max-w-[88%] pl-6"
+      className="relative mb-2 ml-6 mr-2 w-full max-w-[96%] pl-6"
       data-testid="thinking-timeline"
     >
       <div className="absolute bottom-2 left-2 top-2 w-0.5 bg-[var(--kp-brand-light)]/40" />

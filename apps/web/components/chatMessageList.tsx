@@ -174,7 +174,7 @@ export const ChatMessageList = memo(function ChatMessageList({
         key={`a-${assistantId}`}
         data-testid="assistant-message-bubble"
         data-nav-id={assistantId}
-        className="group/msg relative mb-6 ml-12 flex max-w-[88%] flex-col items-start gap-1"
+        className="group/msg relative mb-6 ml-6 mr-2 flex w-full max-w-[96%] flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
           <PostContent content={active.content} className="prose-sm max-w-none text-left" />
@@ -223,7 +223,7 @@ export const ChatMessageList = memo(function ChatMessageList({
         <div className="flex w-full justify-start">
           <div
             className={cn(
-              "group/msg ml-12 flex max-w-[88%] flex-col items-start gap-1",
+              "group/msg ml-6 mr-2 flex w-full max-w-[96%] flex-col items-start gap-1",
               streamingContent ? "mb-6" : "mb-4",
             )}
             data-testid="streaming-assistant-bubble"
@@ -289,10 +289,9 @@ export const ChatMessageList = memo(function ChatMessageList({
             data-testid="user-message-bubble"
             data-delivery-job-id={deliveryJobId || undefined}
             className={cn(
-              "group/msg relative mb-3 flex flex-col gap-1",
-              // 异步投递 / 父 Agent 任务含 markdown 表格，需更宽
-              isAsyncResultDelivery || isParentAgentTask ? "max-w-[92%]" : "max-w-[70%]",
-              isRightSide ? "items-end self-end" : "items-start self-start",
+              // 默认接近全宽（对标 Kimi Code）；右对齐消息仍靠右，但内容区拉宽
+              "group/msg relative mb-3 flex w-full max-w-[96%] flex-col gap-1",
+              isRightSide ? "items-stretch self-end" : "items-stretch self-start",
               deliveryJobId &&
                 highlightJobId === deliveryJobId &&
                 "rounded-2xl ring-2 ring-[var(--kp-brand)] ring-offset-2 ring-offset-[var(--kp-bg)]",
@@ -324,7 +323,7 @@ export const ChatMessageList = memo(function ChatMessageList({
             )}
             <div
               className={cn(
-                "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm",
+                "relative w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm",
                 deliveryJobId &&
                   highlightJobId === deliveryJobId &&
                   "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/30",
@@ -409,7 +408,7 @@ export const ChatMessageList = memo(function ChatMessageList({
   // 乐观消息渲染（用户发送后、流式落地前的占位气泡）
   const renderOptimisticMessage = (msg: { id: string; content: string; attachments?: ChatImageAttachment[] }) => (
     <div className="mb-4 flex justify-end">
-      <div className="flex max-w-[70%] flex-col items-end gap-1.5">
+      <div className="flex w-full max-w-[96%] flex-col items-stretch gap-1.5">
         {msg.attachments && msg.attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
             {msg.attachments.map((att) => (
@@ -433,8 +432,8 @@ export const ChatMessageList = memo(function ChatMessageList({
             ))}
           </div>
         )}
-        <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-sm text-[var(--kp-text-1)] opacity-80">
-          <p className="whitespace-pre-wrap">{msg.content}</p>
+        <div className="w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-sm text-[var(--kp-text-1)] opacity-80">
+          <p className="whitespace-pre-wrap text-left">{msg.content}</p>
         </div>
       </div>
     </div>

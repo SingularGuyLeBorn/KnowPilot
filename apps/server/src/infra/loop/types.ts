@@ -78,7 +78,11 @@ export interface LoopHooks {
   }): void;
   onProgress?(message: string): void;
   /** Steering / Follow-up / 审批续跑 已注入到 messages（落库后调用） */
-  onInjected?(info: { kind: "steer" | "follow_up" | "approval"; content: string; messageId?: string }): void;
+  onInjected?(info: {
+    kind: "steer" | "follow_up" | "approval" | "ask_user";
+    content: string;
+    messageId?: string;
+  }): void;
   /**
    * W7 反思 verdict 已在 done 转移点被消费（仅 critic 未通过时触发；通过 = 正常路径零噪音）。
    * action：retry = 已回注重修；marked = 轮数耗尽标记放行。

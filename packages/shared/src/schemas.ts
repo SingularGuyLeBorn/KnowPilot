@@ -470,6 +470,17 @@ export const submitAgentInjectSchema = z.object({
   kind: z.enum(["steer", "follow_up"]).default("steer"),
 });
 
+/** ask_user：用户在 Chat 弹框作答 */
+export const resolveAskUserSchema = z.object({
+  askId: z.string().uuid(),
+  answer: z.string().min(1, "答复不能为空").max(8000),
+});
+
+/** ask_user：列出某会话仍在等待的提问（刷新后恢复弹框） */
+export const listAskUserPendingSchema = z.object({
+  sessionId: z.string().cuid(),
+});
+
 export const updateSessionQueueItemSchema = z.object({
   id: z.string().cuid(),
   content: z.string().min(1).optional(),
@@ -1147,6 +1158,8 @@ export type ListMessagesInput = z.infer<typeof listMessagesSchema>;
 
 export type CreateSessionQueueItemInput = z.infer<typeof createSessionQueueItemSchema>;
 export type SubmitAgentInjectInput = z.infer<typeof submitAgentInjectSchema>;
+export type ResolveAskUserInput = z.infer<typeof resolveAskUserSchema>;
+export type ListAskUserPendingInput = z.infer<typeof listAskUserPendingSchema>;
 export type UpdateSessionQueueItemInput = z.infer<typeof updateSessionQueueItemSchema>;
 export type ListSessionQueueItemsInput = z.infer<typeof listSessionQueueItemsSchema>;
 export type ReorderSessionQueueItemsInput = z.infer<typeof reorderSessionQueueItemsSchema>;

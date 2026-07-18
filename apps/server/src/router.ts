@@ -13,6 +13,7 @@ import { success, failure } from "./trpc/result.js";
 import {
   createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema,
   createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema,
+  resolveAskUserSchema, listAskUserPendingSchema,
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
@@ -40,6 +41,11 @@ import {
 } from "@knowpilot/shared";
 import { listConfiguredLlmProviders } from "./infra/config.js";
 import { getStreamHub } from "./infra/sessionStreamHub.js";
+import {
+  getAskUserPending,
+  listAskUserPendingForSession,
+  resolveAskUser,
+} from "./infra/askUserGate.js";
 import { listNativeTools, executeNativeTool } from "./infra/nativeTools.js";
 import { getEnvCredentialCandidates } from "./infra/credentialVault.js";
 import { getCachedEnrichedServerCapabilities } from "./infra/capabilities.js";
@@ -1073,6 +1079,42 @@ const approvalRouter = router({
   }),
 });
 
+const askUserRouter = router({
+  listPending: publicProcedure
+    .meta({ description: "列出会话内仍在等待的 ask_user 提问（刷新后恢复弹框）。", aiReadable: false })
+    .input(listAskUserPendingSchema)
+    .query(({ input }) => ({
+      items: listAskUserPendingForSession(input.sessionId).map((p) => ({
+        askId: p.askId,
+        sessionId: p.sessionId,
+        question: p.question,
+        options: p.options,
+        channel: p.channel,
+        subject: p.subject,
+        createdAt: p.createdAt,
+      })),
+    })),
+  resolve: publicProcedure
+    .meta({ description: "答复 ask_user（Chat 弹框），唤醒挂起的 Agent run。", aiReadable: false })
+    .input(resolveAskUserSchema)
+    .mutation(({ input }) => {
+      const pending = getAskUserPending(input.askId);
+      const result = resolveAskUser(input.askId, input.answer, "ui");
+      if (!result.ok) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: result.reason });
+      }
+      if (pending?.sessionId) {
+        getStreamHub()?.pushExternalEvent(pending.sessionId, {
+          type: "ask_user_resolved",
+          sessionId: pending.sessionId,
+          askId: input.askId,
+          outcome: "answered",
+        });
+      }
+      return { askId: input.askId, outcome: "answered" as const };
+    }),
+});
+
 const toolRouter = router({
   create: publicProcedure.meta({ description: "注册工具。name 必须唯一。", aiReadable: true }).input(createToolSchema).mutation(({ ctx, input }) => ctx.services.tool.create(input)),
   getById: publicProcedure.meta({ description: "获取工具详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.tool.getById(input.id)),
@@ -1323,6 +1365,7 @@ export const appRouter = router({
   workspace: workspaceRouter,
   trigger: triggerRouter,
   approval: approvalRouter,
+  askUser: askUserRouter,
   tool: toolRouter,
   run: runRouter,
   prompt: promptRouter,

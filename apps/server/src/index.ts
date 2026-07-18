@@ -154,6 +154,67 @@ app.get(
 );
 app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub));
 
+// AgentMail（agentmail.to）入站 webhook —— ask_user 邮件答复
+app.post("/api/webhooks/agentmail", async (req, res) => {
+  const { verifyAgentMailWebhook, extractReplyTextFromWebhook } = await import(
+    "./infra/agentMailClient.js"
+  );
+  const { resolveAskUserFromMail, getAskUserPending } = await import("./infra/askUserGate.js");
+
+  if (!verifyAgentMailWebhook({ headers: req.headers as Record<string, string | string[] | undefined> })) {
+    res.status(401).json({ error: "UNAUTHORIZED", message: "webhook 验签失败" });
+    return;
+  }
+
+  const payload = req.body as {
+    event_type?: string;
+    event_id?: string;
+    message?: {
+      message_id?: string;
+      thread_id?: string;
+      in_reply_to?: string;
+      extracted_text?: string;
+      text?: string;
+      preview?: string;
+    };
+  };
+
+  if (payload.event_type && payload.event_type !== "message.received") {
+    res.json({ ok: true, ignored: true, reason: `event_type=${payload.event_type}` });
+    return;
+  }
+
+  const text = extractReplyTextFromWebhook(payload);
+  if (!text) {
+    res.json({ ok: true, ignored: true, reason: "empty body" });
+    return;
+  }
+
+  const resolved = resolveAskUserFromMail({
+    eventId: payload.event_id,
+    inReplyTo: payload.message?.in_reply_to,
+    threadId: payload.message?.thread_id,
+    text,
+  });
+
+  if (!resolved.ok) {
+    res.json({ ok: true, matched: false, reason: resolved.reason });
+    return;
+  }
+
+  const pending = getAskUserPending(resolved.askId);
+  if (pending?.sessionId) {
+    streamHub.pushExternalEvent(pending.sessionId, {
+      type: "ask_user_resolved",
+      sessionId: pending.sessionId,
+      askId: resolved.askId,
+      outcome: "answered",
+    });
+  }
+
+  res.json({ ok: true, matched: true, askId: resolved.askId });
+});
+
 // 异步任务推送 SSE（独立于 Agent 运行流，用于推优先的 async_delivery 事件）
 app.get("/api/agent/async-stream", (req, res) => {
   const sessionId = String(req.query.sessionId || "");

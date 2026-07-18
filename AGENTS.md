@@ -401,7 +401,7 @@ KnowPilot 已落地完整的 Swarm 能力，设计决策详见 `docs/development
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `SWARM_MODE` | `local` | `local`（零依赖）/ `redis`（BullMQ，Phase 4） |
-| `EMAIL_PROVIDER` | `none` | `none` / `smtp` / `agentemail` |
+| `EMAIL_PROVIDER` | `none` | `none` / `smtp` / `agentmail` / `ntfy`；可叠加 `NTFY_TOPIC` |
 | `AGENT_MAX_TOOL_CALLS_PER_RUN` | `168` | 单次运行工具调用上限 |
 | `AGENT_DESTRUCTIVE_APPROVAL` | `false` | `true` 时删除类操作走审批（native + 对齐的 tRPC `memory.delete`/`post.delete`）；见 `approvalGate.ts` |
 | `APPROVAL_PENDING_TTL_MS` | `86400000`（24h） | pending 审批过期后标 rejected；`0` 关闭 TTL |

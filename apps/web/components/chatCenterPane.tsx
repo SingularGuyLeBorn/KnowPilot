@@ -31,6 +31,7 @@ import {
 import { UserSendQueuePanel } from "@/components/chatQueue";
 import { ChatMessageList, type ChatMessageListProps } from "@/components/chatMessageList";
 import { ChatGoalBar } from "@/components/chatGoalBar";
+import { SessionAskUserBar } from "@/components/sessionAskUserBar";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
@@ -386,6 +387,7 @@ export function ChatCenterPane({
       )}
 
       <div className="relative z-30 border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-4 pt-3 pb-3 md:px-6">
+        <SessionAskUserBar sessionId={effectiveSessionId} />
         <UserSendQueuePanel
           items={sortQueueItems(userQueue)}
           onChange={(items) => {

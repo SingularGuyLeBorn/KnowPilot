@@ -181,6 +181,12 @@ export function useChatSseSubscriptions({
             streamLifecycleActions.hydrateDone(sid);
           });
       });
+      register("ask_user_pending", () => {
+        void utils.askUser.listPending.invalidate({ sessionId: sid });
+      });
+      register("ask_user_resolved", () => {
+        void utils.askUser.listPending.invalidate({ sessionId: sid });
+      });
     }
     return () => {
       for (const fn of cleanups) fn();

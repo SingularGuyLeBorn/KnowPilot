@@ -36,6 +36,8 @@ tools:
   - "native:skill_promote"
   - "native:optimize_agent_prompt"
   - "native:generate_skill_from_experience"
+  - "native:ask_user"
+  - "native:send_email"
 heartbeat:
   enabled: true
   cron: "0 9 * * *"
