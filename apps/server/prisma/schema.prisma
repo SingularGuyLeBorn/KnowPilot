@@ -355,8 +355,8 @@ model Workspace {
   description    String?
   path           String   @unique /// 对应硬盘上的目录路径
   managerAgentId String?  @unique                /// 该 Workspace 的管理 Agent id
-  isSystem       Boolean  @default(false) /// 是否为系统级 / Root Workspace（超级 Agent 所属）
-  systemType     String?  /// 系统 Workspace 类型："super"（Root）| 其他扩展
+  isSystem       Boolean  @default(false) /// 是否为系统级 Workspace（Root / Assistant Home）
+  systemType     String?  /// 系统 Workspace 类型："super"（Root）| "assistant"（默认助手家）
   /// 本 Workspace 后台 LLM 异步槽上限（slotClass=llm）；0 = 不限（仍受全局 maxConcurrent 硬顶）
   asyncSlotQuota Int      @default(2)
   status         String   @default("active") /// "active" | "archived" | "deleted"（tombstone）

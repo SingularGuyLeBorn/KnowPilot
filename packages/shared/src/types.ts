@@ -39,6 +39,8 @@ export interface Agent {
   apiKey: string | null;
   heartbeatModel: string | null;
   heartbeat: HeartbeatConfig | null;
+  /** 连续失败熔断暂停时刻；null = 未暂停 */
+  heartbeatSuspendedAt?: string | Date | null;
   status: "active" | "idle" | "dormant" | "deleted";
   deletedAt: string | Date | null;
   deletedBy: string | null;
@@ -123,6 +125,14 @@ export interface Memory {
   type: string;
   strength: number;
   keywords: string[];
+  /** global | workspace:{id} | agent:{id} */
+  scope?: string;
+  agentId?: string | null;
+  status?: "active" | "superseded" | string;
+  attribution?: string | null;
+  validFrom?: string | Date | null;
+  validTo?: string | Date | null;
+  supersededBy?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
@@ -261,6 +271,12 @@ export interface Workspace {
   description: string | null;
   path: string;
   managerAgentId: string | null;
+  /** 系统级 Root Workspace（超级 Agent 所属）；不可注销/改路径 */
+  isSystem: boolean;
+  /** 系统类型，如 "super" */
+  systemType: string | null;
+  /** 本 Workspace 后台 LLM 异步槽上限；0 = 不限（仍受全局 maxConcurrent） */
+  asyncSlotQuota: number;
   status: "active" | "archived" | "deleted";
   deletedAt: string | Date | null;
   deletedBy: string | null;

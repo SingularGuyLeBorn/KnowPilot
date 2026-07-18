@@ -9,7 +9,8 @@ import { motion } from "framer-motion";
 import { BarChart3, Bot, Crown, FileText, ShieldCheck, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, Activity, type LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useNativeCapabilities } from "@/lib/hooks";
-import { LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
+import { AdminPage, LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
+import { AsyncPoolPanel } from "@/components/asyncPoolPanel";
 
 function StatCard({
   icon: Icon,
@@ -40,15 +41,40 @@ export default function DashboardPage() {
   const { data, isLoading } = trpc.analytics.dashboard.useQuery({});
   const { data: caps } = useNativeCapabilities();
   const { data: swarmStats } = trpc.analytics.swarmStats.useQuery({ days: 30 });
+  const { data: llmBudget } = trpc.agent.llmBudgetStatus.useQuery(undefined, {
+    refetchInterval: 30_000,
+  });
+  const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
+  const workspaceNames = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of workspacesQuery.data?.items ?? []) m.set(w.id, w.name);
+    return m;
+  }, [workspacesQuery.data?.items]);
 
   const tierIcon = (tier: string) => (tier === "super" ? Crown : tier === "manager" ? ShieldCheck : Bot);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
+    <AdminPage>
       <PageHeader
         title="Analytics 概览"
-        description="文章、Agent 运行、Token 与日志错误趋势一览。"
+        description="并发池、文章、Agent 运行、Token 与日志错误趋势一览。"
       />
+
+      <AsyncPoolPanel workspaceNames={workspaceNames} />
+
+      {llmBudget && (
+        <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 md:p-5">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <Sparkles className="h-4 w-4 text-[var(--kp-brand-deep)]" />
+            <span className="font-semibold text-[var(--kp-text-1)]">今日 LLM 预算</span>
+            <span className="font-mono text-[var(--kp-text-2)]">
+              ${llmBudget.spentUsd.toFixed(4)} / ${llmBudget.limitUsd.toFixed(2)}
+              {llmBudget.exceeded ? " · 已用尽" : ` · ${(llmBudget.ratio * 100).toFixed(0)}%`}
+            </span>
+            <span className="text-[10px] text-[var(--kp-text-3)]">30s 刷新</span>
+          </div>
+        </div>
+      )}
 
       {caps && (
         <NativeCapabilitiesPanel
@@ -62,7 +88,7 @@ export default function DashboardPage() {
       {isLoading || !data ? (
         <LoadingState count={6} />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <StatCard
             icon={FileText}
             label="文章"
@@ -155,6 +181,6 @@ export default function DashboardPage() {
           </div>
         </motion.div>
       )}
-    </div>
+    </AdminPage>
   );
 }

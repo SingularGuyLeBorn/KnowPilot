@@ -133,6 +133,14 @@ export function sliceHistoryAfterCompactBoundary<T extends HistoryMessageLike>(h
   return idx === -1 ? history : history.slice(idx);
 }
 
+/**
+ * 送给 LLM 的会话原文窗口：最近一次压缩边界之后的消息（不含边界 UI 气泡本身）。
+ * 摘要文本由调用方从 ChatSession.contextSummary 注入，不在此重复。
+ */
+export function historySinceLastCompactBoundary<T extends HistoryMessageLike>(history: T[]): T[] {
+  return sliceHistoryAfterCompactBoundary(history).filter((m) => !isCompactBoundaryHistoryItem(m));
+}
+
 export function buildLlmMessagesFromHistory(
   systemContent: string,
   history: HistoryMessageLike[],

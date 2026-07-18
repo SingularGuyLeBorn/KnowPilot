@@ -56,9 +56,25 @@ export async function buildMemoryContext(
   });
   recordMemoryRetrieveOutcome(gateKey, memories.length > 0);
   if (!memories.length) return "";
-  const lines = memories.map((m) => {
+
+  // S6 轻量：同 content 去重（保留强度更高/更新的一条已在 repo 排序）
+  const seen = new Set<string>();
+  const unique = memories.filter((m) => {
+    const key = m.content.trim().toLowerCase().slice(0, 120);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const now = Date.now();
+  const lines = unique.map((m) => {
     const attr = m.attribution && m.attribution !== "agent" ? `/${m.attribution}` : "";
-    return `- [${m.type}${attr}] ${m.content.slice(0, 300)}`;
+    const ageMs = m.updatedAt ? now - new Date(m.updatedAt).getTime() : 0;
+    const stale =
+      Number.isFinite(ageMs) && ageMs > 24 * 60 * 60 * 1000
+        ? "（可能过时，需验证）"
+        : "";
+    return `- [${m.type}${attr}] ${m.content.slice(0, 300)}${stale}`;
   });
   return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
 }
@@ -81,12 +97,20 @@ const WEB_TOOL_GUIDE = `## 网络工具用法
 - web_search：查最新信息、文档、新闻；返回标题+URL+摘要，优先用结果中的 URL 继续深挖。已配置 Tavily/SerpAPI 时按 SEARCH_ENGINE_PRIORITY 自动降级；在 /sources 启用信息源后，Tavily/SerpAPI 会优先在信息源域名内 scoped 搜索（hint 含 infoSource-scoped / N 信息源）。
 - read_article：读取单篇网页正文（Markdown）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书/GitHub 等；GitHub blob→raw + jsDelivr/API（~1s）；InfoQ/OSChina API；SegmentFault/CSDN/掘金/博客园 SSR HTTP；简书 Mobile HTTP；知乎 Cookie HTTP（~1s，需 ZHIHU_COOKIE）；HTTP 404 秒级报错；正文偏短（<150 字）时返回 contentWarning 并建议 scrape_web_page。
 - scrape_web_page：Playwright 采集复杂 SPA/需 JS 渲染页面；返回 method=playwright 与 platform；read_article 失败或页面高度动态时再试。
-建议流程：web_search 找 URL → read_article 读正文 → 必要时 scrape_web_page。知乎/微信/小红书/抖音若被登录墙拦截，可在 .env 配置 ZHIHU_COOKIE / WECHAT_COOKIE / XHS_COOKIE / DOUYIN_COOKIE；GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
+- browser_screenshot：打开页面截图（PNG）落盘，返回 path/publicUrl（无图片字节）。用于视觉确认布局、登录墙、图表、验证码页等；随后用 read_image。
+- read_image：读图。path 用 screenshot 返回路径；也可传图片 URL。mode=ocr|vision|auto（默认 auto）。只回文本，勿期望 base64。
+建议流程：web_search 找 URL → read_article 读正文 → 必要时 scrape_web_page；需要「看见页面」时 browser_screenshot → read_image。知乎/微信/小红书/抖音若被登录墙拦截，可在 .env 配置 ZHIHU_COOKIE / WECHAT_COOKIE / XHS_COOKIE / DOUYIN_COOKIE；GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
 
 /** 根据 Agent 已授权工具追加简短使用指引 */
 export function buildAgentToolGuide(tools: string[]): string {
   const has = (name: string) => tools.some((t) => t === `native:${name}` || t === name);
-  if (has("web_search") || has("read_article") || has("scrape_web_page")) {
+  if (
+    has("web_search") ||
+    has("read_article") ||
+    has("scrape_web_page") ||
+    has("browser_screenshot") ||
+    has("read_image")
+  ) {
     return WEB_TOOL_GUIDE;
   }
   return "";

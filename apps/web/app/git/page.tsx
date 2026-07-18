@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Git 仓库工作台 — 关联本项目仓库 + status / diff / log + commit/pull/push（写操作走审批）
  */
 
@@ -205,7 +205,7 @@ export default function GitPage() {
         <>
           <div
             className={cn(
-              "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
+              "grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] ",
               density === "compact" ? "gap-4" : "gap-6",
             )}
           >

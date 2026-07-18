@@ -28,10 +28,20 @@ import { Input } from "@/components/ui/input";
 import type { Agent } from "@knowpilot/shared";
 import { CHAT_MODELS, DEFAULT_LLM_MODEL, materializeAgentTools } from "@knowpilot/shared";
 import { useAgent, useWorkspace, useCardDensity, type CardDensity } from "@/lib/hooks";
-import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, CardDensityToggle } from "@/components/shared";
+import {
+  EmptyState,
+  KpSelect,
+  LoadingState,
+  ConfirmDialog,
+  Pagination,
+  CardDensityToggle,
+  AdminPage,
+  AdminFormShell,
+} from "@/components/shared";
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { AgentAvatar } from "@/components/agentAvatar";
 import { AssistantDriftBanner } from "@/components/assistantDriftBanner";
+import { AgentLoopContractPanel } from "@/components/agentLoopContractPanel";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
@@ -45,16 +55,33 @@ type AgentForm = {
   heartbeatEnabled: boolean;
   heartbeatCron: string;
   heartbeatGoal: string;
+  /** 空 = 使用默认 model */
+  heartbeatModel: string;
 };
 
 /** 心跳 cron 预设 */
 const HEARTBEAT_CRON_PRESETS = [
   { value: "0 9 * * *", label: "每天 9:00" },
+  { value: "0 0 * * *", label: "每天 0:00" },
   { value: "0 */6 * * *", label: "每 6 小时" },
   { value: "0 */12 * * *", label: "每 12 小时" },
   { value: "0 9 * * 1", label: "每周一 9:00" },
   { value: "*/30 * * * *", label: "每 30 分钟" },
 ];
+
+function formatHeartbeatCron(cron: string | undefined | null): string {
+  if (!cron) return "未设置";
+  return HEARTBEAT_CRON_PRESETS.find((p) => p.value === cron)?.label ?? cron;
+}
+
+function formatHeartbeatLastRun(iso: string | null | undefined): string {
+  if (!iso) return "尚未运行";
+  try {
+    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+  } catch {
+    return iso;
+  }
+}
 
 const DEFAULT_AGENT_TOOLS = [
   "native:web_search",
@@ -82,6 +109,7 @@ const EMPTY_FORM: AgentForm = {
   heartbeatEnabled: false,
   heartbeatCron: "0 9 * * *",
   heartbeatGoal: "",
+  heartbeatModel: "",
 };
 
 const TIER_OPTIONS = [
@@ -127,6 +155,8 @@ const AgentCard = memo(function AgentCard({
   onToggleSelect,
   onEdit,
   onDelete,
+  onResumeHeartbeat,
+  resumePending,
 }: {
   agent: Agent;
   selected: boolean;
@@ -135,6 +165,8 @@ const AgentCard = memo(function AgentCard({
   onToggleSelect: (id: string) => void;
   onEdit: (agent: Agent) => void;
   onDelete: (id: string) => void;
+  onResumeHeartbeat?: (id: string) => void;
+  resumePending?: boolean;
 }) {
   const handleToggle = useCallback(() => onToggleSelect(agent.id), [agent.id, onToggleSelect]);
   const handleEdit = useCallback(() => onEdit(agent), [agent, onEdit]);
@@ -203,28 +235,6 @@ const AgentCard = memo(function AgentCard({
                 <Cpu className="h-2.5 w-2.5" />
                 {agent.model}
               </span>
-              {(() => {
-                const hb = agent.heartbeat as {
-                  enabled?: boolean;
-                  cron?: string;
-                  lastRunStatus?: string | null;
-                  consecutiveFailures?: number;
-                } | null;
-                if (!hb?.enabled) return null;
-                const failed = (hb.consecutiveFailures ?? 0) > 0;
-                return (
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
-                      failed ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600",
-                    )}
-                    title={`心跳 ${hb.cron ?? ""}${hb.lastRunStatus ? ` · 上次: ${hb.lastRunStatus}` : ""}`}
-                  >
-                    <HeartPulse className="h-2.5 w-2.5" />
-                    {failed ? `心跳失败×${hb.consecutiveFailures}` : "心跳"}
-                  </span>
-                );
-              })()}
             </div>
           </div>
         </div>
@@ -245,6 +255,78 @@ const AgentCard = memo(function AgentCard({
           <span>全局超级 Agent · 不属于任何 Workspace</span>
         </div>
       )}
+
+      {(() => {
+        const hb = agent.heartbeat;
+        if (!hb?.enabled) return null;
+        const failed = (hb.consecutiveFailures ?? 0) > 0;
+        const suspended = !!agent.heartbeatSuspendedAt;
+        return (
+          <div
+            className={cn(
+              "rounded-xl border px-3 py-2.5 text-[11px]",
+              density === "compact" ? "mb-2" : "mb-3",
+              suspended
+                ? "border-amber-200 bg-amber-50/80 text-amber-900"
+                : failed
+                  ? "border-red-200 bg-red-50/80 text-red-800"
+                  : "border-emerald-200/80 bg-emerald-50/60 text-emerald-900",
+            )}
+            data-testid="agent-heartbeat-summary"
+          >
+            <div className="mb-1 flex flex-wrap items-center gap-1.5 font-medium">
+              <HeartPulse className="h-3.5 w-3.5 shrink-0" />
+              <span>心跳已开启</span>
+              {suspended && (
+                <span className="rounded-full bg-amber-200/80 px-1.5 py-0.5 text-[9px] font-semibold">
+                  已熔断暂停
+                </span>
+              )}
+              {failed && !suspended && (
+                <span className="rounded-full bg-red-200/80 px-1.5 py-0.5 text-[9px] font-semibold">
+                  连续失败 ×{hb.consecutiveFailures}
+                </span>
+              )}
+            </div>
+            <div className="space-y-0.5 text-[10px] leading-relaxed opacity-90">
+              <div>
+                <span className="text-[var(--kp-text-3)]">频率 </span>
+                {formatHeartbeatCron(hb.cron)}
+                <span className="ml-1 font-mono text-[9px] opacity-70">({hb.cron})</span>
+              </div>
+              {agent.heartbeatModel && (
+                <div>
+                  <span className="text-[var(--kp-text-3)]">心跳模型 </span>
+                  {agent.heartbeatModel}
+                </div>
+              )}
+              {hb.goal?.trim() && (
+                <div className="truncate" title={hb.goal}>
+                  <span className="text-[var(--kp-text-3)]">目标 </span>
+                  {hb.goal.trim()}
+                </div>
+              )}
+              <div>
+                <span className="text-[var(--kp-text-3)]">上次 </span>
+                {formatHeartbeatLastRun(hb.lastRunAt)}
+                {hb.lastRunStatus
+                  ? ` · ${hb.lastRunStatus === "success" ? "成功" : hb.lastRunStatus}`
+                  : ""}
+              </div>
+            </div>
+            {suspended && onResumeHeartbeat && (
+              <button
+                type="button"
+                disabled={resumePending}
+                onClick={() => onResumeHeartbeat(agent.id)}
+                className="mt-2 w-full rounded-lg bg-amber-700 px-2 py-1 text-[10px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {resumePending ? "恢复中…" : "恢复心跳熔断"}
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       <div className={cn("space-y-1 border-t border-[var(--kp-divider)] pt-3", density === "compact" ? "mb-2" : "mb-4")}>
         <AgentToolSummaryCard tools={agent.tools ?? []} />
@@ -347,33 +429,49 @@ export default function AgentsPage() {
     setView("edit");
   };
 
-  const openEdit = useCallback((agent: Agent) => {
-    setEditingId(agent.id);
-    const hb = agent.heartbeat as {
-      enabled?: boolean;
-      cron?: string;
-      goal?: string;
-      lastRunAt?: string | null;
-      lastRunStatus?: string | null;
-      consecutiveFailures?: number;
-    } | null;
-    setHeartbeatMeta({
-      lastRunAt: hb?.lastRunAt ?? null,
-      lastRunStatus: hb?.lastRunStatus ?? null,
-      consecutiveFailures: hb?.consecutiveFailures ?? 0,
-    });
-    setForm({
-      name: agent.name,
-      description: agent.description ?? "",
-      model: agent.model,
-      systemPrompt: agent.systemPrompt ?? "",
-      tools: materializeAgentTools(agent.tools ?? []),
-      heartbeatEnabled: hb?.enabled ?? false,
-      heartbeatCron: hb?.cron ?? "0 9 * * *",
-      heartbeatGoal: hb?.goal ?? "",
-    });
-    setView("edit");
-  }, []);
+  const openEdit = useCallback(
+    (agent: Agent) => {
+      setEditingId(agent.id);
+      setView("edit");
+      const apply = (row: Agent) => {
+        const hb = row.heartbeat as {
+          enabled?: boolean;
+          cron?: string;
+          goal?: string;
+          lastRunAt?: string | null;
+          lastRunStatus?: string | null;
+          consecutiveFailures?: number;
+        } | null;
+        setHeartbeatMeta({
+          lastRunAt: hb?.lastRunAt ?? null,
+          lastRunStatus: hb?.lastRunStatus ?? null,
+          consecutiveFailures: hb?.consecutiveFailures ?? 0,
+        });
+        setForm({
+          name: row.name,
+          description: row.description ?? "",
+          model: row.model,
+          systemPrompt: row.systemPrompt ?? "",
+          tools: materializeAgentTools(row.tools ?? []),
+          heartbeatEnabled: hb?.enabled ?? false,
+          heartbeatCron: hb?.cron ?? "0 9 * * *",
+          heartbeatGoal: hb?.goal ?? "",
+          heartbeatModel: row.heartbeatModel ?? "",
+        });
+      };
+      apply(agent);
+      // 列表裁剪了 systemPrompt，进编辑时拉全量
+      void utils.agent
+        .getById.fetch({ id: agent.id })
+        .then((row) => apply(row as Agent))
+        .catch(() => {});
+    },
+    [utils.agent.getById],
+  );
+
+  const resumeHeartbeatMut = trpc.agent.resumeHeartbeat.useMutation({
+    onSuccess: () => void utils.agent.list.invalidate(),
+  });
 
   const handleSave = async () => {
     const payload = {
@@ -382,6 +480,7 @@ export default function AgentsPage() {
       model: form.model,
       systemPrompt: form.systemPrompt,
       tools: materializeAgentTools(form.tools),
+      heartbeatModel: form.heartbeatModel.trim() || null,
       heartbeat: {
         enabled: form.heartbeatEnabled,
         cron: form.heartbeatCron,
@@ -449,65 +548,63 @@ export default function AgentsPage() {
 
   if (view === "edit") {
     return (
-      <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8">
+      <AdminFormShell>
         <button
           type="button"
           onClick={() => setView("list")}
-          className="mb-6 flex items-center gap-1 text-sm text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]"
+          className="flex items-center gap-1 text-sm text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]"
         >
           <ChevronLeft className="h-4 w-4" />
-          返回档案馆
+          返回列表
         </button>
 
-        <div className="mx-auto max-w-2xl space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--kp-text-1)]">{editingId ? "编辑 Agent" : "新建 Agent"}</h1>
-            <p className="mt-1 text-sm text-[var(--kp-text-3)]">
-              配置模型、System Prompt 与工具授权。Chat 页右侧设置可会话级覆盖 Prompt。
-            </p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--kp-text-1)]">{editingId ? "编辑 Agent" : "新建 Agent"}</h1>
+          <p className="mt-1 text-sm text-[var(--kp-text-3)]">
+            配置模型、System Prompt、工具授权与心跳。Chat 页可会话级覆盖 Prompt。
+          </p>
+        </div>
 
-          <div className="space-y-4 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">名称</label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="assistant" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">描述</label>
-              <Input
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Agent 职责简介"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">默认模型</label>
-              <KpSelect
-                value={form.model}
-                onChange={(model) => setForm({ ...form, model })}
-                options={modelOptions(form.model)}
-                className="w-full"
-                aria-label="默认模型"
-              />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="space-y-4 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5 md:p-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">名称</label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="assistant" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">描述</label>
+                <Input
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Agent 职责简介"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">默认模型</label>
+                <KpSelect
+                  value={form.model}
+                  onChange={(model) => setForm({ ...form, model })}
+                  options={modelOptions(form.model)}
+                  className="w-full"
+                  aria-label="默认模型"
+                />
+              </div>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-[var(--kp-text-3)]">System Prompt</label>
               <textarea
                 value={form.systemPrompt}
                 onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
-                rows={8}
-                className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand)]"
+                rows={10}
+                className="w-full resize-y rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand)]"
                 placeholder="定义 Agent 角色与行为。留空则仅依赖模型默认能力。"
               />
               {!form.systemPrompt.trim() && (
-                <p className="mt-1.5 text-[11px] text-[var(--kp-text-3)]">当前为空。可在下方 Markdown 源文件或此处填写系统提示词。</p>
+                <p className="mt-1.5 text-[11px] text-[var(--kp-text-3)]">当前为空。可在 Markdown 源文件或此处填写系统提示词。</p>
               )}
             </div>
-            <div>
-              <label className="mb-2 block text-xs font-medium text-[var(--kp-text-3)]">工具授权</label>
-              <AgentToolsEditor tools={form.tools} onChange={(tools) => setForm({ ...form, tools })} />
-            </div>
-            {/* 心跳配置（#4）：定时自主运行 */}
+            {/* 心跳配置 */}
             <div className="rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -554,50 +651,81 @@ export default function AgentsPage() {
                       placeholder="cron 表达式，如 0 9 * * *"
                       className="mt-1.5 font-mono text-xs"
                     />
+                    <p className="mt-1 text-[10px] text-[var(--kp-text-3)]">
+                      当前：{formatHeartbeatCron(form.heartbeatCron)}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-[var(--kp-text-3)]">心跳模型（可选）</label>
+                    <KpSelect
+                      value={form.heartbeatModel || "__default__"}
+                      onChange={(v) =>
+                        setForm({ ...form, heartbeatModel: v === "__default__" ? "" : v })
+                      }
+                      options={[
+                        { value: "__default__", label: `与默认模型相同（${form.model}）` },
+                        ...modelOptions(form.heartbeatModel || form.model).filter(
+                          (o) => o.value !== "__default__",
+                        ),
+                      ]}
+                      className="w-full"
+                      aria-label="心跳模型"
+                    />
+                    <p className="mt-1 text-[10px] text-[var(--kp-text-3)]">
+                      可用更便宜的模型跑定时巡检，省主对话配额。
+                    </p>
                   </div>
                   <div>
                     <label className="mb-1 block text-[11px] text-[var(--kp-text-3)]">心跳目标（触发时发给 Agent 的任务）</label>
                     <textarea
                       value={form.heartbeatGoal}
                       onChange={(e) => setForm({ ...form, heartbeatGoal: e.target.value })}
-                      rows={3}
-                      className="w-full resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand)]"
+                      rows={4}
+                      className="w-full resize-y rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm outline-none focus:border-[var(--kp-brand)]"
                       placeholder="例：检查信息源更新并整理新文章"
                     />
                   </div>
-                  {heartbeatMeta.lastRunAt && (
+                  {(heartbeatMeta.lastRunAt || heartbeatMeta.consecutiveFailures > 0) && (
                     <p className="text-[11px] text-[var(--kp-text-3)]">
-                      上次运行：{new Date(heartbeatMeta.lastRunAt).toLocaleString("zh-CN")} ·{" "}
+                      上次运行：{formatHeartbeatLastRun(heartbeatMeta.lastRunAt)} ·{" "}
                       {heartbeatMeta.lastRunStatus === "success" ? "成功" : heartbeatMeta.lastRunStatus ?? "未知"}
                       {heartbeatMeta.consecutiveFailures > 0 && ` · 连续失败 ${heartbeatMeta.consecutiveFailures} 次`}
                     </p>
                   )}
+                  {editingId && <AgentLoopContractPanel agentId={editingId} />}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex gap-3">
-            <Button onClick={() => void handleSave()} disabled={createMutation.isPending || updateMutation.isPending}>
-              {editingId ? "保存修改" : "创建 Agent"}
-            </Button>
-            {editingId && (
-              <span
-                className={cn(isEditingSuper && "cursor-not-allowed")}
-                title={isEditingSuper ? "超级 Agent 不可删除" : undefined}
-              >
-                <Button
-                  variant="destructive"
-                  onClick={() => setDeleteId(editingId)}
-                  disabled={isEditingSuper}
-                  className="disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
-                >
-                  <Trash2 className="mr-1 h-4 w-4" />
-                  删除
-                </Button>
-              </span>
-            )}
+          <div className="space-y-4 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5 md:p-6">
+            <div>
+              <label className="mb-2 block text-xs font-medium text-[var(--kp-text-3)]">工具授权</label>
+              <AgentToolsEditor tools={form.tools} onChange={(tools) => setForm({ ...form, tools })} />
+            </div>
           </div>
+        </div>
+
+        <div className="flex gap-3">
+          <Button onClick={() => void handleSave()} disabled={createMutation.isPending || updateMutation.isPending}>
+            {editingId ? "保存修改" : "创建 Agent"}
+          </Button>
+          {editingId && (
+            <span
+              className={cn(isEditingSuper && "cursor-not-allowed")}
+              title={isEditingSuper ? "超级 Agent 不可删除" : undefined}
+            >
+              <Button
+                variant="destructive"
+                onClick={() => setDeleteId(editingId)}
+                disabled={isEditingSuper}
+                className="disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
+              >
+                <Trash2 className="mr-1 h-4 w-4" />
+                删除
+              </Button>
+            </span>
+          )}
         </div>
 
         <ConfirmDialog
@@ -609,13 +737,12 @@ export default function AgentsPage() {
           onConfirm={confirmDelete}
           onCancel={() => setDeleteId(null)}
         />
-      </div>
+      </AdminFormShell>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-5">
-      {/* UX #3：compact header——去掉整屏渐变 banner，标题与新建按钮同行，卡片直接可见 */}
+    <AdminPage>
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
@@ -623,7 +750,7 @@ export default function AgentsPage() {
           </span>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-[var(--kp-text-1)]">我的 Agents</h1>
-            <p className="text-xs text-[var(--kp-text-3)]">选择一个 Agent 开始对话，或配置模型、Prompt 与工具授权</p>
+            <p className="text-xs text-[var(--kp-text-3)]">选择一个 Agent 开始对话，或配置模型、Prompt、工具与心跳</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -646,12 +773,13 @@ export default function AgentsPage() {
       <div className="flex items-start gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3 py-2 text-xs text-[var(--kp-text-2)]">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
         <div>
-          <span className="font-medium text-[var(--kp-text-1)]">心跳状态：</span>
-          卡片上的心跳徽章表示该 Agent 是否按 cron 自主运行。绿色=正常，红色=连续失败，无徽章=未启用。
-          定时任务去
-          <Link href="/tasks" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/tasks</Link>，
-          运行记录去
-          <Link href="/runs" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/runs</Link>。
+          <span className="font-medium text-[var(--kp-text-1)]">心跳：</span>
+          卡片展示频率、目标与上次运行。配置在「配置」页；系统定时脚本见
+          <Link href="/tasks" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/tasks</Link>
+          ，运行记录见
+          <Link href="/runs" className="mx-1 text-[var(--kp-brand-deep)] hover:underline">/runs</Link>
+          。说明见
+          <code className="mx-1 rounded bg-[var(--kp-bg-mute)] px-1 py-0.5">docs/development/scheduled-tasks-and-heartbeat.md</code>。
         </div>
       </div>
 
@@ -745,7 +873,7 @@ export default function AgentsPage() {
               全选本页
             </label>
           </div>
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] gap-5">
             {sortedItems.map((agent: Agent) => (
               <AgentCard
                 key={agent.id}
@@ -756,6 +884,8 @@ export default function AgentsPage() {
                 onToggleSelect={toggleSelect}
                 onEdit={openEdit}
                 onDelete={setDeleteId}
+                onResumeHeartbeat={(id) => resumeHeartbeatMut.mutate({ agentId: id })}
+                resumePending={resumeHeartbeatMut.isPending}
               />
             ))}
           </div>
@@ -791,6 +921,6 @@ export default function AgentsPage() {
         onConfirm={confirmBulkDelete}
         onCancel={() => setDeleteId(null)}
       />
-    </div>
+    </AdminPage>
   );
 }

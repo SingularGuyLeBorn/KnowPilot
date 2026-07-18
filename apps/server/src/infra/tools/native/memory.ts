@@ -13,6 +13,7 @@ import {
 import type { PostEntity } from "../../../services.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
 import { readPinnedFile, writePinnedFile, type PinnedWhich } from "../../pinnedMemory.js";
+import { appendDailyNote, searchDailyNotes } from "../../memoryDaily.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
 import type { ToolRollback } from "../types.js";
@@ -126,6 +127,24 @@ async function pinnedMemoryWriteTool(args: Record<string, unknown>, ctx: NativeT
   const content = String(args.content ?? "");
   if (!content.trim()) throw new Error("content 不能为空");
   return writePinnedFile(ctx.config.projectRoot, which, content);
+}
+
+async function memoryDailyAppendTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const content = String(args.content || "").trim();
+  if (!content) throw new Error("content 不能为空");
+  const day = args.day != null ? String(args.day).trim() : undefined;
+  return appendDailyNote(ctx.config.projectRoot, content, {
+    day: day || undefined,
+    source: ctx.agentSnapshot?.id ? `agent:${ctx.agentSnapshot.id.slice(0, 8)}` : "agent",
+  });
+}
+
+async function memoryDailySearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const keyword = String(args.keyword || "");
+  return searchDailyNotes(ctx.config.projectRoot, keyword, {
+    maxDays: args.maxDays !== undefined ? Number(args.maxDays) : 30,
+    maxHits: args.maxHits !== undefined ? Number(args.maxHits) : 20,
+  });
 }
 
 async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -345,6 +364,33 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
       }),
     ),
   },
+  {
+    name: "memory_daily_append",
+    concurrencyClass: "D",
+    // 追加日记文件，文件名含日期；重跑产生新行而非覆盖
+    reentrant: true,
+    description:
+      "追加 L2 工作日记（content/memories/daily/YYYY-MM-DD.md）。只作工作笔记，**不会**自动注入 system prompt；需要时用 memory_daily_search 召回。稳定偏好/事实仍用 memory_create。",
+    parameters: zodParams(
+      z.object({
+        content: z.string().describe("今日工作笔记一行"),
+        day: z.string().describe("可选 YYYY-MM-DD，默认今天").optional(),
+      }),
+    ),
+  },
+  {
+    name: "memory_daily_search",
+    reentrant: true,
+    description:
+      "搜索 L2 工作日记（最近 N 天的 daily/*.md）。结果不注入 prompt，由你主动调用后阅读。",
+    parameters: zodParams(
+      z.object({
+        keyword: z.string().describe("关键词；空则列出最近日记行").optional(),
+        maxDays: z.number().describe("回溯天数，默认 30，最大 90").optional(),
+        maxHits: z.number().describe("最多返回条数，默认 20").optional(),
+      }),
+    ),
+  },
 ];
 
 const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
@@ -357,6 +403,8 @@ const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
   memory_delete: memoryDeleteTool,
   pinned_memory_read: pinnedMemoryReadTool,
   pinned_memory_write: pinnedMemoryWriteTool,
+  memory_daily_append: memoryDailyAppendTool,
+  memory_daily_search: memoryDailySearchTool,
 };
 
 /** create 类补偿共用：按结果 id 走 Service 删除（保证文件回写 / FTS 同步）；NOT_FOUND 幂等跳过 */

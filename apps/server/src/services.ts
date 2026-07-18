@@ -870,8 +870,8 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     return {
       id: true, name: true, autoName: true, description: true, model: true, tools: true,
       tier: true, workspaceId: true, parentId: true, heartbeatModel: true,
-      heartbeat: true, status: true, source: true, deletedAt: true, deletedBy: true,
-      createdAt: true, updatedAt: true,
+      heartbeat: true, heartbeatSuspendedAt: true, status: true, source: true,
+      deletedAt: true, deletedBy: true, createdAt: true, updatedAt: true,
     };
   }
 
@@ -1288,6 +1288,12 @@ export interface MemoryEntity {
   strength: number;
   keywords: string[];
   scope: string;
+  agentId?: string | null;
+  status?: string;
+  attribution?: string | null;
+  validFrom?: Date | null;
+  validTo?: Date | null;
+  supersededBy?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1309,6 +1315,9 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
   protected buildListWhere(input: ListMemoriesInput): any {
     const where: any = {};
     if (input.type) where.type = input.type;
+    if (input.scope) where.scope = input.scope;
+    if (input.status) where.status = input.status;
+    else where.status = { not: "superseded" }; // 默认只看 active
     if (input.keyword) {
       where.OR = [{ content: { contains: input.keyword } }, { keywords: { contains: input.keyword } }];
     }
@@ -1321,17 +1330,15 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
       type: input.type,
       strength: input.strength,
       keywords: input.keywords.join(","),
+      scope: input.scope?.trim() || "global",
+      status: "active",
     };
-    // W5：scope/agentId/contentHash 不在 tRPC schema 内（外部 API 不可指定），
-    // 由 MemoryRepository 等内部调用方透传
     const extra = input as any;
-    if (extra.scope) data.scope = extra.scope;
     if (extra.agentId) data.agentId = extra.agentId;
     if (extra.contentHash) data.contentHash = extra.contentHash;
-    if (extra.attribution) data.attribution = extra.attribution;
-    if (extra.validFrom !== undefined) data.validFrom = extra.validFrom;
-    if (extra.validTo !== undefined) data.validTo = extra.validTo;
-    data.status = extra.status ?? "active";
+    if (input.attribution) data.attribution = input.attribution;
+    if (input.validFrom !== undefined) data.validFrom = input.validFrom;
+    if (input.validTo !== undefined) data.validTo = input.validTo;
     return data;
   }
 
@@ -1763,6 +1770,32 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
     } catch {
       /* ignore */
     }
+  }
+
+  /**
+   * 构建 LLM 上下文专用历史：
+   * - 有 since（通常 = contextCompactedAt）：取该时刻起的最近 limit 条
+   * - 无 since：取全会话最近 limit 条（避免 page=1 asc 拿到最旧页）
+   * 页面展示仍走 listForChat，压缩不删气泡。
+   */
+  async listForLlmContext(input: {
+    sessionId: string;
+    since?: Date | string | null;
+    limit?: number;
+  }): Promise<MessageEntity[]> {
+    const limit = Math.min(Math.max(input.limit ?? 200, 1), 500);
+    const since = input.since ? new Date(input.since) : null;
+    const where =
+      since && !Number.isNaN(since.getTime())
+        ? { sessionId: input.sessionId, createdAt: { gte: since } }
+        : { sessionId: input.sessionId };
+    const items = await this.prisma.chatMessage.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    items.reverse();
+    return items.map((i: any) => this.formatEntity(i));
   }
 
   // P0-1 彻底解耦：Chat 专用 cursor 无限查询。

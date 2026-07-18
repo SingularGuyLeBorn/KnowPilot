@@ -1,14 +1,13 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
-import { Bot, Loader2, Plus, Send, Square, X } from "lucide-react";
+import { Bot, Check, ImagePlus, ListOrdered, Loader2, Send, Square, Wand2, X } from "lucide-react";
 import type { ChatSessionConfig, Skill } from "@knowpilot/shared";
-import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
+import { LucideIconByName, ChatShortcutHints } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import type { ChatQueueAttachment } from "@/lib/chatQueueTypes";
 import { ChatModelMenu } from "@/components/chatModelMenu";
-import { ChatInputChips } from "@/components/chatInputChips";
 
 export interface SelectedSkill {
   id: string;
@@ -100,8 +99,10 @@ export const ChatInputArea = memo(function ChatInputArea({
       ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
   const [pendingImages, setPendingImages] = useState<ChatQueueAttachment[]>([]);
-  const [ocrLoading, setOcrLoading] = useState(false);
+  /** 正在 OCR 的附件 id → true（蒙版按图显示，而非整栏一个 loading） */
+  const [ocrInFlight, setOcrInFlight] = useState<Record<string, boolean>>({});
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const ocrLoading = Object.keys(ocrInFlight).length > 0;
   // 发送按钮防抖/防重入：用 ref 锁 + state 同步禁用按钮，避免 React state 批处理导致双击/双快捷键穿透
   const [isSending, setIsSending] = useState(false);
 
@@ -221,7 +222,12 @@ export const ChatInputArea = memo(function ChatInputArea({
     let attachments = pendingImages;
     const needsOcr = !supportsVision && attachments.some((a) => !a.extractedText);
     if (needsOcr) {
-      setOcrLoading(true);
+      const ids = attachments.filter((a) => !a.extractedText).map((a) => a.id);
+      setOcrInFlight((prev) => {
+        const next = { ...prev };
+        for (const id of ids) next[id] = true;
+        return next;
+      });
       setOcrError(null);
       try {
         attachments = await Promise.all(attachments.map(runOcrForAttachment));
@@ -230,7 +236,11 @@ export const ChatInputArea = memo(function ChatInputArea({
         releaseSendLock();
         return;
       } finally {
-        setOcrLoading(false);
+        setOcrInFlight((prev) => {
+          const next = { ...prev };
+          for (const id of ids) delete next[id];
+          return next;
+        });
       }
     }
 
@@ -270,7 +280,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       setPendingImages((prev) => [...prev, att]);
 
       if (!supportsVision) {
-        setOcrLoading(true);
+        setOcrInFlight((prev) => ({ ...prev, [id]: true }));
         void runOcrForAttachment(att)
           .then((done) => {
             setPendingImages((prev) => prev.map((x) => (x.id === id ? done : x)));
@@ -280,7 +290,11 @@ export const ChatInputArea = memo(function ChatInputArea({
             setPendingImages((prev) => prev.filter((x) => x.id !== id));
           })
           .finally(() => {
-            setOcrLoading(false);
+            setOcrInFlight((prev) => {
+              const next = { ...prev };
+              delete next[id];
+              return next;
+            });
           });
       }
     };
@@ -309,26 +323,26 @@ export const ChatInputArea = memo(function ChatInputArea({
       )}
       {selectedSkill && (
         <div className="mb-2 flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-1 text-xs font-medium text-[var(--kp-brand-deep)]">
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--kp-brand-soft)]/70 px-2.5 py-1 text-xs font-medium text-[var(--kp-brand-deep)]">
             <LucideIconByName name={selectedSkill.icon} className="h-3 w-3" />
             {selectedSkill.name}
           </span>
           <button
             type="button"
             onClick={() => onSkillChange(null)}
-            className="rounded p-0.5 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+            className="rounded-lg p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+            aria-label="清除 Skill"
           >
             <X className="h-3.5 w-3.5" />
           </button>
-          <span className="text-[10px] text-[var(--kp-text-3)]">发送时将覆盖 System Prompt</span>
+          <span className="text-[10px] text-[var(--kp-text-3)]">将作为本轮系统指引</span>
         </div>
       )}
 
       {skillOpen && filteredSkills.length > 0 && (
-        <div className="absolute bottom-full left-0 z-20 mb-2 max-h-48 w-full overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] py-1 shadow-lg">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase text-[var(--kp-text-3)]">
-            选择 Skill
-            <ShortcutSlashSkill />
+        <div className="absolute bottom-full left-0 z-20 mb-2 max-h-48 w-full overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] py-1 shadow-lg">
+          <div className="px-3 py-1.5 text-[10px] font-semibold text-[var(--kp-text-3)]">
+            选择 Skill（也可输入 /）
           </div>
           {filteredSkills.map((skill, i) => (
             <button
@@ -352,11 +366,73 @@ export const ChatInputArea = memo(function ChatInputArea({
 
       <div
         className={cn(
-          "overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-sm transition-[border-color,box-shadow]",
-          "focus-within:border-[var(--kp-brand)] focus-within:shadow-[0_0_0_3px_rgba(184,160,144,0.12)]",
+          "overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] transition-colors",
+          "focus-within:border-[var(--kp-brand)]",
           disabled && "opacity-60",
         )}
       >
+        {/* 图片预览在输入框上方（粘贴/附件后立刻出现） */}
+        {pendingImages.length > 0 && (
+          <div
+            data-testid="chat-image-previews"
+            className="flex flex-wrap gap-2 px-3 pt-3"
+          >
+            {pendingImages.map((img) => {
+              const isOcring = Boolean(ocrInFlight[img.id]);
+              return (
+                <div
+                  key={img.id}
+                  className="relative h-16 w-16 overflow-hidden rounded-xl"
+                  data-testid="chat-image-preview"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.previewUrl}
+                    alt={img.name}
+                    className={cn("h-full w-full object-cover", isOcring && "scale-[1.02]")}
+                  />
+                  {isOcring && (
+                    <div
+                      className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-[rgba(28,26,24,0.55)]"
+                      data-testid="chat-ocr-loading"
+                      aria-label="OCR 识别中"
+                    >
+                      <Loader2 className="h-5 w-5 animate-spin text-white" />
+                      <span className="text-[9px] font-medium text-white/90">OCR</span>
+                    </div>
+                  )}
+                  {!supportsVision && !isOcring && img.extractedText && (
+                    <span
+                      data-testid="chat-ocr-ready"
+                      className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-0.5 bg-emerald-600/85 py-0.5 text-[9px] text-white"
+                      title={img.extractedText.slice(0, 200)}
+                    >
+                      <Check className="h-2.5 w-2.5" />
+                      完成
+                    </span>
+                  )}
+                  {!isOcring && (
+                    <button
+                      type="button"
+                      onClick={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
+                      className="absolute right-0.5 top-0.5 rounded-full bg-black/55 p-0.5 text-white transition hover:bg-black/75"
+                      aria-label="移除图片"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {ocrError && (
+          <div data-testid="chat-ocr-error" className="px-3 pt-2 text-xs text-red-600">
+            {ocrError}
+          </div>
+        )}
+
         <div className="relative">
           <textarea
             ref={textareaRef}
@@ -434,60 +510,22 @@ export const ChatInputArea = memo(function ChatInputArea({
             disabled={disabled}
             placeholder=""
             data-testid="chat-input"
-            className="min-h-[88px] w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-[var(--kp-text-1)] caret-[var(--kp-text-1)] outline-none disabled:cursor-not-allowed"
+            className={cn(
+              "min-h-[88px] w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed",
+              "text-[var(--kp-text-1)] caret-[var(--kp-text-1)] disabled:cursor-not-allowed",
+              // 覆盖 globals.css 的 textarea:focus-visible 描边——否则聚焦时底部 outline 会像一条横线劈开输入框
+              "outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0",
+            )}
           />
           {!disabled && !input.trim() && (
-            <div
-              className="pointer-events-none absolute inset-0 flex items-start justify-between gap-3 px-4 py-3"
-              aria-hidden={false}
-            >
+            <div className="pointer-events-none absolute inset-0 px-4 py-3" aria-hidden>
               <span className="text-sm text-[var(--kp-text-3)]">{placeholderHint}</span>
-              <ChatShortcutHints isStreaming={isStreaming} className="pointer-events-auto shrink-0" />
             </div>
           )}
         </div>
 
-        {ocrError && (
-          <div
-            data-testid="chat-ocr-error"
-            className="border-t border-[var(--kp-divider-light)] px-4 py-2 text-xs text-red-600"
-          >
-            {ocrError}
-          </div>
-        )}
-
-        {pendingImages.length > 0 && (
-          <div
-            data-testid="chat-image-previews"
-            className="flex flex-wrap gap-2 border-t border-[var(--kp-divider-light)] px-4 py-2"
-          >
-            {pendingImages.map((img) => (
-              <div key={img.id} className="relative" data-testid="chat-image-preview">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.previewUrl} alt={img.name} className="h-14 w-14 rounded-lg object-cover" />
-                {!supportsVision && img.extractedText && (
-                  <span
-                    data-testid="chat-ocr-ready"
-                    className="absolute bottom-0 left-0 right-0 truncate rounded-b-lg bg-emerald-600/80 px-1 text-[9px] text-white"
-                    title={img.extractedText.slice(0, 200)}
-                  >
-                    OCR ✓
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPendingImages((p) => p.filter((x) => x.id !== img.id))}
-                  className="absolute -right-1 -top-1 rounded-full bg-black/60 p-0.5 text-white"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* 底部功能栏：附件 | 模型菜单 | 发送 */}
-        <div className="flex items-center justify-between gap-2 border-t border-[var(--kp-divider-light)] px-3 py-2">
+        {/* 能力条：与输入同表面，无分割线；Skill 只在这里出现一次 */}
+        <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-1">
           <div className="flex items-center gap-0.5">
             <input
               ref={fileRef}
@@ -507,15 +545,41 @@ export const ChatInputArea = memo(function ChatInputArea({
               onClick={() => fileRef.current?.click()}
               data-testid="chat-attach-image"
               className="inline-flex items-center justify-center rounded-lg p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)] disabled:opacity-50"
-              title="添加图片"
-              aria-label="添加图片"
+              title={ocrLoading ? "OCR 识别中…" : "添加图片"}
+              aria-label={ocrLoading ? "OCR 识别中" : "添加图片"}
             >
-              {ocrLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" data-testid="chat-ocr-loading" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
+              <ImagePlus className="h-4 w-4" />
             </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={openSkillPicker}
+              data-testid="chat-chip-skill"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition",
+                selectedSkill
+                  ? "bg-[var(--kp-brand-soft)]/60 text-[var(--kp-brand-deep)]"
+                  : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
+              )}
+              title={selectedSkill ? `已选 ${selectedSkill.name}（点击更换）` : "选择 Skill，或输入 /"}
+              aria-label="选择 Skill"
+            >
+              <Wand2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Skill</span>
+            </button>
+            {queueLength > 0 && (
+              <button
+                type="button"
+                onClick={focusQueuePanel}
+                data-testid="chat-chip-queue"
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)]"
+                title="查看发送队列"
+              >
+                <ListOrdered className="h-4 w-4" />
+                {queueLength}
+              </button>
+            )}
+            <ChatShortcutHints isStreaming={isStreaming} />
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -546,14 +610,6 @@ export const ChatInputArea = memo(function ChatInputArea({
           </div>
         </div>
       </div>
-
-      <ChatInputChips
-        onOpenSkillPicker={openSkillPicker}
-        queueLength={queueLength}
-        onFocusQueue={focusQueuePanel}
-        selectedSkillName={selectedSkill?.name}
-        onClearSkill={() => onSkillChange(null)}
-      />
 
       {modelHint && (
         <p className="mt-1.5 px-1 text-center text-[11px] leading-relaxed text-[var(--kp-text-3)]">

@@ -934,41 +934,43 @@ export function RuntimeStatusPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-runtime-queue">
       {/* 一级分组：异步队列 / 同步任务 */}
-      <div className="flex items-center gap-1 border-b border-[var(--kp-divider-light)] px-2.5 py-2">
-        <button
-          type="button"
-          data-testid="runtime-group-async"
-          onClick={() => onGroupTabChange("async")}
-          className={cn(
-            "rounded-md px-2.5 py-1 text-xs font-medium transition",
-            groupTab === "async"
-              ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-              : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-          )}
-        >
-          异步队列
-          <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
-            {activeCount + toConsumeCount}
-          </span>
-        </button>
-        <button
-          type="button"
-          data-testid="runtime-group-sync"
-          onClick={() => onGroupTabChange("sync")}
-          className={cn(
-            "rounded-md px-2.5 py-1 text-xs font-medium transition",
-            groupTab === "sync"
-              ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-              : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-          )}
-        >
-          同步任务
-          {syncActiveItems.length > 0 && (
-            <span className="ml-1 inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
-              {syncActiveItems.length}
+      <div className="px-2.5 py-2">
+        <div className="flex gap-1 rounded-xl bg-[var(--kp-bg-mute)] p-0.5">
+          <button
+            type="button"
+            data-testid="runtime-group-async"
+            onClick={() => onGroupTabChange("async")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition",
+              groupTab === "async"
+                ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+            )}
+          >
+            异步队列
+            <span className="inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
+              {activeCount + toConsumeCount}
             </span>
-          )}
-        </button>
+          </button>
+          <button
+            type="button"
+            data-testid="runtime-group-sync"
+            onClick={() => onGroupTabChange("sync")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition",
+              groupTab === "sync"
+                ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+            )}
+          >
+            同步任务
+            {syncActiveItems.length > 0 && (
+              <span className="inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
+                {syncActiveItems.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {groupTab === "sync" ? (

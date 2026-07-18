@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tasks 后台任务管理页面 (L3 系统与运维)
  */
 
@@ -43,7 +43,7 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
+    <div className="mx-auto w-full max-w-[1400px] flex-1 space-y-6 overflow-y-auto bg-[var(--kp-bg)] px-4 py-6 md:px-8 md:py-8">
       <PageHeader
         icon={CalendarClock}
         title="Tasks 定时任务"
@@ -76,7 +76,7 @@ export default function TasksPage() {
           onAction={handleCreateDemo}
         />
       ) : (
-        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
+        <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((task: Task, idx: number) => {
             const statusColors = {
               pending: "bg-yellow-500/10 text-yellow-600",

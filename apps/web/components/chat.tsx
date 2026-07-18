@@ -244,34 +244,36 @@ export function ChatView() {
     [searchParams, pathname, router],
   );
 
-  // 【URL 同步群】URL → tabs；tabs 焦点 → URL（含可选 split）
-  // 只要 URL 与焦点不一致就 ensure（OPEN_TAB 幂等）。禁止用「已见过该 URL」ref 阻断重试——
-  // 否则首帧 ensure 被其它 effect 冲掉后永远不会再对齐（深链 ?sessionId= 会停在新对话）。
+  // 【URL 同步群】
+  // 不变量：URL→tabs 只响应「URL 本身变化」（深链 / 前进后退 / 外链），
+  // 绝不把 focusedSessionId / layout 放进 deps——否则会与下方 tabs→URL 乒乓：
+  //   焦点刚切到 B、URL 仍是 A → URL 效应抢回 A，同时 tabs 效应把 URL 写成 B → 下一帧再反过来。
+  // 运行时读 ref，避免闭包陈旧；焦点被冲成 null 时另有恢复效应（只在空焦点时 ensure）。
+  const focusedSessionIdRef = useRef(focusedSessionId);
+  focusedSessionIdRef.current = focusedSessionId;
+
   useEffect(() => {
-    if (sessionFromUrl && sessionFromUrl !== focusedSessionId) {
+    if (sessionFromUrl && sessionFromUrl !== focusedSessionIdRef.current) {
       ensureFocusedSession(sessionFromUrl);
       void utils.session.listRunning.invalidate();
       consumeRef.current(sessionFromUrl);
     }
-    if (
-      splitFromUrl &&
-      splitFromUrl !== sessionFromUrl &&
-      (tabs.layout !== "split" || tabs.secondarySessionId !== splitFromUrl)
-    ) {
-      ensureSplitWith(splitFromUrl);
-    }
-  }, [
-    sessionFromUrl,
-    splitFromUrl,
-    focusedSessionId,
-    tabs.layout,
-    tabs.secondarySessionId,
-    ensureFocusedSession,
-    ensureSplitWith,
-    utils.session.listRunning,
-  ]);
+  }, [sessionFromUrl, ensureFocusedSession, utils.session.listRunning]);
 
-  // tabs 焦点 / 分屏 → URL
+  useEffect(() => {
+    if (!splitFromUrl || splitFromUrl === sessionFromUrl) return;
+    ensureSplitWith(splitFromUrl);
+  }, [splitFromUrl, sessionFromUrl, ensureSplitWith]);
+
+  // 深链 ensure 被其它 effect 冲成空焦点时补一次（有焦点绝不抢——避免与用户点标签打架）
+  useEffect(() => {
+    if (!tabsHydrated) return;
+    if (sessionFromUrl && !focusedSessionId) {
+      ensureFocusedSession(sessionFromUrl);
+    }
+  }, [tabsHydrated, sessionFromUrl, focusedSessionId, ensureFocusedSession]);
+
+  // tabs 焦点 / 分屏 → URL（本地操作的唯一写回通道；selectSession 等也可先写 URL，本效应幂等对齐）
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     let changed = false;

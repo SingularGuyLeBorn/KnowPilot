@@ -323,49 +323,50 @@ export const ChatSidebar = memo(function ChatSidebar({
     const isMain = historySubTab === "main";
     return (
       <>
-        {/* 对话历史子标签页：主 Agent + 子 Agent */}
-        <div className="flex gap-1 border-b border-[var(--kp-divider)] px-3 py-2">
-          <button
-            type="button"
-            onClick={() => {
-              setHistorySubTab("main");
-              syncChatUiToUrl({ view: "main" });
-              // 当前停在子会话时，顺带切回父会话，避免中栏仍卡在失败的子任务页
-              if (isSubagentSession && parentSessionId) {
-                selectSession(parentSessionId);
-              }
-            }}
-            data-testid="history-subtab-main"
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-              isMain
-                ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-            )}
-          >
-            主 Agent
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setHistorySubTab("sub");
-              syncChatUiToUrl({ view: "sub" });
-            }}
-            data-testid="history-subtab-sub"
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-              !isMain
-                ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-            )}
-          >
-            子 Agent
-            {currentSubAgentCount > 0 && (
-              <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-bg-mute)] px-1 py-0 text-[9px] font-semibold text-[var(--kp-text-2)]">
-                {currentSubAgentCount}
-              </span>
-            )}
-          </button>
+        {/* 对话历史子标签：与顶层「对话|运行」同款圆角分段 */}
+        <div className="px-3 py-2">
+          <div className="flex gap-1 rounded-xl bg-[var(--kp-bg-mute)] p-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setHistorySubTab("main");
+                syncChatUiToUrl({ view: "main" });
+                if (isSubagentSession && parentSessionId) {
+                  selectSession(parentSessionId);
+                }
+              }}
+              data-testid="history-subtab-main"
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
+                isMain
+                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+              )}
+            >
+              主 Agent
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setHistorySubTab("sub");
+                syncChatUiToUrl({ view: "sub" });
+              }}
+              data-testid="history-subtab-sub"
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
+                !isMain
+                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+              )}
+            >
+              子 Agent
+              {currentSubAgentCount > 0 && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-bg)]/80 px-1.5 py-0 text-[9px] font-semibold text-[var(--kp-text-2)]">
+                  {currentSubAgentCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="w-64 border-b border-[var(--kp-divider)] px-3 py-2">
@@ -565,7 +566,7 @@ export const ChatSidebar = memo(function ChatSidebar({
             </button>
           </div>
           {/* 左栏顶层标签：对话 | 运行 */}
-          <div className="mt-2 flex gap-1 rounded-lg bg-[var(--kp-bg-mute)] p-0.5">
+          <div className="mt-2 flex gap-1 rounded-xl bg-[var(--kp-bg-mute)] p-0.5">
             <button
               type="button"
               onClick={() => {
@@ -574,7 +575,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               }}
               data-testid="left-tab-history"
               className={cn(
-                "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
                 leftTab === "history"
                   ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
@@ -590,7 +591,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               }}
               data-testid="left-tab-runtime"
               className={cn(
-                "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
                 leftTab === "runtime"
                   ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",

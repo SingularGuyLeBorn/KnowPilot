@@ -126,4 +126,17 @@ L5  微压缩         macro 压缩前先清大工具结果（学 Claude Code）
 
 ---
 
-> 最后更新：2026-07-11。本文档为学习计划，不动代码。落地按 S1→S8 顺序，每步可独立验收。
+> 最后更新：2026-07-18。
+
+## 7. 落地进度（对照 S1→S8）
+
+| 步骤 | 状态 | 说明 |
+|---|---|---|
+| S1 拆 experience 污染 | ✅ | `MEMORY_INJECTABLE_TYPES` 排除 experience；create 类型约束 |
+| S2 L1 双文件 + 硬预算 + 冻结 | ✅ | `content/memories/_pinned/` + `pinnedMemory` + 工具 |
+| S3 compact 前 memoryFlush | ✅ | `memoryFlush.ts`；**2026-07-18**：写入 scope 改为 agent/workspace（有 Actor 时），不再默认 global |
+| S4 microcompact | ✅ | `autoCompact.microCompactMessages` |
+| S5 日记层 + 按需召回 | ✅ | `memoryDaily.ts` + `memory_daily_append` / `memory_daily_search`；不注入 prompt |
+| S6 LLM 记忆选择器 + 去重 | 🟡 轻量 | 注入侧 content 去重 + >1 天「可能过时」提示；side LLM 选 ≤5 **未做** |
+| S7 Dreaming 晋升 | ⏳ | 未做 |
+| S8 外挂 Mem0/Honcho | ⏳ | 未做（不上向量库先） |

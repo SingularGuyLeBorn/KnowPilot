@@ -158,6 +158,91 @@ export async function scrapePage(options: ScrapeOptions): Promise<ScrapeResult> 
   }
 }
 
+export interface ScreenshotOptions {
+  url: string;
+  waitFor?: string;
+  timeout?: number;
+  /** 整页长截图，默认 false（视口） */
+  fullPage?: boolean;
+  /** 视口宽，默认 1280 */
+  width?: number;
+  /** 视口高，默认 800 */
+  height?: number;
+}
+
+export interface ScreenshotResult {
+  success: boolean;
+  error?: string;
+  data?: {
+    url: string;
+    title: string;
+    buffer: Buffer;
+    width: number;
+    height: number;
+    fullPage: boolean;
+  };
+}
+
+/**
+ * 打开页面并截图（PNG buffer）。与 scrapePage 共用共享浏览器，无状态。
+ */
+export async function screenshotPage(options: ScreenshotOptions): Promise<ScreenshotResult> {
+  const {
+    url,
+    waitFor,
+    timeout = DEFAULT_TIMEOUT,
+    fullPage = false,
+    width = 1280,
+    height = 800,
+  } = options;
+
+  if (!url || !url.startsWith("http")) {
+    return { success: false, error: "无效的 URL（需 http/https）" };
+  }
+
+  let page: Page | null = null;
+  let context: BrowserContext | null = null;
+  try {
+    const browser = await getSharedBrowser();
+    context = await browser.newContext({
+      viewport: { width, height },
+      userAgent: DEFAULT_UA,
+    });
+    page = await context.newPage();
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout });
+    await page.waitForTimeout(600);
+    await preparePageForExtract(page, url);
+
+    if (waitFor) {
+      await page.waitForSelector(waitFor, { timeout: 5000 }).catch(() => undefined);
+    }
+
+    const title = await page.title();
+    const buffer = Buffer.from(
+      await page.screenshot({ type: "png", fullPage }),
+    );
+
+    return {
+      success: true,
+      data: {
+        url,
+        title,
+        buffer,
+        width,
+        height,
+        fullPage,
+      },
+    };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { success: false, error: `截图失败: ${msg}` };
+  } finally {
+    if (page) await page.close().catch(() => undefined);
+    if (context) await context.close().catch(() => undefined);
+  }
+}
+
 /**
  * 批量采集
  */

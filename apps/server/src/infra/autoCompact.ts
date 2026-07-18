@@ -19,6 +19,11 @@ import {
   resolveCompactCharThreshold,
 } from "@knowpilot/shared";
 import { flushMemoriesBeforeCompact } from "./memoryFlush.js";
+import {
+  buildLlmMessagesFromHistory,
+  historySinceLastCompactBoundary,
+  type HistoryMessageLike,
+} from "./chatHistory.js";
 
 /** 摘要内容标记：压缩边界消息的正文前缀（边界行由 buildCompactBoundaryMarker 生成） */
 export const SUMMARY_MARKER = "[此前对话摘要 — 自动压缩]";
@@ -79,15 +84,64 @@ export function microCompactMessages(messages: LlmMessage[], toolResultMaxChars:
   });
 }
 
-function buildSummaryPair(summaryText: string, generation: number): LlmMessage[] {
+/** 摘要注入后的合成 assistant 确认（rebuild / maybeCompact 幂等剥离用） */
+export const CONTEXT_SUMMARY_ACK = "已阅读摘要，继续基于上述上下文协助你。";
+
+export function buildSummaryPair(summaryText: string, generation: number): LlmMessage[] {
   const boundary = buildCompactBoundaryMarker(generation);
   return [
     {
       role: "user",
       content: `${boundary}\n${SUMMARY_MARKER}\n${summaryText}`,
     },
-    { role: "assistant", content: "已阅读摘要，继续基于上述上下文协助你。" },
+    { role: "assistant", content: CONTEXT_SUMMARY_ACK },
   ];
+}
+
+/** 去掉已注入的摘要 pair，避免 maybeCompact / 多次 rebuild 双重注入 */
+export function stripInjectedSummaryMessages(messages: LlmMessage[]): LlmMessage[] {
+  const out: LlmMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    if (typeof m.content === "string" && isCompactSummaryContent(m.content)) {
+      const next = messages[i + 1];
+      if (next?.role === "assistant" && next.content === CONTEXT_SUMMARY_ACK) i++;
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
+}
+
+/**
+ * 发给 LLM 的会话上下文不变量：
+ * system +（可选）contextSummary + 最近一次压缩边界之后的全部原文消息。
+ * 页面历史气泡不删；此处只裁剪模型视野。
+ */
+export function buildLlmContextSinceCompact(
+  systemContent: string,
+  history: HistoryMessageLike[],
+  options?: {
+    modelId?: string;
+    microCompactToolMaxChars?: number;
+    contextSummary?: string | null;
+  },
+): LlmMessage[] {
+  const base = buildLlmMessagesFromHistory(
+    systemContent,
+    historySinceLastCompactBoundary(history),
+    {
+      modelId: options?.modelId,
+      microCompactToolMaxChars: options?.microCompactToolMaxChars,
+    },
+  );
+  const summary = options?.contextSummary?.trim();
+  if (!summary) return base;
+
+  const system = base.filter((m) => m.role === "system");
+  const rest = stripInjectedSummaryMessages(base.filter((m) => m.role !== "system"));
+  const generation = Math.max(1, nextCompactGeneration(summary) - 1);
+  return [...system, ...buildSummaryPair(summary, generation), ...rest];
 }
 
 function trimOldest(messages: LlmMessage[], keepRecent: number): LlmMessage[] {
@@ -131,6 +185,9 @@ export interface CompactOptions {
   flushContext?: {
     services: ServiceContainer;
     sessionId?: string;
+    agentId?: string | null;
+    workspaceId?: string | null;
+    tier?: string | null;
   };
   /** 压缩阶段事件回调；仅在真正 macro 压缩时触发，reused / 未触发不 emit */
   emit?: (event: AgentStreamEvent) => void;
@@ -159,8 +216,13 @@ export async function maybeCompactMessages(
   const generation = nextCompactGeneration(existing);
 
   if (existing) {
-    const recent = rest.length > settings.keepRecent ? rest.slice(-settings.keepRecent) : rest;
-    const reusedMessages: LlmMessage[] = [...system, ...buildSummaryPair(existing, generation - 1), ...recent];
+    // 复用摘要时保留压缩边界之后的全部原文，不再用 keepRecent 截断（keepRecent 只用于「再次压缩」切点）
+    const cleaned = stripInjectedSummaryMessages(rest);
+    const reusedMessages: LlmMessage[] = [
+      ...system,
+      ...buildSummaryPair(existing, generation - 1),
+      ...cleaned,
+    ];
     if (estimateChars(reusedMessages) < charThreshold) {
       return {
         messages: reusedMessages,
@@ -199,7 +261,14 @@ export async function maybeCompactMessages(
       options.flushContext.services,
       transcript,
       model,
-      { existingSummary: existing },
+      {
+        existingSummary: existing,
+        actor: {
+          agentId: options.flushContext.agentId,
+          workspaceId: options.flushContext.workspaceId,
+          tier: options.flushContext.tier,
+        },
+      },
     );
   }
 
@@ -313,7 +382,10 @@ export async function compactSessionHistory(
     },
     messages,
     model,
-    options,
+    {
+      ...options,
+      existingSummary: existingSummary ?? options?.existingSummary,
+    },
   );
   if (forced.compacted && forced.summaryText) {
     return forced;
@@ -427,16 +499,22 @@ export async function runSessionCompact(params: {
   trigger: CompactPersistTrigger;
   emit?: (event: AgentStreamEvent) => void;
 }): Promise<RunSessionCompactResult> {
-  const history = await params.services.message.list({
+  const session = await params.services.session.getByIdLite(params.sessionId);
+  const historyItems = await params.services.message.listForLlmContext({
     sessionId: params.sessionId,
-    page: 1,
-    pageSize: SESSION_HISTORY_PAGE_SIZE,
+    since: (session as { contextCompactedAt?: Date | string | null }).contextCompactedAt,
+    limit: SESSION_HISTORY_PAGE_SIZE,
   });
-  const { buildLlmMessagesFromHistory, sliceHistoryAfterCompactBoundary } = await import("./chatHistory.js");
-  const messages = buildLlmMessagesFromHistory(
+  const messages = buildLlmContextSinceCompact(
     params.systemPrompt || "你是 KnowPilot 助手。",
-    sliceHistoryAfterCompactBoundary(history.items),
-    { modelId: params.model },
+    historyItems,
+    {
+      modelId: params.model,
+      contextSummary:
+        params.existingSummary ??
+        (session as { contextSummary?: string | null }).contextSummary ??
+        null,
+    },
   );
 
   const charThreshold = resolveCompactThresholdForModel(params.config, params.model);
@@ -448,13 +526,44 @@ export async function runSessionCompact(params: {
     params.emit?.({ type: "compact_start", generation, estimatedRatio, round: 0 });
   }
 
+  let flushActor: {
+    agentId?: string | null;
+    workspaceId?: string | null;
+    tier?: string | null;
+  } = {};
+  try {
+    const sess = await params.services.prisma.chatSession.findUnique({
+      where: { id: params.sessionId },
+      select: { agentId: true },
+    });
+    if (sess?.agentId) {
+      const agent = await params.services.prisma.agent.findUnique({
+        where: { id: sess.agentId },
+        select: { id: true, workspaceId: true, tier: true },
+      });
+      if (agent) {
+        flushActor = {
+          agentId: agent.id,
+          workspaceId: agent.workspaceId,
+          tier: agent.tier,
+        };
+      }
+    }
+  } catch {
+    /* 查 Actor 失败时 flush 回退为无 Agent → global */
+  }
+
   const compacted = await compactSessionHistory(
     params.config,
     messages,
     params.model,
     params.existingSummary,
     {
-      flushContext: { services: params.services, sessionId: params.sessionId },
+      flushContext: {
+        services: params.services,
+        sessionId: params.sessionId,
+        ...flushActor,
+      },
       emit: params.trigger === "auto" ? params.emit : undefined,
     },
   );

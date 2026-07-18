@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Credentials 凭据管理页面 (L5 敏感数据)
  */
 
@@ -109,7 +109,7 @@ export default function CredentialsPage() {
         />
       ) : (
         <>
-          <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
+          <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] ", density === "compact" ? "gap-4" : "gap-6")}>
             {data.items.map((cred: Credential, idx: number) => (
               <motion.div
                 key={cred.id}

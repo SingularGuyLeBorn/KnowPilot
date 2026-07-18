@@ -13,9 +13,38 @@
  */
 
 import * as fs from "fs";
+import * as http from "http";
 import * as path from "path";
+import { exec } from "child_process";
+import { randomBytes } from "crypto";
+import { URL } from "url";
 
 const FEISHU_BASE = "https://open.feishu.cn/open-apis";
+const ACCOUNTS_AUTHORIZE = "https://accounts.feishu.cn/open-apis/authen/v1/authorize";
+
+/** 默认申请的用户 scope（含画板/IM/权限；应用后台须先开通对应权限） */
+export const FEISHU_DEFAULT_OAUTH_SCOPES = [
+  "offline_access",
+  "board:whiteboard:node:read",
+  "board:whiteboard:node:create",
+  "board:whiteboard:node:delete",
+  "docx:document",
+  "drive:drive",
+  "wiki:wiki",
+  "search:docs:read",
+  // 协作者增删改（文档权限 API；建群用 im:chat，勿带未开通的 create_as_user → 20043）
+  "im:chat",
+  "im:chat:create",
+  "im:chat:delete",
+  "im:chat:read",
+  "im:chat:update",
+  "docs:permission.member:create",
+  "docs:permission.member:update",
+  "docs:permission.member:delete",
+  "docs:permission.member:retrieve",
+  "docs:permission.setting:read",
+  "docs:permission.setting:write_only",
+].join(" ");
 
 function readEnv(...keys: string[]): string {
   for (const key of keys) {
@@ -33,10 +62,23 @@ function getLarkAppSecret(): string {
   return readEnv("FEISHU_APP_SECRET", "LARK_APP_SECRET");
 }
 
-/** 缓存文件路径: 项目目录/content/cookies/feishu_oauth.json */
+/** 解析 monorepo 根（避免从 apps/server 启动时读到 apps/server/content/...） */
+function resolveRepoRoot(): string {
+  if (process.env.KNOWPILOT_ROOT?.trim()) return path.resolve(process.env.KNOWPILOT_ROOT.trim());
+  const candidates = [
+    process.cwd(),
+    path.resolve(process.cwd(), "../.."),
+    path.resolve(process.cwd(), "../../.."),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, "pnpm-workspace.yaml"))) return candidate;
+  }
+  return path.resolve(process.cwd(), "../..");
+}
+
+/** 缓存文件路径: 仓库根/content/cookies/feishu_oauth.json */
 function getCachePath(): string {
-  const projectRoot = process.env.KNOWPILOT_ROOT || path.resolve(process.cwd());
-  return path.join(projectRoot, "content", "cookies", "feishu_oauth.json");
+  return path.join(resolveRepoRoot(), "content", "cookies", "feishu_oauth.json");
 }
 
 /** 读取缓存文件 */
@@ -287,4 +329,218 @@ export async function refreshTokenManually(): Promise<{
       error: e.message,
     };
   }
+}
+
+export type FeishuAuthorizeResult = {
+  success: boolean;
+  cachePath: string;
+  accessTokenPrefix?: string;
+  hasRefreshToken?: boolean;
+  expiresIn?: number;
+  scope?: string;
+  authUrl?: string;
+  error?: string;
+};
+
+function openBrowser(url: string): void {
+  const platform = process.platform;
+  const cmd =
+    platform === "win32"
+      ? `start "" "${url}"`
+      : platform === "darwin"
+        ? `open "${url}"`
+        : `xdg-open "${url}"`;
+  exec(cmd, () => undefined);
+}
+
+/**
+ * 浏览器 OAuth 授权：拉起本地回调 → 换 token → 写入 feishu_oauth.json
+ * 与 capture_zhihu_login 同模式：需用户在浏览器点一次同意；之后靠 refresh 自动续。
+ */
+export async function authorizeUserViaBrowser(options?: {
+  redirectUri?: string;
+  port?: number;
+  timeoutSec?: number;
+  scope?: string;
+  openBrowser?: boolean;
+}): Promise<FeishuAuthorizeResult> {
+  // 确保从仓库根 .env 读到 APP_ID/SECRET（tsx 直接跑脚本时未必已 load）
+  try {
+    const { loadRootEnv } = await import("../config.js");
+    loadRootEnv();
+  } catch {
+    /* ignore */
+  }
+
+  const appId = getLarkAppId();
+  const appSecret = getLarkAppSecret();
+  const cachePath = getCachePath();
+  if (!appId || !appSecret) {
+    return {
+      success: false,
+      cachePath,
+      error: "未配置 FEISHU_APP_ID / FEISHU_APP_SECRET",
+    };
+  }
+
+  const redirectUri = options?.redirectUri || "http://localhost:8088";
+  const port = options?.port ?? 8088;
+  const timeoutSec = options?.timeoutSec ?? 180;
+  const scope = (options?.scope || FEISHU_DEFAULT_OAUTH_SCOPES).trim();
+  const state = randomBytes(16).toString("base64url");
+  const authUrl =
+    `${ACCOUNTS_AUTHORIZE}?app_id=${encodeURIComponent(appId)}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent(scope)}` +
+    `&state=${encodeURIComponent(state)}`;
+
+  type Pending = {
+    done: boolean;
+    error?: string;
+    data?: {
+      access_token: string;
+      refresh_token?: string;
+      expires_in?: number;
+      refresh_token_expires_in?: number;
+      scope?: string;
+    };
+  };
+  const pending: Pending = { done: false };
+
+  const server = http.createServer(async (req, res) => {
+    try {
+      const rawUrl = req.url || "/";
+      // 浏览器预检 / 旧标签页：无 code 的请求一律忽略，勿结束整个授权流程
+      if (rawUrl.includes("favicon") || rawUrl === "/" || !rawUrl.includes("code=")) {
+        if (!rawUrl.includes("code=")) {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end("<p>等待飞书授权回调…请在授权页点击同意。</p>");
+          return;
+        }
+      }
+      const u = new URL(rawUrl, redirectUri);
+      const code = u.searchParams.get("code");
+      const returnedState = u.searchParams.get("state");
+      if (!code) {
+        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("waiting");
+        return;
+      }
+      if (returnedState !== state) {
+        // 旧标签页带过期 state：提示用户关掉旧页，不要把本次授权判死
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(
+          "<h2>这是过期的授权回调（state 不匹配）</h2><p>请关闭本页，回到最新弹出的飞书授权窗口重新点「同意」。</p>",
+        );
+        return;
+      }
+
+      const tokenRes = await fetch(`${FEISHU_BASE}/authen/v2/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          client_id: appId,
+          client_secret: appSecret,
+          code,
+          redirect_uri: redirectUri,
+        }),
+      });
+      const tokenJson = (await tokenRes.json()) as {
+        code?: number;
+        msg?: string;
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        refresh_token_expires_in?: number;
+        scope?: string;
+      };
+      if (tokenJson.code !== 0 || !tokenJson.access_token) {
+        const err = tokenJson.msg || `HTTP ${tokenRes.status}`;
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<h2 style="color:red">换取 token 失败</h2><p>${err}</p>`);
+        pending.error = err;
+        pending.done = true;
+        return;
+      }
+
+      pending.data = {
+        access_token: tokenJson.access_token,
+        refresh_token: tokenJson.refresh_token,
+        expires_in: tokenJson.expires_in,
+        refresh_token_expires_in: tokenJson.refresh_token_expires_in,
+        scope: tokenJson.scope,
+      };
+      pending.done = true;
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        "<h2 style='color:green'>飞书授权成功</h2><p>可关闭此页，回到 KnowPilot。</p>",
+      );
+    } catch (e) {
+      pending.error = e instanceof Error ? e.message : String(e);
+      pending.done = true;
+      res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<h2>错误</h2><p>${pending.error}</p>`);
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve());
+  });
+
+  if (options?.openBrowser !== false) openBrowser(authUrl);
+
+  const deadline = Date.now() + timeoutSec * 1000;
+  try {
+    while (!pending.done && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+
+  if (!pending.done) {
+    return {
+      success: false,
+      cachePath,
+      authUrl,
+      error: `等待授权超时（${timeoutSec}s）。请打开 authUrl 完成扫码后重试。`,
+    };
+  }
+  if (pending.error || !pending.data?.access_token) {
+    return {
+      success: false,
+      cachePath,
+      authUrl,
+      error: pending.error || "未拿到 access_token",
+    };
+  }
+
+  const now = Date.now() / 1000;
+  const expiresIn = pending.data.expires_in ?? 7200;
+  const newCache: CacheData = {
+    app_id: appId,
+    access_token: pending.data.access_token,
+    refresh_token: pending.data.refresh_token,
+    expire_at: now + expiresIn,
+    refresh_expire_at: pending.data.refresh_token_expires_in
+      ? now + pending.data.refresh_token_expires_in
+      : undefined,
+    scope: pending.data.scope || scope,
+    saved_at: now,
+  };
+  fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+  writeCache(newCache);
+  memCache = { data: newCache, loadedAt: Date.now() };
+
+  return {
+    success: true,
+    cachePath,
+    accessTokenPrefix: pending.data.access_token.slice(0, 12) + "...",
+    hasRefreshToken: Boolean(pending.data.refresh_token),
+    expiresIn,
+    scope: pending.data.scope,
+    authUrl,
+  };
 }

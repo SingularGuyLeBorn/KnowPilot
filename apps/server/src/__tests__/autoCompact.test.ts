@@ -2,6 +2,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { AppConfig } from "../infra/config.js";
 import {
   maybeCompactMessages,
+  buildLlmContextSinceCompact,
+  CONTEXT_SUMMARY_ACK,
   estimateChars,
   SUMMARY_MARKER,
   COMPACT_BOUNDARY_PREFIX,
@@ -114,4 +116,59 @@ describe("autoCompact", () => {
     expect(String(out[0].content).length).toBeLessThan(2000);
     expect(String(out[0].content)).toContain("micro-compact");
   });
+
+  it("复用摘要时保留压缩后全部原文，不用 keepRecent 截断", async () => {
+    const messages = longMessages(20, 80);
+    const result = await maybeCompactMessages(makeConfig({ triggerRatio: 0.99, keepRecent: 4 }), messages, "deepseek-v4-flash", {
+      existingSummary: "旧摘要内容",
+    });
+    expect(result.reused).toBe(true);
+    const nonSystem = result.messages.filter((m) => m.role !== "system");
+    // summary pair(2) + 原 20 条（longMessages 含 system，rest=20）
+    expect(nonSystem.length).toBe(22);
+    expect(nonSystem.some((m) => String(m.content).includes("msg-0-"))).toBe(true);
+    expect(nonSystem.some((m) => String(m.content).includes("msg-19-"))).toBe(true);
+  });
+
+  it("buildLlmContextSinceCompact = summaryText + 边界后全部消息", () => {
+    const boundary = `${COMPACT_BOUNDARY_PREFIX}v1@2026-01-01T00:00:00.000Z]`;
+    const history = [
+      { role: "user", content: "旧 SECRET_OLD" },
+      { role: "assistant", content: "旧答" },
+      {
+        role: "assistant",
+        content: `${boundary}\n已自动压缩`,
+        toolCalls: [{ id: "c1", name: "__context_compact__", kind: "compact", args: {}, result: {} }],
+      },
+      { role: "user", content: "边界后-1" },
+      { role: "assistant", content: "边界后-2" },
+      { role: "user", content: "边界后-3" },
+    ];
+    const messages = buildLlmContextSinceCompact("sys", history, {
+      contextSummary: "这是持久化摘要 SUMMARY_SECRET",
+    });
+    const blob = JSON.stringify(messages);
+    expect(blob).toContain("SUMMARY_SECRET");
+    expect(blob).toContain(SUMMARY_MARKER);
+    expect(blob).toContain("边界后-1");
+    expect(blob).toContain("边界后-2");
+    expect(blob).toContain("边界后-3");
+    expect(blob).toContain(CONTEXT_SUMMARY_ACK);
+    expect(blob).not.toContain("SECRET_OLD");
+    // 边界 UI 气泡本身不进 LLM
+    expect(blob).not.toContain("已自动压缩");
+  });
+
+  it("buildLlmContextSinceCompact 幂等：已含摘要 pair 不双重注入", () => {
+    const history = [
+      { role: "user", content: "继续" },
+    ];
+    const once = buildLlmContextSinceCompact("sys", history, { contextSummary: "摘要A" });
+    const twice = buildLlmContextSinceCompact("sys", history, { contextSummary: "摘要A" });
+    const count = (msgs: typeof once) =>
+      msgs.filter((m) => typeof m.content === "string" && m.content.includes(SUMMARY_MARKER)).length;
+    expect(count(once)).toBe(1);
+    expect(count(twice)).toBe(1);
+  });
+
 });

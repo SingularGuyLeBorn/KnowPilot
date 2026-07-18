@@ -109,6 +109,28 @@ describe("formatToolTimingHint", () => {
     expect(hint).toContain("2899 字");
   });
 
+  it("browser_screenshot 摘要含截图字节与 suggestedTool", () => {
+    const hint = formatToolTimingHint({
+      elapsedMs: 400,
+      path: "content/uploads/screenshots/x.png",
+      bytes: 2048,
+      suggestedTool: "read_image",
+    });
+    expect(hint).toContain("400ms");
+    expect(hint).toContain("截图 2048B");
+    expect(hint).toContain("→read_image");
+  });
+
+  it("read_image 摘要含 source 与字数", () => {
+    const hint = formatToolTimingHint({
+      elapsedMs: 120,
+      source: "ocr",
+      textChars: 88,
+    });
+    expect(hint).toContain("ocr");
+    expect(hint).toContain("88 字");
+  });
+
   it("sleep 结果摘要含等待时长", () => {
     const hint = formatToolTimingHint({
       waitedMs: 20000,

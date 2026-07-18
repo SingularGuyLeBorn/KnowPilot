@@ -20,6 +20,7 @@ import {
   GitBranch,
   HardDrive,
   Hammer,
+  Keyboard,
   MessageSquare,
   PenLine,
   Play,
@@ -226,10 +227,10 @@ export function ShortcutSlashSkill({ className }: { className?: string }) {
   );
 }
 
-const hintTriggerClass =
-  "inline-flex cursor-default rounded-md p-0.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-2)]";
-
-/** 聊天输入框快捷键提示 — 纯图标 + 悬浮说明 */
+/**
+ * 聊天快捷键提示 — 收成一枚键盘图标，悬停看完整说明。
+ * 避免在空输入框右上角堆一排 kbd（视觉噪音大、像第二套工具栏）。
+ */
 export function ChatShortcutHints({
   isStreaming = false,
   className,
@@ -238,37 +239,24 @@ export function ChatShortcutHints({
   className?: string;
 }) {
   return (
-    <TooltipProvider delay={280}>
-      <div className={cn("flex items-center gap-1", className)}>
-        {!isStreaming && (
-          <Tooltip>
-            <TooltipTrigger className={hintTriggerClass}>
-              <KbdKey icon={CornerDownLeft} label="Enter" />
-            </TooltipTrigger>
-            <TooltipContent side="top">Enter 换行</TooltipContent>
-          </Tooltip>
-        )}
-        <Tooltip>
-          <TooltipTrigger className={hintTriggerClass}>
-            <ShortcutCtrlEnter />
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            {isStreaming ? "Ctrl+Enter 加入发送队列" : "Ctrl+Enter 发送消息"}
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger className={hintTriggerClass}>
-            <ShortcutSlashSkill />
-          </TooltipTrigger>
-          <TooltipContent side="top">输入 / 选择 Skill</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger className={hintTriggerClass}>
-            <kbd className={kbdBoxClass}>/compact</kbd>
-          </TooltipTrigger>
-          <TooltipContent side="top">输入 /compact 发送压缩指令（由 Agent 调用 session_compact）</TooltipContent>
-        </Tooltip>
-      </div>
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          className={cn(
+            "inline-flex items-center justify-center rounded-lg p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-2)]",
+            className,
+          )}
+          aria-label="快捷键说明"
+        >
+          <Keyboard className="h-4 w-4" />
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[240px] space-y-1 px-3 py-2 text-left text-[11px] leading-relaxed">
+          <div>Enter · 换行</div>
+          <div>{isStreaming ? "Ctrl+Enter · 加入队列" : "Ctrl+Enter · 发送"}</div>
+          <div>/ · 选择 Skill</div>
+          <div>/compact · 压缩上下文</div>
+        </TooltipContent>
+      </Tooltip>
     </TooltipProvider>
   );
 }

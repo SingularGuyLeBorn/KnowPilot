@@ -198,6 +198,17 @@ const agentRouter = router({
         });
       }
     }),
+  resumeHeartbeat: publicProcedure
+    .meta({
+      description: "手动恢复熔断暂停的 Agent 心跳（清零连续失败计数并重挂 cron）。",
+      aiReadable: false,
+    })
+    .input(z.object({ agentId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getHeartbeatEngine } = await import("./infra/heartbeatEngine.js");
+      const engine = getHeartbeatEngine(ctx.prisma, ctx.services, ctx.config);
+      return engine.resumeHeartbeat(input.agentId);
+    }),
   toolSummary: publicProcedure
     .meta({ description: "解析 Agent tools 授权并统计 LLM 可见工具规模。", aiReadable: true })
     .input(z.object({ tools: z.array(z.string()) }))
@@ -902,6 +913,24 @@ const workspaceRouter = router({
   list: publicProcedure.meta({ description: "列出所有工作区。", aiReadable: true }).input(listWorkspacesSchema).query(({ ctx, input }) => ctx.services.workspace.list(input)),
   update: publicProcedure.meta({ description: "更新工作区配置。", aiReadable: true }).input(updateWorkspaceSchema).mutation(({ ctx, input }) => ctx.services.workspace.update(input)),
   delete: publicProcedure.meta({ description: "删除工作区。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.workspace.delete(input.id)),
+  resetAssistantHome: publicProcedure
+    .meta({
+      description:
+        "重置 Assistant Home：归档默认助手会话并清空队列，恢复内置工具清单与系统提示；不动长期记忆与 pinned。",
+      aiReadable: false,
+    })
+    .mutation(async ({ ctx }) => {
+      const { resetAssistantHome } = await import("./infra/swarmInitializer.js");
+      try {
+        const result = await resetAssistantHome(ctx.prisma, ctx.config, ctx.services);
+        return { success: true as const, data: result };
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }),
 });
 
 const triggerRouter = router({

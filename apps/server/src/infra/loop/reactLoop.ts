@@ -298,7 +298,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     const compacted = await maybeCompactMessages(input.config, llmMessages, snapshot.model, {
       existingSummary,
       flushContext: input.sessionId
-        ? { services: input.services, sessionId: input.sessionId }
+        ? {
+            services: input.services,
+            sessionId: input.sessionId,
+            agentId: input.agentMeta?.id,
+            workspaceId: input.agentMeta?.workspaceId,
+            tier: input.agentMeta?.tier,
+          }
         : undefined,
       emit: input.compactEmit,
     });

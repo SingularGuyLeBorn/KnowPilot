@@ -18,6 +18,9 @@ import type { AgentEntity } from "../services.js";
 import { ASSISTANT_DEFAULT_TOOLS } from "@knowpilot/shared";
 import { getAppConfig } from "./config.js";
 
+/** 与 swarmInitializer.SYSTEM_WORKSPACE_TYPE_ASSISTANT 同源字面量（避免循环依赖） */
+const ASSISTANT_HOME_SYSTEM_TYPE = "assistant";
+
 /** 默认 assistant 工具清单单点定义在 shared（ASSISTANT_DEFAULT_TOOLS），此处不再另维护一份 */
 
 export const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
@@ -74,6 +77,16 @@ async function findAssistantCandidate(services: ServiceContainer): Promise<Agent
   return list.items.find((a: { name: string }) => a.name === "assistant") ?? list.items[0] ?? null;
 }
 
+/** 查找 Assistant Home workspaceId（启动后应已由 initSwarm 创建） */
+async function findAssistantHomeId(services: ServiceContainer): Promise<string | undefined> {
+  const list = await services.workspace.list({ page: 1, pageSize: 100, status: "active" });
+  const home = list.items.find(
+    (w: { isSystem?: boolean; systemType?: string | null }) =>
+      w.isSystem && w.systemType === ASSISTANT_HOME_SYSTEM_TYPE,
+  );
+  return home?.id;
+}
+
 export async function resolveAgent(services: ServiceContainer, agentId?: string): Promise<ResolveAgentResult> {
   if (agentId) return { agent: await services.agent.getById(agentId), drift: [] };
 
@@ -92,6 +105,7 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
     return { agent: exact, drift: detectAssistantDrift(exact) };
   }
 
+  const homeId = await findAssistantHomeId(services);
   const created = await services.agent.create({
     name: "assistant",
     description: "KnowPilot 默认助手",
@@ -99,6 +113,7 @@ export async function resolveAgent(services: ServiceContainer, agentId?: string)
     systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT,
     tools: ASSISTANT_DEFAULT_TOOLS,
     tier: "manager",
+    ...(homeId ? { workspaceId: homeId } : {}),
   });
   return { agent: created.data!, drift: [] };
 }

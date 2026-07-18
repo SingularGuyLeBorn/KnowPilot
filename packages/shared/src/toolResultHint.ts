@@ -33,6 +33,13 @@ export function formatToolTimingHint(result: unknown): string | null {
     if (r.textTruncated === true) parts.push("已截断");
   }
   if (typeof r.suggestedTool === "string" && r.suggestedTool) parts.push(`→${r.suggestedTool}`);
+  if (typeof r.path === "string" && r.path && typeof r.bytes === "number") {
+    parts.push(`截图 ${r.bytes}B`);
+  }
+  if (typeof r.source === "string" && (r.source === "ocr" || r.source === "vision")) {
+    parts.push(r.source);
+    if (typeof r.textChars === "number") parts.push(`${r.textChars} 字`);
+  }
   if (typeof r.total === "number" && typeof r.query === "string") parts.push(`${r.total} 条`);
   // sleep / wait 结果
   if (typeof r.waitedMs === "number" || typeof r.waitedSeconds === "number") {

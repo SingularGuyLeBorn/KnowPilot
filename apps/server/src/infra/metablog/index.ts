@@ -9,9 +9,15 @@ export { detectPlatform, fetchContent, fetchWithPlaywright, fetchJinaAsHtml, loo
 export { parseHtmlToMarkdown } from "./platform/parser.js";
 export type { ParseResult, ParseOptions } from "./platform/types.js";
 
-export { scrapePage, scrapeBatch, getScraperStatus } from "./webScraper.js";
+export { scrapePage, scrapeBatch, screenshotPage, getScraperStatus } from "./webScraper.js";
 export { closeSharedBrowser } from "./browserPool.js";
-export type { ScrapeOptions, ScrapeResult, ScrapedPage } from "./webScraper.js";
+export type {
+  ScrapeOptions,
+  ScrapeResult,
+  ScrapedPage,
+  ScreenshotOptions,
+  ScreenshotResult,
+} from "./webScraper.js";
 
 import { detectPlatform, fetchContent, fetchWithPlaywright, fetchJinaAsHtml, looksLikeBlockedHtml, normalizeGithubReadUrl } from "./platform/fetcher.js";
 import { parseHtmlToMarkdown } from "./platform/parser.js";

@@ -120,7 +120,10 @@ export interface AppConfig {
     };
     yuque: {
       session: string;
+      /** Web API CSRF（Cookie `_ctoken`），不是 Open API Token */
       ctoken: string;
+      /** Open API v2 个人令牌（YUQUE_TOKEN） */
+      personalToken: string;
     };
     github: {
       token: string;
@@ -511,6 +514,7 @@ export function createAppConfig(): AppConfig {
       yuque: {
         session: readEnv("YUQUE_SESSION"),
         ctoken: readEnv("YUQUE_CTOKEN"),
+        personalToken: readEnv("YUQUE_TOKEN", "YUQUE_PERSONAL_TOKEN"),
       },
       github: {
         token: readEnv("GITHUB_TOKEN", "VITE_GITHUB_TOKEN"),

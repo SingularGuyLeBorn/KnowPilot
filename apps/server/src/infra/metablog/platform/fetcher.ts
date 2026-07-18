@@ -13,7 +13,7 @@ import type { ContentFetcher, FetchedContent } from "./types";
 import { launchPlaywrightBrowser } from "../playwrightChrome.js";
 import { getSharedBrowser, closeSharedBrowser } from "../browserPool.js";
 import { PW_SCROLL_HALF, PW_SCROLL_THIRD, PW_EXTRACT_ARTICLE_DOM, PW_WAIT_BODY_MIN_FN } from "../playwrightBrowserScripts.js";
-import { loadCookies } from "../../cookieJar.js";
+import { cookiesToHeader, loadCookies } from "../../cookieJar.js";
 
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -1356,7 +1356,13 @@ function tagZhihuHttpHtml(rawHtml: string): string {
 }
 
 async function fetchZhihuViaHttp(url: string, timeout: number): Promise<string | null> {
-  const cookie = envCookieHeader("ZHIHU_COOKIE");
+  // 优先级：.env ZHIHU_COOKIE → cookieJar（capture_zhihu_login 同步写入）
+  const cookie =
+    envCookieHeader("ZHIHU_COOKIE") ||
+    (() => {
+      const jar = loadCookies("zhihu");
+      return jar.length ? cookiesToHeader(jar) : undefined;
+    })();
   if (!cookie) return null;
   try {
     const html = await fetchHtml(url, { Referer: "https://www.zhihu.com/", Cookie: cookie }, timeout);

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Skill 管理页面 (L2 智能工作台)
  *
  * 展示大模型代理可以调用的 TypeScript 技能代码库。
@@ -74,7 +74,7 @@ export default function SkillsPage() {
           onAction={handleCreateDemo}
         />
       ) : (
-        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3", density === "compact" ? "gap-4" : "gap-6")}>
+        <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((skill: Skill, idx: number) => (
             <motion.div
               key={skill.id}

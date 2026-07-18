@@ -44,7 +44,15 @@ export const DESTRUCTIVE_NATIVE_OPS = new Set([
   "directory_delete",
   "yuque_delete_doc",
   "yuque_delete_doc_v2",
+  "yuque_delete_book",
+  "yuque_delete_repo",
   "github_delete_file",
+  "github_delete_repo",
+  "github_delete_branch",
+  "github_merge_pull_request",
+  "feishu_delete_doc",
+  "feishu_delete_whiteboard_nodes",
+  "feishu_remove_permission_member",
 ]);
 
 export function isDestructiveApprovalEnabled(): boolean {

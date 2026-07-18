@@ -184,6 +184,10 @@ export async function getIntegrationCredentials(
     yuque: {
       session: pick(yuqueItems, "yuque_session") || readEnv("YUQUE_SESSION"),
       ctoken: pick(yuqueItems, "yuque_ctoken") || readEnv("YUQUE_CTOKEN"),
+      personalToken:
+        pick(yuqueItems, "yuque_token") ||
+        pick(yuqueItems, "yuque_personal_token") ||
+        readEnv("YUQUE_TOKEN", "YUQUE_PERSONAL_TOKEN"),
     },
     github: {
       token: pick(githubItems, "github_token") || readEnv("GITHUB_TOKEN", "VITE_GITHUB_TOKEN"),

@@ -5,6 +5,7 @@ import {
   parseAttachmentsFromToolResults,
   parseStoredToolCalls,
   sliceHistoryAfterCompactBoundary,
+  historySinceLastCompactBoundary,
   sanitizePostCompactAssistantContent,
   formatPostCompactAssistantReply,
   COMPACT_BOUNDARY_PREFIX,
@@ -164,6 +165,27 @@ describe("chatHistory 工具回放", () => {
     expect(sliced).toHaveLength(3);
     expect(sliced[0].content).toContain(COMPACT_BOUNDARY_PREFIX);
     expect(JSON.stringify(sliced)).not.toContain("SECRET_OLD");
+  });
+
+
+  it("historySinceLastCompactBoundary 去掉边界气泡，只保留边界后原文", () => {
+    const boundary = `${COMPACT_BOUNDARY_PREFIX}v1@2026-01-01T00:00:00.000Z]\n已压缩。`;
+    const history = [
+      { role: "user", content: "旧问题含 SECRET_OLD" },
+      { role: "assistant", content: "旧回复" },
+      {
+        role: "assistant",
+        content: boundary,
+        toolCalls: [{ id: "c1", name: "__context_compact__", kind: "compact", args: {}, result: {} }],
+      },
+      { role: "user", content: "新问题" },
+      { role: "assistant", content: "新回复" },
+    ];
+    const sliced = historySinceLastCompactBoundary(history);
+    expect(sliced).toHaveLength(2);
+    expect(sliced[0].content).toBe("新问题");
+    expect(JSON.stringify(sliced)).not.toContain("SECRET_OLD");
+    expect(JSON.stringify(sliced)).not.toContain(COMPACT_BOUNDARY_PREFIX);
   });
 
   it("sanitizePostCompactAssistantContent 在 session_compact 成功时强制简短确认", () => {

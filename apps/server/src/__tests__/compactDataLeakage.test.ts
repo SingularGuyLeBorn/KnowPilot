@@ -191,6 +191,7 @@ describe("compact 数据暴露审计", () => {
           items: longHistoryItems(40, 500),
           total: 40,
         }),
+        listForLlmContext: vi.fn().mockResolvedValue(longHistoryItems(40, 500)),
         create: vi.fn().mockResolvedValue({ success: true, data: { id: "boundary-2" } }),
       },
     };
@@ -237,7 +238,11 @@ describe("compact 数据暴露审计", () => {
   it("runSessionCompact 将摘要写入 session.contextSummary，tRPC 可返回 summaryPreview 但不进 Agent 工具链", async () => {
     const services = {
       session: {
-        getByIdLite: vi.fn(),
+        getByIdLite: vi.fn().mockResolvedValue({
+          id: "sess-t",
+          contextSummary: null,
+          contextCompactedAt: null,
+        }),
         update: vi.fn().mockResolvedValue({ success: true }),
       },
       message: {
@@ -245,7 +250,13 @@ describe("compact 数据暴露审计", () => {
           items: longHistoryItems(40, 500),
           total: 40,
         }),
+        listForLlmContext: vi.fn().mockResolvedValue(longHistoryItems(40, 500)),
         create: vi.fn().mockResolvedValue({ success: true, data: { id: "b-3" } }),
+      },
+      prisma: {
+        chatSession: {
+          findUnique: vi.fn().mockResolvedValue({ agentId: null }),
+        },
       },
     } as unknown as ServiceContainer;
 

@@ -105,6 +105,14 @@ export function saveCookies(platform: CookiePlatform, cookies: CookieJarEntry[])
   fs.writeFileSync(getCookiePath(platform), JSON.stringify(cookies, null, 2), "utf-8");
 }
 
+/** CookieJar → HTTP Cookie 头 */
+export function cookiesToHeader(cookies: CookieJarEntry[]): string {
+  return cookies
+    .filter((c) => c.name && c.value)
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+}
+
 /** 追加/更新 Cookie（按 name + domain） */
 export function mergeCookies(platform: CookiePlatform, newCookies: CookieJarEntry[]): CookieJarEntry[] {
   const existing = loadCookies(platform);

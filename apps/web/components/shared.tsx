@@ -943,3 +943,48 @@ export function PageHeader({
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════
+   10. AdminPage / AdminFormShell — 管理控制台宽版布局
+   列表与编辑页统一 max-w-[1400px]，禁止 max-w-2xl 细长条
+   ═══════════════════════════════════════════════════════ */
+
+/** 管理列表页外壳：铺满主栏可用宽度，超宽屏封顶 1400px */
+export function AdminPage({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-y-auto bg-[var(--kp-bg)] px-4 py-6 md:px-8 md:py-8",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** 管理编辑/配置页外壳：与列表同宽，避免中间一条、两边空白 */
+export function AdminFormShell({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "mx-auto w-full max-w-[1400px] flex-1 space-y-6 overflow-y-auto bg-[var(--kp-bg)] px-4 py-6 md:px-8 md:py-8",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}

@@ -9,11 +9,11 @@ import {
   isMemoryUserCreatable,
   MEMORY_FLUSH_STRENGTH_DEFAULT,
   MEMORY_FLUSH_STRENGTH_PREFERENCE,
-  MEMORY_SCOPE_GLOBAL,
   MEMORY_TYPES,
   type MemoryUserCreatableType,
 } from "@knowpilot/shared";
-import { createMemoryRepository } from "./memoryRepository.js";
+import { createMemoryRepository, resolveMemoryWriteScope } from "./memoryRepository.js";
+import { appendDailyNote } from "./memoryDaily.js";
 
 const FLUSH_SYSTEM = `你是 KnowPilot 记忆提取助手。从对话 transcript 中提取应长期保存的信息。
 
@@ -63,7 +63,11 @@ export async function flushMemoriesBeforeCompact(
   services: ServiceContainer,
   transcript: string,
   model: string,
-  options?: { existingSummary?: string | null },
+  options?: {
+    existingSummary?: string | null;
+    /** 写入 scope 的执行者；缺省（无 Agent）才落 global */
+    actor?: { agentId?: string | null; workspaceId?: string | null; tier?: string | null };
+  },
 ): Promise<number> {
   const flushCfg = config.compact?.memoryFlush;
   if (flushCfg?.enabled === false) return 0;
@@ -75,6 +79,13 @@ export async function flushMemoriesBeforeCompact(
   const userContent = existing
     ? `[已有摘要]\n${existing}\n\n[待提取的新对话段]\n${slice}`
     : slice;
+
+  // 有 Agent 时默认写 agent 层（manager 不能写 global）；无 Agent 的用户级路径才 global
+  const writeScope = resolveMemoryWriteScope(undefined, {
+    agentId: options?.actor?.agentId ?? undefined,
+    workspaceId: options?.actor?.workspaceId ?? undefined,
+    tier: options?.actor?.tier ?? undefined,
+  });
 
   try {
     const resp = await chatCompletion({
@@ -88,22 +99,32 @@ export async function flushMemoriesBeforeCompact(
       maxTokens: 1024,
     });
     const facts = parseFlushFacts(resp.content ?? "").slice(0, maxFacts);
-    // W5：统一走 MemoryRepository，contentHash 全量 hash 去重（替代 slice(0,40) 前缀 + N+1 查询）
     const repo = createMemoryRepository(services);
     let written = 0;
     for (const fact of facts) {
       await repo.write({
         content: fact.content,
         type: fact.type,
-        scope: MEMORY_SCOPE_GLOBAL,
-        strength: fact.type === MEMORY_TYPES.PREFERENCE ? MEMORY_FLUSH_STRENGTH_PREFERENCE : MEMORY_FLUSH_STRENGTH_DEFAULT,
+        scope: writeScope,
+        strength:
+          fact.type === MEMORY_TYPES.PREFERENCE
+            ? MEMORY_FLUSH_STRENGTH_PREFERENCE
+            : MEMORY_FLUSH_STRENGTH_DEFAULT,
         keywords: fact.keywords,
         attribution: "flush",
       });
       written++;
     }
+    // 日记层：记一条「今日压缩抢救了 N 条」工作笔记（不注入 prompt）
     if (written > 0) {
-      console.log(`[MemoryFlush] compact 前写入/刷新 ${written} 条长期记忆`);
+      try {
+        appendDailyNote(config.projectRoot, `compact flush 写入 ${written} 条记忆 → ${writeScope}`, {
+          source: "flush",
+        });
+      } catch {
+        /* 日记失败不阻断 compact */
+      }
+      console.log(`[MemoryFlush] compact 前写入/刷新 ${written} 条长期记忆（scope=${writeScope}）`);
     }
     return written;
   } catch (err) {

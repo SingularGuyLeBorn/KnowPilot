@@ -11,6 +11,7 @@ export interface ChatInputChipsProps {
   onOpenSkillPicker: () => void;
   queueLength: number;
   onFocusQueue?: () => void;
+  /** 仅用于高亮「已选 Skill」态；名称展示在输入框上方 banner，避免双份文案 */
   selectedSkillName?: string | null;
   onClearSkill?: () => void;
 }
@@ -20,7 +21,6 @@ export function ChatInputChips({
   queueLength,
   onFocusQueue,
   selectedSkillName,
-  onClearSkill,
 }: ChatInputChipsProps) {
   return (
     <div
@@ -37,28 +37,10 @@ export function ChatInputChips({
             : "border-[var(--kp-divider)] bg-[var(--kp-bg)] text-[var(--kp-text-2)] hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-mute)]",
         )}
         data-testid="chat-chip-skill"
+        title={selectedSkillName ? `已选 ${selectedSkillName}（点此更换）` : "选择 Skill，或输入 /"}
       >
         <Wand2 className="h-3 w-3" />
-        {selectedSkillName ? selectedSkillName.slice(0, 16) : "Skill"}
-        {selectedSkillName && onClearSkill && (
-          <span
-            role="button"
-            tabIndex={0}
-            className="ml-0.5 rounded-full px-1 text-[10px] hover:bg-[var(--kp-bg-mute)]"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClearSkill();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.stopPropagation();
-                onClearSkill();
-              }
-            }}
-          >
-            ×
-          </span>
-        )}
+        Skill
       </button>
       {queueLength > 0 && (
         <button

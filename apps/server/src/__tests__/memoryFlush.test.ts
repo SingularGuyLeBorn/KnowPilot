@@ -27,17 +27,22 @@ describe("memoryFlush", () => {
     vi.restoreAllMocks();
   });
 
-  it("从 transcript 提取事实并写入 Memory", async () => {
+  it("从 transcript 提取事实并写入 Memory（有 Agent 时写 agent scope）", async () => {
     vi.spyOn(llmClient, "chatCompletion").mockResolvedValue({
       content: `[{"content":"用户偏好莫兰迪色系","type":"preference","keywords":["design","color"]}]`,
     } as any);
     const services = makeServices();
     const config = {
+      projectRoot: process.cwd(),
       compact: { memoryFlush: { enabled: true, maxFacts: 5 } },
     } as AppConfig;
-    const n = await flushMemoriesBeforeCompact(config, services as any, "用户说喜欢莫兰迪色", "m");
+    const n = await flushMemoriesBeforeCompact(config, services as any, "用户说喜欢莫兰迪色", "m", {
+      actor: { agentId: "agent_flush_1", workspaceId: "ws1", tier: "manager" },
+    });
     expect(n).toBe(1);
     expect(services.memory.create).toHaveBeenCalledOnce();
+    const arg = services.memory.create.mock.calls[0][0] as { scope?: string };
+    expect(arg.scope).toBe("agent:agent_flush_1");
   });
 
   it("memoryFlush 关闭时跳过", async () => {

@@ -748,11 +748,16 @@ html.dark .kp-vignette::after,
   border-top: 1px solid var(--kp-divider);
 }
 
-/* 统一 focus-visible：莫兰迪品牌环 + 足够对比，键盘可达性 */
-:where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+/* 统一 focus-visible：莫兰迪品牌环 + 足够对比，键盘可达性。
+   排除 textarea：聊天等复合输入卡片用外框 focus-within 提示焦点，
+   内层 textarea 再画 outline 会在工具栏上方形成一条「假横线」。 */
+:where(a, button, [role="button"], input:not([type="hidden"]), select, [tabindex]):focus-visible {
   outline: 2px solid var(--kp-brand);
   outline-offset: 2px;
   border-radius: 2px;
+}
+textarea:focus-visible {
+  outline: none;
 }
 
 /* 卡片内阴影向品牌色微调，避免纯黑投影在浅底上发脏 */

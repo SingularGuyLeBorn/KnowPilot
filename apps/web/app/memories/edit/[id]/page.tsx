@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -60,6 +60,14 @@ export default function MemoryDetailPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const validToRaw = form.validTo !== undefined ? form.validTo : memory.validTo;
+    let validTo: Date | null | undefined;
+    if (validToRaw === null || validToRaw === "") {
+      validTo = null;
+    } else if (validToRaw !== undefined) {
+      validTo = validToRaw instanceof Date ? validToRaw : new Date(String(validToRaw));
+    }
+
     update.mutate(
       {
         id: memory.id,
@@ -67,6 +75,17 @@ export default function MemoryDetailPage() {
         type: form.type ?? memory.type,
         strength: form.strength ?? memory.strength,
         keywords: form.keywords ?? memory.keywords,
+        scope: form.scope ?? memory.scope,
+        status: (form.status ?? memory.status) as "active" | "superseded" | undefined,
+        attribution: (form.attribution ?? memory.attribution) as
+          | "user"
+          | "agent"
+          | "flush"
+          | "experience"
+          | "system"
+          | null
+          | undefined,
+        validTo,
       },
       {
         onSuccess: () => router.push("/memories"),
@@ -77,7 +96,7 @@ export default function MemoryDetailPage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-6">
+      <div className="mx-auto w-full max-w-[1400px] space-y-6">
         <div className="flex items-center gap-3">
           <Link
             href="/memories"
@@ -127,6 +146,66 @@ export default function MemoryDetailPage() {
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-[var(--kp-text-1)]">关键词（逗号分隔）</label>
             <Input value={formatKeywords(value("keywords") as string[] | undefined)} onChange={(e) => updateField("keywords", parseKeywords(e.target.value))} className="bg-[var(--kp-bg)]" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--kp-text-1)]">Scope</label>
+              <Input
+                value={String(value("scope") ?? "global")}
+                onChange={(e) => updateField("scope", e.target.value)}
+                placeholder="global / workspace:{id} / agent:{id}"
+                className="bg-[var(--kp-bg)]"
+              />
+              <p className="text-[10px] text-[var(--kp-text-3)]">
+                写入权限：仅超级 Agent 可写 global；勿伪造他 Agent / Workspace
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--kp-text-1)]">状态</label>
+              <select
+                value={String(value("status") ?? "active")}
+                onChange={(e) => updateField("status", e.target.value)}
+                className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm"
+              >
+                <option value="active">active</option>
+                <option value="superseded">superseded</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--kp-text-1)]">归因</label>
+              <select
+                value={String(value("attribution") ?? "")}
+                onChange={(e) =>
+                  updateField("attribution", e.target.value ? e.target.value : null)
+                }
+                className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm"
+              >
+                <option value="">（未设）</option>
+                <option value="user">user</option>
+                <option value="agent">agent</option>
+                <option value="flush">flush</option>
+                <option value="experience">experience</option>
+                <option value="system">system</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--kp-text-1)]">有效至（可选）</label>
+              <Input
+                type="date"
+                value={(() => {
+                  const v = value("validTo");
+                  if (!v) return "";
+                  const d = v instanceof Date ? v : new Date(String(v));
+                  if (Number.isNaN(d.getTime())) return "";
+                  return d.toISOString().slice(0, 10);
+                })()}
+                onChange={(e) =>
+                  updateField("validTo", e.target.value ? e.target.value : null)
+                }
+                className="bg-[var(--kp-bg)]"
+              />
+            </div>
           </div>
 
           {error && (

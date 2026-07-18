@@ -1,18 +1,30 @@
 /**
- * Native Web 域 — search / RSS / article / scrape
+ * Native Web 域 — search / RSS / article / scrape / screenshot / read_image
  */
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 import type { AppConfig } from "../../config.js";
 import {
   smartSearch,
   parsePlatformUrl,
   scrapePage,
+  screenshotPage,
   resetSearchEngineConfigs,
   detectPlatform,
   isArticleFetchFatalError,
   type SearchEngineName,
 } from "../../metablog/index.js";
+import { downloadImageToTemp, ocrRemoteImage } from "../../metablog/ocrBridge.js";
+import { performOcrFromFile } from "../../ocrService.js";
+import { chatCompletion } from "../../llmClient.js";
+import { resolveSafePath } from "../../safePath.js";
 import { isSmokeInfoSource } from "../../smokeArtifacts.js";
-import { AGENT_TOOL_RESULT_MAX_CHARS } from "@knowpilot/shared";
+import {
+  AGENT_TOOL_RESULT_MAX_CHARS,
+  LLM_MODEL_IDS,
+  resolveModelSupportsVision,
+} from "@knowpilot/shared";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
@@ -505,6 +517,203 @@ async function scrapeWebPageTool(args: Record<string, unknown>, _ctx: NativeTool
   };
 }
 
+/** 打开页面截图并落盘到 content/uploads/screenshots/，只返路径（禁止把 base64 塞进 tool result） */
+async function browserScreenshotTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const url = String(args.url || "").trim();
+  if (!url) throw new Error("url 不能为空");
+
+  const started = Date.now();
+  const fullPage = args.fullPage === true;
+  const result = await screenshotPage({
+    url,
+    timeout: args.timeout !== undefined ? Number(args.timeout) : 30000,
+    waitFor: args.waitFor ? String(args.waitFor) : undefined,
+    fullPage,
+    width: args.width !== undefined ? Number(args.width) : 1280,
+    height: args.height !== undefined ? Number(args.height) : 800,
+  });
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error || "页面截图失败");
+  }
+
+  const { data } = result;
+  const dirAbs = path.join(ctx.config.uploadDir, "screenshots");
+  fs.mkdirSync(dirAbs, { recursive: true });
+  const hash = crypto.createHash("sha1").update(url).digest("hex").slice(0, 8);
+  const fileName = `${Date.now().toString(36)}-${hash}.png`;
+  const absPath = path.join(dirAbs, fileName);
+  fs.writeFileSync(absPath, data.buffer);
+
+  const relPath = path
+    .relative(ctx.config.projectRoot, absPath)
+    .replace(/\\/g, "/");
+  const publicUrl = `/uploads/screenshots/${fileName}`;
+
+  return {
+    url: data.url,
+    title: data.title,
+    path: relPath,
+    publicUrl,
+    bytes: data.buffer.length,
+    width: data.width,
+    height: data.height,
+    fullPage: data.fullPage,
+    mimeType: "image/png",
+    suggestedTool: "read_image",
+    suggestedArgs: { path: relPath, mode: "auto" },
+    elapsedMs: Date.now() - started,
+  };
+}
+
+function mimeFromExt(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  return "image/png";
+}
+
+function resolveLocalImagePath(config: AppConfig, rawPath: string): string {
+  const trimmed = rawPath.trim().replace(/\\/g, "/");
+  // /uploads/... → content/uploads/...
+  if (trimmed.startsWith("/uploads/")) {
+    return resolveSafePath(config, `content/uploads/${trimmed.slice("/uploads/".length)}`);
+  }
+  return resolveSafePath(config, trimmed);
+}
+
+async function readImageWithVision(
+  ctx: NativeToolContext,
+  absPath: string,
+  mimeType: string,
+  prompt: string,
+  model: string,
+): Promise<{ text: string; model: string }> {
+  const b64 = fs.readFileSync(absPath).toString("base64");
+  const dataUrl = `data:${mimeType};base64,${b64}`;
+  const result = await chatCompletion({
+    config: ctx.config,
+    model,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: dataUrl, detail: "auto" } },
+        ],
+      },
+    ],
+    maxTokens: 2048,
+    temperature: 0.2,
+  });
+  const text = (result.content ?? "").trim();
+  if (!text) throw new Error("Vision 模型未返回可读描述");
+  return { text, model };
+}
+
+/** 读图：OCR 或 Vision。输入 path（项目内相对路径）或 http(s)/uploads URL。 */
+async function readImageTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const started = Date.now();
+  const pathArg = args.path != null ? String(args.path).trim() : "";
+  const urlArg = args.url != null ? String(args.url).trim() : "";
+  if (!pathArg && !urlArg) {
+    throw new Error("path 与 url 至少提供一个（优先用 browser_screenshot 返回的 path）");
+  }
+
+  const language = args.language != null ? String(args.language) : "auto";
+  const prompt =
+    args.prompt != null && String(args.prompt).trim()
+      ? String(args.prompt).trim()
+      : "请完整描述这张图片中的可见文字、布局与关键信息。若是截图，优先提取页面标题、正文要点与 UI 状态。";
+
+  let mode = String(args.mode || "auto").toLowerCase() as "ocr" | "vision" | "auto";
+  if (mode !== "ocr" && mode !== "vision" && mode !== "auto") mode = "auto";
+
+  const agentModel = ctx.agentSnapshot?.model || "";
+  const explicitModel = args.model != null ? String(args.model).trim() : "";
+  const visionModel =
+    explicitModel ||
+    (resolveModelSupportsVision(agentModel) ? agentModel : LLM_MODEL_IDS.DEEPSEEK_VL2);
+
+  if (mode === "auto") {
+    mode = resolveModelSupportsVision(explicitModel || agentModel || visionModel) ? "vision" : "ocr";
+  }
+
+  // 远程 http(s) URL：vision 先下载临时文件；OCR 走 ocrRemoteImage
+  if (urlArg && /^https?:\/\//i.test(urlArg) && !pathArg) {
+    if (mode === "vision") {
+      const tempPath = await downloadImageToTemp(urlArg);
+      try {
+        const mimeType = mimeFromExt(tempPath);
+        const { text, model } = await readImageWithVision(ctx, tempPath, mimeType, prompt, visionModel);
+        return {
+          text: text.slice(0, AGENT_TOOL_RESULT_MAX_CHARS),
+          textChars: text.length,
+          textTruncated: text.length > AGENT_TOOL_RESULT_MAX_CHARS,
+          source: "vision" as const,
+          mode: "vision",
+          model,
+          url: urlArg,
+          elapsedMs: Date.now() - started,
+        };
+      } finally {
+        fs.unlink(tempPath, () => undefined);
+      }
+    }
+    const ocr = await ocrRemoteImage(urlArg, language);
+    if (!ocr.success || !ocr.text) {
+      throw new Error(ocr.error || "远程图片 OCR 失败");
+    }
+    return {
+      text: ocr.text.slice(0, AGENT_TOOL_RESULT_MAX_CHARS),
+      textChars: ocr.text.length,
+      textTruncated: ocr.text.length > AGENT_TOOL_RESULT_MAX_CHARS,
+      source: "ocr" as const,
+      mode: "ocr",
+      engine: ocr.engine,
+      url: urlArg,
+      elapsedMs: Date.now() - started,
+    };
+  }
+
+  const absPath = resolveLocalImagePath(ctx.config, pathArg || urlArg);
+  if (!fs.existsSync(absPath)) {
+    throw new Error(`图片文件不存在: ${pathArg || urlArg}`);
+  }
+  const mimeType = mimeFromExt(absPath);
+
+  if (mode === "vision") {
+    const { text, model } = await readImageWithVision(ctx, absPath, mimeType, prompt, visionModel);
+    return {
+      text: text.slice(0, AGENT_TOOL_RESULT_MAX_CHARS),
+      textChars: text.length,
+      textTruncated: text.length > AGENT_TOOL_RESULT_MAX_CHARS,
+      source: "vision" as const,
+      mode: "vision",
+      model,
+      path: pathArg || urlArg,
+      elapsedMs: Date.now() - started,
+    };
+  }
+
+  const ocr = await performOcrFromFile(ctx.config, absPath, language);
+  if (!ocr.success || !ocr.text) {
+    throw new Error(ocr.error || "OCR 失败");
+  }
+  return {
+    text: ocr.text.slice(0, AGENT_TOOL_RESULT_MAX_CHARS),
+    textChars: ocr.text.length,
+    textTruncated: ocr.text.length > AGENT_TOOL_RESULT_MAX_CHARS,
+    source: "ocr" as const,
+    mode: "ocr",
+    engine: ocr.engine,
+    path: pathArg || urlArg,
+    elapsedMs: Date.now() - started,
+  };
+}
+
 const WEB_DEFS: NativeToolDefinition[] = [
   {
     name: "web_search",
@@ -592,7 +801,54 @@ const WEB_DEFS: NativeToolDefinition[] = [
       },
       required: ["url"],
     },
-  }
+  },
+  {
+    name: "browser_screenshot",
+    concurrencyClass: "B",
+    // 截图落盘到 uploads/screenshots，文件名含时间戳，重跑不覆盖旧图
+    reentrant: true,
+    description:
+      "用 Playwright 打开页面并截图（PNG），保存到 content/uploads/screenshots/。返回 path/publicUrl（不含图片字节）。视觉确认页面 / 登录墙 / 图表时用；随后用 read_image 读图。纯文字页优先 read_article。",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "目标页面 URL（http/https）" },
+        timeout: { type: "number", description: "超时毫秒，默认 30000" },
+        waitFor: { type: "string", description: "可选 CSS 选择器，出现后再截" },
+        fullPage: { type: "boolean", description: "是否整页长截图，默认 false（视口）" },
+        width: { type: "number", description: "视口宽度，默认 1280" },
+        height: { type: "number", description: "视口高度，默认 800" },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "read_image",
+    concurrencyClass: "B",
+    // OCR/vision 只读，无本地写副作用
+    reentrant: true,
+    description:
+      "读取图片中的文字或视觉内容。path 用 browser_screenshot 返回的相对路径；也可传 http(s) 图片 URL。mode=ocr|vision|auto（默认 auto：当前模型支持 vision 则识图，否则 OCR）。结果只回文本。",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "项目内相对路径，如 content/uploads/screenshots/xxx.png；也可用 /uploads/...",
+        },
+        url: { type: "string", description: "http(s) 图片 URL，或 /uploads/...（与 path 二选一）" },
+        mode: {
+          type: "string",
+          enum: ["ocr", "vision", "auto"],
+          description: "ocr=本地/云 OCR；vision=多模态识图；auto=按模型能力选择",
+        },
+        language: { type: "string", description: "OCR 语言：auto|chs|en 等，默认 auto" },
+        prompt: { type: "string", description: "vision 模式下的识图提示（可选）" },
+        model: { type: "string", description: "vision 模型 id（可选；默认 Agent 模型或 deepseek-vl2）" },
+      },
+      required: [],
+    },
+  },
 ];
 
 const WEB_HANDLERS = {
@@ -601,6 +857,8 @@ const WEB_HANDLERS = {
   rss_draft_posts: rssDraftPostsTool,
   read_article: readArticleTool,
   scrape_web_page: scrapeWebPageTool,
+  browser_screenshot: browserScreenshotTool,
+  read_image: readImageTool,
 };
 
 export function registerWebTools(): void {

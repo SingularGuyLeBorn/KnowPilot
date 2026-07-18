@@ -15,6 +15,7 @@ import {
   githubGetRepo,
   githubCreateRepo,
   githubUpdateRepo,
+  githubDeleteRepo,
   githubGetFile,
   githubCreateFile,
   githubUpdateFile,
@@ -23,12 +24,16 @@ import {
   githubGetIssue,
   githubCreateIssue,
   githubUpdateIssue,
+  githubCreateIssueComment,
   githubListPullRequests,
   githubGetPullRequest,
   githubCreatePullRequest,
+  githubUpdatePullRequest,
+  githubMergePullRequest,
   githubListBranches,
   githubGetBranch,
   githubCreateBranch,
+  githubDeleteBranch,
   githubListWorkflows,
   githubTriggerWorkflow,
   githubCreateRelease,
@@ -40,9 +45,13 @@ import {
   feishuSendMessage,
   feishuGetDoc,
   feishuCreateDoc,
+  feishuUpdateDocBlocks,
+  feishuUpdateDocTitle,
+  feishuDeleteDoc,
   feishuSearchDocs,
   feishuGetWikiSpace,
   feishuGetWikiNodes,
+  feishuCreateWikiNode,
   feishuCreateSpreadsheet,
   feishuAppendSpreadsheetValues,
   feishuListDocWhiteboards,
@@ -52,28 +61,50 @@ import {
   feishuDeleteWhiteboardNodes,
   feishuGetWhiteboardTheme,
   feishuUpdateWhiteboardTheme,
+  feishuListPermissionMembers,
+  feishuAddPermissionMember,
+  feishuUpdatePermissionMember,
+  feishuRemovePermissionMember,
+  feishuGetPermissionPublic,
+  feishuUpdatePermissionPublic,
+  feishuBatchGetUserIds,
+  feishuAddCollaboratorByContact,
   getUserAccessTokenStatus,
   refreshUserAccessToken,
 } from "../../feishuClient.js";
+import type { FeishuPermissionPublicPatch } from "../../feishuClient.js";
 import { getCredentialValue } from "../../credentialVault.js";
 import { sendEmailNotification } from "../../emailNotifier.js";
-import { refreshTokenManually as refreshFileToken } from "../../external/larkTokenManager.js";
+import {
+  authorizeUserViaBrowser,
+  refreshTokenManually as refreshFileToken,
+  getTokenStatus as getFeishuFileTokenStatus,
+} from "../../external/larkTokenManager.js";
 import {
   getYuqueCredentials,
+  getYuquePersonalToken,
   yuqueListBooks,
   yuqueGetBookToc,
+  yuqueCreateBook,
+  yuqueUpdateBook,
+  yuqueDeleteBook,
+  yuqueGetDocWeb,
   yuqueCreateDoc,
   yuqueUpdateDoc,
   yuqueDeleteDoc,
   yuqueListRepos,
+  yuqueCreateRepo,
+  yuqueUpdateRepo,
+  yuqueDeleteRepo,
   yuqueListDocs,
   yuqueGetDocV2,
   yuqueCreateDocV2,
   yuqueUpdateDocV2,
   yuqueDeleteDocV2,
+  yuqueProbeSession,
 } from "../../yuqueClient.js";
 import { captureZhihuLoginState } from "../../metablog/auth/zhihuLogin.js";
-import { listSavedCookiePlatforms } from "../../cookieJar.js";
+import { listSavedCookiePlatforms, loadCookies } from "../../cookieJar.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
@@ -185,13 +216,26 @@ async function gitCloneTool(args: Record<string, unknown>, ctx: NativeToolContex
 // ─── 语雀 ───
 
 async function yuqueGetDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.yuque.ctoken || "";
+  // Web：bookId + slug；Open API：namespace + slug
+  if (args.bookId) {
+    const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+    const data = await yuqueGetDocWeb(String(args.slug), String(args.bookId), credentials);
+    const doc = (data as { data?: { title?: string; slug?: string; body?: string; content?: string } })?.data ?? data;
+    const body = (doc as { body?: string; content?: string }).body || (doc as { content?: string }).content || "";
+    return {
+      title: (doc as { title?: string }).title,
+      slug: (doc as { slug?: string }).slug,
+      body: String(body).slice(0, 12000),
+      via: "web",
+    };
+  }
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
   const data = (await yuqueGetDocV2(String(args.namespace), String(args.slug), token)) as {
     title?: string;
     slug?: string;
     body?: string;
   };
-  return { title: data.title, slug: data.slug, body: (data.body || "").slice(0, 12000) };
+  return { title: data.title, slug: data.slug, body: (data.body || "").slice(0, 12000), via: "open_api_v2" };
 }
 
 async function yuqueListBooksTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -202,6 +246,37 @@ async function yuqueListBooksTool(args: Record<string, unknown>, ctx: NativeTool
 async function yuqueGetBookTocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
   return yuqueGetBookToc(String(args.bookId), credentials);
+}
+
+async function yuqueCreateBookTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueCreateBook(
+    String(args.name),
+    {
+      description: args.description ? String(args.description) : undefined,
+      public: args.public !== undefined ? Number(args.public) : undefined,
+      slug: args.slug ? String(args.slug) : undefined,
+    },
+    credentials,
+  );
+}
+
+async function yuqueUpdateBookTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueUpdateBook(
+    String(args.bookId),
+    {
+      name: args.name ? String(args.name) : undefined,
+      description: args.description ? String(args.description) : undefined,
+      public: args.public !== undefined ? Number(args.public) : undefined,
+    },
+    credentials,
+  );
+}
+
+async function yuqueDeleteBookTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueDeleteBook(String(args.bookId), credentials);
 }
 
 async function yuqueCreateDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -219,28 +294,64 @@ async function yuqueDeleteDocTool(args: Record<string, unknown>, ctx: NativeTool
   return yuqueDeleteDoc(String(args.docId), String(args.bookId), credentials);
 }
 
+async function yuqueSessionStatusTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const credentials = await getYuqueCredentials(ctx.prisma, ctx.config);
+  return yuqueProbeSession(credentials);
+}
+
 async function yuqueListReposTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.yuque.ctoken || "";
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
   return yuqueListRepos(token);
 }
 
+async function yuqueCreateRepoTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
+  return yuqueCreateRepo(
+    String(args.name),
+    {
+      description: args.description ? String(args.description) : undefined,
+      public: args.public !== undefined ? Number(args.public) : undefined,
+      slug: args.slug ? String(args.slug) : undefined,
+    },
+    token,
+  );
+}
+
+async function yuqueUpdateRepoTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
+  return yuqueUpdateRepo(
+    String(args.namespace),
+    {
+      name: args.name ? String(args.name) : undefined,
+      description: args.description ? String(args.description) : undefined,
+      public: args.public !== undefined ? Number(args.public) : undefined,
+    },
+    token,
+  );
+}
+
+async function yuqueDeleteRepoTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
+  return yuqueDeleteRepo(String(args.namespace), token);
+}
+
 async function yuqueListDocsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.yuque.ctoken || "";
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
   return yuqueListDocs(String(args.namespace), token);
 }
 
 async function yuqueCreateDocV2Tool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.yuque.ctoken || "";
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
   return yuqueCreateDocV2(String(args.namespace), String(args.title), String(args.body), token);
 }
 
 async function yuqueUpdateDocV2Tool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.yuque.ctoken || "";
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
   return yuqueUpdateDocV2(String(args.namespace), String(args.slug), String(args.title), String(args.body), token);
 }
 
 async function yuqueDeleteDocV2Tool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const token = ctx.config.integrations.yuque.ctoken || "";
+  const token = await getYuquePersonalToken(ctx.prisma, ctx.config);
   return yuqueDeleteDocV2(String(args.namespace), String(args.slug), token);
 }
 
@@ -251,7 +362,11 @@ async function captureZhihuLoginTool(args: Record<string, unknown>, _ctx: Native
 }
 
 async function browserLoginStatusTool(_args: Record<string, unknown>, _ctx: NativeToolContext) {
-  return { platforms: listSavedCookiePlatforms() };
+  const platforms = listSavedCookiePlatforms();
+  return {
+    platforms,
+    details: platforms.map((p) => ({ platform: p, cookieCount: loadCookies(p).length })),
+  };
 }
 
 // ─── GitHub ───
@@ -293,6 +408,12 @@ async function githubUpdateRepoTool(args: Record<string, unknown>, ctx: NativeTo
     },
     getGitHubToken(ctx.config),
   );
+}
+
+async function githubDeleteRepoTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  await githubDeleteRepo(owner, repoName, getGitHubToken(ctx.config));
+  return { repo: `${owner}/${repoName}`, deleted: true };
 }
 
 async function githubGetFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -349,14 +470,16 @@ async function githubDeleteFileTool(args: Record<string, unknown>, ctx: NativeTo
 
 async function githubListIssuesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { owner, repoName } = parseRepo(String(args.repo));
-  return githubListIssues(
+  const items = (await githubListIssues(
     owner,
     repoName,
     (args.state as "open" | "closed" | "all") || "open",
     Number(args.perPage || 30),
     Number(args.page || 1),
     getGitHubToken(ctx.config),
-  );
+  )) as Array<{ pull_request?: unknown }>;
+  // GitHub Issues API 会混入 PR；默认过滤，只留真正的 issue
+  return items.filter((i) => !i.pull_request);
 }
 
 async function githubGetIssueTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -422,6 +545,48 @@ async function githubCreatePullRequestTool(args: Record<string, unknown>, ctx: N
   );
 }
 
+async function githubUpdatePullRequestTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubUpdatePullRequest(
+    owner,
+    repoName,
+    Number(args.number),
+    {
+      title: args.title ? String(args.title) : undefined,
+      body: args.body ? String(args.body) : undefined,
+      state: args.state as "open" | "closed" | undefined,
+      base: args.base ? String(args.base) : undefined,
+    },
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubMergePullRequestTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubMergePullRequest(
+    owner,
+    repoName,
+    Number(args.number),
+    {
+      commit_title: args.commitTitle ? String(args.commitTitle) : undefined,
+      commit_message: args.commitMessage ? String(args.commitMessage) : undefined,
+      merge_method: (args.mergeMethod as "merge" | "squash" | "rebase") || "merge",
+    },
+    getGitHubToken(ctx.config),
+  );
+}
+
+async function githubCreateIssueCommentTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  return githubCreateIssueComment(
+    owner,
+    repoName,
+    Number(args.number),
+    String(args.body),
+    getGitHubToken(ctx.config),
+  );
+}
+
 async function githubListBranchesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { owner, repoName } = parseRepo(String(args.repo));
   return githubListBranches(owner, repoName, Number(args.perPage || 30), Number(args.page || 1), getGitHubToken(ctx.config));
@@ -435,6 +600,12 @@ async function githubGetBranchTool(args: Record<string, unknown>, ctx: NativeToo
 async function githubCreateBranchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { owner, repoName } = parseRepo(String(args.repo));
   return githubCreateBranch(owner, repoName, String(args.newBranch), String(args.fromBranch || "main"), getGitHubToken(ctx.config));
+}
+
+async function githubDeleteBranchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { owner, repoName } = parseRepo(String(args.repo));
+  await githubDeleteBranch(owner, repoName, String(args.branch), getGitHubToken(ctx.config));
+  return { repo: `${owner}/${repoName}`, branch: String(args.branch), deleted: true };
 }
 
 async function githubListWorkflowsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -468,7 +639,11 @@ async function githubCreateReleaseTool(args: Record<string, unknown>, ctx: Nativ
 }
 
 async function githubTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const tool = String(args.tool || "");
+  // 兼容 snake_case（native）与 camelCase（executor）：github_create_issue → githubCreateIssue
+  const raw = String(args.tool || "").trim();
+  const tool = raw.includes("_")
+    ? raw.split("_").map((p, i) => (i === 0 ? p : p.charAt(0).toUpperCase() + p.slice(1))).join("")
+    : raw;
   const params = (args.params || {}) as Record<string, unknown>;
   return executeGitHubTool(tool, params, getGitHubToken(ctx.config));
 }
@@ -506,9 +681,40 @@ async function feishuCreateDocTool(args: Record<string, unknown>, ctx: NativeToo
   return feishuCreateDoc(String(args.title), args.folderToken ? String(args.folderToken) : undefined, ctx.prisma, ctx.config);
 }
 
+async function feishuUpdateDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const documentId = String(args.documentId);
+  const title = args.title != null ? String(args.title) : undefined;
+  const blocks = Array.isArray(args.blocks) ? (args.blocks as unknown[]) : undefined;
+  if (!title && !blocks?.length) throw new Error("请提供 title 和/或 blocks（docx batch_update requests）");
+  const results: Record<string, unknown> = {};
+  if (title) results.title = await feishuUpdateDocTitle(documentId, title, ctx.prisma, ctx.config);
+  if (blocks?.length) results.blocks = await feishuUpdateDocBlocks(documentId, blocks, ctx.prisma, ctx.config);
+  return results;
+}
+
+async function feishuDeleteDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuDeleteDoc(String(args.documentId), ctx.prisma, ctx.config);
+}
+
 async function feishuSearchDocsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
   return feishuSearchDocs(String(args.query), ctx.prisma, ctx.config);
+}
+
+async function feishuCreateWikiNodeTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuCreateWikiNode(
+    String(args.spaceId),
+    String(args.title),
+    {
+      parentNodeToken: args.parentNodeToken ? String(args.parentNodeToken) : undefined,
+      objType: args.objType ? String(args.objType) : undefined,
+    },
+    ctx.prisma,
+    ctx.config,
+  );
 }
 
 async function feishuGetWikiSpaceTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -613,15 +819,167 @@ async function feishuUpdateWhiteboardThemeTool(args: Record<string, unknown>, ct
   return feishuUpdateWhiteboardTheme(String(args.whiteboardId), String(args.theme), ctx.prisma, ctx.config);
 }
 
+async function feishuListPermissionMembersTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuListPermissionMembers(
+    String(args.token),
+    String(args.type || "docx"),
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuAddPermissionMemberTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuAddPermissionMember(
+    String(args.token),
+    String(args.type || "docx"),
+    {
+      memberType: String(args.memberType || "openid"),
+      memberId: String(args.memberId),
+      perm: String(args.perm || "view"),
+    },
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuUpdatePermissionMemberTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuUpdatePermissionMember(
+    String(args.token),
+    String(args.type || "docx"),
+    {
+      memberType: String(args.memberType || "openid"),
+      memberId: String(args.memberId),
+      perm: String(args.perm || "edit"),
+    },
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuRemovePermissionMemberTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuRemovePermissionMember(
+    String(args.token),
+    String(args.type || "docx"),
+    {
+      memberType: String(args.memberType || "openid"),
+      memberId: String(args.memberId),
+    },
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuGetPermissionPublicTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuGetPermissionPublic(String(args.token), String(args.type || "docx"), ctx.prisma, ctx.config);
+}
+
+async function feishuUpdatePermissionPublicTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const patch: FeishuPermissionPublicPatch = {};
+  const keys = [
+    "external_access_entity",
+    "security_entity",
+    "comment_entity",
+    "share_entity",
+    "manage_collaborator_entity",
+    "link_share_entity",
+    "copy_entity",
+  ] as const;
+  for (const k of keys) {
+    if (args[k] != null && String(args[k]).trim()) {
+      (patch as Record<string, string>)[k] = String(args[k]).trim();
+    }
+  }
+  if (!Object.keys(patch).length) {
+    throw new Error(
+      "请至少提供一项权限设置字段：external_access_entity / link_share_entity / share_entity / manage_collaborator_entity / copy_entity / security_entity / comment_entity",
+    );
+  }
+  return feishuUpdatePermissionPublic(
+    String(args.token),
+    String(args.type || "docx"),
+    patch,
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuLookupUserTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const mobiles = Array.isArray(args.mobiles)
+    ? args.mobiles.map(String)
+    : args.mobile
+      ? [String(args.mobile)]
+      : [];
+  const emails = Array.isArray(args.emails)
+    ? args.emails.map(String)
+    : args.email
+      ? [String(args.email)]
+      : [];
+  return feishuBatchGetUserIds(
+    { mobiles, emails, includeResigned: args.includeResigned === true },
+    ctx.config,
+    ctx.prisma,
+  );
+}
+
+async function feishuAddCollaboratorByContactTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuAddCollaboratorByContact(
+    String(args.token),
+    String(args.type || "docx"),
+    {
+      mobile: args.mobile != null ? String(args.mobile) : undefined,
+      email: args.email != null ? String(args.email) : undefined,
+      perm: String(args.perm || "view"),
+    },
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
 async function feishuRefreshTokenTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
   const refreshToken = await getCredentialValue(ctx.prisma, "feishu", "feishu_refresh_token");
   if (refreshToken) {
-    const token = await refreshUserAccessToken(ctx.prisma, refreshToken);
+    const token = await refreshUserAccessToken(ctx.prisma, refreshToken, ctx.config);
     return { success: true, source: "credential", token: token.slice(0, 8) + "..." };
   }
   const fileResult = await refreshFileToken();
-  return { source: "file", ...fileResult };
+  if (fileResult.success) return { source: "file", ...fileResult };
+  return {
+    source: "file",
+    ...fileResult,
+    success: false,
+    hint: "refresh 失败时请调用 feishu_authorize（会打开浏览器，用户点一次同意即可落盘新 token）",
+  };
+}
+
+/** 浏览器 OAuth：token 过期且无法 refresh 时由 Agent 自行拉起，无需人工改 .env */
+async function feishuAuthorizeTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
+  const timeoutSec = Number(args.timeoutSec || 180);
+  const result = await authorizeUserViaBrowser({
+    timeoutSec: Number.isFinite(timeoutSec) ? timeoutSec : 180,
+    openBrowser: args.openBrowser !== false,
+    scope: args.scope ? String(args.scope) : undefined,
+  });
+  if (!result.success) {
+    throw new Error(
+      result.error ||
+        "飞书授权失败。请确认开放平台已添加重定向 http://localhost:8088，并开通 offline_access / 文档 / 画板权限。",
+    );
+  }
+  const status = getFeishuFileTokenStatus();
+  return {
+    ...result,
+    fileStatus: status,
+    message:
+      "授权成功，token 已写入 content/cookies/feishu_oauth.json。后续过期会自动 refresh；refresh 也失效时再调本工具。",
+  };
 }
 
 // ─── 邮件通知工具 ───
@@ -742,34 +1100,65 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_get_doc",
-    reentrant: true, // 远端 GET 只读（凭证只读不刷新）
-    description: "通过语雀 Open API v2 获取文档内容（需配置 YUQUE_SESSION 或 Credential scope=yuque）。",
+    reentrant: true,
+    description:
+      "读取语雀文档。优先 Web：传 bookId+slug（需 YUQUE_SESSION）；或 Open API：传 namespace+slug（需 YUQUE_TOKEN 个人令牌）。",
     parameters: zodParams(
       z.object({
-        namespace: z.string().describe("知识库 namespace，如 user/repo"),
         slug: z.string().describe("文档 slug"),
+        bookId: z.string().describe("Web API：知识库 id").optional(),
+        namespace: z.string().describe("Open API：如 user/repo").optional(),
       }),
     ),
   },
   {
     name: "yuque_list_books",
-    reentrant: true, // 远端 GET 只读
-    description: "列出语雀知识库（内部 Web API，需 Cookie）。",
+    reentrant: true,
+    description: "列出语雀知识库（Web Cookie：YUQUE_SESSION + YUQUE_CTOKEN）。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "yuque_get_book_toc",
-    reentrant: true, // 远端 GET 只读
-    description: "获取语雀知识库目录（内部 Web API，需 Cookie）。",
+    reentrant: true,
+    description: "获取语雀知识库目录（Web Cookie）。",
+    parameters: zodParams(z.object({ bookId: z.string() })),
+  },
+  {
+    name: "yuque_create_book",
+    concurrencyClass: "D",
+    description: "创建语雀知识库（Web Cookie）。",
     parameters: zodParams(
       z.object({
-        bookId: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        slug: z.string().optional(),
+        public: z.number().describe("0 私密 / 1 公开，默认 0").optional(),
       }),
     ),
   },
   {
+    name: "yuque_update_book",
+    concurrencyClass: "D",
+    description: "更新语雀知识库元信息（Web Cookie）。",
+    parameters: zodParams(
+      z.object({
+        bookId: z.string(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        public: z.number().optional(),
+      }),
+    ),
+  },
+  {
+    name: "yuque_delete_book",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "删除语雀知识库（Web Cookie，不可恢复）。",
+    parameters: zodParams(z.object({ bookId: z.string() })),
+  },
+  {
     name: "yuque_create_doc",
-    description: "在语雀知识库创建文档（内部 Web API，需 Cookie）。",
+    description: "在语雀知识库创建文档（Web Cookie）。",
     parameters: zodParams(
       z.object({
         bookId: z.string(),
@@ -780,11 +1169,11 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_update_doc",
-    description: "更新语雀文档（内部 Web API，需 Cookie）。",
+    description: "更新语雀文档（Web Cookie）。",
     parameters: zodParams(
       z.object({
         docId: z.string(),
-        bookId: z.string().optional(),
+        bookId: z.string(),
         title: z.string(),
         body: z.string(),
       }),
@@ -793,7 +1182,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   {
     name: "yuque_delete_doc",
     destructive: true,
-    description: "删除语雀文档（内部 Web API，需 Cookie）。",
+    description: "删除语雀文档（Web Cookie）。",
     parameters: zodParams(
       z.object({
         docId: z.string(),
@@ -802,24 +1191,59 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
-    name: "yuque_list_repos",
-    reentrant: true, // 远端 GET 只读
-    description: "列出语雀知识库（Open API v2，需 Token）。",
+    name: "yuque_session_status",
+    reentrant: true,
+    description: "探测语雀 Cookie 会话是否仍有效（list_books 轻量探测）。",
     parameters: zodParams(z.object({})),
   },
   {
-    name: "yuque_list_docs",
-    reentrant: true, // 远端 GET 只读
-    description: "列出语雀知识库文档（Open API v2，需 Token）。",
+    name: "yuque_list_repos",
+    reentrant: true,
+    description: "列出语雀知识库（Open API v2，需 YUQUE_TOKEN 个人令牌，不是网页 _ctoken）。",
+    parameters: zodParams(z.object({})),
+  },
+  {
+    name: "yuque_create_repo",
+    concurrencyClass: "D",
+    description: "创建语雀知识库（Open API v2，需 YUQUE_TOKEN）。",
     parameters: zodParams(
       z.object({
-        namespace: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        slug: z.string().optional(),
+        public: z.number().optional(),
       }),
     ),
   },
   {
+    name: "yuque_update_repo",
+    concurrencyClass: "D",
+    description: "更新语雀知识库（Open API v2）。",
+    parameters: zodParams(
+      z.object({
+        namespace: z.string(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        public: z.number().optional(),
+      }),
+    ),
+  },
+  {
+    name: "yuque_delete_repo",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "删除语雀知识库（Open API v2）。",
+    parameters: zodParams(z.object({ namespace: z.string() })),
+  },
+  {
+    name: "yuque_list_docs",
+    reentrant: true,
+    description: "列出语雀知识库文档（Open API v2，需 YUQUE_TOKEN）。",
+    parameters: zodParams(z.object({ namespace: z.string() })),
+  },
+  {
     name: "yuque_create_doc_v2",
-    description: "创建语雀文档（Open API v2，需 Token）。",
+    description: "创建语雀文档（Open API v2，需 YUQUE_TOKEN）。",
     parameters: zodParams(
       z.object({
         namespace: z.string(),
@@ -830,7 +1254,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "yuque_update_doc_v2",
-    description: "更新语雀文档（Open API v2，需 Token）。",
+    description: "更新语雀文档（Open API v2，需 YUQUE_TOKEN）。",
     parameters: zodParams(
       z.object({
         namespace: z.string(),
@@ -843,7 +1267,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   {
     name: "yuque_delete_doc_v2",
     destructive: true,
-    description: "删除语雀文档（Open API v2，需 Token）。",
+    description: "删除语雀文档（Open API v2，需 YUQUE_TOKEN）。",
     parameters: zodParams(
       z.object({
         namespace: z.string(),
@@ -853,7 +1277,8 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "capture_zhihu_login",
-    description: "弹出浏览器窗口让用户登录知乎，完成后保存登录态到 content/cookies/zhihu_storage_state.json。",
+    description:
+      "弹出浏览器登录知乎：写 storageState + 同步 cookieJar（content/cookies/zhihu.json），供 read_article HTTP/Playwright 复用。",
     parameters: zodParams(
       z.object({
         timeoutSec: z.number().describe("等待超时秒数，默认 120").optional(),
@@ -863,7 +1288,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   {
     name: "browser_login_status",
     reentrant: true, // 只读 cookieJar 状态
-    description: "列出当前已保存的浏览器登录态平台。",
+    description: "列出已保存的浏览器登录态平台及 cookie 条数（含知乎 cookieJar）。",
     parameters: zodParams(z.object({})),
   },
   {
@@ -908,6 +1333,17 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
         description: z.string().optional(),
         private: z.boolean().optional(),
         defaultBranch: z.string().optional(),
+      }),
+    ),
+  },
+  {
+    name: "github_delete_repo",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "删除 GitHub 仓库（不可恢复，需 delete_repo 权限）。",
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
       }),
     ),
   },
@@ -1057,6 +1493,48 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "github_update_pull_request",
+    concurrencyClass: "D",
+    description: "更新 PR（标题/正文/目标分支）；state=closed 关闭，state=open 重开。",
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        number: z.number(),
+        title: z.string().optional(),
+        body: z.string().optional(),
+        state: z.enum(["open", "closed"]).optional(),
+        base: z.string().optional(),
+      }),
+    ),
+  },
+  {
+    name: "github_merge_pull_request",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "合并 Pull Request（merge / squash / rebase）。",
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        number: z.number(),
+        mergeMethod: z.enum(["merge", "squash", "rebase"]).describe("默认 merge").optional(),
+        commitTitle: z.string().optional(),
+        commitMessage: z.string().optional(),
+      }),
+    ),
+  },
+  {
+    name: "github_create_issue_comment",
+    concurrencyClass: "D",
+    description: "在 Issue 或 PR 下发表评论。",
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        number: z.number().describe("Issue/PR 编号"),
+        body: z.string(),
+      }),
+    ),
+  },
+  {
     name: "github_list_branches",
     reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
@@ -1090,6 +1568,18 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
         repo: z.string().describe("仓库，格式 owner/repo"),
         newBranch: z.string(),
         fromBranch: z.string().describe("默认 main").optional(),
+      }),
+    ),
+  },
+  {
+    name: "github_delete_branch",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "删除 GitHub 分支（删除 refs/heads/{branch}）。",
+    parameters: zodParams(
+      z.object({
+        repo: z.string().describe("仓库，格式 owner/repo"),
+        branch: z.string(),
       }),
     ),
   },
@@ -1189,12 +1679,173 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "feishu_update_doc",
+    concurrencyClass: "D",
+    description:
+      "更新飞书文档：可改 title，和/或传 blocks（docx batch_update 的 requests 数组）。需 user_access_token。",
+    parameters: zodParams(
+      z.object({
+        documentId: z.string(),
+        title: z.string().optional(),
+        blocks: z.array(z.unknown()).describe("可选：docx blocks/batch_update requests").optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_delete_doc",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "删除飞书云文档（drive files DELETE，type=docx）。需 user_access_token；可能走审批。",
+    parameters: zodParams(
+      z.object({
+        documentId: z.string(),
+      }),
+    ),
+  },
+  {
     name: "feishu_search_docs",
     concurrencyClass: "B",
     description: "搜索飞书文档（需 user_access_token）。",
     parameters: zodParams(
       z.object({
         query: z.string(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_list_permission_members",
+    reentrant: true,
+    concurrencyClass: "B",
+    description: "列出飞书云文档协作者（drive permissions members）。token 为 document_id / 文件 token；type 默认 docx。",
+    parameters: zodParams(
+      z.object({
+        token: z.string().describe("云文档 token（docx 即 document_id）"),
+        type: z
+          .enum(["doc", "docx", "sheet", "file", "wiki", "bitable", "folder", "mindnote", "minutes", "slides"])
+          .describe("默认 docx")
+          .optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_add_permission_member",
+    concurrencyClass: "D",
+    description:
+      "为飞书云文档添加协作者。memberType：openid/email/openchat/unionid 等；perm：view/edit/full_access。需 docs:permission.member:create。",
+    parameters: zodParams(
+      z.object({
+        token: z.string().describe("云文档 token"),
+        type: z.string().describe("默认 docx").optional(),
+        memberType: z.string().describe("默认 openid").optional(),
+        memberId: z.string().describe("与 memberType 对应的协作者 ID / 邮箱"),
+        perm: z.enum(["view", "edit", "full_access"]).describe("默认 view").optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_update_permission_member",
+    concurrencyClass: "D",
+    description: "更新飞书云文档协作者权限（view→edit 等）。需 docs:permission.member:update。",
+    parameters: zodParams(
+      z.object({
+        token: z.string(),
+        type: z.string().describe("默认 docx").optional(),
+        memberType: z.string().describe("默认 openid").optional(),
+        memberId: z.string(),
+        perm: z.enum(["view", "edit", "full_access"]).describe("默认 edit").optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_remove_permission_member",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "移除飞书云文档协作者。需 docs:permission.member:delete；可能走审批。",
+    parameters: zodParams(
+      z.object({
+        token: z.string(),
+        type: z.string().describe("默认 docx").optional(),
+        memberType: z.string().describe("默认 openid").optional(),
+        memberId: z.string(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_get_permission_public",
+    reentrant: true,
+    concurrencyClass: "B",
+    description:
+      "读取飞书云文档「权限设置」（可见性）：外部分享、链接分享、谁可管理协作者/复制/打印下载/评论等。对应 UI 权限设置面板。",
+    parameters: zodParams(
+      z.object({
+        token: z.string().describe("document_id / 文件 token"),
+        type: z.string().describe("默认 docx").optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_update_permission_public",
+    concurrencyClass: "D",
+    description:
+      "更新飞书云文档「权限设置」（增量）。字段映射 UI：external_access_entity=允许分享到组织外；link_share_entity=链接分享；" +
+      "share_entity+manage_collaborator_entity=谁可查看/添加/移除协作者；copy_entity=谁可复制；security_entity=谁可创建副本/打印/下载；comment_entity=谁可评论。" +
+      "示例：组织内链接可读 → link_share_entity=tenant_readable；互联网可读 → external_access_entity=open + link_share_entity=anyone_readable。",
+    parameters: zodParams(
+      z.object({
+        token: z.string(),
+        type: z.string().describe("默认 docx").optional(),
+        external_access_entity: z.enum(["open", "closed", "allow_share_partner_tenant"]).optional(),
+        link_share_entity: z
+          .enum([
+            "tenant_readable",
+            "tenant_editable",
+            "partner_tenant_readable",
+            "partner_tenant_editable",
+            "anyone_readable",
+            "anyone_editable",
+            "closed",
+          ])
+          .optional(),
+        share_entity: z.enum(["anyone", "same_tenant"]).optional(),
+        manage_collaborator_entity: z
+          .enum(["collaborator_can_view", "collaborator_can_edit", "collaborator_full_access"])
+          .optional(),
+        copy_entity: z.enum(["anyone_can_view", "anyone_can_edit", "only_full_access"]).optional(),
+        security_entity: z.enum(["anyone_can_view", "anyone_can_edit", "only_full_access"]).optional(),
+        comment_entity: z.enum(["anyone_can_view", "anyone_can_edit"]).optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_lookup_user",
+    reentrant: true,
+    concurrencyClass: "B",
+    description:
+      "用手机号/邮箱查飞书用户 open_id（contact batch_get_id，应用身份）。加协作者前可先查。" +
+      "需开通 contact:user.id:readonly（或 contact:contact:readonly_as_app）并发布。仅邮箱时可直接 add_permission_member(memberType=email)。",
+    parameters: zodParams(
+      z.object({
+        mobile: z.string().describe("单个手机号").optional(),
+        email: z.string().describe("单个邮箱").optional(),
+        mobiles: z.array(z.string()).optional(),
+        emails: z.array(z.string()).optional(),
+        includeResigned: z.boolean().optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_add_collaborator_by_contact",
+    concurrencyClass: "D",
+    description:
+      "用手机号或邮箱把用户加为文档协作者并设权限（view/edit/full_access）。邮箱直加；手机号先查 open_id 再加。" +
+      "手机号路径需通讯录查 ID 权限。",
+    parameters: zodParams(
+      z.object({
+        token: z.string().describe("document_id"),
+        type: z.string().describe("默认 docx").optional(),
+        mobile: z.string().optional(),
+        email: z.string().optional(),
+        perm: z.enum(["view", "edit", "full_access"]).describe("默认 view").optional(),
       }),
     ),
   },
@@ -1216,6 +1867,19 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
       z.object({
         spaceId: z.string(),
         parentNodeToken: z.string().describe("可选父节点 token").optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_create_wiki_node",
+    concurrencyClass: "D",
+    description: "在飞书 Wiki 空间创建节点（默认 obj_type=docx）。需 user_access_token。",
+    parameters: zodParams(
+      z.object({
+        spaceId: z.string(),
+        title: z.string(),
+        parentNodeToken: z.string().describe("可选父节点 token").optional(),
+        objType: z.string().describe("默认 docx").optional(),
       }),
     ),
   },
@@ -1252,8 +1916,23 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   {
     name: "feishu_refresh_token",
     concurrencyClass: "D",
-    description: "手动刷新飞书 user_access_token。",
+    description:
+      "用 refresh_token 静默续期飞书 user_access_token（Credential 或 feishu_oauth.json）。失败时请改调 feishu_authorize。",
     parameters: zodParams(z.object({})),
+  },
+  {
+    name: "feishu_authorize",
+    concurrencyClass: "D",
+    description:
+      "打开浏览器完成飞书 OAuth（含 offline_access + 文档/知识库/画板 scope），写入 content/cookies/feishu_oauth.json。" +
+      "在 feishu_token_status 无效、refresh 失败、或新增权限后需要重新授权时调用。用户需在弹出页点一次同意。",
+    parameters: zodParams(
+      z.object({
+        timeoutSec: z.number().describe("等待用户授权秒数，默认 180").optional(),
+        openBrowser: z.boolean().describe("是否自动打开浏览器，默认 true").optional(),
+        scope: z.string().describe("可选自定义 scope（空格分隔）").optional(),
+      }),
+    ),
   },
   {
     name: "feishu_list_doc_whiteboards",
@@ -1365,6 +2044,13 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   git_push: gitPushTool,
   yuque_get_doc: yuqueGetDocTool,
   yuque_list_books: yuqueListBooksTool,
+  yuque_create_book: yuqueCreateBookTool,
+  yuque_update_book: yuqueUpdateBookTool,
+  yuque_delete_book: yuqueDeleteBookTool,
+  yuque_session_status: yuqueSessionStatusTool,
+  yuque_create_repo: yuqueCreateRepoTool,
+  yuque_update_repo: yuqueUpdateRepoTool,
+  yuque_delete_repo: yuqueDeleteRepoTool,
   yuque_get_book_toc: yuqueGetBookTocTool,
   yuque_create_doc: yuqueCreateDocTool,
   yuque_update_doc: yuqueUpdateDocTool,
@@ -1380,6 +2066,7 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   github_get_repo: githubGetRepoTool,
   github_create_repo: githubCreateRepoTool,
   github_update_repo: githubUpdateRepoTool,
+  github_delete_repo: githubDeleteRepoTool,
   github_get_file: githubGetFileTool,
   github_create_file: githubCreateFileTool,
   github_update_file: githubUpdateFileTool,
@@ -1388,12 +2075,16 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   github_get_issue: githubGetIssueTool,
   github_create_issue: githubCreateIssueTool,
   github_update_issue: githubUpdateIssueTool,
+  github_create_issue_comment: githubCreateIssueCommentTool,
   github_list_pull_requests: githubListPullRequestsTool,
   github_get_pull_request: githubGetPullRequestTool,
   github_create_pull_request: githubCreatePullRequestTool,
+  github_update_pull_request: githubUpdatePullRequestTool,
+  github_merge_pull_request: githubMergePullRequestTool,
   github_list_branches: githubListBranchesTool,
   github_get_branch: githubGetBranchTool,
   github_create_branch: githubCreateBranchTool,
+  github_delete_branch: githubDeleteBranchTool,
   github_list_workflows: githubListWorkflowsTool,
   github_trigger_workflow: githubTriggerWorkflowTool,
   github_create_release: githubCreateReleaseTool,
@@ -1402,13 +2093,25 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_send_message: feishuSendMessageTool,
   feishu_get_doc: feishuGetDocTool,
   feishu_create_doc: feishuCreateDocTool,
+  feishu_update_doc: feishuUpdateDocTool,
+  feishu_delete_doc: feishuDeleteDocTool,
   feishu_search_docs: feishuSearchDocsTool,
+  feishu_list_permission_members: feishuListPermissionMembersTool,
+  feishu_add_permission_member: feishuAddPermissionMemberTool,
+  feishu_update_permission_member: feishuUpdatePermissionMemberTool,
+  feishu_remove_permission_member: feishuRemovePermissionMemberTool,
+  feishu_get_permission_public: feishuGetPermissionPublicTool,
+  feishu_update_permission_public: feishuUpdatePermissionPublicTool,
+  feishu_lookup_user: feishuLookupUserTool,
+  feishu_add_collaborator_by_contact: feishuAddCollaboratorByContactTool,
   feishu_get_wiki_space: feishuGetWikiSpaceTool,
   feishu_get_wiki_nodes: feishuGetWikiNodesTool,
+  feishu_create_wiki_node: feishuCreateWikiNodeTool,
   feishu_create_spreadsheet: feishuCreateSpreadsheetTool,
   feishu_append_spreadsheet_values: feishuAppendSpreadsheetValuesTool,
   feishu_token_status: feishuTokenStatusTool,
   feishu_refresh_token: feishuRefreshTokenTool,
+  feishu_authorize: feishuAuthorizeTool,
   feishu_list_doc_whiteboards: feishuListDocWhiteboardsTool,
   feishu_list_whiteboard_nodes: feishuListWhiteboardNodesTool,
   feishu_create_whiteboard_nodes: feishuCreateWhiteboardNodesTool,

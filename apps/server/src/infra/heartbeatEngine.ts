@@ -557,12 +557,30 @@ export class HeartbeatEngine {
     }
   }
 
-  /** W12：手动恢复被暂停的心跳（摘除 suspended 标记；cron 注册随下次 refresh() 重建） */
-  async resumeHeartbeat(agentId: string): Promise<void> {
+  /** W12：手动恢复被暂停的心跳（清零失败计数 + 摘除 suspended；refresh 重挂 cron） */
+  async resumeHeartbeat(agentId: string): Promise<{ resumed: boolean }> {
+    const row = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { heartbeat: true, heartbeatSuspendedAt: true },
+    });
+    if (!row) return { resumed: false };
+    const hb = this.parseHeartbeat(row.heartbeat);
     await this.prisma.agent.update({
       where: { id: agentId },
-      data: { heartbeatSuspendedAt: null },
+      data: {
+        heartbeatSuspendedAt: null,
+        ...(hb
+          ? {
+              heartbeat: {
+                ...hb,
+                consecutiveFailures: 0,
+              } as object,
+            }
+          : {}),
+      },
     });
+    await this.refresh();
+    return { resumed: true };
   }
 
   /** W12：观测/测试用——该 Agent 心跳是否处于 suspended 暂停态 */

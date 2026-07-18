@@ -536,6 +536,8 @@ export const memoryAttributionSchema = z.enum([
   "system",
 ]);
 
+export const memoryStatusSchema = z.enum(["active", "superseded"]);
+
 export const createMemorySchema = z.object({
   content: z.string().min(1),
   type: memoryUserTypeSchema.default("note"),
@@ -543,6 +545,8 @@ export const createMemorySchema = z.object({
   keywords: z.array(z.string()).default([]),
   /** 事实来源归因（可选；Agent 工具 / flush 会写入） */
   attribution: memoryAttributionSchema.optional(),
+  /** 作用域：global / workspace:{id} / agent:{id}；UI 创建默认 global */
+  scope: z.string().max(120).optional(),
   validFrom: z.coerce.date().optional().nullable(),
   validTo: z.coerce.date().optional().nullable(),
 });
@@ -553,6 +557,11 @@ export const updateMemorySchema = z.object({
   type: memoryUserTypeSchema.optional(),
   strength: z.number().min(0).max(1).optional(),
   keywords: z.array(z.string()).optional(),
+  attribution: memoryAttributionSchema.optional(),
+  scope: z.string().max(120).optional(),
+  validFrom: z.coerce.date().optional().nullable(),
+  validTo: z.coerce.date().optional().nullable(),
+  status: memoryStatusSchema.optional(),
 });
 
 export const listMemoriesSchema = z.object({
@@ -560,6 +569,8 @@ export const listMemoriesSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
   keyword: z.string().optional(),
   type: z.string().optional(),
+  scope: z.string().optional(),
+  status: memoryStatusSchema.optional(),
 });
 
 /* ═══════════════════════════════════════════════════════

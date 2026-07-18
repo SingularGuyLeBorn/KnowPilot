@@ -79,10 +79,10 @@ export const SessionListItem = memo(function SessionListItem({
     <div
       data-testid="session-list-item"
       className={cn(
-        "group/sess mb-1 flex items-stretch overflow-hidden rounded-lg border transition-colors",
+        "group/sess mb-1 flex items-stretch overflow-hidden rounded-xl border transition-colors",
         active
-          ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand)]/10"
-          : "border-transparent hover:border-[var(--kp-divider)] hover:bg-[var(--kp-bg-mute)]/50",
+          ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40"
+          : "border-transparent hover:bg-[var(--kp-bg-mute)]/60",
       )}
     >
       <button
@@ -119,7 +119,7 @@ export const SessionListItem = memo(function SessionListItem({
           {session.model} · {formatRelativeTime(session.updatedAt)}
         </div>
       </button>
-      <div className="flex shrink-0 items-center gap-0.5 border-l border-[var(--kp-divider-light)] px-1 opacity-70 transition-opacity group-hover/sess:opacity-100">
+      <div className="flex shrink-0 items-center gap-0.5 px-1 opacity-0 transition-opacity group-hover/sess:opacity-100">
         {onOpenInOtherPane && (
           <button
             type="button"

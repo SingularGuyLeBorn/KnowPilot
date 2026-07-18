@@ -5,7 +5,12 @@
 import { prisma } from "../db.js";
 import { getAppConfig } from "../infra/config.js";
 import { getTenantAccessToken, getUserAccessTokenStatus, feishuSearchDocs } from "../infra/feishuClient.js";
-import { getYuqueCredentials, yuqueListBooks, yuqueListRepos } from "../infra/yuqueClient.js";
+import {
+  getYuqueCredentials,
+  getYuquePersonalToken,
+  yuqueListBooks,
+  yuqueListRepos,
+} from "../infra/yuqueClient.js";
 import { getGitHubToken, githubSearchRepos } from "../infra/githubClient.js";
 
 type Row = { name: string; ok: boolean; detail: string };
@@ -57,10 +62,11 @@ async function checkYuque(): Promise<Row> {
     } catch (e) {
       booksNote = `list_books err=${e instanceof Error ? e.message.slice(0, 100) : String(e)}`;
     }
-    // Open API v2（ctoken 当 token）：list repos
+    // Open API v2（个人令牌 YUQUE_TOKEN，勿用 CSRF ctoken）
     let reposNote = "";
     try {
-      const repos = await yuqueListRepos(creds.ctoken);
+      const token = await getYuquePersonalToken(prisma, config);
+      const repos = await yuqueListRepos(token);
       const n = Array.isArray(repos)
         ? repos.length
         : (repos as { data?: unknown[] })?.data?.length ?? "?";

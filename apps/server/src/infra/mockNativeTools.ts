@@ -5,7 +5,7 @@
  * 通过环境变量启用：
  *   MOCK_NATIVE_TOOLS=true
  *
- * 当前覆盖：web_search、read_article、scrape_web_page、read_file、write_file。
+ * 当前覆盖：web_search、read_article、scrape_web_page、browser_screenshot、read_image、read_file、write_file。
  * 未覆盖的工具会回退到真实实现（如需可继续补）。
  */
 
@@ -66,6 +66,37 @@ const MOCK_HANDLERS: Record<string, MockHandler> = {
     content: "Mock scrape content.",
     links: [{ text: "Mock Link", href: "https://example.com" }],
     elapsedMs: 5,
+  }),
+
+  browser_screenshot: (args) => {
+    const url = String(args.url ?? "https://example.com");
+    const path = `content/uploads/screenshots/mock-${Date.now().toString(36)}.png`;
+    return {
+      url,
+      title: "Mock Screenshot",
+      path,
+      publicUrl: `/uploads/screenshots/${path.split("/").pop()}`,
+      bytes: 1024,
+      width: 1280,
+      height: 800,
+      fullPage: args.fullPage === true,
+      mimeType: "image/png",
+      suggestedTool: "read_image",
+      suggestedArgs: { path, mode: "auto" },
+      elapsedMs: 8,
+    };
+  },
+
+  read_image: (args) => ({
+    text: "Mock OCR/vision text from screenshot.",
+    textChars: 36,
+    textTruncated: false,
+    source: String(args.mode || "auto") === "vision" ? "vision" : "ocr",
+    mode: String(args.mode || "ocr"),
+    engine: "mock",
+    path: args.path != null ? String(args.path) : undefined,
+    url: args.url != null ? String(args.url) : undefined,
+    elapsedMs: 3,
   }),
 
   read_file: (args) => ({

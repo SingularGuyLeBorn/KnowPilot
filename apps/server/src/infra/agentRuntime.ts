@@ -6,7 +6,8 @@ import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { resolveEffectiveAgentModel, type LlmMessage } from "./llmClient.js";
 import { describeLlmError } from "./resilientLlmClient.js";
-import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
+import { type StoredToolCall, sanitizePostCompactAssistantContent } from "./chatHistory.js";
+import { buildLlmContextSinceCompact } from "./autoCompact.js";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
 import { runReactLoop, createSyncTransport, withReflection } from "./loop/index.js";
@@ -195,18 +196,26 @@ export async function chatAgent(
       attachments: hasAttachments ? input.attachments : undefined,
     });
 
-    const history = await services.message.list({ sessionId, page: 1, pageSize: 50 });
+    const sessionMeta = await services.session.getByIdLite(sessionId);
+    const historyItems = await services.message.listForLlmContext({
+      sessionId,
+      since: (sessionMeta as { contextCompactedAt?: Date | string | null }).contextCompactedAt,
+      limit: 200,
+    });
     const memoryHint = await buildAllMemoryHints(services, displayText, {
       agentId: agent.id,
       sessionId,
     });
-    const messages = buildLlmMessagesFromHistory(
+    const messages = buildLlmContextSinceCompact(
       buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint, {
         tier: agent.tier,
         name: agent.name,
       }),
-      sliceHistoryAfterCompactBoundary(history.items),
-      { modelId: effectiveModel },
+      historyItems,
+      {
+        modelId: effectiveModel,
+        contextSummary: (sessionMeta as { contextSummary?: string | null }).contextSummary ?? null,
+      },
     );
 
     const result = await runAgentLoop({

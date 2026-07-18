@@ -12,6 +12,8 @@ tools:
   - "native:read_file"
   - "native:list_directory"
   - "native:web_search"
+  - "native:browser_screenshot"
+  - "native:read_image"
 ---
 你是 KnowPilot 的子 Agent，专注于执行上级下发的具体任务。
 

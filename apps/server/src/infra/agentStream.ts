@@ -11,12 +11,12 @@ import {
   type LlmToolCall,
 } from "./llmClient.js";
 import { describeLlmError } from "./resilientLlmClient.js";
-import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
+import { type StoredToolCall, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
 import { buildAllMemoryHints, buildSystemPromptWithHints } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
-import { resolveMicroCompactToolMaxChars } from "./autoCompact.js";
+import { resolveMicroCompactToolMaxChars, buildLlmContextSinceCompact } from "./autoCompact.js";
 import { runReactLoop, createStreamTransport, withReflection } from "./loop/index.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { verifyAuthHeader, isAuthEnabled } from "./auth.js";
@@ -549,25 +549,32 @@ export async function chatAgentStream(
       });
     }
 
-    const history = await services.message.list({ sessionId, page: 1, pageSize: HISTORY_PAGE_SIZE });
+    const sessionMeta = await services.session.getByIdLite(sessionId);
+    const historyItems = await services.message.listForLlmContext({
+      sessionId,
+      since: (sessionMeta as { contextCompactedAt?: Date | string | null }).contextCompactedAt,
+      limit: HISTORY_PAGE_SIZE,
+    });
     const historyBase = prepared!.excludeAssistantId
-      ? history.items.filter((m) => m.id !== prepared!.excludeAssistantId)
-      : history.items;
-    const historyForLlm = sliceHistoryAfterCompactBoundary(historyBase);
+      ? historyItems.filter((m) => m.id !== prepared!.excludeAssistantId)
+      : historyItems;
+    // 供下方 updateAssistantId 查找；与 LLM 窗口同源
+    const history = { items: historyItems };
 
     const memoryHint = await buildAllMemoryHints(services, prepared.messageText, {
       agentId: (agent as { id?: string }).id,
       sessionId,
     });
-    const messages = buildLlmMessagesFromHistory(
+    const messages = buildLlmContextSinceCompact(
       buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint, {
         tier: (agent as { tier?: string }).tier,
         name: (agent as { name?: string }).name,
       }),
-      historyForLlm,
+      historyBase,
       {
         modelId: effectiveModel,
         microCompactToolMaxChars: resolveMicroCompactToolMaxChars(effectiveConfig),
+        contextSummary: (sessionMeta as { contextSummary?: string | null }).contextSummary ?? null,
       },
     );
 

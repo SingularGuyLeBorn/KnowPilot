@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Memories 长期记忆管理页面 (L2 智能工作台)
  */
 
@@ -12,13 +12,27 @@ import Link from "next/link";
 import type { Memory } from "@knowpilot/shared";
 import { MEMORY_TYPE_LABELS } from "@knowpilot/shared";
 import { useMemory, useCardDensity } from "@/lib/hooks";
-import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
+import { AdminPage, EmptyState, KpSelect, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
+
+function formatScope(scope?: string) {
+  if (!scope || scope === "global") return "global";
+  if (scope.startsWith("workspace:")) return `空间 ${scope.slice(10, 18)}…`;
+  if (scope.startsWith("agent:")) return `Agent ${scope.slice(6, 14)}…`;
+  return scope;
+}
 
 export default function MemoriesPage() {
   const { useList, useCreate, useDelete } = useMemory();
   const { density } = useCardDensity();
   const [page] = useState(1);
-  const { data, isLoading } = useList({ page, pageSize: 12 });
+  const [scopeFilter, setScopeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"active" | "superseded" | "">("active");
+  const { data, isLoading } = useList({
+    page,
+    pageSize: 12,
+    scope: scopeFilter || undefined,
+    status: statusFilter || undefined,
+  });
   const createMutation = useCreate();
   const deleteMutation = useDelete();
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -29,6 +43,8 @@ export default function MemoriesPage() {
       type: "preference",
       strength: 0.95,
       keywords: ["preference", "design", "language"],
+      scope: "global",
+      attribution: "user",
     });
   };
 
@@ -58,7 +74,7 @@ export default function MemoriesPage() {
   const keyLearnings =
     typeof parsed.keyLearnings === "string" ? parsed.keyLearnings : undefined;
   const toolsUsed = Array.isArray(parsed.toolsUsed)
-    ? parsed.toolsUsed.filter((t): t is string => typeof t === "string")
+    ? (parsed.toolsUsed as unknown[]).filter((t): t is string => typeof t === "string")
     : [];
   const success = typeof parsed.success === "boolean" ? parsed.success : undefined;
   const durationMs = typeof parsed.durationMs === "number" ? parsed.durationMs : undefined;
@@ -132,14 +148,40 @@ const confirmDelete = () => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
+    <AdminPage>
       <PageHeader
         icon={Brain}
         title="Memories 记忆晶体"
-        description="沉淀与用户的对话事实或喜好偏好。记忆以向量化和语义提取形式持久化存盘，在与 Agent 交互时被自动关联提取，使智能体愈加懂你。"
+        description="三层 scope（global / workspace / agent）、时效与 superseded 状态均可查看。"
         action={{ label: "写入记忆晶体", onClick: handleCreateDemo, icon: Plus }}
         showDensityToggle
       />
+
+      <div className="flex flex-wrap gap-2">
+        <KpSelect
+          value={scopeFilter || "__all__"}
+          onChange={(v) => setScopeFilter(v === "__all__" ? "" : v)}
+          options={[
+            { value: "__all__", label: "全部 scope" },
+            { value: "global", label: "global" },
+          ]}
+          className="w-40"
+          aria-label="scope 筛选"
+        />
+        <KpSelect
+          value={statusFilter || "__all__"}
+          onChange={(v) =>
+            setStatusFilter(v === "__all__" ? "" : (v as "active" | "superseded"))
+          }
+          options={[
+            { value: "__all__", label: "默认（不含 superseded）" },
+            { value: "active", label: "active" },
+            { value: "superseded", label: "superseded" },
+          ]}
+          className="w-40"
+          aria-label="状态筛选"
+        />
+      </div>
 
       {isLoading ? (
         <LoadingState count={3} />
@@ -151,7 +193,7 @@ const confirmDelete = () => {
           onAction={handleCreateDemo}
         />
       ) : (
-        <div className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ", density === "compact" ? "gap-4" : "gap-6")}>
+        <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((memory: Memory, idx: number) => (
             <motion.div
               key={memory.id}
@@ -164,12 +206,27 @@ const confirmDelete = () => {
               className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
             >
               <div>
-                <div className="flex justify-between items-start gap-4 mb-3">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--kp-brand-deep)]">
-                    {MEMORY_TYPE_LABELS[memory.type as keyof typeof MEMORY_TYPE_LABELS] ?? memory.type}
-                  </span>
-                  
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="mb-3 flex items-start justify-between gap-4">
+                  <div className="flex flex-wrap gap-1">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--kp-brand-deep)]">
+                      {MEMORY_TYPE_LABELS[memory.type as keyof typeof MEMORY_TYPE_LABELS] ?? memory.type}
+                    </span>
+                    <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-[9px] text-[var(--kp-text-2)]">
+                      {formatScope(memory.scope)}
+                    </span>
+                    {memory.status && memory.status !== "active" && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] text-amber-800">
+                        {memory.status}
+                      </span>
+                    )}
+                    {memory.attribution && (
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] text-blue-700">
+                        {memory.attribution}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                     <Link
                       href={`/memories/edit/${memory.id}`}
                       className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)] px-2 py-0.5 rounded hover:bg-[var(--kp-brand-soft)]"
@@ -190,12 +247,17 @@ const confirmDelete = () => {
                 </div>
               </div>
 
-              <div className="space-y-2 pt-3 border-t border-[var(--kp-divider-light)]">
-                <div className="flex justify-between items-center text-[10px] text-[var(--kp-text-3)]">
+              <div className="space-y-2 border-t border-[var(--kp-divider-light)] pt-3">
+                <div className="flex items-center justify-between text-[10px] text-[var(--kp-text-3)]">
                   <span className="flex items-center gap-1">
-                    <Zap className="w-3 h-3 text-[var(--kp-brand-deep)]" />
-                    记忆强度: {memory.strength * 100}%
+                    <Zap className="h-3 w-3 text-[var(--kp-brand-deep)]" />
+                    强度 {(memory.strength * 100).toFixed(0)}%
                   </span>
+                  {memory.validTo && (
+                    <span title={String(memory.validTo)}>
+                      有效至 {new Date(memory.validTo).toLocaleDateString("zh-CN")}
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {memory.keywords?.map((k: string) => (
@@ -223,6 +285,6 @@ const confirmDelete = () => {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteId(null)}
       />
-    </div>
+    </AdminPage>
   );
 }

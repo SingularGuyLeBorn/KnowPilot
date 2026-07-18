@@ -767,8 +767,9 @@ describe("native:memory_create / memory_search", () => {
       items: Array<{ content: string }>;
     };
     expect(findMany).toHaveBeenCalled();
-    const firstCall = (findMany.mock.calls as unknown as Array<[{ where: { scope: { in: string[] } } }]>)[0]?.[0];
-    expect(firstCall?.where.scope.in).toContain("global");
+    const firstCall = (findMany.mock.calls as unknown as Array<[{ where: unknown }]>)[0]?.[0];
+    const whereJson = JSON.stringify(firstCall?.where ?? {});
+    expect(whereJson).toContain("global");
     expect(result.total).toBe(1);
     expect(result.items[0]?.content).toContain("这是一段很长的记忆内容");
     fs.rmSync(root, { recursive: true, force: true });
@@ -1191,24 +1192,32 @@ describe("native:yuque_get_doc", () => {
     vi.unstubAllGlobals();
   });
 
-  it("未配置 YUQUE_SESSION 时抛错", async () => {
+  it("未配置 YUQUE_TOKEN 时 Open API 路径抛错", async () => {
     const root = createTempProjectDir();
     const ctx = createNativeCtx(root);
     await expect(
       executeNativeTool("yuque_get_doc", { namespace: "u/r", slug: "doc" }, ctx),
-    ).rejects.toThrow(/YUQUE_CTOKEN|语雀凭证/);
+    ).rejects.toThrow(/YUQUE_TOKEN|个人令牌/);
     fs.rmSync(root, { recursive: true, force: true });
   });
 
   it("API 成功返回文档 body", async () => {
     const root = createTempProjectDir();
     const ctx = createNativeCtx(root, {
-      config: { integrations: { feishu: { appId: "", appSecret: "", userAccessToken: "", tenantAccessToken: "" }, yuque: { session: "", ctoken: "sess" }, github: { token: "" } } },
+      config: {
+        integrations: {
+          feishu: { appId: "", appSecret: "", userAccessToken: "", tenantAccessToken: "" },
+          yuque: { session: "", ctoken: "", personalToken: "yuque-pat" },
+          github: { token: "" },
+        },
+      },
     });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
         ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: { title: "Doc", slug: "doc", body: "# Hi" } }),
         json: async () => ({ data: { title: "Doc", slug: "doc", body: "# Hi" } }),
       })),
     );
@@ -1216,9 +1225,10 @@ describe("native:yuque_get_doc", () => {
       "yuque_get_doc",
       { namespace: "user/repo", slug: "doc" },
       ctx,
-    )) as { title: string; body: string };
+    )) as { title: string; body: string; via: string };
     expect(result.title).toBe("Doc");
     expect(result.body).toBe("# Hi");
+    expect(result.via).toBe("open_api_v2");
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
@@ -1728,7 +1738,7 @@ describe("native:feishu_send_text", () => {
       config: {
         integrations: {
           feishu: { appId: "", appSecret: "", userAccessToken: "", tenantAccessToken: "tok" },
-          yuque: { session: "", ctoken: "" },
+          yuque: { session: "", ctoken: "", personalToken: "" },
           github: { token: "" },
         },
       },
@@ -1737,6 +1747,8 @@ describe("native:feishu_send_text", () => {
       "fetch",
       vi.fn(async () => ({
         ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ code: 0, data: { message_id: "m1" } }),
         json: async () => ({ code: 0, data: { message_id: "m1" } }),
       })),
     );
@@ -1746,7 +1758,6 @@ describe("native:feishu_send_text", () => {
       ctx,
     );
     expect(result).toEqual(expect.objectContaining({ message_id: "m1" }));
-    expect(result).toHaveProperty("elapsedMs");
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tools 工具注册表 — 完整 CRUD 配置页（参考 MetaBlog / sources）
  */
 
@@ -224,7 +224,7 @@ export default function ToolsPage() {
           返回工具列表
         </button>
 
-        <div className="mx-auto max-w-2xl space-y-6">
+        <div className="mx-auto w-full max-w-[1400px] space-y-6">
           <div>
             <h1 className="text-2xl font-bold text-[var(--kp-text-1)]">
               {editingId ? "编辑工具注册" : "注册新工具"}
@@ -432,7 +432,7 @@ export default function ToolsPage() {
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] ">
             {data.items.map((tool: Tool, idx: number) => {
               const Icon = TYPE_ICONS[tool.type] ?? Cpu;
               return (

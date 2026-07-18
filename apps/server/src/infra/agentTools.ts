@@ -70,7 +70,19 @@ type ToolKind = "native" | "skill" | "mcp";
 const DEFAULT_NATIVE = [...DEFAULT_AGENT_NATIVE];
 
 /** 可并发执行的工具（只读 / 无副作用） */
-const READ_ONLY_NATIVE = new Set(["web_search", "read_article", "scrape_web_page", "read_file", "list_directory", "wait", "sleep"]);
+const READ_ONLY_NATIVE = new Set([
+  "web_search",
+  "read_article",
+  "scrape_web_page",
+  "browser_screenshot",
+  "read_image",
+  "read_file",
+  "list_directory",
+  "wait",
+  "sleep",
+  "memory_search",
+  "memory_daily_search",
+]);
 
 const CLASS_CONCURRENCY: Record<"A" | "B" | "C" | "D", number> = { A: 8, B: 4, C: 2, D: 1 };
 

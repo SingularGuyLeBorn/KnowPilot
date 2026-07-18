@@ -19,6 +19,13 @@ export function getGitHubToken(config: AppConfig): string {
   return config.integrations.github.token || "";
 }
 
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
+const MAX_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export async function githubApiRequest<T = unknown>(
   endpoint: string,
   options: GitHubApiOptions = {},
@@ -42,20 +49,28 @@ export async function githubApiRequest<T = unknown>(
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(url, init);
-  const text = await res.text();
-  let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, init);
+    const text = await res.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { raw: text };
+    }
 
-  if (!res.ok) {
-    const message = (data as any)?.message || res.statusText;
-    throw new Error(`GitHub API 失败: ${res.status} ${message}`);
+    if (res.ok) return data as T;
+
+    const message = (data as { message?: string })?.message || res.statusText;
+    lastError = new Error(`GitHub API 失败: ${res.status} ${message}`);
+    if (!RETRYABLE_STATUS.has(res.status) || attempt === MAX_RETRIES) break;
+
+    const retryAfter = Number(res.headers.get("retry-after") || 0);
+    const backoff = retryAfter > 0 ? retryAfter * 1000 : 400 * 2 ** attempt + Math.floor(Math.random() * 200);
+    await sleep(backoff);
   }
-  return data as T;
+  throw lastError ?? new Error("GitHub API 失败");
 }
 
 export function parseRepo(repo: string): { owner: string; repoName: string } {
@@ -99,6 +114,10 @@ export async function githubUpdateRepo(
     body: options,
     token,
   });
+}
+
+export async function githubDeleteRepo(owner: string, repo: string, token?: string) {
+  return githubApiRequest(`/repos/${owner}/${repo}`, { method: "DELETE", token });
 }
 
 /* ─── File contents ─── */
@@ -274,6 +293,48 @@ export async function githubCreatePullRequest(
   });
 }
 
+export async function githubUpdatePullRequest(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  options: { title?: string; body?: string; state?: "open" | "closed"; base?: string },
+  token?: string,
+) {
+  return githubApiRequest(`/repos/${owner}/${repo}/pulls/${pullNumber}`, {
+    method: "PATCH",
+    body: options,
+    token,
+  });
+}
+
+export async function githubMergePullRequest(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  options: { commit_title?: string; commit_message?: string; merge_method?: "merge" | "squash" | "rebase" } = {},
+  token?: string,
+) {
+  return githubApiRequest(`/repos/${owner}/${repo}/pulls/${pullNumber}/merge`, {
+    method: "PUT",
+    body: options,
+    token,
+  });
+}
+
+export async function githubCreateIssueComment(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  body: string,
+  token?: string,
+) {
+  return githubApiRequest(`/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
+    method: "POST",
+    body: { body },
+    token,
+  });
+}
+
 /* ─── Branches ─── */
 
 export async function githubListBranches(
@@ -302,6 +363,13 @@ export async function githubCreateBranch(
   return githubApiRequest(`/repos/${owner}/${repo}/git/refs`, {
     method: "POST",
     body: { ref: `refs/heads/${newBranch}`, sha: base.commit.sha },
+    token,
+  });
+}
+
+export async function githubDeleteBranch(owner: string, repo: string, branch: string, token?: string) {
+  return githubApiRequest(`/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branch)}`, {
+    method: "DELETE",
     token,
   });
 }

@@ -144,6 +144,13 @@ describe("W9 initSwarm 首次启动与幂等", () => {
     });
     expect(mainSession).toBeTruthy();
 
+    // Assistant Home 与 Root 对称创建
+    const assistantHome = await prisma.workspace.findFirst({
+      where: { isSystem: true, systemType: "assistant", status: { not: "deleted" } },
+    });
+    expect(assistantHome).toBeTruthy();
+    expect(assistantHome!.name).toBe("KnowPilot Assistant");
+
     // 幂等：重复执行不产生重复 Agent / Workspace
     await initSwarm(prisma, services, config);
     const supersAfter = await prisma.agent.findMany({ where: { tier: "super", status: { not: "deleted" } } });
@@ -152,6 +159,10 @@ describe("W9 initSwarm 首次启动与幂等", () => {
       where: { isSystem: true, systemType: "super", status: { not: "deleted" } },
     });
     expect(systemWsAfter.length).toBe(1);
+    const assistantHomes = await prisma.workspace.findMany({
+      where: { isSystem: true, systemType: "assistant", status: { not: "deleted" } },
+    });
+    expect(assistantHomes.length).toBe(1);
   });
 });
 

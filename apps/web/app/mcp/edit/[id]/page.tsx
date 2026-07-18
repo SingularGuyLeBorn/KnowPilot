@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -89,7 +89,7 @@ export default function McpDetailPage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-6">
+      <div className="mx-auto w-full max-w-[1400px] space-y-6">
         <div className="flex items-center gap-3">
           <Link
             href="/mcp"
