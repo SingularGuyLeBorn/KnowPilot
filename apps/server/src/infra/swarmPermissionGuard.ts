@@ -65,9 +65,10 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "free_api_keys_list",
     "free_api_keys_fetch",
     "free_models_list",
-    // Hermes：经验→Skill draft / prompt 优化（sub 不可）
+    // Hermes：经验→Skill draft / 启用 draft / prompt 优化（sub 不可；enable/promote 另走审批闸）
     "optimize_agent_prompt",
     "generate_skill_from_experience",
+    "skill_enable",
   ],
   // 子 Agent 及以上（manager/super 也可以用）：可执行异步任务，但不能再派生子 Agent
   sub: [

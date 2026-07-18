@@ -106,10 +106,11 @@ describe("generateSkillFromExperience", () => {
 });
 
 describe("Hermes tool tier 硬拦", () => {
-  it("sub 剔除 generate_skill / optimize；manager 保留", () => {
+  it("sub 剔除 generate/optimize/enable/discover；manager 保留 enable；discover 仅 super", () => {
     const tools = [
       "native:generate_skill_from_experience",
       "native:optimize_agent_prompt",
+      "native:skill_enable",
       "native:skill_discover",
       "native:read_file",
     ];
@@ -117,8 +118,10 @@ describe("Hermes tool tier 硬拦", () => {
     expect(sub).toEqual(["native:read_file"]);
     const mgr = getAllowedToolsForTier("manager", tools);
     expect(mgr).toContain("native:generate_skill_from_experience");
+    expect(mgr).toContain("native:skill_enable");
     expect(mgr).not.toContain("native:skill_discover");
     const sup = getAllowedToolsForTier("super", tools);
     expect(sup).toContain("native:skill_discover");
+    expect(sup).toContain("native:skill_enable");
   });
 });

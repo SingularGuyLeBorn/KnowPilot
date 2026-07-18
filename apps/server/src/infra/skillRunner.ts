@@ -149,7 +149,95 @@ __fn(input, context);
     .then((result) => ({ mode: "sandbox" as const, skill: skill.name, result, logs }));
 }
 
-/** 执行 Skill：可执行代码走沙箱，否则返回 Prompt 指引 */
+/** metaJson.stats：Skill 真实使用账本（供 skill_discover 排序，禁止默认 100% 假繁荣） */
+export type SkillUsageStats = {
+  usageCount: number;
+  successCount: number;
+  failCount: number;
+  /** 0–100，按 successCount/usageCount 四舍五入 */
+  successRate: number;
+  lastUsedAt: string;
+};
+
+export function parseSkillUsageStats(metaJson?: string | null): SkillUsageStats | null {
+  if (!metaJson) return null;
+  try {
+    const meta = JSON.parse(metaJson) as { stats?: Partial<SkillUsageStats> };
+    const s = meta.stats;
+    if (!s || typeof s.usageCount !== "number" || s.usageCount <= 0) return null;
+    const usageCount = s.usageCount;
+    const successCount = typeof s.successCount === "number" ? s.successCount : 0;
+    const failCount = typeof s.failCount === "number" ? s.failCount : Math.max(0, usageCount - successCount);
+    const successRate =
+      typeof s.successRate === "number"
+        ? s.successRate
+        : Math.round((successCount / usageCount) * 100);
+    return {
+      usageCount,
+      successCount,
+      failCount,
+      successRate,
+      lastUsedAt: typeof s.lastUsedAt === "string" ? s.lastUsedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 纯函数：累加一次调用结果到 metaJson.stats（单测可直接验） */
+export function mergeSkillUsageStats(
+  metaJson: string | null | undefined,
+  success: boolean,
+  now: Date = new Date(),
+): { metaJson: string; stats: SkillUsageStats } {
+  let meta: Record<string, unknown> = {};
+  try {
+    meta = JSON.parse(metaJson || "{}") as Record<string, unknown>;
+  } catch {
+    meta = {};
+  }
+  const prev = (meta.stats && typeof meta.stats === "object" ? meta.stats : {}) as Partial<SkillUsageStats>;
+  const usageCount = (prev.usageCount ?? 0) + 1;
+  const successCount = (prev.successCount ?? 0) + (success ? 1 : 0);
+  const failCount = (prev.failCount ?? 0) + (success ? 0 : 1);
+  const stats: SkillUsageStats = {
+    usageCount,
+    successCount,
+    failCount,
+    successRate: Math.round((successCount / usageCount) * 100),
+    lastUsedAt: now.toISOString(),
+  };
+  meta.stats = stats;
+  return { metaJson: JSON.stringify(meta), stats };
+}
+
+function isSkillExecSuccess(result: unknown): boolean {
+  if (result && typeof result === "object" && "error" in result) {
+    const err = (result as { error: unknown }).error;
+    if (err !== undefined && err !== null && err !== "") return false;
+  }
+  return true;
+}
+
+async function persistSkillUsage(
+  services: ServiceContainer,
+  skill: SkillEntity,
+  success: boolean,
+): Promise<void> {
+  const update = services.skill?.update;
+  if (typeof update !== "function") return;
+  try {
+    const { metaJson } = mergeSkillUsageStats(skill.metaJson, success);
+    await update.call(services.skill, { id: skill.id, metaJson } as never);
+  } catch (err) {
+    console.warn(
+      `[skillRunner] 写入 Skill 使用统计失败（${skill.name}）:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/** 执行 Skill：可执行代码走沙箱，否则返回 Prompt 指引；每次调用回写 metaJson.stats */
 export async function executeSkill(
   services: ServiceContainer,
   skillRef: string,
@@ -159,11 +247,12 @@ export async function executeSkill(
   const input = String(args.input ?? "");
   const context = args.context ? String(args.context) : undefined;
 
+  let result: unknown;
   if (isExecutableSkillCode(skill.code)) {
     try {
-      return await executeSkillInSandbox(skill, input, context);
+      result = await executeSkillInSandbox(skill, input, context);
     } catch (err: unknown) {
-      return {
+      result = {
         mode: "sandbox",
         skill: skill.name,
         error: err instanceof Error ? err.message : String(err),
@@ -172,16 +261,19 @@ export async function executeSkill(
         context,
       };
     }
+  } else {
+    result = {
+      mode: "prompt",
+      skill: skill.name,
+      description: skill.description,
+      trigger: skill.trigger,
+      instructions: skill.code,
+      input,
+      context,
+      message: `已加载 Skill「${skill.name}」。请严格遵循 instructions 处理 input${context ? "，并结合 context" : ""}。`,
+    };
   }
 
-  return {
-    mode: "prompt",
-    skill: skill.name,
-    description: skill.description,
-    trigger: skill.trigger,
-    instructions: skill.code,
-    input,
-    context,
-    message: `已加载 Skill「${skill.name}」。请严格遵循 instructions 处理 input${context ? "，并结合 context" : ""}。`,
-  };
+  await persistSkillUsage(services, skill, isSkillExecSuccess(result));
+  return result;
 }

@@ -104,6 +104,13 @@ describe("approvalGate destructive + TTL", () => {
     expect(toolRequiresApproval("git_diff")).toBe(false);
   });
 
+  it("Hermes skill_enable / skill_promote 默认需审批（与 git 同档）", () => {
+    expect(toolRequiresApproval("skill_enable")).toBe(true);
+    expect(toolRequiresApproval("skill_promote")).toBe(true);
+    expect(toolRequiresApproval("skill_discover")).toBe(false);
+    expect(toolRequiresApproval("generate_skill_from_experience")).toBe(false);
+  });
+
   it("REQUIRE_APPROVAL=false 全局关闭", () => {
     process.env.REQUIRE_APPROVAL = "false";
     process.env.AGENT_DESTRUCTIVE_APPROVAL = "true";

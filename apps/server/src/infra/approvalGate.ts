@@ -27,10 +27,19 @@ const APPROVAL_REQUIRED_OPS = new Set([
   "git_push",
   "git_commit",
   "git_pull",
+  // Hermes：draft 启用 / 跨 Agent 推广默认需人工审批（与 git 同档，不依赖 AGENT_DESTRUCTIVE_APPROVAL）
+  "skill_enable",
+  "skill_promote",
 ]);
 
-/** 经 native 执行层落库的写 Git 工具（approve-and-execute 走 executeNativeTool） */
-const NATIVE_GIT_WRITE_OPS = new Set(["git_commit", "git_pull", "git_push"]);
+/** 经 native 执行层落库、批准后走 executeNativeTool 的工具（git 写 + Hermes Skill 上线/推广） */
+const NATIVE_APPROVAL_EXECUTE_OPS = new Set([
+  "git_commit",
+  "git_pull",
+  "git_push",
+  "skill_enable",
+  "skill_promote",
+]);
 
 /**
  * AGENT_DESTRUCTIVE_APPROVAL=true 时，Agent native 删除类工具也需审批。
@@ -403,7 +412,7 @@ export async function executeApprovedOperation(
 
     let execResult: unknown;
 
-    if (isNativeApprovalTool(approval.toolName) || NATIVE_GIT_WRITE_OPS.has(approval.toolName)) {
+    if (isNativeApprovalTool(approval.toolName) || NATIVE_APPROVAL_EXECUTE_OPS.has(approval.toolName)) {
       const { executeNativeTool } = await import("./nativeTools.js");
       const { getAppConfig } = await import("./config.js");
       const config = getAppConfig();

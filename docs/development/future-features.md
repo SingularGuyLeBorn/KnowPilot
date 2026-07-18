@@ -168,20 +168,24 @@ session_rotate({
 
 ## 6. Agent 进化（Hermes 风格）
 
-> **决策（2026-07-18）**：**收窄**。保留「Run 后写 experience Memory」（已有）；**不做**默认全自动提炼 Skill / 心跳审查 / 无审批上线。  
-> 原因：生成物多为伪代码、discover 缺真实使用统计、单用户更需要可查经验而非自动造 Skill。  
-> 若以后要做：只产 `enabled=false` draft + 人工审批，再谈 promote。
+> **决策（2026-07-18，已纠偏）**：**需要**自动 Skill 进化闭环，但**必须** draft + 审批上线，禁止无统计假繁荣、禁止无审批跨 Workspace 推广。
 
-### 6.1 已有
+### 6.1 已落地
 
-- `accumulateExperience`（stream onDone）→ `Memory.type=experience`；防注入白名单已排除。
-- 工具半成品：`generate_skill_from_experience` / `skill_discover` / `skill_promote`（**未进默认 tools**）。
+| 环节 | 状态 |
+|---|---|
+| Run 后写 experience（跳过纯闲聊；stream + sync） | ✅ |
+| `generate_skill_from_experience` → `enabled=false` draft + 可执行 `run()` 骨架 | ✅ |
+| manager/super 默认工具接线 + tier 硬拦 | ✅ |
+| `executeSkill` 回写 `metaJson.stats`（usageCount/successRate） | ✅ |
+| `skill_discover` 仅收录有真实统计的已启用 Skill | ✅ |
+| `skill_enable` / `skill_promote` 默认走审批闸（与 git 同档） | ✅ |
+| 模板：manager 审 experience→draft；super 可 discover/promote | ✅ |
 
 ### 6.2 明确不做（当前阶段）
 
-- 管理 Agent 心跳自动审查 experience → Skill。
-- 超级 Agent 跨 Workspace 自动推广 Skill。
-- 无统计的 `skill_discover`「假繁荣」。
+- 心跳里**无人值守**自动 `generate`→`enable`→`promote`（可建议，不可跳过审批）。
+- 把进化逻辑塞进 `consolidateMemories`。
 
 ---
 

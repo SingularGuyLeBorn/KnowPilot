@@ -359,6 +359,7 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:free_api_keys_fetch",
     "native:free_models_list",
     "native:skill_discover",
+    "native:skill_enable",
     "native:skill_promote",
     "native:optimize_agent_prompt",
     "native:generate_skill_from_experience",
@@ -393,6 +394,7 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:free_models_list",
     "native:optimize_agent_prompt",
     "native:generate_skill_from_experience",
+    "native:skill_enable",
   ],
   sub: [
     "native:sleep",

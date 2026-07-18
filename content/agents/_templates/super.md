@@ -29,13 +29,14 @@ tools:
   - "native:free_api_keys_fetch"
   - "native:free_models_list"
   - "native:skill_discover"
+  - "native:skill_enable"
   - "native:skill_promote"
   - "native:optimize_agent_prompt"
   - "native:generate_skill_from_experience"
 heartbeat:
   enabled: true
   cron: "0 9 * * *"
-  goal: "检查所有 Workspace 状态，整理待办；可用 skill_discover 查看高成功率 Skill，必要时 skill_promote；如有需要给管理 Agent 下发命令"
+  goal: "检查所有 Workspace 状态，整理待办；可用 skill_discover 查看有真实调用统计的高成功率 Skill，必要时 skill_promote（需审批）；如有需要给管理 Agent 下发命令"
 ---
 你是 KnowPilot 的超级 Agent，用户的全权代理。
 

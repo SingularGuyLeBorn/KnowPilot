@@ -308,6 +308,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "free_api_keys_fetch",
   "free_models_list",
   "skill_discover",
+  "skill_enable",
   "skill_promote",
   "optimize_agent_prompt",
   "generate_skill_from_experience",

@@ -15,6 +15,7 @@ import { isSessionRunningClaimed } from "../../sessionRunningSignal.js";
 import { provisionWorkspace } from "../../workspaceProvision.js";
 import { checkWorkspaceAgentAccess } from "../../swarmPermissionGuard.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "../../agentEvolution.js";
+import { parseSkillUsageStats } from "../../skillRunner.js";
 import { resolveToolsForAgentTier } from "../../loop/setup.js";
 import { buildAllMemoryHints, buildSystemPromptWithHints } from "../../promptBuilder.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
@@ -1180,24 +1181,22 @@ async function freeModelsListTool(args: Record<string, unknown>, ctx: NativeTool
 async function skillDiscoverTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.prisma) return { error: "需要 prisma 上下文" };
   const minSuccessRate = (args.minSuccessRate as number) ?? 80;
+  const minUsageCount = Math.max(1, (args.minUsageCount as number) ?? 1);
   const limit = (args.limit as number) ?? 10;
-  // 查所有启用的 Skill
   const skills = await ctx.prisma.skill.findMany({
     where: { enabled: true },
     select: { id: true, name: true, description: true, icon: true, metaJson: true },
   });
-  // 按 Run 表中使用该 skill 的成功率排序
-  // Run.toolCalls 中可能包含 skill 调用记录，此处简化：按 skill name 在 Run 中出现次数排序
-  // 完整实现需要 Run 表记录 skill 调用明细，此处用 metaJson 中的统计作为近似
-  const candidates = skills.map((s) => {
-    let stats = { usageCount: 0, successRate: 100 };
-    try {
-      const meta = JSON.parse(s.metaJson || "{}");
-      if (meta.stats) stats = meta.stats;
-    } catch { /* ignore */ }
-    return { ...s, ...stats };
-  }).filter((s) => s.successRate >= minSuccessRate)
-    .sort((a, b) => b.usageCount - a.usageCount)
+  // 只用 executeSkill 回写的 metaJson.stats；无真实调用不进榜（杜绝默认 100% 假繁荣）
+  const candidates = skills
+    .map((s) => {
+      const stats = parseSkillUsageStats(s.metaJson);
+      if (!stats) return null;
+      return { ...s, ...stats };
+    })
+    .filter((s): s is NonNullable<typeof s> => !!s)
+    .filter((s) => s.usageCount >= minUsageCount && s.successRate >= minSuccessRate)
+    .sort((a, b) => b.usageCount - a.usageCount || b.successRate - a.successRate)
     .slice(0, limit);
 
   return {
@@ -1209,8 +1208,49 @@ async function skillDiscoverTool(args: Record<string, unknown>, ctx: NativeToolC
       icon: s.icon,
       usageCount: s.usageCount,
       successRate: s.successRate,
+      lastUsedAt: s.lastUsedAt || undefined,
     })),
-    hint: "使用 skill_promote 将优秀 Skill 推广到其他 Workspace 的 Agent。",
+    hint: "仅含有真实调用统计的已启用 Skill。推广前确认目标 Agent；skill_promote 需人工审批。",
+  };
+}
+
+async function skillEnableTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const skillId = String(args.skillId || "");
+  if (!skillId) return { error: "skill_enable 需要 skillId" };
+  const skill = await ctx.services.skill.getById(skillId);
+  if (!skill) return { error: `Skill ${skillId} 不存在` };
+  if (skill.enabled) {
+    return { success: true, alreadyEnabled: true, skillId, name: skill.name, message: `Skill ${skill.name} 已启用。` };
+  }
+  let meta: Record<string, unknown> = {};
+  try {
+    meta = JSON.parse(skill.metaJson || "{}") as Record<string, unknown>;
+  } catch {
+    meta = {};
+  }
+  meta.draft = false;
+  meta.enabledAt = new Date().toISOString();
+  meta.enabledByAgentId = ctx.agentSnapshot?.id ?? null;
+  const updated = await ctx.services.skill.update({
+    id: skillId,
+    enabled: true,
+    metaJson: JSON.stringify(meta),
+  } as never);
+  if (!updated.success) {
+    return { error: updated.error?.message ?? "启用失败" };
+  }
+  await ctx.services.log?.create?.({
+    level: "info",
+    component: "swarm",
+    event: "skill_enabled",
+    message: `Skill ${skill.name} 已启用（经审批）`,
+    metadata: { skillId, skillName: skill.name, operatorAgentId: ctx.agentSnapshot?.id },
+  }).catch(() => {});
+  return {
+    success: true,
+    skillId,
+    name: skill.name,
+    message: `Skill ${skill.name} 已启用，可被 Agent 调度；跨 Workspace 推广请用 skill_promote（亦需审批）。`,
   };
 }
 
@@ -1220,9 +1260,11 @@ async function skillPromoteTool(args: Record<string, unknown>, ctx: NativeToolCo
   if (!skillId || targetAgentIds.length === 0) {
     return { error: "skill_promote 需要 skillId 和 targetAgentIds" };
   }
-  // 验证 Skill 存在
   const skill = await ctx.services.skill.getById(skillId);
   if (!skill) return { error: `Skill ${skillId} 不存在` };
+  if (!skill.enabled) {
+    return { error: `Skill ${skill.name} 仍是 draft（未启用）。请先 skill_enable 经审批启用后再推广。` };
+  }
   const skillToolName = `skill:${skill.name}`;
   let promoted = 0;
   const errors: string[] = [];
@@ -1235,7 +1277,6 @@ async function skillPromoteTool(args: Record<string, unknown>, ctx: NativeToolCo
         errors.push(`Agent ${agent.name} 已有 Skill ${skill.name}`);
         continue;
       }
-      // 加入 Skill 到工具列表
       await ctx.services.agent.update({
         id: agentId,
         tools: [...currentTools, skillToolName],
@@ -1245,7 +1286,6 @@ async function skillPromoteTool(args: Record<string, unknown>, ctx: NativeToolCo
       errors.push(`Agent ${agentId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  // 审计日志
   await ctx.services.log?.create?.({
     level: "info", component: "swarm", event: "skill_promoted",
     message: `Skill ${skill.name} 推广到 ${promoted} 个 Agent`,
@@ -1478,18 +1518,31 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "skill_discover",
-    reentrant: true, // 只读：Skill/Run 统计扫描
-    description: "发现跨 Workspace 的优秀 Skill（超级 Agent 专用，Hermes 进化 #45）。扫描所有 Skill，按使用频率/成功率排序，返回值得推广的候选。",
+    reentrant: true, // 只读：Skill metaJson.stats 扫描
+    description:
+      "发现值得推广的 Skill（超级 Agent，Hermes）。仅返回已启用且有真实调用统计（executeSkill 回写）的候选，按 usageCount/successRate 排序。",
     parameters: zodParams(
       z.object({
         minSuccessRate: z.number().describe("最低成功率阈值（0-100），默认 80").optional(),
+        minUsageCount: z.number().describe("最低调用次数，默认 1（无统计不进榜）").optional(),
         limit: z.number().describe("返回数量上限，默认 10").optional(),
       }),
     ),
   },
   {
+    name: "skill_enable",
+    description:
+      "启用 Skill draft（enabled=false→true，管理 Agent+，Hermes）。默认需人工审批；启用后才会进入 Agent 调度与 skill_discover。",
+    parameters: zodParams(
+      z.object({
+        skillId: z.string().describe("要启用的 Skill id"),
+      }),
+    ),
+  },
+  {
     name: "skill_promote",
-    description: "将一个优秀 Skill 推广到其他 Workspace（超级 Agent 专用，Hermes 进化 #45）。把 Skill 复制到目标 Workspace 的 Agent 工具列表中。",
+    description:
+      "将已启用的优秀 Skill 加入目标 Agent 工具列表（超级 Agent，Hermes）。默认需人工审批；未启用的 draft 不可推广。",
     parameters: zodParams(
       z.object({
         skillId: z.string().describe("要推广的 Skill id"),
@@ -1509,7 +1562,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   {
     name: "generate_skill_from_experience",
     description:
-      "从 Agent 运行经验中生成 Skill **draft**（管理 Agent+，Hermes）。分析高频工具组合；新建 Skill 默认 enabled=false，需人工启用后再推广。",
+      "从 Agent 运行经验中生成 Skill **draft**（管理 Agent+，Hermes）。分析高频工具组合；新建 Skill 默认 enabled=false，需 skill_enable 审批启用后再推广。",
     parameters: zodParams(
       z.object({
         agentId: z.string().describe("分析哪个 Agent 的经验"),
@@ -1537,6 +1590,7 @@ const SWARM_HANDLERS: Record<string, NativeToolHandler> = {
   free_api_keys_fetch: freeApiKeysFetchTool,
   free_models_list: freeModelsListTool,
   skill_discover: skillDiscoverTool,
+  skill_enable: skillEnableTool,
   skill_promote: skillPromoteTool,
   optimize_agent_prompt: optimizeAgentPromptTool,
   generate_skill_from_experience: generateSkillFromExperienceTool,
