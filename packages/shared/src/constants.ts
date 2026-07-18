@@ -429,6 +429,13 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:yuque_update_doc",
   "native:yuque_delete_doc",
   "native:feishu_token_status",
+  "native:feishu_list_doc_whiteboards",
+  "native:feishu_list_whiteboard_nodes",
+  "native:feishu_create_whiteboard_nodes",
+  "native:feishu_whiteboard_from_diagram",
+  "native:feishu_delete_whiteboard_nodes",
+  "native:feishu_get_whiteboard_theme",
+  "native:feishu_update_whiteboard_theme",
   "skill:*",
   "mcp:filesystem",
 ];

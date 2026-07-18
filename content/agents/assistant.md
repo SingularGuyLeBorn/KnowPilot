@@ -45,6 +45,13 @@ tools:
   - "native:yuque_update_doc"
   - "native:yuque_delete_doc"
   - "native:feishu_token_status"
+  - "native:feishu_list_doc_whiteboards"
+  - "native:feishu_list_whiteboard_nodes"
+  - "native:feishu_create_whiteboard_nodes"
+  - "native:feishu_whiteboard_from_diagram"
+  - "native:feishu_delete_whiteboard_nodes"
+  - "native:feishu_get_whiteboard_theme"
+  - "native:feishu_update_whiteboard_theme"
   - "skill:*"
   - "mcp:filesystem"
 ---
@@ -54,7 +61,7 @@ tools:
 
 - **GitHub**：`github_search_repos` / `github_get_*` / `github_list_*`；创建 issue 用 `github_create_issue`（需 GITHUB_TOKEN）。
 - **语雀**：优先 `yuque_list_books` → `yuque_get_book_toc` → `yuque_create_doc` / `yuque_update_doc`（Cookie 会话，勿用 Open API v2 工具除非另有 Token）。
-- **飞书**：当前仅 `feishu_token_status` 可诊断凭证；应用未开机器人时不能发消息，文档搜索接口待修。
+- **飞书画板**：文档里先 `feishu_list_doc_whiteboards` 拿 `whiteboardId`，再用 `feishu_whiteboard_from_diagram`（mermaid/plantuml，默认覆盖）画流程图；精细节点用 `feishu_create_whiteboard_nodes`。需开放平台权限 `board:whiteboard:node:read/create/delete`。发消息仍需应用开通机器人。
 
 ## 网络工具建议流程
 

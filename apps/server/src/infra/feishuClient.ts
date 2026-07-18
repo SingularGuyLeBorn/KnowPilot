@@ -198,7 +198,7 @@ export async function feishuApi<T = unknown>(
 
   if (explicitToken) {
     token = explicitToken;
-  } else if (options.useUserToken || path.startsWith("/wiki/")) {
+  } else if (options.useUserToken || path.startsWith("/wiki/") || path.startsWith("/board/")) {
     if (!prisma || !config) throw new Error("调用 user_token 接口需要提供 prisma 与 config");
     token = await getUserAccessToken(prisma, config);
   }
@@ -375,6 +375,188 @@ export async function feishuAppendSpreadsheetValues(
       body: {
         valueRange: { range, values },
       },
+      useUserToken: true,
+    },
+    prisma,
+    config,
+  );
+}
+
+/* ─── 画板 board-v1（文档内 block_type=43，token = whiteboard_id）─── */
+
+/** 文档块类型：画板 */
+export const FEISHU_BLOCK_TYPE_BOARD = 43;
+
+export type FeishuWhiteboardRef = {
+  whiteboardId: string;
+  blockId: string;
+  parentId?: string;
+};
+
+/**
+ * 列出文档内所有画板（分页拉齐 blocks，筛 block_type=43）。
+ * whiteboard_id = block.board.token（或兼容 block.token）。
+ */
+export async function feishuListDocWhiteboards(
+  documentId: string,
+  prisma: PrismaClient,
+  config: AppConfig,
+): Promise<FeishuWhiteboardRef[]> {
+  type BlockRow = {
+    block_id?: string;
+    parent_id?: string;
+    block_type?: number;
+    token?: string;
+    board?: { token?: string };
+  };
+  type BlocksPage = { items?: BlockRow[]; page_token?: string; has_more?: boolean };
+
+  const out: FeishuWhiteboardRef[] = [];
+  let pageToken: string | undefined;
+  for (let i = 0; i < 50; i++) {
+    const page = await feishuApi<BlocksPage>(
+      `/docx/v1/documents/${encodeURIComponent(documentId)}/blocks`,
+      {
+        method: "GET",
+        query: { page_size: 500, page_token: pageToken },
+        useUserToken: true,
+      },
+      prisma,
+      config,
+    );
+    for (const b of page?.items ?? []) {
+      if (b.block_type !== FEISHU_BLOCK_TYPE_BOARD) continue;
+      const whiteboardId = b.board?.token || b.token;
+      if (!whiteboardId || !b.block_id) continue;
+      out.push({ whiteboardId, blockId: b.block_id, parentId: b.parent_id });
+    }
+    if (!page?.has_more || !page.page_token) break;
+    pageToken = page.page_token;
+  }
+  return out;
+}
+
+export async function feishuListWhiteboardNodes(
+  whiteboardId: string,
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  return feishuApi(
+    `/board/v1/whiteboards/${encodeURIComponent(whiteboardId)}/nodes`,
+    { method: "GET", useUserToken: true },
+    prisma,
+    config,
+  );
+}
+
+export async function feishuCreateWhiteboardNodes(
+  whiteboardId: string,
+  nodes: unknown[],
+  options: { overwrite?: boolean; clientToken?: string },
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    throw new Error("nodes 不能为空数组");
+  }
+  return feishuApi(
+    `/board/v1/whiteboards/${encodeURIComponent(whiteboardId)}/nodes`,
+    {
+      method: "POST",
+      query: options.clientToken ? { client_token: options.clientToken } : undefined,
+      body: {
+        nodes,
+        ...(options.overwrite ? { overwrite: true } : {}),
+      },
+      useUserToken: true,
+    },
+    prisma,
+    config,
+  );
+}
+
+/**
+ * 用 PlantUML / Mermaid / SVG 源码写入画板（官方 plantuml 导入接口，syntax_type: 1/2/3）。
+ * 对 Agent 最友好的「画流程图」路径；overwrite=true 时整板覆盖。
+ */
+export async function feishuWhiteboardFromDiagram(
+  whiteboardId: string,
+  code: string,
+  format: "plantuml" | "mermaid" | "svg",
+  options: { overwrite?: boolean; clientToken?: string },
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  const syntaxType = format === "plantuml" ? 1 : format === "mermaid" ? 2 : 3;
+  return feishuApi(
+    `/board/v1/whiteboards/${encodeURIComponent(whiteboardId)}/nodes/plantuml`,
+    {
+      method: "POST",
+      query: options.clientToken ? { client_token: options.clientToken } : undefined,
+      body: {
+        plant_uml_code: code,
+        syntax_type: syntaxType,
+        parse_mode: 1,
+        diagram_type: 0,
+        ...(options.overwrite ? { overwrite: true } : {}),
+      },
+      useUserToken: true,
+    },
+    prisma,
+    config,
+  );
+}
+
+export async function feishuDeleteWhiteboardNodes(
+  whiteboardId: string,
+  ids: string[],
+  options: { clientToken?: string },
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new Error("ids 不能为空");
+  }
+  if (ids.length > 100) {
+    throw new Error("单次最多删除 100 个节点，请分批调用");
+  }
+  return feishuApi(
+    `/board/v1/whiteboards/${encodeURIComponent(whiteboardId)}/nodes/batch_delete`,
+    {
+      method: "DELETE",
+      query: options.clientToken ? { client_token: options.clientToken } : undefined,
+      body: { ids },
+      useUserToken: true,
+    },
+    prisma,
+    config,
+  );
+}
+
+export async function feishuGetWhiteboardTheme(
+  whiteboardId: string,
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  return feishuApi(
+    `/board/v1/whiteboards/${encodeURIComponent(whiteboardId)}/theme`,
+    { method: "GET", useUserToken: true },
+    prisma,
+    config,
+  );
+}
+
+export async function feishuUpdateWhiteboardTheme(
+  whiteboardId: string,
+  theme: string,
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  return feishuApi(
+    `/board/v1/whiteboards/${encodeURIComponent(whiteboardId)}/update_theme`,
+    {
+      method: "POST",
+      body: { theme },
       useUserToken: true,
     },
     prisma,

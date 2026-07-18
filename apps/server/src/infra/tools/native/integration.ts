@@ -45,6 +45,13 @@ import {
   feishuGetWikiNodes,
   feishuCreateSpreadsheet,
   feishuAppendSpreadsheetValues,
+  feishuListDocWhiteboards,
+  feishuListWhiteboardNodes,
+  feishuCreateWhiteboardNodes,
+  feishuWhiteboardFromDiagram,
+  feishuDeleteWhiteboardNodes,
+  feishuGetWhiteboardTheme,
+  feishuUpdateWhiteboardTheme,
   getUserAccessTokenStatus,
   refreshUserAccessToken,
 } from "../../feishuClient.js";
@@ -533,6 +540,77 @@ async function feishuAppendSpreadsheetValuesTool(args: Record<string, unknown>, 
 async function feishuTokenStatusTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
   return getUserAccessTokenStatus(ctx.prisma, ctx.config);
+}
+
+async function feishuListDocWhiteboardsTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const boards = await feishuListDocWhiteboards(String(args.documentId), ctx.prisma, ctx.config);
+  return { count: boards.length, boards };
+}
+
+async function feishuListWhiteboardNodesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuListWhiteboardNodes(String(args.whiteboardId), ctx.prisma, ctx.config);
+}
+
+async function feishuCreateWhiteboardNodesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const nodes = args.nodes;
+  if (!Array.isArray(nodes)) throw new Error("nodes 必须是数组（board-v1 节点结构）");
+  return feishuCreateWhiteboardNodes(
+    String(args.whiteboardId),
+    nodes,
+    {
+      overwrite: args.overwrite === true,
+      clientToken: args.clientToken ? String(args.clientToken) : undefined,
+    },
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuWhiteboardFromDiagramTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const format = String(args.format || "mermaid") as "plantuml" | "mermaid" | "svg";
+  if (!["plantuml", "mermaid", "svg"].includes(format)) {
+    throw new Error("format 必须是 plantuml | mermaid | svg");
+  }
+  const code = String(args.code || "").trim();
+  if (!code) throw new Error("code 不能为空");
+  return feishuWhiteboardFromDiagram(
+    String(args.whiteboardId),
+    code,
+    format,
+    {
+      overwrite: args.overwrite !== false, // 默认覆盖，避免叠一层旧图
+      clientToken: args.clientToken ? String(args.clientToken) : undefined,
+    },
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuDeleteWhiteboardNodesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const ids = args.ids;
+  if (!Array.isArray(ids) || ids.length === 0) throw new Error("ids 必须为非空字符串数组");
+  return feishuDeleteWhiteboardNodes(
+    String(args.whiteboardId),
+    ids.map(String),
+    { clientToken: args.clientToken ? String(args.clientToken) : undefined },
+    ctx.prisma,
+    ctx.config,
+  );
+}
+
+async function feishuGetWhiteboardThemeTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuGetWhiteboardTheme(String(args.whiteboardId), ctx.prisma, ctx.config);
+}
+
+async function feishuUpdateWhiteboardThemeTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuUpdateWhiteboardTheme(String(args.whiteboardId), String(args.theme), ctx.prisma, ctx.config);
 }
 
 async function feishuRefreshTokenTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -1178,6 +1256,91 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     parameters: zodParams(z.object({})),
   },
   {
+    name: "feishu_list_doc_whiteboards",
+    reentrant: true,
+    concurrencyClass: "B",
+    description:
+      "列出飞书文档内的画板（board-v1）。文档块 block_type=43，返回 whiteboardId（= block.board.token）。编辑画板前先调此工具拿 id。需 board:whiteboard:node:read + 文档读权限。",
+    parameters: zodParams(
+      z.object({
+        documentId: z.string().describe("文档 document_id / token"),
+      }),
+    ),
+  },
+  {
+    name: "feishu_list_whiteboard_nodes",
+    reentrant: true,
+    concurrencyClass: "B",
+    description: "获取画板全部节点树（GET board/v1/.../nodes）。需 board:whiteboard:node:read。",
+    parameters: zodParams(
+      z.object({
+        whiteboardId: z.string().describe("画板 id（feishu_list_doc_whiteboards 返回）"),
+      }),
+    ),
+  },
+  {
+    name: "feishu_create_whiteboard_nodes",
+    concurrencyClass: "D",
+    destructive: true,
+    description:
+      "在画板上批量创建节点（原生 board-v1 节点 JSON：sticky_note / composite_shape / connector / mind_map 等）。overwrite=true 时先清空再写入。一般流程图优先用 feishu_whiteboard_from_diagram（mermaid/plantuml）。需 board:whiteboard:node:create。",
+    parameters: zodParams(
+      z.object({
+        whiteboardId: z.string(),
+        nodes: z.array(z.record(z.unknown())).describe("whiteboard.node[]，见飞书 board-v1 数据结构"),
+        overwrite: z.boolean().describe("是否覆盖整板，默认 false").optional(),
+        clientToken: z.string().describe("幂等 token（≥10 字符）").optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_whiteboard_from_diagram",
+    concurrencyClass: "D",
+    destructive: true,
+    description:
+      "用 Mermaid / PlantUML / SVG 源码写入飞书画板（POST .../nodes/plantuml）。推荐路径：先 feishu_list_doc_whiteboards 取 whiteboardId，再传 mermaid/plantuml 代码；默认 overwrite=true 覆盖旧图。需 board:whiteboard:node:create。",
+    parameters: zodParams(
+      z.object({
+        whiteboardId: z.string(),
+        code: z.string().describe("Mermaid / PlantUML / SVG 源码"),
+        format: z.enum(["mermaid", "plantuml", "svg"]).describe("默认 mermaid").optional(),
+        overwrite: z.boolean().describe("默认 true：覆盖整板").optional(),
+        clientToken: z.string().describe("幂等 token（≥10 字符）").optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_delete_whiteboard_nodes",
+    concurrencyClass: "D",
+    destructive: true,
+    description: "批量删除画板节点（含子节点递归）。单次最多 100 个 id。需 board:whiteboard:node:delete。",
+    parameters: zodParams(
+      z.object({
+        whiteboardId: z.string(),
+        ids: z.array(z.string()).describe("节点 id 列表"),
+        clientToken: z.string().optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_get_whiteboard_theme",
+    reentrant: true,
+    concurrencyClass: "B",
+    description: "获取画板主题。",
+    parameters: zodParams(z.object({ whiteboardId: z.string() })),
+  },
+  {
+    name: "feishu_update_whiteboard_theme",
+    concurrencyClass: "D",
+    description: "更新画板主题：classic / minimalist_gray / retro / vibrant_color / default。",
+    parameters: zodParams(
+      z.object({
+        whiteboardId: z.string(),
+        theme: z.enum(["classic", "minimalist_gray", "retro", "vibrant_color", "default"]),
+      }),
+    ),
+  },
+  {
     name: "send_email",
     description: "发送邮件通知用户（任务完成、预算耗尽、心跳失败等）。需配置 EMAIL_PROVIDER 环境变量。",
     parameters: zodParams(
@@ -1246,6 +1409,13 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_append_spreadsheet_values: feishuAppendSpreadsheetValuesTool,
   feishu_token_status: feishuTokenStatusTool,
   feishu_refresh_token: feishuRefreshTokenTool,
+  feishu_list_doc_whiteboards: feishuListDocWhiteboardsTool,
+  feishu_list_whiteboard_nodes: feishuListWhiteboardNodesTool,
+  feishu_create_whiteboard_nodes: feishuCreateWhiteboardNodesTool,
+  feishu_whiteboard_from_diagram: feishuWhiteboardFromDiagramTool,
+  feishu_delete_whiteboard_nodes: feishuDeleteWhiteboardNodesTool,
+  feishu_get_whiteboard_theme: feishuGetWhiteboardThemeTool,
+  feishu_update_whiteboard_theme: feishuUpdateWhiteboardThemeTool,
   send_email: sendEmailTool,
 };
 
