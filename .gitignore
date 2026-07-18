@@ -87,6 +87,14 @@ e2e-setup-marker.txt
 undefined
 .test-content-e2e/
 
+# 本地 OAuth / Cookie 凭证（勿提交）
+content/cookies/
+
+# 本地临时探测脚本（_ 前缀）与飞书实验脚本
+apps/server/src/scripts/_feishu*.ts
+apps/server/src/scripts/_yuque*.ts
+experiments/feishu-api/
+
 # Python virtual env / cache
 experiments/.venv/
 experiments/**/__pycache__/
