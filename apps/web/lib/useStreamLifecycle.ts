@@ -30,7 +30,7 @@
  * 队列、optimistic、abort 不进本 store（见 useSessionComposeState）。
  */
 
-import { useSyncExternalStore, useMemo } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type { TimelineStep } from "@/lib/chatMessageUtils";
 
 export type StreamPhase = "idle" | "streaming" | "done" | "error";
@@ -302,13 +302,17 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
 
 class StreamLifecycleStore {
   private state: LifecycleMap = new Map();
-  private listeners = new Set<Listener>();
+  /** listener → 只关心的 sessionId；null = 全局（序列化/测试） */
+  private listeners = new Map<Listener, string | null>();
   private commitListeners = new Set<CommitListener>();
 
   getState = (): LifecycleMap => this.state;
 
-  subscribe = (listener: Listener): (() => void) => {
-    this.listeners.add(listener);
+  /**
+   * @param filterSessionId 传入时仅该 session 的 action 触发回调（token 热路径减扇出）
+   */
+  subscribe = (listener: Listener, filterSessionId?: string | null): (() => void) => {
+    this.listeners.set(listener, filterSessionId === undefined ? null : filterSessionId);
     return () => {
       this.listeners.delete(listener);
     };
@@ -331,6 +335,18 @@ class StreamLifecycleStore {
     }
   };
 
+  private notifyListeners = (changedSessionIds: string[]): void => {
+    for (const [listener, filter] of this.listeners) {
+      if (filter == null || changedSessionIds.includes(filter)) {
+        try {
+          listener();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  };
+
   dispatch = (action: Action): void => {
     const occupiedBefore = new Map<string, StreamPhase>();
     const drainBefore = new Map<string, boolean>();
@@ -339,12 +355,10 @@ class StreamLifecycleStore {
       drainBefore.set(sid, st.drainRequested);
     }
     this.state = reducer(this.state, action);
-    for (const listener of this.listeners) {
-      try {
-        listener();
-      } catch {
-        /* ignore */
-      }
+    if (action.type === "MIGRATE_STREAM_SESSION") {
+      this.notifyListeners([action.fromKey, action.toSessionId]);
+    } else {
+      this.notifyListeners([action.sessionId]);
     }
     // 任意 session 进入 idle 时通知 Compose drain（INV-2 / INV-8 ②）
     for (const [sid, st] of this.state) {
@@ -573,8 +587,12 @@ export function useStreamLifecycle(sessionId: string | null | undefined): {
 } {
   const store = getStore();
   const key = sessionId ?? "";
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => store.subscribe(onStoreChange, key),
+    [store, key],
+  );
   const state = useSyncExternalStore(
-    store.subscribe,
+    subscribe,
     () => store.getState().get(key) ?? EMPTY_STATE,
     () => EMPTY_STATE,
   );
