@@ -27,11 +27,12 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
         className,
       )}
     >
-      <div className="flex h-14 w-full items-center gap-4 px-4 md:px-6">
+      <div className="flex h-14 w-full items-center gap-3 px-3 md:gap-4 md:px-6">
         {showMobileMenu && (
           <button
+            type="button"
             onClick={onMenuClick}
-            className="rounded-lg p-2 text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] lg:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-[var(--kp-text-2)] transition hover:bg-[var(--kp-bg-mute)] lg:hidden"
             aria-label="打开菜单"
           >
             <Menu className="h-5 w-5" />
@@ -46,7 +47,8 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           <span className="hidden sm:inline">KnowPilot</span>
         </Link>
 
-        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        {/* 桌面顶栏；窄屏改走底栏，避免横向挤爆 */}
+        <nav className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex">
           <TopNavLink href="/posts" active={pathname.startsWith("/posts")} icon={<PenLine className="h-4 w-4" />}>
             文章
           </TopNavLink>
@@ -61,7 +63,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           </TopNavLink>
         </nav>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
           <CommandPalette />
           <ThemeToggle />
         </div>

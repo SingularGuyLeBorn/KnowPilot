@@ -146,9 +146,12 @@ export function ChatCenterPane({
           title={leftOpen ? "折叠左侧栏" : "展开左侧栏"}
           aria-label={leftOpen ? "折叠左侧栏" : "展开左侧栏"}
           aria-pressed={leftOpen}
-          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "icon" }),
+            "h-11 w-11 shrink-0 md:h-8 md:w-8",
+          )}
         >
-          <PanelLeft className="h-4 w-4" />
+          <PanelLeft className="h-5 w-5 md:h-4 md:w-4" />
         </button>
         <Bot className="h-5 w-5 shrink-0 text-[var(--kp-brand)]" />
         <div className="min-w-0 flex-1">

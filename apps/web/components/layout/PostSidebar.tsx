@@ -9,6 +9,7 @@ import { FolderOpen, PlusCircle } from "lucide-react";
 
 interface PostSidebarProps {
   className?: string;
+  onNavigate?: () => void;
 }
 
 const SIDEBAR_WIDTH_KEY = "kp-post-sidebar-width";
@@ -18,7 +19,7 @@ const DEFAULT_WIDTH = 280;
 
 /** 文章专用侧栏 — 仅文档目录树，与系统导航完全分离（对齐 MetaBlog GlobalSidebar）
  *  支持拖拽调整宽度（持久化到 localStorage） */
-export function PostSidebar({ className }: PostSidebarProps) {
+export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
   const pathname = usePathname();
   const [width, setWidth] = useState(() => {
     try {
@@ -73,7 +74,12 @@ export function PostSidebar({ className }: PostSidebarProps) {
         "relative flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]",
         className,
       )}
-      style={{ width: `${width}px` }}
+      style={onNavigate ? undefined : { width: `${width}px` }}
+      onClickCapture={(e) => {
+        if (!onNavigate) return;
+        const t = e.target as HTMLElement | null;
+        if (t?.closest("a[href]")) onNavigate();
+      }}
     >
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
         <div className="flex items-center gap-2">
@@ -82,8 +88,9 @@ export function PostSidebar({ className }: PostSidebarProps) {
         </div>
         <Link
           href="/editor"
+          onClick={() => onNavigate?.()}
           className={cn(
-            "flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition",
+            "flex min-h-11 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition",
             pathname.startsWith("/editor")
               ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
               : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
@@ -95,12 +102,14 @@ export function PostSidebar({ className }: PostSidebarProps) {
         </Link>
       </div>
       <PostTreeNav className="min-h-0 flex-1" />
-      {/* 拖拽调整宽度的手柄 */}
-      <div
-        onMouseDown={handleMouseDown}
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--kp-brand)]/30 active:bg-[var(--kp-brand)]/50"
-        aria-label="拖拽调整侧栏宽度"
-      />
+      {/* 拖拽调整宽度的手柄（移动抽屉不展示） */}
+      {!onNavigate && (
+        <div
+          onMouseDown={handleMouseDown}
+          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--kp-brand)]/30 active:bg-[var(--kp-brand)]/50"
+          aria-label="拖拽调整侧栏宽度"
+        />
+      )}
     </aside>
   );
 }

@@ -6,7 +6,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Cloud, Lock, Shield, ExternalLink, Palette } from "lucide-react";
+import { Cloud, Lock, Shield, ExternalLink, Palette, Smartphone } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { clearAuthToken } from "@/lib/auth";
 import { LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
@@ -25,17 +25,48 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--kp-bg)] p-6 md:p-8 space-y-6">
+    <div className="flex-1 space-y-5 overflow-y-auto bg-[var(--kp-bg)] px-3 py-4 sm:space-y-6 sm:p-6 md:p-8">
       <PageHeader
         title="远程访问与安全"
-        description="通过 Cloudflare Tunnel 暴露公网时，建议同时启用 Access 或 AUTH_MODE 密码保护。"
+        description="通过 Cloudflare Tunnel 暴露公网时，建议同时启用 Access 或 AUTH_MODE 密码保护。手机请用下方 PUBLIC_URL 访问。"
       />
 
       {isLoading || !data ? (
         <LoadingState count={2} />
       ) : (
-        <div className="grid gap-6 md:grid-cols-2">
-          <section className="rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-6 space-y-4">
+        <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
+          <section className="space-y-3 rounded-2xl border border-[var(--kp-brand)]/25 bg-[var(--kp-brand-soft)]/40 p-4 sm:space-y-4 sm:p-6 md:col-span-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
+              <Smartphone className="h-4 w-4 text-[var(--kp-brand-deep)]" />
+              手机远程访问
+            </div>
+            <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-[var(--kp-text-2)]">
+              <li>
+                用手机浏览器打开{" "}
+                {data.remote.publicUrl ? (
+                  <a
+                    href={data.remote.publicUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all font-medium text-[var(--kp-brand-deep)] underline"
+                  >
+                    {data.remote.publicUrl}
+                  </a>
+                ) : (
+                  <span className="font-mono">PUBLIC_URL</span>
+                )}
+                （不要用局域网 IP 硬刚 NAT，优先 Tunnel）。
+              </li>
+              <li>
+                公网场景务必 <code className="rounded bg-black/5 px-1 font-mono">AUTH_MODE=password</code>
+                ，或叠加 Cloudflare Access。
+              </li>
+              <li>底部导航：首页 / 博客 / Chat / 更多；Chat 左栏在手机上是全屏叠层，点左上角面板图标打开。</li>
+              <li>可「添加到主屏幕」做成类 App 入口（见浏览器分享菜单）；不支持离线使用。</li>
+            </ul>
+          </section>
+
+          <section className="space-y-4 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
               <Lock className="h-4 w-4 text-[var(--kp-brand-deep)]" />
               应用鉴权
@@ -111,7 +142,7 @@ export default function SettingsPage() {
               <li>在 Zero Trust → Access → Applications 为 Tunnel 域名创建 Self-hosted 应用</li>
               <li>Policy 选择 One-time PIN 或 Google / GitHub 登录</li>
               <li>与 AUTH_MODE=password 叠加可形成双重保护</li>
-              <li>详见项目文档 docs/deployment/cloudflare-tunnel.md</li>
+              <li>详见项目文档 docs/development/cloudflare-tunnel.md</li>
             </ol>
           </section>
         </div>

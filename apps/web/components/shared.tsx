@@ -915,7 +915,7 @@ export function PageHeader({
         <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight text-[var(--kp-text-1)]">{title}</h1>
           {description && (
-            <p className="mt-0.5 truncate text-xs text-[var(--kp-text-3)]" title={description}>
+            <p className="mt-0.5 text-xs text-[var(--kp-text-3)] whitespace-normal break-words leading-relaxed max-w-3xl">
               {description}
             </p>
           )}
@@ -960,7 +960,8 @@ export function AdminPage({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-y-auto bg-[var(--kp-bg)] px-4 py-6 md:px-8 md:py-8",
+        "mx-auto w-full max-w-[1400px] flex-1 space-y-4 overflow-y-auto overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6 md:px-8 md:py-8",
+        "[&_.kp-table-scroll]:overflow-x-auto [&_.kp-table-scroll]:overscroll-x-contain",
         className,
       )}
     >
@@ -980,7 +981,7 @@ export function AdminFormShell({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1400px] flex-1 space-y-6 overflow-y-auto bg-[var(--kp-bg)] px-4 py-6 md:px-8 md:py-8",
+        "mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-y-auto overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6 md:px-8 md:py-8",
         className,
       )}
     >

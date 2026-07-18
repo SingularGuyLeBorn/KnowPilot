@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * useChatUiPrefs —— Chat 两栏 UI 偏好（左栏开关、左栏标签、历史子标签）。
+ * useChatUiPrefs — Chat 两栏 UI 偏好（左栏开关、左栏标签、历史子标签）。
  *
  * 【存储持久化群】localStorage 读写合一：原 chat.tsx 两个 effect（mount 水合 + 变化写回）
  * 归并为一个——首轮（未水合）走水合分支 return 不写回；水合引发的 state 更新触发
@@ -11,6 +11,8 @@
  * leftTab: history=对话，runtime=运行（投递队列 + Task 追溯）。
  * 旧值 leftTab:"async" / URL ?panel=async 均映射为 runtime。
  * 右栏偏好（rightOpen/rightTab）已拆除，读时忽略、写时不再存。
+ *
+ * 窄屏（<md）：左栏默认关闭且不把 leftOpen 写回 localStorage，避免手机叠层状态污染桌面偏好。
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -24,6 +26,11 @@ export type ChatUiPrefs = {
   leftTab: ChatLeftTab;
   historySubTab: "main" | "sub";
 };
+
+function isMobileViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 767px)").matches;
+}
 
 function normalizeLeftTab(raw: unknown, panel?: string | null): ChatLeftTab {
   if (panel === "async" || panel === "runtime") return "runtime";
@@ -64,7 +71,7 @@ function writeChatUiPrefs(prefs: ChatUiPrefs) {
 type SearchParamsLike = Pick<URLSearchParams, "get">;
 
 export function useChatUiPrefs(searchParams: SearchParamsLike) {
-  const [leftOpen, setLeftOpen] = useState(true);
+  const [leftOpen, setLeftOpen] = useState(false);
   const [leftTab, setLeftTab] = useState<ChatLeftTab>("history");
   const [historySubTab, setHistorySubTab] = useState<"main" | "sub">("main");
   const hydratedRef = useRef(false);
@@ -75,12 +82,19 @@ export function useChatUiPrefs(searchParams: SearchParamsLike) {
       const prefs = readChatUiPrefs();
       const view = searchParams.get("view");
       const panel = searchParams.get("panel");
-      setLeftOpen(prefs.leftOpen);
+      // 窄屏单栏：默认收起左栏叠层；桌面沿用持久化偏好
+      setLeftOpen(isMobileViewport() ? false : prefs.leftOpen);
       setLeftTab(normalizeLeftTab(prefs.leftTab, panel));
       setHistorySubTab(view === "sub" || view === "main" ? view : prefs.historySubTab);
       return;
     }
-    writeChatUiPrefs({ leftOpen, leftTab, historySubTab });
+    const stored = readChatUiPrefs();
+    writeChatUiPrefs({
+      // 手机上的 leftOpen 是叠层临时态，不写回，保留桌面偏好
+      leftOpen: isMobileViewport() ? stored.leftOpen : leftOpen,
+      leftTab,
+      historySubTab,
+    });
   }, [searchParams, leftOpen, leftTab, historySubTab]);
 
   return {
