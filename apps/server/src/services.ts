@@ -1622,21 +1622,26 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       });
     }
 
-    // 若仍有未答复 ask_user：注入引导文案，禁止盲目续跑重复提问（见 askUserGate.buildResumeHintIfAskPending）
+    const { getServiceContainer } = await import("./infra/serviceContainer.js");
+    const services = getServiceContainer(this.prisma, this.eventBus, this.config);
+
+    // 优先 drain 队首孤儿 ask_user 答复（重启后无 waiter 入队的项）：以答复起流，勿盲目「继续任务」
+    const orphanAnswer = await services.sessionQueueItem.claimHeadAskUserOrphan(input.id);
     const { buildResumeHintIfAskPending } = await import("./infra/askUserGate.js");
-    const askHint = buildResumeHintIfAskPending(input.id);
+    const askHint = orphanAnswer ? null : buildResumeHintIfAskPending(input.id);
     const body: AgentChatInput = {
       sessionId: input.id,
       agentId: session.agentId ?? undefined,
-      message: askHint ?? "（服务已重启，请继续完成未完成的任务）",
-      // source="system" 标记服务恢复注入：chatAgentStream 会按系统恢复路径去重，不混入用户消息
-      source: "system",
+      message:
+        orphanAnswer?.content ??
+        askHint ??
+        "（服务已重启，请继续完成未完成的任务）",
+      // 孤儿答复按用户消息上链；其余恢复注入走 system 去重路径
+      source: orphanAnswer ? "user" : "system",
       // 子任务血统允许 report_back（与 asyncJobManager autoConsume 同口径）
       runOrigin: session.parentSessionId || session.kind === "subagent" ? "parent" : "user",
     };
 
-    const { getServiceContainer } = await import("./infra/serviceContainer.js");
-    const services = getServiceContainer(this.prisma, this.eventBus, this.config);
     const { createTrpcInvoker } = await import("./infra/trpcInvoker.js");
     const invokeTrpc = createTrpcInvoker({ services });
     const { chatAgentStream } = await import("./infra/agentStream.js");
@@ -2066,6 +2071,21 @@ export class SessionQueueItemService extends BaseService<
       orderBy: { order: "asc" },
     });
     return rows.map((r) => this.formatEntity(r));
+  }
+
+  /**
+   * resume / 恢复路径：仅当队首是 `kind=user` 且 `source=ask_user` 时软认领并返回内容。
+   * 不越过 superior / 其它 user 项（保 FIFO）；认领失败（并发）返回 null。
+   */
+  async claimHeadAskUserOrphan(
+    sessionId: string,
+  ): Promise<{ id: string; content: string } | null> {
+    const items = await this.listBySession(sessionId);
+    const head = items[0];
+    if (!head || head.kind !== "user" || head.source !== "ask_user") return null;
+    const { claimed } = await this.consume(head.id);
+    if (!claimed) return null;
+    return { id: head.id, content: head.content };
   }
 
   /**

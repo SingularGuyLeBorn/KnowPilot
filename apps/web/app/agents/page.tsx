@@ -41,6 +41,8 @@ import {
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { AgentAvatar } from "@/components/agentAvatar";
 import { AssistantDriftBanner } from "@/components/assistantDriftBanner";
+import { SwarmAlertsBanner } from "@/components/swarmAlertsBanner";
+import { SwarmHealthPanel } from "@/components/swarmHealthPanel";
 import { AgentLoopContractPanel } from "@/components/agentLoopContractPanel";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
@@ -405,6 +407,10 @@ export default function AgentsPage() {
   }, [workspacesQuery.data?.items]);
   // W16d-3：默认 assistant 配置漂移横幅（drift 为空时组件渲染 null）
   const { data: driftStatus } = trpc.agent.driftStatus.useQuery(undefined, { staleTime: 60_000 });
+  const { data: swarmAlerts } = trpc.agent.swarmAlerts.useQuery(undefined, {
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+  });
 
   const sortedItems = useMemo(
     () => [...(data?.items ?? [])].sort((a: Agent, b: Agent) => (TIER_RANK[a.tier ?? "sub"] ?? 2) - (TIER_RANK[b.tier ?? "sub"] ?? 2)),
@@ -718,6 +724,7 @@ export default function AgentsPage() {
                     </p>
                   )}
                   {editingId && <AgentLoopContractPanel agentId={editingId} />}
+                  {editingId && <SwarmHealthPanel agentId={editingId} />}
                 </div>
               )}
             </div>
@@ -792,6 +799,16 @@ export default function AgentsPage() {
           agentName={driftStatus.agentName}
           drift={driftStatus.drift}
           migrationHint={driftStatus.migrationHint}
+        />
+      )}
+
+      {swarmAlerts && (
+        <SwarmAlertsBanner
+          needsAttention={swarmAlerts.needsAttention}
+          askUserPendingCount={swarmAlerts.askUserPendingCount}
+          askUserSamples={swarmAlerts.askUserSamples}
+          suspendedAgents={swarmAlerts.suspendedAgents}
+          highInboxAgents={swarmAlerts.highInboxAgents}
         />
       )}
 

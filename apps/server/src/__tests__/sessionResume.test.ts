@@ -295,4 +295,50 @@ describe("C-3 会话手动恢复（session.resume）", () => {
       await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
     }
   }, 20_000);
+
+  it("T10 paused + 队首孤儿 ask_user 答复 → resume 优先消费并以 user 源起流", async () => {
+    process.env.MOCK_LLM = "true";
+    const ctx = await createContextInner();
+    const caller = appRouter.createCaller(ctx);
+    const agentId = await createAgent(ctx, "T10");
+    const sessionId = await createSessionWithStatus(ctx, agentId, "paused");
+    const orphanContent =
+      "【用户答复 ask_user】\n选择：用 deepseek-v4-flash\n（请基于此答复继续，勿再调用 ask_user 问同一问题。）";
+
+    await ctx.services.sessionQueueItem.create({
+      sessionId,
+      kind: "user",
+      content: orphanContent,
+      source: "ask_user",
+      sourceName: "用户答复",
+    });
+
+    try {
+      const before = await ctx.services.sessionQueueItem.listBySession(sessionId);
+      expect(before).toHaveLength(1);
+
+      const res = await caller.session.resume({ id: sessionId });
+      expect(res).toMatchObject({ resumed: true, streamStarted: true });
+      await getStreamHub()!.waitFor(sessionId);
+
+      // 队首已消费
+      expect(await ctx.services.sessionQueueItem.listBySession(sessionId)).toHaveLength(0);
+
+      const userMsgs = await prisma.chatMessage.findMany({
+        where: { sessionId, role: "user" },
+        orderBy: { createdAt: "asc" },
+      });
+      const joined = userMsgs.map((m) => m.content).join("\n");
+      expect(joined).toContain("用 deepseek-v4-flash");
+      // 负向：旧实现忽略队列，只会注入「服务已重启，请继续…」
+      expect(joined).not.toContain("请继续完成未完成的任务");
+      // 孤儿答复按 user 源上链（非 system 恢复去重路径）
+      expect(userMsgs.some((m) => m.source === "user" && m.content.includes("deepseek-v4-flash"))).toBe(
+        true,
+      );
+    } finally {
+      await prisma.sessionQueueItem.deleteMany({ where: { sessionId } }).catch(() => {});
+      await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
+    }
+  }, 20_000);
 });

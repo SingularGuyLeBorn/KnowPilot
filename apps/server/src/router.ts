@@ -185,6 +185,16 @@ const agentRouter = router({
       const { getSwarmHealthSnapshot } = await import("./infra/swarmHealth.js");
       return getSwarmHealthSnapshot(ctx.prisma, input.agentId);
     }),
+  swarmAlerts: publicProcedure
+    .meta({
+      description:
+        "全仓 Swarm 轻量告警（ask_user 积压 / 心跳熔断 / inbox 偏高）；供 /agents 列表顶栏。",
+      aiReadable: true,
+    })
+    .query(async ({ ctx }) => {
+      const { getSwarmAlertsOverview } = await import("./infra/swarmHealth.js");
+      return getSwarmAlertsOverview(ctx.prisma);
+    }),
   getLoopContract: publicProcedure
     .meta({ description: "读取超级 Agent 心跳 Loop Contract（控制平面只读）。", aiReadable: true })
     .input(z.object({ agentId: z.string().cuid() }))
