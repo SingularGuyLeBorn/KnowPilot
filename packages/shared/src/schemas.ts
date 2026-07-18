@@ -528,11 +528,23 @@ export const listMcpServersSchema = z.object({
 
 export const memoryUserTypeSchema = z.enum(MEMORY_USER_CREATABLE_TYPES);
 
+export const memoryAttributionSchema = z.enum([
+  "user",
+  "agent",
+  "flush",
+  "experience",
+  "system",
+]);
+
 export const createMemorySchema = z.object({
   content: z.string().min(1),
   type: memoryUserTypeSchema.default("note"),
   strength: z.number().min(0).max(1).default(MEMORY_INITIAL_STRENGTH),
   keywords: z.array(z.string()).default([]),
+  /** 事实来源归因（可选；Agent 工具 / flush 会写入） */
+  attribution: memoryAttributionSchema.optional(),
+  validFrom: z.coerce.date().optional().nullable(),
+  validTo: z.coerce.date().optional().nullable(),
 });
 
 export const updateMemorySchema = z.object({

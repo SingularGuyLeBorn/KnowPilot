@@ -9,6 +9,8 @@ export interface FtsHit {
   entityId: string;
   title: string;
   body: string;
+  /** FTS5 BM25 rank（通常为负数，越小越好）；无 rank 时省略 */
+  rank?: number;
 }
 
 let ftsReady = false;
@@ -99,15 +101,17 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
   return rows.length;
 }
 
-/** FTS 查询；无匹配或 FTS 不可用时返回空数组 */
+/** FTS 查询；无匹配或 FTS 不可用时返回空数组。含 BM25 rank（越小越好）。 */
 export async function searchFts(prisma: PrismaClient, query: string, limit = 20): Promise<FtsHit[]> {
   const ftsQuery = escapeFtsQuery(query);
   if (!ftsQuery) return [];
 
   try {
     if (!ftsReady) await ensureFtsTable(prisma);
-    const rows = await prisma.$queryRawUnsafe<Array<FtsHit & { entity_id?: string }>>(
-      `SELECT entity, entity_id as entityId, title, body
+    const rows = await prisma.$queryRawUnsafe<
+      Array<FtsHit & { entity_id?: string; rank?: number }>
+    >(
+      `SELECT entity, entity_id as entityId, title, body, rank
        FROM search_fts
        WHERE search_fts MATCH ?
        ORDER BY rank
@@ -120,6 +124,7 @@ export async function searchFts(prisma: PrismaClient, query: string, limit = 20)
       entityId: r.entityId ?? r.entity_id ?? "",
       title: r.title,
       body: r.body,
+      rank: typeof r.rank === "number" ? r.rank : undefined,
     }));
   } catch {
     return [];

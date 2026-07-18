@@ -245,11 +245,16 @@ model Memory {
   status      String   @default("active")
   /// 后继记忆 id（status=superseded 时指向新版）
   supersededBy String?
+  /// 事实来源归因：user=用户陈述 | agent=Agent 推断 | flush=压缩前抢救 | experience=运行经验 | system=系统
+  attribution String   @default("agent")
+  validFrom   DateTime? /// 事实生效起点（可选）
+  validTo     DateTime? /// 事实失效点；null=仍有效；过期后不进检索/注入
   sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   @@index([status, scope])
+  @@index([validTo])
 }
 
 /// Git 仓库管理

@@ -98,6 +98,7 @@ export async function flushMemoriesBeforeCompact(
         scope: MEMORY_SCOPE_GLOBAL,
         strength: fact.type === MEMORY_TYPES.PREFERENCE ? MEMORY_FLUSH_STRENGTH_PREFERENCE : MEMORY_FLUSH_STRENGTH_DEFAULT,
         keywords: fact.keywords,
+        attribution: "flush",
       });
       written++;
     }

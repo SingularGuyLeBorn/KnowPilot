@@ -15,12 +15,16 @@ import {
   MEMORY_SCOPE_GLOBAL,
 } from "@knowpilot/shared";
 import { createMemoryRepository } from "./memoryRepository.js";
+import {
+  recordMemoryRetrieveOutcome,
+  shouldSkipMemoryRetrieve,
+} from "./memoryRetrieveGate.js";
 
 /**
  * 构建注入 system prompt 的长期记忆片段。
- * W5：统一走 MemoryRepository（FTS 优先 / LIKE 回退收进仓储，strength×recency 排序）；
- * W5-followup：三层 scope 读路径——global + workspace:{wid}（Agent 有 Workspace 时）+ agent:{aid}，
- * 其他 Agent / 其他 Workspace 的私有记忆天然不可见。
+ * W5：统一走 MemoryRepository（FTS 优先 / LIKE 回退；BM25×(1+strength)×recency 排序）；
+ * W5-followup：三层 scope 读路径——global + workspace:{wid}（Agent 有 Workspace 时）+ agent:{aid}；
+ * 门控：连续无命中后跳过若干轮检索（综述① retrieve-or-not）。
  */
 export async function buildMemoryContext(
   services: ServiceContainer,
@@ -29,6 +33,10 @@ export async function buildMemoryContext(
 ): Promise<string> {
   const keyword = userText.slice(0, 80).trim();
   if (!keyword) return "";
+  const gateKey = options?.agentId ?? "__global__";
+  if (shouldSkipMemoryRetrieve(gateKey)) {
+    return "";
+  }
   const scopes = [MEMORY_SCOPE_GLOBAL];
   if (options?.agentId) {
     const agent = await services.prisma.agent.findUnique({
@@ -45,8 +53,12 @@ export async function buildMemoryContext(
     scopes,
     limit: 5,
   });
+  recordMemoryRetrieveOutcome(gateKey, memories.length > 0);
   if (!memories.length) return "";
-  const lines = memories.map((m) => `- [${m.type}] ${m.content.slice(0, 300)}`);
+  const lines = memories.map((m) => {
+    const attr = m.attribution && m.attribution !== "agent" ? `/${m.attribution}` : "";
+    return `- [${m.type}${attr}] ${m.content.slice(0, 300)}`;
+  });
   return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
 }
 

@@ -206,16 +206,16 @@ session_rotate({
 - `todo_write` / `todo_read`（会话级 todoState）
 - `AGENT_MAX_TOOL_CALLS_PER_RUN` 循环强制（reactLoop）
 
-### 8.2 仍值得做（按性价比）
+### 8.2 进度（2026-07-18 起）
 
-| 优先级 | 项 | 理由 |
+| 优先级 | 项 | 状态 |
 |---|---|---|
-| P1 | 记忆检索：BM25 × strength × recency；retrieve-or-not 门控 | 综述①最大可用缺口，零依赖可补排序 |
-| P1 | 记忆 source/validTo + 心跳整合任务 | 防矛盾事实长期污染 |
-| P1 | Run/协作轨迹 JSONL 导出 + Mock 平台基准 | Harness V；证明 Swarm「更值」 |
-| P2 | 轻量 SOP / 阶段工件（Markdown 接力） | MetaGPT 降幻觉核心 |
-| P2 | 常驻层 USER.md/AGENT.md 硬预算 | 记忆分层规划 S1 |
-| P3 | MCP 远程 / A2A / 本地 side 模型 | 有外部需求再做 |
+| P1 | 记忆检索：BM25 × (1+strength) × recency；retrieve-or-not 门控 | **已落地**（`memoryRepository` / `memoryRetrieveGate` / `buildMemoryContext`） |
+| P1 | 记忆 attribution / validTo + 心跳 consolidate | **已落地**（schema + `consolidateMemories` 挂 decay cron） |
+| P1 | Run/Session 轨迹 JSONL 导出骨架 | **已落地**（`run.exportTrace` / `session.exportTrace`）；Mock 平台基准仍待 |
+| P2 | 轻量 SOP / 阶段工件（Markdown 接力） | 待做 |
+| P2 | 常驻层 USER.md/AGENT.md 硬预算 | 待做 |
+| P3 | MCP 远程 / A2A / 本地 side 模型 | 按需 |
 
 ### 8.3 理念不做
 

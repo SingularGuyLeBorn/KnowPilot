@@ -41,6 +41,9 @@ export interface MemoryItem {
   keywords: string[];
   scope: string;
   agentId: string | null;
+  attribution: string;
+  validFrom: Date | null;
+  validTo: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -67,6 +70,10 @@ export interface MemoryWriteInput {
   strength?: number;
   keywords?: string[];
   sourceSlug?: string;
+  /** user | agent | flush | experience | system */
+  attribution?: string;
+  validFrom?: Date | null;
+  validTo?: Date | null;
 }
 
 export interface MemorySupersedeUpdateInput {
@@ -126,6 +133,9 @@ function toItem(raw: {
   keywords: string | string[];
   scope: string;
   agentId: string | null;
+  attribution?: string | null;
+  validFrom?: Date | null;
+  validTo?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }): MemoryItem {
@@ -142,9 +152,30 @@ function toItem(raw: {
     keywords,
     scope: raw.scope,
     agentId: raw.agentId,
+    attribution: raw.attribution ?? "agent",
+    validFrom: raw.validFrom ?? null,
+    validTo: raw.validTo ?? null,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   };
+}
+
+/**
+ * 综合分：BM25 相关度 × (1+strength) × recency。
+ * FTS5 rank 越小（更负）越好 → logistic：1/(1+e^rank)；无 FTS 命中时 bm25Rel=1（纯 strength×recency）。
+ */
+export function scoreMemoryCandidate(opts: {
+  strength: number;
+  updatedAt: Date;
+  nowMs: number;
+  ftsRank?: number;
+}): number {
+  const recency = recencyScore(opts.updatedAt, opts.nowMs);
+  const bm25Rel =
+    typeof opts.ftsRank === "number" && Number.isFinite(opts.ftsRank)
+      ? 1 / (1 + Math.exp(opts.ftsRank))
+      : 1;
+  return bm25Rel * (1 + Math.max(0, opts.strength)) * recency;
 }
 
 export class PrismaMemoryRepository implements MemoryRepository {
@@ -160,40 +191,74 @@ export class PrismaMemoryRepository implements MemoryRepository {
     const typeFilter = query.types && query.types.length > 0 ? { type: { in: query.types } } : {};
     // 软版本链：默认只注入 / 检索 active，不把 superseded 旧版灌进 prompt
     const statusFilter = { status: MEMORY_STATUS_ACTIVE };
+    const now = new Date();
+    // 过期事实不进检索：validTo 为空或仍在未来
+    const validityFilter = {
+      OR: [{ validTo: null }, { validTo: { gt: now } }],
+    };
 
     let rows: any[] = [];
-    // 路径 1：FTS 召回（原 promptBuilder 两条路径收进仓储）
+    const rankById = new Map<string, number>();
+    // 路径 1：FTS 召回 + BM25 rank 保留供综合打分
     if (query.keyword) {
       try {
         const hits = await searchFts(this.prisma, query.keyword, Math.max(limit * 4, 20));
-        const ids = hits.filter((h) => h.entity === "memory").map((h) => h.entityId);
+        const memHits = hits.filter((h) => h.entity === "memory");
+        for (const h of memHits) {
+          if (typeof h.rank === "number") rankById.set(h.entityId, h.rank);
+        }
+        const ids = memHits.map((h) => h.entityId);
         if (ids.length > 0) {
           rows = await this.prisma.memory.findMany({
-            where: { id: { in: ids }, scope: { in: scopes }, ...typeFilter, ...statusFilter },
+            where: {
+              id: { in: ids },
+              scope: { in: scopes },
+              ...typeFilter,
+              ...statusFilter,
+              ...validityFilter,
+            },
           });
         }
       } catch {
         // FTS 未就绪等，回退 LIKE
       }
     }
-    // 路径 2：LIKE 回退；排序在内存做（strength × recency），取宽一点再裁剪
+    // 路径 2：LIKE 回退；排序在内存做（BM25×(1+strength)×recency），取宽一点再裁剪
+    // 注意：keyword 的 OR 不能与 validityFilter 的 OR 同级展开，否则后者被覆盖
     if (rows.length === 0) {
+      const keywordFilter = query.keyword
+        ? {
+            OR: [
+              { content: { contains: query.keyword } },
+              { keywords: { contains: query.keyword } },
+            ],
+          }
+        : {};
       rows = await this.prisma.memory.findMany({
         where: {
-          scope: { in: scopes },
-          ...typeFilter,
-          ...statusFilter,
-          ...(query.keyword
-            ? { OR: [{ content: { contains: query.keyword } }, { keywords: { contains: query.keyword } }] }
-            : {}),
+          AND: [
+            { scope: { in: scopes } },
+            typeFilter,
+            statusFilter,
+            validityFilter,
+            keywordFilter,
+          ],
         },
         take: 200,
       });
     }
 
-    const nowMs = Date.now();
+    const nowMs = now.getTime();
     return rows
-      .map((r) => ({ item: toItem(r), score: r.strength * recencyScore(r.updatedAt, nowMs) }))
+      .map((r) => ({
+        item: toItem(r),
+        score: scoreMemoryCandidate({
+          strength: r.strength,
+          updatedAt: r.updatedAt,
+          nowMs,
+          ftsRank: rankById.get(r.id),
+        }),
+      }))
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map((x) => x.item);
@@ -229,6 +294,9 @@ export class PrismaMemoryRepository implements MemoryRepository {
       contentHash,
       status: MEMORY_STATUS_ACTIVE,
       sourceSlug: input.sourceSlug,
+      attribution: input.attribution ?? "agent",
+      validFrom: input.validFrom ?? undefined,
+      validTo: input.validTo ?? undefined,
     };
     if (this.memoryService) {
       const created = await this.memoryService.create(createInput as any);
@@ -248,6 +316,9 @@ export class PrismaMemoryRepository implements MemoryRepository {
         contentHash,
         status: MEMORY_STATUS_ACTIVE,
         sourceSlug: input.sourceSlug ?? undefined,
+        attribution: createInput.attribution,
+        validFrom: createInput.validFrom ?? undefined,
+        validTo: createInput.validTo ?? undefined,
       } as any,
     });
     return toItem(raw);
@@ -432,4 +503,49 @@ export async function decayMemories(
   }
   const archived = await repo.forget({ beforeStrength: MEMORY_ARCHIVE_THRESHOLD });
   return { decayed, archived };
+}
+
+/**
+ * 记忆整合（心跳维护）：退役已过 validTo 的事实；同 scope 同 contentHash 的重复 active 行只留最强一条。
+ * 与 decayMemories 同 cron 通道，失败不阻塞心跳主流程。
+ *
+ * @param deleteMemory 删除单条（应走 MemoryService.delete 以同步文件+FTS）；测试可传裸 prisma delete
+ */
+export async function consolidateMemories(
+  prisma: PrismaClient,
+  deleteMemory: (id: string) => Promise<boolean>,
+  opts?: { now?: Date },
+): Promise<{ expired: number; duplicatesRemoved: number }> {
+  const now = opts?.now ?? new Date();
+  let expired = 0;
+  const expiredRows = await prisma.memory.findMany({
+    where: { status: MEMORY_STATUS_ACTIVE, validTo: { lt: now } },
+    select: { id: true },
+  });
+  for (const row of expiredRows) {
+    if (await deleteMemory(row.id)) expired++;
+  }
+
+  // 同 scope + contentHash 多条 active：保留 strength 最高（并列取最新 updatedAt），其余删
+  const actives = await prisma.memory.findMany({
+    where: { status: MEMORY_STATUS_ACTIVE, contentHash: { not: null } },
+    select: { id: true, scope: true, contentHash: true, strength: true, updatedAt: true },
+  });
+  const groups = new Map<string, typeof actives>();
+  for (const row of actives) {
+    if (!row.contentHash) continue;
+    const key = `${row.scope}\0${row.contentHash}`;
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+  let duplicatesRemoved = 0;
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => b.strength - a.strength || b.updatedAt.getTime() - a.updatedAt.getTime());
+    for (const extra of list.slice(1)) {
+      if (await deleteMemory(extra.id)) duplicatesRemoved++;
+    }
+  }
+  return { expired, duplicatesRemoved };
 }

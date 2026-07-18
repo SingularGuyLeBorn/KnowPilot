@@ -1328,6 +1328,9 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
     if (extra.scope) data.scope = extra.scope;
     if (extra.agentId) data.agentId = extra.agentId;
     if (extra.contentHash) data.contentHash = extra.contentHash;
+    if (extra.attribution) data.attribution = extra.attribution;
+    if (extra.validFrom !== undefined) data.validFrom = extra.validFrom;
+    if (extra.validTo !== undefined) data.validTo = extra.validTo;
     data.status = extra.status ?? "active";
     return data;
   }

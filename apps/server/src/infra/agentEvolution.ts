@@ -70,6 +70,7 @@ export async function accumulateExperience(
       type: MEMORY_TYPES.EXPERIENCE,
       strength: success ? 1.0 : 0.5,
       keywords: [...new Set(toolNames), input.trigger ?? "user", success ? "success" : "failed"],
+      attribution: "experience" as const,
     };
     await repo.write({ ...memoryBase, scope: memoryAgentScope(agentId) });
 

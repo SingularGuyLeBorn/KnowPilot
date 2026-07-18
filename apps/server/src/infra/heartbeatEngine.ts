@@ -30,7 +30,7 @@ import { createTrpcInvoker } from "./trpcInvoker.js";
 import { assertLlmBudget } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
 import { expireStaleApprovals } from "./approvalGate.js";
-import { createMemoryRepository, decayMemories } from "./memoryRepository.js";
+import { createMemoryRepository, decayMemories, consolidateMemories } from "./memoryRepository.js";
 import { sendEmailNotification } from "./emailNotifier.js";
 import { HEARTBEAT_MAX_CONSECUTIVE_FAILURES } from "@knowpilot/shared";
 import {
@@ -204,18 +204,34 @@ export class HeartbeatEngine {
     }
   }
 
-  /** W5：每日记忆衰减（失败不阻塞心跳主流程） */
-  async runMemoryDecay(): Promise<{ decayed: number; archived: number }> {
+  /** W5：每日记忆衰减 + 整合（过期退役 / 重复去重；失败不阻塞心跳主流程） */
+  async runMemoryDecay(): Promise<{
+    decayed: number;
+    archived: number;
+    expired: number;
+    duplicatesRemoved: number;
+  }> {
     try {
       const repo = createMemoryRepository(this.services);
       const result = await decayMemories(repo, this.prisma);
-      if (result.decayed > 0 || result.archived > 0) {
-        console.log(`  🧠 [MemoryDecay] 衰减 ${result.decayed} 条，归档删除 ${result.archived} 条`);
+      const consolidated = await consolidateMemories(this.prisma, async (id) => {
+        const r = await this.services.memory.delete(id);
+        return r.success;
+      });
+      if (
+        result.decayed > 0 ||
+        result.archived > 0 ||
+        consolidated.expired > 0 ||
+        consolidated.duplicatesRemoved > 0
+      ) {
+        console.log(
+          `  🧠 [MemoryDecay] 衰减 ${result.decayed} 条，归档 ${result.archived} 条，过期退役 ${consolidated.expired} 条，重复清理 ${consolidated.duplicatesRemoved} 条`,
+        );
       }
-      return result;
+      return { ...result, ...consolidated };
     } catch (err) {
       console.warn(`  🧠 [MemoryDecay] 执行失败:`, err instanceof Error ? err.message : err);
-      return { decayed: 0, archived: 0 };
+      return { decayed: 0, archived: 0, expired: 0, duplicatesRemoved: 0 };
     }
   }
 

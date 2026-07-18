@@ -81,14 +81,32 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
     tier: ctx.agentSnapshot?.tier,
   });
   const repo = createMemoryRepository(ctx.services);
+  const attributionRaw = args.attribution ? String(args.attribution) : "agent";
+  const attribution = ["user", "agent", "system"].includes(attributionRaw)
+    ? attributionRaw
+    : "agent";
+  let validTo: Date | null | undefined;
+  if (args.validTo) {
+    const d = new Date(String(args.validTo));
+    if (!Number.isNaN(d.getTime())) validTo = d;
+  }
   const memory = await repo.write({
     content,
     type: rawType as MemoryUserCreatableType,
     scope,
     strength: Number.isFinite(strength) ? Math.min(1, Math.max(0, strength)) : 1,
     keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : [],
+    attribution,
+    validTo,
   });
-  return { id: memory.id, type: memory.type, strength: memory.strength, keywords: memory.keywords, scope: memory.scope };
+  return {
+    id: memory.id,
+    type: memory.type,
+    strength: memory.strength,
+    keywords: memory.keywords,
+    scope: memory.scope,
+    attribution: memory.attribution,
+  };
 }
 
 async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -230,6 +248,14 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
         scope: z
           .enum(["agent", "workspace", "global"])
           .describe("可见范围：agent=仅自己（默认）；workspace=同 Workspace 共享；global=全局（仅超级 Agent）")
+          .optional(),
+        attribution: z
+          .enum(["user", "agent", "system"])
+          .describe("事实来源：user=用户陈述；agent=Agent 推断（默认）；system=系统")
+          .optional(),
+        validTo: z
+          .string()
+          .describe("可选 ISO 时间：事实失效点（过期后不再检索/注入）")
           .optional(),
       }),
     ),
