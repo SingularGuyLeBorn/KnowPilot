@@ -10,13 +10,23 @@ import { Activity, Loader2, Mail, MessageCircle, PauseCircle } from "lucide-reac
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
-export function SwarmHealthPanel({ agentId }: { agentId: string }) {
+export function SwarmHealthPanel({
+  agentId,
+  /** compact：Chat 运行页；健康且 hideWhenHealthy 时不占位 */
+  compact,
+  hideWhenHealthy,
+}: {
+  agentId: string;
+  compact?: boolean;
+  hideWhenHealthy?: boolean;
+}) {
   const { data, isLoading, isError } = trpc.agent.swarmHealth.useQuery(
     { agentId },
     { enabled: !!agentId, staleTime: 15_000, refetchInterval: 15_000 },
   );
 
   if (isLoading) {
+    if (compact && hideWhenHealthy) return null;
     return (
       <div
         data-testid="swarm-health-panel"
@@ -29,6 +39,7 @@ export function SwarmHealthPanel({ agentId }: { agentId: string }) {
   }
 
   if (isError || !data) {
+    if (compact && hideWhenHealthy) return null;
     return (
       <div
         data-testid="swarm-health-panel"
@@ -39,11 +50,14 @@ export function SwarmHealthPanel({ agentId }: { agentId: string }) {
     );
   }
 
+  if (hideWhenHealthy && !data.needsAttention) return null;
+
   return (
     <div
       data-testid="swarm-health-panel"
       className={cn(
         "space-y-2 rounded-xl border p-3",
+        compact && "rounded-none border-x-0 border-t-0",
         data.needsAttention
           ? "border-sky-300/70 bg-sky-50/80 dark:border-sky-500/40 dark:bg-sky-950/30"
           : "border-[var(--kp-divider)] bg-[var(--kp-bg)]",

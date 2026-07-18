@@ -1581,6 +1581,8 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     status: string;
     resumed: boolean;
     streamStarted: boolean;
+    /** 队首为 superior 时：已挂服务端 drain，未注入「继续任务」并行流 */
+    superiorDrainQueued?: boolean;
   }> {
     const session = await this.getByIdLite(input.id); // 不存在 → NOT_FOUND
 
@@ -1624,6 +1626,38 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
 
     const { getServiceContainer } = await import("./infra/serviceContainer.js");
     const services = getServiceContainer(this.prisma, this.eventBus, this.config);
+    const config = this.config;
+
+    // 队首 superior：只挂服务端 drain，禁止与「继续任务」并行起流（保 FIFO）
+    const queueHead = (await services.sessionQueueItem.listBySession(input.id))[0];
+    if (queueHead?.kind === "superior" && session.agentId) {
+      const { enqueueSuperiorDrainForSession } = await import("./infra/tools/native/swarm.js");
+      const drainPromise = enqueueSuperiorDrainForSession({
+        sessionId: input.id,
+        targetAgentId: session.agentId,
+        config,
+        services,
+      });
+      void drainPromise.finally(async () => {
+        if (hub.isRunning(input.id)) return;
+        const nextStatus = session.kind === "subagent" ? "completed" : "active";
+        await this.prisma.chatSession
+          .updateMany({
+            where: { id: input.id, status: "running" },
+            data: { status: nextStatus },
+          })
+          .catch((settleErr) => {
+            console.warn(`[session.resume] superior drain 后归位失败 session=${input.id}:`, settleErr);
+          });
+      });
+      return {
+        id: input.id,
+        status: "running",
+        resumed: true,
+        streamStarted: false,
+        superiorDrainQueued: true,
+      };
+    }
 
     // 优先 drain 队首孤儿 ask_user 答复（重启后无 waiter 入队的项）：以答复起流，勿盲目「继续任务」
     const orphanAnswer = await services.sessionQueueItem.claimHeadAskUserOrphan(input.id);
@@ -1645,7 +1679,6 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     const { createTrpcInvoker } = await import("./infra/trpcInvoker.js");
     const invokeTrpc = createTrpcInvoker({ services });
     const { chatAgentStream } = await import("./infra/agentStream.js");
-    const config = this.config;
 
     try {
       const started = await hub.startIfNotRunning(input.id, body, async (emit, signal) => {

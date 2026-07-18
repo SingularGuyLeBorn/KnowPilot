@@ -296,6 +296,59 @@ describe("C-3 会话手动恢复（session.resume）", () => {
     }
   }, 20_000);
 
+  it("T11 paused + 队首 superior → resume 挂 drain、不起「继续任务」并行流", async () => {
+    process.env.MOCK_LLM = "true";
+    const ctx = await createContextInner();
+    const caller = appRouter.createCaller(ctx);
+    const agentId = await createAgent(ctx, "T11");
+    const sessionId = await createSessionWithStatus(ctx, agentId, "paused");
+    // 主会话标记：superior drain → prepareAgentRun 按 agent 主会话找会话
+    await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { isMainSession: true, kind: "subagent", status: "paused" },
+    });
+
+    const streamSpy = vi.spyOn(agentStream, "chatAgentStream");
+
+    await ctx.services.sessionQueueItem.create({
+      sessionId,
+      kind: "superior",
+      content: "上级催办：请继续处理任务 Alpha",
+      source: agentId,
+      sourceName: "manager",
+    });
+
+    try {
+      const res = await caller.session.resume({ id: sessionId });
+      expect(res).toMatchObject({
+        resumed: true,
+        streamStarted: false,
+        superiorDrainQueued: true,
+      });
+
+      // 负向：旧实现会立刻 chatAgentStream 注入「继续任务」
+      expect(streamSpy).not.toHaveBeenCalled();
+
+      const sysMsgs = await prisma.chatMessage.findMany({
+        where: { sessionId, role: "user", source: "system" },
+      });
+      expect(sysMsgs.some((m) => m.content.includes("请继续完成未完成的任务"))).toBe(false);
+
+      // drain 链应在空闲时消费 superior（MOCK_LLM）
+      await getStreamHub()!.waitFor(sessionId).catch(() => {});
+      // 给 drain 一点时间；若池拒入仍可能残留，但至少不得并行起 resume 流
+      for (let i = 0; i < 30; i++) {
+        const left = await ctx.services.sessionQueueItem.listBySession(sessionId);
+        if (left.length === 0) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    } finally {
+      streamSpy.mockRestore();
+      await prisma.sessionQueueItem.deleteMany({ where: { sessionId } }).catch(() => {});
+      await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
+    }
+  }, 30_000);
+
   it("T10 paused + 队首孤儿 ask_user 答复 → resume 优先消费并以 user 源起流", async () => {
     process.env.MOCK_LLM = "true";
     const ctx = await createContextInner();

@@ -6,12 +6,14 @@
  * - EMAIL_PROVIDER=smtp → SMTP（QQ 邮箱等）
  * - NTFY_TOPIC 非空 → ntfy.sh（免注册推送，可与上面叠加）
  *
+ * 每通道独立 CircuitBreaker：连续失败开闸，冷却后半开探测；开闸期间跳过该通道。
  * EMAIL_PROVIDER=none 且未配 NTFY_TOPIC 时不发。
  */
 
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { sendAgentMailMessage } from "./agentMailClient.js";
+import { CircuitBreaker } from "./circuitBreaker.js";
 
 export interface EmailSendInput {
   subject: string;
@@ -23,6 +25,55 @@ export interface EmailSendInput {
 }
 
 export type EmailSendResult = { success: true; message: string } | { error: string };
+
+/** 通知通道熔断：3 次连续失败开闸，5 分钟冷却 */
+const NOTIFY_FAILURE_THRESHOLD = 3;
+const NOTIFY_OPEN_DURATION_MS = 5 * 60_000;
+
+const notifyBreakers = new Map<string, CircuitBreaker>();
+
+function getNotifyBreaker(channel: string): CircuitBreaker {
+  let b = notifyBreakers.get(channel);
+  if (!b) {
+    b = new CircuitBreaker({
+      failureThreshold: NOTIFY_FAILURE_THRESHOLD,
+      openDurationMs: NOTIFY_OPEN_DURATION_MS,
+    });
+    notifyBreakers.set(channel, b);
+  }
+  return b;
+}
+
+/** 测试用：清空通道熔断器 */
+export function __resetNotifyBreakersForTests(): void {
+  notifyBreakers.clear();
+}
+
+async function runWithNotifyBreaker(
+  channel: string,
+  run: () => Promise<EmailSendResult>,
+): Promise<EmailSendResult> {
+  const breaker = getNotifyBreaker(channel);
+  const permit = breaker.tryAcquire();
+  if (!permit.allowed) {
+    const secs = Math.ceil(permit.retryAfterMs / 1000);
+    return {
+      error: `${channel} 通道熔断中（约 ${secs}s 后半开探测），本次跳过`,
+    };
+  }
+  try {
+    const result = await run();
+    if ("success" in result && result.success) {
+      breaker.recordSuccess();
+    } else {
+      breaker.recordFailure();
+    }
+    return result;
+  } catch (err) {
+    breaker.recordFailure();
+    return { error: `${channel} 异常: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
 
 async function sendViaSmtp(to: string, subject: string, body: string): Promise<EmailSendResult> {
   // @ts-ignore — nodemailer 可选依赖
@@ -129,7 +180,12 @@ export async function sendEmailNotification(
     };
   }
 
-  const results = await Promise.all(jobs.map(async (j) => ({ name: j.name, result: await j.run() })));
+  const results = await Promise.all(
+    jobs.map(async (j) => ({
+      name: j.name,
+      result: await runWithNotifyBreaker(j.name, j.run),
+    })),
+  );
   const ok = results.filter((r) => "success" in r.result && r.result.success);
   const failed = results.filter((r) => "error" in r.result);
 

@@ -28,6 +28,7 @@ import { useAsyncProgressSteps } from "@/lib/useAsyncProgressSteps";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
+import { SwarmHealthPanel } from "@/components/swarmHealthPanel";
 import type { ChatLeftTab } from "@/lib/useChatUiPrefs";
 
 export interface ChatSidebarProps {
@@ -280,6 +281,9 @@ export const ChatSidebar = memo(function ChatSidebar({
     if (leftTab === "runtime") {
       return (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="left-runtime-panel">
+          {effectiveAgentId ? (
+            <SwarmHealthPanel agentId={effectiveAgentId} compact hideWhenHealthy />
+          ) : null}
           <section className="border-b border-[var(--kp-divider)]" data-testid="left-runtime-delivery">
             <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
               投递队列

@@ -581,13 +581,58 @@ async function prepareAgentRun(
 }
 
 /**
+ * 为单个会话挂 superior FIFO drain（与 busy 入队 / R-2 重注册同源）。
+ * 幂等：重复注册只是链上多一次空转；consume 原子认领保证同一项只被处理一次。
+ */
+export async function enqueueSuperiorDrainForSession(options: {
+  sessionId: string;
+  targetAgentId: string;
+  config: AppConfig;
+  services: ServiceContainer;
+}): Promise<void> {
+  const { sessionId, targetAgentId, config, services } = options;
+  const { enqueueSuperiorQueueDrain } = await import("../../asyncJobManager.js");
+  return enqueueSuperiorQueueDrain({
+    sessionId,
+    config,
+    services,
+    runItem: async (item) => {
+      // 重建最小 NativeToolContext：sessionId 留空——不刷新 parentSessionId，
+      // 保留原 spawn 的 report_back 路由；发送方 tier 实时解析（仅决定注入消息 source 标识）
+      let tier: string | undefined;
+      if (item.source) {
+        try {
+          const fromAgent = await services.agent.getById(item.source);
+          tier = (fromAgent as { tier?: string } | null)?.tier;
+        } catch {
+          /* 解析失败按缺省处理 */
+        }
+      }
+      const drainCtx: NativeToolContext = {
+        config,
+        services,
+        prisma: services.prisma,
+        invokeTrpc: createTrpcInvoker({ services }),
+        agentSnapshot: { id: item.source ?? "unknown", model: "", systemPrompt: "", tools: [], tier },
+        inToolRound: false,
+      };
+      const next = await prepareAgentRun(targetAgentId, item.content, drainCtx, { fromDrain: true });
+      if (next.kind === "started") {
+        await next.completion;
+      } else if (next.kind === "failed") {
+        console.warn(
+          `[enqueueSuperiorDrainForSession] drain 重入被守卫拒绝 session=${sessionId}: ${next.error}`,
+        );
+      }
+    },
+  });
+}
+
+/**
  * R-2 启动恢复动作 3：superior 孤儿队列项重注册服务端 drain。
  *
  * 进程内 drain 链随重启丢失，pending 队列项跨重启留存于 SQLite（W-E 已知限制）。
- * 重启首扫为每个有待处理 superior 项的活跃会话重新注册 drain（enqueueSuperiorQueueDrain
- * per-session 串行链，与运行时 busy 分支同一机制），会话空闲后按 FIFO consume（删除即认领，
- * 与前端 drain 竞态安全）并重入 prepareAgentRun 起流。
- * 幂等：重复注册只是链上多一次空转；consume 原子认领保证同一项只被处理一次。
+ * 重启首扫为每个有待处理 superior 项的活跃会话重新注册 drain，会话空闲后按 FIFO consume。
  * 返回重注册 drain 的会话数。
  */
 export async function requeueOrphanedSuperiorDrains(
@@ -602,48 +647,17 @@ export async function requeueOrphanedSuperiorDrains(
   });
   const sessionIds = [...new Set(items.map((i) => i.sessionId))];
   if (sessionIds.length === 0) return 0;
-  // 已删除/归档会话的残留项不复活（prepareAgentRun 的 find-or-create 会捞 not-deleted 会话，必须先过滤）
   const liveSessions = await services.prisma.chatSession.findMany({
     where: { id: { in: sessionIds }, status: { notIn: ["deleted", "archived"] }, agentId: { not: null } },
     select: { id: true, agentId: true },
   });
-  // 动态 import：asyncJobManager 经 agentRuntime/agentStream/agentTools 处于 ReAct 环内
-  const { enqueueSuperiorQueueDrain } = await import("../../asyncJobManager.js");
   let registered = 0;
   for (const session of liveSessions) {
-    const sessionId = session.id;
-    const targetAgentId = session.agentId as string;
-    enqueueSuperiorQueueDrain({
-      sessionId,
+    void enqueueSuperiorDrainForSession({
+      sessionId: session.id,
+      targetAgentId: session.agentId as string,
       config,
       services,
-      runItem: async (item) => {
-        // 重建最小 NativeToolContext：sessionId 留空——不刷新 parentSessionId，
-        // 保留原 spawn 的 report_back 路由；发送方 tier 实时解析（仅决定注入消息 source 标识）
-        let tier: string | undefined;
-        if (item.source) {
-          try {
-            const fromAgent = await services.agent.getById(item.source);
-            tier = (fromAgent as { tier?: string } | null)?.tier;
-          } catch { /* 解析失败按缺省处理 */ }
-        }
-        const drainCtx: NativeToolContext = {
-          config,
-          services,
-          prisma: services.prisma,
-          invokeTrpc: createTrpcInvoker({ services }),
-          agentSnapshot: { id: item.source ?? "unknown", model: "", systemPrompt: "", tools: [], tier },
-          inToolRound: false,
-        };
-        const next = await prepareAgentRun(targetAgentId, item.content, drainCtx, { fromDrain: true });
-        if (next.kind === "started") {
-          await next.completion;
-        } else if (next.kind === "failed") {
-          // 守卫拒绝（QUEUE_FULL 等）：不重试，记日志（item 已认领，消息终结于此）
-          console.warn(`[requeueSuperiorDrains] drain 重入被守卫拒绝 session=${sessionId}: ${next.error}`);
-        }
-        // kind=queued：claim 后、start 前会话又被占的极端竞态——内容已重新入队尾，交给链后续迭代
-      },
     });
     registered++;
   }

@@ -7,7 +7,10 @@ vi.mock("../infra/agentMailClient.js", () => ({
   sendAgentMailMessage: vi.fn(async () => ({ ok: true, messageId: "m1", inboxId: "i1" })),
 }));
 
-import { sendEmailNotification } from "../infra/emailNotifier.js";
+import {
+  __resetNotifyBreakersForTests,
+  sendEmailNotification,
+} from "../infra/emailNotifier.js";
 import type { AppConfig } from "../infra/config.js";
 
 const config = { emailProvider: "none" } as AppConfig;
@@ -16,6 +19,7 @@ describe("emailNotifier channels", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
+    __resetNotifyBreakersForTests();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 200 })),
@@ -28,6 +32,7 @@ describe("emailNotifier channels", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     globalThis.fetch = originalFetch;
+    __resetNotifyBreakersForTests();
     delete process.env.NTFY_TOPIC;
     delete process.env.EMAIL_PROVIDER;
     delete process.env.EMAIL_TO;
@@ -58,5 +63,32 @@ describe("emailNotifier channels", () => {
     );
     expect(result).toMatchObject({ success: true });
     expect(vi.mocked(fetch)).toHaveBeenCalled();
+  });
+
+  it("ntfy 连续失败达阈值后熔断跳过", async () => {
+    process.env.NTFY_TOPIC = "kp-breaker";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("fail", { status: 503 })),
+    );
+
+    for (let i = 0; i < 3; i++) {
+      const r = await sendEmailNotification(config, undefined, {
+        subject: `fail-${i}`,
+        body: "x",
+      });
+      expect("error" in r).toBe(true);
+      expect((r as { error: string }).error).toContain("ntfy");
+    }
+
+    const callsAfterFailures = vi.mocked(fetch).mock.calls.length;
+    const blocked = await sendEmailNotification(config, undefined, {
+      subject: "should-skip",
+      body: "x",
+    });
+    expect("error" in blocked).toBe(true);
+    expect((blocked as { error: string }).error).toContain("熔断");
+    // 开闸期间不再打真实 fetch
+    expect(vi.mocked(fetch).mock.calls.length).toBe(callsAfterFailures);
   });
 });
