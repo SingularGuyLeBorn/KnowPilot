@@ -28,7 +28,6 @@ import {
   sessionMessagesStore,
 } from "@/lib/useSessionMessages";
 import {
-  useStreamLifecycle,
   streamLifecycleActions,
   streamLifecycleStore,
   type StreamLifecycleState,
@@ -334,11 +333,10 @@ export function ChatView() {
     router,
   ]);
 
-  // 焦点 session 仍订阅三层 store：供右栏 token/队列派生、SSE/drain、hydrate 兜底
-  // （中栏展示由 ChatSessionPane 各自订阅，允许与焦点切片重复订阅）
+  // 焦点 session：消息 + compose 供右栏/队列派生；lifecycle 不再订阅（每 token 重渲整树）
+  // 中栏流式 UI 由 ChatSessionPane 各自 useStreamLifecycle；此处只走 store actions
   const lifecycleKey = effectiveSessionId ?? NEW_STREAM_KEY;
   const { messages, hydrateFromServer } = useSessionMessages(effectiveSessionId);
-  const { state: lifecycleState } = useStreamLifecycle(lifecycleKey);
   const setError = setViewError;
   const { state: composeState } = useSessionComposeState(lifecycleKey);
   const userQueue = composeState.userQueue;
