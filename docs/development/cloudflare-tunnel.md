@@ -174,7 +174,7 @@ docker compose --profile cloudflare up -d cloudflare
 2. 首次打开会要求登录（`AUTH_MODE=password`）。
 3. 窄屏有底栏：首页 / 博客 / Chat / 更多；Chat 左栏为全屏叠层。
 4. 浏览器菜单可「添加到主屏幕」（轻量 PWA，**不支持离线**）。
-5. 状态与告警：桌面打开 `/settings` →「手机远程访问」卡片。
+5. 状态与告警：打开 `/settings` →「远程就绪检查清单」（AUTH / PUBLIC_URL / Tunnel Token）与 Access 步骤。
 
 ---
 
