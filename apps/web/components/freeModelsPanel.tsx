@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { Copy, ExternalLink, RefreshCw, Sparkles, Radio } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Copy, Check, ExternalLink, RefreshCw, Sparkles, Radio, Search } from "lucide-react";
+import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { EmptyState, LoadingState, KpSelect } from "@/components/shared";
+import { EmptyState, LoadingState, KpSelect, Pagination } from "@/components/shared";
 import { cn } from "@/lib/utils";
+
+const OPENROUTER_PAGE_SIZE = 10;
+const FREELLM_PAGE_SIZE = 10;
 
 function formatContext(n?: number): string {
   if (!n || n <= 0) return "—";
@@ -15,17 +19,14 @@ function formatContext(n?: number): string {
   return String(n);
 }
 
-function formatPrice(raw?: string): string {
-  if (raw == null || raw === "") return "—";
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n === 0) return "Free";
-  if (n < 0.000001) return raw;
-  return `$${n.toFixed(6)}`;
-}
-
 function isMultimodal(modality?: string): boolean {
   if (!modality) return false;
   return modality !== "text" && modality !== "text->text";
+}
+
+function formatModality(modality?: string): string {
+  if (!modality) return "text";
+  return modality.replace("->", "→");
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -37,6 +38,54 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+function StatusPill({
+  tone = "neutral",
+  children,
+}: {
+  tone?: "neutral" | "ok" | "warn" | "brand";
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium tracking-wide",
+        tone === "neutral" && "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
+        tone === "ok" && "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300",
+        tone === "warn" && "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+        tone === "brand" && "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function CopyIdButton({
+  id,
+  copied,
+  onCopy,
+}: {
+  id: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      title="复制模型 id"
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] transition-colors",
+        "text-[var(--kp-text-2)] hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-brand-deep)]",
+        copied && "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300",
+      )}
+    >
+      {copied ? <Check className="h-3 w-3 shrink-0" /> : <Copy className="h-3 w-3 shrink-0 opacity-70" />}
+      <span className="max-w-[16rem] truncate sm:max-w-[22rem]">{id}</span>
+    </button>
+  );
+}
+
 export function FreeModelsPanel() {
   const utils = trpc.useUtils();
   const [q, setQ] = useState("");
@@ -44,6 +93,9 @@ export function FreeModelsPanel() {
   const [sort, setSort] = useState<"context_desc" | "context_asc" | "name">("context_desc");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
+  const [orPage, setOrPage] = useState(1);
+  const [freellmPage, setFreellmPage] = useState(1);
 
   const statusQuery = trpc.llm.freeModelsStatus.useQuery(undefined, { staleTime: 15_000 });
   const modelsQuery = trpc.llm.listFreeModels.useQuery(
@@ -51,6 +103,11 @@ export function FreeModelsPanel() {
     { staleTime: 15_000 },
   );
   const channelsQuery = trpc.llm.listFreellmChannels.useQuery(undefined, { staleTime: 15_000 });
+
+  // 筛选变化时回到第一页，避免停在空页
+  useEffect(() => {
+    setOrPage(1);
+  }, [q, modality, sort]);
   const refreshMutation = trpc.llm.refreshFreeModels.useMutation({
     onSuccess: async (res) => {
       setToast(
@@ -81,6 +138,22 @@ export function FreeModelsPanel() {
   const freellmItems = channelsQuery.data?.items ?? [];
   const hasOrKey = statusQuery.data?.openRouter.hasApiKey ?? modelsQuery.data?.hasApiKey;
 
+  const orTotal = openRouterItems.length;
+  const orTotalPages = Math.max(1, Math.ceil(orTotal / OPENROUTER_PAGE_SIZE));
+  const orPageSafe = Math.min(orPage, orTotalPages);
+  const orPageItems = useMemo(() => {
+    const start = (orPageSafe - 1) * OPENROUTER_PAGE_SIZE;
+    return openRouterItems.slice(start, start + OPENROUTER_PAGE_SIZE);
+  }, [openRouterItems, orPageSafe]);
+
+  const freellmTotal = freellmItems.length;
+  const freellmTotalPages = Math.max(1, Math.ceil(freellmTotal / FREELLM_PAGE_SIZE));
+  const freellmPageSafe = Math.min(freellmPage, freellmTotalPages);
+  const freellmPageItems = useMemo(() => {
+    const start = (freellmPageSafe - 1) * FREELLM_PAGE_SIZE;
+    return freellmItems.slice(start, start + FREELLM_PAGE_SIZE);
+  }, [freellmItems, freellmPageSafe]);
+
   const modalityOptions = useMemo(
     () => [
       { value: "all", label: "全部模态" },
@@ -99,245 +172,338 @@ export function FreeModelsPanel() {
   );
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => refreshMutation.mutate()}
-          disabled={refreshMutation.isPending}
-          className="gap-1.5"
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 260, damping: 26 }}
+      className="w-full space-y-5"
+    >
+        {/* 顶栏：状态 + 刷新 */}
+        <div
+          className={cn(
+            "relative overflow-hidden rounded-2xl border border-[var(--kp-divider)]",
+            "bg-gradient-to-br from-[var(--kp-bg-alt)] via-[var(--kp-bg)] to-[var(--kp-brand-soft)]",
+            "px-4 py-4 md:px-5 md:py-4",
+          )}
         >
-          <RefreshCw className={cn("h-3.5 w-3.5", refreshMutation.isPending && "animate-spin")} />
-          {refreshMutation.isPending ? "同步中…" : "立即刷新"}
-        </Button>
-        {statusQuery.data && (
-          <p className="text-xs text-[var(--kp-text-3)]">
-            OpenRouter {statusQuery.data.openRouter.count} 个
-            {statusQuery.data.openRouter.syncedAt
-              ? ` · 同步于 ${new Date(statusQuery.data.openRouter.syncedAt).toLocaleString()}`
-              : " · 尚未同步"}
-            {" · "}
-            freellm {statusQuery.data.freellm.credentialCount} 条通道
-            {statusQuery.data.freellm.runtimeModel
-              ? ` · 运行时 ${statusQuery.data.freellm.runtimeModel}`
-              : ""}
-          </p>
-        )}
-        {toast && (
-          <span className="text-xs text-[var(--kp-brand-deep)]">{toast}</span>
-        )}
-      </div>
-
-      {/* OpenRouter */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-[var(--kp-brand-deep)]" />
-          <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">OpenRouter 免费模型</h2>
-          <a
-            href="https://openrouter.ai/models?q=free"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-[10px] text-[var(--kp-text-3)] hover:text-[var(--kp-brand-deep)]"
-          >
-            官方目录 <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-
-        {!hasOrKey && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-[var(--kp-text-2)]">
-            未配置 <code className="font-mono">OPENROUTER_API_KEY</code>。在项目根目录{" "}
-            <code className="font-mono">.env</code> 写入后重启，即可在线同步完整{" "}
-            <code className="font-mono">:free</code> 目录；若有历史落盘缓存仍可只读浏览。
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-[var(--kp-brand)]/10 blur-2xl"
+          />
+          <div className="relative flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <StatusPill tone="brand">
+                OpenRouter {statusQuery.data?.openRouter.count ?? openRouterItems.length}
+              </StatusPill>
+              <StatusPill tone="neutral">
+                freellm {statusQuery.data?.freellm.credentialCount ?? freellmItems.length}
+              </StatusPill>
+              {hasOrKey === false && <StatusPill tone="warn">未配 OR key</StatusPill>}
+              {statusQuery.data?.freellm.runtimeModel && (
+                <StatusPill tone="ok">运行时 {statusQuery.data.freellm.runtimeModel}</StatusPill>
+              )}
+              {statusQuery.data?.openRouter.syncedAt && (
+                <span className="text-[11px] text-[var(--kp-text-2)]">
+                  同步于 {new Date(statusQuery.data.openRouter.syncedAt).toLocaleString()}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {toast && (
+                <span className="max-w-[16rem] truncate text-[11px] text-[var(--kp-brand-deep)] md:max-w-xs">
+                  {toast}
+                </span>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => refreshMutation.mutate()}
+                disabled={refreshMutation.isPending}
+                className="gap-1.5 shadow-sm"
+              >
+                <RefreshCw
+                  className={cn("h-3.5 w-3.5", refreshMutation.isPending && "animate-spin")}
+                />
+                {refreshMutation.isPending ? "同步中…" : "立即刷新"}
+              </Button>
+            </div>
           </div>
-        )}
-
-        <div className="flex flex-wrap gap-2">
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索模型 id / 名称 / 描述…"
-            className="max-w-sm h-9 text-sm"
-          />
-          <KpSelect
-            value={modality}
-            onChange={(v) => setModality(v as "all" | "text" | "multimodal")}
-            options={modalityOptions}
-            className="w-32"
-          />
-          <KpSelect
-            value={sort}
-            onChange={(v) => setSort(v as "context_desc" | "context_asc" | "name")}
-            options={sortOptions}
-            className="w-32"
-          />
         </div>
 
-        {modelsQuery.isLoading ? (
-          <LoadingState />
-        ) : openRouterItems.length === 0 ? (
-          <EmptyState
-            title="暂无 :free 模型"
-            description={
-              hasOrKey
-                ? "点击「立即刷新」从 OpenRouter 拉取目录。"
-                : "配置 OPENROUTER_API_KEY 后刷新即可。"
-            }
-          />
-        ) : (
-          <div className="overflow-x-auto rounded-2xl border border-[var(--kp-divider)]">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[var(--kp-bg-alt)] text-[var(--kp-text-3)]">
-                <tr>
-                  <th className="px-3 py-2.5 font-medium">模型</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">上下文</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">输入</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">输出</th>
-                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">模态</th>
-                  <th className="px-3 py-2.5 font-medium">说明</th>
-                  <th className="px-3 py-2.5 font-medium w-20" />
-                </tr>
-              </thead>
-              <tbody>
-                {openRouterItems.map((m) => (
-                  <tr
+        {/* OpenRouter */}
+        <section
+          className={cn(
+            "overflow-hidden rounded-2xl border border-[var(--kp-divider)]",
+            "bg-[var(--kp-bg-alt)]/80 shadow-[0_1px_0_rgba(45,42,38,0.04),0_12px_40px_-24px_rgba(45,42,38,0.35)]",
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--kp-divider)] px-4 py-3 md:px-5">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">OpenRouter 免费模型</h2>
+                <p className="text-[11px] text-[var(--kp-text-2)]">点击模型 id 即可复制到 Chat</p>
+              </div>
+            </div>
+            <a
+              href="https://openrouter.ai/models?q=free"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--kp-text-2)] transition-colors hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-brand-deep)]"
+            >
+              官方目录 <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+
+          <div className="space-y-3 px-4 py-3 md:px-5">
+            {!hasOrKey && (
+              <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-2.5 text-xs leading-relaxed text-amber-950/80 dark:text-amber-100/90">
+                未配置 <code className="rounded bg-black/5 px-1 font-mono">OPENROUTER_API_KEY</code>
+                。写入项目根目录 <code className="rounded bg-black/5 px-1 font-mono">.env</code>{" "}
+                后重启即可在线同步 <code className="rounded bg-black/5 px-1 font-mono">:free</code>{" "}
+                目录；有落盘缓存时可只读浏览。
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[12rem] flex-1 max-w-md">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--kp-text-3)]" />
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="搜索模型 id / 名称 / 描述…"
+                  className="h-9 border-[var(--kp-divider)] bg-[var(--kp-bg)] pl-8 text-sm"
+                />
+              </div>
+              <KpSelect
+                value={modality}
+                onChange={(v) => setModality(v as "all" | "text" | "multimodal")}
+                options={modalityOptions}
+                className="w-32"
+              />
+              <KpSelect
+                value={sort}
+                onChange={(v) => setSort(v as "context_desc" | "context_asc" | "name")}
+                options={sortOptions}
+                className="w-32"
+              />
+            </div>
+          </div>
+
+          {modelsQuery.isLoading ? (
+            <div className="px-4 pb-5 md:px-5">
+              <LoadingState />
+            </div>
+          ) : openRouterItems.length === 0 ? (
+            <div className="px-4 pb-5 md:px-5">
+              <EmptyState
+                title="暂无 :free 模型"
+                description={
+                  hasOrKey
+                    ? "点击「立即刷新」从 OpenRouter 拉取目录。"
+                    : "配置 OPENROUTER_API_KEY 后刷新即可。"
+                }
+              />
+            </div>
+          ) : (
+            <>
+            <ul className="divide-y divide-[var(--kp-divider)] border-t border-[var(--kp-divider)]">
+              {orPageItems.map((m, i) => {
+                const text = m.description || m.topProvider || "";
+                const long = text.length > 140;
+                const open = !!expandedDesc[m.id];
+                const multi = isMultimodal(m.modality);
+                return (
+                  <li
                     key={m.id}
-                    className="border-t border-[var(--kp-divider)] hover:bg-[var(--kp-bg-alt)]/60"
-                  >
-                    <td className="px-3 py-2.5 align-top">
-                      <div className="font-medium text-[var(--kp-text-1)]">{m.name}</div>
-                      <div className="font-mono text-[10px] text-[var(--kp-text-3)] break-all">
-                        {m.id}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 align-top font-mono text-[var(--kp-text-2)]">
-                      {formatContext(m.contextLength)}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-2)]">
-                      {formatPrice(m.pricingPrompt)}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-2)]">
-                      {formatPrice(m.pricingCompletion)}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-2)]">
-                      {m.modality ?? "—"}
-                      {isMultimodal(m.modality) && (
-                        <span className="ml-1 text-[10px] text-[var(--kp-brand-deep)]">多模态</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-3)] max-w-xs">
-                      <p className="line-clamp-2">{m.description || m.topProvider || "—"}</p>
-                    </td>
-                    <td className="px-3 py-2.5 align-top">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 gap-1"
-                        onClick={() => void onCopy(m.id)}
-                      >
-                        <Copy className="h-3 w-3" />
-                        {copiedId === m.id ? "已复制" : "复制"}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* Freellm */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Radio className="h-4 w-4 text-[var(--kp-brand-deep)]" />
-          <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">Freellm 网关通道</h2>
-          <span className="text-[10px] text-[var(--kp-text-3)]">
-            已探活入库 · 不展示明文 key
-          </span>
-        </div>
-
-        {channelsQuery.isLoading ? (
-          <LoadingState />
-        ) : freellmItems.length === 0 ? (
-          <EmptyState
-            title="暂无 freellm 通道"
-            description="启动同步或点击「立即刷新」从 GitHub freellm / 本地 README 拉取并探活。"
-          />
-        ) : (
-          <div className="overflow-x-auto rounded-2xl border border-[var(--kp-divider)]">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[var(--kp-bg-alt)] text-[var(--kp-text-3)]">
-                <tr>
-                  <th className="px-3 py-2.5 font-medium">模型</th>
-                  <th className="px-3 py-2.5 font-medium">Provider</th>
-                  <th className="px-3 py-2.5 font-medium">预算</th>
-                  <th className="px-3 py-2.5 font-medium">限速</th>
-                  <th className="px-3 py-2.5 font-medium">过期</th>
-                  <th className="px-3 py-2.5 font-medium">状态</th>
-                  <th className="px-3 py-2.5 font-medium w-20" />
-                </tr>
-              </thead>
-              <tbody>
-                {freellmItems.map((c) => (
-                  <tr
-                    key={c.id}
                     className={cn(
-                      "border-t border-[var(--kp-divider)]",
-                      c.isRuntime && "bg-[var(--kp-brand-soft)]/40",
+                      "group px-4 py-3.5 transition-colors md:px-5",
+                      "hover:bg-[var(--kp-bg)]/70",
+                      i % 2 === 1 && "bg-[var(--kp-bg)]/35",
                     )}
                   >
-                    <td className="px-3 py-2.5 align-top">
-                      <div className="font-medium text-[var(--kp-text-1)]">
-                        {c.model ?? c.name}
-                        {c.isRuntime && (
-                          <span className="ml-1.5 text-[10px] font-normal text-[var(--kp-brand-deep)]">
-                            运行时
-                          </span>
-                        )}
+                    <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-semibold leading-snug text-[var(--kp-text-1)]">
+                            {m.name}
+                          </h3>
+                          <StatusPill tone="ok">Free</StatusPill>
+                          {multi && <StatusPill tone="brand">多模态</StatusPill>}
+                          <StatusPill tone="neutral">{formatContext(m.contextLength)} ctx</StatusPill>
+                        </div>
+                        <CopyIdButton
+                          id={m.id}
+                          copied={copiedId === m.id}
+                          onCopy={() => void onCopy(m.id)}
+                        />
+                        {text ? (
+                          <div className="max-w-3xl space-y-1">
+                            <p
+                              className={cn(
+                                "text-xs leading-relaxed text-[var(--kp-text-2)] whitespace-pre-wrap break-words",
+                                !open && long && "line-clamp-2",
+                              )}
+                            >
+                              {text}
+                            </p>
+                            {long && (
+                              <button
+                                type="button"
+                                className="text-[11px] font-medium text-[var(--kp-brand-deep)] hover:underline"
+                                onClick={() =>
+                                  setExpandedDesc((prev) => ({ ...prev, [m.id]: !prev[m.id] }))
+                                }
+                              >
+                                {open ? "收起" : "展开全部"}
+                              </button>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="font-mono text-[10px] text-[var(--kp-text-3)] truncate max-w-[220px]">
-                        {c.name}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-2)]">
-                      {c.provider ?? "—"}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-2)]">
-                      {c.budget ?? "—"}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-2)]">
-                      {c.rateLimit ?? "—"}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-3)] whitespace-nowrap">
-                      {c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 align-top text-[var(--kp-text-2)]">
-                      {c.validated ? "已探活" : c.status ?? "—"}
-                    </td>
-                    <td className="px-3 py-2.5 align-top">
-                      {c.model && (
+                      <div className="flex shrink-0 flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:pt-0.5">
+                        <span className="text-[11px] text-[var(--kp-text-2)]">
+                          {formatModality(m.modality)}
+                        </span>
                         <Button
                           type="button"
-                          variant="ghost"
                           size="sm"
-                          className="h-7 px-2 gap-1"
-                          onClick={() => void onCopy(c.model!)}
+                          variant="secondary"
+                          className="h-8 gap-1.5 border border-[var(--kp-divider)] bg-[var(--kp-bg)] text-[var(--kp-text-1)] hover:border-[var(--kp-brand)]/40 hover:bg-[var(--kp-brand-soft)]"
+                          onClick={() => void onCopy(m.id)}
                         >
-                          <Copy className="h-3 w-3" />
-                          {copiedId === c.model ? "已复制" : "复制"}
+                          {copiedId === m.id ? (
+                            <>
+                              <Check className="h-3.5 w-3.5 text-emerald-600" />
+                              已复制
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="h-3.5 w-3.5" />
+                              复制 id
+                            </>
+                          )}
                         </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="px-2 md:px-3">
+              <Pagination
+                page={orPageSafe}
+                pageSize={OPENROUTER_PAGE_SIZE}
+                total={orTotal}
+                totalPages={orTotalPages}
+                onPageChange={setOrPage}
+              />
+            </div>
+            </>
+          )}
+        </section>
+
+        {/* Freellm */}
+        <section
+          className={cn(
+            "overflow-hidden rounded-2xl border border-[var(--kp-divider)]",
+            "bg-[var(--kp-bg-alt)]/80 shadow-[0_1px_0_rgba(45,42,38,0.04),0_12px_40px_-24px_rgba(45,42,38,0.35)]",
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--kp-divider)] px-4 py-3 md:px-5">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+                <Radio className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">Freellm 网关通道</h2>
+                <p className="text-[11px] text-[var(--kp-text-2)]">已探活入库 · 不展示明文 key</p>
+              </div>
+            </div>
           </div>
-        )}
-      </section>
-    </div>
+
+          {channelsQuery.isLoading ? (
+            <div className="px-4 py-5 md:px-5">
+              <LoadingState />
+            </div>
+          ) : freellmItems.length === 0 ? (
+            <div className="px-4 py-5 md:px-5">
+              <EmptyState
+                title="暂无 freellm 通道"
+                description="启动同步或点击「立即刷新」从 GitHub freellm / 本地 README 拉取并探活。"
+              />
+            </div>
+          ) : (
+            <>
+            <ul className="divide-y divide-[var(--kp-divider)]">
+              {freellmPageItems.map((c) => (
+                <li
+                  key={c.id}
+                  className={cn(
+                    "flex flex-col gap-2 px-4 py-3.5 transition-colors md:px-5 sm:flex-row sm:items-center sm:justify-between",
+                    "hover:bg-[var(--kp-bg)]/70",
+                    c.isRuntime && "bg-[var(--kp-brand-soft)]/50",
+                  )}
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--kp-text-1)]">
+                        {c.model ?? c.name}
+                      </h3>
+                      {c.isRuntime && <StatusPill tone="ok">运行时</StatusPill>}
+                      <StatusPill tone={c.validated ? "ok" : "neutral"}>
+                        {c.validated ? "已探活" : c.status ?? "—"}
+                      </StatusPill>
+                      {c.provider && <StatusPill tone="neutral">{c.provider}</StatusPill>}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--kp-text-2)]">
+                      <span className="font-mono truncate max-w-[18rem]">{c.name}</span>
+                      {c.budget && <span>预算 {c.budget}</span>}
+                      {c.rateLimit && <span>限速 {c.rateLimit}</span>}
+                      {c.expiresAt && (
+                        <span>过期 {new Date(c.expiresAt).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
+                  {c.model && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 shrink-0 gap-1.5 border border-[var(--kp-divider)] bg-[var(--kp-bg)] hover:bg-[var(--kp-brand-soft)]"
+                      onClick={() => void onCopy(c.model!)}
+                    >
+                      {copiedId === c.model ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          已复制
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" />
+                          复制 id
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div className="px-2 md:px-3">
+              <Pagination
+                page={freellmPageSafe}
+                pageSize={FREELLM_PAGE_SIZE}
+                total={freellmTotal}
+                totalPages={freellmTotalPages}
+                onPageChange={setFreellmPage}
+              />
+            </div>
+            </>
+          )}
+        </section>
+    </motion.div>
   );
 }
 
@@ -350,13 +516,19 @@ export function FreeModelsSummaryCard() {
   return (
     <a
       href="/free-models"
-      className="block rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 md:p-5 hover:border-[var(--kp-brand-deep)]/40 transition-colors"
+      className={cn(
+        "block rounded-2xl border border-[var(--kp-divider)] p-4 md:p-5 transition-colors",
+        "bg-gradient-to-br from-[var(--kp-bg-alt)] to-[var(--kp-brand-soft)]/40",
+        "hover:border-[var(--kp-brand-deep)]/35",
+      )}
     >
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        <Sparkles className="h-4 w-4 text-[var(--kp-brand-deep)]" />
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+          <Sparkles className="h-4 w-4" />
+        </span>
         <span className="font-semibold text-[var(--kp-text-1)]">免费模型目录</span>
         {isLoading || !data ? (
-          <span className="text-[var(--kp-text-3)]">加载中…</span>
+          <span className="text-[var(--kp-text-2)]">加载中…</span>
         ) : (
           <>
             <span className="font-mono text-[var(--kp-text-2)]">
@@ -364,10 +536,8 @@ export function FreeModelsSummaryCard() {
               {" · "}
               freellm {data.freellm.credentialCount}
             </span>
-            {!data.openRouter.hasApiKey && (
-              <span className="text-[10px] text-amber-600 dark:text-amber-400">未配 OR key</span>
-            )}
-            <span className="text-[10px] text-[var(--kp-text-3)]">查看全部 →</span>
+            {!data.openRouter.hasApiKey && <StatusPill tone="warn">未配 OR key</StatusPill>}
+            <span className="text-[11px] font-medium text-[var(--kp-brand-deep)]">查看全部 →</span>
           </>
         )}
       </div>

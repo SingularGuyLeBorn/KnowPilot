@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from "vitest";
+﻿import { describe, expect, it, beforeEach, vi } from "vitest";
 import {
   projectOpenRouterFreeModel,
   listFreellmChannels,
@@ -9,6 +9,8 @@ import {
   filterOpenRouterFreeModels,
   setFreellmGatewayRuntime,
 } from "../infra/freeLlmRuntime.js";
+import { executeNativeTool } from "../infra/nativeTools.js";
+import { createNativeCtx, createTempProjectDir } from "./helpers/toolTestFixtures.js";
 
 describe("freeModels catalog", () => {
   beforeEach(() => {
@@ -95,7 +97,6 @@ describe("freeModels catalog", () => {
             }),
             expiresAt: null,
             lastUsedAt: null,
-            // 模拟 ORM 若误 select value，列表函数也不应透出
             value: "sk-secret-should-not-leak",
           },
           {
@@ -117,5 +118,90 @@ describe("freeModels catalog", () => {
     expect(JSON.stringify(items)).not.toContain("sk-secret");
     expect(JSON.stringify(items)).not.toContain("value");
     expect(items[0]).not.toHaveProperty("value");
+  });
+
+  it("free_models_list：manager 可读目录；结果不含明文 key；sub 被拒", async () => {
+    const root = createTempProjectDir();
+    setOpenRouterFreeModelCatalog({
+      syncedAt: "2026-07-18T00:00:00.000Z",
+      models: [
+        {
+          id: "vendor/flash:free",
+          name: "Flash Free",
+          description: "x".repeat(400),
+          modality: "text->text",
+          contextLength: 128_000,
+        },
+        {
+          id: "vendor/vision:free",
+          name: "Vision Free",
+          modality: "text+image->text",
+          contextLength: 64_000,
+        },
+      ],
+    });
+    setFreellmGatewayRuntime({
+      apiKey: "sk-secret-runtime",
+      baseUrl: "https://example.com/v1",
+      model: "gateway-model",
+      credentialId: "cred-rt",
+      syncedAt: new Date().toISOString(),
+    });
+
+    const prisma = {
+      credential: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "cred-rt",
+            name: "free-channel",
+            metadata: JSON.stringify({
+              source: "free",
+              model: "gateway-model",
+              provider: "auto",
+              validated: true,
+            }),
+            expiresAt: null,
+            lastUsedAt: null,
+            value: "sk-secret-runtime",
+          },
+        ]),
+      },
+    };
+
+    const managerCtx = {
+      ...createNativeCtx(root, { prisma: prisma as any }),
+      prisma: prisma as any,
+      agentSnapshot: {
+        id: "mgr-1",
+        model: "deepseek-v4-flash",
+        systemPrompt: "",
+        tools: ["native:free_models_list"],
+        tier: "manager",
+        workspaceId: "ws-a",
+      },
+    };
+
+    const result = (await executeNativeTool(
+      "free_models_list",
+      { q: "flash", limit: 10 },
+      managerCtx as any,
+    )) as any;
+
+    expect(result.openRouter.totalMatched).toBe(1);
+    expect(result.openRouter.items[0].id).toBe("vendor/flash:free");
+    expect(result.openRouter.items[0].description.length).toBeLessThanOrEqual(240);
+    expect(result.freellm.runtimeModel).toBe("gateway-model");
+    expect(JSON.stringify(result)).not.toContain("sk-secret");
+
+    const subCtx = {
+      ...managerCtx,
+      agentSnapshot: { ...managerCtx.agentSnapshot, id: "sub-1", tier: "sub" },
+    };
+    const denied = (await executeNativeTool("free_models_list", {}, subCtx as any)) as {
+      error?: string;
+      permissionDenied?: boolean;
+    };
+    expect(denied.permissionDenied).toBe(true);
+    expect(denied.error).toContain("TIER_INSUFFICIENT");
   });
 });

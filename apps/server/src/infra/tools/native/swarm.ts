@@ -1,5 +1,5 @@
 /**
- * Native Swarm 域 — agent_* / workspace_* / skill 进化 / 免费 API Key
+ * Native Swarm 域 — agent_* / workspace_* / skill 进化 / 免费 API Key / 免费模型目录
  *
  * PR-4b：从 nativeTools.ts 迁出，handler 与 schema 保持原语义不变。
  * agentCreateSubTool / agentSendMessageTool 导出供 session 域 spawn_subagent 复用。
@@ -19,6 +19,15 @@ import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
 import { createTrpcInvoker } from "../../trpcInvoker.js";
 import { createMemoryRepository } from "../../memoryRepository.js";
 import { MEMORY_SCOPE_GLOBAL, memoryAgentScope, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
+import {
+  filterOpenRouterFreeModels,
+  getFreellmGatewayRuntime,
+  getOpenRouterFreeModelCatalog,
+  getOpenRouterFreeSyncedAt,
+  loadOpenRouterFreeCatalogFromDisk,
+} from "../../freeLlmRuntime.js";
+import { listFreellmChannels } from "../../freeKeysSync.js";
+
 import type { LlmMessage } from "../../llmClient.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
@@ -426,6 +435,8 @@ async function prepareAgentRun(
         tier: agent.tier,
         name: agent.name,
       });
+      // 会话 model 优先：spawn_subagent 复用 agentId 时可通过 session.model 覆盖本轮模型
+      const runModel = (mainSession.model && String(mainSession.model).trim()) || agent.model;
       const messages: LlmMessage[] = [
         { role: "system", content: systemPrompt },
         { role: "user", content: input },
@@ -433,7 +444,7 @@ async function prepareAgentRun(
       const invokeTrpc = createTrpcInvoker({ services: ctx.services });
       const agentMeta = {
         id: agent.id,
-        model: agent.model,
+        model: runModel,
         systemPrompt,
         tools: tierTools,
         tier: agent.tier,
@@ -452,7 +463,7 @@ async function prepareAgentRun(
           const loop = await runAgentLoopStream({
             config: ctx.config,
             services: ctx.services,
-            agent: { model: agent.model, systemPrompt, tools: tierTools },
+            agent: { model: runModel, systemPrompt, tools: tierTools },
             messages,
             llmOptions: {},
             invokeTrpc,
@@ -1108,6 +1119,69 @@ async function freeApiKeysFetchTool(args: Record<string, unknown>, ctx: NativeTo
   };
 }
 
+
+async function freeModelsListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!getOpenRouterFreeModelCatalog()) {
+    loadOpenRouterFreeCatalogFromDisk(ctx.config.projectRoot);
+  }
+
+  const q = typeof args.q === "string" ? args.q.trim() : undefined;
+  const modalityRaw = typeof args.modality === "string" ? args.modality : "all";
+  const modality =
+    modalityRaw === "text" || modalityRaw === "multimodal" || modalityRaw === "all"
+      ? modalityRaw
+      : "all";
+  const sortRaw = typeof args.sort === "string" ? args.sort : "context_desc";
+  const sort =
+    sortRaw === "context_asc" || sortRaw === "name" || sortRaw === "context_desc"
+      ? sortRaw
+      : "context_desc";
+  const limit = Math.min(100, Math.max(1, Math.floor(Number(args.limit) || 30)));
+  const includeFreellm = args.includeFreellm !== false;
+
+  const all = filterOpenRouterFreeModels({ q: q || undefined, modality, sort });
+  const sliced = all.slice(0, limit);
+  const items = sliced.map((m) => ({
+    id: m.id,
+    name: m.name,
+    contextLength: m.contextLength,
+    modality: m.modality,
+    // 截断说明，避免一次把整份目录塞进上下文
+    description: m.description ? m.description.slice(0, 240) : undefined,
+  }));
+
+  const result: Record<string, unknown> = {
+    openRouter: {
+      syncedAt: getOpenRouterFreeSyncedAt(),
+      hasApiKey: !!ctx.config.llm.providers.openrouter?.apiKey?.trim(),
+      totalMatched: all.length,
+      returned: items.length,
+      truncated: all.length > items.length,
+      items,
+      hint: "复制模型 id 到 Chat / spawn_subagent.model / compact.summaryModel 即可使用（:free 需 OPENROUTER_API_KEY）",
+    },
+  };
+
+  if (includeFreellm && ctx.prisma) {
+    const channels = await listFreellmChannels(ctx.prisma);
+    const runtime = getFreellmGatewayRuntime();
+    result.freellm = {
+      runtimeModel: runtime?.model ?? null,
+      total: channels.length,
+      channels: channels.slice(0, limit).map((c) => ({
+        model: c.model,
+        name: c.name,
+        provider: c.provider,
+        validated: c.validated,
+        isRuntime: c.isRuntime,
+        status: c.status,
+      })),
+    };
+  }
+
+  return result;
+}
+
 // ─── Hermes 进化：Skill 发现与推广（#45）───
 
 async function skillDiscoverTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -1368,15 +1442,39 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   {
     name: "free_api_keys_list",
     reentrant: true, // 只读：Credential findMany（不触碰 lastUsedAt）
-    description: "列出可用的免费 API Key（从 Credential 表中 scope=llm 且 metadata.source=free 的记录）。",
+    description: "列出可用的免费 API Key 元数据（不返回明文；Credential 中 source=free）。仅管理 Agent（manager）及以上可调用。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "free_api_keys_fetch",
-    description: "获取一个可用的免费 API Key（轮询分配，标记 lastUsedAt）。用于 Agent 无专属 key 时获取临时 key。",
+    description: "获取一个可用的免费 API Key（轮询分配，标记 lastUsedAt，返回明文）。仅管理 Agent（manager）及以上可调用；子 Agent 禁止。",
     parameters: zodParams(
       z.object({
         provider: z.string().describe(`偏好提供商（如 ${LLM_PROVIDER_DEEPSEEK}/openai），不填则随机分配`).optional(),
+      }),
+    ),
+  },
+  {
+    name: "free_models_list",
+    reentrant: true, // 只读：进程内/落盘目录 + freellm 通道元数据，永不返回明文 key
+    description:
+      "列出可用免费模型：OpenRouter :free 目录（id/上下文/模态/说明）+ 可选 freellm 网关通道元数据（无明文 key）。仅管理 Agent（manager）及以上可调用。可用 q/modality/sort/limit 缩小结果，避免撑爆上下文。",
+    parameters: zodParams(
+      z.object({
+        q: z.string().describe("搜索模型 id / 名称 / 描述关键词").optional(),
+        modality: z
+          .enum(["all", "text", "multimodal"])
+          .describe("模态筛选：all | text | multimodal，默认 all")
+          .optional(),
+        sort: z
+          .enum(["context_desc", "context_asc", "name"])
+          .describe("排序：context_desc（默认）| context_asc | name")
+          .optional(),
+        limit: z.number().describe("返回条数上限，默认 30，最大 100").optional(),
+        includeFreellm: z
+          .boolean()
+          .describe("是否附带 freellm 网关通道列表（默认 true；不含明文 key）")
+          .optional(),
       }),
     ),
   },
@@ -1438,6 +1536,7 @@ const SWARM_HANDLERS: Record<string, NativeToolHandler> = {
   workspace_archive: workspaceArchiveTool,
   free_api_keys_list: freeApiKeysListTool,
   free_api_keys_fetch: freeApiKeysFetchTool,
+  free_models_list: freeModelsListTool,
   skill_discover: skillDiscoverTool,
   skill_promote: skillPromoteTool,
   optimize_agent_prompt: optimizeAgentPromptTool,

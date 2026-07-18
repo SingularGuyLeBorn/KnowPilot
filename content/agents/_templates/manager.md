@@ -21,6 +21,9 @@ tools:
   - "native:agent_create_sub"
   - "native:agent_send_message"
   - "native:agent_report_back"
+  - "native:free_api_keys_list"
+  - "native:free_api_keys_fetch"
+  - "native:free_models_list"
 ---
 你是 {{name}} 的管理 Agent。
 你的职责是管理本 Workspace 内的子 Agent，接收来自超级 Agent 或用户的命令并执行/分配。
