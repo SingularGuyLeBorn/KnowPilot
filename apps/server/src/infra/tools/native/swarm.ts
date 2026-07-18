@@ -1279,7 +1279,12 @@ async function generateSkillFromExperienceTool(args: Record<string, unknown>, ct
     String(args.skillDescription || ""),
   );
   return result.success
-    ? { success: true, skillId: result.skillId, message: `Skill 已从经验中生成` }
+    ? {
+        success: true,
+        skillId: result.skillId,
+        draft: true,
+        message: `Skill draft 已生成（enabled=false）。请人工审阅后启用，再 skill_promote。`,
+      }
     : { error: result.reason ?? "生成失败" };
 }
 
@@ -1503,7 +1508,8 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "generate_skill_from_experience",
-    description: "从 Agent 运行经验中自动生成 Skill（管理 Agent 专用，Agent 进化高级版）。分析高频工具组合，提炼为可复用的 Skill。",
+    description:
+      "从 Agent 运行经验中生成 Skill **draft**（管理 Agent+，Hermes）。分析高频工具组合；新建 Skill 默认 enabled=false，需人工启用后再推广。",
     parameters: zodParams(
       z.object({
         agentId: z.string().describe("分析哪个 Agent 的经验"),

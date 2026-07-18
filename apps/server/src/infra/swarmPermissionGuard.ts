@@ -32,12 +32,14 @@ export interface PermissionCheckContext {
  * 未列出的工具默认对所有 tier 开放（读写类工具仍受 allowedNative 白名单约束）。
  */
 const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
-  // 超级 Agent 专属：建/归档空间、创建任意 tier Agent
+  // 超级 Agent 专属：建/归档空间、创建任意 tier Agent、跨 Workspace Skill 发现/推广
   super: [
     "workspace_create",
     "workspace_archive",
     "workspace_delete",
     "agent_create",
+    "skill_discover",
+    "skill_promote",
   ],
   // 管理 Agent 及以上：本 Workspace 内 CRUD / 检视 / 派生子 Agent（出域由工具内硬拦）
   manager: [
@@ -63,6 +65,9 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "free_api_keys_list",
     "free_api_keys_fetch",
     "free_models_list",
+    // Hermes：经验→Skill draft / prompt 优化（sub 不可）
+    "optimize_agent_prompt",
+    "generate_skill_from_experience",
   ],
   // 子 Agent 及以上（manager/super 也可以用）：可执行异步任务，但不能再派生子 Agent
   sub: [
