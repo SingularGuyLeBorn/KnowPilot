@@ -36,23 +36,26 @@ winget install Cloudflare.cloudflared
 # 或把 cloudflared.exe 放到仓库 cloudflare\ 目录
 ```
 
-### 2. 启动本地服务
+### 2. 一键远程（推荐）
+
+公网试用前建议在 `.env` 打开密码（见下方「必开鉴权」）。然后**一个终端**：
 
 ```powershell
 # 在仓库根目录
 pnpm install
-pnpm db:sync
-pnpm dev
-# 确认本机可打开 http://localhost:3000
+pnpm remote
 ```
 
-公网试用前建议在 `.env` 打开密码（见下方「必开鉴权」）。
+会同时拉起 `dev --remote` 与临时隧道，并在终端打印 `https://xxxx.trycloudflare.com`。  
+Ctrl+C 会一并停掉开发服务与 cloudflared。
 
-### 3. 开临时隧道
+等价于「先 `pnpm dev` / `pnpm tunnel:quick`」两步；需要跳过 sync 时：`pnpm remote --quick`。
 
-另开一个终端：
+### 3. 分步启动（可选）
 
 ```powershell
+pnpm dev
+# 另开终端
 pnpm tunnel:quick
 ```
 
@@ -179,13 +182,15 @@ docker compose --profile cloudflare up -d cloudflare
 
 | 命令 | 作用 |
 |---|---|
+| `pnpm remote` | **一键**：dev(--remote) + 临时隧道，打印公网 URL |
+| `pnpm remote:named` | 一键：dev(--remote) + Token/config 命名隧道 |
 | `pnpm dev` | 本地 Web + Server |
 | `pnpm dev:remote` | Web 绑 `0.0.0.0`（局域网/特殊网络） |
-| `pnpm tunnel:quick` | 临时 `*.trycloudflare.com` |
+| `pnpm tunnel:quick` | 仅临时隧道（需已 `pnpm dev`） |
 | `pnpm tunnel:run` | 用 `.env` 的 `CLOUDFLARE_TUNNEL_TOKEN` |
 | `pnpm tunnel:run:config` | 用 `cloudflare/config.yml` |
 
-脚本实现：[`scripts/tunnel.ps1`](../../scripts/tunnel.ps1)。
+脚本：[`scripts/remote.mjs`](../../scripts/remote.mjs)、[`scripts/tunnel.ps1`](../../scripts/tunnel.ps1)。
 
 ---
 
