@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * 输入区模型菜单（Kimi 风格）：模型列表 + 思考强度 / 更多参数 / 系统提示 二级页。
+ * 输入区模型菜单（Kimi 风格）：模型列表 + 免费模型 / 思考强度 / 更多参数 / 系统提示 二级页。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { Check, ChevronLeft, ChevronRight, ChevronDown, Sparkles } from "lucide-react";
 import {
   PRIMARY_CHAT_MODELS,
   type ChatSessionConfig,
@@ -14,8 +15,25 @@ import {
 } from "@knowpilot/shared";
 import { cn } from "@/lib/utils";
 import { useSessionHoverPreview } from "@/lib/hooks";
+import { trpc } from "@/lib/trpc";
 
-type MenuPanel = "root" | "thinking" | "params" | "prompt";
+type MenuPanel = "root" | "free" | "thinking" | "params" | "prompt";
+
+const FREE_PICK_LIMIT = 8;
+
+function shortModelLabel(modelId: string): string {
+  const primary = PRIMARY_CHAT_MODELS.find((m) => m.id === modelId);
+  if (primary) return primary.label.replace(/^DeepSeek /, "");
+  if (modelId.endsWith(":free")) {
+    const base = modelId.replace(/:free$/i, "");
+    const leaf = base.includes("/") ? base.split("/").pop()! : base;
+    return `${leaf} · free`;
+  }
+  if (modelId.includes("/")) {
+    return modelId.split("/").pop() ?? modelId;
+  }
+  return modelId;
+}
 
 const EFFORT_OPTIONS: { id: ReasoningEffort | "off"; label: string; hint?: string }[] = [
   { id: "off", label: "关闭" },
@@ -42,10 +60,28 @@ export function ChatModelMenu({
 }: ChatModelMenuProps) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<MenuPanel>("root");
+  const [freeQ, setFreeQ] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const { enabled: hoverPreview, setEnabled: setHoverPreview } = useSessionHoverPreview();
+
+  const freeEnabled = open && panel === "free";
+  const freeModelsQuery = trpc.llm.listFreeModels.useQuery(
+    { q: freeQ.trim() || undefined, modality: "text", sort: "context_desc" },
+    { enabled: freeEnabled, staleTime: 60_000 },
+  );
+  const freellmQuery = trpc.llm.listFreellmChannels.useQuery(undefined, {
+    enabled: freeEnabled,
+    staleTime: 60_000,
+  });
+
+  const freePicks = useMemo(() => {
+    const items = freeModelsQuery.data?.items ?? [];
+    return items.slice(0, FREE_PICK_LIMIT);
+  }, [freeModelsQuery.data?.items]);
+
+  const freellmRuntimeModel = freellmQuery.data?.runtimeModel?.trim() || null;
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) {
@@ -54,7 +90,7 @@ export function ChatModelMenu({
     }
     const place = () => {
       const rect = triggerRef.current!.getBoundingClientRect();
-      const width = 280;
+      const width = panel === "free" ? 320 : 280;
       const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
       // 锚定在 trigger 上方；具体高度由 transform 拉起
       setMenuPos({ top: rect.top - 8, left });
@@ -80,9 +116,7 @@ export function ChatModelMenu({
     return () => document.removeEventListener("click", onDoc);
   }, [open]);
 
-  const modelLabel =
-    PRIMARY_CHAT_MODELS.find((m) => m.id === chatConfig.model)?.label.replace(/^DeepSeek /, "") ??
-    chatConfig.model;
+  const modelLabel = shortModelLabel(chatConfig.model);
   const thinkingOn = modelReasoningRequired || chatConfig.enableReasoning;
   const thinkingSupported = modelSupportsReasoning || modelReasoningRequired;
   const effortLabel = !thinkingOn
@@ -92,12 +126,22 @@ export function ChatModelMenu({
       : "标准";
   const triggerLabel = effortLabel ? `${modelLabel} · ${effortLabel}` : modelLabel;
 
+  const pickFreeModel = (modelId: string) => {
+    updateConfig({ model: modelId, enableReasoning: false });
+    setOpen(false);
+    setPanel("root");
+    setFreeQ("");
+  };
+
   const menu = open && menuPos && typeof document !== "undefined"
     ? createPortal(
         <div
           ref={menuRef}
           data-testid="chat-model-menu"
-          className="fixed z-[200] w-[280px] -translate-y-full overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] shadow-lg"
+          className={cn(
+            "fixed z-[200] -translate-y-full overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] shadow-lg",
+            panel === "free" ? "w-[320px]" : "w-[280px]",
+          )}
           style={{ top: menuPos.top, left: menuPos.left }}
           role="menu"
         >
@@ -143,6 +187,18 @@ export function ChatModelMenu({
                 );
               })}
               <div className="my-1 border-t border-[var(--kp-divider-light)]" />
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-3 py-2 text-xs text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+                onClick={() => setPanel("free")}
+                data-testid="chat-model-menu-free"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
+                  免费模型
+                </span>
+                <ChevronRight className="h-3.5 w-3.5 text-[var(--kp-text-3)]" />
+              </button>
               {thinkingSupported && (
                 <button
                   type="button"
@@ -185,6 +241,109 @@ export function ChatModelMenu({
                 <span>会话 hover 预览</span>
                 <span className="text-[var(--kp-text-3)]">{hoverPreview ? "开" : "关"}</span>
               </button>
+            </div>
+          )}
+
+          {panel === "free" && (
+            <div className="py-1" data-testid="chat-model-menu-free-panel">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1 px-3 py-2 text-xs font-medium text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+                onClick={() => {
+                  setPanel("root");
+                  setFreeQ("");
+                }}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                免费模型
+              </button>
+              <div className="px-3 pb-2">
+                <input
+                  type="search"
+                  value={freeQ}
+                  onChange={(e) => setFreeQ(e.target.value)}
+                  placeholder="搜索 OpenRouter :free…"
+                  data-testid="chat-free-model-search"
+                  className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-2 py-1.5 text-xs text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand)]"
+                />
+              </div>
+              {freellmRuntimeModel && (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={chatConfig.model === freellmRuntimeModel}
+                  data-testid="chat-free-model-freellm-runtime"
+                  onClick={() => pickFreeModel(freellmRuntimeModel)}
+                  className={cn(
+                    "flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--kp-bg-mute)]",
+                    chatConfig.model === freellmRuntimeModel && "bg-[var(--kp-brand-soft)]/40",
+                  )}
+                >
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+                    {chatConfig.model === freellmRuntimeModel && (
+                      <Check className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-medium text-[var(--kp-text-1)]">
+                      freellm 当前网关
+                    </span>
+                    <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--kp-text-3)]">
+                      {freellmRuntimeModel}
+                    </span>
+                  </span>
+                </button>
+              )}
+              {freeModelsQuery.isLoading && (
+                <p className="px-3 py-2 text-[10px] text-[var(--kp-text-3)]">加载免费目录…</p>
+              )}
+              {!freeModelsQuery.isLoading && freePicks.length === 0 && (
+                <p className="px-3 py-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+                  暂无 :free 目录。请配置 OPENROUTER_API_KEY 并同步，或打开「免费模型」页刷新。
+                </p>
+              )}
+              {freePicks.map((m) => {
+                const active = chatConfig.model === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={active}
+                    data-testid={`chat-free-model-option-${m.id}`}
+                    onClick={() => pickFreeModel(m.id)}
+                    className={cn(
+                      "flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--kp-bg-mute)]",
+                      active && "bg-[var(--kp-brand-soft)]/40",
+                    )}
+                  >
+                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+                      {active && <Check className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium text-[var(--kp-text-1)]">
+                        {m.name || shortModelLabel(m.id)}
+                      </span>
+                      <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--kp-text-3)]">
+                        {m.id}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="my-1 border-t border-[var(--kp-divider-light)]" />
+              <Link
+                href="/free-models"
+                data-testid="chat-free-model-browse-all"
+                className="flex w-full items-center justify-between px-3 py-2 text-xs text-[var(--kp-brand-deep)] hover:bg-[var(--kp-bg-mute)]"
+                onClick={() => {
+                  setOpen(false);
+                  setPanel("root");
+                }}
+              >
+                <span>浏览全部免费模型</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
             </div>
           )}
 
