@@ -156,6 +156,7 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
   const targetId = String(args.id || "");
   // 默认不附带全局 Memory：experience 会污染父 Agent 上下文，导致把「旧任务经验」当成当前结果
   const includeMemory = args.includeMemory === true;
+  const includeSwarm = args.includeSwarm === true;
   const agent = await ctx.services.agent.getById(targetId);
   if (!agent) return { error: "Agent 不存在" };
   const scopeErr = checkWorkspaceAgentAccess(
@@ -199,6 +200,11 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
       content: m.content.slice(0, 200),
     }));
   }
+  let swarm: unknown;
+  if (includeSwarm && ctx.prisma) {
+    const { getSwarmHealthSnapshot } = await import("../../swarmHealth.js");
+    swarm = await getSwarmHealthSnapshot(ctx.prisma, targetId);
+  }
   return {
     agent: {
       id: agent.id,
@@ -225,9 +231,14 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
           })) ?? [],
       ) ?? [],
     memories,
-    hint: includeMemory
-      ? undefined
-      : "默认不返回 Memory。需要长期偏好时可传 includeMemory=true（不会返回 experience 任务日志）。请以 agent.id（cuid）为准，勿编造 ID。",
+    swarm,
+    hint: [
+      includeMemory ? null : "默认不返回 Memory；需要时传 includeMemory=true。",
+      includeSwarm ? null : "需要 inbox/队列/ask_user 积压时传 includeSwarm=true。",
+      "请以 agent.id（cuid）为准，勿编造 ID。",
+    ]
+      .filter(Boolean)
+      .join(" "),
   };
 }
 
@@ -1414,12 +1425,18 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "agent_inspect",
-    reentrant: true, // 只读：agent/session/memory 查询
-    description: "查看 Agent 上下文（超级=全局；管理 Agent=本 Workspace；对超级仅返回公开元信息）。",
+    reentrant: true, // 只读：agent/session/memory/swarm 查询
+    description:
+      "查看 Agent 上下文（超级=全局；管理 Agent=本 Workspace；对超级仅返回公开元信息）。" +
+      "includeSwarm=true 时附带 inbox 积压、会话运行态、ask_user pending、心跳熔断、superior 队列。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("目标 Agent id"),
-        includeMemory: z.boolean().describe("是否包含 memory（默认 true）").optional(),
+        includeMemory: z.boolean().describe("是否包含 memory（默认 false）").optional(),
+        includeSwarm: z
+          .boolean()
+          .describe("是否包含 Swarm 健康快照（inbox/队列/ask_user/心跳，默认 false）")
+          .optional(),
       }),
     ),
   },

@@ -347,6 +347,15 @@ const server = app.listen(PORT, () => {
     .catch((err) => {
       console.error("❌ [Run] 中断恢复检查失败:", err);
     });
+  // ask_user：从 SQLite 恢复 pending（提醒重挂；无 waiter 时答复走会话队列孤儿投递）
+  import("./infra/askUserGate.js")
+    .then(({ hydrateAskUserGateFromDb }) => hydrateAskUserGateFromDb(config, services))
+    .then((n) => {
+      if (n > 0) console.log(`  ♻️ [ask_user] 已恢复 ${n} 条 pending 提问`);
+    })
+    .catch((err) => {
+      console.error("❌ [ask_user] hydrate 失败:", err);
+    });
   import("./infra/approvalGate.js")
     .then(({ expireStaleApprovals }) => expireStaleApprovals(services))
     .then((n) => {

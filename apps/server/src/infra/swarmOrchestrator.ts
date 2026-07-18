@@ -145,6 +145,7 @@ export class SwarmOrchestrator {
         // pool 命中：先等准备段（快，仅 DB），有早结 outcome 立即返回——不等执行收口（fire-and-forget，可能数分钟）。
         if (existing.prepared) await existing.prepared.catch(() => {});
         const outcome = existing.outcome ?? (existing.completion ? await existing.completion : undefined);
+        this.pushParentUpdate(spec, existing.jobId, "duplicate", outcome);
         return { jobId: existing.jobId, origin: spec.origin, status: "duplicate", deduped: true, outcome };
       }
     }
@@ -262,10 +263,12 @@ export class SwarmOrchestrator {
       this.auditOutcome(spec, finalJobId, outcome);
       throw err;
     }
+    const poolStatus = pool.isRunning(finalJobId) ? "running" : "queued";
+    this.pushParentUpdate(spec, finalJobId, poolStatus);
     return {
       jobId: finalJobId,
       origin: spec.origin,
-      status: pool.isRunning(finalJobId) ? "running" : "queued",
+      status: poolStatus,
       deduped: false,
       completion,
     };
@@ -321,6 +324,35 @@ export class SwarmOrchestrator {
         error: outcome.error,
       },
     );
+    this.pushParentUpdate(spec, jobId, ok ? "completed" : "failed", outcome);
+  }
+
+  /** 向父会话推 swarm_task_update（动态 import，避免与 agentStream 成环） */
+  private pushParentUpdate(
+    spec: SwarmTaskSpec,
+    jobId: string,
+    status: "queued" | "running" | "duplicate" | "completed" | "failed",
+    outcome?: SwarmTaskOutcome,
+  ): void {
+    void import("./sessionStreamHub.js")
+      .then(({ getStreamHub }) => {
+        getStreamHub()?.pushExternalEvent(spec.sessionId, {
+          type: "swarm_task_update",
+          sessionId: spec.sessionId,
+          jobId,
+          origin: spec.origin,
+          taskLabel: spec.taskLabel,
+          status,
+          error: outcome?.error,
+          subagentSessionId:
+            typeof outcome?.attach?.subagentSessionId === "string"
+              ? outcome.attach.subagentSessionId
+              : undefined,
+        });
+      })
+      .catch(() => {
+        /* hub 未就绪时静默 */
+      });
   }
 
   private audit(level: "info" | "warn", event: string, message: string, metadata: Record<string, unknown>): void {

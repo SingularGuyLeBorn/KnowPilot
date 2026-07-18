@@ -187,6 +187,11 @@ export function useChatSseSubscriptions({
       register("ask_user_resolved", () => {
         void utils.askUser.listPending.invalidate({ sessionId: sid });
       });
+      register("swarm_task_update", () => {
+        // 父会话被动跟进 Swarm 任务态，少靠 task.list 盲轮询
+        void utils.task.list.invalidate();
+        void utils.agent.asyncQueueStats.invalidate();
+      });
     }
     return () => {
       for (const fn of cleanups) fn();

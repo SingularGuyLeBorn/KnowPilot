@@ -81,7 +81,7 @@ async function askUserTool(args: Record<string, unknown>, ctx: NativeToolContext
     emailSentTo = to;
   }
 
-  const pending = createAskUserPending({
+  const pending = await createAskUserPending({
     sessionId: ctx.sessionId,
     question,
     options,

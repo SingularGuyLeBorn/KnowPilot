@@ -42,7 +42,7 @@ describe("askUserGate", () => {
   });
 
   it("UI resolve 唤醒 waitAskUserResolution", async () => {
-    const pending = createAskUserPending({
+    const pending = await createAskUserPending({
       sessionId: "clxxxxxxxxxxxxxxxxxxxx",
       question: "选哪个模型？",
       options: ["A", "B"],
@@ -60,7 +60,7 @@ describe("askUserGate", () => {
   });
 
   it("邮件 in_reply_to 命中正确 askId", async () => {
-    const pending = createAskUserPending({
+    const pending = await createAskUserPending({
       sessionId: "clxxxxxxxxxxxxxxxxxxxx",
       question: "邮箱问句",
       channel: "email",
@@ -92,7 +92,7 @@ describe("askUserGate", () => {
   });
 
   it("10 分钟级首次提醒 + 周期性提醒（测试用缩短 ms）", async () => {
-    const pending = createAskUserPending({
+    const pending = await createAskUserPending({
       sessionId: "clxxxxxxxxxxxxxxxxxxxx",
       question: "还在吗？",
       channel: "ui",
@@ -114,7 +114,7 @@ describe("askUserGate", () => {
   });
 
   it("resolve 先于 wait 注册时仍能拿到答复（竞态幂等）", async () => {
-    const pending = createAskUserPending({
+    const pending = await createAskUserPending({
       sessionId: "clxxxxxxxxxxxxxxxxxxxx",
       question: "竞态题",
       channel: "ui",
@@ -128,7 +128,7 @@ describe("askUserGate", () => {
 
   it("TTL 超时以 expired 唤醒", async () => {
     process.env.ASK_USER_TTL_MS = "500";
-    const pending = createAskUserPending({
+    const pending = await createAskUserPending({
       sessionId: "clxxxxxxxxxxxxxxxxxxxx",
       question: "超时题",
       channel: "ui",

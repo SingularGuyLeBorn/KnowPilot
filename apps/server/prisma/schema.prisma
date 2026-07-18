@@ -406,6 +406,32 @@ model Approval {
   @@index([status, createdAt])
 }
 
+/// ask_user 提问账本（进程重启后可恢复 pending / 孤儿答复入队）
+model AskUserRequest {
+  id            String    @id /// UUID（与 askUserGate askId 一致）
+  sessionId     String
+  agentId       String?
+  question      String
+  options       Json?     /// string[]
+  channel       String    @default("ui") /// "ui" | "email"
+  subject       String    @default("KnowPilot 需要你的确认")
+  messageId     String?   /// AgentMail outbound Message-ID
+  threadId      String?
+  status        String    @default("pending") /// "pending" | "resolved"
+  reminderCount Int       @default(0)
+  answer        String?
+  resolution    String?   /// "answered" | "expired" | "aborted"
+  source        String?   /// "ui" | "email" | "timeout" | "abort"
+  createdAt     DateTime  @default(now())
+  resolvedAt    DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([sessionId, status])
+  @@index([status, createdAt])
+  @@index([messageId])
+  @@index([threadId])
+}
+
 /// 工具注册表 (Tool)
 model Tool {
   id               String   @id @default(cuid())

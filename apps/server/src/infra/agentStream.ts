@@ -183,6 +183,17 @@ export type AgentStreamEvent =
       sessionId: string;
       askId: string;
       outcome: "answered" | "expired" | "aborted";
+    }
+  /** SwarmOrchestrator 任务状态推到父会话（去重/排队/完成/失败），替代盲轮询 */
+  | {
+      type: "swarm_task_update";
+      sessionId: string;
+      jobId: string;
+      origin: string;
+      taskLabel: string;
+      status: "queued" | "running" | "duplicate" | "completed" | "failed";
+      error?: string;
+      subagentSessionId?: string;
     };
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
