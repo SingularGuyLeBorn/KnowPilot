@@ -198,11 +198,12 @@ export function ChatView() {
   const effectiveSessionId = focusedSessionId;
   const prevFocusedRef = useRef<string | null>(null);
 
+  // 仅可见 pane 长连 SSE；闲置 open tab 不占 EventSource。切回时 INV-7 hydrate 对账 + 可续传。
   const watchedSessionIds = useMemo(() => {
-    const ids = new Set<string>([...tabs.openTabIds, ...visibleSessionIds]);
+    const ids = new Set<string>([...visibleSessionIds]);
     if (effectiveSessionId) ids.add(effectiveSessionId);
     return [...ids];
-  }, [tabs.openTabIds, visibleSessionIds, effectiveSessionId]);
+  }, [visibleSessionIds, effectiveSessionId]);
 
   // 【悬停预览域】hover preview 开关、监控窗 state、防抖定时器与四个 handler
   // 收拢于 useChatHoverMonitor（含原开关清理 effect 与卸载定时器清理）
