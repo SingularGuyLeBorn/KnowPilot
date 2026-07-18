@@ -1,6 +1,6 @@
 /**
  * Session / Agent 异步自动命名 —— 首条消息时调 LLM 写入 autoName 字段，fire-and-forget，失败静默。
- * 不动 title / name：显示时 autoName 优先，没有才用 title / name。
+ * Session：只写 autoName，不动 title。Agent：写 autoName；若 name 仍是「子 Agent xxxx」占位则一并覆写 name。
  * 幂等：autoName 已有值就跳过，不会重复命名。
  */
 
@@ -74,7 +74,10 @@ export async function autoNameAgent(agentId: string, task: string): Promise<void
     });
     const name = clean(content ?? "", 30);
     if (!name || /^子\s*Agent/i.test(name)) return;
-    await prisma.agent.update({ where: { id: agentId }, data: { autoName: name } });
+    // autoName 供列表/角标展示；若仍是占位 name（子 Agent xxxx），一并覆写 name，避免下游快照继续冻住碎片 id
+    const patch: { autoName: string; name?: string } = { autoName: name };
+    if (/^子\s*Agent\s+[a-z0-9]+$/i.test(agent.name)) patch.name = name;
+    await prisma.agent.update({ where: { id: agentId }, data: patch });
     const mainSession = await prisma.chatSession.findFirst({
       where: { agentId, isMainSession: true, status: { not: "deleted" } },
       select: { id: true },

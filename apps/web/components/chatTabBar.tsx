@@ -21,6 +21,8 @@ export interface ChatTabBarProps {
   onEnterSplit: () => void;
   onExitSplit: () => void;
   canEnterSplit: boolean;
+  /** 悬停/按下标签时预热消息缓存 */
+  onPrefetchTab?: (sessionId: string) => void;
 }
 
 export function ChatTabBar({
@@ -31,6 +33,7 @@ export function ChatTabBar({
   onEnterSplit,
   onExitSplit,
   canEnterSplit,
+  onPrefetchTab,
 }: ChatTabBarProps) {
   const focusedId =
     tabs.focusedPane === "secondary" ? tabs.secondarySessionId : tabs.primarySessionId;
@@ -46,7 +49,7 @@ export function ChatTabBar({
       className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-2.5"
       data-testid="chat-tab-bar"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1.5">
+      <div className="flex min-w-0 flex-1 items-center justify-start gap-1.5 overflow-x-auto py-1.5">
         {ordered.length === 0 ? (
           <div className="rounded-xl bg-[var(--kp-bg-mute)] px-3 py-1.5 text-[11px] text-[var(--kp-text-3)]">
             新对话
@@ -63,7 +66,7 @@ export function ChatTabBar({
                 className={cn(
                   "group flex max-w-[200px] shrink-0 items-center gap-0.5 rounded-xl border px-1.5 text-[12px] transition-colors",
                   isFocused
-                    ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/50 font-medium text-[var(--kp-brand-deep)] shadow-sm"
+                    ? "border-[var(--kp-brand-deep)] bg-[var(--kp-brand-deep)] font-semibold text-white shadow-sm"
                     : isVisibleOther
                       ? "border-[var(--kp-divider)] bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]"
                       : "border-transparent bg-transparent text-[var(--kp-text-3)] hover:border-[var(--kp-divider)] hover:bg-[var(--kp-bg-mute)]/70",
@@ -76,10 +79,14 @@ export function ChatTabBar({
                   type="button"
                   className="min-w-0 flex-1 truncate px-1.5 py-1.5 text-left"
                   onClick={() => onFocusTab(item.id)}
+                  onMouseEnter={() => onPrefetchTab?.(item.id)}
                   onMouseDown={(e) => {
                     if (e.button === 1) {
                       e.preventDefault();
                       onCloseTab(item.id);
+                    } else if (e.button === 0) {
+                      // mousedown 比 click 更早发起预取，缩短切 tab 空白窗
+                      onPrefetchTab?.(item.id);
                     }
                   }}
                   title={item.title}
@@ -89,9 +96,11 @@ export function ChatTabBar({
                 <button
                   type="button"
                   className={cn(
-                    "shrink-0 rounded-lg p-1 text-[var(--kp-text-3)] transition",
-                    "opacity-0 group-hover:opacity-100 hover:bg-[var(--kp-bg)] hover:text-[var(--kp-text-1)]",
-                    isFocused && "opacity-70",
+                    "shrink-0 rounded-lg p-1 transition",
+                    "opacity-0 group-hover:opacity-100",
+                    isFocused
+                      ? "text-white/80 hover:bg-white/15 hover:text-white opacity-80"
+                      : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg)] hover:text-[var(--kp-text-1)]",
                   )}
                   aria-label={`关闭 ${item.title}`}
                   data-testid="chat-tab-close"

@@ -45,7 +45,6 @@ import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
 import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
 import { saveChatStoresToStorage, useChatRunStream } from "@/lib/useChatRunStream";
 import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
-import { useChatEnqueue } from "@/lib/useChatEnqueue";
 import { useChatSseSubscriptions } from "@/lib/useChatSseSubscriptions";
 import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
 import { useChatTabs } from "@/lib/useChatTabs";
@@ -113,6 +112,7 @@ export function ChatView() {
     setLeftTab,
     historySubTab,
     setHistorySubTab,
+    prefsReady,
   } = useChatUiPrefs(searchParams);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -272,6 +272,30 @@ export function ChatView() {
       ensureFocusedSession(sessionFromUrl);
     }
   }, [tabsHydrated, sessionFromUrl, focusedSessionId, ensureFocusedSession]);
+
+  // 子 Agent 任务会话已终态时从标签栏摘掉（当前正在看的除外，避免读报告时被踢走）
+  useEffect(() => {
+    if (!tabsHydrated) return;
+    const items = sessionsQuery.data?.items;
+    if (!items?.length || tabs.openTabIds.length === 0) return;
+    const byId = new Map(items.map((s) => [s.id, s]));
+    const terminal = new Set(["completed", "failed", "archived", "deleted"]);
+    for (const id of tabs.openTabIds) {
+      if (id === focusedSessionId) continue;
+      const s = byId.get(id);
+      if (!s) continue;
+      const isSub = s.kind === "subagent" || !!s.parentSessionId;
+      if (isSub && terminal.has(String(s.status))) {
+        closeTab(id);
+      }
+    }
+  }, [
+    tabsHydrated,
+    tabs.openTabIds,
+    focusedSessionId,
+    sessionsQuery.data?.items,
+    closeTab,
+  ]);
 
   // tabs 焦点 / 分屏 → URL（本地操作的唯一写回通道；selectSession 等也可先写 URL，本效应幂等对齐）
   useEffect(() => {
@@ -472,12 +496,6 @@ export function ChatView() {
     },
     [backendDown, cancelAsyncJobMutateFn, showToast],
   );
-
-  const retryAsyncJobMutation = trpc.agent.retryAsyncJob.useMutation({
-    onSuccess: () => {
-      void asyncQueueQuery.refetch();
-    },
-  });
 
   const pinAsyncJobMutation = trpc.agent.toggleAsyncJobPinned.useMutation({
     onSuccess: () => {
@@ -815,21 +833,7 @@ export function ChatView() {
     return off;
   }, []);
 
-  // R16：useCallback 稳定化，使 ChatInputArea memo 后流式期间跳过重渲染
-  // 【enqueue 编排簇】enqueueMessage + 500ms 防重 lastEnqueueRef 收拢于 useChatEnqueue
-  // （W13e 拆出；useCallback 体与 deps 逐字未改，仅 sessionDetail?.status 解构重命名为
-  // sessionStatus）。INV-8 ① 用户入队显式 drain 仍经 consumeRef 调用。
-  // 父级仍挂 enqueue（compact 快捷等）；各 pane 自有一份 enqueue 绑定自己的 sessionId
-  useChatEnqueue({
-    backendDown,
-    effectiveSessionId,
-    sessionStatus: sessionDetail?.status,
-    createSessionQueueItemMutation,
-    submitInjectMutation,
-    isSessionRunOccupied,
-    showToast,
-    consumeRef,
-  });
+  // enqueueMessage 在各 ChatSessionPane 内自行挂载（含 /goal|/research 闸）
 
   // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
   const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
@@ -1091,13 +1095,23 @@ export function ChatView() {
         cache = {};
       }
     }
-    const fromList = new Map(
-      (sessionsQuery.data?.items ?? []).map((s) => [s.id, sessionLabel(s)]),
-    );
-    return tabs.openTabIds.map((id) => ({
-      id,
-      title: fromList.get(id) || cache[id] || "新对话",
-    }));
+    const items = sessionsQuery.data?.items ?? [];
+    const fromList = new Map(items.map((s) => [s.id, sessionLabel(s)]));
+    const byId = new Map(items.map((s) => [s.id, s]));
+    return tabs.openTabIds.map((id) => {
+      const base = fromList.get(id) || cache[id] || "新对话";
+      const s = byId.get(id);
+      const isSub = !!s && (s.kind === "subagent" || !!s.parentSessionId);
+      const status = s ? String(s.status) : "";
+      // 标题常冻住「任务排队等待中」，终态时补后缀避免误以为还在排队
+      if (isSub && status === "completed" && !/已完成/.test(base)) {
+        return { id, title: `${base} · 已完成` };
+      }
+      if (isSub && status === "failed" && !/失败/.test(base)) {
+        return { id, title: `${base} · 失败` };
+      }
+      return { id, title: base };
+    });
   }, [tabs.openTabIds, sessionsQuery.data?.items]);
 
   const overlayChatConfig = focusedPaneConfig ?? chatConfig;
@@ -1132,6 +1146,7 @@ export function ChatView() {
         setLeftTab={setLeftTab}
         historySubTab={historySubTab}
         setHistorySubTab={setHistorySubTab}
+        prefsReady={prefsReady}
         syncChatUiToUrl={syncChatUiToUrl}
         effectiveSessionId={effectiveSessionId}
         effectiveAgentId={effectiveAgentId}
@@ -1159,7 +1174,6 @@ export function ChatView() {
         setToast={showToast}
         refetchSession={refetchSession}
         cancelAsyncJobMutate={cancelAsyncJobMutate}
-        retryAsyncJobMutate={retryAsyncJobMutation.mutate}
         pinAsyncJobMutate={pinAsyncJobMutation.mutate}
         runtimeGroupTab={runtimeGroupTab}
         setRuntimeGroupTab={setRuntimeGroupTab}
@@ -1187,6 +1201,11 @@ export function ChatView() {
           onEnterSplit={() => enterSplit()}
           onExitSplit={exitSplit}
           canEnterSplit={tabs.openTabIds.length >= 2}
+          onPrefetchTab={(id) => {
+            void sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
+              utils.message.listForChat.fetch(opts),
+            );
+          }}
         />
         <div
           className={cn(
@@ -1194,8 +1213,9 @@ export function ChatView() {
             tabs.layout === "split" ? "flex-row" : "flex-col",
           )}
         >
+          {/* 稳定 key：切会话只换 sessionId，禁止整树 remount 造成空白闪一下 */}
           <ChatSessionPane
-            key={`primary-${tabs.primarySessionId ?? "new"}`}
+            key="primary"
             sessionId={tabs.primarySessionId}
             isFocused={tabs.focusedPane === "primary"}
             onFocus={() => focusPane("primary")}
@@ -1207,7 +1227,7 @@ export function ChatView() {
             <>
               <div className="w-px shrink-0 bg-[var(--kp-divider)]" />
               <ChatSessionPane
-                key={`secondary-${tabs.secondarySessionId}`}
+                key="secondary"
                 sessionId={tabs.secondarySessionId}
                 isFocused={tabs.focusedPane === "secondary"}
                 onFocus={() => focusPane("secondary")}

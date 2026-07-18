@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatQueuedHint, type ChatQueueItem, type SyncTaskItem } from "@/lib/chatQueueTypes";
+import { formatSubagentDisplayName } from "@/components/chatMessageBits";
+import { requestLocateDelivery } from "@/lib/deliveryLocate";
 
 export function kindLabel(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
@@ -518,7 +520,10 @@ const STATUS_SPRING = { type: "spring" as const, stiffness: 320, damping: 28 };
 
 function statusKindLabel(item: ChatQueueItem): string {
   if (item.sourceType === "sleep" || /^sleep\b/i.test(item.taskLabel ?? "")) return "async sleep";
-  if (item.sourceType === "subagent") return "async subagent";
+  if (item.sourceType === "subagent") {
+    const name = formatSubagentDisplayName(item.subagentName);
+    return name ? `async · ${name}` : "async subagent";
+  }
   if (item.sourceType === "async_task_tool") return "async tool";
   return "async task";
 }
@@ -551,9 +556,10 @@ function StatusRow({
   const label = statusKindLabel(item);
   const title = item.taskLabel || previewText(item);
   const lastLog = item.logs?.length ? item.logs[item.logs.length - 1]?.message : "";
+  // 已消费/待消费：单行摘要即可；完整原文点卡片跳转气泡查看
   const preview =
     tone === "consumed" || tone === "held" || tone === "ready"
-      ? (item.asyncResult ?? item.text).slice(0, 220)
+      ? (item.asyncResult ?? item.text).replace(/\s+/g, " ").trim().slice(0, 72)
       : tone === "queued"
         ? formatQueuedHint(item) || item.text || lastLog
         : item.text || lastLog;
@@ -568,6 +574,18 @@ function StatusRow({
           : tone === "held"
             ? "钉住"
             : "已消费";
+  const showElapsed = (tone === "queued" || tone === "running") && !!item.createdAt;
+  const canLocate = (tone === "consumed" || tone === "ready") && !!item.jobId;
+  const displaySubName = formatSubagentDisplayName(item.subagentName);
+
+  const locateBubble = () => {
+    if (!item.jobId) return;
+    const ok = requestLocateDelivery(item.jobId);
+    if (!ok) {
+      // 气泡可能尚未 hydrate；仍提示用户意图
+      console.warn(`[runtime] 未找到投递气泡 jobId=${item.jobId}`);
+    }
+  };
 
   return (
     <motion.div
@@ -577,8 +595,23 @@ function StatusRow({
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 16, scale: 0.98, transition: { duration: 0.18 } }}
       transition={STATUS_SPRING}
+      role={canLocate ? "button" : undefined}
+      tabIndex={canLocate ? 0 : undefined}
+      onClick={canLocate ? locateBubble : undefined}
+      onKeyDown={
+        canLocate
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                locateBubble();
+              }
+            }
+          : undefined
+      }
+      title={canLocate ? "点击跳转到对话中的投递气泡" : undefined}
       className={cn(
-        "group relative overflow-hidden rounded-xl border px-3 py-2.5 transition-colors",
+        "group relative overflow-hidden rounded-xl border px-3 py-2 transition-colors",
+        canLocate && "cursor-pointer hover:border-[var(--kp-brand)]/35 hover:bg-[var(--kp-brand-soft)]/25",
         tone === "running" && "border-[var(--kp-brand)]/25 bg-[var(--kp-brand-soft)]/40",
         tone === "queued" && "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]",
         tone === "ready" && "border-amber-500/20 bg-[var(--kp-bg-alt)]",
@@ -591,10 +624,10 @@ function StatusRow({
       {tone === "running" && (
         <span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-[var(--kp-brand)]" />
       )}
-      <div className="flex items-start gap-2.5">
+      <div className="flex items-start gap-2">
         <span
           className={cn(
-            "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md",
             tone === "running" && "text-[var(--kp-brand)]",
             tone === "queued" && "text-[var(--kp-text-3)]",
             tone === "ready" && "text-amber-600",
@@ -603,48 +636,55 @@ function StatusRow({
           )}
         >
           {tone === "running" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : tone === "queued" ? (
-            <Clock className="h-4 w-4" />
+            <Clock className="h-3.5 w-3.5" />
           ) : (
-            <Check className="h-4 w-4" />
+            <Check className="h-3.5 w-3.5" />
           )}
         </span>
-        <div className="min-w-0 flex-1 space-y-1">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-md bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-[var(--kp-text-2)]">
+            <span className="rounded-md bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-[var(--kp-text-2)]">
               {label}
             </span>
-            <span className="text-[11px] font-medium text-[var(--kp-text-3)]">{toneLabel}</span>
+            <span className="text-[10px] font-medium text-[var(--kp-text-3)]">{toneLabel}</span>
             {tone === "held" && (
-              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
                 未喂入
               </span>
             )}
             {item.status === "failed" && (
-              <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[11px] font-medium text-red-600">失败</span>
+              <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600">失败</span>
+            )}
+            {canLocate && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--kp-brand-deep)]">
+                <MessageSquare className="h-3 w-3" />
+                查看原文
+              </span>
             )}
           </div>
-          <p className="truncate text-[13px] font-semibold text-[var(--kp-text-1)]" title={title}>
+          <p className="truncate text-xs font-semibold text-[var(--kp-text-1)]" title={title}>
             {title}
           </p>
           {preview ? (
-            <p className="line-clamp-4 text-xs leading-relaxed text-[var(--kp-text-2)]">{preview}</p>
+            <p className="truncate text-[11px] leading-snug text-[var(--kp-text-2)]">{preview}</p>
           ) : null}
           {latestLog && tone === "running" && latestLog !== preview ? (
-            <p className="line-clamp-2 text-[11px] text-[var(--kp-text-3)]">日志 · {latestLog}</p>
+            <p className="line-clamp-1 text-[10px] text-[var(--kp-text-3)]">日志 · {latestLog}</p>
           ) : null}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--kp-text-3)]">
-            {item.createdAt ? <span>已过 {formatElapsed(item.createdAt)}</span> : null}
-            {item.jobId ? (
-              <span className="text-[var(--kp-text-3)]" title={`任务 ${item.jobId}`}>
-                任务
-              </span>
-            ) : null}
-            {item.subagentName ? <span>{item.subagentName}</span> : null}
-          </div>
+          {(showElapsed || displaySubName) && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[var(--kp-text-3)]">
+              {showElapsed ? <span>已过 {formatElapsed(item.createdAt)}</span> : null}
+              {displaySubName ? <span>{displaySubName}</span> : null}
+            </div>
+          )}
         </div>
-        <div className="flex shrink-0 flex-col gap-0.5 opacity-70 transition group-hover:opacity-100">
+        <div
+          className="flex shrink-0 flex-col gap-0.5 opacity-70 transition group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           {item.subagentSessionId && (
             <a
               href={`/chat?sessionId=${item.subagentSessionId}`}
@@ -739,7 +779,12 @@ function SyncTaskRow({
   const preview = active
     ? undefined
     : (item.status === "failed" ? item.error : item.asyncResult)?.slice(0, 120);
-  const elapsed = active && item.elapsedMs != null ? formatElapsedMs(item.elapsedMs) : formatElapsed(item.createdAt);
+  const elapsed =
+    active
+      ? item.elapsedMs != null
+        ? formatElapsedMs(item.elapsedMs)
+        : formatElapsed(item.createdAt)
+      : null;
 
   return (
     <div
@@ -790,7 +835,7 @@ function SyncTaskRow({
           <p className="truncate text-[13px] font-semibold text-[var(--kp-text-1)]" title={item.taskLabel}>
             {item.taskLabel}
           </p>
-          {preview ? <p className="line-clamp-4 text-xs leading-relaxed text-[var(--kp-text-2)]">{preview}</p> : null}
+          {preview ? <p className="truncate text-[11px] leading-snug text-[var(--kp-text-2)]">{preview}</p> : null}
           {active && item.logs?.length ? (
             <div>
               <button
@@ -808,12 +853,11 @@ function SyncTaskRow({
               )}
             </div>
           ) : null}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--kp-text-3)]">
-            <span>已过 {elapsed}</span>
-            <span className="text-[var(--kp-text-3)]" title={`任务 ${item.jobId}`}>
-              任务
-            </span>
-          </div>
+          {elapsed ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[var(--kp-text-3)]">
+              <span>已过 {elapsed}</span>
+            </div>
+          ) : null}
         </div>
         {active && onCancel ? (
           <div className="flex shrink-0 flex-col gap-0.5 opacity-70 transition group-hover:opacity-100">

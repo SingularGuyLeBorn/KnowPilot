@@ -3,10 +3,10 @@
 /**
  * useChatUiPrefs — Chat 两栏 UI 偏好（左栏开关、左栏标签、历史子标签）。
  *
- * 【存储持久化群】localStorage 读写合一：原 chat.tsx 两个 effect（mount 水合 + 变化写回）
- * 归并为一个——首轮（未水合）走水合分支 return 不写回；水合引发的 state 更新触发
- * 第二轮起走写回分支。消除了原实现 mount 时「先写默认值再写回水合值」的中间态，
- * 最终持久化内容一致。URL view/panel 参数在水合时优先于 localStorage。
+ * 【存储持久化群】localStorage 读写合一：
+ * - 水合走 useLayoutEffect（paint 前），避免首帧 leftOpen=false → true 时
+ *   侧栏从 md:w-0 过渡到 md:w-64 造成「左侧栏长出来叠层」闪烁。
+ * - 写回走 useEffect（水合完成后），不把手机叠层 leftOpen 写回桌面偏好。
  *
  * leftTab: history=对话，runtime=运行（投递队列 + Task 追溯）。
  * 旧值 leftTab:"async" / URL ?panel=async 均映射为 runtime。
@@ -15,7 +15,7 @@
  * 窄屏（<md）：左栏默认关闭且不把 leftOpen 写回 localStorage，避免手机叠层状态污染桌面偏好。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const CHAT_UI_STORAGE_KEY = "kp-chat-ui-v1";
 
@@ -68,26 +68,44 @@ function writeChatUiPrefs(prefs: ChatUiPrefs) {
   }
 }
 
+/** 客户端首屏尽量对齐 localStorage，减少 SSR/水合与偏好不一致。 */
+function getClientBootstrapPrefs(searchParams: SearchParamsLike): ChatUiPrefs {
+  const prefs = readChatUiPrefs();
+  const view = searchParams.get("view");
+  const panel = searchParams.get("panel");
+  return {
+    leftOpen: isMobileViewport() ? false : prefs.leftOpen,
+    leftTab: normalizeLeftTab(prefs.leftTab, panel),
+    historySubTab: view === "sub" || view === "main" ? view : prefs.historySubTab,
+  };
+}
+
 type SearchParamsLike = Pick<URLSearchParams, "get">;
 
 export function useChatUiPrefs(searchParams: SearchParamsLike) {
-  const [leftOpen, setLeftOpen] = useState(false);
+  // 桌面默认开栏（与持久化默认一致）。切勿初始化为 false：
+  // 否则首帧 md:w-0 + transition，水合后再开栏会「长出来」叠层。
+  const [leftOpen, setLeftOpen] = useState(true);
   const [leftTab, setLeftTab] = useState<ChatLeftTab>("history");
   const [historySubTab, setHistorySubTab] = useState<"main" | "sub">("main");
+  /** 水合完成前禁止侧栏 width transition，避免偶发偏好修正仍带动画闪一下 */
+  const [prefsReady, setPrefsReady] = useState(false);
   const hydratedRef = useRef(false);
 
+  useLayoutEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    const boot = getClientBootstrapPrefs(searchParams);
+    setLeftOpen(boot.leftOpen);
+    setLeftTab(boot.leftTab);
+    setHistorySubTab(boot.historySubTab);
+    // 下一帧再开 transition，避免本次 leftOpen 修正与 transition 同帧仍被动画
+    const raf = requestAnimationFrame(() => setPrefsReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, [searchParams]);
+
   useEffect(() => {
-    if (!hydratedRef.current) {
-      hydratedRef.current = true;
-      const prefs = readChatUiPrefs();
-      const view = searchParams.get("view");
-      const panel = searchParams.get("panel");
-      // 窄屏单栏：默认收起左栏叠层；桌面沿用持久化偏好
-      setLeftOpen(isMobileViewport() ? false : prefs.leftOpen);
-      setLeftTab(normalizeLeftTab(prefs.leftTab, panel));
-      setHistorySubTab(view === "sub" || view === "main" ? view : prefs.historySubTab);
-      return;
-    }
+    if (!hydratedRef.current) return;
     const stored = readChatUiPrefs();
     writeChatUiPrefs({
       // 手机上的 leftOpen 是叠层临时态，不写回，保留桌面偏好
@@ -95,7 +113,7 @@ export function useChatUiPrefs(searchParams: SearchParamsLike) {
       leftTab,
       historySubTab,
     });
-  }, [searchParams, leftOpen, leftTab, historySubTab]);
+  }, [leftOpen, leftTab, historySubTab]);
 
   return {
     leftOpen,
@@ -104,5 +122,6 @@ export function useChatUiPrefs(searchParams: SearchParamsLike) {
     setLeftTab,
     historySubTab,
     setHistorySubTab,
+    prefsReady,
   };
 }

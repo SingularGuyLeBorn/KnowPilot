@@ -165,6 +165,7 @@ export async function chatAgent(
   config: AppConfig,
   input: AgentChatInput,
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>,
+  opts?: { toolsOverride?: string[] },
 ) {
   const start = Date.now();
   let sessionId = input.sessionId;
@@ -178,6 +179,7 @@ export async function chatAgent(
     const { agent, drift } = await resolveAgent(services, input.agentId);
     logAgentDrift(agent.name, drift);
     const effectiveModel = input.model || agent.model;
+    const effectiveTools = opts?.toolsOverride?.length ? opts.toolsOverride : agent.tools;
 
     if (!sessionId) {
       const created = await services.session.create({
@@ -207,7 +209,7 @@ export async function chatAgent(
       sessionId,
     });
     const messages = buildLlmContextSinceCompact(
-      buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint, {
+      buildSystemPromptWithHints(agent.systemPrompt, effectiveTools, memoryHint, {
         tier: agent.tier,
         name: agent.name,
       }),
@@ -218,10 +220,17 @@ export async function chatAgent(
       },
     );
 
+    // toolsOverride（如 skill_review）需保留 manage 类工具：sub tier 会裁掉 skill_manage
+    const effectiveTier = opts?.toolsOverride?.length
+      ? agent.tier === "sub"
+        ? "manager"
+        : agent.tier
+      : agent.tier;
+
     const result = await runAgentLoop({
       config,
       services,
-      agent: { ...agent, model: input.model || agent.model },
+      agent: { ...agent, model: input.model || agent.model, tools: effectiveTools },
       messages,
       invokeTrpc,
       sessionId,
@@ -229,8 +238,8 @@ export async function chatAgent(
         id: agent.id,
         model: input.model || agent.model,
         systemPrompt: agent.systemPrompt,
-        tools: agent.tools,
-        tier: agent.tier,
+        tools: effectiveTools,
+        tier: effectiveTier,
         parentId: agent.parentId,
         workspaceId: agent.workspaceId,
       },

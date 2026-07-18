@@ -101,7 +101,7 @@ model ChatSession {
   agentId      String?
   // Swarm/Subagent：父会话 id（普通会话为 null）
   parentSessionId String?
-  // 会话类型："chat"（默认普通会话）| "subagent"（子代理任务会话）
+  // 会话类型："chat" | "subagent" | "heartbeat" | "skill_review"
   kind         String        @default("chat")
   // 任务状态：active | queued | running | paused | completed | failed
   status       String        @default("active")
@@ -118,6 +118,8 @@ model ChatSession {
   rotatedToSessionId String?
   /// 会话级待办清单（todo_write/todo_read）：{ todos: TodoItem[], updatedAt: string }
   todoState    Json?
+  /// Goal / Deep Research 外环状态（standing goal + 裁判续跑）
+  goalState    Json?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   // P1-8：外键到 Agent，删 Agent 时 agentId 置 null

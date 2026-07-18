@@ -49,6 +49,12 @@ interface SpawnPrepared {
   jobId?: string;
 }
 
+/** 未显式传 name 时的占位名：取任务前几个字，避免「子 Agent + 时间戳碎片」像 uuid */
+function defaultSubagentPlaceholderName(task: string): string {
+  const snippet = task.replace(/\s+/g, " ").trim().slice(0, 10);
+  return snippet || "子 Agent 任务";
+}
+
 /** v8 TP-1/Q4：LLM 主动派生子 Agent。
  *
  * 不变量：
@@ -234,7 +240,7 @@ async function spawnSubagentPrepare(
       : `你是上级 Agent 派出的子 Agent。请完成下发的任务，必要时调用工具，最终使用 agent_report_back 向上级汇报结果。\n\n任务：${task}`;
     const createResult = await agentCreateSubTool(
       {
-        name: args.name ? String(args.name) : `子 Agent ${Date.now().toString(36).slice(-4)}`,
+        name: args.name ? String(args.name) : defaultSubagentPlaceholderName(task),
         description: args.description ? String(args.description) : undefined,
         systemPrompt: args.systemPrompt ? String(args.systemPrompt) : defaultPrompt,
         // 默认执行类工具（native: 前缀）；再按 sub tier 裁剪，杜绝物化成空 → native:all

@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
-import { Bot, Check, ImagePlus, ListOrdered, Loader2, Send, Square, Wand2, X } from "lucide-react";
+import { Bot, Check, Flag, ImagePlus, ListOrdered, Loader2, Search, Send, Square, Wand2, X } from "lucide-react";
 import type { ChatSessionConfig, Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -44,7 +44,20 @@ interface ChatInputAreaProps {
   sessionHint?: string;
   /** 当前会话 ID，用于隔离上键历史恢复 */
   sessionId?: string | null;
+  /** 子会话不展示 /goal|/research 命令 */
+  isSubagentSession?: boolean;
+  /** 深度调研仅新会话首条前可选 */
+  canStartDeepResearch?: boolean;
 }
+
+type SlashCommandItem = {
+  id: string;
+  label: string;
+  insert: string;
+  description: string;
+  disabled?: boolean;
+  disabledReason?: string;
+};
 
 // R16：memo 化——onSend(onStop)已 useCallback、skills 已 useMemo 稳定，流式期间 props 稳定可跳过重渲染
 export const ChatInputArea = memo(function ChatInputArea({
@@ -67,18 +80,14 @@ export const ChatInputArea = memo(function ChatInputArea({
   modelReasoningRequired,
   sessionHint,
   sessionId,
+  isSubagentSession = false,
+  canStartDeepResearch = false,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // 发送防重入锁：ref 在同步阶段立即生效，避免 React state 批处理导致双击/双快捷键穿透
   const sendLockRef = useRef(false);
   const pendingDeliveryRef = useRef<"steer" | "follow_up" | undefined>(undefined);
-
-  // UX #6：进入 / 切换会话后自动聚焦输入框，从 Agent 卡片「对话」直达可立即打字。
-  // key={sessionId} 使切会话时组件重挂载，此 effect 每次挂载执行一次。
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
 
   // 输入框 value 内部自管理，避免每个字符都触发外层 ChatView 重渲染
   const [input, setInput] = useState("");
@@ -110,6 +119,18 @@ export const ChatInputArea = memo(function ChatInputArea({
   const historyKey = sessionId ? `kp-input-history:${sessionId}` : null;
   const [historyIdx, setHistoryIdx] = useState(-1); // -1 = 不在浏览历史模式
   const [draftBackup, setDraftBackup] = useState(""); // 浏览历史前的草稿备份
+
+  // UX #6：切会话聚焦 + 清空草稿（原靠 key remount，现 pane 稳定挂载需显式重置）
+  useEffect(() => {
+    setInput("");
+    setSkillOpen(false);
+    setSkillQuery("");
+    setHighlightIdx(0);
+    setPendingImages([]);
+    setOcrError(null);
+    setHistoryIdx(-1);
+    textareaRef.current?.focus();
+  }, [sessionId]);
 
   const getHistory = useCallback((): string[] => {
     if (!historyKey) return [];
@@ -143,10 +164,51 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   const enabledSkills = skills.filter((s) => s.enabled);
 
+  const slashCommands: SlashCommandItem[] = isSubagentSession
+    ? []
+    : [
+        {
+          id: "goal",
+          label: "/goal",
+          insert: "/goal ",
+          description: "设定会话目标并开始（也可 pause|resume|clear|status）",
+        },
+        {
+          id: "research",
+          label: "/research",
+          insert: "/research ",
+          description: canStartDeepResearch
+            ? "启动深度调研（仅新会话首条消息前）"
+            : "深度调研只能在新会话首条消息前选择",
+          disabled: !canStartDeepResearch,
+          disabledReason: "仅新会话首条前可选",
+        },
+      ];
+
+  const q = skillQuery.toLowerCase();
+  const filteredCommands = slashCommands.filter(
+    (c) =>
+      !q ||
+      c.label.toLowerCase().includes(q) ||
+      c.id.includes(q) ||
+      c.description.toLowerCase().includes(q),
+  );
   const filteredSkills = enabledSkills.filter((s) => {
-    const q = skillQuery.toLowerCase();
-    return s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
+    return (
+      !q ||
+      s.name.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q)
+    );
   });
+
+  type PickerRow =
+    | { kind: "cmd"; cmd: SlashCommandItem }
+    | { kind: "skill"; skill: Skill };
+  const pickerRows: PickerRow[] = [
+    ...filteredCommands.map((cmd) => ({ kind: "cmd" as const, cmd })),
+    ...filteredSkills.map((skill) => ({ kind: "skill" as const, skill })),
+  ];
+  const pickerHasContent = pickerRows.length > 0 || skillOpen;
 
   const detectSkillTrigger = (text: string, cursor: number) => {
     const before = text.slice(0, cursor);
@@ -162,9 +224,23 @@ export const ChatInputArea = memo(function ChatInputArea({
   };
 
   const activeHighlightIdx =
-    skillOpen && filteredSkills.length > 0
-      ? Math.min(highlightIdx, filteredSkills.length - 1)
+    skillOpen && pickerRows.length > 0
+      ? Math.min(highlightIdx, pickerRows.length - 1)
       : 0;
+
+  const replaceSlashPrefix = (replacement: string) => {
+    const ta = textareaRef.current;
+    if (ta) {
+      const before = input.slice(0, ta.selectionStart);
+      const after = input.slice(ta.selectionStart);
+      const cleaned = before.replace(/\/[\w-]*$/, "");
+      setInput(cleaned + replacement + after);
+    } else {
+      setInput(input.replace(/\/[\w-]*$/, "") + replacement);
+    }
+    setSkillOpen(false);
+    textareaRef.current?.focus();
+  };
 
   const selectSkill = (skill: Skill) => {
     onSkillChange({
@@ -174,17 +250,17 @@ export const ChatInputArea = memo(function ChatInputArea({
       description: skill.description,
       code: skill.code,
     });
-    const ta = textareaRef.current;
-    if (ta) {
-      const before = input.slice(0, ta.selectionStart);
-      const after = input.slice(ta.selectionStart);
-      const cleaned = before.replace(/\/[\w-]*$/, "");
-      setInput(cleaned + after);
-    } else {
-      setInput(input.replace(/\/[\w-]*$/, ""));
-    }
-    setSkillOpen(false);
-    textareaRef.current?.focus();
+    replaceSlashPrefix("");
+  };
+
+  const selectCommand = (cmd: SlashCommandItem) => {
+    if (cmd.disabled) return;
+    replaceSlashPrefix(cmd.insert);
+  };
+
+  const activatePickerRow = (row: PickerRow) => {
+    if (row.kind === "cmd") selectCommand(row.cmd);
+    else selectSkill(row.skill);
   };
 
   const runOcrForAttachment = async (att: ChatQueueAttachment): Promise<ChatQueueAttachment> => {
@@ -339,28 +415,86 @@ export const ChatInputArea = memo(function ChatInputArea({
         </div>
       )}
 
-      {skillOpen && filteredSkills.length > 0 && (
-        <div className="absolute bottom-full left-0 z-20 mb-2 max-h-48 w-full overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] py-1 shadow-lg">
-          <div className="px-3 py-1.5 text-[10px] font-semibold text-[var(--kp-text-3)]">
-            选择 Skill（也可输入 /）
-          </div>
-          {filteredSkills.map((skill, i) => (
-            <button
-              key={skill.id}
-              type="button"
-              onClick={() => selectSkill(skill)}
-              className={cn(
-                "flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition",
-                i === activeHighlightIdx ? "bg-[var(--kp-brand-soft)]" : "hover:bg-[var(--kp-bg-mute)]",
-              )}
-            >
-              <LucideIconByName name={skill.icon} className="mt-0.5 h-4 w-4 shrink-0 text-[var(--kp-brand)]" />
-              <div className="min-w-0">
-                <div className="font-medium text-[var(--kp-text-1)]">{skill.name}</div>
-                <div className="truncate text-xs text-[var(--kp-text-3)]">{skill.description}</div>
+      {skillOpen && pickerHasContent && (
+        <div
+          className="absolute bottom-full left-0 z-20 mb-2 max-h-56 w-full overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] py-1 shadow-lg"
+          data-testid="chat-slash-picker"
+        >
+          {!isSubagentSession && filteredCommands.length > 0 && (
+            <>
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-[var(--kp-text-3)]">
+                命令
               </div>
-            </button>
-          ))}
+              {filteredCommands.map((cmd) => {
+                const rowIdx = pickerRows.findIndex((r) => r.kind === "cmd" && r.cmd.id === cmd.id);
+                const disabled = !!cmd.disabled;
+                return (
+                  <button
+                    key={cmd.id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => selectCommand(cmd)}
+                    title={disabled ? cmd.disabledReason : undefined}
+                    className={cn(
+                      "flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition",
+                      disabled && "cursor-not-allowed opacity-45",
+                      !disabled && rowIdx === activeHighlightIdx
+                        ? "bg-[var(--kp-brand-soft)]"
+                        : !disabled && "hover:bg-[var(--kp-bg-mute)]",
+                    )}
+                  >
+                    {cmd.id === "research" ? (
+                      <Search className="mt-0.5 h-4 w-4 shrink-0 text-[var(--kp-brand)]" />
+                    ) : (
+                      <Flag className="mt-0.5 h-4 w-4 shrink-0 text-[var(--kp-brand)]" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-medium text-[var(--kp-text-1)]">{cmd.label}</div>
+                      <div className="truncate text-xs text-[var(--kp-text-3)]">
+                        {cmd.description}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </>
+          )}
+          <div className="px-3 py-1.5 text-[10px] font-semibold text-[var(--kp-text-3)]">
+            已启用 Skill{enabledSkills.length === 0 ? "（当前无）" : ` · ${enabledSkills.length}`}
+          </div>
+          {filteredSkills.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-[var(--kp-text-3)]">
+              无匹配项。Skill 来自 content/skills 且标记为启用的条目。
+            </div>
+          ) : (
+            filteredSkills.map((skill) => {
+              const rowIdx = pickerRows.findIndex(
+                (r) => r.kind === "skill" && r.skill.id === skill.id,
+              );
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  onClick={() => selectSkill(skill)}
+                  className={cn(
+                    "flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition",
+                    rowIdx === activeHighlightIdx
+                      ? "bg-[var(--kp-brand-soft)]"
+                      : "hover:bg-[var(--kp-bg-mute)]",
+                  )}
+                >
+                  <LucideIconByName
+                    name={skill.icon}
+                    className="mt-0.5 h-4 w-4 shrink-0 text-[var(--kp-brand)]"
+                  />
+                  <div className="min-w-0">
+                    <div className="font-medium text-[var(--kp-text-1)]">{skill.name}</div>
+                    <div className="truncate text-xs text-[var(--kp-text-3)]">{skill.description}</div>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       )}
 
@@ -443,10 +577,10 @@ export const ChatInputArea = memo(function ChatInputArea({
             }}
             onClick={(e) => detectSkillTrigger(input, e.currentTarget.selectionStart)}
             onKeyDown={(e) => {
-              if (skillOpen && filteredSkills.length > 0) {
+              if (skillOpen && pickerRows.length > 0) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
-                  setHighlightIdx((i) => Math.min(i + 1, filteredSkills.length - 1));
+                  setHighlightIdx((i) => Math.min(i + 1, pickerRows.length - 1));
                   return;
                 }
                 if (e.key === "ArrowUp") {
@@ -456,7 +590,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                 }
                 if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
                   e.preventDefault();
-                  selectSkill(filteredSkills[activeHighlightIdx]);
+                  activatePickerRow(pickerRows[activeHighlightIdx]!);
                   return;
                 }
                 if (e.key === "Escape") {
@@ -561,8 +695,14 @@ export const ChatInputArea = memo(function ChatInputArea({
                   ? "bg-[var(--kp-brand-soft)]/60 text-[var(--kp-brand-deep)]"
                   : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
               )}
-              title={selectedSkill ? `已选 ${selectedSkill.name}（点击更换）` : "选择 Skill，或输入 /"}
-              aria-label="选择 Skill"
+              title={
+                selectedSkill
+                  ? `已选 ${selectedSkill.name}（点击更换）`
+                  : isSubagentSession
+                    ? "选择已启用 Skill，或输入 /"
+                    : "选择命令 / Skill，或输入 /goal、/research"
+              }
+              aria-label="选择命令或 Skill"
             >
               <Wand2 className="h-4 w-4" />
               <span className="hidden sm:inline">Skill</span>

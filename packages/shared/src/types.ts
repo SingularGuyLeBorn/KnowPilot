@@ -189,7 +189,7 @@ export interface ChatSession {
   agentId?: string | null;
   // Swarm/Subagent 扩展字段
   parentSessionId?: string | null;
-  kind?: "chat" | "subagent" | "heartbeat";
+  kind?: "chat" | "subagent" | "heartbeat" | "skill_review";
   status?: import("./schemas.js").SessionStatus;
   taskDescription?: string | null;
   isMainSession?: boolean;
@@ -197,6 +197,8 @@ export interface ChatSession {
   contextSummary?: string | null;
   contextCompactedAt?: string | Date | null;
   rotatedToSessionId?: string | null;
+  /** Goal / Deep Research 外环 */
+  goalState?: import("./schemas.js").SessionGoalState | null;
   createdAt: string | Date;
   updatedAt: string | Date;
   messages?: ChatMessage[];

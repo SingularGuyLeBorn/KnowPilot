@@ -40,6 +40,9 @@ interface WorkspaceTreeProps {
   searchQuery: string;
   /** 主 Agent / 子 Agent 两种视图 */
   mode: "main" | "sub";
+  /** 批量管理：显示复选框；点击行由父组件决定是切会话还是勾选 */
+  bulkMode?: boolean;
+  bulkSelected?: Set<string>;
 }
 
 export function WorkspaceTree({
@@ -54,6 +57,8 @@ export function WorkspaceTree({
   onNewChat,
   searchQuery,
   mode,
+  bulkMode = false,
+  bulkSelected,
 }: WorkspaceTreeProps) {
   const searchLower = searchQuery.trim().toLowerCase();
 
@@ -197,10 +202,16 @@ export function WorkspaceTree({
                   key={s.id}
                   session={s}
                   active={effectiveSessionId === s.id}
+                  bulkMode={bulkMode}
+                  bulkChecked={!!bulkSelected?.has(s.id)}
                   onSelect={() => onSelectSession(s.id)}
                   onHover={() => onHoverSession?.(s.id)}
                   onHoverEnd={() => onHoverSessionEnd?.(s.id)}
-                  onDelete={onDeleteSession ? () => onDeleteSession(s.id) : undefined}
+                  onDelete={
+                    bulkMode || !onDeleteSession
+                      ? undefined
+                      : () => onDeleteSession(s.id)
+                  }
                   data-testid="session-list-item"
                 />
               ))}
@@ -297,6 +308,8 @@ function AgentIcon({ tier, className }: { tier: string; className?: string }) {
 function SessionRow({
   session,
   active,
+  bulkMode,
+  bulkChecked,
   onSelect,
   onHover,
   onHoverEnd,
@@ -305,6 +318,8 @@ function SessionRow({
 }: {
   session: ChatSession;
   active: boolean;
+  bulkMode?: boolean;
+  bulkChecked?: boolean;
   onSelect: () => void;
   onHover?: () => void;
   onHoverEnd?: () => void;
@@ -315,11 +330,24 @@ function SessionRow({
     <div
       className={cn(
         "group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition",
-        active
-          ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
-          : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+        bulkMode && bulkChecked
+          ? "bg-[var(--kp-brand-soft)]/70 font-medium text-[var(--kp-brand-deep)]"
+          : active
+            ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
+            : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
       )}
     >
+      {bulkMode && (
+        <input
+          type="checkbox"
+          checked={!!bulkChecked}
+          onChange={onSelect}
+          onClick={(e) => e.stopPropagation()}
+          className="h-3.5 w-3.5 shrink-0 accent-[var(--kp-brand)]"
+          aria-label={`选择会话 ${session.autoName || session.title || "新对话"}`}
+          data-testid="session-bulk-checkbox"
+        />
+      )}
       <button
         type="button"
         data-testid={dataTestId}

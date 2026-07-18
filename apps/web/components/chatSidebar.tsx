@@ -2,7 +2,7 @@
 
 /**
  * ChatSidebar —— 左栏（W13b 从 chat.tsx 拆出）。
- * 顶层 Tab：对话 | 运行。运行 Tab 合并投递队列（RuntimeStatusPanel）与 Task 追溯（AsyncTaskPanel）。
+ * 顶层 Tab：对话 | 运行。运行 Tab = 投递队列（RuntimeStatusPanel）+ 旁路复盘（SideRunsPanel）。
  *
  * W16b：React.memo 渲染屏障——左栏 props 不含任何流式派生值，流式期 ChatView
  * 每 token 重渲染时左栏整树跳过。前提是 ChatView 侧 props 全部引用稳定
@@ -18,8 +18,8 @@ import { type Agent } from "@knowpilot/shared";
 import { type ChatQueueItem, type SyncTaskItem } from "@/lib/chatQueueTypes";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared";
-import { AsyncTaskPanel } from "@/components/asyncTaskPanel";
 import { RuntimeStatusPanel } from "@/components/chatQueue";
+import { SideRunsPanel } from "@/components/sideRunsPanel";
 import { WorkspaceTree } from "@/components/workspaceTree";
 import { WorkspaceSelect } from "@/components/workspaceSelect";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
@@ -28,7 +28,6 @@ import { useAsyncProgressSteps } from "@/lib/useAsyncProgressSteps";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
-import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 import type { ChatLeftTab } from "@/lib/useChatUiPrefs";
 
 export interface ChatSidebarProps {
@@ -38,6 +37,8 @@ export interface ChatSidebarProps {
   setLeftTab: (tab: ChatLeftTab) => void;
   historySubTab: "main" | "sub";
   setHistorySubTab: (tab: "main" | "sub") => void;
+  /** 偏好水合完成后再开 width transition，避免刷新首帧从 w-0 长出 */
+  prefsReady?: boolean;
   syncChatUiToUrl: (patch: { view?: "main" | "sub"; panel?: "history" | "runtime" }) => void;
   effectiveSessionId: string | null;
   effectiveAgentId: string;
@@ -65,7 +66,6 @@ export interface ChatSidebarProps {
   setToast: (msg: string | null) => void;
   refetchSession: () => void;
   cancelAsyncJobMutate: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>["mutate"];
-  retryAsyncJobMutate: ReturnType<typeof trpc.agent.retryAsyncJob.useMutation>["mutate"];
   pinAsyncJobMutate: ReturnType<typeof trpc.agent.toggleAsyncJobPinned.useMutation>["mutate"];
   runtimeGroupTab: "async" | "sync";
   setRuntimeGroupTab: (tab: "async" | "sync") => void;
@@ -82,6 +82,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   setLeftTab,
   historySubTab,
   setHistorySubTab,
+  prefsReady = true,
   syncChatUiToUrl,
   effectiveSessionId,
   effectiveAgentId,
@@ -109,7 +110,6 @@ export const ChatSidebar = memo(function ChatSidebar({
   setToast,
   refetchSession,
   cancelAsyncJobMutate,
-  retryAsyncJobMutate,
   pinAsyncJobMutate,
   runtimeGroupTab,
   setRuntimeGroupTab,
@@ -137,15 +137,6 @@ export const ChatSidebar = memo(function ChatSidebar({
   const bulkDeleteMutation = trpc.session.bulkDelete.useMutation();
 
   // 异步任务活跃数（子 Agent 会话下以父会话为锚点）
-  const asyncTaskCountQuery = trpc.task.list.useQuery(
-    { page: 1, pageSize: 50, sessionId: mainSessionId ?? undefined },
-    { enabled: !!mainSessionId },
-  );
-  const asyncTaskActiveCount = useMemo(() => {
-    const items = (asyncTaskCountQuery.data?.items ?? []) as { status?: string }[];
-    return items.filter((t) => t.status === "running" || t.status === "queued").length;
-  }, [asyncTaskCountQuery.data?.items]);
-
   // 左栏专属 state
   const [sessionSearch, setSessionSearch] = useState("");
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<{ id: string; title: string } | null>(null);
@@ -282,7 +273,7 @@ export const ChatSidebar = memo(function ChatSidebar({
     setDeleteSessionTarget({ id, title: "该会话" });
   }, [sessionsQuery.data?.items]);
 
-  const runtimeBadgeCount = Math.max(runtimeActiveItems.length, asyncTaskActiveCount);
+  const runtimeBadgeCount = runtimeActiveItems.length + runtimeToConsumeItems.length;
 
   // 左栏内容：避免 JSX 内嵌多层三元表达式导致解析/维护困难
   const leftPanelBody = (() => {
@@ -293,6 +284,11 @@ export const ChatSidebar = memo(function ChatSidebar({
             <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
               投递队列
             </div>
+            {asyncProgressSteps.length > 0 && (
+              <div className="border-b border-[var(--kp-divider)] px-3 pb-2" data-testid="async-progress-block">
+                <ThinkingTimeline steps={asyncProgressSteps} isLive />
+              </div>
+            )}
             <div className="min-h-[200px]">
               <RuntimeStatusPanel
                 groupTab={runtimeGroupTab}
@@ -306,21 +302,15 @@ export const ChatSidebar = memo(function ChatSidebar({
               />
             </div>
           </section>
-          <section data-testid="left-runtime-tasks">
+          <section data-testid="left-runtime-side-runs">
             <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
-              Task 追溯
+              旁路复盘
             </div>
-            {asyncProgressSteps.length > 0 && (
-              <div className="border-b border-[var(--kp-divider)] px-3 pb-2" data-testid="async-progress-block">
-                <ThinkingTimeline steps={asyncProgressSteps} isLive />
-              </div>
-            )}
-            <AsyncTaskPanel
-              parentSessionId={mainSessionId ?? undefined}
-              onCancelJob={(jobId) => cancelAsyncJobMutate({ jobId })}
-              onRetryJob={(jobId) => {
-                sessionComposeActions.markDeliveryConsumed(effectiveSessionId ?? NEW_STREAM_KEY, jobId);
-                retryAsyncJobMutate({ jobId });
+            <SideRunsPanel
+              parentSessionId={effectiveSessionId ?? mainSessionId}
+              onOpenSession={(id) => {
+                selectSession(id);
+                closeLeftOnMobile();
               }}
             />
           </section>
@@ -446,6 +436,15 @@ export const ChatSidebar = memo(function ChatSidebar({
               >
                 全选
               </button>
+              {bulkSelected.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setBulkSelected(new Set())}
+                  className="rounded px-1.5 py-0.5 text-[11px] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+                >
+                  清空
+                </button>
+              )}
               <button
                 type="button"
                 disabled={bulkSelected.size === 0 || bulkDeleteMutation.isPending}
@@ -480,13 +479,15 @@ export const ChatSidebar = memo(function ChatSidebar({
               effectiveSessionId={effectiveSessionId}
               effectiveAgentId={effectiveAgentId}
               agents={agentsQuery.data?.items ?? []}
-              onSelectSession={selectSession}
+              onSelectSession={handleSessionSelect}
               onHoverSession={handleSessionHover}
               onHoverSessionEnd={handleSessionHoverEnd}
               onDeleteSession={handleRequestDelete}
               onNewChat={startNewChat}
               searchQuery={sessionSearch}
               mode={isMain ? "main" : "sub"}
+              bulkMode={isMain && bulkMode}
+              bulkSelected={bulkSelected}
             />
           ) : (
             /* 非 swarm 模式：回退到扁平 session 列表 */
@@ -561,7 +562,9 @@ export const ChatSidebar = memo(function ChatSidebar({
       )}
       <aside
         className={cn(
-          "flex min-h-0 flex-col border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300",
+          "flex min-h-0 flex-col border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]",
+          // 仅用户折叠/展开时过渡；水合期禁止，避免刷新「侧栏长出来」叠层
+          prefsReady && "transition-[width] duration-300 ease-out",
           // 桌面：侧栏伸缩
           "md:relative md:z-auto md:shrink-0 md:border-r",
           leftOpen ? "md:w-64" : "md:w-0 md:overflow-hidden md:border-r-0",
