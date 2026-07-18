@@ -374,7 +374,7 @@ pnpm db:backup    # dev.db → backups/
 - `.env` 被 `.gitignore` 忽略，不得提交。`.env.example` 仅含占位值。
 - `CREDENTIAL_MASTER_KEY` 用于 AES-256-GCM 加密 Credential 表，丢失后已加密凭据无法解密。
 - 默认 `AUTH_MODE=none` 无鉴权，仅适合本地。暴露公网必须启用鉴权。
-- 用 Cloudflare Tunnel 把本机暴露到公网（无需开端口）：见 [docs/development/cloudflare-tunnel.md](docs/development/cloudflare-tunnel.md)（`pnpm tunnel:quick` / `pnpm tunnel:run`）。
+- 用 Cloudflare Tunnel 把本机暴露到公网（无需开端口）：见 [docs/development/cloudflare-tunnel.md](docs/development/cloudflare-tunnel.md)。一键：`pnpm remote`（dev + 临时隧道）；分步：`pnpm tunnel:quick` / `pnpm tunnel:run`。
 - `apps/server/prisma/dev.db` 不进 Git；数据持久化依赖 `content/` 下的 Markdown 源文件。
 
 ---
