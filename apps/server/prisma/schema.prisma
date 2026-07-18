@@ -223,9 +223,13 @@ model Log {
 model McpServer {
   id        String   @id @default(cuid())
   name      String   @unique
-  command   String
-  args      Json?    /// 参数 String[]
-  env       Json?    /// 环境变量 Record<string, string>
+  /// stdio（默认本地子进程）| http（Streamable HTTP 远程）
+  transport String   @default("stdio")
+  command   String   @default("") /// stdio 可执行文件；http 时可空
+  args      Json?    /// 参数 String[]（stdio）
+  env       Json?    /// 环境变量 Record<string, string>（stdio 注入子进程）
+  url       String?  /// http 传输的 MCP endpoint URL
+  headers   Json?    /// http 请求头 Record<string, string>（如 Authorization）
   enabled     Boolean  @default(true)
   sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）

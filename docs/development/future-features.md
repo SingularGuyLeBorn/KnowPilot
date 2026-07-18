@@ -213,7 +213,7 @@ session_rotate({
 | P1 | Run/Session 轨迹 JSONL 导出骨架 | **已落地**；Mock 平台基准仍待 |
 | P2 | 轻量 SOP / 阶段工件（Markdown 接力） | 待做 |
 | P2 | 常驻层 USER.md/AGENT.md 硬预算 | **已落地** |
-| P3 | **MCP 远程（Streamable HTTP）** | **排期做**（stdio 并存） |
+| P3 | **MCP 远程（Streamable HTTP）** | **已落地**（`transport=http` + url/headers；stdio 默认并存） |
 | P3 | 本地 side 模型（如 Ollama） | 按需，与 MCP 正交 |
 | — | A2A（跨产品 Agent 协议） | **不做**（见下） |
 

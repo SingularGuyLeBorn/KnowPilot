@@ -5,6 +5,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { McpServerEntity } from "../services.js";
 import { executeMockMcpTool, getMockMcpToolSchemas } from "./mockMcpRegistry.js";
@@ -108,13 +109,32 @@ function evictClient(serverName: string): void {
   clientCache.delete(serverName);
 }
 
-async function connectClient(server: McpServerEntity): Promise<Client> {
-  const transport = new StdioClientTransport({
-    command: server.command,
-    args: server.args,
+/** 按 transport 选择客户端传输（供测试断言，不真正连接） */
+export function createMcpTransport(server: McpServerEntity): StdioClientTransport | StreamableHTTPClientTransport {
+  const transportKind = server.transport === "http" ? "http" : "stdio";
+  if (transportKind === "http") {
+    const url = server.url?.trim();
+    if (!url) {
+      throw new Error(`MCP Server "${server.name}" 为 http 传输但未配置 url`);
+    }
+    const headers = { ...(server.headers ?? {}) };
+    return new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: Object.keys(headers).length > 0 ? { headers } : undefined,
+    });
+  }
+  const command = server.command?.trim();
+  if (!command) {
+    throw new Error(`MCP Server "${server.name}" 为 stdio 传输但未配置 command`);
+  }
+  return new StdioClientTransport({
+    command,
+    args: server.args ?? [],
     env: { ...process.env, ...server.env } as Record<string, string>,
   });
+}
 
+async function connectClient(server: McpServerEntity): Promise<Client> {
+  const transport = createMcpTransport(server);
   const client = new Client({ name: "knowpilot", version: "1.0.0" }, { capabilities: {} });
   await withTimeout(client.connect(transport), MCP_CONNECT_TIMEOUT_MS, `MCP ${server.name}`);
   clientCache.set(server.name, client);

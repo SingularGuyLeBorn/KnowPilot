@@ -499,22 +499,76 @@ export const listLogsSchema = z.object({
    McpServer (MCP 服务)
    ═══════════════════════════════════════════════════════ */
 
-export const createMcpServerSchema = z.object({
-  name: z.string().min(1).max(100),
-  command: z.string().min(1),
-  args: z.array(z.string()).default([]),
-  env: z.record(z.string(), z.string()).default({}),
-  enabled: z.boolean().default(true),
-});
+const mcpTransportSchema = z.enum(["stdio", "http"]);
 
-export const updateMcpServerSchema = z.object({
-  id: z.string().cuid(),
-  name: z.string().min(1).max(100).optional(),
-  command: z.string().optional(),
-  args: z.array(z.string()).optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  enabled: z.boolean().optional(),
-});
+function refineMcpTransport(
+  data: {
+    transport?: "stdio" | "http";
+    command?: string;
+    url?: string | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  const transport = data.transport ?? "stdio";
+  if (transport === "stdio") {
+    if (!data.command?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "stdio 传输必须填写 command",
+        path: ["command"],
+      });
+    }
+  } else if (transport === "http") {
+    const url = data.url?.trim() ?? "";
+    if (!url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "http 传输必须填写 url",
+        path: ["url"],
+      });
+    } else {
+      try {
+        void new URL(url);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "url 不是合法 URL",
+          path: ["url"],
+        });
+      }
+    }
+  }
+}
+
+export const createMcpServerSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    transport: mcpTransportSchema.default("stdio"),
+    command: z.string().default(""),
+    args: z.array(z.string()).default([]),
+    env: z.record(z.string(), z.string()).default({}),
+    url: z.string().optional().nullable(),
+    headers: z.record(z.string(), z.string()).default({}),
+    enabled: z.boolean().default(true),
+  })
+  .superRefine(refineMcpTransport);
+
+export const updateMcpServerSchema = z
+  .object({
+    id: z.string().cuid(),
+    name: z.string().min(1).max(100).optional(),
+    transport: mcpTransportSchema.optional(),
+    command: z.string().optional(),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    url: z.string().optional().nullable(),
+    headers: z.record(z.string(), z.string()).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    // 更新时仅在显式带了 transport 或同时改了 command/url 时校验；完整校验由 Service 合并后做
+    if (data.transport !== undefined) refineMcpTransport(data, ctx);
+  });
 
 export const listMcpServersSchema = z.object({
   page: z.number().int().min(1).default(1),

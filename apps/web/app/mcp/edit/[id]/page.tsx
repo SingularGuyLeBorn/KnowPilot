@@ -48,6 +48,8 @@ export default function McpDetailPage() {
     setForm((prev) => ({ ...prev, [key]: val }));
   };
 
+  const transport = (value("transport") as McpServer["transport"] | undefined) ?? "stdio";
+
   const parseArgs = (text: string) =>
     text
       .split(/\n+/)
@@ -56,7 +58,7 @@ export default function McpDetailPage() {
 
   const formatArgs = (args?: string[]) => (args ?? []).join("\n");
 
-  const parseEnv = (text: string): Record<string, string> => {
+  const parseRecord = (text: string): Record<string, string> => {
     try {
       const parsed = JSON.parse(text);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, string>;
@@ -66,18 +68,22 @@ export default function McpDetailPage() {
     return {};
   };
 
-  const formatEnv = (env?: Record<string, string>) => JSON.stringify(env ?? {}, null, 2);
+  const formatRecord = (env?: Record<string, string>) => JSON.stringify(env ?? {}, null, 2);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const nextTransport = form.transport ?? server.transport ?? "stdio";
     update.mutate(
       {
         id: server.id,
         name: form.name ?? server.name,
+        transport: nextTransport,
         command: form.command ?? server.command,
         args: form.args ?? server.args,
         env: form.env ?? server.env,
+        url: form.url !== undefined ? form.url : server.url,
+        headers: form.headers ?? server.headers ?? {},
         enabled: form.enabled ?? server.enabled,
       },
       {
@@ -113,29 +119,74 @@ export default function McpDetailPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[var(--kp-text-1)]">命令</label>
-            <Input value={String(value("command") ?? "")} onChange={(e) => updateField("command", e.target.value)} placeholder="npx / uvx / node" className="bg-[var(--kp-bg)]" />
+            <label className="text-sm font-medium text-[var(--kp-text-1)]">传输方式</label>
+            <select
+              value={transport}
+              onChange={(e) => updateField("transport", e.target.value as McpServer["transport"])}
+              className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm text-[var(--kp-text-1)]"
+              data-testid="mcp-transport-select"
+            >
+              <option value="stdio">stdio（本地子进程）</option>
+              <option value="http">http（Streamable HTTP 远程）</option>
+            </select>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[var(--kp-text-1)]">参数（每行一个）</label>
-            <textarea
-              value={formatArgs(value("args") as string[] | undefined)}
-              onChange={(e) => updateField("args", parseArgs(e.target.value))}
-              rows={4}
-              className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand-deep)] focus:ring-1 focus:ring-[var(--kp-brand-deep)] resize-y font-mono"
-            />
-          </div>
+          {transport === "http" ? (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[var(--kp-text-1)]">URL</label>
+                <Input
+                  value={String(value("url") ?? "")}
+                  onChange={(e) => updateField("url", e.target.value)}
+                  placeholder="https://mcp.example.com/mcp"
+                  className="bg-[var(--kp-bg)] font-mono"
+                  data-testid="mcp-url-input"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[var(--kp-text-1)]">请求头（JSON，可选）</label>
+                <textarea
+                  value={formatRecord(value("headers") as Record<string, string> | undefined)}
+                  onChange={(e) => updateField("headers", parseRecord(e.target.value))}
+                  rows={4}
+                  className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand-deep)] focus:ring-1 focus:ring-[var(--kp-brand-deep)] resize-y font-mono"
+                  placeholder='{"Authorization":"Bearer …"}'
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[var(--kp-text-1)]">命令</label>
+                <Input
+                  value={String(value("command") ?? "")}
+                  onChange={(e) => updateField("command", e.target.value)}
+                  placeholder="npx / uvx / node"
+                  className="bg-[var(--kp-bg)]"
+                />
+              </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-[var(--kp-text-1)]">环境变量（JSON）</label>
-            <textarea
-              value={formatEnv(value("env") as Record<string, string> | undefined)}
-              onChange={(e) => updateField("env", parseEnv(e.target.value))}
-              rows={5}
-              className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand-deep)] focus:ring-1 focus:ring-[var(--kp-brand-deep)] resize-y font-mono"
-            />
-          </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[var(--kp-text-1)]">参数（每行一个）</label>
+                <textarea
+                  value={formatArgs(value("args") as string[] | undefined)}
+                  onChange={(e) => updateField("args", parseArgs(e.target.value))}
+                  rows={4}
+                  className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand-deep)] focus:ring-1 focus:ring-[var(--kp-brand-deep)] resize-y font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[var(--kp-text-1)]">环境变量（JSON）</label>
+                <textarea
+                  value={formatRecord(value("env") as Record<string, string> | undefined)}
+                  onChange={(e) => updateField("env", parseRecord(e.target.value))}
+                  rows={5}
+                  className="w-full rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-2 text-sm text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand-deep)] focus:ring-1 focus:ring-[var(--kp-brand-deep)] resize-y font-mono"
+                />
+              </div>
+            </>
+          )}
 
           <label className="flex items-center gap-2 text-sm text-[var(--kp-text-2)]">
             <input
