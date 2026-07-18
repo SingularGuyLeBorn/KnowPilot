@@ -151,54 +151,52 @@ session_rotate({
 
 ## 5. 多实例部署
 
+> **决策（2026-07-18）**：**缓做完整多实例**。单用户本地默认 `SWARM_MODE=local` 足够。  
+> 已落地底座（`SWARM_MODE=redis` 时生效，local 无感）：分布式 prepare 锁、`RedisSwarmBus` 与 Local 语义对齐、session running Redis 宣称。  
+> **暂不做**：全局任务池 Redis 化、BullMQ Worker 消费 Agent、PostgreSQL 迁移、SSE 跨实例亲和。真要多机部署时再开，且几乎必须切 Postgres。
+
 ### 5.1 动机
 
-当前 `agentRunLocks` 是进程内内存，多实例部署会失效。
+进程内 `agentRunLocks` / hub / 任务池在多实例下失效。
 
-### 5.2 期望行为
+### 5.2 完整形态（未来，非当前目标）
 
-- 用 Redis/BullMQ 替代进程内锁。
-- `SWARM_MODE=redis` 时启用分布式 SwarmBus。
-- Agent 运行锁、异步任务队列、消息总线全部走 Redis。
-
-### 5.3 待确认问题
-
-- 是否需要支持多用户？
-- 多实例下 `dev.db`（SQLite）是否还能用，还是必须切到 PostgreSQL？
+- Agent 运行锁、异步任务池、消息总线、busy 信号全走 Redis。
+- 多写 DB → PostgreSQL；SSE sticky 或跨实例事件回放。
 
 ---
 
 ## 6. Agent 进化（Hermes 风格）
 
-### 6.1 动机
+> **决策（2026-07-18）**：**收窄**。保留「Run 后写 experience Memory」（已有）；**不做**默认全自动提炼 Skill / 心跳审查 / 无审批上线。  
+> 原因：生成物多为伪代码、discover 缺真实使用统计、单用户更需要可查经验而非自动造 Skill。  
+> 若以后要做：只产 `enabled=false` draft + 人工审批，再谈 promote。
 
-让 Agent 能从经验中自动生成 Skill，减少人工维护。
+### 6.1 已有
 
-### 6.2 期望行为
+- `accumulateExperience`（stream onDone）→ `Memory.type=experience`；防注入白名单已排除。
+- 工具半成品：`generate_skill_from_experience` / `skill_discover` / `skill_promote`（**未进默认 tools**）。
 
-- Agent 完成任务后，自动写 `kind="experience"` 的 Memory。
-- 管理 Agent 定期审查子 Agent 的 experience，提炼成 Skill。
-- 超级 Agent 跨 Workspace 发现优秀 Skill 并推广。
+### 6.2 明确不做（当前阶段）
 
-### 6.3 待确认问题
-
-- 自动生成的 Skill 是否需要审批？
-- Skill 的版本如何管理？
+- 管理 Agent 心跳自动审查 experience → Skill。
+- 超级 Agent 跨 Workspace 自动推广 Skill。
+- 无统计的 `skill_discover`「假繁荣」。
 
 ---
 
 ## 7. 其他候选
 
 - **多模态识图**：图片附件直接走 vision 模型，不依赖 OCR。
-- **协作模式**：多个用户共享同一个 Workspace。
+- **协作模式**：多个用户共享同一个 Workspace（与单用户定位冲突，低优先）。
 - **插件市场**：用户可以发布/安装 Skill 和 MCP Server。
-- **移动端适配**：Chat 页面在手机上的布局优化。
+- ~~**移动端适配**~~：**已落地**（底栏/Chat 单栏叠层/`pnpm remote`/Settings 清单）。
 
 ---
 
 ## 8. 综述对照后续项（2026-07-18 登记）
 
-> 对照 `docs/surveys-2026/` 两篇对比文 + **当前代码**。下列「已落地」项使综述 Part 4 部分过时；「仍值得做」供拍板，本工单不实现。
+> 对照 `docs/surveys-2026/` 两篇对比文 + **当前代码**。
 
 ### 8.1 综述文已过时（不必再排）
 
@@ -206,17 +204,20 @@ session_rotate({
 - `todo_write` / `todo_read`（会话级 todoState）
 - `AGENT_MAX_TOOL_CALLS_PER_RUN` 循环强制（reactLoop）
 
-### 8.2 进度（2026-07-18 起）
+### 8.2 进度
 
 | 优先级 | 项 | 状态 |
 |---|---|---|
-| P1 | 记忆检索：BM25 × (1+strength) × recency；retrieve-or-not 门控 | **已落地**（`memoryRepository` / `memoryRetrieveGate` / `buildMemoryContext`） |
-| P1 | 记忆 attribution / validTo + 心跳 consolidate | **已落地**（schema + `consolidateMemories` 挂 decay cron） |
-| P1 | Run/Session 轨迹 JSONL 导出骨架 | **已落地**（`run.exportTrace` / `session.exportTrace`）；Mock 平台基准仍待 |
+| P1 | 记忆检索：BM25 × (1+strength) × recency；retrieve-or-not 门控 | **已落地** |
+| P1 | 记忆 attribution / validTo + 心跳 consolidate | **已落地** |
+| P1 | Run/Session 轨迹 JSONL 导出骨架 | **已落地**；Mock 平台基准仍待 |
 | P2 | 轻量 SOP / 阶段工件（Markdown 接力） | 待做 |
-| P2 | 常驻层 USER.md/AGENT.md 硬预算 | **已落地**（`content/memories/_pinned/` + `pinnedMemory` 会话冻结 + `pinned_memory_read/write`） |
-| P3 | MCP 远程 / A2A / 本地 side 模型 | 按需 |
+| P2 | 常驻层 USER.md/AGENT.md 硬预算 | **已落地** |
+| P3 | **MCP 远程（Streamable HTTP）** | **排期做**（stdio 并存） |
+| P3 | 本地 side 模型（如 Ollama） | 按需，与 MCP 正交 |
+| — | A2A（跨产品 Agent 协议） | **不做**（见下） |
 
 ### 8.3 理念不做
 
-对等群聊 Swarm、参数化记忆、容器级沙箱（单用户本地定位）。
+- 对等群聊 Swarm、参数化记忆、容器级沙箱（单用户本地定位）。
+- **A2A 联邦 / Agent Card 市场**：已有私有 SwarmBus；无外部对端不造标准协议层。
