@@ -19,6 +19,7 @@ import {
   recordMemoryRetrieveOutcome,
   shouldSkipMemoryRetrieve,
 } from "./memoryRetrieveGate.js";
+import { ensurePinnedMemoryHint } from "./pinnedMemory.js";
 
 /**
  * 构建注入 system prompt 的长期记忆片段。
@@ -60,6 +61,20 @@ export async function buildMemoryContext(
     return `- [${m.type}${attr}] ${m.content.slice(0, 300)}`;
   });
   return `\n\n## 相关长期记忆\n${lines.join("\n")}`;
+}
+
+/**
+ * L1 常驻层（冻结）+ 动态 FTS 记忆（按轮检索）。
+ * sessionId 有值时 USER/AGENT 快照会话内不变；动态层仍按 userText 检索。
+ */
+export async function buildAllMemoryHints(
+  services: ServiceContainer,
+  userText: string,
+  options?: { agentId?: string | null; sessionId?: string | null },
+): Promise<string> {
+  const pinned = await ensurePinnedMemoryHint(services, options?.sessionId);
+  const dynamic = await buildMemoryContext(services, userText, { agentId: options?.agentId });
+  return pinned + dynamic;
 }
 
 const WEB_TOOL_GUIDE = `## 网络工具用法

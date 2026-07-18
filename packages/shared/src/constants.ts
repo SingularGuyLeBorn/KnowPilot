@@ -117,6 +117,17 @@ export const MEMORY_FLUSH_STRENGTH_DEFAULT = 0.85;
 /** 新记忆初始强度（memoryRepository.create / createMemorySchema 默认值同源） */
 export const MEMORY_INITIAL_STRENGTH = 1.0;
 
+/**
+ * L1 常驻层硬预算（Hermes 对标：USER ~500 tok / AGENT ~800 tok，按 ~4 字/token 粗估）。
+ * 写入与注入均截断到此上限；会话开始冻结快照，会话内改文件不影响本会话 prompt。
+ */
+export const PINNED_MEMORY_USER_MAX_CHARS = 2_000;
+export const PINNED_MEMORY_AGENT_MAX_CHARS = 3_200;
+/** 相对 projectRoot 的常驻层目录（`_` 前缀：db:sync 跳过，不进 Memory 表） */
+export const PINNED_MEMORY_DIR = "content/memories/_pinned";
+export const PINNED_MEMORY_USER_FILE = "USER.md";
+export const PINNED_MEMORY_AGENT_FILE = "AGENT.md";
+
 /** 长期记忆每日衰减系数（decayMemories，挂 heartbeat 每日 cron） */
 export const MEMORY_DECAY_FACTOR_PER_DAY = 0.95;
 /** 衰减后低于该强度的记忆归档删除 */
@@ -331,6 +342,8 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:memory_create",
     "native:memory_update",
     "native:memory_search",
+    "native:pinned_memory_read",
+    "native:pinned_memory_write",
     "native:agent_create",
     "native:agent_update",
     "native:agent_delete",
@@ -355,6 +368,8 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:memory_create",
     "native:memory_update",
     "native:memory_search",
+    "native:pinned_memory_read",
+    "native:pinned_memory_write",
     "native:agent_create_sub",
     "native:agent_send_message",
     "native:agent_report_back",
@@ -392,6 +407,8 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:memory_create",
   "native:memory_update",
   "native:memory_search",
+  "native:pinned_memory_read",
+  "native:pinned_memory_write",
   "native:todo_write",
   "native:todo_read",
   "skill:*",

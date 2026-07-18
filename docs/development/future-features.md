@@ -214,7 +214,7 @@ session_rotate({
 | P1 | 记忆 attribution / validTo + 心跳 consolidate | **已落地**（schema + `consolidateMemories` 挂 decay cron） |
 | P1 | Run/Session 轨迹 JSONL 导出骨架 | **已落地**（`run.exportTrace` / `session.exportTrace`）；Mock 平台基准仍待 |
 | P2 | 轻量 SOP / 阶段工件（Markdown 接力） | 待做 |
-| P2 | 常驻层 USER.md/AGENT.md 硬预算 | 待做 |
+| P2 | 常驻层 USER.md/AGENT.md 硬预算 | **已落地**（`content/memories/_pinned/` + `pinnedMemory` 会话冻结 + `pinned_memory_read/write`） |
 | P3 | MCP 远程 / A2A / 本地 side 模型 | 按需 |
 
 ### 8.3 理念不做

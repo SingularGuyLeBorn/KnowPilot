@@ -12,6 +12,7 @@ import {
 } from "@knowpilot/shared";
 import type { PostEntity } from "../../../services.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
+import { readPinnedFile, writePinnedFile, type PinnedWhich } from "../../pinnedMemory.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
 import type { ToolRollback } from "../types.js";
@@ -107,6 +108,24 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
     scope: memory.scope,
     attribution: memory.attribution,
   };
+}
+
+async function pinnedMemoryReadTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const which = String(args.which || "").trim() as PinnedWhich;
+  if (which !== "user" && which !== "agent") {
+    throw new Error("which 必须是 user 或 agent");
+  }
+  return readPinnedFile(ctx.config.projectRoot, which);
+}
+
+async function pinnedMemoryWriteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const which = String(args.which || "").trim() as PinnedWhich;
+  if (which !== "user" && which !== "agent") {
+    throw new Error("which 必须是 user 或 agent");
+  }
+  const content = String(args.content ?? "");
+  if (!content.trim()) throw new Error("content 不能为空");
+  return writePinnedFile(ctx.config.projectRoot, which, content);
 }
 
 async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -302,6 +321,30 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
       }),
     ),
   },
+  {
+    name: "pinned_memory_read",
+    reentrant: true,
+    description:
+      "读取 L1 常驻层 USER.md（用户偏好）或 AGENT.md（工作约定）。硬预算截断后的正文；会话内注入的是冻结快照，本工具读的是磁盘当前内容。",
+    parameters: zodParams(
+      z.object({
+        which: z.enum(["user", "agent"]).describe("user=USER.md；agent=AGENT.md"),
+      }),
+    ),
+  },
+  {
+    name: "pinned_memory_write",
+    concurrencyClass: "D",
+    destructive: true,
+    description:
+      "写入 L1 常驻层 USER.md / AGENT.md（超硬预算自动截断）。立即写盘；当前会话仍用冻结快照，**新会话**才注入更新后的内容。勿把可检索的琐碎事实写进这里——琐碎事实用 memory_create。",
+    parameters: zodParams(
+      z.object({
+        which: z.enum(["user", "agent"]).describe("user=USER.md；agent=AGENT.md"),
+        content: z.string().describe("完整替换正文（Markdown）"),
+      }),
+    ),
+  },
 ];
 
 const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
@@ -312,6 +355,8 @@ const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
   memory_update: memoryUpdateTool,
   memory_search: memorySearchTool,
   memory_delete: memoryDeleteTool,
+  pinned_memory_read: pinnedMemoryReadTool,
+  pinned_memory_write: pinnedMemoryWriteTool,
 };
 
 /** create 类补偿共用：按结果 id 走 Service 删除（保证文件回写 / FTS 同步）；NOT_FOUND 幂等跳过 */

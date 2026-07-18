@@ -53,6 +53,8 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "memory_update",
     "memory_search",
     "memory_delete",
+    "pinned_memory_read",
+    "pinned_memory_write",
     "session_compact",
     "session_rotate",
   ],

@@ -182,6 +182,8 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "memory_update",
   "memory_search",
   "memory_delete",
+  "pinned_memory_read",
+  "pinned_memory_write",
   "todo_write",
   "todo_read",
   "git_branch",

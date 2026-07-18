@@ -14,7 +14,7 @@ import { describeLlmError } from "./resilientLlmClient.js";
 import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterCompactBoundary, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
-import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
+import { buildAllMemoryHints, buildSystemPromptWithHints } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 import { resolveMicroCompactToolMaxChars } from "./autoCompact.js";
 import { runReactLoop, createStreamTransport, withReflection } from "./loop/index.js";
@@ -555,8 +555,9 @@ export async function chatAgentStream(
       : history.items;
     const historyForLlm = sliceHistoryAfterCompactBoundary(historyBase);
 
-    const memoryHint = await buildMemoryContext(services, prepared.messageText, {
+    const memoryHint = await buildAllMemoryHints(services, prepared.messageText, {
       agentId: (agent as { id?: string }).id,
+      sessionId,
     });
     const messages = buildLlmMessagesFromHistory(
       buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint, {

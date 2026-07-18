@@ -14,7 +14,7 @@ import { provisionWorkspace } from "../../workspaceProvision.js";
 import { checkWorkspaceAgentAccess } from "../../swarmPermissionGuard.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "../../agentEvolution.js";
 import { resolveToolsForAgentTier } from "../../loop/setup.js";
-import { buildMemoryContext, buildSystemPromptWithHints } from "../../promptBuilder.js";
+import { buildAllMemoryHints, buildSystemPromptWithHints } from "../../promptBuilder.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
 import { createTrpcInvoker } from "../../trpcInvoker.js";
 import { createMemoryRepository } from "../../memoryRepository.js";
@@ -417,7 +417,10 @@ async function prepareAgentRun(
         throw new Error("SessionStreamHub 未初始化，无法启动子 Agent 流式运行");
       }
 
-      const memoryHint = await buildMemoryContext(ctx.services, input, { agentId: agent.id });
+      const memoryHint = await buildAllMemoryHints(ctx.services, input, {
+        agentId: agent.id,
+        sessionId: mainSession.id,
+      });
       const tierTools = resolveToolsForAgentTier(agent.tier, agent.tools);
       const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, tierTools, memoryHint, {
         tier: agent.tier,
@@ -425,8 +428,8 @@ async function prepareAgentRun(
       });
       const messages: LlmMessage[] = [
         { role: "system", content: systemPrompt },
-        { role: "user", content: input }
-];
+        { role: "user", content: input },
+      ];
       const invokeTrpc = createTrpcInvoker({ services: ctx.services });
       const agentMeta = {
         id: agent.id,

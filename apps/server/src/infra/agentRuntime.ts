@@ -10,7 +10,8 @@ import { buildLlmMessagesFromHistory, type StoredToolCall, sliceHistoryAfterComp
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
 import { runReactLoop, createSyncTransport, withReflection } from "./loop/index.js";
-import { buildMemoryContext, buildSystemPromptWithHints } from "./promptBuilder.js";
+import { buildAllMemoryHints, buildSystemPromptWithHints } from "./promptBuilder.js";
+import { ensurePinnedMemoryHint } from "./pinnedMemory.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 
 export interface AgentLoopResult {
@@ -85,7 +86,12 @@ export async function runAgent(
   try {
     const { agent, drift } = await resolveAgent(services, input.agentId);
     logAgentDrift(agent.name, drift);
-    const memoryHint = input.input ? await buildMemoryContext(services, input.input, { agentId: agent.id }) : "";
+    const memoryHint = input.input
+      ? await buildAllMemoryHints(services, input.input, {
+          agentId: agent.id,
+          sessionId: input.sessionId,
+        })
+      : await ensurePinnedMemoryHint(services, input.sessionId);
     const messages: LlmMessage[] = [
       {
         role: "system",
@@ -190,7 +196,10 @@ export async function chatAgent(
     });
 
     const history = await services.message.list({ sessionId, page: 1, pageSize: 50 });
-    const memoryHint = await buildMemoryContext(services, displayText, { agentId: agent.id });
+    const memoryHint = await buildAllMemoryHints(services, displayText, {
+      agentId: agent.id,
+      sessionId,
+    });
     const messages = buildLlmMessagesFromHistory(
       buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint, {
         tier: agent.tier,
