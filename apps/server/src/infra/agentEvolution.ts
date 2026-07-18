@@ -18,7 +18,7 @@ import type { StoredToolCall } from "./chatHistory.js";
 import { createMemoryRepository } from "./memoryRepository.js";
 import { MEMORY_TYPES, memoryAgentScope, memoryWorkspaceScope } from "@knowpilot/shared";
 
-interface ExperienceSummary {
+export interface ExperienceSummary {
   taskDescription: string;
   toolsUsed: string[];
   success: boolean;
@@ -27,9 +27,16 @@ interface ExperienceSummary {
   keyLearnings: string;
 }
 
+/** 有工具调用才值得沉淀经验；纯闲聊跳过，避免经验库噪声 */
+export function shouldAccumulateExperience(result: {
+  toolCalls?: StoredToolCall[] | null;
+}): boolean {
+  return (result.toolCalls ?? []).some((t) => t.kind === "tool");
+}
+
 /**
  * 从一次 Run 中提取经验并写入 Memory
- * 在 agentStream onDone 后调用
+ * 挂载：agentStream onDone + agentRuntime chatAgent（有工具调用时）
  */
 export async function accumulateExperience(
   prisma: PrismaClient,
@@ -44,8 +51,12 @@ export async function accumulateExperience(
   },
   input: { message: string; trigger?: string; workspaceId?: string | null },
   durationMs: number,
-): Promise<void> {
+): Promise<{ written: boolean }> {
   try {
+    if (!shouldAccumulateExperience(result)) {
+      return { written: false };
+    }
+
     const tools = result.toolCalls.filter((t) => t.kind === "tool");
     const toolNames = tools.map((t) => t.name);
     const success = !!result.content.trim();
@@ -69,7 +80,7 @@ export async function accumulateExperience(
       content: JSON.stringify(experience),
       type: MEMORY_TYPES.EXPERIENCE,
       strength: success ? 1.0 : 0.5,
-      keywords: [...new Set(toolNames), input.trigger ?? "user", success ? "success" : "failed"],
+      keywords: [...new Set(toolNames), input.trigger ?? "chat", success ? "success" : "failed"],
       attribution: "experience" as const,
     };
     await repo.write({ ...memoryBase, scope: memoryAgentScope(agentId) });
@@ -87,8 +98,10 @@ export async function accumulateExperience(
       where: { id: agentId },
       data: { status: "active" },
     }).catch(() => {});
+    return { written: true };
   } catch (err) {
     console.warn(`[AgentEvolution] 经验积累失败 for ${agentId}:`, err);
+    return { written: false };
   }
 }
 
