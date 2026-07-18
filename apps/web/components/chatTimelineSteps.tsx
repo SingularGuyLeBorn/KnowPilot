@@ -9,6 +9,7 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { Check, ChevronRight, Clock, Loader2, Sparkles, X } from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
+import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { cn } from "@/lib/utils";
 import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils";
 import { ToolStepIcon, type ToolIconStatus } from "@/lib/toolIcons";
@@ -120,6 +121,11 @@ const ThinkingStep = memo(function ThinkingStep({
             isLive ? (
               <p className="text-xs text-[var(--kp-text-3)]">等待模型输出…</p>
             ) : null
+          ) : isLive ? (
+            <StreamingPlainContent
+              content={content}
+              className="prose-sm max-w-none text-xs text-[var(--kp-text-2)]"
+            />
           ) : (
             <PostContent
               content={content}

@@ -75,6 +75,8 @@ export interface UseChatRunStreamParams {
   isPageUnloadingRef: RefObject<boolean>;
   pendingStreamDeltaRef: RefObject<Map<string, string>>;
   streamRafRef: RefObject<Map<string, number>>;
+  pendingThinkingDeltaRef: RefObject<Map<string, string>>;
+  thinkingRafRef: RefObject<Map<string, number>>;
   streamSaveTimeoutRef: RefObject<ReturnType<typeof setTimeout> | null>;
   setSessionId: (id: string | null) => void;
   setEditingUserId: (id: string | null) => void;
@@ -96,6 +98,8 @@ export function useChatRunStream({
   isPageUnloadingRef,
   pendingStreamDeltaRef,
   streamRafRef,
+  pendingThinkingDeltaRef,
+  thinkingRafRef,
   streamSaveTimeoutRef,
   setSessionId,
   setEditingUserId,
@@ -131,6 +135,20 @@ export function useChatRunStream({
     streamRafRef.current.set(sid, id);
   }, [scheduleStreamSave, pendingStreamDeltaRef, streamRafRef]);
 
+  const scheduleThinkingFlush = useCallback((sid: string) => {
+    if (thinkingRafRef.current.has(sid)) return;
+    const id = requestAnimationFrame(() => {
+      thinkingRafRef.current.delete(sid);
+      const delta = pendingThinkingDeltaRef.current.get(sid);
+      if (delta) {
+        pendingThinkingDeltaRef.current.delete(sid);
+        streamLifecycleActions.appendThinkingDelta(sid, delta);
+        scheduleStreamSave();
+      }
+    });
+    thinkingRafRef.current.set(sid, id);
+  }, [scheduleStreamSave, pendingThinkingDeltaRef, thinkingRafRef]);
+
   /** 立即冲刷并取消该 session 的待写 delta */
   const flushStreamNow = useCallback((sid: string) => {
     const rafId = streamRafRef.current.get(sid);
@@ -144,7 +162,18 @@ export function useChatRunStream({
       streamLifecycleActions.appendTokenDelta(sid, delta);
       scheduleStreamSave();
     }
-  }, [scheduleStreamSave, pendingStreamDeltaRef, streamRafRef]);
+    const thinkRaf = thinkingRafRef.current.get(sid);
+    if (thinkRaf !== undefined) {
+      cancelAnimationFrame(thinkRaf);
+      thinkingRafRef.current.delete(sid);
+    }
+    const thinkDelta = pendingThinkingDeltaRef.current.get(sid);
+    if (thinkDelta) {
+      pendingThinkingDeltaRef.current.delete(sid);
+      streamLifecycleActions.appendThinkingDelta(sid, thinkDelta);
+      scheduleStreamSave();
+    }
+  }, [scheduleStreamSave, pendingStreamDeltaRef, streamRafRef, pendingThinkingDeltaRef, thinkingRafRef]);
 
   /** 取消该 session 的 rAF 并丢弃未写 delta */
   const discardStreamFlush = useCallback((sid: string) => {
@@ -154,7 +183,13 @@ export function useChatRunStream({
       streamRafRef.current.delete(sid);
     }
     pendingStreamDeltaRef.current.delete(sid);
-  }, [pendingStreamDeltaRef, streamRafRef]);
+    const thinkRaf = thinkingRafRef.current.get(sid);
+    if (thinkRaf !== undefined) {
+      cancelAnimationFrame(thinkRaf);
+      thinkingRafRef.current.delete(sid);
+    }
+    pendingThinkingDeltaRef.current.delete(sid);
+  }, [pendingStreamDeltaRef, streamRafRef, pendingThinkingDeltaRef, thinkingRafRef]);
 
   const runStream = useCallback(
     async (opts: RunStreamOptions) => {
@@ -282,7 +317,11 @@ export function useChatRunStream({
               }
             },
             onThinking: (delta) => {
-              streamLifecycleActions.appendThinkingDelta(originSid, delta);
+              pendingThinkingDeltaRef.current.set(
+                originSid,
+                (pendingThinkingDeltaRef.current.get(originSid) ?? "") + delta,
+              );
+              scheduleThinkingFlush(originSid);
             },
             onToken: (delta) => {
               pendingStreamDeltaRef.current.set(
@@ -562,7 +601,7 @@ export function useChatRunStream({
         // 队列消费改由 onStreamCommitted（INV-1/2）驱动，finally 不再 hydrate+consume
       }
     },
-    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback, effectiveSessionIdRef, isPageUnloadingRef, pendingStreamDeltaRef, setEditingUserId, setSessionId],
+    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, scheduleThinkingFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback, effectiveSessionIdRef, isPageUnloadingRef, pendingStreamDeltaRef, pendingThinkingDeltaRef, setEditingUserId, setSessionId],
   );
 
   return { runStream };
