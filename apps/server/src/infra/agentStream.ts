@@ -146,7 +146,9 @@ export type AgentStreamEvent =
   /** Session 自动命名完成：前端刷新侧边栏标题 */
   | { type: "session_title_updated"; sessionId: string; title: string }
   /** Agent 自动命名完成：前端刷新 Agent 树 */
-  | { type: "agent_renamed"; agentId: string; name: string };
+  | { type: "agent_renamed"; agentId: string; name: string }
+  /** SessionQueueItem 增删改：前端按 dbId 幂等合并发送队列（superior / child_notify / user） */
+  | { type: "session_queue_update"; sessionId: string; kind: string };
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
@@ -774,7 +776,15 @@ export async function chatAgentStream(
       tokenUsage: result.tokenUsage,
     });
   } catch (err: unknown) {
-    const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
+    const isAbort =
+      err instanceof Error &&
+      (err.name === "AbortError" ||
+        err.message.includes("用户中断") ||
+        err.message.includes("已中止") ||
+        err.message.includes("已被主动取消") ||
+        err.message.includes("超时被中止") ||
+        err.message.includes("调度层中止") ||
+        err.message.includes("会话已停止"));
     if (isAbort && sessionId && (partialContent.trim() || partialToolCalls.length > 0)) {
       try {
         if (prepared?.updateAssistantId) {

@@ -336,6 +336,22 @@ export const rerunSessionSchema = z.object({
 // C-3 会话手动恢复（v10）：仅恢复 paused 会话，幂等（并发/重复调用不报错）
 export const resumeSessionSchema = z.object({ id: z.string().cuid() });
 
+/** 确保 Agent 有一条主会话（空会话亦可）；Chat 无焦点进入时用，幂等。与「新对话」无关 */
+export const ensureMainSessionSchema = z.object({
+  agentId: z.string().cuid(),
+});
+
+/**
+ * 「新对话」：有空会话则复用（或提示已在其上），否则新建空会话。
+ * focusedSessionId 用于判定 already_here。
+ */
+export const openNewSessionSchema = z.object({
+  agentId: z.string().cuid(),
+  focusedSessionId: z.string().cuid().nullable().optional(),
+  title: z.string().min(1).max(200).optional(),
+  model: z.string().optional(),
+});
+
 /* ═══════════════════════════════════════════════════════
    Message (消息)
    ═══════════════════════════════════════════════════════ */
@@ -385,7 +401,7 @@ export const listMessagesForChatSchema = z.object({
 
 export const createSessionQueueItemSchema = z.object({
   sessionId: z.string().cuid(),
-  kind: z.enum(["user", "superior"]),
+  kind: z.enum(["user", "superior", "child_notify"]),
   content: z.string().min(1, "队列项内容不能为空"),
   source: z.string().min(1),
   sourceName: z.string().optional(),
@@ -663,7 +679,14 @@ export const createWorkspaceSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(100),
   description: z.string().optional(),
   path: safePathString,
-  autoCreateManager: z.boolean().optional(), // 自动创建管理 Agent（不传则默认 true，由 service 处理）
+  /** 是否自动创建管理 Agent（默认 true）；与 withManager 同义，任一为 false 即关闭 */
+  autoCreateManager: z.boolean().optional(),
+  withManager: z.boolean().optional(),
+  managerName: z.string().min(1).max(100).optional(),
+  /** 创建后发给管理员主会话的初始任务（无管理员时忽略） */
+  initialTask: z.string().max(8000).optional(),
+  /** 本 Workspace 后台 LLM 异步槽上限；0=不限；默认 2 */
+  asyncSlotQuota: z.number().int().min(0).max(100).optional(),
   isSystem: z.boolean().optional(), // 系统级 Workspace（内部使用）
   systemType: z.string().optional(), // 系统 Workspace 类型，如 "super"
 });
@@ -674,6 +697,7 @@ export const updateWorkspaceSchema = z.object({
   description: z.string().optional(),
   path: safePathString.optional(),
   status: workspaceStatusSchema.optional(),
+  asyncSlotQuota: z.number().int().min(0).max(100).optional(),
   isSystem: z.boolean().optional(),
   systemType: z.string().optional(),
 });
@@ -981,6 +1005,8 @@ export type ListSessionsInput = z.infer<typeof listSessionsSchema>;
 export type StopSessionInput = z.infer<typeof stopSessionSchema>;
 export type RerunSessionInput = z.infer<typeof rerunSessionSchema>;
 export type ResumeSessionInput = z.infer<typeof resumeSessionSchema>;
+export type EnsureMainSessionInput = z.infer<typeof ensureMainSessionSchema>;
+export type OpenNewSessionInput = z.infer<typeof openNewSessionSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;

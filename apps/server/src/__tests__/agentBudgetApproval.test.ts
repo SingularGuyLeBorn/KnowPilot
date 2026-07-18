@@ -93,6 +93,17 @@ describe("approvalGate destructive + TTL", () => {
     expect(toolRequiresApproval("git.push")).toBe(true);
   });
 
+  it("Agent native git 写操作与 tRPC 同档需审批（防绕过）", () => {
+    expect(toolRequiresApproval("git_commit")).toBe(true);
+    expect(toolRequiresApproval("git_pull")).toBe(true);
+    expect(toolRequiresApproval("git_push")).toBe(true);
+    expect(toolRequiresApproval("git.commit")).toBe(true);
+    expect(toolRequiresApproval("git.pull")).toBe(true);
+    // 只读不拦
+    expect(toolRequiresApproval("git_status")).toBe(false);
+    expect(toolRequiresApproval("git_diff")).toBe(false);
+  });
+
   it("REQUIRE_APPROVAL=false 全局关闭", () => {
     process.env.REQUIRE_APPROVAL = "false";
     process.env.AGENT_DESTRUCTIVE_APPROVAL = "true";

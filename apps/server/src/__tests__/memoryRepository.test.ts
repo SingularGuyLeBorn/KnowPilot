@@ -309,4 +309,63 @@ describe("MemoryRepository（W5）", () => {
     const allRows = await prisma.memory.findMany({ where: { content: { contains: token2 } } });
     expect(allRows.every((r) => r.scope === memoryAgentScope(agentNoWs.id))).toBe(true);
   });
+
+  it("supersedeUpdate：读路径只见新版；旧 id 再 update 跟到链尾；跨 scope 拒绝", async () => {
+    const agentId = `${RUN}-su-agent`;
+    const token = `${RUN}-su-token`;
+    const v1 = await track(
+      await repo.write({
+        content: `事实 v1 ${token}`,
+        type: MEMORY_TYPES.SEMANTIC,
+        scope: memoryAgentScope(agentId),
+        keywords: [token],
+      }),
+    );
+
+    const { previousId, memory: v2 } = await repo.supersedeUpdate({
+      id: v1.id,
+      content: `事实 v2 ${token}`,
+      actor: { agentId, tier: "manager" },
+    });
+    createdIds.push(v2.id);
+    expect(previousId).toBe(v1.id);
+    expect(v2.id).not.toBe(v1.id);
+
+    const active = await repo.read({
+      scopes: [memoryAgentScope(agentId)],
+      keyword: token,
+      types: [MEMORY_TYPES.SEMANTIC],
+    });
+    expect(active.map((m) => m.id)).toEqual([v2.id]);
+    expect(active[0]!.content).toContain("v2");
+
+    const oldRow = await prisma.memory.findUnique({ where: { id: v1.id } });
+    expect((oldRow as { status?: string })?.status).toBe("superseded");
+    expect((oldRow as { supersededBy?: string })?.supersededBy).toBe(v2.id);
+
+    // 用旧 id 再 update → 跟到链尾挂 v3
+    const { previousId: prev2, memory: v3 } = await repo.supersedeUpdate({
+      id: v1.id,
+      content: `事实 v3 ${token}`,
+      actor: { agentId, tier: "manager" },
+    });
+    createdIds.push(v3.id);
+    expect(prev2).toBe(v2.id);
+    expect(v3.id).not.toBe(v2.id);
+
+    const active2 = await repo.read({
+      scopes: [memoryAgentScope(agentId)],
+      keyword: token,
+      types: [MEMORY_TYPES.SEMANTIC],
+    });
+    expect(active2.map((m) => m.id)).toEqual([v3.id]);
+
+    await expect(
+      repo.supersedeUpdate({
+        id: v3.id,
+        content: `越权改写 ${token}`,
+        actor: { agentId: "other-agent", tier: "manager" },
+      }),
+    ).rejects.toThrow(/越权/);
+  });
 });

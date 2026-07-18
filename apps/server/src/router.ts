@@ -16,7 +16,7 @@ import {
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
-  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, compactSessionSchema,
+  createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, ensureMainSessionSchema, openNewSessionSchema, compactSessionSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
@@ -426,6 +426,58 @@ const sessionRouter = router({
   create: publicProcedure.meta({ description: "创建聊天会话。", aiReadable: true }).input(createSessionSchema).mutation(({ ctx, input }) => ctx.services.session.create(input)),
   getById: publicProcedure.meta({ description: "获取会话详情（含消息列表）。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.session.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有聊天会话。", aiReadable: true }).input(listSessionsSchema).query(({ ctx, input }) => ctx.services.session.list(input)),
+  ensureMain: publicProcedure
+    .meta({
+      description: "确保 Agent 有一条主会话（空亦可）。Chat 进入无会话态时调用，幂等返回 sessionId。",
+      aiReadable: true,
+    })
+    .input(ensureMainSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.services.agent.getById(input.agentId);
+      if (!agent) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Agent 不存在: ${input.agentId}` });
+      }
+      const { ensureMainSession } = await import("./infra/ensureMainSession.js");
+      const { session, created } = await ensureMainSession(ctx.prisma, {
+        agentId: agent.id,
+        title: `${agent.name} 主会话`,
+        model: agent.model || ctx.config.llm.defaultModel,
+      });
+      return {
+        id: session.id,
+        title: session.title,
+        agentId: session.agentId,
+        model: session.model,
+        created,
+      };
+    }),
+  openNew: publicProcedure
+    .meta({
+      description:
+        "新对话：已有空会话则复用（焦点已在其上则 already_here）；否则新建空会话。",
+      aiReadable: true,
+    })
+    .input(openNewSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const agent = await ctx.services.agent.getById(input.agentId);
+      if (!agent) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Agent 不存在: ${input.agentId}` });
+      }
+      const { openNewSession } = await import("./infra/openNewSession.js");
+      const { session, action } = await openNewSession(ctx.prisma, {
+        agentId: agent.id,
+        focusedSessionId: input.focusedSessionId,
+        title: input.title ?? "新对话",
+        model: input.model || agent.model || ctx.config.llm.defaultModel,
+      });
+      return {
+        id: session.id,
+        title: session.title,
+        agentId: session.agentId,
+        model: session.model,
+        action,
+      };
+    }),
   listRunning: publicProcedure
     .meta({ description: "列出当前服务器上正在运行的 Agent 流式会话（用于前端断线/跨标签恢复）。", aiReadable: false })
     .input(z.void().optional())
@@ -801,22 +853,33 @@ const workspaceRouter = router({
     .meta({ description: "创建工作区（path 唯一）。autoCreateManager=true 时自动创建管理 Agent + 主 session + .knowpilot/ 目录。", aiReadable: false })
     .input(createWorkspaceSchema)
     .mutation(async ({ ctx, input }) => {
-      if (input.autoCreateManager === false) {
+      const withManager = input.withManager !== false && input.autoCreateManager !== false;
+      if (!withManager) {
         return ctx.services.workspace.create(input);
       }
-      // 走完整 provision：Workspace + 管理 Agent + 主 session + .knowpilot/
+      // 走完整 provision：Workspace + 管理 Agent + 主 session + 可选初始任务 + .knowpilot/
       const { provisionWorkspace } = await import("./infra/workspaceProvision.js");
       const result = await provisionWorkspace(ctx.config, ctx.services, {
         name: input.name,
         path: input.path,
         description: input.description,
+        withManager: true,
+        managerName: input.managerName,
+        initialTask: input.initialTask,
+        asyncSlotQuota: input.asyncSlotQuota,
         operatorAgentId: "user",
       });
       if (!result.success) {
         throw new TRPCError({ code: "BAD_REQUEST", message: result.error ?? "创建 Workspace 失败" });
       }
       const ws = await ctx.services.workspace.getById(result.workspaceId!);
-      return { success: true as const, data: ws, managerAgentId: result.managerAgentId };
+      return {
+        success: true as const,
+        data: ws,
+        managerAgentId: result.managerAgentId,
+        managerSessionId: result.managerSessionId,
+        initialTaskStatus: result.initialTaskStatus,
+      };
     }),
   getById: publicProcedure.meta({ description: "获取工作区详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.workspace.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有工作区。", aiReadable: true }).input(listWorkspacesSchema).query(({ ctx, input }) => ctx.services.workspace.list(input)),

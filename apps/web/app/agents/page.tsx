@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Agent } from "@knowpilot/shared";
 import { CHAT_MODELS, DEFAULT_LLM_MODEL, materializeAgentTools } from "@knowpilot/shared";
-import { useAgent, useCardDensity, type CardDensity } from "@/lib/hooks";
+import { useAgent, useWorkspace, useCardDensity, type CardDensity } from "@/lib/hooks";
 import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, CardDensityToggle } from "@/components/shared";
 import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { AgentAvatar } from "@/components/agentAvatar";
@@ -123,6 +123,7 @@ const AgentCard = memo(function AgentCard({
   agent,
   selected,
   density,
+  workspaceName,
   onToggleSelect,
   onEdit,
   onDelete,
@@ -130,6 +131,7 @@ const AgentCard = memo(function AgentCard({
   agent: Agent;
   selected: boolean;
   density: CardDensity;
+  workspaceName?: string | null;
   onToggleSelect: (id: string) => void;
   onEdit: (agent: Agent) => void;
   onDelete: (id: string) => void;
@@ -234,7 +236,7 @@ const AgentCard = memo(function AgentCard({
       {agent.workspaceId && (
         <div className={cn("flex items-center gap-1.5 text-[10px] text-[var(--kp-text-3)]", density === "compact" ? "mb-1.5" : "mb-3")}>
           <Folder className="h-3 w-3" />
-          <span>Workspace: {agent.workspaceId.slice(0, 8)}…</span>
+          <span>Workspace: {workspaceName || "未命名空间"}</span>
         </div>
       )}
       {isSuper && (
@@ -309,6 +311,15 @@ export default function AgentsPage() {
     [page, keyword, tier, status],
   );
   const { data, isLoading, refetch } = useList(listInput);
+  const { useList: useWorkspaceList } = useWorkspace();
+  const workspacesQuery = useWorkspaceList({ page: 1, pageSize: 100, status: "active" });
+  const workspaceNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const w of workspacesQuery.data?.items ?? []) {
+      m.set(w.id, w.name);
+    }
+    return m;
+  }, [workspacesQuery.data?.items]);
   // W16d-3：默认 assistant 配置漂移横幅（drift 为空时组件渲染 null）
   const { data: driftStatus } = trpc.agent.driftStatus.useQuery(undefined, { staleTime: 60_000 });
 
@@ -741,6 +752,7 @@ export default function AgentsPage() {
                 agent={agent}
                 selected={selectedIds.has(agent.id)}
                 density={density}
+                workspaceName={agent.workspaceId ? workspaceNameById.get(agent.workspaceId) : null}
                 onToggleSelect={toggleSelect}
                 onEdit={openEdit}
                 onDelete={setDeleteId}

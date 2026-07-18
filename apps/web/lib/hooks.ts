@@ -235,6 +235,7 @@ export const useFile = () => {
 export const useLog = () => useCRUDApi<unknown, { id: string }, unknown, unknown>("log");
 export const useGit = () => {
   const crud = useCRUDApi<any, any, any, GitRepo>("git");
+  const utils = trpc.useUtils();
   return {
     ...crud,
     useStatus: (input: { repoId?: string; repoPath?: string }, options?: { enabled?: boolean }) =>
@@ -243,6 +244,48 @@ export const useGit = () => {
       input: { repoId?: string; repoPath?: string; limit?: number },
       options?: { enabled?: boolean },
     ) => trpc.git.log.useQuery(input, options),
+    useDiff: (
+      input: { repoId?: string; repoPath?: string; staged?: boolean },
+      options?: { enabled?: boolean },
+    ) => trpc.git.diff.useQuery(input, options),
+    useCommit: (options?: {
+      onSuccess?: (res: unknown) => void;
+      onError?: (err: { message?: string }) => void;
+    }) =>
+      trpc.git.commit.useMutation({
+        onSuccess: (res) => {
+          void utils.git.status.invalidate();
+          void utils.git.log.invalidate();
+          void utils.git.diff.invalidate();
+          options?.onSuccess?.(res);
+        },
+        onError: options?.onError,
+      }),
+    usePull: (options?: {
+      onSuccess?: (res: unknown) => void;
+      onError?: (err: { message?: string }) => void;
+    }) =>
+      trpc.git.pull.useMutation({
+        onSuccess: (res) => {
+          void utils.git.status.invalidate();
+          void utils.git.log.invalidate();
+          void utils.git.diff.invalidate();
+          options?.onSuccess?.(res);
+        },
+        onError: options?.onError,
+      }),
+    usePush: (options?: {
+      onSuccess?: (res: unknown) => void;
+      onError?: (err: { message?: string }) => void;
+    }) =>
+      trpc.git.push.useMutation({
+        onSuccess: (res) => {
+          void utils.git.status.invalidate();
+          void utils.git.log.invalidate();
+          options?.onSuccess?.(res);
+        },
+        onError: options?.onError,
+      }),
   };
 };
 export const useTask = () => {

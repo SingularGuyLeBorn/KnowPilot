@@ -4,7 +4,7 @@
  * Subagent 后台管理页 — 列出所有子 Agent 任务会话，支持状态过滤与操作
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Bot, ExternalLink, MessageSquare, Square, Trash2, RotateCcw } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog, EmptyState, Pagination } from "@/components/shared";
 import type { SessionStatus } from "@knowpilot/shared";
+import { sessionLabel } from "@/lib/displayLabels";
 
 const STATUS_OPTIONS = ["", "running", "queued", "completed", "failed", "paused"] as const;
 const STATUS_LABEL: Record<string, string> = {
@@ -60,6 +61,15 @@ export default function SubagentsPage() {
   });
 
   const items = query.data?.items ?? [];
+  // 父会话标题：用会话列表建字典
+  const allSessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 100 });
+  const parentLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of allSessionsQuery.data?.items ?? []) {
+      m.set(s.id, sessionLabel(s));
+    }
+    return m;
+  }, [allSessionsQuery.data?.items]);
   const total = query.data?.total ?? 0;
   const totalPages = query.data?.totalPages ?? 1;
   const confirmTarget = items.find((s) => s.id === confirmId);
@@ -132,7 +142,7 @@ export default function SubagentsPage() {
               {items.map((s) => (
                 <tr key={s.id} className="border-b border-[var(--kp-divider-light)] last:border-0">
                   <td className="max-w-[18rem] px-3 py-2">
-                    <div className="truncate font-medium text-[var(--kp-text-1)]">{s.title}</div>
+                    <div className="truncate font-medium text-[var(--kp-text-1)]">{sessionLabel(s)}</div>
                     {s.taskDescription && (
                       <div className="mt-0.5 line-clamp-1 text-[10px] text-[var(--kp-text-3)]">{s.taskDescription}</div>
                     )}
@@ -142,8 +152,9 @@ export default function SubagentsPage() {
                       <Link
                         href={`/chat?sessionId=${s.parentSessionId}`}
                         className="text-[var(--kp-brand-deep)] hover:underline"
+                        title={parentLabelById.get(s.parentSessionId) ?? "父会话"}
                       >
-                        {s.parentSessionId.slice(-6)}
+                        {parentLabelById.get(s.parentSessionId) ?? "父会话"}
                       </Link>
                     ) : (
                       <span className="text-[var(--kp-text-3)]">—</span>

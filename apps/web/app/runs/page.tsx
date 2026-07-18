@@ -4,13 +4,15 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Activity, Clock, Bot } from "lucide-react";
 import Link from "next/link";
 import type { Run } from "@knowpilot/shared";
-import { useRun } from "@/lib/hooks";
+import { useRun, useAgent } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 import { formatRelativeTime } from "@/lib/utils";
+import { agentLabel, runLabel, sessionLabel } from "@/lib/displayLabels";
+import { trpc } from "@/lib/trpc";
 
 const STATUS_STYLE: Record<Run["status"], string> = {
   pending: "bg-yellow-500/10 text-yellow-600",
@@ -32,6 +34,7 @@ const STATUS_LABEL: Record<Run["status"], string> = {
 
 export default function RunsPage() {
   const { useList, useDelete } = useRun();
+  const { useList: useAgentList } = useAgent();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const { data, isLoading } = useList({
@@ -39,6 +42,22 @@ export default function RunsPage() {
     pageSize: 20,
     status: statusFilter || undefined,
   });
+  const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
+  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 100 });
+  const agentNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of agentsQuery.data?.items ?? []) {
+      m.set(a.id, agentLabel(a));
+    }
+    return m;
+  }, [agentsQuery.data?.items]);
+  const sessionLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of sessionsQuery.data?.items ?? []) {
+      m.set(s.id, sessionLabel(s));
+    }
+    return m;
+  }, [sessionsQuery.data?.items]);
   const deleteMutation = useDelete();
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -109,8 +128,16 @@ export default function RunsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 text-[var(--kp-text-2)]">
                           <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
-                          <span className="font-mono text-xs truncate max-w-[200px]">
-                            {run.agentId?.slice(0, 8) ?? "—"} / {run.sessionId?.slice(0, 8) ?? "—"}
+                          <span className="text-xs truncate max-w-[240px]" title={runLabel({
+                            agentName: run.agentId ? agentNameById.get(run.agentId) : null,
+                            sessionLabel: run.sessionId ? sessionLabelById.get(run.sessionId) : null,
+                            status: STATUS_LABEL[run.status],
+                          })}>
+                            {runLabel({
+                              agentName: run.agentId ? agentNameById.get(run.agentId) : null,
+                              sessionLabel: run.sessionId ? sessionLabelById.get(run.sessionId) : null,
+                              status: STATUS_LABEL[run.status],
+                            })}
                           </span>
                         </div>
                       </td>

@@ -40,6 +40,7 @@ import {
   rollbackAgentMessageDeliveredByTaskRef,
 } from "./agentMessageLedger.js";
 import { getTool } from "./tools/registry.js";
+import { isAbortLikeError, messageFromAbortSignal } from "./abortReason.js";
 
 export interface AsyncTaskLogEntry {
   timestamp: number;
@@ -345,6 +346,19 @@ export async function autoConsumeAsyncDelivery(options: {
   // v7 通道收敛：deliverToQueue=false 的结果已走 tool return 直返父 Agent，此处若放行 = 二次投喂
   if (input?.deliverToQueue === false) return "skipped";
 
+  const failed = status === "failed" || task.status === "failed";
+  // sleep / 纯工具失败：只留右栏 Task 看板，禁止灌进父会话气泡（否则 LLM 把错误当用户消息反复重试）。
+  // 仍原子标记 delivered，避免 reconciler 对「未投递失败」反复 notify。
+  const lightweightSource =
+    input?.sourceType === "sleep" || input?.sourceType === "async_task_tool";
+  if (failed && lightweightSource) {
+    await prisma.task.updateMany({
+      where: { id: jobId, delivered: false },
+      data: { delivered: true, deliveredAt: new Date() },
+    });
+    return "skipped";
+  }
+
   const hub = getStreamHub();
   if (!hub) return "skipped";
 
@@ -359,7 +373,6 @@ export async function autoConsumeAsyncDelivery(options: {
   }
 
   const output = parseAsyncOutput(task.output);
-  const failed = status === "failed" || task.status === "failed";
   const message = failed
     ? `任务失败：${output.error || "未知错误"}`
     : output.asyncResult || "(无文本输出)";
@@ -1402,10 +1415,15 @@ function buildAsyncExecute(
   };
 
   const finalizeFailure = async (err: unknown, emit?: (event: AgentStreamEvent) => void) => {
-    const isAbort = err instanceof Error && (err.name === "AbortError" || err.message.includes("用户中断"));
+    const isAbort = isAbortLikeError(err);
     const isTimeout = err instanceof Error && err.message.includes("超时");
-    const reason = isTimeout ? "异步任务执行超时" : isAbort ? "异步任务已取消" : undefined;
-    const errorText = reason || (err instanceof Error ? err.message : String(err));
+    const errorText = isAbort
+      ? messageFromAbortSignal(undefined, err)
+      : isTimeout
+        ? "异步任务执行超时"
+        : err instanceof Error
+          ? err.message
+          : String(err);
     await appendAsyncJobLog(jobId, { level: "error", message: errorText }, services);
     const existingOutputFailed = parseAsyncOutput((await services.task.getById(jobId))?.output);
     await services.task.update({
@@ -1432,8 +1450,14 @@ function buildAsyncExecute(
     }
     await broadcastShare("failed", { error: errorText });
     const parentInputFailed = parseAsyncInput((await services.task.getById(jobId))?.input);
-    // 同 finalizeSuccess 的 v7 投递闸：sync 任务的失败结果同样走 tool return，不进队列
-    if (parentInputFailed?.sessionId && parentInputFailed.deliverToQueue !== false) {
+    // sync 失败走 tool return；sleep/纯工具失败不进对话气泡（右栏 Task 仍可见）
+    const skipFailedBubble =
+      parentInputFailed?.sourceType === "sleep" || parentInputFailed?.sourceType === "async_task_tool";
+    if (
+      parentInputFailed?.sessionId &&
+      parentInputFailed.deliverToQueue !== false &&
+      !skipFailedBubble
+    ) {
       await notifyAsyncDelivery(parentInputFailed.sessionId, jobId, "failed", parentInputFailed.taskLabel, services, config);
     }
     emit?.({ type: "error", message: errorText, sessionId: subagentSessionId });
@@ -1445,7 +1469,8 @@ function buildAsyncExecute(
     const registry = new Map<string, ToolRegistryEntry>();
     await buildAgentToolSchemas(services, parsed, registry);
     const toolCtx = createAgentToolContext(config, services, invokeTrpc, parsed, undefined, {
-      sessionId: subagentSessionId,
+      // 纯工具异步复用父会话上下文；缺 sessionId 会导致 sleep(async=true) 等工具直接抛错
+      sessionId: subagentSessionId ?? parentSessionId,
       agentSnapshot,
       runOrigin: "parent",
     });
@@ -1629,11 +1654,22 @@ export async function startAsyncAgentTask(options: {
 
   const orchestrator = getAsyncJobOrchestrator(options.config);
   const stats = orchestrator.getStats();
-  // 初始状态标签与池准入口径同源（Q2：全局占用 = 池内 running + hub 交互 running）
-  const willQueue = stats.runningGlobal + stats.hubInteractiveRunning >= stats.limits.maxGlobal;
+  // 纯工具不占 LLM 全局槽，不会因 maxConcurrent 排队；LLM/子 Agent 仍走 Q2 准入口径
+  const willQueue =
+    mode === "tool"
+      ? false
+      : stats.runningGlobal + stats.hubInteractiveRunning >= stats.limits.maxGlobal;
   const initialStatus = willQueue ? "queued" : "running";
 
   const parentAgent = await prisma.agent.findUnique({ where: { id: options.agent.id } }).catch(() => null);
+  // 行级 Workspace 槽配额（Q4）；Root 常用 0=不限，业务空间默认 2
+  let workspaceSlotQuota: number | undefined;
+  const parentWorkspaceId = parentAgent?.workspaceId ?? null;
+  if (parentWorkspaceId) {
+    const ws = await prisma.workspace.findUnique({ where: { id: parentWorkspaceId } }).catch(() => null);
+    const quota = (ws as { asyncSlotQuota?: number } | null)?.asyncSlotQuota;
+    if (typeof quota === "number") workspaceSlotQuota = quota;
+  }
 
   // async_task_run：不创建新的 Agent/会话，直接复用父 Agent 身份跑后台任务。
   // spawn_subagent：才创建独立的 tier=sub 子 Agent 和 subagent ChatSession。
@@ -1769,10 +1805,13 @@ export async function startAsyncAgentTask(options: {
       origin: isSubagent ? "spawn_subagent" : "async_task_run",
       schedule: "pool",
       sessionId: options.sessionId,
-      workspaceId: agentSnapshot.workspaceId ?? null,
+      workspaceId: agentSnapshot.workspaceId ?? parentWorkspaceId ?? null,
+      workspaceSlotQuota: mode === "tool" ? undefined : workspaceSlotQuota,
       jobId,
       taskLabel,
       timeoutMs: options.timeoutMs,
+      // sleep/纯工具：lightweight 不占全局 LLM 槽
+      slotClass: mode === "tool" ? "lightweight" : "llm",
       metadata: subagentSessionId ? { subagentSessionId } : undefined,
       execute: async (signal) => {
         await buildAsyncExecute(
@@ -1864,6 +1903,8 @@ export async function startAsyncSleepTask(options: {
       jobId,
       sessionId: options.sessionId,
       timeoutMs: ms + 10_000,
+      // sleep 不占全局 LLM 槽：避免「等 10 秒」堵住 spawn_subagent / 后台推理
+      slotClass: "lightweight",
       execute: async (signal) => {
         try {
           await options.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
@@ -1872,12 +1913,16 @@ export async function startAsyncSleepTask(options: {
         }
         const { aborted } = await waitMs(ms, signal);
         if (aborted || signal.aborted) {
+          const abortMsg = messageFromAbortSignal(signal);
           await options.services.task.update({
             id: jobId,
             status: "failed",
             finishedAt: new Date(),
-            output: { error: "定时器已取消" } satisfies AsyncTaskOutput,
+            output: {
+              error: abortMsg.includes("用户中断") ? "定时器已取消" : abortMsg,
+            } satisfies AsyncTaskOutput,
           } as any).catch(() => undefined);
+          // 失败不 notify：右栏可见，对话区不灌错误气泡
           return;
         }
         await options.services.task.update({
@@ -1901,15 +1946,10 @@ export async function startAsyncSleepTask(options: {
       .catch(() => undefined);
     throw err;
   }
-  const stats = orchestrator.getStats();
-  // 初始状态标签与池准入口径同源（Q2：全局占用 = 池内 running + hub 交互 running）
-  const willQueue = stats.runningGlobal + stats.hubInteractiveRunning >= stats.limits.maxGlobal;
   return {
     jobId,
-    status: willQueue ? "queued" : "running",
-    message: willQueue
-      ? `定时器已排队，将在获得槽位后等待 ${seconds} 秒。`
-      : `定时器已启动，${seconds} 秒后结果会进入发送队列最前。`,
+    status: "running",
+    message: `定时器已启动，${seconds} 秒后结果会进入发送队列最前（不占用 LLM 并发槽）。`,
   };
 }
 

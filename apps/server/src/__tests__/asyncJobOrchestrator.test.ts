@@ -59,6 +59,7 @@ describe("AsyncJobOrchestrator", () => {
   it("取消运行中任务会 abort signal", async () => {
     const orch = new AsyncJobOrchestrator({ maxGlobal: 2, maxPerSession: 2, taskTimeoutMs: 60_000 });
     let aborted = false;
+    let reason: unknown;
 
     orch.enqueue({
       jobId: "j1",
@@ -66,6 +67,7 @@ describe("AsyncJobOrchestrator", () => {
       execute: async (signal) => {
         signal.addEventListener("abort", () => {
           aborted = true;
+          reason = signal.reason;
         });
         await new Promise((r) => setTimeout(r, 200));
       },
@@ -75,6 +77,49 @@ describe("AsyncJobOrchestrator", () => {
     expect(orch.cancel("j1")).toBe(true);
     await new Promise((r) => setTimeout(r, 50));
     expect(aborted).toBe(true);
+    expect(reason).toBe("cancel");
+  });
+
+  it("lightweight 不占全局 LLM 槽：满槽时 sleep 类仍立即 start", async () => {
+    const orch = new AsyncJobOrchestrator({ maxGlobal: 1, maxPerSession: 5, taskTimeoutMs: 60_000 });
+    const gate = { open: false };
+    const started: string[] = [];
+
+    orch.enqueue({
+      jobId: "llm-1",
+      sessionId: "s1",
+      slotClass: "llm",
+      execute: async () => {
+        started.push("llm-1");
+        while (!gate.open) await new Promise((r) => setTimeout(r, 15));
+      },
+    });
+    orch.enqueue({
+      jobId: "llm-2",
+      sessionId: "s1",
+      slotClass: "llm",
+      execute: async () => {
+        started.push("llm-2");
+      },
+    });
+    orch.enqueue({
+      jobId: "sleep-1",
+      sessionId: "s1",
+      slotClass: "lightweight",
+      execute: async () => {
+        started.push("sleep-1");
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 40));
+    expect(started).toContain("llm-1");
+    expect(started).toContain("sleep-1");
+    expect(started).not.toContain("llm-2");
+    expect(orch.getStats().runningGlobal).toBe(1);
+
+    gate.open = true;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(started).toContain("llm-2");
   });
 
   it("超时自动 abort", async () => {

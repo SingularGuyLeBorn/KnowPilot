@@ -46,6 +46,7 @@ export function kindLabel(item: ChatQueueItem): string {
     return "async task";
   }
   if (item.kind === "superior") return item.sourceName ? `上级 · ${item.sourceName}` : "上级 Agent";
+  if (item.kind === "child_notify") return item.sourceName ? `来自子 Agent · ${item.sourceName}` : "来自子 Agent";
   return "待发消息";
 }
 
@@ -87,6 +88,7 @@ export function QueueCard({
 }: QueueCardProps) {
   const isAsyncResult = item.kind === "async-result";
   const isRunning = item.kind === "async-running";
+  const isChildNotify = item.kind === "child_notify";
   const canEditMain = item.kind === "user";
   const canEditAppend = isAsyncResult;
 
@@ -94,7 +96,8 @@ export function QueueCard({
     <div
       className={cn(
         "rounded-xl border bg-[var(--kp-bg-alt)] transition-shadow",
-        item.pinned ? "border-[var(--kp-brand)]/40 shadow-sm" : "border-[var(--kp-divider-light)]",
+        item.pinned ? "border-[var(--kp-brand)]/40 shadow-sm" : isChildNotify ? "border-emerald-300/60" : "border-[var(--kp-divider-light)]",
+        isChildNotify && "border-l-4 border-l-emerald-400",
         expanded ? "p-3" : "px-3 py-2",
       )}
       data-testid={`chat-queue-item-${item.kind}`}
@@ -114,7 +117,9 @@ export function QueueCard({
                   ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                   : isAsyncResult
                     ? "bg-amber-500/10 text-amber-700"
-                    : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
+                    : isChildNotify
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
               )}
             >
               {kindLabel(item)}
@@ -160,6 +165,16 @@ export function QueueCard({
                     placeholder="可选：对异步结果追加说明…"
                   />
                 </div>
+              )}
+
+              {/* superior / child_notify：只读正文（旧实现展开后既无 preview 也无 textarea，内容空白） */}
+              {(item.kind === "superior" || item.kind === "child_notify") && (
+                <p
+                  className="whitespace-pre-wrap rounded-lg bg-[var(--kp-bg-mute)] px-2 py-1.5 text-xs text-[var(--kp-text-1)]"
+                  data-testid="chat-queue-item-body"
+                >
+                  {item.text.trim() || "（空消息）"}
+                </p>
               )}
 
               {(canEditMain || (isAsyncResult && item.text)) && onUpdate && (
@@ -621,7 +636,11 @@ function StatusRow({
           ) : null}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--kp-text-3)]">
             {item.createdAt ? <span>已过 {formatElapsed(item.createdAt)}</span> : null}
-            {item.jobId ? <span className="font-mono">#{item.jobId.slice(0, 8)}</span> : null}
+            {item.jobId ? (
+              <span className="text-[var(--kp-text-3)]" title={`任务 ${item.jobId}`}>
+                任务
+              </span>
+            ) : null}
             {item.subagentName ? <span>{item.subagentName}</span> : null}
           </div>
         </div>
@@ -791,7 +810,9 @@ function SyncTaskRow({
           ) : null}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--kp-text-3)]">
             <span>已过 {elapsed}</span>
-            <span className="font-mono">#{item.jobId.slice(0, 8)}</span>
+            <span className="text-[var(--kp-text-3)]" title={`任务 ${item.jobId}`}>
+              任务
+            </span>
           </div>
         </div>
         {active && onCancel ? (
@@ -800,7 +821,9 @@ function SyncTaskRow({
               type="button"
               onClick={() => onCancel(item.jobId)}
               className="rounded p-1 text-amber-600 hover:bg-amber-50"
-              title="取消"
+              title="取消任务"
+              aria-label="取消任务"
+              data-testid="runtime-cancel-job"
             >
               <Square className="h-3.5 w-3.5" />
             </button>
@@ -899,6 +922,15 @@ export function RuntimeStatusPanel({
     [syncTaskItems],
   );
 
+  // 进行中耗时每秒刷新（formatElapsed 依赖 Date.now，无 tick 则 UI 冻结）
+  const hasActiveClock = activeCount > 0 || syncActiveItems.length > 0;
+  const [, setElapsedTick] = useState(0);
+  useEffect(() => {
+    if (!hasActiveClock) return;
+    const timer = window.setInterval(() => setElapsedTick((n) => n + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveClock]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-runtime-queue">
       {/* 一级分组：异步队列 / 同步任务 */}
@@ -964,8 +996,8 @@ export function RuntimeStatusPanel({
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
           <div className="space-y-3">
-            {/* 进行中：queued（第 N 位 · 因 X 上限排队）+ running */}
-            <StatusSection title="进行中" count={activeCount} emptyHint="无进行中任务">
+            {/* 进行中：跟踪 Task 的 queued/running（过程细节在子会话对话区，不在此展示全文） */}
+            <StatusSection title="进行中" count={activeCount} emptyHint="无进行中的异步任务">
               <AnimatePresence initial={false}>
                 {running.map((item) => (
                   <StatusRow
@@ -986,8 +1018,8 @@ export function RuntimeStatusPanel({
               </AnimatePresence>
             </StatusSection>
 
-            {/* 待消费：终态未 delivered；pinned 为子组「钉住·未喂入」；failed 是 badge 不是独立组 */}
-            <StatusSection title="待消费" count={toConsumeCount} emptyHint="无待消费结果">
+            {/* 待消费：仅终态未 delivered 的结果（非子 Agent 运行过程） */}
+            <StatusSection title="待消费" count={toConsumeCount} emptyHint="无待喂入的终态结果">
               <AnimatePresence initial={false}>
                 {toConsume.map((item) => (
                   <StatusRow

@@ -11,8 +11,9 @@ import { createTrpcInvoker } from "./trpcInvoker.js";
 import { success, failureFromError } from "../trpc/result.js";
 import type { OperationResult } from "@knowpilot/shared";
 import { APPROVAL_DEFAULT_TTL_MS } from "@knowpilot/shared";
+import { makeAbortError } from "./abortReason.js";
 
-/** 默认需要人工审批的 tRPC 工具路径 */
+/** 默认需要人工审批的操作（tRPC 点号名 + Agent native 下划线名） */
 const APPROVAL_REQUIRED_OPS = new Set([
   "agent.delete",
   "skill.delete",
@@ -22,7 +23,14 @@ const APPROVAL_REQUIRED_OPS = new Set([
   "git.push",
   "git.commit",
   "git.pull",
+  // Agent native 路径：与 tRPC 同档，禁止绕过审批直接写仓库
+  "git_push",
+  "git_commit",
+  "git_pull",
 ]);
+
+/** 经 native 执行层落库的写 Git 工具（approve-and-execute 走 executeNativeTool） */
+const NATIVE_GIT_WRITE_OPS = new Set(["git_commit", "git_pull", "git_push"]);
 
 /**
  * AGENT_DESTRUCTIVE_APPROVAL=true 时，Agent native 删除类工具也需审批。
@@ -169,9 +177,7 @@ export async function waitApprovalResolution(
     const waiter: ApprovalWaiter = { resolve: resolvePromise, signal: opts?.signal };
     waiter.onAbort = () => {
       removeApprovalWaiter(approvalId, waiter);
-      const err = new Error("流式输出已被用户中断");
-      err.name = "AbortError";
-      rejectPromise(err);
+      rejectPromise(makeAbortError(opts?.signal));
     };
 
     const set = approvalWaiters.get(approvalId) ?? new Set<ApprovalWaiter>();
@@ -389,7 +395,7 @@ export async function executeApprovedOperation(
 
     let execResult: unknown;
 
-    if (isNativeApprovalTool(approval.toolName)) {
+    if (isNativeApprovalTool(approval.toolName) || NATIVE_GIT_WRITE_OPS.has(approval.toolName)) {
       const { executeNativeTool } = await import("./nativeTools.js");
       const { getAppConfig } = await import("./config.js");
       const config = getAppConfig();

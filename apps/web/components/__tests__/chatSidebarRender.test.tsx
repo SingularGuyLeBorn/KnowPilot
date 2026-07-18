@@ -59,6 +59,7 @@ vi.mock("@/components/workspaceSelect", () => ({
 }));
 vi.mock("@/components/workspaceTree", () => ({ WorkspaceTree: () => null }));
 vi.mock("@/components/asyncTaskPanel", () => ({ AsyncTaskPanel: () => null }));
+vi.mock("@/components/chatQueue", () => ({ RuntimeStatusPanel: () => null }));
 vi.mock("@/components/chatTimelineSteps", () => ({ ThinkingTimeline: () => null }));
 vi.mock("@/components/chatSessionListItem", () => ({ SessionListItem: () => null }));
 vi.mock("@/components/shared", () => ({ ConfirmDialog: () => null }));
@@ -73,6 +74,7 @@ const noop = () => {};
 /** 镜像 chat.tsx 稳定化后的 props：全部引用稳定（module 级单例） */
 const stableProps: ChatSidebarProps = {
   leftOpen: true,
+  setLeftOpen: noop,
   leftTab: "history",
   setLeftTab: noop,
   historySubTab: "main",
@@ -86,7 +88,6 @@ const stableProps: ChatSidebarProps = {
   parentSessionId: null,
   selectedWorkspaceId: null,
   selectedAgent: undefined,
-  chatConfigModel: "mock-model",
   asyncResultQueue: [],
   selectSession: noop,
   selectWorkspace: noop,
@@ -103,6 +104,13 @@ const stableProps: ChatSidebarProps = {
   refetchSession: noop,
   cancelAsyncJobMutate: noop,
   retryAsyncJobMutate: noop,
+  pinAsyncJobMutate: noop,
+  runtimeGroupTab: "async",
+  setRuntimeGroupTab: noop,
+  syncTaskItems: [],
+  runtimeActiveItems: [],
+  runtimeToConsumeItems: [],
+  runtimeConsumedItems: [],
 };
 
 let harnessRenders = 0;

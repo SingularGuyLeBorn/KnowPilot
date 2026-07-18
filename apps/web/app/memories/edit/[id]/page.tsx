@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMemory } from "@/lib/hooks";
 import type { Memory } from "@knowpilot/shared";
+import { memoryLabel } from "@/lib/displayLabels";
 
 export default function MemoryDetailPage() {
   const params = useParams();
@@ -87,7 +88,7 @@ export default function MemoryDetailPage() {
           <div>
             <h1 className="text-2xl font-bold text-[var(--kp-text-1)] flex items-center gap-2">
               <Brain className="w-5 h-5 text-[var(--kp-brand-deep)]" />
-              记忆 · {memory.id.slice(0, 8)}
+              {memoryLabel({ content: String(value("content") ?? memory.content ?? "") })}
             </h1>
             <p className="text-xs text-[var(--kp-text-3)]">ID: {memory.id}</p>
           </div>

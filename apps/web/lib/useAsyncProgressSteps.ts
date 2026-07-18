@@ -26,7 +26,7 @@ export function useAsyncProgressSteps(asyncResultQueue: ChatQueueItem[]): Timeli
         steps.push({
           type: "progress",
           jobId: item.jobId ?? item.id,
-          label: item.taskLabel || `后台任务 ${item.jobId?.slice(0, 6) ?? ""}`,
+          label: item.taskLabel || "后台任务",
           round: 1,
           status: item.status === "queued" ? "queued" : "running",
           content: latestLog?.message,
@@ -35,7 +35,7 @@ export function useAsyncProgressSteps(asyncResultQueue: ChatQueueItem[]): Timeli
         steps.push({
           type: "progress",
           jobId: item.jobId ?? item.id,
-          label: item.taskLabel || `后台任务 ${item.jobId?.slice(0, 6) ?? ""}`,
+          label: item.taskLabel || "后台任务",
           round: 1,
           status: item.status === "failed" ? "failed" : "done",
           content: item.status === "failed" ? item.asyncResult : latestLog?.message,

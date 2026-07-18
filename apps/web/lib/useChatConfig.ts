@@ -85,7 +85,7 @@ export function useChatConfig(opts: {
     [effectiveSessionId, updateSessionMutate],
   );
 
-  // R17：useCallback 稳定化，使 ChatSettingsPanel memo 后流式期间跳过重渲染
+  // R17：useCallback 稳定化，供输入区模型菜单等 memo 子树复用
   const resetPromptToAgent = useCallback(() => {
     if (!selectedAgent) return;
     updateConfig({ systemPrompt: selectedAgent.systemPrompt, customSystemPrompt: false });

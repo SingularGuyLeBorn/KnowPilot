@@ -201,15 +201,38 @@ const ToolStep = memo(function ToolStep({
     [step.name, step.args],
   );
 
+  const toolBaseName = step.name.replace(/^skill__/, "").replace(/^mcp__/, "");
+  const isTodoWrite = toolBaseName === "todo_write";
+  const todoItems = useMemo(() => {
+    if (!isTodoWrite || !step.result || typeof step.result !== "object") return null;
+    const todos = (step.result as { todos?: unknown }).todos;
+    if (!Array.isArray(todos)) return null;
+    return todos
+      .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+      .map((t) => ({
+        id: String(t.id ?? ""),
+        content: String(t.content ?? ""),
+        status: String(t.status ?? "pending"),
+      }))
+      .filter((t) => t.content);
+  }, [isTodoWrite, step.result]);
+
   // R18：JSON.stringify 仅在展开时计算（折叠时不浪费 CPU），且 memo 化避免重复 stringify
   const argsJson = useMemo(() => (open ? JSON.stringify(step.args, null, 2) : ""), [open, step.args]);
   const resultJson = useMemo(
-    () => (open && step.result !== undefined ? JSON.stringify(step.result, null, 2) : ""),
-    [open, step.result],
+    () => (open && step.result !== undefined && !todoItems ? JSON.stringify(step.result, null, 2) : ""),
+    [open, step.result, todoItems],
   );
 
   const iconStatus: ToolIconStatus =
     step.status === "running" ? "running" : hasError ? "error" : step.status === "done" ? "done" : "idle";
+
+  const todoStatusLabel: Record<string, string> = {
+    pending: "待办",
+    in_progress: "进行中",
+    completed: "完成",
+    cancelled: "取消",
+  };
 
   return (
     <div
@@ -268,13 +291,51 @@ const ToolStep = memo(function ToolStep({
         </summary>
         {open && (
           <div className="border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/40 px-3 py-2">
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
-              {argsJson}
-            </pre>
-            {step.result !== undefined && (
-              <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
-                {resultJson}
-              </pre>
+            {todoItems ? (
+              <ul
+                className="space-y-1.5 text-[11px] text-[var(--kp-text-2)]"
+                data-testid="todo-write-list"
+              >
+                {todoItems.map((t) => (
+                  <li key={t.id || t.content} className="flex items-start gap-2">
+                    <span
+                      className={cn(
+                        "mt-0.5 shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-none",
+                        t.status === "completed"
+                          ? "bg-green-100 text-green-700"
+                          : t.status === "in_progress"
+                            ? "bg-sky-100 text-sky-700"
+                            : t.status === "cancelled"
+                              ? "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]"
+                              : "bg-amber-100 text-amber-700",
+                      )}
+                    >
+                      {todoStatusLabel[t.status] ?? t.status}
+                    </span>
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1",
+                        t.status === "completed" || t.status === "cancelled"
+                          ? "text-[var(--kp-text-3)] line-through"
+                          : "",
+                      )}
+                    >
+                      {t.content}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <>
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
+                  {argsJson}
+                </pre>
+                {step.result !== undefined && (
+                  <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
+                    {resultJson}
+                  </pre>
+                )}
+              </>
             )}
           </div>
         )}

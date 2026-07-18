@@ -374,13 +374,16 @@ pnpm lint
 
 KnowPilot 已落地完整的 Swarm 能力，设计决策详见 `docs/development/design-decisions.md`。
 
-### 三层 Agent 层级
+### 三层 Agent 层级 + Root Workspace
 
 | 层级 | tier | 权限 | 说明 |
 |---|---|---|---|
-| 超级 Agent | `super` | 全局 CRUD + 跨 Workspace | 首次启动自动创建，心跳自主运行 |
-| 管理 Agent | `manager` | Workspace 内 CRUD 子 Agent | 每个 Workspace 一个，自动创建主 session |
-| 子 Agent | `sub` | 执行任务 + report_back | 由管理 Agent 或用户创建 |
+| 超级 Agent | `super` | 近似用户全能（硬禁：删自己 / 自降 tier） | 归属 **KnowPilot Root**（`isSystem` Workspace）；可建业务 Workspace |
+| 管理 Agent | `manager` | 本 Workspace 内 CRUD；除向超级报告外禁止出域 | 创建 Workspace 时默认附带（`withManager`）；可带 `initialTask` |
+| 子 Agent | `sub` | 执行任务 + report_back / notify_parent | 由管理 Agent 或用户创建 |
+
+- 业务 Workspace 行级后台 LLM 槽：`Workspace.asyncSlotQuota`（默认 2；Root=0 不限）；全局 `asyncJobs.maxConcurrent` 仍是硬顶。
+- 设计决策见 `docs/development/design-decisions.md`「Workspace 层级 + 超级 Agent」；通道/槽位见 `docs/development/async-slots-and-parent-child.md`。
 
 ### 核心模块
 

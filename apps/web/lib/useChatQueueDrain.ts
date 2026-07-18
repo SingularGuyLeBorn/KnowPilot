@@ -5,23 +5,25 @@
  *
  * consumeQueue：从 async 结果队列 / 用户队列挑下一条就绪项，ACK/去重/乐观气泡后 runStream；
  * drainAllPendingQueues：优先消费 preferredSessionId，再扫描其它有待消费项的 session
- * （后台不抢视图）。纯结构拆分：useCallback 体与 deps 逐字未改，仅
- * chatConfig.model / sessionsQuery.data?.items 解构重命名为 chatConfigModel / sessionsItems，
- * 并追加注入的稳定 refs（identity 恒定，行为等价）。本 hook 不新增任何 useEffect；
- * INV-2 占用判断与 INV-8 drain 触发链（唯一钩子在 chat.tsx【drain 订阅】）语义不变。
+ * （后台不抢视图）。
+ *
+ * superior 不变量：kind=superior 仅由服务端 enqueueSuperiorQueueDrain 起流；
+ * 前端若队首是 superior 则停（不越过队首消费后续项，也不双跑）。
+ * child_notify 与 user 一样：remove 本地 + consume DB 后再起流（修「消费后仍在队列 → 再发一遍」）。
  */
 
 import { useCallback, type RefObject } from "react";
 import { trpc } from "@/lib/trpc";
 import { getModelOption } from "@/lib/chatConfig";
 import { type ChatQueueItem, formatQueueItemForLlm } from "@/lib/chatQueueTypes";
-import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { type RunStreamOptions } from "@/lib/useChatRunStream";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
 export interface UseChatQueueDrainParams {
   effectiveSessionId: string | null;
+  /** 可见 pane 的 sessionId（分屏时两侧）；仅这些会话自动 drain */
+  visibleSessionIds?: string[];
   asyncResultQueue: ChatQueueItem[];
   chatConfigModel: string;
   isSessionRunOccupied: (sid: string | null) => boolean;
@@ -35,6 +37,7 @@ export interface UseChatQueueDrainParams {
 
 export function useChatQueueDrain({
   effectiveSessionId,
+  visibleSessionIds,
   asyncResultQueue,
   chatConfigModel,
   isSessionRunOccupied,
@@ -49,6 +52,7 @@ export function useChatQueueDrain({
 
   const consumeQueue = useCallback((targetSessionId?: string) => {
     const viewSid = effectiveSessionId ?? NEW_STREAM_KEY;
+    const visible = new Set(visibleSessionIds?.length ? visibleSessionIds : [viewSid]);
     const sid = targetSessionId ?? viewSid;
     const compose = sessionComposeStore.get(sid);
     // INV-2：streaming|done 均占用，禁止开新流
@@ -58,10 +62,14 @@ export function useChatQueueDrain({
       t.kind !== "async-running" &&
       (t.text.trim() || t.asyncResult || t.attachments?.length);
 
-    // 当前视图：可用 poll 合并后的 asyncResultQueue；后台 session：仅看本地 overlays
-    // （异步投递的后台续跑主要由服务端 autoConsumeAsyncDelivery 完成）
+    // 可见 pane：用 poll 合并后的 asyncResultQueue（焦点）或本会话 overlays（分屏另一侧）
+    // 不可见 tab：仅 overlays（后台续跑主要靠服务端 autoConsume）
     const asyncCandidates =
-      sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
+      sid === viewSid
+        ? asyncResultQueue
+        : visible.has(sid)
+          ? compose.asyncOverlays
+          : compose.asyncOverlays;
 
     let asyncReady: ChatQueueItem | undefined;
     for (const t of asyncCandidates) {
@@ -74,7 +82,9 @@ export function useChatQueueDrain({
     let userReady: ChatQueueItem | undefined;
     if (!asyncReady) {
       for (const t of compose.userQueue) {
-        if ((t.kind === "user" || t.kind === "superior") && isReady(t)) {
+        // superior：服务端 FIFO drain 专属；队首是 superior 时前端停，绝不越过起流
+        if (t.kind === "superior") break;
+        if ((t.kind === "user" || t.kind === "child_notify") && isReady(t)) {
           userReady = t;
           break;
         }
@@ -112,45 +122,41 @@ export function useChatQueueDrain({
         }
       }
 
-      if (task.kind === "user" || task.kind === "superior") {
-        if (task.kind === "superior") {
-          const sessionMessages = sessionMessagesStore.getMessages(sid);
-          const already = sessionMessages.some(
-            (m) => m.role === "user" && m.content.trim() === task.text.trim(),
-          );
-          if (already) {
-            sessionComposeActions.removeUserQueueItem(sid, task.id);
-            if (task.dbId) {
-              consumeSessionQueueItemMutation.mutate({ id: task.dbId });
+      if (task.kind === "user" || task.kind === "child_notify") {
+        // child_notify 必须与 user 一样出队：旧实现落入 else 不 consume → 流结束后再发一遍
+        const streamMessagePreview =
+          formatQueueItemForLlm(task, !!getModelOption(chatConfigModel).supportsVision) ||
+          (task.attachments?.length ? "（见附件）" : "");
+        if (!streamMessagePreview.trim() && !task.attachments?.length) {
+          // 空内容禁止起流（否则 LLM「像没接到」）
+          sessionComposeActions.removeUserQueueItem(sid, task.id);
+          if (task.dbId) {
+            try {
+              await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
+            } catch {
+              /* ignore */
             }
+          }
+          sessionComposeActions.setQueueDraining(sid, false);
+          consumeRef.current(sid);
+          return;
+        }
+
+        sessionComposeActions.removeUserQueueItem(sid, task.id);
+        if (task.dbId) {
+          try {
+            const claim = await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
+            if (!claim.claimed) {
+              sessionComposeActions.setQueueDraining(sid, false);
+              consumeRef.current(sid);
+              return;
+            }
+          } catch {
             sessionComposeActions.setQueueDraining(sid, false);
-            // 已释放 drain 锁且在 async 续体内，直接重试下一项
-            consumeRef.current(sid);
             return;
           }
         }
-        sessionComposeActions.removeUserQueueItem(sid, task.id);
-        if (task.dbId) {
-          if (task.kind === "superior") {
-            // W-E 软认领：与服务端 superior drain 竞态同抢一条队列项（consume 删除即认领），
-            // 落选方（claimed=false）静默跳过——该项由认领方负责起流，绝不双跑
-            try {
-              const claim = await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
-              if (!claim.claimed) {
-                sessionComposeActions.setQueueDraining(sid, false);
-                // 已释放 drain 锁且在 async 续体内，直接重试下一项
-                consumeRef.current(sid);
-                return;
-              }
-            } catch {
-              sessionComposeActions.setQueueDraining(sid, false);
-              return;
-            }
-          } else {
-            consumeSessionQueueItemMutation.mutate({ id: task.dbId });
-          }
-        }
-      } else {
+      } else if (task.kind === "async-result") {
         if (task.jobId) {
           const finishedJobId = task.jobId;
           const finishedStatus = task.status ?? "done";
@@ -213,54 +219,72 @@ export function useChatQueueDrain({
         skillPrompt: task.skillPrompt,
         source: isAsyncResult
           ? "sub"
-          : task.kind === "superior"
-            ? (["super", "manager", "sub", "system"].includes(String(task.source))
-                ? (task.source as "super" | "manager" | "sub" | "system")
-                : "manager")
+          : task.kind === "child_notify"
+            ? "sub"
             : "user",
         toolResults: isAsyncResult
           ? {
               subagentResult: {
                 jobId: task.jobId,
                 subagentSessionId: task.subagentSessionId,
-                subagentName: task.subagentName ?? `子 Agent ${task.jobId?.slice(0, 6) ?? ""}`,
+                subagentName: task.subagentName ?? "子 Agent",
                 sourceType: task.sourceType,
                 taskLabel: task.taskLabel,
               },
             }
-          : undefined,
+          : task.kind === "child_notify"
+            ? { childNotify: { sourceName: task.sourceName, source: task.source } }
+            : undefined,
         optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
         targetSessionId: sid === NEW_STREAM_KEY ? undefined : sid,
         keepCurrentView,
         agentId: streamAgentId,
       });
     })();
-  }, [runStream, chatConfigModel, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils.session.listRunning, asyncQueueQuery, sessionsItems, consumeRef]);
+  }, [runStream, chatConfigModel, asyncResultQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils.session.listRunning, asyncQueueQuery, sessionsItems, consumeRef]);
 
-  /** 优先消费 preferredSessionId，再扫描其它有待消费项的 session（后台不抢视图） */
+  /** 优先 preferred，再可见 pane；不扫隐藏 tab（避免后台 tab 抢起流） */
   const drainAllPendingQueues = useCallback(
     (preferredSessionId?: string) => {
       const viewSid = effectiveSessionId ?? NEW_STREAM_KEY;
+      const visible = visibleSessionIds?.length
+        ? visibleSessionIds
+        : [viewSid].filter((id) => id && id !== NEW_STREAM_KEY);
       const ordered: string[] = [];
       const seen = new Set<string>();
       const push = (id: string) => {
-        if (seen.has(id)) return;
+        if (!id || seen.has(id)) return;
         seen.add(id);
         ordered.push(id);
       };
       if (preferredSessionId) push(preferredSessionId);
-      push(viewSid);
-      for (const id of sessionComposeStore.listSessionIds()) push(id);
+      for (const id of visible) push(id);
+      // 新对话（无 sessionId）：焦点为空时 viewSid/preferred 均为 NEW_STREAM_KEY
+      if (
+        preferredSessionId === NEW_STREAM_KEY ||
+        viewSid === NEW_STREAM_KEY ||
+        (!effectiveSessionId && !visible.length)
+      ) {
+        push(NEW_STREAM_KEY);
+      }
 
       for (const sid of ordered) {
         const compose = sessionComposeStore.get(sid);
         // INV-2：streaming|done 均占用，跳过
         if (isSessionRunOccupied(sid) || compose.queueDraining) continue;
-        const hasUser = compose.userQueue.some(
-          (t) =>
-            (t.kind === "user" || t.kind === "superior") &&
-            (t.text.trim() || t.attachments?.length),
-        );
+        // superior 在队首时前端不 drain（服务端负责）；仅探测 user/child_notify
+        let blockedBySuperior = false;
+        const hasUser = compose.userQueue.some((t) => {
+          if (t.kind === "superior") {
+            blockedBySuperior = true;
+            return false;
+          }
+          if (blockedBySuperior) return false;
+          return (
+            (t.kind === "user" || t.kind === "child_notify") &&
+            (t.text.trim() || t.attachments?.length)
+          );
+        });
         const asyncCandidates = sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
         const hasAsync = asyncCandidates.some(
           (t) =>
@@ -273,7 +297,7 @@ export function useChatQueueDrain({
         consumeQueue(sid);
       }
     },
-    [consumeQueue, effectiveSessionId, isSessionRunOccupied, asyncResultQueue],
+    [consumeQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied, asyncResultQueue],
   );
 
   return { drainAllPendingQueues };

@@ -73,7 +73,8 @@ const MANAGER_FALLBACK_PROMPT = `你是 {{name}} 的管理 Agent。
 你可以创建子 Agent，可以与子 Agent 通信，可以向上级回报结果。`;
 
 const SUB_FALLBACK_PROMPT = `你是 KnowPilot 的子 Agent，专注于执行上级下发的具体任务。
-收到任务后独立执行，完成后通过 agent_report_back 向上级汇报结果。
+收到任务后独立执行，完成后必须调用 agent_report_back 向上级交付正式结果（进异步结果队列）。
+过程通知用 agent_notify_parent（进父会话待发消息），不要用它代替 report_back 交最终结果。
 你不能创建其他 Agent，也不能跨 Workspace 操作。`;
 
 const SUPER_FALLBACK_HEARTBEAT: Record<string, unknown> = {
@@ -227,5 +228,15 @@ export async function createAgentForTier(prisma: PrismaClient, input: CreateAgen
   if (overrides.parentId != null) data.parentId = overrides.parentId;
   const heartbeat = overrides.heartbeat !== undefined ? overrides.heartbeat : template.heartbeat;
   if (heartbeat != null) data.heartbeat = heartbeat as Prisma.InputJsonValue;
-  return prisma.agent.create({ data });
+  const agent = await prisma.agent.create({ data });
+  // prisma 直写绕过 AgentService.afterCreate，此处补主会话（幂等）
+  const { ensureMainSession } = await import("./ensureMainSession.js");
+  await ensureMainSession(prisma, {
+    agentId: agent.id,
+    title: `${agent.name} 主会话`,
+    model: agent.model,
+  }).catch((err) => {
+    console.warn(`[agentFactory] ensureMainSession 失败 agentId=${agent.id}:`, err);
+  });
+  return agent;
 }

@@ -26,21 +26,38 @@
 
 import type { AppConfig } from "./config.js";
 import { getStreamHub, onHubRunSettled } from "./sessionStreamHub.js";
+import { abortController } from "./abortReason.js";
 
 /** 排队阻塞原因：哪个上限卡住（queuedByReason 统计与 UI「第 N 位 · 因 X 上限排队」共用） */
 export type AsyncJobQueuedReason = "global" | "session" | "workspace";
 
+/**
+ * 槽位类别：
+ * - llm：占全局 LLM 容量（默认）；准入受 maxGlobal / hub 交互占用约束
+ * - lightweight：sleep / 纯工具等短任务；可取消、可超时，但不计入 runningGlobal，不堵 LLM 槽
+ */
+export type AsyncJobSlotClass = "llm" | "lightweight";
+
 export interface AsyncJobRunSpec {
   jobId: string;
   sessionId: string;
-  /** per-workspace 公平配额维度（maxPerWorkspace > 0 时生效）；缺省/null = 不参与 workspace 配额 */
+  /** per-workspace 公平配额维度；缺省/null = 不参与 workspace 配额 */
   workspaceId?: string | null;
+  /**
+   * 该任务所属 Workspace 的行级槽上限（Workspace.asyncSlotQuota）。
+   * - undefined：回退 config maxPerWorkspace（0=不限）
+   * - 0：该空间不限（仍受全局 maxConcurrent）
+   * - >0：该空间 llm running 上限
+   */
+  workspaceSlotQuota?: number;
   /** 任务级超时毫秒数；未指定时使用 orchestrator 全局超时 */
   timeoutMs?: number;
   /** 排队超时覆盖（毫秒）；未指定时使用全局 queuedTimeoutMs。消费类任务必传（禁止无限等槽） */
   queuedTimeoutMs?: number;
   /** high = 交付消费类任务：插到队首（同类 FIFO），admit 优先级高于普通排队任务 */
   priority?: "normal" | "high";
+  /** 缺省 llm；lightweight 不占全局 LLM 槽 */
+  slotClass?: AsyncJobSlotClass;
   /** 附加元数据：当前用于 subagent session 与 AbortController 关联 */
   metadata?: { subagentSessionId?: string };
   /** 排队期被移出队列（超时/取消）且未获槽时回调——消费通道据此放弃本轮 */
@@ -180,14 +197,17 @@ export class AsyncJobOrchestrator {
 
   /** 准入判定链：返回首个卡住的上限；null = 可 start。判定只读，drain 串行调用 */
   private blockReason(spec: AsyncJobRunSpec): AsyncJobQueuedReason | null {
+    // lightweight（sleep/纯工具）不参与 LLM 容量竞争，直接获槽
+    if (spec.slotClass === "lightweight") return null;
     if (this.runningGlobal + this.hubInteractiveRunning() >= this.limits.maxGlobal) return "global";
     if ((this.runningBySession.get(spec.sessionId) ?? 0) >= this.limits.maxPerSession) return "session";
-    if (
-      this.maxPerWorkspace > 0 &&
-      spec.workspaceId &&
-      (this.runningByWorkspace.get(spec.workspaceId) ?? 0) >= this.maxPerWorkspace
-    ) {
-      return "workspace";
+    if (spec.workspaceId) {
+      // 行级配额优先；未传则回退全局 maxPerWorkspace；0 = 该维度不限
+      const quota =
+        spec.workspaceSlotQuota !== undefined ? spec.workspaceSlotQuota : this.maxPerWorkspace;
+      if (quota > 0 && (this.runningByWorkspace.get(spec.workspaceId) ?? 0) >= quota) {
+        return "workspace";
+      }
     }
     return null;
   }
@@ -298,7 +318,7 @@ export class AsyncJobOrchestrator {
   cancel(jobId: string): boolean {
     const running = this.runningJobs.get(jobId);
     if (running) {
-      running.controller.abort();
+      abortController(running.controller, "cancel");
       return true;
     }
     const idx = this.queue.findIndex((q) => q.spec.jobId === jobId);
@@ -318,7 +338,7 @@ export class AsyncJobOrchestrator {
     const controller = this.subagentControllers.get(subagentSessionId);
     if (controller) {
       const running = [...this.runningJobs.entries()].find(([, r]) => r.controller === controller);
-      controller.abort();
+      abortController(controller, "session_stop");
       this.subagentControllers.delete(subagentSessionId);
       return { stopped: true, wasRunning: true, jobId: running?.[0] };
     }
@@ -376,10 +396,13 @@ export class AsyncJobOrchestrator {
   /** 获槽启动：增加全局/会话/工作区计数，execute 在 AbortSignal 下运行；finally 必须释放计数并再次 drain。 */
   private start(spec: AsyncJobRunSpec): void {
     const controller = new AbortController();
-    this.runningGlobal++;
-    this.runningBySession.set(spec.sessionId, (this.runningBySession.get(spec.sessionId) ?? 0) + 1);
-    if (spec.workspaceId) {
-      this.runningByWorkspace.set(spec.workspaceId, (this.runningByWorkspace.get(spec.workspaceId) ?? 0) + 1);
+    const occupiesLlmSlot = spec.slotClass !== "lightweight";
+    if (occupiesLlmSlot) {
+      this.runningGlobal++;
+      this.runningBySession.set(spec.sessionId, (this.runningBySession.get(spec.sessionId) ?? 0) + 1);
+      if (spec.workspaceId) {
+        this.runningByWorkspace.set(spec.workspaceId, (this.runningByWorkspace.get(spec.workspaceId) ?? 0) + 1);
+      }
     }
     this.runningJobs.set(spec.jobId, { spec, controller, startedAt: Date.now() });
     if (spec.metadata?.subagentSessionId) {
@@ -389,7 +412,7 @@ export class AsyncJobOrchestrator {
 
     const timeoutMs = spec.timeoutMs ?? this.limits.taskTimeoutMs;
     const timeout = setTimeout(() => {
-      controller.abort();
+      abortController(controller, "timeout");
     }, timeoutMs);
 
     const execute = spec.execute(controller.signal);
@@ -403,14 +426,16 @@ export class AsyncJobOrchestrator {
           this.subagentControllers.delete(spec.metadata.subagentSessionId);
         }
         this.runningJobs.delete(spec.jobId);
-        this.runningGlobal = Math.max(0, this.runningGlobal - 1);
-        const left = (this.runningBySession.get(spec.sessionId) ?? 1) - 1;
-        if (left <= 0) this.runningBySession.delete(spec.sessionId);
-        else this.runningBySession.set(spec.sessionId, left);
-        if (spec.workspaceId) {
-          const wsLeft = (this.runningByWorkspace.get(spec.workspaceId) ?? 1) - 1;
-          if (wsLeft <= 0) this.runningByWorkspace.delete(spec.workspaceId);
-          else this.runningByWorkspace.set(spec.workspaceId, wsLeft);
+        if (occupiesLlmSlot) {
+          this.runningGlobal = Math.max(0, this.runningGlobal - 1);
+          const left = (this.runningBySession.get(spec.sessionId) ?? 1) - 1;
+          if (left <= 0) this.runningBySession.delete(spec.sessionId);
+          else this.runningBySession.set(spec.sessionId, left);
+          if (spec.workspaceId) {
+            const wsLeft = (this.runningByWorkspace.get(spec.workspaceId) ?? 1) - 1;
+            if (wsLeft <= 0) this.runningByWorkspace.delete(spec.workspaceId);
+            else this.runningByWorkspace.set(spec.workspaceId, wsLeft);
+          }
         }
         this.drain();
       });

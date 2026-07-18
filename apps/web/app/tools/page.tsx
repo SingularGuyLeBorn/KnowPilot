@@ -109,6 +109,20 @@ export default function ToolsPage() {
     return mcpServers.map((s) => ({ value: s.name, label: s.name }));
   }, [mcpData]);
 
+  const targetDisplayName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of nativeTools) m.set(t.name, t.name);
+    for (const s of skillData?.items ?? []) {
+      m.set(s.id, s.name);
+      m.set(s.name, s.name);
+    }
+    for (const s of mcpData?.items ?? []) {
+      m.set(s.id, s.name);
+      m.set(s.name, s.name);
+    }
+    return m;
+  }, [nativeTools, skillData, mcpData]);
+
   const openCreate = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
@@ -452,9 +466,12 @@ export default function ToolsPage() {
                   </p>
 
                   {tool.targetId && (
-                    <p className="mb-3 flex items-center gap-1 truncate font-mono text-[10px] text-[var(--kp-text-3)]">
+                    <p
+                      className="mb-3 flex items-center gap-1 truncate text-[10px] text-[var(--kp-text-3)]"
+                      title={tool.targetId}
+                    >
                       <Link2 className="h-3 w-3 shrink-0" />
-                      {tool.targetId}
+                      {targetDisplayName.get(tool.targetId) || tool.targetId}
                     </p>
                   )}
 

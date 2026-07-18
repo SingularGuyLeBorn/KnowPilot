@@ -1,34 +1,28 @@
 "use client";
 
 /**
- * Agent Chat — 三栏布局 · 多版本 · 消息编辑 · Skill / 触发
+ * Agent Chat — 左栏 + 标签/分屏中栏 · 多版本 · 消息编辑 · Skill / 触发
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc";
-import { useAgent, useResumeSession } from "@/lib/hooks";
-import { stopAgentChat, copyToClipboard } from "@/lib/agentStream";
+import { useAgent } from "@/lib/hooks";
+import { cn } from "@/lib/utils";
 import {
-  getModelOption,
   loadDefaultChatConfig,
   resolveNewChatConfig,
 } from "@/lib/chatConfig";
-import { buildMessageGroups } from "@/lib/chatMessageUtils";
 import { type Agent, type ChatMessage } from "@knowpilot/shared";
-import { type SelectedSkill } from "@/components/chatInput";
-import { buildTokenBudget } from "@/components/tokenBudgetBar";
 import {
-  type ChatQueueItem,
-  createUserQueueItem,
   sessionQueueItemToChatItem,
+  mergeUserQueueFromDb,
 } from "@/lib/chatQueueTypes";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
-import { type ChatMessageListProps } from "@/components/chatMessageList";
-import { ChatCenterPane } from "@/components/chatCenterPane";
 import { ChatOverlays } from "@/components/chatOverlays";
-import { ChatRightPanel } from "@/components/chatRightPanel";
 import { ChatSidebar } from "@/components/chatSidebar";
+import { ChatTabBar } from "@/components/chatTabBar";
+import { ChatSessionPane } from "@/components/chatSessionPane";
 import {
   useSessionMessages,
   sessionMessagesStore,
@@ -54,7 +48,15 @@ import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
 import { useChatEnqueue } from "@/lib/useChatEnqueue";
 import { useChatSseSubscriptions } from "@/lib/useChatSseSubscriptions";
 import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
-import { COMPOSE_STORAGE_KEY, LIFECYCLE_STORAGE_KEY, NEW_STREAM_KEY } from "@/lib/chatKeys";
+import { useChatTabs } from "@/lib/useChatTabs";
+import { sessionLabel } from "@/lib/displayLabels";
+import {
+  COMPOSE_STORAGE_KEY,
+  LIFECYCLE_STORAGE_KEY,
+  NEW_STREAM_KEY,
+  TAB_TITLE_CACHE_KEY,
+} from "@/lib/chatKeys";
+import type { ChatSessionConfig } from "@knowpilot/shared";
 
 /* ─── Main ─── */
 
@@ -64,30 +66,55 @@ export function ChatView() {
   const pathname = usePathname();
   const agentFromUrl = searchParams.get("agentId");
   const sessionFromUrl = searchParams.get("sessionId");
+  const splitFromUrl = searchParams.get("split");
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const {
+    tabs,
+    focusedSessionId,
+    visibleSessionIds,
+    tabsHydrated,
+    openTab,
+    openInOtherPane,
+    focusTab,
+    focusPane,
+    closeTab,
+    enterSplit,
+    exitSplit,
+    startNewChatInTabs,
+    ensureFocusedSession,
+    ensureSplitWith,
+  } = useChatTabs();
+
+  /** 与旧单焦点 API 对齐：焦点 pane 的 session；runStream 新建会话时 openTab */
+  const sessionId = focusedSessionId;
+  const setSessionId = useCallback(
+    (id: string | null) => {
+      if (id) openTab(id);
+      else startNewChatInTabs();
+    },
+    [openTab, startNewChatInTabs],
+  );
+
   const [agentId, setAgentId] = useState("");
   const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState<string | null>(null);
-  // 视图级非流式错误（如重命名失败）；流式 error 来自 lifecycleState.error
-  const [viewError, setViewError] = useState<string | null>(null);
-  // 三栏 UI 偏好收拢于 useChatUiPrefs：读写 localStorage，避免多个 consumer 自行订阅
+  // 视图级非流式错误（侧栏重命名等）；中栏流式 error 在 ChatSessionPane
+  const [, setViewError] = useState<string | null>(null);
+  /** 焦点 pane 上报的配置（runStream + Prompt overlay） */
+  const [focusedPaneConfig, setFocusedPaneConfig] = useState<ChatSessionConfig | null>(null);
+  const [focusedConfigApi, setFocusedConfigApi] = useState<{
+    updateConfig: (patch: Partial<ChatSessionConfig>) => void;
+    resetPromptToAgent: () => void;
+  } | null>(null);
+  // 左栏 UI 偏好收拢于 useChatUiPrefs：读写 localStorage
   const {
     leftOpen,
     setLeftOpen,
-    rightOpen,
-    setRightOpen,
     leftTab,
     setLeftTab,
     historySubTab,
     setHistorySubTab,
-    rightTab,
-    setRightTab,
   } = useChatUiPrefs(searchParams);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
-  const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null);
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState("");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [showCreateSubagent, setShowCreateSubagent] = useState(false);
@@ -129,10 +156,6 @@ export function ChatView() {
   const isPageUnloadingRef = useRef(false);
   const streamSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isSessionStreaming = useCallback(
-    (sid: string | null): boolean => streamLifecycleStore.isStreaming(sid),
-    [],
-  );
   /** INV-2：streaming|done 均占用，Compose 不得开新流 */
   const isSessionRunOccupied = useCallback(
     (sid: string | null): boolean => streamLifecycleStore.isRunOccupied(sid),
@@ -156,11 +179,10 @@ export function ChatView() {
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
   const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
   const utils = trpc.useUtils();
-  const switchVersion = trpc.message.switchVersion.useMutation();
-  // W16b：.mutateAsync 是 observer 绑定的稳定引用（整个 mutation 对象每渲染新建），
-  // 供 useCallback deps 使用
-  const switchVersionMutateAsync = switchVersion.mutateAsync;
-
+  const ensureMainSessionMutation = trpc.session.ensureMain.useMutation();
+  const ensureMainMutateAsync = ensureMainSessionMutation.mutateAsync;
+  const openNewSessionMutation = trpc.session.openNew.useMutation();
+  const openNewSessionMutateAsync = openNewSessionMutation.mutateAsync;
   const defaultAgentId = useMemo(() => {
     const items = agentsQuery.data?.items;
     if (!items?.length) return "";
@@ -168,14 +190,18 @@ export function ChatView() {
     return assistant?.id ?? items[0].id;
   }, [agentsQuery.data?.items]);
 
-  // sessionId state 与 URL param 保持同步：
-  // 1. 从外部页面跳转（/subagents → /chat?sessionId=xxx）时 sessionId 为 null，URL param 生效
-  // 2. 浏览器前进/后退改变 URL 时，把 URL 同步回 state
-  // 3. selectSession 已主动更新 URL，所以日常侧边栏切换不会触发这里
-  // 4. startNewChat 期间 router.replace 清 URL 是异步的，必须用 ref 记录上一次 URL 值，
-  //    避免 stale sessionFromUrl 把刚清空的 state 又拉回去（用户感知的“点两次才新建”）。
-  const effectiveSessionId = sessionId ?? sessionFromUrl;
-  const prevSessionFromUrlRef = useRef<string | null>(sessionFromUrl);
+  // 焦点 session 只跟 tabs，禁止回退到 URL：
+  // startNewChat 后 router.replace 清 URL 是异步的，若 effectiveSessionId = focused ?? url，
+  // 会短暂仍指向旧会话，导致 NEW_STREAM_KEY 入队却 runStream 打到旧 sid（第二会话无回复）。
+  // 深链由下方 URL→tabs effect 的 ensureFocusedSession 灌入 tabs。
+  const effectiveSessionId = focusedSessionId;
+  const prevFocusedRef = useRef<string | null>(null);
+
+  const watchedSessionIds = useMemo(() => {
+    const ids = new Set<string>([...tabs.openTabIds, ...visibleSessionIds]);
+    if (effectiveSessionId) ids.add(effectiveSessionId);
+    return [...ids];
+  }, [tabs.openTabIds, visibleSessionIds, effectiveSessionId]);
 
   // 【悬停预览域】hover preview 开关、监控窗 state、防抖定时器与四个 handler
   // 收拢于 useChatHoverMonitor（含原开关清理 effect 与卸载定时器清理）
@@ -190,7 +216,7 @@ export function ChatView() {
   } = useChatHoverMonitor({ effectiveSessionId });
 
   const syncChatUiToUrl = useCallback(
-    (patch: { view?: "main" | "sub"; panel?: "history" | "async" }) => {
+    (patch: { view?: "main" | "sub"; panel?: "history" | "runtime" }) => {
       const params = new URLSearchParams(searchParams.toString());
       let changed = false;
       if (patch.view === "sub" || patch.view === "main") {
@@ -200,9 +226,9 @@ export function ChatView() {
           changed = true;
         }
       }
-      if (patch.panel === "async") {
-        if (params.get("panel") !== "async") {
-          params.set("panel", "async");
+      if (patch.panel === "runtime") {
+        if (params.get("panel") !== "runtime") {
+          params.set("panel", "runtime");
           changed = true;
         }
       } else if (patch.panel === "history") {
@@ -218,49 +244,77 @@ export function ChatView() {
     [searchParams, pathname, router],
   );
 
-  // 【URL 同步群】URL → state（外部跳转 / 浏览器前进后退；反向 state → URL 在
-  // selectSession / startNewChat / onSessionStart 事件处理内）。含 INV-8 ③ drain 调用
-  // 与 listRunning 挂接发现，属编排主干，保留在 chat.tsx。
+  // 【URL 同步群】URL → tabs；tabs 焦点 → URL（含可选 split）
+  // 只要 URL 与焦点不一致就 ensure（OPEN_TAB 幂等）。禁止用「已见过该 URL」ref 阻断重试——
+  // 否则首帧 ensure 被其它 effect 冲掉后永远不会再对齐（深链 ?sessionId= 会停在新对话）。
   useEffect(() => {
-    if (sessionFromUrl && sessionFromUrl !== sessionId && sessionFromUrl !== prevSessionFromUrlRef.current) {
-      // URL→state 在同一个事件处理（本 effect）内同步完成，不用 queueMicrotask 推迟：
-      // 推迟只会制造「URL 已变、sessionId 未变」的中间帧，无任何收益。
-      const sid = sessionFromUrl;
-      setSessionId(sid);
-      // 子会话可能已在服务端跑流：立刻发现并挂接，避免空白到刷新才出现
+    if (sessionFromUrl && sessionFromUrl !== focusedSessionId) {
+      ensureFocusedSession(sessionFromUrl);
       void utils.session.listRunning.invalidate();
-      // INV-8 ③：会话切换完成 → 显式 drain（该会话可能有恢复/镜像的待发队列项）
-      consumeRef.current(sid);
+      consumeRef.current(sessionFromUrl);
     }
-    prevSessionFromUrlRef.current = sessionFromUrl;
-  }, [sessionFromUrl, sessionId, utils.session.listRunning]);
-  // 同步当前视图 session 到 ref（见下方【ref 镜像群】，赋值幂等、归并为一个 effect）
+    if (
+      splitFromUrl &&
+      splitFromUrl !== sessionFromUrl &&
+      (tabs.layout !== "split" || tabs.secondarySessionId !== splitFromUrl)
+    ) {
+      ensureSplitWith(splitFromUrl);
+    }
+  }, [
+    sessionFromUrl,
+    splitFromUrl,
+    focusedSessionId,
+    tabs.layout,
+    tabs.secondarySessionId,
+    ensureFocusedSession,
+    ensureSplitWith,
+    utils.session.listRunning,
+  ]);
 
-  // 三层 store 订阅：sessionId 变化后自动切切片，无需 applyView
+  // tabs 焦点 / 分屏 → URL
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    let changed = false;
+    const focus = focusedSessionId;
+    if (focus) {
+      if (params.get("sessionId") !== focus) {
+        params.set("sessionId", focus);
+        changed = true;
+      }
+    } else if (params.has("sessionId") && prevFocusedRef.current) {
+      // 仅在从有焦点变为新对话时清 URL（避免首帧清空深链）
+      params.delete("sessionId");
+      changed = true;
+    }
+    if (tabs.layout === "split" && tabs.secondarySessionId) {
+      if (params.get("split") !== tabs.secondarySessionId) {
+        params.set("split", tabs.secondarySessionId);
+        changed = true;
+      }
+    } else if (params.has("split")) {
+      params.delete("split");
+      changed = true;
+    }
+    prevFocusedRef.current = focus;
+    if (changed) {
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [
+    focusedSessionId,
+    tabs.layout,
+    tabs.secondarySessionId,
+    searchParams,
+    pathname,
+    router,
+  ]);
+
+  // 焦点 session 仍订阅三层 store：供右栏 token/队列派生、SSE/drain、hydrate 兜底
+  // （中栏展示由 ChatSessionPane 各自订阅，允许与焦点切片重复订阅）
   const lifecycleKey = effectiveSessionId ?? NEW_STREAM_KEY;
-  const {
-    messages,
-    isMessagesHydrated,
-    hasOlderMessages,
-    isLoadingOlderMessages,
-    loadOlderMessages,
-    hydrateFromServer,
-  } = useSessionMessages(effectiveSessionId);
-  const { state: lifecycleState, isStreaming } = useStreamLifecycle(lifecycleKey);
-  const streamingContent = lifecycleState.streamingContent;
-  const liveTimeline = lifecycleState.liveTimeline;
-  const streamTargetUserId = lifecycleState.streamTargetUserId;
-  // INV-4：本轮流式期间提前 upsert 的 assistant id，其 stored 渲染被屏蔽（live 块独占）
-  const inFlightAssistantId =
-    lifecycleState.phase === "streaming" || lifecycleState.phase === "done"
-      ? lifecycleState.inFlightAssistantId
-      : null;
-  const lastRoundTokens = lifecycleState.lastRoundTokens;
-  const streamError = lifecycleState.error;
-  const error = viewError ?? streamError;
+  const { messages, hydrateFromServer } = useSessionMessages(effectiveSessionId);
+  const { state: lifecycleState } = useStreamLifecycle(lifecycleKey);
   const setError = setViewError;
   const { state: composeState } = useSessionComposeState(lifecycleKey);
-  const optimistic = composeState.optimistic;
   const userQueue = composeState.userQueue;
   const asyncOverlays = composeState.asyncOverlays;
   const consumedDeliveries = composeState.consumedDeliveries;
@@ -363,7 +417,12 @@ export function ChatView() {
 
   const sessionQueueQuery = trpc.agent.listSessionQueueItems.useQuery(
     { sessionId: effectiveSessionId! },
-    { enabled: !!effectiveSessionId && !backendDown },
+    {
+      enabled: !!effectiveSessionId && !backendDown,
+      // 推优先（session_queue_update）+ 短轮询兜底：EventSource 晚连 / 漏推时不靠刷新
+      refetchInterval: 3_000,
+      refetchOnWindowFocus: true,
+    },
   );
   const createSessionQueueItemMutation = trpc.agent.createSessionQueueItem.useMutation();
   const submitInjectMutation = trpc.agent.submitInject.useMutation();
@@ -394,8 +453,23 @@ export function ChatView() {
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {
       void asyncQueueQuery.refetch();
+      showToast("已请求取消任务");
+    },
+    onError: (err) => {
+      showToast(err.message || "取消失败：后端不可用或任务已结束");
     },
   });
+  const cancelAsyncJobMutateFn = cancelAsyncJobMutation.mutate;
+  const cancelAsyncJobMutate = useCallback(
+    (input: { jobId: string }) => {
+      if (backendDown) {
+        showToast("后端未连接，无法取消任务。请先运行 pnpm dev");
+        return;
+      }
+      cancelAsyncJobMutateFn(input);
+    },
+    [backendDown, cancelAsyncJobMutateFn, showToast],
+  );
 
   const retryAsyncJobMutation = trpc.agent.retryAsyncJob.useMutation({
     onSuccess: () => {
@@ -409,20 +483,28 @@ export function ChatView() {
     },
   });
 
-  // 【队列水合 · INV-8 ④】从 DB 水合发送队列（仅在切换会话时一次，避免覆盖本地编辑）；
-  // hydrateDone 显式 drain 请求是 INV-8 ④ 触发链关键节点，保留在编排层。
-  const hydratedSessionRef = useRef<string | null>(null);
+  // 【队列水合 · INV-8 ④】DB 为事实源：切会话全量替换；同会话按 dbId 幂等 merge（含删除）。
+  // 不再「每会话只灌一次」——否则 superior/child_notify 入队后不刷新永远看不见。
+  const queueHydrateSessionRef = useRef<string | null>(null);
   useEffect(() => {
     if (!effectiveSessionId) {
-      hydratedSessionRef.current = null;
+      queueHydrateSessionRef.current = null;
       return;
     }
     if (!sessionQueueQuery.data) return;
-    if (hydratedSessionRef.current === effectiveSessionId) return;
-    hydratedSessionRef.current = effectiveSessionId;
-    const items = sessionQueueQuery.data.map(sessionQueueItemToChatItem);
-    sessionComposeActions.setUserQueue(effectiveSessionId, items);
-    // INV-8 ④：发送队列 DB hydrate 完成 → 显式 drain 请求（覆盖切会话后有待发项的场景）
+    const sessionChanged = queueHydrateSessionRef.current !== effectiveSessionId;
+    queueHydrateSessionRef.current = effectiveSessionId;
+    if (sessionChanged) {
+      sessionComposeActions.setUserQueue(
+        effectiveSessionId,
+        sessionQueueQuery.data.map(sessionQueueItemToChatItem),
+      );
+    } else {
+      sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) =>
+        mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+      );
+    }
+    // INV-8 ④：发送队列 hydrate/merge 完成 → 显式 drain（仅 user/child_notify；superior 由服务端起流）
     streamLifecycleActions.hydrateDone(effectiveSessionId);
   }, [effectiveSessionId, sessionQueueQuery.data]);
 
@@ -443,6 +525,7 @@ export function ChatView() {
   useChatSseSubscriptions({
     effectiveSessionId,
     mainSessionId,
+    watchedSessionIds,
     backendDown,
     asyncQueueQuery,
     asyncQueueStatsQuery,
@@ -451,25 +534,17 @@ export function ChatView() {
     setRotateBanner,
   });
 
-  // 拖拽重排 500ms 防抖写 DB：避免连续 drag-over 触发大量 reorder mutation
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const persistQueueOrder = useCallback(
-    (items: ChatQueueItem[]) => {
-      if (!effectiveSessionId) return;
-      const orderedIds = items.map((i) => i.dbId).filter((id): id is string => !!id);
-      if (orderedIds.length === 0) return;
-      if (reorderTimerRef.current) clearTimeout(reorderTimerRef.current);
-      reorderTimerRef.current = setTimeout(() => {
-        reorderSessionQueueItemsMutation.mutate({ sessionId: effectiveSessionId, orderedIds });
-      }, 500);
-    },
-    [effectiveSessionId, reorderSessionQueueItemsMutation],
-  );
 
   // 【派生队列群】asyncResultQueue / runtime 三组（TP-3）/ 显示队列的 useMemo 派生收拢于
   // useChatDerivedQueues（W13e 拆出；useMemo 体与 deps 逐字未改）
-  const { asyncResultQueue, runtimeActiveItems, runtimeToConsumeItems, runtimeConsumedItems, queue, syncTaskItems } =
-    useChatDerivedQueues({ asyncOverlays, asyncQueueQuery, consumedDeliveries, userQueue });
+  const {
+    asyncResultQueue,
+    runtimeActiveItems,
+    runtimeToConsumeItems,
+    runtimeConsumedItems,
+    syncTaskItems,
+  } = useChatDerivedQueues({ asyncOverlays, asyncQueueQuery, consumedDeliveries, userQueue });
   // W-A 右栏「状态」一级分组：异步队列可消费 / 同步任务只展示；不持久化到 URL
   const [runtimeGroupTab, setRuntimeGroupTab] = useState<"async" | "sync">("async");
 
@@ -491,30 +566,15 @@ export function ChatView() {
   }, [selectedAgentMeta, selectedAgentFull.data]);
 
   // 【会话配置域】模型 / systemPrompt 的加载、派生与持久化收拢于 useChatConfig
-  const { chatConfig, setChatConfig, updateConfig, resetPromptToAgent } = useChatConfig({
+  const { chatConfig, setChatConfig, updateConfig } = useChatConfig({
     effectiveSessionId,
     selectedAgent,
     sessionDetailModel: sessionDetail?.model,
     sessionDetailSystemPrompt: sessionDetail?.systemPrompt,
   });
-  const modelOpt = getModelOption(chatConfig.model);
-
-  const messageGroups = useMemo(
-    () => buildMessageGroups(messages),
-    [messages],
-  );
-
-  const tokenBudget = useMemo(
-    () => buildTokenBudget(messages, chatConfig.maxTokens, lastRoundTokens, chatConfig.model),
-    [messages, chatConfig.maxTokens, chatConfig.model, lastRoundTokens],
-  );
-
-  const lastUserMessageId = useMemo(() => {
-    if (messageGroups.length === 0) return null;
-    return messageGroups[messageGroups.length - 1].userMessage.id;
-  }, [messageGroups]);
 
   const handleOpenPromptEditor = useCallback(() => setShowPromptEditor(true), []);
+  const overlayUpdateConfig = focusedConfigApi?.updateConfig ?? updateConfig;
 
   // W16b：ChatOverlays memo 屏障要求 props 引用稳定，内联箭头每渲染新建会击穿 memo
   const handleSubagentCreated = useCallback(
@@ -525,10 +585,11 @@ export function ChatView() {
   // 【runStream 流式编排内核】runStream + rAF token 合帧三件套 + 持久化调度收拢于
   // useChatRunStream（W13e 拆出；useCallback 体与 deps 逐字未改）。rAF/定时器 refs 留在
   // 本文件，供【页面生命周期与全局监听群】的 unmount 清理 effect 统一回收。
+  const runStreamChatConfig = focusedPaneConfig ?? chatConfig;
   const { runStream } = useChatRunStream({
     effectiveSessionId,
     effectiveAgentId,
-    chatConfig,
+    chatConfig: runStreamChatConfig,
     selectedWorkspaceId,
     selectedAgent,
     updateConfig,
@@ -540,7 +601,7 @@ export function ChatView() {
     streamRafRef,
     streamSaveTimeoutRef,
     setSessionId,
-    setEditingUserId,
+    setEditingUserId: () => {},
     searchParams,
     pathname,
     router,
@@ -711,8 +772,9 @@ export function ChatView() {
   // 仍是下方【drain 订阅 · INV-8 ②④】effect，经 consumeRef 镜像调用。
   const { drainAllPendingQueues } = useChatQueueDrain({
     effectiveSessionId,
+    visibleSessionIds,
     asyncResultQueue,
-    chatConfigModel: chatConfig.model,
+    chatConfigModel: (focusedPaneConfig ?? chatConfig).model,
     isSessionRunOccupied,
     sessionsItems: sessionsQuery.data?.items,
     consumeSessionQueueItemMutation,
@@ -755,7 +817,8 @@ export function ChatView() {
   // 【enqueue 编排簇】enqueueMessage + 500ms 防重 lastEnqueueRef 收拢于 useChatEnqueue
   // （W13e 拆出；useCallback 体与 deps 逐字未改，仅 sessionDetail?.status 解构重命名为
   // sessionStatus）。INV-8 ① 用户入队显式 drain 仍经 consumeRef 调用。
-  const { enqueueMessage } = useChatEnqueue({
+  // 父级仍挂 enqueue（compact 快捷等）；各 pane 自有一份 enqueue 绑定自己的 sessionId
+  useChatEnqueue({
     backendDown,
     effectiveSessionId,
     sessionStatus: sessionDetail?.status,
@@ -766,112 +829,83 @@ export function ChatView() {
     consumeRef,
   });
 
-  const handleStop = useCallback(async () => {
-    if (effectiveSessionId) {
-      // 先通知后端真正停止运行，再 abort 本地连接
-      try {
-        await stopAgentChat(effectiveSessionId);
-      } catch {
-        // 后端停止失败也继续 abort 本地连接
-      }
-    }
-    sessionComposeActions.getActiveAbortController(effectiveSessionId)?.abort();
-  }, [effectiveSessionId]);
-
-  // C-3 不变量：恢复按钮触发 resume mutation → hook 内失效 listRunning →
-  // 上方 INV-5 挂接 effect 发现运行中会话自动 runStream 续传。
-  const { mutate: resumeSession, isPending: resumePending } = useResumeSession({
-    onError: (msg) => showToast(`恢复会话失败：${msg}`),
-  });
-  const handleResumeSession = useCallback(() => {
-    if (!effectiveSessionId) return;
-    resumeSession({ id: effectiveSessionId });
-  }, [effectiveSessionId, resumeSession]);
-
   // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
   const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
 
-  // W16b：以下 6 个消息列表回调全部 useCallback 稳定化——messageListProps 已 useMemo 打包，
-  // 回调若每渲染新建会让 ChatMessageList 的 memo 屏障形同虚设（deps 均为稳定引用，见各数组）。
-  const handleRegenerate = useCallback((userMessageId: string) => {
-    if (!effectiveSessionId || isSessionRunOccupied(effectiveSessionId)) return;
-    void runStream({ regenerate: true, regenerateUserMessageId: userMessageId });
-  }, [effectiveSessionId, isSessionRunOccupied, runStream]);
+  const onFocusedChatConfigChange = useCallback(
+    (_sid: string | null, config: ChatSessionConfig) => {
+      setFocusedPaneConfig(config);
+    },
+    [],
+  );
+  const onFocusedChatConfigApiChange = useCallback(
+    (
+      _sid: string | null,
+      api: {
+        updateConfig: (patch: Partial<ChatSessionConfig>) => void;
+        resetPromptToAgent: () => void;
+      },
+    ) => {
+      setFocusedConfigApi(api);
+    },
+    [],
+  );
 
-  const handleRetry = useCallback((messageId: string) => {
-    if (!effectiveSessionId || isSessionRunOccupied(effectiveSessionId)) return;
-    void runStream({ retryFromMessageId: messageId });
-  }, [effectiveSessionId, isSessionRunOccupied, runStream]);
-
-  // 错误条「转后台重试」：把上一条用户消息包装成 async_task_run 请求重新入队
-  const handleTimeoutRetryInBackground = (lastText: string) => {
-    sessionComposeActions.patchUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, (prev) => [
-      ...prev,
-      createUserQueueItem(`请用 async_task_run 在后台执行这个任务（避免前台超时）：\n${lastText}`),
-    ]);
-    streamLifecycleActions.clearError(effectiveSessionId ?? NEW_STREAM_KEY);
-    setViewError(null);
-    // INV-8 ①：用户点击入队 → 显式 drain
-    // （clearError 在已是 idle 时无转移，不会触发 ②）
-    consumeRef.current(effectiveSessionId ?? NEW_STREAM_KEY);
-  };
-
-  const handleEditConfirm = useCallback((userMessageId: string) => {
-    const content = editDraft.trim();
-    if (!content || isSessionRunOccupied(effectiveSessionId)) return;
-    void runStream({ editMessageId: userMessageId, editContent: content });
-  }, [editDraft, effectiveSessionId, isSessionRunOccupied, runStream]);
-
-  const handleSwitchVersion = useCallback(async (assistantMessageId: string, versionIndex: number) => {
-    // 切版本只读 MS，不开新流；但仍需避免与 streaming 冲突
-    if (isSessionStreaming(effectiveSessionId)) return;
-    await switchVersionMutateAsync({ messageId: assistantMessageId, versionIndex });
-    // 服务端 afterUpdate 会推 message_upserted；hydrate 作兜底
-    void hydrateFromServer();
-  }, [effectiveSessionId, isSessionStreaming, switchVersionMutateAsync, hydrateFromServer]);
-
-  const handleCopy = useCallback(async (id: string, content: string) => {
-    if (await copyToClipboard(content)) {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
-    }
-  }, []);
-
-  const handleShare = useCallback(async (content: string) => {
-    try {
-      if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ text: content });
-        return;
+  /** 绑定当前 Agent 的主会话（有则复用、无则创建空会话），保证始终有真实 sessionId */
+  const bindAgentMainSession = useCallback(
+    async (aid: string): Promise<string | null> => {
+      if (!aid || backendDown) return null;
+      try {
+        const res = await ensureMainMutateAsync({ agentId: aid });
+        openTab(res.id);
+        try {
+          const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
+            string,
+            string
+          >;
+          if (res.title && prev[res.id] !== res.title) {
+            sessionStorage.setItem(
+              TAB_TITLE_CACHE_KEY,
+              JSON.stringify({ ...prev, [res.id]: res.title }),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+        void utils.session.list.invalidate();
+        return res.id;
+      } catch {
+        return null;
       }
-    } catch {
-      /* fallback to copy */
-    }
-    if (await copyToClipboard(content)) {
-      setCopiedId("share");
-      setTimeout(() => setCopiedId(null), 1500);
-    }
-  }, []);
+    },
+    [backendDown, ensureMainMutateAsync, openTab, utils.session.list],
+  );
+
+  // 水合后若仍无焦点会话：落到当前 Agent 主会话（禁止长期停在 NEW_STREAM_KEY / 无 id）
+  useEffect(() => {
+    if (!tabsHydrated || backendDown) return;
+    if (focusedSessionId || sessionFromUrl) return;
+    if (!effectiveAgentId) return;
+    void bindAgentMainSession(effectiveAgentId);
+  }, [
+    tabsHydrated,
+    backendDown,
+    focusedSessionId,
+    sessionFromUrl,
+    effectiveAgentId,
+    bindAgentMainSession,
+  ]);
 
   const startNewChat = useCallback(() => {
-    // 新建对话不中止任何已有 session 的流式（多 session 并发隔离）
-    // 先把当前 effective Agent 固化到 state：如果从已有会话切过来，agentId state 可能
-    // 被清空，直接 setSessionId(null) 会让 effectiveAgentId 回退到 default assistant。
+    const aid = agentId || effectiveAgentId;
     setAgentId((prev) => prev || effectiveAgentId);
-    setSessionId(null);
-    // 保持当前选中的 Agent，不清空——用户选了哪个 Agent，新会话继续用哪个
-    // setAgentId("") 已移除，避免回退到 defaultAgentId(assistant)
-    // 输入框 value 已下放到 ChatInputArea，由其 key={effectiveSessionId ?? "new"}
-    // 在切换/新建会话时整体 remount 自动清空，无需在此手动 reset。
-    setSelectedSkill(null);
     setEditingSessionId(null);
     setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
-    streamLifecycleActions.resetSession(NEW_STREAM_KEY);
-    sessionComposeActions.resetComposeSession(NEW_STREAM_KEY);
-    // 清除 URL 中的 sessionId/agentId/view，确保新建对话不受旧参数束缚
+    setHistorySubTab("main");
     const params = new URLSearchParams(searchParams.toString());
     let changed = false;
-    if (params.get("sessionId")) {
-      params.delete("sessionId");
+    if (params.get("split")) {
+      params.delete("split");
       changed = true;
     }
     if (params.get("agentId")) {
@@ -885,47 +919,112 @@ export function ChatView() {
     if (changed) {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-    setHistorySubTab("main");
-  }, [selectedAgent, effectiveAgentId, searchParams, pathname, router, setChatConfig, setHistorySubTab]);
+    void (async () => {
+      if (!aid || backendDown) {
+        // 后端不可用时仍允许本地空态，避免按钮完全失灵
+        startNewChatInTabs();
+        streamLifecycleActions.resetSession(NEW_STREAM_KEY);
+        sessionComposeActions.resetComposeSession(NEW_STREAM_KEY);
+        const p = new URLSearchParams(searchParams.toString());
+        if (p.get("sessionId")) {
+          p.delete("sessionId");
+          router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+        }
+        return;
+      }
+      try {
+        const res = await openNewSessionMutateAsync({
+          agentId: aid,
+          focusedSessionId: focusedSessionId,
+          model: selectedAgent?.model,
+        });
+        if (res.action === "already_here") {
+          showToast("当前已在新会话中");
+          return;
+        }
+        openTab(res.id);
+        try {
+          const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
+            string,
+            string
+          >;
+          if (res.title && prev[res.id] !== res.title) {
+            sessionStorage.setItem(
+              TAB_TITLE_CACHE_KEY,
+              JSON.stringify({ ...prev, [res.id]: res.title }),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+        void utils.session.list.invalidate();
+      } catch {
+        showToast("创建新会话失败");
+      }
+    })();
+  }, [
+    agentId,
+    selectedAgent,
+    effectiveAgentId,
+    backendDown,
+    focusedSessionId,
+    searchParams,
+    pathname,
+    router,
+    setChatConfig,
+    setHistorySubTab,
+    startNewChatInTabs,
+    openNewSessionMutateAsync,
+    openTab,
+    showToast,
+    utils.session.list,
+  ]);
 
-  const selectSession = useCallback((id: string) => {
-    if (effectiveSessionId === id) return;
-    // 多 session 隔离：切换会话只改 sessionId，三层 hook 自动订阅新切片。
-    setSessionId(id);
-    setAgentId("");
-    setUserSelectedWorkspaceId(null);
-    setEditingSessionId(null);
-    setSelectedSkill(null);
-    void utils.session.listRunning.invalidate();
-    const targetSt = streamLifecycleStore.get(id);
-    if (
-      targetSt.phase === "streaming" &&
-      !targetSt.connected &&
-      !sessionComposeActions.getActiveAbortController(id)
-    ) {
-      // 事件处理内同步续传，无需 microtask
-      void runStreamRef.current({ targetSessionId: id, resumeAfter: targetSt.lastEventId, isResume: true });
-    }
-    // INV-8 ③：会话切换完成 → 显式 drain（恢复/镜像的待发队列项立即开跑；占用中 drain 自动跳过）
-    consumeRef.current(id);
-    // 切换会话后同步 URL sessionId。
-    // 只有「点进某个会话」时才按会话类型带上 view——这是用户显式导航，不是后台强制。
-    // 用户在同一会话内点「主/子 Agent」标签时，只改 view/localStorage，不走这里。
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("sessionId", id);
-    if (params.get("agentId")) params.delete("agentId");
-    const targetMeta = (sessionsQuery.data?.items ?? []).find((s) => s.id === id);
-    const targetIsSub =
-      targetMeta?.kind === "subagent" || !!targetMeta?.parentSessionId;
-    if (targetIsSub) {
-      params.set("view", "sub");
-      setHistorySubTab("sub");
-    } else {
-      params.set("view", "main");
-      setHistorySubTab("main");
-    }
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [effectiveSessionId, searchParams, pathname, router, sessionsQuery.data?.items, utils.session.listRunning, setHistorySubTab]);
+  const selectSession = useCallback(
+    (id: string) => {
+      openTab(id);
+      setAgentId("");
+      setUserSelectedWorkspaceId(null);
+      setEditingSessionId(null);
+      void utils.session.listRunning.invalidate();
+      const targetSt = streamLifecycleStore.get(id);
+      if (
+        targetSt.phase === "streaming" &&
+        !targetSt.connected &&
+        !sessionComposeActions.getActiveAbortController(id)
+      ) {
+        void runStreamRef.current({
+          targetSessionId: id,
+          resumeAfter: targetSt.lastEventId,
+          isResume: true,
+        });
+      }
+      consumeRef.current(id);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("sessionId", id);
+      if (params.get("agentId")) params.delete("agentId");
+      const targetMeta = (sessionsQuery.data?.items ?? []).find((s) => s.id === id);
+      const targetIsSub =
+        targetMeta?.kind === "subagent" || !!targetMeta?.parentSessionId;
+      if (targetIsSub) {
+        params.set("view", "sub");
+        setHistorySubTab("sub");
+      } else {
+        params.set("view", "main");
+        setHistorySubTab("main");
+      }
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [
+      openTab,
+      searchParams,
+      pathname,
+      router,
+      sessionsQuery.data?.items,
+      utils.session.listRunning,
+      setHistorySubTab,
+    ],
+  );
 
   const selectWorkspace = useCallback((workspaceId: string) => {
     setUserSelectedWorkspaceId(workspaceId);
@@ -952,53 +1051,81 @@ export function ChatView() {
       params.delete("agentId");
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [agentsQuery.data?.items, effectiveAgentId, searchParams, pathname, router]);
+  }, [agentsQuery.data?.items, effectiveAgentId, searchParams, pathname, router, setSessionId]);
 
-  // ChatMessageList 的 props 打包（W13e 随中栏外提至 ChatCenterPane，字段与原内联 JSX 一致）。
-  // W16b：useMemo 打包——原实现每渲染新建对象，ChatMessageList memo 屏障永远失效；
-  // 现仅在字段真变时换引用（流式期仅 streamingContent/liveTimeline 等消息字段触发，
-  // toast / 重命名输入等非消息更新不再连带整棵消息列表）。
-  const messageListProps: ChatMessageListProps = useMemo(() => ({
-    messageGroups,
-    messages,
-    optimistic,
-    liveTimeline,
-    streamingContent,
-    isStreaming,
-    streamTargetUserId,
-    inFlightAssistantId,
-    isSubagentSession,
-    copiedId,
-    editingUserId,
-    editDraft,
-    isMessagesHydrated,
-    effectiveSessionId,
+  // 标签标题：优先列表 autoName/title；列表缺失时用 sessionStorage 缓存，避免只显示 CUID 前缀
+  useEffect(() => {
+    const items = sessionsQuery.data?.items;
+    if (!items?.length) return;
+    try {
+      const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
+        string,
+        string
+      >;
+      let changed = false;
+      const next = { ...prev };
+      for (const s of items) {
+        const label = (s.autoName || s.title || "").trim();
+        if (label && next[s.id] !== label) {
+          next[s.id] = label;
+          changed = true;
+        }
+      }
+      if (changed) sessionStorage.setItem(TAB_TITLE_CACHE_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  }, [sessionsQuery.data?.items]);
+
+  const tabBarItems = useMemo(() => {
+    let cache: Record<string, string> = {};
+    if (typeof window !== "undefined") {
+      try {
+        cache = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
+          string,
+          string
+        >;
+      } catch {
+        cache = {};
+      }
+    }
+    const fromList = new Map(
+      (sessionsQuery.data?.items ?? []).map((s) => [s.id, sessionLabel(s)]),
+    );
+    return tabs.openTabIds.map((id) => ({
+      id,
+      title: fromList.get(id) || cache[id] || "新对话",
+    }));
+  }, [tabs.openTabIds, sessionsQuery.data?.items]);
+
+  const overlayChatConfig = focusedPaneConfig ?? chatConfig;
+
+  const paneShared = {
     backendDown,
+    leftOpen,
+    setLeftOpen,
+    skills,
+    selectedAgent,
     hasWorkspaces,
-    hasOlderMessages,
-    isLoadingOlderMessages,
-    loadOlderMessages,
-    onCopy: handleCopy,
-    onShare: handleShare,
-    onRegenerate: handleRegenerate,
-    onSwitchVersion: handleSwitchVersion,
-    onEditConfirm: handleEditConfirm,
-    onRetry: handleRetry,
-    setEditingUserId,
-    setEditDraft,
-  }), [
-    messageGroups, messages, optimistic, liveTimeline, streamingContent, isStreaming,
-    streamTargetUserId, inFlightAssistantId, isSubagentSession, copiedId, editingUserId,
-    editDraft, isMessagesHydrated, effectiveSessionId, backendDown, hasWorkspaces,
-    hasOlderMessages, isLoadingOlderMessages, loadOlderMessages, handleCopy, handleShare,
-    handleRegenerate, handleSwitchVersion, handleEditConfirm, handleRetry,
-    setEditingUserId, setEditDraft,
-  ]);
+    runStream,
+    consumeRef,
+    createSessionQueueItemMutation,
+    submitInjectMutation,
+    deleteSessionQueueItemMutation,
+    reorderSessionQueueItemsMutation,
+    asyncQueueStats: asyncQueueStatsQuery.data,
+    rotateBanner,
+    setRotateBanner,
+    showToast,
+    selectSession,
+    onOpenPromptEditor: handleOpenPromptEditor,
+  } as const;
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
       <ChatSidebar
         leftOpen={leftOpen}
+        setLeftOpen={setLeftOpen}
         leftTab={leftTab}
         setLeftTab={setLeftTab}
         historySubTab={historySubTab}
@@ -1012,9 +1139,11 @@ export function ChatView() {
         parentSessionId={parentSessionId}
         selectedWorkspaceId={selectedWorkspaceId}
         selectedAgent={selectedAgent}
-        chatConfigModel={chatConfig.model}
         asyncResultQueue={asyncResultQueue}
         selectSession={selectSession}
+        openInOtherPane={openInOtherPane}
+        openTabIds={tabs.openTabIds}
+        closeTab={closeTab}
         selectWorkspace={selectWorkspace}
         startNewChat={startNewChat}
         editingSessionId={editingSessionId}
@@ -1027,8 +1156,15 @@ export function ChatView() {
         setError={setError}
         setToast={showToast}
         refetchSession={refetchSession}
-        cancelAsyncJobMutate={cancelAsyncJobMutation.mutate}
+        cancelAsyncJobMutate={cancelAsyncJobMutate}
         retryAsyncJobMutate={retryAsyncJobMutation.mutate}
+        pinAsyncJobMutate={pinAsyncJobMutation.mutate}
+        runtimeGroupTab={runtimeGroupTab}
+        setRuntimeGroupTab={setRuntimeGroupTab}
+        syncTaskItems={syncTaskItems}
+        runtimeActiveItems={runtimeActiveItems}
+        runtimeToConsumeItems={runtimeToConsumeItems}
+        runtimeConsumedItems={runtimeConsumedItems}
       />
 
       {sessionHoverPreviewEnabled && (
@@ -1039,81 +1175,54 @@ export function ChatView() {
           onClose={() => setHoverMonitorSessionId(null)}
         />
       )}
-      <ChatCenterPane
-        effectiveSessionId={effectiveSessionId}
-        sessionDetail={sessionDetail}
-        isLoadingOlderMessages={isLoadingOlderMessages}
-        isStreaming={isStreaming}
-        selectedAgentName={selectedAgent?.name}
-        chatConfigModel={chatConfig.model}
-        chatConfigSystemPrompt={chatConfig.systemPrompt}
-        queueLength={queue.length}
-        compactPending={isSessionRunOccupied(effectiveSessionId ?? "")}
-        onCompact={() => enqueueMessage("请压缩当前会话上下文")}
-        setLeftOpen={setLeftOpen}
-        setRightOpen={setRightOpen}
-        isSubagentSession={isSubagentSession}
-        parentSessionId={parentSessionId}
-        parentSessionTitle={parentSession?.title}
-        backendDown={backendDown}
-        rotateBanner={rotateBanner}
-        setRotateBanner={setRotateBanner}
-        selectSession={selectSession}
-        messageListProps={messageListProps}
-        error={error}
-        lastUserMessageId={lastUserMessageId}
-        onRetry={handleRetry}
-        onTimeoutRetryInBackground={handleTimeoutRetryInBackground}
-        userQueue={userQueue}
-        asyncQueueData={asyncQueueQuery.data}
-        asyncStats={asyncQueueStatsQuery.data}
-        persistQueueOrder={persistQueueOrder}
-        deleteSessionQueueItemMutation={deleteSessionQueueItemMutation}
-        onSend={enqueueMessage}
-        onStop={handleStop}
-        onResumeSession={handleResumeSession}
-        resumePending={resumePending}
-        skills={skills}
-        selectedSkill={selectedSkill}
-        onSkillChange={setSelectedSkill}
-        modelHint={modelOpt.inputHint ?? (modelOpt.supportsVision ? "多模态 · 支持图片" : "纯文本 · 图片将 OCR 后发送")}
-        supportsVision={!!modelOpt.supportsVision}
-        onOpenConfig={() => {
-          setRightOpen(true);
-          setRightTab("config");
-        }}
-      />
 
-      <ChatRightPanel
-        rightOpen={rightOpen}
-        setRightOpen={setRightOpen}
-        rightTab={rightTab}
-        setRightTab={setRightTab}
-        chatConfig={chatConfig}
-        updateConfig={updateConfig}
-        resetPromptToAgent={resetPromptToAgent}
-        onOpenPromptEditor={handleOpenPromptEditor}
-        skills={skills}
-        selectedSkill={selectedSkill}
-        setSelectedSkill={setSelectedSkill}
-        modelSupportsReasoning={!!modelOpt.supportsThinking}
-        modelReasoningRequired={!!modelOpt.reasoningRequired}
-        tokenBudget={tokenBudget}
-        runtimeGroupTab={runtimeGroupTab}
-        setRuntimeGroupTab={setRuntimeGroupTab}
-        syncTaskItems={syncTaskItems}
-        runtimeActiveItems={runtimeActiveItems}
-        runtimeToConsumeItems={runtimeToConsumeItems}
-        runtimeConsumedItems={runtimeConsumedItems}
-        cancelAsyncJobMutate={cancelAsyncJobMutation.mutate}
-        pinAsyncJobMutate={pinAsyncJobMutation.mutate}
-      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <ChatTabBar
+          tabs={tabs}
+          items={tabBarItems}
+          onFocusTab={focusTab}
+          onCloseTab={closeTab}
+          onEnterSplit={() => enterSplit()}
+          onExitSplit={exitSplit}
+          canEnterSplit={tabs.openTabIds.length >= 2}
+        />
+        <div
+          className={cn(
+            "flex min-h-0 flex-1",
+            tabs.layout === "split" ? "flex-row" : "flex-col",
+          )}
+        >
+          <ChatSessionPane
+            key={`primary-${tabs.primarySessionId ?? "new"}`}
+            sessionId={tabs.primarySessionId}
+            isFocused={tabs.focusedPane === "primary"}
+            onFocus={() => focusPane("primary")}
+            onChatConfigChange={onFocusedChatConfigChange}
+            onChatConfigApiChange={onFocusedChatConfigApiChange}
+            {...paneShared}
+          />
+          {tabs.layout === "split" && tabs.secondarySessionId && (
+            <>
+              <div className="w-px shrink-0 bg-[var(--kp-divider)]" />
+              <ChatSessionPane
+                key={`secondary-${tabs.secondarySessionId}`}
+                sessionId={tabs.secondarySessionId}
+                isFocused={tabs.focusedPane === "secondary"}
+                onFocus={() => focusPane("secondary")}
+                onChatConfigChange={onFocusedChatConfigChange}
+                onChatConfigApiChange={onFocusedChatConfigApiChange}
+                {...paneShared}
+              />
+            </>
+          )}
+        </div>
+      </div>
 
       <ChatOverlays
         showPromptEditor={showPromptEditor}
         setShowPromptEditor={setShowPromptEditor}
-        systemPrompt={chatConfig.systemPrompt}
-        updateConfig={updateConfig}
+        systemPrompt={overlayChatConfig.systemPrompt}
+        updateConfig={overlayUpdateConfig}
         showCreateSubagent={showCreateSubagent}
         setShowCreateSubagent={setShowCreateSubagent}
         parentSessionId={mainSessionId ?? undefined}

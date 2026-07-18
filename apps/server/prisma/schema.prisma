@@ -114,6 +114,8 @@ model ChatSession {
   contextCompactedAt DateTime?
   // session_rotate：轮换到的新会话 id（旧会话 archived 后保留跳转）
   rotatedToSessionId String?
+  /// 会话级待办清单（todo_write/todo_read）：{ todos: TodoItem[], updatedAt: string }
+  todoState    Json?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   // P1-8：外键到 Agent，删 Agent 时 agentId 置 null
@@ -153,11 +155,11 @@ model ChatMessage {
 model SessionQueueItem {
   id             String   @id @default(cuid())
   sessionId      String
-  /// 队列项类型："user"（用户消息）| "superior"（上级 Agent 消息镜像）
+  /// 队列项类型："user"（用户消息）| "superior"（上级 Agent 消息镜像）| "child_notify"（子 Agent 主动通知父会话）
   kind           String
   /// 消息文本内容
   content        String
-  /// 来源标识：user 消息存 "user"；superior 消息存来源 Agent id
+  /// 来源标识：user 消息存 "user"；superior / child_notify 消息存来源 Agent id
   source         String
   /// 来源 Agent 的名字（superior 专用，UI 显示「来自父 Agent · xxx」）
   sourceName     String?
@@ -239,10 +241,15 @@ model Memory {
   scope       String   @default("global") /// "global" | "agent:{agentId}" | "workspace:{workspaceId}"（W5 写时隔离，替代读时过滤）
   agentId     String?  /// scope=agent:{id} 时的冗余列，便于按 Agent 查询
   contentHash String?  /// 内容全量 sha256（W5 去重，替代 slice(0,40) 前缀匹配）
+  /// active=可读注入；superseded=被 memory_update 软链取代（不进 prompt）
+  status      String   @default("active")
+  /// 后继记忆 id（status=superseded 时指向新版）
+  supersededBy String?
   sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  @@index([status, scope])
 }
 
 /// Git 仓库管理
@@ -341,8 +348,10 @@ model Workspace {
   description    String?
   path           String   @unique /// 对应硬盘上的目录路径
   managerAgentId String?  @unique                /// 该 Workspace 的管理 Agent id
-  isSystem       Boolean  @default(false) /// 是否为系统级 Workspace（如超级 Agent 所属）
-  systemType     String?  /// 系统 Workspace 类型："super" | 其他扩展
+  isSystem       Boolean  @default(false) /// 是否为系统级 / Root Workspace（超级 Agent 所属）
+  systemType     String?  /// 系统 Workspace 类型："super"（Root）| 其他扩展
+  /// 本 Workspace 后台 LLM 异步槽上限（slotClass=llm）；0 = 不限（仍受全局 maxConcurrent 硬顶）
+  asyncSlotQuota Int      @default(2)
   status         String   @default("active") /// "active" | "archived" | "deleted"（tombstone）
   deletedAt      DateTime?                 /// 删除时间
   deletedBy      String?                   /// 删除者

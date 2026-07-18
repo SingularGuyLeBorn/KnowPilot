@@ -2,7 +2,7 @@
  * Chat 发送队列 — 类型与 LLM 正文拼装（参考 MetaBlog 异步任务 + 发送队列）
  */
 
-export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "superior";
+export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "superior" | "child_notify";
 
 /** 排队阻塞原因：哪个上限卡住（与服务端 AsyncJobQueuedReason 一致，orchestrator 真实判定） */
 export type AsyncQueuedReason = "global" | "session" | "workspace";
@@ -122,6 +122,11 @@ export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = fals
       parts.push(item.text.trim());
     }
     return parts.join("\n\n");
+  }
+
+  if (item.kind === "child_notify") {
+    if (item.text.trim()) parts.push(item.text.trim());
+    return parts.length ? parts.join("\n\n") : "（子 Agent 通知）";
   }
 
   if (item.text.trim()) parts.push(item.text.trim());
@@ -303,7 +308,9 @@ export function extractLocalQueueFromMerged(
     ...(poll?.running ?? []).map((j) => j.jobId),
     ...(poll?.queued ?? []).map((j) => j.jobId),
   ]);
-  const userItems = merged.filter((i) => i.kind === "user" || i.kind === "superior");
+  const userItems = merged.filter(
+    (i) => i.kind === "user" || i.kind === "superior" || i.kind === "child_notify",
+  );
   const overlays: ChatQueueItem[] = [];
 
   for (const item of merged) {
@@ -338,7 +345,9 @@ export function splitQueueByKind(
     ...(poll?.running ?? []).map((j) => j.jobId),
     ...(poll?.queued ?? []).map((j) => j.jobId),
   ]);
-  const userQueue = merged.filter((i) => i.kind === "user" || i.kind === "superior");
+  const userQueue = merged.filter(
+    (i) => i.kind === "user" || i.kind === "superior" || i.kind === "child_notify",
+  );
   const asyncOverlays: ChatQueueItem[] = [];
 
   for (const item of merged) {
@@ -386,8 +395,8 @@ export function createUserQueueItem(
   };
 }
 
-/** 把 DB SessionQueueItem 转成前端 ChatQueueItem */
-export function sessionQueueItemToChatItem(row: {
+/** DB SessionQueueItem 行形状（list / SSE 合并共用） */
+export type SessionQueueItemRow = {
   id: string;
   kind: string;
   content: string;
@@ -399,16 +408,21 @@ export function sessionQueueItemToChatItem(row: {
   skillId?: string | null;
   skillPrompt?: string | null;
   createdAt: string | Date | number;
-}): ChatQueueItem {
+};
+
+/** 把 DB SessionQueueItem 转成前端 ChatQueueItem */
+export function sessionQueueItemToChatItem(row: SessionQueueItemRow): ChatQueueItem {
   const createdAt =
     typeof row.createdAt === "number"
       ? row.createdAt
       : row.createdAt instanceof Date
         ? row.createdAt.getTime()
         : new Date(row.createdAt).getTime();
+  const kind: ChatQueueItemKind =
+    row.kind === "superior" ? "superior" : row.kind === "child_notify" ? "child_notify" : "user";
   return {
-    id: row.kind === "superior" ? `sup-${row.id}` : `q-${row.id}`,
-    kind: row.kind === "superior" ? "superior" : "user",
+    id: row.kind === "superior" ? `sup-${row.id}` : row.kind === "child_notify" ? `cn-${row.id}` : `q-${row.id}`,
+    kind,
     text: row.content,
     status: "pending",
     skillId: row.skillId ?? undefined,
@@ -420,4 +434,19 @@ export function sessionQueueItemToChatItem(row: {
     source: row.source,
     sourceName: row.sourceName ?? undefined,
   };
+}
+
+/**
+ * 用 DB 列表幂等合并本地发送队列：
+ * - 有 dbId 的项以 DB 为事实源（增/改/删随 list 对齐）
+ * - 尚无 dbId 的本地乐观项保留（用户刚入队、mutation 未回）
+ * 解决「每会话只水合一次 → 不刷新看不见队列 / 空首包锁死」。
+ */
+export function mergeUserQueueFromDb(
+  local: ChatQueueItem[],
+  dbRows: SessionQueueItemRow[],
+): ChatQueueItem[] {
+  const dbItems = dbRows.map(sessionQueueItemToChatItem);
+  const localOnly = local.filter((i) => !i.dbId);
+  return [...dbItems, ...localOnly];
 }

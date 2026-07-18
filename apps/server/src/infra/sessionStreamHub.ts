@@ -63,6 +63,13 @@ export class SessionStreamHub {
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   /** 独立于 Agent 运行流的外部事件订阅者（如 async_delivery） */
   private externalSubs = new Map<string, Set<(event: AgentStreamEvent) => void>>();
+  /**
+   * 外部事件短环形缓冲：EventSource 尚未连上时 pushExternalEvent 会丢事件
+   * （无活跃 Agent run 时也不进 runs.buffer）。subscribeExternal 时重放，
+   * 让 session_queue_update 等幂等事件不依赖「先连上再推」时序。
+   */
+  private externalRing = new Map<string, AgentStreamEvent[]>();
+  private static readonly EXTERNAL_RING_SIZE = 32;
   private config: StreamConfig;
 
   constructor(config: Partial<StreamConfig> = {}) {
@@ -161,6 +168,11 @@ export class SessionStreamHub {
    * - 若该 session 有活跃 Agent 流，同时写入环形缓冲并推给流 subscribers。
    */
   pushExternalEvent(sessionId: string, event: AgentStreamEvent): void {
+    const ring = this.externalRing.get(sessionId) ?? [];
+    ring.push(event);
+    if (ring.length > SessionStreamHub.EXTERNAL_RING_SIZE) ring.shift();
+    this.externalRing.set(sessionId, ring);
+
     const subs = this.externalSubs.get(sessionId);
     if (subs) {
       for (const sub of subs) {
@@ -190,6 +202,16 @@ export class SessionStreamHub {
 
   /** 订阅外部事件（独立于 Agent 运行流）。返回 unsubscribe 函数。 */
   subscribeExternal(sessionId: string, onEvent: (event: AgentStreamEvent) => void): () => void {
+    // 先重放短环（幂等：前端 session_queue_update / async_* 均以 refetch+merge 消化）
+    const ring = this.externalRing.get(sessionId) ?? [];
+    for (const event of ring) {
+      try {
+        onEvent(event);
+      } catch {
+        /* ignore */
+      }
+    }
+
     let subs = this.externalSubs.get(sessionId);
     if (!subs) {
       subs = new Set();
@@ -451,12 +473,13 @@ export class SessionStreamHub {
 
   /**
    * 显式停止某个 session 的运行（触发 abort）。
+   * @param reason AbortSignal.reason：user=用户点停止；session_stop=级联清理
    */
-  stop(sessionId: string): boolean {
+  stop(sessionId: string, reason: "user" | "session_stop" = "user"): boolean {
     const state = this.runs.get(sessionId);
     if (!state || state.completed) return false;
     this.clearInjectQueues(sessionId);
-    state.abortController.abort();
+    state.abortController.abort(reason);
     return true;
   }
 
@@ -476,7 +499,7 @@ export class SessionStreamHub {
     const state = this.runs.get(sessionId);
     if (state) {
       if (!state.completed) {
-        state.abortController.abort();
+        state.abortController.abort("session_stop");
       }
       if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
       this.runs.delete(sessionId);

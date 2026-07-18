@@ -65,7 +65,9 @@ export class RedisSwarmBus implements SwarmBus {
     const timingError = checkUpwardMessageTiming(fromTier, toAgent.tier, inToolRound);
     if (timingError) return { success: false, error: timingError };
 
-    const crossError = checkCrossWorkspace(fromTier, fromWorkspaceId, toAgent.workspaceId);
+    const crossError = checkCrossWorkspace(fromTier, fromWorkspaceId, toAgent.workspaceId, {
+      toTier: toAgent.tier,
+    });
     if (crossError) return { success: false, error: crossError };
 
     const depth = msg.depth ?? 1;

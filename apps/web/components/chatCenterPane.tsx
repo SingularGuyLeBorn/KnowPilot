@@ -14,13 +14,12 @@ import {
   Bot,
   Loader2,
   PanelLeft,
-  PanelRight,
   Play,
   X,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { type ChatSession, type Skill } from "@knowpilot/shared";
+import { type ChatSession, type ChatSessionConfig, type Skill } from "@knowpilot/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { SessionContextBar } from "@/components/sessionContextUsage";
 import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
@@ -48,8 +47,8 @@ export interface ChatCenterPaneProps {
   queueLength: number;
   compactPending: boolean;
   onCompact: () => void;
+  leftOpen: boolean;
   setLeftOpen: Dispatch<SetStateAction<boolean>>;
-  setRightOpen: Dispatch<SetStateAction<boolean>>;
   // 子 Agent 任务条
   isSubagentSession: boolean;
   parentSessionId: string | null;
@@ -82,7 +81,12 @@ export interface ChatCenterPaneProps {
   onSkillChange: (skill: SelectedSkill | null) => void;
   modelHint: string;
   supportsVision: boolean;
-  onOpenConfig: () => void;
+  chatConfig: ChatSessionConfig;
+  updateConfig: (patch: Partial<ChatSessionConfig>) => void;
+  resetPromptToAgent: () => void;
+  onOpenPromptEditor: () => void;
+  modelSupportsReasoning: boolean;
+  modelReasoningRequired: boolean;
 }
 
 export function ChatCenterPane({
@@ -96,8 +100,8 @@ export function ChatCenterPane({
   queueLength,
   compactPending,
   onCompact,
+  leftOpen,
   setLeftOpen,
-  setRightOpen,
   isSubagentSession,
   parentSessionId,
   parentSessionTitle,
@@ -124,13 +128,26 @@ export function ChatCenterPane({
   onSkillChange,
   modelHint,
   supportsVision,
-  onOpenConfig,
+  chatConfig,
+  updateConfig,
+  resetPromptToAgent,
+  onOpenPromptEditor,
+  modelSupportsReasoning,
+  modelReasoningRequired,
 }: ChatCenterPaneProps) {
   const { messages, messageGroups } = messageListProps;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex items-center gap-2 border-b border-[var(--kp-divider)] px-4 py-2.5">
-        <button type="button" onClick={() => setLeftOpen((v) => !v)} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}>
+        <button
+          type="button"
+          onClick={() => setLeftOpen((v) => !v)}
+          data-testid="chat-left-panel-toggle"
+          title={leftOpen ? "折叠左侧栏" : "展开左侧栏"}
+          aria-label={leftOpen ? "折叠左侧栏" : "展开左侧栏"}
+          aria-pressed={leftOpen}
+          className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}
+        >
           <PanelLeft className="h-4 w-4" />
         </button>
         <Bot className="h-5 w-5 shrink-0 text-[var(--kp-brand)]" />
@@ -160,9 +177,6 @@ export function ChatCenterPane({
           />
         )}
         <Link href="/agents" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:flex text-xs")}>Agent 管理</Link>
-        <button type="button" onClick={() => setRightOpen((v) => !v)} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}>
-          <PanelRight className="h-4 w-4" />
-        </button>
       </header>
 
       {isSubagentSession && (
@@ -351,7 +365,7 @@ export function ChatCenterPane({
         </div>
       )}
 
-      <div className="border-t border-[var(--kp-divider)] px-4 pt-3 md:px-6">
+      <div className="relative z-30 border-t border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 pt-3 md:px-6">
         <UserSendQueuePanel
           items={sortQueueItems(userQueue)}
           onChange={(items) => {
@@ -385,7 +399,12 @@ export function ChatCenterPane({
           modelHint={modelHint}
           modelId={chatConfigModel}
           supportsVision={supportsVision}
-          onOpenConfig={onOpenConfig}
+          chatConfig={chatConfig}
+          updateConfig={updateConfig}
+          resetPromptToAgent={resetPromptToAgent}
+          onOpenPromptEditor={onOpenPromptEditor}
+          modelSupportsReasoning={modelSupportsReasoning}
+          modelReasoningRequired={modelReasoningRequired}
           sessionHint={
             sessionDetail?.status === "archived"
               ? sessionDetail.rotatedToSessionId

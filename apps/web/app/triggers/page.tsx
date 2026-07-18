@@ -4,22 +4,37 @@
 
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Zap, Plus, ToggleLeft, ToggleRight } from "lucide-react";
 import type { Trigger } from "@knowpilot/shared";
-import { useTrigger, useCardDensity } from "@/lib/hooks";
+import { useTrigger, useTask, useAgent, useCardDensity } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
+import { agentLabel } from "@/lib/displayLabels";
 
 const EVENT_SOURCES = ["post.create", "post.update", "post.delete", "agent.create", "skill.create"];
 const ACTION_TYPES = ["run_agent", "run_task"] as const;
 
 export default function TriggersPage() {
   const { useList, useCreate, useUpdate, useDelete } = useTrigger();
+  const { useList: useTaskList } = useTask();
+  const { useList: useAgentList } = useAgent();
   const { density } = useCardDensity();
   const [page, setPage] = useState(1);
   const { data, isLoading } = useList({ page, pageSize: 12 });
+  const tasksQuery = useTaskList({ page: 1, pageSize: 100 });
+  const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
+  const actionLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of tasksQuery.data?.items ?? []) {
+      m.set(t.id, t.name);
+    }
+    for (const a of agentsQuery.data?.items ?? []) {
+      m.set(a.id, agentLabel(a));
+    }
+    return m;
+  }, [tasksQuery.data?.items, agentsQuery.data?.items]);
   const createMutation = useCreate();
   const updateMutation = useUpdate();
   const deleteMutation = useDelete();
@@ -115,8 +130,11 @@ export default function TriggersPage() {
                     <code className="bg-[var(--kp-bg-mute)] px-1.5 py-0.5 rounded font-mono">{trigger.source}</code>
                   </div>
                   <div>
-                    <span className="text-[var(--kp-text-3)]">动作 ID </span>
-                    <code className="bg-[var(--kp-bg-mute)] px-1.5 py-0.5 rounded font-mono text-[10px]">{trigger.actionId}</code>
+                    <span className="text-[var(--kp-text-3)]">动作目标 </span>
+                    <span className="rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px]">
+                      {actionLabelById.get(trigger.actionId) ||
+                        (trigger.actionType === "run_task" ? "未知任务" : "未知 Agent")}
+                    </span>
                   </div>
                 </div>
 

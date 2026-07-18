@@ -2,10 +2,7 @@
 
 /**
  * ChatSidebar —— 左栏（W13b 从 chat.tsx 拆出）。
- * 包含左栏头部（选中 Agent + 对话历史/异步任务标签）、会话列表（WorkspaceTree 或扁平列表）、
- * 批量管理、会话搜索、异步任务面板，以及随左栏外提的删除/批量删除确认弹窗。
- * 纯结构拆分：INV-1~8 流式状态机、面板 UI 的 URL/localStorage 持久化、toast、
- * 悬停预览监控窗（ChatHoverMonitor）、子 Agent 弹窗仍留在 chat.tsx，经 props 受控注入。
+ * 顶层 Tab：对话 | 运行。运行 Tab 合并投递队列（RuntimeStatusPanel）与 Task 追溯（AsyncTaskPanel）。
  *
  * W16b：React.memo 渲染屏障——左栏 props 不含任何流式派生值，流式期 ChatView
  * 每 token 重渲染时左栏整树跳过。前提是 ChatView 侧 props 全部引用稳定
@@ -13,15 +10,16 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ListChecks, Plus, Search } from "lucide-react";
+import { Bot, ListChecks, PanelLeftClose, Plus, Search } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAgent } from "@/lib/hooks";
 import { cn, groupBySessionDate } from "@/lib/utils";
 import { type Agent } from "@knowpilot/shared";
-import { type ChatQueueItem } from "@/lib/chatQueueTypes";
+import { type ChatQueueItem, type SyncTaskItem } from "@/lib/chatQueueTypes";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared";
 import { AsyncTaskPanel } from "@/components/asyncTaskPanel";
+import { RuntimeStatusPanel } from "@/components/chatQueue";
 import { WorkspaceTree } from "@/components/workspaceTree";
 import { WorkspaceSelect } from "@/components/workspaceSelect";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
@@ -31,17 +29,16 @@ import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
+import type { ChatLeftTab } from "@/lib/useChatUiPrefs";
 
 export interface ChatSidebarProps {
-  // 布局与左栏标签受控态：URL/localStorage 持久化 effect 与 selectSession/startNewChat
-  // 的复位逻辑在 ChatView，state 不搬，受控注入
   leftOpen: boolean;
-  leftTab: "history" | "async";
-  setLeftTab: (tab: "history" | "async") => void;
+  setLeftOpen: (open: boolean | ((v: boolean) => boolean)) => void;
+  leftTab: ChatLeftTab;
+  setLeftTab: (tab: ChatLeftTab) => void;
   historySubTab: "main" | "sub";
   setHistorySubTab: (tab: "main" | "sub") => void;
-  syncChatUiToUrl: (patch: { view?: "main" | "sub"; panel?: "history" | "async" }) => void;
-  // 选中态与跨区数据
+  syncChatUiToUrl: (patch: { view?: "main" | "sub"; panel?: "history" | "runtime" }) => void;
   effectiveSessionId: string | null;
   effectiveAgentId: string;
   mainSessionId: string | null;
@@ -50,35 +47,37 @@ export interface ChatSidebarProps {
   parentSessionId: string | null;
   selectedWorkspaceId: string | null;
   selectedAgent: Agent | undefined;
-  chatConfigModel: string;
   asyncResultQueue: ChatQueueItem[];
-  // 选择回调：改 ChatView state + URL，留在 ChatView
   selectSession: (id: string) => void;
+  openInOtherPane?: (id: string) => void;
+  openTabIds?: string[];
+  closeTab?: (id: string) => void;
   selectWorkspace: (workspaceId: string) => void;
   startNewChat: () => void;
-  // 重命名受控态：selectSession/startNewChat 会复位 editingSessionId，state 留 ChatView
   editingSessionId: string | null;
   setEditingSessionId: (id: string | null) => void;
   renameDraft: string;
   setRenameDraft: (draft: string) => void;
-  // 悬停预览回调：ChatHoverMonitor 与其 unmount 清理 effect 留 ChatView，回调注入
   handleSessionHover: (id: string) => void;
   handleSessionHoverEnd: (id: string) => void;
-  // 子 Agent 弹窗开关：弹窗 JSX 留 ChatView（保持 fixed 层叠顺序），仅注入开关
   setShowCreateSubagent: (open: boolean) => void;
-  // 视图错误 / toast / 会话详情刷新：中栏错误条与 toast 归 ChatView
   setError: (msg: string | null) => void;
   setToast: (msg: string | null) => void;
   refetchSession: () => void;
-  // 异步任务 mutate：mutation 单例（onSuccess 绑定 ChatView 的 asyncQueueQuery.refetch）留在
-  // ChatView，仅注入稳定的 .mutate 函数引用——React Query useMutation 返回对象每渲染新建，
-  // 整个注入会击穿 memo
   cancelAsyncJobMutate: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>["mutate"];
   retryAsyncJobMutate: ReturnType<typeof trpc.agent.retryAsyncJob.useMutation>["mutate"];
+  pinAsyncJobMutate: ReturnType<typeof trpc.agent.toggleAsyncJobPinned.useMutation>["mutate"];
+  runtimeGroupTab: "async" | "sync";
+  setRuntimeGroupTab: (tab: "async" | "sync") => void;
+  syncTaskItems: SyncTaskItem[];
+  runtimeActiveItems: ChatQueueItem[];
+  runtimeToConsumeItems: ChatQueueItem[];
+  runtimeConsumedItems: ChatQueueItem[];
 }
 
 export const ChatSidebar = memo(function ChatSidebar({
   leftOpen,
+  setLeftOpen,
   leftTab,
   setLeftTab,
   historySubTab,
@@ -92,9 +91,11 @@ export const ChatSidebar = memo(function ChatSidebar({
   parentSessionId,
   selectedWorkspaceId,
   selectedAgent,
-  chatConfigModel,
   asyncResultQueue,
   selectSession,
+  openInOtherPane,
+  openTabIds = [],
+  closeTab,
   selectWorkspace,
   startNewChat,
   editingSessionId,
@@ -109,6 +110,13 @@ export const ChatSidebar = memo(function ChatSidebar({
   refetchSession,
   cancelAsyncJobMutate,
   retryAsyncJobMutate,
+  pinAsyncJobMutate,
+  runtimeGroupTab,
+  setRuntimeGroupTab,
+  syncTaskItems,
+  runtimeActiveItems,
+  runtimeToConsumeItems,
+  runtimeConsumedItems,
 }: ChatSidebarProps) {
   // 与 ChatView 相同 key 的查询订阅：React Query 按 key 共享缓存并去重请求，无额外网络开销
   const { useList: useAgentList } = useAgent();
@@ -159,7 +167,9 @@ export const ChatSidebar = memo(function ChatSidebar({
     const q = sessionSearch.trim().toLowerCase();
     if (!q) return agentFiltered;
     return agentFiltered.filter(
-      (s) => s.title.toLowerCase().includes(q) || s.model.toLowerCase().includes(q),
+      (s) =>
+        (s.autoName || s.title || "").toLowerCase().includes(q) ||
+        s.model.toLowerCase().includes(q),
     );
   }, [sessionsQuery.data?.items, sessionSearch, mainAgentId]);
 
@@ -212,6 +222,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       // 三层 store 统一清理：StreamLifecycle + Compose 也会残留已删 session 的 state
       streamLifecycleActions.deleteSession(id);
       sessionComposeActions.deleteComposeSession(id);
+      closeTab?.(id);
       void utils.session.list.invalidate();
       if (effectiveSessionId === id) startNewChat();
       setDeleteSessionTarget(null);
@@ -219,7 +230,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       setError(err instanceof Error ? err.message : "删除失败");
       setDeleteSessionTarget(null);
     }
-  }, [deleteSession, effectiveSessionId, startNewChat, utils.session.list, setError]);
+  }, [deleteSession, effectiveSessionId, startNewChat, closeTab, utils.session.list, setError]);
 
   // 会话列表项交互回调：保持引用稳定，避免每次输入都触发所有 SessionListItem 重渲染
   const handleSessionSelect = useCallback((id: string) => {
@@ -257,31 +268,55 @@ export const ChatSidebar = memo(function ChatSidebar({
   const handleRequestDelete = useCallback((id: string) => {
     const s = sessionsQuery.data?.items.find((x) => x.id === id);
     if (s) {
-      setDeleteSessionTarget({ id: s.id, title: s.title });
+      setDeleteSessionTarget({ id: s.id, title: s.autoName || s.title || "新对话" });
       return;
     }
     // WorkspaceTree 子 Agent 会话可能不在主 sessionsQuery 里
     setDeleteSessionTarget({ id, title: "该会话" });
   }, [sessionsQuery.data?.items]);
 
+  const runtimeBadgeCount = Math.max(runtimeActiveItems.length, asyncTaskActiveCount);
+
   // 左栏内容：避免 JSX 内嵌多层三元表达式导致解析/维护困难
   const leftPanelBody = (() => {
-    if (leftTab === "async") {
+    if (leftTab === "runtime") {
       return (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {asyncProgressSteps.length > 0 && (
-            <div className="border-b border-[var(--kp-divider)] px-3 pt-3" data-testid="async-progress-block">
-              <ThinkingTimeline steps={asyncProgressSteps} isLive />
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="left-runtime-panel">
+          <section className="border-b border-[var(--kp-divider)]" data-testid="left-runtime-delivery">
+            <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+              投递队列
             </div>
-          )}
-          <AsyncTaskPanel
-            parentSessionId={mainSessionId ?? undefined}
-            onCancelJob={(jobId) => cancelAsyncJobMutate({ jobId })}
-            onRetryJob={(jobId) => {
-              sessionComposeActions.markDeliveryConsumed(effectiveSessionId ?? NEW_STREAM_KEY, jobId);
-              retryAsyncJobMutate({ jobId });
-            }}
-          />
+            <div className="min-h-[200px]">
+              <RuntimeStatusPanel
+                groupTab={runtimeGroupTab}
+                onGroupTabChange={setRuntimeGroupTab}
+                activeItems={runtimeActiveItems}
+                toConsumeItems={runtimeToConsumeItems}
+                consumedItems={runtimeConsumedItems}
+                syncTaskItems={syncTaskItems}
+                onCancel={(jobId) => cancelAsyncJobMutate({ jobId })}
+                onTogglePin={(jobId, pinned) => pinAsyncJobMutate({ jobId, pinned })}
+              />
+            </div>
+          </section>
+          <section data-testid="left-runtime-tasks">
+            <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+              Task 追溯
+            </div>
+            {asyncProgressSteps.length > 0 && (
+              <div className="border-b border-[var(--kp-divider)] px-3 pb-2" data-testid="async-progress-block">
+                <ThinkingTimeline steps={asyncProgressSteps} isLive />
+              </div>
+            )}
+            <AsyncTaskPanel
+              parentSessionId={mainSessionId ?? undefined}
+              onCancelJob={(jobId) => cancelAsyncJobMutate({ jobId })}
+              onRetryJob={(jobId) => {
+                sessionComposeActions.markDeliveryConsumed(effectiveSessionId ?? NEW_STREAM_KEY, jobId);
+                retryAsyncJobMutate({ jobId });
+              }}
+            />
+          </section>
         </div>
       );
     }
@@ -480,9 +515,11 @@ export const ChatSidebar = memo(function ChatSidebar({
                         <SessionListItem
                           session={s}
                           active={effectiveSessionId === s.id}
+                          isOpenTab={openTabIds.includes(s.id)}
                           editing={editingSessionId === s.id}
                           renameDraft={renameDraft}
                           onSelect={handleSessionSelect}
+                          onOpenInOtherPane={openInOtherPane}
                           onHover={handleSessionHover}
                           onHoverEnd={handleSessionHoverEnd}
                           onStartRename={handleStartRename}
@@ -515,10 +552,19 @@ export const ChatSidebar = memo(function ChatSidebar({
               <div className="truncate text-xs font-semibold text-[var(--kp-text-1)]">
                 {selectedAgent?.name ?? "assistant"}
               </div>
-              <div className="truncate text-[10px] text-[var(--kp-text-3)]">{chatConfigModel}</div>
             </div>
+            <button
+              type="button"
+              onClick={() => setLeftOpen(false)}
+              data-testid="chat-left-panel-collapse"
+              title="折叠左侧栏"
+              aria-label="折叠左侧栏"
+              className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7 shrink-0 text-[var(--kp-text-3)]")}
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
           </div>
-          {/* 左栏顶层标签页：对话历史 + 异步任务 */}
+          {/* 左栏顶层标签：对话 | 运行 */}
           <div className="mt-2 flex gap-1 rounded-lg bg-[var(--kp-bg-mute)] p-0.5">
             <button
               type="button"
@@ -534,27 +580,27 @@ export const ChatSidebar = memo(function ChatSidebar({
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
               )}
             >
-              对话历史
+              对话
             </button>
             <button
               type="button"
               onClick={() => {
-                setLeftTab("async");
-                syncChatUiToUrl({ panel: "async" });
+                setLeftTab("runtime");
+                syncChatUiToUrl({ panel: "runtime" });
               }}
-              data-testid="left-tab-async"
+              data-testid="left-tab-runtime"
               className={cn(
                 "flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-                leftTab === "async"
+                leftTab === "runtime"
                   ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
               )}
             >
-              异步任务
-              {asyncTaskActiveCount > 0 && (
+              运行
+              {runtimeBadgeCount > 0 && (
                 <span className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1 py-0 text-[9px] font-semibold text-[var(--kp-brand-deep)]">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--kp-brand)]" />
-                  {asyncTaskActiveCount}
+                  {runtimeBadgeCount}
                 </span>
               )}
             </button>

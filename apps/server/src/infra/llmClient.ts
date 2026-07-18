@@ -6,6 +6,7 @@ import type { AppConfig, LlmProviderConfig } from "./config.js";
 import type { ReasoningEffort } from "@knowpilot/shared";
 import { LLM_MODEL_IDS, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
 import { mockChatCompletion, mockChatCompletionStream } from "./mockLlmClient.js";
+import { makeAbortError } from "./abortReason.js";
 
 /** LLM HTTP 错误：携带状态码与响应体，供弹性层（resilientLlmClient）分类 */
 export class LlmHttpError extends Error {
@@ -381,9 +382,7 @@ export async function* chatCompletionStream(options: {
   let responseModel = model;
   while (true) {
     if (options.signal?.aborted) {
-      const err = new Error("流式输出已被用户中断");
-      err.name = "AbortError";
-      throw err;
+      throw makeAbortError(options.signal);
     }
     const { done, value } = await reader.read();
     if (done) break;

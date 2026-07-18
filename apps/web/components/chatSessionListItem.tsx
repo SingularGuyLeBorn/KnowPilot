@@ -6,16 +6,18 @@
  */
 
 import { memo } from "react";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Columns2, Pencil, Trash2, X } from "lucide-react";
 import type { ChatSession } from "@knowpilot/shared";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
 export const SessionListItem = memo(function SessionListItem({
   session,
   active,
+  isOpenTab,
   editing,
   renameDraft,
   onSelect,
+  onOpenInOtherPane,
   onHover,
   onHoverEnd,
   onStartRename,
@@ -26,9 +28,12 @@ export const SessionListItem = memo(function SessionListItem({
 }: {
   session: ChatSession;
   active: boolean;
+  /** 已在标签栏打开（非焦点也标记） */
+  isOpenTab?: boolean;
   editing: boolean;
   renameDraft: string;
   onSelect: (id: string) => void;
+  onOpenInOtherPane?: (id: string) => void;
   onHover?: (id: string) => void;
   onHoverEnd?: (id: string) => void;
   onStartRename: (id: string) => void;
@@ -91,7 +96,14 @@ export const SessionListItem = memo(function SessionListItem({
         )}
       >
         <div className="truncate font-medium">
-          {session.autoName || session.title}
+          {isOpenTab && !active && (
+            <span
+              className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[var(--kp-brand)]/60"
+              title="已在标签页打开"
+              aria-hidden
+            />
+          )}
+          {session.autoName || session.title || "新对话"}
           {session.kind === "heartbeat" && (
             <span className="ml-1.5 rounded bg-orange-100 px-1 py-0.5 text-[10px] font-normal text-orange-700">
               心跳
@@ -108,6 +120,19 @@ export const SessionListItem = memo(function SessionListItem({
         </div>
       </button>
       <div className="flex shrink-0 items-center gap-0.5 border-l border-[var(--kp-divider-light)] px-1 opacity-70 transition-opacity group-hover/sess:opacity-100">
+        {onOpenInOtherPane && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onOpenInOtherPane(session.id)}
+            className="rounded-md p-1.5 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+            aria-label="在另一侧打开"
+            title="在另一侧打开"
+            data-testid="session-open-other-pane"
+          >
+            <Columns2 className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}

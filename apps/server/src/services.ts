@@ -93,7 +93,7 @@ import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
-import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
+import { resolveSafePath } from "./infra/safePath.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
 
@@ -946,10 +946,18 @@ ${entity.systemPrompt}
 
   protected getFileSlug(entity: AgentEntity): string { return `${entity.name}-${entity.id.slice(-6)}`; }
 
-  // P11：FTS 增量
+  // P11：FTS 增量；每个 Agent 创建后立刻有一条空主会话（真实 sessionId，避免 Chat「无会话」空态）
   protected override async afterCreate(entity: AgentEntity, input: CreateAgentInput): Promise<void> {
     await super.afterCreate(entity, input);
     await this.syncFts("agent", entity.id, entity.name, `${entity.description ?? ""}\n${entity.systemPrompt ?? ""}`);
+    const { ensureMainSession } = await import("./infra/ensureMainSession.js");
+    await ensureMainSession(this.prisma, {
+      agentId: entity.id,
+      title: `${entity.name} 主会话`,
+      model: entity.model,
+    }).catch((err) => {
+      console.warn(`[AgentService] ensureMainSession 失败 agentId=${entity.id}:`, err);
+    });
     // A14：通知 heartbeatEngine / agentSchemaCache 等 agent 配置变更
     this.eventBus.emit("agent.created", entity);
   }
@@ -982,6 +990,29 @@ ${entity.systemPrompt}
 
   protected override async validateUpdate(input: UpdateAgentInput, existing: any): Promise<void> {
     if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
+    // Q1：超级 Agent 禁止降级 / 改 tier；禁止把其他 Agent 改成第二个 super
+    if (existing.tier === "super" && input.tier !== undefined && input.tier !== "super") {
+      throw new ServiceValidationError(
+        failure({
+          code: "SUPER_TIER_IMMUTABLE",
+          message: "超级 Agent 的 tier 不可修改（禁止自降级）。",
+          retryable: false,
+          operation: "update",
+          entity: this.entityName,
+        }),
+      );
+    }
+    if (input.tier === "super" && existing.tier !== "super") {
+      throw new ServiceValidationError(
+        failure({
+          code: "SUPER_AGENT_UNIQUE",
+          message: "不能将其他 Agent 提升为超级 Agent（全局唯一，由系统初始化创建）。",
+          retryable: false,
+          operation: "update",
+          entity: this.entityName,
+        }),
+      );
+    }
   }
 
   /**
@@ -1297,6 +1328,7 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
     if (extra.scope) data.scope = extra.scope;
     if (extra.agentId) data.agentId = extra.agentId;
     if (extra.contentHash) data.contentHash = extra.contentHash;
+    data.status = extra.status ?? "active";
     return data;
   }
 
@@ -1355,6 +1387,8 @@ export interface SessionEntity {
   contextSummary?: string | null;
   contextCompactedAt?: Date | string | null;
   rotatedToSessionId?: string | null;
+  /** 会话级待办清单（todo_write / todo_read） */
+  todoState?: unknown | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1808,6 +1842,20 @@ export class SessionQueueItemService extends BaseService<
   protected override get defaultOrderBy(): string { return "order"; }
   protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
 
+  /** 推送 session_queue_update：创建/消费/删除/重排后让打开中的会话实时合并队列（不依赖刷新） */
+  private async pushQueueUpdate(sessionId: string, kind: string): Promise<void> {
+    try {
+      const { getStreamHub } = await import("./infra/sessionStreamHub.js");
+      getStreamHub()?.pushExternalEvent(sessionId, {
+        type: "session_queue_update",
+        sessionId,
+        kind,
+      });
+    } catch {
+      /* hub 未初始化时忽略（单测 / 启动早期） */
+    }
+  }
+
   /** 创建时自动赋 order = 当前最大 order + 10；superior 幂等（同 agentMessageId 不重复） */
   override async create(input: CreateSessionQueueItemInput): Promise<OperationResult<SessionQueueItemEntity>> {
     const start = Date.now();
@@ -1817,8 +1865,11 @@ export class SessionQueueItemService extends BaseService<
           where: { sessionId: input.sessionId, agentMessageId: input.agentMessageId },
         });
         if (existing) {
+          const entity = this.formatEntity(existing);
+          // 幂等命中仍广播：晚订阅 / 首包空水合的前端可借此合并
+          await this.pushQueueUpdate(entity.sessionId, entity.kind);
           return success({
-            data: this.formatEntity(existing),
+            data: entity,
             operation: "create",
             entity: this.entityName,
             durationMs: Date.now() - start,
@@ -1847,6 +1898,7 @@ export class SessionQueueItemService extends BaseService<
       });
       const entity = this.formatEntity(raw);
       await this.afterCreate(entity, input);
+      await this.pushQueueUpdate(entity.sessionId, entity.kind);
       return success({
         data: entity,
         operation: "create",
@@ -1932,6 +1984,9 @@ export class SessionQueueItemService extends BaseService<
       }
       return true;
     });
+    if (claimed) {
+      await this.pushQueueUpdate(item.sessionId, item.kind);
+    }
     return { success: true, claimed };
   }
 
@@ -1945,7 +2000,17 @@ export class SessionQueueItemService extends BaseService<
         });
       }
     });
+    await this.pushQueueUpdate(sessionId, "reorder");
     return { success: true };
+  }
+
+  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
+    const result = await super.delete(id);
+    if (result.success && item) {
+      await this.pushQueueUpdate(item.sessionId, item.kind);
+    }
+    return result;
   }
 }
 
@@ -2032,12 +2097,11 @@ export class GitService extends BaseService<CreateGitRepoInput, UpdateGitRepoInp
   }
 
   private async resolveRepoPath(input: GitRepoPathInput): Promise<string> {
-    // 安全：所有 Git 操作的 cwd 都必须经 resolveSafePath / assertPathWithinProjectRoot 校验
+    // 安全：所有 Git 操作的 cwd 都必须经 resolveSafePath 校验并解析为绝对路径
     if (input.repoPath) return resolveSafePath(this.config, input.repoPath);
     if (input.repoId) {
       const repo = await this.getById(input.repoId);
-      assertPathWithinProjectRoot(this.config, repo.path);
-      return repo.path;
+      return resolveSafePath(this.config, repo.path);
     }
     return this.config.projectRoot;
   }
@@ -2153,8 +2217,18 @@ export class WorkspaceService extends BaseService<CreateWorkspaceInput, UpdateWo
     return where;
   }
   protected buildCreateData(input: CreateWorkspaceInput) {
-    const { autoCreateManager: _auto, ...data } = input;
-    return { ...data, status: "active" };
+    const {
+      autoCreateManager: _auto,
+      withManager: _with,
+      managerName: _mgrName,
+      initialTask: _task,
+      ...data
+    } = input;
+    return {
+      ...data,
+      status: "active",
+      asyncSlotQuota: typeof input.asyncSlotQuota === "number" ? input.asyncSlotQuota : 2,
+    };
   }
   protected buildUpdateData(input: UpdateWorkspaceInput) {
     const { id: _id, ...data } = input;

@@ -71,7 +71,11 @@ export function buildTierIdentityHint(tier?: string | null, name?: string | null
     const who = name ? `「${name}」` : "";
     return `\n\n## 你的身份（硬约束）
 你是子 Agent${who}，**不是**超级 Agent，也**不是**管理 Agent。
-- 只执行上级下发的当前任务；完成后必须调用 agent_report_back 向上级汇报。
+- 只执行上级下发的当前任务；**完成后必须调用 agent_report_back** 向上级交付正式结果（进父会话异步结果队列）。
+- **agent_report_back vs agent_notify_parent（勿混用）**：
+  - \`agent_report_back\` = 任务最终结果（完成/失败），正式交付，父 Agent 据此继续。
+  - \`agent_notify_parent\` = 过程通知（进度、卡点、催问），进父会话待发消息队列，**不是**任务结果。
+  - 禁止用 notify_parent 代替 report_back 交最终结果；过程中可先 notify，结束时仍要 report_back。
 - 异步任务（如 sleep async）到期后续跑时，仍应继续完成任务并 agent_report_back，不要把续跑当成「用户闲聊」。
 - 用户在本会话直接发消息时，也可酌情 report_back（补充汇报），但请在内容中说明这是补充。
 - 禁止创建/派生子 Agent 或管理其他 Agent（不得使用 spawn_subagent、agent_create、agent_create_sub 等）。

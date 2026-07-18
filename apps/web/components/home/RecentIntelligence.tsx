@@ -79,7 +79,7 @@ export function RecentIntelligence({ posts }: RecentIntelligenceProps) {
                 }}
               >
                 <Link
-                  href={`/posts/${post.slug}`}
+                  href={`/posts/${encodeURIComponent(post.slug)}`}
                   className="group relative flex h-full flex-col overflow-hidden rounded-3xl kp-card p-6 transition-all duration-500 hover:-translate-y-1 hover:shadow-xl hover:shadow-[rgba(184,160,144,0.16)]"
                 >
                   <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[var(--kp-brand)] via-[var(--kp-brand-light)] to-transparent opacity-60 transition-opacity group-hover:opacity-100" />

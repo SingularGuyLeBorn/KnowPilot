@@ -120,6 +120,42 @@ async function memorySearchTool(args: Record<string, unknown>, ctx: NativeToolCo
   };
 }
 
+async function memoryUpdateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  const content = String(args.content || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  if (!content) throw new Error("content 不能为空");
+  const rawType = args.type !== undefined ? String(args.type) : undefined;
+  if (rawType !== undefined && !isMemoryUserCreatable(rawType)) {
+    throw new Error(
+      `type 无效：${rawType}。允许：preference、semantic、episodic、note、procedural。`,
+    );
+  }
+  const strength = args.strength !== undefined ? Number(args.strength) : undefined;
+  const repo = createMemoryRepository(ctx.services);
+  const { previousId, memory } = await repo.supersedeUpdate({
+    id,
+    content,
+    type: rawType,
+    strength: strength !== undefined && Number.isFinite(strength) ? strength : undefined,
+    keywords: Array.isArray(args.keywords) ? args.keywords.map(String) : undefined,
+    actor: {
+      agentId: ctx.agentSnapshot?.id,
+      workspaceId: ctx.agentSnapshot?.workspaceId,
+      tier: ctx.agentSnapshot?.tier,
+    },
+  });
+  return {
+    id: memory.id,
+    previousId,
+    type: memory.type,
+    strength: memory.strength,
+    keywords: memory.keywords,
+    scope: memory.scope,
+    superseded: previousId !== memory.id,
+  };
+}
+
 async function memoryDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const id = String(args.id || "").trim();
   if (!id) throw new Error("id 不能为空");
@@ -181,7 +217,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     concurrencyClass: "D",
     destructive: true,
     description:
-      "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。scope：agent=仅自己可见（默认）；workspace=同 Workspace 的 Agent 共享；global=全局共享（仅超级 Agent）。不要记可从代码/git/文档直接查到的内容。",
+      "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。scope：agent=仅自己可见（默认）；workspace=同 Workspace 的 Agent 共享；global=全局共享（仅超级 Agent）。不要记可从代码/git/文档直接查到的内容。若发现与已有记忆矛盾或事实过时，请用 memory_update（勿重复 create）。",
     parameters: zodParams(
       z.object({
         content: z.string().describe("记忆内容"),
@@ -199,9 +235,28 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "memory_update",
+    concurrencyClass: "D",
+    destructive: true,
+    description:
+      "更新长期记忆（软版本链）：新建现行版本，旧版标为 superseded 不再注入上下文。用于纠正矛盾或过时事实；可传已 superseded 的旧 id（自动跟到链尾）。",
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("要更新的记忆 id（search/create 返回的 id）"),
+        content: z.string().describe("新的记忆内容"),
+        type: z
+          .enum(["preference", "semantic", "episodic", "note", "procedural"])
+          .describe("记忆类型（不填则继承）")
+          .optional(),
+        strength: z.number().describe("强度 0-1（不填则继承）").optional(),
+        keywords: z.array(z.string()).describe("检索关键词（不填则继承）").optional(),
+      }),
+    ),
+  },
+  {
     name: "memory_search",
     reentrant: true, // 只读搜索
-    description: "搜索本地记忆库。",
+    description: "搜索本地记忆库（仅返回现行 active 版本）。",
     parameters: zodParams(
       z.object({
         keyword: z.string().describe("关键词").optional(),
@@ -228,6 +283,7 @@ const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
   post_update: postUpdateTool,
   post_delete: postDeleteTool,
   memory_create: memoryCreateTool,
+  memory_update: memoryUpdateTool,
   memory_search: memorySearchTool,
   memory_delete: memoryDeleteTool,
 };

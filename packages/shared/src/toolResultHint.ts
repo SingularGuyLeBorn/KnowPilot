@@ -3,6 +3,10 @@ export function formatToolTimingHint(result: unknown): string | null {
   if (!result || typeof result !== "object" || Array.isArray(result)) return null;
   const r = result as Record<string, unknown>;
   if (r.error) return null;
+  // todo_write / todo_read 等自带 summary 时优先展示
+  if (typeof r.summary === "string" && r.summary.trim()) {
+    return r.summary.trim().slice(0, 80);
+  }
   // 异步任务状态查询 / 等待 / 取消 结果友好化
   const asyncHint = formatAsyncJobHint(r);
   if (asyncHint) return asyncHint;

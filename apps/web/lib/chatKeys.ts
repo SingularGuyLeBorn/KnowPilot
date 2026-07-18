@@ -10,3 +10,5 @@
 export const NEW_STREAM_KEY = "__new__";
 export const LIFECYCLE_STORAGE_KEY = "kp:chat-lifecycle-states";
 export const COMPOSE_STORAGE_KEY = "kp:chat-compose-states";
+/** 标签栏标题缓存：session 不在 list 页或后端短暂不可用时仍显示可读名 */
+export const TAB_TITLE_CACHE_KEY = "kp:chat-tab-titles-v1";

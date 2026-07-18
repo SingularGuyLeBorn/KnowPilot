@@ -198,6 +198,48 @@ const scenarios: MockLlmScenario[] = [
     },
   },
   {
+    // 父 Agent 同步等待派生子 Agent，子 Agent 会调用 agent_notify_parent 向父会话发通知
+    name: "spawn_subagent_notify",
+    match: (opts, forced) =>
+      forced === "spawn_subagent_notify" ||
+      (/派子 Agent 通知|spawn notify/i.test(lastUserText(opts)) &&
+        hasTool(opts, "spawn_subagent") &&
+        !hasAnyToolResult(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("spawn_subagent", { task: "通知父会话任务进度", waitForResult: true, label: "进度通知" })],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("spawn_subagent", { task: "通知父会话任务进度", waitForResult: true, label: "进度通知" })],
+      });
+    },
+  },
+  {
+    // 子 Agent 调用 agent_notify_parent 向父会话发送通知
+    name: "agent_notify_parent",
+    match: (opts, forced) =>
+      forced === "agent_notify_parent" ||
+      (/通知父会话|notify parent/i.test(lastUserText(opts)) &&
+        hasTool(opts, "agent_notify_parent") &&
+        !hasAnyToolResult(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("agent_notify_parent", { content: "子 Agent 进度通知：任务进行中" })],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("agent_notify_parent", { content: "子 Agent 进度通知：任务进行中" })],
+      });
+    },
+  },
+  {
     // 父 Agent 阻塞派生子 Agent（waitForResult=true），用于验证刷新/切 tab 后流式恢复
     name: "spawn_subagent_wait",
     match: (opts, forced) =>
@@ -376,6 +418,48 @@ const scenarios: MockLlmScenario[] = [
     },
   },
   {
+    // 父 Agent 派生子 Agent 发通知后，向用户确认已派生
+    name: "spawn_subagent_notify_final",
+    match: (opts, forced) =>
+      forced === "spawn_subagent_notify_final" ||
+      (hasAnyToolResult(opts) &&
+        /派子 Agent 通知|spawn notify/i.test(lastUserText(opts)) &&
+        hasTool(opts, "spawn_subagent")),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "已派生子 Agent，它会向父会话发送进度通知。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      const content = "已派生子 Agent，它会向父会话发送进度通知。";
+      for (const token of content.split("")) {
+        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+      }
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 子 Agent 调用 agent_notify_parent 后继续生成最终回复
+    name: "agent_notify_parent_final",
+    match: (opts, forced) =>
+      forced === "agent_notify_parent_final" ||
+      (hasAnyToolResult(opts) &&
+        /通知父会话|notify parent/i.test(lastUserText(opts)) &&
+        !hasTool(opts, "spawn_subagent")),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "已通知父会话，继续执行任务。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      const content = "已通知父会话，继续执行任务。";
+      for (const token of content.split("")) {
+        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+      }
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
     // 子 Agent 完成慢速任务后返回结果
     name: "subagent_slow_final",
     match: (opts, forced) =>
@@ -388,6 +472,25 @@ const scenarios: MockLlmScenario[] = [
     }),
     stream: async function* (opts) {
       const content = "子 Agent 慢速总结已完成。";
+      for (const token of content.split("")) {
+        yield { type: "token", delta: token, model: opts.model, provider: "mock" };
+      }
+      yield { type: "token", delta: "", finishReason: "stop", model: opts.model, provider: "mock", tokenUsage: { prompt: 10, completion: 12, total: 22 } };
+    },
+  },
+  {
+    // 父会话收到子 Agent 通过 agent_notify_parent 发来的通知后生成回复
+    name: "agent_notify_parent_received",
+    match: (opts, forced) =>
+      forced === "agent_notify_parent_received" ||
+      /子 Agent 进度通知|notify parent/i.test(lastUserText(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "收到子 Agent 通知，继续等待完整结果。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      const content = "收到子 Agent 通知，继续等待完整结果。";
       for (const token of content.split("")) {
         yield { type: "token", delta: token, model: opts.model, provider: "mock" };
       }

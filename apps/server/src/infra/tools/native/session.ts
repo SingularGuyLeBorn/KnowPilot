@@ -802,6 +802,119 @@ async function invokeApiTool(args: Record<string, unknown>, ctx: NativeToolConte
   return ctx.invokeTrpc(String(args.tool), args.args ?? {});
 }
 
+export type SessionTodoStatus = "pending" | "in_progress" | "completed" | "cancelled";
+
+export interface SessionTodoItem {
+  id: string;
+  content: string;
+  status: SessionTodoStatus;
+}
+
+export interface SessionTodoState {
+  todos: SessionTodoItem[];
+  updatedAt: string;
+}
+
+const TODO_STATUSES = new Set<SessionTodoStatus>(["pending", "in_progress", "completed", "cancelled"]);
+
+function parseTodoState(raw: unknown): SessionTodoState {
+  if (!raw || typeof raw !== "object") return { todos: [], updatedAt: new Date(0).toISOString() };
+  const obj = raw as { todos?: unknown; updatedAt?: unknown };
+  const todos = Array.isArray(obj.todos) ? obj.todos : [];
+  return {
+    todos: todos
+      .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+      .map((t) => ({
+        id: String(t.id ?? ""),
+        content: String(t.content ?? ""),
+        status: (TODO_STATUSES.has(t.status as SessionTodoStatus)
+          ? t.status
+          : "pending") as SessionTodoStatus,
+      }))
+      .filter((t) => t.id && t.content),
+    updatedAt: typeof obj.updatedAt === "string" ? obj.updatedAt : new Date(0).toISOString(),
+  };
+}
+
+/** 整表替换会话待办；至多一条 in_progress */
+export function normalizeTodoWriteInput(rawTodos: unknown): SessionTodoItem[] {
+  if (!Array.isArray(rawTodos)) throw new Error("todos 必须是数组");
+  if (rawTodos.length > 40) throw new Error("todos 最多 40 项");
+  const todos: SessionTodoItem[] = [];
+  let inProgress = 0;
+  for (const raw of rawTodos) {
+    if (!raw || typeof raw !== "object") throw new Error("todos 每项必须是对象");
+    const t = raw as Record<string, unknown>;
+    const id = String(t.id ?? "").trim();
+    const content = String(t.content ?? "").trim();
+    const status = String(t.status ?? "pending").trim() as SessionTodoStatus;
+    if (!id) throw new Error("todos[].id 不能为空");
+    if (!content) throw new Error("todos[].content 不能为空");
+    if (!TODO_STATUSES.has(status)) {
+      throw new Error(`todos[].status 无效：${status}（允许 pending|in_progress|completed|cancelled）`);
+    }
+    if (status === "in_progress") inProgress++;
+    todos.push({ id, content, status });
+  }
+  if (inProgress > 1) throw new Error("todos 至多允许一条 status=in_progress");
+  return todos;
+}
+
+async function todoWriteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) {
+    throw new Error("todo_write 需要在 Chat 会话中调用（缺少 sessionId）");
+  }
+  if (!ctx.prisma) throw new Error("todo_write 需要 prisma 上下文");
+  const todos = normalizeTodoWriteInput(args.todos);
+  const state: SessionTodoState = { todos, updatedAt: new Date().toISOString() };
+  await ctx.prisma.chatSession.update({
+    where: { id: ctx.sessionId },
+    data: { todoState: state as any },
+  });
+  const pending = todos.filter((t) => t.status === "pending").length;
+  const inProgress = todos.filter((t) => t.status === "in_progress").length;
+  const completed = todos.filter((t) => t.status === "completed").length;
+  const cancelled = todos.filter((t) => t.status === "cancelled").length;
+  return {
+    ok: true,
+    total: todos.length,
+    pending,
+    in_progress: inProgress,
+    completed,
+    cancelled,
+    todos,
+    updatedAt: state.updatedAt,
+    summary: `待办 ${todos.length}项 · ${inProgress}进行中 · ${completed}完成` +
+      (pending ? ` · ${pending}待办` : "") +
+      (cancelled ? ` · ${cancelled}取消` : ""),
+  };
+}
+
+async function todoReadTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) {
+    throw new Error("todo_read 需要在 Chat 会话中调用（缺少 sessionId）");
+  }
+  if (!ctx.prisma) throw new Error("todo_read 需要 prisma 上下文");
+  const row = await ctx.prisma.chatSession.findUnique({
+    where: { id: ctx.sessionId },
+    select: { todoState: true },
+  });
+  const state = parseTodoState(row?.todoState);
+  const inProgress = state.todos.filter((t) => t.status === "in_progress").length;
+  const completed = state.todos.filter((t) => t.status === "completed").length;
+  return {
+    total: state.todos.length,
+    in_progress: inProgress,
+    completed,
+    todos: state.todos,
+    updatedAt: state.updatedAt,
+    summary:
+      state.todos.length === 0
+        ? "待办清单为空"
+        : `待办 ${state.todos.length}项 · ${inProgress}进行中 · ${completed}完成`,
+  };
+}
+
 const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
@@ -881,6 +994,32 @@ const SESSION_DEFS: NativeToolDefinition[] = [
       }),
     ),
   },
+  {
+    name: "todo_write",
+    description:
+      "写入/覆盖当前会话的待办清单（整表替换）。长任务开始时建立清单并随进度更新 status；至多一条 in_progress。状态持久在会话上，刷新不丢。",
+    parameters: zodParams(
+      z.object({
+        todos: z
+          .array(
+            z.object({
+              id: z.string().describe("稳定 id（同会话内勿随意改）"),
+              content: z.string().describe("待办内容"),
+              status: z
+                .enum(["pending", "in_progress", "completed", "cancelled"])
+                .describe("状态"),
+            }),
+          )
+          .describe("完整待办列表（覆盖写）"),
+      }),
+    ),
+  },
+  {
+    name: "todo_read",
+    reentrant: true,
+    description: "读取当前会话的待办清单。",
+    parameters: zodParams(z.object({})),
+  },
 ];
 
 const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
@@ -890,6 +1029,8 @@ const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
   session_compact: sessionCompactTool,
   task_run: taskRunTool,
   invoke_api: invokeApiTool,
+  todo_write: todoWriteTool,
+  todo_read: todoReadTool,
 };
 
 export function registerSessionTools(): void {

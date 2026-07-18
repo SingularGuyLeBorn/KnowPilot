@@ -53,6 +53,13 @@ export interface MemoryReadQuery {
   limit?: number;
 }
 
+/** 记忆写入方的身份（提前声明供 supersedeUpdate 使用） */
+export interface MemoryScopeActor {
+  agentId?: string | null;
+  workspaceId?: string | null;
+  tier?: string | null;
+}
+
 export interface MemoryWriteInput {
   content: string;
   type: string;
@@ -60,6 +67,17 @@ export interface MemoryWriteInput {
   strength?: number;
   keywords?: string[];
   sourceSlug?: string;
+}
+
+export interface MemorySupersedeUpdateInput {
+  /** 要更新的记忆 id（若已 superseded 则沿链跟到当前 active） */
+  id: string;
+  content: string;
+  type?: string;
+  strength?: number;
+  keywords?: string[];
+  /** 调用方身份：用于校验不得改他 Agent / 他 Workspace 的记忆 */
+  actor: MemoryScopeActor;
 }
 
 export interface MemoryForgetCriteria {
@@ -71,8 +89,16 @@ export interface MemoryForgetCriteria {
 export interface MemoryRepository {
   read(query: MemoryReadQuery): Promise<MemoryItem[]>;
   write(input: MemoryWriteInput): Promise<MemoryItem>;
+  /** Agent memory_update：软版本链（新建 active + 旧行 superseded） */
+  supersedeUpdate(input: MemorySupersedeUpdateInput): Promise<{
+    previousId: string;
+    memory: MemoryItem;
+  }>;
   forget(criteria: MemoryForgetCriteria): Promise<number>;
 }
+
+const MEMORY_STATUS_ACTIVE = "active";
+const MEMORY_STATUS_SUPERSEDED = "superseded";
 
 /** 内容全量 hash（替代 slice(0,40) 前缀去重） */
 export function hashMemoryContent(content: string): string {
@@ -132,6 +158,8 @@ export class PrismaMemoryRepository implements MemoryRepository {
     const limit = Math.max(1, Math.min(100, query.limit ?? 8));
     const scopes = query.scopes.length > 0 ? query.scopes : [MEMORY_SCOPE_GLOBAL];
     const typeFilter = query.types && query.types.length > 0 ? { type: { in: query.types } } : {};
+    // 软版本链：默认只注入 / 检索 active，不把 superseded 旧版灌进 prompt
+    const statusFilter = { status: MEMORY_STATUS_ACTIVE };
 
     let rows: any[] = [];
     // 路径 1：FTS 召回（原 promptBuilder 两条路径收进仓储）
@@ -141,7 +169,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
         const ids = hits.filter((h) => h.entity === "memory").map((h) => h.entityId);
         if (ids.length > 0) {
           rows = await this.prisma.memory.findMany({
-            where: { id: { in: ids }, scope: { in: scopes }, ...typeFilter },
+            where: { id: { in: ids }, scope: { in: scopes }, ...typeFilter, ...statusFilter },
           });
         }
       } catch {
@@ -154,6 +182,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
         where: {
           scope: { in: scopes },
           ...typeFilter,
+          ...statusFilter,
           ...(query.keyword
             ? { OR: [{ content: { contains: query.keyword } }, { keywords: { contains: query.keyword } }] }
             : {}),
@@ -175,8 +204,10 @@ export class PrismaMemoryRepository implements MemoryRepository {
     const contentHash = hashMemoryContent(input.content);
     const agentId = agentIdFromScope(scope);
 
-    // 去重：同 scope 同 contentHash → 幂等刷新强度（取高者），不重复插入
-    const existing = await this.prisma.memory.findFirst({ where: { scope, contentHash } });
+    // 去重：同 scope 同 contentHash（仅 active）→ 幂等刷新强度（取高者），不重复插入
+    const existing = await this.prisma.memory.findFirst({
+      where: { scope, contentHash, status: MEMORY_STATUS_ACTIVE },
+    });
     if (existing) {
       const strength = Math.max(existing.strength, input.strength ?? existing.strength);
       if (this.memoryService) {
@@ -196,6 +227,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
       scope,
       agentId,
       contentHash,
+      status: MEMORY_STATUS_ACTIVE,
       sourceSlug: input.sourceSlug,
     };
     if (this.memoryService) {
@@ -214,10 +246,100 @@ export class PrismaMemoryRepository implements MemoryRepository {
         scope,
         agentId,
         contentHash,
+        status: MEMORY_STATUS_ACTIVE,
         sourceSlug: input.sourceSlug ?? undefined,
-      },
+      } as any,
     });
     return toItem(raw);
+  }
+
+  /**
+   * 软版本链更新：新建 active 行，旧行标 superseded + supersededBy。
+   * 传入已 superseded 的 id 时沿链跟到当前 active 再挂新版。
+   */
+  async supersedeUpdate(input: MemorySupersedeUpdateInput): Promise<{
+    previousId: string;
+    memory: MemoryItem;
+  }> {
+    const content = input.content.trim();
+    if (!content) throw new Error("content 不能为空");
+
+    const head = await this.resolveActiveMemoryHead(input.id);
+    this.assertActorCanTouchMemory(head.scope, input.actor);
+
+    const type = input.type?.trim() || head.type;
+    const keywords = input.keywords ?? head.keywords;
+    const strength =
+      input.strength !== undefined && Number.isFinite(input.strength)
+        ? Math.min(1, Math.max(0, input.strength))
+        : head.strength;
+
+    const created = await this.write({
+      content,
+      type,
+      scope: head.scope,
+      strength,
+      keywords,
+    });
+
+    // 同内容 hash 命中 write 幂等：可能返回同一行——此时无需软链
+    if (created.id === head.id) {
+      return { previousId: head.id, memory: created };
+    }
+
+    await this.prisma.memory.update({
+      where: { id: head.id },
+      data: {
+        status: MEMORY_STATUS_SUPERSEDED,
+        supersededBy: created.id,
+      } as any,
+    });
+
+    return { previousId: head.id, memory: created };
+  }
+
+  /** 沿 supersededBy 跟到当前 active（防环，最多 32 跳） */
+  private async resolveActiveMemoryHead(id: string): Promise<MemoryItem & { status?: string }> {
+    let currentId = id;
+    for (let i = 0; i < 32; i++) {
+      const row = await this.prisma.memory.findUnique({ where: { id: currentId } });
+      if (!row) throw new Error(`记忆不存在：${currentId}`);
+      const status = (row as { status?: string }).status ?? MEMORY_STATUS_ACTIVE;
+      const supersededBy = (row as { supersededBy?: string | null }).supersededBy;
+      if (status === MEMORY_STATUS_ACTIVE || !supersededBy) {
+        if (status !== MEMORY_STATUS_ACTIVE && !supersededBy) {
+          throw new Error(`记忆 ${currentId} 已非 active 且无后继，无法 update`);
+        }
+        return { ...toItem(row), status };
+      }
+      currentId = supersededBy;
+    }
+    throw new Error(`记忆软链过深或成环：起点 ${id}`);
+  }
+
+  /** 禁止改他 Agent / 他 Workspace；super 可改 global；同 scope 可改 */
+  private assertActorCanTouchMemory(scope: string, actor: MemoryScopeActor): void {
+    if (scope === MEMORY_SCOPE_GLOBAL) {
+      if (actor.agentId && actor.tier !== "super") {
+        throw new Error("仅超级 Agent 可更新 global 层记忆");
+      }
+      return;
+    }
+    if (scope.startsWith(MEMORY_SCOPE_PREFIX.AGENT)) {
+      const aid = scope.slice(MEMORY_SCOPE_PREFIX.AGENT.length);
+      if (!actor.agentId || aid !== actor.agentId) {
+        throw new Error(`越权：不能更新其他 Agent 的记忆（${scope}）`);
+      }
+      return;
+    }
+    if (scope.startsWith(MEMORY_SCOPE_PREFIX.WORKSPACE)) {
+      const wid = scope.slice(MEMORY_SCOPE_PREFIX.WORKSPACE.length);
+      if (!actor.workspaceId || wid !== actor.workspaceId) {
+        throw new Error(`越权：不能更新其他 Workspace 的记忆（${scope}）`);
+      }
+      return;
+    }
+    throw new Error(`无效的 memory scope：${scope}`);
   }
 
   async forget(criteria: MemoryForgetCriteria): Promise<number> {
@@ -248,13 +370,6 @@ export function createMemoryRepository(services: ServiceContainer): MemoryReposi
 }
 
 /* ─── 三层 scope 写路径守卫（W5-followup） ─── */
-
-/** 记忆写入方的身份（来自调用 Agent 快照；无 Agent 时表示用户级聊天） */
-export interface MemoryScopeActor {
-  agentId?: string | null;
-  workspaceId?: string | null;
-  tier?: string | null;
-}
 
 /**
  * 解析并校验记忆写入 scope（三层隔离的写路径守卫，native memory_create 与测试共用）。

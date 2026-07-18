@@ -16,10 +16,14 @@ import type { AsyncQueueStats } from "@knowpilot/server";
 import { trpc } from "@/lib/trpc";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
+import { sessionComposeActions } from "@/lib/useSessionComposeState";
+import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
 
 export interface UseChatSseSubscriptionsParams {
   effectiveSessionId: string | null;
   mainSessionId: string | null;
+  /** 打开的标签 / 可见 pane；切 tab 不关闭仍 open 的 watch */
+  watchedSessionIds?: string[];
   backendDown: boolean;
   asyncQueueQuery: ReturnType<typeof trpc.agent.pullAsyncQueue.useQuery>;
   asyncQueueStatsQuery: ReturnType<typeof trpc.agent.asyncQueueStats.useQuery>;
@@ -31,6 +35,7 @@ export interface UseChatSseSubscriptionsParams {
 export function useChatSseSubscriptions({
   effectiveSessionId,
   mainSessionId,
+  watchedSessionIds,
   backendDown,
   asyncQueueQuery,
   asyncQueueStatsQuery,
@@ -41,10 +46,16 @@ export function useChatSseSubscriptions({
   const utils = trpc.useUtils();
 
   const extraWatchedSessionsRef = useRef<Set<string>>(new Set());
+  const watchedKey = (watchedSessionIds ?? []).filter(Boolean).sort().join(",");
   useEffect(() => {
-    if (!effectiveSessionId || backendDown) return;
-    const sessionIds = new Set<string>([effectiveSessionId]);
+    if (backendDown) return;
+    const sessionIds = new Set<string>();
+    if (effectiveSessionId) sessionIds.add(effectiveSessionId);
     if (mainSessionId) sessionIds.add(mainSessionId);
+    for (const id of watchedKey ? watchedKey.split(",") : []) {
+      if (id) sessionIds.add(id);
+    }
+    if (sessionIds.size === 0) return;
     // 捕获 ref 值到 effect 局部变量，避免 cleanup 时 ref 已变更（react-hooks/exhaustive-deps）
     const extraWatched = extraWatchedSessionsRef.current;
 
@@ -134,7 +145,10 @@ export function useChatSseSubscriptions({
             setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
           }
           void utils.session.list.invalidate();
-          void utils.session.getById.invalidate({ id: data.oldSessionId ?? effectiveSessionId });
+          const invalidateId = data.oldSessionId ?? effectiveSessionId ?? undefined;
+          if (invalidateId) {
+            void utils.session.getById.invalidate({ id: invalidateId });
+          }
         } catch {
           /* ignore */
         }
@@ -144,6 +158,17 @@ export function useChatSseSubscriptions({
       });
       register("agent_renamed", () => {
         void utils.agent.list.invalidate();
+      });
+      register("session_queue_update", () => {
+        // 按本 watch 的 sid 刷新（分屏两侧各自 merge）
+        void utils.agent.listSessionQueueItems
+          .fetch({ sessionId: sid })
+          .then((data) => {
+            if (!data) return;
+            utils.agent.listSessionQueueItems.setData({ sessionId: sid }, data);
+            sessionComposeActions.patchUserQueue(sid, (q) => mergeUserQueueFromDb(q, data));
+            streamLifecycleActions.hydrateDone(sid);
+          });
       });
     }
     return () => {
@@ -160,6 +185,7 @@ export function useChatSseSubscriptions({
   }, [
     effectiveSessionId,
     mainSessionId,
+    watchedKey,
     backendDown,
     asyncQueueQuery,
     asyncQueueStatsQuery,

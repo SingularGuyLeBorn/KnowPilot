@@ -23,8 +23,8 @@ test.describe("Chat Mock — 异步任务队列", () => {
     await waitForChatReady(page);
     await sendChatMessage(page, "请启动一个后台任务总结当前项目");
 
-    // 异步任务进度在左侧「异步任务」面板展示
-    await page.getByTestId("left-tab-async").click();
+    // 异步任务进度在左侧「运行」面板展示
+    await page.getByTestId("left-tab-runtime").click();
 
     // 父会话时间线应实时显示后台任务进度（在流式/结果消费期间任一时间点出现即可）
     try {
@@ -54,7 +54,7 @@ test.describe("Chat Mock — 异步任务队列", () => {
     expect(pageText.some((t) => t.includes("Mock LLM"))).toBe(true);
   });
 
-  test("右栏「同步任务」分组：卡片可见、无钉住/发送按钮，切回「异步队列」不回归", async ({ page }) => {
+  test("左栏运行「同步任务」分组：卡片可见、无钉住/发送按钮，切回「异步队列」不回归", async ({ page }) => {
     // 准备：创建会话并写入同步任务（deliverToQueue=false，结果走 tool return，只展示不进队列）
     const agents = await trpcQuery<{ items: { id: string; name: string; model: string; systemPrompt: string }[] }>(
       "agent.list",
@@ -81,9 +81,13 @@ test.describe("Chat Mock — 异步任务队列", () => {
     try {
       await page.goto(`/chat?sessionId=${sessionId}`);
       await page.getByTestId("chat-input").waitFor({ state: "visible", timeout: 30_000 });
+      // 等 URL 深链会话落入焦点 pane（chat-input 在新对话页也可见，不能单靠它判定）
+      await expect(page.locator('[data-testid="chat-session-pane"][data-session-id="' + sessionId + '"]')).toBeVisible({
+        timeout: 15_000,
+      });
 
-      // 切到右栏「状态」→ 一级分组「同步任务」
-      await page.getByTestId("right-tab-runtime").click();
+      // 切到左栏「运行」→ 一级分组「同步任务」
+      await page.getByTestId("left-tab-runtime").click();
       await page.getByTestId("runtime-group-sync").click();
 
       // 卡片可见：进行中（running）+ 已结束（completed）各一，结果预览 ~120 字

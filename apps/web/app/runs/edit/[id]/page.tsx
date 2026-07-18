@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRun } from "@/lib/hooks";
 import type { Run } from "@knowpilot/shared";
+import { runLabel } from "@/lib/displayLabels";
 
 const STATUS_OPTIONS = ["pending", "running", "success", "failed", "cancelled"] as const;
 
@@ -108,7 +109,7 @@ export default function RunDetailPage() {
           <div>
             <h1 className="text-2xl font-bold text-[var(--kp-text-1)] flex items-center gap-2">
               <Activity className="w-5 h-5 text-[var(--kp-brand-deep)]" />
-              运行记录 · {run.id.slice(0, 8)}
+              {runLabel({ status: String(value("status") ?? run.status) })}
             </h1>
             <p className="text-xs text-[var(--kp-text-3)]">ID: {run.id}</p>
           </div>

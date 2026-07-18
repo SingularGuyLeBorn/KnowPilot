@@ -256,6 +256,9 @@ export const ChatMessageList = memo(function ChatMessageList({
         taskLabel?: string;
       };
     } | undefined)?.subagentResult;
+    const childNotify = (msgToolResults as {
+      childNotify?: { sourceName?: string; source?: string };
+    } | undefined)?.childNotify;
     const subagentName = msgSource === "sub" ? subResult?.subagentName : undefined;
     // #24 子代理会话中，父 Agent 下发的任务消息视觉上像用户消息（右侧）。
     // source 可能是 super / manager（取决于父 Agent tier）。
@@ -263,13 +266,14 @@ export const ChatMessageList = memo(function ChatMessageList({
       isSubagentSession && (msgSource === "super" || msgSource === "manager");
     // 异步结果投递：右侧气泡 + async sleep / async task 角标
     const isAsyncResultDelivery = msgSource === "sub" && !!subResult;
+    // 子 Agent 主动通知父会话（agent_notify_parent）
+    const isChildNotify = !!childNotify;
     // 心跳触发：放右侧（通知位），气泡内文字仍左对齐；视觉用灰底+橙标，不走 brand 用户色
     const isHeartbeat = msgSource === "system";
-    const isRightSide = isHeartbeat
+    const isRightSide = isHeartbeat || isChildNotify
       || (isSubagentSession
         ? msgSource === "user" || isParentAgentTask || isAsyncResultDelivery
         : msgSource === "user" || msgSource === "sub" || isParentAgentTask);
-    const isAgentMessage = !isRightSide;
     return (
       <div className="flex flex-col">
         <div className={cn("flex w-full", isRightSide ? "justify-end" : "justify-start")}>
@@ -308,15 +312,9 @@ export const ChatMessageList = memo(function ChatMessageList({
                 ))}
               </div>
             )}
-            <div className={cn(
-              "relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl px-4 py-3 text-left text-sm shadow-sm",
-              isHeartbeat || isAgentMessage
-                ? "bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] border border-[var(--kp-divider)]"
-                : isAsyncResultDelivery
-                  // 子 Agent 返回结果：比正常用户气泡（--kp-brand-deep）略微深一点点（--kp-brand-darker），均达 AA
-                  ? "bg-[var(--kp-brand-darker)] text-white"
-                  : "bg-[var(--kp-brand-deep)] text-white",
-            )}>
+            <div
+              className="relative w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm"
+            >
               <MessageSourceLabel
                 source={msgSource}
                 isSubagentSession={isSubagentSession}
@@ -324,9 +322,10 @@ export const ChatMessageList = memo(function ChatMessageList({
                 subagentName={subagentName}
                 asyncKind={isAsyncResultDelivery ? subResult?.sourceType : undefined}
                 taskLabel={isAsyncResultDelivery ? subResult?.taskLabel : undefined}
+                childNotify={childNotify}
               />
               {group.userMessage.skillName && (
-                <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px]">
+                <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[10px] text-[var(--kp-brand-deep)]">
                   <LucideIconByName name={group.userMessage.skillIcon} className="h-3 w-3" />
                   {group.userMessage.skillName}
                 </span>
@@ -336,7 +335,7 @@ export const ChatMessageList = memo(function ChatMessageList({
                   value={editDraft}
                   onChange={(e) => setEditDraft(e.target.value)}
                   rows={Math.max(1, editDraft.split("\n").length)}
-                  className="block w-full resize-none border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-white outline-none placeholder:text-white/50 [field-sizing:content]"
+                  className="block w-full resize-none border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-[var(--kp-text-1)] outline-none placeholder:text-[var(--kp-text-3)] [field-sizing:content]"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -347,11 +346,10 @@ export const ChatMessageList = memo(function ChatMessageList({
                   }}
                 />
               ) : isAsyncResultDelivery || isParentAgentTask ? (
-                // 子 Agent 异步投递 / 父 Agent 下发任务：内容是 markdown（报告、表格、列表），用 PostContent 渲染
-                // 气泡底色与正常用户气泡一致（bg-brand + text-white），prose-invert 让 markdown 文字/边框在深色背景上可读
+                // 子 Agent 异步投递 / 父 Agent 下发任务：markdown 报告（浅底气泡，普通 prose）
                 <PostContent
                   content={group.userMessage.content}
-                  className="prose-sm prose-invert max-w-none text-left [&_table]:text-xs [&_th]:px-2 [&_td]:px-2 [&_a]:text-white [&_strong]:text-white [&_code]:bg-white/15 [&_pre]:bg-white/10 [&_blockquote]:border-white/40 [&_blockquote]:text-white/80"
+                  className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
                 />
               ) : (
                 <p className="whitespace-pre-wrap text-left leading-relaxed">{group.userMessage.content}</p>
@@ -420,7 +418,7 @@ export const ChatMessageList = memo(function ChatMessageList({
             ))}
           </div>
         )}
-        <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl bg-[var(--kp-brand-deep)] px-4 py-3 text-sm text-white opacity-80">
+        <div className="w-fit max-w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-sm text-[var(--kp-text-1)] opacity-80">
           <p className="whitespace-pre-wrap">{msg.content}</p>
         </div>
       </div>

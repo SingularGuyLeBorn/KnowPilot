@@ -1,12 +1,14 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
-import { Bot, ImagePlus, Loader2, Send, Settings, Square, Wand2, X } from "lucide-react";
-import type { Skill } from "@knowpilot/shared";
+import { Bot, Loader2, Plus, Send, Square, X } from "lucide-react";
+import type { ChatSessionConfig, Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints, ShortcutSlashSkill } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import type { ChatQueueAttachment } from "@/lib/chatQueueTypes";
+import { ChatModelMenu } from "@/components/chatModelMenu";
+import { ChatInputChips } from "@/components/chatInputChips";
 
 export interface SelectedSkill {
   id: string;
@@ -33,8 +35,12 @@ interface ChatInputAreaProps {
   modelHint?: string;
   modelId?: string;
   supportsVision?: boolean;
-  /** 点击模型 pill 时打开右侧配置面板 */
-  onOpenConfig?: () => void;
+  chatConfig: ChatSessionConfig;
+  updateConfig: (patch: Partial<ChatSessionConfig>) => void;
+  resetPromptToAgent: () => void;
+  onOpenPromptEditor: () => void;
+  modelSupportsReasoning: boolean;
+  modelReasoningRequired: boolean;
   /** 会话级提示（如子代理任务会话警告），显示在输入框上方 */
   sessionHint?: string;
   /** 当前会话 ID，用于隔离上键历史恢复 */
@@ -54,7 +60,12 @@ export const ChatInputArea = memo(function ChatInputArea({
   modelHint,
   modelId = "",
   supportsVision = false,
-  onOpenConfig,
+  chatConfig,
+  updateConfig,
+  resetPromptToAgent,
+  onOpenPromptEditor,
+  modelSupportsReasoning,
+  modelReasoningRequired,
   sessionHint,
   sessionId,
 }: ChatInputAreaProps) {
@@ -75,6 +86,19 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [highlightIdx, setHighlightIdx] = useState(0);
+
+  const openSkillPicker = useCallback(() => {
+    textareaRef.current?.focus();
+    setSkillQuery("");
+    setSkillOpen(true);
+    setHighlightIdx(0);
+  }, []);
+
+  const focusQueuePanel = useCallback(() => {
+    document
+      .querySelector<HTMLElement>("[data-testid='chat-queue-panel']")
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
   const [pendingImages, setPendingImages] = useState<ChatQueueAttachment[]>([]);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
@@ -410,7 +434,7 @@ export const ChatInputArea = memo(function ChatInputArea({
             disabled={disabled}
             placeholder=""
             data-testid="chat-input"
-            className="min-h-[88px] w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-[var(--kp-text-1)] outline-none disabled:cursor-not-allowed"
+            className="min-h-[88px] w-full resize-none border-0 bg-transparent px-4 py-3 text-sm leading-relaxed text-[var(--kp-text-1)] caret-[var(--kp-text-1)] outline-none disabled:cursor-not-allowed"
           />
           {!disabled && !input.trim() && (
             <div
@@ -462,7 +486,7 @@ export const ChatInputArea = memo(function ChatInputArea({
           </div>
         )}
 
-        {/* 底部功能栏 */}
+        {/* 底部功能栏：附件 | 模型菜单 | 发送 */}
         <div className="flex items-center justify-between gap-2 border-t border-[var(--kp-divider-light)] px-3 py-2">
           <div className="flex items-center gap-0.5">
             <input
@@ -482,67 +506,58 @@ export const ChatInputArea = memo(function ChatInputArea({
               disabled={disabled || ocrLoading}
               onClick={() => fileRef.current?.click()}
               data-testid="chat-attach-image"
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)] disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-lg p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)] disabled:opacity-50"
               title="添加图片"
+              aria-label="添加图片"
             >
               {ocrLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" data-testid="chat-ocr-loading" />
               ) : (
-                <ImagePlus className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
               )}
-              <span className="hidden sm:inline">图片</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                textareaRef.current?.focus();
-                setSkillQuery("");
-                setSkillOpen(true);
-                setHighlightIdx(0);
-              }}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
-              title="选择 Skill"
-            >
-              <Wand2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Skill</span>
-            </button>
-
-            {onOpenConfig && (
-              <button
-                type="button"
-                onClick={onOpenConfig}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
-                title="模型与配置（右侧面板）"
-                aria-label="打开对话设置"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-            )}
           </div>
 
-          <button
-            type="button"
-            onClick={isStreaming ? onStop : handleSend}
-            disabled={!canSend && !isStreaming}
-            data-testid={isStreaming ? "chat-stop" : "chat-send"}
-            title={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送"}
-            aria-label={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送消息"}
-            className={cn(
-              "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all duration-200",
-              isStreaming || canSend
-                ? "border-transparent bg-gradient-to-b from-[var(--kp-brand-light)] to-[var(--kp-brand-dark)] text-white hover:from-[var(--kp-brand)] hover:to-[var(--kp-brand-dark)]"
-                : "border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
-            )}
-          >
-            {isStreaming ? <Square className="h-4 w-4 fill-current" /> : <Send className="h-4 w-4" />}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <ChatModelMenu
+              chatConfig={chatConfig}
+              updateConfig={updateConfig}
+              resetPromptToAgent={resetPromptToAgent}
+              onOpenPromptEditor={onOpenPromptEditor}
+              modelSupportsReasoning={modelSupportsReasoning}
+              modelReasoningRequired={modelReasoningRequired}
+            />
+            <button
+              type="button"
+              onClick={isStreaming ? onStop : handleSend}
+              disabled={!canSend && !isStreaming}
+              data-testid={isStreaming ? "chat-stop" : "chat-send"}
+              title={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送"}
+              aria-label={isStreaming ? "停止生成" : queueLength > 0 ? "加入发送队列" : "发送消息"}
+              className={cn(
+                "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all duration-200",
+                isStreaming || canSend
+                  ? "border-transparent bg-gradient-to-b from-[var(--kp-brand-light)] to-[var(--kp-brand-dark)] text-white hover:from-[var(--kp-brand)] hover:to-[var(--kp-brand-dark)]"
+                  : "border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+              )}
+            >
+              {isStreaming ? <Square className="h-4 w-4 fill-current" /> : <Send className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </div>
 
+      <ChatInputChips
+        onOpenSkillPicker={openSkillPicker}
+        queueLength={queueLength}
+        onFocusQueue={focusQueuePanel}
+        selectedSkillName={selectedSkill?.name}
+        onClearSkill={() => onSkillChange(null)}
+      />
+
       {modelHint && (
-        <p className="mt-2 px-1 text-[11px] leading-relaxed text-[var(--kp-text-3)]">
-          <span className="font-medium text-[var(--kp-text-2)]">当前模型 {modelId}：</span>
+        <p className="mt-1.5 px-1 text-center text-[11px] leading-relaxed text-[var(--kp-text-3)]">
+          <span className="font-medium text-[var(--kp-text-2)]">{modelId}：</span>
           {modelHint}
         </p>
       )}

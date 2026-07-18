@@ -11,6 +11,7 @@ import {
 import { getStreamHub } from "../../sessionStreamHub.js";
 import { getSwarmBus } from "../../swarmBus.js";
 import { provisionWorkspace } from "../../workspaceProvision.js";
+import { checkWorkspaceAgentAccess } from "../../swarmPermissionGuard.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "../../agentEvolution.js";
 import { resolveToolsForAgentTier } from "../../loop/setup.js";
 import { buildMemoryContext, buildSystemPromptWithHints } from "../../promptBuilder.js";
@@ -52,15 +53,7 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
   if (!created.success || !created.data) {
     return { error: created.error?.message ?? "创建 Agent 失败" };
   }
-  // 管理 Agent / 子 Agent：自动创建主 session
-  if ((args.tier === "manager" || args.tier === "sub") && created.data.id) {
-    await ctx.services.session.create({
-      title: `${args.name} 主会话`,
-      model: args.model ? String(args.model) : ctx.config.llm.defaultModel,
-      agentId: created.data.id,
-      isMainSession: true,
-    }).catch(() => { /* 主 session 创建失败不阻塞 */ });
-  }
+  // 主会话由 AgentService.afterCreate → ensureMainSession 统一创建（幂等）
   // 审计日志
   await ctx.services.log?.create?.({
     level: "info",
@@ -74,8 +67,26 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
 
 async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { id, ...updateData } = args;
+  const targetId = String(id || "");
+  const existing = await ctx.services.agent.getById(targetId);
+  if (!existing) return { error: "Agent 不存在" };
+  const scopeErr = checkWorkspaceAgentAccess(
+    { tier: ctx.agentSnapshot?.tier ?? "sub", workspaceId: ctx.agentSnapshot?.workspaceId },
+    { tier: existing.tier, workspaceId: existing.workspaceId, id: targetId },
+    "agent_update",
+  );
+  if (scopeErr) return { error: `[${scopeErr.code}] ${scopeErr.reason}` };
+  // 管理 Agent 禁止改 tier / 迁出 Workspace
+  if (ctx.agentSnapshot?.tier === "manager") {
+    if (updateData.tier !== undefined && String(updateData.tier) !== existing.tier) {
+      return { error: "[TIER_PROTECTED] 管理 Agent 不能修改目标 Agent 的 tier。" };
+    }
+    if (updateData.workspaceId !== undefined && String(updateData.workspaceId) !== (existing.workspaceId ?? "")) {
+      return { error: "[CROSS_WORKSPACE_FORBIDDEN] 管理 Agent 不能把 Agent 迁出本 Workspace。" };
+    }
+  }
   const result = await ctx.services.agent.update({
-    id: String(id),
+    id: targetId,
     name: updateData.name ? String(updateData.name) : undefined,
     description: updateData.description ? String(updateData.description) : undefined,
     model: updateData.model ? String(updateData.model) : undefined,
@@ -85,6 +96,9 @@ async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolCon
     heartbeatModel: updateData.heartbeatModel ? String(updateData.heartbeatModel) : undefined,
     heartbeat: updateData.heartbeat as any,
     status: updateData.status as any,
+    tier: ctx.agentSnapshot?.tier === "super" && updateData.tier !== undefined
+      ? (updateData.tier as any)
+      : undefined,
   } as any);
   if (!result.success) return { error: result.error?.message ?? "更新 Agent 失败" };
   await ctx.services.log?.create?.({
@@ -100,11 +114,16 @@ async function agentDeleteTool(args: Record<string, unknown>, ctx: NativeToolCon
   // tombstone 删除：先 abort 运行中任务，再标记 deleted（不真删 DB 记录）
   const existing = await ctx.services.agent.getById(targetId);
   if (!existing) return { error: "Agent 不存在" };
-  // 超级不能删其他 super（#16）
-  if (existing.tier === "super" && ctx.agentSnapshot?.tier === "super" && targetId !== ctx.agentSnapshot.id) {
-    // super 删其他 super → 检查目标是不是自己也想删（已在权限层拦截 self delete）
-    return { error: "[TIER_PROTECTED] 超级 Agent 不能删除其他超级 Agent。" };
+  // Q1：任何超级 Agent 不可删（含自己；权限层亦拦 SELF_DELETE）
+  if (existing.tier === "super") {
+    return { error: "[SUPER_AGENT_NOT_DELETABLE] 超级 Agent 不可删除。" };
   }
+  const scopeErr = checkWorkspaceAgentAccess(
+    { tier: ctx.agentSnapshot?.tier ?? "sub", workspaceId: ctx.agentSnapshot?.workspaceId },
+    { tier: existing.tier, workspaceId: existing.workspaceId, id: targetId },
+    "agent_delete",
+  );
+  if (scopeErr) return { error: `[${scopeErr.code}] ${scopeErr.reason}` };
   // 先标记 deleted（tombstone），保留记录
   await ctx.services.agent.update({
     id: targetId,
@@ -125,6 +144,24 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
   const includeMemory = args.includeMemory === true;
   const agent = await ctx.services.agent.getById(targetId);
   if (!agent) return { error: "Agent 不存在" };
+  const scopeErr = checkWorkspaceAgentAccess(
+    { tier: ctx.agentSnapshot?.tier ?? "sub", workspaceId: ctx.agentSnapshot?.workspaceId },
+    { tier: agent.tier, workspaceId: agent.workspaceId, id: targetId },
+    "agent_inspect",
+  );
+  // 管理 Agent 可 inspect 本空间；对超级仅允许看公开元信息（id/name/tier），禁止读会话/记忆
+  if (scopeErr && !(scopeErr.code === "TIER_PROTECTED" && ctx.agentSnapshot?.tier === "manager" && agent.tier === "super")) {
+    return { error: `[${scopeErr.code}] ${scopeErr.reason}` };
+  }
+  if (scopeErr?.code === "TIER_PROTECTED" && agent.tier === "super") {
+    return {
+      id: agent.id,
+      name: agent.name,
+      tier: agent.tier,
+      status: agent.status,
+      note: "超级 Agent 仅返回公开元信息；详情请通过消息/报告通道沟通。",
+    };
+  }
   // 获取最近 session + 消息
   const sessions = await ctx.prisma?.chatSession.findMany({
     where: { agentId: targetId },
@@ -939,13 +976,22 @@ async function workspaceCreateTool(args: Record<string, unknown>, ctx: NativeToo
   const name = String(args.name || "");
   const path = String(args.path || "");
   if (!name || !path) return { error: "workspace_create 需要 name 和 path" };
-  // 复用 workspaceProvision 编排（与 workspace.create tRPC 路由共享逻辑）
+  const withManager =
+    args.withManager === undefined && args.autoCreateManager === undefined
+      ? undefined
+      : args.withManager !== false && args.autoCreateManager !== false;
   const result = await provisionWorkspace(ctx.config, ctx.services, {
     name,
     path,
     description: args.description as string | undefined,
     managerModel: args.managerModel as string | undefined,
     managerSystemPrompt: args.managerSystemPrompt as string | undefined,
+    managerName: args.managerName as string | undefined,
+    withManager,
+    autoCreateManager: withManager,
+    initialTask: args.initialTask as string | undefined,
+    asyncSlotQuota:
+      args.asyncSlotQuota !== undefined ? Number(args.asyncSlotQuota) : undefined,
     operatorAgentId: ctx.agentSnapshot?.id,
     managerParentId: ctx.agentSnapshot?.id,
   });
@@ -954,14 +1000,24 @@ async function workspaceCreateTool(args: Record<string, unknown>, ctx: NativeToo
     success: true,
     workspaceId: result.workspaceId,
     managerAgentId: result.managerAgentId,
-    message: `Workspace ${name} 已创建，管理 Agent 已就绪。`,
+    managerSessionId: result.managerSessionId,
+    initialTaskStatus: result.initialTaskStatus,
+    message: result.managerAgentId
+      ? `Workspace ${name} 已创建，管理 Agent 已就绪。`
+      : `Workspace ${name} 已创建（未创建管理 Agent）。`,
   };
 }
 
 async function workspaceArchiveTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const wsId = String(args.id || "");
+  const ws = await ctx.services.workspace.getById(wsId).catch(() => null);
+  if (!ws) return { error: "Workspace 不存在" };
+  if ((ws as { isSystem?: boolean }).isSystem) {
+    return { error: "[SYSTEM_WORKSPACE_IMMUTABLE] Root / 系统 Workspace 不可归档。" };
+  }
   // 归档：Workspace status=archived + 所有 Agent status=dormant
-  await ctx.services.workspace.update({ id: wsId, status: "archived" } as any).catch(() => {});
+  const updated = await ctx.services.workspace.update({ id: wsId, status: "archived" } as any);
+  if (!updated.success) return { error: updated.error?.message ?? "归档失败" };
   const agents = await ctx.prisma?.agent.findMany({ where: { workspaceId: wsId, status: { not: "deleted" } } }) ?? [];
   for (const a of agents) {
     await ctx.services.agent.update({ id: a.id, status: "dormant" } as any).catch(() => {});
@@ -1170,7 +1226,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "agent_update",
-    description: "更新 Agent 配置（需超级权限，不能改自己 tier）。运行中的 Agent 用旧配置跑完，下次启动用新配置。",
+    description: "更新 Agent 配置（超级=全局；管理 Agent=仅本 Workspace 内，不能改 tier/迁出空间）。超级 Agent 不可被降级。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("目标 Agent id"),
@@ -1189,7 +1245,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   {
     name: "agent_delete",
     destructive: true,
-    description: "删除 Agent（需超级权限，不能删自己或其他 super）。先停止运行中任务，再级联删 session/message/memory，留 tombstone。",
+    description: "删除 Agent（超级=全局；管理 Agent=仅本 Workspace）。超级 Agent 不可删除。tombstone 保留。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("目标 Agent id"),
@@ -1197,9 +1253,28 @@ const SWARM_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "agent_update_sub",
+    description: "更新本 Workspace 内子 Agent（管理 Agent 工具别名，等同 agent_update + 出域硬拦）。",
+    parameters: zodParams(z.object({
+      id: z.string().describe("目标 Agent id"),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      model: z.string().optional(),
+      systemPrompt: z.string().optional(),
+      tools: z.array(z.string()).optional(),
+      status: z.enum(["active", "idle", "dormant"]).optional(),
+    })),
+  },
+  {
+    name: "agent_delete_sub",
+    destructive: true,
+    description: "删除本 Workspace 内子 Agent（管理 Agent 工具别名，等同 agent_delete + 出域硬拦）。",
+    parameters: zodParams(z.object({ id: z.string().describe("目标 Agent id") })),
+  },
+  {
     name: "agent_inspect",
     reentrant: true, // 只读：agent/session/memory 查询
-    description: "获取任意 Agent 的完整上下文（需超级权限）。包括 session 消息、memory、运行记录。默认管理 Agent 运行过程对超级不可见，此工具用于越级查看。",
+    description: "查看 Agent 上下文（超级=全局；管理 Agent=本 Workspace；对超级仅返回公开元信息）。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("目标 Agent id"),
@@ -1220,10 +1295,13 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "agent_report_back",
-    description: "向上级 Agent 回报结果（默认工具，所有 Agent 可用）。只能在正式回复中调用（不能在工具调用轮次中）。",
+    description:
+      "【正式任务结果】把本轮任务的最终结果回报给上级，进入父会话「异步任务结果队列」（右栏待消费），父 Agent 会据此继续工作。" +
+      "与 agent_notify_parent 的区别：report_back=任务完成/失败的正式交付；notify_parent=过程中的进度/催问/闲聊通知，走发送队列，不是任务结果。" +
+      "非阻塞派活（waitForResult=false）完成后必须调用本工具；不要用 notify_parent 代替本工具交结果。",
     parameters: zodParams(
       z.object({
-        content: z.string().describe("回报内容"),
+        content: z.string().describe("回报内容（任务最终结果全文）"),
         messageType: z.enum(["report", "query"]).describe("回报或请求帮助").optional(),
       }),
     ),
@@ -1249,14 +1327,20 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "workspace_create",
-    description: "创建 Workspace（需超级权限）。自动创建该 Workspace 的管理 Agent + 主 session + .knowpilot/ 目录结构。",
+    description:
+      "创建业务 Workspace（需超级权限）。默认自动创建管理 Agent + 主 session + .knowpilot/；可设 withManager、initialTask、asyncSlotQuota（本空间后台 LLM 槽上限，默认 2，0=不限仍受全局硬顶）。",
     parameters: zodParams(
       z.object({
         name: z.string().describe("Workspace 名称"),
         description: z.string().optional(),
         path: z.string().describe("磁盘目录路径"),
+        withManager: z.boolean().describe("是否创建管理 Agent（默认 true）").optional(),
+        autoCreateManager: z.boolean().describe("同 withManager").optional(),
+        managerName: z.string().describe("管理 Agent 名称").optional(),
         managerModel: z.string().describe("管理 Agent 的模型").optional(),
         managerSystemPrompt: z.string().describe("管理 Agent 的 system prompt（不填用默认模板）").optional(),
+        initialTask: z.string().describe("发给管理 Agent 主会话的初始任务").optional(),
+        asyncSlotQuota: z.number().describe("本 Workspace 后台 LLM 异步槽上限；0=不限；默认 2").optional(),
       }),
     ),
   },
@@ -1331,6 +1415,9 @@ const SWARM_HANDLERS: Record<string, NativeToolHandler> = {
   agent_create: agentCreateTool,
   agent_update: agentUpdateTool,
   agent_delete: agentDeleteTool,
+  // *_sub：管理 Agent 工具清单别名，与 update/delete 同实现（出域硬拦在 handler 内）
+  agent_update_sub: agentUpdateTool,
+  agent_delete_sub: agentDeleteTool,
   agent_inspect: agentInspectTool,
   agent_send_message: agentSendMessageTool,
   agent_report_back: agentReportBackTool,

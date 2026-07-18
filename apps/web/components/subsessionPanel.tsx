@@ -78,7 +78,7 @@ export function SubsessionPanel({
               title={STATUS_LABEL[status] ?? status}
             />
             <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{s.title}</div>
+              <div className="truncate font-medium">{s.autoName || s.title || "子会话"}</div>
               <div className="truncate text-[10px] text-[var(--kp-text-3)]">
                 {STATUS_LABEL[status] ?? status} · {formatRelativeTime(s.updatedAt)}
               </div>

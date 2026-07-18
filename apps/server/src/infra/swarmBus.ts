@@ -77,7 +77,9 @@ export class LocalSwarmBus implements SwarmBus {
     if (timingError) return { success: false, error: timingError };
 
     // 跨 Workspace 校验（#19）
-    const crossError = checkCrossWorkspace(fromTier, fromWorkspaceId, toAgent.workspaceId);
+    const crossError = checkCrossWorkspace(fromTier, fromWorkspaceId, toAgent.workspaceId, {
+      toTier: toAgent.tier,
+    });
     if (crossError) return { success: false, error: crossError };
 
     // depth 校验（#12 防循环）

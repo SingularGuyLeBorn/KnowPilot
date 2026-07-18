@@ -9,16 +9,27 @@ export const STREAMING_TIMEOUT = 90_000;
 
 export async function waitForChatReady(page: Page): Promise<Locator> {
   await page.goto("/chat");
-  const input = page.getByTestId("chat-input");
+  // 分屏时可能有两个 chat-input：取焦点侧 / 首个
+  const input = page.getByTestId("chat-input").first();
   await input.waitFor({ state: "visible", timeout: 30_000 });
   await expect(input).toBeEnabled({ timeout: 30_000 });
   return input;
 }
 
 export async function sendChatMessage(page: Page, text: string): Promise<void> {
-  const input = page.getByTestId("chat-input");
+  const focusedPane = page.getByTestId("chat-session-pane").filter({
+    has: page.locator('[data-focused="true"]'),
+  });
+  const input =
+    (await focusedPane.count()) > 0
+      ? focusedPane.getByTestId("chat-input")
+      : page.getByTestId("chat-input").first();
+  const send =
+    (await focusedPane.count()) > 0
+      ? focusedPane.getByTestId("chat-send")
+      : page.getByTestId("chat-send").first();
   await input.fill(text);
-  await page.getByTestId("chat-send").click();
+  await send.click();
 }
 
 export async function waitForStreamingComplete(page: Page): Promise<void> {

@@ -56,6 +56,10 @@ export interface SwarmTaskSpec {
    */
   schedule: "pool" | "inline";
   timeoutMs?: number;
+  /** 透传池槽位类别：lightweight = 不占全局 LLM 槽（sleep/纯工具） */
+  slotClass?: "llm" | "lightweight";
+  /** 透传 Workspace 行级异步槽上限 */
+  workspaceSlotQuota?: number;
   metadata?: { subagentSessionId?: string };
   /**
    * 权限校验（swarmPermissionGuard.checkToolPermission 单点复用）。
@@ -232,7 +236,9 @@ export class SwarmOrchestrator {
         jobId: finalJobId,
         sessionId: spec.sessionId,
         workspaceId: spec.workspaceId,
+        workspaceSlotQuota: spec.workspaceSlotQuota,
         timeoutMs: spec.timeoutMs,
+        slotClass: spec.slotClass,
         metadata: resolvedMetadata,
         execute: async (signal) => {
           let outcome: SwarmTaskOutcome;

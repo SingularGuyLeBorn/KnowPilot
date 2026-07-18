@@ -20,11 +20,15 @@ import type { AppConfig } from "./config.js";
 import { resolveSafePath } from "./safePath.js";
 import { DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 import { createAgentForTier } from "./agentFactory.js";
+import { ensureMainSession } from "./ensureMainSession.js";
 
 const SUPER_AGENT_NAME = "KnowPilot 超级 Agent";
-const SYSTEM_WORKSPACE_NAME = "KnowPilot 系统";
+/** Root Workspace：超级 Agent 归属；UI/文档亦称「KnowPilot Root」 */
+const SYSTEM_WORKSPACE_NAME = "KnowPilot Root";
 const SYSTEM_WORKSPACE_PATH = "workspaces/__system__";
 const SYSTEM_WORKSPACE_TYPE = "super";
+/** Root 不限本空间槽（仍受全局 maxConcurrent）；业务空间默认 2 */
+const ROOT_ASYNC_SLOT_QUOTA = 0;
 
 /**
  * 确保系统 Workspace 存在。
@@ -34,9 +38,19 @@ async function ensureSystemWorkspace(prisma: PrismaClient, config: AppConfig): P
   const existing = await prisma.workspace.findFirst({
     where: { isSystem: true, systemType: SYSTEM_WORKSPACE_TYPE, status: { not: "deleted" } },
   });
-  if (existing) return existing.id;
+  if (existing) {
+    // 幂等修复：旧库名「KnowPilot 系统」→ Root；配额对齐
+    const row = existing as { id: string; name: string; asyncSlotQuota?: number };
+    const patch: { name?: string; asyncSlotQuota?: number } = {};
+    if (row.name !== SYSTEM_WORKSPACE_NAME) patch.name = SYSTEM_WORKSPACE_NAME;
+    if (row.asyncSlotQuota !== ROOT_ASYNC_SLOT_QUOTA) patch.asyncSlotQuota = ROOT_ASYNC_SLOT_QUOTA;
+    if (Object.keys(patch).length > 0) {
+      await prisma.workspace.update({ where: { id: existing.id }, data: patch as any });
+    }
+    return existing.id;
+  }
 
-  // 创建系统 Workspace 的磁盘目录
+  // 创建 Root Workspace 的磁盘目录
   try {
     const fs = await import("node:fs/promises");
     const systemPath = resolveSafePath(config, SYSTEM_WORKSPACE_PATH);
@@ -44,42 +58,23 @@ async function ensureSystemWorkspace(prisma: PrismaClient, config: AppConfig): P
     await fs.mkdir(`${systemPath}/.knowpilot/shared/scratch`, { recursive: true });
     await fs.writeFile(`${systemPath}/.knowpilot/state.json`, "{}");
   } catch (err) {
-    console.warn(`[swarmInitializer] 系统 Workspace 目录创建失败:`, err);
+    console.warn(`[swarmInitializer] Root Workspace 目录创建失败:`, err);
   }
 
   const created = await prisma.workspace.create({
     data: {
       name: SYSTEM_WORKSPACE_NAME,
-      description: "KnowPilot 系统级 Workspace，容纳超级 Agent 及全局子 Agent。",
+      description: "KnowPilot Root Workspace：超级 Agent 归属；全局编排与跨空间协调从这里发生。",
       path: SYSTEM_WORKSPACE_PATH,
       isSystem: true,
       systemType: SYSTEM_WORKSPACE_TYPE,
+      asyncSlotQuota: ROOT_ASYNC_SLOT_QUOTA,
       status: "active",
-    },
+    } as any,
   });
 
-  console.log(`  📁 [Swarm] 已自动创建系统 Workspace：${created.name} (${created.id})`);
+  console.log(`  📁 [Swarm] 已自动创建 Root Workspace：${created.name} (${created.id})`);
   return created.id;
-}
-
-/**
- * 为指定 Agent 创建主 session（幂等：每个 Agent 只创建一个 isMainSession）。
- */
-async function ensureMainSession(prisma: PrismaClient, agentId: string, title: string, model: string): Promise<void> {
-  const existing = await prisma.chatSession.findFirst({
-    where: { agentId, isMainSession: true, status: { not: "deleted" } },
-  });
-  if (existing) return;
-
-  await prisma.chatSession.create({
-    data: {
-      title,
-      model,
-      agentId,
-      isMainSession: true,
-      status: "active",
-    },
-  });
 }
 
 /**
@@ -115,7 +110,11 @@ export async function initSwarm(
       });
       console.log(`  🔗 [Swarm] 已把超级 Agent 关联到系统 Workspace`);
     }
-    await ensureMainSession(prisma, existing.id, `${SUPER_AGENT_NAME} 主会话`, existing.model ?? config?.llm.defaultModel ?? DEFAULT_LLM_MODEL);
+    await ensureMainSession(prisma, {
+      agentId: existing.id,
+      title: `${SUPER_AGENT_NAME} 主会话`,
+      model: existing.model ?? config?.llm.defaultModel ?? DEFAULT_LLM_MODEL,
+    });
     return;
   }
 
@@ -137,7 +136,12 @@ export async function initSwarm(
     });
   }
 
-  await ensureMainSession(prisma, superAgent.id, `${SUPER_AGENT_NAME} 主会话`, superAgent.model);
+  // createAgentForTier 已 ensure；此处再调一次幂等兜底（标题用固定超级 Agent 文案）
+  await ensureMainSession(prisma, {
+    agentId: superAgent.id,
+    title: `${SUPER_AGENT_NAME} 主会话`,
+    model: superAgent.model,
+  });
 
   console.log("  👑 [Swarm] 已自动创建超级 Agent（首次启动）并关联系统 Workspace");
 }

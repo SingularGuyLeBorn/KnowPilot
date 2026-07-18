@@ -32,24 +32,25 @@ export interface PermissionCheckContext {
  * 未列出的工具默认对所有 tier 开放（读写类工具仍受 allowedNative 白名单约束）。
  */
 const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
-  // 超级 Agent 专属
+  // 超级 Agent 专属：建/归档空间、创建任意 tier Agent
   super: [
     "workspace_create",
     "workspace_archive",
     "workspace_delete",
     "agent_create",
+  ],
+  // 管理 Agent 及以上：本 Workspace 内 CRUD / 检视 / 派生子 Agent（出域由工具内硬拦）
+  manager: [
     "agent_update",
     "agent_delete",
     "agent_inspect",
-  ],
-  // 管理 Agent 及以上（super 也可以用）：管理子 Agent、向上转发、派生子 Agent
-  manager: [
     "agent_create_sub",
     "agent_update_sub",
     "agent_delete_sub",
     "agent_forward",
     "spawn_subagent",
     "memory_create",
+    "memory_update",
     "memory_search",
     "memory_delete",
     "session_compact",
@@ -60,6 +61,9 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "async_task_run",
     "async_task_status",
     "async_task_cancel",
+    "agent_notify_parent",
+    "todo_write",
+    "todo_read",
   ],
 };
 
@@ -184,23 +188,57 @@ export function checkUpwardMessageTiming(
 }
 
 /**
- * 检查跨 Workspace 通信（#19：只有 super 能跨 Workspace）
+ * 检查跨 Workspace 通信（#19 + Workspace Q3）
+ * - super：无限制
+ * - 目标为 super：出域唯一白名单（向上报告 / 回复超级）
+ * - 其余：必须同 Workspace
  */
 export function checkCrossWorkspace(
   fromTier: string,
   fromWorkspaceId: string | null | undefined,
   toWorkspaceId: string | null | undefined,
+  options?: { toTier?: string | null },
 ): PermissionError | null {
-  // super 没有限制
   if (fromTier === "super") return null;
-  // 同 Workspace 或目标无 Workspace → 允许
+  // 出域白名单：向超级 Agent 报告（超级挂在 Root Workspace，workspaceId 非空）
+  if (options?.toTier === "super") return null;
   if (fromWorkspaceId === toWorkspaceId) return null;
-  if (!toWorkspaceId) return null; // 目标是 super（无 workspace）
-  // 跨 Workspace 且非 super → 拒绝
+  if (!toWorkspaceId) return null;
   return {
     code: "CROSS_WORKSPACE_FORBIDDEN",
-    reason: `只有超级 Agent 能跨 Workspace 协调。当前 Agent（Workspace: ${fromWorkspaceId ?? "无"}）不能向其他 Workspace（${toWorkspaceId}）的 Agent 发消息。`,
+    reason: `管理/子 Agent 除向超级 Agent 报告外，不能触碰 Workspace 外资源。当前（${fromWorkspaceId ?? "无"}）→ 目标（${toWorkspaceId}）。`,
   };
+}
+
+/**
+ * 管理/子 Agent 操作目标 Agent 时的出域硬拦（Q3）。
+ * super 放行；禁止触碰超级 Agent；禁止跨 Workspace。
+ */
+export function checkWorkspaceAgentAccess(
+  caller: { tier: string; workspaceId?: string | null },
+  target: { tier: string; workspaceId?: string | null; id: string },
+  action: string,
+): PermissionError | null {
+  if (caller.tier === "super") return null;
+  if (target.tier === "super") {
+    return {
+      code: "TIER_PROTECTED",
+      reason: `${action}：不能操作超级 Agent（仅可经消息/报告通道向上沟通）。`,
+    };
+  }
+  if (caller.workspaceId && target.workspaceId && caller.workspaceId !== target.workspaceId) {
+    return {
+      code: "CROSS_WORKSPACE_FORBIDDEN",
+      reason: `${action}：只能操作本 Workspace（${caller.workspaceId}）内的 Agent，目标属于 ${target.workspaceId}。`,
+    };
+  }
+  if (caller.workspaceId && !target.workspaceId) {
+    return {
+      code: "CROSS_WORKSPACE_FORBIDDEN",
+      reason: `${action}：目标 Agent 无 Workspace 归属，管理/子 Agent 不可操作。`,
+    };
+  }
+  return null;
 }
 
 /**

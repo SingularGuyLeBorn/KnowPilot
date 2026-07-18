@@ -28,6 +28,7 @@ import {
 } from "./mcpClient.js";
 import { getEventBus } from "./eventBus.js";
 import { assertApprovalOrProceed, getPendingApprovalCause } from "./approvalGate.js";
+import { makeAbortError } from "./abortReason.js";
 import { resolveAgent } from "./agentResolver.js";
 import { coerceToolBoolean } from "./tools/native/types.js";
 
@@ -412,8 +413,9 @@ function withToolTimeout<T>(promise: Promise<T>, ms: number, label: string, sign
   });
   const abortPromise = signal
     ? new Promise<T>((_, reject) => {
-        if (signal.aborted) reject(new Error("流式输出已被用户中断"));
-        else signal.addEventListener("abort", () => reject(new Error("流式输出已被用户中断")), { once: true });
+        const rejectAbort = () => reject(makeAbortError(signal));
+        if (signal.aborted) rejectAbort();
+        else signal.addEventListener("abort", rejectAbort, { once: true });
       })
     : null;
   const racers = abortPromise ? [promise, timeout, abortPromise] : [promise, timeout];

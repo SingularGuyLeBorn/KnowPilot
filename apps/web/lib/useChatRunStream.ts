@@ -382,7 +382,7 @@ export function useChatRunStream({
                   const status = r.status;
                   sessionComposeActions.patchAsyncOverlays(originSid, (prev) => {
                     if (prev.some((q) => q.jobId === jobId)) return prev;
-                    const label = r.message || r.subagentName || `${name === "spawn_subagent" ? "子 Agent" : "后台任务"} ${jobId.slice(0, 6)}`;
+                    const label = r.message || r.subagentName || (name === "spawn_subagent" ? "子 Agent" : "后台任务");
                     return [
                       {
                         id: `run-${jobId}`,

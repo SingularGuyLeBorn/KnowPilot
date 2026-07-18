@@ -38,6 +38,16 @@ describe("formatToolTimingHint", () => {
     expect(formatToolResultHint({ error: "timeout" })).toContain("失败");
   });
 
+  it("todo_write 结果优先用 summary", () => {
+    expect(
+      formatToolResultHint({
+        summary: "待办 3项 · 1进行中 · 1完成",
+        total: 3,
+        todos: [],
+      }),
+    ).toBe("待办 3项 · 1进行中 · 1完成");
+  });
+
   it("read_article 摘要含平台、作者与方法", () => {
     const hint = formatToolTimingHint({
       elapsedMs: 890,

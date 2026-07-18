@@ -25,6 +25,7 @@ const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: str
   manager: { label: "管理 Agent", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
   sub: { label: "子 Agent 发送", bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
   system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
+  childNotify: { label: "来自子 Agent", bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-200" },
 };
 
 export function asyncResultLabel(sourceType?: string, taskLabel?: string, subagentName?: string): string {
@@ -42,6 +43,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   subagentName,
   asyncKind,
   taskLabel,
+  childNotify,
 }: {
   source?: string;
   isSubagentSession?: boolean;
@@ -50,8 +52,25 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   /** 异步投递角标：sleep / async_task_llm / ... */
   asyncKind?: string;
   taskLabel?: string;
+  /** 子 Agent 主动通知（agent_notify_parent）元信息 */
+  childNotify?: { sourceName?: string; source?: string };
 }) {
   if (!source || source === "user") return null;
+  if (childNotify) {
+    const label = childNotify.sourceName ? `来自子 Agent · ${childNotify.sourceName}` : "来自子 Agent";
+    return (
+      <span
+        className={cn(
+          "pointer-events-none absolute -top-2.5 z-10 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
+          align === "right" ? "right-3" : "left-3",
+          "border-emerald-200 bg-emerald-100 text-emerald-700",
+        )}
+      >
+        <Bot className="h-3.5 w-3.5" />
+        {label}
+      </span>
+    );
+  }
   if (asyncKind || (source === "sub" && taskLabel)) {
     const label = asyncResultLabel(asyncKind, taskLabel, subagentName);
     return (
@@ -59,8 +78,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
         className={cn(
           "pointer-events-none absolute -top-2.5 z-10 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
           align === "right" ? "right-3" : "left-3",
-          // 与气泡底色（brand-deep）同色系，不再用 teal/green
-          "border-[var(--kp-brand-light)] bg-[var(--kp-brand-deep)] text-white",
+          "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
         )}
       >
         <Bot className="h-3.5 w-3.5" />
@@ -71,8 +89,9 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   const base = SOURCE_LABEL_STYLES[source] ?? { label: source, bg: "bg-gray-100", text: "text-gray-600", border: "border-gray-200" };
   const isParent = (source === "super" || source === "manager") && isSubagentSession;
   const label = isParent ? "父 Agent" : subagentName && source === "sub" ? `${base.label} · ${subagentName}` : base.label;
-  const bg = isParent ? "bg-[var(--kp-brand-deep)]" : base.bg;
-  const text = isParent ? "text-white" : base.text;
+  // 父 Agent 角标用浅底深字，与统一白色气泡搭配
+  const bg = isParent ? "bg-[var(--kp-brand-soft)]" : base.bg;
+  const text = isParent ? "text-[var(--kp-brand-deep)]" : base.text;
   const border = isParent ? "border-[var(--kp-brand-light)]" : base.border;
   return (
     <span

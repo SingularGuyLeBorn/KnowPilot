@@ -421,6 +421,99 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
     }
   });
 
+  it("T8：busy 连发 B/C → FIFO 各消费一次（不双写 ChatMessage）", async () => {
+    const ctx = await createContextInner();
+    const fx = await createDrainFixture(ctx);
+    const release = await occupySession(fx.subSessionId, fx.subAgentId);
+    const autoRelease = setTimeout(release, 5000);
+    try {
+      const sendCtx = makeSendCtx(ctx, fx);
+      const rB = (await executeNativeTool(
+        "agent_send_message",
+        { toAgentId: fx.subAgentId, content: "SUPERIOR-B-ONCE" },
+        sendCtx,
+      )) as { success?: boolean; queued?: boolean };
+      const rC = (await executeNativeTool(
+        "agent_send_message",
+        { toAgentId: fx.subAgentId, content: "SUPERIOR-C-ONCE" },
+        sendCtx,
+      )) as { success?: boolean; queued?: boolean };
+      expect(rB.success).toBe(true);
+      expect(rB.queued).toBe(true);
+      expect(rC.success).toBe(true);
+      expect(rC.queued).toBe(true);
+
+      const queued = await ctx.services.sessionQueueItem.listBySession(fx.subSessionId);
+      expect(queued.map((i) => i.content)).toEqual(["SUPERIOR-B-ONCE", "SUPERIOR-C-ONCE"]);
+
+      clearTimeout(autoRelease);
+      release();
+
+      await vi.waitFor(
+        async () => {
+          const remaining = await ctx.services.sessionQueueItem.listBySession(fx.subSessionId);
+          expect(remaining).toHaveLength(0);
+          const users = await prisma.chatMessage.findMany({
+            where: {
+              sessionId: fx.subSessionId,
+              role: "user",
+              content: { in: ["SUPERIOR-B-ONCE", "SUPERIOR-C-ONCE"] },
+            },
+            orderBy: { createdAt: "asc" },
+          });
+          expect(users.map((u) => u.content)).toEqual(["SUPERIOR-B-ONCE", "SUPERIOR-C-ONCE"]);
+          // 各恰好一条——双 drain 会写成 2+2
+          expect(users).toHaveLength(2);
+          for (const u of users) {
+            const assistants = await prisma.chatMessage.findMany({
+              where: {
+                sessionId: fx.subSessionId,
+                role: "assistant",
+                createdAt: { gte: u.createdAt },
+              },
+            });
+            expect(assistants.length).toBeGreaterThanOrEqual(1);
+          }
+        },
+        { timeout: 15_000, interval: 80 },
+      );
+    } finally {
+      clearTimeout(autoRelease);
+      release();
+      await cleanupDrainFixture(fx);
+    }
+  });
+
+  it("T9：SessionQueueItem create/consume 推送 session_queue_update", async () => {
+    const ctx = await createContextInner();
+    const fx = await createDrainFixture(ctx);
+    const hub = getStreamHub()!;
+    const pushed: Array<{ type: string; kind?: string }> = [];
+    const orig = hub.pushExternalEvent.bind(hub);
+    vi.spyOn(hub, "pushExternalEvent").mockImplementation((sessionId, event) => {
+      pushed.push(event as { type: string; kind?: string });
+      return orig(sessionId, event);
+    });
+    try {
+      const created = await ctx.services.sessionQueueItem.create({
+        sessionId: fx.subSessionId,
+        kind: "superior",
+        content: "SSE-QUEUE-PING",
+        source: fx.parentAgentId,
+      });
+      expect(created.success).toBe(true);
+      expect(pushed.some((e) => e.type === "session_queue_update" && e.kind === "superior")).toBe(true);
+
+      const itemId = (created.data as { id: string }).id;
+      pushed.length = 0;
+      const claim = await ctx.services.sessionQueueItem.consume(itemId);
+      expect(claim.claimed).toBe(true);
+      expect(pushed.some((e) => e.type === "session_queue_update")).toBe(true);
+    } finally {
+      await cleanupDrainFixture(fx);
+    }
+  });
+
   it("consume 软认领：不存在 item 返回 claimed:false 不抛错；竞态双 consume 一胜一静默", async () => {
     const ctx = await createContextInner();
     const fx = await createDrainFixture(ctx);

@@ -23,6 +23,7 @@ const FLUSH_SYSTEM = `你是 KnowPilot 记忆提取助手。从对话 transcript
 - type 含义：preference=用户偏好；semantic=稳定事实/决策；episodic=某次具体经历；note=一般笔记；procedural=操作流程/套路
 - 不要记：可从代码/git/文档直接查到的内容；临时 tool 输出；寒暄
 - 不要重复已有摘要里的事实
+- 若与已有长期记忆矛盾：仍可提取新事实（运行时可用 memory_update 软链纠正，勿重复堆叠同主题旧版）
 - 最多 5 条；无值得保存的则输出 []`;
 
 interface FlushFact {

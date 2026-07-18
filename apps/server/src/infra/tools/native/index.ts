@@ -10,6 +10,7 @@ import { registerSwarmTools } from "./swarm.js";
 import { registerSessionTools } from "./session.js";
 import { registerMemoryTools } from "./memory.js";
 import { registerIntegrationTools } from "./integration.js";
+import { registerNotifyTools } from "./notify.js";
 
 export function registerNativeDomains(): void {
   registerFsTools();
@@ -19,6 +20,7 @@ export function registerNativeDomains(): void {
   registerSessionTools();
   registerMemoryTools();
   registerIntegrationTools();
+  registerNotifyTools();
 }
 
 export type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";

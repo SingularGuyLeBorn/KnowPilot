@@ -232,14 +232,17 @@ export async function runGlobalSearch(
             where: { content: { contains: query }, role: { in: ["user", "assistant"] } },
             take: perEntity,
             orderBy: { createdAt: "desc" },
-            include: { session: { select: { id: true, title: true } } },
+            include: { session: { select: { id: true, title: true, autoName: true } } },
           });
           for (const msg of list) {
+            const sess = msg.session;
+            const subtitle =
+              (sess?.autoName?.trim() || sess?.title?.trim()) || "会话消息";
             hits.push({
               entity: "message",
               id: msg.id,
               title: msg.content.slice(0, 100),
-              subtitle: msg.session?.title ?? msg.sessionId,
+              subtitle,
               href: `/chat?sessionId=${msg.sessionId}`,
               score: 1,
             });

@@ -32,6 +32,7 @@ import { AGENT_TOOL_RESULT_MAX_CHARS } from "@knowpilot/shared";
 import { createPhaseMachine } from "./phase.js";
 import { REFLECTION_UNPASSED_MARK } from "./reflection.js";
 import type { ReactLoopInput, ReactLoopResult, TurnSnapshot } from "./types.js";
+import { makeAbortError } from "../abortReason.js";
 
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
@@ -327,9 +328,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       }
 
       if (input.signal?.aborted) {
-        const err = new Error("流式输出已被用户中断");
-        err.name = "AbortError";
-        throw err;
+        throw makeAbortError(input.signal);
       }
 
       const turn = await input.transport.complete({
@@ -457,9 +456,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       }
 
       if (input.signal?.aborted) {
-        const err = new Error("流式输出已被用户中断");
-        err.name = "AbortError";
-        throw err;
+        throw makeAbortError(input.signal);
       }
 
       toolCtx.inToolRound = true;
