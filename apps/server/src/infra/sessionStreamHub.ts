@@ -47,6 +47,12 @@ type RunState = {
   steeringQueue: RunInjectMessage[];
   /** 本会停止时注入并续轮 */
   followUpQueue: RunInjectMessage[];
+  /** token/thinking 合帧：减少 ring + SQLite 写入粒度（与 SSE 16ms/512 对齐） */
+  coalesce: {
+    token: string;
+    thinking: string;
+    timer: ReturnType<typeof setTimeout> | null;
+  };
 };
 
 type PersistItem = {
@@ -191,17 +197,8 @@ export class SessionStreamHub {
 
     const run = this.runs.get(sessionId);
     if (run && !run.completed) {
-      const buffered: BufferedEvent = { id: run.nextId++, event };
-      run.buffer.push(buffered);
-      if (run.buffer.length > this.config.ringSize) run.buffer.shift();
-      this.enqueuePersist(buffered, run.sessionId);
-      for (const sub of run.subscribers) {
-        try {
-          Promise.resolve(sub(buffered)).catch(() => {});
-        } catch {
-          /* ignore */
-        }
-      }
+      // 外部事件插入 Agent 流前先冲刷合帧，避免 token 排到 async_* 之后
+      this.emitToRun(run, event);
     }
   }
 
@@ -296,6 +293,7 @@ export class SessionStreamHub {
         runningSince: Date.now(),
         steeringQueue: [],
         followUpQueue: [],
+        coalesce: { token: "", thinking: "", timer: null },
       };
       this.runs.set(sessionId, state);
       // 起流占位成功后「忙」由 isRunning 接管，清除 drain 宣告的「即将起流」标记（S2）
@@ -305,22 +303,7 @@ export class SessionStreamHub {
       state.nextId = maxId + 1;
 
       const emit = (event: AgentStreamEvent) => {
-        if (state.completed) return;
-        const buffered: BufferedEvent = { id: state.nextId++, event };
-        state.buffer.push(buffered);
-        if (state.buffer.length > this.config.ringSize) {
-          state.buffer.shift();
-        }
-        this.enqueuePersist(buffered, state.sessionId);
-        for (const sub of state.subscribers) {
-          try {
-            Promise.resolve(sub(buffered)).catch(() => {
-              // 单个订阅者失败不打扰其他订阅者
-            });
-          } catch {
-            /* ignore */
-          }
-        }
+        this.emitToRun(state, event);
       };
 
       state.promise = (async () => {
@@ -330,6 +313,7 @@ export class SessionStreamHub {
           const message = err instanceof Error ? err.message : String(err);
           emit({ type: "error", message, sessionId });
         } finally {
+          this.flushRunCoalesce(state);
           state.completed = true;
           await releaseSessionRunning(sessionId);
           // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
@@ -550,6 +534,70 @@ export class SessionStreamHub {
       this.flushTimer = null;
     }
     await this.flushPersistQueue();
+  }
+
+  /** 将事件写入 ring + persist + 实时订阅者（已合帧后的最终事件） */
+  private pushRunEvent(state: RunState, event: AgentStreamEvent): void {
+    const buffered: BufferedEvent = { id: state.nextId++, event };
+    state.buffer.push(buffered);
+    if (state.buffer.length > this.config.ringSize) {
+      state.buffer.shift();
+    }
+    this.enqueuePersist(buffered, state.sessionId);
+    for (const sub of state.subscribers) {
+      try {
+        Promise.resolve(sub(buffered)).catch(() => {
+          // 单个订阅者失败不打扰其他订阅者
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private flushRunCoalesce(state: RunState): void {
+    if (state.coalesce.timer) {
+      clearTimeout(state.coalesce.timer);
+      state.coalesce.timer = null;
+    }
+    if (state.coalesce.thinking) {
+      const delta = state.coalesce.thinking;
+      state.coalesce.thinking = "";
+      this.pushRunEvent(state, { type: "thinking", delta });
+    }
+    if (state.coalesce.token) {
+      const delta = state.coalesce.token;
+      state.coalesce.token = "";
+      this.pushRunEvent(state, { type: "token", delta });
+    }
+  }
+
+  /**
+   * Agent 运行 emit：token/thinking 按 16ms 或 512 字符合帧后再进 ring/SQLite；
+   * 其它事件先冲刷合帧缓冲，保证顺序。
+   */
+  private emitToRun(state: RunState, event: AgentStreamEvent): void {
+    if (state.completed) return;
+    if (event.type === "token") {
+      state.coalesce.token += event.delta;
+      if (state.coalesce.token.length >= 512) {
+        this.flushRunCoalesce(state);
+      } else if (!state.coalesce.timer) {
+        state.coalesce.timer = setTimeout(() => this.flushRunCoalesce(state), 16);
+      }
+      return;
+    }
+    if (event.type === "thinking") {
+      state.coalesce.thinking += event.delta;
+      if (state.coalesce.thinking.length >= 512) {
+        this.flushRunCoalesce(state);
+      } else if (!state.coalesce.timer) {
+        state.coalesce.timer = setTimeout(() => this.flushRunCoalesce(state), 16);
+      }
+      return;
+    }
+    this.flushRunCoalesce(state);
+    this.pushRunEvent(state, event);
   }
 
   /* 持久化：事件双写内存缓冲与 SQLite，支持断线续传和服务端重启恢复 */
