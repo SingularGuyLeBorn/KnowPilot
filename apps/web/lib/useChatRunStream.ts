@@ -115,10 +115,11 @@ export function useChatRunStream({
       saveChatStoresToStorage();
       return;
     }
+    // 流式期勿每 100ms JSON.stringify 全文；1.5s 节流足够崩溃恢复，done/visibility 仍走 immediate
     streamSaveTimeoutRef.current = setTimeout(() => {
       saveChatStoresToStorage();
       streamSaveTimeoutRef.current = null;
-    }, 100);
+    }, 1_500);
   }, [streamSaveTimeoutRef]);
 
   const scheduleStreamFlush = useCallback((sid: string) => {
