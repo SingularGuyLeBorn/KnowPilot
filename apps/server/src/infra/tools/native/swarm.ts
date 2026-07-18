@@ -10,6 +10,7 @@ import {
 } from "../../swarmPermissionGuard.js";
 import { getStreamHub } from "../../sessionStreamHub.js";
 import { getSwarmBus } from "../../swarmBus.js";
+import { getAgentRunLock } from "../../agentRunLock.js";
 import { provisionWorkspace } from "../../workspaceProvision.js";
 import { checkWorkspaceAgentAccess } from "../../swarmPermissionGuard.js";
 import { optimizeAgentPrompt, generateSkillFromExperience } from "../../agentEvolution.js";
@@ -226,13 +227,6 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
   };
 }
 
-/**
- * 防止同一 Agent 被并发触发自动运行。
- * 锁仅覆盖 prepare 段（会话 find-or-create / busy 判定 / dedup / 写消息 / 起流），
- * 不覆盖运行本身——运行期间再次派活走 busy 判定入队（W-E），而不是在锁上干等。
- */
-const agentRunLocks = new Map<string, Promise<PrepareAgentRunResult>>();
-
 type PrepareAgentRunResult =
   /** 已起流（或 dedup 命中已有答案）：completion 解析为本轮最终 assistant 文本 */
   | { kind: "started"; subagentSessionId: string; completion: Promise<string> }
@@ -262,10 +256,9 @@ async function prepareAgentRun(
   ctx: NativeToolContext,
   opts?: { messageType?: "command" | "query" | "report" | "forward"; fromDrain?: boolean },
 ): Promise<PrepareAgentRunResult> {
-  const existing = agentRunLocks.get(targetAgentId);
-  if (existing) await existing;
-
-  const preparePromise = (async (): Promise<PrepareAgentRunResult> => {
+  // 锁仅覆盖 prepare 段（会话 find-or-create / busy / dedup / 写消息 / 起流），不盖整轮 run。
+  // SWARM_MODE=redis 时走 Redis SET NX，多实例互斥；local 走进程内链。
+  return getAgentRunLock().withLock(targetAgentId, async () => {
     let sessionIdForCleanup: string | undefined;
     try {
       // W4：优先用 ctx 注入的 resolveAgent（见 createAgentToolContext），缺省回退到 agentResolver 叶子模块
@@ -564,13 +557,8 @@ async function prepareAgentRun(
         }
       }
       throw err;
-    } finally {
-      agentRunLocks.delete(targetAgentId);
     }
-  })();
-
-  agentRunLocks.set(targetAgentId, preparePromise);
-  return preparePromise;
+  });
 }
 
 /**
