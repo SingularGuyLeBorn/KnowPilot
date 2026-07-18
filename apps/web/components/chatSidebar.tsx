@@ -118,6 +118,12 @@ export const ChatSidebar = memo(function ChatSidebar({
   runtimeToConsumeItems,
   runtimeConsumedItems,
 }: ChatSidebarProps) {
+  const closeLeftOnMobile = () => {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+      setLeftOpen(false);
+    }
+  };
+
   // 与 ChatView 相同 key 的查询订阅：React Query 按 key 共享缓存并去重请求，无额外网络开销
   const { useList: useAgentList } = useAgent();
   const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
@@ -243,6 +249,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       });
     } else {
       selectSession(id);
+      closeLeftOnMobile();
     }
   }, [bulkMode, selectSession]);
 
@@ -543,8 +550,28 @@ export const ChatSidebar = memo(function ChatSidebar({
 
   return (
     <>
-      <aside className={cn("flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300", leftOpen ? "w-64" : "w-0 overflow-hidden border-r-0")}>
-        <div className="w-64 shrink-0 border-b border-[var(--kp-divider)] px-3 py-2.5" data-testid="chat-left-panel-header">
+      {/* 窄屏：左栏改为全屏叠层，避免挤占消息区 */}
+      {leftOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] md:hidden"
+          aria-label="关闭会话面板"
+          onClick={() => setLeftOpen(false)}
+        />
+      )}
+      <aside
+        className={cn(
+          "flex min-h-0 flex-col border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition-all duration-300",
+          // 桌面：侧栏伸缩
+          "md:relative md:z-auto md:shrink-0 md:border-r",
+          leftOpen ? "md:w-64" : "md:w-0 md:overflow-hidden md:border-r-0",
+          // 手机：打开时全屏叠层；关闭时不占位
+          leftOpen
+            ? "fixed inset-0 z-50 w-full border-0 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] pt-[env(safe-area-inset-top,0px)] md:static md:inset-auto md:pb-0 md:pt-0"
+            : "hidden md:flex",
+        )}
+      >
+        <div className="w-full shrink-0 border-b border-[var(--kp-divider)] px-3 py-2.5 md:w-64" data-testid="chat-left-panel-header">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
               <Bot className="h-3.5 w-3.5" />
@@ -560,9 +587,12 @@ export const ChatSidebar = memo(function ChatSidebar({
               data-testid="chat-left-panel-collapse"
               title="折叠左侧栏"
               aria-label="折叠左侧栏"
-              className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-7 w-7 shrink-0 text-[var(--kp-text-3)]")}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "h-11 w-11 shrink-0 text-[var(--kp-text-3)] md:h-7 md:w-7",
+              )}
             >
-              <PanelLeftClose className="h-3.5 w-3.5" />
+              <PanelLeftClose className="h-4 w-4 md:h-3.5 md:w-3.5" />
             </button>
           </div>
           {/* 左栏顶层标签：对话 | 运行 */}

@@ -31,6 +31,8 @@ import { KnowPilotLogo } from "@/lib/icons";
 
 interface SidebarProps {
   className?: string;
+  /** 移动端抽屉内点击导航后关闭 */
+  onNavigate?: () => void;
 }
 
 interface NavSubItem {
@@ -92,7 +94,7 @@ const navGroups: Record<string, NavGroup> = {
   },
 };
 
-export function Sidebar({ className }: SidebarProps) {
+export function Sidebar({ className, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -164,8 +166,9 @@ export function Sidebar({ className }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => onNavigate?.()}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
+                "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
                 isActive
                   ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                   : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
@@ -188,7 +191,7 @@ export function Sidebar({ className }: SidebarProps) {
         isResizing && "select-none",
         className
       )}
-      style={{ width }}
+      style={onNavigate ? undefined : { width }}
     >
       <div className="flex h-full flex-col overflow-hidden">
         <Link href="/" className="flex shrink-0 items-center gap-3 border-b border-[var(--kp-divider)] px-5 py-4 transition hover:bg-[var(--kp-bg-mute)]">
@@ -225,15 +228,17 @@ export function Sidebar({ className }: SidebarProps) {
         </div>
       </div>
 
-      <div
-        onPointerDown={handlePointerDown}
-        className={cn(
-          "absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--kp-brand)]/20",
-          isResizing && "bg-[var(--kp-brand)]/30"
-        )}
-        aria-label="调整侧边栏宽度"
-        role="separator"
-      />
+      {!onNavigate && (
+        <div
+          onPointerDown={handlePointerDown}
+          className={cn(
+            "absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize transition-colors hover:bg-[var(--kp-brand)]/20",
+            isResizing && "bg-[var(--kp-brand)]/30",
+          )}
+          aria-label="调整侧边栏宽度"
+          role="separator"
+        />
+      )}
     </aside>
   );
 }

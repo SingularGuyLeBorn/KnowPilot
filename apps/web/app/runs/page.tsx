@@ -106,8 +106,8 @@ export default function RunsPage() {
       ) : (
         <>
           <div className="rounded-2xl border border-[var(--kp-divider-light)] overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="kp-table-scroll overflow-x-auto">
+              <table className="w-full min-w-[36rem] text-sm">
                 <thead className="bg-[var(--kp-bg-soft)] text-left text-xs text-[var(--kp-text-3)]">
                   <tr>
                     <th className="px-4 py-3 font-semibold">状态</th>
