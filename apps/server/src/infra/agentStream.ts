@@ -2,6 +2,7 @@
  * Agent 流式聊天 — SSE 事件 + 流式 ReAct 循环 + 多版本 / 编辑 / Skill
  */
 
+import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
@@ -936,6 +937,56 @@ export async function switchAssistantMessageVersion(
   });
 }
 
+/**
+ * Hub 已占用时的 POST 落点：普通新消息入 Inbox；重试/编辑/重生成返回 rejected。
+ * 返回 null = 无需处理（无 message）。
+ */
+export async function handleBusyHubPost(
+  services: ServiceContainer,
+  sessionId: string,
+  body: AgentChatInput,
+): Promise<{ kind: "queued"; queueItemId: string } | { kind: "rejected"; message: string } | null> {
+  const isMutatingReplay =
+    Boolean(body.regenerate) || Boolean(body.retryFromMessageId) || Boolean(body.editMessageId);
+  if (isMutatingReplay) {
+    return {
+      kind: "rejected",
+      message: "当前会话已有运行中的流，请等待结束后再重试/编辑/重新生成。",
+    };
+  }
+  const msg = typeof body.message === "string" ? body.message.trim() : "";
+  if (!msg) return null;
+
+  const existing = await services.prisma.sessionQueueItem.findFirst({
+    where: { sessionId, kind: "user", content: msg },
+    orderBy: { order: "desc" },
+  });
+  if (existing) return { kind: "queued", queueItemId: existing.id };
+
+  const created = await services.sessionQueueItem.create({
+    sessionId,
+    kind: "user",
+    content: msg,
+    source: body.source === "system" ? "system" : "user",
+    attachments: body.attachments,
+    skillId: body.skillId,
+  });
+  const queueItemId = (created.data as { id?: string } | undefined)?.id;
+  if (!queueItemId) {
+    return { kind: "rejected", message: "会话忙碌且消息入队失败，请稍后重试。" };
+  }
+  return { kind: "queued", queueItemId };
+}
+
+function beginSse(res: Response): void {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  // P8：禁用 nginx / Cloudflare Tunnel 等反代对 SSE 的缓冲，否则前端收不到实时流
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+}
+
 /** Express SSE handler: POST /api/agent/chat/stream（启动运行）/ GET（续传） */
 export function handleAgentChatStream(
   services: ServiceContainer,
@@ -944,27 +995,26 @@ export function handleAgentChatStream(
   hub: SessionStreamHub,
 ) {
   return async (req: Request, res: Response) => {
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    // P8：禁用 nginx / Cloudflare Tunnel 等反代对 SSE 的缓冲，否则前端收不到实时流
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders?.();
+    const isPost = req.method === "POST";
+    const body = (req.body ?? {}) as AgentChatInput & { resumeAfter?: number };
+    const requestSessionId = body.sessionId || String(req.query.sessionId || "");
+    const afterEventId = Number(body.resumeAfter ?? req.query.resumeAfter ?? 0);
+    // POST 无 sessionId：每请求唯一占位键（clientMessageId 或预生成 id），杜绝共享 ""
+    let runSessionId =
+      requestSessionId ||
+      (isPost
+        ? `pending:${body.clientMessageId?.trim() || randomUUID()}`
+        : "");
 
     if (isAuthEnabled(config) && !verifyAuthHeader(config, req.headers.authorization)) {
+      beginSse(res);
       writeSse(res, { type: "error", message: "未授权：请先登录后再使用 Chat 流式接口。" });
       res.end();
       return;
     }
 
-    const isPost = req.method === "POST";
-    const body = (req.body ?? {}) as AgentChatInput & { resumeAfter?: number };
-    const requestSessionId = body.sessionId || String(req.query.sessionId || "");
-    const afterEventId = Number(body.resumeAfter ?? req.query.resumeAfter ?? 0);
-    // POST 且未带 sessionId 时，先以空字符串在 Hub 中占位；等 chatAgentStream 创建真实 session 后再迁移。
-    let runSessionId = requestSessionId;
-
     if (!requestSessionId && !isPost) {
+      beginSse(res);
       writeSse(res, { type: "error", message: "缺少 sessionId" });
       res.end();
       return;
@@ -978,6 +1028,7 @@ export function handleAgentChatStream(
         (typeof body?.message === "string" && body.message.trim().length > 0);
 
       if (!valid) {
+        beginSse(res);
         writeSse(res, { type: "error", message: "message 不能为空" });
         res.end();
         return;
@@ -988,6 +1039,7 @@ export function handleAgentChatStream(
         try {
           const sess = await services.session.getByIdLite(requestSessionId);
           if (sess?.status === "archived") {
+            beginSse(res);
             writeSse(res, {
               type: "error",
               message: "该会话已归档，请前往新会话继续对话。",
@@ -1004,19 +1056,51 @@ export function handleAgentChatStream(
         }
       }
 
-      // 幂等：若已有运行中的任务，不再重复启动（可能是前端重连时误发了 POST）
+      // 三态起流：busy → 结构化 409（消息入队）；duplicate → 降级订阅；started → 订阅新流
       try {
-        await hub.startIfNotRunning(runSessionId, body, (emit, signal) =>
+        const startResult = await hub.startIfNotRunning(runSessionId, body, (emit, signal) =>
           chatAgentStream(services, config, body, invokeTrpc, emit, signal),
         );
+        if (startResult === "busy") {
+          if (requestSessionId) {
+            const busy = await handleBusyHubPost(services, requestSessionId, body);
+            if (busy?.kind === "rejected") {
+              res.status(409).json({
+                code: "SESSION_BUSY",
+                sessionId: requestSessionId,
+                message: busy.message,
+              });
+              return;
+            }
+            res.status(409).json({
+              code: "SESSION_BUSY",
+              sessionId: requestSessionId,
+              queueItemId: busy?.queueItemId ?? null,
+              message:
+                busy?.kind === "queued"
+                  ? "会话忙碌，消息已入队，将在当前流结束后由 Inbox 推进。"
+                  : "会话忙碌，请稍后重试或改用排队/追问。",
+            });
+            return;
+          }
+          res.status(409).json({
+            code: "SESSION_BUSY",
+            message: "会话忙碌，请稍后重试。",
+          });
+          return;
+        }
+        // started | duplicate：打开 SSE 订阅（duplicate 附着已有流）
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[agentStream] 启动会话 ${runSessionId} Agent 流失败:`, err);
+        beginSse(res);
         writeSse(res, { type: "error", message: `启动失败：${message}` });
         res.end();
         return;
       }
     }
+
+    beginSse(res);
 
     if (!hub.isRunning(runSessionId) && afterEventId === 0) {
       // 不是 POST 且没有运行中的任务，也没有要续传的历史事件

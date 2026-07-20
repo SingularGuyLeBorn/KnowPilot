@@ -230,23 +230,49 @@ export class SessionStreamHub {
   }
 
   /**
-   * 幂等启动：若该 session 已在运行则返回 false；否则启动并返回 true。
+   * 起流互斥三态：
+   * - started：获槽并启动
+   * - duplicate：同 clientMessageId 的重试（允许降级订阅，不重复起流）
+   * - busy：不同消息占线（调用方应入队 / 409，禁止静默附着）
    */
   async startIfNotRunning(
     sessionId: string,
     input: AgentChatInput,
     runner: (emit: (event: AgentStreamEvent) => void, signal: AbortSignal) => Promise<void>,
-  ): Promise<boolean> {
-    if (this.isRunning(sessionId)) return false;
-    if (await isSessionRunningClaimed(sessionId)) return false;
+  ): Promise<"started" | "duplicate" | "busy"> {
+    if (this.isRunning(sessionId)) {
+      return this.classifyBusyOrDuplicate(sessionId, input);
+    }
+    if (await isSessionRunningClaimed(sessionId)) {
+      return this.classifyBusyOrDuplicate(sessionId, input);
+    }
     try {
       await this.start(sessionId, input, runner);
-      return true;
+      return "started";
     } catch (err) {
-      // 并发竞态：start 内同步占位后，第二个调用方的 isRunning 检查会抛「已运行」→ 视作未启动
-      if (err instanceof Error && /已有运行中的 Agent 流/.test(err.message)) return false;
+      // 并发竞态：start 内同步占位后，第二个调用方抛「已运行」→ 再分类
+      if (err instanceof Error && /已有运行中的 Agent 流/.test(err.message)) {
+        return this.classifyBusyOrDuplicate(sessionId, input);
+      }
       throw err;
     }
+  }
+
+  private classifyBusyOrDuplicate(
+    sessionId: string,
+    input: AgentChatInput,
+  ): "duplicate" | "busy" {
+    const run = this.runs.get(sessionId);
+    const runningMsgId = run?.input?.clientMessageId;
+    const incomingMsgId = input.clientMessageId;
+    if (
+      typeof runningMsgId === "string" &&
+      runningMsgId.length > 0 &&
+      runningMsgId === incomingMsgId
+    ) {
+      return "duplicate";
+    }
+    return "busy";
   }
 
   /**

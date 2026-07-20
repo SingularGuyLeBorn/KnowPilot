@@ -1894,8 +1894,8 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
         }
       });
 
-      if (!started) {
-        // 已有活跃流接管（如前端断线重连先一步 POST 起流）：竞态幂等，状态维持 running
+      if (started !== "started") {
+        // 已有活跃流接管（busy/duplicate）：竞态幂等，状态维持 running
         return { id: input.id, status: "running", resumed: true, streamStarted: false };
       }
       return { id: input.id, status: "running", resumed: true, streamStarted: true };

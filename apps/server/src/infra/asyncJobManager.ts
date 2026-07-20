@@ -463,7 +463,7 @@ export async function autoConsumeAsyncDelivery(options: {
             const started = await hub.startIfNotRunning(sessionId, body, (emit, signal) =>
               chatAgentStream(services, config, body, invokeTrpc, emit, signal),
             );
-            if (started) {
+            if (started === "started") {
               hub.pushExternalEvent(sessionId, {
                 type: "session_run_started",
                 sessionId,
@@ -473,12 +473,12 @@ export async function autoConsumeAsyncDelivery(options: {
               // 槽位持有到续跑结束（与 spawn 池任务同口径）
               await hub.waitFor(sessionId);
             } else {
-              // 被抢线：消息确定未写入 → 条件写回滚并重挂链尾。
+              // 被抢线（busy/duplicate）：消息确定未写入 → 条件写回滚并重挂链尾。
               // 回滚落选（false）= 期间已被正常消费/对账者处理，不得再补投。
               requeue = await rollbackAsyncDeliveryClaim(jobId);
               if (requeue) {
                 console.warn(
-                  `[asyncJobManager] autoConsume 被抢线（started=false），已回滚 delivered 并重挂链尾 session=${sessionId} job=${jobId}`,
+                  `[asyncJobManager] autoConsume 被抢线（${started}），已回滚 delivered 并重挂链尾 session=${sessionId} job=${jobId}`,
                 );
               }
             }
@@ -1599,7 +1599,7 @@ function buildAsyncExecute(
                 await finalizeFailure(runErr, emit);
               }
             });
-            if (started) {
+            if (started === "started") {
               // 池 abort（超时/取消）必须传导到 hub 真正停子会话流，否则 LLM 在后台继续空转烧钱
               signal.addEventListener("abort", () => hub.stop(subagentSessionId), { once: true });
               // 通知前端挂接子会话流（切到子页时不必等刷新）

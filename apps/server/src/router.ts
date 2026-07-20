@@ -607,11 +607,12 @@ const sessionRouter = router({
             config: ctx.config,
             prisma: ctx.prisma,
           });
-          streamStarted = await hub.startIfNotRunning(input.sessionId, fullBody, (emit, signal) =>
-            import("./infra/agentStream.js").then(({ chatAgentStream }) =>
-              chatAgentStream(ctx.services, ctx.config, fullBody, invoke, emit, signal),
-            ),
-          );
+          streamStarted =
+            (await hub.startIfNotRunning(input.sessionId, fullBody, (emit, signal) =>
+              import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+                chatAgentStream(ctx.services, ctx.config, fullBody, invoke, emit, signal),
+              ),
+            )) === "started";
         }
       }
       return { goal, streamStarted };
@@ -648,11 +649,12 @@ const sessionRouter = router({
           config: ctx.config,
           prisma: ctx.prisma,
         });
-        streamStarted = await hub.startIfNotRunning(input.sessionId, body, (emit, signal) =>
-          import("./infra/agentStream.js").then(({ chatAgentStream }) =>
-            chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
-          ),
-        );
+        streamStarted =
+          (await hub.startIfNotRunning(input.sessionId, body, (emit, signal) =>
+            import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+              chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
+            ),
+          )) === "started";
       }
       return { goal, streamStarted };
     }),

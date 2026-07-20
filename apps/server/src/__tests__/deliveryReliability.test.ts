@@ -145,7 +145,7 @@ describe("R-1 S3 投递可靠性（同链即时回滚 + reconciler 对账者）"
     const fx = await createFixture(ctx);
     const hub = getStreamHub()!;
     // 第一轮强制抢线：startIfNotRunning 返回 false（别的流占线，chatAgentStream 确定未执行）
-    const startSpy = vi.spyOn(hub, "startIfNotRunning").mockResolvedValueOnce(false);
+    const startSpy = vi.spyOn(hub, "startIfNotRunning").mockResolvedValueOnce("busy");
     try {
       const r = await autoConsumeAsyncDelivery({
         sessionId: fx.sessionId,
