@@ -123,6 +123,9 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       gateNotifyCooldownMs: 1_800_000,
       loopContract: { maxStaleRounds: 3, maxEvidence: 50 },
     },
+    approvalGate: {
+      notifyCooldownMs: 1_800_000,
+    },
     reflection: { enabled: false, maxRounds: 1, criticModel: "" },
     ...overrides,
     // 浅合并会整段覆盖 skills/goal，这里补回默认字段

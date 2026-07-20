@@ -210,6 +210,11 @@ export interface AppConfig {
       maxEvidence: number;
     };
   };
+  /** W3：审批 gate 通知冷却（per-approval lastNotifiedAt） */
+  approvalGate: {
+    /** 同一审批冷却窗口内不重复通知（毫秒）；默认 30min */
+    notifyCooldownMs: number;
+  };
   /** W7 反思：loop 进入 done 前一票结构化 critic（默认关闭） */
   reflection: {
     enabled: boolean;
@@ -423,6 +428,7 @@ export function createAppConfig(): AppConfig {
   const asyncJobsConfig = (yamlConfig.asyncJobs as Record<string, unknown>) || {};
   const heartbeatYaml = (yamlConfig.heartbeat as Record<string, unknown>) || {};
   const loopContractYaml = (heartbeatYaml.loopContract as Record<string, unknown>) || {};
+  const approvalGateYaml = (yamlConfig.approvalGate as Record<string, unknown>) || {};
   // llm 段 zod 解析：解析失败（如字段类型错误）回退默认值，不阻断启动
   const llmYamlParsed = LlmYamlSchema.safeParse(yamlConfig.llm ?? {});
   const llmYaml = llmYamlParsed.success ? llmYamlParsed.data : LlmYamlSchema.parse({});
@@ -644,6 +650,12 @@ export function createAppConfig(): AppConfig {
         maxStaleRounds: Math.max(1, parseInt(String(loopContractYaml.maxStaleRounds ?? "3"), 10)),
         maxEvidence: Math.max(5, parseInt(String(loopContractYaml.maxEvidence ?? "50"), 10)),
       },
+    },
+    approvalGate: {
+      notifyCooldownMs: Math.max(
+        0,
+        parseInt(String(approvalGateYaml.notifyCooldownMs ?? String(30 * 60_000)), 10),
+      ),
     },
     reflection: reflectionYaml,
     skills: skillsYaml,

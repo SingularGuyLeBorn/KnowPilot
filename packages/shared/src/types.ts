@@ -333,6 +333,10 @@ export interface Approval {
   decidedAt?: string | Date | null;
   decisionNote?: string | null;
   executedAt?: string | Date | null;
+  /** W3：`<domain>:<verb>:<target>`；调度面相交检查 */
+  decisionScope?: string | null;
+  /** W3：上次 gate 通知时间 */
+  lastNotifiedAt?: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
