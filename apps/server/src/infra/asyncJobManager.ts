@@ -109,6 +109,11 @@ interface AsyncTaskOutput {
   tokenUsage?: { prompt: number; completion: number; total: number };
   /** 执行过程中产生的进度/日志，供前端进度条与 LLM 状态查询使用 */
   logs?: AsyncTaskLogEntry[];
+  /**
+   * B1 投递豁免台账：true = 已原子认领 delivered 但故意不写会话气泡
+   * （如 sleep/async_task_tool 失败）。reconciler Pass 1 识别后跳过，避免孤儿回滚循环。
+   */
+  deliveryExempt?: boolean;
 }
 
 function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
@@ -348,13 +353,18 @@ export async function autoConsumeAsyncDelivery(options: {
 
   const failed = status === "failed" || task.status === "failed";
   // sleep / 纯工具失败：只留右栏 Task 看板，禁止灌进父会话气泡（否则 LLM 把错误当用户消息反复重试）。
-  // 仍原子标记 delivered，避免 reconciler 对「未投递失败」反复 notify。
+  // 原子标记 delivered + output.deliveryExempt 台账——Pass 1 识别豁免，避免「无气泡=孤儿」回滚循环。
   const lightweightSource =
     input?.sourceType === "sleep" || input?.sourceType === "async_task_tool";
   if (failed && lightweightSource) {
+    const prev = parseAsyncOutput(task.output);
     await prisma.task.updateMany({
       where: { id: jobId, delivered: false },
-      data: { delivered: true, deliveredAt: new Date() },
+      data: {
+        delivered: true,
+        deliveredAt: new Date(),
+        output: { ...prev, deliveryExempt: true },
+      },
     });
     return "skipped";
   }
@@ -657,6 +667,9 @@ export async function reconcileAsyncDeliveries(options: {
     // 同步任务（deliverToQueue=false）结果走 tool return，永不进气泡——不属于对账范围
     if (!input || input.deliverToQueue === false) continue;
     const sessionId = input.sessionId;
+
+    // B1：deliveryExempt 台账 = 故意不写气泡的已认领交付（如轻量失败），不是孤儿
+    if (parseAsyncOutput(task.output).deliveryExempt === true) continue;
 
     // ground truth：会话里是否已有携带该 jobId 台账的气泡（Prisma SQLite 不支持 JSON 路径过滤，
     // 用 json_extract 裸查；toolResults 为 NULL 时 json_extract 返回 NULL 天然不命中）
