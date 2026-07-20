@@ -10,11 +10,11 @@
 |---|---|---|---|---|
 | D1 | P0 | 实体双写顺序倒置无补偿：写文件失败 → 下次 sync 硬删实体 | services.ts:268-331,400-469 | PR-1 · 已修复@a10d1a5c |
 | D2 | P0 | Windows 下 sync-posts `.trash` 过滤永不命中：回收站文章以新 slug 复活并公开 | sync-posts.ts:25,112 | PR-1 · 已修复@a916242e |
-| A1 | P1 | 合成轮吞掉 AbortError：用户点停止被写成 success 并落库假兜底文案 | reactLoop.ts:619-674 | PR-5 |
-| A2 | P1 | SSE 事件 id 双命名空间：断线续传重放错乱 + 重放后 synthetic done 双发 | sessionStreamHub.ts:103-115,540-556; agentStream.ts:1045-1112 | PR-5 |
-| A3 | P1 | autoCompact 双写无串行化/CAS：contextSummary 与边界消息可分裂，静默丢上下文视野 | autoCompact.ts:450-517; router.ts:676-698 | PR-5 |
-| A4 | P1 | POST 起流返回值被忽略 + 占位 sessionId 共享键 `""`：新消息静默丢失、两新聊天串流 | agentStream.ts:963-1010 | PR-5 |
-| A5 | P1 | steer/follow_up 注入队列随 RunState 销毁：UI 承诺「已注入」服务端静默丢弃 | sessionStreamHub.ts:315-467; reactLoop.ts:381,605 | PR-5 |
+| A1 | P1 | 合成轮吞掉 AbortError：用户点停止被写成 success 并落库假兜底文案 | reactLoop.ts:619-674 | 已修复@57b0fe2b（原 PR-5） |
+| A2 | P1 | SSE 事件 id 双命名空间：断线续传重放错乱 + 重放后 synthetic done 双发 | sessionStreamHub.ts:103-115,540-556; agentStream.ts:1045-1112 | 已修复@ee762e2f（原 PR-5） |
+| A3 | P1 | autoCompact 双写无串行化/CAS：contextSummary 与边界消息可分裂，静默丢上下文视野 | autoCompact.ts:450-517; router.ts:676-698 | 已修复@8e6a3eb6（原 PR-5） |
+| A4 | P1 | POST 起流返回值被忽略 + 占位 sessionId 共享键 `""`：新消息静默丢失、两新聊天串流 | agentStream.ts:963-1010 | 已修复@2afbc363（原 PR-5） |
+| A5 | P1 | steer/follow_up 注入队列随 RunState 销毁：UI 承诺「已注入」服务端静默丢弃 | sessionStreamHub.ts:315-467; reactLoop.ts:381,605 | 已修复@84132a60（原 PR-5） |
 | B1 | P1 | reconciler 对「失败轻量任务」形成永不收敛的对账循环 | asyncJobManager.ts:354-360↔619-688 | PR-4 |
 | B2 | P1 | superior drain「删除即认领」+ 同事务置 consumed：崩溃窗口消息永久丢失 | services.ts:2129-2159; asyncJobManager.ts:271-286 | PR-4 |
 | C1 | P1 | 僵尸 running Task 永久卡死心跳与定时任务（恢复扫描只认 `[async]` 前缀） | asyncJobManager.ts:930-935; heartbeatEngine.ts:331-375; taskScheduler.ts:56-59; triggerEngine.ts:142-148 | 已修复@d14fc926（原 PR-3） |
@@ -26,7 +26,7 @@
 | D6 | P1 | destructive 两份清单漂移：`agent_delete_sub` 删除操作绕过审批 | approvalGate.ts:48-65 vs native/swarm.ts:1476 | 已修复@36a785b2（原 PR-2） |
 | E1 | P1 | ACK 瞬态失败 → 异步结果永久丢失（consumedDeliveries 持久化无 unmark） | useChatQueueDrain.ts:107-122 | PR-6 |
 | E2 | P1 | INV-1 不在 reducer：COMMIT_STREAM 接受 streaming→idle 直跳 | useStreamLifecycle.ts:248-262,511-525 | PR-6 |
-| E3 | P1 | abort 后 2s setTimeout 兜底（时序猜测补丁，partial 对齐靠赌） | useChatRunStream.ts:566-573 | PR-6（+PR-5 服务端契约） |
+| E3 | P1 | abort 后 2s setTimeout 兜底（时序猜测补丁，partial 对齐靠赌） | useChatRunStream.ts:566-573 | PR-6（服务端契约已修复@d42f82f4） |
 | A6 | P2 | 审批/ask_user 两 gate 挂起-唤醒-中止语义不一致 | approvalGate.ts:160-232 | 已修复@1f19ee4f（原 PR-2/A6） |
 | A7 | P2 | stream/sync 两链路行为分叉：reflection 拦不住已流出拒稿；sync abort 不留部分稿 | reflection.ts:138-150; agentStream.ts:870-898; agentRuntime.ts:252-258 | 登记 |
 | A8 | P2 | 扁平存储重建：注入消息时序失真 + inject 落库失败幻影消息 | chatHistory.ts:144-215; reactLoop.ts:161-187 | 登记 |

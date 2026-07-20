@@ -1342,3 +1342,25 @@ PR-3 后心跳仍是「cron 到点 → 预算检查 → 直接 dispatch」。缺
 | 持久化 | `Agent.heartbeat.decision` 子键 `json_set`，禁止整 blob 覆写 | 对齐 PR-3 C4 运行态/配置态分列 |
 
 **回答**：按上表落地（分支 `feat/heartbeat-decision`）
+
+---
+
+## PR-5 流式内核不变量（2026-07-21，arch/stream-kernel）
+
+### 背景
+
+体检 A1–A5 + E3 服务端：合成轮吞 Abort、SSE id 双命名空间、compact 双写无 CAS、起流互斥二值化+共享占位键、inject 随 RunState GC、stop/abort partial id 无契约。
+
+### 决策
+
+| 编号 | 决策 | 结论 |
+| --- | --- | --- |
+| A1 | synthesizing 终态 | AbortError 用 `isAbortLikeError` 重抛；`finalizeRun` 拒绝 aborted→success（唯一合法 cancelled） |
+| A2 | 事件 id | `SessionStreamEvent.seq` per-session 单调；SSE/`resumeAfter`/重放同源；token 合帧带尾帧 seq；DB 已有 done 不补 synthetic done |
+| A3 | compact | `compactGeneration` 显式列 + 单事务 CAS；running 拒手动 compact |
+| A4 | 起流互斥 | `started` / `duplicate` / `busy`；占位键每 POST 唯一；busy→409（web 排队属 PR-6） |
+| A5 | inject 持久化 | 接受即写 `SessionQueueItem(kind=steer\|follow_up)`；ack 删行；收尾未消费移交 `kind=user`；PR-4 未合不引入 claimedAt |
+| E3 | abort 契约 | stop 响应 `partialAssistantMessageId`；预生成 id 与落库同值（web 消 setTimeout 属 PR-6） |
+| P11 附带 | 单主会话 | `SessionService.create/update(isMainSession)` 摘掉同 Agent 其它主标记，避免 prepare/spawn findFirst 命中空壳 |
+
+**回答**：按上表落地（分支 `arch/stream-kernel`）
