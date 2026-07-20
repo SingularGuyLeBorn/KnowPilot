@@ -1427,4 +1427,25 @@ PR-3 后心跳仍是「cron 到点 → 预算检查 → 直接 dispatch」。缺
 | B6 | 同步抛错 | `Promise.resolve().then(() => execute)`，finally 必走 |
 | B7 | 唯一约束 | `@@unique([sessionId, agentMessageId])` + 事务 create / P2002 幂等 |
 
-**回答**：按上表落地（分支 `arch/async-delivery-queue`）
+**回答**：按上表落地（分支 `arch/async-delivery-queue`→master `74eeccc8`）
+
+---
+
+## W3 审批 decision-scope + safe bypass（2026-07-21，feat/approval-scope）
+
+### 背景
+
+审批 pending 后整 run 挂起 `awaiting_human`（单 run 内串行，正确且保留）。跨工作项调度面此前无 scope：任一 pending 会让心跳/池任务整体停摆或无关 lane 被连带堵住。参考 loopx gate decision-scope / safe bypass / 通知冷却。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| Scope 模型 | `Approval.decisionScope` = `<domain>:<verb>:<target>`，服务端从工具名+关键参数派生（LLM 不可见）；缺省 `tool:<name>`；匹配为字符串前缀级（不做 realpath） |
+| 单 run | **保留** `awaiting_human` 整 run 挂起；不实现单 run 内工具级并行调度（登记待办） |
+| 调度面 | `AsyncJobOrchestrator` / `SwarmTaskSpec.requiredScopes`：pending scope ∩ requiredScopes → `reason=gate` 跳过；不相交正常准入。容量类 reason 仍保留入队首因 |
+| 心跳 | `wait_user_gate` 附带被堵 scope；不相交且有队列 → `bounded_delivery`（reasons 注明其余推进） |
+| safe bypass | 同 gate 生命周期内一次只读 turn（`safeBypassUsed`）；无只读工具则纯等待；`readonlyOnly` 写工具硬拒 |
+| 通知冷却 | `Approval.lastNotifiedAt` + `config.approvalGate.notifyCooldownMs`（默认 30min）；单点 `notifyPendingApprovalIfCooldownAllows` |
+
+**回答**：按上表落地（分支 `feat/approval-scope`→master）
