@@ -313,6 +313,16 @@ export async function executeAgentTool(
     throw new Error(`Agent 未授权使用原生工具 ${nativeName}`);
   }
 
+  // W3 safe bypass：只读 turn 内写工具硬拒（复用 isReadonlyTool / reentrant 集）
+  if (ctx.readonlyOnly) {
+    const { isReadonlyTool } = await import("./approvalScope.js");
+    if (!isReadonlyTool(nativeName)) {
+      throw new Error(
+        `SAFE_BYPASS_READONLY：当前为审批 gate 下的只读分析步，禁止执行写工具「${nativeName}」。`,
+      );
+    }
+  }
+
   // HITL：native 危险操作与 tRPC 审批走同一闸门（AGENT_DESTRUCTIVE_APPROVAL / APPROVAL_REQUIRED_OPS）
   const approvalId = typeof args.approvalId === "string" ? args.approvalId : undefined;
   await assertApprovalOrProceed(ctx.services, nativeName, args, approvalId);
@@ -387,7 +397,11 @@ export async function executeToolCallsBatch(
             error: msg,
             elapsedMs: Date.now() - started,
             timedOut: false,
-            approvalPending: { approvalId: pendingApproval.approvalId, toolName: item.parsed.name },
+            approvalPending: {
+              approvalId: pendingApproval.approvalId,
+              toolName: item.parsed.name,
+              decisionScope: pendingApproval.decisionScope,
+            },
           },
         };
       }
@@ -476,6 +490,8 @@ export function createAgentToolContext(
     runOrigin?: NativeToolContext["runOrigin"];
     /** W6：本 run 的 D 类工具回滚栈（reactLoop 注入） */
     rollbackStack?: NativeToolContext["rollbackStack"];
+    /** W3 safe bypass */
+    readonlyOnly?: boolean;
   },
 ): AgentToolContext {
   return {
@@ -487,6 +503,7 @@ export function createAgentToolContext(
     agentSnapshot: meta?.agentSnapshot,
     runOrigin: meta?.runOrigin,
     rollbackStack: meta?.rollbackStack,
+    readonlyOnly: meta?.readonlyOnly === true,
     // W4：向工具层注入 Agent 解析（agentResolver 是叶子模块，不重建循环依赖）
     resolveAgent,
     allowedNative: parsed.native,
