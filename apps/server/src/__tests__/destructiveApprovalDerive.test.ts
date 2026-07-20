@@ -7,11 +7,10 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
-import { registerNativeDomains } from "../infra/tools/native/index.js";
+import { listNativeTools } from "../infra/nativeTools.js";
 import {
   listTools,
   listDestructiveNativeOpsForApproval,
-  __resetToolRegistryForTests,
 } from "../infra/tools/registry.js";
 import {
   toolRequiresApproval,
@@ -23,8 +22,8 @@ describe("D6 destructive 审批清单派生", () => {
   const prevRequire = process.env.REQUIRE_APPROVAL;
 
   beforeAll(() => {
-    __resetToolRegistryForTests();
-    registerNativeDomains();
+    // 触发 ensureNativeToolsRegistered，不清空全局 registry（避免污染并行用例）
+    expect(listNativeTools().length).toBeGreaterThan(0);
   });
 
   beforeEach(() => {

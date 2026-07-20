@@ -13,8 +13,7 @@ import {
   getApprovalPendingTtlMs,
   getDestructiveNativeOps,
 } from "../infra/approvalGate.js";
-import { registerNativeDomains } from "../infra/tools/native/index.js";
-import { __resetToolRegistryForTests } from "../infra/tools/registry.js";
+import { listNativeTools } from "../infra/nativeTools.js";
 import type { LlmToolCall } from "../infra/llmClient.js";
 
 function tc(id: string, name = "web_search"): LlmToolCall {
@@ -58,8 +57,7 @@ describe("approvalGate destructive + TTL", () => {
   const prevTtl = process.env.APPROVAL_PENDING_TTL_MS;
 
   beforeAll(() => {
-    __resetToolRegistryForTests();
-    registerNativeDomains();
+    expect(listNativeTools().length).toBeGreaterThan(0);
   });
 
   beforeEach(() => {
