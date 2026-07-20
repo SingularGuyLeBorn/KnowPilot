@@ -809,34 +809,29 @@ export interface StartupRecoveryResult {
  * 不是第三条并行恢复路径——动作 1 收拢既有 recoverStaleAsyncJobs，动作 2 与 R-1 孤儿共用
  * reconcileAsyncDeliveries 同一幂等入口（CLAIM 原子互斥 + notify/autoConsume 管道）。
  *
- * 四动作（顺序敏感）：
- * 1. 僵尸 running/queued async Task 两态分叉（C-2）：reentrant=true 且 retryCount<maxRetries
- *    → retryCount+1 先落库（crash-loop 防护即账本）并重建执行体自动续跑入 v8 全局池；
- *    否则 → failed（reentrant=false「服务重启，任务中断」/ 超上限「需人工介入」）。
- *    副作用未知的任务不盲目重跑（进程死亡时进度未知），retryAsyncJob 保留手动重试。
- * 2. 僵尸 running ChatSession → paused（条件写 updateMany）：重启后 hub 无任何活跃流，
- *    仍 running 的会话都是尸体。先于动作 3 执行——drain 重注册会把有真实积压的会话重新置 running。
- * 3. superior 孤儿 SessionQueueItem → 重新注册 drain（v7 W-E 机制，swarm.ts 叶子实现；
- *    进程内 drain 链随重启丢失，pending 队列项跨重启留存于 SQLite）。
- * 4. 合并对账首轮（reconcileAsyncDeliveries）：R-2 动作 2 补投 delivered=false 终态未投递
- *    + R-1 孤儿回滚补投 delivered=true 但会话无气泡的记录。全部走同一 notify/autoConsume 管道，
- *    不另造投递路径。AgentMessage pending 超龄走 W14 既有 reconcileAgentMessageLedger 对账。
+ * 四动作（顺序敏感；B4：僵尸会话 paused 先于 Task 续跑，避免刚被 resume 置 running 的子会话被误伤）：
+ * 1. 僵尸 running ChatSession → paused（条件写 updateMany）：重启后 hub 无任何活跃流，
+ *    仍 running 的会话都是尸体。
+ * 2. 僵尸 running/queued async Task 两态分叉（C-2）：reentrant=true 且 retryCount<maxRetries
+ *    → retryCount+1 先落库并认领为 resuming，重建执行体入池；否则 → failed。
+ * 3. superior 孤儿 SessionQueueItem → 重新注册 drain（含 B2 超龄软认领重置）。
+ * 4. 合并对账首轮（reconcileAsyncDeliveries）。
  */
 export async function runStartupRecovery(options: {
   config: AppConfig;
   services: ServiceContainer;
 }): Promise<StartupRecoveryResult> {
   const { config, services } = options;
-  // 动作 1（含同步其 subagent ChatSession 标 failed；reentrant 僵尸自动续跑）
-  const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
-  // 动作 2：僵尸 running 会话 → paused
+  // B4 动作 1：僵尸 running 会话 → paused（先于 Task 续跑，防误伤刚起流的子会话）
   const zombieSessions = await prisma.chatSession.updateMany({
     where: { status: "running" },
     data: { status: "paused" },
   });
-  // B2：超龄软认领重置（须在 superior drain 重注册之前，否则认领中项对 list 不可见）
+  // 动作 2：Task 恢复（reentrant 续跑入池 / 否则 failed）
+  const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
+  // B2：超龄软认领重置（须在 superior drain 重注册之前）
   const staleQueueClaimsReleased = await services.sessionQueueItem.releaseStaleClaims();
-  // 动作 3：动态 import——swarm.ts 处于 ReAct 环内（agentStream/agentRuntime 依赖链），静态导入成环
+  // 动作 3：superior 孤儿 drain 重注册
   const { requeueOrphanedSuperiorDrains } = await import("./tools/native/swarm.js");
   const superiorDrainsRegistered = await requeueOrphanedSuperiorDrains(config, services);
   // 动作 4 + R-1 孤儿：合并对账首轮
@@ -954,6 +949,8 @@ export async function recoverStaleRuns(): Promise<number> {
  *
  * 幂等：启动一次+测试可能重复调用——逐条条件写认领（updateMany where id + status in
  * (running,queued) 当前快照），落选（count=0）跳过，重入/并发安全。
+ * B4：续跑认领写中间态 `resuming`（认领条件排除之），同进程二次调用不会再 +retryCount / 双入池；
+ * 入池成功后由执行体转 running；入池被拒回落 queued 待下次恢复。
  */
 export async function recoverStaleAsyncJobs(
   config: AppConfig,
@@ -978,12 +975,12 @@ export async function recoverStaleAsyncJobs(
 
     // 仅可解析的 async 输入才具备续跑重建能力；心跳/cron/trigger 僵尸默认不可重入 → failed
     if (input && task.reentrant && task.retryCount < task.maxRetries) {
-      // 自动续跑分支：先落库计数 + 状态重置（条件写认领），再入池
+      // B4：认领 → resuming（排除二次认领），再入池
       const claimed = await prisma.task.updateMany({
         where: { id: task.id, status: { in: ["running", "queued"] } },
         data: {
           retryCount: { increment: 1 },
-          status: "queued",
+          status: "resuming",
           queuedAt: new Date(),
           startedAt: null,
           finishedAt: null,
@@ -1011,9 +1008,15 @@ export async function recoverStaleAsyncJobs(
         });
         resumed++;
       } catch (err) {
-        // 入池被拒（maxQueued 满）：不标 failed、不回滚计数——维持 queued 等下轮恢复（见 docstring）
+        // 入池被拒：回落 queued（非 resuming），不回滚计数——下次恢复可再认领
+        await prisma.task
+          .updateMany({
+            where: { id: task.id, status: "resuming" },
+            data: { status: "queued" },
+          })
+          .catch(() => {});
         console.warn(
-          `[recoverStaleAsyncJobs] 僵尸任务 ${task.id} 续跑入池被拒，维持 queued 待下次恢复:`,
+          `[recoverStaleAsyncJobs] 僵尸任务 ${task.id} 续跑入池被拒，回落 queued 待下次恢复:`,
           err instanceof Error ? err.message : err,
         );
       }

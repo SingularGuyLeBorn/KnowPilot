@@ -288,7 +288,7 @@ model Task {
   id             String    @id @default(cuid())
   name           String
   type           String    /// "cron" | "oneshot" | "async_agent"
-  status         String    /// "queued" | "running" | "success" | "failed" | "cancelled"
+  status         String    /// "queued" | "resuming" | "running" | "success" | "failed" | "cancelled"
   sessionId      String?   /// 异步 Agent 任务归属的 ChatSession id
   delivered      Boolean   @default(false) /// 异步结果是否已投递给前端
   deliveredAt    DateTime? /// 异步结果投递时间
