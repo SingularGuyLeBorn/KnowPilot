@@ -85,16 +85,56 @@ function tryCommitAfterHydrate(sessionId: string, messages: ChatMessage[]): void
   }
 }
 
+/** upsert / hydrate 共用：内容字段全等则 skip */
+function messageFieldsEqual(a: ChatMessage, b: ChatMessage): boolean {
+  return (
+    a.content === b.content &&
+    a.toolCalls === b.toolCalls &&
+    a.toolResults === b.toolResults &&
+    a.tokenUsage === b.tokenUsage
+  );
+}
+
+/**
+ * E5：hydrate same-id 取新——后到达者幂等取新，不覆盖已更新内容。
+ * 无 updatedAt 时：字段全等复用 prev；assistant 内容更长（SSE 递进）优先；
+ * 元数据更丰富优先；其余取 incoming（显式刷新）。
+ */
+function pickFresherMessage(prev: ChatMessage, incoming: ChatMessage): ChatMessage {
+  if (messageFieldsEqual(prev, incoming)) return prev;
+  if (prev.role === "assistant" && incoming.role === "assistant") {
+    if (prev.content.length > incoming.content.length) return prev;
+    if (prev.content.length < incoming.content.length) return incoming;
+  }
+  const richness = (m: ChatMessage) =>
+    (m.toolCalls ? 1 : 0) + (m.toolResults ? 1 : 0) + (m.tokenUsage ? 1 : 0);
+  const prevR = richness(prev);
+  const incR = richness(incoming);
+  if (prevR > incR) return prev;
+  if (incR > prevR) return incoming;
+  return incoming;
+}
+
 function reducer(state: MessageMap, action: Action): MessageMap {
   switch (action.type) {
     case "hydrate": {
       const existing = state.get(action.sessionId);
       const incoming = action.messages.map(normalizeMessage);
       if (existing) {
+        const existingById = new Map(existing.map((m) => [m.id, m]));
         const incomingIds = new Set(incoming.map((m) => m.id));
         const older = existing.filter((m) => !incomingIds.has(m.id));
-        const merged = [...older, ...incoming].sort(cmpByCreatedAt);
-        if (merged.length === existing.length && merged.every((m, i) => m.id === existing[i].id)) {
+        // same-id：逐字段 compare-skip / 取新（禁止 stale 快照覆盖 SSE v2）
+        const mergedIncoming = incoming.map((msg) => {
+          const prev = existingById.get(msg.id);
+          return prev ? pickFresherMessage(prev, msg) : msg;
+        });
+        const merged = [...older, ...mergedIncoming].sort(cmpByCreatedAt);
+        // 快路径：整列 id 相等且字段无变化
+        if (
+          merged.length === existing.length &&
+          merged.every((m, i) => m.id === existing[i].id && messageFieldsEqual(m, existing[i]))
+        ) {
           return state;
         }
         const next = new Map(state);
@@ -112,12 +152,7 @@ function reducer(state: MessageMap, action: Action): MessageMap {
       let nextList: ChatMessage[];
       if (idx >= 0) {
         const prev = list[idx];
-        if (
-          prev.content === msg.content &&
-          prev.toolCalls === msg.toolCalls &&
-          prev.toolResults === msg.toolResults &&
-          prev.tokenUsage === msg.tokenUsage
-        ) {
+        if (messageFieldsEqual(prev, msg)) {
           return state;
         }
         nextList = list.slice();
