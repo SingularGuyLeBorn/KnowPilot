@@ -1064,11 +1064,16 @@ describe("TP-4 防崩压测", () => {
       expect(JSON.stringify(bRow?.output)).toMatch(/取消/);
 
       // 5) 取消 A（运行中）：signal abort 级联到子会话流（占位流被 hub.stop）
+      // 先清 busy 入队的 superior 项，避免 hub.finally → drain 立刻重起流导致 isRunning 又变 true
+      await prisma.sessionQueueItem.deleteMany({ where: { sessionId: subA.subSessionId } }).catch(() => {});
       const cancelA = await cancelAsyncJob(a.jobId!, narrow, ctx.services);
       expect(cancelA.cancelled).toBe(true);
       await vi.waitFor(() => expect(childAborted).toBe(true), { timeout: 3000, interval: 20 });
       await vi.waitFor(() => expect(orch.isRunning(a.jobId!)).toBe(false), { timeout: 3000, interval: 20 });
-      expect(hub.isRunning(subA.subSessionId)).toBe(false);
+      await vi.waitFor(() => expect(hub.isRunning(subA.subSessionId)).toBe(false), {
+        timeout: 3000,
+        interval: 20,
+      });
       await vi.waitFor(
         async () => {
           expect((await prisma.task.findUnique({ where: { id: a.jobId! } }))?.status).toBe("failed");

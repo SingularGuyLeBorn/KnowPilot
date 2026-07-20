@@ -1716,6 +1716,43 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     };
   }
 
+  /**
+   * P11 不变量：每 Agent 至多一条 isMainSession=true（与 ensureMainSession 同源）。
+   * 新建/提升主会话前摘掉同 Agent 其它主会话标记，避免 prepareAgentRun findFirst
+   * 命中「空壳主会话」而测试/业务占用的是另一条 isMainSession 会话。
+   */
+  private async demoteOtherMainSessions(agentId: string, exceptId?: string): Promise<void> {
+    await this.prisma.chatSession.updateMany({
+      where: {
+        agentId,
+        isMainSession: true,
+        status: { not: "deleted" },
+        ...(exceptId ? { id: { not: exceptId } } : {}),
+      },
+      data: { isMainSession: false },
+    });
+  }
+
+  override async create(input: CreateSessionInput): Promise<OperationResult<SessionEntity>> {
+    if (input.isMainSession && input.agentId) {
+      await this.demoteOtherMainSessions(input.agentId);
+    }
+    return super.create(input);
+  }
+
+  override async update(input: UpdateSessionInput): Promise<OperationResult<SessionEntity>> {
+    if (input.isMainSession === true) {
+      const existing = await this.prisma.chatSession.findUnique({
+        where: { id: input.id },
+        select: { agentId: true },
+      });
+      if (existing?.agentId) {
+        await this.demoteOtherMainSessions(existing.agentId, input.id);
+      }
+    }
+    return super.update(input);
+  }
+
   override async getById(id: string): Promise<any> {
     // P0-1 彻底解耦：getById 只返会话元数据（title/model/agentId/kind/status...），不含 messages。
     // 消息由前端 useInfiniteQuery 走 message.listForChat（cursor 分页）独立加载。
