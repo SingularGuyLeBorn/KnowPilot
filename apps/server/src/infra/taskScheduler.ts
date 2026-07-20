@@ -5,6 +5,7 @@
 import cron, { type ScheduledTask } from "node-cron";
 import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
+// 重叠互斥收进 TaskService.run → claimTaskRun，本调度器不再 check-then-act
 
 export class TaskScheduler {
   private jobs = new Map<string, ScheduledTask>();
@@ -51,15 +52,13 @@ export class TaskScheduler {
   }
 
   private async runScheduled(taskId: string, taskName: string): Promise<void> {
-    // 重叠保护：cron 触发前查 DB，running 则跳过防叠跑
+    // 重叠互斥单点 = TaskService.run → claimTaskRun（禁止本层再 check-then-act）
     try {
-      const current = await this.prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
-      if (current?.status === "running") {
-        console.warn(`  ⏰ [TaskScheduler] 任务 "${taskName}" 正在运行，跳过本次触发`);
-        return;
-      }
       console.log(`  ⏰ [TaskScheduler] 触发执行: ${taskName}`);
-      await this.services.task.run(taskId);
+      const result = await this.services.task.run(taskId);
+      if (!result.success && result.error?.code === "TASK_ALREADY_RUNNING") {
+        console.warn(`  ⏰ [TaskScheduler] 任务 "${taskName}" 正在运行，跳过本次触发`);
+      }
     } catch (err: unknown) {
       console.error(
         `  ❌ [TaskScheduler] 任务 "${taskName}" 执行失败:`,
