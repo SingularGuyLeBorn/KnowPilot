@@ -111,6 +111,14 @@ goal:
 
 # 超级 Agent 心跳 Loop Contract（控制平面；不替换 ReAct）
 heartbeat:
+  # W2 决策层：cron 只负责唤醒；decisionEnabled=false 可整体回退到旧「到点即跑」
+  decisionEnabled: true
+  # quiet/monitor_quiet_skip 退避 skipTicks 上限（1→3→7→cap）
+  quietCap: 8
+  # 连续 K 次 quiet（无 gate/队列）→ terminal_no_followup，复用 heartbeatSuspendedAt
+  terminalAfterQuiet: 3
+  # wait_user_gate 同 gate 通知冷却（毫秒）
+  gateNotifyCooldownMs: 1800000
   loopContract:
     # 连续 N 轮无新 evidence → handoff=false，跳过后续触发直至 resume
     maxStaleRounds: 3

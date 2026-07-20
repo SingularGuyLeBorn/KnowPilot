@@ -124,6 +124,28 @@ export const loopContractSchema = z.object({
   stoppedReason: z.string().nullable().default(null),
 });
 
+/** W2：心跳决策运行态（存 Agent.heartbeat.decision，与配置态分列） */
+export const heartbeatDecisionStateSchema = z.object({
+  skipRemaining: z.number().int().min(0).default(0),
+  resetToken: z.string().default(""),
+  lastMode: z
+    .enum([
+      "bounded_delivery",
+      "wait_user_gate",
+      "monitor_quiet_skip",
+      "quiet",
+      "repair",
+      "terminal_no_followup",
+    ])
+    .nullable()
+    .optional(),
+  quietStreak: z.number().int().min(0).default(0),
+  lastSkipTicks: z.number().int().min(0).default(0),
+  lastGateNotifyAt: z.string().nullable().optional(),
+  lastGateNotifyKey: z.string().nullable().optional(),
+  terminalAt: z.string().nullable().optional(),
+});
+
 export const heartbeatConfigSchema = z.object({
   enabled: z.boolean().default(false),
   cron: z.string().default("0 9 * * *"),
@@ -133,6 +155,8 @@ export const heartbeatConfigSchema = z.object({
   consecutiveFailures: z.number().default(0),
   /** LoopX 式控制平面（Phase 1：超级 Agent 心跳） */
   loopContract: loopContractSchema.optional(),
+  /** W2 决策运行态（引擎 json_set 原子更新，勿整 blob 覆写） */
+  decision: heartbeatDecisionStateSchema.optional(),
 });
 
 export const createAgentSchema = z.object({

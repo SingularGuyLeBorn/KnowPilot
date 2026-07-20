@@ -66,6 +66,25 @@ export interface LoopContract {
   stoppedReason: string | null;
 }
 
+/** W2：心跳决策运行态（Agent.heartbeat.decision） */
+export interface HeartbeatDecisionState {
+  skipRemaining: number;
+  resetToken: string;
+  lastMode:
+    | "bounded_delivery"
+    | "wait_user_gate"
+    | "monitor_quiet_skip"
+    | "quiet"
+    | "repair"
+    | "terminal_no_followup"
+    | null;
+  quietStreak: number;
+  lastSkipTicks: number;
+  lastGateNotifyAt?: string | null;
+  lastGateNotifyKey?: string | null;
+  terminalAt?: string | null;
+}
+
 export interface HeartbeatConfig {
   enabled: boolean;
   cron: string;
@@ -74,6 +93,7 @@ export interface HeartbeatConfig {
   lastRunStatus: string | null;
   consecutiveFailures: number;
   loopContract?: LoopContract;
+  decision?: HeartbeatDecisionState;
 }
 
 /** Agent 间消息 */
