@@ -9,6 +9,7 @@
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
+import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readBoolean, getFileMtime } from "./utils.js";
 import {
   inferKindFromScanPath,
@@ -144,7 +145,7 @@ export const skillSyncer: Syncer<SkillData> = {
   async upsert(prisma: PrismaClient, record: SyncRecord<SkillData>): Promise<void> {
     const { slug, mtime, data } = record;
 
-    await prisma.skill.upsert({
+    const row = await prisma.skill.upsert({
       where: { name: data.name },
       update: {
         description: data.description,
@@ -168,10 +169,23 @@ export const skillSyncer: Syncer<SkillData> = {
         sourceMtime: mtime,
       },
     });
+    try {
+      await upsertFtsRow(prisma, "skill", row.id, row.name, `${row.description}\n${row.code}`);
+    } catch (e) {
+      console.warn(`  ⚠️ [Skill FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
+    }
   },
 
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const rows = await prisma.skill.findMany({ where: { sourceSlug: slug }, select: { id: true } });
     const r = await prisma.skill.deleteMany({ where: { sourceSlug: slug } });
+    for (const row of rows) {
+      try {
+        await deleteFtsRow(prisma, "skill", row.id);
+      } catch (e) {
+        console.warn(`  ⚠️ [Skill FTS] delete 失败 id=${row.id}:`, e instanceof Error ? e.message : e);
+      }
+    }
     return r.count;
   },
 

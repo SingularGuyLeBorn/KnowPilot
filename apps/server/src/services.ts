@@ -1451,17 +1451,20 @@ export class McpService extends FileSyncService<CreateMcpServerInput, UpdateMcpS
 
   protected getFileSlug(entity: McpServerEntity): string { return entity.name; }
 
-  // A9：MCP CRUD 后 emit 事件，通知 agentSchemaCache / mcpClient 缓存失效
+  // A9：MCP CRUD 后 emit 事件；D5：FTS 增量挂钩
   protected override async afterCreate(entity: McpServerEntity, input: CreateMcpServerInput): Promise<void> {
     await super.afterCreate(entity, input);
+    await this.syncFts("mcp", entity.id, entity.name, entity.command ?? "");
     this.eventBus.emit("mcp.created", entity);
   }
   protected override async afterUpdate(entity: McpServerEntity, existing: any, input: UpdateMcpServerInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
+    await this.syncFts("mcp", entity.id, entity.name, entity.command ?? "");
     this.eventBus.emit("mcp.updated", entity);
   }
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
+    await this.removeFts("mcp", existing.id);
     this.eventBus.emit("mcp.deleted", existing);
   }
 
@@ -2794,6 +2797,20 @@ ${entity.content}
   }
 
   protected getFileSlug(entity: any): string { return entity.name; }
+
+  // D5：Prompt FTS 增量挂钩（与 syncer upsert 对齐）
+  protected override async afterCreate(entity: any, input: CreatePromptInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    await this.syncFts("prompt", entity.id, entity.name, `${entity.description ?? ""}\n${entity.content ?? ""}`);
+  }
+  protected override async afterUpdate(entity: any, existing: any, input: UpdatePromptInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    await this.syncFts("prompt", entity.id, entity.name, `${entity.description ?? ""}\n${entity.content ?? ""}`);
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    await this.removeFts("prompt", existing.id);
+  }
 
   protected override async validateCreate(input: CreatePromptInput): Promise<void> {
     await this.assertUnique("name", input.name, "创建");

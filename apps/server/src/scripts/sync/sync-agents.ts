@@ -8,6 +8,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { LLM_MODEL_IDS } from "@knowpilot/shared";
+import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, getFileMtime } from "./utils.js";
 
@@ -68,6 +69,7 @@ export const agentSyncer: Syncer<AgentData> = {
     if (!existing) {
       existing = await prisma.agent.findFirst({ where: { name: data.name, status: { not: "deleted" } } });
     }
+    let rowId: string;
     if (existing) {
       await prisma.agent.update({
         where: { id: existing.id },
@@ -83,8 +85,9 @@ export const agentSyncer: Syncer<AgentData> = {
           sourceMtime: mtime,
         },
       });
+      rowId = existing.id;
     } else {
-      await prisma.agent.create({
+      const created = await prisma.agent.create({
         data: {
           name: data.name,
           description: data.description,
@@ -97,12 +100,33 @@ export const agentSyncer: Syncer<AgentData> = {
           sourceMtime: mtime,
         },
       });
+      rowId = created.id;
+    }
+
+    const live = await prisma.agent.findUnique({
+      where: { id: rowId },
+      select: { id: true, name: true, description: true, systemPrompt: true, status: true },
+    });
+    if (live && live.status !== "deleted") {
+      try {
+        await upsertFtsRow(prisma, "agent", live.id, live.name, `${live.description ?? ""}\n${live.systemPrompt ?? ""}`);
+      } catch (e) {
+        console.warn(`  ⚠️ [Agent FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
+      }
     }
   },
 
   // #7：unlink 增量硬删 by sourceSlug
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const rows = await prisma.agent.findMany({ where: { sourceSlug: slug }, select: { id: true } });
     const r = await prisma.agent.deleteMany({ where: { sourceSlug: slug } });
+    for (const row of rows) {
+      try {
+        await deleteFtsRow(prisma, "agent", row.id);
+      } catch (e) {
+        console.warn(`  ⚠️ [Agent FTS] delete 失败 id=${row.id}:`, e instanceof Error ? e.message : e);
+      }
+    }
     return r.count;
   },
 
