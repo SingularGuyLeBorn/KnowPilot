@@ -15,6 +15,9 @@ import { resetSwarmOrchestratorForTests } from "../infra/swarmOrchestrator.js";
 import { setStreamHub } from "../infra/sessionStreamHub.js";
 
 const RUN = `c2rf-${Date.now().toString(36)}`;
+/** 测试专用 cron，避开库内其它 Agent 常用的 0 9 / 0 10 */
+const CRON_A = "17 7 * * *";
+const CRON_B = "19 7 * * *";
 
 describe("C2 refresh 串行链 + generation 令牌", () => {
   beforeEach(() => {
@@ -38,18 +41,19 @@ describe("C2 refresh 串行链 + generation 令牌", () => {
       systemPrompt: "test",
       tools: [],
       tier: "manager",
-      heartbeat: { enabled: true, cron: "0 9 * * *", goal: "C2 双发防护" } as any,
+      heartbeat: { enabled: true, cron: CRON_A, goal: "C2 双发防护" } as any,
     });
     if (!created.success) throw new Error(created.error?.message);
     const agentId = (created.data as { id: string }).id;
 
-    let agentCronLive = 0;
-    vi.spyOn(cron, "schedule").mockImplementation(((expression: string) => {
-      const isAgentCron = expression === "0 9 * * *";
-      if (isAgentCron) agentCronLive++;
+    const liveByAgent = new Map<string, number>();
+    vi.spyOn(cron, "schedule").mockImplementation(((expression: string, _fn: () => void) => {
+      // 仅跟踪本用例 Agent 的 cron；维护任务与其它 Agent 不计入
+      const track = expression === CRON_A;
+      if (track) liveByAgent.set(agentId, (liveByAgent.get(agentId) ?? 0) + 1);
       return {
         stop: () => {
-          if (isAgentCron) agentCronLive = Math.max(0, agentCronLive - 1);
+          if (track) liveByAgent.set(agentId, Math.max(0, (liveByAgent.get(agentId) ?? 0) - 1));
         },
         start: () => {},
       } as unknown as ReturnType<typeof cron.schedule>;
@@ -60,10 +64,8 @@ describe("C2 refresh 串行链 + generation 令牌", () => {
       llm: { ...ctx.config.llm, dailyBudget: 0 },
     });
 
-    // 先无钩子完成 start
     await engine.start();
-    expect(engine.__getJobCountForTests()).toBe(1);
-    expect(agentCronLive).toBe(1);
+    expect(liveByAgent.get(agentId)).toBe(1);
 
     let releaseA: (() => void) | null = null;
     let yieldHits = 0;
@@ -71,7 +73,6 @@ describe("C2 refresh 串行链 + generation 令牌", () => {
       () =>
         new Promise<void>((resolve) => {
           yieldHits++;
-          // 仅挂起「第一条 refresh」的第一次 yield，制造与第二条的交叠窗口
           if (yieldHits === 1) {
             releaseA = resolve;
             return;
@@ -88,9 +89,7 @@ describe("C2 refresh 串行链 + generation 令牌", () => {
     releaseA!();
     await Promise.all([p1, p2]);
 
-    expect(agentCronLive).toBe(1);
-    expect(engine.__getJobCountForTests()).toBe(1);
-    void agentId;
+    expect(liveByAgent.get(agentId)).toBe(1);
   });
 
   it("start→stop→start 交错无泄漏 cron job", async () => {
@@ -101,13 +100,14 @@ describe("C2 refresh 串行链 + generation 令牌", () => {
       systemPrompt: "test",
       tools: [],
       tier: "manager",
-      heartbeat: { enabled: true, cron: "0 10 * * *", goal: "C2 stop 交错" } as any,
+      heartbeat: { enabled: true, cron: CRON_B, goal: "C2 stop 交错" } as any,
     });
     if (!created.success) throw new Error(created.error?.message);
+    const agentId = (created.data as { id: string }).id;
 
     let agentCronLive = 0;
     vi.spyOn(cron, "schedule").mockImplementation(((expression: string) => {
-      const isAgent = expression === "0 10 * * *";
+      const isAgent = expression === CRON_B;
       if (isAgent) agentCronLive++;
       return {
         stop: () => {
@@ -134,7 +134,6 @@ describe("C2 refresh 串行链 + generation 令牌", () => {
     await vi.waitFor(() => {
       expect(release).not.toBeNull();
     });
-    // 在首次 refresh 挂起期间 stop，再 start
     engine.stop();
     engine.__setRefreshYieldForTests(null);
     release!();
@@ -142,8 +141,8 @@ describe("C2 refresh 串行链 + generation 令牌", () => {
 
     await engine.start();
     await vi.waitFor(() => {
-      expect(engine.__getJobCountForTests()).toBe(1);
+      expect(agentCronLive).toBe(1);
     });
-    expect(agentCronLive).toBe(1);
+    void agentId;
   });
 });
