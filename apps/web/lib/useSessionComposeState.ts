@@ -52,6 +52,7 @@ type Action =
   | { type: "PATCH_ASYNC_OVERLAYS"; sessionId: string; updater: (q: ChatQueueItem[]) => ChatQueueItem[] }
   | { type: "SET_CONSUMED_DELIVERIES"; sessionId: string; consumed: Set<string> }
   | { type: "MARK_DELIVERY_CONSUMED"; sessionId: string; jobId: string }
+  | { type: "UNMARK_DELIVERY_CONSUMED"; sessionId: string; jobId: string }
   | { type: "SET_QUEUE_DRAINING"; sessionId: string; draining: boolean }
   | { type: "SET_ACTIVE_QUEUE_TASK"; sessionId: string; taskId: string | null }
   | { type: "MIGRATE"; fromKey: string; toSessionId: string }
@@ -109,6 +110,13 @@ function reducer(state: ComposeMap, action: Action): ComposeMap {
       const cur = ensure(state, action.sessionId);
       const next = new Set(cur.consumedDeliveries);
       next.add(action.jobId);
+      return set(action.sessionId, { ...cur, consumedDeliveries: next });
+    }
+    case "UNMARK_DELIVERY_CONSUMED": {
+      const cur = ensure(state, action.sessionId);
+      if (!cur.consumedDeliveries.has(action.jobId)) return state;
+      const next = new Set(cur.consumedDeliveries);
+      next.delete(action.jobId);
       return set(action.sessionId, { ...cur, consumedDeliveries: next });
     }
     case "SET_QUEUE_DRAINING":
@@ -177,6 +185,11 @@ function getStore(): SessionComposeStore {
   return globalStore;
 }
 
+/** 单测重置（勿在生产路径调用） */
+export function __resetSessionComposeStoreForTests(): void {
+  globalStore = null;
+}
+
 /** 语义化写操作 */
 export const sessionComposeActions = {
   addOptimisticUserBubble(sessionId: string, bubble: OptimisticUserBubble) {
@@ -226,6 +239,10 @@ export const sessionComposeActions = {
   },
   markDeliveryConsumed(sessionId: string, jobId: string) {
     getStore().dispatch({ type: "MARK_DELIVERY_CONSUMED", sessionId, jobId });
+  },
+  /** E1：ACK 未 claimed / 瞬态失败时回滚本地标记，允许 delivery 再出现 */
+  unmarkDeliveryConsumed(sessionId: string, jobId: string) {
+    getStore().dispatch({ type: "UNMARK_DELIVERY_CONSUMED", sessionId, jobId });
   },
   setQueueDraining(sessionId: string, draining: boolean) {
     getStore().dispatch({ type: "SET_QUEUE_DRAINING", sessionId, draining });
