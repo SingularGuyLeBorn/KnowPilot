@@ -38,7 +38,7 @@ import { AGENT_TOOL_RESULT_MAX_CHARS } from "@knowpilot/shared";
 import { createPhaseMachine } from "./phase.js";
 import { REFLECTION_UNPASSED_MARK } from "./reflection.js";
 import type { ReactLoopInput, ReactLoopResult, TurnSnapshot } from "./types.js";
-import { makeAbortError } from "../abortReason.js";
+import { isAbortLikeError, makeAbortError } from "../abortReason.js";
 
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
@@ -285,10 +285,16 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
   /** 终态统一收口：success / failed / cancelled（用户 abort），output 携带 phase 终态快照与业务字段 */
   const finalizeRun = async (terminal: "success" | "failed" | "cancelled", patch: Record<string, unknown>) => {
     if (!runId || !canUpdateRun || !runSvc) return;
+    // 不变量：aborted 时唯一合法终态 cancelled——拒绝 success 收口
+    let effective: "success" | "failed" | "cancelled" = terminal;
+    if (terminal === "success" && input.signal?.aborted === true) {
+      console.error("[ReactLoop] 拒绝 aborted run 以 success 收口，强制 cancelled");
+      effective = "cancelled";
+    }
     try {
       await runSvc.update({
         id: runId,
-        status: terminal,
+        status: effective,
         output: { ...patch, phase: machine.phase, roundsUsed, executedToolsCount: countExecutedTools() },
         toolCalls: executedTools,
         tokenUsage: totalUsage,
@@ -304,12 +310,15 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     machine.transition("compacting");
 
     let existingSummary: string | null = null;
+    let existingGeneration = 0;
     if (input.sessionId) {
       try {
         const sess =
           (await input.services.session.getByIdLite?.(input.sessionId)) ??
           (await input.services.session.getById(input.sessionId));
         existingSummary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? null;
+        existingGeneration =
+          (sess as { compactGeneration?: number | null } | null)?.compactGeneration ?? 0;
       } catch {
         /* ignore */
       }
@@ -317,6 +326,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
     const compacted = await maybeCompactMessages(input.config, llmMessages, snapshot.model, {
       existingSummary,
+      existingGeneration,
       flushContext: input.sessionId
         ? {
             services: input.services,
@@ -391,6 +401,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             reasoning_content: turn.reasoningContent ?? null,
           });
           await injectUserMessages(input, llmMessages, followUps, "follow_up");
+          // A5：注入成功后 ack 持久队列行，避免收尾误移交
+          if (input.sessionId) {
+            await getStreamHub()?.ackInject(
+              input.sessionId,
+              followUps.map((f) => f.id),
+            );
+          }
           continue;
         }
 
@@ -605,6 +622,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       const steers = input.runQueues?.takeSteer() ?? [];
       if (steers.length > 0) {
         await injectUserMessages(input, llmMessages, steers, "steer");
+        // A5：注入成功后 ack；若此处之后 abort，已 ack 的不再移交
+        if (input.sessionId) {
+          await getStreamHub()?.ackInject(
+            input.sessionId,
+            steers.map((s) => s.id),
+          );
+        }
       }
 
       // 下一轮 LLM
@@ -617,16 +641,23 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     }
 
     if (machine.phase === "synthesizing") {
+      // aborted 不得以兜底文案 success 收口——唯一合法终态 cancelled（外层 catch）
+      if (input.signal?.aborted) {
+        throw makeAbortError(input.signal);
+      }
       const hasToolWork = executedTools.some(
         (t) => t.name !== "__thinking__" && t.name !== "__content__",
       );
-      if (hasToolWork && !input.signal?.aborted) {
+      if (hasToolWork) {
         try {
           const synthesis = await input.transport.complete({
             messages: llmMessages,
             signal: input.signal,
             withTools: false,
           });
+          if (input.signal?.aborted) {
+            throw makeAbortError(input.signal);
+          }
           accumulateUsage(synthesis.tokenUsage);
           if (synthesis.model) lastModel = synthesis.model;
           if (synthesis.provider) lastProvider = synthesis.provider;
@@ -649,9 +680,17 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
               runId,
             };
           }
-        } catch {
+        } catch (err) {
+          // AbortError 必须重抛中断；其他合成失败才落兜底
+          if (isAbortLikeError(err) || input.signal?.aborted) {
+            throw isAbortLikeError(err) ? err : makeAbortError(input.signal);
+          }
           /* 合成失败落兜底 */
         }
+      }
+
+      if (input.signal?.aborted) {
+        throw makeAbortError(input.signal);
       }
 
       const fallback = hitToolBudget
@@ -699,8 +738,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     // W6：D 类工具补偿——run 进入 failed 且非用户 abort 时逆序回滚本 run 已执行的写入工具。
     // 回滚报告挂在错误对象上供上层（agentStream/agentRuntime）透传，并写入 failed Run 的
     // output.rollback（W11：终态由 finalizeRun 统一 update 到入口创建的 running 行）。
-    const isAbort =
-      input.signal?.aborted === true || (err instanceof Error && err.name === "AbortError");
+    const isAbort = input.signal?.aborted === true || isAbortLikeError(err);
     let report: RunRollbackReport | null = null;
     if (!isAbort) {
       try {

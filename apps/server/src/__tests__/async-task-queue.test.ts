@@ -21,7 +21,11 @@ import {
   listSyncAsyncJobs,
   retryAsyncJob,
 } from "../infra/asyncJobManager.js";
-import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
+import {
+  getAsyncJobOrchestrator,
+  resetAsyncJobOrchestratorForTests,
+} from "../infra/asyncJobOrchestrator.js";
+import { SessionStreamHub, setStreamHub } from "../infra/sessionStreamHub.js";
 import { createTestConfig } from "./helpers/toolTestFixtures.js";
 
 async function cleanupSessionTasks(sessionId: string, parentAgentId: string) {
@@ -201,6 +205,12 @@ describe("async-task-queue 工具协议", () => {
   });
 
   it("pullAsyncQueue 返回 running、queued、deliveries 三类数据", async () => {
+    // v7：纯工具 async_task_run 不占 LLM 全局槽、不会因 maxConcurrent 排队。
+    // running/queued 双态用 spawn_subagent（入池）制造；deliveries 用纯工具跑完投递。
+    process.env.MOCK_LLM = "true";
+    setStreamHub(
+      new SessionStreamHub({ ringSize: 50, persist: false, eventTtlMs: 500, cleanupIntervalMs: 0 }),
+    );
     const ctx = await createContextInner();
     const toolCtx = { ...ctx, invokeTrpc: async () => ({ ok: true }) };
     const session = await ctx.services.session.create({ title: "父会话", model: "deepseek-chat" });
@@ -219,59 +229,82 @@ describe("async-task-queue 工具协议", () => {
         maxSubagentsPerSession: 10,
       },
     });
+    const spawnCtx = {
+      ...toolCtx,
+      config: narrowConfig,
+      sessionId,
+      agentSnapshot: {
+        id: parentAgentId,
+        model: "deepseek-chat",
+        systemPrompt: "test",
+        tools: ["native:spawn_subagent"],
+        tier: "manager" as const,
+        workspaceId: null,
+        parentId: null,
+      },
+    };
 
+    let releaseBlocker: () => void = () => {};
     try {
-      const first = (await executeNativeTool(
+      // 占满唯一全局槽，保证 spawn 必 queued（纯工具不占槽，见下）
+      const orch = getAsyncJobOrchestrator(narrowConfig);
+      const gate = new Promise<void>((resolve) => {
+        releaseBlocker = resolve;
+      });
+      orch.enqueue({ jobId: "pull-queue-blocker", sessionId: "other-session", execute: () => gate });
+
+      const spawned = (await executeNativeTool(
+        "spawn_subagent",
+        { task: "队列 spawn 排队", name: "队列Spawn子", waitForResult: false },
+        spawnCtx,
+      )) as { jobId?: string; status?: string; success?: boolean };
+      expect(spawned.success).toBe(true);
+      expect(spawned.status).toBe("queued");
+      expect(spawned.jobId).toBeTruthy();
+
+      const queued = await listQueuedAsyncJobs(sessionId, narrowConfig);
+      expect(queued.length).toBe(1);
+      expect(queued[0].jobId).toBe(spawned.jobId);
+
+      // 纯工具不占 LLM 槽：可与池满并存，作为 running + 最终 deliveries
+      const toolJob = (await executeNativeTool(
         "async_task_run",
-        { task: "队列 A", label: "队列 A", toolCall: { tool: "wait", args: { ms: 300 } } },
+        { task: "投递探针", label: "投递探针", toolCall: { tool: "wait", args: { ms: 200 } } },
         {
           ...toolCtx,
           config: narrowConfig,
           sessionId,
-          agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: SNAPSHOT_TOOLS },
+          agentSnapshot: {
+            id: parentAgentId,
+            model: "deepseek-chat",
+            systemPrompt: "test",
+            tools: SNAPSHOT_TOOLS,
+          },
         },
-      )) as { jobId: string };
+      )) as { jobId: string; status?: string };
+      expect(toolJob.jobId).toBeTruthy();
 
-      const second = (await executeNativeTool(
-        "async_task_run",
-        { task: "队列 B", label: "队列 B", toolCall: { tool: "wait", args: { ms: 30 } } },
-        {
-          ...toolCtx,
-          config: narrowConfig,
-          sessionId,
-          agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: SNAPSHOT_TOOLS },
-        },
-      )) as { jobId: string };
-
-      // 等待出现一个排队任务，确保 running / queued 两类都可见
       await vi.waitFor(
         async () => {
-          const queued = await listQueuedAsyncJobs(sessionId, narrowConfig);
-          expect(queued.length).toBe(1);
+          const running = await listRunningAsyncJobs(sessionId);
+          expect(running.some((j) => j.jobId === toolJob.jobId)).toBe(true);
+          const stillQueued = await listQueuedAsyncJobs(sessionId, narrowConfig);
+          expect(stillQueued.some((j) => j.jobId === spawned.jobId)).toBe(true);
         },
-        { timeout: 2000, interval: 50 },
+        { timeout: 2000, interval: 30 },
       );
-
-      const running = await listRunningAsyncJobs(sessionId);
-      expect(running.length).toBe(1);
-      const allJobIds = [...running.map((j) => j.jobId), ...(await listQueuedAsyncJobs(sessionId, narrowConfig)).map((j) => j.jobId)];
-      expect(allJobIds).toContain(first.jobId);
-      expect(allJobIds).toContain(second.jobId);
-
-      // 释放槽位让排队任务执行，最终至少有一个结果被投递
-      const { cancelAsyncJob } = await import("../infra/asyncJobManager.js");
-      if (running.length > 0) {
-        await cancelAsyncJob(running[0].jobId, narrowConfig, ctx.services);
-      }
 
       await vi.waitFor(
         async () => {
           const deliveries = await pullAsyncDeliveries(sessionId);
           expect(deliveries.length).toBeGreaterThanOrEqual(1);
         },
-        { timeout: 5000, interval: 50 },
+        { timeout: 8000, interval: 50 },
       );
     } finally {
+      releaseBlocker();
+      setStreamHub(null);
+      delete process.env.MOCK_LLM;
       await cleanupSessionTasks(sessionId, parentAgentId);
     }
   });

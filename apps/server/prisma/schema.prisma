@@ -112,6 +112,8 @@ model ChatSession {
   // Auto-Compact：持久化上下文摘要，避免每轮重复调 LLM 压缩
   contextSummary     String?
   contextCompactedAt DateTime?
+  /// 压缩代际（显式列；persist 用 CAS，不再解析摘要文本 vN@）
+  compactGeneration  Int       @default(0)
   /// L1 常驻层（USER.md/AGENT.md）会话冻结快照；首轮注入时写入，会话内不变
   pinnedMemorySnapshot String?
   // session_rotate：轮换到的新会话 id（旧会话 archived 后保留跳转）
@@ -159,7 +161,7 @@ model ChatMessage {
 model SessionQueueItem {
   id             String   @id @default(cuid())
   sessionId      String
-  /// 队列项类型："user"（用户消息）| "superior"（上级 Agent 消息镜像）| "child_notify"（子 Agent 主动通知父会话）
+  /// 队列项类型："user" | "superior" | "child_notify" | "steer" | "follow_up"（后两者为 mid-run 注入，收尾可移交 user）
   kind           String
   /// 消息文本内容
   content        String
@@ -188,11 +190,13 @@ model SessionQueueItem {
 model SessionStreamEvent {
   id        Int      @id @default(autoincrement())
   sessionId String
+  /// per-session 单调序号（与内存 nextId 同源）；SSE id / resumeAfter / 重放均用此列
+  seq       Int      @default(0)
   eventType String   /// token | reasoning | tool_start | tool_end | intermediate_content | done | error | session_start | round_start
   payload   Json     /// AgentStreamEvent 完整 JSON
   createdAt DateTime @default(now())
 
-  @@index([sessionId, id])
+  @@index([sessionId, seq])
   @@index([createdAt])
 }
 

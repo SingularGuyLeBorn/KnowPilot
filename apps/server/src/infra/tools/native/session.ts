@@ -277,6 +277,7 @@ async function spawnSubagentPrepare(
   const initialStatus = waitForResult ? "running" : "queued";
   let mainSession = await ctx.prisma?.chatSession.findFirst({
     where: { agentId: subagentId, isMainSession: true, status: { not: "deleted" } },
+    orderBy: { updatedAt: "desc" },
   });
   if (!mainSession) {
     // W4：与下文一致，优先 ctx 注入的 resolveAgent，缺省回退 agentResolver 叶子模块
@@ -299,11 +300,16 @@ async function spawnSubagentPrepare(
         })) ?? null;
     }
   } else {
-    // 复用已有主会话：pool 路径标 queued / inline 标 running；若本次指定了 model，覆盖会话模型（本轮起生效）
+    // 复用已有主会话（P11 ensureMainSession 空壳）：pool 路径标 queued / inline 标 running；
+    // 补齐 subagent 血缘字段，否则右栏/测试按 parentSessionId+kind 查不到本次派生子会话。
     const patch: Record<string, unknown> = {};
     if (!waitForResult) patch.status = "queued";
     else if (mainSession.status !== "running") patch.status = "running";
     if (modelOverride && mainSession.model !== modelOverride) patch.model = modelOverride;
+    if (mainSession.kind !== "subagent") patch.kind = "subagent";
+    if (ctx.sessionId && mainSession.parentSessionId !== ctx.sessionId) {
+      patch.parentSessionId = ctx.sessionId;
+    }
     if (Object.keys(patch).length > 0) {
       try {
         await ctx.services.session.update({ id: mainSession.id, ...patch } as any);

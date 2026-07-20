@@ -322,7 +322,9 @@ export async function copyToClipboard(text: string) {
   }
 }
 
-export async function stopAgentChat(sessionId: string): Promise<{ stopped: boolean }> {
+export async function stopAgentChat(
+  sessionId: string,
+): Promise<{ stopped: boolean; partialAssistantMessageId: string | null }> {
   const res = await fetch("/api/agent/chat/stop", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -332,5 +334,12 @@ export async function stopAgentChat(sessionId: string): Promise<{ stopped: boole
     const text = await res.text().catch(() => "");
     throw new Error(`停止失败 HTTP ${res.status}: ${text}`);
   }
-  return (await res.json()) as { stopped: boolean };
+  const body = (await res.json()) as {
+    stopped: boolean;
+    partialAssistantMessageId?: string | null;
+  };
+  return {
+    stopped: body.stopped,
+    partialAssistantMessageId: body.partialAssistantMessageId ?? null,
+  };
 }

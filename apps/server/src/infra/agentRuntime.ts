@@ -217,6 +217,7 @@ export async function chatAgent(
       {
         modelId: effectiveModel,
         contextSummary: (sessionMeta as { contextSummary?: string | null }).contextSummary ?? null,
+        compactGeneration: (sessionMeta as { compactGeneration?: number | null }).compactGeneration ?? 0,
       },
     );
 

@@ -400,6 +400,7 @@ export const updateSessionSchema = z.object({
   taskDescription: z.string().max(2000).optional(),
   kind: sessionKindSchema.optional(),
   parentSessionId: z.string().cuid().nullable().optional(),
+  isMainSession: z.boolean().optional(), // 提升主会话时 SessionService 会摘掉同 Agent 其它主标记
   // Auto-Compact 持久化摘要
   contextSummary: z.string().max(20000).nullable().optional(),
   contextCompactedAt: z.coerce.date().nullable().optional(),
@@ -474,6 +475,8 @@ export const openNewSessionSchema = z.object({
    ═══════════════════════════════════════════════════════ */
 
 export const createMessageSchema = z.object({
+  /** 预生成 id（E3 abort 契约：stop 响应与落库共用同一 id） */
+  id: z.string().cuid().optional(),
   sessionId: z.string().cuid(),
   role: z.enum(["user", "assistant", "system", "tool"]),
   content: z.string().min(1, "内容不能为空"),

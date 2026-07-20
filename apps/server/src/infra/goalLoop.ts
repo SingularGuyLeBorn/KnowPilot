@@ -378,7 +378,7 @@ export async function drainGoalContinueAfterSettle(args: {
   const started = await hub.startIfNotRunning(args.sessionId, body, (emit, signal) =>
     chatAgentStream(args.services, args.config, body, invoke, emit, signal),
   );
-  return started;
+  return started === "started";
 }
 
 let goalSettledHookRegistered = false;

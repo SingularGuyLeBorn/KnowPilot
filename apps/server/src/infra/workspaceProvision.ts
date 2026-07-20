@@ -76,7 +76,7 @@ async function startInitialTask(options: {
     const started = await hub.startIfNotRunning(options.sessionId, body, async (emit, signal) => {
       await chatAgentStream(options.services, options.config, body, invokeTrpc, emit, signal);
     });
-    return started ? "started" : "started";
+    return started === "started" ? "started" : "failed";
   } catch (err) {
     console.warn(`[workspaceProvision] 初始任务起流失败:`, err);
     return "failed";

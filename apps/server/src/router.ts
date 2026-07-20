@@ -156,12 +156,12 @@ const agentRouter = router({
       aiReadable: false,
     })
     .input(submitAgentInjectSchema)
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const hub = getStreamHub();
       if (!hub) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "StreamHub 未初始化" });
       }
-      const result = hub.enqueueInject(input.sessionId, input.kind, input.content);
+      const result = await hub.enqueueInject(input.sessionId, input.kind, input.content);
       if (!result.ok) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: result.reason });
       }
@@ -607,11 +607,12 @@ const sessionRouter = router({
             config: ctx.config,
             prisma: ctx.prisma,
           });
-          streamStarted = await hub.startIfNotRunning(input.sessionId, fullBody, (emit, signal) =>
-            import("./infra/agentStream.js").then(({ chatAgentStream }) =>
-              chatAgentStream(ctx.services, ctx.config, fullBody, invoke, emit, signal),
-            ),
-          );
+          streamStarted =
+            (await hub.startIfNotRunning(input.sessionId, fullBody, (emit, signal) =>
+              import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+                chatAgentStream(ctx.services, ctx.config, fullBody, invoke, emit, signal),
+              ),
+            )) === "started";
         }
       }
       return { goal, streamStarted };
@@ -648,11 +649,12 @@ const sessionRouter = router({
           config: ctx.config,
           prisma: ctx.prisma,
         });
-        streamStarted = await hub.startIfNotRunning(input.sessionId, body, (emit, signal) =>
-          import("./infra/agentStream.js").then(({ chatAgentStream }) =>
-            chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
-          ),
-        );
+        streamStarted =
+          (await hub.startIfNotRunning(input.sessionId, body, (emit, signal) =>
+            import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+              chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
+            ),
+          )) === "started";
       }
       return { goal, streamStarted };
     }),
@@ -685,6 +687,7 @@ const sessionRouter = router({
         model: session.model || ctx.config.llm.defaultModel,
         systemPrompt: session.systemPrompt || "你是 KnowPilot 助手。",
         existingSummary: session.contextSummary,
+        existingGeneration: (session as { compactGeneration?: number }).compactGeneration ?? 0,
         trigger: "manual",
       });
       if (!result.compacted) {

@@ -323,6 +323,8 @@ async function prepareAgentRun(
 
       let mainSession = await ctx.prisma?.chatSession.findFirst({
         where: { agentId: targetAgentId, isMainSession: true, status: { not: "deleted" } },
+        // 存量若曾双主会话，取最近更新的一条（SessionService 已阻止新建双主）
+        orderBy: { updatedAt: "desc" },
       });
       if (!mainSession) {
         const created = await ctx.services.session.create({
@@ -340,10 +342,12 @@ async function prepareAgentRun(
           mainSession = await ctx.prisma?.chatSession.findUnique({ where: { id: (created.data as { id: string }).id } }) ?? null;
         }
       } else {
-        // 已有主会话：每次派活都刷新 parentSessionId，保证 report_back 回到「本次 spawn 的父会话」
+        // 已有主会话（含 P11 空壳主会话）：刷新血缘 + running，保证 report_back / 队列查询可定位
         const patch: Record<string, unknown> = { status: "running" };
         if (mainSession.kind !== "subagent") patch.kind = "subagent";
-        if (ctx.sessionId) patch.parentSessionId = ctx.sessionId;
+        if (ctx.sessionId && mainSession.parentSessionId !== ctx.sessionId) {
+          patch.parentSessionId = ctx.sessionId;
+        }
         if (Object.keys(patch).length > 0) {
           try {
             await ctx.services.session.update({ id: mainSession.id, ...patch } as any);
