@@ -19,15 +19,15 @@
 | B2 | P1 | superior drain「删除即认领」+ 同事务置 consumed：崩溃窗口消息永久丢失 | services.ts:2129-2159; asyncJobManager.ts:271-286 | PR-4 |
 | C1 | P1 | 僵尸 running Task 永久卡死心跳与定时任务（恢复扫描只认 `[async]` 前缀） | asyncJobManager.ts:930-935; heartbeatEngine.ts:331-375; taskScheduler.ts:56-59; triggerEngine.ts:142-148 | PR-3 |
 | C2 | P1 | HeartbeatEngine.refresh() 无串行化：并发 refresh 泄漏 cron job 重复调度 | heartbeatEngine.ts:158-207 | PR-3 |
-| C3 | P1 | 审批等待注册表 missed-wakeup + TTL 误报「已过期」（操作实际已执行） | approvalGate.ts:160-233,284-308 | PR-2 |
+| C3 | P1 | 审批等待注册表 missed-wakeup + TTL 误报「已过期」（操作实际已执行） | approvalGate.ts:160-233,284-308 | 已修复@1f19ee4f（原 PR-2） |
 | D3 | P1 | 实体文件写回零路径消毒：name/slug 直接进 path.join 可穿越出 content | services.ts:382-398,948,1292,2636 | PR-1 · 已修复@ca3f5dfb |
 | D4 | P1 | sync 与运行时 CRUD 并发无保护：rename 窗口期 watch unlink 可硬删刚改名实体 | sync.ts:122-195; services.ts:408-415 | PR-1 · 已修复@97c0eebd |
 | D5 | P1 | FTS 三条漂移通道（watch 不碰 FTS / rebuild 不过滤墓碑 / 增量只覆盖 4/8 实体） | sync.ts:122-186; ftsIndex.ts:51-102 | PR-1 · 已修复@8f9e8978 |
-| D6 | P1 | destructive 两份清单漂移：`agent_delete_sub` 删除操作绕过审批 | approvalGate.ts:48-65 vs native/swarm.ts:1476 | PR-2 |
+| D6 | P1 | destructive 两份清单漂移：`agent_delete_sub` 删除操作绕过审批 | approvalGate.ts:48-65 vs native/swarm.ts:1476 | 已修复@36a785b2（原 PR-2） |
 | E1 | P1 | ACK 瞬态失败 → 异步结果永久丢失（consumedDeliveries 持久化无 unmark） | useChatQueueDrain.ts:107-122 | PR-6 |
 | E2 | P1 | INV-1 不在 reducer：COMMIT_STREAM 接受 streaming→idle 直跳 | useStreamLifecycle.ts:248-262,511-525 | PR-6 |
 | E3 | P1 | abort 后 2s setTimeout 兜底（时序猜测补丁，partial 对齐靠赌） | useChatRunStream.ts:566-573 | PR-6（+PR-5 服务端契约） |
-| A6 | P2 | 审批/ask_user 两 gate 挂起-唤醒-中止语义不一致 | approvalGate.ts:160-232 | PR-2（随 C3） |
+| A6 | P2 | 审批/ask_user 两 gate 挂起-唤醒-中止语义不一致 | approvalGate.ts:160-232 | 已修复@1f19ee4f（原 PR-2/A6） |
 | A7 | P2 | stream/sync 两链路行为分叉：reflection 拦不住已流出拒稿；sync abort 不留部分稿 | reflection.ts:138-150; agentStream.ts:870-898; agentRuntime.ts:252-258 | 登记 |
 | A8 | P2 | 扁平存储重建：注入消息时序失真 + inject 落库失败幻影消息 | chatHistory.ts:144-215; reactLoop.ts:161-187 | 登记 |
 | B3 | P2 | autoConsume 在池槽位内等 hub 空闲：消费任务把全局 LLM 槽变停车场 | asyncJobManager.ts:441-444 vs 258-262 | PR-4 |
@@ -37,8 +37,8 @@
 | B7 | P2 | SessionQueueItem 幂等/排序靠 check-then-insert，无 DB 唯一约束兜底 | services.ts:2016-2048; schema.prisma:159-175 | PR-4 |
 | B8 | P3 | spawn 去重窗口与任务在途期脱节，窗口外重派无幂等承接 | swarmOrchestrator.ts:29,277-281 | 登记 |
 | C4 | P2 | 心跳状态写回混合版本 read-modify-write：丢计数、吞「配置变更清零」 | heartbeatEngine.ts:622-657 | PR-3 |
-| C5 | P2 | llmBudget 检查-扣费 TOCTOU + 重启 hydrate 竞态丢额度 | llmBudget.ts:43-62,121-142 | PR-2 |
-| C6 | P2 | CircuitBreaker 半开期无探测纪元：陈旧成功误合闸、陈旧失败误重计时 | circuitBreaker.ts:123-153 | PR-2 |
+| C5 | P2 | llmBudget 检查-扣费 TOCTOU + 重启 hydrate 竞态丢额度 | llmBudget.ts:43-62,121-142 | 已修复@fd63331f（原 PR-2） |
+| C6 | P2 | CircuitBreaker 半开期无探测纪元：陈旧成功误合闸、陈旧失败误重计时 | circuitBreaker.ts:123-153 | 已修复@a8b22159（原 PR-2） |
 | C7 | P2 | cron 触发与手动触发无原子认领：TaskService.run/TriggerEngine 可叠跑 | taskScheduler.ts:53-63; services.ts:2357; triggerEngine.ts:142-148 | PR-3 |
 | C8 | P2 | config.yaml 无热更新且生效口径分裂（config 快照 vs env 活读并存） | config.ts:650-656; approvalGate.ts:72-78 等 | 登记 |
 | D7 | P2 | safePath 纯词法校验：无符号链接/Junction 解析可逃逸 projectRoot | safePath.ts:9-17 | 登记 |
