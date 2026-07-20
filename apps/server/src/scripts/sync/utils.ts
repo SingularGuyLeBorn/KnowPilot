@@ -19,25 +19,39 @@ export function getContentDir(dirName: string): string {
   return dir;
 }
 
+/** 路径比较前统一为正斜杠（Windows 反斜杠与 POSIX 模板对齐） */
+export function toPosixPath(p: string): string {
+  return p.replace(/\\/g, "/");
+}
+
 /**
  * 递归获取目录下所有指定扩展名的文件。
- * `_` 开头的目录（如 content/agents/_templates/）是模板/元数据目录，
- * 一律跳过，不同步为实体（W9）。
+ * 默认跳过：
+ * - `_` 开头目录（如 content/agents/_templates/，W9）
+ * - `.` 开头目录（如 posts/.trash/ 回收站，D2）
+ * - ignoreDirs 显式名单（images/public/assets/.trash）
  */
-export function getFilesRecursive(dir: string, extensions: string[], ignoreDirs: string[] = ["images", "public", "assets"]): string[] {
+export function getFilesRecursive(
+  dir: string,
+  extensions: string[],
+  ignoreDirs: string[] = ["images", "public", "assets", ".trash"],
+): string[] {
   if (!fs.existsSync(dir)) return [];
 
   let results: string[] = [];
   const list = fs.readdirSync(dir);
+  const ignoreSet = new Set(ignoreDirs);
 
   for (const file of list) {
     const filePath = path.join(dir, file);
     const stat = fs.statSync(filePath);
 
     if (stat.isDirectory()) {
-      if (!file.startsWith("_") && !ignoreDirs.includes(file)) {
-        results = results.concat(getFilesRecursive(filePath, extensions, ignoreDirs));
+      // `.`/`_` 开头与 ignoreDirs 一律跳过，各 syncer 不再自行做路径字符串过滤
+      if (file.startsWith(".") || file.startsWith("_") || ignoreSet.has(file)) {
+        continue;
       }
+      results = results.concat(getFilesRecursive(filePath, extensions, ignoreDirs));
     } else if (extensions.some((ext) => file.endsWith(ext))) {
       results.push(filePath);
     }
@@ -65,7 +79,7 @@ export function parseYamlFile(filePath: string): { data: Record<string, any>; fi
 /** 从文件路径生成 slug（相对路径、正斜杠、去扩展名） */
 export function filePathToSlug(contentDir: string, filePath: string): string {
   const relativePath = path.relative(contentDir, filePath);
-  return relativePath.replace(/\\/g, "/").replace(/\.[^/.]+$/, "");
+  return toPosixPath(relativePath).replace(/\.[^/.]+$/, "");
 }
 
 /** 安全读取字符串数组（支持 YAML 数组或逗号分隔字符串） */

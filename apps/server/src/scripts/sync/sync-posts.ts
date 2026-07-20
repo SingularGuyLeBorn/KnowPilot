@@ -22,7 +22,7 @@ export const postSyncer: Syncer<PostData> = {
   extensions: [".md"],
 
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<PostData>[]> {
-    const filePaths = getFilesRecursive(contentDir, [".md"]).filter((p) => !p.includes(`${contentDir}/.trash/`));
+    const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<PostData>[] = [];
     for (const filePath of filePaths) {
       const r = await this.scanFile!(filePath, contentDir);
@@ -109,7 +109,7 @@ export const postSyncer: Syncer<PostData> = {
     const diskSlugs = new Set<string>(activeSlugs);
     if (contentDir) {
       try {
-        const allFiles = getFilesRecursive(contentDir, [".md"]).filter((p) => !p.includes(`${contentDir}/.trash/`));
+        const allFiles = getFilesRecursive(contentDir, [".md"]);
         for (const filePath of allFiles) {
           try {
             diskSlugs.add(filePathToSlug(contentDir, filePath));
