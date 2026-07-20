@@ -112,6 +112,7 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       enabled: true,
       triggerRatio: 0.75,
       keepRecent: 8,
+      keepRecentTokens: 20000,
       summaryModel: "auto",
       microCompact: { enabled: true, toolResultMaxChars: 4000 },
       memoryFlush: { enabled: true, maxFacts: 5 },

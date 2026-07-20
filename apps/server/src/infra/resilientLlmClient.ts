@@ -20,7 +20,7 @@ import {
 
 /* ─── 错误分类 ─── */
 
-export type LlmErrorClass = "fatal" | "retryable" | "degradable";
+export type LlmErrorClass = "fatal" | "retryable" | "degradable" | "overflow";
 
 export interface ClassifyOptions {
   /** 本轮重试是否已耗尽 */
@@ -29,9 +29,18 @@ export interface ClassifyOptions {
   hasFallback?: boolean;
 }
 
+/** context-overflow 类错误正文特征（厂商文案不一，宽松匹配） */
+const OVERFLOW_BODY_RE =
+  /context[\s_-]?length|context[\s_-]?window|maximum[\s_-]?context|too many tokens|prompt is too long|token[\s_-]?limit|exceeds?(ed)?\s*(the\s*)?(max|context)|max_tokens|context_length_exceeded/i;
+
+export function isContextOverflowBody(body: string): boolean {
+  return OVERFLOW_BODY_RE.test(body || "");
+}
+
 /**
  * LLM 错误分类：
  * - 401/403 → fatal（API Key 无效，重试无意义）
+ * - 400 + overflow 正文 → overflow（由 reactLoop 压缩后重试一次）
  * - 400/422 → fatal（请求参数不被接受）
  * - 408/409/425/429/5xx、网络异常（status=null）→ retryable
  * - retryable 重试耗尽且配置了备用厂商 → degradable
@@ -41,6 +50,13 @@ export function classifyLlmError(
   _body: string,
   opts?: ClassifyOptions,
 ): LlmErrorClass {
+  if (
+    (status === 400 || status === 413) &&
+    isContextOverflowBody(_body)
+  ) {
+    return "overflow";
+  }
+
   const retryable =
     status === null ||
     status === 408 ||
@@ -58,6 +74,9 @@ export function classifyLlmError(
 
 /** 分类对应的用户指引（error 事件 suggestion / 错误消息后缀） */
 export function suggestionForClass(cls: LlmErrorClass, status: number | null): string {
+  if (cls === "overflow") {
+    return "上下文超出模型窗口，将尝试压缩后重试；若仍失败请手动压缩或开启新会话。";
+  }
   if (cls === "fatal") {
     if (status === 401 || status === 403) {
       return "请检查 API Key 是否有效（.env 中对应厂商密钥）。";
@@ -83,6 +102,20 @@ export class LlmResilienceError extends Error {
     super(message);
     this.name = "LlmResilienceError";
   }
+}
+
+/** 是否为 context-overflow（供 overflow 压缩重试判定） */
+export function isContextOverflowError(err: unknown): boolean {
+  if (err instanceof LlmResilienceError) {
+    return err.classification === "overflow";
+  }
+  if (err instanceof LlmHttpError) {
+    return classifyLlmError(err.status, err.body) === "overflow";
+  }
+  if (err instanceof Error) {
+    return isContextOverflowBody(err.message);
+  }
+  return false;
 }
 
 export interface LlmErrorDescription {
@@ -181,16 +214,17 @@ function buildModelChain(options: ChatCompletionOptions, policy: ResolvedPolicy)
   return chain;
 }
 
-/** fatal 错误：立即终止，包装指引后上抛 */
+/** fatal / overflow：立即终止（overflow 不在本层重试，交 reactLoop 压缩后重试一次） */
 function wrapFatal(err: unknown, prefix: string): LlmResilienceError {
   const status = statusOf(err);
   const cls = classifyLlmError(status, bodyOf(err));
   const suggestion = suggestionForClass(cls, status);
+  const classification: LlmErrorClass = cls === "overflow" ? "overflow" : "fatal";
   return new LlmResilienceError(
     `${prefix}（${status === null ? "网络异常" : `HTTP ${status}`}）：${suggestion}原始错误：${
       err instanceof Error ? err.message : String(err)
     }`,
-    "fatal",
+    classification,
     status,
     false,
     suggestion,
@@ -252,7 +286,7 @@ export function withResilience(client: LlmClientCore, defaults?: ResilienceDefau
           if (isAbort(err, options.signal)) throw err;
           lastErr = err;
           const cls = classifyLlmError(statusOf(err), bodyOf(err));
-          if (cls === "fatal") throw wrapFatal(err, "LLM 请求被拒绝");
+          if (cls === "fatal" || cls === "overflow") throw wrapFatal(err, "LLM 请求被拒绝");
           if (attempt < policy.maxRetries) {
             await backoff(attempt, policy.baseDelayMs, policy.jitter);
           }
@@ -284,7 +318,7 @@ export function withResilience(client: LlmClientCore, defaults?: ResilienceDefau
           if (isAbort(err, options.signal)) throw err;
           lastErr = err;
           const cls = classifyLlmError(statusOf(err), bodyOf(err));
-          if (cls === "fatal") throw wrapFatal(err, "LLM 流式请求被拒绝");
+          if (cls === "fatal" || cls === "overflow") throw wrapFatal(err, "LLM 流式请求被拒绝");
           if (attempt < policy.maxRetries) {
             await backoff(attempt, policy.baseDelayMs, policy.jitter);
             continue;

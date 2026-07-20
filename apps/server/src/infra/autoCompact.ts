@@ -28,12 +28,21 @@ import {
   historySinceLastCompactBoundary,
   type HistoryMessageLike,
 } from "./chatHistory.js";
+import {
+  DEFAULT_KEEP_RECENT_TOKENS,
+  extractFileOpsFromMessages,
+  findCompactCutIndex,
+  formatCompactFileDetails,
+  mergeCompactFileDetails,
+  parseCompactFileDetails,
+  type CompactFileDetails,
+} from "./compactCut.js";
 
 /** 摘要内容标记：压缩边界消息的正文前缀（边界行由 buildCompactBoundaryMarker 生成） */
 export const SUMMARY_MARKER = "[此前对话摘要 — 自动压缩]";
 export const COMPACT_BOUNDARY_PREFIX = "[kp-compact-boundary:";
 
-export { DEFAULT_COMPACT_KEEP_RECENT };
+export { DEFAULT_COMPACT_KEEP_RECENT, DEFAULT_KEEP_RECENT_TOKENS };
 
 export const MICRO_COMPACT_TRUNCATED = "[tool result truncated by micro-compact]";
 
@@ -48,10 +57,17 @@ export function isCompactSummaryContent(content: string): boolean {
 
 export function getCompactSettings(config: AppConfig) {
   const compact = config.compact ?? ({} as AppConfig["compact"]);
+  const keepRecentTokensRaw = compact.keepRecentTokens;
   return {
     enabled: compact.enabled !== false,
     triggerRatio: Math.min(0.95, Math.max(0.05, compact.triggerRatio ?? DEFAULT_COMPACT_TRIGGER_RATIO)),
     keepRecent: Math.max(2, compact.keepRecent ?? DEFAULT_COMPACT_KEEP_RECENT),
+    keepRecentTokens: Math.max(
+      100,
+      typeof keepRecentTokensRaw === "number" && Number.isFinite(keepRecentTokensRaw)
+        ? keepRecentTokensRaw
+        : DEFAULT_KEEP_RECENT_TOKENS,
+    ),
     summaryModel: String(compact.summaryModel ?? "auto").trim() || "auto",
     microCompactEnabled: compact.microCompact?.enabled !== false,
     microCompactToolMaxChars: Math.max(
@@ -124,6 +140,23 @@ export function microCompactMessages(messages: LlmMessage[], toolResultMaxChars:
 
 /** 摘要注入后的合成 assistant 确认（rebuild / maybeCompact 幂等剥离用） */
 export const CONTEXT_SUMMARY_ACK = "已阅读摘要，继续基于上述上下文协助你。";
+
+/** 迭代摘要：定位已注入摘要 pair 之后的 firstKept 起点 */
+function findFirstKeptAfterSummaryPair(messages: LlmMessage[]): number | undefined {
+  for (let i = 0; i < messages.length - 1; i++) {
+    const cur = messages[i]!;
+    const next = messages[i + 1]!;
+    if (
+      typeof cur.content === "string" &&
+      isCompactSummaryContent(cur.content) &&
+      next.role === "assistant" &&
+      next.content === CONTEXT_SUMMARY_ACK
+    ) {
+      return i + 2;
+    }
+  }
+  return undefined;
+}
 
 export function buildSummaryPair(summaryText: string, generation: number): LlmMessage[] {
   const boundary = buildCompactBoundaryMarker(generation);
@@ -215,12 +248,18 @@ export interface CompactResult {
   charBefore?: number;
   /** 压缩后字符数 */
   charAfter?: number;
+  /** 跨压缩累计文件清单（写入摘要 details JSON） */
+  fileDetails?: CompactFileDetails;
+  /** 保留段起点（相对 working messages；迭代摘要用） */
+  firstKeptIndex?: number;
 }
 
 export interface CompactOptions {
   existingSummary?: string | null;
   /** 会话当前 compactGeneration（读时快照，供 CAS 与代数计算） */
   existingGeneration?: number | null;
+  /** 迭代摘要显式起点（优先于从摘要 pair 推断） */
+  firstKeptIndex?: number;
   flushContext?: {
     services: ServiceContainer;
     sessionId?: string;
@@ -278,15 +317,30 @@ export async function maybeCompactMessages(
     return { messages: working, compacted: false, charThresholdUsed: charThreshold };
   }
 
-  if (rest.length <= settings.keepRecent + 2) {
+  // 切割：keepRecentTokens 定初切点；不安全则向旧侧移到 tool 对边界；迭代从上次 firstKept 起算
+  const firstKeptStart =
+    options?.firstKeptIndex ??
+    (existing ? findFirstKeptAfterSummaryPair(working) : undefined);
+  const cutIndex = findCompactCutIndex(working, settings.keepRecentTokens, firstKeptStart);
+  const toSummarize = working.slice(0, cutIndex).filter((m) => m.role !== "system");
+  const recent = working.slice(cutIndex);
+
+  // 消息过少或无可摘要段：不压缩（keepRecent 条数仍作下限守卫）
+  if (toSummarize.length < 2 || recent.length < 1 || rest.length <= settings.keepRecent + 2) {
     return { messages: working, compacted: false, charThresholdUsed: charThreshold };
   }
 
-  const toSummarize = rest.slice(0, -settings.keepRecent);
-  const recent = rest.slice(-settings.keepRecent);
+  const fileDetails = mergeCompactFileDetails(
+    parseCompactFileDetails(existing),
+    extractFileOpsFromMessages(toSummarize),
+  );
 
   const transcriptParts: string[] = [];
-  if (existing) transcriptParts.push(`[已有摘要]\n${existing}`);
+  if (existing) {
+    // 摘要正文送 LLM 时剥离 details 机器块，避免污染
+    const bare = existing.replace(/\n*<!--kp-compact-details:[\s\S]*?-->\s*$/, "").trim();
+    transcriptParts.push(`[已有摘要]\n${bare}`);
+  }
   for (const m of toSummarize) {
     const role = m.role === "user" ? "用户" : m.role === "assistant" ? "助手" : m.role;
     const text = (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")).slice(0, 2000);
@@ -354,12 +408,15 @@ export async function maybeCompactMessages(
       };
     }
 
-    const boundary = buildCompactBoundaryMarker(generation);
-    const summaryText = summaryBody;
-    const compactedMessages: LlmMessage[] = [...system, ...buildSummaryPair(summaryBody, generation), ...recent];
+    const summaryText = formatCompactFileDetails(summaryBody, fileDetails);
+    const compactedMessages: LlmMessage[] = [
+      ...system,
+      ...buildSummaryPair(summaryText, generation),
+      ...recent,
+    ];
     const charAfter = estimateChars(compactedMessages);
     console.log(
-      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${charBefore} → ${charAfter} 字符，阈值 ${charThreshold}，摘要模型 ${summaryModel}，flush ${memoriesFlushed}）`,
+      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${charBefore} → ${charAfter} 字符，阈值 ${charThreshold}，摘要模型 ${summaryModel}，flush ${memoriesFlushed}，cut=${cutIndex}）`,
     );
     // compact_end 由调用方（agentStream）在写入边界消息后 emit，避免此处提前发完又重发。
     return {
@@ -372,6 +429,8 @@ export async function maybeCompactMessages(
       messagesSummarized: toSummarize.length,
       charBefore,
       charAfter,
+      fileDetails,
+      firstKeptIndex: cutIndex,
     };
   } catch (err) {
     console.warn("[AutoCompact] 压缩失败，降级裁剪最早消息:", err instanceof Error ? err.message : err);
@@ -391,6 +450,8 @@ export async function maybeCompactMessages(
       messagesSummarized: toSummarize.length,
       charBefore,
       charAfter: estimateChars(trimmed),
+      fileDetails,
+      firstKeptIndex: cutIndex,
     };
   }
 }
@@ -411,6 +472,7 @@ export async function compactSessionHistory(
         enabled: true,
         triggerRatio: base.triggerRatio,
         keepRecent: base.keepRecent,
+        keepRecentTokens: base.keepRecentTokens,
         summaryModel: base.summaryModel,
         microCompact: {
           enabled: base.microCompactEnabled,
@@ -509,6 +571,11 @@ export async function persistCompactResult(
       content: boundaryContent,
       toolCalls: boundaryToolCalls,
       source: "system",
+    });
+    // 显式持久化边界消息 id（迭代摘要 / 历史裁剪的事实源，不靠解析摘要 marker）
+    await tx.chatSession.update({
+      where: { id: sessionId },
+      data: { compactBoundaryMessageId: boundaryMsg.id },
     });
     return { skipped: false as const, boundaryMessageId: boundaryMsg.id };
   });

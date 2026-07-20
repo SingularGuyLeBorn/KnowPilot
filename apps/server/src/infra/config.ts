@@ -182,6 +182,11 @@ export interface AppConfig {
     triggerRatio: number;
     keepRecent: number;
     /**
+     * 压缩时按 token 粗估保留的最近上下文（默认 20000）。
+     * 切点从不落在 toolCall/toolResult 之间；过短时向旧侧移动到安全边界。
+     */
+    keepRecentTokens: number;
+    /**
      * 摘要专用模型。`auto`（默认）= 优先 OpenRouter `:free`，其次 freellm 网关模型，否则回退主对话模型。
      * 也可填具体 model id（如 `deepseek/deepseek-r1:free`）。
      */
@@ -619,6 +624,10 @@ export function createAppConfig(): AppConfig {
         Math.max(0.05, parseFloat(String(compactConfig.triggerRatio ?? "0.75"))),
       ),
       keepRecent: Math.max(2, parseInt(String(compactConfig.keepRecent ?? "8"), 10)),
+      keepRecentTokens: Math.max(
+        100,
+        parseInt(String(compactConfig.keepRecentTokens ?? "20000"), 10) || 20000,
+      ),
       summaryModel: String(compactConfig.summaryModel ?? "auto").trim() || "auto",
       microCompact: {
         enabled: String((compactConfig.microCompact as Record<string, unknown> | undefined)?.enabled ?? "true") !== "false",

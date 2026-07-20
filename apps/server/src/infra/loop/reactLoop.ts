@@ -18,8 +18,9 @@ import {
   TOOL_BUDGET_SKIP_RESULT,
   type ToolRegistryEntry,
 } from "../agentTools.js";
-import { assertLlmBudget, recordTokenUsage } from "../llmBudget.js";
+import { assertLlmBudget, markTokensWasted, recordTokenUsage } from "../llmBudget.js";
 import { maybeCompactMessages, persistCompactResult } from "../autoCompact.js";
+import { completeWithOverflowCompact } from "../overflowCompactRetry.js";
 import { sanitizePostCompactAssistantContent, type StoredToolCall } from "../chatHistory.js";
 import { RunRollbackStack, type RunRollbackReport } from "../tools/rollback.js";
 import { waitApprovalResolution, type ApprovalResolution } from "../approvalGate.js";
@@ -355,6 +356,16 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
   /** 终态统一收口：success / failed / cancelled（用户 abort），output 携带 phase 终态快照与业务字段 */
   const finalizeRun = async (terminal: "success" | "failed" | "cancelled", patch: Record<string, unknown>) => {
+    // W5：心跳/异步无产出 run 的 token 记入 wastedTokens（日预算已在 accumulateUsage 扣过）
+    const origin = input.runOrigin ?? "user";
+    if (
+      (origin === "heartbeat" || origin === "async") &&
+      terminal === "success" &&
+      countExecutedTools() === 0 &&
+      totalUsage.total > 0
+    ) {
+      markTokensWasted(input.config, totalUsage.total);
+    }
     if (!runId || !canUpdateRun || !runSvc) return;
     // 不变量：aborted 时唯一合法终态 cancelled——拒绝 success 收口
     let effective: "success" | "failed" | "cancelled" = terminal;
@@ -418,11 +429,58 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             trigger: "auto",
             emit: input.compactEmit,
           });
+          if (compacted.summaryText) existingSummary = compacted.summaryText;
+          if (compacted.generation != null) existingGeneration = compacted.generation;
         } catch (err) {
           console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
         }
       }
     }
+
+    /** W5：overflow 时压缩一次（复用同一 CAS 路径），供 completeWithOverflowCompact 调用 */
+    const compactOnceForOverflow = async (): Promise<{ didCompact: boolean }> => {
+      let gen = existingGeneration;
+      let summary = existingSummary;
+      if (input.sessionId) {
+        try {
+          const sess =
+            (await input.services.session.getByIdLite?.(input.sessionId)) ??
+            (await input.services.session.getById(input.sessionId));
+          summary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? summary;
+          gen = (sess as { compactGeneration?: number | null } | null)?.compactGeneration ?? gen;
+        } catch {
+          /* ignore */
+        }
+      }
+      const overflowCompacted = await maybeCompactMessages(input.config, llmMessages, snapshot.model, {
+        existingSummary: summary,
+        existingGeneration: gen,
+        flushContext: input.sessionId
+          ? {
+              services: input.services,
+              sessionId: input.sessionId,
+              agentId: input.agentMeta?.id,
+              workspaceId: input.agentMeta?.workspaceId,
+              tier: input.agentMeta?.tier,
+            }
+          : undefined,
+        emit: input.compactEmit,
+      });
+      llmMessages = overflowCompacted.messages;
+      if (overflowCompacted.compacted && overflowCompacted.summaryText && input.sessionId && !overflowCompacted.reused) {
+        try {
+          await persistCompactResult(input.services, input.sessionId, overflowCompacted, {
+            trigger: "auto",
+            emit: input.compactEmit,
+          });
+          existingSummary = overflowCompacted.summaryText;
+          if (overflowCompacted.generation != null) existingGeneration = overflowCompacted.generation;
+        } catch (err) {
+          console.warn("[AutoCompact] overflow 恢复持久化失败:", err instanceof Error ? err.message : err);
+        }
+      }
+      return { didCompact: !!(overflowCompacted.compacted && !overflowCompacted.reused) };
+    };
 
     machine.transition("llm");
 
@@ -446,11 +504,16 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         runId,
       );
 
-      const turn = await input.transport.complete({
-        messages: llmMessages,
-        tools: toolSchemas,
-        signal: input.signal,
-        withTools: true,
+      // W5：overflow → 压缩一次 → 同请求重试一次（钩子链保留 W4，仅包 transport.complete）
+      const turn = await completeWithOverflowCompact({
+        complete: () =>
+          input.transport.complete({
+            messages: llmMessages,
+            tools: toolSchemas,
+            signal: input.signal,
+            withTools: true,
+          }),
+        compactOnce: compactOnceForOverflow,
       });
 
       lastModel = turn.model || lastModel;
@@ -762,10 +825,14 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             roundsUsed || 1,
             runId,
           );
-          const synthesis = await input.transport.complete({
-            messages: llmMessages,
-            signal: input.signal,
-            withTools: false,
+          const synthesis = await completeWithOverflowCompact({
+            complete: () =>
+              input.transport.complete({
+                messages: llmMessages,
+                signal: input.signal,
+                withTools: false,
+              }),
+            compactOnce: compactOnceForOverflow,
           });
           if (input.signal?.aborted) {
             throw makeAbortError(input.signal);
