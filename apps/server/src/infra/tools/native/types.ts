@@ -17,9 +17,13 @@ export interface NativeToolDefinition {
   concurrencyClass?: ToolConcurrencyClass;
   /**
    * D 类（写入/副作用）标记：run 失败（非用户 abort）时逆序补偿。
-   * 与 approvalGate.DESTRUCTIVE_NATIVE_OPS 对齐；补偿实现经 registerNativeDomain 第三参数挂入。
+   * 审批清单由 registry 派生（destructive && !approvalExempt）；补偿经 registerNativeDomain 第三参数挂入。
    */
   destructive?: boolean;
+  /**
+   * 审批豁免：destructive 默认入 AGENT_DESTRUCTIVE_APPROVAL 清单；豁免须显式声明并附理由。
+   */
+  approvalExempt?: boolean;
   /**
    * 可重入标记：无写副作用、at-least-once 重跑安全（与 ToolCommand.reentrant 同义，经 registerNativeDomain 透传）。
    * 默认 false = 保守；拿不准一律不标（false）。

@@ -1961,6 +1961,8 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     name: "feishu_create_whiteboard_nodes",
     concurrencyClass: "D",
     destructive: true,
+    // 画板节点创建（非 delete API）——日常绘图不应被 destructive 审批闸拦住
+    approvalExempt: true,
     description:
       "在画板上批量创建节点（原生 board-v1 节点 JSON：sticky_note / composite_shape / connector / mind_map 等）。overwrite=true 时先清空再写入。一般流程图优先用 feishu_whiteboard_from_diagram（mermaid/plantuml）。需 board:whiteboard:node:create。",
     parameters: zodParams(
@@ -1976,6 +1978,8 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     name: "feishu_whiteboard_from_diagram",
     concurrencyClass: "D",
     destructive: true,
+    // 图表写入创建路径（非 delete API）——与 feishu_create_whiteboard_nodes 同档豁免
+    approvalExempt: true,
     description:
       "用 Mermaid / PlantUML / SVG 源码写入飞书画板（POST .../nodes/plantuml）。推荐路径：先 feishu_list_doc_whiteboards 取 whiteboardId，再传 mermaid/plantuml 代码；默认 overwrite=true 覆盖旧图。需 board:whiteboard:node:create。",
     parameters: zodParams(

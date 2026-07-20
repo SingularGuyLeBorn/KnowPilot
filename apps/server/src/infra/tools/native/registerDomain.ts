@@ -20,12 +20,19 @@ export function registerNativeDomain(
       console.warn(`[native/${def.name}] 有 schema 无 handler，跳过注册`);
       continue;
     }
+    // 反向校验：approvalExempt 仅对 destructive 有意义；destructive 默认入审批清单（派生自 registry）
+    if (def.approvalExempt && !def.destructive) {
+      console.warn(
+        `[native/${def.name}] approvalExempt 仅对 destructive 工具有效，已忽略（非 destructive 本就不入审批清单）`,
+      );
+    }
     const rb = rollbacks?.[def.name];
     registerTool<NativeToolContext>({
       name: def.name,
       kind: "native",
       concurrencyClass: def.concurrencyClass,
       destructive: def.destructive,
+      approvalExempt: def.destructive ? def.approvalExempt : undefined,
       reentrant: def.reentrant,
       schema: () => ({ description: def.description, parameters: def.parameters }),
       execute: (args, ctx) => handler(args, ctx),

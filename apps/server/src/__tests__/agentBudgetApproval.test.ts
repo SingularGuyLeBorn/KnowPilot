@@ -2,7 +2,7 @@
  * P0：工具预算切分 + 审批闸门单元测
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import {
   partitionToolCallsByBudget,
   TOOL_BUDGET_SKIP_RESULT,
@@ -11,8 +11,10 @@ import {
   toolRequiresApproval,
   isDestructiveApprovalEnabled,
   getApprovalPendingTtlMs,
-  DESTRUCTIVE_NATIVE_OPS,
+  getDestructiveNativeOps,
 } from "../infra/approvalGate.js";
+import { registerNativeDomains } from "../infra/tools/native/index.js";
+import { __resetToolRegistryForTests } from "../infra/tools/registry.js";
 import type { LlmToolCall } from "../infra/llmClient.js";
 
 function tc(id: string, name = "web_search"): LlmToolCall {
@@ -55,6 +57,11 @@ describe("approvalGate destructive + TTL", () => {
   const prevRequire = process.env.REQUIRE_APPROVAL;
   const prevTtl = process.env.APPROVAL_PENDING_TTL_MS;
 
+  beforeAll(() => {
+    __resetToolRegistryForTests();
+    registerNativeDomains();
+  });
+
   beforeEach(() => {
     delete process.env.AGENT_DESTRUCTIVE_APPROVAL;
     delete process.env.REQUIRE_APPROVAL;
@@ -80,10 +87,11 @@ describe("approvalGate destructive + TTL", () => {
     process.env.AGENT_DESTRUCTIVE_APPROVAL = "true";
     expect(toolRequiresApproval("memory_delete")).toBe(true);
     expect(toolRequiresApproval("agent_delete")).toBe(true);
+    expect(toolRequiresApproval("agent_delete_sub")).toBe(true);
     expect(toolRequiresApproval("memory.delete")).toBe(true);
     expect(toolRequiresApproval("post.delete")).toBe(true);
     expect(toolRequiresApproval("web_search")).toBe(false);
-    for (const name of DESTRUCTIVE_NATIVE_OPS) {
+    for (const name of getDestructiveNativeOps()) {
       expect(toolRequiresApproval(name)).toBe(true);
     }
   });

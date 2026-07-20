@@ -12,6 +12,7 @@ import { success, failureFromError } from "../trpc/result.js";
 import type { OperationResult } from "@knowpilot/shared";
 import { APPROVAL_DEFAULT_TTL_MS } from "@knowpilot/shared";
 import { makeAbortError } from "./abortReason.js";
+import { listDestructiveNativeOpsForApproval } from "./tools/registry.js";
 
 /** 默认需要人工审批的操作（tRPC 点号名 + Agent native 下划线名） */
 const APPROVAL_REQUIRED_OPS = new Set([
@@ -42,27 +43,12 @@ const NATIVE_APPROVAL_EXECUTE_OPS = new Set([
 ]);
 
 /**
- * AGENT_DESTRUCTIVE_APPROVAL=true 时，Agent native 删除类工具也需审批。
- * 与 tRPC 列表对齐，并覆盖仅存在于 native 路径的删除（如 memory_delete、post_delete）。
+ * AGENT_DESTRUCTIVE_APPROVAL=true 时需审批的 native 工具清单。
+ * 唯一事实源 = registry：destructive && !approvalExempt（禁止再造硬编码 Set）。
  */
-export const DESTRUCTIVE_NATIVE_OPS = new Set([
-  "agent_delete",
-  "memory_delete",
-  "post_delete",
-  "file_delete",
-  "directory_delete",
-  "yuque_delete_doc",
-  "yuque_delete_doc_v2",
-  "yuque_delete_book",
-  "yuque_delete_repo",
-  "github_delete_file",
-  "github_delete_repo",
-  "github_delete_branch",
-  "github_merge_pull_request",
-  "feishu_delete_doc",
-  "feishu_delete_whiteboard_nodes",
-  "feishu_remove_permission_member",
-]);
+export function getDestructiveNativeOps(): Set<string> {
+  return listDestructiveNativeOpsForApproval();
+}
 
 export function isDestructiveApprovalEnabled(): boolean {
   return process.env.AGENT_DESTRUCTIVE_APPROVAL === "true";
@@ -304,15 +290,15 @@ export function toolRequiresApproval(toolName: string): boolean {
   if (process.env.REQUIRE_APPROVAL === "false") return false;
   if (APPROVAL_REQUIRED_OPS.has(toolName)) return true;
   if (isDestructiveApprovalEnabled()) {
-    if (DESTRUCTIVE_NATIVE_OPS.has(toolName)) return true;
-    // tRPC 侧与 native 对齐的删除（默认不拦，仅开关打开时）
+    if (getDestructiveNativeOps().has(toolName)) return true;
+    // tRPC 侧与 native 对齐的删除（不在 native registry，与派生清单同开关）
     if (toolName === "memory.delete" || toolName === "post.delete") return true;
   }
   return false;
 }
 
 export function isNativeApprovalTool(toolName: string): boolean {
-  return DESTRUCTIVE_NATIVE_OPS.has(toolName);
+  return getDestructiveNativeOps().has(toolName);
 }
 
 function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {

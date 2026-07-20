@@ -36,6 +36,19 @@ export function listToolNames(kind?: ToolKind): string[] {
   return listTools(kind).map((t) => t.name);
 }
 
+/**
+ * AGENT_DESTRUCTIVE_APPROVAL 审批清单唯一事实源：
+ * native 且 destructive 且未声明 approvalExempt。
+ * 挂在 registry 叶子，供 approvalGate 派生，避免 approvalGate↔域注册循环依赖。
+ */
+export function listDestructiveNativeOpsForApproval(): Set<string> {
+  return new Set(
+    listTools("native")
+      .filter((t) => t.destructive === true && t.approvalExempt !== true)
+      .map((t) => t.name),
+  );
+}
+
 /** 测试用：清空注册表 */
 export function __resetToolRegistryForTests(): void {
   registry.clear();
