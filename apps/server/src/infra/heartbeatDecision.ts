@@ -49,6 +49,13 @@ export type HeartbeatDecisionState = {
   safeBypassUsed: boolean;
   /** W3：safe bypass 绑定的 gate key（gate 变化时重置 used） */
   safeBypassGateKey: string | null;
+  /**
+   * W5 stall：是否已进入 repair 相位。
+   * normal→连续 2 无产出进 repair；repair 后再连续 2 无产出→terminal。
+   */
+  stallInRepair: boolean;
+  /** 当前相位内连续无产出 tick 数（有产出归零） */
+  stallUnproductiveStreak: number;
 };
 
 export type HeartbeatSignals = {
@@ -71,7 +78,10 @@ export type HeartbeatSignals = {
   lastRunId: string | null;
   lastRunAt: string | null;
   consecutiveFailures: number;
-  /** v1：最近一次 run 是否有 toolCalls>0 */
+  /**
+   * 上一个 heartbeat run「有产出」= toolCalls>0 / 产生审批或 ask_user /
+   * 写入 queued 交付物 / gate 被推进（由引擎收集时计算）。
+   */
   lastRunProductive: boolean;
   budgetExceeded: boolean;
   /** 用户在该 agent 会话发消息的粗粒度分桶（如 5min），进 reset_token */
@@ -112,7 +122,36 @@ export function emptyDecisionState(): HeartbeatDecisionState {
     terminalAt: null,
     safeBypassUsed: false,
     safeBypassGateKey: null,
+    stallInRepair: false,
+    stallUnproductiveStreak: 0,
   };
+}
+
+/** 有产出时清零 stall 计数 */
+function clearStall(state: HeartbeatDecisionState): HeartbeatDecisionState {
+  return { ...state, stallInRepair: false, stallUnproductiveStreak: 0 };
+}
+
+/**
+ * productive 判定（收集 signals 时调用）：
+ * toolCalls>0、产生审批/ask_user、写入 queued 交付物、gate 被推进（phase 含 awaiting_human）。
+ */
+export function computeLastRunProductive(input: {
+  toolCallCount: number;
+  runOutput?: unknown;
+  openApprovals: number;
+  pendingAskUser: number;
+  queuedItems: number;
+}): boolean {
+  if ((input.toolCallCount ?? 0) > 0) return true;
+  if (input.openApprovals > 0 || input.pendingAskUser > 0) return true;
+  if (input.queuedItems > 0) return true;
+  const out = input.runOutput;
+  if (out && typeof out === "object") {
+    const phase = (out as { phase?: unknown }).phase;
+    if (phase === "awaiting_human") return true;
+  }
+  return false;
 }
 
 export function parseDecisionState(raw: unknown): HeartbeatDecisionState {
@@ -141,6 +180,8 @@ export function parseDecisionState(raw: unknown): HeartbeatDecisionState {
     terminalAt: typeof d.terminalAt === "string" ? d.terminalAt : null,
     safeBypassUsed: d.safeBypassUsed === true,
     safeBypassGateKey: typeof d.safeBypassGateKey === "string" ? d.safeBypassGateKey : null,
+    stallInRepair: d.stallInRepair === true,
+    stallUnproductiveStreak: Math.max(0, Number(d.stallUnproductiveStreak ?? 0) || 0),
   };
 }
 
@@ -434,23 +475,76 @@ export function buildHeartbeatDecision(signals: HeartbeatSignals): HeartbeatDeci
     );
   }
 
-  // 有队列但上轮无实质进展、且非失败 streak → repair（v1）
-  if (hasQueue && !signals.lastRunProductive && signals.lastRunAt && !inFailureStreak) {
-    return {
-      mode: "repair",
-      reasons: ["frontier：有队列但上轮无 tool 产出，进入有界修复"],
-      skipTicks: 0,
-      shouldSuspendTerminal: false,
-      skipOnlyDecrement: false,
-      nextState: {
-        ...state,
-        lastMode: "repair",
-        skipRemaining: 0,
-        lastSkipTicks: 0,
-        quietStreak: 0,
-        terminalAt: null,
-      },
-    };
+  // 6b. W5 stall：有待办且已跑过时按无产出 streak 推进 repair → terminal
+  // 连续 2 无产出 → repair；repair 后再连续 2 无产出 → terminal；任一有产出 → 归零
+  const hasWork = hasQueue || inFailureStreak || neverRan || freshDecision;
+  if (hasWork && signals.lastRunAt && !inFailureStreak && !neverRan) {
+    if (signals.lastRunProductive) {
+      state = clearStall(state);
+    } else {
+      const streak = state.stallUnproductiveStreak + 1;
+      if (state.stallInRepair && streak >= 2) {
+        return {
+          mode: "terminal_no_followup",
+          reasons: [
+            `stall：repair 后连续 ${streak} 轮无实质进展（stall repair exhausted）`,
+          ],
+          skipTicks: 0,
+          shouldSuspendTerminal: true,
+          skipOnlyDecrement: false,
+          nextState: {
+            ...state,
+            lastMode: "terminal_no_followup",
+            quietStreak: 0,
+            skipRemaining: 0,
+            lastSkipTicks: 0,
+            terminalAt: nowIso,
+            stallInRepair: true,
+            stallUnproductiveStreak: streak,
+          },
+        };
+      }
+      if (!state.stallInRepair && streak >= 2) {
+        return {
+          mode: "repair",
+          reasons: [`stall：连续 ${streak} 轮无实质进展，进入有界修复`],
+          skipTicks: 0,
+          shouldSuspendTerminal: false,
+          skipOnlyDecrement: false,
+          nextState: {
+            ...state,
+            lastMode: "repair",
+            skipRemaining: 0,
+            lastSkipTicks: 0,
+            quietStreak: 0,
+            terminalAt: null,
+            stallInRepair: true,
+            stallUnproductiveStreak: 0, // repair 相位重新计数
+          },
+        };
+      }
+      if (state.stallInRepair) {
+        return {
+          mode: "repair",
+          reasons: [`stall：repair 相位第 ${streak} 轮仍无产出，继续有界修复`],
+          skipTicks: 0,
+          shouldSuspendTerminal: false,
+          skipOnlyDecrement: false,
+          nextState: {
+            ...state,
+            lastMode: "repair",
+            skipRemaining: 0,
+            lastSkipTicks: 0,
+            quietStreak: 0,
+            terminalAt: null,
+            stallInRepair: true,
+            stallUnproductiveStreak: streak,
+          },
+        };
+      }
+      // streak=1 且尚非 repair：先正常投递一票，下轮再进 repair
+      state = { ...state, stallUnproductiveStreak: streak, stallInRepair: false };
+    }
   }
 
   // 7. 默认正常投递（首轮 / 决策态重置 / 有队列 / 失败 streak 续试）
@@ -474,6 +568,9 @@ export function buildHeartbeatDecision(signals: HeartbeatSignals): HeartbeatDeci
       lastSkipTicks: 0,
       quietStreak: 0,
       terminalAt: null,
+      stallInRepair: false,
+      // 有产出已 clearStall；无产出 streak=1 保留，下轮再进 repair
+      stallUnproductiveStreak: signals.lastRunProductive ? 0 : state.stallUnproductiveStreak,
     },
   };
 }

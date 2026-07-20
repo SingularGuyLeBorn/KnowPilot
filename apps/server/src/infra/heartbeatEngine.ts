@@ -53,6 +53,7 @@ import {
   withGateNotifyStamp,
   type HeartbeatDecision,
   type HeartbeatDecisionState,
+  computeLastRunProductive,
 } from "./heartbeatDecision.js";
 import { listAllAskUserPending } from "./askUserGate.js";
 import {
@@ -63,8 +64,9 @@ import {
 
 const MAX_CONSECUTIVE_FAILURES = HEARTBEAT_MAX_CONSECUTIVE_FAILURES;
 
-/** repair 模式追加到 system 提示的固定句（W5 再扩展完整 stall） */
-const REPAIR_SYSTEM_HINT = "上轮无实质进展，请重新规划下一步";
+/** repair 模式追加到 system 的固定修复提示（W5 stall；不做结构化 replan 清单） */
+const REPAIR_SYSTEM_HINT =
+  "连续 N 轮无实质进展，请重新评估目标与下一步，只做一个能改变状态的动作";
 
 /** W5：记忆衰减维护任务 cron（每日 03:17，避开心跳高峰） */
 const MEMORY_DECAY_CRON = "17 3 * * *";
@@ -386,7 +388,25 @@ export class HeartbeatEngine {
 
         if (decision.mode === "terminal_no_followup" && decision.shouldSuspendTerminal) {
           await this.suspendHeartbeat(agentId, agent.name);
-          console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 目标闭合（terminal），已 suspended`);
+          const stallExhausted = decision.reasons.some((r) => r.includes("stall repair exhausted"));
+          if (stallExhausted) {
+            const subject = `[KnowPilot] Agent「${agent.name}」心跳 stall 修复耗尽`;
+            const body =
+              `Agent「${agent.name}」（${agentId}）连续多轮无实质进展，stall repair exhausted，心跳已 suspended。\n` +
+              `决策原因：${decision.reasons.join("；")}\n` +
+              `最近状态：lastMode=${decision.nextState.lastMode}，stallUnproductiveStreak=${decision.nextState.stallUnproductiveStreak}`;
+            const notify = await sendEmailNotification(this.config, this.services.log, {
+              subject,
+              body,
+              agentId,
+            });
+            if ("error" in notify) {
+              console.warn(`  💓 [HeartbeatEngine] stall 通知未发送：${notify.error}`);
+            }
+          }
+          console.warn(
+            `  💓 [HeartbeatEngine] Agent ${agent.name} ${stallExhausted ? "stall 耗尽" : "目标闭合"}（terminal），已 suspended`,
+          );
           return;
         }
 
@@ -575,7 +595,7 @@ export class HeartbeatEngine {
       this.prisma.run.findFirst({
         where: { agentId },
         orderBy: { createdAt: "desc" },
-        select: { id: true, toolCallCount: true, createdAt: true },
+        select: { id: true, toolCallCount: true, createdAt: true, output: true, status: true },
       }),
       this.prisma.chatMessage.findFirst({
         where: {
@@ -644,7 +664,13 @@ export class HeartbeatEngine {
       lastRunId: lastRun?.id ?? hb.lastRunAt,
       lastRunAt: hb.lastRunAt,
       consecutiveFailures: hb.consecutiveFailures,
-      lastRunProductive: (lastRun?.toolCallCount ?? 0) > 0,
+      lastRunProductive: computeLastRunProductive({
+        toolCallCount: lastRun?.toolCallCount ?? 0,
+        runOutput: lastRun?.output,
+        openApprovals: pendingApprovals,
+        pendingAskUser: askPending.length,
+        queuedItems,
+      }),
       budgetExceeded: budget.exceeded,
       lastUserMessageAtBucket: bucketUserMessageAt(lastUserMsg?.createdAt?.getTime() ?? null),
       decisionState: hb.decision ?? emptyDecisionState(),
