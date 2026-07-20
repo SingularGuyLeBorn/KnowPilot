@@ -1359,7 +1359,7 @@ PR-3 后心跳仍是「cron 到点 → 预算检查 → 直接 dispatch」。缺
 | A2 | 事件 id | `SessionStreamEvent.seq` per-session 单调；SSE/`resumeAfter`/重放同源；token 合帧带尾帧 seq；DB 已有 done 不补 synthetic done |
 | A3 | compact | `compactGeneration` 显式列 + 单事务 CAS；running 拒手动 compact |
 | A4 | 起流互斥 | `started` / `duplicate` / `busy`；占位键每 POST 唯一；busy→409（web 排队属 PR-6） |
-| A5 | inject 持久化 | 接受即写 `SessionQueueItem(kind=steer\|follow_up)`；ack 删行；收尾未消费移交 `kind=user`；PR-4 未合不引入 claimedAt |
+| A5 | inject 持久化 | 接受即写 `SessionQueueItem(kind=steer\|follow_up)`；ack 删行；收尾未消费移交 `kind=user`；与 PR-4 `claimedAt` 软认领叠加 |
 | E3 | abort 契约 | stop 响应 `partialAssistantMessageId`；预生成 id 与落库同值（web 消 setTimeout 属 PR-6） |
 | P11 附带 | 单主会话 | `SessionService.create/update(isMainSession)` 摘掉同 Agent 其它主标记，避免 prepare/spawn findFirst 命中空壳 |
 
