@@ -51,6 +51,11 @@ export interface ToolCommand<Ctx = unknown> {
    * 与 destructive 同处单点声明（域注册处），禁止再造列表；默认 false = 保守不重跑。
    */
   reentrant?: boolean;
+  /**
+   * W3：可选 scope 派生（缺省走 approvalScope 内置表）。
+   * 返回值须为 `<domain>:<verb>:<target>`；LLM 不可见。
+   */
+  deriveScope?(args: Record<string, unknown>): string | null | undefined;
   schema(): ToolSchema;
   execute(params: Record<string, unknown>, ctx: Ctx): Promise<unknown>;
   /** 执行前快照（destructive 工具按需实现）；返回值原样透传给 rollback */

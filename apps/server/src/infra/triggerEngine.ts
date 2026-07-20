@@ -202,6 +202,7 @@ export class TriggerEngine {
       sessionId: `trigger:${agent.id}`,
       workspaceId: agent.workspaceId ?? null,
       taskLabel: `trigger:${agent.name}`,
+      tools: agent.tools ? agent.tools.split(",").filter(Boolean) : [],
       execute: async (): Promise<SwarmTaskOutcome> => {
         const result = await runAgent(
           this.services,
