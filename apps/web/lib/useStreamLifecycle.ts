@@ -647,9 +647,10 @@ export const streamLifecycleActions = {
     getStore().dispatch({ type: "MARK_INFLIGHT_ASSISTANT", sessionId, messageId });
   },
   /**
-   * INV-8 ④：数据 hydrate 完成（消息 / 发送队列 / 异步队列刷新 / sessionStorage 恢复）→
+   * INV-8 ④ hydrate_view：数据 hydrate 完成（消息 view / 发送队列 / 异步队列 / sessionStorage）→
    * 在 reducer 转移点置 drainRequested，由 onStreamCommitted 同款钩子消费。
    * 占用中调用为 no-op（commit 进入 idle 时自会驱动 drain）。
+   * 注意：消息 prefetch 不得调用本方法（见 MessageHydrateSource）。
    */
   hydrateDone(sessionId: string) {
     getStore().dispatch({ type: "HYDRATE_DONE", sessionId });
