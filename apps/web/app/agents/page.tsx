@@ -316,6 +316,17 @@ const AgentCard = memo(function AgentCard({
                   ? ` · ${hb.lastRunStatus === "success" ? "成功" : hb.lastRunStatus}`
                   : ""}
               </div>
+              {hb.decision?.lastMode && (
+                <div data-testid="agent-heartbeat-decision">
+                  <span className="text-[var(--kp-text-3)]">决策 </span>
+                  <span className="font-mono text-[9px]">{hb.decision.lastMode}</span>
+                  {(hb.decision.skipRemaining ?? 0) > 0 && (
+                    <span className="ml-1 rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px]">
+                      skip {hb.decision.skipRemaining}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             {suspended && onResumeHeartbeat && (
               <button

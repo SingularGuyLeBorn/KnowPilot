@@ -195,8 +195,16 @@ export interface AppConfig {
       maxFacts: number;
     };
   };
-  /** 超级 Agent 心跳 Loop Contract 默认 */
+  /** 心跳：决策层 + Loop Contract 默认 */
   heartbeat: {
+    /** W2：总开关；false = 回退到点即 dispatch */
+    decisionEnabled: boolean;
+    /** quiet/monitor 退避 skipTicks 上限 */
+    quietCap: number;
+    /** 连续 K 次 quiet → terminal */
+    terminalAfterQuiet: number;
+    /** wait_user_gate 同 gate 通知冷却（毫秒） */
+    gateNotifyCooldownMs: number;
     loopContract: {
       maxStaleRounds: number;
       maxEvidence: number;
@@ -625,6 +633,13 @@ export function createAppConfig(): AppConfig {
       },
     },
     heartbeat: {
+      decisionEnabled: String(heartbeatYaml.decisionEnabled ?? "true") !== "false",
+      quietCap: Math.max(1, parseInt(String(heartbeatYaml.quietCap ?? "8"), 10)),
+      terminalAfterQuiet: Math.max(1, parseInt(String(heartbeatYaml.terminalAfterQuiet ?? "3"), 10)),
+      gateNotifyCooldownMs: Math.max(
+        0,
+        parseInt(String(heartbeatYaml.gateNotifyCooldownMs ?? String(30 * 60_000)), 10),
+      ),
       loopContract: {
         maxStaleRounds: Math.max(1, parseInt(String(loopContractYaml.maxStaleRounds ?? "3"), 10)),
         maxEvidence: Math.max(5, parseInt(String(loopContractYaml.maxEvidence ?? "50"), 10)),
