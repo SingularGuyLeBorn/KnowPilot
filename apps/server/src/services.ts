@@ -1602,6 +1602,26 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
 
   protected getFileSlug(entity: MemoryEntity): string { return entity.id; }
 
+  /** D8：MemoryRepository supersede 事务外文件先行 / 失败补偿 */
+  writeContentFile(entity: MemoryEntity): void {
+    this.writeFile(entity);
+  }
+
+  /** D8：事务失败时补偿删文件 */
+  deleteContentFile(entity: MemoryEntity): void {
+    try {
+      this.deleteFile(entity);
+    } catch (e) {
+      console.warn(`[MemoryService] 补偿删文件失败 id=${entity.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  /** D8：事务成功后补 FTS / sourceMeta */
+  async finalizeContentProjection(entity: MemoryEntity): Promise<void> {
+    await this.syncFileMetaToDb(entity);
+    await this.syncFts("memory", entity.id, entity.type, entity.content);
+  }
+
   // P11：FTS 增量
   protected override async afterCreate(entity: MemoryEntity, input: CreateMemoryInput): Promise<void> {
     await super.afterCreate(entity, input);
