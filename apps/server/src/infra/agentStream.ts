@@ -198,8 +198,8 @@ export type AgentStreamEvent =
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
-  // 增加 id 行以支持断线续传
-  const idLine = eventId ? `id: ${eventId}\n` : "";
+  // id 行 = per-session seq（与 SessionStreamEvent.seq / resumeAfter 同源）
+  const idLine = typeof eventId === "number" ? `id: ${eventId}\n` : "";
   res.write(`${idLine}event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
@@ -1040,7 +1040,9 @@ export function handleAgentChatStream(
 
     // R2：token 事件合并 —— 累加 delta 到 tokenBuffer，16ms 定时器冲刷为单帧；
     // 非 token 事件先冲刷 tokenBuffer 再发送，保证事件顺序。
+    // 合帧携带帧内最后一个事件的 seq，确保 lastEventId 随 token 前进。
     let tokenBuffer = "";
+    let tokenFlushSeq: number | undefined;
     let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
     const flushTokens = () => {
       if (tokenFlushTimer) {
@@ -1048,36 +1050,42 @@ export function handleAgentChatStream(
         tokenFlushTimer = null;
       }
       if (tokenBuffer) {
-        writeSse(res, { type: "token", delta: tokenBuffer });
+        writeSse(res, { type: "token", delta: tokenBuffer }, tokenFlushSeq);
         tokenBuffer = "";
+        tokenFlushSeq = undefined;
       }
     };
 
-    const unsubscribe = await hub.subscribe(runSessionId, afterEventId, async (buffered: BufferedEvent) => {
-      const event = buffered.event;
-      // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
-      if (event.type === "session_start" && event.sessionId && !requestSessionId) {
-        if (runSessionId !== event.sessionId) {
-          await hub.migrateSessionId(runSessionId, event.sessionId);
-          runSessionId = event.sessionId;
+    const { unsubscribe, replayHadTerminal } = await hub.subscribe(
+      runSessionId,
+      afterEventId,
+      async (buffered: BufferedEvent) => {
+        const event = buffered.event;
+        // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
+        if (event.type === "session_start" && event.sessionId && !requestSessionId) {
+          if (runSessionId !== event.sessionId) {
+            await hub.migrateSessionId(runSessionId, event.sessionId);
+            runSessionId = event.sessionId;
+          }
         }
-      }
-      if (event.type === "token") {
-        tokenBuffer += event.delta;
-        if (tokenBuffer.length >= 512) {
+        if (event.type === "token") {
+          tokenBuffer += event.delta;
+          tokenFlushSeq = buffered.id;
+          if (tokenBuffer.length >= 512) {
+            flushTokens();
+          } else if (!tokenFlushTimer) {
+            tokenFlushTimer = setTimeout(flushTokens, 16);
+          }
+        } else {
           flushTokens();
-        } else if (!tokenFlushTimer) {
-          tokenFlushTimer = setTimeout(flushTokens, 16);
+          writeSse(res, event, buffered.id);
         }
-      } else {
-        flushTokens();
-        writeSse(res, event, buffered.id);
-      }
-      if (event.type === "done" || event.type === "error") {
-        flushTokens();
-        setTimeout(end, 0);
-      }
-    });
+        if (event.type === "done" || event.type === "error") {
+          flushTokens();
+          setTimeout(end, 0);
+        }
+      },
+    );
 
     // 心跳：防止浏览器/反代因长时间无数据关闭空闲连接
     const heartbeat = setInterval(() => {
@@ -1093,8 +1101,9 @@ export function handleAgentChatStream(
     });
 
     // 订阅时运行已结束：必须显式发 done 让前端从 streaming 归位到 idle，
-    // 否则前端会进入无意义重连循环（12 次 ~2min），期间一直卡 "Thinking..."
-    if (!hub.isRunning(runSessionId) && ended === false) {
+    // 否则前端会进入无意义重连循环（12 次 ~2min），期间一直卡 "Thinking..."。
+    // 若重放已含真实 done/error，禁止再补发 synthetic done（避免双发）。
+    if (!hub.isRunning(runSessionId) && ended === false && !replayHadTerminal) {
       setTimeout(() => {
         flushTokens();
         writeSse(res, {

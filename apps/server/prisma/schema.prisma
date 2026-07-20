@@ -188,11 +188,13 @@ model SessionQueueItem {
 model SessionStreamEvent {
   id        Int      @id @default(autoincrement())
   sessionId String
+  /// per-session 单调序号（与内存 nextId 同源）；SSE id / resumeAfter / 重放均用此列
+  seq       Int      @default(0)
   eventType String   /// token | reasoning | tool_start | tool_end | intermediate_content | done | error | session_start | round_start
   payload   Json     /// AgentStreamEvent 完整 JSON
   createdAt DateTime @default(now())
 
-  @@index([sessionId, id])
+  @@index([sessionId, seq])
   @@index([createdAt])
 }
 
