@@ -6,6 +6,8 @@
 import type { PrismaClient } from "@prisma/client";
 import { listAllAskUserPending, listAskUserPendingForSession } from "./askUserGate.js";
 import { listNotifyBreakerStatuses, type NotifyChannelStatus } from "./emailNotifier.js";
+import { getLlmBudgetStatus, WASTED_TOKEN_ALERT_RATIO } from "./llmBudget.js";
+import type { AppConfig } from "./config.js";
 
 export type SwarmInboxPreviewItem = {
   id: string;
@@ -272,7 +274,7 @@ export async function getSwarmAlertsOverview(prisma: PrismaClient): Promise<Swar
  */
 export async function buildSwarmBrief(
   prisma: PrismaClient,
-  options?: { workspaceId?: string | null; limit?: number },
+  options?: { workspaceId?: string | null; limit?: number; config?: AppConfig },
 ): Promise<SwarmBrief> {
   const limit = Math.min(30, Math.max(1, options?.limit ?? 12));
   const where =
@@ -301,6 +303,23 @@ export async function buildSwarmBrief(
     `扫描 Agent：${snapshots.length} · 需关注：${attention.length}`,
     ``,
   ];
+
+  if (options?.config) {
+    const budget = getLlmBudgetStatus(options.config);
+    if (budget.totalTokens > 0) {
+      const pct = Math.round(budget.wasteRatio * 100);
+      lines.push(`## 今日 LLM 空转占比`);
+      lines.push(
+        `- wastedTokens=${budget.wastedTokens} / totalTokens=${budget.totalTokens}（${pct}%）`,
+      );
+      if (budget.wasteRatio >= WASTED_TOKEN_ALERT_RATIO) {
+        lines.push(
+          `- ⚠ 空转占比超过 ${Math.round(WASTED_TOKEN_ALERT_RATIO * 100)}%，请检查心跳/异步是否在空转烧 token。`,
+        );
+      }
+      lines.push(``);
+    }
+  }
 
   if (notifyChannels.some((c) => c.state !== "closed")) {
     lines.push(`## 通知通道`);
