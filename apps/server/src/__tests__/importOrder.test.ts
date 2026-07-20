@@ -22,8 +22,9 @@ const entries: Array<{ name: string; specifier: string; key: string }> = [
   { name: "agentTools", specifier: "../infra/agentTools.js", key: "executeAgentTool" },
   { name: "reactLoop", specifier: "../infra/loop/reactLoop.js", key: "runReactLoop" },
   { name: "agentRuntime", specifier: "../infra/agentRuntime.js", key: "runAgentLoop" },
-  { name: "promptBuilder", specifier: "../infra/promptBuilder.js", key: "buildSystemPromptWithHints" },
+  { name: "promptBuilder", specifier: "../infra/promptBuilder.js", key: "buildSystemPromptSkeleton" },
   { name: "agentResolver", specifier: "../infra/agentResolver.js", key: "resolveAgent" },
+  { name: "contextHooks", specifier: "../infra/contextHooks.js", key: "runContextHooks" },
 ];
 
 describe("W4 import 顺序冒烟（循环依赖防线）", () => {
@@ -43,8 +44,8 @@ describe("W4 import 顺序冒烟（循环依赖防线）", () => {
     expect(src).not.toMatch(/from\s+["']\.\/agentRuntime\.js["']/);
   });
 
-  it("源码防线：promptBuilder / agentResolver 必须是叶子模块（不 import 环内模块）", () => {
-    for (const leaf of ["promptBuilder", "agentResolver"]) {
+  it("源码防线：promptBuilder / agentResolver / contextHooks 必须是叶子模块（不 import 环内模块）", () => {
+    for (const leaf of ["promptBuilder", "agentResolver", "contextHooks"]) {
       const src = readFileSync(path.resolve(__dirname, `../infra/${leaf}.ts`), "utf-8");
       for (const banned of ["agentRuntime", "nativeTools", "agentTools", "loop/index", "loop/reactLoop", "agentStream"]) {
         expect(

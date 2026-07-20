@@ -11,8 +11,7 @@ import { buildLlmContextSinceCompact } from "./autoCompact.js";
 import type { AgentChatInput, AgentRunInput } from "@knowpilot/shared";
 import { success, failure } from "../trpc/result.js";
 import { runReactLoop, createSyncTransport, withReflection } from "./loop/index.js";
-import { buildAllMemoryHints, buildSystemPromptWithHints } from "./promptBuilder.js";
-import { ensurePinnedMemoryHint } from "./pinnedMemory.js";
+import { buildSystemPromptSkeleton } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 
 export interface AgentLoopResult {
@@ -36,7 +35,7 @@ export async function runAgentLoop(options: {
   signal?: AbortSignal;
   /** 工具上下文：传入后 async_task_run / spawn_subagent / sleep(async) 等可在本循环内使用 */
   sessionId?: string;
-  agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
+  agentMeta?: { id: string; name?: string | null; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
   runOrigin?: "user" | "parent" | "heartbeat";
   /** W11：Run.input 业务描述（触发消息等），run 入口落库时写入 */
   runInput?: unknown;
@@ -87,19 +86,11 @@ export async function runAgent(
   try {
     const { agent, drift } = await resolveAgent(services, input.agentId);
     logAgentDrift(agent.name, drift);
-    const memoryHint = input.input
-      ? await buildAllMemoryHints(services, input.input, {
-          agentId: agent.id,
-          sessionId: input.sessionId,
-        })
-      : await ensurePinnedMemoryHint(services, input.sessionId);
+    // 记忆 / tier / 工具引导由 reactLoop 内 contextHooks 在 LLM 调用前注入
     const messages: LlmMessage[] = [
       {
         role: "system",
-        content: buildSystemPromptWithHints(agent.systemPrompt, agent.tools, memoryHint, {
-          tier: agent.tier,
-          name: agent.name,
-        }),
+        content: buildSystemPromptSkeleton(agent.systemPrompt),
       },
     ];
 
@@ -130,6 +121,7 @@ export async function runAgent(
       sessionId: input.sessionId,
       agentMeta: {
         id: agent.id,
+        name: agent.name,
         model: agent.model,
         systemPrompt: agent.systemPrompt,
         tools: agent.tools,
@@ -204,15 +196,8 @@ export async function chatAgent(
       since: (sessionMeta as { contextCompactedAt?: Date | string | null }).contextCompactedAt,
       limit: 200,
     });
-    const memoryHint = await buildAllMemoryHints(services, displayText, {
-      agentId: agent.id,
-      sessionId,
-    });
     const messages = buildLlmContextSinceCompact(
-      buildSystemPromptWithHints(agent.systemPrompt, effectiveTools, memoryHint, {
-        tier: agent.tier,
-        name: agent.name,
-      }),
+      buildSystemPromptSkeleton(agent.systemPrompt),
       historyItems,
       {
         modelId: effectiveModel,
@@ -237,6 +222,7 @@ export async function chatAgent(
       sessionId,
       agentMeta: {
         id: agent.id,
+        name: agent.name,
         model: input.model || agent.model,
         systemPrompt: agent.systemPrompt,
         tools: effectiveTools,

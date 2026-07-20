@@ -20,7 +20,7 @@ import { describeLlmError } from "./resilientLlmClient.js";
 import { type StoredToolCall, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
-import { buildAllMemoryHints, buildSystemPromptWithHints } from "./promptBuilder.js";
+import { buildSystemPromptSkeleton } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 import { resolveMicroCompactToolMaxChars, buildLlmContextSinceCompact } from "./autoCompact.js";
 import { runReactLoop, createStreamTransport, withReflection } from "./loop/index.js";
@@ -238,7 +238,7 @@ export async function runAgentLoopStream(options: {
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
   emit: (event: AgentStreamEvent) => void;
   sessionId?: string;
-  agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; workspaceId?: string | null; parentId?: string | null };
+  agentMeta?: { id: string; name?: string | null; model: string; systemPrompt: string; tools: string[]; tier?: string; workspaceId?: string | null; parentId?: string | null };
   signal?: AbortSignal;
   runOrigin?: "user" | "parent" | "heartbeat";
   /** W11：Run.input 业务描述（触发消息等），run 入口落库时写入 */
@@ -618,15 +618,9 @@ export async function chatAgentStream(
     // 供下方 updateAssistantId 查找；与 LLM 窗口同源
     const history = { items: historyItems };
 
-    const memoryHint = await buildAllMemoryHints(services, prepared.messageText, {
-      agentId: (agent as { id?: string }).id,
-      sessionId,
-    });
+    // 记忆 / tier / 工具引导由 reactLoop 内 contextHooks 在 LLM 调用前注入
     const messages = buildLlmContextSinceCompact(
-      buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint, {
-        tier: (agent as { tier?: string }).tier,
-        name: (agent as { name?: string }).name,
-      }),
+      buildSystemPromptSkeleton(effectiveSystemPrompt || agent.systemPrompt),
       historyBase,
       {
         modelId: effectiveModel,
@@ -722,12 +716,13 @@ export async function chatAgentStream(
       sessionId,
       agentMeta: {
         id: agent.id,
+        name: (agent as { name?: string }).name,
         model: effectiveModel,
         systemPrompt: effectiveSystemPrompt || agent.systemPrompt,
         tools: agent.tools,
-        tier: (agent as any).tier ?? "sub",
-        workspaceId: (agent as any).workspaceId ?? null,
-        parentId: (agent as any).parentId ?? null,
+        tier: (agent as { tier?: string }).tier,
+        workspaceId: (agent as { workspaceId?: string | null }).workspaceId ?? null,
+        parentId: (agent as { parentId?: string | null }).parentId ?? null,
       },
       signal,
       runOrigin: input.runOrigin,

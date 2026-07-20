@@ -39,6 +39,9 @@ import { createPhaseMachine } from "./phase.js";
 import { REFLECTION_UNPASSED_MARK } from "./reflection.js";
 import type { ReactLoopInput, ReactLoopResult, TurnSnapshot } from "./types.js";
 import { isAbortLikeError, makeAbortError } from "../abortReason.js";
+import { runContextHooks, type ContextHookInput } from "../contextHooks.js";
+import type { Agent } from "@knowpilot/shared";
+import { buildSystemPromptSkeleton } from "../promptBuilder.js";
 
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
@@ -98,6 +101,71 @@ function buildApprovalResumeMessage(resolution: ApprovalResolution): string {
     return `人工审批超时已过期（${base}），该操作未执行。请向用户说明情况并收尾，或改用其他不需要审批的方案。`;
   }
   return `人工审批被拒绝（${base}），该操作未执行。请向用户说明情况并收尾，或改用其他不需要审批的方案。`;
+}
+
+/** 将钩子产出的 systemPrompt 写回消息列表中的 system 条（无则前置） */
+function applySystemPromptToMessages(messages: LlmMessage[], systemPrompt: string): LlmMessage[] {
+  const idx = messages.findIndex((m) => m.role === "system");
+  if (idx >= 0) {
+    const next = messages.map((m, i) => (i === idx ? { ...m, content: systemPrompt } : m));
+    return next;
+  }
+  return [{ role: "system", content: systemPrompt }, ...messages];
+}
+
+function buildHookAgent(input: ReactLoopInput): Agent {
+  const meta = input.agentMeta;
+  return {
+    id: meta?.id ?? "unknown",
+    name: meta?.name ?? "",
+    description: null,
+    model: input.agent.model,
+    systemPrompt: input.agent.systemPrompt,
+    tools: meta?.tools ?? input.agent.tools,
+    // 无 tier 时不注入身份段（与旧 buildTierIdentityHint(undefined) 一致；禁止默认 sub）
+    tier: (meta?.tier ?? null) as unknown as Agent["tier"],
+    workspaceId: meta?.workspaceId ?? null,
+    parentId: meta?.parentId ?? null,
+    apiKey: null,
+    heartbeatModel: null,
+    heartbeat: null,
+    status: "active",
+    deletedAt: null,
+    deletedBy: null,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  };
+}
+
+/** 每次 LLM complete 前跑 context 钩子链，写回 llmMessages */
+async function applyContextHooksBeforeComplete(
+  input: ReactLoopInput,
+  toolCtx: ReturnType<typeof createAgentToolContext>,
+  llmMessages: LlmMessage[],
+  round: number,
+  runId: string | undefined,
+): Promise<LlmMessage[]> {
+  // 始终以骨架为钩子输入（避免 round===1 在 synthesizing 再跑时叠加重写）
+  const skeleton = buildSystemPromptSkeleton(
+    input.agentMeta?.systemPrompt ?? input.agent.systemPrompt,
+  );
+
+  const hookInput: ContextHookInput = {
+    agent: buildHookAgent(input),
+    sessionId: input.sessionId ?? "",
+    runId: runId ?? "",
+    round,
+    messages: llmMessages.map((m) => ({ ...m })),
+    systemPrompt: skeleton,
+    ctx: toolCtx,
+    scratch: {},
+  };
+  const hooked = await runContextHooks(hookInput);
+  // 无钩子改写 systemPrompt（如 round>1 内建全跳过）→ 保留消息里已注入的 system，防被骨架冲掉
+  if (hooked.systemPrompt === skeleton) {
+    return hooked.messages;
+  }
+  return applySystemPromptToMessages(hooked.messages, hooked.systemPrompt);
 }
 
 function pushThinking(executedTools: StoredToolCall[], round: number, delta: string) {
@@ -366,6 +434,14 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       if (input.signal?.aborted) {
         throw makeAbortError(input.signal);
       }
+
+      llmMessages = await applyContextHooksBeforeComplete(
+        input,
+        toolCtx,
+        llmMessages,
+        roundsUsed,
+        runId,
+      );
 
       const turn = await input.transport.complete({
         messages: llmMessages,
@@ -650,6 +726,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       );
       if (hasToolWork) {
         try {
+          llmMessages = await applyContextHooksBeforeComplete(
+            input,
+            toolCtx,
+            llmMessages,
+            roundsUsed || 1,
+            runId,
+          );
           const synthesis = await input.transport.complete({
             messages: llmMessages,
             signal: input.signal,

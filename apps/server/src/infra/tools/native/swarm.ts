@@ -19,7 +19,7 @@ import { parseSkillUsageStats } from "../../skillRunner.js";
 import { getSkillUsage, latestActivityAt } from "../../skillUsage.js";
 import { parseSkillKind } from "../../skillPackage.js";
 import { resolveToolsForAgentTier } from "../../loop/setup.js";
-import { buildAllMemoryHints, buildSystemPromptWithHints } from "../../promptBuilder.js";
+import { buildSystemPromptSkeleton } from "../../promptBuilder.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
 import { createTrpcInvoker } from "../../trpcInvoker.js";
 import { createMemoryRepository } from "../../memoryRepository.js";
@@ -482,15 +482,9 @@ async function prepareAgentRun(
         throw new Error("SessionStreamHub 未初始化，无法启动子 Agent 流式运行");
       }
 
-      const memoryHint = await buildAllMemoryHints(ctx.services, input, {
-        agentId: agent.id,
-        sessionId: mainSession.id,
-      });
       const tierTools = resolveToolsForAgentTier(agent.tier, agent.tools);
-      const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, tierTools, memoryHint, {
-        tier: agent.tier,
-        name: agent.name,
-      });
+      // 记忆 / tier / 工具引导由 reactLoop 内 contextHooks 在 LLM 调用前注入
+      const systemPrompt = buildSystemPromptSkeleton(agent.systemPrompt);
       // 会话 model 优先：spawn_subagent 复用 agentId 时可通过 session.model 覆盖本轮模型
       const runModel = (mainSession.model && String(mainSession.model).trim()) || agent.model;
       const messages: LlmMessage[] = [
@@ -500,6 +494,7 @@ async function prepareAgentRun(
       const invokeTrpc = createTrpcInvoker({ services: ctx.services });
       const agentMeta = {
         id: agent.id,
+        name: agent.name,
         model: runModel,
         systemPrompt,
         tools: tierTools,
