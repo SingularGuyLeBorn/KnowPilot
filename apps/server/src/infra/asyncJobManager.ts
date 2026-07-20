@@ -1186,6 +1186,8 @@ export interface AsyncQueuedJob {
   position?: number;
   /** 排队原因：首个卡住的上限（orchestrator 真实判定，TP-2）；不在池内存队列时为 undefined（如重启后 DB 残留 queued） */
   reason?: AsyncJobQueuedReason;
+  /** W3：reason=gate 时的阻塞详情（因审批 X 阻塞 scope） */
+  gateBlock?: { approvalId: string; scope: string; reason: string };
   subagentSessionId?: string;
   logs?: AsyncTaskLogEntry[];
   createdAt: number;
@@ -1212,13 +1214,15 @@ export async function listQueuedAsyncJobs(
       // v7 两级分组隔离：deliverToQueue=false 同步任务专属「同步任务」区，不进异步 queued 列表。
       if (input.deliverToQueue === false) return null;
       const output = parseAsyncOutput(row.output);
+      const reason = orchestrator.getQueuedReason(row.id);
       const base: AsyncQueuedJob = {
         jobId: row.id,
         sessionId,
         taskLabel: input.taskLabel,
         status: "queued",
         position: orchestrator.getPosition(row.id),
-        reason: orchestrator.getQueuedReason(row.id),
+        reason,
+        gateBlock: reason === "gate" ? orchestrator.getGateBlock(row.id) : undefined,
         logs: output.logs,
         createdAt: row.createdAt.getTime(),
         sourceType: input.sourceType,
@@ -1876,6 +1880,8 @@ export async function startAsyncAgentTask(options: {
       // sleep/纯工具：lightweight 不占全局 LLM 槽
       slotClass: mode === "tool" ? "lightweight" : "llm",
       metadata: subagentSessionId ? { subagentSessionId } : undefined,
+      // W3：按工具集声明 requiredScopes，与 pending approval scope 相交则 gate 排队
+      tools: Array.isArray(agentSnapshot.tools) ? agentSnapshot.tools : [],
       execute: async (signal) => {
         await buildAsyncExecute(
           options.config,

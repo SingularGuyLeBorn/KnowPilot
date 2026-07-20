@@ -345,6 +345,17 @@ const server = app.listen(PORT, () => {
     .catch((err) => {
       console.error("❌ [StartupRecovery] 启动恢复失败:", err);
     });
+  // W3：刷新 pending approval decisionScope 缓存（调度面 gate 相交检查同步可读）
+  import("./infra/approvalGate.js")
+    .then(({ refreshPendingApprovalScopeCache }) => refreshPendingApprovalScopeCache(services))
+    .then(() => import("./infra/approvalScope.js"))
+    .then(({ getCachedPendingApprovalScopes }) => {
+      const n = getCachedPendingApprovalScopes().length;
+      if (n > 0) console.log(`  🛂 [ApprovalScope] 已加载 ${n} 条 pending decisionScope`);
+    })
+    .catch((err) => {
+      console.warn("  ⚠️ [ApprovalScope] pending scope 缓存刷新失败:", err instanceof Error ? err.message : err);
+    });
   // W11：遗留 running Run 标 interrupted（如实声明不续跑；与 recoverStaleAsyncJobs 同款启动挂载点）
   recoverStaleRuns()
     .then((n) => {

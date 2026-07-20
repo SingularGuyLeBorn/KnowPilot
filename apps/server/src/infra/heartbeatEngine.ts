@@ -27,7 +27,11 @@ import { getSwarmOrchestrator, type SwarmTaskOutcome } from "./swarmOrchestrator
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { assertLlmBudget, getLlmBudgetStatus } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
-import { expireStaleApprovals } from "./approvalGate.js";
+import {
+  expireStaleApprovals,
+  notifyPendingApprovalIfCooldownAllows,
+  refreshPendingApprovalScopeCache,
+} from "./approvalGate.js";
 import { createMemoryRepository, decayMemories, consolidateMemories } from "./memoryRepository.js";
 import { sendEmailNotification } from "./emailNotifier.js";
 import { claimExclusiveSessionTaskRun } from "./taskClaim.js";
@@ -51,6 +55,11 @@ import {
   type HeartbeatDecisionState,
 } from "./heartbeatDecision.js";
 import { listAllAskUserPending } from "./askUserGate.js";
+import {
+  deriveDecisionScope,
+  deriveRequiredScopesFromTools,
+  filterReadonlyTools,
+} from "./approvalScope.js";
 
 const MAX_CONSECUTIVE_FAILURES = HEARTBEAT_MAX_CONSECUTIVE_FAILURES;
 
@@ -393,6 +402,27 @@ export class HeartbeatEngine {
             console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳跳过（LLM 预算耗尽）`);
             return;
           }
+        } else if (decision.mode === "wait_user_gate" && decision.safeBypassAllowed) {
+          // W3 safe bypass：mode 仍 wait_user_gate，但允许一次只读 turn（无只读工具则纯等待）
+          const allTools = agent.tools ? agent.tools.split(",").filter(Boolean) : [];
+          const readonlyTools = filterReadonlyTools(allTools);
+          if (readonlyTools.length === 0) {
+            return;
+          }
+          try {
+            assertLlmBudget(this.config);
+          } catch {
+            console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} safe bypass 跳过（LLM 预算耗尽）`);
+            return;
+          }
+          const stamped: HeartbeatDecisionState = {
+            ...decision.nextState,
+            safeBypassUsed: true,
+            safeBypassGateKey: decision.nextState.safeBypassGateKey,
+          };
+          await this.persistDecisionState(agentId, stamped);
+          await this.dispatchHeartbeatRun(agentId, agent, hb, false, { readonlyOnly: true });
+          return;
         } else {
           // wait_user_gate / quiet / monitor / skipOnlyDecrement：不 dispatch
           return;
@@ -432,26 +462,61 @@ export class HeartbeatEngine {
 
     if (decision.mode === "wait_user_gate" && decision.userGate) {
       const nowMs = Date.now();
-      const notify = shouldNotifyUserGate({
-        decision,
-        cooldownMs: this.config.heartbeat.gateNotifyCooldownMs,
-        nowMs,
-      });
-      if (notify.notify && notify.gateKey) {
-        const nowIso = new Date(nowMs).toISOString();
-        nextState = withGateNotifyStamp(nextState, notify.gateKey, nowIso);
-        const subject = `[KnowPilot] Agent「${agentName}」心跳等待人工：${decision.userGate.kind}`;
-        const body =
-          `Agent「${agentName}」（${agentId}）心跳决策为 wait_user_gate。\n` +
-          `待办：${decision.userGate.summary}\n` +
-          `原因：${decision.reasons.join("；")}`;
-        const result = await sendEmailNotification(this.config, this.services.log, {
-          subject,
-          body,
-          agentId,
+      if (decision.userGate.kind === "approval") {
+        // W3：审批通知走 Approval.lastNotifiedAt 单点冷却
+        const pending = await this.prisma.approval.findMany({
+          where: { status: "pending" },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          select: {
+            id: true,
+            toolName: true,
+            decisionScope: true,
+            lastNotifiedAt: true,
+          },
         });
-        if ("error" in result) {
-          console.warn(`  💓 [HeartbeatEngine] gate 通知未发送：${result.error}`);
+        let anyNotified = false;
+        for (const row of pending) {
+          const r = await notifyPendingApprovalIfCooldownAllows(this.services, row, {
+            subject: `[KnowPilot] Agent「${agentName}」心跳等待人工：approval`,
+            body:
+              `Agent「${agentName}」（${agentId}）心跳决策为 wait_user_gate。\n` +
+              `待办：${decision.userGate.summary}\n` +
+              (decision.blockedScopes?.length
+                ? `被堵 scope：${decision.blockedScopes.join(", ")}\n`
+                : "") +
+              `原因：${decision.reasons.join("；")}`,
+          });
+          if (r.notified) anyNotified = true;
+        }
+        if (anyNotified) {
+          const gateKey =
+            decision.userGate.blockedScopes?.join("|") ||
+            `approval:${decision.userGate.summary}`;
+          nextState = withGateNotifyStamp(nextState, gateKey, new Date(nowMs).toISOString());
+        }
+      } else {
+        const notify = shouldNotifyUserGate({
+          decision,
+          cooldownMs: this.config.heartbeat.gateNotifyCooldownMs,
+          nowMs,
+        });
+        if (notify.notify && notify.gateKey) {
+          const nowIso = new Date(nowMs).toISOString();
+          nextState = withGateNotifyStamp(nextState, notify.gateKey, nowIso);
+          const subject = `[KnowPilot] Agent「${agentName}」心跳等待人工：${decision.userGate.kind}`;
+          const body =
+            `Agent「${agentName}」（${agentId}）心跳决策为 wait_user_gate。\n` +
+            `待办：${decision.userGate.summary}\n` +
+            `原因：${decision.reasons.join("；")}`;
+          const result = await sendEmailNotification(this.config, this.services.log, {
+            subject,
+            body,
+            agentId,
+          });
+          if ("error" in result) {
+            console.warn(`  💓 [HeartbeatEngine] gate 通知未发送：${result.error}`);
+          }
         }
       }
     }
@@ -498,7 +563,7 @@ export class HeartbeatEngine {
     });
     const sessionIds = sessions.map((s) => s.id);
 
-    const [queuedItems, lastRun, lastUserMsg, pendingApprovals] = await Promise.all([
+    const [queuedItems, lastRun, lastUserMsg, pendingApprovalRows] = await Promise.all([
       sessionIds.length === 0
         ? Promise.resolve(0)
         : this.prisma.sessionQueueItem.count({
@@ -521,20 +586,44 @@ export class HeartbeatEngine {
         orderBy: { createdAt: "desc" },
         select: { createdAt: true },
       }),
-      this.prisma.approval.count({ where: { status: "pending" } }),
+      this.prisma.approval.findMany({
+        where: { status: "pending" },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: { id: true, toolName: true, decisionScope: true, args: true },
+      }),
     ]);
+
+    // W3：刷新 pending scope 缓存（供调度面 drain 同步判定）
+    void refreshPendingApprovalScopeCache(this.services).catch(() => {});
+
+    const pendingApprovals = pendingApprovalRows.length;
+    const pendingApprovalScopes = pendingApprovalRows.map((r) => {
+      let scope = r.decisionScope;
+      if (!scope) {
+        const args =
+          typeof r.args === "string"
+            ? (JSON.parse(r.args) as Record<string, unknown>)
+            : ((r.args as Record<string, unknown>) ?? {});
+        scope = deriveDecisionScope(r.toolName, args);
+      }
+      return { approvalId: r.id, scope };
+    });
 
     let openApprovalSummary: string | null = null;
     if (pendingApprovals > 0) {
-      const latest = await this.prisma.approval.findFirst({
-        where: { status: "pending" },
-        orderBy: { createdAt: "desc" },
-        select: { toolName: true },
-      });
+      const latest = pendingApprovalRows[0];
       openApprovalSummary = latest
-        ? `待批 ${latest.toolName}（共 ${pendingApprovals} 条）`
+        ? `待批 ${latest.toolName}${latest.decisionScope ? ` [${latest.decisionScope}]` : ""}（共 ${pendingApprovals} 条）`
         : `有 ${pendingApprovals} 条审批待处理`;
     }
+
+    const agentRow = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { tools: true },
+    });
+    const agentTools = agentRow?.tools ? agentRow.tools.split(",").filter(Boolean) : [];
+    const agentRequiredScopes = deriveRequiredScopesFromTools(agentTools);
 
     const askPending = listAllAskUserPending().filter((p) => p.agentId === agentId);
     const pendingAskUserSummary =
@@ -549,6 +638,8 @@ export class HeartbeatEngine {
       pendingAskUser: askPending.length,
       openApprovalSummary,
       pendingAskUserSummary,
+      pendingApprovalScopes,
+      agentRequiredScopes,
       queuedItems,
       lastRunId: lastRun?.id ?? hb.lastRunAt,
       lastRunAt: hb.lastRunAt,
@@ -597,6 +688,7 @@ export class HeartbeatEngine {
     },
     hb: HeartbeatState,
     repairHint: boolean,
+    opts?: { readonlyOnly?: boolean },
   ): Promise<void> {
     let session = await this.prisma.chatSession.findFirst({
       where: { agentId: agent.id, kind: "heartbeat" },
@@ -623,17 +715,22 @@ export class HeartbeatEngine {
     });
 
     const heartbeatModel = agent.heartbeatModel || agent.model;
+    const allTools = agent.tools ? agent.tools.split(",").filter(Boolean) : [];
+    const tools = opts?.readonlyOnly ? filterReadonlyTools(allTools) : allTools;
     const agentSnapshot = {
       id: agent.id,
       model: heartbeatModel,
       systemPrompt: agent.systemPrompt,
-      tools: agent.tools ? agent.tools.split(",").filter(Boolean) : [],
+      tools,
       tier: agent.tier,
       workspaceId: agent.workspaceId,
       parentId: agent.parentId,
     };
 
     const repairSuffix = repairHint ? `\n\n${REPAIR_SYSTEM_HINT}` : "";
+    const bypassSuffix = opts?.readonlyOnly
+      ? "\n\n[safe bypass] 当前为审批 gate 下的一次性只读分析步：仅可使用只读工具，禁止任何写入/删除/git 写操作。"
+      : "";
 
     const task = await this.prisma.task.create({
       data: {
@@ -650,6 +747,7 @@ export class HeartbeatEngine {
           goal: hb.goal,
           agentSnapshot,
           repair: repairHint,
+          readonlyOnly: opts?.readonlyOnly === true,
         },
       },
     });
@@ -663,6 +761,9 @@ export class HeartbeatEngine {
         workspaceId: agent.workspaceId ?? null,
         jobId: task.id,
         taskLabel: `[heartbeat] ${agent.name}`,
+        // safe bypass / 心跳只读步：空 requiredScopes，不被写类 gate 堵死
+        requiredScopes: opts?.readonlyOnly ? [] : deriveRequiredScopesFromTools(allTools),
+        tools: allTools,
         execute: async (signal): Promise<SwarmTaskOutcome> => {
           const claimed = await claimExclusiveSessionTaskRun(this.prisma, task.id, session.id);
           if (!claimed) {
@@ -691,7 +792,8 @@ export class HeartbeatEngine {
                 model: heartbeatModel,
                 systemPrompt:
                   `${agent.systemPrompt}\n\n你因心跳机制被自动唤醒。任务目标：${hb.goal}\n完成后用简洁中文汇总结果。` +
-                  repairSuffix,
+                  repairSuffix +
+                  bypassSuffix,
                 tools: agentSnapshot.tools,
               },
               messages: [{ role: "user", content: hb.goal }],
@@ -700,7 +802,14 @@ export class HeartbeatEngine {
               sessionId: session.id,
               agentMeta: agentSnapshot,
               runOrigin: "heartbeat",
-              runInput: { heartbeat: true, goal: hb.goal, taskId: task.id, repair: repairHint },
+              runInput: {
+                heartbeat: true,
+                goal: hb.goal,
+                taskId: task.id,
+                repair: repairHint,
+                readonlyOnly: opts?.readonlyOnly === true,
+              },
+              readonlyOnly: opts?.readonlyOnly === true,
             });
 
             await this.prisma.task.update({

@@ -151,7 +151,8 @@ describe("W2 heartbeatDecision 引擎集成", () => {
       name: `W2-gate-${RUN}`,
       model: "deepseek-chat",
       systemPrompt: "test",
-      tools: [],
+      // 仅写工具：避免 [] 物化为默认只读集后触发 W3 safe bypass 建 Task
+      tools: ["native:write_file"],
       tier: "manager",
       heartbeat: {
         enabled: true,

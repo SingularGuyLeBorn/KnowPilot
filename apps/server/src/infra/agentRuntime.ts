@@ -39,6 +39,8 @@ export async function runAgentLoop(options: {
   runOrigin?: "user" | "parent" | "heartbeat";
   /** W11：Run.input 业务描述（触发消息等），run 入口落库时写入 */
   runInput?: unknown;
+  /** W3 safe bypass：只读 turn */
+  readonlyOnly?: boolean;
   /** 每完成一轮工具调用后回调，用于异步任务进度日志 */
   onProgress?: (message: string) => void;
 }): Promise<AgentLoopResult> {
@@ -54,6 +56,7 @@ export async function runAgentLoop(options: {
     agentMeta: options.agentMeta,
     runOrigin: options.runOrigin,
     runInput: options.runInput,
+    readonlyOnly: options.readonlyOnly,
     // W7：sync 链路接入反思装饰器（默认关闭）；stream 链路接入点见 agentStream.runAgentLoopStream
     transport: withReflection(createSyncTransport(options.config, effectiveModel), {
       enabled: options.config.reflection.enabled,

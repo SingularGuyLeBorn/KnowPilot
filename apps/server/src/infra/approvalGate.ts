@@ -13,6 +13,16 @@ import type { OperationResult } from "@knowpilot/shared";
 import { APPROVAL_DEFAULT_TTL_MS } from "@knowpilot/shared";
 import { makeAbortError } from "./abortReason.js";
 import { listDestructiveNativeOpsForApproval } from "./tools/registry.js";
+import {
+  deriveDecisionScope,
+  removeCachedPendingScope,
+  setCachedPendingApprovalScopes,
+  shouldNotifyApprovalByCooldown,
+  upsertCachedPendingScope,
+} from "./approvalScope.js";
+import { getAppConfig } from "./config.js";
+import { sendEmailNotification } from "./emailNotifier.js";
+import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 
 /** 默认需要人工审批的操作（tRPC 点号名 + Agent native 下划线名） */
 const APPROVAL_REQUIRED_OPS = new Set([
@@ -119,6 +129,13 @@ function removeApprovalWaiter(approvalId: string, waiter: ApprovalWaiter): void 
 
 /** 审批决策发生后调用：唤醒所有挂在该审批上的 run（无 waiter 时静默 no-op） */
 export function notifyApprovalResolved(approvalId: string, resolution: ApprovalResolution): void {
+  // W3：从 pending scope 缓存摘除 → 池 drain 可放行被堵 lane
+  removeCachedPendingScope(approvalId);
+  try {
+    getAsyncJobOrchestrator(getAppConfig()).reevaluateQueue();
+  } catch {
+    /* 池未初始化时忽略 */
+  }
   const set = approvalWaiters.get(approvalId);
   if (!set) return;
   for (const waiter of [...set]) {
@@ -127,8 +144,84 @@ export function notifyApprovalResolved(approvalId: string, resolution: ApprovalR
   }
 }
 
+/** 从 DB 刷新 pending scope 缓存（启动 / 测试 / 对账） */
+export async function refreshPendingApprovalScopeCache(
+  services: ServiceContainer,
+): Promise<void> {
+  const rows = await services.prisma.approval.findMany({
+    where: { status: "pending" },
+    select: { id: true, decisionScope: true, toolName: true, args: true },
+  });
+  setCachedPendingApprovalScopes(
+    rows.map((r) => {
+      let scope = r.decisionScope;
+      if (!scope) {
+        const args =
+          typeof r.args === "string"
+            ? (JSON.parse(r.args) as Record<string, unknown>)
+            : ((r.args as Record<string, unknown>) ?? {});
+        scope = deriveDecisionScope(r.toolName, args);
+      }
+      return { approvalId: r.id, scope };
+    }),
+  );
+}
+
+/**
+ * 审批 gate 通知单点：按 Approval.lastNotifiedAt + approvalGate.notifyCooldownMs 冷却。
+ * 返回本次是否实际发出通知。
+ */
+export async function notifyPendingApprovalIfCooldownAllows(
+  services: ServiceContainer,
+  approval: {
+    id: string;
+    toolName: string;
+    decisionScope?: string | null;
+    lastNotifiedAt?: Date | string | null;
+  },
+  opts?: { subject?: string; body?: string },
+): Promise<{ notified: boolean }> {
+  const config = getAppConfig();
+  const cooldownMs = config.approvalGate?.notifyCooldownMs ?? 30 * 60_000;
+  const nowMs = Date.now();
+  if (
+    !shouldNotifyApprovalByCooldown({
+      lastNotifiedAt: approval.lastNotifiedAt,
+      cooldownMs,
+      nowMs,
+    })
+  ) {
+    return { notified: false };
+  }
+
+  const scopeHint = approval.decisionScope ? ` scope=${approval.decisionScope}` : "";
+  const subject =
+    opts?.subject ?? `[KnowPilot] 待审批：${approval.toolName}${scopeHint}`;
+  const body =
+    opts?.body ??
+    `操作「${approval.toolName}」需要人工审批（approvalId=${approval.id}${scopeHint}）。\n请在 /approvals 处理。`;
+
+  const result = await sendEmailNotification(config, services.log, {
+    subject,
+    body,
+  });
+  if ("error" in result) {
+    console.warn(`[ApprovalGate] gate 通知未发送：${result.error}`);
+    // 发送失败不盖 lastNotifiedAt，允许下次重试
+    return { notified: false };
+  }
+
+  await services.prisma.approval.updateMany({
+    where: { id: approval.id, status: "pending" },
+    data: { lastNotifiedAt: new Date(nowMs) },
+  });
+  return { notified: true };
+}
+
 /** 从工具执行错误中提取 PENDING_APPROVAL 标记（assertApprovalOrProceed 抛出的 TRPCError cause） */
-export function getPendingApprovalCause(err: unknown): { approvalId: string } | null {
+export function getPendingApprovalCause(
+  err: unknown,
+): { approvalId: string; decisionScope?: string } | null {
   const cause = (err as { cause?: unknown } | null)?.cause;
   if (
     cause &&
@@ -136,7 +229,11 @@ export function getPendingApprovalCause(err: unknown): { approvalId: string } | 
     (cause as { reason?: unknown }).reason === "PENDING_APPROVAL" &&
     typeof (cause as { approvalId?: unknown }).approvalId === "string"
   ) {
-    return { approvalId: (cause as { approvalId: string }).approvalId };
+    const decisionScope = (cause as { decisionScope?: unknown }).decisionScope;
+    return {
+      approvalId: (cause as { approvalId: string }).approvalId,
+      decisionScope: typeof decisionScope === "string" ? decisionScope : undefined,
+    };
   }
   return null;
 }
@@ -409,21 +506,44 @@ export async function assertApprovalOrProceed(
     return;
   }
 
+  const normalizedArgs = normalizeArgs(args);
+  const decisionScope = deriveDecisionScope(toolName, normalizedArgs);
   const created = await services.approval.create({
     toolName,
-    args: normalizeArgs(args),
+    args: normalizedArgs,
     status: "pending",
-  });
+    decisionScope,
+  } as Parameters<typeof services.approval.create>[0]);
 
   if (!created.success || !created.data) {
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "创建审批请求失败，请稍后重试。" });
   }
 
   const id = (created.data as { id: string }).id;
+  upsertCachedPendingScope({ approvalId: id, scope: decisionScope });
+  try {
+    getAsyncJobOrchestrator(getAppConfig()).reevaluateQueue();
+  } catch {
+    /* 池未初始化时忽略 */
+  }
+
+  // 通知单点（冷却内抑制）；失败不阻断审批创建
+  void notifyPendingApprovalIfCooldownAllows(services, {
+    id,
+    toolName,
+    decisionScope,
+    lastNotifiedAt: null,
+  }).catch((err) => {
+    console.warn(
+      "[ApprovalGate] 创建后通知失败:",
+      err instanceof Error ? err.message : err,
+    );
+  });
+
   throw new TRPCError({
     code: "FORBIDDEN",
-    message: `操作「${toolName}」需要人工审批，已加入审批队列（approvalId=${id}）。请在 /approvals 批准后，携带同一参数与 approvalId 重试。`,
-    cause: { reason: "PENDING_APPROVAL", approvalId: id },
+    message: `操作「${toolName}」需要人工审批，已加入审批队列（approvalId=${id}，scope=${decisionScope}）。请在 /approvals 批准后，携带同一参数与 approvalId 重试。`,
+    cause: { reason: "PENDING_APPROVAL", approvalId: id, decisionScope },
   });
 }
 

@@ -136,6 +136,8 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
         workspaceId: parentSnapshot.workspaceId ?? null,
         taskLabel: task.slice(0, 80),
         timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
+        // W3：子 Agent 默认工具集 → requiredScopes（粗粒度）
+        tools: [...DEFAULT_SUBAGENT_TOOLS],
         guard,
         dedup: {
           agentId: parentSnapshot.id,

@@ -27,9 +27,14 @@
 import type { AppConfig } from "./config.js";
 import { getStreamHub, onHubRunSettled } from "./sessionStreamHub.js";
 import { abortController } from "./abortReason.js";
+import {
+  findGateBlock,
+  getCachedPendingApprovalScopes,
+  type GateBlock,
+} from "./approvalScope.js";
 
 /** 排队阻塞原因：哪个上限卡住（queuedByReason 统计与 UI「第 N 位 · 因 X 上限排队」共用） */
-export type AsyncJobQueuedReason = "global" | "session" | "workspace";
+export type AsyncJobQueuedReason = "global" | "session" | "workspace" | "gate";
 
 /**
  * 槽位类别：
@@ -58,6 +63,11 @@ export interface AsyncJobRunSpec {
   priority?: "normal" | "high";
   /** 缺省 llm；lightweight 不占全局 LLM 槽 */
   slotClass?: AsyncJobSlotClass;
+  /**
+   * W3：工作项声明的 requiredScopes（由工具集静态推导）。
+   * 与 pending approvals.decisionScope 相交 → 排队 reason=gate，不获槽。
+   */
+  requiredScopes?: string[];
   /** 附加元数据：当前用于 subagent session 与 AbortController 关联 */
   metadata?: { subagentSessionId?: string };
   /** 排队期被移出队列（超时/取消）且未获槽时回调——消费通道据此放弃本轮 */
@@ -68,6 +78,8 @@ export interface AsyncJobRunSpec {
 interface QueuedItem {
   spec: AsyncJobRunSpec;
   reason: AsyncJobQueuedReason;
+  /** reason=gate 时附带阻塞详情（供 UI「因审批 X 阻塞 scope」） */
+  gateBlock?: GateBlock;
 }
 
 interface RunningJob {
@@ -195,8 +207,20 @@ export class AsyncJobOrchestrator {
     return n;
   }
 
+  /**
+   * W3 gate 阻塞详情：requiredScopes ∩ pending decisionScope。
+   * pending 来自进程内缓存（approvalGate 创建/决议时刷新），drain 同步可读。
+   */
+  private gateBlockFor(spec: AsyncJobRunSpec): GateBlock | null {
+    const required = spec.requiredScopes;
+    if (!required || required.length === 0) return null;
+    return findGateBlock(required, getCachedPendingApprovalScopes());
+  }
+
   /** 准入判定链：返回首个卡住的上限；null = 可 start。判定只读，drain 串行调用 */
   private blockReason(spec: AsyncJobRunSpec): AsyncJobQueuedReason | null {
+    // W3：审批 scope 相交优先于容量——被堵 lane 挂着，其他 lane 继续
+    if (this.gateBlockFor(spec)) return "gate";
     // lightweight（sleep/纯工具）不参与 LLM 容量竞争，直接获槽
     if (spec.slotClass === "lightweight") return null;
     if (this.runningGlobal + this.hubInteractiveRunning() >= this.limits.maxGlobal) return "global";
@@ -217,7 +241,12 @@ export class AsyncJobOrchestrator {
     if (this.queue.length >= this.maxQueued) {
       throw new Error(`任务池队列已满（maxQueued=${this.maxQueued}），请稍后再派。`);
     }
-    const item: QueuedItem = { spec, reason: this.blockReason(spec) ?? "global" };
+    const reason = this.blockReason(spec) ?? "global";
+    const item: QueuedItem = {
+      spec,
+      reason,
+      gateBlock: reason === "gate" ? (this.gateBlockFor(spec) ?? undefined) : undefined,
+    };
     if (spec.priority === "high") {
       // 高优通道：插到队首（同类 FIFO），admit 优先级高于普通排队任务
       let idx = 0;
@@ -287,7 +316,12 @@ export class AsyncJobOrchestrator {
   getStats() {
     const runningByWorkspace: Record<string, number> = {};
     for (const [k, v] of this.runningByWorkspace) runningByWorkspace[k] = v;
-    const queuedByReason: Record<AsyncJobQueuedReason, number> = { global: 0, session: 0, workspace: 0 };
+    const queuedByReason: Record<AsyncJobQueuedReason, number> = {
+      global: 0,
+      session: 0,
+      workspace: 0,
+      gate: 0,
+    };
     for (const item of this.queue) queuedByReason[item.reason]++;
     return {
       queued: this.queue.length,
@@ -312,6 +346,14 @@ export class AsyncJobOrchestrator {
   /** 排队任务的阻塞原因（哪个上限卡住）；不在队列中为 undefined */
   getQueuedReason(jobId: string): AsyncJobQueuedReason | undefined {
     return this.queue.find((q) => q.spec.jobId === jobId)?.reason;
+  }
+
+  /** W3：gate 阻塞详情（approvalId + scope）；非 gate / 不在队列 → undefined */
+  getGateBlock(jobId: string): GateBlock | undefined {
+    const item = this.queue.find((q) => q.spec.jobId === jobId);
+    if (!item || item.reason !== "gate") return undefined;
+    // 缓存可能已更新：再求一次以反映最新 pending
+    return this.gateBlockFor(item.spec) ?? item.gateBlock;
   }
 
   /** cancel 幂等：运行中 abort 信号；排队中移出队列并触发 cancelled 事件。同一 jobId 多次调用无副作用。 */
@@ -383,7 +425,15 @@ export class AsyncJobOrchestrator {
       const item = this.queue[i];
       const reason = this.blockReason(item.spec);
       if (reason) {
-        // reason 记录「入队时首个卡住的上限」，不随容量变化改写（口径稳定，UI/统计可解释）
+        // 容量类 reason 保留入队首因（口径稳定）；gate 可随 pending 解除/命中改写
+        const gate = this.gateBlockFor(item.spec);
+        if (gate) {
+          item.reason = "gate";
+          item.gateBlock = gate;
+        } else if (item.reason === "gate") {
+          item.reason = reason;
+          item.gateBlock = undefined;
+        }
         i++;
         continue;
       }
