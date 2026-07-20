@@ -117,6 +117,10 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       memoryFlush: { enabled: true, maxFacts: 5 },
     },
     heartbeat: {
+      decisionEnabled: true,
+      quietCap: 8,
+      terminalAfterQuiet: 3,
+      gateNotifyCooldownMs: 1_800_000,
       loopContract: { maxStaleRounds: 3, maxEvidence: 50 },
     },
     reflection: { enabled: false, maxRounds: 1, criticModel: "" },
