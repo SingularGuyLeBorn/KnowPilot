@@ -60,6 +60,10 @@ export interface NativeToolContext {
    * 本 run 的 D 类工具回滚栈（reactLoop 注入；缺省 = 不跟踪，如审批直执/单测直接调工具）。
    */
   rollbackStack?: RunRollbackStack;
+  /**
+   * W3 safe bypass：为 true 时仅允许只读（reentrant）工具；写工具在权限层拒绝。
+   */
+  readonlyOnly?: boolean;
 }
 
 export type NativeToolHandler = (

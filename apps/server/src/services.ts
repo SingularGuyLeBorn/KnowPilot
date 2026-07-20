@@ -91,6 +91,7 @@ import type { AppConfig } from "./infra/config.js";
 // type-only：编译期擦除，不构成运行时循环依赖（resume 的 runner emit 追踪用）
 import type { AgentStreamEvent } from "./infra/agentStream.js";
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
+import { deriveDecisionScope } from "./infra/approvalScope.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
@@ -2814,7 +2815,18 @@ export class ApprovalService extends BaseService<CreateApprovalInput, UpdateAppr
     if (input.status) where.status = input.status;
     return where;
   }
-  protected buildCreateData(input: CreateApprovalInput) { return input; }
+  protected buildCreateData(input: CreateApprovalInput) {
+    // W3：服务端派生 decisionScope（LLM/客户端不可传业务语义；已有则保留）
+    const args =
+      input.args && typeof input.args === "object" && !Array.isArray(input.args)
+        ? (input.args as Record<string, unknown>)
+        : {};
+    const decisionScope =
+      typeof input.decisionScope === "string" && input.decisionScope.trim()
+        ? input.decisionScope.trim()
+        : deriveDecisionScope(input.toolName, args);
+    return { ...input, decisionScope };
+  }
   protected buildUpdateData(input: UpdateApprovalInput) {
     const { id: _id, ...data } = input;
     // 审批决策审计：进入决策终态（approved/rejected）时统一盖决策者与时间戳。
@@ -2881,8 +2893,8 @@ export class RunService extends BaseService<CreateRunInput, UpdateRunInput, List
   }
   protected buildCreateData(input: CreateRunInput) { return input; }
   protected buildUpdateData(input: UpdateRunInput) { const { id: _id, ...data } = input; return data; }
-  // P2-5：Runs 列表 UI 只需 status/agent/session/耗时/token/时间，裁剪 input/output/toolCalls/error 等大 JSON；
-  // 详情走 getById 取全量。
+  // P2-5：Runs 列表 UI 只需 status/agent/session/耗时/token/时间；
+  // W3：保留 output（phase/blockedScopes）供 awaiting_human 卡展示被堵 scope；input/toolCalls/error 仍裁剪。
   protected override getListSelect(): any {
     return {
       id: true,
@@ -2892,6 +2904,7 @@ export class RunService extends BaseService<CreateRunInput, UpdateRunInput, List
       durationMs: true,
       toolCallCount: true,
       tokenUsage: true,
+      output: true,
       createdAt: true,
       updatedAt: true,
     };
