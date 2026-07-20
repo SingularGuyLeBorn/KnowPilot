@@ -84,8 +84,14 @@ export function getApprovalPendingTtlMs(): number {
  * 2. 唤醒靠事件，不靠轮询：waitApprovalResolution 注册后挂起，由以下来源 resolve：
  *    - executeApprovedOperation 执行后（approved，携带执行结果）
  *    - ApprovalService.afterUpdate 决策为 rejected（人工拒绝）
- *    - expireStaleApprovals 批量清扫 / waiter 自带 TTL 截止（expired）
- * 3. 幂等消除竞态：wait 入口先读当前状态，已决直接返回，消除「resolve 先于 wait 注册」的双通道竞态。
+ *    - expireStaleApprovals / waiter TTL 条件写成功（expired）
+ * 3. 「决策事件必达」= 注册先行、对账在后：先同步注册 waiter，再 await 复读状态；
+ *    已决 → 立即 resolve 真实结果并摘 waiter；pending → 正常等待。读与收事件之间无 await 交错丢事件。
+ *
+ * A6 与 askUserGate 语义对照（保留各自语义，不对齐实现）：
+ * - approval abort（signal）：reject AbortError → run 走 failed 收尾（危险操作中止不假装完成）
+ * - ask_user abort：resolve outcome=aborted → 注入「被中止」续轮让 LLM 收尾
+ * - 两者共同点：挂起靠进程内 waiter、唤醒靠显式事件/TTL，禁止轮询赌时序
  */
 
 export type ApprovalResolution = {
@@ -104,6 +110,16 @@ interface ApprovalWaiter {
 }
 
 const approvalWaiters = new Map<string, Set<ApprovalWaiter>>();
+
+/** 测试隔离：清空等待注册表并取消 TTL / abort 监听 */
+export function __resetApprovalWaitersForTests(): void {
+  for (const [approvalId, set] of approvalWaiters) {
+    for (const waiter of [...set]) {
+      removeApprovalWaiter(approvalId, waiter);
+    }
+  }
+  approvalWaiters.clear();
+}
 
 function removeApprovalWaiter(approvalId: string, waiter: ApprovalWaiter): void {
   if (waiter.timer) clearTimeout(waiter.timer);
@@ -153,50 +169,66 @@ async function expireApprovalIfPending(services: ServiceContainer, approvalId: s
   return result.count > 0;
 }
 
+type ApprovalRow = {
+  toolName: string;
+  status: string;
+  createdAt?: Date | string;
+  decidedBy?: string | null;
+};
+
+/** 已决状态 → Resolution；仍需等待（pending / approved 未 execute）→ null */
+function resolutionFromApprovalRow(approval: ApprovalRow, approvalId: string): ApprovalResolution | null {
+  if (approval.status === "executed") {
+    return { outcome: "approved", approvalId, toolName: approval.toolName };
+  }
+  if (approval.status === "rejected") {
+    return {
+      outcome: approval.decidedBy === "system-ttl" ? "expired" : "rejected",
+      approvalId,
+      toolName: approval.toolName,
+    };
+  }
+  // pending 或 approved（尚未 execute）：继续等显式事件
+  return null;
+}
+
 /**
  * 挂起等待审批决策（awaiting_human 的唯一唤醒通道）。
- * 返回决策结果；signal 中断时以 AbortError 拒绝（run 走 failed 收尾）。
+ * 返回决策结果；signal 中断时以 AbortError 拒绝（run 走 failed 收尾；与 ask_user 注入续轮不同，见文件头 A6）。
  */
 export async function waitApprovalResolution(
   services: ServiceContainer,
   approvalId: string,
   opts?: { signal?: AbortSignal },
 ): Promise<ApprovalResolution> {
-  // 幂等入口：已决状态直接映射返回，消除「决策先于等待注册」的竞态
-  let toolName = "unknown";
-  let createdAtMs: number | null = null;
-  try {
-    const approval = (await services.approval.getById(approvalId)) as {
-      toolName: string;
-      status: string;
-      createdAt?: Date | string;
-      decidedBy?: string | null;
-    };
-    toolName = approval.toolName;
-    createdAtMs = approval.createdAt ? new Date(approval.createdAt).getTime() : null;
-    if (approval.status === "executed") {
-      return { outcome: "approved", approvalId, toolName };
-    }
-    if (approval.status === "rejected") {
-      return {
-        outcome: approval.decidedBy === "system-ttl" ? "expired" : "rejected",
-        approvalId,
-        toolName,
-      };
-    }
-    // status=approved（尚未 execute）：继续等 executeApprovedOperation 的显式事件，不提前放行
-  } catch {
-    // 审批行不存在：当作拒绝处理，让 LLM 收尾而不是永久挂起
-    return { outcome: "rejected", approvalId, toolName };
-  }
-
   return new Promise<ApprovalResolution>((resolvePromise, rejectPromise) => {
-    const waiter: ApprovalWaiter = { resolve: resolvePromise, signal: opts?.signal };
+    let settled = false;
+    let toolName = "unknown";
+
+    const settle = (r: ApprovalResolution) => {
+      if (settled) return;
+      settled = true;
+      resolvePromise(r);
+    };
+    const settleReject = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      rejectPromise(err);
+    };
+
+    const waiter: ApprovalWaiter = {
+      resolve: (r) => {
+        removeApprovalWaiter(approvalId, waiter);
+        settle(r);
+      },
+      signal: opts?.signal,
+    };
     waiter.onAbort = () => {
       removeApprovalWaiter(approvalId, waiter);
-      rejectPromise(makeAbortError(opts?.signal));
+      settleReject(makeAbortError(opts?.signal));
     };
 
+    // ① 同步注册先行——此后任何 notify 必达（消除读↔注册窗口丢事件）
     const set = approvalWaiters.get(approvalId) ?? new Set<ApprovalWaiter>();
     set.add(waiter);
     approvalWaiters.set(approvalId, set);
@@ -209,26 +241,62 @@ export async function waitApprovalResolution(
       opts.signal.addEventListener("abort", waiter.onAbort, { once: true });
     }
 
-    // TTL 截止机制：与 expireStaleApprovals 同一条 TTL 规则的两个执行点——
-    // 批量清扫管「无 run 挂起的堆积」，本定时器管「本条有 run 挂起的审批」。
-    // 到期时间与审批自身 createdAt+TTL 对齐，是领域截止而非时序猜测。
-    const ttl = getApprovalPendingTtlMs();
-    if (ttl > 0 && createdAtMs !== null) {
+    const armTtl = (createdAtMs: number) => {
+      const ttl = getApprovalPendingTtlMs();
+      if (ttl <= 0) return;
       const remaining = createdAtMs + ttl - Date.now();
       waiter.timer = setTimeout(() => {
         void (async () => {
+          if (settled) return;
+          let flipped = false;
           try {
-            await expireApprovalIfPending(services, approvalId);
+            flipped = await expireApprovalIfPending(services, approvalId);
           } catch (err) {
             console.warn("[ApprovalGate] waiter TTL 过期落库失败:", err instanceof Error ? err.message : err);
           }
-          removeApprovalWaiter(approvalId, waiter);
-          resolvePromise({ outcome: "expired", approvalId, toolName });
+          if (settled) return;
+
+          // expired 解析必须以条件写 count=1 为前提；count=0 = 并发已决 → 复读如实 resolve
+          if (flipped) {
+            removeApprovalWaiter(approvalId, waiter);
+            settle({ outcome: "expired", approvalId, toolName });
+            return;
+          }
+          try {
+            const row = (await services.approval.getById(approvalId)) as ApprovalRow;
+            toolName = row.toolName || toolName;
+            const resolved = resolutionFromApprovalRow(row, approvalId);
+            removeApprovalWaiter(approvalId, waiter);
+            settle(resolved ?? { outcome: "rejected", approvalId, toolName });
+          } catch {
+            removeApprovalWaiter(approvalId, waiter);
+            settle({ outcome: "rejected", approvalId, toolName });
+          }
         })();
       }, Math.max(remaining, 0));
-      // 不阻断进程退出（测试/CLI 场景）
       if (typeof waiter.timer === "object" && "unref" in waiter.timer) waiter.timer.unref();
-    }
+    };
+
+    // ② 注册后再复读：已决立即收尾；pending 则挂 TTL 等待事件
+    void (async () => {
+      try {
+        const approval = (await services.approval.getById(approvalId)) as ApprovalRow;
+        if (settled) return; // 复读期间已被 notify 唤醒
+        toolName = approval.toolName || toolName;
+        const resolved = resolutionFromApprovalRow(approval, approvalId);
+        if (resolved) {
+          removeApprovalWaiter(approvalId, waiter);
+          settle(resolved);
+          return;
+        }
+        const createdAtMs = approval.createdAt ? new Date(approval.createdAt).getTime() : null;
+        if (createdAtMs !== null) armTtl(createdAtMs);
+      } catch {
+        if (settled) return;
+        removeApprovalWaiter(approvalId, waiter);
+        settle({ outcome: "rejected", approvalId, toolName });
+      }
+    })();
   });
 }
 
@@ -280,31 +348,34 @@ function argsMatch(stored: unknown, requested: Record<string, unknown>): boolean
   return canonicalJson(normalizeArgs(parsed)) === canonicalJson(normalizeArgs(requested));
 }
 
-/** 将超时仍 pending 的审批标为 rejected；返回处理条数 */
+/** 将超时仍 pending 的审批标为 rejected；只对实际翻转成功的行发 notify；返回翻转条数 */
 export async function expireStaleApprovals(services: ServiceContainer): Promise<number> {
   const ttl = getApprovalPendingTtlMs();
   if (ttl <= 0) return 0;
   const cutoff = new Date(Date.now() - ttl);
-  // 先取出将被翻转的行（W11：需逐条发 approval_resolved 事件唤醒挂起的 run）
   const stale = await services.prisma.approval.findMany({
     where: { status: "pending", createdAt: { lt: cutoff } },
     select: { id: true, toolName: true },
   });
   if (stale.length === 0) return 0;
-  // 单条 updateMany 全量清理，避免分页 pageSize 漏扫；同时落审计字段
-  const result = await services.prisma.approval.updateMany({
-    where: { status: "pending", createdAt: { lt: cutoff } },
-    data: {
-      status: "rejected",
-      decidedBy: "system-ttl",
-      decidedAt: new Date(),
-      decisionNote: "审批超时，自动拒绝。",
-    },
-  });
+
+  // 逐条条件写：与人工批准/waiter TTL 竞态安全；仅 count=1 的行才 notify（避免误报 expired）
+  let flipped = 0;
   for (const row of stale) {
+    let ok = false;
+    try {
+      ok = await expireApprovalIfPending(services, row.id);
+    } catch (err) {
+      console.warn(
+        `[ApprovalGate] expireStaleApprovals 翻转失败 id=${row.id}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+    if (!ok) continue;
+    flipped += 1;
     notifyApprovalResolved(row.id, { outcome: "expired", approvalId: row.id, toolName: row.toolName });
   }
-  return result.count;
+  return flipped;
 }
 
 /**

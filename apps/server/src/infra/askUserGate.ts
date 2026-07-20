@@ -5,6 +5,12 @@
  * - 内存 Map = 热路径；AskUserRequest 表 = 重启真相源
  * - waitAskUserResolution 挂 Promise；resolveAskUser / TTL / abort 唤醒
  * - 重启后 hydrate 恢复 pending+提醒；无 waiter 时的答复 → 入会话发送队列（孤儿投递）
+ * - 同步临界区：pending 状态检查与 waiter 注册之间无 await（内存 Map 可读），与 approvalGate
+ *   「注册先行、对账在后」同一不变量（approval 因真相源在 DB 而先注册再 await 复读）
+ *
+ * A6 与 approvalGate 语义对照（保留各自语义，不对齐实现）：
+ * - ask_user abort：resolve outcome=aborted → 注入「被中止」续轮让 LLM 收尾
+ * - approval abort：reject AbortError → run 走 failed（危险操作中止不假装完成）
  */
 
 import { randomUUID } from "node:crypto";
