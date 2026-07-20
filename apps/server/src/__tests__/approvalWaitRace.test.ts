@@ -110,9 +110,10 @@ describe("C3 approval wait 竞态", () => {
       { id: "flip-ok", toolName: "git_commit" },
       { id: "flip-no", toolName: "git_push" },
     ]);
-    const updateMany = vi.fn(async (args: { where?: { id?: string } }) => ({
-      count: args?.where?.id === "flip-ok" ? 1 : 0,
-    }));
+    const updateMany = vi.fn(async (args: unknown) => {
+      const id = (args as { where?: { id?: string } } | undefined)?.where?.id;
+      return { count: id === "flip-ok" ? 1 : 0 };
+    });
     const getById = vi.fn(async (id: string) => ({
       toolName: id === "flip-ok" ? "git_commit" : "git_push",
       status: "pending",
