@@ -219,6 +219,8 @@ export interface ChatSession {
   rotatedToSessionId?: string | null;
   /** Goal / Deep Research 外环 */
   goalState?: import("./schemas.js").SessionGoalState | null;
+  /** 会话树当前叶消息 id */
+  activeLeafId?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
   messages?: ChatMessage[];
@@ -239,6 +241,12 @@ export interface ChatMessage {
   sessionId: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  /** 会话树父消息 id；首条为 null */
+  parentId?: string | null;
+  /** 书签标签 */
+  label?: string | null;
+  /** null=普通；branch_summary=分支摘要（默认不进 LLM 上下文） */
+  kind?: string | null;
   attachments?: ChatImageAttachment[];
   toolCalls: any;
   toolResults: any;

@@ -153,6 +153,9 @@ export type AgentStreamEvent =
         id: string;
         role: string;
         content: string;
+        parentId?: string | null;
+        label?: string | null;
+        kind?: string | null;
         toolCalls?: unknown;
         toolResults?: unknown;
         tokenUsage?: unknown;
@@ -761,21 +764,23 @@ export async function chatAgentStream(
     // W11：Run 行已由内核在 run 入口创建（running）并在 done 终态写回；此处仅把 assistantMessageId
     // 合并进既有 output（读-改-写保内核字段不丢）。
     const runId = result.runId;
+    // W1：assistant 落库必须走 appendChatMessage（parentId + activeLeafId 同事务）
+    let createdParentId: string | null = null;
     assistantMessageId = await services.prisma.$transaction(async (tx) => {
       if (!assistantMessageId) {
         const initial = buildInitialVersionMeta(result.content, result.toolCalls);
-        const created = await tx.chatMessage.create({
-          data: {
-            id: pendingAssistantId,
-            sessionId,
-            role: "assistant",
-            content: result.content,
-            toolCalls: result.toolCalls,
-            toolResults: initial.toolResults,
-            tokenUsage: result.tokenUsage,
-          } as any,
+        const { appendChatMessage } = await import("./chatTree.js");
+        const created = await appendChatMessage(tx, {
+          id: pendingAssistantId,
+          sessionId,
+          role: "assistant",
+          content: result.content,
+          toolCalls: result.toolCalls,
+          toolResults: initial.toolResults,
+          tokenUsage: result.tokenUsage,
         });
         assistantMessageId = created.id;
+        createdParentId = created.parentId ?? null;
       }
 
       if (runId) {
@@ -806,6 +811,9 @@ export async function chatAgentStream(
           id: assistantMessageId,
           role: "assistant",
           content: result.content,
+          parentId: createdParentId,
+          label: null,
+          kind: null,
           toolCalls: result.toolCalls ?? undefined,
           toolResults: undefined,
           tokenUsage: result.tokenUsage ?? undefined,

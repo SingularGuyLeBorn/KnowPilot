@@ -501,14 +501,14 @@ export async function persistCompactResult(
     if (cas.count === 0) {
       return { skipped: true as const };
     }
-    const boundaryMsg = await tx.chatMessage.create({
-      data: {
-        sessionId,
-        role: "assistant",
-        content: boundaryContent,
-        toolCalls: boundaryToolCalls,
-        source: "system",
-      },
+    // W1：压缩边界消息挂到活跃叶并推进游标（与 CAS 同事务）
+    const { appendChatMessage } = await import("./chatTree.js");
+    const boundaryMsg = await appendChatMessage(tx, {
+      sessionId,
+      role: "assistant",
+      content: boundaryContent,
+      toolCalls: boundaryToolCalls,
+      source: "system",
     });
     return { skipped: false as const, boundaryMessageId: boundaryMsg.id };
   });

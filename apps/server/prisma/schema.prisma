@@ -122,6 +122,8 @@ model ChatSession {
   todoState    Json?
   /// Goal / Deep Research 外环状态（standing goal + 裁判续跑）
   goalState    Json?
+  /// 会话树当前叶消息 id（游标；新消息挂到此叶下）
+  activeLeafId String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   // P1-8：外键到 Agent，删 Agent 时 agentId 置 null
@@ -145,6 +147,12 @@ model ChatMessage {
   sessionId    String
   role         String      /// "user" | "assistant" | "system" | "tool"
   content      String
+  /// 会话树：指向父消息 id；首条为 null
+  parentId     String?
+  /// 书签标签（可空）
+  label        String?
+  /// 消息种类：null/普通 | "branch_summary"（分支摘要，默认不进 LLM 上下文）
+  kind         String?
   attachments  Json?       /// ChatImageAttachment[]，用户消息的图片附件
   toolCalls    Json?       /// 调用的工具
   toolResults  Json?       /// 工具执行结果
@@ -155,6 +163,7 @@ model ChatMessage {
   session      ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
+  @@index([sessionId, parentId])
 }
 
 /// 会话级发送队列项（用户消息 + 上级 Agent 消息镜像）
