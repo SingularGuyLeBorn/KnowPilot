@@ -20,6 +20,7 @@ import { createContextInner } from "../trpc/context.js";
 import { setStreamHub, getStreamHub, SessionStreamHub } from "../infra/sessionStreamHub.js";
 import { resetSwarmBus } from "../infra/swarmBus.js";
 import { enqueueSuperiorQueueDrain } from "../infra/asyncJobManager.js";
+import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
 import { isSubagentSessionSettled } from "../infra/tools/native/session.js";
 
 type Ctx = Awaited<ReturnType<typeof createContextInner>>;
@@ -140,6 +141,7 @@ async function occupySession(sessionId: string, agentId: string): Promise<() => 
 describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () => {
   beforeEach(() => {
     resetSwarmBus();
+    resetAsyncJobOrchestratorForTests();
     process.env.MOCK_LLM = "true";
     setStreamHub(new SessionStreamHub({ ringSize: 100, persist: false, eventTtlMs: 1000, cleanupIntervalMs: 0 }));
   });
@@ -193,12 +195,12 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
       expect(leaked).toHaveLength(0);
 
       // ── 转闲：drain 自动起一轮 ──
-      // 完成判定＝队列空 + user 消息写入 + assistant 产出（consume 先于起流，单看队列空会抢跑）
+      // B2：listBySession 在软认领后即为空——完成判定必须以「行物理删除 + AgentMessage consumed」为准
+      const queueItemId = items[0].id;
       release();
       await vi.waitFor(
         async () => {
-          const remaining = await ctx.services.sessionQueueItem.listBySession(fx.subSessionId);
-          expect(remaining).toHaveLength(0);
+          expect(await prisma.sessionQueueItem.findUnique({ where: { id: queueItemId } })).toBeNull();
           const userMsg = await prisma.chatMessage.findFirst({
             where: { sessionId: fx.subSessionId, role: "user", content: "W-E 排队任务" },
           });
@@ -209,14 +211,12 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
           });
           expect(assistant).toBeTruthy();
           expect(assistant!.content.length).toBeGreaterThan(0);
+          const consumedMsg = await prisma.agentMessage.findUnique({ where: { id: agentMsg!.id } });
+          expect(consumedMsg!.status).toBe("consumed");
+          expect(consumedMsg!.deliveredAt).toBeTruthy();
         },
         { timeout: 10_000, interval: 50 },
       );
-
-      // consume 后 AgentMessage 记账 consumed（deliveredAt 兜底补齐，pending 不泄漏）
-      const consumedMsg = await prisma.agentMessage.findUnique({ where: { id: agentMsg!.id } });
-      expect(consumedMsg!.status).toBe("consumed");
-      expect(consumedMsg!.deliveredAt).toBeTruthy();
     } finally {
       clearTimeout(autoRelease);
       release();

@@ -366,8 +366,13 @@ describe("W12 心跳连续失败熔断暂停", () => {
     if (!created.success) throw new Error(`创建 Agent 失败：${created.error?.message}`);
     const agentId = (created.data as { id: string }).id;
 
-    // dailyBudget=0 关闭预算闸，避免 .dev-log 真实消耗影响测试
-    const hbConfig = { ...ctx.config, llm: { ...ctx.config.llm, dailyBudget: 0 } };
+    // dailyBudget=0 关闭预算闸；decisionEnabled=false 走失败 streak 旧路径
+    // （全量套件里残留 pending Approval 会让决策层 wait_user_gate 跳过 dispatch → streak 永不 +1）
+    const hbConfig = {
+      ...ctx.config,
+      llm: { ...ctx.config.llm, dailyBudget: 0 },
+      heartbeat: { ...ctx.config.heartbeat, decisionEnabled: false },
+    };
     const engine = getHeartbeatEngine(prisma, ctx.services, hbConfig);
     await engine.start();
 
@@ -457,7 +462,11 @@ describe("W12 心跳连续失败熔断暂停", () => {
     if (!created.success) throw new Error(`创建 Agent 失败：${created.error?.message}`);
     const agentId = (created.data as { id: string }).id;
 
-    const hbConfig = { ...ctx.config, llm: { ...ctx.config.llm, dailyBudget: 0 } };
+    const hbConfig = {
+      ...ctx.config,
+      llm: { ...ctx.config.llm, dailyBudget: 0 },
+      heartbeat: { ...ctx.config.heartbeat, decisionEnabled: false },
+    };
     const engine = getHeartbeatEngine(prisma, ctx.services, hbConfig);
     await engine.start();
 
