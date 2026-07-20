@@ -164,7 +164,8 @@ describe("B2 SessionQueueItem 软认领 claimedAt", () => {
       expect(row?.claimedAt).toBeNull();
       expect(await ctx.services.sessionQueueItem.listBySession(fx.sessionId)).toHaveLength(1);
 
-      // 再置超龄，走启动恢复入口
+      // 再置超龄，走启动恢复入口。摘掉 hub，避免 release 后 superior drain 立刻重认领干扰断言。
+      setStreamHub(null);
       await ctx.services.sessionQueueItem.consume(fx.itemId);
       await prisma.sessionQueueItem.update({
         where: { id: fx.itemId },

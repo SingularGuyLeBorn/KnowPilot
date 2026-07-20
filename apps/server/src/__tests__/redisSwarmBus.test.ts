@@ -26,6 +26,8 @@ function mockPrisma(overrides: Record<string, unknown> = {}) {
     },
     agentMessage: {
       count: vi.fn(async () => 0),
+      // B5：resolveServerDelegationDepth 查入站；mock 无入站 → depth=1
+      findFirst: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: "msg-1",
         ...data,
@@ -101,6 +103,7 @@ describe("RedisSwarmBus.send", () => {
     const prisma = mockPrisma({
       agentMessage: {
         count: vi.fn(async () => 9999),
+        findFirst: vi.fn(async () => null),
         create: vi.fn(),
         findMany: vi.fn(async () => []),
         updateMany: vi.fn(async () => ({ count: 0 })),
