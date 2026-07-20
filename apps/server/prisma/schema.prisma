@@ -169,7 +169,7 @@ model SessionQueueItem {
   source         String
   /// 来源 Agent 的名字（superior 专用，UI 显示「来自父 Agent · xxx」）
   sourceName     String?
-  /// 关联的 AgentMessage id（kind=superior 时必填，消费时用来 markConsumed）
+  /// 关联的 AgentMessage id（kind=superior 时必填，finalize 时用来 markConsumed）
   agentMessageId String?
   /// 排序权重（越小越靠前），用户拖拽后批量更新
   order          Int      @default(0)
@@ -178,11 +178,14 @@ model SessionQueueItem {
   /// skill 关联（user 消息可能带 skillId）
   skillId        String?
   skillPrompt    String?
+  /// B2 软认领：非空 = 已被 drain 认领、等待 ChatMessage 落地后 finalize 删行；超龄由启动恢复重置
+  claimedAt      DateTime?
   createdAt      DateTime @default(now())
 
   session        ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, order])
+  @@index([claimedAt])
   @@unique([sessionId, agentMessageId])
 }
 

@@ -301,11 +301,19 @@ const agentRouter = router({
   consumeSessionQueueItem: publicProcedure
     .meta({
       description:
-        "消费（删除）一条会话发送队列项，同时标记关联 AgentMessage 已消费。返回 claimed：是否抢到认领（前端 drain 与服务端 superior drain 竞态，落选 false 静默跳过）。",
+        "软认领一条会话发送队列项（置 claimedAt，不删行）。返回 claimed：是否抢到认领（前端 drain 与服务端 superior drain 竞态，落选 false 静默跳过）。ChatMessage 落地后须再调 finalizeSessionQueueItem。",
       aiReadable: false,
     })
     .input(z.object({ id: z.string().cuid() }))
     .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.consume(input.id)),
+  finalizeSessionQueueItem: publicProcedure
+    .meta({
+      description:
+        "确认队列项内容已写入 ChatMessage：删除行并标记关联 AgentMessage consumed。须在 consume 软认领成功且消息落地之后调用。",
+      aiReadable: false,
+    })
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.finalize(input.id)),
   reorderSessionQueueItems: publicProcedure
     .meta({ description: "批量重排会话发送队列项顺序。", aiReadable: false })
     .input(reorderSessionQueueItemsSchema)

@@ -60,16 +60,21 @@ async function createDrainFixture(ctx: Ctx): Promise<DrainFixture> {
   } as any);
   const parentSessionId = (parentSession.data as { id: string }).id;
 
-  // 子 Agent 主会话：triggerAgentRun/prepareAgentRun 按 isMainSession 找回此会话
-  const subSession = await ctx.services.session.create({
-    title: "W-E 子主会话",
-    model: "deepseek-chat",
-    agentId: subAgentId,
-    isMainSession: true,
-    kind: "subagent",
-    parentSessionId,
-  } as any);
-  const subSessionId = (subSession.data as { id: string }).id;
+  // Agent.create 已 ensureMainSession：复用该主会话，禁止再造第二条 isMainSession
+  // （否则 prepareAgentRun findFirst 可能占到未 occupy 的那条 → busy 判定失效）
+  const main = await prisma.chatSession.findFirst({
+    where: { agentId: subAgentId, isMainSession: true, status: { not: "deleted" } },
+  });
+  if (!main) throw new Error("createDrainFixture: 子 Agent 缺少自动主会话");
+  await prisma.chatSession.update({
+    where: { id: main.id },
+    data: {
+      title: "W-E 子主会话",
+      kind: "subagent",
+      parentSessionId,
+    },
+  });
+  const subSessionId = main.id;
 
   return { parentAgentId, subAgentId, parentSessionId, subSessionId };
 }
@@ -522,7 +527,7 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
       const miss = await ctx.services.sessionQueueItem.consume("clwe0nonexistent000000001");
       expect(miss).toEqual({ success: true, claimed: false });
 
-      // ② 竞态双 consume：删除即认领，落选方静默（旧实现落选方抛 P2025/NOT_FOUND → 旧实现即红）
+      // ② 竞态双 consume：条件写 claimedAt，落选方静默；list 对已认领项不可见
       const created = await ctx.services.sessionQueueItem.create({
         sessionId: fx.subSessionId,
         kind: "superior",
@@ -538,6 +543,9 @@ describe("W-E running 子 Agent 消息服务端队列 + 空闲自动 drain", () 
       expect(claimedCount).toBe(1);
       expect([r1, r2].every((r) => r.success)).toBe(true);
       expect(await ctx.services.sessionQueueItem.listBySession(fx.subSessionId)).toHaveLength(0);
+      expect((await prisma.sessionQueueItem.findUnique({ where: { id: itemId } }))?.claimedAt).toBeTruthy();
+      await ctx.services.sessionQueueItem.finalize(itemId);
+      expect(await prisma.sessionQueueItem.findUnique({ where: { id: itemId } })).toBeNull();
     } finally {
       await cleanupDrainFixture(fx);
     }

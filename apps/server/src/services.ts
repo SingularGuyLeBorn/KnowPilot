@@ -1934,6 +1934,12 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
         } catch {
           track.terminal = "error";
         }
+        // B2：孤儿 ask_user 答复已写入 ChatMessage 后才 finalize 删行；失败保留 claimedAt 交恢复
+        if (orphanAnswer && track.terminal === "done") {
+          await services.sessionQueueItem.finalize(orphanAnswer.id).catch((finErr) => {
+            console.warn(`[session.resume] finalize ask_user 队列项失败 item=${orphanAnswer.id}:`, finErr);
+          });
+        }
         // 终态归位（runner 内、hub 标 completed 之前，见头注 5）。
         const nextStatus =
           track.terminal === "done" ? (session.kind === "subagent" ? "completed" : "active") : "paused";
@@ -2200,8 +2206,12 @@ export interface SessionQueueItemEntity {
   attachments: any;
   skillId: string | null;
   skillPrompt: string | null;
+  claimedAt: Date | null;
   createdAt: Date;
 }
+
+/** B2：软认领超龄阈值——claimedAt 超过此时长且未 finalize，启动恢复重置为可重投 */
+export const SESSION_QUEUE_CLAIM_STALE_MS = 120_000;
 
 export class SessionQueueItemService extends BaseService<
   CreateSessionQueueItemInput,
@@ -2335,10 +2345,10 @@ export class SessionQueueItemService extends BaseService<
     return true;
   }
 
-  /** 按 session 列出全部队列项（按 order 升序），供 Chat UI 一次拉齐 */
+  /** 按 session 列出未认领队列项（按 order 升序）；已软认领项对 UI/drain 不可见 */
   async listBySession(sessionId: string): Promise<SessionQueueItemEntity[]> {
     const rows = await this.prisma.sessionQueueItem.findMany({
-      where: { sessionId },
+      where: { sessionId, claimedAt: null },
       orderBy: { order: "asc" },
     });
     return rows.map((r) => this.formatEntity(r));
@@ -2360,23 +2370,43 @@ export class SessionQueueItemService extends BaseService<
   }
 
   /**
-   * 消费一条队列项（软认领）：删除 SessionQueueItem + 标记 AgentMessage consumed（如适用）。
-   * 删除即认领——item 不存在或并发落选（前端 drain 与服务端 superior drain 同抢一条）时
-   * 返回 claimed:false，落选方静默跳过，不抛错。
+   * B2 软认领：条件写置 claimedAt（不再删行）。
+   * 并发双 consume 落选方 claimed:false；行对 listBySession 不可见，待 ChatMessage 落地后 finalize 删行。
    */
   async consume(id: string): Promise<{ success: boolean; claimed: boolean }> {
     const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
     if (!item) {
       return { success: true, claimed: false };
     }
+    if (item.claimedAt) {
+      return { success: true, claimed: false };
+    }
 
-    const claimed = await this.prisma.$transaction(async (tx) => {
-      // 删除即认领：deleteMany 原子返回受影响行数，并发双 consume 落选方 count=0
-      const del = await tx.sessionQueueItem.deleteMany({ where: { id } });
+    const claimed = await this.prisma.sessionQueueItem.updateMany({
+      where: { id, claimedAt: null },
+      data: { claimedAt: new Date() },
+    });
+    if (claimed.count > 0) {
+      await this.pushQueueUpdate(item.sessionId, item.kind);
+    }
+    return { success: true, claimed: claimed.count > 0 };
+  }
+
+  /**
+   * B2 落地确认：ChatMessage 已写入后删行 + 标记关联 AgentMessage consumed。
+   * 幂等——行已删 / 未认领均 success；对外不暴露中间态。
+   */
+  async finalize(id: string): Promise<{ success: boolean; finalized: boolean }> {
+    const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
+    if (!item) {
+      return { success: true, finalized: false };
+    }
+
+    const finalized = await this.prisma.$transaction(async (tx) => {
+      const del = await tx.sessionQueueItem.deleteMany({ where: { id, claimedAt: { not: null } } });
       if (del.count === 0) return false;
       if (item.kind === "superior" && item.agentMessageId) {
-        // W16a-1：delivered → consumed 不动 deliveredAt（CLAIM 真账）；pending 直跳 consumed 兜底补齐。
-        // 已 consumed / 已删除均为幂等 no-op。
+        // W16a-1：delivered → consumed 不动 deliveredAt；pending 直跳 consumed 兜底补齐。
         const fromDelivered = await tx.agentMessage.updateMany({
           where: { id: item.agentMessageId, status: "delivered" },
           data: { status: "consumed" },
@@ -2390,10 +2420,23 @@ export class SessionQueueItemService extends BaseService<
       }
       return true;
     });
-    if (claimed) {
+    if (finalized) {
       await this.pushQueueUpdate(item.sessionId, item.kind);
     }
-    return { success: true, claimed };
+    return { success: true, finalized };
+  }
+
+  /**
+   * B2 启动恢复：扫 claimedAt 超龄且未 finalize 的项，重置 claimedAt=null 重投。
+   * 不变量：队列项只能在内容已进 ChatMessage 之后消失——崩溃窗口可恢复。
+   */
+  async releaseStaleClaims(staleMs = SESSION_QUEUE_CLAIM_STALE_MS): Promise<number> {
+    const cutoff = new Date(Date.now() - Math.max(0, staleMs));
+    const result = await this.prisma.sessionQueueItem.updateMany({
+      where: { claimedAt: { not: null, lt: cutoff } },
+      data: { claimedAt: null },
+    });
+    return result.count;
   }
 
   /** 批量重排序：按 orderedIds 顺序依次赋 order = index * 10 */

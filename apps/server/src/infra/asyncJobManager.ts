@@ -234,19 +234,19 @@ export interface SuperiorQueueDrainItem {
  * 复用 enqueueSessionAutoConsume 的 per-session 串行链——同会话的异步投递续跑与本 drain
  * 全部串行，「同会话同时至多一条流」不变量不破。
  *
- * 链上循环：hub.isRunning → waitFor；取队首（listBySession[0]）；无则结束；
- * consume 原子认领（删除即认领，落选 = 前端 drain 抢先，静默跳过看下一项）；
- * runItem 重入 prepareAgentRun（dedup 防重写、写消息、起流）；等该轮结束；取下一项。
+ * 链上循环：hub.isRunning → waitFor；取队首（listBySession[0]，仅 claimedAt=null）；无则结束；
+ * consume 软认领（置 claimedAt，落选 = 前端 drain 抢先，静默跳过看下一项）；
+ * runItem 重入 prepareAgentRun（写消息、起流）；成功后 finalize 删行；抛错则保留 claimedAt 交恢复扫描。
  * 只处理 kind=superior 项：user 项归前端 drain 管（可能带附件/skill，服务端重放会丢语义），
  * 遇到即停——前端 drain 消费后会连带处理后续 superior 项；下次发消息也会重新注册本 drain。
  *
  * v8 TP-1 池准入：drain 续跑属「交付消费」高优通道（runConsumeJob 队首优先 + 全局占用约束）。
  * 不变量：禁止「等槽无限挂起消费链」——等槽超时则放弃本轮 drain，队列项未 claim、
  * 原样留在持久队列（不丢），下次触发（busy/idle 再入队或前端 drain）续上。
+ * B2 不变量：队列项只能在内容已进 ChatMessage 之后消失（finalize）。
  *
- * 已知限制：链是进程内的，服务端重启后丢失；pending 队列项跨重启留存于 SQLite，
- * 靠下次发送（busy/idle 都会再入队并触发本 drain）或前端打开会话 drain 兜底
- * （与 AGENTS.md「运行中任务随重启丢失」一致）。
+ * 已知限制：链是进程内的，服务端重启后丢失；pending / 超龄 claimed 队列项跨重启留存于 SQLite，
+ * 靠 runStartupRecovery 重置软认领 + requeueOrphanedSuperiorDrains，或下次发送 / 前端 drain 兜底。
  */
 export function enqueueSuperiorQueueDrain(options: {
   sessionId: string;
@@ -276,15 +276,17 @@ export function enqueueSuperiorQueueDrain(options: {
           execute: async () => {
             const claim = await services.sessionQueueItem.consume(head.id);
             if (!claim.claimed) return;
-            // S2：认领后同步宣告「即将起流」——consume 删行到 runItem 内 hub.start 之间无 await 交错点
-            // （本 continuation 同步执行到 mark），spawn 同步等待轮询据此判定「忙」，不会抓前轮旧 assistant
+            // S2：认领后同步宣告「即将起流」——软认领到 runItem 内 hub.start 之间无 await 交错点
             hub.markRunStarting(sessionId);
             // Q2 不双算：drain 续跑流挂在池槽位下，不计入 hub 交互 running
             const releaseClaim = orchestrator.claimOccupancy(sessionId);
             try {
               await runItem({ id: head.id, kind: head.kind, content: head.content, source: head.source });
+              // ChatMessage 已由 prepareAgentRun 写入（或 failed 路径终结）→ finalize 删行
+              await services.sessionQueueItem.finalize(head.id);
             } catch (err) {
               console.warn(`[asyncJobManager] superior 队列 drain 处理失败 session=${sessionId} item=${head.id}:`, err);
+              // 保留 claimedAt：启动恢复扫超龄后重置重投（B2 崩溃窗口可恢复）
             } finally {
               releaseClaim();
               hub.unmarkRunStarting(sessionId);
@@ -788,6 +790,8 @@ export interface StartupRecoveryResult {
   staleTasksResumed: number;
   /** 动作 2：僵尸 running ChatSession 标 paused 数 */
   zombieSessionsPaused: number;
+  /** B2：超龄软认领 SessionQueueItem 重置 claimedAt 数 */
+  staleQueueClaimsReleased: number;
   /** 动作 3：superior 孤儿队列项重注册 drain 的会话数 */
   superiorDrainsRegistered: number;
   /** 动作 4：合并对账首轮（R-2 动作 2 补投 delivered=false + R-1 孤儿回滚补投 delivered=true） */
@@ -824,6 +828,8 @@ export async function runStartupRecovery(options: {
     where: { status: "running" },
     data: { status: "paused" },
   });
+  // B2：超龄软认领重置（须在 superior drain 重注册之前，否则认领中项对 list 不可见）
+  const staleQueueClaimsReleased = await services.sessionQueueItem.releaseStaleClaims();
   // 动作 3：动态 import——swarm.ts 处于 ReAct 环内（agentStream/agentRuntime 依赖链），静态导入成环
   const { requeueOrphanedSuperiorDrains } = await import("./tools/native/swarm.js");
   const superiorDrainsRegistered = await requeueOrphanedSuperiorDrains(config, services);
@@ -833,6 +839,7 @@ export async function runStartupRecovery(options: {
     staleTasksFailed,
     staleTasksResumed,
     zombieSessionsPaused: zombieSessions.count,
+    staleQueueClaimsReleased,
     superiorDrainsRegistered,
     reconcile,
   };
