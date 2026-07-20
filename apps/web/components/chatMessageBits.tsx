@@ -158,10 +158,13 @@ export function MessageActions({
   onRetry,
   onRegenerate,
   onShare,
+  onToggleBookmark,
+  bookmarked = false,
   showEdit = true,
   showRetry = true,
   showRegenerate = false,
   showShare = true,
+  showBookmark = false,
   isEditing = false,
   disabled,
   versionNav,
@@ -174,10 +177,13 @@ export function MessageActions({
   onRetry?: () => void;
   onRegenerate?: () => void;
   onShare?: () => void;
+  onToggleBookmark?: () => void;
+  bookmarked?: boolean;
   showEdit?: boolean;
   showRetry?: boolean;
   showRegenerate?: boolean;
   showShare?: boolean;
+  showBookmark?: boolean;
   isEditing?: boolean;
   disabled?: boolean;
   versionNav?: React.ReactNode;
@@ -189,6 +195,19 @@ export function MessageActions({
   return (
     <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/msg:opacity-100 group-hover/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-focus-within/msg:pointer-events-auto">
       {versionNav}
+      {showBookmark && onToggleBookmark && (
+        <button
+          type="button"
+          onClick={onToggleBookmark}
+          disabled={disabled}
+          className={cn(btnClass, bookmarked && "text-[var(--kp-brand)]")}
+          title={bookmarked ? "去书签" : "加书签"}
+          aria-label={bookmarked ? "去书签" : "加书签"}
+          data-testid="message-bookmark-btn"
+        >
+          <Bookmark className={cn("h-3.5 w-3.5", bookmarked && "fill-current")} />
+        </button>
+      )}
       <button type="button" onClick={onCopy} disabled={disabled} className={btnClass} title="复制" aria-label="复制">
         <Copy className="h-3.5 w-3.5" />
       </button>

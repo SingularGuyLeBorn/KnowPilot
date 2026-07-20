@@ -1675,6 +1675,8 @@ export interface SessionEntity {
   rotatedToSessionId?: string | null;
   /** 会话级待办清单（todo_write / todo_read） */
   todoState?: unknown | null;
+  /** 会话树当前叶消息 id */
+  activeLeafId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -2032,6 +2034,9 @@ export interface MessageEntity {
   sessionId: string;
   role: string;
   content: string;
+  parentId?: string | null;
+  label?: string | null;
+  kind?: string | null;
   attachments: any;
   toolCalls: any;
   toolResults: any;
@@ -2039,6 +2044,23 @@ export interface MessageEntity {
   finishReason?: string | null;
   source?: string;
   createdAt: Date;
+}
+
+function messageUpsertPayload(entity: MessageEntity) {
+  return {
+    id: entity.id,
+    role: entity.role,
+    content: entity.content,
+    parentId: entity.parentId ?? null,
+    label: entity.label ?? null,
+    kind: entity.kind ?? null,
+    toolCalls: entity.toolCalls ?? undefined,
+    toolResults: entity.toolResults ?? undefined,
+    tokenUsage: entity.tokenUsage ?? undefined,
+    attachments: entity.attachments ?? undefined,
+    source: entity.source ?? null,
+    createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
+  };
 }
 
 export class MessageService extends BaseService<CreateMessageInput, UpdateMessageInput, ListMessagesInput, MessageEntity> {
@@ -2054,36 +2076,55 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   protected override get defaultOrderBy(): string { return "createdAt"; }
   protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
 
-  protected override async afterCreate(entity: MessageEntity, input: CreateMessageInput): Promise<void> {
-    // 每次写入消息都把父会话顶到列表最前，确保后台更新/子 Agent 返回后父会话能被立即找到。
+  /**
+   * W1：消息 create + activeLeafId 推进必须同事务（appendChatMessage）。
+   * 禁止走裸 delegate.create，否则会话树断链。
+   */
+  override async create(input: CreateMessageInput): Promise<OperationResult<MessageEntity>> {
+    const start = Date.now();
     try {
-      await this.prisma.chatSession.update({
-        where: { id: input.sessionId },
-        data: { updatedAt: new Date() },
+      await this.validateCreate(input);
+      const { appendChatMessage } = await import("./infra/chatTree.js");
+      const raw = await appendChatMessage(this.prisma, {
+        id: input.id,
+        sessionId: input.sessionId,
+        role: input.role,
+        content: input.content,
+        attachments: input.attachments,
+        toolCalls: input.toolCalls,
+        toolResults: input.toolResults,
+        tokenUsage: input.tokenUsage,
+        finishReason: input.finishReason,
+        source: input.source,
       });
-    } catch {
-      // 会话可能已被删除，忽略
+      const entity = this.formatEntity(raw);
+      await this.afterCreate(entity, input);
+      return success({
+        data: entity,
+        state: await this.getState(),
+        nextSteps: this.getCreateNextSteps(entity),
+        operation: "create",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      const uniqueConflict = failureFromPrismaUnique(error, "创建", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
+      return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
     }
+  }
+
+  protected override async afterCreate(entity: MessageEntity, input: CreateMessageInput): Promise<void> {
+    // updatedAt / activeLeafId 已由 appendChatMessage 同事务推进；此处只广播。
     await super.afterCreate(entity, input);
-    // 广播 message_upserted：前端 reducer 直接 patch messages[]，不再靠 invalidate→refetch 闪烁刷新。
-    // 动态 import 避免与 sessionStreamHub 循环依赖。
     try {
       const { getStreamHub } = await import("./infra/sessionStreamHub.js");
       const hub = getStreamHub();
       hub?.pushExternalEvent(entity.sessionId, {
         type: "message_upserted",
         sessionId: entity.sessionId,
-        message: {
-          id: entity.id,
-          role: entity.role,
-          content: entity.content,
-          toolCalls: entity.toolCalls ?? undefined,
-          toolResults: entity.toolResults ?? undefined,
-          tokenUsage: entity.tokenUsage ?? undefined,
-          attachments: entity.attachments ?? undefined,
-          source: entity.source ?? null,
-          createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
-        },
+        message: messageUpsertPayload(entity),
       });
     } catch {
       /* StreamHub 未初始化或会话已清理，忽略 */
@@ -2092,28 +2133,25 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
 
   protected override async afterUpdate(entity: MessageEntity, _existing: any, _input: UpdateMessageInput): Promise<void> {
     await super.afterUpdate(entity, _existing, _input);
-    // update（如 switchVersion）也推 message_upserted，前端 MessageStore 直接 patch
     try {
       const { getStreamHub } = await import("./infra/sessionStreamHub.js");
       const hub = getStreamHub();
       hub?.pushExternalEvent(entity.sessionId, {
         type: "message_upserted",
         sessionId: entity.sessionId,
-        message: {
-          id: entity.id,
-          role: entity.role,
-          content: entity.content,
-          toolCalls: entity.toolCalls ?? undefined,
-          toolResults: entity.toolResults ?? undefined,
-          tokenUsage: entity.tokenUsage ?? undefined,
-          attachments: entity.attachments ?? undefined,
-          source: entity.source ?? null,
-          createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
-        },
+        message: messageUpsertPayload(entity),
       });
     } catch {
       /* ignore */
     }
+  }
+
+  async setLabel(input: { messageId: string; label: string | null }): Promise<MessageEntity> {
+    const { setMessageLabel } = await import("./infra/chatTree.js");
+    const updated = await setMessageLabel(this.prisma, input);
+    const entity = this.formatEntity(updated);
+    await this.afterUpdate(entity, updated, { id: input.messageId } as UpdateMessageInput);
+    return entity;
   }
 
   protected override async afterDelete(existing: any): Promise<void> {
@@ -2135,56 +2173,86 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   }
 
   /**
-   * 构建 LLM 上下文专用历史：
+   * 构建 LLM 上下文专用历史（仅活跃路径，排除 branch_summary）：
    * - 有 since（通常 = contextCompactedAt）：取该时刻起的最近 limit 条
-   * - 无 since：取全会话最近 limit 条（避免 page=1 asc 拿到最旧页）
-   * 页面展示仍走 listForChat，压缩不删气泡。
+   * - 无 since：取活跃路径最近 limit 条
    */
   async listForLlmContext(input: {
     sessionId: string;
     since?: Date | string | null;
     limit?: number;
   }): Promise<MessageEntity[]> {
+    const { resolveActivePath, BRANCH_SUMMARY_KIND } = await import("./infra/chatTree.js");
     const limit = Math.min(Math.max(input.limit ?? 200, 1), 500);
     const since = input.since ? new Date(input.since) : null;
-    const where =
-      since && !Number.isNaN(since.getTime())
-        ? { sessionId: input.sessionId, createdAt: { gte: since } }
-        : { sessionId: input.sessionId };
-    const items = await this.prisma.chatMessage.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
+    const session = await this.prisma.chatSession.findUnique({
+      where: { id: input.sessionId },
+      select: { activeLeafId: true },
     });
-    items.reverse();
-    return items.map((i: any) => this.formatEntity(i));
+    const all = await this.prisma.chatMessage.findMany({
+      where: { sessionId: input.sessionId },
+      orderBy: { createdAt: "asc" },
+    });
+    let path = resolveActivePath(all, session?.activeLeafId).filter(
+      (m) => m.kind !== BRANCH_SUMMARY_KIND,
+    );
+    if (since && !Number.isNaN(since.getTime())) {
+      path = path.filter((m) => m.createdAt >= since);
+    }
+    if (path.length > limit) path = path.slice(-limit);
+    return path.map((i: any) => this.formatEntity(i));
   }
 
-  // P0-1 彻底解耦：Chat 专用 cursor 无限查询。
-  // 无 cursor：返最近 limit 条（asc）。有 cursor：返早于 cursor(消息 id) 的 limit 条（asc）。
-  // nextCursor = 本页最旧消息 id（供下页继续向上翻），items.length < limit 时无 nextCursor（已到顶）。
-  async listForChat(input: { sessionId: string; cursor?: string; limit?: number }): Promise<{ items: MessageEntity[]; nextCursor?: string }> {
+  /**
+   * Chat 专用 cursor 无限查询（默认活跃路径 + 路径上挂的 branch_summary）。
+   * tree:true 调试模式返回全树按 createdAt。
+   */
+  async listForChat(input: {
+    sessionId: string;
+    cursor?: string;
+    limit?: number;
+    tree?: boolean;
+  }): Promise<{ items: MessageEntity[]; nextCursor?: string }> {
     const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-    let items: any[];
-    if (input.cursor) {
-      const cur = await this.prisma.chatMessage.findUnique({ where: { id: input.cursor }, select: { createdAt: true } });
-      if (!cur) return { items: [] };
-      items = await this.prisma.chatMessage.findMany({
-        where: { sessionId: input.sessionId, createdAt: { lt: cur.createdAt } },
-        orderBy: { createdAt: "desc" },
-        take: limit,
+    let ordered: any[];
+
+    if (input.tree) {
+      ordered = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId },
+        orderBy: { createdAt: "asc" },
       });
     } else {
-      items = await this.prisma.chatMessage.findMany({
-        where: { sessionId: input.sessionId },
-        orderBy: { createdAt: "desc" },
-        take: limit,
+      const { resolveActivePathWithSummaries } = await import("./infra/chatTree.js");
+      const session = await this.prisma.chatSession.findUnique({
+        where: { id: input.sessionId },
+        select: { activeLeafId: true },
       });
+      const all = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId },
+        orderBy: { createdAt: "asc" },
+      });
+      ordered = resolveActivePathWithSummaries(all, session?.activeLeafId);
     }
-    items.reverse(); // asc，便于前端按序渲染
-    const formatted = items.map((i: any) => this.formatEntity(i));
-    const nextCursor = formatted.length >= limit ? formatted[0]?.id : undefined;
-    return { items: formatted, nextCursor };
+
+    let window: any[];
+    if (input.cursor) {
+      const idx = ordered.findIndex((m) => m.id === input.cursor);
+      if (idx <= 0) return { items: [] };
+      const start = Math.max(0, idx - limit);
+      window = ordered.slice(start, idx);
+    } else {
+      window = ordered.slice(-limit);
+    }
+
+    const formatted = window.map((i: any) => this.formatEntity(i));
+    const nextCursor = formatted.length >= limit && ordered[0]?.id !== formatted[0]?.id
+      ? formatted[0]?.id
+      : formatted.length >= limit
+        ? formatted[0]?.id
+        : undefined;
+    // 已到顶：本页覆盖到 ordered[0]
+    const reachedTop = formatted.length > 0 && formatted[0]?.id === ordered[0]?.id;
+    return { items: formatted, nextCursor: reachedTop ? undefined : nextCursor };
   }
 }
 

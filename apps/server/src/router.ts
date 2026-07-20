@@ -20,6 +20,7 @@ import {
   createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, ensureMainSessionSchema, openNewSessionSchema, compactSessionSchema,
   setSessionGoalSchema, sessionGoalControlSchema, listSideRunsSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
+  switchBranchSchema, sessionTreeSchema, setMessageLabelSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
   createLogSchema, updateLogSchema, listLogsSchema,
@@ -747,6 +748,21 @@ const sessionRouter = router({
     .meta({ description: "手动恢复已暂停（paused）会话：续跑服务端重启前未完成的 ReAct 轮。幂等——并发/重复调用不报错、不重复起流。", aiReadable: false })
     .input(resumeSessionSchema)
     .mutation(({ ctx, input }) => ctx.services.session.resume(input)),
+  // W1：会话树分支切换（更新 activeLeafId；旁路可生成 branch_summary）
+  switchBranch: publicProcedure
+    .meta({ description: "切换会话树当前叶（游标）。切到当前叶幂等；若放弃旁路有新内容则生成 branch_summary。", aiReadable: false })
+    .input(switchBranchSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { switchBranch } = await import("./infra/chatTree.js");
+      return switchBranch(ctx.prisma, ctx.config, input);
+    }),
+  tree: publicProcedure
+    .meta({ description: "返回会话消息树邻接表（nodes + children），供 UI 渲染分支指示。", aiReadable: false })
+    .input(sessionTreeSchema)
+    .query(async ({ ctx, input }) => {
+      const { getSessionTree } = await import("./infra/chatTree.js");
+      return getSessionTree(ctx.prisma, input.sessionId);
+    }),
   spawn: publicProcedure
     .meta({ description: "创建并启动子代理任务（subagent）。返回 subagentSessionId 与 jobId。", aiReadable: false })
     .input(
@@ -841,6 +857,10 @@ const messageRouter = router({
     .meta({ description: "切换 assistant 消息的多版本回答。", aiReadable: true })
     .input(switchMessageVersionSchema)
     .mutation(({ ctx, input }) => switchAssistantMessageVersion(ctx.services, input.messageId, input.versionIndex)),
+  setLabel: publicProcedure
+    .meta({ description: "为消息设置或清除书签标签。", aiReadable: false })
+    .input(setMessageLabelSchema)
+    .mutation(({ ctx, input }) => ctx.services.message.setLabel(input)),
 });
 
 const fileRouter = router({

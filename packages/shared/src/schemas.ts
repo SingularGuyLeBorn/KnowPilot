@@ -513,6 +513,25 @@ export const listMessagesForChatSchema = z.object({
   /** cursor = 上一页最旧消息 id；省略时返最近 limit 条 */
   cursor: z.string().cuid().optional(),
   limit: z.number().int().min(1).max(100).optional(),
+  /** 调试：true 时返回全树（按 createdAt），默认仅活跃路径 */
+  tree: z.boolean().optional(),
+});
+
+/** 会话树：切换当前叶（游标） */
+export const switchBranchSchema = z.object({
+  sessionId: z.string().cuid(),
+  messageId: z.string().cuid(),
+});
+
+/** 会话树邻接表（UI 分支指示） */
+export const sessionTreeSchema = z.object({
+  sessionId: z.string().cuid(),
+});
+
+/** 消息书签 */
+export const setMessageLabelSchema = z.object({
+  messageId: z.string().cuid(),
+  label: z.string().max(100).nullable(),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -1225,6 +1244,10 @@ export type ListSideRunsInput = z.infer<typeof listSideRunsSchema>;
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;
 export type ListMessagesInput = z.infer<typeof listMessagesSchema>;
+export type ListMessagesForChatInput = z.infer<typeof listMessagesForChatSchema>;
+export type SwitchBranchInput = z.infer<typeof switchBranchSchema>;
+export type SessionTreeInput = z.infer<typeof sessionTreeSchema>;
+export type SetMessageLabelInput = z.infer<typeof setMessageLabelSchema>;
 
 export type CreateSessionQueueItemInput = z.infer<typeof createSessionQueueItemSchema>;
 export type SubmitAgentInjectInput = z.infer<typeof submitAgentInjectSchema>;

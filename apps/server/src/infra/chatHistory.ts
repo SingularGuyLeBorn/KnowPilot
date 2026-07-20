@@ -105,6 +105,7 @@ export function buildUserMessageContentForLlm(
 export type HistoryMessageLike = {
   role: string;
   content: string;
+  kind?: string | null;
   attachments?: unknown;
   toolCalls?: unknown;
   toolResults?: unknown;
@@ -151,6 +152,9 @@ export function buildLlmMessagesFromHistory(
   const messages: LlmMessage[] = [{ role: "system", content: systemContent }];
 
   for (const msg of history) {
+    // 分支摘要默认不进 LLM 上下文（活跃路径旁路展示卡）
+    if (msg.kind === "branch_summary") continue;
+
     if (msg.role === "user") {
       const attachments = Array.isArray(msg.attachments)
         ? msg.attachments.filter((a): a is ChatImageAttachment => !!a && typeof a === "object")
