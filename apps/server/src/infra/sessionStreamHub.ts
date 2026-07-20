@@ -344,6 +344,9 @@ export class SessionStreamHub {
         } finally {
           this.flushRunCoalesce(state);
           state.completed = true;
+          // A5：未消费 inject 移交 user Inbox（唯一丢弃/移交收拢点）
+          await this.handoffUnconsumedInjects(state.sessionId);
+          this.clearInjectQueues(sessionId);
           await releaseSessionRunning(sessionId);
           // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
           emitHubRunSettled(sessionId);
@@ -471,21 +474,43 @@ export class SessionStreamHub {
 
   /**
    * 运行中注入 Steering / Follow-up。
-   * @returns false 若 session 无活跃 run
+   * 接受即持久：先写 SessionQueueItem（kind=steer|follow_up），内存队列只持 id 指针。
    */
-  enqueueInject(
+  async enqueueInject(
     sessionId: string,
     kind: "steer" | "follow_up",
     content: string,
-  ): { ok: true; id: string; kind: "steer" | "follow_up"; queued: number } | { ok: false; reason: string } {
+  ): Promise<
+    { ok: true; id: string; kind: "steer" | "follow_up"; queued: number } | { ok: false; reason: string }
+  > {
     const state = this.runs.get(sessionId);
     if (!state || state.completed) {
       return { ok: false, reason: "会话当前没有运行中的 Agent，无法注入。请使用普通发送。" };
     }
     const text = content.trim();
     if (!text) return { ok: false, reason: "内容不能为空" };
+
+    let persistId: string;
+    try {
+      const row = await prisma.sessionQueueItem.create({
+        data: {
+          sessionId,
+          kind,
+          content: text,
+          source: "user",
+        },
+      });
+      persistId = row.id;
+    } catch (err) {
+      console.warn(
+        `[SessionStreamHub] inject 持久化失败 session=${sessionId}:`,
+        err instanceof Error ? err.message : err,
+      );
+      return { ok: false, reason: "注入消息持久化失败，请重试。" };
+    }
+
     const item: RunInjectMessage = {
-      id: `inj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      id: persistId,
       content: text,
       createdAt: Date.now(),
     };
@@ -496,7 +521,7 @@ export class SessionStreamHub {
 
   /**
    * 取出待注入消息（按 config mode）。
-   * one-at-a-time：只取队首一条；all：取全部。
+   * 只移出内存索引；DB 行保留至 ackInject（abort/收尾可移交 drain）。
    */
   takeInject(
     sessionId: string,
@@ -513,7 +538,52 @@ export class SessionStreamHub {
     return [queue.shift()!];
   }
 
-  /** abort 时清空未注入队列（已落库消息不删） */
+  /** 注入落库成功后删除 SessionQueueItem（消费确认） */
+  async ackInject(sessionId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    try {
+      await prisma.sessionQueueItem.deleteMany({
+        where: { sessionId, id: { in: ids }, kind: { in: ["steer", "follow_up"] } },
+      });
+    } catch (err) {
+      console.warn(
+        `[SessionStreamHub] ackInject 失败 session=${sessionId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  /**
+   * run 收尾：未消费（含 take 后未 ack）的 steer/follow_up 移交 user Inbox，
+   * 供既有 drain 通道推进。丢弃只发生在此收拢点并打日志。
+   */
+  async handoffUnconsumedInjects(sessionId: string): Promise<number> {
+    try {
+      const items = await prisma.sessionQueueItem.findMany({
+        where: { sessionId, kind: { in: ["steer", "follow_up"] } },
+        orderBy: { createdAt: "asc" },
+      });
+      if (items.length === 0) return 0;
+      for (const item of items) {
+        await prisma.sessionQueueItem.update({
+          where: { id: item.id },
+          data: { kind: "user", source: "user" },
+        });
+        console.log(
+          `[SessionStreamHub] inject 未消费移交 user 队列 session=${sessionId} id=${item.id} from=${item.kind}`,
+        );
+      }
+      return items.length;
+    } catch (err) {
+      console.warn(
+        `[SessionStreamHub] handoffUnconsumedInjects 失败 session=${sessionId}:`,
+        err instanceof Error ? err.message : err,
+      );
+      return 0;
+    }
+  }
+
+  /** abort 时清空内存索引（DB 行由 finally handoff 移交，禁止在此丢弃） */
   clearInjectQueues(sessionId: string): void {
     const state = this.runs.get(sessionId);
     if (!state) return;

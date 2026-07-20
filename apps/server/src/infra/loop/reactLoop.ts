@@ -401,6 +401,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             reasoning_content: turn.reasoningContent ?? null,
           });
           await injectUserMessages(input, llmMessages, followUps, "follow_up");
+          // A5：注入成功后 ack 持久队列行，避免收尾误移交
+          if (input.sessionId) {
+            await getStreamHub()?.ackInject(
+              input.sessionId,
+              followUps.map((f) => f.id),
+            );
+          }
           continue;
         }
 
@@ -615,6 +622,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       const steers = input.runQueues?.takeSteer() ?? [];
       if (steers.length > 0) {
         await injectUserMessages(input, llmMessages, steers, "steer");
+        // A5：注入成功后 ack；若此处之后 abort，已 ack 的不再移交
+        if (input.sessionId) {
+          await getStreamHub()?.ackInject(
+            input.sessionId,
+            steers.map((s) => s.id),
+          );
+        }
       }
 
       // 下一轮 LLM

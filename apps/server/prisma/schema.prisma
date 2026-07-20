@@ -161,7 +161,7 @@ model ChatMessage {
 model SessionQueueItem {
   id             String   @id @default(cuid())
   sessionId      String
-  /// 队列项类型："user"（用户消息）| "superior"（上级 Agent 消息镜像）| "child_notify"（子 Agent 主动通知父会话）
+  /// 队列项类型："user" | "superior" | "child_notify" | "steer" | "follow_up"（后两者为 mid-run 注入，收尾可移交 user）
   kind           String
   /// 消息文本内容
   content        String

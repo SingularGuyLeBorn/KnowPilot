@@ -156,12 +156,12 @@ const agentRouter = router({
       aiReadable: false,
     })
     .input(submitAgentInjectSchema)
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const hub = getStreamHub();
       if (!hub) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "StreamHub 未初始化" });
       }
-      const result = hub.enqueueInject(input.sessionId, input.kind, input.content);
+      const result = await hub.enqueueInject(input.sessionId, input.kind, input.content);
       if (!result.ok) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: result.reason });
       }

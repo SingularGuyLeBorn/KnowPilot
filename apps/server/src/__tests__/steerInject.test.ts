@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { prisma } from "../db.js";
 import { SessionStreamHub, setStreamHub } from "../infra/sessionStreamHub.js";
 import type { AgentChatInput } from "@knowpilot/shared";
 
@@ -10,8 +11,13 @@ const baseInput = { message: "hi" } as AgentChatInput;
 
 describe("SessionStreamHub inject queues", () => {
   let hub: SessionStreamHub;
+  let sessionId: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    const sess = await prisma.chatSession.create({
+      data: { title: "steer-inject-test", model: "test" },
+    });
+    sessionId = sess.id;
     hub = new SessionStreamHub({
       ringSize: 50,
       persist: false,
@@ -23,47 +29,52 @@ describe("SessionStreamHub inject queues", () => {
     setStreamHub(hub);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     hub.destroy();
     setStreamHub(null);
+    await prisma.sessionQueueItem.deleteMany({ where: { sessionId } });
+    await prisma.chatSession.deleteMany({ where: { id: sessionId } });
   });
 
-  it("无活跃 run 时 enqueue 失败", () => {
-    const r = hub.enqueueInject("clxxxxxxxxxxxxxxxxxxxxxxxxx", "steer", "改方向");
+  it("无活跃 run 时 enqueue 失败", async () => {
+    const r = await hub.enqueueInject(sessionId, "steer", "改方向");
     expect(r.ok).toBe(false);
   });
 
   it("活跃 run 可入队，takeInject one-at-a-time", async () => {
-    const sid = "clxxxxxxxxxxxxxxxxxxxxxxxx1";
     let resolveRun!: () => void;
     const gate = new Promise<void>((r) => {
       resolveRun = r;
     });
-    await hub.start(sid, baseInput, async () => {
+    await hub.start(sessionId, baseInput, async () => {
       await gate;
     });
 
-    expect(hub.enqueueInject(sid, "steer", "第一条").ok).toBe(true);
-    expect(hub.enqueueInject(sid, "steer", "第二条").ok).toBe(true);
+    expect((await hub.enqueueInject(sessionId, "steer", "第一条")).ok).toBe(true);
+    expect((await hub.enqueueInject(sessionId, "steer", "第二条")).ok).toBe(true);
 
-    const first = hub.takeInject(sid, "steer");
+    const first = hub.takeInject(sessionId, "steer");
     expect(first).toHaveLength(1);
     expect(first[0]?.content).toBe("第一条");
 
-    const second = hub.takeInject(sid, "steer");
+    const second = hub.takeInject(sessionId, "steer");
     expect(second.map((x) => x.content)).toEqual(["第二条"]);
 
+    // ack 以免 finally handoff 干扰
+    await hub.ackInject(
+      sessionId,
+      [...first, ...second].map((x) => x.id),
+    );
     resolveRun();
-    await hub.waitFor(sid);
+    await hub.waitFor(sessionId);
   });
 
-  it("follow_up 与 steer 队列隔离；abort 清空", async () => {
-    const sid = "clxxxxxxxxxxxxxxxxxxxxxxxx2";
+  it("follow_up 与 steer 队列隔离；abort 清空内存但持久行移交", async () => {
     let resolveRun!: () => void;
     const gate = new Promise<void>((r) => {
       resolveRun = r;
     });
-    await hub.start(sid, baseInput, async (_emit, signal) => {
+    await hub.start(sessionId, baseInput, async (_emit, signal) => {
       await new Promise<void>((resolve) => {
         if (signal.aborted) return resolve();
         signal.addEventListener("abort", () => resolve(), { once: true });
@@ -73,15 +84,23 @@ describe("SessionStreamHub inject queues", () => {
       });
     });
 
-    hub.enqueueInject(sid, "steer", "steer-msg");
-    hub.enqueueInject(sid, "follow_up", "fu-msg");
-    expect(hub.takeInject(sid, "follow_up")[0]?.content).toBe("fu-msg");
-    expect(hub.takeInject(sid, "steer")[0]?.content).toBe("steer-msg");
+    await hub.enqueueInject(sessionId, "steer", "steer-msg");
+    await hub.enqueueInject(sessionId, "follow_up", "fu-msg");
+    expect(hub.takeInject(sessionId, "follow_up")[0]?.content).toBe("fu-msg");
+    expect(hub.takeInject(sessionId, "steer")[0]?.content).toBe("steer-msg");
 
-    hub.enqueueInject(sid, "steer", "will-clear");
-    hub.stop(sid);
-    expect(hub.takeInject(sid, "steer")).toHaveLength(0);
+    await hub.enqueueInject(sessionId, "steer", "will-clear");
+    hub.stop(sessionId);
+    expect(hub.takeInject(sessionId, "steer")).toHaveLength(0);
     resolveRun();
+    await hub.waitFor(sessionId);
+    await new Promise((r) => setTimeout(r, 30));
+    // 未 ack 的 will-clear 应移交为 user
+    const handed = await prisma.sessionQueueItem.findMany({
+      where: { sessionId, content: "will-clear" },
+    });
+    expect(handed).toHaveLength(1);
+    expect(handed[0].kind).toBe("user");
   });
 
   it("steeringMode=all 一次取光", async () => {
@@ -93,20 +112,23 @@ describe("SessionStreamHub inject queues", () => {
       steeringMode: "all",
       followUpMode: "all",
     });
-    const sid = "clxxxxxxxxxxxxxxxxxxxxxxxx3";
     let resolveRun!: () => void;
     const gate = new Promise<void>((r) => {
       resolveRun = r;
     });
-    await allHub.start(sid, baseInput, async () => {
+    await allHub.start(sessionId, baseInput, async () => {
       await gate;
     });
-    allHub.enqueueInject(sid, "steer", "a");
-    allHub.enqueueInject(sid, "steer", "b");
-    const batch = allHub.takeInject(sid, "steer");
+    await allHub.enqueueInject(sessionId, "steer", "a");
+    await allHub.enqueueInject(sessionId, "steer", "b");
+    const batch = allHub.takeInject(sessionId, "steer");
     expect(batch.map((x) => x.content)).toEqual(["a", "b"]);
+    await allHub.ackInject(
+      sessionId,
+      batch.map((x) => x.id),
+    );
     resolveRun();
-    await allHub.waitFor(sid);
+    await allHub.waitFor(sessionId);
     allHub.destroy();
   });
 });
