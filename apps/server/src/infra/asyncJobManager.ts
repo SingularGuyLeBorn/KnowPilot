@@ -907,8 +907,14 @@ export async function recoverStaleRuns(): Promise<number> {
 }
 
 /**
- * v10 可重入续跑：服务启动时扫描僵尸 async 任务（status running/queued 且 [async]/async_agent），
- * 同函数内两态分叉（C-2）——reentrant=true 续跑 / 否则 failed：
+ * v10 可重入续跑 + C1 执行型僵尸收拢：服务启动扫描 status∈(running,queued) 的执行型 Task。
+ *
+ * 识别面（不再只认 [async]/async_agent）：
+ * - 异步：name `[async]*` / type=async_agent（既有 reentrant 续跑语义不变）
+ * - 心跳：name `[heartbeat]*`（默认不可重入 → failed）
+ * - cron / oneshot：type 命中（含 TriggerEngine 叠跑遗留的 running 行）
+ *
+ * 同函数内两态分叉——仅「可解析的 async input + reentrant」走续跑，其余标 failed：
  *
  * - 自动续跑（reentrant=true 且 retryCount < maxRetries）：retryCount+1 **先落库**
  *   （crash-loop 防护即账本——崩在入池前也计数），状态重置 queued（queuedAt 刷新、
@@ -930,16 +936,22 @@ export async function recoverStaleAsyncJobs(
   const stale = await prisma.task.findMany({
     where: {
       status: { in: ["running", "queued"] },
-      OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+      OR: [
+        { name: { startsWith: "[async]" } },
+        { type: "async_agent" },
+        { name: { startsWith: "[heartbeat]" } },
+        { type: "cron" },
+        { type: "oneshot" },
+      ],
     },
   });
   let failed = 0;
   let resumed = 0;
   for (const task of stale) {
     const input = parseAsyncInput(task.input);
-    if (!input) continue;
 
-    if (task.reentrant && task.retryCount < task.maxRetries) {
+    // 仅可解析的 async 输入才具备续跑重建能力；心跳/cron/trigger 僵尸默认不可重入 → failed
+    if (input && task.reentrant && task.retryCount < task.maxRetries) {
       // 自动续跑分支：先落库计数 + 状态重置（条件写认领），再入池
       const claimed = await prisma.task.updateMany({
         where: { id: task.id, status: { in: ["running", "queued"] } },
@@ -982,21 +994,26 @@ export async function recoverStaleAsyncJobs(
       continue;
     }
 
-    // R-2 语义：标 failed（error 文案两态区分），条件写认领保证幂等
-    const errorText = task.reentrant
-      ? `已达自动重试上限（${task.maxRetries} 次），需人工介入`
-      : "服务重启，任务中断";
+    // R-2 / C1：标 failed（error 文案两态区分），条件写认领保证幂等
+    const errorText =
+      input && task.reentrant
+        ? `已达自动重试上限（${task.maxRetries} 次），需人工介入`
+        : "服务重启，任务中断";
     const claimedFailed = await prisma.task.updateMany({
       where: { id: task.id, status: { in: ["running", "queued"] } },
       data: {
         status: "failed",
         finishedAt: new Date(),
         output: { error: errorText },
+        // 心跳行避免再被 pullAsyncDeliveries 误扫：与 heartbeatEngine 投递口径对齐
+        ...(task.name.startsWith("[heartbeat]")
+          ? { delivered: true, deliveredAt: new Date() }
+          : {}),
       },
     });
     if (claimedFailed.count === 0) continue; // 并发落选
     // 同步 subagent ChatSession 状态为 failed（避免卡片永久停在 running/queued）
-    if (input.subagentSessionId) {
+    if (input?.subagentSessionId) {
       try {
         await prisma.chatSession.update({
           where: { id: input.subagentSessionId },

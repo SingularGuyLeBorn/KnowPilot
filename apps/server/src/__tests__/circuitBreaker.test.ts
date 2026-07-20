@@ -417,9 +417,20 @@ describe("W12 心跳连续失败熔断暂停", () => {
       expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
       await engine2.resumeHeartbeat(agentId);
       expect(await engine2.isHeartbeatSuspended(agentId)).toBe(false);
+      expect(await readStreak(agentId)).toBe(0);
 
-      // resume 不清计数：恢复后再失败（streak 仍 ≥ 阈值）→ 立即重新暂停
+      // resume 清零计数：恢复后须重新累计至阈值才再 suspend（单次失败不立即熔断）
       await engine2.triggerHeartbeat(agentId);
+      await vi.waitFor(async () => {
+        expect(await readStreak(agentId)).toBe(1);
+      });
+      expect(await engine2.isHeartbeatSuspended(agentId)).toBe(false);
+      for (let i = 2; i <= HEARTBEAT_MAX_CONSECUTIVE_FAILURES; i++) {
+        await engine2.triggerHeartbeat(agentId);
+        await vi.waitFor(async () => {
+          expect(await readStreak(agentId)).toBe(i);
+        });
+      }
       await vi.waitFor(async () => {
         expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
       });

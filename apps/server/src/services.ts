@@ -96,6 +96,7 @@ import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
 import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
+import { claimTaskRun } from "./infra/taskClaim.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
 
@@ -2519,7 +2520,7 @@ export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, L
   protected buildCreateData(input: CreateTaskInput) { return input; }
   protected buildUpdateData(input: UpdateTaskInput) { const { id: _id, ...data } = input; return data; }
 
-  /** 立即执行任务（db:sync 等） */
+  /** 立即执行任务（db:sync 等）；认领单点 = claimTaskRun，落选如实返回「正在运行」 */
   async run(id: string): Promise<OperationResult<any>> {
     let task: { id: string; name: string; type: string; input?: unknown };
     try {
@@ -2537,7 +2538,19 @@ export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, L
       });
     }
 
-    await this.update({ id, status: "running" });
+    const claimed = await claimTaskRun(this.prisma, id);
+    if (!claimed) {
+      return failure({
+        code: "TASK_ALREADY_RUNNING",
+        message: `任务「${task.name}」正在运行，请等待完成后再触发。`,
+        details: { id },
+        suggestion: "同一任务同时只允许一个执行体；稍后重试或先取消当前运行。",
+        retryable: true,
+        operation: "run",
+        entity: this.entityName,
+        durationMs: 0,
+      });
+    }
 
     try {
       const { executeTaskJob } = await import("./infra/taskRunner.js");

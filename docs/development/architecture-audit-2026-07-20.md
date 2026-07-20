@@ -17,8 +17,8 @@
 | A5 | P1 | steer/follow_up 注入队列随 RunState 销毁：UI 承诺「已注入」服务端静默丢弃 | sessionStreamHub.ts:315-467; reactLoop.ts:381,605 | PR-5 |
 | B1 | P1 | reconciler 对「失败轻量任务」形成永不收敛的对账循环 | asyncJobManager.ts:354-360↔619-688 | PR-4 |
 | B2 | P1 | superior drain「删除即认领」+ 同事务置 consumed：崩溃窗口消息永久丢失 | services.ts:2129-2159; asyncJobManager.ts:271-286 | PR-4 |
-| C1 | P1 | 僵尸 running Task 永久卡死心跳与定时任务（恢复扫描只认 `[async]` 前缀） | asyncJobManager.ts:930-935; heartbeatEngine.ts:331-375; taskScheduler.ts:56-59; triggerEngine.ts:142-148 | PR-3 |
-| C2 | P1 | HeartbeatEngine.refresh() 无串行化：并发 refresh 泄漏 cron job 重复调度 | heartbeatEngine.ts:158-207 | PR-3 |
+| C1 | P1 | 僵尸 running Task 永久卡死心跳与定时任务（恢复扫描只认 `[async]` 前缀） | asyncJobManager.ts:930-935; heartbeatEngine.ts:331-375; taskScheduler.ts:56-59; triggerEngine.ts:142-148 | 已修复@d14fc926（原 PR-3） |
+| C2 | P1 | HeartbeatEngine.refresh() 无串行化：并发 refresh 泄漏 cron job 重复调度 | heartbeatEngine.ts:158-207 | 已修复@af286fe2（原 PR-3） |
 | C3 | P1 | 审批等待注册表 missed-wakeup + TTL 误报「已过期」（操作实际已执行） | approvalGate.ts:160-233,284-308 | 已修复@1f19ee4f（原 PR-2） |
 | D3 | P1 | 实体文件写回零路径消毒：name/slug 直接进 path.join 可穿越出 content | services.ts:382-398,948,1292,2636 | PR-1 · 已修复@ca3f5dfb |
 | D4 | P1 | sync 与运行时 CRUD 并发无保护：rename 窗口期 watch unlink 可硬删刚改名实体 | sync.ts:122-195; services.ts:408-415 | PR-1 · 已修复@97c0eebd |
@@ -36,10 +36,10 @@
 | B6 | P2 | orchestrator.start() 对同步抛错的 execute 泄漏槽位计数 | asyncJobOrchestrator.ts:397-442 | PR-4 |
 | B7 | P2 | SessionQueueItem 幂等/排序靠 check-then-insert，无 DB 唯一约束兜底 | services.ts:2016-2048; schema.prisma:159-175 | PR-4 |
 | B8 | P3 | spawn 去重窗口与任务在途期脱节，窗口外重派无幂等承接 | swarmOrchestrator.ts:29,277-281 | 登记 |
-| C4 | P2 | 心跳状态写回混合版本 read-modify-write：丢计数、吞「配置变更清零」 | heartbeatEngine.ts:622-657 | PR-3 |
+| C4 | P2 | 心跳状态写回混合版本 read-modify-write：丢计数、吞「配置变更清零」 | heartbeatEngine.ts:622-657 | 已修复@046a169f（原 PR-3） |
 | C5 | P2 | llmBudget 检查-扣费 TOCTOU + 重启 hydrate 竞态丢额度 | llmBudget.ts:43-62,121-142 | 已修复@fd63331f（原 PR-2） |
 | C6 | P2 | CircuitBreaker 半开期无探测纪元：陈旧成功误合闸、陈旧失败误重计时 | circuitBreaker.ts:123-153 | 已修复@a8b22159（原 PR-2） |
-| C7 | P2 | cron 触发与手动触发无原子认领：TaskService.run/TriggerEngine 可叠跑 | taskScheduler.ts:53-63; services.ts:2357; triggerEngine.ts:142-148 | PR-3 |
+| C7 | P2 | cron 触发与手动触发无原子认领：TaskService.run/TriggerEngine 可叠跑 | taskScheduler.ts:53-63; services.ts:2357; triggerEngine.ts:142-148 | 已修复@63af42c2（原 PR-3） |
 | C8 | P2 | config.yaml 无热更新且生效口径分裂（config 快照 vs env 活读并存） | config.ts:650-656; approvalGate.ts:72-78 等 | 登记 |
 | D7 | P2 | safePath 纯词法校验：无符号链接/Junction 解析可逃逸 projectRoot | safePath.ts:9-17 | 登记 |
 | D8 | P2 | memoryRepository.supersedeUpdate 两步写无事务；memoryService 缺省静默降级 | memoryRepository.ts:282-370 | PR-1 · 已修复@0757c085 |
