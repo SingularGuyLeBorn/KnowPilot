@@ -1385,3 +1385,24 @@ PR-3 后心跳仍是「cron 到点 → 预算检查 → 直接 dispatch」。缺
 | E6 | 队列水合 | 切会话与同会话统一 `mergeUserQueueFromDb`，单一「DB + local-only」入口 |
 
 **回答**：按上表落地（分支 `arch/chat-web-store`）
+
+---
+
+## W4 context 钩子链（2026-07-21，feat/context-hooks）
+
+### 背景
+
+每轮发给 LLM 的上下文原由 `promptBuilder.buildSystemPromptWithHints` 硬编码拼装（记忆、tier 身份、工具引导）。要对齐 pi extensions 的 `context` 事件（每次 LLM 调用前可非破坏性改写消息列表），并给后续 RAG/技能注入留开放链路。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 模块 | 叶子 `infra/contextHooks.ts`：只依赖类型 + promptBuilder 片段构建；不 import loop/prisma |
+| 接入点 | `reactLoop` 每次 `transport.complete` 前（含 synthesizing）；sync/stream 共用 |
+| 内建钩子 | `memory`(100) → `tier-identity`(200) → `tool-guide`(300) → `agent-extras`(400)；拼装顺序仍为历史 `base + identity + memory + guide`（memory 先跑完成检索，片段入 scratch，agent-extras 最终合成） |
+| v1 等价性 | 内建钩子 `enabled: round === 1`，保持「每 run 开头注入一次」；「每轮生效」留给后续具体钩子自行选择 |
+| 开放面 | `registerContextHook` 导出；v1 无技能声明配置面、无 config.yaml 新节 |
+| 不做 | 钩子热重载 / 外部包安装（登记待办）；不改变注入文案本身 |
+
+**回答**：按上表落地（分支 `feat/context-hooks`）

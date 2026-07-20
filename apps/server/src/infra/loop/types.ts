@@ -104,6 +104,8 @@ export interface ReactLoopInput {
   sessionId?: string;
   agentMeta?: {
     id: string;
+    /** 供 context 钩子 tier-identity 注入；缺省不注入名字 */
+    name?: string | null;
     model: string;
     systemPrompt: string;
     tools: string[];
