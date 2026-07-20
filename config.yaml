@@ -109,6 +109,11 @@ goal:
   # 裁判模型；auto = OpenRouter strong_free
   judgeModel: auto
 
+# W3：审批 decision-scope / gate 通知冷却（per-Approval.lastNotifiedAt）
+approvalGate:
+  # 同一审批冷却窗口内不重复通知（毫秒）；默认 30min
+  notifyCooldownMs: 1800000
+
 # 超级 Agent 心跳 Loop Contract（控制平面；不替换 ReAct）
 heartbeat:
   # W2 决策层：cron 只负责唤醒；decisionEnabled=false 可整体回退到旧「到点即跑」

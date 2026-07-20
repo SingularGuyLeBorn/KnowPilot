@@ -396,18 +396,23 @@ model Trigger {
 
 /// 审批队列 (Approval)
 model Approval {
-  id           String    @id @default(cuid())
-  toolName     String
-  args         Json      /// 调用参数
-  status       String    @default("pending") /// "pending" | "approved" | "rejected" | "executed"
-  decidedBy    String?   /// 决策者（当前单用户场景固定 "local-user"；超时自动拒绝为 "system-ttl"）
-  decidedAt    DateTime? /// 决策时间
-  decisionNote String?   /// 决策说明（拒绝理由等）
-  executedAt   DateTime? /// 审批操作执行完成时间（软删除标记，记录永不物理删除）
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  toolName       String
+  args           Json      /// 调用参数
+  status         String    @default("pending") /// "pending" | "approved" | "rejected" | "executed"
+  decidedBy      String?   /// 决策者（当前单用户场景固定 "local-user"；超时自动拒绝为 "system-ttl"）
+  decidedAt      DateTime? /// 决策时间
+  decisionNote   String?   /// 决策说明（拒绝理由等）
+  executedAt     DateTime? /// 审批操作执行完成时间（软删除标记，记录永不物理删除）
+  /// W3：决策 scope，格式 <domain>:<verb>:<target>；调度面相交检查用（LLM 不可见）
+  decisionScope  String?
+  /// W3：上次发出 gate 通知的时间；冷却窗口内不重复打扰
+  lastNotifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([status, createdAt])
+  @@index([status, decisionScope])
 }
 
 /// ask_user 提问账本（进程重启后可恢复 pending / 孤儿答复入队）

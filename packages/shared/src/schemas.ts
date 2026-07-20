@@ -954,6 +954,8 @@ export const createApprovalSchema = z.object({
   toolName: z.string().min(1),
   args: z.any(),
   status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+  /** W3：服务端派生的 decisionScope；LLM/客户端不可传业务语义，仅服务端写入 */
+  decisionScope: z.string().min(1).optional(),
 });
 
 export const updateApprovalSchema = z.object({
