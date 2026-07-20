@@ -87,8 +87,9 @@ describe("CircuitBreaker 三态状态机", () => {
     const permit = cb.tryAcquire();
     expect(permit.allowed).toBe(true);
     expect(cb.getState()).toBe("half-open");
+    expect(permit.allowed && permit.probeToken).toEqual(expect.any(Number));
 
-    cb.recordSuccess();
+    cb.recordSuccess(permit.allowed ? permit.probeToken : undefined);
     expect(cb.getState()).toBe("closed");
     expect(cb.getFailureCount()).toBe(0);
   });
@@ -100,10 +101,11 @@ describe("CircuitBreaker 三态状态机", () => {
     cb.recordFailure();
     cb.recordFailure();
     clock.advance(1000);
-    expect(cb.tryAcquire().allowed).toBe(true); // 探测
+    const probe = cb.tryAcquire();
+    expect(probe.allowed).toBe(true);
     expect(cb.getState()).toBe("half-open");
 
-    cb.recordFailure(); // 探测失败
+    cb.recordFailure(probe.allowed ? probe.probeToken : undefined);
     expect(cb.getState()).toBe("open");
 
     const p = cb.tryAcquire();
@@ -124,6 +126,52 @@ describe("CircuitBreaker 三态状态机", () => {
     const concurrent = cb.tryAcquire();
     expect(concurrent.allowed).toBe(false);
     if (!concurrent.allowed) expect(concurrent.retryAfterMs).toBe(1000);
+  });
+
+  it("C6：closed 期迟到成功/失败在 half-open 不改变探测判定；错令牌忽略", () => {
+    const clock = makeClock();
+    const cb = new CircuitBreaker({ failureThreshold: 2, openDurationMs: 1000, now: clock.now });
+
+    // closed 期发出请求（无令牌）在途
+    expect(cb.tryAcquire().allowed).toBe(true);
+    cb.recordFailure();
+    cb.recordFailure();
+    expect(cb.getState()).toBe("open");
+
+    clock.advance(1000);
+    const probe = cb.tryAcquire();
+    expect(probe.allowed).toBe(true);
+    expect(cb.getState()).toBe("half-open");
+    const token = probe.allowed ? probe.probeToken : undefined;
+    expect(token).toEqual(expect.any(Number));
+
+    // closed 期迟到成功：无令牌 → 不得误合闸，探测仍在途
+    cb.recordSuccess();
+    expect(cb.getState()).toBe("half-open");
+
+    // 错令牌失败：不得误重开
+    cb.recordFailure(999_999);
+    expect(cb.getState()).toBe("half-open");
+
+    // 真探测成功才合闸
+    cb.recordSuccess(token);
+    expect(cb.getState()).toBe("closed");
+  });
+
+  it("C6：half-open 探测在途时迟到失败不得清掉 probeInFlight 让第二探测混入", () => {
+    const clock = makeClock();
+    const cb = new CircuitBreaker({ failureThreshold: 2, openDurationMs: 1000, now: clock.now });
+
+    cb.recordFailure();
+    cb.recordFailure();
+    clock.advance(1000);
+    expect(cb.tryAcquire().allowed).toBe(true);
+
+    // 迟到无令牌失败（旧实现会 clear probeInFlight 并 reopen；或 clear 后仍 half-open 放进第二探测）
+    cb.recordFailure();
+    expect(cb.getState()).toBe("half-open");
+    const second = cb.tryAcquire();
+    expect(second.allowed).toBe(false);
   });
 
   it("非法转移拒绝：closed→half-open / open→closed 被 guard 拒绝且状态不变", () => {
