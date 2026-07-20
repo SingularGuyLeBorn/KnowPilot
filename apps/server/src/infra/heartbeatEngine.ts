@@ -676,24 +676,18 @@ export class HeartbeatEngine {
   async resumeHeartbeat(agentId: string): Promise<{ resumed: boolean }> {
     const row = await this.prisma.agent.findUnique({
       where: { id: agentId },
-      select: { heartbeat: true, heartbeatSuspendedAt: true },
+      select: { heartbeatSuspendedAt: true },
     });
     if (!row) return { resumed: false };
-    const hb = this.parseHeartbeat(row.heartbeat);
-    await this.prisma.agent.update({
-      where: { id: agentId },
-      data: {
-        heartbeatSuspendedAt: null,
-        ...(hb
-          ? {
-              heartbeat: {
-                ...hb,
-                consecutiveFailures: 0,
-              } as object,
-            }
-          : {}),
-      },
-    });
+    // C4：清零只 touch consecutiveFailures，不整 blob 覆写（避免冲掉并发运行态字段）
+    await this.prisma.$executeRaw`
+      UPDATE "Agent"
+      SET
+        "heartbeatSuspendedAt" = NULL,
+        heartbeat = json_set(COALESCE(heartbeat, '{}'), '$.consecutiveFailures', 0),
+        "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = ${agentId}
+    `;
     await this.refresh();
     return { resumed: true };
   }
@@ -707,6 +701,25 @@ export class HeartbeatEngine {
     return row?.heartbeatSuspendedAt != null;
   }
 
+  /** @internal 测试用：直接触达运行态写回（验证原子计数） */
+  async __updateHeartbeatStatusForTests(
+    agentId: string,
+    status: "success" | "failed" | "cancelled" | "budget_exceeded",
+    prevHb: HeartbeatState,
+    opts?: {
+      evidenceSummary?: string;
+      taskId?: string;
+      applyLoopContract?: boolean;
+    },
+  ): Promise<void> {
+    return this.updateHeartbeatStatus(agentId, status, prevHb, opts);
+  }
+
+  /**
+   * C4：运行态字段（lastRunAt/Status、consecutiveFailures、可选 loopContract）用 json_set 原子更新，
+   * 禁止整 blob 覆写——配置态（enabled/cron/goal）不被并发写回冲掉；
+   * consecutiveFailures 在 SQL 层自增/清零，杜绝 read-modify-write 丢计数。
+   */
   private async updateHeartbeatStatus(
     agentId: string,
     status: "success" | "failed" | "cancelled" | "budget_exceeded",
@@ -717,47 +730,62 @@ export class HeartbeatEngine {
       applyLoopContract?: boolean;
     },
   ): Promise<void> {
-    const consecutiveFailures =
-      status === "success" ? 0 : status === "failed" ? prevHb.consecutiveFailures + 1 : prevHb.consecutiveFailures;
+    const nowIso = new Date().toISOString();
+    const agentStatus = status === "success" ? "active" : "idle";
 
-    const current = this.parseHeartbeat(
-      (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
-    );
+    try {
+      // 失败 → SQL 自增；成功 → 置 0；其余保持现值（不读改写）
+      await this.prisma.$executeRaw`
+        UPDATE "Agent"
+        SET
+          heartbeat = json_set(
+            COALESCE(heartbeat, '{}'),
+            '$.lastRunAt', ${nowIso},
+            '$.lastRunStatus', ${status},
+            '$.consecutiveFailures',
+              CASE
+                WHEN ${status} = 'success' THEN 0
+                WHEN ${status} = 'failed' THEN COALESCE(json_extract(heartbeat, '$.consecutiveFailures'), 0) + 1
+                ELSE COALESCE(json_extract(heartbeat, '$.consecutiveFailures'), 0)
+              END
+          ),
+          status = ${agentStatus},
+          "updatedAt" = CURRENT_TIMESTAMP
+        WHERE id = ${agentId}
+      `;
 
-    let loopContract = current?.loopContract ?? prevHb.loopContract;
-    if (opts?.applyLoopContract) {
-      const defaults = this.config.heartbeat.loopContract;
-      const base = ensureLoopContract(prevHb.goal, loopContract, defaults);
-      loopContract = recordEvidence(
-        base,
-        {
-          at: new Date().toISOString(),
-          summary: opts.evidenceSummary ?? status,
-          taskId: opts.taskId,
-          status,
-        },
-        defaults,
-      );
-      if (!loopContract.handoff) {
-        console.warn(`  💓 [HeartbeatEngine] Loop Contract 停止交回: ${loopContract.stoppedReason}`);
+      if (opts?.applyLoopContract) {
+        const current = this.parseHeartbeat(
+          (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
+        );
+        const defaults = this.config.heartbeat.loopContract;
+        const goal = current?.goal || prevHb.goal;
+        const base = ensureLoopContract(goal, current?.loopContract ?? prevHb.loopContract, defaults);
+        const loopContract = recordEvidence(
+          base,
+          {
+            at: nowIso,
+            summary: opts.evidenceSummary ?? status,
+            taskId: opts.taskId,
+            status,
+          },
+          defaults,
+        );
+        if (!loopContract.handoff) {
+          console.warn(`  💓 [HeartbeatEngine] Loop Contract 停止交回: ${loopContract.stoppedReason}`);
+        }
+        const loopJson = JSON.stringify(loopContract);
+        await this.prisma.$executeRaw`
+          UPDATE "Agent"
+          SET
+            heartbeat = json_set(COALESCE(heartbeat, '{}'), '$.loopContract', json(${loopJson})),
+            "updatedAt" = CURRENT_TIMESTAMP
+          WHERE id = ${agentId}
+        `;
       }
-    }
-
-    await this.prisma.agent.update({
-      where: { id: agentId },
-      data: {
-        heartbeat: {
-          ...(current ?? prevHb),
-          lastRunAt: new Date().toISOString(),
-          lastRunStatus: status,
-          consecutiveFailures,
-          ...(loopContract ? { loopContract } : {}),
-        } as object,
-        status: status === "success" ? "active" : "idle",
-      },
-    }).catch((err) => {
+    } catch (err) {
       console.warn(`  💓 [HeartbeatEngine] 更新心跳状态失败 agent=${agentId}:`, err instanceof Error ? err.message : err);
-    });
+    }
   }
 }
 
