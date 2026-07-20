@@ -15,13 +15,54 @@ import {
 } from "./constants";
 
 /* ═══════════════════════════════════════════════════════
+   实体 name / slug 路径安全（D3）
+   ═══════════════════════════════════════════════════════ */
+
+/** 禁止 `/ \ ..`、Windows 保留字符与控制字符；允许空格/中文 */
+const ENTITY_NAME_UNSAFE = /[\/\\<>:"|?*\x00-\x1f]/;
+function isSafeEntityName(value: string): boolean {
+  if (!value || value.trim() !== value) return false;
+  if (ENTITY_NAME_UNSAFE.test(value)) return false;
+  if (value.includes("..")) return false;
+  if (value === "." || value === "..") return false;
+  return true;
+}
+
+/** 文件 slug 可含单层 `/`（如 skill procedural `name/SKILL`），但每段仍走 name 规则且禁 .. */
+function isSafeEntitySlug(value: string): boolean {
+  if (!value || value.trim() !== value) return false;
+  if (/[\\<>:"|?*\x00-\x1f]/.test(value)) return false;
+  if (value.includes("..")) return false;
+  if (value.startsWith("/") || value.endsWith("/")) return false;
+  return value.split("/").every((p) => p.length > 0 && isSafeEntityName(p));
+}
+
+/** Agent/MCP/Prompt/Skill 等用作文件名的 name */
+export const safeEntityNameSchema = z
+  .string()
+  .min(1, "名称不能为空")
+  .max(100)
+  .refine(isSafeEntityName, {
+    message: "名称不能包含 / \\ ..、Windows 保留字符 <>:\"|?* 或控制字符",
+  });
+
+/** Post / 文件 slug：允许受控嵌套段，禁止穿越 */
+export const safeEntitySlugSchema = z
+  .string()
+  .min(1, "slug 不能为空")
+  .max(200)
+  .refine(isSafeEntitySlug, {
+    message: "slug 不能包含 \\、..、Windows 保留字符 <>:\"|?* 或控制字符",
+  });
+
+/* ═══════════════════════════════════════════════════════
    Post (文章)
    ═══════════════════════════════════════════════════════ */
 
 export const createPostSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
   content: z.string().default(""),
-  slug: z.string().optional(),
+  slug: safeEntitySlugSchema.optional(),
   excerpt: z.string().optional(),
   coverImage: z.string().url().optional().nullable(),
   category: z.string().optional().nullable(),
@@ -33,7 +74,7 @@ export const updatePostSchema = z.object({
   id: z.string().cuid(),
   title: z.string().min(1).max(200).optional(),
   content: z.string().optional(),
-  slug: z.string().optional(),
+  slug: safeEntitySlugSchema.optional(),
   published: z.boolean().optional(),
   excerpt: z.string().optional(),
   coverImage: z.string().url().optional().nullable(),
@@ -95,7 +136,7 @@ export const heartbeatConfigSchema = z.object({
 });
 
 export const createAgentSchema = z.object({
-  name: z.string().min(1, "名称不能为空").max(100),
+  name: safeEntityNameSchema,
   description: z.string().optional(),
   model: z.string().default(LLM_MODEL_IDS.DEEPSEEK_CHAT),
   systemPrompt: z.string().default(""),
@@ -112,7 +153,7 @@ export const createAgentSchema = z.object({
 
 export const updateAgentSchema = z.object({
   id: z.string().cuid(),
-  name: z.string().min(1).max(100).optional(),
+  name: safeEntityNameSchema.optional(),
   description: z.string().optional(),
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -246,7 +287,7 @@ export const nativeExecuteSchema = z.object({
    ═══════════════════════════════════════════════════════ */
 
 export const createSkillSchema = z.object({
-  name: z.string().min(1, "名称不能为空").max(100),
+  name: safeEntityNameSchema,
   description: z.string().min(1, "描述不能为空"),
   code: z.string().min(1, "代码实现不能为空"),
   icon: z.string().optional(),
@@ -257,7 +298,7 @@ export const createSkillSchema = z.object({
 
 export const updateSkillSchema = z.object({
   id: z.string().cuid(),
-  name: z.string().min(1).max(100).optional(),
+  name: safeEntityNameSchema.optional(),
   description: z.string().optional(),
   code: z.string().optional(),
   icon: z.string().optional(),
@@ -605,7 +646,7 @@ function refineMcpTransport(
 
 export const createMcpServerSchema = z
   .object({
-    name: z.string().min(1).max(100),
+    name: safeEntityNameSchema,
     transport: mcpTransportSchema.default("stdio"),
     command: z.string().default(""),
     args: z.array(z.string()).default([]),
@@ -619,7 +660,7 @@ export const createMcpServerSchema = z
 export const updateMcpServerSchema = z
   .object({
     id: z.string().cuid(),
-    name: z.string().min(1).max(100).optional(),
+    name: safeEntityNameSchema.optional(),
     transport: mcpTransportSchema.optional(),
     command: z.string().optional(),
     args: z.array(z.string()).optional(),
@@ -973,7 +1014,7 @@ export const listRunsSchema = z.object({
    ═══════════════════════════════════════════════════════ */
 
 export const createPromptSchema = z.object({
-  name: z.string().min(1, "名称不能为空").max(100),
+  name: safeEntityNameSchema,
   version: z.string().default("1.0.0"),
   description: z.string().optional(),
   variables: z.array(z.string()).default([]),
@@ -983,7 +1024,7 @@ export const createPromptSchema = z.object({
 
 export const updatePromptSchema = z.object({
   id: z.string().cuid(),
-  name: z.string().min(1).max(100).optional(),
+  name: safeEntityNameSchema.optional(),
   version: z.string().optional(),
   description: z.string().optional().nullable(),
   variables: z.array(z.string()).optional(),

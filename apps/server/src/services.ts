@@ -94,7 +94,7 @@ import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
-import { resolveSafePath } from "./infra/safePath.js";
+import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
@@ -390,13 +390,41 @@ export abstract class FileSyncService<
     return (this.config.contentPaths as any)[this.contentDirName] || path.join(this.config.contentDir, this.contentDirName);
   }
 
+  /**
+   * D3：slug 消毒 + 最终路径必须落在对应 content 子目录内（兼 projectRoot）。
+   * 允许受控嵌套（如 skill `name/SKILL`），禁止 `..` / 绝对路径 / Windows 保留字符。
+   */
+  protected assertSafeFileSlug(slug: string): string {
+    if (!slug || typeof slug !== "string") {
+      throw new Error(`${this.entityName} 文件 slug 不能为空`);
+    }
+    if (/[\\<>:"|?*\x00-\x1f]/.test(slug) || slug.includes("..")) {
+      throw new Error(`${this.entityName} 非法文件 slug（含保留字符或 ..）：${slug}`);
+    }
+    if (slug.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(slug)) {
+      throw new Error(`${this.entityName} 非法文件 slug（绝对路径）：${slug}`);
+    }
+    const parts = slug.replace(/\\/g, "/").split("/");
+    if (parts.some((p) => !p || p === "." || p === "..")) {
+      throw new Error(`${this.entityName} 非法文件 slug（空段或 . / ..）：${slug}`);
+    }
+    return slug;
+  }
+
   protected resolveEntityFilePath(slug: string): string {
-    return path.join(this.getContentDir(), `${slug}${this.fileExtension}`);
+    const safe = this.assertSafeFileSlug(slug);
+    const filePath = path.resolve(this.getContentDir(), `${safe}${this.fileExtension}`);
+    assertPathWithinProjectRoot(this.config, filePath);
+    const contentRoot = path.resolve(this.getContentDir());
+    const prefix = contentRoot.endsWith(path.sep) ? contentRoot : contentRoot + path.sep;
+    if (filePath !== contentRoot && !filePath.startsWith(prefix)) {
+      throw new Error(`${this.entityName} 文件路径越出 content/${this.contentDirName}：${slug}`);
+    }
+    return filePath;
   }
 
   protected writeFile(entity: TEntity): void {
-    const slug = this.getFileSlug(entity);
-    const filePath = this.resolveEntityFilePath(slug);
+    const filePath = this.resolveEntityFilePath(this.getFileSlug(entity));
     const fileDir = path.dirname(filePath);
     if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
     fs.writeFileSync(filePath, this.serializeToFile(entity), "utf-8");
@@ -414,7 +442,15 @@ export abstract class FileSyncService<
    */
   protected deleteFileBySlug(slug: string, opts?: { required?: boolean }): boolean {
     const required = opts?.required !== false;
-    const filePath = this.resolveEntityFilePath(slug);
+    let filePath: string;
+    try {
+      filePath = this.resolveEntityFilePath(slug);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (required) throw e;
+      console.warn(`[FileSync] 跳过非法 slug 删除 entity=${this.entityName}:`, msg);
+      return false;
+    }
     if (!fs.existsSync(filePath)) return true;
     try {
       fs.unlinkSync(filePath);
