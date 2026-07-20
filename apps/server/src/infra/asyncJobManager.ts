@@ -440,10 +440,14 @@ export async function autoConsumeAsyncDelivery(options: {
   // 消息可能已写入，回滚会导致重复投喂——交由 reconciler（第二层）以 ChatMessage 为 ground truth 对账。
   const consumeWork = async (): Promise<void> => {
     try {
+      // B3：与 drain 对齐——hub.waitFor 在 runConsumeJob 之前（槽外等）。
+      // 不变量：池槽只覆盖「执行」，不覆盖「等待起流条件」。
+      if (hub.isRunning(sessionId)) {
+        await hub.waitFor(sessionId);
+      }
       // v8 TP-1：交付消费走高优池准入（队首优先 + 全局占用约束）。
       // 不变量：禁止「等槽无限挂起消费链」——等槽超时未获槽则放弃本轮；
       // CLAIM 在获槽后执行，未获槽则 delivered 保持 false，delivery 原样留待下次触发（不丢）。
-      // hub 交互流不依赖池槽位 ⇒ 等 hub 空闲不会与池形成循环等待。
       const orchestrator = getAsyncJobOrchestrator(config);
       let requeue = false;
       const admitted = await orchestrator.runConsumeJob({
@@ -451,8 +455,10 @@ export async function autoConsumeAsyncDelivery(options: {
         sessionId,
         queuedTimeoutMs: consumeQueuedTimeoutMs(config),
         execute: async () => {
+          // 获槽后再忙：禁止槽内 wait，重挂链尾（下轮再槽外 wait）
           if (hub.isRunning(sessionId)) {
-            await hub.waitFor(sessionId);
+            requeue = true;
+            return;
           }
           // 获槽后才 CLAIM（W14：原子 CLAIM 与 AgentMessage 投递记账同事务——认领成功即完成对账，
           // 不存在「Task 已 delivered 但旁路邮箱仍 pending」的中间态。记账按 taskRef=jobId 幂等）。
