@@ -112,6 +112,8 @@ model ChatSession {
   // Auto-Compact：持久化上下文摘要，避免每轮重复调 LLM 压缩
   contextSummary     String?
   contextCompactedAt DateTime?
+  /// 压缩代际（显式列；persist 用 CAS，不再解析摘要文本 vN@）
+  compactGeneration  Int       @default(0)
   /// L1 常驻层（USER.md/AGENT.md）会话冻结快照；首轮注入时写入，会话内不变
   pinnedMemorySnapshot String?
   // session_rotate：轮换到的新会话 id（旧会话 archived 后保留跳转）

@@ -310,12 +310,15 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     machine.transition("compacting");
 
     let existingSummary: string | null = null;
+    let existingGeneration = 0;
     if (input.sessionId) {
       try {
         const sess =
           (await input.services.session.getByIdLite?.(input.sessionId)) ??
           (await input.services.session.getById(input.sessionId));
         existingSummary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? null;
+        existingGeneration =
+          (sess as { compactGeneration?: number | null } | null)?.compactGeneration ?? 0;
       } catch {
         /* ignore */
       }
@@ -323,6 +326,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
     const compacted = await maybeCompactMessages(input.config, llmMessages, snapshot.model, {
       existingSummary,
+      existingGeneration,
       flushContext: input.sessionId
         ? {
             services: input.services,

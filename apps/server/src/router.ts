@@ -685,6 +685,7 @@ const sessionRouter = router({
         model: session.model || ctx.config.llm.defaultModel,
         systemPrompt: session.systemPrompt || "你是 KnowPilot 助手。",
         existingSummary: session.contextSummary,
+        existingGeneration: (session as { compactGeneration?: number }).compactGeneration ?? 0,
         trigger: "manual",
       });
       if (!result.compacted) {
