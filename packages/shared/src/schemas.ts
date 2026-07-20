@@ -376,6 +376,7 @@ export const updateSessionSchema = z.object({
   taskDescription: z.string().max(2000).optional(),
   kind: sessionKindSchema.optional(),
   parentSessionId: z.string().cuid().nullable().optional(),
+  isMainSession: z.boolean().optional(), // 提升主会话时 SessionService 会摘掉同 Agent 其它主标记
   // Auto-Compact 持久化摘要
   contextSummary: z.string().max(20000).nullable().optional(),
   contextCompactedAt: z.coerce.date().nullable().optional(),
