@@ -50,7 +50,9 @@ const RUN_SNAPSHOT_THROTTLE_MS = 5000;
 const APPROVAL_RESULT_MAX_CHARS = 2000;
 
 /** W11：从工具结果中读取审批 pending 标记（agentTools runOne 捕获 PENDING_APPROVAL 时写入） */
-function readApprovalPendingMarker(result: unknown): { approvalId: string; toolName?: string } | null {
+function readApprovalPendingMarker(
+  result: unknown,
+): { approvalId: string; toolName?: string; decisionScope?: string } | null {
   if (!result || typeof result !== "object") return null;
   const marker = (result as { approvalPending?: unknown }).approvalPending;
   if (
@@ -58,7 +60,7 @@ function readApprovalPendingMarker(result: unknown): { approvalId: string; toolN
     typeof marker === "object" &&
     typeof (marker as { approvalId?: unknown }).approvalId === "string"
   ) {
-    return marker as { approvalId: string; toolName?: string };
+    return marker as { approvalId: string; toolName?: string; decisionScope?: string };
   }
   return null;
 }
@@ -286,6 +288,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       : input.agentMeta,
     runOrigin: input.runOrigin ?? "user",
     rollbackStack,
+    readonlyOnly: input.readonlyOnly === true,
   });
 
   let llmMessages: LlmMessage[] = [...input.messages];
@@ -640,12 +643,38 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       // 等 approval_resolved 显式事件唤醒后回 llm。唤醒靠事件不靠轮询；注入复用 W7 injectUserMessages。
       const pendingApprovals = executedItems
         .map((item) => readApprovalPendingMarker(item.result))
-        .filter((m): m is { approvalId: string; toolName?: string } => m !== null);
+        .filter(
+          (m): m is { approvalId: string; toolName?: string; decisionScope?: string } => m !== null,
+        );
       if (pendingApprovals.length > 0) {
         machine.transition("awaiting_human");
-        await writeRunSnapshot(true); // 挂起态必须可查：phase=awaiting_human 强制快照
+        const blockedScopes = pendingApprovals
+          .map((m) => m.decisionScope)
+          .filter((s): s is string => typeof s === "string" && s.length > 0);
+        // 挂起态必须可查：phase=awaiting_human + 被堵 scope（W3 UI）
+        await writeRunSnapshot(true);
+        try {
+          if (runId && blockedScopes.length > 0) {
+            await input.services.prisma.run.update({
+              where: { id: runId },
+              data: {
+                output: {
+                  phase: "awaiting_human",
+                  roundsUsed,
+                  executedToolsCount: countExecutedTools(),
+                  blockedScopes,
+                  pendingApprovalIds: pendingApprovals.map((m) => m.approvalId),
+                },
+              },
+            });
+          }
+        } catch {
+          /* 快照增强失败不阻断挂起 */
+        }
         input.hooks?.onProgress?.(
-          `等待人工审批（${pendingApprovals.map((m) => m.approvalId).join(", ")}），运行已挂起`,
+          `等待人工审批（${pendingApprovals.map((m) => m.approvalId).join(", ")}${
+            blockedScopes.length ? `；scope ${blockedScopes.join(", ")}` : ""
+          }），运行已挂起`,
         );
         for (const pending of pendingApprovals) {
           const resolution = await waitApprovalResolution(input.services, pending.approvalId, {

@@ -14,6 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { scopesIntersect } from "./approvalScope.js";
 
 export type HeartbeatDecisionMode =
   | "bounded_delivery"
@@ -27,6 +28,8 @@ export type HeartbeatUserGate = {
   kind: "approval" | "ask_user";
   /** 人类可读待办摘要——mode=wait_user_gate 时必填，禁止空串 */
   summary: string;
+  /** W3：被堵 decisionScope 清单（审批 gate 时附带） */
+  blockedScopes?: string[];
 };
 
 /** 持久化在 Agent.heartbeat.decision 子键（与配置态分列，json_set 原子写） */
@@ -42,6 +45,10 @@ export type HeartbeatDecisionState = {
   lastGateNotifyKey: string | null;
   /** 目标闭合进入 terminal 的时刻；refresh 据此拒绝自动摘除 suspended */
   terminalAt: string | null;
+  /** W3：同一 gate 生命周期内 safe bypass 是否已用过 */
+  safeBypassUsed: boolean;
+  /** W3：safe bypass 绑定的 gate key（gate 变化时重置 used） */
+  safeBypassGateKey: string | null;
 };
 
 export type HeartbeatSignals = {
@@ -53,6 +60,13 @@ export type HeartbeatSignals = {
   openApprovalSummary?: string | null;
   /** 待 ask_user 摘要 */
   pendingAskUserSummary?: string | null;
+  /**
+   * W3：pending 审批的 decisionScope（由引擎从 DB 注入）。
+   * 与 agentRequiredScopes 相交 → 本 Agent 被堵；不相交且有队列 → 可 bounded_delivery。
+   */
+  pendingApprovalScopes?: Array<{ approvalId: string; scope: string }>;
+  /** W3：本 Agent 工具集静态推导的 requiredScopes */
+  agentRequiredScopes?: string[];
   queuedItems: number;
   lastRunId: string | null;
   lastRunAt: string | null;
@@ -80,6 +94,10 @@ export type HeartbeatDecision = {
   shouldSuspendTerminal: boolean;
   /** skipRemaining 消耗路径：本 tick 不跑 agent */
   skipOnlyDecrement: boolean;
+  /** W3：mode=wait_user_gate 且尚未用过 safe bypass → 引擎可派一个只读 turn */
+  safeBypassAllowed?: boolean;
+  /** W3：被堵 scope 清单（决策可观测） */
+  blockedScopes?: string[];
 };
 
 export function emptyDecisionState(): HeartbeatDecisionState {
@@ -92,6 +110,8 @@ export function emptyDecisionState(): HeartbeatDecisionState {
     lastGateNotifyAt: null,
     lastGateNotifyKey: null,
     terminalAt: null,
+    safeBypassUsed: false,
+    safeBypassGateKey: null,
   };
 }
 
@@ -119,6 +139,8 @@ export function parseDecisionState(raw: unknown): HeartbeatDecisionState {
     lastGateNotifyAt: typeof d.lastGateNotifyAt === "string" ? d.lastGateNotifyAt : null,
     lastGateNotifyKey: typeof d.lastGateNotifyKey === "string" ? d.lastGateNotifyKey : null,
     terminalAt: typeof d.terminalAt === "string" ? d.terminalAt : null,
+    safeBypassUsed: d.safeBypassUsed === true,
+    safeBypassGateKey: typeof d.safeBypassGateKey === "string" ? d.safeBypassGateKey : null,
   };
 }
 
@@ -243,9 +265,96 @@ export function buildHeartbeatDecision(signals: HeartbeatSignals): HeartbeatDeci
     };
   }
 
-  // 4. user gate
+  // 4. user gate（W3：审批按 scope 相交；不相交且有队列 → 其余推进）
   if (signals.openApprovals > 0 || signals.pendingAskUser > 0) {
     const preferAsk = signals.pendingAskUser > 0;
+
+    // ask_user 仍全局挂起（无 scope 模型）
+    if (!preferAsk && signals.openApprovals > 0) {
+      const pendingScopes = (signals.pendingApprovalScopes ?? [])
+        .map((r) => r.scope)
+        .filter((s): s is string => typeof s === "string" && s.length > 0);
+      const required = signals.agentRequiredScopes ?? [];
+      const blocked =
+        pendingScopes.length > 0 && required.length > 0 && scopesIntersect(required, pendingScopes)
+          ? pendingScopes.filter((s) => scopesIntersect(required, [s]))
+          : pendingScopes.length > 0 && required.length === 0
+            ? pendingScopes // 无工具声明时保守：视为全堵
+            : pendingScopes.length > 0 && scopesIntersect(required, pendingScopes)
+              ? pendingScopes
+              : [];
+
+      const intersects =
+        required.length === 0
+          ? signals.openApprovals > 0
+          : scopesIntersect(required, pendingScopes);
+
+      if (!intersects && signals.queuedItems > 0) {
+        const scopeHint = pendingScopes.length > 0 ? pendingScopes.join(", ") : "（未知）";
+        return {
+          mode: "bounded_delivery",
+          reasons: [
+            `gate 仅阻塞 scope ${scopeHint}，本 Agent 无相交，其余推进（queued=${signals.queuedItems}）`,
+          ],
+          skipTicks: 0,
+          shouldSuspendTerminal: false,
+          skipOnlyDecrement: false,
+          blockedScopes: pendingScopes,
+          nextState: {
+            ...state,
+            lastMode: "bounded_delivery",
+            skipRemaining: 0,
+            lastSkipTicks: 0,
+            quietStreak: 0,
+            terminalAt: null,
+            // 非 wait 路径：清掉 bypass 态，避免跨 gate 残留
+            safeBypassUsed: false,
+            safeBypassGateKey: null,
+          },
+        };
+      }
+
+      if (intersects || signals.openApprovals > 0) {
+        const summary =
+          signals.openApprovalSummary?.trim() ||
+          `有 ${signals.openApprovals} 条审批待处理`;
+        if (!summary.trim()) {
+          throw new Error("heartbeatDecision: wait_user_gate 缺少 userGate.summary");
+        }
+        const blockedList = blocked.length > 0 ? blocked : pendingScopes;
+        const gateKey = `approval:${[...blockedList].sort().join("|") || "any"}`;
+        // gate key 变化 → 允许新一轮 safe bypass
+        const bypassUsed =
+          state.safeBypassUsed && state.safeBypassGateKey === gateKey;
+        const safeBypassAllowed = !bypassUsed;
+        return {
+          mode: "wait_user_gate",
+          reasons: [
+            `user_gate：openApprovals=${signals.openApprovals}`,
+            ...(blockedList.length > 0 ? [`被堵 scope：${blockedList.join(", ")}`] : []),
+            ...(safeBypassAllowed ? ["safe_bypass：允许一次只读 turn"] : []),
+          ],
+          userGate: { kind: "approval", summary, blockedScopes: blockedList },
+          skipTicks: 0,
+          shouldSuspendTerminal: false,
+          skipOnlyDecrement: false,
+          safeBypassAllowed,
+          blockedScopes: blockedList,
+          nextState: {
+            ...state,
+            lastMode: "wait_user_gate",
+            skipRemaining: 0,
+            lastSkipTicks: 0,
+            quietStreak: 0,
+            terminalAt: null,
+            safeBypassGateKey: gateKey,
+            // 本决策不置 used——引擎在实际派发只读 turn 后 stamp
+            safeBypassUsed: bypassUsed,
+          },
+        };
+      }
+    }
+
     const kind: HeartbeatUserGate["kind"] = preferAsk ? "ask_user" : "approval";
     const summary = preferAsk
       ? (signals.pendingAskUserSummary?.trim() ||
@@ -267,6 +376,7 @@ export function buildHeartbeatDecision(signals: HeartbeatSignals): HeartbeatDeci
       skipTicks: 0,
       shouldSuspendTerminal: false,
       skipOnlyDecrement: false,
+      safeBypassAllowed: false,
       nextState: {
         ...state,
         lastMode: "wait_user_gate",
