@@ -63,7 +63,7 @@ export function getCompactSettings(config: AppConfig) {
     triggerRatio: Math.min(0.95, Math.max(0.05, compact.triggerRatio ?? DEFAULT_COMPACT_TRIGGER_RATIO)),
     keepRecent: Math.max(2, compact.keepRecent ?? DEFAULT_COMPACT_KEEP_RECENT),
     keepRecentTokens: Math.max(
-      100,
+      1,
       typeof keepRecentTokensRaw === "number" && Number.isFinite(keepRecentTokensRaw)
         ? keepRecentTokensRaw
         : DEFAULT_KEEP_RECENT_TOKENS,

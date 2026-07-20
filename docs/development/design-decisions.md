@@ -1449,3 +1449,42 @@ PR-3 后心跳仍是「cron 到点 → 预算检查 → 直接 dispatch」。缺
 | 通知冷却 | `Approval.lastNotifiedAt` + `config.approvalGate.notifyCooldownMs`（默认 30min）；单点 `notifyPendingApprovalIfCooldownAllows` |
 
 **回答**：按上表落地（分支 `feat/approval-scope`→master）
+
+---
+
+## W1 会话树（2026-07-21，feat/session-tree）
+
+### 背景
+
+ChatMessage 原为扁平线性链，无分支/书签。对齐 pi tree-structured sessions，在 SQLite 行存储上映射 parentId 树 + activeLeafId 游标。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| Schema | `ChatMessage.parentId` / `label`；`ChatSession.activeLeafId`；kind 扩 `branch_summary` |
+| 写入 | 消息 create + activeLeafId 推进同事务；parentId=当前叶 |
+| 读取 | 活跃路径 = 从 activeLeafId 沿 parentId 回溯；LLM/列表默认只走活跃路径 |
+| 切换 | `switchBranch` 更新叶；被放弃旁路生成 `branch_summary`（失败不阻断切换） |
+| 书签 | `setLabel`；摘要默认不进 LLM 上下文 |
+
+**回答**：按上表落地（分支 `feat/session-tree`→master）
+
+---
+
+## W5 compaction 切割 / stall / wastedTokens（2026-07-21，feat/compaction-stall-budget）
+
+### 背景
+
+压缩切点可落在 tool 对中间；心跳无 stall 自愈；预算不区分空转。移植 pi 切割规则 + loopx stall/spend 观测。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 切割 | `keepRecentTokens` 定初切点，不安全则向旧侧移到 tool 对边界；`compactBoundaryMessageId` 显式列 |
+| overflow | context-overflow 压缩后原请求重试一次 |
+| stall | 连续 2 无产出→repair；repair 后再 2→terminal（复用 suspended）+ 通知 |
+| wastedTokens | 日预算扣减不变；无产出 run token 另记 wastedTokens，brief 展示空转占比（≥50% 告警）；v1 不拦截 |
+
+**回答**：按上表落地（分支 `feat/compaction-stall-budget`→master）

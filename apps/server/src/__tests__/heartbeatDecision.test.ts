@@ -136,7 +136,7 @@ describe("heartbeatDecision 决策表", () => {
     expect(d.reasons.some((r) => r.includes("重置"))).toBe(true);
   });
 
-  it("有队列且上轮无产出 → repair", () => {
+  it("有队列且连续 2 轮无产出 → repair", () => {
     const d = buildHeartbeatDecision(
       baseSignals({
         queuedItems: 2,
@@ -144,6 +144,8 @@ describe("heartbeatDecision 决策表", () => {
         lastRunId: "run-1",
         lastRunProductive: false,
         consecutiveFailures: 0,
+        // 上一 tick 已记 1 次无产出 → 本 tick 凑满 2 进 repair
+        decisionState: { ...emptyDecisionState(), stallUnproductiveStreak: 1 },
       }),
     );
     expect(d.mode).toBe("repair");

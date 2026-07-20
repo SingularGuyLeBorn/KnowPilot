@@ -303,18 +303,23 @@ describe("maybeCompactMessages 使用切割点", () => {
   });
 
   it("超阈值时按 keepRecentTokens 切，保留段不含残缺 tool 对", async () => {
+    // 内容需超过 resolveCompactCharThreshold(model, 0.05)（约数万字符）
     const msgs: LlmMessage[] = [{ role: "system", content: "sys" }];
-    for (let i = 0; i < 20; i++) {
-      msgs.push({ role: "user", content: `u${i}-` + "x".repeat(300) });
+    for (let i = 0; i < 40; i++) {
+      msgs.push({ role: "user", content: `u${i}-` + "x".repeat(2000) });
       const id = `c${i}`;
       msgs.push(
         assistantWithTools([id], i % 2 === 0 ? ["read_file"] : ["write_file"], [
           { path: `f${i}.ts` },
         ]),
       );
-      msgs.push(toolResult(id, "r".repeat(100)));
+      msgs.push(toolResult(id, "r".repeat(800)));
     }
-    const result = await maybeCompactMessages(makeConfig({ keepRecentTokens: 120 }), msgs, "deepseek-v4-flash");
+    const result = await maybeCompactMessages(
+      makeConfig({ keepRecentTokens: 400, keepRecent: 2 }),
+      msgs,
+      "deepseek-v4-flash",
+    );
     expect(result.compacted).toBe(true);
     expect(toolPairsComplete(result.messages)).toBe(true);
     expect(result.fileDetails).toBeDefined();

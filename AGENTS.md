@@ -550,4 +550,4 @@ reflection:
 
 ---
 
-> 最后更新：2026-07-21。L1–L5 已全部落地；2026-07-20/21 重构套件 PR-1～PR-6（含 PR-4 投递对账 B1–B7）与 W2/W3/W4 已合入 master；P0 Agent 架构 PR-1～7 已验收；W1–W12 / v4 / v7～v10 既有落地见上。
+> 最后更新：2026-07-21。L1–L5 已全部落地；2026-07-20/21 重构套件 **PR-1～PR-6 + W1～W5 已全部合入 master**（W1 会话树 parentId/activeLeafId；W2 心跳决策层；W3 审批 scope；W4 context 钩子；W5 compaction 切割/stall/wastedTokens）；P0 Agent 架构 PR-1～7 已验收；W1–W12 / v4 / v7～v10 既有落地见上。
