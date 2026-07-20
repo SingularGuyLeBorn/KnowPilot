@@ -32,6 +32,7 @@ import { getEventBus, type EntityEventPayload } from "./eventBus.js";
 import { expireStaleApprovals } from "./approvalGate.js";
 import { createMemoryRepository, decayMemories, consolidateMemories } from "./memoryRepository.js";
 import { sendEmailNotification } from "./emailNotifier.js";
+import { claimExclusiveSessionTaskRun } from "./taskClaim.js";
 import { HEARTBEAT_MAX_CONSECUTIVE_FAILURES } from "@knowpilot/shared";
 import {
   closeLoopGate,
@@ -327,15 +328,6 @@ export class HeartbeatEngine {
         });
       }
 
-      // 检查 session 是否正在流式（#9：每个 Agent 同时只处理一个流式任务）
-      const runningTask = await this.prisma.task.findFirst({
-        where: { sessionId: session.id, status: "running" },
-      });
-      if (runningTask) {
-        console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 正在执行任务，跳过本次心跳`);
-        return;
-      }
-
       // 注入心跳消息（source="system"）
       // 走 MessageService.create 以广播 message_upserted（INV-6：消息持久化广播一致性），
       // 否则心跳消息只在 DB、前端 MessageStore 收不到 → 心跳触发的会话前端看不到触发消息直到刷新。
@@ -357,12 +349,14 @@ export class HeartbeatEngine {
         parentId: agent.parentId,
       };
 
-      // 创建 Task 记录
+      // C1：入队先落 queued；获槽/真正起跑时再原子认领 running（与池口径合一）
       const task = await this.prisma.task.create({
         data: {
           name: `[heartbeat] ${agent.name}`,
           type: "oneshot",
-          status: "running",
+          status: "queued",
+          queuedAt: new Date(),
+          reentrant: false,
           sessionId: session.id,
           input: {
             kind: "heartbeat",
@@ -377,109 +371,160 @@ export class HeartbeatEngine {
       // W10：心跳执行统一走 SwarmOrchestrator 中介者（并发池/结果聚合/Log 审计公共骨架，#13 并发控制不变）；
       // LoopContract、预算检查、心跳状态回写等入口语义保留在本闭包内，不搬进中介者。
       const orchestrator = getSwarmOrchestrator(this.config, this.services);
-      await orchestrator.dispatch({
-        origin: "heartbeat",
-        schedule: "pool",
-        sessionId: session.id,
-        workspaceId: agent.workspaceId ?? null,
-        jobId: task.id,
-        taskLabel: `[heartbeat] ${agent.name}`,
-        execute: async (signal): Promise<SwarmTaskOutcome> => {
-          try {
-            const { runAgentLoop } = await import("./agentRuntime.js");
-            // W10：删除返回 undefined 的 invokeTrpc 桩——心跳 Agent 与 trigger/async 入口
-            // 共用同一 invokeTrpc 通道，invoke_api 等工具调用拿到真实 tRPC 结果回传 ReAct 循环。
-            const invokeTrpc = createTrpcInvoker({ services: this.services, prisma: this.prisma });
-
-            const loop = await runAgentLoop({
-              config: this.config,
-              services: this.services,
-              agent: {
-                model: heartbeatModel,
-                systemPrompt: `${agent.systemPrompt}\n\n你因心跳机制被自动唤醒。任务目标：${hb.goal}\n完成后用简洁中文汇总结果。`,
-                tools: agentSnapshot.tools,
-              },
-              messages: [{ role: "user", content: hb.goal }],
-              invokeTrpc,
-              signal,
-              // W11：补全 run 上下文，心跳 Run 行可溯源（agent/session/runOrigin）
-              sessionId: session.id,
-              agentMeta: agentSnapshot,
-              runOrigin: "heartbeat",
-              runInput: { heartbeat: true, goal: hb.goal, taskId: task.id },
-            });
-
-            await this.prisma.task.update({
-              where: { id: task.id },
-              data: {
-                status: "success",
-                output: { asyncResult: loop.content, tokenUsage: loop.tokenUsage },
-                // 修复：心跳 Task 标记已投递，避免 pullAsyncDeliveries 误判为待投递异步结果
-                delivered: true,
-                deliveredAt: new Date(),
-              },
-            });
-            await this.updateHeartbeatStatus(agentId, "success", hb, {
-              evidenceSummary: typeof loop.content === "string" ? loop.content.slice(0, 500) : "心跳完成",
-              taskId: task.id,
-              applyLoopContract: agent.tier === "super",
-            });
-            console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳完成`);
-            return {
-              status: "success",
-              content: typeof loop.content === "string" ? loop.content.slice(0, 500) : "心跳完成",
-            };
-          } catch (err: unknown) {
-            const isAbort = err instanceof Error && err.name === "AbortError";
-            const reason = isAbort ? "cancelled" : "failed";
-            await this.prisma.task.update({
-              where: { id: task.id },
-              data: {
-                status: "failed",
-                output: { error: err instanceof Error ? err.message : String(err) },
-                // 修复：心跳 Task 失败也标记已投递，避免 pullAsyncDeliveries 误判
-                delivered: true,
-                deliveredAt: new Date(),
-              },
-            }).catch((err) => {
-              console.warn(`  💓 [HeartbeatEngine] 标记心跳任务 failed 失败 task=${task.id}:`, err instanceof Error ? err.message : err);
-            });
-            await this.updateHeartbeatStatus(agentId, reason, hb, {
-              evidenceSummary: err instanceof Error ? err.message : String(err),
-              taskId: task.id,
-              applyLoopContract: agent.tier === "super",
-            });
-
-            // 连续失败达阈值 → 邮件告警（#4）。=== 判定：每个失败 streak 只告警一次，
-            // 避免第 4、5… 次失败重复轰炸收件箱；streak 清零（success）后再次达阈值会重新告警
-            if (reason === "failed") {
-              const updatedHb = this.parseHeartbeat(
-                (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
-              );
-              if (updatedHb && updatedHb.consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
-                const lastError = err instanceof Error ? err.message : String(err);
-                const notify = await sendEmailNotification(this.config, this.services.log, {
-                  subject: `[KnowPilot] Agent「${agent.name}」心跳连续失败 ${updatedHb.consecutiveFailures} 次`,
-                  body: `Agent「${agent.name}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次，心跳已自动暂停（suspended，已持久化）。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态；修复后保存该 Agent 的心跳配置（cron/goal/心跳模型变更会清零失败计数并自动恢复），重启服务不再自动恢复。`,
-                  agentId,
-                });
-                if ("error" in notify) {
-                  console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，邮件告警未发送：${notify.error}`);
-                } else {
-                  console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，已邮件告警用户`);
-                }
-              }
-              // W12：达阈值（含恢复后再失败）→ 暂停该 Agent 心跳（幂等）
-              if (updatedHb && updatedHb.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                await this.suspendHeartbeat(agentId, agent.name);
-              }
+      try {
+        await orchestrator.dispatch({
+          origin: "heartbeat",
+          schedule: "pool",
+          sessionId: session.id,
+          workspaceId: agent.workspaceId ?? null,
+          jobId: task.id,
+          taskLabel: `[heartbeat] ${agent.name}`,
+          execute: async (signal): Promise<SwarmTaskOutcome> => {
+            // 重叠闸 = 会话级原子认领：同 session 已有 running 或本行已被抢 → 落选收尾，不计失败 streak
+            const claimed = await claimExclusiveSessionTaskRun(this.prisma, task.id, session.id);
+            if (!claimed) {
+              await this.prisma.task.updateMany({
+                where: { id: task.id, status: { in: ["queued", "running"] } },
+                data: {
+                  status: "cancelled",
+                  finishedAt: new Date(),
+                  output: { error: "重叠跳过：同会话已有执行中任务" },
+                  delivered: true,
+                  deliveredAt: new Date(),
+                },
+              });
+              console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 正在执行任务，跳过本次心跳`);
+              return { status: "failed", error: "重叠跳过" };
             }
-            return { status: "failed", error: err instanceof Error ? err.message : String(err) };
-          }
-        },
-      });
+
+            try {
+              const { runAgentLoop } = await import("./agentRuntime.js");
+              // W10：删除返回 undefined 的 invokeTrpc 桩——心跳 Agent 与 trigger/async 入口
+              // 共用同一 invokeTrpc 通道，invoke_api 等工具调用拿到真实 tRPC 结果回传 ReAct 循环。
+              const invokeTrpc = createTrpcInvoker({ services: this.services, prisma: this.prisma });
+
+              const loop = await runAgentLoop({
+                config: this.config,
+                services: this.services,
+                agent: {
+                  model: heartbeatModel,
+                  systemPrompt: `${agent.systemPrompt}\n\n你因心跳机制被自动唤醒。任务目标：${hb.goal}\n完成后用简洁中文汇总结果。`,
+                  tools: agentSnapshot.tools,
+                },
+                messages: [{ role: "user", content: hb.goal }],
+                invokeTrpc,
+                signal,
+                // W11：补全 run 上下文，心跳 Run 行可溯源（agent/session/runOrigin）
+                sessionId: session.id,
+                agentMeta: agentSnapshot,
+                runOrigin: "heartbeat",
+                runInput: { heartbeat: true, goal: hb.goal, taskId: task.id },
+              });
+
+              await this.prisma.task.update({
+                where: { id: task.id },
+                data: {
+                  status: "success",
+                  finishedAt: new Date(),
+                  output: { asyncResult: loop.content, tokenUsage: loop.tokenUsage },
+                  // 修复：心跳 Task 标记已投递，避免 pullAsyncDeliveries 误判为待投递异步结果
+                  delivered: true,
+                  deliveredAt: new Date(),
+                },
+              });
+              await this.updateHeartbeatStatus(agentId, "success", hb, {
+                evidenceSummary: typeof loop.content === "string" ? loop.content.slice(0, 500) : "心跳完成",
+                taskId: task.id,
+                applyLoopContract: agent.tier === "super",
+              });
+              console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳完成`);
+              return {
+                status: "success",
+                content: typeof loop.content === "string" ? loop.content.slice(0, 500) : "心跳完成",
+              };
+            } catch (err: unknown) {
+              const isAbort = err instanceof Error && err.name === "AbortError";
+              const reason = isAbort ? "cancelled" : "failed";
+              await this.prisma.task.update({
+                where: { id: task.id },
+                data: {
+                  status: "failed",
+                  finishedAt: new Date(),
+                  output: { error: err instanceof Error ? err.message : String(err) },
+                  // 修复：心跳 Task 失败也标记已投递，避免 pullAsyncDeliveries 误判
+                  delivered: true,
+                  deliveredAt: new Date(),
+                },
+              }).catch((markErr) => {
+                console.warn(`  💓 [HeartbeatEngine] 标记心跳任务 failed 失败 task=${task.id}:`, markErr instanceof Error ? markErr.message : markErr);
+              });
+              await this.updateHeartbeatStatus(agentId, reason, hb, {
+                evidenceSummary: err instanceof Error ? err.message : String(err),
+                taskId: task.id,
+                applyLoopContract: agent.tier === "super",
+              });
+
+              // 连续失败达阈值 → 邮件告警（#4）。=== 判定：每个失败 streak 只告警一次，
+              // 避免第 4、5… 次失败重复轰炸收件箱；streak 清零（success）后再次达阈值会重新告警
+              if (reason === "failed") {
+                await this.maybeSuspendAfterFailure(
+                  agentId,
+                  agent.name,
+                  err instanceof Error ? err.message : String(err),
+                );
+              }
+              return { status: "failed", error: err instanceof Error ? err.message : String(err) };
+            }
+          },
+        });
+      } catch (dispatchErr: unknown) {
+        // C1：池准入拒绝（maxQueued）→ 已建 Task 行必须收尾 failed「队列满」，并计入失败 streak（熔断可见）
+        const msg = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
+        const queueFull = /队列已满|maxQueued/i.test(msg);
+        const errorText = queueFull ? "队列满" : msg;
+        await this.prisma.task.updateMany({
+          where: { id: task.id, status: { in: ["queued", "running"] } },
+          data: {
+            status: "failed",
+            finishedAt: new Date(),
+            output: { error: errorText },
+            delivered: true,
+            deliveredAt: new Date(),
+          },
+        });
+        await this.updateHeartbeatStatus(agentId, "failed", hb, {
+          evidenceSummary: errorText,
+          taskId: task.id,
+          applyLoopContract: agent.tier === "super",
+        });
+        await this.maybeSuspendAfterFailure(agentId, agent.name, errorText);
+        console.error(`  ❌ [HeartbeatEngine] Agent ${agentId} 心跳入池失败:`, msg);
+      }
     } catch (err: unknown) {
       console.error(`  ❌ [HeartbeatEngine] Agent ${agentId} 心跳触发失败:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** 失败 streak 达阈值 → 邮件告警一次 + suspend（幂等） */
+  private async maybeSuspendAfterFailure(agentId: string, agentName: string, lastError: string): Promise<void> {
+    const updatedHb = this.parseHeartbeat(
+      (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
+    );
+    if (!updatedHb) return;
+    if (updatedHb.consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
+      const notify = await sendEmailNotification(this.config, this.services.log, {
+        subject: `[KnowPilot] Agent「${agentName}」心跳连续失败 ${updatedHb.consecutiveFailures} 次`,
+        body: `Agent「${agentName}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次，心跳已自动暂停（suspended，已持久化）。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态；修复后保存该 Agent 的心跳配置（cron/goal/心跳模型变更会清零失败计数并自动恢复），重启服务不再自动恢复。`,
+        agentId,
+      });
+      if ("error" in notify) {
+        console.warn(`  💓 [HeartbeatEngine] Agent ${agentName} 连续失败 ${updatedHb.consecutiveFailures} 次，邮件告警未发送：${notify.error}`);
+      } else {
+        console.log(`  💓 [HeartbeatEngine] Agent ${agentName} 连续失败 ${updatedHb.consecutiveFailures} 次，已邮件告警用户`);
+      }
+    }
+    if (updatedHb.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      await this.suspendHeartbeat(agentId, agentName);
     }
   }
 
