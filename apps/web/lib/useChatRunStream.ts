@@ -525,8 +525,10 @@ export function useChatRunStream({
               const isNoStream =
                 typeof message === "string" && message.includes("没有运行中的 Agent 流");
               if (opts.isResume && isNoStream) {
-                streamLifecycleActions.clearError(originSid);
-                streamLifecycleActions.commitStream(originSid);
+                // resume 无流：ABORT 释放 streaming 占用（勿 COMMIT 直跳）
+                streamLifecycleActions.abortStream(originSid, {
+                  partialAssistantMessageId: null,
+                });
                 void hydrateSessionMessagesFallback(originSid);
                 return;
               }
@@ -587,9 +589,12 @@ export function useChatRunStream({
         streamLifecycleActions.setConnected(originSid, false);
         if (!isPageUnloadingRef.current) {
           const phase = streamLifecycleStore.get(originSid).phase;
-          // 异常退出仍停在 streaming：强制 commit 释放占用
+          // 异常退出仍停在 streaming：ABORT_STREAM 合法释放（禁止 COMMIT 直跳 INV-1）
           if (phase === "streaming") {
-            streamLifecycleActions.commitStream(originSid);
+            streamLifecycleActions.abortStream(originSid, {
+              partialAssistantMessageId: null,
+              leftoverContent: streamLifecycleStore.get(originSid).streamingContent,
+            });
           }
         }
         sessionComposeActions.setActiveAbortController(originSid, null);

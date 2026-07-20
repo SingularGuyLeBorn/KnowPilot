@@ -6,7 +6,9 @@
  * phase: idle → streaming → done | error → idle
  *
  * 不变量（INV）：
- * - INV-1：done → idle 只能经 commitStream（MessageStore 已承接本轮 assistant）
+ * - INV-1：done → idle 只能经 commitStream（MessageStore 已承接本轮 assistant）。
+ *   COMMIT_STREAM 合法源相位：done | error。streaming 非法（dev console.error，生产 no-op）。
+ *   流式中道崩殂释放占用走 ABORT_STREAM，禁止 commitStream 直跳。
  * - INV-2：Compose 仅当 phase === idle 才可 beginStream（streaming|done = isRunOccupied）
  * - INV-3：过渡 UI（streamingContent/liveTimeline）在 commit 前不得被新 BEGIN_STREAM 清掉
  * - INV-4：渲染单一所有权 —— 一条 assistant 消息任一时刻只能有一个渲染源。
@@ -26,7 +28,18 @@
  *   占用中由 ② commit 兜底），由 onStreamCommitted 同款显式钩子消费；
  *   晚于请求才订阅的钩子用 takeDrainRequests() 一次性吃掉存量，不依赖订阅时序。
  *
- * 公开 API 全部语义化（beginStream / appendTokenDelta / completeStream / commitStream …），禁止 ssSet。
+ * 相位合法性表（action → 合法源相位）：
+ * - BEGIN_STREAM（非 resume）：idle
+ * - COMPLETE_STREAM：streaming
+ * - FAIL_STREAM：streaming | done
+ * - ABORT_STREAM：streaming | done
+ * - COMMIT_STREAM：done | error
+ * - CLEAR_ERROR：error（→ idle）
+ *
+ * ABORT_STREAM：partialAssistantMessageId 有值 → done（abort-pending，等 upsert 对齐）；
+ * null → 立即 idle（leftover/timeline 清空）。optimistic 清理由调用方 Compose 负责。
+ *
+ * 公开 API 全部语义化（beginStream / appendTokenDelta / completeStream / abortStream / commitStream …），禁止 ssSet。
  * 队列、optimistic、abort 不进本 store（见 useSessionComposeState）。
  */
 
@@ -95,6 +108,13 @@ type Action =
       assistantMessageId: string | null;
     }
   | { type: "FAIL_STREAM"; sessionId: string; message: string }
+  | {
+      type: "ABORT_STREAM";
+      sessionId: string;
+      /** 有 id → abort-pending（done）；null → 立即 idle */
+      partialAssistantMessageId: string | null;
+      leftoverContent?: string;
+    }
   | { type: "CLEAR_ERROR"; sessionId: string }
   | { type: "COMMIT_STREAM"; sessionId: string }
   | { type: "MARK_INFLIGHT_ASSISTANT"; sessionId: string; messageId: string }
@@ -209,7 +229,16 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
     case "SET_LAST_ROUND_TOKENS":
       return set(action.sessionId, { ...get(action.sessionId), lastRoundTokens: action.tokens });
     case "COMPLETE_STREAM": {
+      // 合法源：streaming
       const s = get(action.sessionId);
+      if (s.phase !== "streaming") {
+        if (process.env.NODE_ENV !== "production") {
+          console.error(
+            `[StreamLifecycle] COMPLETE_STREAM blocked: session ${action.sessionId} phase=${s.phase}`,
+          );
+        }
+        return state;
+      }
       return set(action.sessionId, {
         ...s,
         phase: "done",
@@ -221,7 +250,16 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
       });
     }
     case "FAIL_STREAM": {
+      // 合法源：streaming | done
       const s = get(action.sessionId);
+      if (s.phase !== "streaming" && s.phase !== "done") {
+        if (process.env.NODE_ENV !== "production") {
+          console.error(
+            `[StreamLifecycle] FAIL_STREAM blocked: session ${action.sessionId} phase=${s.phase}`,
+          );
+        }
+        return state;
+      }
       return set(action.sessionId, {
         ...s,
         phase: "error",
@@ -235,6 +273,37 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         drainRequested: false,
       });
     }
+    case "ABORT_STREAM": {
+      // 合法源：streaming | done
+      // 有 partialId → done（abort-pending，等 MessageStore 对齐后再 COMMIT）；
+      // null → 立即 idle（leftover/timeline 清空，释放占用）
+      const s = get(action.sessionId);
+      if (s.phase !== "streaming" && s.phase !== "done") {
+        if (process.env.NODE_ENV !== "production") {
+          console.error(
+            `[StreamLifecycle] ABORT_STREAM blocked: session ${action.sessionId} phase=${s.phase}`,
+          );
+        }
+        return state;
+      }
+      const leftover = (action.leftoverContent ?? s.streamingContent).trim();
+      if (action.partialAssistantMessageId) {
+        return set(action.sessionId, {
+          ...s,
+          phase: "done",
+          streamingContent: leftover,
+          error: null,
+          connected: false,
+          pendingAssistantMessageId: action.partialAssistantMessageId,
+          pendingAssistantContent: leftover || null,
+          drainRequested: false,
+        });
+      }
+      return set(action.sessionId, {
+        ...IDLE_STATE,
+        // 保留 error 字段以外的清场；abort 非 error 路径
+      });
+    }
     case "CLEAR_ERROR": {
       const s = get(action.sessionId);
       return set(action.sessionId, {
@@ -245,11 +314,20 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         drainRequested: s.phase === "error" ? false : s.drainRequested,
       });
     }
-    case "COMMIT_STREAM":
-      // INV-1：done→idle 的唯一清 UI 入口
+    case "COMMIT_STREAM": {
+      // INV-1：合法源 done | error；拒绝 streaming→idle 直跳
+      const s = get(action.sessionId);
+      if (s.phase !== "done" && s.phase !== "error") {
+        if (process.env.NODE_ENV !== "production") {
+          console.error(
+            `[StreamLifecycle] COMMIT_STREAM blocked: session ${action.sessionId} phase=${s.phase}（streaming 释放请用 ABORT_STREAM）`,
+          );
+        }
+        return state;
+      }
       // 进入 idle 的转移自身触发 notifyCommit（INV-8 ②），drainRequested 视为已消费
       return set(action.sessionId, {
-        ...get(action.sessionId),
+        ...s,
         liveTimeline: [],
         streamingContent: "",
         phase: "idle",
@@ -260,6 +338,7 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         connected: false,
         drainRequested: false,
       });
+    }
     case "MARK_INFLIGHT_ASSISTANT": {
       // INV-4：仅流式占用期间记录；idle 时到达的 upsert 是正常 stored 渲染，不屏蔽
       const s = get(action.sessionId);
@@ -420,6 +499,11 @@ function getStore(): StreamLifecycleStore {
   return globalStore;
 }
 
+/** 单测重置（勿在生产路径调用） */
+export function __resetStreamLifecycleStoreForTests(): void {
+  globalStore = null;
+}
+
 const EMPTY_STATE: StreamLifecycleState = IDLE_STATE;
 
 function matchesPending(
@@ -517,10 +601,24 @@ export const streamLifecycleActions = {
     getStore().dispatch({ type: "COMMIT_STREAM", sessionId });
     return true;
   },
-  /** 强制 done/error → idle（abort、空回复、无 assistantMessageId） */
+  /**
+   * 流式中道崩殂 / 用户停止：合法释放占用。
+   * - partialAssistantMessageId 有值 → done（abort-pending），等 upsert 对齐后 COMMIT
+   * - null → 立即 idle（清空 leftover/timeline）
+   */
+  abortStream(
+    sessionId: string,
+    opts: { partialAssistantMessageId: string | null; leftoverContent?: string },
+  ) {
+    getStore().dispatch({
+      type: "ABORT_STREAM",
+      sessionId,
+      partialAssistantMessageId: opts.partialAssistantMessageId,
+      leftoverContent: opts.leftoverContent,
+    });
+  },
+  /** done/error → idle（空回复、fail 后释放）。streaming/idle 由 reducer 拒绝（dev 报错） */
   commitStream(sessionId: string) {
-    const phase = getStore().get(sessionId).phase;
-    if (phase !== "done" && phase !== "error" && phase !== "streaming") return;
     getStore().dispatch({ type: "COMMIT_STREAM", sessionId });
   },
   /**
