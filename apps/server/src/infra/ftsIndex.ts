@@ -57,16 +57,26 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
     rows.push([entity, entityId, safeSlice(title, 500), safeSlice(body, 8000)]);
   };
 
-  const posts = await prisma.post.findMany({ select: { id: true, title: true, content: true, slug: true } });
+  // D5：重建时统一过滤墓碑（软删 post / deleted agent / superseded memory）
+  const posts = await prisma.post.findMany({
+    where: { deletedAt: null },
+    select: { id: true, title: true, content: true, slug: true },
+  });
   for (const p of posts) add("post", p.id, p.title, `${p.slug}\n${p.content ?? ""}`);
 
-  const agents = await prisma.agent.findMany({ select: { id: true, name: true, description: true, systemPrompt: true } });
+  const agents = await prisma.agent.findMany({
+    where: { status: { not: "deleted" } },
+    select: { id: true, name: true, description: true, systemPrompt: true },
+  });
   for (const a of agents) add("agent", a.id, a.name, `${a.description ?? ""}\n${a.systemPrompt ?? ""}`);
 
   const skills = await prisma.skill.findMany({ select: { id: true, name: true, description: true, code: true } });
   for (const s of skills) add("skill", s.id, s.name, `${s.description}\n${s.code}`);
 
-  const memories = await prisma.memory.findMany({ select: { id: true, content: true, type: true } });
+  const memories = await prisma.memory.findMany({
+    where: { status: { not: "superseded" } },
+    select: { id: true, content: true, type: true },
+  });
   for (const m of memories) add("memory", m.id, m.type, m.content);
 
   const tasks = await prisma.task.findMany({ select: { id: true, name: true, cronExpression: true } });
@@ -74,6 +84,11 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
 
   const mcps = await prisma.mcpServer.findMany({ select: { id: true, name: true, command: true } });
   for (const m of mcps) add("mcp", m.id, m.name, m.command);
+
+  const prompts = await prisma.prompt.findMany({
+    select: { id: true, name: true, description: true, content: true },
+  });
+  for (const p of prompts) add("prompt", p.id, p.name, `${p.description ?? ""}\n${p.content ?? ""}`);
 
   const messages = await prisma.chatMessage.findMany({
     where: { role: { in: ["user", "assistant"] } },

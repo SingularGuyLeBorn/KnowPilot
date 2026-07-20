@@ -18,11 +18,11 @@
  * ServiceContainer / MemoryService 均为 type-only 导入，不引入 ReAct 环内模块。
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
-import type { MemoryService } from "../services.js";
-import { searchFts } from "./ftsIndex.js";
+import type { MemoryEntity, MemoryService } from "../services.js";
+import { deleteFtsRow, searchFts } from "./ftsIndex.js";
 import {
   MEMORY_ARCHIVE_THRESHOLD,
   MEMORY_DECAY_FACTOR_PER_DAY,
@@ -32,6 +32,10 @@ import {
   memoryAgentScope,
   memoryWorkspaceScope,
 } from "@knowpilot/shared";
+
+function newMemoryId(): string {
+  return `c${Date.now().toString(36)}${randomBytes(8).toString("hex")}`;
+}
 
 export interface MemoryItem {
   id: string;
@@ -278,6 +282,10 @@ export class PrismaMemoryRepository implements MemoryRepository {
       if (this.memoryService) {
         const updated = await this.memoryService.update({ id: existing.id, strength } as any);
         if (updated.success && updated.data) return toItem(updated.data as any);
+      } else {
+        console.error(
+          "[MemoryRepository] memoryService 缺省：strength 刷新走裸 Prisma，跳过文件写回与 FTS",
+        );
       }
       const raw = await this.prisma.memory.update({ where: { id: existing.id }, data: { strength } });
       return toItem(raw);
@@ -305,6 +313,9 @@ export class PrismaMemoryRepository implements MemoryRepository {
       }
       return toItem(created.data as any);
     }
+    console.error(
+      "[MemoryRepository] memoryService 缺省：create 走裸 Prisma，跳过文件写回与 FTS",
+    );
     const raw = await this.prisma.memory.create({
       data: {
         content: createInput.content,
@@ -326,7 +337,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
 
   /**
    * 软版本链更新：新建 active 行，旧行标 superseded + supersededBy。
-   * 传入已 superseded 的 id 时沿链跟到当前 active 再挂新版。
+   * D8：两步 DB 写包 $transaction；文件/FTS 按 D1 顺序在事务外先行/补做。
    */
   async supersedeUpdate(input: MemorySupersedeUpdateInput): Promise<{
     previousId: string;
@@ -345,28 +356,102 @@ export class PrismaMemoryRepository implements MemoryRepository {
         ? Math.min(1, Math.max(0, input.strength))
         : head.strength;
 
-    const created = await this.write({
-      content,
-      type,
-      scope: head.scope,
-      strength,
-      keywords,
+    // 同内容 hash 命中 → 走 write 幂等刷新，无需软链
+    const contentHash = hashMemoryContent(content);
+    const same = await this.prisma.memory.findFirst({
+      where: { scope: head.scope, contentHash, status: MEMORY_STATUS_ACTIVE },
     });
-
-    // 同内容 hash 命中 write 幂等：可能返回同一行——此时无需软链
-    if (created.id === head.id) {
-      return { previousId: head.id, memory: created };
+    if (same && same.id === head.id) {
+      const refreshed = await this.write({ content, type, scope: head.scope, strength, keywords });
+      return { previousId: head.id, memory: refreshed };
+    }
+    if (same && same.id !== head.id) {
+      // 已有另一 active 同内容：直接挂链到该行（仍事务化标旧）
+      await this.prisma.$transaction([
+        this.prisma.memory.update({
+          where: { id: head.id },
+          data: { status: MEMORY_STATUS_SUPERSEDED, supersededBy: same.id } as any,
+        }),
+      ]);
+      try {
+        await deleteFtsRow(this.prisma, "memory", head.id);
+      } catch {
+        /* best-effort */
+      }
+      return { previousId: head.id, memory: toItem(same as any) };
     }
 
-    await this.prisma.memory.update({
-      where: { id: head.id },
-      data: {
-        status: MEMORY_STATUS_SUPERSEDED,
-        supersededBy: created.id,
-      } as any,
-    });
+    const newId = newMemoryId();
+    const agentId = agentIdFromScope(head.scope);
+    const now = new Date();
+    const provisional: MemoryEntity = {
+      id: newId,
+      content,
+      type,
+      strength,
+      keywords,
+      scope: head.scope,
+      agentId,
+      status: MEMORY_STATUS_ACTIVE,
+      attribution: "agent",
+      validFrom: null,
+      validTo: null,
+      supersededBy: null,
+      createdAt: now,
+      updatedAt: now,
+    };
 
-    return { previousId: head.id, memory: created };
+    // 文件先行（D1）；无 memoryService 时显式告警后仅写 DB
+    if (this.memoryService) {
+      this.memoryService.writeContentFile(provisional);
+    } else {
+      console.error(
+        "[MemoryRepository] memoryService 缺省：supersede 跳过文件写回与 FTS，仅事务写 DB",
+      );
+    }
+
+    try {
+      const [created] = await this.prisma.$transaction([
+        this.prisma.memory.create({
+          data: {
+            id: newId,
+            content,
+            type,
+            strength,
+            keywords: keywords.join(","),
+            scope: head.scope,
+            agentId,
+            contentHash,
+            status: MEMORY_STATUS_ACTIVE,
+            attribution: "agent",
+          } as any,
+        }),
+        this.prisma.memory.update({
+          where: { id: head.id },
+          data: {
+            status: MEMORY_STATUS_SUPERSEDED,
+            supersededBy: newId,
+          } as any,
+        }),
+      ]);
+
+      if (this.memoryService) {
+        await this.memoryService.finalizeContentProjection(toItem(created as any) as any);
+        // 旧版出索引（与 rebuild 墓碑过滤对齐）
+        try {
+          await deleteFtsRow(this.prisma, "memory", head.id);
+        } catch {
+          /* best-effort */
+        }
+      }
+
+      return { previousId: head.id, memory: toItem(created as any) };
+    } catch (e) {
+      if (this.memoryService) {
+        this.memoryService.deleteContentFile(provisional);
+      }
+      throw e;
+    }
   }
 
   /** 沿 supersededBy 跟到当前 active（防环，最多 32 跳） */
@@ -428,6 +513,9 @@ export class PrismaMemoryRepository implements MemoryRepository {
         const r = await this.memoryService.delete(row.id);
         if (r.success) deleted++;
       } else {
+        console.error(
+          "[MemoryRepository] memoryService 缺省：forget 走裸 Prisma delete，跳过文件写回与 FTS",
+        );
         await this.prisma.memory.delete({ where: { id: row.id } });
         deleted++;
       }

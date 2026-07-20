@@ -8,6 +8,7 @@
 import { PrismaClient } from "@prisma/client";
 import fs from "fs";
 import { Syncer, SyncRecord } from "./types.js";
+import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
 import { getFilesRecursive, parseYamlFile, filePathToSlug, readBoolean, getFileMtime } from "./utils.js";
 
 interface McpServerData {
@@ -84,7 +85,7 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
   async upsert(prisma: PrismaClient, record: SyncRecord<McpServerData>): Promise<void> {
     const { slug, mtime, data } = record;
 
-    await prisma.mcpServer.upsert({
+    const row = await prisma.mcpServer.upsert({
       where: { name: data.name },
       update: {
         transport: data.transport,
@@ -110,10 +111,23 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
         sourceMtime: mtime,
       },
     });
+    try {
+      await upsertFtsRow(prisma, "mcp", row.id, row.name, row.command ?? "");
+    } catch (e) {
+      console.warn(`  ⚠️ [McpServer FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
+    }
   },
 
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const rows = await prisma.mcpServer.findMany({ where: { sourceSlug: slug }, select: { id: true } });
     const r = await prisma.mcpServer.deleteMany({ where: { sourceSlug: slug } });
+    for (const row of rows) {
+      try {
+        await deleteFtsRow(prisma, "mcp", row.id);
+      } catch (e) {
+        console.warn(`  ⚠️ [McpServer FTS] delete 失败 id=${row.id}:`, e instanceof Error ? e.message : e);
+      }
+    }
     return r.count;
   },
 

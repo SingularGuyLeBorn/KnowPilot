@@ -3,6 +3,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, getFileMtime } from "./utils.js";
 
@@ -22,7 +23,7 @@ export const postSyncer: Syncer<PostData> = {
   extensions: [".md"],
 
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<PostData>[]> {
-    const filePaths = getFilesRecursive(contentDir, [".md"]).filter((p) => !p.includes(`${contentDir}/.trash/`));
+    const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<PostData>[] = [];
     for (const filePath of filePaths) {
       const r = await this.scanFile!(filePath, contentDir);
@@ -89,11 +90,38 @@ export const postSyncer: Syncer<PostData> = {
         deletedAt: null,
       },
     });
+
+    // D5：watch/全量 upsert 与 DB 同处维护 FTS（墓碑不入索引）
+    const row = await prisma.post.findUnique({
+      where: { slug },
+      select: { id: true, title: true, content: true, slug: true, deletedAt: true },
+    });
+    if (row && !row.deletedAt) {
+      try {
+        await upsertFtsRow(prisma, "post", row.id, row.title, `${row.slug}\n${row.content ?? ""}`);
+      } catch (e) {
+        console.warn(`  ⚠️ [Post FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
+      }
+    } else if (row?.deletedAt) {
+      try {
+        await deleteFtsRow(prisma, "post", row.id);
+      } catch {
+        /* best-effort */
+      }
+    }
   },
 
   // #7：unlink 增量软删（与 cleanup 语义一致，进回收站可恢复）
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const rows = await prisma.post.findMany({ where: { slug, deletedAt: null }, select: { id: true } });
     const r = await prisma.post.updateMany({ where: { slug, deletedAt: null }, data: { deletedAt: new Date() } });
+    for (const row of rows) {
+      try {
+        await deleteFtsRow(prisma, "post", row.id);
+      } catch (e) {
+        console.warn(`  ⚠️ [Post FTS] delete 失败 id=${row.id}:`, e instanceof Error ? e.message : e);
+      }
+    }
     return r.count;
   },
 
@@ -109,7 +137,7 @@ export const postSyncer: Syncer<PostData> = {
     const diskSlugs = new Set<string>(activeSlugs);
     if (contentDir) {
       try {
-        const allFiles = getFilesRecursive(contentDir, [".md"]).filter((p) => !p.includes(`${contentDir}/.trash/`));
+        const allFiles = getFilesRecursive(contentDir, [".md"]);
         for (const filePath of allFiles) {
           try {
             diskSlugs.add(filePathToSlug(contentDir, filePath));
@@ -124,13 +152,18 @@ export const postSyncer: Syncer<PostData> = {
       }
     }
 
-    const allInDb = await prisma.post.findMany({ where: { deletedAt: null }, select: { slug: true, title: true } });
+    const allInDb = await prisma.post.findMany({ where: { deletedAt: null }, select: { id: true, slug: true, title: true } });
     let deleted = 0;
 
     for (const dbPost of allInDb) {
       if (!diskSlugs.has(dbPost.slug)) {
         // 改为软删：与 PostService.delete 语义一致，进回收站而非硬删，可恢复
         await prisma.post.update({ where: { slug: dbPost.slug }, data: { deletedAt: new Date() } });
+        try {
+          await deleteFtsRow(prisma, "post", dbPost.id);
+        } catch {
+          /* best-effort */
+        }
         console.log(`  🗑️ [Post 已软删] "${dbPost.title}" (本地文件已不存在，移入回收站)`);
         deleted++;
       }

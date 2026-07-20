@@ -8,6 +8,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
+import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, readNumber, getFileMtime } from "./utils.js";
 
 interface MemoryData {
@@ -70,6 +71,7 @@ export const memorySyncer: Syncer<MemoryData> = {
       where: { sourceSlug: slug },
     });
 
+    let rowId: string;
     if (existing) {
       await prisma.memory.update({
         where: { id: existing.id },
@@ -83,8 +85,9 @@ export const memorySyncer: Syncer<MemoryData> = {
           ...(data.scope ? { scope: data.scope } : {}),
         },
       });
+      rowId = existing.id;
     } else {
-      await prisma.memory.create({
+      const created = await prisma.memory.create({
         data: {
           content: data.content,
           type: data.type,
@@ -95,12 +98,32 @@ export const memorySyncer: Syncer<MemoryData> = {
           sourceMtime: mtime,
         },
       });
+      rowId = created.id;
+    }
+    const live = await prisma.memory.findUnique({
+      where: { id: rowId },
+      select: { id: true, content: true, type: true, status: true },
+    });
+    if (live && live.status !== "superseded") {
+      try {
+        await upsertFtsRow(prisma, "memory", live.id, live.type, live.content);
+      } catch (e) {
+        console.warn(`  ⚠️ [Memory FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
+      }
     }
   },
 
   // #7：unlink 增量硬删 by sourceSlug
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const rows = await prisma.memory.findMany({ where: { sourceSlug: slug }, select: { id: true } });
     const r = await prisma.memory.deleteMany({ where: { sourceSlug: slug } });
+    for (const row of rows) {
+      try {
+        await deleteFtsRow(prisma, "memory", row.id);
+      } catch (e) {
+        console.warn(`  ⚠️ [Memory FTS] delete 失败 id=${row.id}:`, e instanceof Error ? e.message : e);
+      }
+    }
     return r.count;
   },
 
