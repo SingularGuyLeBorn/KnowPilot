@@ -15,7 +15,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { AppConfig } from "./config.js";
 import type { AgentMessageInput, AgentMessageRecord, SwarmBus } from "./swarmBus.js";
-// 仅 type import，避免与 swarmBus 静态 import RedisSwarmBus 形成运行时环
+import { resolveServerDelegationDepth } from "./delegationDepth.js";
 import { SWARM_MAX_DEPTH, SWARM_MAX_QUEUE_SIZE } from "@knowpilot/shared";
 import {
   checkUpwardMessageTiming,
@@ -72,7 +72,8 @@ export class RedisSwarmBus implements SwarmBus {
     });
     if (crossError) return { success: false, error: crossError };
 
-    const depth = msg.depth ?? 1;
+    // B5：depth 服务端物化——不读调用方入参
+    const depth = await resolveServerDelegationDepth(this.prisma, msg.fromAgentId);
     if (depth > MAX_DEPTH) {
       return {
         success: false,

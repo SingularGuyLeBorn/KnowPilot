@@ -680,8 +680,9 @@ export async function requeueOrphanedSuperiorDrains(
 ): Promise<number> {
   const hub = getStreamHub();
   if (!hub) return 0;
+  // 仅未软认领项：claimedAt 非空交给 releaseStaleClaims 重置后再入本扫描
   const items = await services.prisma.sessionQueueItem.findMany({
-    where: { kind: "superior" },
+    where: { kind: "superior", claimedAt: null },
     select: { sessionId: true },
   });
   const sessionIds = [...new Set(items.map((i) => i.sessionId))];

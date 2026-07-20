@@ -217,4 +217,17 @@ describe("AsyncJobOrchestrator", () => {
     const orch = new AsyncJobOrchestrator({ maxGlobal: 1, maxPerSession: 1, taskTimeoutMs: 60_000 });
     expect(orch.stopSubagent("nonexistent")).toEqual({ stopped: false, wasRunning: false });
   });
+
+  it("B6：execute 同步 throw → runningGlobal 归零（旧实现泄漏槽位 → 旧实现即红）", async () => {
+    const orch = new AsyncJobOrchestrator({ maxGlobal: 2, maxPerSession: 2, taskTimeoutMs: 60_000 });
+    orch.enqueue({
+      jobId: "sync-throw",
+      sessionId: "s1",
+      execute: () => {
+        throw new Error("B6 同步抛错");
+      },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(orch.getStats().runningGlobal).toBe(0);
+  });
 });

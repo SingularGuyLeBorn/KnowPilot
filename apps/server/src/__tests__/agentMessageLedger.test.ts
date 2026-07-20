@@ -646,7 +646,7 @@ describe("W14 AgentMessage 投递记账回写", () => {
       expect(r2?.status).toBe("consumed");
       expect(r2?.deliveredAt?.getTime()).toBe(T1.getTime());
 
-      // ③ sessionQueueItem.consume()（superior 镜像队列消费路径）
+      // ③ sessionQueueItem.consume()+finalize()（superior 镜像：软认领后落地确认才标 consumed）
       const m3 = await prisma.agentMessage.create({
         data: { ...base, content: "W16a queue 真账" },
       });
@@ -660,6 +660,7 @@ describe("W14 AgentMessage 投递记账回写", () => {
         },
       });
       await ctx.services.sessionQueueItem.consume(item.id);
+      await ctx.services.sessionQueueItem.finalize(item.id);
       const r3 = await prisma.agentMessage.findUnique({ where: { id: m3.id } });
       expect(r3?.status).toBe("consumed");
       expect(r3?.deliveredAt?.getTime()).toBe(T1.getTime());

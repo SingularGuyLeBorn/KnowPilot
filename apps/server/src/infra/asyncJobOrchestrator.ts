@@ -415,8 +415,10 @@ export class AsyncJobOrchestrator {
       abortController(controller, "timeout");
     }, timeoutMs);
 
-    const execute = spec.execute(controller.signal);
-    void execute
+    // B6：同步 throw 必须进 Promise 失败路径——直接 spec.execute() 会穿透 start→drain→enqueue，
+    // finally 不执行 → runningGlobal 永久 +1。微任务包装把同步异常归入 catch/finally。
+    void Promise.resolve()
+      .then(() => spec.execute(controller.signal))
       .catch(() => {
         /* 执行者内部已捕获并更新 Task 状态；这里只需保证 finally 走通 */
       })

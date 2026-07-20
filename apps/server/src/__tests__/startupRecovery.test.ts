@@ -195,14 +195,13 @@ describe("R-2 重启恢复四动作（runStartupRecovery 首扫）", () => {
       expect((rowRunning?.output as { error?: string })?.error).toContain("服务重启");
       // 不自动重跑：没有新 run/新任务被创建，任务只是被标 failed（重试走 retryAsyncJob 手动）
       expect(rowRunning?.startedAt).toBeNull();
+      // B4：先 paused 全部 running 尸体（本例 zombie + sub 共 2），再 Task 恢复把 sub 覆写 failed
+      expect(r1.zombieSessionsPaused).toBe(2);
+      const zombieSession = await prisma.chatSession.findUnique({ where: { id: zombieSessionId } });
+      expect(zombieSession?.status).toBe("paused");
       // stale 任务的 subagent 会话同步标 failed（既有 recoverStaleAsyncJobs 语义收拢）
       const subSession = await prisma.chatSession.findUnique({ where: { id: subSessionId } });
       expect(subSession?.status).toBe("failed");
-
-      // 动作 2：僵尸 running 会话 → paused（旧实现无人收口，会话永久停 running，本断言必红）
-      expect(r1.zombieSessionsPaused).toBe(1);
-      const zombieSession = await prisma.chatSession.findUnique({ where: { id: zombieSessionId } });
-      expect(zombieSession?.status).toBe("paused");
 
       // 新鲜终态任务零误伤（旧实现无 Pass 2 时不红；防的是恢复函数误投在途交付）
       const freshRow = await prisma.task.findUnique({ where: { id: freshTerminal.id } });
@@ -261,11 +260,15 @@ describe("R-2 重启恢复四动作（runStartupRecovery 首扫）", () => {
     const ctx = await createContextInner();
     const parentAgentId = await createAgent(ctx, "C3父", "manager");
     const subAgentId = await createAgent(ctx, "C3子", "sub", parentAgentId);
-    // 跨重启留存的子 Agent 主会话（重启前 running 尸体 → 动作 2 先 paused，drain 重跑后 completed）
-    const subSessionId = await createSession(ctx, subAgentId, {
-      status: "running",
-      isMainSession: true,
-      kind: "subagent",
+    // Agent.create 已 ensureMainSession：复用该主会话挂队列（禁止第二条 isMainSession）
+    const main = await prisma.chatSession.findFirst({
+      where: { agentId: subAgentId, isMainSession: true, status: { not: "deleted" } },
+    });
+    if (!main) throw new Error("C3: 子 Agent 缺少自动主会话");
+    const subSessionId = main.id;
+    await prisma.chatSession.update({
+      where: { id: subSessionId },
+      data: { status: "running", kind: "subagent" },
     });
     const agentMsg = await prisma.agentMessage.create({
       data: {

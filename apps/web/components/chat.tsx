@@ -451,6 +451,7 @@ export function ChatView() {
   const createSessionQueueItemMutation = trpc.agent.createSessionQueueItem.useMutation();
   const submitInjectMutation = trpc.agent.submitInject.useMutation();
   const consumeSessionQueueItemMutation = trpc.agent.consumeSessionQueueItem.useMutation();
+  const finalizeSessionQueueItemMutation = trpc.agent.finalizeSessionQueueItem.useMutation();
   const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
   const reorderSessionQueueItemsMutation = trpc.agent.reorderSessionQueueItems.useMutation();
   const ackAsyncDeliveryMutation = trpc.agent.ackAsyncDelivery.useMutation();
@@ -790,6 +791,7 @@ export function ChatView() {
     isSessionRunOccupied,
     sessionsItems: sessionsQuery.data?.items,
     consumeSessionQueueItemMutation,
+    finalizeSessionQueueItemMutation,
     ackAsyncDeliveryMutation,
     asyncQueueQuery,
     runStream,
