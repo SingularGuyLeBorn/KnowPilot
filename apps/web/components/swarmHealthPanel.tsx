@@ -87,6 +87,18 @@ export function SwarmHealthPanel({
         <p className="flex items-center gap-1 text-[10px] text-rose-700 dark:text-rose-300">
           <PauseCircle className="h-3 w-3" />
           心跳熔断于 {new Date(data.heartbeat.suspendedAt).toLocaleString("zh-CN", { hour12: false })}
+          {data.heartbeat.terminalAt ? "（目标闭合）" : ""}
+        </p>
+      )}
+      {data.heartbeat.lastMode && (
+        <p className="text-[10px] text-[var(--kp-text-3)]" data-testid="swarm-heartbeat-decision">
+          决策 {data.heartbeat.lastMode}
+          {data.heartbeat.skipRemaining != null && data.heartbeat.skipRemaining > 0
+            ? ` · 退避剩余 ${data.heartbeat.skipRemaining}`
+            : ""}
+          {data.heartbeat.quietStreak != null && data.heartbeat.quietStreak > 0
+            ? ` · quiet×${data.heartbeat.quietStreak}`
+            : ""}
         </p>
       )}
       {data.inbox.preview.length > 0 && (
