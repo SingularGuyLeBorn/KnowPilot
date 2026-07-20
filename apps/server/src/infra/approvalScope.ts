@@ -221,20 +221,28 @@ export function deriveRequiredScopesFromTools(tools: string[]): string[] {
   return [...out];
 }
 
+/** 去掉 native:/skill:/mcp: 前缀，便于与 registry 名对齐 */
+function bareToolName(toolName: string): string {
+  return String(toolName ?? "").replace(/^(native|skill|mcp):/, "").trim();
+}
+
 /** 只读工具：registry 上 reentrant=true（与可重入只读集对齐） */
 export function isReadonlyTool(toolName: string): boolean {
-  const tool = getTool(toolName);
+  const bare = bareToolName(toolName);
+  if (!bare) return false;
+  const tool = getTool(bare) ?? getTool(toolName);
   if (tool?.reentrant === true) return true;
   // registry 未注册时的保守已知只读名（测试夹具 / tRPC 点号名）
   return (
-    toolName.startsWith("read_") ||
-    toolName.endsWith("_search") ||
-    toolName.endsWith("_status") ||
-    toolName.endsWith("_list") ||
-    toolName === "memory_search" ||
-    toolName === "list_directory" ||
-    toolName === "file_stat" ||
-    toolName === "search_files"
+    bare.startsWith("read_") ||
+    bare.endsWith("_search") ||
+    bare.endsWith("_status") ||
+    bare.endsWith("_list") ||
+    bare === "memory_search" ||
+    bare === "list_directory" ||
+    bare === "file_stat" ||
+    bare === "search_files" ||
+    bare === "web_search"
   );
 }
 
