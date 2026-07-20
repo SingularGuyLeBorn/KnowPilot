@@ -23,10 +23,14 @@ const FLUSH_DEBOUNCE_MS = 250;
 interface BudgetState {
   date: string;
   spentUsd: number;
+  /** 无产出 run 累计 token（仅观测，不拦截日预算） */
+  wastedTokens: number;
+  /** 今日累计 token（用于空转占比） */
+  totalTokens: number;
 }
 
 /** 模块级内存状态（替代原 globalThis 隐式全局） */
-let state: BudgetState = { date: todayKey(), spentUsd: 0 };
+let state: BudgetState = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
 /** 内存状态是否已领先于磁盘（领先时落盘需跟上） */
 let dirty = false;
 /** 单调递增版本号：用于识别异步落盘期间是否发生新消耗 */
@@ -60,9 +64,22 @@ export async function hydrateLlmBudget(projectRoot: string): Promise<void> {
           const diskSpent = Number(parsed.spentUsd) || 0;
           const memSpent = state.date === todayKey() ? state.spentUsd : 0;
           const merged = Math.max(memSpent, diskSpent);
-          state = { date: parsed.date, spentUsd: merged };
+          const diskWaste = Number((parsed as BudgetState).wastedTokens) || 0;
+          const memWaste = state.date === todayKey() ? state.wastedTokens : 0;
+          const diskTotal = Number((parsed as BudgetState).totalTokens) || 0;
+          const memTotal = state.date === todayKey() ? state.totalTokens : 0;
+          state = {
+            date: parsed.date,
+            spentUsd: merged,
+            wastedTokens: Math.max(memWaste, diskWaste),
+            totalTokens: Math.max(memTotal, diskTotal),
+          };
           // 内存领先磁盘 → 保持 dirty 以便落盘追上
-          if (merged > diskSpent) {
+          if (
+            merged > diskSpent ||
+            state.wastedTokens > diskWaste ||
+            state.totalTokens > diskTotal
+          ) {
             dirty = true;
             version += 1;
             scheduleFlush(projectRoot);
@@ -111,7 +128,7 @@ function getState(config: AppConfig): BudgetState {
   }
   if (state.date !== todayKey()) {
     // 跨天 rollover：内存内重置并标记落盘
-    state = { date: todayKey(), spentUsd: 0 };
+    state = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
     dirty = true;
     version += 1;
     scheduleFlush(config.projectRoot);
@@ -126,12 +143,17 @@ export interface LlmBudgetStatus {
   warn: boolean;
   exceeded: boolean;
   date: string;
+  wastedTokens: number;
+  totalTokens: number;
+  /** wastedTokens / totalTokens；无消费时为 0 */
+  wasteRatio: number;
 }
 
 export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
   const s = getState(config);
   const limitUsd = config.llm.dailyBudget;
   const ratio = limitUsd > 0 ? s.spentUsd / limitUsd : 0;
+  const wasteRatio = s.totalTokens > 0 ? s.wastedTokens / s.totalTokens : 0;
   return {
     limitUsd,
     spentUsd: s.spentUsd,
@@ -139,6 +161,9 @@ export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
     warn: limitUsd > 0 && ratio >= 0.85 && ratio < 1,
     exceeded: limitUsd > 0 && s.spentUsd >= limitUsd,
     date: s.date,
+    wastedTokens: s.wastedTokens,
+    totalTokens: s.totalTokens,
+    wasteRatio,
   };
 }
 
@@ -163,10 +188,28 @@ export function recordTokenUsage(
   if (!total) return;
   const s = getState(config);
   s.spentUsd += (total / 1000) * BLENDED_USD_PER_1K;
+  s.totalTokens += total;
   dirty = true;
   version += 1;
   scheduleFlush(config.projectRoot);
 }
+
+/**
+ * 将已计入 totalTokens 的无产出 run token 记入 wastedTokens（不重复扣日预算）。
+ * 日预算扣减规则不变——wastedTokens 只用于观测。
+ */
+export function markTokensWasted(config: AppConfig, tokens: number) {
+  const n = Math.max(0, Math.floor(Number(tokens) || 0));
+  if (!n) return;
+  const s = getState(config);
+  s.wastedTokens += n;
+  dirty = true;
+  version += 1;
+  scheduleFlush(config.projectRoot);
+}
+
+/** 空转占比告警阈值（v1 固定 50%，仅 brief/看板提示） */
+export const WASTED_TOKEN_ALERT_RATIO = 0.5;
 
 /** 测试隔离：重置预算内存状态与待落盘任务 */
 export function resetLlmBudgetForTests(): void {
@@ -174,7 +217,7 @@ export function resetLlmBudgetForTests(): void {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
-  state = { date: todayKey(), spentUsd: 0 };
+  state = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
   dirty = false;
   version = 0;
   hydrated = false;

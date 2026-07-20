@@ -114,6 +114,8 @@ model ChatSession {
   contextCompactedAt DateTime?
   /// 压缩代际（显式列；persist 用 CAS，不再解析摘要文本 vN@）
   compactGeneration  Int       @default(0)
+  /// 最近一次压缩边界消息 id（迭代摘要起点；不靠解析摘要 marker）
+  compactBoundaryMessageId String?
   /// L1 常驻层（USER.md/AGENT.md）会话冻结快照；首轮注入时写入，会话内不变
   pinnedMemorySnapshot String?
   // session_rotate：轮换到的新会话 id（旧会话 archived 后保留跳转）

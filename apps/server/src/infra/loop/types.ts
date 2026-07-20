@@ -113,7 +113,7 @@ export interface ReactLoopInput {
     parentId?: string | null;
     workspaceId?: string | null;
   };
-  runOrigin?: "user" | "parent" | "heartbeat";
+  runOrigin?: "user" | "parent" | "heartbeat" | "async";
   /** W3 safe bypass：只读 turn */
   readonlyOnly?: boolean;
   /** W11：Run 活状态——run 入口落库时写入 Run.input 的业务描述（消息/触发源等） */

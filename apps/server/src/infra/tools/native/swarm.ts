@@ -181,6 +181,7 @@ async function swarmBriefTool(args: Record<string, unknown>, ctx: NativeToolCont
   const brief = await buildSwarmBrief(ctx.prisma, {
     workspaceId: workspaceId === null ? null : workspaceId,
     limit,
+    config: ctx.config,
   });
   return {
     markdown: brief.markdown,
