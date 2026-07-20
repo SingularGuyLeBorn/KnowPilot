@@ -365,7 +365,7 @@ export async function autoConsumeAsyncDelivery(options: {
       data: {
         delivered: true,
         deliveredAt: new Date(),
-        output: { ...prev, deliveryExempt: true },
+        output: { ...prev, deliveryExempt: true } satisfies AsyncTaskOutput as object,
       },
     });
     return "skipped";
