@@ -9,6 +9,7 @@
 
 import fs from "fs";
 import path from "path";
+import { randomBytes } from "node:crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { dump } from "js-yaml";
@@ -97,6 +98,11 @@ import { resolveSafePath } from "./infra/safePath.js";
 import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
+
+/** 预生成与 Prisma @default(cuid()) / z.string().cuid() 兼容的 id（文件先行写路径需要） */
+function newEntityId(): string {
+  return `c${Date.now().toString(36)}${randomBytes(8).toString("hex")}`;
+}
 
 /** 安全 JSON.parse：失败时返回 null 并 warn，避免坏数据致 list 整体崩溃。 */
 function safeJsonParse(raw: string): Record<string, unknown> | null {
@@ -363,6 +369,11 @@ export abstract class BaseService<
 
 /**
  * FileSyncService — 文本化本地实体双写文件基类
+ *
+ * 不变量（D1）：文件先成为事实，DB 后投影；文件操作失败则 DB 不动。
+ * create：写文件 → DB create（失败则补偿删文件）
+ * update：写新文件 → DB update → 成功后删旧文件（改名时）
+ * delete：删文件 → DB delete（文件删不掉则报错、不删 DB）
  */
 export abstract class FileSyncService<
   TCreate,
@@ -379,65 +390,186 @@ export abstract class FileSyncService<
     return (this.config.contentPaths as any)[this.contentDirName] || path.join(this.config.contentDir, this.contentDirName);
   }
 
+  protected resolveEntityFilePath(slug: string): string {
+    return path.join(this.getContentDir(), `${slug}${this.fileExtension}`);
+  }
+
   protected writeFile(entity: TEntity): void {
-    const dir = this.getContentDir();
     const slug = this.getFileSlug(entity);
-    const filePath = path.join(dir, `${slug}${this.fileExtension}`);
+    const filePath = this.resolveEntityFilePath(slug);
     const fileDir = path.dirname(filePath);
     if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
     fs.writeFileSync(filePath, this.serializeToFile(entity), "utf-8");
   }
 
   protected deleteFile(entity: TEntity): void {
-    const dir = this.getContentDir();
     const slug = this.getFileSlug(entity);
-    const filePath = path.join(dir, `${slug}${this.fileExtension}`);
-    if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
+    this.deleteFileBySlug(slug, { required: true });
+  }
+
+  /**
+   * 按 slug 删除实体文件。
+   * required=true（默认）：文件存在但删失败 → 抛错（delete 路径依赖此语义）。
+   * required=false：失败仅 warn（update 改名后清旧文件：不回滚）。
+   */
+  protected deleteFileBySlug(slug: string, opts?: { required?: boolean }): boolean {
+    const required = opts?.required !== false;
+    const filePath = this.resolveEntityFilePath(slug);
+    if (!fs.existsSync(filePath)) return true;
+    try {
+      fs.unlinkSync(filePath);
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (required) {
+        throw new Error(`删除 ${this.entityName} 文件失败（${filePath}）：${msg}`);
+      }
+      console.warn(`[FileSync] 删除旧文件失败 entity=${this.entityName} slug=${slug}:`, msg);
+      return false;
     }
   }
 
-  protected override async afterCreate(entity: TEntity, input: TCreate): Promise<void> {
-    this.writeFile(entity);
-    // 写完文件后回写 sourceSlug/sourceMtime 到 DB，否则 db:sync 用 sourceSlug 查不到记录
-    // 会误判为新文件并重复创建（曾导致超级 Agent 每次同步都复制一份）
-    await this.syncFileMetaToDb(entity);
-    await super.afterCreate(entity, input);
+  /** 为文件先行路径拼出可 formatEntity 的临时行（含预生成 id） */
+  protected buildProvisionalRaw(data: Record<string, unknown>, existing?: Record<string, unknown>): Record<string, unknown> {
+    const now = new Date();
+    return {
+      ...(existing ?? {}),
+      ...data,
+      id: data.id ?? existing?.id ?? newEntityId(),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
   }
 
-  protected override async afterUpdate(entity: TEntity, existing: any, input: TUpdate): Promise<void> {
-    const oldSlug = this.getExistingFileSlug(existing);
-    const newSlug = this.getFileSlug(entity);
-    if (oldSlug && oldSlug !== newSlug) this.deleteFileBySlug(oldSlug);
-    this.writeFile(entity);
-    await this.syncFileMetaToDb(entity);
-    await super.afterUpdate(entity, existing, input);
+  override async create(input: TCreate): Promise<OperationResult<TEntity>> {
+    const start = Date.now();
+    let writtenSlug: string | null = null;
+    try {
+      await this.validateCreate(input);
+      const data = this.buildCreateData(input);
+      if (!data.id) data.id = newEntityId();
+      const provisional = this.formatEntity(this.buildProvisionalRaw(data));
+      this.writeFile(provisional);
+      writtenSlug = this.getFileSlug(provisional);
+      try {
+        const raw = await this.delegate.create({ data });
+        const entity = this.formatEntity(raw);
+        await this.syncFileMetaToDb(entity);
+        await this.afterCreate(entity, input);
+        return success({
+          data: entity,
+          state: await this.getState(),
+          nextSteps: this.getCreateNextSteps(entity),
+          operation: "create",
+          entity: this.entityName,
+          durationMs: Date.now() - start,
+        });
+      } catch (dbError) {
+        if (writtenSlug) {
+          try {
+            this.deleteFileBySlug(writtenSlug, { required: false });
+          } catch {
+            /* compensate best-effort */
+          }
+        }
+        throw dbError;
+      }
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      const uniqueConflict = failureFromPrismaUnique(error, "创建", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
+      return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
+    }
+  }
+
+  override async update(input: TUpdate): Promise<OperationResult<TEntity>> {
+    const start = Date.now();
+    const { id } = input;
+    let wroteNewSlug: string | null = null;
+    let oldSlug: string | null = null;
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing) return this.buildNotFoundFailure("更新", id, Date.now() - start);
+      await this.validateUpdate(input, existing);
+      const updateData = this.buildUpdateData(input);
+      const provisional = this.formatEntity(this.buildProvisionalRaw(updateData, existing));
+      oldSlug = this.getExistingFileSlug(existing);
+      const newSlug = this.getFileSlug(provisional);
+      this.writeFile(provisional);
+      wroteNewSlug = newSlug;
+      try {
+        const raw = await this.delegate.update({ where: { id }, data: updateData });
+        const entity = this.formatEntity(raw);
+        await this.syncFileMetaToDb(entity);
+        if (oldSlug && oldSlug !== newSlug) {
+          this.deleteFileBySlug(oldSlug, { required: false });
+        }
+        await this.afterUpdate(entity, existing, input);
+        return success({
+          data: entity,
+          state: await this.getState(),
+          operation: "update",
+          entity: this.entityName,
+          durationMs: Date.now() - start,
+        });
+      } catch (dbError) {
+        // DB 失败：若已写出新 slug 文件则补偿删除；同 slug 覆盖写不回滚（文件即事实源）
+        if (wroteNewSlug && oldSlug && wroteNewSlug !== oldSlug) {
+          this.deleteFileBySlug(wroteNewSlug, { required: false });
+        }
+        throw dbError;
+      }
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      const uniqueConflict = failureFromPrismaUnique(error, "更新", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
+      return failureFromError(error, "update", this.entityName, `${this.entityName.toUpperCase()}_UPDATE_FAILED`);
+    }
+  }
+
+  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const start = Date.now();
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing) return this.buildNotFoundFailure("删除", id, Date.now() - start);
+      const slug = this.getExistingFileSlug(existing);
+      if (slug) this.deleteFileBySlug(slug, { required: true });
+      await this.delegate.delete({ where: { id } });
+      await this.afterDelete(existing);
+      return success({
+        data: this.buildDeleteSummary(existing),
+        state: await this.getState(),
+        nextSteps: this.getDeleteNextSteps(),
+        operation: "delete",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      return failureFromError(error, "delete", this.entityName, `${this.entityName.toUpperCase()}_DELETE_FAILED`);
+    }
   }
 
   /**
    * 写文件后把 sourceSlug/sourceMtime 回写到 DB，让 db:sync 能按 sourceSlug 匹配到记录。
-   * 没有 sourceSlug 字段的实体表（如 Post 用 slug）会静默跳过。
+   * Post 无 sourceSlug 列（用 slug 主键），只回写 sourceMtime。
    */
-  private async syncFileMetaToDb(entity: TEntity): Promise<void> {
+  protected async syncFileMetaToDb(entity: TEntity): Promise<void> {
     const id = (entity as any).id;
     if (!id) return;
-    // 只有带 sourceSlug 字段的实体才回写（Post 有 sourceMtime 但无 sourceSlug，不能更新 sourceSlug）
-    if ((entity as any).sourceSlug === undefined) return;
     try {
       const slug = this.getFileSlug(entity);
-      const dir = this.getContentDir();
-      const filePath = path.join(dir, `${slug}${this.fileExtension}`);
+      const filePath = this.resolveEntityFilePath(slug);
       const mtime = fs.existsSync(filePath) ? fs.statSync(filePath).mtime : new Date();
+      if (this.entityName === "post") {
+        await this.delegate.update({ where: { id }, data: { sourceMtime: mtime } });
+        return;
+      }
       await this.delegate.update({ where: { id }, data: { sourceSlug: slug, sourceMtime: mtime } });
-    } catch {
-      // 忽略无 sourceSlug/sourceMtime 字段的实体
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[FileSync] syncFileMetaToDb 失败 entity=${this.entityName} id=${id}:`, msg);
     }
-  }
-
-  protected override async afterDelete(existing: any): Promise<void> {
-    const slug = this.getExistingFileSlug(existing);
-    if (slug) this.deleteFileBySlug(slug);
-    await super.afterDelete(existing);
   }
 
   /* ─── P11：FTS 增量维护辅助（best-effort，失败不阻塞业务） ─── */
@@ -458,14 +590,6 @@ export abstract class FileSyncService<
 
   protected getExistingFileSlug(existing: any): string | null {
     try { return this.getFileSlug(this.formatEntity(existing)); } catch { return null; }
-  }
-
-  private deleteFileBySlug(slug: string): void {
-    const dir = this.getContentDir();
-    const filePath = path.join(dir, `${slug}${this.fileExtension}`);
-    if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
-    }
   }
 }
 
