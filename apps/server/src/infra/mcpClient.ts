@@ -241,21 +241,23 @@ export async function executeMcpTool(
       retryAfterMs: permit.retryAfterMs,
     };
   }
+  // half-open 探测令牌：closed 期迟到完成不得拿无令牌/错令牌误合闸或误重开
+  const probeToken = permit.probeToken;
 
   try {
     const result = await callToolOnce(server, meta.toolName, args, false);
-    breaker.recordSuccess();
+    breaker.recordSuccess(probeToken);
     return truncateMcpResult(result);
   } catch (firstErr) {
     console.warn(`[MCP] ${meta.serverName}.${meta.toolName} 失败，尝试重连…`, firstErr instanceof Error ? firstErr.message : firstErr);
     evictClient(server.name);
     try {
       const result = await callToolOnce(server, meta.toolName, args, true);
-      breaker.recordSuccess();
+      breaker.recordSuccess(probeToken);
       return truncateMcpResult(result);
     } catch (retryErr) {
       // 首试 + 重连重试整体计一次失败（避免一次调用双重计数提前开闸）
-      breaker.recordFailure();
+      breaker.recordFailure(probeToken);
       throw new Error(
         `MCP 工具 ${meta.toolName} 调用失败（已重连）：${retryErr instanceof Error ? retryErr.message : String(retryErr)}`,
       );

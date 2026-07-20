@@ -1,10 +1,13 @@
 /**
  * LLM 每日预算追踪（美元估算，OpenClaw 式网关预算）
  *
+ * 软语义（明示）：日预算是「估算下界、并发可超」。
+ * assertLlmBudget 与 recordTokenUsage 分离——N 个并发入口可同时看到未超限并全放行，
+ * 实际花费可能短暂超过 dailyBudget。不做预留制（预留制见 design-decisions 待办）。
+ *
  * 状态管理：模块级内存为唯一运行时真相，LLM 调用路径上零同步 IO。
  * - 落盘：防抖异步写（fs.promises），进程崩溃最多丢失最近一个防抖窗口的消耗
- * - 恢复：首次访问时异步 hydrate（fire-and-forget）；若 hydrate 完成前已有新消耗（dirty），
- *   以内存为准，避免旧文件覆盖新状态
+ * - 恢复：启动期 await hydrateLlmBudget（index.ts 挂载）；同日合并 max(内存, 磁盘)，不丢已花额度
  */
 
 import fs from "fs";
@@ -24,11 +27,12 @@ interface BudgetState {
 
 /** 模块级内存状态（替代原 globalThis 隐式全局） */
 let state: BudgetState = { date: todayKey(), spentUsd: 0 };
-/** 内存状态是否已领先于磁盘（领先时 hydrate 不得覆盖） */
+/** 内存状态是否已领先于磁盘（领先时落盘需跟上） */
 let dirty = false;
 /** 单调递增版本号：用于识别异步落盘期间是否发生新消耗 */
 let version = 0;
 let hydrated = false;
+let hydratePromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function todayKey() {
@@ -39,26 +43,43 @@ function budgetFile(projectRoot: string) {
   return path.join(projectRoot, ".dev-log", "llm-budget.json");
 }
 
-/** 异步 hydrate：仅当磁盘文件属于今日且内存尚无新消耗时采用 */
-function hydrateAsync(projectRoot: string): void {
+/**
+ * 启动期一次性 hydrate：同日取 max(内存已花, 磁盘已花)，不丢额度。
+ * 可安全重入（并发调用共享同一 Promise）。
+ */
+export async function hydrateLlmBudget(projectRoot: string): Promise<void> {
   if (hydrated) return;
-  hydrated = true;
-  fs.promises
-    .readFile(budgetFile(projectRoot), "utf8")
-    .then((raw) => {
-      if (dirty) return;
+  if (hydratePromise) return hydratePromise;
+
+  hydratePromise = (async () => {
+    try {
+      const raw = await fs.promises.readFile(budgetFile(projectRoot), "utf8");
       try {
         const parsed = JSON.parse(raw) as BudgetState;
         if (parsed.date === todayKey()) {
-          state = { date: parsed.date, spentUsd: Number(parsed.spentUsd) || 0 };
+          const diskSpent = Number(parsed.spentUsd) || 0;
+          const memSpent = state.date === todayKey() ? state.spentUsd : 0;
+          const merged = Math.max(memSpent, diskSpent);
+          state = { date: parsed.date, spentUsd: merged };
+          // 内存领先磁盘 → 保持 dirty 以便落盘追上
+          if (merged > diskSpent) {
+            dirty = true;
+            version += 1;
+            scheduleFlush(projectRoot);
+          }
         }
       } catch {
-        /* 文件损坏：忽略，从 0 开始 */
+        /* 文件损坏：忽略，从当前内存继续 */
       }
-    })
-    .catch(() => {
+    } catch {
       /* 文件不存在：正常路径 */
-    });
+    } finally {
+      hydrated = true;
+      hydratePromise = null;
+    }
+  })();
+
+  return hydratePromise;
 }
 
 async function flushAsync(projectRoot: string, snapshotVersion: number): Promise<void> {
@@ -84,7 +105,10 @@ function scheduleFlush(projectRoot: string): void {
 }
 
 function getState(config: AppConfig): BudgetState {
-  hydrateAsync(config.projectRoot);
+  // 启动未 hydrate 时仍允许服务（软语义）；后台补一次合并 hydrate，不阻塞热路径
+  if (!hydrated && !hydratePromise) {
+    void hydrateLlmBudget(config.projectRoot);
+  }
   if (state.date !== todayKey()) {
     // 跨天 rollover：内存内重置并标记落盘
     state = { date: todayKey(), spentUsd: 0 };
@@ -118,6 +142,9 @@ export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
   };
 }
 
+/**
+ * 软闸：已超限则抛错。与 record 分离 → 并发下可短暂超限（估算下界，非硬预留）。
+ */
 export function assertLlmBudget(config: AppConfig) {
   const status = getLlmBudgetStatus(config);
   if (status.exceeded) {
@@ -151,6 +178,7 @@ export function resetLlmBudgetForTests(): void {
   dirty = false;
   version = 0;
   hydrated = false;
+  hydratePromise = null;
 }
 
 /** 测试用：等待防抖落盘完成（生产代码请勿调用） */

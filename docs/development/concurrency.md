@@ -339,7 +339,17 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 13. 未来改进
+## 13. LLM 日预算软语义（C5）
+
+`llmBudget`（`apps/server/src/infra/llmBudget.ts`）日预算是**估算下界、并发可超**：
+
+- `assertLlmBudget` 与 `recordTokenUsage` 分离：N 个并发入口可同时看到「未超限」并全放行，实际花费可能短暂超过 `dailyBudget`。
+- **不做预留制**（登记占用再放行）——预留制见 `design-decisions.md` 待办。
+- 启动期 `await hydrateLlmBudget`（`index.ts`）：同日取 `max(内存已花, 磁盘已花)`，消除「hydrate 完成前新消耗导致整份磁盘额度被丢弃」的竞态。
+
+---
+
+## 14. 未来改进
 
 1. **分布式锁**：多实例部署时用 Redis 替代进程内 `agentRunLocks`。
 2. **推送替代轮询**：`pullAsyncQueue`、`pullAgentMessages` 改为 SSE 推送（详见 `future-features.md`）。

@@ -261,6 +261,8 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "write_file",
     concurrencyClass: "D",
     destructive: true,
+    // 可回滚的常规写入，非删除类——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常写文件
+    approvalExempt: true,
     description: "写入项目根目录内的文本文件（相对路径）。",
     parameters: {
       type: "object",

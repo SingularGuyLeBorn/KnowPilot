@@ -322,6 +322,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "agent_update_sub",
   "agent_delete_sub",
   "agent_notify_parent",
+  "swarm_brief",
   "ask_user",
   "workspace_create",
   "workspace_archive",

@@ -225,6 +225,8 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "post_create",
     concurrencyClass: "D",
     destructive: true,
+    // 创建类可回滚（非删除）——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常建文
+    approvalExempt: true,
     description: "在本地知识库中创建一篇 Markdown 文章（content/posts）。",
     parameters: zodParams(
       z.object({
@@ -272,6 +274,8 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "memory_create",
     concurrencyClass: "D",
     destructive: true,
+    // 创建类可回滚（非删除）——记忆积累是 Agent 常态路径
+    approvalExempt: true,
     description:
       "创建长期记忆。type：preference=用户偏好；semantic=稳定事实/决策；episodic=某次经历；note=笔记；procedural=操作流程。scope：agent=仅自己可见（默认）；workspace=同 Workspace 的 Agent 共享；global=全局共享（仅超级 Agent）。不要记可从代码/git/文档直接查到的内容。若发现与已有记忆矛盾或事实过时，请用 memory_update（勿重复 create）。",
     parameters: zodParams(
@@ -302,6 +306,8 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "memory_update",
     concurrencyClass: "D",
     destructive: true,
+    // 软版本链纠正（非物理删除）——与 memory_create 同档豁免
+    approvalExempt: true,
     description:
       "更新长期记忆（软版本链）：新建现行版本，旧版标为 superseded 不再注入上下文。用于纠正矛盾或过时事实；可传已 superseded 的旧 id（自动跟到链尾）。",
     parameters: zodParams(
@@ -355,6 +361,8 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "pinned_memory_write",
     concurrencyClass: "D",
     destructive: true,
+    // L1 约定写盘（非删除）——Agent 维护自身工作约定的常态路径
+    approvalExempt: true,
     description:
       "写入 L1 常驻层 USER.md / AGENT.md（超硬预算自动截断）。立即写盘；当前会话仍用冻结快照，**新会话**才注入更新后的内容。勿把可检索的琐碎事实写进这里——琐碎事实用 memory_create。",
     parameters: zodParams(

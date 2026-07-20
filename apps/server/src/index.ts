@@ -35,6 +35,7 @@ import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js"
 import { ensureIntegrationCredentialsInjected } from "./infra/credentialVault.js";
 import { isAuthEnabled, verifyAuthHeader } from "./infra/auth.js";
 import { prisma } from "./db.js";
+import { hydrateLlmBudget } from "./infra/llmBudget.js";
 
 const app = express();
 
@@ -264,6 +265,11 @@ app.use(
     },
   })
 );
+
+// C5：启动期 await 预算 hydrate（同日 max 合并，不丢已花额度）后再接流量
+await hydrateLlmBudget(config.projectRoot).catch((err) => {
+  console.error("❌ [llmBudget] 启动 hydrate 失败（将以内存零消耗继续）:", err);
+});
 
 // 启动
 const server = app.listen(PORT, () => {
