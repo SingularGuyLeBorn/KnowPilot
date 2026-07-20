@@ -121,9 +121,26 @@ export default function RunsPage() {
                   {data.items.map((run: Run) => (
                     <tr key={run.id} className="hover:bg-[var(--kp-bg-soft)]/50">
                       <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[run.status]}`}>
-                          {STATUS_LABEL[run.status]}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[run.status]}`}>
+                            {STATUS_LABEL[run.status]}
+                          </span>
+                          {(() => {
+                            const out = run.output as { phase?: string; blockedScopes?: string[] } | null;
+                            if (out?.phase !== "awaiting_human") return null;
+                            const scopes = Array.isArray(out.blockedScopes) ? out.blockedScopes : [];
+                            return (
+                              <span
+                                className="text-[10px] font-mono text-amber-700 dark:text-amber-400"
+                                data-testid="run-awaiting-human-scope"
+                                title="awaiting_human 被堵 scope"
+                              >
+                                等待审批
+                                {scopes.length > 0 ? ` · ${scopes.join(", ")}` : ""}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 text-[var(--kp-text-2)]">
