@@ -548,4 +548,4 @@ reflection:
 
 ---
 
-> 最后更新：2026-07-21。L1–L5 已全部落地；2026-07-20/21 重构套件 PR-1～PR-3 / PR-5 / PR-6（Web Chat store E1–E6）已合入 master；P0 Agent 架构 PR-1～7 已验收；W1–W12 / v4 / v7～v10 既有落地见上。
+> 最后更新：2026-07-21。L1–L5 已全部落地；2026-07-20/21 重构套件 PR-1～PR-6（含 PR-4 投递对账 B1–B7：deliveryExempt 台账、SessionQueueItem 软认领 claimedAt、autoConsume 槽外 waitFor、resume `resuming` 中间态、depth 服务端物化、orchestrator 同步抛错归 Promise、unique 约束幂等）与 W2/W4 已合入 master；P0 Agent 架构 PR-1～7 已验收；W1–W12 / v4 / v7～v10 既有落地见上。

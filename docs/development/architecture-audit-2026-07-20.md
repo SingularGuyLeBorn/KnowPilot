@@ -15,8 +15,8 @@
 | A3 | P1 | autoCompact 双写无串行化/CAS：contextSummary 与边界消息可分裂，静默丢上下文视野 | autoCompact.ts:450-517; router.ts:676-698 | 已修复@8e6a3eb6（原 PR-5） |
 | A4 | P1 | POST 起流返回值被忽略 + 占位 sessionId 共享键 `""`：新消息静默丢失、两新聊天串流 | agentStream.ts:963-1010 | 已修复@2afbc363（原 PR-5） |
 | A5 | P1 | steer/follow_up 注入队列随 RunState 销毁：UI 承诺「已注入」服务端静默丢弃 | sessionStreamHub.ts:315-467; reactLoop.ts:381,605 | 已修复@84132a60（原 PR-5） |
-| B1 | P1 | reconciler 对「失败轻量任务」形成永不收敛的对账循环 | asyncJobManager.ts:354-360↔619-688 | PR-4 |
-| B2 | P1 | superior drain「删除即认领」+ 同事务置 consumed：崩溃窗口消息永久丢失 | services.ts:2129-2159; asyncJobManager.ts:271-286 | PR-4 |
+| B1 | P1 | reconciler 对「失败轻量任务」形成永不收敛的对账循环 | asyncJobManager.ts:354-360↔619-688 | 已修复@74e26ea5（原 PR-4） |
+| B2 | P1 | superior drain「删除即认领」+ 同事务置 consumed：崩溃窗口消息永久丢失 | services.ts:2129-2159; asyncJobManager.ts:271-286 | 已修复@84f5b573（原 PR-4） |
 | C1 | P1 | 僵尸 running Task 永久卡死心跳与定时任务（恢复扫描只认 `[async]` 前缀） | asyncJobManager.ts:930-935; heartbeatEngine.ts:331-375; taskScheduler.ts:56-59; triggerEngine.ts:142-148 | 已修复@d14fc926（原 PR-3） |
 | C2 | P1 | HeartbeatEngine.refresh() 无串行化：并发 refresh 泄漏 cron job 重复调度 | heartbeatEngine.ts:158-207 | 已修复@af286fe2（原 PR-3） |
 | C3 | P1 | 审批等待注册表 missed-wakeup + TTL 误报「已过期」（操作实际已执行） | approvalGate.ts:160-233,284-308 | 已修复@1f19ee4f（原 PR-2） |
@@ -30,11 +30,11 @@
 | A6 | P2 | 审批/ask_user 两 gate 挂起-唤醒-中止语义不一致 | approvalGate.ts:160-232 | 已修复@1f19ee4f（原 PR-2/A6） |
 | A7 | P2 | stream/sync 两链路行为分叉：reflection 拦不住已流出拒稿；sync abort 不留部分稿 | reflection.ts:138-150; agentStream.ts:870-898; agentRuntime.ts:252-258 | 登记 |
 | A8 | P2 | 扁平存储重建：注入消息时序失真 + inject 落库失败幻影消息 | chatHistory.ts:144-215; reactLoop.ts:161-187 | 登记 |
-| B3 | P2 | autoConsume 在池槽位内等 hub 空闲：消费任务把全局 LLM 槽变停车场 | asyncJobManager.ts:441-444 vs 258-262 | PR-4 |
-| B4 | P2 | runStartupRecovery 时序竞态 + resume 分支非幂等（同 jobId 可双入池） | asyncJobManager.ts:942-983,810-813 | PR-4 |
-| B5 | P2 | depth 防循环名存实亡：计数来源是 LLM 入参，服务端从不递增 | swarmPermissionGuard.ts:167-176; swarmBus.ts:87 | PR-4 |
-| B6 | P2 | orchestrator.start() 对同步抛错的 execute 泄漏槽位计数 | asyncJobOrchestrator.ts:397-442 | PR-4 |
-| B7 | P2 | SessionQueueItem 幂等/排序靠 check-then-insert，无 DB 唯一约束兜底 | services.ts:2016-2048; schema.prisma:159-175 | PR-4 |
+| B3 | P2 | autoConsume 在池槽位内等 hub 空闲：消费任务把全局 LLM 槽变停车场 | asyncJobManager.ts:441-444 vs 258-262 | 已修复@3e6f340d（原 PR-4） |
+| B4 | P2 | runStartupRecovery 时序竞态 + resume 分支非幂等（同 jobId 可双入池） | asyncJobManager.ts:942-983,810-813 | 已修复@78e74dec（原 PR-4） |
+| B5 | P2 | depth 防循环名存实亡：计数来源是 LLM 入参，服务端从不递增 | swarmPermissionGuard.ts:167-176; swarmBus.ts:87 | 已修复@cbc8d637（原 PR-4） |
+| B6 | P2 | orchestrator.start() 对同步抛错的 execute 泄漏槽位计数 | asyncJobOrchestrator.ts:397-442 | 已修复@82dfa081（原 PR-4） |
+| B7 | P2 | SessionQueueItem 幂等/排序靠 check-then-insert，无 DB 唯一约束兜底 | services.ts:2016-2048; schema.prisma:159-175 | 已修复@a555470a（原 PR-4） |
 | B8 | P3 | spawn 去重窗口与任务在途期脱节，窗口外重派无幂等承接 | swarmOrchestrator.ts:29,277-281 | 登记 |
 | C4 | P2 | 心跳状态写回混合版本 read-modify-write：丢计数、吞「配置变更清零」 | heartbeatEngine.ts:622-657 | 已修复@046a169f（原 PR-3） |
 | C5 | P2 | llmBudget 检查-扣费 TOCTOU + 重启 hydrate 竞态丢额度 | llmBudget.ts:43-62,121-142 | 已修复@fd63331f（原 PR-2） |

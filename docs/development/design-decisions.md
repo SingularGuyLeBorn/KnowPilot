@@ -1406,3 +1406,25 @@ PR-3 后心跳仍是「cron 到点 → 预算检查 → 直接 dispatch」。缺
 | 不做 | 钩子热重载 / 外部包安装（登记待办）；不改变注入文案本身 |
 
 **回答**：按上表落地（分支 `feat/context-hooks`）
+
+---
+
+## PR-4 投递对账 / 队列认领 / 池槽 / depth / 启动恢复（2026-07-21，arch/async-delivery-queue）
+
+### 背景
+
+体检 B1–B7：失败轻量任务 reconciler 永不收敛；superior drain 删除即认领致崩溃丢消息；autoConsume 槽内等待；resume 非幂等双入池；depth 靠 LLM 入参；start() 同步抛错漏计数；SessionQueueItem 无唯一约束。
+
+### 决策
+
+| 编号 | 决策 | 结论 |
+| --- | --- | --- |
+| B1 | 豁免台账 | autoConsume 跳过写气泡时落 `output.deliveryExempt=true`；Pass 1 识别台账；`delivered=true` ↔ 气泡存在 ∨ 可判定豁免 |
+| B2 | 软认领 | `SessionQueueItem.claimedAt`；consume 条件写置位不删行；ChatMessage 落地后删；超龄 claimedAt 启动重置 |
+| B3 | 槽外等待 | autoConsume 的 `hub.waitFor` 移到 `runConsumeJob` 之前 |
+| B4 | resume 幂等 | 认领写 `status:"resuming"`；僵尸会话 paused 先于 Task 续跑 |
+| B5 | depth 物化 | 移出 LLM schema；服务端沿派生链 +1（叶子 `delegationDepth.ts`） |
+| B6 | 同步抛错 | `Promise.resolve().then(() => execute)`，finally 必走 |
+| B7 | 唯一约束 | `@@unique([sessionId, agentMessageId])` + 事务 create / P2002 幂等 |
+
+**回答**：按上表落地（分支 `arch/async-delivery-queue`）
