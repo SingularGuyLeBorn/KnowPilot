@@ -2289,13 +2289,16 @@ export class SessionQueueItemService extends BaseService<
         }
       }
 
-      const maxOrder = await this.prisma.sessionQueueItem.aggregate({
-        where: { sessionId: input.sessionId },
-        _max: { order: true },
-      });
-      const order = (maxOrder._max.order ?? -10) + 10;
-      const raw = await this.prisma.sessionQueueItem.create({
-        data: { ...this.buildCreateData(input), order },
+      // B7：maxOrder + create 同事务串行化；@@unique([sessionId, agentMessageId]) 兜底并发双建
+      const raw = await this.prisma.$transaction(async (tx) => {
+        const maxOrder = await tx.sessionQueueItem.aggregate({
+          where: { sessionId: input.sessionId },
+          _max: { order: true },
+        });
+        const order = (maxOrder._max.order ?? -10) + 10;
+        return tx.sessionQueueItem.create({
+          data: { ...this.buildCreateData(input), order },
+        });
       });
       const entity = this.formatEntity(raw);
       await this.afterCreate(entity, input);
@@ -2307,6 +2310,23 @@ export class SessionQueueItemService extends BaseService<
         durationMs: Date.now() - start,
       });
     } catch (error) {
+      // B7：唯一约束冲突 → 幂等返回已有行（服务端 busy + 前端镜像并发）
+      const code = (error as { code?: string })?.code;
+      if (code === "P2002" && input.kind === "superior" && input.agentMessageId) {
+        const existing = await this.prisma.sessionQueueItem.findFirst({
+          where: { sessionId: input.sessionId, agentMessageId: input.agentMessageId },
+        });
+        if (existing) {
+          const entity = this.formatEntity(existing);
+          await this.pushQueueUpdate(entity.sessionId, entity.kind);
+          return success({
+            data: entity,
+            operation: "create",
+            entity: this.entityName,
+            durationMs: Date.now() - start,
+          });
+        }
+      }
       return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
     }
   }
