@@ -117,7 +117,7 @@ describe("TP-2 池准入与统计（AsyncJobOrchestrator 单元）", () => {
     orch.enqueue({ jobId: "f-global", sessionId: "s5", workspaceId: "ws5", execute: async () => {} });
 
     const stats = orch.getStats();
-    expect(stats.queuedByReason).toEqual({ global: 1, session: 1, workspace: 1 });
+    expect(stats.queuedByReason).toEqual({ global: 1, session: 1, workspace: 1, gate: 0 });
     expect(stats.runningByWorkspace).toEqual({ ws1: 1, ws2: 1, ws4: 1 });
     expect(orch.getQueuedReason("c-session")).toBe("session");
     expect(orch.getQueuedReason("d-workspace")).toBe("workspace");

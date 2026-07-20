@@ -403,7 +403,12 @@ export class HeartbeatEngine {
             return;
           }
         } else if (decision.mode === "wait_user_gate" && decision.safeBypassAllowed) {
-          // W3 safe bypass：mode 仍 wait_user_gate，但允许一次只读 turn
+          // W3 safe bypass：mode 仍 wait_user_gate，但允许一次只读 turn（无只读工具则纯等待）
+          const allTools = agent.tools ? agent.tools.split(",").filter(Boolean) : [];
+          const readonlyTools = filterReadonlyTools(allTools);
+          if (readonlyTools.length === 0) {
+            return;
+          }
           try {
             assertLlmBudget(this.config);
           } catch {
