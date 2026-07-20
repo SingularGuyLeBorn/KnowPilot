@@ -25,7 +25,6 @@ import { type SelectedSkill } from "@/components/chatInput";
 import {
   type ChatQueueItem,
   createUserQueueItem,
-  sessionQueueItemToChatItem,
   mergeUserQueueFromDb,
 } from "@/lib/chatQueueTypes";
 import { useSessionMessages } from "@/lib/useSessionMessages";
@@ -191,25 +190,13 @@ export function ChatSessionPane({
     asyncQueueQuery,
   });
 
-  const queueHydrateSessionRef = useRef<string | null>(null);
+  // E6：切会话与同会话统一 mergeUserQueueFromDb，保留无 dbId 本地项
   useEffect(() => {
-    if (!sessionId) {
-      queueHydrateSessionRef.current = null;
-      return;
-    }
+    if (!sessionId) return;
     if (!sessionQueueQuery.data) return;
-    const sessionChanged = queueHydrateSessionRef.current !== sessionId;
-    queueHydrateSessionRef.current = sessionId;
-    if (sessionChanged) {
-      sessionComposeActions.setUserQueue(
-        sessionId,
-        sessionQueueQuery.data.map(sessionQueueItemToChatItem),
-      );
-    } else {
-      sessionComposeActions.patchUserQueue(sessionId, (prev) =>
-        mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
-      );
-    }
+    sessionComposeActions.patchUserQueue(sessionId, (prev) =>
+      mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+    );
     streamLifecycleActions.hydrateDone(sessionId);
   }, [sessionId, sessionQueueQuery.data]);
 
