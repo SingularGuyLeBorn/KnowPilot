@@ -450,6 +450,8 @@ export const openNewSessionSchema = z.object({
    ═══════════════════════════════════════════════════════ */
 
 export const createMessageSchema = z.object({
+  /** 预生成 id（E3 abort 契约：stop 响应与落库共用同一 id） */
+  id: z.string().cuid().optional(),
   sessionId: z.string().cuid(),
   role: z.enum(["user", "assistant", "system", "tool"]),
   content: z.string().min(1, "内容不能为空"),

@@ -53,6 +53,9 @@ type RunState = {
     thinking: string;
     timer: ReturnType<typeof setTimeout> | null;
   };
+  /** E3：预生成的 partial assistant id；有实质内容时 stop 响应携带 */
+  pendingAssistantMessageId?: string | null;
+  hasPartialAssistant?: boolean;
 };
 
 type PersistItem = {
@@ -589,6 +592,35 @@ export class SessionStreamHub {
     if (!state) return;
     state.steeringQueue.length = 0;
     state.followUpQueue.length = 0;
+  }
+
+  /** E3：注册预生成的 assistant 消息 id（abort 落库与 stop 响应用同一 id） */
+  setPendingAssistantMessageId(sessionId: string, messageId: string | null): void {
+    const state = this.runs.get(sessionId);
+    if (!state || state.completed) return;
+    state.pendingAssistantMessageId = messageId;
+  }
+
+  /** E3：标记已有可落库的 partial 内容（token/tool） */
+  markPartialAssistant(sessionId: string): void {
+    const state = this.runs.get(sessionId);
+    if (!state || state.completed) return;
+    state.hasPartialAssistant = true;
+  }
+
+  /** E3：读取预生成 id（不论是否已有 partial；供 abort 落库） */
+  getPendingAssistantMessageId(sessionId: string): string | null {
+    const state = this.runs.get(sessionId);
+    return state?.pendingAssistantMessageId ?? null;
+  }
+
+  /**
+   * E3：stop 响应用。有预生成 id 且已有实质内容 → 返回 id；确定无 partial → null。
+   */
+  getPartialAssistantMessageId(sessionId: string): string | null {
+    const state = this.runs.get(sessionId);
+    if (!state?.hasPartialAssistant) return null;
+    return state.pendingAssistantMessageId ?? null;
   }
 
   /**

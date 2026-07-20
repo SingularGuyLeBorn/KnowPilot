@@ -2,8 +2,13 @@
  * Agent 流式聊天 — SSE 事件 + 流式 ReAct 循环 + 多版本 / 编辑 / Skill
  */
 
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
+
+/** 预生成符合 z.string().cuid() 的消息 id（E3 abort 契约） */
+function allocateCuid(): string {
+  return `c${randomBytes(12).toString("hex")}`;
+}
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import {
@@ -26,7 +31,7 @@ import {
   buildInitialVersionMeta,
   getActiveAssistantPayload,
 } from "./messageVersions.js";
-import { SessionStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
+import { SessionStreamHub, getStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 import { autoNameSession } from "./sessionAutoName.js";
 import { markAgentMessageConsumedByTaskRef } from "./agentMessageLedger.js";
 
@@ -466,6 +471,7 @@ export async function chatAgentStream(
   let partialContent = "";
   const partialToolCalls: StoredToolCall[] = [];
   let prepared: PrepareResult | undefined;
+  let pendingAssistantId: string | undefined;
 
   try {
     assertLlmBudget(config);
@@ -533,6 +539,10 @@ export async function chatAgentStream(
     // 自动命名：不管新建还是已有 session，都 fire-and-forget。
     // autoNameSession 内部幂等：autoName 已有值 或 msgCount>1 都跳过，不会重复命名。
     void autoNameSession(sessionId, prepared.messageText);
+
+    // E3：预生成 assistant 消息 id，stop 响应与 abort 落库共用
+    pendingAssistantId = prepared.updateAssistantId ?? allocateCuid();
+    getStreamHub()?.setPendingAssistantMessageId(sessionId, pendingAssistantId);
 
     if (!prepared.skipUserCreate) {
       const src = input.source ?? "user";
@@ -642,14 +652,19 @@ export async function chatAgentStream(
 
     let currentRound = 1;
     const toolArgsMap = new Map<string, unknown>();
+    const notePartial = () => {
+      if (sessionId) getStreamHub()?.markPartialAssistant(sessionId);
+    };
     const trackingEmit = (event: AgentStreamEvent) => {
       if (event.type === "round_start") {
         currentRound = event.round;
       }
       if (event.type === "token" && event.delta) {
         partialContent += event.delta;
+        notePartial();
       }
       if (event.type === "thinking" && event.delta) {
+        notePartial();
         const id = `think_${currentRound}`;
         const existing = partialToolCalls.find((t) => t.id === id);
         if (existing) {
@@ -665,6 +680,7 @@ export async function chatAgentStream(
         }
       }
       if (event.type === "intermediate_content" && event.content) {
+        notePartial();
         const id = `content_${currentRound}`;
         const existing = partialToolCalls.find((t) => t.id === id);
         if (existing) {
@@ -683,6 +699,7 @@ export async function chatAgentStream(
         toolArgsMap.set(event.toolCallId, event.args);
       }
       if (event.type === "tool_end" && event.toolCallId) {
+        notePartial();
         partialToolCalls.push({
           id: event.toolCallId,
           name: event.name,
@@ -754,6 +771,7 @@ export async function chatAgentStream(
         const initial = buildInitialVersionMeta(result.content, result.toolCalls);
         const created = await tx.chatMessage.create({
           data: {
+            id: pendingAssistantId,
             sessionId,
             role: "assistant",
             content: result.content,
@@ -884,11 +902,17 @@ export async function chatAgentStream(
             finishReason: "aborted",
           });
         } else {
+          // E3：落库用与 stop 响应相同的预生成 id
+          const messageId =
+            getStreamHub()?.getPendingAssistantMessageId(sessionId) ||
+            pendingAssistantId ||
+            allocateCuid();
           const initial = buildInitialVersionMeta(partialContent.trim(), partialToolCalls);
           await services.message.create({
+            id: messageId,
             sessionId,
             role: "assistant",
-            content: partialContent.trim(),
+            content: partialContent.trim() || "(已中断)",
             toolCalls: partialToolCalls,
             toolResults: initial.toolResults,
             finishReason: "aborted",
@@ -1215,8 +1239,10 @@ export function handleAgentChatStop(hub: SessionStreamHub) {
       res.status(400).json({ error: "缺少 sessionId" });
       return;
     }
+    // E3：先读 partial id（依赖 hasPartial），再 abort；落库异步用同一预生成 id
+    const partialAssistantMessageId = hub.getPartialAssistantMessageId(sessionId);
     const stopped = hub.stop(sessionId);
-    res.json({ stopped });
+    res.json({ stopped, partialAssistantMessageId });
   };
 }
 
