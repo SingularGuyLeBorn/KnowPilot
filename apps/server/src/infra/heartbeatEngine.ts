@@ -71,6 +71,12 @@ export class HeartbeatEngine {
   // A14：事件驱动 refresh 的防抖句柄与监听器引用（stop 时清理）
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private eventHandler: ((payload: EntityEventPayload<unknown>) => void) | null = null;
+  /** C2：refresh 串行链——新调用挂到上一条之后，禁止交叠 clear/schedule */
+  private refreshChain: Promise<void> = Promise.resolve();
+  /** C2：代际令牌——每次 refresh 递增；过期代际放弃注册并 stop 已建 job */
+  private refreshGeneration = 0;
+  /** @internal 测试注入：在 refresh 的 await 间隙挂起，制造交叠窗口 */
+  private refreshYieldHook: (() => Promise<void>) | null = null;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -152,12 +158,51 @@ export class HeartbeatEngine {
       this.eventHandler = null;
     }
     this.started = false;
+    // 作废在途 refresh：代际递增后旧 refreshInternal 见 mismatch 即放弃注册
+    this.refreshGeneration++;
     console.log("  💓 [HeartbeatEngine] 已停止");
   }
 
-  /** 全量刷新心跳注册（Agent 配置变更后生效） */
+  /** @internal 测试用：注入 refresh await 间隙挂起钩子 */
+  __setRefreshYieldForTests(hook: (() => Promise<void>) | null): void {
+    this.refreshYieldHook = hook;
+  }
+
+  /** @internal 测试用：当前已注册的 Agent 心跳 cron 数 */
+  __getJobCountForTests(): number {
+    return this.jobs.size;
+  }
+
+  /**
+   * 全量刷新心跳注册（Agent 配置变更后生效）。
+   * C2：单条 promise 链串行化 + generation 令牌（链防交错，令牌防 stop/start 泄漏）。
+   * 连续多次 refresh coalesce 为「只落地最新一代」。
+   */
   async refresh(): Promise<void> {
     if (!this.started) return;
+    const gen = ++this.refreshGeneration;
+    const run = () => this.refreshInternal(gen);
+    const next = this.refreshChain.then(run, run);
+    this.refreshChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private async refreshAborted(gen: number): Promise<boolean> {
+    if (!this.started || gen !== this.refreshGeneration) {
+      for (const job of this.jobs.values()) job.stop();
+      this.jobs.clear();
+      return true;
+    }
+    return false;
+  }
+
+  private async refreshInternal(gen: number): Promise<void> {
+    // 已被更新一代取代：直接跳过（coalesce）
+    if (!this.started || gen !== this.refreshGeneration) return;
+
     try {
       // 停止所有现有任务
       for (const job of this.jobs.values()) job.stop();
@@ -171,7 +216,12 @@ export class HeartbeatEngine {
         where: { heartbeatSuspendedAt: { not: null } },
         select: { id: true, heartbeat: true },
       });
+      if (await this.refreshAborted(gen)) return;
+      if (this.refreshYieldHook) await this.refreshYieldHook();
+      if (await this.refreshAborted(gen)) return;
+
       for (const row of suspendedRows) {
+        if (await this.refreshAborted(gen)) return;
         const hb = this.parseHeartbeat(row.heartbeat);
         if ((hb?.consecutiveFailures ?? 0) < MAX_CONSECUTIVE_FAILURES) {
           await this.prisma.agent.update({
@@ -182,6 +232,8 @@ export class HeartbeatEngine {
         }
       }
 
+      if (await this.refreshAborted(gen)) return;
+
       // 重新加载
       const agents = await this.prisma.agent.findMany({
         where: {
@@ -189,11 +241,12 @@ export class HeartbeatEngine {
           tier: { in: ["super", "manager", "sub"] },
         },
       });
-
-      // stop() 可能在 await 期间被调用，此时不应再注册新 cron job
-      if (!this.started) return;
+      if (await this.refreshAborted(gen)) return;
+      if (this.refreshYieldHook) await this.refreshYieldHook();
+      if (await this.refreshAborted(gen)) return;
 
       for (const agent of agents) {
+        if (await this.refreshAborted(gen)) return;
         const hb = this.parseHeartbeat(agent.heartbeat);
         if (!hb?.enabled || !hb.cron || !cron.validate(hb.cron)) continue;
 
