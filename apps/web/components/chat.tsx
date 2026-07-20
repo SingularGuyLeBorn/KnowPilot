@@ -14,10 +14,7 @@ import {
   resolveNewChatConfig,
 } from "@/lib/chatConfig";
 import { type Agent, type ChatMessage } from "@knowpilot/shared";
-import {
-  sessionQueueItemToChatItem,
-  mergeUserQueueFromDb,
-} from "@/lib/chatQueueTypes";
+import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { ChatOverlays } from "@/components/chatOverlays";
 import { ChatSidebar } from "@/components/chatSidebar";
@@ -504,27 +501,14 @@ export function ChatView() {
     },
   });
 
-  // 【队列水合 · INV-8 ④】DB 为事实源：切会话全量替换；同会话按 dbId 幂等 merge（含删除）。
-  // 不再「每会话只灌一次」——否则 superior/child_notify 入队后不刷新永远看不见。
-  const queueHydrateSessionRef = useRef<string | null>(null);
+  // 【队列水合 · INV-8 ④】E6：切会话与同会话统一走 mergeUserQueueFromDb
+  // （DB 行 + 无 dbId 本地项保留），禁止 sessionChanged 全量替换抹掉迁移中的排队项。
   useEffect(() => {
-    if (!effectiveSessionId) {
-      queueHydrateSessionRef.current = null;
-      return;
-    }
+    if (!effectiveSessionId) return;
     if (!sessionQueueQuery.data) return;
-    const sessionChanged = queueHydrateSessionRef.current !== effectiveSessionId;
-    queueHydrateSessionRef.current = effectiveSessionId;
-    if (sessionChanged) {
-      sessionComposeActions.setUserQueue(
-        effectiveSessionId,
-        sessionQueueQuery.data.map(sessionQueueItemToChatItem),
-      );
-    } else {
-      sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) =>
-        mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
-      );
-    }
+    sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) =>
+      mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+    );
     // INV-8 ④：发送队列 hydrate/merge 完成 → 显式 drain（仅 user/child_notify；superior 由服务端起流）
     streamLifecycleActions.hydrateDone(effectiveSessionId);
   }, [effectiveSessionId, sessionQueueQuery.data]);

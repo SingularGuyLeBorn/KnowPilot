@@ -25,7 +25,6 @@ import { type SelectedSkill } from "@/components/chatInput";
 import {
   type ChatQueueItem,
   createUserQueueItem,
-  sessionQueueItemToChatItem,
   mergeUserQueueFromDb,
 } from "@/lib/chatQueueTypes";
 import { useSessionMessages } from "@/lib/useSessionMessages";
@@ -191,25 +190,13 @@ export function ChatSessionPane({
     asyncQueueQuery,
   });
 
-  const queueHydrateSessionRef = useRef<string | null>(null);
+  // E6：切会话与同会话统一 mergeUserQueueFromDb，保留无 dbId 本地项
   useEffect(() => {
-    if (!sessionId) {
-      queueHydrateSessionRef.current = null;
-      return;
-    }
+    if (!sessionId) return;
     if (!sessionQueueQuery.data) return;
-    const sessionChanged = queueHydrateSessionRef.current !== sessionId;
-    queueHydrateSessionRef.current = sessionId;
-    if (sessionChanged) {
-      sessionComposeActions.setUserQueue(
-        sessionId,
-        sessionQueueQuery.data.map(sessionQueueItemToChatItem),
-      );
-    } else {
-      sessionComposeActions.patchUserQueue(sessionId, (prev) =>
-        mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
-      );
-    }
+    sessionComposeActions.patchUserQueue(sessionId, (prev) =>
+      mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+    );
     streamLifecycleActions.hydrateDone(sessionId);
   }, [sessionId, sessionQueueQuery.data]);
 
@@ -298,12 +285,18 @@ export function ChatSessionPane({
   );
 
   const handleStop = useCallback(async () => {
+    // E3：先拿 stop 契约 partialAssistantMessageId，再 abort——AbortError 路径据此
+    // abortStream（有 id 等对齐 / null 立即 idle），不再 setTimeout(2000) 赌落库。
+    let partialAssistantMessageId: string | null = null;
     if (sessionId) {
       try {
-        await stopAgentChat(sessionId);
+        const res = await stopAgentChat(sessionId);
+        partialAssistantMessageId = res.partialAssistantMessageId;
       } catch {
-        /* continue abort */
+        /* continue abort；契约未知时按 null（立即释放） */
+        partialAssistantMessageId = null;
       }
+      streamLifecycleActions.setPendingAbortPartial(sessionId, partialAssistantMessageId);
     }
     sessionComposeActions.getActiveAbortController(sessionId)?.abort();
   }, [sessionId]);

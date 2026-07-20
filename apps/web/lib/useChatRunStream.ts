@@ -525,8 +525,10 @@ export function useChatRunStream({
               const isNoStream =
                 typeof message === "string" && message.includes("没有运行中的 Agent 流");
               if (opts.isResume && isNoStream) {
-                streamLifecycleActions.clearError(originSid);
-                streamLifecycleActions.commitStream(originSid);
+                // resume 无流：ABORT 释放 streaming 占用（勿 COMMIT 直跳）
+                streamLifecycleActions.abortStream(originSid, {
+                  partialAssistantMessageId: null,
+                });
                 void hydrateSessionMessagesFallback(originSid);
                 return;
               }
@@ -555,22 +557,23 @@ export function useChatRunStream({
           }
           flushStreamNow(originSid);
           const leftover = streamLifecycleStore.get(originSid).streamingContent;
-          // INV-1：abort 时只 completeStream（phase=done，live 块继续显示 leftover），
-          // 不立即 commit。服务端保存 partial assistant 后会广播 message_upserted
-          // （或下方 hydrate 拉回）→ tryCommitAfterAssistant/Hydrate → tryCommitStream
-          // 对齐后才 commit → idle。这样 live 块拆除与 stored 气泡出现原子切换，
-          // 消除「中断后回复先消失再出现」的空窗。
-          streamLifecycleActions.completeStream(originSid, leftover);
-          const hydrateSid = originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? "") : originSid;
-          if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
-          // 兜底：服务端可能无 partial 内容（abort 极早）→ 不会发 message_upserted，
-          // done phase 会卡住队列。2s 后仍未 commit 则强制释放。
-          window.setTimeout(() => {
-            const st = streamLifecycleStore.get(originSid);
-            if (st.phase === "done") {
-              streamLifecycleActions.commitStream(originSid);
-            }
-          }, 2000);
+          // E3：stopAgentChat 契约携带 partialAssistantMessageId；无 setTimeout 赌落库。
+          // 有 id → ABORT 进 done（abort-pending），等 upsert 对齐 COMMIT；
+          // null（明确无 partial）→ 立即 idle；非用户 stop（supersede）→ 立即 idle。
+          const pendingPartial = streamLifecycleActions.takePendingAbortPartial(originSid);
+          const partialId = pendingPartial === undefined ? null : pendingPartial;
+          const phaseBefore = streamLifecycleStore.get(originSid).phase;
+          if (phaseBefore === "streaming" || phaseBefore === "done") {
+            streamLifecycleActions.abortStream(originSid, {
+              partialAssistantMessageId: partialId,
+              leftoverContent: leftover,
+            });
+          }
+          if (partialId) {
+            const hydrateSid =
+              originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? "") : originSid;
+            if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
+          }
           if (opts.optimisticUser) {
             sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
           }
@@ -587,9 +590,12 @@ export function useChatRunStream({
         streamLifecycleActions.setConnected(originSid, false);
         if (!isPageUnloadingRef.current) {
           const phase = streamLifecycleStore.get(originSid).phase;
-          // 异常退出仍停在 streaming：强制 commit 释放占用
+          // 异常退出仍停在 streaming：ABORT_STREAM 合法释放（禁止 COMMIT 直跳 INV-1）
           if (phase === "streaming") {
-            streamLifecycleActions.commitStream(originSid);
+            streamLifecycleActions.abortStream(originSid, {
+              partialAssistantMessageId: null,
+              leftoverContent: streamLifecycleStore.get(originSid).streamingContent,
+            });
           }
         }
         sessionComposeActions.setActiveAbortController(originSid, null);

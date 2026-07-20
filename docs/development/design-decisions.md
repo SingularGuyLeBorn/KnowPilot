@@ -1364,3 +1364,24 @@ PR-3 后心跳仍是「cron 到点 → 预算检查 → 直接 dispatch」。缺
 | P11 附带 | 单主会话 | `SessionService.create/update(isMainSession)` 摘掉同 Agent 其它主标记，避免 prepare/spawn findFirst 命中空壳 |
 
 **回答**：按上表落地（分支 `arch/stream-kernel`）
+
+---
+
+## PR-6 Web Chat store 不变量（2026-07-21，arch/chat-web-store）
+
+### 背景
+
+体检 E1–E6：ACK 乐观 mark 永久丢异步结果；COMMIT_STREAM 接受 streaming→idle 直跳；abort 靠 `setTimeout(2000)` 赌 partial 落库；prefetch hydrate 误置 drainRequested；hydrate 整列覆盖 SSE 新内容；sessionChanged 全量替换抹无 dbId 本地项。
+
+### 决策
+
+| 编号 | 决策 | 结论 |
+| --- | --- | --- |
+| E1 | ACK 标记时机 | `claimed:true` 之后才 `markDeliveryConsumed`；失败路径 `unmarkDeliveryConsumed`；不变量收进 `ackThenMarkDelivery` |
+| E2 | 相位合法性 | COMMIT 合法源 `done\|error`；COMPLETE←streaming；FAIL/ABORT←streaming\|done；streaming 释放走 `ABORT_STREAM` |
+| E3 | abort 协议 | stop 响应 `partialAssistantMessageId`→`setPendingAbortPartial`→AbortError `abortStream`；有 id 等对齐，null 立即 idle；删除 2s 计时器 |
+| E4 | hydrate 意图 | `MessageHydrateSource = view\|prefetch`；仅 view 调 `hydrateDone`；`DrainTriggerSource` 类型枚举 INV-8 合法源 |
+| E5 | hydrate 新鲜度 | same-id 复用字段 compare-skip + `pickFresherMessage`（更长 assistant / 更丰富元数据优先） |
+| E6 | 队列水合 | 切会话与同会话统一 `mergeUserQueueFromDb`，单一「DB + local-only」入口 |
+
+**回答**：按上表落地（分支 `arch/chat-web-store`）

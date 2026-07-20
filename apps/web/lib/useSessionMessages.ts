@@ -19,8 +19,25 @@ import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 type MessageMap = Map<string, ChatMessage[]>;
 type Listener = () => void;
 
+/**
+ * 消息 hydrate 意图：
+ * - view：用户正在看的会话水合 → INV-8 ④ 合法 drain 源
+ * - prefetch：悬停/tab 预取（只读）→ 不置 drainRequested
+ */
+export type MessageHydrateSource = "view" | "prefetch";
+
+/**
+ * INV-8 合法 drain 触发源（类型层枚举，新增调用方编译期可审）。
+ * hydrate 仅 `hydrate_view` 可置 drainRequested；prefetch 不在此列。
+ */
+export type DrainTriggerSource =
+  | "user_enqueue"
+  | "stream_committed"
+  | "session_switch"
+  | "hydrate_view";
+
 type Action =
-  | { type: "hydrate"; sessionId: string; messages: ChatMessage[] }
+  | { type: "hydrate"; sessionId: string; messages: ChatMessage[]; source: MessageHydrateSource }
   | { type: "upsert"; sessionId: string; message: ChatMessage }
   | { type: "delete"; sessionId: string; messageId: string }
   | { type: "clear"; sessionId: string };
@@ -68,16 +85,56 @@ function tryCommitAfterHydrate(sessionId: string, messages: ChatMessage[]): void
   }
 }
 
+/** upsert / hydrate 共用：内容字段全等则 skip */
+function messageFieldsEqual(a: ChatMessage, b: ChatMessage): boolean {
+  return (
+    a.content === b.content &&
+    a.toolCalls === b.toolCalls &&
+    a.toolResults === b.toolResults &&
+    a.tokenUsage === b.tokenUsage
+  );
+}
+
+/**
+ * E5：hydrate same-id 取新——后到达者幂等取新，不覆盖已更新内容。
+ * 无 updatedAt 时：字段全等复用 prev；assistant 内容更长（SSE 递进）优先；
+ * 元数据更丰富优先；其余取 incoming（显式刷新）。
+ */
+function pickFresherMessage(prev: ChatMessage, incoming: ChatMessage): ChatMessage {
+  if (messageFieldsEqual(prev, incoming)) return prev;
+  if (prev.role === "assistant" && incoming.role === "assistant") {
+    if (prev.content.length > incoming.content.length) return prev;
+    if (prev.content.length < incoming.content.length) return incoming;
+  }
+  const richness = (m: ChatMessage) =>
+    (m.toolCalls ? 1 : 0) + (m.toolResults ? 1 : 0) + (m.tokenUsage ? 1 : 0);
+  const prevR = richness(prev);
+  const incR = richness(incoming);
+  if (prevR > incR) return prev;
+  if (incR > prevR) return incoming;
+  return incoming;
+}
+
 function reducer(state: MessageMap, action: Action): MessageMap {
   switch (action.type) {
     case "hydrate": {
       const existing = state.get(action.sessionId);
       const incoming = action.messages.map(normalizeMessage);
       if (existing) {
+        const existingById = new Map(existing.map((m) => [m.id, m]));
         const incomingIds = new Set(incoming.map((m) => m.id));
         const older = existing.filter((m) => !incomingIds.has(m.id));
-        const merged = [...older, ...incoming].sort(cmpByCreatedAt);
-        if (merged.length === existing.length && merged.every((m, i) => m.id === existing[i].id)) {
+        // same-id：逐字段 compare-skip / 取新（禁止 stale 快照覆盖 SSE v2）
+        const mergedIncoming = incoming.map((msg) => {
+          const prev = existingById.get(msg.id);
+          return prev ? pickFresherMessage(prev, msg) : msg;
+        });
+        const merged = [...older, ...mergedIncoming].sort(cmpByCreatedAt);
+        // 快路径：整列 id 相等且字段无变化
+        if (
+          merged.length === existing.length &&
+          merged.every((m, i) => m.id === existing[i].id && messageFieldsEqual(m, existing[i]))
+        ) {
           return state;
         }
         const next = new Map(state);
@@ -95,12 +152,7 @@ function reducer(state: MessageMap, action: Action): MessageMap {
       let nextList: ChatMessage[];
       if (idx >= 0) {
         const prev = list[idx];
-        if (
-          prev.content === msg.content &&
-          prev.toolCalls === msg.toolCalls &&
-          prev.toolResults === msg.toolResults &&
-          prev.tokenUsage === msg.tokenUsage
-        ) {
+        if (messageFieldsEqual(prev, msg)) {
           return state;
         }
         nextList = list.slice();
@@ -163,8 +215,10 @@ class SessionMessageStore {
       tryCommitAfterAssistant(action.sessionId, normalizeMessage(action.message));
     } else if (action.type === "hydrate") {
       tryCommitAfterHydrate(action.sessionId, action.messages.map(normalizeMessage));
-      // INV-8 ④：消息 hydrate 完成 = 显式 drain 请求（reducer 转移点置 drainRequested）
-      streamLifecycleActions.hydrateDone(action.sessionId);
+      // INV-8 ④：仅 view hydrate 置 drainRequested；prefetch 只读预热不得触发 drain
+      if (action.source === "view") {
+        streamLifecycleActions.hydrateDone(action.sessionId);
+      }
     }
   };
 
@@ -266,8 +320,12 @@ class SessionMessageStore {
     this.closeSessionWatch(sessionId);
   }
 
-  hydrateSessionMessages(sessionId: string, messages: ChatMessage[]): void {
-    this.dispatch({ type: "hydrate", sessionId, messages });
+  hydrateSessionMessages(
+    sessionId: string,
+    messages: ChatMessage[],
+    source: MessageHydrateSource = "view",
+  ): void {
+    this.dispatch({ type: "hydrate", sessionId, messages, source });
   }
 
   /**
@@ -308,6 +366,13 @@ function getStore(): SessionMessageStore {
   return globalStore;
 }
 
+/** 单测重置（勿在生产路径调用） */
+export function __resetSessionMessageStoreForTests(): void {
+  globalStore = null;
+  hydratedSessionsGlobal.clear();
+  inflightHydrate.clear();
+}
+
 const EMPTY_ARRAY: ChatMessage[] = [];
 
 /** 跨组件重挂载 / Fast Refresh 仍保留，避免偶发永久 spinner */
@@ -338,6 +403,7 @@ type ListForChatPage = {
 async function fetchAndHydrateSession(
   sessionId: string,
   fetchPage: (opts: { sessionId: string; limit: number }) => Promise<ListForChatPage>,
+  source: MessageHydrateSource = "view",
 ): Promise<{ nextCursor?: string | null }> {
   const existing = inflightHydrate.get(sessionId);
   if (existing) {
@@ -348,7 +414,7 @@ async function fetchAndHydrateSession(
   let nextCursor: string | null | undefined;
   const p = (async () => {
     const page = await fetchPage({ sessionId, limit: 50 });
-    store.hydrateSessionMessages(sessionId, page.items as ChatMessage[]);
+    store.hydrateSessionMessages(sessionId, page.items as ChatMessage[], source);
     hydratedSessionsGlobal.add(sessionId);
     nextCursor = page.nextCursor;
   })();
@@ -515,9 +581,12 @@ export const sessionMessagesStore = {
   },
   onMessageUpserted: (sessionId: string, cb: (m: ChatMessage) => void) =>
     getStore().onMessageUpserted(sessionId, cb),
-  hydrateSessionMessages: (sessionId: string, messages: ChatMessage[]) =>
-    getStore().hydrateSessionMessages(sessionId, messages),
-  /** 悬停/即将切换时预热 MessageStore，切过去首帧即可出屏 */
+  hydrateSessionMessages: (
+    sessionId: string,
+    messages: ChatMessage[],
+    source: MessageHydrateSource = "view",
+  ) => getStore().hydrateSessionMessages(sessionId, messages, source),
+  /** 悬停/即将切换时预热 MessageStore（prefetch：不触发 drain） */
   prefetchSessionMessages: (
     sessionId: string,
     fetchPage: (opts: { sessionId: string; limit: number }) => Promise<ListForChatPage>,
@@ -526,7 +595,7 @@ export const sessionMessagesStore = {
     if (hydratedSessionsGlobal.has(sessionId) || getStore().getMessages(sessionId).length > 0) {
       return Promise.resolve();
     }
-    return fetchAndHydrateSession(sessionId, fetchPage).then(() => undefined);
+    return fetchAndHydrateSession(sessionId, fetchPage, "prefetch").then(() => undefined);
   },
   upsertAssistantFromDone: (
     sessionId: string,
