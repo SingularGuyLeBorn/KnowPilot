@@ -425,9 +425,15 @@ export class AsyncJobOrchestrator {
       const item = this.queue[i];
       const reason = this.blockReason(item.spec);
       if (reason) {
-        // 刷新 reason/gateBlock（gate 解除或容量变化后 UI/统计可解释）；容量类仍可保留首因口径
-        item.reason = reason;
-        item.gateBlock = reason === "gate" ? (this.gateBlockFor(item.spec) ?? undefined) : undefined;
+        // 容量类 reason 保留入队首因（口径稳定）；gate 可随 pending 解除/命中改写
+        const gate = this.gateBlockFor(item.spec);
+        if (gate) {
+          item.reason = "gate";
+          item.gateBlock = gate;
+        } else if (item.reason === "gate") {
+          item.reason = reason;
+          item.gateBlock = undefined;
+        }
         i++;
         continue;
       }
