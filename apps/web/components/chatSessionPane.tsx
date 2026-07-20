@@ -298,12 +298,18 @@ export function ChatSessionPane({
   );
 
   const handleStop = useCallback(async () => {
+    // E3：先拿 stop 契约 partialAssistantMessageId，再 abort——AbortError 路径据此
+    // abortStream（有 id 等对齐 / null 立即 idle），不再 setTimeout(2000) 赌落库。
+    let partialAssistantMessageId: string | null = null;
     if (sessionId) {
       try {
-        await stopAgentChat(sessionId);
+        const res = await stopAgentChat(sessionId);
+        partialAssistantMessageId = res.partialAssistantMessageId;
       } catch {
-        /* continue abort */
+        /* continue abort；契约未知时按 null（立即释放） */
+        partialAssistantMessageId = null;
       }
+      streamLifecycleActions.setPendingAbortPartial(sessionId, partialAssistantMessageId);
     }
     sessionComposeActions.getActiveAbortController(sessionId)?.abort();
   }, [sessionId]);

@@ -494,6 +494,9 @@ class StreamLifecycleStore {
 
 let globalStore: StreamLifecycleStore | null = null;
 
+/** E3：stopAgentChat 返回的 partial id，供 AbortError 路径 abortStream 消费（无 setTimeout） */
+const pendingAbortPartials = new Map<string, string | null>();
+
 function getStore(): StreamLifecycleStore {
   if (!globalStore) globalStore = new StreamLifecycleStore();
   return globalStore;
@@ -502,6 +505,7 @@ function getStore(): StreamLifecycleStore {
 /** 单测重置（勿在生产路径调用） */
 export function __resetStreamLifecycleStoreForTests(): void {
   globalStore = null;
+  pendingAbortPartials.clear();
 }
 
 const EMPTY_STATE: StreamLifecycleState = IDLE_STATE;
@@ -616,6 +620,20 @@ export const streamLifecycleActions = {
       partialAssistantMessageId: opts.partialAssistantMessageId,
       leftoverContent: opts.leftoverContent,
     });
+  },
+  /**
+   * E3：用户点停止后、abort() 前登记 stopAgentChat 返回的 partialAssistantMessageId。
+   * AbortError 路径 take 后走 abortStream——有 id 等对齐，null 立即 idle；无计时器。
+   */
+  setPendingAbortPartial(sessionId: string, partialAssistantMessageId: string | null) {
+    pendingAbortPartials.set(sessionId, partialAssistantMessageId);
+  },
+  /** @returns undefined = 非用户 stop（如新流 supersede）；string|null = stop 契约 */
+  takePendingAbortPartial(sessionId: string): string | null | undefined {
+    if (!pendingAbortPartials.has(sessionId)) return undefined;
+    const v = pendingAbortPartials.get(sessionId) ?? null;
+    pendingAbortPartials.delete(sessionId);
+    return v;
   },
   /** done/error → idle（空回复、fail 后释放）。streaming/idle 由 reducer 拒绝（dev 报错） */
   commitStream(sessionId: string) {
