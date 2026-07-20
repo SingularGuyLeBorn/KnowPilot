@@ -1203,7 +1203,24 @@ ${entity.systemPrompt}
           input.heartbeatModel !== undefined && input.heartbeatModel !== existing.heartbeatModel;
         if ((heartbeatChanged || modelChanged) && (next ?? prev)) {
           const base = (next ?? prev) as NonNullable<UpdateAgentInput["heartbeat"]>;
-          input = { ...input, heartbeat: { ...base, consecutiveFailures: 0 } };
+          // W2：配置变更同时清零决策 terminal/退避态，供 refresh 摘除 suspended
+          input = {
+            ...input,
+            heartbeat: {
+              ...base,
+              consecutiveFailures: 0,
+              decision: {
+                skipRemaining: 0,
+                resetToken: "",
+                lastMode: null,
+                quietStreak: 0,
+                lastSkipTicks: 0,
+                lastGateNotifyAt: null,
+                lastGateNotifyKey: null,
+                terminalAt: null,
+              },
+            },
+          };
         }
       }
     }
