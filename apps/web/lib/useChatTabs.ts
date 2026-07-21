@@ -5,7 +5,7 @@
  * 状态机在 chatTabsState；此处负责 sessionStorage 持久化与派生焦点 id。
  */
 
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer } from "react";
 import {
   CHAT_TABS_STORAGE_KEY,
   chatTabsReducer,
@@ -15,6 +15,7 @@ import {
   parseChatTabsStorage,
   serializeChatTabsState,
   type ChatPaneSlot,
+  type ChatTabsAction,
   type ChatTabsState,
 } from "@/lib/chatTabsState";
 
@@ -39,18 +40,47 @@ export interface UseChatTabsResult {
   ensureSplitWith: (otherSessionId: string) => void;
 }
 
+type TabsHookState = {
+  tabs: ChatTabsState;
+  storageReady: boolean;
+};
+
+type TabsHookAction =
+  | ChatTabsAction
+  | { type: "STORAGE_HYDRATE"; state: ChatTabsState | null };
+
+function createInitialTabsHookState(): TabsHookState {
+  return { tabs: createEmptyChatTabsState(), storageReady: false };
+}
+
+function tabsHookReducer(state: TabsHookState, action: TabsHookAction): TabsHookState {
+  if (action.type === "STORAGE_HYDRATE") {
+    return {
+      tabs: action.state
+        ? chatTabsReducer(state.tabs, { type: "HYDRATE", state: action.state })
+        : state.tabs,
+      storageReady: true,
+    };
+  }
+  return {
+    tabs: chatTabsReducer(state.tabs, action),
+    storageReady: state.storageReady,
+  };
+}
+
 export function useChatTabs(): UseChatTabsResult {
   // 首屏必须与 SSR 一致：禁止在 useReducer 初始化时读 sessionStorage
   // （否则服务端渲染「新对话」、客户端首帧已有 tabs → hydration mismatch）。
-  const [tabs, dispatch] = useReducer(chatTabsReducer, undefined, createEmptyChatTabsState);
-  // 水合完成标记用 state（非 ref）：与 HYDRATE 同批提交，避免 persist effect
-  // 在「已标 hydrated、但 tabs 仍是空态」那一帧把 storage 擦掉。
-  const [storageReady, setStorageReady] = useState(false);
+  // storageReady 收进同一 reducer：水合与 ready 同批提交，避免独立 setState 级联渲染。
+  const [{ tabs, storageReady }, dispatch] = useReducer(
+    tabsHookReducer,
+    undefined,
+    createInitialTabsHookState,
+  );
 
   useEffect(() => {
     const fromStorage = parseChatTabsStorage(sessionStorage.getItem(CHAT_TABS_STORAGE_KEY));
-    if (fromStorage) dispatch({ type: "HYDRATE", state: fromStorage });
-    setStorageReady(true);
+    dispatch({ type: "STORAGE_HYDRATE", state: fromStorage });
   }, []);
 
   useEffect(() => {
