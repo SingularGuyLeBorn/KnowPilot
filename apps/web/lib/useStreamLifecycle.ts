@@ -66,8 +66,6 @@ export interface StreamLifecycleState {
   inFlightAssistantId: string | null;
   /** INV-8：数据 hydrate 完成请求 drain 的标记（仅 idle 置位；进入 idle 的转移自身即驱动 drain，故 commit 时清除） */
   drainRequested: boolean;
-  /** completeStream 进入 done 的单调时刻；超时未 commit 则强制释放占用 */
-  doneEnteredAt: number | null;
   /** RESUME_CLAIM：true 时拒绝并发 beginStream(resume) */
   resumeClaimed: boolean;
 }
@@ -89,7 +87,6 @@ const IDLE_STATE: StreamLifecycleState = {
   pendingAssistantContent: null,
   inFlightAssistantId: null,
   drainRequested: false,
-  doneEnteredAt: null,
   resumeClaimed: false,
 };
 
@@ -165,7 +162,6 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
           error: null,
           connected: true,
           resumeClaimed: true,
-          doneEnteredAt: null,
           pendingAssistantMessageId: null,
           pendingAssistantContent: null,
           streamTargetUserId: action.streamTargetUserId ?? prev.streamTargetUserId,
@@ -278,7 +274,6 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         error: null,
         connected: false,
         resumeClaimed: false,
-        doneEnteredAt: Date.now(),
         pendingAssistantMessageId: action.assistantMessageId,
         pendingAssistantContent: action.content.trim() ? action.content : null,
       });
@@ -305,7 +300,6 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         pendingAssistantContent: null,
         inFlightAssistantId: null,
         drainRequested: false,
-        doneEnteredAt: null,
         resumeClaimed: false,
       });
     }
@@ -373,7 +367,6 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         inFlightAssistantId: null,
         connected: false,
         drainRequested: false,
-        doneEnteredAt: null,
         resumeClaimed: false,
       });
     }

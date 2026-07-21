@@ -1488,3 +1488,25 @@ ChatMessage 原为扁平线性链，无分支/书签。对齐 pi tree-structured
 | wastedTokens | 日预算扣减不变；无产出 run token 另记 wastedTokens，brief 展示空转占比（≥50% 告警）；v1 不拦截 |
 
 **回答**：按上表落地（分支 `feat/compaction-stall-budget`→master）
+
+---
+
+## feat/chat-kimi-composer 合入 master 的冲突裁决（2026-07-21）
+
+### 背景
+
+WIP 分支（Kimi 模型菜单/飞书集成/软暂停占位/tombstone 等，基于 f866c89b）与修复套件（PR-1~6 + W1~W5）在 12 个文件冲突。两边都改了流式/队列/store 核心。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 总原则 | 架构语义一律以修复版为准；WIP 正交特性保留 |
+| sealUserAbortStream 本地占位 | **删除**（与 E3 stop 契约 partialAssistantMessageId + abort-pending 解决同一问题，禁止双轨；连实现带测试删） |
+| hub.stop 注入队列 | 对齐 A5：任何 stop 清内存队列（持久行 run 收尾统一移交 user 队列）；WIP 的「软暂停立即标 paused」保留 |
+| ORPHAN_STREAM / commitAfterDone / deprecated 别名 | 删除，ABORT_STREAM 统一承载「释放占用」语义 |
+| done watchdog | 保留并对齐 ABORT_STREAM：带 partialId（进 done）武装、null（回 idle）拆除 |
+| tombstone（consumedQueueDbIds）/ resumeClaimed / field-level merge | 保留（正交特性，与 E1/E2/E5 无冲突） |
+| 队列水合 | 父级（chat.tsx）与 pane 双写 merge 并存（幂等冗余，与 master 一致）；pane 侧挂 tombstone |
+
+**回答**：按上表落地（merge commit `037d081d` → master `edb23a80`；验证 lint 全绿 + server 764/764 + web 57/57）

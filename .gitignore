@@ -74,6 +74,7 @@ content/sources/smoke-source-*.json
 
 # Runtime generated memory / trash files
 content/memories/*.md
+content/skills/.usage.json
 .dev-log/llm-budget.json
 .dev-log/openrouter-free-models.json
 .dev-log/oschina-sample.html
@@ -118,3 +119,4 @@ weights/tts/
 weights/asr/
 !weights/README.md
 !weights/**/.gitkeep
+.test-e2e-pids.json
