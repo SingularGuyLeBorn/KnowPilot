@@ -456,7 +456,7 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
       ? sessionId
       : null,
   );
-  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [hasOlderMessagesState, setHasOlderMessages] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const cursorRef = useRef<string | undefined>(undefined);
 
@@ -466,6 +466,9 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
     () => EMPTY_ARRAY,
   );
 
+  // 无 session 时派生为 false，避免 effect 里同步 setState
+  const hasOlderMessages = !!sessionId && hasOlderMessagesState;
+
   // 同步按「当前 session」派生：缓存命中 / 全局已水合 / 本 session 对账完成
   const isMessagesHydrated =
     !!sessionId &&
@@ -474,16 +477,13 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
       hydratedForSessionId === sessionId);
 
   useEffect(() => {
-    if (!sessionId) {
-      setHasOlderMessages(false);
-      return;
-    }
+    if (!sessionId) return;
     store.watchSession(sessionId);
 
     const cached = store.getMessages(sessionId);
     const already = hydratedSessionsGlobal.has(sessionId) || cached.length > 0;
     if (already) {
-      setHydratedForSessionId(sessionId);
+      // isMessagesHydrated 已由 global/cache 派生为 true，无需 effect 内同步 setState
       void (async () => {
         try {
           const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
