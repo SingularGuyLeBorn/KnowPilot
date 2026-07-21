@@ -7,6 +7,7 @@
 
 import { memo } from "react";
 import {
+  Bookmark,
   Bot,
   Check,
   ChevronLeft,
