@@ -82,7 +82,7 @@ export default function WorkspacesPage() {
       }
     }
     return map;
-  }, [agentsQuery.data, data?.items]);
+  }, [agentsQuery.data, data]);
 
   const handleCreate = async () => {
     setCreateError(null);
