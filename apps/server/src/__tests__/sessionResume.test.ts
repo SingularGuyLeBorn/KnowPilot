@@ -27,6 +27,7 @@ import { appRouter } from "../router.js";
 import { createContextInner } from "../trpc/context.js";
 import { setStreamHub, getStreamHub, SessionStreamHub } from "../infra/sessionStreamHub.js";
 import type { AppConfig } from "../infra/config.js";
+import type { AgentChatInput } from "@knowpilot/shared";
 
 type Ctx = Awaited<ReturnType<typeof createContextInner>>;
 
@@ -349,6 +350,65 @@ describe("C-3 会话手动恢复（session.resume）", () => {
     }
   }, 30_000);
 
+  it("T12 用户软暂停：stop(user)→paused、注入队列保留；resume 注入用户暂停文案", async () => {
+    process.env.MOCK_LLM = "true";
+    const ctx = await createContextInner();
+    const caller = appRouter.createCaller(ctx);
+    const agentId = await createAgent(ctx, "T12");
+    const sessionId = await createSessionWithStatus(ctx, agentId, "active");
+    try {
+      await prisma.chatMessage.create({
+        data: { sessionId, role: "user", content: "做一件大事" },
+      });
+      await prisma.chatMessage.create({
+        data: {
+          sessionId,
+          role: "assistant",
+          content: "半截回复：已开始分析",
+          finishReason: "aborted",
+        },
+      });
+
+      const hub = getStreamHub()!;
+      let resolveRun!: () => void;
+      const gate = new Promise<void>((r) => {
+        resolveRun = r;
+      });
+      const body = { sessionId, message: "占位" } as AgentChatInput;
+      await hub.start(sessionId, body, async (_emit, signal) => {
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) return resolve();
+          signal.addEventListener("abort", () => resolve(), { once: true });
+          void gate;
+        });
+      });
+      hub.enqueueInject(sessionId, "follow_up", "keep-me");
+
+      // 负向：旧实现 stop 清空队列且不标 paused
+      expect(hub.stop(sessionId, "user")).toBe(true);
+      await expect
+        .poll(async () => (await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status, {
+          timeout: 5_000,
+        })
+        .toBe("paused");
+      expect(hub.takeInject(sessionId, "follow_up")[0]?.content).toBe("keep-me");
+      resolveRun();
+      await hub.waitFor(sessionId);
+
+      const res = await caller.session.resume({ id: sessionId });
+      expect(res).toMatchObject({ resumed: true, streamStarted: true });
+      await hub.waitFor(sessionId);
+
+      const sysMsgs = await prisma.chatMessage.findMany({
+        where: { sessionId, role: "user", source: "system" },
+      });
+      expect(sysMsgs.some((m) => m.content.includes("用户暂停了生成"))).toBe(true);
+      expect(sysMsgs.some((m) => m.content.includes("服务已重启"))).toBe(false);
+    } finally {
+      await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
+    }
+  }, 20_000);
+
   it("T10 paused + 队首孤儿 ask_user 答复 → resume 优先消费并以 user 源起流", async () => {
     process.env.MOCK_LLM = "true";
     const ctx = await createContextInner();
@@ -394,4 +454,101 @@ describe("C-3 会话手动恢复（session.resume）", () => {
       await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
     }
   }, 20_000);
+
+  it("T11 子会话用户软停止 → paused（不得被 runner 覆写 failed），resume 可用", async () => {
+    // 负向：旧 prepareAgentRun catch 无条件 status=failed，覆盖 Hub.stop 的 paused → resume BAD_REQUEST
+    const ctx = await createContextInner();
+    const caller = appRouter.createCaller(ctx);
+    const agentId = await createAgent(ctx, "T11");
+    const created = await ctx.services.session.create({
+      title: "T11 subagent",
+      model: "deepseek-chat",
+      agentId,
+      kind: "subagent",
+      isMainSession: true,
+    } as any);
+    const sessionId = (created.data as { id: string }).id;
+    await prisma.chatSession.update({ where: { id: sessionId }, data: { status: "running", kind: "subagent" } });
+    const hub = getStreamHub()!;
+
+    try {
+      await hub.start(
+        sessionId,
+        { sessionId, message: "长跑", agentId } as AgentChatInput,
+        async (emit, signal) => {
+          // 模拟 prepareAgentRun runner：挂起至 abort，不直写 failed（修后契约）
+          await new Promise<void>((_resolve, reject) => {
+            const onAbort = () => {
+              const err = new Error("流式输出已被用户中断");
+              err.name = "AbortError";
+              emit({ type: "error", message: err.message, sessionId });
+              reject(err);
+            };
+            if (signal.aborted) onAbort();
+            else signal.addEventListener("abort", onAbort, { once: true });
+          });
+        },
+      );
+
+      expect(hub.stop(sessionId, "user")).toBe(true);
+      await hub.waitFor(sessionId);
+
+      const afterStop = await prisma.chatSession.findUnique({ where: { id: sessionId } });
+      expect(afterStop?.status).toBe("paused");
+      expect(afterStop?.status).not.toBe("failed");
+
+      process.env.MOCK_LLM = "true";
+      const res = await caller.session.resume({ id: sessionId });
+      expect(res).toMatchObject({ resumed: true });
+    } finally {
+      delete process.env.MOCK_LLM;
+      await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
+    }
+  }, 20_000);
+
+  it("T9 Hub 全路径归位：paused 上普通起流（非 resume）done → active", async () => {
+    // 根因回归：软暂停标 paused 后用户直接发消息走 hub.start，旧实现无归位 → 永久 paused
+    const chatSpy = vi.spyOn(agentStream, "chatAgentStream").mockImplementation(async (_s, _c, input, _inv, emit) => {
+      emit({
+        type: "done",
+        sessionId: input.sessionId!,
+        agentId: "t9-spy",
+        content: "T9 ok",
+        toolCalls: [],
+        model: "m",
+        provider: "p",
+        roundsUsed: 1,
+      });
+    });
+
+    const ctx = await createContextInner();
+    const agentId = await createAgent(ctx, "T9");
+    const sessionId = await createSessionWithStatus(ctx, agentId, "paused");
+    const hub = getStreamHub()!;
+
+    try {
+      const started = await hub.startIfNotRunning(
+        sessionId,
+        { sessionId, message: "继续", agentId } as AgentChatInput,
+        (emit, signal) =>
+          agentStream.chatAgentStream(
+            ctx.services,
+            ctx.config as AppConfig,
+            { sessionId, message: "继续", agentId },
+            async () => undefined,
+            emit,
+            signal,
+          ),
+      );
+      expect(started).toBe(true);
+      expect((await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status).toBe("running");
+
+      await hub.waitFor(sessionId);
+      // 旧实现：停在 paused；Hub 收口后必须 active
+      expect((await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status).toBe("active");
+      expect(chatSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
+    }
+  }, 15_000);
 });

@@ -12,13 +12,13 @@
  * 本 hook 不新增任何 useEffect。INV-1~8 与 drain 链语义不变。
  */
 
-import { useCallback, type RefObject } from "react";
+import { useCallback, useRef, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import type { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { streamAgentChat } from "@/lib/agentStream";
 import { buildStreamConfig } from "@/lib/chatConfig";
-import { formatToolResultHint } from "@/lib/chatMessageUtils";
+import { formatToolResultHint, pruneEmptyThinkingSteps } from "@/lib/chatMessageUtils";
 import { type Agent, type ChatSessionConfig, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 import { type ChatQueueItem } from "@/lib/chatQueueTypes";
 import { COMPOSE_STORAGE_KEY, LIFECYCLE_STORAGE_KEY, NEW_STREAM_KEY } from "@/lib/chatKeys";
@@ -136,6 +136,9 @@ export function useChatRunStream({
     streamRafRef.current.set(sid, id);
   }, [scheduleStreamSave, pendingStreamDeltaRef, streamRafRef]);
 
+  /** 与 pendingThinkingDelta 同步的 round，flush 时写入正确轮次 */
+  const pendingThinkingRoundRef = useRef<Map<string, number>>(new Map());
+
   const scheduleThinkingFlush = useCallback((sid: string) => {
     if (thinkingRafRef.current.has(sid)) return;
     const id = requestAnimationFrame(() => {
@@ -143,7 +146,9 @@ export function useChatRunStream({
       const delta = pendingThinkingDeltaRef.current.get(sid);
       if (delta) {
         pendingThinkingDeltaRef.current.delete(sid);
-        streamLifecycleActions.appendThinkingDelta(sid, delta);
+        const round = pendingThinkingRoundRef.current.get(sid) ?? 1;
+        pendingThinkingRoundRef.current.delete(sid);
+        streamLifecycleActions.appendThinkingDelta(sid, delta, round);
         scheduleStreamSave();
       }
     });
@@ -171,7 +176,9 @@ export function useChatRunStream({
     const thinkDelta = pendingThinkingDeltaRef.current.get(sid);
     if (thinkDelta) {
       pendingThinkingDeltaRef.current.delete(sid);
-      streamLifecycleActions.appendThinkingDelta(sid, thinkDelta);
+      const round = pendingThinkingRoundRef.current.get(sid) ?? 1;
+      pendingThinkingRoundRef.current.delete(sid);
+      streamLifecycleActions.appendThinkingDelta(sid, thinkDelta, round);
       scheduleStreamSave();
     }
   }, [scheduleStreamSave, pendingStreamDeltaRef, streamRafRef, pendingThinkingDeltaRef, thinkingRafRef]);
@@ -190,7 +197,41 @@ export function useChatRunStream({
       thinkingRafRef.current.delete(sid);
     }
     pendingThinkingDeltaRef.current.delete(sid);
+    pendingThinkingRoundRef.current.delete(sid);
   }, [pendingStreamDeltaRef, streamRafRef, pendingThinkingDeltaRef, thinkingRafRef]);
+
+  /**
+   * 用户软暂停收口：flush → completeStream(保留 leftover) → 半截写入 MessageStore →
+   * tryCommit 拆 live。禁止「只 commit 不落库」导致回复整段消失。
+   */
+  const sealUserAbortStream = useCallback(
+    (sid: string) => {
+      flushStreamNow(sid);
+      const life = streamLifecycleStore.get(sid);
+      let leftover = life.streamingContent || life.pendingAssistantContent || "";
+      if (!leftover.trim()) {
+        leftover = life.liveTimeline
+          .filter((t): t is { type: "content"; content: string; round: number } => t.type === "content")
+          .map((t) => t.content)
+          .join("\n\n");
+      }
+      streamLifecycleActions.completeStream(sid, leftover);
+      const sealed = leftover.trim();
+      if (sealed) {
+        // upsert 触发 tryCommitAfterAssistant → 与 pending 正文对齐后 commit，live→stored 原子切换
+        sessionMessagesStore.upsertLocalAbortedAssistant(sid, sealed);
+        const st = streamLifecycleStore.get(sid);
+        if (st.phase === "done") {
+          // 未对齐时强制 commit 前再确保 store 有气泡（防御）
+          streamLifecycleActions.commitStream(sid);
+        }
+      } else {
+        // 极早中断无正文：立刻释放占用（禁止 setTimeout 赌时序）
+        streamLifecycleActions.commitAfterDone(sid);
+      }
+    },
+    [flushStreamNow],
+  );
 
   const runStream = useCallback(
     async (opts: RunStreamOptions) => {
@@ -202,15 +243,17 @@ export function useChatRunStream({
       sessionComposeActions.getActiveAbortController(originSid)?.abort();
       const ac = new AbortController();
       sessionComposeActions.setActiveAbortController(originSid, ac);
+      /** 当前 ReAct 轮次：thinking delta 必须写入对应 round，禁止糊到上一轮 */
+      let streamRound = 1;
 
       const isResume = opts.isResume === true;
-      streamLifecycleActions.beginStream(originSid, {
+      const began = streamLifecycleActions.beginStream(originSid, {
         streamTargetUserId:
           opts.retryFromMessageId ?? opts.regenerateUserMessageId ?? opts.editMessageId ?? null,
         resume: isResume,
       });
-      // INV-2：非 resume 时若仍 occupied，beginStream 已 no-op，禁止继续发请求
-      if (!isResume && streamLifecycleStore.get(originSid).phase !== "streaming") {
+      // INV-2 / RESUME_CLAIM：begin 被拒（占用中或 resume 双挂）则禁止继续发请求
+      if (!began) {
         sessionComposeActions.setActiveAbortController(originSid, null);
         sessionComposeActions.setQueueDraining(originSid, false);
         return;
@@ -304,24 +347,15 @@ export function useChatRunStream({
               scheduleStreamSave(true);
             },
             onRoundStart: (round) => {
-              const prev = streamLifecycleStore.get(originSid).liveTimeline;
-              if (prev.length === 1 && prev[0]?.type === "thinking" && !prev[0].content) {
-                streamLifecycleActions.replaceTimeline(originSid, [
-                  { type: "thinking" as const, content: "", round },
-                ]);
-              } else {
-                streamLifecycleActions.appendTimelineStep(originSid, {
-                  type: "thinking" as const,
-                  content: "",
-                  round,
-                });
-              }
+              streamRound = round;
+              // 不预插空 Thinking：无 reasoning 的工具轮不再留下空壳
             },
             onThinking: (delta) => {
               pendingThinkingDeltaRef.current.set(
                 originSid,
                 (pendingThinkingDeltaRef.current.get(originSid) ?? "") + delta,
               );
+              pendingThinkingRoundRef.current.set(originSid, streamRound);
               scheduleThinkingFlush(originSid);
             },
             onToken: (delta) => {
@@ -334,7 +368,10 @@ export function useChatRunStream({
             onIntermediateContent: (content, round) => {
               discardStreamFlush(originSid);
               streamLifecycleActions.clearStreamingContent(originSid);
-              const prev = streamLifecycleStore.get(originSid).liveTimeline;
+              const prev = pruneEmptyThinkingSteps(streamLifecycleStore.get(originSid).liveTimeline);
+              if (prev.length !== streamLifecycleStore.get(originSid).liveTimeline.length) {
+                streamLifecycleActions.replaceTimeline(originSid, prev);
+              }
               if (!prev.some((step) => step.type === "content" && step.round === round)) {
                 streamLifecycleActions.appendTimelineStep(originSid, {
                   type: "content" as const,
@@ -346,8 +383,12 @@ export function useChatRunStream({
             onToolStart: (name, args, round, toolCallId) => {
               flushStreamNow(originSid);
               streamLifecycleActions.moveStreamingContentToTimeline(originSid, round);
-              const prev = streamLifecycleStore.get(originSid).liveTimeline;
-              if (prev.some((step) => step.type === "tool" && step.toolCallId === toolCallId)) return;
+              // 本轮若无思考正文，摘掉空 Thinking，避免工具条上方一排空壳
+              const pruned = pruneEmptyThinkingSteps(streamLifecycleStore.get(originSid).liveTimeline);
+              if (pruned.length !== streamLifecycleStore.get(originSid).liveTimeline.length) {
+                streamLifecycleActions.replaceTimeline(originSid, pruned);
+              }
+              if (pruned.some((step) => step.type === "tool" && step.toolCallId === toolCallId)) return;
               streamLifecycleActions.appendTimelineStep(originSid, {
                 type: "tool",
                 toolCallId,
@@ -512,24 +553,44 @@ export function useChatRunStream({
             },
             onError: (message, sid, suggestion) => {
               if (originSid === NEW_STREAM_KEY && sid) {
-                discardStreamFlush(originSid);
                 streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, sid);
                 sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, sid);
                 originSid = sid;
-              } else {
-                discardStreamFlush(originSid);
               }
               if (opts.optimisticUser) {
                 sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
               }
-              const isNoStream =
-                typeof message === "string" && message.includes("没有运行中的 Agent 流");
+              const msg = typeof message === "string" ? message : "";
+              const isNoStream = msg.includes("没有运行中的 Agent 流");
               if (opts.isResume && isNoStream) {
+                discardStreamFlush(originSid);
                 streamLifecycleActions.clearError(originSid);
                 streamLifecycleActions.commitStream(originSid);
                 void hydrateSessionMessagesFallback(originSid);
                 return;
               }
+              // 用户软暂停 / 中断：半截进 MessageStore 再拆 live，禁止 commit 后气泡变空
+              const isUserAbort =
+                msg === "user" ||
+                msg.includes("用户中断") ||
+                msg.includes("流式输出已被用户中断") ||
+                msg.includes("已中止") ||
+                msg.includes("已被主动取消") ||
+                msg.includes("会话已停止");
+              if (isUserAbort) {
+                if (isPageUnloadingRef.current) return;
+                sealUserAbortStream(originSid);
+                const hydrateSid =
+                  originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? sid ?? "") : originSid;
+                if (hydrateSid) {
+                  // 服务端 partial 落库后与本地占位合并；不依赖 hydrate 赌时序决定是否有气泡
+                  void hydrateSessionMessagesFallback(hydrateSid);
+                  void utils.session.getById.invalidate({ id: hydrateSid }).catch(() => undefined);
+                  void utils.session.list.invalidate();
+                }
+                return;
+              }
+              discardStreamFlush(originSid);
               streamLifecycleActions.failStream(
                 originSid,
                 message + (suggestion ? `\n${suggestion}` : ""),
@@ -553,24 +614,14 @@ export function useChatRunStream({
           if (isPageUnloadingRef.current) {
             return;
           }
-          flushStreamNow(originSid);
-          const leftover = streamLifecycleStore.get(originSid).streamingContent;
-          // INV-1：abort 时只 completeStream（phase=done，live 块继续显示 leftover），
-          // 不立即 commit。服务端保存 partial assistant 后会广播 message_upserted
-          // （或下方 hydrate 拉回）→ tryCommitAfterAssistant/Hydrate → tryCommitStream
-          // 对齐后才 commit → idle。这样 live 块拆除与 stored 气泡出现原子切换，
-          // 消除「中断后回复先消失再出现」的空窗。
-          streamLifecycleActions.completeStream(originSid, leftover);
+          // 半截正文先入 MessageStore 再 commit，避免「暂停后回复整段消失」
+          sealUserAbortStream(originSid);
           const hydrateSid = originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? "") : originSid;
-          if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
-          // 兜底：服务端可能无 partial 内容（abort 极早）→ 不会发 message_upserted，
-          // done phase 会卡住队列。2s 后仍未 commit 则强制释放。
-          window.setTimeout(() => {
-            const st = streamLifecycleStore.get(originSid);
-            if (st.phase === "done") {
-              streamLifecycleActions.commitStream(originSid);
-            }
-          }, 2000);
+          if (hydrateSid) {
+            void hydrateSessionMessagesFallback(hydrateSid);
+            void utils.session.getById.invalidate({ id: hydrateSid }).catch(() => undefined);
+            void utils.session.list.invalidate();
+          }
           if (opts.optimisticUser) {
             sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
           }
@@ -587,11 +638,12 @@ export function useChatRunStream({
         streamLifecycleActions.setConnected(originSid, false);
         if (!isPageUnloadingRef.current) {
           const phase = streamLifecycleStore.get(originSid).phase;
-          // 异常退出仍停在 streaming：强制 commit 释放占用
+          // 异常退出仍停在 streaming：orphan 释放占用（不经 done 对齐，与 commitAfterDone 分离）
           if (phase === "streaming") {
-            streamLifecycleActions.commitStream(originSid);
+            streamLifecycleActions.orphanStreamOccupancy(originSid);
           }
         }
+        streamLifecycleActions.releaseResumeClaim(originSid);
         sessionComposeActions.setActiveAbortController(originSid, null);
         sessionComposeActions.setQueueDraining(originSid, false);
         const finishedTaskId = sessionComposeStore.get(originSid).activeQueueTaskId;
@@ -602,7 +654,7 @@ export function useChatRunStream({
         // 队列消费改由 onStreamCommitted（INV-1/2）驱动，finally 不再 hydrate+consume
       }
     },
-    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, scheduleThinkingFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback, effectiveSessionIdRef, isPageUnloadingRef, pendingStreamDeltaRef, pendingThinkingDeltaRef, setEditingUserId, setSessionId],
+    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, scheduleThinkingFlush, flushStreamNow, discardStreamFlush, sealUserAbortStream, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback, effectiveSessionIdRef, isPageUnloadingRef, pendingStreamDeltaRef, pendingThinkingDeltaRef, setEditingUserId, setSessionId],
   );
 
   return { runStream };

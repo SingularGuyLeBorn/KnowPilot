@@ -14,10 +14,30 @@
 
 import * as fs from "fs";
 import * as http from "http";
+import * as net from "net";
 import * as path from "path";
 import { exec } from "child_process";
 import { randomBytes } from "crypto";
 import { URL } from "url";
+
+/** 探测本机可用端口（默认从 8088 起尝试若干相邻端口，避开 EADDRINUSE） */
+async function findFreeListenPort(startPort: number, maxTries = 5): Promise<number> {
+  for (let i = 0; i < maxTries; i++) {
+    const port = startPort + i;
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = net.createServer();
+      probe.once("error", () => resolve(false));
+      probe.listen(port, "127.0.0.1", () => {
+        probe.close(() => resolve(true));
+      });
+    });
+    if (free) return port;
+  }
+  throw new Error(
+    `本地回调端口 ${startPort}–${startPort + maxTries - 1} 均被占用（EADDRINUSE）。` +
+      `请关闭占用进程后重试，并在飞书开放平台为实际端口添加重定向 URI（如 http://localhost:${startPort}）。`,
+  );
+}
 
 const FEISHU_BASE = "https://open.feishu.cn/open-apis";
 const ACCOUNTS_AUTHORIZE = "https://accounts.feishu.cn/open-apis/authen/v1/authorize";
@@ -383,8 +403,12 @@ export async function authorizeUserViaBrowser(options?: {
     };
   }
 
-  const redirectUri = options?.redirectUri || "http://localhost:8088";
-  const port = options?.port ?? 8088;
+  const preferredPort = options?.port ?? 8088;
+  // 显式 redirectUri 时尊重调用方端口；否则自动找空闲端口（8088 被占时 +1…）
+  const port = options?.redirectUri
+    ? preferredPort
+    : await findFreeListenPort(preferredPort);
+  const redirectUri = options?.redirectUri || `http://localhost:${port}`;
   const timeoutSec = options?.timeoutSec ?? 180;
   const scope = (options?.scope || FEISHU_DEFAULT_OAUTH_SCOPES).trim();
   const state = randomBytes(16).toString("base64url");

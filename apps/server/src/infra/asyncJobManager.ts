@@ -806,11 +806,25 @@ export async function runStartupRecovery(options: {
   const { config, services } = options;
   // 动作 1（含同步其 subagent ChatSession 标 failed；reentrant 僵尸自动续跑）
   const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
-  // 动作 2：僵尸 running 会话 → paused
+  // 动作 2：僵尸 running 会话 → paused（先查出子会话以便广播，再条件写）
+  const zombieSubRows = await prisma.chatSession.findMany({
+    where: { status: "running", kind: "subagent", parentSessionId: { not: null } },
+    select: { id: true, parentSessionId: true, title: true, agentId: true },
+  });
   const zombieSessions = await prisma.chatSession.updateMany({
     where: { status: "running" },
     data: { status: "paused" },
   });
+  for (const row of zombieSubRows) {
+    if (!row.parentSessionId) continue;
+    void notifySubagentSessionUpdate({
+      parentSessionId: row.parentSessionId,
+      subagentSessionId: row.id,
+      status: "paused",
+      title: row.title ?? undefined,
+      agentId: row.agentId,
+    });
+  }
   // 动作 3：动态 import——swarm.ts 处于 ReAct 环内（agentStream/agentRuntime 依赖链），静态导入成环
   const { requeueOrphanedSuperiorDrains } = await import("./tools/native/swarm.js");
   const superiorDrainsRegistered = await requeueOrphanedSuperiorDrains(config, services);
@@ -998,10 +1012,21 @@ export async function recoverStaleAsyncJobs(
     // 同步 subagent ChatSession 状态为 failed（避免卡片永久停在 running/queued）
     if (input.subagentSessionId) {
       try {
-        await prisma.chatSession.update({
+        const subRow = await prisma.chatSession.update({
           where: { id: input.subagentSessionId },
           data: { status: "failed" },
+          select: { id: true, parentSessionId: true, title: true, agentId: true },
         });
+        // 重启恢复路径必须广播：否则父会话右栏/子会话卡片仍显示 running
+        if (subRow.parentSessionId) {
+          void notifySubagentSessionUpdate({
+            parentSessionId: subRow.parentSessionId,
+            subagentSessionId: subRow.id,
+            status: "failed",
+            title: subRow.title ?? undefined,
+            agentId: subRow.agentId,
+          });
+        }
       } catch {
         // subagent session 可能已删除，忽略
       }

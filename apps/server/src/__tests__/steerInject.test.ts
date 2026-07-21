@@ -57,7 +57,7 @@ describe("SessionStreamHub inject queues", () => {
     await hub.waitFor(sid);
   });
 
-  it("follow_up 与 steer 队列隔离；abort 清空", async () => {
+  it("follow_up 与 steer 队列隔离；用户软暂停保留队列，session_stop 清空", async () => {
     const sid = "clxxxxxxxxxxxxxxxxxxxxxxxx2";
     let resolveRun!: () => void;
     const gate = new Promise<void>((r) => {
@@ -78,10 +78,37 @@ describe("SessionStreamHub inject queues", () => {
     expect(hub.takeInject(sid, "follow_up")[0]?.content).toBe("fu-msg");
     expect(hub.takeInject(sid, "steer")[0]?.content).toBe("steer-msg");
 
+    hub.enqueueInject(sid, "steer", "soft-keep");
+    // 用户软暂停：保留注入队列，便于 resume 继续
+    hub.stop(sid, "user");
+    expect(hub.takeInject(sid, "steer").map((x) => x.content)).toEqual(["soft-keep"]);
+
+    // 级联 session_stop 才清空
     hub.enqueueInject(sid, "steer", "will-clear");
-    hub.stop(sid);
-    expect(hub.takeInject(sid, "steer")).toHaveLength(0);
+    hub.enqueueInject(sid, "follow_up", "fu-clear");
+    // stop 在 completed 后不再生效——重新起一轮测 session_stop
     resolveRun();
+    await hub.waitFor(sid);
+
+    let resolveRun2!: () => void;
+    const gate2 = new Promise<void>((r) => {
+      resolveRun2 = r;
+    });
+    await hub.start(sid, baseInput, async (_emit, signal) => {
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => resolve(), { once: true });
+        void gate2.then(() => {
+          /* keep waiting abort */
+        });
+      });
+    });
+    hub.enqueueInject(sid, "steer", "will-clear");
+    hub.enqueueInject(sid, "follow_up", "fu-clear");
+    hub.stop(sid, "session_stop");
+    expect(hub.takeInject(sid, "steer")).toHaveLength(0);
+    expect(hub.takeInject(sid, "follow_up")).toHaveLength(0);
+    resolveRun2();
   });
 
   it("steeringMode=all 一次取光", async () => {

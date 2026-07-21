@@ -25,12 +25,15 @@ import { type SelectedSkill } from "@/components/chatInput";
 import {
   type ChatQueueItem,
   createUserQueueItem,
-  sessionQueueItemToChatItem,
   mergeUserQueueFromDb,
 } from "@/lib/chatQueueTypes";
 import { useSessionMessages } from "@/lib/useSessionMessages";
 import { useStreamLifecycle, streamLifecycleActions, streamLifecycleStore } from "@/lib/useStreamLifecycle";
-import { useSessionComposeState, sessionComposeActions } from "@/lib/useSessionComposeState";
+import {
+  useSessionComposeState,
+  sessionComposeActions,
+  sessionComposeStore,
+} from "@/lib/useSessionComposeState";
 import { useChatConfig } from "@/lib/useChatConfig";
 import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
 import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
@@ -200,14 +203,15 @@ export function ChatSessionPane({
     if (!sessionQueueQuery.data) return;
     const sessionChanged = queueHydrateSessionRef.current !== sessionId;
     queueHydrateSessionRef.current = sessionId;
+    const tombstones = sessionComposeStore.get(sessionId).consumedQueueDbIds;
     if (sessionChanged) {
       sessionComposeActions.setUserQueue(
         sessionId,
-        sessionQueueQuery.data.map(sessionQueueItemToChatItem),
+        mergeUserQueueFromDb([], sessionQueueQuery.data, tombstones),
       );
     } else {
       sessionComposeActions.patchUserQueue(sessionId, (prev) =>
-        mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+        mergeUserQueueFromDb(prev, sessionQueueQuery.data!, tombstones),
       );
     }
     streamLifecycleActions.hydrateDone(sessionId);
@@ -492,7 +496,6 @@ export function ChatSessionPane({
         parentSessionId={parentSessionId}
         parentSessionTitle={parentSession ? sessionLabel(parentSession) : undefined}
         allowDeepResearch={canStartDeepResearch}
-        showToast={showToast}
         backendDown={backendDown}
         rotateBanner={isFocused ? rotateBanner : null}
         setRotateBanner={setRotateBanner}

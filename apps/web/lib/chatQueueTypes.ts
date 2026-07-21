@@ -440,13 +440,17 @@ export function sessionQueueItemToChatItem(row: SessionQueueItemRow): ChatQueueI
  * 用 DB 列表幂等合并本地发送队列：
  * - 有 dbId 的项以 DB 为事实源（增/改/删随 list 对齐）
  * - 尚无 dbId 的本地乐观项保留（用户刚入队、mutation 未回）
- * 解决「每会话只水合一次 → 不刷新看不见队列 / 空首包锁死」。
+ * - tombstonedDbIds：已认领出队的 id，挡住迟到的 list/SSE 把幽灵项塞回「待发」
+ * 解决「只水合一次 / 空首包锁死」与「已发送仍挂在待发」。
  */
 export function mergeUserQueueFromDb(
   local: ChatQueueItem[],
   dbRows: SessionQueueItemRow[],
+  tombstonedDbIds?: ReadonlySet<string>,
 ): ChatQueueItem[] {
-  const dbItems = dbRows.map(sessionQueueItemToChatItem);
+  const dbItems = dbRows
+    .filter((r) => !tombstonedDbIds?.has(r.id))
+    .map(sessionQueueItemToChatItem);
   const localOnly = local.filter((i) => !i.dbId);
   return [...dbItems, ...localOnly];
 }

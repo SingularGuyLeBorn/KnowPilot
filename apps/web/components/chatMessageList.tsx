@@ -123,29 +123,13 @@ export const ChatMessageList = memo(function ChatMessageList({
   const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
   /** 右侧导航：当前视口对应的回复横杠下标 */
   const [navActiveIdx, setNavActiveIdx] = useState<number | null>(null);
+  /** 点击导航后短暂钉住高亮，避免 Virtuoso 估算滚动未到位时 rangeChanged 抢回上一轮 */
+  const navPinUntilRef = useRef(0);
   useEffect(() => {
     setNavActiveIdx(null);
+    navPinUntilRef.current = 0;
   }, [effectiveSessionId]);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // 右侧导航条：每条 assistant 回复一个横杠，hover 放大 + 预览，点击滚动定位
-  const navItems = useMemo<NavItem[]>(() => {
-    return messageGroups
-      .map((g, idx) => {
-        if (!g.assistantMessage) return null;
-        const active = getActiveVersion(g);
-        if (!active) return null;
-        const preview = active.content.replace(/[#*`>\-\[\]!]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
-        return {
-          id: g.assistantMessage.id,
-          preview: preview || "（空回复）",
-          domId: g.assistantMessage.id,
-          // 记录在 messageGroups 中的索引，供虚拟列表 scrollToIndex 使用
-          index: idx,
-        } satisfies NavItem;
-      })
-      .filter((x): x is NavItem => x !== null);
-  }, [messageGroups]);
 
   // 流式续写交给 followOutput；切会话落底见下方 useLayoutEffect（禁止 Virtuoso key remount）。
   const showLiveStream = isStreaming || liveTimeline.length > 0 || !!streamingContent;
@@ -173,7 +157,6 @@ export const ChatMessageList = memo(function ChatMessageList({
       <div
         key={`a-${assistantId}`}
         data-testid="assistant-message-bubble"
-        data-nav-id={assistantId}
         className="group/msg relative mb-6 ml-6 mr-2 flex w-full max-w-[96%] flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
@@ -287,6 +270,7 @@ export const ChatMessageList = memo(function ChatMessageList({
         <div className={cn("flex w-full", isRightSide ? "justify-end" : "justify-start")}>
           <div
             data-testid="user-message-bubble"
+            data-nav-id={group.userMessage.id}
             data-delivery-job-id={deliveryJobId || undefined}
             className={cn(
               // 默认接近全宽（对标 Kimi Code）；右对齐消息仍靠右，但内容区拉宽
@@ -474,6 +458,29 @@ export const ChatMessageList = memo(function ChatMessageList({
     return items;
   }, [messageGroups, optimistic, showLiveStream, streamTargetUserId, materializedClientIds, inFlightAssistantId]);
 
+  // 右侧导航：锚点 = 用户发送的消息（对标 DeepSeek 大纲），不是 assistant 回复
+  const navItems = useMemo<NavItem[]>(() => {
+    const items: NavItem[] = [];
+    chatItems.forEach((item, virtuosoIdx) => {
+      if (item.kind !== "group") return;
+      const userMsg = item.group.userMessage;
+      const preview = (userMsg.content || "")
+        .replace(/[#*`>\-\[\]!()]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120);
+      const total = item.group.versions.length;
+      items.push({
+        id: userMsg.id,
+        preview: preview || "（空消息）",
+        domId: userMsg.id,
+        index: virtuosoIdx,
+        versionLabel: total > 1 ? `${item.group.activeVersionIndex + 1}/${total}` : undefined,
+      });
+    });
+    return items;
+  }, [chatItems]);
+
   // 冷加载：当前 session 尚未就绪时保留上一屏（禁止用「上一会话的 hydrated=true」冲掉 hold）
   const holdRef = useRef<{ sessionId: string | null; items: ChatItem[] }>({
     sessionId: effectiveSessionId,
@@ -493,8 +500,36 @@ export const ChatMessageList = memo(function ChatMessageList({
   const displayItems = showingStale ? holdRef.current.items : chatItems;
   const hasDisplay = displayItems.length > 0;
 
-  const handleNavScrollToIndex = useCallback((index: number) => {
-    virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: "smooth" });
+  const handleNavNavigate = useCallback((navIdx: number, item: NavItem) => {
+    setNavActiveIdx(navIdx);
+    navPinUntilRef.current = Date.now() + 1200;
+    // 先让 Virtuoso 把目标项滚进窗口（高度估算可能偏短）
+    virtuosoRef.current?.scrollToIndex({
+      index: item.index,
+      align: "start",
+      behavior: "smooth",
+    });
+    // 再按真实 DOM 精确定位（对标 DeepSeek：点第 N 轮就停在第 N 轮）
+    window.setTimeout(() => {
+      const el = document.querySelector(
+        `[data-nav-id="${CSS.escape(item.domId)}"]`,
+      ) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else {
+        // 目标尚未挂载：再催一次 Virtuoso
+        virtuosoRef.current?.scrollToIndex({
+          index: item.index,
+          align: "start",
+          behavior: "auto",
+        });
+        window.setTimeout(() => {
+          document
+            .querySelector(`[data-nav-id="${CSS.escape(item.domId)}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
+      }
+    }, 60);
   }, []);
 
   // 切会话落底：不 remount Virtuoso（禁止 key=sessionId 白屏），只在会话真正就绪后 scroll
@@ -608,14 +643,22 @@ export const ChatMessageList = memo(function ChatMessageList({
             followOutput={(atBottom) => (atBottom ? "auto" : false)}
             rangeChanged={(range) => {
               if (navItems.length === 0) return;
-              const mid = (range.startIndex + range.endIndex) / 2;
+              // 点击导航钉住期间不跟滚，防止估算高度导致高亮退回上一轮
+              if (Date.now() < navPinUntilRef.current) return;
+              // 对标 DeepSeek：取「视口顶部附近」那一轮（最后一个 index <= startIndex 的 nav）
               let best = 0;
-              let bestDist = Number.POSITIVE_INFINITY;
               for (let i = 0; i < navItems.length; i++) {
-                const dist = Math.abs(navItems[i]!.index - mid);
-                if (dist < bestDist) {
-                  bestDist = dist;
-                  best = i;
+                if (navItems[i]!.index <= range.startIndex) best = i;
+                else break;
+              }
+              // 若顶部还没到第一条有回复的组，但视口已覆盖某条，取视口内第一条
+              if (navItems[0]!.index > range.startIndex) {
+                for (let i = 0; i < navItems.length; i++) {
+                  const ni = navItems[i]!.index;
+                  if (ni >= range.startIndex && ni <= range.endIndex) {
+                    best = i;
+                    break;
+                  }
                 }
               }
               setNavActiveIdx((prev) => (prev === best ? prev : best));
@@ -643,7 +686,7 @@ export const ChatMessageList = memo(function ChatMessageList({
       <MessageNavRail
         items={showingStale ? [] : navItems}
         activeIndex={navActiveIdx}
-        onScrollToIndex={handleNavScrollToIndex}
+        onNavigate={handleNavNavigate}
       />
     </div>
   );

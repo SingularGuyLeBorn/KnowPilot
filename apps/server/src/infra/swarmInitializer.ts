@@ -10,10 +10,32 @@ import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
 import type { AppConfig } from "./config.js";
 import { resolveSafePath } from "./safePath.js";
-import { ASSISTANT_DEFAULT_TOOLS, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
+import {
+  ASSISTANT_DEFAULT_TOOLS,
+  DEFAULT_LLM_MODEL,
+  TIER_DEFAULT_TOOLS,
+} from "@knowpilot/shared";
 import { createAgentForTier } from "./agentFactory.js";
 import { ensureMainSession } from "./ensureMainSession.js";
 import { DEFAULT_ASSISTANT_SYSTEM_PROMPT } from "./agentResolver.js";
+
+/** 存量超级 Agent 补齐缺失的默认工具（幂等；含飞书/语雀/GitHub） */
+function mergeMissingSuperTools(existingTools: string): { tools: string; added: string[] } {
+  const current = existingTools
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const seen = new Set(current);
+  const added: string[] = [];
+  for (const t of TIER_DEFAULT_TOOLS.super) {
+    if (!seen.has(t)) {
+      current.push(t);
+      seen.add(t);
+      added.push(t);
+    }
+  }
+  return { tools: current.join(","), added };
+}
 
 const SUPER_AGENT_NAME = "KnowPilot 超级 Agent";
 /** Root Workspace：超级 Agent 归属 */
@@ -285,6 +307,16 @@ export async function initSwarm(
         data: { managerAgentId: existing.id },
       });
       console.log(`  🔗 [Swarm] 已把超级 Agent 关联到系统 Workspace`);
+    }
+    const { tools, added } = mergeMissingSuperTools(existing.tools ?? "");
+    if (added.length > 0) {
+      await prisma.agent.update({
+        where: { id: existing.id },
+        data: { tools },
+      });
+      console.log(
+        `  🔧 [Swarm] 超级 Agent 已补齐 ${added.length} 个工具（飞书/语雀/GitHub 等）`,
+      );
     }
     await ensureMainSession(prisma, {
       agentId: existing.id,

@@ -61,4 +61,13 @@ describe("mergeUserQueueFromDb", () => {
     const merged = mergeUserQueueFromDb([a], []);
     expect(merged).toEqual([]);
   });
+
+  it("tombstone 挡住迟到 DB 列表把已认领项塞回待发", () => {
+    const a = sessionQueueItemToChatItem(row({ id: "db-a", content: "你自己决定就行了" }));
+    const local: ChatQueueItem[] = [];
+    const staleDb = [row({ id: "db-a", content: "你自己决定就行了" })];
+    const merged = mergeUserQueueFromDb(local, staleDb, new Set(["db-a"]));
+    expect(merged).toEqual([]);
+    expect(mergeUserQueueFromDb([a], staleDb, new Set(["db-a"]))).toEqual([]);
+  });
 });

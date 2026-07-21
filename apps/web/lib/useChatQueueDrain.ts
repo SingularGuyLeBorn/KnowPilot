@@ -19,6 +19,7 @@ import { type ChatQueueItem, formatQueueItemForLlm } from "@/lib/chatQueueTypes"
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { type RunStreamOptions } from "@/lib/useChatRunStream";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
+import { mergeAsyncQueueFromCache } from "@/lib/refreshSessionAsyncQueue";
 
 export interface UseChatQueueDrainParams {
   effectiveSessionId: string | null;
@@ -62,14 +63,9 @@ export function useChatQueueDrain({
       t.kind !== "async-running" &&
       (t.text.trim() || t.asyncResult || t.attachments?.length);
 
-    // 可见 pane：用 poll 合并后的 asyncResultQueue（焦点）或本会话 overlays（分屏另一侧）
-    // 不可见 tab：仅 overlays（后台续跑主要靠服务端 autoConsume）
+    // 按 session 合并 RQ 缓存 + overlays（禁止非焦点只看 overlays、焦点才看 poll）
     const asyncCandidates =
-      sid === viewSid
-        ? asyncResultQueue
-        : visible.has(sid)
-          ? compose.asyncOverlays
-          : compose.asyncOverlays;
+      sid === viewSid ? asyncResultQueue : mergeAsyncQueueFromCache(utils, sid);
 
     let asyncReady: ChatQueueItem | undefined;
     for (const t of asyncCandidates) {
@@ -129,8 +125,11 @@ export function useChatQueueDrain({
           (task.attachments?.length ? "（见附件）" : "");
         if (!streamMessagePreview.trim() && !task.attachments?.length) {
           // 空内容禁止起流（否则 LLM「像没接到」）
-          sessionComposeActions.removeUserQueueItem(sid, task.id);
+          sessionComposeActions.claimUserQueueItem(sid, task);
           if (task.dbId) {
+            utils.agent.listSessionQueueItems.setData({ sessionId: sid }, (old) =>
+              Array.isArray(old) ? old.filter((i) => i.id !== task.dbId) : old,
+            );
             try {
               await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
             } catch {
@@ -142,16 +141,27 @@ export function useChatQueueDrain({
           return;
         }
 
-        sessionComposeActions.removeUserQueueItem(sid, task.id);
+        // 先 tombstone + 本地出队，再 consume：挡住迟到 list/SSE 把幽灵「待发」塞回
+        sessionComposeActions.claimUserQueueItem(sid, task);
         if (task.dbId) {
+          utils.agent.listSessionQueueItems.setData({ sessionId: sid }, (old) =>
+            Array.isArray(old) ? old.filter((i) => i.id !== task.dbId) : old,
+          );
           try {
             const claim = await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
             if (!claim.claimed) {
+              // 他人已认领 / 已不存在：清 tombstone，让后续 merge 以 DB 为准
+              sessionComposeActions.unmarkQueueDbIdConsumed(sid, task.dbId);
               sessionComposeActions.setQueueDraining(sid, false);
               consumeRef.current(sid);
               return;
             }
           } catch {
+            sessionComposeActions.unmarkQueueDbIdConsumed(sid, task.dbId);
+            sessionComposeActions.patchUserQueue(sid, (q) => {
+              if (q.some((i) => i.id === task.id || i.dbId === task.dbId)) return q;
+              return [...q, task];
+            });
             sessionComposeActions.setQueueDraining(sid, false);
             return;
           }
@@ -241,7 +251,7 @@ export function useChatQueueDrain({
         agentId: streamAgentId,
       });
     })();
-  }, [runStream, chatConfigModel, asyncResultQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils.session.listRunning, asyncQueueQuery, sessionsItems, consumeRef]);
+  }, [runStream, chatConfigModel, asyncResultQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied, consumeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
 
   /** 优先 preferred，再可见 pane；不扫隐藏 tab（避免后台 tab 抢起流） */
   const drainAllPendingQueues = useCallback(
@@ -285,7 +295,8 @@ export function useChatQueueDrain({
             (t.text.trim() || t.attachments?.length)
           );
         });
-        const asyncCandidates = sid === viewSid ? asyncResultQueue : compose.asyncOverlays;
+        const asyncCandidates =
+          sid === viewSid ? asyncResultQueue : mergeAsyncQueueFromCache(utils, sid);
         const hasAsync = asyncCandidates.some(
           (t) =>
             t.kind === "async-result" &&
@@ -297,7 +308,7 @@ export function useChatQueueDrain({
         consumeQueue(sid);
       }
     },
-    [consumeQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied, asyncResultQueue],
+    [consumeQueue, effectiveSessionId, visibleSessionIds, isSessionRunOccupied, asyncResultQueue, utils],
   );
 
   return { drainAllPendingQueues };

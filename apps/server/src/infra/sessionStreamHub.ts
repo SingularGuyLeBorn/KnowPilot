@@ -25,6 +25,53 @@ export type BufferedEvent = {
 
 type StreamConfig = AppConfig["stream"];
 
+/** Hub 起流时允许切入 running 的会话态（archived/failed/completed 不动） */
+const CLAIM_RUNNING_FROM = ["active", "paused", "running"] as const;
+
+/**
+ * 会话 DB 生命周期：所有起流路径（普通发消息 / resume / drain）统一经 Hub 收口。
+ * - 起流：active|paused → running
+ * - 终态：done → active（subagent/skill_review → completed）；error/abort → paused
+ * 条件写 where status 保证与 stop(软暂停)/report_back 不互相覆盖。
+ */
+async function claimSessionDbRunning(sessionId: string): Promise<void> {
+  if (!sessionId) return;
+  try {
+    await prisma.chatSession.updateMany({
+      where: { id: sessionId, status: { in: [...CLAIM_RUNNING_FROM] } },
+      data: { status: "running" },
+    });
+  } catch (err) {
+    console.warn(`[SessionStreamHub] 起流标 running 失败 session=${sessionId}:`, err);
+  }
+}
+
+async function settleSessionDbStatus(
+  sessionId: string,
+  terminal: "done" | "error",
+): Promise<void> {
+  if (!sessionId) return;
+  try {
+    const row = await prisma.chatSession.findUnique({
+      where: { id: sessionId },
+      select: { kind: true, status: true },
+    });
+    if (!row || row.status !== "running") return;
+    const next =
+      terminal === "done"
+        ? row.kind === "subagent" || row.kind === "skill_review"
+          ? "completed"
+          : "active"
+        : "paused";
+    await prisma.chatSession.updateMany({
+      where: { id: sessionId, status: "running" },
+      data: { status: next },
+    });
+  } catch (err) {
+    console.warn(`[SessionStreamHub] 终态归位失败 session=${sessionId}:`, err);
+  }
+}
+
 /** 运行中注入的用户消息（Steering / Follow-up） */
 export type RunInjectMessage = {
   id: string;
@@ -298,6 +345,8 @@ export class SessionStreamHub {
       this.runs.set(sessionId, state);
       // 起流占位成功后「忙」由 isRunning 接管，清除 drain 宣告的「即将起流」标记（S2）
       this.startingSessions.delete(sessionId);
+      // DB 生命周期：占位成功即标 running（空占位 sessionId="" 时 no-op，migrate 后再标）
+      await claimSessionDbRunning(sessionId);
 
       const maxId = await this.maxEventIdFor(sessionId);
       state.nextId = maxId + 1;
@@ -307,13 +356,23 @@ export class SessionStreamHub {
       };
 
       state.promise = (async () => {
+        // 终态归位：按 emit 的 done/error 判定（与 resume 旧路径同口径，现收进 Hub 全覆盖）
+        const track = { terminal: "error" as "done" | "error" };
+        const trackingEmit = (event: AgentStreamEvent) => {
+          if (event.type === "done") track.terminal = "done";
+          else if (event.type === "error") track.terminal = "error";
+          emit(event);
+        };
         try {
-          await runner(emit, abortController.signal);
+          await runner(trackingEmit, abortController.signal);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
+          track.terminal = "error";
           emit({ type: "error", message, sessionId });
         } finally {
           this.flushRunCoalesce(state);
+          // 先归位 DB，再标 completed / 通知 settled（与 superior drain waitFor 形成 happens-before）
+          await settleSessionDbStatus(sessionId, track.terminal);
           state.completed = true;
           await releaseSessionRunning(sessionId);
           // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
@@ -407,6 +466,9 @@ export class SessionStreamHub {
       if (item.sessionId === oldId) item.sessionId = newId;
     }
 
+    // 空占位 → 真实 session：补标 running（start 时旧 id 为空跳过了 claim）
+    await claimSessionDbRunning(newId);
+
     if (this.config.persist) {
       try {
         await prisma.sessionStreamEvent.updateMany({
@@ -476,13 +538,28 @@ export class SessionStreamHub {
 
   /**
    * 显式停止某个 session 的运行（触发 abort）。
-   * @param reason AbortSignal.reason：user=用户点停止；session_stop=级联清理
+   * @param reason AbortSignal.reason：user=用户软暂停（保留 followUp/steering 队列）；
+   *   session_stop=级联清理（清空注入队列）
    */
   stop(sessionId: string, reason: "user" | "session_stop" = "user"): boolean {
     const state = this.runs.get(sessionId);
     if (!state || state.completed) return false;
-    this.clearInjectQueues(sessionId);
+    // 软暂停不清队列：用户点停止后应能 resume 继续，跟进/steering 不能丢
+    if (reason === "session_stop") {
+      this.clearInjectQueues(sessionId);
+    }
     state.abortController.abort(reason);
+    // 用户软暂停：立刻标 paused（与 chatAgentStream abort 收尾幂等），前端才能出「恢复运行」
+    if (reason === "user") {
+      void prisma.chatSession
+        .updateMany({
+          where: { id: sessionId, status: { in: ["active", "running"] } },
+          data: { status: "paused" },
+        })
+        .catch((err) => {
+          console.warn(`[SessionStreamHub] 软暂停标 paused 失败 session=${sessionId}:`, err);
+        });
+    }
     return true;
   }
 

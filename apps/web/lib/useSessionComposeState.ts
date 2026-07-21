@@ -24,6 +24,8 @@ export interface SessionComposeState {
   userQueue: ChatQueueItem[];
   asyncOverlays: ChatQueueItem[];
   consumedDeliveries: Set<string>;
+  /** 已认领出队的 SessionQueueItem.id：挡住迟到 list/SSE 把幽灵「待发」塞回 */
+  consumedQueueDbIds: Set<string>;
   queueDraining: boolean;
   activeQueueTaskId: string | null;
 }
@@ -34,6 +36,7 @@ const EMPTY_COMPOSE: SessionComposeState = {
   userQueue: [],
   asyncOverlays: [],
   consumedDeliveries: new Set(),
+  consumedQueueDbIds: new Set(),
   queueDraining: false,
   activeQueueTaskId: null,
 };
@@ -52,6 +55,8 @@ type Action =
   | { type: "PATCH_ASYNC_OVERLAYS"; sessionId: string; updater: (q: ChatQueueItem[]) => ChatQueueItem[] }
   | { type: "SET_CONSUMED_DELIVERIES"; sessionId: string; consumed: Set<string> }
   | { type: "MARK_DELIVERY_CONSUMED"; sessionId: string; jobId: string }
+  | { type: "MARK_QUEUE_DB_CONSUMED"; sessionId: string; dbId: string }
+  | { type: "UNMARK_QUEUE_DB_CONSUMED"; sessionId: string; dbId: string }
   | { type: "SET_QUEUE_DRAINING"; sessionId: string; draining: boolean }
   | { type: "SET_ACTIVE_QUEUE_TASK"; sessionId: string; taskId: string | null }
   | { type: "MIGRATE"; fromKey: string; toSessionId: string }
@@ -59,7 +64,13 @@ type Action =
   | { type: "DELETE"; sessionId: string };
 
 function ensure(state: ComposeMap, sessionId: string): SessionComposeState {
-  return state.get(sessionId) ?? { ...EMPTY_COMPOSE, consumedDeliveries: new Set() };
+  return (
+    state.get(sessionId) ?? {
+      ...EMPTY_COMPOSE,
+      consumedDeliveries: new Set(),
+      consumedQueueDbIds: new Set(),
+    }
+  );
 }
 
 function reducer(state: ComposeMap, action: Action): ComposeMap {
@@ -111,6 +122,19 @@ function reducer(state: ComposeMap, action: Action): ComposeMap {
       next.add(action.jobId);
       return set(action.sessionId, { ...cur, consumedDeliveries: next });
     }
+    case "MARK_QUEUE_DB_CONSUMED": {
+      const cur = ensure(state, action.sessionId);
+      const next = new Set(cur.consumedQueueDbIds);
+      next.add(action.dbId);
+      return set(action.sessionId, { ...cur, consumedQueueDbIds: next });
+    }
+    case "UNMARK_QUEUE_DB_CONSUMED": {
+      const cur = ensure(state, action.sessionId);
+      if (!cur.consumedQueueDbIds.has(action.dbId)) return state;
+      const next = new Set(cur.consumedQueueDbIds);
+      next.delete(action.dbId);
+      return set(action.sessionId, { ...cur, consumedQueueDbIds: next });
+    }
     case "SET_QUEUE_DRAINING":
       return set(action.sessionId, {
         ...ensure(state, action.sessionId),
@@ -130,7 +154,11 @@ function reducer(state: ComposeMap, action: Action): ComposeMap {
       return map;
     }
     case "RESET":
-      return set(action.sessionId, { ...EMPTY_COMPOSE, consumedDeliveries: new Set() });
+      return set(action.sessionId, {
+        ...EMPTY_COMPOSE,
+        consumedDeliveries: new Set(),
+        consumedQueueDbIds: new Set(),
+      });
     case "DELETE": {
       if (!state.has(action.sessionId)) return state;
       const map = new Map(state);
@@ -167,7 +195,11 @@ class SessionComposeStore {
   };
 
   get = (sessionId: string): SessionComposeState =>
-    this.state.get(sessionId) ?? { ...EMPTY_COMPOSE, consumedDeliveries: new Set() };
+    this.state.get(sessionId) ?? {
+      ...EMPTY_COMPOSE,
+      consumedDeliveries: new Set(),
+      consumedQueueDbIds: new Set(),
+    };
 }
 
 let globalStore: SessionComposeStore | null = null;
@@ -215,6 +247,23 @@ export const sessionComposeActions = {
       updater: (q) => q.filter((i) => i.id !== itemId),
     });
   },
+  /** 出队认领：本地移除 + dbId 进 tombstone（防迟到 SSE 幽灵回潮） */
+  claimUserQueueItem(sessionId: string, item: ChatQueueItem) {
+    if (item.dbId) {
+      getStore().dispatch({ type: "MARK_QUEUE_DB_CONSUMED", sessionId, dbId: item.dbId });
+    }
+    getStore().dispatch({
+      type: "PATCH_USER_QUEUE",
+      sessionId,
+      updater: (q) => q.filter((i) => i.id !== item.id && i.dbId !== item.dbId),
+    });
+  },
+  markQueueDbIdConsumed(sessionId: string, dbId: string) {
+    getStore().dispatch({ type: "MARK_QUEUE_DB_CONSUMED", sessionId, dbId });
+  },
+  unmarkQueueDbIdConsumed(sessionId: string, dbId: string) {
+    getStore().dispatch({ type: "UNMARK_QUEUE_DB_CONSUMED", sessionId, dbId });
+  },
   setAsyncOverlays(sessionId: string, asyncOverlays: ChatQueueItem[]) {
     getStore().dispatch({ type: "SET_ASYNC_OVERLAYS", sessionId, asyncOverlays });
   },
@@ -257,7 +306,12 @@ export const sessionComposeStore = {
     for (const [k, v] of getStore().getState()) {
       const { abort: _a, ...rest } = v;
       void _a;
-      obj[k] = { ...rest, consumedDeliveries: [...rest.consumedDeliveries] };
+      // consumedQueueDbIds 不跨刷新持久化：刷新后以 DB 为准（会话内 tombstone 防迟到 SSE）
+      obj[k] = {
+        ...rest,
+        consumedDeliveries: [...rest.consumedDeliveries],
+        consumedQueueDbIds: [],
+      };
     }
     return obj;
   },

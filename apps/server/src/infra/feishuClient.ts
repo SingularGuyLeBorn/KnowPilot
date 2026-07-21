@@ -15,6 +15,7 @@ import {
   refreshTokenManually as refreshFileToken,
   RefreshTokenExpiredError,
 } from "./external/larkTokenManager.js";
+import { markdownToBlocks } from "./feishuMarkdownToBlocks.js";
 
 const FEISHU_BASE = "https://open.feishu.cn/open-apis";
 
@@ -359,22 +360,368 @@ export async function feishuCreateDoc(title: string, folderToken?: string, prism
   );
 }
 
+/** 新建内容请走 children API；batch_update 仅改已有 block_id */
+const FEISHU_APPEND_HINT =
+  "新建内容请用 feishu_append_doc_text / feishu_append_doc_blocks（docx children），不要猜 batch_update。";
+
+/** 单条 text_run 保守上限（过长易 1770001） */
+export const FEISHU_TEXT_RUN_MAX_CHARS = 2000;
+/** 单次 children 创建上限（飞书文档约定） */
+export const FEISHU_CHILDREN_BATCH_MAX = 50;
+
+/** 飞书 docx 子块最小形态（Agent / Markdown 转换用） */
+export type FeishuDocxBlock = {
+  block_type: number;
+  text?: { elements: Array<Record<string, unknown>> };
+  board?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type TextRunEl = {
+  text_run?: { content?: string; text_element_style?: Record<string, unknown> };
+  equation?: { content?: string };
+};
+
+function chunkString(str: string, maxLen: number): string[] {
+  if (str.length <= maxLen) return [str];
+  const chunks: string[] = [];
+  let remaining = str;
+  while (remaining.length > maxLen) {
+    let breakAt = remaining.lastIndexOf("\n", maxLen);
+    if (breakAt <= 0) breakAt = maxLen;
+    chunks.push(remaining.slice(0, breakAt));
+    remaining = remaining.slice(breakAt);
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+/** 超长 text_run 切片，避免 1770001 / 1770033 */
+function splitLongTextRuns(blocks: FeishuDocxBlock[], maxChars: number): FeishuDocxBlock[] {
+  return blocks.map((block) => {
+    const blockType = Object.keys(block).find((k) => k !== "block_type");
+    if (!blockType) return block;
+    const data = block[blockType] as { elements?: TextRunEl[] } | undefined;
+    if (!data || !Array.isArray(data.elements)) return block;
+    const newElements: TextRunEl[] = [];
+    for (const el of data.elements) {
+      const content = el.text_run?.content;
+      if (typeof content === "string" && content.length > maxChars) {
+        for (const chunk of chunkString(content, maxChars)) {
+          newElements.push({
+            text_run: {
+              content: chunk,
+              text_element_style: el.text_run?.text_element_style,
+            },
+          });
+        }
+      } else {
+        newElements.push(el);
+      }
+    }
+    return { ...block, [blockType]: { ...data, elements: newElements } };
+  });
+}
+
+function elementsToPlain(els: TextRunEl[]): string {
+  return els
+    .map((el) => el.text_run?.content || (el.equation?.content ? `$${el.equation.content}$` : ""))
+    .join("");
+}
+
+/**
+ * 表格兜底：多步创建失败时再压成「| 单元格 |」文本行（勿作主路径）。
+ */
+function flattenTableBlock(block: FeishuDocxBlock): FeishuDocxBlock[] {
+  const cells = block._cell_contents as TextRunEl[][] | undefined;
+  const cols = Number((block.table as { property?: { column_size?: number } } | undefined)?.property?.column_size) || 0;
+  if (!Array.isArray(cells) || cells.length === 0 || cols <= 0) {
+    return [
+      {
+        block_type: 2,
+        text: { elements: [{ text_run: { content: "[表格]" } }] },
+      },
+    ];
+  }
+  const rows: FeishuDocxBlock[] = [];
+  for (let r = 0; r < cells.length; r += cols) {
+    const parts = cells.slice(r, r + cols).map((els) => elementsToPlain(els || []));
+    rows.push({
+      block_type: 2,
+      text: { elements: [{ text_run: { content: `| ${parts.join(" | ")} |` } }] },
+    });
+  }
+  return rows;
+}
+
+function isNativeTableBlock(block: FeishuDocxBlock): boolean {
+  return block.block_type === 31 && Array.isArray(block._cell_contents);
+}
+
+/** 非表格块：去掉内部字段并切片；误入的表格压扁（children 直写拒 _cell_contents） */
+function prepareBlocksForChildren(blocks: FeishuDocxBlock[]): FeishuDocxBlock[] {
+  const out: FeishuDocxBlock[] = [];
+  for (const block of blocks) {
+    if (isNativeTableBlock(block)) {
+      out.push(...flattenTableBlock(block));
+      continue;
+    }
+    const { _cell_contents: _, ...rest } = block;
+    out.push(rest as FeishuDocxBlock);
+  }
+  return splitLongTextRuns(out, FEISHU_TEXT_RUN_MAX_CHARS);
+}
+
+/**
+ * 剥掉 `_cell_contents`，得到可直写 children 的空表壳（对标 MetaBlog createTableBlock 第 1 步）。
+ */
+export function stripTableCellContents(block: FeishuDocxBlock): FeishuDocxBlock {
+  const { _cell_contents: _, ...rest } = block;
+  return rest as FeishuDocxBlock;
+}
+
+/**
+ * Markdown → 飞书 docx 块（标题/列表/加粗/分割线/公式/原生表格）。
+ * 表格保留 block_type=31 + `_cell_contents`；写入走 MetaBlog 同款多步：
+ * 建空表 → GET cell 自带 text child → PATCH update_text_elements。
+ * 勿把带 `_cell_contents` 的块直接丢给 children API。
+ */
+export function markdownToDocxBlocks(markdown: string): FeishuDocxBlock[] {
+  if (markdown == null || String(markdown).trim().length === 0) return [];
+  const blocks = markdownToBlocks(String(markdown)) as FeishuDocxBlock[];
+  return blocks.map((block) => {
+    if (isNativeTableBlock(block)) return block;
+    return prepareBlocksForChildren([block])[0] ?? block;
+  });
+}
+
+/**
+ * 在父块下创建子块（POST .../blocks/:block_id/children）。
+ * 根文档追加时 parentBlockId 默认 = documentId。
+ */
+export async function feishuCreateDocChildren(
+  documentId: string,
+  children: unknown[],
+  opts: { parentBlockId?: string; index?: number } | undefined,
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  if (!Array.isArray(children) || children.length === 0) {
+    throw new Error("children 不能为空");
+  }
+  if (children.length > FEISHU_CHILDREN_BATCH_MAX) {
+    throw new Error(
+      `单次 children 最多 ${FEISHU_CHILDREN_BATCH_MAX} 个，当前 ${children.length}；请分批或用 feishu_append_doc_text 自动切片。`,
+    );
+  }
+  const parentBlockId = opts?.parentBlockId?.trim() || documentId;
+  const body: Record<string, unknown> = { children };
+  if (typeof opts?.index === "number" && Number.isFinite(opts.index)) {
+    body.index = opts.index;
+  }
+  return feishuApi(
+    `/docx/v1/documents/${encodeURIComponent(documentId)}/blocks/${encodeURIComponent(parentBlockId)}/children`,
+    {
+      method: "POST",
+      body,
+      useUserToken: true,
+    },
+    prisma,
+    config,
+  );
+}
+
+async function feishuGetDocBlock(
+  documentId: string,
+  blockId: string,
+  prisma: PrismaClient,
+  config: AppConfig,
+): Promise<{ block?: { children?: string[] } }> {
+  return feishuApi(
+    `/docx/v1/documents/${encodeURIComponent(documentId)}/blocks/${encodeURIComponent(blockId)}`,
+    { useUserToken: true },
+    prisma,
+    config,
+  );
+}
+
+async function feishuPatchTextElements(
+  documentId: string,
+  blockId: string,
+  elements: TextRunEl[],
+  prisma: PrismaClient,
+  config: AppConfig,
+): Promise<unknown> {
+  return feishuApi(
+    `/docx/v1/documents/${encodeURIComponent(documentId)}/blocks/${encodeURIComponent(blockId)}`,
+    {
+      method: "PATCH",
+      body: { update_text_elements: { elements } },
+      useUserToken: true,
+    },
+    prisma,
+    config,
+  );
+}
+
+/**
+ * MetaBlog `createTableBlock` 同款：
+ * 1) children 创建空 table（无 _cell_contents）
+ * 2) 从返回的 table.cells 取 cell id（行优先）
+ * 3) GET cell → PATCH 其 auto-generated text child（消空 child 副作用）
+ */
+async function feishuCreateTableBlock(
+  documentId: string,
+  tableBlock: FeishuDocxBlock,
+  prisma: PrismaClient,
+  config: AppConfig,
+): Promise<{ tableId: string; cellIds: string[]; cellResults: unknown[] }> {
+  const cellContents = (tableBlock._cell_contents as TextRunEl[][]) || [];
+  const tableShell = stripTableCellContents(tableBlock);
+  const prop = (tableShell.table as { property?: { row_size?: number; column_size?: number } } | undefined)
+    ?.property;
+  const rowCount = Number(prop?.row_size) || 0;
+  const colCount = Number(prop?.column_size) || 0;
+  if (rowCount > 9 || colCount > 9) {
+    throw new Error(
+      `表格尺寸超限：${rowCount}×${colCount}（飞书硬限各 ≤9）。请拆成多个 ≤9×9 的小表。`,
+    );
+  }
+
+  type CreateChildrenRes = {
+    children?: Array<{
+      block_id?: string;
+      table?: { cells?: string[] };
+    }>;
+  };
+  const created = (await feishuCreateDocChildren(
+    documentId,
+    [tableShell],
+    undefined,
+    prisma,
+    config,
+  )) as CreateChildrenRes;
+
+  const tableNode = created.children?.[0];
+  const tableId = tableNode?.block_id;
+  const cellIds = tableNode?.table?.cells ?? [];
+  if (!tableId || cellIds.length === 0) {
+    throw new Error("创建 table block 后未返回 block_id 或 cell_ids");
+  }
+  if (cellContents.length !== cellIds.length) {
+    throw new Error(
+      `cell 内容数量不匹配: _cell_contents=${cellContents.length}, cell_ids=${cellIds.length}`,
+    );
+  }
+
+  const cellResults: unknown[] = [];
+  for (let i = 0; i < cellIds.length; i++) {
+    const elements = cellContents[i] || [];
+    const hasContent = elements.some((el) => el.text_run?.content || el.equation?.content);
+    if (!hasContent) continue;
+
+    // QPS：每 3 个 cell 延时（每个 cell 2 请求），对标 MetaBlog
+    if (i > 0 && i % 3 === 0) {
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    const cellRes = await feishuGetDocBlock(documentId, cellIds[i]!, prisma, config);
+    const textChildId = cellRes.block?.children?.[0];
+    if (!textChildId) {
+      throw new Error(`Cell ${i} 未找到 auto-generated text child`);
+    }
+    cellResults.push(
+      await feishuPatchTextElements(documentId, textChildId, elements, prisma, config),
+    );
+  }
+
+  return { tableId, cellIds, cellResults };
+}
+
+async function feishuAppendNativeTable(
+  documentId: string,
+  tableBlock: FeishuDocxBlock,
+  prisma: PrismaClient,
+  config: AppConfig,
+): Promise<unknown> {
+  try {
+    return await feishuCreateTableBlock(documentId, tableBlock, prisma, config);
+  } catch (err) {
+    // 多步创建失败时降级为管道文本，保证长文主路径不炸
+    const flat = prepareBlocksForChildren([tableBlock]);
+    if (flat.length === 0) throw err;
+    console.warn(
+      `[feishu] 原生表格写入失败，降级为管道文本: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return feishuCreateDocChildren(documentId, flat, undefined, prisma, config);
+  }
+}
+
+/** 追加 Markdown/文本到文档末尾（对标 MetaBlog /doc/append：普通块 children，表格多步填格） */
+export async function feishuAppendDocText(
+  documentId: string,
+  text: string,
+  prisma: PrismaClient,
+  config: AppConfig,
+) {
+  const blocks = markdownToDocxBlocks(text);
+  if (blocks.length === 0) {
+    throw new Error("text 为空或无法解析为可写入块，无法追加文档内容");
+  }
+  const results: unknown[] = [];
+  const QPS_DELAY_MS = 400;
+  let wroteBatch = false;
+  let tableCount = 0;
+  let i = 0;
+  while (i < blocks.length) {
+    if (isNativeTableBlock(blocks[i]!)) {
+      if (wroteBatch) await new Promise((r) => setTimeout(r, QPS_DELAY_MS));
+      results.push(await feishuAppendNativeTable(documentId, blocks[i]!, prisma, config));
+      tableCount += 1;
+      wroteBatch = true;
+      i += 1;
+      continue;
+    }
+    const segment: FeishuDocxBlock[] = [];
+    while (i < blocks.length && !isNativeTableBlock(blocks[i]!)) {
+      segment.push(blocks[i]!);
+      i += 1;
+    }
+    const prepared = prepareBlocksForChildren(segment);
+    for (let b = 0; b < prepared.length; b += FEISHU_CHILDREN_BATCH_MAX) {
+      if (wroteBatch) await new Promise((r) => setTimeout(r, QPS_DELAY_MS));
+      const batch = prepared.slice(b, b + FEISHU_CHILDREN_BATCH_MAX);
+      results.push(await feishuCreateDocChildren(documentId, batch, undefined, prisma, config));
+      wroteBatch = true;
+    }
+  }
+  return { blockCount: blocks.length, tableCount, batches: results.length, results };
+}
+
 export async function feishuUpdateDocBlocks(
   documentId: string,
   blocks: unknown[],
   prisma: PrismaClient,
   config: AppConfig,
 ) {
-  return feishuApi(
-    `/docx/v1/documents/${documentId}/blocks/batch_update`,
-    {
-      method: "PATCH",
-      body: { requests: blocks },
-      useUserToken: true,
-    },
-    prisma,
-    config,
-  );
+  try {
+    return await feishuApi(
+      `/docx/v1/documents/${documentId}/blocks/batch_update`,
+      {
+        method: "PATCH",
+        body: { requests: blocks },
+        useUserToken: true,
+      },
+      prisma,
+      config,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("1770001") || msg.includes("invalid param") || msg.includes("Invalid")) {
+      throw new Error(`${msg} — ${FEISHU_APPEND_HINT}`);
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
 }
 
 export async function feishuDeleteDoc(documentId: string, prisma: PrismaClient, config: AppConfig) {
@@ -779,21 +1126,34 @@ export async function feishuAddPermissionMember(
   prisma: PrismaClient,
   config: AppConfig,
 ) {
-  return feishuApi(
-    `/drive/v1/permissions/${encodeURIComponent(token)}/members`,
-    {
-      method: "POST",
-      useUserToken: true,
-      query: { type, need_notification: "false" },
-      body: {
-        member_type: member.memberType,
-        member_id: member.memberId,
-        perm: member.perm,
+  try {
+    return await feishuApi(
+      `/drive/v1/permissions/${encodeURIComponent(token)}/members`,
+      {
+        method: "POST",
+        useUserToken: true,
+        query: { type, need_notification: "false" },
+        body: {
+          member_type: member.memberType,
+          member_id: member.memberId,
+          perm: member.perm,
+        },
       },
-    },
-    prisma,
-    config,
-  );
+      prisma,
+      config,
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // 1063003：参数合法但操作被拒——最常见是「给文档所有者加权限」或可见性/企管策略
+    if (msg.includes("code=1063003")) {
+      throw new Error(
+        `${msg}\n排查：① 目标是否就是文档所有者（飞书禁止给所有者再加协作者，所有者已有完整权限）；` +
+          `② 调用身份与目标是否同企业/互为联系人且未屏蔽；③ 企业是否管控禁止外部分享协作者；` +
+          `④ 「转移所有者」需专用 transfer owner API，不是 add_permission_member。`,
+      );
+    }
+    throw err;
+  }
 }
 
 export async function feishuUpdatePermissionMember(

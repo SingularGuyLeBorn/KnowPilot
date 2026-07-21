@@ -57,7 +57,6 @@ export interface ChatCenterPaneProps {
   parentSessionTitle: string | undefined;
   /** 空主会话才允许深度调研入口 */
   allowDeepResearch: boolean;
-  showToast: (msg: string | null) => void;
   // 横幅群：后端离线 / session_rotate 跳转
   backendDown: boolean;
   rotateBanner: { newSessionId: string; newTitle: string } | null;
@@ -111,7 +110,6 @@ export function ChatCenterPane({
   parentSessionId,
   parentSessionTitle,
   allowDeepResearch,
-  showToast,
   backendDown,
   rotateBanner,
   setRotateBanner,
@@ -183,6 +181,8 @@ export function ChatCenterPane({
             contextSummary={sessionDetail.contextSummary}
             onCompact={onCompact}
             compactPending={compactPending}
+            onOpenPromptEditor={onOpenPromptEditor}
+            onResetPrompt={resetPromptToAgent}
             className="hidden shrink-0 lg:flex"
           />
         )}
@@ -258,6 +258,8 @@ export function ChatCenterPane({
             contextSummary={sessionDetail.contextSummary}
             onCompact={onCompact}
             compactPending={compactPending}
+            onOpenPromptEditor={onOpenPromptEditor}
+            onResetPrompt={resetPromptToAgent}
           />
         </div>
       )}
@@ -269,15 +271,11 @@ export function ChatCenterPane({
         </div>
       )}
 
-      {/* Goal 进度 / 深度调研闸：子会话永不展示；Goal 入口走 /goal */}
+      {/* Goal / 深度调研进度：子会话永不展示；深度研究入口在输入区 chip */}
       {!isSubagentSession &&
         (sessionDetail?.kind ?? "chat") === "chat" &&
         !sessionDetail?.parentSessionId && (
-          <ChatGoalBar
-            sessionId={effectiveSessionId}
-            allowDeepResearch={allowDeepResearch}
-            onToast={showToast}
-          />
+          <ChatGoalBar sessionId={effectiveSessionId} />
         )}
 
       {(rotateBanner || (sessionDetail?.status === "archived" && sessionDetail.rotatedToSessionId)) && (
@@ -320,7 +318,7 @@ export function ChatCenterPane({
           data-testid="session-resume-banner"
           className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-2 text-xs text-[var(--kp-brand-deep)]"
         >
-          <span className="min-w-0 flex-1 truncate">会话已暂停（服务重启前未完成的轮次可继续）</span>
+          <span className="min-w-0 flex-1 truncate">会话已暂停，可恢复继续</span>
           <button
             type="button"
             data-testid="resume-session-button"
@@ -397,11 +395,14 @@ export function ChatCenterPane({
             persistQueueOrder(uq);
           }}
           onRemove={(id) => {
+            const sid = effectiveSessionId ?? NEW_STREAM_KEY;
             const target = userQueue.find((t) => t.id === id);
-            sessionComposeActions.removeUserQueueItem(effectiveSessionId ?? NEW_STREAM_KEY, id);
-            sessionComposeActions.patchAsyncOverlays(effectiveSessionId ?? NEW_STREAM_KEY, (q) =>
-              q.filter((t) => t.id !== id),
-            );
+            if (target) {
+              sessionComposeActions.claimUserQueueItem(sid, target);
+            } else {
+              sessionComposeActions.removeUserQueueItem(sid, id);
+            }
+            sessionComposeActions.patchAsyncOverlays(sid, (q) => q.filter((t) => t.id !== id));
             if (target?.dbId) {
               deleteSessionQueueItemMutation.mutate({ id: target.dbId });
             }
@@ -422,8 +423,6 @@ export function ChatCenterPane({
           supportsVision={supportsVision}
           chatConfig={chatConfig}
           updateConfig={updateConfig}
-          resetPromptToAgent={resetPromptToAgent}
-          onOpenPromptEditor={onOpenPromptEditor}
           modelSupportsReasoning={modelSupportsReasoning}
           modelReasoningRequired={modelReasoningRequired}
           sessionHint={

@@ -14,10 +14,6 @@ import {
   resolveNewChatConfig,
 } from "@/lib/chatConfig";
 import { type Agent, type ChatMessage } from "@knowpilot/shared";
-import {
-  sessionQueueItemToChatItem,
-  mergeUserQueueFromDb,
-} from "@/lib/chatQueueTypes";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { ChatOverlays } from "@/components/chatOverlays";
 import { ChatSidebar } from "@/components/chatSidebar";
@@ -174,7 +170,7 @@ export function ChatView() {
   // A16：skill 列表极少变化，加 staleTime 5min，减少每次进 Chat 都重请求。
   // skill CRUD 后 useCRUDApi 会 invalidate utils.skill.list（按 key 失效全部 input），自动刷新。
   const skillsQuery = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true }, { staleTime: 5 * 60 * 1000 });
-  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
+  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40, kind: "chat" });
   const providers = trpc.agent.llmProviders.useQuery();
   // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
@@ -504,30 +500,7 @@ export function ChatView() {
     },
   });
 
-  // 【队列水合 · INV-8 ④】DB 为事实源：切会话全量替换；同会话按 dbId 幂等 merge（含删除）。
-  // 不再「每会话只灌一次」——否则 superior/child_notify 入队后不刷新永远看不见。
-  const queueHydrateSessionRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!effectiveSessionId) {
-      queueHydrateSessionRef.current = null;
-      return;
-    }
-    if (!sessionQueueQuery.data) return;
-    const sessionChanged = queueHydrateSessionRef.current !== effectiveSessionId;
-    queueHydrateSessionRef.current = effectiveSessionId;
-    if (sessionChanged) {
-      sessionComposeActions.setUserQueue(
-        effectiveSessionId,
-        sessionQueueQuery.data.map(sessionQueueItemToChatItem),
-      );
-    } else {
-      sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) =>
-        mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
-      );
-    }
-    // INV-8 ④：发送队列 hydrate/merge 完成 → 显式 drain（仅 user/child_notify；superior 由服务端起流）
-    streamLifecycleActions.hydrateDone(effectiveSessionId);
-  }, [effectiveSessionId, sessionQueueQuery.data]);
+  // 发送队列 hydrate 仅在 ChatSessionPane（按 session 分片），父级不再双写 merge
 
   // 【子 Agent 镜像域】pending AgentMessage 幂等镜像入队收拢于 useSubagentMessageMirror（体未改）
   useSubagentMessageMirror({
@@ -555,6 +528,15 @@ export function ChatView() {
     setRotateBanner,
   });
 
+  // 预热打开中会话的 async 切片缓存，供非焦点 drain / SSE merge 使用
+  useEffect(() => {
+    if (backendDown) return;
+    for (const sid of watchedSessionIds) {
+      if (!sid || sid === NEW_STREAM_KEY) continue;
+      void utils.agent.pullAsyncQueue.prefetch({ sessionId: sid });
+    }
+  }, [watchedSessionIds, backendDown, utils.agent.pullAsyncQueue]);
+
   const reorderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 【派生队列群】asyncResultQueue / runtime 三组（TP-3）/ 显示队列的 useMemo 派生收拢于
@@ -567,7 +549,7 @@ export function ChatView() {
     syncTaskItems,
   } = useChatDerivedQueues({ asyncOverlays, asyncQueueQuery, consumedDeliveries, userQueue });
   // W-A 右栏「状态」一级分组：异步队列可消费 / 同步任务只展示；不持久化到 URL
-  const [runtimeGroupTab, setRuntimeGroupTab] = useState<"async" | "sync">("async");
+  const [runtimeGroupTab, setRuntimeGroupTab] = useState<"async" | "sync" | "side">("async");
 
   // R19：agent.list 已裁剪 systemPrompt；Chat 用 agent.getById 取 systemPrompt/model，与 list metadata 合并
   const selectedAgentMeta = agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId);
@@ -686,7 +668,7 @@ export function ChatView() {
             // 事件处理内同步续传，无需 microtask
             void runStreamRef.current({
               targetSessionId: sid,
-              resumeAfter: st.lastEventId ?? 0,
+              resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
               isResume: true,
             });
           }
@@ -719,8 +701,12 @@ export function ChatView() {
       for (const [sid, st] of Object.entries(life)) {
         if (sid === NEW_STREAM_KEY) continue;
         if (st.phase === "streaming" && !sessionComposeActions.getActiveAbortController(sid)) {
-          // 事件处理内同步续传，无需 microtask
-          void runStreamRef.current({ targetSessionId: sid, resumeAfter: st.lastEventId, isResume: true });
+          // 事件处理内同步续传；INV-5 续传起点唯一走 resolveResumeAfter
+          void runStreamRef.current({
+            targetSessionId: sid,
+            resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
+            isResume: true,
+          });
         }
       }
     };
@@ -779,19 +765,14 @@ export function ChatView() {
       if (!sid || sid === NEW_STREAM_KEY) continue;
       // 已存在 active stream（abort 非空）说明已自行恢复或在运行中，无需重复 resume
       if (sessionComposeActions.getActiveAbortController(sid)) continue;
-      // 架构不变量：挂接进度必须与本地状态一致。
-      // - 本地无该运行任何进度（服务端启动的运行：子 Agent prepareAgentRun / report_back 后父会话 autoConsume）：
-      //   必须 resumeAfter=0 从头重放事件缓冲重建完整 liveTimeline。
-      //   若从尾巴（item.lastEventId）接，thinking/tool 事件全被跳过 → 空 Thinking 卡住、
-      //   done 后只有正式回复文本、hydrate 再闪烁重建完整时间线。
-      // - 本地已有进度（断线重连）：接在本地 lastEventId 之后，避免重放重复拼接。
-      const st = streamLifecycleStore.get(sid);
-      const hasLocalProgress =
-        st.phase === "streaming" && (st.lastEventId > 0 || st.liveTimeline.some((s) => s.type !== "thinking" || s.content));
-      const resumeAfter = hasLocalProgress ? st.lastEventId : 0;
+      // INV-5：续传起点唯一走 resolveResumeAfter（禁止各 effect 手写 lastEventId 判定）
       // runStreamRef.current 读到 useRef 首帧初始值（mount 首跑时镜像 effect 尚未执行，
       // 其镜像赋值也是同一个首帧 runStream）；同步挂接，无需 microtask
-      void runStreamRef.current({ targetSessionId: sid, resumeAfter, isResume: true });
+      void runStreamRef.current({
+        targetSessionId: sid,
+        resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
+        isResume: true,
+      });
     }
   }, [runningSessionsQuery.data]);
 
@@ -1009,7 +990,7 @@ export function ChatView() {
       ) {
         void runStreamRef.current({
           targetSessionId: id,
-          resumeAfter: targetSt.lastEventId,
+          resumeAfter: streamLifecycleStore.resolveResumeAfter(id),
           isResume: true,
         });
       }

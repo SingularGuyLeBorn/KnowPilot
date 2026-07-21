@@ -441,7 +441,13 @@ export function ThinkingTimeline({
   steps: TimelineStep[];
   isLive?: boolean;
 }) {
-  if (!steps.length) return null;
+  // 历史/非末尾的空 Thinking 一律不渲染；直播中仅保留「正在等首 token」的最后一个空壳
+  const visibleSteps = steps.filter((step, i) => {
+    if (step.type !== "thinking") return true;
+    if (step.content.trim()) return true;
+    return isLive && i === steps.length - 1;
+  });
+  if (!visibleSteps.length) return null;
 
   // 左对齐与 assistant 气泡一致（对标 Kimi Code 接近全宽单列）。
   // 竖线导轨 absolute，不占布局宽度。
@@ -452,7 +458,7 @@ export function ThinkingTimeline({
     >
       <div className="absolute bottom-2 left-2 top-2 w-0.5 bg-[var(--kp-brand-light)]/40" />
       <div className="min-w-0 space-y-3">
-        {steps.map((step, i) => {
+        {visibleSteps.map((step, i) => {
           const key =
             step.type === "tool"
               ? step.toolCallId
@@ -468,7 +474,7 @@ export function ThinkingTimeline({
                 <span className="absolute -left-[17px] top-2 h-2.5 w-2.5 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
               )}
               {step.type === "thinking" ? (
-                <ThinkingStep step={step} isLive={isLive && i === steps.length - 1} />
+                <ThinkingStep step={step} isLive={isLive && i === visibleSteps.length - 1} />
               ) : step.type === "content" ? (
                 <ContentStep step={step} />
               ) : step.type === "progress" ? (

@@ -16,14 +16,21 @@ test.describe("Chat Mock — 去右栏布局", () => {
     await expect(page.getByTestId("right-tab-config")).toHaveCount(0);
     await expect(page.getByTestId("right-tab-runtime")).toHaveCount(0);
 
-    // 模型菜单
+    // 模型菜单：主菜单 + hover 飞出思考强度；无系统提示入口
     await page.getByTestId("chat-model-menu-trigger").first().click();
     await expect(page.getByTestId("chat-model-menu")).toBeVisible();
+    await expect(page.getByTestId("chat-model-menu-prompt")).toHaveCount(0);
+    await page.getByTestId("chat-model-menu-thinking").hover();
+    await expect(page.getByTestId("chat-model-menu-thinking-panel")).toBeVisible();
     await page.getByTestId("chat-model-option-deepseek-v4-pro").click();
     await expect(page.getByTestId("chat-model-menu-trigger").first()).toContainText(/Pro|V4/i);
 
-    // chip 行
+    // 输入区 chip：深度研究 + Skill
+    await expect(page.getByTestId("chat-deep-research-toggle").first()).toBeVisible();
     await expect(page.getByTestId("chat-chip-skill").first()).toBeVisible();
+
+    // 空会话无顶部深度调研推广条
+    await expect(page.getByTestId("chat-deep-research-gate")).toHaveCount(0);
 
     // 左栏运行
     await page.getByTestId("left-tab-runtime").click();

@@ -2,7 +2,7 @@
 
 /**
  * ChatSidebar —— 左栏（W13b 从 chat.tsx 拆出）。
- * 顶层 Tab：对话 | 运行。运行 Tab = 投递队列（RuntimeStatusPanel）+ 旁路复盘（SideRunsPanel）。
+ * 顶层 Tab：对话 | 运行。运行 Tab = RuntimeStatusPanel（异步队列 / 同步任务 / 旁路复盘 同级）。
  *
  * W16b：React.memo 渲染屏障——左栏 props 不含任何流式派生值，流式期 ChatView
  * 每 token 重渲染时左栏整树跳过。前提是 ChatView 侧 props 全部引用稳定
@@ -68,8 +68,8 @@ export interface ChatSidebarProps {
   refetchSession: () => void;
   cancelAsyncJobMutate: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>["mutate"];
   pinAsyncJobMutate: ReturnType<typeof trpc.agent.toggleAsyncJobPinned.useMutation>["mutate"];
-  runtimeGroupTab: "async" | "sync";
-  setRuntimeGroupTab: (tab: "async" | "sync") => void;
+  runtimeGroupTab: "async" | "sync" | "side";
+  setRuntimeGroupTab: (tab: "async" | "sync" | "side") => void;
   syncTaskItems: SyncTaskItem[];
   runtimeActiveItems: ChatQueueItem[];
   runtimeToConsumeItems: ChatQueueItem[];
@@ -128,7 +128,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   // 与 ChatView 相同 key 的查询订阅：React Query 按 key 共享缓存并去重请求，无额外网络开销
   const { useList: useAgentList } = useAgent();
   const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
-  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
+  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40, kind: "chat" });
   // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
   const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
@@ -284,16 +284,13 @@ export const ChatSidebar = memo(function ChatSidebar({
           {effectiveAgentId ? (
             <SwarmHealthPanel agentId={effectiveAgentId} compact hideWhenHealthy />
           ) : null}
-          <section className="border-b border-[var(--kp-divider)]" data-testid="left-runtime-delivery">
-            <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
-              投递队列
-            </div>
+          <section className="flex min-h-0 flex-1 flex-col" data-testid="left-runtime-delivery">
             {asyncProgressSteps.length > 0 && (
-              <div className="border-b border-[var(--kp-divider)] px-3 pb-2" data-testid="async-progress-block">
+              <div className="border-b border-[var(--kp-divider)] px-3 py-2" data-testid="async-progress-block">
                 <ThinkingTimeline steps={asyncProgressSteps} isLive />
               </div>
             )}
-            <div className="min-h-[200px]">
+            <div className="flex min-h-0 flex-1 flex-col">
               <RuntimeStatusPanel
                 groupTab={runtimeGroupTab}
                 onGroupTabChange={setRuntimeGroupTab}
@@ -303,20 +300,19 @@ export const ChatSidebar = memo(function ChatSidebar({
                 syncTaskItems={syncTaskItems}
                 onCancel={(jobId) => cancelAsyncJobMutate({ jobId })}
                 onTogglePin={(jobId, pinned) => pinAsyncJobMutate({ jobId, pinned })}
+                sidePanel={
+                  <div data-testid="left-runtime-side-runs">
+                    <SideRunsPanel
+                      parentSessionId={effectiveSessionId ?? mainSessionId}
+                      onOpenSession={(id) => {
+                        selectSession(id);
+                        closeLeftOnMobile();
+                      }}
+                    />
+                  </div>
+                }
               />
             </div>
-          </section>
-          <section data-testid="left-runtime-side-runs">
-            <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
-              旁路复盘
-            </div>
-            <SideRunsPanel
-              parentSessionId={effectiveSessionId ?? mainSessionId}
-              onOpenSession={(id) => {
-                selectSession(id);
-                closeLeftOnMobile();
-              }}
-            />
           </section>
         </div>
       );

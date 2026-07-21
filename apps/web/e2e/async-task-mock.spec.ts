@@ -103,13 +103,14 @@ test.describe("Chat Mock — 异步任务队列", () => {
       await expect(syncList.getByTitle("发送", { exact: true })).toHaveCount(0);
       await expect(syncList.getByRole("button", { name: /发送|喂入|消费/ })).toHaveCount(0);
 
-      // 切回「异步队列」：TP-3 三组状态模型（进行中/待消费/已消费）与容器不回归
+      // 切回「异步队列」：二级子 Tab（进行中/待消费/已消费）与旁路复盘同级入口不回归
       await page.getByTestId("runtime-group-async").click();
-      const asyncPanel = page.getByTestId("chat-runtime-queue");
+      const asyncPanel = page.getByTestId("runtime-async-panel");
       await expect(asyncPanel).toBeVisible();
-      await expect(asyncPanel).toContainText("进行中");
-      await expect(asyncPanel).toContainText("待消费");
-      await expect(asyncPanel).toContainText("已消费");
+      await expect(page.getByTestId("runtime-async-subtab-active")).toBeVisible();
+      await expect(page.getByTestId("runtime-async-subtab-ready")).toBeVisible();
+      await expect(page.getByTestId("runtime-async-subtab-consumed")).toBeVisible();
+      await expect(page.getByTestId("runtime-group-side")).toBeVisible();
     } finally {
       await cleanupAsyncQueueTasks(sessionId);
     }

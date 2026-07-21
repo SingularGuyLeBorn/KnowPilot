@@ -38,9 +38,29 @@ function normalizeMessage(raw: ChatMessage): ChatMessage {
   return raw;
 }
 
+/** 用户软暂停时本地占位气泡 id（服务端落库后由真实 id 替换） */
+export function localAbortedAssistantId(sessionId: string): string {
+  return `local-aborted:${sessionId}`;
+}
+
+/** 服务端真实 aborted/同文案到达后，摘掉本地占位，避免双气泡 */
+function pruneLocalAbortedPlaceholder(sessionId: string, serverMessage: ChatMessage): void {
+  if (serverMessage.role !== "assistant") return;
+  const localId = localAbortedAssistantId(sessionId);
+  if (serverMessage.id === localId) return;
+  const local = getStore().getMessages(sessionId).find((m) => m.id === localId);
+  if (!local) return;
+  const sameText =
+    !!local.content.trim() && local.content.trim() === (serverMessage.content ?? "").trim();
+  if (serverMessage.finishReason === "aborted" || sameText) {
+    getStore().dispatch({ type: "delete", sessionId, messageId: localId });
+  }
+}
+
 /** INV-1：assistant 进 MessageStore 后尝试关闭 Lifecycle done→idle */
 function tryCommitAfterAssistant(sessionId: string, message: ChatMessage): void {
   if (message.role !== "assistant") return;
+  pruneLocalAbortedPlaceholder(sessionId, message);
   const committed = streamLifecycleActions.tryCommitStream(sessionId, {
     messageId: message.id,
     content: message.content,
@@ -95,16 +115,25 @@ function reducer(state: MessageMap, action: Action): MessageMap {
       let nextList: ChatMessage[];
       if (idx >= 0) {
         const prev = list[idx];
+        // field-level merge：incoming 为 undefined 的字段保留 prev（防 agentStream 补发空 payload 抹掉 timeline）
+        const merged: ChatMessage = {
+          ...prev,
+          ...msg,
+          toolCalls: msg.toolCalls !== undefined ? msg.toolCalls : prev.toolCalls,
+          toolResults: msg.toolResults !== undefined ? msg.toolResults : prev.toolResults,
+          tokenUsage: msg.tokenUsage !== undefined ? msg.tokenUsage : prev.tokenUsage,
+          attachments: msg.attachments !== undefined ? msg.attachments : prev.attachments,
+        };
         if (
-          prev.content === msg.content &&
-          prev.toolCalls === msg.toolCalls &&
-          prev.toolResults === msg.toolResults &&
-          prev.tokenUsage === msg.tokenUsage
+          prev.content === merged.content &&
+          prev.toolCalls === merged.toolCalls &&
+          prev.toolResults === merged.toolResults &&
+          prev.tokenUsage === merged.tokenUsage
         ) {
           return state;
         }
         nextList = list.slice();
-        nextList[idx] = msg;
+        nextList[idx] = merged;
       } else {
         nextList = [...list, msg].sort(cmpByCreatedAt);
       }
@@ -162,7 +191,23 @@ class SessionMessageStore {
     if (action.type === "upsert") {
       tryCommitAfterAssistant(action.sessionId, normalizeMessage(action.message));
     } else if (action.type === "hydrate") {
-      tryCommitAfterHydrate(action.sessionId, action.messages.map(normalizeMessage));
+      const hydrated = action.messages.map(normalizeMessage);
+      tryCommitAfterHydrate(action.sessionId, hydrated);
+      // 软暂停本地占位：hydrate 已含服务端 aborted/同文案时摘掉，避免双气泡
+      const localId = localAbortedAssistantId(action.sessionId);
+      const local = this.getMessages(action.sessionId).find((m) => m.id === localId);
+      if (
+        local &&
+        hydrated.some(
+          (m) =>
+            m.role === "assistant" &&
+            m.id !== localId &&
+            (m.finishReason === "aborted" ||
+              (!!local.content.trim() && m.content.trim() === local.content.trim())),
+        )
+      ) {
+        this.dispatch({ type: "delete", sessionId: action.sessionId, messageId: localId });
+      }
       // INV-8 ④：消息 hydrate 完成 = 显式 drain 请求（reducer 转移点置 drainRequested）
       streamLifecycleActions.hydrateDone(action.sessionId);
     }
@@ -299,6 +344,36 @@ class SessionMessageStore {
       createdAt: existing?.createdAt ?? new Date(),
     };
     this.dispatch({ type: "upsert", sessionId, message });
+  }
+
+  /**
+   * 用户软暂停：把直播半截正文立刻写入 MessageStore（finishReason=aborted），
+   * 再经 tryCommit 拆掉 live 块——保证 commit 后气泡不空窗。
+   * 服务端 message_upserted 到达后替换同文案本地占位。
+   */
+  upsertLocalAbortedAssistant(sessionId: string, content: string): string | null {
+    const trimmed = content.trim();
+    if (!trimmed) return null;
+    const id = localAbortedAssistantId(sessionId);
+    const existing = this.getMessages(sessionId).find((m) => m.id === id);
+    this.dispatch({
+      type: "upsert",
+      sessionId,
+      message: {
+        id,
+        sessionId,
+        role: "assistant",
+        content: trimmed,
+        toolCalls: existing?.toolCalls ?? null,
+        toolResults: existing?.toolResults ?? null,
+        tokenUsage: null,
+        finishReason: "aborted",
+        source: existing?.source ?? "system",
+        attachments: existing?.attachments,
+        createdAt: existing?.createdAt ?? new Date(),
+      },
+    });
+    return id;
   }
 }
 let globalStore: SessionMessageStore | null = null;
@@ -538,4 +613,9 @@ export const sessionMessagesStore = {
       finishReason?: string | null;
     },
   ) => getStore().upsertAssistantFromDone(sessionId, data),
+  upsertLocalAbortedAssistant: (sessionId: string, content: string) =>
+    getStore().upsertLocalAbortedAssistant(sessionId, content),
+  /** 幂等 upsert（含 field-level merge）；供 SSE / 测试直达 reducer */
+  upsertMessage: (sessionId: string, message: ChatMessage) =>
+    getStore().dispatch({ type: "upsert", sessionId, message }),
 };
