@@ -822,16 +822,31 @@ export async function runStartupRecovery(options: {
   services: ServiceContainer;
 }): Promise<StartupRecoveryResult> {
   const { config, services } = options;
-  // B4 动作 1：僵尸 running 会话 → paused（先于 Task 续跑，防误伤刚起流的子会话）
+  // B4 动作 1：僵尸 running 会话 → paused（先于 Task 续跑，防误伤刚起流的子会话；
+  // 先查出子会话以便广播，再条件写）
+  const zombieSubRows = await prisma.chatSession.findMany({
+    where: { status: "running", kind: "subagent", parentSessionId: { not: null } },
+    select: { id: true, parentSessionId: true, title: true, agentId: true },
+  });
   const zombieSessions = await prisma.chatSession.updateMany({
     where: { status: "running" },
     data: { status: "paused" },
   });
+  for (const row of zombieSubRows) {
+    if (!row.parentSessionId) continue;
+    void notifySubagentSessionUpdate({
+      parentSessionId: row.parentSessionId,
+      subagentSessionId: row.id,
+      status: "paused",
+      title: row.title ?? undefined,
+      agentId: row.agentId,
+    });
+  }
   // 动作 2：Task 恢复（reentrant 续跑入池 / 否则 failed）
   const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
   // B2：超龄软认领重置（须在 superior drain 重注册之前）
   const staleQueueClaimsReleased = await services.sessionQueueItem.releaseStaleClaims();
-  // 动作 3：superior 孤儿 drain 重注册
+  // 动作 3：superior 孤儿 drain 重注册（动态 import——swarm.ts 处于 ReAct 环内，静态导入成环）
   const { requeueOrphanedSuperiorDrains } = await import("./tools/native/swarm.js");
   const superiorDrainsRegistered = await requeueOrphanedSuperiorDrains(config, services);
   // 动作 4 + R-1 孤儿：合并对账首轮
@@ -1044,10 +1059,21 @@ export async function recoverStaleAsyncJobs(
     // 同步 subagent ChatSession 状态为 failed（避免卡片永久停在 running/queued）
     if (input?.subagentSessionId) {
       try {
-        await prisma.chatSession.update({
+        const subRow = await prisma.chatSession.update({
           where: { id: input.subagentSessionId },
           data: { status: "failed" },
+          select: { id: true, parentSessionId: true, title: true, agentId: true },
         });
+        // 重启恢复路径必须广播：否则父会话右栏/子会话卡片仍显示 running
+        if (subRow.parentSessionId) {
+          void notifySubagentSessionUpdate({
+            parentSessionId: subRow.parentSessionId,
+            subagentSessionId: subRow.id,
+            status: "failed",
+            title: subRow.title ?? undefined,
+            agentId: subRow.agentId,
+          });
+        }
       } catch {
         // subagent session 可能已删除，忽略
       }

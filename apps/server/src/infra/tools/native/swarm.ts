@@ -32,7 +32,6 @@ import {
   loadOpenRouterFreeCatalogFromDisk,
 } from "../../freeLlmRuntime.js";
 import { listFreellmChannels } from "../../freeKeysSync.js";
-
 import type { LlmMessage } from "../../llmClient.js";
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
@@ -545,11 +544,7 @@ async function prepareAgentRun(
             source: "sub",
           });
 
-          try {
-            // 子 Agent 运行完成：主会话进入 completed，释放后续 drain 的 idle 条件
-            await ctx.services.session.update({ id: mainSession!.id, status: "completed" } as any);
-          } catch { /* ignore */ }
-
+          // 终态归位只经 Hub.settleSessionDbStatus（done→completed）；禁止此处直写 completed
           emit({
             type: "done",
             sessionId: mainSession!.id,
@@ -571,10 +566,8 @@ async function prepareAgentRun(
               source: "sub",
             });
           } catch { /* ignore */ }
-          try {
-            // 运行异常：标 failed 阻止重复 drain，保留人工排查现场
-            await ctx.services.session.update({ id: mainSession!.id, status: "failed" } as any);
-          } catch { /* ignore */ }
+          // 禁止 session.update(failed/completed)：用户软暂停时 Hub 已标 paused，再写 failed 会让 resume 永久不可用；
+          // 终态一律交 Hub.settleSessionDbStatus（done→completed / error→paused）
           emit({ type: "error", message: errorText, sessionId: mainSession!.id });
           throw err;
         }

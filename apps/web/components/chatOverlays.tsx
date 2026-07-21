@@ -52,7 +52,7 @@ export const ChatOverlays = memo(function ChatOverlays({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
           <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] shadow-xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <h3 className="font-semibold">编辑 System Prompt</h3>
+              <h3 className="font-semibold">编辑系统提示</h3>
               <button type="button" onClick={() => setShowPromptEditor(false)}><X className="h-4 w-4" /></button>
             </div>
             <textarea value={systemPrompt} onChange={(e) => updateConfig({ systemPrompt: e.target.value, customSystemPrompt: true })} rows={12} className="m-4 flex-1 resize-none rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-3 text-sm outline-none" />

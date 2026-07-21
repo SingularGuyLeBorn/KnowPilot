@@ -3,7 +3,7 @@
 import { forwardRef, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, Gauge, X } from "lucide-react";
+import { ArrowDown, ArrowUp, FileText, Gauge, X } from "lucide-react";
 import type { ChatMessage } from "@knowpilot/shared";
 import { buildContextUsage, formatTokenCount, type ContextUsageSnapshot } from "@/lib/contextUsage";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,8 @@ export const SessionContextBar = memo(function SessionContextBar({
   contextSummary,
   onCompact,
   compactPending,
+  onOpenPromptEditor,
+  onResetPrompt,
 }: {
   messages: ChatMessage[];
   systemPrompt: string;
@@ -25,6 +27,8 @@ export const SessionContextBar = memo(function SessionContextBar({
   contextSummary?: string | null;
   onCompact?: () => void;
   compactPending?: boolean;
+  onOpenPromptEditor?: () => void;
+  onResetPrompt?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -80,6 +84,18 @@ export const SessionContextBar = memo(function SessionContextBar({
     <>
       <div className={cn("flex items-center gap-2", className)}>
         <span className="hidden text-[11px] font-medium text-[var(--kp-text-3)] sm:inline">Session</span>
+        {onOpenPromptEditor && (
+          <button
+            type="button"
+            data-testid="chat-system-prompt-btn"
+            onClick={onOpenPromptEditor}
+            className="inline-flex items-center gap-1 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-2.5 py-1 text-[11px] text-[var(--kp-text-2)] shadow-sm transition hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)] hover:text-[var(--kp-brand-deep)]"
+            title="编辑系统提示"
+          >
+            <FileText className="h-3 w-3" />
+            <span className="hidden sm:inline">系统提示</span>
+          </button>
+        )}
         <button
           ref={triggerRef}
           type="button"
@@ -111,10 +127,13 @@ export const SessionContextBar = memo(function SessionContextBar({
             ref={panelRef}
             usage={usage}
             compactPct={compactPct}
+            systemPrompt={systemPrompt}
             style={{ top: pos.top, left: pos.left }}
             onClose={() => setOpen(false)}
             onCompact={onCompact}
             compactPending={compactPending}
+            onOpenPromptEditor={onOpenPromptEditor}
+            onResetPrompt={onResetPrompt}
           />,
           document.body,
         )}
@@ -127,15 +146,32 @@ const ContextUsagePopover = forwardRef<
   {
     usage: ContextUsageSnapshot;
     compactPct: number;
+    systemPrompt: string;
     style: { top: number; left: number };
     onClose: () => void;
     onCompact?: () => void;
     compactPending?: boolean;
+    onOpenPromptEditor?: () => void;
+    onResetPrompt?: () => void;
   }
->(function ContextUsagePopover({ usage, compactPct, style, onClose, onCompact, compactPending }, ref) {
+>(function ContextUsagePopover(
+  {
+    usage,
+    compactPct,
+    systemPrompt,
+    style,
+    onClose,
+    onCompact,
+    compactPending,
+    onOpenPromptEditor,
+    onResetPrompt,
+  },
+  ref,
+) {
   const warn = usage.compactRatio >= 0.75;
   const critical = usage.compactRatio >= 0.92;
   const ringColor = critical ? "#ef4444" : warn ? "#f59e0b" : "var(--kp-brand)";
+  const promptPreview = systemPrompt.trim() || "（使用 Agent 默认提示）";
 
   return (
     <motion.div
@@ -235,6 +271,43 @@ const ContextUsagePopover = forwardRef<
               {compactPct >= 75
                 ? "⚠ 接近自动压缩阈值。继续对话将触发旧消息摘要。"
                 : "未触发自动压缩。超过压缩阈值时服务端会自动摘要更早的对话。"}
+            </div>
+          )}
+
+          {(onOpenPromptEditor || onResetPrompt) && (
+            <div
+              className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-3 py-2.5"
+              data-testid="context-prompt-section"
+            >
+              <div className="mb-1.5 text-[11px] font-semibold text-[var(--kp-text-2)]">系统提示</div>
+              <p className="max-h-20 overflow-y-auto text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+                {promptPreview.length > 280 ? `${promptPreview.slice(0, 280)}…` : promptPreview}
+              </p>
+              <div className="mt-2 flex gap-2">
+                {onOpenPromptEditor && (
+                  <button
+                    type="button"
+                    data-testid="context-prompt-edit"
+                    onClick={() => {
+                      onClose();
+                      onOpenPromptEditor();
+                    }}
+                    className="flex-1 rounded-lg bg-[var(--kp-brand)] px-2 py-1.5 text-xs font-medium text-white"
+                  >
+                    编辑
+                  </button>
+                )}
+                {onResetPrompt && (
+                  <button
+                    type="button"
+                    data-testid="context-prompt-reset"
+                    onClick={onResetPrompt}
+                    className="flex-1 rounded-lg border border-[var(--kp-divider)] px-2 py-1.5 text-xs text-[var(--kp-text-2)]"
+                  >
+                    重置
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

@@ -152,11 +152,20 @@ function reducer(state: MessageMap, action: Action): MessageMap {
       let nextList: ChatMessage[];
       if (idx >= 0) {
         const prev = list[idx];
-        if (messageFieldsEqual(prev, msg)) {
+        // field-level merge：incoming 为 undefined 的字段保留 prev（防 agentStream 补发空 payload 抹掉 timeline）
+        const merged: ChatMessage = {
+          ...prev,
+          ...msg,
+          toolCalls: msg.toolCalls !== undefined ? msg.toolCalls : prev.toolCalls,
+          toolResults: msg.toolResults !== undefined ? msg.toolResults : prev.toolResults,
+          tokenUsage: msg.tokenUsage !== undefined ? msg.tokenUsage : prev.tokenUsage,
+          attachments: msg.attachments !== undefined ? msg.attachments : prev.attachments,
+        };
+        if (messageFieldsEqual(prev, merged)) {
           return state;
         }
         nextList = list.slice();
-        nextList[idx] = msg;
+        nextList[idx] = merged;
       } else {
         nextList = [...list, msg].sort(cmpByCreatedAt);
       }
@@ -358,6 +367,7 @@ class SessionMessageStore {
     };
     this.dispatch({ type: "upsert", sessionId, message });
   }
+
 }
 let globalStore: SessionMessageStore | null = null;
 
@@ -607,4 +617,7 @@ export const sessionMessagesStore = {
       finishReason?: string | null;
     },
   ) => getStore().upsertAssistantFromDone(sessionId, data),
+  /** 幂等 upsert（含 field-level merge）；供 SSE / 测试直达 reducer */
+  upsertMessage: (sessionId: string, message: ChatMessage) =>
+    getStore().dispatch({ type: "upsert", sessionId, message }),
 };

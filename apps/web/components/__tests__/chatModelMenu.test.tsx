@@ -1,5 +1,5 @@
 /**
- * ChatModelMenu：选模型 / 免费模型 / 思考强度写回 updateConfig。
+ * ChatModelMenu：选模型 / hover 飞出子菜单 / 思考强度写回。
  */
 
 import { act } from "react";
@@ -77,6 +77,13 @@ vi.mock("@/lib/trpc", () => ({
 
 import { ChatModelMenu } from "@/components/chatModelMenu";
 
+function openFlyout(el: Element | null) {
+  // jsdom 下 React 对 mouseenter 委托不可靠；与触控一致走 click 打开飞出
+  act(() => {
+    (el as HTMLButtonElement | null)?.click();
+  });
+}
+
 describe("ChatModelMenu", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -107,8 +114,6 @@ describe("ChatModelMenu", () => {
         <ChatModelMenu
           chatConfig={{ ...config, ...overrides }}
           updateConfig={updateConfig}
-          resetPromptToAgent={vi.fn()}
-          onOpenPromptEditor={vi.fn()}
           modelSupportsReasoning
           modelReasoningRequired={false}
         />,
@@ -126,6 +131,7 @@ describe("ChatModelMenu", () => {
     renderMenu();
     openMenu();
     expect(document.querySelector("[data-testid='chat-model-menu']")).toBeTruthy();
+    expect(document.querySelector("[data-testid='chat-model-menu-prompt']")).toBeNull();
 
     const proId = LLM_MODEL_IDS.DEEPSEEK_V4_PRO;
     act(() => {
@@ -136,12 +142,11 @@ describe("ChatModelMenu", () => {
     expect(updateConfig).toHaveBeenCalledWith({ model: proId });
   });
 
-  it("思考强度写回 enableReasoning / reasoningEffort", () => {
+  it("飞出思考强度子菜单并写回", () => {
     renderMenu({ enableReasoning: true, reasoningEffort: "high" });
     openMenu();
-    act(() => {
-      document.querySelector<HTMLButtonElement>("[data-testid='chat-model-menu-thinking']")?.click();
-    });
+    openFlyout(document.querySelector("[data-testid='chat-model-menu-thinking']"));
+    expect(document.querySelector("[data-testid='chat-model-menu-thinking-panel']")).toBeTruthy();
     act(() => {
       document.querySelector<HTMLButtonElement>("[data-testid='chat-thinking-max']")?.click();
     });
@@ -156,12 +161,28 @@ describe("ChatModelMenu", () => {
     expect(updateConfig).toHaveBeenCalledWith({ enableReasoning: false });
   });
 
-  it("免费模型面板可选 OpenRouter :free 并关闭思考", () => {
+  it("飞出后 document click 不误关；mousedown 外部才关", () => {
     renderMenu();
     openMenu();
+    openFlyout(document.querySelector("[data-testid='chat-model-menu-thinking']"));
+    expect(document.querySelector("[data-testid='chat-model-menu-thinking-panel']")).toBeTruthy();
+
     act(() => {
-      document.querySelector<HTMLButtonElement>("[data-testid='chat-model-menu-free']")?.click();
+      document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    expect(document.querySelector("[data-testid='chat-model-menu']")).toBeTruthy();
+    expect(document.querySelector("[data-testid='chat-model-menu-thinking-panel']")).toBeTruthy();
+
+    act(() => {
+      document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    });
+    expect(document.querySelector("[data-testid='chat-model-menu']")).toBeNull();
+  });
+
+  it("飞出免费模型可选 OpenRouter :free 并关闭思考", () => {
+    renderMenu();
+    openMenu();
+    openFlyout(document.querySelector("[data-testid='chat-model-menu-free']"));
     expect(document.querySelector("[data-testid='chat-model-menu-free-panel']")).toBeTruthy();
 
     const freeId = freeFixtures.openRouterItems[0]!.id;
@@ -173,12 +194,10 @@ describe("ChatModelMenu", () => {
     expect(updateConfig).toHaveBeenCalledWith({ model: freeId, enableReasoning: false });
   });
 
-  it("免费模型面板可选 freellm 当前网关模型", () => {
+  it("飞出免费模型可选 freellm 当前网关模型", () => {
     renderMenu();
     openMenu();
-    act(() => {
-      document.querySelector<HTMLButtonElement>("[data-testid='chat-model-menu-free']")?.click();
-    });
+    openFlyout(document.querySelector("[data-testid='chat-model-menu-free']"));
     act(() => {
       document
         .querySelector<HTMLButtonElement>("[data-testid='chat-free-model-freellm-runtime']")

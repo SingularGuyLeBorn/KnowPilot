@@ -66,7 +66,14 @@ export interface StreamLifecycleState {
   inFlightAssistantId: string | null;
   /** INV-8：数据 hydrate 完成请求 drain 的标记（仅 idle 置位；进入 idle 的转移自身即驱动 drain，故 commit 时清除） */
   drainRequested: boolean;
+  /** completeStream 进入 done 的单调时刻；超时未 commit 则强制释放占用 */
+  doneEnteredAt: number | null;
+  /** RESUME_CLAIM：true 时拒绝并发 beginStream(resume) */
+  resumeClaimed: boolean;
 }
+
+/** done 相位等待 MessageStore 对齐的上限；超时强制 commit，避免发送队列永久占用 */
+export const DONE_COMMIT_TIMEOUT_MS = 8_000;
 
 const IDLE_STATE: StreamLifecycleState = {
   phase: "idle",
@@ -82,6 +89,8 @@ const IDLE_STATE: StreamLifecycleState = {
   pendingAssistantContent: null,
   inFlightAssistantId: null,
   drainRequested: false,
+  doneEnteredAt: null,
+  resumeClaimed: false,
 };
 
 type LifecycleMap = Map<string, StreamLifecycleState>;
@@ -120,6 +129,7 @@ type Action =
   | { type: "MARK_INFLIGHT_ASSISTANT"; sessionId: string; messageId: string }
   | { type: "HYDRATE_DONE"; sessionId: string }
   | { type: "CLEAR_DRAIN_REQUEST"; sessionId: string }
+  | { type: "RELEASE_RESUME_CLAIM"; sessionId: string }
   | { type: "MIGRATE_STREAM_SESSION"; fromKey: string; toSessionId: string }
   | { type: "RESET"; sessionId: string }
   | { type: "DELETE"; sessionId: string };
@@ -140,11 +150,22 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
     case "BEGIN_STREAM": {
       const prev = get(action.sessionId);
       if (action.resume) {
+        // RESUME_CLAIM：已有 resume 在途则拒绝双挂
+        if (prev.resumeClaimed && prev.phase === "streaming" && prev.connected) {
+          if (process.env.NODE_ENV !== "production") {
+            console.error(
+              `[StreamLifecycle] resume blocked: session ${action.sessionId} already claimed`,
+            );
+          }
+          return state;
+        }
         return set(action.sessionId, {
           ...prev,
           phase: "streaming",
           error: null,
           connected: true,
+          resumeClaimed: true,
+          doneEnteredAt: null,
           pendingAssistantMessageId: null,
           pendingAssistantContent: null,
           streamTargetUserId: action.streamTargetUserId ?? prev.streamTargetUserId,
@@ -163,7 +184,8 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         ...IDLE_STATE,
         phase: "streaming",
         streamTargetUserId: action.streamTargetUserId,
-        liveTimeline: [{ type: "thinking", content: "", round: 1 }],
+        // 不预插空 Thinking：等首个 reasoning delta 再创建（避免多轮工具后满屏空壳）
+        liveTimeline: [],
         connected: true,
         lastEventId: 0,
         lastEventAt: Date.now(),
@@ -174,16 +196,26 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
     case "APPEND_THINKING_DELTA": {
       const s = get(action.sessionId);
       const copy = [...s.liveTimeline];
+      const round = action.round > 0 ? action.round : 1;
+      // 优先写入同 round 的 thinking；避免多轮时 delta 糊到上一轮
       for (let i = copy.length - 1; i >= 0; i--) {
         const step = copy[i];
-        if (step.type === "thinking") {
-          copy[i] = { type: "thinking", content: step.content + action.delta, round: step.round };
+        if (step.type === "thinking" && step.round === round) {
+          copy[i] = { type: "thinking", content: step.content + action.delta, round };
+          return set(action.sessionId, { ...s, liveTimeline: copy });
+        }
+      }
+      // 复用末尾空占位（兼容旧 resume 重放）
+      for (let i = copy.length - 1; i >= 0; i--) {
+        const step = copy[i];
+        if (step.type === "thinking" && !step.content.trim()) {
+          copy[i] = { type: "thinking", content: action.delta, round };
           return set(action.sessionId, { ...s, liveTimeline: copy });
         }
       }
       return set(action.sessionId, {
         ...s,
-        liveTimeline: [...copy, { type: "thinking", content: action.delta, round: action.round }],
+        liveTimeline: [...copy, { type: "thinking", content: action.delta, round }],
       });
     }
     case "SET_STREAMING_CONTENT":
@@ -245,6 +277,8 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         streamingContent: action.content,
         error: null,
         connected: false,
+        resumeClaimed: false,
+        doneEnteredAt: Date.now(),
         pendingAssistantMessageId: action.assistantMessageId,
         pendingAssistantContent: action.content.trim() ? action.content : null,
       });
@@ -271,6 +305,8 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         pendingAssistantContent: null,
         inFlightAssistantId: null,
         drainRequested: false,
+        doneEnteredAt: null,
+        resumeClaimed: false,
       });
     }
     case "ABORT_STREAM": {
@@ -337,7 +373,14 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
         inFlightAssistantId: null,
         connected: false,
         drainRequested: false,
+        doneEnteredAt: null,
+        resumeClaimed: false,
       });
+    }
+    case "RELEASE_RESUME_CLAIM": {
+      const s = get(action.sessionId);
+      if (!s.resumeClaimed) return state;
+      return set(action.sessionId, { ...s, resumeClaimed: false });
     }
     case "MARK_INFLIGHT_ASSISTANT": {
       // INV-4：仅流式占用期间记录；idle 时到达的 upsert 是正常 stored 渲染，不屏蔽
@@ -384,8 +427,36 @@ class StreamLifecycleStore {
   /** listener → 只关心的 sessionId；null = 全局（序列化/测试） */
   private listeners = new Map<Listener, string | null>();
   private commitListeners = new Set<CommitListener>();
+  /** done 超时强制 commit 的计时器（进 store，不进编排层 setTimeout 赌 hydrate） */
+  private doneWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
 
   getState = (): LifecycleMap => this.state;
+
+  private clearDoneWatchdog = (sessionId: string): void => {
+    const t = this.doneWatchdogs.get(sessionId);
+    if (t != null) {
+      clearTimeout(t);
+      this.doneWatchdogs.delete(sessionId);
+    }
+  };
+
+  private armDoneWatchdog = (sessionId: string): void => {
+    this.clearDoneWatchdog(sessionId);
+    this.doneWatchdogs.set(
+      sessionId,
+      setTimeout(() => {
+        this.doneWatchdogs.delete(sessionId);
+        const s = this.state.get(sessionId);
+        if (!s || s.phase !== "done") return;
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(
+            `[StreamLifecycle] done 超时 ${DONE_COMMIT_TIMEOUT_MS}ms 未对齐 MessageStore，强制 commit session=${sessionId}`,
+          );
+        }
+        this.dispatch({ type: "COMMIT_STREAM", sessionId });
+      }, DONE_COMMIT_TIMEOUT_MS),
+    );
+  };
 
   /**
    * @param filterSessionId 传入时仅该 session 的 action 触发回调（token 热路径减扇出）
@@ -434,6 +505,31 @@ class StreamLifecycleStore {
       drainBefore.set(sid, st.drainRequested);
     }
     this.state = reducer(this.state, action);
+
+    // done watchdog：进入 done 武装；离开 done/销毁时拆除
+    // ABORT_STREAM：带 partialId → 进入 done（abort-pending）需武装；null → 立即 idle 需拆除
+    if (
+      action.type === "COMPLETE_STREAM" ||
+      (action.type === "ABORT_STREAM" && action.partialAssistantMessageId)
+    ) {
+      this.armDoneWatchdog(action.sessionId);
+    } else if (
+      action.type === "COMMIT_STREAM" ||
+      (action.type === "ABORT_STREAM" && !action.partialAssistantMessageId) ||
+      action.type === "FAIL_STREAM" ||
+      action.type === "RESET" ||
+      action.type === "DELETE" ||
+      (action.type === "BEGIN_STREAM" && !action.resume)
+    ) {
+      this.clearDoneWatchdog(action.sessionId);
+    } else if (action.type === "MIGRATE_STREAM_SESSION") {
+      const t = this.doneWatchdogs.get(action.fromKey);
+      if (t != null) {
+        this.doneWatchdogs.delete(action.fromKey);
+        this.doneWatchdogs.set(action.toSessionId, t);
+      }
+    }
+
     if (action.type === "MIGRATE_STREAM_SESSION") {
       this.notifyListeners([action.fromKey, action.toSessionId]);
     } else {
@@ -535,13 +631,26 @@ function matchesPending(
 
 /** 语义化写操作：所有流式状态变更必须走这里，禁止 ssSet */
 export const streamLifecycleActions = {
-  beginStream(sessionId: string, opts: { streamTargetUserId?: string | null; resume?: boolean } = {}) {
+  beginStream(
+    sessionId: string,
+    opts: { streamTargetUserId?: string | null; resume?: boolean } = {},
+  ): boolean {
+    const resume = opts.resume === true;
+    const before = getStore().get(sessionId);
+    if (resume && before.resumeClaimed && before.phase === "streaming" && before.connected) {
+      return false;
+    }
+    if (!resume && isOccupiedPhase(before.phase)) {
+      return false;
+    }
     getStore().dispatch({
       type: "BEGIN_STREAM",
       sessionId,
       streamTargetUserId: opts.streamTargetUserId ?? null,
-      resume: opts.resume === true,
+      resume,
     });
+    const after = getStore().get(sessionId);
+    return after.phase === "streaming";
   },
   replaceTimeline(sessionId: string, steps: TimelineStep[]) {
     getStore().dispatch({ type: "REPLACE_TIMELINE", sessionId, steps });
@@ -639,6 +748,21 @@ export const streamLifecycleActions = {
   commitStream(sessionId: string) {
     getStore().dispatch({ type: "COMMIT_STREAM", sessionId });
   },
+  releaseResumeClaim(sessionId: string) {
+    getStore().dispatch({ type: "RELEASE_RESUME_CLAIM", sessionId });
+  },
+  /**
+   * INV-5：续传起点唯一判定——本地已有进度则接 lastEventId，否则 0 全量重放。
+   * listRunning / selectSession / visibility / mount 必须共用，禁止各 effect 手写。
+   */
+  resolveResumeAfter(sessionId: string): number {
+    const st = getStore().get(sessionId);
+    const hasLocalProgress =
+      st.phase === "streaming" &&
+      (st.lastEventId > 0 ||
+        st.liveTimeline.some((s) => s.type !== "thinking" || Boolean(s.content)));
+    return hasLocalProgress ? st.lastEventId : 0;
+  },
   /**
    * INV-4：流式期间 message_upserted 提前送达本轮 assistant 时登记 id，
    * 渲染层据此屏蔽 stored 渲染直到 commit。idle 时调用为 no-op。
@@ -686,6 +810,7 @@ export const streamLifecycleStore = {
   isRunOccupied: (sessionId: string | null | undefined) => getStore().isRunOccupied(sessionId),
   canBeginNewRun: (sessionId: string | null | undefined) => getStore().canBeginNewRun(sessionId),
   takeDrainRequests: () => getStore().takeDrainRequests(),
+  resolveResumeAfter: (sessionId: string) => streamLifecycleActions.resolveResumeAfter(sessionId),
   serialize: (): Record<string, StreamLifecycleState> => {
     const obj: Record<string, StreamLifecycleState> = {};
     for (const [k, v] of getStore().getState()) {

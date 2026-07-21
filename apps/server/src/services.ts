@@ -89,7 +89,6 @@ import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
 // type-only：编译期擦除，不构成运行时循环依赖（resume 的 runner emit 追踪用）
-import type { AgentStreamEvent } from "./infra/agentStream.js";
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { deriveDecisionScope } from "./infra/approvalScope.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
@@ -1694,7 +1693,10 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     if (input.keyword) where.title = { contains: input.keyword };
     if (input.agentIds && input.agentIds.length > 0) where.agentId = { in: input.agentIds };
     if (input.parentSessionId !== undefined) where.parentSessionId = input.parentSessionId;
+    // 显式 kind=skill_review|heartbeat 走旁路入口（listSideRuns 等）；
+    // 对话历史默认排除，避免系统旁路会话污染侧栏。
     if (input.kind) where.kind = input.kind;
+    else where.kind = { notIn: ["skill_review", "heartbeat"] };
     if (input.status) where.status = input.status;
     return where;
   }
@@ -1798,10 +1800,10 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
    *
    * 不变量（全部收条件写/原子操作，不靠编排层时序猜测）：
    * 1. 仅 status="paused" 可恢复；active/failed/archived/completed 等 → BAD_REQUEST（说明原因）。
-   * 2. 唯一互斥点 = 条件写 updateMany where {id, status:"paused"} → {status:"running"}：
+   * 2. resume 互斥点 = 条件写 updateMany where {id, status:"paused"} → {status:"running"}：
    *    count=1 获得恢复权；count=0 重读——已 running → 幂等返回（并发 double-resume
-   *    落选方不报错、不重复起流）；其它 → BAD_REQUEST。全仓只有这一处 paused→running，
-   *    并发下至多一个调用方起流，不加第二层锁。
+   *    落选方不报错、不重复起流）；其它 → BAD_REQUEST。
+   *    普通发消息走 Hub.start 的 claim（active|paused→running），与此处幂等叠加。
    * 3. 系统提示消息（role:"user", source:"system"）由 chatAgentStream 在起流后写入——
    *    注入与起流同源，不存在「消息已写、流未起」的孤儿窗口，故回滚无需删消息。
    * 4. 起流失败回滚（宁漏勿错）：startIfNotRunning 返回 false = 已有活跃流接管
@@ -1810,12 +1812,9 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
    *    （isRunning 检查；maxEventIdFor 内部已吞错不抛），抛错 ⟹ runner 未执行
    *    ⟹ 消息必然未写入 ⟹ 回滚安全完整。回滚同走条件写 where status:"running"：
    *    期间已被 stop/接管则 count=0 不误滚。
-   * 5. 终态归位挂在 runner 内部：run 结束时若状态仍 running——
-   *    done → subagent 会话 "completed" / 其它 "active"；error/中断 → "paused"
-   *    （瞬时错误不判死刑，保留再次手动恢复的闭环）。写在 runner 内、hub 标 completed
-   *    之前，与 superior drain 链的 waitFor 形成 happens-before（drain 只会在本 runner
-   *    结束后才可能把状态重新置 running），无 check-then-act 窗口；条件写 where
-   *    status:"running" 保证期间被 stop（paused）/ report_back（completed）接管时不覆盖。
+   * 5. 终态归位收进 SessionStreamHub.start（所有起流路径共用）：run 结束时若仍 running——
+   *    done → subagent/skill_review "completed" / 其它 "active"；error/中断 → "paused"。
+   *    resume 不再重复 settle；条件写 where status:"running" 保证与 stop/report_back 不覆盖。
    */
   async resume(input: { id: string }): Promise<{
     id: string;
@@ -1881,7 +1880,9 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       });
       void drainPromise.finally(async () => {
         if (hub.isRunning(input.id)) return;
-        const nextStatus = session.kind === "subagent" ? "completed" : "active";
+        // 与 Hub.settleSessionDbStatus 对齐：subagent / skill_review → completed
+        const nextStatus =
+          session.kind === "subagent" || session.kind === "skill_review" ? "completed" : "active";
         await this.prisma.chatSession
           .updateMany({
             where: { id: input.id, status: "running" },
@@ -1904,13 +1905,23 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     const orphanAnswer = await services.sessionQueueItem.claimHeadAskUserOrphan(input.id);
     const { buildResumeHintIfAskPending } = await import("./infra/askUserGate.js");
     const askHint = orphanAnswer ? null : buildResumeHintIfAskPending(input.id);
+    // 用户软暂停（assistant finishReason=aborted）与重启尸体会话分叉提示
+    let continueHint = "（服务已重启，请继续完成未完成的任务）";
+    if (!orphanAnswer && !askHint) {
+      const lastAssistant = await this.prisma.chatMessage.findFirst({
+        where: { sessionId: input.id, role: "assistant" },
+        orderBy: { createdAt: "desc" },
+        select: { finishReason: true },
+      });
+      if (lastAssistant?.finishReason === "aborted") {
+        continueHint =
+          "（用户暂停了生成，请根据已有对话与工具结果，从中断处继续完成任务）";
+      }
+    }
     const body: AgentChatInput = {
       sessionId: input.id,
       agentId: session.agentId ?? undefined,
-      message:
-        orphanAnswer?.content ??
-        askHint ??
-        "（服务已重启，请继续完成未完成的任务）",
+      message: orphanAnswer?.content ?? askHint ?? continueHint,
       // 孤儿答复按用户消息上链；其余恢复注入走 system 去重路径
       source: orphanAnswer ? "user" : "system",
       // 子任务血统允许 report_back（与 asyncJobManager autoConsume 同口径）
@@ -1920,6 +1931,7 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     const { createTrpcInvoker } = await import("./infra/trpcInvoker.js");
     const invokeTrpc = createTrpcInvoker({ services });
     const { chatAgentStream } = await import("./infra/agentStream.js");
+    type AgentStreamEvent = import("./infra/agentStream.js").AgentStreamEvent;
 
     try {
       const started = await hub.startIfNotRunning(input.id, body, async (emit, signal) => {

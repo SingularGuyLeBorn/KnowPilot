@@ -740,6 +740,13 @@ const sessionRouter = router({
         // 运行中：catch 会把 session 置 paused；这里不重复写，避免覆盖
         return ctx.services.session.getByIdLite(input.id);
       }
+      // 普通 chat：必须 hub.stop，禁止只改 DB 导致「paused 但流仍在跑」
+      try {
+        const { getStreamHub } = await import("./infra/sessionStreamHub.js");
+        getStreamHub()?.stop(session.id, "user");
+      } catch {
+        /* hub 未初始化 */
+      }
       return ctx.services.session.update({ id: input.id, status: "paused" });
     }),
   // C-3（v10）：paused 会话手动恢复闭环。所有不变量（条件写抢占/回滚/终态归位）

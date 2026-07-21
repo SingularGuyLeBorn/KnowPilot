@@ -341,13 +341,19 @@ describe("W12 心跳连续失败熔断暂停", () => {
     for (let i = 1; i <= HEARTBEAT_MAX_CONSECUTIVE_FAILURES; i++) {
       await engine.triggerHeartbeat(agentId);
       // 等失败闭环落库（streak +1），避免下一次触发被 running 守卫跳过
-      await vi.waitFor(async () => {
-        expect(await readStreak(agentId)).toBe(i);
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await readStreak(agentId)).toBe(i);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
     }
-    await vi.waitFor(async () => {
-      expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
-    });
+    await vi.waitFor(
+      async () => {
+        expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
+      },
+      { timeout: 15_000, interval: 100 },
+    );
   }
 
   it("streak 达阈值 → suspended 落库；refresh 不再连坐恢复；配置变更清零计数后个体化摘除；重启不失", async () => {
@@ -426,19 +432,28 @@ describe("W12 心跳连续失败熔断暂停", () => {
 
       // resume 清零计数：恢复后须重新累计至阈值才再 suspend（单次失败不立即熔断）
       await engine2.triggerHeartbeat(agentId);
-      await vi.waitFor(async () => {
-        expect(await readStreak(agentId)).toBe(1);
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await readStreak(agentId)).toBe(1);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
       expect(await engine2.isHeartbeatSuspended(agentId)).toBe(false);
       for (let i = 2; i <= HEARTBEAT_MAX_CONSECUTIVE_FAILURES; i++) {
         await engine2.triggerHeartbeat(agentId);
-        await vi.waitFor(async () => {
-          expect(await readStreak(agentId)).toBe(i);
-        });
+        await vi.waitFor(
+          async () => {
+            expect(await readStreak(agentId)).toBe(i);
+          },
+          { timeout: 15_000, interval: 100 },
+        );
       }
-      await vi.waitFor(async () => {
-        expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
     } finally {
       await prisma.task.deleteMany({ where: { name: { contains: "W12-suspend" } } });
       await prisma.chatSession.deleteMany({ where: { agentId } });

@@ -1,6 +1,7 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -62,41 +63,43 @@ function serializeTools(sel: ToolSelection): string[] {
 }
 
 function ToolPreview({ tools }: { tools: string[] }) {
-  const { data, isLoading } = trpc.agent.toolSummary.useQuery(
+  // keepPreviousData：勾选时勿卸掉旧摘要 → 顶栏高度不塌，下方列表不会跟着「跳一下」
+  const { data, isLoading, isFetching } = trpc.agent.toolSummary.useQuery(
     { tools },
-    { staleTime: 30_000 },
+    { staleTime: 30_000, placeholderData: keepPreviousData },
   );
 
-  if (isLoading || !data) {
-    return (
-      <div className="flex items-center gap-2 text-xs text-[var(--kp-text-3)]">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        计算实际可用能力…
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-2 rounded-xl border border-[var(--kp-brand)]/20 bg-[var(--kp-brand-soft)]/50 p-3">
-      <div className="flex items-start gap-2 text-xs text-[var(--kp-brand-deep)]">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <div>
-          <p className="font-medium">
-            对话时 LLM 可见约 <strong>{data.llmFunctions}</strong> 个工具函数
-          </p>
-          {data.usesDefaultNative && (
-            <p className="mt-1 text-[var(--kp-text-3)]">
-              未单独勾选内置工具时，系统会自动附带 {DEFAULT_AGENT_NATIVE.length}{" "}
-              个基础能力（搜索、读文件等）。保存后将写入配置文件。
-            </p>
-          )}
-          {data.apiProcedures > 0 && (
-            <p className="mt-1 text-[var(--kp-text-3)]">
-              「调用 API」展开后可访问约 {data.apiProcedures} 个后端接口。
-            </p>
-          )}
+    <div className="min-h-[4.5rem] space-y-2 rounded-xl border border-[var(--kp-brand)]/20 bg-[var(--kp-brand-soft)]/50 p-3">
+      {!data ? (
+        <div className="flex items-center gap-2 text-xs text-[var(--kp-text-3)]">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          计算实际可用能力…
         </div>
-      </div>
+      ) : (
+        <div className="flex items-start gap-2 text-xs text-[var(--kp-brand-deep)]">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              对话时 LLM 可见约 <strong>{data.llmFunctions}</strong> 个工具函数
+              {isFetching && !isLoading && (
+                <Loader2 className="ml-1.5 inline h-3 w-3 animate-spin opacity-60" />
+              )}
+            </p>
+            {data.usesDefaultNative && (
+              <p className="mt-1 text-[var(--kp-text-3)]">
+                未单独勾选内置工具时，系统会自动附带 {DEFAULT_AGENT_NATIVE.length}{" "}
+                个基础能力（搜索、读文件等）。保存后将写入配置文件。
+              </p>
+            )}
+            {data.apiProcedures > 0 && (
+              <p className="mt-1 text-[var(--kp-text-3)]">
+                「调用 API」展开后可访问约 {data.apiProcedures} 个后端接口。
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -207,6 +210,8 @@ export function AgentToolsEditor({ tools, onChange }: AgentToolsEditorProps) {
   const [openGroups, setOpenGroups] = useState<Set<NativeToolGroupId>>(
     () => new Set(["web", "fs", "async", "swarm"]),
   );
+  const listRef = useRef<HTMLDivElement>(null);
+  const listScrollTopRef = useRef(0);
 
   if (tools !== toolsSnapshot) {
     setToolsSnapshot(tools);
@@ -222,7 +227,14 @@ export function AgentToolsEditor({ tools, onChange }: AgentToolsEditorProps) {
 
   const serialized = useMemo(() => materializeAgentTools(serializeTools(sel)), [sel]);
 
+  // 勾选导致重渲染时锁住列表 scrollTop，避免点哪滚哪
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = listScrollTopRef.current;
+  }, [sel, openGroups, query]);
+
   const update = (next: ToolSelection) => {
+    if (listRef.current) listScrollTopRef.current = listRef.current.scrollTop;
     setSel(next);
     onChange(materializeAgentTools(serializeTools(next)));
   };
@@ -332,7 +344,13 @@ export function AgentToolsEditor({ tools, onChange }: AgentToolsEditorProps) {
           />
         </div>
 
-        <div className="max-h-[28rem] space-y-2 overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/40 p-2">
+        <div
+          ref={listRef}
+          onScroll={(e) => {
+            listScrollTopRef.current = e.currentTarget.scrollTop;
+          }}
+          className="max-h-[28rem] space-y-2 overflow-y-auto rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/40 p-2"
+        >
           {NATIVE_TOOL_GROUPS.map((group) => {
             const items = grouped.get(group.id) ?? [];
             if (items.length === 0) return null;

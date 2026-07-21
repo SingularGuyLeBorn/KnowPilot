@@ -5,8 +5,8 @@
  *
  * 不变量：
  * - 队列预览统一截断至 120 字符（previewText）。
- * - 右栏「状态」两级分组：异步队列可消费（钉住/待消费/已消费）/ 同步任务只展示。
- * - RuntimeStatusPanel 按 TP-3 执行×消费维度分组：进行中 / 待消费（含钉住子组）/ 已消费。
+ * - 运行栏一级：异步队列 / 同步任务 / 旁路复盘。
+ * - 异步队列二级子 Tab：进行中 / 待消费（含钉住子组）/ 已消费（TP-3）。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -352,6 +352,8 @@ interface UserSendQueuePanelProps {
 export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: UserSendQueuePanelProps) {
   const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
+  // superior 队首由服务端 drain；前端不越过，需明示以免用户以为待发卡住
+  const superiorHeadBlocks = items[0]?.kind === "superior";
 
   return (
     <div className="mb-2" data-testid="chat-queue-panel">
@@ -365,6 +367,9 @@ export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: Us
           <span className="font-medium text-[var(--kp-text-2)]">
             待发消息 {items.length}
           </span>
+          {superiorHeadBlocks && (
+            <span className="text-[var(--kp-text-3)]">· 等待上级消息送达</span>
+          )}
           {asyncStats && asyncStats.runningGlobal > 0 && (
             <span className="text-[var(--kp-brand)]">· 运行 {asyncStats.runningGlobal}</span>
           )}
@@ -395,6 +400,11 @@ export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: Us
               <ChevronUp className="h-4 w-4" />
             </button>
           </div>
+          {superiorHeadBlocks && (
+            <p className="mb-2 text-[11px] leading-snug text-[var(--kp-text-3)]">
+              队首为上级 Agent 消息，服务端送达后才会继续发送后续待发项。
+            </p>
+          )}
           <InlineQueueList items={items} onChange={onChange} onRemove={onRemove} />
         </div>
       )}
@@ -727,18 +737,23 @@ function StatusSection({
   count,
   children,
   emptyHint,
+  hideTitle,
 }: {
   title: string;
   count: number;
   children: ReactNode;
   emptyHint?: string;
+  /** 子 Tab 已展示标题时隐藏区块头，避免重复 */
+  hideTitle?: boolean;
 }) {
   return (
     <section className="space-y-2">
-      <div className="sticky top-0 z-[1] flex items-center gap-1.5 bg-[var(--kp-bg)]/90 px-0.5 py-1 backdrop-blur-sm">
-        <h4 className="text-xs font-semibold tracking-wide text-[var(--kp-text-2)]">{title}</h4>
-        <span className="tabular-nums text-xs text-[var(--kp-text-3)]">{count}</span>
-      </div>
+      {!hideTitle && (
+        <div className="sticky top-0 z-[1] flex items-center gap-1.5 bg-[var(--kp-bg)]/90 px-0.5 py-1 backdrop-blur-sm">
+          <h4 className="text-xs font-semibold tracking-wide text-[var(--kp-text-2)]">{title}</h4>
+          <span className="tabular-nums text-xs text-[var(--kp-text-3)]">{count}</span>
+        </div>
+      )}
       {count === 0 ? (
         emptyHint ? <p className="px-0.5 pb-1 text-xs text-[var(--kp-text-3)]/70">{emptyHint}</p> : null
       ) : (
@@ -748,10 +763,13 @@ function StatusSection({
   );
 }
 
+export type RuntimeGroupTab = "async" | "sync" | "side";
+export type RuntimeAsyncSubTab = "active" | "ready" | "consumed";
+
 export interface RuntimeStatusPanelProps {
-  /** 一级分组：异步队列 / 同步任务（W-A） */
-  groupTab: "async" | "sync";
-  onGroupTabChange: (tab: "async" | "sync") => void;
+  /** 一级分组：异步队列 / 同步任务 / 旁路复盘 */
+  groupTab: RuntimeGroupTab;
+  onGroupTabChange: (tab: RuntimeGroupTab) => void;
   /** 进行中：async-running（queued 排队 + running 执行） */
   activeItems: ChatQueueItem[];
   /** 待消费：终态（success/failed）且 delivered=false；pinned 为子组「钉住·未喂入」 */
@@ -760,6 +778,8 @@ export interface RuntimeStatusPanelProps {
   consumedItems: ChatQueueItem[];
   /** 同步任务（deliverToQueue=false）：只展示，无 pin/消费/气泡发送 */
   syncTaskItems?: SyncTaskItem[];
+  /** 旁路复盘面板（与一二级队列同级 Tab 内容） */
+  sidePanel?: ReactNode;
   onCancel?: (jobId: string) => void;
   onTogglePin?: (jobId: string, pinned: boolean) => void;
 }
@@ -885,9 +905,12 @@ export function RuntimeStatusPanel({
   toConsumeItems,
   consumedItems,
   syncTaskItems = [],
+  sidePanel,
   onCancel,
   onTogglePin,
 }: RuntimeStatusPanelProps) {
+  const [asyncSubTab, setAsyncSubTab] = useState<RuntimeAsyncSubTab>("active");
+
   // 进行中：running 在前（执行体），queued 在后按池位置升序（position 缺失的排末尾，保持稳定 createdAt）
   const queued = useMemo(
     () =>
@@ -975,49 +998,67 @@ export function RuntimeStatusPanel({
     return () => window.clearInterval(timer);
   }, [hasActiveClock]);
 
+  const groupTabBtn = (
+    tab: RuntimeGroupTab,
+    label: string,
+    testId: string,
+    badge?: number,
+    /** true 时角标含 0（异步队列）；默认仅 >0 显示 */
+    showZeroBadge?: boolean,
+  ) => (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={() => onGroupTabChange(tab)}
+      className={cn(
+        "flex min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[11px] font-medium transition sm:text-xs sm:px-2",
+        groupTab === tab
+          ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+          : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+      )}
+    >
+      <span className="truncate">{label}</span>
+      {badge != null && (showZeroBadge || badge > 0) && (
+        <span className="inline-flex min-w-[1.1rem] shrink-0 justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+
+  const asyncSubTabBtn = (tab: RuntimeAsyncSubTab, label: string, count: number, testId: string) => (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={() => setAsyncSubTab(tab)}
+      className={cn(
+        "flex flex-1 items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition",
+        asyncSubTab === tab
+          ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+          : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
+      )}
+    >
+      {label}
+      <span className="tabular-nums text-[10px] opacity-70">{count}</span>
+    </button>
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-runtime-queue">
-      {/* 一级分组：异步队列 / 同步任务 */}
+      {/* 一级：异步队列 / 同步任务 / 旁路复盘 */}
       <div className="px-2.5 py-2">
         <div className="flex gap-1 rounded-xl bg-[var(--kp-bg-mute)] p-0.5">
-          <button
-            type="button"
-            data-testid="runtime-group-async"
-            onClick={() => onGroupTabChange("async")}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition",
-              groupTab === "async"
-                ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-            )}
-          >
-            异步队列
-            <span className="inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
-              {activeCount + toConsumeCount}
-            </span>
-          </button>
-          <button
-            type="button"
-            data-testid="runtime-group-sync"
-            onClick={() => onGroupTabChange("sync")}
-            className={cn(
-              "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition",
-              groupTab === "sync"
-                ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
-                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
-            )}
-          >
-            同步任务
-            {syncActiveItems.length > 0 && (
-              <span className="inline-flex min-w-[1.1rem] justify-center rounded-full bg-[var(--kp-brand-soft)] px-1.5 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
-                {syncActiveItems.length}
-              </span>
-            )}
-          </button>
+          {groupTabBtn("async", "异步队列", "runtime-group-async", activeCount + toConsumeCount, true)}
+          {groupTabBtn("sync", "同步任务", "runtime-group-sync", syncActiveItems.length)}
+          {groupTabBtn("side", "旁路复盘", "runtime-group-side")}
         </div>
       </div>
 
-      {groupTab === "sync" ? (
+      {groupTab === "side" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto" data-testid="runtime-side-panel">
+          {sidePanel}
+        </div>
+      ) : groupTab === "sync" ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2" data-testid="sync-task-list">
           {syncTaskItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-[var(--kp-text-3)]">
@@ -1040,87 +1081,98 @@ export function RuntimeStatusPanel({
           )}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
-          <div className="space-y-3">
-            {/* 进行中：跟踪 Task 的 queued/running（过程细节在子会话对话区，不在此展示全文） */}
-            <StatusSection title="进行中" count={activeCount} emptyHint="无进行中的异步任务">
-              <AnimatePresence initial={false}>
-                {running.map((item) => (
-                  <StatusRow
-                    key={item.jobId ?? item.id}
-                    item={item}
-                    tone="running"
-                    onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
-                  />
-                ))}
-                {queued.map((item) => (
-                  <StatusRow
-                    key={item.jobId ?? item.id}
-                    item={item}
-                    tone="queued"
-                    onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
-                  />
-                ))}
-              </AnimatePresence>
-            </StatusSection>
-
-            {/* 待消费：仅终态未 delivered 的结果（非子 Agent 运行过程） */}
-            <StatusSection title="待消费" count={toConsumeCount} emptyHint="无待喂入的终态结果">
-              <AnimatePresence initial={false}>
-                {toConsume.map((item) => (
-                  <StatusRow
-                    key={item.jobId ?? item.id}
-                    item={item}
-                    tone="ready"
-                    onTogglePin={
-                      item.jobId && onTogglePin
-                        ? () => onTogglePin(item.jobId!, !item.pinned)
-                        : undefined
-                    }
-                  />
-                ))}
-              </AnimatePresence>
-              {held.length > 0 && (
-                <div className="mt-2 space-y-2" data-testid="runtime-held-group">
-                  <div className="flex items-center gap-1.5 px-0.5">
-                    <Pin className="h-3 w-3 text-amber-600" />
-                    <span className="text-[11px] font-medium text-amber-700">钉住·未喂入</span>
-                    <span className="tabular-nums text-[11px] text-[var(--kp-text-3)]">{held.length}</span>
-                  </div>
-                  <AnimatePresence initial={false}>
-                    {held.map((item) => (
-                      <StatusRow
-                        key={item.jobId ?? item.id}
-                        item={item}
-                        tone="held"
-                        onTogglePin={
-                          item.jobId && onTogglePin
-                            ? () => onTogglePin(item.jobId!, !item.pinned)
-                            : undefined
-                        }
-                      />
-                    ))}
-                  </AnimatePresence>
-                </div>
-              )}
-            </StatusSection>
-
-            {/* 已消费：delivered=true（success/failed badge），fresh 滑入 */}
-            <StatusSection title="已消费" count={consumedItems.length} emptyHint="尚无消费记录">
-              <AnimatePresence initial={false}>
-                {consumedItems.map((item) => {
-                  const id = item.jobId ?? item.id;
-                  return (
+        <div className="flex min-h-0 flex-1 flex-col" data-testid="runtime-async-panel">
+          {/* 二级：进行中 / 待消费 / 已消费 */}
+          <div className="px-2.5 pb-1.5">
+            <div className="flex gap-0.5 rounded-lg bg-[var(--kp-bg-mute)]/70 p-0.5">
+              {asyncSubTabBtn("active", "进行中", activeCount, "runtime-async-subtab-active")}
+              {asyncSubTabBtn("ready", "待消费", toConsumeCount, "runtime-async-subtab-ready")}
+              {asyncSubTabBtn("consumed", "已消费", consumedItems.length, "runtime-async-subtab-consumed")}
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2">
+            {asyncSubTab === "active" && (
+              <StatusSection title="进行中" count={activeCount} emptyHint="无进行中的异步任务" hideTitle>
+                <AnimatePresence initial={false}>
+                  {running.map((item) => (
                     <StatusRow
-                      key={id}
+                      key={item.jobId ?? item.id}
                       item={item}
-                      tone="consumed"
-                      fresh={freshIds.has(id)}
+                      tone="running"
+                      onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
                     />
-                  );
-                })}
-              </AnimatePresence>
-            </StatusSection>
+                  ))}
+                  {queued.map((item) => (
+                    <StatusRow
+                      key={item.jobId ?? item.id}
+                      item={item}
+                      tone="queued"
+                      onCancel={item.jobId && onCancel ? () => onCancel(item.jobId!) : undefined}
+                    />
+                  ))}
+                </AnimatePresence>
+              </StatusSection>
+            )}
+
+            {asyncSubTab === "ready" && (
+              <StatusSection title="待消费" count={toConsumeCount} emptyHint="无待喂入的终态结果" hideTitle>
+                <AnimatePresence initial={false}>
+                  {toConsume.map((item) => (
+                    <StatusRow
+                      key={item.jobId ?? item.id}
+                      item={item}
+                      tone="ready"
+                      onTogglePin={
+                        item.jobId && onTogglePin
+                          ? () => onTogglePin(item.jobId!, !item.pinned)
+                          : undefined
+                      }
+                    />
+                  ))}
+                </AnimatePresence>
+                {held.length > 0 && (
+                  <div className="mt-2 space-y-2" data-testid="runtime-held-group">
+                    <div className="flex items-center gap-1.5 px-0.5">
+                      <Pin className="h-3 w-3 text-amber-600" />
+                      <span className="text-[11px] font-medium text-amber-700">钉住·未喂入</span>
+                      <span className="tabular-nums text-[11px] text-[var(--kp-text-3)]">{held.length}</span>
+                    </div>
+                    <AnimatePresence initial={false}>
+                      {held.map((item) => (
+                        <StatusRow
+                          key={item.jobId ?? item.id}
+                          item={item}
+                          tone="held"
+                          onTogglePin={
+                            item.jobId && onTogglePin
+                              ? () => onTogglePin(item.jobId!, !item.pinned)
+                              : undefined
+                          }
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </StatusSection>
+            )}
+
+            {asyncSubTab === "consumed" && (
+              <StatusSection title="已消费" count={consumedItems.length} emptyHint="尚无消费记录" hideTitle>
+                <AnimatePresence initial={false}>
+                  {consumedItems.map((item) => {
+                    const id = item.jobId ?? item.id;
+                    return (
+                      <StatusRow
+                        key={id}
+                        item={item}
+                        tone="consumed"
+                        fresh={freshIds.has(id)}
+                      />
+                    );
+                  })}
+                </AnimatePresence>
+              </StatusSection>
+            )}
           </div>
         </div>
       )}

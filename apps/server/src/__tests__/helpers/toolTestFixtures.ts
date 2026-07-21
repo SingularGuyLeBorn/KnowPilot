@@ -283,6 +283,8 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "feishu_get_doc",
   "feishu_create_doc",
   "feishu_update_doc",
+  "feishu_append_doc_text",
+  "feishu_append_doc_blocks",
   "feishu_delete_doc",
   "feishu_search_docs",
   "feishu_list_permission_members",

@@ -139,7 +139,10 @@ export function buildTimelineFromStored(toolCalls?: ToolCallRecord[]): TimelineS
     const round =
       typeof (tc.args as { round?: number })?.round === "number" ? (tc.args as { round: number }).round : 1;
     if (tc.kind === "thinking") {
-      steps.push({ type: "thinking", content: String(tc.result ?? ""), round });
+      const content = String(tc.result ?? "").trim();
+      // 空思考不进时间线（历史消息里也不展示空壳 Thinking）
+      if (!content) continue;
+      steps.push({ type: "thinking", content, round });
     } else if (tc.kind === "content") {
       steps.push({ type: "content", content: String(tc.result ?? ""), round });
     } else {
@@ -156,4 +159,9 @@ export function buildTimelineFromStored(toolCalls?: ToolCallRecord[]): TimelineS
     }
   }
   return steps;
+}
+
+/** 去掉仍无正文的 Thinking 占位（工具已开始 / 落库前清理） */
+export function pruneEmptyThinkingSteps(steps: TimelineStep[]): TimelineStep[] {
+  return steps.filter((s) => s.type !== "thinking" || !!s.content.trim());
 }

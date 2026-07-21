@@ -36,8 +36,6 @@ interface ChatInputAreaProps {
   supportsVision?: boolean;
   chatConfig: ChatSessionConfig;
   updateConfig: (patch: Partial<ChatSessionConfig>) => void;
-  resetPromptToAgent: () => void;
-  onOpenPromptEditor: () => void;
   modelSupportsReasoning: boolean;
   modelReasoningRequired: boolean;
   /** 会话级提示（如子代理任务会话警告），显示在输入框上方 */
@@ -74,8 +72,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   supportsVision = false,
   chatConfig,
   updateConfig,
-  resetPromptToAgent,
-  onOpenPromptEditor,
   modelSupportsReasoning,
   modelReasoningRequired,
   sessionHint,
@@ -94,6 +90,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [highlightIdx, setHighlightIdx] = useState(0);
+  const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
 
   const openSkillPicker = useCallback(() => {
     textareaRef.current?.focus();
@@ -129,8 +126,13 @@ export const ChatInputArea = memo(function ChatInputArea({
     setPendingImages([]);
     setOcrError(null);
     setHistoryIdx(-1);
+    setDeepResearchEnabled(false);
     textareaRef.current?.focus();
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!canStartDeepResearch) setDeepResearchEnabled(false);
+  }, [canStartDeepResearch]);
 
   const getHistory = useCallback((): string[] => {
     if (!historyKey) return [];
@@ -290,10 +292,20 @@ export const ChatInputArea = memo(function ChatInputArea({
   };
 
   const handleSend = async () => {
-    const text = input.trim();
+    let text = input.trim();
     if ((!text && pendingImages.length === 0) || disabled || ocrLoading || sendLockRef.current) return;
     sendLockRef.current = true;
     setIsSending(true);
+
+    // 深度研究 chip：发送时自动补 /research 前缀（与 enqueue 斜杠语义一致）
+    if (
+      deepResearchEnabled &&
+      canStartDeepResearch &&
+      text &&
+      !/^\/(research|deepresearch|deep-research|goal)\b/i.test(text)
+    ) {
+      text = `/research ${text}`;
+    }
 
     let attachments = pendingImages;
     const needsOcr = !supportsVision && attachments.some((a) => !a.extractedText);
@@ -334,6 +346,7 @@ export const ChatInputArea = memo(function ChatInputArea({
     setPendingImages([]);
     setOcrError(null);
     setHistoryIdx(-1); // 退出历史浏览模式
+    setDeepResearchEnabled(false);
     // 同步释放 ref 锁；isSending 继续保留 300ms，让按钮保持禁用，防止连击/快捷键穿透。
     sendLockRef.current = false;
     setTimeout(releaseSendLock, 300);
@@ -380,11 +393,13 @@ export const ChatInputArea = memo(function ChatInputArea({
   const canSend = (!!input.trim() || pendingImages.length > 0) && !disabled && !ocrLoading && !isSending;
   const placeholderHint = disabled
     ? "后端未连接"
-    : isStreaming
-      ? "Agent 回复中，发送将加入队列…"
-      : queueLength > 0
-        ? `队列中还有 ${queueLength} 条，继续发送会依次执行`
-        : "输入消息";
+    : deepResearchEnabled && canStartDeepResearch
+      ? "深度研究已开启：发送将走 /research …"
+      : isStreaming
+        ? "Agent 回复中，发送将加入队列…"
+        : queueLength > 0
+          ? `队列中还有 ${queueLength} 条，继续发送会依次执行`
+          : "输入消息";
 
   return (
     <div className="relative mx-auto max-w-3xl">
@@ -502,6 +517,9 @@ export const ChatInputArea = memo(function ChatInputArea({
         className={cn(
           "overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] transition-colors",
           "focus-within:border-[var(--kp-brand)]",
+          deepResearchEnabled &&
+            canStartDeepResearch &&
+            "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/15",
           disabled && "opacity-60",
         )}
       >
@@ -661,6 +679,35 @@ export const ChatInputArea = memo(function ChatInputArea({
         {/* 能力条：与输入同表面，无分割线；Skill 只在这里出现一次 */}
         <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-1">
           <div className="flex items-center gap-0.5">
+            {!isSubagentSession && (
+              <button
+                type="button"
+                disabled={disabled || !canStartDeepResearch}
+                data-testid="chat-deep-research-toggle"
+                aria-pressed={deepResearchEnabled && canStartDeepResearch}
+                onClick={() => {
+                  if (!canStartDeepResearch) return;
+                  setDeepResearchEnabled((v) => !v);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition",
+                  deepResearchEnabled && canStartDeepResearch
+                    ? "bg-[var(--kp-brand-soft)]/70 text-[var(--kp-brand-deep)]"
+                    : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
+                  !canStartDeepResearch && "cursor-not-allowed opacity-40",
+                )}
+                title={
+                  canStartDeepResearch
+                    ? deepResearchEnabled
+                      ? "关闭深度研究（发送不再自动加 /research）"
+                      : "开启深度研究：发送时自动加 /research"
+                    : "深度研究仅新会话首条消息前可选"
+                }
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden sm:inline">深度研究</span>
+              </button>
+            )}
             <input
               ref={fileRef}
               type="file"
@@ -726,8 +773,6 @@ export const ChatInputArea = memo(function ChatInputArea({
             <ChatModelMenu
               chatConfig={chatConfig}
               updateConfig={updateConfig}
-              resetPromptToAgent={resetPromptToAgent}
-              onOpenPromptEditor={onOpenPromptEditor}
               modelSupportsReasoning={modelSupportsReasoning}
               modelReasoningRequired={modelReasoningRequired}
             />

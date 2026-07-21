@@ -16,8 +16,9 @@ import type { AsyncQueueStats } from "@knowpilot/server";
 import { trpc } from "@/lib/trpc";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
-import { sessionComposeActions } from "@/lib/useSessionComposeState";
+import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
+import { refreshSessionAsyncQueue } from "@/lib/refreshSessionAsyncQueue";
 
 export interface UseChatSseSubscriptionsParams {
   effectiveSessionId: string | null;
@@ -59,24 +60,22 @@ export function useChatSseSubscriptions({
     // 捕获 ref 值到 effect 局部变量，避免 cleanup 时 ref 已变更（react-hooks/exhaustive-deps）
     const extraWatched = extraWatchedSessionsRef.current;
 
-    const refreshAsyncQueueOnly = () => {
-      void asyncQueueQuery.refetch().then(() => {
-        if (effectiveSessionId) streamLifecycleActions.hydrateDone(effectiveSessionId);
-      });
-      // stats 优先走 SSE setData；无 stats 时再 refetch
+    /** 按事件所属 session 刷新切片；禁止一律刷 effectiveSessionId（后台 Tab 幽灵根因） */
+    const refreshAsyncQueueFor = (targetSid: string) => {
+      void refreshSessionAsyncQueue(utils, targetSid);
+      // 焦点 query 缓存对齐（同 session 时 UI 立刻一致）
+      if (targetSid === effectiveSessionId) {
+        void asyncQueueQuery.refetch();
+      }
       void asyncQueueStatsQuery.refetch();
     };
 
-    const refreshAsync = (opts?: { heavy?: boolean }) => {
-      // INV-8 ④：异步队列刷新完成 = 显式 drain 请求
-      refreshAsyncQueueOnly();
+    const refreshAsync = (opts: { heavy?: boolean; sessionId: string }) => {
+      refreshAsyncQueueFor(opts.sessionId);
       // heavy：终态才 invalidate 子会话列表 / task.list，避免 running 进度抖整批
-      if (opts?.heavy && mainSessionId) {
+      if (opts.heavy && mainSessionId) {
         void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
         void utils.task.list.invalidate();
-        if (mainSessionId !== effectiveSessionId) {
-          void utils.agent.pullAsyncQueue.invalidate({ sessionId: mainSessionId });
-        }
       }
     };
 
@@ -88,27 +87,42 @@ export function useChatSseSubscriptions({
         cleanups.push(sessionMessagesStore.addSessionEventListener(sid, eventType, handler));
       };
 
-      register("async_delivery", () => refreshAsync({ heavy: true }));
+      register("async_delivery", (ev) => {
+        let targetSid = sid;
+        try {
+          const data = JSON.parse(ev.data) as { sessionId?: string };
+          if (data.sessionId) targetSid = data.sessionId;
+        } catch {
+          /* ignore */
+        }
+        refreshAsync({ heavy: true, sessionId: targetSid });
+      });
       register("session_run_started", (ev) => {
         try {
           const data = JSON.parse(ev.data) as { sessionId?: string };
           void utils.session.listRunning.invalidate();
-          refreshAsync({ heavy: true });
+          refreshAsync({ heavy: true, sessionId: data.sessionId || sid });
           if (data.sessionId && data.sessionId !== sid) {
             sessionMessagesStore.watchSession(data.sessionId);
             extraWatchedSessionsRef.current.add(data.sessionId);
           }
         } catch {
           void utils.session.listRunning.invalidate();
-          refreshAsync({ heavy: true });
+          refreshAsync({ heavy: true, sessionId: sid });
         }
       });
       register("async_job_update", (ev) => {
         let status: string | undefined;
+        let targetSid = sid;
         try {
           // stats 形状用服务端导出的 AsyncQueueStats（单一事实源），不再本地内联重复声明
-          const data = JSON.parse(ev.data) as { stats?: AsyncQueueStats; status?: string };
+          const data = JSON.parse(ev.data) as {
+            stats?: AsyncQueueStats;
+            status?: string;
+            sessionId?: string;
+          };
           status = data.status;
+          if (data.sessionId) targetSid = data.sessionId;
           if (data.stats) {
             utils.agent.asyncQueueStats.setData(undefined, data.stats);
           }
@@ -117,12 +131,7 @@ export function useChatSseSubscriptions({
         }
         const terminal =
           status === "done" || status === "failed" || status === "cancelled";
-        if (terminal) {
-          refreshAsync({ heavy: true });
-        } else {
-          // queued/running：只刷队列切片，不 invalidate task.list / listChildren
-          refreshAsyncQueueOnly();
-        }
+        refreshAsync({ heavy: terminal, sessionId: targetSid });
       });
       register("agent_message", () => {
         if (isSubagentSession) void pullAgentMessagesQuery.refetch();
@@ -177,7 +186,9 @@ export function useChatSseSubscriptions({
           .then((data) => {
             if (!data) return;
             utils.agent.listSessionQueueItems.setData({ sessionId: sid }, data);
-            sessionComposeActions.patchUserQueue(sid, (q) => mergeUserQueueFromDb(q, data));
+            sessionComposeActions.patchUserQueue(sid, (q) =>
+              mergeUserQueueFromDb(q, data, sessionComposeStore.get(sid).consumedQueueDbIds),
+            );
             streamLifecycleActions.hydrateDone(sid);
           });
       });

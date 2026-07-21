@@ -62,6 +62,15 @@ describe("mergeUserQueueFromDb", () => {
     expect(merged).toEqual([]);
   });
 
+  it("tombstone 挡住迟到 DB 列表把已认领项塞回待发", () => {
+    const a = sessionQueueItemToChatItem(row({ id: "db-a", content: "你自己决定就行了" }));
+    const local: ChatQueueItem[] = [];
+    const staleDb = [row({ id: "db-a", content: "你自己决定就行了" })];
+    const merged = mergeUserQueueFromDb(local, staleDb, new Set(["db-a"]));
+    expect(merged).toEqual([]);
+    expect(mergeUserQueueFromDb([a], staleDb, new Set(["db-a"]))).toEqual([]);
+  });
+
   it("E6：sessionChanged 快照先于 dbId 回填 → 本地项保留且可 patch", () => {
     // 模拟 NEW_STREAM_KEY 迁移后、createSessionQueueItem 尚未回填 dbId 的窗口
     const localPending: ChatQueueItem = {

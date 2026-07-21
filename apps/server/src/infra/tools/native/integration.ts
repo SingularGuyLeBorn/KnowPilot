@@ -47,6 +47,8 @@ import {
   feishuCreateDoc,
   feishuUpdateDocBlocks,
   feishuUpdateDocTitle,
+  feishuCreateDocChildren,
+  feishuAppendDocText,
   feishuDeleteDoc,
   feishuSearchDocs,
   feishuGetWikiSpace,
@@ -686,11 +688,36 @@ async function feishuUpdateDocTool(args: Record<string, unknown>, ctx: NativeToo
   const documentId = String(args.documentId);
   const title = args.title != null ? String(args.title) : undefined;
   const blocks = Array.isArray(args.blocks) ? (args.blocks as unknown[]) : undefined;
-  if (!title && !blocks?.length) throw new Error("请提供 title 和/或 blocks（docx batch_update requests）");
+  if (!title && !blocks?.length) {
+    throw new Error(
+      "请提供 title 和/或 blocks（仅改已有 block 的 batch_update）。新建正文请用 feishu_append_doc_text / feishu_append_doc_blocks。",
+    );
+  }
   const results: Record<string, unknown> = {};
   if (title) results.title = await feishuUpdateDocTitle(documentId, title, ctx.prisma, ctx.config);
   if (blocks?.length) results.blocks = await feishuUpdateDocBlocks(documentId, blocks, ctx.prisma, ctx.config);
   return results;
+}
+
+async function feishuAppendDocTextTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  return feishuAppendDocText(String(args.documentId), String(args.text ?? ""), ctx.prisma, ctx.config);
+}
+
+async function feishuAppendDocBlocksTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("飞书工具需要 prisma 上下文");
+  const children = Array.isArray(args.children) ? (args.children as unknown[]) : [];
+  if (children.length === 0) throw new Error("children 不能为空");
+  return feishuCreateDocChildren(
+    String(args.documentId),
+    children,
+    {
+      parentBlockId: args.parentBlockId != null ? String(args.parentBlockId) : undefined,
+      index: args.index != null ? Number(args.index) : undefined,
+    },
+    ctx.prisma,
+    ctx.config,
+  );
 }
 
 async function feishuDeleteDocTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -1682,12 +1709,50 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     name: "feishu_update_doc",
     concurrencyClass: "D",
     description:
-      "更新飞书文档：可改 title，和/或传 blocks（docx batch_update 的 requests 数组）。需 user_access_token。",
+      "仅改标题或已有块：title 和/或 blocks（docx batch_update requests，必须带已有 block_id）。" +
+      "新建段落/表格/画板禁止用本工具——请用 feishu_append_doc_text 或 feishu_append_doc_blocks。需 user_access_token。",
     parameters: zodParams(
       z.object({
         documentId: z.string(),
         title: z.string().optional(),
-        blocks: z.array(z.unknown()).describe("可选：docx blocks/batch_update requests").optional(),
+        blocks: z
+          .array(z.unknown())
+          .describe("可选：batch_update requests（改已有块）；新建内容勿传")
+          .optional(),
+      }),
+    ),
+  },
+  {
+    name: "feishu_append_doc_text",
+    reentrant: true,
+    concurrencyClass: "D",
+    description:
+      "【写正文首选】把 Markdown 追加到飞书文档末尾：服务端解析为原生块（标题/加粗/列表/分割线/代码/公式/表格）。" +
+      "普通块走 docx children；GFM 表格对标 MetaBlog：建空表 → PATCH 各 cell 自带 text child（原生表格，不是管道符）。" +
+      "规范：段落顶格；标题 `# `（# 后空格）；无序列表只用 `- `；加粗 `**重点**`；分割线 `---`；" +
+      "表格须含表头+`|---|` 分隔行+数据行（≤9×9）；行内公式 `$...$`、块级 `$$...$$`。" +
+      "禁止把 `#`/`**`/`|...|` 当纯文本指望飞书渲染。create_doc 后立刻用本工具灌内容。需 user_access_token。",
+    parameters: zodParams(
+      z.object({
+        documentId: z.string().describe("文档 document_id；Wiki 节点用返回的 obj_token"),
+        text: z
+          .string()
+          .describe("Markdown 全文（含 GFM 表格/公式会转成飞书原生块；非 raw 字符串堆叠）"),
+      }),
+    ),
+  },
+  {
+    name: "feishu_append_doc_blocks",
+    concurrencyClass: "D",
+    description:
+      "在文档根（或指定父块）下创建子块。用于画板壳 block_type:43 board:{}、标题块、表格壳等。" +
+      "普通长文优先 feishu_append_doc_text。示例 children: [{block_type:2,text:{elements:[{text_run:{content:\"hi\"}}]}},{block_type:43,board:{}}]。",
+    parameters: zodParams(
+      z.object({
+        documentId: z.string(),
+        children: z.array(z.unknown()).describe("docx children 块数组（单次最多 50）"),
+        parentBlockId: z.string().describe("父块 id，默认=documentId（根）").optional(),
+        index: z.number().describe("插入位置，默认末尾").optional(),
       }),
     ),
   },
@@ -1925,7 +1990,8 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
     concurrencyClass: "D",
     description:
       "打开浏览器完成飞书 OAuth（含 offline_access + 文档/知识库/画板 scope），写入 content/cookies/feishu_oauth.json。" +
-      "在 feishu_token_status 无效、refresh 失败、或新增权限后需要重新授权时调用。用户需在弹出页点一次同意。",
+      "仅在 feishu_token_status 无效且 feishu_refresh_token 失败、或新增权限后需要重新授权时调用；已有有效 token 勿重复调用。" +
+      "用户需在弹出页点一次同意。本地回调默认 http://localhost:8088（占用时自动尝试相邻端口）。",
     parameters: zodParams(
       z.object({
         timeoutSec: z.number().describe("等待用户授权秒数，默认 180").optional(),
@@ -2098,6 +2164,8 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   feishu_get_doc: feishuGetDocTool,
   feishu_create_doc: feishuCreateDocTool,
   feishu_update_doc: feishuUpdateDocTool,
+  feishu_append_doc_text: feishuAppendDocTextTool,
+  feishu_append_doc_blocks: feishuAppendDocBlocksTool,
   feishu_delete_doc: feishuDeleteDocTool,
   feishu_search_docs: feishuSearchDocsTool,
   feishu_list_permission_members: feishuListPermissionMembersTool,

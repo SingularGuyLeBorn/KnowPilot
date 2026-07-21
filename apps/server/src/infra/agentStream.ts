@@ -34,6 +34,11 @@ import {
 import { SessionStreamHub, getStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 import { autoNameSession } from "./sessionAutoName.js";
 import { markAgentMessageConsumedByTaskRef } from "./agentMessageLedger.js";
+import {
+  isAbortLikeError,
+  messageFromAbortReason,
+  resolveAbortReasonCode,
+} from "./abortReason.js";
 
 /** SSE 热路径截断：全文仍随 message 落库；timeline 只需要 hint + 预览 */
 const TOOL_END_SSE_MAX_CHARS = 2_000;
@@ -766,9 +771,11 @@ export async function chatAgentStream(
     const runId = result.runId;
     // W1：assistant 落库必须走 appendChatMessage（parentId + activeLeafId 同事务）
     let createdParentId: string | null = null;
+    let persistedToolResults: unknown;
     assistantMessageId = await services.prisma.$transaction(async (tx) => {
       if (!assistantMessageId) {
         const initial = buildInitialVersionMeta(result.content, result.toolCalls);
+        persistedToolResults = initial.toolResults;
         const { appendChatMessage } = await import("./chatTree.js");
         // sessionId 为 let，闭包内 CFA 不收窄；此处已过创建/复用分支，必为 string
         const created = await appendChatMessage(tx, {
@@ -798,13 +805,21 @@ export async function chatAgentStream(
       return assistantMessageId;
     });
 
-    // 契约对齐：assistant 消息走裸 tx.chatMessage.create 绕过了 MessageService.afterCreate，
-    // 必须补发 message_upserted，否则 async-stream EventSource 收不到 →
-    // 服务端自启动的运行（autoConsume / 心跳 / 触发器）在前端没消费 agent 流时，
-    // assistant 消息只能靠刷新重 hydrate 才出现（DB 有、store 没有）。
+    // 契约对齐：assistant 消息落库绕过 MessageService.afterCreate，必须补发 message_upserted，
+    // 否则 async-stream EventSource 收不到 → 服务端自启动的运行（autoConsume / 心跳 / 触发器）
+    // 在前端没消费 agent 流时，assistant 消息只能靠刷新重 hydrate 才出现（DB 有、store 没有）。
     // done 事件只投递给「正在消费 agent 流」的订阅者；message_upserted 才是 MessageStore 的统一入口。
+    // 字段须与 MessageService.afterCreate 对齐（含 toolResults/versionMeta），update 路径从 DB 取全量防抹时间线。
     try {
       const { getStreamHub } = await import("./sessionStreamHub.js");
+      // update 路径：从 DB 取完整 toolResults，避免补发空字段抹掉时间线
+      if (persistedToolResults === undefined && assistantMessageId) {
+        const row = await services.prisma.chatMessage.findUnique({
+          where: { id: assistantMessageId },
+          select: { toolResults: true },
+        });
+        persistedToolResults = row?.toolResults ?? undefined;
+      }
       getStreamHub()?.pushExternalEvent(sessionId!, {
         type: "message_upserted",
         sessionId: sessionId!,
@@ -816,7 +831,7 @@ export async function chatAgentStream(
           label: null,
           kind: null,
           toolCalls: result.toolCalls ?? undefined,
-          toolResults: undefined,
+          toolResults: persistedToolResults ?? undefined,
           tokenUsage: result.tokenUsage ?? undefined,
           attachments: undefined,
           source: null,
@@ -882,15 +897,16 @@ export async function chatAgentStream(
       tokenUsage: result.tokenUsage,
     });
   } catch (err: unknown) {
-    const isAbort =
-      err instanceof Error &&
-      (err.name === "AbortError" ||
-        err.message.includes("用户中断") ||
-        err.message.includes("已中止") ||
-        err.message.includes("已被主动取消") ||
-        err.message.includes("超时被中止") ||
-        err.message.includes("调度层中止") ||
-        err.message.includes("会话已停止"));
+    const abortCode = resolveAbortReasonCode(signal, err);
+    const isAbort = isAbortLikeError(err) || signal?.aborted === true;
+    // hub.stop("user") 的 reason 偶发以裸字符串 "user" 冒泡，归一成可读文案
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    const isUserSoftStop =
+      abortCode === "user" ||
+      rawMessage === "user" ||
+      rawMessage.includes("用户中断") ||
+      rawMessage.includes("流式输出已被用户中断");
+
     if (isAbort && sessionId && (partialContent.trim() || partialToolCalls.length > 0)) {
       try {
         if (prepared?.updateAssistantId) {
@@ -926,17 +942,36 @@ export async function chatAgentStream(
         console.error("[chatAgentStream] 保存中断消息失败:", saveErr);
       }
     }
-    const message = err instanceof Error ? err.message : String(err);
+
+    // 用户软暂停：会话进 paused，前端才能出「恢复运行」（无 partial 也要标，否则 Resume 入口消失）
+    if (isUserSoftStop && sessionId) {
+      try {
+        await services.prisma.chatSession.updateMany({
+          where: { id: sessionId, status: { in: ["active", "running"] } },
+          data: { status: "paused" },
+        });
+      } catch (pauseErr) {
+        console.warn("[chatAgentStream] 软暂停标 paused 失败:", pauseErr);
+      }
+    }
+
+    const message = isUserSoftStop
+      ? messageFromAbortReason("user")
+      : isAbort && abortCode !== "unknown"
+        ? messageFromAbortReason(abortCode)
+        : rawMessage;
     const isBudget = message.includes("LLM 预算");
     const llm = describeLlmError(err, "检查 LLM 配置与会话 ID 是否有效。");
     emit({
       type: "error",
       message,
       sessionId,
-      retryable: isBudget ? false : llm.retryable,
+      retryable: isBudget ? false : isAbort ? true : llm.retryable,
       suggestion: isBudget
         ? "可在 .env 提高 LLM_DAILY_BUDGET，或明日再试。"
-        : llm.suggestion,
+        : isUserSoftStop
+          ? "会话已暂停，可点「恢复运行」从中断处继续。"
+          : llm.suggestion,
     });
   }
 }

@@ -29,7 +29,11 @@ import {
 } from "@/lib/chatQueueTypes";
 import { useSessionMessages } from "@/lib/useSessionMessages";
 import { useStreamLifecycle, streamLifecycleActions, streamLifecycleStore } from "@/lib/useStreamLifecycle";
-import { useSessionComposeState, sessionComposeActions } from "@/lib/useSessionComposeState";
+import {
+  useSessionComposeState,
+  sessionComposeActions,
+  sessionComposeStore,
+} from "@/lib/useSessionComposeState";
 import { useChatConfig } from "@/lib/useChatConfig";
 import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
 import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
@@ -195,8 +199,10 @@ export function ChatSessionPane({
   useEffect(() => {
     if (!sessionId) return;
     if (!sessionQueueQuery.data) return;
+    // E6 统一 merge（禁 sessionChanged 全量替换）+ tombstone 防迟到 DB 塞回已认领项
+    const tombstones = sessionComposeStore.get(sessionId).consumedQueueDbIds;
     sessionComposeActions.patchUserQueue(sessionId, (prev) =>
-      mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+      mergeUserQueueFromDb(prev, sessionQueueQuery.data!, tombstones),
     );
     streamLifecycleActions.hydrateDone(sessionId);
   }, [sessionId, sessionQueueQuery.data]);
@@ -486,7 +492,6 @@ export function ChatSessionPane({
         parentSessionId={parentSessionId}
         parentSessionTitle={parentSession ? sessionLabel(parentSession) : undefined}
         allowDeepResearch={canStartDeepResearch}
-        showToast={showToast}
         backendDown={backendDown}
         rotateBanner={isFocused ? rotateBanner : null}
         setRotateBanner={setRotateBanner}
