@@ -80,8 +80,7 @@ export function ChatView() {
     ensureSplitWith,
   } = useChatTabs();
 
-  /** 与旧单焦点 API 对齐：焦点 pane 的 session；runStream 新建会话时 openTab */
-  const sessionId = focusedSessionId;
+  /** 与旧单焦点 API 对齐：runStream 新建会话时 openTab */
   const setSessionId = useCallback(
     (id: string | null) => {
       if (id) openTab(id);
@@ -248,8 +247,11 @@ export function ChatView() {
   // 绝不把 focusedSessionId / layout 放进 deps——否则会与下方 tabs→URL 乒乓：
   //   焦点刚切到 B、URL 仍是 A → URL 效应抢回 A，同时 tabs 效应把 URL 写成 B → 下一帧再反过来。
   // 运行时读 ref，避免闭包陈旧；焦点被冲成 null 时另有恢复效应（只在空焦点时 ensure）。
+  // ref 同步放 effect：禁止 render 期写 ref（react-hooks/refs）。
   const focusedSessionIdRef = useRef(focusedSessionId);
-  focusedSessionIdRef.current = focusedSessionId;
+  useEffect(() => {
+    focusedSessionIdRef.current = focusedSessionId;
+  }, [focusedSessionId]);
 
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== focusedSessionIdRef.current) {
