@@ -131,16 +131,17 @@ export function ChatSessionPane({
   const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
-  const error = viewError ?? streamError;
-
-  // pane 稳定挂载后，切会话清掉本会话专属 UI 态（不再靠 remount 重置）
-  useEffect(() => {
+  // 切会话时在 render 期重置本会话 UI 态（React 推荐的 props→state 对齐写法，替代 effect setState）
+  const [paneSessionId, setPaneSessionId] = useState(sessionId);
+  if (paneSessionId !== sessionId) {
+    setPaneSessionId(sessionId);
     setSelectedSkill(null);
     setEditingUserId(null);
     setEditDraft("");
     setViewError(null);
     setCopiedId(null);
-  }, [sessionId]);
+  }
+  const error = viewError ?? streamError;
 
   const { data: sessionDetail } = trpc.session.getById.useQuery(
     { id: sessionId! },
