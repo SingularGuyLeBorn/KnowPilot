@@ -12,6 +12,7 @@ import {
 } from "../infra/autoCompact.js";
 import { buildLlmMessagesFromHistory, sliceHistoryAfterCompactBoundary } from "../infra/chatHistory.js";
 import { executeNativeTool } from "../infra/nativeTools.js";
+import { appendChatMessage } from "../infra/chatTree.js";
 import * as llmClient from "../infra/llmClient.js";
 import { createTempProjectDir, createTestConfig } from "./helpers/toolTestFixtures.js";
 import type { ServiceContainer } from "../infra/serviceContainer.js";
@@ -29,13 +30,14 @@ function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
       microCompact: { enabled: true, toolResultMaxChars: 4000 },
       memoryFlush: { enabled: false, maxFacts: 5 },
       ...overrides,
-      // Partial 展开后 keepRecentTokens 可能为 undefined；配置类型要求 number
-      keepRecentTokens: overrides?.keepRecentTokens ?? 20000,
+      // Partial 展开后可能为 undefined；单测需小预算才能触发压缩（默认 20k 会整段保留）
+      keepRecentTokens: overrides?.keepRecentTokens ?? 200,
     },
   });
 }
 
-function longHistoryItems(count: number, charsEach = 500) {
+/** deepseek-v4-flash @ triggerRatio=0.05 → 阈值 25600；留足余量 */
+function longHistoryItems(count: number, charsEach = 800) {
   return Array.from({ length: count }, (_, i) => ({
     id: `m-${i}`,
     role: i % 2 === 0 ? "user" : "assistant",
@@ -183,13 +185,12 @@ describe("compact 数据暴露审计", () => {
     const sess = await prisma.chatSession.create({
       data: { title: "session-compact-leak", model: "deepseek-v4-flash", compactGeneration: 0 },
     });
-    for (const item of longHistoryItems(40, 500)) {
-      await prisma.chatMessage.create({
-        data: {
-          sessionId: sess.id,
-          role: item.role,
-          content: item.content,
-        },
+    // 必须走 appendChatMessage：直写 ChatMessage 无 parentId 链时 resolveActivePath 只剩叶节点
+    for (const item of longHistoryItems(40)) {
+      await appendChatMessage(prisma, {
+        sessionId: sess.id,
+        role: item.role,
+        content: item.content,
       });
     }
 
@@ -240,13 +241,11 @@ describe("compact 数据暴露审计", () => {
     const sess = await prisma.chatSession.create({
       data: { title: "run-compact-leak", model: "deepseek-v4-flash", compactGeneration: 0 },
     });
-    for (const item of longHistoryItems(40, 500)) {
-      await prisma.chatMessage.create({
-        data: {
-          sessionId: sess.id,
-          role: item.role,
-          content: item.content,
-        },
+    for (const item of longHistoryItems(40)) {
+      await appendChatMessage(prisma, {
+        sessionId: sess.id,
+        role: item.role,
+        content: item.content,
       });
     }
 
