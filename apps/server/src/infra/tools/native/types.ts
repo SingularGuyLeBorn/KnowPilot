@@ -49,8 +49,8 @@ export interface NativeToolContext {
   };
   /** 当前 ReAct 轮次是否仍在工具调用中（向上发消息时机约束 #41） */
   inToolRound?: boolean;
-  /** 本次运行的触发来源：user=用户直接对话；parent=上级下发；heartbeat=心跳 */
-  runOrigin?: "user" | "parent" | "heartbeat";
+  /** 本次运行的触发来源：user=用户直接对话；parent=上级下发；heartbeat=心跳；async=后台异步任务 */
+  runOrigin?: "user" | "parent" | "heartbeat" | "async";
   /**
    * Agent 解析（默认 assistant 查找/补齐/创建）— W4 起由 createAgentToolContext 注入，
    * 工具层不再直接 import agentRuntime（环内模块）。缺省时回退到 agentResolver 默认实现。

@@ -770,9 +770,10 @@ export async function chatAgentStream(
       if (!assistantMessageId) {
         const initial = buildInitialVersionMeta(result.content, result.toolCalls);
         const { appendChatMessage } = await import("./chatTree.js");
+        // sessionId 为 let，闭包内 CFA 不收窄；此处已过创建/复用分支，必为 string
         const created = await appendChatMessage(tx, {
           id: pendingAssistantId,
-          sessionId,
+          sessionId: sessionId!,
           role: "assistant",
           content: result.content,
           toolCalls: result.toolCalls,

@@ -142,7 +142,8 @@ export function resolveActivePath<T extends { id: string; parentId?: string | nu
   let cur: string | null = leafId;
   while (cur && byId.has(cur) && !seen.has(cur)) {
     seen.add(cur);
-    const msg = byId.get(cur)!;
+    // 显式标注 T：避免 Map.get + 自引用 initializer 触发隐式 any
+    const msg: T = byId.get(cur)!;
     path.push(msg);
     cur = msg.parentId ?? null;
   }

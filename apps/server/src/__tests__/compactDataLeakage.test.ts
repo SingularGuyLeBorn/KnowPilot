@@ -29,6 +29,8 @@ function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
       microCompact: { enabled: true, toolResultMaxChars: 4000 },
       memoryFlush: { enabled: false, maxFacts: 5 },
       ...overrides,
+      // Partial 展开后 keepRecentTokens 可能为 undefined；配置类型要求 number
+      keepRecentTokens: overrides?.keepRecentTokens ?? 20000,
     },
   });
 }
