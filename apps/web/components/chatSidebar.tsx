@@ -119,11 +119,11 @@ export const ChatSidebar = memo(function ChatSidebar({
   runtimeToConsumeItems,
   runtimeConsumedItems,
 }: ChatSidebarProps) {
-  const closeLeftOnMobile = () => {
+  const closeLeftOnMobile = useCallback(() => {
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
       setLeftOpen(false);
     }
-  };
+  }, [setLeftOpen]);
 
   // 与 ChatView 相同 key 的查询订阅：React Query 按 key 共享缓存并去重请求，无额外网络开销
   const { useList: useAgentList } = useAgent();
@@ -243,7 +243,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       selectSession(id);
       closeLeftOnMobile();
     }
-  }, [bulkMode, selectSession]);
+  }, [bulkMode, selectSession, closeLeftOnMobile]);
 
   const handleStartRename = useCallback((id: string) => {
     setEditingSessionId(id);
