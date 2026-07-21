@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Copy, Check, ExternalLink, RefreshCw, Sparkles, Radio, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc";
@@ -104,10 +104,19 @@ export function FreeModelsPanel() {
   );
   const channelsQuery = trpc.llm.listFreellmChannels.useQuery(undefined, { staleTime: 15_000 });
 
-  // 筛选变化时回到第一页，避免停在空页
-  useEffect(() => {
+  const setFilterQ = (next: string) => {
+    setQ(next);
     setOrPage(1);
-  }, [q, modality, sort]);
+  };
+  const setFilterModality = (next: "all" | "text" | "multimodal") => {
+    setModality(next);
+    setOrPage(1);
+  };
+  const setFilterSort = (next: "context_desc" | "context_asc" | "name") => {
+    setSort(next);
+    setOrPage(1);
+  };
+
   const refreshMutation = trpc.llm.refreshFreeModels.useMutation({
     onSuccess: async (res) => {
       setToast(
@@ -134,8 +143,14 @@ export function FreeModelsPanel() {
     }
   };
 
-  const openRouterItems = modelsQuery.data?.items ?? [];
-  const freellmItems = channelsQuery.data?.items ?? [];
+  const openRouterItems = useMemo(
+    () => modelsQuery.data?.items ?? [],
+    [modelsQuery.data?.items],
+  );
+  const freellmItems = useMemo(
+    () => channelsQuery.data?.items ?? [],
+    [channelsQuery.data?.items],
+  );
   const hasOrKey = statusQuery.data?.openRouter.hasApiKey ?? modelsQuery.data?.hasApiKey;
 
   const orTotal = openRouterItems.length;
@@ -272,20 +287,20 @@ export function FreeModelsPanel() {
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--kp-text-3)]" />
                 <Input
                   value={q}
-                  onChange={(e) => setQ(e.target.value)}
+                  onChange={(e) => setFilterQ(e.target.value)}
                   placeholder="搜索模型 id / 名称 / 描述…"
                   className="h-9 border-[var(--kp-divider)] bg-[var(--kp-bg)] pl-8 text-sm"
                 />
               </div>
               <KpSelect
                 value={modality}
-                onChange={(v) => setModality(v as "all" | "text" | "multimodal")}
+                onChange={(v) => setFilterModality(v as "all" | "text" | "multimodal")}
                 options={modalityOptions}
                 className="w-32"
               />
               <KpSelect
                 value={sort}
-                onChange={(v) => setSort(v as "context_desc" | "context_asc" | "name")}
+                onChange={(v) => setFilterSort(v as "context_desc" | "context_asc" | "name")}
                 options={sortOptions}
                 className="w-32"
               />
