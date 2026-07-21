@@ -103,7 +103,8 @@ describe("asyncJobManager 持久化", () => {
     expect(row?.delivered).toBe(true);
   });
 
-  it("recoverStaleAsyncJobs 仅处理 async_agent，忽略普通 running Task", async () => {
+  it("recoverStaleAsyncJobs 收拢执行型僵尸（async/cron），忽略 pending 未起跑 Task", async () => {
+    // C1：恢复扫描覆盖 cron/oneshot/heartbeat，不再只认 [async]；pending 不在 running/queued 面
     const asyncTask = await createAsyncTask({ status: "running", taskLabel: "中断 C" });
     const cronLike = await prisma.task.create({
       data: {
@@ -113,18 +114,30 @@ describe("asyncJobManager 持久化", () => {
         input: { type: "cron" },
       },
     });
+    const pendingIdle = await prisma.task.create({
+      data: {
+        name: "pending-idle",
+        type: "oneshot",
+        status: "pending",
+        input: { action: "noop" },
+      },
+    });
 
     const ctx = await createContextInner();
     const { failed: n } = await recoverStaleAsyncJobs(ctx.config, ctx.services);
-    expect(n).toBeGreaterThanOrEqual(1);
+    expect(n).toBeGreaterThanOrEqual(2);
 
     const asyncRow = await prisma.task.findUnique({ where: { id: asyncTask.id } });
     expect(asyncRow?.status).toBe("failed");
 
     const cronRow = await prisma.task.findUnique({ where: { id: cronLike.id } });
-    expect(cronRow?.status).toBe("running");
+    expect(cronRow?.status).toBe("failed");
+    expect((cronRow?.output as { error?: string } | null)?.error).toBe("服务重启，任务中断");
 
-    await prisma.task.delete({ where: { id: cronLike.id } });
+    const pendingRow = await prisma.task.findUnique({ where: { id: pendingIdle.id } });
+    expect(pendingRow?.status).toBe("pending");
+
+    await prisma.task.deleteMany({ where: { id: { in: [cronLike.id, pendingIdle.id] } } });
   });
 
   it("startAsyncAgentTask：mock LLM 完成 → pullAsyncDeliveries 可投递", async () => {

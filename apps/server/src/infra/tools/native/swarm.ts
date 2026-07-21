@@ -19,7 +19,7 @@ import { parseSkillUsageStats } from "../../skillRunner.js";
 import { getSkillUsage, latestActivityAt } from "../../skillUsage.js";
 import { parseSkillKind } from "../../skillPackage.js";
 import { resolveToolsForAgentTier } from "../../loop/setup.js";
-import { buildAllMemoryHints, buildSystemPromptWithHints } from "../../promptBuilder.js";
+import { buildSystemPromptSkeleton } from "../../promptBuilder.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
 import { createTrpcInvoker } from "../../trpcInvoker.js";
 import { createMemoryRepository } from "../../memoryRepository.js";
@@ -180,6 +180,7 @@ async function swarmBriefTool(args: Record<string, unknown>, ctx: NativeToolCont
   const brief = await buildSwarmBrief(ctx.prisma, {
     workspaceId: workspaceId === null ? null : workspaceId,
     limit,
+    config: ctx.config,
   });
   return {
     markdown: brief.markdown,
@@ -322,6 +323,8 @@ async function prepareAgentRun(
 
       let mainSession = await ctx.prisma?.chatSession.findFirst({
         where: { agentId: targetAgentId, isMainSession: true, status: { not: "deleted" } },
+        // 存量若曾双主会话，取最近更新的一条（SessionService 已阻止新建双主）
+        orderBy: { updatedAt: "desc" },
       });
       if (!mainSession) {
         const created = await ctx.services.session.create({
@@ -339,10 +342,12 @@ async function prepareAgentRun(
           mainSession = await ctx.prisma?.chatSession.findUnique({ where: { id: (created.data as { id: string }).id } }) ?? null;
         }
       } else {
-        // 已有主会话：每次派活都刷新 parentSessionId，保证 report_back 回到「本次 spawn 的父会话」
+        // 已有主会话（含 P11 空壳主会话）：刷新血缘 + running，保证 report_back / 队列查询可定位
         const patch: Record<string, unknown> = { status: "running" };
         if (mainSession.kind !== "subagent") patch.kind = "subagent";
-        if (ctx.sessionId) patch.parentSessionId = ctx.sessionId;
+        if (ctx.sessionId && mainSession.parentSessionId !== ctx.sessionId) {
+          patch.parentSessionId = ctx.sessionId;
+        }
         if (Object.keys(patch).length > 0) {
           try {
             await ctx.services.session.update({ id: mainSession.id, ...patch } as any);
@@ -477,15 +482,9 @@ async function prepareAgentRun(
         throw new Error("SessionStreamHub 未初始化，无法启动子 Agent 流式运行");
       }
 
-      const memoryHint = await buildAllMemoryHints(ctx.services, input, {
-        agentId: agent.id,
-        sessionId: mainSession.id,
-      });
       const tierTools = resolveToolsForAgentTier(agent.tier, agent.tools);
-      const systemPrompt = buildSystemPromptWithHints(agent.systemPrompt, tierTools, memoryHint, {
-        tier: agent.tier,
-        name: agent.name,
-      });
+      // 记忆 / tier / 工具引导由 reactLoop 内 contextHooks 在 LLM 调用前注入
+      const systemPrompt = buildSystemPromptSkeleton(agent.systemPrompt);
       // 会话 model 优先：spawn_subagent 复用 agentId 时可通过 session.model 覆盖本轮模型
       const runModel = (mainSession.model && String(mainSession.model).trim()) || agent.model;
       const messages: LlmMessage[] = [
@@ -495,6 +494,7 @@ async function prepareAgentRun(
       const invokeTrpc = createTrpcInvoker({ services: ctx.services });
       const agentMeta = {
         id: agent.id,
+        name: agent.name,
         model: runModel,
         systemPrompt,
         tools: tierTools,
@@ -674,8 +674,9 @@ export async function requeueOrphanedSuperiorDrains(
 ): Promise<number> {
   const hub = getStreamHub();
   if (!hub) return 0;
+  // 仅未软认领项：claimedAt 非空交给 releaseStaleClaims 重置后再入本扫描
   const items = await services.prisma.sessionQueueItem.findMany({
-    where: { kind: "superior" },
+    where: { kind: "superior", claimedAt: null },
     select: { sessionId: true },
   });
   const sessionIds = [...new Set(items.map((i) => i.sessionId))];

@@ -56,11 +56,19 @@ export async function exportRunTraceJsonl(
     }),
   ];
   if (run.sessionId) {
-    const msgs = await prisma.chatMessage.findMany({
+    const { resolveActivePath, BRANCH_SUMMARY_KIND } = await import("./chatTree.js");
+    const session = await prisma.chatSession.findUnique({
+      where: { id: run.sessionId },
+      select: { activeLeafId: true },
+    });
+    const all = await prisma.chatMessage.findMany({
       where: { sessionId: run.sessionId },
       orderBy: { createdAt: "asc" },
-      take: 500,
+      take: 2000,
     });
+    const msgs = resolveActivePath(all, session?.activeLeafId)
+      .filter((m) => m.kind !== BRANCH_SUMMARY_KIND)
+      .slice(-500);
     for (const m of msgs) {
       lines.push(
         line({
@@ -85,15 +93,23 @@ export async function exportSessionTraceJsonl(
   prisma: PrismaClient,
   sessionId: string,
 ): Promise<{ jsonl: string; lineCount: number }> {
-  const session = await prisma.chatSession.findUnique({ where: { id: sessionId }, select: { id: true } });
+  const session = await prisma.chatSession.findUnique({
+    where: { id: sessionId },
+    select: { id: true, activeLeafId: true },
+  });
   if (!session) {
     throw new Error(`会话不存在: ${sessionId}`);
   }
-  const msgs = await prisma.chatMessage.findMany({
+  // 导出当前活跃路径（与用户所见一致），不含 branch_summary
+  const { resolveActivePath, BRANCH_SUMMARY_KIND } = await import("./chatTree.js");
+  const all = await prisma.chatMessage.findMany({
     where: { sessionId },
     orderBy: { createdAt: "asc" },
-    take: 2000,
+    take: 4000,
   });
+  const msgs = resolveActivePath(all, session.activeLeafId)
+    .filter((m) => m.kind !== BRANCH_SUMMARY_KIND)
+    .slice(-2000);
   const lines = msgs.map((m) =>
     line({
       kind: "message",

@@ -87,8 +87,9 @@ describe("CircuitBreaker 三态状态机", () => {
     const permit = cb.tryAcquire();
     expect(permit.allowed).toBe(true);
     expect(cb.getState()).toBe("half-open");
+    expect(permit.allowed && permit.probeToken).toEqual(expect.any(Number));
 
-    cb.recordSuccess();
+    cb.recordSuccess(permit.allowed ? permit.probeToken : undefined);
     expect(cb.getState()).toBe("closed");
     expect(cb.getFailureCount()).toBe(0);
   });
@@ -100,10 +101,11 @@ describe("CircuitBreaker 三态状态机", () => {
     cb.recordFailure();
     cb.recordFailure();
     clock.advance(1000);
-    expect(cb.tryAcquire().allowed).toBe(true); // 探测
+    const probe = cb.tryAcquire();
+    expect(probe.allowed).toBe(true);
     expect(cb.getState()).toBe("half-open");
 
-    cb.recordFailure(); // 探测失败
+    cb.recordFailure(probe.allowed ? probe.probeToken : undefined);
     expect(cb.getState()).toBe("open");
 
     const p = cb.tryAcquire();
@@ -124,6 +126,52 @@ describe("CircuitBreaker 三态状态机", () => {
     const concurrent = cb.tryAcquire();
     expect(concurrent.allowed).toBe(false);
     if (!concurrent.allowed) expect(concurrent.retryAfterMs).toBe(1000);
+  });
+
+  it("C6：closed 期迟到成功/失败在 half-open 不改变探测判定；错令牌忽略", () => {
+    const clock = makeClock();
+    const cb = new CircuitBreaker({ failureThreshold: 2, openDurationMs: 1000, now: clock.now });
+
+    // closed 期发出请求（无令牌）在途
+    expect(cb.tryAcquire().allowed).toBe(true);
+    cb.recordFailure();
+    cb.recordFailure();
+    expect(cb.getState()).toBe("open");
+
+    clock.advance(1000);
+    const probe = cb.tryAcquire();
+    expect(probe.allowed).toBe(true);
+    expect(cb.getState()).toBe("half-open");
+    const token = probe.allowed ? probe.probeToken : undefined;
+    expect(token).toEqual(expect.any(Number));
+
+    // closed 期迟到成功：无令牌 → 不得误合闸，探测仍在途
+    cb.recordSuccess();
+    expect(cb.getState()).toBe("half-open");
+
+    // 错令牌失败：不得误重开
+    cb.recordFailure(999_999);
+    expect(cb.getState()).toBe("half-open");
+
+    // 真探测成功才合闸
+    cb.recordSuccess(token);
+    expect(cb.getState()).toBe("closed");
+  });
+
+  it("C6：half-open 探测在途时迟到失败不得清掉 probeInFlight 让第二探测混入", () => {
+    const clock = makeClock();
+    const cb = new CircuitBreaker({ failureThreshold: 2, openDurationMs: 1000, now: clock.now });
+
+    cb.recordFailure();
+    cb.recordFailure();
+    clock.advance(1000);
+    expect(cb.tryAcquire().allowed).toBe(true);
+
+    // 迟到无令牌失败（旧实现会 clear probeInFlight 并 reopen；或 clear 后仍 half-open 放进第二探测）
+    cb.recordFailure();
+    expect(cb.getState()).toBe("half-open");
+    const second = cb.tryAcquire();
+    expect(second.allowed).toBe(false);
   });
 
   it("非法转移拒绝：closed→half-open / open→closed 被 guard 拒绝且状态不变", () => {
@@ -293,13 +341,19 @@ describe("W12 心跳连续失败熔断暂停", () => {
     for (let i = 1; i <= HEARTBEAT_MAX_CONSECUTIVE_FAILURES; i++) {
       await engine.triggerHeartbeat(agentId);
       // 等失败闭环落库（streak +1），避免下一次触发被 running 守卫跳过
-      await vi.waitFor(async () => {
-        expect(await readStreak(agentId)).toBe(i);
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await readStreak(agentId)).toBe(i);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
     }
-    await vi.waitFor(async () => {
-      expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
-    });
+    await vi.waitFor(
+      async () => {
+        expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
+      },
+      { timeout: 15_000, interval: 100 },
+    );
   }
 
   it("streak 达阈值 → suspended 落库；refresh 不再连坐恢复；配置变更清零计数后个体化摘除；重启不失", async () => {
@@ -318,8 +372,13 @@ describe("W12 心跳连续失败熔断暂停", () => {
     if (!created.success) throw new Error(`创建 Agent 失败：${created.error?.message}`);
     const agentId = (created.data as { id: string }).id;
 
-    // dailyBudget=0 关闭预算闸，避免 .dev-log 真实消耗影响测试
-    const hbConfig = { ...ctx.config, llm: { ...ctx.config.llm, dailyBudget: 0 } };
+    // dailyBudget=0 关闭预算闸；decisionEnabled=false 走失败 streak 旧路径
+    // （全量套件里残留 pending Approval 会让决策层 wait_user_gate 跳过 dispatch → streak 永不 +1）
+    const hbConfig = {
+      ...ctx.config,
+      llm: { ...ctx.config.llm, dailyBudget: 0 },
+      heartbeat: { ...ctx.config.heartbeat, decisionEnabled: false },
+    };
     const engine = getHeartbeatEngine(prisma, ctx.services, hbConfig);
     await engine.start();
 
@@ -369,12 +428,32 @@ describe("W12 心跳连续失败熔断暂停", () => {
       expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
       await engine2.resumeHeartbeat(agentId);
       expect(await engine2.isHeartbeatSuspended(agentId)).toBe(false);
+      expect(await readStreak(agentId)).toBe(0);
 
-      // resume 不清计数：恢复后再失败（streak 仍 ≥ 阈值）→ 立即重新暂停
+      // resume 清零计数：恢复后须重新累计至阈值才再 suspend（单次失败不立即熔断）
       await engine2.triggerHeartbeat(agentId);
-      await vi.waitFor(async () => {
-        expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await readStreak(agentId)).toBe(1);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
+      expect(await engine2.isHeartbeatSuspended(agentId)).toBe(false);
+      for (let i = 2; i <= HEARTBEAT_MAX_CONSECUTIVE_FAILURES; i++) {
+        await engine2.triggerHeartbeat(agentId);
+        await vi.waitFor(
+          async () => {
+            expect(await readStreak(agentId)).toBe(i);
+          },
+          { timeout: 15_000, interval: 100 },
+        );
+      }
+      await vi.waitFor(
+        async () => {
+          expect(await engine2.isHeartbeatSuspended(agentId)).toBe(true);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
     } finally {
       await prisma.task.deleteMany({ where: { name: { contains: "W12-suspend" } } });
       await prisma.chatSession.deleteMany({ where: { agentId } });
@@ -398,7 +477,11 @@ describe("W12 心跳连续失败熔断暂停", () => {
     if (!created.success) throw new Error(`创建 Agent 失败：${created.error?.message}`);
     const agentId = (created.data as { id: string }).id;
 
-    const hbConfig = { ...ctx.config, llm: { ...ctx.config.llm, dailyBudget: 0 } };
+    const hbConfig = {
+      ...ctx.config,
+      llm: { ...ctx.config.llm, dailyBudget: 0 },
+      heartbeat: { ...ctx.config.heartbeat, decisionEnabled: false },
+    };
     const engine = getHeartbeatEngine(prisma, ctx.services, hbConfig);
     await engine.start();
 

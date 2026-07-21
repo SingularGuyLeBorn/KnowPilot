@@ -15,13 +15,54 @@ import {
 } from "./constants";
 
 /* ═══════════════════════════════════════════════════════
+   实体 name / slug 路径安全（D3）
+   ═══════════════════════════════════════════════════════ */
+
+/** 禁止 `/ \ ..`、Windows 保留字符与控制字符；允许空格/中文 */
+const ENTITY_NAME_UNSAFE = /[\/\\<>:"|?*\x00-\x1f]/;
+function isSafeEntityName(value: string): boolean {
+  if (!value || value.trim() !== value) return false;
+  if (ENTITY_NAME_UNSAFE.test(value)) return false;
+  if (value.includes("..")) return false;
+  if (value === "." || value === "..") return false;
+  return true;
+}
+
+/** 文件 slug 可含单层 `/`（如 skill procedural `name/SKILL`），但每段仍走 name 规则且禁 .. */
+function isSafeEntitySlug(value: string): boolean {
+  if (!value || value.trim() !== value) return false;
+  if (/[\\<>:"|?*\x00-\x1f]/.test(value)) return false;
+  if (value.includes("..")) return false;
+  if (value.startsWith("/") || value.endsWith("/")) return false;
+  return value.split("/").every((p) => p.length > 0 && isSafeEntityName(p));
+}
+
+/** Agent/MCP/Prompt/Skill 等用作文件名的 name */
+export const safeEntityNameSchema = z
+  .string()
+  .min(1, "名称不能为空")
+  .max(100)
+  .refine(isSafeEntityName, {
+    message: "名称不能包含 / \\ ..、Windows 保留字符 <>:\"|?* 或控制字符",
+  });
+
+/** Post / 文件 slug：允许受控嵌套段，禁止穿越 */
+export const safeEntitySlugSchema = z
+  .string()
+  .min(1, "slug 不能为空")
+  .max(200)
+  .refine(isSafeEntitySlug, {
+    message: "slug 不能包含 \\、..、Windows 保留字符 <>:\"|?* 或控制字符",
+  });
+
+/* ═══════════════════════════════════════════════════════
    Post (文章)
    ═══════════════════════════════════════════════════════ */
 
 export const createPostSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
   content: z.string().default(""),
-  slug: z.string().optional(),
+  slug: safeEntitySlugSchema.optional(),
   excerpt: z.string().optional(),
   coverImage: z.string().url().optional().nullable(),
   category: z.string().optional().nullable(),
@@ -33,7 +74,7 @@ export const updatePostSchema = z.object({
   id: z.string().cuid(),
   title: z.string().min(1).max(200).optional(),
   content: z.string().optional(),
-  slug: z.string().optional(),
+  slug: safeEntitySlugSchema.optional(),
   published: z.boolean().optional(),
   excerpt: z.string().optional(),
   coverImage: z.string().url().optional().nullable(),
@@ -83,6 +124,28 @@ export const loopContractSchema = z.object({
   stoppedReason: z.string().nullable().default(null),
 });
 
+/** W2：心跳决策运行态（存 Agent.heartbeat.decision，与配置态分列） */
+export const heartbeatDecisionStateSchema = z.object({
+  skipRemaining: z.number().int().min(0).default(0),
+  resetToken: z.string().default(""),
+  lastMode: z
+    .enum([
+      "bounded_delivery",
+      "wait_user_gate",
+      "monitor_quiet_skip",
+      "quiet",
+      "repair",
+      "terminal_no_followup",
+    ])
+    .nullable()
+    .optional(),
+  quietStreak: z.number().int().min(0).default(0),
+  lastSkipTicks: z.number().int().min(0).default(0),
+  lastGateNotifyAt: z.string().nullable().optional(),
+  lastGateNotifyKey: z.string().nullable().optional(),
+  terminalAt: z.string().nullable().optional(),
+});
+
 export const heartbeatConfigSchema = z.object({
   enabled: z.boolean().default(false),
   cron: z.string().default("0 9 * * *"),
@@ -92,10 +155,12 @@ export const heartbeatConfigSchema = z.object({
   consecutiveFailures: z.number().default(0),
   /** LoopX 式控制平面（Phase 1：超级 Agent 心跳） */
   loopContract: loopContractSchema.optional(),
+  /** W2 决策运行态（引擎 json_set 原子更新，勿整 blob 覆写） */
+  decision: heartbeatDecisionStateSchema.optional(),
 });
 
 export const createAgentSchema = z.object({
-  name: z.string().min(1, "名称不能为空").max(100),
+  name: safeEntityNameSchema,
   description: z.string().optional(),
   model: z.string().default(LLM_MODEL_IDS.DEEPSEEK_CHAT),
   systemPrompt: z.string().default(""),
@@ -112,7 +177,7 @@ export const createAgentSchema = z.object({
 
 export const updateAgentSchema = z.object({
   id: z.string().cuid(),
-  name: z.string().min(1).max(100).optional(),
+  name: safeEntityNameSchema.optional(),
   description: z.string().optional(),
   model: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -246,7 +311,7 @@ export const nativeExecuteSchema = z.object({
    ═══════════════════════════════════════════════════════ */
 
 export const createSkillSchema = z.object({
-  name: z.string().min(1, "名称不能为空").max(100),
+  name: safeEntityNameSchema,
   description: z.string().min(1, "描述不能为空"),
   code: z.string().min(1, "代码实现不能为空"),
   icon: z.string().optional(),
@@ -257,7 +322,7 @@ export const createSkillSchema = z.object({
 
 export const updateSkillSchema = z.object({
   id: z.string().cuid(),
-  name: z.string().min(1).max(100).optional(),
+  name: safeEntityNameSchema.optional(),
   description: z.string().optional(),
   code: z.string().optional(),
   icon: z.string().optional(),
@@ -335,6 +400,7 @@ export const updateSessionSchema = z.object({
   taskDescription: z.string().max(2000).optional(),
   kind: sessionKindSchema.optional(),
   parentSessionId: z.string().cuid().nullable().optional(),
+  isMainSession: z.boolean().optional(), // 提升主会话时 SessionService 会摘掉同 Agent 其它主标记
   // Auto-Compact 持久化摘要
   contextSummary: z.string().max(20000).nullable().optional(),
   contextCompactedAt: z.coerce.date().nullable().optional(),
@@ -409,6 +475,8 @@ export const openNewSessionSchema = z.object({
    ═══════════════════════════════════════════════════════ */
 
 export const createMessageSchema = z.object({
+  /** 预生成 id（E3 abort 契约：stop 响应与落库共用同一 id） */
+  id: z.string().cuid().optional(),
   sessionId: z.string().cuid(),
   role: z.enum(["user", "assistant", "system", "tool"]),
   content: z.string().min(1, "内容不能为空"),
@@ -445,6 +513,25 @@ export const listMessagesForChatSchema = z.object({
   /** cursor = 上一页最旧消息 id；省略时返最近 limit 条 */
   cursor: z.string().cuid().optional(),
   limit: z.number().int().min(1).max(100).optional(),
+  /** 调试：true 时返回全树（按 createdAt），默认仅活跃路径 */
+  tree: z.boolean().optional(),
+});
+
+/** 会话树：切换当前叶（游标） */
+export const switchBranchSchema = z.object({
+  sessionId: z.string().cuid(),
+  messageId: z.string().cuid(),
+});
+
+/** 会话树邻接表（UI 分支指示） */
+export const sessionTreeSchema = z.object({
+  sessionId: z.string().cuid(),
+});
+
+/** 消息书签 */
+export const setMessageLabelSchema = z.object({
+  messageId: z.string().cuid(),
+  label: z.string().max(100).nullable(),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -605,7 +692,7 @@ function refineMcpTransport(
 
 export const createMcpServerSchema = z
   .object({
-    name: z.string().min(1).max(100),
+    name: safeEntityNameSchema,
     transport: mcpTransportSchema.default("stdio"),
     command: z.string().default(""),
     args: z.array(z.string()).default([]),
@@ -619,7 +706,7 @@ export const createMcpServerSchema = z
 export const updateMcpServerSchema = z
   .object({
     id: z.string().cuid(),
-    name: z.string().min(1).max(100).optional(),
+    name: safeEntityNameSchema.optional(),
     transport: mcpTransportSchema.optional(),
     command: z.string().optional(),
     args: z.array(z.string()).optional(),
@@ -886,6 +973,8 @@ export const createApprovalSchema = z.object({
   toolName: z.string().min(1),
   args: z.any(),
   status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+  /** W3：服务端派生的 decisionScope；LLM/客户端不可传业务语义，仅服务端写入 */
+  decisionScope: z.string().min(1).optional(),
 });
 
 export const updateApprovalSchema = z.object({
@@ -973,7 +1062,7 @@ export const listRunsSchema = z.object({
    ═══════════════════════════════════════════════════════ */
 
 export const createPromptSchema = z.object({
-  name: z.string().min(1, "名称不能为空").max(100),
+  name: safeEntityNameSchema,
   version: z.string().default("1.0.0"),
   description: z.string().optional(),
   variables: z.array(z.string()).default([]),
@@ -983,7 +1072,7 @@ export const createPromptSchema = z.object({
 
 export const updatePromptSchema = z.object({
   id: z.string().cuid(),
-  name: z.string().min(1).max(100).optional(),
+  name: safeEntityNameSchema.optional(),
   version: z.string().optional(),
   description: z.string().optional().nullable(),
   variables: z.array(z.string()).optional(),
@@ -1155,6 +1244,10 @@ export type ListSideRunsInput = z.infer<typeof listSideRunsSchema>;
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;
 export type ListMessagesInput = z.infer<typeof listMessagesSchema>;
+export type ListMessagesForChatInput = z.infer<typeof listMessagesForChatSchema>;
+export type SwitchBranchInput = z.infer<typeof switchBranchSchema>;
+export type SessionTreeInput = z.infer<typeof sessionTreeSchema>;
+export type SetMessageLabelInput = z.infer<typeof setMessageLabelSchema>;
 
 export type CreateSessionQueueItemInput = z.infer<typeof createSessionQueueItemSchema>;
 export type SubmitAgentInjectInput = z.infer<typeof submitAgentInjectSchema>;

@@ -9,6 +9,7 @@ import { getAppConfig } from "./config.js";
 import { runAgent } from "./agentRuntime.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { executeTaskJob } from "./taskRunner.js";
+import { claimTaskRun } from "./taskClaim.js";
 import { getSwarmOrchestrator, type SwarmTaskOutcome } from "./swarmOrchestrator.js";
 
 /** 脱敏事件 payload 中的敏感字段，防止凭据/密钥被写入 Log.metadata。 */
@@ -139,13 +140,19 @@ export class TriggerEngine {
 
     console.log(`    ⚙️ [TriggerEngine] 启动后台任务: ${task.name}`);
 
+    // 先写入触发载荷（不抢 running）；认领单点 = claimTaskRun，与 TaskService/cron 共用
     await this.prisma.task.update({
       where: { id: taskId },
       data: {
-        status: "running",
         input: JSON.stringify({ triggerEvent: triggerPayload }),
       },
     });
+
+    const claimed = await claimTaskRun(this.prisma, taskId);
+    if (!claimed) {
+      console.warn(`    ⚙️ [TriggerEngine] 任务 "${task.name}" 正在运行，跳过本次触发`);
+      return;
+    }
 
     try {
       const output = await executeTaskJob(this.prisma, {
@@ -195,6 +202,7 @@ export class TriggerEngine {
       sessionId: `trigger:${agent.id}`,
       workspaceId: agent.workspaceId ?? null,
       taskLabel: `trigger:${agent.name}`,
+      tools: agent.tools ? agent.tools.split(",").filter(Boolean) : [],
       execute: async (): Promise<SwarmTaskOutcome> => {
         const result = await runAgent(
           this.services,

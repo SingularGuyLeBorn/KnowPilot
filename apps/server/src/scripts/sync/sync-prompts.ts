@@ -8,6 +8,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
+import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, getFileMtime } from "./utils.js";
 
 interface PromptData {
@@ -61,7 +62,7 @@ export const promptSyncer: Syncer<PromptData> = {
   async upsert(prisma: PrismaClient, record: SyncRecord<PromptData>): Promise<void> {
     const { slug, mtime, data } = record;
 
-    await prisma.prompt.upsert({
+    const row = await prisma.prompt.upsert({
       where: { name: data.name },
       update: {
         version: data.version,
@@ -83,11 +84,24 @@ export const promptSyncer: Syncer<PromptData> = {
         sourceMtime: mtime,
       },
     });
+    try {
+      await upsertFtsRow(prisma, "prompt", row.id, row.name, `${row.description ?? ""}\n${row.content ?? ""}`);
+    } catch (e) {
+      console.warn(`  ⚠️ [Prompt FTS] upsert 失败 slug=${slug}:`, e instanceof Error ? e.message : e);
+    }
   },
 
   // #7：unlink 增量硬删 by sourceSlug
   async deleteBySlug(prisma: PrismaClient, slug: string): Promise<number> {
+    const rows = await prisma.prompt.findMany({ where: { sourceSlug: slug }, select: { id: true } });
     const r = await prisma.prompt.deleteMany({ where: { sourceSlug: slug } });
+    for (const row of rows) {
+      try {
+        await deleteFtsRow(prisma, "prompt", row.id);
+      } catch (e) {
+        console.warn(`  ⚠️ [Prompt FTS] delete 失败 id=${row.id}:`, e instanceof Error ? e.message : e);
+      }
+    }
     return r.count;
   },
 

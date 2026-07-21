@@ -128,6 +128,15 @@ export default function ApprovalsPage() {
                       >
                         {STATUS_LABELS[approval.status] ?? approval.status}
                       </span>
+                      {approval.decisionScope ? (
+                        <code
+                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]"
+                          title="decisionScope（调度面相交检查）"
+                          data-testid="approval-decision-scope"
+                        >
+                          {approval.decisionScope}
+                        </code>
+                      ) : null}
                     </div>
                     <pre className="text-[10px] font-mono bg-[var(--kp-bg-mute)] rounded-lg p-3 overflow-x-auto max-h-32 text-[var(--kp-text-2)]">
                       {formatArgs(approval.args)}

@@ -182,6 +182,11 @@ export interface AppConfig {
     triggerRatio: number;
     keepRecent: number;
     /**
+     * 压缩时按 token 粗估保留的最近上下文（默认 20000）。
+     * 切点从不落在 toolCall/toolResult 之间；过短时向旧侧移动到安全边界。
+     */
+    keepRecentTokens: number;
+    /**
      * 摘要专用模型。`auto`（默认）= 优先 OpenRouter `:free`，其次 freellm 网关模型，否则回退主对话模型。
      * 也可填具体 model id（如 `deepseek/deepseek-r1:free`）。
      */
@@ -195,12 +200,25 @@ export interface AppConfig {
       maxFacts: number;
     };
   };
-  /** 超级 Agent 心跳 Loop Contract 默认 */
+  /** 心跳：决策层 + Loop Contract 默认 */
   heartbeat: {
+    /** W2：总开关；false = 回退到点即 dispatch */
+    decisionEnabled: boolean;
+    /** quiet/monitor 退避 skipTicks 上限 */
+    quietCap: number;
+    /** 连续 K 次 quiet → terminal */
+    terminalAfterQuiet: number;
+    /** wait_user_gate 同 gate 通知冷却（毫秒） */
+    gateNotifyCooldownMs: number;
     loopContract: {
       maxStaleRounds: number;
       maxEvidence: number;
     };
+  };
+  /** W3：审批 gate 通知冷却（per-approval lastNotifiedAt） */
+  approvalGate: {
+    /** 同一审批冷却窗口内不重复通知（毫秒）；默认 30min */
+    notifyCooldownMs: number;
   };
   /** W7 反思：loop 进入 done 前一票结构化 critic（默认关闭） */
   reflection: {
@@ -415,6 +433,7 @@ export function createAppConfig(): AppConfig {
   const asyncJobsConfig = (yamlConfig.asyncJobs as Record<string, unknown>) || {};
   const heartbeatYaml = (yamlConfig.heartbeat as Record<string, unknown>) || {};
   const loopContractYaml = (heartbeatYaml.loopContract as Record<string, unknown>) || {};
+  const approvalGateYaml = (yamlConfig.approvalGate as Record<string, unknown>) || {};
   // llm 段 zod 解析：解析失败（如字段类型错误）回退默认值，不阻断启动
   const llmYamlParsed = LlmYamlSchema.safeParse(yamlConfig.llm ?? {});
   const llmYaml = llmYamlParsed.success ? llmYamlParsed.data : LlmYamlSchema.parse({});
@@ -605,6 +624,10 @@ export function createAppConfig(): AppConfig {
         Math.max(0.05, parseFloat(String(compactConfig.triggerRatio ?? "0.75"))),
       ),
       keepRecent: Math.max(2, parseInt(String(compactConfig.keepRecent ?? "8"), 10)),
+      keepRecentTokens: Math.max(
+        100,
+        parseInt(String(compactConfig.keepRecentTokens ?? "20000"), 10) || 20000,
+      ),
       summaryModel: String(compactConfig.summaryModel ?? "auto").trim() || "auto",
       microCompact: {
         enabled: String((compactConfig.microCompact as Record<string, unknown> | undefined)?.enabled ?? "true") !== "false",
@@ -625,10 +648,23 @@ export function createAppConfig(): AppConfig {
       },
     },
     heartbeat: {
+      decisionEnabled: String(heartbeatYaml.decisionEnabled ?? "true") !== "false",
+      quietCap: Math.max(1, parseInt(String(heartbeatYaml.quietCap ?? "8"), 10)),
+      terminalAfterQuiet: Math.max(1, parseInt(String(heartbeatYaml.terminalAfterQuiet ?? "3"), 10)),
+      gateNotifyCooldownMs: Math.max(
+        0,
+        parseInt(String(heartbeatYaml.gateNotifyCooldownMs ?? String(30 * 60_000)), 10),
+      ),
       loopContract: {
         maxStaleRounds: Math.max(1, parseInt(String(loopContractYaml.maxStaleRounds ?? "3"), 10)),
         maxEvidence: Math.max(5, parseInt(String(loopContractYaml.maxEvidence ?? "50"), 10)),
       },
+    },
+    approvalGate: {
+      notifyCooldownMs: Math.max(
+        0,
+        parseInt(String(approvalGateYaml.notifyCooldownMs ?? String(30 * 60_000)), 10),
+      ),
     },
     reflection: reflectionYaml,
     skills: skillsYaml,

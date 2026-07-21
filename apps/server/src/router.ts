@@ -20,6 +20,7 @@ import {
   createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, ensureMainSessionSchema, openNewSessionSchema, compactSessionSchema,
   setSessionGoalSchema, sessionGoalControlSchema, listSideRunsSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
+  switchBranchSchema, sessionTreeSchema, setMessageLabelSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
   createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
   createLogSchema, updateLogSchema, listLogsSchema,
@@ -156,12 +157,12 @@ const agentRouter = router({
       aiReadable: false,
     })
     .input(submitAgentInjectSchema)
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const hub = getStreamHub();
       if (!hub) {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "StreamHub 未初始化" });
       }
-      const result = hub.enqueueInject(input.sessionId, input.kind, input.content);
+      const result = await hub.enqueueInject(input.sessionId, input.kind, input.content);
       if (!result.ok) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: result.reason });
       }
@@ -301,11 +302,19 @@ const agentRouter = router({
   consumeSessionQueueItem: publicProcedure
     .meta({
       description:
-        "消费（删除）一条会话发送队列项，同时标记关联 AgentMessage 已消费。返回 claimed：是否抢到认领（前端 drain 与服务端 superior drain 竞态，落选 false 静默跳过）。",
+        "软认领一条会话发送队列项（置 claimedAt，不删行）。返回 claimed：是否抢到认领（前端 drain 与服务端 superior drain 竞态，落选 false 静默跳过）。ChatMessage 落地后须再调 finalizeSessionQueueItem。",
       aiReadable: false,
     })
     .input(z.object({ id: z.string().cuid() }))
     .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.consume(input.id)),
+  finalizeSessionQueueItem: publicProcedure
+    .meta({
+      description:
+        "确认队列项内容已写入 ChatMessage：删除行并标记关联 AgentMessage consumed。须在 consume 软认领成功且消息落地之后调用。",
+      aiReadable: false,
+    })
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.finalize(input.id)),
   reorderSessionQueueItems: publicProcedure
     .meta({ description: "批量重排会话发送队列项顺序。", aiReadable: false })
     .input(reorderSessionQueueItemsSchema)
@@ -607,11 +616,12 @@ const sessionRouter = router({
             config: ctx.config,
             prisma: ctx.prisma,
           });
-          streamStarted = await hub.startIfNotRunning(input.sessionId, fullBody, (emit, signal) =>
-            import("./infra/agentStream.js").then(({ chatAgentStream }) =>
-              chatAgentStream(ctx.services, ctx.config, fullBody, invoke, emit, signal),
-            ),
-          );
+          streamStarted =
+            (await hub.startIfNotRunning(input.sessionId, fullBody, (emit, signal) =>
+              import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+                chatAgentStream(ctx.services, ctx.config, fullBody, invoke, emit, signal),
+              ),
+            )) === "started";
         }
       }
       return { goal, streamStarted };
@@ -648,11 +658,12 @@ const sessionRouter = router({
           config: ctx.config,
           prisma: ctx.prisma,
         });
-        streamStarted = await hub.startIfNotRunning(input.sessionId, body, (emit, signal) =>
-          import("./infra/agentStream.js").then(({ chatAgentStream }) =>
-            chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
-          ),
-        );
+        streamStarted =
+          (await hub.startIfNotRunning(input.sessionId, body, (emit, signal) =>
+            import("./infra/agentStream.js").then(({ chatAgentStream }) =>
+              chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
+            ),
+          )) === "started";
       }
       return { goal, streamStarted };
     }),
@@ -685,6 +696,7 @@ const sessionRouter = router({
         model: session.model || ctx.config.llm.defaultModel,
         systemPrompt: session.systemPrompt || "你是 KnowPilot 助手。",
         existingSummary: session.contextSummary,
+        existingGeneration: (session as { compactGeneration?: number }).compactGeneration ?? 0,
         trigger: "manual",
       });
       if (!result.compacted) {
@@ -743,6 +755,21 @@ const sessionRouter = router({
     .meta({ description: "手动恢复已暂停（paused）会话：续跑服务端重启前未完成的 ReAct 轮。幂等——并发/重复调用不报错、不重复起流。", aiReadable: false })
     .input(resumeSessionSchema)
     .mutation(({ ctx, input }) => ctx.services.session.resume(input)),
+  // W1：会话树分支切换（更新 activeLeafId；旁路可生成 branch_summary）
+  switchBranch: publicProcedure
+    .meta({ description: "切换会话树当前叶（游标）。切到当前叶幂等；若放弃旁路有新内容则生成 branch_summary。", aiReadable: false })
+    .input(switchBranchSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { switchBranch } = await import("./infra/chatTree.js");
+      return switchBranch(ctx.prisma, ctx.config, input);
+    }),
+  tree: publicProcedure
+    .meta({ description: "返回会话消息树邻接表（nodes + children），供 UI 渲染分支指示。", aiReadable: false })
+    .input(sessionTreeSchema)
+    .query(async ({ ctx, input }) => {
+      const { getSessionTree } = await import("./infra/chatTree.js");
+      return getSessionTree(ctx.prisma, input.sessionId);
+    }),
   spawn: publicProcedure
     .meta({ description: "创建并启动子代理任务（subagent）。返回 subagentSessionId 与 jobId。", aiReadable: false })
     .input(
@@ -837,6 +864,10 @@ const messageRouter = router({
     .meta({ description: "切换 assistant 消息的多版本回答。", aiReadable: true })
     .input(switchMessageVersionSchema)
     .mutation(({ ctx, input }) => switchAssistantMessageVersion(ctx.services, input.messageId, input.versionIndex)),
+  setLabel: publicProcedure
+    .meta({ description: "为消息设置或清除书签标签。", aiReadable: false })
+    .input(setMessageLabelSchema)
+    .mutation(({ ctx, input }) => ctx.services.message.setLabel(input)),
 });
 
 const fileRouter = router({

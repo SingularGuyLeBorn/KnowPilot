@@ -95,16 +95,14 @@ function isMoreActive(pathname: string): boolean {
 
 export function MobileBottomNav() {
   const pathname = usePathname();
-  const [moreOpen, setMoreOpen] = useState(false);
-
-  useEffect(() => {
-    setMoreOpen(false);
-  }, [pathname]);
+  // 用 pathname 键控：路由变化时 moreOpen 自然为 false，无需 effect 里 setState
+  const [moreOpenPath, setMoreOpenPath] = useState<string | null>(null);
+  const moreOpen = moreOpenPath === pathname;
 
   useEffect(() => {
     if (!moreOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMoreOpen(false);
+      if (e.key === "Escape") setMoreOpenPath(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -130,7 +128,7 @@ export function MobileBottomNav() {
             type="button"
             className="absolute inset-0 bg-black/35 backdrop-blur-[2px]"
             aria-label="关闭"
-            onClick={() => setMoreOpen(false)}
+            onClick={() => setMoreOpenPath(null)}
           />
           <div
             className={cn(
@@ -144,7 +142,7 @@ export function MobileBottomNav() {
               <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">更多</h2>
               <button
                 type="button"
-                onClick={() => setMoreOpen(false)}
+                onClick={() => setMoreOpenPath(null)}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
                 aria-label="关闭更多"
               >
@@ -167,7 +165,7 @@ export function MobileBottomNav() {
                         <Link
                           key={item.href}
                           href={item.href}
-                          onClick={() => setMoreOpen(false)}
+                          onClick={() => setMoreOpenPath(null)}
                           className={cn(
                             "flex min-h-11 items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                             active
@@ -218,7 +216,7 @@ export function MobileBottomNav() {
           })}
           <button
             type="button"
-            onClick={() => setMoreOpen((v) => !v)}
+            onClick={() => setMoreOpenPath((p) => (p === pathname ? null : pathname))}
             className={cn(
               "flex min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition",
               moreActive || moreOpen

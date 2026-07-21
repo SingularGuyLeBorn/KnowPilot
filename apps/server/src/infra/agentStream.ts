@@ -2,7 +2,13 @@
  * Agent 流式聊天 — SSE 事件 + 流式 ReAct 循环 + 多版本 / 编辑 / Skill
  */
 
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
+
+/** 预生成符合 z.string().cuid() 的消息 id（E3 abort 契约） */
+function allocateCuid(): string {
+  return `c${randomBytes(12).toString("hex")}`;
+}
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import {
@@ -14,7 +20,7 @@ import { describeLlmError } from "./resilientLlmClient.js";
 import { type StoredToolCall, sanitizePostCompactAssistantContent } from "./chatHistory.js";
 import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
-import { buildAllMemoryHints, buildSystemPromptWithHints } from "./promptBuilder.js";
+import { buildSystemPromptSkeleton } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
 import { resolveMicroCompactToolMaxChars, buildLlmContextSinceCompact } from "./autoCompact.js";
 import { runReactLoop, createStreamTransport, withReflection } from "./loop/index.js";
@@ -25,7 +31,7 @@ import {
   buildInitialVersionMeta,
   getActiveAssistantPayload,
 } from "./messageVersions.js";
-import { SessionStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
+import { SessionStreamHub, getStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 import { autoNameSession } from "./sessionAutoName.js";
 import { markAgentMessageConsumedByTaskRef } from "./agentMessageLedger.js";
 import {
@@ -152,6 +158,9 @@ export type AgentStreamEvent =
         id: string;
         role: string;
         content: string;
+        parentId?: string | null;
+        label?: string | null;
+        kind?: string | null;
         toolCalls?: unknown;
         toolResults?: unknown;
         tokenUsage?: unknown;
@@ -203,8 +212,8 @@ export type AgentStreamEvent =
 
 function writeSse(res: Response, event: AgentStreamEvent, eventId?: number) {
   // P7：合并为单次 res.write，减少高频吐字下的系统调用（原为 event 行 + data 行两次 write）
-  // 增加 id 行以支持断线续传
-  const idLine = eventId ? `id: ${eventId}\n` : "";
+  // id 行 = per-session seq（与 SessionStreamEvent.seq / resumeAfter 同源）
+  const idLine = typeof eventId === "number" ? `id: ${eventId}\n` : "";
   res.write(`${idLine}event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
@@ -237,7 +246,7 @@ export async function runAgentLoopStream(options: {
   invokeTrpc: (tool: string, args?: unknown) => Promise<unknown>;
   emit: (event: AgentStreamEvent) => void;
   sessionId?: string;
-  agentMeta?: { id: string; model: string; systemPrompt: string; tools: string[]; tier?: string; workspaceId?: string | null; parentId?: string | null };
+  agentMeta?: { id: string; name?: string | null; model: string; systemPrompt: string; tools: string[]; tier?: string; workspaceId?: string | null; parentId?: string | null };
   signal?: AbortSignal;
   runOrigin?: "user" | "parent" | "heartbeat";
   /** W11：Run.input 业务描述（触发消息等），run 入口落库时写入 */
@@ -470,6 +479,7 @@ export async function chatAgentStream(
   let partialContent = "";
   const partialToolCalls: StoredToolCall[] = [];
   let prepared: PrepareResult | undefined;
+  let pendingAssistantId: string | undefined;
 
   try {
     assertLlmBudget(config);
@@ -537,6 +547,10 @@ export async function chatAgentStream(
     // 自动命名：不管新建还是已有 session，都 fire-and-forget。
     // autoNameSession 内部幂等：autoName 已有值 或 msgCount>1 都跳过，不会重复命名。
     void autoNameSession(sessionId, prepared.messageText);
+
+    // E3：预生成 assistant 消息 id，stop 响应与 abort 落库共用
+    pendingAssistantId = prepared.updateAssistantId ?? allocateCuid();
+    getStreamHub()?.setPendingAssistantMessageId(sessionId, pendingAssistantId);
 
     if (!prepared.skipUserCreate) {
       const src = input.source ?? "user";
@@ -612,20 +626,15 @@ export async function chatAgentStream(
     // 供下方 updateAssistantId 查找；与 LLM 窗口同源
     const history = { items: historyItems };
 
-    const memoryHint = await buildAllMemoryHints(services, prepared.messageText, {
-      agentId: (agent as { id?: string }).id,
-      sessionId,
-    });
+    // 记忆 / tier / 工具引导由 reactLoop 内 contextHooks 在 LLM 调用前注入
     const messages = buildLlmContextSinceCompact(
-      buildSystemPromptWithHints(effectiveSystemPrompt || agent.systemPrompt, agent.tools, memoryHint, {
-        tier: (agent as { tier?: string }).tier,
-        name: (agent as { name?: string }).name,
-      }),
+      buildSystemPromptSkeleton(effectiveSystemPrompt || agent.systemPrompt),
       historyBase,
       {
         modelId: effectiveModel,
         microCompactToolMaxChars: resolveMicroCompactToolMaxChars(effectiveConfig),
         contextSummary: (sessionMeta as { contextSummary?: string | null }).contextSummary ?? null,
+        compactGeneration: (sessionMeta as { compactGeneration?: number | null }).compactGeneration ?? 0,
       },
     );
 
@@ -645,14 +654,19 @@ export async function chatAgentStream(
 
     let currentRound = 1;
     const toolArgsMap = new Map<string, unknown>();
+    const notePartial = () => {
+      if (sessionId) getStreamHub()?.markPartialAssistant(sessionId);
+    };
     const trackingEmit = (event: AgentStreamEvent) => {
       if (event.type === "round_start") {
         currentRound = event.round;
       }
       if (event.type === "token" && event.delta) {
         partialContent += event.delta;
+        notePartial();
       }
       if (event.type === "thinking" && event.delta) {
+        notePartial();
         const id = `think_${currentRound}`;
         const existing = partialToolCalls.find((t) => t.id === id);
         if (existing) {
@@ -668,6 +682,7 @@ export async function chatAgentStream(
         }
       }
       if (event.type === "intermediate_content" && event.content) {
+        notePartial();
         const id = `content_${currentRound}`;
         const existing = partialToolCalls.find((t) => t.id === id);
         if (existing) {
@@ -686,6 +701,7 @@ export async function chatAgentStream(
         toolArgsMap.set(event.toolCallId, event.args);
       }
       if (event.type === "tool_end" && event.toolCallId) {
+        notePartial();
         partialToolCalls.push({
           id: event.toolCallId,
           name: event.name,
@@ -708,12 +724,13 @@ export async function chatAgentStream(
       sessionId,
       agentMeta: {
         id: agent.id,
+        name: (agent as { name?: string }).name,
         model: effectiveModel,
         systemPrompt: effectiveSystemPrompt || agent.systemPrompt,
         tools: agent.tools,
-        tier: (agent as any).tier ?? "sub",
-        workspaceId: (agent as any).workspaceId ?? null,
-        parentId: (agent as any).parentId ?? null,
+        tier: (agent as { tier?: string }).tier,
+        workspaceId: (agent as { workspaceId?: string | null }).workspaceId ?? null,
+        parentId: (agent as { parentId?: string | null }).parentId ?? null,
       },
       signal,
       runOrigin: input.runOrigin,
@@ -752,22 +769,26 @@ export async function chatAgentStream(
     // W11：Run 行已由内核在 run 入口创建（running）并在 done 终态写回；此处仅把 assistantMessageId
     // 合并进既有 output（读-改-写保内核字段不丢）。
     const runId = result.runId;
+    // W1：assistant 落库必须走 appendChatMessage（parentId + activeLeafId 同事务）
+    let createdParentId: string | null = null;
     let persistedToolResults: unknown;
     assistantMessageId = await services.prisma.$transaction(async (tx) => {
       if (!assistantMessageId) {
         const initial = buildInitialVersionMeta(result.content, result.toolCalls);
         persistedToolResults = initial.toolResults;
-        const created = await tx.chatMessage.create({
-          data: {
-            sessionId,
-            role: "assistant",
-            content: result.content,
-            toolCalls: result.toolCalls,
-            toolResults: initial.toolResults,
-            tokenUsage: result.tokenUsage,
-          } as any,
+        const { appendChatMessage } = await import("./chatTree.js");
+        // sessionId 为 let，闭包内 CFA 不收窄；此处已过创建/复用分支，必为 string
+        const created = await appendChatMessage(tx, {
+          id: pendingAssistantId,
+          sessionId: sessionId!,
+          role: "assistant",
+          content: result.content,
+          toolCalls: result.toolCalls,
+          toolResults: initial.toolResults,
+          tokenUsage: result.tokenUsage,
         });
         assistantMessageId = created.id;
+        createdParentId = created.parentId ?? null;
       }
 
       if (runId) {
@@ -784,8 +805,11 @@ export async function chatAgentStream(
       return assistantMessageId;
     });
 
-    // 契约对齐：assistant 消息走裸 tx.chatMessage.create 绕过了 MessageService.afterCreate，
-    // 必须补发 message_upserted（字段须与 MessageService.afterCreate 对齐，含 toolResults/versionMeta）。
+    // 契约对齐：assistant 消息落库绕过 MessageService.afterCreate，必须补发 message_upserted，
+    // 否则 async-stream EventSource 收不到 → 服务端自启动的运行（autoConsume / 心跳 / 触发器）
+    // 在前端没消费 agent 流时，assistant 消息只能靠刷新重 hydrate 才出现（DB 有、store 没有）。
+    // done 事件只投递给「正在消费 agent 流」的订阅者；message_upserted 才是 MessageStore 的统一入口。
+    // 字段须与 MessageService.afterCreate 对齐（含 toolResults/versionMeta），update 路径从 DB 取全量防抹时间线。
     try {
       const { getStreamHub } = await import("./sessionStreamHub.js");
       // update 路径：从 DB 取完整 toolResults，避免补发空字段抹掉时间线
@@ -803,6 +827,9 @@ export async function chatAgentStream(
           id: assistantMessageId,
           role: "assistant",
           content: result.content,
+          parentId: createdParentId,
+          label: null,
+          kind: null,
           toolCalls: result.toolCalls ?? undefined,
           toolResults: persistedToolResults ?? undefined,
           tokenUsage: result.tokenUsage ?? undefined,
@@ -895,11 +922,17 @@ export async function chatAgentStream(
             finishReason: "aborted",
           });
         } else {
+          // E3：落库用与 stop 响应相同的预生成 id
+          const messageId =
+            getStreamHub()?.getPendingAssistantMessageId(sessionId) ||
+            pendingAssistantId ||
+            allocateCuid();
           const initial = buildInitialVersionMeta(partialContent.trim(), partialToolCalls);
           await services.message.create({
+            id: messageId,
             sessionId,
             role: "assistant",
-            content: partialContent.trim(),
+            content: partialContent.trim() || "(已中断)",
             toolCalls: partialToolCalls,
             toolResults: initial.toolResults,
             finishReason: "aborted",
@@ -967,6 +1000,56 @@ export async function switchAssistantMessageVersion(
   });
 }
 
+/**
+ * Hub 已占用时的 POST 落点：普通新消息入 Inbox；重试/编辑/重生成返回 rejected。
+ * 返回 null = 无需处理（无 message）。
+ */
+export async function handleBusyHubPost(
+  services: ServiceContainer,
+  sessionId: string,
+  body: AgentChatInput,
+): Promise<{ kind: "queued"; queueItemId: string } | { kind: "rejected"; message: string } | null> {
+  const isMutatingReplay =
+    Boolean(body.regenerate) || Boolean(body.retryFromMessageId) || Boolean(body.editMessageId);
+  if (isMutatingReplay) {
+    return {
+      kind: "rejected",
+      message: "当前会话已有运行中的流，请等待结束后再重试/编辑/重新生成。",
+    };
+  }
+  const msg = typeof body.message === "string" ? body.message.trim() : "";
+  if (!msg) return null;
+
+  const existing = await services.prisma.sessionQueueItem.findFirst({
+    where: { sessionId, kind: "user", content: msg },
+    orderBy: { order: "desc" },
+  });
+  if (existing) return { kind: "queued", queueItemId: existing.id };
+
+  const created = await services.sessionQueueItem.create({
+    sessionId,
+    kind: "user",
+    content: msg,
+    source: body.source === "system" ? "system" : "user",
+    attachments: body.attachments,
+    skillId: body.skillId,
+  });
+  const queueItemId = (created.data as { id?: string } | undefined)?.id;
+  if (!queueItemId) {
+    return { kind: "rejected", message: "会话忙碌且消息入队失败，请稍后重试。" };
+  }
+  return { kind: "queued", queueItemId };
+}
+
+function beginSse(res: Response): void {
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  // P8：禁用 nginx / Cloudflare Tunnel 等反代对 SSE 的缓冲，否则前端收不到实时流
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+}
+
 /** Express SSE handler: POST /api/agent/chat/stream（启动运行）/ GET（续传） */
 export function handleAgentChatStream(
   services: ServiceContainer,
@@ -975,27 +1058,26 @@ export function handleAgentChatStream(
   hub: SessionStreamHub,
 ) {
   return async (req: Request, res: Response) => {
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    // P8：禁用 nginx / Cloudflare Tunnel 等反代对 SSE 的缓冲，否则前端收不到实时流
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders?.();
+    const isPost = req.method === "POST";
+    const body = (req.body ?? {}) as AgentChatInput & { resumeAfter?: number };
+    const requestSessionId = body.sessionId || String(req.query.sessionId || "");
+    const afterEventId = Number(body.resumeAfter ?? req.query.resumeAfter ?? 0);
+    // POST 无 sessionId：每请求唯一占位键（clientMessageId 或预生成 id），杜绝共享 ""
+    let runSessionId =
+      requestSessionId ||
+      (isPost
+        ? `pending:${body.clientMessageId?.trim() || randomUUID()}`
+        : "");
 
     if (isAuthEnabled(config) && !verifyAuthHeader(config, req.headers.authorization)) {
+      beginSse(res);
       writeSse(res, { type: "error", message: "未授权：请先登录后再使用 Chat 流式接口。" });
       res.end();
       return;
     }
 
-    const isPost = req.method === "POST";
-    const body = (req.body ?? {}) as AgentChatInput & { resumeAfter?: number };
-    const requestSessionId = body.sessionId || String(req.query.sessionId || "");
-    const afterEventId = Number(body.resumeAfter ?? req.query.resumeAfter ?? 0);
-    // POST 且未带 sessionId 时，先以空字符串在 Hub 中占位；等 chatAgentStream 创建真实 session 后再迁移。
-    let runSessionId = requestSessionId;
-
     if (!requestSessionId && !isPost) {
+      beginSse(res);
       writeSse(res, { type: "error", message: "缺少 sessionId" });
       res.end();
       return;
@@ -1009,6 +1091,7 @@ export function handleAgentChatStream(
         (typeof body?.message === "string" && body.message.trim().length > 0);
 
       if (!valid) {
+        beginSse(res);
         writeSse(res, { type: "error", message: "message 不能为空" });
         res.end();
         return;
@@ -1019,6 +1102,7 @@ export function handleAgentChatStream(
         try {
           const sess = await services.session.getByIdLite(requestSessionId);
           if (sess?.status === "archived") {
+            beginSse(res);
             writeSse(res, {
               type: "error",
               message: "该会话已归档，请前往新会话继续对话。",
@@ -1035,19 +1119,51 @@ export function handleAgentChatStream(
         }
       }
 
-      // 幂等：若已有运行中的任务，不再重复启动（可能是前端重连时误发了 POST）
+      // 三态起流：busy → 结构化 409（消息入队）；duplicate → 降级订阅；started → 订阅新流
       try {
-        await hub.startIfNotRunning(runSessionId, body, (emit, signal) =>
+        const startResult = await hub.startIfNotRunning(runSessionId, body, (emit, signal) =>
           chatAgentStream(services, config, body, invokeTrpc, emit, signal),
         );
+        if (startResult === "busy") {
+          if (requestSessionId) {
+            const busy = await handleBusyHubPost(services, requestSessionId, body);
+            if (busy?.kind === "rejected") {
+              res.status(409).json({
+                code: "SESSION_BUSY",
+                sessionId: requestSessionId,
+                message: busy.message,
+              });
+              return;
+            }
+            res.status(409).json({
+              code: "SESSION_BUSY",
+              sessionId: requestSessionId,
+              queueItemId: busy?.queueItemId ?? null,
+              message:
+                busy?.kind === "queued"
+                  ? "会话忙碌，消息已入队，将在当前流结束后由 Inbox 推进。"
+                  : "会话忙碌，请稍后重试或改用排队/追问。",
+            });
+            return;
+          }
+          res.status(409).json({
+            code: "SESSION_BUSY",
+            message: "会话忙碌，请稍后重试。",
+          });
+          return;
+        }
+        // started | duplicate：打开 SSE 订阅（duplicate 附着已有流）
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[agentStream] 启动会话 ${runSessionId} Agent 流失败:`, err);
+        beginSse(res);
         writeSse(res, { type: "error", message: `启动失败：${message}` });
         res.end();
         return;
       }
     }
+
+    beginSse(res);
 
     if (!hub.isRunning(runSessionId) && afterEventId === 0) {
       // 不是 POST 且没有运行中的任务，也没有要续传的历史事件
@@ -1072,7 +1188,9 @@ export function handleAgentChatStream(
 
     // R2：token 事件合并 —— 累加 delta 到 tokenBuffer，16ms 定时器冲刷为单帧；
     // 非 token 事件先冲刷 tokenBuffer 再发送，保证事件顺序。
+    // 合帧携带帧内最后一个事件的 seq，确保 lastEventId 随 token 前进。
     let tokenBuffer = "";
+    let tokenFlushSeq: number | undefined;
     let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
     const flushTokens = () => {
       if (tokenFlushTimer) {
@@ -1080,36 +1198,42 @@ export function handleAgentChatStream(
         tokenFlushTimer = null;
       }
       if (tokenBuffer) {
-        writeSse(res, { type: "token", delta: tokenBuffer });
+        writeSse(res, { type: "token", delta: tokenBuffer }, tokenFlushSeq);
         tokenBuffer = "";
+        tokenFlushSeq = undefined;
       }
     };
 
-    const unsubscribe = await hub.subscribe(runSessionId, afterEventId, async (buffered: BufferedEvent) => {
-      const event = buffered.event;
-      // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
-      if (event.type === "session_start" && event.sessionId && !requestSessionId) {
-        if (runSessionId !== event.sessionId) {
-          await hub.migrateSessionId(runSessionId, event.sessionId);
-          runSessionId = event.sessionId;
+    const { unsubscribe, replayHadTerminal } = await hub.subscribe(
+      runSessionId,
+      afterEventId,
+      async (buffered: BufferedEvent) => {
+        const event = buffered.event;
+        // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
+        if (event.type === "session_start" && event.sessionId && !requestSessionId) {
+          if (runSessionId !== event.sessionId) {
+            await hub.migrateSessionId(runSessionId, event.sessionId);
+            runSessionId = event.sessionId;
+          }
         }
-      }
-      if (event.type === "token") {
-        tokenBuffer += event.delta;
-        if (tokenBuffer.length >= 512) {
+        if (event.type === "token") {
+          tokenBuffer += event.delta;
+          tokenFlushSeq = buffered.id;
+          if (tokenBuffer.length >= 512) {
+            flushTokens();
+          } else if (!tokenFlushTimer) {
+            tokenFlushTimer = setTimeout(flushTokens, 16);
+          }
+        } else {
           flushTokens();
-        } else if (!tokenFlushTimer) {
-          tokenFlushTimer = setTimeout(flushTokens, 16);
+          writeSse(res, event, buffered.id);
         }
-      } else {
-        flushTokens();
-        writeSse(res, event, buffered.id);
-      }
-      if (event.type === "done" || event.type === "error") {
-        flushTokens();
-        setTimeout(end, 0);
-      }
-    });
+        if (event.type === "done" || event.type === "error") {
+          flushTokens();
+          setTimeout(end, 0);
+        }
+      },
+    );
 
     // 心跳：防止浏览器/反代因长时间无数据关闭空闲连接
     const heartbeat = setInterval(() => {
@@ -1125,8 +1249,9 @@ export function handleAgentChatStream(
     });
 
     // 订阅时运行已结束：必须显式发 done 让前端从 streaming 归位到 idle，
-    // 否则前端会进入无意义重连循环（12 次 ~2min），期间一直卡 "Thinking..."
-    if (!hub.isRunning(runSessionId) && ended === false) {
+    // 否则前端会进入无意义重连循环（12 次 ~2min），期间一直卡 "Thinking..."。
+    // 若重放已含真实 done/error，禁止再补发 synthetic done（避免双发）。
+    if (!hub.isRunning(runSessionId) && ended === false && !replayHadTerminal) {
       setTimeout(() => {
         flushTokens();
         writeSse(res, {
@@ -1153,8 +1278,10 @@ export function handleAgentChatStop(hub: SessionStreamHub) {
       res.status(400).json({ error: "缺少 sessionId" });
       return;
     }
+    // E3：先读 partial id（依赖 hasPartial），再 abort；落库异步用同一预生成 id
+    const partialAssistantMessageId = hub.getPartialAssistantMessageId(sessionId);
     const stopped = hub.stop(sessionId);
-    res.json({ stopped });
+    res.json({ stopped, partialAssistantMessageId });
   };
 }
 

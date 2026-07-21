@@ -38,14 +38,24 @@ export interface ToolCommand<Ctx = unknown> {
   concurrencyClass?: ToolConcurrencyClass;
   /**
    * D 类（写入/副作用）标记：本 run 执行后进入回滚栈，run 失败（非用户 abort）时逆序补偿。
-   * 与 approvalGate.DESTRUCTIVE_NATIVE_OPS 对齐，单点在域注册处声明，禁止再造列表。
+   * 审批清单唯一事实源：registry 上 destructive && !approvalExempt（见 listDestructiveNativeOpsForApproval）。
    */
   destructive?: boolean;
+  /**
+   * 审批豁免：destructive 工具默认入 AGENT_DESTRUCTIVE_APPROVAL 清单；
+   * 确需豁免（如可回滚的常规写入）须显式声明并附理由注释。
+   */
+  approvalExempt?: boolean;
   /**
    * 可重入标记：无写副作用、at-least-once 重跑安全（崩溃恢复可自动重跑，最坏只是再读一次）。
    * 与 destructive 同处单点声明（域注册处），禁止再造列表；默认 false = 保守不重跑。
    */
   reentrant?: boolean;
+  /**
+   * W3：可选 scope 派生（缺省走 approvalScope 内置表）。
+   * 返回值须为 `<domain>:<verb>:<target>`；LLM 不可见。
+   */
+  deriveScope?(args: Record<string, unknown>): string | null | undefined;
   schema(): ToolSchema;
   execute(params: Record<string, unknown>, ctx: Ctx): Promise<unknown>;
   /** 执行前快照（destructive 工具按需实现）；返回值原样透传给 rollback */

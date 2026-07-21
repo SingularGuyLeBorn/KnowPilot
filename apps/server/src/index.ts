@@ -35,6 +35,7 @@ import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js"
 import { ensureIntegrationCredentialsInjected } from "./infra/credentialVault.js";
 import { isAuthEnabled, verifyAuthHeader } from "./infra/auth.js";
 import { prisma } from "./db.js";
+import { hydrateLlmBudget } from "./infra/llmBudget.js";
 
 const app = express();
 
@@ -265,6 +266,11 @@ app.use(
   })
 );
 
+// C5：启动期 await 预算 hydrate（同日 max 合并，不丢已花额度）后再接流量
+await hydrateLlmBudget(config.projectRoot).catch((err) => {
+  console.error("❌ [llmBudget] 启动 hydrate 失败（将以内存零消耗继续）:", err);
+});
+
 // 启动
 const server = app.listen(PORT, () => {
   console.log(`\n  🚀 KnowPilot Server running at http://localhost:${PORT}`);
@@ -338,6 +344,17 @@ const server = app.listen(PORT, () => {
     })
     .catch((err) => {
       console.error("❌ [StartupRecovery] 启动恢复失败:", err);
+    });
+  // W3：刷新 pending approval decisionScope 缓存（调度面 gate 相交检查同步可读）
+  import("./infra/approvalGate.js")
+    .then(({ refreshPendingApprovalScopeCache }) => refreshPendingApprovalScopeCache(services))
+    .then(() => import("./infra/approvalScope.js"))
+    .then(({ getCachedPendingApprovalScopes }) => {
+      const n = getCachedPendingApprovalScopes().length;
+      if (n > 0) console.log(`  🛂 [ApprovalScope] 已加载 ${n} 条 pending decisionScope`);
+    })
+    .catch((err) => {
+      console.warn("  ⚠️ [ApprovalScope] pending scope 缓存刷新失败:", err instanceof Error ? err.message : err);
     });
   // W11：遗留 running Run 标 interrupted（如实声明不续跑；与 recoverStaleAsyncJobs 同款启动挂载点）
   recoverStaleRuns()

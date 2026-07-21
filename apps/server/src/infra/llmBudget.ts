@@ -1,10 +1,13 @@
 /**
  * LLM 每日预算追踪（美元估算，OpenClaw 式网关预算）
  *
+ * 软语义（明示）：日预算是「估算下界、并发可超」。
+ * assertLlmBudget 与 recordTokenUsage 分离——N 个并发入口可同时看到未超限并全放行，
+ * 实际花费可能短暂超过 dailyBudget。不做预留制（预留制见 design-decisions 待办）。
+ *
  * 状态管理：模块级内存为唯一运行时真相，LLM 调用路径上零同步 IO。
  * - 落盘：防抖异步写（fs.promises），进程崩溃最多丢失最近一个防抖窗口的消耗
- * - 恢复：首次访问时异步 hydrate（fire-and-forget）；若 hydrate 完成前已有新消耗（dirty），
- *   以内存为准，避免旧文件覆盖新状态
+ * - 恢复：启动期 await hydrateLlmBudget（index.ts 挂载）；同日合并 max(内存, 磁盘)，不丢已花额度
  */
 
 import fs from "fs";
@@ -20,15 +23,20 @@ const FLUSH_DEBOUNCE_MS = 250;
 interface BudgetState {
   date: string;
   spentUsd: number;
+  /** 无产出 run 累计 token（仅观测，不拦截日预算） */
+  wastedTokens: number;
+  /** 今日累计 token（用于空转占比） */
+  totalTokens: number;
 }
 
 /** 模块级内存状态（替代原 globalThis 隐式全局） */
-let state: BudgetState = { date: todayKey(), spentUsd: 0 };
-/** 内存状态是否已领先于磁盘（领先时 hydrate 不得覆盖） */
+let state: BudgetState = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
+/** 内存状态是否已领先于磁盘（领先时落盘需跟上） */
 let dirty = false;
 /** 单调递增版本号：用于识别异步落盘期间是否发生新消耗 */
 let version = 0;
 let hydrated = false;
+let hydratePromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function todayKey() {
@@ -39,26 +47,56 @@ function budgetFile(projectRoot: string) {
   return path.join(projectRoot, ".dev-log", "llm-budget.json");
 }
 
-/** 异步 hydrate：仅当磁盘文件属于今日且内存尚无新消耗时采用 */
-function hydrateAsync(projectRoot: string): void {
+/**
+ * 启动期一次性 hydrate：同日取 max(内存已花, 磁盘已花)，不丢额度。
+ * 可安全重入（并发调用共享同一 Promise）。
+ */
+export async function hydrateLlmBudget(projectRoot: string): Promise<void> {
   if (hydrated) return;
-  hydrated = true;
-  fs.promises
-    .readFile(budgetFile(projectRoot), "utf8")
-    .then((raw) => {
-      if (dirty) return;
+  if (hydratePromise) return hydratePromise;
+
+  hydratePromise = (async () => {
+    try {
+      const raw = await fs.promises.readFile(budgetFile(projectRoot), "utf8");
       try {
         const parsed = JSON.parse(raw) as BudgetState;
         if (parsed.date === todayKey()) {
-          state = { date: parsed.date, spentUsd: Number(parsed.spentUsd) || 0 };
+          const diskSpent = Number(parsed.spentUsd) || 0;
+          const memSpent = state.date === todayKey() ? state.spentUsd : 0;
+          const merged = Math.max(memSpent, diskSpent);
+          const diskWaste = Number((parsed as BudgetState).wastedTokens) || 0;
+          const memWaste = state.date === todayKey() ? state.wastedTokens : 0;
+          const diskTotal = Number((parsed as BudgetState).totalTokens) || 0;
+          const memTotal = state.date === todayKey() ? state.totalTokens : 0;
+          state = {
+            date: parsed.date,
+            spentUsd: merged,
+            wastedTokens: Math.max(memWaste, diskWaste),
+            totalTokens: Math.max(memTotal, diskTotal),
+          };
+          // 内存领先磁盘 → 保持 dirty 以便落盘追上
+          if (
+            merged > diskSpent ||
+            state.wastedTokens > diskWaste ||
+            state.totalTokens > diskTotal
+          ) {
+            dirty = true;
+            version += 1;
+            scheduleFlush(projectRoot);
+          }
         }
       } catch {
-        /* 文件损坏：忽略，从 0 开始 */
+        /* 文件损坏：忽略，从当前内存继续 */
       }
-    })
-    .catch(() => {
+    } catch {
       /* 文件不存在：正常路径 */
-    });
+    } finally {
+      hydrated = true;
+      hydratePromise = null;
+    }
+  })();
+
+  return hydratePromise;
 }
 
 async function flushAsync(projectRoot: string, snapshotVersion: number): Promise<void> {
@@ -84,10 +122,13 @@ function scheduleFlush(projectRoot: string): void {
 }
 
 function getState(config: AppConfig): BudgetState {
-  hydrateAsync(config.projectRoot);
+  // 启动未 hydrate 时仍允许服务（软语义）；后台补一次合并 hydrate，不阻塞热路径
+  if (!hydrated && !hydratePromise) {
+    void hydrateLlmBudget(config.projectRoot);
+  }
   if (state.date !== todayKey()) {
     // 跨天 rollover：内存内重置并标记落盘
-    state = { date: todayKey(), spentUsd: 0 };
+    state = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
     dirty = true;
     version += 1;
     scheduleFlush(config.projectRoot);
@@ -102,12 +143,17 @@ export interface LlmBudgetStatus {
   warn: boolean;
   exceeded: boolean;
   date: string;
+  wastedTokens: number;
+  totalTokens: number;
+  /** wastedTokens / totalTokens；无消费时为 0 */
+  wasteRatio: number;
 }
 
 export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
   const s = getState(config);
   const limitUsd = config.llm.dailyBudget;
   const ratio = limitUsd > 0 ? s.spentUsd / limitUsd : 0;
+  const wasteRatio = s.totalTokens > 0 ? s.wastedTokens / s.totalTokens : 0;
   return {
     limitUsd,
     spentUsd: s.spentUsd,
@@ -115,9 +161,15 @@ export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
     warn: limitUsd > 0 && ratio >= 0.85 && ratio < 1,
     exceeded: limitUsd > 0 && s.spentUsd >= limitUsd,
     date: s.date,
+    wastedTokens: s.wastedTokens,
+    totalTokens: s.totalTokens,
+    wasteRatio,
   };
 }
 
+/**
+ * 软闸：已超限则抛错。与 record 分离 → 并发下可短暂超限（估算下界，非硬预留）。
+ */
 export function assertLlmBudget(config: AppConfig) {
   const status = getLlmBudgetStatus(config);
   if (status.exceeded) {
@@ -136,10 +188,28 @@ export function recordTokenUsage(
   if (!total) return;
   const s = getState(config);
   s.spentUsd += (total / 1000) * BLENDED_USD_PER_1K;
+  s.totalTokens += total;
   dirty = true;
   version += 1;
   scheduleFlush(config.projectRoot);
 }
+
+/**
+ * 将已计入 totalTokens 的无产出 run token 记入 wastedTokens（不重复扣日预算）。
+ * 日预算扣减规则不变——wastedTokens 只用于观测。
+ */
+export function markTokensWasted(config: AppConfig, tokens: number) {
+  const n = Math.max(0, Math.floor(Number(tokens) || 0));
+  if (!n) return;
+  const s = getState(config);
+  s.wastedTokens += n;
+  dirty = true;
+  version += 1;
+  scheduleFlush(config.projectRoot);
+}
+
+/** 空转占比告警阈值（v1 固定 50%，仅 brief/看板提示） */
+export const WASTED_TOKEN_ALERT_RATIO = 0.5;
 
 /** 测试隔离：重置预算内存状态与待落盘任务 */
 export function resetLlmBudgetForTests(): void {
@@ -147,10 +217,11 @@ export function resetLlmBudgetForTests(): void {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
-  state = { date: todayKey(), spentUsd: 0 };
+  state = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
   dirty = false;
   version = 0;
   hydrated = false;
+  hydratePromise = null;
 }
 
 /** 测试用：等待防抖落盘完成（生产代码请勿调用） */

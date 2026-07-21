@@ -5,22 +5,28 @@
 export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "superior" | "child_notify";
 
 /** 排队阻塞原因：哪个上限卡住（与服务端 AsyncJobQueuedReason 一致，orchestrator 真实判定） */
-export type AsyncQueuedReason = "global" | "session" | "workspace";
+export type AsyncQueuedReason = "global" | "session" | "workspace" | "gate";
 
 const ASYNC_QUEUED_REASON_LABEL: Record<AsyncQueuedReason, string> = {
   global: "全局上限",
   session: "会话上限",
   workspace: "workspace 上限",
+  gate: "审批 gate",
 };
 
 /** queued 条目的排队提示：「第 N 位 · 因 X 上限排队」（数据均来自池统计，缺哪段省哪段） */
 export function formatQueuedHint(item: {
   queuePosition?: number;
   queuedReason?: AsyncQueuedReason;
+  gateBlock?: { approvalId: string; scope: string; reason?: string };
 }): string {
   const parts: string[] = [];
   if (item.queuePosition !== undefined) parts.push(`第 ${item.queuePosition + 1} 位`);
-  if (item.queuedReason) parts.push(`因${ASYNC_QUEUED_REASON_LABEL[item.queuedReason]}排队`);
+  if (item.queuedReason === "gate" && item.gateBlock) {
+    parts.push(`因审批 ${item.gateBlock.approvalId} 阻塞 scope ${item.gateBlock.scope}`);
+  } else if (item.queuedReason) {
+    parts.push(`因${ASYNC_QUEUED_REASON_LABEL[item.queuedReason]}排队`);
+  }
   return parts.join(" · ");
 }
 
@@ -51,6 +57,8 @@ export interface ChatQueueItem {
   queuePosition?: number;
   /** queued 任务的排队原因：哪个上限卡住（来自 orchestrator.getQueuedReason） */
   queuedReason?: AsyncQueuedReason;
+  /** W3：reason=gate 时的阻塞详情 */
+  gateBlock?: { approvalId: string; scope: string; reason?: string };
   /** 异步原始结果（不可编辑） */
   asyncResult?: string;
   /** 用户对异步结果追加的说明（可编辑，LLM 会区分） */
@@ -137,7 +145,17 @@ export function mergeAsyncPollIntoQueue(
   local: ChatQueueItem[],
   poll?: {
     running?: Array<{ jobId: string; taskLabel: string; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number; sourceType?: string }>;
-    queued?: Array<{ jobId: string; taskLabel: string; position?: number; reason?: AsyncQueuedReason; subagentSessionId?: string; logs?: ChatQueueItem["logs"]; createdAt: number; sourceType?: string }>;
+    queued?: Array<{
+      jobId: string;
+      taskLabel: string;
+      position?: number;
+      reason?: AsyncQueuedReason;
+      gateBlock?: { approvalId: string; scope: string; reason?: string };
+      subagentSessionId?: string;
+      logs?: ChatQueueItem["logs"];
+      createdAt: number;
+      sourceType?: string;
+    }>;
     deliveries?: Array<{
       id: string;
       jobId: string;
@@ -261,6 +279,7 @@ export function mergeAsyncPollIntoQueue(
       status: "queued",
       queuePosition: job.position,
       queuedReason: job.reason,
+      gateBlock: job.gateBlock,
       subagentSessionId: job.subagentSessionId,
       logs: job.logs,
       createdAt: job.createdAt,

@@ -17,8 +17,10 @@
  *
  * 铁律落地（AGENTS.md「状态机非法转移拒绝」）：
  * - state 为私有字段，唯一写入口是 transition() 内的转移表校验，外部无法乱设；
- * - open 期间到达的陈旧 recordSuccess/recordFailure（在途请求晚完成）不改变状态，
- *   事件级「非法转移」同样被拒——成功不能提前合闸，失败不重复计时（避免并发失败无限推迟恢复）；
+ * - open 期间到达的陈旧 recordSuccess/recordFailure（在途请求晚完成）不改变状态；
+ * - half-open 放行探测时发放 probeToken；record* 须携带匹配令牌才计入探测结果；
+ *   closed 期发出的迟到成功/失败（无令牌或令牌不匹配）在 half-open 一律忽略，
+ *   避免误合闸 / 误重开，且不清掉真探测的 probeInFlight。
  * - half-open 同时只放行一个探测请求（probeInFlight），并发探测被拒。
  */
 
@@ -33,7 +35,9 @@ export interface CircuitBreakerOptions {
   now?: () => number;
 }
 
-export type CircuitPermit = { allowed: true } | { allowed: false; retryAfterMs: number };
+export type CircuitPermit =
+  | { allowed: true; /** half-open 探测令牌；closed 放行无此字段 */ probeToken?: number }
+  | { allowed: false; retryAfterMs: number };
 
 /** 合法转移表：唯一事实源。key=当前状态，value=允许到达的下一状态 */
 const LEGAL_TRANSITIONS: Readonly<Record<CircuitState, readonly CircuitState[]>> = {
@@ -50,6 +54,9 @@ export class CircuitBreaker {
   private failures = 0;
   private openedAt = 0;
   private probeInFlight = false;
+  /** 当前半开探测纪元令牌；非探测期为 null */
+  private activeProbeToken: number | null = null;
+  private probeEpoch = 0;
 
   private readonly failureThreshold: number;
   private readonly openDurationMs: number;
@@ -86,9 +93,9 @@ export class CircuitBreaker {
 
   /**
    * 执行前闸门：
-   * - closed：放行；
-   * - open：冷却未到期拒绝（附 retryAfterMs）；到期转 half-open 并放行唯一探测；
-   * - half-open：无探测在途则放行探测，否则拒绝（并发探测不许都放过去）。
+   * - closed：放行（无 probeToken）；
+   * - open：冷却未到期拒绝（附 retryAfterMs）；到期转 half-open 并放行唯一探测（附 probeToken）；
+   * - half-open：无探测在途则放行探测（附 probeToken），否则拒绝。
    */
   tryAcquire(): CircuitPermit {
     if (this.state === "closed") return { allowed: true };
@@ -98,10 +105,8 @@ export class CircuitBreaker {
       if (elapsed < this.openDurationMs) {
         return { allowed: false, retryAfterMs: this.openDurationMs - elapsed };
       }
-      // 冷却到期 → half-open，本调用即探测
       if (this.transition("half-open")) {
-        this.probeInFlight = true;
-        return { allowed: true };
+        return { allowed: true, probeToken: this.beginProbe() };
       }
       return { allowed: false, retryAfterMs: this.openDurationMs };
     }
@@ -110,19 +115,19 @@ export class CircuitBreaker {
     if (this.probeInFlight) {
       return { allowed: false, retryAfterMs: this.openDurationMs };
     }
-    this.probeInFlight = true;
-    return { allowed: true };
+    return { allowed: true, probeToken: this.beginProbe() };
   }
 
   /**
    * 记录成功：
-   * - closed：失败计数清零；
-   * - half-open：探测成功 → 合闸 closed，计数清零；
-   * - open：在途陈旧完成——开闸期间的成功不提前合闸（必须经半开探测），忽略。
+   * - closed：失败计数清零（忽略 probeToken）；
+   * - half-open：仅匹配 activeProbeToken 的探测成功 → 合闸；令牌不匹配/缺失 = 迟到事件，忽略；
+   * - open：陈旧完成忽略。
    */
-  recordSuccess(): void {
+  recordSuccess(probeToken?: number): void {
     if (this.state === "half-open") {
-      this.probeInFlight = false;
+      if (!this.isActiveProbe(probeToken)) return;
+      this.clearProbe();
       this.failures = 0;
       this.transition("closed");
       return;
@@ -134,13 +139,14 @@ export class CircuitBreaker {
 
   /**
    * 记录失败：
-   * - closed：计数 +1，达阈值 → 开闸 open；
-   * - half-open：探测失败 → 回 open 并重新计时；
-   * - open：在途陈旧失败——已开闸，忽略（不推迟恢复时间）。
+   * - closed：计数 +1，达阈值 → 开闸；
+   * - half-open：仅匹配令牌的探测失败 → 回 open 并重新计时；令牌不匹配/缺失忽略；
+   * - open：陈旧失败忽略。
    */
-  recordFailure(): void {
+  recordFailure(probeToken?: number): void {
     if (this.state === "half-open") {
-      this.probeInFlight = false;
+      if (!this.isActiveProbe(probeToken)) return;
+      this.clearProbe();
       this.reopen();
       return;
     }
@@ -150,6 +156,27 @@ export class CircuitBreaker {
         this.reopen();
       }
     }
+  }
+
+  private beginProbe(): number {
+    this.probeEpoch += 1;
+    this.activeProbeToken = this.probeEpoch;
+    this.probeInFlight = true;
+    return this.activeProbeToken;
+  }
+
+  private isActiveProbe(probeToken?: number): boolean {
+    return (
+      this.probeInFlight &&
+      this.activeProbeToken !== null &&
+      probeToken !== undefined &&
+      probeToken === this.activeProbeToken
+    );
+  }
+
+  private clearProbe(): void {
+    this.probeInFlight = false;
+    this.activeProbeToken = null;
   }
 
   private reopen(): void {

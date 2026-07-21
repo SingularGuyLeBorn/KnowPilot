@@ -32,8 +32,10 @@ compact:
   enabled: true
   # 占模型 context window 的触发比例（0.1–0.95）；默认 75% 时 macro 摘要
   triggerRatio: 0.75
-  # 压缩后保留的最近消息条数
+  # 压缩后保留的最近消息条数（过少消息时的下限守卫；实际切点见 keepRecentTokens）
   keepRecent: 8
+  # 按 token 粗估保留的最近上下文（默认 20000）；切点不落在 toolCall/toolResult 之间
+  keepRecentTokens: 20000
   # 摘要专用模型（与主对话解耦，避免用付费主模型烧钱压缩）
   # auto = 优先 OpenRouter :free → freellm 网关模型 → 回退主对话模型；也可写死具体 id
   summaryModel: auto
@@ -109,8 +111,21 @@ goal:
   # 裁判模型；auto = OpenRouter strong_free
   judgeModel: auto
 
+# W3：审批 decision-scope / gate 通知冷却（per-Approval.lastNotifiedAt）
+approvalGate:
+  # 同一审批冷却窗口内不重复通知（毫秒）；默认 30min
+  notifyCooldownMs: 1800000
+
 # 超级 Agent 心跳 Loop Contract（控制平面；不替换 ReAct）
 heartbeat:
+  # W2 决策层：cron 只负责唤醒；decisionEnabled=false 可整体回退到旧「到点即跑」
+  decisionEnabled: true
+  # quiet/monitor_quiet_skip 退避 skipTicks 上限（1→3→7→cap）
+  quietCap: 8
+  # 连续 K 次 quiet（无 gate/队列）→ terminal_no_followup，复用 heartbeatSuspendedAt
+  terminalAfterQuiet: 3
+  # wait_user_gate 同 gate 通知冷却（毫秒）
+  gateNotifyCooldownMs: 1800000
   loopContract:
     # 连续 N 轮无新 evidence → handoff=false，跳过后续触发直至 resume
     maxStaleRounds: 3

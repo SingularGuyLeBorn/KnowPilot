@@ -4,15 +4,13 @@
  * 基于 node-cron 的定时触发引擎。每个 Agent 可配置 heartbeat：
  *   { enabled: true, cron: "0 9 * * *", goal: "检查并整理..." }
  *
- * 触发时：
- * 1. 检查 Agent 状态（active/idle 才触发，dormant/deleted 跳过；W12 suspended 暂停态跳过）
- * 2. 检查 LLM 预算（耗尽则跳过 + 记录 budget_exceeded）
- * 3. 找到或创建该 Agent 的心跳专用 session（kind="heartbeat"，与主会话/用户对话隔离）
- * 4. 向心跳 session 注入一条 source="system" 的心跳消息
- * 5. 自动触发 agentStream（无需用户发起）
- * 6. 更新 heartbeat.lastRunAt + lastRunStatus + consecutiveFailures
- * 7. 连续失败达 HEARTBEAT_MAX_CONSECUTIVE_FAILURES → 邮件告警用户一次（#4，复用 send_email 通道）
- *    + W12：暂停该 Agent 心跳（suspended 熔断，见 suspendHeartbeat 注释的恢复语义）
+ * 触发时（W2：cron 只唤醒，决策层决定是否 dispatch）：
+ * 1. 检查 Agent 状态（active/idle 才触发，dormant/deleted 跳过；W12/W2 suspended 跳过）
+ * 2. 决策层 buildHeartbeatDecision（signals 注入）→ Log heartbeat_decision
+ * 3. bounded_delivery/repair 才入池；其余 mode 跳过（含 wait_user_gate 通知冷却）
+ * 4. 找到或创建心跳专用 session → 注入 system 消息 → SwarmOrchestrator 池 dispatch
+ * 5. 更新 heartbeat.lastRunAt/Status/consecutiveFailures（json_set）；decision 子键独立原子写
+ * 6. 连续失败达阈值 → 邮件告警 + suspended；terminal 亦复用 suspended
  *
  * 并发控制：心跳任务走 asyncJobOrchestrator，与手动启动的任务共享并发池（#13）
  *
@@ -27,11 +25,16 @@ import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { getSwarmOrchestrator, type SwarmTaskOutcome } from "./swarmOrchestrator.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
-import { assertLlmBudget } from "./llmBudget.js";
+import { assertLlmBudget, getLlmBudgetStatus } from "./llmBudget.js";
 import { getEventBus, type EntityEventPayload } from "./eventBus.js";
-import { expireStaleApprovals } from "./approvalGate.js";
+import {
+  expireStaleApprovals,
+  notifyPendingApprovalIfCooldownAllows,
+  refreshPendingApprovalScopeCache,
+} from "./approvalGate.js";
 import { createMemoryRepository, decayMemories, consolidateMemories } from "./memoryRepository.js";
 import { sendEmailNotification } from "./emailNotifier.js";
+import { claimExclusiveSessionTaskRun } from "./taskClaim.js";
 import { HEARTBEAT_MAX_CONSECUTIVE_FAILURES } from "@knowpilot/shared";
 import {
   closeLoopGate,
@@ -41,8 +44,29 @@ import {
   shouldSkipHeartbeat,
   type LoopContract,
 } from "./loopContract.js";
+import {
+  bucketUserMessageAt,
+  buildHeartbeatDecision,
+  emptyDecisionState,
+  parseDecisionState,
+  shouldNotifyUserGate,
+  withGateNotifyStamp,
+  type HeartbeatDecision,
+  type HeartbeatDecisionState,
+  computeLastRunProductive,
+} from "./heartbeatDecision.js";
+import { listAllAskUserPending } from "./askUserGate.js";
+import {
+  deriveDecisionScope,
+  deriveRequiredScopesFromTools,
+  filterReadonlyTools,
+} from "./approvalScope.js";
 
 const MAX_CONSECUTIVE_FAILURES = HEARTBEAT_MAX_CONSECUTIVE_FAILURES;
+
+/** repair 模式追加到 system 的固定修复提示（W5 stall；不做结构化 replan 清单） */
+const REPAIR_SYSTEM_HINT =
+  "连续 N 轮无实质进展，请重新评估目标与下一步，只做一个能改变状态的动作";
 
 /** W5：记忆衰减维护任务 cron（每日 03:17，避开心跳高峰） */
 const MEMORY_DECAY_CRON = "17 3 * * *";
@@ -58,6 +82,8 @@ type HeartbeatState = {
   lastRunStatus: string | null;
   consecutiveFailures: number;
   loopContract?: LoopContract;
+  /** W2 决策运行态；parseHeartbeat 必填，测试桩可省略 */
+  decision?: HeartbeatDecisionState;
 };
 
 export class HeartbeatEngine {
@@ -70,6 +96,12 @@ export class HeartbeatEngine {
   // A14：事件驱动 refresh 的防抖句柄与监听器引用（stop 时清理）
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private eventHandler: ((payload: EntityEventPayload<unknown>) => void) | null = null;
+  /** C2：refresh 串行链——新调用挂到上一条之后，禁止交叠 clear/schedule */
+  private refreshChain: Promise<void> = Promise.resolve();
+  /** C2：代际令牌——每次 refresh 递增；过期代际放弃注册并 stop 已建 job */
+  private refreshGeneration = 0;
+  /** @internal 测试注入：在 refresh 的 await 间隙挂起，制造交叠窗口 */
+  private refreshYieldHook: (() => Promise<void>) | null = null;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -151,12 +183,51 @@ export class HeartbeatEngine {
       this.eventHandler = null;
     }
     this.started = false;
+    // 作废在途 refresh：代际递增后旧 refreshInternal 见 mismatch 即放弃注册
+    this.refreshGeneration++;
     console.log("  💓 [HeartbeatEngine] 已停止");
   }
 
-  /** 全量刷新心跳注册（Agent 配置变更后生效） */
+  /** @internal 测试用：注入 refresh await 间隙挂起钩子 */
+  __setRefreshYieldForTests(hook: (() => Promise<void>) | null): void {
+    this.refreshYieldHook = hook;
+  }
+
+  /** @internal 测试用：当前已注册的 Agent 心跳 cron 数 */
+  __getJobCountForTests(): number {
+    return this.jobs.size;
+  }
+
+  /**
+   * 全量刷新心跳注册（Agent 配置变更后生效）。
+   * C2：单条 promise 链串行化 + generation 令牌（链防交错，令牌防 stop/start 泄漏）。
+   * 连续多次 refresh coalesce 为「只落地最新一代」。
+   */
   async refresh(): Promise<void> {
     if (!this.started) return;
+    const gen = ++this.refreshGeneration;
+    const run = () => this.refreshInternal(gen);
+    const next = this.refreshChain.then(run, run);
+    this.refreshChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private async refreshAborted(gen: number): Promise<boolean> {
+    if (!this.started || gen !== this.refreshGeneration) {
+      for (const job of this.jobs.values()) job.stop();
+      this.jobs.clear();
+      return true;
+    }
+    return false;
+  }
+
+  private async refreshInternal(gen: number): Promise<void> {
+    // 已被更新一代取代：直接跳过（coalesce）
+    if (!this.started || gen !== this.refreshGeneration) return;
+
     try {
       // 停止所有现有任务
       for (const job of this.jobs.values()) job.stop();
@@ -170,9 +241,17 @@ export class HeartbeatEngine {
         where: { heartbeatSuspendedAt: { not: null } },
         select: { id: true, heartbeat: true },
       });
+      if (await this.refreshAborted(gen)) return;
+      if (this.refreshYieldHook) await this.refreshYieldHook();
+      if (await this.refreshAborted(gen)) return;
+
       for (const row of suspendedRows) {
+        if (await this.refreshAborted(gen)) return;
         const hb = this.parseHeartbeat(row.heartbeat);
-        if ((hb?.consecutiveFailures ?? 0) < MAX_CONSECUTIVE_FAILURES) {
+        // W2：terminal_no_followup 复用 suspended；配置变更清零 decision.terminalAt 后才可摘除
+        const isTerminal =
+          !!hb?.decision?.terminalAt || hb?.decision?.lastMode === "terminal_no_followup";
+        if ((hb?.consecutiveFailures ?? 0) < MAX_CONSECUTIVE_FAILURES && !isTerminal) {
           await this.prisma.agent.update({
             where: { id: row.id },
             data: { heartbeatSuspendedAt: null },
@@ -181,6 +260,8 @@ export class HeartbeatEngine {
         }
       }
 
+      if (await this.refreshAborted(gen)) return;
+
       // 重新加载
       const agents = await this.prisma.agent.findMany({
         where: {
@@ -188,11 +269,12 @@ export class HeartbeatEngine {
           tier: { in: ["super", "manager", "sub"] },
         },
       });
-
-      // stop() 可能在 await 期间被调用，此时不应再注册新 cron job
-      if (!this.started) return;
+      if (await this.refreshAborted(gen)) return;
+      if (this.refreshYieldHook) await this.refreshYieldHook();
+      if (await this.refreshAborted(gen)) return;
 
       for (const agent of agents) {
+        if (await this.refreshAborted(gen)) return;
         const hb = this.parseHeartbeat(agent.heartbeat);
         if (!hb?.enabled || !hb.cron || !cron.validate(hb.cron)) continue;
 
@@ -297,86 +379,407 @@ export class HeartbeatEngine {
         }
       }
 
-      // 预算检查（#14）
-      try {
-        assertLlmBudget(this.config);
-      } catch {
-        await this.updateHeartbeatStatus(agentId, "budget_exceeded", hb, {
-          evidenceSummary: "LLM 预算耗尽，跳过本轮",
-          applyLoopContract: agent.tier === "super",
-        });
-        console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳跳过（LLM 预算耗尽）`);
-        return;
+      let repairHint = false;
+
+      // W2 决策层：cron 只唤醒；是否 dispatch 由决策 packet 决定
+      if (this.config.heartbeat.decisionEnabled) {
+        const decision = await this.runHeartbeatDecision(agentId, agent.name, hb);
+        if (!decision) return;
+
+        if (decision.mode === "terminal_no_followup" && decision.shouldSuspendTerminal) {
+          await this.suspendHeartbeat(agentId, agent.name);
+          const stallExhausted = decision.reasons.some((r) => r.includes("stall repair exhausted"));
+          if (stallExhausted) {
+            const subject = `[KnowPilot] Agent「${agent.name}」心跳 stall 修复耗尽`;
+            const body =
+              `Agent「${agent.name}」（${agentId}）连续多轮无实质进展，stall repair exhausted，心跳已 suspended。\n` +
+              `决策原因：${decision.reasons.join("；")}\n` +
+              `最近状态：lastMode=${decision.nextState.lastMode}，stallUnproductiveStreak=${decision.nextState.stallUnproductiveStreak}`;
+            const notify = await sendEmailNotification(this.config, this.services.log, {
+              subject,
+              body,
+              agentId,
+            });
+            if ("error" in notify) {
+              console.warn(`  💓 [HeartbeatEngine] stall 通知未发送：${notify.error}`);
+            }
+          }
+          console.warn(
+            `  💓 [HeartbeatEngine] Agent ${agent.name} ${stallExhausted ? "stall 耗尽" : "目标闭合"}（terminal），已 suspended`,
+          );
+          return;
+        }
+
+        if (decision.mode === "bounded_delivery" || decision.mode === "repair") {
+          repairHint = decision.mode === "repair";
+          try {
+            assertLlmBudget(this.config);
+          } catch {
+            await this.updateHeartbeatStatus(agentId, "budget_exceeded", hb, {
+              evidenceSummary: "LLM 预算耗尽，跳过本轮",
+              applyLoopContract: agent.tier === "super",
+            });
+            console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳跳过（LLM 预算耗尽）`);
+            return;
+          }
+        } else if (decision.mode === "wait_user_gate" && decision.safeBypassAllowed) {
+          // W3 safe bypass：mode 仍 wait_user_gate，但允许一次只读 turn（无只读工具则纯等待）
+          const allTools = agent.tools ? agent.tools.split(",").filter(Boolean) : [];
+          const readonlyTools = filterReadonlyTools(allTools);
+          if (readonlyTools.length === 0) {
+            return;
+          }
+          try {
+            assertLlmBudget(this.config);
+          } catch {
+            console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} safe bypass 跳过（LLM 预算耗尽）`);
+            return;
+          }
+          const stamped: HeartbeatDecisionState = {
+            ...decision.nextState,
+            safeBypassUsed: true,
+            safeBypassGateKey: decision.nextState.safeBypassGateKey,
+          };
+          await this.persistDecisionState(agentId, stamped);
+          await this.dispatchHeartbeatRun(agentId, agent, hb, false, { readonlyOnly: true });
+          return;
+        } else {
+          // wait_user_gate / quiet / monitor / skipOnlyDecrement：不 dispatch
+          return;
+        }
+      } else {
+        // 旧路径：到点即跑（decisionEnabled=false 回退）
+        try {
+          assertLlmBudget(this.config);
+        } catch {
+          await this.updateHeartbeatStatus(agentId, "budget_exceeded", hb, {
+            evidenceSummary: "LLM 预算耗尽，跳过本轮",
+            applyLoopContract: agent.tier === "super",
+          });
+          console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 心跳跳过（LLM 预算耗尽）`);
+          return;
+        }
       }
 
-      // 找到或创建心跳专用 session（与 isMainSession 主会话隔离，避免污染用户对话）
-      let session = await this.prisma.chatSession.findFirst({
-        where: { agentId: agent.id, kind: "heartbeat" },
-        orderBy: { updatedAt: "desc" },
-      });
-      if (!session) {
-        session = await this.prisma.chatSession.create({
-          data: {
-            title: `${agent.name} 心跳`,
-            model: agent.heartbeatModel || agent.model,
-            agentId: agent.id,
-            kind: "heartbeat",
-            isMainSession: false,
-            status: "active",
+      await this.dispatchHeartbeatRun(agentId, agent, hb, repairHint);
+    } catch (err: unknown) {
+      console.error(`  ❌ [HeartbeatEngine] Agent ${agentId} 心跳触发失败:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  /**
+   * W2：收集 signals → buildHeartbeatDecision → 持久化 decision 子键 + Log；
+   * wait_user_gate 走通知冷却。返回 decision；调用方据 mode 决定是否 dispatch。
+   */
+  private async runHeartbeatDecision(
+    agentId: string,
+    agentName: string,
+    hb: HeartbeatState,
+  ): Promise<HeartbeatDecision | null> {
+    const signals = await this.collectHeartbeatSignals(agentId, hb);
+    const decision = buildHeartbeatDecision(signals);
+    let nextState = decision.nextState;
+
+    if (decision.mode === "wait_user_gate" && decision.userGate) {
+      const nowMs = Date.now();
+      if (decision.userGate.kind === "approval") {
+        // W3：审批通知走 Approval.lastNotifiedAt 单点冷却
+        const pending = await this.prisma.approval.findMany({
+          where: { status: "pending" },
+          orderBy: { createdAt: "desc" },
+          take: 5,
+          select: {
+            id: true,
+            toolName: true,
+            decisionScope: true,
+            lastNotifiedAt: true,
           },
         });
+        let anyNotified = false;
+        for (const row of pending) {
+          const r = await notifyPendingApprovalIfCooldownAllows(this.services, row, {
+            subject: `[KnowPilot] Agent「${agentName}」心跳等待人工：approval`,
+            body:
+              `Agent「${agentName}」（${agentId}）心跳决策为 wait_user_gate。\n` +
+              `待办：${decision.userGate.summary}\n` +
+              (decision.blockedScopes?.length
+                ? `被堵 scope：${decision.blockedScopes.join(", ")}\n`
+                : "") +
+              `原因：${decision.reasons.join("；")}`,
+          });
+          if (r.notified) anyNotified = true;
+        }
+        if (anyNotified) {
+          const gateKey =
+            decision.userGate.blockedScopes?.join("|") ||
+            `approval:${decision.userGate.summary}`;
+          nextState = withGateNotifyStamp(nextState, gateKey, new Date(nowMs).toISOString());
+        }
+      } else {
+        const notify = shouldNotifyUserGate({
+          decision,
+          cooldownMs: this.config.heartbeat.gateNotifyCooldownMs,
+          nowMs,
+        });
+        if (notify.notify && notify.gateKey) {
+          const nowIso = new Date(nowMs).toISOString();
+          nextState = withGateNotifyStamp(nextState, notify.gateKey, nowIso);
+          const subject = `[KnowPilot] Agent「${agentName}」心跳等待人工：${decision.userGate.kind}`;
+          const body =
+            `Agent「${agentName}」（${agentId}）心跳决策为 wait_user_gate。\n` +
+            `待办：${decision.userGate.summary}\n` +
+            `原因：${decision.reasons.join("；")}`;
+          const result = await sendEmailNotification(this.config, this.services.log, {
+            subject,
+            body,
+            agentId,
+          });
+          if ("error" in result) {
+            console.warn(`  💓 [HeartbeatEngine] gate 通知未发送：${result.error}`);
+          }
+        }
       }
+    }
 
-      // 检查 session 是否正在流式（#9：每个 Agent 同时只处理一个流式任务）
-      const runningTask = await this.prisma.task.findFirst({
-        where: { sessionId: session.id, status: "running" },
+    await this.persistDecisionState(agentId, nextState);
+
+    await this.services.log
+      .create({
+        level: decision.mode === "terminal_no_followup" ? "warn" : "info",
+        component: "HeartbeatEngine",
+        event: "heartbeat_decision",
+        message: `Agent ${agentName} 心跳决策 ${decision.mode}`,
+        metadata: {
+          agentId,
+          mode: decision.mode,
+          reasons: decision.reasons,
+          skipTicks: decision.skipTicks,
+          userGate: decision.userGate ?? null,
+          skipOnlyDecrement: decision.skipOnlyDecrement,
+          shouldSuspendTerminal: decision.shouldSuspendTerminal,
+        },
+      })
+      .catch((err: unknown) => {
+        console.warn(
+          `  💓 [HeartbeatEngine] 写 heartbeat_decision 日志失败:`,
+          err instanceof Error ? err.message : err,
+        );
       });
-      if (runningTask) {
-        console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 正在执行任务，跳过本次心跳`);
-        return;
+
+    if (decision.mode !== "bounded_delivery" && decision.mode !== "repair") {
+      console.warn(
+        `  💓 [HeartbeatEngine] Agent ${agentName} 决策=${decision.mode}，跳过 dispatch（${decision.reasons.join("；")}）`,
+      );
+    }
+    return { ...decision, nextState };
+  }
+
+  /** 收集决策信号（IO 在此；纯函数决策模块不碰 prisma） */
+  private async collectHeartbeatSignals(agentId: string, hb: HeartbeatState) {
+    const sessions = await this.prisma.chatSession.findMany({
+      where: { agentId, status: { not: "deleted" } },
+      select: { id: true },
+      take: 50,
+    });
+    const sessionIds = sessions.map((s) => s.id);
+
+    const [queuedItems, lastRun, lastUserMsg, pendingApprovalRows] = await Promise.all([
+      sessionIds.length === 0
+        ? Promise.resolve(0)
+        : this.prisma.sessionQueueItem.count({
+            where: {
+              sessionId: { in: sessionIds },
+              kind: { in: ["superior", "child_notify"] },
+            },
+          }),
+      this.prisma.run.findFirst({
+        where: { agentId },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, toolCallCount: true, createdAt: true, output: true, status: true },
+      }),
+      this.prisma.chatMessage.findFirst({
+        where: {
+          sessionId: { in: sessionIds.length ? sessionIds : ["__none__"] },
+          role: "user",
+          NOT: { source: "system" },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      }),
+      this.prisma.approval.findMany({
+        where: { status: "pending" },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: { id: true, toolName: true, decisionScope: true, args: true },
+      }),
+    ]);
+
+    // W3：刷新 pending scope 缓存（供调度面 drain 同步判定）
+    void refreshPendingApprovalScopeCache(this.services).catch(() => {});
+
+    const pendingApprovals = pendingApprovalRows.length;
+    const pendingApprovalScopes = pendingApprovalRows.map((r) => {
+      let scope = r.decisionScope;
+      if (!scope) {
+        const args =
+          typeof r.args === "string"
+            ? (JSON.parse(r.args) as Record<string, unknown>)
+            : ((r.args as Record<string, unknown>) ?? {});
+        scope = deriveDecisionScope(r.toolName, args);
       }
+      return { approvalId: r.id, scope };
+    });
 
-      // 注入心跳消息（source="system"）
-      // 走 MessageService.create 以广播 message_upserted（INV-6：消息持久化广播一致性），
-      // 否则心跳消息只在 DB、前端 MessageStore 收不到 → 心跳触发的会话前端看不到触发消息直到刷新。
-      await this.services.message.create({
-        sessionId: session.id,
-        role: "user",
-        content: `[心跳触发] ${hb.goal}`,
-        source: "system",
-      });
+    let openApprovalSummary: string | null = null;
+    if (pendingApprovals > 0) {
+      const latest = pendingApprovalRows[0];
+      openApprovalSummary = latest
+        ? `待批 ${latest.toolName}${latest.decisionScope ? ` [${latest.decisionScope}]` : ""}（共 ${pendingApprovals} 条）`
+        : `有 ${pendingApprovals} 条审批待处理`;
+    }
 
-      const heartbeatModel = agent.heartbeatModel || agent.model;
-      const agentSnapshot = {
-        id: agent.id,
-        model: heartbeatModel,
-        systemPrompt: agent.systemPrompt,
-        tools: agent.tools ? agent.tools.split(",").filter(Boolean) : [],
-        tier: agent.tier,
-        workspaceId: agent.workspaceId,
-        parentId: agent.parentId,
-      };
+    const agentRow = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { tools: true },
+    });
+    const agentTools = agentRow?.tools ? agentRow.tools.split(",").filter(Boolean) : [];
+    const agentRequiredScopes = deriveRequiredScopesFromTools(agentTools);
 
-      // 创建 Task 记录
-      const task = await this.prisma.task.create({
+    const askPending = listAllAskUserPending().filter((p) => p.agentId === agentId);
+    const pendingAskUserSummary =
+      askPending.length > 0 ? askPending[0]!.question.slice(0, 200) : null;
+
+    const budget = getLlmBudgetStatus(this.config);
+
+    return {
+      enabled: hb.enabled,
+      goal: hb.goal,
+      openApprovals: pendingApprovals,
+      pendingAskUser: askPending.length,
+      openApprovalSummary,
+      pendingAskUserSummary,
+      pendingApprovalScopes,
+      agentRequiredScopes,
+      queuedItems,
+      lastRunId: lastRun?.id ?? hb.lastRunAt,
+      lastRunAt: hb.lastRunAt,
+      consecutiveFailures: hb.consecutiveFailures,
+      lastRunProductive: computeLastRunProductive({
+        toolCallCount: lastRun?.toolCallCount ?? 0,
+        runOutput: lastRun?.output,
+        openApprovals: pendingApprovals,
+        pendingAskUser: askPending.length,
+        queuedItems,
+      }),
+      budgetExceeded: budget.exceeded,
+      lastUserMessageAtBucket: bucketUserMessageAt(lastUserMsg?.createdAt?.getTime() ?? null),
+      decisionState: hb.decision ?? emptyDecisionState(),
+      quietCap: this.config.heartbeat.quietCap,
+      terminalAfterQuiet: this.config.heartbeat.terminalAfterQuiet,
+    };
+  }
+
+  /** decision 子键原子更新（json_set，禁止整 heartbeat blob 覆写） */
+  private async persistDecisionState(agentId: string, decision: HeartbeatDecisionState): Promise<void> {
+    const decisionJson = JSON.stringify(decision);
+    try {
+      await this.prisma.$executeRaw`
+        UPDATE "Agent"
+        SET
+          heartbeat = json_set(COALESCE(heartbeat, '{}'), '$.decision', json(${decisionJson})),
+          "updatedAt" = CURRENT_TIMESTAMP
+        WHERE id = ${agentId}
+      `;
+    } catch (err) {
+      console.warn(
+        `  💓 [HeartbeatEngine] 持久化 decision 失败 agent=${agentId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  /** bounded_delivery / repair：建 session → 入池 dispatch（语义与决策层接入前一致） */
+  private async dispatchHeartbeatRun(
+    agentId: string,
+    agent: {
+      id: string;
+      name: string;
+      model: string;
+      systemPrompt: string;
+      tools: string | null;
+      tier: string;
+      workspaceId: string | null;
+      parentId: string | null;
+      heartbeatModel: string | null;
+    },
+    hb: HeartbeatState,
+    repairHint: boolean,
+    opts?: { readonlyOnly?: boolean },
+  ): Promise<void> {
+    let session = await this.prisma.chatSession.findFirst({
+      where: { agentId: agent.id, kind: "heartbeat" },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!session) {
+      session = await this.prisma.chatSession.create({
         data: {
-          name: `[heartbeat] ${agent.name}`,
-          type: "oneshot",
-          status: "running",
-          sessionId: session.id,
-          input: {
-            kind: "heartbeat",
-            agentId: agent.id,
-            sessionId: session.id,
-            goal: hb.goal,
-            agentSnapshot,
-          },
+          title: `${agent.name} 心跳`,
+          model: agent.heartbeatModel || agent.model,
+          agentId: agent.id,
+          kind: "heartbeat",
+          isMainSession: false,
+          status: "active",
         },
       });
+    }
 
-      // W10：心跳执行统一走 SwarmOrchestrator 中介者（并发池/结果聚合/Log 审计公共骨架，#13 并发控制不变）；
-      // LoopContract、预算检查、心跳状态回写等入口语义保留在本闭包内，不搬进中介者。
-      const orchestrator = getSwarmOrchestrator(this.config, this.services);
+    await this.services.message.create({
+      sessionId: session.id,
+      role: "user",
+      content: `[心跳触发] ${hb.goal}`,
+      source: "system",
+    });
+
+    const heartbeatModel = agent.heartbeatModel || agent.model;
+    const allTools = agent.tools ? agent.tools.split(",").filter(Boolean) : [];
+    const tools = opts?.readonlyOnly ? filterReadonlyTools(allTools) : allTools;
+    const agentSnapshot = {
+      id: agent.id,
+      model: heartbeatModel,
+      systemPrompt: agent.systemPrompt,
+      tools,
+      tier: agent.tier,
+      workspaceId: agent.workspaceId,
+      parentId: agent.parentId,
+    };
+
+    const repairSuffix = repairHint ? `\n\n${REPAIR_SYSTEM_HINT}` : "";
+    const bypassSuffix = opts?.readonlyOnly
+      ? "\n\n[safe bypass] 当前为审批 gate 下的一次性只读分析步：仅可使用只读工具，禁止任何写入/删除/git 写操作。"
+      : "";
+
+    const task = await this.prisma.task.create({
+      data: {
+        name: `[heartbeat] ${agent.name}`,
+        type: "oneshot",
+        status: "queued",
+        queuedAt: new Date(),
+        reentrant: false,
+        sessionId: session.id,
+        input: {
+          kind: "heartbeat",
+          agentId: agent.id,
+          sessionId: session.id,
+          goal: hb.goal,
+          agentSnapshot,
+          repair: repairHint,
+          readonlyOnly: opts?.readonlyOnly === true,
+        },
+      },
+    });
+
+    const orchestrator = getSwarmOrchestrator(this.config, this.services);
+    try {
       await orchestrator.dispatch({
         origin: "heartbeat",
         schedule: "pool",
@@ -384,11 +787,28 @@ export class HeartbeatEngine {
         workspaceId: agent.workspaceId ?? null,
         jobId: task.id,
         taskLabel: `[heartbeat] ${agent.name}`,
+        // safe bypass / 心跳只读步：空 requiredScopes，不被写类 gate 堵死
+        requiredScopes: opts?.readonlyOnly ? [] : deriveRequiredScopesFromTools(allTools),
+        tools: allTools,
         execute: async (signal): Promise<SwarmTaskOutcome> => {
+          const claimed = await claimExclusiveSessionTaskRun(this.prisma, task.id, session.id);
+          if (!claimed) {
+            await this.prisma.task.updateMany({
+              where: { id: task.id, status: { in: ["queued", "running"] } },
+              data: {
+                status: "cancelled",
+                finishedAt: new Date(),
+                output: { error: "重叠跳过：同会话已有执行中任务" },
+                delivered: true,
+                deliveredAt: new Date(),
+              },
+            });
+            console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 正在执行任务，跳过本次心跳`);
+            return { status: "failed", error: "重叠跳过" };
+          }
+
           try {
             const { runAgentLoop } = await import("./agentRuntime.js");
-            // W10：删除返回 undefined 的 invokeTrpc 桩——心跳 Agent 与 trigger/async 入口
-            // 共用同一 invokeTrpc 通道，invoke_api 等工具调用拿到真实 tRPC 结果回传 ReAct 循环。
             const invokeTrpc = createTrpcInvoker({ services: this.services, prisma: this.prisma });
 
             const loop = await runAgentLoop({
@@ -396,25 +816,34 @@ export class HeartbeatEngine {
               services: this.services,
               agent: {
                 model: heartbeatModel,
-                systemPrompt: `${agent.systemPrompt}\n\n你因心跳机制被自动唤醒。任务目标：${hb.goal}\n完成后用简洁中文汇总结果。`,
+                systemPrompt:
+                  `${agent.systemPrompt}\n\n你因心跳机制被自动唤醒。任务目标：${hb.goal}\n完成后用简洁中文汇总结果。` +
+                  repairSuffix +
+                  bypassSuffix,
                 tools: agentSnapshot.tools,
               },
               messages: [{ role: "user", content: hb.goal }],
               invokeTrpc,
               signal,
-              // W11：补全 run 上下文，心跳 Run 行可溯源（agent/session/runOrigin）
               sessionId: session.id,
               agentMeta: agentSnapshot,
               runOrigin: "heartbeat",
-              runInput: { heartbeat: true, goal: hb.goal, taskId: task.id },
+              runInput: {
+                heartbeat: true,
+                goal: hb.goal,
+                taskId: task.id,
+                repair: repairHint,
+                readonlyOnly: opts?.readonlyOnly === true,
+              },
+              readonlyOnly: opts?.readonlyOnly === true,
             });
 
             await this.prisma.task.update({
               where: { id: task.id },
               data: {
                 status: "success",
+                finishedAt: new Date(),
                 output: { asyncResult: loop.content, tokenUsage: loop.tokenUsage },
-                // 修复：心跳 Task 标记已投递，避免 pullAsyncDeliveries 误判为待投递异步结果
                 delivered: true,
                 deliveredAt: new Date(),
               },
@@ -432,54 +861,84 @@ export class HeartbeatEngine {
           } catch (err: unknown) {
             const isAbort = err instanceof Error && err.name === "AbortError";
             const reason = isAbort ? "cancelled" : "failed";
-            await this.prisma.task.update({
-              where: { id: task.id },
-              data: {
-                status: "failed",
-                output: { error: err instanceof Error ? err.message : String(err) },
-                // 修复：心跳 Task 失败也标记已投递，避免 pullAsyncDeliveries 误判
-                delivered: true,
-                deliveredAt: new Date(),
-              },
-            }).catch((err) => {
-              console.warn(`  💓 [HeartbeatEngine] 标记心跳任务 failed 失败 task=${task.id}:`, err instanceof Error ? err.message : err);
-            });
+            await this.prisma.task
+              .update({
+                where: { id: task.id },
+                data: {
+                  status: "failed",
+                  finishedAt: new Date(),
+                  output: { error: err instanceof Error ? err.message : String(err) },
+                  delivered: true,
+                  deliveredAt: new Date(),
+                },
+              })
+              .catch((markErr) => {
+                console.warn(
+                  `  💓 [HeartbeatEngine] 标记心跳任务 failed 失败 task=${task.id}:`,
+                  markErr instanceof Error ? markErr.message : markErr,
+                );
+              });
             await this.updateHeartbeatStatus(agentId, reason, hb, {
               evidenceSummary: err instanceof Error ? err.message : String(err),
               taskId: task.id,
               applyLoopContract: agent.tier === "super",
             });
 
-            // 连续失败达阈值 → 邮件告警（#4）。=== 判定：每个失败 streak 只告警一次，
-            // 避免第 4、5… 次失败重复轰炸收件箱；streak 清零（success）后再次达阈值会重新告警
             if (reason === "failed") {
-              const updatedHb = this.parseHeartbeat(
-                (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
+              await this.maybeSuspendAfterFailure(
+                agentId,
+                agent.name,
+                err instanceof Error ? err.message : String(err),
               );
-              if (updatedHb && updatedHb.consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
-                const lastError = err instanceof Error ? err.message : String(err);
-                const notify = await sendEmailNotification(this.config, this.services.log, {
-                  subject: `[KnowPilot] Agent「${agent.name}」心跳连续失败 ${updatedHb.consecutiveFailures} 次`,
-                  body: `Agent「${agent.name}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次，心跳已自动暂停（suspended，已持久化）。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态；修复后保存该 Agent 的心跳配置（cron/goal/心跳模型变更会清零失败计数并自动恢复），重启服务不再自动恢复。`,
-                  agentId,
-                });
-                if ("error" in notify) {
-                  console.warn(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，邮件告警未发送：${notify.error}`);
-                } else {
-                  console.log(`  💓 [HeartbeatEngine] Agent ${agent.name} 连续失败 ${updatedHb.consecutiveFailures} 次，已邮件告警用户`);
-                }
-              }
-              // W12：达阈值（含恢复后再失败）→ 暂停该 Agent 心跳（幂等）
-              if (updatedHb && updatedHb.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                await this.suspendHeartbeat(agentId, agent.name);
-              }
             }
             return { status: "failed", error: err instanceof Error ? err.message : String(err) };
           }
         },
       });
-    } catch (err: unknown) {
-      console.error(`  ❌ [HeartbeatEngine] Agent ${agentId} 心跳触发失败:`, err instanceof Error ? err.message : err);
+    } catch (dispatchErr: unknown) {
+      const msg = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
+      const queueFull = /队列已满|maxQueued/i.test(msg);
+      const errorText = queueFull ? "队列满" : msg;
+      await this.prisma.task.updateMany({
+        where: { id: task.id, status: { in: ["queued", "running"] } },
+        data: {
+          status: "failed",
+          finishedAt: new Date(),
+          output: { error: errorText },
+          delivered: true,
+          deliveredAt: new Date(),
+        },
+      });
+      await this.updateHeartbeatStatus(agentId, "failed", hb, {
+        evidenceSummary: errorText,
+        taskId: task.id,
+        applyLoopContract: agent.tier === "super",
+      });
+      await this.maybeSuspendAfterFailure(agentId, agent.name, errorText);
+      console.error(`  ❌ [HeartbeatEngine] Agent ${agentId} 心跳入池失败:`, msg);
+    }
+  }
+
+  /** 失败 streak 达阈值 → 邮件告警一次 + suspend（幂等） */
+  private async maybeSuspendAfterFailure(agentId: string, agentName: string, lastError: string): Promise<void> {
+    const updatedHb = this.parseHeartbeat(
+      (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
+    );
+    if (!updatedHb) return;
+    if (updatedHb.consecutiveFailures === MAX_CONSECUTIVE_FAILURES) {
+      const notify = await sendEmailNotification(this.config, this.services.log, {
+        subject: `[KnowPilot] Agent「${agentName}」心跳连续失败 ${updatedHb.consecutiveFailures} 次`,
+        body: `Agent「${agentName}」（${agentId}）心跳已连续失败 ${updatedHb.consecutiveFailures} 次，心跳已自动暂停（suspended，已持久化）。\n最近一次错误：${lastError}\n请检查 LLM 配置与该 Agent 状态；修复后保存该 Agent 的心跳配置（cron/goal/心跳模型变更会清零失败计数并自动恢复），重启服务不再自动恢复。`,
+        agentId,
+      });
+      if ("error" in notify) {
+        console.warn(`  💓 [HeartbeatEngine] Agent ${agentName} 连续失败 ${updatedHb.consecutiveFailures} 次，邮件告警未发送：${notify.error}`);
+      } else {
+        console.log(`  💓 [HeartbeatEngine] Agent ${agentName} 连续失败 ${updatedHb.consecutiveFailures} 次，已邮件告警用户`);
+      }
+    }
+    if (updatedHb.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      await this.suspendHeartbeat(agentId, agentName);
     }
   }
 
@@ -494,6 +953,7 @@ export class HeartbeatEngine {
       lastRunStatus: (hb.lastRunStatus as string | null) ?? null,
       consecutiveFailures: Number(hb.consecutiveFailures ?? 0),
       loopContract: hb.loopContract as LoopContract | undefined,
+      decision: parseDecisionState(hb.decision),
     };
   }
 
@@ -578,24 +1038,23 @@ export class HeartbeatEngine {
   async resumeHeartbeat(agentId: string): Promise<{ resumed: boolean }> {
     const row = await this.prisma.agent.findUnique({
       where: { id: agentId },
-      select: { heartbeat: true, heartbeatSuspendedAt: true },
+      select: { heartbeatSuspendedAt: true },
     });
     if (!row) return { resumed: false };
-    const hb = this.parseHeartbeat(row.heartbeat);
-    await this.prisma.agent.update({
-      where: { id: agentId },
-      data: {
-        heartbeatSuspendedAt: null,
-        ...(hb
-          ? {
-              heartbeat: {
-                ...hb,
-                consecutiveFailures: 0,
-              } as object,
-            }
-          : {}),
-      },
-    });
+    // C4/W2：清零 consecutiveFailures + 清空 terminal 决策态，不整 blob 覆写
+    const clearedDecision = JSON.stringify(emptyDecisionState());
+    await this.prisma.$executeRaw`
+      UPDATE "Agent"
+      SET
+        "heartbeatSuspendedAt" = NULL,
+        heartbeat = json_set(
+          COALESCE(heartbeat, '{}'),
+          '$.consecutiveFailures', 0,
+          '$.decision', json(${clearedDecision})
+        ),
+        "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = ${agentId}
+    `;
     await this.refresh();
     return { resumed: true };
   }
@@ -609,6 +1068,25 @@ export class HeartbeatEngine {
     return row?.heartbeatSuspendedAt != null;
   }
 
+  /** @internal 测试用：直接触达运行态写回（验证原子计数） */
+  async __updateHeartbeatStatusForTests(
+    agentId: string,
+    status: "success" | "failed" | "cancelled" | "budget_exceeded",
+    prevHb: HeartbeatState,
+    opts?: {
+      evidenceSummary?: string;
+      taskId?: string;
+      applyLoopContract?: boolean;
+    },
+  ): Promise<void> {
+    return this.updateHeartbeatStatus(agentId, status, prevHb, opts);
+  }
+
+  /**
+   * C4：运行态字段（lastRunAt/Status、consecutiveFailures、可选 loopContract）用 json_set 原子更新，
+   * 禁止整 blob 覆写——配置态（enabled/cron/goal）不被并发写回冲掉；
+   * consecutiveFailures 在 SQL 层自增/清零，杜绝 read-modify-write 丢计数。
+   */
   private async updateHeartbeatStatus(
     agentId: string,
     status: "success" | "failed" | "cancelled" | "budget_exceeded",
@@ -619,47 +1097,62 @@ export class HeartbeatEngine {
       applyLoopContract?: boolean;
     },
   ): Promise<void> {
-    const consecutiveFailures =
-      status === "success" ? 0 : status === "failed" ? prevHb.consecutiveFailures + 1 : prevHb.consecutiveFailures;
+    const nowIso = new Date().toISOString();
+    const agentStatus = status === "success" ? "active" : "idle";
 
-    const current = this.parseHeartbeat(
-      (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
-    );
+    try {
+      // 失败 → SQL 自增；成功 → 置 0；其余保持现值（不读改写）
+      await this.prisma.$executeRaw`
+        UPDATE "Agent"
+        SET
+          heartbeat = json_set(
+            COALESCE(heartbeat, '{}'),
+            '$.lastRunAt', ${nowIso},
+            '$.lastRunStatus', ${status},
+            '$.consecutiveFailures',
+              CASE
+                WHEN ${status} = 'success' THEN 0
+                WHEN ${status} = 'failed' THEN COALESCE(json_extract(heartbeat, '$.consecutiveFailures'), 0) + 1
+                ELSE COALESCE(json_extract(heartbeat, '$.consecutiveFailures'), 0)
+              END
+          ),
+          status = ${agentStatus},
+          "updatedAt" = CURRENT_TIMESTAMP
+        WHERE id = ${agentId}
+      `;
 
-    let loopContract = current?.loopContract ?? prevHb.loopContract;
-    if (opts?.applyLoopContract) {
-      const defaults = this.config.heartbeat.loopContract;
-      const base = ensureLoopContract(prevHb.goal, loopContract, defaults);
-      loopContract = recordEvidence(
-        base,
-        {
-          at: new Date().toISOString(),
-          summary: opts.evidenceSummary ?? status,
-          taskId: opts.taskId,
-          status,
-        },
-        defaults,
-      );
-      if (!loopContract.handoff) {
-        console.warn(`  💓 [HeartbeatEngine] Loop Contract 停止交回: ${loopContract.stoppedReason}`);
+      if (opts?.applyLoopContract) {
+        const current = this.parseHeartbeat(
+          (await this.prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } }))?.heartbeat,
+        );
+        const defaults = this.config.heartbeat.loopContract;
+        const goal = current?.goal || prevHb.goal;
+        const base = ensureLoopContract(goal, current?.loopContract ?? prevHb.loopContract, defaults);
+        const loopContract = recordEvidence(
+          base,
+          {
+            at: nowIso,
+            summary: opts.evidenceSummary ?? status,
+            taskId: opts.taskId,
+            status,
+          },
+          defaults,
+        );
+        if (!loopContract.handoff) {
+          console.warn(`  💓 [HeartbeatEngine] Loop Contract 停止交回: ${loopContract.stoppedReason}`);
+        }
+        const loopJson = JSON.stringify(loopContract);
+        await this.prisma.$executeRaw`
+          UPDATE "Agent"
+          SET
+            heartbeat = json_set(COALESCE(heartbeat, '{}'), '$.loopContract', json(${loopJson})),
+            "updatedAt" = CURRENT_TIMESTAMP
+          WHERE id = ${agentId}
+        `;
       }
-    }
-
-    await this.prisma.agent.update({
-      where: { id: agentId },
-      data: {
-        heartbeat: {
-          ...(current ?? prevHb),
-          lastRunAt: new Date().toISOString(),
-          lastRunStatus: status,
-          consecutiveFailures,
-          ...(loopContract ? { loopContract } : {}),
-        } as object,
-        status: status === "success" ? "active" : "idle",
-      },
-    }).catch((err) => {
+    } catch (err) {
       console.warn(`  💓 [HeartbeatEngine] 更新心跳状态失败 agent=${agentId}:`, err instanceof Error ? err.message : err);
-    });
+    }
   }
 }
 

@@ -14,6 +14,7 @@ import {
   resolveNewChatConfig,
 } from "@/lib/chatConfig";
 import { type Agent, type ChatMessage } from "@knowpilot/shared";
+import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { ChatOverlays } from "@/components/chatOverlays";
 import { ChatSidebar } from "@/components/chatSidebar";
@@ -79,8 +80,7 @@ export function ChatView() {
     ensureSplitWith,
   } = useChatTabs();
 
-  /** 与旧单焦点 API 对齐：焦点 pane 的 session；runStream 新建会话时 openTab */
-  const sessionId = focusedSessionId;
+  /** 与旧单焦点 API 对齐：runStream 新建会话时 openTab */
   const setSessionId = useCallback(
     (id: string | null) => {
       if (id) openTab(id);
@@ -247,8 +247,11 @@ export function ChatView() {
   // 绝不把 focusedSessionId / layout 放进 deps——否则会与下方 tabs→URL 乒乓：
   //   焦点刚切到 B、URL 仍是 A → URL 效应抢回 A，同时 tabs 效应把 URL 写成 B → 下一帧再反过来。
   // 运行时读 ref，避免闭包陈旧；焦点被冲成 null 时另有恢复效应（只在空焦点时 ensure）。
+  // ref 同步放 effect：禁止 render 期写 ref（react-hooks/refs）。
   const focusedSessionIdRef = useRef(focusedSessionId);
-  focusedSessionIdRef.current = focusedSessionId;
+  useEffect(() => {
+    focusedSessionIdRef.current = focusedSessionId;
+  }, [focusedSessionId]);
 
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== focusedSessionIdRef.current) {
@@ -450,6 +453,7 @@ export function ChatView() {
   const createSessionQueueItemMutation = trpc.agent.createSessionQueueItem.useMutation();
   const submitInjectMutation = trpc.agent.submitInject.useMutation();
   const consumeSessionQueueItemMutation = trpc.agent.consumeSessionQueueItem.useMutation();
+  const finalizeSessionQueueItemMutation = trpc.agent.finalizeSessionQueueItem.useMutation();
   const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
   const reorderSessionQueueItemsMutation = trpc.agent.reorderSessionQueueItems.useMutation();
   const ackAsyncDeliveryMutation = trpc.agent.ackAsyncDelivery.useMutation();
@@ -500,7 +504,17 @@ export function ChatView() {
     },
   });
 
-  // 发送队列 hydrate 仅在 ChatSessionPane（按 session 分片），父级不再双写 merge
+  // 【队列水合 · INV-8 ④】E6：切会话与同会话统一走 mergeUserQueueFromDb
+  // （DB 行 + 无 dbId 本地项保留），禁止 sessionChanged 全量替换抹掉迁移中的排队项。
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+    if (!sessionQueueQuery.data) return;
+    sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) =>
+      mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+    );
+    // INV-8 ④：发送队列 hydrate/merge 完成 → 显式 drain（仅 user/child_notify；superior 由服务端起流）
+    streamLifecycleActions.hydrateDone(effectiveSessionId);
+  }, [effectiveSessionId, sessionQueueQuery.data]);
 
   // 【子 Agent 镜像域】pending AgentMessage 幂等镜像入队收拢于 useSubagentMessageMirror（体未改）
   useSubagentMessageMirror({
@@ -787,6 +801,7 @@ export function ChatView() {
     isSessionRunOccupied,
     sessionsItems: sessionsQuery.data?.items,
     consumeSessionQueueItemMutation,
+    finalizeSessionQueueItemMutation,
     ackAsyncDeliveryMutation,
     asyncQueueQuery,
     runStream,

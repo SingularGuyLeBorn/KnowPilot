@@ -77,4 +77,39 @@ describe("ensureMainSession", () => {
     });
     expect(main).toBeTruthy();
   });
+
+  it("SessionService.create(isMainSession) 摘掉同 Agent 旧主会话（负向：旧实现会双主）", async () => {
+    const res = await services.agent.create({
+      name: `E2E-MainSess-demote-${Date.now()}`,
+      model: "deepseek-v4-flash",
+      systemPrompt: "test",
+      tools: [],
+      tier: "sub",
+    });
+    expect(res.success).toBe(true);
+    const agentId = res.data!.id;
+    const autoMain = await prisma.chatSession.findFirst({
+      where: { agentId, isMainSession: true, status: { not: "deleted" } },
+    });
+    expect(autoMain).toBeTruthy();
+
+    const second = await services.session.create({
+      title: "业务子主会话",
+      model: "deepseek-v4-flash",
+      agentId,
+      isMainSession: true,
+      kind: "subagent",
+    } as any);
+    expect(second.success).toBe(true);
+    const secondId = (second.data as { id: string }).id;
+
+    const mains = await prisma.chatSession.findMany({
+      where: { agentId, isMainSession: true, status: { not: "deleted" } },
+    });
+    expect(mains).toHaveLength(1);
+    expect(mains[0].id).toBe(secondId);
+
+    const demoted = await prisma.chatSession.findUnique({ where: { id: autoMain!.id } });
+    expect(demoted!.isMainSession).toBe(false);
+  });
 });

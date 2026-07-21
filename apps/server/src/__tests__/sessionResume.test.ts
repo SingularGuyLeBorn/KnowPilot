@@ -382,7 +382,7 @@ describe("C-3 会话手动恢复（session.resume）", () => {
           void gate;
         });
       });
-      hub.enqueueInject(sessionId, "follow_up", "keep-me");
+      await hub.enqueueInject(sessionId, "follow_up", "keep-me");
 
       // 负向：旧实现 stop 清空队列且不标 paused
       expect(hub.stop(sessionId, "user")).toBe(true);
@@ -391,9 +391,20 @@ describe("C-3 会话手动恢复（session.resume）", () => {
           timeout: 5_000,
         })
         .toBe("paused");
-      expect(hub.takeInject(sessionId, "follow_up")[0]?.content).toBe("keep-me");
+      // A5 后语义：stop 清空内存队列，但注入已持久化；run 收尾统一移交 user 队列（不丢消息）
       resolveRun();
       await hub.waitFor(sessionId);
+      await expect
+        .poll(
+          async () =>
+            (
+              await prisma.sessionQueueItem.findMany({
+                where: { sessionId, content: "keep-me" },
+              })
+            )[0]?.kind,
+          { timeout: 5_000 },
+        )
+        .toBe("user");
 
       const res = await caller.session.resume({ id: sessionId });
       expect(res).toMatchObject({ resumed: true, streamStarted: true });
@@ -540,7 +551,7 @@ describe("C-3 会话手动恢复（session.resume）", () => {
             signal,
           ),
       );
-      expect(started).toBe(true);
+      expect(started).toBe("started");
       expect((await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status).toBe("running");
 
       await hub.waitFor(sessionId);

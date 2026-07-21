@@ -112,6 +112,10 @@ model ChatSession {
   // Auto-Compact：持久化上下文摘要，避免每轮重复调 LLM 压缩
   contextSummary     String?
   contextCompactedAt DateTime?
+  /// 压缩代际（显式列；persist 用 CAS，不再解析摘要文本 vN@）
+  compactGeneration  Int       @default(0)
+  /// 最近一次压缩边界消息 id（迭代摘要起点；不靠解析摘要 marker）
+  compactBoundaryMessageId String?
   /// L1 常驻层（USER.md/AGENT.md）会话冻结快照；首轮注入时写入，会话内不变
   pinnedMemorySnapshot String?
   // session_rotate：轮换到的新会话 id（旧会话 archived 后保留跳转）
@@ -120,6 +124,8 @@ model ChatSession {
   todoState    Json?
   /// Goal / Deep Research 外环状态（standing goal + 裁判续跑）
   goalState    Json?
+  /// 会话树当前叶消息 id（游标；新消息挂到此叶下）
+  activeLeafId String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   // P1-8：外键到 Agent，删 Agent 时 agentId 置 null
@@ -143,6 +149,12 @@ model ChatMessage {
   sessionId    String
   role         String      /// "user" | "assistant" | "system" | "tool"
   content      String
+  /// 会话树：指向父消息 id；首条为 null
+  parentId     String?
+  /// 书签标签（可空）
+  label        String?
+  /// 消息种类：null/普通 | "branch_summary"（分支摘要，默认不进 LLM 上下文）
+  kind         String?
   attachments  Json?       /// ChatImageAttachment[]，用户消息的图片附件
   toolCalls    Json?       /// 调用的工具
   toolResults  Json?       /// 工具执行结果
@@ -153,13 +165,14 @@ model ChatMessage {
   session      ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
+  @@index([sessionId, parentId])
 }
 
 /// 会话级发送队列项（用户消息 + 上级 Agent 消息镜像）
 model SessionQueueItem {
   id             String   @id @default(cuid())
   sessionId      String
-  /// 队列项类型："user"（用户消息）| "superior"（上级 Agent 消息镜像）| "child_notify"（子 Agent 主动通知父会话）
+  /// 队列项类型："user" | "superior" | "child_notify" | "steer" | "follow_up"（后两者为 mid-run 注入，收尾可移交 user）
   kind           String
   /// 消息文本内容
   content        String
@@ -167,7 +180,7 @@ model SessionQueueItem {
   source         String
   /// 来源 Agent 的名字（superior 专用，UI 显示「来自父 Agent · xxx」）
   sourceName     String?
-  /// 关联的 AgentMessage id（kind=superior 时必填，消费时用来 markConsumed）
+  /// 关联的 AgentMessage id（kind=superior 时必填，finalize 时用来 markConsumed）
   agentMessageId String?
   /// 排序权重（越小越靠前），用户拖拽后批量更新
   order          Int      @default(0)
@@ -176,11 +189,14 @@ model SessionQueueItem {
   /// skill 关联（user 消息可能带 skillId）
   skillId        String?
   skillPrompt    String?
+  /// B2 软认领：非空 = 已被 drain 认领、等待 ChatMessage 落地后 finalize 删行；超龄由启动恢复重置
+  claimedAt      DateTime?
   createdAt      DateTime @default(now())
 
   session        ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, order])
+  @@index([claimedAt])
   @@unique([sessionId, agentMessageId])
 }
 
@@ -188,11 +204,13 @@ model SessionQueueItem {
 model SessionStreamEvent {
   id        Int      @id @default(autoincrement())
   sessionId String
+  /// per-session 单调序号（与内存 nextId 同源）；SSE id / resumeAfter / 重放均用此列
+  seq       Int      @default(0)
   eventType String   /// token | reasoning | tool_start | tool_end | intermediate_content | done | error | session_start | round_start
   payload   Json     /// AgentStreamEvent 完整 JSON
   createdAt DateTime @default(now())
 
-  @@index([sessionId, id])
+  @@index([sessionId, seq])
   @@index([createdAt])
 }
 
@@ -281,7 +299,7 @@ model Task {
   id             String    @id @default(cuid())
   name           String
   type           String    /// "cron" | "oneshot" | "async_agent"
-  status         String    /// "queued" | "running" | "success" | "failed" | "cancelled"
+  status         String    /// "queued" | "resuming" | "running" | "success" | "failed" | "cancelled"
   sessionId      String?   /// 异步 Agent 任务归属的 ChatSession id
   delivered      Boolean   @default(false) /// 异步结果是否已投递给前端
   deliveredAt    DateTime? /// 异步结果投递时间
@@ -392,18 +410,23 @@ model Trigger {
 
 /// 审批队列 (Approval)
 model Approval {
-  id           String    @id @default(cuid())
-  toolName     String
-  args         Json      /// 调用参数
-  status       String    @default("pending") /// "pending" | "approved" | "rejected" | "executed"
-  decidedBy    String?   /// 决策者（当前单用户场景固定 "local-user"；超时自动拒绝为 "system-ttl"）
-  decidedAt    DateTime? /// 决策时间
-  decisionNote String?   /// 决策说明（拒绝理由等）
-  executedAt   DateTime? /// 审批操作执行完成时间（软删除标记，记录永不物理删除）
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  toolName       String
+  args           Json      /// 调用参数
+  status         String    @default("pending") /// "pending" | "approved" | "rejected" | "executed"
+  decidedBy      String?   /// 决策者（当前单用户场景固定 "local-user"；超时自动拒绝为 "system-ttl"）
+  decidedAt      DateTime? /// 决策时间
+  decisionNote   String?   /// 决策说明（拒绝理由等）
+  executedAt     DateTime? /// 审批操作执行完成时间（软删除标记，记录永不物理删除）
+  /// W3：决策 scope，格式 <domain>:<verb>:<target>；调度面相交检查用（LLM 不可见）
+  decisionScope  String?
+  /// W3：上次发出 gate 通知的时间；冷却窗口内不重复打扰
+  lastNotifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([status, createdAt])
+  @@index([status, decisionScope])
 }
 
 /// ask_user 提问账本（进程重启后可恢复 pending / 孤儿答复入队）

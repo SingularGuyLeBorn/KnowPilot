@@ -9,6 +9,7 @@
 
 import fs from "fs";
 import path from "path";
+import { randomBytes } from "node:crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { dump } from "js-yaml";
@@ -89,13 +90,20 @@ import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
 // type-only：编译期擦除，不构成运行时循环依赖（resume 的 runner emit 追踪用）
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
+import { deriveDecisionScope } from "./infra/approvalScope.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
-import { resolveSafePath } from "./infra/safePath.js";
+import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
+import { claimTaskRun } from "./infra/taskClaim.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
+
+/** 预生成与 Prisma @default(cuid()) / z.string().cuid() 兼容的 id（文件先行写路径需要） */
+function newEntityId(): string {
+  return `c${Date.now().toString(36)}${randomBytes(8).toString("hex")}`;
+}
 
 /** 安全 JSON.parse：失败时返回 null 并 warn，避免坏数据致 list 整体崩溃。 */
 function safeJsonParse(raw: string): Record<string, unknown> | null {
@@ -362,6 +370,11 @@ export abstract class BaseService<
 
 /**
  * FileSyncService — 文本化本地实体双写文件基类
+ *
+ * 不变量（D1）：文件先成为事实，DB 后投影；文件操作失败则 DB 不动。
+ * create：写文件 → DB create（失败则补偿删文件）
+ * update：写新文件 → DB update → 成功后删旧文件（改名时）
+ * delete：删文件 → DB delete（文件删不掉则报错、不删 DB）
  */
 export abstract class FileSyncService<
   TCreate,
@@ -378,65 +391,222 @@ export abstract class FileSyncService<
     return (this.config.contentPaths as any)[this.contentDirName] || path.join(this.config.contentDir, this.contentDirName);
   }
 
+  /**
+   * D3：slug 消毒 + 最终路径必须落在对应 content 子目录内（兼 projectRoot）。
+   * 允许受控嵌套（如 skill `name/SKILL`），禁止 `..` / 绝对路径 / Windows 保留字符。
+   */
+  protected assertSafeFileSlug(slug: string): string {
+    if (!slug || typeof slug !== "string") {
+      throw new Error(`${this.entityName} 文件 slug 不能为空`);
+    }
+    if (/[\\<>:"|?*\x00-\x1f]/.test(slug) || slug.includes("..")) {
+      throw new Error(`${this.entityName} 非法文件 slug（含保留字符或 ..）：${slug}`);
+    }
+    if (slug.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(slug)) {
+      throw new Error(`${this.entityName} 非法文件 slug（绝对路径）：${slug}`);
+    }
+    const parts = slug.replace(/\\/g, "/").split("/");
+    if (parts.some((p) => !p || p === "." || p === "..")) {
+      throw new Error(`${this.entityName} 非法文件 slug（空段或 . / ..）：${slug}`);
+    }
+    return slug;
+  }
+
+  protected resolveEntityFilePath(slug: string): string {
+    const safe = this.assertSafeFileSlug(slug);
+    const filePath = path.resolve(this.getContentDir(), `${safe}${this.fileExtension}`);
+    assertPathWithinProjectRoot(this.config, filePath);
+    const contentRoot = path.resolve(this.getContentDir());
+    const prefix = contentRoot.endsWith(path.sep) ? contentRoot : contentRoot + path.sep;
+    if (filePath !== contentRoot && !filePath.startsWith(prefix)) {
+      throw new Error(`${this.entityName} 文件路径越出 content/${this.contentDirName}：${slug}`);
+    }
+    return filePath;
+  }
+
   protected writeFile(entity: TEntity): void {
-    const dir = this.getContentDir();
-    const slug = this.getFileSlug(entity);
-    const filePath = path.join(dir, `${slug}${this.fileExtension}`);
+    const filePath = this.resolveEntityFilePath(this.getFileSlug(entity));
     const fileDir = path.dirname(filePath);
     if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
     fs.writeFileSync(filePath, this.serializeToFile(entity), "utf-8");
   }
 
   protected deleteFile(entity: TEntity): void {
-    const dir = this.getContentDir();
     const slug = this.getFileSlug(entity);
-    const filePath = path.join(dir, `${slug}${this.fileExtension}`);
-    if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
+    this.deleteFileBySlug(slug, { required: true });
+  }
+
+  /**
+   * 按 slug 删除实体文件。
+   * required=true（默认）：文件存在但删失败 → 抛错（delete 路径依赖此语义）。
+   * required=false：失败仅 warn（update 改名后清旧文件：不回滚）。
+   */
+  protected deleteFileBySlug(slug: string, opts?: { required?: boolean }): boolean {
+    const required = opts?.required !== false;
+    let filePath: string;
+    try {
+      filePath = this.resolveEntityFilePath(slug);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (required) throw e;
+      console.warn(`[FileSync] 跳过非法 slug 删除 entity=${this.entityName}:`, msg);
+      return false;
+    }
+    if (!fs.existsSync(filePath)) return true;
+    try {
+      fs.unlinkSync(filePath);
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (required) {
+        throw new Error(`删除 ${this.entityName} 文件失败（${filePath}）：${msg}`);
+      }
+      console.warn(`[FileSync] 删除旧文件失败 entity=${this.entityName} slug=${slug}:`, msg);
+      return false;
     }
   }
 
-  protected override async afterCreate(entity: TEntity, input: TCreate): Promise<void> {
-    this.writeFile(entity);
-    // 写完文件后回写 sourceSlug/sourceMtime 到 DB，否则 db:sync 用 sourceSlug 查不到记录
-    // 会误判为新文件并重复创建（曾导致超级 Agent 每次同步都复制一份）
-    await this.syncFileMetaToDb(entity);
-    await super.afterCreate(entity, input);
+  /** 为文件先行路径拼出可 formatEntity 的临时行（含预生成 id） */
+  protected buildProvisionalRaw(data: Record<string, unknown>, existing?: Record<string, unknown>): Record<string, unknown> {
+    const now = new Date();
+    return {
+      ...(existing ?? {}),
+      ...data,
+      id: data.id ?? existing?.id ?? newEntityId(),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
   }
 
-  protected override async afterUpdate(entity: TEntity, existing: any, input: TUpdate): Promise<void> {
-    const oldSlug = this.getExistingFileSlug(existing);
-    const newSlug = this.getFileSlug(entity);
-    if (oldSlug && oldSlug !== newSlug) this.deleteFileBySlug(oldSlug);
-    this.writeFile(entity);
-    await this.syncFileMetaToDb(entity);
-    await super.afterUpdate(entity, existing, input);
+  override async create(input: TCreate): Promise<OperationResult<TEntity>> {
+    const start = Date.now();
+    let writtenSlug: string | null = null;
+    try {
+      await this.validateCreate(input);
+      const data = this.buildCreateData(input);
+      if (!data.id) data.id = newEntityId();
+      const provisional = this.formatEntity(this.buildProvisionalRaw(data));
+      this.writeFile(provisional);
+      writtenSlug = this.getFileSlug(provisional);
+      try {
+        const raw = await this.delegate.create({ data });
+        const entity = this.formatEntity(raw);
+        await this.syncFileMetaToDb(entity);
+        await this.afterCreate(entity, input);
+        return success({
+          data: entity,
+          state: await this.getState(),
+          nextSteps: this.getCreateNextSteps(entity),
+          operation: "create",
+          entity: this.entityName,
+          durationMs: Date.now() - start,
+        });
+      } catch (dbError) {
+        if (writtenSlug) {
+          try {
+            this.deleteFileBySlug(writtenSlug, { required: false });
+          } catch {
+            /* compensate best-effort */
+          }
+        }
+        throw dbError;
+      }
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      const uniqueConflict = failureFromPrismaUnique(error, "创建", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
+      return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
+    }
+  }
+
+  override async update(input: TUpdate): Promise<OperationResult<TEntity>> {
+    const start = Date.now();
+    const { id } = input;
+    let wroteNewSlug: string | null = null;
+    let oldSlug: string | null = null;
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing) return this.buildNotFoundFailure("更新", id, Date.now() - start);
+      await this.validateUpdate(input, existing);
+      const updateData = this.buildUpdateData(input);
+      const provisional = this.formatEntity(this.buildProvisionalRaw(updateData, existing));
+      oldSlug = this.getExistingFileSlug(existing);
+      const newSlug = this.getFileSlug(provisional);
+      this.writeFile(provisional);
+      wroteNewSlug = newSlug;
+      try {
+        const raw = await this.delegate.update({ where: { id }, data: updateData });
+        const entity = this.formatEntity(raw);
+        await this.syncFileMetaToDb(entity);
+        if (oldSlug && oldSlug !== newSlug) {
+          this.deleteFileBySlug(oldSlug, { required: false });
+        }
+        await this.afterUpdate(entity, existing, input);
+        return success({
+          data: entity,
+          state: await this.getState(),
+          operation: "update",
+          entity: this.entityName,
+          durationMs: Date.now() - start,
+        });
+      } catch (dbError) {
+        // DB 失败：若已写出新 slug 文件则补偿删除；同 slug 覆盖写不回滚（文件即事实源）
+        if (wroteNewSlug && oldSlug && wroteNewSlug !== oldSlug) {
+          this.deleteFileBySlug(wroteNewSlug, { required: false });
+        }
+        throw dbError;
+      }
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      const uniqueConflict = failureFromPrismaUnique(error, "更新", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
+      return failureFromError(error, "update", this.entityName, `${this.entityName.toUpperCase()}_UPDATE_FAILED`);
+    }
+  }
+
+  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const start = Date.now();
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing) return this.buildNotFoundFailure("删除", id, Date.now() - start);
+      const slug = this.getExistingFileSlug(existing);
+      if (slug) this.deleteFileBySlug(slug, { required: true });
+      await this.delegate.delete({ where: { id } });
+      await this.afterDelete(existing);
+      return success({
+        data: this.buildDeleteSummary(existing),
+        state: await this.getState(),
+        nextSteps: this.getDeleteNextSteps(),
+        operation: "delete",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      return failureFromError(error, "delete", this.entityName, `${this.entityName.toUpperCase()}_DELETE_FAILED`);
+    }
   }
 
   /**
    * 写文件后把 sourceSlug/sourceMtime 回写到 DB，让 db:sync 能按 sourceSlug 匹配到记录。
-   * 没有 sourceSlug 字段的实体表（如 Post 用 slug）会静默跳过。
+   * Post 无 sourceSlug 列（用 slug 主键），只回写 sourceMtime。
    */
-  private async syncFileMetaToDb(entity: TEntity): Promise<void> {
+  protected async syncFileMetaToDb(entity: TEntity): Promise<void> {
     const id = (entity as any).id;
     if (!id) return;
-    // 只有带 sourceSlug 字段的实体才回写（Post 有 sourceMtime 但无 sourceSlug，不能更新 sourceSlug）
-    if ((entity as any).sourceSlug === undefined) return;
     try {
       const slug = this.getFileSlug(entity);
-      const dir = this.getContentDir();
-      const filePath = path.join(dir, `${slug}${this.fileExtension}`);
+      const filePath = this.resolveEntityFilePath(slug);
       const mtime = fs.existsSync(filePath) ? fs.statSync(filePath).mtime : new Date();
+      if (this.entityName === "post") {
+        await this.delegate.update({ where: { id }, data: { sourceMtime: mtime } });
+        return;
+      }
       await this.delegate.update({ where: { id }, data: { sourceSlug: slug, sourceMtime: mtime } });
-    } catch {
-      // 忽略无 sourceSlug/sourceMtime 字段的实体
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[FileSync] syncFileMetaToDb 失败 entity=${this.entityName} id=${id}:`, msg);
     }
-  }
-
-  protected override async afterDelete(existing: any): Promise<void> {
-    const slug = this.getExistingFileSlug(existing);
-    if (slug) this.deleteFileBySlug(slug);
-    await super.afterDelete(existing);
   }
 
   /* ─── P11：FTS 增量维护辅助（best-effort，失败不阻塞业务） ─── */
@@ -457,14 +627,6 @@ export abstract class FileSyncService<
 
   protected getExistingFileSlug(existing: any): string | null {
     try { return this.getFileSlug(this.formatEntity(existing)); } catch { return null; }
-  }
-
-  private deleteFileBySlug(slug: string): void {
-    const dir = this.getContentDir();
-    const filePath = path.join(dir, `${slug}${this.fileExtension}`);
-    if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
-    }
   }
 }
 
@@ -1041,7 +1203,24 @@ ${entity.systemPrompt}
           input.heartbeatModel !== undefined && input.heartbeatModel !== existing.heartbeatModel;
         if ((heartbeatChanged || modelChanged) && (next ?? prev)) {
           const base = (next ?? prev) as NonNullable<UpdateAgentInput["heartbeat"]>;
-          input = { ...input, heartbeat: { ...base, consecutiveFailures: 0 } };
+          // W2：配置变更同时清零决策 terminal/退避态，供 refresh 摘除 suspended
+          input = {
+            ...input,
+            heartbeat: {
+              ...base,
+              consecutiveFailures: 0,
+              decision: {
+                skipRemaining: 0,
+                resetToken: "",
+                lastMode: null,
+                quietStreak: 0,
+                lastSkipTicks: 0,
+                lastGateNotifyAt: null,
+                lastGateNotifyKey: null,
+                terminalAt: null,
+              },
+            },
+          };
         }
       }
     }
@@ -1290,17 +1469,20 @@ export class McpService extends FileSyncService<CreateMcpServerInput, UpdateMcpS
 
   protected getFileSlug(entity: McpServerEntity): string { return entity.name; }
 
-  // A9：MCP CRUD 后 emit 事件，通知 agentSchemaCache / mcpClient 缓存失效
+  // A9：MCP CRUD 后 emit 事件；D5：FTS 增量挂钩
   protected override async afterCreate(entity: McpServerEntity, input: CreateMcpServerInput): Promise<void> {
     await super.afterCreate(entity, input);
+    await this.syncFts("mcp", entity.id, entity.name, entity.command ?? "");
     this.eventBus.emit("mcp.created", entity);
   }
   protected override async afterUpdate(entity: McpServerEntity, existing: any, input: UpdateMcpServerInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
+    await this.syncFts("mcp", entity.id, entity.name, entity.command ?? "");
     this.eventBus.emit("mcp.updated", entity);
   }
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
+    await this.removeFts("mcp", existing.id);
     this.eventBus.emit("mcp.deleted", existing);
   }
 
@@ -1438,6 +1620,26 @@ export class MemoryService extends FileSyncService<CreateMemoryInput, UpdateMemo
 
   protected getFileSlug(entity: MemoryEntity): string { return entity.id; }
 
+  /** D8：MemoryRepository supersede 事务外文件先行 / 失败补偿 */
+  writeContentFile(entity: MemoryEntity): void {
+    this.writeFile(entity);
+  }
+
+  /** D8：事务失败时补偿删文件 */
+  deleteContentFile(entity: MemoryEntity): void {
+    try {
+      this.deleteFile(entity);
+    } catch (e) {
+      console.warn(`[MemoryService] 补偿删文件失败 id=${entity.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  /** D8：事务成功后补 FTS / sourceMeta */
+  async finalizeContentProjection(entity: MemoryEntity): Promise<void> {
+    await this.syncFileMetaToDb(entity);
+    await this.syncFts("memory", entity.id, entity.type, entity.content);
+  }
+
   // P11：FTS 增量
   protected override async afterCreate(entity: MemoryEntity, input: CreateMemoryInput): Promise<void> {
     await super.afterCreate(entity, input);
@@ -1472,6 +1674,8 @@ export interface SessionEntity {
   rotatedToSessionId?: string | null;
   /** 会话级待办清单（todo_write / todo_read） */
   todoState?: unknown | null;
+  /** 会话树当前叶消息 id */
+  activeLeafId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1532,6 +1736,43 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       ...(taskDescription !== undefined ? { taskDescription } : {}),
       ...(goalState !== undefined ? { goalState: goalState === null ? null : goalState } : {}),
     };
+  }
+
+  /**
+   * P11 不变量：每 Agent 至多一条 isMainSession=true（与 ensureMainSession 同源）。
+   * 新建/提升主会话前摘掉同 Agent 其它主会话标记，避免 prepareAgentRun findFirst
+   * 命中「空壳主会话」而测试/业务占用的是另一条 isMainSession 会话。
+   */
+  private async demoteOtherMainSessions(agentId: string, exceptId?: string): Promise<void> {
+    await this.prisma.chatSession.updateMany({
+      where: {
+        agentId,
+        isMainSession: true,
+        status: { not: "deleted" },
+        ...(exceptId ? { id: { not: exceptId } } : {}),
+      },
+      data: { isMainSession: false },
+    });
+  }
+
+  override async create(input: CreateSessionInput): Promise<OperationResult<SessionEntity>> {
+    if (input.isMainSession && input.agentId) {
+      await this.demoteOtherMainSessions(input.agentId);
+    }
+    return super.create(input);
+  }
+
+  override async update(input: UpdateSessionInput): Promise<OperationResult<SessionEntity>> {
+    if (input.isMainSession === true) {
+      const existing = await this.prisma.chatSession.findUnique({
+        where: { id: input.id },
+        select: { agentId: true },
+      });
+      if (existing?.agentId) {
+        await this.demoteOtherMainSessions(existing.agentId, input.id);
+      }
+    }
+    return super.update(input);
   }
 
   override async getById(id: string): Promise<any> {
@@ -1690,18 +1931,46 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     const { createTrpcInvoker } = await import("./infra/trpcInvoker.js");
     const invokeTrpc = createTrpcInvoker({ services });
     const { chatAgentStream } = await import("./infra/agentStream.js");
+    type AgentStreamEvent = import("./infra/agentStream.js").AgentStreamEvent;
 
     try {
       const started = await hub.startIfNotRunning(input.id, body, async (emit, signal) => {
         // chatAgentStream 自身吞错并 emit error 事件（不 rethrow），
         // 只能追踪事件流判定终局；防御性 catch 兜底未来改动。
         // 用对象持有终局标记：绕过 TS 对闭包捕获变量的窄化（闭包内赋值不被 CFA 追踪）
-        // 终态归位由 Hub.start 统一收口（头注 5）；此处只跑 stream
-        await chatAgentStream(services, config, body, invokeTrpc, emit, signal);
+        const track = { terminal: "error" as "done" | "error" };
+        const trackingEmit = (event: AgentStreamEvent) => {
+          if (event.type === "done") track.terminal = "done";
+          else if (event.type === "error") track.terminal = "error";
+          emit(event);
+        };
+        try {
+          await chatAgentStream(services, config, body, invokeTrpc, trackingEmit, signal);
+        } catch {
+          track.terminal = "error";
+        }
+        // B2：孤儿 ask_user 答复已写入 ChatMessage 后才 finalize 删行；失败保留 claimedAt 交恢复
+        if (orphanAnswer && track.terminal === "done") {
+          await services.sessionQueueItem.finalize(orphanAnswer.id).catch((finErr) => {
+            console.warn(`[session.resume] finalize ask_user 队列项失败 item=${orphanAnswer.id}:`, finErr);
+          });
+        }
+        // 终态归位（runner 内、hub 标 completed 之前，见头注 5）。
+        const nextStatus =
+          track.terminal === "done" ? (session.kind === "subagent" ? "completed" : "active") : "paused";
+        try {
+          await this.prisma.chatSession.updateMany({
+            where: { id: input.id, status: "running" },
+            data: { status: nextStatus },
+          });
+        } catch (settleErr) {
+          // 归位失败不阻塞流本身：R-2 重启首扫会把尸体 running 再标 paused，留人工恢复
+          console.warn(`[session.resume] 终态归位失败 session=${input.id}:`, settleErr);
+        }
       });
 
-      if (!started) {
-        // 已有活跃流接管（如前端断线重连先一步 POST 起流）：竞态幂等，状态维持 running
+      if (started !== "started") {
+        // 已有活跃流接管（busy/duplicate）：竞态幂等，状态维持 running
         return { id: input.id, status: "running", resumed: true, streamStarted: false };
       }
       return { id: input.id, status: "running", resumed: true, streamStarted: true };
@@ -1777,6 +2046,9 @@ export interface MessageEntity {
   sessionId: string;
   role: string;
   content: string;
+  parentId?: string | null;
+  label?: string | null;
+  kind?: string | null;
   attachments: any;
   toolCalls: any;
   toolResults: any;
@@ -1784,6 +2056,23 @@ export interface MessageEntity {
   finishReason?: string | null;
   source?: string;
   createdAt: Date;
+}
+
+function messageUpsertPayload(entity: MessageEntity) {
+  return {
+    id: entity.id,
+    role: entity.role,
+    content: entity.content,
+    parentId: entity.parentId ?? null,
+    label: entity.label ?? null,
+    kind: entity.kind ?? null,
+    toolCalls: entity.toolCalls ?? undefined,
+    toolResults: entity.toolResults ?? undefined,
+    tokenUsage: entity.tokenUsage ?? undefined,
+    attachments: entity.attachments ?? undefined,
+    source: entity.source ?? null,
+    createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
+  };
 }
 
 export class MessageService extends BaseService<CreateMessageInput, UpdateMessageInput, ListMessagesInput, MessageEntity> {
@@ -1799,36 +2088,55 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   protected override get defaultOrderBy(): string { return "createdAt"; }
   protected override get defaultOrder(): "asc" | "desc" { return "asc"; }
 
-  protected override async afterCreate(entity: MessageEntity, input: CreateMessageInput): Promise<void> {
-    // 每次写入消息都把父会话顶到列表最前，确保后台更新/子 Agent 返回后父会话能被立即找到。
+  /**
+   * W1：消息 create + activeLeafId 推进必须同事务（appendChatMessage）。
+   * 禁止走裸 delegate.create，否则会话树断链。
+   */
+  override async create(input: CreateMessageInput): Promise<OperationResult<MessageEntity>> {
+    const start = Date.now();
     try {
-      await this.prisma.chatSession.update({
-        where: { id: input.sessionId },
-        data: { updatedAt: new Date() },
+      await this.validateCreate(input);
+      const { appendChatMessage } = await import("./infra/chatTree.js");
+      const raw = await appendChatMessage(this.prisma, {
+        id: input.id,
+        sessionId: input.sessionId,
+        role: input.role,
+        content: input.content,
+        attachments: input.attachments,
+        toolCalls: input.toolCalls,
+        toolResults: input.toolResults,
+        tokenUsage: input.tokenUsage,
+        finishReason: input.finishReason,
+        source: input.source,
       });
-    } catch {
-      // 会话可能已被删除，忽略
+      const entity = this.formatEntity(raw);
+      await this.afterCreate(entity, input);
+      return success({
+        data: entity,
+        state: await this.getState(),
+        nextSteps: this.getCreateNextSteps(entity),
+        operation: "create",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      const uniqueConflict = failureFromPrismaUnique(error, "创建", this.entityName);
+      if (uniqueConflict) return uniqueConflict;
+      return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
     }
+  }
+
+  protected override async afterCreate(entity: MessageEntity, input: CreateMessageInput): Promise<void> {
+    // updatedAt / activeLeafId 已由 appendChatMessage 同事务推进；此处只广播。
     await super.afterCreate(entity, input);
-    // 广播 message_upserted：前端 reducer 直接 patch messages[]，不再靠 invalidate→refetch 闪烁刷新。
-    // 动态 import 避免与 sessionStreamHub 循环依赖。
     try {
       const { getStreamHub } = await import("./infra/sessionStreamHub.js");
       const hub = getStreamHub();
       hub?.pushExternalEvent(entity.sessionId, {
         type: "message_upserted",
         sessionId: entity.sessionId,
-        message: {
-          id: entity.id,
-          role: entity.role,
-          content: entity.content,
-          toolCalls: entity.toolCalls ?? undefined,
-          toolResults: entity.toolResults ?? undefined,
-          tokenUsage: entity.tokenUsage ?? undefined,
-          attachments: entity.attachments ?? undefined,
-          source: entity.source ?? null,
-          createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
-        },
+        message: messageUpsertPayload(entity),
       });
     } catch {
       /* StreamHub 未初始化或会话已清理，忽略 */
@@ -1837,28 +2145,25 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
 
   protected override async afterUpdate(entity: MessageEntity, _existing: any, _input: UpdateMessageInput): Promise<void> {
     await super.afterUpdate(entity, _existing, _input);
-    // update（如 switchVersion）也推 message_upserted，前端 MessageStore 直接 patch
     try {
       const { getStreamHub } = await import("./infra/sessionStreamHub.js");
       const hub = getStreamHub();
       hub?.pushExternalEvent(entity.sessionId, {
         type: "message_upserted",
         sessionId: entity.sessionId,
-        message: {
-          id: entity.id,
-          role: entity.role,
-          content: entity.content,
-          toolCalls: entity.toolCalls ?? undefined,
-          toolResults: entity.toolResults ?? undefined,
-          tokenUsage: entity.tokenUsage ?? undefined,
-          attachments: entity.attachments ?? undefined,
-          source: entity.source ?? null,
-          createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : String(entity.createdAt),
-        },
+        message: messageUpsertPayload(entity),
       });
     } catch {
       /* ignore */
     }
+  }
+
+  async setLabel(input: { messageId: string; label: string | null }): Promise<MessageEntity> {
+    const { setMessageLabel } = await import("./infra/chatTree.js");
+    const updated = await setMessageLabel(this.prisma, input);
+    const entity = this.formatEntity(updated);
+    await this.afterUpdate(entity, updated, { id: input.messageId } as UpdateMessageInput);
+    return entity;
   }
 
   protected override async afterDelete(existing: any): Promise<void> {
@@ -1880,56 +2185,86 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
   }
 
   /**
-   * 构建 LLM 上下文专用历史：
+   * 构建 LLM 上下文专用历史（仅活跃路径，排除 branch_summary）：
    * - 有 since（通常 = contextCompactedAt）：取该时刻起的最近 limit 条
-   * - 无 since：取全会话最近 limit 条（避免 page=1 asc 拿到最旧页）
-   * 页面展示仍走 listForChat，压缩不删气泡。
+   * - 无 since：取活跃路径最近 limit 条
    */
   async listForLlmContext(input: {
     sessionId: string;
     since?: Date | string | null;
     limit?: number;
   }): Promise<MessageEntity[]> {
+    const { resolveActivePath, BRANCH_SUMMARY_KIND } = await import("./infra/chatTree.js");
     const limit = Math.min(Math.max(input.limit ?? 200, 1), 500);
     const since = input.since ? new Date(input.since) : null;
-    const where =
-      since && !Number.isNaN(since.getTime())
-        ? { sessionId: input.sessionId, createdAt: { gte: since } }
-        : { sessionId: input.sessionId };
-    const items = await this.prisma.chatMessage.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
+    const session = await this.prisma.chatSession.findUnique({
+      where: { id: input.sessionId },
+      select: { activeLeafId: true },
     });
-    items.reverse();
-    return items.map((i: any) => this.formatEntity(i));
+    const all = await this.prisma.chatMessage.findMany({
+      where: { sessionId: input.sessionId },
+      orderBy: { createdAt: "asc" },
+    });
+    let path = resolveActivePath(all, session?.activeLeafId).filter(
+      (m) => m.kind !== BRANCH_SUMMARY_KIND,
+    );
+    if (since && !Number.isNaN(since.getTime())) {
+      path = path.filter((m) => m.createdAt >= since);
+    }
+    if (path.length > limit) path = path.slice(-limit);
+    return path.map((i: any) => this.formatEntity(i));
   }
 
-  // P0-1 彻底解耦：Chat 专用 cursor 无限查询。
-  // 无 cursor：返最近 limit 条（asc）。有 cursor：返早于 cursor(消息 id) 的 limit 条（asc）。
-  // nextCursor = 本页最旧消息 id（供下页继续向上翻），items.length < limit 时无 nextCursor（已到顶）。
-  async listForChat(input: { sessionId: string; cursor?: string; limit?: number }): Promise<{ items: MessageEntity[]; nextCursor?: string }> {
+  /**
+   * Chat 专用 cursor 无限查询（默认活跃路径 + 路径上挂的 branch_summary）。
+   * tree:true 调试模式返回全树按 createdAt。
+   */
+  async listForChat(input: {
+    sessionId: string;
+    cursor?: string;
+    limit?: number;
+    tree?: boolean;
+  }): Promise<{ items: MessageEntity[]; nextCursor?: string }> {
     const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-    let items: any[];
-    if (input.cursor) {
-      const cur = await this.prisma.chatMessage.findUnique({ where: { id: input.cursor }, select: { createdAt: true } });
-      if (!cur) return { items: [] };
-      items = await this.prisma.chatMessage.findMany({
-        where: { sessionId: input.sessionId, createdAt: { lt: cur.createdAt } },
-        orderBy: { createdAt: "desc" },
-        take: limit,
+    let ordered: any[];
+
+    if (input.tree) {
+      ordered = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId },
+        orderBy: { createdAt: "asc" },
       });
     } else {
-      items = await this.prisma.chatMessage.findMany({
-        where: { sessionId: input.sessionId },
-        orderBy: { createdAt: "desc" },
-        take: limit,
+      const { resolveActivePathWithSummaries } = await import("./infra/chatTree.js");
+      const session = await this.prisma.chatSession.findUnique({
+        where: { id: input.sessionId },
+        select: { activeLeafId: true },
       });
+      const all = await this.prisma.chatMessage.findMany({
+        where: { sessionId: input.sessionId },
+        orderBy: { createdAt: "asc" },
+      });
+      ordered = resolveActivePathWithSummaries(all, session?.activeLeafId);
     }
-    items.reverse(); // asc，便于前端按序渲染
-    const formatted = items.map((i: any) => this.formatEntity(i));
-    const nextCursor = formatted.length >= limit ? formatted[0]?.id : undefined;
-    return { items: formatted, nextCursor };
+
+    let window: any[];
+    if (input.cursor) {
+      const idx = ordered.findIndex((m) => m.id === input.cursor);
+      if (idx <= 0) return { items: [] };
+      const start = Math.max(0, idx - limit);
+      window = ordered.slice(start, idx);
+    } else {
+      window = ordered.slice(-limit);
+    }
+
+    const formatted = window.map((i: any) => this.formatEntity(i));
+    const nextCursor = formatted.length >= limit && ordered[0]?.id !== formatted[0]?.id
+      ? formatted[0]?.id
+      : formatted.length >= limit
+        ? formatted[0]?.id
+        : undefined;
+    // 已到顶：本页覆盖到 ordered[0]
+    const reachedTop = formatted.length > 0 && formatted[0]?.id === ordered[0]?.id;
+    return { items: formatted, nextCursor: reachedTop ? undefined : nextCursor };
   }
 }
 
@@ -1952,8 +2287,12 @@ export interface SessionQueueItemEntity {
   attachments: any;
   skillId: string | null;
   skillPrompt: string | null;
+  claimedAt: Date | null;
   createdAt: Date;
 }
+
+/** B2：软认领超龄阈值——claimedAt 超过此时长且未 finalize，启动恢复重置为可重投 */
+export const SESSION_QUEUE_CLAIM_STALE_MS = 120_000;
 
 export class SessionQueueItemService extends BaseService<
   CreateSessionQueueItemInput,
@@ -2031,13 +2370,16 @@ export class SessionQueueItemService extends BaseService<
         }
       }
 
-      const maxOrder = await this.prisma.sessionQueueItem.aggregate({
-        where: { sessionId: input.sessionId },
-        _max: { order: true },
-      });
-      const order = (maxOrder._max.order ?? -10) + 10;
-      const raw = await this.prisma.sessionQueueItem.create({
-        data: { ...this.buildCreateData(input), order },
+      // B7：maxOrder + create 同事务串行化；@@unique([sessionId, agentMessageId]) 兜底并发双建
+      const raw = await this.prisma.$transaction(async (tx) => {
+        const maxOrder = await tx.sessionQueueItem.aggregate({
+          where: { sessionId: input.sessionId },
+          _max: { order: true },
+        });
+        const order = (maxOrder._max.order ?? -10) + 10;
+        return tx.sessionQueueItem.create({
+          data: { ...this.buildCreateData(input), order },
+        });
       });
       const entity = this.formatEntity(raw);
       await this.afterCreate(entity, input);
@@ -2049,6 +2391,23 @@ export class SessionQueueItemService extends BaseService<
         durationMs: Date.now() - start,
       });
     } catch (error) {
+      // B7：唯一约束冲突 → 幂等返回已有行（服务端 busy + 前端镜像并发）
+      const code = (error as { code?: string })?.code;
+      if (code === "P2002" && input.kind === "superior" && input.agentMessageId) {
+        const existing = await this.prisma.sessionQueueItem.findFirst({
+          where: { sessionId: input.sessionId, agentMessageId: input.agentMessageId },
+        });
+        if (existing) {
+          const entity = this.formatEntity(existing);
+          await this.pushQueueUpdate(entity.sessionId, entity.kind);
+          return success({
+            data: entity,
+            operation: "create",
+            entity: this.entityName,
+            durationMs: Date.now() - start,
+          });
+        }
+      }
       return failureFromError(error, "create", this.entityName, `${this.entityName.toUpperCase()}_CREATE_FAILED`);
     }
   }
@@ -2087,10 +2446,10 @@ export class SessionQueueItemService extends BaseService<
     return true;
   }
 
-  /** 按 session 列出全部队列项（按 order 升序），供 Chat UI 一次拉齐 */
+  /** 按 session 列出未认领队列项（按 order 升序）；已软认领项对 UI/drain 不可见 */
   async listBySession(sessionId: string): Promise<SessionQueueItemEntity[]> {
     const rows = await this.prisma.sessionQueueItem.findMany({
-      where: { sessionId },
+      where: { sessionId, claimedAt: null },
       orderBy: { order: "asc" },
     });
     return rows.map((r) => this.formatEntity(r));
@@ -2112,23 +2471,43 @@ export class SessionQueueItemService extends BaseService<
   }
 
   /**
-   * 消费一条队列项（软认领）：删除 SessionQueueItem + 标记 AgentMessage consumed（如适用）。
-   * 删除即认领——item 不存在或并发落选（前端 drain 与服务端 superior drain 同抢一条）时
-   * 返回 claimed:false，落选方静默跳过，不抛错。
+   * B2 软认领：条件写置 claimedAt（不再删行）。
+   * 并发双 consume 落选方 claimed:false；行对 listBySession 不可见，待 ChatMessage 落地后 finalize 删行。
    */
   async consume(id: string): Promise<{ success: boolean; claimed: boolean }> {
     const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
     if (!item) {
       return { success: true, claimed: false };
     }
+    if (item.claimedAt) {
+      return { success: true, claimed: false };
+    }
 
-    const claimed = await this.prisma.$transaction(async (tx) => {
-      // 删除即认领：deleteMany 原子返回受影响行数，并发双 consume 落选方 count=0
-      const del = await tx.sessionQueueItem.deleteMany({ where: { id } });
+    const claimed = await this.prisma.sessionQueueItem.updateMany({
+      where: { id, claimedAt: null },
+      data: { claimedAt: new Date() },
+    });
+    if (claimed.count > 0) {
+      await this.pushQueueUpdate(item.sessionId, item.kind);
+    }
+    return { success: true, claimed: claimed.count > 0 };
+  }
+
+  /**
+   * B2 落地确认：ChatMessage 已写入后删行 + 标记关联 AgentMessage consumed。
+   * 幂等——行已删 / 未认领均 success；对外不暴露中间态。
+   */
+  async finalize(id: string): Promise<{ success: boolean; finalized: boolean }> {
+    const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
+    if (!item) {
+      return { success: true, finalized: false };
+    }
+
+    const finalized = await this.prisma.$transaction(async (tx) => {
+      const del = await tx.sessionQueueItem.deleteMany({ where: { id, claimedAt: { not: null } } });
       if (del.count === 0) return false;
       if (item.kind === "superior" && item.agentMessageId) {
-        // W16a-1：delivered → consumed 不动 deliveredAt（CLAIM 真账）；pending 直跳 consumed 兜底补齐。
-        // 已 consumed / 已删除均为幂等 no-op。
+        // W16a-1：delivered → consumed 不动 deliveredAt；pending 直跳 consumed 兜底补齐。
         const fromDelivered = await tx.agentMessage.updateMany({
           where: { id: item.agentMessageId, status: "delivered" },
           data: { status: "consumed" },
@@ -2142,10 +2521,23 @@ export class SessionQueueItemService extends BaseService<
       }
       return true;
     });
-    if (claimed) {
+    if (finalized) {
       await this.pushQueueUpdate(item.sessionId, item.kind);
     }
-    return { success: true, claimed };
+    return { success: true, finalized };
+  }
+
+  /**
+   * B2 启动恢复：扫 claimedAt 超龄且未 finalize 的项，重置 claimedAt=null 重投。
+   * 不变量：队列项只能在内容已进 ChatMessage 之后消失——崩溃窗口可恢复。
+   */
+  async releaseStaleClaims(staleMs = SESSION_QUEUE_CLAIM_STALE_MS): Promise<number> {
+    const cutoff = new Date(Date.now() - Math.max(0, staleMs));
+    const result = await this.prisma.sessionQueueItem.updateMany({
+      where: { claimedAt: { not: null, lt: cutoff } },
+      data: { claimedAt: null },
+    });
+    return result.count;
   }
 
   /** 批量重排序：按 orderedIds 顺序依次赋 order = index * 10 */
@@ -2326,7 +2718,7 @@ export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, L
   protected buildCreateData(input: CreateTaskInput) { return input; }
   protected buildUpdateData(input: UpdateTaskInput) { const { id: _id, ...data } = input; return data; }
 
-  /** 立即执行任务（db:sync 等） */
+  /** 立即执行任务（db:sync 等）；认领单点 = claimTaskRun，落选如实返回「正在运行」 */
   async run(id: string): Promise<OperationResult<any>> {
     let task: { id: string; name: string; type: string; input?: unknown };
     try {
@@ -2344,7 +2736,19 @@ export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, L
       });
     }
 
-    await this.update({ id, status: "running" });
+    const claimed = await claimTaskRun(this.prisma, id);
+    if (!claimed) {
+      return failure({
+        code: "TASK_ALREADY_RUNNING",
+        message: `任务「${task.name}」正在运行，请等待完成后再触发。`,
+        details: { id },
+        suggestion: "同一任务同时只允许一个执行体；稍后重试或先取消当前运行。",
+        retryable: true,
+        operation: "run",
+        entity: this.entityName,
+        durationMs: 0,
+      });
+    }
 
     try {
       const { executeTaskJob } = await import("./infra/taskRunner.js");
@@ -2491,7 +2895,18 @@ export class ApprovalService extends BaseService<CreateApprovalInput, UpdateAppr
     if (input.status) where.status = input.status;
     return where;
   }
-  protected buildCreateData(input: CreateApprovalInput) { return input; }
+  protected buildCreateData(input: CreateApprovalInput) {
+    // W3：服务端派生 decisionScope（LLM/客户端不可传业务语义；已有则保留）
+    const args =
+      input.args && typeof input.args === "object" && !Array.isArray(input.args)
+        ? (input.args as Record<string, unknown>)
+        : {};
+    const decisionScope =
+      typeof input.decisionScope === "string" && input.decisionScope.trim()
+        ? input.decisionScope.trim()
+        : deriveDecisionScope(input.toolName, args);
+    return { ...input, decisionScope };
+  }
   protected buildUpdateData(input: UpdateApprovalInput) {
     const { id: _id, ...data } = input;
     // 审批决策审计：进入决策终态（approved/rejected）时统一盖决策者与时间戳。
@@ -2558,8 +2973,8 @@ export class RunService extends BaseService<CreateRunInput, UpdateRunInput, List
   }
   protected buildCreateData(input: CreateRunInput) { return input; }
   protected buildUpdateData(input: UpdateRunInput) { const { id: _id, ...data } = input; return data; }
-  // P2-5：Runs 列表 UI 只需 status/agent/session/耗时/token/时间，裁剪 input/output/toolCalls/error 等大 JSON；
-  // 详情走 getById 取全量。
+  // P2-5：Runs 列表 UI 只需 status/agent/session/耗时/token/时间；
+  // W3：保留 output（phase/blockedScopes）供 awaiting_human 卡展示被堵 scope；input/toolCalls/error 仍裁剪。
   protected override getListSelect(): any {
     return {
       id: true,
@@ -2569,6 +2984,7 @@ export class RunService extends BaseService<CreateRunInput, UpdateRunInput, List
       durationMs: true,
       toolCallCount: true,
       tokenUsage: true,
+      output: true,
       createdAt: true,
       updatedAt: true,
     };
@@ -2624,6 +3040,20 @@ ${entity.content}
   }
 
   protected getFileSlug(entity: any): string { return entity.name; }
+
+  // D5：Prompt FTS 增量挂钩（与 syncer upsert 对齐）
+  protected override async afterCreate(entity: any, input: CreatePromptInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    await this.syncFts("prompt", entity.id, entity.name, `${entity.description ?? ""}\n${entity.content ?? ""}`);
+  }
+  protected override async afterUpdate(entity: any, existing: any, input: UpdatePromptInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    await this.syncFts("prompt", entity.id, entity.name, `${entity.description ?? ""}\n${entity.content ?? ""}`);
+  }
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    await this.removeFts("prompt", existing.id);
+  }
 
   protected override async validateCreate(input: CreatePromptInput): Promise<void> {
     await this.assertUnique("name", input.name, "创建");

@@ -70,4 +70,29 @@ describe("mergeUserQueueFromDb", () => {
     expect(merged).toEqual([]);
     expect(mergeUserQueueFromDb([a], staleDb, new Set(["db-a"]))).toEqual([]);
   });
+
+  it("E6：sessionChanged 快照先于 dbId 回填 → 本地项保留且可 patch", () => {
+    // 模拟 NEW_STREAM_KEY 迁移后、createSessionQueueItem 尚未回填 dbId 的窗口
+    const localPending: ChatQueueItem = {
+      id: "q-migrated",
+      kind: "user",
+      text: "迁移来的排队",
+      status: "pending",
+      createdAt: Date.now(),
+      source: "user",
+    };
+    // 旧实现 sessionChanged 会 setUserQueue(DB 全量) 抹掉 localPending
+    const sessionChangedSnapshot = mergeUserQueueFromDb(
+      [localPending],
+      [row({ id: "db-sup", content: "上级指令", kind: "superior" })],
+    );
+    expect(sessionChangedSnapshot.find((i) => i.id === "q-migrated")).toBeDefined();
+    expect(sessionChangedSnapshot.find((i) => i.id === "q-migrated")?.dbId).toBeUndefined();
+
+    // 回填 patch：按本地 id 找得到项并写上 dbId
+    const afterBackfill = sessionChangedSnapshot.map((i) =>
+      i.id === "q-migrated" ? { ...i, dbId: "db-new" } : i,
+    );
+    expect(afterBackfill.find((i) => i.id === "q-migrated")?.dbId).toBe("db-new");
+  });
 });

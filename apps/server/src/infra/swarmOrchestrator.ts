@@ -24,6 +24,7 @@ import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { getAsyncJobOrchestrator } from "./asyncJobOrchestrator.js";
 import { checkToolPermission, type PermissionCheckContext } from "./swarmPermissionGuard.js";
+import { deriveRequiredScopesFromTools } from "./approvalScope.js";
 
 /** spawn 去重窗口：同 (agentId, hash(taskText)) 在窗口内重复 dispatch 直接返回已有 task */
 export const SWARM_SPAWN_DEDUP_WINDOW_MS = 60_000;
@@ -61,6 +62,13 @@ export interface SwarmTaskSpec {
   /** 透传 Workspace 行级异步槽上限 */
   workspaceSlotQuota?: number;
   metadata?: { subagentSessionId?: string };
+  /**
+   * W3：工作项 requiredScopes。缺省时可由 tools 静态推导；
+   * 与 pending approvals.decisionScope 相交 → 池排队 reason=gate。
+   */
+  requiredScopes?: string[];
+  /** W3：用于缺省推导 requiredScopes 的工具名列表 */
+  tools?: string[];
   /**
    * 权限校验（swarmPermissionGuard.checkToolPermission 单点复用）。
    * 缺省 = 系统入口（heartbeat/trigger），无调用方 Agent，免校验。
@@ -232,6 +240,9 @@ export class SwarmOrchestrator {
 
     // pool：共享 AsyncJobOrchestrator 并发池
     const pool = getAsyncJobOrchestrator(this.deps.config);
+    const requiredScopes =
+      spec.requiredScopes ??
+      (spec.tools && spec.tools.length > 0 ? deriveRequiredScopesFromTools(spec.tools) : undefined);
     try {
       pool.enqueue({
         jobId: finalJobId,
@@ -241,6 +252,7 @@ export class SwarmOrchestrator {
         timeoutMs: spec.timeoutMs,
         slotClass: spec.slotClass,
         metadata: resolvedMetadata,
+        requiredScopes,
         execute: async (signal) => {
           let outcome: SwarmTaskOutcome;
           try {

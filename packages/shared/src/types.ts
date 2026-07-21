@@ -66,6 +66,25 @@ export interface LoopContract {
   stoppedReason: string | null;
 }
 
+/** W2：心跳决策运行态（Agent.heartbeat.decision） */
+export interface HeartbeatDecisionState {
+  skipRemaining: number;
+  resetToken: string;
+  lastMode:
+    | "bounded_delivery"
+    | "wait_user_gate"
+    | "monitor_quiet_skip"
+    | "quiet"
+    | "repair"
+    | "terminal_no_followup"
+    | null;
+  quietStreak: number;
+  lastSkipTicks: number;
+  lastGateNotifyAt?: string | null;
+  lastGateNotifyKey?: string | null;
+  terminalAt?: string | null;
+}
+
 export interface HeartbeatConfig {
   enabled: boolean;
   cron: string;
@@ -74,6 +93,7 @@ export interface HeartbeatConfig {
   lastRunStatus: string | null;
   consecutiveFailures: number;
   loopContract?: LoopContract;
+  decision?: HeartbeatDecisionState;
 }
 
 /** Agent 间消息 */
@@ -199,6 +219,8 @@ export interface ChatSession {
   rotatedToSessionId?: string | null;
   /** Goal / Deep Research 外环 */
   goalState?: import("./schemas.js").SessionGoalState | null;
+  /** 会话树当前叶消息 id */
+  activeLeafId?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
   messages?: ChatMessage[];
@@ -219,6 +241,12 @@ export interface ChatMessage {
   sessionId: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  /** 会话树父消息 id；首条为 null */
+  parentId?: string | null;
+  /** 书签标签 */
+  label?: string | null;
+  /** null=普通；branch_summary=分支摘要（默认不进 LLM 上下文） */
+  kind?: string | null;
   attachments?: ChatImageAttachment[];
   toolCalls: any;
   toolResults: any;
@@ -313,6 +341,10 @@ export interface Approval {
   decidedAt?: string | Date | null;
   decisionNote?: string | null;
   executedAt?: string | Date | null;
+  /** W3：`<domain>:<verb>:<target>`；调度面相交检查 */
+  decisionScope?: string | null;
+  /** W3：上次 gate 通知时间 */
+  lastNotifiedAt?: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }

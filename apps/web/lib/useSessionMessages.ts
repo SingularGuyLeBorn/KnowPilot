@@ -19,8 +19,25 @@ import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 type MessageMap = Map<string, ChatMessage[]>;
 type Listener = () => void;
 
+/**
+ * 消息 hydrate 意图：
+ * - view：用户正在看的会话水合 → INV-8 ④ 合法 drain 源
+ * - prefetch：悬停/tab 预取（只读）→ 不置 drainRequested
+ */
+export type MessageHydrateSource = "view" | "prefetch";
+
+/**
+ * INV-8 合法 drain 触发源（类型层枚举，新增调用方编译期可审）。
+ * hydrate 仅 `hydrate_view` 可置 drainRequested；prefetch 不在此列。
+ */
+export type DrainTriggerSource =
+  | "user_enqueue"
+  | "stream_committed"
+  | "session_switch"
+  | "hydrate_view";
+
 type Action =
-  | { type: "hydrate"; sessionId: string; messages: ChatMessage[] }
+  | { type: "hydrate"; sessionId: string; messages: ChatMessage[]; source: MessageHydrateSource }
   | { type: "upsert"; sessionId: string; message: ChatMessage }
   | { type: "delete"; sessionId: string; messageId: string }
   | { type: "clear"; sessionId: string };
@@ -38,29 +55,9 @@ function normalizeMessage(raw: ChatMessage): ChatMessage {
   return raw;
 }
 
-/** 用户软暂停时本地占位气泡 id（服务端落库后由真实 id 替换） */
-export function localAbortedAssistantId(sessionId: string): string {
-  return `local-aborted:${sessionId}`;
-}
-
-/** 服务端真实 aborted/同文案到达后，摘掉本地占位，避免双气泡 */
-function pruneLocalAbortedPlaceholder(sessionId: string, serverMessage: ChatMessage): void {
-  if (serverMessage.role !== "assistant") return;
-  const localId = localAbortedAssistantId(sessionId);
-  if (serverMessage.id === localId) return;
-  const local = getStore().getMessages(sessionId).find((m) => m.id === localId);
-  if (!local) return;
-  const sameText =
-    !!local.content.trim() && local.content.trim() === (serverMessage.content ?? "").trim();
-  if (serverMessage.finishReason === "aborted" || sameText) {
-    getStore().dispatch({ type: "delete", sessionId, messageId: localId });
-  }
-}
-
 /** INV-1：assistant 进 MessageStore 后尝试关闭 Lifecycle done→idle */
 function tryCommitAfterAssistant(sessionId: string, message: ChatMessage): void {
   if (message.role !== "assistant") return;
-  pruneLocalAbortedPlaceholder(sessionId, message);
   const committed = streamLifecycleActions.tryCommitStream(sessionId, {
     messageId: message.id,
     content: message.content,
@@ -88,16 +85,56 @@ function tryCommitAfterHydrate(sessionId: string, messages: ChatMessage[]): void
   }
 }
 
+/** upsert / hydrate 共用：内容字段全等则 skip */
+function messageFieldsEqual(a: ChatMessage, b: ChatMessage): boolean {
+  return (
+    a.content === b.content &&
+    a.toolCalls === b.toolCalls &&
+    a.toolResults === b.toolResults &&
+    a.tokenUsage === b.tokenUsage
+  );
+}
+
+/**
+ * E5：hydrate same-id 取新——后到达者幂等取新，不覆盖已更新内容。
+ * 无 updatedAt 时：字段全等复用 prev；assistant 内容更长（SSE 递进）优先；
+ * 元数据更丰富优先；其余取 incoming（显式刷新）。
+ */
+function pickFresherMessage(prev: ChatMessage, incoming: ChatMessage): ChatMessage {
+  if (messageFieldsEqual(prev, incoming)) return prev;
+  if (prev.role === "assistant" && incoming.role === "assistant") {
+    if (prev.content.length > incoming.content.length) return prev;
+    if (prev.content.length < incoming.content.length) return incoming;
+  }
+  const richness = (m: ChatMessage) =>
+    (m.toolCalls ? 1 : 0) + (m.toolResults ? 1 : 0) + (m.tokenUsage ? 1 : 0);
+  const prevR = richness(prev);
+  const incR = richness(incoming);
+  if (prevR > incR) return prev;
+  if (incR > prevR) return incoming;
+  return incoming;
+}
+
 function reducer(state: MessageMap, action: Action): MessageMap {
   switch (action.type) {
     case "hydrate": {
       const existing = state.get(action.sessionId);
       const incoming = action.messages.map(normalizeMessage);
       if (existing) {
+        const existingById = new Map(existing.map((m) => [m.id, m]));
         const incomingIds = new Set(incoming.map((m) => m.id));
         const older = existing.filter((m) => !incomingIds.has(m.id));
-        const merged = [...older, ...incoming].sort(cmpByCreatedAt);
-        if (merged.length === existing.length && merged.every((m, i) => m.id === existing[i].id)) {
+        // same-id：逐字段 compare-skip / 取新（禁止 stale 快照覆盖 SSE v2）
+        const mergedIncoming = incoming.map((msg) => {
+          const prev = existingById.get(msg.id);
+          return prev ? pickFresherMessage(prev, msg) : msg;
+        });
+        const merged = [...older, ...mergedIncoming].sort(cmpByCreatedAt);
+        // 快路径：整列 id 相等且字段无变化
+        if (
+          merged.length === existing.length &&
+          merged.every((m, i) => m.id === existing[i].id && messageFieldsEqual(m, existing[i]))
+        ) {
           return state;
         }
         const next = new Map(state);
@@ -124,12 +161,7 @@ function reducer(state: MessageMap, action: Action): MessageMap {
           tokenUsage: msg.tokenUsage !== undefined ? msg.tokenUsage : prev.tokenUsage,
           attachments: msg.attachments !== undefined ? msg.attachments : prev.attachments,
         };
-        if (
-          prev.content === merged.content &&
-          prev.toolCalls === merged.toolCalls &&
-          prev.toolResults === merged.toolResults &&
-          prev.tokenUsage === merged.tokenUsage
-        ) {
+        if (messageFieldsEqual(prev, merged)) {
           return state;
         }
         nextList = list.slice();
@@ -191,25 +223,11 @@ class SessionMessageStore {
     if (action.type === "upsert") {
       tryCommitAfterAssistant(action.sessionId, normalizeMessage(action.message));
     } else if (action.type === "hydrate") {
-      const hydrated = action.messages.map(normalizeMessage);
-      tryCommitAfterHydrate(action.sessionId, hydrated);
-      // 软暂停本地占位：hydrate 已含服务端 aborted/同文案时摘掉，避免双气泡
-      const localId = localAbortedAssistantId(action.sessionId);
-      const local = this.getMessages(action.sessionId).find((m) => m.id === localId);
-      if (
-        local &&
-        hydrated.some(
-          (m) =>
-            m.role === "assistant" &&
-            m.id !== localId &&
-            (m.finishReason === "aborted" ||
-              (!!local.content.trim() && m.content.trim() === local.content.trim())),
-        )
-      ) {
-        this.dispatch({ type: "delete", sessionId: action.sessionId, messageId: localId });
+      tryCommitAfterHydrate(action.sessionId, action.messages.map(normalizeMessage));
+      // INV-8 ④：仅 view hydrate 置 drainRequested；prefetch 只读预热不得触发 drain
+      if (action.source === "view") {
+        streamLifecycleActions.hydrateDone(action.sessionId);
       }
-      // INV-8 ④：消息 hydrate 完成 = 显式 drain 请求（reducer 转移点置 drainRequested）
-      streamLifecycleActions.hydrateDone(action.sessionId);
     }
   };
 
@@ -311,8 +329,12 @@ class SessionMessageStore {
     this.closeSessionWatch(sessionId);
   }
 
-  hydrateSessionMessages(sessionId: string, messages: ChatMessage[]): void {
-    this.dispatch({ type: "hydrate", sessionId, messages });
+  hydrateSessionMessages(
+    sessionId: string,
+    messages: ChatMessage[],
+    source: MessageHydrateSource = "view",
+  ): void {
+    this.dispatch({ type: "hydrate", sessionId, messages, source });
   }
 
   /**
@@ -346,41 +368,19 @@ class SessionMessageStore {
     this.dispatch({ type: "upsert", sessionId, message });
   }
 
-  /**
-   * 用户软暂停：把直播半截正文立刻写入 MessageStore（finishReason=aborted），
-   * 再经 tryCommit 拆掉 live 块——保证 commit 后气泡不空窗。
-   * 服务端 message_upserted 到达后替换同文案本地占位。
-   */
-  upsertLocalAbortedAssistant(sessionId: string, content: string): string | null {
-    const trimmed = content.trim();
-    if (!trimmed) return null;
-    const id = localAbortedAssistantId(sessionId);
-    const existing = this.getMessages(sessionId).find((m) => m.id === id);
-    this.dispatch({
-      type: "upsert",
-      sessionId,
-      message: {
-        id,
-        sessionId,
-        role: "assistant",
-        content: trimmed,
-        toolCalls: existing?.toolCalls ?? null,
-        toolResults: existing?.toolResults ?? null,
-        tokenUsage: null,
-        finishReason: "aborted",
-        source: existing?.source ?? "system",
-        attachments: existing?.attachments,
-        createdAt: existing?.createdAt ?? new Date(),
-      },
-    });
-    return id;
-  }
 }
 let globalStore: SessionMessageStore | null = null;
 
 function getStore(): SessionMessageStore {
   if (!globalStore) globalStore = new SessionMessageStore();
   return globalStore;
+}
+
+/** 单测重置（勿在生产路径调用） */
+export function __resetSessionMessageStoreForTests(): void {
+  globalStore = null;
+  hydratedSessionsGlobal.clear();
+  inflightHydrate.clear();
 }
 
 const EMPTY_ARRAY: ChatMessage[] = [];
@@ -413,6 +413,7 @@ type ListForChatPage = {
 async function fetchAndHydrateSession(
   sessionId: string,
   fetchPage: (opts: { sessionId: string; limit: number }) => Promise<ListForChatPage>,
+  source: MessageHydrateSource = "view",
 ): Promise<{ nextCursor?: string | null }> {
   const existing = inflightHydrate.get(sessionId);
   if (existing) {
@@ -423,7 +424,7 @@ async function fetchAndHydrateSession(
   let nextCursor: string | null | undefined;
   const p = (async () => {
     const page = await fetchPage({ sessionId, limit: 50 });
-    store.hydrateSessionMessages(sessionId, page.items as ChatMessage[]);
+    store.hydrateSessionMessages(sessionId, page.items as ChatMessage[], source);
     hydratedSessionsGlobal.add(sessionId);
     nextCursor = page.nextCursor;
   })();
@@ -465,7 +466,7 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
       ? sessionId
       : null,
   );
-  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [hasOlderMessagesState, setHasOlderMessages] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const cursorRef = useRef<string | undefined>(undefined);
 
@@ -475,6 +476,9 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
     () => EMPTY_ARRAY,
   );
 
+  // 无 session 时派生为 false，避免 effect 里同步 setState
+  const hasOlderMessages = !!sessionId && hasOlderMessagesState;
+
   // 同步按「当前 session」派生：缓存命中 / 全局已水合 / 本 session 对账完成
   const isMessagesHydrated =
     !!sessionId &&
@@ -483,16 +487,13 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
       hydratedForSessionId === sessionId);
 
   useEffect(() => {
-    if (!sessionId) {
-      setHasOlderMessages(false);
-      return;
-    }
+    if (!sessionId) return;
     store.watchSession(sessionId);
 
     const cached = store.getMessages(sessionId);
     const already = hydratedSessionsGlobal.has(sessionId) || cached.length > 0;
     if (already) {
-      setHydratedForSessionId(sessionId);
+      // isMessagesHydrated 已由 global/cache 派生为 true，无需 effect 内同步 setState
       void (async () => {
         try {
           const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
@@ -590,9 +591,12 @@ export const sessionMessagesStore = {
   },
   onMessageUpserted: (sessionId: string, cb: (m: ChatMessage) => void) =>
     getStore().onMessageUpserted(sessionId, cb),
-  hydrateSessionMessages: (sessionId: string, messages: ChatMessage[]) =>
-    getStore().hydrateSessionMessages(sessionId, messages),
-  /** 悬停/即将切换时预热 MessageStore，切过去首帧即可出屏 */
+  hydrateSessionMessages: (
+    sessionId: string,
+    messages: ChatMessage[],
+    source: MessageHydrateSource = "view",
+  ) => getStore().hydrateSessionMessages(sessionId, messages, source),
+  /** 悬停/即将切换时预热 MessageStore（prefetch：不触发 drain） */
   prefetchSessionMessages: (
     sessionId: string,
     fetchPage: (opts: { sessionId: string; limit: number }) => Promise<ListForChatPage>,
@@ -601,7 +605,7 @@ export const sessionMessagesStore = {
     if (hydratedSessionsGlobal.has(sessionId) || getStore().getMessages(sessionId).length > 0) {
       return Promise.resolve();
     }
-    return fetchAndHydrateSession(sessionId, fetchPage).then(() => undefined);
+    return fetchAndHydrateSession(sessionId, fetchPage, "prefetch").then(() => undefined);
   },
   upsertAssistantFromDone: (
     sessionId: string,
@@ -613,8 +617,6 @@ export const sessionMessagesStore = {
       finishReason?: string | null;
     },
   ) => getStore().upsertAssistantFromDone(sessionId, data),
-  upsertLocalAbortedAssistant: (sessionId: string, content: string) =>
-    getStore().upsertLocalAbortedAssistant(sessionId, content),
   /** 幂等 upsert（含 field-level merge）；供 SSE / 测试直达 reducer */
   upsertMessage: (sessionId: string, message: ChatMessage) =>
     getStore().dispatch({ type: "upsert", sessionId, message }),

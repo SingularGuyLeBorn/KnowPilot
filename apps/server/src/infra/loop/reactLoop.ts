@@ -18,8 +18,9 @@ import {
   TOOL_BUDGET_SKIP_RESULT,
   type ToolRegistryEntry,
 } from "../agentTools.js";
-import { assertLlmBudget, recordTokenUsage } from "../llmBudget.js";
+import { assertLlmBudget, markTokensWasted, recordTokenUsage } from "../llmBudget.js";
 import { maybeCompactMessages, persistCompactResult } from "../autoCompact.js";
+import { completeWithOverflowCompact } from "../overflowCompactRetry.js";
 import { sanitizePostCompactAssistantContent, type StoredToolCall } from "../chatHistory.js";
 import { RunRollbackStack, type RunRollbackReport } from "../tools/rollback.js";
 import { waitApprovalResolution, type ApprovalResolution } from "../approvalGate.js";
@@ -38,7 +39,10 @@ import { AGENT_TOOL_RESULT_MAX_CHARS } from "@knowpilot/shared";
 import { createPhaseMachine } from "./phase.js";
 import { REFLECTION_UNPASSED_MARK } from "./reflection.js";
 import type { ReactLoopInput, ReactLoopResult, TurnSnapshot } from "./types.js";
-import { makeAbortError } from "../abortReason.js";
+import { isAbortLikeError, makeAbortError } from "../abortReason.js";
+import { runContextHooks, type ContextHookInput } from "../contextHooks.js";
+import type { Agent } from "@knowpilot/shared";
+import { buildSystemPromptSkeleton } from "../promptBuilder.js";
 
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
@@ -47,7 +51,9 @@ const RUN_SNAPSHOT_THROTTLE_MS = 5000;
 const APPROVAL_RESULT_MAX_CHARS = 2000;
 
 /** W11：从工具结果中读取审批 pending 标记（agentTools runOne 捕获 PENDING_APPROVAL 时写入） */
-function readApprovalPendingMarker(result: unknown): { approvalId: string; toolName?: string } | null {
+function readApprovalPendingMarker(
+  result: unknown,
+): { approvalId: string; toolName?: string; decisionScope?: string } | null {
   if (!result || typeof result !== "object") return null;
   const marker = (result as { approvalPending?: unknown }).approvalPending;
   if (
@@ -55,7 +61,7 @@ function readApprovalPendingMarker(result: unknown): { approvalId: string; toolN
     typeof marker === "object" &&
     typeof (marker as { approvalId?: unknown }).approvalId === "string"
   ) {
-    return marker as { approvalId: string; toolName?: string };
+    return marker as { approvalId: string; toolName?: string; decisionScope?: string };
   }
   return null;
 }
@@ -98,6 +104,71 @@ function buildApprovalResumeMessage(resolution: ApprovalResolution): string {
     return `人工审批超时已过期（${base}），该操作未执行。请向用户说明情况并收尾，或改用其他不需要审批的方案。`;
   }
   return `人工审批被拒绝（${base}），该操作未执行。请向用户说明情况并收尾，或改用其他不需要审批的方案。`;
+}
+
+/** 将钩子产出的 systemPrompt 写回消息列表中的 system 条（无则前置） */
+function applySystemPromptToMessages(messages: LlmMessage[], systemPrompt: string): LlmMessage[] {
+  const idx = messages.findIndex((m) => m.role === "system");
+  if (idx >= 0) {
+    const next = messages.map((m, i) => (i === idx ? { ...m, content: systemPrompt } : m));
+    return next;
+  }
+  return [{ role: "system", content: systemPrompt }, ...messages];
+}
+
+function buildHookAgent(input: ReactLoopInput): Agent {
+  const meta = input.agentMeta;
+  return {
+    id: meta?.id ?? "unknown",
+    name: meta?.name ?? "",
+    description: null,
+    model: input.agent.model,
+    systemPrompt: input.agent.systemPrompt,
+    tools: meta?.tools ?? input.agent.tools,
+    // 无 tier 时不注入身份段（与旧 buildTierIdentityHint(undefined) 一致；禁止默认 sub）
+    tier: (meta?.tier ?? null) as unknown as Agent["tier"],
+    workspaceId: meta?.workspaceId ?? null,
+    parentId: meta?.parentId ?? null,
+    apiKey: null,
+    heartbeatModel: null,
+    heartbeat: null,
+    status: "active",
+    deletedAt: null,
+    deletedBy: null,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  };
+}
+
+/** 每次 LLM complete 前跑 context 钩子链，写回 llmMessages */
+async function applyContextHooksBeforeComplete(
+  input: ReactLoopInput,
+  toolCtx: ReturnType<typeof createAgentToolContext>,
+  llmMessages: LlmMessage[],
+  round: number,
+  runId: string | undefined,
+): Promise<LlmMessage[]> {
+  // 始终以骨架为钩子输入（避免 round===1 在 synthesizing 再跑时叠加重写）
+  const skeleton = buildSystemPromptSkeleton(
+    input.agentMeta?.systemPrompt ?? input.agent.systemPrompt,
+  );
+
+  const hookInput: ContextHookInput = {
+    agent: buildHookAgent(input),
+    sessionId: input.sessionId ?? "",
+    runId: runId ?? "",
+    round,
+    messages: llmMessages.map((m) => ({ ...m })),
+    systemPrompt: skeleton,
+    ctx: toolCtx,
+    scratch: {},
+  };
+  const hooked = await runContextHooks(hookInput);
+  // 无钩子改写 systemPrompt（如 round>1 内建全跳过）→ 保留消息里已注入的 system，防被骨架冲掉
+  if (hooked.systemPrompt === skeleton) {
+    return hooked.messages;
+  }
+  return applySystemPromptToMessages(hooked.messages, hooked.systemPrompt);
 }
 
 function pushThinking(executedTools: StoredToolCall[], round: number, delta: string) {
@@ -218,6 +289,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       : input.agentMeta,
     runOrigin: input.runOrigin ?? "user",
     rollbackStack,
+    readonlyOnly: input.readonlyOnly === true,
   });
 
   let llmMessages: LlmMessage[] = [...input.messages];
@@ -284,11 +356,27 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
   /** 终态统一收口：success / failed / cancelled（用户 abort），output 携带 phase 终态快照与业务字段 */
   const finalizeRun = async (terminal: "success" | "failed" | "cancelled", patch: Record<string, unknown>) => {
+    // W5：心跳/异步无产出 run 的 token 记入 wastedTokens（日预算已在 accumulateUsage 扣过）
+    const origin = input.runOrigin ?? "user";
+    if (
+      (origin === "heartbeat" || origin === "async") &&
+      terminal === "success" &&
+      countExecutedTools() === 0 &&
+      totalUsage.total > 0
+    ) {
+      markTokensWasted(input.config, totalUsage.total);
+    }
     if (!runId || !canUpdateRun || !runSvc) return;
+    // 不变量：aborted 时唯一合法终态 cancelled——拒绝 success 收口
+    let effective: "success" | "failed" | "cancelled" = terminal;
+    if (terminal === "success" && input.signal?.aborted === true) {
+      console.error("[ReactLoop] 拒绝 aborted run 以 success 收口，强制 cancelled");
+      effective = "cancelled";
+    }
     try {
       await runSvc.update({
         id: runId,
-        status: terminal,
+        status: effective,
         output: { ...patch, phase: machine.phase, roundsUsed, executedToolsCount: countExecutedTools() },
         toolCalls: executedTools,
         tokenUsage: totalUsage,
@@ -304,12 +392,15 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     machine.transition("compacting");
 
     let existingSummary: string | null = null;
+    let existingGeneration = 0;
     if (input.sessionId) {
       try {
         const sess =
           (await input.services.session.getByIdLite?.(input.sessionId)) ??
           (await input.services.session.getById(input.sessionId));
         existingSummary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? null;
+        existingGeneration =
+          (sess as { compactGeneration?: number | null } | null)?.compactGeneration ?? 0;
       } catch {
         /* ignore */
       }
@@ -317,6 +408,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
     const compacted = await maybeCompactMessages(input.config, llmMessages, snapshot.model, {
       existingSummary,
+      existingGeneration,
       flushContext: input.sessionId
         ? {
             services: input.services,
@@ -337,11 +429,58 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             trigger: "auto",
             emit: input.compactEmit,
           });
+          if (compacted.summaryText) existingSummary = compacted.summaryText;
+          if (compacted.generation != null) existingGeneration = compacted.generation;
         } catch (err) {
           console.warn("[AutoCompact] 持久化摘要失败:", err instanceof Error ? err.message : err);
         }
       }
     }
+
+    /** W5：overflow 时压缩一次（复用同一 CAS 路径），供 completeWithOverflowCompact 调用 */
+    const compactOnceForOverflow = async (): Promise<{ didCompact: boolean }> => {
+      let gen = existingGeneration;
+      let summary = existingSummary;
+      if (input.sessionId) {
+        try {
+          const sess =
+            (await input.services.session.getByIdLite?.(input.sessionId)) ??
+            (await input.services.session.getById(input.sessionId));
+          summary = (sess as { contextSummary?: string | null } | null)?.contextSummary ?? summary;
+          gen = (sess as { compactGeneration?: number | null } | null)?.compactGeneration ?? gen;
+        } catch {
+          /* ignore */
+        }
+      }
+      const overflowCompacted = await maybeCompactMessages(input.config, llmMessages, snapshot.model, {
+        existingSummary: summary,
+        existingGeneration: gen,
+        flushContext: input.sessionId
+          ? {
+              services: input.services,
+              sessionId: input.sessionId,
+              agentId: input.agentMeta?.id,
+              workspaceId: input.agentMeta?.workspaceId,
+              tier: input.agentMeta?.tier,
+            }
+          : undefined,
+        emit: input.compactEmit,
+      });
+      llmMessages = overflowCompacted.messages;
+      if (overflowCompacted.compacted && overflowCompacted.summaryText && input.sessionId && !overflowCompacted.reused) {
+        try {
+          await persistCompactResult(input.services, input.sessionId, overflowCompacted, {
+            trigger: "auto",
+            emit: input.compactEmit,
+          });
+          existingSummary = overflowCompacted.summaryText;
+          if (overflowCompacted.generation != null) existingGeneration = overflowCompacted.generation;
+        } catch (err) {
+          console.warn("[AutoCompact] overflow 恢复持久化失败:", err instanceof Error ? err.message : err);
+        }
+      }
+      return { didCompact: !!(overflowCompacted.compacted && !overflowCompacted.reused) };
+    };
 
     machine.transition("llm");
 
@@ -357,11 +496,24 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         throw makeAbortError(input.signal);
       }
 
-      const turn = await input.transport.complete({
-        messages: llmMessages,
-        tools: toolSchemas,
-        signal: input.signal,
-        withTools: true,
+      llmMessages = await applyContextHooksBeforeComplete(
+        input,
+        toolCtx,
+        llmMessages,
+        roundsUsed,
+        runId,
+      );
+
+      // W5：overflow → 压缩一次 → 同请求重试一次（钩子链保留 W4，仅包 transport.complete）
+      const turn = await completeWithOverflowCompact({
+        complete: () =>
+          input.transport.complete({
+            messages: llmMessages,
+            tools: toolSchemas,
+            signal: input.signal,
+            withTools: true,
+          }),
+        compactOnce: compactOnceForOverflow,
       });
 
       lastModel = turn.model || lastModel;
@@ -391,6 +543,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             reasoning_content: turn.reasoningContent ?? null,
           });
           await injectUserMessages(input, llmMessages, followUps, "follow_up");
+          // A5：注入成功后 ack 持久队列行，避免收尾误移交
+          if (input.sessionId) {
+            await getStreamHub()?.ackInject(
+              input.sessionId,
+              followUps.map((f) => f.id),
+            );
+          }
           continue;
         }
 
@@ -547,12 +706,38 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       // 等 approval_resolved 显式事件唤醒后回 llm。唤醒靠事件不靠轮询；注入复用 W7 injectUserMessages。
       const pendingApprovals = executedItems
         .map((item) => readApprovalPendingMarker(item.result))
-        .filter((m): m is { approvalId: string; toolName?: string } => m !== null);
+        .filter(
+          (m): m is { approvalId: string; toolName?: string; decisionScope?: string } => m !== null,
+        );
       if (pendingApprovals.length > 0) {
         machine.transition("awaiting_human");
-        await writeRunSnapshot(true); // 挂起态必须可查：phase=awaiting_human 强制快照
+        const blockedScopes = pendingApprovals
+          .map((m) => m.decisionScope)
+          .filter((s): s is string => typeof s === "string" && s.length > 0);
+        // 挂起态必须可查：phase=awaiting_human + 被堵 scope（W3 UI）
+        await writeRunSnapshot(true);
+        try {
+          if (runId && blockedScopes.length > 0) {
+            await input.services.prisma.run.update({
+              where: { id: runId },
+              data: {
+                output: {
+                  phase: "awaiting_human",
+                  roundsUsed,
+                  executedToolsCount: countExecutedTools(),
+                  blockedScopes,
+                  pendingApprovalIds: pendingApprovals.map((m) => m.approvalId),
+                },
+              },
+            });
+          }
+        } catch {
+          /* 快照增强失败不阻断挂起 */
+        }
         input.hooks?.onProgress?.(
-          `等待人工审批（${pendingApprovals.map((m) => m.approvalId).join(", ")}），运行已挂起`,
+          `等待人工审批（${pendingApprovals.map((m) => m.approvalId).join(", ")}${
+            blockedScopes.length ? `；scope ${blockedScopes.join(", ")}` : ""
+          }），运行已挂起`,
         );
         for (const pending of pendingApprovals) {
           const resolution = await waitApprovalResolution(input.services, pending.approvalId, {
@@ -605,6 +790,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       const steers = input.runQueues?.takeSteer() ?? [];
       if (steers.length > 0) {
         await injectUserMessages(input, llmMessages, steers, "steer");
+        // A5：注入成功后 ack；若此处之后 abort，已 ack 的不再移交
+        if (input.sessionId) {
+          await getStreamHub()?.ackInject(
+            input.sessionId,
+            steers.map((s) => s.id),
+          );
+        }
       }
 
       // 下一轮 LLM
@@ -617,16 +809,34 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     }
 
     if (machine.phase === "synthesizing") {
+      // aborted 不得以兜底文案 success 收口——唯一合法终态 cancelled（外层 catch）
+      if (input.signal?.aborted) {
+        throw makeAbortError(input.signal);
+      }
       const hasToolWork = executedTools.some(
         (t) => t.name !== "__thinking__" && t.name !== "__content__",
       );
-      if (hasToolWork && !input.signal?.aborted) {
+      if (hasToolWork) {
         try {
-          const synthesis = await input.transport.complete({
-            messages: llmMessages,
-            signal: input.signal,
-            withTools: false,
+          llmMessages = await applyContextHooksBeforeComplete(
+            input,
+            toolCtx,
+            llmMessages,
+            roundsUsed || 1,
+            runId,
+          );
+          const synthesis = await completeWithOverflowCompact({
+            complete: () =>
+              input.transport.complete({
+                messages: llmMessages,
+                signal: input.signal,
+                withTools: false,
+              }),
+            compactOnce: compactOnceForOverflow,
           });
+          if (input.signal?.aborted) {
+            throw makeAbortError(input.signal);
+          }
           accumulateUsage(synthesis.tokenUsage);
           if (synthesis.model) lastModel = synthesis.model;
           if (synthesis.provider) lastProvider = synthesis.provider;
@@ -649,9 +859,17 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
               runId,
             };
           }
-        } catch {
+        } catch (err) {
+          // AbortError 必须重抛中断；其他合成失败才落兜底
+          if (isAbortLikeError(err) || input.signal?.aborted) {
+            throw isAbortLikeError(err) ? err : makeAbortError(input.signal);
+          }
           /* 合成失败落兜底 */
         }
+      }
+
+      if (input.signal?.aborted) {
+        throw makeAbortError(input.signal);
       }
 
       const fallback = hitToolBudget
@@ -699,8 +917,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     // W6：D 类工具补偿——run 进入 failed 且非用户 abort 时逆序回滚本 run 已执行的写入工具。
     // 回滚报告挂在错误对象上供上层（agentStream/agentRuntime）透传，并写入 failed Run 的
     // output.rollback（W11：终态由 finalizeRun 统一 update 到入口创建的 running 行）。
-    const isAbort =
-      input.signal?.aborted === true || (err instanceof Error && err.name === "AbortError");
+    const isAbort = input.signal?.aborted === true || isAbortLikeError(err);
     let report: RunRollbackReport | null = null;
     if (!isAbort) {
       try {

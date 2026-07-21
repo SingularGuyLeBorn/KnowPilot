@@ -28,12 +28,21 @@ import {
   historySinceLastCompactBoundary,
   type HistoryMessageLike,
 } from "./chatHistory.js";
+import {
+  DEFAULT_KEEP_RECENT_TOKENS,
+  extractFileOpsFromMessages,
+  findCompactCutIndex,
+  formatCompactFileDetails,
+  mergeCompactFileDetails,
+  parseCompactFileDetails,
+  type CompactFileDetails,
+} from "./compactCut.js";
 
 /** 摘要内容标记：压缩边界消息的正文前缀（边界行由 buildCompactBoundaryMarker 生成） */
 export const SUMMARY_MARKER = "[此前对话摘要 — 自动压缩]";
 export const COMPACT_BOUNDARY_PREFIX = "[kp-compact-boundary:";
 
-export { DEFAULT_COMPACT_KEEP_RECENT };
+export { DEFAULT_COMPACT_KEEP_RECENT, DEFAULT_KEEP_RECENT_TOKENS };
 
 export const MICRO_COMPACT_TRUNCATED = "[tool result truncated by micro-compact]";
 
@@ -48,10 +57,17 @@ export function isCompactSummaryContent(content: string): boolean {
 
 export function getCompactSettings(config: AppConfig) {
   const compact = config.compact ?? ({} as AppConfig["compact"]);
+  const keepRecentTokensRaw = compact.keepRecentTokens;
   return {
     enabled: compact.enabled !== false,
     triggerRatio: Math.min(0.95, Math.max(0.05, compact.triggerRatio ?? DEFAULT_COMPACT_TRIGGER_RATIO)),
     keepRecent: Math.max(2, compact.keepRecent ?? DEFAULT_COMPACT_KEEP_RECENT),
+    keepRecentTokens: Math.max(
+      1,
+      typeof keepRecentTokensRaw === "number" && Number.isFinite(keepRecentTokensRaw)
+        ? keepRecentTokensRaw
+        : DEFAULT_KEEP_RECENT_TOKENS,
+    ),
     summaryModel: String(compact.summaryModel ?? "auto").trim() || "auto",
     microCompactEnabled: compact.microCompact?.enabled !== false,
     microCompactToolMaxChars: Math.max(
@@ -125,6 +141,23 @@ export function microCompactMessages(messages: LlmMessage[], toolResultMaxChars:
 /** 摘要注入后的合成 assistant 确认（rebuild / maybeCompact 幂等剥离用） */
 export const CONTEXT_SUMMARY_ACK = "已阅读摘要，继续基于上述上下文协助你。";
 
+/** 迭代摘要：定位已注入摘要 pair 之后的 firstKept 起点 */
+function findFirstKeptAfterSummaryPair(messages: LlmMessage[]): number | undefined {
+  for (let i = 0; i < messages.length - 1; i++) {
+    const cur = messages[i]!;
+    const next = messages[i + 1]!;
+    if (
+      typeof cur.content === "string" &&
+      isCompactSummaryContent(cur.content) &&
+      next.role === "assistant" &&
+      next.content === CONTEXT_SUMMARY_ACK
+    ) {
+      return i + 2;
+    }
+  }
+  return undefined;
+}
+
 export function buildSummaryPair(summaryText: string, generation: number): LlmMessage[] {
   const boundary = buildCompactBoundaryMarker(generation);
   return [
@@ -163,6 +196,8 @@ export function buildLlmContextSinceCompact(
     modelId?: string;
     microCompactToolMaxChars?: number;
     contextSummary?: string | null;
+    /** 会话当前 compactGeneration（注入摘要 pair 的代数） */
+    compactGeneration?: number | null;
   },
 ): LlmMessage[] {
   const base = buildLlmMessagesFromHistory(
@@ -178,7 +213,7 @@ export function buildLlmContextSinceCompact(
 
   const system = base.filter((m) => m.role === "system");
   const rest = stripInjectedSummaryMessages(base.filter((m) => m.role !== "system"));
-  const generation = Math.max(1, nextCompactGeneration(summary) - 1);
+  const generation = Math.max(1, options?.compactGeneration ?? 1);
   return [...system, ...buildSummaryPair(summary, generation), ...rest];
 }
 
@@ -189,12 +224,9 @@ function trimOldest(messages: LlmMessage[], keepRecent: number): LlmMessage[] {
   return [...system, ...rest.slice(-keepRecent)];
 }
 
-function nextCompactGeneration(existingSummary?: string | null): number {
-  if (!existingSummary?.trim()) return 1;
-  const matches = existingSummary.match(/v(\d+)@/g);
-  if (!matches?.length) return 2;
-  const nums = matches.map((m) => parseInt(m.replace(/[^\d]/g, ""), 10)).filter(Number.isFinite);
-  return (nums.length ? Math.max(...nums) : 1) + 1;
+/** 下一压缩代数 = 当前列值 + 1（显式列，不再解析摘要文本） */
+export function nextCompactGeneration(currentGeneration?: number | null): number {
+  return Math.max(0, currentGeneration ?? 0) + 1;
 }
 
 export interface CompactResult {
@@ -216,10 +248,18 @@ export interface CompactResult {
   charBefore?: number;
   /** 压缩后字符数 */
   charAfter?: number;
+  /** 跨压缩累计文件清单（写入摘要 details JSON） */
+  fileDetails?: CompactFileDetails;
+  /** 保留段起点（相对 working messages；迭代摘要用） */
+  firstKeptIndex?: number;
 }
 
 export interface CompactOptions {
   existingSummary?: string | null;
+  /** 会话当前 compactGeneration（读时快照，供 CAS 与代数计算） */
+  existingGeneration?: number | null;
+  /** 迭代摘要显式起点（优先于从摘要 pair 推断） */
+  firstKeptIndex?: number;
   flushContext?: {
     services: ServiceContainer;
     sessionId?: string;
@@ -251,14 +291,15 @@ export async function maybeCompactMessages(
   const system = working.filter((m) => m.role === "system");
   const rest = working.filter((m) => m.role !== "system");
   const existing = options?.existingSummary?.trim() || "";
-  const generation = nextCompactGeneration(existing);
+  const baseGeneration = Math.max(0, options?.existingGeneration ?? 0);
+  const generation = nextCompactGeneration(baseGeneration);
 
   if (existing) {
     // 复用摘要时保留压缩边界之后的全部原文，不再用 keepRecent 截断（keepRecent 只用于「再次压缩」切点）
     const cleaned = stripInjectedSummaryMessages(rest);
     const reusedMessages: LlmMessage[] = [
       ...system,
-      ...buildSummaryPair(existing, generation - 1),
+      ...buildSummaryPair(existing, Math.max(1, baseGeneration)),
       ...cleaned,
     ];
     if (estimateChars(reusedMessages) < charThreshold) {
@@ -276,15 +317,30 @@ export async function maybeCompactMessages(
     return { messages: working, compacted: false, charThresholdUsed: charThreshold };
   }
 
-  if (rest.length <= settings.keepRecent + 2) {
+  // 切割：keepRecentTokens 定初切点；不安全则向旧侧移到 tool 对边界；迭代从上次 firstKept 起算
+  const firstKeptStart =
+    options?.firstKeptIndex ??
+    (existing ? findFirstKeptAfterSummaryPair(working) : undefined);
+  const cutIndex = findCompactCutIndex(working, settings.keepRecentTokens, firstKeptStart);
+  const toSummarize = working.slice(0, cutIndex).filter((m) => m.role !== "system");
+  const recent = working.slice(cutIndex);
+
+  // 消息过少或无可摘要段：不压缩（keepRecent 条数仍作下限守卫）
+  if (toSummarize.length < 2 || recent.length < 1 || rest.length <= settings.keepRecent + 2) {
     return { messages: working, compacted: false, charThresholdUsed: charThreshold };
   }
 
-  const toSummarize = rest.slice(0, -settings.keepRecent);
-  const recent = rest.slice(-settings.keepRecent);
+  const fileDetails = mergeCompactFileDetails(
+    parseCompactFileDetails(existing),
+    extractFileOpsFromMessages(toSummarize),
+  );
 
   const transcriptParts: string[] = [];
-  if (existing) transcriptParts.push(`[已有摘要]\n${existing}`);
+  if (existing) {
+    // 摘要正文送 LLM 时剥离 details 机器块，避免污染
+    const bare = existing.replace(/\n*<!--kp-compact-details:[\s\S]*?-->\s*$/, "").trim();
+    transcriptParts.push(`[已有摘要]\n${bare}`);
+  }
   for (const m of toSummarize) {
     const role = m.role === "user" ? "用户" : m.role === "assistant" ? "助手" : m.role;
     const text = (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "")).slice(0, 2000);
@@ -352,12 +408,15 @@ export async function maybeCompactMessages(
       };
     }
 
-    const boundary = buildCompactBoundaryMarker(generation);
-    const summaryText = summaryBody;
-    const compactedMessages: LlmMessage[] = [...system, ...buildSummaryPair(summaryBody, generation), ...recent];
+    const summaryText = formatCompactFileDetails(summaryBody, fileDetails);
+    const compactedMessages: LlmMessage[] = [
+      ...system,
+      ...buildSummaryPair(summaryText, generation),
+      ...recent,
+    ];
     const charAfter = estimateChars(compactedMessages);
     console.log(
-      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${charBefore} → ${charAfter} 字符，阈值 ${charThreshold}，摘要模型 ${summaryModel}，flush ${memoriesFlushed}）`,
+      `[AutoCompact] ${toSummarize.length} 条消息已压缩（原 ${charBefore} → ${charAfter} 字符，阈值 ${charThreshold}，摘要模型 ${summaryModel}，flush ${memoriesFlushed}，cut=${cutIndex}）`,
     );
     // compact_end 由调用方（agentStream）在写入边界消息后 emit，避免此处提前发完又重发。
     return {
@@ -370,6 +429,8 @@ export async function maybeCompactMessages(
       messagesSummarized: toSummarize.length,
       charBefore,
       charAfter,
+      fileDetails,
+      firstKeptIndex: cutIndex,
     };
   } catch (err) {
     console.warn("[AutoCompact] 压缩失败，降级裁剪最早消息:", err instanceof Error ? err.message : err);
@@ -389,6 +450,8 @@ export async function maybeCompactMessages(
       messagesSummarized: toSummarize.length,
       charBefore,
       charAfter: estimateChars(trimmed),
+      fileDetails,
+      firstKeptIndex: cutIndex,
     };
   }
 }
@@ -409,6 +472,7 @@ export async function compactSessionHistory(
         enabled: true,
         triggerRatio: base.triggerRatio,
         keepRecent: base.keepRecent,
+        keepRecentTokens: base.keepRecentTokens,
         summaryModel: base.summaryModel,
         microCompact: {
           enabled: base.microCompactEnabled,
@@ -446,7 +510,7 @@ const COMPACT_TRIGGER_LABEL: Record<CompactPersistTrigger, string> = {
   agent: "已压缩上下文（由助手触发）",
 };
 
-/** 压缩结果落库：contextSummary + 边界 ChatMessage（手动/自动/工具共用） */
+/** 压缩结果落库：单事务 + compactGeneration CAS（摘要与边界同事务，落败 skipped） */
 export async function persistCompactResult(
   services: ServiceContainer,
   sessionId: string,
@@ -458,12 +522,7 @@ export async function persistCompactResult(
   }
   const trigger = options?.trigger ?? "auto";
   const generation = compacted.generation ?? 1;
-
-  await services.session.update({
-    id: sessionId,
-    contextSummary: compacted.summaryText,
-    contextCompactedAt: new Date(),
-  } as any);
+  const expectedBase = generation - 1; // CAS：读时快照代际
 
   const boundaryMarker = buildCompactBoundaryMarker(generation);
   const summarized = compacted.messagesSummarized ?? 0;
@@ -491,15 +550,41 @@ export async function persistCompactResult(
     },
   ];
 
-  const boundaryMsg = await services.message.create({
-    sessionId,
-    role: "assistant",
-    content: boundaryContent,
-    toolCalls: boundaryToolCalls,
-    source: "system",
+  const prisma = services.prisma;
+  const txResult = await prisma.$transaction(async (tx) => {
+    const cas = await tx.chatSession.updateMany({
+      where: { id: sessionId, compactGeneration: expectedBase },
+      data: {
+        contextSummary: compacted.summaryText,
+        contextCompactedAt: new Date(),
+        compactGeneration: generation,
+      },
+    });
+    if (cas.count === 0) {
+      return { skipped: true as const };
+    }
+    // W1：压缩边界消息挂到活跃叶并推进游标（与 CAS 同事务）
+    const { appendChatMessage } = await import("./chatTree.js");
+    const boundaryMsg = await appendChatMessage(tx, {
+      sessionId,
+      role: "assistant",
+      content: boundaryContent,
+      toolCalls: boundaryToolCalls,
+      source: "system",
+    });
+    // 显式持久化边界消息 id（迭代摘要 / 历史裁剪的事实源，不靠解析摘要 marker）
+    await tx.chatSession.update({
+      where: { id: sessionId },
+      data: { compactBoundaryMessageId: boundaryMsg.id },
+    });
+    return { skipped: false as const, boundaryMessageId: boundaryMsg.id };
   });
-  const boundaryMessageId = boundaryMsg?.success ? (boundaryMsg.data as { id?: string })?.id : undefined;
 
+  if (txResult.skipped) {
+    return { skipped: true };
+  }
+
+  const boundaryMessageId = txResult.boundaryMessageId;
   if (boundaryMessageId && options?.emit) {
     options.emit({
       type: "compact_end",
@@ -536,10 +621,27 @@ export async function runSessionCompact(params: {
   model: string;
   systemPrompt: string;
   existingSummary?: string | null;
+  existingGeneration?: number | null;
   trigger: CompactPersistTrigger;
   emit?: (event: AgentStreamEvent) => void;
 }): Promise<RunSessionCompactResult> {
+  // 手动压缩与 hub run 互斥：会话 running 时拒绝（避免与 auto-compact 交错写）
+  if (params.trigger === "manual") {
+    const { getStreamHub } = await import("./sessionStreamHub.js");
+    const hub = getStreamHub();
+    if (hub?.isRunning(params.sessionId)) {
+      return {
+        compacted: false,
+        message: "会话正在运行中，请停止后再手动压缩。",
+      };
+    }
+  }
+
   const session = await params.services.session.getByIdLite(params.sessionId);
+  const existingGeneration =
+    params.existingGeneration ??
+    (session as { compactGeneration?: number | null }).compactGeneration ??
+    0;
   const historyItems = await params.services.message.listForLlmContext({
     sessionId: params.sessionId,
     since: (session as { contextCompactedAt?: Date | string | null }).contextCompactedAt,
@@ -554,13 +656,14 @@ export async function runSessionCompact(params: {
         params.existingSummary ??
         (session as { contextSummary?: string | null }).contextSummary ??
         null,
+      compactGeneration: existingGeneration,
     },
   );
 
   const charThreshold = resolveCompactThresholdForModel(params.config, params.model);
   const charBefore = estimateChars(messages);
   const estimatedRatio = charThreshold > 0 ? Math.min(1, charBefore / charThreshold) : 1;
-  const generation = nextCompactGeneration(params.existingSummary);
+  const generation = nextCompactGeneration(existingGeneration);
 
   if (params.trigger !== "auto") {
     params.emit?.({ type: "compact_start", generation, estimatedRatio, round: 0 });
@@ -599,6 +702,7 @@ export async function runSessionCompact(params: {
     params.model,
     params.existingSummary,
     {
+      existingGeneration,
       flushContext: {
         services: params.services,
         sessionId: params.sessionId,

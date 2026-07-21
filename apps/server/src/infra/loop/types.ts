@@ -104,6 +104,8 @@ export interface ReactLoopInput {
   sessionId?: string;
   agentMeta?: {
     id: string;
+    /** 供 context 钩子 tier-identity 注入；缺省不注入名字 */
+    name?: string | null;
     model: string;
     systemPrompt: string;
     tools: string[];
@@ -111,7 +113,9 @@ export interface ReactLoopInput {
     parentId?: string | null;
     workspaceId?: string | null;
   };
-  runOrigin?: "user" | "parent" | "heartbeat";
+  runOrigin?: "user" | "parent" | "heartbeat" | "async";
+  /** W3 safe bypass：只读 turn */
+  readonlyOnly?: boolean;
   /** W11：Run 活状态——run 入口落库时写入 Run.input 的业务描述（消息/触发源等） */
   runInput?: unknown;
   /** 覆盖 snapshot.toolResultMaxChars（stream 用 micro-compact 阈值） */

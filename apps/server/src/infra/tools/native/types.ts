@@ -17,9 +17,13 @@ export interface NativeToolDefinition {
   concurrencyClass?: ToolConcurrencyClass;
   /**
    * D 类（写入/副作用）标记：run 失败（非用户 abort）时逆序补偿。
-   * 与 approvalGate.DESTRUCTIVE_NATIVE_OPS 对齐；补偿实现经 registerNativeDomain 第三参数挂入。
+   * 审批清单由 registry 派生（destructive && !approvalExempt）；补偿经 registerNativeDomain 第三参数挂入。
    */
   destructive?: boolean;
+  /**
+   * 审批豁免：destructive 默认入 AGENT_DESTRUCTIVE_APPROVAL 清单；豁免须显式声明并附理由。
+   */
+  approvalExempt?: boolean;
   /**
    * 可重入标记：无写副作用、at-least-once 重跑安全（与 ToolCommand.reentrant 同义，经 registerNativeDomain 透传）。
    * 默认 false = 保守；拿不准一律不标（false）。
@@ -45,8 +49,8 @@ export interface NativeToolContext {
   };
   /** 当前 ReAct 轮次是否仍在工具调用中（向上发消息时机约束 #41） */
   inToolRound?: boolean;
-  /** 本次运行的触发来源：user=用户直接对话；parent=上级下发；heartbeat=心跳 */
-  runOrigin?: "user" | "parent" | "heartbeat";
+  /** 本次运行的触发来源：user=用户直接对话；parent=上级下发；heartbeat=心跳；async=后台异步任务 */
+  runOrigin?: "user" | "parent" | "heartbeat" | "async";
   /**
    * Agent 解析（默认 assistant 查找/补齐/创建）— W4 起由 createAgentToolContext 注入，
    * 工具层不再直接 import agentRuntime（环内模块）。缺省时回退到 agentResolver 默认实现。
@@ -56,6 +60,10 @@ export interface NativeToolContext {
    * 本 run 的 D 类工具回滚栈（reactLoop 注入；缺省 = 不跟踪，如审批直执/单测直接调工具）。
    */
   rollbackStack?: RunRollbackStack;
+  /**
+   * W3 safe bypass：为 true 时仅允许只读（reentrant）工具；写工具在权限层拒绝。
+   */
+  readonlyOnly?: boolean;
 }
 
 export type NativeToolHandler = (

@@ -18,20 +18,22 @@ import {
   checkCrossWorkspace,
   type PermissionError,
 } from "./swarmPermissionGuard.js";
+import { resolveServerDelegationDepth } from "./delegationDepth.js";
 import { RedisSwarmBus } from "./redisSwarmBus.js";
+
+export { resolveServerDelegationDepth } from "./delegationDepth.js";
 
 const MAX_DEPTH = SWARM_MAX_DEPTH;
 const MAX_QUEUE_SIZE = SWARM_MAX_QUEUE_SIZE;
 
 // taskRef（对账键）只允许服务端内部赋值（W16a-3：report_back 桥接强制写 jobId），
-// 故不在 AgentMessageInput 上开放——两个调用方（send_message/report_back）均不接收 LLM 入参。
+// depth 同手法（B5）：由服务端沿派生链物化，不接收 LLM / 调用方入参。
 export interface AgentMessageInput {
   fromAgentId: string;
   toAgentId: string;
   content: string;
   messageType?: "command" | "query" | "report" | "forward";
   source?: "super" | "manager" | "sub" | "user" | "system";
-  depth?: number;
 }
 
 export interface AgentMessageRecord {
@@ -83,8 +85,8 @@ export class LocalSwarmBus implements SwarmBus {
     });
     if (crossError) return { success: false, error: crossError };
 
-    // depth 校验（#12 防循环）
-    const depth = msg.depth ?? 1;
+    // B5：depth 服务端物化（#12 防循环）——不读调用方入参
+    const depth = await resolveServerDelegationDepth(this.prisma, msg.fromAgentId);
     if (depth > MAX_DEPTH) {
       return {
         success: false,

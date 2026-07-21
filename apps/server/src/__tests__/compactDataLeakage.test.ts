@@ -12,6 +12,7 @@ import {
 } from "../infra/autoCompact.js";
 import { buildLlmMessagesFromHistory, sliceHistoryAfterCompactBoundary } from "../infra/chatHistory.js";
 import { executeNativeTool } from "../infra/nativeTools.js";
+import { appendChatMessage } from "../infra/chatTree.js";
 import * as llmClient from "../infra/llmClient.js";
 import { createTempProjectDir, createTestConfig } from "./helpers/toolTestFixtures.js";
 import type { ServiceContainer } from "../infra/serviceContainer.js";
@@ -29,11 +30,14 @@ function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
       microCompact: { enabled: true, toolResultMaxChars: 4000 },
       memoryFlush: { enabled: false, maxFacts: 5 },
       ...overrides,
+      // Partial 展开后可能为 undefined；单测需小预算才能触发压缩（默认 20k 会整段保留）
+      keepRecentTokens: overrides?.keepRecentTokens ?? 200,
     },
   });
 }
 
-function longHistoryItems(count: number, charsEach = 500) {
+/** deepseek-v4-flash @ triggerRatio=0.05 → 阈值 25600；留足余量 */
+function longHistoryItems(count: number, charsEach = 800) {
   return Array.from({ length: count }, (_, i) => ({
     id: `m-${i}`,
     role: i % 2 === 0 ? "user" : "assistant",
@@ -66,48 +70,48 @@ describe("compact 数据暴露审计", () => {
   });
 
   it("persistCompactResult 边界消息 tool result 不含完整摘要", async () => {
-    const sessionUpdates: unknown[] = [];
-    const createdMessages: unknown[] = [];
-    const services = {
-      session: {
-        update: vi.fn(async (input: unknown) => {
-          sessionUpdates.push(input);
-          return { success: true };
-        }),
-      },
-      message: {
-        create: vi.fn(async (input: unknown) => {
-          createdMessages.push(input);
-          return { success: true, data: { id: "boundary-1" } };
-        }),
-      },
-    } as unknown as ServiceContainer;
+    const { prisma } = await import("../db.js");
+    const { createContextInner } = await import("../trpc/context.js");
+    const ctx = await createContextInner();
+    const sess = await prisma.chatSession.create({
+      data: { title: "leak-test", model: "test", compactGeneration: 0 },
+    });
+    try {
+      await persistCompactResult(
+        ctx.services as ServiceContainer,
+        sess.id,
+        {
+          compacted: true,
+          messages: [],
+          summaryText: `完整摘要含 ${SECRET}`,
+          generation: 1,
+          messagesSummarized: 12,
+          charBefore: 10000,
+          charAfter: 2000,
+        },
+        { trigger: "agent" },
+      );
 
-    await persistCompactResult(
-      services,
-      "sess-1",
-      {
-        compacted: true,
-        messages: [],
-        summaryText: `完整摘要含 ${SECRET}`,
-        generation: 1,
-        messagesSummarized: 12,
-        charBefore: 10000,
-        charAfter: 2000,
-      },
-      { trigger: "agent" },
-    );
+      const updated = await prisma.chatSession.findUnique({ where: { id: sess.id } });
+      expect(updated!.contextSummary).toContain(SECRET);
+      expect(updated!.compactGeneration).toBe(1);
 
-    expect(sessionUpdates).toHaveLength(1);
-    expect((sessionUpdates[0] as { contextSummary?: string }).contextSummary).toContain(SECRET);
-
-    const boundary = createdMessages[0] as {
-      toolCalls?: Array<{ name: string; result?: Record<string, unknown> }>;
-    };
-    const compactTc = boundary.toolCalls?.find((t) => t.name === "__context_compact__");
-    expect(compactTc).toBeDefined();
-    expect(compactTc?.result?.summary).toBeUndefined();
-    expect(JSON.stringify(compactTc?.result ?? {})).not.toContain(SECRET);
+      const boundary = await prisma.chatMessage.findFirst({
+        where: { sessionId: sess.id, source: "system" },
+      });
+      expect(boundary).toBeTruthy();
+      const toolCalls = boundary!.toolCalls as Array<{
+        name: string;
+        result?: Record<string, unknown>;
+      }> | null;
+      const compactTc = toolCalls?.find((t) => t.name === "__context_compact__");
+      expect(compactTc).toBeDefined();
+      expect(compactTc?.result?.summary).toBeUndefined();
+      expect(JSON.stringify(compactTc?.result ?? {})).not.toContain(SECRET);
+    } finally {
+      await prisma.chatMessage.deleteMany({ where: { sessionId: sess.id } });
+      await prisma.chatSession.delete({ where: { id: sess.id } });
+    }
   });
 
   it("buildLlmMessagesFromHistory 跳过 __context_compact__ 工具链，仅保留短边界正文", () => {
@@ -175,27 +179,20 @@ describe("compact 数据暴露审计", () => {
   it("session_compact 工具返回值不含 summaryPreview / 摘要正文", async () => {
     const root = createTempProjectDir();
     const secretSummary = `摘要正文 ${SECRET}`;
-
-    const services = {
-      session: {
-        getByIdLite: vi.fn().mockResolvedValue({
-          id: "sess-1",
-          model: "deepseek-v4-flash",
-          systemPrompt: "sys",
-          status: "active",
-          contextSummary: null,
-        }),
-        update: vi.fn().mockResolvedValue({ success: true }),
-      },
-      message: {
-        list: vi.fn().mockResolvedValue({
-          items: longHistoryItems(40, 500),
-          total: 40,
-        }),
-        listForLlmContext: vi.fn().mockResolvedValue(longHistoryItems(40, 500)),
-        create: vi.fn().mockResolvedValue({ success: true, data: { id: "boundary-2" } }),
-      },
-    };
+    const { prisma } = await import("../db.js");
+    const { createContextInner } = await import("../trpc/context.js");
+    const inner = await createContextInner();
+    const sess = await prisma.chatSession.create({
+      data: { title: "session-compact-leak", model: "deepseek-v4-flash", compactGeneration: 0 },
+    });
+    // 必须走 appendChatMessage：直写 ChatMessage 无 parentId 链时 resolveActivePath 只剩叶节点
+    for (const item of longHistoryItems(40)) {
+      await appendChatMessage(prisma, {
+        sessionId: sess.id,
+        role: item.role,
+        content: item.content,
+      });
+    }
 
     llmSpy.mockResolvedValueOnce({
       content: secretSummary,
@@ -203,79 +200,75 @@ describe("compact 数据暴露审计", () => {
       usage: undefined,
     } as any);
 
-    const ctx = {
-      config: makeConfig(),
-      projectRoot: root,
-      services: services as unknown as ServiceContainer,
-      sessionId: "sess-1",
-      invokeTrpc: vi.fn(),
-      agentSnapshot: {
-        id: "mgr-1",
-        model: "deepseek-v4-flash",
-        systemPrompt: "sys",
-        tools: ["native:session_compact"],
-        tier: "manager" as const,
-        workspaceId: "ws-1",
-      },
-    };
+    try {
+      const ctx = {
+        config: makeConfig(),
+        projectRoot: root,
+        services: inner.services as ServiceContainer,
+        sessionId: sess.id,
+        invokeTrpc: vi.fn(),
+        agentSnapshot: {
+          id: "mgr-1",
+          model: "deepseek-v4-flash",
+          systemPrompt: "sys",
+          tools: ["native:session_compact"],
+          tier: "manager" as const,
+          workspaceId: "ws-1",
+        },
+      };
 
-    const result = (await executeNativeTool("session_compact", { reason: "用户要求" }, ctx)) as Record<
-      string,
-      unknown
-    >;
+      const result = (await executeNativeTool("session_compact", { reason: "用户要求" }, ctx)) as Record<
+        string,
+        unknown
+      >;
 
-    expect(result.success, JSON.stringify(result)).toBe(true);
-    expect(result.summaryPreview).toBeUndefined();
-    expect(JSON.stringify(result)).not.toContain(SECRET);
-    expect(services.session.update).toHaveBeenCalled();
-    const updateArg = (services.session.update as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
-      contextSummary?: string;
-    };
-    expect(updateArg.contextSummary).toContain(SECRET);
-
-    fs.rmSync(root, { recursive: true, force: true });
+      expect(result.success, JSON.stringify(result)).toBe(true);
+      expect(result.summaryPreview).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain(SECRET);
+      const updated = await prisma.chatSession.findUnique({ where: { id: sess.id } });
+      expect(updated!.contextSummary).toContain(SECRET);
+    } finally {
+      await prisma.chatMessage.deleteMany({ where: { sessionId: sess.id } });
+      await prisma.chatSession.delete({ where: { id: sess.id } });
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("runSessionCompact 将摘要写入 session.contextSummary，tRPC 可返回 summaryPreview 但不进 Agent 工具链", async () => {
-    const services = {
-      session: {
-        getByIdLite: vi.fn().mockResolvedValue({
-          id: "sess-t",
-          contextSummary: null,
-          contextCompactedAt: null,
-        }),
-        update: vi.fn().mockResolvedValue({ success: true }),
-      },
-      message: {
-        list: vi.fn().mockResolvedValue({
-          items: longHistoryItems(40, 500),
-          total: 40,
-        }),
-        listForLlmContext: vi.fn().mockResolvedValue(longHistoryItems(40, 500)),
-        create: vi.fn().mockResolvedValue({ success: true, data: { id: "b-3" } }),
-      },
-      prisma: {
-        chatSession: {
-          findUnique: vi.fn().mockResolvedValue({ agentId: null }),
-        },
-      },
-    } as unknown as ServiceContainer;
-
-    const result = await runSessionCompact({
-      config: makeConfig(),
-      services,
-      sessionId: "sess-t",
-      model: "deepseek-v4-flash",
-      systemPrompt: "sys",
-      trigger: "manual",
+    const { prisma } = await import("../db.js");
+    const { createContextInner } = await import("../trpc/context.js");
+    const inner = await createContextInner();
+    const sess = await prisma.chatSession.create({
+      data: { title: "run-compact-leak", model: "deepseek-v4-flash", compactGeneration: 0 },
     });
+    for (const item of longHistoryItems(40)) {
+      await appendChatMessage(prisma, {
+        sessionId: sess.id,
+        role: item.role,
+        content: item.content,
+      });
+    }
 
-    expect(result.compacted).toBe(true);
-    expect(result.summaryPreview).toContain(SECRET);
-    const boundaryCreate = (services.message.create as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
-      toolCalls?: Array<{ result?: Record<string, unknown> }>;
-    };
-    expect(JSON.stringify(boundaryCreate.toolCalls ?? [])).not.toContain(SECRET);
+    try {
+      const result = await runSessionCompact({
+        config: makeConfig(),
+        services: inner.services as ServiceContainer,
+        sessionId: sess.id,
+        model: "deepseek-v4-flash",
+        systemPrompt: "sys",
+        trigger: "manual",
+      });
+
+      expect(result.compacted).toBe(true);
+      expect(result.summaryPreview).toContain(SECRET);
+      const boundary = await prisma.chatMessage.findFirst({
+        where: { sessionId: sess.id, source: "system" },
+      });
+      expect(JSON.stringify(boundary?.toolCalls ?? [])).not.toContain(SECRET);
+    } finally {
+      await prisma.chatMessage.deleteMany({ where: { sessionId: sess.id } });
+      await prisma.chatSession.delete({ where: { id: sess.id } });
+    }
   });
 
   it("sliceHistoryAfterCompactBoundary 后 rebuild 不含边界前的旧对话", () => {

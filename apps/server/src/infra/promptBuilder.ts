@@ -1,10 +1,9 @@
 /**
- * Prompt 构建 — 从 agentRuntime 抽出（W4）。
+ * Prompt 构建 — 从 agentRuntime 抽出的叶子模块。
  *
- * 背景：历史循环依赖环 agentRuntime → loop/index → reactLoop → agentTools → nativeTools → agentRuntime，
- * 根因是 nativeTools 值导入 agentRuntime 的 prompt 构建函数。本文件是叶子模块：
- * 仅依赖 ServiceContainer 类型、FTS 索引与 shared 常量，**不依赖** loop/reactLoop/agentTools/nativeTools。
- * prompt 构建函数一律从本文件引入，不要经 agentRuntime 中转（本文件是叶子模块，agentRuntime 在环内）。
+ * 职责：纯字符串 / 记忆片段构建（buildMemoryContext、buildTierIdentityHint、buildAgentToolGuide、
+ * buildSystemPromptSkeleton）。注入编排（何时拼进 system prompt）已迁至 contextHooks 内建钩子。
+ * 不依赖 loop/reactLoop/agentTools/nativeTools。
  */
 
 import type { ServiceContainer } from "./serviceContainer.js";
@@ -159,14 +158,10 @@ export function buildTierIdentityHint(tier?: string | null, name?: string | null
   return "";
 }
 
-export function buildSystemPromptWithHints(
-  basePrompt: string,
-  tools: string[],
-  memoryHint: string,
-  identity?: { tier?: string | null; name?: string | null },
-): string {
-  const identityHint = buildTierIdentityHint(identity?.tier, identity?.name);
-  const base = (basePrompt || "你是 KnowPilot 助手。") + identityHint + memoryHint;
-  const guide = buildAgentToolGuide(tools);
-  return guide ? `${base}\n\n${guide}` : base;
+/**
+ * System prompt 骨架（纯字符串）：缺省回退文案。
+ * 记忆 / tier 身份 / 工具引导 / extras 由 contextHooks 内建钩子在 LLM 调用前注入。
+ */
+export function buildSystemPromptSkeleton(basePrompt: string): string {
+  return basePrompt || "你是 KnowPilot 助手。";
 }

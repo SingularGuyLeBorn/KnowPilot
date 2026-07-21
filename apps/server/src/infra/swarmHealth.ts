@@ -6,6 +6,8 @@
 import type { PrismaClient } from "@prisma/client";
 import { listAllAskUserPending, listAskUserPendingForSession } from "./askUserGate.js";
 import { listNotifyBreakerStatuses, type NotifyChannelStatus } from "./emailNotifier.js";
+import { getLlmBudgetStatus, WASTED_TOKEN_ALERT_RATIO } from "./llmBudget.js";
+import type { AppConfig } from "./config.js";
 
 export type SwarmInboxPreviewItem = {
   id: string;
@@ -41,6 +43,11 @@ export type SwarmHealthSnapshot = {
   heartbeat: {
     suspendedAt: string | null;
     enabled: boolean | null;
+    /** W2 决策态（只读展示） */
+    lastMode: string | null;
+    skipRemaining: number | null;
+    quietStreak: number | null;
+    terminalAt: string | null;
   };
   superiorQueue: {
     pendingItems: number;
@@ -127,9 +134,29 @@ export async function getSwarmHealthSnapshot(
   );
 
   let heartbeatEnabled: boolean | null = null;
+  let lastMode: string | null = null;
+  let skipRemaining: number | null = null;
+  let quietStreak: number | null = null;
+  let terminalAt: string | null = null;
   const hb = agent?.heartbeat;
   if (hb && typeof hb === "object" && !Array.isArray(hb)) {
-    heartbeatEnabled = (hb as { enabled?: unknown }).enabled === true;
+    const hbo = hb as {
+      enabled?: unknown;
+      decision?: {
+        lastMode?: unknown;
+        skipRemaining?: unknown;
+        quietStreak?: unknown;
+        terminalAt?: unknown;
+      };
+    };
+    heartbeatEnabled = hbo.enabled === true;
+    const d = hbo.decision;
+    if (d && typeof d === "object") {
+      lastMode = typeof d.lastMode === "string" ? d.lastMode : null;
+      skipRemaining = typeof d.skipRemaining === "number" ? d.skipRemaining : null;
+      quietStreak = typeof d.quietStreak === "number" ? d.quietStreak : null;
+      terminalAt = typeof d.terminalAt === "string" ? d.terminalAt : null;
+    }
   }
 
   const suspendedAt = agent?.heartbeatSuspendedAt?.toISOString() ?? null;
@@ -161,12 +188,16 @@ export async function getSwarmHealthSnapshot(
     heartbeat: {
       suspendedAt,
       enabled: heartbeatEnabled,
+      lastMode,
+      skipRemaining,
+      quietStreak,
+      terminalAt,
     },
     superiorQueue: { pendingItems: queueItems },
     needsAttention,
     hint:
       "swarm 快照：inbox=AgentMessage；askUserPending=等人答复；superiorQueue=待 drain 的上级/子通知。" +
-      "积压高时先消费再派新任务；suspendedAt 非空表示心跳熔断。",
+      "积压高时先消费再派新任务；suspendedAt 非空表示心跳熔断/目标闭合；lastMode/skipRemaining 为 W2 决策态。",
   };
 }
 
@@ -243,7 +274,7 @@ export async function getSwarmAlertsOverview(prisma: PrismaClient): Promise<Swar
  */
 export async function buildSwarmBrief(
   prisma: PrismaClient,
-  options?: { workspaceId?: string | null; limit?: number },
+  options?: { workspaceId?: string | null; limit?: number; config?: AppConfig },
 ): Promise<SwarmBrief> {
   const limit = Math.min(30, Math.max(1, options?.limit ?? 12));
   const where =
@@ -273,6 +304,23 @@ export async function buildSwarmBrief(
     ``,
   ];
 
+  if (options?.config) {
+    const budget = getLlmBudgetStatus(options.config);
+    if (budget.totalTokens > 0) {
+      const pct = Math.round(budget.wasteRatio * 100);
+      lines.push(`## 今日 LLM 空转占比`);
+      lines.push(
+        `- wastedTokens=${budget.wastedTokens} / totalTokens=${budget.totalTokens}（${pct}%）`,
+      );
+      if (budget.wasteRatio >= WASTED_TOKEN_ALERT_RATIO) {
+        lines.push(
+          `- ⚠ 空转占比超过 ${Math.round(WASTED_TOKEN_ALERT_RATIO * 100)}%，请检查心跳/异步是否在空转烧 token。`,
+        );
+      }
+      lines.push(``);
+    }
+  }
+
   if (notifyChannels.some((c) => c.state !== "closed")) {
     lines.push(`## 通知通道`);
     for (const c of notifyChannels) {
@@ -294,6 +342,14 @@ export async function buildSwarmBrief(
       if (s.askUserPending.length > 0) bits.push(`ask_user=${s.askUserPending.length}`);
       if (s.sessions.paused > 0) bits.push(`paused会话=${s.sessions.paused}`);
       if (s.heartbeat.suspendedAt) bits.push(`心跳熔断`);
+      if (s.heartbeat.lastMode) {
+        bits.push(
+          `决策=${s.heartbeat.lastMode}` +
+            (s.heartbeat.skipRemaining != null && s.heartbeat.skipRemaining > 0
+              ? `(skip=${s.heartbeat.skipRemaining})`
+              : ""),
+        );
+      }
       lines.push(`### ${name}（${s.tier ?? "?"} · \`${s.agentId}\`)`);
       lines.push(`- ${bits.join("；") || "需关注"}`);
       if (s.inbox.preview[0]) {

@@ -146,6 +146,8 @@ export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
 export const DEFAULT_COMPACT_TRIGGER_RATIO = 0.75;
 export const DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS = 128_000;
 export const DEFAULT_COMPACT_KEEP_RECENT = 8;
+/** 压缩切点：按 token 粗估保留的最近上下文（与 config.compact.keepRecentTokens 对齐） */
+export const DEFAULT_COMPACT_KEEP_RECENT_TOKENS = 20_000;
 export const DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS = 4_000;
 
 /* ─── LLM 模型与厂商（W8 常量化收敛：全仓引用此处，禁止裸字符串） ─── */

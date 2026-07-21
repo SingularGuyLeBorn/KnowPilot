@@ -7,7 +7,6 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import { SWARM_MAX_DEPTH } from "@knowpilot/shared";
 
 /** Agent 层级排序：super > manager > sub */
 const TIER_RANK: Record<string, number> = { super: 3, manager: 2, sub: 1 };
@@ -108,14 +107,12 @@ function isTierRestrictedTool(toolName: string): boolean {
   return getRequiredTierForTool(toolName) !== undefined;
 }
 
-/** 判断工具是否是 agent 间通信类工具（需要通信范围校验） */
-function isAgentMessagingTool(toolName: string): boolean {
-  return ["agent_send_message", "agent_report_back", "agent_forward"].includes(toolName);
-}
-
 /**
  * 权限校验入口
  * @returns null=通过，PermissionError=拒绝（含错误码+原因）
+ *
+ * Agent 间通信：向上时机（#41）与 depth 防循环（#12/B5）均不在本层——
+ * 完整实现归属 swarmBus.send（可查 DB / 服务端物化 depth）。
  */
 export function checkToolPermission(
   toolName: string,
@@ -157,21 +154,6 @@ export function checkToolPermission(
       if (ctx.agentTier === "super" && toolName === "agent_delete") {
         // 目标 tier 校验在工具执行时做（需查 DB），此处只做调用方校验
       }
-    }
-  }
-
-  // 3. Agent 间通信工具：depth 防循环校验（#12）。
-  // 向上发消息时机约束（#41）不在本层做——guard 拿不到目标 Agent 的 tier（需查 DB），
-  // 此处预检注定是做一半的「标记了但没做」。其唯一完整实现归属 swarmBus.send →
-  // checkUpwardMessageTiming（执行层可查 DB 获取目标 tier 做完整方向判断），单点收口。
-  if (isAgentMessagingTool(toolName)) {
-    // depth 校验（#12 防循环）
-    const depth = args.depth as number | undefined;
-    if (depth !== undefined && depth > SWARM_MAX_DEPTH) {
-      return {
-        code: "DELEGATION_DEPTH_EXCEEDED",
-        reason: `委托层级 ${depth} 超过上限 ${SWARM_MAX_DEPTH}，可能存在循环委托。`,
-      };
     }
   }
 

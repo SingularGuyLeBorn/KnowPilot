@@ -87,8 +87,13 @@ describe("W10 SwarmOrchestrator 中介者", () => {
 
     try {
       // ── 路径 1：心跳触发 ──
-      // dailyBudget=0 关闭预算闸，避免 .dev-log 真实消耗影响测试
-      const hbConfig = { ...ctx.config, llm: { ...ctx.config.llm, dailyBudget: 0 } };
+      // dailyBudget=0 关闭预算闸；decisionEnabled=false 避免全量套件残留 pending Approval
+      // 把决策层打进 wait_user_gate 导致不 dispatch（Task 永不落库）
+      const hbConfig = {
+        ...ctx.config,
+        llm: { ...ctx.config.llm, dailyBudget: 0 },
+        heartbeat: { ...ctx.config.heartbeat, decisionEnabled: false },
+      };
       const engine = getHeartbeatEngine(prisma, ctx.services, hbConfig);
       await engine.triggerHeartbeat(hbAgentId);
 

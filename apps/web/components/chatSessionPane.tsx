@@ -135,16 +135,17 @@ export function ChatSessionPane({
   const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
-  const error = viewError ?? streamError;
-
-  // pane 稳定挂载后，切会话清掉本会话专属 UI 态（不再靠 remount 重置）
-  useEffect(() => {
+  // 切会话时在 render 期重置本会话 UI 态（React 推荐的 props→state 对齐写法，替代 effect setState）
+  const [paneSessionId, setPaneSessionId] = useState(sessionId);
+  if (paneSessionId !== sessionId) {
+    setPaneSessionId(sessionId);
     setSelectedSkill(null);
     setEditingUserId(null);
     setEditDraft("");
     setViewError(null);
     setCopiedId(null);
-  }, [sessionId]);
+  }
+  const error = viewError ?? streamError;
 
   const { data: sessionDetail } = trpc.session.getById.useQuery(
     { id: sessionId! },
@@ -194,26 +195,15 @@ export function ChatSessionPane({
     asyncQueueQuery,
   });
 
-  const queueHydrateSessionRef = useRef<string | null>(null);
+  // E6：切会话与同会话统一 mergeUserQueueFromDb，保留无 dbId 本地项
   useEffect(() => {
-    if (!sessionId) {
-      queueHydrateSessionRef.current = null;
-      return;
-    }
+    if (!sessionId) return;
     if (!sessionQueueQuery.data) return;
-    const sessionChanged = queueHydrateSessionRef.current !== sessionId;
-    queueHydrateSessionRef.current = sessionId;
+    // E6 统一 merge（禁 sessionChanged 全量替换）+ tombstone 防迟到 DB 塞回已认领项
     const tombstones = sessionComposeStore.get(sessionId).consumedQueueDbIds;
-    if (sessionChanged) {
-      sessionComposeActions.setUserQueue(
-        sessionId,
-        mergeUserQueueFromDb([], sessionQueueQuery.data, tombstones),
-      );
-    } else {
-      sessionComposeActions.patchUserQueue(sessionId, (prev) =>
-        mergeUserQueueFromDb(prev, sessionQueueQuery.data!, tombstones),
-      );
-    }
+    sessionComposeActions.patchUserQueue(sessionId, (prev) =>
+      mergeUserQueueFromDb(prev, sessionQueueQuery.data!, tombstones),
+    );
     streamLifecycleActions.hydrateDone(sessionId);
   }, [sessionId, sessionQueueQuery.data]);
 
@@ -302,12 +292,18 @@ export function ChatSessionPane({
   );
 
   const handleStop = useCallback(async () => {
+    // E3：先拿 stop 契约 partialAssistantMessageId，再 abort——AbortError 路径据此
+    // abortStream（有 id 等对齐 / null 立即 idle），不再 setTimeout(2000) 赌落库。
+    let partialAssistantMessageId: string | null = null;
     if (sessionId) {
       try {
-        await stopAgentChat(sessionId);
+        const res = await stopAgentChat(sessionId);
+        partialAssistantMessageId = res.partialAssistantMessageId;
       } catch {
-        /* continue abort */
+        /* continue abort；契约未知时按 null（立即释放） */
+        partialAssistantMessageId = null;
       }
+      streamLifecycleActions.setPendingAbortPartial(sessionId, partialAssistantMessageId);
     }
     sessionComposeActions.getActiveAbortController(sessionId)?.abort();
   }, [sessionId]);
