@@ -551,4 +551,13 @@ reflection:
 
 ---
 
-> 最后更新：2026-07-21。L1–L5 已全部落地；2026-07-20/21 重构套件 **PR-1～PR-6 + W1～W5 已全部合入 master**（W1 会话树 parentId/activeLeafId；W2 心跳决策层；W3 审批 scope；W4 context 钩子；W5 compaction 切割/stall/wastedTokens）；P0 Agent 架构 PR-1～7 已验收；W1–W12 / v4 / v7～v10 既有落地见上。
+> 最后更新：2026-07-22。L1–L5 已全部落地；2026-07-20/21 重构套件 **PR-1～PR-6 + W1～W5 已全部合入 master**（W1 会话树 parentId/activeLeafId；W2 心跳决策层；W3 审批 scope；W4 context 钩子；W5 compaction 切割/stall/wastedTokens）；P0 Agent 架构 PR-1～7 已验收；W1–W12 / v4 / v7～v10 既有落地见上。
+
+### 2026-07-22 追加
+
+- **Chat 刷新丢回复修复**：SessionStreamHub `subscribeExternal` 不再重放 `message_upserted`；`useSessionMessages` 对 no-op upsert 跳过 `tryCommitAfterAssistant`，防止 stale 重放误标 in-flight；`agentStream` 落库后使用 `persistedCreatedAt` 推送。新增 `sessionStreamHubReplay.test.ts` / `upsertNoopNoInFlight.test.ts`。
+- **Chat UI 增强**：右下角「回到底部」浮动按钮（Virtuoso `atBottomStateChange` 驱动，回底自动隐藏）。
+- **记忆系统升级**：Memory 新增 `lastAccessedAt` / `accessCount`；`decayMemories` 按类型差异化衰减（preference/semantic 不衰减，note/procedural 0.98，episodic 0.95，experience 0.90）；衰减基准优先 `lastAccessedAt`（被调用即重置）。
+- **审批邮件可回复**：Approval 新增 `lastNotifiedMessageId` / `lastNotifiedThreadId`；AgentMail webhook 支持第一行 `APPROVE` / `REJECT` 自动决策并执行；邮件主题统一为 `[KnowPilot 待审批]` / `[KnowPilot 需回复]` / `[KnowPilot 通知]`。
+- **控制台视觉升级**：`globals.css` 新增 `kp-card-premium` / `kp-badge` / `kp-stat-number` / `kp-table` / `kp-progress` / `kp-lift`；Dashboard / Agents / Approvals / Runs 应用新设计系统。
+- **README 重写**：删除 71 个命名候选，更新为当前真实状态。
