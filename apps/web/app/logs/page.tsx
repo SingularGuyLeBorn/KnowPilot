@@ -68,7 +68,7 @@ export default function LogsPage() {
             onClick={() => { setLevel(lvl); setPage(1); }}
             className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${
               level === lvl
-                ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] shadow-sm"
+                ? "border-[var(--kp-brand)] bg-[var(--kp-brand-deep)] text-white shadow-sm"
                 : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] text-[var(--kp-text-2)] hover:border-[var(--kp-brand-light)] hover:bg-[var(--kp-bg-soft)]"
             }`}
           >
@@ -86,41 +86,41 @@ export default function LogsPage() {
           description="目前没有任何系统执行痕迹。所有的 tRPC 变更操作（如创建文章、上传文件等）都会被自动记录日志。"
         />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]/20 shadow-inner">
+        <div className="kp-card-premium overflow-hidden rounded-2xl">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="kp-table">
               <thead>
-                <tr className="border-b border-[var(--kp-divider)] text-[10px] uppercase font-bold tracking-wider text-[var(--kp-text-3)] bg-[var(--kp-bg-alt)]">
-                  <th className="p-4 w-28">级别</th>
-                  <th className="p-4 w-32">组件</th>
-                  <th className="p-4 w-36">事件</th>
-                  <th className="p-4">日志信息</th>
-                  <th className="p-4 w-40 text-right">时间戳</th>
+                <tr>
+                  <th className="w-28">级别</th>
+                  <th className="w-32">组件</th>
+                  <th className="w-36">事件</th>
+                  <th>日志信息</th>
+                  <th className="w-40 text-right">时间戳</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--kp-divider-light)] font-mono text-[11px]">
+              <tbody className="font-mono text-[11px]">
                 {data.items.map((log: LogEntry) => {
                   const levelKey = log.level.toLowerCase();
                   const levelBadge: Record<string, string> = {
-                    info: "border border-sky-200 bg-sky-100 text-sky-900",
-                    success: "border border-emerald-200 bg-emerald-100 text-emerald-900",
-                    warn: "border border-amber-200 bg-amber-100 text-amber-950",
-                    error: "border border-red-200 bg-red-100 text-red-900",
-                    debug: "border border-violet-200 bg-violet-100 text-violet-900",
+                    info: "kp-badge-info",
+                    success: "kp-badge-success",
+                    warn: "kp-badge-warning",
+                    error: "kp-badge-danger",
+                    debug: "kp-badge",
                   };
                   return (
-                    <tr key={log.id} className="hover:bg-[var(--kp-bg-soft)]/60 transition-colors">
-                      <td className="p-4">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 font-bold text-[9px] ${levelBadge[levelKey] ?? "border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]"}`}>
+                    <tr key={log.id}>
+                      <td>
+                        <span className={levelBadge[levelKey] ?? "kp-badge"}>
                           {log.level.toUpperCase()}
                         </span>
                       </td>
-                      <td className="p-4 text-[var(--kp-text-2)]">{log.component}</td>
-                      <td className="p-4 text-[var(--kp-brand-deep)]">{log.event}</td>
-                      <td className="p-4 text-[var(--kp-text-1)] truncate max-w-xs md:max-w-md" title={log.message}>
+                      <td className="text-[var(--kp-text-2)]">{log.component}</td>
+                      <td className="text-[var(--kp-brand-deep)]">{log.event}</td>
+                      <td className="text-[var(--kp-text-1)] truncate max-w-xs md:max-w-md" title={log.message}>
                         {log.message}
                       </td>
-                      <td className="p-4 text-right text-[var(--kp-text-3)]">
+                      <td className="text-right text-[var(--kp-text-3)]">
                         {new Date(log.createdAt).toLocaleString()}
                       </td>
                     </tr>

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Memories 长期记忆管理页面 (L2 智能工作台)
  */
 
@@ -7,7 +7,7 @@
 import React, { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { Brain, Plus, Zap, Tag } from "lucide-react";
+import { Brain, Plus, Zap, Tag, Clock, Eye } from "lucide-react";
 import Link from "next/link";
 import type { Memory } from "@knowpilot/shared";
 import { MEMORY_TYPE_LABELS } from "@knowpilot/shared";
@@ -19,6 +19,20 @@ function formatScope(scope?: string) {
   if (scope.startsWith("workspace:")) return `空间 ${scope.slice(10, 18)}…`;
   if (scope.startsWith("agent:")) return `Agent ${scope.slice(6, 14)}…`;
   return scope;
+}
+
+function formatRelative(iso?: string | Date | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "刚刚";
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return d.toLocaleDateString("zh-CN");
 }
 
 export default function MemoriesPage() {
@@ -102,29 +116,30 @@ export default function MemoriesPage() {
           toolsUsed.map((t) => (
             <span
               key={t}
-              className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--kp-brand-deep)]"
+              className="kp-badge"
+              style={{ background: "var(--kp-brand-soft)", color: "var(--kp-brand-deep)" }}
             >
-              <Tag className="h-2 w-2" />
+              <Tag className="h-2.5 w-2.5" />
               {t}
             </span>
           ))
         ) : (
-          <span className="rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--kp-text-3)]">
+          <span className="kp-badge" style={{ background: "var(--kp-bg-mute)", color: "var(--kp-text-3)" }}>
             无工具调用
           </span>
         )}
         {success !== undefined && (
           <span
             className={cn(
-              "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
-              success ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600",
+              "kp-badge",
+              success ? "kp-badge-success" : "kp-badge-danger",
             )}
           >
             {success ? "成功" : "失败"}
           </span>
         )}
         {durationMs !== undefined && (
-          <span className="rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px] text-[var(--kp-text-3)]">
+          <span className="kp-badge" style={{ background: "var(--kp-bg-mute)", color: "var(--kp-text-3)" }}>
             {(durationMs / 1000).toFixed(1)}s
           </span>
         )}
@@ -198,31 +213,30 @@ const confirmDelete = () => {
             <motion.div
               key={memory.id}
               initial={{ opacity: 0, y: 15 }}
-              animate={{ 
-                opacity: 1, 
+              animate={{
+                opacity: 1,
                 y: 0,
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
-              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
+              className={cn(
+                "kp-card-premium kp-lift group relative overflow-hidden rounded-2xl flex flex-col justify-between",
+                density === "compact" ? "p-3" : "p-5",
+              )}
             >
               <div>
                 <div className="mb-3 flex items-start justify-between gap-4">
-                  <div className="flex flex-wrap gap-1">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--kp-brand-deep)]">
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="kp-badge" style={{ background: "var(--kp-brand-soft)", color: "var(--kp-brand-deep)" }}>
                       {MEMORY_TYPE_LABELS[memory.type as keyof typeof MEMORY_TYPE_LABELS] ?? memory.type}
                     </span>
-                    <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-[9px] text-[var(--kp-text-2)]">
+                    <span className="kp-badge" style={{ background: "var(--kp-bg-mute)", color: "var(--kp-text-2)" }}>
                       {formatScope(memory.scope)}
                     </span>
                     {memory.status && memory.status !== "active" && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] text-amber-800">
-                        {memory.status}
-                      </span>
+                      <span className="kp-badge kp-badge-warning">{memory.status}</span>
                     )}
                     {memory.attribution && (
-                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] text-blue-700">
-                        {memory.attribution}
-                      </span>
+                      <span className="kp-badge kp-badge-info">{memory.attribution}</span>
                     )}
                   </div>
 
@@ -258,6 +272,16 @@ const confirmDelete = () => {
                       有效至 {new Date(memory.validTo).toLocaleDateString("zh-CN")}
                     </span>
                   )}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--kp-text-3)]">
+                  <span className="inline-flex items-center gap-1">
+                    <Eye className="h-3 w-3" />
+                    调用 {memory.accessCount ?? 0} 次
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {memory.lastAccessedAt ? `最近 ${formatRelative(memory.lastAccessedAt)}` : "从未被调用"}
+                  </span>
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {memory.keywords?.map((k: string) => (

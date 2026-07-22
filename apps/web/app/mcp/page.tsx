@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MCP 服务器配置页面 (L2 智能工作台)
  */
 
@@ -71,7 +71,7 @@ export default function McpPage() {
                 y: 0,
                 transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
               }}
-              className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300", density === "compact" ? "p-3" : "p-5")}
+              className={cn("kp-card-premium kp-lift group relative overflow-hidden rounded-2xl flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
             >
               <div className="flex justify-between items-start gap-4 mb-3">
                 <div className="flex items-center gap-3">
@@ -120,9 +120,7 @@ export default function McpPage() {
                   <Terminal className="w-3 h-3 text-[var(--kp-brand-deep)]" />
                   {(server.transport ?? "stdio") === "http" ? "Streamable HTTP" : "Stdio"}
                 </span>
-                <span className={`px-2 py-0.5 rounded-full font-medium ${
-                  server.enabled ? "bg-green-500/10 text-green-500" : "bg-gray-500/10 text-gray-500"
-                }`}>
+                <span className={cn("kp-badge", server.enabled ? "kp-badge-success" : "")}>
                   {server.enabled ? "已连接" : "已断开"}
                 </span>
               </div>

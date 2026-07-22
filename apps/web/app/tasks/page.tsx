@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tasks 后台任务管理页面 (L3 系统与运维)
  */
 
@@ -78,11 +78,11 @@ export default function TasksPage() {
       ) : (
         <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,340px),1fr))] ", density === "compact" ? "gap-4" : "gap-6")}>
           {data.items.map((task: Task, idx: number) => {
-            const statusColors = {
-              pending: "bg-yellow-500/10 text-yellow-600",
-              running: "bg-blue-500/10 text-blue-500 animate-pulse",
-              success: "bg-green-500/10 text-green-500",
-              failed: "bg-red-500/10 text-red-500",
+            const statusBadge = {
+              pending: "kp-badge-warning",
+              running: "kp-badge-info animate-pulse",
+              success: "kp-badge-success",
+              failed: "kp-badge-danger",
             };
             return (
               <motion.div
@@ -93,7 +93,7 @@ export default function TasksPage() {
                   y: 0,
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 }
                 }}
-                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:bg-white dark:hover:bg-[var(--kp-bg-soft)] hover:border-[var(--kp-divider)] hover:shadow-xl transition-all duration-300 flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
+                className={cn("kp-card-premium kp-lift group relative overflow-hidden rounded-2xl flex flex-col justify-between", density === "compact" ? "p-3" : "p-5")}
               >
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-3">
@@ -131,7 +131,7 @@ export default function TasksPage() {
                 </div>
 
                 <div className="pt-3 border-t border-[var(--kp-divider-light)] flex justify-between items-center text-[10px]">
-                  <span className={`px-2 py-0.5 rounded-full font-medium ${statusColors[task.status as keyof typeof statusColors]}`}>
+                  <span className={cn("kp-badge", statusBadge[task.status as keyof typeof statusBadge])}>
                     {task.status.toUpperCase()}
                   </span>
                   

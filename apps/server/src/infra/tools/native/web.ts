@@ -128,6 +128,7 @@ async function tavilySearch(
   query: string,
   maxResults: number,
   includeDomains?: string[],
+  timeoutMs = 8000,
 ) {
   const body: Record<string, unknown> = {
     api_key: apiKey,
@@ -142,7 +143,7 @@ async function tavilySearch(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, timeoutMs);
   if (!res.ok) throw new Error(`Tavily 搜索失败: HTTP ${res.status}`);
   const data = (await res.json()) as {
     answer?: string;
@@ -155,13 +156,13 @@ async function tavilySearch(
   };
 }
 
-async function serpApiSearch(apiKey: string, query: string, maxResults: number) {
+async function serpApiSearch(apiKey: string, query: string, maxResults: number, timeoutMs = 8000) {
   const url = new URL("https://serpapi.com/search.json");
   url.searchParams.set("engine", "google");
   url.searchParams.set("q", query);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("num", String(maxResults));
-  const res = await fetchWithTimeout(url.toString());
+  const res = await fetchWithTimeout(url.toString(), {}, timeoutMs);
   if (!res.ok) throw new Error(`SerpAPI 搜索失败: HTTP ${res.status}`);
   const data = (await res.json()) as { organic_results?: Array<{ title: string; link: string; snippet: string }> };
   return {
@@ -214,6 +215,7 @@ async function tryScopedInfoSourceSearch(
   args: { query: string; maxResults: number },
   ctx: NativeToolContext,
   infoSources: InfoSourceSnapshot[],
+  remainingMs?: number,
 ) {
   if (infoSources.length === 0) return null;
 
@@ -222,9 +224,14 @@ async function tryScopedInfoSourceSearch(
   const infoSourcesUsed = summarizeInfoSources(infoSources);
   const { tavilyApiKey, serpApiKey } = ctx.config.search;
 
+  // 共享总超时预算：剩余时间不足时直接跳过 scoped，把预算留给 smartSearch
+  if (remainingMs !== undefined && remainingMs <= 0) return null;
+
+  const perCallTimeout = remainingMs !== undefined ? Math.max(1000, Math.floor(remainingMs / 2)) : 8000;
+
   if (tavilyApiKey && domains.length > 0) {
     try {
-      const scoped = await tavilySearch(tavilyApiKey, query, maxResults, domains);
+      const scoped = await tavilySearch(tavilyApiKey, query, maxResults, domains, perCallTimeout);
       if (scoped.results.length > 0) {
         return { ...scoped, infoSourcesUsed, searchPhase: "infoSource-scoped" as const };
       }
@@ -236,7 +243,7 @@ async function tryScopedInfoSourceSearch(
   if (serpApiKey && domains.length > 0) {
     try {
       const siteQuery = domains.map((d) => `site:${d}`).join(" OR ");
-      const scoped = await serpApiSearch(serpApiKey, `${query} (${siteQuery})`, maxResults);
+      const scoped = await serpApiSearch(serpApiKey, `${query} (${siteQuery})`, maxResults, perCallTimeout);
       if (scoped.results.length > 0) {
         return { ...scoped, infoSourcesUsed, searchPhase: "infoSource-scoped" as const };
       }
@@ -285,6 +292,9 @@ async function fallbackInfoSourceSearch(
   return null;
 }
 
+/** web_search 总超时：scoped + smartSearch + fallback 三段共享预算，防止各自独立计时叠加到 60s+ */
+const WEB_SEARCH_TOTAL_TIMEOUT_MS = 30_000;
+
 async function webSearch(args: Record<string, unknown>, ctx: NativeToolContext) {
   const query = String(args.query || "");
   const maxResults = Number(args.maxResults || 5);
@@ -297,10 +307,16 @@ async function webSearch(args: Record<string, unknown>, ctx: NativeToolContext) 
   syncSearchEnvFromConfig(ctx.config);
 
   const started = Date.now();
+  const deadlineAt = started + WEB_SEARCH_TOTAL_TIMEOUT_MS;
 
-  const scopedFirst = await tryScopedInfoSourceSearch({ query, maxResults }, ctx, infoSources);
+  const scopedFirst = await tryScopedInfoSourceSearch({ query, maxResults }, ctx, infoSources, deadlineAt - Date.now());
   if (scopedFirst) {
     return { ...scopedFirst, elapsedMs: Date.now() - started };
+  }
+
+  const remainingBeforeSmart = deadlineAt - Date.now();
+  if (remainingBeforeSmart <= 0) {
+    throw new Error(`web_search 总超时（${WEB_SEARCH_TOTAL_TIMEOUT_MS}ms）：scoped 信息源搜索已耗尽预算`);
   }
 
   try {
@@ -312,6 +328,10 @@ async function webSearch(args: Record<string, unknown>, ctx: NativeToolContext) 
       elapsedMs: data.elapsedMs ?? Date.now() - started,
     };
   } catch (smartErr) {
+    const remainingBeforeFallback = deadlineAt - Date.now();
+    if (remainingBeforeFallback <= 0) {
+      throw smartErr instanceof Error ? smartErr : new Error(String(smartErr));
+    }
     const fallback = await fallbackInfoSourceSearch({ query, maxResults }, ctx, infoSources);
     if (fallback) {
       return { ...fallback, elapsedMs: Date.now() - started };

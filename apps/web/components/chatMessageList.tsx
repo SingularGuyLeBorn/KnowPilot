@@ -159,7 +159,7 @@ export const ChatMessageList = memo(function ChatMessageList({
       <div
         key={`a-${assistantId}`}
         data-testid="assistant-message-bubble"
-        className="group/msg relative mb-6 ml-6 mr-2 flex w-full max-w-[96%] flex-col items-start gap-1"
+        className="group/msg relative mb-6 flex w-full flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
           <PostContent content={active.content} className="prose-sm max-w-none text-left" />
@@ -208,7 +208,7 @@ export const ChatMessageList = memo(function ChatMessageList({
         <div className="flex w-full justify-start">
           <div
             className={cn(
-              "group/msg ml-6 mr-2 flex w-full max-w-[96%] flex-col items-start gap-1",
+              "group/msg flex w-full flex-col items-start gap-1",
               streamingContent ? "mb-6" : "mb-4",
             )}
             data-testid="streaming-assistant-bubble"
@@ -276,7 +276,7 @@ export const ChatMessageList = memo(function ChatMessageList({
             data-delivery-job-id={deliveryJobId || undefined}
             className={cn(
               // 默认接近全宽（对标 Kimi Code）；右对齐消息仍靠右，但内容区拉宽
-              "group/msg relative mb-3 flex w-full max-w-[96%] flex-col gap-1",
+              "group/msg relative mb-3 flex w-full flex-col gap-1",
               isRightSide ? "items-stretch self-end" : "items-stretch self-start",
               deliveryJobId &&
                 highlightJobId === deliveryJobId &&
@@ -394,7 +394,7 @@ export const ChatMessageList = memo(function ChatMessageList({
   // 乐观消息渲染（用户发送后、流式落地前的占位气泡）
   const renderOptimisticMessage = (msg: { id: string; content: string; attachments?: ChatImageAttachment[] }) => (
     <div className="mb-4 flex justify-end">
-      <div className="flex w-full max-w-[96%] flex-col items-stretch gap-1.5">
+      <div className="flex w-full flex-col items-stretch gap-1.5">
         {msg.attachments && msg.attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
             {msg.attachments.map((att) => (
