@@ -1013,8 +1013,10 @@ async function feishuAuthorizeTool(args: Record<string, unknown>, _ctx: NativeTo
 
 async function sendEmailTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   // 发送通道单点实现见 infra/emailNotifier.ts（HeartbeatEngine 失败告警复用同一通道）
+  const rawSubject = String(args.subject || "");
+  const subject = rawSubject.startsWith("[KnowPilot 通知]") ? rawSubject : `[KnowPilot 通知] ${rawSubject}`;
   return sendEmailNotification(ctx.config, ctx.services.log, {
-    subject: String(args.subject || ""),
+    subject,
     body: String(args.body || ""),
     to: (args.to as string) || undefined,
     agentId: ctx.agentSnapshot?.id,
