@@ -10,17 +10,17 @@ import Link from "next/link";
 import type { Run } from "@knowpilot/shared";
 import { useRun, useAgent } from "@/lib/hooks";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, cn } from "@/lib/utils";
 import { agentLabel, runLabel, sessionLabel } from "@/lib/displayLabels";
 import { trpc } from "@/lib/trpc";
 
 const STATUS_STYLE: Record<Run["status"], string> = {
-  pending: "bg-yellow-500/10 text-yellow-600",
-  running: "bg-blue-500/10 text-blue-500 animate-pulse",
-  success: "bg-green-500/10 text-green-600",
-  failed: "bg-red-500/10 text-red-600",
-  cancelled: "bg-gray-500/10 text-gray-500",
-  interrupted: "bg-orange-500/10 text-orange-600",
+  pending: "kp-badge-warning",
+  running: "kp-badge-info animate-pulse",
+  success: "kp-badge-success",
+  failed: "kp-badge-danger",
+  cancelled: "kp-badge",
+  interrupted: "kp-badge-warning",
 };
 
 const STATUS_LABEL: Record<Run["status"], string> = {
@@ -85,11 +85,12 @@ export default function RunsPage() {
               setStatusFilter(s);
               setPage(1);
             }}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+            className={cn(
+              "rounded-full px-3 py-1.5 text-xs font-medium transition-all",
               statusFilter === s
-                ? "bg-[var(--kp-brand-deep)] text-white"
-                : "bg-[var(--kp-bg-soft)] text-[var(--kp-text-2)] hover:bg-[var(--kp-brand-soft)]"
-            }`}
+                ? "bg-[var(--kp-brand-deep)] text-white shadow-sm"
+                : "bg-[var(--kp-bg-soft)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+            )}
           >
             {s === "" ? "全部" : STATUS_LABEL[s as Run["status"]]}
           </button>
@@ -105,24 +106,24 @@ export default function RunsPage() {
         />
       ) : (
         <>
-          <div className="rounded-2xl border border-[var(--kp-divider-light)] overflow-hidden">
+          <div className="kp-card-premium rounded-2xl overflow-hidden">
             <div className="kp-table-scroll overflow-x-auto">
-              <table className="w-full min-w-[36rem] text-sm">
-                <thead className="bg-[var(--kp-bg-soft)] text-left text-xs text-[var(--kp-text-3)]">
+              <table className="kp-table min-w-[36rem]">
+                <thead>
                   <tr>
-                    <th className="px-4 py-3 font-semibold">状态</th>
-                    <th className="px-4 py-3 font-semibold">Agent / Session</th>
-                    <th className="px-4 py-3 font-semibold">耗时</th>
-                    <th className="px-4 py-3 font-semibold">时间</th>
-                    <th className="px-4 py-3 font-semibold w-16" />
+                    <th>状态</th>
+                    <th>Agent / Session</th>
+                    <th>耗时</th>
+                    <th>时间</th>
+                    <th className="w-16" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--kp-divider-light)]">
+                <tbody>
                   {data.items.map((run: Run) => (
-                    <tr key={run.id} className="hover:bg-[var(--kp-bg-soft)]/50">
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[run.status]}`}>
+                    <tr key={run.id}>
+                      <td>
+                        <div className="flex flex-col gap-1.5">
+                          <span className={cn("kp-badge w-fit", STATUS_STYLE[run.status])}>
                             {STATUS_LABEL[run.status]}
                           </span>
                           {(() => {
@@ -142,9 +143,11 @@ export default function RunsPage() {
                           })()}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         <div className="flex items-center gap-2 text-[var(--kp-text-2)]">
-                          <Bot className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--kp-bg-mute)]">
+                            <Bot className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
+                          </div>
                           <span className="text-xs truncate max-w-[240px]" title={runLabel({
                             agentName: run.agentId ? agentNameById.get(run.agentId) : null,
                             sessionLabel: run.sessionId ? sessionLabelById.get(run.sessionId) : null,
@@ -158,20 +161,20 @@ export default function RunsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-[var(--kp-text-3)]">
+                      <td className="text-[var(--kp-text-3)]">
                         <span className="inline-flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {run.durationMs != null ? `${run.durationMs} ms` : "—"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-[var(--kp-text-3)]">
+                      <td className="text-xs text-[var(--kp-text-3)]">
                         {formatRelativeTime(run.createdAt)}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
+                      <td>
+                        <div className="flex items-center gap-3">
                           <Link
                             href={`/runs/edit/${run.id}`}
-                            className="text-xs text-[var(--kp-brand-deep)] hover:text-[var(--kp-brand-deep)]"
+                            className="text-xs font-medium text-[var(--kp-brand-deep)] hover:underline"
                           >
                             详情
                           </Link>

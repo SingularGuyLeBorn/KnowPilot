@@ -6,35 +6,59 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { BarChart3, Bot, Crown, FileText, ShieldCheck, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, Activity, type LucideIcon } from "lucide-react";
+import { BarChart3, Bot, Crown, FileText, ShieldCheck, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, Activity, TrendingUp, type LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useNativeCapabilities } from "@/lib/hooks";
 import { AdminPage, LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { AsyncPoolPanel } from "@/components/asyncPoolPanel";
 import { FreeModelsSummaryCard } from "@/components/freeModelsPanel";
+import { cn } from "@/lib/utils";
 
 function StatCard({
   icon: Icon,
   label,
   value,
   sub,
+  trend,
+  tone = "default",
 }: {
   icon: LucideIcon;
   label: string;
   value: string | number;
   sub?: string;
+  trend?: string;
+  tone?: "default" | "success" | "warning" | "danger";
 }) {
+  const toneStyles = {
+    default: "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
+    success: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    warning: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    danger: "bg-red-500/10 text-red-700 dark:text-red-400",
+  };
+
   return (
-    <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
-          <Icon className="h-4 w-4" />
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="kp-card-premium kp-lift rounded-2xl p-5"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className={cn("flex h-9 w-9 items-center justify-center rounded-xl", toneStyles[tone])}>
+            <Icon className="h-4 w-4" />
+          </div>
+          <span className="text-xs font-medium text-[var(--kp-text-3)]">{label}</span>
         </div>
-        <span className="text-xs font-medium text-[var(--kp-text-3)]">{label}</span>
+        {trend && (
+          <span className="kp-badge kp-badge-success">
+            <TrendingUp className="h-3 w-3" />
+            {trend}
+          </span>
+        )}
       </div>
-      <p className="text-2xl font-bold text-[var(--kp-text-1)]">{value}</p>
-      {sub && <p className="text-[10px] text-[var(--kp-text-3)] mt-1">{sub}</p>}
-    </div>
+      <p className="kp-stat-number mt-4">{value}</p>
+      {sub && <p className="mt-1 text-[11px] text-[var(--kp-text-3)]">{sub}</p>}
+    </motion.div>
   );
 }
 
@@ -54,6 +78,9 @@ export default function DashboardPage() {
 
   const tierIcon = (tier: string) => (tier === "super" ? Crown : tier === "manager" ? ShieldCheck : Bot);
 
+  const budgetRatio = llmBudget?.ratio ?? 0;
+  const budgetTone = budgetRatio > 0.9 ? "danger" : budgetRatio > 0.7 ? "warning" : "success";
+
   return (
     <AdminPage>
       <PageHeader
@@ -66,17 +93,53 @@ export default function DashboardPage() {
       <FreeModelsSummaryCard />
 
       {llmBudget && (
-        <div className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 md:p-5">
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            <Sparkles className="h-4 w-4 text-[var(--kp-brand-deep)]" />
-            <span className="font-semibold text-[var(--kp-text-1)]">今日 LLM 预算</span>
-            <span className="font-mono text-[var(--kp-text-2)]">
-              ${llmBudget.spentUsd.toFixed(4)} / ${llmBudget.limitUsd.toFixed(2)}
-              {llmBudget.exceeded ? " · 已用尽" : ` · ${(llmBudget.ratio * 100).toFixed(0)}%`}
-            </span>
-            <span className="text-[10px] text-[var(--kp-text-3)]">30s 刷新</span>
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="kp-card-premium rounded-2xl p-4 md:p-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-xl",
+                budgetTone === "danger" ? "bg-red-500/10 text-red-600" :
+                budgetTone === "warning" ? "bg-amber-500/10 text-amber-600" :
+                "bg-emerald-500/10 text-emerald-600"
+              )}>
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-[var(--kp-text-1)]">今日 LLM 预算</span>
+                  <span className={cn(
+                    "kp-badge",
+                    budgetTone === "danger" ? "kp-badge-danger" :
+                    budgetTone === "warning" ? "kp-badge-warning" :
+                    "kp-badge-success"
+                  )}>
+                    {(llmBudget.ratio * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-[var(--kp-text-3)]">30s 自动刷新</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-lg font-bold text-[var(--kp-text-1)]">
+                ${llmBudget.spentUsd.toFixed(4)} <span className="text-sm font-normal text-[var(--kp-text-3)]">/ ${llmBudget.limitUsd.toFixed(2)}</span>
+              </p>
+              <div className="kp-progress mt-2 w-40">
+                <div
+                  className={cn(
+                    "kp-progress-bar",
+                    budgetTone === "danger" ? "!bg-red-500" :
+                    budgetTone === "warning" ? "!bg-amber-500" : ""
+                  )}
+                  style={{ width: `${Math.min(100, llmBudget.ratio * 100)}%` }}
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {caps && (
@@ -111,6 +174,7 @@ export default function DashboardPage() {
             label="Agent 运行"
             value={data.runs.total}
             sub={`成功 ${data.runs.success} · 失败 ${data.runs.failed}`}
+            tone={data.runs.failed > data.runs.success ? "warning" : "default"}
           />
           <StatCard
             icon={CalendarClock}
@@ -122,6 +186,7 @@ export default function DashboardPage() {
             icon={AlertTriangle}
             label="24h 错误日志"
             value={data.logs.errors24h}
+            tone={data.logs.errors24h > 0 ? "danger" : "success"}
           />
           <StatCard
             icon={Sparkles}
@@ -136,46 +201,57 @@ export default function DashboardPage() {
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6"
+          className="kp-card-premium rounded-2xl p-6"
         >
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="h-4 w-4 text-[var(--kp-brand-deep)]" />
-            <h2 className="text-sm font-bold text-[var(--kp-text-1)]">Swarm Agent 运行统计（近 30 天）</h2>
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+              <Activity className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-[var(--kp-text-1)]">Swarm Agent 运行统计</h2>
+              <p className="text-xs text-[var(--kp-text-3)]">近 30 天</p>
+            </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="kp-table">
               <thead>
-                <tr className="border-b border-[var(--kp-divider)] text-[var(--kp-text-3)]">
-                  <th className="px-3 py-2 text-left font-medium">Agent</th>
-                  <th className="px-3 py-2 text-right font-medium">对话轮数</th>
-                  <th className="px-3 py-2 text-right font-medium">工具调用</th>
-                  <th className="px-3 py-2 text-right font-medium">成功率</th>
-                  <th className="px-3 py-2 text-right font-medium">平均耗时</th>
-                  <th className="px-3 py-2 text-right font-medium">Token 消耗</th>
+                <tr>
+                  <th>Agent</th>
+                  <th className="text-right">对话轮数</th>
+                  <th className="text-right">工具调用</th>
+                  <th className="text-right">成功率</th>
+                  <th className="text-right">平均耗时</th>
+                  <th className="text-right">Token 消耗</th>
                 </tr>
               </thead>
               <tbody>
                 {swarmStats.map((stat: { agentId: string; agentName: string; agentTier: string; conversationRounds: number; toolCallCount: number; successRate: number; avgDurationMs: number; totalTokens: number }) => {
                   const TierIcon = tierIcon(stat.agentTier);
                   return (
-                    <tr key={stat.agentId} className="border-b border-[var(--kp-divider-light)] hover:bg-[var(--kp-bg-soft)]">
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <TierIcon className="h-3 w-3 shrink-0 text-[var(--kp-brand-deep)]" />
-                          <span className="text-[var(--kp-text-1)]">{stat.agentName}</span>
+                    <tr key={stat.agentId}>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--kp-bg-mute)]">
+                            <TierIcon className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
+                          </div>
+                          <span className="font-medium text-[var(--kp-text-1)]">{stat.agentName}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">{stat.conversationRounds}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">{stat.toolCallCount}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        <span className={stat.successRate >= 80 ? "text-green-600" : stat.successRate >= 50 ? "text-amber-600" : "text-red-600"}>
+                      <td className="text-right tabular-nums">{stat.conversationRounds}</td>
+                      <td className="text-right tabular-nums">{stat.toolCallCount}</td>
+                      <td className="text-right tabular-nums">
+                        <span className={cn(
+                          "kp-badge",
+                          stat.successRate >= 80 ? "kp-badge-success" :
+                          stat.successRate >= 50 ? "kp-badge-warning" : "kp-badge-danger"
+                        )}>
                           {stat.successRate}%
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">
+                      <td className="text-right tabular-nums">
                         {stat.avgDurationMs > 1000 ? `${(stat.avgDurationMs / 1000).toFixed(1)}s` : `${stat.avgDurationMs}ms`}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--kp-text-2)]">{stat.totalTokens.toLocaleString()}</td>
+                      <td className="text-right tabular-nums">{stat.totalTokens.toLocaleString()}</td>
                     </tr>
                   );
                 })}

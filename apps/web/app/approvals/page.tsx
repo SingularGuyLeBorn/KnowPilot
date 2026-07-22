@@ -22,11 +22,11 @@ const STATUS_LABELS: Record<string, string> = {
   executed: "已执行",
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-amber-500/10 text-amber-600",
-  approved: "bg-green-500/10 text-green-600",
-  rejected: "bg-red-500/10 text-red-600",
-  executed: "bg-slate-500/10 text-slate-600",
+const STATUS_BADGE: Record<string, string> = {
+  pending: "kp-badge-warning",
+  approved: "kp-badge-success",
+  rejected: "kp-badge-danger",
+  executed: "kp-badge-info",
 };
 
 export default function ApprovalsPage() {
@@ -83,9 +83,9 @@ export default function ApprovalsPage() {
               setPage(1);
             }}
             className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition",
+              "rounded-full px-3 py-1.5 text-xs font-medium transition-all",
               statusFilter === s
-                ? "bg-[var(--kp-brand-deep)] text-white"
+                ? "bg-[var(--kp-brand-deep)] text-white shadow-sm"
                 : "bg-[var(--kp-bg-soft)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
             )}
           >
@@ -113,24 +113,25 @@ export default function ApprovalsPage() {
                   y: 0,
                   transition: { delay: idx * 0.03, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className={cn("rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)]", density === "compact" ? "p-3" : "p-5")}
+                className={cn(
+                  "kp-card-premium kp-lift rounded-2xl",
+                  density === "compact" ? "p-3" : "p-5",
+                )}
                 data-testid="approval-card"
               >
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                  <div className="space-y-2 flex-1 min-w-0">
+                  <div className="space-y-3 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <code className="text-sm font-bold text-[var(--kp-text-1)]">{approval.toolName}</code>
-                      <span
-                        className={cn(
-                          "px-2 py-0.5 rounded-full text-[10px] font-medium",
-                          STATUS_COLORS[approval.status] ?? STATUS_COLORS.pending,
-                        )}
-                      >
+                      <code className="rounded-lg bg-[var(--kp-bg-mute)] px-2 py-1 text-sm font-bold text-[var(--kp-text-1)]">
+                        {approval.toolName}
+                      </code>
+                      <span className={cn("kp-badge", STATUS_BADGE[approval.status] ?? "kp-badge-warning")}>
                         {STATUS_LABELS[approval.status] ?? approval.status}
                       </span>
                       {approval.decisionScope ? (
                         <code
-                          className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]"
+                          className="kp-badge"
+                          style={{ background: "var(--kp-bg-mute)", color: "var(--kp-text-2)" }}
                           title="decisionScope（调度面相交检查）"
                           data-testid="approval-decision-scope"
                         >
@@ -138,11 +139,11 @@ export default function ApprovalsPage() {
                         </code>
                       ) : null}
                     </div>
-                    <pre className="text-[10px] font-mono bg-[var(--kp-bg-mute)] rounded-lg p-3 overflow-x-auto max-h-32 text-[var(--kp-text-2)]">
+                    <pre className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] p-3 text-[11px] font-mono overflow-x-auto max-h-32 text-[var(--kp-text-2)] shadow-inner">
                       {formatArgs(approval.args)}
                     </pre>
-                    <p className="text-[10px] text-[var(--kp-text-3)] flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
+                    <p className="text-[11px] text-[var(--kp-text-3)] flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
                       {new Date(approval.createdAt).toLocaleString("zh-CN")}
                     </p>
                   </div>

@@ -181,12 +181,14 @@ const AgentCard = memo(function AgentCard({
       layout
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -2 }}
+      transition={{ type: "spring", stiffness: 260, damping: 26 }}
       className={cn(
-        "group relative rounded-2xl border transition hover:shadow-lg",
+        "kp-card-premium group relative rounded-2xl transition",
         density === "compact" ? "p-3" : "p-5",
         isSuper
-          ? "border-amber-200/60 bg-gradient-to-br from-amber-50/50 to-[var(--kp-bg-alt)] hover:border-amber-300/80"
-          : "border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] hover:border-[var(--kp-brand)]/30",
+          ? "border-amber-200/60 bg-gradient-to-br from-amber-50/50 to-[var(--kp-bg-alt)]"
+          : "",
         selected && "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/30",
       )}
     >
@@ -219,22 +221,22 @@ const AgentCard = memo(function AgentCard({
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-[var(--kp-text-1)]">{agent.name}</h3>
               {isSuper ? (
-                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                <span className="kp-badge kp-badge-warning">
                   <Lock className="h-2.5 w-2.5" />
                   超级 · 受保护
                 </span>
               ) : agent.tier === "manager" ? (
-                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700">管理</span>
+                <span className="kp-badge kp-badge-info">管理</span>
               ) : null}
               {agent.status === "deleted" && (
-                <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[9px] text-gray-500">已删除</span>
+                <span className="kp-badge" style={{ background: "rgba(107, 114, 128, 0.1)", color: "#6b7280" }}>已删除</span>
               )}
               {agent.status === "dormant" && (
-                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-400">休眠</span>
+                <span className="kp-badge" style={{ background: "rgba(107, 114, 128, 0.08)", color: "#9ca3af" }}>休眠</span>
               )}
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1">
-              <span className="inline-flex items-center gap-1 rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]">
+              <span className="kp-badge" style={{ background: "var(--kp-bg-mute)", color: "var(--kp-text-2)" }}>
                 <Cpu className="h-2.5 w-2.5" />
                 {agent.model}
               </span>
@@ -267,7 +269,7 @@ const AgentCard = memo(function AgentCard({
         return (
           <div
             className={cn(
-              "rounded-xl border px-3 py-2.5 text-[11px]",
+              "rounded-xl border px-3 py-2.5 text-[11px] shadow-sm",
               density === "compact" ? "mb-2" : "mb-3",
               suspended
                 ? "border-amber-200 bg-amber-50/80 text-amber-900"
@@ -281,14 +283,10 @@ const AgentCard = memo(function AgentCard({
               <HeartPulse className="h-3.5 w-3.5 shrink-0" />
               <span>心跳已开启</span>
               {suspended && (
-                <span className="rounded-full bg-amber-200/80 px-1.5 py-0.5 text-[9px] font-semibold">
-                  已熔断暂停
-                </span>
+                <span className="kp-badge kp-badge-warning">已熔断暂停</span>
               )}
               {failed && !suspended && (
-                <span className="rounded-full bg-red-200/80 px-1.5 py-0.5 text-[9px] font-semibold">
-                  连续失败 ×{hb.consecutiveFailures}
-                </span>
+                <span className="kp-badge kp-badge-danger">连续失败 ×{hb.consecutiveFailures}</span>
               )}
             </div>
             <div className="space-y-0.5 text-[10px] leading-relaxed opacity-90">
