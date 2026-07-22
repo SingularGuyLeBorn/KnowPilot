@@ -14,7 +14,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Ban, Bot, Check, Loader2, X } from "lucide-react";
+import { Ban, Bot, Check, ChevronDown, Loader2, X } from "lucide-react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
   buildTimelineFromStored,
@@ -123,6 +123,8 @@ export const ChatMessageList = memo(function ChatMessageList({
   const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
   /** 右侧导航：当前视口对应的回复横杠下标 */
   const [navActiveIdx, setNavActiveIdx] = useState<number | null>(null);
+  /** Virtuoso atBottom 状态：离开底部时显示「回到底部」按钮，回底后隐藏 */
+  const [isAtBottom, setIsAtBottom] = useState(true);
   /** 点击导航后短暂钉住高亮，避免 Virtuoso 估算滚动未到位时 rangeChanged 抢回上一轮 */
   const navPinUntilRef = useRef(0);
   useEffect(() => {
@@ -641,6 +643,7 @@ export const ChatMessageList = memo(function ChatMessageList({
               Footer: () => <div className="h-4" />,
             }}
             followOutput={(atBottom) => (atBottom ? "auto" : false)}
+            atBottomStateChange={setIsAtBottom}
             rangeChanged={(range) => {
               if (navItems.length === 0) return;
               // 点击导航钉住期间不跟滚，防止估算高度导致高亮退回上一轮
@@ -682,6 +685,24 @@ export const ChatMessageList = memo(function ChatMessageList({
             </div>
           )}
         </>
+      )}
+      {/* 回到底部：仅离开底部时出现，回底后自动隐藏（对标 Kimi Code 右下角浮钮） */}
+      {hasDisplay && !isAtBottom && (
+        <button
+          type="button"
+          data-testid="scroll-to-bottom"
+          aria-label="回到底部"
+          onClick={() =>
+            virtuosoRef.current?.scrollToIndex({
+              index: displayItems.length - 1,
+              align: "end",
+              behavior: "smooth",
+            })
+          }
+          className="absolute bottom-5 right-12 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] text-[var(--kp-text-2)] shadow-md transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </button>
       )}
       <MessageNavRail
         items={showingStale ? [] : navItems}

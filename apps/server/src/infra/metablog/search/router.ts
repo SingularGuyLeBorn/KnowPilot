@@ -187,6 +187,29 @@ function isAvailable(config: SearchEngineConfig): boolean {
 
 // ==================== 主路由器 ====================
 
+/** 整体搜索 deadline：必须小于外层 withToolTimeout 默认 30s。
+ * 到点即抛带引擎明细的汇总错误，避免挂起被外层 race 截胡（错误无明细、LLM 盲目原样重试） */
+const SMART_SEARCH_DEADLINE_MS = 25000;
+
+/**
+ * 给单次引擎尝试套整体 deadline 闸门：超时即 reject（走 catch 记失败换下一引擎），
+ * 底层请求由引擎自身的 fetchWithTimeout 收敛中止。
+ */
+function withOverallDeadline<T>(promise: Promise<T>, remainingMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`整体搜索 deadline（${SMART_SEARCH_DEADLINE_MS}ms）已到，放弃等待该引擎`)),
+        remainingMs,
+      );
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 let engineConfigs: Map<SearchEngineName, SearchEngineConfig> | null = null;
 
 function getEngineConfigs(): Map<SearchEngineName, SearchEngineConfig> {
@@ -247,12 +270,22 @@ export async function smartSearch(
   const errors: string[] = [];
   const enginesAttempted: string[] = [];
   const started = Date.now();
+  const deadlineAt = started + SMART_SEARCH_DEADLINE_MS;
+  let deadlineHit = false;
 
   for (const cfg of candidates) {
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      deadlineHit = true;
+      break;
+    }
     enginesAttempted.push(cfg.name);
     try {
       console.log(`[SearchRouter] 尝试引擎: ${cfg.name} (优先级 ${cfg.priority})`);
-      const rawResults = await executeEngine(cfg.name, query, limit, cfg.apiKey);
+      const rawResults = await withOverallDeadline(
+        executeEngine(cfg.name, query, limit, cfg.apiKey),
+        remainingMs,
+      );
       const results = RELEVANCE_FILTER_ENGINES.has(cfg.name)
         ? filterRelevantResults(query, rawResults)
         : rawResults;
@@ -289,8 +322,9 @@ export async function smartSearch(
     }
   }
 
-  // 所有引擎都失败了
-  throw new Error(`搜索失败,所有引擎均不可用:\n${errors.join("\n")}`);
+  // 所有引擎都失败了（错误一行一个引擎明细，喂回 LLM 可换 engine 参数重试）
+  const deadlineNote = deadlineHit ? `（整体 deadline ${SMART_SEARCH_DEADLINE_MS / 1000}s 已到）` : "";
+  throw new Error(`搜索失败,所有引擎均不可用${deadlineNote}:\n${errors.join("\n")}`);
 }
 
 /**

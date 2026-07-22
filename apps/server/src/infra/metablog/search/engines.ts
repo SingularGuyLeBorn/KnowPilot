@@ -25,6 +25,27 @@ import type { SearchResult } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * 带超时的 fetch：到点中止底层请求并抛出可记数的超时错误。
+ * 境外端点在网络黑洞时 TCP connect 会挂起到 OS 级超时（60s+），
+ * 必须在引擎层收敛超时，让 router 能记失败换下一引擎，而不是被外层 race 截胡。
+ * 搜索 API 正常 P99 < 5s，默认 8s 足够。
+ */
+export async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 8000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error(`请求超时（${ms}ms）: ${url.slice(0, 120)}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /** 去除 HTML 标签 */
 function stripHtml(html: string): string {
   return html
@@ -79,7 +100,7 @@ export async function searchBaiduQianfan(
   limit: number,
   apiKey: string
 ): Promise<SearchResult[]> {
-  const response = await fetch("https://qianfan.baidubce.com/v2/ai_search/web_search", {
+  const response = await fetchWithTimeout("https://qianfan.baidubce.com/v2/ai_search/web_search", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -121,7 +142,7 @@ export async function searchMetaso(
   limit: number,
   apiKey: string
 ): Promise<SearchResult[]> {
-  const response = await fetch("https://metaso.cn/api/v1/search", {
+  const response = await fetchWithTimeout("https://metaso.cn/api/v1/search", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -165,7 +186,7 @@ export async function searchBocha(
   limit: number,
   apiKey: string
 ): Promise<SearchResult[]> {
-  const response = await fetch("https://api.bochaai.com/v1/webSearch", {
+  const response = await fetchWithTimeout("https://api.bochaai.com/v1/webSearch", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -207,7 +228,7 @@ export async function searchLangSearch(
   limit: number,
   apiKey: string
 ): Promise<SearchResult[]> {
-  const response = await fetch("https://api.langsearch.com/v1/webSearch", {
+  const response = await fetchWithTimeout("https://api.langsearch.com/v1/webSearch", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -248,7 +269,7 @@ export async function searchTavily(
   limit: number,
   apiKey: string
 ): Promise<SearchResult[]> {
-  const response = await fetch("https://api.tavily.com/search", {
+  const response = await fetchWithTimeout("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -296,7 +317,7 @@ export async function searchBrave(
   url.searchParams.set("count", String(Math.min(limit, 20)));
   url.searchParams.set("offset", "0");
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     headers: {
       "X-Subscription-Token": apiKey,
       Accept: "application/json",
@@ -337,7 +358,7 @@ export async function searchBing(
   url.searchParams.set("count", String(Math.min(limit, 20)));
   url.searchParams.set("mkt", "zh-CN");
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     headers: {
       "Ocp-Apim-Subscription-Key": apiKey,
     },
@@ -369,38 +390,27 @@ export async function searchBing(
 export async function searchBingCrawler(query: string, limit: number): Promise<SearchResult[]> {
   const searchUrl = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&count=${Math.min(limit, 30)}`
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 10000)
+  const res = await fetchWithTimeout(searchUrl, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    },
+  }, 10000)
 
-  try {
-    const res = await fetch(searchUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-      },
-    })
-
-    clearTimeout(timeoutId)
-
-    if (!res.ok) {
-      throw new Error(`Bing crawler failed: HTTP ${res.status}`)
-    }
-
-    const html = await res.text()
-    const results = parseBingHtml(html, limit)
-
-    if (results.length === 0) {
-      throw new Error('Bing crawler returned no results')
-    }
-
-    return results
-  } catch (error: any) {
-    clearTimeout(timeoutId)
-    throw error
+  if (!res.ok) {
+    throw new Error(`Bing crawler failed: HTTP ${res.status}`)
   }
+
+  const html = await res.text()
+  const results = parseBingHtml(html, limit)
+
+  if (results.length === 0) {
+    throw new Error('Bing crawler returned no results')
+  }
+
+  return results
 }
 
 function parseBingHtml(html: string, limit: number): SearchResult[] {
@@ -470,38 +480,27 @@ function parseBingHtml(html: string, limit: number): SearchResult[] {
 export async function searchDuckDuckGo(query: string, limit: number): Promise<SearchResult[]> {
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=zh-cn`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const res = await fetchWithTimeout(searchUrl, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    },
+  }, 6000);
 
-  try {
-    const res = await fetch(searchUrl, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-      },
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      throw new Error(`DuckDuckGo search failed: HTTP ${res.status}`);
-    }
-
-    const html = await res.text();
-    const results = parseDuckDuckGoHtml(html, limit);
-
-    if (results.length === 0) {
-      throw new Error("DuckDuckGo returned no results");
-    }
-
-    return results;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    throw error;
+  if (!res.ok) {
+    throw new Error(`DuckDuckGo search failed: HTTP ${res.status}`);
   }
+
+  const html = await res.text();
+  const results = parseDuckDuckGoHtml(html, limit);
+
+  if (results.length === 0) {
+    throw new Error("DuckDuckGo returned no results");
+  }
+
+  return results;
 }
 
 function parseDuckDuckGoHtml(html: string, limit: number): SearchResult[] {
@@ -571,7 +570,6 @@ export async function searchSearXNG(query: string, limit: number): Promise<Searc
   const shuffled = [...SEARXNG_INSTANCES].sort(() => Math.random() - 0.5);
 
   for (const instance of shuffled) {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const url = new URL(`${instance}/search`);
       url.searchParams.set("q", query);
@@ -579,19 +577,13 @@ export async function searchSearXNG(query: string, limit: number): Promise<Searc
       url.searchParams.set("language", "zh-CN");
       url.searchParams.set("categories", "general");
 
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const res = await fetch(url.toString(), {
-        signal: controller.signal,
+      const res = await fetchWithTimeout(url.toString(), {
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           Accept: "application/json",
         },
-      });
-
-      clearTimeout(timeoutId);
+      }, 10000);
 
       if (!res.ok) {
         errors.push(`${instance}: HTTP ${res.status}`);
@@ -616,7 +608,6 @@ export async function searchSearXNG(query: string, limit: number): Promise<Searc
           source: `searxng(${r.engine || "unknown"})`,
         }));
     } catch (error: any) {
-      if (timeoutId) clearTimeout(timeoutId);
       errors.push(`${instance}: ${error.message}`);
       continue;
     }
@@ -646,7 +637,7 @@ export async function searchSerpApi(
     hl: "zh-CN",
   });
 
-  const response = await fetch(`https://serpapi.com/search?${params.toString()}`, {
+  const response = await fetchWithTimeout(`https://serpapi.com/search?${params.toString()}`, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });

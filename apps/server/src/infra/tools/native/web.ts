@@ -15,6 +15,7 @@ import {
   isArticleFetchFatalError,
   type SearchEngineName,
 } from "../../metablog/index.js";
+import { fetchWithTimeout } from "../../metablog/search/engines.js";
 import { downloadImageToTemp, ocrRemoteImage } from "../../metablog/ocrBridge.js";
 import { performOcrFromFile } from "../../ocrService.js";
 import { chatCompletion } from "../../llmClient.js";
@@ -136,7 +137,8 @@ async function tavilySearch(
   };
   if (includeDomains?.length) body.include_domains = includeDomains;
 
-  const res = await fetch("https://api.tavily.com/search", {
+  // 与引擎层同源 8s 超时：scoped 阶段裸 fetch 在网络黑洞时会挂起到 OS 级超时
+  const res = await fetchWithTimeout("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -159,7 +161,7 @@ async function serpApiSearch(apiKey: string, query: string, maxResults: number) 
   url.searchParams.set("q", query);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("num", String(maxResults));
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url.toString());
   if (!res.ok) throw new Error(`SerpAPI 搜索失败: HTTP ${res.status}`);
   const data = (await res.json()) as { organic_results?: Array<{ title: string; link: string; snippet: string }> };
   return {

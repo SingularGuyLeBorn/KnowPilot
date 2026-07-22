@@ -449,14 +449,15 @@ export function ThinkingTimeline({
   });
   if (!visibleSteps.length) return null;
 
-  // 左对齐与 assistant 气泡一致（对标 Kimi Code 接近全宽单列）。
-  // 竖线导轨 absolute，不占布局宽度。
+  // 左右边缘与 assistant 气泡完全对齐（同 ml-6 mr-2 max-w-[96%]，无内缩），
+  // 避免中间回复「流式全宽 → 进时间线变窄」的跳变。
+  // 竖线导轨放在气泡左侧 margin 区（absolute 负偏移，不占布局宽度），对标 Kimi Code。
   return (
     <div
-      className="relative mb-2 ml-6 mr-2 w-full max-w-[96%] pl-6"
+      className="relative mb-2 ml-6 mr-2 w-full max-w-[96%]"
       data-testid="thinking-timeline"
     >
-      <div className="absolute bottom-2 left-2 top-2 w-0.5 bg-[var(--kp-brand-light)]/40" />
+      <div className="absolute -left-4 bottom-2 top-2 w-0.5 bg-[var(--kp-brand-light)]/40" />
       <div className="min-w-0 space-y-3">
         {visibleSteps.map((step, i) => {
           const key =
@@ -471,7 +472,7 @@ export function ThinkingTimeline({
           return (
             <div key={key} className="relative">
               {step.type === "thinking" && (
-                <span className="absolute -left-[17px] top-2 h-2.5 w-2.5 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
+                <span className="absolute -left-5 top-2 h-2.5 w-2.5 rounded-full bg-[var(--kp-brand)] ring-2 ring-[var(--kp-bg-alt)]" />
               )}
               {step.type === "thinking" ? (
                 <ThinkingStep step={step} isLive={isLive && i === visibleSteps.length - 1} />

@@ -30,8 +30,8 @@ const FREE_PICK_LIMIT = 8;
 const MAIN_WIDTH = 280;
 /** 最大飞出宽（免费模型），用于判定左右方向，避免切换子菜单时主菜单跳动 */
 const MAX_FLYOUT_WIDTH = 300;
-/** 飞出压进主菜单的重叠宽度（绝对定位 left，禁止再用 flex 负 margin） */
-const FLYOUT_OVERLAP = 32;
+/** 飞出与主菜单之间的间隙（留缝不重叠，避免盖住行内当前值；鼠标过缝靠 HOVER_CLOSE_MS 宽限） */
+const FLYOUT_GAP = 6;
 /** 主菜单底边压进触发按钮的像素，消灭触发器↔菜单竖缝 */
 const TRIGGER_OVERLAP = 6;
 const HOVER_CLOSE_MS = 400;
@@ -174,7 +174,7 @@ export function ChatModelMenu({
       const rect = triggerRef.current!.getBoundingClientRect();
       // 主菜单位置只跟 trigger 锚定，不随 flyout 宽变化——否则一开子菜单整块位移，鼠标落空立刻关
       const left = Math.max(8, Math.min(rect.right - MAIN_WIDTH, window.innerWidth - MAIN_WIDTH - 8));
-      const spaceRight = window.innerWidth - (left + MAIN_WIDTH) + FLYOUT_OVERLAP;
+      const spaceRight = window.innerWidth - (left + MAIN_WIDTH) - FLYOUT_GAP;
       const flyoutLeft = spaceRight < MAX_FLYOUT_WIDTH + 8;
       // -translate-y-full 时 top = 菜单底边；+TRIGGER_OVERLAP 压进触发按钮
       setMenuPos({ top: rect.top + TRIGGER_OVERLAP, left, flyoutLeft });
@@ -238,7 +238,7 @@ export function ChatModelMenu({
   };
 
   const activeFlyoutW = flyout ? flyoutWidth(flyout) : 0;
-  const shellExtra = flyout ? activeFlyoutW - FLYOUT_OVERLAP : 0;
+  const shellExtra = flyout ? activeFlyoutW + FLYOUT_GAP : 0;
   const shellLeft =
     menuPos && menuPos.flyoutLeft && flyout ? menuPos.left - shellExtra : (menuPos?.left ?? 0);
   const shellWidth = MAIN_WIDTH + shellExtra;
@@ -356,14 +356,14 @@ export function ChatModelMenu({
               </div>
             </div>
 
-            {/* 飞出：压进主菜单；top 钳视口，maxHeight 防底边溢出 */}
+            {/* 飞出：与主菜单留 FLYOUT_GAP 间隙；top 钳视口，maxHeight 防底边溢出 */}
             {flyout && (
             <div
               ref={flyoutPanelRef}
               className="absolute z-20 overflow-y-auto overscroll-contain rounded-xl"
               style={{
                 top: flyoutTop,
-                left: menuPos.flyoutLeft ? 0 : MAIN_WIDTH - FLYOUT_OVERLAP,
+                left: menuPos.flyoutLeft ? 0 : MAIN_WIDTH + FLYOUT_GAP,
                 maxHeight: flyoutMaxH,
               }}
               onMouseEnter={clearCloseTimer}

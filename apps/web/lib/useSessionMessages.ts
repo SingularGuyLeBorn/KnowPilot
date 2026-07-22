@@ -212,6 +212,7 @@ class SessionMessageStore {
   };
 
   dispatch = (action: Action): void => {
+    const prevState = this.state;
     this.state = reducer(this.state, action);
     for (const listener of this.listeners) {
       try {
@@ -221,7 +222,15 @@ class SessionMessageStore {
       }
     }
     if (action.type === "upsert") {
-      tryCommitAfterAssistant(action.sessionId, normalizeMessage(action.message));
+      // INV-4 前置不变量：只有真正改变 store 的 upsert 才允许参与 commit / 登记 in-flight。
+      // no-op upsert（字段全等，reducer 原样返回）一律跳过——否则 stale 重放
+      // （如 regenerate 后的 externalRing 重放、重复广播）会把旧消息误标为本轮
+      // in-flight assistant，INV-4 随即把该组 stored 气泡顶替成 live 块（刷新丢回复根因）。
+      // 安全性：done 流程由 useChatRunStream 显式 tryCommitStream 兜底；abort 流程的
+      // partial upsert 必为新增/变更；hydrate 的 tryCommitAfterHydrate 不在此闸内。
+      if (this.state !== prevState) {
+        tryCommitAfterAssistant(action.sessionId, normalizeMessage(action.message));
+      }
     } else if (action.type === "hydrate") {
       tryCommitAfterHydrate(action.sessionId, action.messages.map(normalizeMessage));
       // INV-8 ④：仅 view hydrate 置 drainRequested；prefetch 只读预热不得触发 drain

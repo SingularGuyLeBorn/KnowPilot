@@ -257,9 +257,13 @@ export class SessionStreamHub {
 
   /** 订阅外部事件（独立于 Agent 运行流）。返回 unsubscribe 函数。 */
   subscribeExternal(sessionId: string, onEvent: (event: AgentStreamEvent) => void): () => void {
-    // 先重放短环（幂等：前端 session_queue_update / async_* 均以 refetch+merge 消化）
+    // 先重放短环（幂等：前端 session_queue_update / async_* 均以 refetch+merge 消化）。
+    // message_upserted 不重放：消息列表的权威恢复通道是 listForChat hydrate，
+    // 重放 stale 消息投影会把「未变更的旧消息」再推一遍——前端 no-op upsert 本不该
+    // 有任何副作用，但曾因此误标 in-flight 导致刷新后旧回复被 live 块顶替（已加双保险）。
     const ring = this.externalRing.get(sessionId) ?? [];
     for (const event of ring) {
+      if (event.type === "message_upserted") continue;
       try {
         onEvent(event);
       } catch {

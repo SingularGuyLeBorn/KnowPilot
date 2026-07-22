@@ -772,6 +772,7 @@ export async function chatAgentStream(
     // W1：assistant 落库必须走 appendChatMessage（parentId + activeLeafId 同事务）
     let createdParentId: string | null = null;
     let persistedToolResults: unknown;
+    let persistedCreatedAt: string | null = null;
     assistantMessageId = await services.prisma.$transaction(async (tx) => {
       if (!assistantMessageId) {
         const initial = buildInitialVersionMeta(result.content, result.toolCalls);
@@ -789,6 +790,10 @@ export async function chatAgentStream(
         });
         assistantMessageId = created.id;
         createdParentId = created.parentId ?? null;
+        persistedCreatedAt =
+          created.createdAt instanceof Date
+            ? created.createdAt.toISOString()
+            : String(created.createdAt);
       }
 
       if (runId) {
@@ -816,9 +821,10 @@ export async function chatAgentStream(
       if (persistedToolResults === undefined && assistantMessageId) {
         const row = await services.prisma.chatMessage.findUnique({
           where: { id: assistantMessageId },
-          select: { toolResults: true },
+          select: { toolResults: true, createdAt: true },
         });
         persistedToolResults = row?.toolResults ?? undefined;
+        persistedCreatedAt = row?.createdAt?.toISOString() ?? null;
       }
       getStreamHub()?.pushExternalEvent(sessionId!, {
         type: "message_upserted",
@@ -835,7 +841,7 @@ export async function chatAgentStream(
           tokenUsage: result.tokenUsage ?? undefined,
           attachments: undefined,
           source: null,
-          createdAt: new Date().toISOString(),
+          createdAt: persistedCreatedAt ?? new Date().toISOString(),
         },
       });
     } catch {
