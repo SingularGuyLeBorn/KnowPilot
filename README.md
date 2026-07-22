@@ -39,116 +39,6 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 
 ---
 
-## 命名候选清单（中文名已定：见微）
-
-> 项目中文名定为「**见微**」，取「见微知著」——从细微处洞察全局，恰是知识管理的本意。
-> 以下 51 个英文名候选按意象分组，⭐ 为推荐项。选定后本节移除，并统一替换 `KnowPilot` / `@knowpilot/*`。
-
-### A. 微尘系 —— 取「微」
-
-| # | 名字 | 意象 | 备注 |
-|---|---|---|---|
-| 1 | ⭐ **Mote** | 微尘（a mote of dust） | 4 字母，语义直译，简洁好打 |
-| 2 | Speck | 微粒、细点 | 口语化，略轻 |
-| 3 | Iota | 希腊最小字母，「一丝一毫」 | 程序员友好；撞 Go 的 iota / IOTA 币 |
-| 4 | ⭐ **Scintilla** | 拉丁语「火花」，一丝微光/证据 | 优雅偏长；撞 Scintilla 编辑器组件 |
-| 5 | Quark | 夸克，最小粒子 | 撞 KDE 编辑器、出版软件 |
-| 6 | Morsel | 一小口、一小片 | 温润，知识「碎片」感 |
-| 7 | Crumb | 碎屑 | 双关面包屑导航 |
-| 8 | Shard | 碎片，折射整体 | 冷峻；撞数据库分片术语 |
-| 9 | Sliver | 细薄片 | 轻巧 |
-| 10 | Granule | 颗粒 | 平淡 |
-| 11 | Droplet | 一滴水，见沧海 | 撞 DigitalOcean Droplet |
-| 12 | Ripple | 涟漪，小波动见大水面 | 撞 Ripple 币 |
-| 13 | ⭐ **Spore** | 孢子，微小却藏着整个生命 | 有机、生长感，数字花园绝配 |
-| 14 | Pollen | 花粉，传播知识的微粒 | 数字花园意象 |
-| 15 | Kernel | 谷粒 / 内核 | 撞 OS kernel |
-| 16 | Atom | 原子，不可再分 | 撞 Atom 编辑器 |
-| 17 | Flicker | 微闪 | 撞 Flickr |
-| 18 | Tinge | 一丝色泽 | 小众 |
-| 19 | Whiff | 一缕气息 | 口语 |
-| 20 | Vestige | 遗迹、残余线索 | 由残迹推全貌，略忧郁 |
-
-### B. 看见系 —— 取「见」
-
-| # | 名字 | 意象 | 备注 |
-|---|---|---|---|
-| 21 | ⭐ **Glimpse** | 一瞥 | 动作感强，偏「见」丢「微」 |
-| 22 | Gleam | 微光、一闪的察觉 | 短、亮、正面 |
-| 23 | Glint | 一瞬闪光 | 比 Gleam 更锐利 |
-| 24 | Glance | 一掠 | 太常用 |
-| 25 | Espy | 瞥见（文学词） | 古雅，难读 |
-| 26 | Descry | 远远望见（文学词） | 古雅 |
-| 27 | ⭐ **Loupe** | 珠宝匠放大镜 | 「见微的器具」，工具感最贴切 |
-| 28 | ⭐ **Prism** | 棱镜，一束光分解出全部色彩 | 「由一见全」的科学隐喻，撞名较多 |
-| 29 | Lens | 透镜 | 撞 Snap Lens 等 |
-| 30 | Vista | 由近及远的全景 | 撞 Windows Vista |
-
-### C. 知著系 —— 取「知著」
-
-| # | 名字 | 意象 | 备注 |
-|---|---|---|---|
-| 31 | ⭐ **Augur** | 预兆、预言者 | 冷峻独特，你原本就喜欢 |
-| 32 | ⭐ **Fathom** | 彻底参透 + 水深单位 | 一词两意，程序员圈辨识度高 |
-| 33 | Divine | 凭直觉参悟（动词） | 双关「神圣」 |
-| 34 | Omen | 征兆 | 略阴森 |
-| 35 | Portent | 庄重的预兆 | 书面 |
-| 36 | Presage | 预示 | 书面 |
-| 37 | Harbinger | 先驱、前兆 | 略长 |
-| 38 | Inkling | 隐约的察觉 | 灵动可爱 |
-| 39 | Hunch | 直觉预感 | 口语 |
-| 40 | Surmise | 从蛛丝马迹推测 | 动词感 |
-| 41 | Oracle | 神谕 | 撞 Oracle 公司，硬伤 |
-| 42 | Sibyl | 古希腊女预言者 | 独特但生僻 |
-| 43 | Seer | 见者、先知 | 太短，难检索 |
-| 44 | Sage | 智者 | 撞 Sage 数学软件 |
-| 45 | Intuit | 直觉 | 撞 Intuit 公司，硬伤 |
-
-### D. 合体造词 —— 零撞名，域名友好
-
-| # | 名字 | 构成 | 意象 |
-|---|---|---|---|
-| 46 | ⭐ **Augmote** | Augur + Mote | 「见微知著」的压缩包：微尘中的预兆 |
-| 47 | Motescope | Mote + -scope | 微尘之镜，观察微粒的仪器 |
-| 48 | Glimmote | Glimpse + Mote | 一瞥微尘 |
-| 49 | Fathomote | Fathom + Mote | 参透微尘 |
-| 50 | Omote | Omen + Mote | 短促独特（注意日语「表」同形） |
-| 51 | ⭐ **PrismWeave** | Prism + Weave | 棱镜析微光 + 经纬织知识：「由一见全」与「数字花园」双意象，你亲选 |
-
-**我的前三**：Augmote（语义完整 + 零撞名）、Mote（极简直译）、Loupe（工具隐喻最贴知识管理）。
-**你的首选**：PrismWeave。
-
-### D2. PrismWeave 风格二词复合（追加 20）
-
-> 公式：前半取「见微」（光/镜/微尘），后半取「知著」（织机/经纬/典籍）。⭐ 为本组推荐。
-
-| # | 名字 | 构成 | 意象 / 备注 |
-|---|---|---|---|
-| 52 | ⭐ **MoteLoom** | Mote + Loom | 微尘 + 织机；loom 双关「隐约浮现」（loom on the horizon）——见微知著的压缩包，比 Augmote 更温润 |
-| 53 | ⭐ **PrismLoom** | Prism + Loom | 棱镜 + 织机/预兆浮现；与你首选同源，「织」感更强 |
-| 54 | ⭐ **IrisWeave** | Iris + Weave | 虹膜（看见）+ 鳶尾花（花园）+ 编织，一词三意，极贴本项目 |
-| 55 | ⭐ **GlyphWeave** | Glyph + Weave | 字符/符文 + 编织，知识感最强的一组 |
-| 56 | MoteWeave | Mote + Weave | 微尘编织，直译「见微」+ 织，最朴素的对仗 |
-| 57 | LumenWeave | Lumen + Weave | 光通量单位 + 编织，流畅好读；撞 Laravel Lumen 框架 |
-| 58 | WarpWeft | Warp + Weft | 经线 + 纬线，「经纬」直译，全头韵；丢了「微」但格局大 |
-| 59 | LoupeLoom | Loupe + Loom | 珠宝镜 + 织机，全头韵，工具感 |
-| 60 | GlimmerWeave | Glimmer + Weave | 微光编织，柔和 |
-| 61 | SpectraWeave | Spectra + Weave | 光谱编织，学术感 |
-| 62 | OpalWeave | Opal + Weave | 蛋白石变彩效应 + 编织，华美 |
-| 63 | KaleidoWeave | Kaleido + Weave | 万花筒编织，绚丽但偏长 |
-| 64 | LensWeave | Lens + Weave | 透镜编织，最短平快 |
-| 65 | HaloWeave | Halo + Weave | 光晕编织；撞游戏 Halo |
-| 66 | RefractLoom | Refract + Loom | 折射 + 织机，物理感 |
-| 67 | SporeWeave | Spore + Weave | 孢子 + 编织，数字花园生长感 |
-| 68 | CodexWeave | Codex + Weave | 古抄本 + 编织；撞 OpenAI Codex |
-| 69 | FolioWeave | Folio + Weave | 对开本 + 编织，书卷气 |
-| 70 | QuillWeave | Quill + Weave | 羽毛笔 + 编织；撞 Quill.js 编辑器 |
-| 71 | AtlasWeave | Atlas + Weave | 地图集 + 编织，「织出全局地图」；撞 MongoDB Atlas |
-
-**本组前三**：MoteLoom（loom 的「预兆浮现」双关是神来之笔）、IrisWeave（虹膜+鳶尾+编织三意叠加）、GlyphWeave（知识感最直给）。
-
----
-
 ## 核心能力
 
 | 能力 | 说明 |
@@ -158,7 +48,7 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 | <img src="docs/assets/icons/sparkles.svg" width="18" align="absmiddle" alt=""> **Swarm 三层 Agent** | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。 |
 | <img src="docs/assets/icons/palette.svg" width="18" align="absmiddle" alt=""> **莫兰迪星河设计** | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。 |
 | <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。19 实体 CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
-| <img src="docs/assets/icons/wrench.svg" width="18" align="absmiddle" alt=""> **自动化流** | Trigger 事件触发 + Approval 审批拦截 + Agent Loop。异步任务队列 `async_task_run/status/wait`，后台运行结果自动回流对话。 |
+| <img src="docs/assets/icons/wrench.svg" width="18" align="absmiddle" alt=""> **自动化流** | Trigger 事件触发 + Approval 审批拦截 + Agent Loop。异步任务队列 `async_task_run/status`，后台运行结果自动回流对话。 |
 | <img src="docs/assets/icons/map.svg" width="18" align="absmiddle" alt=""> **全局搜索** | FTS5 全文索引 `search.global`，跨文章 / Agent / Skill / Memory / Prompt 统一检索。 |
 | <img src="docs/assets/icons/hourglass.svg" width="18" align="absmiddle" alt=""> **可选鉴权与部署** | `AUTH_MODE=none/password` 本地或远程部署。Docker + CI + `db:backup` 一键备份。 |
 
@@ -253,7 +143,7 @@ pnpm validate       # lint → test → build → e2e 一键验收
 | 后端 | Express 5 + CORS |
 | ORM / 数据库 | Prisma 6 + SQLite |
 | 校验 / 共享类型 | Zod 3，集中定义在 `packages/shared` |
-| 测试 | Vitest 3（server / shared）+ Playwright（web Chat E2E） |
+| 测试 | Vitest 3（server / shared / web）+ Playwright（web Chat E2E） |
 
 ---
 
@@ -336,17 +226,31 @@ KnowPilot/
 
 ---
 
+## 当前状态
+
+L1 ~ L5 已全部落地，项目处于**功能完备、持续打磨**阶段。近期完成的重点：
+
+- **v8 ~ v10**：全局任务池、投递可靠性、可重入与续跑
+- **W1 ~ W16**：会话树、心跳决策层、审批 scope、context 钩子、compaction 切割、stream 内核不变量、Web Chat store 不变量
+- **Chat UI**：Kimi 风格模型菜单、思考时间线、回到底部按钮、刷新不丢回复
+- **记忆系统**：三层 scope（global / workspace / agent）、按类型差异化衰减、被调用重置衰减
+- **审批与邮件**：审批 scope、邮件通知、AgentMail webhook 支持邮件回复审批 / ask_user
+
+详细变更记录见 [`AGENTS.md`](AGENTS.md) 的「当前状态与近期变更」节。
+
+---
+
 ## 路线图
 
-项目按 **L1 ~ L5** 五个阶段演进，详细设计见 [`docs/development/`](docs/development/)。
+项目已完成 L1 ~ L5 全部阶段：
 
 | 阶段 | 主题 | 状态 |
 |---|---|---|
-| **L1** | 博客基建：首页、文章、编辑器、Markdown ↔ SQLite 同步 | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已封板 |
-| **L2** | AI 核心：Agent / Skill / MCP / Memory / Chat | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
-| **L3** | 内容运维：File / Git / Task / Log / Workspace | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
-| **L4** | 自动化流：Trigger / Approval / Agent Loop | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
-| **L5** | 打磨与规模化：搜索、鉴权、统计、部署 | <img src="docs/assets/icons/rocket.svg" width="16" align="absmiddle" alt=""> 已完成 |
+| **L1** | 博客基建：首页、文章、编辑器、Markdown ↔ SQLite 同步 | 已封板 |
+| **L2** | AI 核心：Agent / Skill / MCP / Memory / Chat | 已完成 |
+| **L3** | 内容运维：File / Git / Task / Log / Workspace | 已完成 |
+| **L4** | 自动化流：Trigger / Approval / Agent Loop | 已完成 |
+| **L5** | 打磨与规模化：搜索、鉴权、统计、部署 | 已完成 |
 
 后续规划见 [`docs/development/future-features.md`](docs/development/future-features.md)。
 
