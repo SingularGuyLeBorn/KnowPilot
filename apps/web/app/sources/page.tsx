@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 信息源配置页面 — 参考 MetaBlog TrustedSourceManager
  */
 
@@ -526,7 +526,7 @@ export default function SourcesPage() {
                   y: 0,
                   transition: { delay: idx * 0.04, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className="group flex flex-col rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-5 transition-all hover:border-[var(--kp-divider)] hover:shadow-lg"
+                className="kp-card-premium kp-lift group flex flex-col rounded-2xl p-5"
               >
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">

@@ -72,6 +72,9 @@ content/prompts/smoke-prompt-*.md
 content/prompts/Test Prompt*.md
 content/sources/smoke-source-*.json
 
+# User scratch / experiment prompts (not project source)
+prompts/
+
 # Runtime generated memory / trash files
 content/memories/*.md
 content/skills/.usage.json
