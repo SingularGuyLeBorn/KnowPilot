@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Git 仓库工作台 — 关联本项目仓库 + status / diff / log + commit/pull/push（写操作走审批）
  */
 
@@ -217,10 +217,10 @@ export default function GitPage() {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: idx * 0.05 } }}
                 className={cn(
-                  "group relative overflow-hidden rounded-2xl border p-5 text-left transition-all",
+                  "kp-card-premium kp-lift group relative overflow-hidden rounded-2xl p-5 text-left",
                   activeId === repo.id
-                    ? "border-[var(--kp-brand-deep)] bg-white shadow-lg dark:bg-[var(--kp-bg-soft)]"
-                    : "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:shadow-md",
+                    ? "border-[var(--kp-brand-deep)] bg-white dark:bg-[var(--kp-bg-soft)]"
+                    : "",
                 )}
               >
                 <div className="mb-2 flex items-center gap-2">
@@ -250,7 +250,7 @@ export default function GitPage() {
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-4 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-5"
+              className="kp-card-premium space-y-4 rounded-2xl p-5"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-bold text-[var(--kp-text-1)]">

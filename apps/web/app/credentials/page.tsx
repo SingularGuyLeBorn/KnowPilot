@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Credentials 凭据管理页面 (L5 敏感数据)
  */
 
@@ -119,7 +119,7 @@ export default function CredentialsPage() {
                   y: 0,
                   transition: { delay: idx * 0.04, type: "spring", stiffness: 200, damping: 20 },
                 }}
-                className={cn("group relative overflow-hidden rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:shadow-lg transition-all", density === "compact" ? "p-3" : "p-5")}
+                className={cn("kp-card-premium kp-lift group relative overflow-hidden rounded-2xl", density === "compact" ? "p-3" : "p-5")}
               >
                 <div className="flex justify-between items-start mb-3">
                   <div>

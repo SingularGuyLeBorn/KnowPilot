@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Workspaces 工作区管理页面 — 控制台式卡片：配额 / 状态 / Agent 分层
  */
 
@@ -168,10 +168,10 @@ export default function WorkspacesPage() {
                   transition: { delay: idx * 0.05, type: "spring", stiffness: 200, damping: 20 },
                 }}
                 className={cn(
-                  "group relative flex flex-col justify-between overflow-hidden rounded-2xl border transition-all duration-300",
+                  "kp-card-premium kp-lift group relative flex flex-col justify-between overflow-hidden rounded-2xl",
                   workspace.isSystem
                     ? "border-amber-200/70 bg-gradient-to-br from-amber-50/40 to-[var(--kp-bg-alt)]"
-                    : "border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] hover:border-[var(--kp-divider)] hover:shadow-xl",
+                    : "",
                   density === "compact" ? "p-3" : "p-5",
                 )}
               >
@@ -187,7 +187,7 @@ export default function WorkspacesPage() {
                         </h3>
                         <div className="mt-0.5 flex flex-wrap gap-1">
                           {workspace.isSystem && (
-                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800">
+                            <span className="kp-badge kp-badge-warning">
                               {workspace.systemType === "super"
                                 ? "Root"
                                 : workspace.systemType === "assistant"
@@ -197,10 +197,8 @@ export default function WorkspacesPage() {
                           )}
                           <span
                             className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
-                              workspace.status === "active"
-                                ? "bg-emerald-50 text-emerald-700"
-                                : "bg-gray-100 text-gray-500",
+                              "kp-badge",
+                              workspace.status === "active" ? "kp-badge-success" : "",
                             )}
                           >
                             {workspace.status}

@@ -79,7 +79,7 @@ export default function SettingsPage() {
       ) : (
         <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
           <section
-            className="space-y-3 rounded-2xl border border-[var(--kp-brand)]/25 bg-[var(--kp-brand-soft)]/40 p-4 sm:space-y-4 sm:p-6 md:col-span-2"
+            className="kp-card-premium space-y-3 rounded-2xl border-[var(--kp-brand)]/25 bg-[var(--kp-brand-soft)]/40 p-4 sm:space-y-4 sm:p-6 md:col-span-2"
             data-testid="settings-remote-checklist"
           >
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
@@ -143,7 +143,7 @@ export default function SettingsPage() {
           </section>
 
           <section
-            className="space-y-3 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:space-y-4 sm:p-6 md:col-span-2"
+            className="kp-card-premium space-y-3 rounded-2xl p-4 sm:space-y-4 sm:p-6 md:col-span-2"
             data-testid="settings-pwa-guide"
           >
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
@@ -178,7 +178,7 @@ export default function SettingsPage() {
             </p>
           </section>
 
-          <section className="space-y-4 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:p-6">
+          <section className="kp-card-premium space-y-4 rounded-2xl p-4 sm:p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
               <Lock className="h-4 w-4 text-[var(--kp-brand-deep)]" />
               应用鉴权
@@ -205,7 +205,7 @@ export default function SettingsPage() {
             )}
           </section>
 
-          <section className="space-y-4 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:p-6">
+          <section className="kp-card-premium space-y-4 rounded-2xl p-4 sm:p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
               <Cloud className="h-4 w-4 text-[var(--kp-brand-deep)]" />
               Cloudflare Tunnel
@@ -238,7 +238,7 @@ export default function SettingsPage() {
             </Link>
           </section>
 
-          <section className="space-y-4 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:p-6">
+          <section className="kp-card-premium space-y-4 rounded-2xl p-4 sm:p-6">
             <div className="flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
               <Palette className="h-4 w-4 text-[var(--kp-brand-deep)]" />
               外观主题
@@ -249,7 +249,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="space-y-3 rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 sm:p-6 md:col-span-2">
+          <section className="kp-card-premium space-y-3 rounded-2xl p-4 sm:p-6 md:col-span-2">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--kp-text-1)]">
               <Shield className="h-4 w-4 text-[var(--kp-brand-deep)]" />
               Cloudflare Access 检查清单
