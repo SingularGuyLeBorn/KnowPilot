@@ -155,12 +155,13 @@ app.get(
 );
 app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub));
 
-// AgentMail（agentmail.to）入站 webhook —— ask_user 邮件答复
+// AgentMail（agentmail.to）入站 webhook —— ask_user 邮件答复 + 审批邮件回复
 app.post("/api/webhooks/agentmail", async (req, res) => {
   const { verifyAgentMailWebhook, extractReplyTextFromWebhook } = await import(
     "./infra/agentMailClient.js"
   );
   const { resolveAskUserFromMail, getAskUserPending } = await import("./infra/askUserGate.js");
+  const { resolveApprovalFromMail } = await import("./infra/approvalGate.js");
 
   if (!verifyAgentMailWebhook({ headers: req.headers as Record<string, string | string[] | undefined> })) {
     res.status(401).json({ error: "UNAUTHORIZED", message: "webhook 验签失败" });
@@ -191,6 +192,18 @@ app.post("/api/webhooks/agentmail", async (req, res) => {
     return;
   }
 
+  // 先按审批回复解析（第一行 APPROVE/REJECT）；不匹配再按 ask_user 答复解析
+  const approvalResolved = await resolveApprovalFromMail(services, {
+    eventId: payload.event_id,
+    inReplyTo: payload.message?.in_reply_to,
+    threadId: payload.message?.thread_id,
+    text,
+  });
+  if (approvalResolved.ok) {
+    res.json({ ok: true, matched: true, type: "approval", approvalId: approvalResolved.approvalId, outcome: approvalResolved.outcome });
+    return;
+  }
+
   const resolved = resolveAskUserFromMail({
     eventId: payload.event_id,
     inReplyTo: payload.message?.in_reply_to,
@@ -213,7 +226,7 @@ app.post("/api/webhooks/agentmail", async (req, res) => {
     });
   }
 
-  res.json({ ok: true, matched: true, askId: resolved.askId });
+  res.json({ ok: true, matched: true, type: "ask_user", askId: resolved.askId });
 });
 
 // 异步任务推送 SSE（独立于 Agent 运行流，用于推优先的 async_delivery 事件）

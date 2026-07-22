@@ -275,12 +275,17 @@ model Memory {
   attribution String   @default("agent")
   validFrom   DateTime? /// 事实生效起点（可选）
   validTo     DateTime? /// 事实失效点；null=仍有效；过期后不进检索/注入
+  /// 最近被检索/注入时间；衰减基准优先使用本字段（被调用即重置衰减）
+  lastAccessedAt DateTime?
+  /// 被检索/注入次数（含 FTS/LIKE 命中后返回）
+  accessCount Int @default(0)
   sourceSlug  String?  @unique /// 本地源文件 slug（用于增量同步与清理）
   sourceMtime DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   @@index([status, scope])
   @@index([validTo])
+  @@index([lastAccessedAt])
 }
 
 /// Git 仓库管理
@@ -422,6 +427,9 @@ model Approval {
   decisionScope  String?
   /// W3：上次发出 gate 通知的时间；冷却窗口内不重复打扰
   lastNotifiedAt DateTime?
+  /// 审批通知邮件的 message_id / thread_id（AgentMail 回执匹配用）
+  lastNotifiedMessageId String?
+  lastNotifiedThreadId  String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

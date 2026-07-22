@@ -759,8 +759,9 @@ describe("native:memory_create / memory_search", () => {
         updatedAt: new Date(),
       },
     ]);
+    const updateMany = vi.fn(async () => ({ count: 1 }));
     const ctx = createNativeCtx(root, {
-      services: { prisma: { memory: { findMany } } } as never,
+      services: { prisma: { memory: { findMany, updateMany } } } as never,
     });
     const result = (await executeNativeTool("memory_search", { keyword: "记忆" }, ctx)) as {
       total: number;

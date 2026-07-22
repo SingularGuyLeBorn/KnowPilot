@@ -25,7 +25,6 @@ import { accumulateExperience } from "../infra/agentEvolution.js";
 import { buildMemoryContext } from "../infra/promptBuilder.js";
 import {
   MEMORY_ARCHIVE_THRESHOLD,
-  MEMORY_DECAY_FACTOR_PER_DAY,
   MEMORY_TYPES,
   memoryAgentScope,
   memoryWorkspaceScope,
@@ -162,11 +161,12 @@ describe("MemoryRepository（W5）", () => {
     expect(r1.decayed).toBeGreaterThanOrEqual(1);
     const after10 = await prisma.memory.findUnique({ where: { id: item.id } });
     expect(after10).not.toBeNull();
-    expect(after10!.strength).toBeCloseTo(Math.pow(MEMORY_DECAY_FACTOR_PER_DAY, 10), 5);
+    // note 类型走慢衰减 0.98，不再是全局 0.95
+    expect(after10!.strength).toBeCloseTo(Math.pow(0.98, 10), 5);
     // raw SQL 衰减不改 updatedAt，保证复利基准稳定
     expect(after10!.updatedAt.getTime()).toBe(before!.updatedAt.getTime());
 
-    // 模拟 200 天后：strength ≈ 0.95^200 ≪ 0.1 → 归档删除
+    // 模拟 200 天后：strength ≈ 0.98^200 ≪ 0.1 → 归档删除
     const r2 = await decayMemories(repo, prisma, { now: new Date(Date.now() + 200 * DAY_MS) });
     expect(r2.archived).toBeGreaterThanOrEqual(1);
     const gone = await prisma.memory.findUnique({ where: { id: item.id } });

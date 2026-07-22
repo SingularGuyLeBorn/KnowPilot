@@ -128,10 +128,32 @@ export const PINNED_MEMORY_DIR = "content/memories/_pinned";
 export const PINNED_MEMORY_USER_FILE = "USER.md";
 export const PINNED_MEMORY_AGENT_FILE = "AGENT.md";
 
-/** 长期记忆每日衰减系数（decayMemories，挂 heartbeat 每日 cron） */
+/** 长期记忆每日衰减系数（decayMemories，挂 heartbeat 每日 cron）；按类型差异化 */
 export const MEMORY_DECAY_FACTOR_PER_DAY = 0.95;
 /** 衰减后低于该强度的记忆归档删除 */
 export const MEMORY_ARCHIVE_THRESHOLD = 0.1;
+
+/**
+ * 按记忆类型的每日衰减系数。
+ * - preference/semantic：稳定事实，几乎不衰减（1.0）
+ * - note/procedural：慢衰减（0.98）
+ * - episodic：常规衰减（0.95）
+ * - experience：运行经验，快衰减（0.90）
+ * 衰减基准优先取 lastAccessedAt（被检索/注入即重置衰减），其次 updatedAt。
+ */
+export const MEMORY_DECAY_FACTORS_BY_TYPE: Record<string, number> = {
+  preference: 1.0,
+  semantic: 1.0,
+  note: 0.98,
+  procedural: 0.98,
+  episodic: MEMORY_DECAY_FACTOR_PER_DAY,
+  experience: 0.9,
+};
+
+/** 获取某类型记忆的日衰减系数（缺省回退到全局系数） */
+export function getMemoryDecayFactor(type: string): number {
+  return MEMORY_DECAY_FACTORS_BY_TYPE[type] ?? MEMORY_DECAY_FACTOR_PER_DAY;
+}
 
 export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
   preference: "用户偏好",

@@ -46,7 +46,7 @@ async function askUserTool(args: Record<string, unknown>, ctx: NativeToolContext
 
   const channel = (String(args.channel || "ui").toLowerCase() === "email" ? "email" : "ui") as AskUserChannel;
   const options = normalizeOptions(args.options);
-  const subject = String(args.subject || "KnowPilot 需要你的确认").trim();
+  const subject = String(args.subject || "[KnowPilot 需回复] 需要你的确认").trim();
 
   let messageId: string | undefined;
   let threadId: string | undefined;

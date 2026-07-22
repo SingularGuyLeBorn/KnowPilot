@@ -1548,6 +1548,8 @@ export interface MemoryEntity {
   attribution?: string | null;
   validFrom?: Date | null;
   validTo?: Date | null;
+  lastAccessedAt?: Date | null;
+  accessCount?: number;
   supersededBy?: string | null;
   createdAt: Date;
   updatedAt: Date;

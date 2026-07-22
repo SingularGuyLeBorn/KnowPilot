@@ -25,10 +25,10 @@ import type { MemoryEntity, MemoryService } from "../services.js";
 import { deleteFtsRow, searchFts } from "./ftsIndex.js";
 import {
   MEMORY_ARCHIVE_THRESHOLD,
-  MEMORY_DECAY_FACTOR_PER_DAY,
   MEMORY_INITIAL_STRENGTH,
   MEMORY_SCOPE_GLOBAL,
   MEMORY_SCOPE_PREFIX,
+  getMemoryDecayFactor,
   memoryAgentScope,
   memoryWorkspaceScope,
 } from "@knowpilot/shared";
@@ -48,6 +48,8 @@ export interface MemoryItem {
   attribution: string;
   validFrom: Date | null;
   validTo: Date | null;
+  lastAccessedAt: Date | null;
+  accessCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -140,6 +142,8 @@ function toItem(raw: {
   attribution?: string | null;
   validFrom?: Date | null;
   validTo?: Date | null;
+  lastAccessedAt?: Date | null;
+  accessCount?: number;
   createdAt: Date;
   updatedAt: Date;
 }): MemoryItem {
@@ -159,6 +163,8 @@ function toItem(raw: {
     attribution: raw.attribution ?? "agent",
     validFrom: raw.validFrom ?? null,
     validTo: raw.validTo ?? null,
+    lastAccessedAt: raw.lastAccessedAt ?? null,
+    accessCount: raw.accessCount ?? 0,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
   };
@@ -253,7 +259,7 @@ export class PrismaMemoryRepository implements MemoryRepository {
     }
 
     const nowMs = now.getTime();
-    return rows
+    const items = rows
       .map((r) => ({
         item: toItem(r),
         score: scoreMemoryCandidate({
@@ -266,6 +272,25 @@ export class PrismaMemoryRepository implements MemoryRepository {
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map((x) => x.item);
+
+    // 被检索/注入即重置衰减：更新 lastAccessedAt 并累加 accessCount。
+    // 后续 decayMemories 以 lastAccessedAt 为基准，所以「被调用」的记忆不会继续衰减。
+    if (items.length > 0) {
+      const ids = items.map((m) => m.id);
+      await this.prisma.memory
+        .updateMany({
+          where: { id: { in: ids } },
+          data: { lastAccessedAt: now, accessCount: { increment: 1 } },
+        })
+        .catch((err) => {
+          console.warn(
+            "[MemoryRepository] 更新 lastAccessedAt/accessCount 失败:",
+            err instanceof Error ? err.message : err,
+          );
+        });
+    }
+
+    return items;
   }
 
   async write(input: MemoryWriteInput): Promise<MemoryItem> {
@@ -579,12 +604,16 @@ export async function decayMemories(
   opts?: { now?: Date },
 ): Promise<{ decayed: number; archived: number }> {
   const now = opts?.now ?? new Date();
-  const rows = await prisma.memory.findMany({ select: { id: true, strength: true, updatedAt: true } });
+  const rows = await prisma.memory.findMany({
+    select: { id: true, type: true, strength: true, updatedAt: true, lastAccessedAt: true },
+  });
   let decayed = 0;
   for (const m of rows) {
-    const days = Math.floor((now.getTime() - m.updatedAt.getTime()) / 86_400_000);
+    const baseTime = m.lastAccessedAt ?? m.updatedAt;
+    const days = Math.floor((now.getTime() - baseTime.getTime()) / 86_400_000);
     if (days < 1) continue;
-    const next = m.strength * Math.pow(MEMORY_DECAY_FACTOR_PER_DAY, days);
+    const factor = getMemoryDecayFactor(m.type);
+    const next = m.strength * Math.pow(factor, days);
     // 注意：raw SQL 更新避免触发 @updatedAt，否则衰减基准会每天被重置，复利失效
     await prisma.$executeRawUnsafe(`UPDATE "Memory" SET "strength" = ? WHERE "id" = ?`, next, m.id);
     decayed++;

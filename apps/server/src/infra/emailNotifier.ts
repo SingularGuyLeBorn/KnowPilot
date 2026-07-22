@@ -24,7 +24,9 @@ export interface EmailSendInput {
   agentId?: string;
 }
 
-export type EmailSendResult = { success: true; message: string } | { error: string };
+export type EmailSendResult =
+  | { success: true; message: string; messageId?: string; threadId?: string }
+  | { error: string };
 
 /** 通知通道熔断：3 次连续失败开闸，5 分钟冷却 */
 const NOTIFY_FAILURE_THRESHOLD = 3;
@@ -128,7 +130,12 @@ async function sendViaSmtp(to: string, subject: string, body: string): Promise<E
 async function sendViaAgentMail(to: string, subject: string, body: string): Promise<EmailSendResult> {
   const sent = await sendAgentMailMessage({ to, subject, text: body });
   if (!sent.ok) return { error: sent.error };
-  return { success: true, message: `AgentMail 已发送到 ${to}` };
+  return {
+    success: true,
+    message: `AgentMail 已发送到 ${to}`,
+    messageId: sent.messageId,
+    threadId: sent.threadId,
+  };
 }
 
 /** ntfy.sh：免注册，topic 当密码；见 https://ntfy.sh */
@@ -206,6 +213,9 @@ export async function sendEmailNotification(
 
   if (ok.length > 0) {
     const message = ok.map((r) => (r.result as { message: string }).message).join("；");
+    const agentMailResult = ok.find((r) => r.name === "agentmail")?.result as
+      | { success: true; messageId?: string; threadId?: string }
+      | undefined;
     await log
       ?.create?.({
         level: "info",
@@ -222,7 +232,12 @@ export async function sendEmailNotification(
         },
       })
       .catch(() => {});
-    return { success: true, message };
+    return {
+      success: true,
+      message,
+      messageId: agentMailResult?.messageId,
+      threadId: agentMailResult?.threadId,
+    };
   }
 
   return {
