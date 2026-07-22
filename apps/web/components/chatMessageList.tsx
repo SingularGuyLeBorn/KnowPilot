@@ -137,14 +137,22 @@ export const ChatMessageList = memo(function ChatMessageList({
   const showLiveStream = isStreaming || liveTimeline.length > 0 || !!streamingContent;
   const lastGroupIndex = messageGroups.length - 1;
 
+  const lastStepsByGroupRef = useRef<Map<string, TimelineStep[]>>(new Map());
+
   const renderIntermediateSteps = (group: MessageGroup) => {
     const active = getActiveVersion(group);
     if (!active) return null;
+    const groupKey = group.userMessage.id;
     const steps = buildTimelineFromStored(active.toolCalls);
-    if (!steps.length) return null;
+    // 防御：toolCalls 被部分更新导致 steps 为空时，保留上一次非空 steps，避免 thinking 闪烁消失
+    if (steps.length > 0) {
+      lastStepsByGroupRef.current.set(groupKey, steps);
+    }
+    const displaySteps = steps.length > 0 ? steps : (lastStepsByGroupRef.current.get(groupKey) ?? []);
+    if (!displaySteps.length) return null;
     return (
       <div className="flex w-full justify-start">
-        <ThinkingTimeline steps={steps} isLive={false} />
+        <ThinkingTimeline steps={displaySteps} isLive={false} />
       </div>
     );
   };
