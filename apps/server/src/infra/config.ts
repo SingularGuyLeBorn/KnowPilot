@@ -19,6 +19,15 @@ const LlmYamlSchema = z.object({
   maxRetries: z.coerce.number().int().min(0).default(3),
   baseDelayMs: z.coerce.number().int().min(0).default(1000),
   fallbackModels: z.array(z.string()).default([]),
+  /**
+   * P3-03：providers 段可选覆盖各厂商 baseUrl（env <provider>_BASE_URL 仍优先；
+   * 此处次之；都未配则回退 llmClient.DEFAULT_BASE_URLS）。
+   * 例：providers: { deepseek: { baseUrl: "https://proxy.example.com/v1" } }
+   */
+  providers: z.record(
+    z.string(),
+    z.object({ baseUrl: z.string().default("") }).passthrough(),
+  ).default({}),
 });
 
 /** config.yaml reflection 段：W7 反思（缺省时走默认值） */
@@ -316,25 +325,27 @@ function resolveContentDir(projectRoot: string): string {
   return contentDir;
 }
 
-/** 加载项目根目录 .env（幂等） */
+/** 加载项目根目录 .env（幂等）。P3-04：.env.local 优先级高于 .env（先加载，undefined 守卫保证不覆盖） */
 export function loadRootEnv(projectRoot?: string): void {
   const root = projectRoot || resolveProjectRoot();
-  const envPath = path.join(root, ".env");
-  if (!fs.existsSync(envPath)) return;
-
-  const content = fs.readFileSync(envPath, "utf8");
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq <= 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
+  // P3-04：先加载 .env.local（高敏凭据隔离），再加载 .env（通用配置）；同名键以先加载者为准。
+  for (const file of [".env.local", ".env"]) {
+    const envPath = path.join(root, file);
+    if (!fs.existsSync(envPath)) continue;
+    const content = fs.readFileSync(envPath, "utf8");
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let value = trimmed.slice(eq + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+      }
     }
   }
 }
@@ -437,6 +448,14 @@ export function createAppConfig(): AppConfig {
   // llm 段 zod 解析：解析失败（如字段类型错误）回退默认值，不阻断启动
   const llmYamlParsed = LlmYamlSchema.safeParse(yamlConfig.llm ?? {});
   const llmYaml = llmYamlParsed.success ? llmYamlParsed.data : LlmYamlSchema.parse({});
+  // P3-03：config.yaml llm.providers 段可选覆盖各厂商 baseUrl。
+  // 优先级：env <provider>_BASE_URL > config.yaml providers.<id>.baseUrl > llmClient.DEFAULT_BASE_URLS（最后这层在 llmClient 里）。
+  // 此处只补齐 env 未设的 baseUrl，env 优先保留。
+  for (const [pid, pYaml] of Object.entries(llmYaml.providers)) {
+    if (providers[pid] && !providers[pid].baseUrl && pYaml.baseUrl) {
+      providers[pid].baseUrl = pYaml.baseUrl;
+    }
+  }
   // reflection 段同上：旧 config.yaml 无此段 → 默认关闭
   const reflectionYamlParsed = ReflectionYamlSchema.safeParse(yamlConfig.reflection ?? {});
   const reflectionYaml = reflectionYamlParsed.success
@@ -477,8 +496,9 @@ export function createAppConfig(): AppConfig {
       dailyBudget: parseFloat(readEnv("LLM_DAILY_BUDGET") || "10"),
       // 默认 12 轮：覆盖绝大多数 ReAct 场景，避免坏 LLM 空转到 100 轮长时间转圈
       maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "12", 10)),
-      // #32a：单次运行总工具调用上限 168（用户确认）
-      maxToolCallsPerRun: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_CALLS_PER_RUN") || "168", 10)),
+      // P1-02：单次运行总工具调用上限默认 60（原 168 偏高，坏 LLM 可烧数十分钟才被叫停）。
+      // 60 覆盖正常 ReAct（多数任务 <30 工具调用），坏 LLM 更快被兜底；env 可覆盖调高。
+      maxToolCallsPerRun: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_CALLS_PER_RUN") || "60", 10)),
       // 默认 30s 超时 + 并发 2：收紧以避免慢工具（fetch/MCP）长时间占槽导致卡死；
       // 慢工具应由 async_task_run 转异步而非阻塞主循环。
       // env 非数字时 parseInt 得 NaN（Math.max 打穿成 NaN），Number.isFinite 守卫回退默认 30000

@@ -34,6 +34,8 @@ import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
 import { ensureIntegrationCredentialsInjected } from "./infra/credentialVault.js";
 import { isAuthEnabled, verifyAuthHeader } from "./infra/auth.js";
+import { globalRateLimiter, chatStreamRateLimiter } from "./infra/rateLimit.js";
+import { traceMiddleware, formatTrace } from "./infra/trace.js";
 import { prisma } from "./db.js";
 import { hydrateLlmBudget } from "./infra/llmBudget.js";
 
@@ -95,6 +97,12 @@ app.use(
   }),
 );
 
+// P2 安全加固：全局限流（默认 600 req/15min/IP，本地开发不触发；RATE_LIMIT_ENABLED=false 关闭）
+app.use(globalRateLimiter);
+
+// P2 可观测性：trace_id 透传/生成，写入 ALS 作用域 + 响应 header（web→server 关联排障）
+app.use(traceMiddleware);
+
 // 健康检查 (非 tRPC)
 app.get("/health", async (_req, res) => {
   // P10：保留轻量 DB 连通性检查（DB 挂时返回 503），capabilities 走缓存避免每次查 DB
@@ -147,6 +155,7 @@ setStreamHub(streamHub);
 wireAsyncJobPush(config);
 app.post(
   "/api/agent/chat/stream",
+  chatStreamRateLimiter,
   handleAgentChatStream(services, config, createTrpcInvoker({ services }), streamHub),
 );
 app.get(
@@ -274,7 +283,7 @@ app.use(
     router: appRouter,
     createContext,
     onError({ error, path }) {
-      console.error(`[tRPC Error] ${path}:`, error.message);
+      console.error(`${formatTrace()}[tRPC Error] ${path}:`, error.message);
     },
   })
 );

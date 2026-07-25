@@ -361,3 +361,37 @@ export function withResilience(client: LlmClientCore, defaults?: ResilienceDefau
     chatCompletionStream: resilientChatCompletionStream,
   };
 }
+
+/* ─── P2-02：弹性客户端单例（次要路径统一入口） ─── */
+import * as llmClientNS from "./llmClient.js";
+
+/**
+ * 模块级弹性客户端单例：次要 LLM 调用路径（autoCompact 摘要 / sessionAutoName /
+ * chatTree 摘要 / memoryFlush / goalLoop / web 工具内摘要）统一经此入口，
+ * 享受与主对话路径同款的重试 + 降级。无状态装饰器，策略每次从 options.config.llm 读取。
+ * 经命名空间委托保证 vi.spyOn(llmClient, ...) 测试拦截生效。
+ */
+const resilientLlmSingleton = withResilience({
+  chatCompletion: (options) => llmClientNS.chatCompletion(options),
+  chatCompletionStream: (options) => llmClientNS.chatCompletionStream(options),
+});
+
+/**
+ * 次要路径统一入口：等价于 resilientLlmSingleton.chatCompletion(options)。
+ * 主对话路径仍走 loop/transports.createSyncTransport（同一单例语义，独立构造避免循环）。
+ */
+export function resilientChatCompletion(
+  options: Parameters<typeof chatCompletion>[0],
+): ReturnType<typeof chatCompletion> {
+  return resilientLlmSingleton.chatCompletion(options);
+}
+
+/**
+ * 流式次要路径统一入口：等价于 resilientLlmSingleton.chatCompletionStream(options)。
+ * 主对话路径仍走 loop/transports.createStreamTransport。
+ */
+export function resilientChatCompletionStream(
+  options: Parameters<typeof chatCompletionStream>[0],
+): ReturnType<typeof chatCompletionStream> {
+  return resilientLlmSingleton.chatCompletionStream(options);
+}

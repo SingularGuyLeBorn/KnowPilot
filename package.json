@@ -11,6 +11,8 @@
     "remote:named": "node scripts/remote.mjs --named",
     "dev:web": "pnpm --filter @knowpilot/web dev",
     "dev:server": "pnpm --filter @knowpilot/server dev",
+    "dev:mock-llm": "pnpm --filter @knowpilot/mock-llm dev",
+    "start:mock-llm": "pnpm --filter @knowpilot/mock-llm start",
     "build": "pnpm --filter @knowpilot/web build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",

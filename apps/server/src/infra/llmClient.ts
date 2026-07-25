@@ -5,9 +5,30 @@
 import type { AppConfig, LlmProviderConfig } from "./config.js";
 import type { ReasoningEffort } from "@knowpilot/shared";
 import { LLM_MODEL_IDS, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
-import { mockChatCompletion, mockChatCompletionStream } from "./mockLlmClient.js";
+import {
+  mockChatCompletion,
+  mockChatCompletionStream,
+  type LlmMessage,
+  type LlmToolDefinition,
+  type LlmToolCall,
+  type LlmCompletionResult,
+  type LlmRequestOptions,
+  type StreamChunk,
+  type LlmContentPart,
+} from "@knowpilot/mock-llm-core";
 import { getFreellmGatewayRuntime, withFreellmGatewayFallback } from "./freeLlmRuntime.js";
 import { makeAbortError } from "./abortReason.js";
+
+// 类型再导出：全仓 import 路径不变（llmClient 仍是 LLM 客户端入口，协议类型单源在 mock-llm-core）
+export type {
+  LlmContentPart,
+  LlmMessage,
+  LlmToolDefinition,
+  LlmToolCall,
+  LlmCompletionResult,
+  LlmRequestOptions,
+  StreamChunk,
+} from "@knowpilot/mock-llm-core";
 
 /** LLM HTTP 错误：携带状态码与响应体，供弹性层（resilientLlmClient）分类 */
 export class LlmHttpError extends Error {
@@ -21,55 +42,7 @@ export class LlmHttpError extends Error {
   }
 }
 
-export interface LlmContentPart {
-  type: "text" | "image_url";
-  text?: string;
-  image_url?: { url: string; detail?: "auto" | "low" | "high" };
-}
-
-export interface LlmMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | LlmContentPart[] | null;
-  tool_call_id?: string;
-  name?: string;
-  tool_calls?: LlmToolCall[];
-  /** DeepSeek V4 思考链 — 工具调用回合必须原样回传 */
-  reasoning_content?: string | null;
-}
-
-export interface LlmToolDefinition {
-  type: "function";
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
-  };
-}
-
-export interface LlmToolCall {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-}
-
-export interface LlmCompletionResult {
-  content: string | null;
-  reasoningContent?: string | null;
-  toolCalls: LlmToolCall[];
-  tokenUsage?: { prompt: number; completion: number; total: number };
-  finishReason: string | null;
-  model: string;
-  provider: string;
-}
-
-/** LLM 请求扩展（DeepSeek V4 思考模式） */
-export interface LlmRequestOptions {
-  temperature?: number;
-  maxTokens?: number;
-  enableReasoning?: boolean;
-  reasoningEffort?: ReasoningEffort;
-}
-
+/** LLM 请求扩展（DeepSeek V4 思考模式）— 类型从 @knowpilot/mock-llm-core 再导出 */
 export interface ResolvedDeepSeekRequest {
   apiModel: string;
   thinking: "enabled" | "disabled";
@@ -321,16 +294,6 @@ export async function chatCompletion(options: {
     model: data.model || model,
     provider: provider.id,
   };
-}
-
-export interface StreamChunk {
-  type: "token" | "reasoning" | "tool_calls";
-  delta?: string;
-  toolCalls?: LlmToolCall[];
-  finishReason?: string | null;
-  model?: string;
-  provider?: string;
-  tokenUsage?: { prompt: number; completion: number; total: number };
 }
 
 /** OpenAI 协议 SSE 流式补全（仅文本 delta；tool_calls 在流结束后一次性返回） */

@@ -14,6 +14,19 @@ const execFileAsync = promisify(execFile);
 
 export type ShellMode = "disabled" | "host_restricted" | "host_full" | "docker";
 
+/** 传给子进程时需剔除的敏感环境变量键模式（防恶意命令读取 API Key/Token 泄漏） */
+const SENSITIVE_ENV_RE = /(?:API_KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|COOKIE|CREDENTIAL|AUTH)_|_API_KEY$|_TOKEN$|_SECRET$|CREDENTIAL_MASTER_KEY|^AUTH_PASSWORD$|^AUTH_TOKEN$/i;
+
+/** 从 process.env 派生一份剔除敏感键的子进程环境（P2 安全加固） */
+function buildSandboxEnv(): Record<string, string | undefined> {
+  const safe: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (SENSITIVE_ENV_RE.test(k)) continue;
+    safe[k] = v;
+  }
+  return safe;
+}
+
 /** 明显危险的命令片段（大小写不敏感） */
 const BLOCKED_PATTERNS: RegExp[] = [
   /\brm\s+(-[^\s]*\s+)*-rf?\s+(\/|\\|~\s|\*\s)/i,
@@ -120,7 +133,7 @@ export async function runShellRestricted(
       maxBuffer,
       windowsHide: true,
       env: {
-        ...process.env,
+        ...buildSandboxEnv(),
         CI: "1",
         NO_COLOR: "1",
       },
