@@ -12,7 +12,7 @@
  *   2. SSE chat stream：昂贵端点单独收紧（默认 30 POST / min / IP）。
  */
 
-import rateLimit, { type Options } from "express-rate-limit";
+import rateLimit, { ipKeyGenerator, type Options } from "express-rate-limit";
 
 const enabled = process.env.RATE_LIMIT_ENABLED !== "false";
 
@@ -49,8 +49,10 @@ export const chatStreamRateLimiter = rateLimit({
   skip: (req) => !enabled || req.method !== "POST",
   keyGenerator: (req) => {
     // 同一用户多会话并发续传 GET 不计入；POST 按 IP 限频。
-    const ip = req.ip || (req.socket?.remoteAddress as string | undefined) || "unknown";
-    return `chat-post:${ip}`;
+    // v8 要求自定义 keyGenerator 用 req.ip 时必须经 ipKeyGenerator 归一化 IPv6，否则抛 ERR_ERL_KEY_GEN_IPV6。
+    // ipKeyGenerator 签名为 (ip: string) => string（非 (req) => string），故先取 ip 再传入。
+    const raw = req.ip || (req.socket?.remoteAddress as string | undefined) || "unknown";
+    return `chat-post:${ipKeyGenerator(raw)}`;
   },
   handler: jsonTooManyRequests as unknown as Options["handler"],
 });

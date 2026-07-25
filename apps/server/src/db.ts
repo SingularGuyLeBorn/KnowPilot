@@ -24,4 +24,10 @@ if (!globalForPrisma.prismaWal) {
   void prisma.$queryRawUnsafe("PRAGMA journal_mode=WAL;").catch(() => {
     /* 非 SQLite 或只读时忽略 */
   });
+  // busy_timeout=15s：SQLite 默认 0（锁竞争立即抛 SQLITE_BUSY → Prisma P1008 socket timeout）。
+  // SSE 事件持久化、chatTree 事务、service 更新高并发写时，写锁排队等不到就 P1008/P2034。
+  // 设 15s 让等锁方排队等待而非立即失败，配合 WAL 显著降低并发写失败。
+  void prisma.$queryRawUnsafe("PRAGMA busy_timeout=15000;").catch(() => {
+    /* 非 SQLite 时忽略 */
+  });
 }

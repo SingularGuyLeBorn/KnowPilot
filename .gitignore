@@ -71,6 +71,7 @@ content/mcp/smoke_mcp_*.json
 content/memories/daily/
 content/skills/.curator_state
 content/agents/*-e3f87d.md
+content/uploads/screenshots/
 content/mcp/Test Mcp*.json
 content/prompts/smoke-prompt-*.md
 content/prompts/Test Prompt*.md
@@ -127,3 +128,7 @@ weights/asr/
 !weights/README.md
 !weights/**/.gitkeep
 .test-e2e-pids.json
+
+# ngrok 二进制（项目内 scripts/ngrok.exe，用 scripts/remote-ngrok.mjs 调用；不入库，README 说明下载方式）
+scripts/ngrok.exe
+scripts/ngrok.zip

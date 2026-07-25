@@ -61,13 +61,14 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
       fallbackModels: [],
       providers: {},
     },
-    asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 2, maxPerSession: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxRetries: 3, maxSubagentsPerSession: 10 },
+    asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 2, maxPerSession: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxSubagentsPerSession: 10 },
     ocr: {
       paddleCliPath: path.join(projectRoot, "missing-paddle.py"),
       paddlePythonPath: "python3",
       ppocrHome: path.join(projectRoot, "weights", "ocr", "paddleocr"),
       ocrSpaceApiKey: "",
       ocrSpaceDefaultLang: "chs",
+      tesseractLang: "chi_sim+eng",
     },
     search: {
       tavilyApiKey: "",
@@ -321,6 +322,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "session_clear",
   "session_rotate",
   "session_compact",
+  "session_context_usage",
   // Swarm 管理工具
   "agent_create",
   "agent_update",

@@ -868,6 +868,10 @@ export class SessionStreamHub {
         if (a.sessionId !== b.sessionId) return a.sessionId.localeCompare(b.sessionId);
         return a.seq - b.seq;
       });
+      // 退避：失败后延迟 500ms 再 flush，避免立即重排又立即 flush 在锁竞争下雪崩。
+      if (!this.flushTimer) {
+        this.flushTimer = setTimeout(() => void this.flushPersistQueue(), 500);
+      }
     }
   }
 

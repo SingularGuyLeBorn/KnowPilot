@@ -112,7 +112,9 @@ export async function appendChatMessage(
   };
 
   if (isPrismaClient(db)) {
-    return db.$transaction(exec);
+    // 默认 maxWait=2s/timeout=5s，SQLite 高并发写锁排队时事务会被提前关闭（P2034 Transaction already closed）。
+    // 配合 db.ts 的 busy_timeout=15s，事务超时放宽到 maxWait=10s/timeout=30s，让等锁方排队完成而非失败。
+    return db.$transaction(exec, { maxWait: 10_000, timeout: 30_000 });
   }
   return exec(db);
 }

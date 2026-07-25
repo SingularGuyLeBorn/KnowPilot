@@ -58,6 +58,7 @@
     "nodemailer": "^9.0.3",
     "playwright": "1.59.1",
     "superjson": "2.2.2",
+    "tesseract.js": "^6.0.0",
     "turndown": "7.2.4",
     "zod": "3.25.56",
     "zod-to-json-schema": "^3.25.2"

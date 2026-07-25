@@ -34,6 +34,16 @@ const OCR_SPACE_LANG_MAP: Record<string, string> = {
   kor: "kor",
 };
 
+/** 请求语言 → Tesseract.js 语言组合（中英优先；jpn/kor 映射） */
+const TESSERACT_LANG_MAP: Record<string, string> = {
+  auto: "chi_sim+eng",
+  chs: "chi_sim+eng",
+  cht: "chi_tra+eng",
+  en: "eng",
+  jpn: "jpn+eng",
+  kor: "kor+eng",
+};
+
 function resolvePaddleDefaults(projectRoot: string) {
   return {
     cli: path.join(projectRoot, "tools", "ocr", "paddleocr_cli.py"),
@@ -237,6 +247,39 @@ async function ocrWithPaddleOCR(
   };
 }
 
+async function ocrWithTesseract(
+  config: AppConfig,
+  imagePath: string,
+  language: string,
+): Promise<OcrPerformResult> {
+  // 纯 JS/wasm OCR 兜底引擎：零 Python 依赖，首次跑会按需下载语言数据到缓存。
+  // 放在 PaddleOCR 之后、OCR.space 之前——PaddleOCR 环境好则用（质量高），
+  // 否则 Tesseract.js 本地兜底（无需 API key），最后才走云端 OCR.space。
+  const lang = TESSERACT_LANG_MAP[language] || config.ocr.tesseractLang || "chi_sim+eng";
+  try {
+    const { createWorker } = await import("tesseract.js");
+    // OEM=1 (LSTM)，createWorker 首次会下载 lang.traineddata 到缓存目录
+    const worker = await createWorker(lang, 1, { logger: () => undefined });
+    try {
+      const { data } = await worker.recognize(imagePath);
+      const text = (data?.text || "").trim();
+      if (!text) {
+        return { text: "", engine: "Tesseract.js", success: false, error: "Tesseract.js 识别结果为空" };
+      }
+      return { text, engine: "Tesseract.js", success: true };
+    } finally {
+      await worker.terminate();
+    }
+  } catch (err: unknown) {
+    return {
+      text: "",
+      engine: "Tesseract.js",
+      success: false,
+      error: `Tesseract.js 失败: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
 async function ocrWithOcrSpace(
   config: AppConfig,
   imagePath: string,
@@ -340,6 +383,7 @@ export async function performOcrFromFile(
 
   const engines: Array<{ name: string; fn: () => Promise<OcrPerformResult> }> = [
     { name: "PaddleOCR", fn: () => ocrWithPaddleOCR(config, imagePath, language) },
+    { name: "Tesseract.js", fn: () => ocrWithTesseract(config, imagePath, language) },
     { name: "OCR.space", fn: () => ocrWithOcrSpace(config, imagePath, language) },
   ];
 
