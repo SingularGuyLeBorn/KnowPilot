@@ -549,6 +549,7 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:async_task_run",
   "native:session_rotate",
   "native:session_compact",
+  "native:session_context_usage",
   "native:free_api_keys_list",
   "native:free_api_keys_fetch",
   "native:free_models_list",
@@ -556,6 +557,12 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:git_status",
   "native:git_diff",
   "native:git_log",
+  // 知识库文章工具：assistant 可在 content/posts 创建/更新/删除/列出 Markdown 文章。
+  // 走 PostService，自动 slug 消毒 + frontmatter 规范化 + DB/FTS 同步，避免 write_file 野路径脱同步。
+  "native:post_create",
+  "native:post_update",
+  "native:post_delete",
+  "native:post_list",
   "native:memory_create",
   "native:memory_update",
   "native:memory_search",

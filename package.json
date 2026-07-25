@@ -9,6 +9,8 @@
     "dev:remote": "node scripts/dev.mjs --remote",
     "remote": "node scripts/remote.mjs",
     "remote:named": "node scripts/remote.mjs --named",
+    "dev:ngrok": "node scripts/remote-ngrok.mjs",
+    "dev:ngrok:quick": "node scripts/remote-ngrok.mjs --quick",
     "dev:web": "pnpm --filter @knowpilot/web dev",
     "dev:server": "pnpm --filter @knowpilot/server dev",
     "dev:mock-llm": "pnpm --filter @knowpilot/mock-llm dev",
