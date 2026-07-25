@@ -28,6 +28,7 @@ import { getSharedBrowser } from "./infra/metablog/browserPool.js";
 import { hasSystemChrome } from "./infra/metablog/playwrightChrome.js";
 import { syncSearchEnvFromConfig } from "./infra/nativeTools.js";
 import { getServerCapabilities, getCachedEnrichedServerCapabilities } from "./infra/capabilities.js";
+import { getOcrStatus } from "./infra/ocrService.js";
 import { handleAgentChatStream, handleAgentChatStop } from "./infra/agentStream.js";
 import { SessionStreamHub, setStreamHub } from "./infra/sessionStreamHub.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
@@ -530,6 +531,22 @@ const server = app.listen(PORT, () => {
     void getSharedBrowser()
       .then(() => console.log("  🌐 [Browser] Playwright 共享实例已预热"))
       .catch((err) => console.warn("  ⚠️ [Browser] 预热失败:", err instanceof Error ? err.message : err));
+  }
+
+  // OCR 引擎可用性诊断（三级降级：PaddleOCR → Tesseract.js → OCR.space）
+  try {
+    const ocr = getOcrStatus(config);
+    const paddleReady = ocr.paddleCli && ocr.models.det && ocr.models.rec && ocr.models.cls;
+    const engines: string[] = [];
+    engines.push(paddleReady ? "PaddleOCR✅" : "PaddleOCR❌");
+    engines.push("Tesseract.js✅"); // 纯 JS 兜底，首次跑按需下载语言数据
+    engines.push(ocr.ocrSpaceConfigured ? "OCR.space✅" : "OCR.space❌");
+    console.log(`  🔤 [OCR] 引擎降级链: ${engines.join(" → ")}`);
+    if (!paddleReady) {
+      console.log(`     PaddleOCR 未就绪（cli=${ocr.paddleCli}, det=${ocr.models.det}, rec=${ocr.models.rec}, cls=${ocr.models.cls}）；将用 Tesseract.js 本地兜底，无需 API key`);
+    }
+  } catch (err) {
+    console.warn("  ⚠️ [OCR] 状态探测失败:", err instanceof Error ? err.message : err);
   }
 });
 
