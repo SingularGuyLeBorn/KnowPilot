@@ -67,6 +67,10 @@ content/agents/*测试 Agent*.md
 content/skills/smoke_skill_*.md
 content/skills/Test Skill*.md
 content/mcp/smoke_mcp_*.json
+# 运行时产物：日记 / curator 状态 / 心跳产生的临时 agent（不入库）
+content/memories/daily/
+content/skills/.curator_state
+content/agents/*-e3f87d.md
 content/mcp/Test Mcp*.json
 content/prompts/smoke-prompt-*.md
 content/prompts/Test Prompt*.md
