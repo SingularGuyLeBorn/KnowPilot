@@ -143,6 +143,8 @@ export type AgentStreamEvent =
       newSessionId: string;
       newTitle: string;
       reason?: string;
+      /** true=前端自动聚焦新会话；false/缺省=仅提示用户手动跳转 */
+      focusNewSession?: boolean;
     }
   /** 服务端自动消费异步结果后启动了会话流（前端应挂接 listRunning / resume） */
   | {
@@ -192,12 +194,13 @@ export type AgentStreamEvent =
       channel: "ui" | "email";
       subject?: string;
     }
-  /** ask_user 已答复/超时/中止：前端收起弹框 */
+  /** ask_user 已答复/超时/中止：前端收起弹框；answered 时带 answer 回填 customResponse 输入框 */
   | {
       type: "ask_user_resolved";
       sessionId: string;
       askId: string;
       outcome: "answered" | "expired" | "aborted";
+      answer?: string;
     }
   /** SwarmOrchestrator 任务状态推到父会话（去重/排队/完成/失败），替代盲轮询 */
   | {

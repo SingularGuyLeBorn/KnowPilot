@@ -7,7 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { getStreamHub } from "../../sessionStreamHub.js";
-import { runSessionCompact } from "../../autoCompact.js";
+import { runSessionCompact, estimateChars, resolveCompactThresholdForModel, buildLlmContextSinceCompact } from "../../autoCompact.js";
 import { getAllowedToolsForTier } from "../../swarmPermissionGuard.js";
 import { resolveToolsForAgentTier, DEFAULT_SUBAGENT_TOOLS } from "../../loop/setup.js";
 import { resolveAgent as defaultResolveAgent } from "../../agentResolver.js";
@@ -666,6 +666,67 @@ async function sessionCompactTool(_args: Record<string, unknown>, ctx: NativeToo
 }
 
 /**
+ * 查看当前会话上下文占用：消息数、估算字符、压缩阈值、占比、是否已压缩。
+ * 供 agent 自主判断是否需要 session_compact；只读，无副作用。
+ */
+async function sessionContextUsageTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) throw new Error("session_context_usage 需要在 Chat 会话中调用（缺少 sessionId）");
+  if (!ctx.services?.session || !ctx.services?.message) {
+    throw new Error("当前上下文未提供 Session/Message Service，无法查询上下文占用");
+  }
+
+  const session = await ctx.services.session.getByIdLite(ctx.sessionId);
+  if (!session) throw new Error("当前会话不存在");
+
+  const model = session.model || ctx.agentSnapshot?.model || ctx.config.llm.defaultModel;
+  const systemPrompt = session.systemPrompt || ctx.agentSnapshot?.systemPrompt || "你是 KnowPilot 助手。";
+  const existingSummary = (session as { contextSummary?: string | null }).contextSummary ?? null;
+  const existingGeneration = (session as { compactGeneration?: number | null }).compactGeneration ?? 0;
+  const compactedAt = (session as { contextCompactedAt?: Date | string | null }).contextCompactedAt ?? null;
+
+  const historyItems = await ctx.services.message.listForLlmContext({
+    sessionId: ctx.sessionId,
+    since: compactedAt,
+    limit: 200,
+  });
+  const messages = buildLlmContextSinceCompact(systemPrompt, historyItems, {
+    modelId: model,
+    contextSummary: existingSummary,
+    compactGeneration: existingGeneration,
+  });
+
+  const charThreshold = resolveCompactThresholdForModel(ctx.config, model);
+  const estimatedChars = estimateChars(messages);
+  // 粗估 token：中文约 1.5 字符/token，英文约 4 字符/token，取 2.5 折中
+  const estimatedTokens = Math.round(estimatedChars / 2.5);
+  const ratio = charThreshold > 0 ? Math.min(1, estimatedChars / charThreshold) : 0;
+  const thresholdTokens = charThreshold > 0 ? Math.round(charThreshold / 2.5) : 0;
+
+  // 统计原文消息数（不含 system / 注入摘要 pair）
+  const originalMessageCount = historyItems.length;
+
+  return {
+    sessionId: ctx.sessionId,
+    model,
+    messageCount: originalMessageCount,
+    estimatedChars,
+    estimatedTokens,
+    charThreshold,
+    thresholdTokens,
+    ratio: Math.round(ratio * 100) / 100,
+    ratioPercent: Math.round(ratio * 100),
+    hasSummary: !!existingSummary,
+    compactGeneration: existingGeneration,
+    hint:
+      ratio >= 0.8
+        ? "上下文已占用 " + Math.round(ratio * 100) + "%，建议调用 session_compact 压缩，或 session_rotate 换干净会话。"
+        : ratio >= 0.6
+          ? "上下文占用 " + Math.round(ratio * 100) + "%，暂无需压缩；继续观察。"
+          : "上下文占用 " + Math.round(ratio * 100) + "%，充裕。",
+  };
+}
+
+/**
  * 归档当前会话并开启同 Agent 新会话；总结写入 content/sessions/ 与新会话首条消息。
  * 不自动切换前端视图——通过 SSE session_rotated 提示用户手动跳转。
  */
@@ -741,20 +802,34 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
   }
   const newSession = created.data as { id: string; title: string };
 
-  // 用 summary 作为新会话首条用户消息，使新上下文直接继承轮换前的决策、未完事项与关键结论
-  let firstMessage = `【上一会话摘要】\n\n${summary}`;
-  if (carryMemoryIds.length > 0) {
-    firstMessage += `\n\n【需继续参考的 Memory】\n${carryMemoryIds.map((id) => `- ${id}`).join("\n")}`;
+  const firstMessageOverride = args.firstMessage ? String(args.firstMessage).trim() : "";
+  const focusNewSession = args.focusNewSession === true;
+
+  // 首条消息：firstMessage 优先（作为右侧 user 气泡，source=user）；否则用 summary 作为 system 注入消息。
+  if (firstMessageOverride) {
+    // 干净重启：firstMessage 作为新会话首条用户气泡；summary 仅归档旧会话，不注入新会话上下文
+    await ctx.services.message.create({
+      sessionId: newSession.id,
+      role: "user",
+      content: firstMessageOverride,
+      source: "user",
+    } as any);
+  } else {
+    // 默认：summary 作为新会话首条用户消息（继承决策/未完事项），source=system 标注非用户直接输入
+    let firstMessage = `【上一会话摘要】\n\n${summary}`;
+    if (carryMemoryIds.length > 0) {
+      firstMessage += `\n\n【需继续参考的 Memory】\n${carryMemoryIds.map((id) => `- ${id}`).join("\n")}`;
+    }
+    if (reason) {
+      firstMessage += `\n\n（轮换原因：${reason}）`;
+    }
+    await ctx.services.message.create({
+      sessionId: newSession.id,
+      role: "user",
+      content: firstMessage,
+      source: "system",
+    } as any);
   }
-  if (reason) {
-    firstMessage += `\n\n（轮换原因：${reason}）`;
-  }
-  await ctx.services.message.create({
-    sessionId: newSession.id,
-    role: "user",
-    content: firstMessage,
-    source: "system",
-  } as any);
 
   // 归档旧会话并记录 rotatedToSessionId：既防止重复轮换，也保留用户手动跳转的链路
   await ctx.services.session.update({
@@ -765,7 +840,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     rotatedToSessionId: newSession.id,
   } as any);
 
-  // 通过 SSE 提示旧会话页面可跳转；不自动切换前端视图，避免打断用户当前操作
+  // 通过 SSE 提示旧会话页面可跳转；focusNewSession=true 时前端自动聚焦新会话
   try {
     const hub = getStreamHub();
     hub?.pushExternalEvent(oldSession.id, {
@@ -774,6 +849,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
       newSessionId: newSession.id,
       newTitle: newSession.title || newTitle,
       reason,
+      focusNewSession,
     });
   } catch (err) {
     console.warn("[session_rotate] SSE 推送失败:", err);
@@ -799,7 +875,11 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     newSessionId: newSession.id,
     newTitle: newSession.title || newTitle,
     summaryPath: relativeSummaryPath,
-    message: "已归档当前会话并创建新会话。请告知用户可点击提示跳转；不要假设页面已自动切换。",
+    focusNewSession,
+    firstMessageUsed: !!firstMessageOverride,
+    message: focusNewSession
+      ? "已归档当前会话并创建新会话，前端已自动聚焦新会话。"
+      : "已归档当前会话并创建新会话。请告知用户可点击提示跳转；不要假设页面已自动切换。",
   };
 }
 
@@ -938,7 +1018,7 @@ const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
     description:
-      "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 作为工具返回值（不强制 report_back，也不进异步队列）。",
+      "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 作为工具返回值（不强制 report_back，也不进异步队列）。waitForResult=false 派生后应立即结束当前轮（直接 return，告知用户已派子 Agent 即可），结果会经 report_back 自动投递到父会话异步结果队列，下一轮自动出现气泡；切勿轮询 async_task_status 查看进度——该工具只用于你已主动发起的 async_task_run 纯工具任务。",
     parameters: zodParams(
       z.object({
         task: z.string().describe("子 Agent 要执行的任务描述（详细越好）"),
@@ -972,14 +1052,30 @@ const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "session_rotate",
     description:
-      "当当前会话轮数过多、话题切换或用户要求换干净上下文时调用：归档当前会话，创建同一 Agent 的新会话，并把你写的总结作为新会话第一条用户消息。用户若仍在看旧会话，不会自动跳转，只会收到提示。",
+      "当当前会话轮数过多、话题切换或用户要求换干净上下文时调用：归档当前会话，创建同一 Agent 的新会话。默认把你写的总结作为新会话首条用户消息（继承决策/未完事项）。若提供 firstMessage，则用 firstMessage 作为新会话首条用户气泡（右侧，source=user），summary 仅归档到旧会话不注入新会话——适用于「上下文污染了，开干净会话用新问题重启」。focusNewSession=true 时前端自动聚焦新会话。",
     parameters: zodParams(
       z.object({
         summary: z.string().describe("给新会话用的中文总结（Markdown），需保留目标、决策、未完成事项与关键结论"),
-        reason: z.string().describe("轮换原因，如「轮数过多」「话题切换」「用户要求」").optional(),
+        reason: z.string().describe("轮换原因，如「轮数过多」「话题切换」「用户要求」「上下文污染」").optional(),
         title: z.string().describe("新会话标题（可选，默认基于旧标题生成）").optional(),
         carryMemoryIds: z.array(z.string()).describe("需要在新会话首条消息中提及的 Memory id（可选）").optional(),
+        firstMessage: z
+          .string()
+          .describe("新会话首条用户消息（右侧气泡，source=user）。提供后 summary 不注入新会话，仅归档旧会话；适用于开干净会话用新问题重启。不提供则沿用 summary 作为首条 system 消息。")
+          .optional(),
+        focusNewSession: z
+          .boolean()
+          .describe("true=前端自动聚焦/跳转到新会话；false(默认)=仅提示用户手动跳转")
+          .optional(),
       }),
+    ),
+  },
+  {
+    name: "session_context_usage",
+    description:
+      "查看当前会话上下文占用（只读，无副作用）：返回原文消息数、估算字符/Token、压缩阈值、占用比例、是否已压缩、压缩代数。占用高（≥80%）时建议 session_compact 压缩或 session_rotate 换干净会话。agent 可在长对话中定期自查以决定是否压缩。",
+    parameters: zodParams(
+      z.object({}),
     ),
   },
   {
@@ -1024,7 +1120,6 @@ const SESSION_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "todo_read",
-    reentrant: true,
     description: "读取当前会话的待办清单。",
     parameters: zodParams(z.object({})),
   },
@@ -1035,6 +1130,7 @@ const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
   session_clear: sessionClearTool,
   session_rotate: sessionRotateTool,
   session_compact: sessionCompactTool,
+  session_context_usage: sessionContextUsageTool,
   task_run: taskRunTool,
   todo_write: todoWriteTool,
   todo_read: todoReadTool,

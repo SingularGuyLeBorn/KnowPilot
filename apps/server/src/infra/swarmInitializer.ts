@@ -17,7 +17,7 @@ import {
 } from "@knowpilot/shared";
 import { createAgentForTier } from "./agentFactory.js";
 import { ensureMainSession } from "./ensureMainSession.js";
-import { DEFAULT_ASSISTANT_SYSTEM_PROMPT } from "./agentResolver.js";
+import { DEFAULT_ASSISTANT_SYSTEM_PROMPT, resolveAgent } from "./agentResolver.js";
 
 /** 存量超级 Agent 补齐缺失的默认工具（幂等；含飞书/语雀/GitHub） */
 function mergeMissingSuperTools(existingTools: string): { tools: string; added: string[] } {
@@ -349,6 +349,15 @@ export async function initSwarm(
 
   // Assistant Home：与 Root 对称，每次启动保证存在并绑定默认助手
   const assistantHomeId = await ensureAssistantWorkspace(prisma, config);
-  await bindAssistantToHome(prisma, assistantHomeId);
-  void services;
+  const bindResult = await bindAssistantToHome(prisma, assistantHomeId);
+  // 启动即创建默认 assistant（此前为懒创建：首次对话时 resolveAgent 才建。
+  // 改为启动创建，使 /agents 页启动后即可见 assistant，不必先发消息触发）。
+  if (!bindResult.agentId && services) {
+    try {
+      const { agent } = await resolveAgent(services);
+      console.log(`  🤖 [Swarm] 已自动创建默认 assistant（${agent.id}）并绑定 Assistant Home`);
+    } catch (err) {
+      console.warn("  ⚠️ [Swarm] 启动创建默认 assistant 失败（将退回首次对话时创建）:", err instanceof Error ? err.message : err);
+    }
+  }
 }

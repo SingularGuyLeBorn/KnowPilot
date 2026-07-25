@@ -329,7 +329,7 @@ export async function executeAgentTool(
     throw new Error(`Agent 未授权使用原生工具 ${nativeName}`);
   }
 
-  // W3 safe bypass：只读 turn 内写工具硬拒（复用 isReadonlyTool / reentrant 集）
+  // W3 safe bypass：只读 turn 内写工具硬拒（复用 isReadonlyTool / 非 destructive 集）
   if (ctx.readonlyOnly) {
     const { isReadonlyTool } = await import("./approvalScope.js");
     if (!isReadonlyTool(nativeName)) {
