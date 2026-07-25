@@ -86,6 +86,47 @@ function truncateForMessage(value: unknown): string {
   return text.length > APPROVAL_RESULT_MAX_CHARS ? `${text.slice(0, APPROVAL_RESULT_MAX_CHARS)}…` : text;
 }
 
+/**
+ * 工具结果超 maxChars 时，优先截断 result 的长文本字段（content/text/transcript/excerpt），
+ * 保留其他元信息字段完整，避免把整个 JSON 整体 slice 导致 content 在中间被砍。
+ * 返回截断后的 JSON 字符串；若无法智能截断（无长文本字段）返回 null 由调用方整体 slice。
+ */
+function truncateToolResultContent(result: unknown, maxChars: number): string | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const obj = result as Record<string, unknown>;
+  const longTextFields = ["content", "text", "transcript", "excerpt", "html", "markdown"];
+  // 找出最长的文本字段
+  let target: string | null = null;
+  let targetKey = "";
+  for (const k of longTextFields) {
+    const v = obj[k];
+    if (typeof v === "string" && v.length > (target?.length ?? 0)) {
+      target = v;
+      targetKey = k;
+    }
+  }
+  if (!target || target.length < maxChars * 0.3) return null;
+
+  // 计算除目标字段外的其他字段 JSON 长度
+  const otherFields = { ...obj };
+  delete otherFields[targetKey];
+  const otherJson = JSON.stringify(otherFields);
+  const overhead = otherJson.length + 20; // key 名 + 引号 + 省略号标记
+
+  // 给 content 留出 maxChars - overhead - 余量
+  const budget = Math.max(maxChars - overhead - 200, Math.floor(maxChars * 0.5));
+  if (budget <= 0) return null;
+
+  const truncatedContent = target.slice(0, budget);
+  const truncatedObj = { ...otherFields, [targetKey]: truncatedContent };
+  const out = JSON.stringify(truncatedObj);
+  // 加显式截断标记（在 content 末尾）
+  return out.replace(
+    new RegExp(`("${targetKey}":"[^"]*)$`),
+    `$1\\n…[content TRUNCATED, original=${target.length} chars, kept=${budget}]`,
+  );
+}
+
 /** W11：审批决策后的续跑注入消息（经 injectUserMessages 显式机制进入原 session 与 llmMessages） */
 function buildApprovalResumeMessage(resolution: ApprovalResolution): string {
   const base = `approvalId=${resolution.approvalId}，操作：${resolution.toolName}`;
@@ -230,7 +271,8 @@ function appendToolResultMessages(
     const fullStr = JSON.stringify(item.result);
     let content = fullStr;
     if (fullStr.length > maxChars) {
-      content = fullStr.slice(0, maxChars) + `\n...[TRUNCATED, original=${fullStr.length} chars, limit=${maxChars}]`;
+      const trimmed = truncateToolResultContent(item.result, maxChars);
+      content = trimmed ?? fullStr.slice(0, maxChars) + `\n...[TRUNCATED, original=${fullStr.length} chars, limit=${maxChars}]`;
     }
     llmMessages.push({
       role: "tool",
