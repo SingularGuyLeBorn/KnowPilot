@@ -91,11 +91,13 @@ export function getApprovalPendingTtlMs(): number {
  */
 
 export type ApprovalResolution = {
-  outcome: "approved" | "rejected" | "expired";
+  outcome: "approved" | "rejected" | "expired" | "user_replied";
   approvalId: string;
   toolName: string;
   /** outcome=approved 时由 executeApprovedOperation 透传的执行结果（可能为失败结果） */
   execResult?: unknown;
+  /** outcome=user_replied 时用户邮件回复的原文（注入回 Agent 让它自己理解意图） */
+  answer?: string;
 };
 
 interface ApprovalWaiter {
@@ -205,7 +207,7 @@ export async function notifyPendingApprovalIfCooldownAllows(
       (approval.decisionScope ? `Scope：${approval.decisionScope}\n` : "") +
       `\n处理方式（二选一）：\n` +
       `1. 打开 KnowPilot /approvals 页面批准或拒绝\n` +
-      `2. 直接回复本邮件，正文第一行写 APPROVE（批准）或 REJECT（拒绝）\n`;
+      `2. 直接回复本邮件即可，回复内容会作为你的答复注入给 Agent（和聊天框打字等价），Agent 会自行理解你的意图\n`;
 
   const result = await sendEmailNotification(config, services.log, {
     subject,
@@ -504,7 +506,8 @@ export async function assertApprovalOrProceed(
     if (approval.status === "rejected") {
       throw new TRPCError({ code: "FORBIDDEN", message: "该审批已拒绝或已超时失效，请重新发起。" });
     }
-    if (approval.status !== "approved") {
+    // user_replied（邮件回复原文注入后 Agent 续轮判断同意）视为已授权，放行并标 executed 防重复
+    if (approval.status !== "approved" && approval.status !== "user_replied") {
       throw new TRPCError({ code: "FORBIDDEN", message: "该操作尚未通过审批，无法执行。" });
     }
     if (approval.toolName !== toolName) {
@@ -512,6 +515,17 @@ export async function assertApprovalOrProceed(
     }
     if (!argsMatch(approval.args, args)) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "审批参数与当前请求不一致，请重新发起审批。" });
+    }
+    // user_replied 放行后标 executed（approved 路径由 executeApprovedOperation 标，此处补 user_replied）
+    if (approval.status === "user_replied") {
+      try {
+        await services.prisma.approval.update({
+          where: { id: approvalId },
+          data: { status: "executed", executedAt: new Date() },
+        });
+      } catch {
+        /* 标记失败不阻断本次执行 */
+      }
     }
     return;
   }
@@ -652,65 +666,61 @@ export async function executeApprovedOperation(
 
 /* ─── 邮件回复审批（AgentMail webhook） ─── */
 
-/** 从回复正文提取审批决策：第一行 APPROVE / REJECT（不区分大小写，支持 approve / reject / 批准 / 拒绝） */
-function parseApprovalDecisionFromReply(text: string): "approved" | "rejected" | null {
-  const firstLine = text.trim().split(/\r?\n/)[0]?.trim().toLowerCase() ?? "";
-  if (/^(approve|approved|批准|同意|通过|ok|yes)$/i.test(firstLine)) return "approved";
-  if (/^(reject|rejected|拒绝|否决|不同意|no)$/i.test(firstLine)) return "rejected";
-  return null;
-}
-
 /**
- * 处理 AgentMail 回复：匹配 pending 审批并自动决策。
+ * 处理 AgentMail 回复：匹配 pending 审批，把回复**原文**作为用户消息注入回 Agent，
+ * 让 Agent 自己理解用户意图（和用户在聊天框打字等价）。
+ *
  * 匹配优先级：in_reply_to → thread_id；仅处理仍 pending 且已记录回执 id 的审批。
+ * 审批状态置为 user_replied（非 approved 非 rejected），Agent 续轮后若判断用户同意，
+ * 带 approvalId 调用原工具时由 assertApprovalOrProceed 放行并标 executed。
  */
 export async function resolveApprovalFromMail(
   services: ServiceContainer,
   input: { eventId?: string; inReplyTo?: string | null; threadId?: string | null; text: string },
-): Promise<{ ok: true; approvalId: string; outcome: "approved" | "rejected" } | { ok: false; reason: string }> {
-  const decision = parseApprovalDecisionFromReply(input.text);
-  if (!decision) return { ok: false, reason: "未识别到审批指令（第一行需为 APPROVE 或 REJECT）" };
-
+): Promise<{ ok: true; approvalId: string; outcome: "user_replied"; answer: string } | { ok: false; reason: string }> {
+  // 1. 按 in_reply_to / thread_id 找 pending 审批
   let approvalId: string | undefined;
+  let toolName = "unknown";
   if (input.inReplyTo) {
     const row = await services.prisma.approval.findFirst({
       where: { lastNotifiedMessageId: input.inReplyTo, status: "pending" },
-      select: { id: true },
+      select: { id: true, toolName: true },
     });
     approvalId = row?.id;
+    toolName = row?.toolName ?? "unknown";
   }
   if (!approvalId && input.threadId) {
     const row = await services.prisma.approval.findFirst({
       where: { lastNotifiedThreadId: input.threadId, status: "pending" },
-      select: { id: true },
+      select: { id: true, toolName: true },
     });
     approvalId = row?.id;
+    toolName = row?.toolName ?? "unknown";
   }
   if (!approvalId) return { ok: false, reason: "未找到对应的 pending 审批" };
 
+  const answer = input.text.trim();
+  if (!answer) return { ok: false, reason: "邮件回复内容为空" };
+
+  // 2. 审批状态置为 user_replied（保留 pending 语义，Agent 续轮后自行判断）
   const updated = await services.prisma.approval.updateMany({
     where: { id: approvalId, status: "pending" },
     data: {
-      status: decision,
+      status: "user_replied",
       decidedBy: "email-reply",
       decidedAt: new Date(),
-      decisionNote: `通过邮件回复${decision === "approved" ? "批准" : "拒绝"}`,
+      decisionNote: `用户通过邮件回复（原文注入回 Agent 自行判断）`,
     },
   });
   if (updated.count === 0) return { ok: false, reason: "审批已处理或已过期" };
 
-  const row = (await services.approval.getById(approvalId)) as { toolName?: string };
-  const toolName = row?.toolName ?? "unknown";
+  // 3. 唤醒挂起的 run，把回复原文注入回 Agent（和聊天框打字等价）
+  notifyApprovalResolved(approvalId, {
+    outcome: "user_replied",
+    approvalId,
+    toolName,
+    answer,
+  });
 
-  if (decision === "approved") {
-    // 批准后立即执行
-    const exec = await executeApprovedOperation({ services }, approvalId);
-    if (!exec.success) {
-      console.warn(`[ApprovalGate] 邮件审批通过但执行失败 approvalId=${approvalId}:`, exec.error?.message);
-    }
-  } else {
-    notifyApprovalResolved(approvalId, { outcome: "rejected", approvalId, toolName });
-  }
-
-  return { ok: true, approvalId, outcome: decision };
+  return { ok: true, approvalId, outcome: "user_replied", answer };
 }

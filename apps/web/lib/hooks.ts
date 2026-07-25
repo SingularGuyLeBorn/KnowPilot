@@ -334,6 +334,23 @@ export const useApproval = () => {
 };
 export const useTool = () => useCRUDApi<any, any, any, Tool>("tool");
 
+/** 邮件回复死信审计（未匹配 pending 的邮件回复） */
+export function useDeadLetterList(status: "pending" | "reviewed" | "all" = "all") {
+  return trpc.deadLetter.list.useQuery({ status, limit: 50 });
+}
+export function useDeadLetterReview() {
+  const utils = trpc.useUtils() as any;
+  return trpc.deadLetter.review.useMutation({
+    onSuccess: () => utils.deadLetter.list.invalidate(),
+  });
+}
+export function useDeadLetterClear() {
+  const utils = trpc.useUtils() as any;
+  return trpc.deadLetter.clear.useMutation({
+    onSuccess: () => utils.deadLetter.list.invalidate(),
+  });
+}
+
 /** 原生工具运行时能力（搜索/OCR/浏览器/read_article 平台） */
 export function useNativeCapabilities(options?: { staleTime?: number }) {
   return trpc.native.capabilities.useQuery(undefined, {

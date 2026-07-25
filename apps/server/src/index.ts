@@ -165,12 +165,12 @@ app.get(
 app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub));
 
 // AgentMail（agentmail.to）入站 webhook —— ask_user 邮件答复 + 审批邮件回复
+// 工业级模式：快速 202 ack + 异步处理（防 AgentMail 超时重投雪崩）。
+// 异步处理靠 DB 幂等（claimWebhookEvent）+ 兜底轮询保证最终一致，AgentMail 收到 202 即不重投。
 app.post("/api/webhooks/agentmail", async (req, res) => {
   const { verifyAgentMailWebhook, extractReplyTextFromWebhook } = await import(
     "./infra/agentMailClient.js"
   );
-  const { resolveAskUserFromMail, getAskUserPending } = await import("./infra/askUserGate.js");
-  const { resolveApprovalFromMail } = await import("./infra/approvalGate.js");
 
   if (!verifyAgentMailWebhook({ headers: req.headers as Record<string, string | string[] | undefined> })) {
     res.status(401).json({ error: "UNAUTHORIZED", message: "webhook 验签失败" });
@@ -201,27 +201,70 @@ app.post("/api/webhooks/agentmail", async (req, res) => {
     return;
   }
 
-  // 先按审批回复解析（第一行 APPROVE/REJECT）；不匹配再按 ask_user 答复解析
+  // 立即 202 ack，AgentMail 收到后不重投；处理异步进行（防 DB 慢 → 超时 → 重投雪崩）
+  res.status(202).json({ ok: true, accepted: true, event_id: payload.event_id });
+
+  // 异步处理：幂等抢占 → 审批/ask_user 解析 → 注入 session；失败落 DLQ
+  void handleAgentMailInbound(payload, text).catch((err) =>
+    console.error("[agentmail webhook] 异步处理异常:", err instanceof Error ? err.message : err),
+  );
+});
+
+/** webhook 异步处理体：与兜底轮询共享同款逻辑 */
+async function handleAgentMailInbound(
+  payload: {
+    event_id?: string;
+    message?: {
+      message_id?: string;
+      thread_id?: string;
+      in_reply_to?: string;
+      extracted_text?: string;
+      text?: string;
+      preview?: string;
+    };
+  },
+  text: string,
+): Promise<void> {
+  const { resolveAskUserFromMail, getAskUserPending } = await import("./infra/askUserGate.js");
+  const { resolveApprovalFromMail } = await import("./infra/approvalGate.js");
+  const { claimWebhookEvent, recordDeadLetterMail } = await import("./infra/webhookIdempotency.js");
+
+  const eventId = payload.event_id;
+  if (eventId) {
+    const claim = await claimWebhookEvent(prisma, eventId, "webhook", "unmatched");
+    if (!claim.claimed) return; // 已处理（幂等）
+  }
+
+  // 先按审批回复解析；不匹配再按 ask_user 答复解析
   const approvalResolved = await resolveApprovalFromMail(services, {
-    eventId: payload.event_id,
+    eventId,
     inReplyTo: payload.message?.in_reply_to,
     threadId: payload.message?.thread_id,
     text,
   });
   if (approvalResolved.ok) {
-    res.json({ ok: true, matched: true, type: "approval", approvalId: approvalResolved.approvalId, outcome: approvalResolved.outcome });
+    console.info(
+      `[agentmail webhook] 审批回复已注入: approvalId=${approvalResolved.approvalId} outcome=${approvalResolved.outcome}`,
+    );
     return;
   }
 
   const resolved = resolveAskUserFromMail({
-    eventId: payload.event_id,
+    eventId,
     inReplyTo: payload.message?.in_reply_to,
     threadId: payload.message?.thread_id,
     text,
   });
 
   if (!resolved.ok) {
-    res.json({ ok: true, matched: false, reason: resolved.reason });
+    await recordDeadLetterMail(prisma, {
+      messageId: payload.message?.message_id,
+      threadId: payload.message?.thread_id,
+      inReplyTo: payload.message?.in_reply_to,
+      text,
+      error: resolved.reason,
+      source: "webhook",
+    });
     return;
   }
 
@@ -232,10 +275,25 @@ app.post("/api/webhooks/agentmail", async (req, res) => {
       sessionId: pending.sessionId,
       askId: resolved.askId,
       outcome: "answered",
+      answer: resolved.answer,
     });
   }
+  console.info(`[agentmail webhook] ask_user 答复已注入: askId=${resolved.askId}`);
+}
 
-  res.json({ ok: true, matched: true, type: "ask_user", askId: resolved.askId });
+// Admin：临时隧道解析到公网 URL 后，remote.mjs 调此端点动态注册 AgentMail webhook。
+// 仅允许本机调用（防公网滥用）；AUTH_MODE=none 时也只放行 localhost。
+app.post("/api/admin/agentmail-webhook", async (req, res) => {
+  const ip = req.ip || (req.socket?.remoteAddress as string | undefined) || "";
+  const isLocal = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  if (!isLocal) {
+    res.status(403).json({ error: "FORBIDDEN", message: "仅允许本机调用" });
+    return;
+  }
+  const body = (req.body ?? {}) as { url?: string };
+  const { ensureAgentMailWebhook } = await import("./infra/agentMailClient.js");
+  const result = await ensureAgentMailWebhook({ urlOverride: body.url });
+  res.json(result);
 });
 
 // 异步任务推送 SSE（独立于 Agent 运行流，用于推优先的 async_delivery 事件）
@@ -419,6 +477,55 @@ const server = app.listen(PORT, () => {
     .then(({ startFreeKeysAutoSync }) => startFreeKeysAutoSync(prisma, config))
     .catch((err) => console.warn("  ⚠️ [freeKeysSync] 启动失败:", err instanceof Error ? err.message : err));
 
+  // AgentMail：启动即确保 inbox 可用 + 注册 webhook（邮件回复接收通道）+ 启动兜底轮询。
+  // 未配置 AGENTMAIL_API_KEY 时跳过；未配置 PUBLIC_URL/AGENTMAIL_WEBHOOK_URL 时跳过 webhook 注册并 warn
+  // （本地 localhost 不可公网访问，AgentMail 无法回调，需 Cloudflare Tunnel / ngrok 暴露公网）。
+  // 兜底轮询：webhook 通道挂了（ngrok 断、server 重启中、AgentMail 投递失败）也能收到邮件回复。
+  let agentMailPollerLocal: { stop: () => void } | null = null;
+  void import("./infra/agentMailClient.js")
+    .then(async ({ isAgentMailConfigured, ensureAgentMailInbox, ensureAgentMailWebhook }) => {
+      if (!isAgentMailConfigured()) return;
+      const inbox = await ensureAgentMailInbox();
+      if (!inbox.ok) {
+        console.warn("  ⚠️ [AgentMail] inbox 未就绪:", inbox.error);
+        return;
+      }
+      console.log(`  📧 [AgentMail] inbox ready: ${inbox.inboxId}`);
+      const wh = await ensureAgentMailWebhook();
+      if (!wh.ok && !wh.skipped) {
+        console.warn("  ⚠️ [AgentMail] webhook 注册失败:", wh.error);
+      }
+      // 隧道连通性自检：注册成功后延迟 10s 从公网 ping webhook URL
+      if (wh.ok) {
+        const { selfCheckTunnel } = await import("./infra/agentMailClient.js");
+        setTimeout(() => {
+          void selfCheckTunnel(wh.url).then((r) => {
+            if (r.ok) {
+              console.log(`  ✅ [AgentMail] 隧道自检通过：公网可访问 ${wh.url}（HTTP ${r.status}）`);
+            } else {
+              console.warn(
+                `  ⚠️ [AgentMail] 隧道自检失败：公网无法访问 ${wh.url}（${r.error ?? `HTTP ${r.status}`}）。请检查 ngrok/Cloudflare Tunnel 是否正常运行、PUBLIC_URL 是否正确。`,
+              );
+            }
+          });
+        }, 10_000);
+      }
+      // 兜底轮询（webhook 通道挂了的最后防线）
+      const { startAgentMailPoller } = await import("./infra/agentMailPoller.js");
+      agentMailPollerLocal = startAgentMailPoller({
+        inboxId: inbox.inboxId,
+        services,
+        streamHub,
+      });
+      agentMailPollerRef = agentMailPollerLocal;
+      console.log("  📧 [AgentMail] 兜底轮询已启动（60s 周期，webhook 挂了也能收邮件回复）");
+      // webhook 健康巡检（AgentMail 侧 webhook 丢失/URL 不匹配 → 自动重注册）
+      const { startAgentMailWebhookHealthCheck } = await import("./infra/agentMailClient.js");
+      agentMailWebhookHealthRef = startAgentMailWebhookHealthCheck();
+      console.log("  📧 [AgentMail] webhook 健康巡检已启动（5min 周期，丢失/URL 不匹配自动重注册）");
+    })
+    .catch((err) => console.warn("  ⚠️ [AgentMail] 启动初始化失败:", err instanceof Error ? err.message : err));
+
   if (hasSystemChrome() && process.env.BROWSER_WARMUP !== "0") {
     void getSharedBrowser()
       .then(() => console.log("  🌐 [Browser] Playwright 共享实例已预热"))
@@ -428,11 +535,15 @@ const server = app.listen(PORT, () => {
 
 // 优雅退出处理
 let heartbeatEngineRef: { start: () => void; stop: () => void } | null = null;
+let agentMailPollerRef: { stop: () => void } | null = null;
+let agentMailWebhookHealthRef: { stop: () => void } | null = null;
 const handleShutdown = () => {
   console.log("\n  💾 [Shutdown] 正在关闭服务，清理资源...");
   triggerEngine.stop();
   taskScheduler.stop();
   heartbeatEngineRef?.stop();
+  agentMailPollerRef?.stop();
+  agentMailWebhookHealthRef?.stop();
   stopAsyncDeliveryReconciler();
   void import("./infra/freeKeysSync.js").then(({ stopFreeKeysAutoSync }) => stopFreeKeysAutoSync());
   streamHub.destroy();

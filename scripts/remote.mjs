@@ -222,6 +222,20 @@ async function main() {
     if (url) {
       printedUrl = true;
       printRemoteBanner(url, env);
+      // 临时隧道 URL 解析到后，通知 server 用该 URL 注册 AgentMail webhook（邮件回复接收通道）。
+      // server 启动时 PUBLIC_URL 为空已跳过注册；此处动态注入隧道 URL 触发重新注册。
+      void fetch("http://127.0.0.1:3010/api/admin/agentmail-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: `${url.replace(/\/$/, "")}/api/webhooks/agentmail` }),
+      })
+        .then((r) => r.json().catch(() => ({})))
+        .then((r) => {
+          if (r && r.ok) console.log(`  📧 [AgentMail] webhook 已用临时隧道 URL 注册: ${r.url}`);
+          else if (r && r.skipped) console.log(`  ⚠️ [AgentMail] webhook 注册跳过: ${r.error}`);
+          else if (r) console.warn(`  ⚠️ [AgentMail] webhook 注册失败: ${r.error}`);
+        })
+        .catch((err) => console.warn("  ⚠️ [AgentMail] 通知 server 注册 webhook 失败:", err.message));
     }
   };
   tunnel.stdout?.on("data", onChunk);
