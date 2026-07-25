@@ -7,7 +7,7 @@
  */
 
 import { memo, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, Clock, Loader2, Sparkles, X } from "lucide-react";
+import { Check, ChevronRight, Clock, Loader2, MessageCircle, Sparkles, X } from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
 import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { cn } from "@/lib/utils";
@@ -238,6 +238,18 @@ const ToolStep = memo(function ToolStep({
       channel: marker?.channel ?? r.channel ?? "ui",
     };
   }, [toolBaseName, step.result]);
+  // ask_user 已答复：把用户回复从 result 里挑出来，工具框内专门渲染（不靠 JSON pre 块）
+  const askUserAnswer = useMemo(() => {
+    if (toolBaseName !== "ask_user" || !step.result || typeof step.result !== "object") return null;
+    const r = step.result as { status?: string; answer?: string; source?: string };
+    if (r.status === "answered" && typeof r.answer === "string" && r.answer.trim()) {
+      return { answer: r.answer, source: r.source };
+    }
+    if (r.status === "expired" || r.status === "aborted") {
+      return { answer: null, status: r.status };
+    }
+    return null;
+  }, [toolBaseName, step.result]);
   const todoItems = useMemo(() => {
     if (!isTodoWrite || !step.result || typeof step.result !== "object") return null;
     const todos = (step.result as { todos?: unknown }).todos;
@@ -368,6 +380,37 @@ const ToolStep = memo(function ToolStep({
                   </li>
                 ))}
               </ul>
+            ) : askUserAnswer ? (
+              <div className="space-y-2 text-[11px]">
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
+                  {argsJson}
+                </pre>
+                {askUserAnswer.answer ? (
+                  <div
+                    data-testid="ask-user-answer"
+                    className="rounded-lg border border-green-200 bg-green-50 px-2.5 py-2"
+                  >
+                    <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-green-700">
+                      <MessageCircle className="h-3 w-3" />
+                      用户答复
+                      {askUserAnswer.source && (
+                        <span className="text-[9px] text-green-600">
+                          （{askUserAnswer.source === "email" ? "邮件" : askUserAnswer.source === "ui" ? "Chat" : askUserAnswer.source}）
+                        </span>
+                      )}
+                    </div>
+                    <div className="whitespace-pre-wrap break-words text-[11px] text-green-900">
+                      {askUserAnswer.answer}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[10px] text-amber-700">
+                    {askUserAnswer.status === "expired"
+                      ? "等待超时，用户未在时限内答复"
+                      : "等待被中止"}
+                  </div>
+                )}
+              </div>
             ) : (
               <>
                 <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">

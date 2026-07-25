@@ -8,7 +8,7 @@ import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
-import { Check, Copy, Link2 } from "lucide-react";
+import { Check, Copy, Link2, Eye, Code2, Maximize2, Minimize2, WrapText } from "lucide-react";
 import { transformWikiLinks } from "./WikiLink";
 import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
@@ -42,8 +42,28 @@ function resolveAssetUrl(src: string, postSlug?: string) {
   return `/api/posts/assets${resolved}`;
 }
 
-function CodeToolbar({ language, code }: { language: string; code: string }) {
+/** 可渲染为 iframe 预览的语言（HTML/可独立运行的标记） */
+const PREVIEWABLE_LANGS = new Set(["html", "htm", "svg"]);
+
+interface CodeBlockState {
+  mode: "code" | "preview";
+  wrap: boolean;
+  maximized: boolean;
+}
+
+function CodeToolbar({
+  language,
+  code,
+  state,
+  setState,
+}: {
+  language: string;
+  code: string;
+  state: CodeBlockState;
+  setState: (next: Partial<CodeBlockState>) => void;
+}) {
   const [copied, setCopied] = useState(false);
+  const canPreview = PREVIEWABLE_LANGS.has(language.toLowerCase());
 
   const handleCopy = async () => {
     try {
@@ -58,25 +78,92 @@ function CodeToolbar({ language, code }: { language: string; code: string }) {
   return (
     <div className="kp-code-toolbar">
       <span className="font-mono uppercase tracking-wider">{language || "text"}</span>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="group/copy"
-        aria-label={copied ? "已复制" : "复制代码"}
-      >
-        {copied ? (
-          <>
-            <Check className="h-3.5 w-3.5 text-green-600" />
-            <span>已复制</span>
-          </>
-        ) : (
-          <>
-            <Copy className="h-3.5 w-3.5" />
-            <span>复制</span>
-          </>
+      <div className="flex items-center gap-1">
+        {/* 代码 / 预览 切换（仅可渲染语言显示） */}
+        {canPreview && (
+          <div className="flex items-center rounded-md bg-[var(--kp-bg)] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setState({ mode: "code" })}
+              className={`flex items-center gap-1 rounded px-2 py-0.5 transition-colors ${
+                state.mode === "code"
+                  ? "bg-[var(--kp-brand)] text-white"
+                  : "text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)]"
+              }`}
+              aria-label="代码视图"
+            >
+              <Code2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setState({ mode: "preview" })}
+              className={`flex items-center gap-1 rounded px-2 py-0.5 transition-colors ${
+                state.mode === "preview"
+                  ? "bg-[var(--kp-brand)] text-white"
+                  : "text-[var(--kp-text-2)] hover:text-[var(--kp-text-1)]"
+              }`}
+              aria-label="预览视图"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </button>
+          </div>
         )}
-      </button>
+
+        {/* 换行切换 */}
+        <button
+          type="button"
+          onClick={() => setState({ wrap: !state.wrap })}
+          className={`group/wrap rounded p-1 text-[var(--kp-text-2)] transition-colors hover:bg-[var(--kp-bg)] hover:text-[var(--kp-text-1)] ${
+            state.wrap ? "text-[var(--kp-brand)]" : ""
+          }`}
+          aria-label={state.wrap ? "关闭自动换行" : "开启自动换行"}
+          title={state.wrap ? "关闭自动换行" : "开启自动换行"}
+        >
+          <WrapText className="h-3.5 w-3.5" />
+        </button>
+
+        {/* 复制 */}
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="group/copy rounded p-1 text-[var(--kp-text-2)] transition-colors hover:bg-[var(--kp-bg)] hover:text-[var(--kp-text-1)]"
+          aria-label={copied ? "已复制" : "复制代码"}
+          title={copied ? "已复制" : "复制代码"}
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+
+        {/* 最大化 / 还原 */}
+        <button
+          type="button"
+          onClick={() => setState({ maximized: !state.maximized })}
+          className="rounded p-1 text-[var(--kp-text-2)] transition-colors hover:bg-[var(--kp-bg)] hover:text-[var(--kp-text-1)]"
+          aria-label={state.maximized ? "还原" : "最大化"}
+          title={state.maximized ? "还原" : "最大化"}
+        >
+          {state.maximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </button>
+      </div>
     </div>
+  );
+}
+
+/** iframe 预览：sandbox 隔离，allow-scripts 但不给 allow-same-origin（防访问父页 cookie/storage） */
+function CodePreview({ code, language }: { code: string; language: string }) {
+  const srcDoc = useMemo(() => {
+    // SVG 直接作为文档；HTML 原样渲染
+    if (language.toLowerCase() === "svg") {
+      return code;
+    }
+    return code;
+  }, [code, language]);
+  return (
+    <iframe
+      srcDoc={srcDoc}
+      sandbox="allow-scripts allow-forms allow-modals allow-popups"
+      className="h-full w-full border-0 bg-white"
+      title="代码预览"
+    />
   );
 }
 
@@ -134,14 +221,56 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   }
 
   const codeText = getText(children);
+  const [state, setState] = useState<CodeBlockState>({ mode: "code", wrap: false, maximized: false });
+  const canPreview = PREVIEWABLE_LANGS.has(language.toLowerCase());
+  const update = (next: Partial<CodeBlockState>) => setState((prev) => ({ ...prev, ...next }));
+
+  const codeView = (
+    <pre
+      {...props}
+      className={`!m-0 p-4 text-sm leading-relaxed ${
+        state.wrap ? "whitespace-pre-wrap break-words" : "overflow-x-auto whitespace-pre"
+      }`}
+    >
+      {children}
+    </pre>
+  );
+
+  const body = (
+    <>
+      {state.mode === "preview" && canPreview ? (
+        <div className="h-[360px] w-full">
+          <CodePreview code={codeText} language={language} />
+        </div>
+      ) : (
+        codeView
+      )}
+    </>
+  );
 
   return (
-    <div className="my-6 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]">
-      <CodeToolbar language={language} code={codeText} />
-      <pre {...props} className="!m-0 overflow-x-auto p-4 text-sm leading-relaxed">
-        {children}
-      </pre>
-    </div>
+    <>
+      <div className="my-6 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]">
+        <CodeToolbar language={language} code={codeText} state={state} setState={update} />
+        {body}
+      </div>
+      {/* 最大化 overlay：fixed 全屏，Esc 还原 */}
+      {state.maximized && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col bg-[var(--kp-bg)]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="代码最大化视图"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") update({ maximized: false });
+          }}
+          tabIndex={-1}
+        >
+          <CodeToolbar language={language} code={codeText} state={state} setState={update} />
+          <div className="flex-1 overflow-hidden">{body}</div>
+        </div>
+      )}
+    </>
   );
 }
 

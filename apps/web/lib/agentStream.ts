@@ -5,6 +5,18 @@
 import type { ChatConfigInput } from "@knowpilot/shared";
 import { authHeaders } from "@/lib/auth";
 
+/**
+ * 浏览器端 SSE / 流式 POST 直连后端基址。
+ * 默认空串 → 走 Next.js rewrite（/api/agent/... → 后端）。
+ * 设 NEXT_PUBLIC_SERVER_URL（如 http://localhost:3010）→ 直连后端，绕过 Next.js dev rewrite 对 SSE 的缓冲，
+ * 让 token 边产生边推到前端，避免「最后一次性渲染」。
+ * 生产若前后同域可留空走 rewrite；若跨域则配 NEXT_PUBLIC_SERVER_URL + 后端 CORS。
+ */
+function streamBaseUrl(): string {
+  if (typeof window === "undefined") return "";
+  return process.env.NEXT_PUBLIC_SERVER_URL || "";
+}
+
 export interface AgentChatStreamInput {
   sessionId?: string;
   agentId?: string;
@@ -252,14 +264,14 @@ export async function streamAgentChat(
       const qs = new URLSearchParams();
       if (input.sessionId) qs.set("sessionId", input.sessionId);
       qs.set("resumeAfter", String(lastEventId));
-      url = `/api/agent/chat/stream?${qs.toString()}`;
+      url = `${streamBaseUrl()}/api/agent/chat/stream?${qs.toString()}`;
       init = {
         method: "GET",
         headers: { ...authHeaders() },
         signal,
       };
     } else {
-      url = "/api/agent/chat/stream";
+      url = `${streamBaseUrl()}/api/agent/chat/stream`;
       init = {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },

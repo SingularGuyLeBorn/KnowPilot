@@ -77,7 +77,7 @@ export function ChatTabBar({
               >
                 <button
                   type="button"
-                  className="min-w-0 flex-1 truncate px-1.5 py-1.5 text-left"
+                  className="min-w-0 flex-1 truncate px-1.5 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-0 rounded-lg"
                   onClick={() => onFocusTab(item.id)}
                   onMouseEnter={() => onPrefetchTab?.(item.id)}
                   onMouseDown={(e) => {
@@ -96,7 +96,7 @@ export function ChatTabBar({
                 <button
                   type="button"
                   className={cn(
-                    "shrink-0 rounded-lg p-1 transition",
+                    "shrink-0 rounded-lg p-1 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-0",
                     "opacity-0 group-hover:opacity-100",
                     isFocused
                       ? "text-white/80 hover:bg-white/15 hover:text-white opacity-80"

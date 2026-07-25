@@ -31,6 +31,14 @@ const nextConfig: NextConfig = {
         destination: `${serverInternal}/api/agent/chat/stop`,
       },
       {
+        source: "/api/webhooks/agentmail",
+        destination: `${serverInternal}/api/webhooks/agentmail`,
+      },
+      {
+        source: "/api/admin/agentmail-webhook",
+        destination: `${serverInternal}/api/admin/agentmail-webhook`,
+      },
+      {
         source: "/api/posts/assets/:path*",
         destination: `${serverInternal}/api/posts/assets/:path*`,
       },

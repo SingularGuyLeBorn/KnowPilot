@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc";
+import { Files } from "lucide-react";
 import { useAgent } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import {
@@ -20,6 +21,7 @@ import { ChatOverlays } from "@/components/chatOverlays";
 import { ChatSidebar } from "@/components/chatSidebar";
 import { ChatTabBar } from "@/components/chatTabBar";
 import { ChatSessionPane } from "@/components/chatSessionPane";
+import { ChatFilesPanel } from "@/components/chatFilesPanel";
 import {
   useSessionMessages,
   sessionMessagesStore,
@@ -137,6 +139,8 @@ export function ChatView() {
     newSessionId: string;
     newTitle: string;
   } | null>(null);
+  /** 右侧文件 Panel：展示本 session 上传图片 + Agent 创建文件 */
+  const [rightFilesOpen, setRightFilesOpen] = useState(false);
   /** 可指定 session：流结束后应消费该 session，而不是当前视图 */
   const consumeRef = useRef<(preferredSessionId?: string) => void>(() => {});
 
@@ -525,11 +529,16 @@ export function ChatView() {
     refetchSessionQueue: sessionQueueQuery.refetch,
   });
 
+  // selectSession 定义在下方（line ~998），useChatSseSubscriptions 在此引用会触发 TDZ。
+  // 用 ref 中转：SSE 回调触发时读 ref.current，selectSession 定义后立即赋值（render 中幂等赋值，无副作用）。
+  const selectSessionRef = useRef<(id: string) => void>(() => {});
+
   // 【SSE 订阅与事件分发 · 心脏区】推优先：通过 store 统一监听 async-stream SSE（当前会话 + 父会话）。
   // 不再自建 EventSource——复用 useSessionMessages 的 watchSession 连接，消除双连接浪费。
   // 事件回调里 watchSession 的子 Agent session 在 cleanup 时统一 close。
   // effect 体逐字迁入 useChatSseSubscriptions（W13e），调用位置即原 effect 位置，
   // 挂载顺序与 cleanup 的 closeSessionWatch 引用计数时序不变。
+  const handleFocusSession = useCallback((id: string) => selectSessionRef.current(id), []);
   useChatSseSubscriptions({
     effectiveSessionId,
     mainSessionId,
@@ -540,6 +549,7 @@ export function ChatView() {
     pullAgentMessagesQuery,
     isSubagentSession,
     setRotateBanner,
+    onFocusSession: handleFocusSession,
   });
 
   // 预热打开中会话的 async 切片缓存，供非焦点 drain / SSE merge 使用
@@ -1035,6 +1045,11 @@ export function ChatView() {
       setHistorySubTab,
     ],
   );
+  // 在 effect 中赋值 ref，供 useChatSseSubscriptions 的 onFocusSession 回调读取最新引用
+  // （render 中赋值 ref 违反 react-hooks/refs；effect 在 commit 后执行，SSE 事件触发时已是最新值）
+  useEffect(() => {
+    selectSessionRef.current = selectSession;
+  }, [selectSession]);
 
   const selectWorkspace = useCallback((workspaceId: string) => {
     setUserSelectedWorkspaceId(workspaceId);
@@ -1213,10 +1228,21 @@ export function ChatView() {
         />
         <div
           className={cn(
-            "flex min-h-0 flex-1",
-            tabs.layout === "split" ? "flex-row" : "flex-col",
+            "relative flex min-h-0 flex-1 flex-row",
           )}
         >
+          {/* 右侧文件 Panel 关闭时显示打开按钮 */}
+          {!rightFilesOpen && (
+            <button
+              type="button"
+              onClick={() => setRightFilesOpen(true)}
+              className="absolute right-2 top-2 z-20 rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-1.5 text-[var(--kp-text-2)] shadow-sm transition-colors hover:bg-[var(--kp-bg-alt)] hover:text-[var(--kp-text-1)]"
+              aria-label="打开文件面板"
+              title="本会话文件"
+            >
+              <Files className="h-4 w-4" />
+            </button>
+          )}
           {/* 稳定 key：切会话只换 sessionId，禁止整树 remount 造成空白闪一下 */}
           <ChatSessionPane
             key="primary"
@@ -1241,6 +1267,11 @@ export function ChatView() {
               />
             </>
           )}
+          <ChatFilesPanel
+            sessionId={effectiveSessionId}
+            open={rightFilesOpen}
+            onClose={() => setRightFilesOpen(false)}
+          />
         </div>
       </div>
 

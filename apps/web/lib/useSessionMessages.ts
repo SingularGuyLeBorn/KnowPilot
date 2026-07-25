@@ -260,7 +260,7 @@ class SessionMessageStore {
     const token = getAuthToken();
     const qs = new URLSearchParams({ sessionId });
     if (token) qs.set("token", token);
-    const es = new EventSource(`/api/agent/async-stream?${qs.toString()}`);
+    const es = new EventSource(`${process.env.NEXT_PUBLIC_SERVER_URL || ""}/api/agent/async-stream?${qs.toString()}`);
     es.addEventListener("message_upserted", (ev) => {
       try {
         const data = JSON.parse((ev as MessageEvent).data) as {
