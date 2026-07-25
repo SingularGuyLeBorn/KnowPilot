@@ -182,9 +182,58 @@ pnpm test         # 全仓库运行 Vitest
 ### 通用约定
 
 - **语言**：注释、UI 文案、Git 提交信息、文档以中文为主；代码标识符（变量、函数、组件名）使用英文。
-- **Git 提交前缀**：`feat:`、`fix:`、`docs:`、`docs(dev-log):`、`refactor:`、`test:` 等。
+- **Git 提交前缀**：`feat:`、`fix:`、`docs:`、`docs(dev-log):`、`refactor:`、`test:`、`chore:` 等。
 - **长路径支持**：仓库已开启 `core.longpaths=true` 以支持深层中文 Markdown 路径。
 - **空目录占位**：使用 `.gitkeep` 保留占位目录（如 `content/agents/`、`content/skills/`）。
+
+### Git 管理与工程化规范
+
+> 工作树脏乱 = 失职。AI 助手每次结束工作前，必须让 `git status` 干净（或只剩明确不该提交的运行时产物）。这是工程纪律，不是可选项。
+
+#### 1. 提交分组原则
+
+- **按主题分组，不按时间堆**：一次会话可能做多批工作（审计修复 + 新功能 + 重构 + 文档）。结束前按主题拆成多个提交，每条提交信息说清「为什么改」，不要 83 个文件一锅端成「update」。
+- **主题划分粒度**：基础设施（依赖/安全/测试设施）/ 重构（拆分）/ 功能（新能力）/ 修复（bug）/ 文档（报告+规范）/ 配置（.env.example/config.yaml）分开。
+- **跨主题文件归主要主题**：一个文件被多主题改时，归到改动量最大或语义最贴的主题。例如 `apps/server/package.json` 同时含 `mock-llm-core`（测试设施）和 `express-rate-limit`（安全）两个依赖，归到「基础设施」提交，提交信息注明含限流依赖。
+- **跨主题 hunk 拆分**：当且仅当两个主题都很大、合并会严重损害可读性时，用 `git add -p` 按 hunk 拆。PowerShell 无 `printf`，用 `Write-Output "y`nn`n" | git add -p <file>` 喂入交互输入。hunk 顺序不确定时慎用，优先选归并。
+
+#### 2. 提交信息规范
+
+- **格式**：`<type>(<scope>): <中文摘要>` + 空行 + `<中文正文，说 why 不只说 what>`。
+- **前缀**：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `perf`。`feat(swarm)` / `fix(chat)` / `refactor` 等 scope 可选但推荐。
+- **正文说 why**：不是罗列改了哪些文件，而是说清「为什么这么改、解决了什么问题、有什么架构含义」。例如「砍 invoke_api 万能后门 = 砍掉所有打地鼠黑名单的维护负担」比「删除 invokeApiTool 函数」有价值。
+- **HEREDOC 写多行**：PowerShell 用 `git commit -m "第一行`n第二行"` 或多个 `-m`（每个 -m 一段）。复杂正文用 `git commit -m "$(cat <<'EOF' ... EOF)"`（需 bash；PowerShell 用反引号 n 拼接）。
+
+#### 3. 工作树卫生（提交前必做）
+
+- **误创建文件即删**：测试时把任务文本当 Agent 名建出来的 `content/agents/请先等待...md` 这类文件，发现即删，不要留着污染工作树。
+- **运行时产物 gitignore**：日记（`content/memories/daily/`）、curator 状态（`content/skills/.curator_state`）、心跳临时 agent（`content/agents/*-e3f87d.md`）等运行时产物，加进 `.gitignore` 防御，不要提交。
+- **测试产物防御**：`.gitignore` 已有 `content/posts/smoke-post-*.md`、`content/agents/*子 Agent*.md` 等模式，新增测试产物路径时同步加防御。
+- **不提交密钥/凭据**：`.env` / `.env.local` / `*.db` / `backups/` 已 gitignore，绝不 `git add -f` 强加。`dev.db` 是缓存层随时可重建，不入库。
+
+#### 4. 提交前验证（铁律）
+
+每次提交前必须跑：
+- `pnpm --filter @knowpilot/server lint` + `--filter @knowpilot/shared lint` + `--filter @knowpilot/web lint`：tsc/eslint 0 error。
+- `pnpm --filter @knowpilot/server test`：全量绿。跨包改动时跑 `pnpm test`（含 shared + web 组件单测）。
+- 单测绿 ≠ 运行时无错（CancelledError 教训）：lint + test 通过只是必要条件，不是充分条件。低频路径同样必修。
+
+#### 5. 提交操作纪律
+
+- **禁止 `git push --force` 到 master/main**：除非用户明确要求且你已警告风险。
+- **禁止 `git commit --amend` 已推送提交**：已推送的提交 amend 等于改写历史，会让协作者拉到冲突。amend 仅限「本地未推送 + 你自己创建的提交 + pre-commit hook 自动改了文件」。
+- **禁止 `git config` 修改**：不动用户 git 配置。
+- **禁止 `--no-verify` 跳钩**：除非用户明确要求。
+- **禁止 `git add -A` 一锅端**：按主题 `git add <指定路径>`，避免误加运行时产物/密钥。
+- **PowerShell 无 `&&`**：用 `;` 分步，或 `git add X; git commit -m "..."`。`printf` 也不存在，用 `Write-Output`。
+
+#### 6. 整理流程（每次会话结束前执行）
+
+1. `git status`：扫一遍，识别误创建文件（删）、运行时产物（gitignore）、跨主题改动（分组）。
+2. 按主题 `git add <路径>` + `git commit`，每条提交信息说 why。
+3. `pnpm --filter @knowpilot/server lint` + `pnpm --filter @knowpilot/server test` 验证无回归。
+4. 最终 `git status` 必须 `nothing to commit, working tree clean`（或只剩明确 gitignore 的运行时产物）。
+5. `git log --oneline -10` 检查历史可读：每条提交能从信息看懂「为什么改」。
 
 ### 后端 API 设计（tRPC）
 
