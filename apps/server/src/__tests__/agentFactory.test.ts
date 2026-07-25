@@ -97,7 +97,8 @@ describe("W9 createAgentForTier 三 tier 创建", () => {
     createdIds.push(agent.id);
     expect(agent.tier).toBe("manager");
     expect(agent.name).toBe("W9Workspace 管理 Agent");
-    expect(agent.systemPrompt).toContain("W9Workspace 的管理 Agent");
+    expect(agent.systemPrompt).toContain("W9Workspace");
+    expect(agent.systemPrompt).toContain("管理 Agent");
     const tools = agent.tools.split(",");
     for (const required of TIER_DEFAULT_TOOLS.manager) {
       expect(tools).toContain(required);

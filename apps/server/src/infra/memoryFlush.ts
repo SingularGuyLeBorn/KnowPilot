@@ -4,7 +4,7 @@
 
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import { chatCompletion } from "./llmClient.js";
+import { resilientChatCompletion } from "./resilientLlmClient.js";
 import {
   isMemoryUserCreatable,
   MEMORY_FLUSH_STRENGTH_DEFAULT,
@@ -88,7 +88,7 @@ export async function flushMemoriesBeforeCompact(
   });
 
   try {
-    const resp = await chatCompletion({
+    const resp = await resilientChatCompletion({
       config,
       model,
       messages: [

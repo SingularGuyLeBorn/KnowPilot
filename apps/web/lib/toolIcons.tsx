@@ -176,7 +176,6 @@ const EXACT_TOOL_ICONS: Record<string, LucideIcon> = {
   feishu_token_status: Shield,
   feishu_refresh_token: RefreshCw,
 
-  invoke_api: Webhook,
   spawn_subagent: Network,
   async_task_run: Play,
   async_task_status: Activity,

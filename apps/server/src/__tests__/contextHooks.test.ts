@@ -63,7 +63,6 @@ function makeInput(overrides?: Partial<ContextHookInput>): ContextHookInput {
       tier: "sub",
       workspaceId: null,
       parentId: null,
-      apiKey: null,
       heartbeatModel: null,
       heartbeat: null,
       status: "active",

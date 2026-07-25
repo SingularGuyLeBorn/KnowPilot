@@ -23,6 +23,25 @@ export {
   readArticleContentWarning,
 } from "./tools/native/web.js";
 
+/**
+ * P2-03：从 ToolCommand.schema().parameters 读 required 数组，返回 args 缺失的必填字段名。
+ * 仅做轻量存在性校验（undefined/null 视为缺失；空字符串留给 handler 自行 trim 校验），
+ * 避免引入 ajv 依赖；类型/格式校验仍由 handler 内 zod 负责。
+ */
+function checkRequiredParams(cmd: { schema(): { parameters: Record<string, unknown> } }, args: Record<string, unknown>): string[] {
+  try {
+    const params = cmd.schema().parameters;
+    const required = params?.required;
+    if (!Array.isArray(required)) return [];
+    return required.filter((field) => {
+      const v = args[field];
+      return v === undefined || v === null;
+    }).map((f) => String(f));
+  } catch {
+    return [];
+  }
+}
+
 /** 域工具灌入统一注册表（唯一注册路径：registerNativeDomains） */
 let nativeToolsRegistered = false;
 function ensureNativeToolsRegistered(): void {
@@ -79,6 +98,16 @@ export async function executeNativeTool(
         .join(", ")}`,
     );
   }
+  // P2-03：执行前用 schema 的 required 字段做轻量入参校验，缺必填字段直接返回结构化错误给 LLM 下轮修正，
+  // 不进 handler（避免 handler 因字段缺失抛非结构化异常或误用默认值）。
+  const missing = checkRequiredParams(cmd, args);
+  if (missing.length > 0) {
+    return {
+      error: `工具 ${name} 缺少必填参数: ${missing.join(", ")}。请检查参数后重试。`,
+      validationError: true,
+      missingParams: missing,
+    };
+  }
   // D 类工具回滚栈（W6）：本 run 携带 rollbackStack 时，执行前快照、成功后入栈；
   // 执行失败的工具不入栈（未产生副作用，无需补偿）
   const stack = cmd.destructive ? ctx.rollbackStack : undefined;
@@ -97,7 +126,8 @@ export async function executeNativeTool(
 
 export function resolveAllowedNativeTools(agentTools: string[]): string[] | "all" {
   const native = agentTools.filter((t) => t.startsWith("native:")).map((t) => t.replace(/^native:/, ""));
-  if (agentTools.length === 0) return "all";
+  // P0-01 对齐：空数组返回默认只读集（不再 "all"），与 parseAgentTools 语义一致
+  if (agentTools.length === 0) return [...DEFAULT_AGENT_NATIVE];
   if (native.length === 0) return [...DEFAULT_AGENT_NATIVE];
   return native;
 }
@@ -106,7 +136,9 @@ export function buildNativeToolSchemas(allowed: string[] | "all") {
   ensureNativeToolsRegistered();
   const cmds =
     allowed === "all"
-      ? listTools("native")
+      ? // P1-03：native:"all" 时跳过 defaultHidden=true 的危险工具（run_shell/git_push/file_delete 等），
+        // Agent 想用必须显式 `native:<name>` 声明。显式列表不受此限（已声明即授权）。
+        listTools("native").filter((t) => !t.defaultHidden)
       : listTools("native").filter((t) => allowed.includes(t.name));
   return cmds.map((t) => {
     const s = t.schema();

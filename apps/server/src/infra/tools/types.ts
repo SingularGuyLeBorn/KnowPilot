@@ -52,6 +52,13 @@ export interface ToolCommand<Ctx = unknown> {
    */
   reentrant?: boolean;
   /**
+   * P1-03：默认对 LLM 隐藏（不进 schema）除非 Agent 显式声明该工具。
+   * 用于危险工具（run_shell / git_push / file_delete / github_delete_repo 等）的渐进披露——
+   * native:"all" 时跳过 defaultHidden=true 的工具，Agent 想用必须显式 `native:<name>`。
+   * registerNativeDomain 对 destructive && !approvalExempt 自动设 defaultHidden=true（除非显式覆盖）。
+   */
+  defaultHidden?: boolean;
+  /**
    * W3：可选 scope 派生（缺省走 approvalScope 内置表）。
    * 返回值须为 `<domain>:<verb>:<target>`；LLM 不可见。
    */

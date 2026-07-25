@@ -7,7 +7,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import type { AppConfig } from "./config.js";
-import { chatCompletion } from "./llmClient.js";
+import { resilientChatCompletion } from "./resilientLlmClient.js";
 import { resolveCompactSummaryModel } from "./autoCompact.js";
 
 export const BRANCH_SUMMARY_KIND = "branch_summary";
@@ -333,7 +333,7 @@ export async function summarizeAbandonedBranch(
     .join("\n\n---\n\n");
   const summaryModel = resolveCompactSummaryModel(config, model);
   try {
-    const summary = await chatCompletion({
+    const summary = await resilientChatCompletion({
       config,
       model: summaryModel,
       messages: [

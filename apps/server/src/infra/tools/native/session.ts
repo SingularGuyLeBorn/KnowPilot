@@ -1,5 +1,5 @@
 /**
- * Native 会话与运行时域 — session_* / spawn_subagent / task_run / invoke_api
+ * Native 会话与运行时域 — session_* / spawn_subagent / task_run / todo_*
  *
  * PR-4b：从 nativeTools.ts 迁出，handler 与 schema 保持原语义不变。
  * spawn_subagent 复用 swarm 域的 agentCreateSubTool / agentSendMessageTool（单向依赖，无环）。
@@ -253,7 +253,6 @@ async function spawnSubagentPrepare(
             : [...DEFAULT_SUBAGENT_TOOLS],
         ),
         model: modelOverride || parentSnapshot.model,
-        apiKey: args.apiKey as string | undefined,
         workspaceId: args.workspaceId,
       },
       ctx,
@@ -822,10 +821,6 @@ async function taskRunTool(args: Record<string, unknown>, ctx: NativeToolContext
   return { taskId, output: runResult.data };
 }
 
-async function invokeApiTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  return ctx.invokeTrpc(String(args.tool), args.args ?? {});
-}
-
 export type SessionTodoStatus = "pending" | "in_progress" | "completed" | "cancelled";
 
 export interface SessionTodoItem {
@@ -1008,17 +1003,6 @@ const SESSION_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
-    name: "invoke_api",
-    concurrencyClass: "B",
-    description: "调用 KnowPilot 后端 tRPC 工具（如 post.list、memory.list）。tool 格式：post.list",
-    parameters: zodParams(
-      z.object({
-        tool: z.string(),
-        args: z.record(z.unknown()).describe("JSON 参数对象").optional(),
-      }),
-    ),
-  },
-  {
     name: "todo_write",
     description:
       "写入/覆盖当前会话的待办清单（整表替换）。长任务开始时建立清单并随进度更新 status；至多一条 in_progress。状态持久在会话上，刷新不丢。",
@@ -1052,7 +1036,6 @@ const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
   session_rotate: sessionRotateTool,
   session_compact: sessionCompactTool,
   task_run: taskRunTool,
-  invoke_api: invokeApiTool,
   todo_write: todoWriteTool,
   todo_read: todoReadTool,
 };

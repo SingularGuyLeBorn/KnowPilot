@@ -226,7 +226,7 @@ native 工具已全部按域收拢到 `apps/server/src/infra/tools/native/`（PR
 | `web.ts` | web_search、read_article、scrape_web_page、rss_* |
 | `shell.ts` | run_shell、wait、sleep、async_task_* |
 | `swarm.ts` | agent_*、workspace_*、skill_discover/promote、optimize_agent_prompt、generate_skill_from_experience、free_api_keys_* |
-| `session.ts` | session_*、spawn_subagent、task_run、invoke_api |
+| `session.ts` | session_*、spawn_subagent、task_run、todo_* |
 | `memory.ts` | memory_*、post_* |
 | `integration.ts` | git_*、yuque_*、github_*、feishu_*、send_email、浏览器登录态 |
 

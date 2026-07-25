@@ -18,12 +18,18 @@ import type { ToolRegistryEntry } from "../infra/agentTools.js";
 import fs from "fs";
 
 describe("Agent 工具桥 — parseAgentTools", () => {
-  it("空 tools 返回 all native + skillWildcard", () => {
+  it("空 tools 返回 DEFAULT_NATIVE 只读集 + skillWildcard（与 shared 物化路径对齐，不再走 all）", () => {
     const parsed = parseAgentTools([]);
-    expect(parsed.native).toBe("all");
+    expect(Array.isArray(parsed.native)).toBe(true);
+    expect(parsed.native).toEqual([...DEFAULT_NATIVE]);
     expect(parsed.skills).toEqual([]);
     expect(parsed.skillWildcard).toBe(true);
     expect(parsed.mcpServers).toEqual([]);
+  });
+
+  it("显式 native:all 仍保留全量语义（Agent 主动声明）", () => {
+    const parsed = parseAgentTools(["native:all"]);
+    expect(parsed.native).toBe("all");
   });
 
   it("解析 native / skill / mcp 前缀", () => {
@@ -60,7 +66,7 @@ describe("Agent 工具桥 — parseAgentTools", () => {
 
   it("DEFAULT_NATIVE 包含基础工具", () => {
     expect(DEFAULT_NATIVE).toContain("read_file");
-    expect(DEFAULT_NATIVE).toContain("invoke_api");
+    expect(DEFAULT_NATIVE).toContain("session_clear");
   });
 });
 

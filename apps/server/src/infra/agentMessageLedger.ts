@@ -44,20 +44,31 @@ export async function markAgentMessageDeliveredByTaskRef(
  * - pending → consumed 直跳（竞态/存量兜底）：deliveredAt 原本为空，按消费时刻补齐
  *   （消息既已被读入上下文，交付必然已发生，此刻是可得的最真实时间）。
  * 重复调用幂等 no-op。返回命中条数。
+ *
+ * P1-06：若 db 为 PrismaClient（非 TransactionClient），用 $transaction 包裹两次 updateMany
+ * 消除与 rollbackAgentMessageDeliveredByTaskRef 的竞态窗口；若 db 已是 TransactionClient
+ * （调用方在事务内复用），直接两次 updateMany（事务已由调用方保证）。
  */
 export async function markAgentMessageConsumedByTaskRef(
   db: AgentMessageLedgerDb,
   taskRef: string,
 ): Promise<number> {
-  const fromDelivered = await db.agentMessage.updateMany({
-    where: { taskRef, status: "delivered" },
-    data: { status: "consumed" },
-  });
-  const fromPending = await db.agentMessage.updateMany({
-    where: { taskRef, status: "pending" },
-    data: { status: "consumed", deliveredAt: new Date() },
-  });
-  return fromDelivered.count + fromPending.count;
+  const run = async (tx: AgentMessageLedgerDb): Promise<number> => {
+    const fromDelivered = await tx.agentMessage.updateMany({
+      where: { taskRef, status: "delivered" },
+      data: { status: "consumed" },
+    });
+    const fromPending = await tx.agentMessage.updateMany({
+      where: { taskRef, status: "pending" },
+      data: { status: "consumed", deliveredAt: new Date() },
+    });
+    return fromDelivered.count + fromPending.count;
+  };
+  // PrismaClient 有 $transaction；TransactionClient 无（避免嵌套事务）
+  if ("$transaction" in db && typeof (db as any).$transaction === "function") {
+    return await (db as any).$transaction(async (tx: any) => run(tx));
+  }
+  return await run(db);
 }
 
 /**

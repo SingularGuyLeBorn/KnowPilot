@@ -170,7 +170,6 @@ export const createAgentSchema = z.object({
   workspaceId: z.string().cuid().optional(),
   parentId: z.string().cuid().optional(),
   source: z.string().max(64).optional(),
-  apiKey: z.string().optional(),
   heartbeatModel: z.string().optional(),
   heartbeat: heartbeatConfigSchema.optional(),
 });
@@ -187,7 +186,6 @@ export const updateAgentSchema = z.object({
   workspaceId: z.string().cuid().nullable().optional(),
   parentId: z.string().cuid().nullable().optional(),
   source: z.string().max(64).nullable().optional(),
-  apiKey: z.string().nullable().optional(),
   heartbeatModel: z.string().nullable().optional(),
   heartbeat: heartbeatConfigSchema.optional(),
   status: agentStatusSchema.optional(),

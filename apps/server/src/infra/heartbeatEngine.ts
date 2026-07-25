@@ -56,6 +56,7 @@ import {
   computeLastRunProductive,
 } from "./heartbeatDecision.js";
 import { listAllAskUserPending } from "./askUserGate.js";
+import { runWithTrace, formatTrace } from "./trace.js";
 import {
   deriveDecisionScope,
   deriveRequiredScopesFromTools,
@@ -279,7 +280,14 @@ export class HeartbeatEngine {
         if (!hb?.enabled || !hb.cron || !cron.validate(hb.cron)) continue;
 
         const job = cron.schedule(hb.cron, () => {
-          void this.triggerHeartbeat(agent.id);
+          // P2 可观测性：心跳非请求路径，每次触发建独立 trace_id 作用域贯穿整段决策+执行
+          void runWithTrace(async () => {
+            try {
+              await this.triggerHeartbeat(agent.id);
+            } catch (err) {
+              console.error(`${formatTrace()}[HeartbeatEngine] triggerHeartbeat 未捕获异常:`, err instanceof Error ? err.message : err);
+            }
+          });
         });
         this.jobs.set(agent.id, job);
       }

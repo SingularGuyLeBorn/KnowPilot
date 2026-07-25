@@ -47,7 +47,6 @@ model Agent {
   workspaceId  String?                     /// 所属 Workspace（super 无）
   parentId     String?                     /// 上级 Agent id（super 无）
   source       String?                     /// 创建来源：ui:subagent_panel / native_tool:agent_create_sub / heartbeat / manual 等
-  apiKey       String?                     /// 专属 API Key（不设则用 env）
   heartbeatModel String?                   /// 心跳用便宜模型（不设则用 model）
   heartbeat    Json?                       /// { enabled, cron, goal, lastRunAt, lastRunStatus, consecutiveFailures }
   heartbeatSuspendedAt DateTime?           /// W12/W16d-2：连续失败熔断暂停时刻（持久化；null = 未暂停）。恢复语义见 heartbeatEngine

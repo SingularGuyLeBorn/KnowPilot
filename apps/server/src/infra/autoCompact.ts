@@ -7,7 +7,8 @@
  */
 
 import type { AppConfig } from "./config.js";
-import { chatCompletion, type LlmMessage } from "./llmClient.js";
+import { type LlmMessage } from "./llmClient.js";
+import { resilientChatCompletion } from "./resilientLlmClient.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 // type-only：避免运行时循环依赖（agentStream 反向 import maybeCompactMessages）
 import type { AgentStreamEvent } from "./agentStream.js";
@@ -372,7 +373,7 @@ export async function maybeCompactMessages(
   options?.emit?.({ type: "compact_start", generation, estimatedRatio, round: 0 });
 
   try {
-    const summary = await chatCompletion({
+    const summary = await resilientChatCompletion({
       config,
       model: summaryModel,
       messages: [

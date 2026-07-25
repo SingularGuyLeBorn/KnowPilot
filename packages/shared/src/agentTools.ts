@@ -10,7 +10,6 @@ export const DEFAULT_AGENT_NATIVE = [
   "web_search",
   "read_file",
   "list_directory",
-  "invoke_api",
   "session_clear",
 ] as const;
 

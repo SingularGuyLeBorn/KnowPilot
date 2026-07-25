@@ -7,10 +7,10 @@
 const AUTO_NAME_TIMEOUT_MS = 30_000; // 命名是 fire-and-forget，LLM 挂起时不能无限占用连接
 
 const SESSION_PROMPT =
-  "根据用户消息生成 6-12 字中文标题。直接输出标题，不要引号/句号/emoji/前缀。";
+  "你在为 KnowPilot（一座以 Markdown 为原子、AI 为引擎的数字花园）的对话会话起标题。根据用户首条消息提炼一个 6-12 字的中文标题，概括这次对话的主题或意图。直接输出标题，不要引号/句号/emoji/前缀/解释。";
 
 const AGENT_PROMPT =
-  "根据任务给子 Agent 起名。2-8 字中文，正常名字，不能含特殊符号/引号/括号/emoji，不能以「子 Agent」开头。直接输出名字。";
+  "你在为 KnowPilot（一座以 Markdown 为原子、AI 为引擎的数字花园）的一个子 Agent 起名。根据它的任务，起一个 2-8 字的中文名字，像一个能干的角色名（如「资料整理员」「代码审阅官」），能体现其职责。不能含特殊符号/引号/括号/emoji，不能以「子 Agent」开头。直接输出名字。";
 
 function clean(s: string, max: number): string {
   return s
@@ -25,7 +25,7 @@ export async function autoNameSession(sessionId: string, firstMessage: string): 
   try {
     const { prisma } = await import("../db.js");
     const { getAppConfig } = await import("./config.js");
-    const { chatCompletion } = await import("./llmClient.js");
+    const { resilientChatCompletion } = await import("./resilientLlmClient.js");
     const { getStreamHub } = await import("./sessionStreamHub.js");
     // 幂等唯一守卫：autoName 已有值就跳过（命名过就不再命名）。
     // 不要用 msgCount>1 守卫——autoNameSession 与 agent 流并发，assistant 消息可能在
@@ -35,7 +35,7 @@ export async function autoNameSession(sessionId: string, firstMessage: string): 
     const session = await prisma.chatSession.findUnique({ where: { id: sessionId }, select: { autoName: true } });
     if (!session || session.autoName) return;
     const config = getAppConfig();
-    const { content } = await chatCompletion({
+    const { content } = await resilientChatCompletion({
       config,
       model: config.llm.defaultModel,
       messages: [{ role: "system", content: SESSION_PROMPT }, { role: "user", content: firstMessage.slice(0, 500) }],
@@ -57,13 +57,13 @@ export async function autoNameAgent(agentId: string, task: string): Promise<void
   try {
     const { prisma } = await import("../db.js");
     const { getAppConfig } = await import("./config.js");
-    const { chatCompletion } = await import("./llmClient.js");
+    const { resilientChatCompletion } = await import("./resilientLlmClient.js");
     const { getStreamHub } = await import("./sessionStreamHub.js");
     // 幂等：autoName 已有值就跳过
     const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { autoName: true, name: true } });
     if (!agent || agent.autoName) return;
     const config = getAppConfig();
-    const { content } = await chatCompletion({
+    const { content } = await resilientChatCompletion({
       config,
       model: config.llm.defaultModel,
       messages: [{ role: "system", content: AGENT_PROMPT }, { role: "user", content: task.slice(0, 500) }],

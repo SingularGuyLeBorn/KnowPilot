@@ -234,7 +234,6 @@ const SMOKE_ARG_OVERRIDES: Record<string, unknown> = {
   "native.read_file": { path: "README.md" },
   "native.list_directory": { path: "." },
   "native.web_search": { query: "KnowPilot", maxResults: 2 },
-  "native.invoke_api": { tool: "post.list", args: { page: 1, pageSize: 1 } },
   "native.wait": { ms: 1 },
   "native.git_status": { repoPath: "." },
   "native.git_log": { repoPath: ".", limit: 2 },

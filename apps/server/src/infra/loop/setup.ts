@@ -3,6 +3,7 @@
  */
 
 import type { LlmToolCall } from "../llmClient.js";
+import type { AgentTier } from "@knowpilot/shared";
 import { getAllowedToolsForTier } from "../swarmPermissionGuard.js";
 import { getTierTemplate } from "../agentFactory.js";
 
@@ -13,7 +14,13 @@ import { getTierTemplate } from "../agentFactory.js";
  */
 export const DEFAULT_SUBAGENT_TOOLS: readonly string[] = getTierTemplate("sub").tools;
 
-/** 规范化 + 按 tier 裁剪工具列表 */
+/**
+ * 规范化 + 按 tier 裁剪工具列表。
+ *
+ * 空 tools 兜底对所有 tier 生效（不只 sub）：空 tools → 该 tier 模板工具集。
+ * 这与 parseAgentTools 的空数组兜底（DEFAULT_NATIVE 5 个只读工具）形成两道防线——
+ * 即便 tier 模板缺失，parseAgentTools 也不会让空数组走 "all" 全量暴露。
+ */
 export function resolveToolsForAgentTier(tier: string | undefined | null, tools: string[]): string[] {
   const t = tier || "sub";
   let normalized = (tools ?? []).map((tool) => {
@@ -21,8 +28,8 @@ export function resolveToolsForAgentTier(tier: string | undefined | null, tools:
     if (tool.includes(":")) return tool;
     return `native:${tool}`;
   });
-  if (normalized.length === 0 && t === "sub") {
-    normalized = getTierTemplate("sub").tools;
+  if (normalized.length === 0) {
+    normalized = getTierTemplate(t as AgentTier).tools;
   }
   return getAllowedToolsForTier(t, normalized);
 }

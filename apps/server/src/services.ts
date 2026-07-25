@@ -997,7 +997,6 @@ export interface AgentEntity {
   tier: "super" | "manager" | "sub";
   workspaceId: string | null;
   parentId: string | null;
-  apiKey: string | null;
   heartbeatModel: string | null;
   heartbeat: any;
   status: string;
@@ -1016,12 +1015,9 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
   protected get delegate() { return this.prisma.agent; }
 
   protected formatEntity(raw: any): AgentEntity {
-    // 安全（#20）：API 响应永不返回明文 apiKey。agent.apiKey 字段仅供 DB 存储，
-    // LLM 实际使用 config providers 的 env key（llmClient provider.apiKey），不读此字段。
-    const { apiKey: _omitApiKey, ...rest } = raw;
+    const { ...rest } = raw;
     return {
       ...rest,
-      apiKey: null,
       tools: raw.tools ? raw.tools.split(",").filter(Boolean).map((t: string) => t.trim()) : [],
     };
   }
@@ -1071,14 +1067,13 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
       ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
       ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
       ...(input.source !== undefined ? { source: input.source } : {}),
-      ...(input.apiKey !== undefined ? { apiKey: input.apiKey } : {}),
       ...(input.heartbeatModel !== undefined ? { heartbeatModel: input.heartbeatModel } : {}),
       ...(input.heartbeat !== undefined ? { heartbeat: input.heartbeat } : {}),
     };
   }
 
   protected buildUpdateData(input: UpdateAgentInput): any {
-    const { id: _id, tools, name, tier, workspaceId, parentId, source, apiKey, heartbeatModel, heartbeat, status, ...data } = input;
+    const { id: _id, tools, name, tier, workspaceId, parentId, source, heartbeatModel, heartbeat, status, ...data } = input;
     const updateData: any = { ...data };
     if (name !== undefined) updateData.name = name;
     if (tools !== undefined) updateData.tools = materializeAgentTools(tools).join(",");
@@ -1086,7 +1081,6 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
     if (workspaceId !== undefined) updateData.workspaceId = workspaceId;
     if (parentId !== undefined) updateData.parentId = parentId;
     if (source !== undefined) updateData.source = source;
-    if (apiKey !== undefined) updateData.apiKey = apiKey;
     if (heartbeatModel !== undefined) updateData.heartbeatModel = heartbeatModel;
     if (heartbeat !== undefined) updateData.heartbeat = heartbeat;
     if (status !== undefined) updateData.status = status;

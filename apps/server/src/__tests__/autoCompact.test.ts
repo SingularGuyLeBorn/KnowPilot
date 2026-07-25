@@ -12,6 +12,7 @@ import {
   resolveCompactThresholdForModel,
 } from "../infra/autoCompact.js";
 import * as llmClient from "../infra/llmClient.js";
+import * as resilientLlmClient from "../infra/resilientLlmClient.js";
 import type { LlmMessage } from "../infra/llmClient.js";
 
 function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
@@ -48,7 +49,14 @@ describe("autoCompact", () => {
   let spy: any;
 
   beforeEach(() => {
-    spy = vi.spyOn(llmClient, "chatCompletion").mockResolvedValue({
+    // P2-02：autoCompact 改走 resilientChatCompletion（弹性层），spy 目标随之迁移。
+    // 保留对 llmClient.chatCompletion 的 spy 以兼容 microCompact 等仍直连内核的路径。
+    vi.spyOn(llmClient, "chatCompletion").mockResolvedValue({
+      content: "这是压缩后的摘要内容。",
+      tool_calls: undefined,
+      usage: undefined,
+    } as any);
+    spy = vi.spyOn(resilientLlmClient, "resilientChatCompletion").mockResolvedValue({
       content: "这是压缩后的摘要内容。",
       tool_calls: undefined,
       usage: undefined,

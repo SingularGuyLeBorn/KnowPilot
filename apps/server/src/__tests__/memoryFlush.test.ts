@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { AppConfig } from "../infra/config.js";
 import { flushMemoriesBeforeCompact } from "../infra/memoryFlush.js";
-import * as llmClient from "../infra/llmClient.js";
+import * as resilientLlmClient from "../infra/resilientLlmClient.js";
 
 function makeServices() {
   const items: Array<{ content: string; type: string; strength: number; keywords: string[] }> = [];
@@ -28,7 +28,8 @@ describe("memoryFlush", () => {
   });
 
   it("从 transcript 提取事实并写入 Memory（有 Agent 时写 agent scope）", async () => {
-    vi.spyOn(llmClient, "chatCompletion").mockResolvedValue({
+    // P2-02：memoryFlush 改走 resilientChatCompletion，spy 目标迁移。
+    vi.spyOn(resilientLlmClient, "resilientChatCompletion").mockResolvedValue({
       content: `[{"content":"用户偏好莫兰迪色系","type":"preference","keywords":["design","color"]}]`,
     } as any);
     const services = makeServices();
@@ -46,7 +47,7 @@ describe("memoryFlush", () => {
   });
 
   it("memoryFlush 关闭时跳过", async () => {
-    const spy = vi.spyOn(llmClient, "chatCompletion");
+    const spy = vi.spyOn(resilientLlmClient, "resilientChatCompletion");
     const services = makeServices();
     const config = {
       compact: { memoryFlush: { enabled: false, maxFacts: 5 } },

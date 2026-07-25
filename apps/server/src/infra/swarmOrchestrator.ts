@@ -124,7 +124,9 @@ export class SwarmOrchestrator {
   constructor(private readonly deps: { config: AppConfig; services: ServiceContainer }) {}
 
   async dispatch(spec: SwarmTaskSpec): Promise<SwarmDispatchHandle> {
-    // ── 同步段（无 await）：并发 dispatch 的权限/去重判定原子完成，不赌时序 ──
+    // ── 去重判定段 ──
+    // 注：未命中分支（lookupDedup 返回 null → registerDedup）之间无 await，并发 dispatch 不会双注册；
+    //    命中分支含 await（等在途任务 prepare/completion），非"全段无 await"——下方分别处理。
 
     // 1. 权限校验（swarmPermissionGuard 单点）
     if (spec.guard) {
@@ -144,17 +146,20 @@ export class SwarmOrchestrator {
     if (dedupKey) {
       const existing = this.lookupDedup(dedupKey);
       if (existing) {
-        this.audit("info", "swarm_dispatch_deduped", `${spec.origin} 任务「${spec.taskLabel}」命中 60s 去重窗口，返回已有任务 ${existing.jobId}`, {
-          origin: spec.origin,
-          jobId: existing.jobId,
-          taskLabel: spec.taskLabel,
-        });
         // 在途任务：等同一次 dispatch 收口，返回同一份结果（幂等，不重复执行）。
         // pool 命中：先等准备段（快，仅 DB），有早结 outcome 立即返回——不等执行收口（fire-and-forget，可能数分钟）。
+        // P1-01：existing.jobId 在 prepare 段可能被改写为 finalJobId，必须 await prepared 之后再读，
+        //        否则 audit 日志与返回值 jobId 可能不一致（一个用初始 uuid，一个用 finalJobId）。
         if (existing.prepared) await existing.prepared.catch(() => {});
+        const resolvedJobId = existing.jobId;
         const outcome = existing.outcome ?? (existing.completion ? await existing.completion : undefined);
-        this.pushParentUpdate(spec, existing.jobId, "duplicate", outcome);
-        return { jobId: existing.jobId, origin: spec.origin, status: "duplicate", deduped: true, outcome };
+        this.audit("info", "swarm_dispatch_deduped", `${spec.origin} 任务「${spec.taskLabel}」命中 60s 去重窗口，返回已有任务 ${resolvedJobId}`, {
+          origin: spec.origin,
+          jobId: resolvedJobId,
+          taskLabel: spec.taskLabel,
+        });
+        this.pushParentUpdate(spec, resolvedJobId, "duplicate", outcome);
+        return { jobId: resolvedJobId, origin: spec.origin, status: "duplicate", deduped: true, outcome };
       }
     }
 

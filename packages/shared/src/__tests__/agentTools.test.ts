@@ -12,7 +12,6 @@ describe("materializeAgentTools", () => {
       "native:web_search",
       "native:read_file",
       "native:list_directory",
-      "native:invoke_api",
       "native:session_clear",
       "skill:*",
     ]);
@@ -23,7 +22,6 @@ describe("materializeAgentTools", () => {
       "native:web_search",
       "native:read_file",
       "native:list_directory",
-      "native:invoke_api",
       "native:session_clear",
       "skill:*",
     ]);
@@ -43,7 +41,6 @@ describe("materializeAgentTools", () => {
       "native:web_search",
       "native:read_file",
       "native:list_directory",
-      "native:invoke_api",
       "native:session_clear",
       "skill:refactor",
       "mcp:filesystem",
@@ -67,11 +64,10 @@ describe("materializeAgentTools", () => {
     ]);
   });
 
-  it("DEFAULT_AGENT_NATIVE 包含五项基础能力", () => {
+  it("DEFAULT_AGENT_NATIVE 包含四项基础能力", () => {
     expect(DEFAULT_AGENT_NATIVE).toContain("read_file");
-    expect(DEFAULT_AGENT_NATIVE).toContain("invoke_api");
     expect(DEFAULT_AGENT_NATIVE).toContain("session_clear");
-    expect(DEFAULT_AGENT_NATIVE).toHaveLength(5);
+    expect(DEFAULT_AGENT_NATIVE).toHaveLength(4);
   });
 
   it("裸工具名视为 native，避免物化成空数组", () => {

@@ -53,7 +53,7 @@ export function groupIdForNativeTool(name: string): NativeToolGroupId {
   ) {
     return "swarm";
   }
-  if (/^(yuque_|github_|feishu_|invoke_api|task_run|ocr_)/.test(name)) return "integration";
+  if (/^(yuque_|github_|feishu_|task_run|ocr_)/.test(name)) return "integration";
   return "other";
 }
 
@@ -97,7 +97,6 @@ export const NATIVE_LABELS: Record<string, string> = {
   yuque_get_doc: "语雀文档",
   github_search_repos: "GitHub 搜索",
   feishu_send_text: "飞书消息",
-  invoke_api: "调用后端 API",
   async_task_run: "后台异步任务",
   async_task_status: "异步任务状态",
   async_task_cancel: "取消异步任务",

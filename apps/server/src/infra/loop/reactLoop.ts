@@ -43,6 +43,7 @@ import { isAbortLikeError, makeAbortError } from "../abortReason.js";
 import { runContextHooks, type ContextHookInput } from "../contextHooks.js";
 import type { Agent } from "@knowpilot/shared";
 import { buildSystemPromptSkeleton } from "../promptBuilder.js";
+import { formatTrace } from "../trace.js";
 
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
@@ -129,7 +130,6 @@ function buildHookAgent(input: ReactLoopInput): Agent {
     tier: (meta?.tier ?? null) as unknown as Agent["tier"],
     workspaceId: meta?.workspaceId ?? null,
     parentId: meta?.parentId ?? null,
-    apiKey: null,
     heartbeatModel: null,
     heartbeat: null,
     status: "active",
@@ -219,11 +219,18 @@ function appendToolResultMessages(
       result: item.result,
       kind: item.kind ?? "tool",
     });
+    // P2-04：截断时加显式 [TRUNCATED] 后缀，让 LLM 知道结果被裁，避免基于残缺 JSON 误判。
+    // 优先截断 result 的 content/文本字段而非整个 JSON，保留结构完整性。
+    const fullStr = JSON.stringify(item.result);
+    let content = fullStr;
+    if (fullStr.length > maxChars) {
+      content = fullStr.slice(0, maxChars) + `\n...[TRUNCATED, original=${fullStr.length} chars, limit=${maxChars}]`;
+    }
     llmMessages.push({
       role: "tool",
       tool_call_id: item.call.id,
       name: item.name,
-      content: JSON.stringify(item.result).slice(0, maxChars),
+      content,
     });
   }
 }
@@ -356,13 +363,17 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
   /** 终态统一收口：success / failed / cancelled（用户 abort），output 携带 phase 终态快照与业务字段 */
   const finalizeRun = async (terminal: "success" | "failed" | "cancelled", patch: Record<string, unknown>) => {
-    // W5：心跳/异步无产出 run 的 token 记入 wastedTokens（日预算已在 accumulateUsage 扣过）
+    // W5 + P1-02：无产出 run 的 token 记入 wastedTokens（日预算已在 accumulateUsage 扣过）。
+    // 原 W5 仅对 heartbeat/async origin + success 终态 + 零工具统计；P1-02 扩展到所有 origin 的
+    // 预算/轮次耗尽兜底（terminal=failed 且 hitToolBudget 或 maxRounds 耗尽）——这些 token 也是"白烧"。
     const origin = input.runOrigin ?? "user";
+    const isBudgetExhausted = terminal === "failed" && (patch?.hitToolBudget === true || patch?.roundsExhausted === true);
     if (
-      (origin === "heartbeat" || origin === "async") &&
-      terminal === "success" &&
+      totalUsage.total > 0 &&
       countExecutedTools() === 0 &&
-      totalUsage.total > 0
+      ((origin === "heartbeat" || origin === "async") && terminal === "success"
+        ? true
+        : isBudgetExhausted)
     ) {
       markTokensWasted(input.config, totalUsage.total);
     }
@@ -370,7 +381,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     // 不变量：aborted 时唯一合法终态 cancelled——拒绝 success 收口
     let effective: "success" | "failed" | "cancelled" = terminal;
     if (terminal === "success" && input.signal?.aborted === true) {
-      console.error("[ReactLoop] 拒绝 aborted run 以 success 收口，强制 cancelled");
+      console.error(`${formatTrace()}[ReactLoop] 拒绝 aborted run 以 success 收口，强制 cancelled`);
       effective = "cancelled";
     }
     try {
@@ -384,7 +395,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         toolCallCount: countExecutedTools(),
       });
     } catch (err) {
-      console.warn("[ReactLoop] Run 终态写回失败:", err instanceof Error ? err.message : err);
+      console.warn(`${formatTrace()}[ReactLoop] Run 终态写回失败:`, err instanceof Error ? err.message : err);
     }
   };
 
@@ -602,12 +613,6 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           hitToolBudget: false,
           runId,
         };
-      }
-
-      if (toolCallsUsed >= snapshot.maxToolCalls) {
-        hitToolBudget = true;
-        machine.transition("synthesizing");
-        break;
       }
 
       if (turn.content?.trim()) {
@@ -878,7 +883,9 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       // 流式：兜底文案也推给前端
       input.hooks?.onToken?.(fallback);
       machine.transition("done");
-      await finalizeRun("success", { content: fallback });
+      // P1-02：预算/轮次耗尽是异常终止（非正常完成），改记 failed 而非 success——
+      // 避免监控/账本低估失败率；wastedTokens 在 finalizeRun 内按 hitToolBudget/roundsExhausted 标记统计。
+      await finalizeRun("failed", { content: fallback, hitToolBudget, roundsExhausted: !hitToolBudget });
       return {
         content: fallback,
         toolCalls: executedTools,

@@ -2094,6 +2094,14 @@ export async function getAsyncJobStatus(
   const running = orchestrator.isRunning(jobId);
   const queued = orchestrator.isQueued(jobId);
   const status = running ? "running" : queued ? "queued" : task.status === "success" ? "completed" : task.status === "failed" ? "failed" : task.status;
+  // 防绕过：明确告知 LLM 结果会自动投递，阻止其轮询后调 agent_inspect 主动窥探子会话消息
+  // （invoke_api 已下线；agent_inspect 已不返消息内容。结果唯一通道 = autoConsume 注入）。
+  const hint =
+    status === "completed"
+      ? "任务已完成，结果已自动投递到你的会话（异步任务结果气泡），无需主动拉取或读子会话消息。结束当前轮即可看到结果。"
+      : status === "failed"
+        ? "任务失败，失败信息已自动投递到你的会话，无需主动拉取。"
+        : undefined;
   return {
     jobId,
     status,
@@ -2101,6 +2109,7 @@ export async function getAsyncJobStatus(
     elapsedMs: running || task.status === "running" ? Date.now() - (task.createdAt instanceof Date ? task.createdAt.getTime() : new Date(task.createdAt).getTime()) : undefined,
     subagentSessionId: input?.subagentSessionId,
     timeoutMs: input?.timeoutMs ?? config.asyncJobs.taskTimeoutMs,
+    ...(hint ? { hint } : {}),
   };
 }
 

@@ -36,7 +36,6 @@ export interface Agent {
   tier: "super" | "manager" | "sub";
   workspaceId: string | null;
   parentId: string | null;
-  apiKey: string | null;
   heartbeatModel: string | null;
   heartbeat: HeartbeatConfig | null;
   /** 连续失败熔断暂停时刻；null = 未暂停 */

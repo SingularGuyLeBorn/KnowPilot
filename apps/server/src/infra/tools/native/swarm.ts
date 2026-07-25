@@ -38,6 +38,7 @@ import { zodParams } from "./zodParams.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 import type { AppConfig } from "../../config.js";
+import { getAppConfig } from "../../config.js";
 import type { ServiceContainer } from "../../serviceContainer.js";
 
 async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -49,6 +50,22 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
     });
     if (systemWs) workspaceId = systemWs.id;
   }
+  // P1-04：敏感字段（heartbeat / heartbeatModel）仅 super tier 可设。
+  // manager/sub 传了也忽略 + 写审计 warn，防止越权部署常驻心跳 Agent 持续消耗预算。
+  const operatorTier = ctx.agentSnapshot?.tier ?? "sub";
+  const isSuper = operatorTier === "super";
+  const sensitiveFieldsAttempted: string[] = [];
+  if (args.heartbeat !== undefined) sensitiveFieldsAttempted.push("heartbeat");
+  if (args.heartbeatModel !== undefined) sensitiveFieldsAttempted.push("heartbeatModel");
+  if (sensitiveFieldsAttempted.length > 0 && !isSuper) {
+    await ctx.services.log?.create?.({
+      level: "warn",
+      component: "swarm",
+      event: "agent_create_sensitive_field_denied",
+      message: `非 super Agent 试图创建 Agent 时设置敏感字段 [${sensitiveFieldsAttempted.join(", ")}]，已忽略`,
+      metadata: { operatorAgentId: ctx.agentSnapshot?.id, operatorTier, attemptedFields: sensitiveFieldsAttempted },
+    }).catch(() => {});
+  }
   const created = await ctx.services.agent.create({
     name: String(args.name || ""),
     description: args.description ? String(args.description) : undefined,
@@ -59,9 +76,8 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
     workspaceId,
     parentId: args.parentId as string | undefined,
     source: "native_tool:agent_create",
-    apiKey: args.apiKey as string | undefined,
-    heartbeatModel: args.heartbeatModel as string | undefined,
-    heartbeat: args.heartbeat as any,
+    heartbeatModel: isSuper ? (args.heartbeatModel as string | undefined) : undefined,
+    heartbeat: isSuper ? (args.heartbeat as any) : undefined,
   });
   if (!created.success || !created.data) {
     return { error: created.error?.message ?? "创建 Agent 失败" };
@@ -98,6 +114,23 @@ async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolCon
       return { error: "[CROSS_WORKSPACE_FORBIDDEN] 管理 Agent 不能把 Agent 迁出本 Workspace。" };
     }
   }
+  // P1-04：敏感字段（heartbeat / heartbeatModel）仅 super tier 可改。
+  // manager/sub 传了也忽略 + 写审计 warn，防止越权劫持目标 Agent 的 LLM 计费/日志归因
+  // 或篡改心跳配置。
+  const operatorTierForSensitive = ctx.agentSnapshot?.tier ?? "sub";
+  const isSuperForSensitive = operatorTierForSensitive === "super";
+  const sensitiveUpdateAttempted: string[] = [];
+  if (updateData.heartbeat !== undefined) sensitiveUpdateAttempted.push("heartbeat");
+  if (updateData.heartbeatModel !== undefined) sensitiveUpdateAttempted.push("heartbeatModel");
+  if (sensitiveUpdateAttempted.length > 0 && !isSuperForSensitive) {
+    await ctx.services.log?.create?.({
+      level: "warn",
+      component: "swarm",
+      event: "agent_update_sensitive_field_denied",
+      message: `非 super Agent 试图更新 Agent ${targetId} 的敏感字段 [${sensitiveUpdateAttempted.join(", ")}]，已忽略`,
+      metadata: { targetAgentId: targetId, operatorAgentId: ctx.agentSnapshot?.id, operatorTier: operatorTierForSensitive, attemptedFields: sensitiveUpdateAttempted },
+    }).catch(() => {});
+  }
   const result = await ctx.services.agent.update({
     id: targetId,
     name: updateData.name ? String(updateData.name) : undefined,
@@ -105,9 +138,8 @@ async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolCon
     model: updateData.model ? String(updateData.model) : undefined,
     systemPrompt: updateData.systemPrompt ? String(updateData.systemPrompt) : undefined,
     tools: Array.isArray(updateData.tools) ? (updateData.tools as string[]) : undefined,
-    apiKey: updateData.apiKey !== undefined ? String(updateData.apiKey) : undefined,
-    heartbeatModel: updateData.heartbeatModel ? String(updateData.heartbeatModel) : undefined,
-    heartbeat: updateData.heartbeat as any,
+    heartbeatModel: isSuperForSensitive && updateData.heartbeatModel ? String(updateData.heartbeatModel) : undefined,
+    heartbeat: isSuperForSensitive ? (updateData.heartbeat as any) : undefined,
     status: updateData.status as any,
     tier: ctx.agentSnapshot?.tier === "super" && updateData.tier !== undefined
       ? (updateData.tier as any)
@@ -217,10 +249,13 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
       note: "超级 Agent 仅返回公开元信息；详情请通过消息/报告通道沟通。",
     };
   }
-  // 获取最近 session + 消息
+  // 架构铁律：父 Agent 只能看子 Agent 的状态，不能看子 Agent 的消息内容。
+  // 子 Agent 的结果只能经 agent_report_back → autoConsume 注入父会话异步结果队列这一条通道交付。
+  // 因此 agent_inspect 不返回任何 recentMessages——只返 session 元信息（id/title/messageCount）作为状态。
+  // 取 messages 仅用于 count，不取 content；避免任何形式的对话内容泄露。
   const sessions = await ctx.prisma?.chatSession.findMany({
     where: { agentId: targetId },
-    include: { messages: { orderBy: { createdAt: "desc" }, take: 20 } },
+    select: { id: true, title: true, isMainSession: true, status: true, updatedAt: true, _count: { select: { messages: true } } },
     take: 5,
     orderBy: { updatedAt: "desc" },
   });
@@ -259,22 +294,16 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
         id: s.id,
         title: s.title,
         isMainSession: s.isMainSession,
-        messageCount: s.messages?.length,
+        status: s.status,
+        updatedAt: s.updatedAt,
+        messageCount: s._count?.messages ?? 0,
       })) ?? [],
-    recentMessages:
-      sessions?.flatMap(
-        (s: any) =>
-          s.messages?.map((m: any) => ({
-            role: m.role,
-            content: m.content?.slice(0, 100),
-            source: m.source,
-          })) ?? [],
-      ) ?? [],
     memories,
     swarm,
     hint: [
       includeMemory ? null : "默认不返回 Memory；需要时传 includeMemory=true。",
       includeSwarm ? null : "需要 inbox/队列/ask_user 积压时传 includeSwarm=true。",
+      "agent_inspect 只返回 Agent 状态与会话元信息（id/title/messageCount），不返回任何消息内容。子 Agent 的结果只能通过 agent_report_back 投递到你的会话异步结果队列，请勿尝试读取子会话消息。",
       "请以 agent.id（cuid）为准，勿编造 ID。",
     ]
       .filter(Boolean)
@@ -1029,7 +1058,6 @@ export async function agentCreateSubTool(args: Record<string, unknown>, ctx: Nat
     workspaceId,
     parentId: ctx.agentSnapshot?.id,
     source: "native_tool:agent_create_sub",
-    apiKey: args.apiKey as string | undefined,
   });
   if (!created.success || !created.data) return { error: created.error?.message ?? "创建子 Agent 失败" };
   // 审计日志
@@ -1163,14 +1191,42 @@ async function freeApiKeysFetchTool(args: Record<string, unknown>, ctx: NativeTo
   } catch {
     /* ignore */
   }
+  const metaProvider = typeof meta.provider === "string" ? meta.provider : undefined;
+  const metaBaseUrl = typeof meta.baseUrl === "string" ? meta.baseUrl : undefined;
+  const metaModel = typeof meta.model === "string" ? meta.model : undefined;
+
+  // P1-05：明文 key 不再返回给 LLM 上下文（防 prompt injection 外泄 + 进 provider 训练候选）。
+  // 改为服务端直接注入到运行时 config.llm.providers[provider]，后续 LLM 调用自动使用——
+  // Agent 无需拿到明文 key 即可完成调用。
+  const targetProvider = metaProvider ?? provider ?? "";
+  if (targetProvider) {
+    try {
+      const cfg = getAppConfig();
+      if (cfg.llm.providers[targetProvider]) {
+        cfg.llm.providers[targetProvider].apiKey = picked.value;
+        if (metaBaseUrl) cfg.llm.providers[targetProvider].baseUrl = metaBaseUrl;
+        if (metaModel && !cfg.llm.providers[targetProvider].model) {
+          cfg.llm.providers[targetProvider].model = metaModel;
+        }
+      }
+    } catch (cfgErr) {
+      console.warn("[free_api_keys_fetch] 注入 config 失败:", cfgErr instanceof Error ? cfgErr.message : cfgErr);
+    }
+  }
+
+  // 掩码：保留前4后4，中间 ...（仅用于 LLM 确认拿到了哪个 key，不含明文）
+  const raw = picked.value ?? "";
+  const masked = raw.length > 8 ? `${raw.slice(0, 4)}...${raw.slice(-4)}` : "***";
+
   return {
-    apiKey: picked.value,
+    apiKeyMasked: masked,
     credentialId: picked.id,
     name: picked.name,
-    baseUrl: typeof meta.baseUrl === "string" ? meta.baseUrl : undefined,
-    model: typeof meta.model === "string" ? meta.model : undefined,
-    provider: typeof meta.provider === "string" ? meta.provider : undefined,
-    hint: "使用后请勿持久化此 key，每次需要时重新获取。",
+    baseUrl: metaBaseUrl,
+    model: metaModel,
+    provider: metaProvider,
+    injectedToProvider: targetProvider || null,
+    hint: "Key 已由服务端注入到运行时 config，后续 LLM 调用将自动使用；明文不返回给上下文。",
   };
 }
 
@@ -1418,7 +1474,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
         tier: z.enum(["super", "manager", "sub"]).describe("层级").optional(),
         workspaceId: z.string().describe("所属 Workspace id（super 不需要）").optional(),
         parentId: z.string().describe("上级 Agent id").optional(),
-        apiKey: z.string().describe("专属 API Key").optional(),
         heartbeatModel: z.string().describe("心跳用便宜模型").optional(),
         heartbeat: z.record(z.unknown()).describe("心跳配置 { enabled, cron, goal }").optional(),
       }),
@@ -1435,7 +1490,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
         model: z.string().optional(),
         systemPrompt: z.string().optional(),
         tools: z.array(z.string()).optional(),
-        apiKey: z.string().optional(),
         heartbeatModel: z.string().optional(),
         heartbeat: z.record(z.unknown()).describe("心跳配置").optional(),
         status: z.enum(["active", "idle", "dormant"]).describe("Agent 状态").optional(),
@@ -1475,7 +1529,9 @@ const SWARM_DEFS: NativeToolDefinition[] = [
     name: "agent_inspect",
     reentrant: true, // 只读：agent/session/memory/swarm 查询
     description:
-      "查看 Agent 上下文（超级=全局；管理 Agent=本 Workspace；对超级仅返回公开元信息）。" +
+      "查看 Agent 状态（超级=全局；管理 Agent=本 Workspace；对超级仅返回公开元信息）。" +
+      "只返回 Agent 元信息、最近会话列表（id/title/status/messageCount）与可选 memory/swarm 快照；" +
+      "不返回任何会话消息内容——子 Agent 的结果只能通过 agent_report_back 投递到你的会话异步结果队列。" +
       "includeSwarm=true 时附带 inbox 积压、会话运行态、ask_user pending、心跳熔断、superior 队列。",
     parameters: zodParams(
       z.object({
@@ -1543,7 +1599,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
           .string()
           .describe("目标 Workspace（仅超级 Agent 可跨 Workspace；默认=父 Agent 所在 Workspace）")
           .optional(),
-        apiKey: z.string().optional(),
       }),
     ),
   },
@@ -1583,7 +1638,7 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "free_api_keys_fetch",
-    description: "获取一个可用的免费 API Key（轮询分配，标记 lastUsedAt，返回明文）。仅管理 Agent（manager）及以上可调用；子 Agent 禁止。",
+    description: "获取一个可用的免费 API Key（轮询分配，标记 lastUsedAt）。P1-05：明文 key 不再返回给上下文，由服务端直接注入到运行时 config.llm.providers[provider]，后续 LLM 调用自动使用；返回掩码 + 注入确认。仅管理 Agent（manager）及以上可调用；子 Agent 禁止。",
     parameters: zodParams(
       z.object({
         provider: z.string().describe(`偏好提供商（如 ${LLM_PROVIDER_DEEPSEEK}/openai），不填则随机分配`).optional(),

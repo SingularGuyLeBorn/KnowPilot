@@ -89,11 +89,10 @@ function formatHeartbeatLastRun(iso: string | null | undefined): string {
 const DEFAULT_AGENT_TOOLS = [
   "native:web_search",
   "native:read_article",
-  "native:read_file",
-  "native:write_file",
-  "native:list_directory",
-  "native:invoke_api",
-  "native:spawn_subagent",
+    "native:read_file",
+    "native:write_file",
+    "native:list_directory",
+    "native:spawn_subagent",
   "native:async_task_run",
   "native:async_task_status",
   "native:async_task_cancel",
@@ -434,7 +433,7 @@ export default function AgentsPage() {
   const deleteMutation = useDelete();
   const bulkDeleteMutation = trpc.agent.bulkDelete.useMutation({
     onSuccess: () => {
-      void utils.agent.list.invalidate();
+      utils.agent.list.invalidate().catch(() => {});
       setSelectedIds(new Set());
     },
   });
@@ -486,7 +485,7 @@ export default function AgentsPage() {
   );
 
   const resumeHeartbeatMut = trpc.agent.resumeHeartbeat.useMutation({
-    onSuccess: () => void utils.agent.list.invalidate(),
+    onSuccess: () => { utils.agent.list.invalidate().catch(() => {}); },
   });
 
   const handleSave = async () => {

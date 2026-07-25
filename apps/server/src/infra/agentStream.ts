@@ -34,6 +34,7 @@ import {
 import { SessionStreamHub, getStreamHub, type BufferedEvent } from "./sessionStreamHub.js";
 import { autoNameSession } from "./sessionAutoName.js";
 import { markAgentMessageConsumedByTaskRef } from "./agentMessageLedger.js";
+import { formatTrace } from "./trace.js";
 import {
   isAbortLikeError,
   messageFromAbortReason,
@@ -1161,7 +1162,7 @@ export function handleAgentChatStream(
         // started | duplicate：打开 SSE 订阅（duplicate 附着已有流）
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[agentStream] 启动会话 ${runSessionId} Agent 流失败:`, err);
+        console.error(`${formatTrace()}[agentStream] 启动会话 ${runSessionId} Agent 流失败:`, err);
         beginSse(res);
         writeSse(res, { type: "error", message: `启动失败：${message}` });
         res.end();

@@ -94,29 +94,39 @@ export class LocalSwarmBus implements SwarmBus {
       };
     }
 
-    // 队列容量校验（#32）
-    const pendingCount = await this.prisma.agentMessage.count({
-      where: { toAgentId: msg.toAgentId, status: "pending" },
-    });
-    if (pendingCount >= MAX_QUEUE_SIZE) {
-      return {
-        success: false,
-        error: { code: "QUEUE_FULL", reason: `目标 Agent 队列已满（${MAX_QUEUE_SIZE} 条），请先处理已有消息。` },
-      };
+    // 队列容量校验 + 写入（事务内 count + create，消除 TOCTOU 竞态）
+    // 旧实现 count 与 create 分两个 await，并发 send 可同时通过 count 检查后各自 create，
+    // 突破 MAX_QUEUE_SIZE 上限。事务内 count 保证容量检查与写入原子。
+    let created;
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
+        const pendingCount = await tx.agentMessage.count({
+          where: { toAgentId: msg.toAgentId, status: "pending" },
+        });
+        if (pendingCount >= MAX_QUEUE_SIZE) {
+          throw new Error("QUEUE_FULL");
+        }
+        return await tx.agentMessage.create({
+          data: {
+            fromAgentId: msg.fromAgentId,
+            toAgentId: msg.toAgentId,
+            content: msg.content,
+            messageType: msg.messageType ?? "command",
+            source: msg.source ?? fromTier,
+            depth,
+            status: "pending",
+          },
+        });
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "QUEUE_FULL") {
+        return {
+          success: false,
+          error: { code: "QUEUE_FULL", reason: `目标 Agent 队列已满（${MAX_QUEUE_SIZE} 条），请先处理已有消息。` },
+        };
+      }
+      throw err;
     }
-
-    // 写入消息
-    const created = await this.prisma.agentMessage.create({
-      data: {
-        fromAgentId: msg.fromAgentId,
-        toAgentId: msg.toAgentId,
-        content: msg.content,
-        messageType: msg.messageType ?? "command",
-        source: msg.source ?? fromTier,
-        depth,
-        status: "pending",
-      },
-    });
 
     // 审计日志（#17）
     await this.prisma.log.create({

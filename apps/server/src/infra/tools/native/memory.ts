@@ -67,6 +67,39 @@ async function postDeleteTool(args: Record<string, unknown>, ctx: NativeToolCont
   return { id, deleted: true };
 }
 
+async function postListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  // 砍 invoke_api 后补的专用只读工具：列本地知识库文章。
+  // service.list 已裁剪 content（getListSelect 只返元信息），不泄露正文。
+  const page = Math.max(1, Number(args.page || 1));
+  const pageSize = Math.min(50, Math.max(1, Number(args.pageSize || 20)));
+  const result = await ctx.services.post.list({
+    page,
+    pageSize,
+    published: args.published === undefined ? undefined : args.published === true,
+    category: args.category ? String(args.category) : undefined,
+    tag: args.tag ? String(args.tag) : undefined,
+    keyword: args.keyword ? String(args.keyword) : undefined,
+    orderBy: "updatedAt",
+    order: "desc",
+  } as any);
+  return {
+    total: result.total,
+    page,
+    pageSize,
+    totalPages: result.totalPages,
+    items: result.items.map((p: PostEntity) => ({
+      id: p.id,
+      title: p.title,
+      slug: p.slug,
+      excerpt: p.excerpt,
+      category: p.category,
+      tags: p.tags,
+      published: p.published,
+      updatedAt: p.updatedAt,
+    })),
+  };
+}
+
 async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const content = String(args.content || "").trim();
   if (!content) throw new Error("content 不能为空");
@@ -271,6 +304,22 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "post_list",
+    reentrant: true, // 只读：列文章元信息（不含正文）
+    description:
+      "列出本地知识库文章（content/posts）。按 updatedAt 倒序分页，返回 id/title/slug/excerpt/category/tags/published/updatedAt 元信息（不含正文）。需要正文请用 post_update 读后改，或提示用户在编辑器打开。",
+    parameters: zodParams(
+      z.object({
+        page: z.number().int().min(1).describe("页码，默认 1").optional(),
+        pageSize: z.number().int().min(1).max(50).describe("每页条数，默认 20，最大 50").optional(),
+        published: z.boolean().describe("是否仅看已发布；不填=全部").optional(),
+        category: z.string().describe("按分类过滤").optional(),
+        tag: z.string().describe("按标签过滤").optional(),
+        keyword: z.string().describe("关键词（标题/正文 FTS 优先，回退 LIKE）").optional(),
+      }),
+    ),
+  },
+  {
     name: "memory_create",
     concurrencyClass: "D",
     destructive: true,
@@ -405,6 +454,7 @@ const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
   post_create: postCreateTool,
   post_update: postUpdateTool,
   post_delete: postDeleteTool,
+  post_list: postListTool,
   memory_create: memoryCreateTool,
   memory_update: memoryUpdateTool,
   memory_search: memorySearchTool,

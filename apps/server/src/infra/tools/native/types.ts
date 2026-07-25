@@ -29,6 +29,12 @@ export interface NativeToolDefinition {
    * 默认 false = 保守；拿不准一律不标（false）。
    */
   reentrant?: boolean;
+  /**
+   * P1-03：默认对 LLM 隐藏（native:"all" 时不进 schema）除非 Agent 显式声明。
+   * 显式设 false 可让 destructive && !approvalExempt 的工具仍默认可见（慎用）。
+   * 未显式声明时，registerNativeDomain 对 destructive && !approvalExempt 自动设 true。
+   */
+  defaultHidden?: boolean;
 }
 
 export interface NativeToolContext {

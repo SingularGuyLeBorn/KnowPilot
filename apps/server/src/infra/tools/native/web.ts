@@ -18,7 +18,7 @@ import {
 import { fetchWithTimeout } from "../../metablog/search/engines.js";
 import { downloadImageToTemp, ocrRemoteImage } from "../../metablog/ocrBridge.js";
 import { performOcrFromFile } from "../../ocrService.js";
-import { chatCompletion } from "../../llmClient.js";
+import { resilientChatCompletion } from "../../resilientLlmClient.js";
 import { resolveSafePath } from "../../safePath.js";
 import { isSmokeInfoSource } from "../../smokeArtifacts.js";
 import {
@@ -595,7 +595,7 @@ async function readImageWithVision(
 ): Promise<{ text: string; model: string }> {
   const b64 = fs.readFileSync(absPath).toString("base64");
   const dataUrl = `data:${mimeType};base64,${b64}`;
-  const result = await chatCompletion({
+  const result = await resilientChatCompletion({
     config: ctx.config,
     model,
     messages: [

@@ -15,7 +15,7 @@ vi.mock("bullmq", () => {
 });
 
 function mockPrisma(overrides: Record<string, unknown> = {}) {
-  return {
+  const base = {
     agent: {
       findUnique: vi.fn(async () => ({
         id: "to-1",
@@ -41,7 +41,16 @@ function mockPrisma(overrides: Record<string, unknown> = {}) {
     log: {
       create: vi.fn(async () => ({})),
     },
-    ...overrides,
+  };
+  // P0-02：SwarmBus.send 改用 $transaction 包裹 count + create，mock 需提供 $transaction
+  // 将事务回调的 tx 参数指向 base.agentMessage（与 overrides 合并后的最终 agentMessage）
+  const merged = { ...base, ...overrides } as any;
+  const agentMessage = merged.agentMessage;
+  return {
+    ...merged,
+    $transaction: vi.fn().mockImplementation(async (cb: (tx: any) => Promise<unknown>) => {
+      return cb({ agentMessage });
+    }),
   } as any;
 }
 

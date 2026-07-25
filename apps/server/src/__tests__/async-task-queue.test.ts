@@ -100,7 +100,7 @@ describe("async-task-queue 工具协议", () => {
     }
   });
 
-  it("async_task_run 缺 toolCall 直接报错（W-D：不再有 mode=llm 兜底）", async () => {
+  it("async_task_run 缺 toolCall 返回结构化校验错误（P2-03：前置 required 校验拦截，不再进 handler 抛错）", async () => {
     const ctx = await createContextInner();
     const toolCtx = { ...ctx, invokeTrpc: async () => ({ ok: true }) };
     const session = await ctx.services.session.create({ title: "父会话", model: "deepseek-chat" });
@@ -108,17 +108,18 @@ describe("async-task-queue 工具协议", () => {
     const parentAgentId = await createParentAgent(ctx);
 
     try {
-      await expect(
-        executeNativeTool(
-          "async_task_run",
-          { task: "没有工具调用的任务", label: "旧 llm 用法" },
-          {
-            ...toolCtx,
-            sessionId,
-            agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: [] },
-          },
-        ),
-      ).rejects.toThrow(/toolCall/);
+      const result = (await executeNativeTool(
+        "async_task_run",
+        { task: "没有工具调用的任务", label: "旧 llm 用法" },
+        {
+          ...toolCtx,
+          sessionId,
+          agentSnapshot: { id: parentAgentId, model: "deepseek-chat", systemPrompt: "test", tools: [] },
+        },
+      )) as { error?: string; validationError?: boolean; missingParams?: string[] };
+      expect(result.validationError).toBe(true);
+      expect(result.error).toMatch(/toolCall/);
+      expect(result.missingParams).toContain("toolCall");
     } finally {
       await cleanupSessionTasks(sessionId, parentAgentId);
     }

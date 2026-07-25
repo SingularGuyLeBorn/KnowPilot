@@ -12,7 +12,7 @@ import { sessionGoalStateSchema } from "@knowpilot/shared";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { resolveAuxiliaryModel } from "./auxiliaryModel.js";
-import { chatCompletion } from "./llmClient.js";
+import { resilientChatCompletion } from "./resilientLlmClient.js";
 import { onHubRunSettled, getStreamHub } from "./sessionStreamHub.js";
 import { prisma } from "../db.js";
 
@@ -149,7 +149,7 @@ export async function defaultJudgeGoalTurn(args: {
   config: AppConfig;
 }): Promise<GoalJudgeResult> {
   const assistantSlice = args.lastAssistantText.slice(-4000);
-  const result = await chatCompletion({
+  const result = await resilientChatCompletion({
     config: args.config,
     model: args.model,
     messages: [

@@ -30,6 +30,7 @@ import { getEventBus } from "./eventBus.js";
 import { assertApprovalOrProceed, getPendingApprovalCause } from "./approvalGate.js";
 import { makeAbortError } from "./abortReason.js";
 import { resolveAgent } from "./agentResolver.js";
+import { formatTrace } from "./trace.js";
 import { coerceToolBoolean } from "./tools/native/types.js";
 
 function parseToolCallArgs(call: LlmToolCall): { name: string; args: Record<string, unknown> } {
@@ -144,10 +145,16 @@ void (() => {
   }
 })();
 
-/** 解析 Agent tools 配置：native: / skill: / mcp: / skill:* */
+/**
+ * 解析 Agent tools 配置：native: / skill: / mcp: / skill:* 
+ *
+ * 空数组语义与 shared/parseAgentToolSelection 对齐：物化为 DEFAULT_NATIVE（5 个只读工具），
+ * 不再返回 "all"——避免 LLM 自建或手写 markdown 的 Agent 因 tools 字段为空而拿到全部 ~140 个
+ * native 工具（含 run_shell / git_push / file_delete 等危险操作）。显式全量需写 "native:all"。
+ */
 export function parseAgentTools(agentTools: string[]): ParsedAgentTools {
   if (agentTools.length === 0) {
-    return { native: "all", skills: [], skillWildcard: true, mcpServers: [] };
+    return { native: [...DEFAULT_NATIVE], skills: [], skillWildcard: true, mcpServers: [] };
   }
 
   const native = agentTools.filter((t) => t.startsWith("native:")).map((t) => t.slice("native:".length));
@@ -158,9 +165,8 @@ export function parseAgentTools(agentTools: string[]): ParsedAgentTools {
 
   let nativeResult: string[] | "all";
   if (native.length > 0) {
-    nativeResult = native;
-  } else if (skills.length === 0 && !skillWildcard && mcpServers.length === 0) {
-    nativeResult = DEFAULT_NATIVE;
+    // 显式 "all" 仍保留全量语义（Agent 主动声明要全部 native 工具）
+    nativeResult = native.includes("all") ? "all" : native;
   } else {
     nativeResult = DEFAULT_NATIVE;
   }
@@ -268,6 +274,16 @@ export async function buildAgentToolSchemas(
       registry.set(name, { kind: "mcp", mcpExternalName: name, concurrencySafe });
       schemas.push(schema);
     }
+  }
+
+  // P1-03：schema 体积监控——超 50KB 打 warn，提示工具集过大影响 token 消耗与 LLM 选择准确率
+  const schemaBytes = JSON.stringify(schemas).length;
+  if (schemaBytes > 50_000) {
+    const toolCount = schemas.length;
+    const nativeCount = parsed.native === "all" ? "all" : parsed.native.length;
+    console.warn(
+      `${formatTrace()}[agentTools] schema 体积过大: ${Math.round(schemaBytes / 1024)}KB / ${toolCount} 工具 (native=${nativeCount}, skills=${parsed.skills.length}, mcp=${parsed.mcpServers.length})，考虑用 integration_list/integration_call 元工具或显式声明子集降低 schema 体积`,
+    );
   }
 
   agentSchemaCache.set(cacheKey, { schemas, registryEntries: [...registry.entries()] });
@@ -538,18 +554,6 @@ export interface AgentToolSummary {
   usesDefaultNative: boolean;
 }
 
-export async function countAiReadableProcedures(): Promise<number> {
-  const { appRouter } = await import("../router.js");
-  let count = 0;
-  for (const [path, proc] of Object.entries(appRouter._def.procedures)) {
-    if (path.startsWith("ai.")) continue;
-    const meta = (proc as { _def?: { meta?: { aiReadable?: boolean } } })._def?.meta ?? {};
-    if (meta.aiReadable === false) continue;
-    count++;
-  }
-  return count;
-}
-
 /** 解析 Agent tools 授权并统计 LLM 可见工具规模 */
 export async function summarizeAgentTools(
   services: ServiceContainer,
@@ -559,8 +563,9 @@ export async function summarizeAgentTools(
   const skillNames = await resolveSkillNames(services, parsed);
   const allNative = listNativeTools();
   const grantedNative = parsed.native === "all" ? allNative.map((t) => t.name) : parsed.native;
-  const hasInvokeApi = grantedNative.includes("invoke_api");
-  const apiProcedures = hasInvokeApi ? await countAiReadableProcedures() : 0;
+  // invoke_api 已下线（架构铁律：子 Agent 隔离，结果只能经 report_back 交付）。
+  // apiProcedures 反射面计数随之归零，保留字段以维持前端契约兼容。
+  const apiProcedures = 0;
 
   let mcpTools = 0;
   if (parsed.mcpServers.length > 0) {
@@ -571,8 +576,7 @@ export async function summarizeAgentTools(
     }
   }
 
-  const nativeLlm =
-    grantedNative.filter((n) => n !== "invoke_api").length + (hasInvokeApi ? 1 : 0);
+  const nativeLlm = grantedNative.length;
 
   const explicitNative = tools.filter((t) => t.startsWith("native:")).map((t) => t.slice("native:".length));
   const usesDefaultNative =

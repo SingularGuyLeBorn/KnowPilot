@@ -28,12 +28,14 @@ describe("Native 工具注册表", () => {
   });
 
   it("buildNativeToolSchemas 按授权过滤", () => {
-    const schemas = buildNativeToolSchemas(["read_file", "invoke_api"]);
-    expect(schemas.map((s) => s.function.name)).toEqual(["read_file", "invoke_api"]);
+    const schemas = buildNativeToolSchemas(["read_file", "list_directory"]);
+    expect(schemas.map((s) => s.function.name)).toEqual(["read_file", "list_directory"]);
   });
 
-  it("resolveAllowedNativeTools 空配置返回 all", () => {
-    expect(resolveAllowedNativeTools([])).toBe("all");
+  it("resolveAllowedNativeTools 空配置返回默认只读集（P0-01 对齐，不再 all）", () => {
+    const result = resolveAllowedNativeTools([]);
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).not.toBe("all");
   });
 
   it("未知工具抛出明确错误", async () => {
@@ -813,19 +815,6 @@ describe("native:git_clone", () => {
   });
 });
 
-describe("native:invoke_api", () => {
-  it("转发到 invokeTrpc", async () => {
-    const root = createTempProjectDir();
-    const invokeTrpc = vi.fn(async (tool: string, args?: unknown) => ({ tool, args }));
-    const ctx = createNativeCtx(root, { invokeTrpc });
-    const result = await executeNativeTool("invoke_api", { tool: "post.list", args: { page: 1 } }, ctx);
-    expect(invokeTrpc).toHaveBeenCalledWith("post.list", { page: 1 });
-    expect(result).toEqual(expect.objectContaining({ tool: "post.list", args: { page: 1 } }));
-    expect(result).toHaveProperty("elapsedMs");
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-});
-
 describe("native:web_search", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1527,22 +1516,28 @@ function createMockPrismaForAgentSendMessage(opts: {
   messages?: Array<{ fromAgentId: string; toAgentId: string; createdAt: Date }>;
 }) {
   const messages = opts.messages ?? [];
+  const agentMessage = {
+    findFirst: vi.fn().mockImplementation(({ where }: { where: { fromAgentId: string; toAgentId: string } }) => {
+      const match = messages
+        .filter((m) => m.fromAgentId === where.fromAgentId && m.toAgentId === where.toAgentId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      return Promise.resolve(match ?? null);
+    }),
+    count: vi.fn().mockResolvedValue(0),
+    create: vi.fn().mockResolvedValue({ id: "msg-1" }),
+  };
   return {
     agent: {
       findUnique: vi.fn().mockImplementation(({ where }: { where: { id: string } }) => {
         return Promise.resolve((opts.agent as { id: string }).id === where.id ? opts.agent : null);
       }),
     },
-    agentMessage: {
-      findFirst: vi.fn().mockImplementation(({ where }: { where: { fromAgentId: string; toAgentId: string } }) => {
-        const match = messages
-          .filter((m) => m.fromAgentId === where.fromAgentId && m.toAgentId === where.toAgentId)
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
-        return Promise.resolve(match ?? null);
-      }),
-      count: vi.fn().mockResolvedValue(0),
-      create: vi.fn().mockResolvedValue({ id: "msg-1" }),
-    },
+    agentMessage,
+    // P0-02：SwarmBus.send 改用 $transaction 包裹 count + create，mock 需提供 $transaction
+    // 将事务回调的 tx 参数指向同一组 mock（count + create 共用 agentMessage mock）
+    $transaction: vi.fn().mockImplementation(async (cb: (tx: any) => Promise<unknown>) => {
+      return cb({ agentMessage });
+    }),
     log: {
       create: vi.fn().mockResolvedValue({}),
     },
