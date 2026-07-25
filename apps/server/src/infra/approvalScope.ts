@@ -226,12 +226,12 @@ function bareToolName(toolName: string): string {
   return String(toolName ?? "").replace(/^(native|skill|mcp):/, "").trim();
 }
 
-/** 只读工具：registry 上 reentrant=true（与可重入只读集对齐） */
+/** 只读工具：registry 上 destructive!=true（非破坏性 = 只读/幂等） */
 export function isReadonlyTool(toolName: string): boolean {
   const bare = bareToolName(toolName);
   if (!bare) return false;
   const tool = getTool(bare) ?? getTool(toolName);
-  if (tool?.reentrant === true) return true;
+  if (tool && !tool.destructive) return true;
   // registry 未注册时的保守已知只读名（测试夹具 / tRPC 点号名）
   return (
     bare.startsWith("read_") ||
@@ -251,10 +251,10 @@ export function filterReadonlyTools(tools: string[]): string[] {
   return tools.filter((t) => isReadonlyTool(t));
 }
 
-/** 列出 registry 中全部 reentrant 只读 native 工具名 */
+/** 列出 registry 中全部非破坏性只读 native 工具名 */
 export function listReadonlyNativeToolNames(): string[] {
   return listTools("native")
-    .filter((t) => t.reentrant === true)
+    .filter((t) => !t.destructive)
     .map((t) => t.name);
 }
 

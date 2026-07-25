@@ -314,12 +314,6 @@ model Task {
   input          Json?
   output         Json?
   cronExpression String?
-  /// 自动重跑计数（crash-loop 闸）：可重入任务崩溃恢复自动重跑 +1；手动 retry 清零重来
-  retryCount     Int       @default(0)
-  /// 自动重跑上限：入队时物化 = config.asyncJobs.maxRetries；列默认 2 仅存量行兜底
-  maxRetries     Int       @default(2)
-  /// 可重入标记：入队时按工具声明（ToolCommand.reentrant）推断物化；存量行 false = 保守不重跑
-  reentrant      Boolean   @default(false)
   sourceSlug     String?   @unique /// 本地源文件 slug（content/tasks/）
   sourceMtime    DateTime?        /// 本地源文件最后修改时间（用于增量同步）
   createdAt      DateTime  @default(now())
@@ -547,4 +541,32 @@ model AgentMessage {
   toAgent     Agent    @relation("AgentMsgTo", fields: [toAgentId], references: [id], onDelete: Cascade)
   @@index([toAgentId, status])
   @@index([fromAgentId])
+}
+
+/// 已处理的 webhook 事件幂等表（防 AgentMail 重投 / webhook 与兜底轮询跨通道重复处理）
+/// id = AgentMail event_id（webhook 通道）或 `poll:${message_id}`（兜底轮询通道）
+model ProcessedWebhookEvent {
+  id          String   @id /// event_id 或 poll:message_id（与下游 resolveAskUser/resolveApprovalFromMail 的 eventId 一致）
+  source      String   /// "webhook" | "poll"
+  kind        String   /// "approval" | "ask_user" | "unmatched"
+  processedAt DateTime @default(now())
+}
+
+/// 邮件回复死信表（处理失败 / 未匹配 pending 的邮件回复落表，方便事后追查）
+model DeadLetterMail {
+  id         String    @id @default(cuid())
+  messageId  String?   /// AgentMail message_id
+  threadId   String?
+  inReplyTo  String?
+  subject    String?
+  fromAddr   String?
+  text       String    /// 邮件回复原文
+  error      String    /// 处理失败原因
+  source     String    /// "webhook" | "poller"
+  status     String    @default("pending") /// "pending" | "reviewed"
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+
+  @@index([status, createdAt])
+  @@index([messageId])
 }

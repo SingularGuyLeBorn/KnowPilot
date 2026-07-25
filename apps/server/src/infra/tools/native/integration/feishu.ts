@@ -473,7 +473,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_append_doc_text",
-    reentrant: true,
     concurrencyClass: "D",
     description:
       "【写正文首选】把 Markdown 追加到飞书文档末尾：服务端解析为原生块（标题/加粗/列表/分割线/代码/公式/表格）。" +
@@ -528,7 +527,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_list_permission_members",
-    reentrant: true,
     concurrencyClass: "B",
     description: "列出飞书云文档协作者（drive permissions members）。token 为 document_id / 文件 token；type 默认 docx。",
     parameters: zodParams(
@@ -586,7 +584,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_get_permission_public",
-    reentrant: true,
     concurrencyClass: "B",
     description:
       "读取飞书云文档「权限设置」（可见性）：外部分享、链接分享、谁可管理协作者/复制/打印下载/评论等。对应 UI 权限设置面板。",
@@ -632,7 +629,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_lookup_user",
-    reentrant: true,
     concurrencyClass: "B",
     description:
       "用手机号/邮箱查飞书用户 open_id（contact batch_get_id，应用身份）。加协作者前可先查。" +
@@ -722,7 +718,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_token_status",
-    reentrant: true, // 只读 credential 状态（getUserAccessTokenStatus 不触发刷新写库）
     concurrencyClass: "B",
     description: "查询飞书 user_access_token 状态（Credential 表或文件缓存）。",
     parameters: zodParams(z.object({})),
@@ -751,7 +746,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_list_doc_whiteboards",
-    reentrant: true,
     concurrencyClass: "B",
     description:
       "列出飞书文档内的画板（board-v1）。文档块 block_type=43，返回 whiteboardId（= block.board.token）。编辑画板前先调此工具拿 id。需 board:whiteboard:node:read + 文档读权限。",
@@ -763,7 +757,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_list_whiteboard_nodes",
-    reentrant: true,
     concurrencyClass: "B",
     description: "获取画板全部节点树（GET board/v1/.../nodes）。需 board:whiteboard:node:read。",
     parameters: zodParams(
@@ -822,7 +815,6 @@ export const feishuDefs: NativeToolDefinition[] = [
   },
   {
     name: "feishu_get_whiteboard_theme",
-    reentrant: true,
     concurrencyClass: "B",
     description: "获取画板主题。",
     parameters: zodParams(z.object({ whiteboardId: z.string() })),

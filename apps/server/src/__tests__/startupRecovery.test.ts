@@ -3,9 +3,8 @@
  *
  * 统一入口 runStartupRecovery（asyncJobManager.ts，启动序列一次性首扫；周期对账由
  * startAsyncDeliveryReconciler 负责，动作 2 与 R-1 孤儿共用 reconcileAsyncDeliveries 同一幂等入口）：
- * 1. 僵尸 running/queued async Task 两态分叉（C-2）：reentrant=true 且 retryCount<maxRetries
- *    → retryCount+1 落库并自动续跑入池；否则 → failed「服务重启，任务中断」/「需人工介入」
- *    （副作用未知任务不盲目重跑；retryAsyncJob 手动重试）；
+ * 1. 僵尸 running/queued async Task 统一标 failed「服务重启，任务中断」
+ *    （服务重启一律不自动续跑；reentrant/maxRetries/retryCount 三列已删；retryAsyncJob 手动重试）；
  * 2. 僵尸 running ChatSession → paused（条件写；重启后 hub 无活跃流，running 皆尸体）；
  * 3. superior 孤儿 SessionQueueItem → 重新注册 drain（v7 W-E 机制，consume 删除即认领）；
  * 4. delivered=false 终态未投递 → 重新 notify（reconcileAsyncDeliveries Pass 2）。

@@ -153,7 +153,6 @@ describe("safe bypass：同 gate 只放行一次 readonly turn", () => {
     registerTool({
       name: "memory_search",
       kind: "native",
-      reentrant: true,
       schema: () => ({ description: "r", parameters: {} }),
       execute: async () => ({}),
     });
@@ -161,7 +160,6 @@ describe("safe bypass：同 gate 只放行一次 readonly turn", () => {
       name: "write_file",
       kind: "native",
       destructive: true,
-      reentrant: false,
       schema: () => ({ description: "w", parameters: {} }),
       execute: async () => ({}),
     });
@@ -171,7 +169,7 @@ describe("safe bypass：同 gate 只放行一次 readonly turn", () => {
     __resetToolRegistryForTests();
   });
 
-  it("filterReadonlyTools 只留 reentrant；写工具被滤掉", () => {
+  it("filterReadonlyTools 只留只读（非 destructive）；写工具被滤掉", () => {
     const filtered = filterReadonlyTools(["memory_search", "write_file", "read_file"]);
     expect(filtered).toContain("memory_search");
     expect(filtered).not.toContain("write_file");

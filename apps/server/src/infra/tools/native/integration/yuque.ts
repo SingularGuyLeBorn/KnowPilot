@@ -173,7 +173,6 @@ async function yuqueDeleteDocV2Tool(args: Record<string, unknown>, ctx: NativeTo
 export const yuqueDefs: NativeToolDefinition[] = [
   {
     name: "yuque_get_doc",
-    reentrant: true,
     description:
       "读取语雀文档。优先 Web：传 bookId+slug（需 YUQUE_SESSION）；或 Open API：传 namespace+slug（需 YUQUE_TOKEN 个人令牌）。",
     parameters: zodParams(
@@ -186,13 +185,11 @@ export const yuqueDefs: NativeToolDefinition[] = [
   },
   {
     name: "yuque_list_books",
-    reentrant: true,
     description: "列出语雀知识库（Web Cookie：YUQUE_SESSION + YUQUE_CTOKEN）。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "yuque_get_book_toc",
-    reentrant: true,
     description: "获取语雀知识库目录（Web Cookie）。",
     parameters: zodParams(z.object({ bookId: z.string() })),
   },
@@ -265,13 +262,11 @@ export const yuqueDefs: NativeToolDefinition[] = [
   },
   {
     name: "yuque_session_status",
-    reentrant: true,
     description: "探测语雀 Cookie 会话是否仍有效（list_books 轻量探测）。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "yuque_list_repos",
-    reentrant: true,
     description: "列出语雀知识库（Open API v2，需 YUQUE_TOKEN 个人令牌，不是网页 _ctoken）。",
     parameters: zodParams(z.object({})),
   },
@@ -310,7 +305,6 @@ export const yuqueDefs: NativeToolDefinition[] = [
   },
   {
     name: "yuque_list_docs",
-    reentrant: true,
     description: "列出语雀知识库文档（Open API v2，需 YUQUE_TOKEN）。",
     parameters: zodParams(z.object({ namespace: z.string() })),
   },

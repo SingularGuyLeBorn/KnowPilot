@@ -226,7 +226,6 @@ describe("async-task-queue 工具协议", () => {
         maxPerSession: 2,
         taskTimeoutMs: 60_000,
         queuedTimeoutMs: 0,
-        maxRetries: 0,
         maxSubagentsPerSession: 10,
       },
     });
@@ -530,8 +529,7 @@ describe("W-A 同步任务通道", () => {
       expect(newInput.deliverToQueue).toBe(false);
       expect(newInput.sourceType).toBe("async_task_tool");
       expect(newInput.toolCall).toEqual(WAIT_TOOL_CALL);
-      // 手动 retry 后自动重跑计数清零重来（C-1：计数唯一事实源 = Task.retryCount 列，不再写 input）
-      expect(newRow!.retryCount).toBe(0);
+      // reentrancy 基座已撤销：input 不再写 retryCount
       expect(newInput.retryCount).toBeUndefined();
 
       // 行为断言：重试结果不进异步队列（sync 语义保持），出现在「同步任务」列表

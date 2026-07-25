@@ -347,7 +347,6 @@ async function skillManageTool(args: Record<string, unknown>, ctx: NativeToolCon
 const SKILLS_DEFS: NativeToolDefinition[] = [
   {
     name: "skills_list",
-    reentrant: true,
     description:
       "列出可用 Skill 元数据（渐进披露第 1 层）。只返回 name/短 description/kind，不含全文。需要正文时用 skill_view。",
     parameters: zodParams(
@@ -359,7 +358,6 @@ const SKILLS_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "skill_view",
-    reentrant: true,
     description:
       "加载 Skill 全文（渐进披露第 2 层）或包内附属文件（file_path=references/...）。procedural 技能应经此工具读取，而非 skill__*。",
     parameters: zodParams(

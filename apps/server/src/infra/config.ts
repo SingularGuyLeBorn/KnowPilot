@@ -114,7 +114,6 @@ export interface AppConfig {
     maxQueued: number;
     taskTimeoutMs: number;
     queuedTimeoutMs: number;
-    maxRetries: number;
     /** 每个父会话允许的 subagent 任务数量上限（防止失控） */
     maxSubagentsPerSession: number;
   };
@@ -125,6 +124,8 @@ export interface AppConfig {
     ppocrHome: string;
     ocrSpaceApiKey: string;
     ocrSpaceDefaultLang: string;
+    /** Tesseract.js 默认语言组合（纯 JS 兜底引擎，零 Python 依赖） */
+    tesseractLang: string;
   };
   search: {
     tavilyApiKey: string;
@@ -553,10 +554,6 @@ export function createAppConfig(): AppConfig {
           10,
         ),
       ),
-      maxRetries: Math.max(
-        0,
-        parseInt(readEnv("AGENT_ASYNC_MAX_RETRIES") || String(asyncJobsConfig.maxRetries ?? "3"), 10),
-      ),
       maxSubagentsPerSession: Math.max(
         1,
         parseInt(
@@ -574,6 +571,7 @@ export function createAppConfig(): AppConfig {
       ppocrHome: readEnv("PPOCR_HOME") || path.join(projectRoot, "weights", "ocr", "paddleocr"),
       ocrSpaceApiKey: readEnv("OCR_SPACE_API_KEY"),
       ocrSpaceDefaultLang: readEnv("OCR_SPACE_DEFAULT_LANG") || "chs",
+      tesseractLang: readEnv("TESSERACT_LANG") || "chi_sim+eng",
     },
     search: (() => {
       const tavilyApiKey = readEnv("SEARCH_TAVILY_API_KEY", "TAVILY_API_KEY");

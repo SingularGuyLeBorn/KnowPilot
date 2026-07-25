@@ -721,7 +721,6 @@ const WEB_DEFS: NativeToolDefinition[] = [
     name: "web_search",
     concurrencyClass: "B",
     // 纯搜索只读（syncSearchEnvFromConfig 只写进程内 env 且幂等）
-    reentrant: true,
     description:
       "搜索互联网（MetaBlog smartSearch 多引擎；/sources 信息源启用后 Tavily/SerpAPI 优先 scoped 到信息源域名）。",
     parameters: {
@@ -770,7 +769,6 @@ const WEB_DEFS: NativeToolDefinition[] = [
     name: "read_article",
     concurrencyClass: "A",
     // 只读抓取网页正文，无本地写副作用
-    reentrant: true,
     description:
       "读取网页文章为 Markdown（MetaBlog readArticle）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书等；InfoQ 走官方 API；SPA 站 HTTP→Playwright→DOM→Jina 降级；404/壳页明确报错；正文偏短返回 contentWarning。",
     parameters: {
@@ -791,7 +789,6 @@ const WEB_DEFS: NativeToolDefinition[] = [
     name: "scrape_web_page",
     concurrencyClass: "B",
     // 只读 Playwright 采集，无本地写副作用
-    reentrant: true,
     description: "Playwright 采集网页正文、链接与元数据（MetaBlog scrapeWebPage）。",
     parameters: {
       type: "object",
@@ -808,7 +805,6 @@ const WEB_DEFS: NativeToolDefinition[] = [
     name: "browser_screenshot",
     concurrencyClass: "B",
     // 截图落盘到 uploads/screenshots，文件名含时间戳，重跑不覆盖旧图
-    reentrant: true,
     description:
       "用 Playwright 打开页面并截图（PNG），保存到 content/uploads/screenshots/。返回 path/publicUrl（不含图片字节）。视觉确认页面 / 登录墙 / 图表时用；随后用 read_image 读图。纯文字页优先 read_article。",
     parameters: {
@@ -828,7 +824,6 @@ const WEB_DEFS: NativeToolDefinition[] = [
     name: "read_image",
     concurrencyClass: "B",
     // OCR/vision 只读，无本地写副作用
-    reentrant: true,
     description:
       "读取图片中的文字或视觉内容。path 用 browser_screenshot 返回的相对路径；也可传 http(s) 图片 URL。mode=ocr|vision|auto（默认 auto：当前模型支持 vision 则识图，否则 OCR）。结果只回文本。",
     parameters: {

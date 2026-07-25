@@ -299,7 +299,7 @@ describe("asyncJobManager 持久化", () => {
     const ctx = await createContextInner();
     const narrowConfig = createTestConfig(ctx.config.projectRoot, {
       ...ctx.config,
-      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxRetries: 3, maxSubagentsPerSession: 10 },
+      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxSubagentsPerSession: 10 },
     });
 
     const first = await startAsyncAgentTask({
@@ -344,7 +344,7 @@ describe("asyncJobManager 持久化", () => {
     const ctx = await createContextInner();
     const narrowConfig = createTestConfig(ctx.config.projectRoot, {
       ...ctx.config,
-      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxRetries: 3, maxSubagentsPerSession: 10 },
+      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxSubagentsPerSession: 10 },
     });
 
     const first = await startAsyncAgentTask({ sessionId, task: "排队测 A", label: "A", config: narrowConfig, services: ctx.services, agent: { id: "t", model: "m", systemPrompt: "test", tools: [] } });

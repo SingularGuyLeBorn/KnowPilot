@@ -772,7 +772,6 @@ export class HeartbeatEngine {
         type: "oneshot",
         status: "queued",
         queuedAt: new Date(),
-        reentrant: false,
         sessionId: session.id,
         input: {
           kind: "heartbeat",

@@ -25,11 +25,6 @@ export interface NativeToolDefinition {
    */
   approvalExempt?: boolean;
   /**
-   * 可重入标记：无写副作用、at-least-once 重跑安全（与 ToolCommand.reentrant 同义，经 registerNativeDomain 透传）。
-   * 默认 false = 保守；拿不准一律不标（false）。
-   */
-  reentrant?: boolean;
-  /**
    * P1-03：默认对 LLM 隐藏（native:"all" 时不进 schema）除非 Agent 显式声明。
    * 显式设 false 可让 destructive && !approvalExempt 的工具仍默认可见（慎用）。
    * 未显式声明时，registerNativeDomain 对 destructive && !approvalExempt 自动设 true。
@@ -67,7 +62,7 @@ export interface NativeToolContext {
    */
   rollbackStack?: RunRollbackStack;
   /**
-   * W3 safe bypass：为 true 时仅允许只读（reentrant）工具；写工具在权限层拒绝。
+   * W3 safe bypass：为 true 时仅允许只读（非 destructive）工具；写工具在权限层拒绝。
    */
   readonlyOnly?: boolean;
 }

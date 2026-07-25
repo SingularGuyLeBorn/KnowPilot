@@ -1527,7 +1527,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "agent_inspect",
-    reentrant: true, // 只读：agent/session/memory/swarm 查询
     description:
       "查看 Agent 状态（超级=全局；管理 Agent=本 Workspace；对超级仅返回公开元信息）。" +
       "只返回 Agent 元信息、最近会话列表（id/title/status/messageCount）与可选 memory/swarm 快照；" +
@@ -1546,7 +1545,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "swarm_brief",
-    reentrant: true,
     description:
       "生成 Swarm 作战简报（markdown）：作用域内各 Agent 的 inbox/ask_user/paused/心跳/superior 队列与通知通道熔断。" +
       "超级默认全局，可传 workspaceId；管理 Agent 仅本 Workspace。派活前建议先调用，优先处理积压。",
@@ -1632,7 +1630,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "free_api_keys_list",
-    reentrant: true, // 只读：Credential findMany（不触碰 lastUsedAt）
     description: "列出可用的免费 API Key 元数据（不返回明文；Credential 中 source=free）。仅管理 Agent（manager）及以上可调用。",
     parameters: zodParams(z.object({})),
   },
@@ -1647,7 +1644,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "free_models_list",
-    reentrant: true, // 只读：进程内/落盘目录 + freellm 通道元数据，永不返回明文 key
     description:
       "列出可用免费模型：OpenRouter :free 目录（id/上下文/模态/说明）+ 可选 freellm 网关通道元数据（无明文 key）。仅管理 Agent（manager）及以上可调用。可用 q/modality/sort/limit 缩小结果，避免撑爆上下文。",
     parameters: zodParams(
@@ -1671,7 +1667,6 @@ const SWARM_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "skill_discover",
-    reentrant: true, // 只读：Skill metaJson.stats 扫描
     description:
       "发现值得推广的 Skill（超级 Agent，Hermes）。仅返回已启用且有真实调用统计（executeSkill 回写）的候选，按 usageCount/successRate 排序。",
     parameters: zodParams(

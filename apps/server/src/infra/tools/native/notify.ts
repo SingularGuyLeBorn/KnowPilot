@@ -179,7 +179,6 @@ const defs: NativeToolDefinition[] = [
       "只能 notify 自己的父会话；不要用本工具代替 report_back 交最终结果。",
     parameters: notifyParentParameters,
     concurrencyClass: "B",
-    reentrant: true,
   },
 ];
 

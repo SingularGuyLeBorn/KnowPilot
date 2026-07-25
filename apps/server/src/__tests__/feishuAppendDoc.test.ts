@@ -129,12 +129,11 @@ describe("feishu append native 工具注册", () => {
     listNativeTools();
   });
 
-  it("feishu_append_doc_text / feishu_append_doc_blocks 已注册且 reentrant 标记正确", () => {
+  it("feishu_append_doc_text / feishu_append_doc_blocks 已注册", () => {
     const textTool = getTool("feishu_append_doc_text");
     const blocksTool = getTool("feishu_append_doc_blocks");
     expect(textTool).toBeTruthy();
     expect(blocksTool).toBeTruthy();
-    expect(textTool?.reentrant).toBe(true);
     expect(textTool?.schema().description).toMatch(/Markdown|原生块/);
     expect(blocksTool?.schema().description).toMatch(/children|画板|block_type/);
   });

@@ -116,7 +116,6 @@ async function gitCloneTool(args: Record<string, unknown>, ctx: NativeToolContex
 export const gitDefs: NativeToolDefinition[] = [
   {
     name: "git_branch",
-    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 仓库分支列表。",
     parameters: zodParams(
       z.object({
@@ -150,7 +149,6 @@ export const gitDefs: NativeToolDefinition[] = [
   },
   {
     name: "git_status",
-    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 仓库工作区状态。",
     parameters: zodParams(
       z.object({
@@ -161,7 +159,6 @@ export const gitDefs: NativeToolDefinition[] = [
   },
   {
     name: "git_log",
-    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 提交历史。",
     parameters: zodParams(
       z.object({
@@ -173,7 +170,6 @@ export const gitDefs: NativeToolDefinition[] = [
   },
   {
     name: "git_diff",
-    reentrant: true, // 本地只读 git 命令
     description: "查看 Git 工作区 diff。",
     parameters: zodParams(
       z.object({

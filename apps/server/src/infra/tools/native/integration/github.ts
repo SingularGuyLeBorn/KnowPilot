@@ -346,13 +346,11 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "browser_login_status",
-    reentrant: true, // 只读 cookieJar 状态
     description: "列出已保存的浏览器登录态平台及 cookie 条数（含知乎 cookieJar）。",
     parameters: zodParams(z.object({})),
   },
   {
     name: "github_search_repos",
-    reentrant: true, // 远端 GET 只读
     description: "在 GitHub 搜索公开仓库。",
     parameters: zodParams(
       z.object({
@@ -363,7 +361,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_get_repo",
-    reentrant: true, // 远端 GET 只读
     description: "获取 GitHub 仓库详情。",
     parameters: zodParams(
       z.object({
@@ -408,7 +405,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_get_file",
-    reentrant: true, // 远端 GET 只读
     description: "读取 GitHub 仓库文件内容（Base64 自动解码）。",
     parameters: zodParams(
       z.object({
@@ -461,7 +457,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_list_issues",
-    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub 仓库 Issues。",
     parameters: zodParams(
@@ -475,7 +470,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_get_issue",
-    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "获取单个 GitHub Issue 详情。",
     parameters: zodParams(
@@ -513,7 +507,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_list_pull_requests",
-    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub 仓库 Pull Requests。",
     parameters: zodParams(
@@ -527,7 +520,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_get_pull_request",
-    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "获取单个 GitHub Pull Request 详情。",
     parameters: zodParams(
@@ -595,7 +587,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_list_branches",
-    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub 仓库分支。",
     parameters: zodParams(
@@ -608,7 +599,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_get_branch",
-    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "获取 GitHub 分支详情。",
     parameters: zodParams(
@@ -644,7 +634,6 @@ export const githubDefs: NativeToolDefinition[] = [
   },
   {
     name: "github_list_workflows",
-    reentrant: true, // 远端 GET 只读
     concurrencyClass: "B",
     description: "列出 GitHub Actions 工作流。",
     parameters: zodParams(

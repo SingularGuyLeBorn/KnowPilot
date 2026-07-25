@@ -47,11 +47,6 @@ export interface ToolCommand<Ctx = unknown> {
    */
   approvalExempt?: boolean;
   /**
-   * 可重入标记：无写副作用、at-least-once 重跑安全（崩溃恢复可自动重跑，最坏只是再读一次）。
-   * 与 destructive 同处单点声明（域注册处），禁止再造列表；默认 false = 保守不重跑。
-   */
-  reentrant?: boolean;
-  /**
    * P1-03：默认对 LLM 隐藏（不进 schema）除非 Agent 显式声明该工具。
    * 用于危险工具（run_shell / git_push / file_delete / github_delete_repo 等）的渐进披露——
    * native:"all" 时跳过 defaultHidden=true 的工具，Agent 想用必须显式 `native:<name>`。

@@ -41,7 +41,6 @@ export function registerNativeDomain(
       concurrencyClass: def.concurrencyClass,
       destructive: def.destructive,
       approvalExempt: def.destructive ? def.approvalExempt : undefined,
-      reentrant: def.reentrant,
       defaultHidden,
       schema: () => ({ description: def.description, parameters: def.parameters }),
       execute: (args, ctx) => handler(args, ctx),

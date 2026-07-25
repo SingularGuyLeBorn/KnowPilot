@@ -5,7 +5,7 @@
  * - v7 通道收敛：deliverToQueue 决定结果唯一通道（true→异步队列+原子 CLAIM；false→tool return）。
  * - v8 全局任务池：Q2 占用口径 = 池内 running + hub 交互 running；Q4 血缘让渡 inline 不占新槽。
  * - v9 投递可靠性：R-1 原子 CLAIM + 同链即时回滚 + reconciler 对账 + runStartupRecovery 四动作。
- * - v10 可重入续跑：reentrant 按工具注册表取最严、retryCount 先落库、maxRetries 防 crash-loop。
+ * - v10 可重入续跑已撤销：服务重启一律不自动续跑，僵尸 Task 统一标 failed；reentrant/maxRetries/retryCount 三列已删。
  *
  * 数据持久化到 Task 表；执行调度收口到 asyncJobOrchestrator。
  */
@@ -129,32 +129,6 @@ function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
   const o = value as AsyncTaskInput;
   if (o.kind !== ASYNC_KIND || typeof o.sessionId !== "string") return null;
   return o;
-}
-
-/**
- * v10 可重入推断：物化到 Task.reentrant 列；唯一声明源 = 工具注册表 reentrant 字段，禁止再造列表。
- *
- * - mode "tool"：按 toolCall.tool 查注册表；查不到 = false（保守）。
- * - mode "llm"：agentSnapshot.tools 全体取最严——任一工具未声明 reentrant 或查不到
- *   （skill:* / mcp:* / 未知名，副作用未知一律保守）则整体 false；
- *   空数组 = true（纯 LLM 无工具，at-least-once 重跑最坏只是重新生成一遍回复）。
- * - 工具名归一化：注册表存裸名（web_search），Agent tools 可能带 native: 前缀，先剥前缀再查。
- */
-export function inferTaskReentrant(input: {
-  mode: "llm" | "tool";
-  toolCall?: { tool: string; args: Record<string, unknown> };
-  agentTools?: string[];
-}): boolean {
-  const lookup = (name: string): boolean => {
-    const bare = name.startsWith("native:") ? name.slice("native:".length) : name;
-    return getTool(bare)?.reentrant === true;
-  };
-  if (input.mode === "tool") {
-    return input.toolCall ? lookup(input.toolCall.tool) : false;
-  }
-  const tools = input.agentTools ?? [];
-  if (tools.length === 0) return true;
-  return tools.every((t) => lookup(t));
 }
 
 function parseAsyncOutput(raw: unknown): AsyncTaskOutput {
@@ -790,9 +764,9 @@ export function stopAsyncDeliveryReconciler(): void {
 /* R-2 重启恢复（启动首扫，四动作，全部条件写幂等，DB 为 ground truth） */
 
 export interface StartupRecoveryResult {
-  /** 动作 1：僵尸 running/queued async Task 标 failed 数（不可重入 + 已达自动重跑上限） */
+  /** 动作 1：僵尸 running/queued async Task 标 failed 数（服务重启一律不自动续跑） */
   staleTasksFailed: number;
-  /** 动作 1：僵尸中 reentrant=true 且未达上限、已重建执行体自动续跑入池数（C-2） */
+  /** 动作 1：保留字段，恒为 0（服务重启不自动续跑） */
   staleTasksResumed: number;
   /** 动作 2：僵尸 running ChatSession 标 paused 数 */
   zombieSessionsPaused: number;
@@ -809,11 +783,11 @@ export interface StartupRecoveryResult {
  * 不是第三条并行恢复路径——动作 1 收拢既有 recoverStaleAsyncJobs，动作 2 与 R-1 孤儿共用
  * reconcileAsyncDeliveries 同一幂等入口（CLAIM 原子互斥 + notify/autoConsume 管道）。
  *
- * 四动作（顺序敏感；B4：僵尸会话 paused 先于 Task 续跑，避免刚被 resume 置 running 的子会话被误伤）：
+ * 四动作（顺序敏感；B4：僵尸会话 paused 先于 Task 处理，避免刚被 resume 置 running 的子会话被误伤）：
  * 1. 僵尸 running ChatSession → paused（条件写 updateMany）：重启后 hub 无任何活跃流，
  *    仍 running 的会话都是尸体。
- * 2. 僵尸 running/queued async Task 两态分叉（C-2）：reentrant=true 且 retryCount<maxRetries
- *    → retryCount+1 先落库并认领为 resuming，重建执行体入池；否则 → failed。
+ * 2. 僵尸 running/queued async Task 统一标 failed（用户明确要求服务重启不自动续跑）：
+ *    文案「服务重启，任务中断」。reentrant/maxRetries/retryCount 三列已删，留待人工 retryAsyncJob 手动恢复。
  * 3. superior 孤儿 SessionQueueItem → 重新注册 drain（含 B2 超龄软认领重置）。
  * 4. 合并对账首轮（reconcileAsyncDeliveries）。
  */
@@ -842,7 +816,7 @@ export async function runStartupRecovery(options: {
       agentId: row.agentId,
     });
   }
-  // 动作 2：Task 恢复（reentrant 续跑入池 / 否则 failed）
+  // 动作 2：Task 恢复（服务重启一律标 failed，不自动续跑）
   const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
   // B2：超龄软认领重置（须在 superior drain 重注册之前）
   const staleQueueClaimsReleased = await services.sessionQueueItem.releaseStaleClaims();
@@ -943,29 +917,18 @@ export async function recoverStaleRuns(): Promise<number> {
 }
 
 /**
- * v10 可重入续跑 + C1 执行型僵尸收拢：服务启动扫描 status∈(running,queued) 的执行型 Task。
+ * 服务启动扫描 status∈(running,queued) 的执行型 Task，统一标 failed（用户明确要求服务重启不自动续跑）。
  *
  * 识别面（不再只认 [async]/async_agent）：
- * - 异步：name `[async]*` / type=async_agent（既有 reentrant 续跑语义不变）
- * - 心跳：name `[heartbeat]*`（默认不可重入 → failed）
+ * - 异步：name `[async]*` / type=async_agent
+ * - 心跳：name `[heartbeat]*`
  * - cron / oneshot：type 命中（含 TriggerEngine 叠跑遗留的 running 行）
  *
- * 同函数内两态分叉——仅「可解析的 async input + reentrant」走续跑，其余标 failed：
- *
- * - 自动续跑（reentrant=true 且 retryCount < maxRetries）：retryCount+1 **先落库**
- *   （crash-loop 防护即账本——崩在入池前也计数），状态重置 queued（queuedAt 刷新、
- *   startedAt/finishedAt 置空），从 input 重建执行体入 v8 全局池。
- *   恢复风暴不设新限流层：调度/背压全交池（maxGlobal/queuedTimeoutMs）。
- *   入池被拒（maxQueued 满）：retryCount 已 +1，Task 维持 queued 不标 failed——
- *   下次启动恢复只要 retryCount<maxRetries 会再尝试入池（如实状态，不假装已调度）。
- * - 标 failed（R-2 语义）：reentrant=false「服务重启，任务中断」；
- *   reentrant=true 但 retryCount>=maxRetries「已达自动重试上限（N 次），需人工介入」。
- *   子会话同步标 failed 的既有行为保持。
+ * 处理：一律标 failed，文案「服务重启，任务中断」。reentrant/maxRetries/retryCount 三列已删，
+ * 留待人工 retryAsyncJob 手动恢复。子会话同步标 failed 的既有行为保持。
  *
  * 幂等：启动一次+测试可能重复调用——逐条条件写认领（updateMany where id + status in
  * (running,queued) 当前快照），落选（count=0）跳过，重入/并发安全。
- * B4：续跑认领写中间态 `resuming`（认领条件排除之），同进程二次调用不会再 +retryCount / 双入池；
- * 入池成功后由执行体转 running；入池被拒回落 queued 待下次恢复。
  */
 export async function recoverStaleAsyncJobs(
   config: AppConfig,
@@ -988,61 +951,9 @@ export async function recoverStaleAsyncJobs(
   for (const task of stale) {
     const input = parseAsyncInput(task.input);
 
-    // 仅可解析的 async 输入才具备续跑重建能力；心跳/cron/trigger 僵尸默认不可重入 → failed
-    if (input && task.reentrant && task.retryCount < task.maxRetries) {
-      // B4：认领 → resuming（排除二次认领），再入池
-      const claimed = await prisma.task.updateMany({
-        where: { id: task.id, status: { in: ["running", "queued"] } },
-        data: {
-          retryCount: { increment: 1 },
-          status: "resuming",
-          queuedAt: new Date(),
-          startedAt: null,
-          finishedAt: null,
-        },
-      });
-      if (claimed.count === 0) continue; // 并发落选：已被其他恢复调用处理
-      try {
-        getAsyncJobOrchestrator(config).enqueue({
-          jobId: task.id,
-          sessionId: input.sessionId,
-          timeoutMs: input.timeoutMs,
-          execute: buildAsyncExecute(
-            config,
-            services,
-            task.id,
-            input.task,
-            input.agentSnapshot,
-            "auto",
-            input.subagentSessionId,
-            input.toolCall ? "tool" : "llm",
-            input.toolCall,
-            input.shareToSessionIds,
-            input.sessionId,
-          ),
-        });
-        resumed++;
-      } catch (err) {
-        // 入池被拒：回落 queued（非 resuming），不回滚计数——下次恢复可再认领
-        await prisma.task
-          .updateMany({
-            where: { id: task.id, status: "resuming" },
-            data: { status: "queued" },
-          })
-          .catch(() => {});
-        console.warn(
-          `[recoverStaleAsyncJobs] 僵尸任务 ${task.id} 续跑入池被拒，回落 queued 待下次恢复:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-      continue;
-    }
-
-    // R-2 / C1：标 failed（error 文案两态区分），条件写认领保证幂等
-    const errorText =
-      input && task.reentrant
-        ? `已达自动重试上限（${task.maxRetries} 次），需人工介入`
-        : "服务重启，任务中断";
+    // 服务重启后一律不自动续跑（用户明确要求）：所有僵尸 running/queued Task 统一标 failed，
+    // 留待人工 retryAsyncJob 手动恢复。reentrant/maxRetries/retryCount 三列已删。
+    const errorText = "服务重启，任务中断";
     const claimedFailed = await prisma.task.updateMany({
       where: { id: task.id, status: { in: ["running", "queued"] } },
       data: {
@@ -1377,8 +1288,8 @@ function buildAsyncExecute(
   jobId: string,
   task: string,
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
-  // 重跑来源（仅系统提示文案；自动重跑计数唯一事实源 = Task.retryCount 列）：
-  // null=首发；"manual"=手动 retryAsyncJob；"auto"=重启恢复自动续跑
+  // 重跑来源（仅系统提示文案）：
+  // null=首发；"manual"=手动 retryAsyncJob；"auto"=保留字段（自动续跑已撤销，不再产生）
   retryKind: "manual" | "auto" | null,
   subagentSessionId?: string,
   mode: "llm" | "tool" = "llm",
@@ -1877,11 +1788,6 @@ export async function startAsyncAgentTask(options: {
       shareToSessionIds: options.shareToSessionIds?.length ? options.shareToSessionIds : undefined,
       deliverToQueue: options.deliverToQueue !== false,
     } satisfies AsyncTaskInput,
-    // 可重入三列入队物化（单一事实源 = Task 列）：retryCount 从零起步；
-    // maxRetries 取 config 快照；reentrant 按工具注册表声明推断
-    retryCount: 0,
-    maxRetries: options.config.asyncJobs.maxRetries,
-    reentrant: inferTaskReentrant({ mode, toolCall: options.toolCall, agentTools: agentSnapshot.tools }),
   } as any);
 
   if (!created.success || !created.data) {
@@ -2202,11 +2108,6 @@ export async function retryAsyncJob(
     status: "running",
     sessionId: input.sessionId,
     startedAt: new Date(),
-    // 手动 retry 决策：人工是最后一道闸，不受自动重跑计数堵死——retryCount 清零重来、
-    // 不再设手动次数上限（原 config.maxRetries 拦截删除）；maxRetries/reentrant 按 config+工具声明重新物化
-    retryCount: 0,
-    maxRetries: config.asyncJobs.maxRetries,
-    reentrant: inferTaskReentrant({ mode, toolCall: input.toolCall, agentTools: agentSnapshot.tools }),
     // 原 input 全量保留（sourceType/deliverToQueue/toolCall/subagentSessionId/shareToSessionIds），
     // 否则 sync 任务重试后 deliverToQueue 缺省为 true，结果漂移进异步队列（S8）
     input,

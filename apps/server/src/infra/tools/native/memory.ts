@@ -305,7 +305,6 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "post_list",
-    reentrant: true, // 只读：列文章元信息（不含正文）
     description:
       "列出本地知识库文章（content/posts）。按 updatedAt 倒序分页，返回 id/title/slug/excerpt/category/tags/published/updatedAt 元信息（不含正文）。需要正文请用 post_update 读后改，或提示用户在编辑器打开。",
     parameters: zodParams(
@@ -374,7 +373,6 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "memory_search",
-    reentrant: true, // 只读搜索
     description: "搜索本地记忆库（仅返回现行 active 版本）。",
     parameters: zodParams(
       z.object({
@@ -397,7 +395,6 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "pinned_memory_read",
-    reentrant: true,
     description:
       "读取 L1 常驻层 USER.md（用户偏好）或 AGENT.md（工作约定）。硬预算截断后的正文；会话内注入的是冻结快照，本工具读的是磁盘当前内容。",
     parameters: zodParams(
@@ -425,7 +422,6 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "memory_daily_append",
     concurrencyClass: "D",
     // 追加日记文件，文件名含日期；重跑产生新行而非覆盖
-    reentrant: true,
     description:
       "追加 L2 工作日记（content/memories/daily/YYYY-MM-DD.md）。只作工作笔记，**不会**自动注入 system prompt；需要时用 memory_daily_search 召回。稳定偏好/事实仍用 memory_create。",
     parameters: zodParams(
@@ -437,7 +433,6 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   },
   {
     name: "memory_daily_search",
-    reentrant: true,
     description:
       "搜索 L2 工作日记（最近 N 天的 daily/*.md）。结果不注入 prompt，由你主动调用后阅读。",
     parameters: zodParams(

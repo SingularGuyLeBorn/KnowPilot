@@ -69,7 +69,6 @@ describe("C1 执行型僵尸 Task 恢复扫描", () => {
         status: "running",
         sessionId: session.id,
         startedAt: new Date(),
-        reentrant: false,
         input: { kind: "heartbeat", agentId, sessionId: session.id, goal: "x" },
       },
     });
@@ -80,7 +79,6 @@ describe("C1 执行型僵尸 Task 恢复扫描", () => {
         status: "running",
         cronExpression: "0 * * * *",
         startedAt: new Date(),
-        reentrant: false,
         input: { action: "noop" },
       },
     });
@@ -90,7 +88,6 @@ describe("C1 执行型僵尸 Task 恢复扫描", () => {
         type: "oneshot",
         status: "running",
         startedAt: new Date(),
-        reentrant: false,
         input: { triggerEvent: { entity: "post", action: "created" } },
       },
     });

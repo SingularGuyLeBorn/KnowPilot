@@ -36,7 +36,7 @@ describe("B4 启动恢复 resuming 幂等与动作顺序", () => {
     await prisma.chatSession.deleteMany({ where: { id: { startsWith: SID } } }).catch(() => {});
   });
 
-  it("同进程二次 recover：retryCount 只 +1，单执行体（旧实现双 +1 → 旧实现即红）", async () => {
+  it("服务重启不自动续跑：僵尸统一 failed，二次 recover 幂等", async () => {
     const ctx = await createContextInner();
     const sessionId = `${SID}-s1`;
     const task = await prisma.task.create({
@@ -46,9 +46,6 @@ describe("B4 启动恢复 resuming 幂等与动作顺序", () => {
         status: "running",
         sessionId,
         startedAt: new Date(),
-        retryCount: 0,
-        maxRetries: 3,
-        reentrant: true,
         input: {
           kind: "async_agent",
           sessionId,
@@ -62,27 +59,22 @@ describe("B4 启动恢复 resuming 幂等与动作顺序", () => {
     });
 
     const r1 = await recoverStaleAsyncJobs(ctx.config, ctx.services);
-    expect(r1.resumed).toBe(1);
+    expect(r1.resumed).toBe(0);
+    expect(r1.failed).toBe(1);
     const after1 = await prisma.task.findUnique({ where: { id: task.id } });
-    expect(after1?.retryCount).toBe(1);
-    // 认领中间态 resuming（或已被执行体推进到 running/success）
-    expect(["resuming", "running", "success", "queued"]).toContain(after1?.status);
+    expect(after1?.status).toBe("failed");
+    expect((after1?.output as { error?: string })?.error).toContain("服务重启，任务中断");
 
+    // 二次 recover：已 failed，条件写认领落选
     const r2 = await recoverStaleAsyncJobs(ctx.config, ctx.services);
     expect(r2.resumed).toBe(0);
+    expect(r2.failed).toBe(0);
     const after2 = await prisma.task.findUnique({ where: { id: task.id } });
-    expect(after2?.retryCount).toBe(1);
+    expect(after2?.status).toBe("failed");
 
-    // 池内同 jobId 不应双跑：runningJobs 至多一条
+    // 零入池
     const orch = getAsyncJobOrchestrator(ctx.config);
-    await vi.waitFor(
-      async () => {
-        const row = await prisma.task.findUnique({ where: { id: task.id } });
-        expect(["success", "failed", "running", "resuming"]).toContain(row?.status);
-      },
-      { timeout: 5000, interval: 30 },
-    );
-    expect(orch.getStats().runningGlobal).toBeLessThanOrEqual(1);
+    expect(orch.getStats().runningGlobal).toBe(0);
   });
 
   it("动作顺序：先 paused 僵尸会话，再 Task resume（resume 起的 running 不被误伤）", async () => {
@@ -127,9 +119,6 @@ describe("B4 启动恢复 resuming 幂等与动作顺序", () => {
         status: "running",
         sessionId,
         startedAt: new Date(),
-        retryCount: 0,
-        maxRetries: 2,
-        reentrant: true,
         input: {
           kind: "async_agent",
           sessionId,
