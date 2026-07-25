@@ -114,6 +114,7 @@ AUTH_MODE=none
 pnpm dev            # 同步文章 + 并行启动 server / web
 pnpm dev:web        # 单独启动前端
 pnpm dev:server     # 单独启动后端
+pnpm dev:ngrok      # ngrok 固定域名隧道 + dev（邮件 webhook 自动注册，见下文「远程访问与邮件 webhook」）
 
 pnpm db:sync        # content/ → SQLite 同步（支持 --watch）
 pnpm db:backup      # dev.db 备份到 backups/
@@ -273,12 +274,97 @@ pnpm db:backup    # dev.db → backups/
 
 ---
 
+## 远程访问与邮件 webhook
+
+本地 `localhost` 不可公网访问，Agent 的「邮件回复审批 / ask_user 邮件答复」需要公网回调。项目内置两种隧道方案，**推荐 ngrok 固定域名**（免费、永久固定、一次配好不用管）。
+
+### 方案 A：ngrok 固定域名（推荐）
+
+**前提**：ngrok 免费账号 + 一个 dev domain（永久固定，不花钱）。
+
+```bash
+# 1. 装 ngrok
+winget install --id Ngrok.Ngrok            # Windows
+# 或 brew install ngrok / snap install ngrok
+
+# 2. 注册免费账号 + 领固定域名
+#    https://dashboard.ngrok.com/signup        注册
+#    https://dashboard.ngrok.com/get-started/your-authtoken   复制 authtoken
+#    https://dashboard.ngrok.com/domains       点 Claim domain 领一个 xxx.ngrok-free.dev
+
+# 3. 配 authtoken（一次性）
+ngrok config add-authtoken <你的-authtoken>
+
+# 4. 在 .env 写两行（一次性）
+#    NGROK_DOMAIN=xxx.ngrok-free.dev
+#    PUBLIC_URL=https://xxx.ngrok-free.dev
+
+# 5. 以后每次开发只需一条命令
+pnpm dev:ngrok          # 自动：ngrok 起固定域名 → dev 起 server+web → server 自动注册 AgentMail webhook
+pnpm dev:ngrok:quick    # 跳过 db:sync
+```
+
+启动后日志会打印：
+```
+📧 [AgentMail] inbox ready: yourname@agentmail.to
+[AgentMail] webhook 已注册: https://xxx.ngrok-free.dev/api/webhooks/agentmail
+✅ 开发环境已就绪
+```
+
+之后 Agent 触发 ask_user（邮件通道）或审批时，用户回复邮件 → AgentMail 回调公网域名 → ngrok 转发到本地 → 注入回复给 Agent。**每次同一个 URL，webhook 永久有效，不用每次管。**
+
+> ngrok 免费版浏览器访问公网域名会先显示一个警告页（点 Visit Site 进入），但 AgentMail 的 webhook 是 server-to-server POST（非浏览器），直接转发不显示警告页，不影响邮件回复接收。
+
+### 方案 B：Cloudflare Tunnel（需 Cloudflare 账号 + 域名）
+
+适合已有 Cloudflare 域名的用户，详见 [docs/development/cloudflare-tunnel.md](docs/development/cloudflare-tunnel.md)。
+
+```bash
+pnpm remote              # dev + 临时隧道（URL 每次重启变，不推荐用于邮件 webhook）
+pnpm remote --named       # 命名隧道（需 .env 配 CLOUDFLARE_TUNNEL_TOKEN + PUBLIC_URL=固定域名）
+```
+
+临时隧道 URL 每次变，AgentMail webhook 会失效，需每次重新注册。**邮件 webhook 场景请用方案 A（ngrok 固定）或方案 B 命名隧道。**
+
+### 邮件 webhook 工作原理
+
+```
+用户回复邮件
+   ↓
+AgentMail 平台收到回复
+   ↓ POST https://<公网域名>/api/webhooks/agentmail
+   ↓
+ngrok / Cloudflare Tunnel 转发到本地 :3000
+   ↓ next.config.ts rewrite /api/webhooks/agentmail → :3010
+   ↓
+server webhook 端点（验签 → 解析回复原文）
+   ↓
+审批：resolveApprovalFromMail → 注入回复原文给 Agent（Agent 自行理解意图）
+ask_user：resolveAskUserFromMail → 注入答复给 Agent 续轮
+```
+
+关键：**邮件回复 = 用户输入通道，和聊天框打字等价**。Agent 收到回复全文自己理解意图，不是后端硬判断 approved/rejected。
+
+### 必需的环境变量
+
+| 变量 | 必需 | 说明 |
+|---|---|---|
+| `AGENTMAIL_API_KEY` | 是 | AgentMail 平台 API Key |
+| `AGENTMAIL_INBOX_ID` | 否 | 指定 inbox（缺省自动创建） |
+| `AGENTMAIL_ASK_TO` | 是 | ask_user 邮件发给谁（你的邮箱） |
+| `NGROK_DOMAIN` | 方案 A | ngrok 固定域名（如 `xxx.ngrok-free.dev`） |
+| `PUBLIC_URL` | 是 | 公网完整 URL（`https://xxx.ngrok-free.dev`），server 据此注册 webhook |
+| `AGENTMAIL_WEBHOOK_SECRET` | 推荐 | webhook 验签密钥（未配时开发期放行并 warn） |
+| `AGENTMAIL_WEBHOOK_URL` | 否 | 直接指定完整 webhook URL（优先级高于 PUBLIC_URL 派生） |
+
+---
+
 ## 安全与敏感信息
 
 - `.env` 被 `.gitignore` 忽略，不得提交。`.env.example` 仅含占位值。
 - `CREDENTIAL_MASTER_KEY` 用于 AES-256-GCM 加密 Credential 表，丢失后已加密凭据无法解密。
 - 默认 `AUTH_MODE=none` 无鉴权，仅适合本地。暴露公网必须启用鉴权。
-- 用 Cloudflare Tunnel 把本机暴露到公网（无需开端口）：见 [docs/development/cloudflare-tunnel.md](docs/development/cloudflare-tunnel.md)。一键：`pnpm remote`（dev + 临时隧道）；分步：`pnpm tunnel:quick` / `pnpm tunnel:run`。
+- 用隧道把本机暴露到公网（无需开端口）：**ngrok 固定域名**（`pnpm dev:ngrok`，见上方「远程访问与邮件 webhook」）或 Cloudflare Tunnel（见 [docs/development/cloudflare-tunnel.md](docs/development/cloudflare-tunnel.md)，`pnpm remote` / `pnpm remote --named`）。
 - `apps/server/prisma/dev.db` 不进 Git；数据持久化依赖 `content/` 下的 Markdown 源文件。
 
 ---
