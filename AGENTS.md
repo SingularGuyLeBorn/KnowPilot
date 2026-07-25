@@ -82,16 +82,29 @@ KnowPilot/
 │           ├── constants.ts
 │           ├── types.ts
 │           └── index.ts
-├── content/                    # Git 跟踪的文本数据源
+├── content/                    # Git 跟踪的纯知识库事实源
 │   ├── posts/                  # 文章 Markdown 源文件（已大量使用）
 │   ├── about/                  # About Me（profile.md，Web /about 读取）
-│   ├── agents/                 # Agent 配置（Markdown，运行时 CRUD 写回）
-│   ├── skills/                 # Skill 配置（Markdown）
-│   ├── memories/               # Memory 配置（Markdown）
+│   └── uploads/                # 上传文件（file.upload + 截图）
+├── config/                     # Git 跟踪的 Agent 配置事实源
+│   ├── agents/                 # Agent 配置（Markdown，运行时 CRUD 写回 + _templates/）
+│   ├── skills/                 # Skill 配置（Markdown + .curator_state/.usage.json 运行时忽略）
+│   ├── memories/               # Memory 配置（Markdown + daily/ 运行时忽略）
 │   ├── prompts/                # Prompt 模板（Markdown）
-│   ├── tasks/                  # Task 配置（JSON + db:sync）
+│   ├── tasks/                  # Task 配置（JSON + db:sync 单向导入）
 │   ├── mcp/                    # MCP Server 配置（YAML）
-│   └── uploads/                # 上传文件（file.upload）
+│   └── sources/                # InfoSource 信息源（JSON + db:sync）
+├── data/                       # 运行时产物（整体 .gitignore，可随时重建）
+│   ├── approvals/              # 审批记录（仅 DB，目录占位）
+│   ├── cookies/                # OAuth/登录态（zhihu/feishu 等 storageState + cookieJar）
+│   ├── files/                  # 文件实体（仅 DB，目录占位）
+│   ├── git/                    # GitRepo（仅 DB，目录占位）
+│   ├── logs/                   # 日志（仅 DB，目录占位）
+│   ├── messages/               # AgentMessage（仅 DB，目录占位）
+│   ├── sessions/               # 会话摘要（session_rotate 写入）
+│   ├── tools/                  # Tool（仅 DB，目录占位）
+│   └── workspace/              # write_file 无 Workspace 时的回退区
+├── workspaces/                 # DB Workspace.path 实际落点（根级，.gitignore）
 ├── docs/development/           # L1-L5 阶段开发文档与 API 规范
 ├── docs/surveys-2026/          # 2026 综述 PDF（记忆/Harness/Agent）+ KnowPilot 对比分析
 ├── scripts/
@@ -184,7 +197,7 @@ pnpm test         # 全仓库运行 Vitest
 - **语言**：注释、UI 文案、Git 提交信息、文档以中文为主；代码标识符（变量、函数、组件名）使用英文。
 - **Git 提交前缀**：`feat:`、`fix:`、`docs:`、`docs(dev-log):`、`refactor:`、`test:`、`chore:` 等。
 - **长路径支持**：仓库已开启 `core.longpaths=true` 以支持深层中文 Markdown 路径。
-- **空目录占位**：使用 `.gitkeep` 保留占位目录（如 `content/agents/`、`content/skills/`）。
+- **空目录占位**：使用 `.gitkeep` 保留占位目录（如 `config/agents/`、`config/skills/`）。
 
 ### Git 管理与工程化规范
 
@@ -206,9 +219,9 @@ pnpm test         # 全仓库运行 Vitest
 
 #### 3. 工作树卫生（提交前必做）
 
-- **误创建文件即删**：测试时把任务文本当 Agent 名建出来的 `content/agents/请先等待...md` 这类文件，发现即删，不要留着污染工作树。
-- **运行时产物 gitignore**：日记（`content/memories/daily/`）、curator 状态（`content/skills/.curator_state`）、心跳临时 agent（`content/agents/*-e3f87d.md`）等运行时产物，加进 `.gitignore` 防御，不要提交。
-- **测试产物防御**：`.gitignore` 已有 `content/posts/smoke-post-*.md`、`content/agents/*子 Agent*.md` 等模式，新增测试产物路径时同步加防御。
+- **误创建文件即删**：测试时把任务文本当 Agent 名建出来的 `config/agents/请先等待...md` 这类文件，发现即删，不要留着污染工作树。
+- **运行时产物 gitignore**：日记（`config/memories/daily/`）、curator 状态（`config/skills/.curator_state`）、心跳临时 agent（`config/agents/*-e3f87d.md`）等运行时产物，加进 `.gitignore` 防御，不要提交。
+- **测试产物防御**：`.gitignore` 已有 `content/posts/smoke-post-*.md`、`config/agents/*子 Agent*.md` 等模式，新增测试产物路径时同步加防御。
 - **不提交密钥/凭据**：`.env` / `.env.local` / `*.db` / `backups/` 已 gitignore，绝不 `git add -f` 强加。`dev.db` 是缓存层随时可重建，不入库。
 
 #### 4. 提交前验证（铁律）
@@ -274,8 +287,8 @@ pnpm test         # 全仓库运行 Vitest
    excerpt: "一句话文章简要介绍。"
    ---
    ```
-3. `pnpm db:sync` 扫描 `content/posts/`、`content/agents/` 等已注册目录，解析后 upsert 到对应表；删除本地已不存在但数据库仍有的记录。
-4. Post / Agent / Skill / MCP / Memory / Prompt 的 `create` / `update` / `delete` 会同步写回 `content/` 对应文件。
+3. `pnpm db:sync` 扫描 `content/posts/`、`config/agents/` 等已注册目录，解析后 upsert 到对应表；删除本地已不存在但数据库仍有的记录。
+4. Post / Agent / Skill / MCP / Memory / Prompt 的 `create` / `update` / `delete` 会同步写回 `content/`（posts）或 `config/`（其余）对应文件。
 5. 自动保存：`useAutoSave.ts` 500ms 节流写入 LocalStorage，2s 防抖调用 `post.update`（仅对已存在 id）。
 
 ### 项目扁平化与代码收拢约定
@@ -609,7 +622,7 @@ reflection:
 - **W11 Run 活状态 + awaiting_human 已落地**：reactLoop 内核统一接管 Run 生命周期——入口落 `status:"running"` 行、每轮 tool_batch 后 `{ phase, roundsUsed, executedToolsCount }` 快照写 `Run.output`（5s 节流，phase 转移点强制写）、终态统一 update（success/failed，用户 abort 标 cancelled），调用方（agentStream/agentRuntime）不再自建终态行。新增 `awaiting_human` phase（合法转移 `tool_batch → awaiting_human → llm`）：工具触发审批 pending 时 loop 挂起，等 `approval_resolved` 显式事件（approvalGate 等待注册表 `waitApprovalResolution`/`notifyApprovalResolved`，waiter 自带 TTL 截止与 expireStaleApprovals 同规则）唤醒，续跑消息复用 W7 injectUserMessages 注入原 session（kind=approval）；拒绝/过期注入消息让 LLM 收尾、run 正常结束。`recoverStaleRuns` 启动挂载（index.ts，recoverStaleAsyncJobs 旁）把遗留 running Run 标 `interrupted`（如实不续跑）；/runs 页补 interrupted chips。测试：`runLifecycle.test.ts`（5 例）+ `agentRunPhase.test.ts` 扩充。
 
 - **W10 SwarmOrchestrator 中介者已落地**：新增叶子模块 `infra/swarmOrchestrator.ts`（仅依赖 asyncJobOrchestrator/swarmPermissionGuard，无环），统一 `dispatch(taskSpec) → swarmPermissionGuard 校验 → 60s spawn 去重（agentId+hash(taskText)）→ 并发池/inline 执行 → 结果聚合 → Log 审计` 公共骨架。四入口改为调用方：`spawn_subagent`（inline，同步等待语义不动）、`async_task_run`（startAsyncAgentTask 内走 pool）、`heartbeatEngine`（**已删除返回 undefined 的 invokeTrpc 桩**，心跳 Agent 与 trigger/async 共用 createTrpcInvoker 真实通道）、`TriggerEngine`（run_agent 从直跑改为 pool + await completion 保住 per-trigger 互斥）。`swarmPermissionGuard.ts` 空块检查已删，#41 时机约束单点归属 swarmBus.send → checkUpwardMessageTiming。防线测试 `__tests__/swarmOrchestrator.test.ts`（dispatch 双路 spy / spawn 去重 / guard / 在途幂等）。
-- **W9 AgentFactory 模板化已落地**：三 tier（super/manager/sub）默认模板收至 `content/agents/_templates/{tier}.md`（frontmatter 格式同普通 agent 文件，super 额外含 heartbeat 段，manager/sub 支持 `{{name}}` 占位符），新增叶子模块 `infra/agentFactory.ts`（`getTierTemplate` / `createAgentForTier`，模板按 mtime 缓存，缺失时回退 shared 常量并 warn 一次/tier）；swarmInitializer（super）、workspaceProvision（manager）、loop/setup（sub）三处创建/默认值均走工厂。sync 跳过 `_` 开头目录（`sync/utils.ts` getFilesRecursive + sync.ts watch ignored），模板不会进库。`resolveAgent` 已只读化：返回 `{ agent, drift: string[] }`（调用方经 `logAgentDrift` 打 warn），读路径不再写库；老库默认 assistant 修复走一次性脚本 `scripts/migrate-assistant-tools.ts`（`pnpm --filter @knowpilot/server exec tsx src/scripts/migrate-assistant-tools.ts`，幂等）。注意：`agent.list` 按 R19 裁剪 systemPrompt，漂移检测与调用方需经 `agent.getById` 取全量实体。单测 `__tests__/agentFactory.test.ts`（7 例）。
+- **W9 AgentFactory 模板化已落地**：三 tier（super/manager/sub）默认模板收至 `config/agents/_templates/{tier}.md`（frontmatter 格式同普通 agent 文件，super 额外含 heartbeat 段，manager/sub 支持 `{{name}}` 占位符），新增叶子模块 `infra/agentFactory.ts`（`getTierTemplate` / `createAgentForTier`，模板按 mtime 缓存，缺失时回退 shared 常量并 warn 一次/tier）；swarmInitializer（super）、workspaceProvision（manager）、loop/setup（sub）三处创建/默认值均走工厂。sync 跳过 `_` 开头目录（`sync/utils.ts` getFilesRecursive + sync.ts watch ignored），模板不会进库。`resolveAgent` 已只读化：返回 `{ agent, drift: string[] }`（调用方经 `logAgentDrift` 打 warn），读路径不再写库；老库默认 assistant 修复走一次性脚本 `scripts/migrate-assistant-tools.ts`（`pnpm --filter @knowpilot/server exec tsx src/scripts/migrate-assistant-tools.ts`，幂等）。注意：`agent.list` 按 R19 裁剪 systemPrompt，漂移检测与调用方需经 `agent.getById` 取全量实体。单测 `__tests__/agentFactory.test.ts`（7 例）。
 - **W8 常量化收敛已落地**：模型名/分层工具清单/深度上限/截断值单点定义到 `packages/shared/src/constants.ts`——`LLM_MODEL_IDS` / `LLM_PROVIDER_DEEPSEEK` / `DEFAULT_LLM_MODEL`（server 生效值 = env `DEFAULT_LLM_MODEL` > `config.yaml` `llm.defaultModel` > shared 常量，解析在 `config.ts`）、`TIER_DEFAULT_TOOLS: Record<AgentTier, string[]>`（super=swarmInitializer、manager=workspaceProvision、sub=loop/setup 三处清单收敛；assistant 清单为 `ASSISTANT_DEFAULT_TOOLS`，agentResolver 创建与补齐检查共用）、`SWARM_MAX_DEPTH`/`SWARM_MAX_QUEUE_SIZE`（swarmBus/redisSwarmBus/swarmPermissionGuard 同源）、`AGENT_TOOL_RESULT_MAX_CHARS=16000`（reactLoop snapshot 与 read_article 同源）、`MEMORY_INITIAL_STRENGTH`、`HEARTBEAT_MAX_CONSECUTIVE_FAILURES`、`APPROVAL_DEFAULT_TTL_MS`。心跳连续失败告警不再是「Phase 5」僵尸：发送通道抽为 `infra/emailNotifier.ts`（send_email 工具与 HeartbeatEngine 复用同一实现），streak 达阈值时邮件告警一次（`EMAIL_PROVIDER=none` 时降级为日志）。
 - **W7 反思装饰器已落地**：`infra/loop/reflection.ts` `withReflection(transport, opts)` 在「即将 done」终轮（withTools 且零 toolCalls）用 criticModel 跑一票 JSON critic（`{passed, issues}`），verdict 附到 `LlmTurnResult.reflection`；**评估在 transport 装饰器、决策在 reactLoop done 转移点**——不通过且轮数未满经既有 `injectUserMessages`（kind=follow_up）回注重修，轮数耗尽带 `[未经反思通过]` 标记放行（不阻断用户）。critic 经内部 `createSyncTransport(config, criticModel)` 走 W2 弹性客户端；critic 失败/解析失败 = 静默跳过。`config.yaml` `reflection: { enabled: false, maxRounds: 1, criticModel: "" }` 默认关闭；仅接入 agentRuntime sync 链路，stream 链路另立跟进。单测 `__tests__/reflection.test.ts`（5 例）。
 - **W6 D 类工具幂等 rollback 已落地**：`infra/tools/rollback.ts` 新增 `RunRollbackStack`——reactLoop 每 run 建栈注入 `NativeToolContext.rollbackStack`；`executeNativeTool` 对注册处标记 `destructive` 的工具执行前 capture、成功后 commit；run failed 且非用户 abort 时逆序补偿，报告写 failed Run 的 `output.rollback`。补偿语义：`write_file` 快照还原（run 级 10MB 上限）；`post_create`/`memory_create` 走 Service 删 id；`file_delete`/`directory_delete` 执行时移项目根 `.trash/`（用户手动清理），rollback 移回；`git_commit` 等不可逆操作如实 warn「需人工 revert」。单测 `toolRollback.test.ts`；详见 `docs/development/p0-agent-arch-pr-split.md` PR-4 节。
@@ -621,7 +634,7 @@ reflection:
 - **W2 LLM 弹性客户端已落地**：`infra/resilientLlmClient.ts` 装饰器包装 llmClient（错误分类 fatal/retryable/degradable + 指数退避 jitter 重试 + `config.yaml` `llm.fallbackModels` 按序降级）；`agentRuntime`/`agentStream` error 事件的 `retryable` 改为按分类真实填充；`llmBudget.ts` 预算状态改为模块级内存 + 防抖异步落盘（LLM 调用路径零同步 IO）。
 
 - **P0 Agent 架构（分支 `fix/p0-agent-budget-hitl`）**：PR-1～7 已全部落地；native 工具已全量按域拆至 `infra/tools/native/{fs,web,shell,swarm,session,memory,integration}.ts`，`nativeTools.ts`（118 行）只留注册 + 分发。见 `docs/development/p0-agent-arch-pr-split.md`。
-- **重复超级 Agent 已清理**：文件 `content/agents/KnowPilot 超级 Agent-v5wh3v.md` 已删除；`sync-agents.ts` 跳过 `tier === "super"`。
+- **重复超级 Agent 已清理**：文件 `config/agents/KnowPilot 超级 Agent-v5wh3v.md` 已删除；`sync-agents.ts` 跳过 `tier === "super"`。
 - **设计决策文档**：沉淀在 `docs/development/design-decisions.md`。
 
 ## 未来功能
@@ -661,9 +674,90 @@ reflection:
   3. **`async_task_status` hint 加固**（`asyncJobManager.ts` completed/failed 返回 hint 明示「结果已自动投递，无需主动拉取」），堵 LLM 轮询后窥探的动机。
   - **设计原则（已写入本节）**：子 Agent 的结果**唯一交付通道** = `agent_report_back` → `autoConsume` 注入父会话异步结果队列（带 jobId 台账）。父 Agent 对子 Agent 只可见状态，不可见消息内容。这是子 Agent 隔离的根本——否则子 Agent 完整上下文污染父 Agent，子 Agent 的存在失去意义。`invoke_api` 反射式「零胶水 Agent 化」是历史妥协，已被业界先例（闭工具集、无万能 API 后门）否定，本次彻底砍除。
 - **系统提示词全家桶改进（符合主题）**：KnowPilot 主题 =「以 Markdown 为原子、AI 为引擎的数字花园」。统一三 tier 提示词基调：超级 Agent=总园丁（统筹全局、协调各 Workspace、维护长期秩序，但不替子 Agent 干活）；管理 Agent=园丁长（本 Workspace 负责人，编排子 Agent + 向上汇报）；子 Agent=园丁（被派去完成具体工作，结果经 report_back 交回）。落地：
-  1. **正式模板文件** `content/agents/_templates/{super,manager,sub}.md`（frontmatter + 正文，含主题定位 + 能力/职责 + 行为准则；sync 跳过 `_` 目录不进库）；agentFactory 优先读模板，缺失回退兜底文案。
+  1. **正式模板文件** `config/agents/_templates/{super,manager,sub}.md`（frontmatter + 正文，含主题定位 + 能力/职责 + 行为准则；sync 跳过 `_` 目录不进库）；agentFactory 优先读模板，缺失回退兜底文案。
   2. **兜底文案** `agentFactory.ts` `SUPER/MANAGER/SUB_FALLBACK_PROMPT` 与模板正文对齐（精简版安全网）。
   3. **运行时身份约束** `promptBuilder.ts` `buildTierIdentityHint` 三 tier 分支强化「子 Agent 隔离铁律」——明示「你只能看子 Agent 状态，看不到消息内容，结果等 report_back」，与刚落地的架构铁律对齐。
   4. **会话/子 Agent 取名 prompt** `sessionAutoName.ts` `SESSION_PROMPT`/`AGENT_PROMPT` 加入主题语境（「数字花园」+ 角色名引导如「资料整理员」「代码审阅官」）。
   5. **等价性 fixture** `contextHooks.equivalence.json` 用当前 `buildTierIdentityHint` 重新生成（脚本复刻 agent-extras 钩子拼装逻辑：base→identity→memory→`\n\n`→guide）。
 - **post_list 专用只读工具补充**：砍 invoke_api 后博客 Agent 失去列文章能力，补 `post_list`（`memory.ts`，reentrant=true 只读，调 `services.post.list`，service 已裁剪 content 不返正文，只返 id/title/slug/excerpt/category/tags/published/updatedAt 元信息）。与 post_create/update/delete 一致，**不加入 tier 默认清单**（按需勾选，闭工具集原则）。测试 fixture `ALL_NATIVE_TOOL_NAMES` 同步。
+- **vision_describe 外挂视觉理解器落地**：纯文本模型（如 deepseek-v4-flash）看图能力的架构层补齐。新工具 `vision_describe`（`web.ts`，concurrencyClass B 只读）把图片交给多模态模型做语义理解，返回文字描述回灌给当前模型。与 `read_image` 区别：`read_image` 偏 OCR 文字提取（auto 优先 OCR，纯文本 Agent 走 OCR）；`vision_describe` 强制 vision 语义理解/描述/问答，默认用**免费多模态模型**不消耗付费额度。默认模型选择顺序：env `VISION_DESCRIBE_MODEL` → 当前 Agent 模型若支持 vision → Gemini provider（有免费层）→ OpenRouter 免费多模态（`google/gemma-4-26b-a4b-it:free`）→ `deepseek-vl2` 兜底。复用 `readImageWithVision`（base64 + resilientChatCompletion）。加入 `ASSISTANT_DEFAULT_TOOLS` + 三 tier `TIER_DEFAULT_TOOLS`（super/manager/sub 全配，纯文本 Agent 即开即用）。`.env.example` 补 `VISION_DESCRIBE_MODEL` 配置说明。
+- **heartbeatDecisionEngine flaky 根除**：`vi.waitFor` 默认 1000ms 超时在全量高负载下偶发 SQLite 落库 >1s 触发超时（非测试间状态泄漏，是真实定时器+DB 轮询阈值不够）。给 `heartbeatDecisionEngine`/`heartbeatSchedulerC1`/`swarmOrchestrator` 共 7 处 fire-and-forget DB 轮询 `vi.waitFor` 统一加 `{ timeout: 5000, interval: 100 }`，彻底消除偶发红。
+- **Chat 流式渲染对齐 Kimi（边流式边预览 + 思考计时 + 工具运行指示 + 重试竞态根治 + HTML 预览引导）**：用户反馈「长工具调用卡在 Thinking 无进度感」「要 Kimi 类似 HTML 预览」「重试 A 却 A 消失 B 重发」。根因诊断与修复：
+  1. **流式期直接走 `PostContent`**（`chatMessageList.tsx` 流式气泡 `StreamingPlainContent` → `PostContent`）：代码块即时支持代码/预览切换、复制、最大化、换行，实现「边流式输出边视图渲染」；落库后复用同一渲染器，消除流式→终态视觉跳变。思考过程（reasoning_content）仍用 `StreamingPlainContent` 轻量渲染（避免高亮抖动）。
+  2. **Thinking 计时进度**（`chatTimelineSteps.tsx` `ThinkingStep`）：isLive 起每秒计时，标题旁显示 `Thinking… Ns`，给长思考进度感，消除「卡住」错觉；终态停表。
+  3. **ToolStep running 视觉指示**（`chatTimelineSteps.tsx` `ToolStep`）：原 running 状态只有脉冲圆点+边框，不够醒目。加 `Loader2` spinner + 「运行中」/「等待回复」（ask_user）文案（ml-auto 对齐 done hint 位置），与 `ProgressStep` 一致，工具调用进行中明确可见。
+  4. **重试/重新生成竞态根治**（`agentStream.ts` `prepareMessage`）：原 `retryFromMessageId`/`regenerate` 只复用 A 的 assistant（`excludeAssistantId`/`updateAssistantId`），不删尾部消息——若 A 之后还有 B（A 的 assistant 失败后用户接着发 B），重试 A 时 B 残留，新 assistant 插入后 B 重复或 A「消失」B「重发」竞态。提取 `deleteTailMessages(services, sessionId, items, idx)` 辅助函数（单次 `deleteMany` + 推 `message_deleted` SSE 让前端即时移除），重试/重新生成/编辑三处统一调用：删除该用户消息之后的所有消息（含旧 assistant 与后续 user/assistant）再重发，对齐 ChatGPT 业界惯例。`excludeAssistantId`/`updateAssistantId` 不再设置（旧 assistant 已删，新建）。
+  5. **HTML 预览系统提示词引导**（`agentResolver.ts` `DEFAULT_ASSISTANT_SYSTEM_PROMPT`）：用户要「写 HTML 页面/小游戏/可视化/可交互 demo」等可直接预览的内容时，直接在回复用 ` ```html ` 代码块输出完整代码（前端有「代码/预览」切换 tab 可即时渲染），不要 `write_file` 写文件（文件需另开浏览器体验差）；仅当用户明确要「保存到知识库/创建文件」时才 `write_file`/`post_create`。SVG 同理用 ` ```svg ` 代码块可预览。
+- **assistant 多版本切换闪烁根治**（`useSessionMessages.ts` `pickFresherMessage`）：用户反馈「重试消息可以往前切换、无法切回后边、且一直闪烁」。根因：`pickFresherMessage` 对 assistant 用 `content.length` 判断新旧（为流式 SSE 递进设计：更长=更新）。版本切换到更短的旧版本时，`hydrateFromServer` 返回的 incoming（旧版本短内容）被 prev（新版本长内容）按 `content.length` 误判为「旧」而覆盖回新版本 → 切换无效 + hydrate 反复拉回闪烁。修复：assistant 比较前先看 `toolResults.versionMeta.activeIndex`——incoming 与 prev 的 activeIndex 不同即为版本切换（`switchVersion` 后端写回权威值），直接取 incoming，不走 `content.length` 逻辑。流式递进（activeIndex 不变）仍走原 `content.length` 判断，行为不变。
+- **Workspace 落地 + content/ 污染根治（write_file 默认落 Agent 自己的 Workspace）**：用户反馈「每个 agent 都有自己的 workspace，为什么写到 content/workspace 下」「content 下有核心 posts 怎么能随便污染」「content 太包罗万象能不能拆」。诊断：`Workspace.path` 字段 schema 有、`swarmInitializer`/`workspaceProvision` 创建时也建了 `.knowpilot/` 子目录（Root=`workspaces/__system__`、Assistant Home=`workspaces/__assistant__`、业务 Workspace=用户提供的 path），但 `write_file` 完全没用 `Workspace.path`——`resolveSafePath` 一律相对 `projectRoot`，Agent 可写任意项目根路径，导致 `content/围棋游戏.html`、`content/go-game.html` 直接污染核心知识库根。架构层根治：
+  1. **`safePath.ts` 新增 `resolveWithinDir(dir, relPath)` + `assertPathWithinDir`**：路径必须在指定 dir 内（防 `..` 穿越 / 绝对路径），用于 Workspace 隔离边界。
+  2. **`fs.ts` `writeFileTool`/`appendToFileTool` 改用 `resolveWritablePath(ctx, relPath)`**：path 以 `content/` 开头 → 走 `projectRoot`（知识库资源，如 `content/uploads/` 放图片、`content/posts/` 写文章建议 `post_create`）；否则 → 落到**当前 Agent 的 Workspace 目录**（`ctx.agentSnapshot.workspaceId` 查 `Workspace.path` → `resolveSafePath`/`resolveWithinDir` 解析），无 Workspace 时回退到 `data/workspace/`。返回 `relForReturn`（相对 projectRoot 的路径）便于 `read_file` 复用。
+  3. **工具描述 + 系统提示词对齐**：`write_file`/`append_to_file` def 描述明示「path 相对当前 Agent 的 Workspace 目录（如 `demo.html` → `workspaces/{当前workspace}/demo.html`）；`content/` 开头走知识库」；`DEFAULT_ASSISTANT_SYSTEM_PROMPT` 同步更新引导。
+  4. **污染清理**：`content/围棋游戏.html`、`content/go-game.html` 移到 `data/workspace/`；`content/posts/.trash/` 212 个 e2e 测试垃圾物理删除（已 gitignore）；`data/workspace/` 加入 `.gitignore`（Agent 工作产物可重建）。
+  5. **设计原则**：每个 Agent 有独立 Workspace，工作产物隔离——assistant 写 `workspaces/__assistant__/`、super 写 `workspaces/__system__`、业务 Agent 写自己 Workspace.path。核心知识库 `content/posts/`、`content/about/` 由 `post_create`/`post_update` 走 Service 同步管道保护，`write_file` 不直接写 `content/posts/`（会脱同步）。测试 `nativeTools`/`toolRollback` 路径同步迁到 `data/workspace/`，全量 767/767 通过。
+  - **content/ 拆分大重构已落地（content/config/data 三桶）**：原 `content/` 混 4 类（核心知识库 posts/about/uploads、Agent 配置 agents/skills/memories/prompts/mcp/tasks/sources、运行时产物 approvals/cookies/files/git/logs/messages/sessions/tools/workspace、上传 uploads）。本次彻底三分：
+    1. **config.ts 三分法** `AppConfig` 拆 `contentDir`+`configDir`+`dataDir`，对应 `contentPaths`{posts,about,uploads} / `configPaths`{agents,skills,mcp,memories,tasks,prompts,sources} / `dataPaths`{approvals,cookies,files,git,logs,messages,sessions,tools,workspace}。`resolveStorageRoot(name, envName)` 统一解析，支持 `KP_CONTENT_DIR`/`KP_CONFIG_DIR`/`KP_DATA_DIR` 三 env 隔离（`KP_CONTENT_DIR` 兼容旧测试）。启动 mkdir 三桶循环。
+    2. **物理迁移** `git mv` 7 个配置目录到 `config/`（agents/skills/mcp/memories/prompts/tasks/sources）、9 个运行时目录到 `data/`（approvals/cookies/files/git/logs/messages/sessions/tools/workspace），`content/` 只剩 posts/about/uploads + free-keys-readme.md。空壳 `content/triggers` 删除（无代码引用）。
+    3. **sync 双轨消灭** `sync/utils.ts` `getContentDir` 改读 `getAppConfig()`（先查 configPaths → contentPaths → dataPaths），不再硬编码 `content/${dirName}`，与 `KP_*_DIR` 同源。
+    4. **FileSyncService** `services.ts` `getContentDir()` 改 `configPaths[contentDirName] || contentPaths[contentDirName] || configDir/contentDirName`（posts 走 contentPaths，其余走 configPaths）；错误文案去 `content/` 前缀。
+    5. **散落硬编码收拢**：`cookieJar`/`platformLogin`/`larkTokenManager` cookies → `dataPaths.cookies`；`memoryDaily` → `projectRoot/config/memories/daily`；`pinnedMemory` `PINNED_MEMORY_DIR` 常量改 `config/memories/_pinned`；`session_rotate` 摘要 → `dataPaths.sessions`；`aboutProfile` → `contentPaths.about`；`agentFactory`/`skillUsage`/`skillCurator`/`skills.ts`/`swarm.ts` skills → `configPaths.skills/agents`；`cleanupSmokeArtifacts` 改读 config 三桶；`write_file` 无 Workspace 回退 `content/workspace` → `data/workspace`。
+    6. **工具描述/提示词/注释**：`memory.ts` daily 路径、`feishu.ts`/`github.ts` cookies 路径、各 `sync-*.ts` 顶部注释、`agentFactory`/`skillPackage`/`skillUsage`/`mcpClient`/`skillRunner`/`memoryRepository`/`loop/setup`/`reflection` 注释统一改新路径。
+    7. **测试隔离** `globalSetup.ts` + `e2e-global/setup.mjs` 拆三桶（CONTENT/CONFIG/DATA_SUBDIRS），设三个 `KP_*_DIR` env 指向 `.test-content`/`.test-config`/`.test-data`（E2E 加 `-e2e` 后缀）。`toolTestFixtures.ts` `createTestConfig` 三桶结构。`hermesSkillLoop`/`sessionRotate`/`agentFactory`/`fileSyncSlugSafety`/`fileSyncOrder`/`ftsTombstone`/`watchDeleteGuard`/`memoryDaily` 测试路径同步迁 `config/`/`data/`。
+    8. **`.gitignore`/`Dockerfile`/`docker-compose.yml`/`reset-data.mjs`**：`.gitignore` content/ 段重写（content 只留 posts/about/uploads 规则 + uploads 运行时；config/ 加 smoke/curator/daily/usage 忽略；`/data/` 整体忽略；三 `.test-*` 隔离目录）。`Dockerfile` 加 `COPY config`。`docker-compose.yml` 加 `./config:/app/config:ro` 挂载。`reset-data.mjs` `RUNTIME_CONFIG_DIRS`/`RUNTIME_DATA_DIRS`/`RUNTIME_CONTENT_DIRS` 三桶清理。
+  - **设计原则**：`content/`=纯知识库事实源（Git 跟踪，posts/about/uploads）、`config/`=Agent 配置事实源（Git 跟踪，运行时沉淀如 daily/_pinned/.curator_state/.usage.json 忽略）、`data/`=运行时产物（整体 .gitignore，可随时重建）。三桶由 config.ts 单点配置，sync/Service/工具全走 config，消灭双轨。server tsc 通过、单线程全量 767/767 通过、web eslint 零错误（并发 3 个既有隔离 flaky 单跑均过，非本次引入）。
+- **语音输入 + 语音输出 + 视频转文字落地（浏览器原生，零 API key/零后端依赖）**：用户要「语音输入和语音输出」+「学习 metablog 视频转文字场景」。诊断：metablog `fetcher.ts` 已有 bilibili 字幕抓取（`fetchBilibiliSubtitleExcerpt` 抓字幕逐字稿 + `fetchBilibiliAiConclusion` 抓 AI 总结），但函数私有、未暴露成 Agent 工具。落地：
+  1. **语音输入（STT）** `apps/web/lib/useSpeechRecognition.ts`：封装 `webkitSpeechRecognition`（Chrome/Edge 原生，免费、无需 API key；识别走浏览器内置引擎）。`onInterim`/`onFinal` 回调把转写文本追加到 ChatInput 输入框（`voiceBaseRef` 维护基线 + interim 叠加）。ChatInput 能力条加麦克风按钮（`Mic` 图标，listening 时红色脉冲，title 显示错误/状态）。`sttSupported` 为 false 时按钮不渲染（Safari/Firefox 无该 API）。
+  2. **语音输出（TTS）** `apps/web/lib/useSpeechSynthesis.ts`：封装 `speechSynthesis`（浏览器原生，纯本地引擎，免费）。`speak(text)` 自动清洗 markdown（代码块→「代码块」、去除标记符号）、按 lang 选本地语音。ChatMessageList 顶层用一个 hook 实例（避免多实例冲突全局 speechSynthesis），`speakingAssistantId` 跟踪当前朗读气泡，assistant 气泡 `MessageActions` 加朗读按钮（`Volume2` 图标，朗读中脉冲 + 品牌色，点击切换朗读/停止）。
+  3. **视频转文字工具 `video_transcript`** `apps/web/lib` → `apps/server/src/infra/tools/native/web.ts`：新增 native tool，给 bilibili 视频链接/BV 号，复用 metablog `fetchBilibiliPagelistCid` + `fetchBilibiliSubtitleExcerpt` + `fetchBilibiliAiConclusion`（三函数 export 化）抓字幕逐字稿 + AI 总结。入参 `url`（必填）+ `maxChars`（默认 20000，上限 50000）+ `includeSummary`（默认 true）。返回 `{ bvid, cid, transcript, summary, transcriptChars, truncated, note? }`。无字幕视频返回 note 提示走 whisper。加入 `ASSISTANT_DEFAULT_TOOLS` + 三 tier `TIER_DEFAULT_TOOLS`（super/manager/sub 全配，让所有 Agent 能「给视频链接→转文字→生成草稿/逐字稿/知识库文章」）。测试 fixture `ALL_NATIVE_TOOL_NAMES` 同步。
+  - **设计原则**：语音 IO 用浏览器原生 Web Speech API（`webkitSpeechRecognition` + `speechSynthesis`），零外部依赖、零 API key、零后端改动，符合「本地优先」。`video_transcript` 复用既有 metablog bilibili 抓取能力，不重复造轮子。全量 server 测试 95/95 通过，web eslint 零错误零警告。
+- **主流平台访问权限扩展（多平台浏览器登录态捕获）**：用户要「加几个主流平台的访问权限 比如 知乎的 sdk」。调研结论：各平台官方开放平台（抖音/小红书/微信/知乎/B站）均需企业认证 + OAuth + 回调 URL，对单用户本地优先项目过重且违背「本地优先」；知乎无官方公开 API，非官方 SDK（`zhihu-api`）依赖 cookie + `x-zse-96` 签名，反爬严格不稳定。最务实方案 = 浏览器登录态捕获（用户用自己的账号登录，cookie 落盘，`read_article` 复用访问需登录内容）。落地：
+  1. **`CookiePlatform` 扩展** `cookieJar.ts`：从 `zhihu|wechat|xhs|douyin|yuque` 扩到 9 平台（加 `bilibili|weibo|juejin|csdn`），env cookie 名 + domain 映射同步。
+  2. **泛化登录捕获** 新建 `apps/server/src/infra/metablog/auth/platformLogin.ts`：`PLATFORM_LOGIN_CONFIGS`（9 平台的 loginUrl + cookieUrls + storageStateFile + 阈值）+ `capturePlatformLoginState(platform, timeoutSec)`（弹窗登录 → 轮询 storageState 大小 → 落盘 + 同步 cookieJar）+ `listPlatformLoginStatus()`。`captureZhihuLoginState` 改为委托 `capturePlatformLoginState("zhihu")`（向后兼容）。
+  3. **新工具 `platform_login`** `integration/github.ts`：入参 `platform`（9 选 1）+ `timeoutSec`，弹浏览器让用户手动登录，登录态落盘供 `read_article` 复用。`browser_login_status` 增强：返回 `details`（各平台 storageState 状态）+ `cookieJars`（cookie 条数）。`capture_zhihu_login` 保留但标废弃（建议改用 `platform_login`）。加入 `ASSISTANT_DEFAULT_TOOLS` + 测试 fixture。
+  4. **系统提示词引导** `agentResolver.ts`：明示「用户要访问知乎/微信/小红书/抖音/B站/微博/掘金/CSDN/语雀的需登录内容时用 `platform_login` 弹浏览器登录，`read_article` 自动复用 cookie」。
+  - **设计原则**：不引入官方开放平台 SDK（企业认证过重）+ 不依赖非官方签名 SDK（不稳定）。浏览器登录态捕获 = 用户用自己的账号登录，cookie 落盘本地，`read_article` 抓取时复用，访问收藏夹/付费/私密内容。符合「本地优先、单用户、用自己的账号」。server tsc 通过、nativeTools 95/95 通过。
+- **video_transcript 扩展 YouTube + 外部 Agent 平台接入（Coze/Dify）**：用户要「把 video_transcript 扩展到 YouTube，云端 api 为主 本地轻量，找现成方案复用」+「国内外平台提供了 agent 方便的，多找找」。调研：YouTube 字幕有现成纯 HTTP 库（`youtube-transcript-api-js` 4.0.0，2026-07 发布，零 API key、零浏览器，调 YouTube 内部 timedtext 端点，符合「轻量」）；外部 Agent 平台 Coze（扣子）+ Dify 提供 REST API（Bearer token，chat/workflow 端点），可让 KnowPilot Agent 委托子任务给平台已编排好的 bot/workflow（RAG/知识库/复杂多步逻辑）。落地：
+  1. **YouTube 字幕抓取** `web.ts`：新增 `extractYouTubeId`（解析 watch/youtu.be/shorts/embed/live 链接或纯 11 位 videoId）+ `fetchYouTubeTranscript`（`new YouTubeTranscriptApi().fetch(videoId, ['zh-Hans','zh','en'])`，无指定语言时回退 `list().getAllTranscripts()[0]`，拿 snippets 拼纯文本 + metadata 取 title/author）。`videoTranscriptTool` 加 YouTube 分支：检测到 YouTube ID 走云端字幕抓取，否则走 bilibili。返回加 `platform` 字段（`youtube`/`bilibili`）。工具描述更新支持 bilibili + YouTube。装 `youtube-transcript-api-js` 依赖。
+  2. **外部 Agent 平台接入** 新建 `integration/agentPlatform.ts`：4 个 native tool——`coze_chat`（Coze v3 chat 异步发起 → 轮询 message/list → 取 assistant answer + followUpQuestions）、`coze_workflow`（Coze workflow run blocking）、`dify_chat`（Dify chat-messages blocking 返回 answer）、`dify_workflow`（Dify workflows/run blocking 返回 outputs）。凭据走 `credentialVault`（scope=coze name=access_token / scope=dify name=api_key），回退 env（`COZE_ACCESS_TOKEN`/`DIFY_API_KEY`）。区域可配（`COZE_API_HOST` 默认 `https://api.coze.cn`，国际站设 `https://api.coze.com`；`DIFY_API_BASE` 默认 `https://api.dify.ai/v1`，自托管设自己域名）。聚合到 `integration.ts` `INTEGRATION_DEFS`/`INTEGRATION_HANDLERS`。测试 fixture `ALL_NATIVE_TOOL_NAMES` 同步加 4 个工具名。
+  - **设计原则**：YouTube 用纯 HTTP 库复用 YouTube 自带字幕（零 API key、零浏览器、零本地模型，符合「云端为主、本地轻量」）；Coze/Dify 用官方 REST API blocking 模式（简单可靠，streaming 留后续），让 KnowPilot Agent 能把 RAG/知识库/复杂工作流委托给专业平台，不重复造轮子。server tsc 通过、nativeTools 95/95 通过、trpcSmoke 4/4 通过。
+- **国内社交媒体平台接入（TikHub API）**：用户要「微信 知乎 小红书 抖音 等国内平台为主」。调研结论：官方开放平台（微信/知乎/小红书/抖音）均需企业认证 + OAuth + 回调，不开放内容读取 API（只开放小程序/商家业务 API），对单用户本地优先项目过重；非官方签名 SDK（zhihu-api 等）依赖 cookie + x-zse-96 签名，反爬严格不稳定。最务实方案 = TikHub API（第三方社交媒体数据基础设施，一个 key 覆盖 16 平台 1000+ 端点：小红书/抖音/B站/微博/微信公众号/知乎/快手/TikTok/YouTube/Twitter 等，纯 REST + Bearer token，无需登录账号/浏览器/企业认证，~$0.001/请求，注册送 ~50 次免费）。与既有 `platform_login`（浏览器登录态读私密内容）互补：TikHub 补充「搜索 + 公开内容结构化读取」。落地：
+  1. **新建 `integration/tikhub.ts`**：1 个 native tool `tikhub_request`——通用端点转发，Agent 传 `endpoint`（如 `xiaohongshu/app_v2/get_note_info`）+ `params`（查询参数对象）+ 可选 `method`，自动补 `/api/v1/` 前缀，Bearer token 转发，覆盖全部 1000+ 端点。描述内嵌各平台常用端点示例（小红书 search_note/get_note_info/get_user_notes/get_note_comments、抖音 fetch_one_video/search_general、B站 search/view、微博 search、知乎 search、微信公众号 articles）。凭据走 `credentialVault`（scope=tikhub name=api_key），回退 env `TIKHUB_API_KEY`；Base URL 可用 `TIKHUB_API_BASE` 覆盖。聚合到 `integration.ts`，测试 fixture `ALL_NATIVE_TOOL_NAMES` 同步加 `tikhub_request`。
+  - **设计原则**：不做高层 social_search 封装（各平台 search 端点参数名/结果结构差异大、端点易变，封装不稳且维护成本高）；通用 `tikhub_request` 最灵活、最稳、覆盖全部端点，Agent 查 TikHub 文档拿准确端点路径。不引入官方开放平台 SDK（企业认证过重）+ 不依赖非官方签名 SDK（不稳定）。TikHub 纯 HTTP、本地零依赖，符合「云端为主、本地轻量」。server tsc 通过、nativeTools 95/95 通过。
+- **platform_login 登录态捕获可靠性根治**：用户反馈「Agent 说登录后自动保存 cookie 但实际上并没有」。诊断 `capturePlatformLoginState` 三个 bug：① 登录成功判定靠 storageState 文件大小（5KB/10KB 阈值）——未登录的知乎首页 localStorage 也可能超阈值，误判「已登录」但 cookie 无登录态；② 超时后无条件 `context.storageState({path})` 落盘 + `saveCookies`——用户登录慢超时，保存的是未登录态；③ `saveCookies` 覆盖旧 cookie——新捕获的无效 cookie 覆盖旧的有效登录态。根治：
+  1. **`PlatformLoginConfig` 加 `loginCookieNames: string[]`**：每平台定义登录态核心 cookie 名（zhihu `z_c0`/`d_c0`、wechat `slave_sid`、xhs `web_session`、douyin `sessionid_ss`/`sid_guard`、bilibili `SESSDATA`、weibo `SUB`、juejin `sessionid_ss`、csdn `UserName`/`UserToken`、yuque `_yuque_session`）。
+  2. **轮询改检查 cookie 名**：每 3s `context.cookies(cookieUrls)` 找是否含任一 `loginCookieNames` 且值非空——比文件大小可靠，未登录首页 localStorage 再大也不会误判。
+  3. **超时未登录不落盘、不 saveCookies**：保留旧的有效登录态，返回 `success:false`「未检测到登录态 cookie，未保存（保留旧登录态）」，让用户重试或加 timeoutSec。
+  4. **登录成功才落盘**：命中登录态 cookie 时才 `storageState` + `saveCookies`，message 报告命中的 cookie 名 + storageState 大小 + cookieJar 条数。
+  - **设计原则**：登录态判定必须基于平台特定登录 cookie 名（语义可靠），不能靠文件大小（localStorage 噪声）；未登录时禁止落盘覆盖旧态（宁可不保存也不保存无效态）。server tsc 通过、nativeTools 95/95 + platformFetch 38/38 通过。
+- **super/manager tier 工具清单补齐 platform_login（根因：超级 Agent 拿不到登录工具）**：用户反馈超级 Agent 在「重新登录知乎」任务里 thinking 说「无法直接调用 native:platform_login 作为标准工具」，绕路让用户手动操作。诊断：`platform_login`/`browser_login_status` 只在 `ASSISTANT_DEFAULT_TOOLS`（内置 assistant）里，**`TIER_DEFAULT_TOOLS.super` 和 `TIER_DEFAULT_TOOLS.manager` 都没有**——超级 Agent / 管理 Agent 的工具清单不含登录工具，所以 Agent 拿不到。修复：
+  1. **`constants.ts` `TIER_DEFAULT_TOOLS.super` 加 `native:platform_login` + `native:browser_login_status`**（`...INTEGRATION_DEFAULT_TOOLS` 前）；`TIER_DEFAULT_TOOLS.manager` 同样加（`send_email` 后）。sub tier 不加（子 Agent 不该弹浏览器登录）。
+  2. **一次性脚本 `scripts/fix-super-agent-tools.ts`**：现有 super/manager Agent 的 `tools` 字段是创建时固化的旧清单（resolveAgent 只读化 W9 不自动补齐），脚本读 DB 给现有 Agent 的 tools 字段补齐 `native:platform_login` + `native:browser_login_status`（去重），跑后即删。执行结果：assistant (manager) 补齐 platform_login；超级 Agent 已含（跳过）。
+  3. **兜底模板生效**：`agentFactory.ts` `FALLBACK_TEMPLATES` 用 `TIER_DEFAULT_TOOLS.super/manager`（常量已含 platform_login），模板文件缺失时兜底自动含登录工具。
+  - **设计原则**：新增工具加到 `TIER_DEFAULT_TOOLS` 常量后，新创建的 tier Agent 自动获得；已存在的 Agent 需一次性脚本补齐 tools 字段（resolveAgent 只读化不自动改）。server tsc 通过、nativeTools 95/95 通过。
+- **子 Agent 创建后左侧 panel 不自动更新（根因：invalidate 只覆盖 spawn_subagent）**：用户反馈「子 agent 创建时左侧 panel 数量没自动更新，得刷新才看到，强调多少次了还在犯」。诊断 `apps/web/lib/useChatRunStream.ts` `onToolEnd`：L390 `if (name === "spawn_subagent" ...)` 才 `utils.agent.list.invalidate()`——**只 `spawn_subagent` 工具触发 invalidate**，`agent_create`/`agent_create_sub`/`agent_update`/`agent_delete`/`workspace_create`/`workspace_archive` 这些同样改变 agent/workspace 列表的工具**都不刷新左侧 panel**。超级 Agent 用 `agent_create` 建子 Agent 时，前端 cache 不失效，必须手动刷新。修复：`onToolEnd` 末尾加 `AGENT_LIST_MUTATING_TOOLS` 集合判断，对上述 8 个工具统一 `agent.list.invalidate().then(refetch)` + `session.list.invalidate().then(refetch)`（spawn_subagent 已在上面处理不重复）。设计原则：**任何改变左侧 panel 数据源的工具都必须 invalidate 对应 query**，不能只覆盖单一工具。server tsc 通过、platformFetch 38/38 通过。
+- **登录态「一塌糊涂」根因：read_article 抓取只用 cookieJar 不用 storageState（学 MetaBlog）**：用户反馈「登录态一塌糊涂」，参考 `D:\ALL IN AI\MetaBlog`。对比 MetaBlog `server/services/zhihuCollection.ts` L161 `launchZhihuBrowser({ storageState: fs.existsSync(AUTH_PATH) ? AUTH_PATH : undefined })`——**MetaBlog 抓取用 Playwright + storageState（完整浏览器态：cookies + localStorage + sessionStorage）**。而 KnowPilot `apps/server/src/infra/metablog/platform/fetcher.ts` 的 ZhihuFetcher/DouyinFetcher/XhsFetcher/WechatFetcher 虽然也用 Playwright，但**只 `context.addCookies(loadCookies(...))`（HTTP cookie），没用 storageState**——localStorage/sessionStorage 丢失，知乎/小红书/抖音这种强反爬平台（依赖 x-zse-96 等签名 + 浏览器态指纹）光靠 HTTP cookie 抓不到登录后内容。修复：
+  1. **`platformLogin.ts` export `getPlatformStorageStatePath(platform): string | null`**：返回 `data/cookies/{platform}_storage_state.json` 路径，文件不存在返回 null（调用方回退 addCookies）。
+  2. **fetcher.ts 四个平台 fetcher 优先用 storageState**：`browser.newContext({ ..., ...(storageStatePath ? { storageState: storageStatePath } : {}) })`，有 storageState 时跳过 `addCookies`（storageState 已含 cookies），无 storageState 回退 `addCookies(cookies)` 保持兼容。
+  - **设计原则**：强反爬平台抓取必须复用完整浏览器态（storageState），不能只注入 HTTP cookie（丢失 localStorage/签名上下文）；storageState 优先、cookieJar 回退，保证旧登录态不丢。server tsc 通过、platformFetch 38/38 通过。
+- **platform_login「窗口一开就关、显示已登录」（根因：loginCookieNames 混入设备 cookie）**：用户反馈「打开浏览器还没登录窗口就关了，然后显示已登录，纯扯淡」。诊断 `capturePlatformLoginState` 轮询逻辑：L175 `pwCookies.find(c => cfg.loginCookieNames.includes(c.name) && c.value)` 命中即判定登录成功 → 立刻 `storageState` 落盘 + `browser.close()` 关窗。bug 在 `PLATFORM_LOGIN_CONFIGS` 的 `loginCookieNames` 混入了**未登录就存在的设备 cookie**：① 知乎 `d_c0` 是设备追踪 cookie（未登录首页就有，真正的登录态是 `z_c0`）；② 小红书 `xhsappid` 是设备 id（未登录就有，真正登录态是 `web_session`）；③ csdn `uuid` 是设备 id（未登录就有，真正登录态是 `UserName`/`UserToken`）。结果：浏览器一打开平台页，3s 后首次轮询就检测到设备 cookie 命中 → 误判「已登录」→ 立刻关窗 + 落盘无效态。修复：`loginCookieNames` 只保留**登录后才出现的认证 cookie**——zhihu `["z_c0"]`、xhs `["web_session"]`、csdn `["UserName","UserToken"]`（移除 `d_c0`/`xhsappid`/`uuid` 三个设备 cookie）。其他平台（wechat/douyin/bilibili/weibo/juejin/yuque）的 loginCookieNames 已是纯登录态 cookie，无需改。
+  - **设计原则**：`loginCookieNames` 必须是「登录后才出现」的认证 cookie，绝不能含设备追踪 cookie（`d_c0`/`xhsappid`/`uuid` 这类未登录就有的）——否则首次轮询就误判、关窗、落盘无效态，用户体验「窗口一开就关、显示已登录」。server tsc 通过、platformFetch 38/38 通过。
+- **超级 Agent 绕过 platform_login 用 browser_screenshot（根因：systemPrompt 固化无 platform_login 指引）**：用户截图反馈超级 Agent 读知乎收藏夹时用 `browser_screenshot`+`vision_describe` 而非 `platform_login`，vision_describe 因 Gemini key 无效失败卡死。诊断：`DEFAULT_ASSISTANT_SYSTEM_PROMPT`（agentResolver.ts）已含 platform_login 铁律，但**超级 Agent（super tier）的 systemPrompt 是 `config/agents/agents/_templates/super.md` 创建时固化的旧版本，完全不含 platform_login 指引**；tool-guide 钩子虽注入 `WEB_TOOL_GUIDE`，但措辞是「若被登录墙拦截」（被动），Agent 主动读收藏夹时没意识到会撞登录墙，且 LLM 更听从 systemPrompt（身份核心）。修复四处：
+  1. **`super.md` 模板加「平台登录态（铁律）」段落**：明确 platform_login 是唯一入口、禁止 browser_screenshot/read_image/vision_describe 截图检查、禁止手动 F12 复制 cookie、检查登录态用 browser_login_status、访问需登录内容前先确认登录态。
+  2. **`manager.md` 模板同样加该段落**（管理 Agent 也需）。
+  3. **一次性脚本 `scripts/fix-super-agent-prompt.ts`**：给现有 super/manager Agent 的 systemPrompt 追加该段落（检测不含 `platform_login` 才追加，已含则跳过），执行结果：assistant (manager) + KnowPilot 超级 Agent (super) 各追加一次。
+  4. **`promptBuilder.ts` `WEB_TOOL_GUIDE` 措辞从被动改主动**：「若被登录墙拦截」→「**访问需登录内容前，若不确定登录态，先 browser_login_status 确认，未登录则 platform_login**」，并加「即使用户只说看看登录状态，也优先 browser_login_status 而非截图」。fixture 同步更新 4 处。
+  - **设计原则**：工具使用铁律必须写进 Agent 的 systemPrompt（身份核心，LLM 最听从），不能只靠 tool-guide 钩子的被动措辞；措辞要从「若被拦截」改为「访问前先确认」（主动前置）；模板更新 + 一次性脚本补齐现有 Agent + 钩子措辞强化三管齐下。server tsc 通过、contextHooks 11/11 通过。
+- **超级 Agent 读文章被知乎反爬拦截（根因：TIER_DEFAULT_TOOLS.super 缺 read_article/scrape_web_page）**：dump 最近 session 发现超级 Agent 读知乎专栏 `zhuanlan.zhihu.com/p/...` 时调用链是 `read_article`→`scrape_web_page`→`browser_screenshot`→`read_image`→`vision_describe`，OCR 显示知乎返回「您当前请求存在异常，暂时限制本次访问」拦截页。诊断 `packages/shared/src/constants.ts` `TIER_DEFAULT_TOOLS.super`（L438）和 `config/agents/agents/_templates/super.md` 模板**都没有 `native:read_article` 和 `native:scrape_web_page`**——超级 Agent 拿不到正文抓取工具，只能退回 browser_screenshot 截图（被反爬拦截 + 模型无 vision 卡死）。修复：
+  1. **`constants.ts` `TIER_DEFAULT_TOOLS.super` 和 `.manager` 在 `web_search` 后加 `native:read_article` + `native:scrape_web_page`**（编排者也要能亲自读文章，不能只靠截图）。
+  2. **`super.md` 和 `manager.md` 模板同步加这两个工具**。
+  3. **一次性脚本 `scripts/fix-super-agent-read-article.ts`** 给现有 super/manager Agent 的 tools 字段补齐（已执行：2/2 补齐）。
+  - **设计原则**：编排 tier Agent 也需要核心执行工具（read_article/scrape_web_page），否则遇登录墙/反爬时只能退回截图绕路；工具清单变更必须模板 + 常量 + 现有 DB 三处同步。server tsc 通过、nativeTools 95/95 通过。
+- **read_article offset 参数无效（根因：工具根本没 offset 参数）**：用户反馈「只能读一半，offset=4000 没用」。诊断 `apps/server/src/infra/tools/native/web.ts` read_article 工具 schema（L1012）**只有 maxChars（从头截断），没有 offset 参数**——用户传 offset=4000 被忽略，每次都从第 0 字符开始读，长文永远只能读前 maxChars 一段。修复：
+  1. **schema 加 `offset` 参数**：描述「正文起始字符偏移（默认 0），配合 maxChars 翻页：第一次 offset=0，第二次 offset=上次返回的 offset+contentChars」。
+  2. **实现 `fullContent.slice(offset)` 后再 maxChars 截断**：返回 `content`（offset 后的内容，再截 maxChars）、`contentChars`（本段长度）、`totalChars`（全文长度）、`offset`（当前偏移）、`nextOffset`（下一段起始，truncated 或未到末尾时给出）。
+  3. **工具描述加翻页指引**：「长文分段读：第一次 offset=0，根据返回的 nextOffset 继续读下一段（contentTruncated=true 或 nextOffset 存在时翻页）」。
+  - **设计原则**：长文抓取工具必须支持分段（offset + nextOffset），不能只从头截断——否则 LLM 永远只能读前半段，后半段拿不到。server tsc 通过、platformFetch 38/38 通过。
+- **新增 scroll_screenshot + save_webpage 两个工具**：用户反馈 read_article 截断、长文分段麻烦、SPA 懒加载截图空白。新增两个工具解决：
+  1. **`scroll_screenshot`**（concurrencyClass B）：分段滚动截图，解决 SPA 懒加载/长页 fullPage 截图空白。每次滚动一个视口高度，等待加载后截一张视口图，返回多张截图路径（按滚动顺序）。参数：url、scrollSteps（1~20，默认 5）、scrollDelay（200~5000ms，默认 800，懒加载页调大）、width/height（视口，height 也是滚动步长，默认 800）。自动检测到底（`innerHeight+scrollY >= scrollHeight-10`）提前停止。落盘 `content/uploads/screenshots/`，返回 `screenshots[]`（path/publicUrl/step）+ suggestedTool=read_image。
+  2. **`save_webpage`**（concurrencyClass A）：把网页完整正文保存到本地 `data/webpages/`（HTML 和/或 Markdown），再用 read_file 读取。解决 read_article 截断、长文分段麻烦——存本地后可反复读、离线读、用 read_file offset 分段读长文。复用 read_article 抓取链路（含登录态复用）。参数：url、format（html|markdown|both，默认 both）、method（playwright 强制渲染）。返回 htmlPath/markdownPath/contentChars + suggestedTool=read_file。
+  - **设计原则**：长文/复杂页场景需多管齐下——read_article（分段 offset）适合纯文字、save_webpage（存本地反复读）适合超长文/离线、scroll_screenshot（滚动截图）适合懒加载/需看清布局的 SPA。三者互补，LLM 按场景选。server tsc 通过、nativeTools 95/95 通过。
