@@ -27,7 +27,7 @@ import { TIER_DEFAULT_TOOLS, ASSISTANT_DEFAULT_TOOLS } from "@knowpilot/shared";
 
 const config = getAppConfig();
 const services = getServiceContainer(prisma, getEventBus(), config);
-const templatesDir = path.join(config.contentPaths.agents, "_templates");
+const templatesDir = path.join(config.configPaths.agents, "_templates");
 
 describe("W9 AgentFactory 模板", () => {
   afterAll(() => {

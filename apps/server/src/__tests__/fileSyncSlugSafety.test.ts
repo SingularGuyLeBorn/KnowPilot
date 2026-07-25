@@ -20,7 +20,7 @@ const RUN = `d3-${Date.now().toString(36)}`;
 afterEach(async () => {
   await prisma.agent.deleteMany({ where: { name: { contains: RUN } } }).catch(() => undefined);
   // 清理可能写出的越界文件
-  const evilOutside = path.resolve(config.contentPaths.agents, "..", "..", "tmp", `pwn-${RUN}.md`);
+  const evilOutside = path.resolve(config.configPaths.agents, "..", "..", "tmp", `pwn-${RUN}.md`);
   if (fs.existsSync(evilOutside)) fs.unlinkSync(evilOutside);
 });
 
@@ -50,7 +50,7 @@ describe("D3 FileSync slug 消毒", () => {
     const row = await prisma.agent.findFirst({ where: { name } });
     expect(row).toBeNull();
 
-    const contentRoot = path.resolve(config.contentPaths.agents);
+    const contentRoot = path.resolve(config.configPaths.agents);
     const escaped = path.resolve(contentRoot, "..", "evil-" + RUN + ".md");
     // 常见穿越落点：agents/../evil-xxx.md = content/evil-xxx.md
     expect(fs.existsSync(escaped)).toBe(false);

@@ -18,7 +18,7 @@ describe("memoryDaily L2 日记层", () => {
   it("append 写入 daily/YYYY-MM-DD.md", () => {
     const r = appendDailyNote(root, "今天完成了 OCR 接线", { day: "2026-07-18", source: "test" });
     expect(r.day).toBe("2026-07-18");
-    expect(r.path).toBe("content/memories/daily/2026-07-18.md");
+    expect(r.path).toBe("config/memories/daily/2026-07-18.md");
     const body = fs.readFileSync(path.join(root, r.path), "utf8");
     expect(body).toContain("今天完成了 OCR 接线");
     expect(body).toContain("# 2026-07-18");

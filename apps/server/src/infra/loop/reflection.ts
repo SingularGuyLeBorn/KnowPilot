@@ -39,7 +39,7 @@ export interface ReflectionOptions {
 }
 
 /**
- * Critic prompt（放常量而非 content/prompts：反思是运行时内部质量门，
+ * Critic prompt（放常量而非 config/prompts：反思是运行时内部质量门，
  * 不是用户可复用的 Prompt 模板资产；避免 db:sync 扫描耦合）。
  * 输出契约：严格 JSON { "passed": boolean, "issues": string[] }。
  */

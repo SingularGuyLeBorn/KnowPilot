@@ -1,8 +1,8 @@
 /**
  * Skill 同步器
  *
- * - procedural: content/skills/{name}/SKILL.md（+ references/templates/scripts）
- * - executable: content/skills/{slug}.md
+ * - procedural: config/skills/{name}/SKILL.md（+ references/templates/scripts）
+ * - executable: config/skills/{slug}.md
  * - reference: design-references/ 等
  */
 

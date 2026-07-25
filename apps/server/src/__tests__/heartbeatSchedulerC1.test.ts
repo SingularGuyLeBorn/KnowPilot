@@ -120,17 +120,20 @@ describe("C1 执行型僵尸 Task 恢复扫描", () => {
     await engine.start();
     await engine.triggerHeartbeat(agentId);
 
-    await vi.waitFor(async () => {
-      const success = await prisma.task.findFirst({
-        where: {
-          sessionId: session.id,
-          name: { startsWith: "[heartbeat]" },
-          status: "success",
-          id: { not: hbZombie.id },
-        },
-      });
-      expect(success).not.toBeNull();
-    });
+    await vi.waitFor(
+      async () => {
+        const success = await prisma.task.findFirst({
+          where: {
+            sessionId: session.id,
+            name: { startsWith: "[heartbeat]" },
+            status: "success",
+            id: { not: hbZombie.id },
+          },
+        });
+        expect(success).not.toBeNull();
+      },
+      { timeout: 5000, interval: 100 },
+    );
 
     await prisma.chatSession.deleteMany({ where: { id: session.id } });
     await prisma.agent.deleteMany({ where: { id: agentId } });
@@ -186,14 +189,17 @@ describe("C1 执行型僵尸 Task 恢复扫描", () => {
     const engine = getHeartbeatEngine(prisma, ctx.services, narrow);
     await engine.triggerHeartbeat(agentId);
 
-    await vi.waitFor(async () => {
-      const row = await prisma.task.findFirst({
-        where: { name: `[heartbeat] C1-Queue-${RUN}` },
-        orderBy: { createdAt: "desc" },
-      });
-      expect(row?.status).toBe("failed");
-      expect((row?.output as { error?: string } | null)?.error).toBe("队列满");
-    });
+    await vi.waitFor(
+      async () => {
+        const row = await prisma.task.findFirst({
+          where: { name: `[heartbeat] C1-Queue-${RUN}` },
+          orderBy: { createdAt: "desc" },
+        });
+        expect(row?.status).toBe("failed");
+        expect((row?.output as { error?: string } | null)?.error).toBe("队列满");
+      },
+      { timeout: 5000, interval: 100 },
+    );
 
     const hbRow = await prisma.agent.findUnique({ where: { id: agentId }, select: { heartbeat: true } });
     const streak = (hbRow?.heartbeat as { consecutiveFailures?: number } | null)?.consecutiveFailures ?? 0;

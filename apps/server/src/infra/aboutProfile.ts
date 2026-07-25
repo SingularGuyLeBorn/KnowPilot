@@ -58,7 +58,7 @@ export function loadAboutProfile(): AboutProfile {
   const envPath = process.env.ABOUT_PROFILE_PATH?.trim();
   const filePath = envPath
     ? path.resolve(envPath)
-    : path.join(config.contentDir, "about", "profile.md");
+    : path.join(config.contentPaths.about, "profile.md");
 
   const raw = fs.readFileSync(filePath, "utf8");
   const { data, body } = parseFrontmatter(raw);

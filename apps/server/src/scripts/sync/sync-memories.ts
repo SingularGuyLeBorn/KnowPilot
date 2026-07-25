@@ -1,7 +1,7 @@
 /**
  * Memory 同步器
  *
- * 文件格式：content/memories/{slug}.md
+ * 文件格式：config/memories/{slug}.md
  * frontmatter: content, type, strength, keywords
  * 正文：content（如 frontmatter 未提供则使用正文）
  */

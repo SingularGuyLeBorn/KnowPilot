@@ -6,17 +6,23 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import { load as loadYaml } from "js-yaml";
+import { getAppConfig } from "../../infra/config.js";
 
 /**
- * 定位 content 子目录（自适应执行路径）
- * 优先从当前工作目录找，找不到则向上回退两级（适配 pnpm 脚本在 apps/server 下执行时 cwd 不同）
+ * 定位存储子目录（统一读 AppConfig，消灭与 KP_*_DIR 双轨）
+ * posts/about/uploads → contentPaths；agents/skills/mcp/memories/tasks/prompts/sources → configPaths；
+ * 其余（运行时产物）→ dataPaths。测试通过 KP_CONTENT_DIR/KP_CONFIG_DIR/KP_DATA_DIR 隔离。
  */
 export function getContentDir(dirName: string): string {
-  let dir = path.resolve(process.cwd(), `content/${dirName}`);
-  if (!fs.existsSync(dir)) {
-    dir = path.resolve(process.cwd(), `../../content/${dirName}`);
-  }
-  return dir;
+  const config = getAppConfig();
+  const cp = config.contentPaths as Record<string, string>;
+  const gp = config.configPaths as Record<string, string>;
+  const dp = config.dataPaths as Record<string, string>;
+  if (gp[dirName]) return gp[dirName];
+  if (cp[dirName]) return cp[dirName];
+  if (dp[dirName]) return dp[dirName];
+  // 未知目录名：保守回退到 config 根（旧默认行为是 content 根，但配置类实体已迁 config）
+  return path.join(config.configDir, dirName);
 }
 
 /** 路径比较前统一为正斜杠（Windows 反斜杠与 POSIX 模板对齐） */
@@ -27,7 +33,7 @@ export function toPosixPath(p: string): string {
 /**
  * 递归获取目录下所有指定扩展名的文件。
  * 默认跳过：
- * - `_` 开头目录（如 content/agents/_templates/，W9）
+ * - `_` 开头目录（如 config/agents/_templates/，W9）
  * - `.` 开头目录（如 posts/.trash/ 回收站，D2）
  * - ignoreDirs 显式名单（images/public/assets/.trash）
  */

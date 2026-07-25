@@ -388,7 +388,9 @@ export abstract class FileSyncService<
   protected abstract getFileSlug(entity: TEntity): string;
 
   protected getContentDir(): string {
-    return (this.config.contentPaths as any)[this.contentDirName] || path.join(this.config.contentDir, this.contentDirName);
+    const gp = this.config.configPaths as Record<string, string>;
+    const cp = this.config.contentPaths as Record<string, string>;
+    return gp[this.contentDirName] || cp[this.contentDirName] || path.join(this.config.configDir, this.contentDirName);
   }
 
   /**
@@ -419,7 +421,7 @@ export abstract class FileSyncService<
     const contentRoot = path.resolve(this.getContentDir());
     const prefix = contentRoot.endsWith(path.sep) ? contentRoot : contentRoot + path.sep;
     if (filePath !== contentRoot && !filePath.startsWith(prefix)) {
-      throw new Error(`${this.entityName} 文件路径越出 content/${this.contentDirName}：${slug}`);
+      throw new Error(`${this.entityName} 文件路径越出存储根 ${this.contentDirName}：${slug}`);
     }
     return filePath;
   }

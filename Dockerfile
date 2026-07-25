@@ -28,6 +28,7 @@ COPY --from=build /app/tsconfig.base.json ./
 COPY --from=build /app/apps ./apps
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/content ./content
+COPY --from=build /app/config ./config
 COPY --from=build /app/scripts ./scripts
 
 EXPOSE 3000 3010

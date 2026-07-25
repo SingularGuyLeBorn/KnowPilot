@@ -11,20 +11,13 @@ const projectRoot = path.resolve(__dirname, "../../..");
 export const TEST_DB_NAME = "test-e2e.db";
 export const TEST_DB_URL = `file:./${TEST_DB_NAME}`;
 export const TEST_CONTENT_DIR = path.join(projectRoot, ".test-content-e2e");
+export const TEST_CONFIG_DIR = path.join(projectRoot, ".test-config-e2e");
+export const TEST_DATA_DIR = path.join(projectRoot, ".test-data-e2e");
 const PID_FILE = path.join(projectRoot, ".test-e2e-pids.json");
 
-const CONTENT_SUBDIRS = [
-  "posts",
-  "agents",
-  "skills",
-  "mcp",
-  "memories",
-  "tasks",
-  "prompts",
-  "sources",
-  "uploads",
-  "about",
-];
+const CONTENT_SUBDIRS = ["posts", "about", "uploads"];
+const CONFIG_SUBDIRS = ["agents", "skills", "mcp", "memories", "tasks", "prompts", "sources"];
+const DATA_SUBDIRS = ["approvals", "cookies", "files", "git", "logs", "messages", "sessions", "tools", "workspace"];
 
 function getE2EPorts() {
   return {
@@ -221,6 +214,8 @@ function spawnServer(serverPort) {
     SERVER_PORT: String(serverPort),
     DATABASE_URL: TEST_DB_URL,
     KP_CONTENT_DIR: TEST_CONTENT_DIR,
+    KP_CONFIG_DIR: TEST_CONFIG_DIR,
+    KP_DATA_DIR: TEST_DATA_DIR,
     REQUIRE_APPROVAL: process.env.REQUIRE_APPROVAL ?? "false",
   };
   for (const key of ["MOCK_LLM", "MOCK_MCP", "MOCK_NATIVE_TOOLS"]) {
@@ -281,17 +276,27 @@ export default async function globalSetup() {
   killStaleTestProcesses();
   await sleep(500);
 
-  // 2. 隔离数据库与 content 目录
+  // 2. 隔离数据库与三桶存储目录
   process.env.DATABASE_URL = TEST_DB_URL;
   process.env.KP_CONTENT_DIR = TEST_CONTENT_DIR;
+  process.env.KP_CONFIG_DIR = TEST_CONFIG_DIR;
+  process.env.KP_DATA_DIR = TEST_DATA_DIR;
 
   // 3. 删除旧测试库（带重试，防止残留进程占用）
   await removeDbFiles(path.join(serverDir, "prisma"), TEST_DB_NAME);
 
-  // 4. 创建隔离 content 目录
+  // 4. 创建隔离三桶目录
   fs.mkdirSync(TEST_CONTENT_DIR, { recursive: true });
   for (const sub of CONTENT_SUBDIRS) {
     fs.mkdirSync(path.join(TEST_CONTENT_DIR, sub), { recursive: true });
+  }
+  fs.mkdirSync(TEST_CONFIG_DIR, { recursive: true });
+  for (const sub of CONFIG_SUBDIRS) {
+    fs.mkdirSync(path.join(TEST_CONFIG_DIR, sub), { recursive: true });
+  }
+  fs.mkdirSync(TEST_DATA_DIR, { recursive: true });
+  for (const sub of DATA_SUBDIRS) {
+    fs.mkdirSync(path.join(TEST_DATA_DIR, sub), { recursive: true });
   }
 
   // 5. 复制 about profile（about.getProfile 依赖）

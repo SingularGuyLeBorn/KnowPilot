@@ -2,18 +2,31 @@
  * Cookie Jar — 网页访问登录态持久化
  *
  * 保存/复用各平台 Cookie，支持从 .env 初始化。
- * 文件路径：content/cookies/{platform}.json（Git 不跟踪）
+ * 文件路径：data/cookies/{platform}.json（Git 不跟踪）
  */
 
 import fs from "fs";
 import path from "path";
 
-export type CookiePlatform = "zhihu" | "wechat" | "xhs" | "douyin" | "yuque";
+export type CookiePlatform =
+  | "zhihu"
+  | "wechat"
+  | "xhs"
+  | "douyin"
+  | "yuque"
+  | "bilibili"
+  | "weibo"
+  | "juejin"
+  | "csdn";
 
-const COOKIE_DIR = path.join(process.env.KNOWPILOT_ROOT || process.cwd(), "content", "cookies");
+import { getAppConfig } from "./config.js";
+
+function getCookieDir(): string {
+  return getAppConfig().dataPaths.cookies;
+}
 
 function getCookiePath(platform: CookiePlatform): string {
-  return path.join(COOKIE_DIR, `${platform}.json`);
+  return path.join(getCookieDir(), `${platform}.json`);
 }
 
 function getEnvCookieName(platform: CookiePlatform): string[] {
@@ -28,6 +41,14 @@ function getEnvCookieName(platform: CookiePlatform): string[] {
       return ["DOUYIN_COOKIE"];
     case "yuque":
       return ["YUQUE_SESSION"];
+    case "bilibili":
+      return ["BILIBILI_COOKIE"];
+    case "weibo":
+      return ["WEIBO_COOKIE"];
+    case "juejin":
+      return ["JUEJIN_COOKIE"];
+    case "csdn":
+      return ["CSDN_COOKIE"];
     default:
       return [];
   }
@@ -93,7 +114,15 @@ export function loadCookies(platform: CookiePlatform): CookieJarEntry[] {
             ? ".douyin.com"
             : platform === "yuque"
               ? ".yuque.com"
-              : "";
+              : platform === "bilibili"
+                ? ".bilibili.com"
+                : platform === "weibo"
+                  ? ".weibo.com"
+                  : platform === "juejin"
+                    ? ".juejin.cn"
+                    : platform === "csdn"
+                      ? ".csdn.net"
+                      : "";
   const entries = parseCookieHeader(envCookie, domain);
   saveCookies(platform, entries);
   return entries;
@@ -101,7 +130,7 @@ export function loadCookies(platform: CookiePlatform): CookieJarEntry[] {
 
 /** 保存某平台 Cookie */
 export function saveCookies(platform: CookiePlatform, cookies: CookieJarEntry[]): void {
-  fs.mkdirSync(COOKIE_DIR, { recursive: true });
+  fs.mkdirSync(getCookieDir(), { recursive: true });
   fs.writeFileSync(getCookiePath(platform), JSON.stringify(cookies, null, 2), "utf-8");
 }
 
@@ -146,9 +175,10 @@ export async function captureCookies(
 
 /** 列出已保存的平台 */
 export function listSavedCookiePlatforms(): CookiePlatform[] {
-  if (!fs.existsSync(COOKIE_DIR)) return [];
+  const dir = getCookieDir();
+  if (!fs.existsSync(dir)) return [];
   return fs
-    .readdirSync(COOKIE_DIR)
+    .readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
     .map((f) => f.replace(".json", ""))
     .filter((p): p is CookiePlatform => ["zhihu", "wechat", "xhs", "douyin", "yuque"].includes(p));

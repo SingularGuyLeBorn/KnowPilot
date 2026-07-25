@@ -19,8 +19,12 @@ const serverDir = path.resolve(__dirname, "../..");
 const projectRoot = path.resolve(serverDir, "../..");
 const TEST_DB_URL = "file:./test.db";
 const TEST_CONTENT_DIR = path.join(projectRoot, ".test-content");
+const TEST_CONFIG_DIR = path.join(projectRoot, ".test-config");
+const TEST_DATA_DIR = path.join(projectRoot, ".test-data");
 
-const CONTENT_SUBDIRS = ["posts", "agents", "skills", "mcp", "memories", "tasks", "prompts", "sources", "uploads", "about"];
+const CONTENT_SUBDIRS = ["posts", "about", "uploads"];
+const CONFIG_SUBDIRS = ["agents", "skills", "mcp", "memories", "tasks", "prompts", "sources"];
+const DATA_SUBDIRS = ["approvals", "cookies", "files", "git", "logs", "messages", "sessions", "tools", "workspace"];
 
 export default async function globalSetup() {
   // 1. 隔离数据库：必须在 workers fork（即任何 PrismaClient 实例化）之前设置
@@ -34,12 +38,22 @@ export default async function globalSetup() {
     }
   }
 
-  // 2. 隔离 content 目录
+  // 2. 隔离三桶存储目录（content/config/data）
   fs.mkdirSync(TEST_CONTENT_DIR, { recursive: true });
   for (const sub of CONTENT_SUBDIRS) {
     fs.mkdirSync(path.join(TEST_CONTENT_DIR, sub), { recursive: true });
   }
+  fs.mkdirSync(TEST_CONFIG_DIR, { recursive: true });
+  for (const sub of CONFIG_SUBDIRS) {
+    fs.mkdirSync(path.join(TEST_CONFIG_DIR, sub), { recursive: true });
+  }
+  fs.mkdirSync(TEST_DATA_DIR, { recursive: true });
+  for (const sub of DATA_SUBDIRS) {
+    fs.mkdirSync(path.join(TEST_DATA_DIR, sub), { recursive: true });
+  }
   process.env.KP_CONTENT_DIR = TEST_CONTENT_DIR;
+  process.env.KP_CONFIG_DIR = TEST_CONFIG_DIR;
+  process.env.KP_DATA_DIR = TEST_DATA_DIR;
 
   // about.getProfile 依赖 about/profile.md：优先复制真实文件，否则写占位
   const realProfile = path.join(projectRoot, "content", "about", "profile.md");
@@ -82,9 +96,19 @@ export default async function globalSetup() {
     } catch {
       /* teardown 尽力而为 */
     }
-    // 清理测试 content 目录（保留 test.db 供失败排查）
+    // 清理测试三桶目录（保留 test.db 供失败排查）
     try {
       fs.rmSync(TEST_CONTENT_DIR, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    try {
+      fs.rmSync(TEST_CONFIG_DIR, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    try {
+      fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
     } catch {
       /* ignore */
     }

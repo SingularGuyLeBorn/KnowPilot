@@ -62,7 +62,7 @@ export async function maybeRunSkillCurator(
   config: AppConfig,
   opts?: { force?: boolean },
 ): Promise<CuratorResult> {
-  const skillsRoot = config.contentPaths.skills;
+  const skillsRoot = config.configPaths.skills;
   const intervalH = config.skills.curatorIntervalHours;
   const state = readState(skillsRoot);
   if (!opts?.force && state.lastRunAt) {

@@ -31,3 +31,30 @@ export function resolveSafePath(config: AppConfig, relPath: string): string {
   assertPathWithinProjectRoot(config, abs);
   return abs;
 }
+
+/**
+ * 校验绝对路径必须位于 dir 之内，否则抛错。用于 Workspace 隔离。
+ */
+export function assertPathWithinDir(dir: string, absPath: string): void {
+  const root = path.resolve(dir);
+  const normalized = path.resolve(absPath);
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  if (normalized !== root && !normalized.startsWith(prefix)) {
+    throw new Error(`路径超出目录范围：${absPath}（dir=${root}）`);
+  }
+}
+
+/**
+ * 把相对路径解析到指定 dir 内的绝对路径，禁 .. 与绝对路径。
+ * 用于 Agent Workspace 隔离：write_file 默认落到当前 Agent 的 Workspace 目录。
+ */
+export function resolveWithinDir(dir: string, relPath: string): string {
+  const normalized = String(relPath).replace(/\\/g, "/").replace(/^\/+/, "");
+  if (normalized.includes("..")) throw new Error("路径不允许包含 ..");
+  if (/^[a-zA-Z]:[\\/]/.test(normalized) || /^[\\/]/.test(normalized) || normalized.startsWith("//")) {
+    throw new Error(`路径不允许为绝对路径：${relPath}`);
+  }
+  const abs = path.resolve(dir, normalized);
+  assertPathWithinDir(dir, abs);
+  return abs;
+}

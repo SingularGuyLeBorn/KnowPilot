@@ -5,8 +5,8 @@
  * 清除范围：
  *   - SQLite：apps/server/prisma/*.db(+shm/wal)
  *   - workspaces/ 下全部工作区目录
- *   - content/ 各实体目录内文件（保留 .gitkeep）
- *   - .dev-log / .test-content* / E2E 残留
+ *   - content/uploads（运行时截图）+ config/ 各实体目录内沉淀（保留 .gitkeep）+ data/ 运行时产物（保留 .gitkeep）
+ *   - .dev-log / .test-content* / .test-config* / .test-data* / E2E 残留
  *
  * 默认保留 content/posts 与 content/about（博客花园）。
  * 加 --all 时连文章与 About 一并清空。
@@ -31,31 +31,41 @@ const yes = args.has("--yes") || args.has("-y");
 const includePosts = args.has("--all");
 const runSeed = args.has("--seed");
 
-/** content 下始终清理的运行时实体目录 */
-const RUNTIME_CONTENT_DIRS = [
+/** config/ 下需清理的运行时沉淀实体目录（保留 .gitkeep） */
+const RUNTIME_CONFIG_DIRS = [
   "agents",
-  "approvals",
-  "files",
-  "git",
-  "logs",
   "mcp",
   "memories",
-  "messages",
   "prompts",
-  "sessions",
   "skills",
   "sources",
   "tasks",
+];
+
+/** data/ 下运行时产物目录（整体可重建） */
+const RUNTIME_DATA_DIRS = [
+  "approvals",
+  "cookies",
+  "files",
+  "git",
+  "logs",
+  "messages",
+  "sessions",
   "tools",
-  "triggers",
-  "uploads",
   "workspace",
 ];
+
+/** content/ 下运行时产物（uploads 截图等），posts/about 默认保留 */
+const RUNTIME_CONTENT_DIRS = ["uploads"];
 
 const EXTRA_PATHS = [
   ".dev-log",
   ".test-content",
+  ".test-config",
+  ".test-data",
   ".test-content-e2e",
+  ".test-config-e2e",
+  ".test-data-e2e",
   ".test-e2e-pids.json",
   "apps/web/e2e/test-results",
   "apps/web/e2e/test-results-mock",
@@ -138,13 +148,29 @@ function clearWorkspaces() {
 
 function clearContent() {
   let entries = 0;
-  const dirs = [...RUNTIME_CONTENT_DIRS];
-  if (includePosts) dirs.push("posts");
+  const contentDirs = [...RUNTIME_CONTENT_DIRS];
+  if (includePosts) contentDirs.push("posts");
 
-  for (const name of dirs) {
+  for (const name of contentDirs) {
     const dir = path.join(root, "content", name);
     const n = clearDirKeepGitkeep(dir);
     if (n > 0) console.log(`  清空 content/${name}/（${n} 项）`);
+    entries += n;
+  }
+
+  // config/ 下运行时沉淀实体（保留 .gitkeep）
+  for (const name of RUNTIME_CONFIG_DIRS) {
+    const dir = path.join(root, "config", name);
+    const n = clearDirKeepGitkeep(dir);
+    if (n > 0) console.log(`  清空 config/${name}/（${n} 项）`);
+    entries += n;
+  }
+
+  // data/ 下运行时产物（整体可重建，保留 .gitkeep）
+  for (const name of RUNTIME_DATA_DIRS) {
+    const dir = path.join(root, "data", name);
+    const n = clearDirKeepGitkeep(dir);
+    if (n > 0) console.log(`  清空 data/${name}/（${n} 项）`);
     entries += n;
   }
 

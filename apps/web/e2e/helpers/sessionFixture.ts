@@ -33,7 +33,7 @@ export async function createUserOnlySession(): Promise<UserOnlySessionFixture> {
   const msgRes = await trpcMutate<ApiResult<{ id: string }>>("message.create", {
     sessionId,
     role: "user",
-    content: "用 list_directory 工具查看 content/agents 目录，一句话回复有哪些文件",
+    content: "用 list_directory 工具查看 config/agents 目录，一句话回复有哪些文件",
   });
   if (!msgRes.success || !msgRes.data) {
     throw new Error(msgRes.error?.message ?? "message.create 失败");

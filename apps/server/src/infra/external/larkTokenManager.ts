@@ -19,6 +19,7 @@ import * as path from "path";
 import { exec } from "child_process";
 import { randomBytes } from "crypto";
 import { URL } from "url";
+import { getAppConfig } from "../config.js";
 
 /** 探测本机可用端口（默认从 8088 起尝试若干相邻端口，避开 EADDRINUSE） */
 async function findFreeListenPort(startPort: number, maxTries = 5): Promise<number> {
@@ -96,9 +97,9 @@ function resolveRepoRoot(): string {
   return path.resolve(process.cwd(), "../..");
 }
 
-/** 缓存文件路径: 仓库根/content/cookies/feishu_oauth.json */
+/** 缓存文件路径: data/cookies/feishu_oauth.json */
 function getCachePath(): string {
-  return path.join(resolveRepoRoot(), "content", "cookies", "feishu_oauth.json");
+  return path.join(getAppConfig().dataPaths.cookies, "feishu_oauth.json");
 }
 
 /** 读取缓存文件 */

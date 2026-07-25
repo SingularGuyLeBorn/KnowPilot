@@ -24,7 +24,7 @@ afterEach(async () => {
     const row = await prisma.agent.findUnique({ where: { id } }).catch(() => null);
     if (row) {
       const slug = row.sourceSlug || `${row.name}-${id.slice(-6)}`;
-      const fp = path.join(config.contentPaths.agents, `${slug}.md`);
+      const fp = path.join(config.configPaths.agents, `${slug}.md`);
       if (fs.existsSync(fp)) fs.unlinkSync(fp);
       await prisma.agent.delete({ where: { id } }).catch(() => undefined);
     }

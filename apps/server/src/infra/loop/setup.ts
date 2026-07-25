@@ -9,7 +9,7 @@ import { getTierTemplate } from "../agentFactory.js";
 
 /**
  * 子 Agent 默认执行工具（带 native: 前缀，避免物化成空 → native:all）。
- * W9：运行时取 AgentFactory 模板 content/agents/_templates/sub.md（缺失回退 shared TIER_DEFAULT_TOOLS.sub）；
+ * W9：运行时取 AgentFactory 模板 config/agents/_templates/sub.md（缺失回退 shared TIER_DEFAULT_TOOLS.sub）；
  * 本导出为模块加载时的快照，热路径请走 resolveToolsForAgentTier（模板缓存按 mtime 自动刷新）。
  */
 export const DEFAULT_SUBAGENT_TOOLS: readonly string[] = getTierTemplate("sub").tools;

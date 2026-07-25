@@ -1,7 +1,7 @@
 /**
  * Task 同步器
  *
- * 文件格式：content/tasks/{slug}.json
+ * 文件格式：config/tasks/{slug}.json
  * 字段：name, type, status, cronExpression, input
  */
 

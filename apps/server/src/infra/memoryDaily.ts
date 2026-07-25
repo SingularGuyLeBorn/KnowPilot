@@ -1,12 +1,12 @@
 /**
- * L2 工作日记层 — content/memories/daily/YYYY-MM-DD.md
+ * L2 工作日记层 — config/memories/daily/YYYY-MM-DD.md
  * 只 search / append，不注入 system prompt（与 L1 pinned / L3 Memory 表正交）。
  */
 
 import fs from "fs";
 import path from "path";
 
-const DAILY_DIR_REL = path.join("content", "memories", "daily");
+const DAILY_DIR_REL = path.join("config", "memories", "daily");
 
 function dailyDir(projectRoot: string): string {
   return path.join(projectRoot, DAILY_DIR_REL);

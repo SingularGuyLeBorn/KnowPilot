@@ -53,36 +53,54 @@ content/posts/search-test-*.md
 content/posts/draft-search-test-*.md
 content/posts/e2e-trash-*.md
 content/posts/.trash/
+content/posts/smoke-post-*.md
 # W6：file_delete/directory_delete 回收站（项目根），由用户手动清理
 /.trash/
 content/uploads/vitest-test-file-*
-# 测试数据隔离（#2）：Vitest 用 test.db + .test-content，以下为 E2E/漏网 smoke 产物防御
-.test-content/
-content/posts/smoke-post-*.md
-content/agents/Smoke Agent*.md
-content/agents/ApprovalGate_*.md
-content/agents/*子代理*.md
-content/agents/*子 Agent*.md
-content/agents/*测试 Agent*.md
-content/skills/smoke_skill_*.md
-content/skills/Test Skill*.md
-content/mcp/smoke_mcp_*.json
-# 运行时产物：日记 / curator 状态 / 心跳产生的临时 agent（不入库）
-content/memories/daily/
-content/skills/.curator_state
-content/agents/*-e3f87d.md
 content/uploads/screenshots/
-content/mcp/Test Mcp*.json
-content/prompts/smoke-prompt-*.md
-content/prompts/Test Prompt*.md
-content/sources/smoke-source-*.json
+# 测试数据隔离（#2）：Vitest 用 test.db + .test-content/.test-config/.test-data，以下为 E2E/漏网 smoke 产物防御
+.test-content/
+.test-config/
+.test-data/
+.test-content-e2e/
+.test-config-e2e/
+.test-data-e2e/
+# config/ 下运行时产物与 smoke 残留（config/ 本体 Git 跟踪）
+config/agents/Smoke Agent*.md
+config/agents/ApprovalGate_*.md
+config/agents/*子代理*.md
+config/agents/*子 Agent*.md
+config/agents/*测试 Agent*.md
+config/agents/*-e3f87d.md
+config/skills/smoke_skill_*.md
+config/skills/Test Skill*.md
+config/skills/.curator_state
+config/skills/.usage.json
+# 嵌套路径防御（content 拆分后 config/skills/skills/ 等多一层）
+config/**/skills/.curator_state
+config/**/skills/.usage.json
+config/mcp/smoke_mcp_*.json
+config/mcp/Test Mcp*.json
+config/prompts/smoke-prompt-*.md
+config/prompts/Test Prompt*.md
+config/sources/smoke-source-*.json
+# 运行时日记（不入库）
+config/memories/daily/
+config/**/memories/daily/
+# Runtime generated memory 文件（用户运行时沉淀，可选跟踪；此处忽略避免噪声）
+config/memories/*.md
+config/**/memories/*.md
+
+# apps/server 下误生成的 config/ 目录（运行时 daily memory 路径 bug，后续修）
+apps/server/config/
+
+# data/ 运行时产物根（整体 .gitignore，可随时重建）
+/data/
 
 # User scratch / experiment prompts (not project source)
 prompts/
 
-# Runtime generated memory / trash files
-content/memories/*.md
-content/skills/.usage.json
+# Runtime generated trash / dev logs
 .dev-log/llm-budget.json
 .dev-log/openrouter-free-models.json
 .dev-log/oschina-sample.html
@@ -95,10 +113,8 @@ content/skills/.usage.json
 dev-*.png
 e2e-setup-marker.txt
 undefined
-.test-content-e2e/
 
-# 本地 OAuth / Cookie 凭证（勿提交）
-content/cookies/
+# 本地 OAuth / Cookie 凭证（已迁入 data/cookies/，勿提交）
 
 # 本地临时探测脚本（_ 前缀）与飞书实验脚本
 apps/server/src/scripts/_feishu*.ts

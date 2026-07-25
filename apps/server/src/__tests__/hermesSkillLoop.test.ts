@@ -37,7 +37,7 @@ describe("Hermes skill package 约定", () => {
 
   it("archive 移入 .archive 而非硬删", () => {
     const root = createTempProjectDir();
-    const skills = path.join(root, "content", "skills");
+    const skills = path.join(root, "config", "skills");
     const pkg = path.join(skills, "demo-skill");
     fs.mkdirSync(pkg, { recursive: true });
     fs.writeFileSync(path.join(pkg, "SKILL.md"), "---\nname: demo-skill\nkind: procedural\n---\n# Demo\n");
@@ -104,7 +104,7 @@ describe("Hermes skill_manage / usage / nudge", () => {
   it("skill_manage create 写出 procedural 包并 bump usage", async () => {
     const root = createTempProjectDir();
     roots.push(root);
-    const skillsDir = path.join(root, "content", "skills");
+    const skillsDir = path.join(root, "config", "skills");
     fs.mkdirSync(skillsDir, { recursive: true });
     const config = createTestConfig(root);
     const createdIds: string[] = [];
@@ -150,7 +150,7 @@ kind: procedural
   it("usage sidecar 记录 view；nudge 阈值负向/正向", async () => {
     const root = createTempProjectDir();
     roots.push(root);
-    const skillsDir = path.join(root, "content", "skills");
+    const skillsDir = path.join(root, "config", "skills");
     fs.mkdirSync(skillsDir, { recursive: true });
     bumpSkillView("demo", skillsDir);
     bumpSkillView("demo", skillsDir);
@@ -233,7 +233,7 @@ kind: procedural
   it("curator 归档闲置 agent-created skill（非硬删）", async () => {
     const root = createTempProjectDir();
     roots.push(root);
-    const skillsDir = path.join(root, "content", "skills");
+    const skillsDir = path.join(root, "config", "skills");
     const pkg = path.join(skillsDir, "old-skill");
     fs.mkdirSync(pkg, { recursive: true });
     fs.writeFileSync(path.join(pkg, "SKILL.md"), "---\nname: old-skill\nkind: procedural\n---\n# Old\n");

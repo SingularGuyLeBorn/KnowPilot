@@ -9,6 +9,7 @@ import {
   isSmokeContentSlug,
   isSmokeInfoSource,
 } from "./smokeArtifacts.js";
+import { getAppConfig } from "./config.js";
 
 export interface CleanupSmokeArtifactsResult {
   filesRemoved: number;
@@ -33,17 +34,17 @@ export async function cleanupSmokeArtifacts(opts: {
   projectRoot: string;
   prisma: PrismaClient;
 }): Promise<CleanupSmokeArtifactsResult> {
-  const contentRoot = path.join(opts.projectRoot, "content");
+  const cfg = getAppConfig();
   const fileRemoved: string[] = [];
 
   const dirs: Array<{ dir: string; matcher: (name: string) => boolean }> = [
-    { dir: path.join(contentRoot, "sources"), matcher: (n) => /^smoke-source-\d+\.json$/i.test(n) },
-    { dir: path.join(contentRoot, "posts"), matcher: (n) => /^smoke-post-\d+\.md$/i.test(n) },
-    { dir: path.join(contentRoot, "prompts"), matcher: (n) => /^smoke-prompt-\d+\.md$/i.test(n) },
-    { dir: path.join(contentRoot, "skills"), matcher: (n) => /^smoke_skill_[a-z0-9]+\.md$/i.test(n) },
-    { dir: path.join(contentRoot, "mcp"), matcher: (n) => /^smoke_mcp_[a-z0-9]+\.(json|ya?ml)$/i.test(n) },
-    { dir: path.join(contentRoot, "agents"), matcher: (n) => /^Smoke Agent \d+\.md$/i.test(n) },
-    { dir: path.join(contentRoot, "uploads"), matcher: (n) => /^vitest-test-file-/i.test(n) },
+    { dir: cfg.configPaths.sources, matcher: (n) => /^smoke-source-\d+\.json$/i.test(n) },
+    { dir: cfg.contentPaths.posts, matcher: (n) => /^smoke-post-\d+\.md$/i.test(n) },
+    { dir: cfg.configPaths.prompts, matcher: (n) => /^smoke-prompt-\d+\.md$/i.test(n) },
+    { dir: cfg.configPaths.skills, matcher: (n) => /^smoke_skill_[a-z0-9]+\.md$/i.test(n) },
+    { dir: cfg.configPaths.mcp, matcher: (n) => /^smoke_mcp_[a-z0-9]+\.(json|ya?ml)$/i.test(n) },
+    { dir: cfg.configPaths.agents, matcher: (n) => /^Smoke Agent \d+\.md$/i.test(n) },
+    { dir: cfg.contentPaths.uploads, matcher: (n) => /^vitest-test-file-/i.test(n) },
   ];
 
   for (const { dir, matcher } of dirs) {

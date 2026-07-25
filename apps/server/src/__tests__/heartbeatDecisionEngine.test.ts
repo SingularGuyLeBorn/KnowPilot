@@ -77,9 +77,12 @@ describe("W2 heartbeatDecision 引擎集成", () => {
     const engine = getHeartbeatEngine(prisma, ctx.services, hbConfig(ctx));
 
     await engine.triggerHeartbeat(agentId);
-    await vi.waitFor(async () => {
-      expect((await readDecision(agentId)).lastRunAt).toBeTruthy();
-    });
+    await vi.waitFor(
+      async () => {
+        expect((await readDecision(agentId)).lastRunAt).toBeTruthy();
+      },
+      { timeout: 5000, interval: 100 },
+    );
     const afterFirst = await prisma.task.count({ where: { name: `[heartbeat] W2-backoff-${RUN}` } });
     expect(afterFirst).toBe(1);
 

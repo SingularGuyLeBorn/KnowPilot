@@ -25,7 +25,7 @@ async function main() {
   }
 
   const res = await caller.agent.chat({
-    message: "用 list_directory 工具查看 content/agents 目录，一句话回复有哪些文件",
+    message: "用 list_directory 工具查看 config/agents 目录，一句话回复有哪些文件",
   });
 
   console.log("chat success:", res.success);

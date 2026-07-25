@@ -66,9 +66,16 @@ export interface LlmProviderConfig {
 export interface AppConfig {
   port: number;
   projectRoot: string;
+  /** 知识库事实源根（posts/about/uploads），Git 跟踪 */
   contentDir: string;
   contentPaths: {
     posts: string;
+    about: string;
+    uploads: string;
+  };
+  /** Agent 配置根（agents/skills/memories/prompts/mcp/tasks/sources），Git 跟踪 */
+  configDir: string;
+  configPaths: {
     agents: string;
     skills: string;
     mcp: string;
@@ -77,6 +84,20 @@ export interface AppConfig {
     prompts: string;
     sources: string;
   };
+  /** 运行时产物根（approvals/cookies/files/git/logs/messages/sessions/tools/workspace），.gitignore */
+  dataDir: string;
+  dataPaths: {
+    approvals: string;
+    cookies: string;
+    files: string;
+    git: string;
+    logs: string;
+    messages: string;
+    sessions: string;
+    tools: string;
+    workspace: string;
+  };
+  /** 上传目录（= contentPaths.uploads，保留旧名供 FileService 等沿用） */
   uploadDir: string;
   env: "development" | "production" | "test";
   publicUrl: string;
@@ -310,20 +331,21 @@ function loadYamlConfig(projectRoot: string): Record<string, unknown> {
   }
 }
 
-function resolveContentDir(projectRoot: string): string {
-  // 测试隔离（#2）：KP_CONTENT_DIR 覆盖 content 目录，测试产物不落入真实 content/
-  const envDir = process.env.KP_CONTENT_DIR?.trim();
+function resolveStorageRoot(projectRoot: string, name: "content" | "config" | "data", envName: string): string {
+  // 测试隔离：KP_*_DIR 覆盖各自根目录；KP_CONTENT_DIR 兼容旧测试只覆盖 content
+  const envDir = process.env[envName]?.trim();
   if (envDir) {
     return path.isAbsolute(envDir) ? envDir : path.resolve(projectRoot, envDir);
   }
-
-  const contentDir = path.join(projectRoot, "content");
-  if (fs.existsSync(contentDir)) return contentDir;
-
-  const cwdContent = path.resolve(process.cwd(), "content");
-  if (fs.existsSync(cwdContent)) return cwdContent;
-
-  return contentDir;
+  if (name === "content") {
+    const legacy = process.env.KP_CONTENT_DIR?.trim();
+    if (legacy) return path.isAbsolute(legacy) ? legacy : path.resolve(projectRoot, legacy);
+  }
+  const dir = path.join(projectRoot, name);
+  if (fs.existsSync(dir)) return dir;
+  const cwdDir = path.resolve(process.cwd(), name);
+  if (fs.existsSync(cwdDir)) return cwdDir;
+  return dir;
 }
 
 /** 加载项目根目录 .env（幂等）。P3-04：.env.local 优先级高于 .env（先加载，undefined 守卫保证不覆盖） */
@@ -355,7 +377,9 @@ export function loadRootEnv(projectRoot?: string): void {
 
 export function createAppConfig(): AppConfig {
   const projectRoot = resolveProjectRoot();
-  const contentDir = resolveContentDir(projectRoot);
+  const contentDir = resolveStorageRoot(projectRoot, "content", "KP_CONTENT_DIR");
+  const configDir = resolveStorageRoot(projectRoot, "config", "KP_CONFIG_DIR");
+  const dataDir = resolveStorageRoot(projectRoot, "data", "KP_DATA_DIR");
 
   const providers: Record<string, LlmProviderConfig> = {
     [LLM_PROVIDER_DEEPSEEK]: readProvider(
@@ -473,13 +497,30 @@ export function createAppConfig(): AppConfig {
     contentDir,
     contentPaths: {
       posts: path.join(contentDir, "posts"),
-      agents: path.join(contentDir, "agents"),
-      skills: path.join(contentDir, "skills"),
-      mcp: path.join(contentDir, "mcp"),
-      memories: path.join(contentDir, "memories"),
-      tasks: path.join(contentDir, "tasks"),
-      prompts: path.join(contentDir, "prompts"),
-      sources: path.join(contentDir, "sources"),
+      about: path.join(contentDir, "about"),
+      uploads: path.join(contentDir, "uploads"),
+    },
+    configDir,
+    configPaths: {
+      agents: path.join(configDir, "agents"),
+      skills: path.join(configDir, "skills"),
+      mcp: path.join(configDir, "mcp"),
+      memories: path.join(configDir, "memories"),
+      tasks: path.join(configDir, "tasks"),
+      prompts: path.join(configDir, "prompts"),
+      sources: path.join(configDir, "sources"),
+    },
+    dataDir,
+    dataPaths: {
+      approvals: path.join(dataDir, "approvals"),
+      cookies: path.join(dataDir, "cookies"),
+      files: path.join(dataDir, "files"),
+      git: path.join(dataDir, "git"),
+      logs: path.join(dataDir, "logs"),
+      messages: path.join(dataDir, "messages"),
+      sessions: path.join(dataDir, "sessions"),
+      tools: path.join(dataDir, "tools"),
+      workspace: path.join(dataDir, "workspace"),
     },
     uploadDir: path.join(contentDir, "uploads"),
     env: (process.env.NODE_ENV || "development") as AppConfig["env"],
@@ -694,6 +735,12 @@ export function createAppConfig(): AppConfig {
   };
 
   for (const dir of Object.values(config.contentPaths)) {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  }
+  for (const dir of Object.values(config.configPaths)) {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  }
+  for (const dir of Object.values(config.dataPaths)) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   }
   if (!fs.existsSync(config.uploadDir)) fs.mkdirSync(config.uploadDir, { recursive: true });

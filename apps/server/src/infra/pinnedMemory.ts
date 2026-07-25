@@ -1,7 +1,7 @@
 /**
  * L1 常驻层：USER.md / AGENT.md 硬预算 + 会话冻结快照。
  *
- * - 文件真相源：content/memories/_pinned/{USER,AGENT}.md（`_` 目录不被 db:sync 扫入 Memory 表）
+ * - 文件真相源：config/memories/_pinned/{USER,AGENT}.md（`_` 目录不被 db:sync 扫入 Memory 表）
  * - 注入：会话首轮读盘截断后写入 ChatSession.pinnedMemorySnapshot，后续轮次只读快照
  * - 写工具改文件立即落盘，但本会话 prompt 不变（保 prefix cache / 冻结语义）
  */

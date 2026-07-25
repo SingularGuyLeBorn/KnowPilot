@@ -1,5 +1,5 @@
 /**
- * MCP Client — 连接 content/mcp 配置的 MCP Server，桥接工具到 Agent
+ * MCP Client — 连接 config/mcp 配置的 MCP Server，桥接工具到 Agent
  * 含：结果截断 · 断线重连 · 单次重试 · W12 断路器熔断
  */
 
@@ -98,7 +98,7 @@ async function findMcpServer(services: ServiceContainer, name: string): Promise<
   const list = await services.mcp.list({ page: 1, pageSize: 50, keyword: name });
   const exact = list.items.find((s) => s.name === name);
   if (exact) return exact;
-  throw new Error(`MCP Server "${name}" 不存在。请在 content/mcp/ 添加配置后 db:sync。`);
+  throw new Error(`MCP Server "${name}" 不存在。请在 config/mcp/ 添加配置后 db:sync。`);
 }
 
 function evictClient(serverName: string): void {

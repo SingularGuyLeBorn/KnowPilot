@@ -23,7 +23,7 @@ export async function findSkillByName(services: ServiceContainer, name: string):
   if (exact) return exact;
   const fuzzy = list.items.find((s) => s.name.includes(name) || name.includes(s.name));
   if (fuzzy) return fuzzy;
-  throw new Error(`Skill "${name}" 不存在或未启用。请先在 /skills 创建或在 content/skills/ 添加配置后 db:sync。`);
+  throw new Error(`Skill "${name}" 不存在或未启用。请先在 /skills 创建或在 config/skills/ 添加配置后 db:sync。`);
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * MCP Server 同步器
  *
- * 文件格式：content/mcp/{slug}.yaml 或 {slug}.json
+ * 文件格式：config/mcp/{slug}.yaml 或 {slug}.json
  * 字段：name, transport(stdio|http), command, args, env, url, headers, enabled
  */
 

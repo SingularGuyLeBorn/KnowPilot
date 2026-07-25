@@ -1,7 +1,7 @@
 /**
  * Agent 同步器
  *
- * 文件格式：content/agents/{slug}.md
+ * 文件格式：config/agents/{slug}.md
  * frontmatter: name, description, model, tools
  * 正文：systemPrompt
  */

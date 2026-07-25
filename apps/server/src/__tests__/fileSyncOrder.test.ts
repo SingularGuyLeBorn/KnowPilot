@@ -25,7 +25,7 @@ afterEach(async () => {
       const row = await prisma.agent.findUnique({ where: { id } });
       if (row) {
         const slug = `${row.name}-${id.slice(-6)}`;
-        const fp = path.join(config.contentPaths.agents, `${slug}.md`);
+        const fp = path.join(config.configPaths.agents, `${slug}.md`);
         if (fs.existsSync(fp)) fs.unlinkSync(fp);
         await prisma.agent.delete({ where: { id } }).catch(() => undefined);
       }
@@ -70,7 +70,7 @@ describe("D1 FileSync 双写顺序", () => {
     createdAgentIds.push(id);
 
     const oldSlug = `${name}-${id.slice(-6)}`;
-    const oldPath = path.join(config.contentPaths.agents, `${oldSlug}.md`);
+    const oldPath = path.join(config.configPaths.agents, `${oldSlug}.md`);
     expect(fs.existsSync(oldPath)).toBe(true);
     const oldContent = fs.readFileSync(oldPath, "utf-8");
 
@@ -89,7 +89,7 @@ describe("D1 FileSync 双写顺序", () => {
     expect(fs.readFileSync(oldPath, "utf-8")).toBe(oldContent);
 
     const newSlug = `${RUN}-rename-new-${id.slice(-6)}`;
-    const newPath = path.join(config.contentPaths.agents, `${newSlug}.md`);
+    const newPath = path.join(config.configPaths.agents, `${newSlug}.md`);
     expect(fs.existsSync(newPath)).toBe(false);
   });
 

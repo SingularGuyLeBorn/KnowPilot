@@ -1,6 +1,6 @@
 /**
  * Skill 使用遥测 sidecar（对标 Hermes tools/skill_usage.py）
- * 路径：content/skills/.usage.json — 不进 SKILL.md，best-effort。
+ * 路径：config/skills/.usage.json — 不进 SKILL.md，best-effort。
  */
 
 import fs from "fs";
@@ -24,7 +24,7 @@ export interface SkillUsageRecord {
 type UsageFile = Record<string, SkillUsageRecord>;
 
 function usagePath(skillsRoot?: string): string {
-  const root = skillsRoot ?? getAppConfig().contentPaths.skills;
+  const root = skillsRoot ?? getAppConfig().configPaths.skills;
   return path.join(root, ".usage.json");
 }
 

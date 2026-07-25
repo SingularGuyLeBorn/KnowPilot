@@ -12,7 +12,7 @@
  * 3. 排序：读时按 strength × recencyScore 打分（recencyScore = 1/(1+ageDays)）。
  * 4. 淘汰：decayMemories 每日 strength *= 0.95^days（raw SQL 不改 updatedAt，保证按日复利），
  *    低于 MEMORY_ARCHIVE_THRESHOLD 归档删除（走 MemoryService.delete 同步清理文件与 FTS）。
- * 5. 写路径统一走 MemoryService.create/update：保证文件回写 content/memories/ 与 FTS 增量同步。
+ * 5. 写路径统一走 MemoryService.create/update：保证文件回写 config/memories/ 与 FTS 增量同步。
  *
  * 本模块是叶子模块：运行时仅依赖 ftsIndex / shared 常量 / node:crypto，
  * ServiceContainer / MemoryService 均为 type-only 导入，不引入 ReAct 环内模块。

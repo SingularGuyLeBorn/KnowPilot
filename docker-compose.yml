@@ -21,6 +21,7 @@ services:
     volumes:
       - kp-data:/data
       - ./content:/app/content:ro
+      - ./config:/app/config:ro
     depends_on:
       redis:
         condition: service_healthy

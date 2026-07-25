@@ -98,15 +98,18 @@ describe("W10 SwarmOrchestrator 中介者", () => {
       await engine.triggerHeartbeat(hbAgentId);
 
       // 心跳任务在并发池内收口
-      await vi.waitFor(async () => {
-        const row = await prisma.task.findFirst({
-          where: { name: `[heartbeat] W10-hb-${suffix}` },
-          orderBy: { createdAt: "desc" },
-        });
-        expect(row?.status).toBe("success");
-        const output = row?.output as { asyncResult?: string };
-        expect(output?.asyncResult).toBe("W10 心跳完成内容");
-      });
+      await vi.waitFor(
+        async () => {
+          const row = await prisma.task.findFirst({
+            where: { name: `[heartbeat] W10-hb-${suffix}` },
+            orderBy: { createdAt: "desc" },
+          });
+          expect(row?.status).toBe("success");
+          const output = row?.output as { asyncResult?: string };
+          expect(output?.asyncResult).toBe("W10 心跳完成内容");
+        },
+        { timeout: 5000, interval: 100 },
+      );
 
       // ── 路径 2：spawn_subagent ──
       const spawnResult = (await executeNativeTool(
@@ -168,24 +171,30 @@ describe("W10 SwarmOrchestrator 中介者", () => {
       const startedResult = started!;
       expect(startedResult.status).toMatch(/running|queued/);
 
-      await vi.waitFor(async () => {
-        const row = await prisma.task.findUnique({ where: { id: startedResult.jobId } });
-        expect(row?.status).toBe("success");
-      });
+      await vi.waitFor(
+        async () => {
+          const row = await prisma.task.findUnique({ where: { id: startedResult.jobId } });
+          expect(row?.status).toBe("success");
+        },
+        { timeout: 5000, interval: 100 },
+      );
 
       const call = dispatchSpy.mock.calls.find((c) => (c[0] as { origin: string }).origin === "async_task_run");
       expect(call).toBeDefined();
       expect(call![0]).toMatchObject({ schedule: "pool", jobId: startedResult.jobId, sessionId });
 
       // 审计：swarm_dispatch 受理 + swarm_task_completed 收口
-      await vi.waitFor(async () => {
-        const logs = await prisma.log.findMany({
-          where: { component: "swarm.orchestrator", event: { in: ["swarm_dispatch", "swarm_task_completed"] } },
-        });
-        const events = logs.map((l) => l.event);
-        expect(events).toContain("swarm_dispatch");
-        expect(events).toContain("swarm_task_completed");
-      });
+      await vi.waitFor(
+        async () => {
+          const logs = await prisma.log.findMany({
+            where: { component: "swarm.orchestrator", event: { in: ["swarm_dispatch", "swarm_task_completed"] } },
+          });
+          const events = logs.map((l) => l.event);
+          expect(events).toContain("swarm_dispatch");
+          expect(events).toContain("swarm_task_completed");
+        },
+        { timeout: 5000, interval: 100 },
+      );
     } finally {
       await prisma.task.deleteMany({ where: { id: started?.jobId ?? "__none__" } }).catch(() => {});
       await cleanupAgents(parentAgentId);
@@ -338,11 +347,14 @@ describe("W10 SwarmOrchestrator 中介者", () => {
     expect(execute).not.toHaveBeenCalled();
 
     // 审计落库是 fire-and-forget，等待写入完成
-    await vi.waitFor(async () => {
-      const deniedLogs = await prisma.log.findMany({
-        where: { component: "swarm.orchestrator", event: "swarm_dispatch_denied" },
-      });
-      expect(deniedLogs.length).toBeGreaterThanOrEqual(1);
-    });
+    await vi.waitFor(
+      async () => {
+        const deniedLogs = await prisma.log.findMany({
+          where: { component: "swarm.orchestrator", event: "swarm_dispatch_denied" },
+        });
+        expect(deniedLogs.length).toBeGreaterThanOrEqual(1);
+      },
+      { timeout: 5000, interval: 100 },
+    );
   });
 });

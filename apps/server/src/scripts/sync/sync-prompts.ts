@@ -1,7 +1,7 @@
 /**
  * Prompt 同步器
  *
- * 文件格式：content/prompts/{slug}.md
+ * 文件格式：config/prompts/{slug}.md
  * frontmatter: name, version, description, variables, tags
  * 正文：content
  */

@@ -101,7 +101,7 @@ describe("session_rotate", () => {
       }),
     );
 
-    const summaryFile = path.join(tmpRoot, "content", "sessions", `${oldSession.id}-summary.md`);
+    const summaryFile = path.join(tmpRoot, "data", "sessions", `${oldSession.id}-summary.md`);
     expect(fs.existsSync(summaryFile)).toBe(true);
     expect(fs.readFileSync(summaryFile, "utf8")).toContain("这是总结内容");
     expect(pushExternalEvent).toHaveBeenCalledWith(

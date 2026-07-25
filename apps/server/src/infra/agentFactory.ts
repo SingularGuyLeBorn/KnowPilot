@@ -2,7 +2,7 @@
  * AgentFactory — 三 tier Agent 默认模板与创建（W9）
  *
  * super / manager / sub 三个 tier 的默认模板（systemPrompt / tools / heartbeat）
- * 统一从 `content/agents/_templates/{tier}.md` 读取（frontmatter 格式同普通 agent 文件，
+ * 统一从 `config/agents/_templates/{tier}.md` 读取（frontmatter 格式同普通 agent 文件，
  * 额外支持 heartbeat 段与 `{{name}}` 占位符）；模板目录以 `_` 开头，sync 会跳过（见 sync/utils.ts）。
  *
  * 读不到模板时 fallback 到 shared 常量（TIER_DEFAULT_TOOLS / DEFAULT_LLM_MODEL）+
@@ -48,7 +48,7 @@ export interface CreateAgentForTierInput {
   };
 }
 
-/* ─── 兜底模板（模板文件缺失时的安全网；正式模板见 content/agents/_templates/） ─── */
+/* ─── 兜底模板（模板文件缺失时的安全网；正式模板见 config/agents/_templates/） ─── */
 
 const SUPER_FALLBACK_PROMPT = `你是 KnowPilot 的超级 Agent，用户在本系统的全权代理，归属 Root Workspace。
 
@@ -131,7 +131,7 @@ const templateCache = new Map<AgentTier, { mtimeMs: number; template: AgentTierT
 const fallbackWarned = new Set<AgentTier>();
 
 function getTemplatePath(tier: AgentTier): string {
-  return path.join(getAppConfig().contentPaths.agents, "_templates", `${tier}.md`);
+  return path.join(getAppConfig().configPaths.agents, "_templates", `${tier}.md`);
 }
 
 function renderVars(text: string, vars?: Record<string, string>): string {

@@ -1,7 +1,7 @@
 /**
  * InfoSource 信息源同步器
  *
- * 文件格式：content/sources/{slug}.json
+ * 文件格式：config/sources/{slug}.json
  */
 
 import { PrismaClient } from "@prisma/client";

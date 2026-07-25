@@ -1,8 +1,8 @@
 /**
  * Procedural Skill 包路径与 kind 约定（Hermes SKILL.md 目录形态）
  *
- * - procedural: content/skills/{name}/SKILL.md + references|templates|scripts
- * - executable: content/skills/{slug}.md（沙箱 run / prompt）
+ * - procedural: config/skills/{name}/SKILL.md + references|templates|scripts
+ * - executable: config/skills/{slug}.md（沙箱 run / prompt）
  * - reference: 参考资料，默认不启用、不进工具 schema
  */
 
