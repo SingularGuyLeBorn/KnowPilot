@@ -36,9 +36,9 @@ export default function WorkspacesPage() {
   const utils = trpc.useUtils();
   const resetAssistantMut = trpc.workspace.resetAssistantHome.useMutation({
     onSuccess: () => {
-      void utils.workspace.list.invalidate();
-      void utils.agent.list.invalidate();
-      void utils.session.list.invalidate();
+      utils.workspace.list.invalidate().catch(() => {});
+      utils.agent.list.invalidate().catch(() => {});
+      utils.session.list.invalidate().catch(() => {});
     },
   });
   const [deleteId, setDeleteId] = useState<string | null>(null);

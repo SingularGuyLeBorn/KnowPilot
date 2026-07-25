@@ -22,17 +22,17 @@ export function ChatGoalBar({ sessionId }: { sessionId: string | null }) {
 
   const pauseMut = trpc.session.pauseGoal.useMutation({
     onSuccess: () => {
-      if (sessionId) void utils.session.getGoal.invalidate({ sessionId });
+      if (sessionId) utils.session.getGoal.invalidate({ sessionId }).catch(() => {});
     },
   });
   const resumeMut = trpc.session.resumeGoal.useMutation({
     onSuccess: () => {
-      if (sessionId) void utils.session.getGoal.invalidate({ sessionId });
+      if (sessionId) utils.session.getGoal.invalidate({ sessionId }).catch(() => {});
     },
   });
   const clearMut = trpc.session.clearGoal.useMutation({
     onSuccess: () => {
-      if (sessionId) void utils.session.getGoal.invalidate({ sessionId });
+      if (sessionId) utils.session.getGoal.invalidate({ sessionId }).catch(() => {});
     },
   });
 

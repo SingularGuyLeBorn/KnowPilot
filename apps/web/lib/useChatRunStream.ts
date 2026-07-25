@@ -310,7 +310,7 @@ export function useChatRunStream({
               }
               // session 一建立就刷新侧边栏列表，不要等 onDone——用户发首条消息后
               // 新会话应立即可见，而非等第一条回复结束才出现。
-              void utils.session.list.invalidate();
+              utils.session.list.invalidate().catch(() => {});
               scheduleStreamSave(true);
             },
             onRoundStart: (round) => {
@@ -407,7 +407,6 @@ export function useChatRunStream({
                       deletedBy: null,
                       createdAt: new Date(),
                       updatedAt: new Date(),
-                      apiKey: null,
                       systemPrompt: "",
                     };
                     utils.agent.list.setData({ page: 1, pageSize: 100 }, (old) => {
@@ -516,7 +515,7 @@ export function useChatRunStream({
               if (opts.optimisticUser) {
                 sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
               }
-              void utils.session.list.invalidate();
+              utils.session.list.invalidate().catch(() => {});
             },
             onError: (message, sid, suggestion) => {
               if (originSid === NEW_STREAM_KEY && sid) {

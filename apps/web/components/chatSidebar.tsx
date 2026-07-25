@@ -18,7 +18,7 @@ import { type Agent } from "@knowpilot/shared";
 import { type ChatQueueItem, type SyncTaskItem } from "@/lib/chatQueueTypes";
 import { buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared";
-import { RuntimeStatusPanel } from "@/components/chatQueue";
+import { RuntimeStatusPanel } from "@/components/chatQueueStatus";
 import { SideRunsPanel } from "@/components/sideRunsPanel";
 import { WorkspaceTree } from "@/components/workspaceTree";
 import { WorkspaceSelect } from "@/components/workspaceSelect";
@@ -198,8 +198,8 @@ export const ChatSidebar = memo(function ChatSidebar({
         setError(res.error?.message ?? "重命名失败");
         return;
       }
-      void utils.session.list.invalidate();
-      if (effectiveSessionId === id) void refetchSession();
+      utils.session.list.invalidate().catch(() => {});
+      if (effectiveSessionId === id) refetchSession().catch(() => {});
       setEditingSessionId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "重命名失败");
@@ -221,7 +221,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       streamLifecycleActions.deleteSession(id);
       sessionComposeActions.deleteComposeSession(id);
       closeTab?.(id);
-      void utils.session.list.invalidate();
+      utils.session.list.invalidate().catch(() => {});
       if (effectiveSessionId === id) startNewChat();
       setDeleteSessionTarget(null);
     } catch (err) {
@@ -672,7 +672,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 setBulkSelected(new Set());
                 setBulkMode(false);
                 if (effectiveSessionId && ids.includes(effectiveSessionId)) startNewChat();
-                void utils.session.list.invalidate();
+                utils.session.list.invalidate().catch(() => {});
               },
             },
           );

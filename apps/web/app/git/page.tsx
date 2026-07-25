@@ -72,10 +72,10 @@ export default function GitPage() {
   const diffQuery = useDiff({ repoId: activeId, staged: false }, { enabled: !!activeId });
 
   const refreshAll = useCallback(() => {
-    void statusQuery.refetch();
-    void logQuery.refetch();
-    void diffQuery.refetch();
-    void refetch();
+    statusQuery.refetch().catch(() => {});
+    logQuery.refetch().catch(() => {});
+    diffQuery.refetch().catch(() => {});
+    refetch().catch(() => {});
   }, [statusQuery, logQuery, diffQuery, refetch]);
 
   const commitMutation = useCommit({

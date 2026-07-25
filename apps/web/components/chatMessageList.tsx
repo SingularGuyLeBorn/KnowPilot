@@ -284,7 +284,8 @@ export const ChatMessageList = memo(function ChatMessageList({
             data-delivery-job-id={deliveryJobId || undefined}
             className={cn(
               // 默认接近全宽（对标 Kimi Code）；右对齐消息仍靠右，但内容区拉宽
-              "group/msg relative mb-3 flex w-full max-w-[96%] flex-col gap-1",
+              // scroll-mt-20：点击导航 scrollIntoView(block:start) 时顶部留 80px，避免气泡顶到视口角落
+              "group/msg relative mb-3 flex w-full max-w-[96%] flex-col gap-1 scroll-mt-20",
               isRightSide ? "items-stretch self-end" : "items-stretch self-start",
               deliveryJobId &&
                 highlightJobId === deliveryJobId &&

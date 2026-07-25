@@ -132,7 +132,7 @@ export function FreeModelPicker({
                         void navigator.clipboard.writeText(m.id).then(() => {
                           setCopied(m.id);
                           window.setTimeout(() => setCopied(null), 1200);
-                        });
+                        }).catch(() => {});
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {

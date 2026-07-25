@@ -127,8 +127,8 @@ export function useChatQueueDrain({
           );
           if (claim === "not_claimed") {
             sessionComposeActions.setQueueDraining(sid, false);
-            void utils.session.listRunning.invalidate();
-            if (sid === viewSid) void asyncQueueQuery.refetch();
+            utils.session.listRunning.invalidate().catch(() => {});
+            if (sid === viewSid) asyncQueueQuery.refetch().catch(() => {});
             // 已释放 drain 锁且在 async 续体内（调用栈已 unwind），直接重试下一项
             consumeRef.current(sid);
             return;

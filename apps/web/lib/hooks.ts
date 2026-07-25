@@ -120,10 +120,10 @@ export function usePostMutations(options?: {
   const utils = trpc.useUtils();
 
   const invalidatePostQueries = () => {
-    void utils.post.list.invalidate();
-    void utils.post.tree.invalidate();
-    void utils.post.categories.invalidate();
-    void utils.post.tags.invalidate();
+    utils.post.list.invalidate().catch(() => {});
+    utils.post.tree.invalidate().catch(() => {});
+    utils.post.categories.invalidate().catch(() => {});
+    utils.post.tags.invalidate().catch(() => {});
   };
 
   const create = trpc.post.create.useMutation({
@@ -139,8 +139,8 @@ export function usePostMutations(options?: {
     onSuccess: (result: OperationResult<Post>) => {
       if (result.success && result.data) {
         invalidatePostQueries();
-        void utils.post.getById.invalidate({ id: result.data.id });
-        void utils.post.getBySlug.invalidate({ slug: result.data.slug });
+        utils.post.getById.invalidate({ id: result.data.id }).catch(() => {});
+        utils.post.getBySlug.invalidate({ slug: result.data.slug }).catch(() => {});
         options?.onUpdateSuccess?.(result.data.slug);
       }
     },
@@ -159,14 +159,14 @@ export function usePostMutations(options?: {
   const restore = trpc.post.restore.useMutation({
     onSuccess: () => {
       invalidatePostQueries();
-      void utils.post.listDeleted.invalidate();
+      utils.post.listDeleted.invalidate().catch(() => {});
     },
   });
 
   const permanentDelete = trpc.post.permanentDelete.useMutation({
     onSuccess: () => {
       invalidatePostQueries();
-      void utils.post.listDeleted.invalidate();
+      utils.post.listDeleted.invalidate().catch(() => {});
     },
   });
 
@@ -183,12 +183,12 @@ export const useInfoSource = () => {
   const utils = trpc.useUtils();
   const fetchMutation = trpc.infoSource.fetch.useMutation({
     onSuccess: () => {
-      void utils.infoSource.list.invalidate();
+      utils.infoSource.list.invalidate().catch(() => {});
     },
   });
   const fetchDueMutation = trpc.infoSource.fetchDue.useMutation({
     onSuccess: () => {
-      void utils.infoSource.list.invalidate();
+      utils.infoSource.list.invalidate().catch(() => {});
     },
   });
   return {
@@ -207,10 +207,10 @@ export function useResumeSession(options?: { onError?: (message: string) => void
   const utils = trpc.useUtils();
   return trpc.session.resume.useMutation({
     onSuccess: (_res, vars) => {
-      void utils.session.getById.invalidate({ id: vars.id });
-      void utils.session.list.invalidate();
-      void utils.session.listChildren.invalidate();
-      void utils.session.listRunning.invalidate();
+      utils.session.getById.invalidate({ id: vars.id }).catch(() => {});
+      utils.session.list.invalidate().catch(() => {});
+      utils.session.listChildren.invalidate().catch(() => {});
+      utils.session.listRunning.invalidate().catch(() => {});
     },
     onError: (err) => options?.onError?.(err.message),
   });
@@ -254,9 +254,9 @@ export const useGit = () => {
     }) =>
       trpc.git.commit.useMutation({
         onSuccess: (res) => {
-          void utils.git.status.invalidate();
-          void utils.git.log.invalidate();
-          void utils.git.diff.invalidate();
+          utils.git.status.invalidate().catch(() => {});
+          utils.git.log.invalidate().catch(() => {});
+          utils.git.diff.invalidate().catch(() => {});
           options?.onSuccess?.(res);
         },
         onError: options?.onError,
@@ -267,9 +267,9 @@ export const useGit = () => {
     }) =>
       trpc.git.pull.useMutation({
         onSuccess: (res) => {
-          void utils.git.status.invalidate();
-          void utils.git.log.invalidate();
-          void utils.git.diff.invalidate();
+          utils.git.status.invalidate().catch(() => {});
+          utils.git.log.invalidate().catch(() => {});
+          utils.git.diff.invalidate().catch(() => {});
           options?.onSuccess?.(res);
         },
         onError: options?.onError,
@@ -280,8 +280,8 @@ export const useGit = () => {
     }) =>
       trpc.git.push.useMutation({
         onSuccess: (res) => {
-          void utils.git.status.invalidate();
-          void utils.git.log.invalidate();
+          utils.git.status.invalidate().catch(() => {});
+          utils.git.log.invalidate().catch(() => {});
           options?.onSuccess?.(res);
         },
         onError: options?.onError,
@@ -351,7 +351,7 @@ export const useCredential = () => {
       const utils = trpc.useUtils();
       return trpc.credential.importFromEnv.useMutation({
         onSuccess: (res: any) => {
-          if (res?.imported?.length) void utils.credential.list.invalidate();
+          if (res?.imported?.length) utils.credential.list.invalidate().catch(() => {});
           options?.onSuccess?.(res);
         },
         ...options,
@@ -472,9 +472,9 @@ export function useAgentChat() {
   const chat = trpc.agent.chat.useMutation({
     onSuccess: (res) => {
       if (res.success && res.data?.sessionId) {
-        void utils.session.list.invalidate();
-        void utils.session.getById.invalidate({ id: res.data.sessionId });
-        void utils.message.list.invalidate({ sessionId: res.data.sessionId });
+        utils.session.list.invalidate().catch(() => {});
+        utils.session.getById.invalidate({ id: res.data.sessionId }).catch(() => {});
+        utils.message.list.invalidate({ sessionId: res.data.sessionId }).catch(() => {});
       }
     },
   });

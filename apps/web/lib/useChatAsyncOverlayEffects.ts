@@ -47,7 +47,7 @@ export function useChatAsyncOverlayEffects(opts: {
         shouldPoll = true;
       }
     }
-    if (shouldPoll) void asyncQueueQuery.refetch();
+    if (shouldPoll) asyncQueueQuery.refetch().catch(() => {});
   }, [asyncOverlays, effectiveSessionId, asyncQueueQuery]);
 
   // ② 清理已过期的已完成 async overlay，让进度条稳定展示 5 秒后自动消失

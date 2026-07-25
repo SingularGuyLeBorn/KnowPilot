@@ -60,22 +60,23 @@ export function useChatSseSubscriptions({
     // 捕获 ref 值到 effect 局部变量，避免 cleanup 时 ref 已变更（react-hooks/exhaustive-deps）
     const extraWatched = extraWatchedSessionsRef.current;
 
-    /** 按事件所属 session 刷新切片；禁止一律刷 effectiveSessionId（后台 Tab 幽灵根因） */
+    /** 按事件所属 session 刷新切片；禁止一律刷 effectiveSessionId（后台 Tab 幽灵根因）
+     *  CancelledError 兜底：并发 refetch 取消旧 fetch 抛错，.catch 静默避免 unhandled rejection */
     const refreshAsyncQueueFor = (targetSid: string) => {
       void refreshSessionAsyncQueue(utils, targetSid);
       // 焦点 query 缓存对齐（同 session 时 UI 立刻一致）
       if (targetSid === effectiveSessionId) {
-        void asyncQueueQuery.refetch();
+        asyncQueueQuery.refetch().catch(() => {});
       }
-      void asyncQueueStatsQuery.refetch();
+      asyncQueueStatsQuery.refetch().catch(() => {});
     };
 
     const refreshAsync = (opts: { heavy?: boolean; sessionId: string }) => {
       refreshAsyncQueueFor(opts.sessionId);
       // heavy：终态才 invalidate 子会话列表 / task.list，避免 running 进度抖整批
       if (opts.heavy && mainSessionId) {
-        void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
-        void utils.task.list.invalidate();
+        utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 }).catch(() => {});
+        utils.task.list.invalidate().catch(() => {});
       }
     };
 
@@ -100,14 +101,14 @@ export function useChatSseSubscriptions({
       register("session_run_started", (ev) => {
         try {
           const data = JSON.parse(ev.data) as { sessionId?: string };
-          void utils.session.listRunning.invalidate();
+          utils.session.listRunning.invalidate().catch(() => {});
           refreshAsync({ heavy: true, sessionId: data.sessionId || sid });
           if (data.sessionId && data.sessionId !== sid) {
             sessionMessagesStore.watchSession(data.sessionId);
             extraWatchedSessionsRef.current.add(data.sessionId);
           }
         } catch {
-          void utils.session.listRunning.invalidate();
+          utils.session.listRunning.invalidate().catch(() => {});
           refreshAsync({ heavy: true, sessionId: sid });
         }
       });
@@ -134,13 +135,13 @@ export function useChatSseSubscriptions({
         refreshAsync({ heavy: terminal, sessionId: targetSid });
       });
       register("agent_message", () => {
-        if (isSubagentSession) void pullAgentMessagesQuery.refetch();
+        if (isSubagentSession) pullAgentMessagesQuery.refetch().catch(() => {});
       });
       register("subagent_session_update", (ev) => {
         if (mainSessionId) {
-          void utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 });
+          utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 }).catch(() => {});
         }
-        void utils.session.listRunning.invalidate();
+        utils.session.listRunning.invalidate().catch(() => {});
         try {
           const data = JSON.parse(ev.data) as {
             subagentSessionId?: string;
@@ -164,24 +165,24 @@ export function useChatSseSubscriptions({
           if (data.oldSessionId && data.oldSessionId === effectiveSessionId) {
             setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
           }
-          void utils.session.list.invalidate();
+          utils.session.list.invalidate().catch(() => {});
           const invalidateId = data.oldSessionId ?? effectiveSessionId ?? undefined;
           if (invalidateId) {
-            void utils.session.getById.invalidate({ id: invalidateId });
+            utils.session.getById.invalidate({ id: invalidateId }).catch(() => {});
           }
         } catch {
           /* ignore */
         }
       });
       register("session_title_updated", () => {
-        void utils.session.list.invalidate();
+        utils.session.list.invalidate().catch(() => {});
       });
       register("agent_renamed", () => {
-        void utils.agent.list.invalidate();
+        utils.agent.list.invalidate().catch(() => {});
       });
       register("session_queue_update", () => {
         // 按本 watch 的 sid 刷新（分屏两侧各自 merge）
-        void utils.agent.listSessionQueueItems
+        utils.agent.listSessionQueueItems
           .fetch({ sessionId: sid })
           .then((data) => {
             if (!data) return;
@@ -190,18 +191,19 @@ export function useChatSseSubscriptions({
               mergeUserQueueFromDb(q, data, sessionComposeStore.get(sid).consumedQueueDbIds),
             );
             streamLifecycleActions.hydrateDone(sid);
-          });
+          })
+          .catch(() => {});
       });
       register("ask_user_pending", () => {
-        void utils.askUser.listPending.invalidate({ sessionId: sid });
+        utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
       });
       register("ask_user_resolved", () => {
-        void utils.askUser.listPending.invalidate({ sessionId: sid });
+        utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
       });
       register("swarm_task_update", () => {
         // 父会话被动跟进 Swarm 任务态，少靠 task.list 盲轮询
-        void utils.task.list.invalidate();
-        void utils.agent.asyncQueueStats.invalidate();
+        utils.task.list.invalidate().catch(() => {});
+        utils.agent.asyncQueueStats.invalidate().catch(() => {});
       });
     }
     return () => {

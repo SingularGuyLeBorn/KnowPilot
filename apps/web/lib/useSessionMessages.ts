@@ -569,12 +569,19 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
 
   const hydrateFromServer = useCallback(async () => {
     if (!sessionId) return;
-    const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
-      utilsRef.current.message.listForChat.fetch(opts),
-    );
-    cursorRef.current = nextCursor ?? undefined;
-    setHasOlderMessages(!!nextCursor);
-    setHydratedForSessionId(sessionId);
+    try {
+      const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
+        utilsRef.current.message.listForChat.fetch(opts),
+      );
+      cursorRef.current = nextCursor ?? undefined;
+      setHasOlderMessages(!!nextCursor);
+      setHydratedForSessionId(sessionId);
+    } catch (err) {
+      // CancelledError（并发 fetch 取消）或网络瞬断：静默，不冒泡为 unhandled rejection
+      if (err instanceof Error && err.name !== "CancelledError") {
+        console.warn(`[useSessionMessages] hydrateFromServer 失败 session=${sessionId}:`, err);
+      }
+    }
   }, [sessionId]);
 
   return {
@@ -614,7 +621,9 @@ export const sessionMessagesStore = {
     if (hydratedSessionsGlobal.has(sessionId) || getStore().getMessages(sessionId).length > 0) {
       return Promise.resolve();
     }
-    return fetchAndHydrateSession(sessionId, fetchPage, "prefetch").then(() => undefined);
+    return fetchAndHydrateSession(sessionId, fetchPage, "prefetch")
+      .then(() => undefined)
+      .catch(() => undefined);
   },
   upsertAssistantFromDone: (
     sessionId: string,

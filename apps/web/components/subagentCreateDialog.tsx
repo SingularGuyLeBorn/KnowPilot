@@ -70,8 +70,8 @@ export function SubagentCreateDialog({
   const createAgentMut = trpc.agent.create.useMutation({
     onSuccess: (res) => {
       if (res.success && res.data?.id) {
-        void utils.agent.list.refetch();
-        void utils.session.list.refetch();
+        utils.agent.list.refetch().catch(() => {});
+        utils.session.list.refetch().catch(() => {});
         // 创建成功后继续用新 Agent 启动子 Agent 任务
         spawnWithAgent(res.data.id);
       }
@@ -101,11 +101,11 @@ export function SubagentCreateDialog({
           },
         );
       }
-      void utils.session.list.refetch();
-      void utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 });
-      void utils.agent.list.refetch();
+      utils.session.list.refetch().catch(() => {});
+      utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 }).catch(() => {});
+      utils.agent.list.refetch().catch(() => {});
       // 强制立即刷新子 Agent 列表，确保新卡片在面板中实时出现
-      void utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 });
+      utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 }).catch(() => {});
       onCreated?.({
         subagentSessionId: data.subagentSessionId,
         status: data.status,

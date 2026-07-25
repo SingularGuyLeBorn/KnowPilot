@@ -206,7 +206,7 @@ function AsyncTaskCard({
         isDestructive
         onConfirm={() => {
           deleteMut.mutate({ id: task.id });
-          void utils.task.list.invalidate();
+          utils.task.list.invalidate().catch(() => {});
           setConfirmDelete(false);
         }}
         onCancel={() => setConfirmDelete(false)}
@@ -252,8 +252,8 @@ export function AsyncTaskPanel({
   }, [items]);
 
   const refresh = () => {
-    void query.refetch();
-    void utils.task.list.invalidate();
+    query.refetch().catch(() => {});
+    utils.task.list.invalidate().catch(() => {});
   };
 
   if (!parentSessionId) {

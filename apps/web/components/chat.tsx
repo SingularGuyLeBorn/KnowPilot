@@ -256,7 +256,7 @@ export function ChatView() {
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== focusedSessionIdRef.current) {
       ensureFocusedSession(sessionFromUrl);
-      void utils.session.listRunning.invalidate();
+      utils.session.listRunning.invalidate().catch(() => {});
       consumeRef.current(sessionFromUrl);
     }
   }, [sessionFromUrl, ensureFocusedSession, utils.session.listRunning]);
@@ -479,7 +479,7 @@ export function ChatView() {
 
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {
-      void asyncQueueQuery.refetch();
+      asyncQueueQuery.refetch().catch(() => {});
       showToast("已请求取消任务");
     },
     onError: (err) => {
@@ -500,7 +500,7 @@ export function ChatView() {
 
   const pinAsyncJobMutation = trpc.agent.toggleAsyncJobPinned.useMutation({
     onSuccess: () => {
-      void asyncQueueQuery.refetch();
+      asyncQueueQuery.refetch().catch(() => {});
     },
   });
 
@@ -547,7 +547,7 @@ export function ChatView() {
     if (backendDown) return;
     for (const sid of watchedSessionIds) {
       if (!sid || sid === NEW_STREAM_KEY) continue;
-      void utils.agent.pullAsyncQueue.prefetch({ sessionId: sid });
+      utils.agent.pullAsyncQueue.prefetch({ sessionId: sid }).catch(() => {});
     }
   }, [watchedSessionIds, backendDown, utils.agent.pullAsyncQueue]);
 
@@ -882,7 +882,7 @@ export function ChatView() {
         } catch {
           /* ignore */
         }
-        void utils.session.list.invalidate();
+        utils.session.list.invalidate().catch(() => {});
         return res.id;
       } catch {
         return null;
@@ -967,7 +967,7 @@ export function ChatView() {
         } catch {
           /* ignore */
         }
-        void utils.session.list.invalidate();
+        utils.session.list.invalidate().catch(() => {});
       } catch {
         showToast("创建新会话失败");
       }
@@ -996,7 +996,7 @@ export function ChatView() {
       setAgentId("");
       setUserSelectedWorkspaceId(null);
       setEditingSessionId(null);
-      void utils.session.listRunning.invalidate();
+      utils.session.listRunning.invalidate().catch(() => {});
       const targetSt = streamLifecycleStore.get(id);
       if (
         targetSt.phase === "streaming" &&

@@ -10,13 +10,24 @@ import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 
 type Utils = ReturnType<typeof trpc.useUtils>;
 
-/** fetch pullAsyncQueue → setQueryData → merge 进该 session 的 asyncOverlays → hydrateDone */
+/** fetch pullAsyncQueue → setQueryData → merge 进该 session 的 asyncOverlays → hydrateDone
+ *  CancelledError 兜底：父子 Agent 通信时 SSE 事件密集触发并发 refetch 同一 queryKey，
+ *  TanStack Query 取消未完成的旧 fetch 抛 CancelledError，此处静默吞掉（预期行为，非 bug），
+ *  避免冒泡为 unhandled rejection 被 Next.js dev overlay 捕获显示。 */
 export async function refreshSessionAsyncQueue(
   utils: Utils,
   sessionId: string,
 ): Promise<void> {
   if (!sessionId) return;
-  const data = await utils.agent.pullAsyncQueue.fetch({ sessionId });
+  let data: Awaited<ReturnType<typeof utils.agent.pullAsyncQueue.fetch>> | null = null;
+  try {
+    data = await utils.agent.pullAsyncQueue.fetch({ sessionId });
+  } catch (err) {
+    // CancelledError（并发 refetch 取消旧 fetch）或网络瞬断：静默跳过，不阻塞 SSE 处理
+    if (err instanceof Error && err.name === "CancelledError") return;
+    console.warn(`[refreshSessionAsyncQueue] pullAsyncQueue.fetch 失败 session=${sessionId}:`, err);
+    return;
+  }
   utils.agent.pullAsyncQueue.setData({ sessionId }, data);
   const compose = sessionComposeStore.get(sessionId);
   const merged = mergeAsyncPollIntoQueue(compose.asyncOverlays, data, {

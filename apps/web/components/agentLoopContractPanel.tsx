@@ -13,10 +13,10 @@ export function AgentLoopContractPanel({ agentId }: { agentId: string }) {
     { enabled: !!agentId, refetchInterval: 15_000 },
   );
   const resumeMut = trpc.agent.resumeLoopContract.useMutation({
-    onSuccess: () => void utils.agent.getLoopContract.invalidate({ agentId }),
+    onSuccess: () => { utils.agent.getLoopContract.invalidate({ agentId }).catch(() => {}); },
   });
   const closeMut = trpc.agent.closeLoopGate.useMutation({
-    onSuccess: () => void utils.agent.getLoopContract.invalidate({ agentId }),
+    onSuccess: () => { utils.agent.getLoopContract.invalidate({ agentId }).catch(() => {}); },
   });
 
   if (isLoading) {

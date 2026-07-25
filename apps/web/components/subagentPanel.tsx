@@ -161,7 +161,7 @@ function SubagentAgentCard({
         isDestructive
         onConfirm={() => {
           deleteMut.mutate({ id: agent.id });
-          void utils.agent.list.invalidate();
+          utils.agent.list.invalidate().catch(() => {});
           setConfirmDelete(false);
         }}
         onCancel={() => setConfirmDelete(false)}
@@ -215,10 +215,10 @@ export function SubagentPanel({
   }, [childrenQuery.data?.items]);
 
   const refresh = () => {
-    void query.refetch();
-    void utils.agent.list.invalidate();
+    query.refetch().catch(() => {});
+    utils.agent.list.invalidate().catch(() => {});
     if (parentSessionId) {
-      void utils.session.listChildren.invalidate({ parentSessionId });
+      utils.session.listChildren.invalidate({ parentSessionId }).catch(() => {});
     }
   };
 

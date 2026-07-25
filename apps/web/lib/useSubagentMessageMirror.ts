@@ -72,7 +72,7 @@ export function useSubagentMessageMirror(opts: {
       if (cancelled) return;
       // 仅当至少有一条实际处理（非全 rejected）才 refetch
       if (results.some((r) => r.status === "fulfilled")) {
-        void refetchSessionQueue();
+        refetchSessionQueue().catch(() => {});
       }
     })();
     return () => {

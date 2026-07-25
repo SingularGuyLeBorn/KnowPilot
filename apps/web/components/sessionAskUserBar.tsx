@@ -26,7 +26,7 @@ export function SessionAskUserBar({ sessionId }: { sessionId: string | null }) {
           options={item.options}
           channel={item.channel}
           onResolved={() => {
-            void query.refetch();
+            query.refetch().catch(() => {});
           }}
         />
       ))}
