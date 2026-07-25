@@ -12,6 +12,9 @@ llm:
   # 重试耗尽后按序降级的备用模型（provider 由模型名自动推导，需对应厂商已配置 API Key）
   # 例：fallbackModels: ["kimi-k2", "glm-4-flash"]
   fallbackModels: []
+  # P3-03：可选覆盖各厂商 baseUrl（env <provider>_BASE_URL 仍优先；都未配则回退内置 DEFAULT_BASE_URLS）
+  # 例：providers: { deepseek: { baseUrl: "https://proxy.example.com/v1" } }
+  providers: {}
 
 stream:
   # 每个运行中 session 的内存环形缓冲事件数（热缓冲，用于低延迟推送）
