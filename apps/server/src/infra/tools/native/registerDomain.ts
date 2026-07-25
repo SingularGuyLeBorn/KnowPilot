@@ -27,6 +27,14 @@ export function registerNativeDomain(
       );
     }
     const rb = rollbacks?.[def.name];
+    // P1-03：destructive && !approvalExempt（需审批的危险工具）自动 defaultHidden=true，
+    // 除非域定义显式声明 defaultHidden。这让 native:"all" 不会默认暴露 run_shell/git_push/
+    // file_delete/github_delete_repo 等危险工具，Agent 想用必须显式 `native:<name>`。
+    // approvalExempt 的 destructive（write_file 等可回滚写入）不自动隐藏——是常用工具。
+    let defaultHidden = def.defaultHidden;
+    if (defaultHidden === undefined) {
+      defaultHidden = def.destructive === true && def.approvalExempt !== true;
+    }
     registerTool<NativeToolContext>({
       name: def.name,
       kind: "native",
@@ -34,6 +42,7 @@ export function registerNativeDomain(
       destructive: def.destructive,
       approvalExempt: def.destructive ? def.approvalExempt : undefined,
       reentrant: def.reentrant,
+      defaultHidden,
       schema: () => ({ description: def.description, parameters: def.parameters }),
       execute: (args, ctx) => handler(args, ctx),
       captureRollback: rb?.capture,
