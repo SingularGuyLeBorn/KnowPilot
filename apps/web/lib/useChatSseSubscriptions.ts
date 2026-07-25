@@ -31,6 +31,8 @@ export interface UseChatSseSubscriptionsParams {
   pullAgentMessagesQuery: ReturnType<typeof trpc.agent.pullAgentMessages.useQuery>;
   isSubagentSession: boolean;
   setRotateBanner: (banner: { newSessionId: string; newTitle: string } | null) => void;
+  /** session_rotate focusNewSession=true 时调用，前端自动聚焦新会话 */
+  onFocusSession?: (sessionId: string) => void;
 }
 
 export function useChatSseSubscriptions({
@@ -43,6 +45,7 @@ export function useChatSseSubscriptions({
   pullAgentMessagesQuery,
   isSubagentSession,
   setRotateBanner,
+  onFocusSession,
 }: UseChatSseSubscriptionsParams) {
   const utils = trpc.useUtils();
 
@@ -161,6 +164,7 @@ export function useChatSseSubscriptions({
             oldSessionId?: string;
             newSessionId: string;
             newTitle: string;
+            focusNewSession?: boolean;
           };
           if (data.oldSessionId && data.oldSessionId === effectiveSessionId) {
             setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
@@ -169,6 +173,10 @@ export function useChatSseSubscriptions({
           const invalidateId = data.oldSessionId ?? effectiveSessionId ?? undefined;
           if (invalidateId) {
             utils.session.getById.invalidate({ id: invalidateId }).catch(() => {});
+          }
+          // focusNewSession=true：agent 主动要求前端自动聚焦新会话（干净重启场景）
+          if (data.focusNewSession && onFocusSession) {
+            onFocusSession(data.newSessionId);
           }
         } catch {
           /* ignore */
@@ -197,8 +205,21 @@ export function useChatSseSubscriptions({
       register("ask_user_pending", () => {
         utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
       });
-      register("ask_user_resolved", () => {
+      register("ask_user_resolved", (ev) => {
         utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
+        // 邮件回复路径：把 answer 回填到 AskUserPrompt 的 customResponse 输入框（不创建气泡）
+        try {
+          const data = JSON.parse(ev.data) as { askId?: string; answer?: string; outcome?: string };
+          if (data.askId && data.answer) {
+            window.dispatchEvent(
+              new CustomEvent("kp:ask-user-resolved", {
+                detail: { askId: data.askId, answer: data.answer, outcome: data.outcome ?? "answered" },
+              }),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
       });
       register("swarm_task_update", () => {
         // 父会话被动跟进 Swarm 任务态，少靠 task.list 盲轮询
@@ -228,5 +249,6 @@ export function useChatSseSubscriptions({
     isSubagentSession,
     utils,
     setRotateBanner,
+    onFocusSession,
   ]);
 }

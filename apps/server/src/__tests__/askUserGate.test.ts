@@ -29,16 +29,13 @@ describe("askUserGate", () => {
     __resetAskUserGateForTests();
     vi.mocked(sendEmailNotification).mockClear();
     vi.useFakeTimers();
-    process.env.ASK_USER_FIRST_REMINDER_MS = "1000";
-    process.env.ASK_USER_REPEAT_REMINDER_MS = "2000";
     process.env.ASK_USER_TTL_MS = "60000";
   });
 
   afterEach(() => {
     __resetAskUserGateForTests();
     vi.useRealTimers();
-    delete process.env.ASK_USER_FIRST_REMINDER_MS;
-    delete process.env.ASK_USER_REPEAT_REMINDER_MS;
+    delete process.env.ASK_USER_REMINDER_LADDER_MS;
     delete process.env.ASK_USER_TTL_MS;
   });
 
@@ -92,7 +89,8 @@ describe("askUserGate", () => {
     expect(again.ok).toBe(false);
   });
 
-  it("10 分钟级首次提醒 + 周期性提醒（测试用缩短 ms）", async () => {
+  it("阶梯提醒：1min→10min→30min→30min→1h（测试用 ladder=1000,2000,4000）", async () => {
+    process.env.ASK_USER_REMINDER_LADDER_MS = "1000,2000,4000";
     const pending = await createAskUserPending({
       sessionId: "clxxxxxxxxxxxxxxxxxxxx",
       question: "还在吗？",
@@ -101,17 +99,29 @@ describe("askUserGate", () => {
     });
 
     expect(vi.mocked(sendEmailNotification)).not.toHaveBeenCalled();
+    // 第 1 档：1s 后首次
     await vi.advanceTimersByTimeAsync(1000);
     expect(vi.mocked(sendEmailNotification)).toHaveBeenCalledTimes(1);
     expect(__getAskUserReminderCountForTests(pending.askId)).toBe(1);
 
+    // 第 2 档：再 2s 后第二次
     await vi.advanceTimersByTimeAsync(2000);
     expect(vi.mocked(sendEmailNotification)).toHaveBeenCalledTimes(2);
+    expect(__getAskUserReminderCountForTests(pending.askId)).toBe(2);
+
+    // 第 3 档（最后一档）：再 4s 后第三次
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(vi.mocked(sendEmailNotification)).toHaveBeenCalledTimes(3);
+
+    // 超出 ladder 长度后用最后一档（4s）兜底，再 4s 后第四次
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(vi.mocked(sendEmailNotification)).toHaveBeenCalledTimes(4);
 
     resolveAskUser(pending.askId, "收到", "ui");
     await vi.advanceTimersByTimeAsync(5000);
     // 答复后不再提醒
-    expect(vi.mocked(sendEmailNotification)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sendEmailNotification)).toHaveBeenCalledTimes(4);
+    delete process.env.ASK_USER_REMINDER_LADDER_MS;
   });
 
   it("resolve 先于 wait 注册时仍能拿到答复（竞态幂等）", async () => {

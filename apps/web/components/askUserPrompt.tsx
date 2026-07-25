@@ -4,7 +4,7 @@
  * ask_user Chat 弹框 —— 选项列表 + 自定义输入（仿 Kimi AskUserQuestion）。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -29,12 +29,29 @@ export function AskUserPrompt({
   const [custom, setCustom] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
   const [done, setDone] = useState(false);
+  const [emailAnswer, setEmailAnswer] = useState<string | null>(null);
   const resolveMutation = trpc.askUser.resolve.useMutation({
     onSuccess: () => {
       setDone(true);
       onResolved?.();
     },
   });
+
+  // 邮件回复路径：SSE ask_user_resolved 事件带 answer → 回填 customResponse 输入框 + 标记 done。
+  // 后端已 resolveAskUser(answer,"email") 唤醒 run 续轮，前端无需再提交，只做视觉回填。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ askId: string; answer: string; outcome?: string }>).detail;
+      if (detail.askId !== askId) return;
+      if (detail.outcome && detail.outcome !== "answered") return;
+      setEmailAnswer(detail.answer);
+      setCustom(detail.answer);
+      setDone(true);
+      onResolved?.();
+    };
+    window.addEventListener("kp:ask-user-resolved", handler);
+    return () => window.removeEventListener("kp:ask-user-resolved", handler);
+  }, [askId, onResolved]);
 
   const opts = useMemo(
     () => (Array.isArray(options) ? options.map((o) => String(o).trim()).filter(Boolean) : []),
@@ -56,7 +73,16 @@ export function AskUserPrompt({
           className,
         )}
       >
-        已提交答复，Agent 继续中…
+        {emailAnswer ? (
+          <span>
+            已收到邮件回复并填入答复框，Agent 继续中…
+            <span className="mt-1 block whitespace-pre-wrap break-words text-[12px] text-green-700">
+              {emailAnswer}
+            </span>
+          </span>
+        ) : (
+          "已提交答复，Agent 继续中…"
+        )}
       </div>
     );
   }

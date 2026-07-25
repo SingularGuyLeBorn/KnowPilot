@@ -27,6 +27,10 @@ const askUserParameters = zodParams(
     options: z.array(z.string().min(1)).max(8).optional(),
     channel: z.enum(["ui", "email"]).optional(),
     subject: z.string().max(200).optional(),
+    to: z
+      .string()
+      .describe("收件人邮箱（仅 channel=email 时生效；不填则用 AGENTMAIL_ASK_TO / EMAIL_TO 环境变量）")
+      .optional(),
   }),
 );
 
@@ -59,9 +63,13 @@ async function askUserTool(args: Record<string, unknown>, ctx: NativeToolContext
         error: "ask_user channel=email 需要配置 AGENTMAIL_API_KEY（AgentMail / agentmail.to）。",
       };
     }
-    const to = process.env.AGENTMAIL_ASK_TO?.trim() || process.env.EMAIL_TO?.trim() || "";
+    const to =
+      String(args.to || "").trim() ||
+      process.env.AGENTMAIL_ASK_TO?.trim() ||
+      process.env.EMAIL_TO?.trim() ||
+      "";
     if (!to) {
-      return { success: false, error: "未配置问人收件人（EMAIL_TO 或 AGENTMAIL_ASK_TO）" };
+      return { success: false, error: "未配置问人收件人（to 参数或 EMAIL_TO / AGENTMAIL_ASK_TO 环境变量）" };
     }
 
     const optionsBlock =
@@ -135,12 +143,17 @@ const defs: NativeToolDefinition[] = [
   {
     name: "ask_user",
     description:
-      "【向用户提问并等待答复】在继续任务前必须获得用户决策时使用。" +
-      "channel=ui（默认）：在 Chat 弹出选项/输入框；channel=email：经 AgentMail 发信，用户回复邮件或 Chat 均可作答。" +
-      "调用后运行会挂起，直到用户答复或超时。只需单向通知请用 send_email，不要用本工具。",
+      "【向用户提问并挂起 run，等待用户答复】调用后 run 暂停，直到用户作答（Chat 弹框或回复邮件）或超时。" +
+      "必用场景：(1) 需要用户回答开放问题；(2) 需要用户在选项中选一个；(3) 需要用户确认/决策某事。" +
+      "channel=ui（默认）：Chat 弹框显示选项 + 自定义输入框，用户在网页作答。" +
+      "channel=email：经 AgentMail 发一封【可回复】邮件，用户不在电脑前可直接回复邮件，" +
+      "回复内容会回填到 Chat 的 customResponse 输入框并注入会话继续本轮（不产生独立 user 气泡）。" +
+      "to 参数（channel=email 时）：指定收件人邮箱，不填则用 AGENTMAIL_ASK_TO / EMAIL_TO 环境变量。" +
+      "options：给 2~8 个候选选项；不给则视为开放问题（用户自定义输入）。" +
+      "⚠️ 单向通知（不需等回复，如任务完成/告警）用 send_email，**禁止**用本工具发通知。" +
+      "⚠️ 不要对同一问题重复调用本工具；用户答复后基于答复继续，除非用户要求澄清。",
     parameters: askUserParameters,
     concurrencyClass: "B",
-    reentrant: false,
   },
 ];
 

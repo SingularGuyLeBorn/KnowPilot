@@ -89,6 +89,12 @@ function truncateForMessage(value: unknown): string {
 /** W11：审批决策后的续跑注入消息（经 injectUserMessages 显式机制进入原 session 与 llmMessages） */
 function buildApprovalResumeMessage(resolution: ApprovalResolution): string {
   const base = `approvalId=${resolution.approvalId}，操作：${resolution.toolName}`;
+  if (resolution.outcome === "user_replied") {
+    return (
+      `用户通过邮件回复了审批（${base}）：\n"""\n${resolution.answer ?? ""}\n"""\n` +
+      `请根据回复内容判断用户是否同意执行该操作。如果同意，请直接调用原工具 ${resolution.toolName}（携带 approvalId=${resolution.approvalId}，审批已授权，不会再次拦截）；如果不同意，请向用户说明并收尾。`
+    );
+  }
   if (resolution.outcome === "approved") {
     const result = resolution.execResult;
     const failed =
@@ -244,13 +250,15 @@ async function injectUserMessages(
 ): Promise<void> {
   for (const item of items) {
     let messageId: string | undefined;
-    if (input.sessionId) {
+    // ask_user 回复不落库为 user 气泡：工具本身挂起等待，回复（UI 手打或邮件回填）只作为
+    // customResponse 填入弹框输入框 + 推给 LLM 续轮，不产生独立 user 气泡。
+    // steer/follow_up/approval 仍落库（用户主动注入或审批决策需留痕）。
+    if (input.sessionId && kind !== "ask_user") {
       try {
         const created = await input.services.message.create({
           sessionId: input.sessionId,
           role: "user",
           content: item.content,
-          // 元数据供 UI 识别来源（若 schema 不收 meta 则忽略）
         } as Parameters<typeof input.services.message.create>[0]);
         if (created.success && created.data && typeof created.data === "object" && "id" in created.data) {
           messageId = String((created.data as { id: string }).id);
@@ -760,8 +768,11 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
       // ask_user：工具返回 askUserPending → 同 phase 挂起，等 UI/邮件 resolve
       const pendingAsks = executedItems
-        .map((item) => readAskUserPendingMarker(item.result))
-        .filter((m): m is { askId: string } => m !== null);
+        .map((item) => {
+          const m = readAskUserPendingMarker(item.result);
+          return m ? { askId: m.askId, toolCallId: item.call.id } : null;
+        })
+        .filter((m): m is { askId: string; toolCallId: string } => m !== null);
       if (pendingAsks.length > 0) {
         if (machine.phase !== "awaiting_human") {
           machine.transition("awaiting_human");
@@ -780,7 +791,27 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
               sessionId: input.sessionId,
               askId: pending.askId,
               outcome: resolution.outcome,
+              answer: resolution.outcome === "answered" ? resolution.answer : undefined,
             });
+          }
+          // 把用户答复回写到工具调用结果：前端工具框（ToolStep.result）即可显示用户回复，
+          // 历史加载也一致（tool result 携带 answer，不再只是 waiting_for_user 占位）。
+          const askTool = executedTools.find((t) => t.id === pending.toolCallId);
+          const resolvedResult = {
+            success: true,
+            status: resolution.outcome,
+            askId: resolution.askId,
+            answer: resolution.outcome === "answered" ? resolution.answer : undefined,
+            source: resolution.source,
+          };
+          if (askTool) {
+            askTool.result = resolvedResult;
+            // 同步更新 llmMessages 里对应 tool message 的 content，保持当前轮与历史加载一致
+            const toolMsg = llmMessages.find(
+              (m): m is { role: "tool"; tool_call_id: string; content: string } =>
+                m.role === "tool" && (m as { tool_call_id?: string }).tool_call_id === pending.toolCallId,
+            );
+            if (toolMsg) toolMsg.content = JSON.stringify(resolvedResult);
           }
           await injectUserMessages(
             input,

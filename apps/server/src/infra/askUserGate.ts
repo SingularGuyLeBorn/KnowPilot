@@ -54,11 +54,9 @@ const pendingById = new Map<string, AskUserPending>();
 const waitersById = new Map<string, Set<AskUserWaiter>>();
 const byMessageId = new Map<string, string>();
 const byThreadId = new Map<string, string>();
-const processedEventIds = new Set<string>();
 
 type ReminderHandles = {
-  firstTimer?: ReturnType<typeof setTimeout>;
-  interval?: ReturnType<typeof setInterval>;
+  timer?: ReturnType<typeof setTimeout>;
   config: AppConfig;
   log?: ServiceContainer["log"];
 };
@@ -68,14 +66,37 @@ const remindersById = new Map<string, ReminderHandles>();
 let persistServices: ServiceContainer | null = null;
 let persistConfig: AppConfig | null = null;
 
-function firstReminderMs(): number {
-  const raw = Number(process.env.ASK_USER_FIRST_REMINDER_MS || "");
-  return Number.isFinite(raw) && raw > 0 ? raw : 10 * 60 * 1000;
+/**
+ * ask_user 提醒邮件阶梯节奏（从 ask_user 创建起算，每档间隔）：
+ *   第 1 次：1 分钟后
+ *   第 2 次：再 10 分钟后
+ *   第 3 次：再 30 分钟后
+ *   第 4 次：再 30 分钟后
+ *   第 5 次起：每 1 小时（固定），直到用户回复 / 超时 / 中止
+ * 超出数组长度后用最后一档（1 小时）兜底，保证「固定一小时直到回复」。
+ * env ASK_USER_REMINDER_LADDER_MS 可整体覆盖（逗号分隔毫秒数，测试用，如 10000 = 每档 10s）。
+ */
+const DEFAULT_REMINDER_LADDER_MS = [
+  1 * 60 * 1000, // 1min
+  10 * 60 * 1000, // 10min
+  30 * 60 * 1000, // 30min
+  30 * 60 * 1000, // 30min
+  60 * 60 * 1000, // 1h（固定兜底）
+];
+
+function parseReminderLadder(): number[] {
+  const raw = process.env.ASK_USER_REMINDER_LADDER_MS?.trim();
+  if (!raw) return DEFAULT_REMINDER_LADDER_MS;
+  const parts = raw
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return parts.length > 0 ? parts : DEFAULT_REMINDER_LADDER_MS;
 }
 
-function repeatReminderMs(): number {
-  const raw = Number(process.env.ASK_USER_REPEAT_REMINDER_MS || "");
-  return Number.isFinite(raw) && raw > 0 ? raw : 60 * 60 * 1000;
+function reminderIntervalFor(count: number): number {
+  const ladder = parseReminderLadder();
+  return ladder[Math.min(count, ladder.length - 1)]!;
 }
 
 function askTtlMs(): number {
@@ -101,8 +122,7 @@ function removeWaiter(askId: string, waiter: AskUserWaiter): void {
 function clearReminders(askId: string): void {
   const handles = remindersById.get(askId);
   if (!handles) return;
-  if (handles.firstTimer) clearTimeout(handles.firstTimer);
-  if (handles.interval) clearInterval(handles.interval);
+  if (handles.timer) clearTimeout(handles.timer);
   remindersById.delete(askId);
 }
 
@@ -221,24 +241,33 @@ async function sendReminderEmail(askId: string): Promise<void> {
     pending.options && pending.options.length > 0
       ? `\n选项：\n${pending.options.map((o, i) => `${i + 1}. ${o}`).join("\n")}\n`
       : "";
-  const channelHint =
-    pending.channel === "email"
-      ? "请回复原询问邮件，或在 KnowPilot Chat 弹框中作答。"
-      : "请打开 KnowPilot Chat，在 ask_user 弹框中作答。";
 
+  // 提醒邮件 = 可回复邮件：用户可直接回复本邮件，回复内容作为 customResponse 注入回 session 发给大模型。
+  // 用 sendEmailNotification 发送（agentmail 通道返回 messageId/threadId），绑定回 pending，
+  // 这样 webhook/poller 收到回复时能通过 inReplyTo/threadId 匹配回 askId。
   const result = await sendEmailNotification(handles.config, handles.log, {
-    subject: `[KnowPilot 提醒] 请回复 Agent 提问（已等待 ${mins} 分钟）`,
+    subject: `[KnowPilot 需回复] Agent 正在等你回复（已等待 ${mins} 分钟）`,
     body:
       `Agent 正在等待你的回复（第 ${pending.reminderCount} 次提醒）。\n\n` +
       `问题：${pending.question}\n` +
       optionsBlock +
       `\n会话：${pending.sessionId}\naskId：${askId}\n\n` +
-      `${channelHint}\n`,
+      `直接回复本邮件即可，回复内容会作为你的答复发给 Agent（和聊天框打字等价）。\n` +
+      `你也可以打开 KnowPilot Chat 在 ask_user 弹框中作答。\n`,
     agentId: pending.agentId,
   });
 
   if ("error" in result) {
-    console.warn(`[askUserGate] 提醒未发送 askId=${askId}: ${result.error}`);
+    console.warn(`[askUserGate] 提醒邮件未发送 askId=${askId}: ${result.error}`);
+    return;
+  }
+
+  // 绑定本封提醒邮件的 messageId/threadId 到 pending，用户回复本邮件即可匹配回 askId
+  if (result.messageId || result.threadId) {
+    bindAskUserMailIds(askId, { messageId: result.messageId, threadId: result.threadId });
+    console.info(
+      `[askUserGate] 提醒邮件已发送并绑定 askId=${askId} messageId=${result.messageId} threadId=${result.threadId}（用户可直接回复本邮件）`,
+    );
   }
 }
 
@@ -253,18 +282,25 @@ function scheduleReminders(
   remindersById.set(askId, handles);
 
   const elapsed = opts?.elapsedMs ?? 0;
-  const firstDelay = Math.max(0, firstReminderMs() - elapsed);
+  const pending = pendingById.get(askId);
+  // 已发 reminderCount 次 → 下次是第 reminderCount+1 次，用 ladder[reminderCount] 档
+  const count = pending?.reminderCount ?? 0;
+  const interval = reminderIntervalFor(count);
+  // elapsed 是从创建起算的总耗时；若已超过当前档，立即补发（delay=0）
+  const delay = Math.max(0, interval - elapsed);
 
-  handles.firstTimer = setTimeout(() => {
+  const fire = (): void => {
     void sendReminderEmail(askId).then(() => {
       const still = remindersById.get(askId);
-      const pending = pendingById.get(askId);
-      if (!still || !pending || pending.status !== "pending") return;
-      still.interval = setInterval(() => {
-        void sendReminderEmail(askId);
-      }, repeatReminderMs());
+      const p = pendingById.get(askId);
+      if (!still || !p || p.status !== "pending") return;
+      // sendReminderEmail 已把 reminderCount+1；下次用 ladder[新 reminderCount] 档
+      const nextInterval = reminderIntervalFor(p.reminderCount);
+      still.timer = setTimeout(fire, nextInterval);
     });
-  }, firstDelay);
+  };
+
+  handles.timer = setTimeout(fire, delay);
 }
 
 function finishAsk(askId: string, resolution: AskUserResolution): void {
@@ -383,17 +419,10 @@ export function resolveAskUserFromMail(input: {
   inReplyTo?: string | null;
   threadId?: string | null;
   text: string;
-}): { ok: true; askId: string } | { ok: false; reason: string } {
-  if (input.eventId) {
-    if (processedEventIds.has(input.eventId)) {
-      return { ok: false, reason: "event 已处理（幂等）" };
-    }
-    processedEventIds.add(input.eventId);
-    if (processedEventIds.size > 2000) {
-      const first = processedEventIds.values().next().value;
-      if (first) processedEventIds.delete(first);
-    }
-  }
+}): { ok: true; askId: string; answer: string } | { ok: false; reason: string } {
+  // event_id 幂等已收至 DB（ProcessedWebhookEvent 表，见 webhookIdempotency.ts claimWebhookEvent），
+  // 入口（webhook handler / poller）消费前已抢占；此处不再做内存去重，避免双轨。
+  // 下游 resolveAskUser 的 pending.status 保护是第二道防线（跨通道重复也拒）。
 
   let askId: string | undefined;
   if (input.inReplyTo) askId = byMessageId.get(input.inReplyTo);
@@ -402,7 +431,7 @@ export function resolveAskUserFromMail(input: {
 
   const result = resolveAskUser(askId, input.text, "email");
   if (!result.ok) return { ok: false, reason: result.reason };
-  return { ok: true, askId };
+  return { ok: true, askId, answer: input.text };
 }
 
 export async function waitAskUserResolution(
@@ -549,7 +578,6 @@ export function __resetAskUserGateForTests(): void {
   waitersById.clear();
   byMessageId.clear();
   byThreadId.clear();
-  processedEventIds.clear();
   persistServices = null;
   persistConfig = null;
 }
