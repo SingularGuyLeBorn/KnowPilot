@@ -727,7 +727,7 @@ async function sessionContextUsageTool(_args: Record<string, unknown>, ctx: Nati
 }
 
 /**
- * 归档当前会话并开启同 Agent 新会话；总结写入 content/sessions/ 与新会话首条消息。
+ * 归档当前会话并开启同 Agent 新会话；总结写入 data/sessions/ 与新会话首条消息。
  * 不自动切换前端视图——通过 SSE session_rotated 提示用户手动跳转。
  */
 async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -765,8 +765,8 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     (args.title ? String(args.title).trim() : "") ||
     `${oldTitle} · 续`.slice(0, 60);
 
-  // 先把摘要写入本地文件，作为未来恢复与审计的事实源（与 content/ 源优先原则一致）
-  const sessionsDir = path.join(ctx.config.contentDir, "sessions");
+  // 先把摘要写入本地文件，作为未来恢复与审计的事实源（运行时产物，落 data/sessions/）
+  const sessionsDir = ctx.config.dataPaths.sessions;
   fs.mkdirSync(sessionsDir, { recursive: true });
   const summaryFileName = `${oldSession.id}-summary.md`;
   const summaryPath = path.join(sessionsDir, summaryFileName);

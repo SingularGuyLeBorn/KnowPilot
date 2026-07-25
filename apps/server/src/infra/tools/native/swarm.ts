@@ -1300,7 +1300,7 @@ async function skillDiscoverTool(args: Record<string, unknown>, ctx: NativeToolC
   const minSuccessRate = (args.minSuccessRate as number) ?? 80;
   const minUsageCount = Math.max(1, (args.minUsageCount as number) ?? 1);
   const limit = (args.limit as number) ?? 10;
-  const skillsRoot = ctx.config.contentPaths.skills;
+  const skillsRoot = ctx.config.configPaths.skills;
   const skills = await ctx.prisma.skill.findMany({
     where: { enabled: true },
     select: { id: true, name: true, description: true, icon: true, metaJson: true },

@@ -92,6 +92,16 @@ const ThinkingStep = memo(function ThinkingStep({
   const isEmpty = !content;
   // 默认展开；用户可点击折叠，流式中也可展开/折叠
   const [collapsed, setCollapsed] = useState(false);
+  // 思考计时：isLive 起每秒自增，给长思考进度感（避免「卡住」错觉）；终态停表
+  const [elapsedSec, setElapsedSec] = useState(0);
+  useEffect(() => {
+    if (!isLive) return;
+    const start = Date.now();
+    const t = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [isLive]);
 
   return (
     <div className="w-full overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-sm">
@@ -106,8 +116,11 @@ const ThinkingStep = memo(function ThinkingStep({
         aria-label={collapsed ? "展开思考" : "折叠思考"}
       >
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
-        <span>Thinking</span>
+        <span>Thinking{isLive ? "…" : ""}</span>
         {isLive && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
+        {isLive && elapsedSec > 0 && (
+          <span className="text-[10px] tabular-nums text-[var(--kp-text-3)]">{elapsedSec}s</span>
+        )}
         <ChevronRight
           className={cn(
             "ml-auto h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200",
@@ -329,6 +342,15 @@ const ToolStep = memo(function ToolStep({
             >
               <Clock className="h-3 w-3" />
               {sleepHint}
+            </span>
+          )}
+          {(step.status === "running" || waitingAsk) && !sleepHint && (
+            <span
+              className="ml-auto inline-flex items-center gap-1 text-[10px] text-[var(--kp-brand)]"
+              data-testid="tool-running-indicator"
+            >
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {waitingAsk ? "等待回复" : "运行中"}
             </span>
           )}
           {step.status === "done" && !isLive && (

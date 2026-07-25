@@ -14,6 +14,7 @@ import { launchPlaywrightBrowser } from "../playwrightChrome.js";
 import { getSharedBrowser, closeSharedBrowser } from "../browserPool.js";
 import { PW_SCROLL_HALF, PW_SCROLL_THIRD, PW_EXTRACT_ARTICLE_DOM, PW_WAIT_BODY_MIN_FN } from "../playwrightBrowserScripts.js";
 import { cookiesToHeader, loadCookies } from "../../cookieJar.js";
+import { getPlatformStorageStatePath } from "../auth/platformLogin.js";
 
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -383,7 +384,7 @@ async function fetchBilibiliTags(bvid: string, timeoutMs?: number): Promise<stri
   }
 }
 
-async function fetchBilibiliPagelistCid(bvid: string, timeoutMs?: number): Promise<number | undefined> {
+export async function fetchBilibiliPagelistCid(bvid: string, timeoutMs?: number): Promise<number | undefined> {
   try {
     const res = await fetchWithTimeout(
       `https://api.bilibili.com/x/player/pagelist?bvid=${encodeURIComponent(bvid)}`,
@@ -405,7 +406,7 @@ async function fetchBilibiliPagelistCid(bvid: string, timeoutMs?: number): Promi
   }
 }
 
-async function fetchBilibiliAiConclusion(
+export async function fetchBilibiliAiConclusion(
   bvid: string,
   timeoutMs?: number,
   maxChars = 1500,
@@ -434,7 +435,7 @@ async function fetchBilibiliAiConclusion(
   }
 }
 
-async function fetchBilibiliSubtitleExcerpt(
+export async function fetchBilibiliSubtitleExcerpt(
   bvid: string,
   cid: number,
   timeoutMs?: number,
@@ -746,14 +747,16 @@ export async function fetchWithPlaywright(
 
   if (isDouyin) {
     const cookies = loadCookies("douyin");
+    const storageStatePath = getPlatformStorageStatePath("douyin");
     const browser = await getSharedBrowser();
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
       userAgent: DEFAULT_UA,
       locale: "zh-CN",
       timezoneId: "Asia/Shanghai",
+      ...(storageStatePath ? { storageState: storageStatePath } : {}),
     });
-    if (cookies.length) await context.addCookies(cookies);
+    if (!storageStatePath && cookies.length) await context.addCookies(cookies);
     await context.addInitScript(ZHIHU_STEALTH_SCRIPT);
     try {
       const page = await context.newPage();
@@ -773,14 +776,16 @@ export async function fetchWithPlaywright(
 
   if (isXiaohongshu) {
     const cookies = loadCookies("xhs");
+    const storageStatePath = getPlatformStorageStatePath("xhs");
     const browser = await getSharedBrowser();
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
       userAgent: DEFAULT_UA,
       locale: "zh-CN",
       timezoneId: "Asia/Shanghai",
+      ...(storageStatePath ? { storageState: storageStatePath } : {}),
     });
-    if (cookies.length) await context.addCookies(cookies);
+    if (!storageStatePath && cookies.length) await context.addCookies(cookies);
     await context.addInitScript(ZHIHU_STEALTH_SCRIPT);
     try {
       const page = await context.newPage();
@@ -800,14 +805,16 @@ export async function fetchWithPlaywright(
 
   if (isWechat) {
     const cookies = loadCookies("wechat");
+    const storageStatePath = getPlatformStorageStatePath("wechat");
     const browser = await getSharedBrowser();
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
       userAgent: DEFAULT_UA,
       locale: "zh-CN",
       timezoneId: "Asia/Shanghai",
+      ...(storageStatePath ? { storageState: storageStatePath } : {}),
     });
-    if (cookies.length) await context.addCookies(cookies);
+    if (!storageStatePath && cookies.length) await context.addCookies(cookies);
     try {
       const page = await context.newPage();
       await page.goto(url, { waitUntil: "domcontentloaded", timeout });
@@ -826,6 +833,7 @@ export async function fetchWithPlaywright(
 
   if (isZhihu) {
     const cookies = loadCookies("zhihu");
+    const storageStatePath = getPlatformStorageStatePath("zhihu");
 
     const runZhihuContext = async (headless: boolean) => {
       if (headless) {
@@ -835,8 +843,9 @@ export async function fetchWithPlaywright(
           userAgent: DEFAULT_UA,
           locale: "zh-CN",
           timezoneId: "Asia/Shanghai",
+          ...(storageStatePath ? { storageState: storageStatePath } : {}),
         });
-        if (cookies.length) await context.addCookies(cookies);
+        if (!storageStatePath && cookies.length) await context.addCookies(cookies);
         await context.addInitScript(ZHIHU_STEALTH_SCRIPT);
         try {
           const page = await context.newPage();
@@ -862,8 +871,9 @@ export async function fetchWithPlaywright(
         userAgent: DEFAULT_UA,
         locale: "zh-CN",
         timezoneId: "Asia/Shanghai",
+        ...(storageStatePath ? { storageState: storageStatePath } : {}),
       });
-      if (cookies.length) await context.addCookies(cookies);
+      if (!storageStatePath && cookies.length) await context.addCookies(cookies);
       await context.addInitScript(ZHIHU_STEALTH_SCRIPT);
       try {
         const page = await context.newPage();

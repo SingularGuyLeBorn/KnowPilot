@@ -403,7 +403,7 @@ async function feishuAuthorizeTool(args: Record<string, unknown>, _ctx: NativeTo
     ...result,
     fileStatus: status,
     message:
-      "授权成功，token 已写入 content/cookies/feishu_oauth.json。后续过期会自动 refresh；refresh 也失效时再调本工具。",
+      "授权成功，token 已写入 data/cookies/feishu_oauth.json。后续过期会自动 refresh；refresh 也失效时再调本工具。",
   };
 }
 
@@ -733,7 +733,7 @@ export const feishuDefs: NativeToolDefinition[] = [
     name: "feishu_authorize",
     concurrencyClass: "D",
     description:
-      "打开浏览器完成飞书 OAuth（含 offline_access + 文档/知识库/画板 scope），写入 content/cookies/feishu_oauth.json。" +
+      "打开浏览器完成飞书 OAuth（含 offline_access + 文档/知识库/画板 scope），写入 data/cookies/feishu_oauth.json。" +
       "仅在 feishu_token_status 无效且 feishu_refresh_token 失败、或新增权限后需要重新授权时调用；已有有效 token 勿重复调用。" +
       "用户需在弹出页点一次同意。本地回调默认 http://localhost:8088（占用时自动尝试相邻端口）。",
     parameters: zodParams(

@@ -8,7 +8,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { resolveSafePath } from "../../safePath.js";
+import { resolveSafePath, resolveWithinDir } from "../../safePath.js";
 import type { AppConfig } from "../../config.js";
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
@@ -49,20 +49,60 @@ async function readFileTool(args: Record<string, unknown>, ctx: NativeToolContex
   };
 }
 
+/**
+ * write_file / append_file 路径解析（Workspace 落地）：
+ *   - path 以 "content/" 开头：走 projectRoot（知识库资源，如 content/uploads/、content/posts/；文章建议 post_create）。
+ *   - 否则：落到当前 Agent 的 Workspace 目录（每个 Agent 有独立 Workspace，工作产物隔离）。
+ *     Workspace.path 相对 projectRoot 解析；无 Workspace 时回退到 data/workspace/。
+ * 返回绝对路径与相对 projectRoot 的路径（便于 read_file 复用）。
+ */
+async function resolveWritablePath(
+  ctx: NativeToolContext,
+  relPath: string,
+): Promise<{ abs: string; relForReturn: string }> {
+  const p = String(relPath).replace(/\\/g, "/").replace(/^\/+/, "");
+  if (p.includes("..")) throw new Error("路径不允许包含 ..");
+  if (/^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]/.test(p) || p.startsWith("//")) {
+    throw new Error(`路径不允许为绝对路径：${relPath}`);
+  }
+  // 知识库资源走 projectRoot（content/ 前缀 = posts/about/uploads 等事实源）
+  if (p.startsWith("content/")) {
+    const abs = resolveSafePath(ctx.config, p);
+    return { abs, relForReturn: p };
+  }
+  // Agent 工作产物：当前 Workspace 目录
+  const wsId = ctx.agentSnapshot?.workspaceId;
+  let wsRelPath = "";
+  if (wsId && ctx.prisma) {
+    const ws = await ctx.prisma.workspace.findUnique({ where: { id: wsId } }).catch(() => null);
+    wsRelPath = (ws as { path?: string } | null)?.path?.trim() || "";
+  }
+  if (!wsRelPath) {
+    // 无 Workspace：回退到 data/workspace/（运行时产物隔离区）
+    const fallback = `data/workspace/${p}`;
+    const abs = resolveSafePath(ctx.config, fallback);
+    return { abs, relForReturn: fallback };
+  }
+  const wsAbs = path.isAbsolute(wsRelPath) ? path.resolve(wsRelPath) : resolveSafePath(ctx.config, wsRelPath);
+  const abs = resolveWithinDir(wsAbs, p);
+  const relForReturn = path.relative(ctx.config.projectRoot, abs).replace(/\\/g, "/");
+  return { abs, relForReturn };
+}
+
 async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
+  const { abs, relForReturn } = await resolveWritablePath(ctx, String(args.path));
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(abs, String(args.content ?? ""), "utf8");
-  return { path: args.path, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
+  return { path: relForReturn, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
 }
 
 async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
+  const { abs, relForReturn } = await resolveWritablePath(ctx, String(args.path));
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.appendFileSync(abs, String(args.content ?? ""), "utf8");
-  return { path: args.path, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
+  return { path: relForReturn, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
 }
 
 async function listDirectoryTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -262,11 +302,15 @@ const FS_DEFS: NativeToolDefinition[] = [
     destructive: true,
     // 可回滚的常规写入，非删除类——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常写文件
     approvalExempt: true,
-    description: "写入项目根目录内的文本文件（相对路径）。",
+    description:
+      "写入文本文件。path 解析规则：以 content/ 开头走知识库（content/uploads/ 放图片等资源；content/posts/ 写文章建议改用 post_create 走 frontmatter/同步管道）；否则落到当前 Agent 的 Workspace 目录（每个 Agent 有独立 Workspace，工作产物隔离，如 path=demo.html → workspaces/{当前workspace}/demo.html）。禁止 .. 与绝对路径。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对项目根的路径" },
+        path: {
+          type: "string",
+          description: "相对路径：content/ 开头走知识库；否则相对当前 Workspace（如 demo.html、sub/foo.txt）",
+        },
         content: { type: "string", description: "文件内容" },
       },
       required: ["path", "content"],
@@ -275,11 +319,15 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "append_to_file",
     concurrencyClass: "D",
-    description: "在项目根目录内的文本文件末尾追加内容（文件不存在则创建）。",
+    description:
+      "在文本文件末尾追加内容（文件不存在则创建）。path 解析规则同 write_file：content/ 开头走知识库；否则相对当前 Agent 的 Workspace 目录。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对项目根的路径" },
+        path: {
+          type: "string",
+          description: "相对路径：content/ 开头走知识库；否则相对当前 Workspace（如 log.txt）",
+        },
         content: { type: "string", description: "追加内容" },
       },
       required: ["path", "content"],

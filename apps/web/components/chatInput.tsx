@@ -1,13 +1,14 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
-import { Bot, Check, Flag, ImagePlus, ListOrdered, Loader2, Search, Send, Square, Wand2, X } from "lucide-react";
+import { Bot, Check, Flag, ImagePlus, ListOrdered, Loader2, Mic, Search, Send, Square, Wand2, X } from "lucide-react";
 import type { ChatSessionConfig, Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import type { ChatQueueAttachment } from "@/lib/chatQueueTypes";
 import { ChatModelMenu } from "@/components/chatModelMenu";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 
 export interface SelectedSkill {
   id: string;
@@ -111,6 +112,25 @@ export const ChatInputArea = memo(function ChatInputArea({
   const ocrLoading = Object.keys(ocrInFlight).length > 0;
   // 发送按钮防抖/防重入：用 ref 锁 + state 同步禁用按钮，避免 React state 批处理导致双击/双快捷键穿透
   const [isSending, setIsSending] = useState(false);
+
+  // 语音输入：webkitSpeechRecognition 实时转写，interim/final 追加到 input 末尾
+  const voiceBaseRef = useRef("");
+  const { supported: sttSupported, listening, error: sttError, start: sttStart, stop: sttStop } =
+    useSpeechRecognition(
+      { lang: "zh-CN", interimResults: true, continuous: false },
+      {
+        onInterim: (t) => setInput((voiceBaseRef.current + t).replace(/\s+$/, " ")),
+        onFinal: (t) => {
+          const merged = (voiceBaseRef.current ? voiceBaseRef.current.replace(/\s+$/, "") + " " : "") + t;
+          voiceBaseRef.current = merged + " ";
+          setInput(voiceBaseRef.current);
+        },
+      },
+    );
+  useEffect(() => {
+    if (!listening) voiceBaseRef.current = input;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listening]);
 
   // 上键历史恢复：按 sessionId 隔离，存 localStorage
   const historyKey = sessionId ? `kp-input-history:${sessionId}` : null;
@@ -731,6 +751,30 @@ export const ChatInputArea = memo(function ChatInputArea({
             >
               <ImagePlus className="h-4 w-4" />
             </button>
+            {sttSupported && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={listening ? sttStop : () => { voiceBaseRef.current = input; sttStart(); }}
+                data-testid="chat-voice-input"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-lg p-1.5 transition disabled:opacity-50",
+                  listening
+                    ? "bg-red-500/15 text-red-500 hover:bg-red-500/25"
+                    : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
+                )}
+                title={
+                  sttError
+                    ? sttError
+                    : listening
+                      ? "正在听…点击停止"
+                      : "语音输入（浏览器原生，免费）"
+                }
+                aria-label={listening ? "停止语音输入" : "开始语音输入"}
+              >
+                <Mic className={cn("h-4 w-4", listening && "animate-pulse")} />
+              </button>
+            )}
             <button
               type="button"
               disabled={disabled}

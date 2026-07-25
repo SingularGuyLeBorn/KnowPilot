@@ -29,7 +29,7 @@ import {
 } from "../../skillUsage.js";
 
 function skillsRoot(ctx: NativeToolContext): string {
-  return ctx.config.contentPaths.skills;
+  return ctx.config.configPaths.skills;
 }
 
 function parseMeta(metaJson?: string | null): Record<string, unknown> {

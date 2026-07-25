@@ -423,7 +423,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     concurrencyClass: "D",
     // 追加日记文件，文件名含日期；重跑产生新行而非覆盖
     description:
-      "追加 L2 工作日记（content/memories/daily/YYYY-MM-DD.md）。只作工作笔记，**不会**自动注入 system prompt；需要时用 memory_daily_search 召回。稳定偏好/事实仍用 memory_create。",
+      "追加 L2 工作日记（config/memories/daily/YYYY-MM-DD.md）。只作工作笔记，**不会**自动注入 system prompt；需要时用 memory_daily_search 召回。稳定偏好/事实仍用 memory_create。",
     parameters: zodParams(
       z.object({
         content: z.string().describe("今日工作笔记一行"),

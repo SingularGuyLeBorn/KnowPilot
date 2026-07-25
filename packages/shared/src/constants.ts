@@ -124,7 +124,7 @@ export const MEMORY_INITIAL_STRENGTH = 1.0;
 export const PINNED_MEMORY_USER_MAX_CHARS = 2_000;
 export const PINNED_MEMORY_AGENT_MAX_CHARS = 3_200;
 /** 相对 projectRoot 的常驻层目录（`_` 前缀：db:sync 跳过，不进 Memory 表） */
-export const PINNED_MEMORY_DIR = "content/memories/_pinned";
+export const PINNED_MEMORY_DIR = "config/memories/_pinned";
 export const PINNED_MEMORY_USER_FILE = "USER.md";
 export const PINNED_MEMORY_AGENT_FILE = "AGENT.md";
 
@@ -437,8 +437,12 @@ export const INTEGRATION_DEFAULT_TOOLS: string[] = [
 export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
   super: [
     "native:web_search",
+    "native:read_article",
+    "native:scrape_web_page",
     "native:browser_screenshot",
     "native:read_image",
+    "native:vision_describe",
+    "native:video_transcript",
     "native:read_file",
     "native:write_file",
     "native:list_directory",
@@ -477,12 +481,18 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:generate_skill_from_experience",
     "native:ask_user",
     "native:send_email",
+    "native:platform_login",
+    "native:browser_login_status",
     ...INTEGRATION_DEFAULT_TOOLS,
   ],
   manager: [
     "native:web_search",
+    "native:read_article",
+    "native:scrape_web_page",
     "native:browser_screenshot",
     "native:read_image",
+    "native:vision_describe",
+    "native:video_transcript",
     "native:read_file",
     "native:write_file",
     "native:list_directory",
@@ -516,6 +526,8 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:skill_enable",
     "native:ask_user",
     "native:send_email",
+    "native:platform_login",
+    "native:browser_login_status",
   ],
   sub: [
     "native:sleep",
@@ -530,6 +542,8 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:web_search",
     "native:browser_screenshot",
     "native:read_image",
+    "native:vision_describe",
+    "native:video_transcript",
     "native:skills_list",
     "native:skill_view",
   ],
@@ -542,6 +556,8 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:scrape_web_page",
   "native:browser_screenshot",
   "native:read_image",
+  "native:vision_describe",
+  "native:video_transcript",
   "native:read_file",
   "native:write_file",
   "native:list_directory",
@@ -579,6 +595,7 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:skill_manage",
   ...INTEGRATION_DEFAULT_TOOLS,
   "native:capture_zhihu_login",
+  "native:platform_login",
   "native:browser_login_status",
   "skill:*",
   "mcp:filesystem",

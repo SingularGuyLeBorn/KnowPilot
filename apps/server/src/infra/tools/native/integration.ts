@@ -115,6 +115,8 @@ import { gitDefs, gitHandlers } from "./integration/git.js";
 import { yuqueDefs, yuqueHandlers } from "./integration/yuque.js";
 import { githubDefs, githubHandlers } from "./integration/github.js";
 import { feishuDefs, feishuHandlers } from "./integration/feishu.js";
+import { agentPlatformDefs, agentPlatformHandlers } from "./integration/agentPlatform.js";
+import { tikhubDefs, tikhubHandlers } from "./integration/tikhub.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -134,6 +136,8 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   ...githubDefs,
   ...feishuDefs,
   ...emailDefs,
+  ...agentPlatformDefs,
+  ...tikhubDefs,
 ];
 
 const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
@@ -142,6 +146,8 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   ...githubHandlers,
   ...feishuHandlers,
   ...emailHandlers,
+  ...agentPlatformHandlers,
+  ...tikhubHandlers,
 };
 
 export function registerIntegrationTools(): void {

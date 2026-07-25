@@ -5,12 +5,12 @@
 export { smartSearch, getEngineStatus, resetSearchEngineConfigs } from "./search/router.js";
 export type { SearchEngineName, SearchResponse, SearchResult } from "./search/types.js";
 
-export { detectPlatform, fetchContent, fetchWithPlaywright, fetchJinaAsHtml, looksLikeBlockedHtml, hasWechatArticleHtml, hasXiaohongshuArticleHtml, hasDouyinArticleHtml, parseCookieHeader, isArticleFetchFatalError } from "./platform/fetcher.js";
+export { detectPlatform, fetchContent, fetchWithPlaywright, fetchJinaAsHtml, looksLikeBlockedHtml, hasWechatArticleHtml, hasXiaohongshuArticleHtml, hasDouyinArticleHtml, parseCookieHeader, isArticleFetchFatalError, fetchBilibiliPagelistCid, fetchBilibiliSubtitleExcerpt, fetchBilibiliAiConclusion } from "./platform/fetcher.js";
 export { parseHtmlToMarkdown } from "./platform/parser.js";
 export type { ParseResult, ParseOptions } from "./platform/types.js";
 
 export { scrapePage, scrapeBatch, screenshotPage, getScraperStatus } from "./webScraper.js";
-export { closeSharedBrowser } from "./browserPool.js";
+export { closeSharedBrowser, getSharedBrowser } from "./browserPool.js";
 export type {
   ScrapeOptions,
   ScrapeResult,

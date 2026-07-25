@@ -17,6 +17,7 @@ import {
   RefreshCw,
   RotateCcw,
   Share2,
+  Volume2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -159,14 +160,17 @@ export function MessageActions({
   onRetry,
   onRegenerate,
   onShare,
+  onSpeak,
   onToggleBookmark,
   bookmarked = false,
   showEdit = true,
   showRetry = true,
   showRegenerate = false,
   showShare = true,
+  showSpeak = true,
   showBookmark = false,
   isEditing = false,
+  isSpeaking = false,
   disabled,
   versionNav,
   copied,
@@ -178,14 +182,17 @@ export function MessageActions({
   onRetry?: () => void;
   onRegenerate?: () => void;
   onShare?: () => void;
+  onSpeak?: () => void;
   onToggleBookmark?: () => void;
   bookmarked?: boolean;
   showEdit?: boolean;
   showRetry?: boolean;
   showRegenerate?: boolean;
   showShare?: boolean;
+  showSpeak?: boolean;
   showBookmark?: boolean;
   isEditing?: boolean;
+  isSpeaking?: boolean;
   disabled?: boolean;
   versionNav?: React.ReactNode;
   copied?: boolean;
@@ -212,6 +219,19 @@ export function MessageActions({
       <button type="button" onClick={onCopy} disabled={disabled} className={btnClass} title="复制" aria-label="复制">
         <Copy className="h-3.5 w-3.5" />
       </button>
+      {showSpeak && onSpeak && (
+        <button
+          type="button"
+          onClick={onSpeak}
+          disabled={disabled}
+          className={cn(btnClass, isSpeaking && "text-[var(--kp-brand)]")}
+          title={isSpeaking ? "停止朗读" : "朗读"}
+          aria-label={isSpeaking ? "停止朗读" : "朗读"}
+          data-testid="message-speak-btn"
+        >
+          <Volume2 className={cn("h-3.5 w-3.5", isSpeaking && "animate-pulse")} />
+        </button>
+      )}
       {showShare && onShare && (
         <button type="button" onClick={onShare} disabled={disabled} className={btnClass} title="分享" aria-label="分享">
           <Share2 className="h-3.5 w-3.5" />

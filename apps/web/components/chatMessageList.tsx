@@ -26,12 +26,12 @@ import { LucideIconByName } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { type ChatImageAttachment, type ChatMessage } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
-import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import { MessageActions, MessageSourceLabel, MessageVersions } from "@/components/chatMessageBits";
 import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
 import { type OptimisticUserBubble } from "@/lib/useSessionComposeState";
 import { registerDeliveryLocateHandler } from "@/lib/deliveryLocate";
+import { useSpeechSynthesis } from "@/lib/useSpeechSynthesis";
 
 export interface ChatMessageListProps {
   messageGroups: MessageGroup[];
@@ -92,6 +92,26 @@ export const ChatMessageList = memo(function ChatMessageList({
   setEditingUserId,
   setEditDraft,
 }: ChatMessageListProps) {
+  // 语音输出：assistant 回复朗读（浏览器原生 speechSynthesis，免费）
+  const { supported: ttsSupported, speaking: ttsSpeaking, speak: ttsSpeak, cancel: ttsCancel } =
+    useSpeechSynthesis({ lang: "zh-CN", rate: 1 });
+  const [speakingAssistantId, setSpeakingAssistantId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!ttsSpeaking) setSpeakingAssistantId(null);
+  }, [ttsSpeaking]);
+  const handleSpeak = useCallback(
+    (assistantId: string, content: string) => {
+      if (speakingAssistantId === assistantId) {
+        ttsCancel();
+        setSpeakingAssistantId(null);
+      } else {
+        setSpeakingAssistantId(assistantId);
+        ttsSpeak(content);
+      }
+    },
+    [speakingAssistantId, ttsCancel, ttsSpeak],
+  );
+
   // #12 Swarm 新手引导（可关闭，localStorage 记忆）
   // 初始恒为 false，mount 后再读 localStorage，避免 SSR/首屏 hydration 不一致
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -183,6 +203,8 @@ export const ChatMessageList = memo(function ChatMessageList({
           onCopy={() => void handleCopy(assistantId, active.content)}
           onShare={() => void handleShare(active.content)}
           onRegenerate={() => handleRegenerate(group.userMessage.id)}
+          onSpeak={ttsSupported ? () => handleSpeak(assistantId, active.content) : undefined}
+          isSpeaking={speakingAssistantId === assistantId && ttsSpeaking}
           showRegenerate={isLastGroup}
           showEdit={false}
           showRetry={false}
@@ -223,11 +245,9 @@ export const ChatMessageList = memo(function ChatMessageList({
           >
             {streamingContent ? (
               <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
-                {/* 流式期轻量渲染；落库后的 assistant 气泡仍走完整 PostContent */}
-                <StreamingPlainContent
-                  content={streamingContent}
-                  className="prose-sm max-w-none text-left"
-                />
+                {/* 流式期直接走完整 PostContent：代码块即时支持代码/预览切换、复制、最大化，
+                    实现「边流式输出边视图渲染」。落库后复用同一渲染器，无流式→终态视觉跳变。 */}
+                <PostContent content={streamingContent} className="prose-sm max-w-none text-left" />
               </div>
             ) : liveTimeline.length === 0 ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">

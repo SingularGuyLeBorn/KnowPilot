@@ -103,6 +103,14 @@ function messageFieldsEqual(a: ChatMessage, b: ChatMessage): boolean {
 function pickFresherMessage(prev: ChatMessage, incoming: ChatMessage): ChatMessage {
   if (messageFieldsEqual(prev, incoming)) return prev;
   if (prev.role === "assistant" && incoming.role === "assistant") {
+    // 版本切换：toolResults.versionMeta.activeIndex 变化时，后端为权威（switchVersion 写回），
+    // 必须取 incoming——不能用 content.length 判断（切到更短的旧版本会被误判为「旧」而覆盖回新版本，
+    // 表现为「可以往前切换、无法切回后边、且一直闪烁」）。
+    const prevIdx = (prev.toolResults as { versionMeta?: { activeIndex?: number } } | null)?.versionMeta?.activeIndex;
+    const incIdx = (incoming.toolResults as { versionMeta?: { activeIndex?: number } } | null)?.versionMeta?.activeIndex;
+    if (typeof prevIdx === "number" && typeof incIdx === "number" && prevIdx !== incIdx) {
+      return incoming;
+    }
     if (prev.content.length > incoming.content.length) return prev;
     if (prev.content.length < incoming.content.length) return incoming;
   }

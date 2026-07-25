@@ -351,6 +351,39 @@ export async function runAgentLoopStream(options: {
   };
 }
 
+/**
+ * 删除指定位置之后的所有消息（含 assistant 与后续 user/assistant），并推送 message_deleted SSE。
+ * 重试/重新生成时复用：与编辑一致，删除尾部后重发该用户消息，避免后续消息残留导致状态混乱
+ * （如「重试 A 却残留 B，新 assistant 插入后 B 重复」竞态）。
+ */
+async function deleteTailMessages(
+  services: ServiceContainer,
+  sessionId: string,
+  items: Awaited<ReturnType<typeof services.message.list>>["items"],
+  idx: number,
+): Promise<void> {
+  const tailIds = items.slice(idx + 1).map((m) => m.id);
+  if (tailIds.length === 0) return;
+  await services.prisma.chatMessage.deleteMany({ where: { id: { in: tailIds } } });
+  // deleteMany 绕过 MessageService.afterDelete，需手动推 message_deleted SSE，
+  // 否则前端 MessageStore 残留被删消息直到 hydrate 兜底才消失
+  try {
+    const { getStreamHub } = await import("./sessionStreamHub.js");
+    const hub = getStreamHub();
+    if (hub) {
+      for (const tailId of tailIds) {
+        hub.pushExternalEvent(sessionId, {
+          type: "message_deleted",
+          sessionId,
+          messageId: tailId,
+        });
+      }
+    }
+  } catch {
+    /* ignore SSE */
+  }
+}
+
 async function prepareMessage(
   services: ServiceContainer,
   input: AgentChatInput,
@@ -367,28 +400,8 @@ async function prepareMessage(
     if (items[idx].role !== "user") throw new Error("只能编辑用户消息");
     const newContent = input.editContent!.trim();
     await services.message.update({ id: input.editMessageId, content: newContent });
-    // A5：编辑后删除尾部消息改为单次 deleteMany，避免 K 次逐条往返
-    const tailIds = items.slice(idx + 1).map((m) => m.id);
-    if (tailIds.length > 0) {
-      await services.prisma.chatMessage.deleteMany({ where: { id: { in: tailIds } } });
-      // deleteMany 绕过 MessageService.afterDelete，需手动推 message_deleted SSE，
-      // 否则前端 MessageStore 残留被删消息直到 hydrate 兜底才消失
-      try {
-        const { getStreamHub } = await import("./sessionStreamHub.js");
-        const hub = getStreamHub();
-        if (hub) {
-          for (const tailId of tailIds) {
-            hub.pushExternalEvent(input.sessionId, {
-              type: "message_deleted",
-              sessionId: input.sessionId,
-              messageId: tailId,
-            });
-          }
-        }
-      } catch {
-        /* ignore SSE */
-      }
-    }
+    // 编辑后删除尾部消息（与重试/重新生成同源）
+    await deleteTailMessages(services, input.sessionId, items, idx);
     return { messageText: newContent, skipUserCreate: true };
   }
 
@@ -409,12 +422,12 @@ async function prepareMessage(
     }
     if (userIdx === -1) throw new Error("没有可重新生成的用户消息");
 
-    const assistantAfter = items[userIdx + 1]?.role === "assistant" ? items[userIdx + 1] : null;
+    // 删除该用户消息之后的所有消息（含旧 assistant 与后续 user/assistant），再重发。
+    // 与编辑一致：避免后续消息残留导致状态混乱（如重试 A 却残留 B，新 assistant 插入后 B 重复）。
+    await deleteTailMessages(services, input.sessionId, items, userIdx);
     return {
       messageText: items[userIdx].content,
       skipUserCreate: true,
-      excludeAssistantId: assistantAfter?.id,
-      updateAssistantId: assistantAfter?.id,
     };
   }
 
@@ -423,12 +436,13 @@ async function prepareMessage(
     const idx = items.findIndex((m) => m.id === input.retryFromMessageId);
     if (idx === -1) throw new Error(`消息 ${input.retryFromMessageId} 不存在`);
     if (items[idx].role !== "user") throw new Error("只能重试用户消息");
-    const assistantAfter = items[idx + 1]?.role === "assistant" ? items[idx + 1] : null;
+    // 删除该用户消息之后的所有消息（含旧 assistant 与后续 user/assistant），再重发。
+    // 重试场景：用户消息 A 之后可能还有 B（如 A 的 assistant 失败后用户接着发了 B），
+    // 不删尾部会导致 B 残留、新 assistant 插入后 B 重复或 A「消失」B「重发」竞态。
+    await deleteTailMessages(services, input.sessionId, items, idx);
     return {
       messageText: items[idx].content,
       skipUserCreate: true,
-      excludeAssistantId: assistantAfter?.id,
-      updateAssistantId: assistantAfter?.id,
     };
   }
 

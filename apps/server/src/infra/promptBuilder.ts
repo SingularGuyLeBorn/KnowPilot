@@ -94,11 +94,11 @@ export async function buildAllMemoryHints(
 
 const WEB_TOOL_GUIDE = `## 网络工具用法
 - web_search：查最新信息、文档、新闻；返回标题+URL+摘要，优先用结果中的 URL 继续深挖。已配置 Tavily/SerpAPI 时按 SEARCH_ENGINE_PRIORITY 自动降级；在 /sources 启用信息源后，Tavily/SerpAPI 会优先在信息源域名内 scoped 搜索（hint 含 infoSource-scoped / N 信息源）。
-- read_article：读取单篇网页正文（Markdown）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书/GitHub 等；GitHub blob→raw + jsDelivr/API（~1s）；InfoQ/OSChina API；SegmentFault/CSDN/掘金/博客园 SSR HTTP；简书 Mobile HTTP；知乎 Cookie HTTP（~1s，需 ZHIHU_COOKIE）；HTTP 404 秒级报错；正文偏短（<150 字）时返回 contentWarning 并建议 scrape_web_page。
+- read_article：读取单篇网页正文（Markdown）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书/GitHub 等；GitHub blob→raw + jsDelivr/API（~1s）；InfoQ/OSChina API；SegmentFault/CSDN/掘金/博客园 SSR HTTP；简书 Mobile HTTP；知乎 Cookie HTTP（~1s，需登录态）；HTTP 404 秒级报错；正文偏短（<150 字）时返回 contentWarning 并建议 scrape_web_page。
 - scrape_web_page：Playwright 采集复杂 SPA/需 JS 渲染页面；返回 method=playwright 与 platform；read_article 失败或页面高度动态时再试。
 - browser_screenshot：打开页面截图（PNG）落盘，返回 path/publicUrl（无图片字节）。用于视觉确认布局、登录墙、图表、验证码页等；随后用 read_image。
 - read_image：读图。path 用 screenshot 返回路径；也可传图片 URL。mode=ocr|vision|auto（默认 auto）。只回文本，勿期望 base64。
-建议流程：web_search 找 URL → read_article 读正文 → 必要时 scrape_web_page；需要「看见页面」时 browser_screenshot → read_image。知乎/微信/小红书/抖音若被登录墙拦截，可在 .env 配置 ZHIHU_COOKIE / WECHAT_COOKIE / XHS_COOKIE / DOUYIN_COOKIE；GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
+建议流程：web_search 找 URL → read_article 读正文 → 必要时 scrape_web_page；需要「看见页面」时 browser_screenshot → read_image。知乎/微信/小红书/抖音/B站/微博/掘金/CSDN/语雀**访问需登录内容（收藏夹/付费/私密）前，若不确定登录态，先 native:browser_login_status 确认（不弹窗），未登录则 native:platform_login 弹浏览器让用户手动登录（扫码/账密），登录态自动落盘后 read_article 自动复用 cookie——不要让用户手动 F12 复制 cookie，也不要用 browser_screenshot/read_image 截图检查登录状态（模型无 vision 会卡死）**。即使用户只说「看看登录状态」，也优先 browser_login_status 而非截图。GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
 
 /** Hermes SKILLS_GUIDANCE：程序记忆 vs Memory（陈述事实） */
 export const SKILLS_GUIDANCE = `## Skill 程序记忆（Hermes）

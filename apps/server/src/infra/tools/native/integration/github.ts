@@ -35,6 +35,7 @@ import {
 } from "../../../githubClient.js";
 import { executeGitHubTool, listGitHubTools } from "../../../external/githubToolExecutor.js";
 import { captureZhihuLoginState } from "../../../metablog/auth/zhihuLogin.js";
+import { capturePlatformLoginState, listPlatformLoginStatus, PLATFORM_LOGIN_CONFIGS } from "../../../metablog/auth/platformLogin.js";
 import { listSavedCookiePlatforms, loadCookies } from "../../../cookieJar.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "../types.js";
 import { z } from "zod";
@@ -46,11 +47,24 @@ async function captureZhihuLoginTool(args: Record<string, unknown>, _ctx: Native
   return captureZhihuLoginState(Number(args.timeoutSec || 120));
 }
 
+async function platformLoginTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
+  const platform = String(args.platform ?? "").trim() as keyof typeof PLATFORM_LOGIN_CONFIGS;
+  if (!platform || !PLATFORM_LOGIN_CONFIGS[platform]) {
+    return {
+      success: false,
+      message: `不支持的平台：${args.platform ?? ""}。支持：${Object.keys(PLATFORM_LOGIN_CONFIGS).join(", ")}`,
+    };
+  }
+  return capturePlatformLoginState(platform, Number(args.timeoutSec || 120));
+}
+
 async function browserLoginStatusTool(_args: Record<string, unknown>, _ctx: NativeToolContext) {
   const platforms = listSavedCookiePlatforms();
+  const details = listPlatformLoginStatus();
   return {
     platforms,
-    details: platforms.map((p) => ({ platform: p, cookieCount: loadCookies(p).length })),
+    details,
+    cookieJars: platforms.map((p) => ({ platform: p, cookieCount: loadCookies(p).length })),
   };
 }
 
@@ -337,7 +351,7 @@ export const githubDefs: NativeToolDefinition[] = [
   {
     name: "capture_zhihu_login",
     description:
-      "弹出浏览器登录知乎：写 storageState + 同步 cookieJar（content/cookies/zhihu.json），供 read_article HTTP/Playwright 复用。",
+      "弹出浏览器登录知乎：写 storageState + 同步 cookieJar（data/cookies/zhihu.json），供 read_article HTTP/Playwright 复用。已废弃，建议改用 platform_login（支持多平台）。",
     parameters: zodParams(
       z.object({
         timeoutSec: z.number().describe("等待超时秒数，默认 120").optional(),
@@ -345,8 +359,22 @@ export const githubDefs: NativeToolDefinition[] = [
     ),
   },
   {
+    name: "platform_login",
+    description:
+      "平台登录的唯一入口：调用即弹出 Playwright 浏览器窗口，让用户手动登录指定平台（扫码/账密），登录态自动落盘（storageState + cookieJar），供 read_article 抓取需登录内容（收藏夹/付费/私密）。支持平台：zhihu（知乎）、wechat（微信公众号后台）、xhs（小红书）、douyin（抖音）、bilibili（哔哩哔哩）、weibo（微博）、juejin（掘金）、csdn（CSDN）、yuque（语雀）。**用户说登录/重新登录/获取某平台账户时，直接调用本工具——不要先 browser_screenshot/read_image 截图检查状态（模型无 vision 会卡死）；检查登录状态用 browser_login_status。** 各平台官方开放平台需企业认证+OAuth 对单用户本地项目过重，浏览器登录态捕获是最务实方案。",
+    parameters: zodParams(
+      z.object({
+        platform: z
+          .string()
+          .describe("平台名：zhihu/wechat/xhs/douyin/bilibili/weibo/juejin/csdn/yuque"),
+        timeoutSec: z.number().describe("等待登录超时秒数，默认 120").optional(),
+      }),
+    ),
+  },
+  {
     name: "browser_login_status",
-    description: "列出已保存的浏览器登录态平台及 cookie 条数（含知乎 cookieJar）。",
+    description:
+      "列出所有支持平台的浏览器登录态状态（storageState 是否存在、大小、cookieJar 条数）。用于检查哪些平台已登录、哪些需重新登录。",
     parameters: zodParams(z.object({})),
   },
   {
@@ -684,6 +712,7 @@ export const githubDefs: NativeToolDefinition[] = [
 
 export const githubHandlers: Record<string, NativeToolHandler> = {
   capture_zhihu_login: captureZhihuLoginTool,
+  platform_login: platformLoginTool,
   browser_login_status: browserLoginStatusTool,
   github_search_repos: githubSearchReposTool,
   github_get_repo: githubGetRepoTool,

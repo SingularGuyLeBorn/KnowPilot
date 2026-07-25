@@ -466,6 +466,16 @@ export function useChatRunStream({
                   });
                 }
               }
+              // 改变 agent/workspace 列表的工具：invalidate 左侧 panel 列表（spawn_subagent 已在上面处理）
+              if (
+                name === "agent_create" || name === "agent_create_sub" ||
+                name === "agent_update" || name === "agent_update_sub" ||
+                name === "agent_delete" || name === "agent_delete_sub" ||
+                name === "workspace_create" || name === "workspace_archive"
+              ) {
+                void utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => undefined);
+                void utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => undefined);
+              }
             },
             onEventId: (id) => {
               streamLifecycleActions.setLastEventId(originSid, id);

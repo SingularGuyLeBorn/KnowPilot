@@ -203,11 +203,11 @@ describe("native:write_file", () => {
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool(
       "write_file",
-      { path: "out/nested/file.txt", content: "saved" },
+      { path: "content/workspace/out/nested/file.txt", content: "saved" },
       ctx,
     )) as { path: string; bytes: number };
     expect(result.bytes).toBeGreaterThan(0);
-    expect(fs.readFileSync(path.join(root, "out/nested/file.txt"), "utf8")).toBe("saved");
+    expect(fs.readFileSync(path.join(root, "content/workspace/out/nested/file.txt"), "utf8")).toBe("saved");
   });
 });
 
@@ -261,24 +261,33 @@ describe("native:append_to_file", () => {
   });
 
   it("在已有文件末尾追加内容", async () => {
-    fs.writeFileSync(path.join(root, "log.txt"), "line1\n", "utf8");
+    fs.mkdirSync(path.join(root, "content/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "content/workspace/log.txt"), "line1\n", "utf8");
     const ctx = createNativeCtx(root);
-    const result = (await executeNativeTool("append_to_file", { path: "log.txt", content: "line2\n" }, ctx)) as {
+    const result = (await executeNativeTool(
+      "append_to_file",
+      { path: "content/workspace/log.txt", content: "line2\n" },
+      ctx,
+    )) as {
       path: string;
       bytes: number;
     };
     expect(result.bytes).toBe(6);
-    expect(fs.readFileSync(path.join(root, "log.txt"), "utf8")).toBe("line1\nline2\n");
+    expect(fs.readFileSync(path.join(root, "content/workspace/log.txt"), "utf8")).toBe("line1\nline2\n");
   });
 
   it("文件不存在时创建并写入", async () => {
     const ctx = createNativeCtx(root);
-    const result = (await executeNativeTool("append_to_file", { path: "new.txt", content: "x" }, ctx)) as {
+    const result = (await executeNativeTool(
+      "append_to_file",
+      { path: "content/workspace/new.txt", content: "x" },
+      ctx,
+    )) as {
       path: string;
       bytes: number;
     };
     expect(result.bytes).toBe(1);
-    expect(fs.readFileSync(path.join(root, "new.txt"), "utf8")).toBe("x");
+    expect(fs.readFileSync(path.join(root, "content/workspace/new.txt"), "utf8")).toBe("x");
   });
 });
 
