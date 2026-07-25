@@ -291,6 +291,26 @@ pnpm test         # 全仓库运行 Vitest
 
 几十个场景靠几十个补丁维护的项目，不是工程，是债务堆。本项目不接受这种债务。
 
+### 架构纪律：自主执行铁律（禁止停下等用户选择）
+
+> 与「禁止打补丁」「禁止向后兼容」同级的铁律。本项目是单人项目，用户的时间比 AI 的时间贵，**AI 不得把决策成本转嫁给用户**。
+
+具体执行：
+
+1. **禁止用 AskQuestion / 提问等方式把技术决策抛给用户**：架构选型、拆分边界、修复方案、重构顺序、命名、是否放宽某条纪律——AI 自己拍板，按最推荐方案直接做。只有涉及**不可逆的外部副作用**（删线上数据、push 远程、花钱调真实付费 API、改 git config）才允许停下来确认。
+2. **每次运行必须把发现的问题修掉，禁止「列清单等用户挑」**：审计 / 重构 / 修 bug 时扫到的所有问题（含低频、含边界、含「概率低」），一律当场修完。不得输出「以下是选项，请你选择」「这几个有什么选项推荐哪个」然后停下。**最推荐方案 = 默认执行方案**，修完再汇报。
+3. **禁止「打票不施工」**：不得只写 TODO / 报告 / 工单而不动手。发现即修，修完即验证（lint + test），验证完再写进度。报告是施工的副产物，不是施工的替代品。
+4. **禁止「半成品交付」**：不得修一半留一半等用户催。一个改动要么修完跑绿，要么不动；跨文件的连带改动必须在同一次改动里改完，禁止「先改 A，B 留到下次」。
+5. **判断标准**：删掉你这段「询问用户」的话，任务还能不能往下推进？能推进就该直接做，问都不要问。不能推进（缺外部信息 / 缺权限 / 缺不可逆确认）才允许问，且问完必须立刻继续，不得等用户回。
+
+#### 今天踩过的坑（2026-07-25，必须内化为规范）
+
+- **`void promise` 是 unhandled rejection 的温床**：TanStack Query 取消进行中的 `fetch`/`refetch` 时以 `CancelledError` reject；前端大量 `void utils.*.refetch()` / `void utils.*.invalidate()` / `void query.refetch()` 丢弃返回值，rejection 被 Next.js dev overlay 捕获上报。**单测（jsdom + createRoot + act）覆盖不到浏览器运行时 unhandled rejection 路径**——单测全绿 ≠ 运行时无错。
+  - **铁规**：今后全仓**禁止** `void <promise>` 写法。所有 `refetch` / `fetch` / `invalidate` / `prefetch` / `mutateAsync` / `clipboard.writeText` 等 Promise 调用，要么 `await`（在 try/catch 内），要么 `.catch(() => {})` 静默兜底。`void` 只用于「明确不返回 Promise 的语句表达式」场景。
+  - **审查义务**：改前端任何涉及 promise 的代码，必须连带审查同文件 / 同 hook 链路的 `void promise` 残留；发现即改，不得留。
+- **单测绿不能给运行时打包票**：给用户说「没问题」前，必须明确区分「单测覆盖路径绿」与「浏览器运行时路径未验证」。后者要靠静态审查 + 实际跑 dev server 复现，不得用单测绿代替。此前对父子 Agent 通信路径打包票后被用户实测打脸，教训记下。
+- **低频不是不修的理由**：用户手动触发的低频路径（手动刷新按钮、创建对话框、git 页刷新）并发概率低，但 `CancelledError` 隐患与高频路径同源。审计扫到的所有 `void promise` 一律修，不得按「频率」分级取舍。
+
 ### 架构纪律：禁止向后兼容包袱
 
 > 与「禁止打补丁」同级的铁律。本项目是**单用户、本地优先、未发布 1.0** 的项目——没有外部消费者，没有线上多版本共存，**没有任何理由保留向后兼容层**。
@@ -561,3 +581,26 @@ reflection:
 - **审批邮件可回复**：Approval 新增 `lastNotifiedMessageId` / `lastNotifiedThreadId`；AgentMail webhook 支持第一行 `APPROVE` / `REJECT` 自动决策并执行；邮件主题统一为 `[KnowPilot 待审批]` / `[KnowPilot 需回复]` / `[KnowPilot 通知]`。
 - **控制台视觉升级**：`globals.css` 新增 `kp-card-premium` / `kp-badge` / `kp-stat-number` / `kp-table` / `kp-progress` / `kp-lift`；Dashboard / Agents / Approvals / Runs 应用新设计系统。
 - **README 重写**：删除 71 个命名候选，更新为当前真实状态。
+
+### 2026-07-25 追加（审计 + 修复 + 规范内化）
+
+- **深度审计报告落地**：`AUDIT_REPORT.md`（执行摘要 + 项目详解 + P0/P1/P2/P3 问题清单 + 架构问题 + 未来路线图 + 附录）。审计基于代码证据，所有结论引用具体文件行号。
+- **Swarm 竞态 / 工具死循环 / 工具设计审查**：P0-02（Swarm 竞态）、P1-01（spawn jobId 竞态）、P1-06（AgentMessage 投递记账）等均已在 v7~v10 + PR-1~6 + W1~W5 重构套件中系统性根治——事务写、CAS `updateMany` 条件写、同步占位认领、软认领、幂等 upsert、reconciler 对账多层防护已落地，代码证据见 `swarmBus.ts`/`swarmOrchestrator.ts`/`taskClaim.ts`/`sessionStreamHub.ts`/`services.ts`/`asyncJobManager.ts`/`agentMessageLedger.ts`。
+- **mock-llm 测试服务落地**：独立 HTTP 服务（`apps/mock-llm` + `packages/mock-llm-core`），OpenAI 协议兼容，header `x-mock-scenario` 控制场景，共享 scenario 逻辑（流式 / 非流式 / 工具调用 / 错误注入 / 超时 / 限流）。修复 scenario 永久污染 `process.env` bug（改 `opts.scenario` 隔离到请求上下文）。用于 `resilientLlmClient` 重试 / 降级 / 错误分类的端到端测试，省真实 API 费用。
+- **CancelledError 全链路根治**：父子 Agent 通信 SSE 风暴 + 低频用户操作路径 + invalidate/prefetch 全仓兜底，共修 70+ 处 `void promise` → `.catch(() => {})` / try/catch。详见 `AUDIT_REPORT.md` 第九批。**铁规已写入 AGENTS.md「自主执行铁律」节**：今后禁止 `void <promise>`，单测绿不等于运行时无错，低频同样必修。
+- **P2-01 选 B 落地**：`integration.ts` 2100 行 god file 拆为 137 行聚合器 + 5 个域文件（`integration/{email,git,yuque,github,feishu}.ts`），lint + 全量测试零回归。此拆分不违反「单文件收拢」铁律（铁律针对业务 Service / Router / Hooks / 通用组件，工具域定义 + handler 是叶子模块，按域拆是收拢的反面——是叶子化）。
+- **P1-04 死字段清理**：删除 `Agent.apiKey`（schema + shared + services + native tools + 测试），`prisma db execute` 直接 SQL drop column。
+- **P1-03 子任务**：LLM schema 体积 warn 落地；`defaultHidden` 现状确认。
+- **AGENTS.md 新增「自主执行铁律」**：禁止 AI 把技术决策抛给用户、禁止列清单等用户挑、禁止打票不施工、禁止半成品交付。最推荐方案 = 默认执行方案，发现即修修完即验证。
+- **子 Agent 隔离铁律落地（双通道重复投喂根治）**：父 Agent 收到子 Agent `report_back` 结果出现「两遍」根因 = 父经 `invoke_api` 通用后门读子会话消息 / 子任务 output 全文（通道 A）与 `autoConsume` 注入 tool result（通道 B）双投喂。架构层根治：
+  1. **`invoke_api` 工具彻底下线**（`session.ts` 删函数 + def + handler；`shared/agentTools.ts` `DEFAULT_AGENT_NATIVE` 删；`shared/constants.ts` 三 tier `TIER_DEFAULT_TOOLS` + `ASSISTANT_DEFAULT_TOOLS` 删；`server/agentTools.ts` `hasInvokeApi`/`countAiReadableProcedures` 死代码删；web `agents/page.tsx`/`nativeToolGroups.ts`/`toolIcons.tsx` 删；测试 `nativeTools.test.ts`/`agentTools.test.ts`/`shared/agentTools.test.ts`/`trpcSmokeHarness`/`toolTestFixtures` 同步）。砍掉万能后门 = 砍掉所有「打地鼠黑名单」的维护负担。
+  2. **`agent_inspect` 彻底不返消息内容**（`swarm.ts` 删 `recentMessages` 字段 + `isOwnChild` 脱敏分支；`sessions` 改 `select` 只取元信息 + `_count.messages`，不取 content；def 描述明示「不返回任何会话消息内容，子 Agent 结果只能经 agent_report_back」；hint 文案重申）。父 Agent 只能看子 Agent 的状态（id/title/status/messageCount/swarm 健康快照），不能看任何消息内容。
+  3. **`async_task_status` hint 加固**（`asyncJobManager.ts` completed/failed 返回 hint 明示「结果已自动投递，无需主动拉取」），堵 LLM 轮询后窥探的动机。
+  - **设计原则（已写入本节）**：子 Agent 的结果**唯一交付通道** = `agent_report_back` → `autoConsume` 注入父会话异步结果队列（带 jobId 台账）。父 Agent 对子 Agent 只可见状态，不可见消息内容。这是子 Agent 隔离的根本——否则子 Agent 完整上下文污染父 Agent，子 Agent 的存在失去意义。`invoke_api` 反射式「零胶水 Agent 化」是历史妥协，已被业界先例（闭工具集、无万能 API 后门）否定，本次彻底砍除。
+- **系统提示词全家桶改进（符合主题）**：KnowPilot 主题 =「以 Markdown 为原子、AI 为引擎的数字花园」。统一三 tier 提示词基调：超级 Agent=总园丁（统筹全局、协调各 Workspace、维护长期秩序，但不替子 Agent 干活）；管理 Agent=园丁长（本 Workspace 负责人，编排子 Agent + 向上汇报）；子 Agent=园丁（被派去完成具体工作，结果经 report_back 交回）。落地：
+  1. **正式模板文件** `content/agents/_templates/{super,manager,sub}.md`（frontmatter + 正文，含主题定位 + 能力/职责 + 行为准则；sync 跳过 `_` 目录不进库）；agentFactory 优先读模板，缺失回退兜底文案。
+  2. **兜底文案** `agentFactory.ts` `SUPER/MANAGER/SUB_FALLBACK_PROMPT` 与模板正文对齐（精简版安全网）。
+  3. **运行时身份约束** `promptBuilder.ts` `buildTierIdentityHint` 三 tier 分支强化「子 Agent 隔离铁律」——明示「你只能看子 Agent 状态，看不到消息内容，结果等 report_back」，与刚落地的架构铁律对齐。
+  4. **会话/子 Agent 取名 prompt** `sessionAutoName.ts` `SESSION_PROMPT`/`AGENT_PROMPT` 加入主题语境（「数字花园」+ 角色名引导如「资料整理员」「代码审阅官」）。
+  5. **等价性 fixture** `contextHooks.equivalence.json` 用当前 `buildTierIdentityHint` 重新生成（脚本复刻 agent-extras 钩子拼装逻辑：base→identity→memory→`\n\n`→guide）。
+- **post_list 专用只读工具补充**：砍 invoke_api 后博客 Agent 失去列文章能力，补 `post_list`（`memory.ts`，reentrant=true 只读，调 `services.post.list`，service 已裁剪 content 不返正文，只返 id/title/slug/excerpt/category/tags/published/updatedAt 元信息）。与 post_create/update/delete 一致，**不加入 tier 默认清单**（按需勾选，闭工具集原则）。测试 fixture `ALL_NATIVE_TOOL_NAMES` 同步。
