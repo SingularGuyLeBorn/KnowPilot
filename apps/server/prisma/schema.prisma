@@ -411,6 +411,8 @@ model InboxItem {
   /// JSON 元数据
   metadata        String    @default("{}")
   distilledPostId String?
+  /// 原平台发布时间（有则优先用于排序；无则回退 capturedAt）
+  sourceAt        DateTime?
   capturedAt      DateTime  @default(now())
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -419,6 +421,7 @@ model InboxItem {
   @@index([status])
   @@index([source])
   @@index([capturedAt])
+  @@index([sourceAt])
 }
 
 /// 工作区管理 (Workspace)

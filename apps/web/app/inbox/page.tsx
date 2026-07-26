@@ -1,25 +1,27 @@
 /**
- * 知识 Inbox — 按平台 / 知乎收藏夹 / 小红书点赞·收藏 / B站收藏·稍后再看浏览与蒸馏
+ * 知识 Inbox — 平台 Tab + 收藏夹分页筛选；列表/卡片可切换
  */
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ExternalLink,
-  ImageIcon,
   Inbox,
-  RefreshCw,
   Sparkles,
   Trash2,
-  BookMarked,
   Heart,
-  FolderOpen,
-  Link2,
+  ChevronLeft,
   ChevronRight,
   Loader2,
-  Tv,
+  LayoutGrid,
+  List,
+  CalendarClock,
+  Link2,
+  BookMarked,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +38,8 @@ import {
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
-const SPRING = { type: "spring" as const, stiffness: 260, damping: 26 };
+const VIEW_MODE_KEY = "kp-inbox-view-mode";
+const COLLECTION_PAGE_SIZE = 8;
 
 const SOURCE_LABELS: Record<string, string> = {
   screenshot: "截图",
@@ -52,6 +55,10 @@ const STATUS_LABELS: Record<string, string> = {
   distilled: "已成文",
   ignored: "已忽略",
 };
+
+const PLATFORMS = ["zhihu", "xhs", "bilibili", "wechat", "screenshot", "url"] as const;
+
+type ViewMode = "card" | "list";
 
 type BrowseKey =
   | { type: "all" }
@@ -76,10 +83,145 @@ function browseEquals(a: BrowseKey, b: BrowseKey): boolean {
   return false;
 }
 
+function browsePlatform(browse: BrowseKey): string | null {
+  if (browse.type === "source") return browse.source;
+  if (browse.type === "zhihuCollection") return "zhihu";
+  if (browse.type === "xhsTag") return "xhs";
+  if (browse.type === "bilibiliTag" || browse.type === "bilibiliCollection") return "bilibili";
+  return null;
+}
+
 function itemCollectionTitle(item: InboxItem): string | null {
   const t = item.metadata?.collectionTitle;
   return typeof t === "string" && t.trim() ? t : null;
 }
+
+const NOISE_TAGS = new Set([
+  "zhihu",
+  "xhs",
+  "bilibili",
+  "wechat",
+  "screenshot",
+  "url",
+  "collection",
+  "openapi",
+  "like",
+  "favorite",
+  "fav",
+  "toview",
+  "liked",
+  "collect",
+]);
+
+/** 列表/卡片共用的元状态 */
+function itemMeta(item: InboxItem) {
+  const collection = itemCollectionTitle(item);
+  const author =
+    typeof item.metadata?.author === "string" && item.metadata.author.trim()
+      ? item.metadata.author.trim()
+      : null;
+  const contentType =
+    typeof item.metadata?.contentType === "string" && item.metadata.contentType.trim()
+      ? String(item.metadata.contentType)
+      : null;
+  const kindHint =
+    item.source === "xhs" && item.tags?.includes("like")
+      ? "点赞"
+      : item.source === "xhs" && item.tags?.includes("favorite")
+        ? "收藏"
+        : item.source === "bilibili" && item.tags?.includes("toview")
+          ? "稍后再看"
+          : item.source === "bilibili" && (item.tags?.includes("fav") || item.tags?.includes("favorite"))
+            ? "收藏"
+            : null;
+  const tags = (item.tags ?? []).filter((t) => !NOISE_TAGS.has(t)).slice(0, 4);
+  const sourceAt =
+    item.sourceAt != null
+      ? new Date(item.sourceAt)
+      : typeof item.metadata?.publishedAt === "number"
+        ? new Date(item.metadata.publishedAt)
+        : null;
+  const isSourceTime = Boolean(sourceAt && !Number.isNaN(sourceAt.getTime()));
+  const rawTime = (isSourceTime ? sourceAt! : new Date(item.capturedAt)).toLocaleString();
+  // 小红书列表同步常无原帖时间：回退到收录时间时必须明示，避免「按原帖时间」下全员同一时刻被误认成发帖时间
+  const timeLabel = isSourceTime ? `原帖 ${rawTime}` : `收录 ${rawTime}`;
+  return {
+    sourceLabel: SOURCE_LABELS[item.source] || item.source,
+    statusLabel: STATUS_LABELS[item.status] || item.status,
+    collection,
+    author,
+    contentType,
+    kindHint,
+    tags,
+    hasUrl: Boolean(item.url),
+    hasBody: Boolean(item.content?.trim() || item.contentPath || item.excerpt?.trim()),
+    distilled: Boolean(item.distilledPostId),
+    timeLabel,
+    isSourceTime,
+  };
+}
+
+function MetaPill({
+  children,
+  tone = "mute",
+}: {
+  children: ReactNode;
+  tone?: "mute" | "warn" | "ok" | "brand";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] leading-none",
+        tone === "mute" && "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]",
+        tone === "warn" && "bg-amber-500/12 text-amber-800 dark:text-amber-300",
+        tone === "ok" && "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300",
+        tone === "brand" && "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function InboxItemActions({
+  item,
+  onDelete,
+}: {
+  item: InboxItem;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {item.url ? (
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]"
+          title="打开原文"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
+      <button
+        type="button"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-red-600"
+        title="删除"
+        onClick={onDelete}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+type FacetChip = {
+  id: string;
+  label: string;
+  count: number;
+  browse: BrowseKey;
+  icon?: "heart" | "book" | "tv";
+};
 
 export default function InboxPage() {
   const {
@@ -87,14 +229,9 @@ export default function InboxPage() {
     useDelete,
     useStats,
     useFacets,
-    useScanScreenshots,
-    useSyncXhs,
-    useSyncBilibili,
-    useIngestWechat,
     useDistill,
     useIgnore,
     useCaptureUrl,
-    useSyncZhihu,
   } = useInbox();
 
   const [page, setPage] = useState(1);
@@ -102,13 +239,32 @@ export default function InboxPage() {
   const [searchInput, setSearchInput] = useState("");
   const [browse, setBrowse] = useState<BrowseKey>({ type: "all" });
   const [statusFilter, setStatusFilter] = useState("fetched");
+  const [orderBy, setOrderBy] = useState<"capturedAt" | "sourceAt">("sourceAt");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [zhihuUrl, setZhihuUrl] = useState("");
   const [pasteUrl, setPasteUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [syncOpen, setSyncOpen] = useState(false);
+  /** 收藏夹芯片分页（与主列表 page 独立） */
+  const [facetPage, setFacetPage] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_MODE_KEY);
+      if (saved === "card" || saved === "list") return saved;
+    } catch {
+      /* ignore */
+    }
+    return "list";
+  });
+
+  const setViewModePersist = (mode: ViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const listInput = useMemo(() => {
     const base = {
@@ -116,7 +272,7 @@ export default function InboxPage() {
       pageSize: 24,
       keyword: keyword || undefined,
       status: (statusFilter || undefined) as InboxItem["status"] | undefined,
-      orderBy: "capturedAt" as const,
+      orderBy,
       order: "desc" as const,
     };
     if (browse.type === "source") {
@@ -135,7 +291,7 @@ export default function InboxPage() {
       return { ...base, source: "bilibili" as const, collectionId: browse.collectionId };
     }
     return base;
-  }, [page, keyword, statusFilter, browse]);
+  }, [page, keyword, statusFilter, browse, orderBy]);
 
   const { data, isLoading, refetch } = useList(listInput);
   const { data: stats, refetch: refetchStats } = useStats();
@@ -143,18 +299,87 @@ export default function InboxPage() {
     statusFilter ? { status: statusFilter } : {},
   );
   const deleteMutation = useDelete();
-  const scanMutation = useScanScreenshots();
-  const syncXhsMutation = useSyncXhs();
-  const syncBilibiliMutation = useSyncBilibili();
-  const wechatMutation = useIngestWechat();
   const distillMutation = useDistill();
   const ignoreMutation = useIgnore();
   const captureMutation = useCaptureUrl();
-  const syncZhihuMutation = useSyncZhihu();
   const utils = trpc.useUtils();
 
   const items = data?.items ?? [];
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
+  const activePlatform = browsePlatform(browse);
+
+  const facetChips: FacetChip[] = useMemo(() => {
+    if (activePlatform === "zhihu") {
+      return (facets?.zhihuCollections ?? []).map((col) => ({
+        id: col.id,
+        label: col.title,
+        count: col.count,
+        browse: { type: "zhihuCollection", collectionId: col.id } as BrowseKey,
+        icon: "book" as const,
+      }));
+    }
+    if (activePlatform === "xhs") {
+      const chips: FacetChip[] = [];
+      if ((facets?.xhs?.like ?? 0) > 0) {
+        chips.push({
+          id: "xhs-like",
+          label: "点赞",
+          count: facets!.xhs!.like,
+          browse: { type: "xhsTag", tag: "like" },
+          icon: "heart",
+        });
+      }
+      if ((facets?.xhs?.favorite ?? 0) > 0) {
+        chips.push({
+          id: "xhs-fav",
+          label: "收藏",
+          count: facets!.xhs!.favorite,
+          browse: { type: "xhsTag", tag: "favorite" },
+          icon: "book",
+        });
+      }
+      return chips;
+    }
+    if (activePlatform === "bilibili") {
+      const chips: FacetChip[] = [];
+      if ((facets?.bilibili?.favorite ?? 0) > 0) {
+        chips.push({
+          id: "bili-fav",
+          label: "收藏",
+          count: facets!.bilibili!.favorite,
+          browse: { type: "bilibiliTag", tag: "favorite" },
+          icon: "book",
+        });
+      }
+      if ((facets?.bilibili?.toview ?? 0) > 0) {
+        chips.push({
+          id: "bili-toview",
+          label: "稍后再看",
+          count: facets!.bilibili!.toview,
+          browse: { type: "bilibiliTag", tag: "toview" },
+          icon: "tv",
+        });
+      }
+      for (const col of facets?.bilibiliCollections ?? []) {
+        chips.push({
+          id: col.id,
+          label: col.title,
+          count: col.count,
+          browse: { type: "bilibiliCollection", collectionId: col.id },
+          icon: "tv",
+        });
+      }
+      return chips;
+    }
+    return [];
+  }, [activePlatform, facets]);
+
+  const facetTotalPages = Math.max(1, Math.ceil(facetChips.length / COLLECTION_PAGE_SIZE));
+  const safeFacetPage = Math.min(facetPage, facetTotalPages - 1);
+  const pagedFacets = facetChips.slice(
+    safeFacetPage * COLLECTION_PAGE_SIZE,
+    safeFacetPage * COLLECTION_PAGE_SIZE + COLLECTION_PAGE_SIZE,
+  );
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -172,6 +397,11 @@ export default function InboxPage() {
     setBrowse(next);
     setPage(1);
     setSelected(new Set());
+    // 换筛选时清搜索，避免 facet 计数与列表（带 keyword）分叉成「有计数却 0 条」
+    setKeyword("");
+    setSearchInput("");
+    const nextPlat = browsePlatform(next);
+    if (nextPlat !== activePlatform) setFacetPage(0);
   };
 
   const toggleSelect = (id: string) => {
@@ -186,47 +416,10 @@ export default function InboxPage() {
   const runAction = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
     try {
-      const res = await fn();
-      const sync = res as {
-        created?: number;
-        updated?: number;
-        errors?: string[];
-        collectionsDiscovered?: number;
-        collectionsSynced?: number;
-        byKind?: Partial<
-          Record<
-            "liked" | "collect" | "fav" | "toview",
-            { scanned: number; created: number; updated: number; stoppedEarly?: boolean }
-          >
-        >;
-        byCollection?: Array<{ stoppedEarly?: boolean }>;
-      } | null;
-      let detail = "";
-      if (sync?.byKind) {
-        const parts: string[] = [];
-        if (sync.byKind.liked) {
-          parts.push(`点赞新${sync.byKind.liked.created}`);
-        }
-        if (sync.byKind.collect) {
-          parts.push(`收藏新${sync.byKind.collect.created}`);
-        }
-        if (sync.byKind.fav) {
-          parts.push(`收藏夹新${sync.byKind.fav.created}`);
-        }
-        if (sync.byKind.toview) {
-          parts.push(`稍后再看新${sync.byKind.toview.created}`);
-        }
-        if (parts.length) detail = `：${parts.join(" · ")}`;
-      } else if (typeof sync?.collectionsDiscovered === "number") {
-        detail = `：${sync.collectionsSynced ?? 0} 夹 · 新 ${sync.created ?? 0}`;
-      } else if (typeof sync?.created === "number") {
-        detail = `：新 ${sync.created}`;
-      }
-      const errHint = sync?.errors?.length ? `（${sync.errors[0]}）` : "";
-      showToast(`${label}完成${detail}${errHint}`);
+      await fn();
+      showToast(`${label}完成`);
       setSelected(new Set());
       refreshAll();
-      return res;
     } catch (err) {
       showToast(`${label}失败: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -249,463 +442,521 @@ export default function InboxPage() {
     return col ? `知乎 · ${col.title}` : "知乎 · 收藏夹";
   }, [browse, facets]);
 
-  const railBtn = (active: boolean) =>
-    cn(
-      "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition",
-      active
-        ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] shadow-sm"
-        : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
-    );
+  const platformSourceActive =
+    browse.type === "source" || browse.type === "all"
+      ? browse.type === "source"
+        ? browse.source
+        : null
+      : activePlatform;
 
   return (
-    <AdminPage className="!max-w-[1600px]">
-      {/* Hero */}
-      <motion.section
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={SPRING}
-        className="relative overflow-hidden rounded-3xl border border-[var(--kp-border)] bg-[var(--kp-surface)]"
-      >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 opacity-90"
-          style={{
-            background:
-              "radial-gradient(ellipse 80% 60% at 12% 20%, color-mix(in oklab, var(--kp-brand) 22%, transparent), transparent 55%), radial-gradient(ellipse 70% 50% at 88% 0%, color-mix(in oklab, var(--kp-brand) 10%, transparent), transparent 50%)",
-          }}
-        />
-        <div className="relative flex flex-col gap-5 p-6 md:flex-row md:items-end md:justify-between md:p-8">
+    <AdminPage className="!max-w-[1200px]">
+      <header className="space-y-4 border-b border-[var(--kp-border)] pb-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <p className="kp-eyebrow">Knowledge Intake</p>
-            <h1 className="kp-display mt-2 text-3xl text-[var(--kp-text-1)] md:text-4xl">Inbox</h1>
-            <p className="mt-2 max-w-xl text-sm text-[var(--kp-text-2)] md:text-base">
-              截图、知乎收藏夹、小红书点赞与收藏 — 按来源浏览，勾选后蒸馏进知识库。
+            <div className="flex items-center gap-2 text-[var(--kp-text-3)]">
+              <Inbox className="h-4 w-4" />
+              <span className="text-[11px] font-semibold tracking-[0.14em] uppercase">Inbox</span>
+            </div>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--kp-text-1)]">
+              知识收件箱
+            </h1>
+            <p className="mt-1 text-sm text-[var(--kp-text-2)]">
+              选平台 → 可选收藏夹 → 勾选蒸馏。定时拉取在「平台每日同步」。
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              disabled={!!busy}
-              onClick={() => setSyncOpen((v) => !v)}
-              className="shadow-sm"
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 hidden text-xs text-[var(--kp-text-3)] sm:inline">
+              待消化{" "}
+              <strong className="font-semibold text-[var(--kp-text-1)]">{stats?.fetched ?? 0}</strong>
+              <span className="mx-1.5 text-[var(--kp-border)]">·</span>
+              总计{" "}
+              <strong className="font-semibold text-[var(--kp-text-1)]">{stats?.total ?? 0}</strong>
+            </span>
+            <Link
+              href="/platform-sync"
+              className="inline-flex h-8 items-center rounded-md border border-[var(--kp-border)] bg-[var(--kp-surface)] px-3 text-sm hover:bg-[var(--kp-bg-mute)]"
             >
-              {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
-              同步素材
-            </Button>
+              <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+              每日同步
+            </Link>
             <Button
               size="sm"
-              variant="outline"
               disabled={!selectedIds.length || !!busy}
-              onClick={() => runAction("蒸馏", () => distillMutation.mutateAsync({ ids: selectedIds }))}
+              onClick={() =>
+                runAction("蒸馏", () => distillMutation.mutateAsync({ ids: selectedIds }))
+              }
             >
-              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              蒸馏 ({selectedIds.length})
+              {busy === "蒸馏" ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              蒸馏{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
             </Button>
           </div>
         </div>
 
-        {/* Stats strip */}
-        <div className="relative grid grid-cols-2 gap-px border-t border-[var(--kp-border)] bg-[var(--kp-border)] sm:grid-cols-4">
-          {[
-            { label: "待消化", value: stats?.fetched ?? 0 },
-            { label: "已成文", value: stats?.distilled ?? 0 },
-            { label: "已忽略", value: stats?.ignored ?? 0 },
-            { label: "总计", value: stats?.total ?? 0 },
-          ].map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...SPRING, delay: 0.04 * i }}
-              className="bg-[var(--kp-surface)] px-5 py-4"
-            >
-              <div className="text-[11px] font-medium tracking-wide text-[var(--kp-text-3)]">{s.label}</div>
-              <div className="kp-stat-number mt-1 text-2xl">{s.value}</div>
-            </motion.div>
-          ))}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            className="sm:max-w-md"
+            placeholder="粘贴单篇链接快速收录…"
+            value={pasteUrl}
+            onChange={(e) => setPasteUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && pasteUrl.trim()) {
+                runAction("收录链接", async () => {
+                  await captureMutation.mutateAsync({ url: pasteUrl.trim() });
+                  setPasteUrl("");
+                }).catch(() => {});
+              }
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!!busy || !pasteUrl.trim()}
+            onClick={() =>
+              runAction("收录链接", async () => {
+                await captureMutation.mutateAsync({ url: pasteUrl.trim() });
+                setPasteUrl("");
+              })
+            }
+          >
+            <Link2 className="mr-1.5 h-3.5 w-3.5" />
+            收录
+          </Button>
         </div>
-      </motion.section>
+      </header>
 
       <AnimatePresence>
-        {toast && (
+        {toast ? (
           <motion.div
-            initial={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)] px-4 py-2.5 text-sm shadow-sm"
+            exit={{ opacity: 0, y: -6 }}
+            className="rounded-lg border border-[var(--kp-border)] bg-[var(--kp-surface)] px-3 py-2 text-sm text-[var(--kp-text-2)]"
           >
             {toast}
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {/* Sync panel */}
-      <AnimatePresence>
-        {syncOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
+      {/* 平台 Tab：点一下选中，再点「全部」离开 */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setBrowseAndReset({ type: "all" })}
+            className={cn(
+              "inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm transition",
+              browse.type === "all"
+                ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
+                : "border-[var(--kp-border)] bg-[var(--kp-surface)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+            )}
           >
-            <div className="kp-card-premium space-y-4 rounded-2xl p-5">
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("扫描截图", () => scanMutation.mutateAsync({}))}>
-                  <ImageIcon className="mr-1.5 h-3.5 w-3.5" />
-                  扫描截图
-                </Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步知乎增量", () => syncZhihuMutation.mutateAsync({ mode: "incremental" }))}>
-                  <BookMarked className="mr-1.5 h-3.5 w-3.5" />
-                  知乎增量
-                </Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步知乎全量", () => syncZhihuMutation.mutateAsync({ mode: "full" }))}>
-                  知乎全量
-                </Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步小红书增量", () => syncXhsMutation.mutateAsync({ mode: "incremental", kinds: ["liked", "collect"] }))}>
-                  <Heart className="mr-1.5 h-3.5 w-3.5" />
-                  小红书增量
-                </Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步小红书全量", () => syncXhsMutation.mutateAsync({ mode: "full", kinds: ["liked", "collect"], maxItems: 2000 }))}>
-                  小红书全量
-                </Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步B站增量", () => syncBilibiliMutation.mutateAsync({ mode: "incremental", kinds: ["fav", "toview"] }))}>
-                  <Tv className="mr-1.5 h-3.5 w-3.5" />
-                  B站增量
-                </Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步B站全量", () => syncBilibiliMutation.mutateAsync({ mode: "full", kinds: ["fav", "toview"], maxItems: 2000 }))}>
-                  B站全量
-                </Button>
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("读微信链接", () => wechatMutation.mutateAsync({}))}>
-                  微信 links.txt
-                </Button>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input placeholder="只同步某一个知乎收藏夹 URL" value={zhihuUrl} onChange={(e) => setZhihuUrl(e.target.value)} />
-                <Button size="sm" disabled={!!busy || !zhihuUrl.trim()} onClick={() => runAction("同步知乎单夹", () => syncZhihuMutation.mutateAsync({ collectionUrl: zhihuUrl.trim(), mode: "incremental", maxItems: 200 }))}>
-                  同步该夹
-                </Button>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input placeholder="粘贴单篇链接收录" value={pasteUrl} onChange={(e) => setPasteUrl(e.target.value)} />
-                <Button
-                  size="sm"
-                  disabled={!!busy || !pasteUrl.trim()}
+            <Inbox className="h-3.5 w-3.5 opacity-70" />
+            全部
+            <span className="tabular-nums text-[11px] opacity-70">
+              {facets?.total ?? stats?.total ?? 0}
+            </span>
+          </button>
+          {PLATFORMS.map((src) => {
+            const active = platformSourceActive === src;
+            return (
+              <button
+                key={src}
+                type="button"
+                onClick={() => setBrowseAndReset({ type: "source", source: src })}
+                className={cn(
+                  "inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm transition",
+                  active
+                    ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
+                    : "border-[var(--kp-border)] bg-[var(--kp-surface)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+                )}
+              >
+                {SOURCE_LABELS[src]}
+                <span className="tabular-nums text-[11px] opacity-70">
+                  {facets?.bySource?.[src] ?? 0}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 子筛选：仅当前平台有收藏夹/标签时出现；可分页；可回「该平台全部」 */}
+        {activePlatform && facetChips.length > 0 ? (
+          <div className="rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)] p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-[var(--kp-text-3)]">
+                {activePlatform === "zhihu"
+                  ? "知乎收藏夹"
+                  : activePlatform === "xhs"
+                    ? "小红书分类"
+                    : "B站分类"}
+                <span className="ml-1.5 tabular-nums">共 {facetChips.length}</span>
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-md px-2 py-1 text-xs transition",
+                    browse.type === "source"
+                      ? "bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
+                      : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+                  )}
                   onClick={() =>
-                    runAction("收录链接", async () => {
-                      await captureMutation.mutateAsync({ url: pasteUrl.trim() });
-                      setPasteUrl("");
-                    })
+                    setBrowseAndReset({ type: "source", source: activePlatform })
                   }
                 >
-                  <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                  收录
-                </Button>
-              </div>
-              <p className="text-xs text-[var(--kp-text-3)]">
-                截图目录 {stats?.screenshotWatchDir || "data/inbox/screenshots/drop"} · 蒸馏花园{" "}
-                {stats?.defaultGarden || "knowledge"} · 平台需先 Chat 里 platform_login
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Body: rail + list */}
-      <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <motion.aside
-          initial={{ opacity: 0, x: -12 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={SPRING}
-          className="kp-card-premium h-fit space-y-4 rounded-2xl p-3 lg:sticky lg:top-20"
-        >
-          <div>
-            <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
-              浏览
-            </p>
-            <button type="button" className={railBtn(browseEquals(browse, { type: "all" }))} onClick={() => setBrowseAndReset({ type: "all" })}>
-              <Inbox className="h-4 w-4 shrink-0 opacity-70" />
-              <span className="flex-1 truncate">全部</span>
-              <span className="text-xs tabular-nums opacity-60">{facets?.total ?? stats?.total ?? 0}</span>
-            </button>
-          </div>
-
-          <div>
-            <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
-              平台
-            </p>
-            <div className="space-y-0.5">
-              {(["zhihu", "xhs", "bilibili", "wechat", "screenshot", "url"] as const).map((src) => (
-                <button
-                  key={src}
-                  type="button"
-                  className={railBtn(browseEquals(browse, { type: "source", source: src }))}
-                  onClick={() => setBrowseAndReset({ type: "source", source: src })}
-                >
-                  <FolderOpen className="h-4 w-4 shrink-0 opacity-70" />
-                  <span className="flex-1 truncate">{SOURCE_LABELS[src]}</span>
-                  <span className="text-xs tabular-nums opacity-60">{facets?.bySource?.[src] ?? 0}</span>
+                  看该平台全部
                 </button>
-              ))}
+                {facetTotalPages > 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={safeFacetPage <= 0}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--kp-border)] disabled:opacity-30"
+                      aria-label="上一页收藏夹"
+                      onClick={() => setFacetPage((p) => Math.max(0, p - 1))}
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="min-w-[3.5rem] text-center text-[11px] tabular-nums text-[var(--kp-text-3)]">
+                      {safeFacetPage + 1}/{facetTotalPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safeFacetPage >= facetTotalPages - 1}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--kp-border)] disabled:opacity-30"
+                      aria-label="下一页收藏夹"
+                      onClick={() =>
+                        setFacetPage((p) => Math.min(facetTotalPages - 1, p + 1))
+                      }
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                ) : null}
+              </div>
             </div>
-          </div>
-
-          {(facets?.zhihuCollections?.length ?? 0) > 0 && (
-            <div>
-              <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
-                知乎收藏夹
-              </p>
-              <div className="max-h-56 space-y-0.5 overflow-y-auto">
-                {facets!.zhihuCollections.map((col) => (
+            <div className="flex flex-wrap gap-1.5">
+              {pagedFacets.map((chip) => {
+                const on = browseEquals(browse, chip.browse);
+                const Icon =
+                  chip.icon === "heart" ? Heart : chip.icon === "tv" ? Tv : BookMarked;
+                return (
                   <button
-                    key={col.id}
+                    key={chip.id}
                     type="button"
-                    className={railBtn(
-                      browseEquals(browse, { type: "zhihuCollection", collectionId: col.id }),
+                    title={chip.label}
+                    onClick={() => setBrowseAndReset(chip.browse)}
+                    className={cn(
+                      "inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition",
+                      on
+                        ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] font-medium text-[var(--kp-brand-deep)]"
+                        : "border-[var(--kp-border)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
                     )}
-                    onClick={() => setBrowseAndReset({ type: "zhihuCollection", collectionId: col.id })}
-                    title={col.title}
                   >
-                    <BookMarked className="h-4 w-4 shrink-0 opacity-70" />
-                    <span className="flex-1 truncate">{col.title}</span>
-                    <span className="text-xs tabular-nums opacity-60">{col.count}</span>
+                    <Icon className="h-3 w-3 shrink-0 opacity-60" />
+                    <span className="truncate">{chip.label}</span>
+                    <span className="shrink-0 tabular-nums opacity-60">{chip.count}</span>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
-          )}
+          </div>
+        ) : null}
+      </section>
 
-          {((facets?.xhs?.like ?? 0) > 0 || (facets?.xhs?.favorite ?? 0) > 0) && (
-            <div>
-              <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
-                小红书
-              </p>
-              <div className="space-y-0.5">
-                <button
-                  type="button"
-                  className={railBtn(browseEquals(browse, { type: "xhsTag", tag: "like" }))}
-                  onClick={() => setBrowseAndReset({ type: "xhsTag", tag: "like" })}
-                >
-                  <Heart className="h-4 w-4 shrink-0 opacity-70" />
-                  <span className="flex-1 truncate">点赞</span>
-                  <span className="text-xs tabular-nums opacity-60">{facets?.xhs?.like ?? 0}</span>
-                </button>
-                <button
-                  type="button"
-                  className={railBtn(browseEquals(browse, { type: "xhsTag", tag: "favorite" }))}
-                  onClick={() => setBrowseAndReset({ type: "xhsTag", tag: "favorite" })}
-                >
-                  <BookMarked className="h-4 w-4 shrink-0 opacity-70" />
-                  <span className="flex-1 truncate">收藏</span>
-                  <span className="text-xs tabular-nums opacity-60">{facets?.xhs?.favorite ?? 0}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {((facets?.bilibili?.favorite ?? 0) > 0 || (facets?.bilibili?.toview ?? 0) > 0) && (
-            <div>
-              <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
-                B站
-              </p>
-              <div className="space-y-0.5">
-                <button
-                  type="button"
-                  className={railBtn(browseEquals(browse, { type: "bilibiliTag", tag: "favorite" }))}
-                  onClick={() => setBrowseAndReset({ type: "bilibiliTag", tag: "favorite" })}
-                >
-                  <BookMarked className="h-4 w-4 shrink-0 opacity-70" />
-                  <span className="flex-1 truncate">收藏</span>
-                  <span className="text-xs tabular-nums opacity-60">{facets?.bilibili?.favorite ?? 0}</span>
-                </button>
-                <button
-                  type="button"
-                  className={railBtn(browseEquals(browse, { type: "bilibiliTag", tag: "toview" }))}
-                  onClick={() => setBrowseAndReset({ type: "bilibiliTag", tag: "toview" })}
-                >
-                  <Tv className="h-4 w-4 shrink-0 opacity-70" />
-                  <span className="flex-1 truncate">稍后再看</span>
-                  <span className="text-xs tabular-nums opacity-60">{facets?.bilibili?.toview ?? 0}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {(facets?.bilibiliCollections?.length ?? 0) > 0 && (
-            <div>
-              <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
-                B站收藏夹
-              </p>
-              <div className="max-h-56 space-y-0.5 overflow-y-auto">
-                {facets!.bilibiliCollections.map((col) => (
-                  <button
-                    key={col.id}
-                    type="button"
-                    className={railBtn(
-                      browseEquals(browse, { type: "bilibiliCollection", collectionId: col.id }),
-                    )}
-                    onClick={() => setBrowseAndReset({ type: "bilibiliCollection", collectionId: col.id })}
-                    title={col.title}
-                  >
-                    <Tv className="h-4 w-4 shrink-0 opacity-70" />
-                    <span className="flex-1 truncate">{col.title}</span>
-                    <span className="text-xs tabular-nums opacity-60">{col.count}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </motion.aside>
-
-        <div className="min-w-0 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-[var(--kp-text-2)]">
-              <Inbox className="h-3.5 w-3.5 shrink-0 opacity-60" />
-              <ChevronRight className="h-3 w-3 shrink-0 opacity-40" />
-              <span className="truncate font-medium text-[var(--kp-text-1)]">{breadcrumb}</span>
-              {data && (
-                <span className="shrink-0 text-xs text-[var(--kp-text-3)]">· {data.total} 条</span>
-              )}
-            </div>
-            <Input
-              className="max-w-xs"
-              placeholder="搜索标题 / 正文 / 收藏夹"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  setKeyword(searchInput.trim());
-                  setPage(1);
-                }
-              }}
-            />
-            <KpSelect
-              value={statusFilter}
-              onChange={(v) => {
-                setStatusFilter(v);
+      {/* 工具条 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1 text-sm">
+          <span className="font-medium text-[var(--kp-text-1)]">{breadcrumb}</span>
+          {data ? (
+            <span className="ml-2 text-xs text-[var(--kp-text-3)]">{data.total} 条</span>
+          ) : null}
+        </div>
+        <div className="flex max-w-[240px] items-center gap-1">
+          <Input
+            className="flex-1"
+            placeholder="搜索标题/摘要/链接/标签…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setKeyword(searchInput.trim());
+                setPage(1);
+              }
+            }}
+          />
+          {keyword || searchInput ? (
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--kp-border)] text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
+              title="清除搜索"
+              aria-label="清除搜索"
+              onClick={() => {
+                setSearchInput("");
+                setKeyword("");
                 setPage(1);
               }}
-              options={[
-                { value: "", label: "全部状态" },
-                ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),
-              ]}
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!selectedIds.length || !!busy}
-              onClick={() => runAction("忽略", () => ignoreMutation.mutateAsync({ ids: selectedIds }))}
             >
-              忽略
-            </Button>
-          </div>
-
-          {isLoading ? (
-            <LoadingState />
-          ) : items.length === 0 ? (
-            <EmptyState
-              title="这里还是空的"
-              description="点上方「同步素材」拉知乎/小红书/B站，或把截图丢进 drop 目录。左侧可按收藏夹筛选。"
-            />
-          ) : (
-            <motion.div layout className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <AnimatePresence mode="popLayout">
-                {items.map((item: InboxItem, index: number) => {
-                  const colTitle = itemCollectionTitle(item);
-                  const isXhsLike = item.source === "xhs" && item.tags?.includes("like");
-                  const isXhsFav = item.source === "xhs" && item.tags?.includes("favorite");
-                  return (
-                    <motion.article
-                      key={item.id}
-                      layout
-                      initial={{ opacity: 0, y: 14 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.96 }}
-                      transition={{ ...SPRING, delay: Math.min(index * 0.03, 0.24) }}
-                      whileHover={{ y: -3 }}
-                      className={cn(
-                        "group relative flex flex-col rounded-2xl border border-[var(--kp-border)] bg-[var(--kp-surface)] p-4 shadow-sm transition",
-                        "hover:border-[color-mix(in_oklab,var(--kp-brand)_35%,var(--kp-border))]",
-                        selected.has(item.id) && "ring-2 ring-[var(--kp-brand)] ring-offset-2 ring-offset-[var(--kp-bg)]",
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <input
-                          type="checkbox"
-                          className="mt-1 h-4 w-4 accent-[var(--kp-brand)]"
-                          checked={selected.has(item.id)}
-                          onChange={() => toggleSelect(item.id)}
-                          aria-label={`选择 ${item.title}`}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap gap-1.5">
-                            <span className="kp-badge kp-badge-info">
-                              {SOURCE_LABELS[item.source] || item.source}
-                            </span>
-                            {colTitle && <span className="kp-badge">{colTitle}</span>}
-                            {isXhsLike && <span className="kp-badge">点赞</span>}
-                            {isXhsFav && <span className="kp-badge">收藏</span>}
-                            <span
-                              className={cn(
-                                "kp-badge",
-                                item.status === "fetched" && "kp-badge-warning",
-                                item.status === "distilled" && "kp-badge-success",
-                              )}
-                            >
-                              {STATUS_LABELS[item.status] || item.status}
-                            </span>
-                          </div>
-                          <h3 className="mt-2 line-clamp-2 text-[15px] font-semibold leading-snug text-[var(--kp-text-1)]">
-                            {item.title}
-                          </h3>
-                          {item.excerpt && (
-                            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-[var(--kp-text-3)]">
-                              {item.excerpt}
-                            </p>
-                          )}
-                          <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-[var(--kp-text-3)]">
-                            <span>{new Date(item.capturedAt).toLocaleString()}</span>
-                            <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-                              {item.url && (
-                                <a
-                                  href={item.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand)]"
-                                  title="打开原文"
-                                >
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                </a>
-                              )}
-                              <button
-                                type="button"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg hover:bg-[var(--kp-bg-mute)] hover:text-red-600"
-                                title="删除"
-                                onClick={() => setDeleteId(item.id)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.article>
-                  );
-                })}
-              </AnimatePresence>
-            </motion.div>
-          )}
-
-          {data && data.totalPages > 1 && (
-            <Pagination
-              page={data.page}
-              pageSize={data.pageSize}
-              total={data.total}
-              totalPages={data.totalPages}
-              onPageChange={setPage}
-            />
-          )}
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
+        <KpSelect
+          value={statusFilter}
+          onChange={(v) => {
+            setStatusFilter(v);
+            setPage(1);
+          }}
+          options={[
+            { value: "", label: "全部状态" },
+            ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),
+          ]}
+        />
+        <KpSelect
+          value={orderBy}
+          onChange={(v) => {
+            setOrderBy(v as "capturedAt" | "sourceAt");
+            setPage(1);
+          }}
+          options={[
+            { value: "sourceAt", label: "按原帖时间" },
+            { value: "capturedAt", label: "按收录时间" },
+          ]}
+        />
+        <div
+          className="inline-flex h-8 items-center rounded-lg border border-[var(--kp-border)] bg-[var(--kp-surface)] p-0.5"
+          role="group"
+          aria-label="视图切换"
+        >
+          <button
+            type="button"
+            title="列表"
+            aria-pressed={viewMode === "list"}
+            onClick={() => setViewModePersist("list")}
+            className={cn(
+              "inline-flex h-7 w-8 items-center justify-center rounded-md transition",
+              viewMode === "list"
+                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
+            )}
+          >
+            <List className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            title="卡片"
+            aria-pressed={viewMode === "card"}
+            onClick={() => setViewModePersist("card")}
+            className={cn(
+              "inline-flex h-7 w-8 items-center justify-center rounded-md transition",
+              viewMode === "card"
+                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+                : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
+            )}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!selectedIds.length || !!busy}
+          onClick={() => runAction("忽略", () => ignoreMutation.mutateAsync({ ids: selectedIds }))}
+        >
+          忽略
+        </Button>
       </div>
+
+      {/* 内容 */}
+      {isLoading ? (
+        <LoadingState />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="这里还是空的"
+          description={
+            keyword
+              ? `没有匹配「${keyword}」的条目。点搜索旁 × 清除，或换关键词。`
+              : "点上方「每日同步」拉取素材，或粘贴链接收录。点「全部」可离开当前平台筛选。"
+          }
+        />
+      ) : viewMode === "list" ? (
+        <ul className="divide-y divide-[var(--kp-border)] overflow-hidden rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)]">
+          {items.map((item: InboxItem) => {
+            const meta = itemMeta(item);
+            const on = selected.has(item.id);
+            return (
+              <li key={item.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={on}
+                  onClick={() => toggleSelect(item.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      toggleSelect(item.id);
+                    }
+                  }}
+                  className={cn(
+                    "group flex cursor-pointer items-start gap-3 px-3 py-2.5 text-left transition",
+                    on
+                      ? "bg-[var(--kp-brand-soft)] ring-1 ring-inset ring-[var(--kp-brand)]"
+                      : "hover:bg-[var(--kp-bg-mute)]/50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
+                      on ? "bg-[var(--kp-brand-deep)]" : "bg-[var(--kp-border)]",
+                    )}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <h3 className="truncate text-sm font-medium text-[var(--kp-text-1)]">
+                      {item.title}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <MetaPill tone="brand">{meta.sourceLabel}</MetaPill>
+                      <MetaPill
+                        tone={
+                          item.status === "fetched"
+                            ? "warn"
+                            : item.status === "distilled"
+                              ? "ok"
+                              : "mute"
+                        }
+                      >
+                        {meta.statusLabel}
+                      </MetaPill>
+                      {meta.collection ? <MetaPill>{meta.collection}</MetaPill> : null}
+                      {meta.kindHint ? <MetaPill>{meta.kindHint}</MetaPill> : null}
+                      {meta.author ? <MetaPill>{meta.author}</MetaPill> : null}
+                      {meta.hasBody ? <MetaPill>有摘要</MetaPill> : <MetaPill>仅标题</MetaPill>}
+                      {meta.distilled ? <MetaPill tone="ok">已蒸馏</MetaPill> : null}
+                      {meta.tags.map((t) => (
+                        <MetaPill key={t}>{t}</MetaPill>
+                      ))}
+                    </div>
+                    {item.excerpt ? (
+                      <p className="line-clamp-2 text-xs text-[var(--kp-text-3)]">{item.excerpt}</p>
+                    ) : null}
+                  </div>
+                  <div
+                    className="flex shrink-0 flex-col items-end gap-1 pt-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <span
+                      className="text-[11px] tabular-nums text-[var(--kp-text-3)]"
+                      title={meta.isSourceTime ? "原帖时间" : "收录时间"}
+                    >
+                      {meta.timeLabel}
+                    </span>
+                    <InboxItemActions item={item} onDelete={() => setDeleteId(item.id)} />
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+          {items.map((item: InboxItem) => {
+            const meta = itemMeta(item);
+            const on = selected.has(item.id);
+            return (
+              <article
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                aria-pressed={on}
+                onClick={() => toggleSelect(item.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleSelect(item.id);
+                  }
+                }}
+                className={cn(
+                  "flex cursor-pointer flex-col gap-2 rounded-xl border p-3.5 text-left transition",
+                  on
+                    ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] shadow-[0_0_0_1px_var(--kp-brand)]"
+                    : "border-[var(--kp-border)] bg-[var(--kp-surface)] hover:border-[color-mix(in_oklab,var(--kp-brand)_35%,var(--kp-border))]",
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <span
+                    className={cn(
+                      "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                      on ? "bg-[var(--kp-brand-deep)]" : "bg-[var(--kp-border)]",
+                    )}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <MetaPill tone="brand">{meta.sourceLabel}</MetaPill>
+                      <MetaPill
+                        tone={
+                          item.status === "fetched"
+                            ? "warn"
+                            : item.status === "distilled"
+                              ? "ok"
+                              : "mute"
+                        }
+                      >
+                        {meta.statusLabel}
+                      </MetaPill>
+                      {meta.kindHint ? <MetaPill>{meta.kindHint}</MetaPill> : null}
+                    </div>
+                    <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[var(--kp-text-1)]">
+                      {item.title}
+                    </h3>
+                    {item.excerpt ? (
+                      <p className="line-clamp-3 text-xs leading-relaxed text-[var(--kp-text-3)]">
+                        {item.excerpt}
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {meta.author ? <MetaPill>{meta.author}</MetaPill> : null}
+                      {meta.hasBody ? <MetaPill>有摘要</MetaPill> : <MetaPill>仅标题</MetaPill>}
+                      {meta.distilled ? <MetaPill tone="ok">已蒸馏</MetaPill> : null}
+                      {meta.tags.map((t) => (
+                        <MetaPill key={t}>{t}</MetaPill>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-0.5 text-[11px] text-[var(--kp-text-3)]">
+                      <span title={meta.isSourceTime ? "原帖时间" : "收录时间"} className="tabular-nums">
+                        {meta.timeLabel}
+                      </span>
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <InboxItemActions item={item} onDelete={() => setDeleteId(item.id)} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {data && data.totalPages > 1 ? (
+        <Pagination
+          page={data.page}
+          pageSize={data.pageSize}
+          total={data.total}
+          totalPages={data.totalPages}
+          onPageChange={setPage}
+        />
+      ) : null}
 
       <ConfirmDialog
         isOpen={!!deleteId}

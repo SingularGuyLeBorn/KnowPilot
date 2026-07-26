@@ -43,7 +43,7 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] flex-1 space-y-6 overflow-y-auto bg-[var(--kp-bg)] px-4 py-6 md:px-8 md:py-8">
+    <div className="mx-auto w-full max-w-[1400px] flex-1 space-y-6 bg-[var(--kp-bg)] px-4 py-6 md:px-8 md:py-8">
       <PageHeader
         icon={CalendarClock}
         title="Tasks 定时任务"

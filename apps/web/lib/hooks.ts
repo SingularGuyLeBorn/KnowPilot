@@ -281,6 +281,31 @@ export const useInbox = () => {
       trpc.inbox.syncXhs.useMutation({ onSuccess: invalidate }),
     useSyncBilibili: () =>
       trpc.inbox.syncBilibili.useMutation({ onSuccess: invalidate }),
+    /** 启动即返回 jobId；勿在 onSuccess invalidate（任务尚未跑完，会无谓闪烁） */
+    useStartPlatformSync: () => trpc.inbox.startPlatformSync.useMutation(),
+    useCancelPlatformSync: () => trpc.inbox.cancelPlatformSync.useMutation(),
+    usePlatformSyncProgress: (jobId: string | null, options?: any) =>
+      trpc.inbox.platformSyncProgress.useQuery(
+        { jobId: jobId ?? "" },
+        {
+          enabled: !!jobId,
+          staleTime: 0,
+          refetchOnWindowFocus: false,
+          ...options,
+        },
+      ),
+    useActivePlatformSync: (options?: any) =>
+      trpc.inbox.activePlatformSync.useQuery(undefined, {
+        refetchOnWindowFocus: false,
+        ...options,
+      }),
+    useLatestPlatformSync: (options?: any) =>
+      trpc.inbox.latestPlatformSync.useQuery(undefined, {
+        refetchOnWindowFocus: true,
+        staleTime: 0,
+        ...options,
+      }),
+    invalidateInboxQueries: invalidate,
     useScanScreenshots: () =>
       trpc.inbox.scanScreenshots.useMutation({ onSuccess: invalidate }),
     useIngestWechat: () =>

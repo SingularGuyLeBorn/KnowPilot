@@ -14,16 +14,16 @@ import {
   resolveScreenshotWatchDir,
   parseXhsNotesFromApiJson,
   xhsInboxExternalId,
-  shouldStopXhsIncrementalBatch,
   parseZhihuFavlistsJson,
   parseZhihuCollectionItemsJson,
   extractZhihuCollectionId,
-  shouldStopZhihuIncrementalPage,
+  shouldStopIncrementalKnownStreak,
+  INBOX_INCREMENTAL_KNOWN_STREAK,
+  resolveZhihuFavlistNextOffset,
   parseBilibiliFavFoldersJson,
   parseBilibiliFavMediasJson,
   parseBilibiliToviewJson,
   bilibiliInboxExternalId,
-  shouldStopBilibiliIncrementalPage,
 } from "../infra/inboxPipeline.js";
 import {
   inboxSyncXhsSchema,
@@ -118,9 +118,21 @@ describe("inboxPipeline", () => {
     expect(parsed.collectionUrl).toBeUndefined();
     expect(parsed.maxItemsPerCollection).toBe(5000);
     expect(extractZhihuCollectionId("https://www.zhihu.com/collection/12345")).toBe("12345");
-    expect(shouldStopZhihuIncrementalPage(20, 0)).toBe(true);
-    expect(shouldStopZhihuIncrementalPage(20, 1)).toBe(false);
-    expect(shouldStopZhihuIncrementalPage(0, 0)).toBe(false);
+    expect(INBOX_INCREMENTAL_KNOWN_STREAK).toBe(10);
+    expect(shouldStopIncrementalKnownStreak(9)).toBe(false);
+    expect(shouldStopIncrementalKnownStreak(10)).toBe(true);
+    expect(shouldStopIncrementalKnownStreak(0)).toBe(false);
+    // 开放平台假 IsEnd + 无 NextOffset：Totals 未扫完则用 scanned 续翻
+    expect(
+      resolveZhihuFavlistNextOffset({
+        currentOffset: 0,
+        nextOffset: "",
+        isEnd: true,
+        pageItemCount: 19,
+        scanned: 19,
+        remoteCount: 1379,
+      }),
+    ).toEqual({ done: false, offset: 19 });
   });
 
   it("parseZhihuFavlistsJson / items JSON", () => {
@@ -162,9 +174,8 @@ describe("inboxPipeline", () => {
     expect(parsed.mode).toBe("incremental");
     expect(xhsInboxExternalId("liked", "abc")).toBe("like:abc");
     expect(xhsInboxExternalId("collect", "abc")).toBe("fav:abc");
-    expect(shouldStopXhsIncrementalBatch(10, 0, true)).toBe(true);
-    expect(shouldStopXhsIncrementalBatch(10, 0, false)).toBe(false);
-    expect(shouldStopXhsIncrementalBatch(10, 2, true)).toBe(false);
+    expect(shouldStopIncrementalKnownStreak(10)).toBe(true);
+    expect(shouldStopIncrementalKnownStreak(9)).toBe(false);
   });
 
   it("parseXhsNotesFromApiJson 解析 note 列表", () => {
@@ -173,7 +184,7 @@ describe("inboxPipeline", () => {
         data: {
           notes: [
             {
-              note_id: "n1",
+              note_id: "n1abcdef",
               display_title: "标题一",
               xsec_token: "tok",
               user: { nickname: "作者" },
@@ -184,10 +195,79 @@ describe("inboxPipeline", () => {
       "liked",
     );
     expect(notes).toHaveLength(1);
-    expect(notes[0]!.noteId).toBe("n1");
+    expect(notes[0]!.noteId).toBe("n1abcdef");
     expect(notes[0]!.title).toBe("标题一");
     expect(notes[0]!.url).toContain("xsec_token=tok");
     expect(notes[0]!.author).toBe("作者");
+  });
+
+  it("parseXhsNotesFromApiJson 提取 desc 与时间", () => {
+    const notes = parseXhsNotesFromApiJson(
+      {
+        data: {
+          notes: [
+            {
+              note_id: "n2abcdef",
+              display_title: "标题二",
+              desc: "这是摘要正文",
+              time: 1700000000,
+              user: { nickname: "乙" },
+            },
+          ],
+        },
+      },
+      "collect",
+    );
+    expect(notes[0]!.excerpt).toBe("这是摘要正文");
+    expect(notes[0]!.publishedAtMs).toBe(1700000000 * 1000);
+  });
+
+  it("parseXhsNotesFromApiJson 嵌套 time + 跳过 user.create_time", () => {
+    const notes = parseXhsNotesFromApiJson(
+      {
+        data: {
+          notes: [
+            {
+              note_card: {
+                note_id: "n3nested1",
+                display_title: "嵌套时间",
+                user: { nickname: "丙", create_time: 1000000000 },
+                interact_info: { liked: true },
+                meta: { last_update_time: 1710000000 },
+              },
+            },
+          ],
+        },
+      },
+      "liked",
+    );
+    expect(notes[0]!.publishedAtMs).toBe(1710000000 * 1000);
+  });
+
+  it("coerceXhsEpochMs 拒绝相对文案与过小数", async () => {
+    const { coerceXhsEpochMs } = await import("../infra/inboxPipeline.js");
+    expect(coerceXhsEpochMs("3天前")).toBeUndefined();
+    expect(coerceXhsEpochMs(123)).toBeUndefined();
+    expect(coerceXhsEpochMs(1710000000)).toBe(1710000000 * 1000);
+  });
+
+  it("parseXhsNotesFromApiJson 兼容 items + noteCard", () => {
+    const notes = parseXhsNotesFromApiJson(
+      {
+        data: {
+          items: [
+            {
+              id: "feed99xyz",
+              noteCard: { noteId: "card99xyz", displayTitle: "卡片标题", xsecToken: "t2" },
+            },
+          ],
+        },
+      },
+      "collect",
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.noteId).toBe("card99xyz");
+    expect(notes[0]!.title).toBe("卡片标题");
   });
 
   it("inboxSyncBilibiliSchema 默认 kinds + incremental", () => {
@@ -196,8 +276,8 @@ describe("inboxPipeline", () => {
     expect(parsed.mode).toBe("incremental");
     expect(bilibiliInboxExternalId("fav", "BV1xx411c7mD", "123")).toBe("fav:123:BV1xx411c7mD");
     expect(bilibiliInboxExternalId("toview", "BV1xx411c7mD")).toBe("toview:BV1xx411c7mD");
-    expect(shouldStopBilibiliIncrementalPage(20, 0)).toBe(true);
-    expect(shouldStopBilibiliIncrementalPage(20, 1)).toBe(false);
+    expect(shouldStopIncrementalKnownStreak(10)).toBe(true);
+    expect(shouldStopIncrementalKnownStreak(3)).toBe(false);
   });
 
   it("parseBilibili fav / toview JSON", () => {

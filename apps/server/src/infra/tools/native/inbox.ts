@@ -88,6 +88,52 @@ async function inboxSyncBilibili(args: Record<string, unknown>, ctx: NativeToolC
   });
 }
 
+/** 与 UI「平台同步」同通道：后台任务立即返回 jobId，不堵对话 */
+async function inboxStartPlatformSync(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const mode = args.mode === "full" ? "full" : "incremental";
+  const job = await ctx.services.inbox.startPlatformSync({
+    mode,
+    zhihu: args.zhihu === undefined ? true : coerceToolBoolean(args.zhihu),
+    xhs: args.xhs === undefined ? true : coerceToolBoolean(args.xhs),
+    bilibili: args.bilibili === undefined ? true : coerceToolBoolean(args.bilibili),
+    screenshots: args.screenshots === undefined ? true : coerceToolBoolean(args.screenshots),
+    wechat: args.wechat === undefined ? true : coerceToolBoolean(args.wechat),
+    maxItems: typeof args.maxItems === "number" ? args.maxItems : undefined,
+    maxUpsert: typeof args.maxUpsert === "number" ? args.maxUpsert : undefined,
+    probe: coerceToolBoolean(args.probe),
+    fetchContent: coerceToolBoolean(args.fetchContent),
+  });
+  return {
+    ...job,
+    hint: "已启动后台同步。用 inbox_platform_sync_status 查进度；完成后到 /inbox 浏览。长时全量请优先本工具，勿用 inbox_sync_* 堵对话。",
+  };
+}
+
+async function inboxPlatformSyncStatus(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const jobId = typeof args.jobId === "string" ? args.jobId.trim() : "";
+  if (jobId) {
+    return ctx.services.inbox.getPlatformSyncProgress(jobId);
+  }
+  const [active, latest] = await Promise.all([
+    ctx.services.inbox.getActivePlatformSync(),
+    ctx.services.inbox.getLatestPlatformSync(),
+  ]);
+  return {
+    active,
+    latest,
+    hint: active
+      ? `同步进行中 jobId=${active.id}${active.currentLabel ? ` · ${active.currentLabel}` : ""}`
+      : latest
+        ? `无进行中任务；最近一次 ${latest.status} jobId=${latest.id}`
+        : "尚无同步任务",
+  };
+}
+
+async function inboxCancelPlatformSync(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const jobId = typeof args.jobId === "string" ? args.jobId.trim() : undefined;
+  return ctx.services.inbox.cancelPlatformSync(jobId || undefined);
+}
+
 async function inboxScanScreenshots(args: Record<string, unknown>, ctx: NativeToolContext) {
   return ctx.services.inbox.scanScreenshots({
     dir: typeof args.dir === "string" ? args.dir : undefined,
@@ -175,9 +221,53 @@ const INBOX_DEFS: NativeToolDefinition[] = [
     },
   },
   {
+    name: "inbox_start_platform_sync",
+    description:
+      "【Tier 1·推荐】后台批量同步 Inbox（与 /platform-sync 同通道）。后端有序：知乎 openapi→cookie；小红书/B站需登录。立即返回 jobId；查进度 inbox_platform_sync_status。先 platform_doctor/browser_login_status。",
+    concurrencyClass: "C",
+    parameters: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["full", "incremental"], description: "默认 incremental" },
+        zhihu: { type: "boolean", description: "默认同步知乎" },
+        xhs: { type: "boolean", description: "默认同步小红书" },
+        bilibili: { type: "boolean", description: "默认同步 B 站" },
+        screenshots: { type: "boolean", description: "默认扫截图目录" },
+        wechat: { type: "boolean", description: "默认读微信 links.txt" },
+        maxItems: { type: "number" },
+        maxUpsert: { type: "number", description: "实际入库上限（试跑）" },
+        probe: { type: "boolean", description: "试跑：列表少、入库少，验证登录态" },
+        fetchContent: { type: "boolean", description: "默认 false（只拉列表）" },
+      },
+    },
+  },
+  {
+    name: "inbox_platform_sync_status",
+    description:
+      "查询平台批量同步进度。传 jobId 查指定任务；不传则返回当前进行中 + 最近一次。",
+    concurrencyClass: "B",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "可选；inbox_start_platform_sync 返回的 jobId" },
+      },
+    },
+  },
+  {
+    name: "inbox_cancel_platform_sync",
+    description: "取消进行中的平台批量同步。不传 jobId 则取消当前活跃任务。",
+    concurrencyClass: "C",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string" },
+      },
+    },
+  },
+  {
     name: "inbox_sync_zhihu",
     description:
-      "同步知乎收藏到 Inbox。优先用开放平台 ZHIHU_ACCESS_SECRET（无需浏览器登录）；无 key 时回退 platform_login(zhihu)。不填 collectionUrl = 同步全部收藏夹；填 URL 只同步该夹。mode=incremental（默认）整页无新增即停；mode=full 全量打底。默认只拉列表。",
+      "【Tier 1·同步执行会堵对话】知乎收藏。后端：openapi→cookie_api→playwright。日常用 inbox_start_platform_sync。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
@@ -198,7 +288,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_sync_xhs",
     description:
-      "同步小红书「点赞」和/或「收藏」到 Inbox。需先 platform_login(platform=xhs)。mode=incremental（默认）遇已知笔记提前停；mode=full 全量打底。kinds 默认两者。默认只拉列表。",
+      "【Tier 1·同步执行会堵对话】小红书点赞/收藏。后端：storage_state_playwright。日常用 inbox_start_platform_sync；需 platform_login(xhs)。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
@@ -218,7 +308,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_sync_bilibili",
     description:
-      "同步 B 站「我创建的收藏夹」和/或「稍后再看」到 Inbox（学 BiliNote：复用 platform_login(bilibili) 的 SESSDATA）。kinds 默认两者；mode=incremental 遇整页无新增早停；fetchContent=true 时抓字幕/AI 总结。",
+      "【Tier 1·同步执行会堵对话】B站收藏/稍后再看。后端：cookie_api(SESSDATA)。日常用 inbox_start_platform_sync。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
@@ -302,6 +392,9 @@ const INBOX_HANDLERS: Record<string, NativeToolHandler> = {
   inbox_stats: inboxStats,
   inbox_capture_url: inboxCaptureUrl,
   inbox_capture_urls: inboxCaptureUrls,
+  inbox_start_platform_sync: inboxStartPlatformSync,
+  inbox_platform_sync_status: inboxPlatformSyncStatus,
+  inbox_cancel_platform_sync: inboxCancelPlatformSync,
   inbox_sync_zhihu: inboxSyncZhihu,
   inbox_sync_xhs: inboxSyncXhs,
   inbox_sync_bilibili: inboxSyncBilibili,

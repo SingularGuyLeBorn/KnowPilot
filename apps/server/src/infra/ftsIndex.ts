@@ -92,6 +92,26 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
   });
   for (const p of prompts) add("prompt", p.id, p.name, `${p.description ?? ""}\n${p.content ?? ""}`);
 
+  const inboxItems = await prisma.inboxItem.findMany({
+    select: {
+      id: true,
+      title: true,
+      excerpt: true,
+      url: true,
+      tags: true,
+      source: true,
+      content: true,
+    },
+  });
+  for (const item of inboxItems) {
+    add(
+      "inbox",
+      item.id,
+      item.title,
+      `[${item.source}] ${item.url ?? ""}\n${item.tags ?? ""}\n${item.excerpt ?? ""}\n${item.content ?? ""}`,
+    );
+  }
+
   const messages = await prisma.chatMessage.findMany({
     where: { role: { in: ["user", "assistant"] } },
     select: { id: true, content: true, sessionId: true },
@@ -120,22 +140,50 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
 
 /** FTS 查询；无匹配或 FTS 不可用时返回空数组。含 BM25 rank（越小越好）。 */
 export async function searchFts(prisma: PrismaClient, query: string, limit = 20): Promise<FtsHit[]> {
+  return searchFtsFiltered(prisma, query, limit);
+}
+
+/** 按实体类型过滤的 FTS（Inbox 搜索避免被 post/message 挤掉） */
+export async function searchFtsByEntity(
+  prisma: PrismaClient,
+  entity: string,
+  query: string,
+  limit = 200,
+): Promise<FtsHit[]> {
+  return searchFtsFiltered(prisma, query, limit, entity);
+}
+
+async function searchFtsFiltered(
+  prisma: PrismaClient,
+  query: string,
+  limit: number,
+  entity?: string,
+): Promise<FtsHit[]> {
   const ftsQuery = escapeFtsQuery(query);
   if (!ftsQuery) return [];
 
   try {
     if (!ftsReady) await ensureFtsTable(prisma);
-    const rows = await prisma.$queryRawUnsafe<
-      Array<FtsHit & { entity_id?: string; rank?: number }>
-    >(
-      `SELECT entity, entity_id as entityId, title, body, rank
-       FROM search_fts
-       WHERE search_fts MATCH ?
-       ORDER BY rank
-       LIMIT ?`,
-      ftsQuery,
-      limit,
-    );
+    const rows = entity
+      ? await prisma.$queryRawUnsafe<Array<FtsHit & { entity_id?: string; rank?: number }>>(
+          `SELECT entity, entity_id as entityId, title, body, rank
+           FROM search_fts
+           WHERE search_fts MATCH ? AND entity = ?
+           ORDER BY rank
+           LIMIT ?`,
+          ftsQuery,
+          entity,
+          limit,
+        )
+      : await prisma.$queryRawUnsafe<Array<FtsHit & { entity_id?: string; rank?: number }>>(
+          `SELECT entity, entity_id as entityId, title, body, rank
+           FROM search_fts
+           WHERE search_fts MATCH ?
+           ORDER BY rank
+           LIMIT ?`,
+          ftsQuery,
+          limit,
+        );
     return rows.map((r) => ({
       entity: r.entity,
       entityId: r.entityId ?? r.entity_id ?? "",

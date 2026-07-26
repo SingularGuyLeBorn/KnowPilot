@@ -960,7 +960,8 @@ export function AdminPage({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1400px] flex-1 space-y-4 overflow-y-auto overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6 md:px-8 md:py-8",
+        // 只由 Shell <main> 滚动；此处再 overflow-y-auto = 双滚动条（设计败笔）
+        "mx-auto w-full max-w-[1400px] flex-1 space-y-4 overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6 md:px-8 md:py-8",
         "[&_.kp-table-scroll]:overflow-x-auto [&_.kp-table-scroll]:overscroll-x-contain",
         className,
       )}
@@ -981,7 +982,7 @@ export function AdminFormShell({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-y-auto overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6 md:px-8 md:py-8",
+        "mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6 md:px-8 md:py-8",
         className,
       )}
     >

@@ -925,7 +925,7 @@ export const listInboxItemsSchema = z.object({
   collectionId: z.string().min(1).max(64).optional(),
   /** 标签子筛选：like / favorite / collection 等 */
   tag: z.string().min(1).max(64).optional(),
-  orderBy: z.enum(["capturedAt", "createdAt", "updatedAt"]).default("capturedAt"),
+  orderBy: z.enum(["capturedAt", "sourceAt", "createdAt", "updatedAt"]).default("capturedAt"),
   order: z.enum(["asc", "desc"]).default("desc"),
 });
 
@@ -958,6 +958,8 @@ export const inboxSyncZhihuSchema = z.object({
   maxItemsPerCollection: z.number().int().min(1).max(5000).default(5000),
   /** 每夹条数上限；若传入则覆盖 maxItemsPerCollection（单夹快捷同步常用） */
   maxItems: z.number().int().min(1).max(5000).optional(),
+  /** 入库上限（可小于列表 maxItems；试跑常用 3） */
+  maxUpsert: z.number().int().min(1).max(5000).optional(),
   fetchContent: z.boolean().default(false),
   maxChars: z.number().int().min(500).max(50000).default(12000),
 });
@@ -971,6 +973,8 @@ export const inboxSyncXhsSchema = z.object({
   mode: inboxSyncXhsModeSchema.default("incremental"),
   /** 每种 kind 最多拉取条数（点赞与收藏分别计数） */
   maxItems: z.number().int().min(1).max(5000).default(200),
+  /** 入库上限（跨 kind 合计；可小于列表 maxItems） */
+  maxUpsert: z.number().int().min(1).max(5000).optional(),
   fetchContent: z.boolean().default(false),
   maxChars: z.number().int().min(500).max(50000).default(12000),
 });
@@ -985,6 +989,8 @@ export const inboxSyncBilibiliSchema = z.object({
   /** 每个收藏夹 / 稍后再看列表最多条数 */
   maxItems: z.number().int().min(1).max(5000).default(200),
   maxFolders: z.number().int().min(1).max(100).default(50),
+  /** 入库上限（可小于列表 maxItems） */
+  maxUpsert: z.number().int().min(1).max(5000).optional(),
   /** true 时用 video_transcript 链路抓字幕摘要（更慢、耗额度） */
   fetchContent: z.boolean().default(false),
   maxChars: z.number().int().min(500).max(50000).default(12000),
@@ -1011,6 +1017,32 @@ export const inboxDistillSchema = z.object({
 export const inboxIgnoreSchema = z.object({
   ids: z.array(z.string().cuid()).min(1).max(100),
 });
+
+/** 平台批量同步：后台任务，避免 HTTP 长请求被代理掐成 fetch failed */
+export const inboxPlatformSyncModeSchema = z.enum(["full", "incremental"]);
+export const inboxPlatformSyncStartSchema = z.object({
+  mode: inboxPlatformSyncModeSchema.default("incremental"),
+  zhihu: z.boolean().default(true),
+  xhs: z.boolean().default(true),
+  bilibili: z.boolean().default(true),
+  screenshots: z.boolean().default(true),
+  wechat: z.boolean().default(true),
+  maxItems: z.number().int().min(1).max(5000).optional(),
+  /** 实际入库上限；小于 maxItems 时只写前 N 条（试跑用） */
+  maxUpsert: z.number().int().min(1).max(5000).optional(),
+  /**
+   * 试跑：列表最多 10、入库最多 3（覆盖 maxItems/maxUpsert）。
+   * 用于验证登录态，避免全量收藏测半小时。
+   */
+  probe: z.boolean().default(false),
+  fetchContent: z.boolean().default(false),
+});
+export const inboxPlatformSyncProgressSchema = z.object({
+  jobId: z.string().min(1).max(64),
+});
+
+export type InboxPlatformSyncStartInput = z.input<typeof inboxPlatformSyncStartSchema>;
+export type InboxPlatformSyncProgressInput = z.infer<typeof inboxPlatformSyncProgressSchema>;
 
 /* ═══════════════════════════════════════════════════════
    GitRepo (Git 仓库)

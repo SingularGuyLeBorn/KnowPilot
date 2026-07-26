@@ -68,75 +68,123 @@ const verifyZhihu: LoginVerifyFn = async (page) => {
 };
 
 /**
- * 小红书登录确认（对齐 MediaCrawler）：
- * 1) 侧栏「我」/ profile 链接出现
- * 2) web_session 相对登录前 baseline 发生变化
- * 禁止用 page.request 打 edith /user/me——该接口要 x-s 签名，未签名永远像未登录，导致扫码成功也不落盘。
+ * 小红书仍停在登录 / 安全验证门禁页。
+ * 注意：扫码成功、手机未点「确认登录」时，/user/me 也可能带 user_id——绝不能当已登录。
+ */
+export function isXhsAuthChallengeUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  return (
+    u.includes("/login") ||
+    u.includes("verifyuuid") ||
+    u.includes("verify_uuid") ||
+    u.includes("website-login") ||
+    u.includes("captcha") ||
+    u.includes("/sso/") ||
+    u.includes("account-web") ||
+    u.includes("passport")
+  );
+}
+
+/** 离线 login-meta 仅认侧栏「我」落盘；历史 me_api / web_session_change / dom_profile 一律不信任 */
+const XHS_STRONG_LOGIN_VIA = new Set(["dom_me"]);
+
+/**
+ * 仅匹配登录/验证弹层内文案。禁止扫全文：探索页推荐流常含「扫一扫」等词，
+ * 会导致「侧栏已有我、主页已开」仍被判登录失效。
+ */
+export function textLooksLikeXhsLoginPending(text: string): boolean {
+  return /安全验证|Security Verification|扫码登录|扫码成功|已扫码|请在手机上?确认|等待确认|确认登录|登录确认|请确认登录|二维码已过期|登录后继续/i.test(
+    text,
+  );
+}
+
+async function pageHasXhsSidebarMe(page: Page): Promise<boolean> {
+  // 多种 DOM：span「我」/ 链接文本含「我」/ 侧栏底部 profile 链
+  const selectors = [
+    "xpath=//a[contains(@href, '/user/profile/')]//span[normalize-space()='我']",
+    "xpath=//a[contains(@href, '/user/profile/') and contains(normalize-space(.), '我')]",
+    "a[href*='/user/profile/']:has-text('我')",
+  ];
+  for (const sel of selectors) {
+    try {
+      const visible = await page.locator(sel).first().isVisible({ timeout: 500 }).catch(() => false);
+      if (visible) return true;
+    } catch {
+      /* try next */
+    }
+  }
+  return false;
+}
+
+async function pageShowsXhsChallengeUi(page: Page): Promise<boolean> {
+  // 只认明确的登录弹层，不扫整页正文
+  try {
+    const box = page.locator(".login-container, [class*='login-container']").first();
+    if (await box.isVisible({ timeout: 400 }).catch(() => false)) {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const qr = page.locator("img.qrcode-img, .qrcode-img").first();
+    if (await qr.isVisible({ timeout: 400 }).catch(() => false)) {
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  // 弹层局部文案（避免 document.body 全文误伤）
+  try {
+    const modalText = await page.evaluate(() => {
+      const nodes = Array.from(
+        document.querySelectorAll(
+          ".login-container, [class*='login-container'], [class*='login-modal'], [class*='captcha']",
+        ),
+      );
+      return nodes.map((n) => (n as HTMLElement).innerText || "").join("\n").slice(0, 2000);
+    });
+    if (modalText && textLooksLikeXhsLoginPending(modalText)) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/**
+ * 小红书登录确认（铁律）：
+ * 1) 侧栏「我」可见 → 已登录（最高优先级，不被推荐流文案误伤）
+ * 2) 否则若仍在 /login 或登录弹层 → 未登录
+ * 禁止 me_api / web_session / 全文关键词
  */
 async function confirmXhsLoggedIn(
   page: Page,
-  context: BrowserContext,
-  baselineWebSession: string,
+  _context: BrowserContext,
+  _baselineWebSession: string,
 ): Promise<{ ok: boolean; via: string }> {
-  // 1. UI（最可靠）
-  try {
-    const meVisible = await page
-      .isVisible("xpath=//a[contains(@href, '/user/profile/')]//span[text()='我']", { timeout: 600 })
-      .catch(() => false);
-    if (meVisible) return { ok: true, via: "dom_me" };
-  } catch {
-    /* ignore */
-  }
-  try {
-    const profileVisible = await page
-      .locator('a[href*="/user/profile/"]')
-      .first()
-      .isVisible({ timeout: 500 })
-      .catch(() => false);
-    if (profileVisible) return { ok: true, via: "dom_profile" };
-  } catch {
-    /* ignore */
+  // 先认「我」：用户已看到主页时绝不能再报失效
+  if (await pageHasXhsSidebarMe(page)) {
+    return { ok: true, via: "dom_me" };
   }
 
-  // 2. web_session 值变化（MediaCrawler 主路径）
-  const cookies = await context.cookies([
-    "https://www.xiaohongshu.com",
-    "https://edith.xiaohongshu.com",
-  ]);
-  const ws = cookies.find((c) => c.name === "web_session" && c.value)?.value ?? "";
-  if (ws && baselineWebSession && ws !== baselineWebSession) {
-    return { ok: true, via: "web_session_change" };
+  const url = page.url();
+  if (isXhsAuthChallengeUrl(url)) {
+    return { ok: false, via: "auth_gate" };
   }
-  // baseline 为空但登录后才出现较长 web_session
-  if (!baselineWebSession && ws.length >= 20) {
-    return { ok: true, via: "web_session_new" };
-  }
-
-  // 3. 页面内 fetch（可选；签名失败则忽略）
-  try {
-    const me = await page.evaluate(async () => {
-      try {
-        const r = await fetch("https://edith.xiaohongshu.com/api/sns/web/v2/user/me", {
-          credentials: "include",
-          headers: { Accept: "application/json" },
-        });
-        if (!r.ok) return null;
-        return (await r.json()) as { data?: { guest?: boolean; user_id?: string } };
-      } catch {
-        return null;
-      }
-    });
-    const inner = me?.data;
-    if (inner && inner.guest === false) return { ok: true, via: "me_api" };
-    if (inner?.user_id && inner.guest !== true) return { ok: true, via: "me_api" };
-  } catch {
-    /* ignore */
+  if (await pageShowsXhsChallengeUi(page)) {
+    return { ok: false, via: "challenge_ui" };
   }
 
   return { ok: false, via: "none" };
 }
 
-/** @deprecated 保留类型位；小红书改走 confirmXhsLoggedIn */
+/** 供同步管道复用：当前页是否已登录（侧栏「我」） */
+export async function isXhsPageLoggedIn(page: Page): Promise<boolean> {
+  const r = await confirmXhsLoggedIn(page, {} as BrowserContext, "");
+  return r.ok;
+}
+
+/** 配置位：小红书落盘前再跑一遍硬确认 */
 const verifyXhs: LoginVerifyFn = async (page, context) => {
   const r = await confirmXhsLoggedIn(page, context, "");
   return r.ok;
@@ -463,16 +511,25 @@ export function platformHasRealLoginCookies(platform: CookiePlatform): {
       const raw = JSON.parse(fs.readFileSync(authPath, "utf-8")) as {
         cookies?: Array<{ name?: string; value?: string }>;
       };
-      const check = hasRequiredAuthCookies(raw.cookies ?? [], cfg);
+      const cookies = raw.cookies ?? [];
+      const check = hasRequiredAuthCookies(cookies, cfg);
       if (check.ok) {
         return { loggedIn: true, hitCookies: check.hitCookies, source: "storageState" };
       }
-      // 会话升级型登录（如小红书）：捕获成功时写了 login-meta（via=web_session_change/dom_me 等）
+      // 会话升级型登录（如小红书）：须强信号 meta + 非空 session cookie
+      // 历史弱信号（web_session_change / dom_profile）扫码未确认也会写入——一律不认
       const meta = readLoginMeta(platform);
-      if (meta?.verifiedBy) {
+      const sessionNames = cfg.sessionCookieNames ?? [];
+      const sessionHits = cookies
+        .filter((c) => c.name && sessionNames.includes(c.name) && (c.value?.length ?? 0) >= 16)
+        .map((c) => c.name as string);
+      const metaOk =
+        Boolean(meta?.verifiedBy) &&
+        (platform !== "xhs" || XHS_STRONG_LOGIN_VIA.has(meta!.verifiedBy));
+      if (metaOk && sessionHits.length > 0) {
         return {
           loggedIn: true,
-          hitCookies: meta.hitCookie ? [meta.hitCookie] : [meta.verifiedBy],
+          hitCookies: meta!.hitCookie ? [meta!.hitCookie, ...sessionHits] : sessionHits,
           source: "loginMeta",
         };
       }
@@ -489,8 +546,40 @@ export function platformHasRealLoginCookies(platform: CookiePlatform): {
   return { loggedIn: false, hitCookies: [], source: "none" };
 }
 
-export async function capturePlatformLoginState(
+/** 强制清除落盘登录态（服务端已拒会话 / 同步撞登录页时用，不受离线 loggedIn 误报保护） */
+export function clearPlatformLoginState(platform: CookiePlatform): {
+  cleared: boolean;
+  paths: string[];
+} {
+  const cfg = PLATFORM_LOGIN_CONFIGS[platform];
+  if (!cfg) return { cleared: false, paths: [] };
+  const paths = [
+    getStorageStatePath(cfg.storageStateFile),
+    path.join(getAppConfig().dataPaths.cookies, `${platform}.json`),
+    getLoginMetaPath(platform),
+  ];
+  const removed: string[] = [];
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) {
+        fs.unlinkSync(p);
+        removed.push(p);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { cleared: removed.length > 0, paths: removed };
+}
+
+/**
+ * 在已有 Playwright 上下文中等待用户登录并落盘。
+ * 供 platform_login 与同步撞登录页后的就地补登共用（勿关窗）。
+ */
+export async function waitAndPersistPlatformLogin(
   platform: CookiePlatform,
+  context: BrowserContext,
+  page: Page,
   timeoutSec: number = 180,
 ): Promise<PlatformLoginResult> {
   const cfg = PLATFORM_LOGIN_CONFIGS[platform];
@@ -516,16 +605,15 @@ export async function capturePlatformLoginState(
   const authPath = getStorageStatePath(cfg.storageStateFile);
   fs.mkdirSync(path.dirname(authPath), { recursive: true });
 
-  const { browser, context, page } = await launchZhihuBrowser({ headless: false });
-
-  try {
-    await page.goto(cfg.loginUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(2500);
-
-    // 小红书：若未自动弹登录框，点一次登录按钮露出二维码
-    if (platform === "xhs") {
+  // 小红书：仅当还没有登录/验证弹层时，才点一次登录按钮（已有 QR 时再点会打乱流程、逼你扫第二遍）
+  if (platform === "xhs") {
+    const alreadyChallenge =
+      isXhsAuthChallengeUrl(page.url()) || (await pageShowsXhsChallengeUi(page));
+    if (!alreadyChallenge) {
       try {
-        const loginBtn = page.locator("xpath=//*[@id='app']/div[1]/div[2]/div[1]/ul/div[1]/button");
+        const loginBtn = page.locator(
+          "xpath=//*[@id='app']/div[1]/div[2]/div[1]/ul/div[1]/button",
+        );
         if (await loginBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
           await loginBtn.click().catch(() => undefined);
           await page.waitForTimeout(800);
@@ -534,24 +622,30 @@ export async function capturePlatformLoginState(
         /* 用户也可手动点登录 */
       }
     }
+  }
 
-    const watchNames = [...cfg.authCookieNames, ...(cfg.sessionCookieNames ?? [])];
-    let baseline = new Map<string, string>();
-    try {
-      const initial = await context.cookies(cfg.cookieUrls);
-      baseline = collectNamedCookieMap(initial, watchNames);
-    } catch {
-      baseline = new Map();
-    }
-    const baselineWebSession = baseline.get("web_session") ?? "";
+  const watchNames = [...cfg.authCookieNames, ...(cfg.sessionCookieNames ?? [])];
+  let baseline = new Map<string, string>();
+  try {
+    const initial = await context.cookies(cfg.cookieUrls);
+    baseline = collectNamedCookieMap(initial, watchNames);
+  } catch {
+    baseline = new Map();
+  }
+  const baselineWebSession = baseline.get("web_session") ?? "";
 
-    const timeoutMs = Math.max(30, timeoutSec) * 1000;
-    const pollInterval = 2500;
-    const startTime = Date.now();
-    /** 仅 web_session 变化时需连续确认 2 次，防访客会话抖动误存 */
-    let xhsSessionStreak = 0;
-    let lastFailHint = "";
+  // 小红书：安全验证 QR + 登录 QR 可能连扫两遍，手机确认也慢，至少等 8 分钟
+  const effectiveTimeoutSec =
+    platform === "xhs" ? Math.max(480, timeoutSec) : Math.max(30, timeoutSec);
+  const timeoutMs = effectiveTimeoutSec * 1000;
+  const pollInterval = 3000;
+  /** 侧栏「我」须连续命中才落盘（「我」优先后误判已少，2 次约 6s 足够） */
+  const XHS_STABLE_HITS = 2;
+  const startTime = Date.now();
+  let lastFailHint = "";
+  let xhsStableHits = 0;
 
+  try {
     while (Date.now() - startTime < timeoutMs) {
       await page.waitForTimeout(pollInterval);
       let pwCookies: PwCookie[];
@@ -567,20 +661,21 @@ export async function capturePlatformLoginState(
       if (platform === "xhs") {
         const confirm = await confirmXhsLoggedIn(page, context, baselineWebSession);
         if (!confirm.ok) {
-          xhsSessionStreak = 0;
-          lastFailHint = "等待扫码后 web_session 变化或侧栏出现「我」";
+          xhsStableHits = 0;
+          if (confirm.via === "auth_gate" || confirm.via === "challenge_ui") {
+            lastFailHint =
+              "仍在安全验证/登录弹层：可能要扫两遍（先安全验证再登录）。每次扫完请在手机点「确认」，窗口会等到左侧出现「我」才关闭——绝不会因仅扫码而关窗";
+          } else {
+            lastFailHint = "等待侧栏出现「我」（登录弹层消失后才算成功）";
+          }
           continue;
         }
-        if (confirm.via === "web_session_change" || confirm.via === "web_session_new") {
-          xhsSessionStreak += 1;
-          if (xhsSessionStreak < 2) {
-            lastFailHint = `已检测到 web_session 变化，再确认一次 (${xhsSessionStreak}/2)…`;
-            continue;
-          }
-        } else {
-          xhsSessionStreak = 0;
+        xhsStableHits += 1;
+        if (xhsStableHits < XHS_STABLE_HITS) {
+          lastFailHint = `已看到侧栏「我」，再确认稳定性 (${xhsStableHits}/${XHS_STABLE_HITS})…`;
+          continue;
         }
-        verifiedBy = confirm.via;
+        verifiedBy = "dom_me";
         hitCookie = "web_session";
       } else {
         const signal = detectLoginCookieSignal(pwCookies, baseline, cfg);
@@ -646,7 +741,7 @@ export async function capturePlatformLoginState(
 
     return {
       success: false,
-      message: `${platform} 登录超时未落盘。${lastFailHint ? `最后状态：${lastFailHint}。` : ""}小红书以扫码后 web_session 变化或侧栏「我」为准（不再依赖需签名的 /user/me）。请在窗口内完成扫码，或加大 timeoutSec（建议 ≥180）。`,
+      message: `${platform} 登录超时未落盘。${lastFailHint ? `最后状态：${lastFailHint}。` : ""}小红书必须：完成安全验证与登录扫码（可能两遍）→ 每次在手机点「确认」→ 登录弹层消失且侧栏稳定出现「我」。仅扫码绝不关窗。建议 timeoutSec≥480。`,
       platform,
       authPath,
       fileSize: fs.existsSync(authPath) ? fs.statSync(authPath).size : 0,
@@ -657,6 +752,39 @@ export async function capturePlatformLoginState(
       message: `${platform} 登录态捕获失败: ${error instanceof Error ? error.message : String(error)}`,
       platform,
       authPath,
+      fileSize: 0,
+    };
+  }
+}
+
+export async function capturePlatformLoginState(
+  platform: CookiePlatform,
+  timeoutSec: number = 180,
+): Promise<PlatformLoginResult> {
+  const cfg = PLATFORM_LOGIN_CONFIGS[platform];
+  if (!cfg) {
+    return {
+      success: false,
+      message: `不支持的平台：${platform}（支持：${Object.keys(PLATFORM_LOGIN_CONFIGS).join(", ")}）`,
+      platform,
+      authPath: "",
+      fileSize: 0,
+    };
+  }
+
+  // 干净上下文弹窗（禁止加载旧 storageState）
+  const { browser, context, page } = await launchZhihuBrowser({ headless: false });
+
+  try {
+    await page.goto(cfg.loginUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(2500);
+    return await waitAndPersistPlatformLogin(platform, context, page, timeoutSec);
+  } catch (error: unknown) {
+    return {
+      success: false,
+      message: `${platform} 登录态捕获失败: ${error instanceof Error ? error.message : String(error)}`,
+      platform,
+      authPath: getStorageStatePath(cfg.storageStateFile),
       fileSize: 0,
     };
   } finally {

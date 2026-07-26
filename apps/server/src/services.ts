@@ -91,8 +91,10 @@ import {
   inboxSyncZhihuSchema,
   inboxSyncXhsSchema,
   inboxSyncBilibiliSchema,
+  inboxPlatformSyncStartSchema,
   type InboxSyncXhsInput,
   type InboxSyncBilibiliInput,
+  type InboxPlatformSyncStartInput,
   type InboxScanScreenshotsInput,
   type InboxIngestWechatDropInput,
   type InboxDistillInput,
@@ -117,7 +119,7 @@ import matter from "gray-matter";
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { deriveDecisionScope } from "./infra/approvalScope.js";
 import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
-import { upsertFtsRow, deleteFtsRow, searchFts } from "./infra/ftsIndex.js";
+import { upsertFtsRow, deleteFtsRow, searchFts, searchFtsByEntity } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
 import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
 import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
@@ -3908,110 +3910,215 @@ export class InboxService extends BaseService<
     }
     return {
       ...raw,
+      content: raw.content ?? null,
       tags: raw.tags ? String(raw.tags).split(",").filter(Boolean).map((t: string) => t.trim()) : [],
       metadata,
     };
+  }
+
+  /** 列表不拉 content：上千条正文 LIKE + 整段回传是搜索卡顿主因；正文走 getById */
+  protected override getListSelect(): any {
+    return {
+      id: true,
+      source: true,
+      externalId: true,
+      title: true,
+      url: true,
+      excerpt: true,
+      contentPath: true,
+      status: true,
+      tags: true,
+      metadata: true,
+      distilledPostId: true,
+      sourceAt: true,
+      capturedAt: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+  }
+
+  // keyword 优先 FTS（含正文索引）；未命中再 LIKE 短字段，禁止扫 content/metadata
+  async list(input: ListInboxItemsInput): Promise<PaginatedResult<import("@knowpilot/shared").InboxItem>> {
+    if (input.keyword && !(input as any).ftsIds) {
+      try {
+        const hits = await searchFtsByEntity(this.prisma, "inbox", input.keyword, 500);
+        const ids = hits.map((h) => h.entityId).filter(Boolean);
+        if (ids.length > 0) {
+          return super.list({ ...input, ftsIds: ids } as any);
+        }
+      } catch {
+        // FTS 不可用，回退短字段 LIKE
+      }
+    }
+    return super.list(input);
   }
 
   protected buildListWhere(input: ListInboxItemsInput): any {
     const where: any = {};
     if (input.source) where.source = input.source;
     if (input.status) where.status = input.status;
-    if (input.tag) where.tags = { contains: input.tag };
+    const and: any[] = [];
+    if (input.tag) {
+      const t = input.tag.trim();
+      // CSV token 精确匹配（fav⊂favorite 时裸 contains 会误伤）
+      and.push({
+        OR: [
+          { tags: t },
+          { tags: { startsWith: `${t},` } },
+          { tags: { endsWith: `,${t}` } },
+          { tags: { contains: `,${t},` } },
+        ],
+      });
+    }
     if (input.collectionId) {
       if (input.collectionId === "unknown") {
-        where.AND = [
-          ...(where.AND ?? []),
-          { source: "zhihu" },
-          { NOT: { metadata: { contains: '"collectionId"' } } },
-        ];
+        and.push({ source: "zhihu" }, { NOT: { metadata: { contains: '"collectionId"' } } });
       } else {
         where.metadata = { contains: `"collectionId":"${input.collectionId}"` };
       }
     }
-    if (input.keyword) {
+    if ((input as any).ftsIds) {
+      where.id = { in: (input as any).ftsIds };
+    } else if (input.keyword) {
+      // 短字段 LIKE 兜底：绝不扫 content/metadata（全表 LIKE 正文会卡数秒）
       where.OR = [
         { title: { contains: input.keyword } },
         { excerpt: { contains: input.keyword } },
         { url: { contains: input.keyword } },
-        { content: { contains: input.keyword } },
         { tags: { contains: input.keyword } },
-        { metadata: { contains: input.keyword } },
       ];
     }
+    if (and.length) where.AND = [...(where.AND ?? []), ...and];
     return where;
   }
 
-  /** 分面：按来源 / 知乎收藏夹 / 小红书点赞·收藏计数（单用户体量内存聚合即可） */
+  protected override getOrderBy(input: ListInboxItemsInput): any {
+    const order = input.order || "desc";
+    const orderBy = input.orderBy || "capturedAt";
+    // sourceAt 为空的条目回退到 capturedAt
+    if (orderBy === "sourceAt") {
+      return [{ sourceAt: order }, { capturedAt: order }];
+    }
+    return { [orderBy]: order };
+  }
+
+  protected override async afterCreate(
+    entity: import("@knowpilot/shared").InboxItem,
+    _input: CreateInboxItemInput,
+  ): Promise<void> {
+    await super.afterCreate(entity, _input);
+    try {
+      await upsertFtsRow(
+        this.prisma,
+        "inbox",
+        entity.id,
+        entity.title,
+        `[${entity.source}] ${entity.url ?? ""}\n${entity.tags.join(",")}\n${entity.excerpt ?? ""}\n${entity.content ?? ""}`,
+      );
+    } catch (err) {
+      console.warn("[inbox] FTS afterCreate 失败:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    try {
+      await deleteFtsRow(this.prisma, "inbox", existing.id);
+    } catch (err) {
+      console.warn("[inbox] FTS afterDelete 失败:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** 分面：来源用 groupBy；收藏夹/标签只扫轻量字段 */
   async facets(input: { status?: string } = {}) {
     const where: { status?: string } = {};
     if (input.status) where.status = input.status;
-    const rows = await this.prisma.inboxItem.findMany({
-      where,
-      select: { source: true, tags: true, metadata: true },
-    });
+
+    const [total, sourceGroups, zhihuRows, xhsRows, bilibiliRows] = await Promise.all([
+      this.prisma.inboxItem.count({ where }),
+      this.prisma.inboxItem.groupBy({
+        by: ["source"],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.inboxItem.findMany({
+        where: { ...where, source: "zhihu" },
+        select: { metadata: true },
+      }),
+      this.prisma.inboxItem.findMany({
+        where: { ...where, source: "xhs" },
+        select: { tags: true },
+      }),
+      this.prisma.inboxItem.findMany({
+        where: { ...where, source: "bilibili" },
+        select: { tags: true, metadata: true },
+      }),
+    ]);
+
     const bySource: Record<string, number> = {};
+    for (const g of sourceGroups) bySource[g.source] = g._count._all;
+
     const zhihuMap = new Map<string, { id: string; title: string; count: number }>();
+    for (const row of zhihuRows) {
+      let meta: Record<string, unknown> = {};
+      try {
+        meta = row.metadata ? JSON.parse(row.metadata) : {};
+      } catch {
+        meta = {};
+      }
+      const id = meta.collectionId != null ? String(meta.collectionId) : "unknown";
+      const title =
+        typeof meta.collectionTitle === "string" && meta.collectionTitle
+          ? meta.collectionTitle
+          : id === "unknown"
+            ? "未标注收藏夹"
+            : `收藏夹 ${id}`;
+      const prev = zhihuMap.get(id) ?? { id, title, count: 0 };
+      prev.count += 1;
+      if (typeof meta.collectionTitle === "string" && meta.collectionTitle) {
+        prev.title = meta.collectionTitle;
+      }
+      zhihuMap.set(id, prev);
+    }
+
     let xhsLike = 0;
     let xhsFavorite = 0;
+    for (const row of xhsRows) {
+      const tags = String(row.tags || "").split(",");
+      if (tags.includes("like")) xhsLike += 1;
+      if (tags.includes("favorite")) xhsFavorite += 1;
+    }
+
     let bilibiliFav = 0;
     let bilibiliToview = 0;
     const bilibiliMap = new Map<string, { id: string; title: string; count: number }>();
-    for (const row of rows) {
-      bySource[row.source] = (bySource[row.source] ?? 0) + 1;
-      if (row.source === "zhihu") {
-        let meta: Record<string, unknown> = {};
-        try {
-          meta = row.metadata ? JSON.parse(row.metadata) : {};
-        } catch {
-          meta = {};
-        }
-        const id = meta.collectionId != null ? String(meta.collectionId) : "unknown";
+    for (const row of bilibiliRows) {
+      const tags = String(row.tags || "").split(",");
+      if (tags.includes("toview")) bilibiliToview += 1;
+      if (tags.includes("favorite")) bilibiliFav += 1;
+      let meta: Record<string, unknown> = {};
+      try {
+        meta = row.metadata ? JSON.parse(row.metadata) : {};
+      } catch {
+        meta = {};
+      }
+      if (meta.collectionId != null) {
+        const id = String(meta.collectionId);
         const title =
           typeof meta.collectionTitle === "string" && meta.collectionTitle
             ? meta.collectionTitle
-            : id === "unknown"
-              ? "未标注收藏夹"
-              : `收藏夹 ${id}`;
-        const prev = zhihuMap.get(id) ?? { id, title, count: 0 };
+            : `收藏夹 ${id}`;
+        const prev = bilibiliMap.get(id) ?? { id, title, count: 0 };
         prev.count += 1;
         if (typeof meta.collectionTitle === "string" && meta.collectionTitle) {
           prev.title = meta.collectionTitle;
         }
-        zhihuMap.set(id, prev);
-      }
-      if (row.source === "xhs") {
-        const tags = String(row.tags || "");
-        if (tags.split(",").includes("like")) xhsLike += 1;
-        if (tags.split(",").includes("favorite")) xhsFavorite += 1;
-      }
-      if (row.source === "bilibili") {
-        const tags = String(row.tags || "");
-        if (tags.split(",").includes("toview")) bilibiliToview += 1;
-        if (tags.split(",").includes("favorite")) bilibiliFav += 1;
-        let meta: Record<string, unknown> = {};
-        try {
-          meta = row.metadata ? JSON.parse(row.metadata) : {};
-        } catch {
-          meta = {};
-        }
-        if (meta.collectionId != null) {
-          const id = String(meta.collectionId);
-          const title =
-            typeof meta.collectionTitle === "string" && meta.collectionTitle
-              ? meta.collectionTitle
-              : `收藏夹 ${id}`;
-          const prev = bilibiliMap.get(id) ?? { id, title, count: 0 };
-          prev.count += 1;
-          if (typeof meta.collectionTitle === "string" && meta.collectionTitle) {
-            prev.title = meta.collectionTitle;
-          }
-          bilibiliMap.set(id, prev);
-        }
+        bilibiliMap.set(id, prev);
       }
     }
+
     return {
-      total: rows.length,
+      total,
       bySource,
       zhihuCollections: Array.from(zhihuMap.values()).sort((a, b) => b.count - a.count),
       xhs: { like: xhsLike, favorite: xhsFavorite },
@@ -4055,37 +4162,116 @@ export class InboxService extends BaseService<
     return captureInboxUrls(this.prisma, this.config, input);
   }
 
-  async syncZhihu(input: InboxSyncZhihuInput) {
+  async syncZhihu(
+    input: InboxSyncZhihuInput,
+    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    shouldAbort?: () => boolean,
+  ) {
     const { syncZhihuCollection, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
     ensureInboxDirs(this.config);
     const parsed = inboxSyncZhihuSchema.parse(input ?? {});
-    return syncZhihuCollection(this.prisma, this.config, parsed);
+    return syncZhihuCollection(this.prisma, this.config, {
+      ...parsed,
+      onProgress,
+      shouldAbort,
+    });
   }
 
-  async syncXhs(input: InboxSyncXhsInput) {
+  async syncXhs(
+    input: InboxSyncXhsInput,
+    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    shouldAbort?: () => boolean,
+  ) {
     const { syncXhsLibrary, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
     ensureInboxDirs(this.config);
     const parsed = inboxSyncXhsSchema.parse(input ?? {});
-    return syncXhsLibrary(this.prisma, this.config, parsed);
+    return syncXhsLibrary(this.prisma, this.config, { ...parsed, onProgress, shouldAbort });
   }
 
-  async syncBilibili(input: InboxSyncBilibiliInput) {
+  async syncBilibili(
+    input: InboxSyncBilibiliInput,
+    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    shouldAbort?: () => boolean,
+  ) {
     const { syncBilibiliLibrary, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
     ensureInboxDirs(this.config);
     const parsed = inboxSyncBilibiliSchema.parse(input ?? {});
-    return syncBilibiliLibrary(this.prisma, this.config, parsed);
+    return syncBilibiliLibrary(this.prisma, this.config, {
+      ...parsed,
+      onProgress,
+      shouldAbort,
+    });
   }
 
-  async scanScreenshots(input: InboxScanScreenshotsInput) {
+  async startPlatformSync(input: InboxPlatformSyncStartInput) {
+    const { startInboxPlatformSyncJob } = await import("./infra/inboxPlatformSyncJob.js");
+    const { ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { getServiceContainer } = await import("./infra/serviceContainer.js");
+    ensureInboxDirs(this.config);
+    const parsed = inboxPlatformSyncStartSchema.parse(input ?? {});
+    try {
+      const services = getServiceContainer(this.prisma, this.eventBus, this.config);
+      return startInboxPlatformSyncJob(services, parsed);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new TRPCError({
+        code: message.includes("进行中") ? "CONFLICT" : "BAD_REQUEST",
+        message,
+      });
+    }
+  }
+
+  async getPlatformSyncProgress(jobId: string) {
+    const { getInboxPlatformSyncJob } = await import("./infra/inboxPlatformSyncJob.js");
+    const job = getInboxPlatformSyncJob(jobId);
+    if (!job) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `同步任务不存在或已过期: ${jobId}`,
+      });
+    }
+    return job;
+  }
+
+  async getActivePlatformSync() {
+    const { getActiveInboxPlatformSyncJob } = await import("./infra/inboxPlatformSyncJob.js");
+    return getActiveInboxPlatformSyncJob();
+  }
+
+  async getLatestPlatformSync() {
+    const { getLatestInboxPlatformSyncJob } = await import("./infra/inboxPlatformSyncJob.js");
+    return getLatestInboxPlatformSyncJob();
+  }
+
+  async cancelPlatformSync(jobId?: string) {
+    const { cancelInboxPlatformSyncJob } = await import("./infra/inboxPlatformSyncJob.js");
+    try {
+      return cancelInboxPlatformSyncJob(jobId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new TRPCError({
+        code: message.includes("不存在") ? "NOT_FOUND" : "BAD_REQUEST",
+        message,
+      });
+    }
+  }
+
+  async scanScreenshots(
+    input: InboxScanScreenshotsInput,
+    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+  ) {
     const { scanScreenshotDrop, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
     ensureInboxDirs(this.config);
-    return scanScreenshotDrop(this.prisma, this.config, input);
+    return scanScreenshotDrop(this.prisma, this.config, { ...input, onProgress });
   }
 
-  async ingestWechatDrop(input: InboxIngestWechatDropInput) {
+  async ingestWechatDrop(
+    input: InboxIngestWechatDropInput,
+    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+  ) {
     const { ingestWechatDropFile, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
     ensureInboxDirs(this.config);
-    return ingestWechatDropFile(this.prisma, this.config, input);
+    return ingestWechatDropFile(this.prisma, this.config, { ...input, onProgress });
   }
 
   async ignoreItems(input: InboxIgnoreInput) {

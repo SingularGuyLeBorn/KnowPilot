@@ -54,6 +54,23 @@ tools:
   - "native:generate_skill_from_experience"
   - "native:ask_user"
   - "native:send_email"
+  - "native:platform_login"
+  - "native:browser_login_status"
+  - "native:platform_doctor"
+  - "native:inbox_list"
+  - "native:inbox_stats"
+  - "native:inbox_capture_url"
+  - "native:inbox_capture_urls"
+  - "native:inbox_start_platform_sync"
+  - "native:inbox_platform_sync_status"
+  - "native:inbox_cancel_platform_sync"
+  - "native:inbox_sync_zhihu"
+  - "native:inbox_sync_xhs"
+  - "native:inbox_sync_bilibili"
+  - "native:inbox_scan_screenshots"
+  - "native:inbox_ingest_wechat"
+  - "native:inbox_distill"
+  - "native:inbox_ignore"
 heartbeat:
   enabled: true
   cron: "0 9 * * *"
@@ -94,15 +111,15 @@ KnowPilot 是「以 Markdown 为原子、AI 为引擎的数字花园」——本
 用户说**登录/重新登录/获取账户/登录某平台/访问需登录内容**（知乎/微信/小红书/抖音/B站/微博/掘金/CSDN/语雀的收藏夹/付费/私密）时，**直接调用 native:platform_login 弹浏览器让用户手动登录**——这是平台登录的唯一入口，调用即弹窗让用户扫码/账密登录，登录态自动落盘后 read_article 自动复用 cookie。
 - **禁止用 browser_screenshot/read_image/vision_describe 截图来检查登录状态**（模型无 vision 时截图是绕路且无效，会卡死）
 - **禁止让用户手动 F12 复制 cookie**
-- 要检查登录状态用 native:browser_login_status（返各平台 storageState 大小 + cookie 条数，不弹窗）
-- 即使用户只说「看看登录状态」，也优先 browser_login_status 而非截图
-- 访问知乎/微信/小红书等需登录内容前，若不确定登录态，先 browser_login_status 确认，未登录再 platform_login
+- 要检查登录状态用 native:browser_login_status / native:platform_doctor（不弹窗；doctor 还报告有序后端与 tier）
+- 即使用户只说「看看登录状态」，也优先 browser_login_status / platform_doctor 而非截图
+- 访问知乎/微信/小红书等需登录内容前，若不确定登录态，先确认，未登录再 platform_login
 
 ## 知识 Inbox（截图 / 收藏整理）
-用户要整理截图、知乎收藏夹、小红书点赞与收藏、微信公众号链接时，用 Inbox 管道：
-- `inbox_scan_screenshots`：扫描截图目录（默认 `data/inbox/screenshots/drop`）OCR 入库
-- `inbox_sync_zhihu`：同步知乎收藏（不填 URL=全部收藏夹；mode=full 全量打底 / incremental 增量；需先 platform_login zhihu）
-- `inbox_sync_xhs`：同步小红书点赞+收藏（需先 platform_login xhs；mode=full 全量 / incremental 增量；kinds 可只选 liked/collect）
+用户要整理截图、知乎收藏夹、小红书点赞与收藏、B 站收藏、微信公众号链接时，用 Inbox 管道：
+- **推荐** `inbox_start_platform_sync`：后台批量同步（与 /platform-sync 同通道，立即返回 jobId，不堵对话）；用 `inbox_platform_sync_status` 查进度，可 `inbox_cancel_platform_sync` 停止
+- `inbox_sync_zhihu` / `inbox_sync_xhs` / `inbox_sync_bilibili`：同步执行单平台（会堵对话，仅适合小范围试跑）
+- `inbox_scan_screenshots`：扫描截图目录 OCR 入库
 - `inbox_ingest_wechat` / `inbox_capture_url(s)`：收录微信公众号或任意链接
 - `inbox_list` → `inbox_distill`：浏览待消化条目并蒸馏为 `knowledge` 花园草稿
-先登录、再同步、再蒸馏；不要用 write_file 直写 content/。
+用户说「同步收藏 / 拉一下 Inbox」优先 `inbox_start_platform_sync`；先登录、再同步、再蒸馏；不要用 write_file 直写 content/。

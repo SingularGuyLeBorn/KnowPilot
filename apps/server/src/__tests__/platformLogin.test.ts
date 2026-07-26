@@ -4,7 +4,9 @@ import {
   collectNamedCookieMap,
   detectLoginCookieSignal,
   hasRequiredAuthCookies,
+  isXhsAuthChallengeUrl,
   platformHasRealLoginCookies,
+  textLooksLikeXhsLoginPending,
   type PlatformLoginConfig,
 } from "../infra/metablog/auth/platformLogin.js";
 import type { CookiePlatform } from "../infra/cookieJar.js";
@@ -163,16 +165,57 @@ describe("hasRequiredAuthCookies", () => {
   });
 });
 
+describe("isXhsAuthChallengeUrl", () => {
+  it("登录页 / 安全验证 / verifyUuid 视为门禁", () => {
+    expect(isXhsAuthChallengeUrl("https://www.xiaohongshu.com/login?redirectPath=/explore")).toBe(
+      true,
+    );
+    expect(
+      isXhsAuthChallengeUrl(
+        "https://www.xiaohongshu.com/website-login/captcha?verifyUuid=a2cf5ff3-8af1",
+      ),
+    ).toBe(true);
+    expect(isXhsAuthChallengeUrl("https://www.xiaohongshu.com/?verifyUuid=xxx")).toBe(true);
+  });
+
+  it("explore / 用户页不是门禁", () => {
+    expect(isXhsAuthChallengeUrl("https://www.xiaohongshu.com/explore")).toBe(false);
+    expect(isXhsAuthChallengeUrl("https://www.xiaohongshu.com/user/profile/abc")).toBe(false);
+  });
+});
+
+describe("textLooksLikeXhsLoginPending", () => {
+  it("扫码成功未确认 / 安全验证文案视为未完成", () => {
+    expect(textLooksLikeXhsLoginPending("扫码成功，请在手机上确认登录")).toBe(true);
+    expect(textLooksLikeXhsLoginPending("Security Verification")).toBe(true);
+    expect(textLooksLikeXhsLoginPending("已扫码，等待确认")).toBe(true);
+  });
+
+  it("探索页推荐流常见词不算 pending（防误判已登录主页）", () => {
+    expect(textLooksLikeXhsLoginPending("发现\n关注\n西安美食推荐")).toBe(false);
+    expect(textLooksLikeXhsLoginPending("打开 App 扫一扫看更多")).toBe(false);
+  });
+});
+
 describe("platformHasRealLoginCookies smoke", () => {
-  it("无真登录 cookie 时 xhs 为 false", () => {
+  it("xhs 离线判定：auth cookie 或 (强信号 loginMeta+web_session)；弱 meta 不认", () => {
     const r = platformHasRealLoginCookies("xhs");
     if (!r.loggedIn) {
-      expect(r.hitCookies).toEqual([]);
-    } else {
-      for (const name of r.hitCookies) {
-        expect(["customer-sso-sid", "galaxy_creator_session_id"]).toContain(name);
-      }
+      // 允许空；若本机只有历史弱 meta（dom_profile/web_session_change）必须报未登录
+      return;
     }
+    const allowed = new Set([
+      "customer-sso-sid",
+      "galaxy_creator_session_id",
+      "web_session",
+      "dom_me",
+    ]);
+    for (const name of r.hitCookies) {
+      expect(allowed.has(name)).toBe(true);
+    }
+    expect(r.hitCookies).not.toContain("dom_profile");
+    expect(r.hitCookies).not.toContain("web_session_change");
+    expect(r.hitCookies).not.toContain("me_api");
   });
 
   it("配置自检：每个平台 authCookieNames 非空", () => {

@@ -37,15 +37,16 @@ export function getChromeLaunchOptions(extra?: LaunchOptions): LaunchOptions {
 
 export async function launchPlaywrightBrowser(
   chromium: { launch: (opts?: LaunchOptions) => Promise<Browser> },
-  opts: LaunchOptions & { isZhihu?: boolean } = {},
+  opts: LaunchOptions & { isZhihu?: boolean; /** 小红书等同知乎：有头 + 降自动化特征，防空页 */ antiBot?: boolean } = {},
 ): Promise<Browser> {
-  const { isZhihu = false, ...rest } = opts;
+  const { isZhihu = false, antiBot = false, ...rest } = opts;
+  const headed = isZhihu || antiBot;
   const useChrome = hasSystemChrome();
   return chromium.launch({
-    headless: isZhihu ? false : (rest.headless ?? true),
+    headless: headed ? false : (rest.headless ?? true),
     channel: useChrome ? "chrome" : undefined,
-    args: isZhihu
-      ? ["--disable-blink-features=AutomationControlled"]
+    args: headed
+      ? ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
       : ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", ...(rest.args ?? [])],
     ...rest,
   });

@@ -211,6 +211,8 @@ export interface InboxItem {
   tags: string[];
   metadata: Record<string, unknown>;
   distilledPostId: string | null;
+  /** 原平台发布时间；无则 null，列表排序回退 capturedAt */
+  sourceAt: string | Date | null;
   capturedAt: string | Date;
   createdAt: string | Date;
   updatedAt: string | Date;

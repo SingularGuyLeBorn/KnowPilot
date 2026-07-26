@@ -260,3 +260,135 @@ export function ChatShortcutHints({
     </TooltipProvider>
   );
 }
+
+/** 统一 source key（platform-sync 用 screenshots 复数） */
+function normalizePlatformSource(source: string): string {
+  if (source === "screenshots") return "screenshot";
+  return source;
+}
+
+const PLATFORM_LABELS: Record<string, string> = {
+  zhihu: "知乎",
+  xhs: "小红书",
+  bilibili: "B站",
+  wechat: "微信",
+  screenshot: "截图",
+  url: "链接",
+};
+
+export function platformSourceLabel(source: string): string {
+  const key = normalizePlatformSource(source);
+  return PLATFORM_LABELS[key] ?? source;
+}
+
+/** 主题线稿：底 brand-soft，线 brand-deep；属性写死在 path 上，避免 g 透传异常 */
+function PlatformGlyph({ source }: { source: string }) {
+  const common = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  switch (source) {
+    case "zhihu":
+      return (
+        <>
+          <path
+            {...common}
+            d="M9 12c0-3.3 3-6 7-6s6.2 2.2 6.8 5.2A5 5 0 0 1 21 20.5h-1l-3 2.2.7-2.2A6.2 6.2 0 0 1 9 12z"
+          />
+          <path {...common} d="M14.5 10.6c.8-.8 2.2-.8 3 0 .6.6.6 1.5 0 2.1-.5.5-1 .7-1.3 1.3-.2.4-.3.8-.3 1.2" />
+          <circle cx="16" cy="18.2" r="0.9" fill="currentColor" />
+        </>
+      );
+    case "xhs":
+      return (
+        <>
+          <path
+            {...common}
+            d="M10 9h10a2 2 0 0 1 2 2v11.2c0 .5-.6.8-1 .5l-3.2-2.1H10a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2z"
+          />
+          <path {...common} d="M12.2 13.5h6.5M12.2 16.5h4.5" />
+        </>
+      );
+    case "bilibili":
+      return (
+        <>
+          <rect {...common} x="7.5" y="11.5" width="17" height="12" rx="2.8" />
+          <path {...common} d="M11.5 8.2l2.8 3M20.5 8.2l-2.8 3" />
+          <circle cx="13" cy="16.8" r="1" fill="currentColor" />
+          <circle cx="19" cy="16.8" r="1" fill="currentColor" />
+          <path {...common} d="M14 19.5c1 0.9 3 0.9 4 0" />
+        </>
+      );
+    case "wechat":
+      return (
+        <>
+          <path
+            {...common}
+            d="M11.5 9.5c-3.6 0-6.5 2.4-6.5 5.3 0 1.7.9 3.2 2.4 4.1l-.5 1.8 2.1-1.1c.7.2 1.5.3 2.3.3.4 0 .7 0 1.1-.1"
+          />
+          <path
+            {...common}
+            d="M15.2 15c0-2.8 2.8-5.1 6.3-5.1S27.8 12.2 27.8 15s-2.8 5.1-6.3 5.1c-.7 0-1.4-.1-2.1-.3l-2 1 .4-1.7c-1.4-1-2.2-2.4-2.2-4.1z"
+          />
+          <circle cx="19.4" cy="14.9" r="0.75" fill="currentColor" />
+          <circle cx="23.2" cy="14.9" r="0.75" fill="currentColor" />
+        </>
+      );
+    case "screenshot":
+      return (
+        <>
+          <rect {...common} x="7.5" y="10.8" width="17" height="12.5" rx="2.4" />
+          <circle {...common} cx="16" cy="17" r="3" />
+          <path {...common} d="M11.5 10.8l1-2h7l1 2" />
+        </>
+      );
+    case "url":
+      return (
+        <>
+          <path {...common} d="M13.2 19l-1.1 1.1a2.8 2.8 0 0 1-4-4l2.5-2.5a2.8 2.8 0 0 1 4 0" />
+          <path {...common} d="M18.8 13l1.1-1.1a2.8 2.8 0 0 1 4 4l-2.5 2.5a2.8 2.8 0 0 1-4 0" />
+          <path {...common} d="M13.8 18.2l4.4-4.4" />
+        </>
+      );
+    default:
+      return (
+        <>
+          <circle {...common} cx="16" cy="16" r="6.5" />
+          <path {...common} d="M16 13v3.2l2 1.2" />
+        </>
+      );
+  }
+}
+
+export function PlatformSourceIcon({
+  source,
+  size = 20,
+  className,
+  title,
+}: {
+  source: string;
+  size?: number;
+  className?: string;
+  title?: string;
+}) {
+  const key = normalizePlatformSource(source);
+  const label = PLATFORM_LABELS[key] ?? source;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn("shrink-0 text-[var(--kp-brand-deep)]", className)}
+      role="img"
+      aria-label={title ?? label}
+    >
+      <rect width="32" height="32" rx="8" fill="var(--kp-brand-soft)" />
+      <PlatformGlyph source={key} />
+    </svg>
+  );
+}

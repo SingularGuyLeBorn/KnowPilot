@@ -43,6 +43,7 @@ import {
 } from "../../../metablog/auth/platformLogin.js";
 import { listSavedCookiePlatforms, loadCookies } from "../../../cookieJar.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "../types.js";
+import { coerceToolBoolean } from "../types.js";
 import { z } from "zod";
 import { zodParams } from "../zodParams.js";
 
@@ -58,7 +59,11 @@ async function platformLoginTool(args: Record<string, unknown>, _ctx: NativeTool
   }
   // 登录前清掉仅含访客 cookie 的假登录态，避免 Agent/用户误以为已登录
   const purged = purgeInvalidPlatformLogin(platform);
-  const result = await capturePlatformLoginState(platform, Number(args.timeoutSec || 180));
+  const defaultTimeout = platform === "xhs" ? 480 : 180;
+  const result = await capturePlatformLoginState(
+    platform,
+    Number(args.timeoutSec || defaultTimeout),
+  );
   return purged.purged ? { ...result, purgedInvalidBeforeLogin: purged.reason } : result;
 }
 
@@ -72,11 +77,21 @@ async function browserLoginStatusTool(_args: Record<string, unknown>, _ctx: Nati
   return {
     loggedIn,
     notLoggedIn,
-    hint: "以 details[].loggedIn + authCookieNames 为准；hasStorageState/文件大小不能证明已登录。各平台捕获时还会走身份 API 复核。",
+    hint:
+      "以 details[].loggedIn 为准。hasIdentityVerify=true 只表示「配置了复核函数」，不等于刚才已复核通过。" +
+      "通道体检（有序后端/Tier）用 platform_doctor；小红书须扫码后手机点确认。",
     details,
     cookieJars: platforms.map((p) => ({ platform: p, cookieCount: loadCookies(p).length })),
     purgedInvalid: purged.length ? purged : undefined,
   };
+}
+
+async function platformDoctorTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("platform_doctor 需要 prisma 上下文");
+  const { doctorPlatformChannels } = await import("../../../platformChannels.js");
+  return doctorPlatformChannels(ctx.prisma, {
+    liveProbe: coerceToolBoolean(args.liveProbe),
+  });
 }
 
 // ─── GitHub ───
@@ -362,21 +377,37 @@ export const githubDefs: NativeToolDefinition[] = [
   {
     name: "platform_login",
     description:
-      "平台登录的唯一入口：调用即弹出 Playwright 浏览器窗口，让用户手动登录指定平台（扫码/账密），登录态自动落盘（storageState + cookieJar）。支持：zhihu/wechat/xhs/douyin/bilibili/weibo/juejin/csdn/yuque。**必须等用户在窗口内完成扫码**——小红书以扫码后 web_session 变化或侧栏「我」为准（不要提前关窗）。检查状态用 browser_login_status（看 loggedIn）。",
+      "【Tier 1】平台登录唯一入口：弹 Playwright 让用户扫码/账密；落盘 storageState+cookieJar。支持 zhihu/wechat/xhs/douyin/bilibili/weibo/juejin/csdn/yuque。小红书须手机确认且侧栏出现「我」。查状态用 browser_login_status；通道/后端体检用 platform_doctor。",
     parameters: zodParams(
       z.object({
         platform: z
           .string()
           .describe("平台名：zhihu/wechat/xhs/douyin/bilibili/weibo/juejin/csdn/yuque"),
-        timeoutSec: z.number().describe("等待登录超时秒数，默认 180（扫码建议 ≥180）").optional(),
+        timeoutSec: z
+          .number()
+          .describe("等待登录超时秒数；小红书默认至少 300（扫码+手机确认+安全验证），其它默认 180")
+          .optional(),
       }),
     ),
   },
   {
     name: "browser_login_status",
     description:
-      "列出各平台是否真登录（details[].loggedIn + authCookieNames/hitCookies）。以 loggedIn 为准；文件大小不能证明已登录。会自动清理全平台无效假登录态。",
+      "【Tier 0 本地】列出各平台真登录态（loggedIn）。文件大小≠已登录；会清理访客假态。通道有序后端/在线探测见 platform_doctor。",
     parameters: zodParams(z.object({})),
+  },
+  {
+    name: "platform_doctor",
+    description:
+      "【学 AgentReach doctor】体检 Inbox/读文/搜索通道：tier、有序 backends、activeBackend、本地登录。默认非交互；liveProbe=true 才对知乎/B站打轻量 HTTP（不弹窗）。不装 AgentReach CLI。",
+    parameters: zodParams(
+      z.object({
+        liveProbe: z
+          .boolean()
+          .describe("默认 false；true=知乎/B站轻量在线探测")
+          .optional(),
+      }),
+    ),
   },
   {
     name: "github_search_repos",
@@ -714,6 +745,7 @@ export const githubDefs: NativeToolDefinition[] = [
 export const githubHandlers: Record<string, NativeToolHandler> = {
   platform_login: platformLoginTool,
   browser_login_status: browserLoginStatusTool,
+  platform_doctor: platformDoctorTool,
   github_search_repos: githubSearchReposTool,
   github_get_repo: githubGetRepoTool,
   github_create_repo: githubCreateRepoTool,
