@@ -319,8 +319,17 @@ function TreeNodeItem({
   );
 }
 
-export function PostTreeNav({ className }: { className?: string }) {
-  const { data, isLoading } = trpc.post.tree.useQuery({});
+export function PostTreeNav({
+  className,
+  /** 非空时只拉该花园目录，树顶不再套一层花园分组 */
+  gardenId,
+}: {
+  className?: string;
+  gardenId?: string | null;
+}) {
+  const { data, isLoading } = trpc.post.tree.useQuery(
+    gardenId ? { garden: gardenId } : {},
+  );
   const pathname = usePathname();
   const activeSlug = useMemo(() => getPostSlug(pathname), [pathname]);
   const tree = useMemo(() => buildTree(data || []), [data]);

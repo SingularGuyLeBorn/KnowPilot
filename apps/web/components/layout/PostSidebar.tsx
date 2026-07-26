@@ -5,7 +5,9 @@ import { cn } from "@/lib/utils";
 import { PostTreeNav } from "@/components/post/PostTreeNav";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FolderOpen, PlusCircle } from "lucide-react";
+import { ArrowLeft, FolderOpen, PlusCircle } from "lucide-react";
+import { useContentGardenScope } from "@/lib/hooks";
+import { trpc } from "@/lib/trpc";
 
 interface PostSidebarProps {
   className?: string;
@@ -17,10 +19,15 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 280;
 
-/** 文章专用侧栏 — 仅文档目录树，与系统导航完全分离（对齐 MetaBlog GlobalSidebar）
- *  支持拖拽调整宽度（持久化到 localStorage） */
+/** 文章专用侧栏 — 进入某座库后只显示该库目录（对齐「先选书架再翻书」） */
 export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
   const pathname = usePathname();
+  const { gardenId, isScoped } = useContentGardenScope();
+  const { data: gardenMeta } = trpc.garden.getById.useQuery(
+    { id: gardenId! },
+    { enabled: !!gardenId && isScoped },
+  );
+
   const [width, setWidth] = useState(() => {
     try {
       const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -68,6 +75,13 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
     };
   }, [width]);
 
+  const title = isScoped
+    ? (gardenMeta?.title || gardenId || "本库目录")
+    : "全部知识库";
+  const newHref = gardenId
+    ? `/editor?garden=${encodeURIComponent(gardenId)}`
+    : "/editor";
+
   return (
     <aside
       className={cn(
@@ -81,28 +95,41 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
         if (t?.closest("a[href]")) onNavigate();
       }}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--kp-divider)] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <FolderOpen className="h-4 w-4 text-[var(--kp-brand-deep)]" />
-          <span className="text-sm font-semibold text-[var(--kp-text-1)]">文档目录</span>
+      <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--kp-divider)] px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <FolderOpen className="h-4 w-4 shrink-0 text-[var(--kp-brand-deep)]" />
+            <span className="truncate text-sm font-semibold text-[var(--kp-text-1)]" title={title}>
+              {title}
+            </span>
+          </div>
+          <Link
+            href={newHref}
+            onClick={() => onNavigate?.()}
+            className={cn(
+              "flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition",
+              pathname.startsWith("/editor")
+                ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+                : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+            )}
+            title="新建文章"
+          >
+            <PlusCircle className="h-3.5 w-3.5" />
+            新建
+          </Link>
         </div>
-        <Link
-          href="/editor"
-          onClick={() => onNavigate?.()}
-          className={cn(
-            "flex min-h-11 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition",
-            pathname.startsWith("/editor")
-              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
-              : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
-          )}
-          title="新建文章"
-        >
-          <PlusCircle className="h-3.5 w-3.5" />
-          新建
-        </Link>
+        {isScoped && (
+          <Link
+            href="/gardens"
+            onClick={() => onNavigate?.()}
+            className="inline-flex items-center gap-1 text-[11px] text-[var(--kp-text-3)] transition hover:text-[var(--kp-brand-deep)]"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            全部知识库
+          </Link>
+        )}
       </div>
-      <PostTreeNav className="min-h-0 flex-1" />
-      {/* 拖拽调整宽度的手柄（移动抽屉不展示） */}
+      <PostTreeNav className="min-h-0 flex-1" gardenId={isScoped ? gardenId : null} />
       {!onNavigate && (
         <div
           onMouseDown={handleMouseDown}

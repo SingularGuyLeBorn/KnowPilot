@@ -17,9 +17,20 @@ import type { ChatSessionConfig } from "@knowpilot/shared";
 
 const configs = new Map<string, ChatSessionConfig>();
 const listeners = new Set<() => void>();
+let notifyQueued = false;
 
+/**
+ * 合并到 microtask 再通知：禁止在 React setState updater / 渲染期同步
+ * 触发 useSyncExternalStore 订阅方（否则会报
+ * "Cannot update a component while rendering a different component"）。
+ */
 function notify() {
-  for (const l of listeners) l();
+  if (notifyQueued) return;
+  notifyQueued = true;
+  queueMicrotask(() => {
+    notifyQueued = false;
+    for (const l of listeners) l();
+  });
 }
 
 /** 只读快照：无切片时回退 DEFAULT（不写 Map、不 notify）——供 useSyncExternalStore */
@@ -80,4 +91,5 @@ export function subscribeSessionConfigStore(listener: () => void): () => void {
 
 export function __resetSessionConfigStoreForTests(): void {
   configs.clear();
+  notifyQueued = false;
 }

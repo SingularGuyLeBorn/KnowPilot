@@ -7,8 +7,10 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- 动态 tRPC router 名称绑定 */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
+import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import type {
   OperationResult,
   CreatePostInput, UpdatePostInput, ListPostsInput, Post,
@@ -94,21 +96,53 @@ export function useGardens() {
   return useCRUDApi<CreateGardenInput, UpdateGardenInput & { id: string }, ListGardensInput, Garden>("garden");
 }
 
+/**
+ * 内容区当前「作用域花园」。
+ * - `/gardens/{id}`、`?garden=` → 只显示该库目录
+ * - `/posts/{slug}` 无 query → 默认 posts 库（不混其它库）
+ * - `/posts` 全部列表（无 garden）→ null（跨库全树）
+ */
+export function useContentGardenScope(): {
+  gardenId: string | null;
+  isScoped: boolean;
+} {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  return useMemo(() => {
+    const fromQuery = searchParams.get("garden")?.trim() || "";
+    const gardenHome = pathname.match(/^\/gardens\/([^/]+)\/?$/);
+    if (gardenHome?.[1]) {
+      const id = decodeURIComponent(gardenHome[1]);
+      return { gardenId: id, isScoped: true };
+    }
+    if (fromQuery) {
+      return { gardenId: fromQuery, isScoped: true };
+    }
+    if (pathname.startsWith("/posts/") && !pathname.startsWith("/posts/trash")) {
+      return { gardenId: DEFAULT_POST_GARDEN, isScoped: true };
+    }
+    if (pathname.startsWith("/editor")) {
+      return { gardenId: DEFAULT_POST_GARDEN, isScoped: true };
+    }
+    return { gardenId: null, isScoped: false };
+  }, [pathname, searchParams]);
+}
+
 /** 文章专属 Hooks 扩展 */
 export function usePosts() {
   const postCrud = useCRUDApi<CreatePostInput, UpdatePostInput, ListPostsInput, Post>("post");
   return {
     ...postCrud,
-    useBySlug: (slug: string, garden?: "posts" | "knowledge" | "resources", options?: any) => {
+    useBySlug: (slug: string, garden?: string, options?: any) => {
       return trpc.post.getBySlug.useQuery(
-        { slug, garden: garden ?? "posts" },
+        { slug, garden: garden ?? DEFAULT_POST_GARDEN },
         { enabled: !!slug, ...options },
       );
     },
     useSearch: (
       query: string,
       limit = 10,
-      garden?: "posts" | "knowledge" | "resources",
+      garden?: string,
       options?: any,
     ) => {
       return trpc.post.search.useQuery(
@@ -116,8 +150,8 @@ export function usePosts() {
         { enabled: !!query, ...options },
       );
     },
-    useTree: (garden?: "posts" | "knowledge" | "resources", options?: any) => {
-      return trpc.post.tree.useQuery({ garden }, options);
+    useTree: (garden?: string, options?: any) => {
+      return trpc.post.tree.useQuery(garden ? { garden } : {}, options);
     },
     useCategories: (options?: any) => {
       return trpc.post.categories.useQuery(undefined, options);

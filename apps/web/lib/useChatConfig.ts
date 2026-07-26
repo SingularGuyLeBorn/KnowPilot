@@ -52,11 +52,13 @@ export function useChatConfig(opts: {
               : saved.systemPrompt || selectedAgent.systemPrompt,
           };
           setChatConfig(next);
+          // 禁止在 setState updater 内写 store（会同步 notify 父级 ChatView）
           setSessionConfig(effectiveSessionId, next);
           return;
         }
+        let next: ChatSessionConfig | null = null;
         setChatConfig((prev) => {
-          const next = {
+          next = {
             ...prev,
             model: sessionDetailModel ?? selectedAgent.model,
             systemPrompt:
@@ -65,9 +67,9 @@ export function useChatConfig(opts: {
               !!sessionDetailSystemPrompt?.trim() &&
               sessionDetailSystemPrompt !== selectedAgent.systemPrompt,
           };
-          setSessionConfig(effectiveSessionId, next);
           return next;
         });
+        if (next) setSessionConfig(effectiveSessionId, next);
       });
     } else {
       startTransition(() => {
@@ -80,24 +82,26 @@ export function useChatConfig(opts: {
 
   const updateConfig = useCallback(
     (patch: Partial<ChatSessionConfig>) => {
+      let next: ChatSessionConfig | null = null;
       setChatConfig((prev) => {
-        const next = { ...prev, ...patch };
-        if (effectiveSessionId) {
-          saveSessionChatConfig(effectiveSessionId, next);
-          setSessionConfig(effectiveSessionId, next);
-        } else {
-          saveDefaultChatConfig(next);
-          setSessionConfig(NEW_STREAM_KEY, next);
-        }
-        if (effectiveSessionId && (patch.model || patch.systemPrompt !== undefined)) {
-          updateSessionMutate({
-            id: effectiveSessionId,
-            ...(patch.model ? { model: patch.model } : {}),
-            ...(patch.systemPrompt !== undefined ? { systemPrompt: patch.systemPrompt } : {}),
-          });
-        }
+        next = { ...prev, ...patch };
         return next;
       });
+      if (!next) return;
+      if (effectiveSessionId) {
+        saveSessionChatConfig(effectiveSessionId, next);
+        setSessionConfig(effectiveSessionId, next);
+      } else {
+        saveDefaultChatConfig(next);
+        setSessionConfig(NEW_STREAM_KEY, next);
+      }
+      if (effectiveSessionId && (patch.model || patch.systemPrompt !== undefined)) {
+        updateSessionMutate({
+          id: effectiveSessionId,
+          ...(patch.model ? { model: patch.model } : {}),
+          ...(patch.systemPrompt !== undefined ? { systemPrompt: patch.systemPrompt } : {}),
+        });
+      }
     },
     [effectiveSessionId, updateSessionMutate],
   );

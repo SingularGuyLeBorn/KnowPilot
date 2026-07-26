@@ -75,7 +75,7 @@ export function CommandPalette() {
       {
         id: "action:gardens",
         type: "action",
-        title: "知识库花园",
+        title: "知识库",
         href: "/gardens",
         icon: <FolderOpen className="h-4 w-4" />,
       },
@@ -90,7 +90,7 @@ export function CommandPalette() {
       {
         id: "action:posts",
         type: "action",
-        title: "前往文章列表",
+        title: "全部文章（跨库）",
         href: "/posts",
         icon: <FileText className="h-4 w-4" />,
         shortcut: "P",

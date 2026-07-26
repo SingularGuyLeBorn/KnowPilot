@@ -692,6 +692,8 @@ export interface GardenEntity {
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  postCount?: number;
+  recentPosts?: Array<{ title: string; slug: string }>;
 }
 
 export class GardenService extends BaseService<
@@ -870,6 +872,39 @@ export class GardenService extends BaseService<
     const raw = await this.prisma.garden.findFirst({ where: { id, deletedAt: null } });
     if (!raw) throw new TRPCError({ code: "NOT_FOUND", message: `花园不存在：${id}` });
     return this.formatEntity(raw);
+  }
+
+  /** list 附带 postCount + 最近 3 篇标题，供知识库门户卡片 */
+  override async list(input: ListGardensInput): Promise<PaginatedResult<GardenEntity>> {
+    const result = await super.list(input);
+    const ids = result.items.map((g) => g.id);
+    if (ids.length === 0) return result;
+
+    const [counts, ...previewBatches] = await Promise.all([
+      this.prisma.post.groupBy({
+        by: ["garden"],
+        where: { garden: { in: ids }, deletedAt: null },
+        _count: { _all: true },
+      }),
+      ...ids.map((gardenId) =>
+        this.prisma.post.findMany({
+          where: { garden: gardenId, deletedAt: null },
+          orderBy: { updatedAt: "desc" },
+          take: 3,
+          select: { title: true, slug: true },
+        }),
+      ),
+    ]);
+
+    const countMap = new Map(counts.map((c) => [c.garden, c._count._all]));
+    return {
+      ...result,
+      items: result.items.map((g, i) => ({
+        ...g,
+        postCount: countMap.get(g.id) ?? 0,
+        recentPosts: previewBatches[i] ?? [],
+      })),
+    };
   }
 
   /**

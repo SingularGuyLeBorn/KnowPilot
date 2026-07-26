@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   __resetSessionConfigStoreForTests,
   ensureSessionConfigHydrated,
@@ -6,6 +6,7 @@ import {
   migrateSessionConfig,
   patchSessionConfig,
   setSessionConfig,
+  subscribeSessionConfigStore,
 } from "../sessionConfigStore";
 import { DEFAULT_CHAT_CONFIG, saveSessionChatConfig } from "../chatConfig";
 
@@ -13,6 +14,16 @@ describe("sessionConfigStore (E8)", () => {
   beforeEach(() => {
     __resetSessionConfigStoreForTests();
     if (typeof localStorage !== "undefined") localStorage.clear();
+  });
+
+  it("notify 合并到 microtask，不在 set 调用栈同步触发订阅方", async () => {
+    const spy = vi.fn();
+    const unsub = subscribeSessionConfigStore(spy);
+    setSessionConfig("s-notify", { ...DEFAULT_CHAT_CONFIG, model: "m1" });
+    expect(spy).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(spy).toHaveBeenCalledTimes(1);
+    unsub();
   });
 
   it("ensureHydrated 缺省写入 DEFAULT", () => {

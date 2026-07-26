@@ -15,6 +15,10 @@ export interface Garden {
   deletedAt: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
+  /** list 投影：未软删文章数 */
+  postCount?: number;
+  /** list 投影：最近更新文章（最多 3） */
+  recentPosts?: Array<{ title: string; slug: string }>;
 }
 
 /** 文章实体（garden = 花园 id；slug = 该根下相对路径） */

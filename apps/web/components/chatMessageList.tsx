@@ -374,14 +374,12 @@ export const ChatMessageList = memo(function ChatMessageList({
                     if (e.key === "Escape") setEditingUserId(null);
                   }}
                 />
-              ) : isAsyncResultDelivery || isParentAgentTask ? (
-                // 子 Agent 异步投递 / 父 Agent 下发任务：markdown 报告（浅底气泡，普通 prose）
+              ) : (
+                // 用户消息一律 Markdown 渲染（含普通提问 / 异步投递 / 父下发任务）
                 <PostContent
                   content={group.userMessage.content}
                   className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
                 />
-              ) : (
-                <p className="whitespace-pre-wrap text-left leading-relaxed">{group.userMessage.content}</p>
               )}
             </div>
             <MessageActions
@@ -448,7 +446,10 @@ export const ChatMessageList = memo(function ChatMessageList({
           </div>
         )}
         <div className="w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-sm text-[var(--kp-text-1)] opacity-80">
-          <p className="whitespace-pre-wrap text-left">{msg.content}</p>
+          <PostContent
+            content={msg.content}
+            className="prose-sm max-w-none text-left text-[var(--kp-text-1)] opacity-100 [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
+          />
         </div>
       </div>
     </div>

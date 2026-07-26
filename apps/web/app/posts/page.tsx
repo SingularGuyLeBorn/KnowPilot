@@ -79,9 +79,9 @@ export default function PostsPage() {
     <div className="mx-auto w-full max-w-5xl px-6 py-8 lg:px-10">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-[var(--kp-text-1)]">文章管理</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--kp-text-1)]">全部文章</h1>
             <p className="mt-1 text-sm text-[var(--kp-text-3)]">
-              共 {data?.total ?? 0} 篇
+              跨库列表 · 共 {data?.total ?? 0} 篇
               {gardenFilter !== "all" ? ` · ${gardenTitle(gardenFilter)}` : ""}
               {isFetching && !isLoading ? " · 刷新中…" : ""}
             </p>
@@ -91,7 +91,7 @@ export default function PostsPage() {
               href="/gardens"
               className={cn(buttonVariants({ variant: "outline" }), "inline-flex items-center gap-2 text-xs")}
             >
-              知识库
+              返回知识库
             </Link>
             <Link
               href="/posts/trash"

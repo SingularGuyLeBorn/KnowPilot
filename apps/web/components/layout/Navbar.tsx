@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { KnowPilotLogo } from "@/lib/icons";
 import { usePathname } from "next/navigation";
-import { BookOpen, Bot, Menu, PenLine, PlusCircle, UserCircle } from "lucide-react";
+import { BookOpen, Bot, Menu, MessageSquare, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "./CommandPalette";
 import { ThemeToggle } from "@/components/themeToggle";
@@ -13,6 +13,17 @@ interface NavbarProps {
   mode: LayoutMode;
   onMenuClick?: () => void;
   className?: string;
+}
+
+/** 内容域：库首页 / 文章列表 / 编辑器都算「知识库」高亮，不拆成三个顶栏入口 */
+function isKnowledgeActive(pathname: string): boolean {
+  return (
+    pathname.startsWith("/gardens") ||
+    pathname.startsWith("/posts") ||
+    pathname.startsWith("/editor") ||
+    pathname.startsWith("/categories") ||
+    pathname.startsWith("/tags")
+  );
 }
 
 export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
@@ -47,18 +58,23 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           <span className="hidden sm:inline">KnowPilot</span>
         </Link>
 
-        {/* 桌面顶栏；窄屏改走底栏，避免横向挤爆 */}
+        {/* 产品顶栏：知识库（内容）· 对话 · Agents · About。文章/写作不进顶栏，从库内进入。 */}
         <nav className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex">
-          <TopNavLink href="/gardens" active={pathname.startsWith("/gardens")} icon={<BookOpen className="h-4 w-4" />}>
+          <TopNavLink href="/gardens" active={isKnowledgeActive(pathname)} icon={<BookOpen className="h-4 w-4" />}>
             知识库
           </TopNavLink>
-          <TopNavLink href="/posts" active={pathname.startsWith("/posts")} icon={<PenLine className="h-4 w-4" />}>
-            文章
+          <TopNavLink
+            href="/chat"
+            active={pathname.startsWith("/chat")}
+            icon={<MessageSquare className="h-4 w-4" />}
+          >
+            对话
           </TopNavLink>
-          <TopNavLink href="/editor" active={pathname.startsWith("/editor")} icon={<PlusCircle className="h-4 w-4" />}>
-            写作
-          </TopNavLink>
-          <TopNavLink href="/agents" active={pathname.startsWith("/agents") || pathname.startsWith("/chat")} icon={<Bot className="h-4 w-4" />}>
+          <TopNavLink
+            href="/agents"
+            active={pathname.startsWith("/agents")}
+            icon={<Bot className="h-4 w-4" />}
+          >
             Agents
           </TopNavLink>
           <TopNavLink href="/about" active={pathname.startsWith("/about")} icon={<UserCircle className="h-4 w-4" />}>

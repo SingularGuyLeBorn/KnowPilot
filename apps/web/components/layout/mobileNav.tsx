@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Home,
+  BookOpen,
   PenLine,
   MessageSquare,
   LayoutGrid,
@@ -65,23 +66,28 @@ export const MOBILE_MORE_ITEMS: MobileMoreItem[] = [
   { href: "/tasks", icon: CalendarClock, label: "后台任务", group: "系统与运维" },
   { href: "/logs", icon: ScrollText, label: "运行日志", group: "系统与运维" },
   { href: "/credentials", icon: KeyRound, label: "凭据管理", group: "系统与运维" },
-  { href: "/editor", icon: PlusCircle, label: "写作", group: "博客" },
-  { href: "/about", icon: UserCircle, label: "About", group: "博客" },
+  { href: "/posts", icon: PenLine, label: "全部文章", group: "知识库" },
+  { href: "/editor", icon: PlusCircle, label: "新建文章", group: "知识库" },
+  { href: "/about", icon: UserCircle, label: "About", group: "知识库" },
 ];
 
 const PRIMARY = [
   { href: "/", icon: Home, label: "首页", match: (p: string) => p === "/" || p === "" },
   {
-    href: "/posts",
-    icon: PenLine,
-    label: "博客",
+    href: "/gardens",
+    icon: BookOpen,
+    label: "知识库",
     match: (p: string) =>
-      p.startsWith("/posts") || p.startsWith("/categories") || p.startsWith("/tags") || p.startsWith("/editor"),
+      p.startsWith("/gardens") ||
+      p.startsWith("/posts") ||
+      p.startsWith("/categories") ||
+      p.startsWith("/tags") ||
+      p.startsWith("/editor"),
   },
   {
     href: "/chat",
     icon: MessageSquare,
-    label: "Chat",
+    label: "对话",
     match: (p: string) => p.startsWith("/chat"),
   },
 ] as const;
