@@ -245,6 +245,6 @@ tRPC `session.stop`（router.ts:475-506）：`kind === "subagent"` 时走 `stopS
 | W16a-②（waitForResult 路径 AgentMessage 终结方式） | `design-decisions.md` :750-770 |
 | 并发不变量（全局任务池 §6 / 投递可靠性 §7） | `concurrency.md` :116-202 |
 | v8 任务池压测审查（Q4 死锁回归等 8 条逐项） | `review-final-task-pool.md` |
-| 运行时配置（`asyncJobs` 节：maxConcurrent/maxPerSession/maxPerWorkspace/maxQueued/taskTimeoutMs/queuedTimeoutMs/maxRetries/maxSubagentsPerSession） | `config.yaml` |
+| 运行时配置（`asyncJobs` 节：maxConcurrent/maxPerSession/maxPerWorkspace/maxQueued/taskTimeoutMs/queuedTimeoutMs/maxSubagentsPerSession；`maxRetries` 已随 v10 可重入基座删除） | `config.yaml` |
 
 **相关测试**：`__tests__/globalTaskPool.test.ts`（TP-1/TP-2/TP-4，含 Q4 死锁回归 :1223、50 spawn 压测 :866）、`__tests__/deliveryReliability.test.ts`（R-1）、`__tests__/startupRecovery.test.ts`（R-2）、`__tests__/async-task-queue.test.ts`（含 `async_task_wait` 注册表移除负向断言）。

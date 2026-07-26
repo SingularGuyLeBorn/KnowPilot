@@ -164,8 +164,8 @@ drain 时对每个排队任务逐条求值，**首个命中的上限即排队原
 ### 6.6 回收器
 
 - 池的 queue/running 是进程内存态，服务端重启即清空。
-- `recoverStaleAsyncJobs()`（启动时挂载，v10 C-2 起两态分叉）：遗留 `running/queued` 的 async_agent Task 中 `reentrant=true` 且未达重试上限的，重建执行体**重新入本池自动续跑**（背压全交池，见 §8）；其余标 `failed` 并同步子会话状态——副作用未知的任务如实宣告失败，不盲目重跑（`recoverStaleRuns` 仍只标 `interrupted` 不续跑）。
-- 不可重入任务与 AGENTS.md「运行中的 Agent 任务随服务端进程重启而丢失」一致；可重入任务的跨重启续跑见 §8。
+- `recoverStaleAsyncJobs()`（启动时挂载）：遗留 `running/queued` 的 async_agent Task **一律**标 `failed`（文案「服务重启，任务中断」），**绝不**重建执行体自动续跑——tool 任务有副作用、进度未知，盲目重跑可能重复执行；留待人工 `retryAsyncJob`。`recoverStaleRuns` 仍只标 `interrupted` 不续跑。
+- 与 AGENTS.md「服务重启不自动续跑」铁律一致；会话侧手动恢复见 §8。
 
 ---
 
@@ -193,11 +193,11 @@ v9 落地。异步结果从「任务完成」到「气泡进会话」的链路�
 - 扫描面：`delivered=true` 且终态、超龄（`RECONCILER_MIN_DELIVERED_AGE_MS=60s`，CLAIM→落库正常在秒级完成，该阈值只影响补投时机不影响正确性）、未 pinned、`deliverToQueue≠false`（同步任务结果走 tool return，永不进队列，不属补投范围）、且会话内无 `toolResults.subagentResult.jobId=X` 的 ChatMessage 的孤儿交付。
 - **ChatMessage 是唯一 ground truth**：交付是否完成只看气泡在不在，不看 Task 标志位。有气泡 → 跳过；无气泡 → 条件写回滚（同 7.2 互斥语义）→ `notifyAsyncDelivery` 重走正常 notify/autoConsume 管道补投（`[reconciler] 补投 jobId=...`，每轮上限 `RECONCILER_BATCH_LIMIT=50`）。补投不另造投递路径，对账者跑多少轮、与其他写方如何交错都不会出错（幂等）。
 
-### 7.4 重启恢复四动作：全部条件写幂等（动作 1 自 v10 起两态分叉）
+### 7.4 重启恢复四动作：全部条件写幂等
 
 `runStartupRecovery` 启动首扫（index.ts 启动序列挂载，shutdown 停 reconciler），DB 为 ground truth：
 
-1. 僵尸 running/queued async Task 两态分叉（v10 C-2 起）：`reentrant=true && retryCount<maxRetries` → `retryCount+1` 落库后自动续跑入池（见 §8）；否则 → failed（reentrant=false「服务重启，任务中断」/ 超上限「已达自动重试上限（N 次），需人工介入」）。非 reentrant 任务**不自动重跑**：tool 任务有副作用（写文件/发请求），进程死亡时执行进度未知，盲目重跑可能重复执行；`retryAsyncJob` 保留手动重试，把「要不要承担重复副作用」的决定权交还给人。
+1. 僵尸 running/queued async Task → **一律** failed（「服务重启，任务中断」），**不自动重跑**。tool 任务有副作用（写文件/发请求），进程死亡时执行进度未知，盲目重跑可能重复执行；`retryAsyncJob` 保留手动重试，把「要不要承担重复副作用」的决定权交还给人。（历史：曾短暂落地 `reentrant`/`retryCount`/`maxRetries` 两态分叉自动续跑，已按用户要求整体撤销；三列已从 schema 删除。）
 2. 僵尸 running ChatSession → paused（`updateMany` 条件写；重启后 hub 无任何活跃流，仍 running 的都是尸体）。先于动作 3 执行——drain 重注册会把有真实积压的会话重新置 running。
 3. superior 孤儿 SessionQueueItem → 重注册 drain（v7 W-E 机制；进程内 drain 链随重启丢失，pending 队列项跨重启留存于 SQLite）。
 4. `delivered=false` 终态未投递 → 重新 notify——与 R-1 reconciler **同一幂等入口** `reconcileAsyncDeliveries`，不造第二条恢复路径。
@@ -206,46 +206,35 @@ AgentMessage pending 超龄走 W14 既有 stale 对账（`SUPERIOR_MIRROR_STALE_
 
 ---
 
-## 8. 可重入与续跑（v10 C-1/C-2/C-3）
+## 8. 会话手动恢复（原 v10 C-3；可重入自动续跑已撤销）
 
-v10 落地。v9 R-2 把重启尸体「如实归档」（§7.4），v10 补上「安全复活」：系统现在知道哪些任务可以安全重跑（`reentrant`），自动重跑配持久化账本防 crash-loop；会话侧提供手动恢复闭环（不做自动恢复，理由见决策 Q3）。设计决策（Q1~Q4）见 `design-decisions.md` 文末「可重入与续跑」；两个异步工具的全生命周期语义见 `async-tools-semantics.md`（§2 生命周期、§4 三层兜底）。
+> **状态更新（现行）**：v10 曾落地 `Task.reentrant`/`retryCount`/`maxRetries` + 启动自动续跑（C-1/C-2），已按用户要求**整体撤销**——schema 三列删除、`inferTaskReentrant`/`ToolCommand.reentrant`/入队物化/`config.asyncJobs.maxRetries` 全部清除；`recoverStaleAsyncJobs` 统一标 failed。仅保留 **C-3 会话手动恢复**（`chatSession.resume`）。历史决策原文见 `design-decisions.md`「可重入与续跑 Q1~Q4」（已加撤销注记）。异步工具全生命周期见 `async-tools-semantics.md`。
 
-### 8.1 reentrant 物化：入队推断快照，不在恢复时临时推断
+### 8.1 启动恢复：僵尸 Task 一律 failed
 
-- 声明链单点：`NativeToolDefinition.reentrant` → `registerDomain` 透传 → `ToolCommand.reentrant`——与 `destructive` 同处域注册处声明，禁止再造第二张清单（types.ts 单点纪律）；未声明默认 `false`（保守）。
-- 任务级推断 `inferTaskReentrant`（asyncJobManager.ts）：tool 任务按其 `toolCall.tool` 的声明；llm 任务按 `agentSnapshot.tools` 全体取**最严**（任一 false 则整体 false；无工具 = true 纯 LLM，重跑最坏只是重新生成一遍回复）。
-- **物化时点 = 入队**：`createAsyncJob` / `buildAsyncExecute` / `retryAsyncJob` 入队路径写 `Task.reentrant` 与 `Task.maxRetries`（= `config.asyncJobs.maxRetries` 快照）。恢复时**不**重新推断——工具声明与 agentSnapshot 可能已漂移，入队快照是任务的出生证明。存量行 `reentrant=false`（保守：副作用未知不重跑）。
+- `recoverStaleAsyncJobs`（`runStartupRecovery` 动作 1 唯一收拢点）：所有僵尸 running/queued Task → failed「服务重启，任务中断」，不重建执行体、不入池。
+- 逐条条件写认领（`updateMany where id + status in (running,queued)`），落选 count=0 跳过——重入/并发幂等。
+- 手动 `retryAsyncJob` 是唯一复活闸：直接重建执行体入池（不再物化 reentrant/maxRetries）。
 
-### 8.2 重试账本不变量
-
-- **自动重跑先落库 `retryCount+1` 再重建执行体入池**——crash-loop 防护即账本：计数持久化，重启进程仍在；顺序不可换（先入池后落库 = 进程死在中间则少记一次，上限被穿透）。
-- 达 `maxRetries` 上限 → 标 failed「已达自动重试上限（N 次），需人工介入」，不再自动重跑。
-- 手动 `retryAsyncJob` **清零重来**、不消耗自动额度——人工介入是最后一道闸，不被自动计数堵死。
-- `input.retryCount` 内存态字段已删，Task 列是唯一事实源。
-
-### 8.3 僵尸续跑分叉：同一函数内两态，不新造恢复管线
-
-- `recoverStaleAsyncJobs`（`runStartupRecovery` 动作 1 唯一收拢点，不新造恢复管线）：僵尸 Task `reentrant=true && retryCount<maxRetries` → 续跑；否则维持 R-2 语义标 failed（两态文案）。
-- 逐条条件写认领（`updateMany where id + status in (running,queued)` 当前快照），落选 count=0 跳过——重入/并发幂等。
-- **恢复只入池，背压归池**（Q4）：续跑走 v8 全局池正常 admit 管道，恢复风暴（N 个僵尸同时入池）由池的 maxGlobal/准入判定链限流；入池被拒（maxQueued 满）不标 failed、不回滚计数，维持 queued 等下轮启动恢复再试。恢复路径禁止再造并发计数器/信号量。
-
-### 8.4 会话手动恢复（chatSession.resume）
+### 8.2 会话手动恢复（chatSession.resume）
 
 - 唯一互斥点 = 条件写 `updateMany where {id, status:"paused"} → running`：并发 double-resume 只一生效；count=0 重读——已 running 幂等返回（不报错、不重复起流），archived/failed 等 BAD_REQUEST。
 - 获恢复权后注入 `source:"system"` user 消息「（服务已重启，请继续完成未完成的任务）」，经 `hub.startIfNotRunning(chatAgentStream)` **交互式起流**（v8 Q2 口径：不入池但计入全局占用，不新造限流层）。系统消息由 chatAgentStream 起流后写入——注入与起流同源，不存在「消息已写、流未起」的孤儿窗口。
 - `startIfNotRunning` 返回 false = 已有活跃流接管（如前端断线重连先一步起流）→ 竞态幂等不算失败；起流抛错 ⟹ runner 未执行 ⟹ 消息必未写入 ⟹ 安全回滚 running→paused。
 - 终态归位挂 runner 内（hub 标 completed 之前）：done → active/completed（subagent），error/abort → paused 可再次恢复；条件写 `where status:"running"` 保证期间被 stop/report_back 接管时不覆盖。
 - 上下文从 ChatMessage 扁平消息链重建（`chatHistory.test.ts` 已证可重建），resume 前已有的 assistant 消息不重复生成。
+- **禁止**启动时自动 resume——paused 会话由用户点按钮触发。
 
-### 8.5 与 v8 池 / v9 reconciler 的职责边界
+### 8.3 与 v8 池 / v9 reconciler 的职责边界
 
 | 机制 | 管什么 | 对账键 | 扫描面 |
 | --- | --- | --- | --- |
 | v8 全局池（§6） | 活着的任务怎么排队：后台并发容量与公平 | 池内 running/queued 内存态 + hub 交互口径 | 调度准入（drain 逐条求值） |
 | v9 reconciler（§7.3） | 「结果已产出、气泡没进会话」的孤儿**投递** | ChatMessage 有无 `toolResults.subagentResult.jobId=X` | `delivered=true` 终态交付 |
-| v10 续跑（本节） | 「结果未产出、执行体已死」的僵尸**重建** | Task.status + `reentrant` 入队快照 + `retryCount` 账本 | running/queued 僵尸任务 |
+| 启动恢复（§7.4 / §8.1） | 「执行体已死」的僵尸**归档**（标 failed，不复活） | Task.status | running/queued 僵尸任务 |
+| 会话 resume（§8.2） | paused 会话的**手动**续聊 | ChatSession.status 条件写 | 用户触发 |
 
-- 三者扫描面两两不相交：池管调度、reconciler 管投递、续跑管复活，各兜各的底互不越界。续跑重建的执行体入池后即受池全部不变量约束；任务跑完后的结果投递仍走 §7 的 CLAIM/对账管道。
+- 扫描面两两不相交：池管调度、reconciler 管投递、启动恢复管归档、resume 管会话续聊。任务跑完后的结果投递仍走 §7 的 CLAIM/对账管道。
 
 ---
 

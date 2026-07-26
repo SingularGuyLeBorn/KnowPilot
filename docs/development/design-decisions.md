@@ -1009,6 +1009,8 @@ LoopX 不是执行器，而是长程 Agent 的**控制平面**：跨 turn / 重�
 
 ## 可重入与续跑 Q1：可重入性模型——单点声明还是独立清单？（2026-07-16，v10 C-1 已落地）
 
+> **⚠️ 状态更新（现行）**：本节 Q1~Q4 曾落地，随后按用户要求**整体撤销**自动续跑与 reentrancy 基座——`Task.reentrant`/`retryCount`/`maxRetries` 三列已从 schema 删除；`inferTaskReentrant`/`ToolCommand.reentrant`/入队物化/`config.asyncJobs.maxRetries` 全部清除；`recoverStaleAsyncJobs` 统一标 failed「服务重启，任务中断」。仅 **Q3 会话手动恢复（C-3）** 仍有效。下文保留为历史决策记录，**勿当作现行实现**。现行不变量见 `concurrency.md` §7.4 / §8、`AGENTS.md`「服务重启不自动续跑」铁律。
+
 **背景**：v9 R-2「僵尸 Task 一律 failed 不自动重跑」的根因是副作用未知。但并非所有任务都有副作用：纯 LLM 任务重跑最坏是重新生成一遍回复，只读工具任务（`web_search`、fs 读类）天然幂等。系统没有任何可重入性标记，安全任务被一刀切陪葬。要支持自动续跑，先回答「系统怎么知道一个任务能不能安全重跑」。
 
 **候选方案**：

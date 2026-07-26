@@ -132,7 +132,7 @@ KnowPilot **不是**「对等 Swarm / 群聊涌现」，也 **不是** MetaGPT �
 | | |
 |---|---|
 | 业界 | 框架差异大；编排综述强调 failure-recovery 轴；生产要 at-least-once 语义 |
-| KnowPilot | 启动恢复四动作；`reentrant`+重试账本；投递 CLAIM+reconciler；会话手动 resume |
+| KnowPilot | 启动恢复四动作（僵尸 Task→failed，不自动续跑）；投递 CLAIM+reconciler；会话手动 resume |
 | 水位 | **A-** |
 | 缺口 | 无细粒度 checkpoint；无多副本选主 |
 
