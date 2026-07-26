@@ -83,9 +83,9 @@ KnowPilot/
 │           ├── types.ts
 │           └── index.ts
 ├── content/                    # Git 跟踪的纯知识库事实源
-│   ├── posts/                  # 博客花园（Post.garden=posts）
-│   ├── knowledge/              # 知识库花园（Post.garden=knowledge）
-│   ├── resources/              # 资源花园（Post.garden=resources）
+│   ├── {gardenId}/             # 动态花园（含种子 posts/knowledge/resources）
+│   │   ├── _garden.md          # 库元数据 + 首页正文（不进 Post 表）
+│   │   └── {slug}.md           # 文章（Post）
 │   ├── about/                  # About Me（非花园；profile.md）
 │   └── uploads/                # 上传文件（file.upload + 截图）
 ├── config/                     # Git 跟踪的 Agent 配置事实源
@@ -278,8 +278,9 @@ pnpm test         # 全仓库运行 Vitest
 
 来源：`MIGRATION_PLAN.md`、`docs/development/README.md`
 
-1. 文章源文件位于 `content/{garden}/{slug}.md`，`garden ∈ posts|knowledge|resources`；`(garden, slug)` 联合唯一；frontmatter **不写** garden（目录是事实源）。
-2. Frontmatter 规范字段：
+1. **花园**：`content/{gardenId}/_garden.md`（可 `garden.create` / `garden_create` 新建第 N 座）；种子三库 posts/knowledge/resources 启动自动 ensure。`about`/`uploads` 不是花园。
+2. **文章**：`content/{gardenId}/{slug}.md`；`(garden, slug)` 联合唯一；frontmatter **不写** garden。
+3. Frontmatter 规范字段：
  ```yaml
  ---
  title: "文章标题"
@@ -289,8 +290,7 @@ pnpm test         # 全仓库运行 Vitest
  excerpt: "一句话文章简要介绍。"
  ---
  ```
-3. `pnpm db:sync` 扫描各花园目录与 `config/agents/` 等已注册目录，解析后 upsert；删除本地已不存在但数据库仍有的记录。
-4. Post / Agent / Skill / MCP / Memory / Prompt 的 `create` / `update` / `delete` 会同步写回 `content/{garden}/`（Post）或 `config/`（其余）。禁止 `write_file` 直写知识库花园。
+4. `pnpm db:sync` 先同步 Garden，再按发现的花园动态挂 Post syncer。禁止 `write_file` 直写 `content/`（除 `uploads/`）。
 5. 自动保存：`useAutoSave.ts` 500ms 节流写入 LocalStorage，2s 防抖调用 `post.update`（仅对已存在 id）。
 
 ### 项目扁平化与代码收拢约定

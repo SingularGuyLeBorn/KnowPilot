@@ -1534,3 +1534,24 @@ WIP 分支（Kimi 模型菜单/飞书集成/软暂停占位/tombstone 等，基�
 | UI | 列表花园切换；详情 `?garden=`（默认 posts 可省略）；新建可选花园 |
 
 **回答**：按上表落地（分支 `arch/audit-fix-2026-07-26`）
+
+---
+
+## 动态知识库花园 + 每库首页（2026-07-26）
+
+### 背景
+
+固定三元组无法满足「新建第 N 座库 + 每库首页」。升级为目录事实源 + Garden 投影表。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 事实源 | `content/{id}/_garden.md`（title/description + 首页正文）；文章仍 `content/{id}/{slug}.md` |
+| 注册 | 扫描含 `_garden.md` 的目录；种子 posts/knowledge/resources 启动 ensure |
+| API/工具 | `garden` CRUD + `garden_*` native；post.garden 为动态 string，写前校验库存在 |
+| 首页 UI | `/gardens` 列表；`/gardens/[id]` 渲染 homeContent |
+| 删除 | 仅空库；种子不可删；目录进 `content/.trash/gardens/` |
+| write_file | 整个 content/ 除 uploads 硬禁 |
+
+**回答**：按上表落地
