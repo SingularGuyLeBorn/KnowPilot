@@ -55,6 +55,16 @@ const GoalYamlSchema = z.object({
   judgeModel: z.string().default("auto"),
 });
 
+/** config.yaml inbox 段：截图监视目录 + 蒸馏默认花园 */
+const InboxYamlSchema = z.object({
+  /** 截图监视目录；空 = data/inbox/screenshots/drop；可填 iCloud Photos 路径 */
+  screenshotWatchDir: z.string().default(""),
+  /** 蒸馏默认写入的花园 id */
+  defaultGarden: z.string().default("knowledge"),
+  /** 知乎收藏夹 URL 列表（定时同步可选） */
+  zhihuCollectionUrls: z.array(z.string()).default([]),
+});
+
 /* ─── 类型定义 ─── */
 
 export interface LlmProviderConfig {
@@ -99,6 +109,14 @@ export interface AppConfig {
     sessions: string;
     tools: string;
     workspace: string;
+    /** 知识 Inbox 原始件（截图/平台收藏缓存） */
+    inbox: string;
+  };
+  /** 知识 Inbox：截图监视与蒸馏默认 */
+  inbox: {
+    screenshotWatchDir: string;
+    defaultGarden: string;
+    zhihuCollectionUrls: string[];
   };
   /** 上传目录（= contentPaths.uploads，保留旧名供 FileService 等沿用） */
   uploadDir: string;
@@ -487,6 +505,8 @@ export function createAppConfig(): AppConfig {
   const skillsYaml = skillsYamlParsed.success ? skillsYamlParsed.data : SkillsYamlSchema.parse({});
   const goalYamlParsed = GoalYamlSchema.safeParse(yamlConfig.goal ?? {});
   const goalYaml = goalYamlParsed.success ? goalYamlParsed.data : GoalYamlSchema.parse({});
+  const inboxYamlParsed = InboxYamlSchema.safeParse(yamlConfig.inbox ?? {});
+  const inboxYaml = inboxYamlParsed.success ? inboxYamlParsed.data : InboxYamlSchema.parse({});
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
@@ -520,6 +540,12 @@ export function createAppConfig(): AppConfig {
       sessions: path.join(dataDir, "sessions"),
       tools: path.join(dataDir, "tools"),
       workspace: path.join(dataDir, "workspace"),
+      inbox: path.join(dataDir, "inbox"),
+    },
+    inbox: {
+      screenshotWatchDir: readEnv("KP_INBOX_SCREENSHOT_DIR") || inboxYaml.screenshotWatchDir,
+      defaultGarden: inboxYaml.defaultGarden || "knowledge",
+      zhihuCollectionUrls: inboxYaml.zhihuCollectionUrls,
     },
     uploadDir: path.join(contentDir, "uploads"),
     env: (process.env.NODE_ENV || "development") as AppConfig["env"],

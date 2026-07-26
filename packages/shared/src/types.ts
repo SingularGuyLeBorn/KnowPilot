@@ -197,6 +197,25 @@ export interface InfoSource {
   updatedAt: string | Date;
 }
 
+/** 知识 Inbox 素材 — 待消化的截图 / 收藏 / 链接 */
+export interface InboxItem {
+  id: string;
+  source: "screenshot" | "zhihu" | "xhs" | "wechat" | "url" | string;
+  externalId: string;
+  title: string;
+  url: string | null;
+  excerpt: string | null;
+  contentPath: string | null;
+  content: string | null;
+  status: "fetched" | "distilled" | "ignored" | string;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  distilledPostId: string | null;
+  capturedAt: string | Date;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
 /** DeepSeek V4 思考强度（API 仅 high/max 生效，low/medium 映射为 high） */
 export type ReasoningEffort = "low" | "medium" | "high" | "max";
 

@@ -391,6 +391,36 @@ model InfoSourceItem {
   @@index([status])
 }
 
+/// 知识 Inbox — 截图 / 平台收藏 / 公众号链接的待消化素材队列
+model InboxItem {
+  id              String    @id @default(cuid())
+  /// screenshot | zhihu | xhs | wechat | url
+  source          String
+  /// 去重键：URL 或文件内容 hash
+  externalId      String
+  title           String
+  url             String?
+  excerpt         String?
+  /// 相对 projectRoot 或 data/inbox 的原文/截图路径
+  contentPath     String?
+  /// OCR / 正文文本（可截断）
+  content         String?
+  /// fetched | distilled | ignored
+  status          String    @default("fetched")
+  tags            String    @default("")
+  /// JSON 元数据
+  metadata        String    @default("{}")
+  distilledPostId String?
+  capturedAt      DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([source, externalId])
+  @@index([status])
+  @@index([source])
+  @@index([capturedAt])
+}
+
 /// 工作区管理 (Workspace)
 model Workspace {
   id             String   @id @default(cuid())

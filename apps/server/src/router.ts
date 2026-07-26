@@ -34,6 +34,9 @@ import {
   createRunSchema, updateRunSchema, listRunsSchema,
   createPromptSchema, updatePromptSchema, listPromptsSchema,
   createInfoSourceSchema, updateInfoSourceSchema, listInfoSourcesSchema,
+  createInboxItemSchema, updateInboxItemSchema, listInboxItemsSchema,
+  inboxCaptureUrlSchema, inboxCaptureUrlsSchema, inboxSyncZhihuSchema, inboxSyncXhsSchema,
+  inboxScanScreenshotsSchema, inboxIngestWechatDropSchema, inboxDistillSchema, inboxIgnoreSchema,
   createCredentialSchema, updateCredentialSchema, listCredentialsSchema,
   webSearchSchema, nativeExecuteSchema,
   deleteByIdSchema, deleteByIdWithApprovalSchema, gitPushWithApprovalSchema, gitCommitWithApprovalSchema, gitPullWithApprovalSchema,
@@ -486,6 +489,23 @@ const infoSourceRouter = router({
       const { fetchDueRssSources } = await import("./infra/rssFetch.js");
       return fetchDueRssSources(ctx.prisma, { maxItems: input.maxItems ?? 20, timeoutMs: 20000 });
     }),
+});
+
+const inboxRouter = router({
+  create: publicProcedure.meta({ description: "手动创建 Inbox 条目。", aiReadable: true }).input(createInboxItemSchema).mutation(({ ctx, input }) => ctx.services.inbox.create(input)),
+  getById: publicProcedure.meta({ description: "获取 Inbox 条目详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.inbox.getById(input.id)),
+  list: publicProcedure.meta({ description: "列出 Inbox 素材（截图/知乎/小红书/微信）。", aiReadable: true }).input(listInboxItemsSchema).query(({ ctx, input }) => ctx.services.inbox.list(input)),
+  update: publicProcedure.meta({ description: "更新 Inbox 条目。", aiReadable: true }).input(updateInboxItemSchema).mutation(({ ctx, input }) => ctx.services.inbox.update(input)),
+  delete: publicProcedure.meta({ description: "删除 Inbox 条目。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.inbox.delete(input.id)),
+  stats: publicProcedure.meta({ description: "Inbox 统计（待消化/已蒸馏/按来源）。", aiReadable: true }).query(({ ctx }) => ctx.services.inbox.stats()),
+  captureUrl: publicProcedure.meta({ description: "抓取单个 URL 写入 Inbox。", aiReadable: true }).input(inboxCaptureUrlSchema).mutation(({ ctx, input }) => ctx.services.inbox.captureUrl(input)),
+  captureUrls: publicProcedure.meta({ description: "批量抓取 URL 写入 Inbox。", aiReadable: true }).input(inboxCaptureUrlsSchema).mutation(({ ctx, input }) => ctx.services.inbox.captureUrls(input)),
+  syncZhihu: publicProcedure.meta({ description: "同步知乎收藏夹到 Inbox（需 platform_login zhihu）。", aiReadable: true }).input(inboxSyncZhihuSchema).mutation(({ ctx, input }) => ctx.services.inbox.syncZhihu(input)),
+  syncXhs: publicProcedure.meta({ description: "同步小红书收藏到 Inbox（需 platform_login xhs）。", aiReadable: true }).input(inboxSyncXhsSchema).mutation(({ ctx, input }) => ctx.services.inbox.syncXhs(input)),
+  scanScreenshots: publicProcedure.meta({ description: "扫描截图目录 OCR 入库。", aiReadable: true }).input(inboxScanScreenshotsSchema).mutation(({ ctx, input }) => ctx.services.inbox.scanScreenshots(input)),
+  ingestWechatDrop: publicProcedure.meta({ description: "读取 data/inbox/wechat/links.txt 入库。", aiReadable: true }).input(inboxIngestWechatDropSchema).mutation(({ ctx, input }) => ctx.services.inbox.ingestWechatDrop(input)),
+  distill: publicProcedure.meta({ description: "将 Inbox 条目蒸馏为未发布 Post 草稿。", aiReadable: true }).input(inboxDistillSchema).mutation(({ ctx, input }) => ctx.services.inbox.distill(input)),
+  ignore: publicProcedure.meta({ description: "忽略 Inbox 条目。", aiReadable: true }).input(inboxIgnoreSchema).mutation(({ ctx, input }) => ctx.services.inbox.ignoreItems(input)),
 });
 
 const sessionRouter = router({
@@ -1459,6 +1479,7 @@ export const appRouter = router({
   mcp: mcpRouter,
   memory: memoryRouter,
   infoSource: infoSourceRouter,
+  inbox: inboxRouter,
   git: gitRouter,
   search: searchRouter,
   analytics: analyticsRouter,

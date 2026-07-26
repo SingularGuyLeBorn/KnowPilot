@@ -13,6 +13,7 @@ import { registerIntegrationTools } from "./integration.js";
 import { registerNotifyTools } from "./notify.js";
 import { registerAskUserTools } from "./askUser.js";
 import { registerSkillsTools } from "./skills.js";
+import { registerInboxTools } from "./inbox.js";
 
 export function registerNativeDomains(): void {
   registerFsTools();
@@ -25,6 +26,7 @@ export function registerNativeDomains(): void {
   registerNotifyTools();
   registerAskUserTools();
   registerSkillsTools();
+  registerInboxTools();
 }
 
 export type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";

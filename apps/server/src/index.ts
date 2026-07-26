@@ -52,6 +52,12 @@ initGlobalProxy();
 // 初始化配置、事件总线、Service容器、触发器引擎
 const config = getAppConfig();
 syncSearchEnvFromConfig(config);
+// 知识 Inbox 目录（截图 drop / 微信 links.txt）
+import("./infra/inboxPipeline.js")
+  .then(({ ensureInboxDirs }) => ensureInboxDirs(config))
+  .catch((err) => {
+    console.warn("  ⚠️ [Inbox] 目录初始化失败:", err instanceof Error ? err.message : err);
+  });
 const eventBus = getEventBus();
 const services = getServiceContainer(prisma, eventBus, config);
 // 种子花园 posts/knowledge/resources：补 _garden.md + DB 行

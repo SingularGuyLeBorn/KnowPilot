@@ -15,7 +15,7 @@ import type {
   OperationResult,
   CreatePostInput, UpdatePostInput, ListPostsInput, Post,
   CreateGardenInput, UpdateGardenInput, ListGardensInput, Garden,
-  Agent, Skill, McpServer, Memory, InfoSource,
+  Agent, Skill, McpServer, Memory, InfoSource, InboxItem,
   ChatSession, ChatMessage, FileMeta, GitRepo,
   Task, Workspace, Trigger, Approval,
   Tool, Prompt, Credential, Run,
@@ -257,6 +257,36 @@ export const useInfoSource = () => {
     useFetchDue: () => fetchDueMutation,
   };
 };
+
+export const useInbox = () => {
+  const base = useCRUDApi<any, any, any, InboxItem>("inbox");
+  const utils = trpc.useUtils();
+  const invalidate = () => {
+    utils.inbox.list.invalidate().catch(() => {});
+    utils.inbox.stats.invalidate().catch(() => {});
+  };
+  return {
+    ...base,
+    useStats: (options?: any) => trpc.inbox.stats.useQuery(undefined, options),
+    useCaptureUrl: () =>
+      trpc.inbox.captureUrl.useMutation({ onSuccess: invalidate }),
+    useCaptureUrls: () =>
+      trpc.inbox.captureUrls.useMutation({ onSuccess: invalidate }),
+    useSyncZhihu: () =>
+      trpc.inbox.syncZhihu.useMutation({ onSuccess: invalidate }),
+    useSyncXhs: () =>
+      trpc.inbox.syncXhs.useMutation({ onSuccess: invalidate }),
+    useScanScreenshots: () =>
+      trpc.inbox.scanScreenshots.useMutation({ onSuccess: invalidate }),
+    useIngestWechat: () =>
+      trpc.inbox.ingestWechatDrop.useMutation({ onSuccess: invalidate }),
+    useDistill: () =>
+      trpc.inbox.distill.useMutation({ onSuccess: invalidate }),
+    useIgnore: () =>
+      trpc.inbox.ignore.useMutation({ onSuccess: invalidate }),
+  };
+};
+
 export const useSession = () => useCRUDApi<any, any, any, ChatSession>("session");
 
 /**

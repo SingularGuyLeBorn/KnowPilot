@@ -118,6 +118,17 @@ approvalGate:
   # 同一审批冷却窗口内不重复通知（毫秒）；默认 30min
   notifyCooldownMs: 1800000
 
+# 知识 Inbox：截图 / 知乎 / 小红书 / 微信公众号 → 待消化 → 蒸馏
+inbox:
+  # 截图监视目录；空 = data/inbox/screenshots/drop
+  # Windows iCloud 示例：C:/Users/你的用户名/Pictures/iCloud Photos/Photos
+  # 也可设 env KP_INBOX_SCREENSHOT_DIR
+  screenshotWatchDir: ""
+  # 蒸馏默认写入的花园
+  defaultGarden: knowledge
+  # 可选：定时 inbox:sync 时自动拉这些知乎收藏夹
+  zhihuCollectionUrls: []
+
 # 超级 Agent 心跳 Loop Contract（控制平面；不替换 ReAct）
 heartbeat:
   # W2 决策层：cron 只负责唤醒；decisionEnabled=false 可整体回退到旧「到点即跑」

@@ -32,6 +32,7 @@ import {
   PromptService,
   CredentialService,
   InfoSourceService,
+  InboxService,
 } from "../services.js";
 
 export class ServiceContainer {
@@ -58,6 +59,7 @@ export class ServiceContainer {
   readonly prompt: PromptService;
   readonly credential: CredentialService;
   readonly infoSource: InfoSourceService;
+  readonly inbox: InboxService;
 
   constructor(prisma: PrismaClient, eventBus: AppEventBus, config: AppConfig) {
     this.prisma = prisma;
@@ -83,6 +85,7 @@ export class ServiceContainer {
     this.prompt = new PromptService(prisma, eventBus, config);
     this.credential = new CredentialService(prisma, eventBus, config);
     this.infoSource = new InfoSourceService(prisma, eventBus, config);
+    this.inbox = new InboxService(prisma, eventBus, config);
   }
 }
 

@@ -29,6 +29,7 @@ function inferAction(task: TaskRecord, input: Record<string, unknown>): string {
   const name = task.name.toLowerCase();
   if (name.includes("sync") || name.includes("同步")) return "db:sync";
   if (name.includes("rss") || name.includes("feed")) return "rss:fetch";
+  if (name.includes("inbox") || name.includes("截图") || name.includes("收藏")) return "inbox:sync";
   return "noop";
 }
 
@@ -51,6 +52,57 @@ export async function executeTaskJob(
         upserted: r.upserted,
         cleaned: r.cleaned,
       })),
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  if (action === "inbox:sync") {
+    const { getAppConfig } = await import("./config.js");
+    const { getServiceContainer } = await import("./serviceContainer.js");
+    const { getEventBus } = await import("./eventBus.js");
+    const config = getAppConfig();
+    const services = getServiceContainer(prisma, getEventBus(), config);
+    const maxItems = typeof input.maxItems === "number" ? input.maxItems : 50;
+    const fetchContent = input.fetchContent === true;
+    const results: Record<string, unknown> = {};
+
+    const maxChars = typeof input.maxChars === "number" ? input.maxChars : 12000;
+    if (input.screenshots !== false) {
+      results.screenshots = await services.inbox.scanScreenshots({
+        maxFiles: maxItems,
+        runOcr: input.runOcr !== false,
+      });
+    }
+    if (input.wechat !== false) {
+      results.wechat = await services.inbox.ingestWechatDrop({
+        maxUrls: maxItems,
+        fetchContent: input.fetchContent !== false,
+        maxChars,
+      });
+    }
+    if (typeof input.zhihuCollectionUrl === "string" && input.zhihuCollectionUrl) {
+      results.zhihu = await services.inbox.syncZhihu({
+        collectionUrl: input.zhihuCollectionUrl,
+        maxItems,
+        fetchContent,
+        maxChars,
+      });
+    } else if (config.inbox.zhihuCollectionUrls.length) {
+      const zhihuResults = [];
+      for (const collectionUrl of config.inbox.zhihuCollectionUrls) {
+        zhihuResults.push(
+          await services.inbox.syncZhihu({ collectionUrl, maxItems, fetchContent, maxChars }),
+        );
+      }
+      results.zhihu = zhihuResults;
+    }
+    if (input.xhs === true) {
+      results.xhs = await services.inbox.syncXhs({ maxItems, fetchContent, maxChars });
+    }
+
+    return {
+      action: "inbox:sync",
+      results,
       timestamp: new Date().toISOString(),
     };
   }
@@ -95,7 +147,7 @@ export async function executeTaskJob(
 
   return {
     action: "noop",
-    message: `任务「${task.name}」已执行；可在 input.action 中指定 db:sync 或 rss:fetch 等动作。`,
+    message: `任务「${task.name}」已执行；可在 input.action 中指定 db:sync、rss:fetch 或 inbox:sync 等动作。`,
     timestamp: new Date().toISOString(),
   };
 }

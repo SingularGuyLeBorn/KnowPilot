@@ -82,6 +82,17 @@ import {
   type CreateInfoSourceInput,
   type UpdateInfoSourceInput,
   type ListInfoSourcesInput,
+  type CreateInboxItemInput,
+  type UpdateInboxItemInput,
+  type ListInboxItemsInput,
+  type InboxCaptureUrlInput,
+  type InboxCaptureUrlsInput,
+  type InboxSyncZhihuInput,
+  type InboxSyncXhsInput,
+  type InboxScanScreenshotsInput,
+  type InboxIngestWechatDropInput,
+  type InboxDistillInput,
+  type InboxIgnoreInput,
   type AgentRunInput,
   type AgentChatInput,
   type WebSearchInput,
@@ -3845,5 +3856,212 @@ export class InfoSourceService extends FileSyncService<
 
   protected override buildDeleteSummary(existing: any): Record<string, unknown> {
     return { id: existing.id, name: existing.name, url: existing.url };
+  }
+}
+
+/** 知识 Inbox — 截图 / 平台收藏待消化队列（仅 DB，原始件在 data/inbox/） */
+export class InboxService extends BaseService<
+  CreateInboxItemInput,
+  UpdateInboxItemInput,
+  ListInboxItemsInput,
+  import("@knowpilot/shared").InboxItem
+> {
+  readonly entityName = "inbox";
+  protected get delegate() { return this.prisma.inboxItem; }
+
+  protected formatEntity(raw: any): import("@knowpilot/shared").InboxItem {
+    let metadata: Record<string, unknown> = {};
+    try {
+      metadata = raw.metadata ? JSON.parse(raw.metadata) : {};
+    } catch {
+      metadata = {};
+    }
+    return {
+      ...raw,
+      tags: raw.tags ? String(raw.tags).split(",").filter(Boolean).map((t: string) => t.trim()) : [],
+      metadata,
+    };
+  }
+
+  protected buildListWhere(input: ListInboxItemsInput): any {
+    const where: any = {};
+    if (input.source) where.source = input.source;
+    if (input.status) where.status = input.status;
+    if (input.keyword) {
+      where.OR = [
+        { title: { contains: input.keyword } },
+        { excerpt: { contains: input.keyword } },
+        { url: { contains: input.keyword } },
+        { content: { contains: input.keyword } },
+        { tags: { contains: input.keyword } },
+      ];
+    }
+    return where;
+  }
+
+  protected buildCreateData(input: CreateInboxItemInput): any {
+    return {
+      source: input.source,
+      externalId: input.externalId,
+      title: input.title.trim(),
+      url: input.url ?? null,
+      excerpt: input.excerpt ?? null,
+      contentPath: input.contentPath ?? null,
+      content: input.content ?? null,
+      tags: input.tags?.join(",") || "",
+      metadata: JSON.stringify(input.metadata ?? {}),
+      status: input.status ?? "fetched",
+    };
+  }
+
+  protected buildUpdateData(input: UpdateInboxItemInput): any {
+    const { id: _id, tags, metadata, ...rest } = input;
+    const data: any = { ...rest };
+    if (tags !== undefined) data.tags = tags.join(",");
+    if (metadata !== undefined) data.metadata = JSON.stringify(metadata);
+    return data;
+  }
+
+  async captureUrl(input: InboxCaptureUrlInput) {
+    const { captureInboxUrl, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    return captureInboxUrl(this.prisma, this.config, input);
+  }
+
+  async captureUrls(input: InboxCaptureUrlsInput) {
+    const { captureInboxUrls, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    return captureInboxUrls(this.prisma, this.config, input);
+  }
+
+  async syncZhihu(input: InboxSyncZhihuInput) {
+    const { syncZhihuCollection, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    return syncZhihuCollection(this.prisma, this.config, input);
+  }
+
+  async syncXhs(input: InboxSyncXhsInput) {
+    const { syncXhsFavorites, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    return syncXhsFavorites(this.prisma, this.config, input);
+  }
+
+  async scanScreenshots(input: InboxScanScreenshotsInput) {
+    const { scanScreenshotDrop, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    return scanScreenshotDrop(this.prisma, this.config, input);
+  }
+
+  async ingestWechatDrop(input: InboxIngestWechatDropInput) {
+    const { ingestWechatDropFile, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    return ingestWechatDropFile(this.prisma, this.config, input);
+  }
+
+  async ignoreItems(input: InboxIgnoreInput) {
+    const result = await this.prisma.inboxItem.updateMany({
+      where: { id: { in: input.ids } },
+      data: { status: "ignored" },
+    });
+    return { success: true, count: result.count };
+  }
+
+  async distill(input: InboxDistillInput) {
+    const { formatInboxItemBody } = await import("./infra/inboxPipeline.js");
+    const garden = input.garden || this.config.inbox.defaultGarden || "knowledge";
+    const items = await this.prisma.inboxItem.findMany({
+      where: { id: { in: input.ids } },
+    });
+    const distilled: Array<{ inboxId: string; postId: string; title: string; path?: string }> = [];
+    const errors: string[] = [];
+
+    for (const raw of items) {
+      const item = this.formatEntity(raw);
+      if (item.status === "ignored") {
+        errors.push(`${item.id}: 已忽略，跳过`);
+        continue;
+      }
+      try {
+        const body = formatInboxItemBody({
+          title: item.title,
+          url: item.url,
+          source: item.source,
+          content: item.content,
+          excerpt: item.excerpt,
+          contentPath: item.contentPath,
+          tags: item.tags,
+          metadata: item.metadata,
+        });
+        const slugBase = item.title
+          .toLowerCase()
+          .replace(/[^\w\u4e00-\u9fff]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 48) || `inbox-${item.id.slice(-6)}`;
+        const slug = `inbox/${slugBase}-${item.id.slice(-6)}`;
+        const created = await this.postCreateViaService({
+          title: item.title,
+          garden,
+          slug,
+          content: body,
+          excerpt: item.excerpt || item.title,
+          tags: [...new Set(["inbox", item.source, ...item.tags])],
+          published: input.published ?? false,
+        });
+        await this.prisma.inboxItem.update({
+          where: { id: item.id },
+          data: { status: "distilled", distilledPostId: created.id },
+        });
+        distilled.push({
+          inboxId: item.id,
+          postId: created.id,
+          title: created.title,
+          path: `content/${garden}/${created.slug}.md`,
+        });
+      } catch (err) {
+        errors.push(`${item.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { distilled, errors, garden };
+  }
+
+  /** 同进程内创建 Post（写回 Markdown）；避免经 tRPC 绕圈 */
+  private async postCreateViaService(input: {
+    title: string;
+    garden: string;
+    slug: string;
+    content: string;
+    excerpt: string;
+    tags: string[];
+    published: boolean;
+  }): Promise<{ id: string; title: string; slug: string }> {
+    const postService = new PostService(this.prisma, this.eventBus, this.config);
+    const result = await postService.create(input as any);
+    if (!result.success || !result.data) {
+      throw new Error(result.error?.message || "post.create 失败");
+    }
+    const data = result.data as any;
+    return { id: data.id, title: data.title, slug: data.slug };
+  }
+
+  async stats() {
+    const [fetched, distilled, ignored, total] = await Promise.all([
+      this.prisma.inboxItem.count({ where: { status: "fetched" } }),
+      this.prisma.inboxItem.count({ where: { status: "distilled" } }),
+      this.prisma.inboxItem.count({ where: { status: "ignored" } }),
+      this.prisma.inboxItem.count(),
+    ]);
+    const bySource = await this.prisma.inboxItem.groupBy({
+      by: ["source"],
+      _count: { _all: true },
+    });
+    return {
+      total,
+      fetched,
+      distilled,
+      ignored,
+      bySource: Object.fromEntries(bySource.map((r) => [r.source, r._count._all])),
+      screenshotWatchDir: this.config.inbox.screenshotWatchDir || "data/inbox/screenshots/drop",
+      defaultGarden: this.config.inbox.defaultGarden,
+    };
   }
 }

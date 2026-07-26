@@ -885,6 +885,96 @@ export const listInfoSourcesSchema = z.object({
 });
 
 /* ═══════════════════════════════════════════════════════
+   Inbox（知识素材箱：截图 / 知乎 / 小红书 / 微信公众号）
+   ═══════════════════════════════════════════════════════ */
+
+export const inboxSourceSchema = z.enum(["screenshot", "zhihu", "xhs", "wechat", "url"]);
+export const inboxStatusSchema = z.enum(["fetched", "distilled", "ignored"]);
+
+export const createInboxItemSchema = z.object({
+  source: inboxSourceSchema,
+  externalId: z.string().min(1).max(500),
+  title: z.string().min(1).max(500),
+  url: z.string().max(2000).optional().nullable(),
+  excerpt: z.string().max(4000).optional().nullable(),
+  contentPath: z.string().max(1000).optional().nullable(),
+  content: z.string().max(200_000).optional().nullable(),
+  tags: z.array(z.string()).default([]),
+  metadata: z.record(z.unknown()).optional(),
+  status: inboxStatusSchema.default("fetched"),
+});
+
+export const updateInboxItemSchema = z.object({
+  id: z.string().cuid(),
+  title: z.string().min(1).max(500).optional(),
+  excerpt: z.string().max(4000).optional().nullable(),
+  content: z.string().max(200_000).optional().nullable(),
+  tags: z.array(z.string()).optional(),
+  status: inboxStatusSchema.optional(),
+  distilledPostId: z.string().cuid().optional().nullable(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export const listInboxItemsSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+  keyword: z.string().optional(),
+  source: inboxSourceSchema.optional(),
+  status: inboxStatusSchema.optional(),
+  orderBy: z.enum(["capturedAt", "createdAt", "updatedAt"]).default("capturedAt"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export const inboxCaptureUrlSchema = z.object({
+  url: z.string().url(),
+  source: inboxSourceSchema.optional(),
+  fetchContent: z.boolean().default(true),
+  maxChars: z.number().int().min(500).max(50000).default(12000),
+});
+
+export const inboxCaptureUrlsSchema = z.object({
+  urls: z.array(z.string().url()).min(1).max(50),
+  source: inboxSourceSchema.optional(),
+  fetchContent: z.boolean().default(true),
+  maxChars: z.number().int().min(500).max(50000).default(12000),
+});
+
+export const inboxSyncZhihuSchema = z.object({
+  collectionUrl: z.string().url(),
+  maxItems: z.number().int().min(1).max(200).default(50),
+  fetchContent: z.boolean().default(false),
+  maxChars: z.number().int().min(500).max(50000).default(12000),
+});
+
+export const inboxSyncXhsSchema = z.object({
+  maxItems: z.number().int().min(1).max(200).default(50),
+  fetchContent: z.boolean().default(false),
+  maxChars: z.number().int().min(500).max(50000).default(12000),
+});
+
+export const inboxScanScreenshotsSchema = z.object({
+  dir: z.string().optional(),
+  maxFiles: z.number().int().min(1).max(200).default(50),
+  runOcr: z.boolean().default(true),
+});
+
+export const inboxIngestWechatDropSchema = z.object({
+  fetchContent: z.boolean().default(true),
+  maxChars: z.number().int().min(500).max(50000).default(12000),
+  maxUrls: z.number().int().min(1).max(100).default(50),
+});
+
+export const inboxDistillSchema = z.object({
+  ids: z.array(z.string().cuid()).min(1).max(30),
+  garden: z.string().min(1).max(64).default("knowledge"),
+  published: z.boolean().default(false),
+});
+
+export const inboxIgnoreSchema = z.object({
+  ids: z.array(z.string().cuid()).min(1).max(100),
+});
+
+/* ═══════════════════════════════════════════════════════
    GitRepo (Git 仓库)
    ═══════════════════════════════════════════════════════ */
 
@@ -1338,6 +1428,20 @@ export type ListMemoriesInput = z.infer<typeof listMemoriesSchema>;
 export type CreateInfoSourceInput = z.infer<typeof createInfoSourceSchema>;
 export type UpdateInfoSourceInput = z.infer<typeof updateInfoSourceSchema>;
 export type ListInfoSourcesInput = z.infer<typeof listInfoSourcesSchema>;
+
+export type InboxSource = z.infer<typeof inboxSourceSchema>;
+export type InboxStatus = z.infer<typeof inboxStatusSchema>;
+export type CreateInboxItemInput = z.infer<typeof createInboxItemSchema>;
+export type UpdateInboxItemInput = z.infer<typeof updateInboxItemSchema>;
+export type ListInboxItemsInput = z.infer<typeof listInboxItemsSchema>;
+export type InboxCaptureUrlInput = z.infer<typeof inboxCaptureUrlSchema>;
+export type InboxCaptureUrlsInput = z.infer<typeof inboxCaptureUrlsSchema>;
+export type InboxSyncZhihuInput = z.infer<typeof inboxSyncZhihuSchema>;
+export type InboxSyncXhsInput = z.infer<typeof inboxSyncXhsSchema>;
+export type InboxScanScreenshotsInput = z.infer<typeof inboxScanScreenshotsSchema>;
+export type InboxIngestWechatDropInput = z.infer<typeof inboxIngestWechatDropSchema>;
+export type InboxDistillInput = z.infer<typeof inboxDistillSchema>;
+export type InboxIgnoreInput = z.infer<typeof inboxIgnoreSchema>;
 
 export type CreateGitRepoInput = z.infer<typeof createGitRepoSchema>;
 export type UpdateGitRepoInput = z.infer<typeof updateGitRepoSchema>;

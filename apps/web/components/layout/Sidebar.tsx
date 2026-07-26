@@ -24,6 +24,7 @@ import {
   Activity,
   KeyRound,
   Globe,
+  Inbox,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ const navGroups: Record<string, NavGroup> = {
       { href: "/skills", icon: Wand2, label: "Skill 管理" },
       { href: "/mcp", icon: Cpu, label: "MCP 服务器" },
       { href: "/sources", icon: Globe, label: "信息源" },
+      { href: "/inbox", icon: Inbox, label: "知识 Inbox" },
       { href: "/memories", icon: Brain, label: "长期记忆" },
       { href: "/prompts", icon: FileCode2, label: "提示词模板" },
       { href: "/tools", icon: Wrench, label: "工具注册" },
