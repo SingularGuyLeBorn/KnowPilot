@@ -649,7 +649,6 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:inbox_distill",
   "native:inbox_ignore",
   "skill:*",
-  "mcp:filesystem",
 ];
 
 /* ─── 知识库花园（动态 N 座） ───

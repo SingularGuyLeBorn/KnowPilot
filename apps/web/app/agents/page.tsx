@@ -99,7 +99,6 @@ const DEFAULT_AGENT_TOOLS = [
   "native:sleep",
   "native:git_status",
   "skill:*",
-  "mcp:filesystem",
 ];
 
 const EMPTY_FORM: AgentForm = {

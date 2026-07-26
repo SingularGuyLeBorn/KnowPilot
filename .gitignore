@@ -72,6 +72,9 @@ config/agents/*子代理*.md
 config/agents/*子 Agent*.md
 config/agents/*测试 Agent*.md
 config/agents/*-e3f87d.md
+# Agent 误把任务文本当名称创建的文件（发现即删；此处防御再生成）
+config/agents/调用*.md
+config/agents/请先*.md
 config/skills/smoke_skill_*.md
 config/skills/Test Skill*.md
 config/skills/.curator_state

@@ -2,7 +2,7 @@
  * MCP Client — 单元测试
  */
 
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
@@ -11,9 +11,12 @@ import {
   truncateMcpResult,
   MCP_MAX_RESULT_CHARS,
   createMcpTransport,
+  buildMcpToolSchemas,
+  disconnectAllMcpClients,
 } from "../infra/mcpClient.js";
 import type { McpServerEntity } from "../services.js";
 import { createMcpServerSchema } from "@knowpilot/shared";
+import type { ServiceContainer } from "../infra/serviceContainer.js";
 
 describe("MCP 工具命名", () => {
   it("mcpToolName 生成安全外部名", () => {
@@ -121,5 +124,24 @@ describe("createMcpServerSchema transport", () => {
       url: "https://example.com/mcp",
     });
     expect(r.success).toBe(true);
+  });
+});
+
+describe("buildMcpToolSchemas 缺失 Server", () => {
+  beforeEach(async () => {
+    await disconnectAllMcpClients();
+    delete process.env.MOCK_MCP;
+  });
+
+  it("mcp:filesystem 未配置时跳过，不抛错拖垮 Chat", async () => {
+    const services = {
+      mcp: {
+        list: vi.fn(async () => ({ items: [], total: 0, page: 1, pageSize: 50, totalPages: 0 })),
+      },
+    } as unknown as ServiceContainer;
+
+    const schemas = await buildMcpToolSchemas(services, ["filesystem"]);
+    expect(schemas).toEqual([]);
+    expect(services.mcp.list).toHaveBeenCalled();
   });
 });

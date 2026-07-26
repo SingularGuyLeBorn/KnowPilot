@@ -175,7 +175,17 @@ export async function buildMcpToolSchemas(
   const schemas: Array<{ type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }> = [];
 
   for (const serverName of serverNames) {
-    const server = await findMcpServer(services, serverName);
+    // 未配置的 MCP 名（如默认清单残留 mcp:filesystem）必须跳过，禁止拖垮整次 Chat
+    let server: McpServerEntity;
+    try {
+      server = await findMcpServer(services, serverName);
+    } catch (err: unknown) {
+      console.warn(
+        `[MCP] Server "${serverName}" 不存在，跳过 MCP 工具（请在 config/mcp/ 添加配置后 db:sync）:`,
+        err instanceof Error ? err.message : err,
+      );
+      continue;
+    }
     if (!server.enabled) continue;
 
     try {
