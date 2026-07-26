@@ -17,7 +17,8 @@ import { PrismaClient } from "@prisma/client";
 import { Syncer } from "./sync/types.js";
 import { getContentDir, filePathToSlug } from "./sync/utils.js";
 import { guardedWatchDeleteBySlug } from "./sync/watchDeleteGuard.js";
-import { postGardenSyncers } from "./sync/sync-posts.js";
+import { buildPostGardenSyncers } from "./sync/sync-posts.js";
+import { gardenSyncer } from "./sync/sync-gardens.js";
 import { agentSyncer } from "./sync/sync-agents.js";
 import { skillSyncer } from "./sync/sync-skills.js";
 import { mcpServerSyncer } from "./sync/sync-mcp-servers.js";
@@ -25,20 +26,24 @@ import { memorySyncer } from "./sync/sync-memories.js";
 import { promptSyncer } from "./sync/sync-prompts.js";
 import { taskSyncer } from "./sync/sync-tasks.js";
 import { infoSourceSyncer } from "./sync/sync-info-sources.js";
+import { getAppConfig } from "../infra/config.js";
 
 const prisma = new PrismaClient();
 
-// 所有已注册的实体同步器（L2 已接入 Agent/Skill/MCP/Memory/Prompt；L3 Task）
-const syncers: Syncer<unknown>[] = [
-  ...postGardenSyncers,
-  agentSyncer,
-  skillSyncer,
-  mcpServerSyncer,
-  memorySyncer,
-  promptSyncer,
-  taskSyncer,
-  infoSourceSyncer,
-];
+/** 动态组装：Garden 优先，再按 content/ 发现的花园挂 Post syncer */
+function buildSyncers(): Syncer<unknown>[] {
+  return [
+    gardenSyncer,
+    ...buildPostGardenSyncers(getAppConfig().contentDir),
+    agentSyncer,
+    skillSyncer,
+    mcpServerSyncer,
+    memorySyncer,
+    promptSyncer,
+    taskSyncer,
+    infoSourceSyncer,
+  ];
+}
 
 interface SyncResult {
   entityName: string;
@@ -59,7 +64,10 @@ function needsSync(recordMtime: Date, existingMtime?: Date): boolean {
 
 /** 同步单个实体（增量），返回统计 */
 async function syncEntity<T>(syncer: Syncer<T>, client: PrismaClient): Promise<SyncResult> {
-  const contentDir = getContentDir(syncer.contentDirName);
+  const contentDir =
+    syncer.entityName === "Garden"
+      ? getAppConfig().contentDir
+      : getContentDir(syncer.contentDirName);
   const result: SyncResult = { entityName: syncer.entityName, scanned: 0, upserted: 0, cleaned: 0 };
 
   if (!fs.existsSync(contentDir)) {
@@ -101,8 +109,12 @@ export async function runContentSync(
   console.log(`\n🔄 开始同步本地内容文件至数据库...`);
 
   const results: SyncResult[] = [];
-  for (const syncer of syncers) {
-    console.log(`\n📂 [${syncer.entityName}] 源目录: ${getContentDir(syncer.contentDirName)}`);
+  for (const syncer of buildSyncers()) {
+    const srcLabel =
+      syncer.entityName === "Garden"
+        ? getAppConfig().contentDir
+        : getContentDir(syncer.contentDirName);
+    console.log(`\n📂 [${syncer.entityName}] 源目录: ${srcLabel}`);
     const result = await syncEntity(syncer, client);
     results.push(result);
     console.log(`  📊 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
@@ -130,13 +142,20 @@ async function runWatch(): Promise<void> {
   /** D4：改名窗口跳过 delete 后，下一防抖周期跑全量 upsert 收敛 */
   const pendingFullRescan = new Set<string>();
 
-  for (const syncer of syncers) {
-    const contentDir = getContentDir(syncer.contentDirName);
+  // watch：挂 content 根 + 各配置目录；新建花园后下一轮 runContentSync 会重建 Post syncer
+  for (const syncer of buildSyncers()) {
+    const contentDir =
+      syncer.entityName === "Garden"
+        ? getAppConfig().contentDir
+        : getContentDir(syncer.contentDirName);
     if (!fs.existsSync(contentDir)) continue;
 
-    // 忽略点开头目录/文件 与 `_` 开头目录（如 agents/_templates/ 模板目录，W9）
+    // 忽略点开头与 `_` 开头目录；Garden 特例允许 _garden.md（首页事实源）
     const watcher = chokidar.watch(contentDir, {
-      ignored: /(^|[/\\])(\.|_)/,
+      ignored: (p: string) => {
+        if (path.basename(p) === "_garden.md") return false;
+        return /(^|[/\\])(\.|_)/.test(p);
+      },
       persistent: true,
       ignoreInitial: true,
     });

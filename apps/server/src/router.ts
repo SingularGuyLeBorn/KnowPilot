@@ -12,6 +12,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {
   createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, getPostBySlugSchema, postGardenSchema,
+  createGardenSchema, updateGardenSchema, listGardensSchema, getGardenByIdSchema, deleteGardenSchema,
   createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema,
   resolveAskUserSchema, listAskUserPendingSchema,
   createSkillSchema, updateSkillSchema, listSkillsSchema,
@@ -106,12 +107,20 @@ async function withApprovalGuard(
   return execute();
 }
 
+const gardenRouter = router({
+  list: publicProcedure.meta({ description: "分页列出知识库花园。", aiReadable: true }).input(listGardensSchema).query(({ ctx, input }) => ctx.services.garden.list(input)),
+  getById: publicProcedure.meta({ description: "获取花园详情与首页正文。", aiReadable: true }).input(getGardenByIdSchema).query(({ ctx, input }) => ctx.services.garden.getById(input.id)),
+  create: publicProcedure.meta({ description: "新建知识库花园（content/{id}/_garden.md）。", aiReadable: true }).input(createGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.create(input)),
+  update: publicProcedure.meta({ description: "更新花园标题/说明/首页。", aiReadable: true }).input(updateGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.update(input)),
+  delete: publicProcedure.meta({ description: "删除空花园（种子库不可删）。", aiReadable: true }).input(deleteGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.delete(input.id)),
+});
+
 const postRouter = router({
-  list: publicProcedure.meta({ description: "分页列出文章；可按花园 garden（posts|knowledge|resources）/分类/标签/关键词过滤。", aiReadable: true }).input(listPostsSchema).query(({ ctx, input }) => ctx.services.post.list(input)),
+  list: publicProcedure.meta({ description: "分页列出文章；可按花园 garden id /分类/标签/关键词过滤。", aiReadable: true }).input(listPostsSchema).query(({ ctx, input }) => ctx.services.post.list(input)),
   tree: publicProcedure.meta({ description: "获取已发布文章的 garden/slug/title 列表（可选花园过滤）。", aiReadable: true }).input(z.object({ garden: postGardenSchema.optional() }).default({})).query(({ ctx, input }) => ctx.services.post.tree(input.garden)),
   getBySlug: publicProcedure.meta({ description: "按花园 + slug 获取文章详情，同时增加浏览量。", aiReadable: true }).input(getPostBySlugSchema).query(({ ctx, input }) => ctx.services.post.getBySlug(input.slug, input.garden)),
   getById: publicProcedure.meta({ description: "按 id 获取文章，用于编辑器加载。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.post.getById(input.id)),
-  create: publicProcedure.meta({ description: "创建新文章到指定花园（garden），自动同步到 content/{garden}/{slug}.md。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
+  create: publicProcedure.meta({ description: "创建新文章到已存在的花园（garden），同步到 content/{garden}/{slug}.md。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
   update: publicProcedure.meta({ description: "更新文章内容，自动同步到本地 Markdown 文件。", aiReadable: true }).input(updatePostSchema).mutation(({ ctx, input }) => ctx.services.post.update(input)),
   delete: publicProcedure.meta({ description: "删除文章到回收站。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
     withApprovalGuard(ctx.services, "post.delete", { id: input.id }, input.approvalId, () => ctx.services.post.delete(input.id)),
@@ -1438,6 +1447,7 @@ const deadLetterRouter = router({
 /* ─── 编译出口 ─── */
 
 export const appRouter = router({
+  garden: gardenRouter,
   post: postRouter,
   agent: agentRouter,
   skill: skillRouter,

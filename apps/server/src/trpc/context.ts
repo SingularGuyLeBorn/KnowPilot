@@ -40,6 +40,7 @@ export async function createContextInner() {
   const config = getAppConfig();
   await ensureIntegrationCredentialsInjected(config, prisma);
   const services = getServiceContainer(prisma, eventBus, config);
+  await services.garden.ensureSeedGardens();
 
   const streamHub = getStreamHub();
 

@@ -7,13 +7,14 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import { POST_GARDENS, type PostGarden } from "@knowpilot/shared";
 import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
+import { getAppConfig } from "../../infra/config.js";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, getFileMtime } from "./utils.js";
+import { discoverGardenIds } from "./discover-gardens.js";
 
 interface PostData {
-  garden: PostGarden;
+  garden: string;
   slug: string;
   title: string;
   content: string;
@@ -23,7 +24,7 @@ interface PostData {
   tags: string;
 }
 
-function createPostGardenSyncer(garden: PostGarden): Syncer<PostData> {
+export function createPostGardenSyncer(garden: string): Syncer<PostData> {
   const entityName = `Post:${garden}`;
 
   return {
@@ -205,8 +206,11 @@ function createPostGardenSyncer(garden: PostGarden): Syncer<PostData> {
   };
 }
 
-/** 三棵花园各一 syncer，供 sync.ts 展开注册 */
-export const postGardenSyncers: Syncer<PostData>[] = POST_GARDENS.map(createPostGardenSyncer);
+/** 按当前 content/ 发现结果动态构建 Post syncer 列表 */
+export function buildPostGardenSyncers(contentRoot?: string): Syncer<PostData>[] {
+  const root = contentRoot ?? getAppConfig().contentDir;
+  return discoverGardenIds(root).map(createPostGardenSyncer);
+}
 
-/** 博客花园（posts）syncer —— 单测与只关心博客树的调用方用 */
-export const postSyncer = postGardenSyncers.find((s) => s.contentDirName === "posts")!;
+/** 博客花园（posts）syncer —— 单测专用 */
+export const postSyncer = createPostGardenSyncer("posts");

@@ -11,6 +11,7 @@ import type { AppConfig } from "./config.js";
 
 // Service imports
 import {
+  GardenService,
   PostService,
   AgentService,
   SkillService,
@@ -36,6 +37,7 @@ import {
 export class ServiceContainer {
   readonly prisma: PrismaClient;
   readonly config: AppConfig;
+  readonly garden: GardenService;
   readonly post: PostService;
   readonly agent: AgentService;
   readonly skill: SkillService;
@@ -60,6 +62,7 @@ export class ServiceContainer {
   constructor(prisma: PrismaClient, eventBus: AppEventBus, config: AppConfig) {
     this.prisma = prisma;
     this.config = config;
+    this.garden = new GardenService(prisma, eventBus, config);
     this.post = new PostService(prisma, eventBus, config);
     this.agent = new AgentService(prisma, eventBus, config);
     this.skill = new SkillService(prisma, eventBus, config);

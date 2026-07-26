@@ -69,11 +69,9 @@ export interface AppConfig {
   /** 知识库事实源根（posts/about/uploads），Git 跟踪 */
   contentDir: string;
   contentPaths: {
-    /** 博客花园（默认） */
+    /** 种子花园便利路径（任意动态库请用 resolveGardenDir） */
     posts: string;
-    /** 知识库花园 */
     knowledge: string;
-    /** 资源/资料花园 */
     resources: string;
     about: string;
     uploads: string;
@@ -752,6 +750,18 @@ export function createAppConfig(): AppConfig {
 /* ─── 全局单例 ─── */
 
 const globalForConfig = globalThis as unknown as { __appConfig: AppConfig };
+
+/**
+ * 解析花园根目录 content/{gardenId}/（不做存在性校验；格式由调用方保证）
+ */
+export function resolveGardenDir(config: AppConfig, gardenId: string): string {
+  return path.join(config.contentDir, gardenId);
+}
+
+/** 花园元数据+首页文件路径 */
+export function resolveGardenMetaPath(config: AppConfig, gardenId: string): string {
+  return path.join(resolveGardenDir(config, gardenId), "_garden.md");
+}
 
 export function getAppConfig(): AppConfig {
   if (!globalForConfig.__appConfig) {

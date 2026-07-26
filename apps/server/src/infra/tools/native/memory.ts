@@ -6,13 +6,11 @@
 import {
   DEFAULT_POST_GARDEN,
   isMemoryUserCreatable,
-  isPostGarden,
+  isValidGardenIdFormat,
   MEMORY_SCOPE_GLOBAL,
   memoryAgentScope,
   memoryWorkspaceScope,
-  POST_GARDENS,
   type MemoryUserCreatableType,
-  type PostGarden,
 } from "@knowpilot/shared";
 import type { PostEntity } from "../../../services.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
@@ -24,13 +22,95 @@ import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
-function parseGardenArg(raw: unknown): PostGarden {
+/** 花园 id：仅格式校验；存在性由 GardenService / PostService 负责 */
+function parseGardenArg(raw: unknown): string {
   if (raw === undefined || raw === null || raw === "") return DEFAULT_POST_GARDEN;
-  const g = String(raw);
-  if (!isPostGarden(g)) {
-    throw new Error(`garden 无效：${g}。允许：${POST_GARDENS.join(" | ")}`);
+  const g = String(raw).trim();
+  if (!isValidGardenIdFormat(g)) {
+    throw new Error(`garden 无效：${g}。须为小写字母开头的 [a-z0-9_-]，且不能是 about/uploads`);
   }
   return g;
+}
+
+async function gardenCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  const title = String(args.title || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  if (!title) throw new Error("title 不能为空");
+  const result = await ctx.services.garden.create({
+    id,
+    title,
+    description: args.description != null ? String(args.description) : null,
+    homeContent: args.homeContent != null ? String(args.homeContent) : `# ${title}\n`,
+  });
+  if (!result.success) throw new Error(result.error?.message || "创建花园失败");
+  return {
+    id: result.data!.id,
+    title: result.data!.title,
+    path: `content/${result.data!.id}/_garden.md`,
+  };
+}
+
+async function gardenListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const page = Math.max(1, Number(args.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(args.pageSize || 50)));
+  const result = await ctx.services.garden.list({
+    page,
+    pageSize,
+    keyword: args.keyword ? String(args.keyword) : undefined,
+  });
+  return {
+    total: result.total,
+    items: result.items.map((g) => ({
+      id: g.id,
+      title: g.title,
+      description: g.description,
+      path: `content/${g.id}/_garden.md`,
+    })),
+  };
+}
+
+async function gardenGetTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  const g = await ctx.services.garden.getById(id);
+  return {
+    id: g.id,
+    title: g.title,
+    description: g.description,
+    homeContent: g.homeContent,
+    path: `content/${g.id}/_garden.md`,
+  };
+}
+
+async function gardenUpdateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  const result = await ctx.services.garden.update({
+    id,
+    title: args.title !== undefined ? String(args.title) : undefined,
+    description:
+      args.description !== undefined
+        ? args.description
+          ? String(args.description)
+          : null
+        : undefined,
+    homeContent: args.homeContent !== undefined ? String(args.homeContent) : undefined,
+  });
+  if (!result.success) throw new Error(result.error?.message || "更新花园失败");
+  return {
+    id: result.data!.id,
+    title: result.data!.title,
+    path: `content/${result.data!.id}/_garden.md`,
+  };
+}
+
+async function gardenDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  const result = await ctx.services.garden.delete(id);
+  if (!result.success) throw new Error(result.error?.message || "删除花园失败");
+  return { id, deleted: true };
 }
 
 async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -290,19 +370,73 @@ async function memoryDeleteTool(args: Record<string, unknown>, ctx: NativeToolCo
 
 const MEMORY_DEFS: NativeToolDefinition[] = [
   {
+    name: "garden_create",
+    concurrencyClass: "D",
+    destructive: true,
+    approvalExempt: true,
+    description:
+      "新建知识库花园（第 N 座库）。id=目录名（小写 [a-z0-9_-]）；落盘 content/{id}/_garden.md（title/description + 首页正文）。建库后才能 post_create 往该库写文章。禁止 write_file 直写 content/。",
+    parameters: zodParams(
+      z.object({
+        id: z.string().describe("花园 id（目录名），如 research-notes"),
+        title: z.string().describe("显示标题"),
+        description: z.string().describe("一句话说明").optional(),
+        homeContent: z.string().describe("首页 Markdown 正文").optional(),
+      }),
+    ),
+  },
+  {
+    name: "garden_list",
+    description: "列出知识库花园（id/title/description/path）。写文前先确认目标库存在。",
+    parameters: zodParams(
+      z.object({
+        page: z.number().int().min(1).optional(),
+        pageSize: z.number().int().min(1).max(100).optional(),
+        keyword: z.string().optional(),
+      }),
+    ),
+  },
+  {
+    name: "garden_get",
+    description: "获取花园详情与首页正文（homeContent）。",
+    parameters: zodParams(z.object({ id: z.string().describe("花园 id") })),
+  },
+  {
+    name: "garden_update",
+    concurrencyClass: "D",
+    destructive: true,
+    approvalExempt: true,
+    description: "更新花园标题/说明/首页正文（写回 _garden.md）。",
+    parameters: zodParams(
+      z.object({
+        id: z.string(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        homeContent: z.string().describe("首页 Markdown").optional(),
+      }),
+    ),
+  },
+  {
+    name: "garden_delete",
+    concurrencyClass: "D",
+    destructive: true,
+    description:
+      "删除空花园（无未删文章才可删；种子库 posts/knowledge/resources 不可删）。目录移入 content/.trash/gardens/。",
+    parameters: zodParams(z.object({ id: z.string() })),
+  },
+  {
     name: "post_create",
     concurrencyClass: "D",
     destructive: true,
-    // 创建类可回滚（非删除）——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常建文
     approvalExempt: true,
     description:
-      "在本地知识库花园创建 Markdown 文章。garden：posts（博客，默认）| knowledge（知识库）| resources（资料）。slug=花园内相对路径（可含 /，如 llm-guide/foo）。落盘 content/{garden}/{slug}.md，并同步 DB/FTS。禁止用 write_file 直写花园目录。",
+      "在已存在的知识库花园创建 Markdown 文章。garden=花园 id（须先 garden_create 或选种子库 posts/knowledge/resources）；slug=库内相对路径。落盘 content/{garden}/{slug}.md。禁止 write_file 直写。",
     parameters: zodParams(
       z.object({
         title: z.string().describe("文章标题"),
         garden: z
-          .enum(["posts", "knowledge", "resources"])
-          .describe("知识库花园：posts=博客 / knowledge=知识库 / resources=资料；默认 posts")
+          .string()
+          .describe("花园 id；默认 posts。未知 id 会失败——先 garden_list/garden_create")
           .optional(),
         content: z.string().describe("Markdown 正文").optional(),
         slug: z
@@ -321,15 +455,12 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "post_update",
     concurrencyClass: "D",
     description:
-      "更新本地知识库文章。可改 garden 以迁移到另一花园（文件随之搬迁）。先用 post_list 查 id。",
+      "更新本地知识库文章。可改 garden 以迁移到另一已存在花园。先用 post_list 查 id。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("文章 id"),
         title: z.string().describe("文章标题").optional(),
-        garden: z
-          .enum(["posts", "knowledge", "resources"])
-          .describe("目标花园（迁移时填写）")
-          .optional(),
+        garden: z.string().describe("目标花园 id（迁移时填写）").optional(),
         content: z.string().describe("Markdown 正文").optional(),
         slug: z.string().describe("花园内相对路径").optional(),
         excerpt: z.string().describe("摘要").optional(),
@@ -354,13 +485,10 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "post_list",
     description:
-      "列出本地知识库文章。可按 garden 过滤。返回 id/garden/slug/path/title/excerpt 等元信息（不含正文）。更新前先 list 拿 id。",
+      "列出本地知识库文章。可按 garden 过滤。返回 id/garden/slug/path/title/excerpt 等元信息（不含正文）。",
     parameters: zodParams(
       z.object({
-        garden: z
-          .enum(["posts", "knowledge", "resources"])
-          .describe("只列该花园；不填=全部花园")
-          .optional(),
+        garden: z.string().describe("只列该花园；不填=全部花园").optional(),
         page: z.number().int().min(1).describe("页码，默认 1").optional(),
         pageSize: z.number().int().min(1).max(50).describe("每页条数，默认 20，最大 50").optional(),
         published: z.boolean().describe("是否仅看已发布；不填=全部").optional(),
@@ -498,6 +626,11 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
 ];
 
 const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
+  garden_create: gardenCreateTool,
+  garden_list: gardenListTool,
+  garden_get: gardenGetTool,
+  garden_update: gardenUpdateTool,
+  garden_delete: gardenDeleteTool,
   post_create: postCreateTool,
   post_update: postUpdateTool,
   post_delete: postDeleteTool,
@@ -533,6 +666,18 @@ async function deleteByIdCompensate(
  * post_delete / memory_delete 为不可逆删除，不挂补偿（run 失败时如实 warn「需人工 revert」）。
  */
 const MEMORY_ROLLBACKS: Record<string, ToolRollback<NativeToolContext>> = {
+  garden_create: {
+    compensate: async (_args, result, _captured, ctx) => {
+      const id = (result as { id?: string } | undefined)?.id;
+      if (!id) return "执行结果无 id，幂等跳过";
+      const del = await ctx.services.garden.delete(id);
+      if (!del.success) {
+        if (del.error?.code?.includes("NOT_FOUND")) return "花园已不存在，幂等跳过";
+        throw new Error(del.error?.message || "garden 删除回补失败");
+      }
+      return `已删除本 run 创建的花园（id=${id}）`;
+    },
+  },
   post_create: {
     compensate: async (_args, result, _captured, ctx) => deleteByIdCompensate("post", result, ctx),
   },

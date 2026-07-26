@@ -31,18 +31,12 @@ function moveToTrash(config: AppConfig, abs: string, relPath: string): string {
   return trashRel;
 }
 
-/** content/ 写入白名单：仅 uploads；知识库花园与 about 必须走 post_*（或禁止） */
+/** content/ 写入白名单：仅 uploads；其余 content/（含动态花园与 about）禁 write_file */
 const CONTENT_WRITE_PREFIXES = ["content/uploads/"] as const;
-const CONTENT_WRITE_DENY_PREFIXES = [
-  "content/posts/",
-  "content/knowledge/",
-  "content/resources/",
-  "content/about/",
-] as const;
 
 /**
  * Agent FS 路径单点（读写对称）：
- * - content/：读任意知识库；写仅 content/uploads/；硬拒 posts/about
+ * - content/：读任意知识库；写仅 content/uploads/
  * - 其余：落到当前 Agent Workspace（无 Workspace → data/workspace/）
  * - list/search 默认 Workspace 根，禁止裸扫项目根
  */
@@ -59,18 +53,10 @@ async function resolveAgentFsPath(
   }
   if (p.startsWith("content/") || p === "content") {
     if (mode === "write") {
-      const denied = CONTENT_WRITE_DENY_PREFIXES.some(
-        (d) => p === d.slice(0, -1) || p.startsWith(d),
-      );
-      if (denied) {
-        throw new Error(
-          `禁止 write_file/append 直写 ${p}：文章/About 必须走 post_create/post_update 等 Service 同步管道`,
-        );
-      }
       const allowed = CONTENT_WRITE_PREFIXES.some((a) => p.startsWith(a));
       if (!allowed) {
         throw new Error(
-          `content/ 写入仅允许 content/uploads/…（当前: ${p}）；工作文件请用不带 content/ 前缀的 Workspace 相对路径`,
+          `禁止 write_file 直写 ${p}：content/ 仅 uploads 可写；建库/首页走 garden_*，文章走 post_*`,
         );
       }
     }
@@ -333,7 +319,7 @@ const FS_DEFS: NativeToolDefinition[] = [
     // 可回滚的常规写入，非删除类——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常写文件
     approvalExempt: true,
     description:
-      "写入文本文件。path：content/uploads/… 可写上传资源；禁止 content/posts|knowledge|resources|about（知识库须 post_create 并指定 garden）；其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
+      "写入文本文件。path：content/uploads/… 可写上传资源；禁止直写 content/ 其它路径（建库/首页走 garden_*，文章走 post_create）；其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
     parameters: {
       type: "object",
       properties: {

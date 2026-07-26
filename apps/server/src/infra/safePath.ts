@@ -84,24 +84,17 @@ export function resolveRealWriteTarget(absPath: string): string {
 }
 
 /**
- * 禁止最终落点进入知识库花园或 About。
- * 花园（posts/knowledge/resources）必须走 post_*；about 禁止 AI 写入。
+ * 禁止最终落点进入 content/（除 content/uploads/）。
+ * 动态花园与 about 一律走 garden_* / post_*；uploads 供截图等上传。
  */
 export function assertAbsNotKnowledgeCore(config: AppConfig, absPath: string): void {
   const rel = path.relative(path.resolve(config.projectRoot), path.resolve(absPath)).replace(/\\/g, "/");
   if (rel.startsWith("..")) return;
-  const denied =
-    rel === "content/posts" ||
-    rel.startsWith("content/posts/") ||
-    rel === "content/knowledge" ||
-    rel.startsWith("content/knowledge/") ||
-    rel === "content/resources" ||
-    rel.startsWith("content/resources/") ||
-    rel === "content/about" ||
-    rel.startsWith("content/about/");
-  if (denied) {
+  const underContent = rel === "content" || rel.startsWith("content/");
+  const underUploads = rel === "content/uploads" || rel.startsWith("content/uploads/");
+  if (underContent && !underUploads) {
     throw new Error(
-      `禁止写入知识库路径 ${rel}：文章须走 post_create/post_update（指定 garden）；About 禁止 AI 写；Workspace.path 也不得指向上述目录`,
+      `禁止写入知识库路径 ${rel}：文章须走 post_create/post_update；建库/改首页走 garden_*；About 禁止 AI 写；仅 content/uploads/ 可经 write_file 写`,
     );
   }
 }

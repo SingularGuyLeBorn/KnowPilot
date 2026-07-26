@@ -54,6 +54,10 @@ const config = getAppConfig();
 syncSearchEnvFromConfig(config);
 const eventBus = getEventBus();
 const services = getServiceContainer(prisma, eventBus, config);
+// 种子花园 posts/knowledge/resources：补 _garden.md + DB 行
+services.garden.ensureSeedGardens().catch((err) => {
+  console.warn("  ⚠️ [Garden] 种子库初始化失败:", err instanceof Error ? err.message : err);
+});
 // P1：启动时尽早注入一次集成凭据到 config.integrations，后续请求零工作；
 // 凭据 CRUD 后由 invalidateIntegrationCredentials 标记失效，下次请求惰性重注入。
 ensureIntegrationCredentialsInjected(config, prisma).catch((err) => {
