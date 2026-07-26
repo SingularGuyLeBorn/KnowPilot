@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState, LoadingState, KpSelect, Pagination } from "@/components/shared";
 import { cn } from "@/lib/utils";
+import {
+  freeModelsMessages,
+  readFreeModelsLocale,
+  type FreeModelsLocale,
+} from "@/lib/freeModelsI18n";
 
 const OPENROUTER_PAGE_SIZE = 10;
 const FREELLM_PAGE_SIZE = 10;
@@ -64,16 +69,18 @@ function CopyIdButton({
   id,
   copied,
   onCopy,
+  title,
 }: {
   id: string;
   copied: boolean;
   onCopy: () => void;
+  title: string;
 }) {
   return (
     <button
       type="button"
       onClick={onCopy}
-      title="复制模型 id"
+      title={title}
       className={cn(
         "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] transition-colors",
         "text-[var(--kp-text-2)] hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-brand-deep)]",
@@ -86,7 +93,8 @@ function CopyIdButton({
   );
 }
 
-export function FreeModelsPanel() {
+export function FreeModelsPanel({ locale = "zh" }: { locale?: FreeModelsLocale }) {
+  const t = freeModelsMessages(locale);
   const utils = trpc.useUtils();
   const [q, setQ] = useState("");
   const [modality, setModality] = useState<"all" | "text" | "multimodal">("all");
@@ -119,9 +127,8 @@ export function FreeModelsPanel() {
 
   const refreshMutation = trpc.llm.refreshFreeModels.useMutation({
     onSuccess: async (res) => {
-      setToast(
-        `已刷新：OpenRouter ${res.openRouterFreeModels} · freellm 探活 ${res.validated}（新增 ${res.synced}）`,
-      );
+      const msg = freeModelsMessages(readFreeModelsLocale());
+      setToast(msg.refreshed(res.openRouterFreeModels, res.validated, res.synced));
       await Promise.all([
         utils.llm.freeModelsStatus.invalidate(),
         utils.llm.listFreeModels.invalidate(),
@@ -130,7 +137,8 @@ export function FreeModelsPanel() {
       window.setTimeout(() => setToast(null), 4000);
     },
     onError: (err) => {
-      setToast(`刷新失败：${err.message}`);
+      const msg = freeModelsMessages(readFreeModelsLocale());
+      setToast(msg.refreshFailed(err.message));
       window.setTimeout(() => setToast(null), 5000);
     },
   });
@@ -171,20 +179,22 @@ export function FreeModelsPanel() {
 
   const modalityOptions = useMemo(
     () => [
-      { value: "all", label: "全部模态" },
-      { value: "text", label: "纯文本" },
-      { value: "multimodal", label: "多模态" },
+      { value: "all", label: t.modalityAll },
+      { value: "text", label: t.modalityText },
+      { value: "multimodal", label: t.modalityMulti },
     ],
-    [],
+    [t],
   );
   const sortOptions = useMemo(
     () => [
-      { value: "context_desc", label: "上下文 ↓" },
-      { value: "context_asc", label: "上下文 ↑" },
-      { value: "name", label: "名称" },
+      { value: "context_desc", label: t.sortCtxDesc },
+      { value: "context_asc", label: t.sortCtxAsc },
+      { value: "name", label: t.sortName },
     ],
-    [],
+    [t],
   );
+
+  const dateLocale = locale === "en" ? "en-US" : "zh-CN";
 
   return (
     <motion.div
@@ -213,13 +223,16 @@ export function FreeModelsPanel() {
               <StatusPill tone="neutral">
                 freellm {statusQuery.data?.freellm.credentialCount ?? freellmItems.length}
               </StatusPill>
-              {hasOrKey === false && <StatusPill tone="warn">未配 OR key</StatusPill>}
+              {hasOrKey === false && <StatusPill tone="warn">{t.noOrKey}</StatusPill>}
               {statusQuery.data?.freellm.runtimeModel && (
-                <StatusPill tone="ok">运行时 {statusQuery.data.freellm.runtimeModel}</StatusPill>
+                <StatusPill tone="ok">
+                  {t.runtime} {statusQuery.data.freellm.runtimeModel}
+                </StatusPill>
               )}
               {statusQuery.data?.openRouter.syncedAt && (
                 <span className="text-[11px] text-[var(--kp-text-2)]">
-                  同步于 {new Date(statusQuery.data.openRouter.syncedAt).toLocaleString()}
+                  {t.syncAt}{" "}
+                  {new Date(statusQuery.data.openRouter.syncedAt).toLocaleString(dateLocale)}
                 </span>
               )}
             </div>
@@ -239,7 +252,7 @@ export function FreeModelsPanel() {
                 <RefreshCw
                   className={cn("h-3.5 w-3.5", refreshMutation.isPending && "animate-spin")}
                 />
-                {refreshMutation.isPending ? "同步中…" : "立即刷新"}
+                {refreshMutation.isPending ? t.refreshing : t.refresh}
               </Button>
             </div>
           </div>
@@ -258,8 +271,8 @@ export function FreeModelsPanel() {
                 <Sparkles className="h-4 w-4" />
               </span>
               <div>
-                <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">OpenRouter 免费模型</h2>
-                <p className="text-[11px] text-[var(--kp-text-2)]">点击模型 id 即可复制到 Chat</p>
+                <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">{t.openRouterTitle}</h2>
+                <p className="text-[11px] text-[var(--kp-text-2)]">{t.openRouterSubtitle}</p>
               </div>
             </div>
             <a
@@ -268,17 +281,14 @@ export function FreeModelsPanel() {
               rel="noreferrer"
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[var(--kp-text-2)] transition-colors hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-brand-deep)]"
             >
-              官方目录 <ExternalLink className="h-3 w-3" />
+              {t.officialCatalog} <ExternalLink className="h-3 w-3" />
             </a>
           </div>
 
           <div className="space-y-3 px-4 py-3 md:px-5">
             {!hasOrKey && (
               <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-2.5 text-xs leading-relaxed text-amber-950/80 dark:text-amber-100/90">
-                未配置 <code className="rounded bg-black/5 px-1 font-mono">OPENROUTER_API_KEY</code>
-                。写入项目根目录 <code className="rounded bg-black/5 px-1 font-mono">.env</code>{" "}
-                后重启即可在线同步 <code className="rounded bg-black/5 px-1 font-mono">:free</code>{" "}
-                目录；有落盘缓存时可只读浏览。
+                {t.noOrKeyHint}
               </div>
             )}
 
@@ -288,7 +298,7 @@ export function FreeModelsPanel() {
                 <Input
                   value={q}
                   onChange={(e) => setFilterQ(e.target.value)}
-                  placeholder="搜索模型 id / 名称 / 描述…"
+                  placeholder={t.searchPlaceholder}
                   className="h-9 border-[var(--kp-divider)] bg-[var(--kp-bg)] pl-8 text-sm"
                 />
               </div>
@@ -296,13 +306,13 @@ export function FreeModelsPanel() {
                 value={modality}
                 onChange={(v) => setFilterModality(v as "all" | "text" | "multimodal")}
                 options={modalityOptions}
-                className="w-32"
+                className="w-36"
               />
               <KpSelect
                 value={sort}
                 onChange={(v) => setFilterSort(v as "context_desc" | "context_asc" | "name")}
                 options={sortOptions}
-                className="w-32"
+                className="w-36"
               />
             </div>
           </div>
@@ -314,12 +324,8 @@ export function FreeModelsPanel() {
           ) : openRouterItems.length === 0 ? (
             <div className="px-4 pb-5 md:px-5">
               <EmptyState
-                title="暂无 :free 模型"
-                description={
-                  hasOrKey
-                    ? "点击「立即刷新」从 OpenRouter 拉取目录。"
-                    : "配置 OPENROUTER_API_KEY 后刷新即可。"
-                }
+                title={t.emptyOrTitle}
+                description={hasOrKey ? t.emptyOrDescHasKey : t.emptyOrDescNoKey}
               />
             </div>
           ) : (
@@ -352,13 +358,14 @@ export function FreeModelsPanel() {
                             {m.name}
                           </h3>
                           <StatusPill tone="ok">Free</StatusPill>
-                          {multi && <StatusPill tone="brand">多模态</StatusPill>}
+                          {multi && <StatusPill tone="brand">{t.multimodal}</StatusPill>}
                           <StatusPill tone="neutral">{formatContext(m.contextLength)} ctx</StatusPill>
                         </div>
                         <CopyIdButton
                           id={m.id}
                           copied={copiedId === m.id}
                           onCopy={() => onCopy(m.id).catch(() => {})}
+                          title={t.copyTitle}
                         />
                         {text ? (
                           <div className="max-w-3xl space-y-1">
@@ -378,7 +385,7 @@ export function FreeModelsPanel() {
                                   setExpandedDesc((prev) => ({ ...prev, [m.id]: !prev[m.id] }))
                                 }
                               >
-                                {open ? "收起" : "展开全部"}
+                                {open ? t.collapse : t.expand}
                               </button>
                             )}
                           </div>
@@ -398,12 +405,12 @@ export function FreeModelsPanel() {
                           {copiedId === m.id ? (
                             <>
                               <Check className="h-3.5 w-3.5 text-emerald-600" />
-                              已复制
+                              {t.copied}
                             </>
                           ) : (
                             <>
                               <Copy className="h-3.5 w-3.5" />
-                              复制 id
+                              {t.copyId}
                             </>
                           )}
                         </Button>
@@ -439,8 +446,8 @@ export function FreeModelsPanel() {
                 <Radio className="h-4 w-4" />
               </span>
               <div>
-                <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">Freellm 网关通道</h2>
-                <p className="text-[11px] text-[var(--kp-text-2)]">已探活入库 · 不展示明文 key</p>
+                <h2 className="text-sm font-semibold text-[var(--kp-text-1)]">{t.freellmTitle}</h2>
+                <p className="text-[11px] text-[var(--kp-text-2)]">{t.freellmSubtitle}</p>
               </div>
             </div>
           </div>
@@ -452,8 +459,8 @@ export function FreeModelsPanel() {
           ) : freellmItems.length === 0 ? (
             <div className="px-4 py-5 md:px-5">
               <EmptyState
-                title="暂无 freellm 通道"
-                description="启动同步或点击「立即刷新」从 GitHub freellm / 本地 README 拉取并探活。"
+                title={t.emptyFreellmTitle}
+                description={t.emptyFreellmDesc}
               />
             </div>
           ) : (
@@ -473,18 +480,20 @@ export function FreeModelsPanel() {
                       <h3 className="text-sm font-semibold text-[var(--kp-text-1)]">
                         {c.model ?? c.name}
                       </h3>
-                      {c.isRuntime && <StatusPill tone="ok">运行时</StatusPill>}
+                      {c.isRuntime && <StatusPill tone="ok">{t.runtime}</StatusPill>}
                       <StatusPill tone={c.validated ? "ok" : "neutral"}>
-                        {c.validated ? "已探活" : c.status ?? "—"}
+                        {c.validated ? t.validated : c.status ?? "—"}
                       </StatusPill>
                       {c.provider && <StatusPill tone="neutral">{c.provider}</StatusPill>}
                     </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--kp-text-2)]">
                       <span className="font-mono truncate max-w-[18rem]">{c.name}</span>
-                      {c.budget && <span>预算 {c.budget}</span>}
-                      {c.rateLimit && <span>限速 {c.rateLimit}</span>}
+                      {c.budget && <span>{t.budget} {c.budget}</span>}
+                      {c.rateLimit && <span>{t.rateLimit} {c.rateLimit}</span>}
                       {c.expiresAt && (
-                        <span>过期 {new Date(c.expiresAt).toLocaleDateString()}</span>
+                        <span>
+                          {t.expires} {new Date(c.expiresAt).toLocaleDateString(dateLocale)}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -499,12 +508,12 @@ export function FreeModelsPanel() {
                       {copiedId === c.model ? (
                         <>
                           <Check className="h-3.5 w-3.5 text-emerald-600" />
-                          已复制
+                          {t.copied}
                         </>
                       ) : (
                         <>
                           <Copy className="h-3.5 w-3.5" />
-                          复制 id
+                          {t.copyId}
                         </>
                       )}
                     </Button>
@@ -530,6 +539,8 @@ export function FreeModelsPanel() {
 
 /** Dashboard 摘要卡 */
 export function FreeModelsSummaryCard() {
+  const locale = readFreeModelsLocale();
+  const t = freeModelsMessages(locale);
   const { data, isLoading } = trpc.llm.freeModelsStatus.useQuery(undefined, {
     staleTime: 30_000,
   });
@@ -547,9 +558,9 @@ export function FreeModelsSummaryCard() {
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
           <Sparkles className="h-4 w-4" />
         </span>
-        <span className="font-semibold text-[var(--kp-text-1)]">免费模型目录</span>
+        <span className="font-semibold text-[var(--kp-text-1)]">{t.summaryTitle}</span>
         {isLoading || !data ? (
-          <span className="text-[var(--kp-text-2)]">加载中…</span>
+          <span className="text-[var(--kp-text-2)]">{t.summaryLoading}</span>
         ) : (
           <>
             <span className="font-mono text-[var(--kp-text-2)]">
@@ -557,8 +568,10 @@ export function FreeModelsSummaryCard() {
               {" · "}
               freellm {data.freellm.credentialCount}
             </span>
-            {!data.openRouter.hasApiKey && <StatusPill tone="warn">未配 OR key</StatusPill>}
-            <span className="text-[11px] font-medium text-[var(--kp-brand-deep)]">查看全部 →</span>
+            {!data.openRouter.hasApiKey && <StatusPill tone="warn">{t.noOrKey}</StatusPill>}
+            <span className="text-[11px] font-medium text-[var(--kp-brand-deep)]">
+              {t.summaryViewAll}
+            </span>
           </>
         )}
       </div>
