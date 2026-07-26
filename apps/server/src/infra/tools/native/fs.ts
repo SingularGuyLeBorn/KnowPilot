@@ -31,46 +31,49 @@ function moveToTrash(config: AppConfig, abs: string, relPath: string): string {
   return trashRel;
 }
 
-async function readFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  if (!fs.statSync(abs).isFile()) throw new Error("目标不是文件");
-  const maxChars = Number(args.maxChars || 12000);
-  const offset = Math.max(0, Number(args.offset || 0));
-  const content = fs.readFileSync(abs, "utf8");
-  const totalChars = content.length;
-  const slice = content.slice(offset, offset + maxChars);
-  return {
-    path: args.path,
-    offset,
-    totalChars,
-    truncated: totalChars > offset + maxChars,
-    content: slice,
-  };
-}
+/** content/ 写入白名单：仅 uploads；posts/about 必须走 Service 同步管道 */
+const CONTENT_WRITE_PREFIXES = ["content/uploads/"] as const;
+const CONTENT_WRITE_DENY_PREFIXES = ["content/posts/", "content/about/"] as const;
 
 /**
- * write_file / append_file 路径解析（Workspace 落地）：
- *   - path 以 "content/" 开头：走 projectRoot（知识库资源，如 content/uploads/、content/posts/；文章建议 post_create）。
- *   - 否则：落到当前 Agent 的 Workspace 目录（每个 Agent 有独立 Workspace，工作产物隔离）。
- *     Workspace.path 相对 projectRoot 解析；无 Workspace 时回退到 data/workspace/。
- * 返回绝对路径与相对 projectRoot 的路径（便于 read_file 复用）。
+ * Agent FS 路径单点（读写对称）：
+ * - content/：读任意知识库；写仅 content/uploads/；硬拒 posts/about
+ * - 其余：落到当前 Agent Workspace（无 Workspace → data/workspace/）
+ * - list/search 默认 Workspace 根，禁止裸扫项目根
  */
-async function resolveWritablePath(
+async function resolveAgentFsPath(
   ctx: NativeToolContext,
   relPath: string,
+  mode: "read" | "write",
 ): Promise<{ abs: string; relForReturn: string }> {
-  const p = String(relPath).replace(/\\/g, "/").replace(/^\/+/, "");
+  let p = String(relPath ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!p || p === ".") p = "";
   if (p.includes("..")) throw new Error("路径不允许包含 ..");
   if (/^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]/.test(p) || p.startsWith("//")) {
     throw new Error(`路径不允许为绝对路径：${relPath}`);
   }
-  // 知识库资源走 projectRoot（content/ 前缀 = posts/about/uploads 等事实源）
-  if (p.startsWith("content/")) {
-    const abs = resolveSafePath(ctx.config, p);
-    return { abs, relForReturn: p };
+  if (p.startsWith("content/") || p === "content") {
+    if (mode === "write") {
+      const denied = CONTENT_WRITE_DENY_PREFIXES.some(
+        (d) => p === d.slice(0, -1) || p.startsWith(d),
+      );
+      if (denied) {
+        throw new Error(
+          `禁止 write_file/append 直写 ${p}：文章/About 必须走 post_create/post_update 等 Service 同步管道`,
+        );
+      }
+      const allowed = CONTENT_WRITE_PREFIXES.some((a) => p.startsWith(a));
+      if (!allowed) {
+        throw new Error(
+          `content/ 写入仅允许 content/uploads/…（当前: ${p}）；工作文件请用不带 content/ 前缀的 Workspace 相对路径`,
+        );
+      }
+    }
+    if (p === "content") p = "content";
+    const abs = resolveSafePath(ctx.config, p || "content");
+    return { abs, relForReturn: p || "content" };
   }
-  // Agent 工作产物：当前 Workspace 目录
+
   const wsId = ctx.agentSnapshot?.workspaceId;
   let wsRelPath = "";
   if (wsId && ctx.prisma) {
@@ -78,19 +81,36 @@ async function resolveWritablePath(
     wsRelPath = (ws as { path?: string } | null)?.path?.trim() || "";
   }
   if (!wsRelPath) {
-    // 无 Workspace：回退到 data/workspace/（运行时产物隔离区）
-    const fallback = `data/workspace/${p}`;
+    const fallback = p ? `data/workspace/${p}` : "data/workspace";
     const abs = resolveSafePath(ctx.config, fallback);
     return { abs, relForReturn: fallback };
   }
   const wsAbs = path.isAbsolute(wsRelPath) ? path.resolve(wsRelPath) : resolveSafePath(ctx.config, wsRelPath);
-  const abs = resolveWithinDir(wsAbs, p);
+  const abs = p ? resolveWithinDir(wsAbs, p) : wsAbs;
   const relForReturn = path.relative(ctx.config.projectRoot, abs).replace(/\\/g, "/");
   return { abs, relForReturn };
 }
 
+async function readFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "read");
+  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${relForReturn}`);
+  if (!fs.statSync(abs).isFile()) throw new Error("目标不是文件");
+  const maxChars = Number(args.maxChars || 12000);
+  const offset = Math.max(0, Number(args.offset || 0));
+  const content = fs.readFileSync(abs, "utf8");
+  const totalChars = content.length;
+  const slice = content.slice(offset, offset + maxChars);
+  return {
+    path: relForReturn,
+    offset,
+    totalChars,
+    truncated: totalChars > offset + maxChars,
+    content: slice,
+  };
+}
+
 async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { abs, relForReturn } = await resolveWritablePath(ctx, String(args.path));
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(abs, String(args.content ?? ""), "utf8");
@@ -98,7 +118,7 @@ async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolConte
 }
 
 async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { abs, relForReturn } = await resolveWritablePath(ctx, String(args.path));
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.appendFileSync(abs, String(args.content ?? ""), "utf8");
@@ -106,8 +126,8 @@ async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolCo
 }
 
 async function listDirectoryTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path || "."));
-  if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${args.path || "."}`);
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path || "."), "read");
+  if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${relForReturn}`);
   if (args.recursive === true) {
     const entries: Array<{ path: string; type: "file" | "directory" }> = [];
     function walk(dir: string, prefix: string) {
@@ -126,19 +146,19 @@ async function listDirectoryTool(args: Record<string, unknown>, ctx: NativeToolC
   }));
 }
 async function fileDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
+  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${relForReturn}`);
   const stat = fs.statSync(abs);
-  if (stat.isDirectory()) throw new Error(`不支持删除目录，请指定文件: ${args.path}`);
-  const trashPath = moveToTrash(ctx.config, abs, String(args.path));
-  return { path: args.path, deleted: true, trashPath };
+  if (stat.isDirectory()) throw new Error(`不支持删除目录，请指定文件: ${relForReturn}`);
+  const trashPath = moveToTrash(ctx.config, abs, relForReturn);
+  return { path: relForReturn, deleted: true, trashPath };
 }
 
 async function fileRenameTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
+  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${relForReturn}`);
   const stat = fs.statSync(abs);
-  if (stat.isDirectory()) throw new Error(`不支持重命名目录: ${args.path}`);
+  if (stat.isDirectory()) throw new Error(`不支持重命名目录: ${relForReturn}`);
   const newName = String(args.newName || "").trim();
   if (!newName) throw new Error("newName 不能为空");
   if (newName.includes("/") || newName.includes("\\")) throw new Error("newName 不能包含目录分隔符");
@@ -146,41 +166,42 @@ async function fileRenameTool(args: Record<string, unknown>, ctx: NativeToolCont
   if (!dest.startsWith(path.resolve(ctx.config.projectRoot))) throw new Error("目标路径超出项目根目录范围");
   if (fs.existsSync(dest)) throw new Error(`目标已存在: ${newName}`);
   fs.renameSync(abs, dest);
-  return { from: args.path, to: path.relative(ctx.config.projectRoot, dest).replace(/\\/g, "/") };
+  return { from: relForReturn, to: path.relative(ctx.config.projectRoot, dest).replace(/\\/g, "/") };
 }
 
 async function fileMoveTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  const stat = fs.statSync(abs);
-  if (stat.isDirectory()) throw new Error(`不支持移动目录: ${args.path}`);
+  const src = await resolveAgentFsPath(ctx, String(args.path), "write");
+  if (!fs.existsSync(src.abs)) throw new Error(`文件不存在: ${src.relForReturn}`);
+  const stat = fs.statSync(src.abs);
+  if (stat.isDirectory()) throw new Error(`不支持移动目录: ${src.relForReturn}`);
   const destRel = String(args.dest || "").trim();
   if (!destRel) throw new Error("dest 不能为空");
-  const destAbs = resolveSafePath(ctx.config, destRel);
-  if (fs.existsSync(destAbs)) throw new Error(`目标已存在: ${destRel}`);
-  const destDir = path.dirname(destAbs);
+  const dest = await resolveAgentFsPath(ctx, destRel, "write");
+  if (fs.existsSync(dest.abs)) throw new Error(`目标已存在: ${dest.relForReturn}`);
+  const destDir = path.dirname(dest.abs);
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-  fs.renameSync(abs, destAbs);
-  return { from: args.path, to: destRel };
+  fs.renameSync(src.abs, dest.abs);
+  return { from: src.relForReturn, to: dest.relForReturn };
 }
 
 async function fileCopyTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${args.path}`);
-  if (!fs.statSync(abs).isFile()) throw new Error(`只能复制文件: ${args.path}`);
+  const src = await resolveAgentFsPath(ctx, String(args.path), "read");
+  if (!fs.existsSync(src.abs)) throw new Error(`文件不存在: ${src.relForReturn}`);
+  if (!fs.statSync(src.abs).isFile()) throw new Error(`只能复制文件: ${src.relForReturn}`);
   const destRel = String(args.dest || "").trim();
   if (!destRel) throw new Error("dest 不能为空");
-  const destAbs = resolveSafePath(ctx.config, destRel);
-  if (fs.existsSync(destAbs)) throw new Error(`目标已存在: ${destRel}`);
-  const destDir = path.dirname(destAbs);
+  const dest = await resolveAgentFsPath(ctx, destRel, "write");
+  if (fs.existsSync(dest.abs)) throw new Error(`目标已存在: ${dest.relForReturn}`);
+  const destDir = path.dirname(dest.abs);
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-  fs.copyFileSync(abs, destAbs);
-  return { from: args.path, to: destRel };
+  fs.copyFileSync(src.abs, dest.abs);
+  return { from: src.relForReturn, to: dest.relForReturn };
 }
 
 async function searchFilesTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const root = resolveSafePath(ctx.config, String(args.path || "."));
-  if (!fs.existsSync(root)) throw new Error(`目录不存在: ${args.path || "."}`);
+  const rooted = await resolveAgentFsPath(ctx, String(args.path || "."), "read");
+  const root = rooted.abs;
+  if (!fs.existsSync(root)) throw new Error(`目录不存在: ${rooted.relForReturn}`);
   const rawPattern = String(args.pattern || "");
   if (!rawPattern) throw new Error("pattern 不能为空");
   const isRegex = args.isRegex === true;
@@ -247,18 +268,18 @@ async function searchFilesTool(args: Record<string, unknown>, ctx: NativeToolCon
 }
 
 async function directoryCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (fs.existsSync(abs)) throw new Error(`路径已存在: ${args.path}`);
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
+  if (fs.existsSync(abs)) throw new Error(`路径已存在: ${relForReturn}`);
   fs.mkdirSync(abs, { recursive: true });
-  return { path: args.path, created: true };
+  return { path: relForReturn, created: true };
 }
 
 async function fileStatTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`文件或目录不存在: ${args.path}`);
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "read");
+  if (!fs.existsSync(abs)) throw new Error(`文件或目录不存在: ${relForReturn}`);
   const stat = fs.statSync(abs);
   return {
-    path: args.path,
+    path: relForReturn,
     exists: true,
     isFile: stat.isFile(),
     isDirectory: stat.isDirectory(),
@@ -269,27 +290,28 @@ async function fileStatTool(args: Record<string, unknown>, ctx: NativeToolContex
 }
 
 async function directoryDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const abs = resolveSafePath(ctx.config, String(args.path));
-  if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${args.path}`);
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
+  if (!fs.existsSync(abs)) throw new Error(`目录不存在: ${relForReturn}`);
   const stat = fs.statSync(abs);
-  if (!stat.isDirectory()) throw new Error(`目标不是目录: ${args.path}`);
+  if (!stat.isDirectory()) throw new Error(`目标不是目录: ${relForReturn}`);
   // 语义保持：非 recursive 只允许删空目录（原 rmdirSync 行为），recursive 才删非空
   if (args.recursive !== true && fs.readdirSync(abs).length > 0) {
-    throw new Error(`目录非空，需 recursive=true 才能删除: ${args.path}`);
+    throw new Error(`目录非空，需 recursive=true 才能删除: ${relForReturn}`);
   }
-  const trashPath = moveToTrash(ctx.config, abs, String(args.path));
-  return { path: args.path, deleted: true, trashPath };
+  const trashPath = moveToTrash(ctx.config, abs, relForReturn);
+  return { path: relForReturn, deleted: true, trashPath };
 }
 
 const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "read_file",
     concurrencyClass: "A",
-    description: "读取项目根目录内的文本文件（相对路径），支持偏移与最大长度。",
+    description:
+      "读取文本文件。path 以 content/ 开头可读知识库；否则相对当前 Agent Workspace（禁止裸扫项目根/config/apps）。支持偏移与最大长度。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对项目根的路径，如 content/posts/foo.md" },
+        path: { type: "string", description: "content/… 或 Workspace 相对路径" },
         maxChars: { type: "number", description: "最大读取字符数，默认 12000" },
         offset: { type: "number", description: "起始字符偏移，默认 0" },
       },
@@ -303,13 +325,13 @@ const FS_DEFS: NativeToolDefinition[] = [
     // 可回滚的常规写入，非删除类——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常写文件
     approvalExempt: true,
     description:
-      "写入文本文件。path 解析规则：以 content/ 开头走知识库（content/uploads/ 放图片等资源；content/posts/ 写文章建议改用 post_create 走 frontmatter/同步管道）；否则落到当前 Agent 的 Workspace 目录（每个 Agent 有独立 Workspace，工作产物隔离，如 path=demo.html → workspaces/{当前workspace}/demo.html）。禁止 .. 与绝对路径。",
+      "写入文本文件。path：content/uploads/… 可写上传资源；禁止 content/posts|about（须 post_create）；其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "相对路径：content/ 开头走知识库；否则相对当前 Workspace（如 demo.html、sub/foo.txt）",
+          description: "content/uploads/… 或 Workspace 相对路径（如 demo.html）",
         },
         content: { type: "string", description: "文件内容" },
       },
@@ -320,13 +342,13 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "append_to_file",
     concurrencyClass: "D",
     description:
-      "在文本文件末尾追加内容（文件不存在则创建）。path 解析规则同 write_file：content/ 开头走知识库；否则相对当前 Agent 的 Workspace 目录。",
+      "在文本文件末尾追加内容（文件不存在则创建）。路径规则同 write_file（uploads 白名单 + Workspace）。",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "相对路径：content/ 开头走知识库；否则相对当前 Workspace（如 log.txt）",
+          description: "content/uploads/… 或 Workspace 相对路径",
         },
         content: { type: "string", description: "追加内容" },
       },
@@ -336,11 +358,11 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "list_directory",
     concurrencyClass: "A",
-    description: "列出项目内目录内容，可选递归。",
+    description: "列出目录内容（默认当前 Agent Workspace 根，可选递归）。path=content/… 可列知识库子树。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对目录，默认 ." },
+        path: { type: "string", description: "相对 Workspace 或 content/…；默认 Workspace 根" },
         recursive: { type: "boolean", description: "是否递归列出子目录，默认 false" },
       },
     },
@@ -478,12 +500,12 @@ const FS_HANDLERS = {
 const FS_ROLLBACKS: Record<string, ToolRollback<NativeToolContext>> = {
   write_file: {
     capture: async (args, ctx) => {
-      const abs = resolveSafePath(ctx.config, String(args.path));
+      const { abs } = await resolveAgentFsPath(ctx, String(args.path), "write");
       if (!fs.existsSync(abs)) return { existed: false };
       return { existed: true, content: fs.readFileSync(abs, "utf8") };
     },
     compensate: async (args, _result, captured, ctx) => {
-      const abs = resolveSafePath(ctx.config, String(args.path));
+      const { abs } = await resolveAgentFsPath(ctx, String(args.path), "write");
       const data = captured as { existed?: boolean; content?: string } | undefined;
       if (!data?.existed) {
         if (fs.existsSync(abs)) fs.unlinkSync(abs);
@@ -511,9 +533,9 @@ async function moveBackFromTrash(
   if (!trashPath) return "无回收站路径（可能已恢复），幂等跳过";
   const trashAbs = resolveSafePath(ctx.config, trashPath);
   if (!fs.existsSync(trashAbs)) return "回收站副本已不存在（视为已回滚），幂等跳过";
-  const origAbs = resolveSafePath(ctx.config, String(args.path));
+  const { abs: origAbs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
   if (fs.existsSync(origAbs)) {
-    throw new Error(`原路径已存在新内容（${args.path}），为避免覆盖未移回；回收站副本保留于 ${trashPath}，需人工合并`);
+    throw new Error(`原路径已存在新内容（${relForReturn}），为避免覆盖未移回；回收站副本保留于 ${trashPath}，需人工合并`);
   }
   fs.mkdirSync(path.dirname(origAbs), { recursive: true });
   fs.renameSync(trashAbs, origAbs);

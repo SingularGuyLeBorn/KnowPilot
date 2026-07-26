@@ -164,7 +164,8 @@ describe("native:read_file", () => {
   });
 
   it("maxChars 截断长内容", async () => {
-    fs.writeFileSync(path.join(root, "long.txt"), "a".repeat(100), "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/long.txt"), "a".repeat(100), "utf8");
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool("read_file", { path: "long.txt", maxChars: 10 }, ctx)) as {
       content: string;
@@ -175,7 +176,8 @@ describe("native:read_file", () => {
   });
 
   it("offset 控制读取起点", async () => {
-    fs.writeFileSync(path.join(root, "seq.txt"), "0123456789", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/seq.txt"), "0123456789", "utf8");
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool("read_file", { path: "seq.txt", offset: 3, maxChars: 4 }, ctx)) as {
       content: string;
@@ -203,11 +205,11 @@ describe("native:write_file", () => {
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool(
       "write_file",
-      { path: "content/workspace/out/nested/file.txt", content: "saved" },
+      { path: "out/nested/file.txt", content: "saved" },
       ctx,
     )) as { path: string; bytes: number };
     expect(result.bytes).toBeGreaterThan(0);
-    expect(fs.readFileSync(path.join(root, "content/workspace/out/nested/file.txt"), "utf8")).toBe("saved");
+    expect(fs.readFileSync(path.join(root, "data/workspace/out/nested/file.txt"), "utf8")).toBe("saved");
   });
 });
 
@@ -216,8 +218,8 @@ describe("native:list_directory", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.writeFileSync(path.join(root, "a.txt"), "a", "utf8");
-    fs.mkdirSync(path.join(root, "subdir"));
+    fs.mkdirSync(path.join(root, "data/workspace/subdir"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/a.txt"), "a", "utf8");
   });
 
   afterEach(() => {
@@ -237,15 +239,15 @@ describe("native:list_directory", () => {
   });
 
   it("recursive 递归列出", async () => {
-    fs.writeFileSync(path.join(root, "subdir", "nested.txt"), "n", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/subdir", "nested.txt"), "n", "utf8");
     const ctx = createNativeCtx(root);
     const entries = (await executeNativeTool("list_directory", { path: ".", recursive: true }, ctx)) as Array<{
       path: string;
       type: string;
     }>;
-    const paths = entries.map((e) => e.path);
-    expect(paths).toContain("subdir");
-    expect(paths).toContain("subdir/nested.txt");
+    const paths = entries.map((e) => e.path.replace(/\\/g, "/"));
+    expect(paths.some((x) => x.endsWith("subdir") || x.includes("/subdir"))).toBe(true);
+    expect(paths.some((x) => x.includes("nested.txt"))).toBe(true);
   });
 });
 
@@ -261,33 +263,33 @@ describe("native:append_to_file", () => {
   });
 
   it("在已有文件末尾追加内容", async () => {
-    fs.mkdirSync(path.join(root, "content/workspace"), { recursive: true });
-    fs.writeFileSync(path.join(root, "content/workspace/log.txt"), "line1\n", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/log.txt"), "line1\n", "utf8");
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool(
       "append_to_file",
-      { path: "content/workspace/log.txt", content: "line2\n" },
+      { path: "log.txt", content: "line2\n" },
       ctx,
     )) as {
       path: string;
       bytes: number;
     };
     expect(result.bytes).toBe(6);
-    expect(fs.readFileSync(path.join(root, "content/workspace/log.txt"), "utf8")).toBe("line1\nline2\n");
+    expect(fs.readFileSync(path.join(root, "data/workspace/log.txt"), "utf8")).toBe("line1\nline2\n");
   });
 
   it("文件不存在时创建并写入", async () => {
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool(
       "append_to_file",
-      { path: "content/workspace/new.txt", content: "x" },
+      { path: "new.txt", content: "x" },
       ctx,
     )) as {
       path: string;
       bytes: number;
     };
     expect(result.bytes).toBe(1);
-    expect(fs.readFileSync(path.join(root, "content/workspace/new.txt"), "utf8")).toBe("x");
+    expect(fs.readFileSync(path.join(root, "data/workspace/new.txt"), "utf8")).toBe("x");
   });
 });
 
@@ -296,7 +298,8 @@ describe("native:file_delete", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.writeFileSync(path.join(root, "to-delete.txt"), "bye", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/to-delete.txt"), "bye", "utf8");
   });
 
   afterEach(() => {
@@ -310,7 +313,7 @@ describe("native:file_delete", () => {
       deleted: boolean;
     };
     expect(result.deleted).toBe(true);
-    expect(fs.existsSync(path.join(root, "to-delete.txt"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "data/workspace/to-delete.txt"))).toBe(false);
   });
 
   it("拒绝路径穿越", async () => {
@@ -368,7 +371,8 @@ describe("native:file_rename", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.writeFileSync(path.join(root, "old.txt"), "content", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/old.txt"), "content", "utf8");
   });
 
   afterEach(() => {
@@ -381,13 +385,13 @@ describe("native:file_rename", () => {
       from: string;
       to: string;
     };
-    expect(result.to).toBe("new.txt");
-    expect(fs.existsSync(path.join(root, "new.txt"))).toBe(true);
-    expect(fs.existsSync(path.join(root, "old.txt"))).toBe(false);
+    expect(result.to.replace(/\\/g, "/")).toBe("data/workspace/new.txt");
+    expect(fs.existsSync(path.join(root, "data/workspace/new.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "data/workspace/old.txt"))).toBe(false);
   });
 
   it("拒绝重命名目录", async () => {
-    fs.mkdirSync(path.join(root, "dir"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data/workspace/dir"), { recursive: true });
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("file_rename", { path: "dir", newName: "x" }, ctx)).rejects.toThrow(/不支持重命名目录/);
   });
@@ -398,7 +402,7 @@ describe("native:file_rename", () => {
   });
 
   it("目标已存在时报错", async () => {
-    fs.writeFileSync(path.join(root, "existing.txt"), "", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/existing.txt"), "", "utf8");
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("file_rename", { path: "old.txt", newName: "existing.txt" }, ctx)).rejects.toThrow(/目标已存在/);
   });
@@ -409,7 +413,8 @@ describe("native:file_move", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.writeFileSync(path.join(root, "a.txt"), "a", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/a.txt"), "a", "utf8");
   });
 
   afterEach(() => {
@@ -422,19 +427,19 @@ describe("native:file_move", () => {
       from: string;
       to: string;
     };
-    expect(result.to).toBe("dir/b.txt");
-    expect(fs.existsSync(path.join(root, "dir", "b.txt"))).toBe(true);
-    expect(fs.existsSync(path.join(root, "a.txt"))).toBe(false);
+    expect(result.to.replace(/\\/g, "/")).toBe("data/workspace/dir/b.txt");
+    expect(fs.existsSync(path.join(root, "data/workspace/dir/b.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "data/workspace/a.txt"))).toBe(false);
   });
 
   it("拒绝移动目录", async () => {
-    fs.mkdirSync(path.join(root, "dir"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data/workspace/dir"), { recursive: true });
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("file_move", { path: "dir", dest: "x.txt" }, ctx)).rejects.toThrow(/不支持移动目录/);
   });
 
   it("目标已存在时报错", async () => {
-    fs.writeFileSync(path.join(root, "b.txt"), "", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/b.txt"), "", "utf8");
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("file_move", { path: "a.txt", dest: "b.txt" }, ctx)).rejects.toThrow(/目标已存在/);
   });
@@ -445,7 +450,8 @@ describe("native:file_copy", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.writeFileSync(path.join(root, "a.txt"), "copy me", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/a.txt"), "copy me", "utf8");
   });
 
   afterEach(() => {
@@ -458,14 +464,14 @@ describe("native:file_copy", () => {
       from: string;
       to: string;
     };
-    expect(result.to).toBe("dir/b.txt");
-    expect(fs.existsSync(path.join(root, "dir", "b.txt"))).toBe(true);
-    expect(fs.existsSync(path.join(root, "a.txt"))).toBe(true);
-    expect(fs.readFileSync(path.join(root, "dir", "b.txt"), "utf8")).toBe("copy me");
+    expect(result.to.replace(/\\/g, "/")).toBe("data/workspace/dir/b.txt");
+    expect(fs.existsSync(path.join(root, "data/workspace/dir/b.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "data/workspace/a.txt"))).toBe(true);
+    expect(fs.readFileSync(path.join(root, "data/workspace/dir/b.txt"), "utf8")).toBe("copy me");
   });
 
   it("目标已存在时报错", async () => {
-    fs.writeFileSync(path.join(root, "b.txt"), "", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/b.txt"), "", "utf8");
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("file_copy", { path: "a.txt", dest: "b.txt" }, ctx)).rejects.toThrow(/目标已存在/);
   });
@@ -476,9 +482,9 @@ describe("native:search_files", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.mkdirSync(path.join(root, "notes"), { recursive: true });
-    fs.writeFileSync(path.join(root, "notes", "a.md"), "hello world\nfoo bar", "utf8");
-    fs.writeFileSync(path.join(root, "b.md"), "another hello", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace/notes"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/notes/a.md"), "hello world\nfoo bar", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/b.md"), "another hello", "utf8");
   });
 
   afterEach(() => {
@@ -492,8 +498,8 @@ describe("native:search_files", () => {
       results: Array<{ file: string; line: number; snippet: string }>;
     };
     expect(result.total).toBeGreaterThanOrEqual(2);
-    expect(result.results.some((r) => r.file === "notes/a.md" && r.line === 1)).toBe(true);
-    expect(result.results.some((r) => r.file === "b.md")).toBe(true);
+    expect(result.results.some((r) => r.file.replace(/\\/g, "/").endsWith("notes/a.md") && r.line === 1)).toBe(true);
+    expect(result.results.some((r) => r.file.replace(/\\/g, "/").endsWith("b.md"))).toBe(true);
   });
 
   it("isRegex 支持正则", async () => {
@@ -524,7 +530,8 @@ describe("native:search_files", () => {
   });
 
   it("caseSensitive 区分大小写", async () => {
-    fs.writeFileSync(path.join(root, "case.txt"), "Hello\nhello", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/case.txt"), "Hello\nhello", "utf8");
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool(
       "search_files",
@@ -553,11 +560,11 @@ describe("native:directory_create", () => {
   it("创建目录", async () => {
     const ctx = createNativeCtx(root);
     await executeNativeTool("directory_create", { path: "a/b/c" }, ctx);
-    expect(fs.existsSync(path.join(root, "a", "b", "c"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "data/workspace/a/b/c"))).toBe(true);
   });
 
   it("路径已存在时报错", async () => {
-    fs.mkdirSync(path.join(root, "a"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data/workspace/a"), { recursive: true });
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("directory_create", { path: "a" }, ctx)).rejects.toThrow(/路径已存在/);
   });
@@ -568,7 +575,8 @@ describe("native:file_stat", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.writeFileSync(path.join(root, "a.txt"), "abc", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/a.txt"), "abc", "utf8");
   });
 
   afterEach(() => {
@@ -593,9 +601,9 @@ describe("native:directory_delete", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.mkdirSync(path.join(root, "empty"), { recursive: true });
-    fs.mkdirSync(path.join(root, "full"), { recursive: true });
-    fs.writeFileSync(path.join(root, "full", "a.txt"), "a", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace/empty"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data/workspace/full"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/full/a.txt"), "a", "utf8");
   });
 
   afterEach(() => {
@@ -605,17 +613,18 @@ describe("native:directory_delete", () => {
   it("删除空目录", async () => {
     const ctx = createNativeCtx(root);
     await executeNativeTool("directory_delete", { path: "empty" }, ctx);
-    expect(fs.existsSync(path.join(root, "empty"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "data/workspace/empty"))).toBe(false);
   });
 
   it("recursive 删除非空目录", async () => {
     const ctx = createNativeCtx(root);
     await executeNativeTool("directory_delete", { path: "full", recursive: true }, ctx);
-    expect(fs.existsSync(path.join(root, "full"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "data/workspace/full"))).toBe(false);
   });
 
   it("目标不是目录时报错", async () => {
-    fs.writeFileSync(path.join(root, "file.txt"), "", "utf8");
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
+    fs.writeFileSync(path.join(root, "data/workspace/file.txt"), "", "utf8");
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("directory_delete", { path: "file.txt" }, ctx)).rejects.toThrow(/不是目录/);
   });

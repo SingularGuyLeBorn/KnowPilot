@@ -81,7 +81,7 @@ describe("W6 D 类工具 rollback", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
-    fs.mkdirSync(path.join(root, "content/workspace"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
     // 确保 native 工具已注册（其他测试文件可能清空过 registry）
     listNativeTools();
   });
@@ -91,10 +91,10 @@ describe("W6 D 类工具 rollback", () => {
   });
 
   it("write_file 后 run failed → 内容还原为执行前快照，failed Run 落 output.rollback", async () => {
-    fs.writeFileSync(path.join(root, "content/workspace/target.txt"), "old content", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/target.txt"), "old content", "utf8");
     const { services, runCreate, runUpdate } = stubServices();
     const transport = scriptedTransport([
-      { toolCalls: [tc("c1", "write_file", { path: "content/workspace/target.txt", content: "corrupted" })] },
+      { toolCalls: [tc("c1", "write_file", { path: "target.txt", content: "corrupted" })] },
       { throwError: "LLM boom" },
     ]);
 
@@ -108,7 +108,7 @@ describe("W6 D 类工具 rollback", () => {
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toBe("LLM boom");
     // 内容已还原
-    expect(fs.readFileSync(path.join(root, "content/workspace/target.txt"), "utf8")).toBe("old content");
+    expect(fs.readFileSync(path.join(root, "data/workspace/target.txt"), "utf8")).toBe("old content");
     // 回滚报告挂在错误对象上
     const report = (caught as Error & { rollbackReport?: { rolledBack: number; entries: Array<{ toolName: string; status: string }> } }).rollbackReport;
     expect(report).toBeDefined();
@@ -128,25 +128,25 @@ describe("W6 D 类工具 rollback", () => {
   it("write_file 新建文件后 run failed → 回滚为删除该新建文件", async () => {
     const { services } = stubServices();
     const transport = scriptedTransport([
-      { toolCalls: [tc("c1", "write_file", { path: "content/workspace/new.txt", content: "brand new" })] },
+      { toolCalls: [tc("c1", "write_file", { path: "new.txt", content: "brand new" })] },
       { throwError: "LLM boom" },
     ]);
 
     await expect(
       runReactLoop(loopInput(root, services, transport, ["native:write_file"])),
     ).rejects.toThrow("LLM boom");
-    expect(fs.existsSync(path.join(root, "content/workspace/new.txt"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "data/workspace/new.txt"))).toBe(false);
   });
 
   it("run failed 时多个 D 类工具逆序回滚（write_file 快照 + file_delete 回收站移回）", async () => {
-    fs.writeFileSync(path.join(root, "content/workspace/a.txt"), "A", "utf8");
-    fs.writeFileSync(path.join(root, "content/workspace/b.txt"), "B", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/a.txt"), "A", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/b.txt"), "B", "utf8");
     const { services } = stubServices();
     const transport = scriptedTransport([
       {
         toolCalls: [
-          tc("c1", "write_file", { path: "content/workspace/a.txt", content: "A2" }),
-          tc("c2", "file_delete", { path: "content/workspace/b.txt" }),
+          tc("c1", "write_file", { path: "a.txt", content: "A2" }),
+          tc("c2", "file_delete", { path: "b.txt" }),
         ],
       },
       { throwError: "LLM boom" },
@@ -160,9 +160,9 @@ describe("W6 D 类工具 rollback", () => {
     }
 
     // 执行后立即状态：a 被改写、b 被移入回收站 → 回滚后双双恢复
-    expect(fs.readFileSync(path.join(root, "content/workspace/a.txt"), "utf8")).toBe("A");
-    expect(fs.existsSync(path.join(root, "content/workspace/b.txt"))).toBe(true);
-    expect(fs.readFileSync(path.join(root, "content/workspace/b.txt"), "utf8")).toBe("B");
+    expect(fs.readFileSync(path.join(root, "data/workspace/a.txt"), "utf8")).toBe("A");
+    expect(fs.existsSync(path.join(root, "data/workspace/b.txt"))).toBe(true);
+    expect(fs.readFileSync(path.join(root, "data/workspace/b.txt"), "utf8")).toBe("B");
 
     const report = (caught as Error & { rollbackReport?: { entries: Array<{ toolName: string; status: string }> } }).rollbackReport;
     // 逆序：先回滚 file_delete，再回滚 write_file
@@ -239,7 +239,7 @@ describe("W6 D 类工具 rollback", () => {
   });
 
   it("用户 abort → run failed 但不触发回滚", async () => {
-    fs.writeFileSync(path.join(root, "content/workspace/keep.txt"), "old", "utf8");
+    fs.writeFileSync(path.join(root, "data/workspace/keep.txt"), "old", "utf8");
     const { services, runUpdate } = stubServices();
     const controller = new AbortController();
     // 第一轮执行 write_file；第二轮 complete 前 abort 并抛 AbortError
@@ -250,7 +250,7 @@ describe("W6 D 类工具 rollback", () => {
         if (calls === 1) {
           return {
             content: "",
-            toolCalls: [tc("c1", "write_file", { path: "content/workspace/keep.txt", content: "modified" })],
+            toolCalls: [tc("c1", "write_file", { path: "keep.txt", content: "modified" })],
             model: "test-model",
             provider: "test",
           };
@@ -266,7 +266,7 @@ describe("W6 D 类工具 rollback", () => {
     input.signal = controller.signal;
     await expect(runReactLoop(input)).rejects.toThrow("用户中断");
     // abort 不回滚：文件保持已修改状态
-    expect(fs.readFileSync(path.join(root, "content/workspace/keep.txt"), "utf8")).toBe("modified");
+    expect(fs.readFileSync(path.join(root, "data/workspace/keep.txt"), "utf8")).toBe("modified");
     // W11：abort 终态经 update 标 cancelled（不是 failed，也不带 rollback）
     const cancelledUpdate = runUpdate.mock.calls
       .map((c) => c[0] as unknown as { status?: string; output?: { rollback?: unknown } })
