@@ -868,12 +868,14 @@ async function readImageTool(args: Record<string, unknown>, ctx: NativeToolConte
 }
 
 /**
- * 外挂视觉理解器默认模型选择顺序：
+ * 外挂视觉理解器默认模型选择顺序（国内优先、免费优先）：
  * 1. env VISION_DESCRIBE_MODEL（显式覆盖）
  * 2. 当前 Agent 模型若支持 vision → 复用（不额外计费切换）
- * 3. Gemini provider 配了 key → 用其默认模型（有免费层，多模态）
- * 4. OpenRouter provider 配了 key → google/gemma-4-26b-a4b-it:free（免费多模态）
- * 5. deepseek-vl2 兜底（付费）
+ * 3. 智谱 zhipu provider 配了 key → glm-4.1v-thinking-flash（免费、国内直连、无需代理）★ 国内首选
+ * 4. Kimi provider 配了 key → kimi-k2.5（注册送免费额度、国内直连、多模态）
+ * 5. Gemini provider 配了 key → gemini-2.0-flash（国外，国内需代理）
+ * 6. OpenRouter provider 配了 key → google/gemma-4-26b-a4b-it:free（国外，需代理）
+ * 7. deepseek-vl2 兜底（付费）
  */
 function resolveDefaultVisionModel(ctx: NativeToolContext): string {
   const explicit = process.env.VISION_DESCRIBE_MODEL?.trim();
@@ -881,6 +883,8 @@ function resolveDefaultVisionModel(ctx: NativeToolContext): string {
   const agentModel = ctx.agentSnapshot?.model || "";
   if (agentModel && resolveModelSupportsVision(agentModel)) return agentModel;
   const providers = ctx.config.llm.providers;
+  if (providers.zhipu?.apiKey?.trim()) return "glm-4.1v-thinking-flash";
+  if (providers.kimi?.apiKey?.trim()) return "kimi-k2.5";
   if (providers.gemini?.apiKey?.trim()) return providers.gemini.model || "gemini-2.0-flash";
   if (providers.openrouter?.apiKey?.trim()) return "google/gemma-4-26b-a4b-it:free";
   return LLM_MODEL_IDS.DEEPSEEK_VL2;

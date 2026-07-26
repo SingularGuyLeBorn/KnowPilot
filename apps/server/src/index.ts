@@ -11,6 +11,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./router.js";
 import { createContext } from "./trpc/context.js";
 import { getAppConfig, loadRootEnv } from "./infra/config.js";
+import { initGlobalProxy } from "./infra/proxyDispatcher.js";
 import { getEventBus } from "./infra/eventBus.js";
 import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";
@@ -44,6 +45,9 @@ const app = express();
 
 // 优先加载 monorepo 根目录 .env
 loadRootEnv();
+
+// 初始化全局代理（国内访问国外 LLM/站点；读 HTTPS_PROXY/KP_HTTPS_PROXY，未设则直连）
+initGlobalProxy();
 
 // 初始化配置、事件总线、Service容器、触发器引擎
 const config = getAppConfig();
