@@ -13,7 +13,7 @@
 
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import { resolveSafePath } from "./safePath.js";
+import { resolveSafePath, assertWorkspacePathAllowed } from "./safePath.js";
 import { getTierTemplate } from "./agentFactory.js";
 
 export interface ProvisionWorkspaceInput {
@@ -90,6 +90,11 @@ export async function provisionWorkspace(
 ): Promise<ProvisionWorkspaceResult> {
   const { name, path } = input;
   if (!name || !path) return { success: false, error: "需要 name 和 path" };
+  try {
+    assertWorkspacePathAllowed(config, path);
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
 
   const asyncSlotQuota =
     typeof input.asyncSlotQuota === "number" && Number.isFinite(input.asyncSlotQuota)

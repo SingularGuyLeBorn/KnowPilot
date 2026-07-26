@@ -195,6 +195,9 @@ describe("native:write_file", () => {
 
   beforeEach(() => {
     root = createTempProjectDir();
+    fs.mkdirSync(path.join(root, "content/posts"), { recursive: true });
+    fs.mkdirSync(path.join(root, "content/uploads"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data/workspace"), { recursive: true });
   });
 
   afterEach(() => {
@@ -210,6 +213,48 @@ describe("native:write_file", () => {
     )) as { path: string; bytes: number };
     expect(result.bytes).toBeGreaterThan(0);
     expect(fs.readFileSync(path.join(root, "data/workspace/out/nested/file.txt"), "utf8")).toBe("saved");
+  });
+
+  it("硬拒 content/posts 直写（必须走 post_* Service）", async () => {
+    const ctx = createNativeCtx(root);
+    await expect(
+      executeNativeTool("write_file", { path: "content/posts/evil.md", content: "x" }, ctx),
+    ).rejects.toThrow(/禁止|posts|post_create/);
+    expect(fs.existsSync(path.join(root, "content/posts/evil.md"))).toBe(false);
+  });
+
+  it("允许 content/uploads 写入", async () => {
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool(
+      "write_file",
+      { path: "content/uploads/shot.png.txt", content: "img" },
+      ctx,
+    )) as { path: string };
+    expect(result.path.replace(/\\/g, "/")).toContain("content/uploads/");
+    expect(fs.readFileSync(path.join(root, "content/uploads/shot.png.txt"), "utf8")).toBe("img");
+  });
+
+  it("Workspace.path 指向 content/posts 时写文件仍硬拒", async () => {
+    const ctx = createNativeCtx(root, {
+      prisma: {
+        workspace: {
+          findUnique: async () => ({ id: "ws-evil", path: "content/posts" }),
+        },
+      } as never,
+    });
+    ctx.agentSnapshot = {
+      id: "a1",
+      model: "m",
+      systemPrompt: "",
+      tools: [],
+      tier: "sub",
+      workspaceId: "ws-evil",
+      parentId: null,
+    };
+    await expect(
+      executeNativeTool("write_file", { path: "evil.md", content: "x" }, ctx),
+    ).rejects.toThrow(/知识库核心|content\/posts/);
+    expect(fs.existsSync(path.join(root, "content/posts/evil.md"))).toBe(false);
   });
 });
 

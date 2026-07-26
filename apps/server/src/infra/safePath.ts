@@ -58,3 +58,34 @@ export function resolveWithinDir(dir: string, relPath: string): string {
   assertPathWithinDir(dir, abs);
   return abs;
 }
+
+/** 禁止最终落点进入知识库核心（posts/about），堵住 Workspace.path 绕过 write 隔离 */
+export function assertAbsNotKnowledgeCore(config: AppConfig, absPath: string): void {
+  const rel = path.relative(path.resolve(config.projectRoot), path.resolve(absPath)).replace(/\\/g, "/");
+  if (rel.startsWith("..")) return;
+  if (
+    rel === "content/posts" ||
+    rel.startsWith("content/posts/") ||
+    rel === "content/about" ||
+    rel.startsWith("content/about/")
+  ) {
+    throw new Error(
+      `禁止写入知识库核心路径 ${rel}：文章/About 必须走 post_create/post_update；Workspace.path 也不得指向 content/posts|about`,
+    );
+  }
+}
+
+/** Workspace 创建时校验 path 不得指向知识库核心或敏感 config 根 */
+export function assertWorkspacePathAllowed(config: AppConfig, workspacePath: string): void {
+  const normalized = String(workspacePath ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalized) throw new Error("Workspace path 不能为空");
+  if (normalized.includes("..")) throw new Error("Workspace path 不允许包含 ..");
+  const abs = path.isAbsolute(normalized)
+    ? path.resolve(normalized)
+    : resolveSafePath(config, normalized);
+  assertAbsNotKnowledgeCore(config, abs);
+  const rel = path.relative(path.resolve(config.projectRoot), abs).replace(/\\/g, "/");
+  if (rel === "config" || rel.startsWith("config/agents") || rel.startsWith("config/skills")) {
+    throw new Error(`Workspace path 禁止指向 Agent 配置区：${rel}`);
+  }
+}

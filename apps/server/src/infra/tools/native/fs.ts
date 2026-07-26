@@ -8,7 +8,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { resolveSafePath, resolveWithinDir } from "../../safePath.js";
+import { resolveSafePath, resolveWithinDir, assertAbsNotKnowledgeCore } from "../../safePath.js";
 import type { AppConfig } from "../../config.js";
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
@@ -87,6 +87,7 @@ async function resolveAgentFsPath(
   }
   const wsAbs = path.isAbsolute(wsRelPath) ? path.resolve(wsRelPath) : resolveSafePath(ctx.config, wsRelPath);
   const abs = p ? resolveWithinDir(wsAbs, p) : wsAbs;
+  if (mode === "write") assertAbsNotKnowledgeCore(ctx.config, abs);
   const relForReturn = path.relative(ctx.config.projectRoot, abs).replace(/\\/g, "/");
   return { abs, relForReturn };
 }
