@@ -117,6 +117,27 @@ export function findPostSlugByHref(href: string, posts: PostTreeItem[]): string 
   return findPostByHref(href, posts)?.slug ?? null;
 }
 
+/** 解析 Markdown 内链目标文章（相对路径 / slug），供跳转与 hover 预览共用 */
+export function resolvePostLinkTarget(
+  href: string,
+  posts: PostTreeItem[],
+  postSlug?: string,
+  preferGarden?: string,
+): PostTreeItem | null {
+  if (href.startsWith("/posts/")) return null;
+
+  if (postSlug && !href.startsWith("/") && !isExternalHref(href)) {
+    const resolved = resolveRelativeMdSlug(href, postSlug);
+    if (resolved) {
+      const candidates = posts.filter((post) => post.slug === resolved);
+      const hit = pickPreferGarden(candidates, preferGarden);
+      if (hit) return hit;
+    }
+  }
+
+  return findPostByHref(href, posts, preferGarden);
+}
+
 export function resolvePostLinkHref(
   href: string,
   posts: PostTreeItem[],
@@ -127,16 +148,7 @@ export function resolvePostLinkHref(
     return href;
   }
 
-  if (postSlug && !href.startsWith("/") && !isExternalHref(href)) {
-    const resolved = resolveRelativeMdSlug(href, postSlug);
-    if (resolved) {
-      const candidates = posts.filter((post) => post.slug === resolved);
-      const hit = pickPreferGarden(candidates, preferGarden);
-      if (hit) return postDetailHref(hit.slug, hit.garden ?? DEFAULT_POST_GARDEN);
-    }
-  }
-
-  const matched = findPostByHref(href, posts, preferGarden);
+  const matched = resolvePostLinkTarget(href, posts, postSlug, preferGarden);
   if (matched) {
     return postDetailHref(matched.slug, matched.garden ?? DEFAULT_POST_GARDEN);
   }

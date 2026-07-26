@@ -2,9 +2,16 @@
 
 import Link from "next/link";
 import type { ComponentPropsWithoutRef } from "react";
+import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { trpc } from "@/lib/trpc";
-import { isExternalHref, resolvePostLinkHref } from "@/lib/postHref";
+import {
+  isExternalHref,
+  postDetailHref,
+  resolvePostLinkHref,
+  resolvePostLinkTarget,
+} from "@/lib/postHref";
 import { WikiLink } from "./WikiLink";
+import { PostLinkPreview } from "./PostLinkPreview";
 
 interface PostMarkdownLinkProps extends ComponentPropsWithoutRef<"a"> {
   href?: string;
@@ -48,6 +55,22 @@ export function PostMarkdownLink({
       <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
         {children}
       </a>
+    );
+  }
+
+  const target = resolvePostLinkTarget(href, posts, postSlug, postGarden);
+  if (target) {
+    const garden = target.garden ?? postGarden ?? DEFAULT_POST_GARDEN;
+    return (
+      <PostLinkPreview
+        href={postDetailHref(target.slug, garden)}
+        slug={target.slug}
+        garden={garden}
+        title={target.title}
+        className={props.className}
+      >
+        {children}
+      </PostLinkPreview>
     );
   }
 

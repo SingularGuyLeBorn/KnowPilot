@@ -1297,6 +1297,65 @@ ${entity.content}
     return this.formatEntity(post);
   }
 
+  /**
+   * 内链 hover 预览：不增加 viewCount，只返回标题/摘要/正文前段纯文本。
+   */
+  async preview(slug: string, garden: string = DEFAULT_POST_GARDEN): Promise<{
+    id: string;
+    garden: string;
+    slug: string;
+    title: string;
+    excerpt: string | null;
+    category: string | null;
+    tags: string[];
+    previewText: string;
+  }> {
+    const post = await this.prisma.post.findFirst({
+      where: { garden, slug, deletedAt: null },
+      select: {
+        id: true,
+        garden: true,
+        slug: true,
+        title: true,
+        excerpt: true,
+        category: true,
+        tags: true,
+        content: true,
+      },
+    });
+    if (!post) throw new TRPCError({ code: "NOT_FOUND", message: `文章不存在（${garden}/${slug}）` });
+
+    const tags = post.tags
+      ? post.tags.split(",").map((t) => t.trim()).filter(Boolean)
+      : [];
+
+    const excerpt = post.excerpt?.trim() || null;
+    const previewText =
+      excerpt ||
+      String(post.content || "")
+        .replace(/^---[\s\S]*?---\s*/, "")
+        .replace(/```[\s\S]*?```/g, " ")
+        .replace(/\$\$[\s\S]*?\$\$/g, " ")
+        .replace(/\$[^$\n]+\$/g, " ")
+        .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/[#>*_`~|]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 220);
+
+    return {
+      id: post.id,
+      garden: post.garden,
+      slug: post.slug,
+      title: post.title,
+      excerpt,
+      category: post.category,
+      tags,
+      previewText,
+    };
+  }
+
   async search(query: string, limit = 10, garden?: string): Promise<PostEntity[]> {
     try {
       const ftsHits = await searchFts(this.prisma, query, limit * 2);

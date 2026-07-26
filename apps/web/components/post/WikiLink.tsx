@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { postDetailHref } from "@/lib/postHref";
+import { PostLinkPreview } from "./PostLinkPreview";
 
 interface WikiLinkProps {
   target: string;
@@ -49,13 +49,15 @@ export function WikiLink({ target, children, preferGarden }: WikiLinkProps) {
   }
 
   return (
-    <Link
+    <PostLinkPreview
       href={postDetailHref(match.slug, match.garden)}
-      className="border-b border-dashed border-primary/50 text-primary hover:border-solid"
+      slug={match.slug}
+      garden={match.garden}
       title={match.title}
+      className="border-b border-dashed border-primary/50 text-primary hover:border-solid"
     >
       {children}
-    </Link>
+    </PostLinkPreview>
   );
 }
 

@@ -119,6 +119,7 @@ const postRouter = router({
   list: publicProcedure.meta({ description: "分页列出文章；可按花园 garden id /分类/标签/关键词过滤。", aiReadable: true }).input(listPostsSchema).query(({ ctx, input }) => ctx.services.post.list(input)),
   tree: publicProcedure.meta({ description: "获取已发布文章的 garden/slug/title 列表（可选花园过滤）。", aiReadable: true }).input(z.object({ garden: postGardenSchema.optional() }).default({})).query(({ ctx, input }) => ctx.services.post.tree(input.garden)),
   getBySlug: publicProcedure.meta({ description: "按花园 + slug 获取文章详情，同时增加浏览量。", aiReadable: true }).input(getPostBySlugSchema).query(({ ctx, input }) => ctx.services.post.getBySlug(input.slug, input.garden)),
+  preview: publicProcedure.meta({ description: "文章内链 hover 预览（标题/摘要/正文前段），不增加浏览量。", aiReadable: true }).input(getPostBySlugSchema).query(({ ctx, input }) => ctx.services.post.preview(input.slug, input.garden)),
   getById: publicProcedure.meta({ description: "按 id 获取文章，用于编辑器加载。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.post.getById(input.id)),
   create: publicProcedure.meta({ description: "创建新文章到已存在的花园（garden），同步到 content/{garden}/{slug}.md。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
   update: publicProcedure.meta({ description: "更新文章内容，自动同步到本地 Markdown 文件。", aiReadable: true }).input(updatePostSchema).mutation(({ ctx, input }) => ctx.services.post.update(input)),

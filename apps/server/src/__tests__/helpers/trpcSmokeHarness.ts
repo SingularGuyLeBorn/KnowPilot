@@ -58,6 +58,7 @@ const SMOKE_ARG_OVERRIDES: Record<string, unknown> = {
   "post.list": { page: 1, pageSize: 1 },
   "post.search": { query: "smoke", limit: 3 },
   "post.getBySlug": { slug: "__smoke_nonexistent_slug__", garden: "posts" },
+  "post.preview": { slug: "__smoke_nonexistent_slug__", garden: "posts" },
   "post.getById": { id: FAKE_CUID },
   "post.create": {
     title: `Smoke Post ${Date.now()}`,
