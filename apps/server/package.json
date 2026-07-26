@@ -33,7 +33,11 @@
     "integration:smoke:platform:medium": "tsx src/scripts/integration-smoke.ts --medium-platform",
     "integration:smoke:platform:extended": "tsx src/scripts/integration-smoke.ts --extended-platform",
     "read-article:spot": "tsx src/scripts/read-article-spot.ts",
-    "ocr:check": "tsx src/scripts/ocr-check.ts"
+    "ocr:check": "tsx src/scripts/ocr-check.ts",
+    "feishu:authorize": "tsx src/scripts/feishu-authorize.ts",
+    "diag:agentmail": "tsx src/scripts/diag-agentmail.ts",
+    "smoke:yuque-feishu": "tsx src/scripts/smoke-yuque-feishu-full.ts",
+    "smoke:yuque-feishu:deep": "tsx src/scripts/smoke-yuque-feishu-deep.ts"
   },
   "dependencies": {
     "@knowpilot/mock-llm-core": "workspace:*",

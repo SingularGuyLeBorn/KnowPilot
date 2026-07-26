@@ -92,11 +92,6 @@ function ToolPreview({ tools }: { tools: string[] }) {
                 个基础能力（搜索、读文件等）。保存后将写入配置文件。
               </p>
             )}
-            {data.apiProcedures > 0 && (
-              <p className="mt-1 text-[var(--kp-text-3)]">
-                「调用 API」展开后可访问约 {data.apiProcedures} 个后端接口。
-              </p>
-            )}
           </div>
         </div>
       )}

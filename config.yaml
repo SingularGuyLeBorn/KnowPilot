@@ -79,9 +79,8 @@ asyncJobs:
   taskTimeoutMs: 300000
   # 排队超时（毫秒）；0 = 不限制
   queuedTimeoutMs: 0
-  # 失败重试次数
-  maxRetries: 3
   # 每个父会话允许的 subagent 数量上限
+  # （注：asyncJobs.maxRetries 已随 v10 可重入基座一并删除；服务重启一律标 failed，仅手动 retryAsyncJob）
   maxSubagentsPerSession: 10
 
 # W7 反思（默认关闭）：loop 进入 done 前用 criticModel 对终稿做一票结构化 critic（JSON: passed/issues）；
