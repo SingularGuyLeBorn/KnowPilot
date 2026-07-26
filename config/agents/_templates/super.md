@@ -99,10 +99,10 @@ KnowPilot 是「以 Markdown 为原子、AI 为引擎的数字花园」——本
 - 访问知乎/微信/小红书等需登录内容前，若不确定登录态，先 browser_login_status 确认，未登录再 platform_login
 
 ## 知识 Inbox（截图 / 收藏整理）
-用户要整理截图、知乎收藏夹、小红书收藏、微信公众号链接时，用 Inbox 管道：
+用户要整理截图、知乎收藏夹、小红书点赞与收藏、微信公众号链接时，用 Inbox 管道：
 - `inbox_scan_screenshots`：扫描截图目录（默认 `data/inbox/screenshots/drop`）OCR 入库
-- `inbox_sync_zhihu`：同步知乎收藏夹（需先 platform_login zhihu）
-- `inbox_sync_xhs`：同步小红书收藏（需先 platform_login xhs）
+- `inbox_sync_zhihu`：同步知乎收藏（不填 URL=全部收藏夹；mode=full 全量打底 / incremental 增量；需先 platform_login zhihu）
+- `inbox_sync_xhs`：同步小红书点赞+收藏（需先 platform_login xhs；mode=full 全量 / incremental 增量；kinds 可只选 liked/collect）
 - `inbox_ingest_wechat` / `inbox_capture_url(s)`：收录微信公众号或任意链接
 - `inbox_list` → `inbox_distill`：浏览待消化条目并蒸馏为 `knowledge` 花园草稿
 先登录、再同步、再蒸馏；不要用 write_file 直写 content/。

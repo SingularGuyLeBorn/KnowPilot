@@ -1157,7 +1157,7 @@ const WEB_DEFS: NativeToolDefinition[] = [
     concurrencyClass: "A",
     // 只读抓取网页正文，无本地写副作用
     description:
-      "读取网页文章为 Markdown（MetaBlog readArticle）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书等；InfoQ 走官方 API；SPA 站 HTTP→Playwright→DOM→Jina 降级；404/壳页明确报错；正文偏短返回 contentWarning。长文分段读：第一次 offset=0，根据返回的 nextOffset 继续读下一段（contentTruncated=true 或 nextOffset 存在时翻页）。",
+      "读取网页文章为 Markdown（MetaBlog readArticle）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书等；小红书会从 SSR imageList 返回 images URL。默认 embedOcr=true：前几张图临时下载 OCR 后嵌进正文（不永久落盘）。OCR 不理想时，对 images[] URL 再用 read_image / vision_describe；多模态模型可直接 vision 读图。长文分段：offset + nextOffset 翻页。",
     parameters: {
       type: "object",
       properties: {
@@ -1194,7 +1194,7 @@ const WEB_DEFS: NativeToolDefinition[] = [
     concurrencyClass: "B",
     // 截图落盘到 uploads/screenshots，文件名含时间戳，重跑不覆盖旧图
     description:
-      "用 Playwright 打开页面并截图（PNG），保存到 content/uploads/screenshots/。返回 path/publicUrl（不含图片字节）。视觉确认页面 / 登录墙 / 图表时用；随后用 read_image 读图。纯文字页优先 read_article。",
+      "用 Playwright **无头浏览器**（headless，不弹可见窗口）打开页面并截图（PNG），保存到 content/uploads/screenshots/。返回 path/publicUrl（不含图片字节）；Chat 展开工具结果可直接预览图。视觉确认页面 / 登录墙 / 图表时用；随后用 read_image 读图。需要用户扫码登录时用 platform_login（会弹可见窗口），不要用本工具。纯文字页优先 read_article。",
     parameters: {
       type: "object",
       properties: {
