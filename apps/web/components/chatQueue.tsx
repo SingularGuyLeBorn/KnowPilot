@@ -19,6 +19,7 @@ import {
   GripVertical,
   Loader2,
   MessageSquare,
+  Pencil,
   Pin,
   PinOff,
   Trash2,
@@ -63,6 +64,9 @@ export function previewText(item: ChatQueueItem): string {
 interface QueueCardProps {
   item: ChatQueueItem;
   expanded?: boolean;
+  /** Cursor 式：把待发消息拉进主输入框编辑 */
+  isEditing?: boolean;
+  onEdit?: () => void;
   onUpdate?: (patch: Partial<ChatQueueItem>) => void;
   onRemove?: () => void;
   onMoveUp?: () => void;
@@ -75,6 +79,8 @@ interface QueueCardProps {
 export function QueueCard({
   item,
   expanded = true,
+  isEditing = false,
+  onEdit,
   onUpdate,
   onRemove,
   onMoveUp,
@@ -87,6 +93,8 @@ export function QueueCard({
   const isRunning = item.kind === "async-running";
   const isChildNotify = item.kind === "child_notify";
   const canEditMain = item.kind === "user";
+  /** 有 onEdit 时走主输入框（Cursor 式），卡片内不再内联改正文 */
+  const editInComposer = canEditMain && !!onEdit;
   const canEditAppend = isAsyncResult;
 
   return (
@@ -94,10 +102,12 @@ export function QueueCard({
       className={cn(
         "rounded-xl border bg-[var(--kp-bg-alt)] transition-shadow",
         item.pinned ? "border-[var(--kp-brand)]/40 shadow-sm" : isChildNotify ? "border-emerald-300/60" : "border-[var(--kp-divider-light)]",
+        isEditing && "border-[var(--kp-brand)]/50 ring-1 ring-[var(--kp-brand)]/30",
         isChildNotify && "border-l-4 border-l-emerald-400",
         expanded ? "p-3" : "px-3 py-2",
       )}
       data-testid={`chat-queue-item-${item.kind}`}
+      data-editing={isEditing ? "true" : undefined}
     >
       <div className="flex items-start gap-2">
         {!isRunning && (
@@ -122,6 +132,11 @@ export function QueueCard({
               {kindLabel(item)}
             </span>
             {isRunning && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
+            {isEditing && (
+              <span className="text-[10px] font-medium text-[var(--kp-text-3)]" data-testid="chat-queue-editing-badge">
+                Editing
+              </span>
+            )}
             {item.pinned && <span className="text-[10px] text-[var(--kp-brand-deep)]">已置顶</span>}
             {(isRunning || isAsyncResult) && item.subagentSessionId && (
               <a
@@ -174,7 +189,16 @@ export function QueueCard({
                 </p>
               )}
 
-              {(canEditMain || (isAsyncResult && item.text)) && onUpdate && (
+              {editInComposer && (
+                <p
+                  className="whitespace-pre-wrap rounded-lg bg-[var(--kp-bg-mute)] px-2 py-1.5 text-xs text-[var(--kp-text-1)]"
+                  data-testid="chat-queue-item-body"
+                >
+                  {item.text.trim() || "（空消息）"}
+                </p>
+              )}
+
+              {!editInComposer && (canEditMain || (isAsyncResult && item.text)) && onUpdate && (
                 <div>
                   <p className="mb-1 text-[10px] font-medium text-[var(--kp-text-3)]">
                     {canEditMain ? "消息内容" : "附加上下文"}
@@ -213,6 +237,20 @@ export function QueueCard({
         <div className="flex shrink-0 flex-col gap-0.5">
           {!isRunning && (
             <>
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  className={cn(
+                    "rounded p-1 hover:bg-[var(--kp-bg-mute)]",
+                    isEditing ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-3)]",
+                  )}
+                  title="在输入框中编辑"
+                  data-testid="chat-queue-edit"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
               {onTogglePin && (
                 <button
                   type="button"
@@ -286,9 +324,11 @@ interface InlineQueueListProps {
   items: ChatQueueItem[];
   onChange: (items: ChatQueueItem[]) => void;
   onRemove: (id: string) => void;
+  editingId?: string | null;
+  onEdit?: (id: string) => void;
 }
 
-function InlineQueueList({ items, onChange, onRemove }: InlineQueueListProps) {
+function InlineQueueList({ items, onChange, onRemove, editingId, onEdit }: InlineQueueListProps) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
 
   const reorder = (from: number, to: number) => {
@@ -325,6 +365,8 @@ function InlineQueueList({ items, onChange, onRemove }: InlineQueueListProps) {
           <QueueCard
             item={item}
             expanded
+            isEditing={editingId === item.id}
+            onEdit={item.kind === "user" && onEdit ? () => onEdit(item.id) : undefined}
             onUpdate={(patch) => updateItem(item.id, patch)}
             onRemove={() => onRemove(item.id)}
             onMoveUp={() => moveItem(item.id, -1)}
@@ -341,11 +383,22 @@ interface UserSendQueuePanelProps {
   items: ChatQueueItem[];
   onChange: (items: ChatQueueItem[]) => void;
   onRemove: (id: string) => void;
+  editingId?: string | null;
+  onEdit?: (id: string) => void;
   asyncStats?: { queued: number; runningGlobal: number };
 }
 
-export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: UserSendQueuePanelProps) {
-  const [expanded, setExpanded] = useState(false);
+export function UserSendQueuePanel({
+  items,
+  onChange,
+  onRemove,
+  editingId = null,
+  onEdit,
+  asyncStats,
+}: UserSendQueuePanelProps) {
+  const [userExpanded, setUserExpanded] = useState(false);
+  // 编辑中强制展开，结束后回到用户自己的展开/收起偏好
+  const expanded = userExpanded || !!editingId;
   if (items.length === 0) return null;
   // superior 队首由服务端 drain；前端不越过，需明示以免用户以为待发卡住
   const superiorHeadBlocks = items[0]?.kind === "superior";
@@ -355,7 +408,7 @@ export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: Us
       {!expanded ? (
         <button
           type="button"
-          onClick={() => setExpanded(true)}
+          onClick={() => setUserExpanded(true)}
           className="flex w-full items-center gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/95 px-3 py-2 text-left text-xs shadow-sm transition hover:bg-[var(--kp-bg-mute)]"
         >
           <MessageSquare className="h-4 w-4 text-[var(--kp-brand)]" />
@@ -388,9 +441,10 @@ export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: Us
             </span>
             <button
               type="button"
-              onClick={() => setExpanded(false)}
+              onClick={() => setUserExpanded(false)}
               className="rounded p-1 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)]"
               title="收起"
+              disabled={!!editingId}
             >
               <ChevronUp className="h-4 w-4" />
             </button>
@@ -400,7 +454,13 @@ export function UserSendQueuePanel({ items, onChange, onRemove, asyncStats }: Us
               队首为上级 Agent 消息，服务端送达后才会继续发送后续待发项。
             </p>
           )}
-          <InlineQueueList items={items} onChange={onChange} onRemove={onRemove} />
+          <InlineQueueList
+            items={items}
+            onChange={onChange}
+            onRemove={onRemove}
+            editingId={editingId}
+            onEdit={onEdit}
+          />
         </div>
       )}
     </div>

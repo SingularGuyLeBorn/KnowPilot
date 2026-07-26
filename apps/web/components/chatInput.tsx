@@ -9,6 +9,10 @@ import { trpc } from "@/lib/trpc";
 import type { ChatQueueAttachment } from "@/lib/chatQueueTypes";
 import { ChatModelMenu } from "@/components/chatModelMenu";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
+import {
+  restoreDraftAfterQueueEdit,
+  stashDraftOnEnterQueueEdit,
+} from "@/lib/queueEditDraft";
 
 export interface SelectedSkill {
   id: string;
@@ -17,6 +21,8 @@ export interface SelectedSkill {
   description: string;
   code: string;
 }
+
+export type QueueEditTarget = { id: string; text: string };
 
 interface ChatInputAreaProps {
   onSend: (
@@ -47,6 +53,10 @@ interface ChatInputAreaProps {
   isSubagentSession?: boolean;
   /** 深度调研仅新会话首条前可选 */
   canStartDeepResearch?: boolean;
+  /** Cursor 式编辑队列项：非 null 时输入框处于「Edit Queued」态 */
+  queueEdit?: QueueEditTarget | null;
+  onCommitQueueEdit?: (id: string, text: string) => void;
+  onCancelQueueEdit?: () => void;
 }
 
 type SlashCommandItem = {
@@ -79,6 +89,9 @@ export const ChatInputArea = memo(function ChatInputArea({
   sessionId,
   isSubagentSession = false,
   canStartDeepResearch = false,
+  queueEdit = null,
+  onCommitQueueEdit,
+  onCancelQueueEdit,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -88,6 +101,11 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   // 输入框 value 内部自管理，避免每个字符都触发外层 ChatView 重渲染
   const [input, setInput] = useState("");
+  const inputRef = useRef(input);
+  inputRef.current = input;
+  /** 编辑队列前备份的草稿（提交/取消后还原，保证 abcde 不丢） */
+  const queueEditDraftBackupRef = useRef<string | null>(null);
+  const queueEditActiveIdRef = useRef<string | null>(null);
   const [skillOpen, setSkillOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [highlightIdx, setHighlightIdx] = useState(0);
@@ -147,12 +165,52 @@ export const ChatInputArea = memo(function ChatInputArea({
     setOcrError(null);
     setHistoryIdx(-1);
     setDeepResearchEnabled(false);
+    queueEditDraftBackupRef.current = null;
+    queueEditActiveIdRef.current = null;
     textareaRef.current?.focus();
   }, [sessionId]);
 
   useEffect(() => {
     if (!canStartDeepResearch) setDeepResearchEnabled(false);
   }, [canStartDeepResearch]);
+
+  // Cursor 式编辑队列：进入时备份草稿并载入队列正文；父级清空时还原备份
+  useEffect(() => {
+    const editId = queueEdit?.id ?? null;
+    if (editId && queueEdit) {
+      queueEditDraftBackupRef.current = stashDraftOnEnterQueueEdit({
+        alreadyEditingId: queueEditActiveIdRef.current,
+        currentBackup: queueEditDraftBackupRef.current,
+        currentInput: inputRef.current,
+      });
+      if (queueEditActiveIdRef.current !== editId) {
+        queueEditActiveIdRef.current = editId;
+        setInput(queueEdit.text);
+        setHistoryIdx(-1);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      }
+      return;
+    }
+    if (queueEditActiveIdRef.current !== null) {
+      const backup = queueEditDraftBackupRef.current;
+      queueEditDraftBackupRef.current = null;
+      queueEditActiveIdRef.current = null;
+      setInput(restoreDraftAfterQueueEdit(backup));
+    }
+  }, [queueEdit?.id, queueEdit?.text, queueEdit]);
+
+  const finishQueueEditLocally = useCallback(() => {
+    const backup = queueEditDraftBackupRef.current;
+    queueEditDraftBackupRef.current = null;
+    queueEditActiveIdRef.current = null;
+    setInput(restoreDraftAfterQueueEdit(backup));
+    setHistoryIdx(-1);
+  }, []);
+
+  const cancelQueueEdit = useCallback(() => {
+    finishQueueEditLocally();
+    onCancelQueueEdit?.();
+  }, [finishQueueEditLocally, onCancelQueueEdit]);
 
   const getHistory = useCallback((): string[] => {
     if (!historyKey) return [];
@@ -317,6 +375,17 @@ export const ChatInputArea = memo(function ChatInputArea({
     sendLockRef.current = true;
     setIsSending(true);
 
+    // Cursor 式：提交队列编辑 → 写回队列项 + 还原进入编辑前的草稿（abcde 不丢）
+    const editingId = queueEditActiveIdRef.current;
+    if (editingId && onCommitQueueEdit) {
+      onCommitQueueEdit(editingId, text);
+      finishQueueEditLocally();
+      pendingDeliveryRef.current = undefined;
+      sendLockRef.current = false;
+      setTimeout(releaseSendLock, 300);
+      return;
+    }
+
     // 深度研究 chip：发送时自动补 /research 前缀（与 enqueue 斜杠语义一致）
     if (
       deepResearchEnabled &&
@@ -410,16 +479,23 @@ export const ChatInputArea = memo(function ChatInputArea({
     reader.readAsDataURL(file);
   };
 
-  const canSend = (!!input.trim() || pendingImages.length > 0) && !disabled && !ocrLoading && !isSending;
+  const isEditingQueue = !!queueEdit?.id;
+  const canSend =
+    (!!input.trim() || (!isEditingQueue && pendingImages.length > 0)) &&
+    !disabled &&
+    !ocrLoading &&
+    !isSending;
   const placeholderHint = disabled
     ? "后端未连接"
-    : deepResearchEnabled && canStartDeepResearch
-      ? "深度研究已开启：发送将走 /research …"
-      : isStreaming
-        ? "Agent 回复中，发送将加入队列…"
-        : queueLength > 0
-          ? `队列中还有 ${queueLength} 条，继续发送会依次执行`
-          : "输入消息";
+    : isEditingQueue
+      ? "编辑队列消息，发送后写回队列并恢复原草稿"
+      : deepResearchEnabled && canStartDeepResearch
+        ? "深度研究已开启：发送将走 /research …"
+        : isStreaming
+          ? "Agent 回复中，发送将加入队列…"
+          : queueLength > 0
+            ? `队列中还有 ${queueLength} 条，继续发送会依次执行`
+            : "输入消息";
 
   return (
     <div className="relative mx-auto max-w-3xl">
@@ -636,6 +712,11 @@ export const ChatInputArea = memo(function ChatInputArea({
                   return;
                 }
               }
+              if (e.key === "Escape" && queueEditActiveIdRef.current) {
+                e.preventDefault();
+                cancelQueueEdit();
+                return;
+              }
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
                 // Alt+Ctrl/Cmd+Enter = follow_up；普通 Ctrl/Cmd+Enter = 默认（streaming 时为 steer）
@@ -699,6 +780,23 @@ export const ChatInputArea = memo(function ChatInputArea({
         {/* 能力条：与输入同表面，无分割线；Skill 只在这里出现一次 */}
         <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-1">
           <div className="flex items-center gap-0.5">
+            {isEditingQueue && (
+              <span
+                data-testid="chat-edit-queued-chip"
+                className="mr-1 inline-flex items-center gap-1 rounded-full border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/60 px-2.5 py-1 text-[11px] font-medium text-[var(--kp-brand-deep)]"
+              >
+                Edit Queued
+                <button
+                  type="button"
+                  onClick={cancelQueueEdit}
+                  className="rounded-full p-0.5 hover:bg-[var(--kp-brand-soft)]"
+                  aria-label="取消编辑队列"
+                  title="取消编辑，恢复原草稿"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
             {!isSubagentSession && (
               <button
                 type="button"

@@ -7,7 +7,7 @@
  */
 
 import Link from "next/link";
-import type { ComponentProps, Dispatch, SetStateAction } from "react";
+import { useState, type ComponentProps, type Dispatch, type SetStateAction } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -140,6 +140,19 @@ export function ChatCenterPane({
   modelSupportsReasoning,
   modelReasoningRequired,
 }: ChatCenterPaneProps) {
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
+  const [editingForSessionId, setEditingForSessionId] = useState(effectiveSessionId);
+  // 切会话时在 render 期清空编辑态（避免 effect 内 setState）
+  if (editingForSessionId !== effectiveSessionId) {
+    setEditingForSessionId(effectiveSessionId);
+    if (editingQueueId != null) setEditingQueueId(null);
+  }
+  // 条目已不在队列 → 派生为未编辑（不强制清 state，提交/取消路径会清）
+  const editingQueueItem =
+    editingQueueId != null
+      ? userQueue.find((i) => i.id === editingQueueId && i.kind === "user")
+      : undefined;
+  const activeEditingId = editingQueueItem?.id ?? null;
   const { messages, messageGroups } = messageListProps;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -388,6 +401,8 @@ export function ChatCenterPane({
         <SessionAskUserBar sessionId={effectiveSessionId} />
         <UserSendQueuePanel
           items={sortQueueItems(userQueue)}
+          editingId={activeEditingId}
+          onEdit={(id) => setEditingQueueId(id)}
           onChange={(items) => {
             const { userQueue: uq, asyncOverlays: ao } = splitQueueByKind(items, asyncQueueData);
             sessionComposeActions.setUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, uq);
@@ -406,6 +421,7 @@ export function ChatCenterPane({
             if (target?.dbId) {
               deleteSessionQueueItemMutation.mutate({ id: target.dbId });
             }
+            if (editingQueueId === id) setEditingQueueId(null);
           }}
           asyncStats={asyncStats}
         />
@@ -437,6 +453,19 @@ export function ChatCenterPane({
           sessionId={effectiveSessionId}
           isSubagentSession={isSubagentSession}
           canStartDeepResearch={allowDeepResearch}
+          queueEdit={
+            editingQueueItem
+              ? { id: editingQueueItem.id, text: editingQueueItem.text }
+              : null
+          }
+          onCommitQueueEdit={(id, text) => {
+            const sid = effectiveSessionId ?? NEW_STREAM_KEY;
+            const next = userQueue.map((i) => (i.id === id ? { ...i, text } : i));
+            sessionComposeActions.setUserQueue(sid, next);
+            persistQueueOrder(next);
+            setEditingQueueId(null);
+          }}
+          onCancelQueueEdit={() => setEditingQueueId(null)}
         />
       </div>
     </div>
