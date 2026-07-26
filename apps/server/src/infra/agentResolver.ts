@@ -54,6 +54,12 @@ export function detectAssistantDrift(agent: AgentEntity): string[] {
   // 仅当系统提示还是旧版默认（或空）时报告，用户自定义提示词不算漂移
   if (!agent.systemPrompt || agent.systemPrompt === OUTDATED_ASSISTANT_SYSTEM_PROMPT) {
     drift.push("系统提示为空或为旧版默认");
+  } else if (
+    agent.systemPrompt.startsWith("你是 KnowPilot 智能助手") &&
+    !agent.systemPrompt.includes("garden_create")
+  ) {
+    // 仍是内置默认身份、但缺动态花园指引（功能新增后未跑迁移）
+    drift.push("系统提示缺少动态花园指引（需升级默认提示）");
   }
   // 默认 assistant 必须是 manager 层级；已明确指定 super/manager/sub 的 Agent 不算漂移
   if (!agent.tier) {
