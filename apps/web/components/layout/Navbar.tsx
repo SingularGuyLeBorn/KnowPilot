@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { KnowPilotLogo } from "@/lib/icons";
 import { usePathname } from "next/navigation";
-import { Bot, Menu, PenLine, PlusCircle, UserCircle } from "lucide-react";
+import { BookOpen, Bot, Menu, PenLine, PlusCircle, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "./CommandPalette";
 import { ThemeToggle } from "@/components/themeToggle";
@@ -49,6 +49,9 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
 
         {/* 桌面顶栏；窄屏改走底栏，避免横向挤爆 */}
         <nav className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex">
+          <TopNavLink href="/gardens" active={pathname.startsWith("/gardens")} icon={<BookOpen className="h-4 w-4" />}>
+            知识库
+          </TopNavLink>
           <TopNavLink href="/posts" active={pathname.startsWith("/posts")} icon={<PenLine className="h-4 w-4" />}>
             文章
           </TopNavLink>

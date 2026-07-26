@@ -73,6 +73,13 @@ export function CommandPalette() {
 
     list.push(
       {
+        id: "action:gardens",
+        type: "action",
+        title: "知识库花园",
+        href: "/gardens",
+        icon: <FolderOpen className="h-4 w-4" />,
+      },
+      {
         id: "action:home",
         type: "action",
         title: "前往首页",

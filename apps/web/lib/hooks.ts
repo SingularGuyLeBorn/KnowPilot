@@ -12,6 +12,7 @@ import { trpc } from "@/lib/trpc";
 import type {
   OperationResult,
   CreatePostInput, UpdatePostInput, ListPostsInput, Post,
+  CreateGardenInput, UpdateGardenInput, ListGardensInput, Garden,
   Agent, Skill, McpServer, Memory, InfoSource,
   ChatSession, ChatMessage, FileMeta, GitRepo,
   Task, Workspace, Trigger, Approval,
@@ -87,6 +88,11 @@ export function useCRUDApi<TCreate = any, TUpdate extends { id: string } = any, 
 }
 
 /* ─── 2. 18 个实体的具体 Hook 绑定与特定扩展 ─── */
+
+/** 知识库花园 Hooks */
+export function useGardens() {
+  return useCRUDApi<CreateGardenInput, UpdateGardenInput & { id: string }, ListGardensInput, Garden>("garden");
+}
 
 /** 文章专属 Hooks 扩展 */
 export function usePosts() {

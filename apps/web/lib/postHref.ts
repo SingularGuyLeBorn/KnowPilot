@@ -3,13 +3,13 @@
  * - 详情 URL：默认花园 posts 走 /posts/{slug}；其它花园带 ?garden=
  * - Markdown 相对链接 / wiki 解析：在 tree 结果里按 slug 匹配，并带上 garden
  */
-import { DEFAULT_POST_GARDEN, type PostGarden } from "@knowpilot/shared";
+import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 
 export interface PostTreeItem {
   slug: string;
   title: string;
-  /** 知识库花园；缺省按 posts 处理（兼容旧 tree 缓存） */
-  garden?: PostGarden | string;
+  /** 知识库花园 id；缺省按 posts */
+  garden?: string;
 }
 
 const EXTERNAL_HREF_RE = /^([a-z][a-z0-9+.-]*:|\/\/)/i;
@@ -22,7 +22,7 @@ export function isExternalHref(href: string): boolean {
  * 文章详情链接：默认花园 posts 走 /posts/{slug}；其它花园带 ?garden=
  * slug 可含 /，统一 encodeURIComponent。
  */
-export function postDetailHref(slug: string, garden: PostGarden | string = DEFAULT_POST_GARDEN): string {
+export function postDetailHref(slug: string, garden: string = DEFAULT_POST_GARDEN): string {
   const encoded = encodeURIComponent(slug);
   if (!garden || garden === DEFAULT_POST_GARDEN) return `/posts/${encoded}`;
   return `/posts/${encoded}?garden=${encodeURIComponent(garden)}`;

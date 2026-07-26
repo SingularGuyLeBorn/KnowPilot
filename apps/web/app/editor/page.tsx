@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Send } from "lucide-react";
 import dynamic from "next/dynamic";
-import { DEFAULT_POST_GARDEN, POST_GARDENS, type PostGarden } from "@knowpilot/shared";
+import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
 
 const MilkdownEditor = dynamic(
@@ -17,20 +17,19 @@ import { usePostMutations } from "@/lib/hooks";
 import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { cn } from "@/lib/utils";
-
-const GARDEN_LABELS: Record<PostGarden, string> = {
-  posts: "博客 posts",
-  knowledge: "知识库 knowledge",
-  resources: "资源 resources",
-};
+import { trpc } from "@/lib/trpc";
 
 export default function NewPostPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const gardenFromUrl = searchParams.get("garden") || DEFAULT_POST_GARDEN;
+  const { data: gardens } = trpc.garden.list.useQuery({ page: 1, pageSize: 100 });
+
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
-  const [garden, setGarden] = useState<PostGarden>(DEFAULT_POST_GARDEN);
+  const [garden, setGarden] = useState(gardenFromUrl);
 
   const { lastSavedAt } = useAutoSave({
     title,
@@ -95,7 +94,6 @@ export default function NewPostPage() {
     <>
       <MilkdownStyles />
       <div className="flex h-full flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 sm:px-6">
           <div className="flex items-center gap-4">
             <Link
@@ -143,17 +141,16 @@ export default function NewPostPage() {
           </div>
         </div>
 
-        {/* Meta fields：花园决定落盘 content/{garden}/ */}
         <div className="flex flex-wrap gap-4 border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 sm:px-6">
           <select
             value={garden}
-            onChange={(e) => setGarden(e.target.value as PostGarden)}
+            onChange={(e) => setGarden(e.target.value)}
             className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-1.5 text-sm text-[var(--kp-text-1)] outline-none"
             title="知识库花园（content/{garden}/）"
           >
-            {POST_GARDENS.map((g) => (
-              <option key={g} value={g}>
-                {GARDEN_LABELS[g]}
+            {(gardens?.items ?? [{ id: DEFAULT_POST_GARDEN, title: "博客" }]).map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.title} ({g.id})
               </option>
             ))}
           </select>
@@ -171,7 +168,6 @@ export default function NewPostPage() {
           />
         </div>
 
-        {/* Editor */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div
             {...dropHandlers}

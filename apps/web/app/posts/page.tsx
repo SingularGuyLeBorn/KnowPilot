@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   PenLine,
   Calendar,
@@ -13,7 +13,7 @@ import {
   X,
   FileText,
 } from "lucide-react";
-import { POST_GARDENS, type Post, type PostGarden } from "@knowpilot/shared";
+import type { Post } from "@knowpilot/shared";
 import { trpc } from "@/lib/trpc";
 import { usePostMutations } from "@/lib/hooks";
 import { postDetailHref } from "@/lib/postHref";
@@ -24,28 +24,26 @@ import { cn } from "@/lib/utils";
 import { Pagination, ConfirmDialog, EmptyState, LoadingState } from "@/components/shared";
 
 type PublishFilter = "all" | "published" | "draft";
-type GardenFilter = "all" | PostGarden;
-
-const GARDEN_LABELS: Record<PostGarden, string> = {
-  posts: "博客",
-  knowledge: "知识库",
-  resources: "资源",
-};
 
 export default function PostsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const gardenFromUrl = searchParams.get("garden") || "";
   const [page, setPage] = useState(1);
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all");
-  const [gardenFilter, setGardenFilter] = useState<GardenFilter>("all");
+  /** URL ?garden= 优先；本地切换时用 state，点「全部」清 URL */
+  const [gardenOverride, setGardenOverride] = useState<string | null>(null);
+  const gardenFilter = gardenOverride ?? (gardenFromUrl || "all");
   const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
 
-  // 简单防抖，避免每次击键都请求
   useEffect(() => {
     const id = setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
     return () => clearTimeout(id);
   }, [keyword]);
+
+  const { data: gardens } = trpc.garden.list.useQuery({ page: 1, pageSize: 100 });
 
   const publishedParam =
     publishFilter === "all" ? undefined : publishFilter === "published";
@@ -74,6 +72,9 @@ export default function PostsPage() {
     remove.mutate({ id: deleteTarget.id });
   };
 
+  const gardenTitle = (id: string) =>
+    gardens?.items.find((g) => g.id === id)?.title ?? id;
+
   return (
     <div className="mx-auto w-full max-w-5xl px-6 py-8 lg:px-10">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -81,11 +82,17 @@ export default function PostsPage() {
             <h1 className="text-2xl font-bold tracking-tight text-[var(--kp-text-1)]">文章管理</h1>
             <p className="mt-1 text-sm text-[var(--kp-text-3)]">
               共 {data?.total ?? 0} 篇
-              {gardenFilter !== "all" ? ` · ${GARDEN_LABELS[gardenFilter]}` : ""}
+              {gardenFilter !== "all" ? ` · ${gardenTitle(gardenFilter)}` : ""}
               {isFetching && !isLoading ? " · 刷新中…" : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/gardens"
+              className={cn(buttonVariants({ variant: "outline" }), "inline-flex items-center gap-2 text-xs")}
+            >
+              知识库
+            </Link>
             <Link
               href="/posts/trash"
               className={cn(buttonVariants({ variant: "outline" }), "inline-flex items-center gap-2 text-xs")}
@@ -93,7 +100,14 @@ export default function PostsPage() {
               <Trash2 className="h-4 w-4" />
               回收站
             </Link>
-            <Link href="/editor" className={cn(buttonVariants(), "inline-flex items-center gap-2")}>
+            <Link
+              href={
+                gardenFilter !== "all"
+                  ? `/editor?garden=${encodeURIComponent(gardenFilter)}`
+                  : "/editor"
+              }
+              className={cn(buttonVariants(), "inline-flex items-center gap-2")}
+            >
               <PenLine className="h-4 w-4" />
               新建文章
             </Link>
@@ -101,27 +115,39 @@ export default function PostsPage() {
         </div>
 
         <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-1">
-          {(
-            [
-              ["all", "全部花园"],
-              ...POST_GARDENS.map((g) => [g, GARDEN_LABELS[g]] as const),
-            ] as const
-          ).map(([value, label]) => (
+          <button
+            type="button"
+            onClick={() => {
+              setGardenOverride("all");
+              setPage(1);
+              router.replace("/posts");
+            }}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-xs transition",
+              gardenFilter === "all"
+                ? "bg-[var(--kp-brand)] text-white"
+                : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+            )}
+          >
+            全部花园
+          </button>
+          {(gardens?.items ?? []).map((g) => (
             <button
-              key={value}
+              key={g.id}
               type="button"
               onClick={() => {
-                setGardenFilter(value);
+                setGardenOverride(g.id);
                 setPage(1);
+                router.replace(`/posts?garden=${encodeURIComponent(g.id)}`);
               }}
               className={cn(
                 "rounded-lg px-3 py-1.5 text-xs transition",
-                gardenFilter === value
+                gardenFilter === g.id
                   ? "bg-[var(--kp-brand)] text-white"
                   : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
               )}
             >
-              {label}
+              {g.title}
             </button>
           ))}
         </div>
@@ -158,19 +184,19 @@ export default function PostsPage() {
                 ["published", "已发布"],
                 ["draft", "草稿"],
               ] as const
-            ).map(([key, label]) => (
+            ).map(([value, label]) => (
               <button
-                key={key}
+                key={value}
                 type="button"
                 onClick={() => {
-                  setPublishFilter(key);
+                  setPublishFilter(value);
                   setPage(1);
                 }}
                 className={cn(
-                  "rounded-lg px-3 py-1.5 text-sm font-medium transition",
-                  publishFilter === key
-                    ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
-                    : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+                  "rounded-lg px-3 py-1.5 text-xs transition",
+                  publishFilter === value
+                    ? "bg-[var(--kp-brand)] text-white"
+                    : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
                 )}
               >
                 {label}
@@ -180,32 +206,27 @@ export default function PostsPage() {
         </div>
 
         {isLoading ? (
-          <LoadingState count={5} />
+          <LoadingState />
         ) : !data?.items.length ? (
           <EmptyState
-            title="没有找到文章"
-            description={
-              debouncedKeyword
-                ? "试试更换关键词，或清除筛选条件。"
-                : "创建第一篇文章，开始搭建你的知识库。"
-            }
+            title="暂无文章"
+            description="换一个花园，或点击「新建文章」开始写作"
             icon={<FileText className="h-6 w-6" />}
-            actionLabel="新建文章"
-            onAction={() => router.push("/editor")}
           />
         ) : (
           <>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {data.items.map((post) => (
                 <PostRow
                   key={post.id}
-                  post={post as Post}
-                  onDelete={() => setDeleteTarget(post as Post)}
+                  post={post}
+                  gardenLabel={gardenTitle(post.garden)}
+                  onDelete={() => setDeleteTarget(post)}
                   deleting={remove.isPending && deleteTarget?.id === post.id}
                 />
               ))}
             </div>
-            {data.totalPages > 1 && (
+            <div className="mt-8">
               <Pagination
                 page={data.page}
                 pageSize={data.pageSize}
@@ -213,33 +234,31 @@ export default function PostsPage() {
                 totalPages={data.totalPages}
                 onPageChange={setPage}
               />
-            )}
+            </div>
           </>
         )}
 
-      <ConfirmDialog
-        isOpen={deleteTarget !== null}
-        title="删除文章"
-        description={
-          deleteTarget
-            ? `确定删除《${deleteTarget.title}》吗？文章将移入回收站，可在 30 天内恢复。`
-            : ""
-        }
-        confirmLabel={remove.isPending ? "删除中…" : "确认删除"}
-        isDestructive
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
-      />
+        <ConfirmDialog
+          isOpen={!!deleteTarget}
+          title="删除文章"
+          description={`确定将「${deleteTarget?.title ?? ""}」移入回收站？`}
+          confirmLabel="删除"
+          isDestructive
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
     </div>
   );
 }
 
 function PostRow({
   post,
+  gardenLabel,
   onDelete,
   deleting,
 }: {
   post: Post;
+  gardenLabel: string;
   onDelete: () => void;
   deleting: boolean;
 }) {
@@ -254,7 +273,7 @@ function PostRow({
               {post.published ? "已发布" : "草稿"}
             </Badge>
             <Badge variant="outline" className="text-xs">
-              {GARDEN_LABELS[post.garden] ?? post.garden}
+              {gardenLabel}
             </Badge>
             {post.category && (
               <Badge
@@ -308,15 +327,15 @@ function PostRow({
           </Link>
           <button
             type="button"
-            disabled={deleting}
             onClick={onDelete}
+            disabled={deleting}
             className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
+              buttonVariants({ variant: "outline", size: "sm" }),
               "inline-flex items-center gap-1 text-sm text-destructive hover:text-destructive"
             )}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            删除
+            {deleting ? "…" : "删除"}
           </button>
         </div>
       </div>
