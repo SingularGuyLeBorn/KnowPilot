@@ -54,6 +54,10 @@ const zh = {
   emptyOrDescHasKey: "点击「立即刷新」从 OpenRouter 拉取目录。",
   emptyOrDescNoKey: "配置 OPENROUTER_API_KEY 后刷新即可。",
   multimodal: "多模态",
+  freeBadge: "免费",
+  /** 上下文窗口角标后缀，如「1.0M 上下文」 */
+  ctxLabel: "上下文",
+  modalityTextToText: "文本→文本",
   expand: "展开全部",
   collapse: "收起",
   copyId: "复制 id",
@@ -101,6 +105,9 @@ const en: { [K in keyof typeof zh]: (typeof zh)[K] } = {
   emptyOrDescHasKey: "Click “Refresh now” to pull from OpenRouter.",
   emptyOrDescNoKey: "Set OPENROUTER_API_KEY, then refresh.",
   multimodal: "Multimodal",
+  freeBadge: "Free",
+  ctxLabel: "ctx",
+  modalityTextToText: "text→text",
   expand: "Show more",
   collapse: "Show less",
   copyId: "Copy id",
@@ -123,4 +130,80 @@ export type FreeModelsMessages = typeof zh;
 
 export function freeModelsMessages(locale: FreeModelsLocale): FreeModelsMessages {
   return locale === "en" ? en : zh;
+}
+
+/** OpenRouter 厂商 slug → 展示名（品牌；未收录则原样） */
+const PUBLISHER_LABEL: Record<FreeModelsLocale, Record<string, string>> = {
+  zh: {
+    nvidia: "英伟达",
+    google: "谷歌",
+    meta: "Meta",
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    qwen: "通义千问",
+    deepseek: "DeepSeek",
+    mistralai: "Mistral",
+    microsoft: "微软",
+    amazon: "亚马逊",
+    cohere: "Cohere",
+    "x-ai": "xAI",
+    moonshotai: "月之暗面",
+    zhipu: "智谱",
+    "01-ai": "零一万物",
+    baidu: "百度",
+    tencent: "腾讯",
+    alibaba: "阿里巴巴",
+    bytedance: "字节跳动",
+    freellm: "Freellm",
+    openrouter: "OpenRouter",
+  },
+  en: {
+    nvidia: "NVIDIA",
+    google: "Google",
+    meta: "Meta",
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    qwen: "Qwen",
+    deepseek: "DeepSeek",
+    mistralai: "Mistral",
+    microsoft: "Microsoft",
+    amazon: "Amazon",
+    cohere: "Cohere",
+    "x-ai": "xAI",
+    moonshotai: "Moonshot",
+    zhipu: "Zhipu",
+    "01-ai": "01.AI",
+    baidu: "Baidu",
+    tencent: "Tencent",
+    alibaba: "Alibaba",
+    bytedance: "ByteDance",
+    freellm: "Freellm",
+    openrouter: "OpenRouter",
+  },
+};
+
+export function formatPublisherLabel(slug: string | undefined | null, locale: FreeModelsLocale): string {
+  if (!slug || slug === "—") return "—";
+  const key = slug.trim().toLowerCase();
+  return PUBLISHER_LABEL[locale][key] ?? slug;
+}
+
+export function formatModalityLabel(
+  modality: string | undefined,
+  locale: FreeModelsLocale,
+): string {
+  const t = freeModelsMessages(locale);
+  if (!modality || modality === "text" || modality === "text->text" || modality === "text→text") {
+    return t.modalityTextToText;
+  }
+  return modality.replace("->", "→");
+}
+
+export function formatContextPill(
+  contextLength: number | undefined,
+  locale: FreeModelsLocale,
+  formatContext: (n?: number) => string,
+): string {
+  const t = freeModelsMessages(locale);
+  return `${formatContext(contextLength)} ${t.ctxLabel}`;
 }

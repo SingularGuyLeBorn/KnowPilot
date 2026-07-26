@@ -10,6 +10,12 @@ import { Check, Copy } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import {
+  formatContextPill,
+  formatPublisherLabel,
+  freeModelsMessages,
+  readFreeModelsLocale,
+} from "@/lib/freeModelsI18n";
 
 export function publisherFromModelId(id: string): string {
   const slash = id.indexOf("/");
@@ -44,6 +50,8 @@ export function FreeModelPicker({
   className?: string;
   allowAuto?: boolean;
 }) {
+  const locale = readFreeModelsLocale();
+  const t = freeModelsMessages(locale);
   const [q, setQ] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const modelsQuery = trpc.llm.listFreeModels.useQuery(
@@ -113,11 +121,11 @@ export function FreeModelPicker({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="rounded bg-[var(--kp-bg-mute)] px-1 py-0.5 text-[10px] font-medium text-[var(--kp-text-2)]">
-                      {m.publisher}
+                      {formatPublisherLabel(m.publisher, locale)}
                     </span>
                     <span className="font-medium text-[var(--kp-text-1)]">{m.name}</span>
                     <span className="text-[10px] text-[var(--kp-text-3)]">
-                      {formatContext(m.contextLength)} ctx
+                      {formatContextPill(m.contextLength, locale, formatContext)}
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1">
@@ -142,7 +150,7 @@ export function FreeModelPicker({
                         }
                       }}
                       className="inline-flex rounded p-0.5 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg)]"
-                      title="复制 id"
+                      title={t.copyTitle}
                     >
                       {copied === m.id ? (
                         <Check className="h-3 w-3 text-emerald-600" />

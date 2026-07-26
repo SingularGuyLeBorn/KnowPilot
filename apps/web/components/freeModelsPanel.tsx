@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { EmptyState, LoadingState, KpSelect, Pagination } from "@/components/shared";
 import { cn } from "@/lib/utils";
 import {
+  formatContextPill,
+  formatModalityLabel,
+  formatPublisherLabel,
   freeModelsMessages,
   readFreeModelsLocale,
   type FreeModelsLocale,
@@ -27,11 +30,6 @@ function formatContext(n?: number): string {
 function isMultimodal(modality?: string): boolean {
   if (!modality) return false;
   return modality !== "text" && modality !== "text->text";
-}
-
-function formatModality(modality?: string): string {
-  if (!modality) return "text";
-  return modality.replace("->", "→");
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -353,13 +351,15 @@ export function FreeModelsPanel({ locale = "zh" }: { locale?: FreeModelsLocale }
                           <span className="font-mono text-[11px] text-[var(--kp-text-3)]">
                             #{globalIndex}
                           </span>
-                          <StatusPill tone="brand">{publisher}</StatusPill>
+                          <StatusPill tone="brand">{formatPublisherLabel(publisher, locale)}</StatusPill>
                           <h3 className="text-sm font-semibold leading-snug text-[var(--kp-text-1)]">
                             {m.name}
                           </h3>
-                          <StatusPill tone="ok">Free</StatusPill>
+                          <StatusPill tone="ok">{t.freeBadge}</StatusPill>
                           {multi && <StatusPill tone="brand">{t.multimodal}</StatusPill>}
-                          <StatusPill tone="neutral">{formatContext(m.contextLength)} ctx</StatusPill>
+                          <StatusPill tone="neutral">
+                            {formatContextPill(m.contextLength, locale, formatContext)}
+                          </StatusPill>
                         </div>
                         <CopyIdButton
                           id={m.id}
@@ -393,7 +393,7 @@ export function FreeModelsPanel({ locale = "zh" }: { locale?: FreeModelsLocale }
                       </div>
                       <div className="flex shrink-0 flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:pt-0.5">
                         <span className="text-[11px] text-[var(--kp-text-2)]">
-                          {formatModality(m.modality)}
+                          {formatModalityLabel(m.modality, locale)}
                         </span>
                         <Button
                           type="button"
@@ -484,7 +484,9 @@ export function FreeModelsPanel({ locale = "zh" }: { locale?: FreeModelsLocale }
                       <StatusPill tone={c.validated ? "ok" : "neutral"}>
                         {c.validated ? t.validated : c.status ?? "—"}
                       </StatusPill>
-                      {c.provider && <StatusPill tone="neutral">{c.provider}</StatusPill>}
+                      {c.provider && (
+                        <StatusPill tone="neutral">{formatPublisherLabel(c.provider, locale)}</StatusPill>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--kp-text-2)]">
                       <span className="font-mono truncate max-w-[18rem]">{c.name}</span>
