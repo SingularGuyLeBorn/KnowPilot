@@ -278,7 +278,10 @@ function appendToolResultMessages(
   }
 }
 
-/** 将 Steering / Follow-up 注入 llmMessages，并尽量落库以便前端 message_upserted */
+/**
+ * 将 Steering / Follow-up 注入 llmMessages，并尽量落库以便前端 message_upserted。
+ * A8：有 session 且需留痕的 kind，落库失败 = 注入失败（不 push 进 LLM，禁幻影消息）。
+ */
 async function injectUserMessages(
   input: ReactLoopInput,
   llmMessages: LlmMessage[],
@@ -290,20 +293,26 @@ async function injectUserMessages(
     // ask_user 回复不落库为 user 气泡：工具本身挂起等待，回复（UI 手打或邮件回填）只作为
     // customResponse 填入弹框输入框 + 推给 LLM 续轮，不产生独立 user 气泡。
     // steer/follow_up/approval 仍落库（用户主动注入或审批决策需留痕）。
-    if (input.sessionId && kind !== "ask_user") {
+    const mustPersist = Boolean(input.sessionId) && kind !== "ask_user";
+    let persisted = !mustPersist;
+    if (mustPersist) {
       try {
         const created = await input.services.message.create({
-          sessionId: input.sessionId,
+          sessionId: input.sessionId!,
           role: "user",
           content: item.content,
         } as Parameters<typeof input.services.message.create>[0]);
         if (created.success && created.data && typeof created.data === "object" && "id" in created.data) {
           messageId = String((created.data as { id: string }).id);
+          persisted = true;
+        } else {
+          console.warn(`[ReactLoop] ${kind} 落库未成功，跳过 LLM 注入（A8）`);
         }
       } catch (err) {
-        console.warn(`[ReactLoop] ${kind} 落库失败:`, err instanceof Error ? err.message : err);
+        console.warn(`[ReactLoop] ${kind} 落库失败，跳过 LLM 注入（A8）:`, err instanceof Error ? err.message : err);
       }
     }
+    if (!persisted) continue;
     llmMessages.push({ role: "user", content: item.content });
     input.hooks?.onInjected?.({ kind, content: item.content, messageId });
   }

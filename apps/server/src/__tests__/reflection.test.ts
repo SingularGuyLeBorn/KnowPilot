@@ -99,10 +99,15 @@ describe("W7 反思装饰器 withReflection", () => {
       { content: '{"passed": true, "issues": []}' },
     ]);
     const onInjected = vi.fn();
+    const create = vi.fn(async () => ({ success: true, data: { id: "inj-1" } }));
+    const input = loopInput(main.transport, { critic: critic.transport }, { onInjected });
+    input.sessionId = "sess-reflect-ok";
+    input.services = {
+      ...input.services,
+      message: { create },
+    } as unknown as ServiceContainer;
 
-    const result = await runReactLoop(
-      loopInput(main.transport, { critic: critic.transport }, { onInjected }),
-    );
+    const result = await runReactLoop(input);
 
     expect(result.content).toBe("修订版 v2");
     expect(result.roundsUsed).toBe(2);
@@ -110,7 +115,8 @@ describe("W7 反思装饰器 withReflection", () => {
     expect(critic.calls).toHaveLength(2);
     // 回注走的是既有 injectUserMessages 显式机制（kind=follow_up）
     expect(onInjected).toHaveBeenCalledTimes(1);
-    expect(onInjected.mock.calls[0][0]).toMatchObject({ kind: "follow_up" });
+    expect(onInjected.mock.calls[0][0]).toMatchObject({ kind: "follow_up", messageId: "inj-1" });
+    expect(create).toHaveBeenCalled();
     // 第二轮 messages：被拒终稿以 assistant 入列，critic 意见以 user 消息回注
     const secondRound = main.calls[1];
     const assistantDraft = secondRound.find((m) => m.role === "assistant" && m.content === "草稿 v1");
@@ -119,6 +125,34 @@ describe("W7 反思装饰器 withReflection", () => {
       (m) => m.role === "user" && typeof m.content === "string" && m.content.includes("遗漏了用户要求的对比表格"),
     );
     expect(feedbackMsg).toBeDefined();
+  });
+
+  it("A8：follow_up 落库失败 → 不进 LLM 上下文、不触发 onInjected（禁幻影）", async () => {
+    const main = scriptedTransport([{ content: "草稿 v1" }, { content: "修订版 v2" }]);
+    const critic = scriptedTransport([
+      { content: '{"passed": false, "issues": ["遗漏表格"]}' },
+      { content: '{"passed": true, "issues": []}' },
+    ]);
+    const onInjected = vi.fn();
+    const create = vi.fn(async () => ({ success: false, error: "db down" }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const input = loopInput(main.transport, { critic: critic.transport }, { onInjected });
+    input.sessionId = "sess-a8-fail";
+    input.services = {
+      ...input.services,
+      message: { create },
+    } as unknown as ServiceContainer;
+
+    await runReactLoop(input);
+
+    expect(create).toHaveBeenCalled();
+    expect(onInjected).not.toHaveBeenCalled();
+    const secondRound = main.calls[1] ?? [];
+    const phantom = secondRound.find(
+      (m) => m.role === "user" && typeof m.content === "string" && m.content.includes("遗漏表格"),
+    );
+    expect(phantom).toBeUndefined();
+    warn.mockRestore();
   });
 
   it("反思轮数耗尽 → 带 [未经反思通过] 标记放行（不阻断用户）", async () => {
