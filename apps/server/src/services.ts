@@ -84,6 +84,9 @@ import {
   type WebSearchInput,
   type GitRepoPathInput,
   type NativeExecuteInput,
+  DEFAULT_POST_GARDEN,
+  isPostGarden,
+  type PostGarden,
 } from "@knowpilot/shared";
 import { success, failure, failureFromError } from "./trpc/result.js";
 import type { AppEventBus } from "./infra/eventBus.js";
@@ -482,14 +485,14 @@ export abstract class FileSyncService<
 
   override async create(input: TCreate): Promise<OperationResult<TEntity>> {
     const start = Date.now();
-    let writtenSlug: string | null = null;
+    let provisionalWritten: TEntity | null = null;
     try {
       await this.validateCreate(input);
       const data = this.buildCreateData(input);
       if (!data.id) data.id = newEntityId();
       const provisional = this.formatEntity(this.buildProvisionalRaw(data));
       this.writeFile(provisional);
-      writtenSlug = this.getFileSlug(provisional);
+      provisionalWritten = provisional;
       try {
         const raw = await this.delegate.create({ data });
         const entity = this.formatEntity(raw);
@@ -504,9 +507,10 @@ export abstract class FileSyncService<
           durationMs: Date.now() - start,
         });
       } catch (dbError) {
-        if (writtenSlug) {
+        // 用实体补偿删除（Post 多花园时仅凭 slug 无法定位文件）
+        if (provisionalWritten) {
           try {
-            this.deleteFileBySlug(writtenSlug, { required: false });
+            this.deleteFile(provisionalWritten);
           } catch {
             /* compensate best-effort */
           }
@@ -524,24 +528,26 @@ export abstract class FileSyncService<
   override async update(input: TUpdate): Promise<OperationResult<TEntity>> {
     const start = Date.now();
     const { id } = input;
-    let wroteNewSlug: string | null = null;
-    let oldSlug: string | null = null;
+    let provisionalWritten: TEntity | null = null;
+    let existingEntity: TEntity | null = null;
     try {
       const existing = await this.delegate.findUnique({ where: { id } });
       if (!existing) return this.buildNotFoundFailure("更新", id, Date.now() - start);
       await this.validateUpdate(input, existing);
       const updateData = this.buildUpdateData(input);
       const provisional = this.formatEntity(this.buildProvisionalRaw(updateData, existing));
-      oldSlug = this.getExistingFileSlug(existing);
+      existingEntity = this.formatEntity(existing);
+      const oldSlug = this.getExistingFileSlug(existing);
       const newSlug = this.getFileSlug(provisional);
       this.writeFile(provisional);
-      wroteNewSlug = newSlug;
+      provisionalWritten = provisional;
       try {
         const raw = await this.delegate.update({ where: { id }, data: updateData });
         const entity = this.formatEntity(raw);
         await this.syncFileMetaToDb(entity);
-        if (oldSlug && oldSlug !== newSlug) {
-          this.deleteFileBySlug(oldSlug, { required: false });
+        // 路径或花园变更：删旧文件（deleteFile 走实体，支持多花园）
+        if (this.shouldDeleteOldFileAfterUpdate(existingEntity, entity, oldSlug, newSlug)) {
+          this.deleteFile(existingEntity);
         }
         await this.afterUpdate(entity, existing, input);
         return success({
@@ -552,9 +558,17 @@ export abstract class FileSyncService<
           durationMs: Date.now() - start,
         });
       } catch (dbError) {
-        // DB 失败：若已写出新 slug 文件则补偿删除；同 slug 覆盖写不回滚（文件即事实源）
-        if (wroteNewSlug && oldSlug && wroteNewSlug !== oldSlug) {
-          this.deleteFileBySlug(wroteNewSlug, { required: false });
+        // DB 失败：若写出了不同于旧路径的新文件则补偿删除
+        if (
+          provisionalWritten &&
+          existingEntity &&
+          this.shouldDeleteOldFileAfterUpdate(existingEntity, provisionalWritten, oldSlug, newSlug)
+        ) {
+          try {
+            this.deleteFile(provisionalWritten);
+          } catch {
+            /* compensate best-effort */
+          }
         }
         throw dbError;
       }
@@ -564,6 +578,16 @@ export abstract class FileSyncService<
       if (uniqueConflict) return uniqueConflict;
       return failureFromError(error, "update", this.entityName, `${this.entityName.toUpperCase()}_UPDATE_FAILED`);
     }
+  }
+
+  /** 默认：仅 slug 变化时删旧文件；Post 可覆盖以支持 garden 迁移 */
+  protected shouldDeleteOldFileAfterUpdate(
+    _existing: TEntity,
+    _next: TEntity,
+    oldSlug: string | null,
+    newSlug: string,
+  ): boolean {
+    return Boolean(oldSlug && oldSlug !== newSlug);
   }
 
   override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
@@ -638,6 +662,7 @@ export abstract class FileSyncService<
 export interface PostEntity {
   id: string;
   title: string;
+  garden: PostGarden;
   slug: string;
   content: string;
   excerpt: string | null;
@@ -654,16 +679,70 @@ export interface PostEntity {
 
 export class PostService extends FileSyncService<CreatePostInput, UpdatePostInput, ListPostsInput, PostEntity> {
   readonly entityName = "post";
+  /** 默认花园目录名；实际读写走 getGardenDir(entity.garden) */
   readonly contentDirName = "posts";
   readonly fileExtension = ".md";
 
   protected get delegate() { return this.prisma.post; }
 
   protected formatEntity(raw: any): PostEntity {
+    const gardenRaw = String(raw.garden ?? DEFAULT_POST_GARDEN);
+    const garden: PostGarden = isPostGarden(gardenRaw) ? gardenRaw : DEFAULT_POST_GARDEN;
     return {
       ...raw,
+      garden,
       tags: raw.tags ? raw.tags.split(",").filter(Boolean).map((t: string) => t.trim()) : [],
     };
+  }
+
+  /** 解析花园根目录（content/{garden}） */
+  protected getGardenDir(garden: string): string {
+    if (!isPostGarden(garden)) {
+      throw new Error(`未知知识库花园：${garden}（允许：posts|knowledge|resources）`);
+    }
+    const dir = (this.config.contentPaths as Record<string, string>)[garden];
+    if (!dir) throw new Error(`contentPaths 缺少花园 ${garden}`);
+    return dir;
+  }
+
+  protected resolvePostFilePath(garden: string, slug: string): string {
+    const safe = this.assertSafeFileSlug(slug);
+    const contentRoot = path.resolve(this.getGardenDir(garden));
+    const filePath = path.resolve(contentRoot, `${safe}${this.fileExtension}`);
+    assertPathWithinProjectRoot(this.config, filePath);
+    const prefix = contentRoot.endsWith(path.sep) ? contentRoot : contentRoot + path.sep;
+    if (filePath !== contentRoot && !filePath.startsWith(prefix)) {
+      throw new Error(`Post 文件路径越出花园 ${garden}：${slug}`);
+    }
+    return filePath;
+  }
+
+  protected override writeFile(entity: PostEntity): void {
+    const filePath = this.resolvePostFilePath(entity.garden, entity.slug);
+    const fileDir = path.dirname(filePath);
+    if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
+    fs.writeFileSync(filePath, this.serializeToFile(entity), "utf-8");
+  }
+
+  protected override deleteFile(entity: PostEntity): void {
+    const filePath = this.resolvePostFilePath(entity.garden, entity.slug);
+    if (!fs.existsSync(filePath)) return;
+    try {
+      fs.unlinkSync(filePath);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`删除 Post 文件失败（${filePath}）：${msg}`);
+    }
+  }
+
+  protected override shouldDeleteOldFileAfterUpdate(
+    existing: PostEntity,
+    next: PostEntity,
+    oldSlug: string | null,
+    newSlug: string,
+  ): boolean {
+    if (!oldSlug) return false;
+    return oldSlug !== newSlug || existing.garden !== next.garden;
   }
 
   // R13：keyword 优先走 FTS 取 post id 再过滤，避免 LIKE 扫 title+content 全表；FTS 无命中/不可用回退 LIKE
@@ -684,6 +763,7 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
 
   protected buildListWhere(input: ListPostsInput): any {
     const where: any = { deletedAt: null };
+    if (input.garden) where.garden = input.garden;
     if (input.published !== undefined) where.published = input.published;
     if (input.category) where.category = input.category;
     if (input.tag) where.tags = { contains: input.tag };
@@ -698,8 +778,10 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
 
   protected buildCreateData(input: CreatePostInput): any {
     const slug = input.slug || this.generateSlug(input.title);
+    const garden = input.garden ?? DEFAULT_POST_GARDEN;
     return {
       title: input.title,
+      garden,
       slug,
       content: input.content,
       published: input.published ?? false,
@@ -722,10 +804,24 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
 
   protected override getListSelect(): any {
     // P1-7：列表不返回完整 content，载荷过大；需要正文走 getById。
-    return { id: true, title: true, slug: true, excerpt: true, coverImage: true, published: true, category: true, tags: true, viewCount: true, createdAt: true, updatedAt: true };
+    return {
+      id: true,
+      title: true,
+      garden: true,
+      slug: true,
+      excerpt: true,
+      coverImage: true,
+      published: true,
+      category: true,
+      tags: true,
+      viewCount: true,
+      createdAt: true,
+      updatedAt: true,
+    };
   }
 
   protected serializeToFile(entity: PostEntity): string {
+    // garden 由目录表达，不写入 frontmatter（目录是事实源）
     const tagsYaml = entity.tags?.length > 0 ? `\ntags:\n` + entity.tags.map((t) => `  - "${t}"`).join("\n") : "";
     return `---
 title: "${entity.title.replace(/"/g, '\\"')}"
@@ -739,56 +835,92 @@ ${entity.content}
 
   protected getFileSlug(entity: PostEntity): string { return entity.slug; }
 
-  // P11：FTS 增量——create/update 后 upsert，delete 后 remove
+  // P11：FTS 增量——body 带 garden 前缀便于检索
   protected override async afterCreate(entity: PostEntity, input: CreatePostInput): Promise<void> {
     await super.afterCreate(entity, input);
-    await this.syncFts("post", entity.id, entity.title, `${entity.slug}\n${entity.content ?? ""}`);
+    await this.syncFts(
+      "post",
+      entity.id,
+      entity.title,
+      `[${entity.garden}] ${entity.slug}\n${entity.content ?? ""}`,
+    );
   }
   protected override async afterUpdate(entity: PostEntity, existing: any, input: UpdatePostInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
-    await this.syncFts("post", entity.id, entity.title, `${entity.slug}\n${entity.content ?? ""}`);
+    await this.syncFts(
+      "post",
+      entity.id,
+      entity.title,
+      `[${entity.garden}] ${entity.slug}\n${entity.content ?? ""}`,
+    );
   }
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
     await this.removeFts("post", existing.id);
   }
 
+  /** (garden, slug) 联合唯一 */
+  private async assertGardenSlugUnique(
+    garden: string,
+    slug: string,
+    operation: string,
+    excludeId?: string,
+  ): Promise<void> {
+    const existing = await this.prisma.post.findFirst({
+      where: { garden, slug },
+    });
+    if (existing && existing.id !== excludeId) {
+      throw new ServiceValidationError(
+        failure({
+          code: "POST_GARDEN_SLUG_CONFLICT",
+          message: `${operation} post 失败：花园 ${garden} 下 slug "${slug}" 已被占用。`,
+          details: { garden, slug, existingId: existing.id },
+          field: "slug",
+          suggestion: "换一个 slug，或改用其它花园。",
+          retryable: false,
+          operation,
+          entity: this.entityName,
+        }),
+      );
+    }
+  }
+
   protected override async validateCreate(input: CreatePostInput): Promise<void> {
     const slug = input.slug || this.generateSlug(input.title);
-    await this.assertUnique("slug", slug, "创建");
+    const garden = input.garden ?? DEFAULT_POST_GARDEN;
+    await this.assertGardenSlugUnique(garden, slug, "创建");
   }
 
   protected override async validateUpdate(input: UpdatePostInput, existing: any): Promise<void> {
-    if (input.slug && input.slug !== existing.slug) {
-      await this.assertUnique("slug", input.slug, "更新", input.id);
+    const nextGarden = input.garden ?? existing.garden ?? DEFAULT_POST_GARDEN;
+    const nextSlug = input.slug ?? existing.slug;
+    if (nextGarden !== existing.garden || nextSlug !== existing.slug) {
+      await this.assertGardenSlugUnique(nextGarden, nextSlug, "更新", input.id);
     }
   }
 
   protected override buildDeleteSummary(existing: any): Record<string, unknown> {
-    return { id: existing.id, slug: existing.slug, title: existing.title };
+    return { id: existing.id, garden: existing.garden, slug: existing.slug, title: existing.title };
   }
 
-  async getBySlug(slug: string): Promise<PostEntity> {
-    const post = await this.prisma.post.findUnique({ where: { slug, deletedAt: null } });
-    if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "文章不存在" });
-    // A15：浏览量自增改 fire-and-forget，不阻塞读取关键路径；返回的 post 仍是自增前的快照（与原行为一致）
+  async getBySlug(slug: string, garden: PostGarden = DEFAULT_POST_GARDEN): Promise<PostEntity> {
+    const post = await this.prisma.post.findFirst({
+      where: { garden, slug, deletedAt: null },
+    });
+    if (!post) throw new TRPCError({ code: "NOT_FOUND", message: `文章不存在（${garden}/${slug}）` });
     this.prisma.post
       .update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } })
-      .catch(() => {
-        // 统计写入失败不影响文章读取
-      });
+      .catch(() => {});
     return this.formatEntity(post);
   }
 
-  async search(query: string, limit = 10): Promise<PostEntity[]> {
-    // R1：优先 FTS（索引覆盖 title+content，远快于 LIKE %q% 全表扫）。
-    // FTS 命中 post id 后按 rank 顺序 findMany 回填，保持 API 形状不变；FTS 无命中/不可用时回退 LIKE。
+  async search(query: string, limit = 10, garden?: PostGarden): Promise<PostEntity[]> {
     try {
       const ftsHits = await searchFts(this.prisma, query, limit * 2);
       const postIds = ftsHits.filter((h) => h.entity === "post").map((h) => h.entityId);
       if (postIds.length > 0) {
         const posts = await this.prisma.post.findMany({
-          where: { id: { in: postIds }, deletedAt: null },
+          where: { id: { in: postIds }, deletedAt: null, ...(garden ? { garden } : {}) },
         });
         const byId = new Map(posts.map((p: any) => [p.id, p] as const));
         const ordered = postIds.map((id) => byId.get(id)).filter((p): p is any => !!p);
@@ -798,18 +930,22 @@ ${entity.content}
       // FTS 不可用（表未就绪等），回退 LIKE
     }
     const rawItems = await this.prisma.post.findMany({
-      where: { deletedAt: null, OR: [{ title: { contains: query } }, { content: { contains: query } }] },
+      where: {
+        deletedAt: null,
+        ...(garden ? { garden } : {}),
+        OR: [{ title: { contains: query } }, { content: { contains: query } }],
+      },
       take: limit,
       orderBy: { updatedAt: "desc" },
     });
     return rawItems.map((item: any) => this.formatEntity(item));
   }
 
-  async tree(): Promise<{ id: string; slug: string; title: string }[]> {
+  async tree(garden?: PostGarden): Promise<{ id: string; garden: string; slug: string; title: string }[]> {
     return this.prisma.post.findMany({
-      where: { published: true, deletedAt: null },
-      select: { id: true, slug: true, title: true },
-      orderBy: { slug: "asc" },
+      where: { published: true, deletedAt: null, ...(garden ? { garden } : {}) },
+      select: { id: true, garden: true, slug: true, title: true },
+      orderBy: [{ garden: "asc" }, { slug: "asc" }],
     });
   }
 
@@ -839,34 +975,34 @@ ${entity.content}
     return this.formatEntity(raw);
   }
 
-  private getTrashDir(): string {
-    return path.join(this.getContentDir(), ".trash");
+  private getTrashDir(garden: string): string {
+    return path.join(this.getGardenDir(garden), ".trash");
   }
 
-  private moveFileToTrash(slug: string): void {
-    const dir = this.getContentDir();
-    const trashDir = this.getTrashDir();
+  private moveFileToTrash(garden: string, slug: string): void {
+    const dir = this.getGardenDir(garden);
+    const trashDir = this.getTrashDir(garden);
     const src = path.join(dir, `${slug}${this.fileExtension}`);
     const dest = path.join(trashDir, `${slug}${this.fileExtension}`);
     if (fs.existsSync(src)) {
-      if (!fs.existsSync(trashDir)) fs.mkdirSync(trashDir, { recursive: true });
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.renameSync(src, dest);
     }
   }
 
-  private moveFileFromTrash(slug: string): void {
-    const dir = this.getContentDir();
-    const trashDir = this.getTrashDir();
+  private moveFileFromTrash(garden: string, slug: string): void {
+    const dir = this.getGardenDir(garden);
+    const trashDir = this.getTrashDir(garden);
     const src = path.join(trashDir, `${slug}${this.fileExtension}`);
     const dest = path.join(dir, `${slug}${this.fileExtension}`);
     if (fs.existsSync(src)) {
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.renameSync(src, dest);
     }
   }
 
-  private deleteFileFromTrash(slug: string): void {
-    const trashDir = this.getTrashDir();
+  private deleteFileFromTrash(garden: string, slug: string): void {
+    const trashDir = this.getTrashDir(garden);
     const filePath = path.join(trashDir, `${slug}${this.fileExtension}`);
     if (fs.existsSync(filePath)) {
       try { fs.unlinkSync(filePath); } catch {}
@@ -880,7 +1016,8 @@ ${entity.content}
       if (!existing) return this.buildNotFoundFailure("删除", id, Date.now() - start);
       if (existing.deletedAt) return this.buildNotFoundFailure("删除", id, Date.now() - start);
       const slug = this.getExistingFileSlug(existing);
-      if (slug) this.moveFileToTrash(slug);
+      const garden = String(existing.garden ?? DEFAULT_POST_GARDEN);
+      if (slug) this.moveFileToTrash(garden, slug);
       const raw = await this.delegate.update({ where: { id }, data: { deletedAt: new Date() } });
       // P2-7：软删后显式触发 post.deleted 事件（不调继承的 afterDelete，因其会 deleteFileBySlug，
       // 而此处文件已 moveFileToTrash，避免重复处理）。TriggerEngine 等监听器依赖此事件联动。
@@ -916,11 +1053,17 @@ ${entity.content}
         });
       }
       const slug = this.getExistingFileSlug(existing);
-      if (slug) this.moveFileFromTrash(slug);
+      const garden = String(existing.garden ?? DEFAULT_POST_GARDEN);
+      if (slug) this.moveFileFromTrash(garden, slug);
       const raw = await this.delegate.update({ where: { id }, data: { deletedAt: null } });
       const entity = this.formatEntity(raw);
       // #11：恢复后重新入 FTS，使文章可被搜索
-      await this.syncFts("post", entity.id, entity.title, `${entity.slug}\n${entity.content ?? ""}`);
+      await this.syncFts(
+        "post",
+        entity.id,
+        entity.title,
+        `[${entity.garden}] ${entity.slug}\n${entity.content ?? ""}`,
+      );
       return success({
         data: entity,
         state: await this.getState(),
@@ -949,7 +1092,8 @@ ${entity.content}
         });
       }
       const slug = this.getExistingFileSlug(existing);
-      if (slug) this.deleteFileFromTrash(slug);
+      const garden = String(existing.garden ?? DEFAULT_POST_GARDEN);
+      if (slug) this.deleteFileFromTrash(garden, slug);
       await this.delegate.delete({ where: { id } });
       // #11：永久删除后移除 FTS
       await this.removeFts("post", existing.id);

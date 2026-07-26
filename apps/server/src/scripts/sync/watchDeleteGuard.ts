@@ -17,12 +17,20 @@ export async function isWatchDeleteProtected(
   graceMs: number = WATCH_DELETE_GRACE_MS,
 ): Promise<boolean> {
   const since = new Date(Date.now() - graceMs);
+  // Post:posts / Post:knowledge / Post:resources —— 按花园收窄改名窗口
+  if (entityName === "Post" || entityName.startsWith("Post:")) {
+    const garden = entityName.startsWith("Post:") ? entityName.slice("Post:".length) : undefined;
+    return !!(await prisma.post.findFirst({
+      where: {
+        slug,
+        ...(garden ? { garden } : {}),
+        updatedAt: { gte: since },
+      },
+      select: { id: true },
+    }));
+  }
+
   switch (entityName) {
-    case "Post":
-      return !!(await prisma.post.findFirst({
-        where: { slug, updatedAt: { gte: since } },
-        select: { id: true },
-      }));
     case "Agent":
       return !!(await prisma.agent.findFirst({
         where: { sourceSlug: slug, updatedAt: { gte: since } },

@@ -92,7 +92,9 @@ describe("D5 FTS 墓碑与 syncer 挂钩", () => {
     expect(record).not.toBeNull();
     await postSyncer.upsert(prisma, record!);
 
-    const row = await prisma.post.findUnique({ where: { slug } });
+    const row = await prisma.post.findUnique({
+      where: { garden_slug: { garden: "posts", slug } },
+    });
     expect(row).not.toBeNull();
     cleanupPostIds.push(row!.id);
 

@@ -17,7 +17,7 @@ import { PrismaClient } from "@prisma/client";
 import { Syncer } from "./sync/types.js";
 import { getContentDir, filePathToSlug } from "./sync/utils.js";
 import { guardedWatchDeleteBySlug } from "./sync/watchDeleteGuard.js";
-import { postSyncer } from "./sync/sync-posts.js";
+import { postGardenSyncers } from "./sync/sync-posts.js";
 import { agentSyncer } from "./sync/sync-agents.js";
 import { skillSyncer } from "./sync/sync-skills.js";
 import { mcpServerSyncer } from "./sync/sync-mcp-servers.js";
@@ -30,7 +30,7 @@ const prisma = new PrismaClient();
 
 // 所有已注册的实体同步器（L2 已接入 Agent/Skill/MCP/Memory/Prompt；L3 Task）
 const syncers: Syncer<unknown>[] = [
-  postSyncer,
+  ...postGardenSyncers,
   agentSyncer,
   skillSyncer,
   mcpServerSyncer,

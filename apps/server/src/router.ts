@@ -11,7 +11,7 @@ import { router, publicProcedure } from "./trpc/trpc.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {
-  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema,
+  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, getPostBySlugSchema, postGardenSchema,
   createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema,
   resolveAskUserSchema, listAskUserPendingSchema,
   createSkillSchema, updateSkillSchema, listSkillsSchema,
@@ -107,11 +107,11 @@ async function withApprovalGuard(
 }
 
 const postRouter = router({
-  list: publicProcedure.meta({ description: "分页列出文章，支持分类/标签/关键词过滤。", aiReadable: true }).input(listPostsSchema).query(({ ctx, input }) => ctx.services.post.list(input)),
-  tree: publicProcedure.meta({ description: "获取所有已发布文章的 slug/title 列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.tree()),
-  getBySlug: publicProcedure.meta({ description: "按 slug 获取文章详情，同时增加浏览量。", aiReadable: true }).input(z.object({ slug: z.string() })).query(({ ctx, input }) => ctx.services.post.getBySlug(input.slug)),
+  list: publicProcedure.meta({ description: "分页列出文章；可按花园 garden（posts|knowledge|resources）/分类/标签/关键词过滤。", aiReadable: true }).input(listPostsSchema).query(({ ctx, input }) => ctx.services.post.list(input)),
+  tree: publicProcedure.meta({ description: "获取已发布文章的 garden/slug/title 列表（可选花园过滤）。", aiReadable: true }).input(z.object({ garden: postGardenSchema.optional() }).default({})).query(({ ctx, input }) => ctx.services.post.tree(input.garden)),
+  getBySlug: publicProcedure.meta({ description: "按花园 + slug 获取文章详情，同时增加浏览量。", aiReadable: true }).input(getPostBySlugSchema).query(({ ctx, input }) => ctx.services.post.getBySlug(input.slug, input.garden)),
   getById: publicProcedure.meta({ description: "按 id 获取文章，用于编辑器加载。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.post.getById(input.id)),
-  create: publicProcedure.meta({ description: "创建新文章，自动同步到本地 Markdown 文件。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
+  create: publicProcedure.meta({ description: "创建新文章到指定花园（garden），自动同步到 content/{garden}/{slug}.md。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
   update: publicProcedure.meta({ description: "更新文章内容，自动同步到本地 Markdown 文件。", aiReadable: true }).input(updatePostSchema).mutation(({ ctx, input }) => ctx.services.post.update(input)),
   delete: publicProcedure.meta({ description: "删除文章到回收站。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
     withApprovalGuard(ctx.services, "post.delete", { id: input.id }, input.approvalId, () => ctx.services.post.delete(input.id)),
@@ -119,7 +119,7 @@ const postRouter = router({
   restore: publicProcedure.meta({ description: "从回收站恢复文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.restore(input.id)),
   permanentDelete: publicProcedure.meta({ description: "从回收站永久删除文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.permanentDelete(input.id)),
   listDeleted: publicProcedure.meta({ description: "列出回收站中的文章。", aiReadable: true }).query(({ ctx }) => ctx.services.post.listDeleted()),
-  search: publicProcedure.meta({ description: "搜索文章标题和内容。", aiReadable: true }).input(searchPostsSchema).query(({ ctx, input }) => ctx.services.post.search(input.query, input.limit)),
+  search: publicProcedure.meta({ description: "搜索文章标题和内容（可选花园过滤）。", aiReadable: true }).input(searchPostsSchema).query(({ ctx, input }) => ctx.services.post.search(input.query, input.limit, input.garden)),
   categories: publicProcedure.meta({ description: "获取所有已发布文章的分类列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.categories()),
   tags: publicProcedure.meta({ description: "获取所有已发布文章的标签列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.tags()),
 });

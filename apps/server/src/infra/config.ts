@@ -69,7 +69,12 @@ export interface AppConfig {
   /** 知识库事实源根（posts/about/uploads），Git 跟踪 */
   contentDir: string;
   contentPaths: {
+    /** 博客花园（默认） */
     posts: string;
+    /** 知识库花园 */
+    knowledge: string;
+    /** 资源/资料花园 */
+    resources: string;
     about: string;
     uploads: string;
   };
@@ -491,6 +496,8 @@ export function createAppConfig(): AppConfig {
     contentDir,
     contentPaths: {
       posts: path.join(contentDir, "posts"),
+      knowledge: path.join(contentDir, "knowledge"),
+      resources: path.join(contentDir, "resources"),
       about: path.join(contentDir, "about"),
       uploads: path.join(contentDir, "uploads"),
     },

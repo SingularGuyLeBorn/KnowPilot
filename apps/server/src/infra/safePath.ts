@@ -83,18 +83,25 @@ export function resolveRealWriteTarget(absPath: string): string {
   return path.resolve(fs.realpathSync(cur), ...missing);
 }
 
-/** 禁止最终落点进入知识库核心（posts/about），堵住 Workspace.path 绕过 write 隔离 */
+/**
+ * 禁止最终落点进入知识库花园或 About。
+ * 花园（posts/knowledge/resources）必须走 post_*；about 禁止 AI 写入。
+ */
 export function assertAbsNotKnowledgeCore(config: AppConfig, absPath: string): void {
   const rel = path.relative(path.resolve(config.projectRoot), path.resolve(absPath)).replace(/\\/g, "/");
   if (rel.startsWith("..")) return;
-  if (
+  const denied =
     rel === "content/posts" ||
     rel.startsWith("content/posts/") ||
+    rel === "content/knowledge" ||
+    rel.startsWith("content/knowledge/") ||
+    rel === "content/resources" ||
+    rel.startsWith("content/resources/") ||
     rel === "content/about" ||
-    rel.startsWith("content/about/")
-  ) {
+    rel.startsWith("content/about/");
+  if (denied) {
     throw new Error(
-      `禁止写入知识库核心路径 ${rel}：文章/About 必须走 post_create/post_update；Workspace.path 也不得指向 content/posts|about`,
+      `禁止写入知识库路径 ${rel}：文章须走 post_create/post_update（指定 garden）；About 禁止 AI 写；Workspace.path 也不得指向上述目录`,
     );
   }
 }

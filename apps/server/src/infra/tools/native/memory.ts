@@ -4,11 +4,15 @@
  * PR-4b：从 nativeTools.ts 迁出，handler 与 schema 保持原语义不变。
  */
 import {
+  DEFAULT_POST_GARDEN,
   isMemoryUserCreatable,
+  isPostGarden,
   MEMORY_SCOPE_GLOBAL,
   memoryAgentScope,
   memoryWorkspaceScope,
+  POST_GARDENS,
   type MemoryUserCreatableType,
+  type PostGarden,
 } from "@knowpilot/shared";
 import type { PostEntity } from "../../../services.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
@@ -20,11 +24,22 @@ import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
+function parseGardenArg(raw: unknown): PostGarden {
+  if (raw === undefined || raw === null || raw === "") return DEFAULT_POST_GARDEN;
+  const g = String(raw);
+  if (!isPostGarden(g)) {
+    throw new Error(`garden 无效：${g}。允许：${POST_GARDENS.join(" | ")}`);
+  }
+  return g;
+}
+
 async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const title = String(args.title || "").trim();
   if (!title) throw new Error("title 不能为空");
+  const garden = parseGardenArg(args.garden);
   const input = {
     title,
+    garden,
     content: String(args.content ?? ""),
     slug: args.slug ? String(args.slug) : undefined,
     excerpt: args.excerpt ? String(args.excerpt) : undefined,
@@ -36,7 +51,13 @@ async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolCont
   const result = await ctx.services.post.create(input);
   if (!result.success) throw new Error(result.error?.message || "创建文章失败");
   const post = result.data as PostEntity;
-  return { id: post.id, slug: post.slug, title: post.title };
+  return {
+    id: post.id,
+    garden: post.garden,
+    slug: post.slug,
+    title: post.title,
+    path: `content/${post.garden}/${post.slug}.md`,
+  };
 }
 
 async function postUpdateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -46,6 +67,7 @@ async function postUpdateTool(args: Record<string, unknown>, ctx: NativeToolCont
     id,
     title: args.title !== undefined ? String(args.title) : undefined,
     content: args.content !== undefined ? String(args.content) : undefined,
+    garden: args.garden !== undefined ? parseGardenArg(args.garden) : undefined,
     slug: args.slug !== undefined ? String(args.slug) : undefined,
     excerpt: args.excerpt !== undefined ? String(args.excerpt) : undefined,
     coverImage: args.coverImage !== undefined ? (args.coverImage ? String(args.coverImage) : null) : undefined,
@@ -56,7 +78,13 @@ async function postUpdateTool(args: Record<string, unknown>, ctx: NativeToolCont
   const result = await ctx.services.post.update(input);
   if (!result.success) throw new Error(result.error?.message || "更新文章失败");
   const post = result.data as PostEntity;
-  return { id: post.id, slug: post.slug, title: post.title };
+  return {
+    id: post.id,
+    garden: post.garden,
+    slug: post.slug,
+    title: post.title,
+    path: `content/${post.garden}/${post.slug}.md`,
+  };
 }
 
 async function postDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -72,9 +100,14 @@ async function postListTool(args: Record<string, unknown>, ctx: NativeToolContex
   // service.list 已裁剪 content（getListSelect 只返元信息），不泄露正文。
   const page = Math.max(1, Number(args.page || 1));
   const pageSize = Math.min(50, Math.max(1, Number(args.pageSize || 20)));
+  const garden =
+    args.garden === undefined || args.garden === null || args.garden === ""
+      ? undefined
+      : parseGardenArg(args.garden);
   const result = await ctx.services.post.list({
     page,
     pageSize,
+    garden,
     published: args.published === undefined ? undefined : args.published === true,
     category: args.category ? String(args.category) : undefined,
     tag: args.tag ? String(args.tag) : undefined,
@@ -89,8 +122,10 @@ async function postListTool(args: Record<string, unknown>, ctx: NativeToolContex
     totalPages: result.totalPages,
     items: result.items.map((p: PostEntity) => ({
       id: p.id,
+      garden: p.garden,
       title: p.title,
       slug: p.slug,
+      path: `content/${p.garden}/${p.slug}.md`,
       excerpt: p.excerpt,
       category: p.category,
       tags: p.tags,
@@ -260,15 +295,23 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     destructive: true,
     // 创建类可回滚（非删除）——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常建文
     approvalExempt: true,
-    description: "在本地知识库中创建一篇 Markdown 文章（content/posts）。",
+    description:
+      "在本地知识库花园创建 Markdown 文章。garden：posts（博客，默认）| knowledge（知识库）| resources（资料）。slug=花园内相对路径（可含 /，如 llm-guide/foo）。落盘 content/{garden}/{slug}.md，并同步 DB/FTS。禁止用 write_file 直写花园目录。",
     parameters: zodParams(
       z.object({
         title: z.string().describe("文章标题"),
+        garden: z
+          .enum(["posts", "knowledge", "resources"])
+          .describe("知识库花园：posts=博客 / knowledge=知识库 / resources=资料；默认 posts")
+          .optional(),
         content: z.string().describe("Markdown 正文").optional(),
-        slug: z.string().describe("URL 标识，不填则自动生成").optional(),
+        slug: z
+          .string()
+          .describe("花园内相对路径（不含 .md），如 notes/intro；不填则由标题生成")
+          .optional(),
         excerpt: z.string().describe("摘要").optional(),
         coverImage: z.string().describe("封面图 URL").optional(),
-        category: z.string().describe("分类").optional(),
+        category: z.string().describe("分类（元数据，不是目录）").optional(),
         tags: z.array(z.string()).describe("标签列表").optional(),
         published: z.boolean().describe("是否发布").optional(),
       }),
@@ -277,13 +320,18 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "post_update",
     concurrencyClass: "D",
-    description: "更新本地知识库中的 Markdown 文章。",
+    description:
+      "更新本地知识库文章。可改 garden 以迁移到另一花园（文件随之搬迁）。先用 post_list 查 id。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("文章 id"),
         title: z.string().describe("文章标题").optional(),
+        garden: z
+          .enum(["posts", "knowledge", "resources"])
+          .describe("目标花园（迁移时填写）")
+          .optional(),
         content: z.string().describe("Markdown 正文").optional(),
-        slug: z.string().describe("URL 标识").optional(),
+        slug: z.string().describe("花园内相对路径").optional(),
         excerpt: z.string().describe("摘要").optional(),
         coverImage: z.string().describe("封面图 URL").optional(),
         category: z.string().describe("分类").optional(),
@@ -296,7 +344,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "post_delete",
     concurrencyClass: "D",
     destructive: true,
-    description: "删除本地知识库中的 Markdown 文章。",
+    description: "删除本地知识库文章（软删进该花园 .trash）。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("文章 id"),
@@ -306,9 +354,13 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
   {
     name: "post_list",
     description:
-      "列出本地知识库文章（content/posts）。按 updatedAt 倒序分页，返回 id/title/slug/excerpt/category/tags/published/updatedAt 元信息（不含正文）。需要正文请用 post_update 读后改，或提示用户在编辑器打开。",
+      "列出本地知识库文章。可按 garden 过滤。返回 id/garden/slug/path/title/excerpt 等元信息（不含正文）。更新前先 list 拿 id。",
     parameters: zodParams(
       z.object({
+        garden: z
+          .enum(["posts", "knowledge", "resources"])
+          .describe("只列该花园；不填=全部花园")
+          .optional(),
         page: z.number().int().min(1).describe("页码，默认 1").optional(),
         pageSize: z.number().int().min(1).max(50).describe("每页条数，默认 20，最大 50").optional(),
         published: z.boolean().describe("是否仅看已发布；不填=全部").optional(),

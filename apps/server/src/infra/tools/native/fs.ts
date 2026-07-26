@@ -31,9 +31,14 @@ function moveToTrash(config: AppConfig, abs: string, relPath: string): string {
   return trashRel;
 }
 
-/** content/ 写入白名单：仅 uploads；posts/about 必须走 Service 同步管道 */
+/** content/ 写入白名单：仅 uploads；知识库花园与 about 必须走 post_*（或禁止） */
 const CONTENT_WRITE_PREFIXES = ["content/uploads/"] as const;
-const CONTENT_WRITE_DENY_PREFIXES = ["content/posts/", "content/about/"] as const;
+const CONTENT_WRITE_DENY_PREFIXES = [
+  "content/posts/",
+  "content/knowledge/",
+  "content/resources/",
+  "content/about/",
+] as const;
 
 /**
  * Agent FS 路径单点（读写对称）：
@@ -328,7 +333,7 @@ const FS_DEFS: NativeToolDefinition[] = [
     // 可回滚的常规写入，非删除类——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常写文件
     approvalExempt: true,
     description:
-      "写入文本文件。path：content/uploads/… 可写上传资源；禁止 content/posts|about（须 post_create）；其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
+      "写入文本文件。path：content/uploads/… 可写上传资源；禁止 content/posts|knowledge|resources|about（知识库须 post_create 并指定 garden）；其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
     parameters: {
       type: "object",
       properties: {

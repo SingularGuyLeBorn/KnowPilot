@@ -297,6 +297,7 @@ export async function draftPostsFromRssItems(
           category: defaultCategory,
           tags: ["RSS", source.name].join(","),
           published: false,
+          garden: "posts", // RSS 草稿固定进博客花园
         },
       });
       await prisma.infoSourceItem.update({

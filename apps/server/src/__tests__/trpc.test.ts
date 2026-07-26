@@ -34,13 +34,34 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     const fetchedId = await caller.post.getById({ id: created.data.id });
     expect(fetchedId.title).toBe(uniqueTitle);
 
-    // Read by Slug
-    const fetchedSlug = await caller.post.getBySlug({ slug: uniqueSlug });
+    // Read by Slug（默认花园 posts）
+    const fetchedSlug = await caller.post.getBySlug({ slug: uniqueSlug, garden: "posts" });
     expect(fetchedSlug.title).toBe(uniqueTitle);
+    expect(fetchedSlug.garden).toBe("posts");
+
+    // 同 slug 可在另一花园并存
+    const knowledgeTwin = await caller.post.create({
+      title: `${uniqueTitle} Knowledge`,
+      slug: uniqueSlug,
+      garden: "knowledge",
+      content: "knowledge garden twin",
+      published: true,
+    });
+    expect(knowledgeTwin.success).toBe(true);
+    expect(knowledgeTwin.data.garden).toBe("knowledge");
+    const twinBySlug = await caller.post.getBySlug({ slug: uniqueSlug, garden: "knowledge" });
+    expect(twinBySlug.id).toBe(knowledgeTwin.data.id);
 
     // List
     const list = await caller.post.list({ page: 1, pageSize: 10, keyword: "unit test" });
     expect(list.items.some((item: any) => item.id === created.data.id)).toBe(true);
+    const knowledgeList = await caller.post.list({
+      page: 1,
+      pageSize: 10,
+      garden: "knowledge",
+      keyword: uniqueSlug,
+    });
+    expect(knowledgeList.items.some((item: any) => item.id === knowledgeTwin.data.id)).toBe(true);
 
     // Update
     const updated = await caller.post.update({
@@ -53,6 +74,7 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     // Delete
     const deleted = await caller.post.delete({ id: created.data.id });
     expect(deleted.success).toBe(true);
+    await caller.post.delete({ id: knowledgeTwin.data.id });
 
     // Verify deletion
     await expect(caller.post.getById({ id: created.data.id })).rejects.toThrow();

@@ -22,7 +22,7 @@ const TEST_CONTENT_DIR = path.join(projectRoot, ".test-content");
 const TEST_CONFIG_DIR = path.join(projectRoot, ".test-config");
 const TEST_DATA_DIR = path.join(projectRoot, ".test-data");
 
-const CONTENT_SUBDIRS = ["posts", "about", "uploads"];
+const CONTENT_SUBDIRS = ["posts", "knowledge", "resources", "about", "uploads"];
 const CONFIG_SUBDIRS = ["agents", "skills", "mcp", "memories", "tasks", "prompts", "sources"];
 const DATA_SUBDIRS = ["approvals", "cookies", "files", "git", "logs", "messages", "sessions", "tools", "workspace"];
 

@@ -60,9 +60,11 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
   // D5：重建时统一过滤墓碑（软删 post / deleted agent / superseded memory）
   const posts = await prisma.post.findMany({
     where: { deletedAt: null },
-    select: { id: true, title: true, content: true, slug: true },
+    select: { id: true, title: true, content: true, slug: true, garden: true },
   });
-  for (const p of posts) add("post", p.id, p.title, `${p.slug}\n${p.content ?? ""}`);
+  for (const p of posts) {
+    add("post", p.id, p.title, `[${p.garden}] ${p.slug}\n${p.content ?? ""}`);
+  }
 
   const agents = await prisma.agent.findMany({
     where: { status: { not: "deleted" } },
