@@ -1059,10 +1059,14 @@ async function videoTranscriptTool(args: Record<string, unknown>, _ctx: NativeTo
     };
   }
 
-  // bilibili 分支
+  // bilibili 分支（学 BiliNote：有登录态时注入 SESSDATA，字幕更稳）
   const bvid = extractBvid(urlArg);
   if (!bvid) throw new Error(`无法从输入解析 bilibili BV 号或 YouTube 视频 ID：${urlArg}`);
-  const cid = await fetchBilibiliPagelistCid(bvid, 10000);
+  const { loadCookies, cookiesToHeader } = await import("../../cookieJar.js");
+  const biliCookies = loadCookies("bilibili");
+  const biliCookieHeader =
+    biliCookies.some((c) => c.name === "SESSDATA" && c.value) ? cookiesToHeader(biliCookies) : null;
+  const cid = await fetchBilibiliPagelistCid(bvid, 10000, biliCookieHeader);
   if (!cid) {
     return {
       platform: "bilibili",
@@ -1075,8 +1079,8 @@ async function videoTranscriptTool(args: Record<string, unknown>, _ctx: NativeTo
   }
 
   const [transcript, summary] = await Promise.all([
-    fetchBilibiliSubtitleExcerpt(bvid, cid, 10000, maxChars),
-    includeSummary ? fetchBilibiliAiConclusion(bvid, 10000, 4000) : Promise.resolve(""),
+    fetchBilibiliSubtitleExcerpt(bvid, cid, 10000, maxChars, biliCookieHeader),
+    includeSummary ? fetchBilibiliAiConclusion(bvid, 10000, 4000, biliCookieHeader) : Promise.resolve(""),
   ]);
 
   if (!transcript && !summary) {

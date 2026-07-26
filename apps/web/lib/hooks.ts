@@ -279,6 +279,8 @@ export const useInbox = () => {
       trpc.inbox.syncZhihu.useMutation({ onSuccess: invalidate }),
     useSyncXhs: () =>
       trpc.inbox.syncXhs.useMutation({ onSuccess: invalidate }),
+    useSyncBilibili: () =>
+      trpc.inbox.syncBilibili.useMutation({ onSuccess: invalidate }),
     useScanScreenshots: () =>
       trpc.inbox.scanScreenshots.useMutation({ onSuccess: invalidate }),
     useIngestWechat: () =>

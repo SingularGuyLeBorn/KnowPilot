@@ -384,7 +384,11 @@ async function fetchBilibiliTags(bvid: string, timeoutMs?: number): Promise<stri
   }
 }
 
-export async function fetchBilibiliPagelistCid(bvid: string, timeoutMs?: number): Promise<number | undefined> {
+export async function fetchBilibiliPagelistCid(
+  bvid: string,
+  timeoutMs?: number,
+  cookieHeader?: string | null,
+): Promise<number | undefined> {
   try {
     const res = await fetchWithTimeout(
       `https://api.bilibili.com/x/player/pagelist?bvid=${encodeURIComponent(bvid)}`,
@@ -394,6 +398,7 @@ export async function fetchBilibiliPagelistCid(bvid: string, timeoutMs?: number)
           Referer: "https://www.bilibili.com",
           "User-Agent": DEFAULT_UA,
           Accept: "application/json",
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         },
       },
     );
@@ -410,6 +415,7 @@ export async function fetchBilibiliAiConclusion(
   bvid: string,
   timeoutMs?: number,
   maxChars = 1500,
+  cookieHeader?: string | null,
 ): Promise<string> {
   try {
     const res = await fetchWithTimeout(
@@ -420,6 +426,7 @@ export async function fetchBilibiliAiConclusion(
           Referer: "https://www.bilibili.com",
           "User-Agent": DEFAULT_UA,
           Accept: "application/json",
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         },
       },
     );
@@ -440,6 +447,7 @@ export async function fetchBilibiliSubtitleExcerpt(
   cid: number,
   timeoutMs?: number,
   maxChars = 2500,
+  cookieHeader?: string | null,
 ): Promise<string> {
   try {
     const playerRes = await fetchWithTimeout(
@@ -450,6 +458,7 @@ export async function fetchBilibiliSubtitleExcerpt(
           Referer: "https://www.bilibili.com",
           "User-Agent": DEFAULT_UA,
           Accept: "application/json",
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         },
       },
     );

@@ -885,10 +885,10 @@ export const listInfoSourcesSchema = z.object({
 });
 
 /* ═══════════════════════════════════════════════════════
-   Inbox（知识素材箱：截图 / 知乎 / 小红书 / 微信公众号）
+   Inbox（知识素材箱：截图 / 知乎 / 小红书 / B站 / 微信公众号）
    ═══════════════════════════════════════════════════════ */
 
-export const inboxSourceSchema = z.enum(["screenshot", "zhihu", "xhs", "wechat", "url"]);
+export const inboxSourceSchema = z.enum(["screenshot", "zhihu", "xhs", "wechat", "bilibili", "url"]);
 export const inboxStatusSchema = z.enum(["fetched", "distilled", "ignored"]);
 
 export const createInboxItemSchema = z.object({
@@ -971,6 +971,21 @@ export const inboxSyncXhsSchema = z.object({
   mode: inboxSyncXhsModeSchema.default("incremental"),
   /** 每种 kind 最多拉取条数（点赞与收藏分别计数） */
   maxItems: z.number().int().min(1).max(5000).default(200),
+  fetchContent: z.boolean().default(false),
+  maxChars: z.number().int().min(500).max(50000).default(12000),
+});
+
+/** B 站：收藏夹 + 稍后再看（学 BiliNote：复用 platform_login SESSDATA） */
+export const inboxSyncBilibiliKindSchema = z.enum(["fav", "toview"]);
+export const inboxSyncBilibiliModeSchema = z.enum(["full", "incremental"]);
+export const inboxSyncBilibiliSchema = z.object({
+  /** fav=我创建的收藏夹；toview=稍后再看；默认两者 */
+  kinds: z.array(inboxSyncBilibiliKindSchema).min(1).max(2).default(["fav", "toview"]),
+  mode: inboxSyncBilibiliModeSchema.default("incremental"),
+  /** 每个收藏夹 / 稍后再看列表最多条数 */
+  maxItems: z.number().int().min(1).max(5000).default(200),
+  maxFolders: z.number().int().min(1).max(100).default(50),
+  /** true 时用 video_transcript 链路抓字幕摘要（更慢、耗额度） */
   fetchContent: z.boolean().default(false),
   maxChars: z.number().int().min(500).max(50000).default(12000),
 });
@@ -1463,6 +1478,7 @@ export type InboxCaptureUrlsInput = z.infer<typeof inboxCaptureUrlsSchema>;
 export type InboxSyncZhihuInput = z.input<typeof inboxSyncZhihuSchema>;
 /** 调用方可省略带 default 的字段；service 内再 parse 补全 */
 export type InboxSyncXhsInput = z.input<typeof inboxSyncXhsSchema>;
+export type InboxSyncBilibiliInput = z.input<typeof inboxSyncBilibiliSchema>;
 export type InboxScanScreenshotsInput = z.infer<typeof inboxScanScreenshotsSchema>;
 export type InboxIngestWechatDropInput = z.infer<typeof inboxIngestWechatDropSchema>;
 export type InboxDistillInput = z.infer<typeof inboxDistillSchema>;

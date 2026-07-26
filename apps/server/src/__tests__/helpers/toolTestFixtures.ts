@@ -390,6 +390,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "inbox_capture_urls",
   "inbox_sync_zhihu",
   "inbox_sync_xhs",
+  "inbox_sync_bilibili",
   "inbox_scan_screenshots",
   "inbox_ingest_wechat",
   "inbox_distill",

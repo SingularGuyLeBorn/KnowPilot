@@ -1,5 +1,5 @@
 /**
- * 知识 Inbox native 工具 — 截图 / 知乎 / 小红书 / 微信公众号
+ * 知识 Inbox native 工具 — 截图 / 知乎 / 小红书 / B 站 / 微信公众号
  */
 
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
@@ -73,6 +73,21 @@ async function inboxSyncXhs(args: Record<string, unknown>, ctx: NativeToolContex
   });
 }
 
+async function inboxSyncBilibili(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const rawKinds = Array.isArray(args.kinds) ? args.kinds.map(String) : [];
+  const kinds = rawKinds.filter((k): k is "fav" | "toview" => k === "fav" || k === "toview");
+  const mode = args.mode === "full" ? "full" : "incremental";
+  return ctx.services.inbox.syncBilibili({
+    kinds: kinds.length ? kinds : ["fav", "toview"],
+    mode,
+    maxItems:
+      typeof args.maxItems === "number" ? args.maxItems : mode === "full" ? 2000 : 200,
+    maxFolders: typeof args.maxFolders === "number" ? args.maxFolders : 50,
+    fetchContent: coerceToolBoolean(args.fetchContent),
+    maxChars: typeof args.maxChars === "number" ? args.maxChars : 12000,
+  });
+}
+
 async function inboxScanScreenshots(args: Record<string, unknown>, ctx: NativeToolContext) {
   return ctx.services.inbox.scanScreenshots({
     dir: typeof args.dir === "string" ? args.dir : undefined,
@@ -109,7 +124,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_list",
     description:
-      "列出知识 Inbox 待消化素材（截图/知乎收藏/小红书点赞与收藏/微信公众号）。status=fetched 待处理，distilled 已成文，ignored 已丢弃。",
+      "列出知识 Inbox 待消化素材（截图/知乎收藏/小红书点赞与收藏/B站收藏与稍后再看/微信公众号）。status=fetched 待处理，distilled 已成文，ignored 已丢弃。",
     concurrencyClass: "B",
     parameters: {
       type: "object",
@@ -117,7 +132,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
         page: { type: "number" },
         pageSize: { type: "number" },
         keyword: { type: "string" },
-        source: { type: "string", enum: ["screenshot", "zhihu", "xhs", "wechat", "url"] },
+        source: { type: "string", enum: ["screenshot", "zhihu", "xhs", "wechat", "bilibili", "url"] },
         status: { type: "string", enum: ["fetched", "distilled", "ignored"] },
       },
     },
@@ -131,14 +146,14 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_capture_url",
     description:
-      "把单个链接（知乎/小红书/微信公众号/任意网页）抓取正文写入 Inbox。需登录态的内容先 platform_login。",
+      "把单个链接（知乎/小红书/B站/微信公众号/任意网页）抓取正文写入 Inbox。需登录态的内容先 platform_login。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
       required: ["url"],
       properties: {
         url: { type: "string" },
-        source: { type: "string", enum: ["screenshot", "zhihu", "xhs", "wechat", "url"] },
+        source: { type: "string", enum: ["screenshot", "zhihu", "xhs", "wechat", "bilibili", "url"] },
         fetchContent: { type: "boolean", description: "是否抓正文，默认 true" },
         maxChars: { type: "number" },
       },
@@ -153,7 +168,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
       required: ["urls"],
       properties: {
         urls: { type: "array", items: { type: "string" } },
-        source: { type: "string", enum: ["zhihu", "xhs", "wechat", "url"] },
+        source: { type: "string", enum: ["zhihu", "xhs", "wechat", "bilibili", "url"] },
         fetchContent: { type: "boolean" },
         maxChars: { type: "number" },
       },
@@ -196,6 +211,27 @@ const INBOX_DEFS: NativeToolDefinition[] = [
         mode: { type: "string", enum: ["full", "incremental"], description: "默认 incremental" },
         maxItems: { type: "number", description: "每种最多条数；incremental 默认 200，full 默认 2000" },
         fetchContent: { type: "boolean" },
+        maxChars: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "inbox_sync_bilibili",
+    description:
+      "同步 B 站「我创建的收藏夹」和/或「稍后再看」到 Inbox（学 BiliNote：复用 platform_login(bilibili) 的 SESSDATA）。kinds 默认两者；mode=incremental 遇整页无新增早停；fetchContent=true 时抓字幕/AI 总结。",
+    concurrencyClass: "C",
+    parameters: {
+      type: "object",
+      properties: {
+        kinds: {
+          type: "array",
+          items: { type: "string", enum: ["fav", "toview"] },
+          description: '默认 ["fav","toview"]；fav=收藏夹，toview=稍后再看',
+        },
+        mode: { type: "string", enum: ["full", "incremental"], description: "默认 incremental" },
+        maxItems: { type: "number", description: "每夹/稍后再看最多条数" },
+        maxFolders: { type: "number", description: "最多同步多少个收藏夹，默认 50" },
+        fetchContent: { type: "boolean", description: "是否抓字幕摘要，默认 false" },
         maxChars: { type: "number" },
       },
     },
@@ -268,6 +304,7 @@ const INBOX_HANDLERS: Record<string, NativeToolHandler> = {
   inbox_capture_urls: inboxCaptureUrls,
   inbox_sync_zhihu: inboxSyncZhihu,
   inbox_sync_xhs: inboxSyncXhs,
+  inbox_sync_bilibili: inboxSyncBilibili,
   inbox_scan_screenshots: inboxScanScreenshots,
   inbox_ingest_wechat: inboxIngestWechat,
   inbox_distill: inboxDistill,

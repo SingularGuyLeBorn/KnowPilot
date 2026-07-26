@@ -1,6 +1,6 @@
 /**
  * 平台每日同步 — 自动化与工作流
- * 用 cron Task(action=inbox:sync) 定时拉知乎/小红书/截图/微信
+ * 用 cron Task(action=inbox:sync) 定时拉知乎/小红书/B站/截图/微信
  */
 
 "use client";
@@ -19,6 +19,7 @@ import {
   Heart,
   ImageIcon,
   MessageSquare,
+  Tv,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ type SyncFlags = {
   screenshots: boolean;
   wechat: boolean;
   zhihu: boolean;
+  bilibili: boolean;
 };
 
 function parseTaskInput(task: Task | undefined): SyncFlags & { cron: string } {
@@ -45,6 +47,7 @@ function parseTaskInput(task: Task | undefined): SyncFlags & { cron: string } {
       screenshots: true,
       wechat: true,
       zhihu: true,
+      bilibili: true,
       cron: DEFAULT_CRON,
     };
   }
@@ -54,19 +57,21 @@ function parseTaskInput(task: Task | undefined): SyncFlags & { cron: string } {
     screenshots: input.screenshots !== false,
     wechat: input.wechat !== false,
     zhihu: input.zhihu === true || typeof input.zhihuCollectionUrl === "string",
+    bilibili: input.bilibili === true,
     cron: task.cronExpression || DEFAULT_CRON,
   };
 }
 
 export default function PlatformSyncPage() {
   const { useList, useCreate, useUpdate, useRun } = useTask();
-  const { useSyncZhihu, useSyncXhs, useScanScreenshots, useIngestWechat } = useInbox();
+  const { useSyncZhihu, useSyncXhs, useSyncBilibili, useScanScreenshots, useIngestWechat } = useInbox();
   const { data, isLoading, refetch } = useList({ page: 1, pageSize: 50 });
   const createMutation = useCreate();
   const updateMutation = useUpdate();
   const runMutation = useRun();
   const syncZhihu = useSyncZhihu();
   const syncXhs = useSyncXhs();
+  const syncBilibili = useSyncBilibili();
   const scan = useScanScreenshots();
   const wechat = useIngestWechat();
 
@@ -90,6 +95,7 @@ export default function PlatformSyncPage() {
     screenshots: parsed.screenshots,
     wechat: parsed.wechat,
     zhihu: parsed.zhihu,
+    bilibili: parsed.bilibili,
   };
 
   const setCron = (value: string) => setCronOverride(value);
@@ -108,9 +114,12 @@ export default function PlatformSyncPage() {
     screenshots: flags.screenshots,
     wechat: flags.wechat,
     zhihu: flags.zhihu,
+    bilibili: flags.bilibili,
     zhihuMode: "incremental",
     xhsMode: "incremental",
+    bilibiliMode: "incremental",
     xhsKinds: ["liked", "collect"],
+    bilibiliKinds: ["fav", "toview"],
     maxItems: 200,
     fetchContent: false,
   });
@@ -194,6 +203,14 @@ export default function PlatformSyncPage() {
         });
         parts.push(`小红书+${(r as { created?: number })?.created ?? 0}`);
       }
+      if (flags.bilibili) {
+        const r = await syncBilibili.mutateAsync({
+          mode,
+          kinds: ["fav", "toview"],
+          maxItems: mode === "full" ? 2000 : 200,
+        });
+        parts.push(`B站+${(r as { created?: number })?.created ?? 0}`);
+      }
       showToast(`${mode === "full" ? "全量" : "增量"}完成：${parts.join(" · ") || "未选平台"}`);
     } catch (err) {
       showToast(`失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -205,6 +222,7 @@ export default function PlatformSyncPage() {
   const platformCards = [
     { key: "zhihu" as const, label: "知乎收藏夹", desc: "自动发现全部夹 · 增量早停", icon: BookMarked },
     { key: "xhs" as const, label: "小红书点赞+收藏", desc: "双 Tab · 遇已知笔记早停", icon: Heart },
+    { key: "bilibili" as const, label: "B站收藏+稍后再看", desc: "SESSDATA · 对齐 BiliNote", icon: Tv },
     { key: "screenshots" as const, label: "截图 drop", desc: "扫描 data/inbox/screenshots/drop", icon: ImageIcon },
     { key: "wechat" as const, label: "微信 links.txt", desc: "读取 wechat/links.txt", icon: MessageSquare },
   ];
@@ -214,7 +232,7 @@ export default function PlatformSyncPage() {
       <PageHeader
         icon={RefreshCw}
         title="平台每日同步"
-        description="在「自动化与工作流」里定时拉取知乎 / 小红书 / 截图 / 微信到 Inbox。结果去知识 Inbox 浏览与蒸馏。"
+        description="在「自动化与工作流」里定时拉取知乎 / 小红书 / B站 / 截图 / 微信到 Inbox。结果去知识 Inbox 浏览与蒸馏。"
       />
 
       {toast && (
@@ -365,7 +383,16 @@ export default function PlatformSyncPage() {
               </p>
             )}
             <p className="text-xs leading-relaxed text-[var(--kp-text-3)]">
-              知乎 / 小红书需先在 Chat 用 <code>platform_login</code> 登录。首次用「立即全量同步」打底，之后开每日增量即可。
+              知乎 / 小红书 / B站需先在 Chat 用 <code>platform_login</code> 登录（B站对齐{" "}
+              <a
+                href="https://github.com/JefferyHcool/BiliNote"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[var(--kp-brand-deep)] hover:underline"
+              >
+                BiliNote
+              </a>{" "}
+              复用 SESSDATA）。首次用「立即全量同步」打底，之后开每日增量即可。
             </p>
             <Link
               href="/tasks"

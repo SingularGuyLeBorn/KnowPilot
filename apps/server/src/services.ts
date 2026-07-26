@@ -90,7 +90,9 @@ import {
   type InboxSyncZhihuInput,
   inboxSyncZhihuSchema,
   inboxSyncXhsSchema,
+  inboxSyncBilibiliSchema,
   type InboxSyncXhsInput,
+  type InboxSyncBilibiliInput,
   type InboxScanScreenshotsInput,
   type InboxIngestWechatDropInput,
   type InboxDistillInput,
@@ -3952,6 +3954,9 @@ export class InboxService extends BaseService<
     const zhihuMap = new Map<string, { id: string; title: string; count: number }>();
     let xhsLike = 0;
     let xhsFavorite = 0;
+    let bilibiliFav = 0;
+    let bilibiliToview = 0;
+    const bilibiliMap = new Map<string, { id: string; title: string; count: number }>();
     for (const row of rows) {
       bySource[row.source] = (bySource[row.source] ?? 0) + 1;
       if (row.source === "zhihu") {
@@ -3980,12 +3985,38 @@ export class InboxService extends BaseService<
         if (tags.split(",").includes("like")) xhsLike += 1;
         if (tags.split(",").includes("favorite")) xhsFavorite += 1;
       }
+      if (row.source === "bilibili") {
+        const tags = String(row.tags || "");
+        if (tags.split(",").includes("toview")) bilibiliToview += 1;
+        if (tags.split(",").includes("favorite")) bilibiliFav += 1;
+        let meta: Record<string, unknown> = {};
+        try {
+          meta = row.metadata ? JSON.parse(row.metadata) : {};
+        } catch {
+          meta = {};
+        }
+        if (meta.collectionId != null) {
+          const id = String(meta.collectionId);
+          const title =
+            typeof meta.collectionTitle === "string" && meta.collectionTitle
+              ? meta.collectionTitle
+              : `收藏夹 ${id}`;
+          const prev = bilibiliMap.get(id) ?? { id, title, count: 0 };
+          prev.count += 1;
+          if (typeof meta.collectionTitle === "string" && meta.collectionTitle) {
+            prev.title = meta.collectionTitle;
+          }
+          bilibiliMap.set(id, prev);
+        }
+      }
     }
     return {
       total: rows.length,
       bySource,
       zhihuCollections: Array.from(zhihuMap.values()).sort((a, b) => b.count - a.count),
       xhs: { like: xhsLike, favorite: xhsFavorite },
+      bilibili: { favorite: bilibiliFav, toview: bilibiliToview },
+      bilibiliCollections: Array.from(bilibiliMap.values()).sort((a, b) => b.count - a.count),
     };
   }
 
@@ -4036,6 +4067,13 @@ export class InboxService extends BaseService<
     ensureInboxDirs(this.config);
     const parsed = inboxSyncXhsSchema.parse(input ?? {});
     return syncXhsLibrary(this.prisma, this.config, parsed);
+  }
+
+  async syncBilibili(input: InboxSyncBilibiliInput) {
+    const { syncBilibiliLibrary, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    const parsed = inboxSyncBilibiliSchema.parse(input ?? {});
+    return syncBilibiliLibrary(this.prisma, this.config, parsed);
   }
 
   async scanScreenshots(input: InboxScanScreenshotsInput) {

@@ -1,5 +1,5 @@
 /**
- * 知识 Inbox — 按平台 / 知乎收藏夹 / 小红书点赞·收藏浏览与蒸馏
+ * 知识 Inbox — 按平台 / 知乎收藏夹 / 小红书点赞·收藏 / B站收藏·稍后再看浏览与蒸馏
  */
 
 "use client";
@@ -19,6 +19,7 @@ import {
   Link2,
   ChevronRight,
   Loader2,
+  Tv,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ const SOURCE_LABELS: Record<string, string> = {
   screenshot: "截图",
   zhihu: "知乎",
   xhs: "小红书",
+  bilibili: "B站",
   wechat: "微信",
   url: "链接",
 };
@@ -55,7 +57,9 @@ type BrowseKey =
   | { type: "all" }
   | { type: "source"; source: string }
   | { type: "zhihuCollection"; collectionId: string }
-  | { type: "xhsTag"; tag: "like" | "favorite" };
+  | { type: "xhsTag"; tag: "like" | "favorite" }
+  | { type: "bilibiliTag"; tag: "favorite" | "toview" }
+  | { type: "bilibiliCollection"; collectionId: string };
 
 function browseEquals(a: BrowseKey, b: BrowseKey): boolean {
   if (a.type !== b.type) return false;
@@ -65,6 +69,10 @@ function browseEquals(a: BrowseKey, b: BrowseKey): boolean {
     return a.collectionId === b.collectionId;
   }
   if (a.type === "xhsTag" && b.type === "xhsTag") return a.tag === b.tag;
+  if (a.type === "bilibiliTag" && b.type === "bilibiliTag") return a.tag === b.tag;
+  if (a.type === "bilibiliCollection" && b.type === "bilibiliCollection") {
+    return a.collectionId === b.collectionId;
+  }
   return false;
 }
 
@@ -81,6 +89,7 @@ export default function InboxPage() {
     useFacets,
     useScanScreenshots,
     useSyncXhs,
+    useSyncBilibili,
     useIngestWechat,
     useDistill,
     useIgnore,
@@ -119,6 +128,12 @@ export default function InboxPage() {
     if (browse.type === "xhsTag") {
       return { ...base, source: "xhs" as const, tag: browse.tag };
     }
+    if (browse.type === "bilibiliTag") {
+      return { ...base, source: "bilibili" as const, tag: browse.tag };
+    }
+    if (browse.type === "bilibiliCollection") {
+      return { ...base, source: "bilibili" as const, collectionId: browse.collectionId };
+    }
     return base;
   }, [page, keyword, statusFilter, browse]);
 
@@ -130,6 +145,7 @@ export default function InboxPage() {
   const deleteMutation = useDelete();
   const scanMutation = useScanScreenshots();
   const syncXhsMutation = useSyncXhs();
+  const syncBilibiliMutation = useSyncBilibili();
   const wechatMutation = useIngestWechat();
   const distillMutation = useDistill();
   const ignoreMutation = useIgnore();
@@ -179,7 +195,7 @@ export default function InboxPage() {
         collectionsSynced?: number;
         byKind?: Partial<
           Record<
-            "liked" | "collect",
+            "liked" | "collect" | "fav" | "toview",
             { scanned: number; created: number; updated: number; stoppedEarly?: boolean }
           >
         >;
@@ -193,6 +209,12 @@ export default function InboxPage() {
         }
         if (sync.byKind.collect) {
           parts.push(`收藏新${sync.byKind.collect.created}`);
+        }
+        if (sync.byKind.fav) {
+          parts.push(`收藏夹新${sync.byKind.fav.created}`);
+        }
+        if (sync.byKind.toview) {
+          parts.push(`稍后再看新${sync.byKind.toview.created}`);
         }
         if (parts.length) detail = `：${parts.join(" · ")}`;
       } else if (typeof sync?.collectionsDiscovered === "number") {
@@ -216,6 +238,13 @@ export default function InboxPage() {
     if (browse.type === "all") return "全部素材";
     if (browse.type === "source") return SOURCE_LABELS[browse.source] || browse.source;
     if (browse.type === "xhsTag") return browse.tag === "like" ? "小红书 · 点赞" : "小红书 · 收藏";
+    if (browse.type === "bilibiliTag") {
+      return browse.tag === "toview" ? "B站 · 稍后再看" : "B站 · 收藏";
+    }
+    if (browse.type === "bilibiliCollection") {
+      const col = facets?.bilibiliCollections?.find((c) => c.id === browse.collectionId);
+      return col ? `B站 · ${col.title}` : "B站 · 收藏夹";
+    }
     const col = facets?.zhihuCollections?.find((c) => c.id === browse.collectionId);
     return col ? `知乎 · ${col.title}` : "知乎 · 收藏夹";
   }, [browse, facets]);
@@ -339,6 +368,13 @@ export default function InboxPage() {
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步小红书全量", () => syncXhsMutation.mutateAsync({ mode: "full", kinds: ["liked", "collect"], maxItems: 2000 }))}>
                   小红书全量
                 </Button>
+                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步B站增量", () => syncBilibiliMutation.mutateAsync({ mode: "incremental", kinds: ["fav", "toview"] }))}>
+                  <Tv className="mr-1.5 h-3.5 w-3.5" />
+                  B站增量
+                </Button>
+                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("同步B站全量", () => syncBilibiliMutation.mutateAsync({ mode: "full", kinds: ["fav", "toview"], maxItems: 2000 }))}>
+                  B站全量
+                </Button>
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={() => runAction("读微信链接", () => wechatMutation.mutateAsync({}))}>
                   微信 links.txt
                 </Button>
@@ -398,7 +434,7 @@ export default function InboxPage() {
               平台
             </p>
             <div className="space-y-0.5">
-              {(["zhihu", "xhs", "wechat", "screenshot", "url"] as const).map((src) => (
+              {(["zhihu", "xhs", "bilibili", "wechat", "screenshot", "url"] as const).map((src) => (
                 <button
                   key={src}
                   type="button"
@@ -465,6 +501,59 @@ export default function InboxPage() {
               </div>
             </div>
           )}
+
+          {((facets?.bilibili?.favorite ?? 0) > 0 || (facets?.bilibili?.toview ?? 0) > 0) && (
+            <div>
+              <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
+                B站
+              </p>
+              <div className="space-y-0.5">
+                <button
+                  type="button"
+                  className={railBtn(browseEquals(browse, { type: "bilibiliTag", tag: "favorite" }))}
+                  onClick={() => setBrowseAndReset({ type: "bilibiliTag", tag: "favorite" })}
+                >
+                  <BookMarked className="h-4 w-4 shrink-0 opacity-70" />
+                  <span className="flex-1 truncate">收藏</span>
+                  <span className="text-xs tabular-nums opacity-60">{facets?.bilibili?.favorite ?? 0}</span>
+                </button>
+                <button
+                  type="button"
+                  className={railBtn(browseEquals(browse, { type: "bilibiliTag", tag: "toview" }))}
+                  onClick={() => setBrowseAndReset({ type: "bilibiliTag", tag: "toview" })}
+                >
+                  <Tv className="h-4 w-4 shrink-0 opacity-70" />
+                  <span className="flex-1 truncate">稍后再看</span>
+                  <span className="text-xs tabular-nums opacity-60">{facets?.bilibili?.toview ?? 0}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(facets?.bilibiliCollections?.length ?? 0) > 0 && (
+            <div>
+              <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-[var(--kp-text-3)] uppercase">
+                B站收藏夹
+              </p>
+              <div className="max-h-56 space-y-0.5 overflow-y-auto">
+                {facets!.bilibiliCollections.map((col) => (
+                  <button
+                    key={col.id}
+                    type="button"
+                    className={railBtn(
+                      browseEquals(browse, { type: "bilibiliCollection", collectionId: col.id }),
+                    )}
+                    onClick={() => setBrowseAndReset({ type: "bilibiliCollection", collectionId: col.id })}
+                    title={col.title}
+                  >
+                    <Tv className="h-4 w-4 shrink-0 opacity-70" />
+                    <span className="flex-1 truncate">{col.title}</span>
+                    <span className="text-xs tabular-nums opacity-60">{col.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </motion.aside>
 
         <div className="min-w-0 space-y-4">
@@ -515,7 +604,7 @@ export default function InboxPage() {
           ) : items.length === 0 ? (
             <EmptyState
               title="这里还是空的"
-              description="点上方「同步素材」拉知乎/小红书，或把截图丢进 drop 目录。左侧可按收藏夹筛选。"
+              description="点上方「同步素材」拉知乎/小红书/B站，或把截图丢进 drop 目录。左侧可按收藏夹筛选。"
             />
           ) : (
             <motion.div layout className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

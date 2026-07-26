@@ -121,6 +121,19 @@ export async function executeTaskJob(
         maxChars,
       });
     }
+    if (input.bilibili === true) {
+      const rawKinds = Array.isArray(input.bilibiliKinds) ? input.bilibiliKinds.map(String) : [];
+      const kinds = rawKinds.filter((k): k is "fav" | "toview" => k === "fav" || k === "toview");
+      const bilibiliMode = input.bilibiliMode === "full" ? "full" : "incremental";
+      results.bilibili = await services.inbox.syncBilibili({
+        kinds: kinds.length ? kinds : ["fav", "toview"],
+        mode: bilibiliMode,
+        maxItems,
+        maxFolders: typeof input.maxFolders === "number" ? input.maxFolders : 50,
+        fetchContent,
+        maxChars,
+      });
+    }
 
     return {
       action: "inbox:sync",

@@ -200,7 +200,7 @@ export interface InfoSource {
 /** 知识 Inbox 素材 — 待消化的截图 / 收藏 / 链接 */
 export interface InboxItem {
   id: string;
-  source: "screenshot" | "zhihu" | "xhs" | "wechat" | "url" | string;
+  source: "screenshot" | "zhihu" | "xhs" | "wechat" | "bilibili" | "url" | string;
   externalId: string;
   title: string;
   url: string | null;

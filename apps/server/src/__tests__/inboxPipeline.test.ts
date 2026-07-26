@@ -19,8 +19,17 @@ import {
   parseZhihuCollectionItemsJson,
   extractZhihuCollectionId,
   shouldStopZhihuIncrementalPage,
+  parseBilibiliFavFoldersJson,
+  parseBilibiliFavMediasJson,
+  parseBilibiliToviewJson,
+  bilibiliInboxExternalId,
+  shouldStopBilibiliIncrementalPage,
 } from "../infra/inboxPipeline.js";
-import { inboxSyncXhsSchema, inboxSyncZhihuSchema } from "@knowpilot/shared";
+import {
+  inboxSyncXhsSchema,
+  inboxSyncZhihuSchema,
+  inboxSyncBilibiliSchema,
+} from "@knowpilot/shared";
 import { createTempProjectDir, createTestConfig } from "./helpers/toolTestFixtures.js";
 
 describe("inboxPipeline", () => {
@@ -179,6 +188,70 @@ describe("inboxPipeline", () => {
     expect(notes[0]!.title).toBe("标题一");
     expect(notes[0]!.url).toContain("xsec_token=tok");
     expect(notes[0]!.author).toBe("作者");
+  });
+
+  it("inboxSyncBilibiliSchema 默认 kinds + incremental", () => {
+    const parsed = inboxSyncBilibiliSchema.parse({});
+    expect(parsed.kinds).toEqual(["fav", "toview"]);
+    expect(parsed.mode).toBe("incremental");
+    expect(bilibiliInboxExternalId("fav", "BV1xx411c7mD", "123")).toBe("fav:123:BV1xx411c7mD");
+    expect(bilibiliInboxExternalId("toview", "BV1xx411c7mD")).toBe("toview:BV1xx411c7mD");
+    expect(shouldStopBilibiliIncrementalPage(20, 0)).toBe(true);
+    expect(shouldStopBilibiliIncrementalPage(20, 1)).toBe(false);
+  });
+
+  it("parseBilibili fav / toview JSON", () => {
+    const folders = parseBilibiliFavFoldersJson({
+      data: { list: [{ id: 42, title: "默认收藏夹", media_count: 9 }, { id: "bad", title: "x" }] },
+    });
+    expect(folders).toHaveLength(1);
+    expect(folders[0]!.id).toBe("42");
+    expect(folders[0]!.mediaCount).toBe(9);
+
+    const { items, hasMore } = parseBilibiliFavMediasJson({
+      data: {
+        medias: [
+          { bvid: "BV1xx411c7mD", title: "测试视频", upper: { name: "UP主" }, intro: "简介" },
+          { bvid: "bad", title: "跳过" },
+        ],
+        has_more: true,
+      },
+    });
+    expect(hasMore).toBe(true);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.bvid).toBe("BV1xx411c7mD");
+    expect(items[0]!.author).toBe("UP主");
+
+    const toview = parseBilibiliToviewJson({
+      data: {
+        list: [{ bvid: "BV1yy411c7mE", title: "稍后再看", owner: { name: "乙" }, desc: "d" }],
+      },
+    });
+    expect(toview).toHaveLength(1);
+    expect(toview[0]!.bvid).toBe("BV1yy411c7mE");
+  });
+
+  it("B站收藏与稍后再看可各存一条同 bvid", async () => {
+    const bvid = `BV1test${Date.now().toString(36)}`;
+    const fav = await upsertInboxItem(prisma, {
+      source: "bilibili",
+      externalId: bilibiliInboxExternalId("fav", bvid, "99"),
+      title: "收藏视频",
+      url: `https://www.bilibili.com/video/${bvid}`,
+      tags: ["bilibili", "favorite"],
+      metadata: { collectionId: "99", collectionTitle: "默认收藏夹" },
+    });
+    const toview = await upsertInboxItem(prisma, {
+      source: "bilibili",
+      externalId: bilibiliInboxExternalId("toview", bvid),
+      title: "稍后再看",
+      url: `https://www.bilibili.com/video/${bvid}`,
+      tags: ["bilibili", "toview"],
+    });
+    createdIds.push(fav.id, toview.id);
+    expect(fav.created).toBe(true);
+    expect(toview.created).toBe(true);
+    expect(fav.id).not.toBe(toview.id);
   });
 
   it("小红书点赞与收藏可各存一条同 noteId", async () => {
