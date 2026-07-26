@@ -18,10 +18,13 @@ export function getContentDir(dirName: string): string {
   const cp = config.contentPaths as Record<string, string>;
   const gp = config.configPaths as Record<string, string>;
   const dp = config.dataPaths as Record<string, string>;
-  if (gp[dirName]) return gp[dirName];
+  // 知识库路径优先（posts/knowledge/resources/about/uploads）
   if (cp[dirName]) return cp[dirName];
+  if (gp[dirName]) return gp[dirName];
   if (dp[dirName]) return dp[dirName];
-  // 未知目录名：保守回退到 config 根（旧默认行为是 content 根，但配置类实体已迁 config）
+  // 动态花园：content/{id}/（存在则用之）；配置类未知名回退 config/
+  const underContent = path.join(config.contentDir, dirName);
+  if (fs.existsSync(underContent)) return underContent;
   return path.join(config.configDir, dirName);
 }
 
@@ -58,7 +61,11 @@ export function getFilesRecursive(
         continue;
       }
       results = results.concat(getFilesRecursive(filePath, extensions, ignoreDirs));
-    } else if (extensions.some((ext) => file.endsWith(ext))) {
+    } else if (
+      extensions.some((ext) => file.endsWith(ext)) &&
+      // 跳过 `_garden.md` 等元文件（花园首页事实源，不当 Post）
+      !file.startsWith("_")
+    ) {
       results.push(filePath);
     }
   }

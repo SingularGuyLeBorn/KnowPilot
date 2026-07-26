@@ -19,6 +19,8 @@ interface PostContentProps {
   content: string;
   className?: string;
   postSlug?: string;
+  /** 当前文章所属花园；内链解析优先同库匹配 */
+  postGarden?: string;
 }
 
 function urlTransform(url: string) {
@@ -340,7 +342,12 @@ function ThinkingNode({
   );
 }
 
-export const PostContent = memo(function PostContent({ content, className, postSlug }: PostContentProps) {
+export const PostContent = memo(function PostContent({
+  content,
+  className,
+  postSlug,
+  postGarden,
+}: PostContentProps) {
   const processedContent = useMemo(
     () => memoizeMarkdownTransform(content, transformWikiLinks),
     [content],
@@ -361,7 +368,7 @@ export const PostContent = memo(function PostContent({ content, className, postS
   const components = useMemo(
     () => ({
     a: ({ href, children, ...props }) => (
-      <PostMarkdownLink href={href} postSlug={postSlug} {...props}>
+      <PostMarkdownLink href={href} postSlug={postSlug} postGarden={postGarden} {...props}>
         {children}
       </PostMarkdownLink>
     ),
@@ -410,7 +417,7 @@ export const PostContent = memo(function PostContent({ content, className, postS
       </ThinkingNode>
     ),
   }) as Components,
-    [postSlug],
+    [postSlug, postGarden],
   );
 
   return (

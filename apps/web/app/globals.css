@@ -945,6 +945,35 @@ html.dark .kp-badge-info,
   border-bottom: 0;
 }
 
+/* Markdown / prose 表格：横竖线齐全（GFM table） */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  font-size: 0.875rem;
+}
+.prose thead th,
+.prose tbody td {
+  border: 1px solid var(--kp-divider);
+  padding: 0.55rem 0.75rem;
+  vertical-align: top;
+}
+.prose thead th {
+  background: var(--kp-bg-mute);
+  font-weight: 600;
+  color: var(--kp-text-1);
+  text-align: left;
+}
+.prose tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--kp-bg-mute) 45%, transparent);
+}
+.prose tbody tr:hover td {
+  background: color-mix(in srgb, var(--kp-brand-soft) 55%, transparent);
+}
+
 /* 进度条：圆角 + 渐变 */
 .kp-progress {
   height: 6px;

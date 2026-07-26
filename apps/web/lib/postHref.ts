@@ -58,34 +58,55 @@ export function normalizeMdTarget(href: string): string {
   }
 }
 
+function pickPreferGarden(
+  matches: PostTreeItem[],
+  preferGarden?: string,
+): PostTreeItem | null {
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+  if (preferGarden) {
+    const inGarden = matches.find((p) => (p.garden ?? DEFAULT_POST_GARDEN) === preferGarden);
+    if (inGarden) return inGarden;
+  }
+  return matches[0];
+}
+
 /** 在文章树中查找与 Markdown 链接对应的文章（含 garden） */
 export function findPostByHref(
   href: string,
   posts: PostTreeItem[],
+  preferGarden?: string,
 ): PostTreeItem | null {
   const target = normalizeMdTarget(href);
   if (!target) return null;
 
-  const exact = posts.find(
+  const exact = posts.filter(
     (post) => post.slug === target || post.slug.toLowerCase() === target.toLowerCase(),
   );
-  if (exact) return exact;
+  const exactHit = pickPreferGarden(exact, preferGarden);
+  if (exactHit) return exactHit;
 
   const suffixMatches = posts.filter(
     (post) => post.slug.endsWith(`/${target}`) || post.slug.endsWith(target),
   );
+  const suffixHit = pickPreferGarden(suffixMatches, preferGarden);
+  if (suffixHit && (suffixMatches.length === 1 || preferGarden)) return suffixHit;
   if (suffixMatches.length === 1) return suffixMatches[0];
 
   const basename = target.split("/").pop();
   if (!basename) return null;
 
   const folderFileMatches = posts.filter((post) => post.slug.endsWith(`/${basename}/${basename}`));
+  const folderHit = pickPreferGarden(folderFileMatches, preferGarden);
+  if (folderHit && (folderFileMatches.length === 1 || preferGarden)) return folderHit;
   if (folderFileMatches.length === 1) return folderFileMatches[0];
 
   const basenameMatches = posts.filter((post) => {
     const parts = post.slug.split("/");
     return parts[parts.length - 1] === basename;
   });
+  const baseHit = pickPreferGarden(basenameMatches, preferGarden);
+  if (baseHit && (basenameMatches.length === 1 || preferGarden)) return baseHit;
   if (basenameMatches.length === 1) return basenameMatches[0];
 
   return null;
@@ -100,6 +121,7 @@ export function resolvePostLinkHref(
   href: string,
   posts: PostTreeItem[],
   postSlug?: string,
+  preferGarden?: string,
 ): string | null {
   if (href.startsWith("/posts/")) {
     return href;
@@ -108,12 +130,13 @@ export function resolvePostLinkHref(
   if (postSlug && !href.startsWith("/") && !isExternalHref(href)) {
     const resolved = resolveRelativeMdSlug(href, postSlug);
     if (resolved) {
-      const hit = posts.find((post) => post.slug === resolved);
+      const candidates = posts.filter((post) => post.slug === resolved);
+      const hit = pickPreferGarden(candidates, preferGarden);
       if (hit) return postDetailHref(hit.slug, hit.garden ?? DEFAULT_POST_GARDEN);
     }
   }
 
-  const matched = findPostByHref(href, posts);
+  const matched = findPostByHref(href, posts, preferGarden);
   if (matched) {
     return postDetailHref(matched.slug, matched.garden ?? DEFAULT_POST_GARDEN);
   }

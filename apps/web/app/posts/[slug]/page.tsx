@@ -140,7 +140,7 @@ export default function PostDetailPage() {
 
               <Card>
                 <CardContent className="p-6 sm:p-8">
-                  <PostContent content={post.content} postSlug={post.slug} />
+                  <PostContent content={post.content} postSlug={post.slug} postGarden={post.garden} />
                 </CardContent>
               </Card>
             </article>

@@ -7,21 +7,42 @@ import { postDetailHref } from "@/lib/postHref";
 interface WikiLinkProps {
   target: string;
   children: React.ReactNode;
+  /** 优先在该花园内匹配 slug/title */
+  preferGarden?: string;
 }
 
-export function WikiLink({ target, children }: WikiLinkProps) {
-  const { data: posts = [] } = trpc.post.tree.useQuery({});
-
+function matchPost(
+  posts: Array<{ slug: string; title: string; garden: string }>,
+  target: string,
+  preferGarden?: string,
+) {
   const normalizedTarget = target.trim().toLowerCase();
-  const match = posts.find((post) => {
+  const pool = preferGarden
+    ? [
+        ...posts.filter((p) => p.garden === preferGarden),
+        ...posts.filter((p) => p.garden !== preferGarden),
+      ]
+    : posts;
+
+  return pool.find((post) => {
     if (post.slug.toLowerCase() === normalizedTarget) return true;
     if (post.title.toLowerCase() === normalizedTarget) return true;
+    // 允许 wiki 只写末段：[[ddpm]] → 01-foundations/ddpm
+    if (post.slug.toLowerCase().endsWith(`/${normalizedTarget}`)) return true;
     return false;
   });
+}
+
+export function WikiLink({ target, children, preferGarden }: WikiLinkProps) {
+  const { data: posts = [] } = trpc.post.tree.useQuery({});
+  const match = matchPost(posts, target, preferGarden);
 
   if (!match) {
     return (
-      <span className="border-b border-dashed border-muted-foreground/50 text-muted-foreground" title={`未找到页面：${target}`}>
+      <span
+        className="border-b border-dashed border-muted-foreground/50 text-muted-foreground"
+        title={`未找到页面：${target}`}
+      >
         {children}
       </span>
     );
