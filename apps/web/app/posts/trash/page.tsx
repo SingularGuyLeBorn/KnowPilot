@@ -20,7 +20,7 @@ export default function PostTrashPage() {
 
   const handleRestore = async (post: Post) => {
     const res = await restore.mutateAsync({ id: post.id });
-    if (res.success) void refetch();
+    if (res.success) refetch().catch(() => {});
     setRestoreTarget(null);
   };
 
@@ -29,7 +29,7 @@ export default function PostTrashPage() {
     const res = await permanentDelete.mutateAsync({ id: deleteTarget.id });
     if (res.success) {
       setDeleteTarget(null);
-      void refetch();
+      refetch().catch(() => {});
     }
   };
 
@@ -110,7 +110,7 @@ export default function PostTrashPage() {
         title="恢复文章"
         description={`确定恢复「${restoreTarget?.title ?? ""}」？恢复后将重新出现在文章列表中。`}
         confirmLabel="恢复"
-        onConfirm={() => restoreTarget && void handleRestore(restoreTarget)}
+        onConfirm={() => restoreTarget && handleRestore(restoreTarget).catch(() => {})}
         onCancel={() => setRestoreTarget(null)}
       />
 

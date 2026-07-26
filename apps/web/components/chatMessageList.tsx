@@ -200,8 +200,8 @@ export const ChatMessageList = memo(function ChatMessageList({
         </div>
 
         <MessageActions
-          onCopy={() => void handleCopy(assistantId, active.content)}
-          onShare={() => void handleShare(active.content)}
+          onCopy={() => handleCopy(assistantId, active.content).catch(() => {})}
+          onShare={() => handleShare(active.content).catch(() => {})}
           onRegenerate={() => handleRegenerate(group.userMessage.id)}
           onSpeak={ttsSupported ? () => handleSpeak(assistantId, active.content) : undefined}
           isSpeaking={speakingAssistantId === assistantId && ttsSpeaking}
@@ -215,8 +215,8 @@ export const ChatMessageList = memo(function ChatMessageList({
               <MessageVersions
                 current={group.activeVersionIndex}
                 total={group.versions.length}
-                onPrev={() => void handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex - 1)}
-                onNext={() => void handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex + 1)}
+                onPrev={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex - 1).catch(() => {})}
+                onNext={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex + 1).catch(() => {})}
               />
             ) : null
           }
@@ -385,8 +385,8 @@ export const ChatMessageList = memo(function ChatMessageList({
               )}
             </div>
             <MessageActions
-              onCopy={() => void handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content)}
-              onShare={() => void handleShare(isEditing ? editDraft : group.userMessage.content)}
+              onCopy={() => handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content).catch(() => {})}
+              onShare={() => handleShare(isEditing ? editDraft : group.userMessage.content).catch(() => {})}
               onEdit={() => {
                 setEditingUserId(group.userMessage.id);
                 setEditDraft(group.userMessage.content);
@@ -701,7 +701,7 @@ export const ChatMessageList = memo(function ChatMessageList({
             startReached={() => {
               if (showingStale) return;
               if (hasOlderMessages && !isLoadingOlderMessages) {
-                void loadOlderMessages();
+                loadOlderMessages().catch(() => {});
               }
             }}
           />

@@ -78,9 +78,9 @@ describe("SessionStreamHub inject queues", () => {
       await new Promise<void>((resolve) => {
         if (signal.aborted) return resolve();
         signal.addEventListener("abort", () => resolve(), { once: true });
-        void gate.then(() => {
+        gate.then(() => {
           /* keep waiting abort */
-        });
+        }).catch(() => {});
       });
     });
 

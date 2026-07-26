@@ -500,9 +500,9 @@ export function startFreeKeysAutoSync(prisma: PrismaClient, config: AppConfig): 
     }
   };
 
-  void tick();
+  tick().catch(() => {});
   if (timer) clearInterval(timer);
-  timer = setInterval(() => void tick(), intervalMs);
+  timer = setInterval(() => { tick().catch(() => {}); }, intervalMs);
   console.log(`  👀 [freeKeysSync] 已启动（默认开启，间隔 ${Math.round(intervalMs / 60000)} 分钟）`);
 }
 

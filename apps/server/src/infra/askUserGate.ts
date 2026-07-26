@@ -234,7 +234,7 @@ async function sendReminderEmail(askId: string): Promise<void> {
   if (!pending || pending.status !== "pending" || !handles) return;
 
   pending.reminderCount += 1;
-  void persistReminderCount(askId, pending.reminderCount);
+  persistReminderCount(askId, pending.reminderCount).catch(() => {});
 
   const mins = Math.round((Date.now() - pending.createdAt) / 60000);
   const optionsBlock =
@@ -290,14 +290,14 @@ function scheduleReminders(
   const delay = Math.max(0, interval - elapsed);
 
   const fire = (): void => {
-    void sendReminderEmail(askId).then(() => {
+    sendReminderEmail(askId).then(() => {
       const still = remindersById.get(askId);
       const p = pendingById.get(askId);
       if (!still || !p || p.status !== "pending") return;
       // sendReminderEmail 已把 reminderCount+1；下次用 ladder[新 reminderCount] 档
       const nextInterval = reminderIntervalFor(p.reminderCount);
       still.timer = setTimeout(fire, nextInterval);
-    });
+    }).catch(() => {});
   };
 
   handles.timer = setTimeout(fire, delay);
@@ -309,7 +309,7 @@ function finishAsk(askId: string, resolution: AskUserResolution): void {
   if (pending) {
     pending.status = "resolved";
     pending.resolution = resolution;
-    void persistResolve(askId, resolution, pending.reminderCount);
+    persistResolve(askId, resolution, pending.reminderCount).catch(() => {});
   }
   clearReminders(askId);
 
@@ -323,7 +323,7 @@ function finishAsk(askId: string, resolution: AskUserResolution): void {
 
   // 重启后无挂起 run：答复仍进会话队列，由 drain 续跑
   if (!hadWaiters && pending && resolution.outcome === "answered") {
-    void deliverOrphanAskAnswer(pending, resolution);
+    deliverOrphanAskAnswer(pending, resolution).catch(() => {});
   }
 }
 
@@ -376,7 +376,7 @@ export function bindAskUserMailIds(
     pending.threadId = ids.threadId;
     byThreadId.set(ids.threadId, askId);
   }
-  void persistMailIds(askId, ids);
+  persistMailIds(askId, ids).catch(() => {});
 }
 
 export function getAskUserPending(askId: string): AskUserPending | undefined {

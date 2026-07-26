@@ -332,20 +332,14 @@ function loadYamlConfig(projectRoot: string): Record<string, unknown> {
 }
 
 function resolveStorageRoot(projectRoot: string, name: "content" | "config" | "data", envName: string): string {
-  // 测试隔离：KP_*_DIR 覆盖各自根目录；KP_CONTENT_DIR 兼容旧测试只覆盖 content
+  // 测试隔离：KP_CONTENT_DIR / KP_CONFIG_DIR / KP_DATA_DIR 各自覆盖对应根目录
   const envDir = process.env[envName]?.trim();
   if (envDir) {
     return path.isAbsolute(envDir) ? envDir : path.resolve(projectRoot, envDir);
   }
-  if (name === "content") {
-    const legacy = process.env.KP_CONTENT_DIR?.trim();
-    if (legacy) return path.isAbsolute(legacy) ? legacy : path.resolve(projectRoot, legacy);
-  }
-  const dir = path.join(projectRoot, name);
-  if (fs.existsSync(dir)) return dir;
-  const cwdDir = path.resolve(process.cwd(), name);
-  if (fs.existsSync(cwdDir)) return cwdDir;
-  return dir;
+  // 唯一事实源：项目根下的 content|config|data（由 resolveProjectRoot 定位）
+  // 禁止回退 process.cwd()——从 apps/server 启动时会误建 apps/server/content/
+  return path.join(projectRoot, name);
 }
 
 /** 加载项目根目录 .env（幂等）。P3-04：.env.local 优先级高于 .env（先加载，undefined 守卫保证不覆盖） */

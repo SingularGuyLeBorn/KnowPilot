@@ -54,7 +54,7 @@ export function setOpenRouterFreeModelCatalog(catalog: OpenRouterFreeCatalog): v
   };
 }
 
-/** 兼容旧调用：只写 id 列表 */
+/** 仅写模型 id 列表（测试与轻量同步入口；完整 catalog 走 setOpenRouterFreeModelCatalog） */
 export function setOpenRouterFreeModels(models: string[]): void {
   const syncedAt = new Date().toISOString();
   setOpenRouterFreeModelCatalog({

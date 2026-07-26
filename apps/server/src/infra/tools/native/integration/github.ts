@@ -333,7 +333,7 @@ async function githubCreateReleaseTool(args: Record<string, unknown>, ctx: Nativ
 }
 
 async function githubTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  // 兼容 snake_case（native）与 camelCase（executor）：github_create_issue → githubCreateIssue
+  // snake_case（native 工具名）与 camelCase（executor 方法名）：github_create_issue → githubCreateIssue
   const raw = String(args.tool || "").trim();
   const tool = raw.includes("_")
     ? raw.split("_").map((p, i) => (i === 0 ? p : p.charAt(0).toUpperCase() + p.slice(1))).join("")

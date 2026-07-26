@@ -390,7 +390,7 @@ export const ChatInputArea = memo(function ChatInputArea({
 
       if (!supportsVision) {
         setOcrInFlight((prev) => ({ ...prev, [id]: true }));
-        void runOcrForAttachment(att)
+        runOcrForAttachment(att).catch(() => {})
           .then((done) => {
             setPendingImages((prev) => prev.map((x) => (x.id === id ? done : x)));
           })

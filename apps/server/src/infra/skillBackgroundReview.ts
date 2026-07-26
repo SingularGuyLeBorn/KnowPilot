@@ -87,7 +87,7 @@ export function maybeSpawnSkillBackgroundReview(args: SkillReviewSpawnArgs): boo
   const digest = buildTraceDigest(args.toolCalls);
   const message = `[skill-background-review]\n${digest}\n\n${SKILL_REVIEW_PROMPT}`;
 
-  void (async () => {
+  (async () => {
     try {
       if (args.runReview) {
         await args.runReview(message);
@@ -102,7 +102,7 @@ export function maybeSpawnSkillBackgroundReview(args: SkillReviewSpawnArgs): boo
     } finally {
       reviewLocks.delete(lockKey);
     }
-  })();
+  })().catch(() => {});
 
   return true;
 }

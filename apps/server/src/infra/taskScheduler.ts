@@ -32,7 +32,7 @@ export class TaskScheduler {
       }
 
       const job = cron.schedule(task.cronExpression, () => {
-        void this.runScheduled(task.id, task.name);
+        this.runScheduled(task.id, task.name).catch(() => {});
       });
       this.jobs.set(task.id, job);
       registered++;

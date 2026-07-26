@@ -56,7 +56,7 @@ const eventBus = getEventBus();
 const services = getServiceContainer(prisma, eventBus, config);
 // P1：启动时尽早注入一次集成凭据到 config.integrations，后续请求零工作；
 // 凭据 CRUD 后由 invalidateIntegrationCredentials 标记失效，下次请求惰性重注入。
-void ensureIntegrationCredentialsInjected(config, prisma).catch((err) => {
+ensureIntegrationCredentialsInjected(config, prisma).catch((err) => {
   console.warn("  ⚠️ [Credentials] 启动注入失败，将退回首次请求时注入:", err instanceof Error ? err.message : err);
 });
 const triggerEngine = getTriggerEngine(prisma, eventBus, services);
@@ -210,7 +210,7 @@ app.post("/api/webhooks/agentmail", async (req, res) => {
   res.status(202).json({ ok: true, accepted: true, event_id: payload.event_id });
 
   // 异步处理：幂等抢占 → 审批/ask_user 解析 → 注入 session；失败落 DLQ
-  void handleAgentMailInbound(payload, text).catch((err) =>
+  handleAgentMailInbound(payload, text).catch((err) =>
     console.error("[agentmail webhook] 异步处理异常:", err instanceof Error ? err.message : err),
   );
 });
@@ -487,7 +487,7 @@ const server = app.listen(PORT, () => {
   // （本地 localhost 不可公网访问，AgentMail 无法回调，需 Cloudflare Tunnel / ngrok 暴露公网）。
   // 兜底轮询：webhook 通道挂了（ngrok 断、server 重启中、AgentMail 投递失败）也能收到邮件回复。
   let agentMailPollerLocal: { stop: () => void } | null = null;
-  void import("./infra/agentMailClient.js")
+  import("./infra/agentMailClient.js")
     .then(async ({ isAgentMailConfigured, ensureAgentMailInbox, ensureAgentMailWebhook }) => {
       if (!isAgentMailConfigured()) return;
       const inbox = await ensureAgentMailInbox();
@@ -504,15 +504,17 @@ const server = app.listen(PORT, () => {
       if (wh.ok) {
         const { selfCheckTunnel } = await import("./infra/agentMailClient.js");
         setTimeout(() => {
-          void selfCheckTunnel(wh.url).then((r) => {
-            if (r.ok) {
-              console.log(`  ✅ [AgentMail] 隧道自检通过：公网可访问 ${wh.url}（HTTP ${r.status}）`);
-            } else {
-              console.warn(
-                `  ⚠️ [AgentMail] 隧道自检失败：公网无法访问 ${wh.url}（${r.error ?? `HTTP ${r.status}`}）。请检查 ngrok/Cloudflare Tunnel 是否正常运行、PUBLIC_URL 是否正确。`,
-              );
-            }
-          });
+          selfCheckTunnel(wh.url)
+            .then((r) => {
+              if (r.ok) {
+                console.log(`  ✅ [AgentMail] 隧道自检通过：公网可访问 ${wh.url}（HTTP ${r.status}）`);
+              } else {
+                console.warn(
+                  `  ⚠️ [AgentMail] 隧道自检失败：公网无法访问 ${wh.url}（${r.error ?? `HTTP ${r.status}`}）。请检查 ngrok/Cloudflare Tunnel 是否正常运行、PUBLIC_URL 是否正确。`,
+                );
+              }
+            })
+            .catch(() => {});
         }, 10_000);
       }
       // 兜底轮询（webhook 通道挂了的最后防线）
@@ -532,7 +534,7 @@ const server = app.listen(PORT, () => {
     .catch((err) => console.warn("  ⚠️ [AgentMail] 启动初始化失败:", err instanceof Error ? err.message : err));
 
   if (hasSystemChrome() && process.env.BROWSER_WARMUP !== "0") {
-    void getSharedBrowser()
+    getSharedBrowser()
       .then(() => console.log("  🌐 [Browser] Playwright 共享实例已预热"))
       .catch((err) => console.warn("  ⚠️ [Browser] 预热失败:", err instanceof Error ? err.message : err));
   }
@@ -566,14 +568,19 @@ const handleShutdown = () => {
   agentMailPollerRef?.stop();
   agentMailWebhookHealthRef?.stop();
   stopAsyncDeliveryReconciler();
-  void import("./infra/freeKeysSync.js").then(({ stopFreeKeysAutoSync }) => stopFreeKeysAutoSync());
+  import("./infra/freeKeysSync.js")
+    .then(({ stopFreeKeysAutoSync }) => stopFreeKeysAutoSync())
+    .catch(() => {});
   streamHub.destroy();
-  void closeSharedBrowser().catch(() => undefined);
+  closeSharedBrowser().catch(() => undefined);
   server.close(() => {
-    prisma.$disconnect().then(() => {
-      console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");
-      process.exit(0);
-    });
+    prisma
+      .$disconnect()
+      .then(() => {
+        console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");
+        process.exit(0);
+      })
+      .catch(() => process.exit(1));
   });
 };
 

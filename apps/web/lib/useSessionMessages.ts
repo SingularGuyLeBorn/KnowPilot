@@ -511,7 +511,7 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
     const already = hydratedSessionsGlobal.has(sessionId) || cached.length > 0;
     if (already) {
       // isMessagesHydrated 已由 global/cache 派生为 true，无需 effect 内同步 setState
-      void (async () => {
+      (async () => {
         try {
           const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
             utilsRef.current.message.listForChat.fetch(opts),
@@ -523,13 +523,13 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
         } catch {
           streamLifecycleActions.hydrateDone(sessionId);
         }
-      })();
+      })().catch(() => {});
       return;
     }
 
     // 冷会话：保持 hydratedForSessionId !== sessionId，直到 fetch 完成
     let cancelled = false;
-    void (async () => {
+    (async () => {
       try {
         const { nextCursor } = await fetchAndHydrateSession(sessionId, (opts) =>
           utilsRef.current.message.listForChat.fetch(opts),
@@ -543,7 +543,7 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
         if (!cancelled) setHydratedForSessionId(sessionId);
         streamLifecycleActions.hydrateDone(sessionId);
       }
-    })();
+    })().catch(() => {});
     return () => {
       cancelled = true;
       // 根因修复：切走时关闭旧 session 的 EventSource，防止 HTTP/1.1 6 连接上限耗尽

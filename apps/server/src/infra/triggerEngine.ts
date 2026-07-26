@@ -129,7 +129,7 @@ export class TriggerEngine {
       })();
 
       this.runningTriggers.set(trigger.id, exec);
-      void exec.finally(() => this.runningTriggers.delete(trigger.id));
+      exec.finally(() => this.runningTriggers.delete(trigger.id));
       // 不 await：让本事件内的多个触发器并行执行，且不阻塞 EventBus.emit
     }
   }

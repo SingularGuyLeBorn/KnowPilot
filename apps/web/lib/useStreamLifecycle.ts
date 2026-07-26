@@ -201,7 +201,7 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
           return set(action.sessionId, { ...s, liveTimeline: copy });
         }
       }
-      // 复用末尾空占位（兼容旧 resume 重放）
+      // 复用末尾空 thinking 占位（resume 重放时避免重复插入）
       for (let i = copy.length - 1; i >= 0; i--) {
         const step = copy[i];
         if (step.type === "thinking" && !step.content.trim()) {

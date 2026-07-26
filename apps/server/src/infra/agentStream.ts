@@ -564,7 +564,7 @@ export async function chatAgentStream(
 
     // 自动命名：不管新建还是已有 session，都 fire-and-forget。
     // autoNameSession 内部幂等：autoName 已有值 或 msgCount>1 都跳过，不会重复命名。
-    void autoNameSession(sessionId, prepared.messageText);
+    autoNameSession(sessionId, prepared.messageText).catch(() => {});
 
     // E3：预生成 assistant 消息 id，stop 响应与 abort 落库共用
     pendingAssistantId = prepared.updateAssistantId ?? allocateCuid();

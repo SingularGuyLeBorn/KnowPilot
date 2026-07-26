@@ -116,7 +116,7 @@ function scheduleFlush(projectRoot: string): void {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
-    void flushAsync(projectRoot, version);
+    flushAsync(projectRoot, version).catch(() => {});
   }, FLUSH_DEBOUNCE_MS);
   flushTimer.unref?.();
 }
@@ -124,7 +124,7 @@ function scheduleFlush(projectRoot: string): void {
 function getState(config: AppConfig): BudgetState {
   // 启动未 hydrate 时仍允许服务（软语义）；后台补一次合并 hydrate，不阻塞热路径
   if (!hydrated && !hydratePromise) {
-    void hydrateLlmBudget(config.projectRoot);
+    hydrateLlmBudget(config.projectRoot).catch(() => {});
   }
   if (state.date !== todayKey()) {
     // 跨天 rollover：内存内重置并标记落盘

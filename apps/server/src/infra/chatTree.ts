@@ -129,7 +129,7 @@ export function resolveActivePath<T extends { id: string; parentId?: string | nu
 
   let leafId = activeLeafId && byId.has(activeLeafId) ? activeLeafId : null;
   if (!leafId) {
-    // 无叶游标：按 createdAt 取最后一条（兼容未回填会话）
+    // 无叶游标：按 createdAt 取最后一条（activeLeafId 未回填的会话）
     const sorted = [...allMessages].sort((a, b) => {
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;

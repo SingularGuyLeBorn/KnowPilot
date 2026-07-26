@@ -148,7 +148,7 @@ export class SessionStreamHub {
     if (this.config.persist && this.config.cleanupIntervalMs > 0) {
       this.cleanupTimer = setInterval(() => this.deleteExpired(), this.config.cleanupIntervalMs);
       // 启动时先清理一轮，避免上次崩溃残留过期数据
-      void this.deleteExpired();
+      this.deleteExpired().catch(() => {});
     }
   }
 
@@ -702,7 +702,7 @@ export class SessionStreamHub {
     state.abortController.abort(reason);
     // 用户软暂停：立刻标 paused（与 chatAgentStream abort 收尾幂等），前端才能出「恢复运行」
     if (reason === "user") {
-      void prisma.chatSession
+      prisma.chatSession
         .updateMany({
           where: { id: sessionId, status: { in: ["active", "running"] } },
           data: { status: "paused" },
@@ -720,7 +720,7 @@ export class SessionStreamHub {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
-    void this.flushPersistQueue().catch(() => undefined);
+    this.flushPersistQueue().catch(() => undefined);
   }
 
   /**
@@ -839,9 +839,9 @@ export class SessionStreamHub {
       payload: buffered.event,
     });
     if (this.persistQueue.length >= 50) {
-      void this.flushPersistQueue();
+      this.flushPersistQueue().catch(() => {});
     } else if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => void this.flushPersistQueue(), 50);
+      this.flushTimer = setTimeout(() => this.flushPersistQueue().catch(() => {}), 50);
     }
   }
 
@@ -870,7 +870,7 @@ export class SessionStreamHub {
       });
       // 退避：失败后延迟 500ms 再 flush，避免立即重排又立即 flush 在锁竞争下雪崩。
       if (!this.flushTimer) {
-        this.flushTimer = setTimeout(() => void this.flushPersistQueue(), 500);
+        this.flushTimer = setTimeout(() => this.flushPersistQueue().catch(() => {}), 500);
       }
     }
   }

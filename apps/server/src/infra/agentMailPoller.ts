@@ -86,7 +86,7 @@ export function startAgentMailPoller(opts: {
     if (stopped) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      void tick();
+      tick().catch(() => {});
     }, ms);
   }
 

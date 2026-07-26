@@ -63,7 +63,7 @@ export default function SettingsPage() {
 
   const handleLogout = () => {
     clearAuthToken();
-    void refetch();
+    refetch().catch(() => {});
     window.location.href = "/login";
   };
 

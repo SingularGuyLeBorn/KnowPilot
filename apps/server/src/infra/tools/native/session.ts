@@ -263,7 +263,7 @@ async function spawnSubagentPrepare(
     // 默认名时 fire-and-forget 调 LLM 起个正常名字；cuid 不变，父 Agent 仍能靠 agentId 找到
     // （动态 import：后台锦上添花路径，主链路无需加载 sessionAutoName 及其 LLM 依赖）
     if (!args.name && /^子\s*Agent\s+[a-z0-9]+$/i.test(subagentName)) {
-      void import("../../sessionAutoName.js")
+      import("../../sessionAutoName.js")
         .then(({ autoNameAgent }) => autoNameAgent(subagentId, task))
         .catch(() => undefined);
     }

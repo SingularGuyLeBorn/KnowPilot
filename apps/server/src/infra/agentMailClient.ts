@@ -309,7 +309,7 @@ export function startAgentMailWebhookHealthCheck(opts?: {
     if (stopped) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      void check().finally(() => scheduleNext(intervalMs));
+      check().finally(() => scheduleNext(intervalMs));
     }, ms);
   }
 

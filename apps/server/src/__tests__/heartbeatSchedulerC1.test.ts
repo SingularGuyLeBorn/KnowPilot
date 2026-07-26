@@ -95,8 +95,7 @@ describe("C1 执行型僵尸 Task 恢复扫描", () => {
     const config = createTestConfig(ctx.config.projectRoot, {
       asyncJobs: { ...ctx.config.asyncJobs, maxConcurrent: 2, maxQueued: 10 },
     });
-    const { failed, resumed } = await recoverStaleAsyncJobs(config, ctx.services);
-    expect(resumed).toBe(0);
+    const { failed } = await recoverStaleAsyncJobs(config, ctx.services);
     expect(failed).toBeGreaterThanOrEqual(3);
 
     for (const id of [hbZombie.id, cronZombie.id, triggerZombie.id]) {

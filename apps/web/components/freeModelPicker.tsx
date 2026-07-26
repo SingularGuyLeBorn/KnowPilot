@@ -129,7 +129,7 @@ export function FreeModelPicker({
                       tabIndex={0}
                       onClick={(e) => {
                         e.stopPropagation();
-                        void navigator.clipboard.writeText(m.id).then(() => {
+                        navigator.clipboard.writeText(m.id).then(() => {
                           setCopied(m.id);
                           window.setTimeout(() => setCopied(null), 1200);
                         }).catch(() => {});
@@ -138,7 +138,7 @@ export function FreeModelPicker({
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
                           e.stopPropagation();
-                          void navigator.clipboard.writeText(m.id);
+                          navigator.clipboard.writeText(m.id).catch(() => {});
                         }
                       }}
                       className="inline-flex rounded p-0.5 text-[var(--kp-text-3)] hover:bg-[var(--kp-bg)]"

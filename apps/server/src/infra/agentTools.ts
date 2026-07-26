@@ -540,7 +540,6 @@ export interface AgentToolSummary {
   nativeGranted: number;
   skillTools: number;
   mcpTools: number;
-  apiProcedures: number;
   llmFunctions: number;
   /** 配置原文（每行授权） */
   configuredLines: string[];
@@ -563,9 +562,6 @@ export async function summarizeAgentTools(
   const skillNames = await resolveSkillNames(services, parsed);
   const allNative = listNativeTools();
   const grantedNative = parsed.native === "all" ? allNative.map((t) => t.name) : parsed.native;
-  // invoke_api 已下线（架构铁律：子 Agent 隔离，结果只能经 report_back 交付）。
-  // apiProcedures 反射面计数随之归零，保留字段以维持前端契约兼容。
-  const apiProcedures = 0;
 
   let mcpTools = 0;
   if (parsed.mcpServers.length > 0) {
@@ -590,7 +586,6 @@ export async function summarizeAgentTools(
     nativeGranted: parsed.native === "all" ? allNative.length : grantedNative.length,
     skillTools: skillNames.length,
     mcpTools,
-    apiProcedures,
     llmFunctions: nativeLlm + skillNames.length + mcpTools,
     configuredLines: tools,
     resolvedNative: grantedNative,

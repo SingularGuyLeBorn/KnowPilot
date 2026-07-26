@@ -56,7 +56,7 @@ export default function GitPage() {
         return;
       }
       setBanner({ type: "ok", text: "已关联本项目仓库（path: .）" });
-      void refetch();
+      refetch().catch(() => {});
     },
     onError: (err: { message?: string }) => {
       setBanner({ type: "err", text: err.message || "关联失败" });

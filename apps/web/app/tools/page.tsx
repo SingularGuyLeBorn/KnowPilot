@@ -192,7 +192,7 @@ export default function ToolsPage() {
       await createMutation.mutateAsync(payload);
     }
     setView("list");
-    void refetch();
+    refetch().catch(() => {});
   };
 
   const handleSearch = () => {
@@ -347,7 +347,7 @@ export default function ToolsPage() {
 
           <div className="flex gap-3">
             <Button
-              onClick={() => void handleSave()}
+              onClick={() => { handleSave().catch(() => {}); }}
               disabled={createMutation.isPending || updateMutation.isPending}
             >
               {editingId ? "保存修改" : "注册工具"}

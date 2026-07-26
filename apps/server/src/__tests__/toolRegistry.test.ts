@@ -63,8 +63,8 @@ describe("ToolCommand registry", () => {
 
     const root = createTempProjectDir();
     try {
-      const file = `${root}/hello.txt`;
-      fs.writeFileSync(file, "ok", "utf8");
+      fs.mkdirSync(`${root}/data/workspace`, { recursive: true });
+      fs.writeFileSync(`${root}/data/workspace/hello.txt`, "ok", "utf8");
       const ctx = createNativeCtx(root);
       const result = (await executeNativeTool("read_file", { path: "hello.txt" }, ctx)) as {
         content?: string;

@@ -391,7 +391,7 @@ export function registerGoalLoopSettledHook(
   if (goalSettledHookRegistered) return () => {};
   goalSettledHookRegistered = true;
   return onHubRunSettled((sessionId) => {
-    void drainGoalContinueAfterSettle({ services, config, sessionId }).catch((err) => {
+    drainGoalContinueAfterSettle({ services, config, sessionId }).catch((err) => {
       console.warn(
         "[goalLoop] settled 续跑失败:",
         err instanceof Error ? err.message : err,

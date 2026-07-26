@@ -873,7 +873,7 @@ export type FeishuWhiteboardRef = {
 
 /**
  * 列出文档内所有画板（分页拉齐 blocks，筛 block_type=43）。
- * whiteboard_id = block.board.token（或兼容 block.token）。
+ * whiteboard_id = block.board.token（缺省时回退 block.token，对齐飞书 API 字段形态差异）。
  */
 export async function feishuListDocWhiteboards(
   documentId: string,

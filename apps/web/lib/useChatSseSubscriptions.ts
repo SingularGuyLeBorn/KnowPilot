@@ -66,7 +66,7 @@ export function useChatSseSubscriptions({
     /** 按事件所属 session 刷新切片；禁止一律刷 effectiveSessionId（后台 Tab 幽灵根因）
      *  CancelledError 兜底：并发 refetch 取消旧 fetch 抛错，.catch 静默避免 unhandled rejection */
     const refreshAsyncQueueFor = (targetSid: string) => {
-      void refreshSessionAsyncQueue(utils, targetSid);
+      refreshSessionAsyncQueue(utils, targetSid).catch(() => {});
       // 焦点 query 缓存对齐（同 session 时 UI 立刻一致）
       if (targetSid === effectiveSessionId) {
         asyncQueueQuery.refetch().catch(() => {});

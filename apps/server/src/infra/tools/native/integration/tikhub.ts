@@ -39,7 +39,7 @@ async function tikhubRequest(args: Record<string, unknown>, ctx: NativeToolConte
   const base = tikhubBase();
   const started = Date.now();
 
-  // 统一前缀 /api/v1/（用户传 xiaohongshu/... 或 /api/v1/xiaohongshu/... 都兼容）
+  // 统一前缀 /api/v1/（接受 xiaohongshu/... 或 /api/v1/xiaohongshu/...）
   const fullPath = endpoint.startsWith("api/v1/") ? `/${endpoint}` : `/api/v1/${endpoint}`;
   const url = new URL(base + fullPath);
   let res: Response;

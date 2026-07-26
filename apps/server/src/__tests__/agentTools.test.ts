@@ -158,7 +158,8 @@ describe("Agent 工具桥 — buildAgentToolSchemas", () => {
 describe("Agent 工具桥 — executeAgentTool", () => {
   it("executeAgentTool 调用 native read_file", async () => {
     const root = createTempProjectDir();
-    fs.writeFileSync(`${root}/test.txt`, "content", "utf8");
+    fs.mkdirSync(`${root}/data/workspace`, { recursive: true });
+    fs.writeFileSync(`${root}/data/workspace/test.txt`, "content", "utf8");
     const parsed = parseAgentTools(["native:read_file"]);
     const registry = new Map<string, ToolRegistryEntry>([
       ["read_file", { kind: "native", nativeName: "read_file" }],
@@ -213,8 +214,9 @@ describe("Agent 工具桥 — executeAgentTool", () => {
 describe("Agent 工具桥 — executeToolCallsBatch", () => {
   it("只读工具并发执行", async () => {
     const root = createTempProjectDir();
-    fs.writeFileSync(`${root}/a.txt`, "a", "utf8");
-    fs.writeFileSync(`${root}/b.txt`, "b", "utf8");
+    fs.mkdirSync(`${root}/data/workspace`, { recursive: true });
+    fs.writeFileSync(`${root}/data/workspace/a.txt`, "a", "utf8");
+    fs.writeFileSync(`${root}/data/workspace/b.txt`, "b", "utf8");
     const parsed = parseAgentTools(["native:read_file"]);
     const registry = new Map<string, ToolRegistryEntry>([
       ["read_file", { kind: "native", nativeName: "read_file", concurrencySafe: true }],

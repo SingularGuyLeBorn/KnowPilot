@@ -83,7 +83,7 @@ export function useChatEnqueue({
             return;
           }
 
-          void (async () => {
+          (async () => {
             try {
               if (!rest || /^status$/i.test(rest)) {
                 if (isResearch && !rest) {
@@ -128,7 +128,7 @@ export function useChatEnqueue({
             } catch (err) {
               showToast(err instanceof Error ? err.message : "Goal 操作失败");
             }
-          })();
+          })().catch(() => {});
           return;
         }
       }
@@ -153,7 +153,7 @@ export function useChatEnqueue({
       if (effectiveSessionId && isSessionRunOccupied(effectiveSessionId)) {
         const kind = delivery === "follow_up" ? "follow_up" : "steer";
         if (!messageText) return;
-        void (async () => {
+        (async () => {
           try {
             await submitInjectMutation.mutateAsync({
               sessionId: effectiveSessionId,
@@ -169,7 +169,7 @@ export function useChatEnqueue({
             const msg = err instanceof Error ? err.message : String(err);
             showToast(msg || "注入失败");
           }
-        })();
+        })().catch(() => {});
         return;
       }
 
@@ -191,7 +191,7 @@ export function useChatEnqueue({
       });
 
       if (effectiveSessionId) {
-        void (async () => {
+        (async () => {
           try {
             const res = await createSessionQueueItemMutation.mutateAsync({
               sessionId: effectiveSessionId,
@@ -227,7 +227,7 @@ export function useChatEnqueue({
             });
             consumeRef.current(effectiveSessionId);
           }
-        })();
+        })().catch(() => {});
         return;
       }
 

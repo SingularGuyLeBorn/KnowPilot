@@ -104,7 +104,7 @@ async function findMcpServer(services: ServiceContainer, name: string): Promise<
 function evictClient(serverName: string): void {
   const client = clientCache.get(serverName);
   if (client) {
-    void client.close().catch(() => undefined);
+    client.close().catch(() => undefined);
   }
   clientCache.delete(serverName);
 }

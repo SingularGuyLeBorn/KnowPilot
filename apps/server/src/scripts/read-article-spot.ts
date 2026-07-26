@@ -44,6 +44,6 @@ main()
     process.exit(1);
   })
   .finally(() => {
-    void closeSharedBrowser().catch(() => undefined);
-    void prisma.$disconnect().catch(() => undefined);
+    closeSharedBrowser().catch(() => undefined);
+    prisma.$disconnect().catch(() => undefined);
   });

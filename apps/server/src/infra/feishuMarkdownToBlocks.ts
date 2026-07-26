@@ -178,7 +178,7 @@ export function markdownToBlocksWithDiagnostics(markdown: string): MarkdownConve
 }
 
 /**
- * 将 Markdown 字符串转换为飞书 block 数组(兼容旧版, 无诊断信息)
+ * 将 Markdown 字符串转换为飞书 block 数组（仅返回 blocks，无诊断信息）
  *
  * @param markdown - 原始 Markdown 文本
  * @returns 飞书 block 结构数组

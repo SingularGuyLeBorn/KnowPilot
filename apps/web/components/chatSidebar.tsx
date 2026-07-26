@@ -198,8 +198,8 @@ export const ChatSidebar = memo(function ChatSidebar({
         setError(res.error?.message ?? "重命名失败");
         return;
       }
-      void utils.session.list.invalidate();
-      if (effectiveSessionId === id) void refetchSession();
+      utils.session.list.invalidate().catch(() => {});
+      if (effectiveSessionId === id) refetchSession().catch(() => {});
       setEditingSessionId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "重命名失败");
@@ -257,7 +257,7 @@ export const ChatSidebar = memo(function ChatSidebar({
     renameDraftRef.current = renameDraft;
   }, [renameDraft]);
   const handleConfirmRename = useCallback((id: string) => {
-    void handleRenameSession(id, renameDraftRef.current);
+    handleRenameSession(id, renameDraftRef.current).catch(() => {});
   }, [handleRenameSession]);
 
   const handleCancelRename = useCallback(() => {
@@ -649,7 +649,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         description={`确定删除「${deleteSessionTarget?.title ?? ""}」？所有消息将被永久删除。`}
         confirmLabel="删除"
         isDestructive
-        onConfirm={() => deleteSessionTarget && void handleDeleteSession(deleteSessionTarget.id)}
+        onConfirm={() => deleteSessionTarget && handleDeleteSession(deleteSessionTarget.id).catch(() => {})}
         onCancel={() => setDeleteSessionTarget(null)}
       />
 

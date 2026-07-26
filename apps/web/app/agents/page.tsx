@@ -476,7 +476,7 @@ export default function AgentsPage() {
       };
       apply(agent);
       // 列表裁剪了 systemPrompt，进编辑时拉全量
-      void utils.agent
+      utils.agent
         .getById.fetch({ id: agent.id })
         .then((row) => apply(row as Agent))
         .catch(() => {});
@@ -514,7 +514,7 @@ export default function AgentsPage() {
       await createMutation.mutateAsync(payload);
     }
     setView("list");
-    void refetch();
+    refetch().catch(() => {});
   };
 
   const confirmDelete = () => {
@@ -747,7 +747,7 @@ export default function AgentsPage() {
         </div>
 
         <div className="flex gap-3">
-          <Button onClick={() => void handleSave()} disabled={createMutation.isPending || updateMutation.isPending}>
+          <Button onClick={() => { handleSave().catch(() => {}); }} disabled={createMutation.isPending || updateMutation.isPending}>
             {editingId ? "保存修改" : "创建 Agent"}
           </Button>
           {editingId && (

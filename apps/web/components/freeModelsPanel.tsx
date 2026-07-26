@@ -358,7 +358,7 @@ export function FreeModelsPanel() {
                         <CopyIdButton
                           id={m.id}
                           copied={copiedId === m.id}
-                          onCopy={() => void onCopy(m.id)}
+                          onCopy={() => onCopy(m.id).catch(() => {})}
                         />
                         {text ? (
                           <div className="max-w-3xl space-y-1">
@@ -393,7 +393,7 @@ export function FreeModelsPanel() {
                           size="sm"
                           variant="secondary"
                           className="h-8 gap-1.5 border border-[var(--kp-divider)] bg-[var(--kp-bg)] text-[var(--kp-text-1)] hover:border-[var(--kp-brand)]/40 hover:bg-[var(--kp-brand-soft)]"
-                          onClick={() => void onCopy(m.id)}
+                          onClick={() => onCopy(m.id).catch(() => {})}
                         >
                           {copiedId === m.id ? (
                             <>
@@ -494,7 +494,7 @@ export function FreeModelsPanel() {
                       size="sm"
                       variant="secondary"
                       className="h-8 shrink-0 gap-1.5 border border-[var(--kp-divider)] bg-[var(--kp-bg)] hover:bg-[var(--kp-brand-soft)]"
-                      onClick={() => void onCopy(c.model!)}
+                      onClick={() => onCopy(c.model!).catch(() => {})}
                     >
                       {copiedId === c.model ? (
                         <>

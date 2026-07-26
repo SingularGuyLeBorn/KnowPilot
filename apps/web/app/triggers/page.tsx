@@ -280,7 +280,7 @@ export default function TriggersPage() {
           {formError && <p className="text-xs text-red-600">{formError}</p>}
           <div className="flex gap-2 pt-1">
             <Button
-              onClick={() => void handleSave()}
+              onClick={() => { handleSave().catch(() => {}); }}
               disabled={createMutation.isPending || updateMutation.isPending}
             >
               {editingId ? "保存修改" : "创建触发器"}

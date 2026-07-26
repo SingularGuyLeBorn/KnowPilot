@@ -341,7 +341,7 @@ export async function waitApprovalResolution(
       if (ttl <= 0) return;
       const remaining = createdAtMs + ttl - Date.now();
       waiter.timer = setTimeout(() => {
-        void (async () => {
+        (async () => {
           if (settled) return;
           let flipped = false;
           try {
@@ -367,13 +367,13 @@ export async function waitApprovalResolution(
             removeApprovalWaiter(approvalId, waiter);
             settle({ outcome: "rejected", approvalId, toolName });
           }
-        })();
+        })().catch(() => {});
       }, Math.max(remaining, 0));
       if (typeof waiter.timer === "object" && "unref" in waiter.timer) waiter.timer.unref();
     };
 
     // ② 注册后再复读：已决立即收尾；pending 则挂 TTL 等待事件
-    void (async () => {
+    (async () => {
       try {
         const approval = (await services.approval.getById(approvalId)) as ApprovalRow;
         if (settled) return; // 复读期间已被 notify 唤醒
@@ -391,7 +391,7 @@ export async function waitApprovalResolution(
         removeApprovalWaiter(approvalId, waiter);
         settle({ outcome: "rejected", approvalId, toolName });
       }
-    })();
+    })().catch(() => {});
   });
 }
 
@@ -552,7 +552,7 @@ export async function assertApprovalOrProceed(
   }
 
   // 通知单点（冷却内抑制）；失败不阻断审批创建
-  void notifyPendingApprovalIfCooldownAllows(services, {
+  notifyPendingApprovalIfCooldownAllows(services, {
     id,
     toolName,
     decisionScope,

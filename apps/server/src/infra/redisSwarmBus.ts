@@ -157,13 +157,13 @@ export class RedisSwarmBus implements SwarmBus {
       })
       .catch(() => {});
 
-    void this.notifyAgentMessage({
+    this.notifyAgentMessage({
       toAgentId: msg.toAgentId,
       messageId: created.id,
       content: msg.content,
       fromAgentId: msg.fromAgentId,
       source: msg.source ?? fromTier,
-    });
+    }).catch(() => {});
 
     return { success: true, message: "消息已发送（Redis 旁路）。", messageId: created.id };
   }

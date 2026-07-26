@@ -772,7 +772,7 @@ ${entity.content}
     const post = await this.prisma.post.findUnique({ where: { slug, deletedAt: null } });
     if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "文章不存在" });
     // A15：浏览量自增改 fire-and-forget，不阻塞读取关键路径；返回的 post 仍是自增前的快照（与原行为一致）
-    void this.prisma.post
+    this.prisma.post
       .update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } })
       .catch(() => {
         // 统计写入失败不影响文章读取
@@ -1876,20 +1876,22 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
         config,
         services,
       });
-      void drainPromise.finally(async () => {
-        if (hub.isRunning(input.id)) return;
-        // 与 Hub.settleSessionDbStatus 对齐：subagent / skill_review → completed
-        const nextStatus =
-          session.kind === "subagent" || session.kind === "skill_review" ? "completed" : "active";
-        await this.prisma.chatSession
-          .updateMany({
-            where: { id: input.id, status: "running" },
-            data: { status: nextStatus },
-          })
-          .catch((settleErr) => {
-            console.warn(`[session.resume] superior drain 后归位失败 session=${input.id}:`, settleErr);
-          });
-      });
+      drainPromise
+        .finally(async () => {
+          if (hub.isRunning(input.id)) return;
+          // 与 Hub.settleSessionDbStatus 对齐：subagent / skill_review → completed
+          const nextStatus =
+            session.kind === "subagent" || session.kind === "skill_review" ? "completed" : "active";
+          await this.prisma.chatSession
+            .updateMany({
+              where: { id: input.id, status: "running" },
+              data: { status: nextStatus },
+            })
+            .catch((settleErr) => {
+              console.warn(`[session.resume] superior drain 后归位失败 session=${input.id}:`, settleErr);
+            });
+        })
+        .catch(() => {});
       return {
         id: input.id,
         status: "running",

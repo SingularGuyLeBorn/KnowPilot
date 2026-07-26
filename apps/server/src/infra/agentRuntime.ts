@@ -248,7 +248,7 @@ export async function chatAgent(
     });
 
     // Hermes：有工具调用时沉淀 experience（与 agentStream onDone 同语义）
-    void import("./agentEvolution.js")
+    import("./agentEvolution.js")
       .then(({ accumulateExperience }) =>
         accumulateExperience(
           services.prisma,

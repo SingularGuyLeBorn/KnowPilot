@@ -181,7 +181,7 @@ export default function SourcesPage() {
       await createMutation.mutateAsync(payload);
     }
     setView("list");
-    void refetch();
+    refetch().catch(() => {});
   };
 
   const handleSearch = () => {
@@ -334,7 +334,7 @@ export default function SourcesPage() {
           </div>
 
           <div className="flex gap-3">
-            <Button onClick={() => void handleSave()} disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button onClick={() => { handleSave().catch(() => {}); }} disabled={createMutation.isPending || updateMutation.isPending}>
               {editingId ? "保存修改" : "创建信息源"}
             </Button>
             {editingId && (
@@ -371,7 +371,7 @@ export default function SourcesPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void fetchDueMutation.mutateAsync({})}
+          onClick={() => { fetchDueMutation.mutateAsync({}).catch(() => {}); }}
           disabled={fetchDueMutation.isPending}
           className="gap-1 text-xs"
         >

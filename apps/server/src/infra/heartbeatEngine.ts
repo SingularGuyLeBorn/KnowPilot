@@ -133,15 +133,15 @@ export class HeartbeatEngine {
     // Hermes：同通道挂 skill curator（stale/archive，非硬删）
     if (!this.maintenanceJob) {
       this.maintenanceJob = cron.schedule(MEMORY_DECAY_CRON, () => {
-        void this.runMemoryDecay();
-        void this.runSkillCurator();
+        this.runMemoryDecay().catch(() => {});
+        this.runSkillCurator().catch(() => {});
       });
     }
 
     // W12：审批过期清理维护任务（启动时的一次性清理在 index.ts，这里负责每日定时清扫）
     if (!this.approvalCleanupJob) {
       this.approvalCleanupJob = cron.schedule(APPROVAL_CLEANUP_CRON, () => {
-        void this.runApprovalCleanup();
+        this.runApprovalCleanup().catch(() => {});
       });
     }
 
@@ -153,7 +153,7 @@ export class HeartbeatEngine {
       if (this.refreshTimer) clearTimeout(this.refreshTimer);
       this.refreshTimer = setTimeout(() => {
         this.refreshTimer = null;
-        void this.refresh();
+        this.refresh().catch(() => {});
       }, 500);
     };
     for (const ev of ["agent.created", "agent.updated", "agent.deleted"]) {
@@ -281,13 +281,13 @@ export class HeartbeatEngine {
 
         const job = cron.schedule(hb.cron, () => {
           // P2 可观测性：心跳非请求路径，每次触发建独立 trace_id 作用域贯穿整段决策+执行
-          void runWithTrace(async () => {
+          runWithTrace(async () => {
             try {
               await this.triggerHeartbeat(agent.id);
             } catch (err) {
               console.error(`${formatTrace()}[HeartbeatEngine] triggerHeartbeat 未捕获异常:`, err instanceof Error ? err.message : err);
             }
-          });
+          }).catch(() => {});
         });
         this.jobs.set(agent.id, job);
       }
@@ -623,7 +623,7 @@ export class HeartbeatEngine {
     ]);
 
     // W3：刷新 pending scope 缓存（供调度面 drain 同步判定）
-    void refreshPendingApprovalScopeCache(this.services).catch(() => {});
+    refreshPendingApprovalScopeCache(this.services).catch(() => {});
 
     const pendingApprovals = pendingApprovalRows.length;
     const pendingApprovalScopes = pendingApprovalRows.map((r) => {

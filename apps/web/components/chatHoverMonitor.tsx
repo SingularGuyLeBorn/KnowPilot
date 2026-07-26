@@ -57,7 +57,7 @@ export function ChatHoverMonitor({ sessionId, onMouseEnter, onMouseLeave, onClos
   // 预加载：鼠标进入时由父组件触发 prefetch，组件挂载后也主动取一次第一页
   useEffect(() => {
     if (!sessionId) return;
-    void messagesQuery.fetchNextPage();
+    messagesQuery.fetchNextPage().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 

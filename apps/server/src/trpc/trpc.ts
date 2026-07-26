@@ -94,7 +94,7 @@ const loggerMiddleware = t.middleware(async (opts) => {
 
   if (result.ok) {
     // P2：成功审计日志改 fire-and-forget，不阻塞请求关键路径。
-    void opts.ctx.prisma.log
+    opts.ctx.prisma.log
       .create({
         data: {
           level: "info",

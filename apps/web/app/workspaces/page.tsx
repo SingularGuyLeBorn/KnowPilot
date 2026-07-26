@@ -112,7 +112,7 @@ export default function WorkspacesPage() {
         managerName: "",
         initialTask: "",
       });
-      void refetch();
+      refetch().catch(() => {});
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "创建失败");
     }
@@ -426,7 +426,7 @@ export default function WorkspacesPage() {
               <Button variant="outline" onClick={() => setShowCreate(false)}>
                 取消
               </Button>
-              <Button onClick={() => void handleCreate()} disabled={createMutation.isPending}>
+              <Button onClick={() => { handleCreate().catch(() => {}); }} disabled={createMutation.isPending}>
                 {createMutation.isPending ? "创建中…" : "创建"}
               </Button>
             </div>

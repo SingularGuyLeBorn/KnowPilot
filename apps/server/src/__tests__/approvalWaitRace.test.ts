@@ -130,9 +130,9 @@ describe("C3 approval wait 竞态", () => {
     await expect(waitOk).resolves.toMatchObject({ outcome: "expired", approvalId: "flip-ok" });
 
     let noSettled = false;
-    void waitNo.then(() => {
+    waitNo.then(() => {
       noSettled = true;
-    });
+    }).catch(() => {});
     await new Promise((r) => setTimeout(r, 30));
     expect(noSettled).toBe(false);
 

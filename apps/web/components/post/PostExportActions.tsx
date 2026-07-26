@@ -52,7 +52,7 @@ export function PostExportActions({ post, articleRef }: PostExportActionsProps) 
         <button
           type="button"
           disabled={busy}
-          onClick={() => void handleExportPdf()}
+          onClick={() => handleExportPdf().catch(() => {})}
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
             "inline-flex items-center gap-1 text-[var(--kp-text-2)] hover:text-[var(--kp-brand-deep)]",
@@ -69,7 +69,7 @@ export function PostExportActions({ post, articleRef }: PostExportActionsProps) 
         <button
           type="button"
           disabled={busy}
-          onClick={() => void handleExportMd()}
+          onClick={() => handleExportMd().catch(() => {})}
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
             "inline-flex items-center gap-1 text-[var(--kp-text-2)] hover:text-[var(--kp-brand-deep)]",

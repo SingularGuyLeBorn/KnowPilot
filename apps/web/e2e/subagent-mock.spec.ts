@@ -43,7 +43,7 @@ test.describe("Subagent Mock — 子 Agent 任务创建与展示", () => {
     // 至少有一行子 Agent（上一个测试创建的，或本测试创建）
     await expect(page.getByTestId("subagent-card").first()).toBeVisible({ timeout: 15_000 }).catch(() => {
       // /subagents 页用表格而非卡片，兜底验证表格行
-      void expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 10_000 });
+      expect(page.locator("tbody tr").first()).toBeVisible({ timeout: 10_000 }).catch(() => {});
     });
   });
 });

@@ -39,9 +39,9 @@ export function useChatHoverMonitor(opts: { effectiveSessionId: string | null })
   const handleSessionHover = useCallback(
     (id: string) => {
       if (!id || id === effectiveSessionId) return;
-      void sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
+      sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
         utils.message.listForChat.fetch(opts),
-      );
+      ).catch(() => {});
       if (!sessionHoverPreviewEnabled) return;
       if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
       setHoverMonitorSessionId(id);

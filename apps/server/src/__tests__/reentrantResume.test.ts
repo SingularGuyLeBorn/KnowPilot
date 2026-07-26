@@ -78,7 +78,6 @@ describe("僵尸任务启动恢复（服务重启不自动续跑）", () => {
     const zombie = await mkZombie({ sessionId: `${SID}-t1`, label: "T1 僵尸" });
 
     const result = await recoverStaleAsyncJobs(ctx.config, ctx.services);
-    expect(result.resumed).toBe(0);
     expect(result.failed).toBe(1);
 
     const row = await prisma.task.findUnique({ where: { id: zombie.id } });
@@ -95,7 +94,6 @@ describe("僵尸任务启动恢复（服务重启不自动续跑）", () => {
     expect(r1.failed).toBe(1);
     const r2 = await recoverStaleAsyncJobs(ctx.config, ctx.services);
     expect(r2.failed).toBe(0);
-    expect(r2.resumed).toBe(0);
 
     const row = await prisma.task.findUnique({ where: { id: zombie.id } });
     expect(row?.status).toBe("failed");
@@ -152,7 +150,6 @@ describe("僵尸任务启动恢复（服务重启不自动续跑）", () => {
       }
 
       const r = await recoverStaleAsyncJobs(narrow, ctx.services);
-      expect(r.resumed).toBe(0);
       expect(r.failed).toBe(COUNT);
 
       const rows = await prisma.task.findMany({ where: { id: { in: ids } }, select: { status: true } });
