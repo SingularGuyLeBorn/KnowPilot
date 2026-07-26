@@ -7,12 +7,94 @@
  */
 
 import { memo, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, Clock, Loader2, MessageCircle, Sparkles, X } from "lucide-react";
+import { Check, ChevronRight, Clock, Loader2, MessageCircle, Sparkles, X, ZoomIn } from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
 import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { cn } from "@/lib/utils";
 import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils";
+import { extractToolResultImages, type ToolResultImage } from "@/lib/toolResultImages";
 import { ToolStepIcon, type ToolIconStatus } from "@/lib/toolIcons";
+
+/** 工具结果截图预览：缩略图 + 点击全屏 */
+const ToolResultImageGallery = memo(function ToolResultImageGallery({
+  images,
+}: {
+  images: ToolResultImage[];
+}) {
+  const [lightbox, setLightbox] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+
+  if (!images.length) return null;
+
+  return (
+    <>
+      <div className="mb-2 space-y-2" data-testid="tool-result-images">
+        <div className="text-[10px] font-medium text-[var(--kp-text-3)]">截图预览</div>
+        <div className={cn("grid gap-2", images.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+          {images.map((img) => (
+            <button
+              key={img.src}
+              type="button"
+              className="group relative overflow-hidden rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)] text-left"
+              onClick={() => setLightbox(img.src)}
+              title="点击放大"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- 动态 /uploads 路径，不走 next/image 优化 */}
+              <img
+                src={img.src}
+                alt={img.label || "截图"}
+                className="max-h-56 w-full object-contain object-top"
+                loading="lazy"
+              />
+              <span className="pointer-events-none absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded bg-black/55 px-1.5 py-0.5 text-[9px] text-white opacity-0 transition-opacity group-hover:opacity-100">
+                <ZoomIn className="h-3 w-3" />
+                放大
+              </span>
+              {img.label && (
+                <span className="absolute bottom-0 left-0 right-0 truncate bg-black/50 px-1.5 py-0.5 text-[9px] text-white">
+                  {img.label}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4"
+          data-testid="tool-result-image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            aria-label="关闭预览"
+            onClick={() => setLightbox(null)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightbox}
+            alt="截图放大预览"
+            className="max-h-[92vh] max-w-[96vw] rounded object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+});
 
 /** 从 sleep / wait 工具参数推断目标时长（ms） */
 function sleepTargetMs(name: string, args: unknown): number | null {
@@ -283,6 +365,10 @@ const ToolStep = memo(function ToolStep({
     () => (open && step.result !== undefined && !todoItems ? JSON.stringify(step.result, null, 2) : ""),
     [open, step.result, todoItems],
   );
+  const resultImages = useMemo(
+    () => (step.result !== undefined ? extractToolResultImages(step.result) : []),
+    [step.result],
+  );
 
   const iconStatus: ToolIconStatus =
     step.status === "running" ? "running" : hasError ? "error" : step.status === "done" ? "done" : "idle";
@@ -435,6 +521,7 @@ const ToolStep = memo(function ToolStep({
               </div>
             ) : (
               <>
+                {resultImages.length > 0 && <ToolResultImageGallery images={resultImages} />}
                 <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
                   {argsJson}
                 </pre>
