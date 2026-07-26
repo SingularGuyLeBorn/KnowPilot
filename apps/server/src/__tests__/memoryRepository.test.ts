@@ -156,8 +156,11 @@ describe("MemoryRepository（W5）", () => {
     const before = await prisma.memory.findUnique({ where: { id: item.id } });
     expect(before).not.toBeNull();
 
-    // 模拟 10 天后执行衰减（用未来 now，避免改动其他数据的 updatedAt）
-    const r1 = await decayMemories(repo, prisma, { now: new Date(Date.now() + 10 * DAY_MS) });
+    // 模拟 10 天后执行衰减。用 baseTime + 10*DAY 而非 Date.now() + 10*DAY，
+    // 避免 write 与 decay 调用之间的时钟抖动让 (now - baseTime) 跌破 10 天边界（flaky 根因）。
+    const baseTime = before!.updatedAt;
+    const now10 = new Date(baseTime.getTime() + 10 * DAY_MS);
+    const r1 = await decayMemories(repo, prisma, { now: now10 });
     expect(r1.decayed).toBeGreaterThanOrEqual(1);
     const after10 = await prisma.memory.findUnique({ where: { id: item.id } });
     expect(after10).not.toBeNull();
@@ -166,8 +169,9 @@ describe("MemoryRepository（W5）", () => {
     // raw SQL 衰减不改 updatedAt，保证复利基准稳定
     expect(after10!.updatedAt.getTime()).toBe(before!.updatedAt.getTime());
 
-    // 模拟 200 天后：strength ≈ 0.98^200 ≪ 0.1 → 归档删除
-    const r2 = await decayMemories(repo, prisma, { now: new Date(Date.now() + 200 * DAY_MS) });
+    // 模拟 200 天后：strength ≈ 0.98^200 ≪ 0.1 → 归档删除（基准仍用 baseTime，复利稳定）
+    const now200 = new Date(baseTime.getTime() + 200 * DAY_MS);
+    const r2 = await decayMemories(repo, prisma, { now: now200 });
     expect(r2.archived).toBeGreaterThanOrEqual(1);
     const gone = await prisma.memory.findUnique({ where: { id: item.id } });
     expect(gone).toBeNull();

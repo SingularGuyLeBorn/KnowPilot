@@ -11,7 +11,6 @@ tools:
   - "native:async_task_run"
   - "native:browser_login_status"
   - "native:browser_screenshot"
-  - "native:capture_zhihu_login"
   - "native:feishu_add_collaborator_by_contact"
   - "native:feishu_add_permission_member"
   - "native:feishu_append_doc_blocks"

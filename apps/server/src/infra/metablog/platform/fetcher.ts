@@ -1366,7 +1366,7 @@ function tagZhihuHttpHtml(rawHtml: string): string {
 }
 
 async function fetchZhihuViaHttp(url: string, timeout: number): Promise<string | null> {
-  // 优先级：.env ZHIHU_COOKIE → cookieJar（capture_zhihu_login 同步写入）
+  // 优先级：.env ZHIHU_COOKIE → cookieJar（platform_login 同步写入）
   const cookie =
     envCookieHeader("ZHIHU_COOKIE") ||
     (() => {

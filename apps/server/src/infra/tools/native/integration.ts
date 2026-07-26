@@ -104,7 +104,6 @@ import {
   yuqueDeleteDocV2,
   yuqueProbeSession,
 } from "../../yuqueClient.js";
-import { captureZhihuLoginState } from "../../metablog/auth/zhihuLogin.js";
 import { listSavedCookiePlatforms, loadCookies } from "../../cookieJar.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
 import { z } from "zod";

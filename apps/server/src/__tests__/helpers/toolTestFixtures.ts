@@ -272,7 +272,6 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "yuque_create_doc_v2",
   "yuque_update_doc_v2",
   "yuque_delete_doc_v2",
-  "capture_zhihu_login",
   "platform_login",
   "browser_login_status",
   "github_search_repos",

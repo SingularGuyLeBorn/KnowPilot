@@ -1,7 +1,7 @@
 /**
  * 集成域 — github_* + 浏览器登录态（从 integration.ts 拆出，P2-01 选 B）
  *
- * GitHub 仓库/Issue/PR/分支/工作流/Release 操作 + capture_zhihu_login/browser_login_status 浏览器登录态工具。
+ * GitHub 仓库/Issue/PR/分支/工作流/Release 操作 + platform_login/browser_login_status 浏览器登录态工具。
  */
 import {
   getGitHubToken,
@@ -34,7 +34,6 @@ import {
   githubSearchRepos,
 } from "../../../githubClient.js";
 import { executeGitHubTool, listGitHubTools } from "../../../external/githubToolExecutor.js";
-import { captureZhihuLoginState } from "../../../metablog/auth/zhihuLogin.js";
 import { capturePlatformLoginState, listPlatformLoginStatus, PLATFORM_LOGIN_CONFIGS } from "../../../metablog/auth/platformLogin.js";
 import { listSavedCookiePlatforms, loadCookies } from "../../../cookieJar.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "../types.js";
@@ -42,10 +41,6 @@ import { z } from "zod";
 import { zodParams } from "../zodParams.js";
 
 // ─── 浏览器登录态 ───
-
-async function captureZhihuLoginTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
-  return captureZhihuLoginState(Number(args.timeoutSec || 120));
-}
 
 async function platformLoginTool(args: Record<string, unknown>, _ctx: NativeToolContext) {
   const platform = String(args.platform ?? "").trim() as keyof typeof PLATFORM_LOGIN_CONFIGS;
@@ -348,16 +343,6 @@ async function githubTool(args: Record<string, unknown>, ctx: NativeToolContext)
 }
 
 export const githubDefs: NativeToolDefinition[] = [
-  {
-    name: "capture_zhihu_login",
-    description:
-      "弹出浏览器登录知乎：写 storageState + 同步 cookieJar（data/cookies/zhihu.json），供 read_article HTTP/Playwright 复用。已废弃，建议改用 platform_login（支持多平台）。",
-    parameters: zodParams(
-      z.object({
-        timeoutSec: z.number().describe("等待超时秒数，默认 120").optional(),
-      }),
-    ),
-  },
   {
     name: "platform_login",
     description:
@@ -711,7 +696,6 @@ export const githubDefs: NativeToolDefinition[] = [
 ];
 
 export const githubHandlers: Record<string, NativeToolHandler> = {
-  capture_zhihu_login: captureZhihuLoginTool,
   platform_login: platformLoginTool,
   browser_login_status: browserLoginStatusTool,
   github_search_repos: githubSearchReposTool,

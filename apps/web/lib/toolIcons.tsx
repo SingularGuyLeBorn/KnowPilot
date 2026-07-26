@@ -95,7 +95,6 @@ const EXACT_TOOL_ICONS: Record<string, LucideIcon> = {
   scrape_web_page: Globe,
   rss_fetch: Rss,
   rss_draft_posts: FilePlus,
-  capture_zhihu_login: Globe,
   browser_login_status: Shield,
 
   read_file: FileText,

@@ -594,7 +594,6 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:skill_view",
   "native:skill_manage",
   ...INTEGRATION_DEFAULT_TOOLS,
-  "native:capture_zhihu_login",
   "native:platform_login",
   "native:browser_login_status",
   "skill:*",

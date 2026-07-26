@@ -376,7 +376,7 @@ function openBrowser(url: string): void {
 
 /**
  * 浏览器 OAuth 授权：拉起本地回调 → 换 token → 写入 feishu_oauth.json
- * 与 capture_zhihu_login 同模式：需用户在浏览器点一次同意；之后靠 refresh 自动续。
+ * 与 platform_login 同模式：需用户在浏览器点一次同意；之后靠 refresh 自动续。
  */
 export async function authorizeUserViaBrowser(options?: {
   redirectUri?: string;
