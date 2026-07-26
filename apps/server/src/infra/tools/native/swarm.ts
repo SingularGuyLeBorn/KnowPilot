@@ -269,10 +269,12 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
       scopes: [MEMORY_SCOPE_GLOBAL, memoryAgentScope(targetId)],
       limit: 5,
     });
+    // 隔离铁律延伸：includeMemory 也只返元信息，不返 content（避免半内容泄露）
     memories = rows.map((m) => ({
       id: m.id,
       type: m.type,
-      content: m.content.slice(0, 200),
+      scope: m.scope,
+      contentChars: m.content.length,
     }));
   }
   let swarm: unknown;
@@ -287,7 +289,9 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
       tier: agent.tier,
       status: agent.status,
       model: agent.model,
-      systemPrompt: agent.systemPrompt.slice(0, 200),
+      // 不返 systemPrompt 正文——配置/身份属半内容，状态面只暴露是否有自定义 prompt
+      hasCustomSystemPrompt: Boolean(agent.systemPrompt?.trim()),
+      systemPromptChars: agent.systemPrompt?.length ?? 0,
     },
     sessions:
       sessions?.map((s: any) => ({
@@ -301,9 +305,9 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
     memories,
     swarm,
     hint: [
-      includeMemory ? null : "默认不返回 Memory；需要时传 includeMemory=true。",
+      includeMemory ? null : "默认不返回 Memory；需要时传 includeMemory=true（仅元信息，无正文）。",
       includeSwarm ? null : "需要 inbox/队列/ask_user 积压时传 includeSwarm=true。",
-      "agent_inspect 只返回 Agent 状态与会话元信息（id/title/messageCount），不返回任何消息内容。子 Agent 的结果只能通过 agent_report_back 投递到你的会话异步结果队列，请勿尝试读取子会话消息。",
+      "agent_inspect 只返回 Agent 状态与会话元信息（id/title/messageCount），不返回 systemPrompt/记忆正文/任何消息内容。子 Agent 的结果只能通过 agent_report_back 投递到你的会话异步结果队列。",
       "请以 agent.id（cuid）为准，勿编造 ID。",
     ]
       .filter(Boolean)
@@ -716,12 +720,12 @@ export async function requeueOrphanedSuperiorDrains(
   });
   let registered = 0;
   for (const session of liveSessions) {
-    void enqueueSuperiorDrainForSession({
+    enqueueSuperiorDrainForSession({
       sessionId: session.id,
       targetAgentId: session.agentId as string,
       config,
       services,
-    });
+    }).catch(() => {});
     registered++;
   }
   return registered;
@@ -814,7 +818,7 @@ export async function agentSendMessageTool(args: Record<string, unknown>, ctx: N
       };
     }
     // 非阻塞：后台跑 StreamHub；失败时 runner 内部会写 failed + 错误气泡
-    void prepared.completion.catch((err: unknown) => {
+    prepared.completion.catch((err: unknown) => {
       console.warn(`[agent_send_message] 目标 Agent ${toAgentId} 后台运行失败:`, err);
     });
     return { success: true, message: "已派活并自动运行（子会话可实时查看流式输出）。" };
@@ -1529,13 +1533,17 @@ const SWARM_DEFS: NativeToolDefinition[] = [
     name: "agent_inspect",
     description:
       "查看 Agent 状态（超级=全局；管理 Agent=本 Workspace；对超级仅返回公开元信息）。" +
-      "只返回 Agent 元信息、最近会话列表（id/title/status/messageCount）与可选 memory/swarm 快照；" +
-      "不返回任何会话消息内容——子 Agent 的结果只能通过 agent_report_back 投递到你的会话异步结果队列。" +
+      "只返回 Agent 元信息（含 hasCustomSystemPrompt/systemPromptChars，无 prompt 正文）、" +
+      "最近会话列表（id/title/status/messageCount）与可选 memory 元信息（id/type/scope/contentChars，无正文）/swarm 快照；" +
+      "不返回 systemPrompt/记忆正文/任何会话消息内容——子 Agent 的结果只能通过 agent_report_back 投递。" +
       "includeSwarm=true 时附带 inbox 积压、会话运行态、ask_user pending、心跳熔断、superior 队列。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("目标 Agent id"),
-        includeMemory: z.boolean().describe("是否包含 memory（默认 false）").optional(),
+        includeMemory: z
+          .boolean()
+          .describe("是否包含 memory 元信息（默认 false；仅 id/type/scope/长度，无正文）")
+          .optional(),
         includeSwarm: z
           .boolean()
           .describe("是否包含 Swarm 健康快照（inbox/队列/ask_user/心跳，默认 false）")

@@ -91,27 +91,31 @@ describe("B5 depth 服务端物化", () => {
 
   it("无入站时 depth=1；有入站时 depth=父+1", async () => {
     const ctx = await createContextInner();
+    // 不用 tier=super：库内已有唯一超级 Agent 时 create 会返回 SUPER_AGENT_UNIQUE（全量并行易红）
     const a = await ctx.services.agent.create({
       name: `B5-${RUN_ID}-root`,
       model: "deepseek-chat",
       systemPrompt: "t",
       tools: [],
-      tier: "super",
+      tier: "manager",
     });
+    expect(a.data).toBeTruthy();
     const b = await ctx.services.agent.create({
       name: `B5-${RUN_ID}-child`,
       model: "deepseek-chat",
       systemPrompt: "t",
       tools: [],
-      tier: "manager",
+      tier: "sub",
+      parentId: (a.data as { id: string }).id,
     });
+    expect(b.data).toBeTruthy();
     const agentA = (a.data as { id: string }).id;
     const agentB = (b.data as { id: string }).id;
     const bus = getSwarmBus(prisma, ctx.services);
 
     const r1 = await bus.send(
-      { fromAgentId: agentA, toAgentId: agentB, content: "B5-first", source: "super" },
-      "super",
+      { fromAgentId: agentA, toAgentId: agentB, content: "B5-first", source: "manager" },
+      "manager",
       null,
       true,
     );
@@ -120,8 +124,8 @@ describe("B5 depth 服务端物化", () => {
     expect(m1?.depth).toBe(1);
 
     const r2 = await bus.send(
-      { fromAgentId: agentB, toAgentId: agentA, content: "B5-second", messageType: "report", source: "manager" },
-      "manager",
+      { fromAgentId: agentB, toAgentId: agentA, content: "B5-second", messageType: "report", source: "sub" },
+      "sub",
       null,
       false,
     );

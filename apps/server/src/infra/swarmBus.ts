@@ -21,8 +21,6 @@ import {
 import { resolveServerDelegationDepth } from "./delegationDepth.js";
 import { RedisSwarmBus } from "./redisSwarmBus.js";
 
-export { resolveServerDelegationDepth } from "./delegationDepth.js";
-
 const MAX_DEPTH = SWARM_MAX_DEPTH;
 const MAX_QUEUE_SIZE = SWARM_MAX_QUEUE_SIZE;
 
@@ -139,13 +137,13 @@ export class LocalSwarmBus implements SwarmBus {
       },
     }).catch(() => { /* 审计日志失败不阻塞 */ });
 
-    void this.notifyAgentMessage({
+    this.notifyAgentMessage({
       toAgentId: msg.toAgentId,
       messageId: created.id,
       content: msg.content,
       fromAgentId: msg.fromAgentId,
       source: msg.source ?? fromTier,
-    });
+    }).catch(() => {});
 
     return { success: true, message: "消息已发送。", messageId: created.id };
   }

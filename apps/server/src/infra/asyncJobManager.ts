@@ -532,7 +532,7 @@ async function notifyAsyncDelivery(
   }
 
   if (services && config) {
-    void autoConsumeAsyncDelivery({ sessionId, jobId, status, taskLabel, services, config }).catch((err) => {
+    autoConsumeAsyncDelivery({ sessionId, jobId, status, taskLabel, services, config }).catch((err) => {
       console.warn(`[asyncJobManager] autoConsumeAsyncDelivery 失败:`, err);
     });
   }
@@ -742,7 +742,7 @@ export function startAsyncDeliveryReconciler(config: AppConfig, services: Servic
   stopAsyncDeliveryReconciler();
   const intervalMs = Math.max(1000, config.stream.cleanupIntervalMs);
   const runRound = () => {
-    void reconcileAsyncDeliveries({ services, config }).catch((err) => {
+    reconcileAsyncDeliveries({ services, config }).catch((err) => {
       console.warn("[reconciler] 对账轮次失败（下轮重试）:", err);
     });
   };
@@ -766,8 +766,6 @@ export function stopAsyncDeliveryReconciler(): void {
 export interface StartupRecoveryResult {
   /** 动作 1：僵尸 running/queued async Task 标 failed 数（服务重启一律不自动续跑） */
   staleTasksFailed: number;
-  /** 动作 1：保留字段，恒为 0（服务重启不自动续跑） */
-  staleTasksResumed: number;
   /** 动作 2：僵尸 running ChatSession 标 paused 数 */
   zombieSessionsPaused: number;
   /** B2：超龄软认领 SessionQueueItem 重置 claimedAt 数 */
@@ -808,16 +806,16 @@ export async function runStartupRecovery(options: {
   });
   for (const row of zombieSubRows) {
     if (!row.parentSessionId) continue;
-    void notifySubagentSessionUpdate({
+    notifySubagentSessionUpdate({
       parentSessionId: row.parentSessionId,
       subagentSessionId: row.id,
       status: "paused",
       title: row.title ?? undefined,
       agentId: row.agentId,
-    });
+    }).catch(() => {});
   }
   // 动作 2：Task 恢复（服务重启一律标 failed，不自动续跑）
-  const { failed: staleTasksFailed, resumed: staleTasksResumed } = await recoverStaleAsyncJobs(config, services);
+  const { failed: staleTasksFailed } = await recoverStaleAsyncJobs(config, services);
   // B2：超龄软认领重置（须在 superior drain 重注册之前）
   const staleQueueClaimsReleased = await services.sessionQueueItem.releaseStaleClaims();
   // 动作 3：superior 孤儿 drain 重注册（动态 import——swarm.ts 处于 ReAct 环内，静态导入成环）
@@ -827,7 +825,6 @@ export async function runStartupRecovery(options: {
   const reconcile = await reconcileAsyncDeliveries({ services, config });
   return {
     staleTasksFailed,
-    staleTasksResumed,
     zombieSessionsPaused: zombieSessions.count,
     staleQueueClaimsReleased,
     superiorDrainsRegistered,
@@ -871,7 +868,7 @@ export function wireAsyncJobPush(config: AppConfig): void {
   _asyncPushWired = true;
   const orchestrator = getAsyncJobOrchestrator(config);
   orchestrator.onAny((ev) => {
-    void (async () => {
+    (async () => {
       try {
         const { getStreamHub } = await import("./sessionStreamHub.js");
         const hub = getStreamHub();
@@ -895,7 +892,7 @@ export function wireAsyncJobPush(config: AppConfig): void {
       } catch (err) {
         console.warn(`[asyncJobManager] async_job_update 推送失败:`, err);
       }
-    })();
+    })().catch(() => {});
   });
 }
 
@@ -933,7 +930,7 @@ export async function recoverStaleRuns(): Promise<number> {
 export async function recoverStaleAsyncJobs(
   config: AppConfig,
   services: ServiceContainer,
-): Promise<{ failed: number; resumed: number }> {
+): Promise<{ failed: number }> {
   const stale = await prisma.task.findMany({
     where: {
       status: { in: ["running", "queued"] },
@@ -947,7 +944,6 @@ export async function recoverStaleAsyncJobs(
     },
   });
   let failed = 0;
-  let resumed = 0;
   for (const task of stale) {
     const input = parseAsyncInput(task.input);
 
@@ -977,13 +973,13 @@ export async function recoverStaleAsyncJobs(
         });
         // 重启恢复路径必须广播：否则父会话右栏/子会话卡片仍显示 running
         if (subRow.parentSessionId) {
-          void notifySubagentSessionUpdate({
+          notifySubagentSessionUpdate({
             parentSessionId: subRow.parentSessionId,
             subagentSessionId: subRow.id,
             status: "failed",
             title: subRow.title ?? undefined,
             agentId: subRow.agentId,
-          });
+          }).catch(() => {});
         }
       } catch {
         // subagent session 可能已删除，忽略
@@ -991,7 +987,7 @@ export async function recoverStaleAsyncJobs(
     }
     failed++;
   }
-  return { failed, resumed };
+  return { failed };
 }
 
 /** 投递后 Task 行默认保留 7 天供 UI 追溯；超期物理删除，已删行不再参与对账与队列展示。 */
@@ -1288,9 +1284,8 @@ function buildAsyncExecute(
   jobId: string,
   task: string,
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
-  // 重跑来源（仅系统提示文案）：
-  // null=首发；"manual"=手动 retryAsyncJob；"auto"=保留字段（自动续跑已撤销，不再产生）
-  retryKind: "manual" | "auto" | null,
+  // 重跑来源（仅系统提示文案）：null=首发；"manual"=手动 retryAsyncJob
+  retryKind: "manual" | null,
   subagentSessionId?: string,
   mode: "llm" | "tool" = "llm",
   toolCall?: { tool: string; args: Record<string, unknown> },
@@ -1298,7 +1293,7 @@ function buildAsyncExecute(
   parentSessionId?: string,
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
-  const retryHint = retryKind === "manual" ? "（手动重试）" : retryKind === "auto" ? "（服务重启自动续跑）" : "";
+  const retryHint = retryKind === "manual" ? "（手动重试）" : "";
   const syncSubStatus = async (status: "completed" | "failed" | "paused" | "running") => {
     if (!subagentSessionId) return;
     try {
@@ -1733,13 +1728,13 @@ export async function startAsyncAgentTask(options: {
       } as any);
       if (sub.success && sub.data) subagentSessionId = (sub.data as { id: string }).id;
       if (subagentSessionId) {
-        void notifySubagentSessionUpdate({
+        notifySubagentSessionUpdate({
           parentSessionId: options.sessionId,
           subagentSessionId,
           status: initialStatus,
           title: taskLabel.slice(0, 60),
           agentId: actualSubAgentId,
-        });
+        }).catch(() => {});
       }
     } catch (err) {
       console.warn(`[asyncJobManager] 创建 subagent session 失败，降级为无可视化载体继续执行:`, err);

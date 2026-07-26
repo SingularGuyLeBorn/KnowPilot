@@ -59,7 +59,6 @@ describe("B4 启动恢复 resuming 幂等与动作顺序", () => {
     });
 
     const r1 = await recoverStaleAsyncJobs(ctx.config, ctx.services);
-    expect(r1.resumed).toBe(0);
     expect(r1.failed).toBe(1);
     const after1 = await prisma.task.findUnique({ where: { id: task.id } });
     expect(after1?.status).toBe("failed");
@@ -67,7 +66,6 @@ describe("B4 启动恢复 resuming 幂等与动作顺序", () => {
 
     // 二次 recover：已 failed，条件写认领落选
     const r2 = await recoverStaleAsyncJobs(ctx.config, ctx.services);
-    expect(r2.resumed).toBe(0);
     expect(r2.failed).toBe(0);
     const after2 = await prisma.task.findUnique({ where: { id: task.id } });
     expect(after2?.status).toBe("failed");
