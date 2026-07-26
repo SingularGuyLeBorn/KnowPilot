@@ -9,9 +9,11 @@ import { z } from "zod";
 import {
   AGENT_TIERS,
   DEFAULT_LLM_MODEL,
+  DEFAULT_POST_GARDEN,
   LLM_MODEL_IDS,
   MEMORY_INITIAL_STRENGTH,
   MEMORY_USER_CREATABLE_TYPES,
+  POST_GARDENS,
 } from "./constants";
 
 /* ═══════════════════════════════════════════════════════
@@ -56,12 +58,18 @@ export const safeEntitySlugSchema = z
   });
 
 /* ═══════════════════════════════════════════════════════
-   Post (文章)
+   Post (文章 / 知识库花园)
+   garden = 哪棵库根（content/{garden}/）；slug = 库内相对路径（可含 /）
    ═══════════════════════════════════════════════════════ */
+
+export const postGardenSchema = z.enum(POST_GARDENS);
 
 export const createPostSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
   content: z.string().default(""),
+  /** 知识库花园：posts（博客）/ knowledge / resources；默认 posts */
+  garden: postGardenSchema.default(DEFAULT_POST_GARDEN),
+  /** 库内相对路径（不含 .md）；不填则由标题生成 */
   slug: safeEntitySlugSchema.optional(),
   excerpt: z.string().optional(),
   coverImage: z.string().url().optional().nullable(),
@@ -74,6 +82,8 @@ export const updatePostSchema = z.object({
   id: z.string().cuid(),
   title: z.string().min(1).max(200).optional(),
   content: z.string().optional(),
+  /** 允许迁移到另一花园（文件随之搬迁） */
+  garden: postGardenSchema.optional(),
   slug: safeEntitySlugSchema.optional(),
   published: z.boolean().optional(),
   excerpt: z.string().optional(),
@@ -85,6 +95,8 @@ export const updatePostSchema = z.object({
 export const listPostsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
+  /** 不传 = 全部花园；传则只列该花园 */
+  garden: postGardenSchema.optional(),
   published: z.boolean().optional(),
   category: z.string().optional(),
   tag: z.string().optional(),
@@ -96,6 +108,13 @@ export const listPostsSchema = z.object({
 export const searchPostsSchema = z.object({
   query: z.string().min(1),
   limit: z.number().int().min(1).max(50).default(10),
+  garden: postGardenSchema.optional(),
+});
+
+/** 按花园 + slug 取文（slug 单独不再全局唯一） */
+export const getPostBySlugSchema = z.object({
+  slug: safeEntitySlugSchema,
+  garden: postGardenSchema.default(DEFAULT_POST_GARDEN),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -1195,7 +1214,8 @@ export const paginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
    类型导出 (从 schema 推导)
    ═══════════════════════════════════════════════════════ */
 
-export type CreatePostInput = z.infer<typeof createPostSchema>;
+/** 入参类型：garden/content 等有 default 的字段可省略 */
+export type CreatePostInput = z.input<typeof createPostSchema>;
 export type UpdatePostInput = z.infer<typeof updatePostSchema>;
 export type ListPostsInput = z.infer<typeof listPostsSchema>;
 export type SearchPostsInput = z.infer<typeof searchPostsSchema>;

@@ -139,9 +139,9 @@ async function main() {
 
   for (const post of samplePosts) {
     await prisma.post.upsert({
-      where: { slug: post.slug },
+      where: { garden_slug: { garden: "posts", slug: post.slug } },
       update: post,
-      create: post,
+      create: { ...post, garden: "posts" },
     });
     console.log(`  ✅ ${post.title}`);
   }

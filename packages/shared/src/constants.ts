@@ -600,6 +600,22 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "mcp:filesystem",
 ];
 
+/* ─── 知识库花园（Post garden） ───
+ *
+ * 物理根：content/{garden}/…（Markdown 事实源）。
+ * Agent 选库用 garden；库内相对路径仍用 slug（可含 /）。
+ * about 不是花园（个人页，禁止 AI 经 post_* / write_file 写入）。
+ * 对标业界：Dify dataset / AKB vault / Obsidian 分区 / MetaBlog section ——
+ * 多库可选，但必须走知识库管道，禁止通用写文件直捅。
+ */
+export const POST_GARDENS = ["posts", "knowledge", "resources"] as const;
+export type PostGarden = (typeof POST_GARDENS)[number];
+export const DEFAULT_POST_GARDEN: PostGarden = "posts";
+
+export function isPostGarden(value: string): value is PostGarden {
+  return (POST_GARDENS as readonly string[]).includes(value);
+}
+
 /* ─── Agent 运行时阈值（W8 常量化收敛） ─── */
 
 /** Agent 工具结果进 LLM 上下文的单条截断上限（reactLoop snapshot 与 read_article 同源） */
