@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { trpc } from "@/lib/trpc";
+import { postDetailHref } from "@/lib/postHref";
 
 interface WikiLinkProps {
   target: string;
@@ -9,7 +10,7 @@ interface WikiLinkProps {
 }
 
 export function WikiLink({ target, children }: WikiLinkProps) {
-  const { data: posts = [] } = trpc.post.tree.useQuery();
+  const { data: posts = [] } = trpc.post.tree.useQuery({});
 
   const normalizedTarget = target.trim().toLowerCase();
   const match = posts.find((post) => {
@@ -28,7 +29,7 @@ export function WikiLink({ target, children }: WikiLinkProps) {
 
   return (
     <Link
-      href={`/posts/${encodeURIComponent(match.slug)}`}
+      href={postDetailHref(match.slug, match.garden)}
       className="border-b border-dashed border-primary/50 text-primary hover:border-solid"
       title={match.title}
     >

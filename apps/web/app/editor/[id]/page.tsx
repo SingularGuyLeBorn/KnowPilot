@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
 import { ImageUploadButton, useImageDrop, useImagePaste } from "@/components/editor/ImageUploadButton";
 import { usePostMutations } from "@/lib/hooks";
+import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,7 @@ const MilkdownEditor = dynamic(
 interface Post {
   id: string;
   slug: string;
+  garden: "posts" | "knowledge" | "resources";
   title: string;
   content: string;
   category: string | null;
@@ -77,8 +79,8 @@ function EditorForm({ id, post }: { id: string; post: Post }) {
   });
 
   const { update } = usePostMutations({
-    onUpdateSuccess: (slug) => {
-      router.push(`/posts/${encodeURIComponent(slug)}`);
+    onUpdateSuccess: ({ slug, garden }) => {
+      router.push(postDetailHref(slug, garden));
     },
   });
 
@@ -125,7 +127,7 @@ function EditorForm({ id, post }: { id: string; post: Post }) {
         <div className="flex items-center justify-between border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-4">
             <Link
-              href={`/posts/${encodeURIComponent(post.slug)}`}
+              href={postDetailHref(post.slug, post.garden)}
               className="inline-flex shrink-0 items-center gap-1 text-sm text-[var(--kp-text-2)] transition hover:text-[var(--kp-text-1)]"
             >
               <ArrowLeft className="h-4 w-4" />

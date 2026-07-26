@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Send } from "lucide-react";
 import dynamic from "next/dynamic";
+import { DEFAULT_POST_GARDEN, POST_GARDENS, type PostGarden } from "@knowpilot/shared";
 import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
 
 const MilkdownEditor = dynamic(
@@ -13,8 +14,15 @@ const MilkdownEditor = dynamic(
 );
 import { ImageUploadButton, useImageDrop, useImagePaste } from "@/components/editor/ImageUploadButton";
 import { usePostMutations } from "@/lib/hooks";
+import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { cn } from "@/lib/utils";
+
+const GARDEN_LABELS: Record<PostGarden, string> = {
+  posts: "博客 posts",
+  knowledge: "知识库 knowledge",
+  resources: "资源 resources",
+};
 
 export default function NewPostPage() {
   const router = useRouter();
@@ -22,6 +30,7 @@ export default function NewPostPage() {
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
+  const [garden, setGarden] = useState<PostGarden>(DEFAULT_POST_GARDEN);
 
   const { lastSavedAt } = useAutoSave({
     title,
@@ -42,8 +51,8 @@ export default function NewPostPage() {
   const [uploadKey, setUploadKey] = useState(0);
 
   const { create } = usePostMutations({
-    onCreateSuccess: (slug) => {
-      router.push(`/posts/${encodeURIComponent(slug)}`);
+    onCreateSuccess: ({ slug, garden: g }) => {
+      router.push(postDetailHref(slug, g));
     },
   });
 
@@ -61,6 +70,7 @@ export default function NewPostPage() {
       {
         title: title.trim(),
         content,
+        garden,
         category: category || null,
         tags: tags
           .split(",")
@@ -133,8 +143,20 @@ export default function NewPostPage() {
           </div>
         </div>
 
-        {/* Meta fields */}
+        {/* Meta fields：花园决定落盘 content/{garden}/ */}
         <div className="flex flex-wrap gap-4 border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 sm:px-6">
+          <select
+            value={garden}
+            onChange={(e) => setGarden(e.target.value as PostGarden)}
+            className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-1.5 text-sm text-[var(--kp-text-1)] outline-none"
+            title="知识库花园（content/{garden}/）"
+          >
+            {POST_GARDENS.map((g) => (
+              <option key={g} value={g}>
+                {GARDEN_LABELS[g]}
+              </option>
+            ))}
+          </select>
           <input
             value={category}
             onChange={(e) => setCategory(e.target.value)}

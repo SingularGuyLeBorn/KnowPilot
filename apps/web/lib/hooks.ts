@@ -93,14 +93,25 @@ export function usePosts() {
   const postCrud = useCRUDApi<CreatePostInput, UpdatePostInput, ListPostsInput, Post>("post");
   return {
     ...postCrud,
-    useBySlug: (slug: string, options?: any) => {
-      return trpc.post.getBySlug.useQuery({ slug }, { enabled: !!slug, ...options });
+    useBySlug: (slug: string, garden?: "posts" | "knowledge" | "resources", options?: any) => {
+      return trpc.post.getBySlug.useQuery(
+        { slug, garden: garden ?? "posts" },
+        { enabled: !!slug, ...options },
+      );
     },
-    useSearch: (query: string, limit = 10, options?: any) => {
-      return trpc.post.search.useQuery({ query, limit }, { enabled: !!query, ...options });
+    useSearch: (
+      query: string,
+      limit = 10,
+      garden?: "posts" | "knowledge" | "resources",
+      options?: any,
+    ) => {
+      return trpc.post.search.useQuery(
+        { query, limit, garden },
+        { enabled: !!query, ...options },
+      );
     },
-    useTree: (options?: any) => {
-      return trpc.post.tree.useQuery(undefined, options);
+    useTree: (garden?: "posts" | "knowledge" | "resources", options?: any) => {
+      return trpc.post.tree.useQuery({ garden }, options);
     },
     useCategories: (options?: any) => {
       return trpc.post.categories.useQuery(undefined, options);
@@ -113,8 +124,9 @@ export function usePosts() {
 
 /** 文章 mutation 封装：创建/更新/删除后统一刷新相关 query */
 export function usePostMutations(options?: {
-  onCreateSuccess?: (slug: string) => void;
-  onUpdateSuccess?: (slug: string) => void;
+  /** 创建成功：回传 slug + garden，便于跳转带花园的详情页 */
+  onCreateSuccess?: (post: { slug: string; garden: Post["garden"] }) => void;
+  onUpdateSuccess?: (post: { slug: string; garden: Post["garden"] }) => void;
   onDeleteSuccess?: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -128,9 +140,12 @@ export function usePostMutations(options?: {
 
   const create = trpc.post.create.useMutation({
     onSuccess: (result: OperationResult<Post>) => {
-      if (result.success) {
+      if (result.success && result.data?.slug) {
         invalidatePostQueries();
-        if (result.data?.slug) options?.onCreateSuccess?.(result.data.slug);
+        options?.onCreateSuccess?.({
+          slug: result.data.slug,
+          garden: result.data.garden ?? "posts",
+        });
       }
     },
   });
@@ -140,8 +155,13 @@ export function usePostMutations(options?: {
       if (result.success && result.data) {
         invalidatePostQueries();
         utils.post.getById.invalidate({ id: result.data.id }).catch(() => {});
-        utils.post.getBySlug.invalidate({ slug: result.data.slug }).catch(() => {});
-        options?.onUpdateSuccess?.(result.data.slug);
+        utils.post.getBySlug
+          .invalidate({ slug: result.data.slug, garden: result.data.garden ?? "posts" })
+          .catch(() => {});
+        options?.onUpdateSuccess?.({
+          slug: result.data.slug,
+          garden: result.data.garden ?? "posts",
+        });
       }
     },
   });

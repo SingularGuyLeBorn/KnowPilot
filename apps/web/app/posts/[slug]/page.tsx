@@ -1,10 +1,11 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { keepPreviousData } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, Eye, Edit2, Trash2 } from "lucide-react";
+import { isPostGarden, DEFAULT_POST_GARDEN, type PostGarden } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
 import { TableOfContents } from "@/components/post/TableOfContents";
 import { PageSearch } from "@/components/post/PageSearch";
@@ -20,13 +21,16 @@ import { ConfirmDialog } from "@/components/shared";
 
 export default function PostDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const slug = decodeURIComponent(params.slug as string);
+  const gardenParam = searchParams.get("garden") ?? DEFAULT_POST_GARDEN;
+  const garden: PostGarden = isPostGarden(gardenParam) ? gardenParam : DEFAULT_POST_GARDEN;
   const articleRef = useRef<HTMLElement>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { data: post, isLoading } = trpc.post.getBySlug.useQuery(
-    { slug },
+    { slug, garden },
     { placeholderData: keepPreviousData }
   );
 

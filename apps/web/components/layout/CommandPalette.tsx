@@ -26,6 +26,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { postDetailHref } from "@/lib/postHref";
 import { cn } from "@/lib/utils";
 import { KbdKey, ShortcutCmdK, ShortcutEsc } from "@/lib/icons";
 import { Input } from "@/components/ui/input";
@@ -54,7 +55,7 @@ export function CommandPalette() {
     setSelectedIndex(0);
   };
 
-  const { data: posts = [] } = trpc.post.tree.useQuery(undefined, { enabled: open });
+  const { data: posts = [] } = trpc.post.tree.useQuery({}, { enabled: open });
   const { data: categories = [] } = trpc.post.categories.useQuery(undefined, { enabled: open });
   const { data: tags = [] } = trpc.post.tags.useQuery(undefined, { enabled: open });
   const { data: agentsData } = trpc.agent.list.useQuery(
@@ -191,11 +192,11 @@ export function CommandPalette() {
     for (const post of posts) {
       if (!q || post.title.toLowerCase().includes(q) || post.slug.toLowerCase().includes(q)) {
         list.push({
-          id: `post:${post.slug}`,
+          id: `post:${post.garden}:${post.slug}`,
           type: "post",
           title: post.title,
-          subtitle: post.slug,
-          href: `/posts/${encodeURIComponent(post.slug)}`,
+          subtitle: `${post.garden}/${post.slug}`,
+          href: postDetailHref(post.slug, post.garden),
           icon: <FileText className="h-4 w-4" />,
         });
       }

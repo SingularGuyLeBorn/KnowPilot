@@ -12,7 +12,7 @@ interface PostMarkdownLinkProps extends ComponentPropsWithoutRef<"a"> {
 }
 
 export function PostMarkdownLink({ href, postSlug, children, ...props }: PostMarkdownLinkProps) {
-  const { data: posts = [] } = trpc.post.tree.useQuery();
+  const { data: posts = [] } = trpc.post.tree.useQuery({});
 
   if (!href) {
     return <span {...props}>{children}</span>;

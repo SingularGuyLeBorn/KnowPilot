@@ -75,9 +75,13 @@ interface PostListItem {
   updatedAt: Date | string;
 }
 
-function PostRow({ post }: { post: PostListItem }) {
+function PostRow({ post }: { post: PostListItem & { garden?: string } }) {
+  const href =
+    post.garden && post.garden !== "posts"
+      ? `/posts/${encodeURIComponent(post.slug)}?garden=${encodeURIComponent(post.garden)}`
+      : `/posts/${encodeURIComponent(post.slug)}`;
   return (
-    <Link href={`/posts/${encodeURIComponent(post.slug)}`} className="group block">
+    <Link href={href} className="group block">
       <Card className="transition-all hover:-translate-y-[2px] hover:border-primary/20 hover:bg-accent hover:shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg group-hover:text-primary">{post.title}</CardTitle>

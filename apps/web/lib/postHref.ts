@@ -1,12 +1,31 @@
+/**
+ * 文章链接解析与生成。
+ * - 详情 URL：默认花园 posts 走 /posts/{slug}；其它花园带 ?garden=
+ * - Markdown 相对链接 / wiki 解析：在 tree 结果里按 slug 匹配，并带上 garden
+ */
+import { DEFAULT_POST_GARDEN, type PostGarden } from "@knowpilot/shared";
+
 export interface PostTreeItem {
   slug: string;
   title: string;
+  /** 知识库花园；缺省按 posts 处理（兼容旧 tree 缓存） */
+  garden?: PostGarden | string;
 }
 
 const EXTERNAL_HREF_RE = /^([a-z][a-z0-9+.-]*:|\/\/)/i;
 
 export function isExternalHref(href: string): boolean {
   return EXTERNAL_HREF_RE.test(href);
+}
+
+/**
+ * 文章详情链接：默认花园 posts 走 /posts/{slug}；其它花园带 ?garden=
+ * slug 可含 /，统一 encodeURIComponent。
+ */
+export function postDetailHref(slug: string, garden: PostGarden | string = DEFAULT_POST_GARDEN): string {
+  const encoded = encodeURIComponent(slug);
+  if (!garden || garden === DEFAULT_POST_GARDEN) return `/posts/${encoded}`;
+  return `/posts/${encoded}?garden=${encodeURIComponent(garden)}`;
 }
 
 /** 将相对 Markdown 路径解析为 post slug（不含 .md 后缀） */
@@ -39,34 +58,42 @@ export function normalizeMdTarget(href: string): string {
   }
 }
 
-/** 在文章树中查找与 Markdown 链接对应的文章 slug */
-export function findPostSlugByHref(href: string, posts: PostTreeItem[]): string | null {
+/** 在文章树中查找与 Markdown 链接对应的文章（含 garden） */
+export function findPostByHref(
+  href: string,
+  posts: PostTreeItem[],
+): PostTreeItem | null {
   const target = normalizeMdTarget(href);
   if (!target) return null;
 
   const exact = posts.find(
     (post) => post.slug === target || post.slug.toLowerCase() === target.toLowerCase(),
   );
-  if (exact) return exact.slug;
+  if (exact) return exact;
 
   const suffixMatches = posts.filter(
     (post) => post.slug.endsWith(`/${target}`) || post.slug.endsWith(target),
   );
-  if (suffixMatches.length === 1) return suffixMatches[0].slug;
+  if (suffixMatches.length === 1) return suffixMatches[0];
 
   const basename = target.split("/").pop();
   if (!basename) return null;
 
   const folderFileMatches = posts.filter((post) => post.slug.endsWith(`/${basename}/${basename}`));
-  if (folderFileMatches.length === 1) return folderFileMatches[0].slug;
+  if (folderFileMatches.length === 1) return folderFileMatches[0];
 
   const basenameMatches = posts.filter((post) => {
     const parts = post.slug.split("/");
     return parts[parts.length - 1] === basename;
   });
-  if (basenameMatches.length === 1) return basenameMatches[0].slug;
+  if (basenameMatches.length === 1) return basenameMatches[0];
 
   return null;
+}
+
+/** 仅返回 slug；需要花园时用 findPostByHref */
+export function findPostSlugByHref(href: string, posts: PostTreeItem[]): string | null {
+  return findPostByHref(href, posts)?.slug ?? null;
 }
 
 export function resolvePostLinkHref(
@@ -80,14 +107,15 @@ export function resolvePostLinkHref(
 
   if (postSlug && !href.startsWith("/") && !isExternalHref(href)) {
     const resolved = resolveRelativeMdSlug(href, postSlug);
-    if (resolved && posts.some((post) => post.slug === resolved)) {
-      return `/posts/${encodeURIComponent(resolved)}`;
+    if (resolved) {
+      const hit = posts.find((post) => post.slug === resolved);
+      if (hit) return postDetailHref(hit.slug, hit.garden ?? DEFAULT_POST_GARDEN);
     }
   }
 
-  const matched = findPostSlugByHref(href, posts);
+  const matched = findPostByHref(href, posts);
   if (matched) {
-    return `/posts/${encodeURIComponent(matched)}`;
+    return postDetailHref(matched.slug, matched.garden ?? DEFAULT_POST_GARDEN);
   }
 
   return null;

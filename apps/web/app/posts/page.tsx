@@ -13,16 +13,24 @@ import {
   X,
   FileText,
 } from "lucide-react";
+import { POST_GARDENS, type Post, type PostGarden } from "@knowpilot/shared";
 import { trpc } from "@/lib/trpc";
 import { usePostMutations } from "@/lib/hooks";
+import { postDetailHref } from "@/lib/postHref";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Pagination, ConfirmDialog, EmptyState, LoadingState } from "@/components/shared";
-import type { Post } from "@knowpilot/shared";
 
 type PublishFilter = "all" | "published" | "draft";
+type GardenFilter = "all" | PostGarden;
+
+const GARDEN_LABELS: Record<PostGarden, string> = {
+  posts: "博客",
+  knowledge: "知识库",
+  resources: "资源",
+};
 
 export default function PostsPage() {
   const router = useRouter();
@@ -30,6 +38,7 @@ export default function PostsPage() {
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [publishFilter, setPublishFilter] = useState<PublishFilter>("all");
+  const [gardenFilter, setGardenFilter] = useState<GardenFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
 
   // 简单防抖，避免每次击键都请求
@@ -46,6 +55,7 @@ export default function PostsPage() {
     pageSize: 10,
     keyword: debouncedKeyword || undefined,
     published: publishedParam,
+    garden: gardenFilter === "all" ? undefined : gardenFilter,
     orderBy: "updatedAt",
     order: "desc",
   });
@@ -71,6 +81,7 @@ export default function PostsPage() {
             <h1 className="text-2xl font-bold tracking-tight text-[var(--kp-text-1)]">文章管理</h1>
             <p className="mt-1 text-sm text-[var(--kp-text-3)]">
               共 {data?.total ?? 0} 篇
+              {gardenFilter !== "all" ? ` · ${GARDEN_LABELS[gardenFilter]}` : ""}
               {isFetching && !isLoading ? " · 刷新中…" : ""}
             </p>
           </div>
@@ -87,6 +98,32 @@ export default function PostsPage() {
               新建文章
             </Link>
           </div>
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-1">
+          {(
+            [
+              ["all", "全部花园"],
+              ...POST_GARDENS.map((g) => [g, GARDEN_LABELS[g]] as const),
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setGardenFilter(value);
+                setPage(1);
+              }}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs transition",
+                gardenFilter === value
+                  ? "bg-[var(--kp-brand)] text-white"
+                  : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-4 sm:flex-row sm:items-center">
@@ -216,6 +253,9 @@ function PostRow({
             <Badge variant={post.published ? "default" : "secondary"} className="text-xs">
               {post.published ? "已发布" : "草稿"}
             </Badge>
+            <Badge variant="outline" className="text-xs">
+              {GARDEN_LABELS[post.garden] ?? post.garden}
+            </Badge>
             {post.category && (
               <Badge
                 variant="outline"
@@ -227,7 +267,7 @@ function PostRow({
             )}
           </div>
           <Link
-            href={`/posts/${encodeURIComponent(post.slug)}`}
+            href={postDetailHref(post.slug, post.garden)}
             className="block text-lg font-semibold text-[var(--kp-text-1)] transition hover:text-[var(--kp-brand-deep)]"
           >
             {post.title}
@@ -251,7 +291,7 @@ function PostRow({
 
         <div className="flex shrink-0 items-center gap-2">
           <Link
-            href={`/posts/${encodeURIComponent(post.slug)}`}
+            href={postDetailHref(post.slug, post.garden)}
             className={cn(buttonVariants({ variant: "outline", size: "sm" }), "text-sm")}
           >
             阅读

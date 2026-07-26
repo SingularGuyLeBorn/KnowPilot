@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { postDetailHref } from "@/lib/postHref";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
@@ -24,11 +25,13 @@ interface PostSummary {
   id: string;
   slug: string;
   title: string;
+  garden?: string;
 }
 
 interface TreeNode {
   id: string;
   slug?: string;
+  garden?: string;
   title: string;
   key: string;
   type: "doc" | "group";
@@ -43,11 +46,23 @@ interface TreeItem {
 const EXPANDED_KEY = "kp-tree-expanded";
 const SCROLL_KEY = "kp-tree-scroll-top";
 
+const GARDEN_ROOT_LABEL: Record<string, string> = {
+  posts: "博客",
+  knowledge: "知识库",
+  resources: "资源",
+};
+
 function buildTree(posts: PostSummary[]): TreeNode[] {
   const root: Record<string, TreeItem> = {};
+  // 多花园并存时，顶层按花园分组，避免跨花园同 slug 路径撞车
+  const gardens = new Set(posts.map((p) => p.garden ?? "posts"));
+  const multiGarden = gardens.size > 1;
 
   for (const post of posts) {
-    const parts = post.slug.split("/");
+    const garden = post.garden ?? "posts";
+    const parts = multiGarden
+      ? [GARDEN_ROOT_LABEL[garden] ?? garden, ...post.slug.split("/")]
+      : post.slug.split("/");
     let map = root;
     let parentItem: TreeItem | null = null;
 
@@ -105,6 +120,7 @@ function buildTree(posts: PostSummary[]): TreeNode[] {
     return {
       id: post?.id || `group-${key}`,
       slug: post?.slug,
+      garden: post?.garden,
       title: post?.title || key,
       key,
       type: post ? "doc" : "group",
@@ -159,6 +175,7 @@ function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
 interface FlatDocRow {
   key: string;
   slug: string;
+  garden?: string;
   title: string;
   depth: number;
 }
@@ -167,7 +184,13 @@ function flattenDocNodes(nodes: TreeNode[], depth = 0): FlatDocRow[] {
   const rows: FlatDocRow[] = [];
   for (const node of nodes) {
     if (node.slug) {
-      rows.push({ key: node.key, slug: node.slug, title: node.title, depth });
+      rows.push({
+        key: node.key,
+        slug: node.slug,
+        garden: node.garden,
+        title: node.title,
+        depth,
+      });
     }
     if (node.children.length) {
       rows.push(...flattenDocNodes(node.children, depth + 1));
@@ -251,7 +274,7 @@ function TreeNodeItem({
 
         {isDoc && node.slug ? (
           <Link
-            href={`/posts/${encodeURIComponent(node.slug)}`}
+            href={postDetailHref(node.slug, node.garden)}
             scroll={false}
             onClick={onNavigate}
             className={rowClass}
@@ -297,7 +320,7 @@ function TreeNodeItem({
 }
 
 export function PostTreeNav({ className }: { className?: string }) {
-  const { data, isLoading } = trpc.post.tree.useQuery();
+  const { data, isLoading } = trpc.post.tree.useQuery({});
   const pathname = usePathname();
   const activeSlug = useMemo(() => getPostSlug(pathname), [pathname]);
   const tree = useMemo(() => buildTree(data || []), [data]);
@@ -520,7 +543,7 @@ export function PostTreeNav({ className }: { className?: string }) {
             const isActive = item.slug === activeSlug;
             return (
               <Link
-                href={`/posts/${encodeURIComponent(item.slug)}`}
+                href={postDetailHref(item.slug, item.garden)}
                 scroll={false}
                 onClick={handleNavigate}
                 className={cn(
