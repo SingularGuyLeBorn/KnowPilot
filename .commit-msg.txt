@@ -1,0 +1,20 @@
+chore: 清理死脚本 + .gitignore 冗余规则 + memoryFlush 测试隔离
+
+1. 删除 19 个无引用脚本（apps/server/src/scripts/ 35→15）：
+   - 5 个下划线 demo（_feishu-*、_yuque-demo-keep，已被 .gitignore 忽略，本地清理）
+   - 6 个 migrate-*（schema 字段已全部存在，已执行，违反「一次性脚本执行完即删」铁律）
+   - 2 个 debug-*（临时调试脚本）
+   - 2 个 probe-*（临时探测脚本）
+   - 4 个与 integration-smoke/e2e 功能重叠的 smoke/test（smoke-agent-chat、smoke-integrations、test-real-tools、verify-yuque）
+   保留 15 个：有 package.json script 引用的 + feishu-authorize（注释引用）+ diag-agentmail（排障）+ cleanup-all-sessions（运维）+ bench-perf（基准）+ smoke-yuque-feishu-deep/full（深度集成，integration-smoke 不覆盖 CRUD）
+
+2. .gitignore 清理冗余规则：
+   - 删 config/**/skills/.curator_state 等「嵌套防御」规则（嵌套 bug 已修，与平铺规则重复）
+   - 删 config/**/memories/daily/、config/**/memories/*.md（与平铺规则重复）
+   - 删 apps/server/config/（误生成目录 bug 已修，规则多余）
+
+3. memoryFlush.test.ts 测试隔离：原 projectRoot: process.cwd() 导致测试跑时 daily note 写进
+   apps/server/config/memories/daily/（污染工作树，反复生成 ?? apps/server/config/）。
+   改用 os.tmpdir() 隔离临时目录，测试后不再污染工作树。
+
+验证：server tsc 通过、全量 Vitest 767/767 通过、memoryFlush 测试后 apps/server/config/ 未复现。

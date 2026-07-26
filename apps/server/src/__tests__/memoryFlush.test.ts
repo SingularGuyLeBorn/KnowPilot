@@ -1,7 +1,17 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import os from "os";
+import path from "path";
+import fs from "fs";
 import type { AppConfig } from "../infra/config.js";
 import { flushMemoriesBeforeCompact } from "../infra/memoryFlush.js";
 import * as resilientLlmClient from "../infra/resilientLlmClient.js";
+
+/** 隔离的临时 projectRoot，避免 memoryDaily 把 daily note 写进工作树（污染 apps/server/config/） */
+function tmpProjectRoot(): string {
+  const dir = path.join(os.tmpdir(), `kp-memflush-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 function makeServices() {
   const items: Array<{ content: string; type: string; strength: number; keywords: string[] }> = [];
@@ -34,7 +44,7 @@ describe("memoryFlush", () => {
     } as any);
     const services = makeServices();
     const config = {
-      projectRoot: process.cwd(),
+      projectRoot: tmpProjectRoot(),
       compact: { memoryFlush: { enabled: true, maxFacts: 5 } },
     } as AppConfig;
     const n = await flushMemoriesBeforeCompact(config, services as any, "用户说喜欢莫兰迪色", "m", {
