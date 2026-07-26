@@ -116,6 +116,7 @@ import { githubDefs, githubHandlers } from "./integration/github.js";
 import { feishuDefs, feishuHandlers } from "./integration/feishu.js";
 import { agentPlatformDefs, agentPlatformHandlers } from "./integration/agentPlatform.js";
 import { tikhubDefs, tikhubHandlers } from "./integration/tikhub.js";
+import { zhihuOpenApiDefs, zhihuOpenApiHandlers } from "./integration/zhihuOpenApi.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -137,6 +138,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   ...emailDefs,
   ...agentPlatformDefs,
   ...tikhubDefs,
+  ...zhihuOpenApiDefs,
 ];
 
 const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
@@ -147,6 +149,7 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   ...emailHandlers,
   ...agentPlatformHandlers,
   ...tikhubHandlers,
+  ...zhihuOpenApiHandlers,
 };
 
 export function registerIntegrationTools(): void {

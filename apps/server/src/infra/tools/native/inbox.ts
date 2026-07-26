@@ -162,7 +162,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_sync_zhihu",
     description:
-      "同步知乎收藏到 Inbox。不填 collectionUrl = 自动发现并同步「我的全部收藏夹」。填 URL 则只同步该夹。mode=incremental（默认）从新到旧，整页无新增即停；mode=full 全量打底。需先 platform_login(platform=zhihu)。默认只拉列表。",
+      "同步知乎收藏到 Inbox。优先用开放平台 ZHIHU_ACCESS_SECRET（无需浏览器登录）；无 key 时回退 platform_login(zhihu)。不填 collectionUrl = 同步全部收藏夹；填 URL 只同步该夹。mode=incremental（默认）整页无新增即停；mode=full 全量打底。默认只拉列表。",
     concurrencyClass: "C",
     parameters: {
       type: "object",

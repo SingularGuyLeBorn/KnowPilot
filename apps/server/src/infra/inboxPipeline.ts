@@ -2,7 +2,8 @@
  * 知识 Inbox 管道 — 截图 / 知乎收藏 / 小红书点赞与收藏 / 微信公众号链接
  *
  * 原始件落 data/inbox/；成文经 PostService（post_create）进 content/{garden}/。
- * 平台私有收藏无官方 OAuth：复用 platform_login 的 cookie / storageState。
+ * 知乎优先走开放平台 Access Secret（favlists / favlist_contents）；无 key 时回退
+ * platform_login 的 cookie / storageState + 站内 API。
  */
 
 import crypto from "node:crypto";
@@ -16,6 +17,11 @@ import { launchPlaywrightBrowser } from "./metablog/playwrightChrome.js";
 import { parsePlatformUrl } from "./metablog/index.js";
 import { performOcrFromFile } from "./ocrService.js";
 import { detectPlatform } from "./metablog/platform/fetcher.js";
+import {
+  resolveZhihuAccessSecret,
+  zhihuFavlistContents,
+  zhihuUserFavlists,
+} from "./zhihuOpenApi.js";
 
 export type InboxSource = "screenshot" | "zhihu" | "xhs" | "wechat" | "url";
 
@@ -895,9 +901,156 @@ export async function syncOneZhihuCollection(
 }
 
 /**
+ * 经知乎开放平台同步单个收藏夹（Access Secret，无 cookie）。
+ */
+async function syncOneZhihuCollectionOpenApi(
+  prisma: PrismaClient,
+  config: AppConfig,
+  opts: {
+    secret: string;
+    collection: ZhihuCollectionMeta;
+    mode: ZhihuSyncMode;
+    maxItems: number;
+    fetchContent?: boolean;
+    maxChars?: number;
+  },
+): Promise<{
+  scanned: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+  items: Array<{ id: string; title: string; url?: string | null; created: boolean }>;
+  stoppedEarly: boolean;
+  remoteCount?: number;
+  localCount: number;
+  approxNew?: number;
+}> {
+  const pageSize = 20;
+  const urlToken = Number(opts.collection.id);
+  const localCountBefore = await countLocalZhihuCollectionItems(prisma, opts.collection.id);
+  const resultItems: Array<{ id: string; title: string; url?: string | null; created: boolean }> =
+    [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  let scanned = 0;
+  let stoppedEarly = false;
+  let remoteCount: number | undefined;
+  let offset: number | string = 0;
+
+  while (scanned < opts.maxItems) {
+    const page = await zhihuFavlistContents(opts.secret, {
+      favlistUrlToken: urlToken,
+      offset,
+      limit: pageSize,
+    });
+    if (!page.ok) {
+      errors.push(
+        `开放平台收藏夹「${opts.collection.title}」失败 Code=${page.code}: ${page.message}`,
+      );
+      break;
+    }
+    if (typeof page.data.Paging?.Totals === "number") remoteCount = page.data.Paging.Totals;
+    const items = page.data.Items ?? [];
+    if (!items.length) break;
+
+    let pageCreated = 0;
+    let pageSeen = 0;
+    for (const row of items) {
+      if (scanned >= opts.maxItems) break;
+      const url = String(row.Url || "").trim();
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      pageSeen += 1;
+      scanned += 1;
+      try {
+        const title = String(row.Title || url).slice(0, 200);
+        const excerpt = row.Summary ? String(row.Summary).slice(0, 500) : null;
+        if (opts.fetchContent) {
+          const captured = await captureInboxUrl(prisma, config, {
+            url,
+            source: "zhihu",
+            fetchContent: true,
+            maxChars: opts.maxChars,
+          });
+          await prisma.inboxItem.update({
+            where: { id: captured.id },
+            data: {
+              tags: "zhihu,collection,openapi",
+              metadata: JSON.stringify({
+                collectionUrl: opts.collection.url,
+                collectionId: opts.collection.id,
+                collectionTitle: opts.collection.title,
+                contentType: row.ContentType,
+                via: "zhihu_openapi",
+              }),
+            },
+          });
+          if (captured.created) {
+            created += 1;
+            pageCreated += 1;
+          } else updated += 1;
+          resultItems.push(captured);
+        } else {
+          const upserted = await upsertInboxItem(prisma, {
+            source: "zhihu",
+            externalId: url,
+            title,
+            url,
+            excerpt,
+            tags: ["zhihu", "collection", "openapi"],
+            metadata: {
+              collectionUrl: opts.collection.url,
+              collectionId: opts.collection.id,
+              collectionTitle: opts.collection.title,
+              contentType: row.ContentType,
+              via: "zhihu_openapi",
+            },
+          });
+          if (upserted.created) {
+            created += 1;
+            pageCreated += 1;
+          } else updated += 1;
+          resultItems.push(upserted);
+        }
+      } catch (err) {
+        skipped += 1;
+        errors.push(`${url}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    if (opts.mode === "incremental" && shouldStopZhihuIncrementalPage(pageSeen, pageCreated)) {
+      stoppedEarly = true;
+      break;
+    }
+    if (page.data.Paging?.IsEnd) break;
+    const next = page.data.Paging?.NextOffset;
+    if (next === undefined || next === null || String(next) === "") break;
+    offset = next;
+  }
+
+  return {
+    scanned,
+    created,
+    updated,
+    skipped,
+    errors,
+    items: resultItems,
+    stoppedEarly,
+    remoteCount,
+    localCount: localCountBefore,
+    approxNew:
+      typeof remoteCount === "number" ? Math.max(0, remoteCount - localCountBefore) : undefined,
+  };
+}
+
+/**
  * 知乎收藏同步：
- * - 提供 collectionUrl → 只同步该夹
- * - 不提供 → 自动发现「我的全部收藏夹」后逐夹同步
+ * - 有 ZHIHU_ACCESS_SECRET → 优先官方开放平台 favlists（无需 platform_login）
+ * - 否则回退 cookie / storageState + 站内 API
  * - mode=full 拉到护栏/末尾；mode=incremental（默认）整页无新增即停
  */
 export async function syncZhihuCollection(
@@ -919,6 +1072,92 @@ export async function syncZhihuCollection(
     opts.maxItems ?? opts.maxItemsPerCollection ?? (opts.collectionUrl ? 50 : 5000);
   const maxCollections = opts.maxCollections ?? 50;
 
+  const openApiSecret = await resolveZhihuAccessSecret(prisma);
+  if (openApiSecret) {
+    const errors: string[] = [];
+    const collections: ZhihuCollectionMeta[] = [];
+
+    if (opts.collectionUrl?.trim()) {
+      const id = extractZhihuCollectionId(opts.collectionUrl);
+      if (!id) {
+        return {
+          scanned: 0,
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          errors: [`无法从 URL 解析收藏夹 id: ${opts.collectionUrl}`],
+          items: [],
+          mode,
+        };
+      }
+      collections.push({
+        id,
+        title: `收藏夹 ${id}`,
+        url: opts.collectionUrl.trim(),
+      });
+    } else {
+      const listed = await zhihuUserFavlists(openApiSecret, maxCollections);
+      if (!listed.ok) {
+        errors.push(`开放平台 favlists 失败 Code=${listed.code}: ${listed.message}`);
+      } else {
+        for (const row of listed.data.Items ?? []) {
+          collections.push({
+            id: String(row.UrlToken),
+            title: row.Title || `收藏夹 ${row.UrlToken}`,
+            url: row.Url || `https://www.zhihu.com/collection/${row.UrlToken}`,
+          });
+        }
+      }
+    }
+
+    const result: InboxSyncResult = {
+      scanned: 0,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      errors,
+      items: [],
+      mode,
+      collectionsDiscovered: collections.length,
+      collectionsSynced: 0,
+      byCollection: [],
+    };
+    if (!collections.length) {
+      if (!result.errors.length) result.errors.push("开放平台未返回可同步收藏夹。");
+      return result;
+    }
+
+    for (const collection of collections) {
+      const one = await syncOneZhihuCollectionOpenApi(prisma, config, {
+        secret: openApiSecret,
+        collection,
+        mode,
+        maxItems: perCollection,
+        fetchContent: opts.fetchContent,
+        maxChars: opts.maxChars,
+      });
+      result.scanned += one.scanned;
+      result.created += one.created;
+      result.updated += one.updated;
+      result.skipped += one.skipped;
+      result.errors.push(...one.errors);
+      result.items.push(...one.items);
+      result.collectionsSynced = (result.collectionsSynced ?? 0) + 1;
+      result.byCollection!.push({
+        id: collection.id,
+        title: collection.title,
+        scanned: one.scanned,
+        created: one.created,
+        updated: one.updated,
+        remoteCount: one.remoteCount,
+        localCount: one.localCount,
+        approxNew: one.approxNew,
+        stoppedEarly: one.stoppedEarly,
+      });
+    }
+    return result;
+  }
+
   const cookies = loadCookies("zhihu");
   if (!cookies.length && !getPlatformStorageStatePath("zhihu")) {
     return {
@@ -926,7 +1165,9 @@ export async function syncZhihuCollection(
       created: 0,
       updated: 0,
       skipped: 0,
-      errors: ["知乎未登录。请先在 Chat 调用 platform_login(platform=zhihu) 扫码登录。"],
+      errors: [
+        "未配置知乎开放平台 ZHIHU_ACCESS_SECRET，且未 platform_login(zhihu)。请任选其一：在 .env.local 配置 Access Secret，或 Chat 调用 platform_login。",
+      ],
       items: [],
       mode,
       collectionsDiscovered: 0,

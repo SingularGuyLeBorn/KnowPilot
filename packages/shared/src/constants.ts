@@ -427,6 +427,13 @@ export const INTEGRATION_DEFAULT_TOOLS: string[] = [
   "native:feishu_delete_whiteboard_nodes",
   "native:feishu_get_whiteboard_theme",
   "native:feishu_update_whiteboard_theme",
+  // 知乎数据开放平台（Access Secret；搜索/热榜/直答/收藏夹）
+  "native:zhihu_openapi_search",
+  "native:zhihu_openapi_hot_list",
+  "native:zhihu_openapi_ask",
+  "native:zhihu_openapi_favlists",
+  "native:zhihu_openapi_recent_collections",
+  "native:zhihu_openapi_favlist_contents",
 ];
 
 /**
