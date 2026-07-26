@@ -326,6 +326,42 @@ describe("W10 SwarmOrchestrator 中介者", () => {
     expect(runs).toBe(1);
   });
 
+  it("B8：窗口已过期但仍在途时第二次 dispatch 仍 dedup，不双跑", async () => {
+    const ctx = await createContextInner();
+    const orchestrator = getSwarmOrchestrator(ctx.config, ctx.services);
+    let runs = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const makeSpec = () => ({
+      origin: "spawn_subagent" as const,
+      schedule: "inline" as const,
+      sessionId: "sess-b8-expire",
+      taskLabel: "b8-inflight-expire",
+      dedup: { agentId: "agent-b8-expire", taskText: "B8 在途过期任务", windowMs: 25 },
+      execute: async (): Promise<SwarmTaskOutcome> => {
+        runs++;
+        await gate;
+        return { status: "success", attach: { b8: true } };
+      },
+    });
+
+    const p1 = orchestrator.dispatch(makeSpec());
+    await vi.waitFor(() => expect(runs).toBe(1), { timeout: 5000, interval: 20 });
+    await new Promise((r) => setTimeout(r, 40));
+    // 第二次会 await 同一次 completion——不可在 release 前 await，否则自死锁
+    const p2 = orchestrator.dispatch(makeSpec());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(runs).toBe(1);
+    release();
+    const [h1, h2] = await Promise.all([p1, p2]);
+    expect(h1.deduped).toBe(false);
+    expect(h2.deduped).toBe(true);
+    expect(h2.jobId).toBe(h1.jobId);
+    expect(h1.outcome?.attach).toEqual({ b8: true });
+    expect(h2.outcome?.attach).toEqual({ b8: true });
+    expect(runs).toBe(1);
+  });
+
   it("中介者 guard：sub tier dispatch spawn_subagent 被拒且不执行", async () => {
     const ctx = await createContextInner();
     const orchestrator = getSwarmOrchestrator(ctx.config, ctx.services);

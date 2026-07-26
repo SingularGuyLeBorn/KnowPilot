@@ -1,15 +1,13 @@
 /**
- * E3：abort 用 stopAgentChat 的 partialAssistantMessageId，无 setTimeout(2000)
+ * E3 / P2-4：abort 用 partialAssistantMessageId 对齐；有 id 时禁止靠 hydrate/计时器进 idle。
  *
- * 负向断言（旧实现红）：
- * - 无 partial id 契约时靠 2s 强制 commit → 慢于 2s 落库会闪断
- * - 有 id 时对齐前被计时器拆掉 live 块
+ * 行为不变量（删掉编排层 hydrate 补丁仍成立）：
+ * - abortStream(partialId) → phase=done，推进时间仍 done
+ * - HYDRATE_DONE 不能把 done 变成 idle
+ * - 仅 tryCommitStream(同 id) 才能 idle
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import {
   streamLifecycleActions,
   streamLifecycleStore,
@@ -42,12 +40,10 @@ describe("E3 abort partialAssistantMessageId（无计时器）", () => {
     expect(streamLifecycleStore.get(SID).phase).toBe("done");
     expect(streamLifecycleStore.get(SID).pendingAssistantMessageId).toBe("msg-partial-e3");
 
-    // 旧实现会在 2s 强制 commit；新实现无计时器，推进时间仍保持 done
     vi.advanceTimersByTime(2500);
     expect(streamLifecycleStore.get(SID).phase).toBe("done");
     expect(streamLifecycleStore.get(SID).streamingContent).toBe("partial-text");
 
-    // 迟到 upsert 对齐 → commit，气泡不闪断（live 一直撑到对齐）
     expect(
       streamLifecycleActions.tryCommitStream(SID, {
         messageId: "msg-partial-e3",
@@ -73,23 +69,26 @@ describe("E3 abort partialAssistantMessageId（无计时器）", () => {
     expect(streamLifecycleStore.isRunOccupied(SID)).toBe(false);
   });
 
-  it("useChatRunStream abort 路径无 setTimeout(2000) 兜底", () => {
-    const dir = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(dir, "../useChatRunStream.ts"), "utf8");
-    expect(src).not.toMatch(/setTimeout\s*\(\s*[^)]*2000\s*\)/);
-    expect(src).toMatch(/takePendingAbortPartial/);
-    expect(src).toMatch(/abortStream/);
-  });
+  it("P2-4：abort 有 partialId 后 HYDRATE_DONE 不能释放占用（禁 hydrate 赌落库）", () => {
+    streamLifecycleActions.beginStream(SID);
+    streamLifecycleActions.appendTokenDelta(SID, "half");
+    streamLifecycleActions.abortStream(SID, {
+      partialAssistantMessageId: "msg-p24",
+      leftoverContent: "half",
+    });
+    expect(streamLifecycleStore.get(SID).phase).toBe("done");
 
-  it("P2-4：user abort / AbortError 路径不再 hydrateSessionMessagesFallback", () => {
-    const dir = dirname(fileURLToPath(import.meta.url));
-    const src = readFileSync(join(dir, "../useChatRunStream.ts"), "utf8");
-    // 仅 resume 无流一处调用；abort 路径已删（deps/签名里的标识符不算调用）
-    const calls = src.match(/hydrateSessionMessagesFallback\(/g) ?? [];
-    expect(calls.length).toBe(1);
-    expect(src).toMatch(/opts\.isResume && isNoStream[\s\S]{0,400}?hydrateSessionMessagesFallback\(/);
-    expect(src).toMatch(/禁止 hydrate 赌落库/);
+    streamLifecycleActions.hydrateDone(SID);
+    expect(streamLifecycleStore.get(SID).phase).toBe("done");
+    expect(streamLifecycleStore.get(SID).pendingAssistantMessageId).toBe("msg-p24");
+    expect(streamLifecycleStore.isRunOccupied(SID)).toBe(true);
+
+    expect(
+      streamLifecycleActions.tryCommitStream(SID, {
+        messageId: "msg-p24",
+        content: "half",
+      }),
+    ).toBe(true);
+    expect(streamLifecycleStore.get(SID).phase).toBe("idle");
   });
 });
-
-
