@@ -80,24 +80,46 @@ export async function executeTaskJob(
         maxChars,
       });
     }
+    const zhihuMode = input.zhihuMode === "full" ? "full" : "incremental";
+    const zhihuBase = {
+      mode: zhihuMode as "full" | "incremental",
+      maxCollections: 50,
+      maxItemsPerCollection: 5000,
+      maxItems,
+      fetchContent,
+      maxChars,
+    };
+    // zhihu:true → 自动发现全部收藏夹；或配置/单 URL；默认不跑知乎除非显式打开
     if (typeof input.zhihuCollectionUrl === "string" && input.zhihuCollectionUrl) {
       results.zhihu = await services.inbox.syncZhihu({
+        ...zhihuBase,
         collectionUrl: input.zhihuCollectionUrl,
+      });
+    } else if (config.inbox.zhihuCollectionUrls.length && input.zhihu !== false) {
+      const zhihuResults = [];
+      for (const collectionUrl of config.inbox.zhihuCollectionUrls) {
+        zhihuResults.push(
+          await services.inbox.syncZhihu({
+            ...zhihuBase,
+            collectionUrl,
+          }),
+        );
+      }
+      results.zhihu = zhihuResults;
+    } else if (input.zhihu === true) {
+      results.zhihu = await services.inbox.syncZhihu(zhihuBase);
+    }
+    if (input.xhs === true) {
+      const rawKinds = Array.isArray(input.xhsKinds) ? input.xhsKinds.map(String) : [];
+      const kinds = rawKinds.filter((k): k is "liked" | "collect" => k === "liked" || k === "collect");
+      const xhsMode = input.xhsMode === "full" ? "full" : "incremental";
+      results.xhs = await services.inbox.syncXhs({
+        kinds: kinds.length ? kinds : ["liked", "collect"],
+        mode: xhsMode,
         maxItems,
         fetchContent,
         maxChars,
       });
-    } else if (config.inbox.zhihuCollectionUrls.length) {
-      const zhihuResults = [];
-      for (const collectionUrl of config.inbox.zhihuCollectionUrls) {
-        zhihuResults.push(
-          await services.inbox.syncZhihu({ collectionUrl, maxItems, fetchContent, maxChars }),
-        );
-      }
-      results.zhihu = zhihuResults;
-    }
-    if (input.xhs === true) {
-      results.xhs = await services.inbox.syncXhs({ maxItems, fetchContent, maxChars });
     }
 
     return {

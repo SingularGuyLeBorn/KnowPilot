@@ -94,6 +94,142 @@ function isNoiseImageUrl(src: string): boolean {
   );
 }
 
+/** 解析小红书 SSR 的 window.__INITIAL_STATE__（含 undefined → null） */
+export function parseXiaohongshuInitialState(html: string): Record<string, unknown> | null {
+  const marker = "window.__INITIAL_STATE__";
+  const idx = html.indexOf(marker);
+  if (idx < 0) return null;
+  const eq = html.indexOf("=", idx + marker.length);
+  if (eq < 0) return null;
+  let i = eq + 1;
+  while (i < html.length && /\s/.test(html[i]!)) i++;
+  if (html[i] !== "{") return null;
+  // 括号匹配截取 JSON 对象（避免非贪婪正则在超大 state 上失败）
+  let depth = 0;
+  let end = -1;
+  let inStr = false;
+  let escape = false;
+  for (let j = i; j < html.length; j++) {
+    const ch = html[j]!;
+    if (inStr) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        end = j + 1;
+        break;
+      }
+    }
+  }
+  if (end < 0) return null;
+  const raw = html.slice(i, end).replace(/\bundefined\b/g, "null");
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function pickXhsImageUrl(item: unknown): string | null {
+  if (!item || typeof item !== "object") return null;
+  const o = item as Record<string, unknown>;
+  const infoList = Array.isArray(o.infoList) ? o.infoList : [];
+  const wbDft = infoList.find(
+    (x) => x && typeof x === "object" && (x as { imageScene?: string }).imageScene === "WB_DFT",
+  ) as { url?: string } | undefined;
+  const candidates = [
+    o.urlDefault,
+    o.url_default,
+    o.urlPre,
+    o.url_pre,
+    o.url,
+    wbDft?.url,
+    (infoList[0] as { url?: string } | undefined)?.url,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && /^https?:\/\//i.test(c) && !isNoiseImageUrl(c)) {
+      return c.replace(/\\u002F/g, "/");
+    }
+  }
+  const trace = o.traceId ?? o.trace_id ?? o.fileId ?? o.file_id;
+  if (typeof trace === "string" && trace.length > 8) {
+    const id = trace.includes("/") ? (trace.split("/").pop() as string) : trace;
+    return `https://ci.xiaohongshu.com/${id}?imageView2/2/w/1080/format/jpg`;
+  }
+  return null;
+}
+
+/**
+ * 从小红书笔记 HTML 提取轮播图 URL。
+ * 优先 __INITIAL_STATE__.note.noteDetailMap.*.note.imageList（正文 Readability 里通常没有图）。
+ */
+export function extractXiaohongshuImages(html: string): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const push = (u: string | null) => {
+    if (!u || seen.has(u) || isNoiseImageUrl(u)) return;
+    seen.add(u);
+    urls.push(u);
+  };
+
+  const state = parseXiaohongshuInitialState(html);
+  const noteDetailMap = getByPath(state, "note.noteDetailMap") as Record<string, unknown> | undefined;
+  if (noteDetailMap && typeof noteDetailMap === "object") {
+    for (const key of Object.keys(noteDetailMap)) {
+      const entry = noteDetailMap[key] as Record<string, unknown> | undefined;
+      const note = (entry?.note ?? entry) as Record<string, unknown> | undefined;
+      const list = (note?.imageList ?? note?.image_list) as unknown;
+      if (!Array.isArray(list)) continue;
+      for (const item of list) push(pickXhsImageUrl(item));
+      if (urls.length) break;
+    }
+  }
+
+  // 兜底：CDN 直链 / swiper img
+  if (!urls.length) {
+    for (const m of html.matchAll(
+      /https?:\\?\/\\?\/[^\s"'<>]+(?:xhscdn|xiaohongshu\.com|rednote)[^\s"'<>]+\.(?:jpg|jpeg|png|webp)/gi,
+    )) {
+      push(m[0]!.replace(/\\u002F/g, "/").replace(/\\\//g, "/"));
+    }
+  }
+  if (!urls.length) {
+    for (const src of extractImagesFromHtml(html, ["src", "data-src"])) push(src);
+  }
+
+  return urls.slice(0, 20);
+}
+
+/** 小红书笔记视频流（若有） */
+export function extractXiaohongshuVideos(html: string): string[] {
+  const state = parseXiaohongshuInitialState(html);
+  const noteDetailMap = getByPath(state, "note.noteDetailMap") as Record<string, unknown> | undefined;
+  if (!noteDetailMap || typeof noteDetailMap !== "object") return [];
+  const urls: string[] = [];
+  for (const key of Object.keys(noteDetailMap)) {
+    const entry = noteDetailMap[key] as Record<string, unknown> | undefined;
+    const note = (entry?.note ?? entry) as Record<string, unknown> | undefined;
+    const h264 = getByPath(note, "video.media.stream.h264") as Array<{ masterUrl?: string; url?: string }> | undefined;
+    if (Array.isArray(h264)) {
+      for (const s of h264) {
+        const u = s?.masterUrl || s?.url;
+        if (typeof u === "string" && u.startsWith("http")) urls.push(u);
+      }
+    }
+    if (urls.length) break;
+  }
+  return urls.slice(0, 5);
+}
+
 // ============================================
 // HTML → Markdown(核心)
 // ============================================
@@ -908,8 +1044,12 @@ export async function parseHtmlToMarkdown(
     if (authorMatch) author = sanitizeAuthor(authorMatch[1]);
   }
 
-  // 提取图片
-  if (!images.length) {
+  // 提取图片：小红书图在 __INITIAL_STATE__.imageList，不在 Readability 正文里
+  if (platform === "xiaohongshu") {
+    images = extractXiaohongshuImages(html);
+    const xhsVideos = extractXiaohongshuVideos(html);
+    if (xhsVideos.length) videos = xhsVideos;
+  } else if (!images.length) {
     images = extractImagesFromHtml(contentHtml || html, config.imageAttributes);
   }
   const ogImage = extractMeta(html, "og:image");

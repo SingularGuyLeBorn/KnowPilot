@@ -46,18 +46,28 @@ async function inboxCaptureUrls(args: Record<string, unknown>, ctx: NativeToolCo
 
 async function inboxSyncZhihu(args: Record<string, unknown>, ctx: NativeToolContext) {
   const collectionUrl = String(args.collectionUrl || "").trim();
-  if (!collectionUrl) throw new Error("collectionUrl 必填（知乎收藏夹链接）");
+  const mode = args.mode === "full" ? "full" : "incremental";
   return ctx.services.inbox.syncZhihu({
-    collectionUrl,
-    maxItems: typeof args.maxItems === "number" ? args.maxItems : 50,
+    collectionUrl: collectionUrl || undefined,
+    mode,
+    maxCollections: typeof args.maxCollections === "number" ? args.maxCollections : 50,
+    maxItemsPerCollection:
+      typeof args.maxItemsPerCollection === "number" ? args.maxItemsPerCollection : 5000,
+    maxItems: typeof args.maxItems === "number" ? args.maxItems : undefined,
     fetchContent: coerceToolBoolean(args.fetchContent),
     maxChars: typeof args.maxChars === "number" ? args.maxChars : 12000,
   });
 }
 
 async function inboxSyncXhs(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const rawKinds = Array.isArray(args.kinds) ? args.kinds.map(String) : [];
+  const kinds = rawKinds.filter((k): k is "liked" | "collect" => k === "liked" || k === "collect");
+  const mode = args.mode === "full" ? "full" : "incremental";
   return ctx.services.inbox.syncXhs({
-    maxItems: typeof args.maxItems === "number" ? args.maxItems : 50,
+    kinds: kinds.length ? kinds : ["liked", "collect"],
+    mode,
+    maxItems:
+      typeof args.maxItems === "number" ? args.maxItems : mode === "full" ? 2000 : 200,
     fetchContent: coerceToolBoolean(args.fetchContent),
     maxChars: typeof args.maxChars === "number" ? args.maxChars : 12000,
   });
@@ -99,7 +109,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_list",
     description:
-      "列出知识 Inbox 待消化素材（截图/知乎收藏/小红书收藏/微信公众号）。status=fetched 待处理，distilled 已成文，ignored 已丢弃。",
+      "列出知识 Inbox 待消化素材（截图/知乎收藏/小红书点赞与收藏/微信公众号）。status=fetched 待处理，distilled 已成文，ignored 已丢弃。",
     concurrencyClass: "B",
     parameters: {
       type: "object",
@@ -152,14 +162,19 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_sync_zhihu",
     description:
-      "同步知乎收藏夹条目到 Inbox。参数 collectionUrl 如 https://www.zhihu.com/collection/123。需先 platform_login(platform=zhihu)。默认只拉列表；fetchContent=true 时逐篇抓正文（较慢）。",
+      "同步知乎收藏到 Inbox。不填 collectionUrl = 自动发现并同步「我的全部收藏夹」。填 URL 则只同步该夹。mode=incremental（默认）从新到旧，整页无新增即停；mode=full 全量打底。需先 platform_login(platform=zhihu)。默认只拉列表。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
-      required: ["collectionUrl"],
       properties: {
-        collectionUrl: { type: "string" },
-        maxItems: { type: "number" },
+        collectionUrl: {
+          type: "string",
+          description: "可选；如 https://www.zhihu.com/collection/123；不填同步全部收藏夹",
+        },
+        mode: { type: "string", enum: ["full", "incremental"], description: "默认 incremental" },
+        maxCollections: { type: "number", description: "最多同步多少个收藏夹，默认 50" },
+        maxItemsPerCollection: { type: "number", description: "每夹最多条数，默认 5000" },
+        maxItems: { type: "number", description: "覆盖 maxItemsPerCollection 的每夹上限" },
         fetchContent: { type: "boolean", description: "是否立即抓每篇正文，默认 false" },
         maxChars: { type: "number" },
       },
@@ -168,12 +183,18 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_sync_xhs",
     description:
-      "同步小红书「我的收藏」到 Inbox。需先 platform_login(platform=xhs)。默认只拉列表；fetchContent=true 时逐篇抓正文。",
+      "同步小红书「点赞」和/或「收藏」到 Inbox。需先 platform_login(platform=xhs)。mode=incremental（默认）遇已知笔记提前停；mode=full 全量打底。kinds 默认两者。默认只拉列表。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
       properties: {
-        maxItems: { type: "number" },
+        kinds: {
+          type: "array",
+          items: { type: "string", enum: ["liked", "collect"] },
+          description: '默认 ["liked","collect"]；liked=点赞，collect=收藏',
+        },
+        mode: { type: "string", enum: ["full", "incremental"], description: "默认 incremental" },
+        maxItems: { type: "number", description: "每种最多条数；incremental 默认 200，full 默认 2000" },
         fetchContent: { type: "boolean" },
         maxChars: { type: "number" },
       },

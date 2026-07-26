@@ -921,8 +921,16 @@ export const listInboxItemsSchema = z.object({
   keyword: z.string().optional(),
   source: inboxSourceSchema.optional(),
   status: inboxStatusSchema.optional(),
+  /** 知乎收藏夹 id；传 unknown 表示无 collectionId 的旧条目 */
+  collectionId: z.string().min(1).max(64).optional(),
+  /** 标签子筛选：like / favorite / collection 等 */
+  tag: z.string().min(1).max(64).optional(),
   orderBy: z.enum(["capturedAt", "createdAt", "updatedAt"]).default("capturedAt"),
   order: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export const inboxFacetsSchema = z.object({
+  status: inboxStatusSchema.optional(),
 });
 
 export const inboxCaptureUrlSchema = z.object({
@@ -939,15 +947,30 @@ export const inboxCaptureUrlsSchema = z.object({
   maxChars: z.number().int().min(500).max(50000).default(12000),
 });
 
+export const inboxSyncZhihuModeSchema = z.enum(["full", "incremental"]);
 export const inboxSyncZhihuSchema = z.object({
-  collectionUrl: z.string().url(),
-  maxItems: z.number().int().min(1).max(200).default(50),
+  /** 单个收藏夹 URL；不填则登录后自动发现并同步「我的全部收藏夹」 */
+  collectionUrl: z.string().url().optional(),
+  /** full=每夹拉到末尾；incremental=从新到旧，遇已知条目提前停（默认） */
+  mode: inboxSyncZhihuModeSchema.default("incremental"),
+  maxCollections: z.number().int().min(1).max(200).default(50),
+  /** 每个收藏夹最多拉取条数（全量护栏，默认 5000） */
+  maxItemsPerCollection: z.number().int().min(1).max(5000).default(5000),
+  /** 每夹条数上限；若传入则覆盖 maxItemsPerCollection（单夹快捷同步常用） */
+  maxItems: z.number().int().min(1).max(5000).optional(),
   fetchContent: z.boolean().default(false),
   maxChars: z.number().int().min(500).max(50000).default(12000),
 });
 
+export const inboxSyncXhsKindSchema = z.enum(["liked", "collect"]);
+export const inboxSyncXhsModeSchema = z.enum(["full", "incremental"]);
 export const inboxSyncXhsSchema = z.object({
-  maxItems: z.number().int().min(1).max(200).default(50),
+  /** liked=点赞，collect=收藏；默认两者都同步 */
+  kinds: z.array(inboxSyncXhsKindSchema).min(1).max(2).default(["liked", "collect"]),
+  /** full=滚到护栏；incremental=遇已知 noteId 批次提前停（默认） */
+  mode: inboxSyncXhsModeSchema.default("incremental"),
+  /** 每种 kind 最多拉取条数（点赞与收藏分别计数） */
+  maxItems: z.number().int().min(1).max(5000).default(200),
   fetchContent: z.boolean().default(false),
   maxChars: z.number().int().min(500).max(50000).default(12000),
 });
@@ -1436,8 +1459,10 @@ export type UpdateInboxItemInput = z.infer<typeof updateInboxItemSchema>;
 export type ListInboxItemsInput = z.infer<typeof listInboxItemsSchema>;
 export type InboxCaptureUrlInput = z.infer<typeof inboxCaptureUrlSchema>;
 export type InboxCaptureUrlsInput = z.infer<typeof inboxCaptureUrlsSchema>;
-export type InboxSyncZhihuInput = z.infer<typeof inboxSyncZhihuSchema>;
-export type InboxSyncXhsInput = z.infer<typeof inboxSyncXhsSchema>;
+/** 调用方可省略带 default 的字段；service 内再 parse 补全 */
+export type InboxSyncZhihuInput = z.input<typeof inboxSyncZhihuSchema>;
+/** 调用方可省略带 default 的字段；service 内再 parse 补全 */
+export type InboxSyncXhsInput = z.input<typeof inboxSyncXhsSchema>;
 export type InboxScanScreenshotsInput = z.infer<typeof inboxScanScreenshotsSchema>;
 export type InboxIngestWechatDropInput = z.infer<typeof inboxIngestWechatDropSchema>;
 export type InboxDistillInput = z.infer<typeof inboxDistillSchema>;

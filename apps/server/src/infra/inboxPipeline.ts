@@ -1,5 +1,5 @@
 /**
- * 知识 Inbox 管道 — 截图 / 知乎收藏 / 小红书收藏 / 微信公众号链接
+ * 知识 Inbox 管道 — 截图 / 知乎收藏 / 小红书点赞与收藏 / 微信公众号链接
  *
  * 原始件落 data/inbox/；成文经 PostService（post_create）进 content/{garden}/。
  * 平台私有收藏无官方 OAuth：复用 platform_login 的 cookie / storageState。
@@ -31,6 +31,16 @@ export interface InboxUpsertInput {
   metadata?: Record<string, unknown>;
 }
 
+export type ZhihuSyncMode = "full" | "incremental";
+
+export interface ZhihuCollectionMeta {
+  id: string;
+  title: string;
+  url: string;
+  /** 远端条目数（若 API 提供） */
+  itemCount?: number;
+}
+
 export interface InboxSyncResult {
   scanned: number;
   created: number;
@@ -38,7 +48,63 @@ export interface InboxSyncResult {
   skipped: number;
   errors: string[];
   items: Array<{ id: string; title: string; url?: string | null; created: boolean }>;
+  /** 小红书：按点赞/收藏分别计数 */
+  byKind?: Partial<
+    Record<
+      "liked" | "collect",
+      { scanned: number; created: number; updated: number; stoppedEarly?: boolean }
+    >
+  >;
+  /** 知乎：同步模式与分夹摘要 */
+  mode?: ZhihuSyncMode;
+  collectionsDiscovered?: number;
+  collectionsSynced?: number;
+  byCollection?: Array<{
+    id: string;
+    title: string;
+    scanned: number;
+    created: number;
+    updated: number;
+    remoteCount?: number;
+    localCount?: number;
+    approxNew?: number;
+    stoppedEarly?: boolean;
+  }>;
 }
+
+const ZHIHU_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+
+export type XhsSyncKind = "liked" | "collect";
+
+const XHS_KIND_CFG: Record<
+  XhsSyncKind,
+  {
+    tabQuery: string;
+    tabLabels: string[];
+    apiPattern: RegExp;
+    tag: string;
+    externalPrefix: string;
+    label: string;
+  }
+> = {
+  liked: {
+    tabQuery: "tab=liked&subTab=note",
+    tabLabels: ["点赞", "赞过"],
+    apiPattern: /note\/like|like\/page|liked/i,
+    tag: "like",
+    externalPrefix: "like:",
+    label: "点赞",
+  },
+  collect: {
+    tabQuery: "tab=fav&subTab=note",
+    tabLabels: ["收藏", "我的收藏"],
+    apiPattern: /note\/collect|collect\/page|collected/i,
+    tag: "favorite",
+    externalPrefix: "fav:",
+    label: "收藏",
+  },
+};
 
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".bmp"]);
 const MAX_CONTENT_CHARS = 80_000;
@@ -132,9 +198,277 @@ function inferSourceFromUrl(url: string): InboxSource {
   return "url";
 }
 
-function extractZhihuCollectionId(collectionUrl: string): string | null {
+export function extractZhihuCollectionId(collectionUrl: string): string | null {
   const m = collectionUrl.match(/\/collections?\/(\d+)/i);
   return m?.[1] ?? null;
+}
+
+/** 增量：本页有条目且零新增 → 提前停 */
+export function shouldStopZhihuIncrementalPage(pageSeen: number, pageCreated: number): boolean {
+  return pageSeen > 0 && pageCreated === 0;
+}
+
+/** 解析知乎 favlists / collections 列表 API */
+export function parseZhihuFavlistsJson(json: unknown): ZhihuCollectionMeta[] {
+  const root = json as {
+    data?: Array<{
+      id?: number | string;
+      title?: string;
+      url?: string;
+      answer_count?: number;
+      item_count?: number;
+      follower_count?: number;
+    }>;
+  };
+  const out: ZhihuCollectionMeta[] = [];
+  for (const row of root?.data ?? []) {
+    const id = String(row.id ?? "");
+    if (!/^\d+$/.test(id)) continue;
+    const title = String(row.title || `收藏夹 ${id}`).slice(0, 200);
+    const url =
+      row.url && String(row.url).startsWith("http")
+        ? String(row.url)
+        : `https://www.zhihu.com/collection/${id}`;
+    const itemCount =
+      typeof row.answer_count === "number"
+        ? row.answer_count
+        : typeof row.item_count === "number"
+          ? row.item_count
+          : undefined;
+    out.push({ id, title, url, itemCount });
+  }
+  return out;
+}
+
+type ZhihuListItem = { title: string; url: string; excerpt?: string; author?: string };
+
+/** 解析知乎 collection items API */
+export function parseZhihuCollectionItemsJson(json: unknown): {
+  items: ZhihuListItem[];
+  isEnd: boolean;
+} {
+  const data = json as {
+    data?: Array<{
+      content?: {
+        type?: string;
+        title?: string;
+        question?: { title?: string; id?: number };
+        id?: number | string;
+        url?: string;
+        excerpt?: string;
+        author?: { name?: string };
+      };
+    }>;
+    paging?: { is_end?: boolean };
+  };
+  const items: ZhihuListItem[] = [];
+  for (const row of data.data ?? []) {
+    const c = row.content;
+    if (!c) continue;
+    let title = c.title || c.question?.title || "知乎收藏";
+    let url = c.url || "";
+    if (!url && c.type === "answer" && c.question?.id && c.id) {
+      url = `https://www.zhihu.com/question/${c.question.id}/answer/${c.id}`;
+    } else if (!url && c.type === "article" && c.id) {
+      url = `https://zhuanlan.zhihu.com/p/${c.id}`;
+    }
+    if (!url) continue;
+    if (!url.startsWith("http")) url = `https://www.zhihu.com${url}`;
+    items.push({
+      title: String(title).slice(0, 200),
+      url,
+      excerpt: c.excerpt ? String(c.excerpt).slice(0, 280) : undefined,
+      author: c.author?.name,
+    });
+  }
+  return { items, isEnd: Boolean(data.paging?.is_end) };
+}
+
+async function zhihuFetchJson(
+  apiUrl: string,
+  cookies: CookieJarEntry[],
+  referer: string,
+): Promise<{ ok: boolean; status: number; json: unknown; text: string }> {
+  const res = await fetch(apiUrl, {
+    headers: {
+      Cookie: cookiesToHeader(cookies),
+      "User-Agent": ZHIHU_UA,
+      Referer: referer,
+      Accept: "application/json",
+    },
+  });
+  const text = await res.text().catch(() => "");
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  return { ok: res.ok, status: res.status, json, text };
+}
+
+/**
+ * 发现当前登录用户的全部收藏夹。
+ * 优先 /api/v4/me → favlists；失败再 Playwright 打开个人页 collections Tab。
+ */
+export async function listZhihuMyCollections(opts?: {
+  maxCollections?: number;
+}): Promise<{ collections: ZhihuCollectionMeta[]; errors: string[]; urlToken?: string }> {
+  const maxCollections = opts?.maxCollections ?? 50;
+  const errors: string[] = [];
+  const cookies = loadCookies("zhihu");
+  const storageState = getPlatformStorageStatePath("zhihu");
+  if (!cookies.length && !storageState) {
+    return {
+      collections: [],
+      errors: ["知乎未登录。请先在 Chat 调用 platform_login(platform=zhihu) 扫码登录。"],
+    };
+  }
+
+  let urlToken: string | undefined;
+  const byId = new Map<string, ZhihuCollectionMeta>();
+
+  if (cookies.length) {
+    try {
+      const me = await zhihuFetchJson("https://www.zhihu.com/api/v4/me", cookies, "https://www.zhihu.com/");
+      if (me.ok && me.json && typeof me.json === "object") {
+        const token = (me.json as { url_token?: string }).url_token;
+        if (token) urlToken = String(token);
+      } else if (!me.ok) {
+        errors.push(`知乎 /me API ${me.status}`.slice(0, 200));
+      }
+    } catch (err) {
+      errors.push(`知乎 /me 失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    if (urlToken) {
+      let offset = 0;
+      const limit = 20;
+      for (let page = 0; page < 40 && byId.size < maxCollections; page++) {
+        const apiUrl =
+          `https://www.zhihu.com/api/v4/members/${encodeURIComponent(urlToken)}/favlists` +
+          `?offset=${offset}&limit=${limit}&include=data%5B*%5D.updated_time%2Canswer_count%2Cfollower_count%2Ccreator%2Cdescription%2Cis_following%2Cis_public%2Ccreated_time`;
+        try {
+          const res = await zhihuFetchJson(
+            apiUrl,
+            cookies,
+            `https://www.zhihu.com/people/${urlToken}/collections`,
+          );
+          if (!res.ok) {
+            errors.push(`知乎 favlists API ${res.status}`.slice(0, 200));
+            break;
+          }
+          const batch = parseZhihuFavlistsJson(res.json);
+          if (!batch.length) break;
+          for (const c of batch) {
+            if (byId.size >= maxCollections) break;
+            byId.set(c.id, c);
+          }
+          const paging = (res.json as { paging?: { is_end?: boolean } })?.paging;
+          if (paging?.is_end) break;
+          offset += limit;
+        } catch (err) {
+          errors.push(`favlists 失败: ${err instanceof Error ? err.message : String(err)}`);
+          break;
+        }
+      }
+    }
+  }
+
+  if (byId.size === 0) {
+    try {
+      const { chromium } = await import("playwright");
+      // headless:true 必须放在 isZhihu 旁：launch 里 ...rest 会覆盖 isZhihu 默认的可见窗
+      const browser = await launchPlaywrightBrowser(chromium, { isZhihu: true, headless: true });
+      try {
+        const context = await browser.newContext({
+          ...(storageState ? { storageState } : {}),
+          userAgent: ZHIHU_UA,
+          viewport: { width: 1280, height: 900 },
+        });
+        if (!storageState && cookies.length) {
+          await context.addCookies(
+            cookies.map((c) => ({
+              name: c.name,
+              value: c.value,
+              domain: c.domain.startsWith(".") ? c.domain : c.domain,
+              path: c.path || "/",
+            })),
+          );
+        }
+        const page = await context.newPage();
+        await page.goto("https://www.zhihu.com/", { waitUntil: "domcontentloaded", timeout: 60000 });
+        await new Promise((r) => setTimeout(r, 1500));
+
+        if (!urlToken) {
+          const href = await page.evaluate(() => {
+            const a =
+              document.querySelector<HTMLAnchorElement>('a[href*="/people/"]') ||
+              document.querySelector<HTMLAnchorElement>('a[href*="/org/"]');
+            return a?.href || null;
+          });
+          const m = href?.match(/\/(?:people|org)\/([^/?#]+)/);
+          if (m?.[1]) urlToken = decodeURIComponent(m[1]);
+        }
+
+        if (urlToken) {
+          for (let pageNum = 1; pageNum <= 20 && byId.size < maxCollections; pageNum++) {
+            const listUrl =
+              pageNum === 1
+                ? `https://www.zhihu.com/people/${urlToken}/collections`
+                : `https://www.zhihu.com/people/${urlToken}/collections?page=${pageNum}`;
+            await page.goto(listUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+            await new Promise((r) => setTimeout(r, 2000));
+            for (let i = 0; i < 2; i++) {
+              await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+              await new Promise((r) => setTimeout(r, 1200));
+            }
+            const found = await page.evaluate(() => {
+              const results: Array<{ id: string; title: string; href: string }> = [];
+              document.querySelectorAll<HTMLAnchorElement>('a[href*="/collection/"]').forEach((a) => {
+                const href = a.href;
+                if (href.includes("/collections")) return;
+                const id = href.match(/\/collection\/(\d+)/)?.[1];
+                if (!id) return;
+                const title = (a.textContent || "").trim();
+                if (!title || title.length < 1) return;
+                results.push({ id, title, href });
+              });
+              return results;
+            });
+            let newCount = 0;
+            for (const c of found) {
+              if (byId.has(c.id) || byId.size >= maxCollections) continue;
+              byId.set(c.id, {
+                id: c.id,
+                title: c.title.slice(0, 200),
+                url: c.href.split("?")[0]!,
+              });
+              newCount += 1;
+            }
+            if (newCount === 0 || found.length < 3) break;
+          }
+        } else {
+          errors.push("未能解析知乎 url_token，请确认登录态有效。");
+        }
+        await context.close();
+      } finally {
+        await browser.close().catch(() => {});
+      }
+    } catch (err) {
+      errors.push(`Playwright 发现收藏夹失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (byId.size === 0 && !errors.length) {
+    errors.push("未发现任何收藏夹。请确认账号下已有收藏夹。");
+  }
+
+  return {
+    collections: Array.from(byId.values()).slice(0, maxCollections),
+    errors,
+    urlToken,
+  };
 }
 
 export async function upsertInboxItem(
@@ -288,30 +622,302 @@ export async function captureInboxUrls(
   return result;
 }
 
-/** 知乎收藏夹：优先官方 Web API + cookie；失败再 Playwright 列表页 */
+async function countLocalZhihuCollectionItems(
+  prisma: PrismaClient,
+  collectionId: string,
+): Promise<number> {
+  return prisma.inboxItem.count({
+    where: {
+      source: "zhihu",
+      OR: [
+        { metadata: { contains: `"collectionId":"${collectionId}"` } },
+        { metadata: { contains: `"collectionId": ${collectionId}` } },
+        { externalId: { startsWith: `zhcol:${collectionId}:` } },
+      ],
+    },
+  });
+}
+
+async function fetchZhihuCollectionItemsList(
+  collection: ZhihuCollectionMeta,
+  cookies: CookieJarEntry[],
+  maxItems: number,
+): Promise<{ items: ZhihuListItem[]; errors: string[] }> {
+  const list: ZhihuListItem[] = [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+
+  if (cookies.length) {
+    try {
+      let offset = 0;
+      const limit = 20;
+      while (list.length < maxItems) {
+        const apiUrl = `https://www.zhihu.com/api/v4/collections/${collection.id}/items?offset=${offset}&limit=${limit}`;
+        const res = await zhihuFetchJson(apiUrl, cookies, collection.url);
+        if (!res.ok) {
+          errors.push(
+            `收藏夹「${collection.title}」API ${res.status}: ${res.text}`.slice(0, 300),
+          );
+          break;
+        }
+        const parsed = parseZhihuCollectionItemsJson(res.json);
+        if (!parsed.items.length) break;
+        for (const item of parsed.items) {
+          if (seen.has(item.url)) continue;
+          seen.add(item.url);
+          list.push(item);
+          if (list.length >= maxItems) break;
+        }
+        if (parsed.isEnd) break;
+        offset += limit;
+      }
+    } catch (err) {
+      errors.push(
+        `收藏夹「${collection.title}」API 失败: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  if (list.length === 0) {
+    try {
+      const parsed = await parsePlatformUrl({
+        url: collection.url,
+        timeout: 60000,
+        method: "playwright",
+        platform: "ZhihuCollection",
+        embedOcr: false,
+      });
+      const md = String(parsed.content ?? "");
+      const blockRe = /## (.+)\n(?:- 作者: (.+)\n)?- 链接: (.+)\n(?:- 摘要: (.+)\n)?/g;
+      let m: RegExpExecArray | null;
+      while ((m = blockRe.exec(md)) !== null && list.length < maxItems) {
+        const url = m[3].trim();
+        if (seen.has(url)) continue;
+        seen.add(url);
+        list.push({
+          title: m[1].trim(),
+          author: m[2]?.trim(),
+          url,
+          excerpt: m[4]?.trim(),
+        });
+      }
+      if (list.length === 0) {
+        errors.push(`收藏夹「${collection.title}」解析为空：请确认已登录且可访问。`);
+      }
+    } catch (err) {
+      errors.push(
+        `收藏夹「${collection.title}」Playwright 降级失败: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  return { items: list, errors };
+}
+
+/**
+ * 同步单个收藏夹：分页拉取 + upsert；incremental 时整页无新增则提前停。
+ * externalId 仍用文章 URL（与历史一致），metadata 带 collectionId 便于计数。
+ */
+export async function syncOneZhihuCollection(
+  prisma: PrismaClient,
+  config: AppConfig,
+  opts: {
+    collection: ZhihuCollectionMeta;
+    mode?: ZhihuSyncMode;
+    maxItems?: number;
+    fetchContent?: boolean;
+    maxChars?: number;
+  },
+): Promise<{
+  scanned: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+  items: Array<{ id: string; title: string; url?: string | null; created: boolean }>;
+  stoppedEarly: boolean;
+  remoteCount?: number;
+  localCount: number;
+  approxNew?: number;
+}> {
+  const mode: ZhihuSyncMode = opts.mode ?? "incremental";
+  const maxItems = opts.maxItems ?? 5000;
+  const cookies = loadCookies("zhihu");
+  const pageSize = 20;
+
+  const localCountBefore = await countLocalZhihuCollectionItems(prisma, opts.collection.id);
+  const remoteCount = opts.collection.itemCount;
+  const approxNew =
+    typeof remoteCount === "number" ? Math.max(0, remoteCount - localCountBefore) : undefined;
+
+  const resultItems: Array<{ id: string; title: string; url?: string | null; created: boolean }> =
+    [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  let scanned = 0;
+  let stoppedEarly = false;
+
+  const upsertItem = async (item: ZhihuListItem): Promise<boolean> => {
+    scanned += 1;
+    try {
+      if (opts.fetchContent) {
+        const captured = await captureInboxUrl(prisma, config, {
+          url: item.url,
+          source: "zhihu",
+          fetchContent: true,
+          maxChars: opts.maxChars,
+        });
+        await prisma.inboxItem.update({
+          where: { id: captured.id },
+          data: {
+            tags: "zhihu,collection",
+            metadata: JSON.stringify({
+              collectionUrl: opts.collection.url,
+              collectionId: opts.collection.id,
+              collectionTitle: opts.collection.title,
+              author: item.author,
+            }),
+          },
+        });
+        if (captured.created) created += 1;
+        else updated += 1;
+        resultItems.push(captured);
+        return captured.created;
+      }
+      const upserted = await upsertInboxItem(prisma, {
+        source: "zhihu",
+        externalId: item.url,
+        title: item.title,
+        url: item.url,
+        excerpt: item.excerpt ?? null,
+        tags: ["zhihu", "collection"],
+        metadata: {
+          collectionUrl: opts.collection.url,
+          collectionId: opts.collection.id,
+          collectionTitle: opts.collection.title,
+          author: item.author,
+        },
+      });
+      if (upserted.created) created += 1;
+      else updated += 1;
+      resultItems.push(upserted);
+      return upserted.created;
+    } catch (err) {
+      skipped += 1;
+      errors.push(`${item.url}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  };
+
+  let apiOk = false;
+  if (cookies.length) {
+    try {
+      let offset = 0;
+      while (scanned < maxItems) {
+        const apiUrl = `https://www.zhihu.com/api/v4/collections/${opts.collection.id}/items?offset=${offset}&limit=${pageSize}`;
+        const res = await zhihuFetchJson(apiUrl, cookies, opts.collection.url);
+        if (!res.ok) {
+          errors.push(
+            `收藏夹「${opts.collection.title}」API ${res.status}: ${res.text}`.slice(0, 300),
+          );
+          break;
+        }
+        apiOk = true;
+        const parsed = parseZhihuCollectionItemsJson(res.json);
+        if (!parsed.items.length) break;
+
+        let pageCreated = 0;
+        let pageSeen = 0;
+        for (const item of parsed.items) {
+          if (seen.has(item.url) || scanned >= maxItems) continue;
+          seen.add(item.url);
+          pageSeen += 1;
+          const isNew = await upsertItem(item);
+          if (isNew) pageCreated += 1;
+        }
+
+        if (mode === "incremental" && shouldStopZhihuIncrementalPage(pageSeen, pageCreated)) {
+          stoppedEarly = true;
+          break;
+        }
+        if (parsed.isEnd) break;
+        offset += pageSize;
+      }
+    } catch (err) {
+      errors.push(
+        `收藏夹「${opts.collection.title}」API 失败: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  if (!apiOk && resultItems.length === 0) {
+    const fetched = await fetchZhihuCollectionItemsList(opts.collection, cookies, maxItems);
+    errors.push(...fetched.errors);
+    let streakKnown = 0;
+    let pageCreated = 0;
+    for (const item of fetched.items) {
+      if (seen.has(item.url) || scanned >= maxItems) continue;
+      seen.add(item.url);
+      const isNew = await upsertItem(item);
+      if (isNew) {
+        pageCreated += 1;
+        streakKnown = 0;
+      } else {
+        streakKnown += 1;
+      }
+      if (mode === "incremental" && localCountBefore > 0 && streakKnown >= pageSize) {
+        stoppedEarly = true;
+        break;
+      }
+    }
+    if (mode === "incremental" && pageCreated === 0 && localCountBefore > 0 && scanned > 0) {
+      stoppedEarly = true;
+    }
+  }
+
+  return {
+    scanned,
+    created,
+    updated,
+    skipped,
+    errors,
+    items: resultItems,
+    stoppedEarly,
+    remoteCount,
+    localCount: localCountBefore,
+    approxNew,
+  };
+}
+
+/**
+ * 知乎收藏同步：
+ * - 提供 collectionUrl → 只同步该夹
+ * - 不提供 → 自动发现「我的全部收藏夹」后逐夹同步
+ * - mode=full 拉到护栏/末尾；mode=incremental（默认）整页无新增即停
+ */
 export async function syncZhihuCollection(
   prisma: PrismaClient,
   config: AppConfig,
   opts: {
-    collectionUrl: string;
+    collectionUrl?: string;
+    mode?: ZhihuSyncMode;
+    maxCollections?: number;
+    maxItemsPerCollection?: number;
     maxItems?: number;
     fetchContent?: boolean;
     maxChars?: number;
   },
 ): Promise<InboxSyncResult> {
   ensureInboxDirs(config);
-  const maxItems = opts.maxItems ?? 50;
-  const collectionId = extractZhihuCollectionId(opts.collectionUrl);
-  if (!collectionId) {
-    return {
-      scanned: 0,
-      created: 0,
-      updated: 0,
-      skipped: 0,
-      errors: [`无法从 URL 解析收藏夹 id: ${opts.collectionUrl}`],
-      items: [],
-    };
-  }
+  const mode: ZhihuSyncMode = opts.mode ?? "incremental";
+  const perCollection =
+    opts.maxItems ?? opts.maxItemsPerCollection ?? (opts.collectionUrl ? 50 : 5000);
+  const maxCollections = opts.maxCollections ?? 50;
 
   const cookies = loadCookies("zhihu");
   if (!cookies.length && !getPlatformStorageStatePath("zhihu")) {
@@ -322,157 +928,193 @@ export async function syncZhihuCollection(
       skipped: 0,
       errors: ["知乎未登录。请先在 Chat 调用 platform_login(platform=zhihu) 扫码登录。"],
       items: [],
+      mode,
+      collectionsDiscovered: 0,
+      collectionsSynced: 0,
+      byCollection: [],
     };
   }
 
-  type ListItem = { title: string; url: string; excerpt?: string; author?: string };
-  const list: ListItem[] = [];
+  const collections: ZhihuCollectionMeta[] = [];
   const errors: string[] = [];
 
-  try {
-    let offset = 0;
-    const limit = 20;
-    while (list.length < maxItems) {
-      const apiUrl = `https://www.zhihu.com/api/v4/collections/${collectionId}/items?offset=${offset}&limit=${limit}`;
-      const res = await fetch(apiUrl, {
-        headers: {
-          Cookie: cookiesToHeader(cookies),
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          Referer: opts.collectionUrl,
-        },
-      });
-      if (!res.ok) {
-        errors.push(`知乎 API ${res.status}: ${await res.text().catch(() => "")}`.slice(0, 300));
-        break;
-      }
-      const data = (await res.json()) as {
-        data?: Array<{
-          content?: {
-            type?: string;
-            title?: string;
-            question?: { title?: string; id?: number };
-            id?: number | string;
-            url?: string;
-            excerpt?: string;
-            author?: { name?: string };
-          };
-        }>;
-        paging?: { is_end?: boolean };
+  if (opts.collectionUrl?.trim()) {
+    const id = extractZhihuCollectionId(opts.collectionUrl);
+    if (!id) {
+      return {
+        scanned: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [`无法从 URL 解析收藏夹 id: ${opts.collectionUrl}`],
+        items: [],
+        mode,
       };
-      const batch = data.data ?? [];
-      if (!batch.length) break;
-      for (const row of batch) {
-        const c = row.content;
-        if (!c) continue;
-        let title = c.title || c.question?.title || "知乎收藏";
-        let url = c.url || "";
-        if (!url && c.type === "answer" && c.question?.id && c.id) {
-          url = `https://www.zhihu.com/question/${c.question.id}/answer/${c.id}`;
-        } else if (!url && c.type === "article" && c.id) {
-          url = `https://zhuanlan.zhihu.com/p/${c.id}`;
-        }
-        if (!url) continue;
-        if (!url.startsWith("http")) url = `https://www.zhihu.com${url}`;
-        list.push({
-          title: String(title).slice(0, 200),
-          url,
-          excerpt: c.excerpt ? String(c.excerpt).slice(0, 280) : undefined,
-          author: c.author?.name,
-        });
-        if (list.length >= maxItems) break;
-      }
-      if (data.paging?.is_end) break;
-      offset += limit;
     }
-  } catch (err) {
-    errors.push(`知乎 API 失败: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
-  // API 空结果时降级 Playwright + 现有收藏夹解析
-  if (list.length === 0) {
-    try {
-      const parsed = await parsePlatformUrl({
-        url: opts.collectionUrl,
-        timeout: 60000,
-        method: "playwright",
-        platform: "ZhihuCollection",
-        embedOcr: false,
-      });
-      const md = String(parsed.content ?? "");
-      const blockRe = /## (.+)\n(?:- 作者: (.+)\n)?- 链接: (.+)\n(?:- 摘要: (.+)\n)?/g;
-      let m: RegExpExecArray | null;
-      while ((m = blockRe.exec(md)) !== null && list.length < maxItems) {
-        list.push({
-          title: m[1].trim(),
-          author: m[2]?.trim(),
-          url: m[3].trim(),
-          excerpt: m[4]?.trim(),
-        });
-      }
-      if (list.length === 0) {
-        errors.push("收藏夹解析为空：请确认已登录且收藏夹可访问。");
-      }
-    } catch (err) {
-      errors.push(`Playwright 降级失败: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    collections.push({
+      id,
+      title: `收藏夹 ${id}`,
+      url: opts.collectionUrl.trim(),
+    });
+  } else {
+    const discovered = await listZhihuMyCollections({ maxCollections });
+    errors.push(...discovered.errors);
+    collections.push(...discovered.collections);
   }
 
   const result: InboxSyncResult = {
-    scanned: list.length,
+    scanned: 0,
     created: 0,
     updated: 0,
     skipped: 0,
     errors,
     items: [],
+    mode,
+    collectionsDiscovered: collections.length,
+    collectionsSynced: 0,
+    byCollection: [],
   };
 
-  for (const item of list.slice(0, maxItems)) {
-    try {
-      if (opts.fetchContent) {
-        const captured = await captureInboxUrl(prisma, config, {
-          url: item.url,
-          source: "zhihu",
-          fetchContent: true,
-          maxChars: opts.maxChars,
-        });
-        if (captured.created) result.created += 1;
-        else result.updated += 1;
-        result.items.push(captured);
-      } else {
-        const upserted = await upsertInboxItem(prisma, {
-          source: "zhihu",
-          externalId: item.url,
-          title: item.title,
-          url: item.url,
-          excerpt: item.excerpt ?? null,
-          tags: ["zhihu", "collection"],
-          metadata: { collectionUrl: opts.collectionUrl, author: item.author },
-        });
-        if (upserted.created) result.created += 1;
-        else result.updated += 1;
-        result.items.push(upserted);
-      }
-    } catch (err) {
-      result.skipped += 1;
-      result.errors.push(`${item.url}: ${err instanceof Error ? err.message : String(err)}`);
-    }
+  if (!collections.length) {
+    if (!result.errors.length) result.errors.push("没有可同步的收藏夹。");
+    return result;
   }
+
+  for (const collection of collections) {
+    const one = await syncOneZhihuCollection(prisma, config, {
+      collection,
+      mode,
+      maxItems: perCollection,
+      fetchContent: opts.fetchContent,
+      maxChars: opts.maxChars,
+    });
+    result.scanned += one.scanned;
+    result.created += one.created;
+    result.updated += one.updated;
+    result.skipped += one.skipped;
+    result.errors.push(...one.errors);
+    result.items.push(...one.items);
+    result.collectionsSynced = (result.collectionsSynced ?? 0) + 1;
+    result.byCollection!.push({
+      id: collection.id,
+      title: collection.title,
+      scanned: one.scanned,
+      created: one.created,
+      updated: one.updated,
+      remoteCount: one.remoteCount,
+      localCount: one.localCount,
+      approxNew: one.approxNew,
+      stoppedEarly: one.stoppedEarly,
+    });
+  }
+
   return result;
 }
 
-/** 小红书「我的收藏」：Playwright + storageState，拦截收藏分页 API */
-export async function syncXhsFavorites(
+type XhsNoteItem = {
+  kind: XhsSyncKind;
+  noteId: string;
+  title: string;
+  url: string;
+  author?: string;
+};
+
+/** 解析小红书列表 API JSON（供单测与 syncXhsLibrary 共用） */
+export function parseXhsNotesFromApiJson(
+  json: unknown,
+  kind: XhsSyncKind,
+): Array<Omit<XhsNoteItem, "kind">> {
+  const out: Array<Omit<XhsNoteItem, "kind">> = [];
+  const root = json as {
+    data?: {
+      notes?: Array<{
+        note_id?: string;
+        id?: string;
+        display_title?: string;
+        title?: string;
+        xsec_token?: string;
+        user?: { nickname?: string };
+        note_card?: {
+          note_id?: string;
+          display_title?: string;
+          user?: { nickname?: string };
+          xsec_token?: string;
+        };
+      }>;
+    };
+  };
+  const rows = root?.data?.notes ?? [];
+  for (const row of rows) {
+    const card = row.note_card ?? row;
+    const noteId = String(card.note_id || row.note_id || row.id || "");
+    if (!noteId) continue;
+    const title = String(
+      card.display_title || row.display_title || row.title || `小红书笔记 ${noteId}`,
+    ).slice(0, 200);
+    const token = card.xsec_token || row.xsec_token;
+    const url = token
+      ? `https://www.xiaohongshu.com/explore/${noteId}?xsec_token=${encodeURIComponent(token)}`
+      : `https://www.xiaohongshu.com/explore/${noteId}`;
+    out.push({
+      noteId,
+      title,
+      url,
+      author: card.user?.nickname || row.user?.nickname,
+    });
+  }
+  void kind;
+  return out;
+}
+
+export function xhsInboxExternalId(kind: XhsSyncKind, noteId: string): string {
+  return `${XHS_KIND_CFG[kind].externalPrefix}${noteId}`;
+}
+
+export type XhsSyncMode = ZhihuSyncMode;
+
+/** 增量：本批有条目且全是已入库 noteId → 提前停（对齐 MetaBlog pageNewCount===0） */
+export function shouldStopXhsIncrementalBatch(
+  batchSize: number,
+  batchNewCount: number,
+  hasLocalBaseline: boolean,
+): boolean {
+  return hasLocalBaseline && batchSize > 0 && batchNewCount === 0;
+}
+
+async function loadExistingXhsNoteIds(
+  prisma: PrismaClient,
+  kind: XhsSyncKind,
+): Promise<Set<string>> {
+  const prefix = XHS_KIND_CFG[kind].externalPrefix;
+  const rows = await prisma.inboxItem.findMany({
+    where: { source: "xhs", externalId: { startsWith: prefix } },
+    select: { externalId: true },
+  });
+  return new Set(rows.map((r) => r.externalId.slice(prefix.length)));
+}
+
+/**
+ * 小红书「点赞 + 收藏」：Playwright + storageState，拦截列表 API / DOM 兜底。
+ * kinds 默认两者；mode=incremental（默认）遇已知 noteId 批次早停；full 滚到 maxItems。
+ */
+export async function syncXhsLibrary(
   prisma: PrismaClient,
   config: AppConfig,
   opts: {
+    kinds?: XhsSyncKind[];
+    mode?: XhsSyncMode;
     maxItems?: number;
     fetchContent?: boolean;
     maxChars?: number;
   },
 ): Promise<InboxSyncResult> {
   ensureInboxDirs(config);
-  const maxItems = opts.maxItems ?? 50;
+  const mode: XhsSyncMode = opts.mode ?? "incremental";
+  const maxItems = opts.maxItems ?? (mode === "full" ? 2000 : 200);
+  const kinds = (opts.kinds?.length ? opts.kinds : (["liked", "collect"] as XhsSyncKind[])).filter(
+    (k): k is XhsSyncKind => k === "liked" || k === "collect",
+  );
+  const uniqueKinds = [...new Set(kinds)];
   const storageState = getPlatformStorageStatePath("xhs");
   const cookies = loadCookies("xhs");
   if (!storageState && !cookies.length) {
@@ -483,12 +1125,20 @@ export async function syncXhsFavorites(
       skipped: 0,
       errors: ["小红书未登录。请先在 Chat 调用 platform_login(platform=xhs) 扫码登录。"],
       items: [],
+      mode,
+      byKind: {},
     };
   }
 
-  type NoteItem = { noteId: string; title: string; url: string; author?: string };
-  const notes: NoteItem[] = [];
+  const notes: XhsNoteItem[] = [];
   const errors: string[] = [];
+  const stoppedEarlyByKind: Partial<Record<XhsSyncKind, boolean>> = {};
+  /** 当前正在采集的 kind（response 监听用） */
+  let activeKind: XhsSyncKind | null = null;
+  const existingByKind = new Map<XhsSyncKind, Set<string>>();
+  for (const kind of uniqueKinds) {
+    existingByKind.set(kind, await loadExistingXhsNoteIds(prisma, kind));
+  }
 
   const { chromium } = await import("playwright");
   const browser = await launchPlaywrightBrowser(chromium, { headless: true });
@@ -512,50 +1162,32 @@ export async function syncXhsFavorites(
 
     context.on("response", async (response) => {
       try {
+        if (!activeKind) return;
+        if (stoppedEarlyByKind[activeKind]) return;
+        const cfg = XHS_KIND_CFG[activeKind];
         const u = response.url();
-        if (!/note\/collect|collect\/page|collected/i.test(u)) return;
+        if (!cfg.apiPattern.test(u)) return;
         if (!response.ok()) return;
-        const json = (await response.json().catch(() => null)) as {
-          data?: {
-            notes?: Array<{
-              note_id?: string;
-              id?: string;
-              display_title?: string;
-              title?: string;
-              xsec_token?: string;
-              user?: { nickname?: string };
-              note_card?: {
-                note_id?: string;
-                display_title?: string;
-                user?: { nickname?: string };
-                xsec_token?: string;
-              };
-            }>;
-            cursor?: string;
-          };
-        } | null;
-        const rows = json?.data?.notes ?? [];
-        for (const row of rows) {
-          const card = row.note_card ?? row;
-          const noteId = String(card.note_id || row.note_id || row.id || "");
-          if (!noteId || notes.some((n) => n.noteId === noteId)) continue;
-          const title = String(card.display_title || row.display_title || row.title || `小红书笔记 ${noteId}`).slice(
-            0,
-            200,
-          );
-          const token = card.xsec_token || row.xsec_token;
-          const url = token
-            ? `https://www.xiaohongshu.com/explore/${noteId}?xsec_token=${encodeURIComponent(token)}`
-            : `https://www.xiaohongshu.com/explore/${noteId}`;
-          notes.push({
-            noteId,
-            title,
-            url,
-            author: card.user?.nickname || row.user?.nickname,
-          });
+        const json = await response.json().catch(() => null);
+        if (!json) return;
+        const parsed = parseXhsNotesFromApiJson(json, activeKind);
+        if (!parsed.length) return;
+        const existing = existingByKind.get(activeKind) ?? new Set();
+        let batchNew = 0;
+        for (const n of parsed) {
+          if (notes.filter((x) => x.kind === activeKind).length >= maxItems) break;
+          if (notes.some((x) => x.kind === activeKind && x.noteId === n.noteId)) continue;
+          if (!existing.has(n.noteId)) batchNew += 1;
+          notes.push({ kind: activeKind, ...n });
+        }
+        if (
+          mode === "incremental" &&
+          shouldStopXhsIncrementalBatch(parsed.length, batchNew, existing.size > 0)
+        ) {
+          stoppedEarlyByKind[activeKind] = true;
         }
       } catch {
-        /* ignore parse errors */
+        /* ignore */
       }
     });
 
@@ -563,66 +1195,120 @@ export async function syncXhsFavorites(
     await page.goto("https://www.xiaohongshu.com", { waitUntil: "domcontentloaded", timeout: 60000 });
     await new Promise((r) => setTimeout(r, 2000));
 
-    // 尝试进入个人页 → 收藏 Tab
     const profileHref = await page.evaluate(() => {
       const a =
         document.querySelector<HTMLAnchorElement>('a[href*="/user/profile/"]') ||
         document.querySelector<HTMLAnchorElement>('a[href*="user/profile"]');
       return a?.href || null;
     });
-    if (profileHref) {
-      await page.goto(profileHref, { waitUntil: "domcontentloaded", timeout: 60000 });
-      await new Promise((r) => setTimeout(r, 1500));
-      // 点击「收藏」
-      const collectClicked = await page.evaluate(() => {
-        const nodes = Array.from(document.querySelectorAll("a, span, div, button"));
-        const target = nodes.find((el) => /^(收藏|我的收藏)$/.test((el.textContent || "").trim()));
-        if (target instanceof HTMLElement) {
-          target.click();
-          return true;
-        }
-        return false;
-      });
-      if (!collectClicked) {
-        // URL 猜：部分版本用 channel_type / tab
-        const uid = profileHref.match(/\/user\/profile\/([^/?#]+)/)?.[1];
-        if (uid) {
-          await page.goto(`https://www.xiaohongshu.com/user/profile/${uid}?channel_type=collect`, {
-            waitUntil: "domcontentloaded",
-            timeout: 60000,
-          });
-        }
-      }
-    } else {
+    if (!profileHref) {
       errors.push("未能定位小红书个人主页链接，请确认登录态有效后重试。");
     }
+    const uid = profileHref?.match(/\/user\/profile\/([^/?#]+)/)?.[1] ?? null;
 
-    // 滚动加载
-    for (let i = 0; i < 12 && notes.length < maxItems; i++) {
-      await page.mouse.wheel(0, 1800);
-      await new Promise((r) => setTimeout(r, 1200));
-    }
+    const scrollRounds = mode === "full" ? 40 : 16;
 
-    // DOM 兜底扫卡片
-    if (notes.length === 0) {
-      const fromDom = await page.evaluate(() => {
-        const out: Array<{ noteId: string; title: string; url: string }> = [];
-        for (const a of Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/explore/"]'))) {
-          const m = a.href.match(/\/explore\/([a-zA-Z0-9]+)/);
-          if (!m) continue;
-          const noteId = m[1];
-          if (out.some((x) => x.noteId === noteId)) continue;
-          const title = (a.getAttribute("title") || a.textContent || `笔记 ${noteId}`).trim().slice(0, 200);
-          out.push({ noteId, title: title || `笔记 ${noteId}`, url: a.href.split("&")[0] });
+    for (const kind of uniqueKinds) {
+      activeKind = kind;
+      const cfg = XHS_KIND_CFG[kind];
+      const beforeCount = notes.filter((n) => n.kind === kind).length;
+      const existing = existingByKind.get(kind) ?? new Set();
+
+      if (uid) {
+        await page.goto(`https://www.xiaohongshu.com/user/profile/${uid}?${cfg.tabQuery}`, {
+          waitUntil: "domcontentloaded",
+          timeout: 60000,
+        });
+        await new Promise((r) => setTimeout(r, 2000));
+      } else if (profileHref) {
+        await page.goto(profileHref, { waitUntil: "domcontentloaded", timeout: 60000 });
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+
+      const labels = cfg.tabLabels;
+      await page.evaluate((tabLabels: string[]) => {
+        const nodes = Array.from(document.querySelectorAll("a, span, div, button"));
+        const target = nodes.find((el) => {
+          const t = (el.textContent || "").trim();
+          return tabLabels.some((l) => t === l || t.startsWith(l));
+        });
+        if (target instanceof HTMLElement) target.click();
+      }, labels);
+      await new Promise((r) => setTimeout(r, 1500));
+
+      let stagnant = 0;
+      for (
+        let i = 0;
+        i < scrollRounds &&
+        notes.filter((n) => n.kind === kind).length < maxItems &&
+        !stoppedEarlyByKind[kind];
+        i++
+      ) {
+        const before = notes.filter((n) => n.kind === kind).length;
+        await page.mouse.wheel(0, 1800);
+        await new Promise((r) => setTimeout(r, 1100));
+        const after = notes.filter((n) => n.kind === kind).length;
+        if (after === before) stagnant += 1;
+        else stagnant = 0;
+        if (stagnant >= 3) break;
+      }
+
+      // DOM 兜底（API 未命中时）
+      if (notes.filter((n) => n.kind === kind).length === beforeCount) {
+        const fromDom = await page.evaluate(() => {
+          const out: Array<{ noteId: string; title: string; url: string }> = [];
+          for (const a of Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/explore/"]'))) {
+            const m = a.href.match(/\/explore\/([a-zA-Z0-9]+)/);
+            if (!m) continue;
+            const noteId = m[1]!;
+            if (out.some((x) => x.noteId === noteId)) continue;
+            const title = (a.getAttribute("title") || a.textContent || `笔记 ${noteId}`).trim().slice(0, 200);
+            out.push({ noteId, title: title || `笔记 ${noteId}`, url: a.href.split("&")[0]! });
+          }
+          return out;
+        });
+        let batchNew = 0;
+        for (const n of fromDom) {
+          if (notes.filter((x) => x.kind === kind).length >= maxItems) break;
+          if (notes.some((x) => x.kind === kind && x.noteId === n.noteId)) continue;
+          if (!existing.has(n.noteId)) batchNew += 1;
+          notes.push({ kind, ...n });
+          // 列表按时间序：incremental 连续命中已知则截断后续
+          if (
+            mode === "incremental" &&
+            existing.size > 0 &&
+            existing.has(n.noteId) &&
+            batchNew === 0 &&
+            notes.filter((x) => x.kind === kind).length - beforeCount >= 8
+          ) {
+            // 前若干条全旧 → MetaBlog 同构早停
+            const collected = notes.filter((x) => x.kind === kind).slice(beforeCount);
+            const allOld = collected.every((x) => existing.has(x.noteId));
+            if (allOld) {
+              stoppedEarlyByKind[kind] = true;
+              break;
+            }
+          }
         }
-        return out;
-      });
-      for (const n of fromDom) {
-        if (notes.length >= maxItems) break;
-        if (!notes.some((x) => x.noteId === n.noteId)) notes.push(n);
+        if (
+          mode === "incremental" &&
+          fromDom.length > 5 &&
+          shouldStopXhsIncrementalBatch(
+            fromDom.length,
+            fromDom.filter((n) => !existing.has(n.noteId)).length,
+            existing.size > 0,
+          )
+        ) {
+          stoppedEarlyByKind[kind] = true;
+        }
+      }
+
+      if (notes.filter((n) => n.kind === kind).length === beforeCount) {
+        errors.push(`未采集到「${cfg.label}」笔记。请确认登录后个人页该 Tab 有内容。`);
       }
     }
 
+    activeKind = null;
     await context.close();
   } catch (err) {
     errors.push(`小红书同步失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -630,51 +1316,103 @@ export async function syncXhsFavorites(
     await browser.close().catch(() => {});
   }
 
+  // incremental：入库时再按序早停——只保留「碰到已知基线之前」的新条目 + 碰到的那一页已知（用于 update）
+  const notesToUpsert: XhsNoteItem[] = [];
+  for (const kind of uniqueKinds) {
+    const existing = existingByKind.get(kind) ?? new Set();
+    const kindNotes = notes.filter((n) => n.kind === kind);
+    if (mode !== "incremental" || existing.size === 0) {
+      notesToUpsert.push(...kindNotes);
+      continue;
+    }
+    let hitKnownStreak = 0;
+    for (const note of kindNotes) {
+      notesToUpsert.push(note);
+      if (existing.has(note.noteId)) {
+        hitKnownStreak += 1;
+        if (hitKnownStreak >= 5) {
+          stoppedEarlyByKind[kind] = true;
+          break;
+        }
+      } else {
+        hitKnownStreak = 0;
+      }
+    }
+  }
+
   const result: InboxSyncResult = {
-    scanned: Math.min(notes.length, maxItems),
+    scanned: notesToUpsert.length,
     created: 0,
     updated: 0,
     skipped: 0,
     errors,
     items: [],
+    mode,
+    byKind: {},
   };
 
-  for (const note of notes.slice(0, maxItems)) {
+  for (const kind of uniqueKinds) {
+    result.byKind![kind] = {
+      scanned: 0,
+      created: 0,
+      updated: 0,
+      stoppedEarly: Boolean(stoppedEarlyByKind[kind]),
+    };
+  }
+
+  for (const note of notesToUpsert) {
+    const cfg = XHS_KIND_CFG[note.kind];
+    const bucket = result.byKind![note.kind]!;
+    bucket.scanned += 1;
     try {
+      const externalId = xhsInboxExternalId(note.kind, note.noteId);
+      let title = note.title;
+      let content: string | null = null;
+      let excerpt: string | null = null;
+      const metadata: Record<string, unknown> = {
+        author: note.author,
+        kind: note.kind,
+        noteId: note.noteId,
+      };
       if (opts.fetchContent) {
-        const captured = await captureInboxUrl(prisma, config, {
-          url: note.url,
-          source: "xhs",
-          fetchContent: true,
-          maxChars: opts.maxChars,
-        });
-        if (captured.created) result.created += 1;
-        else result.updated += 1;
-        result.items.push(captured);
-      } else {
-        const upserted = await upsertInboxItem(prisma, {
-          source: "xhs",
-          externalId: note.noteId,
-          title: note.title,
-          url: note.url,
-          tags: ["xhs", "favorite"],
-          metadata: { author: note.author },
-        });
-        if (upserted.created) result.created += 1;
-        else result.updated += 1;
-        result.items.push(upserted);
+        try {
+          const body = await fetchArticleBody(note.url, opts.maxChars ?? 12000);
+          title = body.title || note.title;
+          content = body.content;
+          excerpt = body.content.slice(0, 280);
+          metadata.platform = body.platform;
+          if (body.author) metadata.author = body.author;
+        } catch (err) {
+          metadata.fetchError = err instanceof Error ? err.message : String(err);
+        }
       }
+      const upserted = await upsertInboxItem(prisma, {
+        source: "xhs",
+        externalId,
+        title,
+        url: note.url,
+        excerpt,
+        content,
+        tags: ["xhs", cfg.tag],
+        metadata,
+      });
+      if (upserted.created) {
+        result.created += 1;
+        bucket.created += 1;
+      } else {
+        result.updated += 1;
+        bucket.updated += 1;
+      }
+      result.items.push(upserted);
     } catch (err) {
       result.skipped += 1;
       result.errors.push(`${note.url}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  if (result.scanned === 0 && result.errors.length === 0) {
-    result.errors.push("未采集到收藏笔记。请确认登录后个人页「收藏」Tab 有内容。");
-  }
   return result;
 }
+
 
 export async function ingestWechatDropFile(
   prisma: PrismaClient,

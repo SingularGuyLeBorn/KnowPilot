@@ -88,6 +88,8 @@ import {
   type InboxCaptureUrlInput,
   type InboxCaptureUrlsInput,
   type InboxSyncZhihuInput,
+  inboxSyncZhihuSchema,
+  inboxSyncXhsSchema,
   type InboxSyncXhsInput,
   type InboxScanScreenshotsInput,
   type InboxIngestWechatDropInput,
@@ -3315,6 +3317,32 @@ export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, L
   protected buildCreateData(input: CreateTaskInput) { return input; }
   protected buildUpdateData(input: UpdateTaskInput) { const { id: _id, ...data } = input; return data; }
 
+  protected override async afterCreate(entity: any, input: CreateTaskInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    if (entity?.type === "cron" && entity.cronExpression) {
+      const { tryGetTaskScheduler } = await import("./infra/taskScheduler.js");
+      await tryGetTaskScheduler()?.upsertCronJob(entity.id);
+    }
+  }
+
+  protected override async afterUpdate(entity: any, existing: any, input: UpdateTaskInput): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    const { tryGetTaskScheduler } = await import("./infra/taskScheduler.js");
+    const scheduler = tryGetTaskScheduler();
+    if (!scheduler) return;
+    if (entity?.type === "cron" && entity.cronExpression) {
+      await scheduler.upsertCronJob(entity.id);
+    } else {
+      scheduler.removeCronJob(entity.id);
+    }
+  }
+
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    const { tryGetTaskScheduler } = await import("./infra/taskScheduler.js");
+    tryGetTaskScheduler()?.removeCronJob(existing.id);
+  }
+
   /** 立即执行任务（db:sync 等）；认领单点 = claimTaskRun，落选如实返回「正在运行」 */
   async run(id: string): Promise<OperationResult<any>> {
     let task: { id: string; name: string; type: string; input?: unknown };
@@ -3887,6 +3915,18 @@ export class InboxService extends BaseService<
     const where: any = {};
     if (input.source) where.source = input.source;
     if (input.status) where.status = input.status;
+    if (input.tag) where.tags = { contains: input.tag };
+    if (input.collectionId) {
+      if (input.collectionId === "unknown") {
+        where.AND = [
+          ...(where.AND ?? []),
+          { source: "zhihu" },
+          { NOT: { metadata: { contains: '"collectionId"' } } },
+        ];
+      } else {
+        where.metadata = { contains: `"collectionId":"${input.collectionId}"` };
+      }
+    }
     if (input.keyword) {
       where.OR = [
         { title: { contains: input.keyword } },
@@ -3894,9 +3934,59 @@ export class InboxService extends BaseService<
         { url: { contains: input.keyword } },
         { content: { contains: input.keyword } },
         { tags: { contains: input.keyword } },
+        { metadata: { contains: input.keyword } },
       ];
     }
     return where;
+  }
+
+  /** 分面：按来源 / 知乎收藏夹 / 小红书点赞·收藏计数（单用户体量内存聚合即可） */
+  async facets(input: { status?: string } = {}) {
+    const where: { status?: string } = {};
+    if (input.status) where.status = input.status;
+    const rows = await this.prisma.inboxItem.findMany({
+      where,
+      select: { source: true, tags: true, metadata: true },
+    });
+    const bySource: Record<string, number> = {};
+    const zhihuMap = new Map<string, { id: string; title: string; count: number }>();
+    let xhsLike = 0;
+    let xhsFavorite = 0;
+    for (const row of rows) {
+      bySource[row.source] = (bySource[row.source] ?? 0) + 1;
+      if (row.source === "zhihu") {
+        let meta: Record<string, unknown> = {};
+        try {
+          meta = row.metadata ? JSON.parse(row.metadata) : {};
+        } catch {
+          meta = {};
+        }
+        const id = meta.collectionId != null ? String(meta.collectionId) : "unknown";
+        const title =
+          typeof meta.collectionTitle === "string" && meta.collectionTitle
+            ? meta.collectionTitle
+            : id === "unknown"
+              ? "未标注收藏夹"
+              : `收藏夹 ${id}`;
+        const prev = zhihuMap.get(id) ?? { id, title, count: 0 };
+        prev.count += 1;
+        if (typeof meta.collectionTitle === "string" && meta.collectionTitle) {
+          prev.title = meta.collectionTitle;
+        }
+        zhihuMap.set(id, prev);
+      }
+      if (row.source === "xhs") {
+        const tags = String(row.tags || "");
+        if (tags.split(",").includes("like")) xhsLike += 1;
+        if (tags.split(",").includes("favorite")) xhsFavorite += 1;
+      }
+    }
+    return {
+      total: rows.length,
+      bySource,
+      zhihuCollections: Array.from(zhihuMap.values()).sort((a, b) => b.count - a.count),
+      xhs: { like: xhsLike, favorite: xhsFavorite },
+    };
   }
 
   protected buildCreateData(input: CreateInboxItemInput): any {
@@ -3937,13 +4027,15 @@ export class InboxService extends BaseService<
   async syncZhihu(input: InboxSyncZhihuInput) {
     const { syncZhihuCollection, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
     ensureInboxDirs(this.config);
-    return syncZhihuCollection(this.prisma, this.config, input);
+    const parsed = inboxSyncZhihuSchema.parse(input ?? {});
+    return syncZhihuCollection(this.prisma, this.config, parsed);
   }
 
   async syncXhs(input: InboxSyncXhsInput) {
-    const { syncXhsFavorites, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { syncXhsLibrary, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
     ensureInboxDirs(this.config);
-    return syncXhsFavorites(this.prisma, this.config, input);
+    const parsed = inboxSyncXhsSchema.parse(input ?? {});
+    return syncXhsLibrary(this.prisma, this.config, parsed);
   }
 
   async scanScreenshots(input: InboxScanScreenshotsInput) {
