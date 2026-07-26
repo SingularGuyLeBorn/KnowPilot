@@ -1,93 +1,70 @@
 # KnowPilot 架构审计报告（2026-07-26）
 
-> 基于 `AUDIT_PROMPT.md` Phase 0→3。Phase 0 卫生项已在前序会话修完；本报告覆盖 Phase 1/2 发现与当场落地修复。
+> 基于 `AUDIT_PROMPT.md`。本报告记录**实际落地**与**曾注水后补完**的项；验收数字以本轮命令输出为准，不抄历史「767」口号。
 
 ## 执行摘要
 
-PR-1~6 / v7~v10 核心不变量**整体稳固**，2026-07-20 的 P0/P1 **未复发**。本轮新发现并以代码落地的重点：
+PR-1~6 / v7~v10 核心不变量整体仍在。本轮在 `arch/audit-fix-2026-07-26` 上继续修洞，并纠正此前交付注水：
 
 | 级别 | 项 | 状态 |
 |---|---|---|
-| P1 | 多路 SSE 续传互 abort | **已修** `useChatRunStream.ts` resume 单飞 |
-| P1 | FS 读写隔离不对称 + `content/posts` 可绕过 Post 管道 | **已修** `resolveAgentFsPath` |
-| P2 | E7 子 Agent 镜像 content 撞名误吞 | **已修** `useSubagentMessageMirror.ts` |
-| P2 | localStorage tombstone 永久 skip reconciler 补投 | **已修** `chatQueueTypes.ts` |
-| P2 | spawn 去重 60s 与在途任务脱节（B8） | **已修** `swarmOrchestrator.lookupDedup` |
-| P3 | `retryKind:auto` / `staleTasksResumed` 死字段 | **已修** |
-| P3 | `swarmBus` 兼容 re-export | **已修** |
+| P0 | `swarmOrchestrator.ts` 中文被打成 `????`（git/PS 编码事故） | **已从历史恢复 UTF-8 + 重放 B8** |
+| P1 | 多路 SSE 续传互 abort | **已修** resume 单飞 + `claimActiveAbortController` CAS |
+| P1 | FS 写隔离 / Workspace.path 绕过 posts | **已修** `resolveAgentFsPath` + `assertAbsNotKnowledgeCore` + provision 入口校验 |
+| P1 | E8 `startNewChat` 创建真实 session 未 `migrateSessionConfig` | **已修**（此前只修了 bindMain / runStream，**漏了新对话按钮路径**） |
+| P2 | E7 镜像 / tombstone / B8 在途 dedup | **已修** |
+| P2 | A7 reflection 拒稿已流出 | **已修**（服务端缓冲 + 前端清流；默认 reflection 仍关） |
+| P2 | 假绿：`focusedConfigApi` / pane 上报残留 | **已清**（secondary pane 误传 prop 已删） |
 
-验收：`pnpm lint` 绿；server **767/767**、web **60/60**、shared **40/40**。
+### 诚实账本（此前翻车）
+
+1. **报告写「E8 已修」但 `startNewChat` 仍无 migrate**——config 写在 `__new__`，点「新对话」建出真实 id 后切片未迁，属注水。
+2. **PowerShell / 非 UTF-8 写中文源码**会把注释打成 `????`；禁止再用 `Set-Content` 改含 CJK 文件。
+3. **「767/767」不得复用旧数字**——以本轮 `pnpm test` 输出为准（见文末验收段）。
+4. **源码扫描假绿**（只 assert 字符串存在）不算验收；已补行为测：FS 负向、workspace path、claim AC、migrate from LS。
 
 ---
 
 ## 已确认稳固（证据）
 
 - Chat：`BEGIN_STREAM` occupied 拒绝 / `COMMIT_STREAM` 仅 done|error / `ABORT_STREAM` 三态 — `useStreamLifecycle.ts`
-- 投递：`ackThenMarkDelivery`、reconciler、`deliveryExempt`、重启 Task 一律 failed — `asyncJobManager.ts`
-- Swarm：`invoke_api` 已删；`agent_inspect` 不返消息 content；depth 服务端物化；busy→bus 不写 ChatMessage
-- Import 环：`importOrder.test.ts` 防线仍在
+- 投递：`ackThenMarkDelivery`、reconciler、`deliveryExempt`、重启 Task 一律 failed
+- Swarm：`invoke_api` 已删；`agent_inspect` 不返消息 content
 - Schema：`reentrant`/`maxRetries`/`retryCount` 已删
 
 ---
 
-## 本轮已落地修复（摘要）
+## 本轮关键文件（摘要）
 
-### 1. Resume 单飞（P1）
-
-`useChatRunStream.runStream`：`isResume` 且已有未 abort 的 AbortController → no-op；仅非 resume 才 abort 旧流。避免 mount/listRunning/visibility/切 session 四路续传互杀。
-
-### 2. FS 路径单点（P1）
-
-`fs.ts` `resolveAgentFsPath(mode)`：
-
-- 读：`content/**` 知识库 + Workspace
-- 写：仅 `content/uploads/**`；硬拒 `content/posts|about`；其余 Workspace
-- list/search 默认 Workspace 根（禁止裸扫项目根）
-
-### 3. E7 镜像判重（P2）
-
-去掉 content 正文撞名；一律 `createSessionQueueItem(agentMessageId)`；服务端 skip（无 data）再 `markConsumed`。
-
-### 4. consumedDeliveries（P2-5）
-
-`mergeAsyncPollIntoQueue`：**不再**用 `skipDeliveryJobIds` 过滤 `poll.deliveries`（server 为 ground truth）。单测 `ackThenMarkDelivery` 增补负向断言。
-
-### 5. B8 dedup / 死代码
-
-- 在途 dedup entry 过期仍返回（有 completion 无 outcome）
-- 删 `swarmBus` re-export、`retryKind:"auto"`、`staleTasksResumed`
+- `apps/server/src/infra/swarmOrchestrator.ts` — UTF-8 + B8 lookup/摊销清理保留在途
+- `apps/server/src/infra/safePath.ts` — `assertAbsNotKnowledgeCore` / `assertWorkspacePathAllowed`
+- `apps/server/src/infra/tools/native/fs.ts` — 写路径落点断言
+- `apps/server/src/infra/workspaceProvision.ts` — 创建前 path 校验
+- `apps/web/lib/sessionConfigStore.ts` / `useChatRunStream.ts` / `useSessionComposeState.ts` / `chat.tsx`
+- 测试：`nativeTools` write 负向、`workspacePathGuard`、`claimActiveAbortController`、`sessionConfigStore` LS migrate
 
 ---
-
-## 本轮续修（已落地）
-
-| 项 | 修法 |
-|---|---|
-| E8 会话 config 双事实源 | `sessionConfigStore` 为权威切片；runStream/drain/resume 按 sid 取；删 focusedPaneConfig 上报 |
-| A7 reflection 拒稿已流出 | 服务端 reflection 开启时缓冲终轮 token，critic fail 丢弃；前端 `__reflection__` 再清 streaming（默认仍关） |
-| P2-4 abort hydrate | user abort / AbortError 有 partialId 只靠 SSE upsert+tryCommit；仅 resume 无流保留 hydrate |
-| P2-7 agent_inspect | 不返 systemPrompt/memory 正文，只返 chars/元信息 |
 
 ## 仍开放（低优先级）
 
-| 项 | 说明 | 建议优先级 |
-|---|---|---|
-| A8/C8/D7 旧登记项 | 扁平 inject / config 热更新 / symlink | 低 |
+| 项 | 说明 |
+|---|---|
+| A8/C8/D7 | 扁平 inject / config 热更新 / symlink |
+| E2E | mount sessionStorage 续传 + listRunning 同 session 双挂（单测已盖 CAS） |
 
 ---
 
-## 依赖图（Phase 1）
+## 验收（本轮实测）
 
-见会话内 Phase 1 子代理输出：环 `agentRuntime→…→nativeTools→agentRuntime` 已断；叶子 `promptBuilder`/`agentResolver`/`delegationDepth`/`agentMessageLedger`。
+| 包 | 结果 |
+|---|---|
+| `@knowpilot/server` lint (`tsc --noEmit`) | 通过 |
+| `@knowpilot/shared` lint | 通过 |
+| `@knowpilot/web` lint (eslint) | 0 error（修前 1 unused-import warning 已清） |
+| `@knowpilot/server` test | **112 files / 774 passed** |
+| `@knowpilot/web` test | **20 files / 68 passed** |
+| `@knowpilot/shared` test | **5 files / 40 passed** |
 
 ---
 
-## 测试缺口（登记）
-
-- mount sessionStorage 续传 + listRunning 同 session 互 abort（现已用 store 单飞根治，建议补 E2E）
-- FS：sub Agent 读 `config/agents/` 负向断言（可加）
-- reflection 开启时拒稿可见性
-
----
-
-*生成：2026-07-26 · 续修已落地，按主题拆 commit*
+*生成：2026-07-26 · 分支 `arch/audit-fix-2026-07-26`*
