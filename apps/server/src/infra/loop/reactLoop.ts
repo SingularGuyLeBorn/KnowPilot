@@ -117,14 +117,9 @@ function truncateToolResultContent(result: unknown, maxChars: number): string | 
   const budget = Math.max(maxChars - overhead - 200, Math.floor(maxChars * 0.5));
   if (budget <= 0) return null;
 
-  const truncatedContent = target.slice(0, budget);
+  const truncatedContent = target.slice(0, budget) + `\n…[content TRUNCATED, original=${target.length} chars, kept=${budget}]`;
   const truncatedObj = { ...otherFields, [targetKey]: truncatedContent };
-  const out = JSON.stringify(truncatedObj);
-  // 加显式截断标记（在 content 末尾）
-  return out.replace(
-    new RegExp(`("${targetKey}":"[^"]*)$`),
-    `$1\\n…[content TRUNCATED, original=${target.length} chars, kept=${budget}]`,
-  );
+  return JSON.stringify(truncatedObj);
 }
 
 /** W11：审批决策后的续跑注入消息（经 injectUserMessages 显式机制进入原 session 与 llmMessages） */
