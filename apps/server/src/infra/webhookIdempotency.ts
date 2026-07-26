@@ -19,8 +19,8 @@ import { Prisma } from "@prisma/client";
 export async function claimWebhookEvent(
   prisma: PrismaClient,
   eventId: string,
-  source: "webhook" | "poll",
-  kind: "approval" | "ask_user" | "unmatched",
+  source: string,
+  kind: string,
 ): Promise<{ claimed: boolean }> {
   if (!eventId) return { claimed: true }; // 无 event_id 不做幂等（下游状态保护兜底）
   try {

@@ -1555,3 +1555,24 @@ WIP 分支（Kimi 模型菜单/飞书集成/软暂停占位/tombstone 等，基�
 | write_file | 整个 content/ 除 uploads 硬禁 |
 
 **回答**：按上表落地
+
+---
+
+## IM 通道：企微 + QQ + 移动端 Chat（2026-07-27）
+
+### 背景
+
+参考 OpenClaw Channel Gateway、Hermes 多通道、Claude Code Channels/Remote Control、MetaBlog `messageGateway`：本地 SessionStreamHub 是唯一 Agent 运行时，IM 只做入站归一化 + 原渠道回发。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 架构 | 新建 `messageGateway` + `ChannelBinding`；入站 → 绑定会话 → `hub.startIfNotRunning`（交互式，不入 async 池） |
+| 企微 | 官方智能机器人 **WSS 长连接**（`WECOM_AIBOT_*`），流式 `aibot_respond_msg` |
+| QQ | 官方开放平台 Bot；默认 webhook `/api/webhooks/qq`，可选 `QQ_BOT_WS=1`；**禁止 oicq 私协议** |
+| 实体 | `ChannelBinding` 表（SQLite）；tRPC `channel.*`；管理页 `/channels` |
+| 移动端 | **复用 `/chat`**，不新建 `/m/chat`；PWA `start_url=/chat` + `visualViewport` 键盘避让 |
+| 幂等 | 复用 `ProcessedWebhookEvent`，source=`im:wecom`/`im:qq` |
+
+**回答**：按上表落地（分支 `feat/im-channels-wecom-qq`）

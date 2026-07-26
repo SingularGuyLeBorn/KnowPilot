@@ -624,3 +624,24 @@ model DeadLetterMail {
   @@index([status, createdAt])
   @@index([messageId])
 }
+
+/// IM 通道绑定：企微/QQ 对端 ↔ ChatSession（本地优先，非 Markdown 事实源）
+model ChannelBinding {
+  id            String    @id @default(cuid())
+  /// wecom | qq | feishu | telegram
+  channel       String
+  /// 对端稳定 id（企微 userid / QQ openid）
+  peerId        String
+  /// 群聊 id；单聊存空串（复合唯一忌 null）
+  chatId        String    @default("")
+  sessionId     String
+  agentId       String
+  title         String?
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([channel, peerId, chatId])
+  @@index([sessionId])
+  @@index([channel, lastMessageAt])
+}

@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "KnowPilot",
     short_name: "KnowPilot",
     description: "智能知识管理与 Agent 工作台（支持手机远程访问）",
-    start_url: "/",
+    start_url: "/chat",
     display: "standalone",
     orientation: "any",
     background_color: "#f8f6f3",

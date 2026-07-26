@@ -517,6 +517,62 @@ const inboxRouter = router({
   ignore: publicProcedure.meta({ description: "忽略 Inbox 条目。", aiReadable: true }).input(inboxIgnoreSchema).mutation(({ ctx, input }) => ctx.services.inbox.ignoreItems(input)),
 });
 
+const channelRouter = router({
+  status: publicProcedure
+    .meta({ description: "IM 通道（企微/QQ）连接状态与统计。", aiReadable: true })
+    .query(async () => {
+      const { getMessageGatewayStats, listChannelAdapters } = await import("./infra/messageGateway.js");
+      return {
+        stats: getMessageGatewayStats(),
+        adapters: listChannelAdapters().map((a) => ({
+          channel: a.channel,
+          name: a.name,
+          enabled: a.enabled,
+          ...a.getStatus(),
+        })),
+      };
+    }),
+  listBindings: publicProcedure
+    .meta({ description: "列出 IM 对端 ↔ 会话绑定。", aiReadable: true })
+    .input(z.object({ channel: z.enum(["wecom", "qq", "feishu", "telegram"]).optional(), limit: z.number().int().min(1).max(200).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const { listChannelBindings } = await import("./infra/channelBinding.js");
+      return { items: await listChannelBindings(ctx.prisma, input ?? undefined) };
+    }),
+  deleteBinding: publicProcedure
+    .meta({ description: "删除 IM 绑定（不删会话消息）。", aiReadable: true })
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { deleteChannelBinding } = await import("./infra/channelBinding.js");
+      return { ok: await deleteChannelBinding(ctx.prisma, input.id) };
+    }),
+  simulateInbound: publicProcedure
+    .meta({ description: "模拟一条 IM 入站（开发调试；需服务已 init MessageGateway）。", aiReadable: true })
+    .input(
+      z.object({
+        channel: z.enum(["wecom", "qq"]),
+        peerId: z.string().min(1).max(128),
+        text: z.string().min(1).max(4000),
+        chatId: z.string().max(128).optional(),
+        eventId: z.string().max(128).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const { handleIncomingMessage } = await import("./infra/messageGateway.js");
+      const { randomUUID } = await import("node:crypto");
+      return handleIncomingMessage({
+        envelope: {
+          channel: input.channel,
+          peerId: input.peerId,
+          chatId: input.chatId,
+          timestamp: new Date().toISOString(),
+        },
+        payload: { text: input.text },
+        meta: { eventId: input.eventId || randomUUID() },
+      });
+    }),
+});
+
 const sessionRouter = router({
   create: publicProcedure.meta({ description: "创建聊天会话。", aiReadable: true }).input(createSessionSchema).mutation(({ ctx, input }) => ctx.services.session.create(input)),
   getById: publicProcedure.meta({ description: "获取会话详情（含消息列表）。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.session.getById(input.id)),
@@ -1489,6 +1545,7 @@ export const appRouter = router({
   memory: memoryRouter,
   infoSource: infoSourceRouter,
   inbox: inboxRouter,
+  channel: channelRouter,
   git: gitRouter,
   search: searchRouter,
   analytics: analyticsRouter,

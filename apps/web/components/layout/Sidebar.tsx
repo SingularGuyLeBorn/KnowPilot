@@ -27,6 +27,7 @@ import {
   Inbox,
   Sparkles,
   RefreshCw,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { KnowPilotLogo } from "@/lib/icons";
@@ -77,6 +78,7 @@ const navGroups: Record<string, NavGroup> = {
     items: [
       { href: "/inbox", icon: Inbox, label: "知识 Inbox" },
       { href: "/platform-sync", icon: RefreshCw, label: "平台每日同步" },
+      { href: "/channels", icon: Radio, label: "IM 通道" },
       { href: "/triggers", icon: Zap, label: "事件触发器" },
       { href: "/approvals", icon: ShieldCheck, label: "审批队列" },
     ],

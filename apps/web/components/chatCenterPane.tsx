@@ -397,7 +397,10 @@ export function ChatCenterPane({
         </div>
       )}
 
-      <div className="relative z-30 border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-4 pt-3 pb-3 md:px-6">
+      <div
+        className="relative z-30 border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-4 pt-3 pb-3 md:px-6"
+        style={{ paddingBottom: "max(0.75rem, calc(0.75rem + var(--kp-keyboard-inset, 0px)))" }}
+      >
         <SessionAskUserBar sessionId={effectiveSessionId} />
         <UserSendQueuePanel
           items={sortQueueItems(userQueue)}

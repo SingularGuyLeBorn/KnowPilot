@@ -179,6 +179,34 @@ app.get(
 );
 app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub));
 
+// QQ 官方 Bot 入站 webhook（需公网 URL / pnpm remote）；验签 MVP 仅校验配置已启用
+app.post("/api/webhooks/qq", async (req, res) => {
+  try {
+    const { getChannelAdapter } = await import("./infra/messageGateway.js");
+    const { getQqAdapterIngest } = await import("./infra/channels/qqOfficialBot.js");
+    const adapter = getChannelAdapter("qq");
+    if (!adapter?.enabled) {
+      res.status(503).json({ error: "QQ Bot 未启用（需 QQ_BOT_APP_ID / QQ_BOT_SECRET）" });
+      return;
+    }
+    const ingest = getQqAdapterIngest(adapter);
+    if (!ingest) {
+      res.status(500).json({ error: "QQ adapter 无 ingest" });
+      return;
+    }
+    // QQ 开放平台 URL 验证可能带 plain token challenge
+    const body = req.body as { d?: unknown; op?: number; t?: string };
+    res.status(202).json({ ok: true });
+    const result = ingest(body);
+    if (!result.ok) {
+      console.warn(`[qq webhook] 忽略: ${result.error}`);
+    }
+  } catch (err) {
+    console.error("[qq webhook]", err);
+    if (!res.headersSent) res.status(500).json({ error: "internal" });
+  }
+});
+
 // AgentMail（agentmail.to）入站 webhook —— ask_user 邮件答复 + 审批邮件回复
 // 工业级模式：快速 202 ack + 异步处理（防 AgentMail 超时重投雪崩）。
 // 异步处理靠 DB 幂等（claimWebhookEvent）+ 兜底轮询保证最终一致，AgentMail 收到 202 即不重投。
@@ -401,6 +429,11 @@ const server = app.listen(PORT, () => {
     }
   }
 
+  // IM 通道：企微长连接 / QQ Bot（未配凭证则跳过）
+  import("./infra/channels/index.js")
+    .then(({ bootstrapMessageChannels }) => bootstrapMessageChannels({ prisma, services, config }))
+    .catch((err) => console.error("❌ [IM] 通道启动失败:", err));
+
   // Goal 外环：hub run settled → 若有 pendingContinue 则起下一轮（显式事件，非定时器）
   import("./infra/goalLoop.js")
     .then(({ registerGoalLoopSettledHook }) => {
@@ -578,6 +611,9 @@ const handleShutdown = () => {
   agentMailPollerRef?.stop();
   agentMailWebhookHealthRef?.stop();
   stopAsyncDeliveryReconciler();
+  import("./infra/channels/index.js")
+    .then(({ stopAllChannelAdapters }) => stopAllChannelAdapters())
+    .catch(() => {});
   import("./infra/freeKeysSync.js")
     .then(({ stopFreeKeysAutoSync }) => stopFreeKeysAutoSync())
     .catch(() => {});

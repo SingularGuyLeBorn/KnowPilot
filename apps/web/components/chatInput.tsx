@@ -131,6 +131,24 @@ export const ChatInputArea = memo(function ChatInputArea({
   // 发送按钮防抖/防重入：用 ref 锁 + state 同步禁用按钮，避免 React state 批处理导致双击/双快捷键穿透
   const [isSending, setIsSending] = useState(false);
 
+  // 移动端虚拟键盘：用 visualViewport 抬高输入区，避免遮挡
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const sync = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty("--kp-keyboard-inset", `${inset}px`);
+    };
+    sync();
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    return () => {
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+      document.documentElement.style.removeProperty("--kp-keyboard-inset");
+    };
+  }, []);
+
   // 语音输入：webkitSpeechRecognition 实时转写，interim/final 追加到 input 末尾
   const voiceBaseRef = useRef("");
   const { supported: sttSupported, listening, error: sttError, start: sttStart, stop: sttStop } =
