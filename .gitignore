@@ -9,6 +9,7 @@ out/
 
 # Environment
 .env
+# 历史残留防御（已不再使用；统一用根目录 .env）
 .env.local
 .env.*.local
 

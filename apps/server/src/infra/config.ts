@@ -363,27 +363,24 @@ function resolveStorageRoot(projectRoot: string, name: "content" | "config" | "d
   return path.join(projectRoot, name);
 }
 
-/** 加载项目根目录 .env（幂等）。P3-04：.env.local 优先级高于 .env（先加载，undefined 守卫保证不覆盖） */
+/** 加载项目根目录 .env（幂等）。已加载的 process.env 键不覆盖。 */
 export function loadRootEnv(projectRoot?: string): void {
   const root = projectRoot || resolveProjectRoot();
-  // P3-04：先加载 .env.local（高敏凭据隔离），再加载 .env（通用配置）；同名键以先加载者为准。
-  for (const file of [".env.local", ".env"]) {
-    const envPath = path.join(root, file);
-    if (!fs.existsSync(envPath)) continue;
-    const content = fs.readFileSync(envPath, "utf8");
-    for (const line of content.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq <= 0) continue;
-      const key = trimmed.slice(0, eq).trim();
-      let value = trimmed.slice(eq + 1).trim();
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (process.env[key] === undefined) {
-        process.env[key] = value;
-      }
+  const envPath = path.join(root, ".env");
+  if (!fs.existsSync(envPath)) return;
+  const content = fs.readFileSync(envPath, "utf8");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
     }
   }
 }

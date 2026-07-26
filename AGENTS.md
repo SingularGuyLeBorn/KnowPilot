@@ -224,7 +224,7 @@ pnpm test         # 全仓库运行 Vitest
 - **误创建文件即删**：测试时把任务文本当 Agent 名建出来的 `config/agents/请先等待...md` 这类文件，发现即删，不要留着污染工作树。
 - **运行时产物 gitignore**：日记（`config/memories/daily/`）、curator 状态（`config/skills/.curator_state`）、心跳临时 agent（`config/agents/*-e3f87d.md`）等运行时产物，加进 `.gitignore` 防御，不要提交。
 - **测试产物防御**：`.gitignore` 已有 `content/posts/smoke-post-*.md`、`config/agents/*子 Agent*.md` 等模式，新增测试产物路径时同步加防御。
-- **不提交密钥/凭据**：`.env` / `.env.local` / `*.db` / `backups/` 已 gitignore，绝不 `git add -f` 强加。`dev.db` 是缓存层随时可重建，不入库。
+- **不提交密钥/凭据**：`.env` / `*.db` / `backups/` 已 gitignore，绝不 `git add -f` 强加。`dev.db` 是缓存层随时可重建，不入库。
 
 #### 4. 提交前验证（铁律）
 

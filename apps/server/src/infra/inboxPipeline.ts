@@ -1173,7 +1173,7 @@ export async function syncZhihuCollection(
       updated: 0,
       skipped: 0,
       errors: [
-        "未配置知乎开放平台 ZHIHU_ACCESS_SECRET，且未 platform_login(zhihu)。请任选其一：在 .env.local 配置 Access Secret，或 Chat 调用 platform_login。",
+        "未配置知乎开放平台 ZHIHU_ACCESS_SECRET，且未 platform_login(zhihu)。请任选其一：在 .env 配置 Access Secret，或 Chat 调用 platform_login。",
       ],
       items: [],
       mode,
