@@ -23,7 +23,7 @@ export function useSubagentMessageMirror(opts: {
   isSubagentSession: boolean;
   pendingAgentMessages: PendingAgentMessage[] | undefined;
   messages: ChatMessage[];
-  refetchSessionQueue: () => unknown;
+  refetchSessionQueue: () => Promise<unknown>;
 }) {
   const {
     effectiveSessionId,

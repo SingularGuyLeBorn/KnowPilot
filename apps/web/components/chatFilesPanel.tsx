@@ -259,7 +259,7 @@ export function ChatFilesPanel({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const query = trpc.message.listForChat.useQuery(
-    { sessionId: sessionId!, pageSize: 100 },
+    { sessionId: sessionId!, limit: 100 },
     { enabled: Boolean(sessionId && open), staleTime: 10_000 },
   );
 

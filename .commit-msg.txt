@@ -1,15 +1,13 @@
-refactor: 清理废弃 capture_zhihu_login 工具 + 兼容委托层 zhihuLogin.ts + flaky 衰减测试
+fix: 修复 web build 既有类型错误（3 处）+ shellRunner execFile overload
 
-1. 删除已废弃的 capture_zhihu_login 工具（handler/schema/注册/import/图标/fixture/清单），
-   统一用 platform_login（已覆盖知乎）。删除纯兼容委托层 zhihuLogin.ts（captureZhihuLoginState
-   → capturePlatformLoginState("zhihu")），违反「禁止兼容层」铁律。DB 内 assistant agent 的
-   tools 字段残留引用由一次性脚本清理（执行后即删）。
+web build 一直 fail type check（非本轮引入，但既已暴露）：
 
-2. 修复 flaky 测试 memoryRepository.test.ts > decayMemories：原用 Date.now()+10*DAY 作为衰减 now，
-   write 与 decay 调用之间的时钟抖动会让 (now - baseTime) 偶尔跌破 10 天边界导致 days=9（全量套件偶发失败）。
-   改为 baseTime + 10*DAY 精确对齐，days 恒为 10，消除时钟抖动。
+1. chatFilesPanel.tsx:262 — message.listForChat input 用 limit 而非 pageSize，原传 pageSize 触发 overload 不匹配。改为 limit: 100。
 
-3. 删除 3 个注释明确「运行后可删」的一次性脚本 fix-super-agent-{prompt,read-article,tools}.ts
-   （本轮已执行，模板已含新内容，重置 DB 后 sync 重建）。
+2. chatSidebar.tsx:201/202 — utils.session.list.invalidate() 返回 void（非 Promise），原 .catch 报错。改 void 前缀 fire-and-forget；refetchSession 同理（prop 类型有意窄化为 () => void，tRPC refetch 的 rejection 由 React Query 内部处理）。
 
-server tsc 通过、全量 Vitest 767/767 通过。
+3. useSubagentMessageMirror.ts:26 — refetchSessionQueue prop 类型标 () => unknown 丢了 Promise，L75 .catch 报错。实际来源是 tRPC useQuery.refetch（返回 Promise），改类型为 () => Promise<unknown>。
+
+4. shellRunner.ts:135 — execFile 的 env 选项在 web 端 @types/node 下 ProcessEnv 有 required NODE_ENV，原 Record 触发 overload。env 改用 as unknown as NodeJS.ProcessEnv 双断言。
+
+验证：web tsc 0 错误、web build Compiled successfully、server 767/767、web 59/59 全绿。

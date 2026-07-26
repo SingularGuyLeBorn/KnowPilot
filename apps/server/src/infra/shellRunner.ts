@@ -136,7 +136,7 @@ export async function runShellRestricted(
         ...buildSandboxEnv(),
         CI: "1",
         NO_COLOR: "1",
-      },
+      } as unknown as NodeJS.ProcessEnv,
     });
     const out = (stdout || "").slice(0, config.shell.maxOutputChars);
     const err = (stderr || "").slice(0, config.shell.maxOutputChars);

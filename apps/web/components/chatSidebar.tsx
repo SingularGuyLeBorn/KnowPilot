@@ -198,8 +198,8 @@ export const ChatSidebar = memo(function ChatSidebar({
         setError(res.error?.message ?? "重命名失败");
         return;
       }
-      utils.session.list.invalidate().catch(() => {});
-      if (effectiveSessionId === id) refetchSession().catch(() => {});
+      void utils.session.list.invalidate();
+      if (effectiveSessionId === id) void refetchSession();
       setEditingSessionId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "重命名失败");

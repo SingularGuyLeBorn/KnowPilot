@@ -31,7 +31,7 @@ export default function DeadLettersPage() {
       <PageHeader
         title="邮件回复死信"
         description="未匹配 pending 的邮件回复（webhook/轮询收到但找不到对应 ask_user/审批）。审计用，可追查为什么某封回复没生效。"
-        icon={<MailX className="h-6 w-6" />}
+        icon={MailX}
       />
 
       <div className="mb-4 flex items-center gap-2">
