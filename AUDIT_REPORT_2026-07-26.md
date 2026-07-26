@@ -64,7 +64,7 @@ PR-1~6 / v7~v10 核心不变量**整体稳固**，2026-07-20 的 P0/P1 **未复�
 | 项 | 修法 |
 |---|---|
 | E8 会话 config 双事实源 | `sessionConfigStore` 为权威切片；runStream/drain/resume 按 sid 取；删 focusedPaneConfig 上报 |
-| A7 reflection 拒稿已流出 | `__reflection__` onToolStart 清 streaming + discard rAF；拒稿进时间线作中间结果（默认 reflection 仍关） |
+| A7 reflection 拒稿已流出 | 服务端 reflection 开启时缓冲终轮 token，critic fail 丢弃；前端 `__reflection__` 再清 streaming（默认仍关） |
 | P2-4 abort hydrate | user abort / AbortError 有 partialId 只靠 SSE upsert+tryCommit；仅 resume 无流保留 hydrate |
 | P2-7 agent_inspect | 不返 systemPrompt/memory 正文，只返 chars/元信息 |
 
@@ -72,7 +72,6 @@ PR-1~6 / v7~v10 核心不变量**整体稳固**，2026-07-20 的 P0/P1 **未复�
 
 | 项 | 说明 | 建议优先级 |
 |---|---|---|
-| A7 服务端终轮缓冲 | reflection.enabled 时缓冲 token 至 critic 通过（当前仅前端清流） | 低 |
 | A8/C8/D7 旧登记项 | 扁平 inject / config 热更新 / symlink | 低 |
 
 ---

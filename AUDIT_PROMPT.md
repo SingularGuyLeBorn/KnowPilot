@@ -206,7 +206,7 @@
 - [ ] `@@unique([sessionId, agentMessageId])` + 事务 create / P2002 幂等
 - [ ] `Promise.resolve().then(execute)` 同步抛错不漏槽
 - [ ] `runStartupRecovery` 四动作（僵尸 Task→failed / 僵尸 ChatSession→paused / superior 孤儿重注册 / delivered=false 重投）
-- [ ] **注意：可重入机制已移除**——确认 `reentrant`/`retryCount`/`maxRetries` 字段是否还在 schema（应在）、是否还有代码读这些字段做自动续跑（应无自动续跑，只有手动 retryAsyncJob）
+- [ ] **注意：可重入机制已移除**——确认 `reentrant`/`retryCount`/`maxRetries` 字段已从 schema **删除**；确认无代码读这些字段做自动续跑（应无自动续跑，只有手动 `retryAsyncJob`）
 
 #### 维度 6：安全
 

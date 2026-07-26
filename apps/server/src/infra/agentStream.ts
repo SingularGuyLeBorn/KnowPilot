@@ -270,6 +270,14 @@ export async function runAgentLoopStream(options: {
   const hub = options.sessionId
     ? (await import("./sessionStreamHub.js")).getStreamHub()
     : null;
+  // A7：reflection 开启时缓冲终轮 token，等 critic 结算再 flush / fail 丢弃，
+  // 避免拒稿正文已当「终稿」流出后再回注重修。
+  const reflectionOn = options.config.reflection.enabled;
+  const pendingTokens: string[] = [];
+  const flushPendingTokens = () => {
+    for (const delta of pendingTokens) options.emit({ type: "token", delta });
+    pendingTokens.length = 0;
+  };
   // W7：stream 链路接入反思装饰器（默认关闭，开启后与 sync 链路同一评估点/消费点：
   // withTools 且零 toolCalls 的终轮 = reactLoop 唯一正常 done 进入点，verdict 消费在 loop 内核）
   const transport = withReflection(
@@ -279,15 +287,27 @@ export async function runAgentLoopStream(options: {
       options.llmOptions,
       {
         onThinking: (_round, delta) => options.emit({ type: "thinking", delta }),
-        onToken: (delta) => options.emit({ type: "token", delta }),
+        onToken: (delta) => {
+          if (reflectionOn) pendingTokens.push(delta);
+          else options.emit({ type: "token", delta });
+        },
       },
       () => roundRef.current,
     ),
     {
-      enabled: options.config.reflection.enabled,
+      enabled: reflectionOn,
       maxRounds: options.config.reflection.maxRounds,
       criticModel: options.config.reflection.criticModel || effectiveModel,
       config: options.config,
+      onDraftSettled: (settlement) => {
+        if (!reflectionOn) return;
+        // fail：丢弃缓冲（reactLoop 会再发 intermediate_content，禁止双发）
+        if (settlement === "fail") {
+          pendingTokens.length = 0;
+          return;
+        }
+        flushPendingTokens();
+      },
     },
   );
 

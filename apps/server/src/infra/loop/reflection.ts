@@ -25,6 +25,8 @@ import type { LlmTransport, ReflectionVerdict } from "./types.js";
 /** 反思轮数耗尽仍未通过时的放行标记（reactLoop 在 done 转移点加在正文前） */
 export const REFLECTION_UNPASSED_MARK = "[未经反思通过] ";
 
+export type ReflectionDraftSettlement = "pass" | "fail" | "skip";
+
 export interface ReflectionOptions {
   /** 总开关（config.yaml reflection.enabled，默认 false） */
   enabled: boolean;
@@ -36,6 +38,11 @@ export interface ReflectionOptions {
   config: AppConfig;
   /** 测试注入：覆盖默认 critic transport */
   criticTransport?: LlmTransport;
+  /**
+   * A7：stream 路径终轮 token 已缓冲时，按 critic 结果结算。
+   * pass/skip → 调用方 flush 缓冲 token；fail → 丢弃缓冲（reactLoop 发 intermediate）。
+   */
+  onDraftSettled?: (settlement: ReflectionDraftSettlement, draft: string) => void;
 }
 
 /**
@@ -137,15 +144,21 @@ export function withReflection(transport: LlmTransport, opts: ReflectionOptions)
   return {
     async complete(args) {
       const result = await transport.complete(args);
+      const draft = result.content?.trim() ? result.content : "";
       // 「即将 done」感知：reactLoop 唯一的正常 done 进入点 = withTools 轮返回零 toolCalls。
       // stream 路径存在 runQueues followUp 抢先续轮的形态：此时 verdict 已附着但 loop 不消费
       // （白跑一票 critic，无正确性问题）——followUp 注入后的新终轮会再次评估。
       // 无正文内容（空回答）不审——没什么可评的，避免空转 critic。
       if (!args.withTools || result.toolCalls.length > 0 || !result.content?.trim()) {
+        opts.onDraftSettled?.("skip", draft);
         return result;
       }
       const verdict = await runCritic(critic, args.messages, result.content, args.signal);
-      if (!verdict) return result;
+      if (!verdict) {
+        opts.onDraftSettled?.("skip", draft);
+        return result;
+      }
+      opts.onDraftSettled?.(verdict.passed ? "pass" : "fail", draft);
       return { ...result, reflection: { ...verdict, maxRounds: opts.maxRounds } };
     },
   };

@@ -13,8 +13,9 @@ import { cn } from "@/lib/utils";
 import {
   loadDefaultChatConfig,
   resolveNewChatConfig,
+  saveDefaultChatConfig,
 } from "@/lib/chatConfig";
-import { type Agent, type ChatMessage } from "@knowpilot/shared";
+import { type Agent, type ChatMessage, type ChatSessionConfig } from "@knowpilot/shared";
 import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { ChatOverlays } from "@/components/chatOverlays";
@@ -37,7 +38,6 @@ import {
   sessionComposeStore,
 } from "@/lib/useSessionComposeState";
 import { useChatUiPrefs } from "@/lib/useChatUiPrefs";
-import { useChatConfig } from "@/lib/useChatConfig";
 import { useChatHoverMonitor } from "@/lib/useChatHoverMonitor";
 import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
 import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
@@ -53,10 +53,11 @@ import {
   NEW_STREAM_KEY,
   TAB_TITLE_CACHE_KEY,
 } from "@/lib/chatKeys";
-import type { ChatSessionConfig } from "@knowpilot/shared";
 import {
   ensureSessionConfigHydrated,
   getSessionConfig,
+  patchSessionConfig,
+  setSessionConfig,
   subscribeSessionConfigStore,
 } from "@/lib/sessionConfigStore";
 
@@ -596,16 +597,19 @@ export function ChatView() {
     } as Agent;
   }, [selectedAgentMeta, selectedAgentFull.data]);
 
-  // 【会话配置域】模型 / systemPrompt 的加载、派生与持久化收拢于 useChatConfig
-  const { chatConfig, setChatConfig, updateConfig } = useChatConfig({
-    effectiveSessionId,
-    selectedAgent,
-    sessionDetailModel: sessionDetail?.model,
-    sessionDetailSystemPrompt: sessionDetail?.systemPrompt,
-  });
+  // E8：父级不再双挂 useChatConfig——config 权威在 sessionConfigStore；
+  // pane 内 useChatConfig 负责 UI 同步写入 store；overlay / 新对话走 store API。
+  const fallbackUpdateConfig = useCallback(
+    (patch: Partial<ChatSessionConfig>) => {
+      const sid = effectiveSessionId ?? NEW_STREAM_KEY;
+      const next = patchSessionConfig(sid, patch, !!effectiveSessionId);
+      if (!effectiveSessionId) saveDefaultChatConfig(next);
+    },
+    [effectiveSessionId],
+  );
 
   const handleOpenPromptEditor = useCallback(() => setShowPromptEditor(true), []);
-  const overlayUpdateConfig = focusedConfigApi?.updateConfig ?? updateConfig;
+  const overlayUpdateConfig = focusedConfigApi?.updateConfig ?? fallbackUpdateConfig;
 
   // W16b：ChatOverlays memo 屏障要求 props 引用稳定，内联箭头每渲染新建会击穿 memo
   const handleSubagentCreated = useCallback(
@@ -917,7 +921,9 @@ export function ChatView() {
     const aid = agentId || effectiveAgentId;
     setAgentId((prev) => prev || effectiveAgentId);
     setEditingSessionId(null);
-    setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
+    const next = resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent);
+    setSessionConfig(NEW_STREAM_KEY, next);
+    saveDefaultChatConfig(next);
     setHistorySubTab("main");
     const params = new URLSearchParams(searchParams.toString());
     let changed = false;
@@ -988,7 +994,6 @@ export function ChatView() {
     searchParams,
     pathname,
     router,
-    setChatConfig,
     setHistorySubTab,
     startNewChatInTabs,
     openNewSessionMutateAsync,
@@ -1131,12 +1136,12 @@ export function ChatView() {
     });
   }, [tabs.openTabIds, sessionsQuery.data?.items]);
 
-  // E8：overlay 订阅权威 store（焦点 session）；无 session 时回退父级 chatConfig（新对话）
-  const overlaySessionId = effectiveSessionId;
+  // E8：overlay 只订阅权威 store（焦点 session / 新对话 NEW_STREAM_KEY）
+  const overlaySessionId = effectiveSessionId ?? NEW_STREAM_KEY;
   const overlayChatConfig = useSyncExternalStore(
     subscribeSessionConfigStore,
-    () => (overlaySessionId ? getSessionConfig(overlaySessionId) : chatConfig),
-    () => chatConfig,
+    () => getSessionConfig(overlaySessionId),
+    () => ensureSessionConfigHydrated(overlaySessionId),
   );
 
   const paneShared = {

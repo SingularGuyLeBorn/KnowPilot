@@ -271,8 +271,15 @@ describe("W16d-1 stream 链路反思接入（runAgentLoopStream）", () => {
     expect(streamSpy).toHaveBeenCalledTimes(2);
     expect(completionSpy).toHaveBeenCalledTimes(2);
     expect(result.content).toBe("修订版 v2");
-    // 被拒草稿先进时间线（intermediate_content），随后 reflection SSE 透传 verdict
+    // A7：拒稿草稿不得以 token 事件流出（只进 intermediate_content 时间线）
+    const tokenBeforeReflection = (() => {
+      const idx = events.findIndex((e) => e.type === "reflection");
+      return events.slice(0, idx < 0 ? events.length : idx).filter((e) => e.type === "token");
+    })();
+    expect(tokenBeforeReflection).toEqual([]);
     expect(events.some((e) => e.type === "intermediate_content" && e.content === "草稿 v1")).toBe(true);
+    // 终稿修订版才以 token 放出（critic pass 后 flush）
+    expect(events.some((e) => e.type === "token" && e.delta === "修订版 v2")).toBe(true);
     const reflectionEvents = events.filter((e) => e.type === "reflection");
     expect(reflectionEvents).toEqual([
       { type: "reflection", round: 1, issues: ["遗漏了用户要求的对比表格"], action: "retry" },
