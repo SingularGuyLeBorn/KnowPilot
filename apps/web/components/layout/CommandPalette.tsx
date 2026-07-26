@@ -24,6 +24,7 @@ import {
   Activity,
   KeyRound,
   Sparkles,
+  Inbox,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { postDetailHref } from "@/lib/postHref";
@@ -109,6 +110,22 @@ export function CommandPalette() {
         title: "Agent 管理",
         href: "/agents",
         icon: <Bot className="h-4 w-4" />,
+      },
+      {
+        id: "action:inbox",
+        type: "action",
+        title: "知识 Inbox",
+        subtitle: "自动化与工作流 · 截图 / 知乎 / 小红书",
+        href: "/inbox",
+        icon: <Inbox className="h-4 w-4" />,
+      },
+      {
+        id: "action:platform-sync",
+        type: "action",
+        title: "平台每日同步",
+        subtitle: "自动化与工作流 · 知乎 / 小红书定时拉取",
+        href: "/platform-sync",
+        icon: <Inbox className="h-4 w-4" />,
       },
       {
         id: "action:skills",

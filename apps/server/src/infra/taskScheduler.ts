@@ -51,6 +51,30 @@ export class TaskScheduler {
     console.log("  ⏰ [TaskScheduler] 已停止");
   }
 
+  /** 热更新：新建/改 cron 后无需重启服务即可生效 */
+  async upsertCronJob(taskId: string): Promise<void> {
+    this.removeCronJob(taskId);
+    if (!this.started) return;
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task || task.type !== "cron" || !task.cronExpression) return;
+    if (!cron.validate(task.cronExpression)) {
+      console.warn(`  ⚠️ [TaskScheduler] 跳过无效 cron: ${task.name} (${task.cronExpression})`);
+      return;
+    }
+    const job = cron.schedule(task.cronExpression, () => {
+      this.runScheduled(task.id, task.name).catch(() => {});
+    });
+    this.jobs.set(task.id, job);
+    console.log(`  ⏰ [TaskScheduler] 已热注册 "${task.name}" → ${task.cronExpression}`);
+  }
+
+  removeCronJob(taskId: string): void {
+    const job = this.jobs.get(taskId);
+    if (!job) return;
+    job.stop();
+    this.jobs.delete(taskId);
+  }
+
   private async runScheduled(taskId: string, taskName: string): Promise<void> {
     // 重叠互斥单点 = TaskService.run → claimTaskRun（禁止本层再 check-then-act）
     try {
@@ -89,4 +113,9 @@ export function resetTaskSchedulerForTests(): void {
   if (_scheduler) _scheduler.stop();
   _scheduler = null;
   _schedulerPrisma = null;
+}
+
+/** 供 TaskService 热挂 cron；调度器未启动时为 no-op */
+export function tryGetTaskScheduler(): TaskScheduler | null {
+  return _scheduler;
 }

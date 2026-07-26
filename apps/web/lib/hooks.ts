@@ -264,10 +264,13 @@ export const useInbox = () => {
   const invalidate = () => {
     utils.inbox.list.invalidate().catch(() => {});
     utils.inbox.stats.invalidate().catch(() => {});
+    utils.inbox.facets.invalidate().catch(() => {});
   };
   return {
     ...base,
     useStats: (options?: any) => trpc.inbox.stats.useQuery(undefined, options),
+    useFacets: (input?: { status?: string }, options?: any) =>
+      trpc.inbox.facets.useQuery(input ?? {}, options),
     useCaptureUrl: () =>
       trpc.inbox.captureUrl.useMutation({ onSuccess: invalidate }),
     useCaptureUrls: () =>
