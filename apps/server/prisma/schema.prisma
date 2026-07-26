@@ -7,12 +7,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// 知识库花园 (Garden) —— 动态 N 座；事实源 content/{id}/_garden.md
+model Garden {
+  id          String    @id /// = 目录名 gardenId
+  title       String
+  description String?
+  homeContent String    @default("") /// 首页 Markdown 正文
+  sourceMtime DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([deletedAt])
+  @@index([updatedAt(sort: Desc)])
+}
+
 /// 文章 (Post) —— 多花园：garden + slug 联合唯一
-/// 物理路径 content/{garden}/{slug}.md；garden∈posts|knowledge|resources
+/// 物理路径 content/{garden}/{slug}.md；garden = Garden.id（动态）
 model Post {
   id         String   @id @default(cuid())
   title      String
-  /// 知识库花园根名（对应 content 子目录；默认 posts 兼容存量）
+  /// 知识库花园 id（对应 content 子目录；默认 posts）
   garden     String   @default("posts")
   /// 花园内相对路径（可含 /，不含 .md）；不再全局唯一
   slug       String

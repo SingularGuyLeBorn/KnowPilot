@@ -453,6 +453,15 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:session_rotate",
     "native:todo_write",
     "native:todo_read",
+    "native:garden_create",
+    "native:garden_list",
+    "native:garden_get",
+    "native:garden_update",
+    "native:garden_delete",
+    "native:post_create",
+    "native:post_update",
+    "native:post_delete",
+    "native:post_list",
     "native:memory_create",
     "native:memory_update",
     "native:memory_search",
@@ -503,11 +512,20 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:session_rotate",
     "native:todo_write",
     "native:todo_read",
+    "native:garden_create",
+    "native:garden_list",
+    "native:garden_get",
+    "native:garden_update",
+    "native:garden_delete",
+    "native:post_create",
+    "native:post_update",
+    "native:post_delete",
+    "native:post_list",
     "native:memory_create",
     "native:memory_update",
     "native:memory_search",
-    "native:memory_daily_append",
     "native:memory_daily_search",
+    "native:memory_daily_append",
     "native:pinned_memory_read",
     "native:pinned_memory_write",
     "native:agent_create_sub",
@@ -573,8 +591,12 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:git_status",
   "native:git_diff",
   "native:git_log",
-  // 知识库文章工具：assistant 可在 content/posts 创建/更新/删除/列出 Markdown 文章。
-  // 走 PostService，自动 slug 消毒 + frontmatter 规范化 + DB/FTS 同步，避免 write_file 野路径脱同步。
+  // 知识库：可建第 N 座花园 + 写文章；禁 write_file 直写 content/
+  "native:garden_create",
+  "native:garden_list",
+  "native:garden_get",
+  "native:garden_update",
+  "native:garden_delete",
   "native:post_create",
   "native:post_update",
   "native:post_delete",
@@ -600,20 +622,34 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "mcp:filesystem",
 ];
 
-/* ─── 知识库花园（Post garden） ───
+/* ─── 知识库花园（动态 N 座） ───
  *
- * 物理根：content/{garden}/…（Markdown 事实源）。
- * Agent 选库用 garden；库内相对路径仍用 slug（可含 /）。
- * about 不是花园（个人页，禁止 AI 经 post_* / write_file 写入）。
- * 对标业界：Dify dataset / AKB vault / Obsidian 分区 / MetaBlog section ——
- * 多库可选，但必须走知识库管道，禁止通用写文件直捅。
+ * 物理根：content/{gardenId}/…；元数据+首页：_garden.md
+ * Post.garden = gardenId；库内路径仍用 slug（可含 /）。
+ * about / uploads 永远不是花园。写入只走 garden_* / post_*。
  */
-export const POST_GARDENS = ["posts", "knowledge", "resources"] as const;
-export type PostGarden = (typeof POST_GARDENS)[number];
-export const DEFAULT_POST_GARDEN: PostGarden = "posts";
+/** 启动/同步时确保存在的种子库（不是 API 封闭枚举） */
+export const SEED_GARDENS = ["posts", "knowledge", "resources"] as const;
+export type SeedGarden = (typeof SEED_GARDENS)[number];
+export const DEFAULT_POST_GARDEN = "posts" as const;
+/** content/ 下禁止当作花园的目录名 */
+export const RESERVED_CONTENT_DIRS = ["about", "uploads"] as const;
 
-export function isPostGarden(value: string): value is PostGarden {
-  return (POST_GARDENS as readonly string[]).includes(value);
+export function isReservedContentDir(value: string): boolean {
+  return (RESERVED_CONTENT_DIRS as readonly string[]).includes(value);
+}
+
+export function isSeedGarden(value: string): value is SeedGarden {
+  return (SEED_GARDENS as readonly string[]).includes(value);
+}
+
+/** 花园 id 格式：单段小写字母数字 + -/_，禁保留名（存在性由运行时校验） */
+const GARDEN_ID_RE = /^[a-z][a-z0-9_-]{0,62}$/;
+export function isValidGardenIdFormat(value: string): boolean {
+  if (!value || value !== value.trim()) return false;
+  if (isReservedContentDir(value)) return false;
+  if (value.startsWith("_") || value.startsWith(".")) return false;
+  return GARDEN_ID_RE.test(value);
 }
 
 /* ─── Agent 运行时阈值（W8 常量化收敛） ─── */

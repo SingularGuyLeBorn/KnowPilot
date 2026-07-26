@@ -10,10 +10,10 @@ import {
   AGENT_TIERS,
   DEFAULT_LLM_MODEL,
   DEFAULT_POST_GARDEN,
+  isValidGardenIdFormat,
   LLM_MODEL_IDS,
   MEMORY_INITIAL_STRENGTH,
   MEMORY_USER_CREATABLE_TYPES,
-  POST_GARDENS,
 } from "./constants";
 
 /* ═══════════════════════════════════════════════════════
@@ -58,17 +58,56 @@ export const safeEntitySlugSchema = z
   });
 
 /* ═══════════════════════════════════════════════════════
-   Post (文章 / 知识库花园)
-   garden = 哪棵库根（content/{garden}/）；slug = 库内相对路径（可含 /）
+   Garden（动态知识库）+ Post
+   gardenId = content/{id}/；首页 = _garden.md；Post.slug = 库内路径
    ═══════════════════════════════════════════════════════ */
 
-export const postGardenSchema = z.enum(POST_GARDENS);
+/** 花园 id：格式校验；「是否已存在」由 Service 运行时校验 */
+export const gardenIdSchema = z
+  .string()
+  .min(1)
+  .max(63)
+  .refine(isValidGardenIdFormat, {
+    message: "花园 id 须为小写字母开头的 [a-z0-9_-]，且不能是 about/uploads",
+  });
+
+/** Post.garden 字段（同 gardenId） */
+export const postGardenSchema = gardenIdSchema;
+
+export const createGardenSchema = z.object({
+  id: gardenIdSchema,
+  title: z.string().min(1, "标题不能为空").max(200),
+  description: z.string().max(500).optional().nullable(),
+  /** 首页 Markdown 正文（写入 _garden.md body） */
+  homeContent: z.string().default(""),
+});
+
+export const updateGardenSchema = z.object({
+  id: gardenIdSchema,
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(500).optional().nullable(),
+  homeContent: z.string().optional(),
+});
+
+export const listGardensSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(50),
+  keyword: z.string().optional(),
+});
+
+export const getGardenByIdSchema = z.object({
+  id: gardenIdSchema,
+});
+
+export const deleteGardenSchema = z.object({
+  id: gardenIdSchema,
+});
 
 export const createPostSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(200),
   content: z.string().default(""),
-  /** 知识库花园：posts（博客）/ knowledge / resources；默认 posts */
-  garden: postGardenSchema.default(DEFAULT_POST_GARDEN),
+  /** 目标花园 id（须已存在）；默认 posts */
+  garden: gardenIdSchema.default(DEFAULT_POST_GARDEN),
   /** 库内相对路径（不含 .md）；不填则由标题生成 */
   slug: safeEntitySlugSchema.optional(),
   excerpt: z.string().optional(),
@@ -82,8 +121,8 @@ export const updatePostSchema = z.object({
   id: z.string().cuid(),
   title: z.string().min(1).max(200).optional(),
   content: z.string().optional(),
-  /** 允许迁移到另一花园（文件随之搬迁） */
-  garden: postGardenSchema.optional(),
+  /** 允许迁移到另一已存在花园（文件随之搬迁） */
+  garden: gardenIdSchema.optional(),
   slug: safeEntitySlugSchema.optional(),
   published: z.boolean().optional(),
   excerpt: z.string().optional(),
@@ -96,7 +135,7 @@ export const listPostsSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
   /** 不传 = 全部花园；传则只列该花园 */
-  garden: postGardenSchema.optional(),
+  garden: gardenIdSchema.optional(),
   published: z.boolean().optional(),
   category: z.string().optional(),
   tag: z.string().optional(),
@@ -108,13 +147,13 @@ export const listPostsSchema = z.object({
 export const searchPostsSchema = z.object({
   query: z.string().min(1),
   limit: z.number().int().min(1).max(50).default(10),
-  garden: postGardenSchema.optional(),
+  garden: gardenIdSchema.optional(),
 });
 
-/** 按花园 + slug 取文（slug 单独不再全局唯一） */
+/** 按花园 + slug 取文 */
 export const getPostBySlugSchema = z.object({
   slug: safeEntitySlugSchema,
-  garden: postGardenSchema.default(DEFAULT_POST_GARDEN),
+  garden: gardenIdSchema.default(DEFAULT_POST_GARDEN),
 });
 
 /* ═══════════════════════════════════════════════════════
@@ -1217,6 +1256,10 @@ export const paginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
 /** 入参类型：garden/content 等有 default 的字段可省略 */
 export type CreatePostInput = z.input<typeof createPostSchema>;
 export type UpdatePostInput = z.infer<typeof updatePostSchema>;
+export type CreateGardenInput = z.input<typeof createGardenSchema>;
+export type UpdateGardenInput = z.infer<typeof updateGardenSchema>;
+/** list 入参经 zod default 后 page/pageSize 必有 */
+export type ListGardensInput = z.infer<typeof listGardensSchema>;
 export type ListPostsInput = z.infer<typeof listPostsSchema>;
 export type SearchPostsInput = z.infer<typeof searchPostsSchema>;
 

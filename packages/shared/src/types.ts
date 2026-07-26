@@ -5,12 +5,24 @@
  * 隔离数据库（Prisma）独有的私有字段，保持前后端纯净的数据交互。
  */
 
-/** 文章实体（garden = 知识库根；slug = 该根下相对路径） */
+/** 知识库花园（缓存投影；事实源 content/{id}/_garden.md） */
+export interface Garden {
+  id: string;
+  title: string;
+  description: string | null;
+  /** 首页 Markdown 正文 */
+  homeContent: string;
+  deletedAt: string | Date | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+}
+
+/** 文章实体（garden = 花园 id；slug = 该根下相对路径） */
 export interface Post {
   id: string;
   title: string;
-  /** posts | knowledge | resources —— 对应 content/{garden}/ */
-  garden: "posts" | "knowledge" | "resources";
+  /** 花园 id —— 对应 content/{garden}/ */
+  garden: string;
   slug: string;
   content: string;
   excerpt: string | null;
