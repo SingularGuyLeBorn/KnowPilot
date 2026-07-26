@@ -457,7 +457,8 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
   // 12. Workspace (工作区)
   it("should perform CRUD on Workspace entity", async () => {
     const uniqueName = `Test Workspace ${Date.now()}`;
-    const uniquePath = `D:/temp/test-workspace-${Date.now()}`;
+    // D7：Workspace.path 必须落在 projectRoot 内（禁盘符绝对路径逃逸）
+    const uniquePath = `workspaces/test-ws-${Date.now()}`;
 
     const created = await caller.workspace.create({
       name: uniqueName,

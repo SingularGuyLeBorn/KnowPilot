@@ -8,7 +8,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { resolveSafePath, resolveWithinDir, assertAbsNotKnowledgeCore } from "../../safePath.js";
+import { resolveSafePath, resolveWithinDir, assertWritePathSafe } from "../../safePath.js";
 import type { AppConfig } from "../../config.js";
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
@@ -71,6 +71,7 @@ async function resolveAgentFsPath(
     }
     if (p === "content") p = "content";
     const abs = resolveSafePath(ctx.config, p || "content");
+    if (mode === "write") assertWritePathSafe(ctx.config, abs);
     return { abs, relForReturn: p || "content" };
   }
 
@@ -83,11 +84,12 @@ async function resolveAgentFsPath(
   if (!wsRelPath) {
     const fallback = p ? `data/workspace/${p}` : "data/workspace";
     const abs = resolveSafePath(ctx.config, fallback);
+    if (mode === "write") assertWritePathSafe(ctx.config, abs);
     return { abs, relForReturn: fallback };
   }
   const wsAbs = path.isAbsolute(wsRelPath) ? path.resolve(wsRelPath) : resolveSafePath(ctx.config, wsRelPath);
   const abs = p ? resolveWithinDir(wsAbs, p) : wsAbs;
-  if (mode === "write") assertAbsNotKnowledgeCore(ctx.config, abs);
+  if (mode === "write") assertWritePathSafe(ctx.config, abs);
   const relForReturn = path.relative(ctx.config.projectRoot, abs).replace(/\\/g, "/");
   return { abs, relForReturn };
 }

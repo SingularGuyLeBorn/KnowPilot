@@ -165,7 +165,7 @@ const SMOKE_ARG_OVERRIDES: Record<string, unknown> = {
 
   "workspace.list": { page: 1, pageSize: 1 },
   "workspace.getById": { id: FAKE_CUID },
-  "workspace.create": { name: `Smoke WS ${Date.now()}`, path: `/tmp/smoke-${Date.now()}` },
+  "workspace.create": { name: `Smoke WS ${Date.now()}`, path: `workspaces/smoke-${Date.now()}` },
   "workspace.update": { id: FAKE_CUID, description: "smoke" },
   "workspace.delete": { id: FAKE_CUID },
 
