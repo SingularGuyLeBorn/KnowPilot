@@ -28,8 +28,8 @@
 | E2 | P1 | INV-1 不在 reducer：COMMIT_STREAM 接受 streaming→idle 直跳 | useStreamLifecycle.ts:248-262,511-525 | 已修复@b4094a95（PR-6） |
 | E3 | P1 | abort 后 2s setTimeout 兜底（时序猜测补丁，partial 对齐靠赌） | useChatRunStream.ts:566-573 | 已修复@a0a2dbab（PR-6；服务端契约@d42f82f4） |
 | A6 | P2 | 审批/ask_user 两 gate 挂起-唤醒-中止语义不一致 | approvalGate.ts:160-232 | 已修复@1f19ee4f（原 PR-2/A6） |
-| A7 | P2 | stream/sync 两链路行为分叉：reflection 拦不住已流出拒稿；sync abort 不留部分稿 | reflection.ts:138-150; agentStream.ts:870-898; agentRuntime.ts:252-258 | 登记 |
-| A8 | P2 | 扁平存储重建：注入消息时序失真 + inject 落库失败幻影消息 | chatHistory.ts:144-215; reactLoop.ts:161-187 | 登记 |
+| A7 | P2 | stream/sync 两链路行为分叉：reflection 拦不住已流出拒稿；sync abort 不留部分稿 | reflection.ts; agentStream.ts | 已修复@arch/audit-fix-2026-07-26 |
+| A8 | P2 | 扁平存储重建：注入消息时序失真 + inject 落库失败幻影消息 | chatHistory.ts; reactLoop.ts | 部分修复@arch/audit-fix-2026-07-26（幻影已修；时序拆行仍开放） |
 | B3 | P2 | autoConsume 在池槽位内等 hub 空闲：消费任务把全局 LLM 槽变停车场 | asyncJobManager.ts:441-444 vs 258-262 | 已修复@3e6f340d（原 PR-4） |
 | B4 | P2 | runStartupRecovery 时序竞态 + resume 分支非幂等（同 jobId 可双入池） | asyncJobManager.ts:942-983,810-813 | 已修复@78e74dec（原 PR-4） |
 | B5 | P2 | depth 防循环名存实亡：计数来源是 LLM 入参，服务端从不递增 | swarmPermissionGuard.ts:167-176; swarmBus.ts:87 | 已修复@cbc8d637（原 PR-4） |
@@ -41,7 +41,7 @@
 | C6 | P2 | CircuitBreaker 半开期无探测纪元：陈旧成功误合闸、陈旧失败误重计时 | circuitBreaker.ts:123-153 | 已修复@a8b22159（原 PR-2） |
 | C7 | P2 | cron 触发与手动触发无原子认领：TaskService.run/TriggerEngine 可叠跑 | taskScheduler.ts:53-63; services.ts:2357; triggerEngine.ts:142-148 | 已修复@63af42c2（原 PR-3） |
 | C8 | P2 | config.yaml 无热更新且生效口径分裂（config 快照 vs env 活读并存） | config.ts:650-656; approvalGate.ts:72-78 等 | 登记 |
-| D7 | P2 | safePath 纯词法校验：无符号链接/Junction 解析可逃逸 projectRoot | safePath.ts:9-17 | 登记 |
+| D7 | P2 | safePath 纯词法校验：无符号链接/Junction 解析可逃逸 projectRoot | safePath.ts | 已修复@arch/audit-fix-2026-07-26（assertWritePathSafe+realpath） |
 | D8 | P2 | memoryRepository.supersedeUpdate 两步写无事务；memoryService 缺省静默降级 | memoryRepository.ts:282-370 | PR-1 · 已修复@0757c085 |
 | E4 | P2 | 悬停/预取（只读意图）经 hydrate 无条件置 drainRequested：悬停即发消息 | useSessionMessages.ts:164-168,521-530 | 已修复@714fe080（PR-6） |
 | E5 | P2 | hydrate 合并新鲜度粒度是「整列 id 序列」：stale 页面可覆盖 SSE 新内容 | useSessionMessages.ts:73-90 | 已修复@3776708f（PR-6） |
@@ -145,13 +145,13 @@
 
 ## P2/P3 登记项（本轮不修，转入 design-decisions 待办）
 
-- **A7**：stream/sync 两链路行为分叉（reflection 拒稿已流出；sync abort 不留部分稿）。修法方向：reflection 开启时 transport 对疑似终轮缓冲 token 至 verdict；部分稿保存收进 reactLoop catch 转移点。
-- **A8**：扁平存储重建时序失真 + inject 幻影消息。修法方向：assistant 按轮拆行或 toolCalls 带 round 序位、注入消息记 injectAfterRound；inject 落库失败=注入失败（不 push 进 LLM 上下文）。
-- **B8**：spawn 去重窗口对齐任务在途期（挂 completion）而非固定 60s。
+- **A7**：✅ 已修（2026-07-26）：reflection 开启时 stream 缓冲终轮 token，critic fail 丢弃；sync abort 部分稿走 E3 契约。
+- **A8**：部分修（2026-07-26）：inject 落库失败不再 push LLM（禁幻影）；时序拆行 / injectAfterRound 仍开放。
+- **B8**：✅ 已修（lookupDedup 保留在途 + 负向行为测）。
 - **C8**：config 单通道化（活读 env 全部启动时解析进 AppConfig）或显式维护「热生效旋钮清单」。
-- **D7**：safePath 写操作前对父目录 realpath 并重新校验前缀。
-- **E7**：useSubagentMessageMirror 判重键改 agentMessageId（镜像写入时记入 toolResults/source），触发改显式事件。
-- **E8**：会话配置收进 per-session store 切片消灭上报效应；mount-resume 改「先 hydrate 配置再起流」两阶段编排。
+- **D7**：✅ 已修（assertWritePathSafe + resolveRealWriteTarget；Workspace.path 强制 projectRoot 内）。
+- **E7**：✅ 已修（本波）。
+- **E8**：✅ 已修（sessionConfigStore + startNewChat migrate）。
 
 ---
 

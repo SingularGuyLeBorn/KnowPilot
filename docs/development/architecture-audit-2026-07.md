@@ -31,7 +31,7 @@
 | 2 | 工具层 — 适配器+命令模式 | ✅ | W6：PR-4b/4c 全域拆分（nativeTools 3420→123 行）+ D 类工具幂等 rollback + 并发分级单真相 + 四域 Zod 化 |
 | 3 | 记忆层 — 仓储+缓存 | ✅ | W5：MemoryRepository 仓储 + scope 三层隔离 + contentHash 幂等去重 + strength 衰减归档，调用方全走接口 |
 | 4 | 状态管理 — 状态机 | ✅ | 后端 phase 机样板；W3 前端 drain 单驱动（INV-8）补丁清零；W11 Run 活状态 + phase 快照 + AWAITING_HUMAN 审批续跑 |
-| 5 | 反思层 — 装饰器模式 | ⚠️ | W7 withReflection 落地（done 前结构化 critic + 回注重试）；但默认关闭且仅接 sync 链路，stream 链路另立跟进 |
+| 5 | 反思层 — 装饰器模式 | ⚠️ | W7 withReflection 落地（done 前结构化 critic + 回注重试）；默认关闭；stream/sync 均已接 withReflection（A7 token 缓冲已落地） |
 | 6 | 多 Agent 协作 — 中介者+代理 | ✅ | W10 SwarmOrchestrator 统一四入口调度 + spawn 去重 + heartbeat 桩删除；W8 MAX_DEPTH 单点化 |
 | 7 | 错误恢复 — 断路器+补偿 | ✅ | W2 LLM 重试/降级/错误分类 + W12 MCP 断路器/心跳熔断暂停 + W6 rollback 逆序补偿 |
 | 8 | HITL — 拦截器模式 | ⚠️ | W1 审计字段 + 软删除、W11 审批续跑、W12 清理定时化已修；tRPC 手动包装 11 处 + 规则硬编码 Set 未修 |
@@ -248,7 +248,7 @@
       { "id": "tool_command", "status": "✅", "score": 9, "fixed_by": ["W6"], "remaining": "fs/web/shell 三域手写 JSON schema 的 Zod 化另立跟进" },
       { "id": "memory_repository", "status": "✅", "score": 9, "fixed_by": ["W5"], "remaining": "" },
       { "id": "state_machine", "status": "✅", "score": 9, "fixed_by": ["W3", "W11"], "remaining": "重启后 running Run 标 interrupted 如实不续跑（设计决策），checkpoint 重建恢复为未来扩展" },
-      { "id": "reflection", "status": "⚠️", "score": 6, "fixed_by": ["W7"], "remaining": "reflection.enabled 默认 false；仅 sync 链路接入，stream 链路另立跟进" },
+      { "id": "reflection", "status": "⚠️", "score": 6, "fixed_by": ["W7"], "remaining": "reflection.enabled 默认 false；stream/sync 均已接入（A7 缓冲）" },
       { "id": "multi_agent", "status": "✅", "score": 9, "fixed_by": ["W10", "W8"], "remaining": "" },
       { "id": "error_recovery", "status": "✅", "score": 9, "fixed_by": ["W2", "W12", "W6"], "remaining": "" },
       { "id": "hitl", "status": "⚠️", "score": 7, "fixed_by": ["W1", "W11", "W12"], "remaining": "tRPC withApprovalGuard 手动包装 11 处未改 middleware 自动拦截；审批规则硬编码 Set，config.yaml 无审批段" },
