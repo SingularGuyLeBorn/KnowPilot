@@ -1512,3 +1512,25 @@ WIP 分支（Kimi 模型菜单/飞书集成/软暂停占位/tombstone 等，基�
 | 队列水合 | 父级（chat.tsx）与 pane 双写 merge 并存（幂等冗余，与 master 一致）；pane 侧挂 tombstone |
 
 **回答**：按上表落地（merge commit `037d081d` → master `edb23a80`；验证 lint 全绿 + server 764/764 + web 57/57）
+
+---
+
+## 多知识库花园 Post.garden（2026-07-26）
+
+### 背景
+
+单桶 `content/posts/` 无法区分博客 / 内部笔记 / 资源索引；需要 Agent 可选花园 + 库内路径，同时**禁止** `write_file` 直写知识库（脱同步）。对标 Dify dataset / AKB vault / Obsidian 分区，形态本地优先。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 目录形态 | `content/{garden}/{slug}.md`，`garden ∈ posts\|knowledge\|resources`；`about` 不是花园 |
+| 唯一键 | DB `@@unique([garden, slug])`；slug 可含 `/`（库内相对路径） |
+| frontmatter | **不写** garden（目录是事实源） |
+| 写入通道 | 只走 `post_create` / `post_update` / 编辑器；`write_file` 硬禁 posts\|knowledge\|resources\|about |
+| sync | 每花园一个 Syncer（`Post:{garden}`），watch 删除按花园收窄 |
+| API | `getBySlug({slug,garden})`；list/tree/search 可选 garden 过滤 |
+| UI | 列表花园切换；详情 `?garden=`（默认 posts 可省略）；新建可选花园 |
+
+**回答**：按上表落地（分支 `arch/audit-fix-2026-07-26`）

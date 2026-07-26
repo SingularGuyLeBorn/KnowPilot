@@ -83,8 +83,10 @@ KnowPilot/
 │           ├── types.ts
 │           └── index.ts
 ├── content/                    # Git 跟踪的纯知识库事实源
-│   ├── posts/                  # 文章 Markdown 源文件（已大量使用）
-│   ├── about/                  # About Me（profile.md，Web /about 读取）
+│   ├── posts/                  # 博客花园（Post.garden=posts）
+│   ├── knowledge/              # 知识库花园（Post.garden=knowledge）
+│   ├── resources/              # 资源花园（Post.garden=resources）
+│   ├── about/                  # About Me（非花园；profile.md）
 │   └── uploads/                # 上传文件（file.upload + 截图）
 ├── config/                     # Git 跟踪的 Agent 配置事实源
 │   ├── agents/                 # Agent 配置（Markdown，运行时 CRUD 写回 + _templates/）
@@ -276,19 +278,19 @@ pnpm test         # 全仓库运行 Vitest
 
 来源：`MIGRATION_PLAN.md`、`docs/development/README.md`
 
-1. 文章源文件位于 `content/posts/{slug}.md`。
+1. 文章源文件位于 `content/{garden}/{slug}.md`，`garden ∈ posts|knowledge|resources`；`(garden, slug)` 联合唯一；frontmatter **不写** garden（目录是事实源）。
 2. Frontmatter 规范字段：
-   ```yaml
-   ---
-   title: "文章标题"
-   category: "分类"
-   tags: ["标签1", "标签2"]
-   published: true
-   excerpt: "一句话文章简要介绍。"
-   ---
-   ```
-3. `pnpm db:sync` 扫描 `content/posts/`、`config/agents/` 等已注册目录，解析后 upsert 到对应表；删除本地已不存在但数据库仍有的记录。
-4. Post / Agent / Skill / MCP / Memory / Prompt 的 `create` / `update` / `delete` 会同步写回 `content/`（posts）或 `config/`（其余）对应文件。
+ ```yaml
+ ---
+ title: "文章标题"
+ category: "分类"
+ tags: ["标签1", "标签2"]
+ published: true
+ excerpt: "一句话文章简要介绍。"
+ ---
+ ```
+3. `pnpm db:sync` 扫描各花园目录与 `config/agents/` 等已注册目录，解析后 upsert；删除本地已不存在但数据库仍有的记录。
+4. Post / Agent / Skill / MCP / Memory / Prompt 的 `create` / `update` / `delete` 会同步写回 `content/{garden}/`（Post）或 `config/`（其余）。禁止 `write_file` 直写知识库花园。
 5. 自动保存：`useAutoSave.ts` 500ms 节流写入 LocalStorage，2s 防抖调用 `post.update`（仅对已存在 id）。
 
 ### 项目扁平化与代码收拢约定
