@@ -19,6 +19,7 @@ import { type ChatQueueItem, formatQueueItemForLlm } from "@/lib/chatQueueTypes"
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { type RunStreamOptions } from "@/lib/useChatRunStream";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
+import { getSessionConfig } from "@/lib/sessionConfigStore";
 import { mergeAsyncQueueFromCache } from "@/lib/refreshSessionAsyncQueue";
 
 export type AckAsyncDeliveryFn = (input: { jobId: string }) => Promise<{ claimed: boolean }>;
@@ -44,7 +45,6 @@ export interface UseChatQueueDrainParams {
   /** 可见 pane 的 sessionId（分屏时两侧）；仅这些会话自动 drain */
   visibleSessionIds?: string[];
   asyncResultQueue: ChatQueueItem[];
-  chatConfigModel: string;
   isSessionRunOccupied: (sid: string | null) => boolean;
   sessionsItems: Array<{ id: string; agentId?: string | null }> | undefined;
   consumeSessionQueueItemMutation: ReturnType<typeof trpc.agent.consumeSessionQueueItem.useMutation>;
@@ -59,7 +59,6 @@ export function useChatQueueDrain({
   effectiveSessionId,
   visibleSessionIds,
   asyncResultQueue,
-  chatConfigModel,
   isSessionRunOccupied,
   sessionsItems,
   consumeSessionQueueItemMutation,
@@ -118,7 +117,7 @@ export function useChatQueueDrain({
 
     sessionComposeActions.setQueueDraining(sid, true);
 
-    void (async () => {
+    (async () => {
       if (task.kind === "async-result" && task.jobId) {
         try {
           // E1：claimed:true 之后才 mark（queueDraining 已防并发；提前 mark 无保护作用且 ACK 失败会永久 skip）
@@ -141,10 +140,14 @@ export function useChatQueueDrain({
         }
       }
 
+      // E8：按被 drain 的 sessionId 取 model，禁止吃焦点 pane 闭包
+      const drainModel = getSessionConfig(sid).model;
+      const supportsVision = !!getModelOption(drainModel).supportsVision;
+
       if (task.kind === "user" || task.kind === "child_notify") {
         // child_notify 必须与 user 一样出队：旧实现落入 else 不 consume → 流结束后再发一遍
         const streamMessagePreview =
-          formatQueueItemForLlm(task, !!getModelOption(chatConfigModel).supportsVision) ||
+          formatQueueItemForLlm(task, supportsVision) ||
           (task.attachments?.length ? "（见附件）" : "");
         if (!streamMessagePreview.trim() && !task.attachments?.length) {
           // 空内容禁止起流（否则 LLM「像没接到」）
@@ -219,7 +222,6 @@ export function useChatQueueDrain({
         }
       }
 
-      const supportsVision = !!getModelOption(chatConfigModel).supportsVision;
       const streamMessage =
         formatQueueItemForLlm(task, supportsVision) ||
         (task.attachments?.length ? "（见附件）" : "");
@@ -284,8 +286,8 @@ export function useChatQueueDrain({
       } catch {
         /* runStream 失败：保留 claimedAt，启动恢复超龄后重投 */
       }
-    })();
-  }, [runStream, chatConfigModel, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
+    })().catch(() => {});
+  }, [runStream, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
 
   /** 优先 preferred，再可见 pane；不扫隐藏 tab（避免后台 tab 抢起流） */
   const drainAllPendingQueues = useCallback(

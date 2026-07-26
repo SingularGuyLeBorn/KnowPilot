@@ -85,4 +85,25 @@ describe("E1 ackThenMarkDelivery", () => {
     sessionComposeActions.unmarkDeliveryConsumed(SID, JOB);
     expect(sessionComposeStore.get(SID).consumedDeliveries.has(JOB)).toBe(false);
   });
+
+  it("P2-5：localStorage tombstone 不得 skip 服务端 deliveries（reconciler 补投）", () => {
+    sessionComposeActions.markDeliveryConsumed(SID, JOB);
+    const merged = mergeAsyncPollIntoQueue(
+      [],
+      {
+        deliveries: [
+          {
+            id: "del-requeue",
+            jobId: JOB,
+            taskLabel: "补投",
+            asyncResult: "reconciler 回滚后重投",
+            status: "done" as const,
+            createdAt: Date.now(),
+          },
+        ],
+      },
+      { skipDeliveryJobIds: sessionComposeStore.get(SID).consumedDeliveries },
+    );
+    expect(merged.some((i) => i.jobId === JOB && i.kind === "async-result")).toBe(true);
+  });
 });

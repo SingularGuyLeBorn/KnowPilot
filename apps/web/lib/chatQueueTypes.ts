@@ -288,7 +288,8 @@ export function mergeAsyncPollIntoQueue(
   }
 
   for (const del of poll.deliveries ?? []) {
-    if (skipDeliveries.has(del.jobId)) continue;
+    // 服务端 deliveries 是待消费 ground truth：禁止用 localStorage tombstone 永久 skip。
+    // skipDeliveries 只用于上方本地 overlay 生命周期；reconciler 回滚补投必须能再次入队。
     // 本地已完成 overlay 仍在展示窗口内，跳过 poll delivery 避免重复消费/闪烁
     if (localFinishedOverlayIds.has(del.jobId)) continue;
     next = next.filter((q) => q.jobId !== del.jobId);

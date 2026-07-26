@@ -6,6 +6,8 @@
  * 【会话配置域】原 chat.tsx 配置加载 effect + updateConfig / resetPromptToAgent 收拢。
  * effect 体未改：localStorage 会话配置优先，其次 session 落库值，最后 Agent 默认；
  * 新会话页走 resolveNewChatConfig(默认配置, selectedAgent)。
+ *
+ * E8：每次写入同步 sessionConfigStore（runStream/drain/resume 的权威切片）。
  */
 
 import { useCallback, useEffect, useState, startTransition } from "react";
@@ -18,6 +20,8 @@ import {
   saveDefaultChatConfig,
   saveSessionChatConfig,
 } from "@/lib/chatConfig";
+import { NEW_STREAM_KEY } from "@/lib/chatKeys";
+import { setSessionConfig } from "@/lib/sessionConfigStore";
 import { type Agent, type ChatSessionConfig } from "@knowpilot/shared";
 
 export function useChatConfig(opts: {
@@ -41,27 +45,35 @@ export function useChatConfig(opts: {
       startTransition(() => {
         if (saved) {
           // 已有会话保留用户选择的模型，只同步 systemPrompt（如果用户没自定义）
-          setChatConfig({
+          const next = {
             ...saved,
             systemPrompt: saved.customSystemPrompt
               ? saved.systemPrompt
-              : (saved.systemPrompt || selectedAgent.systemPrompt),
-          });
+              : saved.systemPrompt || selectedAgent.systemPrompt,
+          };
+          setChatConfig(next);
+          setSessionConfig(effectiveSessionId, next);
           return;
         }
-        setChatConfig((prev) => ({
-          ...prev,
-          model: sessionDetailModel ?? selectedAgent.model,
-          systemPrompt:
-            sessionDetailSystemPrompt?.trim() || selectedAgent.systemPrompt,
-          customSystemPrompt:
-            !!sessionDetailSystemPrompt?.trim() &&
-            sessionDetailSystemPrompt !== selectedAgent.systemPrompt,
-        }));
+        setChatConfig((prev) => {
+          const next = {
+            ...prev,
+            model: sessionDetailModel ?? selectedAgent.model,
+            systemPrompt:
+              sessionDetailSystemPrompt?.trim() || selectedAgent.systemPrompt,
+            customSystemPrompt:
+              !!sessionDetailSystemPrompt?.trim() &&
+              sessionDetailSystemPrompt !== selectedAgent.systemPrompt,
+          };
+          setSessionConfig(effectiveSessionId, next);
+          return next;
+        });
       });
     } else {
       startTransition(() => {
-        setChatConfig(resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent));
+        const next = resolveNewChatConfig(loadDefaultChatConfig(), selectedAgent);
+        setChatConfig(next);
+        setSessionConfig(NEW_STREAM_KEY, next);
       });
     }
   }, [effectiveSessionId, selectedAgent, sessionDetailModel, sessionDetailSystemPrompt]);
@@ -70,8 +82,13 @@ export function useChatConfig(opts: {
     (patch: Partial<ChatSessionConfig>) => {
       setChatConfig((prev) => {
         const next = { ...prev, ...patch };
-        if (effectiveSessionId) saveSessionChatConfig(effectiveSessionId, next);
-        else saveDefaultChatConfig(next);
+        if (effectiveSessionId) {
+          saveSessionChatConfig(effectiveSessionId, next);
+          setSessionConfig(effectiveSessionId, next);
+        } else {
+          saveDefaultChatConfig(next);
+          setSessionConfig(NEW_STREAM_KEY, next);
+        }
         if (effectiveSessionId && (patch.model || patch.systemPrompt !== undefined)) {
           updateSessionMutate({
             id: effectiveSessionId,

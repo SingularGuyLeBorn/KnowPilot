@@ -19,9 +19,15 @@ import { trpc } from "@/lib/trpc";
 import { streamAgentChat } from "@/lib/agentStream";
 import { buildStreamConfig } from "@/lib/chatConfig";
 import { formatToolResultHint, pruneEmptyThinkingSteps } from "@/lib/chatMessageUtils";
-import { type Agent, type ChatSessionConfig, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
+import { type Agent, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 import { type ChatQueueItem } from "@/lib/chatQueueTypes";
 import { COMPOSE_STORAGE_KEY, LIFECYCLE_STORAGE_KEY, NEW_STREAM_KEY } from "@/lib/chatKeys";
+import {
+  ensureSessionConfigHydrated,
+  getSessionConfig,
+  migrateSessionConfig,
+  patchSessionConfig,
+} from "@/lib/sessionConfigStore";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions, streamLifecycleStore } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
@@ -64,11 +70,10 @@ export type RunStreamOptions = {
 export interface UseChatRunStreamParams {
   effectiveSessionId: string | null;
   effectiveAgentId: string;
-  chatConfig: ChatSessionConfig;
   selectedWorkspaceId: string | null;
   selectedAgent: Agent | undefined;
-  updateConfig: (patch: Partial<ChatSessionConfig>) => void;
   createSessionQueueItemMutation: ReturnType<typeof trpc.agent.createSessionQueueItem.useMutation>;
+  /** 仅 resume 无流等无法靠 SSE upsert 对齐的路径使用；abort 有 partialId 时禁止调用 */
   hydrateSessionMessagesFallback: (sid: string) => Promise<void>;
   // rAF/定时器/视图 refs：归 chat.tsx 所有（unmount 清理 effect 统一回收），运行时注入
   effectiveSessionIdRef: RefObject<string | null>;
@@ -88,10 +93,8 @@ export interface UseChatRunStreamParams {
 export function useChatRunStream({
   effectiveSessionId,
   effectiveAgentId,
-  chatConfig,
   selectedWorkspaceId,
   selectedAgent,
-  updateConfig,
   createSessionQueueItemMutation,
   hydrateSessionMessagesFallback,
   effectiveSessionIdRef,
@@ -206,14 +209,21 @@ export function useChatRunStream({
       let originSid = opts.targetSessionId ?? effectiveSessionId ?? NEW_STREAM_KEY;
       // 视图不变量：流回调不依赖闭包 keepCurrentView，改用 effectiveSessionIdRef 运行时判断
       // keepCurrentView 参数仅保留给 consumeQueue 标记后台消费，不再在回调里使用
-      void opts.keepCurrentView;
-      sessionComposeActions.getActiveAbortController(originSid)?.abort();
+      const isResume = opts.isResume === true;
+      // RESUME 单飞：续传不得 abort 已有 SSE（四路入口 mount/listRunning/visibility/切 session 会互杀）。
+      // 新开流才替换 controller；resume 若已有在途 controller 则直接 no-op。
+      const existingAc = sessionComposeActions.getActiveAbortController(originSid);
+      if (isResume && existingAc && !existingAc.signal.aborted) {
+        return;
+      }
+      if (!isResume) {
+        existingAc?.abort();
+      }
       const ac = new AbortController();
       sessionComposeActions.setActiveAbortController(originSid, ac);
       /** 当前 ReAct 轮次：thinking delta 必须写入对应 round，禁止糊到上一轮 */
       let streamRound = 1;
 
-      const isResume = opts.isResume === true;
       const began = streamLifecycleActions.beginStream(originSid, {
         streamTargetUserId:
           opts.retryFromMessageId ?? opts.regenerateUserMessageId ?? opts.editMessageId ?? null,
@@ -221,16 +231,21 @@ export function useChatRunStream({
       });
       // INV-2 / RESUME_CLAIM：begin 被拒（占用中或 resume 双挂）则禁止继续发请求
       if (!began) {
-        sessionComposeActions.setActiveAbortController(originSid, null);
+        // 仅清掉我们刚挂上的 controller；勿 abort（resume 双挂时可能与在途流无关）
+        if (sessionComposeActions.getActiveAbortController(originSid) === ac) {
+          sessionComposeActions.setActiveAbortController(originSid, null);
+        }
         sessionComposeActions.setQueueDraining(originSid, false);
         return;
       }
       scheduleStreamSave(true);
       setEditingUserId(null);
 
+      // E8：运行时按 originSid 取权威 config，禁止吃 React 闭包首帧 DEFAULT / 错 pane
+      const runtimeConfig = ensureSessionConfigHydrated(originSid);
       const streamConfig = buildStreamConfig(
         {
-          ...chatConfig,
+          ...runtimeConfig,
           ...(opts.skillPrompt
             ? { systemPrompt: opts.skillPrompt, customSystemPrompt: true }
             : {}),
@@ -269,6 +284,7 @@ export function useChatRunStream({
                 flushStreamNow(NEW_STREAM_KEY);
                 streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, sid);
                 sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, sid);
+                migrateSessionConfig(NEW_STREAM_KEY, sid);
                 originSid = sid;
                 // 新会话首条消息期间入队的项尚无 dbId，迁移后补写 DB
                 const pending = sessionComposeStore.get(sid).userQueue;
@@ -349,7 +365,15 @@ export function useChatRunStream({
             },
             onToolStart: (name, args, round, toolCallId) => {
               flushStreamNow(originSid);
-              streamLifecycleActions.moveStreamingContentToTimeline(originSid, round);
+              // A7：反思拒稿已流出的草稿进时间线作中间结果，并清 streaming / 待合帧，
+              // 避免气泡继续展示「像终稿」直到下一轮 token 覆盖。
+              if (name === "__reflection__") {
+                discardStreamFlush(originSid);
+                streamLifecycleActions.moveStreamingContentToTimeline(originSid, round);
+                streamLifecycleActions.clearStreamingContent(originSid);
+              } else {
+                streamLifecycleActions.moveStreamingContentToTimeline(originSid, round);
+              }
               // 本轮若无思考正文，摘掉空 Thinking，避免工具条上方一排空壳
               const pruned = pruneEmptyThinkingSteps(streamLifecycleStore.get(originSid).liveTimeline);
               if (pruned.length !== streamLifecycleStore.get(originSid).liveTimeline.length) {
@@ -394,7 +418,7 @@ export function useChatRunStream({
                       id: r.agentId,
                       name: r.subagentName || `子 Agent ${r.agentId.slice(0, 4)}`,
                       description: null,
-                      model: chatConfig.model || DEFAULT_LLM_MODEL,
+                      model: getSessionConfig(originSid).model || DEFAULT_LLM_MODEL,
                       tools: [] as string[],
                       tier: "sub" as const,
                       workspaceId: wsId,
@@ -421,8 +445,8 @@ export function useChatRunStream({
                       };
                     });
                   }
-                  void utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => undefined);
-                  void utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => undefined);
+                  utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => {});
+                  utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
                 }
                 if (r.jobId && (r.status === "running" || r.status === "queued")) {
                   const jobId = r.jobId;
@@ -473,8 +497,8 @@ export function useChatRunStream({
                 name === "agent_delete" || name === "agent_delete_sub" ||
                 name === "workspace_create" || name === "workspace_archive"
               ) {
-                void utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => undefined);
-                void utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => undefined);
+                utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => {});
+                utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
               }
             },
             onEventId: (id) => {
@@ -485,6 +509,7 @@ export function useChatRunStream({
                 flushStreamNow(originSid);
                 streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, data.sessionId);
                 sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, data.sessionId);
+                migrateSessionConfig(NEW_STREAM_KEY, data.sessionId);
                 originSid = data.sessionId;
               } else {
                 flushStreamNow(originSid);
@@ -497,10 +522,14 @@ export function useChatRunStream({
                 streamLifecycleActions.setLastRoundTokens(originSid, data.tokenUsage.total);
               }
               if (opts.skillPrompt) {
-                updateConfig({ systemPrompt: opts.skillPrompt, customSystemPrompt: true });
+                patchSessionConfig(
+                  originSid,
+                  { systemPrompt: opts.skillPrompt, customSystemPrompt: true },
+                  true,
+                );
               }
               if (data.sessionId) {
-                void utils.session.getById.invalidate({ id: data.sessionId }).catch(() => undefined);
+                utils.session.getById.invalidate({ id: data.sessionId }).catch(() => {});
               }
               const content = data.content ?? "";
               const assistantMessageId = data.assistantMessageId ?? null;
@@ -531,6 +560,7 @@ export function useChatRunStream({
               if (originSid === NEW_STREAM_KEY && sid) {
                 streamLifecycleActions.migrateStreamSession(NEW_STREAM_KEY, sid);
                 sessionComposeActions.migrateComposeSession(NEW_STREAM_KEY, sid);
+                migrateSessionConfig(NEW_STREAM_KEY, sid);
                 originSid = sid;
               }
               if (opts.optimisticUser) {
@@ -544,7 +574,7 @@ export function useChatRunStream({
                 streamLifecycleActions.abortStream(originSid, {
                   partialAssistantMessageId: null,
                 });
-                void hydrateSessionMessagesFallback(originSid);
+                hydrateSessionMessagesFallback(originSid).catch(() => {});
                 return;
               }
               // 用户软暂停 / 中断：半截进 MessageStore 再拆 live，禁止 commit 后气泡变空
@@ -558,16 +588,13 @@ export function useChatRunStream({
               if (isUserAbort) {
                 if (isPageUnloadingRef.current) return;
                 // 用户软暂停/中断经 SSE error 到达：与 catch AbortError 同走 E3 abort-pending。
-                // partial 由服务端按契约补发 message_upserted，无需客户端本地占位。
+                // partial 由服务端按契约补发 message_upserted → tryCommit；禁止 hydrate 赌落库（P2-4）。
                 flushStreamNow(originSid);
                 const pendingPartial = streamLifecycleActions.takePendingAbortPartial(originSid);
                 streamLifecycleActions.abortStream(originSid, {
                   partialAssistantMessageId: pendingPartial ?? null,
                   leftoverContent: streamLifecycleStore.get(originSid).streamingContent,
                 });
-                const hydrateSid =
-                  originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? sid ?? "") : originSid;
-                if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
                 return;
               }
               discardStreamFlush(originSid);
@@ -608,11 +635,7 @@ export function useChatRunStream({
               leftoverContent: leftover,
             });
           }
-          if (partialId) {
-            const hydrateSid =
-              originSid === NEW_STREAM_KEY ? (effectiveSessionId ?? "") : originSid;
-            if (hydrateSid) void hydrateSessionMessagesFallback(hydrateSid);
-          }
+          // P2-4：有 partialId 靠 SSE message_upserted + tryCommit 对齐，禁止 hydrate 赌落库
           if (opts.optimisticUser) {
             sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
           }
@@ -648,7 +671,7 @@ export function useChatRunStream({
         // 队列消费改由 onStreamCommitted（INV-1/2）驱动，finally 不再 hydrate+consume
       }
     },
-    [effectiveAgentId, chatConfig, effectiveSessionId, selectedWorkspaceId, updateConfig, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, scheduleThinkingFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback, effectiveSessionIdRef, isPageUnloadingRef, pendingStreamDeltaRef, pendingThinkingDeltaRef, setEditingUserId, setSessionId],
+    [effectiveAgentId, effectiveSessionId, selectedWorkspaceId, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, scheduleThinkingFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback, effectiveSessionIdRef, isPageUnloadingRef, pendingStreamDeltaRef, pendingThinkingDeltaRef, setEditingUserId, setSessionId],
   );
 
   return { runStream };

@@ -80,4 +80,16 @@ describe("E3 abort partialAssistantMessageId（无计时器）", () => {
     expect(src).toMatch(/takePendingAbortPartial/);
     expect(src).toMatch(/abortStream/);
   });
+
+  it("P2-4：user abort / AbortError 路径不再 hydrateSessionMessagesFallback", () => {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(dir, "../useChatRunStream.ts"), "utf8");
+    // 仅 resume 无流一处调用；abort 路径已删（deps/签名里的标识符不算调用）
+    const calls = src.match(/hydrateSessionMessagesFallback\(/g) ?? [];
+    expect(calls.length).toBe(1);
+    expect(src).toMatch(/opts\.isResume && isNoStream[\s\S]{0,400}?hydrateSessionMessagesFallback\(/);
+    expect(src).toMatch(/禁止 hydrate 赌落库/);
+  });
 });
+
+

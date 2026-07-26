@@ -123,7 +123,7 @@ async function parseSseBlock(
         const action = payload.action === "marked" ? "marked" : "retry";
         const issues: string[] = Array.isArray(payload.issues) ? payload.issues : [];
         const toolCallId = `reflection_r${round}_${action}`;
-        callbacks.onToolStart?.("__reflection__", { issues }, round, toolCallId);
+        callbacks.onToolStart?.("__reflection__", { issues, action }, round, toolCallId);
         callbacks.onToolEnd?.(
           "__reflection__",
           { passed: false, issues, action },

@@ -68,8 +68,7 @@ export interface ChatSessionPaneProps {
   setRotateBanner: (banner: { newSessionId: string; newTitle: string } | null) => void;
   showToast: (msg: string | null) => void;
   onOpenPromptEditor: () => void;
-  /** 向父级上报本 pane 的 chatConfig（焦点 pane 供 runStream / Prompt overlay 使用） */
-  onChatConfigChange?: (sessionId: string | null, config: ChatSessionConfig) => void;
+  /** 向父级上报本 pane 的 updateConfig API（Prompt overlay）；config 正文走 sessionConfigStore */
   onChatConfigApiChange?: (
     sessionId: string | null,
     api: {
@@ -101,7 +100,6 @@ export function ChatSessionPane({
   setRotateBanner,
   showToast,
   onOpenPromptEditor,
-  onChatConfigChange,
   onChatConfigApiChange,
 }: ChatSessionPaneProps) {
   const lifecycleKey = sessionId ?? NEW_STREAM_KEY;
@@ -223,20 +221,15 @@ export function ChatSessionPane({
   });
 
   useEffect(() => {
-    if (isFocused) onChatConfigChange?.(sessionId, chatConfig);
-  }, [isFocused, sessionId, chatConfig, onChatConfigChange]);
-
-  useEffect(() => {
     if (isFocused) onChatConfigApiChange?.(sessionId, { updateConfig, resetPromptToAgent });
   }, [isFocused, sessionId, updateConfig, resetPromptToAgent, onChatConfigApiChange]);
 
-  const { asyncResultQueue, queue } = useChatDerivedQueues({
+  const { queue } = useChatDerivedQueues({
     asyncOverlays,
     asyncQueueQuery,
     consumedDeliveries,
     userQueue,
   });
-  void asyncResultQueue;
 
   const modelOpt = getModelOption(chatConfig.model);
   const messageGroups = useMemo(() => buildMessageGroups(messages), [messages]);
@@ -322,12 +315,12 @@ export function ChatSessionPane({
   const handleRegenerate = useCallback(
     (userMessageId: string) => {
       if (!sessionId || isSessionRunOccupied(sessionId)) return;
-      void runStream({
+      runStream({
         regenerate: true,
         regenerateUserMessageId: userMessageId,
         targetSessionId: sessionId,
         keepCurrentView: !isFocused,
-      });
+      }).catch(() => {});
     },
     [sessionId, isSessionRunOccupied, runStream, isFocused],
   );
@@ -335,11 +328,11 @@ export function ChatSessionPane({
   const handleRetry = useCallback(
     (messageId: string) => {
       if (!sessionId || isSessionRunOccupied(sessionId)) return;
-      void runStream({
+      runStream({
         retryFromMessageId: messageId,
         targetSessionId: sessionId,
         keepCurrentView: !isFocused,
-      });
+      }).catch(() => {});
     },
     [sessionId, isSessionRunOccupied, runStream, isFocused],
   );
@@ -364,12 +357,12 @@ export function ChatSessionPane({
     (userMessageId: string) => {
       const content = editDraft.trim();
       if (!content || isSessionRunOccupied(sessionId)) return;
-      void runStream({
+      runStream({
         editMessageId: userMessageId,
         editContent: content,
         targetSessionId: sessionId ?? undefined,
         keepCurrentView: !isFocused,
-      });
+      }).catch(() => {});
     },
     [editDraft, sessionId, isSessionRunOccupied, runStream, isFocused],
   );
@@ -378,7 +371,7 @@ export function ChatSessionPane({
     async (assistantMessageId: string, versionIndex: number) => {
       if (isSessionStreaming(sessionId)) return;
       await switchVersionMutateAsync({ messageId: assistantMessageId, versionIndex });
-      void hydrateFromServer();
+      hydrateFromServer().catch(() => {});
     },
     [sessionId, isSessionStreaming, switchVersionMutateAsync, hydrateFromServer],
   );

@@ -4,7 +4,7 @@
  * Agent Chat — 左栏 + 标签/分屏中栏 · 多版本 · 消息编辑 · Skill / 触发
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { Files } from "lucide-react";
@@ -54,6 +54,11 @@ import {
   TAB_TITLE_CACHE_KEY,
 } from "@/lib/chatKeys";
 import type { ChatSessionConfig } from "@knowpilot/shared";
+import {
+  ensureSessionConfigHydrated,
+  getSessionConfig,
+  subscribeSessionConfigStore,
+} from "@/lib/sessionConfigStore";
 
 /* ─── Main ─── */
 
@@ -95,8 +100,7 @@ export function ChatView() {
   const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState<string | null>(null);
   // 视图级非流式错误（侧栏重命名等）；中栏流式 error 在 ChatSessionPane
   const [, setViewError] = useState<string | null>(null);
-  /** 焦点 pane 上报的配置（runStream + Prompt overlay） */
-  const [focusedPaneConfig, setFocusedPaneConfig] = useState<ChatSessionConfig | null>(null);
+  /** 焦点 pane 的 updateConfig API（Prompt overlay）；config 正文走 sessionConfigStore */
   const [focusedConfigApi, setFocusedConfigApi] = useState<{
     updateConfig: (patch: Partial<ChatSessionConfig>) => void;
     resetPromptToAgent: () => void;
@@ -356,7 +360,7 @@ export function ChatView() {
       if (sid === effectiveSessionId) {
         // 不 await：hydrate → store dispatch → tryCommitAfterHydrate（INV-1 对账）
         // + hydrateDone（INV-8 ④）全部经 store 事件流转，不把 await 挂在流式回调上。
-        void hydrateFromServer();
+        hydrateFromServer().catch(() => {});
         return;
       }
       try {
@@ -610,16 +614,13 @@ export function ChatView() {
   );
 
   // 【runStream 流式编排内核】runStream + rAF token 合帧三件套 + 持久化调度收拢于
-  // useChatRunStream（W13e 拆出；useCallback 体与 deps 逐字未改）。rAF/定时器 refs 留在
-  // 本文件，供【页面生命周期与全局监听群】的 unmount 清理 effect 统一回收。
-  const runStreamChatConfig = focusedPaneConfig ?? chatConfig;
+  // useChatRunStream（W13e 拆出）。E8：config 运行时从 sessionConfigStore 按 sid 取，不经 props。
+  // rAF/定时器 refs 留在本文件，供 unmount 清理 effect 统一回收。
   const { runStream } = useChatRunStream({
     effectiveSessionId,
     effectiveAgentId,
-    chatConfig: runStreamChatConfig,
     selectedWorkspaceId,
     selectedAgent,
-    updateConfig,
     createSessionQueueItemMutation,
     hydrateSessionMessagesFallback,
     effectiveSessionIdRef,
@@ -687,14 +688,16 @@ export function ChatView() {
               streamLifecycleActions.setLastEventId(sid, st.lastEventId);
             }
             console.log("[mount] resuming", sid, "lastEventId", st.lastEventId);
+            // E8：续传前同步 hydrate 该 sid 的 config（禁止吃首帧 DEFAULT 闭包）
+            ensureSessionConfigHydrated(sid);
             // runStreamRef.current 此时读到的是 useRef(runStream) 首帧初始值
             // （镜像 effect 声明在下方、mount 批内此时尚未执行，但它要赋的也是同一个首帧 runStream）；
             // 事件处理内同步续传，无需 microtask
-            void runStreamRef.current({
+            runStreamRef.current({
               targetSessionId: sid,
               resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
               isResume: true,
-            });
+            }).catch(() => {});
           }
         }
       }
@@ -725,12 +728,13 @@ export function ChatView() {
       for (const [sid, st] of Object.entries(life)) {
         if (sid === NEW_STREAM_KEY) continue;
         if (st.phase === "streaming" && !sessionComposeActions.getActiveAbortController(sid)) {
+          ensureSessionConfigHydrated(sid);
           // 事件处理内同步续传；INV-5 续传起点唯一走 resolveResumeAfter
-          void runStreamRef.current({
+          runStreamRef.current({
             targetSessionId: sid,
             resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
             isResume: true,
-          });
+          }).catch(() => {});
         }
       }
     };
@@ -789,25 +793,24 @@ export function ChatView() {
       if (!sid || sid === NEW_STREAM_KEY) continue;
       // 已存在 active stream（abort 非空）说明已自行恢复或在运行中，无需重复 resume
       if (sessionComposeActions.getActiveAbortController(sid)) continue;
+      ensureSessionConfigHydrated(sid);
       // INV-5：续传起点唯一走 resolveResumeAfter（禁止各 effect 手写 lastEventId 判定）
       // runStreamRef.current 读到 useRef 首帧初始值（mount 首跑时镜像 effect 尚未执行，
       // 其镜像赋值也是同一个首帧 runStream）；同步挂接，无需 microtask
-      void runStreamRef.current({
+      runStreamRef.current({
         targetSessionId: sid,
         resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
         isResume: true,
-      });
+      }).catch(() => {});
     }
   }, [runningSessionsQuery.data]);
 
   // 【队列 drain 编排簇】consumeQueue + drainAllPendingQueues 收拢于 useChatQueueDrain
-  // （W13e 拆出；useCallback 体与 deps 逐字未改，仅解构重命名）。drain 触发链唯一钩子
-  // 仍是下方【drain 订阅 · INV-8 ②④】effect，经 consumeRef 镜像调用。
+  // （W13e 拆出）。E8：drain 内按 sid 取 sessionConfigStore.model。
   const { drainAllPendingQueues } = useChatQueueDrain({
     effectiveSessionId,
     visibleSessionIds,
     asyncResultQueue,
-    chatConfigModel: (focusedPaneConfig ?? chatConfig).model,
     isSessionRunOccupied,
     sessionsItems: sessionsQuery.data?.items,
     consumeSessionQueueItemMutation,
@@ -852,12 +855,6 @@ export function ChatView() {
   // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
   const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
 
-  const onFocusedChatConfigChange = useCallback(
-    (_sid: string | null, config: ChatSessionConfig) => {
-      setFocusedPaneConfig(config);
-    },
-    [],
-  );
   const onFocusedChatConfigApiChange = useCallback(
     (
       _sid: string | null,
@@ -906,7 +903,7 @@ export function ChatView() {
     if (!tabsHydrated || backendDown) return;
     if (focusedSessionId || sessionFromUrl) return;
     if (!effectiveAgentId) return;
-    void bindAgentMainSession(effectiveAgentId);
+    bindAgentMainSession(effectiveAgentId).catch(() => {});
   }, [
     tabsHydrated,
     backendDown,
@@ -939,7 +936,7 @@ export function ChatView() {
     if (changed) {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-    void (async () => {
+    (async () => {
       if (!aid || backendDown) {
         // 后端不可用时仍允许本地空态，避免按钮完全失灵
         startNewChatInTabs();
@@ -981,7 +978,7 @@ export function ChatView() {
       } catch {
         showToast("创建新会话失败");
       }
-    })();
+    })().catch(() => {});
   }, [
     agentId,
     selectedAgent,
@@ -1013,11 +1010,12 @@ export function ChatView() {
         !targetSt.connected &&
         !sessionComposeActions.getActiveAbortController(id)
       ) {
-        void runStreamRef.current({
+        ensureSessionConfigHydrated(id);
+        runStreamRef.current({
           targetSessionId: id,
           resumeAfter: streamLifecycleStore.resolveResumeAfter(id),
           isResume: true,
-        });
+        }).catch(() => {});
       }
       consumeRef.current(id);
       const params = new URLSearchParams(searchParams.toString());
@@ -1133,7 +1131,13 @@ export function ChatView() {
     });
   }, [tabs.openTabIds, sessionsQuery.data?.items]);
 
-  const overlayChatConfig = focusedPaneConfig ?? chatConfig;
+  // E8：overlay 订阅权威 store（焦点 session）；无 session 时回退父级 chatConfig（新对话）
+  const overlaySessionId = effectiveSessionId;
+  const overlayChatConfig = useSyncExternalStore(
+    subscribeSessionConfigStore,
+    () => (overlaySessionId ? getSessionConfig(overlaySessionId) : chatConfig),
+    () => chatConfig,
+  );
 
   const paneShared = {
     backendDown,
@@ -1221,9 +1225,9 @@ export function ChatView() {
           onExitSplit={exitSplit}
           canEnterSplit={tabs.openTabIds.length >= 2}
           onPrefetchTab={(id) => {
-            void sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
+            sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
               utils.message.listForChat.fetch(opts),
-            );
+            ).catch(() => {});
           }}
         />
         <div
@@ -1249,7 +1253,6 @@ export function ChatView() {
             sessionId={tabs.primarySessionId}
             isFocused={tabs.focusedPane === "primary"}
             onFocus={() => focusPane("primary")}
-            onChatConfigChange={onFocusedChatConfigChange}
             onChatConfigApiChange={onFocusedChatConfigApiChange}
             {...paneShared}
           />
@@ -1261,7 +1264,6 @@ export function ChatView() {
                 sessionId={tabs.secondarySessionId}
                 isFocused={tabs.focusedPane === "secondary"}
                 onFocus={() => focusPane("secondary")}
-                onChatConfigChange={onFocusedChatConfigChange}
                 onChatConfigApiChange={onFocusedChatConfigApiChange}
                 {...paneShared}
               />

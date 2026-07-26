@@ -4,13 +4,12 @@
  * useSubagentMessageMirror —— 子 Agent 会话：把 pending AgentMessage 幂等镜像进 SessionQueueItem。
  *
  * 【子 Agent 镜像域】effect 体自 chat.tsx 原样迁入（含 exhaustive-deps 豁免）。
- * 若 prepareAgentRun（agent_send_message autoRun 空闲路径）已写入同内容 ChatMessage，则直接 markConsumed，
- * 避免队列再消费导致「消息发两遍」。
+ * 权威键 = agentMessageId（服务端 create 幂等 + shouldSkipSuperiorMirror）。
+ * 禁止用 content 正文撞名判重——同文 user/历史 superior 会误 markConsumed，吞掉上级新指令（E7）。
  */
 
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { type ChatMessage } from "@knowpilot/shared";
 
 type PendingAgentMessage = {
   id: string;
@@ -22,14 +21,14 @@ export function useSubagentMessageMirror(opts: {
   effectiveSessionId: string | null;
   isSubagentSession: boolean;
   pendingAgentMessages: PendingAgentMessage[] | undefined;
-  messages: ChatMessage[];
+  /** 保留入参以兼容调用方；判重不再读 messages */
+  messages: unknown;
   refetchSessionQueue: () => Promise<unknown>;
 }) {
   const {
     effectiveSessionId,
     isSubagentSession,
     pendingAgentMessages,
-    messages,
     refetchSessionQueue,
   } = opts;
   const createSessionQueueItemMutation = trpc.agent.createSessionQueueItem.useMutation();
@@ -44,19 +43,8 @@ export function useSubagentMessageMirror(opts: {
       // 并行镜像：N 条 pending 消息同时发，不串行阻塞渲染（旧实现顺序 await 导致进入子会话卡死）
       const results = await Promise.allSettled(
         pendingAgentMessages.map(async (msg) => {
-          const alreadyInChat = messages.some(
-            (m) => m.role === "user" && m.content.trim() === String(msg.content ?? "").trim(),
-          );
-          if (alreadyInChat) {
-            try {
-              await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id });
-            } catch {
-              /* ignore */
-            }
-            return;
-          }
           try {
-            await createSessionQueueItemMutation.mutateAsync({
+            const created = await createSessionQueueItemMutation.mutateAsync({
               sessionId: effectiveSessionId,
               kind: "superior",
               content: msg.content,
@@ -64,6 +52,10 @@ export function useSubagentMessageMirror(opts: {
               source: msg.source || "manager",
               agentMessageId: msg.id,
             });
+            // 服务端 shouldSkipSuperiorMirror：success 但无 data → 已投递/对账跳过，回写 consumed
+            if (created?.success && !created.data) {
+              await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id }).catch(() => {});
+            }
           } catch {
             // 幂等冲突或网络错误忽略
           }
@@ -79,5 +71,5 @@ export function useSubagentMessageMirror(opts: {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSessionId, isSubagentSession, pendingAgentMessages, messages]);
+  }, [effectiveSessionId, isSubagentSession, pendingAgentMessages]);
 }
