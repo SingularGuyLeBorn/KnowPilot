@@ -236,6 +236,16 @@ export const sessionComposeActions = {
   setActiveAbortController(sessionId: string, abort: AbortController | null) {
     getStore().dispatch({ type: "SET_ABORT", sessionId, abort });
   },
+  /**
+   * Resume 单飞 CAS：仅当当前无「未 abort」的 controller 时挂上新 AC。
+   * 同步路径无 await，JS 单线程下 get→set 等价原子，杜绝双路 resume 互盖。
+   */
+  claimActiveAbortController(sessionId: string, abort: AbortController): boolean {
+    const cur = getStore().get(sessionId).abort;
+    if (cur && !cur.signal.aborted) return false;
+    getStore().dispatch({ type: "SET_ABORT", sessionId, abort });
+    return true;
+  },
   getActiveAbortController(sessionId: string | null): AbortController | null {
     if (!sessionId) return null;
     return getStore().get(sessionId).abort;

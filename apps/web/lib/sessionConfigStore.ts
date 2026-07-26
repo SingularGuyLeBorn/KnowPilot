@@ -4,6 +4,8 @@
  * localStorage 仍是持久层；本 store 是运行时权威切片。
  * runStream / drain / mount-resume 必须经 get/ensureHydrated 按 sessionId 取 config，
  * 禁止吃 React 闭包里的 focusedPaneConfig / 首帧 DEFAULT。
+ *
+ * getSnapshot（useSyncExternalStore）只读 Map，禁止在 snapshot 内 notify。
  */
 
 import {
@@ -18,6 +20,11 @@ const listeners = new Set<() => void>();
 
 function notify() {
   for (const l of listeners) l();
+}
+
+/** 只读快照：无切片时回退 DEFAULT（不写 Map、不 notify）——供 useSyncExternalStore */
+export function getSessionConfigSnapshot(sessionId: string): ChatSessionConfig {
+  return configs.get(sessionId) ?? DEFAULT_CHAT_CONFIG;
 }
 
 /** 同步保证 session 有切片：优先内存 → localStorage → DEFAULT */
@@ -55,13 +62,13 @@ export function patchSessionConfig(
 
 export function migrateSessionConfig(fromId: string, toId: string): void {
   if (fromId === toId) return;
-  const cfg = configs.get(fromId);
-  if (cfg) {
-    configs.set(toId, cfg);
-    configs.delete(fromId);
-    saveSessionChatConfig(toId, cfg);
-    notify();
-  }
+  const cfg = configs.get(fromId) ?? loadSessionChatConfig(fromId);
+  if (!cfg) return;
+  const next = { ...DEFAULT_CHAT_CONFIG, ...cfg };
+  configs.set(toId, next);
+  configs.delete(fromId);
+  saveSessionChatConfig(toId, next);
+  notify();
 }
 
 export function subscribeSessionConfigStore(listener: () => void): () => void {

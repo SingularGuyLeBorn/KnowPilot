@@ -7,11 +7,12 @@ import {
   patchSessionConfig,
   setSessionConfig,
 } from "../sessionConfigStore";
-import { DEFAULT_CHAT_CONFIG } from "../chatConfig";
+import { DEFAULT_CHAT_CONFIG, saveSessionChatConfig } from "../chatConfig";
 
 describe("sessionConfigStore (E8)", () => {
   beforeEach(() => {
     __resetSessionConfigStoreForTests();
+    if (typeof localStorage !== "undefined") localStorage.clear();
   });
 
   it("ensureHydrated 缺省写入 DEFAULT", () => {
@@ -31,5 +32,13 @@ describe("sessionConfigStore (E8)", () => {
     setSessionConfig("__new__", { ...DEFAULT_CHAT_CONFIG, model: "migrated-model" });
     migrateSessionConfig("__new__", "real-sid");
     expect(getSessionConfig("real-sid").model).toBe("migrated-model");
+    expect(getSessionConfig("__new__").model).toBe(DEFAULT_CHAT_CONFIG.model);
+  });
+
+  it("migrate 内存无切片时从 localStorage 读 NEW 配置", () => {
+    saveSessionChatConfig("__new__", { ...DEFAULT_CHAT_CONFIG, model: "from-ls" });
+    __resetSessionConfigStoreForTests();
+    migrateSessionConfig("__new__", "sid-from-ls");
+    expect(getSessionConfig("sid-from-ls").model).toBe("from-ls");
   });
 });

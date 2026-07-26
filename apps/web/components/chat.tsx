@@ -55,7 +55,8 @@ import {
 } from "@/lib/chatKeys";
 import {
   ensureSessionConfigHydrated,
-  getSessionConfig,
+  getSessionConfigSnapshot,
+  migrateSessionConfig,
   patchSessionConfig,
   setSessionConfig,
   subscribeSessionConfigStore,
@@ -101,11 +102,6 @@ export function ChatView() {
   const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState<string | null>(null);
   // 视图级非流式错误（侧栏重命名等）；中栏流式 error 在 ChatSessionPane
   const [, setViewError] = useState<string | null>(null);
-  /** 焦点 pane 的 updateConfig API（Prompt overlay）；config 正文走 sessionConfigStore */
-  const [focusedConfigApi, setFocusedConfigApi] = useState<{
-    updateConfig: (patch: Partial<ChatSessionConfig>) => void;
-    resetPromptToAgent: () => void;
-  } | null>(null);
   // 左栏 UI 偏好收拢于 useChatUiPrefs：读写 localStorage
   const {
     leftOpen,
@@ -609,7 +605,7 @@ export function ChatView() {
   );
 
   const handleOpenPromptEditor = useCallback(() => setShowPromptEditor(true), []);
-  const overlayUpdateConfig = focusedConfigApi?.updateConfig ?? fallbackUpdateConfig;
+  const overlayUpdateConfig = fallbackUpdateConfig;
 
   // W16b：ChatOverlays memo 屏障要求 props 引用稳定，内联箭头每渲染新建会击穿 memo
   const handleSubagentCreated = useCallback(
@@ -859,18 +855,6 @@ export function ChatView() {
   // R16：稳定 skills 引用，避免 ChatInputArea memo 因 ?? [] 新数组失效
   const skills = useMemo(() => skillsQuery.data?.items ?? [], [skillsQuery.data]);
 
-  const onFocusedChatConfigApiChange = useCallback(
-    (
-      _sid: string | null,
-      api: {
-        updateConfig: (patch: Partial<ChatSessionConfig>) => void;
-        resetPromptToAgent: () => void;
-      },
-    ) => {
-      setFocusedConfigApi(api);
-    },
-    [],
-  );
 
   /** 绑定当前 Agent 的主会话（有则复用、无则创建空会话），保证始终有真实 sessionId */
   const bindAgentMainSession = useCallback(
@@ -878,6 +862,7 @@ export function ChatView() {
       if (!aid || backendDown) return null;
       try {
         const res = await ensureMainMutateAsync({ agentId: aid });
+        migrateSessionConfig(NEW_STREAM_KEY, res.id);
         openTab(res.id);
         try {
           const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
@@ -966,6 +951,7 @@ export function ChatView() {
           return;
         }
         openTab(res.id);
+        migrateSessionConfig(NEW_STREAM_KEY, res.id);
         try {
           const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
             string,
@@ -1136,12 +1122,15 @@ export function ChatView() {
     });
   }, [tabs.openTabIds, sessionsQuery.data?.items]);
 
-  // E8：overlay 只订阅权威 store（焦点 session / 新对话 NEW_STREAM_KEY）
+  // E8：overlay 只订阅权威 store；getSnapshot 只读，hydrate 放 effect（禁 snapshot 内 notify）
   const overlaySessionId = effectiveSessionId ?? NEW_STREAM_KEY;
+  useEffect(() => {
+    ensureSessionConfigHydrated(overlaySessionId);
+  }, [overlaySessionId]);
   const overlayChatConfig = useSyncExternalStore(
     subscribeSessionConfigStore,
-    () => getSessionConfig(overlaySessionId),
-    () => ensureSessionConfigHydrated(overlaySessionId),
+    () => getSessionConfigSnapshot(overlaySessionId),
+    () => getSessionConfigSnapshot(overlaySessionId),
   );
 
   const paneShared = {
@@ -1258,7 +1247,6 @@ export function ChatView() {
             sessionId={tabs.primarySessionId}
             isFocused={tabs.focusedPane === "primary"}
             onFocus={() => focusPane("primary")}
-            onChatConfigApiChange={onFocusedChatConfigApiChange}
             {...paneShared}
           />
           {tabs.layout === "split" && tabs.secondarySessionId && (
@@ -1269,7 +1257,6 @@ export function ChatView() {
                 sessionId={tabs.secondarySessionId}
                 isFocused={tabs.focusedPane === "secondary"}
                 onFocus={() => focusPane("secondary")}
-                onChatConfigApiChange={onFocusedChatConfigApiChange}
                 {...paneShared}
               />
             </>

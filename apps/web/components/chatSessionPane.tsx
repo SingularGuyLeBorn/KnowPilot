@@ -18,7 +18,7 @@ import { trpc } from "@/lib/trpc";
 import { stopAgentChat, copyToClipboard } from "@/lib/agentStream";
 import { getModelOption } from "@/lib/chatConfig";
 import { buildMessageGroups } from "@/lib/chatMessageUtils";
-import { type Agent, type ChatMessage, type ChatSessionConfig, type Skill } from "@knowpilot/shared";
+import { type Agent, type ChatMessage, type Skill } from "@knowpilot/shared";
 import { ChatCenterPane } from "@/components/chatCenterPane";
 import { type ChatMessageListProps } from "@/components/chatMessageList";
 import { type SelectedSkill } from "@/components/chatInput";
@@ -68,14 +68,6 @@ export interface ChatSessionPaneProps {
   setRotateBanner: (banner: { newSessionId: string; newTitle: string } | null) => void;
   showToast: (msg: string | null) => void;
   onOpenPromptEditor: () => void;
-  /** 向父级上报本 pane 的 updateConfig API（Prompt overlay）；config 正文走 sessionConfigStore */
-  onChatConfigApiChange?: (
-    sessionId: string | null,
-    api: {
-      updateConfig: (patch: Partial<ChatSessionConfig>) => void;
-      resetPromptToAgent: () => void;
-    },
-  ) => void;
 }
 
 export function ChatSessionPane({
@@ -100,7 +92,6 @@ export function ChatSessionPane({
   setRotateBanner,
   showToast,
   onOpenPromptEditor,
-  onChatConfigApiChange,
 }: ChatSessionPaneProps) {
   const lifecycleKey = sessionId ?? NEW_STREAM_KEY;
 
@@ -220,9 +211,6 @@ export function ChatSessionPane({
     sessionDetailSystemPrompt: sessionDetail?.systemPrompt,
   });
 
-  useEffect(() => {
-    if (isFocused) onChatConfigApiChange?.(sessionId, { updateConfig, resetPromptToAgent });
-  }, [isFocused, sessionId, updateConfig, resetPromptToAgent, onChatConfigApiChange]);
 
   const { queue } = useChatDerivedQueues({
     asyncOverlays,

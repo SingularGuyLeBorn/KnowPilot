@@ -210,17 +210,17 @@ export function useChatRunStream({
       // 视图不变量：流回调不依赖闭包 keepCurrentView，改用 effectiveSessionIdRef 运行时判断
       // keepCurrentView 参数仅保留给 consumeQueue 标记后台消费，不再在回调里使用
       const isResume = opts.isResume === true;
-      // RESUME 单飞：续传不得 abort 已有 SSE（四路入口 mount/listRunning/visibility/切 session 会互杀）。
-      // 新开流才替换 controller；resume 若已有在途 controller 则直接 no-op。
-      const existingAc = sessionComposeActions.getActiveAbortController(originSid);
-      if (isResume && existingAc && !existingAc.signal.aborted) {
-        return;
-      }
-      if (!isResume) {
-        existingAc?.abort();
-      }
+      // RESUME 单飞：续传不得 abort 已有 SSE；claim CAS 堵住双路同时见 null 互盖。
+      // 新开流才 abort 旧 controller 再挂新 AC；已 abort 的陈旧 AC 允许 resume 替换。
       const ac = new AbortController();
-      sessionComposeActions.setActiveAbortController(originSid, ac);
+      if (isResume) {
+        if (!sessionComposeActions.claimActiveAbortController(originSid, ac)) {
+          return;
+        }
+      } else {
+        sessionComposeActions.getActiveAbortController(originSid)?.abort();
+        sessionComposeActions.setActiveAbortController(originSid, ac);
+      }
       /** 当前 ReAct 轮次：thinking delta 必须写入对应 round，禁止糊到上一轮 */
       let streamRound = 1;
 
