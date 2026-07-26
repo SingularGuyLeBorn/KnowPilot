@@ -174,6 +174,44 @@ describe("platform fetch helpers", () => {
     expect(hasWechatArticleHtml("<html>环境异常，完成验证</html>")).toBe(false);
   });
 
+  it("小红书从 __INITIAL_STATE__.imageList 提取轮播图", async () => {
+    const { extractXiaohongshuImages, parseXiaohongshuInitialState } = await import(
+      "../infra/metablog/platform/parser.js"
+    );
+    const state = {
+      note: {
+        noteDetailMap: {
+          "64b659d8000000001002a23d": {
+            note: {
+              title: "宝宝拉拉裤选购攻略",
+              imageList: [
+                {
+                  urlDefault: "https://sns-webpic-qc.xhscdn.com/a/1.jpg",
+                  urlPre: "https://sns-webpic-qc.xhscdn.com/a/1-pre.jpg",
+                },
+                {
+                  infoList: [{ imageScene: "WB_DFT", url: "https://sns-webpic-qc.xhscdn.com/a/2.jpg" }],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const html = `<html><body><div id="detail-desc">正文</div><script>window.__INITIAL_STATE__=${JSON.stringify(state)};(function(){})</script></body></html>`;
+    expect(parseXiaohongshuInitialState(html)).toBeTruthy();
+    expect(extractXiaohongshuImages(html)).toEqual([
+      "https://sns-webpic-qc.xhscdn.com/a/1.jpg",
+      "https://sns-webpic-qc.xhscdn.com/a/2.jpg",
+    ]);
+    const parsed = await parseHtmlToMarkdown(html, "https://www.xiaohongshu.com/explore/64b659d8000000001002a23d", "xiaohongshu", {
+      fetcher: "xiaohongshu",
+      method: "http",
+    });
+    expect(parsed.images).toHaveLength(2);
+    expect(parsed.images[0]).toContain("xhscdn.com");
+  });
+
   it("B站 API 短简介时合成 stats 正文", async () => {
     const state = JSON.stringify({
       videoData: {

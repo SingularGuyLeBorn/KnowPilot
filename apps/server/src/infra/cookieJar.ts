@@ -181,5 +181,7 @@ export function listSavedCookiePlatforms(): CookiePlatform[] {
     .readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
     .map((f) => f.replace(".json", ""))
-    .filter((p): p is CookiePlatform => ["zhihu", "wechat", "xhs", "douyin", "yuque"].includes(p));
+    .filter((p): p is CookiePlatform =>
+      ["zhihu", "wechat", "xhs", "douyin", "yuque", "bilibili", "weibo", "juejin", "csdn"].includes(p),
+    );
 }

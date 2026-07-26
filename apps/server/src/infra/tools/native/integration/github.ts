@@ -34,7 +34,13 @@ import {
   githubSearchRepos,
 } from "../../../githubClient.js";
 import { executeGitHubTool, listGitHubTools } from "../../../external/githubToolExecutor.js";
-import { capturePlatformLoginState, listPlatformLoginStatus, PLATFORM_LOGIN_CONFIGS } from "../../../metablog/auth/platformLogin.js";
+import {
+  capturePlatformLoginState,
+  listPlatformLoginStatus,
+  PLATFORM_LOGIN_CONFIGS,
+  purgeAllInvalidPlatformLogins,
+  purgeInvalidPlatformLogin,
+} from "../../../metablog/auth/platformLogin.js";
 import { listSavedCookiePlatforms, loadCookies } from "../../../cookieJar.js";
 import type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "../types.js";
 import { z } from "zod";
@@ -50,16 +56,26 @@ async function platformLoginTool(args: Record<string, unknown>, _ctx: NativeTool
       message: `不支持的平台：${args.platform ?? ""}。支持：${Object.keys(PLATFORM_LOGIN_CONFIGS).join(", ")}`,
     };
   }
-  return capturePlatformLoginState(platform, Number(args.timeoutSec || 120));
+  // 登录前清掉仅含访客 cookie 的假登录态，避免 Agent/用户误以为已登录
+  const purged = purgeInvalidPlatformLogin(platform);
+  const result = await capturePlatformLoginState(platform, Number(args.timeoutSec || 180));
+  return purged.purged ? { ...result, purgedInvalidBeforeLogin: purged.reason } : result;
 }
 
 async function browserLoginStatusTool(_args: Record<string, unknown>, _ctx: NativeToolContext) {
+  // 全平台清理：仅有访客/设备 cookie、缺认证 cookie 的假登录态一律删除
+  const purged = purgeAllInvalidPlatformLogins().filter((r) => r.purged);
   const platforms = listSavedCookiePlatforms();
   const details = listPlatformLoginStatus();
+  const loggedIn = details.filter((d) => d.loggedIn).map((d) => d.platform);
+  const notLoggedIn = details.filter((d) => !d.loggedIn).map((d) => d.platform);
   return {
-    platforms,
+    loggedIn,
+    notLoggedIn,
+    hint: "以 details[].loggedIn + authCookieNames 为准；hasStorageState/文件大小不能证明已登录。各平台捕获时还会走身份 API 复核。",
     details,
     cookieJars: platforms.map((p) => ({ platform: p, cookieCount: loadCookies(p).length })),
+    purgedInvalid: purged.length ? purged : undefined,
   };
 }
 
@@ -346,20 +362,20 @@ export const githubDefs: NativeToolDefinition[] = [
   {
     name: "platform_login",
     description:
-      "平台登录的唯一入口：调用即弹出 Playwright 浏览器窗口，让用户手动登录指定平台（扫码/账密），登录态自动落盘（storageState + cookieJar），供 read_article 抓取需登录内容（收藏夹/付费/私密）。支持平台：zhihu（知乎）、wechat（微信公众号后台）、xhs（小红书）、douyin（抖音）、bilibili（哔哩哔哩）、weibo（微博）、juejin（掘金）、csdn（CSDN）、yuque（语雀）。**用户说登录/重新登录/获取某平台账户时，直接调用本工具——不要先 browser_screenshot/read_image 截图检查状态（模型无 vision 会卡死）；检查登录状态用 browser_login_status。** 各平台官方开放平台需企业认证+OAuth 对单用户本地项目过重，浏览器登录态捕获是最务实方案。",
+      "平台登录的唯一入口：调用即弹出 Playwright 浏览器窗口，让用户手动登录指定平台（扫码/账密），登录态自动落盘（storageState + cookieJar）。支持：zhihu/wechat/xhs/douyin/bilibili/weibo/juejin/csdn/yuque。**必须等用户在窗口内完成扫码**——小红书以扫码后 web_session 变化或侧栏「我」为准（不要提前关窗）。检查状态用 browser_login_status（看 loggedIn）。",
     parameters: zodParams(
       z.object({
         platform: z
           .string()
           .describe("平台名：zhihu/wechat/xhs/douyin/bilibili/weibo/juejin/csdn/yuque"),
-        timeoutSec: z.number().describe("等待登录超时秒数，默认 120").optional(),
+        timeoutSec: z.number().describe("等待登录超时秒数，默认 180（扫码建议 ≥180）").optional(),
       }),
     ),
   },
   {
     name: "browser_login_status",
     description:
-      "列出所有支持平台的浏览器登录态状态（storageState 是否存在、大小、cookieJar 条数）。用于检查哪些平台已登录、哪些需重新登录。",
+      "列出各平台是否真登录（details[].loggedIn + authCookieNames/hitCookies）。以 loggedIn 为准；文件大小不能证明已登录。会自动清理全平台无效假登录态。",
     parameters: zodParams(z.object({})),
   },
   {
