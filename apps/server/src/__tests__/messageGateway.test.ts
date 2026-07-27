@@ -40,7 +40,7 @@ describe("messageGateway 幂等（mock deps）", () => {
 
   it("未 init 时返回错误", async () => {
     const r = await handleIncomingMessage({
-      envelope: { channel: "wecom", peerId: "u1", timestamp: new Date().toISOString() },
+      envelope: { channel: "qq", peerId: "u1", timestamp: new Date().toISOString() },
       payload: { text: "hi" },
       meta: { eventId: "e1" },
     });
@@ -63,7 +63,7 @@ describe("messageGateway 幂等（mock deps）", () => {
 
   it("可注册 adapter 并读状态", () => {
     const adapter: ChannelAdapter = {
-      channel: "wecom",
+      channel: "qq",
       name: "mock",
       enabled: false,
       getStatus: () => ({ state: "disconnected" }),
@@ -79,10 +79,10 @@ describe("messageGateway 幂等（mock deps）", () => {
 describe("UnifiedMessage 形状", () => {
   it("信封字段齐全", () => {
     const msg: UnifiedMessage = {
-      envelope: { channel: "wecom", peerId: "u", chatId: "g", timestamp: "t" },
+      envelope: { channel: "qq", peerId: "u", chatId: "g", timestamp: "t" },
       payload: { text: "x" },
       meta: { eventId: "id", replyTo: "req" },
     };
-    expect(msg.envelope.channel).toBe("wecom");
+    expect(msg.envelope.channel).toBe("qq");
   });
 });

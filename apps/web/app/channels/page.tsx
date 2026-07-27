@@ -22,8 +22,8 @@ export default function ChannelsPage() {
     },
   });
   const [peerId, setPeerId] = useState("debug-user");
-  const [text, setText] = useState("你好，这是一条模拟企微消息");
-  const [channel, setChannel] = useState<"wecom" | "qq">("wecom");
+  const [text, setText] = useState("你好，这是一条模拟 QQ 消息");
+  const channel = "qq" as const;
 
   const adapters = statusQ.data?.adapters ?? [];
   const bindings = bindingsQ.data?.items ?? [];
@@ -31,20 +31,17 @@ export default function ChannelsPage() {
   return (
     <AdminPage
       title="IM 通道"
-      description="企业微信智能机器人长连接 · QQ 官方 Bot。对齐 OpenClaw/Hermes：入站归一化后进既有 ChatSession / SessionStreamHub。"
+      description="QQ 官方 Bot。入站归一化后进既有 ChatSession / SessionStreamHub。"
     >
       <div className="mb-4 rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)] p-4 text-sm text-[var(--kp-text-2)]">
         <p className="font-medium text-[var(--kp-text-1)]">配置（根目录 .env）</p>
         <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
           <li>
-            企微：<code>WECOM_AIBOT_ID</code> + <code>WECOM_AIBOT_SECRET</code>（官方 WSS，无需公网）
-          </li>
-          <li>
             QQ：<code>QQ_BOT_APP_ID</code> + <code>QQ_BOT_SECRET</code>；回调{" "}
             <code>/api/webhooks/qq</code>（需 <code>pnpm remote</code>）或 <code>QQ_BOT_WS=1</code>
           </li>
           <li>
-            白名单：<code>WECOM_AIBOT_ALLOWED_USERIDS</code> / <code>QQ_BOT_ALLOWED_OPENIDS</code>
+            白名单：<code>QQ_BOT_ALLOWED_OPENIDS</code>（空 = 不限制）
           </li>
         </ul>
       </div>
@@ -74,21 +71,16 @@ export default function ChannelsPage() {
           </div>
         ))}
         {adapters.length === 0 ? (
-          <EmptyState title="通道未启动" description="重启 server 后此处显示企微/QQ 适配器状态。" />
+          <EmptyState title="通道未启动" description="重启 server 后此处显示 QQ 适配器状态。" />
         ) : null}
       </div>
 
       <div className="mb-6 rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)] p-4">
         <p className="text-sm font-medium text-[var(--kp-text-1)]">模拟入站（调试）</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <select
-            className="rounded-md border border-[var(--kp-border)] bg-transparent px-2 py-1.5 text-sm"
-            value={channel}
-            onChange={(e) => setChannel(e.target.value as "wecom" | "qq")}
-          >
-            <option value="wecom">wecom</option>
-            <option value="qq">qq</option>
-          </select>
+          <span className="rounded-md border border-[var(--kp-border)] px-2 py-1.5 text-sm text-[var(--kp-text-3)]">
+            qq
+          </span>
           <input
             className="flex-1 rounded-md border border-[var(--kp-border)] bg-transparent px-2 py-1.5 text-sm"
             value={peerId}
@@ -130,7 +122,7 @@ export default function ChannelsPage() {
 
       <h2 className="mb-2 text-sm font-semibold text-[var(--kp-text-1)]">绑定列表</h2>
       {bindings.length === 0 ? (
-        <EmptyState title="暂无绑定" description="收到第一条企微/QQ 消息或模拟入站后会出现。" />
+        <EmptyState title="暂无绑定" description="收到第一条 QQ 消息或模拟入站后会出现。" />
       ) : (
         <ul className="divide-y divide-[var(--kp-border)] rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)]">
           {bindings.map((b) => (

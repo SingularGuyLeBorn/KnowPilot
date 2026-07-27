@@ -81,11 +81,15 @@ export async function resolveOrCreateChannelBinding(
     resolved = await resolveDefaultAgentId(prisma);
   }
 
-  const title = `IM · ${input.channel} · ${input.peerId.slice(0, 12)}`;
+  const title =
+    input.title?.trim() ||
+    `IM · ${input.channel} · ${input.peerId.slice(0, 12)}`;
   const model = resolved.model || config.llm.defaultModel || DEFAULT_LLM_MODEL;
   const dedicated = await prisma.chatSession.create({
     data: {
       title,
+      // 侧栏/标签优先读 autoName；无首轮自动命名前也要可读
+      autoName: title,
       model,
       agentId: resolved.id,
       isMainSession: false,

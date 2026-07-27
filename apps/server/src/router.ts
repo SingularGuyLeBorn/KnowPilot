@@ -11,7 +11,7 @@ import { router, publicProcedure } from "./trpc/trpc.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {
-  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, getPostBySlugSchema, postGardenSchema,
+  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, getPostBySlugSchema, postGardenSchema, postRecordViewSchema,
   createGardenSchema, updateGardenSchema, listGardensSchema, getGardenByIdSchema, deleteGardenSchema,
   createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema,
   resolveAskUserSchema, listAskUserPendingSchema,
@@ -123,7 +123,8 @@ const gardenRouter = router({
 const postRouter = router({
   list: publicProcedure.meta({ description: "分页列出文章；可按花园 garden id /分类/标签/关键词过滤。", aiReadable: true }).input(listPostsSchema).query(({ ctx, input }) => ctx.services.post.list(input)),
   tree: publicProcedure.meta({ description: "获取已发布文章的 garden/slug/title 列表（可选花园过滤）。", aiReadable: true }).input(z.object({ garden: postGardenSchema.optional() }).default({})).query(({ ctx, input }) => ctx.services.post.tree(input.garden)),
-  getBySlug: publicProcedure.meta({ description: "按花园 + slug 获取文章详情，同时增加浏览量。", aiReadable: true }).input(getPostBySlugSchema).query(({ ctx, input }) => ctx.services.post.getBySlug(input.slug, input.garden)),
+  getBySlug: publicProcedure.meta({ description: "按花园 + slug 获取文章详情（不增加浏览量；阅读计数用 recordView）。", aiReadable: true }).input(getPostBySlugSchema).query(({ ctx, input }) => ctx.services.post.getBySlug(input.slug, input.garden)),
+  recordView: publicProcedure.meta({ description: "记录一次文章阅读（viewCount+1）。", aiReadable: false }).input(postRecordViewSchema).mutation(({ ctx, input }) => ctx.services.post.recordView(input.id)),
   preview: publicProcedure.meta({ description: "文章内链 hover 预览（标题/摘要/正文前段），不增加浏览量。", aiReadable: true }).input(getPostBySlugSchema).query(({ ctx, input }) => ctx.services.post.preview(input.slug, input.garden)),
   getById: publicProcedure.meta({ description: "按 id 获取文章，用于编辑器加载。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.post.getById(input.id)),
   create: publicProcedure.meta({ description: "创建新文章到已存在的花园（garden），同步到 content/{garden}/{slug}.md。", aiReadable: true }).input(createPostSchema).mutation(({ ctx, input }) => ctx.services.post.create(input)),
@@ -519,7 +520,7 @@ const inboxRouter = router({
 
 const channelRouter = router({
   status: publicProcedure
-    .meta({ description: "IM 通道（企微/QQ）连接状态与统计。", aiReadable: true })
+    .meta({ description: "IM 通道（QQ）连接状态与统计。", aiReadable: true })
     .query(async () => {
       const { getMessageGatewayStats, listChannelAdapters } = await import("./infra/messageGateway.js");
       return {
@@ -534,7 +535,7 @@ const channelRouter = router({
     }),
   listBindings: publicProcedure
     .meta({ description: "列出 IM 对端 ↔ 会话绑定。", aiReadable: true })
-    .input(z.object({ channel: z.enum(["wecom", "qq", "feishu", "telegram"]).optional(), limit: z.number().int().min(1).max(200).optional() }).optional())
+    .input(z.object({ channel: z.enum(["qq", "feishu", "telegram"]).optional(), limit: z.number().int().min(1).max(200).optional() }).optional())
     .query(async ({ ctx, input }) => {
       const { listChannelBindings } = await import("./infra/channelBinding.js");
       return { items: await listChannelBindings(ctx.prisma, input ?? undefined) };
@@ -550,7 +551,7 @@ const channelRouter = router({
     .meta({ description: "模拟一条 IM 入站（开发调试；需服务已 init MessageGateway）。", aiReadable: true })
     .input(
       z.object({
-        channel: z.enum(["wecom", "qq"]),
+        channel: z.enum(["qq"]),
         peerId: z.string().min(1).max(128),
         text: z.string().min(1).max(4000),
         chatId: z.string().max(128).optional(),

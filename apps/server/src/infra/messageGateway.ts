@@ -16,12 +16,12 @@ import { getStreamHub } from "./sessionStreamHub.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { wrapEmitForChannelReply } from "./channelStreamBridge.js";
 
-export type ImChannel = "wecom" | "qq" | "feishu" | "telegram";
+export type ImChannel = "qq" | "feishu" | "telegram";
 
 export type UnifiedMessage = {
   envelope: {
     channel: ImChannel;
-    /** 对端稳定 id（企微 userid / QQ openid） */
+    /** 对端稳定 id（QQ openid 等） */
     peerId: string;
     /** 群聊 id；单聊可空 */
     chatId?: string;
@@ -31,9 +31,9 @@ export type UnifiedMessage = {
     text: string;
   };
   meta: {
-    /** 通道侧事件幂等键（wecom msgid / qq id） */
+    /** 通道侧事件幂等键（qq message id 等） */
     eventId: string;
-    /** 企微 req_id 等回传字段 */
+    /** 通道回传字段（replyTo 等） */
     replyTo?: string;
     raw?: unknown;
   };

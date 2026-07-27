@@ -429,7 +429,7 @@ const server = app.listen(PORT, () => {
     }
   }
 
-  // IM 通道：企微长连接 / QQ Bot（未配凭证则跳过）
+  // IM 通道：QQ Bot（未配凭证则跳过）
   import("./infra/channels/index.js")
     .then(({ bootstrapMessageChannels }) => bootstrapMessageChannels({ prisma, services, config }))
     .catch((err) => console.error("❌ [IM] 通道启动失败:", err));

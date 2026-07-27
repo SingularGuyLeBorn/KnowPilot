@@ -156,6 +156,11 @@ export const getPostBySlugSchema = z.object({
   garden: gardenIdSchema.default(DEFAULT_POST_GARDEN),
 });
 
+/** 记录一次文章阅读（与 getBySlug 分离，便于预取不刷浏览量） */
+export const postRecordViewSchema = z.object({
+  id: z.string().cuid(),
+});
+
 /* ═══════════════════════════════════════════════════════
    Agent (AI 代理)
    ═══════════════════════════════════════════════════════ */
@@ -400,7 +405,7 @@ export const listSkillsSchema = z.object({
 
 export const sessionStatusSchema = z.enum(["active", "queued", "running", "paused", "completed", "failed", "archived"]);
 
-export const sessionKindSchema = z.enum(["chat", "subagent", "heartbeat", "skill_review"]);
+export const sessionKindSchema = z.enum(["chat", "subagent", "heartbeat", "skill_review", "channel"]);
 
 export const sessionGoalModeSchema = z.enum(["goal", "deep_research"]);
 export const sessionGoalStatusSchema = z.enum(["active", "paused", "done", "exhausted"]);
