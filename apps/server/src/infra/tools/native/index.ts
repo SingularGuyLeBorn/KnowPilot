@@ -14,6 +14,7 @@ import { registerNotifyTools } from "./notify.js";
 import { registerAskUserTools } from "./askUser.js";
 import { registerSkillsTools } from "./skills.js";
 import { registerInboxTools } from "./inbox.js";
+import { registerDeployTools } from "./deploy.js";
 
 export function registerNativeDomains(): void {
   registerFsTools();
@@ -27,6 +28,7 @@ export function registerNativeDomains(): void {
   registerAskUserTools();
   registerSkillsTools();
   registerInboxTools();
+  registerDeployTools();
 }
 
 export type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
