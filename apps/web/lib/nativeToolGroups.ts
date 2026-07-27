@@ -43,7 +43,7 @@ export function groupIdForNativeTool(name: string): NativeToolGroupId {
     return "fs";
   }
   if (/^async_task_/.test(name)) return "async";
-  if (/^(run_shell|wait|sleep)$/.test(name)) return "shell";
+  if (/^(run_shell|wait|sleep|pinme_upload)$/.test(name)) return "shell";
   if (/^git_/.test(name)) return "git";
   if (/^(memory_|post_|pinned_memory|todo_)/.test(name)) return "memory";
   if (/^session_/.test(name)) return "session";
@@ -198,6 +198,7 @@ export const NATIVE_LABELS: Record<string, string> = {
   async_task_status: "异步任务状态",
   async_task_cancel: "取消异步任务",
   run_shell: "执行 Shell 命令",
+  pinme_upload: "PinMe 公网部署静态站",
   wait: "等待/延迟",
   sleep: "睡眠/定时器",
   spawn_subagent: "派生子 Agent",
@@ -240,4 +241,6 @@ export const NATIVE_LABELS: Record<string, string> = {
   session_compact: "压缩会话",
   session_rotate: "轮换会话",
   session_context_usage: "会话上下文用量",
+  session_search: "检索本会话历史",
+  session_message_get: "读取本会话消息",
 };

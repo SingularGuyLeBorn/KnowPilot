@@ -726,6 +726,186 @@ async function sessionContextUsageTool(_args: Record<string, unknown>, ctx: Nati
   };
 }
 
+function clipExcerpt(text: string, maxChars: number): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, maxChars)}…`;
+}
+
+/**
+ * 本会话消息检索：压缩后模型视野外的原文仍在 ChatMessage，用本工具按需召回。
+ * 优先 FTS（entity=message）再按 sessionId 过滤；无命中回退 LIKE。
+ */
+async function sessionSearchTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) throw new Error("session_search 需要在 Chat 会话中调用（缺少 sessionId）");
+  if (!ctx.prisma) throw new Error("缺少 prisma");
+  const keyword = String(args.keyword ?? "").trim();
+  if (!keyword) throw new Error("keyword 不能为空");
+  const limit = Math.min(Math.max(Number(args.limit ?? 8) || 8, 1), 30);
+  const maxChars = Math.min(Math.max(Number(args.maxChars ?? 600) || 600, 120), 4000);
+  const onlyOutsidePrompt = args.onlyOutsidePrompt === true || args.onlyOutsidePrompt === "true";
+
+  const session = await ctx.prisma.chatSession.findUnique({
+    where: { id: ctx.sessionId },
+    select: {
+      contextCompactedAt: true,
+      contextSummary: true,
+      compactGeneration: true,
+    },
+  });
+  const compactedAt = session?.contextCompactedAt ? new Date(session.contextCompactedAt) : null;
+
+  let orderedIds: string[] = [];
+  try {
+    const { searchFtsByEntity } = await import("../../ftsIndex.js");
+    const hits = await searchFtsByEntity(ctx.prisma, "message", keyword, 300);
+    orderedIds = hits.map((h) => h.entityId).filter(Boolean);
+  } catch {
+    /* FTS 不可用则走 LIKE */
+  }
+
+  type Row = {
+    id: string;
+    role: string;
+    content: string;
+    createdAt: Date;
+  };
+  let rows: Row[] = [];
+
+  if (orderedIds.length > 0) {
+    const found = await ctx.prisma.chatMessage.findMany({
+      where: {
+        sessionId: ctx.sessionId,
+        id: { in: orderedIds },
+        role: { in: ["user", "assistant"] },
+      },
+      select: { id: true, role: true, content: true, createdAt: true },
+    });
+    const byId = new Map(found.map((r) => [r.id, r]));
+    rows = orderedIds.map((id) => byId.get(id)).filter((r): r is Row => Boolean(r));
+  }
+
+  if (rows.length === 0) {
+    rows = await ctx.prisma.chatMessage.findMany({
+      where: {
+        sessionId: ctx.sessionId,
+        role: { in: ["user", "assistant"] },
+        content: { contains: keyword },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit * 3,
+      select: { id: true, role: true, content: true, createdAt: true },
+    });
+  }
+
+  const mapped = rows.map((r) => {
+    const inLlmContext = !compactedAt || r.createdAt >= compactedAt;
+    return {
+      id: r.id,
+      role: r.role,
+      createdAt: r.createdAt.toISOString(),
+      inLlmContext,
+      excerpt: clipExcerpt(r.content, maxChars),
+    };
+  });
+
+  const filtered = onlyOutsidePrompt ? mapped.filter((m) => !m.inLlmContext) : mapped;
+  const items = filtered.slice(0, limit);
+
+  return {
+    sessionId: ctx.sessionId,
+    keyword,
+    totalMatched: filtered.length,
+    hasCompactSummary: Boolean(session?.contextSummary),
+    compactGeneration: session?.compactGeneration ?? 0,
+    items,
+    hint:
+      items.some((i) => !i.inLlmContext)
+        ? "含 inLlmContext=false 的命中：已被压缩挤出模型视野，但原文仍在库；需要全文用 session_message_get(messageId)。"
+        : items.length
+          ? "命中均仍在当前模型视野内（或尚未压缩）。"
+          : "无命中。可换关键词，或 session_message_get(beforeCompact=true) 浏览压缩前片段。",
+  };
+}
+
+/** 按 id 取单条，或拉取压缩边界前/后的若干条原文（按需召回，不整段塞回 prompt）。 */
+async function sessionMessageGetTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.sessionId) throw new Error("session_message_get 需要在 Chat 会话中调用（缺少 sessionId）");
+  if (!ctx.prisma) throw new Error("缺少 prisma");
+
+  const messageId = typeof args.messageId === "string" ? args.messageId.trim() : "";
+  const beforeCompact = args.beforeCompact === true || args.beforeCompact === "true";
+  const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 20);
+  const maxChars = Math.min(Math.max(Number(args.maxChars ?? 4000) || 4000, 200), 16000);
+
+  const session = await ctx.prisma.chatSession.findUnique({
+    where: { id: ctx.sessionId },
+    select: { contextCompactedAt: true },
+  });
+  const compactedAt = session?.contextCompactedAt ? new Date(session.contextCompactedAt) : null;
+
+  if (messageId) {
+    const row = await ctx.prisma.chatMessage.findFirst({
+      where: { id: messageId, sessionId: ctx.sessionId },
+      select: { id: true, role: true, content: true, createdAt: true, toolCalls: true, toolResults: true },
+    });
+    if (!row) throw new Error(`消息不存在或不属于本会话: ${messageId}`);
+    const inLlmContext = !compactedAt || row.createdAt >= compactedAt;
+    return {
+      sessionId: ctx.sessionId,
+      item: {
+        id: row.id,
+        role: row.role,
+        createdAt: row.createdAt.toISOString(),
+        inLlmContext,
+        content: clipExcerpt(row.content, maxChars),
+        contentChars: row.content.length,
+        truncated: row.content.length > maxChars,
+        hasToolCalls: Boolean(row.toolCalls),
+      },
+      hint: inLlmContext
+        ? "该消息仍在模型视野内；一般无需再 get。"
+        : "该消息在压缩边界之外；此处按需召回片段，勿整段复读进回复。",
+    };
+  }
+
+  if (beforeCompact) {
+    if (!compactedAt) {
+      return {
+        sessionId: ctx.sessionId,
+        items: [],
+        hint: "当前会话尚未压缩，无「压缩前」分区；请用 session_search 或省略 beforeCompact。",
+      };
+    }
+    const rows = await ctx.prisma.chatMessage.findMany({
+      where: {
+        sessionId: ctx.sessionId,
+        role: { in: ["user", "assistant"] },
+        createdAt: { lt: compactedAt },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: { id: true, role: true, content: true, createdAt: true },
+    });
+    return {
+      sessionId: ctx.sessionId,
+      compactedAt: compactedAt.toISOString(),
+      items: rows.map((r) => ({
+        id: r.id,
+        role: r.role,
+        createdAt: r.createdAt.toISOString(),
+        inLlmContext: false,
+        content: clipExcerpt(r.content, maxChars),
+        contentChars: r.content.length,
+        truncated: r.content.length > maxChars,
+      })),
+      hint: "以上为压缩边界之前的最近若干条（新→旧）。需要某条全文再 session_message_get(messageId)。",
+    };
+  }
+
+  throw new Error("请提供 messageId，或设 beforeCompact=true 浏览压缩前消息");
+}
+
 /**
  * 归档当前会话并开启同 Agent 新会话；总结写入 data/sessions/ 与新会话首条消息。
  * 不自动切换前端视图——通过 SSE session_rotated 提示用户手动跳转。
@@ -1081,10 +1261,42 @@ const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "session_compact",
     description:
-      "当用户要求压缩上下文、或当前会话过长需要释放 token 时调用：摘要更早的对话并写入会话摘要，保留最近消息继续聊。与 session_rotate 不同，不会换新会话。",
+      "当用户要求压缩上下文、或当前会话过长需要释放 token 时调用：摘要更早的对话并写入会话摘要，保留最近消息继续聊。与 session_rotate 不同，不会换新会话。压缩只改变模型视野（contextSummary + 边界后消息），ChatMessage 原文仍在库；细节丢失时用 session_search / session_message_get 按需召回，勿假设摘要=全文。",
     parameters: zodParams(
       z.object({
         reason: z.string().describe("压缩原因，如「用户要求」「上下文过长」").optional(),
+      }),
+    ),
+  },
+  {
+    name: "session_search",
+    description:
+      "在当前会话的 ChatMessage 原文中关键词检索（优先 FTS，回退 LIKE）。压缩后模型看不到的旧消息仍可命中（inLlmContext=false）。适合「压缩摘要里丢了某细节，需要从本会话历史找回」。禁止用 run_shell/grep 扫会话；跨会话知识用 memory_search / 全局搜索。",
+    parameters: zodParams(
+      z.object({
+        keyword: z.string().describe("关键词（中文/英文均可）"),
+        limit: z.number().describe("最多返回条数，默认 8，上限 30").optional(),
+        maxChars: z.number().describe("每条 excerpt 最大字符，默认 600").optional(),
+        onlyOutsidePrompt: z
+          .boolean()
+          .describe("true=只返回已被压缩挤出模型视野的命中（inLlmContext=false）")
+          .optional(),
+      }),
+    ),
+  },
+  {
+    name: "session_message_get",
+    description:
+      "按需取本会话消息原文片段：传 messageId 取单条；或 beforeCompact=true 浏览压缩边界之前的最近若干条。配合 session_search 使用。勿把大段原文整段复读进最终回复。",
+    parameters: zodParams(
+      z.object({
+        messageId: z.string().describe("消息 id（与 beforeCompact 二选一）").optional(),
+        beforeCompact: z
+          .boolean()
+          .describe("true=返回压缩边界之前的最近消息（新→旧）")
+          .optional(),
+        limit: z.number().describe("beforeCompact 时条数，默认 5，上限 20").optional(),
+        maxChars: z.number().describe("每条 content 最大字符，默认 4000").optional(),
       }),
     ),
   },
@@ -1131,6 +1343,8 @@ const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
   session_rotate: sessionRotateTool,
   session_compact: sessionCompactTool,
   session_context_usage: sessionContextUsageTool,
+  session_search: sessionSearchTool,
+  session_message_get: sessionMessageGetTool,
   task_run: taskRunTool,
   todo_write: todoWriteTool,
   todo_read: todoReadTool,

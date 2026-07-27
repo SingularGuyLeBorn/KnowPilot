@@ -182,12 +182,16 @@ const EXACT_TOOL_ICONS: Record<string, LucideIcon> = {
   task_run: ListTodo,
 
   run_shell: Terminal,
+  pinme_upload: Globe,
+  wait: Clock,
   sleep: Clock,
   wait: Clock,
 
   session_clear: RotateCcw,
   session_rotate: RefreshCw,
   session_compact: Minimize2,
+  session_search: Search,
+  session_message_get: BookMarked,
 
   agent_create: UserPlus,
   agent_update: Settings,

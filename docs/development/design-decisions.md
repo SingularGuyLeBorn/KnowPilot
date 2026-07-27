@@ -1576,3 +1576,28 @@ WIP 分支（Kimi 模型菜单/飞书集成/软暂停占位/tombstone 等，基�
 | 幂等 | 复用 `ProcessedWebhookEvent`，source=`im:wecom`/`im:qq` |
 
 **回答**：按上表落地（分支 `feat/im-channels-wecom-qq`）
+
+---
+
+## 会话压缩后的历史召回：FTS 按需工具，不做会话向量库（2026-07-27）
+
+### 背景
+
+长 session 压缩后，模型只看到 `contextSummary` + 边界后消息。用户担心「摘要丢了细节就真丢了」。提出：RAG/向量库，或 bash grep。
+
+### 事实澄清
+
+- **压缩不删 `ChatMessage`**：UI 历史仍在；丢的是**进 LLM 的窗口**，不是落库原文。
+- 全局 FTS 已索引 `message`，但 Agent 此前**没有本会话检索工具**，只能瞎猜摘要。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 不做 | 每会话向量库 / embedding RAG（本地优先、零新依赖、成本与漂移高） |
+| 不做 | `run_shell` + grep 扫会话（密钥剥离、路径错、绕过权限） |
+| 做 | `session_search`（本会话 FTS→LIKE）+ `session_message_get`（按 id / beforeCompact） |
+| 语义 | 压缩 = 视野收窄；细节按需召回进**工具结果**，不整段回灌 prompt |
+| 提示词 | `SESSION_HISTORY_GUIDE`：摘要≠全文；禁止 shell 扫会话 |
+
+**回答**：按上表落地

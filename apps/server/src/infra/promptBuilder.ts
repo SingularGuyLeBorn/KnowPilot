@@ -101,6 +101,18 @@ const WEB_TOOL_GUIDE = `## 网络工具用法
 - vision_describe：外挂多模态模型做语义理解/描述（适合流程图、UI 截图、版面、纯文字模型看不懂的图）；可直接传图片 URL。
 **图文策略**：先 read_article（正文 + images URL + 内嵌 OCR 粗读）。若 OCR 空白/乱码/看不懂图意（流程图、截图 UI、表格、手写），再对 \`images[]\` 里的 URL 调用 read_image（偏文字）或 vision_describe（偏语义）；**当前模型若支持多模态**，可用 read_image(mode=vision/auto) 直接读图。正文已够用就不要对每张图都 vision_describe。建议流程：web_search 找 URL → read_article → 必要时 scrape_web_page / 读图补强。知乎/微信/小红书/抖音/B站/微博/掘金/CSDN/语雀**访问需登录内容（收藏夹/付费/私密）前，若不确定登录态，先 native:browser_login_status 或 native:platform_doctor 确认（不弹窗；doctor 还报告有序后端/tier），未登录则 native:platform_login 弹浏览器让用户手动登录（扫码/账密），登录态自动落盘后 read_article 自动复用 cookie——不要让用户手动 F12 复制 cookie，也不要用 browser_screenshot/read_image 截图检查登录状态（模型无 vision 会卡死）**。即使用户只说「看看登录状态」，也优先 browser_login_status / platform_doctor 而非截图。同步收藏优先 inbox_start_platform_sync。GitHub 可选 GITHUB_TOKEN 提高 API 限速余量。`;
 
+const PINME_TOOL_GUIDE = `## 公网部署（PinMe）
+用户要「写个小工具/HTML 小游戏并给公网链接」时：
+1. 用 write_file 写到当前 Workspace（如 \`demo/index.html\`），或对话里直接 \`\`\`html\`\`\` 预览（仅预览不部署）。
+2. 需要可分享链接时调用 **pinme_upload**（path 指向含 index.html 的目录；省略则自动找 dist/build/out/public）。
+3. 把返回的 url 发给用户。不要用 run_shell 调 pinme（密钥会被 shell 沙箱剥掉）。需配置 PINME_APPKEY。`;
+
+const SESSION_HISTORY_GUIDE = `## 会话压缩与历史召回
+- session_compact 只缩小**模型视野**（摘要 + 边界后消息），**不删除** ChatMessage；UI 历史仍在。
+- 压缩后摘要丢细节 ≠ 数据丢失。用 **session_search(keyword)** 在本会话原文检索；命中 inLlmContext=false 再用 **session_message_get(messageId)** 拉片段。
+- session_message_get(beforeCompact=true) 可浏览压缩前最近若干条。禁止用 run_shell/grep 扫会话库。
+- 跨会话长期事实用 memory_*；本会话细节用 session_search。`;
+
 /** Hermes SKILLS_GUIDANCE：程序记忆 vs Memory（陈述事实） */
 export const SKILLS_GUIDANCE = `## Skill 程序记忆（Hermes）
 After completing a complex task (约 5+ tool calls)、攻克棘手错误、或发现可复用工作流，用 skill_manage 保存为 Skill，下次复用。
@@ -120,6 +132,12 @@ export function buildAgentToolGuide(tools: string[]): string {
     has("read_image")
   ) {
     parts.push(WEB_TOOL_GUIDE);
+  }
+  if (has("pinme_upload")) {
+    parts.push(PINME_TOOL_GUIDE);
+  }
+  if (has("session_search") || has("session_message_get") || has("session_compact")) {
+    parts.push(SESSION_HISTORY_GUIDE);
   }
   if (has("skills_list") || has("skill_view") || has("skill_manage")) {
     parts.push(SKILLS_GUIDANCE);
