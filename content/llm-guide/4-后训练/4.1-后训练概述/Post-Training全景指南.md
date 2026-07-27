@@ -1,7 +1,16 @@
 ---
 title: "4.1 · Post-Training 全景指南"
-date: 2026-05-16
-tags: [Post-Training, SFT, RLHF, DPO, PPO, 对齐, 指令遵循]
+category: null
+tags:
+  - "Post-Training"
+  - "SFT"
+  - "RLHF"
+  - "DPO"
+  - "PPO"
+  - "对齐"
+  - "指令遵循"
+published: true
+excerpt: null
 ---
 
 # Post-Training 全景指南
@@ -124,3 +133,4 @@ Post-Training 的三层境界：
 当前趋势：从"人工标注驱动"转向"自动反馈驱动"(RLAIF、自博弈、环境交互). 
 
 > 参考来源：[LLM Post-Training 全景指南：从 RLHF 到 GRPO 再到 Agentic RL](https://zhuanlan.zhihu.com/p/2012909606771400823)
+
