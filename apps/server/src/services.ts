@@ -1308,10 +1308,23 @@ ${entity.content}
       where: { garden, slug, deletedAt: null },
     });
     if (!post) throw new TRPCError({ code: "NOT_FOUND", message: `文章不存在（${garden}/${slug}）` });
-    this.prisma.post
-      .update({ where: { id: post.id }, data: { viewCount: { increment: 1 } } })
-      .catch(() => {});
     return this.formatEntity(post);
+  }
+
+  /** 浏览量 +1；与 getBySlug 分离，侧栏预取可安全缓存全文 */
+  async recordView(id: string): Promise<{ viewCount: number }> {
+    const existing = await this.prisma.post.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new TRPCError({ code: "NOT_FOUND", message: `文章不存在（id=${id}）` });
+    }
+    return this.prisma.post.update({
+      where: { id },
+      data: { viewCount: { increment: 1 } },
+      select: { viewCount: true },
+    });
   }
 
   /**
