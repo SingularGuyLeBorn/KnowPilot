@@ -45,7 +45,7 @@ export default function PromptsPage() {
       <PageHeader
         icon={FileCode2}
         title="Prompts 提示词库"
-        description="管理可复用的系统/用户提示词模板，支持变量占位与 Markdown 同步到 content/prompts/。"
+        description="可复用提示词模板（变量如 {{userName}}），事实源在 config/prompts/*.md。目前 Chat 默认仍用 Agent 自己的 systemPrompt；模板库供你沉淀可复用文案，或日后工作流引用。"
         action={{ label: "新建模板", onClick: handleCreateDemo, icon: Plus, disabled: createMutation.isPending }}
         showDensityToggle
       />
@@ -55,7 +55,7 @@ export default function PromptsPage() {
       ) : !data?.items || data.items.length === 0 ? (
         <EmptyState
           title="尚无提示词模板"
-          description="创建第一个模板，供 Agent 或工作流引用。"
+          description="空是因为 config/prompts/ 里还没有 .md，也不是 bug。点下方创建示例；CRUD 走本页 / tRPC prompt.*。Agent 没有专用 prompt_* 工具（改 Agent 人设用 optimize_agent_prompt）。"
           actionLabel="创建示例模板"
           onAction={handleCreateDemo}
         />

@@ -17,6 +17,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { postDetailHref } from "@/lib/postHref";
 import { cn } from "@/lib/utils";
+import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { VirtualFlatList } from "@/components/shared";
@@ -50,6 +51,8 @@ const GARDEN_ROOT_LABEL: Record<string, string> = {
   posts: "博客",
   knowledge: "知识库",
   resources: "资源",
+  "llm-guide": "LLM 指南",
+  diffusion: "扩散模型",
 };
 
 function buildTree(posts: PostSummary[]): TreeNode[] {
@@ -110,12 +113,21 @@ function buildTree(posts: PostSummary[]): TreeNode[] {
     return aParts.length - bParts.length;
   };
 
-  const sortByKey = (a: TreeNode, b: TreeNode) => naturalCompare(a.key, b.key);
+  /** 花园同名索引文（如 llm-guide/llm-guide）置顶，其余按自然序 */
+  const isGardenIndex = (n: TreeNode) =>
+    !!n.slug && !!n.garden && n.slug === n.garden;
+
+  const sortNodes = (a: TreeNode, b: TreeNode) => {
+    const ap = isGardenIndex(a) ? 0 : 1;
+    const bp = isGardenIndex(b) ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    return naturalCompare(a.key, b.key);
+  };
 
   const convert = (key: string, item: TreeItem): TreeNode => {
     const children = Object.entries(item.children)
       .map(([childKey, childItem]) => convert(childKey, childItem))
-      .sort(sortByKey);
+      .sort(sortNodes);
     const post = item.post;
     return {
       id: post?.id || `group-${key}`,
@@ -130,7 +142,7 @@ function buildTree(posts: PostSummary[]): TreeNode[] {
 
   return Object.entries(root)
     .map(([key, item]) => convert(key, item))
-    .sort(sortByKey);
+    .sort(sortNodes);
 }
 
 function getPostSlug(pathname: string) {
@@ -222,12 +234,14 @@ function TreeNodeItem({
   activeSlug,
   onToggle,
   onNavigate,
+  onPrefetch,
 }: {
   node: TreeNode;
   expanded: Set<string>;
   activeSlug: string | null;
   onToggle: (key: string, open: boolean) => void;
   onNavigate: () => void;
+  onPrefetch: (slug: string, garden?: string) => void;
 }) {
   const isExpanded = expanded.has(node.key);
   const isActive = node.slug === activeSlug;
@@ -235,7 +249,7 @@ function TreeNodeItem({
   const isDoc = node.type === "doc";
 
   const rowClass = cn(
-    "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium transition",
+    "group flex min-w-0 flex-1 items-center gap-1 rounded-lg py-1.5 pr-1.5 pl-0 text-left text-sm font-medium transition",
     isActive
       ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
       : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
@@ -253,23 +267,23 @@ function TreeNodeItem({
 
   return (
     <div>
-      <div className="flex items-center">
+      <div className="flex min-w-0 items-center">
         {hasChildren ? (
           <button
             type="button"
             onClick={() => onToggle(node.key, !isExpanded)}
             className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--kp-text-3)] transition-colors hover:bg-[var(--kp-bg-soft)] hover:text-[var(--kp-text-1)]",
+              "flex h-5 w-3.5 shrink-0 items-center justify-center rounded-md text-[var(--kp-text-3)] transition-colors hover:bg-[var(--kp-bg-soft)] hover:text-[var(--kp-text-1)]",
               isExpanded && "text-[var(--kp-text-1)]"
             )}
             aria-label={isExpanded ? "折叠" : "展开"}
           >
             <ChevronRight
-              className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-90")}
+              className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")}
             />
           </button>
         ) : (
-          <span className="h-6 w-6 shrink-0" />
+          <span className="h-5 w-3.5 shrink-0" />
         )}
 
         {isDoc && node.slug ? (
@@ -277,12 +291,14 @@ function TreeNodeItem({
             href={postDetailHref(node.slug, node.garden)}
             scroll={false}
             onClick={onNavigate}
+            onPointerEnter={() => onPrefetch(node.slug!, node.garden)}
+            onFocus={() => onPrefetch(node.slug!, node.garden)}
             className={rowClass}
             title={node.title}
             data-tree-slug={node.slug}
           >
             {iconNode}
-            <span className="line-clamp-2 leading-snug">{node.title}</span>
+            <span className="min-w-0 flex-1 truncate">{node.title}</span>
           </Link>
         ) : (
           <button
@@ -292,7 +308,7 @@ function TreeNodeItem({
             title={node.title}
           >
             {iconNode}
-            <span className="line-clamp-2 leading-snug">{node.title}</span>
+            <span className="min-w-0 flex-1 truncate">{node.title}</span>
           </button>
         )}
       </div>
@@ -300,7 +316,7 @@ function TreeNodeItem({
       {hasChildren && (
         <Collapsible open={isExpanded} onOpenChange={(open) => onToggle(node.key, open)}>
           <CollapsibleContent className="data-open:animate-none data-closed:animate-none">
-            <div className="ml-3 border-l border-[var(--kp-divider)] pl-2">
+            <div className="ml-1.5 border-l border-[var(--kp-divider)] pl-1">
               {node.children.map((child) => (
                 <TreeNodeItem
                   key={child.key}
@@ -309,6 +325,7 @@ function TreeNodeItem({
                   activeSlug={activeSlug}
                   onToggle={onToggle}
                   onNavigate={onNavigate}
+                  onPrefetch={onPrefetch}
                 />
               ))}
             </div>
@@ -435,6 +452,16 @@ export function PostTreeNav({
     }
   }, []);
 
+  const utils = trpc.useUtils();
+  const prefetchPost = useCallback(
+    (slug: string, garden?: string) => {
+      utils.post.getBySlug
+        .prefetch({ slug, garden: garden ?? DEFAULT_POST_GARDEN })
+        .catch(() => {});
+    },
+    [utils],
+  );
+
   const allGroupKeys = useMemo(() => collectGroupKeys(tree), [tree]);
 
   const expandAll = useCallback(() => {
@@ -486,14 +513,14 @@ export function PostTreeNav({
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
-      <div className="shrink-0 px-3 pb-2 pt-2">
+      <div className="shrink-0 pb-2 pr-2 pt-2">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="筛选文章…"
-            className="h-9 border-[var(--kp-divider)] bg-[var(--kp-bg)] pl-9 pr-8 text-sm"
+            className="h-9 border-[var(--kp-divider)] bg-[var(--kp-bg)] pl-8 pr-8 text-sm"
           />
           {query && (
             <button
@@ -543,7 +570,7 @@ export function PostTreeNav({
 
       {isSearchMode ? (
         <VirtualFlatList
-          className="px-2 pb-3 [overflow-anchor:none]"
+          className="pb-3 pr-1 [overflow-anchor:none]"
           items={flatSearchResults}
           rowHeight={40}
           getKey={(item) => item.key}
@@ -555,13 +582,15 @@ export function PostTreeNav({
                 href={postDetailHref(item.slug, item.garden)}
                 scroll={false}
                 onClick={handleNavigate}
+                onPointerEnter={() => prefetchPost(item.slug, item.garden)}
+                onFocus={() => prefetchPost(item.slug, item.garden)}
                 className={cn(
-                  "flex h-full items-center gap-2 rounded-lg px-2.5 text-sm font-medium transition",
+                  "flex h-full items-center gap-1 rounded-lg pr-1.5 text-sm font-medium transition",
                   isActive
                     ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
                     : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
                 )}
-                style={{ paddingLeft: `${10 + item.depth * 12}px` }}
+                style={{ paddingLeft: `${5 + item.depth * 10}px` }}
                 title={item.title}
                 data-tree-slug={item.slug}
               >
@@ -575,7 +604,7 @@ export function PostTreeNav({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3 [overflow-anchor:none]"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3 pr-1 [overflow-anchor:none]"
         >
           <nav className="flex flex-col gap-0.5">
             {visibleTree.map((node) => (
@@ -586,10 +615,11 @@ export function PostTreeNav({
                 activeSlug={activeSlug}
                 onToggle={toggle}
                 onNavigate={handleNavigate}
+                onPrefetch={prefetchPost}
               />
             ))}
             {visibleTree.length === 0 && (
-              <p className="px-2 py-4 text-sm text-[var(--kp-text-3)]">暂无本地文章</p>
+              <p className="py-4 pr-2 text-sm text-[var(--kp-text-3)]">暂无本地文章</p>
             )}
           </nav>
         </div>

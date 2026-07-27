@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   Bot,
@@ -31,7 +32,6 @@ import { postDetailHref } from "@/lib/postHref";
 import { cn } from "@/lib/utils";
 import { KbdKey, ShortcutCmdK, ShortcutEsc } from "@/lib/icons";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
 interface CommandItem {
@@ -107,9 +107,17 @@ export function CommandPalette() {
       {
         id: "action:agents",
         type: "action",
-        title: "Agent 管理",
+        title: "管理",
+        subtitle: "Agents / Skill / 记忆 / Inbox / 凭据…",
         href: "/agents",
         icon: <Bot className="h-4 w-4" />,
+      },
+      {
+        id: "action:about",
+        type: "action",
+        title: "关于我",
+        href: "/about",
+        icon: <UserCircle className="h-4 w-4" />,
       },
       {
         id: "action:inbox",
@@ -203,13 +211,6 @@ export function CommandPalette() {
         title: "系统设置",
         href: "/settings",
         icon: <Settings2 className="h-4 w-4" />,
-      },
-      {
-        id: "action:about",
-        type: "action",
-        title: "About Me",
-        href: "/about",
-        icon: <UserCircle className="h-4 w-4" />,
       }
     );
 
@@ -302,6 +303,11 @@ export function CommandPalette() {
         e.preventDefault();
         if (open) closePalette();
         else openPalette();
+        return;
+      }
+      if (open && e.key === "Escape") {
+        e.preventDefault();
+        closePalette();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -341,8 +347,71 @@ export function CommandPalette() {
     }
   };
 
-  if (!open) {
-    return (
+  // Navbar 有 backdrop-filter，会把子孙 fixed 困在顶栏高度内 → 只剩一条顶蒙版且点空白关不掉。
+  // 必须 portal 到 body，相对视口铺满。
+  const overlay =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 p-4 pt-[12vh]"
+            onClick={closePalette}
+          >
+            <div
+              className="flex w-full max-w-2xl max-h-[min(80vh,40rem)] flex-col overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={handleKeyDown}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="flex shrink-0 items-center gap-3 border-b border-[var(--kp-divider)] px-4 py-3">
+                <Search className="h-5 w-5 shrink-0 text-[var(--kp-text-3)]" />
+                <Input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索文章、Agent、Skill、分类…"
+                  className="h-auto border-0 bg-transparent px-0 text-base text-[var(--kp-text-1)] shadow-none placeholder:text-[var(--kp-text-3)] focus-visible:ring-0"
+                />
+                <span className="hidden shrink-0 sm:inline-block">
+                  <ShortcutEsc />
+                </span>
+              </div>
+
+              {/* 不用 ScrollArea：其 viewport size-full + 仅 max-h 时不裁切，列表会叠进页脚 */}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="py-2">
+                  {items.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-[var(--kp-text-3)]">
+                      没有找到匹配结果
+                    </div>
+                  ) : (
+                    renderGroupedItems(items, selectedIndex, runItem, setSelectedIndex)
+                  )}
+                </div>
+              </div>
+
+              <div className="relative z-10 flex shrink-0 items-center justify-between gap-3 border-t border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-2.5 text-xs text-[var(--kp-text-3)]">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <KbdKey icon={ChevronUp} label="上" />
+                    <KbdKey icon={ChevronDown} label="下" />
+                    <span className="hidden sm:inline">选择</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <KbdKey icon={CornerDownLeft} label="确认" />
+                    <span className="hidden sm:inline">确认</span>
+                  </span>
+                </div>
+                <span className="shrink-0 whitespace-nowrap tabular-nums">{items.length} 个结果</span>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <>
       <button
         type="button"
         onClick={openPalette}
@@ -354,63 +423,8 @@ export function CommandPalette() {
           <ShortcutCmdK />
         </span>
       </button>
-    );
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 p-4 pt-[12vh]"
-      onClick={() => setOpen(false)}
-    >
-      <div
-        className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="flex items-center gap-3 border-b border-[var(--kp-divider)] px-4 py-3">
-          <Search className="h-5 w-5 shrink-0 text-[var(--kp-text-3)]" />
-          <Input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索文章、Agent、Skill、分类…"
-            className="h-auto border-0 bg-transparent px-0 text-base text-[var(--kp-text-1)] shadow-none placeholder:text-[var(--kp-text-3)] focus-visible:ring-0"
-          />
-          <span className="hidden shrink-0 sm:inline-block">
-            <ShortcutEsc />
-          </span>
-        </div>
-
-        <ScrollArea className="max-h-[55vh]">
-          <div className="py-2">
-            {items.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-[var(--kp-text-3)]">
-                没有找到匹配结果
-              </div>
-            ) : (
-              renderGroupedItems(items, selectedIndex, runItem, setSelectedIndex)
-            )}
-          </div>
-        </ScrollArea>
-
-        <div className="flex shrink-0 items-center justify-between gap-4 border-t border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-2.5 text-xs text-[var(--kp-text-3)]">
-          <div className="flex shrink-0 items-center gap-4">
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <KbdKey icon={ChevronUp} label="上" />
-              <KbdKey icon={ChevronDown} label="下" />
-              <span className="hidden sm:inline">选择</span>
-            </span>
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <KbdKey icon={CornerDownLeft} label="确认" />
-              <span className="hidden sm:inline">确认</span>
-            </span>
-          </div>
-          <span className="shrink-0 whitespace-nowrap tabular-nums">{items.length} 个结果</span>
-        </div>
-      </div>
-    </div>
+      {overlay}
+    </>
   );
 }
 
@@ -434,7 +448,7 @@ function renderGroupedItems(
     if (group.items.length === 0) continue;
     elements.push(
       <div key={`group-${group.label}`}>
-        <div className="sticky top-0 bg-[var(--kp-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--kp-text-3)]">
+        <div className="sticky top-0 z-[1] bg-[var(--kp-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--kp-text-3)]">
           {group.label}
         </div>
         <div className="px-2">
@@ -449,7 +463,7 @@ function renderGroupedItems(
                 onMouseEnter={() => onHover(globalIndex)}
                 data-selected={selected}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition",
+                  "flex w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition",
                   selected
                     ? "bg-[var(--kp-brand-deep)] text-white"
                     : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]"
@@ -458,16 +472,21 @@ function renderGroupedItems(
                 <span className={cn("shrink-0", selected ? "text-white" : "text-[var(--kp-text-3)]")}>
                   {item.icon}
                 </span>
-                <span className="flex-1 truncate">{item.title}</span>
+                <span className="min-w-0 flex-1 truncate">{item.title}</span>
                 {item.subtitle && (
-                  <span className={cn("truncate text-xs", selected ? "text-white/80" : "text-[var(--kp-text-3)]")}>
+                  <span
+                    className={cn(
+                      "hidden max-w-[40%] truncate text-xs sm:inline",
+                      selected ? "text-white/80" : "text-[var(--kp-text-3)]",
+                    )}
+                  >
                     {item.subtitle}
                   </span>
                 )}
                 {item.shortcut && (
                   <kbd
                     className={cn(
-                      "rounded border px-1.5 py-0.5 font-mono text-[10px]",
+                      "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px]",
                       selected
                         ? "border-white/30 bg-white/10 text-white"
                         : "border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] text-[var(--kp-text-3)]"

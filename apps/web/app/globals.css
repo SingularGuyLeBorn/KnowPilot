@@ -28,6 +28,12 @@
   --kp-divider: rgba(200, 195, 188, 0.35);
   --kp-divider-light: rgba(200, 195, 188, 0.18);
 
+  /* 全局滚动条（原生 + ScrollArea 共用） */
+  --kp-scrollbar-size: 8px;
+  --kp-scrollbar-thumb: color-mix(in srgb, var(--kp-brand) 42%, var(--kp-bg-mute));
+  --kp-scrollbar-thumb-hover: color-mix(in srgb, var(--kp-brand-deep) 38%, var(--kp-brand-light));
+  --kp-scrollbar-track: transparent;
+
   /* 玻璃拟态（可选 accent） */
   --kp-glass-bg: rgba(248, 246, 243, 0.78);
   --kp-glass-border: rgba(255, 255, 255, 0.18);
@@ -138,6 +144,10 @@ html.dark,
   --sidebar-primary: var(--kp-brand-light);
   --sidebar-primary-foreground: var(--kp-bg);
   --sidebar-accent-foreground: var(--kp-brand-light);
+
+  --kp-scrollbar-thumb: color-mix(in srgb, var(--kp-brand-light) 32%, var(--kp-bg-mute));
+  --kp-scrollbar-thumb-hover: color-mix(in srgb, var(--kp-brand-light) 55%, var(--kp-bg-soft));
+  --kp-scrollbar-track: transparent;
 }
 
 @theme inline {
@@ -204,6 +214,25 @@ html {
 }
 
 /* 首页动画与玻璃卡片工具类 */
+@keyframes kp-post-swap {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.kp-post-swap {
+  animation: kp-post-swap 140ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kp-post-swap {
+    animation: none;
+  }
+}
+
 @keyframes marquee {
   0% {
     transform: translateX(0);
@@ -276,7 +305,9 @@ html.dark .kp-card,
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 
-/* Markdown 渲染：代码块 / 行内代码 / 数学公式 —— 莫兰迪主题 */
+/* Markdown 渲染：代码块 / 行内代码 / 数学公式 —— 莫兰迪主题
+   行内 code 必须排除 pre 内：否则 display:inline + 背景/边框会按「行片段」
+   逐行画出白色小圆角框；块级 chrome 只由 .kp-code-block 承担，避免 pre 再套一层圆角造成角落 gap。 */
 .prose pre {
   margin: 1.5rem 0;
   overflow-x: auto;
@@ -289,16 +320,65 @@ html.dark .kp-card,
   line-height: 1.7;
 }
 
-.prose pre code {
+/* 带工具栏的代码块：外层圆角裁切；正文区可带行号 gutter */
+.kp-code-body {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.kp-code-gutter {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0.65rem 1rem 0.75rem;
+  border-right: 1px solid var(--kp-divider);
+  background: color-mix(in srgb, var(--kp-bg-soft) 70%, transparent);
+  color: var(--kp-text-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  text-align: right;
+  user-select: none;
+  min-width: 2.25rem;
+}
+
+.kp-code-gutter span {
+  display: block;
+  height: 1.7em;
+}
+
+.kp-code-block .kp-code-pre,
+.prose .kp-code-block .kp-code-pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--kp-text-1);
+  padding: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.prose pre code,
+.kp-code-block code {
+  display: block;
   background: transparent !important;
   color: inherit !important;
   padding: 0 !important;
+  border: none !important;
   border-radius: 0 !important;
   font-size: inherit !important;
   font-weight: inherit !important;
+  box-shadow: none !important;
+  line-height: inherit;
 }
 
-.prose code {
+/* 仅行内 code（不在 pre 内） */
+.prose :not(pre) > code {
   background: var(--kp-bg-soft);
   color: var(--kp-brand-deep);
   padding: 0.15rem 0.4rem;
@@ -310,7 +390,7 @@ html.dark .kp-card,
 
 /* 暗色模式：inline code 提亮为 brand-light，在深底 bg-soft 上达 WCAG AA
    （brand-deep #7e6a55 在暗底仅 ~3.4:1 不达标；brand-light #e0d2cd 达 ~11:1） */
-.dark .prose code {
+.dark .prose :not(pre) > code {
   color: var(--kp-brand-light);
 }
 
@@ -319,7 +399,7 @@ html.dark .kp-card,
   content: none !important;
 }
 
-/* 代码块工具栏 */
+/* 代码块工具栏：直角底边贴合正文，圆角只靠外层 overflow-hidden */
 .kp-code-toolbar {
   display: flex;
   align-items: center;
@@ -330,6 +410,7 @@ html.dark .kp-card,
   background: var(--kp-bg-soft);
   font-size: 0.75rem;
   color: var(--kp-text-3);
+  border-radius: 0;
 }
 
 .kp-code-toolbar button {
@@ -564,27 +645,55 @@ mark.kp-page-search-mark.kp-page-search-current {
   box-shadow: 0 0 0 2px rgba(184, 160, 144, 0.35);
 }
 
-/* 文档树滚动区域 */
-.kp-tree-scroll {
+/* ═══════════════════════════════════════════════════════
+   全局滚动条 — 莫兰迪主题（覆盖所有原生 overflow 滚动）
+   Firefox: scrollbar-*；Chromium/Safari: ::-webkit-scrollbar
+   显式隐藏滚动条的元素（如 [scrollbar-width:none]）仍可覆盖本规则。
+   ═══════════════════════════════════════════════════════ */
+* {
   scrollbar-width: thin;
-  scrollbar-color: var(--kp-bg-mute) transparent;
+  scrollbar-color: var(--kp-scrollbar-thumb) var(--kp-scrollbar-track);
 }
 
-.kp-tree-scroll::-webkit-scrollbar {
-  width: 6px;
+*::-webkit-scrollbar {
+  width: var(--kp-scrollbar-size);
+  height: var(--kp-scrollbar-size);
 }
 
-.kp-tree-scroll::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
+  background: var(--kp-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--kp-scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--kp-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-.kp-tree-scroll::-webkit-scrollbar-thumb {
-  background: var(--kp-bg-mute);
-  border-radius: 3px;
+/* Base UI ScrollArea 滑块对齐同一套色 */
+[data-slot="scroll-area-thumb"] {
+  background-color: var(--kp-scrollbar-thumb) !important;
+  border-radius: 999px;
 }
 
-.kp-tree-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--kp-brand-light);
+[data-slot="scroll-area-scrollbar"]:hover [data-slot="scroll-area-thumb"] {
+  background-color: var(--kp-scrollbar-thumb-hover) !important;
+}
+
+/* 兼容旧类名（已全局化，保留以免外部引用失效） */
+.kp-tree-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--kp-scrollbar-thumb) var(--kp-scrollbar-track);
 }
 
 /* 文档树导航 */
@@ -945,8 +1054,140 @@ html.dark .kp-badge-info,
   border-bottom: 0;
 }
 
-/* Markdown / prose 表格：横竖线齐全（GFM table） */
-.prose table {
+/* Markdown / prose 表格：可拖列宽 + 对齐（MarkdownTable） */
+.kp-md-table-shell {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  border: 1px solid var(--kp-divider);
+  border-radius: 0.75rem;
+  background: var(--kp-bg-alt);
+  overflow: hidden;
+}
+.kp-md-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  border-bottom: 1px solid var(--kp-divider);
+  background: color-mix(in srgb, var(--kp-bg-mute) 70%, transparent);
+}
+.kp-md-table-toolbar-label {
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--kp-text-3);
+}
+.kp-md-table-toolbar-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+.kp-md-table-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-height: 1.75rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.45rem;
+  border: 1px solid transparent;
+  font-size: 0.7rem;
+  color: var(--kp-text-2);
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.kp-md-table-btn:hover:not(:disabled) {
+  background: var(--kp-bg-alt);
+  color: var(--kp-text-1);
+  border-color: var(--kp-divider);
+}
+.kp-md-table-btn.is-active {
+  background: var(--kp-brand-soft);
+  color: var(--kp-brand-deep);
+  border-color: color-mix(in srgb, var(--kp-brand) 35%, transparent);
+}
+.kp-md-table-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.kp-md-table-scroll {
+  overflow-x: auto;
+}
+.kp-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin: 0;
+}
+.kp-md-table thead th,
+.kp-md-table tbody td,
+.kp-md-table tfoot td {
+  border: 1px solid var(--kp-divider);
+  padding: 0.55rem 0.75rem;
+  vertical-align: top;
+  word-break: break-word;
+}
+.kp-md-table thead th {
+  position: relative;
+  background: var(--kp-bg-mute);
+  font-weight: 600;
+  color: var(--kp-text-1);
+  user-select: none;
+}
+.kp-md-table .kp-md-th-label {
+  display: inline-block;
+  max-width: 100%;
+}
+.kp-md-table .kp-md-col-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  z-index: 2;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.kp-md-table .kp-md-col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.kp-md-table .kp-md-col-resizer:hover::after,
+.kp-md-table .kp-md-col-resizer:active::after {
+  background: var(--kp-brand);
+}
+.kp-md-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--kp-bg-mute) 45%, transparent);
+}
+.kp-md-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--kp-brand-soft) 55%, transparent);
+}
+/* 单元格选中：Excel/Notion 风——单格浅蓝底 + 实线描边，非整列 */
+.kp-md-table :is(th, td).kp-md-cell-selected {
+  position: relative;
+  z-index: 1;
+  background: color-mix(in srgb, var(--kp-brand) 12%, var(--kp-bg-alt)) !important;
+  box-shadow: inset 0 0 0 2px var(--kp-brand);
+  outline: none;
+}
+.kp-md-table-shell.is-focused {
+  border-color: color-mix(in srgb, var(--kp-brand) 45%, var(--kp-divider));
+}
+
+/* 旧 prose table 选择器兜底（非 MarkdownTable 路径） */
+.prose table:not(.kp-md-table) {
   width: 100%;
   border-collapse: collapse;
   display: block;
@@ -955,22 +1196,22 @@ html.dark .kp-badge-info,
   margin-bottom: 1.25em;
   font-size: 0.875rem;
 }
-.prose thead th,
-.prose tbody td {
+.prose table:not(.kp-md-table) thead th,
+.prose table:not(.kp-md-table) tbody td {
   border: 1px solid var(--kp-divider);
   padding: 0.55rem 0.75rem;
   vertical-align: top;
 }
-.prose thead th {
+.prose table:not(.kp-md-table) thead th {
   background: var(--kp-bg-mute);
   font-weight: 600;
   color: var(--kp-text-1);
   text-align: left;
 }
-.prose tbody tr:nth-child(even) td {
+.prose table:not(.kp-md-table) tbody tr:nth-child(even) td {
   background: color-mix(in srgb, var(--kp-bg-mute) 45%, transparent);
 }
-.prose tbody tr:hover td {
+.prose table:not(.kp-md-table) tbody tr:hover td {
   background: color-mix(in srgb, var(--kp-brand-soft) 55%, transparent);
 }
 

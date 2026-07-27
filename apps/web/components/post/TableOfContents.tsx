@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
-import { Search, X, ChevronRight } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { useMemo, useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { ChevronRight, ListTree, PanelRightClose } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+
+const TOC_VISIBLE_KEY = "kp-post-toc-visible";
+const tocListeners = new Set<() => void>();
 
 interface TocItem {
   id: string;
@@ -51,7 +53,6 @@ function buildGroups(items: TocItem[]): TocGroup[] {
     } else if (current) {
       current.children.push(item);
     } else {
-      // orphan h3/h4 before any h2: create a virtual group
       groups.push({ heading: item, children: [] });
     }
   }
@@ -75,52 +76,54 @@ function useInitialHash(items: TocItem[], setActiveId: (id: string) => void) {
   }, [items, setActiveId]);
 }
 
-function Highlight({ text, query }: { text: string; query: string }) {
-  if (!query.trim()) return <>{text}</>;
-  const safe = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = text.split(new RegExp(`(${safe})`, "gi"));
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase() ? (
-          <mark key={i} className="rounded bg-primary/20 px-0.5 text-primary">
-            {part}
-          </mark>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </>
-  );
+function readTocVisible(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem(TOC_VISIBLE_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
 
-function filterGroups(groups: TocGroup[], query: string): TocGroup[] {
-  const q = query.toLowerCase();
-  return groups.reduce<TocGroup[]>((acc, group) => {
-    const headingMatch = group.heading.text.toLowerCase().includes(q);
-    const matchedChildren = group.children.filter((c) =>
-      c.text.toLowerCase().includes(q)
-    );
-    if (headingMatch) {
-      acc.push({ ...group, children: group.children });
-    } else if (matchedChildren.length) {
-      acc.push({ ...group, children: matchedChildren });
-    }
-    return acc;
-  }, []);
+function subscribeTocVisible(onStoreChange: () => void) {
+  tocListeners.add(onStoreChange);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === TOC_VISIBLE_KEY || e.key === null) onStoreChange();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    tocListeners.delete(onStoreChange);
+    window.removeEventListener("storage", onStorage);
+  };
 }
 
-export function TableOfContents({ content, className }: { content: string; className?: string }) {
-  const [query, setQuery] = useState("");
+function setTocVisiblePersist(next: boolean) {
+  try {
+    localStorage.setItem(TOC_VISIBLE_KEY, next ? "1" : "0");
+  } catch {
+    // ignore
+  }
+  for (const listener of tocListeners) listener();
+}
+
+/** 本页目录显隐偏好（与 TableOfContents 同源，供正文留白同步） */
+export function usePostTocVisible(): boolean {
+  return useSyncExternalStore(subscribeTocVisible, readTocVisible, () => true);
+}
+
+export function TableOfContents({
+  content,
+  className,
+}: {
+  content: string;
+  className?: string;
+}) {
+  const visible = usePostTocVisible();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [manuallyExpanded, setManuallyExpanded] = useState<Set<string>>(new Set());
 
   const items = useMemo(() => parseHeadings(content), [content]);
   const groups = useMemo(() => buildGroups(items), [items]);
-  const filtered = useMemo(() => {
-    if (!query.trim()) return groups;
-    return filterGroups(groups, query);
-  }, [groups, query]);
 
   const expanded = useMemo(() => {
     const next = new Set(manuallyExpanded);
@@ -132,11 +135,8 @@ export function TableOfContents({ content, className }: { content: string; class
         }
       }
     }
-    if (query.trim()) {
-      for (const group of filtered) next.add(group.heading.id);
-    }
     return next;
-  }, [manuallyExpanded, activeId, groups, query, filtered]);
+  }, [manuallyExpanded, activeId, groups]);
 
   useInitialHash(items, setActiveId);
 
@@ -154,8 +154,7 @@ export function TableOfContents({ content, className }: { content: string; class
         }
         if (topVisible) setActiveId(topVisible);
       },
-      // 观察区域：从导航栏下方到视口 45% 处，取最靠近顶部的标题
-      { rootMargin: "-88px 0px -55% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
+      { rootMargin: "-88px 0px -55% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] },
     );
     for (const item of items) {
       const el = document.getElementById(item.id);
@@ -175,43 +174,52 @@ export function TableOfContents({ content, className }: { content: string; class
 
   if (items.length === 0) return null;
 
+  if (!visible) {
+    return (
+      <button
+        type="button"
+        onClick={() => setTocVisiblePersist(true)}
+        className={cn(
+          "fixed top-[5.5rem] right-4 z-30 hidden items-center gap-1.5 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3 py-2 text-xs font-medium text-[var(--kp-text-2)] shadow-sm transition hover:border-[var(--kp-brand)] hover:text-[var(--kp-brand-deep)] xl:inline-flex",
+          className,
+        )}
+        aria-label="显示本页目录"
+        title="显示目录"
+      >
+        <ListTree className="h-4 w-4" />
+        目录
+      </button>
+    );
+  }
+
   return (
     <aside
       className={cn(
         "fixed top-[5.5rem] right-4 z-30 hidden w-72 flex-col rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] text-[var(--kp-text-1)] shadow-sm xl:flex",
-        className
+        className,
       )}
     >
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
         <h3 className="text-sm font-semibold text-[var(--kp-text-1)]">本页目录</h3>
-        <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-xs font-medium text-[var(--kp-text-3)]">
-          {filtered.length}
-        </span>
-      </div>
-      <Separator />
-      <div className="p-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--kp-text-3)]" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索页内标题"
-            className="h-9 pl-9 pr-8 text-sm"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-full bg-[var(--kp-bg-mute)] px-2 py-0.5 text-xs font-medium text-[var(--kp-text-3)]">
+            {groups.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => setTocVisiblePersist(false)}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+            aria-label="隐藏本页目录"
+            title="隐藏目录"
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </button>
         </div>
       </div>
-      <ScrollArea className="max-h-[calc(100vh-11rem)]">
-        <nav className="flex flex-col px-2 pb-2">
-          {filtered.map((group) => {
+      <Separator />
+      <ScrollArea className="max-h-[calc(100vh-9rem)]">
+        <nav className="flex flex-col px-2 py-2">
+          {groups.map((group) => {
             const isOpen = expanded.has(group.heading.id);
             const hasChildren = group.children.length > 0;
             const isActiveGroup = activeId === group.heading.id;
@@ -241,12 +249,10 @@ export function TableOfContents({ content, className }: { content: string; class
                       "group flex flex-1 items-start rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
                       isActiveGroup
                         ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
-                        : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]"
+                        : "text-[var(--kp-text-1)] hover:bg-[var(--kp-bg-mute)]",
                     )}
                   >
-                    <span className="line-clamp-2 font-medium">
-                      <Highlight text={group.heading.text} query={query} />
-                    </span>
+                    <span className="line-clamp-2 font-medium">{group.heading.text}</span>
                   </button>
                 </div>
 
@@ -269,12 +275,10 @@ export function TableOfContents({ content, className }: { content: string; class
                               child.level === 4 && "pl-5 text-[var(--kp-text-2)]",
                               isActive
                                 ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
-                                : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+                                : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
                             )}
                           >
-                            <span className="line-clamp-2">
-                              <Highlight text={child.text} query={query} />
-                            </span>
+                            <span className="line-clamp-2">{child.text}</span>
                           </button>
                         );
                       })}
@@ -284,9 +288,6 @@ export function TableOfContents({ content, className }: { content: string; class
               </Collapsible>
             );
           })}
-          {filtered.length === 0 && (
-            <p className="px-2 py-3 text-sm text-[var(--kp-text-3)]">无匹配标题</p>
-          )}
         </nav>
       </ScrollArea>
     </aside>

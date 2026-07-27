@@ -8,10 +8,12 @@ import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
-import { Check, Copy, Link2, Eye, Code2, Maximize2, Minimize2, WrapText } from "lucide-react";
+import { Check, Copy, Link2, Eye, Code2, Maximize2, Minimize2, WrapText, ListOrdered } from "lucide-react";
 import { transformWikiLinks } from "./WikiLink";
 import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
+import { useShowCodeLineNumbers } from "@/lib/codeBlockPrefs";
+import { MarkdownTable } from "@/components/post/MarkdownTable";
 import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
 
@@ -53,16 +55,28 @@ interface CodeBlockState {
   maximized: boolean;
 }
 
+/** 逻辑行数：末尾单独换行不计入空行 */
+function countCodeLines(code: string): number {
+  if (!code) return 1;
+  const parts = code.split("\n");
+  const n = code.endsWith("\n") ? parts.length - 1 : parts.length;
+  return Math.max(n, 1);
+}
+
 function CodeToolbar({
   language,
   code,
   state,
   setState,
+  showLineNumbers,
+  onToggleLineNumbers,
 }: {
   language: string;
   code: string;
   state: CodeBlockState;
   setState: (next: Partial<CodeBlockState>) => void;
+  showLineNumbers: boolean;
+  onToggleLineNumbers: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const canPreview = PREVIEWABLE_LANGS.has(language.toLowerCase());
@@ -110,6 +124,20 @@ function CodeToolbar({
             </button>
           </div>
         )}
+
+        {/* 行号：全局偏好，一处切换全站代码块同步 */}
+        <button
+          type="button"
+          onClick={onToggleLineNumbers}
+          className={`rounded p-1 text-[var(--kp-text-2)] transition-colors hover:bg-[var(--kp-bg)] hover:text-[var(--kp-text-1)] ${
+            showLineNumbers ? "text-[var(--kp-brand)]" : ""
+          }`}
+          aria-label={showLineNumbers ? "隐藏行号" : "显示行号"}
+          title={showLineNumbers ? "隐藏行号（全局）" : "显示行号（全局）"}
+          aria-pressed={showLineNumbers}
+        >
+          <ListOrdered className="h-3.5 w-3.5" />
+        </button>
 
         {/* 换行切换 */}
         <button
@@ -223,19 +251,31 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   }
 
   const codeText = getText(children);
+  const lineCount = useMemo(() => countCodeLines(codeText), [codeText]);
+  const [showLineNumbers, setShowLineNumbers] = useShowCodeLineNumbers();
   const [state, setState] = useState<CodeBlockState>({ mode: "code", wrap: false, maximized: false });
   const canPreview = PREVIEWABLE_LANGS.has(language.toLowerCase());
   const update = (next: Partial<CodeBlockState>) => setState((prev) => ({ ...prev, ...next }));
+  const toggleLineNumbers = () => setShowLineNumbers(!showLineNumbers);
 
   const codeView = (
-    <pre
-      {...props}
-      className={`!m-0 p-4 text-sm leading-relaxed ${
-        state.wrap ? "whitespace-pre-wrap break-words" : "overflow-x-auto whitespace-pre"
-      }`}
-    >
-      {children}
-    </pre>
+    <div className={`kp-code-body${showLineNumbers ? " kp-code-body--lines" : ""}`}>
+      {showLineNumbers && (
+        <div className="kp-code-gutter" aria-hidden="true">
+          {Array.from({ length: lineCount }, (_, i) => (
+            <span key={i}>{i + 1}</span>
+          ))}
+        </div>
+      )}
+      <pre
+        {...props}
+        className={`kp-code-pre text-sm ${
+          state.wrap ? "whitespace-pre-wrap break-words" : "overflow-x-auto whitespace-pre"
+        }`}
+      >
+        {children}
+      </pre>
+    </div>
   );
 
   const body = (
@@ -250,10 +290,21 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
     </>
   );
 
+  const toolbar = (
+    <CodeToolbar
+      language={language}
+      code={codeText}
+      state={state}
+      setState={update}
+      showLineNumbers={showLineNumbers}
+      onToggleLineNumbers={toggleLineNumbers}
+    />
+  );
+
   return (
     <>
-      <div className="my-6 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]">
-        <CodeToolbar language={language} code={codeText} state={state} setState={update} />
+      <div className="kp-code-block my-6 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]">
+        {toolbar}
         {body}
       </div>
       {/* 最大化 overlay：fixed 全屏，Esc 还原 */}
@@ -268,8 +319,8 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
           }}
           tabIndex={-1}
         >
-          <CodeToolbar language={language} code={codeText} state={state} setState={update} />
-          <div className="flex-1 overflow-hidden">{body}</div>
+          {toolbar}
+          <div className="flex-1 overflow-auto">{body}</div>
         </div>
       )}
     </>
@@ -407,6 +458,9 @@ export const PostContent = memo(function PostContent({
       );
     },
     pre: Pre,
+    table: ({ children, ...props }) => (
+      <MarkdownTable {...props}>{children}</MarkdownTable>
+    ),
     thinkingnode: ({
       category,
       children,

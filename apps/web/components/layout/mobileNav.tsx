@@ -48,11 +48,12 @@ export type MobileMoreItem = {
 
 /** 底栏「更多」里的全站入口（与 Sidebar 对齐，便于手机摸到管理页） */
 export const MOBILE_MORE_ITEMS: MobileMoreItem[] = [
+  { href: "/agents", icon: Bot, label: "管理", group: "常用" },
   { href: "/dashboard", icon: BarChart3, label: "系统看板", group: "常用" },
-  { href: "/agents", icon: Bot, label: "Agents", group: "常用" },
   { href: "/approvals", icon: ShieldCheck, label: "审批队列", group: "常用" },
   { href: "/free-models", icon: Sparkles, label: "免费模型", group: "常用" },
   { href: "/settings", icon: Settings, label: "系统设置", group: "常用" },
+  { href: "/", icon: Home, label: "首页", group: "常用" },
   { href: "/subagents", icon: Bot, label: "子 Agent 任务", group: "智能工作台" },
   { href: "/skills", icon: Wand2, label: "Skill 管理", group: "智能工作台" },
   { href: "/mcp", icon: Cpu, label: "MCP 服务器", group: "智能工作台" },
@@ -74,11 +75,9 @@ export const MOBILE_MORE_ITEMS: MobileMoreItem[] = [
   { href: "/credentials", icon: KeyRound, label: "凭据管理", group: "系统与运维" },
   { href: "/posts", icon: PenLine, label: "全部文章", group: "知识库" },
   { href: "/editor", icon: PlusCircle, label: "新建文章", group: "知识库" },
-  { href: "/about", icon: UserCircle, label: "About", group: "知识库" },
 ];
 
 const PRIMARY = [
-  { href: "/", icon: Home, label: "首页", match: (p: string) => p === "/" || p === "" },
   {
     href: "/gardens",
     icon: BookOpen,
@@ -95,6 +94,12 @@ const PRIMARY = [
     icon: MessageSquare,
     label: "对话",
     match: (p: string) => p.startsWith("/chat"),
+  },
+  {
+    href: "/about",
+    icon: UserCircle,
+    label: "关于我",
+    match: (p: string) => p.startsWith("/about"),
   },
 ] as const;
 

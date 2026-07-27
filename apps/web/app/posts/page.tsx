@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Pagination, ConfirmDialog, EmptyState, LoadingState } from "@/components/shared";
+import { ContinueReadingCard } from "@/components/post/ContinueReading";
 
 type PublishFilter = "all" | "published" | "draft";
 
@@ -113,6 +114,11 @@ export default function PostsPage() {
             </Link>
           </div>
         </div>
+
+        <ContinueReadingCard
+          garden={gardenFilter === "all" ? null : gardenFilter}
+          className="mb-6"
+        />
 
         <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-1">
           <button

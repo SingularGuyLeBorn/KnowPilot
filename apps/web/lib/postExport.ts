@@ -128,27 +128,49 @@ export async function exportPostMarkdownZip(post: PostExportInput): Promise<void
   triggerDownload(blob, `${baseName}.zip`);
 }
 
-/** 导出 PDF（基于文章 DOM） */
+/** 导出 PDF（基于文章 DOM；html2canvas-pro 支持 lab/oklch，避免 Tailwind 4 颜色炸解析） */
 export async function exportPostPdf(
   element: HTMLElement,
   filename: string,
 ): Promise<void> {
-  const html2pdf = (await import("html2pdf.js")).default;
-  const safeName = filename.replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas-pro"),
+    import("jspdf"),
+  ]);
 
-  await html2pdf()
-    .set({
-      margin: [12, 12, 12, 12],
-      filename: `${safeName}.pdf`,
-      image: { type: "jpeg", quality: 0.92 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        scrollY: 0,
-      },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-    })
-    .from(element)
-    .save();
+  const safeName = filename.replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+  const marginMm = 12;
+
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    backgroundColor: "#ffffff",
+    scrollX: 0,
+    scrollY: -window.scrollY,
+    windowWidth: document.documentElement.clientWidth,
+  });
+
+  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+  const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const contentWidth = pageWidth - marginMm * 2;
+  const contentHeight = pageHeight - marginMm * 2;
+  const imgHeight = (canvas.height * contentWidth) / canvas.width;
+
+  let heightLeft = imgHeight;
+  let offsetY = marginMm;
+
+  pdf.addImage(imgData, "JPEG", marginMm, offsetY, contentWidth, imgHeight);
+  heightLeft -= contentHeight;
+
+  while (heightLeft > 0.5) {
+    offsetY = marginMm - (imgHeight - heightLeft);
+    pdf.addPage();
+    pdf.addImage(imgData, "JPEG", marginMm, offsetY, contentWidth, imgHeight);
+    heightLeft -= contentHeight;
+  }
+
+  pdf.save(`${safeName}.pdf`);
 }

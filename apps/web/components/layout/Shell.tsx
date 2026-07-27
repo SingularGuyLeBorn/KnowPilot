@@ -72,6 +72,7 @@ export function Shell({ children, className }: ShellProps) {
 
         <main
           ref={mainRef}
+          data-kp-main-scroll
           className={cn(
             "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--kp-bg)]",
             /* 为固定底栏留空；Chat 自己也会吃满高度，额外 padding 避免输入被挡 */

@@ -3,12 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, BookOpen, ChevronRight, FileText, Layers, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ChevronRight, FileText, Layers, Plus, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog, EmptyState, LoadingState } from "@/components/shared";
+import { ContinueReadingCard } from "@/components/post/ContinueReading";
 import { SEED_GARDENS } from "@knowpilot/shared";
 import { postDetailHref } from "@/lib/postHref";
 
@@ -62,7 +63,7 @@ export default function GardensPage() {
   const totalPosts = items.reduce((sum, g) => sum + (g.postCount ?? 0), 0);
 
   return (
-    <div className="relative min-h-full overflow-hidden">
+    <div className="relative w-full overflow-x-hidden">
       {/* 氛围层：莫兰迪柔光，不对齐工程灰底 */}
       <div
         aria-hidden
@@ -85,8 +86,7 @@ export default function GardensPage() {
         }}
       />
 
-      <div className="mx-auto w-full max-w-6xl px-6 py-10 lg:px-10 lg:py-14">
-        {/* Hero */}
+      <div className="mx-auto w-full max-w-6xl px-6 py-10 pb-16 lg:px-10 lg:py-14">
         <motion.header
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -116,7 +116,6 @@ export default function GardensPage() {
               transition={{ ...spring, delay: 0.12 }}
               className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg)]/70 px-3.5 py-1.5 text-xs text-[var(--kp-text-2)] backdrop-blur-sm"
             >
-              <BookOpen className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
               <span className="kp-stat-number text-sm font-semibold text-[var(--kp-text-1)]">
                 {items.length}
               </span>
@@ -149,6 +148,8 @@ export default function GardensPage() {
             </motion.button>
           </div>
         </motion.header>
+
+        <ContinueReadingCard className="mx-auto mb-10 max-w-xl" />
 
         <AnimatePresence>
           {open && (
@@ -224,6 +225,7 @@ export default function GardensPage() {
               const isSeed = (SEED_GARDENS as readonly string[]).includes(g.id);
               const count = g.postCount ?? 0;
               const recent = g.recentPosts ?? [];
+              const homeHref = `/gardens/${encodeURIComponent(g.id)}`;
               return (
                 <motion.article
                   key={g.id}
@@ -231,36 +233,31 @@ export default function GardensPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.55, delay: 0.08 + index * 0.08, ease: easeOut }}
                   whileHover={{ y: -6 }}
-                  className="group relative flex flex-col overflow-hidden rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/85 p-6 shadow-sm backdrop-blur-sm kp-card-premium transition-shadow duration-500 hover:border-[var(--kp-brand)]/35 hover:shadow-lg"
+                  className="group relative flex flex-col overflow-hidden rounded-3xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/85 p-6 shadow-sm backdrop-blur-sm kp-card-premium transition-[border-color,box-shadow,background-color] duration-500 hover:border-[var(--kp-brand)]/40 hover:bg-[var(--kp-bg-alt)] hover:shadow-[0_12px_40px_-12px_color-mix(in_srgb,var(--kp-brand)_35%,transparent)]"
                 >
                   <div
                     aria-hidden
-                    className="absolute inset-x-0 top-0 h-1 origin-left scale-x-[0.6] bg-gradient-to-r from-[var(--kp-brand)] via-[var(--kp-brand-light,var(--kp-brand))] to-transparent opacity-70 transition-all duration-500 group-hover:scale-x-100 group-hover:opacity-100"
+                    className="absolute inset-x-0 top-0 h-1 origin-left scale-x-[0.45] bg-gradient-to-r from-[var(--kp-brand)] via-[var(--kp-brand-light,var(--kp-brand))] to-transparent opacity-60 transition-all duration-500 group-hover:scale-x-100 group-hover:opacity-100"
+                  />
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-[var(--kp-brand)]/0 blur-2xl transition-all duration-500 group-hover:bg-[var(--kp-brand)]/15"
                   />
 
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <motion.div
-                        whileHover={{ rotate: -6, scale: 1.06 }}
-                        transition={spring}
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
-                      >
-                        <BookOpen className="h-5 w-5" />
-                      </motion.div>
-                      <div className="min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-mono text-[11px] text-[var(--kp-text-3)]">
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                          <Link
-                            href={`/gardens/${encodeURIComponent(g.id)}`}
-                            className="truncate text-xl font-semibold tracking-tight text-[var(--kp-text-1)] transition-colors hover:text-[var(--kp-brand-deep)]"
-                          >
-                            {g.title}
-                          </Link>
-                        </div>
-                        <p className="mt-0.5 text-xs text-[var(--kp-text-3)]">{g.id}</p>
+                  <div className="relative mb-4 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-mono text-[11px] text-[var(--kp-text-3)] transition-colors group-hover:text-[var(--kp-brand)]">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <Link
+                          href={homeHref}
+                          className="truncate text-xl font-semibold tracking-tight text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-brand-deep)]"
+                        >
+                          {g.title}
+                        </Link>
                       </div>
+                      <p className="mt-0.5 font-mono text-xs text-[var(--kp-text-3)]">{g.id}</p>
                     </div>
                     {!isSeed && (
                       <button
@@ -274,12 +271,12 @@ export default function GardensPage() {
                     )}
                   </div>
 
-                  <p className="mb-4 line-clamp-2 min-h-[2.5rem] text-sm leading-relaxed text-[var(--kp-text-2)]">
+                  <p className="relative mb-4 line-clamp-2 min-h-[2.5rem] text-sm leading-relaxed text-[var(--kp-text-2)] transition-colors group-hover:text-[var(--kp-text-1)]">
                     {g.description || "暂无说明"}
                   </p>
 
                   {recent.length > 0 && (
-                    <ul className="mb-5 space-y-1.5 border-t border-[var(--kp-divider)]/80 pt-4">
+                    <ul className="relative mb-5 space-y-1.5 border-t border-[var(--kp-divider)]/80 pt-4">
                       {recent.map((p) => (
                         <li key={p.slug}>
                           <Link
@@ -294,34 +291,27 @@ export default function GardensPage() {
                     </ul>
                   )}
 
-                  <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="relative mt-auto flex items-center justify-between gap-3 pt-1">
                     <span className="text-xs text-[var(--kp-text-3)]">
-                      <span className="font-semibold text-[var(--kp-text-1)]">{count}</span> 篇文章
+                      <span className="font-semibold tabular-nums text-[var(--kp-text-1)] transition-colors group-hover:text-[var(--kp-brand-deep)]">
+                        {count}
+                      </span>{" "}
+                      篇文章
                     </span>
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        href={`/gardens/${encodeURIComponent(g.id)}`}
-                        className={cn(
-                          buttonVariants({ variant: "outline", size: "sm" }),
-                          "group/cta inline-flex items-center gap-1 text-xs",
-                        )}
-                      >
-                        打开首页
-                        <ArrowRight className="h-3 w-3 transition-transform group-hover/cta:translate-x-0.5" />
-                      </Link>
-                      <Link
-                        href={`/posts?garden=${encodeURIComponent(g.id)}`}
-                        className={cn(buttonVariants({ variant: "outline", size: "sm" }), "text-xs")}
-                      >
-                        浏览文章
-                      </Link>
-                      <Link
-                        href={`/editor?garden=${encodeURIComponent(g.id)}`}
-                        className={cn(buttonVariants({ size: "sm" }), "text-xs")}
-                      >
-                        新建文章
-                      </Link>
-                    </div>
+                    <Link
+                      href={homeHref}
+                      className={cn(
+                        buttonVariants({ size: "sm" }),
+                        "inline-flex items-center gap-1 text-xs shadow-sm transition-all duration-300",
+                        /* 触控设备常显；精细指针设备仅 hover / 键盘 focus 出现 */
+                        "opacity-100 translate-y-0",
+                        "md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100",
+                        "md:focus-visible:translate-y-0 md:focus-visible:opacity-100",
+                      )}
+                    >
+                      打开首页
+                      <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
                   </div>
                 </motion.article>
               );

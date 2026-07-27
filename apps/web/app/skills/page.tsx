@@ -58,7 +58,7 @@ export default function SkillsPage() {
       <PageHeader
         icon={Wand2}
         title="Skills 专属动作库"
-        description="定义可被智能代理调用的原子化执行能力。Skill 支持 TypeScript 原生脚本或特定 Prompt 模板指令，赋予 Agent 精准的外部操作与自动化流程控制。"
+        description="可被 Agent 调用的脚本/程序包（Markdown SKILL.md 或 TS）。空库很正常——点「新建」或让 Agent 用 skill_manage 生成；对话里也可用 skills_list / skill_view。"
         action={{ label: "新建插件技能", onClick: handleCreateDemo, icon: Plus }}
         showDensityToggle
       />
@@ -68,8 +68,8 @@ export default function SkillsPage() {
         <LoadingState count={3} />
       ) : !data?.items || data.items.length === 0 ? (
         <EmptyState
-          title="技能库尚未武装"
-          description="当前还没有任何执行技能，Agent 只能进行纯文本对话。点击下方按钮快速部署一个重构技能。"
+          title="还没有 Skill"
+          description="Skill 是实体，有完整 CRUD，并同步到 config/skills/。Agent 工具：skills_list、skill_view、skill_manage（写包）、skill_discover / skill_enable / skill_promote。点下方可加示例，或在对话里让 Agent 创建。"
           actionLabel="添加示例技能"
           onAction={handleCreateDemo}
         />

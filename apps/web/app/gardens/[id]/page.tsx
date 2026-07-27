@@ -6,6 +6,7 @@ import { ArrowLeft, PenLine, FileText } from "lucide-react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
 import { PostContent } from "@/components/post/PostContent";
+import { ContinueReadingCard } from "@/components/post/ContinueReading";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -84,6 +85,8 @@ export default function GardenHomePage() {
           <p className="mt-3 text-sm text-[var(--kp-text-2)]">{garden.description}</p>
         )}
       </header>
+
+      <ContinueReadingCard garden={id} className="mb-8" />
 
       <section className="mb-12 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6 sm:p-8">
         <PostContent content={garden.homeContent || "_（首页暂无正文，可用 garden_update 编辑）_"} />

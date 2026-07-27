@@ -152,7 +152,7 @@ const confirmDelete = () => {
       <PageHeader
         icon={Brain}
         title="Memories 记忆晶体"
-        description="三层 scope（global / workspace / agent）、时效与 superseded 状态均可查看。"
+        description="长期记忆实体：手动写入、Agent memory_create，或对话结束后自动沉淀 experience。文件回写 config/memories/；检索进 system prompt。"
         action={{ label: "写入记忆晶体", onClick: handleCreateDemo, icon: Plus }}
         showDensityToggle
       />
@@ -188,7 +188,7 @@ const confirmDelete = () => {
       ) : !data?.items || data.items.length === 0 ? (
         <EmptyState
           title="记忆脑海空无一物"
-          description="Agent 尚未从日常聊天中提取出持久记忆。你可以手动植入一颗关于偏好的记忆晶体。"
+          description="空很正常。生成路径：① Agent 调用 memory_create；② 有工具调用的对话结束后自动写 experience（agent/workspace 双写）；③ 本页手动创建。心跳会按日衰减低分记忆。"
           actionLabel="植入偏好记忆"
           onAction={handleCreateDemo}
         />

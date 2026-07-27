@@ -31,7 +31,7 @@ import { AdminPage, LoadingState } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
 const TASK_NAME = "Inbox 平台每日同步";
-const DEFAULT_CRON = "0 9 * * *";
+const DEFAULT_CRON = "0 3 * * *";
 const SYNC_JOB_ID_KEY = "kp-inbox-platform-sync-job-id";
 const CHILD_PAGE_SIZE = 8;
 

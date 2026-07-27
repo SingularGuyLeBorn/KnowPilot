@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { PostTreeNav } from "@/components/post/PostTreeNav";
 import Link from "next/link";
@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { ArrowLeft, FolderOpen, PlusCircle } from "lucide-react";
 import { useContentGardenScope } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc";
+import { ContinueReadingSidebarLink } from "@/components/post/ContinueReading";
 
 interface PostSidebarProps {
   className?: string;
@@ -18,6 +19,45 @@ const SIDEBAR_WIDTH_KEY = "kp-post-sidebar-width";
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 280;
+const widthListeners = new Set<() => void>();
+
+function clampSidebarWidth(n: number): number {
+  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, n));
+}
+
+function readSidebarWidth(): number {
+  if (typeof window === "undefined") return DEFAULT_WIDTH;
+  try {
+    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (!saved) return DEFAULT_WIDTH;
+    const n = Number(saved);
+    return Number.isFinite(n) ? clampSidebarWidth(n) : DEFAULT_WIDTH;
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+
+function subscribeSidebarWidth(onStoreChange: () => void) {
+  widthListeners.add(onStoreChange);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === SIDEBAR_WIDTH_KEY || e.key === null) onStoreChange();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    widthListeners.delete(onStoreChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function persistSidebarWidth(n: number) {
+  const next = clampSidebarWidth(n);
+  try {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+  } catch {
+    // ignore
+  }
+  for (const l of widthListeners) l();
+}
 
 /** 文章专用侧栏 — 进入某座库后只显示该库目录（对齐「先选书架再翻书」） */
 export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
@@ -28,14 +68,15 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
     { enabled: !!gardenId && isScoped },
   );
 
-  const [width, setWidth] = useState(() => {
-    try {
-      const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-      return saved ? Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Number(saved))) : DEFAULT_WIDTH;
-    } catch {
-      return DEFAULT_WIDTH;
-    }
-  });
+  const storedWidth = useSyncExternalStore(
+    subscribeSidebarWidth,
+    readSidebarWidth,
+    () => DEFAULT_WIDTH,
+  );
+  /** 拖拽中的临时宽度；松手后写回 localStorage */
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const dragWidthRef = useRef<number | null>(null);
+  const width = dragWidth ?? storedWidth;
   const draggingRef = useRef(false);
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
@@ -52,19 +93,21 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!draggingRef.current) return;
-      const delta = e.clientX - startXRef.current;
-      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidthRef.current + delta));
-      setWidth(newWidth);
+      const next = clampSidebarWidth(startWidthRef.current + (e.clientX - startXRef.current));
+      dragWidthRef.current = next;
+      setDragWidth(next);
     };
     const handleMouseUp = () => {
       if (!draggingRef.current) return;
       draggingRef.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      try {
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
-      } catch {
-        // ignore
+      const finalWidth = dragWidthRef.current;
+      dragWidthRef.current = null;
+      setDragWidth(null);
+      // 禁止在 setState updater 里 emit store（会触发「render 中更新 PostSidebar」）
+      if (finalWidth != null) {
+        queueMicrotask(() => persistSidebarWidth(finalWidth));
       }
     };
     window.addEventListener("mousemove", handleMouseMove);
@@ -73,7 +116,7 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [width]);
+  }, []);
 
   const title = isScoped
     ? (gardenMeta?.title || gardenId || "本库目录")
@@ -85,7 +128,7 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
   return (
     <aside
       className={cn(
-        "relative flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]",
+        "relative flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] pl-[5px]",
         className,
       )}
       style={onNavigate ? undefined : { width: `${width}px` }}
@@ -95,7 +138,7 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
         if (t?.closest("a[href]")) onNavigate();
       }}
     >
-      <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--kp-divider)] px-4 py-3">
+      <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--kp-divider)] py-2.5 pr-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <FolderOpen className="h-4 w-4 shrink-0 text-[var(--kp-brand-deep)]" />
@@ -128,6 +171,10 @@ export function PostSidebar({ className, onNavigate }: PostSidebarProps) {
             全部知识库
           </Link>
         )}
+        <ContinueReadingSidebarLink
+          garden={isScoped ? gardenId : null}
+          onNavigate={onNavigate}
+        />
       </div>
       <PostTreeNav className="min-h-0 flex-1" gardenId={isScoped ? gardenId : null} />
       {!onNavigate && (

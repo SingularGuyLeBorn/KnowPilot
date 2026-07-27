@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { KnowPilotLogo } from "@/lib/icons";
 import { usePathname } from "next/navigation";
-import { BookOpen, Bot, Menu, MessageSquare, UserCircle } from "lucide-react";
+import { BookOpen, LayoutGrid, Menu, MessageSquare, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "./CommandPalette";
 import { ThemeToggle } from "@/components/themeToggle";
@@ -15,7 +15,7 @@ interface NavbarProps {
   className?: string;
 }
 
-/** 内容域：库首页 / 文章列表 / 编辑器都算「知识库」高亮，不拆成三个顶栏入口 */
+/** 内容域：库首页 / 文章列表 / 编辑器都算「知识库」高亮 */
 function isKnowledgeActive(pathname: string): boolean {
   return (
     pathname.startsWith("/gardens") ||
@@ -24,6 +24,20 @@ function isKnowledgeActive(pathname: string): boolean {
     pathname.startsWith("/categories") ||
     pathname.startsWith("/tags")
   );
+}
+
+/**
+ * 「管理」= 原 Agents 工作台 + 侧栏全部 app 路由（Skill / 记忆 / Inbox / 凭据等）。
+ * 不含知识库内容域、对话、关于我、登录。
+ */
+function isManageActive(pathname: string): boolean {
+  if (isKnowledgeActive(pathname)) return false;
+  if (pathname.startsWith("/chat") || pathname.startsWith("/about") || pathname === "/login") {
+    return false;
+  }
+  if (pathname === "/" || pathname === "") return false;
+  // app 模式其余路由（/agents、/skills、/memories、/credentials…）
+  return true;
 }
 
 export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
@@ -58,7 +72,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           <span className="hidden sm:inline">KnowPilot</span>
         </Link>
 
-        {/* 产品顶栏：知识库（内容）· 对话 · Agents · About。文章/写作不进顶栏，从库内进入。 */}
+        {/* 顶栏只留四入口：知识库 · 对话 · 关于我 · 管理（=原 Agents 工作台） */}
         <nav className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex">
           <TopNavLink href="/gardens" active={isKnowledgeActive(pathname)} icon={<BookOpen className="h-4 w-4" />}>
             知识库
@@ -70,15 +84,15 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           >
             对话
           </TopNavLink>
+          <TopNavLink href="/about" active={pathname.startsWith("/about")} icon={<UserCircle className="h-4 w-4" />}>
+            关于我
+          </TopNavLink>
           <TopNavLink
             href="/agents"
-            active={pathname.startsWith("/agents")}
-            icon={<Bot className="h-4 w-4" />}
+            active={isManageActive(pathname)}
+            icon={<LayoutGrid className="h-4 w-4" />}
           >
-            Agents
-          </TopNavLink>
-          <TopNavLink href="/about" active={pathname.startsWith("/about")} icon={<UserCircle className="h-4 w-4" />}>
-            About
+            管理
           </TopNavLink>
         </nav>
 

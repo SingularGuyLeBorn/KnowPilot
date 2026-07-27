@@ -83,7 +83,7 @@ export default function CredentialsPage() {
       <PageHeader
         icon={KeyRound}
         title="Credentials 凭据库"
-        description="管理 API Key / Token 等敏感凭据，按 scope 隔离用途。启用 AUTH_MODE=password 时建议配合远程访问使用。"
+        description="把 API Key / Token 存进本地库（按 scope 隔离：llm、github、feishu、tikhub…）。日常也可以继续只用 .env；本页方便集中管理、过期提醒与从 .env 一键导入。"
         action={{ label: "添加示例凭据", onClick: handleCreateDemo, icon: Plus, disabled: createMutation.isPending }}
         showDensityToggle
       >
@@ -103,7 +103,7 @@ export default function CredentialsPage() {
       ) : !data?.items || data.items.length === 0 ? (
         <EmptyState
           title="凭据库为空"
-          description="尚未保存任何 API Key 或 Token。也可继续使用 .env 中的环境变量。"
+          description="空很正常：密钥多半还在项目根 .env 里。点「从 .env 导入」把已配置的 Key 收进库，或手动添加。Agent 调外部平台时会优先读这里的同名凭据。"
           actionLabel="添加示例凭据"
           onAction={handleCreateDemo}
         />

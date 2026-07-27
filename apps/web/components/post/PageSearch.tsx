@@ -7,6 +7,7 @@ import {
   useCallback,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -84,7 +85,9 @@ function highlight(container: HTMLElement, rawQuery: string): HTMLElement[] {
   return matches;
 }
 
+/** 页内搜索：默认隐藏，Ctrl/Cmd+F 浮出；Esc 关闭并清除高亮 */
 export function PageSearch({ containerRef, className }: PageSearchProps) {
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [matches, setMatches] = useState<HTMLElement[]>([]);
@@ -106,23 +109,30 @@ export function PageSearch({ containerRef, className }: PageSearchProps) {
     setCurrent(index);
   }, []);
 
-  const handleClear = useCallback(() => {
+  const handleClose = useCallback(() => {
+    setOpen(false);
     setQuery("");
     setDebouncedQuery("");
     const container = containerRef.current;
     if (container) clearHighlights(container);
     setMatches([]);
     setCurrent(0);
-    inputRef.current?.blur();
   }, [containerRef]);
+
+  const handleOpen = useCallback(() => {
+    setOpen(true);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    if (!debouncedQuery.trim()) {
+    if (!open || !debouncedQuery.trim()) {
       clearHighlights(container);
-      // Defer state update so it is not synchronous within the effect body.
       queueMicrotask(() => {
         setMatches([]);
         setCurrent(0);
@@ -135,7 +145,7 @@ export function PageSearch({ containerRef, className }: PageSearchProps) {
       setMatches(found);
       setCurrent(found.length ? 0 : -1);
     });
-  }, [debouncedQuery, containerRef]);
+  }, [debouncedQuery, containerRef, open]);
 
   useEffect(() => {
     matches.forEach((el) => el.classList.remove(CURRENT_CLASS));
@@ -150,24 +160,26 @@ export function PageSearch({ containerRef, className }: PageSearchProps) {
     function onKeyDown(e: KeyboardEvent) {
       const isMod = e.ctrlKey || e.metaKey;
       const target = e.target as HTMLElement;
-      const typingInInput =
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable;
+      const inOurInput = Boolean(target.closest?.(".kp-page-search"));
+      const typingElsewhere =
+        !inOurInput &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
 
-      if (isMod && e.key.toLowerCase() === "f" && !typingInInput) {
+      if (isMod && e.key.toLowerCase() === "f" && !typingElsewhere) {
         e.preventDefault();
-        inputRef.current?.focus();
+        handleOpen();
         return;
       }
 
-      if (e.key === "Escape" && query) {
+      if (e.key === "Escape" && open) {
         e.preventDefault();
-        handleClear();
+        handleClose();
         return;
       }
 
-      if (!typingInInput) return;
+      if (!open || !inOurInput) return;
 
       if (e.key === "Enter" && matches.length > 0) {
         e.preventDefault();
@@ -181,65 +193,71 @@ export function PageSearch({ containerRef, className }: PageSearchProps) {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [query, matches, current, goTo, handleClear]);
+  }, [open, matches, current, goTo, handleClose, handleOpen]);
 
-  return (
-    <div className={cn("kp-page-search", className)}>
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5 shadow-sm">
-        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className={cn(
+        "kp-page-search fixed left-1/2 top-[4.75rem] z-[90] w-[min(100vw-2rem,28rem)] -translate-x-1/2",
+        className,
+      )}
+      role="search"
+      aria-label="页内搜索"
+    >
+      <div className="flex items-center gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3 py-2 shadow-lg">
+        <Search className="h-4 w-4 shrink-0 text-[var(--kp-text-3)]" />
         <Input
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="页内搜索（Ctrl+F）"
-          className="h-7 flex-1 border-0 bg-transparent px-1 text-xs shadow-none focus-visible:ring-0"
+          placeholder="页内搜索…"
+          className="h-8 flex-1 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0"
         />
-        {query ? (
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] tabular-nums text-muted-foreground">
-              {matches.length > 0 ? current + 1 : 0} / {matches.length}
-            </span>
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={() =>
-                  matches.length &&
-                  goTo((current - 1 + matches.length) % matches.length)
-                }
-                disabled={matches.length === 0}
-                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                aria-label="上一个匹配"
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  matches.length && goTo((current + 1) % matches.length)
-                }
-                disabled={matches.length === 0}
-                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                aria-label="下一个匹配"
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={handleClear}
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="清除搜索"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-1">
+          <span className="min-w-[3.5rem] text-center text-[11px] tabular-nums text-[var(--kp-text-3)]">
+            {query
+              ? `${matches.length > 0 ? current + 1 : 0} / ${matches.length}`
+              : "—"}
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              matches.length && goTo((current - 1 + matches.length) % matches.length)
+            }
+            disabled={matches.length === 0}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] disabled:opacity-40"
+            aria-label="上一个匹配"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => matches.length && goTo((current + 1) % matches.length)}
+            disabled={matches.length === 0}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] disabled:opacity-40"
+            aria-label="下一个匹配"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]"
+            aria-label="关闭搜索"
+            title="Esc"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       {debouncedQuery && matches.length === 0 && (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          未找到“{debouncedQuery}”的匹配结果
+        <p className="mt-1.5 text-center text-[11px] text-[var(--kp-text-3)]">
+          未找到“{debouncedQuery}”
         </p>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

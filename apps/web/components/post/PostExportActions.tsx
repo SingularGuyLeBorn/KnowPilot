@@ -26,7 +26,12 @@ export function PostExportActions({ post, articleRef }: PostExportActionsProps) 
     try {
       await exportPostPdf(element, post.title);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "PDF 导出失败");
+      const raw = err instanceof Error ? err.message : "PDF 导出失败";
+      setError(
+        /unsupported color function|lab\(|oklch\(/i.test(raw)
+          ? "PDF 导出失败：页面颜色格式不兼容，请刷新后重试"
+          : raw,
+      );
     } finally {
       setExporting(null);
     }
