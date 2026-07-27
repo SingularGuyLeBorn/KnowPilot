@@ -172,7 +172,7 @@ const ThinkingStep = memo(function ThinkingStep({
 }) {
   const content = step.content.trim();
   const isEmpty = !content;
-  // 默认展开；用户可点击折叠，流式中也可展开/折叠
+  // 默认展开；仅用户点击后折叠，结束后不自动改状态
   const [collapsed, setCollapsed] = useState(false);
   // 思考计时：isLive 起每秒自增，给长思考进度感（避免「卡住」错觉）；终态停表
   const [elapsedSec, setElapsedSec] = useState(0);

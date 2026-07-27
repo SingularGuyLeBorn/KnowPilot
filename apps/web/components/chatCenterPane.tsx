@@ -12,6 +12,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Bot,
+  Files,
   Loader2,
   PanelLeft,
   Play,
@@ -89,6 +90,9 @@ export interface ChatCenterPaneProps {
   updateConfig: (patch: Partial<ChatSessionConfig>) => void;
   resetPromptToAgent: () => void;
   onOpenPromptEditor: () => void;
+  /** 打开右侧「本会话文件」面板；未传则不显示入口 */
+  onOpenFilesPanel?: () => void;
+  filesPanelOpen?: boolean;
   modelSupportsReasoning: boolean;
   modelReasoningRequired: boolean;
 }
@@ -137,6 +141,8 @@ export function ChatCenterPane({
   updateConfig,
   resetPromptToAgent,
   onOpenPromptEditor,
+  onOpenFilesPanel,
+  filesPanelOpen = false,
   modelSupportsReasoning,
   modelReasoningRequired,
 }: ChatCenterPaneProps) {
@@ -199,7 +205,24 @@ export function ChatCenterPane({
             className="hidden shrink-0 lg:flex"
           />
         )}
-        <Link href="/agents" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:flex text-xs")}>Agent 管理</Link>
+        <Link
+          href="/agents"
+          className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden shrink-0 sm:flex text-xs")}
+        >
+          Agent 管理
+        </Link>
+        {onOpenFilesPanel && !filesPanelOpen && (
+          <button
+            type="button"
+            onClick={onOpenFilesPanel}
+            className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-8 w-8 shrink-0")}
+            aria-label="打开文件面板"
+            title="本会话文件"
+            data-testid="chat-open-files-panel"
+          >
+            <Files className="h-4 w-4" />
+          </button>
+        )}
       </header>
 
       {isSubagentSession && (

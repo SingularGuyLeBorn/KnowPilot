@@ -1,15 +1,13 @@
 "use client";
 
 /**
- * Agent Chat — 左栏 + 标签/分屏中栏 · 多版本 · 消息编辑 · Skill / 触发
+ * Agent Chat — 左栏会话列表 + 中栏单会话 · 多版本 · 消息编辑 · Skill / 触发
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { trpc } from "@/lib/trpc";
-import { Files } from "lucide-react";
 import { useAgent } from "@/lib/hooks";
-import { cn } from "@/lib/utils";
 import {
   loadDefaultChatConfig,
   resolveNewChatConfig,
@@ -20,7 +18,6 @@ import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { ChatOverlays } from "@/components/chatOverlays";
 import { ChatSidebar } from "@/components/chatSidebar";
-import { ChatTabBar } from "@/components/chatTabBar";
 import { ChatSessionPane } from "@/components/chatSessionPane";
 import { ChatFilesPanel } from "@/components/chatFilesPanel";
 import {
@@ -46,12 +43,10 @@ import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
 import { useChatSseSubscriptions } from "@/lib/useChatSseSubscriptions";
 import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
 import { useChatTabs } from "@/lib/useChatTabs";
-import { sessionLabel } from "@/lib/displayLabels";
 import {
   COMPOSE_STORAGE_KEY,
   LIFECYCLE_STORAGE_KEY,
   NEW_STREAM_KEY,
-  TAB_TITLE_CACHE_KEY,
 } from "@/lib/chatKeys";
 import {
   ensureSessionConfigHydrated,
@@ -70,7 +65,6 @@ export function ChatView() {
   const pathname = usePathname();
   const agentFromUrl = searchParams.get("agentId");
   const sessionFromUrl = searchParams.get("sessionId");
-  const splitFromUrl = searchParams.get("split");
 
   const {
     tabs,
@@ -78,15 +72,9 @@ export function ChatView() {
     visibleSessionIds,
     tabsHydrated,
     openTab,
-    openInOtherPane,
-    focusTab,
-    focusPane,
     closeTab,
-    enterSplit,
-    exitSplit,
     startNewChatInTabs,
     ensureFocusedSession,
-    ensureSplitWith,
   } = useChatTabs();
 
   /** 与旧单焦点 API 对齐：runStream 新建会话时 openTab */
@@ -175,7 +163,8 @@ export function ChatView() {
   // A16：skill 列表极少变化，加 staleTime 5min，减少每次进 Chat 都重请求。
   // skill CRUD 后 useCRUDApi 会 invalidate utils.skill.list（按 key 失效全部 input），自动刷新。
   const skillsQuery = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true }, { staleTime: 5 * 60 * 1000 });
-  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40, kind: "chat" });
+  // 含 chat + channel（IM）；排除 skill_review/heartbeat。子 Agent 会话由侧栏客户端过滤。
+  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
   const providers = trpc.agent.llmProviders.useQuery();
   // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
@@ -261,17 +250,13 @@ export function ChatView() {
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== focusedSessionIdRef.current) {
       ensureFocusedSession(sessionFromUrl);
+      utils.session.list.invalidate().catch(() => {});
       utils.session.listRunning.invalidate().catch(() => {});
       consumeRef.current(sessionFromUrl);
     }
-  }, [sessionFromUrl, ensureFocusedSession, utils.session.listRunning]);
+  }, [sessionFromUrl, ensureFocusedSession, utils.session.list, utils.session.listRunning]);
 
-  useEffect(() => {
-    if (!splitFromUrl || splitFromUrl === sessionFromUrl) return;
-    ensureSplitWith(splitFromUrl);
-  }, [splitFromUrl, sessionFromUrl, ensureSplitWith]);
-
-  // 深链 ensure 被其它 effect 冲成空焦点时补一次（有焦点绝不抢——避免与用户点标签打架）
+  // 深链 ensure 被其它 effect 冲成空焦点时补一次（有焦点绝不抢——避免与侧栏切换打架）
   useEffect(() => {
     if (!tabsHydrated) return;
     if (sessionFromUrl && !focusedSessionId) {
@@ -279,31 +264,7 @@ export function ChatView() {
     }
   }, [tabsHydrated, sessionFromUrl, focusedSessionId, ensureFocusedSession]);
 
-  // 子 Agent 任务会话已终态时从标签栏摘掉（当前正在看的除外，避免读报告时被踢走）
-  useEffect(() => {
-    if (!tabsHydrated) return;
-    const items = sessionsQuery.data?.items;
-    if (!items?.length || tabs.openTabIds.length === 0) return;
-    const byId = new Map(items.map((s) => [s.id, s]));
-    const terminal = new Set(["completed", "failed", "archived", "deleted"]);
-    for (const id of tabs.openTabIds) {
-      if (id === focusedSessionId) continue;
-      const s = byId.get(id);
-      if (!s) continue;
-      const isSub = s.kind === "subagent" || !!s.parentSessionId;
-      if (isSub && terminal.has(String(s.status))) {
-        closeTab(id);
-      }
-    }
-  }, [
-    tabsHydrated,
-    tabs.openTabIds,
-    focusedSessionId,
-    sessionsQuery.data?.items,
-    closeTab,
-  ]);
-
-  // tabs 焦点 / 分屏 → URL（本地操作的唯一写回通道；selectSession 等也可先写 URL，本效应幂等对齐）
+  // 焦点会话 → URL（本地操作的唯一写回通道；顺带清掉旧分屏 ?split=）
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     let changed = false;
@@ -318,12 +279,7 @@ export function ChatView() {
       params.delete("sessionId");
       changed = true;
     }
-    if (tabs.layout === "split" && tabs.secondarySessionId) {
-      if (params.get("split") !== tabs.secondarySessionId) {
-        params.set("split", tabs.secondarySessionId);
-        changed = true;
-      }
-    } else if (params.has("split")) {
+    if (params.has("split")) {
       params.delete("split");
       changed = true;
     }
@@ -331,14 +287,7 @@ export function ChatView() {
     if (changed) {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [
-    focusedSessionId,
-    tabs.layout,
-    tabs.secondarySessionId,
-    searchParams,
-    pathname,
-    router,
-  ]);
+  }, [focusedSessionId, searchParams, pathname, router]);
 
   // 焦点 session：消息 + compose 供右栏/队列派生；lifecycle 不再订阅（每 token 重渲整树）
   // 中栏流式 UI 由 ChatSessionPane 各自 useStreamLifecycle；此处只走 store actions
@@ -864,20 +813,6 @@ export function ChatView() {
         const res = await ensureMainMutateAsync({ agentId: aid });
         migrateSessionConfig(NEW_STREAM_KEY, res.id);
         openTab(res.id);
-        try {
-          const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
-            string,
-            string
-          >;
-          if (res.title && prev[res.id] !== res.title) {
-            sessionStorage.setItem(
-              TAB_TITLE_CACHE_KEY,
-              JSON.stringify({ ...prev, [res.id]: res.title }),
-            );
-          }
-        } catch {
-          /* ignore */
-        }
         utils.session.list.invalidate().catch(() => {});
         return res.id;
       } catch {
@@ -952,20 +887,6 @@ export function ChatView() {
         }
         openTab(res.id);
         migrateSessionConfig(NEW_STREAM_KEY, res.id);
-        try {
-          const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
-            string,
-            string
-          >;
-          if (res.title && prev[res.id] !== res.title) {
-            sessionStorage.setItem(
-              TAB_TITLE_CACHE_KEY,
-              JSON.stringify({ ...prev, [res.id]: res.title }),
-            );
-          }
-        } catch {
-          /* ignore */
-        }
         utils.session.list.invalidate().catch(() => {});
       } catch {
         showToast("创建新会话失败");
@@ -1067,61 +988,6 @@ export function ChatView() {
     }
   }, [agentsQuery.data?.items, effectiveAgentId, searchParams, pathname, router, setSessionId]);
 
-  // 标签标题：优先列表 autoName/title；列表缺失时用 sessionStorage 缓存，避免只显示 CUID 前缀
-  useEffect(() => {
-    const items = sessionsQuery.data?.items;
-    if (!items?.length) return;
-    try {
-      const prev = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
-        string,
-        string
-      >;
-      let changed = false;
-      const next = { ...prev };
-      for (const s of items) {
-        const label = (s.autoName || s.title || "").trim();
-        if (label && next[s.id] !== label) {
-          next[s.id] = label;
-          changed = true;
-        }
-      }
-      if (changed) sessionStorage.setItem(TAB_TITLE_CACHE_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-  }, [sessionsQuery.data?.items]);
-
-  const tabBarItems = useMemo(() => {
-    let cache: Record<string, string> = {};
-    if (typeof window !== "undefined") {
-      try {
-        cache = JSON.parse(sessionStorage.getItem(TAB_TITLE_CACHE_KEY) || "{}") as Record<
-          string,
-          string
-        >;
-      } catch {
-        cache = {};
-      }
-    }
-    const items = sessionsQuery.data?.items ?? [];
-    const fromList = new Map(items.map((s) => [s.id, sessionLabel(s)]));
-    const byId = new Map(items.map((s) => [s.id, s]));
-    return tabs.openTabIds.map((id) => {
-      const base = fromList.get(id) || cache[id] || "新对话";
-      const s = byId.get(id);
-      const isSub = !!s && (s.kind === "subagent" || !!s.parentSessionId);
-      const status = s ? String(s.status) : "";
-      // 标题常冻住「任务排队等待中」，终态时补后缀避免误以为还在排队
-      if (isSub && status === "completed" && !/已完成/.test(base)) {
-        return { id, title: `${base} · 已完成` };
-      }
-      if (isSub && status === "failed" && !/失败/.test(base)) {
-        return { id, title: `${base} · 失败` };
-      }
-      return { id, title: base };
-    });
-  }, [tabs.openTabIds, sessionsQuery.data?.items]);
-
   // E8：overlay 只订阅权威 store；getSnapshot 只读，hydrate 放 effect（禁 snapshot 内 notify）
   const overlaySessionId = effectiveSessionId ?? NEW_STREAM_KEY;
   useEffect(() => {
@@ -1152,6 +1018,8 @@ export function ChatView() {
     showToast,
     selectSession,
     onOpenPromptEditor: handleOpenPromptEditor,
+    onOpenFilesPanel: () => setRightFilesOpen(true),
+    filesPanelOpen: rightFilesOpen,
   } as const;
 
   return (
@@ -1175,8 +1043,6 @@ export function ChatView() {
         selectedAgent={selectedAgent}
         asyncResultQueue={asyncResultQueue}
         selectSession={selectSession}
-        openInOtherPane={openInOtherPane}
-        openTabIds={tabs.openTabIds}
         closeTab={closeTab}
         selectWorkspace={selectWorkspace}
         startNewChat={startNewChat}
@@ -1210,57 +1076,15 @@ export function ChatView() {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatTabBar
-          tabs={tabs}
-          items={tabBarItems}
-          onFocusTab={focusTab}
-          onCloseTab={closeTab}
-          onEnterSplit={() => enterSplit()}
-          onExitSplit={exitSplit}
-          canEnterSplit={tabs.openTabIds.length >= 2}
-          onPrefetchTab={(id) => {
-            sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
-              utils.message.listForChat.fetch(opts),
-            ).catch(() => {});
-          }}
-        />
-        <div
-          className={cn(
-            "relative flex min-h-0 flex-1 flex-row",
-          )}
-        >
-          {/* 右侧文件 Panel 关闭时显示打开按钮 */}
-          {!rightFilesOpen && (
-            <button
-              type="button"
-              onClick={() => setRightFilesOpen(true)}
-              className="absolute right-2 top-2 z-20 rounded-md border border-[var(--kp-divider)] bg-[var(--kp-bg)] p-1.5 text-[var(--kp-text-2)] shadow-sm transition-colors hover:bg-[var(--kp-bg-alt)] hover:text-[var(--kp-text-1)]"
-              aria-label="打开文件面板"
-              title="本会话文件"
-            >
-              <Files className="h-4 w-4" />
-            </button>
-          )}
+        <div className="relative flex min-h-0 flex-1 flex-row">
           {/* 稳定 key：切会话只换 sessionId，禁止整树 remount 造成空白闪一下 */}
           <ChatSessionPane
             key="primary"
             sessionId={tabs.primarySessionId}
-            isFocused={tabs.focusedPane === "primary"}
-            onFocus={() => focusPane("primary")}
+            isFocused
+            onFocus={() => {}}
             {...paneShared}
           />
-          {tabs.layout === "split" && tabs.secondarySessionId && (
-            <>
-              <div className="w-px shrink-0 bg-[var(--kp-divider)]" />
-              <ChatSessionPane
-                key="secondary"
-                sessionId={tabs.secondarySessionId}
-                isFocused={tabs.focusedPane === "secondary"}
-                onFocus={() => focusPane("secondary")}
-                {...paneShared}
-              />
-            </>
-          )}
           <ChatFilesPanel
             sessionId={effectiveSessionId}
             open={rightFilesOpen}

@@ -1,12 +1,11 @@
 /**
- * Chat 标签页 + 两栏分屏 —— 纯状态机（不变量收进 reducer，编排层写错也打不破）。
+ * Chat 会话焦点 —— 纯状态机（侧栏切换；已取消标签栏 / 分屏 UI）。
  *
  * 不变量：
- * 1. layout===single → secondarySessionId=null
- * 2. layout===split → primary/secondary 均非空且不相同
- * 3. openTabIds 无重复；关闭 pane 上的 tab 时 pane 切到相邻仍打开的 tab
- * 4. 打开已在 tabs 中的 session → 只聚焦，不重复加 tab
- * 5. 分屏上限 2
+ * 1. 始终 layout===single，secondarySessionId=null
+ * 2. 同一时刻最多一个焦点会话：openTabIds ⊆ {primarySessionId} 或空
+ * 3. OPEN_TAB 替换焦点，不累积多标签
+ * 4. ENTER_SPLIT / OPEN_IN_OTHER_PANE 退化为单焦点（兼容旧 action / 旧 storage）
  */
 
 export type ChatPaneSlot = "primary" | "secondary";
@@ -45,77 +44,36 @@ export function createEmptyChatTabsState(): ChatTabsState {
 }
 
 export function getFocusedSessionId(state: ChatTabsState): string | null {
-  return state.focusedPane === "secondary"
-    ? state.secondarySessionId
-    : state.primarySessionId;
+  return state.primarySessionId;
 }
 
 /** 当前可见 pane 绑定的 session（用于 drain / SSE） */
 export function getVisibleSessionIds(state: ChatTabsState): string[] {
-  const ids: string[] = [];
-  if (state.primarySessionId) ids.push(state.primarySessionId);
-  if (state.layout === "split" && state.secondarySessionId) {
-    ids.push(state.secondarySessionId);
-  }
-  return ids;
+  return state.primarySessionId ? [state.primarySessionId] : [];
 }
 
-function uniquePush(ids: string[], id: string): string[] {
-  if (ids.includes(id)) return ids;
-  return [...ids, id];
-}
-
-function neighborTab(openTabIds: string[], closingId: string): string | null {
-  const idx = openTabIds.indexOf(closingId);
-  if (idx < 0) return openTabIds[0] ?? null;
-  const next = openTabIds[idx + 1] ?? openTabIds[idx - 1] ?? null;
-  return next && next !== closingId ? next : null;
-}
-
-function replacePaneSession(
-  state: ChatTabsState,
-  pane: ChatPaneSlot,
-  sessionId: string | null,
-): ChatTabsState {
-  if (pane === "primary") {
-    return { ...state, primarySessionId: sessionId };
-  }
-  return { ...state, secondarySessionId: sessionId };
-}
-
-function ensureSplitInvariant(state: ChatTabsState): ChatTabsState {
-  if (state.layout !== "split") {
-    return { ...state, secondarySessionId: null, focusedPane: "primary" };
-  }
-  if (
-    !state.primarySessionId ||
-    !state.secondarySessionId ||
-    state.primarySessionId === state.secondarySessionId
-  ) {
-    // 非法分屏 → 退回单屏，保留 primary（或 secondary 若 primary 空）
-    const keep =
-      state.primarySessionId &&
-      state.primarySessionId !== state.secondarySessionId
-        ? state.primarySessionId
-        : state.secondarySessionId &&
-            state.secondarySessionId !== state.primarySessionId
-          ? state.secondarySessionId
-          : state.primarySessionId;
-    return {
-      ...state,
-      layout: "single",
-      primarySessionId: keep,
-      secondarySessionId: null,
-      focusedPane: "primary",
-    };
-  }
-  return state;
+/** 强制单焦点：旧分屏 / 多标签 storage 一律压成 primary 一个会话 */
+function ensureSingleFocus(state: ChatTabsState): ChatTabsState {
+  const keep =
+    state.focusedPane === "secondary" && state.secondarySessionId
+      ? state.secondarySessionId
+      : state.primarySessionId ??
+        state.secondarySessionId ??
+        state.openTabIds[0] ??
+        null;
+  return {
+    openTabIds: keep ? [keep] : [],
+    layout: "single",
+    primarySessionId: keep,
+    secondarySessionId: null,
+    focusedPane: "primary",
+  };
 }
 
 export function chatTabsReducer(state: ChatTabsState, action: ChatTabsAction): ChatTabsState {
   switch (action.type) {
     case "HYDRATE":
-      return ensureSplitInvariant({
+      return ensureSingleFocus({
         ...createEmptyChatTabsState(),
         ...action.state,
         openTabIds: Array.isArray(action.state.openTabIds)
@@ -123,202 +81,64 @@ export function chatTabsReducer(state: ChatTabsState, action: ChatTabsAction): C
           : [],
       });
 
-    case "OPEN_TAB": {
-      const pane = action.pane ?? state.focusedPane;
-      const openTabIds = uniquePush(state.openTabIds, action.sessionId);
-      let next: ChatTabsState = {
-        ...state,
-        openTabIds,
-        focusedPane: pane === "secondary" && state.layout === "split" ? "secondary" : "primary",
-      };
-      if (next.focusedPane === "secondary" && state.layout === "split") {
-        next = { ...next, secondarySessionId: action.sessionId, focusedPane: "secondary" };
-      } else {
-        next = { ...next, primarySessionId: action.sessionId, focusedPane: "primary" };
-      }
-      return ensureSplitInvariant(next);
-    }
-
-    case "OPEN_IN_OTHER_PANE": {
-      const openTabIds = uniquePush(state.openTabIds, action.sessionId);
-      if (state.layout === "single") {
-        // 单屏 → 分屏：当前 primary 留左，新 session 开右
-        const primary = state.primarySessionId;
-        if (!primary || primary === action.sessionId) {
-          // 无左侧可对照时退化为 OPEN_TAB
-          return chatTabsReducer(
-            { ...state, openTabIds },
-            { type: "OPEN_TAB", sessionId: action.sessionId },
-          );
-        }
-        return ensureSplitInvariant({
-          ...state,
-          openTabIds,
-          layout: "split",
-          primarySessionId: primary,
-          secondarySessionId: action.sessionId,
-          focusedPane: "secondary",
-        });
-      }
-      // 已分屏：写到非焦点侧
-      const other: ChatPaneSlot =
-        state.focusedPane === "primary" ? "secondary" : "primary";
-      if (
-        (other === "primary" ? state.secondarySessionId : state.primarySessionId) ===
-        action.sessionId
-      ) {
-        // 另一侧已是该 session：只聚焦那一侧
-        return { ...state, openTabIds, focusedPane: other };
-      }
-      return ensureSplitInvariant(
-        replacePaneSession(
-          { ...state, openTabIds, focusedPane: other },
-          other,
-          action.sessionId,
-        ),
-      );
-    }
-
-    case "FOCUS_TAB": {
-      if (state.layout === "split" && state.secondarySessionId === action.sessionId) {
-        return { ...state, focusedPane: "secondary" };
-      }
-      if (state.primarySessionId === action.sessionId) {
-        return { ...state, focusedPane: "primary" };
-      }
-      // 未显示：打开到焦点 pane
-      return chatTabsReducer(state, {
-        type: "OPEN_TAB",
-        sessionId: action.sessionId,
-        pane: state.focusedPane,
-      });
-    }
-
-    case "FOCUS_PANE": {
-      if (action.pane === "secondary" && state.layout !== "split") {
-        return state;
-      }
-      return { ...state, focusedPane: action.pane };
-    }
-
-    case "CLOSE_TAB": {
-      const { sessionId } = action;
-      if (!state.openTabIds.includes(sessionId)) return state;
-      const openTabIds = state.openTabIds.filter((id) => id !== sessionId);
-      const fallback = neighborTab(state.openTabIds, sessionId);
-
-      let next: ChatTabsState = { ...state, openTabIds };
-
-      if (state.layout === "split") {
-        if (state.primarySessionId === sessionId && state.secondarySessionId === sessionId) {
-          // 不应发生（不变量）
-          next = {
-            ...next,
-            layout: "single",
-            primarySessionId: fallback,
-            secondarySessionId: null,
-            focusedPane: "primary",
-          };
-        } else if (state.primarySessionId === sessionId) {
-          if (fallback && fallback !== state.secondarySessionId) {
-            next = { ...next, primarySessionId: fallback };
-          } else {
-            // 左侧无替代 → 升格右侧为单屏
-            next = {
-              ...next,
-              layout: "single",
-              primarySessionId: state.secondarySessionId,
-              secondarySessionId: null,
-              focusedPane: "primary",
-            };
-          }
-        } else if (state.secondarySessionId === sessionId) {
-          if (fallback && fallback !== state.primarySessionId) {
-            next = { ...next, secondarySessionId: fallback };
-          } else {
-            next = {
-              ...next,
-              layout: "single",
-              secondarySessionId: null,
-              focusedPane: "primary",
-            };
-          }
-        }
-      } else if (state.primarySessionId === sessionId) {
-        next = {
-          ...next,
-          primarySessionId: fallback,
-          focusedPane: "primary",
-        };
-      }
-
-      return ensureSplitInvariant(next);
-    }
-
-    case "ENTER_SPLIT": {
-      if (state.layout === "split") return state;
-      const primary = state.primarySessionId;
-      if (!primary) return state;
-      const candidate =
-        action.otherSessionId &&
-        action.otherSessionId !== primary &&
-        state.openTabIds.includes(action.otherSessionId)
-          ? action.otherSessionId
-          : state.openTabIds.find((id) => id !== primary) ?? null;
-      if (!candidate) return state;
-      return ensureSplitInvariant({
-        ...state,
-        layout: "split",
-        primarySessionId: primary,
-        secondarySessionId: candidate,
-        focusedPane: "secondary",
-        openTabIds: uniquePush(state.openTabIds, candidate),
-      });
-    }
-
-    case "EXIT_SPLIT": {
-      if (state.layout !== "split") return state;
-      const keep =
-        state.focusedPane === "secondary" && state.secondarySessionId
-          ? state.secondarySessionId
-          : state.primarySessionId;
+    case "OPEN_TAB":
       return {
-        ...state,
+        openTabIds: [action.sessionId],
         layout: "single",
-        primarySessionId: keep,
+        primarySessionId: action.sessionId,
         secondarySessionId: null,
         focusedPane: "primary",
       };
+
+    case "OPEN_IN_OTHER_PANE":
+      // 已取消分屏：等同切换焦点
+      return chatTabsReducer(state, { type: "OPEN_TAB", sessionId: action.sessionId });
+
+    case "FOCUS_TAB":
+      if (state.primarySessionId === action.sessionId) return state;
+      return chatTabsReducer(state, { type: "OPEN_TAB", sessionId: action.sessionId });
+
+    case "FOCUS_PANE":
+      // 单屏无 secondary；忽略
+      return state;
+
+    case "CLOSE_TAB": {
+      const { sessionId } = action;
+      if (state.primarySessionId !== sessionId && !state.openTabIds.includes(sessionId)) {
+        return state;
+      }
+      // 单焦点：关掉当前 → 新对话空态
+      if (state.primarySessionId === sessionId) {
+        return createEmptyChatTabsState();
+      }
+      return ensureSingleFocus({
+        ...state,
+        openTabIds: state.openTabIds.filter((id) => id !== sessionId),
+      });
     }
+
+    case "ENTER_SPLIT":
+      // 已取消分屏
+      return ensureSingleFocus(state);
+
+    case "EXIT_SPLIT":
+      return ensureSingleFocus(state);
 
     case "BIND_PANE": {
-      let next = replacePaneSession(state, action.pane, action.sessionId);
-      if (action.sessionId) {
-        next = { ...next, openTabIds: uniquePush(next.openTabIds, action.sessionId) };
+      if (action.pane === "secondary") {
+        // secondary 已废弃
+        return action.sessionId
+          ? chatTabsReducer(state, { type: "OPEN_TAB", sessionId: action.sessionId })
+          : ensureSingleFocus(state);
       }
-      return ensureSplitInvariant(next);
+      if (!action.sessionId) {
+        return createEmptyChatTabsState();
+      }
+      return chatTabsReducer(state, { type: "OPEN_TAB", sessionId: action.sessionId });
     }
 
-    case "START_NEW_CHAT": {
-      // 焦点侧进入「新对话」；不关闭其它已打开 tab
-      if (state.layout === "split" && state.focusedPane === "secondary") {
-        // 分屏右侧不能挂 null（不变量要求非空）→ 退出分屏后新建
-        return {
-          ...state,
-          layout: "single",
-          primarySessionId: null,
-          secondarySessionId: null,
-          focusedPane: "primary",
-        };
-      }
-      return {
-        ...state,
-        primarySessionId: null,
-        secondarySessionId: state.layout === "split" ? state.secondarySessionId : null,
-        focusedPane: "primary",
-        layout: state.layout === "split" && state.secondarySessionId ? "split" : "single",
-      };
-    }
+    case "START_NEW_CHAT":
+      return createEmptyChatTabsState();
 
     default:
       return state;

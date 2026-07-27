@@ -6,39 +6,29 @@ import {
   getVisibleSessionIds,
 } from "../chatTabsState";
 
-describe("chatTabsReducer", () => {
-  it("OPEN_TAB 去重并聚焦", () => {
+describe("chatTabsReducer（单焦点，无标签栏/分屏）", () => {
+  it("OPEN_TAB 聚焦且不累积多标签", () => {
     let s = createEmptyChatTabsState();
     s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
-    s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
-    expect(s.openTabIds).toEqual(["a"]);
-    expect(s.primarySessionId).toBe("a");
-    expect(getFocusedSessionId(s)).toBe("a");
+    s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "b" });
+    expect(s.openTabIds).toEqual(["b"]);
+    expect(s.primarySessionId).toBe("b");
+    expect(s.layout).toBe("single");
+    expect(getFocusedSessionId(s)).toBe("b");
+    expect(getVisibleSessionIds(s)).toEqual(["b"]);
   });
 
-  it("OPEN_IN_OTHER_PANE：单屏变分屏且两侧不同", () => {
+  it("OPEN_IN_OTHER_PANE 退化为切换焦点，不分屏", () => {
     let s = createEmptyChatTabsState();
     s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
     s = chatTabsReducer(s, { type: "OPEN_IN_OTHER_PANE", sessionId: "b" });
-    expect(s.layout).toBe("split");
-    expect(s.primarySessionId).toBe("a");
-    expect(s.secondarySessionId).toBe("b");
-    expect(s.focusedPane).toBe("secondary");
-    expect(getVisibleSessionIds(s)).toEqual(["a", "b"]);
-  });
-
-  it("CLOSE_TAB：关闭左侧升格右侧为单屏", () => {
-    let s = createEmptyChatTabsState();
-    s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
-    s = chatTabsReducer(s, { type: "OPEN_IN_OTHER_PANE", sessionId: "b" });
-    s = chatTabsReducer(s, { type: "CLOSE_TAB", sessionId: "a" });
     expect(s.layout).toBe("single");
     expect(s.primarySessionId).toBe("b");
     expect(s.secondarySessionId).toBeNull();
     expect(s.openTabIds).toEqual(["b"]);
   });
 
-  it("CLOSE_TAB：关闭唯一 tab 回到新对话", () => {
+  it("CLOSE_TAB：关掉当前回到空态", () => {
     let s = createEmptyChatTabsState();
     s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
     s = chatTabsReducer(s, { type: "CLOSE_TAB", sessionId: "a" });
@@ -46,42 +36,38 @@ describe("chatTabsReducer", () => {
     expect(s.primarySessionId).toBeNull();
   });
 
-  it("ENTER_SPLIT 需要至少两个不同 tab", () => {
+  it("ENTER_SPLIT 为 no-op（保持单屏）", () => {
     let s = createEmptyChatTabsState();
     s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
-    const blocked = chatTabsReducer(s, { type: "ENTER_SPLIT" });
-    expect(blocked.layout).toBe("single");
     s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "b" });
-    // OPEN_TAB 到 primary 会把 primary 换成 b，openTabIds=[a,b]
-    s = chatTabsReducer(s, { type: "ENTER_SPLIT", otherSessionId: "a" });
-    expect(s.layout).toBe("split");
-    expect(s.primarySessionId).toBe("b");
-    expect(s.secondarySessionId).toBe("a");
+    const blocked = chatTabsReducer(s, { type: "ENTER_SPLIT", otherSessionId: "a" });
+    expect(blocked.layout).toBe("single");
+    expect(blocked.primarySessionId).toBe("b");
+    expect(blocked.secondarySessionId).toBeNull();
   });
 
-  it("EXIT_SPLIT 保留焦点侧", () => {
-    let s = createEmptyChatTabsState();
-    s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
-    s = chatTabsReducer(s, { type: "OPEN_IN_OTHER_PANE", sessionId: "b" });
-    s = chatTabsReducer(s, { type: "EXIT_SPLIT" });
+  it("HYDRATE 把旧分屏压成单焦点", () => {
+    const s = chatTabsReducer(createEmptyChatTabsState(), {
+      type: "HYDRATE",
+      state: {
+        openTabIds: ["a", "b"],
+        layout: "split",
+        primarySessionId: "a",
+        secondarySessionId: "b",
+        focusedPane: "secondary",
+      },
+    });
     expect(s.layout).toBe("single");
     expect(s.primarySessionId).toBe("b");
+    expect(s.secondarySessionId).toBeNull();
+    expect(s.openTabIds).toEqual(["b"]);
   });
 
-  it("FOCUS_TAB 切到已显示的 secondary", () => {
-    let s = createEmptyChatTabsState();
-    s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
-    s = chatTabsReducer(s, { type: "OPEN_IN_OTHER_PANE", sessionId: "b" });
-    s = chatTabsReducer(s, { type: "FOCUS_PANE", pane: "primary" });
-    s = chatTabsReducer(s, { type: "FOCUS_TAB", sessionId: "b" });
-    expect(s.focusedPane).toBe("secondary");
-  });
-
-  it("START_NEW_CHAT 清空 primary 焦点", () => {
+  it("START_NEW_CHAT 清空焦点", () => {
     let s = createEmptyChatTabsState();
     s = chatTabsReducer(s, { type: "OPEN_TAB", sessionId: "a" });
     s = chatTabsReducer(s, { type: "START_NEW_CHAT" });
     expect(s.primarySessionId).toBeNull();
-    expect(s.openTabIds).toEqual(["a"]);
+    expect(s.openTabIds).toEqual([]);
   });
 });

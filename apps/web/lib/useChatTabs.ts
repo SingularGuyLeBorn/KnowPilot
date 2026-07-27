@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Chat 标签页 + 分屏 —— React 绑定层。
+ * Chat 会话焦点 —— React 绑定层（侧栏切换；已取消标签栏 / 分屏 UI）。
  * 状态机在 chatTabsState；此处负责 sessionStorage 持久化与派生焦点 id。
  */
 

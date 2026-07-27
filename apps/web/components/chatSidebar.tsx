@@ -51,8 +51,6 @@ export interface ChatSidebarProps {
   selectedAgent: Agent | undefined;
   asyncResultQueue: ChatQueueItem[];
   selectSession: (id: string) => void;
-  openInOtherPane?: (id: string) => void;
-  openTabIds?: string[];
   closeTab?: (id: string) => void;
   selectWorkspace: (workspaceId: string) => void;
   startNewChat: () => void;
@@ -95,8 +93,6 @@ export const ChatSidebar = memo(function ChatSidebar({
   selectedAgent,
   asyncResultQueue,
   selectSession,
-  openInOtherPane,
-  openTabIds = [],
   closeTab,
   selectWorkspace,
   startNewChat,
@@ -128,7 +124,8 @@ export const ChatSidebar = memo(function ChatSidebar({
   // 与 ChatView 相同 key 的查询订阅：React Query 按 key 共享缓存并去重请求，无额外网络开销
   const { useList: useAgentList } = useAgent();
   const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
-  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40, kind: "chat" });
+  // 含 chat + channel（IM）；子 Agent 在 filteredSessions 里剔除
+  const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
   // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
   const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
   const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
@@ -524,11 +521,9 @@ export const ChatSidebar = memo(function ChatSidebar({
                         <SessionListItem
                           session={s}
                           active={effectiveSessionId === s.id}
-                          isOpenTab={openTabIds.includes(s.id)}
                           editing={editingSessionId === s.id}
                           renameDraft={renameDraft}
                           onSelect={handleSessionSelect}
-                          onOpenInOtherPane={openInOtherPane}
                           onHover={handleSessionHover}
                           onHoverEnd={handleSessionHoverEnd}
                           onStartRename={handleStartRename}

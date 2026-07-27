@@ -42,7 +42,6 @@ import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
 import { useResumeSession } from "@/lib/hooks";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 import { sessionLabel } from "@/lib/displayLabels";
-import { cn } from "@/lib/utils";
 import type { RunStreamOptions } from "@/lib/useChatRunStream";
 
 export interface ChatSessionPaneProps {
@@ -68,6 +67,8 @@ export interface ChatSessionPaneProps {
   setRotateBanner: (banner: { newSessionId: string; newTitle: string } | null) => void;
   showToast: (msg: string | null) => void;
   onOpenPromptEditor: () => void;
+  onOpenFilesPanel?: () => void;
+  filesPanelOpen?: boolean;
 }
 
 export function ChatSessionPane({
@@ -92,6 +93,8 @@ export function ChatSessionPane({
   setRotateBanner,
   showToast,
   onOpenPromptEditor,
+  onOpenFilesPanel,
+  filesPanelOpen,
 }: ChatSessionPaneProps) {
   const lifecycleKey = sessionId ?? NEW_STREAM_KEY;
 
@@ -447,10 +450,7 @@ export function ChatSessionPane({
 
   return (
     <div
-      className={cn(
-        "flex min-h-0 min-w-0 flex-1 flex-col",
-        isFocused ? "ring-1 ring-inset ring-[var(--kp-brand)]/30" : "",
-      )}
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
       data-testid="chat-session-pane"
       data-session-id={sessionId ?? "new"}
       data-focused={isFocused ? "true" : "false"}
@@ -503,6 +503,8 @@ export function ChatSessionPane({
         updateConfig={updateConfig}
         resetPromptToAgent={resetPromptToAgent}
         onOpenPromptEditor={onOpenPromptEditor}
+        onOpenFilesPanel={onOpenFilesPanel}
+        filesPanelOpen={filesPanelOpen}
         modelSupportsReasoning={!!modelOpt.supportsThinking}
         modelReasoningRequired={!!modelOpt.reasoningRequired}
       />
