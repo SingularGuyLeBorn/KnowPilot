@@ -81,9 +81,7 @@ export async function resolveOrCreateChannelBinding(
     resolved = await resolveDefaultAgentId(prisma);
   }
 
-  const title =
-    input.title?.trim() ||
-    `IM · ${input.channel} · ${input.peerId.slice(0, 12)}`;
+  const title = `IM · ${input.channel} · ${input.peerId.slice(0, 12)}`;
   const model = resolved.model || config.llm.defaultModel || DEFAULT_LLM_MODEL;
   const dedicated = await prisma.chatSession.create({
     data: {
