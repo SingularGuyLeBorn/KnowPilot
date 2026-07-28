@@ -61,6 +61,8 @@ type SyncStep = {
   created?: number;
   updated?: number;
   message?: string;
+  /** 最近活动行（新在前） */
+  recent?: string[];
   children?: SyncStepChild[];
 };
 
@@ -127,23 +129,24 @@ function jobSummaryLine(job: SyncJob): string {
   return `${modeLabel}完成：新 ${created} · 更新 ${updated}`;
 }
 
-/** done=已写入条数，total=列表估算；完成≠写满 */
+/** done/total：列表落盘或 feed 补拉阶段都会推进 */
 function writeProgressLabel(done: number, total: number, status: string): string {
   if (status === "pending") return "等待";
   if (status === "running" && total <= 0) return "拉取列表…";
   if (status === "done" || status === "error") {
     return total > 0 ? `已写 ${done}（列表约 ${total}）` : `已写 ${done}`;
   }
-  if (total > 0) return `已写 ${done} · 列表约 ${total}`;
+  if (total > 0) return `${done} / ${total}`;
   return `已写 ${done}`;
 }
 
-/** 进行中用写入/列表比；结束态条拉满（完成≠写满分母） */
+/** 进行中用 done/total；结束态条拉满 */
 function writeProgressPct(done: number, total: number, status: string): number {
   if (status === "pending") return 0;
   if (status === "done" || status === "error") return 100;
-  if (total <= 0) return status === "running" ? 8 : 0;
-  return Math.min(100, Math.round((done / total) * 100));
+  // total=0：不定进度占位，避免条看起来完全不动
+  if (total <= 0) return status === "running" ? 12 : 0;
+  return Math.min(100, Math.max(2, Math.round((done / total) * 100)));
 }
 
 function folderProgressLabel(children: SyncStepChild[]): string | null {
@@ -672,7 +675,7 @@ export default function PlatformSyncPage() {
                   ) : null}
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-3">
                   {activeSteps.map((step) => {
                     const pct = writeProgressPct(step.done, step.total, step.status);
                     const isZhihu = step.key === "zhihu";
@@ -680,33 +683,34 @@ export default function PlatformSyncPage() {
                       isZhihu && zhihuChildren.length > 0
                         ? folderProgressLabel(zhihuChildren)
                         : null;
-                    const spanFull = isZhihu && zhihuChildren.length > 0;
+                    const recentLines = step.recent?.length
+                      ? step.recent
+                      : step.message
+                        ? [step.message]
+                        : [];
                     return (
                       <div
                         key={step.key}
-                        className={cn(
-                          "rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)] p-2.5",
-                          spanFull && "sm:col-span-2",
-                        )}
+                        className="flex min-h-[320px] flex-col rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)] p-4"
                       >
-                        <div className="flex items-start gap-2">
+                        <div className="flex items-start gap-2.5">
                           <StepStatusIcon status={step.status} />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                              <span className="text-sm font-medium text-[var(--kp-text-1)]">
+                              <span className="text-base font-medium text-[var(--kp-text-1)]">
                                 {step.label}
                               </span>
-                              <span className="text-[11px] tabular-nums text-[var(--kp-text-3)]">
+                              <span className="text-xs tabular-nums text-[var(--kp-text-3)]">
                                 {folderLine ?? writeProgressLabel(step.done, step.total, step.status)}
                               </span>
                             </div>
                             {folderLine ? (
-                              <p className="mt-0.5 text-[10px] tabular-nums text-[var(--kp-text-3)]">
+                              <p className="mt-0.5 text-[11px] tabular-nums text-[var(--kp-text-3)]">
                                 {writeProgressLabel(step.done, step.total, step.status)}
                               </p>
                             ) : null}
                             <div
-                              className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--kp-border)]"
+                              className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[var(--kp-border)]"
                               role="progressbar"
                               aria-valuenow={pct}
                               aria-valuemin={0}
@@ -727,17 +731,47 @@ export default function PlatformSyncPage() {
                             {step.message && step.status !== "pending" ? (
                               <p
                                 className={cn(
-                                  "mt-1 line-clamp-2 text-[10px]",
+                                  "mt-2 break-words text-sm leading-snug",
                                   step.status === "error"
                                     ? "text-red-600 dark:text-red-400"
-                                    : "text-[var(--kp-text-3)]",
+                                    : "text-[var(--kp-text-1)]",
                                 )}
+                                title={step.message}
                               >
                                 {step.message}
                               </p>
                             ) : null}
                           </div>
                         </div>
+
+                        {recentLines.length > 0 && step.status !== "pending" ? (
+                          <div className="mt-3 min-h-0 flex-1 border-t border-[var(--kp-border)] pt-3">
+                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium text-[var(--kp-text-2)]">
+                                拉取记录
+                              </span>
+                              <span className="text-[11px] tabular-nums text-[var(--kp-text-3)]">
+                                {recentLines.length} 条
+                              </span>
+                            </div>
+                            <ul className="max-h-[360px] space-y-1.5 overflow-y-auto overscroll-contain pr-1">
+                              {recentLines.map((line, idx) => (
+                                <li
+                                  key={`${idx}-${line.slice(0, 24)}`}
+                                  className={cn(
+                                    "rounded-lg px-2.5 py-1.5 text-xs leading-snug",
+                                    idx === 0
+                                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-text-1)]"
+                                      : "bg-[var(--kp-bg-mute)]/70 text-[var(--kp-text-2)]",
+                                  )}
+                                  title={line}
+                                >
+                                  {line}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
 
                         {isZhihu && zhihuChildren.length > 0 ? (
                           <div className="mt-2 border-t border-[var(--kp-border)] pt-2">

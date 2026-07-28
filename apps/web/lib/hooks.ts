@@ -314,6 +314,8 @@ export const useInbox = () => {
       trpc.inbox.distill.useMutation({ onSuccess: invalidate }),
     useIgnore: () =>
       trpc.inbox.ignore.useMutation({ onSuccess: invalidate }),
+    useBulkDelete: () =>
+      trpc.inbox.bulkDelete.useMutation({ onSuccess: invalidate }),
   };
 };
 

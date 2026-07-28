@@ -99,6 +99,8 @@ import {
   type InboxIngestWechatDropInput,
   type InboxDistillInput,
   type InboxIgnoreInput,
+  type InboxEnrichInput,
+  inboxEnrichSchema,
   type AgentRunInput,
   type AgentChatInput,
   type WebSearchInput,
@@ -4042,6 +4044,27 @@ export class InboxService extends BaseService<
     }
   }
 
+  /** 批量删除：单次 deleteMany + 逐条清 FTS（已蒸馏 Post 不动） */
+  async bulkDelete(ids: string[]): Promise<{ deleted: number }> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length) return { deleted: 0 };
+    const existing = await this.prisma.inboxItem.findMany({
+      where: { id: { in: unique } },
+      select: { id: true },
+    });
+    const found = existing.map((r) => r.id);
+    if (!found.length) return { deleted: 0 };
+    await this.prisma.inboxItem.deleteMany({ where: { id: { in: found } } });
+    for (const id of found) {
+      try {
+        await deleteFtsRow(this.prisma, "inbox", id);
+      } catch (err) {
+        console.warn("[inbox] FTS bulkDelete 失败:", err instanceof Error ? err.message : err);
+      }
+    }
+    return { deleted: found.length };
+  }
+
   /** 分面：来源用 groupBy；收藏夹/标签只扫轻量字段 */
   async facets(input: { status?: string } = {}) {
     const where: { status?: string } = {};
@@ -4293,6 +4316,24 @@ export class InboxService extends BaseService<
       data: { status: "ignored" },
     });
     return { success: true, count: result.count };
+  }
+
+  /**
+   * 分批补正文（防风控）。先列表同步再调用；默认每轮 12 条、条间慢间隔。
+   */
+  async enrichContent(
+    input: InboxEnrichInput,
+    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    shouldAbort?: () => boolean,
+  ) {
+    const { enrichInboxMissingContent, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    ensureInboxDirs(this.config);
+    const parsed = inboxEnrichSchema.parse(input ?? {});
+    return enrichInboxMissingContent(this.prisma, this.config, {
+      ...parsed,
+      onProgress,
+      shouldAbort,
+    });
   }
 
   async distill(input: InboxDistillInput) {

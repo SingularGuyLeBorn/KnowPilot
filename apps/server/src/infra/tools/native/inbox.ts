@@ -166,6 +166,22 @@ async function inboxIgnore(args: Record<string, unknown>, ctx: NativeToolContext
   return ctx.services.inbox.ignoreItems({ ids });
 }
 
+async function inboxEnrich(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const ids = Array.isArray(args.ids) ? args.ids.map(String) : undefined;
+  const result = await ctx.services.inbox.enrichContent({
+    source: typeof args.source === "string" ? (args.source as any) : undefined,
+    maxItems: typeof args.maxItems === "number" ? args.maxItems : 12,
+    maxChars: typeof args.maxChars === "number" ? args.maxChars : 12000,
+    ids,
+  });
+  return {
+    ...result,
+    hint:
+      result.stoppedReason ||
+      "防风控：先列表后正文。本轮补完后隔几小时再 inbox_enrich；单日建议累计 ≤40 条。",
+  };
+}
+
 const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_list",
@@ -223,7 +239,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_start_platform_sync",
     description:
-      "【Tier 1·推荐】后台批量同步 Inbox（与 /platform-sync 同通道）。后端有序：知乎 openapi→cookie；小红书/B站需登录。立即返回 jobId；查进度 inbox_platform_sync_status。先 platform_doctor/browser_login_status。",
+      "【Tier 1·推荐】后台批量同步 Inbox（与 /platform-sync 同通道）。默认只拉列表（标题/封面/摘要），fetchContent 务必 false。要正文另用 inbox_enrich 分批慢补。立即返回 jobId；查进度 inbox_platform_sync_status。先 platform_doctor/browser_login_status。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
@@ -237,7 +253,10 @@ const INBOX_DEFS: NativeToolDefinition[] = [
         maxItems: { type: "number" },
         maxUpsert: { type: "number", description: "实际入库上限（试跑）" },
         probe: { type: "boolean", description: "试跑：列表少、入库少，验证登录态" },
-        fetchContent: { type: "boolean", description: "默认 false（只拉列表）" },
+        fetchContent: {
+          type: "boolean",
+          description: "默认 false。true 会慢抓正文且易风控；要正文请用 inbox_enrich",
+        },
       },
     },
   },
@@ -288,7 +307,7 @@ const INBOX_DEFS: NativeToolDefinition[] = [
   {
     name: "inbox_sync_xhs",
     description:
-      "【Tier 1·同步执行会堵对话】小红书点赞/收藏。后端：storage_state_playwright。日常用 inbox_start_platform_sync；需 platform_login(xhs)。",
+      "【Tier 1·同步执行会堵对话】小红书点赞/收藏列表。默认只落标题/作者/摘要/封面。fetchContent=true 时每轮最多新抓约 15 条正文且条间慢间隔，撞风控停；要全量正文请列表后反复 inbox_enrich。日常用 inbox_start_platform_sync；需 platform_login(xhs)。",
     concurrencyClass: "C",
     parameters: {
       type: "object",
@@ -300,8 +319,30 @@ const INBOX_DEFS: NativeToolDefinition[] = [
         },
         mode: { type: "string", enum: ["full", "incremental"], description: "默认 incremental" },
         maxItems: { type: "number", description: "每种最多条数；incremental 默认 200，full 默认 2000" },
-        fetchContent: { type: "boolean" },
+        fetchContent: {
+          type: "boolean",
+          description: "默认 false。true 有预算+节流；全量正文用 inbox_enrich",
+        },
         maxChars: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "inbox_enrich",
+    description:
+      "【要正文时用这个】分批补抓 Inbox 缺正文条目（跳过已有、条间 8–22s、连续风控停）。推荐：先 inbox_start_platform_sync(fetchContent=false) 拉列表，再本工具 maxItems=8~15 多轮补完。单日建议累计 ≤40。",
+    concurrencyClass: "C",
+    parameters: {
+      type: "object",
+      properties: {
+        source: {
+          type: "string",
+          enum: ["screenshot", "zhihu", "xhs", "wechat", "bilibili", "url"],
+          description: "可选；只补某一平台，如 xhs",
+        },
+        maxItems: { type: "number", description: "本轮最多条数，默认 12" },
+        maxChars: { type: "number" },
+        ids: { type: "array", items: { type: "string" }, description: "可选；指定 Inbox id" },
       },
     },
   },
@@ -398,6 +439,7 @@ const INBOX_HANDLERS: Record<string, NativeToolHandler> = {
   inbox_sync_zhihu: inboxSyncZhihu,
   inbox_sync_xhs: inboxSyncXhs,
   inbox_sync_bilibili: inboxSyncBilibili,
+  inbox_enrich: inboxEnrich,
   inbox_scan_screenshots: inboxScanScreenshots,
   inbox_ingest_wechat: inboxIngestWechat,
   inbox_distill: inboxDistill,

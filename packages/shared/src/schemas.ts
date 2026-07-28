@@ -974,12 +974,16 @@ export const inboxSyncXhsModeSchema = z.enum(["full", "incremental"]);
 export const inboxSyncXhsSchema = z.object({
   /** liked=点赞，collect=收藏；默认两者都同步 */
   kinds: z.array(inboxSyncXhsKindSchema).min(1).max(2).default(["liked", "collect"]),
-  /** full=滚到护栏；incremental=遇已知 noteId 批次提前停（默认） */
+  /** full=小步慢滚到护栏；incremental=遇已知 noteId 批次提前停（默认） */
   mode: inboxSyncXhsModeSchema.default("incremental"),
-  /** 每种 kind 最多拉取条数（点赞与收藏分别计数） */
-  maxItems: z.number().int().min(1).max(5000).default(200),
+  /** 每种 kind 最多拉取条数（点赞与收藏分别计数；点赞常 300+） */
+  maxItems: z.number().int().min(1).max(5000).default(500),
   /** 入库上限（跨 kind 合计；可小于列表 maxItems） */
   maxUpsert: z.number().int().min(1).max(5000).optional(),
+  /**
+   * true=逐条打开笔记抓正文+图片（慢、易风控）；默认 false 只落标题/作者/封面/摘要。
+   * 列表阶段已带 display_title、作者、desc 摘要、封面 URL。
+   */
   fetchContent: z.boolean().default(false),
   maxChars: z.number().int().min(500).max(50000).default(12000),
 });
@@ -1021,6 +1025,23 @@ export const inboxDistillSchema = z.object({
 
 export const inboxIgnoreSchema = z.object({
   ids: z.array(z.string().cuid()).min(1).max(100),
+});
+
+/**
+ * 分批补抓缺正文条目（防风控主路径）。
+ * 先列表同步 fetchContent=false，再用本 schema 每天小批量补正文。
+ */
+export const inboxEnrichSchema = z.object({
+  source: inboxSourceSchema.optional(),
+  /** 本轮最多新抓条数，默认 12；建议单日累计 ≤40 */
+  maxItems: z.number().int().min(1).max(50).default(12),
+  maxChars: z.number().int().min(500).max(50000).default(12000),
+  /** 指定条目；不传则自动挑 content 空的 fetched */
+  ids: z.array(z.string().cuid()).max(50).optional(),
+});
+
+export const inboxBulkDeleteSchema = z.object({
+  ids: z.array(z.string().cuid()).min(1).max(200),
 });
 
 /** 平台批量同步：后台任务，避免 HTTP 长请求被代理掐成 fetch failed */
@@ -1520,6 +1541,8 @@ export type InboxScanScreenshotsInput = z.infer<typeof inboxScanScreenshotsSchem
 export type InboxIngestWechatDropInput = z.infer<typeof inboxIngestWechatDropSchema>;
 export type InboxDistillInput = z.infer<typeof inboxDistillSchema>;
 export type InboxIgnoreInput = z.infer<typeof inboxIgnoreSchema>;
+export type InboxEnrichInput = z.input<typeof inboxEnrichSchema>;
+export type InboxBulkDeleteInput = z.infer<typeof inboxBulkDeleteSchema>;
 
 export type CreateGitRepoInput = z.infer<typeof createGitRepoSchema>;
 export type UpdateGitRepoInput = z.infer<typeof updateGitRepoSchema>;

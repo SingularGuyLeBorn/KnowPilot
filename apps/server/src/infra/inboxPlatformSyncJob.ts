@@ -28,6 +28,8 @@ export interface PlatformSyncStep {
   created?: number;
   updated?: number;
   message?: string;
+  /** 最近活动行（新在前） */
+  recent?: string[];
   /** 知乎：按收藏夹拆开的子进度 */
   children?: InboxSyncProgressChild[];
 }
@@ -271,6 +273,7 @@ function bindStepProgress(job: PlatformSyncJob, step: PlatformSyncStep): (p: Inb
     step.total = p.total;
     step.done = p.done;
     if (p.message) step.message = p.message;
+    if (p.recent) step.recent = [...p.recent];
     if (p.children) step.children = cloneChildren(p.children);
     persistJob(job);
   };

@@ -24,11 +24,14 @@ import {
   parseBilibiliFavMediasJson,
   parseBilibiliToviewJson,
   bilibiliInboxExternalId,
+  hasUsableInboxContent,
+  looksLikeInboxFetchBlocked,
 } from "../infra/inboxPipeline.js";
 import {
   inboxSyncXhsSchema,
   inboxSyncZhihuSchema,
   inboxSyncBilibiliSchema,
+  inboxEnrichSchema,
 } from "@knowpilot/shared";
 import { createTempProjectDir, createTestConfig } from "./helpers/toolTestFixtures.js";
 
@@ -188,6 +191,7 @@ describe("inboxPipeline", () => {
               display_title: "标题一",
               xsec_token: "tok",
               user: { nickname: "作者" },
+              cover: { url_default: "https://sns-webpic.example/cover.webp" },
             },
           ],
         },
@@ -199,6 +203,7 @@ describe("inboxPipeline", () => {
     expect(notes[0]!.title).toBe("标题一");
     expect(notes[0]!.url).toContain("xsec_token=tok");
     expect(notes[0]!.author).toBe("作者");
+    expect(notes[0]!.coverUrl).toBe("https://sns-webpic.example/cover.webp");
   });
 
   it("parseXhsNotesFromApiJson 提取 desc 与时间", () => {
@@ -268,6 +273,29 @@ describe("inboxPipeline", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]!.noteId).toBe("card99xyz");
     expect(notes[0]!.title).toBe("卡片标题");
+  });
+
+  it("parseXhsNotesFromApiJson 无 display_title 时用 desc 首行，不落成笔记 id", async () => {
+    const { isXhsPlaceholderTitle, titleFromXhsDesc } = await import("../infra/inboxPipeline.js");
+    expect(titleFromXhsDesc("做一个多模态 RAG\n#AI")).toBe("做一个多模态 RAG");
+    expect(isXhsPlaceholderTitle("笔记 6a644bff0000000011004ed5")).toBe(true);
+    const notes = parseXhsNotesFromApiJson(
+      {
+        data: {
+          notes: [
+            {
+              note_id: "6a644bff0000000011004ed5",
+              display_title: "",
+              desc: "简单讲讲 @tool 装饰器是个啥?\n#Agent",
+            },
+          ],
+        },
+      },
+      "liked",
+    );
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.title).toBe("简单讲讲 @tool 装饰器是个啥?");
+    expect(isXhsPlaceholderTitle(notes[0]!.title, notes[0]!.noteId)).toBe(false);
   });
 
   it("inboxSyncBilibiliSchema 默认 kinds + incremental", () => {
@@ -354,6 +382,19 @@ describe("inboxPipeline", () => {
     expect(liked.created).toBe(true);
     expect(fav.created).toBe(true);
     expect(liked.id).not.toBe(fav.id);
+  });
+
+  it("hasUsableInboxContent / looksLikeInboxFetchBlocked 防风控判定", () => {
+    expect(hasUsableInboxContent("短")).toBe(false);
+    expect(hasUsableInboxContent("1 | " + "长程任务是指需要跨越较长时间跨度的复杂任务。".repeat(2))).toBe(
+      true,
+    );
+    expect(looksLikeInboxFetchBlocked("当前请求存在异常，暂时限制本次访问")).toBe(true);
+    expect(looksLikeInboxFetchBlocked(null, "login required")).toBe(true);
+    expect(looksLikeInboxFetchBlocked("正常技术正文关于 Long-Horizon Agent 训练方法的讨论")).toBe(
+      false,
+    );
+    expect(inboxEnrichSchema.parse({}).maxItems).toBe(12);
   });
 
   it("scanScreenshotDrop 无 OCR 时按文件 hash 入库", async () => {

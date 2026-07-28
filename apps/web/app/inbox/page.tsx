@@ -4,7 +4,7 @@
 
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -22,6 +22,9 @@ import {
   Link2,
   BookMarked,
   X,
+  Check,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +62,40 @@ const STATUS_LABELS: Record<string, string> = {
 const PLATFORMS = ["zhihu", "xhs", "bilibili", "wechat", "screenshot", "url"] as const;
 
 type ViewMode = "card" | "list";
+const DEFAULT_VIEW_MODE: ViewMode = "list";
+
+let viewModeListeners = new Set<() => void>();
+function subscribeViewMode(cb: () => void) {
+  viewModeListeners.add(cb);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === VIEW_MODE_KEY || e.key === null) cb();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    viewModeListeners.delete(cb);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+function getViewModeSnapshot(): ViewMode {
+  try {
+    const saved = localStorage.getItem(VIEW_MODE_KEY);
+    if (saved === "card" || saved === "list") return saved;
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_VIEW_MODE;
+}
+function getViewModeServerSnapshot(): ViewMode {
+  return DEFAULT_VIEW_MODE;
+}
+function persistViewMode(mode: ViewMode) {
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
+  viewModeListeners.forEach((l) => l());
+}
 
 type BrowseKey =
   | { type: "all" }
@@ -191,7 +228,15 @@ function InboxItemActions({
   onDelete: () => void;
 }) {
   return (
-    <div className="flex items-center gap-0.5">
+    <div
+      className={cn(
+        "flex items-center gap-0.5 transition-opacity duration-150",
+        // 默认隐藏；卡片/行 hover 或焦点进入时再显示
+        "pointer-events-none opacity-0",
+        "group-hover:pointer-events-auto group-hover:opacity-100",
+        "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+      )}
+    >
       {item.url ? (
         <a
           href={item.url}
@@ -232,6 +277,7 @@ export default function InboxPage() {
     useDistill,
     useIgnore,
     useCaptureUrl,
+    useBulkDelete,
   } = useInbox();
 
   const [page, setPage] = useState(1);
@@ -241,29 +287,22 @@ export default function InboxPage() {
   const [statusFilter, setStatusFilter] = useState("fetched");
   const [orderBy, setOrderBy] = useState<"capturedAt" | "sourceAt">("sourceAt");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  /** 默认单选；开启多选后可勾多条再批量操作 */
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<string[] | null>(null);
   const [pasteUrl, setPasteUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   /** 收藏夹芯片分页（与主列表 page 独立） */
   const [facetPage, setFacetPage] = useState(0);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem(VIEW_MODE_KEY);
-      if (saved === "card" || saved === "list") return saved;
-    } catch {
-      /* ignore */
-    }
-    return "list";
-  });
-
+  // SSR 固定 list；客户端挂载后再读 localStorage，避免 aria-pressed hydration 不一致
+  const viewMode = useSyncExternalStore(
+    subscribeViewMode,
+    getViewModeSnapshot,
+    getViewModeServerSnapshot,
+  );
   const setViewModePersist = (mode: ViewMode) => {
-    setViewMode(mode);
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, mode);
-    } catch {
-      /* ignore */
-    }
+    persistViewMode(mode);
   };
 
   const listInput = useMemo(() => {
@@ -299,6 +338,7 @@ export default function InboxPage() {
     statusFilter ? { status: statusFilter } : {},
   );
   const deleteMutation = useDelete();
+  const bulkDeleteMutation = useBulkDelete();
   const distillMutation = useDistill();
   const ignoreMutation = useIgnore();
   const captureMutation = useCaptureUrl();
@@ -406,12 +446,36 @@ export default function InboxPage() {
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
+      if (!multiSelect) {
+        // 单选：点已选项取消，否则只保留当前
+        if (prev.has(id) && prev.size === 1) return new Set();
+        return new Set([id]);
+      }
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
   };
+
+  const setMultiSelectMode = (on: boolean) => {
+    setMultiSelect(on);
+    if (!on) {
+      // 退出多选时收成至多 1 条
+      setSelected((prev) => {
+        if (prev.size <= 1) return prev;
+        const first = prev.values().next().value as string | undefined;
+        return first ? new Set([first]) : new Set();
+      });
+    }
+  };
+
+  const selectAllOnPage = () => {
+    setMultiSelect(true);
+    setSelected(new Set(items.map((it) => it.id)));
+  };
+
+  const clearSelection = () => setSelected(new Set());
 
   const runAction = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(label);
@@ -762,13 +826,57 @@ export default function InboxPage() {
             <LayoutGrid className="h-3.5 w-3.5" />
           </button>
         </div>
+        <button
+          type="button"
+          title={multiSelect ? "当前：多选" : "当前：单选（点此项开启多选）"}
+          aria-pressed={multiSelect}
+          onClick={() => setMultiSelectMode(!multiSelect)}
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition",
+            multiSelect
+              ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+              : "border-[var(--kp-border)] bg-[var(--kp-surface)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
+          )}
+        >
+          {multiSelect ? (
+            <CheckSquare className="h-3.5 w-3.5" />
+          ) : (
+            <Square className="h-3.5 w-3.5" />
+          )}
+          {multiSelect ? "多选" : "单选"}
+        </button>
+        {multiSelect ? (
+          <>
+            <Button size="sm" variant="outline" disabled={!items.length || !!busy} onClick={selectAllOnPage}>
+              本页全选
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!selectedIds.length || !!busy}
+              onClick={clearSelection}
+            >
+              清空
+            </Button>
+          </>
+        ) : null}
         <Button
           size="sm"
           variant="outline"
           disabled={!selectedIds.length || !!busy}
           onClick={() => runAction("忽略", () => ignoreMutation.mutateAsync({ ids: selectedIds }))}
         >
-          忽略
+          忽略{selectedIds.length > 1 ? ` (${selectedIds.length})` : ""}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!selectedIds.length || !!busy}
+          className="text-red-600 hover:text-red-700"
+          onClick={() => setPendingDeleteIds(selectedIds)}
+        >
+          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+          删除{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
         </Button>
       </div>
 
@@ -811,11 +919,15 @@ export default function InboxPage() {
                 >
                   <span
                     className={cn(
-                      "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
-                      on ? "bg-[var(--kp-brand-deep)]" : "bg-[var(--kp-border)]",
+                      "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                      on
+                        ? "border-[var(--kp-brand-deep)] bg-[var(--kp-brand-deep)] text-white"
+                        : "border-[var(--kp-border)] bg-[var(--kp-surface)] text-transparent",
                     )}
                     aria-hidden
-                  />
+                  >
+                    {on ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+                  </span>
                   <div className="min-w-0 flex-1 space-y-1">
                     <h3 className="truncate text-sm font-medium text-[var(--kp-text-1)]">
                       {item.title}
@@ -857,7 +969,10 @@ export default function InboxPage() {
                     >
                       {meta.timeLabel}
                     </span>
-                    <InboxItemActions item={item} onDelete={() => setDeleteId(item.id)} />
+                    <InboxItemActions
+                      item={item}
+                      onDelete={() => setPendingDeleteIds([item.id])}
+                    />
                   </div>
                 </div>
               </li>
@@ -883,7 +998,7 @@ export default function InboxPage() {
                   }
                 }}
                 className={cn(
-                  "flex cursor-pointer flex-col gap-2 rounded-xl border p-3.5 text-left transition",
+                  "group flex cursor-pointer flex-col gap-2 rounded-xl border p-3.5 text-left transition",
                   on
                     ? "border-[var(--kp-brand)] bg-[var(--kp-brand-soft)] shadow-[0_0_0_1px_var(--kp-brand)]"
                     : "border-[var(--kp-border)] bg-[var(--kp-surface)] hover:border-[color-mix(in_oklab,var(--kp-brand)_35%,var(--kp-border))]",
@@ -892,11 +1007,15 @@ export default function InboxPage() {
                 <div className="flex items-start gap-2">
                   <span
                     className={cn(
-                      "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-                      on ? "bg-[var(--kp-brand-deep)]" : "bg-[var(--kp-border)]",
+                      "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                      on
+                        ? "border-[var(--kp-brand-deep)] bg-[var(--kp-brand-deep)] text-white"
+                        : "border-[var(--kp-border)] bg-[var(--kp-surface)] text-transparent",
                     )}
                     aria-hidden
-                  />
+                  >
+                    {on ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+                  </span>
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <MetaPill tone="brand">{meta.sourceLabel}</MetaPill>
@@ -937,7 +1056,10 @@ export default function InboxPage() {
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >
-                        <InboxItemActions item={item} onDelete={() => setDeleteId(item.id)} />
+                        <InboxItemActions
+                          item={item}
+                          onDelete={() => setPendingDeleteIds([item.id])}
+                        />
                       </div>
                     </div>
                   </div>
@@ -959,19 +1081,28 @@ export default function InboxPage() {
       ) : null}
 
       <ConfirmDialog
-        isOpen={!!deleteId}
-        title="删除 Inbox 条目？"
+        isOpen={!!pendingDeleteIds?.length}
+        title={
+          (pendingDeleteIds?.length ?? 0) > 1
+            ? `删除 ${pendingDeleteIds!.length} 条 Inbox 条目？`
+            : "删除 Inbox 条目？"
+        }
         description="仅删除队列记录，已蒸馏的文章不会删除。"
         isDestructive
         confirmLabel="确认删除"
         onConfirm={() => {
-          if (deleteId) {
-            deleteMutation.mutate({ id: deleteId });
-            setDeleteId(null);
-            refreshAll();
-          }
+          const ids = pendingDeleteIds ?? [];
+          setPendingDeleteIds(null);
+          if (!ids.length) return;
+          runAction("删除", async () => {
+            if (ids.length === 1) {
+              await deleteMutation.mutateAsync({ id: ids[0]! });
+            } else {
+              await bulkDeleteMutation.mutateAsync({ ids });
+            }
+          }).catch(() => {});
         }}
-        onCancel={() => setDeleteId(null)}
+        onCancel={() => setPendingDeleteIds(null)}
       />
     </AdminPage>
   );
