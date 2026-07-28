@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
@@ -16,6 +17,7 @@ import {
 import { createPortal } from "react-dom";
 import { Check, Copy, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { parseMathBlockPayload } from "@/components/editor/mathBlockAlign";
 
 const InsideKatexFormulaContext = createContext(false);
 
@@ -109,23 +111,32 @@ interface KatexFormulaProps {
  */
 export function KatexFormula({ children, className, display = false }: KatexFormulaProps) {
   const panelId = useId();
+  const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [tex, setTex] = useState("");
   const [copied, setCopied] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   const refreshTex = useCallback(() => {
     const next = extractTex(triggerRef.current);
     setTex(next);
     return next;
   }, []);
+
+  // 块级公式：从 LaTeX 源里读 `% kp-align: left`，直接改 class（避免 setState 级联）
+  useLayoutEffect(() => {
+    if (!display || !rootRef.current) return;
+    const src = extractTex(triggerRef.current);
+    const { align } = parseMathBlockPayload(src);
+    rootRef.current.classList.toggle("kp-katex-align-left", align === "left");
+  }, [display, children]);
 
   const placePanel = useCallback(() => {
     const el = triggerRef.current;
@@ -265,6 +276,7 @@ export function KatexFormula({ children, className, display = false }: KatexForm
     <InsideKatexFormulaContext.Provider value={true}>
       {/* 永远用 span，禁止 p>div / p>pre；源码走 portal */}
       <span
+        ref={rootRef}
         className={cn(
           "kp-katex-formula",
           display ? "kp-katex-formula--display" : "kp-katex-formula--inline",
@@ -284,7 +296,7 @@ export function KatexFormula({ children, className, display = false }: KatexForm
           title={open ? "收起 LaTeX" : "查看 LaTeX 源码"}
         >
           {/*
-            外壳已剥掉 katex / katex-display（避免 overflow 滚动条与整行占宽）。
+            外壳剥掉后再还原：display 必须全宽，否则 \tag{n} 会叠在公式上。
             display 根的 children 已是 .katex，只还原外层；inline 根需还原 .katex。
           */}
           {display ? (

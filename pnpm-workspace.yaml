@@ -2,6 +2,11 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Milkdown + remark-math: mdast-util-math@3 需要 to-markdown.state.compilePattern（≥2.1），
+# 而 remark-stringify/gfm 仍解析到 2.0.0，序列化含行内公式的文章时崩溃空白。
+overrides:
+  mdast-util-to-markdown: ">=2.1.0"
+
 allowBuilds:
   "@prisma/client": true
   "@prisma/engines": true

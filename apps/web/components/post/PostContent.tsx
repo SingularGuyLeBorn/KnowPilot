@@ -20,6 +20,7 @@ import {
   isMathClassName,
   useInsideKatexFormula,
 } from "@/components/post/KatexFormula";
+import { BoardPreview } from "@/components/editor/BoardCanvas";
 import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
 
@@ -275,11 +276,12 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
 
   if (isValidElement(children)) {
     childClass = ((children as ReactElement<{ className?: string }>).props.className) || "";
-    const match = /language-(\w+)/.exec(childClass);
+    const match = /language-([\w-]+)/.exec(childClass);
     if (match) language = match[1];
   }
 
   const isMathBlock = isMathClassName(childClass) || language === "math";
+  const isBoardBlock = language === "kp-board" || language === "board";
   const codeText = getText(children);
   const lineCount = useMemo(() => countCodeLines(codeText), [codeText]);
   const [showLineNumbers, setShowLineNumbers] = useShowCodeLineNumbers();
@@ -298,6 +300,10 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
         {inner}
       </KatexFormula>
     );
+  }
+
+  if (isBoardBlock) {
+    return <BoardPreview raw={codeText} />;
   }
 
   const codeView = (

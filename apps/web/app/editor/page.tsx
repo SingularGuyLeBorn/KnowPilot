@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, Send } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import dynamic from "next/dynamic";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
@@ -36,7 +36,7 @@ export default function NewPostPage() {
     content,
     category,
     tags,
-    published: false,
+    published: true,
     enabled: true,
     onRestored: (draft) => {
       setTitle(draft.title);
@@ -63,7 +63,7 @@ export default function NewPostPage() {
   const { dragOver, dropHandlers } = useImageDrop(appendImage);
   const pasteHandlers = useImagePaste(appendImage);
 
-  const handleSave = (publish = false) => {
+  const handleCreate = () => {
     if (!title.trim()) return;
     create.mutate(
       {
@@ -75,7 +75,7 @@ export default function NewPostPage() {
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean),
-        published: publish,
+        published: true,
       },
       {
         onError: (error) => {
@@ -86,7 +86,7 @@ export default function NewPostPage() {
             setErrorMessage(result.error?.message || "创建文章失败");
           }
         },
-      }
+      },
     );
   };
 
@@ -118,25 +118,18 @@ export default function NewPostPage() {
             )}
             {lastSavedAt && (
               <span className="hidden text-xs text-[var(--kp-text-3)] sm:inline">
-                草稿已保存 {lastSavedAt.toLocaleTimeString("zh-CN")}
+                本地已记 {lastSavedAt.toLocaleTimeString("zh-CN")}
               </span>
             )}
             <ImageUploadButton onUploaded={appendImage} />
             <button
-              onClick={() => handleSave(false)}
-              disabled={create.isPending || !title.trim()}
-              className="inline-flex items-center gap-2 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-4 py-2 text-sm font-medium text-[var(--kp-text-1)] transition hover:bg-[var(--kp-bg-mute)] disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" />
-              保存草稿
-            </button>
-            <button
-              onClick={() => handleSave(true)}
+              type="button"
+              onClick={handleCreate}
               disabled={create.isPending || !title.trim()}
               className="inline-flex items-center gap-2 rounded-xl bg-[var(--kp-brand-deep)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
             >
-              <Send className="h-4 w-4" />
-              发布
+              <Check className="h-4 w-4" />
+              {create.isPending ? "创建中…" : "创建文章"}
             </button>
           </div>
         </div>
@@ -188,6 +181,7 @@ export default function NewPostPage() {
               key={uploadKey}
               initialValue={content}
               onChange={setContent}
+              docMeta={{ title, garden }}
             />
           </div>
         </div>

@@ -442,7 +442,12 @@ html.dark .kp-card,
   margin-top: 0;
 }
 
-/* KaTeX 公式 */
+/* KaTeX 公式
+ *
+ * display 必须占满内容列宽：\tag{n} 靠 .katex-html { position:relative }
+ * + .tag { position:absolute; right:0 } 贴到行尾。若 display/trigger
+ * 收成 fit-content，序号会叠在公式本体上（LLM Guide 大量 \tag）。
+ */
 .katex {
   color: var(--kp-text-1);
   font-size: 1.05em;
@@ -452,16 +457,28 @@ html.dark .kp-card,
   display: block;
   margin: 0;
   text-align: center;
-  overflow: visible !important;
-  /* 不占满父级全宽：收缩到公式本身 */
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .katex-display > .katex {
-  display: inline-block;
-  text-align: left;
+  /* 与 KaTeX 默认一致：block 全宽，\tag 才能贴右 */
+  display: block;
+  text-align: center;
+  white-space: nowrap;
   font-size: 1.1em;
   max-width: 100%;
+}
+.katex-display > .katex > .katex-html {
+  display: block;
+  position: relative;
+}
+.katex-display > .katex > .katex-html > .tag {
+  position: absolute;
+  right: 0;
+  /* 给右侧目录留一点呼吸，避免贴边 */
+  padding-right: 0.15rem;
 }
 
 /* 可交互公式：span 外壳 + portal 源码，零行内占位 */
@@ -471,6 +488,7 @@ html.dark .kp-card,
 }
 .kp-katex-formula--display {
   display: block;
+  width: 100%;
   margin: 1.25rem 0;
   text-align: center;
 }
@@ -494,18 +512,27 @@ html.dark .kp-card,
   gap: 0;
 }
 .kp-katex-formula--display .kp-katex-formula-trigger {
-  display: inline-block;
+  display: block;
+  width: 100%;
   max-width: 100%;
-  padding: 0.2rem 0.4rem;
-  border-radius: 0.65rem;
+  padding: 0.35rem 0.15rem;
+  border-radius: 0.35rem;
   text-align: center;
-  /* 气泡只包公式，不占满整行 */
-  width: fit-content;
+  box-sizing: border-box;
+  background: transparent;
+}
+.kp-katex-formula--display.kp-katex-align-left,
+.kp-katex-formula--display.kp-katex-align-left .kp-katex-formula-trigger {
+  text-align: left;
+}
+.kp-katex-formula--display.kp-katex-align-left .katex-display {
+  text-align: left;
 }
 .kp-katex-formula-trigger:hover,
 .kp-katex-formula.is-open .kp-katex-formula-trigger {
-  background: color-mix(in srgb, var(--kp-brand-soft) 55%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kp-brand) 22%, transparent);
+  /* 与页面同色，仅淡描边提示可点，避免灰/品牌底 */
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kp-divider) 85%, transparent);
 }
 .kp-katex-formula-trigger:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--kp-brand) 50%, transparent);
