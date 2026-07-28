@@ -17,6 +17,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { postDetailHref } from "@/lib/postHref";
 import { cn } from "@/lib/utils";
+import { useContentNavHighlight } from "@/lib/contentNavContext";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
@@ -348,7 +349,11 @@ export function PostTreeNav({
     gardenId ? { garden: gardenId } : {},
   );
   const pathname = usePathname();
-  const activeSlug = useMemo(() => getPostSlug(pathname), [pathname]);
+  const navHighlight = useContentNavHighlight();
+  const activeSlug = useMemo(
+    () => getPostSlug(pathname) ?? navHighlight.slug,
+    [pathname, navHighlight.slug],
+  );
   const tree = useMemo(() => buildTree(data || []), [data]);
   const [manuallyExpanded, setManuallyExpanded] = useState<Map<string, boolean>>(() => {
     try {

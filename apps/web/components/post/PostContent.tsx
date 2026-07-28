@@ -251,7 +251,7 @@ function Heading({
   const id = slugify(text) || `heading-${level}-${fallbackId.replace(/[^a-z0-9]/gi, "").slice(0, 6)}`;
   const Tag = `h${level}` as "h2" | "h3" | "h4";
   return (
-    <Tag id={id} className="group relative scroll-mt-28" {...props}>
+    <Tag id={id} className="group relative scroll-mt-40" {...props}>
       {children}
       <a
         href={`#${id}`}

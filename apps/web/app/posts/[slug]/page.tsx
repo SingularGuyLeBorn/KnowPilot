@@ -115,105 +115,111 @@ export default function PostDetailPage() {
         tocVisible && "xl:pr-[20rem] 2xl:pr-[22rem]",
       )}
     >
-      <div className="mb-6">
-        <Link
-          href="/posts"
-          className={cn(
-            buttonVariants({ variant: "ghost", size: "sm" }),
-            "inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground",
-          )}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          返回文章列表
-        </Link>
-      </div>
-
       {showSkeleton && !post ? (
         <PostSkeleton />
       ) : post ? (
         <>
           <article ref={articleRef} key={post.id} className="kp-post-swap">
-            <ReadingProgressTracker
-              postId={post.id}
-              slug={post.slug}
-              garden={post.garden}
-              title={post.title}
-              articleRef={articleRef}
-            />
-            <header className="mb-8">
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                {post.title}
-              </h1>
-              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                {!post.published && <Badge variant="secondary">草稿</Badge>}
-                {post.category && (
-                  <Link href={`/categories/${encodeURIComponent(post.category)}`}>
-                    <Badge
-                      variant="secondary"
-                      className="cursor-pointer hover:bg-primary/10 hover:text-primary"
-                    >
-                      {post.category}
-                    </Badge>
-                  </Link>
-                )}
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-4 w-4" />
-                  {new Date(post.updatedAt).toLocaleDateString("zh-CN")}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Eye className="h-4 w-4" />
-                  {post.viewCount} 阅读
-                </span>
-                <PostExportActions
-                  post={{
-                    title: post.title,
-                    slug: post.slug,
-                    content: post.content,
-                    excerpt: post.excerpt,
-                    category: post.category,
-                    tags: post.tags,
-                    published: post.published,
-                  }}
-                  articleRef={articleRef}
-                />
+            {/* 半固定顶栏：相对 main 滚动容器 sticky，不随正文滚走 */}
+            <div className="sticky top-0 z-20 -mx-4 mb-6 border-b border-border/70 bg-[var(--kp-bg)]/92 px-4 pb-3 pt-1 backdrop-blur-md sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
+              <div className="mb-3 pt-1">
                 <Link
-                  href={`/editor/${post.id}`}
+                  href={
+                    post.garden && post.garden !== DEFAULT_POST_GARDEN
+                      ? `/gardens/${encodeURIComponent(post.garden)}`
+                      : "/posts"
+                  }
                   className={cn(
                     buttonVariants({ variant: "ghost", size: "sm" }),
-                    "ml-auto inline-flex items-center gap-1 text-primary hover:text-primary/80",
+                    "inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Edit2 className="h-4 w-4" />
-                  编辑
+                  <ArrowLeft className="h-4 w-4" />
+                  返回
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => setConfirmOpen(true)}
-                  disabled={remove.isPending}
-                  className={cn(
-                    buttonVariants({ variant: "ghost", size: "sm" }),
-                    "inline-flex items-center gap-1 text-destructive hover:text-destructive/80",
-                  )}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {remove.isPending ? "删除中…" : "删除"}
-                </button>
               </div>
-              {post.tags?.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {post.tags.map((tag: string) => (
-                    <Link key={tag} href={`/tags/${encodeURIComponent(tag)}`}>
+              <ReadingProgressTracker
+                postId={post.id}
+                slug={post.slug}
+                garden={post.garden}
+                title={post.title}
+                articleRef={articleRef}
+              />
+              <header>
+                <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                  {post.title}
+                </h1>
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                  {!post.published && <Badge variant="secondary">草稿</Badge>}
+                  {post.category && (
+                    <Link href={`/categories/${encodeURIComponent(post.category)}`}>
                       <Badge
-                        variant="outline"
-                        className="cursor-pointer hover:border-primary/50 hover:text-primary"
+                        variant="secondary"
+                        className="cursor-pointer hover:bg-primary/10 hover:text-primary"
                       >
-                        {tag}
+                        {post.category}
                       </Badge>
                     </Link>
-                  ))}
+                  )}
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-4 w-4" />
+                    {new Date(post.updatedAt).toLocaleDateString("zh-CN")}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Eye className="h-4 w-4" />
+                    {post.viewCount} 阅读
+                  </span>
+                  <PostExportActions
+                    post={{
+                      title: post.title,
+                      slug: post.slug,
+                      content: post.content,
+                      excerpt: post.excerpt,
+                      category: post.category,
+                      tags: post.tags,
+                      published: post.published,
+                    }}
+                    articleRef={articleRef}
+                  />
+                  <Link
+                    href={`/editor/${post.id}?garden=${encodeURIComponent(post.garden)}`}
+                    className={cn(
+                      buttonVariants({ variant: "ghost", size: "sm" }),
+                      "ml-auto inline-flex items-center gap-1 text-primary hover:text-primary/80",
+                    )}
+                  >
+                    <Edit2 className="h-4 w-4" />
+                    编辑
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmOpen(true)}
+                    disabled={remove.isPending}
+                    className={cn(
+                      buttonVariants({ variant: "ghost", size: "sm" }),
+                      "inline-flex items-center gap-1 text-destructive hover:text-destructive/80",
+                    )}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {remove.isPending ? "删除中…" : "删除"}
+                  </button>
                 </div>
-              )}
-            </header>
+                {post.tags?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {post.tags.map((tag: string) => (
+                      <Link key={tag} href={`/tags/${encodeURIComponent(tag)}`}>
+                        <Badge
+                          variant="outline"
+                          className="cursor-pointer hover:border-primary/50 hover:text-primary"
+                        >
+                          {tag}
+                        </Badge>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </header>
+            </div>
 
             <Card>
               <CardContent className="p-6 sm:p-8">

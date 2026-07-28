@@ -144,7 +144,14 @@ export default function NewPostPage() {
         <div className="flex flex-wrap gap-4 border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 sm:px-6">
           <select
             value={garden}
-            onChange={(e) => setGarden(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setGarden(next);
+              // 侧栏跟所选花园走
+              const params = new URLSearchParams(searchParams.toString());
+              params.set("garden", next);
+              router.replace(`/editor?${params.toString()}`, { scroll: false });
+            }}
             className="rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-3 py-1.5 text-sm text-[var(--kp-text-1)] outline-none"
             title="知识库花园（content/{garden}/）"
           >

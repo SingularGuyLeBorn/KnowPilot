@@ -101,6 +101,7 @@ export function useGardens() {
  * - `/gardens/{id}`、`?garden=` → 只显示该库目录
  * - `/posts/{slug}` 无 query → 默认 posts 库（不混其它库）
  * - `/posts` 全部列表（无 garden）→ null（跨库全树）
+ * - `/editor`：优先 `?garden=`（编辑页会把文章所属库写进 URL）；无 query 时新建页默认 posts
  */
 export function useContentGardenScope(): {
   gardenId: string | null;
@@ -121,7 +122,8 @@ export function useContentGardenScope(): {
     if (pathname.startsWith("/posts/") && !pathname.startsWith("/posts/trash")) {
       return { gardenId: DEFAULT_POST_GARDEN, isScoped: true };
     }
-    if (pathname.startsWith("/editor")) {
+    // 编辑器无 ?garden= 时：新建默认 posts；编辑已有文由页面 sync query，避免误显 posts 三篇
+    if (pathname === "/editor" || pathname.startsWith("/editor/")) {
       return { gardenId: DEFAULT_POST_GARDEN, isScoped: true };
     }
     return { gardenId: null, isScoped: false };

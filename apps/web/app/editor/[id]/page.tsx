@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Send } from "lucide-react";
 import dynamic from "next/dynamic";
 import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
 import { ImageUploadButton, useImageDrop, useImagePaste } from "@/components/editor/ImageUploadButton";
+import { ContentNavProvider } from "@/lib/contentNavContext";
 import { usePostMutations } from "@/lib/hooks";
 import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
@@ -21,7 +22,7 @@ const MilkdownEditor = dynamic(
 interface Post {
   id: string;
   slug: string;
-  garden: "posts" | "knowledge" | "resources";
+  garden: string;
   title: string;
   content: string;
   category: string | null;
@@ -59,6 +60,7 @@ export default function EditPostPage() {
 
 function EditorForm({ id, post }: { id: string; post: Post }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [title, setTitle] = useState(post.title);
   const [content, setContent] = useState(post.content);
@@ -67,6 +69,15 @@ function EditorForm({ id, post }: { id: string; post: Post }) {
   const [published, setPublished] = useState(post.published);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadKey, setUploadKey] = useState(0);
+
+  // 侧栏花园跟文章走：把 garden 写进 URL（不换 Shell）
+  useEffect(() => {
+    const current = searchParams.get("garden")?.trim() || "";
+    if (current === post.garden) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("garden", post.garden);
+    router.replace(`/editor/${id}?${params.toString()}`, { scroll: false });
+  }, [post.garden, id, router, searchParams]);
 
   const { lastSavedAt, isSaving } = useAutoSave({
     id,
@@ -121,7 +132,7 @@ function EditorForm({ id, post }: { id: string; post: Post }) {
   };
 
   return (
-    <>
+    <ContentNavProvider slug={post.slug} garden={post.garden}>
       <MilkdownStyles />
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 sm:px-6">
@@ -194,7 +205,7 @@ function EditorForm({ id, post }: { id: string; post: Post }) {
             {...pasteHandlers}
             className={cn(
               "h-full rounded-xl transition-colors",
-              dragOver && "bg-[var(--kp-brand)]/5 ring-2 ring-[var(--kp-brand)]/30"
+              dragOver && "bg-[var(--kp-brand)]/5 ring-2 ring-[var(--kp-brand)]/30",
             )}
           >
             <MilkdownEditor
@@ -205,6 +216,6 @@ function EditorForm({ id, post }: { id: string; post: Post }) {
           </div>
         </div>
       </div>
-    </>
+    </ContentNavProvider>
   );
 }
