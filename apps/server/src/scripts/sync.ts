@@ -162,6 +162,10 @@ async function runWatch(): Promise<void> {
     const triggerSync = (eventPath: string, eventType: string) => {
       const ext = path.extname(eventPath).toLowerCase();
       if (!syncer.extensions.includes(ext)) return;
+      // Garden 只认 _garden.md；文章落盘不得拖起全库花园扫描（否则 Goal/autosave 刷爆 watch）
+      if (syncer.entityName === "Garden" && path.basename(eventPath) !== "_garden.md") {
+        return;
+      }
 
       console.log(`  🔔 [${syncer.entityName}] 检测到${eventType}: ${path.relative(contentDir, eventPath)}`);
 
@@ -219,7 +223,7 @@ async function runWatch(): Promise<void> {
             const result = await syncEntity(syncer, prisma);
             console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
           }
-        }, 300)
+        }, 1500)
       );
     };
 

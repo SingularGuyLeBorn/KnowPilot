@@ -10,7 +10,11 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import { PrismaClient } from "@prisma/client";
-import { SEED_GARDENS } from "@knowpilot/shared";
+import {
+  SEED_GARDENS,
+  isReservedContentDir,
+  isValidGardenIdFormat,
+} from "@knowpilot/shared";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFileMtime } from "./utils.js";
 import { getAppConfig } from "../../infra/config.js";
@@ -57,6 +61,26 @@ export const gardenSyncer: Syncer<GardenData> = {
   /** 占位：scan 自行读 content 根 */
   contentDirName: "posts",
   extensions: [".md"],
+
+  /** 只认各花园 `_garden.md`；普通文章变更不得触发 Garden 全量扫 */
+  async scanFile(filePath: string, contentDir: string): Promise<SyncRecord<GardenData> | null> {
+    if (path.basename(filePath) !== GARDEN_META_FILE) return null;
+    const contentRoot = path.resolve(contentDir);
+    const abs = path.resolve(filePath);
+    const rel = path.relative(contentRoot, abs);
+    const parts = rel.split(path.sep);
+    if (parts.length !== 2 || parts[1] !== GARDEN_META_FILE) return null;
+    const id = parts[0]!;
+    if (!isValidGardenIdFormat(id) || isReservedContentDir(id)) return null;
+    try {
+      const data = parseGardenFile(abs, id);
+      return { slug: id, mtime: getFileMtime(abs), data };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`  ❌ [Garden 单文件解析失败] ${abs}:`, msg);
+      return null;
+    }
+  },
 
   async scan(prisma: PrismaClient, _contentDir: string): Promise<SyncRecord<GardenData>[]> {
     const contentRoot = getAppConfig().contentDir;
