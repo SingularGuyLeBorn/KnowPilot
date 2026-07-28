@@ -36,7 +36,11 @@ export const NATIVE_TOOL_GROUPS: NativeToolGroup[] = [
 ];
 
 export function groupIdForNativeTool(name: string): NativeToolGroupId {
-  if (/^(web_|read_article|scrape_|rss_|browser_|scroll_screenshot|save_webpage|vision_describe|video_transcript|read_image)/.test(name)) {
+  if (
+    /^(web_|read_article|scrape_|rss_|browser_|scroll_screenshot|save_webpage|vision_describe|video_transcript|read_image|literature_|document_to_markdown)/.test(
+      name,
+    )
+  ) {
     return "web";
   }
   if (/^(read_file|write_file|list_directory|file_|directory_|search_files)/.test(name)) {
@@ -67,6 +71,9 @@ export function groupIdForNativeTool(name: string): NativeToolGroupId {
 
 export const NATIVE_LABELS: Record<string, string> = {
   web_search: "网页搜索",
+  literature_search: "文献检索",
+  literature_get: "文献详情",
+  document_to_markdown: "PDF/Word 转 Markdown",
   rss_fetch: "抓取 RSS",
   rss_draft_posts: "RSS 转文章草稿",
   read_article: "读取网页文章",

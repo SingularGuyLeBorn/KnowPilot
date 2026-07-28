@@ -1,10 +1,13 @@
-﻿---
+---
 name: "assistant"
 description: "KnowPilot 默认助手"
 model: "deepseek-v4-flash"
 tier: "manager"
 tools:
   - "native:web_search"
+  - "native:literature_search"
+  - "native:literature_get"
+  - "native:document_to_markdown"
   - "native:read_article"
   - "native:scrape_web_page"
   - "native:browser_screenshot"

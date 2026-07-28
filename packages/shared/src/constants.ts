@@ -455,6 +455,9 @@ export const INTEGRATION_DEFAULT_TOOLS: string[] = [
 export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
   super: [
     "native:web_search",
+    "native:literature_search",
+    "native:literature_get",
+    "native:document_to_markdown",
     "native:read_article",
     "native:scrape_web_page",
     "native:browser_screenshot",
@@ -539,6 +542,9 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
   ],
   manager: [
     "native:web_search",
+    "native:literature_search",
+    "native:literature_get",
+    "native:document_to_markdown",
     "native:read_article",
     "native:scrape_web_page",
     "native:browser_screenshot",
@@ -633,6 +639,9 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:write_file",
     "native:list_directory",
     "native:web_search",
+    "native:literature_search",
+    "native:literature_get",
+    "native:document_to_markdown",
     "native:browser_screenshot",
     "native:read_image",
     "native:vision_describe",
@@ -646,6 +655,9 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
 /** 内置 assistant（用户默认助手，manager tier）的工具清单 —— agentResolver 创建与补齐检查共用同一份 */
 export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:web_search",
+  "native:literature_search",
+  "native:literature_get",
+  "native:document_to_markdown",
   "native:read_article",
   "native:scrape_web_page",
   "native:browser_screenshot",
