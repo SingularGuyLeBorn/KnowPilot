@@ -307,77 +307,67 @@ export function MarkdownTable({
   };
 
   const hasSelection = selected != null;
-  const labelCol = hasSelection ? selected.col : -1;
-  const labelText =
-    hasSelection && headers[labelCol]
-      ? `R${selected.row + 1}C${selected.col + 1} · ${headers[labelCol]}`
-      : hasSelection
-        ? `R${selected.row + 1}C${selected.col + 1}`
-        : "未选中单元格";
 
   return (
     <div
       ref={shellRef}
       className={cn("kp-md-table-shell not-prose", hasSelection && "is-focused")}
     >
-      <div className="kp-md-table-toolbar">
-        <span className="kp-md-table-toolbar-label">{labelText}</span>
-        <div className="kp-md-table-toolbar-actions">
-          <button
-            type="button"
-            className={cn(
-              "kp-md-table-btn",
-              hasSelection && currentAligns[activeCol] === "left" && "is-active",
-            )}
-            title="当前列左对齐"
-            disabled={!hasSelection}
-            onClick={() => setColAlign(activeCol, "left")}
-          >
-            <AlignLeft className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className={cn(
-              "kp-md-table-btn",
-              hasSelection && currentAligns[activeCol] === "center" && "is-active",
-            )}
-            title="当前列居中"
-            disabled={!hasSelection}
-            onClick={() => setColAlign(activeCol, "center")}
-          >
-            <AlignCenter className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className={cn(
-              "kp-md-table-btn",
-              hasSelection && currentAligns[activeCol] === "right" && "is-active",
-            )}
-            title="当前列右对齐"
-            disabled={!hasSelection}
-            onClick={() => setColAlign(activeCol, "right")}
-          >
-            <AlignRight className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className="kp-md-table-btn"
-            title="切换当前列对齐"
-            disabled={!hasSelection}
-            onClick={() => setColAlign(activeCol, nextAlign(currentAligns[activeCol] ?? "left"))}
-          >
-            切换
-          </button>
-          <button
-            type="button"
-            className="kp-md-table-btn"
-            title="重置列宽与对齐"
-            onClick={resetLayout}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
+      {hasSelection && (
+        <div className="kp-md-table-toolbar">
+          <div className="kp-md-table-toolbar-actions ml-auto">
+            <button
+              type="button"
+              className={cn(
+                "kp-md-table-btn",
+                currentAligns[activeCol] === "left" && "is-active",
+              )}
+              title="当前列左对齐"
+              onClick={() => setColAlign(activeCol, "left")}
+            >
+              <AlignLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "kp-md-table-btn",
+                currentAligns[activeCol] === "center" && "is-active",
+              )}
+              title="当前列居中"
+              onClick={() => setColAlign(activeCol, "center")}
+            >
+              <AlignCenter className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "kp-md-table-btn",
+                currentAligns[activeCol] === "right" && "is-active",
+              )}
+              title="当前列右对齐"
+              onClick={() => setColAlign(activeCol, "right")}
+            >
+              <AlignRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              className="kp-md-table-btn"
+              title="切换当前列对齐"
+              onClick={() => setColAlign(activeCol, nextAlign(currentAligns[activeCol] ?? "left"))}
+            >
+              切换
+            </button>
+            <button
+              type="button"
+              className="kp-md-table-btn"
+              title="重置列宽与对齐"
+              onClick={resetLayout}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
       <div className="kp-md-table-scroll">
         <table
           ref={tableRef}

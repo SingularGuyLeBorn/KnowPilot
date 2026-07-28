@@ -14,6 +14,12 @@ import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
 import { useShowCodeLineNumbers } from "@/lib/codeBlockPrefs";
 import { MarkdownTable } from "@/components/post/MarkdownTable";
+import {
+  KatexFormula,
+  isKatexRootClassName,
+  isMathClassName,
+  useInsideKatexFormula,
+} from "@/components/post/KatexFormula";
 import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
 
@@ -213,6 +219,28 @@ function slugify(text: string) {
     .replace(/^-|-$/g, "");
 }
 
+/** rehype-katex 替换后的根节点是 span.katex / span.katex-display */
+function MarkdownSpan({
+  className,
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLSpanElement>) {
+  const inside = useInsideKatexFormula();
+  const { root, display } = isKatexRootClassName(className);
+  if (!inside && root) {
+    return (
+      <KatexFormula display={display} className={className}>
+        {children}
+      </KatexFormula>
+    );
+  }
+  return (
+    <span className={className} {...props}>
+      {children}
+    </span>
+  );
+}
+
 function Heading({
   level,
   children,
@@ -243,13 +271,15 @@ function Heading({
 
 function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   let language = "";
+  let childClass = "";
 
   if (isValidElement(children)) {
-    const childClass = ((children as ReactElement<{ className?: string }>).props.className) || "";
+    childClass = ((children as ReactElement<{ className?: string }>).props.className) || "";
     const match = /language-(\w+)/.exec(childClass);
     if (match) language = match[1];
   }
 
+  const isMathBlock = isMathClassName(childClass) || language === "math";
   const codeText = getText(children);
   const lineCount = useMemo(() => countCodeLines(codeText), [codeText]);
   const [showLineNumbers, setShowLineNumbers] = useShowCodeLineNumbers();
@@ -257,6 +287,18 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   const canPreview = PREVIEWABLE_LANGS.has(language.toLowerCase());
   const update = (next: Partial<CodeBlockState>) => setState((prev) => ({ ...prev, ...next }));
   const toggleLineNumbers = () => setShowLineNumbers(!showLineNumbers);
+
+  // 展示型公式勿走代码块外壳（hooks 已全部调用完再分支）
+  if (isMathBlock) {
+    const inner = isValidElement(children)
+      ? (children as ReactElement<{ children?: ReactNode }>).props.children
+      : children;
+    return (
+      <KatexFormula display className={childClass}>
+        {inner}
+      </KatexFormula>
+    );
+  }
 
   const codeView = (
     <div className={`kp-code-body${showLineNumbers ? " kp-code-body--lines" : ""}`}>
@@ -439,6 +481,16 @@ export const PostContent = memo(function PostContent({
       );
     },
     code: ({ className, children, ...props }) => {
+      // 少数未替换路径；正常情况 rehype-katex 已换成 span.katex*
+      const math = isKatexRootClassName(className);
+      if (math.root) {
+        return (
+          <KatexFormula display={math.display} className={className}>
+            {children}
+          </KatexFormula>
+        );
+      }
+
       const isBlock =
         typeof className === "string" &&
         (className.includes("language-") || className.includes("hljs"));
@@ -457,7 +509,14 @@ export const PostContent = memo(function PostContent({
         </code>
       );
     },
+    span: MarkdownSpan,
     pre: Pre,
+    // 用 div 代替 p：避免 display 公式 / 代码块等块级结构落入 <p> 触发 hydration
+    p: ({ children, className, ...props }) => (
+      <div className={["kp-md-p", className].filter(Boolean).join(" ")} {...props}>
+        {children}
+      </div>
+    ),
     table: ({ children, ...props }) => (
       <MarkdownTable {...props}>{children}</MarkdownTable>
     ),
