@@ -199,6 +199,32 @@ export function ensureBuiltinContextHooks(): void {
     },
   });
 
+  // 注入当前 standing goal，避免 Agent 不知道已有外环目标
+  registerContextHook({
+    name: "session-goal",
+    order: 350,
+    enabled: roundOneOnly,
+    run: async (input) => {
+      const sid = input.ctx.sessionId;
+      if (!sid) return;
+      try {
+        const { readGoalStateRaw } = await import("./goalLoop.js");
+        const goal = await readGoalStateRaw(sid);
+        if (!goal) return;
+        input.scratch.__goalHint =
+          `\n\n## 当前会话 Standing Goal\n` +
+          `- mode: ${goal.mode} · status: ${goal.status} · 进度 ${goal.turnsUsed}/${goal.maxTurns}\n` +
+          `- 目标: ${goal.text}\n` +
+          (goal.lastVerdict
+            ? `- 上轮裁判: done=${goal.lastVerdict.done} · ${goal.lastVerdict.reason}\n`
+            : "") +
+          `请围绕该目标推进；完成后在回复中明确确认，或调用 session_goal_clear。`;
+      } catch {
+        // ignore
+      }
+    },
+  });
+
   registerContextHook({
     name: "agent-extras",
     order: 400,
@@ -210,10 +236,11 @@ export function ensureBuiltinContextHooks(): void {
       const base = input.systemPrompt || "你是 KnowPilot 助手。";
       const identityHint = typeof input.scratch.__identityHint === "string" ? input.scratch.__identityHint : "";
       const memoryHint = typeof input.scratch.__memoryHint === "string" ? input.scratch.__memoryHint : "";
+      const goalHint = typeof input.scratch.__goalHint === "string" ? input.scratch.__goalHint : "";
       const guide = typeof input.scratch.__toolGuide === "string" ? input.scratch.__toolGuide : "";
       const composed = guide
-        ? `${base}${identityHint}${memoryHint}\n\n${guide}${extras}`
-        : `${base}${identityHint}${memoryHint}${extras}`;
+        ? `${base}${identityHint}${memoryHint}${goalHint}\n\n${guide}${extras}`
+        : `${base}${identityHint}${memoryHint}${goalHint}${extras}`;
       return { systemPrompt: composed };
     },
   });

@@ -11,9 +11,9 @@ import { router, publicProcedure } from "./trpc/trpc.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {
-  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, getPostBySlugSchema, postGardenSchema, postRecordViewSchema,
+  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, getPostBySlugSchema, postGardenSchema, postRecordViewSchema, explainSelectionSchema,
   createGardenSchema, updateGardenSchema, listGardensSchema, getGardenByIdSchema, deleteGardenSchema,
-  createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema,
+  createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema, editorAgentCompleteSchema, editorFormulaCopilotSchema,
   resolveAskUserSchema, listAskUserPendingSchema,
   createSkillSchema, updateSkillSchema, listSkillsSchema,
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
@@ -139,12 +139,43 @@ const postRouter = router({
   search: publicProcedure.meta({ description: "搜索文章标题和内容（可选花园过滤）。", aiReadable: true }).input(searchPostsSchema).query(({ ctx, input }) => ctx.services.post.search(input.query, input.limit, input.garden)),
   categories: publicProcedure.meta({ description: "获取所有已发布文章的分类列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.categories()),
   tags: publicProcedure.meta({ description: "获取所有已发布文章的标签列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.tags()),
+  explainSelection: publicProcedure
+    .meta({
+      description: "阅读页划线解释：对用户划选原文做一次 LLM 解释（不建会话、不写回文章）。",
+      aiReadable: false,
+    })
+    .input(explainSelectionSchema)
+    .mutation(async ({ input }) => {
+      const { explainPostSelection } = await import("./infra/postExplain.js");
+      return explainPostSelection(input);
+    }),
 });
 
 const agentRouter = router({
   create: publicProcedure.meta({ description: "创建一个新的 AI Agent。name 必须唯一。", aiReadable: true }).input(createAgentSchema).mutation(({ ctx, input }) => ctx.services.agent.create(input)),
   getById: publicProcedure.meta({ description: "获取 Agent 详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.agent.getById(input.id)),
   list: publicProcedure.meta({ description: "列出所有 Agent，支持分页和关键词搜索。", aiReadable: true }).input(listAgentsSchema).query(({ ctx, input }) => ctx.services.agent.list(input)),
+  editorComplete: publicProcedure
+    .meta({
+      description: "编辑器 @Agent 补全：注入 Agent systemPrompt，一次生成 Markdown 片段（不建会话、不跑工具）。",
+      aiReadable: false,
+    })
+    .input(editorAgentCompleteSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { completeEditorWithAgent } = await import("./infra/editorAgentComplete.js");
+      return completeEditorWithAgent(ctx.services, input);
+    }),
+  formulaCopilot: publicProcedure
+    .meta({
+      description:
+        "公式块 Copilot：抽取前后文（约 10 行）后用默认 assistant 直接补全 LaTeX（不建会话、不跑工具）；前端 Tab 接受。",
+      aiReadable: false,
+    })
+    .input(editorFormulaCopilotSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { completeFormulaCopilot } = await import("./infra/editorAgentComplete.js");
+      return completeFormulaCopilot(ctx.services, input);
+    }),
   update: publicProcedure.meta({ description: "更新 Agent 配置。", aiReadable: true }).input(updateAgentSchema).mutation(({ ctx, input }) => ctx.services.agent.update(input)),
   delete: publicProcedure.meta({ description: "删除 Agent 及其本地配置文件。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
     withApprovalGuard(ctx.services, "agent.delete", { id: input.id }, input.approvalId, () => ctx.services.agent.delete(input.id)),

@@ -161,6 +161,57 @@ export const postRecordViewSchema = z.object({
   id: z.string().cuid(),
 });
 
+/** 阅读页划线解释（只读辅助，不写回文章 / 不建 ChatSession） */
+export const explainSelectionSchema = z.object({
+  quote: z.string().trim().min(1).max(2000),
+  title: z.string().min(1).max(300),
+  slug: safeEntitySlugSchema,
+  garden: gardenIdSchema.default(DEFAULT_POST_GARDEN),
+  /** 划选邻近段落，帮助消歧；可选 */
+  surrounding: z.string().max(1500).optional(),
+});
+
+export type ExplainSelectionInput = z.infer<typeof explainSelectionSchema>;
+
+/**
+ * 编辑器 @Agent 补全（Copilot 式）：带 Agent systemPrompt + 格式要求，一次 sync 生成 Markdown 片段。
+ * 不建 ChatSession、不跑工具；前端 Accept 后才写入正文。
+ */
+export const editorAgentCompleteSchema = z.object({
+  agentId: z.string().cuid(),
+  /** 用户指令，如「在这里写一个 LoRA 小节例子」 */
+  instruction: z.string().trim().min(1).max(2000),
+  /** 光标前上下文 */
+  before: z.string().max(8000).default(""),
+  /** 光标后上下文 */
+  after: z.string().max(8000).default(""),
+  /** 若有选区，将替换该段 */
+  selected: z.string().max(4000).optional(),
+  title: z.string().max(300).optional(),
+  garden: gardenIdSchema.optional(),
+  slug: safeEntitySlugSchema.optional(),
+  /** 默认 deepseek-v4-flash；可覆盖 */
+  model: z.string().min(1).max(120).optional(),
+});
+
+export type EditorAgentCompleteInput = z.infer<typeof editorAgentCompleteSchema>;
+
+/** 公式块 Copilot：前后约 10 行上下文 → 直接补全 LaTeX（默认 assistant，不建会话） */
+export const FORMULA_COPILOT_CONTEXT_LINES = 10;
+export const editorFormulaCopilotSchema = z.object({
+  /** 公式块前上下文（调用方截约 10 行） */
+  before: z.string().max(4000).default(""),
+  /** 公式块后上下文 */
+  after: z.string().max(4000).default(""),
+  /** 用户已输入的部分 LaTeX（可空） */
+  partial: z.string().max(2000).optional(),
+  title: z.string().max(300).optional(),
+  garden: gardenIdSchema.optional(),
+  slug: safeEntitySlugSchema.optional(),
+  model: z.string().min(1).max(120).optional(),
+});
+export type EditorFormulaCopilotInput = z.infer<typeof editorFormulaCopilotSchema>;
+
 /* ═══════════════════════════════════════════════════════
    Agent (AI 代理)
    ═══════════════════════════════════════════════════════ */
@@ -296,6 +347,7 @@ export const switchMessageVersionSchema = z.object({
 
 /** Chat 图片附件 — vision 模型直传 data URL，非 vision 走 OCR 文本 */
 export const chatImageAttachmentSchema = z.object({
+  type: z.literal("image").optional(),
   name: z.string(),
   mimeType: z.string(),
   previewUrl: z.string(),
@@ -303,12 +355,66 @@ export const chatImageAttachmentSchema = z.object({
   source: z.enum(["ocr", "vision", "user"]).optional(),
 });
 
+/** Chat 文章引用附件 — @ 选文后结构化落库；正文片段供 LLM 上下文 */
+export const chatPostAttachmentSchema = z.object({
+  type: z.literal("post"),
+  id: z.string().cuid(),
+  garden: z.string().min(1),
+  slug: z.string().min(1),
+  title: z.string().min(1),
+  excerpt: z.string().optional(),
+  /** 发送时截取的正文；过长文章可后续用工具续读 */
+  contentSnippet: z.string().optional(),
+});
+
+/** 图片 | 文章引用（post 须带 type:"post"；无 type 视为图片，兼容旧数据） */
+export const chatAttachmentSchema = z.union([chatPostAttachmentSchema, chatImageAttachmentSchema]);
+
+export type ChatPostAttachment = z.infer<typeof chatPostAttachmentSchema>;
+export type ChatAttachment = z.infer<typeof chatAttachmentSchema>;
+
+export function isChatPostAttachment(a: unknown): a is ChatPostAttachment {
+  return (
+    !!a &&
+    typeof a === "object" &&
+    (a as { type?: unknown }).type === "post" &&
+    typeof (a as { id?: unknown }).id === "string" &&
+    typeof (a as { garden?: unknown }).garden === "string" &&
+    typeof (a as { slug?: unknown }).slug === "string" &&
+    typeof (a as { title?: unknown }).title === "string"
+  );
+}
+
+export function isChatImageAttachment(a: unknown): a is z.infer<typeof chatImageAttachmentSchema> {
+  if (!a || typeof a !== "object") return false;
+  if ((a as { type?: unknown }).type === "post") return false;
+  return (
+    typeof (a as { name?: unknown }).name === "string" &&
+    typeof (a as { mimeType?: unknown }).mimeType === "string" &&
+    typeof (a as { previewUrl?: unknown }).previewUrl === "string"
+  );
+}
+
+/** 文章引用 → 注入 LLM 的文本块 */
+export function formatPostAttachmentForLlm(att: ChatPostAttachment): string {
+  const head = `[引用文章 · ${att.garden}/${att.slug} · ${att.title}]`;
+  const parts = [head];
+  if (att.excerpt?.trim()) parts.push(att.excerpt.trim());
+  if (att.contentSnippet?.trim()) {
+    parts.push("---");
+    parts.push(att.contentSnippet.trim());
+  } else {
+    parts.push("（无正文片段；可用 post_list / 知识库工具续读）");
+  }
+  return parts.join("\n");
+}
+
 export const agentChatSchema = z
   .object({
     sessionId: z.string().cuid().optional(),
     agentId: z.string().cuid().optional(),
     message: z.string().min(1).optional(),
-    attachments: z.array(chatImageAttachmentSchema).optional(),
+    attachments: z.array(chatAttachmentSchema).optional(),
     model: z.string().optional(),
     config: chatConfigSchema.optional(),
     regenerate: z.boolean().optional(),
@@ -541,7 +647,7 @@ export const createMessageSchema = z.object({
   sessionId: z.string().cuid(),
   role: z.enum(["user", "assistant", "system", "tool"]),
   content: z.string().min(1, "内容不能为空"),
-  attachments: z.array(chatImageAttachmentSchema).optional(),
+  attachments: z.array(chatAttachmentSchema).optional(),
   toolCalls: z.any().optional(),
   toolResults: z.any().optional(),
   tokenUsage: z.object({
@@ -556,7 +662,7 @@ export const createMessageSchema = z.object({
 export const updateMessageSchema = z.object({
   id: z.string().cuid(),
   content: z.string().min(1).optional(),
-  attachments: z.array(chatImageAttachmentSchema).optional(),
+  attachments: z.array(chatAttachmentSchema).optional(),
   toolCalls: z.any().optional(),
   toolResults: z.any().optional(),
   finishReason: z.string().optional(),

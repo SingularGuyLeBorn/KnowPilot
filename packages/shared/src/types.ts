@@ -264,8 +264,9 @@ export interface ChatSession {
   messages?: ChatMessage[];
 }
 
-/** Chat 图片附件 */
+/** Chat 图片附件（无 type 或 type:"image"；兼容旧落库） */
 export interface ChatImageAttachment {
+  type?: "image";
   name: string;
   mimeType: string;
   previewUrl: string;
@@ -285,7 +286,8 @@ export interface ChatMessage {
   label?: string | null;
   /** null=普通；branch_summary=分支摘要（默认不进 LLM 上下文） */
   kind?: string | null;
-  attachments?: ChatImageAttachment[];
+  /** 图片 | 文章引用（见 schemas.chatAttachmentSchema） */
+  attachments?: import("./schemas.js").ChatAttachment[];
   toolCalls: any;
   toolResults: any;
   tokenUsage: {

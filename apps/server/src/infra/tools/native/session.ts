@@ -1,5 +1,5 @@
 /**
- * Native 会话与运行时域 — session_* / spawn_subagent / task_run / todo_*
+ * Native 会话与运行时域 — session_* / spawn_subagent / task_run / todo_* / session_goal_*
  *
  * PR-4b：从 nativeTools.ts 迁出，handler 与 schema 保持原语义不变。
  * spawn_subagent 复用 swarm 域的 agentCreateSubTool / agentSendMessageTool（单向依赖，无环）。
@@ -23,6 +23,13 @@ import {
 import { z } from "zod";
 import { zodParams } from "./zodParams.js";
 import { registerNativeDomain } from "./registerDomain.js";
+import {
+  clearSessionGoal,
+  pauseSessionGoal,
+  readGoalStateRaw,
+  resumeSessionGoal,
+  setSessionGoal,
+} from "../../goalLoop.js";
 
 /**
  * spawn waitForResult 轮询的空闲判定（S2）。仅「无流」不够，必须四条件同时满足：
@@ -1194,6 +1201,92 @@ async function todoReadTool(_args: Record<string, unknown>, ctx: NativeToolConte
   };
 }
 
+function requireChatSessionId(ctx: NativeToolContext, tool: string): string {
+  if (!ctx.sessionId) {
+    throw new Error(`${tool} 需要在 Chat 会话中调用（缺少 sessionId）`);
+  }
+  return ctx.sessionId;
+}
+
+function summarizeGoal(goal: {
+  mode: string;
+  status: string;
+  text: string;
+  turnsUsed: number;
+  maxTurns: number;
+} | null) {
+  if (!goal) return { ok: true, goal: null, summary: "当前无 standing goal" };
+  return {
+    ok: true,
+    goal,
+    summary: `Goal[${goal.mode}/${goal.status}] ${goal.turnsUsed}/${goal.maxTurns} · ${goal.text.slice(0, 120)}`,
+  };
+}
+
+/**
+ * Agent 自主设立会话外环 Goal（用户不必输入 /goal）。
+ * 不立刻另起流：当前 run 内继续推进；本轮结束后由 goalLoop 裁判决定是否续跑。
+ */
+async function sessionGoalSetTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const sessionId = requireChatSessionId(ctx, "session_goal_set");
+  const text = String(args.text ?? "").trim();
+  if (!text) throw new Error("session_goal_set 需要 text（目标描述）");
+  const mode = args.mode === "deep_research" ? "deep_research" : "goal";
+  const maxTurns =
+    typeof args.maxTurns === "number" && Number.isFinite(args.maxTurns)
+      ? Math.max(1, Math.min(200, Math.floor(args.maxTurns)))
+      : undefined;
+  const judgeModel =
+    typeof args.judgeModel === "string" && args.judgeModel.trim()
+      ? args.judgeModel.trim()
+      : undefined;
+
+  const goal = await setSessionGoal({
+    services: ctx.services,
+    config: ctx.config,
+    sessionId,
+    text,
+    mode,
+    maxTurns,
+    judgeModel,
+  });
+  return {
+    ...summarizeGoal(goal),
+    hint:
+      "Standing goal 已设立。本轮请继续推进该目标；结束后系统会自动裁判是否续跑。用户无需再输入 /goal。" +
+      " 短问短答勿滥用；与 todo_write 分工：todo=本轮步骤清单，goal=跨轮外环目标。",
+  };
+}
+
+async function sessionGoalStatusTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  const sessionId = requireChatSessionId(ctx, "session_goal_status");
+  const goal = await readGoalStateRaw(sessionId);
+  return summarizeGoal(goal);
+}
+
+async function sessionGoalClearTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  const sessionId = requireChatSessionId(ctx, "session_goal_clear");
+  await clearSessionGoal(ctx.services, sessionId);
+  return { ok: true, cleared: true, summary: "已清除 standing goal" };
+}
+
+async function sessionGoalPauseTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  const sessionId = requireChatSessionId(ctx, "session_goal_pause");
+  const goal = await pauseSessionGoal(ctx.services, sessionId);
+  if (!goal) return { ok: false, summary: "当前无 goal，无法暂停" };
+  return summarizeGoal(goal);
+}
+
+async function sessionGoalResumeTool(_args: Record<string, unknown>, ctx: NativeToolContext) {
+  const sessionId = requireChatSessionId(ctx, "session_goal_resume");
+  const goal = await resumeSessionGoal(ctx.services, sessionId);
+  if (!goal) return { ok: false, summary: "当前无 goal，无法恢复" };
+  return {
+    ...summarizeGoal(goal),
+    hint: "Goal 已恢复为 active；本轮结束后若未完成会自动续跑。",
+  };
+}
+
 const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
@@ -1335,6 +1428,51 @@ const SESSION_DEFS: NativeToolDefinition[] = [
     description: "读取当前会话的待办清单。",
     parameters: zodParams(z.object({})),
   },
+  {
+    name: "session_goal_set",
+    concurrencyClass: "D",
+    description:
+      "为当前会话设立/覆盖 standing goal（跨轮外环，系统裁判续跑）。用户不必输入 /goal——当你判断任务需要多轮推进（修测试、深度调研、长报告、明确交付物）时主动调用。" +
+      "短问短答、一次性查询不要设。" +
+      "mode=goal 普通目标；mode=deep_research 深度调研（仅新会话、尚无用户消息时可用）。" +
+      "与 todo_write 分工：todo=本轮步骤清单；goal=跨轮外环目标。" +
+      "调用后本轮继续推进目标即可，勿再让用户手动 /goal。",
+    parameters: zodParams(
+      z.object({
+        text: z.string().describe("目标描述（清晰、可判定完成）"),
+        mode: z
+          .enum(["goal", "deep_research"])
+          .describe("goal=普通目标（默认）；deep_research=深度调研")
+          .optional(),
+        maxTurns: z.number().describe("最大续跑轮数（可选，走配置默认）").optional(),
+        judgeModel: z.string().describe("裁判模型 id，默认 auto").optional(),
+      }),
+    ),
+  },
+  {
+    name: "session_goal_status",
+    concurrencyClass: "B",
+    description: "读取当前会话 standing goal（mode/status/进度/原文）。无 goal 时返回 null。",
+    parameters: zodParams(z.object({})),
+  },
+  {
+    name: "session_goal_clear",
+    concurrencyClass: "D",
+    description: "清除当前会话 standing goal（停止外环续跑）。目标已完成或用户明确放弃时调用。",
+    parameters: zodParams(z.object({})),
+  },
+  {
+    name: "session_goal_pause",
+    concurrencyClass: "D",
+    description: "暂停 standing goal（保留状态，不续跑）。",
+    parameters: zodParams(z.object({})),
+  },
+  {
+    name: "session_goal_resume",
+    concurrencyClass: "D",
+    description: "恢复已暂停的 standing goal（turnsUsed 归零，重新纳入裁判续跑）。",
+    parameters: zodParams(z.object({})),
+  },
 ];
 
 const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
@@ -1348,6 +1486,11 @@ const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
   task_run: taskRunTool,
   todo_write: todoWriteTool,
   todo_read: todoReadTool,
+  session_goal_set: sessionGoalSetTool,
+  session_goal_status: sessionGoalStatusTool,
+  session_goal_clear: sessionGoalClearTool,
+  session_goal_pause: sessionGoalPauseTool,
+  session_goal_resume: sessionGoalResumeTool,
 };
 
 export function registerSessionTools(): void {

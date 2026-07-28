@@ -66,8 +66,9 @@ describe("chatHistory 工具回放", () => {
       ],
     });
     expect(attachments).toHaveLength(1);
-    expect(attachments[0].source).toBe("ocr");
-    expect(attachments[0].extractedText).toContain("GRPO");
+    const img = attachments[0];
+    expect(img && "source" in img ? img.source : undefined).toBe("ocr");
+    expect(img && "extractedText" in img ? img.extractedText : undefined).toContain("GRPO");
   });
 
   it("buildUserMessageContentForLlm 非 vision 模型将 OCR 文本拼入 user content", () => {
@@ -88,6 +89,29 @@ describe("chatHistory 工具回放", () => {
     expect(content).toContain("[附件 · chart.png · OCR 识别]");
     expect(content).toContain("DeepSeek GRPO");
     expect(content).toContain("请总结图片");
+  });
+
+  it("buildUserMessageContentForLlm 注入 @ 文章引用正文片段", () => {
+    const content = buildUserMessageContentForLlm(
+      "总结这篇文章",
+      [
+        {
+          type: "post",
+          id: "clxxxxxxxxxxxxxxxxxxxxxxxxx",
+          garden: "llm-guide",
+          slug: "4.7-持续学习",
+          title: "持续学习",
+          excerpt: "一句话摘要",
+          contentSnippet: "正文开头……",
+        },
+      ],
+      false,
+    );
+    expect(typeof content).toBe("string");
+    expect(content).toContain("[引用文章 · llm-guide/4.7-持续学习 · 持续学习]");
+    expect(content).toContain("一句话摘要");
+    expect(content).toContain("正文开头……");
+    expect(content).toContain("总结这篇文章");
   });
 
   it("buildLlmMessagesFromHistory 从持久化 user toolResults 回放 OCR 附件", () => {

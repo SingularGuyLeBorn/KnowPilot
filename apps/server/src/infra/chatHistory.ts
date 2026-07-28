@@ -2,8 +2,14 @@
  * 聊天历史 → LLM messages 重建（含 tool call 多轮回放 + vision 多模态）
  */
 
-import type { ChatImageAttachment } from "@knowpilot/shared";
-import { resolveModelSupportsVision, DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS } from "@knowpilot/shared";
+import type { ChatAttachment, ChatImageAttachment } from "@knowpilot/shared";
+import {
+  resolveModelSupportsVision,
+  DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS,
+  isChatImageAttachment,
+  isChatPostAttachment,
+  formatPostAttachmentForLlm,
+} from "@knowpilot/shared";
 import type { LlmContentPart, LlmMessage } from "./llmClient.js";
 import { getActiveAssistantPayload } from "./messageVersions.js";
 
@@ -36,26 +42,13 @@ export function parseStoredToolCalls(raw: unknown): StoredToolCall[] {
   }));
 }
 
-export function parseAttachmentsFromToolResults(raw: unknown): ChatImageAttachment[] {
+export function parseAttachmentsFromToolResults(raw: unknown): ChatAttachment[] {
   if (!raw || typeof raw !== "object") return [];
   const attachments = (raw as { attachments?: unknown }).attachments;
   if (!Array.isArray(attachments)) return [];
-  return attachments
-    .filter(
-      (a): a is ChatImageAttachment =>
-        !!a &&
-        typeof a === "object" &&
-        typeof (a as ChatImageAttachment).name === "string" &&
-        typeof (a as ChatImageAttachment).mimeType === "string" &&
-        typeof (a as ChatImageAttachment).previewUrl === "string",
-    )
-    .map((a) => ({
-      name: a.name,
-      mimeType: a.mimeType,
-      previewUrl: a.previewUrl,
-      extractedText: a.extractedText,
-      source: a.source,
-    }));
+  return attachments.filter(
+    (a): a is ChatAttachment => isChatPostAttachment(a) || isChatImageAttachment(a),
+  );
 }
 
 export function buildReasoningContentFromStored(toolCalls: unknown): string | undefined {
@@ -67,29 +60,34 @@ export function buildReasoningContentFromStored(toolCalls: unknown): string | un
   return joined || undefined;
 }
 
-/** 拼装 user 消息 LLM content：vision 模型直传 image_url，否则 OCR 文本拼入 message */
+/** 拼装 user 消息 LLM content：文章引用 + vision image_url / OCR */
 export function buildUserMessageContentForLlm(
   text: string,
-  attachments: ChatImageAttachment[] | undefined,
+  attachments: ChatAttachment[] | undefined,
   supportsVision: boolean,
 ): string | LlmContentPart[] {
   const trimmed = text.trim();
+  const list = attachments ?? [];
+  const postParts = list.filter(isChatPostAttachment).map(formatPostAttachmentForLlm);
+  const imageAtts = list.filter(isChatImageAttachment) as ChatImageAttachment[];
 
-  if (!supportsVision || !attachments?.length) {
-    const ocrParts = (attachments ?? [])
+  if (!supportsVision || !imageAtts.length) {
+    const ocrParts = imageAtts
       .filter((a) => a.extractedText?.trim())
       .map(
         (a) =>
           `[附件 · ${a.name} · ${a.source === "ocr" ? "OCR 识别" : a.source === "vision" ? "识图" : "用户"}]\n${a.extractedText!.trim()}`,
       );
-    const chunks = [...ocrParts];
+    const chunks = [...postParts, ...ocrParts];
     if (trimmed) chunks.push(trimmed);
     return chunks.join("\n\n") || "(空消息)";
   }
 
   const parts: LlmContentPart[] = [];
-  if (trimmed) parts.push({ type: "text", text: trimmed });
-  for (const att of attachments) {
+  const textChunks = [...postParts];
+  if (trimmed) textChunks.push(trimmed);
+  if (textChunks.length) parts.push({ type: "text", text: textChunks.join("\n\n") });
+  for (const att of imageAtts) {
     if (att.previewUrl.startsWith("data:")) {
       parts.push({
         type: "image_url",
@@ -157,7 +155,9 @@ export function buildLlmMessagesFromHistory(
 
     if (msg.role === "user") {
       const attachments = Array.isArray(msg.attachments)
-        ? msg.attachments.filter((a): a is ChatImageAttachment => !!a && typeof a === "object")
+        ? msg.attachments.filter(
+            (a): a is ChatAttachment => isChatPostAttachment(a) || isChatImageAttachment(a),
+          )
         : parseAttachmentsFromToolResults(msg.toolResults);
       messages.push({
         role: "user",

@@ -18,7 +18,7 @@ import {
 } from "./llmClient.js";
 import { describeLlmError } from "./resilientLlmClient.js";
 import { type StoredToolCall, sanitizePostCompactAssistantContent } from "./chatHistory.js";
-import type { AgentChatInput, ChatConfigInput, ChatImageAttachment } from "@knowpilot/shared";
+import type { AgentChatInput, ChatAttachment, ChatConfigInput } from "@knowpilot/shared";
 import { formatToolResultHint } from "@knowpilot/shared";
 import { buildSystemPromptSkeleton } from "./promptBuilder.js";
 import { resolveAgent, logAgentDrift } from "./agentResolver.js";
@@ -244,7 +244,7 @@ interface PrepareResult {
   skipUserCreate: boolean;
   excludeAssistantId?: string;
   updateAssistantId?: string;
-  attachments?: ChatImageAttachment[];
+  attachments?: ChatAttachment[];
   userMessageMeta?: { skill?: { id: string; name: string; icon?: string | null } };
 }
 

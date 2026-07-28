@@ -120,6 +120,13 @@ After completing a complex task (约 5+ tool calls)、攻克棘手错误、或�
 加载：skills_list 看目录 → skill_view 读全文/references。procedural Skill 不会出现在 skill__* 工具列表里。
 Memory 记「用户是谁/偏好」；Skill 记「这类任务怎么做」。禁止把一次性任务名（PR 号、今日 debug）当成 skill name。`;
 
+const GOAL_TOOL_GUIDE = `## Standing Goal（跨轮外环）
+用户**不必**输入 /goal。当你判断任务需要多轮推进（修测试、完成交付物、深度调研、明确可验收目标）时，主动调用 \`session_goal_set\`。
+- 短问短答、一次性查询：**不要**设 goal。
+- \`todo_write\` = 本轮步骤清单；\`session_goal_set\` = 跨轮外环（回合结束后系统裁判续跑）。
+- 查进度用 \`session_goal_status\`；完成/放弃用 \`session_goal_clear\`；暂停/恢复用 pause/resume。
+- 设立后本轮直接推进目标，勿再要求用户手动 /goal。`;
+
 /** 根据 Agent 已授权工具追加简短使用指引 */
 export function buildAgentToolGuide(tools: string[]): string {
   const has = (name: string) => tools.some((t) => t === `native:${name}` || t === name);
@@ -141,6 +148,13 @@ export function buildAgentToolGuide(tools: string[]): string {
   }
   if (has("skills_list") || has("skill_view") || has("skill_manage")) {
     parts.push(SKILLS_GUIDANCE);
+  }
+  if (
+    has("session_goal_set") ||
+    has("session_goal_status") ||
+    has("session_goal_clear")
+  ) {
+    parts.push(GOAL_TOOL_GUIDE);
   }
   return parts.join("\n\n");
 }
