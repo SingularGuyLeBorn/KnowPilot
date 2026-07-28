@@ -117,6 +117,7 @@ import { feishuDefs, feishuHandlers } from "./integration/feishu.js";
 import { agentPlatformDefs, agentPlatformHandlers } from "./integration/agentPlatform.js";
 import { tikhubDefs, tikhubHandlers } from "./integration/tikhub.js";
 import { zhihuOpenApiDefs, zhihuOpenApiHandlers } from "./integration/zhihuOpenApi.js";
+import { swanlabDefs, swanlabHandlers } from "./integration/swanlab.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -139,6 +140,7 @@ const INTEGRATION_DEFS: NativeToolDefinition[] = [
   ...agentPlatformDefs,
   ...tikhubDefs,
   ...zhihuOpenApiDefs,
+  ...swanlabDefs,
 ];
 
 const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
@@ -150,6 +152,7 @@ const INTEGRATION_HANDLERS: Record<string, NativeToolHandler> = {
   ...agentPlatformHandlers,
   ...tikhubHandlers,
   ...zhihuOpenApiHandlers,
+  ...swanlabHandlers,
 };
 
 export function registerIntegrationTools(): void {
