@@ -282,6 +282,37 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
     const { getSwarmHealthSnapshot } = await import("../../swarmHealth.js");
     swarm = await getSwarmHealthSnapshot(ctx.prisma, targetId);
   }
+  // 最近 Run 进度元信息（phase/rounds/lastToolName），不含任何消息正文
+  let progress: unknown = null;
+  const mainSessionId = sessions?.find((s: { isMainSession?: boolean }) => s.isMainSession)?.id
+    ?? sessions?.[0]?.id;
+  if (mainSessionId && ctx.prisma) {
+    const latestRun = await ctx.prisma.run.findFirst({
+      where: { sessionId: mainSessionId },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, status: true, output: true, updatedAt: true, toolCallCount: true },
+    });
+    if (latestRun) {
+      let out: Record<string, unknown> = {};
+      try {
+        out =
+          typeof latestRun.output === "string"
+            ? (JSON.parse(latestRun.output) as Record<string, unknown>)
+            : ((latestRun.output as Record<string, unknown>) ?? {});
+      } catch {
+        out = {};
+      }
+      progress = {
+        runId: latestRun.id,
+        status: latestRun.status,
+        phase: out.phase,
+        roundsUsed: out.roundsUsed,
+        executedToolsCount: out.executedToolsCount ?? latestRun.toolCallCount,
+        lastToolName: out.lastToolName,
+        updatedAt: latestRun.updatedAt,
+      };
+    }
+  }
   return {
     agent: {
       id: agent.id,
@@ -302,17 +333,77 @@ async function agentInspectTool(args: Record<string, unknown>, ctx: NativeToolCo
         updatedAt: s.updatedAt,
         messageCount: s._count?.messages ?? 0,
       })) ?? [],
+    progress,
     memories,
     swarm,
     hint: [
       includeMemory ? null : "默认不返回 Memory；需要时传 includeMemory=true（仅元信息，无正文）。",
       includeSwarm ? null : "需要 inbox/队列/ask_user 积压时传 includeSwarm=true。",
-      "agent_inspect 只返回 Agent 状态与会话元信息（id/title/messageCount），不返回 systemPrompt/记忆正文/任何消息内容。子 Agent 的结果只能通过 agent_report_back 投递到你的会话异步结果队列。",
+      "agent_inspect 只返回 Agent 状态、会话元信息与 Run 进度（phase/rounds/lastToolName），不返回 systemPrompt/记忆正文/任何消息内容。子 Agent 的结果只能通过 agent_report_back 投递到你的会话异步结果队列。",
       "请以 agent.id（cuid）为准，勿编造 ID。",
     ]
       .filter(Boolean)
       .join(" "),
   };
+}
+
+async function swarmExportTraceTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("需要 prisma");
+  const sessionId =
+    (typeof args.sessionId === "string" && args.sessionId.trim()) ||
+    ctx.sessionId ||
+    "";
+  if (!sessionId) throw new Error("sessionId 必填（或在会话内调用）");
+  const { exportSwarmTraceJsonl } = await import("../../swarmTrace.js");
+  const result = await exportSwarmTraceJsonl(ctx.prisma, ctx.config, {
+    sessionId,
+    includeContent: args.includeContent === true,
+    outRelPath: typeof args.outRelPath === "string" ? args.outRelPath : undefined,
+  });
+  return {
+    ...result,
+    hint: "默认不含消息正文。评估协作效能时用此 JSONL；需要正文才传 includeContent=true。",
+  };
+}
+
+async function swarmStageWriteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("需要 prisma");
+  const { writeSwarmStage } = await import("../../swarmStages.js");
+  return writeSwarmStage(ctx.prisma, ctx.config, {
+    workspaceId:
+      (typeof args.workspaceId === "string" && args.workspaceId) ||
+      ctx.agentSnapshot?.workspaceId ||
+      undefined,
+    stage: String(args.stage || ""),
+    title: typeof args.title === "string" ? args.title : undefined,
+    body: String(args.body || ""),
+    taskRef: typeof args.taskRef === "string" ? args.taskRef : undefined,
+    authorAgentId: ctx.agentSnapshot?.id,
+  });
+}
+
+async function swarmStageListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("需要 prisma");
+  const { listSwarmStages } = await import("../../swarmStages.js");
+  const items = await listSwarmStages(ctx.prisma, ctx.config, {
+    workspaceId:
+      (typeof args.workspaceId === "string" && args.workspaceId) ||
+      ctx.agentSnapshot?.workspaceId ||
+      undefined,
+  });
+  return { items, total: items.length };
+}
+
+async function swarmStageReadTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  if (!ctx.prisma) throw new Error("需要 prisma");
+  const { readSwarmStage } = await import("../../swarmStages.js");
+  return readSwarmStage(ctx.prisma, ctx.config, {
+    workspaceId:
+      (typeof args.workspaceId === "string" && args.workspaceId) ||
+      ctx.agentSnapshot?.workspaceId ||
+      undefined,
+    stage: String(args.stage || ""),
+  });
 }
 
 type PrepareAgentRunResult =
@@ -1727,6 +1818,55 @@ const SWARM_DEFS: NativeToolDefinition[] = [
       }),
     ),
   },
+  {
+    name: "swarm_export_trace",
+    description:
+      "导出会话协作轨迹为 JSONL（session/run/queue/child/task/agentMessage）。默认不含消息正文，用于评估「派子是否更值」。",
+    concurrencyClass: "B",
+    parameters: zodParams(
+      z.object({
+        sessionId: z.string().describe("可选；默认当前会话").optional(),
+        includeContent: z.boolean().describe("是否含消息正文，默认 false").optional(),
+        outRelPath: z.string().describe("可选输出相对路径").optional(),
+      }),
+    ),
+  },
+  {
+    name: "swarm_stage_write",
+    description:
+      "写入 Workspace 阶段工件（.knowpilot/stages/{stage}.md）。轻量 SOP 接力：子 Agent 交工件，父/manager 读工件，不读子会话正文。",
+    concurrencyClass: "C",
+    parameters: zodParams(
+      z.object({
+        stage: z.string().describe("阶段名，如 research / draft / review"),
+        body: z.string().describe("Markdown 正文"),
+        title: z.string().optional(),
+        workspaceId: z.string().optional(),
+        taskRef: z.string().optional(),
+      }),
+    ),
+  },
+  {
+    name: "swarm_stage_list",
+    description: "列出当前 Workspace 的阶段工件元信息（不含全文时可先 list 再 read）。",
+    concurrencyClass: "B",
+    parameters: zodParams(
+      z.object({
+        workspaceId: z.string().optional(),
+      }),
+    ),
+  },
+  {
+    name: "swarm_stage_read",
+    description: "读取指定阶段工件全文（SOP 接力的正式产物通道）。",
+    concurrencyClass: "B",
+    parameters: zodParams(
+      z.object({
+        stage: z.string(),
+        workspaceId: z.string().optional(),
+      }),
+    ),
+  },
 ];
 
 const SWARM_HANDLERS: Record<string, NativeToolHandler> = {
@@ -1751,6 +1891,10 @@ const SWARM_HANDLERS: Record<string, NativeToolHandler> = {
   skill_promote: skillPromoteTool,
   optimize_agent_prompt: optimizeAgentPromptTool,
   generate_skill_from_experience: generateSkillFromExperienceTool,
+  swarm_export_trace: swarmExportTraceTool,
+  swarm_stage_write: swarmStageWriteTool,
+  swarm_stage_list: swarmStageListTool,
+  swarm_stage_read: swarmStageReadTool,
 };
 
 export function registerSwarmTools(): void {

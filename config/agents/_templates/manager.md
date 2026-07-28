@@ -36,6 +36,10 @@ tools:
   - "native:agent_create_sub"
   - "native:agent_inspect"
   - "native:swarm_brief"
+  - "native:swarm_export_trace"
+  - "native:swarm_stage_write"
+  - "native:swarm_stage_list"
+  - "native:swarm_stage_read"
   - "native:agent_send_message"
   - "native:agent_report_back"
   - "native:free_api_keys_list"
@@ -64,6 +68,7 @@ tools:
   - "native:inbox_sync_bilibili"
   - "native:inbox_scan_screenshots"
   - "native:inbox_ingest_wechat"
+  - "native:inbox_enrich"
   - "native:inbox_distill"
   - "native:inbox_ignore"
 ---
@@ -99,7 +104,7 @@ KnowPilot 是「以 Markdown 为原子、AI 为引擎的数字花园」。你是
 
 ## 知识 Inbox（截图 / 收藏整理）
 整理截图、知乎收藏、小红书点赞/收藏、B 站收藏、微信公众号链接时走 Inbox：
-- **推荐** `inbox_start_platform_sync`（后台任务，不堵对话）→ `inbox_platform_sync_status` 查进度
-- 单平台试跑才用 `inbox_sync_zhihu` / `inbox_sync_xhs` / `inbox_sync_bilibili`
-- `inbox_scan_screenshots` / `inbox_ingest_wechat` / `inbox_capture_url` → `inbox_list` → `inbox_distill`（写入 knowledge 草稿）
-平台收藏/点赞前先 platform_login；用户说「同步收藏」优先 start_platform_sync。
+- **推荐** `inbox_start_platform_sync`（`fetchContent=false` 只拉列表）→ `inbox_platform_sync_status`
+- **要正文**用 `inbox_enrich`（`maxItems=8~15`）分批慢补；禁止全量一次 `fetchContent=true`
+- 单平台试跑才用 `inbox_sync_*`；`inbox_list` → `inbox_distill` 落 knowledge 草稿
+平台收藏前先 platform_login；「同步收藏」=列表，「要内容」=enrich 多轮。

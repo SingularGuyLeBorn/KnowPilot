@@ -839,6 +839,13 @@ export async function notifySubagentSessionUpdate(params: {
   status: string;
   title?: string;
   agentId?: string | null;
+  /** 进度元信息（不泄正文）：phase / rounds / 最近工具名 */
+  progress?: {
+    phase?: string;
+    roundsUsed?: number;
+    executedToolsCount?: number;
+    lastToolName?: string;
+  };
 }): Promise<void> {
   try {
     const { getStreamHub } = await import("./sessionStreamHub.js");
@@ -851,6 +858,7 @@ export async function notifySubagentSessionUpdate(params: {
       status: params.status,
       title: params.title,
       agentId: params.agentId,
+      ...(params.progress ? { progress: params.progress } : {}),
     });
   } catch (err) {
     console.warn(`[asyncJobManager] notifySubagentSessionUpdate 失败:`, err);

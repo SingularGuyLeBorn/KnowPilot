@@ -405,13 +405,51 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     const now = Date.now();
     if (!force && now - lastRunSnapshotAt < RUN_SNAPSHOT_THROTTLE_MS) return;
     lastRunSnapshotAt = now;
+    const executedToolsCount = countExecutedTools();
+    const lastTool = [...executedTools].reverse().find((t) => t.kind === "tool");
+    const lastToolName =
+      lastTool && typeof (lastTool as { name?: string }).name === "string"
+        ? String((lastTool as { name: string }).name)
+        : undefined;
+    const output = {
+      phase: machine.phase,
+      roundsUsed,
+      executedToolsCount,
+      ...(lastToolName ? { lastToolName } : {}),
+    };
     try {
       await runSvc.update({
         id: runId,
-        output: { phase: machine.phase, roundsUsed, executedToolsCount: countExecutedTools() },
+        output,
       });
     } catch (err) {
       console.warn("[ReactLoop] Run 快照写回失败:", err instanceof Error ? err.message : err);
+    }
+    // 子会话进度透传父会话（仅元信息，不泄正文）
+    if (input.sessionId && input.services?.session) {
+      try {
+        const sess =
+          (await input.services.session.getByIdLite?.(input.sessionId)) ??
+          (await input.services.session.getById(input.sessionId));
+        const parentSessionId = (sess as { parentSessionId?: string | null } | null)?.parentSessionId;
+        if (parentSessionId) {
+          const { notifySubagentSessionUpdate } = await import("../asyncJobManager.js");
+          await notifySubagentSessionUpdate({
+            parentSessionId,
+            subagentSessionId: input.sessionId,
+            status: "running",
+            agentId: input.agentMeta?.id ?? null,
+            progress: {
+              phase: machine.phase,
+              roundsUsed,
+              executedToolsCount,
+              lastToolName,
+            },
+          });
+        }
+      } catch {
+        /* 进度推送失败不阻断主循环 */
+      }
     }
   };
 

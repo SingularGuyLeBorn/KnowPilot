@@ -117,6 +117,13 @@ export type AgentStreamEvent =
       status: string;
       title?: string;
       agentId?: string | null;
+      /** 仅元信息：phase/rounds/工具名，不含任何消息正文 */
+      progress?: {
+        phase?: string;
+        roundsUsed?: number;
+        executedToolsCount?: number;
+        lastToolName?: string;
+      };
     }
   /** Auto-Compact 阶段：像工具一样在时间线显示，避免静默阻塞 */
   /**

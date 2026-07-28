@@ -42,6 +42,10 @@ tools:
   - "native:agent_delete"
   - "native:agent_inspect"
   - "native:swarm_brief"
+  - "native:swarm_export_trace"
+  - "native:swarm_stage_write"
+  - "native:swarm_stage_list"
+  - "native:swarm_stage_read"
   - "native:agent_send_message"
   - "native:workspace_create"
   - "native:workspace_archive"
@@ -73,6 +77,7 @@ tools:
   - "native:inbox_sync_bilibili"
   - "native:inbox_scan_screenshots"
   - "native:inbox_ingest_wechat"
+  - "native:inbox_enrich"
   - "native:inbox_distill"
   - "native:inbox_ignore"
   - "native:github_search_repos"
@@ -190,5 +195,6 @@ source: null
 可动态新建第 N 座知识库：`native:garden_create`（id+title+首页）→ `content/{id}/_garden.md`；列表/详情/改首页用 `garden_list` / `garden_get` / `garden_update`；空库可 `garden_delete`（种子 `posts` / `knowledge` / `resources` 不可删）。写文章用 `post_create` / `post_update`（`garden` 须已存在，默认 `posts`）；列文章 `post_list`。**禁止 `write_file` 直写 `content/`**（除 `uploads/`）。
 
 ## 知识 Inbox
-用户说「同步收藏 / 拉 Inbox」时优先 `inbox_start_platform_sync`（后台任务，不堵对话），再用 `inbox_platform_sync_status` 查进度；小范围试跑才用 `inbox_sync_zhihu` / `inbox_sync_xhs` / `inbox_sync_bilibili`。
+用户说「同步收藏 / 拉 Inbox」时优先 `inbox_start_platform_sync`（`fetchContent=false`，只拉列表，后台不堵对话），再用 `inbox_platform_sync_status` 查进度。
+用户说「要正文 / 要内容」时用 `inbox_enrich`（`source=xhs`，`maxItems=8~15`）分批慢补；禁止对全量一次 `fetchContent=true`。单日建议累计 ≤40，撞风控则停、隔几小时再跑。
 

@@ -38,6 +38,10 @@ tools:
   - "native:agent_delete"
   - "native:agent_inspect"
   - "native:swarm_brief"
+  - "native:swarm_export_trace"
+  - "native:swarm_stage_write"
+  - "native:swarm_stage_list"
+  - "native:swarm_stage_read"
   - "native:agent_send_message"
   - "native:workspace_create"
   - "native:workspace_archive"
@@ -69,6 +73,7 @@ tools:
   - "native:inbox_sync_bilibili"
   - "native:inbox_scan_screenshots"
   - "native:inbox_ingest_wechat"
+  - "native:inbox_enrich"
   - "native:inbox_distill"
   - "native:inbox_ignore"
 heartbeat:
@@ -117,9 +122,14 @@ KnowPilot 是「以 Markdown 为原子、AI 为引擎的数字花园」——本
 
 ## 知识 Inbox（截图 / 收藏整理）
 用户要整理截图、知乎收藏夹、小红书点赞与收藏、B 站收藏、微信公众号链接时，用 Inbox 管道：
-- **推荐** `inbox_start_platform_sync`：后台批量同步（与 /platform-sync 同通道，立即返回 jobId，不堵对话）；用 `inbox_platform_sync_status` 查进度，可 `inbox_cancel_platform_sync` 停止
-- `inbox_sync_zhihu` / `inbox_sync_xhs` / `inbox_sync_bilibili`：同步执行单平台（会堵对话，仅适合小范围试跑）
-- `inbox_scan_screenshots`：扫描截图目录 OCR 入库
-- `inbox_ingest_wechat` / `inbox_capture_url(s)`：收录微信公众号或任意链接
-- `inbox_list` → `inbox_distill`：浏览待消化条目并蒸馏为 `knowledge` 花园草稿
-用户说「同步收藏 / 拉一下 Inbox」优先 `inbox_start_platform_sync`；先登录、再同步、再蒸馏；不要用 write_file 直写 content/。
+- **推荐** `inbox_start_platform_sync`（`fetchContent=false`）：只拉列表（标题/封面/摘要），后台任务不堵对话
+- **要正文**用 `inbox_enrich`（`source=xhs`，`maxItems=8~15`）分批慢补；跳过已有、条间自动间隔、撞风控停。单日建议累计 ≤40，隔几小时再跑下一轮
+- **禁止**对全量收藏一次 `fetchContent=true`（易风控）；列表与正文必须拆开
+- `inbox_sync_*`：同步执行单平台（会堵对话，仅小范围试跑）
+- `inbox_list` → `inbox_distill`：浏览待消化并蒸馏为 `knowledge` 草稿
+用户说「同步收藏」→ 列表同步；说「要正文/内容」→ `inbox_enrich` 多轮；先登录、再列表、再正文、再蒸馏。
+
+## Swarm 协作与实验
+- 多步协作用 `swarm_stage_write` / `swarm_stage_read` 做阶段工件接力（父读工件，不读子会话正文）
+- 评估协作效能用 `swarm_export_trace`（JSONL，默认无消息正文）
+- 深度学习实验跟踪用 `swanlab_*`（先 `swanlab_status`；脚手架 `swanlab_scaffold_train`）
