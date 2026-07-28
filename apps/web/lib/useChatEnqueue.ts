@@ -175,7 +175,8 @@ export function useChatEnqueue({
 
       const now = Date.now();
       const last = lastEnqueueRef.current;
-      const attachmentsKey = attachments?.map((a) => a.name).join("\n") ?? "";
+      const attachmentsKey =
+        attachments?.map((a) => (a.type === "post" ? `post:${a.id}` : a.name)).join("\n") ?? "";
       if (last && now - last.at < 500 && last.text === `${messageText}\n${attachmentsKey}`) {
         return;
       }

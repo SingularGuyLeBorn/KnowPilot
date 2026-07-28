@@ -13,6 +13,7 @@ import {
   Search,
   UnfoldVertical,
   X,
+  Pin,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { postDetailHref } from "@/lib/postHref";
@@ -22,6 +23,7 @@ import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { VirtualFlatList } from "@/components/shared";
+import { isPostPinned, PostTreeDocActions } from "@/components/post/PostTreeDocActions";
 
 interface PostSummary {
   id: string;
@@ -122,6 +124,9 @@ function buildTree(posts: PostSummary[]): TreeNode[] {
     const ap = isGardenIndex(a) ? 0 : 1;
     const bp = isGardenIndex(b) ? 0 : 1;
     if (ap !== bp) return ap - bp;
+    const aPin = a.slug && a.garden && isPostPinned(a.garden, a.slug) ? 0 : 1;
+    const bPin = b.slug && b.garden && isPostPinned(b.garden, b.slug) ? 0 : 1;
+    if (aPin !== bPin) return aPin - bPin;
     return naturalCompare(a.key, b.key);
   };
 
@@ -236,6 +241,7 @@ function TreeNodeItem({
   onToggle,
   onNavigate,
   onPrefetch,
+  onPinnedChange,
 }: {
   node: TreeNode;
   expanded: Set<string>;
@@ -243,17 +249,19 @@ function TreeNodeItem({
   onToggle: (key: string, open: boolean) => void;
   onNavigate: () => void;
   onPrefetch: (slug: string, garden?: string) => void;
+  onPinnedChange: () => void;
 }) {
   const isExpanded = expanded.has(node.key);
   const isActive = node.slug === activeSlug;
   const hasChildren = node.children.length > 0;
   const isDoc = node.type === "doc";
+  const pinned = Boolean(node.slug && node.garden && isPostPinned(node.garden, node.slug));
 
   const rowClass = cn(
-    "group flex min-w-0 flex-1 items-center gap-1 rounded-lg py-1.5 pr-1.5 pl-0 text-left text-sm font-medium transition",
+    "flex min-w-0 flex-1 items-center gap-1 rounded-lg py-1.5 pr-1 pl-0 text-left text-sm font-medium transition",
     isActive
       ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
-      : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
+      : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
   );
 
   const iconNode = hasChildren ? (
@@ -268,14 +276,14 @@ function TreeNodeItem({
 
   return (
     <div>
-      <div className="flex min-w-0 items-center">
+      <div className="group flex min-w-0 items-center">
         {hasChildren ? (
           <button
             type="button"
             onClick={() => onToggle(node.key, !isExpanded)}
             className={cn(
               "flex h-5 w-3.5 shrink-0 items-center justify-center rounded-md text-[var(--kp-text-3)] transition-colors hover:bg-[var(--kp-bg-soft)] hover:text-[var(--kp-text-1)]",
-              isExpanded && "text-[var(--kp-text-1)]"
+              isExpanded && "text-[var(--kp-text-1)]",
             )}
             aria-label={isExpanded ? "折叠" : "展开"}
           >
@@ -300,6 +308,7 @@ function TreeNodeItem({
           >
             {iconNode}
             <span className="min-w-0 flex-1 truncate">{node.title}</span>
+            {pinned && <Pin className="h-3 w-3 shrink-0 text-[var(--kp-brand-deep)]" />}
           </Link>
         ) : (
           <button
@@ -311,6 +320,16 @@ function TreeNodeItem({
             {iconNode}
             <span className="min-w-0 flex-1 truncate">{node.title}</span>
           </button>
+        )}
+
+        {isDoc && node.slug && node.garden && !node.id.startsWith("group-") && (
+          <PostTreeDocActions
+            postId={node.id}
+            slug={node.slug}
+            garden={node.garden}
+            title={node.title}
+            onPinnedChange={onPinnedChange}
+          />
         )}
       </div>
 
@@ -327,6 +346,7 @@ function TreeNodeItem({
                   onToggle={onToggle}
                   onNavigate={onNavigate}
                   onPrefetch={onPrefetch}
+                  onPinnedChange={onPinnedChange}
                 />
               ))}
             </div>
@@ -354,7 +374,11 @@ export function PostTreeNav({
     () => getPostSlug(pathname) ?? navHighlight.slug,
     [pathname, navHighlight.slug],
   );
-  const tree = useMemo(() => buildTree(data || []), [data]);
+  const [pinTick, setPinTick] = useState(0);
+  const tree = useMemo(() => {
+    void pinTick;
+    return buildTree(data || []);
+  }, [data, pinTick]);
   const [manuallyExpanded, setManuallyExpanded] = useState<Map<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem(EXPANDED_KEY);
@@ -621,6 +645,7 @@ export function PostTreeNav({
                 onToggle={toggle}
                 onNavigate={handleNavigate}
                 onPrefetch={prefetchPost}
+                onPinnedChange={() => setPinTick((n) => n + 1)}
               />
             ))}
             {visibleTree.length === 0 && (

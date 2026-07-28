@@ -15,7 +15,7 @@
 import { useCallback, type RefObject } from "react";
 import { trpc } from "@/lib/trpc";
 import { getModelOption } from "@/lib/chatConfig";
-import { type ChatQueueItem, formatQueueItemForLlm } from "@/lib/chatQueueTypes";
+import { type ChatQueueItem, formatQueueItemForLlm, toApiAttachments } from "@/lib/chatQueueTypes";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { type RunStreamOptions } from "@/lib/useChatRunStream";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
@@ -225,16 +225,7 @@ export function useChatQueueDrain({
       const streamMessage =
         formatQueueItemForLlm(task, supportsVision) ||
         (task.attachments?.length ? "（见附件）" : "");
-      const streamAttachments = task.attachments?.map(
-        ({ id, name, mimeType, previewUrl, extractedText, source }) => ({
-          id,
-          name,
-          mimeType,
-          previewUrl: previewUrl ?? "",
-          extractedText,
-          source,
-        }),
-      );
+      const streamAttachments = toApiAttachments(task.attachments);
       const optimisticId = `opt-${task.id}`;
       const isAsyncResult = task.kind === "async-result";
       const optimisticText = task.text.trim() || (task.attachments?.length ? "（见附件）" : "");

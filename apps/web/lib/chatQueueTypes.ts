@@ -2,6 +2,8 @@
  * Chat 发送队列 — 类型与 LLM 正文拼装（参考 MetaBlog 异步任务 + 发送队列）
  */
 
+import type { ChatAttachment, ChatPostAttachment } from "@knowpilot/shared";
+
 export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "superior" | "child_notify";
 
 /** 排队阻塞原因：哪个上限卡住（与服务端 AsyncJobQueuedReason 一致，orchestrator 真实判定） */
@@ -30,7 +32,9 @@ export function formatQueuedHint(item: {
   return parts.join(" · ");
 }
 
-export interface ChatQueueAttachment {
+/** 队列内图片附件（带本地 id，便于 OCR/预览去重） */
+export interface ChatQueueImageAttachment {
+  type?: "image";
   id: string;
   name: string;
   mimeType: string;
@@ -39,6 +43,38 @@ export interface ChatQueueAttachment {
   /** OCR 或识图后的文本 */
   extractedText?: string;
   source: "ocr" | "vision" | "user";
+}
+
+/** 队列内文章引用（与落库 ChatPostAttachment 同形） */
+export type ChatQueuePostAttachment = ChatPostAttachment;
+
+export type ChatQueueAttachment = ChatQueueImageAttachment | ChatQueuePostAttachment;
+
+/** 映射为 agentChat / 落库 attachments（去掉图片本地 id） */
+export function toApiAttachments(
+  atts?: Array<ChatQueueAttachment | ChatAttachment>,
+): ChatAttachment[] | undefined {
+  if (!atts?.length) return undefined;
+  return atts.map((att) => {
+    if (att.type === "post") {
+      return {
+        type: "post" as const,
+        id: att.id,
+        garden: att.garden,
+        slug: att.slug,
+        title: att.title,
+        excerpt: att.excerpt,
+        contentSnippet: att.contentSnippet,
+      };
+    }
+    return {
+      name: att.name,
+      mimeType: att.mimeType,
+      previewUrl: ("previewUrl" in att ? att.previewUrl : undefined) ?? "",
+      extractedText: att.extractedText,
+      source: att.source,
+    };
+  });
 }
 
 export interface ChatQueueItem {
@@ -108,8 +144,10 @@ export interface SyncTaskItem {
 export function formatQueueItemForLlm(item: ChatQueueItem, supportsVision = false): string {
   const parts: string[] = [];
 
+  // 文章引用由服务端 buildUserMessageContentForLlm 从 attachments 注入，避免双份
   if (item.attachments?.length && !supportsVision) {
     for (const att of item.attachments) {
+      if (att.type === "post") continue;
       if (att.extractedText?.trim()) {
         parts.push(
           `[附件 · ${att.name} · ${att.source === "ocr" ? "OCR 识别" : att.source === "vision" ? "识图" : "用户"}]\n${att.extractedText.trim()}`,

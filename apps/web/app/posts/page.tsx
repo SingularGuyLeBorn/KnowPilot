@@ -317,19 +317,13 @@ function PostRow({
         <div className="flex shrink-0 items-center gap-2">
           <Link
             href={postDetailHref(post.slug, post.garden)}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "text-sm")}
-          >
-            阅读
-          </Link>
-          <Link
-            href={`/editor/${post.id}`}
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
-              "inline-flex items-center gap-1 text-sm"
+              "inline-flex items-center gap-1 text-sm",
             )}
           >
             <Edit2 className="h-3.5 w-3.5" />
-            编辑
+            打开
           </Link>
           <button
             type="button"

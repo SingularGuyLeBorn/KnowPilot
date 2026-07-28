@@ -225,7 +225,7 @@ export function QueueCard({
                       key={a.id}
                       className="rounded bg-[var(--kp-bg-soft)] px-1.5 py-0.5 text-[10px] text-[var(--kp-text-3)]"
                     >
-                      📎 {a.name}
+                      {a.type === "post" ? `文 ${a.title}` : `图 ${a.name}`}
                     </span>
                   ))}
                 </div>

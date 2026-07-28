@@ -2,7 +2,7 @@
  * Agent 流式聊天客户端 — SSE over fetch，支持断线续传与自动重连。
  */
 
-import type { ChatConfigInput } from "@knowpilot/shared";
+import type { ChatAttachment, ChatConfigInput } from "@knowpilot/shared";
 import { authHeaders } from "@/lib/auth";
 
 /**
@@ -21,13 +21,7 @@ export interface AgentChatStreamInput {
   sessionId?: string;
   agentId?: string;
   message?: string;
-  attachments?: Array<{
-    name: string;
-    mimeType: string;
-    previewUrl: string;
-    extractedText?: string;
-    source?: "ocr" | "vision" | "user";
-  }>;
+  attachments?: ChatAttachment[];
   model?: string;
   config?: ChatConfigInput;
   regenerate?: boolean;

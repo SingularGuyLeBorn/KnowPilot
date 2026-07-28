@@ -14,7 +14,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Ban, Bot, Check, ChevronDown, Loader2, X } from "lucide-react";
+import { Ban, Bot, Check, ChevronDown, FileText, Loader2, X } from "lucide-react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
   buildTimelineFromStored,
@@ -24,7 +24,12 @@ import {
 } from "@/lib/chatMessageUtils";
 import { LucideIconByName } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import { type ChatImageAttachment, type ChatMessage } from "@knowpilot/shared";
+import {
+  isChatImageAttachment,
+  isChatPostAttachment,
+  type ChatAttachment,
+  type ChatMessage,
+} from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import { MessageActions, MessageSourceLabel, MessageVersions } from "@/components/chatMessageBits";
@@ -32,6 +37,63 @@ import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
 import { type OptimisticUserBubble } from "@/lib/useSessionComposeState";
 import { registerDeliveryLocateHandler } from "@/lib/deliveryLocate";
 import { useSpeechSynthesis } from "@/lib/useSpeechSynthesis";
+import { postDetailHref } from "@/lib/postHref";
+
+function UserAttachmentChips({
+  attachments,
+  dimmed,
+}: {
+  attachments: ChatAttachment[];
+  dimmed?: boolean;
+}) {
+  if (!attachments.length) return null;
+  return (
+    <div className={cn("mb-1.5 flex flex-wrap justify-end gap-2", dimmed && "opacity-80")}>
+      {attachments.map((att) => {
+        if (isChatPostAttachment(att)) {
+          return (
+            <Link
+              key={`post-${att.id}`}
+              href={postDetailHref(att.slug, att.garden)}
+              className="inline-flex max-w-[min(100%,18rem)] items-start gap-1.5 rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-2.5 py-1.5 text-left shadow-sm transition hover:border-[var(--kp-brand)]/40 hover:bg-[var(--kp-brand-soft)]/30"
+              title={`${att.garden}/${att.slug}`}
+              data-testid="chat-post-ref-chip"
+            >
+              <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+              <span className="min-w-0">
+                <span className="line-clamp-2 text-xs font-medium text-[var(--kp-text-1)]">{att.title}</span>
+                <span className="mt-0.5 block truncate text-[10px] text-[var(--kp-text-3)]">
+                  {att.garden}/{att.slug}
+                </span>
+              </span>
+            </Link>
+          );
+        }
+        if (!isChatImageAttachment(att)) return null;
+        return (
+          <div
+            key={att.previewUrl}
+            className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
+            title={att.extractedText ? `OCR 识别 · ${att.extractedText.slice(0, 120)}` : att.name}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={att.previewUrl}
+              alt={att.name}
+              loading="lazy"
+              className="max-h-40 max-w-[min(100%,16rem)] object-contain"
+            />
+            {att.source === "ocr" && att.extractedText && (
+              <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
+                OCR <Check className="h-2.5 w-2.5" />
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export interface ChatMessageListProps {
   messageGroups: MessageGroup[];
@@ -244,7 +306,7 @@ export const ChatMessageList = memo(function ChatMessageList({
             data-testid="streaming-assistant-bubble"
           >
             {streamingContent ? (
-              <div className="min-h-[3rem] w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
+              <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
                 {/* 流式期直接走完整 PostContent：代码块即时支持代码/预览切换、复制、最大化，
                     实现「边流式输出边视图渲染」。落库后复用同一渲染器，无流式→终态视觉跳变。 */}
                 <PostContent content={streamingContent} className="prose-sm max-w-none text-left" />
@@ -312,30 +374,11 @@ export const ChatMessageList = memo(function ChatMessageList({
                 "rounded-2xl ring-2 ring-[var(--kp-brand)] ring-offset-2 ring-offset-[var(--kp-bg)]",
             )}
           >
-            {group.userMessage.attachments && group.userMessage.attachments.length > 0 && !isEditing && (
-              <div className="mb-1.5 flex flex-wrap justify-end gap-2">
-                {group.userMessage.attachments.map((att) => (
-                  <div
-                    key={att.previewUrl}
-                    className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
-                    title={att.extractedText ? `OCR 识别 · ${att.extractedText.slice(0, 120)}` : att.name}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={att.previewUrl}
-                      alt={att.name}
-                      loading="lazy"
-                      className="max-h-40 max-w-[min(100%,16rem)] object-contain"
-                    />
-                    {att.source === "ocr" && att.extractedText && (
-                      <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
-                        OCR <Check className="h-2.5 w-2.5" />
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            {group.userMessage.attachments &&
+              group.userMessage.attachments.length > 0 &&
+              !isEditing && (
+                <UserAttachmentChips attachments={group.userMessage.attachments} />
+              )}
             <div
               className={cn(
                 "relative w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm",
@@ -419,31 +462,15 @@ export const ChatMessageList = memo(function ChatMessageList({
   };
 
   // 乐观消息渲染（用户发送后、流式落地前的占位气泡）
-  const renderOptimisticMessage = (msg: { id: string; content: string; attachments?: ChatImageAttachment[] }) => (
+  const renderOptimisticMessage = (msg: {
+    id: string;
+    content: string;
+    attachments?: ChatAttachment[];
+  }) => (
     <div className="mb-4 flex justify-end">
       <div className="flex w-full max-w-[96%] flex-col items-stretch gap-1.5">
         {msg.attachments && msg.attachments.length > 0 && (
-          <div className="flex flex-wrap justify-end gap-2">
-            {msg.attachments.map((att) => (
-              <div
-                key={att.previewUrl}
-                className="relative overflow-hidden rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] shadow-sm"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={att.previewUrl}
-                  alt={att.name}
-                  loading="lazy"
-                  className="max-h-40 max-w-[min(100%,16rem)] object-contain opacity-80"
-                />
-                {att.source === "ocr" && att.extractedText && (
-                  <span className="absolute bottom-0 left-0 right-0 inline-flex items-center gap-0.5 truncate bg-emerald-600/80 px-1.5 py-0.5 text-[9px] text-white">
-                    OCR <Check className="h-2.5 w-2.5" />
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
+          <UserAttachmentChips attachments={msg.attachments} dimmed />
         )}
         <div className="w-full min-w-[min(100%,6rem)] rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] px-4 py-3 text-sm text-[var(--kp-text-1)] opacity-80">
           <PostContent
@@ -458,7 +485,7 @@ export const ChatMessageList = memo(function ChatMessageList({
   // 统一虚拟列表数据：消息组 + 乐观消息 + 尾部流式块（仅 !streamTargetUserId 时）
   type ChatItem =
     | { kind: "group"; key: string; group: MessageGroup; index: number }
-    | { kind: "optimistic"; key: string; msg: { id: string; content: string; attachments?: ChatImageAttachment[]; createdAt?: number } }
+    | { kind: "optimistic"; key: string; msg: { id: string; content: string; attachments?: ChatAttachment[]; createdAt?: number } }
     | { kind: "live"; key: "live-trailing" };
   // 后端已持久化的用户消息如果带有 clientMessageId，则隐藏对应的乐观气泡，避免重复显示。
   const materializedClientIds = useMemo(() => {

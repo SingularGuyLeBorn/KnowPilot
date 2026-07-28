@@ -19,8 +19,7 @@ import { trpc } from "@/lib/trpc";
 import { streamAgentChat } from "@/lib/agentStream";
 import { buildStreamConfig } from "@/lib/chatConfig";
 import { formatToolResultHint, pruneEmptyThinkingSteps } from "@/lib/chatMessageUtils";
-import { type Agent, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
-import { type ChatQueueItem } from "@/lib/chatQueueTypes";
+import { type Agent, type ChatAttachment, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
 import { COMPOSE_STORAGE_KEY, LIFECYCLE_STORAGE_KEY, NEW_STREAM_KEY } from "@/lib/chatKeys";
 import {
   ensureSessionConfigHydrated,
@@ -47,7 +46,8 @@ export function saveChatStoresToStorage() {
 
 export type RunStreamOptions = {
   message?: string;
-  attachments?: ChatQueueItem["attachments"];
+  /** 已是 API 形态（图片无本地 id；文章 type:post） */
+  attachments?: ChatAttachment[];
   regenerate?: boolean;
   regenerateUserMessageId?: string;
   retryFromMessageId?: string;
@@ -260,13 +260,7 @@ export function useChatRunStream({
             agentId: opts.agentId || effectiveAgentId || undefined,
             message: isResume ? undefined : opts.message,
             resumeAfter: opts.resumeAfter,
-            attachments: opts.attachments?.map(({ name, mimeType, previewUrl, extractedText, source }) => ({
-              name,
-              mimeType,
-              previewUrl: previewUrl ?? "",
-              extractedText,
-              source,
-            })),
+            attachments: opts.attachments,
             regenerate: opts.regenerate,
             regenerateUserMessageId: opts.regenerateUserMessageId,
             retryFromMessageId: opts.retryFromMessageId,

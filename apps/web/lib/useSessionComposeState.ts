@@ -8,13 +8,13 @@
  */
 
 import { useSyncExternalStore, useMemo } from "react";
-import type { ChatImageAttachment } from "@knowpilot/shared";
+import type { ChatAttachment } from "@knowpilot/shared";
 import type { ChatQueueItem } from "@/lib/chatQueueTypes";
 
 export type OptimisticUserBubble = {
   id: string;
   content: string;
-  attachments?: ChatImageAttachment[];
+  attachments?: ChatAttachment[];
   createdAt?: number;
 };
 
