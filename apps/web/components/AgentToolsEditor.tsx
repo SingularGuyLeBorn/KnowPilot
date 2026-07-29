@@ -28,6 +28,7 @@ import {
   groupIdForNativeTool,
   type NativeToolGroupId,
 } from "@/lib/nativeToolGroups";
+import { formatToolDisplayName } from "@/lib/toolDisplayName";
 
 interface ToolSelection {
   native: Set<string>;
@@ -262,9 +263,16 @@ export function AgentToolsEditor({ tools, onChange }: AgentToolsEditorProps) {
     const map = new Map<NativeToolGroupId, typeof nativeTools>();
     for (const g of NATIVE_TOOL_GROUPS) map.set(g.id, []);
     for (const tool of nativeTools) {
-      const label = (NATIVE_LABELS[tool.name] ?? tool.name).toLowerCase();
+      const display = formatToolDisplayName(tool.name);
+      const label = (NATIVE_LABELS[tool.name] ?? display).toLowerCase();
       const desc = (tool.description ?? "").toLowerCase();
-      if (q && !tool.name.toLowerCase().includes(q) && !label.includes(q) && !desc.includes(q)) {
+      if (
+        q &&
+        !tool.name.toLowerCase().includes(q) &&
+        !label.includes(q) &&
+        !display.toLowerCase().includes(q) &&
+        !desc.includes(q)
+      ) {
         continue;
       }
       const gid = groupIdForNativeTool(tool.name);
@@ -392,7 +400,7 @@ export function AgentToolsEditor({ tools, onChange }: AgentToolsEditorProps) {
                       <ToolRow
                         key={tool.name}
                         checked={sel.native.has(tool.name)}
-                        label={NATIVE_LABELS[tool.name] ?? tool.name}
+                        label={NATIVE_LABELS[tool.name] ?? formatToolDisplayName(tool.name)}
                         description={tool.description}
                         name={tool.name}
                         onClick={() => toggleNative(tool.name)}
@@ -528,7 +536,7 @@ export const AgentToolSummaryCard = memo(function AgentToolSummaryCard({
             key={name}
             className="rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)] px-2 py-0.5 text-[9px] text-[var(--kp-text-3)]"
           >
-            {NATIVE_LABELS[name] ?? name}
+            {NATIVE_LABELS[name] ?? formatToolDisplayName(name)}
           </span>
         ))}
         {data.resolvedSkills.length > 0 && (

@@ -102,6 +102,8 @@ export interface ChatMessageListProps {
   liveTimeline: TimelineStep[];
   streamingContent: string;
   isStreaming: boolean;
+  /** SSE 已接通；RESTORE 幽灵 streaming（connected=false）不得盖住已落库回复 */
+  streamConnected: boolean;
   streamTargetUserId: string | null;
   inFlightAssistantId: string | null;
   isSubagentSession: boolean;
@@ -134,6 +136,7 @@ export const ChatMessageList = memo(function ChatMessageList({
   liveTimeline,
   streamingContent,
   isStreaming,
+  streamConnected,
   streamTargetUserId,
   inFlightAssistantId,
   isSubagentSession,
@@ -202,20 +205,21 @@ export const ChatMessageList = memo(function ChatMessageList({
     }
   };
 
-  // 虚拟列表句柄：用于导航条按索引滚动 + 结构变化时强制滚到底部
+  // 虚拟列表句柄：导航 / 切会话落底 / 贴底跟随
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   /** 运行栏定位投递气泡时短暂高亮 */
   const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
   /** 右侧导航：当前视口对应的回复横杠下标 */
   const [navActiveIdx, setNavActiveIdx] = useState<number | null>(null);
-  /** Virtuoso atBottom 状态：离开底部时显示「回到底部」按钮，回底后隐藏 */
+  /** 离开底部时显示「回到底部」按钮 */
   const [isAtBottom, setIsAtBottom] = useState(true);
   /**
-   * 用户显式「回到底部」后的钉底意图：在高度估算抖动 / 流式追加时仍 followOutput，
-   * 直到用户再次上滑（atBottom→false 且非点击过渡期）才解除。
+   * 钉底意图：Viz/流式高度估算抖动时 atBottom 会短暂 false，
+   * 若只信瞬时 atBottom，followOutput 被掐 → 视口甩到顶部。
+   * 仅用户真正上滑（非回底过渡窗）才解除。
    */
   const stickToBottomRef = useRef(true);
-  /** 点击回底后的短窗口：忽略中间的 false atBottom，避免按钮闪回、follow 被掐断 */
+  /** 点击回底后的短窗口：忽略中间的 false atBottom */
   const scrollToBottomPendingUntilRef = useRef(0);
   /** 点击导航后短暂钉住高亮，避免 Virtuoso 估算滚动未到位时 rangeChanged 抢回上一轮 */
   const navPinUntilRef = useRef(0);
@@ -234,13 +238,13 @@ export const ChatMessageList = memo(function ChatMessageList({
       stickToBottomRef.current = true;
       return;
     }
-    // 点击回底的过渡帧里 Virtuoso 常先报 false（smooth/估算），勿解除钉底
     if (Date.now() < scrollToBottomPendingUntilRef.current) return;
     stickToBottomRef.current = false;
   }, []);
 
-  // 流式续写交给 followOutput；切会话落底见下方 useLayoutEffect（禁止 Virtuoso key remount）。
   const showLiveStream = isStreaming || liveTimeline.length > 0 || !!streamingContent;
+  /** 有真实 live 载荷，或 SSE 已接通——禁止 RESTORE 空壳盖住 stored assistant */
+  const hasLivePayload = liveTimeline.length > 0 || !!streamingContent.trim();
   const lastGroupIndex = messageGroups.length - 1;
 
   const lastStepsByGroupRef = useRef<Map<string, TimelineStep[]>>(new Map());
@@ -485,10 +489,11 @@ export const ChatMessageList = memo(function ChatMessageList({
             />
           </div>
         </div>
-        {(isStreaming && streamTargetUserId === group.userMessage.id) ||
+        {(isStreaming &&
+          streamTargetUserId === group.userMessage.id &&
+          (streamConnected || hasLivePayload)) ||
         (!!group.assistantMessage && group.assistantMessage.id === inFlightAssistantId)
-          ? // INV-4：本轮流式的组（重试原位 / assistant 提前 upsert）由 live 块独占渲染，
-            // stored timeline+气泡在 commit 前不渲染 → live→stored 在同一列表项内原子切换，无双渲染闪烁
+          ? // INV-4：本轮流式的组由 live 块独占；幽灵 restore（未 connected 且无载荷）不抢 stored
             renderLiveStreamBlock()
           : (
               <>
@@ -581,7 +586,7 @@ export const ChatMessageList = memo(function ChatMessageList({
     return items;
   }, [chatItems]);
 
-  // 冷加载：当前 session 尚未就绪时保留上一屏（禁止用「上一会话的 hydrated=true」冲掉 hold）
+  // 冷加载：仅 view hydrate 完成后撤 hold（禁止「有任意一条消息」当就绪 → 闪成最近窗）
   const holdRef = useRef<{ sessionId: string | null; items: ChatItem[] }>({
     sessionId: effectiveSessionId,
     items: [],
@@ -589,9 +594,7 @@ export const ChatMessageList = memo(function ChatMessageList({
   const sessionReady =
     !effectiveSessionId ||
     isMessagesHydrated ||
-    chatItems.length > 0 ||
-    isStreaming ||
-    optimistic.length > 0;
+    ((isStreaming || optimistic.length > 0) && chatItems.length > 0);
   const isColdLoading = !!effectiveSessionId && !sessionReady;
   if (sessionReady) {
     holdRef.current = { sessionId: effectiveSessionId, items: chatItems };
@@ -605,7 +608,6 @@ export const ChatMessageList = memo(function ChatMessageList({
     stickToBottomRef.current = true;
     scrollToBottomPendingUntilRef.current = Date.now() + 800;
     setIsAtBottom(true);
-    // 禁止 smooth：估算高度在动画中途修正会「滚一下又弹回」
     virtuosoRef.current?.scrollToIndex({
       index: last,
       align: "end",
@@ -617,10 +619,32 @@ export const ChatMessageList = memo(function ChatMessageList({
         align: "end",
         behavior: "auto",
       });
-      // 流式/图片撑高后仍贴底（Virtuoso 官方与 followOutput 配套 API）
       virtuosoRef.current?.autoscrollToBottom();
     });
   }, [displayItems.length]);
+
+  // 末条增高（流式 / Viz 撑高不改 totalCount）时，钉底意图下补 autoscrollToBottom
+  const lastRowGrowthKey = useMemo(() => {
+    const last = displayItems[displayItems.length - 1];
+    if (!last) return "empty";
+    if (last.kind === "live") {
+      return `live:${streamingContent.length}:${liveTimeline.length}`;
+    }
+    if (last.kind === "group") {
+      const a = last.group.assistantMessage;
+      const toolsLen = a?.toolCalls ? JSON.stringify(a.toolCalls).length : 0;
+      return `g:${last.key}:${a?.content?.length ?? 0}:${toolsLen}`;
+    }
+    if (last.kind === "optimistic") {
+      return `o:${last.key}:${last.msg.content.length}`;
+    }
+    return last.key;
+  }, [displayItems, streamingContent, liveTimeline.length]);
+
+  useLayoutEffect(() => {
+    if (!stickToBottomRef.current) return;
+    virtuosoRef.current?.autoscrollToBottom();
+  }, [lastRowGrowthKey]);
 
   const handleNavNavigate = useCallback((navIdx: number, item: NavItem) => {
     setNavActiveIdx(navIdx);
@@ -743,6 +767,8 @@ export const ChatMessageList = memo(function ChatMessageList({
                 ? { index: displayItems.length - 1, align: "end" }
                 : 0
             }
+            // 列表短于视口时贴底（官方 chat 配方）
+            alignToBottom
             computeItemKey={(_, item) => item.key}
             itemContent={(_, item) => (
               <div className="py-1 pl-4 pr-9 md:pl-6 md:pr-12">
@@ -763,7 +789,7 @@ export const ChatMessageList = memo(function ChatMessageList({
                 ),
               Footer: () => <div className="h-4" />,
             }}
-            // 钉底意图优先：点击「回到底部」后即使 atBottom 短暂抖动仍继续跟随输出
+            // 钉底意图优先：Viz/高度抖动时 atBottom 短暂 false 仍继续跟随
             followOutput={(atBottom) =>
               stickToBottomRef.current || atBottom ? "auto" : false
             }
@@ -811,7 +837,7 @@ export const ChatMessageList = memo(function ChatMessageList({
           )}
         </>
       )}
-      {/* 回到底部：仅离开底部时出现；点击后钉底，禁止 smooth 弹回 */}
+      {/* 回到底部：一次性 scrollToIndex + autoscrollToBottom */}
       {hasDisplay && !isAtBottom && (
         <button
           type="button"

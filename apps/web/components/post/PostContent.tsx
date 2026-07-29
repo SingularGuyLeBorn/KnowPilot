@@ -20,10 +20,26 @@ import {
   isMathClassName,
   useInsideKatexFormula,
 } from "@/components/post/KatexFormula";
+import dynamic from "next/dynamic";
 import { BoardPreview } from "@/components/editor/BoardCanvas";
-import { VizEmbed } from "@/components/post/VizEmbed";
 import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
+
+/** Remotion 很重：按需加载，避免整页卡在 Next「Rendering…」 */
+const VizEmbed = dynamic(
+  () => import("@/components/post/VizEmbed").then((m) => m.VizEmbed),
+  {
+    ssr: false,
+    // padding 外框与真实 VizEmbed 对齐，禁止 my-6 margin（Virtuoso 测不到）在加载完成时跳变滚顶
+    loading: () => (
+      <div className="py-6" data-no-edit-click>
+        <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-[var(--kp-divider)] bg-white text-sm text-[var(--kp-text-3)]">
+          加载动画…
+        </div>
+      </div>
+    ),
+  },
+);
 
 interface PostContentProps {
   content: string;
@@ -313,7 +329,11 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   }
 
   if (isVizBlock) {
-    return <VizEmbed raw={codeText} />;
+    return (
+      <div className="py-6">
+        <VizEmbed raw={codeText} />
+      </div>
+    );
   }
 
   const codeView = (

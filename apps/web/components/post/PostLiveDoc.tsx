@@ -2,11 +2,12 @@
 
 /**
  * 文章页 = 编辑页：所见即所得，自动保存。
- * 切文时先用轻量 PostContent 秒开，idle 后再挂 Milkdown（避卡顿）。
+ * 默认 PostContent 阅读态（含 ```viz Remotion）；显式点正文文字才挂 Milkdown。
+ * 交互控件（播放/链接/代码工具栏）不得进编辑——否则会卸正文闪出「只有相关笔记」。
  */
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Eye } from "lucide-react";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
@@ -27,6 +28,29 @@ const MilkdownEditor = dynamic(
   { ssr: false },
 );
 
+/** 这些目标上的点击是交互，不是「点文进编辑」 */
+const NO_EDIT_CLICK_SELECTOR = [
+  "a",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "video",
+  "audio",
+  "canvas",
+  "summary",
+  "[role='button']",
+  "[contenteditable='true']",
+  "[data-no-edit-click]",
+  ".not-prose",
+  ".kp-code-block",
+].join(", ");
+
+function isNoEditClickTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest(NO_EDIT_CLICK_SELECTOR));
+}
+
 export interface PostLiveDocModel {
   id: string;
   slug: string;
@@ -46,28 +70,12 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
 
   const [title, setTitle] = useState(post.title);
   const [content, setContent] = useState(post.content);
-  /** 切文先读后编：idle 后再挂重型编辑器 */
-  const [editorReady, setEditorReady] = useState(false);
-
-  // 组件随 post.id remount，editorReady 初始为 false；idle 后再挂编辑器
-  useEffect(() => {
-    let cancelled = false;
-    const boot = () => {
-      if (!cancelled) setEditorReady(true);
-    };
-    if (typeof requestIdleCallback !== "undefined") {
-      const id = requestIdleCallback(boot, { timeout: 480 });
-      return () => {
-        cancelled = true;
-        cancelIdleCallback(id);
-      };
-    }
-    const t = window.setTimeout(boot, 160);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(t);
-    };
-  }, [post.id]);
+  /**
+   * editorRequested：开始拉 Milkdown chunk
+   * editorSurfaceReady：编辑面已挂上，才卸阅读面（原子切换，禁止中间空白窗）
+   */
+  const [editorRequested, setEditorRequested] = useState(false);
+  const [editorSurfaceReady, setEditorSurfaceReady] = useState(false);
 
   const { lastSavedAt, isSaving, saveNow } = useAutoSave({
     id: post.id,
@@ -76,8 +84,22 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
     category: post.category || "",
     tags: (post.tags || []).join(", "),
     published: true,
-    enabled: editorReady,
+    enabled: editorSurfaceReady,
   });
+
+  const requestEditor = useCallback(() => {
+    setEditorRequested(true);
+  }, []);
+
+  const handleReadingClick = useCallback(
+    (e: MouseEvent<HTMLDivElement>) => {
+      if (isNoEditClickTarget(e.target)) return;
+      requestEditor();
+    },
+    [requestEditor],
+  );
+
+  const showReading = !editorSurfaceReady;
 
   return (
     <div
@@ -101,9 +123,14 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           <ArrowLeft className="h-4 w-4" />
           返回
         </Link>
-        <span className="text-xs text-[var(--kp-text-3)]" title="改动 2 秒后写入 Markdown 文件；Ctrl+S 立刻保存">
-          {!editorReady
-            ? "加载编辑器…"
+        <span
+          className="text-xs text-[var(--kp-text-3)]"
+          title="改动 2 秒后写入 Markdown 文件；Ctrl+S 立刻保存"
+        >
+          {!editorSurfaceReady
+            ? editorRequested
+              ? "正在加载编辑器…"
+              : "阅读中 · 点击正文编辑"
             : isSaving
               ? "保存中…"
               : lastSavedAt
@@ -175,29 +202,41 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           )}
         </header>
 
-        {editorReady ? (
-          <MilkdownEditor
-            key={post.id}
-            initialValue={content}
-            onChange={setContent}
-            onManualSave={saveNow}
-            docMeta={{
-              title,
-              garden: post.garden,
-              slug: post.slug,
-              postId: post.id,
-            }}
-            className="border-0 shadow-none"
-          />
-        ) : (
+        {/* 编辑面：先离屏挂载，ready 后再显示；阅读面同期保留 → 无空白窗 */}
+        {editorRequested && (
+          <div
+            className={cn(!editorSurfaceReady && "pointer-events-none absolute -left-[9999px] top-0 w-[min(100%,48rem)] opacity-0")}
+            aria-hidden={!editorSurfaceReady}
+          >
+            <MilkdownEditor
+              key={post.id}
+              initialValue={content}
+              onChange={setContent}
+              onManualSave={saveNow}
+              onEditorReady={() => setEditorSurfaceReady(true)}
+              docMeta={{
+                title,
+                garden: post.garden,
+                slug: post.slug,
+                postId: post.id,
+              }}
+              className="border-0 shadow-none"
+            />
+          </div>
+        )}
+
+        {showReading && (
           <div
             className="w-full cursor-text rounded-xl border border-transparent text-left transition hover:border-[var(--kp-divider-light)]"
-            onClick={() => setEditorReady(true)}
+            onClick={handleReadingClick}
             onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") setEditorReady(true);
+              if (e.key === "Enter" || e.key === " ") {
+                if (isNoEditClickTarget(e.target)) return;
+                requestEditor();
+              }
             }}
             role="presentation"
-            title="点击正文加载编辑器"
+            title="点击正文编辑"
           >
             <PostContent
               content={content}
@@ -209,10 +248,11 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
         )}
       </article>
 
-      {editorReady && <RelatedPosts postId={post.id} />}
+      {/* 阅读态也展示；勿绑 editorReady（否则误进编辑时只剩相关笔记） */}
+      <RelatedPosts postId={post.id} />
 
       <PageSearch containerRef={articleRef} />
-      {editorReady && (
+      {editorSurfaceReady && (
         <SelectionExplain
           containerRef={articleRef}
           title={title}

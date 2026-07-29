@@ -42,6 +42,7 @@ import {
   setFormulaCopilotDocMeta,
 } from "@/components/editor/mathFormulaCopilot";
 import { emptyCodeBlockDeleteKeymap } from "@/components/editor/emptyCodeBlockDelete";
+import { vizCodeBlockView } from "@/components/editor/vizCodeBlockNodeView";
 import {
   milkdownLinkNav,
   setMilkdownLinkNavMeta,
@@ -83,6 +84,8 @@ interface MilkdownEditorProps {
   docMeta?: EditorCompleteDocMeta;
   /** Ctrl+S 手动保存 */
   onManualSave?: () => void | Promise<void>;
+  /** 编辑器壳已挂载（供阅读面原子切换，勿用 setTimeout 赌） */
+  onEditorReady?: () => void;
   className?: string;
 }
 
@@ -139,6 +142,7 @@ function MilkdownWysiwyg({
         .use(mathBlockEditableView)
         .use(mathInlineEditableView)
         .use(emptyCodeBlockDeleteKeymap)
+        .use(vizCodeBlockView)
         .use(milkdownLinkNav)
         .use(milkdownImageUpload)
         .use(milkdownSelectionApi)
@@ -204,6 +208,7 @@ function MilkdownEditorInner({
   onModeChange,
   docMeta,
   onManualSave,
+  onEditorReady,
   className,
 }: MilkdownEditorProps) {
   const [internalMode, setInternalMode] = useState<EditorViewMode>("wysiwyg");
@@ -215,6 +220,10 @@ function MilkdownEditorInner({
     query: string;
     mode?: "wysiwyg" | "source";
   } | null>(null);
+
+  useEffect(() => {
+    onEditorReady?.();
+  }, [onEditorReady]);
 
   useEffect(() => {
     registerMilkdownAtAgentHandler((hit) => {

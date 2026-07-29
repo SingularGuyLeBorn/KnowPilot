@@ -654,16 +654,22 @@ html.dark .kp-card,
 .kp-katex-source-code {
   margin: 0;
   padding: 0.65rem 0.75rem 0.8rem;
-  overflow-x: auto;
+  max-height: min(50vh, 22rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.78rem;
   line-height: 1.5;
   color: var(--kp-text-1);
   text-align: left;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 .kp-katex-source-code code {
+  display: block;
+  max-width: 100%;
   font: inherit;
   color: inherit;
   background: transparent !important;
@@ -671,6 +677,9 @@ html.dark .kp-card,
   border: 0 !important;
   border-radius: 0 !important;
   text-align: left;
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
 }
 
 /* shadcn/ui 主题覆盖为 KnowPilot 莫兰迪色系 */

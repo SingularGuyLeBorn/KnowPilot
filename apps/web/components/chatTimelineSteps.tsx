@@ -24,6 +24,7 @@ import { PostContent } from "@/components/post/PostContent";
 import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { cn } from "@/lib/utils";
 import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils";
+import { formatToolDisplayName } from "@/lib/toolDisplayName";
 import { extractToolResultImages, type ToolResultImage } from "@/lib/toolResultImages";
 import { ToolStepIcon, type ToolIconStatus } from "@/lib/toolIcons";
 
@@ -340,22 +341,15 @@ const ToolStep = memo(function ToolStep({
   step: Extract<TimelineStep, { type: "tool" }>;
   isLive?: boolean;
 }) {
-  const toolBaseName = step.name.replace(/^skill__/, "").replace(/^mcp__/, "");
+  const toolBaseName = step.name
+    .replace(/^native:/, "")
+    .replace(/^skill__/, "")
+    .replace(/^mcp__/, "");
   const isTodoWrite = toolBaseName === "todo_write";
   // null = 跟随默认（todo 有清单则开）；用户点过 summary 后锁定
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const displayName =
-    step.name === "__context_compact__" || step.name === "session_compact"
-      ? "上下文压缩"
-      : step.name === "__thinking__"
-        ? "思考"
-        : step.name === "__content__"
-          ? "中间回复"
-          : step.name === "__reflection__"
-            ? "反思复核"
-            : isTodoWrite
-              ? "SetTodoList"
-              : step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
+  // UI 统一大驼峰（WriteFile）；底层 id 仍为 snake_case
+  const displayName = formatToolDisplayName(step.name);
   const hasError =
     step.result &&
     typeof step.result === "object" &&
@@ -456,8 +450,6 @@ const ToolStep = memo(function ToolStep({
           ? "done"
           : "idle";
 
-  const displayNameAsk =
-    toolBaseName === "ask_user" ? "向用户提问" : displayName;
   const waitingAsk = Boolean(askUserPending);
 
   return (
@@ -488,7 +480,7 @@ const ToolStep = memo(function ToolStep({
             <ToolStepIcon toolName={step.name} status={iconStatus} />
           )}
           <span className="min-w-0 truncate font-semibold text-[var(--kp-text-1)]">
-            {displayNameAsk}
+            {displayName}
           </span>
           {isTodoWrite && (
             <span className="shrink-0 text-[10px] font-normal text-[var(--kp-text-3)]">

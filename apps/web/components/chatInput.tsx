@@ -47,7 +47,6 @@ interface ChatInputAreaProps {
     text: string,
     skill?: SelectedSkill,
     attachments?: ChatQueueAttachment[],
-    delivery?: "steer" | "follow_up",
   ) => void;
   onStop?: () => void;
   disabled?: boolean;
@@ -115,7 +114,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   const fileRef = useRef<HTMLInputElement>(null);
   // 发送防重入锁：ref 在同步阶段立即生效，避免 React state 批处理导致双击/双快捷键穿透
   const sendLockRef = useRef(false);
-  const pendingDeliveryRef = useRef<"steer" | "follow_up" | undefined>(undefined);
 
   // 输入框 value 内部自管理，避免每个字符都触发外层 ChatView 重渲染
   const [input, setInput] = useState("");
@@ -528,7 +526,6 @@ export const ChatInputArea = memo(function ChatInputArea({
     if (editingId && onCommitQueueEdit) {
       onCommitQueueEdit(editingId, text);
       finishQueueEditLocally();
-      pendingDeliveryRef.current = undefined;
       sendLockRef.current = false;
       setTimeout(releaseSendLock, 300);
       return;
@@ -574,10 +571,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       text,
       selectedSkill ?? undefined,
       attachments.length ? attachments : undefined,
-      // Alt+Ctrl/Cmd+Enter → follow_up；普通 Ctrl/Cmd+Enter → 由 Chat 决定（idle=队列 / streaming=steer）
-      pendingDeliveryRef.current,
     );
-    pendingDeliveryRef.current = undefined;
     setInput(""); // 清空输入框（状态内部化后由组件自行清空）
     pushHistory(text); // 记录到上键历史
     onSkillChange(null);
@@ -964,8 +958,6 @@ export const ChatInputArea = memo(function ChatInputArea({
               }
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault();
-                // Alt+Ctrl/Cmd+Enter = follow_up；普通 Ctrl/Cmd+Enter = 默认（streaming 时为 steer）
-                pendingDeliveryRef.current = e.altKey ? "follow_up" : undefined;
                 handleSend();
               }
               // 上键恢复历史消息（picker 关闭时）
