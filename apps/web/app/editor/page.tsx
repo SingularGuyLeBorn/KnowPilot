@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -6,13 +6,12 @@ import Link from "next/link";
 import { ArrowLeft, Check } from "lucide-react";
 import dynamic from "next/dynamic";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
-import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
 
 const MilkdownEditor = dynamic(
   () => import("@/components/editor/MilkdownEditor").then((m) => m.MilkdownEditor),
   { ssr: false }
 );
-import { usePostMutations } from "@/lib/hooks";
+import { usePostMutations } from "@/lib/usePostMutations";
 import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { trpc } from "@/lib/trpc";
@@ -28,6 +27,12 @@ export default function NewPostPage() {
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
   const [garden, setGarden] = useState(gardenFromUrl);
+  /** 新建页稳定草稿键：附件落 uploads/{garden}/_draft/{draftKey}/，与 slug 解耦 */
+  const [draftKey] = useState(() =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `draft_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
+  );
 
   const { lastSavedAt } = useAutoSave({
     title,
@@ -81,7 +86,6 @@ export default function NewPostPage() {
 
   return (
     <>
-      <MilkdownStyles />
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 sm:px-6">
           <div className="flex items-center gap-4">
@@ -160,7 +164,7 @@ export default function NewPostPage() {
           <MilkdownEditor
             initialValue={content}
             onChange={setContent}
-            docMeta={{ title, garden }}
+            docMeta={{ title, garden, draftKey }}
           />
         </div>
       </div>

@@ -2,15 +2,15 @@
 
 /**
  * 文章页 = 编辑页：所见即所得，自动保存。
- * 删除/重命名等管理操作在左侧目录 hover 菜单里。
+ * 切文时先用轻量 PostContent 秒开，idle 后再挂 Milkdown（避卡顿）。
  */
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Eye } from "lucide-react";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
-import { MilkdownStyles } from "@/components/editor/MilkdownEditor";
+import { PostContent } from "@/components/post/PostContent";
 import { TableOfContents, usePostTocVisible } from "@/components/post/TableOfContents";
 import { PageSearch } from "@/components/post/PageSearch";
 import { SelectionExplain } from "@/components/post/SelectionExplain";
@@ -46,6 +46,28 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
 
   const [title, setTitle] = useState(post.title);
   const [content, setContent] = useState(post.content);
+  /** 切文先读后编：idle 后再挂重型编辑器 */
+  const [editorReady, setEditorReady] = useState(false);
+
+  // 组件随 post.id remount，editorReady 初始为 false；idle 后再挂编辑器
+  useEffect(() => {
+    let cancelled = false;
+    const boot = () => {
+      if (!cancelled) setEditorReady(true);
+    };
+    if (typeof requestIdleCallback !== "undefined") {
+      const id = requestIdleCallback(boot, { timeout: 480 });
+      return () => {
+        cancelled = true;
+        cancelIdleCallback(id);
+      };
+    }
+    const t = window.setTimeout(boot, 160);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [post.id]);
 
   const { lastSavedAt, isSaving, saveNow } = useAutoSave({
     id: post.id,
@@ -54,7 +76,7 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
     category: post.category || "",
     tags: (post.tags || []).join(", "),
     published: true,
-    enabled: true,
+    enabled: editorReady,
   });
 
   return (
@@ -64,7 +86,6 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
         tocVisible && "xl:pr-[20rem] 2xl:pr-[22rem]",
       )}
     >
-      <MilkdownStyles />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Link
           href={
@@ -81,15 +102,17 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           返回
         </Link>
         <span className="text-xs text-[var(--kp-text-3)]" title="改动 2 秒后写入 Markdown 文件；Ctrl+S 立刻保存">
-          {isSaving
-            ? "保存中…"
-            : lastSavedAt
-              ? `已写入文件 ${lastSavedAt.toLocaleTimeString("zh-CN")}`
-              : "Ctrl+S 保存 · 停顿后自动落盘"}
+          {!editorReady
+            ? "加载编辑器…"
+            : isSaving
+              ? "保存中…"
+              : lastSavedAt
+                ? `已写入文件 ${lastSavedAt.toLocaleTimeString("zh-CN")}`
+                : "Ctrl+S 保存 · 停顿后自动落盘"}
         </span>
       </div>
 
-      <article ref={articleRef} key={post.id} className="kp-post-swap">
+      <article ref={articleRef} className="kp-post-swap">
         <ReadingProgressTracker
           postId={post.id}
           slug={post.slug}
@@ -152,24 +175,51 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           )}
         </header>
 
-        <MilkdownEditor
-          initialValue={content}
-          onChange={setContent}
-          onManualSave={saveNow}
-          docMeta={{ title, garden: post.garden, slug: post.slug }}
-          className="border-0 shadow-none"
-        />
+        {editorReady ? (
+          <MilkdownEditor
+            key={post.id}
+            initialValue={content}
+            onChange={setContent}
+            onManualSave={saveNow}
+            docMeta={{
+              title,
+              garden: post.garden,
+              slug: post.slug,
+              postId: post.id,
+            }}
+            className="border-0 shadow-none"
+          />
+        ) : (
+          <div
+            className="w-full cursor-text rounded-xl border border-transparent text-left transition hover:border-[var(--kp-divider-light)]"
+            onClick={() => setEditorReady(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") setEditorReady(true);
+            }}
+            role="presentation"
+            title="点击正文加载编辑器"
+          >
+            <PostContent
+              content={content}
+              postSlug={post.slug}
+              postGarden={post.garden}
+              className="prose prose-neutral dark:prose-invert max-w-none"
+            />
+          </div>
+        )}
       </article>
 
-      <RelatedPosts postId={post.id} />
+      {editorReady && <RelatedPosts postId={post.id} />}
 
       <PageSearch containerRef={articleRef} />
-      <SelectionExplain
-        containerRef={articleRef}
-        title={title}
-        slug={post.slug}
-        garden={post.garden}
-      />
+      {editorReady && (
+        <SelectionExplain
+          containerRef={articleRef}
+          title={title}
+          slug={post.slug}
+          garden={post.garden}
+        />
+      )}
       <TableOfContents content={content} />
     </div>
   );

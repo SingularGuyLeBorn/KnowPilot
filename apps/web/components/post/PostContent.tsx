@@ -8,7 +8,7 @@ import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
-import { Check, Copy, Link2, Eye, Code2, Maximize2, Minimize2, WrapText, ListOrdered } from "lucide-react";
+import { Check, Copy, Eye, Code2, Maximize2, Minimize2, WrapText, ListOrdered } from "lucide-react";
 import { transformWikiLinks } from "./WikiLink";
 import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
@@ -246,25 +246,29 @@ function Heading({
   level,
   children,
   ...props
-}: React.HTMLAttributes<HTMLHeadingElement> & { level: 2 | 3 | 4 }) {
+}: React.HTMLAttributes<HTMLHeadingElement> & { level: 1 | 2 | 3 | 4 | 5 | 6 }) {
   const fallbackId = useId();
   const text = getText(children);
   const id = slugify(text) || `heading-${level}-${fallbackId.replace(/[^a-z0-9]/gi, "").slice(0, 6)}`;
-  const Tag = `h${level}` as "h2" | "h3" | "h4";
+  const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+  const hashes = "#".repeat(level);
   return (
     <Tag id={id} className="group relative scroll-mt-40" {...props}>
       {children}
       <a
         href={`#${id}`}
         className="kp-heading-anchor"
-        aria-label="复制锚点链接"
+        aria-label={`${level} 级标题 ${hashes} · 复制锚点链接`}
+        title={`${level} 级标题 · ${hashes}`}
         onClick={(e) => {
           e.preventDefault();
           history.replaceState(null, "", `#${id}`);
           document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
         }}
       >
-        <Link2 className="h-4 w-4" />
+        <span className="kp-heading-level" aria-hidden>
+          {hashes}
+        </span>
       </a>
     </Tag>
   );
@@ -466,14 +470,19 @@ export const PostContent = memo(function PostContent({
 
   const components = useMemo(
     () => ({
+    // rehype-raw 可能带进正文里的 <script>；React 客户端永不执行，直接丢弃避免控制台报错
+    script: () => null,
     a: ({ href, children, ...props }) => (
       <PostMarkdownLink href={href} postSlug={postSlug} postGarden={postGarden} {...props}>
         {children}
       </PostMarkdownLink>
     ),
+    h1: (props) => <Heading level={1} {...props} />,
     h2: (props) => <Heading level={2} {...props} />,
     h3: (props) => <Heading level={3} {...props} />,
     h4: (props) => <Heading level={4} {...props} />,
+    h5: (props) => <Heading level={5} {...props} />,
+    h6: (props) => <Heading level={6} {...props} />,
     img: ({ src, alt }) => {
       if (typeof src !== "string") return null;
       return (
