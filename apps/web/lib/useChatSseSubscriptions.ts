@@ -78,7 +78,7 @@ export function useChatSseSubscriptions({
       refreshAsyncQueueFor(opts.sessionId);
       // heavy：终态才 invalidate 子会话列表 / task.list，避免 running 进度抖整批
       if (opts.heavy && mainSessionId) {
-        utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 }).catch(() => {});
+        utils.session.listChildren.invalidate({ parentSessionId: mainSessionId }).catch(() => {});
         utils.task.list.invalidate().catch(() => {});
       }
     };
@@ -142,8 +142,10 @@ export function useChatSseSubscriptions({
       });
       register("subagent_session_update", (ev) => {
         if (mainSessionId) {
-          utils.session.listChildren.invalidate({ parentSessionId: mainSessionId, pageSize: 20 }).catch(() => {});
+          utils.session.listChildren.invalidate({ parentSessionId: mainSessionId }).catch(() => {});
         }
+        // 子 Agent 实体本身也要刷（spawn 后左侧「子 Agent」tab 靠 parentId 列表）
+        utils.agent.list.invalidate().catch(() => {});
         utils.session.listRunning.invalidate().catch(() => {});
         try {
           const data = JSON.parse(ev.data) as {

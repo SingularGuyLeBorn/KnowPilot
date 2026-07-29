@@ -16,7 +16,7 @@ import { useCallback, useRef, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import type { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
-import { streamAgentChat } from "@/lib/agentStream";
+import { SessionBusyQueuedError, streamAgentChat } from "@/lib/agentStream";
 import { buildStreamConfig } from "@/lib/chatConfig";
 import { formatToolResultHint, pruneEmptyThinkingSteps } from "@/lib/chatMessageUtils";
 import { type Agent, type ChatAttachment, DEFAULT_LLM_MODEL } from "@knowpilot/shared";
@@ -58,6 +58,8 @@ export type RunStreamOptions = {
   source?: "user" | "super" | "manager" | "sub" | "system";
   toolResults?: Record<string, unknown>;
   optimisticUser?: { id: string; text: string };
+  /** 发送队列项 id：busy 时服务端按此 unclaim */
+  queueItemId?: string;
   resumeAfter?: number;
   isResume?: boolean;
   targetSessionId?: string;
@@ -66,6 +68,13 @@ export type RunStreamOptions = {
   /** 覆盖 agentId（后台消费其它 session 时用该 session 的 Agent） */
   agentId?: string;
 };
+
+/** drain 认领↔起流契约：只有 streamed 才 finalize；busy/begin_rejected 必须回滚认领 */
+export type RunStreamOutcome =
+  | { status: "streamed" }
+  | { status: "begin_rejected" }
+  | { status: "busy_queued"; queueItemId: string | null }
+  | { status: "failed" };
 
 export interface UseChatRunStreamParams {
   effectiveSessionId: string | null;
@@ -204,7 +213,7 @@ export function useChatRunStream({
   }, [pendingStreamDeltaRef, streamRafRef, pendingThinkingDeltaRef, thinkingRafRef]);
 
   const runStream = useCallback(
-    async (opts: RunStreamOptions) => {
+    async (opts: RunStreamOptions): Promise<RunStreamOutcome> => {
       // 捕获本次流式所属的 session（新会话首条消息时为 NEW_STREAM_KEY，onDone 拿到 sessionId 后迁移）
       let originSid = opts.targetSessionId ?? effectiveSessionId ?? NEW_STREAM_KEY;
       // 视图不变量：流回调不依赖闭包 keepCurrentView，改用 effectiveSessionIdRef 运行时判断
@@ -215,7 +224,7 @@ export function useChatRunStream({
       const ac = new AbortController();
       if (isResume) {
         if (!sessionComposeActions.claimActiveAbortController(originSid, ac)) {
-          return;
+          return { status: "begin_rejected" };
         }
       } else {
         sessionComposeActions.getActiveAbortController(originSid)?.abort();
@@ -236,7 +245,7 @@ export function useChatRunStream({
           sessionComposeActions.setActiveAbortController(originSid, null);
         }
         sessionComposeActions.setQueueDraining(originSid, false);
-        return;
+        return { status: "begin_rejected" };
       }
       scheduleStreamSave(true);
       setEditingUserId(null);
@@ -270,6 +279,7 @@ export function useChatRunStream({
             source: opts.source,
             toolResults: opts.toolResults,
             clientMessageId: opts.optimisticUser?.id,
+            queueItemId: opts.queueItemId,
             ...streamConfig,
           },
           {
@@ -284,6 +294,7 @@ export function useChatRunStream({
                 const pending = sessionComposeStore.get(sid).userQueue;
                 for (const item of pending) {
                   if (item.dbId || (item.kind !== "user" && item.kind !== "superior")) continue;
+                  const localId = item.id;
                   createSessionQueueItemMutation
                     .mutateAsync({
                       sessionId: sid,
@@ -296,11 +307,21 @@ export function useChatRunStream({
                       skillId: item.skillId,
                       skillPrompt: item.skillPrompt,
                     })
-                    .then((res) => {
+                    .then(async (res) => {
                       const dbId = (res as { data?: { id?: string } })?.data?.id;
                       if (!dbId) return;
+                      const stillQueued = sessionComposeStore
+                        .get(sid)
+                        .userQueue.some((i) => i.id === localId);
+                      if (!stillQueued) {
+                        // 本地项已被 drain：删孤儿行，避免「待发」幽灵
+                        await utils.client.agent.deleteSessionQueueItem
+                          .mutate({ id: dbId })
+                          .catch(() => {});
+                        return;
+                      }
                       sessionComposeActions.patchUserQueue(sid, (q) =>
-                        q.map((i) => (i.id === item.id ? { ...i, dbId } : i)),
+                        q.map((i) => (i.id === localId ? { ...i, dbId } : i)),
                       );
                     })
                     .catch(() => {});
@@ -463,6 +484,7 @@ export function useChatRunStream({
                 if (name === "spawn_subagent" && (r.success || r.agentId || r.subagentSessionId)) {
                   if (r.agentId) {
                     const wsId = selectedWorkspaceId ?? null;
+                    const parentId = effectiveAgentId ?? null;
                     const optimisticAgent = {
                       id: r.agentId,
                       name: r.subagentName || `子 Agent ${r.agentId.slice(0, 4)}`,
@@ -471,7 +493,7 @@ export function useChatRunStream({
                       tools: [] as string[],
                       tier: "sub" as const,
                       workspaceId: wsId,
-                      parentId: effectiveAgentId ?? null,
+                      parentId,
                       heartbeatModel: null,
                       heartbeat: null,
                       status: "active",
@@ -482,9 +504,14 @@ export function useChatRunStream({
                       updatedAt: new Date(),
                       systemPrompt: "",
                     };
-                    utils.agent.list.setData({ page: 1, pageSize: 100 }, (old) => {
+                    const upsertAgentList = (
+                      old:
+                        | { items: typeof optimisticAgent[]; total: number; page: number; pageSize: number; totalPages: number }
+                        | undefined,
+                      pageSize: number,
+                    ) => {
                       if (!old?.items) {
-                        return { items: [optimisticAgent], total: 1, page: 1, pageSize: 100, totalPages: 1 };
+                        return { items: [optimisticAgent], total: 1, page: 1, pageSize, totalPages: 1 };
                       }
                       if (old.items.some((a) => a.id === r.agentId)) return old;
                       return {
@@ -492,10 +519,22 @@ export function useChatRunStream({
                         items: [optimisticAgent, ...old.items],
                         total: (old.total ?? old.items.length) + 1,
                       };
-                    });
+                    };
+                    // 全量列表 + 左侧子 Agent tab（parentId + pageSize=50）两套 key 都要写
+                    utils.agent.list.setData({ page: 1, pageSize: 100 }, (old) =>
+                      upsertAgentList(old as never, 100),
+                    );
+                    if (parentId) {
+                      utils.agent.list.setData(
+                        { page: 1, pageSize: 50, parentId },
+                        (old) => upsertAgentList(old as never, 50),
+                      );
+                    }
                   }
                   utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => {});
                   utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
+                  // 子会话树：与 SubagentPanel listChildren(pageSize=100) 对齐
+                  utils.session.listChildren.invalidate().then(() => utils.session.listChildren.refetch()).catch(() => {});
                 }
                 if (r.jobId && (r.status === "running" || r.status === "queued")) {
                   const jobId = r.jobId;
@@ -720,10 +759,23 @@ export function useChatRunStream({
           },
           ac.signal,
         );
+        return { status: "streamed" };
       } catch (err: unknown) {
+        if (err instanceof SessionBusyQueuedError) {
+          // beginStream 已占位：立刻释放，交给 drain 回滚认领
+          discardStreamFlush(originSid);
+          if (opts.optimisticUser) {
+            sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
+          }
+          streamLifecycleActions.abortStream(originSid, {
+            partialAssistantMessageId: null,
+            leftoverContent: "",
+          });
+          return { status: "busy_queued", queueItemId: err.queueItemId };
+        }
         if (err instanceof Error && err.name === "AbortError") {
           if (isPageUnloadingRef.current) {
-            return;
+            return { status: "streamed" };
           }
           flushStreamNow(originSid);
           const leftover = streamLifecycleStore.get(originSid).streamingContent;
@@ -743,7 +795,7 @@ export function useChatRunStream({
           if (opts.optimisticUser) {
             sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
           }
-          return;
+          return { status: "streamed" };
         }
         discardStreamFlush(originSid);
         streamLifecycleActions.failStream(
@@ -751,6 +803,7 @@ export function useChatRunStream({
           err instanceof Error ? err.message : "对话请求失败",
         );
         streamLifecycleActions.commitStream(originSid);
+        return { status: "failed" };
       } finally {
         discardStreamFlush(originSid);
         streamLifecycleActions.setConnected(originSid, false);

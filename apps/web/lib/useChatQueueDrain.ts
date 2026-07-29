@@ -3,13 +3,13 @@
 /**
  * useChatQueueDrain —— 发送队列 drain 编排簇（W13e 从 chat.tsx 拆出）。
  *
- * consumeQueue：从 async 结果队列 / 用户队列挑下一条就绪项，ACK/去重/乐观气泡后 runStream；
- * drainAllPendingQueues：优先消费 preferredSessionId，再扫描其它有待消费项的 session
- * （后台不抢视图）。
+ * 认领↔起流契约（架构不变量）：
+ * - 软认领后只本地 detach（不出 tombstone）；起流 outcome=streamed 才 tombstone+finalize
+ * - begin_rejected / busy_queued → unclaim + 恢复队列项（禁止 409/begin 拒后待发蒸发）
+ * - failed（已起流）→ 不回滚认领，交 hub reconcileClaimsAfterRun / 超龄 release
  *
  * superior 不变量：kind=superior 仅由服务端 enqueueSuperiorQueueDrain 起流；
- * 前端若队首是 superior 则停（不越过队首消费后续项，也不双跑）。
- * child_notify 与 user 一样：remove 本地 + consume DB 后再起流（修「消费后仍在队列 → 再发一遍」）。
+ * 前端若队首是 superior 则停。
  */
 
 import { useCallback, type RefObject } from "react";
@@ -17,7 +17,7 @@ import { trpc } from "@/lib/trpc";
 import { getModelOption } from "@/lib/chatConfig";
 import { type ChatQueueItem, formatQueueItemForLlm, toApiAttachments } from "@/lib/chatQueueTypes";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
-import { type RunStreamOptions } from "@/lib/useChatRunStream";
+import { type RunStreamOptions, type RunStreamOutcome } from "@/lib/useChatRunStream";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 import { getSessionConfig } from "@/lib/sessionConfigStore";
 import { mergeAsyncQueueFromCache } from "@/lib/refreshSessionAsyncQueue";
@@ -40,6 +40,23 @@ export async function ackThenMarkDelivery(
   return "claimed";
 }
 
+/** 本地出队但不 tombstone——失败可经 unclaim + SSE/merge 或显式 restore 回潮 */
+function detachUserQueueItemLocal(sessionId: string, item: ChatQueueItem) {
+  sessionComposeActions.patchUserQueue(sessionId, (q) =>
+    q.filter((i) => i.id !== item.id && i.dbId !== item.dbId),
+  );
+}
+
+function restoreUserQueueItem(sessionId: string, item: ChatQueueItem) {
+  if (item.dbId) {
+    sessionComposeActions.unmarkQueueDbIdConsumed(sessionId, item.dbId);
+  }
+  sessionComposeActions.patchUserQueue(sessionId, (q) => {
+    if (q.some((i) => i.id === item.id || (item.dbId && i.dbId === item.dbId))) return q;
+    return [...q, item];
+  });
+}
+
 export interface UseChatQueueDrainParams {
   effectiveSessionId: string | null;
   /** 可见 pane 的 sessionId（分屏时两侧）；仅这些会话自动 drain */
@@ -49,9 +66,10 @@ export interface UseChatQueueDrainParams {
   sessionsItems: Array<{ id: string; agentId?: string | null }> | undefined;
   consumeSessionQueueItemMutation: ReturnType<typeof trpc.agent.consumeSessionQueueItem.useMutation>;
   finalizeSessionQueueItemMutation: ReturnType<typeof trpc.agent.finalizeSessionQueueItem.useMutation>;
+  unclaimSessionQueueItemMutation: ReturnType<typeof trpc.agent.unclaimSessionQueueItem.useMutation>;
   ackAsyncDeliveryMutation: ReturnType<typeof trpc.agent.ackAsyncDelivery.useMutation>;
   asyncQueueQuery: ReturnType<typeof trpc.agent.pullAsyncQueue.useQuery>;
-  runStream: (opts: RunStreamOptions) => Promise<void>;
+  runStream: (opts: RunStreamOptions) => Promise<RunStreamOutcome>;
   consumeRef: RefObject<(preferredSessionId?: string) => void>;
 }
 
@@ -63,6 +81,7 @@ export function useChatQueueDrain({
   sessionsItems,
   consumeSessionQueueItemMutation,
   finalizeSessionQueueItemMutation,
+  unclaimSessionQueueItemMutation,
   ackAsyncDeliveryMutation,
   asyncQueueQuery,
   runStream,
@@ -118,6 +137,9 @@ export function useChatQueueDrain({
     sessionComposeActions.setQueueDraining(sid, true);
 
     (async () => {
+      let handedToRunStream = false;
+      let softClaimedDbId: string | null = null;
+      try {
       if (task.kind === "async-result" && task.jobId) {
         try {
           // E1：claimed:true 之后才 mark（queueDraining 已防并发；提前 mark 无保护作用且 ACK 失败会永久 skip）
@@ -150,7 +172,7 @@ export function useChatQueueDrain({
           formatQueueItemForLlm(task, supportsVision) ||
           (task.attachments?.length ? "（见附件）" : "");
         if (!streamMessagePreview.trim() && !task.attachments?.length) {
-          // 空内容禁止起流（否则 LLM「像没接到」）
+          // 空内容禁止起流（否则 LLM「像没接到」）——丢弃：tombstone + finalize
           sessionComposeActions.claimUserQueueItem(sid, task);
           if (task.dbId) {
             utils.agent.listSessionQueueItems.setData({ sessionId: sid }, (old) =>
@@ -170,31 +192,25 @@ export function useChatQueueDrain({
           return;
         }
 
-        // 先 tombstone + 本地出队，再 consume：挡住迟到 list/SSE 把幽灵「待发」塞回
-        sessionComposeActions.claimUserQueueItem(sid, task);
+        // 先软认领，再本地 detach（禁止先 tombstone——409/begin 拒后无法回潮）
         if (task.dbId) {
-          utils.agent.listSessionQueueItems.setData({ sessionId: sid }, (old) =>
-            Array.isArray(old) ? old.filter((i) => i.id !== task.dbId) : old,
-          );
           try {
             const claim = await consumeSessionQueueItemMutation.mutateAsync({ id: task.dbId });
             if (!claim.claimed) {
-              // 他人已认领 / 已不存在：清 tombstone，让后续 merge 以 DB 为准
-              sessionComposeActions.unmarkQueueDbIdConsumed(sid, task.dbId);
               sessionComposeActions.setQueueDraining(sid, false);
               consumeRef.current(sid);
               return;
             }
+            softClaimedDbId = task.dbId;
+            utils.agent.listSessionQueueItems.setData({ sessionId: sid }, (old) =>
+              Array.isArray(old) ? old.filter((i) => i.id !== task.dbId) : old,
+            );
           } catch {
-            sessionComposeActions.unmarkQueueDbIdConsumed(sid, task.dbId);
-            sessionComposeActions.patchUserQueue(sid, (q) => {
-              if (q.some((i) => i.id === task.id || i.dbId === task.dbId)) return q;
-              return [...q, task];
-            });
             sessionComposeActions.setQueueDraining(sid, false);
             return;
           }
         }
+        detachUserQueueItemLocal(sid, task);
       } else if (task.kind === "async-result") {
         if (task.jobId) {
           const finishedJobId = task.jobId;
@@ -241,44 +257,86 @@ export function useChatQueueDrain({
           });
         }
       }
-      try {
-        await runStream({
-          message: streamMessage,
-          attachments: streamAttachments?.length ? streamAttachments : undefined,
-          skillId: task.skillId,
-          skillPrompt: task.skillPrompt,
-          source: isAsyncResult
+      handedToRunStream = true;
+      const outcome = await runStream({
+        message: streamMessage,
+        attachments: streamAttachments?.length ? streamAttachments : undefined,
+        skillId: task.skillId,
+        skillPrompt: task.skillPrompt,
+        source: isAsyncResult
+          ? "sub"
+          : task.kind === "child_notify"
             ? "sub"
-            : task.kind === "child_notify"
-              ? "sub"
-              : "user",
-          toolResults: isAsyncResult
-            ? {
-                subagentResult: {
-                  jobId: task.jobId,
-                  subagentSessionId: task.subagentSessionId,
-                  subagentName: task.subagentName ?? "子 Agent",
-                  sourceType: task.sourceType,
-                  taskLabel: task.taskLabel,
-                },
-              }
-            : task.kind === "child_notify"
-              ? { childNotify: { sourceName: task.sourceName, source: task.source } }
-              : undefined,
-          optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
-          targetSessionId: sid === NEW_STREAM_KEY ? undefined : sid,
-          keepCurrentView,
-          agentId: streamAgentId,
-        });
-        // B2：user/child_notify 软认领后，消息落地再 finalize 删行
+            : "user",
+        toolResults: isAsyncResult
+          ? {
+              subagentResult: {
+                jobId: task.jobId,
+                subagentSessionId: task.subagentSessionId,
+                subagentName: task.subagentName ?? "子 Agent",
+                sourceType: task.sourceType,
+                taskLabel: task.taskLabel,
+              },
+            }
+          : task.kind === "child_notify"
+            ? { childNotify: { sourceName: task.sourceName, source: task.source } }
+            : undefined,
+        optimisticUser: isAsyncResult ? undefined : { id: optimisticId, text: optimisticText },
+        queueItemId: softClaimedDbId ?? task.dbId ?? undefined,
+        targetSessionId: sid === NEW_STREAM_KEY ? undefined : sid,
+        keepCurrentView,
+        agentId: streamAgentId,
+      });
+
+      if (outcome.status === "streamed") {
+        // 起流成功：tombstone 挡迟到 SSE + finalize 删行
         if ((task.kind === "user" || task.kind === "child_notify") && task.dbId) {
+          sessionComposeActions.markQueueDbIdConsumed(sid, task.dbId);
           await finalizeSessionQueueItemMutation.mutateAsync({ id: task.dbId }).catch(() => {});
         }
+      } else if (
+        outcome.status === "begin_rejected" ||
+        outcome.status === "busy_queued"
+      ) {
+        // 未真正起流：回滚认领 + 恢复待发
+        if (softClaimedDbId) {
+          await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(() => {});
+        }
+        if (task.kind === "user" || task.kind === "child_notify") {
+          restoreUserQueueItem(sid, task);
+          sessionComposeActions.removeOptimisticUserBubble(sid, optimisticId);
+        }
+        if (isAsyncResult && task.jobId) {
+          sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
+        }
+      } else if (outcome.status === "failed") {
+        // 已起流后失败：不回滚认领（防双发）；async ACK 可 unmark 以便对账重投
+        if (isAsyncResult && task.jobId) {
+          sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
+        }
+        if (!isAsyncResult) {
+          sessionComposeActions.removeOptimisticUserBubble(sid, optimisticId);
+        }
+      }
       } catch {
-        /* runStream 失败：保留 claimedAt，启动恢复超龄后重投 */
+        /* claim / 拼装阶段抛错：回滚软认领 */
+        if (softClaimedDbId) {
+          await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(() => {});
+          if (task.kind === "user" || task.kind === "child_notify") {
+            restoreUserQueueItem(sid, task);
+          }
+        }
+        if (task.kind === "async-result" && task.jobId) {
+          sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
+        }
+      } finally {
+        // 未交给 runStream 时必须释放锁，否则后续待发永远被 queueDraining 挡住
+        if (!handedToRunStream) {
+          sessionComposeActions.setQueueDraining(sid, false);
+        }
       }
     })().catch(() => {});
-  }, [runStream, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
+  }, [runStream, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, unclaimSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
 
   /** 优先 preferred，再可见 pane；不扫隐藏 tab（避免后台 tab 抢起流） */
   const drainAllPendingQueues = useCallback(

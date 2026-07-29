@@ -179,6 +179,56 @@ describe("B2 SessionQueueItem 软认领 claimedAt", () => {
     }
   });
 
+  it("超龄 claimedAt 且已有同 content ChatMessage：finalize 删行，禁止 release 回待发", async () => {
+    const ctx = await createContextInner();
+    const agent = await ctx.services.agent.create({
+      name: `B2-UserQ-${RUN_ID}-${Math.random().toString(36).slice(2, 6)}`,
+      model: "deepseek-chat",
+      systemPrompt: "test",
+      tools: [],
+      tier: "sub",
+    });
+    const agentId = (agent.data as { id: string }).id;
+    const session = await ctx.services.session.create({
+      title: "B2 user queue",
+      model: "deepseek-chat",
+      agentId,
+      kind: "chat",
+      isMainSession: true,
+    } as any);
+    const sessionId = (session.data as { id: string }).id;
+    try {
+      const created = await ctx.services.sessionQueueItem.create({
+        sessionId,
+        kind: "user",
+        content: "刚发出去的消息",
+        source: "user",
+      });
+      const itemId = (created.data as { id: string }).id;
+      await ctx.services.sessionQueueItem.consume(itemId);
+      await ctx.services.message.create({
+        sessionId,
+        role: "user",
+        content: "刚发出去的消息",
+        source: "user",
+      } as any);
+      await prisma.sessionQueueItem.update({
+        where: { id: itemId },
+        data: { claimedAt: new Date(Date.now() - SESSION_QUEUE_CLAIM_STALE_MS - 1000) },
+      });
+
+      const touched = await ctx.services.sessionQueueItem.releaseStaleClaims();
+      expect(touched).toBeGreaterThanOrEqual(1);
+      expect(await prisma.sessionQueueItem.findUnique({ where: { id: itemId } })).toBeNull();
+      expect(await ctx.services.sessionQueueItem.listBySession(sessionId)).toHaveLength(0);
+    } finally {
+      await prisma.sessionQueueItem.deleteMany({ where: { sessionId } }).catch(() => {});
+      await prisma.chatMessage.deleteMany({ where: { sessionId } }).catch(() => {});
+      await prisma.chatSession.deleteMany({ where: { id: sessionId } }).catch(() => {});
+      await prisma.agent.deleteMany({ where: { id: agentId } }).catch(() => {});
+    }
+  });
+
   it("竞态双 consume：恰一胜；落选 claimed:false", async () => {
     const ctx = await createContextInner();
     const fx = await mkFixture(ctx);
@@ -191,6 +241,38 @@ describe("B2 SessionQueueItem 软认领 claimedAt", () => {
       expect([r1, r2].every((r) => r.success)).toBe(true);
       expect(await ctx.services.sessionQueueItem.listBySession(fx.sessionId)).toHaveLength(0);
       expect((await prisma.sessionQueueItem.findUnique({ where: { id: fx.itemId } }))?.claimedAt).toBeTruthy();
+    } finally {
+      await cleanup(fx);
+    }
+  });
+
+  it("unclaim / reconcileClaimsAfterRun：无消息则释放认领；有消息则 finalize", async () => {
+    const ctx = await createContextInner();
+    const fx = await mkFixture(ctx);
+    const content = "B2 上级指令";
+    try {
+      expect((await ctx.services.sessionQueueItem.consume(fx.itemId)).claimed).toBe(true);
+      expect(await ctx.services.sessionQueueItem.unclaim(fx.itemId)).toBe(true);
+      expect((await prisma.sessionQueueItem.findUnique({ where: { id: fx.itemId } }))?.claimedAt).toBeNull();
+      expect(await ctx.services.sessionQueueItem.listBySession(fx.sessionId)).toHaveLength(1);
+
+      expect((await ctx.services.sessionQueueItem.consume(fx.itemId)).claimed).toBe(true);
+      // 无 ChatMessage：reconcile 应 unclaim
+      expect(await ctx.services.sessionQueueItem.reconcileClaimsAfterRun(fx.sessionId)).toBeGreaterThanOrEqual(1);
+      expect((await prisma.sessionQueueItem.findUnique({ where: { id: fx.itemId } }))?.claimedAt).toBeNull();
+
+      expect((await ctx.services.sessionQueueItem.consume(fx.itemId)).claimed).toBe(true);
+      const claimedAt = (await prisma.sessionQueueItem.findUnique({ where: { id: fx.itemId } }))!.claimedAt!;
+      await prisma.chatMessage.create({
+        data: {
+          sessionId: fx.sessionId,
+          role: "user",
+          content,
+          createdAt: new Date(claimedAt.getTime() + 1),
+        },
+      });
+      expect(await ctx.services.sessionQueueItem.reconcileClaimsAfterRun(fx.sessionId)).toBeGreaterThanOrEqual(1);
+      expect(await prisma.sessionQueueItem.findUnique({ where: { id: fx.itemId } })).toBeNull();
     } finally {
       await cleanup(fx);
     }

@@ -35,6 +35,8 @@ export interface AgentChatStreamInput {
   toolResults?: Record<string, unknown>;
   /** 前端生成的用户消息 ID，用于后端持久化后去重/替换乐观气泡 */
   clientMessageId?: string;
+  /** 发送队列项 id：busy 时服务端按此 unclaim */
+  queueItemId?: string;
   /** 断线续传：从该事件 ID 之后开始接收 */
   resumeAfter?: number;
 }
@@ -69,6 +71,17 @@ export interface AgentStreamCallbacks {
   onError?: (message: string, sessionId?: string, suggestion?: string) => void | Promise<void>;
   /** 每收到一个带 id 的事件时回调，用于断线续传 */
   onEventId?: (id: number) => void;
+}
+
+/** 409 SESSION_BUSY：消息已在服务端队列，须回滚前端软认领/tombstone，禁止当成功或当 fatal error */
+export class SessionBusyQueuedError extends Error {
+  readonly code = "SESSION_BUSY" as const;
+  readonly queueItemId: string | null;
+  constructor(queueItemId: string | null, message?: string) {
+    super(message || "会话忙碌，消息已入队");
+    this.name = "SessionBusyQueuedError";
+    this.queueItemId = queueItemId;
+  }
 }
 
 async function parseSseBlock(
@@ -216,6 +229,22 @@ async function readOneConnection(
       // 交给外层 while 退避重连；耗尽后再统一 onError
       return false;
     }
+    // 409 SESSION_BUSY：抛给 drain 回滚认领（禁止伪成功留下 tombstone / 乐观气泡）
+    if (res.status === 409) {
+      try {
+        const body = JSON.parse(text) as {
+          code?: string;
+          message?: string;
+          queueItemId?: string | null;
+        };
+        if (body.code === "SESSION_BUSY") {
+          throw new SessionBusyQueuedError(body.queueItemId ?? null, body.message);
+        }
+      } catch (err) {
+        if (err instanceof SessionBusyQueuedError) throw err;
+        /* 非 JSON 走通用错误 */
+      }
+    }
     callbacks.onError?.(`流式请求失败 HTTP ${res.status}: ${text}`);
     return true; // 非可重试错误：结束，禁止空转重连
   }
@@ -318,7 +347,8 @@ export async function streamAgentChat(
       const finished = await readOneConnection(res, trackingCallbacks, signal);
       if (finished) return;
       // 连接正常结束但未收到 done/error：可能是连接被悄悄关闭，进入重连
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionBusyQueuedError) throw err;
       if (signal?.aborted) {
         const abortErr = new Error("用户中断");
         abortErr.name = "AbortError";

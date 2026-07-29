@@ -118,6 +118,7 @@ import type { AppEventBus } from "./infra/eventBus.js";
 import type { AppConfig } from "./infra/config.js";
 import { resolveGardenDir, resolveGardenMetaPath } from "./infra/config.js";
 import { serializeGardenFile } from "./scripts/sync/sync-gardens.js";
+import { stripLeadingMarkdownFrontmatter } from "./scripts/sync/utils.js";
 import matter from "gray-matter";
 // type-only：编译期擦除，不构成运行时循环依赖（resume 的 runner emit 追踪用）
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
@@ -994,13 +995,86 @@ export class GardenService extends BaseService<
         data: { deletedAt: new Date() },
       });
       return success({
-        data: { id, title: existing.title },
+        data: { id, title: existing.title, trashPath: fs.existsSync(trashDir) ? path.relative(this.config.projectRoot, trashDir).replace(/\\/g, "/") : null },
         operation: "delete",
         entity: this.entityName,
         durationMs: Date.now() - start,
       });
     } catch (e) {
       return failureFromError(e, "delete", this.entityName, "GARDEN_DELETE_FAILED");
+    }
+  }
+
+  /**
+   * 从 content/.trash/gardens/{id}-* 恢复软删花园。
+   * 取最新一份 trash 目录移回 content/{id}/，清除 deletedAt。
+   */
+  async restore(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const start = Date.now();
+    try {
+      const existing = await this.prisma.garden.findFirst({ where: { id } });
+      if (!existing) {
+        return failure({
+          code: "GARDEN_NOT_FOUND",
+          message: `花园不存在：${id}`,
+          operation: "restore",
+          entity: this.entityName,
+        });
+      }
+      if (!existing.deletedAt) {
+        return failure({
+          code: "GARDEN_NOT_DELETED",
+          message: `花园未处于软删状态：${id}`,
+          operation: "restore",
+          entity: this.entityName,
+        });
+      }
+      const destDir = resolveGardenDir(this.config, id);
+      if (fs.existsSync(destDir)) {
+        return failure({
+          code: "GARDEN_DEST_EXISTS",
+          message: `恢复失败：目标目录已存在 content/${id}/，请先手动处理`,
+          operation: "restore",
+          entity: this.entityName,
+        });
+      }
+      const trashRoot = path.join(this.config.contentDir, ".trash", "gardens");
+      let trashDir: string | null = null;
+      if (fs.existsSync(trashRoot)) {
+        const candidates = fs
+          .readdirSync(trashRoot, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && (e.name === id || e.name.startsWith(`${id}-`)))
+          .map((e) => path.join(trashRoot, e.name))
+          .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+        trashDir = candidates[0] ?? null;
+      }
+      if (!trashDir || !fs.existsSync(trashDir)) {
+        return failure({
+          code: "GARDEN_TRASH_MISSING",
+          message: `回收站中找不到花园目录：${id}（content/.trash/gardens/${id}-*）`,
+          operation: "restore",
+          entity: this.entityName,
+        });
+      }
+      fs.mkdirSync(path.dirname(destDir), { recursive: true });
+      fs.renameSync(trashDir, destDir);
+      await this.prisma.garden.update({
+        where: { id },
+        data: { deletedAt: null },
+      });
+      return success({
+        data: {
+          id,
+          title: existing.title,
+          path: `content/${id}/`,
+          restoredFrom: path.relative(this.config.projectRoot, trashDir).replace(/\\/g, "/"),
+        },
+        operation: "restore",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (e) {
+      return failureFromError(e, "restore", this.entityName, "GARDEN_RESTORE_FAILED");
     }
   }
 
@@ -1170,7 +1244,7 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
       title: input.title,
       garden,
       slug,
-      content: input.content,
+      content: stripLeadingMarkdownFrontmatter(input.content ?? ""),
       published: input.published ?? false,
       excerpt: input.excerpt,
       coverImage: input.coverImage,
@@ -1184,6 +1258,9 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
     const updateData: any = {};
     for (const [key, value] of Object.entries(data)) {
       if (value !== undefined) updateData[key] = value;
+    }
+    if (typeof updateData.content === "string") {
+      updateData.content = stripLeadingMarkdownFrontmatter(updateData.content);
     }
     if (tags !== undefined) updateData.tags = tags.join(",");
     return updateData;
@@ -1209,6 +1286,8 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
 
   protected serializeToFile(entity: PostEntity): string {
     // garden 由目录表达，不写入 frontmatter（目录是事实源）
+    // 正文禁止再夹一层 frontmatter，否则落盘双头、预览把 YAML 渲成列表
+    const body = stripLeadingMarkdownFrontmatter(entity.content ?? "");
     const tagsYaml = entity.tags?.length > 0 ? `\ntags:\n` + entity.tags.map((t) => `  - "${t}"`).join("\n") : "";
     return `---
 title: "${entity.title.replace(/"/g, '\\"')}"
@@ -1216,7 +1295,7 @@ category: ${entity.category ? `"${entity.category.replace(/"/g, '\\"')}"` : "nul
 published: ${entity.published}
 excerpt: ${entity.excerpt ? `"${entity.excerpt.replace(/"/g, '\\"')}"` : "null"}
 ---
-${entity.content}
+${body}
 `;
   }
 
@@ -3074,6 +3153,29 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
     return entity;
   }
 
+  /** 树语义删除：子节点重挂 + activeLeafId 归位（禁止裸 delegate.delete） */
+  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
+    const start = Date.now();
+    try {
+      const existing = await this.delegate.findUnique({ where: { id } });
+      if (!existing) return this.buildNotFoundFailure("删除", id, Date.now() - start);
+      const { removeChatMessage } = await import("./infra/chatTree.js");
+      await removeChatMessage(this.prisma, id);
+      await this.afterDelete(existing);
+      return success({
+        data: this.buildDeleteSummary(existing),
+        state: await this.getState(),
+        nextSteps: this.getDeleteNextSteps(),
+        operation: "delete",
+        entity: this.entityName,
+        durationMs: Date.now() - start,
+      });
+    } catch (error) {
+      if (error instanceof ServiceValidationError) return error.result;
+      return failureFromError(error, "delete", this.entityName, `${this.entityName.toUpperCase()}_DELETE_FAILED`);
+    }
+  }
+
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
     const sessionId: string | undefined = existing?.sessionId;
@@ -3102,9 +3204,12 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
     since?: Date | string | null;
     limit?: number;
   }): Promise<MessageEntity[]> {
-    const { resolveActivePath, BRANCH_SUMMARY_KIND } = await import("./infra/chatTree.js");
+    const { resolveActivePath, BRANCH_SUMMARY_KIND, healBrokenChatTree } = await import(
+      "./infra/chatTree.js"
+    );
     const limit = Math.min(Math.max(input.limit ?? 200, 1), 500);
     const since = input.since ? new Date(input.since) : null;
+    await healBrokenChatTree(this.prisma, input.sessionId).catch(() => null);
     const session = await this.prisma.chatSession.findUnique({
       where: { id: input.sessionId },
       select: { activeLeafId: true },
@@ -3142,7 +3247,15 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
         orderBy: { createdAt: "asc" },
       });
     } else {
-      const { resolveActivePathWithSummaries } = await import("./infra/chatTree.js");
+      const { resolveActivePathWithSummaries, healBrokenChatTree } = await import(
+        "./infra/chatTree.js"
+      );
+      // 读路径自愈：全树悬空 parent / 幽灵 leaf 先修再取路径
+      await healBrokenChatTree(this.prisma, input.sessionId).catch(() => ({
+        healed: false,
+        activeLeafId: null,
+        repairedCount: 0,
+      }));
       const session = await this.prisma.chatSession.findUnique({
         where: { id: input.sessionId },
         select: { activeLeafId: true },
@@ -3199,8 +3312,12 @@ export interface SessionQueueItemEntity {
   createdAt: Date;
 }
 
-/** B2：软认领超龄阈值——claimedAt 超过此时长且未 finalize，启动恢复重置为可重投 */
-export const SESSION_QUEUE_CLAIM_STALE_MS = 120_000;
+/**
+ * B2：软认领超龄阈值。
+ * 长工具/spawn 流式常 >30s；过短会把「已起流未 finalize」项 release 回待发 → 刷新后幽灵排队。
+ * 超龄时若已有同 content 的 user ChatMessage，必须 finalize 删行，禁止 release。
+ */
+export const SESSION_QUEUE_CLAIM_STALE_MS = 15 * 60_000;
 
 export class SessionQueueItemService extends BaseService<
   CreateSessionQueueItemInput,
@@ -3360,7 +3477,29 @@ export class SessionQueueItemService extends BaseService<
       where: { sessionId, claimedAt: null },
       orderBy: { order: "asc" },
     });
-    return rows.map((r) => this.formatEntity(r));
+    // 已落库为 ChatMessage 的 user 项不再暴露（防 release/竞态后刷新进「待发」）
+    const userRows = rows.filter((r) => r.kind === "user" || r.kind === "child_notify");
+    if (userRows.length === 0) return rows.map((r) => this.formatEntity(r));
+    const delivered = await this.prisma.chatMessage.findMany({
+      where: {
+        sessionId,
+        role: "user",
+        content: { in: [...new Set(userRows.map((r) => r.content))] },
+      },
+      select: { content: true },
+    });
+    if (delivered.length === 0) return rows.map((r) => this.formatEntity(r));
+    const deliveredSet = new Set(delivered.map((d) => d.content));
+    const orphanIds = userRows.filter((r) => deliveredSet.has(r.content)).map((r) => r.id);
+    if (orphanIds.length > 0) {
+      // 异步清幽灵行：不阻塞 list；失败留给 reconciler
+      this.prisma.sessionQueueItem
+        .deleteMany({ where: { id: { in: orphanIds }, claimedAt: null } })
+        .catch(() => {});
+    }
+    return rows
+      .filter((r) => !(r.kind === "user" || r.kind === "child_notify") || !deliveredSet.has(r.content))
+      .map((r) => this.formatEntity(r));
   }
 
   /**
@@ -3436,16 +3575,101 @@ export class SessionQueueItemService extends BaseService<
   }
 
   /**
-   * B2 启动恢复：扫 claimedAt 超龄且未 finalize 的项，重置 claimedAt=null 重投。
-   * 不变量：队列项只能在内容已进 ChatMessage 之后消失——崩溃窗口可恢复。
+   * B2 启动/周期恢复：扫 claimedAt 超龄且未 finalize 的项。
+   * - 已有同 content 的 user ChatMessage → finalize 删行（流式中途绝不可 release 回待发）
+   * - 否则重置 claimedAt=null 供重投（崩溃窗口可恢复）
    */
   async releaseStaleClaims(staleMs = SESSION_QUEUE_CLAIM_STALE_MS): Promise<number> {
     const cutoff = new Date(Date.now() - Math.max(0, staleMs));
-    const result = await this.prisma.sessionQueueItem.updateMany({
+    const stale = await this.prisma.sessionQueueItem.findMany({
       where: { claimedAt: { not: null, lt: cutoff } },
+    });
+    if (stale.length === 0) return 0;
+    let touched = 0;
+    const sessionIds = new Set<string>();
+    for (const item of stale) {
+      const delivered =
+        item.kind === "user" || item.kind === "child_notify"
+          ? await this.prisma.chatMessage.findFirst({
+              where: { sessionId: item.sessionId, role: "user", content: item.content },
+              select: { id: true },
+            })
+          : null;
+      if (delivered) {
+        const fin = await this.finalize(item.id);
+        if (fin.finalized) {
+          touched += 1;
+          sessionIds.add(item.sessionId);
+        }
+        continue;
+      }
+      const r = await this.prisma.sessionQueueItem.updateMany({
+        where: { id: item.id, claimedAt: { not: null, lt: cutoff } },
+        data: { claimedAt: null },
+      });
+      if (r.count > 0) {
+        touched += 1;
+        sessionIds.add(item.sessionId);
+      }
+    }
+    for (const sessionId of sessionIds) {
+      await this.pushQueueUpdate(sessionId, "user");
+    }
+    return touched;
+  }
+
+  /** 单条软认领回滚（busy/409 后重投）；成功则推 session_queue_update */
+  async unclaim(id: string): Promise<boolean> {
+    const item = await this.prisma.sessionQueueItem.findUnique({ where: { id } });
+    if (!item?.claimedAt) return false;
+    const r = await this.prisma.sessionQueueItem.updateMany({
+      where: { id, claimedAt: { not: null } },
       data: { claimedAt: null },
     });
-    return result.count;
+    if (r.count > 0) {
+      await this.pushQueueUpdate(item.sessionId, item.kind);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * run 收尾：处理本会话未 finalize 的软认领。
+   * - 认领后已有同 content 的 user ChatMessage → finalize 删行（防重复投递）
+   * - 否则重置 claimedAt，供下一轮 drain（修 busy/409 认领后卡死）
+   */
+  async reconcileClaimsAfterRun(sessionId: string): Promise<number> {
+    const claimed = await this.prisma.sessionQueueItem.findMany({
+      where: { sessionId, claimedAt: { not: null } },
+      orderBy: { order: "asc" },
+    });
+    if (claimed.length === 0) return 0;
+    let touched = 0;
+    for (const item of claimed) {
+      const delivered = await this.prisma.chatMessage.findFirst({
+        where: {
+          sessionId,
+          role: "user",
+          content: item.content,
+          createdAt: { gte: item.claimedAt! },
+        },
+        select: { id: true },
+      });
+      if (delivered) {
+        const fin = await this.finalize(item.id);
+        if (fin.finalized) touched += 1;
+      } else {
+        const r = await this.prisma.sessionQueueItem.updateMany({
+          where: { id: item.id, claimedAt: { not: null } },
+          data: { claimedAt: null },
+        });
+        if (r.count > 0) touched += 1;
+      }
+    }
+    if (touched > 0) {
+      await this.pushQueueUpdate(sessionId, "user");
+    }
+    return touched;
   }
 
   /** 批量重排序：按 orderedIds 顺序依次赋 order = index * 10 */
