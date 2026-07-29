@@ -12,6 +12,7 @@
 import type { ParseResult, PlatformExtractConfig, ParseOptions } from "./types";
 import { MAX_CONTENT_CHARS } from "./types";
 import { ocrRemoteImage, downloadImageToTemp } from "../ocrBridge.js";
+import { isOcrSkippableUrl } from "../../ocrService.js";
 import { uploadFileToKimi } from "../kimiStub.js";
 import fs from "fs";
 
@@ -540,6 +541,9 @@ async function embedOcrIntoMarkdown(content: string, images: string[]): Promise<
     const batch = targetImages.slice(i, i + OCR_CONCURRENCY);
     const batchResults = await Promise.all(
       batch.map(async (url) => {
+        if (isOcrSkippableUrl(url)) {
+          return { url, text: "" };
+        }
         try {
           // 修复：原 Promise.race + setTimeout 模式在 OCR 成功后未 clearTimeout，
           // timer 持有 reject 闭包 20s 不被 GC。改为手动清除。
@@ -551,8 +555,9 @@ async function embedOcrIntoMarkdown(content: string, images: string[]): Promise<
             );
           });
           return { url, text: result.success ? result.text : "" };
-        } catch (err: any) {
-          console.error(`[OCR Embed] 图片 OCR 失败 ${url}: ${err.message}`);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[OCR Embed] 图片 OCR 失败 ${url}: ${message}`);
           return { url, text: "" };
         }
       })

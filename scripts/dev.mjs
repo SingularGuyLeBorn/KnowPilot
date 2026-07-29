@@ -234,7 +234,13 @@ async function main() {
   // 先清遗留 3010，避免 health 命中僵尸进程、新 server 绑定失败却误报「就绪」
   await killOrphanServer(3010);
 
-  spawnService("server", ["--filter", "@knowpilot/server", "dev"], { fatal: true });
+  // server 意外退出（如历史 Tesseract Worker 崩进程）自动拉起，不拖死整栈；
+  // OCR 已改子进程隔离，但仍保留重启兜底。
+  spawnService("server", ["--filter", "@knowpilot/server", "dev"], {
+    fatal: false,
+    restart: true,
+    maxRestarts: 8,
+  });
   await waitForHealth(healthUrl);
 
   await killOrphanNextDev();

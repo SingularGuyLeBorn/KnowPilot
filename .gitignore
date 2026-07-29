@@ -126,6 +126,13 @@ pgdata/
 
 # Server runtime cache
 apps/server/content/
+apps/server/.data/
+# Tesseract.js 语言包误下载到 cwd（应走缓存目录）
+apps/server/*.traineddata
+*.traineddata
+
+# Agent 误把任务前缀当名称（「你是 …」）
+config/agents/你是*.md
 
 # Runtime generated workspaces (root only)
 /workspaces/

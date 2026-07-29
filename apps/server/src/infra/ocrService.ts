@@ -7,7 +7,79 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { spawn } from "child_process";
+import { fileURLToPath } from "url";
 import type { AppConfig } from "./config.js";
+
+const OCR_TESSERACT_CHILD = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "ocrTesseractChild.mjs",
+);
+
+/** 位图魔数：Tesseract/Paddle 只吃这些；SVG/HTML/JSON 进 Worker 会 nextTick 崩进程 */
+export function detectRasterImageKind(buf: Buffer): "png" | "jpeg" | "gif" | "webp" | "bmp" | null {
+  if (buf.length < 3) return null;
+  if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    return "png";
+  }
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpeg";
+  if (buf.length >= 3 && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return "gif";
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return "webp";
+  }
+  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) return "bmp";
+  return null;
+}
+
+/** URL 侧预过滤：徽章 / SVG 等无 OCR 价值且易崩引擎 */
+export function isOcrSkippableUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  if (/\.svg(\?|#|$)/i.test(u)) return true;
+  if (
+    u.includes("shields.io") ||
+    u.includes("badge.svg") ||
+    u.includes("awesome.re/badge") ||
+    u.includes("badgen.net") ||
+    u.includes("img.shields") ||
+    u.includes("github.com/badges") ||
+    u.includes("travis-ci.") ||
+    u.includes("circleci.com")
+  ) {
+    return true;
+  }
+  if (u.includes("favicon") || u.endsWith(".ico") || u.includes(".ico?")) return true;
+  return false;
+}
+
+/** 全局 OCR 并发闸：防止 embed×多会话 fork 风暴拖死机器 */
+const OCR_MAX_CONCURRENT = Math.max(1, Number(process.env.OCR_MAX_CONCURRENT || 2));
+let ocrInFlight = 0;
+const ocrWaiters: Array<() => void> = [];
+
+async function withOcrSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (ocrInFlight >= OCR_MAX_CONCURRENT) {
+    await new Promise<void>((resolve) => {
+      ocrWaiters.push(resolve);
+    });
+  }
+  ocrInFlight += 1;
+  try {
+    return await fn();
+  } finally {
+    ocrInFlight -= 1;
+    const next = ocrWaiters.shift();
+    if (next) next();
+  }
+}
 
 export interface OcrPerformResult {
   text: string;
@@ -252,32 +324,84 @@ async function ocrWithTesseract(
   imagePath: string,
   language: string,
 ): Promise<OcrPerformResult> {
-  // 纯 JS/wasm OCR 兜底引擎：零 Python 依赖，首次跑会按需下载语言数据到缓存。
-  // 放在 PaddleOCR 之后、OCR.space 之前——PaddleOCR 环境好则用（质量高），
-  // 否则 Tesseract.js 本地兜底（无需 API key），最后才走云端 OCR.space。
+  // 纯 JS/wasm OCR 兜底：必须跑在子进程。tesseract.js Worker 对坏图会在
+  // process.nextTick 抛未捕获异常，主进程 try/catch 拦不住，会直接打死 server。
   const lang = TESSERACT_LANG_MAP[language] || config.ocr.tesseractLang || "chi_sim+eng";
-  try {
-    const { createWorker } = await import("tesseract.js");
-    // OEM=1 (LSTM)，createWorker 首次会下载 lang.traineddata 到缓存目录
-    const worker = await createWorker(lang, 1, { logger: () => undefined });
-    try {
-      const { data } = await worker.recognize(imagePath);
-      const text = (data?.text || "").trim();
-      if (!text) {
-        return { text: "", engine: "Tesseract.js", success: false, error: "Tesseract.js 识别结果为空" };
-      }
-      return { text, engine: "Tesseract.js", success: true };
-    } finally {
-      await worker.terminate();
-    }
-  } catch (err: unknown) {
+  if (!fs.existsSync(OCR_TESSERACT_CHILD)) {
     return {
       text: "",
       engine: "Tesseract.js",
       success: false,
-      error: `Tesseract.js 失败: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Tesseract 子进程入口缺失: ${OCR_TESSERACT_CHILD}`,
     };
   }
+
+  return new Promise((resolve) => {
+    const proc = spawn(process.execPath, [OCR_TESSERACT_CHILD, imagePath, lang], {
+      cwd: path.resolve(path.dirname(OCR_TESSERACT_CHILD), "../.."),
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      proc.kill("SIGTERM");
+      resolve({
+        text: "",
+        engine: "Tesseract.js",
+        success: false,
+        error: "Tesseract.js 子进程超时(45s)",
+      });
+    }, 45_000);
+    proc.stdout.on("data", (d: Buffer) => {
+      stdout += d.toString("utf8");
+    });
+    proc.stderr.on("data", (d: Buffer) => {
+      stderr += d.toString("utf8");
+    });
+    proc.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({
+        text: "",
+        engine: "Tesseract.js",
+        success: false,
+        error: `Tesseract.js 子进程启动失败: ${err.message}`,
+      });
+    });
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      try {
+        const parsed = JSON.parse(stdout.trim() || "{}") as {
+          ok?: boolean;
+          text?: string;
+          error?: string;
+        };
+        if (parsed.ok && parsed.text) {
+          resolve({ text: parsed.text, engine: "Tesseract.js", success: true });
+          return;
+        }
+        resolve({
+          text: "",
+          engine: "Tesseract.js",
+          success: false,
+          error:
+            parsed.error ||
+            stderr.slice(0, 240) ||
+            `Tesseract.js 子进程退出码 ${code ?? "?"}`,
+        });
+      } catch {
+        resolve({
+          text: "",
+          engine: "Tesseract.js",
+          success: false,
+          error:
+            stderr.slice(0, 240) ||
+            `Tesseract.js 子进程输出无法解析 (exit ${code ?? "?"})`,
+        });
+      }
+    });
+  });
 }
 
 async function ocrWithOcrSpace(
@@ -370,6 +494,14 @@ export async function performOcrFromFile(
   imagePath: string,
   language = "auto",
 ): Promise<OcrPerformResult> {
+  return withOcrSlot(() => performOcrFromFileUnlocked(config, imagePath, language));
+}
+
+async function performOcrFromFileUnlocked(
+  config: AppConfig,
+  imagePath: string,
+  language: string,
+): Promise<OcrPerformResult> {
   if (!fs.existsSync(imagePath)) {
     return { text: "", engine: "none", success: false, error: `文件不存在: ${imagePath}` };
   }
@@ -379,6 +511,22 @@ export async function performOcrFromFile(
   }
   if (stats.size > 10 * 1024 * 1024) {
     return { text: "", engine: "none", success: false, error: "图片超过 10MB 上限" };
+  }
+  // 魔数门禁：SVG/HTML/空文件进 Tesseract Worker = 主进程被 nextTick 打死
+  const head = Buffer.alloc(Math.min(16, stats.size));
+  const fd = fs.openSync(imagePath, "r");
+  try {
+    fs.readSync(fd, head, 0, head.length, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (!detectRasterImageKind(head)) {
+    return {
+      text: "",
+      engine: "none",
+      success: false,
+      error: "非位图格式（需 PNG/JPEG/GIF/WEBP/BMP），已跳过 OCR",
+    };
   }
 
   const engines: Array<{ name: string; fn: () => Promise<OcrPerformResult> }> = [
