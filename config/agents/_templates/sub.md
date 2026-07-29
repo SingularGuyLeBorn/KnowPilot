@@ -12,6 +12,7 @@ tools:
   - "native:read_file"
   - "native:list_directory"
   - "native:web_search"
+  - "native:download_file"
   - "native:browser_screenshot"
   - "native:read_image"
   - "native:skills_list"

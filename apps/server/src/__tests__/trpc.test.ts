@@ -331,7 +331,14 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     expect(uploaded.data.name).toBe(testFileName);
     expect(uploaded.data.url).toContain("/uploads/");
 
-    // Obsidian 式：按花园/文章分目录
+    // 按 postId 分目录（与 slug 解耦）
+    const postForUpload = await caller.post.create({
+      title: `Upload Nest ${Date.now()}`,
+      content: "img nest",
+      garden: "posts",
+      published: false,
+    });
+    expect(postForUpload.success).toBe(true);
     const nestedName = `vitest-nested-${Date.now()}.png`;
     const nested = await caller.file.upload({
       name: nestedName,
@@ -339,11 +346,26 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
       size: 40,
       data: dummyBase64,
       garden: "posts",
-      slug: "demo/note",
+      postId: postForUpload.data.id,
     });
     expect(nested.success).toBe(true);
-    expect(nested.data.url).toMatch(/\/uploads\/posts\/demo\/note\//);
-    expect(nested.data.path.replace(/\\/g, "/")).toContain("/uploads/posts/demo/note/");
+    expect(nested.data.url).toContain(`/uploads/posts/${postForUpload.data.id}/`);
+    expect(nested.data.path.replace(/\\/g, "/")).toContain(
+      `/uploads/posts/${postForUpload.data.id}/`,
+    );
+    await caller.post.delete({ id: postForUpload.data.id });
+
+    // 草稿键路径
+    const draftUp = await caller.file.upload({
+      name: `vitest-draft-${Date.now()}.png`,
+      mimeType: "image/png",
+      size: 40,
+      data: dummyBase64,
+      garden: "posts",
+      draftKey: "draft_test_key_01",
+    });
+    expect(draftUp.success).toBe(true);
+    expect(draftUp.data.url).toContain("/uploads/posts/_draft/draft_test_key_01/");
 
     // GetById
     const fetched = await caller.file.getById({ id: uploaded.data.id });

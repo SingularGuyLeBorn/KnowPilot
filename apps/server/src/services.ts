@@ -3491,32 +3491,31 @@ export class FileService extends BaseService<CreateFileInput, UpdateFileInput, L
     size: number;
     data: string;
     garden?: string;
-    slug?: string;
+    postId?: string;
+    draftKey?: string;
   }): Promise<OperationResult<any>> {
     const start = Date.now();
     try {
-      const { name, mimeType, size, data, garden, slug } = input;
+      const { name, mimeType, size, data, garden, postId, draftKey } = input;
       const safeName = path.basename(name);
       const ext = path.extname(safeName);
       const baseName = path.basename(safeName, ext).replace(/[^\w\u4e00-\u9fff.-]+/g, "_") || "file";
       const uniqueName = `${baseName}_${Date.now().toString(36)}${ext}`;
       const uploadRoot = path.resolve(this.config.uploadDir);
 
-      // Obsidian 式：uploads/{garden}/{slug段…}/file — 无 meta 时保持扁平兼容
+      // 按 postId（或草稿 draftKey）分目录，与 slug 解耦——改 slug 不断图片链
       const segments: string[] = [];
       if (garden) segments.push(garden);
-      if (slug) {
-        for (const part of slug.split("/")) {
-          const seg = path.basename(part.trim());
-          if (!seg || seg === "." || seg === "..") continue;
-          segments.push(seg);
-        }
+      if (postId) {
+        segments.push(postId);
+      } else if (draftKey) {
+        segments.push("_draft", draftKey);
       }
 
       const destDir = segments.length > 0 ? path.resolve(uploadRoot, ...segments) : uploadRoot;
       const relToRoot = path.relative(uploadRoot, destDir);
       if (relToRoot.startsWith("..") || path.isAbsolute(relToRoot)) {
-        throw new Error(`非法上传目录：拒绝写出 uploads 根之外（garden/slug 穿越）`);
+        throw new Error(`非法上传目录：拒绝写出 uploads 根之外（garden/postId 穿越）`);
       }
       fs.mkdirSync(destDir, { recursive: true });
 

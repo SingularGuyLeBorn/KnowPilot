@@ -40,7 +40,8 @@ const CONTENT_WRITE_PREFIXES = ["content/uploads/"] as const;
  * - 其余：落到当前 Agent Workspace（无 Workspace → data/workspace/）
  * - list/search 默认 Workspace 根，禁止裸扫项目根
  */
-async function resolveAgentFsPath(
+/** 供 web.download_file 等跨域工具复用（写路径规则与 write_file 一致） */
+export async function resolveAgentFsPath(
   ctx: NativeToolContext,
   relPath: string,
   mode: "read" | "write",

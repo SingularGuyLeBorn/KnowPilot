@@ -58,6 +58,8 @@ const SMOKE_ARG_OVERRIDES: Record<string, unknown> = {
   "post.list": { page: 1, pageSize: 1 },
   "post.search": { query: "smoke", limit: 3 },
   "post.related": { id: FAKE_CUID, limit: 5 },
+  "llm.listLocalModels": { timeoutMs: 500 },
+  "llm.listFreeModels": { modality: "all", sort: "name" },
   "post.createFromChat": {
     sessionId: FAKE_CUID,
     messageId: FAKE_CUID,
