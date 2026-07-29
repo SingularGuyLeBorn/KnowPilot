@@ -95,6 +95,8 @@ export function executeSkillInSandbox(
   const code = extractCodeBody(skill.code);
   const logs: string[] = [];
 
+  // Skill VM 与主进程共命运：游离 Promise.reject 靠 processSafety 兜底。
+  // 禁止在此用「全局 Promise.catch」包装——会误吞 run() 的合法失败。
   const sandbox: vm.Context = {
     input,
     context,

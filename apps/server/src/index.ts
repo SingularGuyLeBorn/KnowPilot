@@ -11,7 +11,11 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./router.js";
 import { createContext } from "./trpc/context.js";
 import { getAppConfig, loadRootEnv } from "./infra/config.js";
+import { installProcessSafetyHandlers } from "./infra/processSafety.js";
 import { initGlobalProxy } from "./infra/proxyDispatcher.js";
+
+// 尽早挂安全网：Tesseract/Skill VM/第三方漏网微任务不得打死进程
+installProcessSafetyHandlers();
 import { getEventBus } from "./infra/eventBus.js";
 import { getServiceContainer } from "./infra/serviceContainer.js";
 import { getTriggerEngine } from "./infra/triggerEngine.js";

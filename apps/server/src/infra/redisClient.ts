@@ -23,6 +23,10 @@ export function getRedisClient(): IORedis {
       enableReadyCheck: true,
       lazyConnect: false,
     });
+    // 无 error listener 时 ioredis emit('error') 会抛到进程（Node EventEmitter 铁律）
+    client.on("error", (err) => {
+      console.warn("[Redis] connection error:", err instanceof Error ? err.message : err);
+    });
   }
   return client;
 }

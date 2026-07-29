@@ -15,6 +15,10 @@ export async function getSharedBrowser(): Promise<Browser> {
       browserInstance = null;
     }
     browserInstance = await chromium.launch(getChromeLaunchOptions());
+    // Chromium 崩溃/被杀时清掉单例，下次 get 重建；避免持有死句柄
+    browserInstance.on("disconnected", () => {
+      browserInstance = null;
+    });
   }
   return browserInstance;
 }

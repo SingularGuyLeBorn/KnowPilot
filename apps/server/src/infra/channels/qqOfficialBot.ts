@@ -82,9 +82,13 @@ export function createQqOfficialBotAdapter(cfg: QqBotConfig): ChannelAdapter {
       isGroup: Boolean(opts.groupOpenid),
       groupOpenid: opts.groupOpenid,
     });
-    void handleIncomingMessage(msg).then((r) => {
-      if (!r.ok) console.warn(`[qq] 入站失败: ${r.error}`);
-    });
+    handleIncomingMessage(msg)
+      .then((r) => {
+        if (!r.ok) console.warn(`[qq] 入站失败: ${r.error}`);
+      })
+      .catch((err) => {
+        console.warn(`[qq] 入站异常:`, err instanceof Error ? err.message : err);
+      });
   };
 
   /** 供 Express webhook 调用 */

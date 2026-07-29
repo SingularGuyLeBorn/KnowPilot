@@ -46,6 +46,10 @@ export class RedisSwarmBus implements SwarmBus {
         removeOnFail: 200,
       },
     });
+    // BullMQ Queue 无 error listener 时连接错误可抛到进程
+    this.queue.on("error", (err) => {
+      console.warn("[RedisSwarmBus] Queue error:", err instanceof Error ? err.message : err);
+    });
   }
 
   async send(
