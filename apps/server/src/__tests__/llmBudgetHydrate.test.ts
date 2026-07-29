@@ -21,7 +21,7 @@ import type { AppConfig } from "../infra/config.js";
 function makeConfig(projectRoot: string): AppConfig {
   return {
     projectRoot,
-    llm: { dailyBudget: 10 },
+    llm: { dailyBudget: 10, blendedUsdPer1k: 0.0005 },
   } as unknown as AppConfig;
 }
 

@@ -31,8 +31,8 @@ const CLAIM_RUNNING_FROM = ["active", "paused", "running"] as const;
 /**
  * 会话 DB 生命周期：所有起流路径（普通发消息 / resume / drain）统一经 Hub 收口。
  * - 起流：active|paused → running
- * - 终态：done → active（subagent/skill_review → completed）；error/abort → paused
- * 条件写 where status 保证与 stop(软暂停)/report_back 不互相覆盖。
+ * - 终态：done → active（subagent/skill_review → completed）；error/abort → active（chat）/ failed（子会话）
+ * 用户点停止不再造「paused + 恢复运行」；重启僵尸仍可 paused，直接发消息即可续聊。
  */
 async function claimSessionDbRunning(sessionId: string): Promise<void> {
   if (!sessionId) return;
@@ -57,12 +57,9 @@ async function settleSessionDbStatus(
       select: { kind: true, status: true },
     });
     if (!row || row.status !== "running") return;
+    const isSub = row.kind === "subagent" || row.kind === "skill_review";
     const next =
-      terminal === "done"
-        ? row.kind === "subagent" || row.kind === "skill_review"
-          ? "completed"
-          : "active"
-        : "paused";
+      terminal === "done" ? (isSub ? "completed" : "active") : isSub ? "failed" : "active";
     await prisma.chatSession.updateMany({
       where: { id: sessionId, status: "running" },
       data: { status: next },
@@ -413,6 +410,19 @@ export class SessionStreamHub {
           // A5：未消费 inject 移交 user Inbox（唯一丢弃/移交收拢点）
           await this.handoffUnconsumedInjects(state.sessionId);
           this.clearInjectQueues(sessionId);
+          // busy/崩溃留下的软认领：有消息则 finalize，无则 unclaim，避免待发卡死
+          try {
+            const { getAppConfig } = await import("./config.js");
+            const { getEventBus } = await import("./eventBus.js");
+            const { getServiceContainer } = await import("./serviceContainer.js");
+            const services = getServiceContainer(prisma, getEventBus(), getAppConfig());
+            await services.sessionQueueItem.reconcileClaimsAfterRun(state.sessionId);
+          } catch (err) {
+            console.warn(
+              `[SessionStreamHub] reconcileClaimsAfterRun 失败 session=${sessionId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
           await releaseSessionRunning(sessionId);
           // completed 置位后立即通知（listRunning 已不含本流）：订阅方按新口径重排
           emitHubRunSettled(sessionId);
@@ -585,6 +595,12 @@ export class SessionStreamHub {
     };
     const queue = kind === "steer" ? state.steeringQueue : state.followUpQueue;
     queue.push(item);
+    // 与 SessionQueueItemService.create 对齐：落库即推，前端可水合（即使 UI 已不默认走 inject）
+    this.pushExternalEvent(sessionId, {
+      type: "session_queue_update",
+      sessionId,
+      kind,
+    });
     return { ok: true, id: item.id, kind, queued: queue.length };
   }
 
@@ -611,9 +627,17 @@ export class SessionStreamHub {
   async ackInject(sessionId: string, ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     try {
-      await prisma.sessionQueueItem.deleteMany({
+      const del = await prisma.sessionQueueItem.deleteMany({
         where: { sessionId, id: { in: ids }, kind: { in: ["steer", "follow_up"] } },
       });
+      // 与 handoff 对称：删行后推送，避免前端 list 仍挂幽灵 inject 行
+      if (del.count > 0) {
+        this.pushExternalEvent(sessionId, {
+          type: "session_queue_update",
+          sessionId,
+          kind: "user",
+        });
+      }
     } catch (err) {
       console.warn(
         `[SessionStreamHub] ackInject 失败 session=${sessionId}:`,
@@ -642,6 +666,12 @@ export class SessionStreamHub {
           `[SessionStreamHub] inject 未消费移交 user 队列 session=${sessionId} id=${item.id} from=${item.kind}`,
         );
       }
+      // 前端靠 session_queue_update 水合；handoff 不推则 stop 后队列项「消失」
+      this.pushExternalEvent(sessionId, {
+        type: "session_queue_update",
+        sessionId,
+        kind: "user",
+      });
       return items.length;
     } catch (err) {
       console.warn(
@@ -691,24 +721,23 @@ export class SessionStreamHub {
 
   /**
    * 显式停止某个 session 的运行（触发 abort）。
-   * @param reason AbortSignal.reason：user=用户软暂停（立即标 paused，前端可出「恢复运行」；
-   *   注入消息已由 A5 持久化，run 收尾统一移交 user 队列，内存队列无保留必要）；
-   *   session_stop=级联清理
+   * @param reason AbortSignal.reason：user=用户停止本轮（归 active，可直接再发消息；
+   *   注入已由 A5 持久化，run 收尾移交 user 队列）；session_stop=级联清理
    */
   stop(sessionId: string, reason: "user" | "session_stop" = "user"): boolean {
     const state = this.runs.get(sessionId);
     if (!state || state.completed) return false;
     this.clearInjectQueues(sessionId);
     state.abortController.abort(reason);
-    // 用户软暂停：立刻标 paused（与 chatAgentStream abort 收尾幂等），前端才能出「恢复运行」
+    // 用户停止：立刻回 active（禁止留下「可恢复继续」paused 态）
     if (reason === "user") {
       prisma.chatSession
         .updateMany({
-          where: { id: sessionId, status: { in: ["active", "running"] } },
-          data: { status: "paused" },
+          where: { id: sessionId, status: { in: ["active", "running", "paused"] } },
+          data: { status: "active" },
         })
         .catch((err) => {
-          console.warn(`[SessionStreamHub] 软暂停标 paused 失败 session=${sessionId}:`, err);
+          console.warn(`[SessionStreamHub] 停止后标 active 失败 session=${sessionId}:`, err);
         });
     }
     return true;

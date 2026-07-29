@@ -53,6 +53,61 @@ export type AppendChatMessageData = {
   source?: string;
 };
 
+async function messageExistsInSession(
+  tx: Tx,
+  sessionId: string,
+  messageId: string,
+): Promise<boolean> {
+  const row = await tx.chatMessage.findFirst({
+    where: { id: messageId, sessionId },
+    select: { id: true },
+  });
+  return !!row;
+}
+
+async function walkSessionPath(
+  tx: Tx,
+  sessionId: string,
+  startId: string,
+): Promise<{ path: Array<{ id: string; parentId: string | null }>; broken: boolean }> {
+  const all = await tx.chatMessage.findMany({
+    where: { sessionId },
+    select: { id: true, parentId: true },
+  });
+  const byId = new Map(all.map((m) => [m.id, m]));
+  return walkActivePath(byId, startId);
+}
+
+/** 本会话内、能走到 null 根的合法 parent；否则回退到最新完整链叶 */
+async function resolveValidParentId(
+  tx: Tx,
+  sessionId: string,
+  candidateId: string | null,
+): Promise<string | null> {
+  const all = await tx.chatMessage.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, parentId: true, createdAt: true },
+  });
+  if (all.length === 0) return null;
+  const byId = new Map(all.map((m) => [m.id, m]));
+
+  const isCompleteLeaf = (id: string): boolean => {
+    const { path, broken } = walkActivePath(byId, id);
+    return !broken && path.length > 0 && path[0]!.parentId == null;
+  };
+
+  if (candidateId && byId.has(candidateId) && isCompleteLeaf(candidateId)) {
+    return candidateId;
+  }
+
+  for (let i = all.length - 1; i >= 0; i--) {
+    const id = all[i]!.id;
+    if (isCompleteLeaf(id)) return id;
+  }
+  return all[all.length - 1]!.id;
+}
+
 /**
  * 同事务：create 消息（parentId 默认 = 当前 activeLeafId）+ 推进 activeLeafId。
  * branch_summary 等旁路消息传 advanceLeaf=false，且必须显式 parentId。
@@ -75,8 +130,22 @@ export async function appendChatMessage(
       });
     }
 
-    const parentId =
+    // parent 必须：本会话内 + 能走到 parentId=null 的根。否则挂到最新完整链叶（禁止幽灵/断链尖端）
+    const candidateParent =
       data.parentId !== undefined ? data.parentId : (session.activeLeafId ?? null);
+    const parentId = await resolveValidParentId(tx, data.sessionId, candidateParent);
+    if (session.activeLeafId && session.activeLeafId !== parentId) {
+      const leafOk = parentId != null && (await messageExistsInSession(tx, data.sessionId, session.activeLeafId));
+      const { broken } = leafOk
+        ? await walkSessionPath(tx, data.sessionId, session.activeLeafId)
+        : { broken: true };
+      if (!leafOk || broken) {
+        await tx.chatSession.update({
+          where: { id: data.sessionId },
+          data: { activeLeafId: parentId },
+        });
+      }
+    }
 
     const created = await tx.chatMessage.create({
       data: {
@@ -119,7 +188,39 @@ export async function appendChatMessage(
   return exec(db);
 }
 
-/** 从 activeLeafId 沿 parentId 回溯到根，再反转 = 活跃路径（根→叶） */
+function messageTime(m: { createdAt?: Date | string }): number {
+  return m.createdAt ? new Date(m.createdAt).getTime() : 0;
+}
+
+/** 从 startId 回溯；若遇悬空 parentId 则 broken=true（路径仅为断点以下片段） */
+function walkActivePath<T extends { id: string; parentId?: string | null }>(
+  byId: Map<string, T>,
+  startId: string,
+): { path: T[]; broken: boolean } {
+  const path: T[] = [];
+  const seen = new Set<string>();
+  let cur: string | null = startId;
+  let broken = false;
+  while (cur && byId.has(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    const msg: T = byId.get(cur)!;
+    path.push(msg);
+    const parentId = msg.parentId ?? null;
+    if (parentId && !byId.has(parentId)) {
+      broken = true;
+      break;
+    }
+    cur = parentId;
+  }
+  path.reverse();
+  return { path, broken };
+}
+
+/**
+ * 从 activeLeafId 沿 parentId 回溯到根，再反转 = 活跃路径（根→叶）。
+ * 叶存在但祖先悬空时：回退到「能走到 parentId=null 的最新完整链」，并把孤叶挂到链尾，
+ * 避免 stop/删尾后刷新只剩「(已中断)」一条。
+ */
 export function resolveActivePath<T extends { id: string; parentId?: string | null; createdAt?: Date | string }>(
   allMessages: T[],
   activeLeafId: string | null | undefined,
@@ -127,30 +228,243 @@ export function resolveActivePath<T extends { id: string; parentId?: string | nu
   if (allMessages.length === 0) return [];
   const byId = new Map(allMessages.map((m) => [m.id, m]));
 
+  const sorted = [...allMessages].sort((a, b) => messageTime(a) - messageTime(b));
   let leafId = activeLeafId && byId.has(activeLeafId) ? activeLeafId : null;
   if (!leafId) {
-    // 无叶游标：按 createdAt 取最后一条（activeLeafId 未回填的会话）
-    const sorted = [...allMessages].sort((a, b) => {
-      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return ta - tb;
-    });
     leafId = sorted[sorted.length - 1]?.id ?? null;
   }
   if (!leafId) return [];
 
-  const path: T[] = [];
-  const seen = new Set<string>();
-  let cur: string | null = leafId;
-  while (cur && byId.has(cur) && !seen.has(cur)) {
-    seen.add(cur);
-    // 显式标注 T：避免 Map.get + 自引用 initializer 触发隐式 any
-    const msg: T = byId.get(cur)!;
-    path.push(msg);
-    cur = msg.parentId ?? null;
+  const primary = walkActivePath(byId, leafId);
+  if (
+    !primary.broken &&
+    primary.path.length > 0 &&
+    primary.path[0]!.parentId == null
+  ) {
+    return primary.path;
   }
-  path.reverse();
-  return path;
+
+  // 断链：找最新一条能走到 null 根的完整链，并把当前孤叶挂到链尾
+  let best: T[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const id = sorted[i]!.id;
+    const { path, broken } = walkActivePath(byId, id);
+    if (!broken && path.length > 0 && path[0]!.parentId == null) {
+      best = path;
+      break;
+    }
+  }
+  if (best.length === 0) {
+    // 全库都断：退回按时间序（总比只显示孤叶强）
+    return sorted;
+  }
+
+  const leaf = byId.get(leafId)!;
+  if (!best.some((m) => m.id === leaf.id)) {
+    return [...best, leaf];
+  }
+  return best;
+}
+
+/**
+ * 会话树自愈（幂等）：扫描**全部**悬空 parentId 并重挂，幽灵 activeLeafId 归位。
+ * 不变量：任意可读路径经此函数后，活跃叶能走到 parentId=null。
+ */
+export async function healBrokenChatTree(
+  db: PrismaClient,
+  sessionId: string,
+): Promise<{ healed: boolean; activeLeafId: string | null; repairedCount: number }> {
+  const session = await db.chatSession.findUnique({
+    where: { id: sessionId },
+    select: { activeLeafId: true },
+  });
+  if (!session) return { healed: false, activeLeafId: null, repairedCount: 0 };
+
+  const all = await db.chatMessage.findMany({
+    where: { sessionId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, parentId: true, createdAt: true },
+  });
+  if (all.length === 0) {
+    return { healed: false, activeLeafId: session.activeLeafId, repairedCount: 0 };
+  }
+
+  const byId = new Map(all.map((m) => [m.id, { ...m }]));
+  const findCompleteLeaf = (excludeId?: string | null): string | null => {
+    for (let i = all.length - 1; i >= 0; i--) {
+      const id = all[i]!.id;
+      if (excludeId && id === excludeId) continue;
+      const { path, broken } = walkActivePath(byId, id);
+      if (!broken && path.length > 0 && path[0]!.parentId == null) {
+        return path[path.length - 1]!.id;
+      }
+    }
+    return null;
+  };
+
+  let repairedCount = 0;
+  for (const m of all) {
+    const row = byId.get(m.id)!;
+    if (row.parentId && !byId.has(row.parentId)) {
+      const attachTo = findCompleteLeaf(m.id);
+      await db.chatMessage.update({
+        where: { id: m.id },
+        data: { parentId: attachTo },
+      });
+      row.parentId = attachTo;
+      repairedCount += 1;
+    }
+  }
+
+  let activeLeafId = session.activeLeafId;
+  if (activeLeafId && byId.has(activeLeafId)) {
+    const { broken } = walkActivePath(byId, activeLeafId);
+    if (broken) {
+      const attachTo = findCompleteLeaf(activeLeafId);
+      await db.chatMessage.update({
+        where: { id: activeLeafId },
+        data: { parentId: attachTo },
+      });
+      byId.get(activeLeafId)!.parentId = attachTo;
+      repairedCount += 1;
+    }
+  } else {
+    activeLeafId = findCompleteLeaf() ?? all[all.length - 1]!.id;
+    if (session.activeLeafId !== activeLeafId) {
+      await db.chatSession.update({
+        where: { id: sessionId },
+        data: { activeLeafId },
+      });
+      repairedCount += 1;
+    }
+  }
+
+  return {
+    healed: repairedCount > 0,
+    activeLeafId: activeLeafId ?? session.activeLeafId,
+    repairedCount,
+  };
+}
+
+/**
+ * 树语义删尾：删除 keepMessageId 的全部后代，同事务 activeLeafId=keep。
+ * 重试/编辑/重新生成唯一入口（禁止扁平分页 deleteMany）。
+ */
+export async function truncateAfter(
+  db: PrismaClient,
+  sessionId: string,
+  keepMessageId: string,
+): Promise<{ deletedIds: string[] }> {
+  const keep = await db.chatMessage.findFirst({
+    where: { id: keepMessageId, sessionId },
+    select: { id: true },
+  });
+  if (!keep) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: `truncateAfter：消息不存在或不属于会话 keep=${keepMessageId} session=${sessionId}`,
+    });
+  }
+
+  const all = await db.chatMessage.findMany({
+    where: { sessionId },
+    select: { id: true, parentId: true },
+  });
+  const children = new Map<string, string[]>();
+  for (const m of all) {
+    if (!m.parentId) continue;
+    const list = children.get(m.parentId) ?? [];
+    list.push(m.id);
+    children.set(m.parentId, list);
+  }
+
+  const deletedIds: string[] = [];
+  const queue = [...(children.get(keepMessageId) ?? [])];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    deletedIds.push(id);
+    for (const c of children.get(id) ?? []) queue.push(c);
+  }
+
+  await db.$transaction(
+    async (tx) => {
+      if (deletedIds.length > 0) {
+        await tx.chatMessage.deleteMany({ where: { id: { in: deletedIds } } });
+      }
+      // 强制归位：不依赖「leaf 是否在删除集」猜测
+      await tx.chatSession.update({
+        where: { id: sessionId },
+        data: { activeLeafId: keepMessageId, updatedAt: new Date() },
+      });
+    },
+    { maxWait: 10_000, timeout: 30_000 },
+  );
+
+  return { deletedIds };
+}
+
+/**
+ * 树语义单删：子节点重挂到被删节点的 parent，activeLeafId 若指向被删则归位。
+ */
+export async function removeChatMessage(
+  db: PrismaClient,
+  messageId: string,
+): Promise<{ sessionId: string; deletedId: string; reparented: number }> {
+  const msg = await db.chatMessage.findUnique({
+    where: { id: messageId },
+    select: { id: true, sessionId: true, parentId: true },
+  });
+  if (!msg) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: `removeChatMessage：消息不存在 id=${messageId}`,
+    });
+  }
+
+  let reparented = 0;
+  await db.$transaction(
+    async (tx) => {
+      const children = await tx.chatMessage.findMany({
+        where: { sessionId: msg.sessionId, parentId: messageId },
+        select: { id: true },
+      });
+      if (children.length > 0) {
+        const r = await tx.chatMessage.updateMany({
+          where: { sessionId: msg.sessionId, parentId: messageId },
+          data: { parentId: msg.parentId },
+        });
+        reparented = r.count;
+      }
+      await tx.chatMessage.delete({ where: { id: messageId } });
+
+      const session = await tx.chatSession.findUnique({
+        where: { id: msg.sessionId },
+        select: { activeLeafId: true },
+      });
+      if (session?.activeLeafId === messageId) {
+        const next =
+          msg.parentId ??
+          (
+            await tx.chatMessage.findFirst({
+              where: { sessionId: msg.sessionId },
+              orderBy: { createdAt: "desc" },
+              select: { id: true },
+            })
+          )?.id ??
+          null;
+        await tx.chatSession.update({
+          where: { id: msg.sessionId },
+          data: { activeLeafId: next, updatedAt: new Date() },
+        });
+      }
+    },
+    { maxWait: 10_000, timeout: 30_000 },
+  );
+
+  return { sessionId: msg.sessionId, deletedId: messageId, reparented };
 }
 
 /** 活跃路径 + 挂在路径节点上的 branch_summary（展示用，不进 LLM） */

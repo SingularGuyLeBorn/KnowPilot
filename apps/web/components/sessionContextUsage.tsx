@@ -109,11 +109,17 @@ export const SessionContextBar = memo(function SessionContextBar({
             <Gauge className="h-3 w-3 text-[var(--kp-brand)]" />
             {pct}%
           </span>
-          <span className="flex items-center gap-1 px-2.5 py-1">
+          <span
+            className="flex items-center gap-1 px-2.5 py-1"
+            title="各轮 API 累计输入（含历史重算叠乘，≠当前窗口）"
+          >
             <ArrowUp className="h-3 w-3 text-[var(--kp-text-3)]" />
             {formatTokenCount(usage.inputTokens)}
           </span>
-          <span className="flex items-center gap-1 px-2.5 py-1">
+          <span
+            className="flex items-center gap-1 px-2.5 py-1"
+            title="各轮 API 累计输出（≠当前窗口）"
+          >
             <ArrowDown className="h-3 w-3 text-[var(--kp-text-3)]" />
             {formatTokenCount(usage.outputTokens)}
           </span>
@@ -327,7 +333,7 @@ const ContextUsagePopover = forwardRef<
           {usage.topMessages.length > 0 && (
             <div>
               <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
-                Top 消耗消息
+                Top 消耗消息（按整轮，非单次工具）
               </div>
               <ul className="space-y-1">
                 {usage.topMessages.map((msg, i) => (
@@ -346,7 +352,7 @@ const ContextUsagePopover = forwardRef<
                               : "bg-[var(--kp-bg-mute)] text-[var(--kp-text-2)]",
                           )}
                         >
-                          {msg.role === "user" ? "用户" : msg.role === "assistant" ? "AI" : msg.role}
+                          {msg.role === "user" ? "用户" : msg.role === "assistant" ? "AI 整轮" : msg.role}
                         </span>
                         {msg.isSummarized && (
                           <span className="shrink-0 rounded bg-[var(--kp-brand-light)]/30 px-1 py-0.5 text-[9px] text-[var(--kp-brand-deep)]">
@@ -357,6 +363,17 @@ const ContextUsagePopover = forwardRef<
                           ~{formatTokenCount(msg.tokens)}
                         </span>
                       </div>
+                      {msg.breakdown && (msg.breakdown.toolCount > 0 || msg.breakdown.thinkingTokens > 0) && (
+                        <p className="mt-0.5 text-[10px] tabular-nums text-[var(--kp-text-3)]">
+                          {msg.breakdown.toolCount > 0 ? `${msg.breakdown.toolCount} 次工具 ~${formatTokenCount(msg.breakdown.toolsTokens)}` : "无工具"}
+                          {msg.breakdown.thinkingTokens > 0
+                            ? ` · 思考 ~${formatTokenCount(msg.breakdown.thinkingTokens)}`
+                            : ""}
+                          {msg.breakdown.contentTokens > 0
+                            ? ` · 正文 ~${formatTokenCount(msg.breakdown.contentTokens)}`
+                            : ""}
+                        </p>
+                      )}
                       <p className="mt-0.5 truncate text-[10px] text-[var(--kp-text-3)]">{msg.preview}</p>
                     </div>
                   </li>
@@ -366,7 +383,8 @@ const ContextUsagePopover = forwardRef<
           )}
 
           <p className="text-[10px] leading-relaxed text-[var(--kp-text-3)]">
-            分段按字符粗算（÷4 估算 token）；输入/输出为 API 累计用量。超过阈值时服务端自动摘要旧消息以释放上下文空间。
+            按服务端送模窗口粗算：摘要 + 最近一次压缩边界之后的消息（旧历史不计入）；工具结果截断 ÷4。↑↓
+            是各轮 API 累计叠乘，不是当前窗口。
           </p>
         </div>
       </div>

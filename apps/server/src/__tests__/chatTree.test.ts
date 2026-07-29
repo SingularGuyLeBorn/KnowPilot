@@ -13,6 +13,9 @@ import {
   appendChatMessage,
   backfillChatTree,
   resolveActivePath,
+  healBrokenChatTree,
+  truncateAfter,
+  removeChatMessage,
   BRANCH_SUMMARY_KIND,
   BRANCH_SUMMARY_MARKER,
 } from "../infra/chatTree.js";
@@ -218,6 +221,128 @@ describe("W1 会话树 chatTree", () => {
     const joined = JSON.stringify(llmMsgs);
     expect(joined).not.toContain("秘密旁路");
     expect(joined).not.toContain(BRANCH_SUMMARY_MARKER);
+  });
+
+  it("断链孤叶：resolveActivePath 不丢主链；heal 后 listForChat 恢复全文", async () => {
+    // 复现：stop 落库的 aborted 挂在已删幽灵 parent → 刷新后只剩「(已中断)」
+    const session = await prisma.chatSession.create({
+      data: { title: `W1-orphan-${RUN}`, model: "deepseek-v4-flash" },
+    });
+    sessionIds.push(session.id);
+    const u1 = await appendChatMessage(prisma, {
+      sessionId: session.id,
+      role: "user",
+      content: "第一轮问题",
+    });
+    const a1 = await appendChatMessage(prisma, {
+      sessionId: session.id,
+      role: "assistant",
+      content: "第一轮回答很长……",
+    });
+    const u2 = await appendChatMessage(prisma, {
+      sessionId: session.id,
+      role: "user",
+      content: "继续",
+    });
+    const ghostParentId = "c" + "deadbeef".repeat(3) + "00001";
+    const aborted = await prisma.chatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: "(已中断)",
+        finishReason: "aborted",
+        parentId: ghostParentId,
+      },
+    });
+    await prisma.chatSession.update({
+      where: { id: session.id },
+      data: { activeLeafId: aborted.id },
+    });
+
+    const all = await prisma.chatMessage.findMany({ where: { sessionId: session.id } });
+    const naiveWalk: string[] = [];
+    {
+      const byId = new Map(all.map((m) => [m.id, m]));
+      let cur: string | null = aborted.id;
+      const seen = new Set<string>();
+      while (cur && byId.has(cur) && !seen.has(cur)) {
+        seen.add(cur);
+        naiveWalk.push(cur);
+        cur = byId.get(cur)!.parentId;
+      }
+    }
+    expect(naiveWalk).toEqual([aborted.id]); // 旧实现只会走到这里
+
+    const path = resolveActivePath(all, aborted.id);
+    expect(path.map((m) => m.id)).toEqual([u1.id, a1.id, u2.id, aborted.id]);
+    expect(path.some((m) => m.content.includes("第一轮回答"))).toBe(true);
+
+    const healed = await healBrokenChatTree(prisma, session.id);
+    expect(healed.healed).toBe(true);
+    const fixed = await prisma.chatMessage.findUnique({ where: { id: aborted.id } });
+    expect(fixed?.parentId).toBe(u2.id);
+
+    const ctx = await createContextInner();
+    const listed = await ctx.services.message.listForChat({ sessionId: session.id, limit: 50 });
+    expect(listed.items.length).toBeGreaterThanOrEqual(4);
+    expect(listed.items.some((m) => m.content.includes("第一轮回答"))).toBe(true);
+  });
+
+  it("truncateAfter：按树删后代并强制 activeLeaf=keep（非扁平分页）", async () => {
+    const u1 = await appendChatMessage(prisma, {
+      sessionId: (await prisma.chatSession.create({
+        data: { title: `W1-trunc-${RUN}`, model: "deepseek-v4-flash" },
+      })).id,
+      role: "user",
+      content: "Q1",
+    });
+    sessionIds.push(u1.sessionId);
+    const a1 = await appendChatMessage(prisma, {
+      sessionId: u1.sessionId,
+      role: "assistant",
+      content: "A1",
+    });
+    const u2 = await appendChatMessage(prisma, {
+      sessionId: u1.sessionId,
+      role: "user",
+      content: "Q2",
+    });
+    await appendChatMessage(prisma, {
+      sessionId: u1.sessionId,
+      role: "assistant",
+      content: "A2",
+    });
+
+    const { deletedIds } = await truncateAfter(prisma, u1.sessionId, u2.id);
+    expect(deletedIds.length).toBe(1); // 只删 A2
+    const left = await prisma.chatMessage.findMany({
+      where: { sessionId: u1.sessionId },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(left.map((m) => m.id)).toEqual([u1.id, a1.id, u2.id]);
+    const sess = await prisma.chatSession.findUnique({ where: { id: u1.sessionId } });
+    expect(sess?.activeLeafId).toBe(u2.id);
+  });
+
+  it("removeChatMessage：子节点重挂，不留幽灵 parent", async () => {
+    const sid = (
+      await prisma.chatSession.create({
+        data: { title: `W1-rm-${RUN}`, model: "deepseek-v4-flash" },
+      })
+    ).id;
+    sessionIds.push(sid);
+    const u1 = await appendChatMessage(prisma, { sessionId: sid, role: "user", content: "U1" });
+    const a1 = await appendChatMessage(prisma, { sessionId: sid, role: "assistant", content: "A1" });
+    const u2 = await appendChatMessage(prisma, { sessionId: sid, role: "user", content: "U2" });
+
+    await removeChatMessage(prisma, a1.id);
+    const u2row = await prisma.chatMessage.findUnique({ where: { id: u2.id } });
+    expect(u2row?.parentId).toBe(u1.id); // 重挂到爷
+    const path = resolveActivePath(
+      await prisma.chatMessage.findMany({ where: { sessionId: sid } }),
+      u2.id,
+    );
+    expect(path.map((m) => m.id)).toEqual([u1.id, u2.id]);
   });
 
   it("setLabel 书签 CRUD", async () => {

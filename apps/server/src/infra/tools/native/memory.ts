@@ -110,7 +110,15 @@ async function gardenDeleteTool(args: Record<string, unknown>, ctx: NativeToolCo
   if (!id) throw new Error("id 不能为空");
   const result = await ctx.services.garden.delete(id);
   if (!result.success) throw new Error(result.error?.message || "删除花园失败");
-  return { id, deleted: true };
+  return { id, deleted: true, softDelete: true, ...(result.data as object) };
+}
+
+async function gardenRestoreTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const id = String(args.id || "").trim();
+  if (!id) throw new Error("id 不能为空");
+  const result = await ctx.services.garden.restore(id);
+  if (!result.success) throw new Error(result.error?.message || "恢复花园失败");
+  return { id, restored: true, ...(result.data as object) };
 }
 
 async function postCreateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -421,8 +429,17 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     concurrencyClass: "D",
     destructive: true,
     description:
-      "软删除空花园（无未删文章才可删；种子库不可删）。目录移入 content/.trash/gardens/，可恢复。禁止 shell 硬删。",
+      "软删除空花园（无未删文章才可删；种子库不可删）。目录移入 content/.trash/gardens/，可 garden_restore 恢复。禁止 shell 硬删。",
     parameters: zodParams(z.object({ id: z.string() })),
+  },
+  {
+    name: "garden_restore",
+    concurrencyClass: "D",
+    destructive: true,
+    approvalExempt: true,
+    description:
+      "从 content/.trash/gardens/ 恢复此前 garden_delete 软删的花园（取该 id 最新一份 trash）。",
+    parameters: zodParams(z.object({ id: z.string().describe("花园 id") })),
   },
   {
     name: "post_create",
@@ -632,6 +649,7 @@ const MEMORY_HANDLERS: Record<string, NativeToolHandler> = {
   garden_get: gardenGetTool,
   garden_update: gardenUpdateTool,
   garden_delete: gardenDeleteTool,
+  garden_restore: gardenRestoreTool,
   post_create: postCreateTool,
   post_update: postUpdateTool,
   post_delete: postDeleteTool,

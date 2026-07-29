@@ -350,10 +350,9 @@ describe("C-3 会话手动恢复（session.resume）", () => {
     }
   }, 30_000);
 
-  it("T12 用户软暂停：stop(user)→paused、注入队列保留；resume 注入用户暂停文案", async () => {
+  it("T12 用户停止：stop(user)→active、注入队列保留；可直接再发消息无需 resume", async () => {
     process.env.MOCK_LLM = "true";
     const ctx = await createContextInner();
-    const caller = appRouter.createCaller(ctx);
     const agentId = await createAgent(ctx, "T12");
     const sessionId = await createSessionWithStatus(ctx, agentId, "active");
     try {
@@ -384,14 +383,13 @@ describe("C-3 会话手动恢复（session.resume）", () => {
       });
       await hub.enqueueInject(sessionId, "follow_up", "keep-me");
 
-      // 负向：旧实现 stop 清空队列且不标 paused
       expect(hub.stop(sessionId, "user")).toBe(true);
       await expect
         .poll(async () => (await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status, {
           timeout: 5_000,
         })
-        .toBe("paused");
-      // A5 后语义：stop 清空内存队列，但注入已持久化；run 收尾统一移交 user 队列（不丢消息）
+        .toBe("active");
+      // A5：stop 清空内存队列，注入已持久化；run 收尾移交 user 队列
       resolveRun();
       await hub.waitFor(sessionId);
       await expect
@@ -406,15 +404,26 @@ describe("C-3 会话手动恢复（session.resume）", () => {
         )
         .toBe("user");
 
-      const res = await caller.session.resume({ id: sessionId });
-      expect(res).toMatchObject({ resumed: true, streamStarted: true });
+      // 直接发消息续聊（不再依赖 session.resume / 「恢复运行」横幅）
+      const started = await hub.startIfNotRunning(
+        sessionId,
+        { sessionId, message: "接着写", agentId } as AgentChatInput,
+        async (emit) => {
+          emit({
+            type: "done",
+            sessionId,
+            agentId,
+            content: "续写完成",
+            toolCalls: [],
+            model: "m",
+            provider: "p",
+            roundsUsed: 1,
+          });
+        },
+      );
+      expect(started).toBe("started");
       await hub.waitFor(sessionId);
-
-      const sysMsgs = await prisma.chatMessage.findMany({
-        where: { sessionId, role: "user", source: "system" },
-      });
-      expect(sysMsgs.some((m) => m.content.includes("用户暂停了生成"))).toBe(true);
-      expect(sysMsgs.some((m) => m.content.includes("服务已重启"))).toBe(false);
+      expect((await prisma.chatSession.findUnique({ where: { id: sessionId } }))?.status).toBe("active");
     } finally {
       await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
     }
@@ -466,10 +475,9 @@ describe("C-3 会话手动恢复（session.resume）", () => {
     }
   }, 20_000);
 
-  it("T11 子会话用户软停止 → paused（不得被 runner 覆写 failed），resume 可用", async () => {
-    // 负向：旧 prepareAgentRun catch 无条件 status=failed，覆盖 Hub.stop 的 paused → resume BAD_REQUEST
+  it("T11 子会话用户停止 → active（不得被 runner 覆写 failed），可直接再起流", async () => {
+    // 负向：旧 prepareAgentRun catch 无条件 status=failed，把可续聊会话打成终态
     const ctx = await createContextInner();
-    const caller = appRouter.createCaller(ctx);
     const agentId = await createAgent(ctx, "T11");
     const created = await ctx.services.session.create({
       title: "T11 subagent",
@@ -487,7 +495,6 @@ describe("C-3 会话手动恢复（session.resume）", () => {
         sessionId,
         { sessionId, message: "长跑", agentId } as AgentChatInput,
         async (emit, signal) => {
-          // 模拟 prepareAgentRun runner：挂起至 abort，不直写 failed（修后契约）
           await new Promise<void>((_resolve, reject) => {
             const onAbort = () => {
               const err = new Error("流式输出已被用户中断");
@@ -505,14 +512,27 @@ describe("C-3 会话手动恢复（session.resume）", () => {
       await hub.waitFor(sessionId);
 
       const afterStop = await prisma.chatSession.findUnique({ where: { id: sessionId } });
-      expect(afterStop?.status).toBe("paused");
+      expect(afterStop?.status).toBe("active");
       expect(afterStop?.status).not.toBe("failed");
 
-      process.env.MOCK_LLM = "true";
-      const res = await caller.session.resume({ id: sessionId });
-      expect(res).toMatchObject({ resumed: true });
+      const started = await hub.startIfNotRunning(
+        sessionId,
+        { sessionId, message: "再来", agentId } as AgentChatInput,
+        async (emit) => {
+          emit({
+            type: "done",
+            sessionId,
+            agentId,
+            content: "ok",
+            toolCalls: [],
+            model: "m",
+            provider: "p",
+            roundsUsed: 1,
+          });
+        },
+      );
+      expect(started).toBe("started");
     } finally {
-      delete process.env.MOCK_LLM;
       await cleanup({ agentIds: [agentId], sessionIds: [sessionId] });
     }
   }, 20_000);

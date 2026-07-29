@@ -348,16 +348,20 @@ export async function drainGoalContinueAfterSettle(args: {
   if (!goal || goal.status !== "active" || !goal.pendingContinue) return false;
 
   const reason = goal.pendingContinue.reason;
-  const cleared: SessionGoalState = { ...goal, pendingContinue: null };
-  // 条件式：先清 pending，避免 settled 重入双起
-  await goalStateStore.write(args.sessionId, cleared);
-
+  // 禁止先清 pending 再起流：busy 时续跑会永久丢失（与 user-queue drain 抢 hub 竞态）
   const session = await args.services.session.getByIdLite(args.sessionId);
-  const message = buildGoalContinueMessage(cleared, reason);
-  const model = cleared.execModel || session.model;
+  const message = buildGoalContinueMessage(goal, reason);
+  const model = goal.execModel || session.model;
 
   if (args.startContinuation) {
-    return args.startContinuation(message, model);
+    const ok = await args.startContinuation(message, model);
+    if (ok) {
+      const latest = await goalStateStore.read(args.sessionId);
+      if (latest?.pendingContinue) {
+        await goalStateStore.write(args.sessionId, { ...latest, pendingContinue: null });
+      }
+    }
+    return ok;
   }
 
   const hub = getStreamHub();
@@ -378,7 +382,15 @@ export async function drainGoalContinueAfterSettle(args: {
   const started = await hub.startIfNotRunning(args.sessionId, body, (emit, signal) =>
     chatAgentStream(args.services, args.config, body, invoke, emit, signal),
   );
-  return started === "started";
+  if (started === "started") {
+    const latest = await goalStateStore.read(args.sessionId);
+    if (latest?.pendingContinue) {
+      await goalStateStore.write(args.sessionId, { ...latest, pendingContinue: null });
+    }
+    return true;
+  }
+  // busy/duplicate：保留 pendingContinue，等下次 settle 再试
+  return false;
 }
 
 let goalSettledHookRegistered = false;

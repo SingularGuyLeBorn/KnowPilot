@@ -15,6 +15,8 @@ tools:
   - "native:read_file"
   - "native:write_file"
   - "native:list_directory"
+  - "native:algo_viz_create"
+  - "native:algo_viz_list"
   - "native:async_task_run"
   - "native:async_task_status"
   - "native:async_task_cancel"

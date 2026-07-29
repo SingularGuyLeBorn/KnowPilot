@@ -96,7 +96,7 @@ export function TokenBudgetBar({
       {dailyBudget && dailyBudget.limitUsd > 0 && (
         <div className="mt-2.5 space-y-1 border-t border-[var(--kp-divider)] pt-2">
           <div className="flex justify-between text-[10px] text-[var(--kp-text-3)]">
-            <span>今日 LLM 预算</span>
+            <span>今日 LLM 预算（本地估算）</span>
             <span
               className={cn(
                 dailyBudget.exceeded && "text-red-600 font-semibold",
@@ -115,11 +115,16 @@ export function TokenBudgetBar({
               style={{ width: `${Math.round(Math.min(1, dailyBudget.ratio) * 100)}%` }}
             />
           </div>
+          <p className="text-[10px] text-[var(--kp-text-3)]">
+            按 token×单价粗算，≠厂商账单；:free / 本地模型不计美元。
+          </p>
           {dailyBudget.warn && !dailyBudget.exceeded && (
-            <p className="text-[10px] text-amber-700">接近今日预算上限，后续请求可能被拒绝。</p>
+            <p className="text-[10px] text-amber-700">接近今日估算上限，后续请求可能被拒绝。</p>
           )}
           {dailyBudget.exceeded && (
-            <p className="text-[10px] text-red-600">今日预算已用尽，请明日再试或提高 LLM_DAILY_BUDGET。</p>
+            <p className="text-[10px] text-red-600">
+              今日估算已用尽。可提高 LLM_DAILY_BUDGET，或删 .dev-log/llm-budget.json 后重启。
+            </p>
           )}
         </div>
       )}

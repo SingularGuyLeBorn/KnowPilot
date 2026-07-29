@@ -120,7 +120,8 @@ const gardenRouter = router({
   getById: publicProcedure.meta({ description: "获取花园详情与首页正文。", aiReadable: true }).input(getGardenByIdSchema).query(({ ctx, input }) => ctx.services.garden.getById(input.id)),
   create: publicProcedure.meta({ description: "新建知识库花园（content/{id}/_garden.md）。", aiReadable: true }).input(createGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.create(input)),
   update: publicProcedure.meta({ description: "更新花园标题/说明/首页。", aiReadable: true }).input(updateGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.update(input)),
-  delete: publicProcedure.meta({ description: "删除空花园（种子库不可删）。", aiReadable: true }).input(deleteGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.delete(input.id)),
+  delete: publicProcedure.meta({ description: "软删除空花园（种子库不可删；进 content/.trash/gardens/）。", aiReadable: true }).input(deleteGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.delete(input.id)),
+  restore: publicProcedure.meta({ description: "从 content/.trash/gardens/ 恢复已软删花园。", aiReadable: true }).input(deleteGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.restore(input.id)),
 });
 
 const postRouter = router({
@@ -136,7 +137,8 @@ const postRouter = router({
     withApprovalGuard(ctx.services, "post.delete", { id: input.id }, input.approvalId, () => ctx.services.post.delete(input.id)),
   ),
   restore: publicProcedure.meta({ description: "从回收站恢复文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.restore(input.id)),
-  permanentDelete: publicProcedure.meta({ description: "从回收站永久删除文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.permanentDelete(input.id)),
+  // 软删铁律：永久删除仅人类 UI；aiReadable=false 禁止 Agent 经 invoke 反射触达
+  permanentDelete: publicProcedure.meta({ description: "从回收站永久删除文章（仅人类 UI）。", aiReadable: false }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.permanentDelete(input.id)),
   listDeleted: publicProcedure.meta({ description: "列出回收站中的文章。", aiReadable: true }).query(({ ctx }) => ctx.services.post.listDeleted()),
   search: publicProcedure.meta({ description: "搜索文章标题和内容（可选花园过滤）。", aiReadable: true }).input(searchPostsSchema).query(({ ctx, input }) => ctx.services.post.search(input.query, input.limit, input.garden)),
   related: publicProcedure
@@ -217,20 +219,29 @@ const agentRouter = router({
     .mutation(({ ctx, input }) => chatAgent(ctx.services, ctx.config, input, createTrpcInvokerForCtx(ctx))),
   submitInject: publicProcedure
     .meta({
-      description: "向运行中的 Agent 注入 Steering（工具批后纠偏）或 Follow-up（停前续问）。",
+      description:
+        "运行中补充用户消息：写入发送队列（kind=user），当前流结束后由 Inbox drain。不再走 steer/follow_up。",
       aiReadable: false,
     })
     .input(submitAgentInjectSchema)
-    .mutation(async ({ input }) => {
-      const hub = getStreamHub();
-      if (!hub) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "StreamHub 未初始化" });
+    .mutation(async ({ ctx, input }) => {
+      const created = await ctx.services.sessionQueueItem.create({
+        sessionId: input.sessionId,
+        kind: "user",
+        content: input.content.trim(),
+        source: "user",
+      });
+      if (!created.success || !created.data) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: created.error?.message ?? "入队失败",
+        });
       }
-      const result = await hub.enqueueInject(input.sessionId, input.kind, input.content);
-      if (!result.ok) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: result.reason });
-      }
-      return success({ data: result, operation: "create", entity: "agentInject" });
+      return success({
+        data: { id: created.data.id, kind: "user" as const, queued: true },
+        operation: "create",
+        entity: "sessionQueueItem",
+      });
     }),
   driftStatus: publicProcedure
     .meta({
@@ -379,6 +390,17 @@ const agentRouter = router({
     })
     .input(z.object({ id: z.string().cuid() }))
     .mutation(({ ctx, input }) => ctx.services.sessionQueueItem.finalize(input.id)),
+  unclaimSessionQueueItem: publicProcedure
+    .meta({
+      description:
+        "回滚软认领（claimedAt→null）。起流 begin 被拒 / 409 SESSION_BUSY 时由前端调用，避免 tombstone+认领后待发蒸发。",
+      aiReadable: false,
+    })
+    .input(z.object({ id: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const ok = await ctx.services.sessionQueueItem.unclaim(input.id);
+      return success({ data: { unclaimed: ok }, operation: "update", entity: "sessionQueueItem" });
+    }),
   reorderSessionQueueItems: publicProcedure
     .meta({ description: "批量重排会话发送队列项顺序。", aiReadable: false })
     .input(reorderSessionQueueItemsSchema)
@@ -886,17 +908,16 @@ const sessionRouter = router({
         // 运行中：catch 会把 session 置 paused；这里不重复写，避免覆盖
         return ctx.services.session.getByIdLite(input.id);
       }
-      // 普通 chat：必须 hub.stop，禁止只改 DB 导致「paused 但流仍在跑」
+      // 普通 chat：hub.stop 归 active；禁止只改 DB 导致「DB 已停但流仍在跑」
       try {
         const { getStreamHub } = await import("./infra/sessionStreamHub.js");
         getStreamHub()?.stop(session.id, "user");
       } catch {
         /* hub 未初始化 */
       }
-      return ctx.services.session.update({ id: input.id, status: "paused" });
+      return ctx.services.session.update({ id: input.id, status: "active" });
     }),
-  // C-3（v10）：paused 会话手动恢复闭环。所有不变量（条件写抢占/回滚/终态归位）
-  // 已收进 SessionService.resume；router 只做薄壳转发，禁止在此叠加任何状态判断。
+  // 保留 API：重启僵尸 paused 可程序化续跑；Chat UI 已去掉「恢复运行」，用户直接发消息即可
   resume: publicProcedure
     .meta({ description: "手动恢复已暂停（paused）会话：续跑服务端重启前未完成的 ReAct 轮。幂等——并发/重复调用不报错、不重复起流。", aiReadable: false })
     .input(resumeSessionSchema)
@@ -1508,6 +1529,19 @@ const aiRouter = router({
             code: "AI_TOOL_NOT_FOUND",
             message: `调用失败：找不到名称为 "${tool}" 的工具。`,
             suggestion: "请调用 ai.tools 获取可用工具并核对拼写。",
+            retryable: false,
+            operation: "invoke",
+            entity: "ai",
+            durationMs: Date.now() - start,
+          });
+        }
+        // 软删铁律等：aiReadable:false 的 procedure 对 Agent 反射不可达（不仅从 ai.tools 隐藏）
+        const procMeta = (procedures[tool] as { _def?: { meta?: { aiReadable?: boolean } } })?._def?.meta;
+        if (procMeta?.aiReadable === false) {
+          return failure({
+            code: "AI_TOOL_FORBIDDEN",
+            message: `调用失败：工具 "${tool}" 不对 Agent 开放（aiReadable=false）。`,
+            suggestion: "删除请用 post.delete / file_delete / directory_delete / garden.delete（软删）；永久删除仅人类 UI。",
             retryable: false,
             operation: "invoke",
             entity: "ai",

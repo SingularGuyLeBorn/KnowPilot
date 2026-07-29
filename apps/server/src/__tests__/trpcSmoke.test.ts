@@ -38,6 +38,13 @@ describe("tRPC AI 工具 smoke（~100+ procedures）", () => {
     expect(nativeTools.some((t) => t.name === "native.web_search")).toBe(true);
   });
 
+  it("软删铁律：ai.tools 不含 post.permanentDelete；ai.invoke 硬拒", async () => {
+    expect(allTools.some((t) => t.name === "post.permanentDelete")).toBe(false);
+    const result = await caller.ai.invoke({ tool: "post.permanentDelete", args: { id: "x" } });
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("AI_TOOL_FORBIDDEN");
+  });
+
   it("所有 ai-readable 工具均可通过 ai.invoke 触达（无未捕获崩溃）", async () => {
     const procedures = appRouter._def.procedures;
     const results: SmokeInvokeResult[] = [];

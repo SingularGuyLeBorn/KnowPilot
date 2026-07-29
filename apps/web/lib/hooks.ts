@@ -3,7 +3,6 @@
  *
  * 设计不变量：
  * - 禁止新增 hooks/ 子目录；所有数据 hook 集中于此，避免同名文件冲突。
- * - useResumeSession 成功后失效 listRunning，由 chat.tsx 的 INV-5 自动 runStream 续传。
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- 动态 tRPC router 名称绑定 */
@@ -216,23 +215,6 @@ export const useInbox = () => {
 };
 
 export const useSession = () => useCRUDApi<any, any, any, ChatSession>("session");
-
-/**
- * C-3 不变量：恢复按钮触发 resume mutation 后，立即失效 listRunning /
- * session.getById / list / listChildren，chat.tsx INV-5 挂接 effect 发现运行中会话自动 runStream 续传。
- */
-export function useResumeSession(options?: { onError?: (message: string) => void }) {
-  const utils = trpc.useUtils();
-  return trpc.session.resume.useMutation({
-    onSuccess: (_res, vars) => {
-      utils.session.getById.invalidate({ id: vars.id }).catch(() => {});
-      utils.session.list.invalidate().catch(() => {});
-      utils.session.listChildren.invalidate().catch(() => {});
-      utils.session.listRunning.invalidate().catch(() => {});
-    },
-    onError: (err) => options?.onError?.(err.message),
-  });
-}
 
 export const useMessage = () => useCRUDApi<any, any, any, ChatMessage>("message");
 

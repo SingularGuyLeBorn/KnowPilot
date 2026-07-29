@@ -158,4 +158,35 @@ describe("A4 startIfNotRunning 三态", () => {
     } as AgentChatInput);
     expect(r?.kind).toBe("rejected");
   });
+
+  it("handleBusyHubPost：按 queueItemId unclaim（child_notify 不按 content 误认）", async () => {
+    const ctx = await createContextInner();
+    const { prisma } = ctx;
+    const session = await prisma.chatSession.create({
+      data: { title: "busy-qid", status: "active" },
+    });
+    const created = await ctx.services.sessionQueueItem.create({
+      sessionId: session.id,
+      kind: "child_notify",
+      content: "notify-body",
+      source: "sub",
+    });
+    const qid = (created.data as { id: string }).id;
+    await ctx.services.sessionQueueItem.consume(qid);
+
+    const r = await handleBusyHubPost(ctx.services, session.id, {
+      sessionId: session.id,
+      message: "notify-body",
+      queueItemId: qid,
+    } as AgentChatInput);
+
+    expect(r?.kind).toBe("queued");
+    expect(r && "queueItemId" in r ? r.queueItemId : null).toBe(qid);
+    const row = await prisma.sessionQueueItem.findUnique({ where: { id: qid } });
+    expect(row?.claimedAt).toBeNull();
+    expect(row?.kind).toBe("child_notify");
+
+    await prisma.sessionQueueItem.deleteMany({ where: { sessionId: session.id } });
+    await prisma.chatSession.delete({ where: { id: session.id } });
+  });
 });

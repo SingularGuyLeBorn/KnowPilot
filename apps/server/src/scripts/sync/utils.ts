@@ -73,12 +73,25 @@ export function getFilesRecursive(
   return results;
 }
 
+/**
+ * 剥掉正文开头残留的 YAML frontmatter（`---` … `---`）。
+ * 常见于 Agent post_update 把整文件（含头）塞进 content，serialize 再包一层 → 双头；
+ * gray-matter 只吃掉第一层，第二层会进正文被渲染成 title/tags 列表。
+ */
+export function stripLeadingMarkdownFrontmatter(raw: string): string {
+  let text = String(raw ?? "").replace(/^\uFEFF/, "");
+  for (let i = 0; i < 5 && /^\s*---\r?\n/.test(text); i++) {
+    text = matter(text).content.replace(/^\uFEFF/, "");
+  }
+  return text.replace(/^\r?\n+/, "");
+}
+
 /** 解析 Markdown 文件：返回 frontmatter 数据 + 正文 */
 export function parseMarkdownFile(filePath: string): { data: Record<string, any>; content: string; fileName: string } {
   const fileContent = fs.readFileSync(filePath, "utf-8");
   const fileName = path.basename(filePath);
   const { data, content } = matter(fileContent);
-  return { data, content, fileName };
+  return { data, content: stripLeadingMarkdownFrontmatter(content), fileName };
 }
 
 /** 解析 YAML 文件 */
