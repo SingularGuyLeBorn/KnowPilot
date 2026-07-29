@@ -1,22 +1,22 @@
 import React from "react";
 import { Composition } from "remotion";
-import { PpoClip, PPO_CLIP_DURATION, PPO_CLIP_FPS, PPO_CLIP_HEIGHT, PPO_CLIP_WIDTH } from "./compositions/PpoClip";
+import { ALGO_VIZ_REGISTRY } from "./registry";
 
 export const RemotionRoot: React.FC = () => {
   return (
     <>
-      <Composition
-        id="PpoClip"
-        component={PpoClip}
-        durationInFrames={PPO_CLIP_DURATION}
-        fps={PPO_CLIP_FPS}
-        width={PPO_CLIP_WIDTH}
-        height={PPO_CLIP_HEIGHT}
-        defaultProps={{
-          epsilon: 0.2,
-          title: "PPO-Clip：信任域的一阶近似",
-        }}
-      />
+      {Object.values(ALGO_VIZ_REGISTRY).map((entry) => (
+        <Composition
+          key={entry.id}
+          id={entry.id}
+          component={entry.component}
+          durationInFrames={entry.durationInFrames}
+          fps={entry.fps}
+          width={entry.width}
+          height={entry.height}
+          defaultProps={entry.defaultProps}
+        />
+      ))}
     </>
   );
 };

@@ -84,3 +84,12 @@ the same frame. Offset actions so the eye can follow cause and effect.
 - Put safety caveats in the visual when the subject involves hazardous voltage, heat, pressure,
   chemicals, or machinery.
 
+## Algorithm teaching clips (KnowPilot / algo-viz)
+
+When the job is **algorithm pedagogy** (not talking-head / brand neon):
+
+- Default **light paper background** (`#FFFFFF` / `#F7F8FA`) and dark ink — match reading UI.
+- Every beat needs an on-screen **formula highlight** and a **caption strip** (muted-understandable).
+- Treat keyframes as board illustrations: one focus, labels glued to objects, cause→effect visible.
+- Full checklist: `config/skills/algo-viz/references/algorithm-explainer-pedagogy.md`.
+

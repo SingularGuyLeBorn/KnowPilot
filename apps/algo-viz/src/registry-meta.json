@@ -1,0 +1,31 @@
+{
+  "entries": [
+    {
+      "id": "PpoClip",
+      "durationInFrames": 720,
+      "fps": 30,
+      "width": 1280,
+      "height": 720,
+      "defaultProps": {
+        "epsilon": 0.2,
+        "title": "PPO-Clip：信任域的一阶近似"
+      }
+    },
+    {
+      "id": "ArVsDiffusion",
+      "durationInFrames": 480,
+      "fps": 30,
+      "width": 1280,
+      "height": 720,
+      "defaultProps": {}
+    },
+    {
+      "id": "MaskedDiffusion",
+      "durationInFrames": 360,
+      "fps": 30,
+      "width": 1280,
+      "height": 720,
+      "defaultProps": {}
+    }
+  ]
+}

@@ -421,6 +421,21 @@ describe("native:file_delete", () => {
     expect(fs.existsSync(path.join(root, result.trashPath!))).toBe(true);
   });
 
+  it("trash_restore 可从 .trash 恢复软删文件", async () => {
+    const ctx = createNativeCtx(root);
+    const del = (await executeNativeTool("file_delete", { path: "to-delete.txt" }, ctx)) as {
+      trashPath: string;
+    };
+    const restored = (await executeNativeTool(
+      "trash_restore",
+      { trashPath: del.trashPath },
+      ctx,
+    )) as { originalPath: string };
+    expect(restored.originalPath).toMatch(/to-delete\.txt$/);
+    expect(fs.existsSync(path.join(root, "data/workspace/to-delete.txt"))).toBe(true);
+    expect(fs.readFileSync(path.join(root, "data/workspace/to-delete.txt"), "utf8")).toBe("bye");
+  });
+
   it("拒绝路径穿越", async () => {
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("file_delete", { path: "../etc/passwd" }, ctx)).rejects.toThrow(/\.\./);

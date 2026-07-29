@@ -1,112 +1,74 @@
 "use client";
 
 /**
- * Markdown 围栏 ```viz … ``` → 浏览器内 Remotion Player（代码驱动，默认不落 MP4）。
+ * Markdown 围栏 ```viz … ``` → 浏览器内 Remotion Player。
+ * Player 与 composition 必须同一次动态加载、同一份 remotion（见 next.config alias）。
  *
- * ```viz
- * composition: PpoClip
- * title: PPO-Clip
- * epsilon: 0.2
- * ```
+ * 高度契约：loading / Player / 错误态共用同一外框尺寸，禁止 skeleton→Player 跳变
+ * 触发 Virtuoso ResizeObserver 把聊天滚到顶部。
  */
 
-import { useMemo } from "react";
-import dynamic from "next/dynamic";
-import { ALGO_VIZ_REGISTRY, getAlgoViz } from "@knowpilot/algo-viz";
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import {
+  normalizeVizSrc,
+  parseVizFence,
+  type VizSpec,
+} from "@/components/post/vizFence";
 
-export type VizSpec = {
-  composition?: string;
-  src?: string;
-  title?: string;
-  poster?: string;
-  props: Record<string, unknown>;
+export type { VizSpec };
+export { parseVizFence } from "@/components/post/vizFence";
+
+type AlgoVizEntry = {
+  id: string;
+  component: ComponentType<Record<string, unknown>>;
+  durationInFrames: number;
+  fps: number;
+  width: number;
+  height: number;
+  defaultProps: Record<string, unknown>;
 };
 
-function parseScalar(raw: string): unknown {
-  const v = raw.trim();
-  if (v === "true") return true;
-  if (v === "false") return false;
-  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
-  if (
-    (v.startsWith('"') && v.endsWith('"')) ||
-    (v.startsWith("'") && v.endsWith("'"))
-  ) {
-    return v.slice(1, -1);
-  }
-  return v;
-}
+type PlayerComponent = typeof import("@remotion/player").Player;
 
-export function parseVizFence(raw: string): VizSpec | null {
-  const lines = raw
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return null;
-
-  const map: Record<string, string> = {};
-  for (const line of lines) {
-    const m = /^([a-zA-Z_][\w-]*)\s*:\s*(.+)$/.exec(line);
-    if (m) {
-      map[m[1].toLowerCase()] = m[2].trim();
-      continue;
-    }
-    if (lines.length === 1 && !line.includes(":")) {
-      if (line.startsWith("/") || /^https?:\/\//i.test(line)) {
-        return { src: line, props: {} };
-      }
-      return { composition: line, props: {} };
-    }
-  }
-
-  const reserved = new Set([
-    "composition",
-    "comp",
-    "src",
-    "url",
-    "video",
-    "title",
-    "caption",
-    "poster",
-  ]);
-  const props: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(map)) {
-    if (reserved.has(k)) continue;
-    props[k] = parseScalar(v);
-  }
-
-  const composition = map.composition || map.comp;
-  const src = map.src || map.url || map.video;
-  if (!composition && !src) return null;
-
-  return {
-    composition,
-    src,
-    title: map.title || map.caption,
-    poster: map.poster,
-    props,
-  };
-}
-
-function normalizeSrc(src: string): string {
-  if (/^https?:\/\//i.test(src) || src.startsWith("/")) return src;
-  if (src.startsWith("content/uploads/")) return `/${src.slice("content/".length)}`;
-  if (src.startsWith("uploads/")) return `/${src}`;
-  return src;
-}
-
-const RemotionPlayer = dynamic(
-  () => import("@remotion/player").then((m) => m.Player),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex aspect-video w-full items-center justify-center bg-black text-sm text-white/60">
-        加载动画引擎…
+/** 固定宽高比外框（padding 非 margin，进 Virtuoso 测量）；教学默认白底 */
+function VizFrame({
+  title,
+  aspectRatio,
+  children,
+}: {
+  title?: string;
+  aspectRatio: string;
+  children: ReactNode;
+}) {
+  return (
+    <figure
+      data-no-edit-click
+      className="not-prose my-0 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-white"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {title ? (
+        <figcaption className="border-b border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-2.5 text-sm font-medium text-[var(--kp-text-1)]">
+          {title}
+        </figcaption>
+      ) : null}
+      <div className="relative w-full bg-white" style={{ aspectRatio }}>
+        {children}
       </div>
-    ),
-  },
-);
+    </figure>
+  );
+}
 
-function CompositionPlayer({
+function CompositionPlayer(props: {
+  compositionId: string;
+  title?: string;
+  extraProps: Record<string, unknown>;
+}) {
+  // compositionId 变则 remount，loading 初值即可，勿在 effect 里同步 setLoading
+  return <CompositionPlayerInner key={props.compositionId} {...props} />;
+}
+
+function CompositionPlayerInner({
   compositionId,
   title,
   extraProps,
@@ -115,29 +77,73 @@ function CompositionPlayer({
   title?: string;
   extraProps: Record<string, unknown>;
 }) {
-  const entry = getAlgoViz(compositionId);
+  const [Player, setPlayer] = useState<PlayerComponent | null>(null);
+  const [entry, setEntry] = useState<AlgoVizEntry | null>(null);
+  const [knownIds, setKnownIds] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 同一次 Promise：Player + registry 共用 webpack 对 remotion 的 alias 解析
+    Promise.all([import("@remotion/player"), import("@knowpilot/algo-viz")])
+      .then(([playerMod, algoMod]) => {
+        if (cancelled) return;
+        setPlayer(() => playerMod.Player);
+        setKnownIds(Object.keys(algoMod.ALGO_VIZ_REGISTRY));
+        setEntry(algoMod.getAlgoViz(compositionId));
+        setLoading(false);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setLoadError(e instanceof Error ? e.message : String(e));
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [compositionId]);
+
   const inputProps = useMemo(() => {
     if (!entry) return {};
     return { ...entry.defaultProps, ...extraProps };
   }, [entry, extraProps]);
 
-  if (!entry) {
+  // loading 与 Player 共用同一 aspect，避免首次挂载/播放撑高把列表顶飞
+  const aspectRatio = entry
+    ? `${entry.width} / ${entry.height}`
+    : "16 / 9";
+
+  if (loading) {
     return (
-      <div className="my-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-[var(--kp-text-2)]">
+      <VizFrame title={title} aspectRatio={aspectRatio}>
+        <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--kp-text-3)]">
+          加载动画组件…
+        </div>
+      </VizFrame>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-[var(--kp-text-2)]">
+        动画引擎加载失败：{loadError}
+      </div>
+    );
+  }
+
+  if (!entry || !Player) {
+    return (
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-[var(--kp-text-2)]">
         未知 composition：<code className="font-mono">{compositionId}</code>
-        。已注册：{Object.keys(ALGO_VIZ_REGISTRY).join(", ")}
+        。已注册：{knownIds.join(", ") || "（无）"}
       </div>
     );
   }
 
   return (
-    <figure className="my-6 not-prose overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-black">
-      {title ? (
-        <figcaption className="border-b border-white/10 bg-[var(--kp-bg-alt)] px-4 py-2.5 text-sm font-medium text-[var(--kp-text-1)]">
-          {title}
-        </figcaption>
-      ) : null}
-      <RemotionPlayer
+    <VizFrame title={title} aspectRatio={aspectRatio}>
+      <Player
         component={entry.component}
         durationInFrames={entry.durationInFrames}
         compositionWidth={entry.width}
@@ -148,9 +154,9 @@ function CompositionPlayer({
         autoPlay={false}
         clickToPlay
         inputProps={inputProps}
-        style={{ width: "100%", aspectRatio: `${entry.width} / ${entry.height}` }}
+        style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }}
       />
-    </figure>
+    </VizFrame>
   );
 }
 
@@ -158,7 +164,7 @@ export function VizEmbed({ raw }: { raw: string }) {
   const spec = parseVizFence(raw);
   if (!spec) {
     return (
-      <div className="my-6 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-[var(--kp-text-2)]">
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-[var(--kp-text-2)]">
         无效的 <code className="font-mono">viz</code> 块。请写{" "}
         <code className="font-mono">composition: PpoClip</code>
       </div>
@@ -176,23 +182,18 @@ export function VizEmbed({ raw }: { raw: string }) {
   }
 
   if (spec.src) {
-    const src = normalizeSrc(spec.src);
+    const src = normalizeVizSrc(spec.src);
     return (
-      <figure className="my-6 not-prose overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]">
-        {spec.title ? (
-          <figcaption className="border-b border-[var(--kp-divider)] px-4 py-2.5 text-sm font-medium text-[var(--kp-text-1)]">
-            {spec.title}
-          </figcaption>
-        ) : null}
+      <VizFrame title={spec.title} aspectRatio="16 / 9">
         <video
-          className="aspect-video w-full bg-black"
+          className="absolute inset-0 h-full w-full bg-black object-contain"
           src={src}
-          poster={spec.poster ? normalizeSrc(spec.poster) : undefined}
+          poster={spec.poster ? normalizeVizSrc(spec.poster) : undefined}
           controls
           playsInline
           preload="metadata"
         />
-      </figure>
+      </VizFrame>
     );
   }
 

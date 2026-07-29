@@ -5,6 +5,7 @@
 export type NativeToolGroupId =
   | "web"
   | "fs"
+  | "algoViz"
   | "shell"
   | "git"
   | "memory"
@@ -24,6 +25,7 @@ export type NativeToolGroup = {
 export const NATIVE_TOOL_GROUPS: NativeToolGroup[] = [
   { id: "web", label: "网络与阅读", hint: "搜索、读网页、采集" },
   { id: "fs", label: "文件与目录", hint: "读写、搜索、目录操作" },
+  { id: "algoViz", label: "算法动画", hint: "Remotion composition 创建与列表" },
   { id: "shell", label: "Shell 与等待", hint: "命令执行、睡眠" },
   { id: "git", label: "Git", hint: "状态、提交、拉取推送" },
   { id: "memory", label: "记忆与文章", hint: "Memory / Post / 日记" },
@@ -42,6 +44,9 @@ export function groupIdForNativeTool(name: string): NativeToolGroupId {
     )
   ) {
     return "web";
+  }
+  if (/^(algo_viz_)/.test(name)) {
+    return "algoViz";
   }
   if (/^(read_file|write_file|list_directory|file_|directory_|search_files)/.test(name)) {
     return "fs";
@@ -90,6 +95,8 @@ export const NATIVE_LABELS: Record<string, string> = {
   read_file: "读取文件",
   write_file: "写入文件",
   append_to_file: "追加文件",
+  algo_viz_create: "创建算法动画",
+  algo_viz_list: "列出算法动画",
   list_directory: "列出目录",
   file_rename: "重命名文件",
   file_move: "移动文件",

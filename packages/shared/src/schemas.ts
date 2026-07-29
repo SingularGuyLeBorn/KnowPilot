@@ -460,6 +460,8 @@ export const agentChatSchema = z
     runOrigin: z.enum(["user", "parent", "heartbeat"]).optional(),
     toolResults: z.record(z.unknown()).optional(),
     clientMessageId: z.string().optional(),
+    /** 发送队列项 id：busy 时按此 unclaim/幂等，禁止仅靠 kind+content 误认 child_notify */
+    queueItemId: z.string().cuid().optional(),
     resumeAfter: z.number().int().min(0).optional(),
   })
   .refine(
@@ -749,11 +751,13 @@ export const createSessionQueueItemSchema = z.object({
   skillPrompt: z.string().optional(),
 });
 
-/** 运行中注入 Steering / Follow-up（Pi 语义） */
+/**
+ * 运行中补充用户消息：一律入发送队列（kind=user），与 chat-scenario-states §4 对齐。
+ * 不再接受 steer/follow_up（2026-07-29 撤销默认偏转）。
+ */
 export const submitAgentInjectSchema = z.object({
   sessionId: z.string().cuid(),
-  content: z.string().min(1, "注入内容不能为空"),
-  kind: z.enum(["steer", "follow_up"]).default("steer"),
+  content: z.string().min(1, "内容不能为空"),
 });
 
 /** ask_user：用户在 Chat 弹框作答 */

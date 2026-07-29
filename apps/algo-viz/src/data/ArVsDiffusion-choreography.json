@@ -1,0 +1,107 @@
+{
+  "project": "ArVsDiffusion",
+  "design": "light paper background (#F7F8FA), dark ink, formula highlight, caption strip — algorithm pedagogy for reading UI",
+  "persistentObjects": [
+    {
+      "name": "ar-panel",
+      "states": {
+        "setup": "border dim",
+        "active": "border blue glow"
+      }
+    },
+    {
+      "name": "diff-panel",
+      "states": {
+        "setup": "border dim",
+        "active": "border green glow"
+      }
+    },
+    {
+      "name": "prompt-tokens",
+      "count": 4,
+      "states": {
+        "visible": "ink"
+      }
+    },
+    {
+      "name": "ar-gen-tokens",
+      "count": 6,
+      "states": {
+        "mask": "gray ?",
+        "revealed": "blue"
+      }
+    },
+    {
+      "name": "diff-gen-tokens",
+      "count": 6,
+      "states": {
+        "mask": "gray ?",
+        "revealed": "green"
+      }
+    },
+    {
+      "name": "caption-bar"
+    },
+    {
+      "name": "formula-bar"
+    }
+  ],
+  "beats": [
+    {
+      "id": "setup",
+      "startFrame": 0,
+      "endFrame": 25,
+      "statement": "两侧共享前缀「床前明月」，左侧 AR 逐 token，右侧扩散并行",
+      "actors": [
+        "ar-panel",
+        "diff-panel",
+        "prompt-tokens"
+      ],
+      "setup": "两面板淡入，顶部公式栏",
+      "action": "面板、标题、公式栏淡入",
+      "result": "左蓝「自回归 AR」，右绿「掩码扩散」，前缀可见",
+      "handoff": "进入 AR 阶段"
+    },
+    {
+      "id": "ar-generating",
+      "startFrame": 25,
+      "endFrame": 115,
+      "statement": "AR：每 15 帧从左到右揭示一个 token",
+      "actors": [
+        "ar-gen-tokens",
+        "formula-bar"
+      ],
+      "setup": "6 个后缀全为灰色 [M]",
+      "action": "每 15 帧从左到右揭示一个，弹簧弹出",
+      "result": "token 逐个亮蓝，公式高亮条件概率",
+      "handoff": "AR 全部揭示"
+    },
+    {
+      "id": "diff-denoising",
+      "startFrame": 25,
+      "endFrame": 145,
+      "statement": "扩散：每步对全部 [M] 打分，并行揭开一批（非 L→R）",
+      "actors": [
+        "diff-gen-tokens",
+        "formula-bar"
+      ],
+      "setup": "6 个后缀全 [M]",
+      "action": "每 24 帧并行揭一批（中间优先），每批 1-2 个",
+      "result": "token 亮绿顺序非 L→R，公式高亮迭代去噪",
+      "handoff": "扩散全部揭示"
+    },
+    {
+      "id": "conclusion",
+      "startFrame": 120,
+      "endFrame": 480,
+      "statement": "AR = O(n) 串行；扩散 = O(T) 并行",
+      "actors": [
+        "caption-bar"
+      ],
+      "setup": "两侧全部揭示",
+      "action": "底部淡入对比结论",
+      "result": "左「串行·O(n)」右「并行·O(T)」",
+      "handoff": "结束"
+    }
+  ]
+}

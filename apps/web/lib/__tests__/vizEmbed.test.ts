@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseVizFence } from "@/components/post/VizEmbed";
+import { parseVizFence } from "@/components/post/vizFence";
 
 describe("parseVizFence", () => {
   it("解析 composition + props", () => {
@@ -27,5 +27,15 @@ describe("parseVizFence", () => {
 
   it("缺字段返回 null", () => {
     expect(parseVizFence("title: only")).toBeNull();
+  });
+
+  it("保留 props 键名大小写，并解析 JSON 数组", () => {
+    const s = parseVizFence(
+      `composition: ArVsDiffusion\ngenTokens: ["The","cat"]\nmaskTokens: ["[M]","[M]"]`,
+    );
+    expect(s?.props).toEqual({
+      genTokens: ["The", "cat"],
+      maskTokens: ["[M]", "[M]"],
+    });
   });
 });

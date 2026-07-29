@@ -254,6 +254,7 @@ export const ALL_NATIVE_TOOL_NAMES = [
   "garden_get",
   "garden_update",
   "garden_delete",
+  "garden_restore",
   "post_create",
   "post_update",
   "post_delete",
