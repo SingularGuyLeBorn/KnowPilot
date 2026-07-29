@@ -21,6 +21,7 @@ import { downloadImageToTemp, ocrRemoteImage } from "../../metablog/ocrBridge.js
 import { performOcrFromFile } from "../../ocrService.js";
 import { resilientChatCompletion } from "../../resilientLlmClient.js";
 import { resolveSafePath } from "../../safePath.js";
+import { resolveAgentFsPath } from "./fs.js";
 import { isSmokeInfoSource } from "../../smokeArtifacts.js";
 import {
   fetchBilibiliPagelistCid,
@@ -35,6 +36,7 @@ import {
 } from "@knowpilot/shared";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
+import { academicDefs, academicHandlers } from "./web/academic.js";
 
 interface InfoSourceSnapshot {
   name: string;
@@ -656,6 +658,146 @@ async function scrollScreenshotTool(args: Record<string, unknown>, ctx: NativeTo
   }
 }
 
+const DOWNLOAD_MAX_BYTES = 50 * 1024 * 1024; // 50MB
+const DOWNLOAD_DEFAULT_TIMEOUT_MS = 60_000;
+
+function sanitizeDownloadFilename(name: string): string {
+  const cleaned = name
+    .replace(/[<>:"|?*\x00-\x1f]/g, "_")
+    .replace(/[/\\]/g, "_")
+    .trim();
+  return (cleaned || "download.bin").slice(0, 180);
+}
+
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  // filename*=UTF-8''... 或 filename="..."
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (star?.[1]) {
+    try {
+      return sanitizeDownloadFilename(decodeURIComponent(star[1].trim().replace(/^"|"$/g, "")));
+    } catch {
+      /* ignore */
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  if (plain?.[1]) return sanitizeDownloadFilename(plain[1].trim());
+  return null;
+}
+
+/**
+ * download_file：按 URL 下载任意文件到 Agent Workspace（或 content/uploads/）。
+ * 与 save_webpage 区别：本工具保存原始二进制/附件；save_webpage 存网页正文 HTML/Markdown。
+ */
+async function downloadFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const url = String(args.url || "").trim();
+  if (!url) throw new Error("url 不能为空");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`url 非法：${url}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("download_file 仅支持 http/https URL");
+  }
+
+  const started = Date.now();
+  const timeoutMs = Math.min(
+    Math.max(Number(args.timeoutMs) || DOWNLOAD_DEFAULT_TIMEOUT_MS, 1_000),
+    300_000,
+  );
+  const overwrite = args.overwrite === true;
+
+  let destRel = String(args.path || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+  const urlLeaf = path.basename(parsed.pathname) || "download.bin";
+  let filename = sanitizeDownloadFilename(decodeURIComponent(urlLeaf));
+
+  if (!destRel) {
+    destRel = `downloads/${filename}`;
+  } else if (destRel.endsWith("/")) {
+    destRel = `${destRel}${filename}`;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent": "KnowPilot/1.0 (download_file)",
+        Accept: "*/*",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`下载失败 HTTP ${res.status} ${res.statusText || ""}`.trim());
+    }
+
+    const cdName = filenameFromContentDisposition(res.headers.get("content-disposition"));
+    // 未指定具体文件名（默认 downloads/ 或目录）时，优先用 Content-Disposition
+    if (cdName && (!args.path || String(args.path).trim().endsWith("/"))) {
+      filename = cdName;
+      if (!args.path || !String(args.path).trim()) {
+        destRel = `downloads/${filename}`;
+      } else {
+        destRel = `${String(args.path).trim().replace(/\\/g, "/").replace(/\/?$/, "/")}${filename}`;
+      }
+    }
+
+    const contentLength = res.headers.get("content-length");
+    if (contentLength && Number(contentLength) > DOWNLOAD_MAX_BYTES) {
+      throw new Error(
+        `文件过大（Content-Length ${contentLength} 字节），上限 ${DOWNLOAD_MAX_BYTES} 字节（50MB）`,
+      );
+    }
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > DOWNLOAD_MAX_BYTES) {
+      throw new Error(`文件过大（${buf.length} 字节），上限 ${DOWNLOAD_MAX_BYTES} 字节（50MB）`);
+    }
+    if (buf.length === 0) {
+      throw new Error("下载内容为空（0 字节）");
+    }
+
+    const { abs, relForReturn } = await resolveAgentFsPath(ctx, destRel, "write");
+    if (fs.existsSync(abs) && !overwrite) {
+      throw new Error(`目标已存在：${relForReturn}（传 overwrite=true 可覆盖）`);
+    }
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, buf);
+
+    const contentType = res.headers.get("content-type");
+    const isTextish =
+      !!contentType &&
+      (/^text\//i.test(contentType) ||
+        /json|xml|javascript|csv|markdown|yaml/i.test(contentType));
+
+    return {
+      ok: true,
+      url,
+      path: relForReturn,
+      bytes: buf.length,
+      contentType: contentType || null,
+      elapsedMs: Date.now() - started,
+      suggestedTool: isTextish ? "read_file" : undefined,
+      note: isTextish
+        ? "文件已下载；可用 read_file 阅读（长文配合 offset）"
+        : "文件已下载到本地（二进制）。默认落在当前 Agent Workspace 的 downloads/；也可指定 content/uploads/…",
+    };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`下载超时（${timeoutMs}ms）：${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * save_webpage：把网页完整保存到本地（HTML + Markdown），再 read_file 读。
  * 解决 read_article 截断、长文分段麻烦的问题——存本地后可反复读、离线读。
@@ -1249,6 +1391,26 @@ const WEB_DEFS: NativeToolDefinition[] = [
     },
   },
   {
+    name: "download_file",
+    concurrencyClass: "A",
+    description:
+      "按 URL 下载任意文件到本地（PDF/zip/图片/二进制等）。默认落到当前 Agent Workspace 的 downloads/<文件名>；也可指定 path（相对 Workspace，或 content/uploads/… 写入知识库上传区）。与 save_webpage 区别：本工具保存原始字节；save_webpage 存网页正文 HTML/Markdown。上限 50MB。文本类返回后可用 read_file 阅读。",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "文件 URL（http/https）" },
+        path: {
+          type: "string",
+          description:
+            "保存路径。默认 downloads/<从 URL 或 Content-Disposition 推断的文件名>。可传文件路径（如 downloads/report.pdf）或目录（以 / 结尾，如 content/uploads/）。content/ 仅允许 uploads/",
+        },
+        overwrite: { type: "boolean", description: "目标已存在时是否覆盖，默认 false" },
+        timeoutMs: { type: "number", description: "超时毫秒，默认 60000，上限 300000" },
+      },
+      required: ["url"],
+    },
+  },
+  {
     name: "read_image",
     concurrencyClass: "B",
     // OCR/vision 只读，无本地写副作用
@@ -1324,6 +1486,7 @@ const WEB_DEFS: NativeToolDefinition[] = [
       required: ["url"],
     },
   },
+  ...academicDefs,
 ];
 
 const WEB_HANDLERS = {
@@ -1335,9 +1498,11 @@ const WEB_HANDLERS = {
   browser_screenshot: browserScreenshotTool,
   scroll_screenshot: scrollScreenshotTool,
   save_webpage: saveWebpageTool,
+  download_file: downloadFileTool,
   read_image: readImageTool,
   vision_describe: visionDescribeTool,
   video_transcript: videoTranscriptTool,
+  ...academicHandlers,
 };
 
 export function registerWebTools(): void {

@@ -36,7 +36,11 @@ export const NATIVE_TOOL_GROUPS: NativeToolGroup[] = [
 ];
 
 export function groupIdForNativeTool(name: string): NativeToolGroupId {
-  if (/^(web_|read_article|scrape_|rss_|browser_|scroll_screenshot|save_webpage|vision_describe|video_transcript|read_image)/.test(name)) {
+  if (
+    /^(web_|read_article|scrape_|rss_|browser_|scroll_screenshot|save_webpage|download_file|vision_describe|video_transcript|read_image|search_arxiv|fetch_arxiv|search_huggingface|fetch_huggingface_)/.test(
+      name,
+    )
+  ) {
     return "web";
   }
   if (/^(read_file|write_file|list_directory|file_|directory_|search_files)/.test(name)) {
@@ -74,9 +78,15 @@ export const NATIVE_LABELS: Record<string, string> = {
   browser_screenshot: "网页截图",
   scroll_screenshot: "滚动截图",
   save_webpage: "保存网页到本地",
+  download_file: "下载文件到本地",
   read_image: "识别图片文字",
   vision_describe: "视觉理解描述",
   video_transcript: "视频转文字",
+  search_arxiv: "搜索 arXiv",
+  fetch_arxiv: "获取 arXiv 论文",
+  search_huggingface: "搜索 HuggingFace",
+  fetch_huggingface_model: "HuggingFace 模型详情",
+  fetch_huggingface_trending: "HuggingFace 热榜",
   read_file: "读取文件",
   write_file: "写入文件",
   append_to_file: "追加文件",

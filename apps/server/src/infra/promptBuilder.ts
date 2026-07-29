@@ -94,8 +94,12 @@ export async function buildAllMemoryHints(
 
 const WEB_TOOL_GUIDE = `## 网络工具用法
 - web_search：查最新信息、文档、新闻；返回标题+URL+摘要，优先用结果中的 URL 继续深挖。已配置 Tavily/SerpAPI 时按 SEARCH_ENGINE_PRIORITY 自动降级；在 /sources 启用信息源后，Tavily/SerpAPI 会优先在信息源域名内 scoped 搜索（hint 含 infoSource-scoped / N 信息源）。
+- search_arxiv / fetch_arxiv：学术论文走 arXiv API（免费，约 3s/次限流）。搜用 search_arxiv（可用 OR 合并主题、category=cs.AI 等）；详情用 fetch_arxiv(paperId)；下 PDF 用 download_file(url=pdfUrl)。不要用 web_search/read_article 硬爬 arxiv.org。
+- search_huggingface / fetch_huggingface_model / fetch_huggingface_trending：HuggingFace Hub（无需 key）。搜模型用 search_huggingface；详情用 fetch_huggingface_model(modelId)；热榜用 fetch_huggingface_trending(type=models|datasets|spaces|papers)。
 - read_article：读取单篇网页正文（Markdown）。支持知乎/微信/小红书/B站/掘金/CSDN/InfoQ/SegmentFault/开源中国/博客园/简书/GitHub 等；GitHub blob→raw + jsDelivr/API（~1s）；InfoQ/OSChina API；SegmentFault/CSDN/掘金/博客园 SSR HTTP；简书 Mobile HTTP；知乎 Cookie HTTP（~1s，需登录态）；HTTP 404 秒级报错；正文偏短（<150 字）时返回 contentWarning 并建议 scrape_web_page。默认 embedOcr=true：对前几张图**临时下载→OCR→把文字嵌进正文**（OCR 完删临时文件，**不永久落盘**）；\`images\` 返回 CDN URL 列表（图本身不进知识库）。小红书等图文笔记会从 SSR imageList 抽图。
 - scrape_web_page：Playwright 采集复杂 SPA/需 JS 渲染页面；返回 method=playwright 与 platform；read_article 失败或页面高度动态时再试。
+- download_file：按 URL 下载任意文件（PDF/zip/图片等）到本地，默认 Agent Workspace 的 downloads/；也可 path=content/uploads/…。与 save_webpage（存网页正文）不同。上限 50MB；文本类再用 read_file。
+- save_webpage：把网页正文存成 HTML/Markdown 到 data/webpages/，便于反复/离线读。
 - browser_screenshot：打开页面截图（PNG）落盘，返回 path/publicUrl（无图片字节）。用于视觉确认布局、登录墙、图表、验证码页等；随后用 read_image。
 - read_image：读图。path 用 screenshot 返回路径；也可传 read_article 返回的图片 URL。mode=ocr|vision|auto（默认 auto：当前模型支持 vision 则识图，否则 OCR）。只回文本，勿期望 base64。
 - vision_describe：外挂多模态模型做语义理解/描述（适合流程图、UI 截图、版面、纯文字模型看不懂的图）；可直接传图片 URL。
@@ -135,8 +139,13 @@ export function buildAgentToolGuide(tools: string[]): string {
     has("web_search") ||
     has("read_article") ||
     has("scrape_web_page") ||
+    has("download_file") ||
+    has("save_webpage") ||
     has("browser_screenshot") ||
-    has("read_image")
+    has("read_image") ||
+    has("search_arxiv") ||
+    has("search_huggingface") ||
+    has("fetch_huggingface_trending")
   ) {
     parts.push(WEB_TOOL_GUIDE);
   }

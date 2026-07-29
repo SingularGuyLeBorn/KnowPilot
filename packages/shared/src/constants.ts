@@ -177,6 +177,54 @@ export const DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS = 4_000;
 /** DeepSeek 厂商 id（config.llm.providers key、provider 嗅探、credential key 共用） */
 export const LLM_PROVIDER_DEEPSEEK = "deepseek";
 
+/**
+ * 本地 OpenAI 兼容推理后端（Ollama / llama.cpp / LM Studio / vLLM）。
+ * 会话模型 id 约定：`{provider}/{upstreamModel}`，如 `ollama/llama3.2:latest`。
+ */
+export const LOCAL_LLM_PROVIDER_IDS = ["ollama", "llamacpp", "lmstudio", "vllm"] as const;
+export type LocalLlmProviderId = (typeof LOCAL_LLM_PROVIDER_IDS)[number];
+
+/** 各本地后端默认 OpenAI 兼容根（含 /v1） */
+export const LOCAL_LLM_DEFAULT_BASE_URLS: Record<LocalLlmProviderId, string> = {
+  ollama: "http://127.0.0.1:11434/v1",
+  llamacpp: "http://127.0.0.1:8080/v1",
+  lmstudio: "http://127.0.0.1:1234/v1",
+  vllm: "http://127.0.0.1:8000/v1",
+};
+
+export const LOCAL_LLM_PROVIDER_LABELS: Record<LocalLlmProviderId, string> = {
+  ollama: "Ollama",
+  llamacpp: "llama.cpp",
+  lmstudio: "LM Studio",
+  vllm: "vLLM",
+};
+
+export function isLocalLlmProviderId(id: string): id is LocalLlmProviderId {
+  return (LOCAL_LLM_PROVIDER_IDS as readonly string[]).includes(id);
+}
+
+/** 解析 `ollama/xxx` 形态；非本地前缀时 providerId=null、apiModel=原串 */
+export function parseLocalModelRef(model: string): {
+  providerId: LocalLlmProviderId | null;
+  apiModel: string;
+} {
+  const trimmed = model.trim();
+  const lower = trimmed.toLowerCase();
+  for (const id of LOCAL_LLM_PROVIDER_IDS) {
+    const prefix = `${id}/`;
+    if (lower.startsWith(prefix)) {
+      return { providerId: id, apiModel: trimmed.slice(prefix.length) };
+    }
+  }
+  return { providerId: null, apiModel: trimmed };
+}
+
+/** 拼本地模型会话 id（UI / ChatSession.model） */
+export function toLocalModelRef(providerId: LocalLlmProviderId, apiModel: string): string {
+  const name = apiModel.trim().replace(new RegExp(`^${providerId}/`, "i"), "");
+  return `${providerId}/${name}`;
+}
+
 /** 内置模型 id（与下方 CHAT_MODELS 注册表对齐；旧 id 由 llmClient 映射到 V4 Flash） */
 export const LLM_MODEL_IDS = {
   DEEPSEEK_V4_FLASH: "deepseek-v4-flash",
@@ -275,6 +323,51 @@ export const CHAT_MODELS: ChatModelOption[] = [
   },
   { id: "glm-4-flash", label: "GLM-4 Flash", provider: "zhipu", supportsVision: true, inputHint: "多模态 · 支持图片与文本", defaultTemperature: 0.7 },
   { id: "gpt-4o-mini", label: "GPT-4o Mini", provider: "openai", supportsVision: true, inputHint: "多模态 · 支持图片与文本", defaultTemperature: 0.7 },
+  // 本地后端占位（真实列表由 llm.listLocalModels 动态发现；此处保证静态菜单/Agent 页可见入口）
+  {
+    id: "ollama/llama3.2",
+    label: "Ollama · llama3.2",
+    provider: "ollama",
+    contextWindowTokens: 32_000,
+    supportsThinking: false,
+    supportsVision: false,
+    ocrFallback: true,
+    inputHint: "本地 Ollama · 需本机已拉取模型（ollama pull llama3.2）",
+    defaultTemperature: 0.7,
+  },
+  {
+    id: "llamacpp/local",
+    label: "llama.cpp · local",
+    provider: "llamacpp",
+    contextWindowTokens: 32_000,
+    supportsThinking: false,
+    supportsVision: false,
+    ocrFallback: true,
+    inputHint: "本地 llama.cpp server（OpenAI 兼容 /v1）",
+    defaultTemperature: 0.7,
+  },
+  {
+    id: "lmstudio/local",
+    label: "LM Studio · local",
+    provider: "lmstudio",
+    contextWindowTokens: 32_000,
+    supportsThinking: false,
+    supportsVision: false,
+    ocrFallback: true,
+    inputHint: "本地 LM Studio 本地服务（默认 1234）",
+    defaultTemperature: 0.7,
+  },
+  {
+    id: "vllm/local",
+    label: "vLLM · local",
+    provider: "vllm",
+    contextWindowTokens: 32_000,
+    supportsThinking: false,
+    supportsVision: false,
+    ocrFallback: true,
+    inputHint: "本地 vLLM OpenAI 兼容服务",
+    defaultTemperature: 0.7,
+  },
 ];
 
 /** Chat 设置面板可选模型（V4 Flash / Pro / VL2 + Kimi） */
@@ -293,10 +386,12 @@ export const PRIMARY_CHAT_MODELS: ChatModelOption[] = PRIMARY_CHAT_MODEL_IDS.map
 export function resolveModelSupportsVision(modelId: string): boolean {
   const found = CHAT_MODELS.find((m) => m.id === modelId);
   if (found?.supportsVision) return true;
-  const lower = modelId.toLowerCase();
+  const { apiModel } = parseLocalModelRef(modelId);
+  const lower = apiModel.toLowerCase();
   return (
     lower.includes("vl") ||
     lower.includes("vision") ||
+    lower.includes("llava") ||
     lower.includes("4o") ||
     lower.includes("glm-4")
   );
@@ -457,10 +552,16 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:web_search",
     "native:read_article",
     "native:scrape_web_page",
+    "native:download_file",
     "native:browser_screenshot",
     "native:read_image",
     "native:vision_describe",
     "native:video_transcript",
+    "native:search_arxiv",
+    "native:fetch_arxiv",
+    "native:search_huggingface",
+    "native:fetch_huggingface_model",
+    "native:fetch_huggingface_trending",
     "native:read_file",
     "native:write_file",
     "native:list_directory",
@@ -546,10 +647,16 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:web_search",
     "native:read_article",
     "native:scrape_web_page",
+    "native:download_file",
     "native:browser_screenshot",
     "native:read_image",
     "native:vision_describe",
     "native:video_transcript",
+    "native:search_arxiv",
+    "native:fetch_arxiv",
+    "native:search_huggingface",
+    "native:fetch_huggingface_model",
+    "native:fetch_huggingface_trending",
     "native:read_file",
     "native:write_file",
     "native:list_directory",
@@ -643,10 +750,16 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:write_file",
     "native:list_directory",
     "native:web_search",
+    "native:download_file",
     "native:browser_screenshot",
     "native:read_image",
     "native:vision_describe",
     "native:video_transcript",
+    "native:search_arxiv",
+    "native:fetch_arxiv",
+    "native:search_huggingface",
+    "native:fetch_huggingface_model",
+    "native:fetch_huggingface_trending",
     "native:pinme_upload",
     "native:skills_list",
     "native:skill_view",
@@ -658,10 +771,16 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:web_search",
   "native:read_article",
   "native:scrape_web_page",
+  "native:download_file",
   "native:browser_screenshot",
   "native:read_image",
   "native:vision_describe",
   "native:video_transcript",
+  "native:search_arxiv",
+  "native:fetch_arxiv",
+  "native:search_huggingface",
+  "native:fetch_huggingface_model",
+  "native:fetch_huggingface_trending",
   "native:read_file",
   "native:write_file",
   "native:list_directory",

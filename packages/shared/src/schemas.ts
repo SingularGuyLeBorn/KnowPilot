@@ -798,8 +798,10 @@ export const createFileSchema = z.object({
 });
 
 /**
- * 上传文件。可选 garden/slug → 落盘 content/uploads/{garden}/{slug}/…（Obsidian 式按文分目录）。
- * 新建未落盘文章传 slug=`_draft`。
+ * 上传文件。按文章稳定 id 分目录，改 slug 不断链：
+ * - 已有文章：content/uploads/{garden}/{postId}/…
+ * - 未落盘草稿：content/uploads/{garden}/_draft/{draftKey}/…
+ * - 无 meta：content/uploads/ 扁平
  */
 export const uploadFileSchema = z.object({
   name: z.string().min(1),
@@ -807,7 +809,13 @@ export const uploadFileSchema = z.object({
   size: z.number().int().positive(),
   data: z.string().min(1), // base64 encoded file content
   garden: gardenIdSchema.optional(),
-  slug: safeEntitySlugSchema.optional(),
+  /** 已落盘文章 id（cuid）；优先于 draftKey */
+  postId: z.string().cuid().optional(),
+  /** 新建文章编辑会话的稳定草稿键（uuid）；勿用 slug */
+  draftKey: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]{8,64}$/, "draftKey 须为 8–64 位字母数字/_/-")
+    .optional(),
 });
 
 export const updateFileSchema = z.object({
@@ -1535,6 +1543,13 @@ export const executeApprovalSchema = z.object({
 });
 
 export const approveAndExecuteApprovalSchema = executeApprovalSchema;
+
+/** 批量批准并执行 / 批量拒绝（待你点头队列） */
+export const approvalIdsBatchSchema = z.object({
+  ids: z.array(z.string().cuid()).min(1).max(50),
+});
+export const approveAndExecuteBatchSchema = approvalIdsBatchSchema;
+export const rejectApprovalsBatchSchema = approvalIdsBatchSchema;
 
 export const workflowStepSchema = z.object({
   action: z.string().min(1),
