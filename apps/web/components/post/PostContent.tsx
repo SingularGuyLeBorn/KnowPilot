@@ -21,6 +21,7 @@ import {
   useInsideKatexFormula,
 } from "@/components/post/KatexFormula";
 import { BoardPreview } from "@/components/editor/BoardCanvas";
+import { VizEmbed } from "@/components/post/VizEmbed";
 import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
 
@@ -286,6 +287,7 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
 
   const isMathBlock = isMathClassName(childClass) || language === "math";
   const isBoardBlock = language === "kp-board" || language === "board";
+  const isVizBlock = language === "viz" || language === "algoviz";
   const codeText = getText(children);
   const lineCount = useMemo(() => countCodeLines(codeText), [codeText]);
   const [showLineNumbers, setShowLineNumbers] = useShowCodeLineNumbers();
@@ -308,6 +310,10 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
 
   if (isBoardBlock) {
     return <BoardPreview raw={codeText} />;
+  }
+
+  if (isVizBlock) {
+    return <VizEmbed raw={codeText} />;
   }
 
   const codeView = (
@@ -544,6 +550,21 @@ export const PostContent = memo(function PostContent({
         {children}
       </ThinkingNode>
     ),
+    video: ({ src, children, ...props }) => {
+      const resolved = typeof src === "string" ? src : undefined;
+      return (
+        <video
+          {...props}
+          src={resolved}
+          className="my-6 aspect-video w-full overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-black"
+          controls
+          playsInline
+          preload="metadata"
+        >
+          {children}
+        </video>
+      );
+    },
   }) as Components,
     [postSlug, postGarden],
   );

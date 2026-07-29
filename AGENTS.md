@@ -574,6 +574,8 @@ reflection:
 | 并发 / 阻塞 / 竞态条件防护 | `docs/development/concurrency.md` |
 | 开发踩坑与教训（战地笔记） | `docs/development/开发心路历程.md` |
 | 未来功能规划 | `docs/development/future-features.md` |
+| 文内手写画板 | `apps/web/components/editor/BoardCanvas.tsx`（编辑器 `/hb`） |
+| 算法可视化 / Remotion / ```viz 播放 | `docs/development/algo-viz-workflow.md`、`apps/algo-viz`、`config/skills/algo-viz`、Agent `algo-viz-director` |
 | 修改前端样式/组件 | `apps/web/components/`、`apps/web/app/globals.css` |
 | 修改 Agent 工具 / MCP / Skill 运行时 | `apps/server/src/infra/agentTools.ts`、`apps/server/src/infra/tools/`（ToolCommand 注册表 + `native/{fs,web,shell,swarm,session,memory,integration}`）、`apps/server/src/infra/loop/`（统一 ReAct 内核） |
 | 新增或修改 tRPC Router | `apps/server/src/router.ts`、`packages/shared/src/schemas.ts` |

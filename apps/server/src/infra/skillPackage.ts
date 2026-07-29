@@ -64,9 +64,14 @@ export function shouldSkipSkillScanPath(relPosix: string): boolean {
   if (rel === ".usage.json" || rel.endsWith("/.usage.json")) return true;
   if (rel.endsWith("/.curator_state") || rel === ".curator_state") return true;
   const base = path.posix.basename(rel);
-  if (base === "SKILL.md") return false;
-  // 包内附属 md 不单独建 Skill 行
-  if (isSkillSupportRelPath(rel)) return true;
+  // procedural 包：唯一入口是 SKILL.md；README/LICENSE 等是上游宣传或法律文件，不进 Skill 表
+  if (rel.includes("/")) {
+    if (base === "SKILL.md") return false;
+    if (isSkillSupportRelPath(rel)) return true;
+    return true;
+  }
+  // 顶层 executable：config/skills/foo.md
+  if (base === "README.md" || base === "LICENSE" || base === "CHANGELOG.md") return true;
   return false;
 }
 

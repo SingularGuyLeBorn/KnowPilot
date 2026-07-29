@@ -1,0 +1,65 @@
+{
+  "composition": "PpoClip",
+  "aspect": "16:9",
+  "fps": 30,
+  "durationFrames": 720,
+  "conceptAngle": "概率比 r 在数轴上移动；clip 带是硬边界，越界后目标不再随 r 变大/变小。",
+  "persistentObjects": ["ratioAxis", "clipBand", "ratioMarker", "advantageSign", "caption"],
+  "beats": [
+    {
+      "id": "hook",
+      "startFrame": 0,
+      "endFrame": 90,
+      "statement": "PPO 用概率比 r 衡量新旧策略差多少",
+      "actors": ["title", "formula"],
+      "setup": "暗底标题",
+      "action": "公式淡入",
+      "result": "观众知道本片只讲 clip",
+      "handoff": "数轴登场"
+    },
+    {
+      "id": "axis-band",
+      "startFrame": 90,
+      "endFrame": 210,
+      "statement": "允许更新落在 [1-ε, 1+ε]",
+      "actors": ["ratioAxis", "clipBand", "epsilonLabels"],
+      "setup": "r=1 为旧策略",
+      "action": "画出 clip 带",
+      "result": "安全区间可见",
+      "handoff": "A>0 案例"
+    },
+    {
+      "id": "advantage-positive",
+      "startFrame": 210,
+      "endFrame": 420,
+      "statement": "A>0 时，r 超过 1+ε 后目标被夹住",
+      "actors": ["ratioMarker", "objectiveCurve", "caption"],
+      "setup": "绿点在 1 附近",
+      "action": "点右移越界变灰",
+      "result": "无法靠继续加大 r 抬高目标",
+      "handoff": "A<0 案例"
+    },
+    {
+      "id": "advantage-negative",
+      "startFrame": 420,
+      "endFrame": 600,
+      "statement": "A<0 时，r 低于 1-ε 后同样被夹住",
+      "actors": ["ratioMarker", "objectiveCurve", "caption"],
+      "setup": "红点从 1 左移",
+      "action": "点左移越界变灰",
+      "result": "无法靠继续压小 r 压低目标",
+      "handoff": "收束"
+    },
+    {
+      "id": "resolve",
+      "startFrame": 600,
+      "endFrame": 720,
+      "statement": "Clip ≈ 信任域的一阶软墙",
+      "actors": ["summary", "clipBand"],
+      "setup": "双案例并置",
+      "action": "总结句定格",
+      "result": "静音可懂",
+      "handoff": "结束"
+    }
+  ]
+}

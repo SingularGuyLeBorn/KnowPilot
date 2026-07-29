@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "remotion-code-motion-explainer": {
+      "source": "vibe-motion/remotion-code-motion-explainer",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "b421e016620b448ae6b85412d09b085f1aa1492fad6b58d08015ea4b45140ab8"
+    }
+  }
+}

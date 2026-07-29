@@ -270,6 +270,15 @@ TRPO效果很好, 但这个带约束的优化问题求解起来非常复杂, 需
 
 PPO巧妙地将TRPO的硬性约束思想, 转化为一个更简单、更容易实现的目标函数. 它没有直接约束KL散度, 而是通过**裁剪 (Clipping)** 重要性权重 $r_t(\theta)$ 来间接实现"信任域"的效果. 这就是PPO成功的关键.
 
+下面是一段 **PPO-Clip 可视化**（Markdown 嵌代码围栏，前端用 Remotion Player **当场播 React 动画**，不转 MP4）：
+
+```viz
+composition: PpoClip
+title: PPO-Clip：概率比与 [1−ε, 1+ε] 信任带
+epsilon: 0.2
+```
+
+
 ---
 
 ## 5. 第五部分: PPO算法核心机制深度解析

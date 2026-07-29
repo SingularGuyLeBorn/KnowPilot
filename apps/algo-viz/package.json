@@ -1,0 +1,34 @@
+{
+  "name": "@knowpilot/algo-viz",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/registry.ts",
+  "types": "./src/registry.ts",
+  "exports": {
+    ".": "./src/registry.ts",
+    "./registry": "./src/registry.ts",
+    "./compositions/PpoClip": "./src/compositions/PpoClip.tsx"
+  },
+  "remotion": {
+    "entryPoint": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "compositions": "remotion compositions src/index.ts"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.489",
+    "remotion": "4.0.489"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "typescript": "5.8.3"
+  }
+}

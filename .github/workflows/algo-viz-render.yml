@@ -1,0 +1,86 @@
+# Remotion 成片渲染（按需，不挂进每次 PR 的 CI）
+# 用法：Actions → Algo Viz Render → Run workflow
+# 或本地：gh workflow run algo-viz-render.yml -f composition=PpoClip
+#
+# 前置：apps/algo-viz 已脚手架且含该 composition；产物 Artifact，可再落到 content/uploads/viz/
+
+name: Algo Viz Render
+
+on:
+  workflow_dispatch:
+    inputs:
+      composition:
+        description: "Remotion Composition ID（如 PpoClip / MlaAttention）"
+        required: true
+        default: "HelloWorld"
+      props_json:
+        description: "可选 input props（JSON 对象字符串）；空则用 composition 默认 props"
+        required: false
+        default: ""
+      crf:
+        description: "H.264 CRF（越小越清晰、文件越大）"
+        required: false
+        default: "18"
+
+concurrency:
+  group: algo-viz-render-${{ github.ref }}-${{ inputs.composition }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    name: Render ${{ inputs.composition }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require apps/algo-viz
+        run: |
+          if [ ! -f apps/algo-viz/package.json ]; then
+            echo "::error::apps/algo-viz 尚不存在。先按 config/skills/algo-viz 脚手架 Remotion 工程后再跑本 workflow。"
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Write props (optional)
+        if: ${{ inputs.props_json != '' }}
+        env:
+          PROPS_JSON: ${{ inputs.props_json }}
+        run: |
+          mkdir -p apps/algo-viz/out
+          printf '%s' "$PROPS_JSON" > apps/algo-viz/out/input-props.json
+          echo "props written ($(wc -c < apps/algo-viz/out/input-props.json) bytes)"
+
+      - name: Render composition
+        working-directory: apps/algo-viz
+        run: |
+          OUT="out/${{ inputs.composition }}.mp4"
+          mkdir -p out
+          PROPS_FLAG=""
+          if [ -f out/input-props.json ]; then
+            PROPS_FLAG="--props=./out/input-props.json"
+          fi
+          # entry 由 remotion.config / package.json 决定；composition 为 id
+          pnpm exec remotion render "${{ inputs.composition }}" "$OUT" \
+            --codec=h264 \
+            --crf="${{ inputs.crf }}" \
+            $PROPS_FLAG
+
+      - name: Upload MP4 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: viz-${{ inputs.composition }}-${{ github.run_number }}
+          path: apps/algo-viz/out/${{ inputs.composition }}.mp4
+          retention-days: 30
+          if-no-files-found: error

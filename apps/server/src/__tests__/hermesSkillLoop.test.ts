@@ -31,6 +31,8 @@ describe("Hermes skill package 约定", () => {
     expect(shouldSkipSkillScanPath("my-skill/references/api.md")).toBe(true);
     expect(shouldSkipSkillScanPath(".archive/x/SKILL.md")).toBe(true);
     expect(shouldSkipSkillScanPath("my-skill/SKILL.md")).toBe(false);
+    expect(shouldSkipSkillScanPath("my-skill/README.md")).toBe(true);
+    expect(shouldSkipSkillScanPath("remotion-code-motion-explainer/README.md")).toBe(true);
     expect(skillFileSlug("My Skill", "procedural")).toBe("my-skill/SKILL");
     expect(sanitizeSkillName("Fix PR #123 Today!")).toBe("fix-pr-123-today");
   });
