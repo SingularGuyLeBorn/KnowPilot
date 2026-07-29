@@ -560,6 +560,11 @@ export function useChatRunStream({
               if (opts.optimisticUser) {
                 sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
               }
+              // 迟到/重复 onError（幽灵已 ABORT、listRunning 已释放、重连耗尽叠打）：idle 幂等吞掉
+              const phaseNow = streamLifecycleStore.get(originSid).phase;
+              if (phaseNow === "idle") {
+                return;
+              }
               const msg = typeof message === "string" ? message : "";
               const isNoStream = msg.includes("没有运行中的 Agent 流");
               if (opts.isResume && isNoStream) {
@@ -587,6 +592,22 @@ export function useChatRunStream({
                 const pendingPartial = streamLifecycleActions.takePendingAbortPartial(originSid);
                 streamLifecycleActions.abortStream(originSid, {
                   partialAssistantMessageId: pendingPartial ?? null,
+                  leftoverContent: streamLifecycleStore.get(originSid).streamingContent,
+                });
+                return;
+              }
+              // 服务端宕机 / 重连耗尽：用 ABORT 释放，勿 FAIL→COMMIT（idle 时会刷 console.error overlay）
+              const isConnectivity =
+                msg.includes("连接已断开") ||
+                msg.includes("ECONNREFUSED") ||
+                msg.includes("ECONNRESET") ||
+                msg.includes("Failed to fetch") ||
+                msg.includes("NetworkError") ||
+                /HTTP 50[234]/.test(msg);
+              if (opts.isResume || isConnectivity) {
+                discardStreamFlush(originSid);
+                streamLifecycleActions.abortStream(originSid, {
+                  partialAssistantMessageId: null,
                   leftoverContent: streamLifecycleStore.get(originSid).streamingContent,
                 });
                 return;

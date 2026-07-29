@@ -30,6 +30,7 @@
  *
  * 相位合法性表（action → 合法源相位）：
  * - BEGIN_STREAM（非 resume）：idle
+ * - RESTORE_STREAM_SNAPSHOT：任意（sessionStorage 挂载恢复；不占 RESUME_CLAIM）
  * - COMPLETE_STREAM：streaming
  * - FAIL_STREAM：streaming | done
  * - ABORT_STREAM：streaming | done
@@ -38,6 +39,13 @@
  *
  * ABORT_STREAM：partialAssistantMessageId 有值 → done（abort-pending，等 upsert 对齐）；
  * null → 立即 idle（leftover/timeline 清空）。optimistic 清理由调用方 Compose 负责。
+ *
+ * RESUME_CLAIM / 挂载恢复：
+ * - sessionStorage 只允许 RESTORE_STREAM_SNAPSHOT（恢复 timeline/content/lastEventId，
+ *   connected=false、resumeClaimed=false），禁止在 runStream 外再 beginStream(resume)。
+ * - 唯一 claim 点：runStream 内的 beginStream(resume)。外层预 claim 会导致第二次 begin 被拒、
+ *   AC 被清掉，留下无 AbortController 的幽灵 streaming（Stop 空操作 / Thinking 假 live）。
+ * - Stop：有 AC → abort() 交 AbortError 路径；无 AC → 直接 ABORT_STREAM（见 applyUserStop）。
  *
  * 公开 API 全部语义化（beginStream / appendTokenDelta / completeStream / abortStream / commitStream …），禁止 ssSet。
  * 队列、optimistic、abort 不进本 store（见 useSessionComposeState）。
@@ -127,6 +135,14 @@ type Action =
   | { type: "HYDRATE_DONE"; sessionId: string }
   | { type: "CLEAR_DRAIN_REQUEST"; sessionId: string }
   | { type: "RELEASE_RESUME_CLAIM"; sessionId: string }
+  | {
+      type: "RESTORE_STREAM_SNAPSHOT";
+      sessionId: string;
+      streamTargetUserId: string | null;
+      streamingContent: string;
+      liveTimeline: TimelineStep[];
+      lastEventId: number;
+    }
   | { type: "MIGRATE_STREAM_SESSION"; fromKey: string; toSessionId: string }
   | { type: "RESET"; sessionId: string }
   | { type: "DELETE"; sessionId: string };
@@ -144,6 +160,25 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
   };
 
   switch (action.type) {
+    case "RESTORE_STREAM_SNAPSHOT": {
+      // 挂载恢复 UI 快照：进入 streaming 但不占 RESUME_CLAIM，留给 runStream 唯一 claim。
+      const prev = get(action.sessionId);
+      return set(action.sessionId, {
+        ...prev,
+        phase: "streaming",
+        error: null,
+        connected: false,
+        resumeClaimed: false,
+        pendingAssistantMessageId: null,
+        pendingAssistantContent: null,
+        inFlightAssistantId: null,
+        streamTargetUserId: action.streamTargetUserId,
+        streamingContent: action.streamingContent,
+        liveTimeline: action.liveTimeline,
+        lastEventId: action.lastEventId,
+        lastEventAt: Date.now(),
+      });
+    }
     case "BEGIN_STREAM": {
       const prev = get(action.sessionId);
       if (action.resume) {
@@ -279,10 +314,10 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
       });
     }
     case "FAIL_STREAM": {
-      // 合法源：streaming | done
+      // 合法源：streaming | done；idle 迟到事件静默（服务宕机重连叠打，勿刷 Dev overlay）
       const s = get(action.sessionId);
       if (s.phase !== "streaming" && s.phase !== "done") {
-        if (process.env.NODE_ENV !== "production") {
+        if (process.env.NODE_ENV !== "production" && s.phase !== "idle") {
           console.error(
             `[StreamLifecycle] FAIL_STREAM blocked: session ${action.sessionId} phase=${s.phase}`,
           );
@@ -309,7 +344,7 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
       // null → 立即 idle（leftover/timeline 清空，释放占用）
       const s = get(action.sessionId);
       if (s.phase !== "streaming" && s.phase !== "done") {
-        if (process.env.NODE_ENV !== "production") {
+        if (process.env.NODE_ENV !== "production" && s.phase !== "idle") {
           console.error(
             `[StreamLifecycle] ABORT_STREAM blocked: session ${action.sessionId} phase=${s.phase}`,
           );
@@ -345,10 +380,10 @@ function reducer(state: LifecycleMap, action: Action): LifecycleMap {
       });
     }
     case "COMMIT_STREAM": {
-      // INV-1：合法源 done | error；拒绝 streaming→idle 直跳
+      // INV-1：合法源 done | error；拒绝 streaming→idle 直跳；idle 迟到静默
       const s = get(action.sessionId);
       if (s.phase !== "done" && s.phase !== "error") {
-        if (process.env.NODE_ENV !== "production") {
+        if (process.env.NODE_ENV !== "production" && s.phase !== "idle") {
           console.error(
             `[StreamLifecycle] COMMIT_STREAM blocked: session ${action.sessionId} phase=${s.phase}（streaming 释放请用 ABORT_STREAM）`,
           );
@@ -645,6 +680,28 @@ export const streamLifecycleActions = {
     const after = getStore().get(sessionId);
     return after.phase === "streaming";
   },
+  /**
+   * sessionStorage 挂载恢复：只还原过渡 UI，不占 RESUME_CLAIM。
+   * 随后必须由 runStream(isResume) 内 beginStream(resume) 唯一 claim。
+   */
+  restoreStreamSnapshot(
+    sessionId: string,
+    opts: {
+      streamTargetUserId?: string | null;
+      streamingContent?: string;
+      liveTimeline?: TimelineStep[];
+      lastEventId?: number;
+    },
+  ) {
+    getStore().dispatch({
+      type: "RESTORE_STREAM_SNAPSHOT",
+      sessionId,
+      streamTargetUserId: opts.streamTargetUserId ?? null,
+      streamingContent: opts.streamingContent ?? "",
+      liveTimeline: opts.liveTimeline ?? [],
+      lastEventId: opts.lastEventId ?? 0,
+    });
+  },
   replaceTimeline(sessionId: string, steps: TimelineStep[]) {
     getStore().dispatch({ type: "REPLACE_TIMELINE", sessionId, steps });
   },
@@ -736,6 +793,29 @@ export const streamLifecycleActions = {
     const v = pendingAbortPartials.get(sessionId) ?? null;
     pendingAbortPartials.delete(sessionId);
     return v;
+  },
+  /**
+   * E3 Stop 不变量：有活 AC → abort() 交 AbortError 路径；无 AC（幽灵 streaming）→ 直接 ABORT_STREAM。
+   * 禁止只 `?.abort()` 后放任 phase=streaming（刷新双重 claim / 服务重启后假占用）。
+   */
+  applyUserStop(
+    sessionId: string,
+    opts: {
+      partialAssistantMessageId: string | null;
+      abortController: AbortController | null;
+    },
+  ): "controller" | "lifecycle" {
+    this.setPendingAbortPartial(sessionId, opts.partialAssistantMessageId);
+    const ac = opts.abortController;
+    if (ac && !ac.signal.aborted) {
+      ac.abort();
+      return "controller";
+    }
+    this.abortStream(sessionId, {
+      partialAssistantMessageId: opts.partialAssistantMessageId,
+      leftoverContent: getStore().get(sessionId).streamingContent,
+    });
+    return "lifecycle";
   },
   /** done/error → idle（空回复、fail 后释放）。streaming/idle 由 reducer 拒绝（dev 报错） */
   commitStream(sessionId: string) {

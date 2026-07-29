@@ -623,19 +623,15 @@ export function ChatView() {
           if (sid === NEW_STREAM_KEY) continue;
           const wasStreaming = st.phase === "streaming" || st.isStreaming === true;
           if (wasStreaming) {
-            streamLifecycleActions.beginStream(sid, {
-              streamTargetUserId: st.streamTargetUserId,
-              resume: true,
+            // 只恢复 UI 快照，不占 RESUME_CLAIM——唯一 claim 在 runStream.beginStream(resume)。
+            // 旧路径外层 beginStream(resume) 会把第二次 claim 拒掉并清 AC，留下幽灵 streaming
+            // （Stop 空操作 / Thinking 假计时 / 队列 drain 堵死）。
+            streamLifecycleActions.restoreStreamSnapshot(sid, {
+              streamTargetUserId: st.streamTargetUserId ?? null,
+              streamingContent: st.streamingContent ?? "",
+              liveTimeline: st.liveTimeline ?? [],
+              lastEventId: st.lastEventId ?? 0,
             });
-            if (st.streamingContent) {
-              streamLifecycleActions.setStreamingContent(sid, st.streamingContent);
-            }
-            if (st.liveTimeline?.length) {
-              streamLifecycleActions.replaceTimeline(sid, st.liveTimeline);
-            }
-            if (st.lastEventId) {
-              streamLifecycleActions.setLastEventId(sid, st.lastEventId);
-            }
             console.log("[mount] resuming", sid, "lastEventId", st.lastEventId);
             // E8：续传前同步 hydrate 该 sid 的 config（禁止吃首帧 DEFAULT 闭包）
             ensureSessionConfigHydrated(sid);
@@ -733,10 +729,11 @@ export function ChatView() {
   // 【listRunning 挂接 · INV-5 · 心脏区】后端主动发现运行中会话并续传：
   // 覆盖 sessionStorage 丢失、跨标签、切换 Agent 等场景。
   // 仅信任 StreamHub.listRunning()（含 spawn_subagent / prepareAgentRun 的流式运行）。
-  // 挂接进度一致性（INV-5）所在，effect 体一行未改。
+  // 服务端无该 sid 且本地无 AC → 幽灵占用（重启后假 streaming），ABORT 释放。
   useEffect(() => {
-    const items = runningSessionsQuery.data?.items;
-    if (!items || items.length === 0) return;
+    if (!runningSessionsQuery.isFetched) return;
+    const items = runningSessionsQuery.data?.items ?? [];
+    const runningIds = new Set(items.map((item) => item.sessionId).filter(Boolean));
     for (const item of items) {
       const sid = item.sessionId;
       if (!sid || sid === NEW_STREAM_KEY) continue;
@@ -752,7 +749,18 @@ export function ChatView() {
         isResume: true,
       }).catch(() => {});
     }
-  }, [runningSessionsQuery.data]);
+    // 幽灵占用：服务端不在跑 + 本地无 SSE AC → 合法释放（服务重启会话已 paused，禁止假 streaming）
+    for (const [sid, st] of Object.entries(streamLifecycleStore.serialize())) {
+      if (sid === NEW_STREAM_KEY) continue;
+      if (st.phase !== "streaming" && st.phase !== "done") continue;
+      if (runningIds.has(sid)) continue;
+      if (sessionComposeActions.getActiveAbortController(sid)) continue;
+      streamLifecycleActions.abortStream(sid, {
+        partialAssistantMessageId: null,
+        leftoverContent: st.streamingContent,
+      });
+    }
+  }, [runningSessionsQuery.data, runningSessionsQuery.isFetched]);
 
   // 【队列 drain 编排簇】consumeQueue + drainAllPendingQueues 收拢于 useChatQueueDrain
   // （W13e 拆出）。E8：drain 内按 sid 取 sessionConfigStore.model。

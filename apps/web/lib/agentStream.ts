@@ -178,6 +178,17 @@ async function parseSseBlock(
   return { finished: false, eventId };
 }
 
+function isRetryableHttpStatus(status: number): boolean {
+  // 网关/后端短暂不可用（含 Next rewrite 代理 500）：静默重连，勿每轮 onError
+  return (
+    status === 0 ||
+    status === 408 ||
+    status === 425 ||
+    status === 429 ||
+    (status >= 500 && status <= 599)
+  );
+}
+
 async function readOneConnection(
   res: Response,
   callbacks: AgentStreamCallbacks,
@@ -185,8 +196,12 @@ async function readOneConnection(
 ): Promise<boolean> {
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
+    if (isRetryableHttpStatus(res.status)) {
+      // 交给外层 while 退避重连；耗尽后再统一 onError
+      return false;
+    }
     callbacks.onError?.(`流式请求失败 HTTP ${res.status}: ${text}`);
-    return false;
+    return true; // 非可重试错误：结束，禁止空转重连
   }
 
   const reader = res.body.getReader();

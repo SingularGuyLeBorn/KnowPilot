@@ -44,4 +44,30 @@ describe("StreamLifecycle done watchdog / resumeAfter", () => {
     expect(streamLifecycleActions.beginStream(sid, { resume: true })).toBe(true);
     expect(streamLifecycleActions.beginStream(sid, { resume: true })).toBe(false);
   });
+
+  it("RESTORE_STREAM_SNAPSHOT 不占 RESUME_CLAIM：随后 beginStream(resume) 必须成功", () => {
+    const sid = "wd-1";
+    streamLifecycleActions.restoreStreamSnapshot(sid, {
+      streamingContent: "半截",
+      liveTimeline: [{ type: "thinking", content: "想…", round: 1 }],
+      lastEventId: 17,
+      streamTargetUserId: "u1",
+    });
+    const restored = streamLifecycleStore.get(sid);
+    expect(restored.phase).toBe("streaming");
+    expect(restored.resumeClaimed).toBe(false);
+    expect(restored.connected).toBe(false);
+    expect(restored.lastEventId).toBe(17);
+    expect(restored.streamingContent).toBe("半截");
+
+    // 负向：旧 mount 先 beginStream(resume) 再 runStream 会把这里拒掉 → 幽灵 streaming
+    expect(streamLifecycleActions.beginStream(sid, { resume: true })).toBe(true);
+    expect(streamLifecycleStore.get(sid).resumeClaimed).toBe(true);
+    expect(streamLifecycleStore.get(sid).connected).toBe(true);
+    expect(streamLifecycleStore.get(sid).streamingContent).toBe("半截");
+    expect(streamLifecycleStore.resolveResumeAfter(sid)).toBe(17);
+
+    // claim 后第二次仍拒
+    expect(streamLifecycleActions.beginStream(sid, { resume: true })).toBe(false);
+  });
 });

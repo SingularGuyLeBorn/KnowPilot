@@ -276,20 +276,22 @@ export function ChatSessionPane({
   );
 
   const handleStop = useCallback(async () => {
-    // E3：先拿 stop 契约 partialAssistantMessageId，再 abort——AbortError 路径据此
-    // abortStream（有 id 等对齐 / null 立即 idle），不再 setTimeout(2000) 赌落库。
+    // E3：先拿 stop 契约 partialAssistantMessageId，再 applyUserStop——
+    // 有 AC → abort() 交 AbortError 路径；无 AC（幽灵 streaming）→ 直接 ABORT_STREAM。
+    // 禁止只 ?.abort() 后放任 phase=streaming（Stop 空操作根因）。
+    if (!sessionId) return;
     let partialAssistantMessageId: string | null = null;
-    if (sessionId) {
-      try {
-        const res = await stopAgentChat(sessionId);
-        partialAssistantMessageId = res.partialAssistantMessageId;
-      } catch {
-        /* continue abort；契约未知时按 null（立即释放） */
-        partialAssistantMessageId = null;
-      }
-      streamLifecycleActions.setPendingAbortPartial(sessionId, partialAssistantMessageId);
+    try {
+      const res = await stopAgentChat(sessionId);
+      partialAssistantMessageId = res.partialAssistantMessageId;
+    } catch {
+      /* continue abort；契约未知时按 null（立即释放） */
+      partialAssistantMessageId = null;
     }
-    sessionComposeActions.getActiveAbortController(sessionId)?.abort();
+    streamLifecycleActions.applyUserStop(sessionId, {
+      partialAssistantMessageId,
+      abortController: sessionComposeActions.getActiveAbortController(sessionId),
+    });
   }, [sessionId]);
 
   const { mutate: resumeSession, isPending: resumePending } = useResumeSession({
