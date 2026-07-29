@@ -1,7 +1,7 @@
 /**
  * Milkdown 图片粘贴 / 拖放：
  * 1) 立刻插入 blob 占位图（Notion UX）
- * 2) file.upload 成功后替换为 /uploads/{garden}/{slug}/…
+ * 2) file.upload 成功后替换为 /uploads/{garden}/{postId|/_draft/draftKey}/…
  */
 
 import { imageSchema } from "@milkdown/preset-commonmark";

@@ -13,12 +13,13 @@ export type UploadedImage = {
 
 export type ImageUploadMeta = {
   garden?: string;
-  slug?: string;
+  postId?: string;
+  draftKey?: string;
 };
 
 interface ImageUploadButtonProps {
   onUploaded: (image: UploadedImage) => void;
-  /** 文章元信息 → uploads/{garden}/{slug}/ */
+  /** 文章元信息 → uploads/{garden}/{postId|/_draft/draftKey}/ */
   meta?: ImageUploadMeta;
   /**
    * 若返回 true，表示已由调用方处理（如 WYSIWYG 占位上传），跳过内部 upload。
@@ -53,7 +54,8 @@ export async function uploadImageFile(
       size: number;
       data: string;
       garden?: string;
-      slug?: string;
+      postId?: string;
+      draftKey?: string;
     }) => Promise<{ success: boolean; data?: { url?: string }; error?: { message?: string } }>;
   },
   meta?: ImageUploadMeta,
@@ -69,7 +71,8 @@ export async function uploadImageFile(
     size: file.size,
     data,
     garden: meta?.garden,
-    slug: meta?.slug || (meta?.garden ? "_draft" : undefined),
+    postId: meta?.postId,
+    draftKey: meta?.postId ? undefined : meta?.draftKey,
   });
   if (result.success && result.data?.url) {
     const alt = file.name.replace(/\.[^/.]+$/, "");
@@ -90,13 +93,14 @@ export function useImageUploader(meta?: ImageUploadMeta) {
   const { mutateAsync } = trpc.file.upload.useMutation();
   const [uploading, setUploading] = useState(false);
   const garden = meta?.garden;
-  const slug = meta?.slug;
+  const postId = meta?.postId;
+  const draftKey = meta?.draftKey;
 
   const upload = useCallback(
     async (file: File): Promise<UploadedImage | null> => {
       setUploading(true);
       try {
-        return await uploadImageFile(file, { mutateAsync }, { garden, slug });
+        return await uploadImageFile(file, { mutateAsync }, { garden, postId, draftKey });
       } catch (err) {
         alert(`上传失败：${err instanceof Error ? err.message : String(err)}`);
         return null;
@@ -104,7 +108,7 @@ export function useImageUploader(meta?: ImageUploadMeta) {
         setUploading(false);
       }
     },
-    [mutateAsync, garden, slug],
+    [mutateAsync, garden, postId, draftKey],
   );
 
   return { upload, uploading };

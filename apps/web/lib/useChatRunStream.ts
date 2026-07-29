@@ -357,6 +357,44 @@ export function useChatRunStream({
                 });
               }
             },
+            onToolPreparing: (tools, round) => {
+              flushStreamNow(originSid);
+              streamLifecycleActions.moveStreamingContentToTimeline(originSid, round);
+              const pruned = pruneEmptyThinkingSteps(streamLifecycleStore.get(originSid).liveTimeline);
+              let next = pruned;
+              for (const t of tools) {
+                if (!t.toolCallId || !t.name) continue;
+                const idx = next.findIndex((s) => s.type === "tool" && s.toolCallId === t.toolCallId);
+                if (idx >= 0) {
+                  const prev = next[idx]!;
+                  if (prev.type !== "tool") continue;
+                  // 已进入 running/done 的不要打回 preparing
+                  if (prev.status !== "preparing") continue;
+                  next = next.map((s, i) =>
+                    i === idx && s.type === "tool"
+                      ? { ...s, name: t.name || s.name, argsChars: t.argsChars, round }
+                      : s,
+                  );
+                } else {
+                  next = [
+                    ...next,
+                    {
+                      type: "tool" as const,
+                      toolCallId: t.toolCallId,
+                      name: t.name,
+                      args: { _preparing: true, argsChars: t.argsChars },
+                      round,
+                      status: "preparing" as const,
+                      argsChars: t.argsChars,
+                      startedAt: Date.now(),
+                    },
+                  ];
+                }
+              }
+              if (next !== pruned || next.length !== streamLifecycleStore.get(originSid).liveTimeline.length) {
+                streamLifecycleActions.replaceTimeline(originSid, next);
+              }
+            },
             onToolStart: (name, args, round, toolCallId) => {
               flushStreamNow(originSid);
               // A7：反思拒稿已流出的草稿进时间线作中间结果，并清 streaming / 待合帧，
@@ -373,7 +411,22 @@ export function useChatRunStream({
               if (pruned.length !== streamLifecycleStore.get(originSid).liveTimeline.length) {
                 streamLifecycleActions.replaceTimeline(originSid, pruned);
               }
-              if (pruned.some((step) => step.type === "tool" && step.toolCallId === toolCallId)) return;
+              const existing = pruned.find((step) => step.type === "tool" && step.toolCallId === toolCallId);
+              if (existing && existing.type === "tool") {
+                streamLifecycleActions.updateTimelineStep(
+                  originSid,
+                  (step) => step.type === "tool" && step.toolCallId === toolCallId,
+                  {
+                    name,
+                    args,
+                    round,
+                    status: "running",
+                    startedAt: existing.startedAt ?? Date.now(),
+                    argsChars: undefined,
+                  },
+                );
+                return;
+              }
               streamLifecycleActions.appendTimelineStep(originSid, {
                 type: "tool",
                 toolCallId,
@@ -388,7 +441,9 @@ export function useChatRunStream({
               streamLifecycleActions.updateTimelineStep(
                 originSid,
                 (step) =>
-                  step.type === "tool" && step.toolCallId === toolCallId && step.status === "running",
+                  step.type === "tool" &&
+                  step.toolCallId === toolCallId &&
+                  (step.status === "running" || step.status === "preparing"),
                 { result, hint: hint ?? formatToolResultHint(result), status: "done" },
               );
               if (
@@ -493,6 +548,40 @@ export function useChatRunStream({
               ) {
                 utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => {});
                 utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
+              }
+              // 知识库写工具：立刻刷花园/文章列表，避免用户手动刷新
+              if (
+                name === "garden_create" || name === "garden_update" || name === "garden_delete" ||
+                name === "post_create" || name === "post_update" || name === "post_delete"
+              ) {
+                utils.garden.list.invalidate().catch(() => {});
+                utils.post.list.invalidate().catch(() => {});
+                utils.post.tree.invalidate().catch(() => {});
+                utils.post.categories.invalidate().catch(() => {});
+                utils.post.tags.invalidate().catch(() => {});
+                if (
+                  (name === "post_create" || name === "post_update") &&
+                  result &&
+                  typeof result === "object"
+                ) {
+                  const r = result as { slug?: string; garden?: string; data?: { slug?: string; garden?: string } };
+                  const slug = r.slug ?? r.data?.slug;
+                  const garden = r.garden ?? r.data?.garden ?? "posts";
+                  if (slug) {
+                    utils.post.getBySlug.invalidate({ slug, garden }).catch(() => {});
+                  }
+                }
+              }
+              // Goal 工具：顶栏即时出现/消失
+              if (
+                name === "session_goal_set" ||
+                name === "session_goal_clear" ||
+                name === "session_goal_pause" ||
+                name === "session_goal_resume"
+              ) {
+                if (originSid && originSid !== NEW_STREAM_KEY) {
+                  utils.session.getGoal.invalidate({ sessionId: originSid }).catch(() => {});
+                }
               }
             },
             onEventId: (id) => {
@@ -686,7 +775,29 @@ export function useChatRunStream({
         // 队列消费改由 onStreamCommitted（INV-1/2）驱动，finally 不再 hydrate+consume
       }
     },
-    [effectiveAgentId, effectiveSessionId, selectedWorkspaceId, utils.session.list, utils.session.getById, utils.agent.list, selectedAgent, scheduleStreamFlush, scheduleThinkingFlush, flushStreamNow, discardStreamFlush, scheduleStreamSave, pathname, router, searchParams, createSessionQueueItemMutation, hydrateSessionMessagesFallback, effectiveSessionIdRef, isPageUnloadingRef, pendingStreamDeltaRef, pendingThinkingDeltaRef, setEditingUserId, setSessionId],
+    [
+      effectiveAgentId,
+      effectiveSessionId,
+      selectedWorkspaceId,
+      utils,
+      selectedAgent,
+      scheduleStreamFlush,
+      scheduleThinkingFlush,
+      flushStreamNow,
+      discardStreamFlush,
+      scheduleStreamSave,
+      pathname,
+      router,
+      searchParams,
+      createSessionQueueItemMutation,
+      hydrateSessionMessagesFallback,
+      effectiveSessionIdRef,
+      isPageUnloadingRef,
+      pendingStreamDeltaRef,
+      pendingThinkingDeltaRef,
+      setEditingUserId,
+      setSessionId,
+    ],
   );
 
   return { runStream };

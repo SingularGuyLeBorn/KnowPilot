@@ -14,9 +14,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Check, ChevronRight, ChevronDown, Sparkles } from "lucide-react";
+import { Check, ChevronRight, ChevronDown, HardDrive, Sparkles } from "lucide-react";
 import {
   PRIMARY_CHAT_MODELS,
+  parseLocalModelRef,
   type ChatSessionConfig,
   type ReasoningEffort,
 } from "@knowpilot/shared";
@@ -24,11 +25,11 @@ import { cn } from "@/lib/utils";
 import { useSessionHoverPreview } from "@/lib/hooks";
 import { trpc } from "@/lib/trpc";
 
-type FlyoutKey = "free" | "thinking" | "params";
+type FlyoutKey = "free" | "local" | "thinking" | "params";
 
 const FREE_PICK_LIMIT = 8;
 const MAIN_WIDTH = 280;
-/** 最大飞出宽（免费模型），用于判定左右方向，避免切换子菜单时主菜单跳动 */
+/** 最大飞出宽（免费/本地模型），用于判定左右方向，避免切换子菜单时主菜单跳动 */
 const MAX_FLYOUT_WIDTH = 300;
 /** 飞出与主菜单之间的间隙（留缝不重叠，避免盖住行内当前值；鼠标过缝靠 HOVER_CLOSE_MS 宽限） */
 const FLYOUT_GAP = 6;
@@ -37,7 +38,7 @@ const TRIGGER_OVERLAP = 6;
 const HOVER_CLOSE_MS = 400;
 
 function flyoutWidth(key: FlyoutKey): number {
-  if (key === "free") return 300;
+  if (key === "free" || key === "local") return 300;
   if (key === "params") return 260;
   return 200;
 }
@@ -45,6 +46,13 @@ function flyoutWidth(key: FlyoutKey): number {
 function shortModelLabel(modelId: string): string {
   const primary = PRIMARY_CHAT_MODELS.find((m) => m.id === modelId);
   if (primary) return primary.label.replace(/^DeepSeek /, "");
+  const local = parseLocalModelRef(modelId);
+  if (local.providerId) {
+    const leaf = local.apiModel.includes(":")
+      ? local.apiModel.split(":")[0]
+      : local.apiModel;
+    return `${leaf} · ${local.providerId}`;
+  }
   if (modelId.endsWith(":free")) {
     const base = modelId.replace(/:free$/i, "");
     const leaf = base.includes("/") ? base.split("/").pop()! : base;
@@ -88,11 +96,11 @@ export function ChatModelMenu({
   const [menuPos, setMenuPos] = useState<{
     top: number;
     left: number;
-    flyoutLeft: boolean;
   } | null>(null);
   const { enabled: hoverPreview, setEnabled: setHoverPreview } = useSessionHoverPreview();
 
   const freeEnabled = open && flyout === "free";
+  const localEnabled = open && flyout === "local";
   const freeModelsQuery = trpc.llm.listFreeModels.useQuery(
     { q: freeQ.trim() || undefined, modality: "text", sort: "context_desc" },
     { enabled: freeEnabled, staleTime: 60_000 },
@@ -101,6 +109,10 @@ export function ChatModelMenu({
     enabled: freeEnabled,
     staleTime: 60_000,
   });
+  const localModelsQuery = trpc.llm.listLocalModels.useQuery(
+    { timeoutMs: 2500 },
+    { enabled: localEnabled, staleTime: 15_000 },
+  );
 
   const freePicks = useMemo(() => {
     const items = freeModelsQuery.data?.items ?? [];
@@ -172,12 +184,14 @@ export function ChatModelMenu({
     }
     const place = () => {
       const rect = triggerRef.current!.getBoundingClientRect();
-      // 主菜单位置只跟 trigger 锚定，不随 flyout 宽变化——否则一开子菜单整块位移，鼠标落空立刻关
-      const left = Math.max(8, Math.min(rect.right - MAIN_WIDTH, window.innerWidth - MAIN_WIDTH - 8));
-      const spaceRight = window.innerWidth - (left + MAIN_WIDTH) - FLYOUT_GAP;
-      const flyoutLeft = spaceRight < MAX_FLYOUT_WIDTH + 8;
+      // 始终按「主菜单 + 最大飞出」占位，避免开/切换子菜单时主面板左右跳
+      const totalW = MAIN_WIDTH + FLYOUT_GAP + MAX_FLYOUT_WIDTH;
+      // 从触发按钮左缘向右展开：贴近按钮与右侧栏，少挡输入框
+      let left = rect.left;
+      left = Math.min(left, window.innerWidth - totalW - 8);
+      left = Math.max(8, left);
       // -translate-y-full 时 top = 菜单底边；+TRIGGER_OVERLAP 压进触发按钮
-      setMenuPos({ top: rect.top + TRIGGER_OVERLAP, left, flyoutLeft });
+      setMenuPos({ top: rect.top + TRIGGER_OVERLAP, left });
     };
     place();
     window.addEventListener("resize", place);
@@ -231,6 +245,12 @@ export function ChatModelMenu({
     setFreeQ("");
   };
 
+  const pickLocalModel = (modelId: string) => {
+    updateConfig({ model: modelId, enableReasoning: false });
+    setOpen(false);
+    setFlyout(null);
+  };
+
   const closeAll = () => {
     setOpen(false);
     setFlyout(null);
@@ -239,8 +259,6 @@ export function ChatModelMenu({
 
   const activeFlyoutW = flyout ? flyoutWidth(flyout) : 0;
   const shellExtra = flyout ? activeFlyoutW + FLYOUT_GAP : 0;
-  const shellLeft =
-    menuPos && menuPos.flyoutLeft && flyout ? menuPos.left - shellExtra : (menuPos?.left ?? 0);
   const shellWidth = MAIN_WIDTH + shellExtra;
 
   const menu =
@@ -250,20 +268,16 @@ export function ChatModelMenu({
             ref={menuRef}
             data-testid="chat-model-menu"
             className="fixed z-[400] -translate-y-full"
-            style={{ top: menuPos.top, left: shellLeft, width: shellWidth }}
+            style={{ top: menuPos.top, left: menuPos.left, width: shellWidth }}
             role="menu"
             onMouseDown={(e) => e.stopPropagation()}
             onMouseEnter={clearCloseTimer}
             onMouseLeave={scheduleCloseFlyout}
           >
             <div className="relative w-full">
-            {/* 主菜单：飞出向左时用 margin 把主面板推回原锚点 */}
             <div
               ref={mainPanelRef}
               className="relative z-10 w-[280px] overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] shadow-lg shadow-black/8"
-              style={
-                menuPos.flyoutLeft && flyout ? { marginLeft: shellExtra } : undefined
-              }
             >
               <div className="py-1">
                 <p className="px-3 py-1.5 text-[10px] font-medium text-[var(--kp-text-3)]">
@@ -325,6 +339,18 @@ export function ChatModelMenu({
                   }
                 />
 
+                <FlyoutRow
+                  testId="chat-model-menu-local"
+                  active={flyout === "local"}
+                  onEnter={(el) => openFlyout("local", el)}
+                  label={
+                    <span className="inline-flex items-center gap-1.5">
+                      <HardDrive className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
+                      本地模型
+                    </span>
+                  }
+                />
+
                 {thinkingSupported && (
                   <FlyoutRow
                     testId="chat-model-menu-thinking"
@@ -356,14 +382,14 @@ export function ChatModelMenu({
               </div>
             </div>
 
-            {/* 飞出：与主菜单留 FLYOUT_GAP 间隙；top 钳视口，maxHeight 防底边溢出 */}
+            {/* 飞出固定在主菜单右侧，向右展开，不挡输入框 */}
             {flyout && (
             <div
               ref={flyoutPanelRef}
               className="absolute z-20 overflow-y-auto overscroll-contain rounded-xl"
               style={{
                 top: flyoutTop,
-                left: menuPos.flyoutLeft ? 0 : MAIN_WIDTH + FLYOUT_GAP,
+                left: MAIN_WIDTH + FLYOUT_GAP,
                 maxHeight: flyoutMaxH,
               }}
               onMouseEnter={clearCloseTimer}
@@ -508,6 +534,89 @@ export function ChatModelMenu({
                     <span>浏览全部免费模型</span>
                     <ChevronRight className="h-3.5 w-3.5" />
                   </Link>
+                </FlyoutCard>
+              )}
+
+              {flyout === "local" && (
+                <FlyoutCard testId="chat-model-menu-local-panel" width={300}>
+                  <p className="px-3 pb-1 pt-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+                    探测 Ollama / llama.cpp / LM Studio / vLLM（OpenAI 兼容）。会话 id 形如{" "}
+                    <span className="font-mono">ollama/llama3.2</span>
+                  </p>
+                  {localModelsQuery.isLoading && (
+                    <p className="px-3 py-2 text-[10px] text-[var(--kp-text-3)]">正在探测本机服务…</p>
+                  )}
+                  {localModelsQuery.isError && (
+                    <p className="px-3 py-2 text-[10px] text-red-600">
+                      探测失败：{localModelsQuery.error.message}
+                    </p>
+                  )}
+                  {!localModelsQuery.isLoading &&
+                    (localModelsQuery.data?.items ?? []).map((backend) => (
+                      <div key={backend.id} data-testid={`chat-local-backend-${backend.id}`}>
+                        <div className="flex items-center justify-between px-3 py-1.5">
+                          <span className="text-[11px] font-semibold text-[var(--kp-text-2)]">
+                            {backend.label}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-[10px]",
+                              backend.reachable
+                                ? "text-emerald-600"
+                                : "text-[var(--kp-text-3)]",
+                            )}
+                          >
+                            {backend.reachable
+                              ? `${backend.models.length} 个模型`
+                              : "未连接"}
+                          </span>
+                        </div>
+                        {!backend.reachable && backend.error && (
+                          <p className="px-3 pb-1.5 text-[10px] leading-snug text-[var(--kp-text-3)]">
+                            {backend.baseUrl} · {backend.error.slice(0, 80)}
+                          </p>
+                        )}
+                        {backend.models.map((m) => {
+                          const active = chatConfig.model === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={active}
+                              data-testid={`chat-local-model-option-${m.id}`}
+                              onClick={() => pickLocalModel(m.id)}
+                              className={cn(
+                                "flex w-full items-start gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-[var(--kp-bg-mute)]",
+                                active && "bg-[var(--kp-brand-soft)]/35",
+                              )}
+                            >
+                              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+                                {active && (
+                                  <Check className="h-3.5 w-3.5 text-[var(--kp-brand-deep)]" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-xs font-medium text-[var(--kp-text-1)]">
+                                  {m.name}
+                                </span>
+                                <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--kp-text-3)]">
+                                  {m.id}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  {!localModelsQuery.isLoading &&
+                    (localModelsQuery.data?.totalModels ?? 0) === 0 && (
+                      <p className="px-3 py-2 text-[10px] leading-relaxed text-[var(--kp-text-3)]">
+                        未发现本地模型。请先启动服务，例如{" "}
+                        <span className="font-mono">ollama serve</span> 后{" "}
+                        <span className="font-mono">ollama pull llama3.2</span>。
+                      </p>
+                    )}
                 </FlyoutCard>
               )}
 

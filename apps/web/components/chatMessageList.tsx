@@ -254,10 +254,13 @@ export const ChatMessageList = memo(function ChatMessageList({
         data-testid="assistant-message-bubble"
         className="group/msg relative mb-6 ml-6 mr-2 flex w-full max-w-[96%] flex-col items-start gap-1"
       >
-        <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
-          <PostContent content={active.content} className="prose-sm max-w-none text-left" />
+        <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3.5 py-2 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
+          <PostContent
+            content={active.content.trimEnd()}
+            className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
+          />
           {isInterrupted && (
-            <div className="mt-3 flex items-center gap-1.5 text-[11px] text-amber-600">
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600">
               <Ban className="h-3 w-3" />
               <span>已停止生成</span>
             </div>
@@ -302,7 +305,12 @@ export const ChatMessageList = memo(function ChatMessageList({
     <>
       {showLiveStream && liveTimeline.length > 0 && (
         <div className="flex w-full justify-start">
-          <ThinkingTimeline steps={liveTimeline} isLive />
+          {/* Thinking 计时只在「末步仍是 thinking 且尚无正文流式」时继续；
+              一旦开始吐正文 / 工具准备，Thinking 停表，避免组装参数阶段假计时 */}
+          <ThinkingTimeline
+            steps={liveTimeline}
+            isLive={!streamingContent.trim()}
+          />
         </div>
       )}
       {showLiveStream && (
@@ -315,10 +323,13 @@ export const ChatMessageList = memo(function ChatMessageList({
             data-testid="streaming-assistant-bubble"
           >
             {streamingContent ? (
-              <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
+              <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3.5 py-2 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
                 {/* 流式期直接走完整 PostContent：代码块即时支持代码/预览切换、复制、最大化，
                     实现「边流式输出边视图渲染」。落库后复用同一渲染器，无流式→终态视觉跳变。 */}
-                <PostContent content={streamingContent} className="prose-sm max-w-none text-left" />
+                <PostContent
+                  content={streamingContent.trimEnd()}
+                  className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
+                />
               </div>
             ) : liveTimeline.length === 0 ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] px-4 py-2 text-xs text-[var(--kp-text-2)] shadow-sm">
@@ -668,7 +679,7 @@ export const ChatMessageList = memo(function ChatMessageList({
               </button>
               <p className="mb-1.5 text-xs font-semibold text-[var(--kp-text-1)]">试试 Agent Swarm</p>
               <ul className="space-y-1 text-[11px] leading-relaxed text-[var(--kp-text-2)]">
-                <li>· 右上角选择「KnowPilot 超级 Agent」，让它替你管理其他 Agent</li>
+                <li>· 右上角选择「见微超级 Agent」，让它替你管理其他 Agent</li>
                 <li>· 对它说「创建一个 XX 工作区」，它会自动生成管理 Agent</li>
                 <li>· 也可以在 <Link href="/workspaces" className="text-[var(--kp-brand-deep)] underline">工作区管理页</Link> 手动创建</li>
                 <li>· 长任务会派生子 Agent 后台执行，完成后结果自动回到对话</li>

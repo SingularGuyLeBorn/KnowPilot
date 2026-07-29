@@ -2,7 +2,15 @@
  * Chat 会话配置 — localStorage 持久化扩展参数
  */
 
-import { CHAT_MODELS, DEFAULT_LLM_MODEL, LLM_PROVIDER_DEEPSEEK, type ChatSessionConfig } from "@knowpilot/shared";
+import {
+  CHAT_MODELS,
+  DEFAULT_LLM_MODEL,
+  LLM_PROVIDER_DEEPSEEK,
+  LOCAL_LLM_PROVIDER_LABELS,
+  isLocalLlmProviderId,
+  parseLocalModelRef,
+  type ChatSessionConfig,
+} from "@knowpilot/shared";
 
 const DEFAULT_KEY = "kp-chat-default-config";
 const sessionKey = (id: string) => `kp-chat-session-${id}`;
@@ -23,6 +31,26 @@ export const DEFAULT_CHAT_CONFIG: ChatSessionConfig = {
 export function getModelOption(modelId: string) {
   const found = CHAT_MODELS.find((m) => m.id === modelId);
   if (found) return found;
+  const localRef = parseLocalModelRef(modelId);
+  if (localRef.providerId && isLocalLlmProviderId(localRef.providerId)) {
+    const name = localRef.apiModel || modelId;
+    const lower = name.toLowerCase();
+    const isVision =
+      lower.includes("vl") || lower.includes("vision") || lower.includes("llava");
+    return {
+      id: modelId,
+      label: `${LOCAL_LLM_PROVIDER_LABELS[localRef.providerId]} · ${name}`,
+      provider: localRef.providerId,
+      supportsThinking: false,
+      supportsVision: isVision,
+      ocrFallback: !isVision,
+      inputHint: isVision
+        ? `本地 ${LOCAL_LLM_PROVIDER_LABELS[localRef.providerId]} · 多模态`
+        : `本地 ${LOCAL_LLM_PROVIDER_LABELS[localRef.providerId]} · 纯文本（图片走 OCR）`,
+      defaultTemperature: 0.7,
+      contextWindowTokens: 32_000,
+    };
+  }
   const isDeepSeek = modelId.includes(LLM_PROVIDER_DEEPSEEK);
   const isVision = modelId.includes("vl") || modelId.includes("vision");
   return {

@@ -117,9 +117,11 @@ export type TimelineStep =
       result?: unknown;
       hint?: string | null;
       round: number;
-      status: "running" | "done";
+      status: "preparing" | "running" | "done";
       /** 工具开始执行的本地时间戳，用于 sleep 等长等待的倒计时 */
       startedAt?: number;
+      /** 组装参数阶段已生成的参数字符数（tool_preparing） */
+      argsChars?: number;
     }
   | {
       type: "progress";

@@ -7,13 +7,90 @@
  */
 
 import { memo, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, Clock, Loader2, MessageCircle, Sparkles, X, ZoomIn } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Clock,
+  ListTodo,
+  Loader2,
+  MessageCircle,
+  Minus,
+  Sparkles,
+  Square,
+  X,
+  ZoomIn,
+} from "lucide-react";
 import { PostContent } from "@/components/post/PostContent";
 import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { cn } from "@/lib/utils";
 import { formatToolResultHint, type TimelineStep } from "@/lib/chatMessageUtils";
 import { extractToolResultImages, type ToolResultImage } from "@/lib/toolResultImages";
 import { ToolStepIcon, type ToolIconStatus } from "@/lib/toolIcons";
+
+type TodoListItem = { id: string; content: string; status: string };
+
+function parseTodoList(raw: unknown): TodoListItem[] | null {
+  if (!raw || typeof raw !== "object") return null;
+  const todos = (raw as { todos?: unknown }).todos;
+  if (!Array.isArray(todos)) return null;
+  const items = todos
+    .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+    .map((t) => ({
+      id: String(t.id ?? ""),
+      content: String(t.content ?? ""),
+      status: String(t.status ?? "pending"),
+    }))
+    .filter((t) => t.content);
+  return items.length ? items : null;
+}
+
+/** todo_write 结果：SetTodoList 风格勾选清单（只读） */
+const TodoWriteResult = memo(function TodoWriteResult({ items }: { items: TodoListItem[] }) {
+  return (
+    <ul
+      className="space-y-0 overflow-hidden rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] py-1"
+      data-testid="todo-write-list"
+    >
+      {items.map((t) => {
+        const done = t.status === "completed";
+        const cancelled = t.status === "cancelled";
+        const inProgress = t.status === "in_progress";
+        return (
+          <li
+            key={t.id || t.content}
+            className={cn(
+              "flex items-start gap-2.5 px-3 py-1.5 text-[11px]",
+              inProgress && "border-l-2 border-l-[var(--kp-brand)] bg-[var(--kp-brand-soft)]/20 pl-2.5",
+            )}
+          >
+            <span className="mt-0.5 shrink-0 text-[var(--kp-text-3)]" aria-hidden>
+              {done ? (
+                <span className="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-[var(--kp-brand)] bg-[var(--kp-brand)] text-white">
+                  <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                </span>
+              ) : cancelled ? (
+                <span className="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-[var(--kp-divider)] text-[var(--kp-text-3)]">
+                  <Minus className="h-2.5 w-2.5" />
+                </span>
+              ) : (
+                <Square className="h-3.5 w-3.5" strokeWidth={1.75} />
+              )}
+            </span>
+            <span
+              className={cn(
+                "min-w-0 flex-1 leading-snug text-[var(--kp-text-2)]",
+                (done || cancelled) && "text-[var(--kp-text-3)] line-through",
+                inProgress && "font-medium text-[var(--kp-text-1)]",
+              )}
+            >
+              {t.content}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+});
 
 /** 工具结果截图预览：缩略图 + 点击全屏 */
 const ToolResultImageGallery = memo(function ToolResultImageGallery({
@@ -174,7 +251,7 @@ const ThinkingStep = memo(function ThinkingStep({
   const isEmpty = !content;
   // 默认展开；仅用户点击后折叠，结束后不自动改状态
   const [collapsed, setCollapsed] = useState(false);
-  // 思考计时：isLive 起每秒自增，给长思考进度感（避免「卡住」错觉）；终态停表
+  // 思考计时：仅 isLive 走表；结束后保留秒数（父级在正文/工具出现后会关掉 isLive）
   const [elapsedSec, setElapsedSec] = useState(0);
   useEffect(() => {
     if (!isLive) return;
@@ -200,7 +277,7 @@ const ThinkingStep = memo(function ThinkingStep({
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
         <span>Thinking{isLive ? "…" : ""}</span>
         {isLive && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
-        {isLive && elapsedSec > 0 && (
+        {elapsedSec > 0 && (
           <span className="text-[10px] tabular-nums text-[var(--kp-text-3)]">{elapsedSec}s</span>
         )}
         <ChevronRight
@@ -246,9 +323,12 @@ const ContentStep = memo(function ContentStep({
   return (
     <div
       data-testid="intermediate-content-step"
-      className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-4 py-3 text-left text-sm text-[var(--kp-text-1)] shadow-sm"
+      className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3.5 py-2 text-left text-sm text-[var(--kp-text-1)] shadow-sm"
     >
-      <PostContent content={content} className="prose-sm max-w-none text-left" />
+      <PostContent
+        content={content.trimEnd()}
+        className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
+      />
     </div>
   );
 });
@@ -260,8 +340,10 @@ const ToolStep = memo(function ToolStep({
   step: Extract<TimelineStep, { type: "tool" }>;
   isLive?: boolean;
 }) {
-  // 默认折叠（不展开详情）；用户可手动点击 summary 展开
-  const [open, setOpen] = useState(false);
+  const toolBaseName = step.name.replace(/^skill__/, "").replace(/^mcp__/, "");
+  const isTodoWrite = toolBaseName === "todo_write";
+  // null = 跟随默认（todo 有清单则开）；用户点过 summary 后锁定
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const displayName =
     step.name === "__context_compact__" || step.name === "session_compact"
       ? "上下文压缩"
@@ -271,7 +353,9 @@ const ToolStep = memo(function ToolStep({
           ? "中间回复"
           : step.name === "__reflection__"
             ? "反思复核"
-            : step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
+            : isTodoWrite
+              ? "SetTodoList"
+              : step.name.replace(/^skill__/, "Skill · ").replace(/^mcp__/, "MCP · ");
   const hasError =
     step.result &&
     typeof step.result === "object" &&
@@ -302,8 +386,6 @@ const ToolStep = memo(function ToolStep({
     [step.name, step.args],
   );
 
-  const toolBaseName = step.name.replace(/^skill__/, "").replace(/^mcp__/, "");
-  const isTodoWrite = toolBaseName === "todo_write";
   const askUserPending = useMemo(() => {
     if (toolBaseName !== "ask_user" || !step.result || typeof step.result !== "object") return null;
     const r = step.result as {
@@ -345,19 +427,13 @@ const ToolStep = memo(function ToolStep({
     }
     return null;
   }, [toolBaseName, step.result]);
+  // 优先 result；running/preparing 时用 args 预览
   const todoItems = useMemo(() => {
-    if (!isTodoWrite || !step.result || typeof step.result !== "object") return null;
-    const todos = (step.result as { todos?: unknown }).todos;
-    if (!Array.isArray(todos)) return null;
-    return todos
-      .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
-      .map((t) => ({
-        id: String(t.id ?? ""),
-        content: String(t.content ?? ""),
-        status: String(t.status ?? "pending"),
-      }))
-      .filter((t) => t.content);
-  }, [isTodoWrite, step.result]);
+    if (!isTodoWrite) return null;
+    return parseTodoList(step.result) ?? parseTodoList(step.args);
+  }, [isTodoWrite, step.result, step.args]);
+
+  const open = userOpen ?? (isTodoWrite && !!todoItems);
 
   // R18：JSON.stringify 仅在展开时计算（折叠时不浪费 CPU），且 memo 化避免重复 stringify
   const argsJson = useMemo(() => (open ? JSON.stringify(step.args, null, 2) : ""), [open, step.args]);
@@ -370,15 +446,15 @@ const ToolStep = memo(function ToolStep({
     [step.result],
   );
 
+  const isPreparing = step.status === "preparing";
   const iconStatus: ToolIconStatus =
-    step.status === "running" ? "running" : hasError ? "error" : step.status === "done" ? "done" : "idle";
-
-  const todoStatusLabel: Record<string, string> = {
-    pending: "待办",
-    in_progress: "进行中",
-    completed: "完成",
-    cancelled: "取消",
-  };
+    step.status === "running" || isPreparing
+      ? "running"
+      : hasError
+        ? "error"
+        : step.status === "done"
+          ? "done"
+          : "idle";
 
   const displayNameAsk =
     toolBaseName === "ask_user" ? "向用户提问" : displayName;
@@ -389,26 +465,37 @@ const ToolStep = memo(function ToolStep({
       data-testid="tool-pill"
       className={cn(
         "w-full overflow-hidden rounded-xl border shadow-sm transition-colors",
-        step.status === "running" || waitingAsk
+        step.status === "running" || waitingAsk || isPreparing
           ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/30"
           : "border-[var(--kp-divider-light)] bg-[var(--kp-bg)]",
       )}
     >
-      <details open={open} className="group/tool" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <details open={open} className="group/tool" onToggle={(e) => setUserOpen(e.currentTarget.open)}>
         <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[11px] font-medium text-[var(--kp-text-2)]">
           <span
             className={cn(
               "h-2 w-2 shrink-0 rounded-full",
-              step.status === "running" || waitingAsk
+              step.status === "running" || waitingAsk || isPreparing
                 ? "animate-pulse bg-[var(--kp-brand)]"
                 : hasError
                   ? "bg-red-500"
                   : "bg-green-500",
             )}
           />
-          <ToolStepIcon toolName={step.name} status={iconStatus} />
-          <span className="min-w-0 truncate">{displayNameAsk}</span>
-          {execMode && (
+          {isTodoWrite ? (
+            <ListTodo className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand-deep)]" />
+          ) : (
+            <ToolStepIcon toolName={step.name} status={iconStatus} />
+          )}
+          <span className="min-w-0 truncate font-semibold text-[var(--kp-text-1)]">
+            {displayNameAsk}
+          </span>
+          {isTodoWrite && (
+            <span className="shrink-0 text-[10px] font-normal text-[var(--kp-text-3)]">
+              更新待办
+            </span>
+          )}
+          {execMode && !isTodoWrite && (
             <span
               className={cn(
                 "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-none",
@@ -430,7 +517,17 @@ const ToolStep = memo(function ToolStep({
               {sleepHint}
             </span>
           )}
-          {(step.status === "running" || waitingAsk) && !sleepHint && (
+          {/* preparing：模型仍在写工具参数，显示「准备中」而非裸 KB 数字 */}
+          {isPreparing && !sleepHint && (
+            <span
+              className="ml-auto inline-flex items-center gap-1 text-[10px] text-[var(--kp-brand)]"
+              data-testid="tool-preparing-indicator"
+            >
+              <Loader2 className="h-3 w-3 animate-spin" />
+              准备调用…
+            </span>
+          )}
+          {(step.status === "running" || waitingAsk) && !sleepHint && !isPreparing && (
             <span
               className="ml-auto inline-flex items-center gap-1 text-[10px] text-[var(--kp-brand)]"
               data-testid="tool-running-indicator"
@@ -439,7 +536,7 @@ const ToolStep = memo(function ToolStep({
               {waitingAsk ? "等待回复" : "运行中"}
             </span>
           )}
-          {step.status === "done" && !isLive && (
+          {step.status === "done" && !isLive && !isTodoWrite && (
             <span
               className={cn(
                 "ml-auto text-[10px]",
@@ -455,39 +552,7 @@ const ToolStep = memo(function ToolStep({
         {open && (
           <div className="border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/40 px-3 py-2">
             {todoItems ? (
-              <ul
-                className="space-y-1.5 text-[11px] text-[var(--kp-text-2)]"
-                data-testid="todo-write-list"
-              >
-                {todoItems.map((t) => (
-                  <li key={t.id || t.content} className="flex items-start gap-2">
-                    <span
-                      className={cn(
-                        "mt-0.5 shrink-0 rounded px-1 py-0.5 text-[9px] font-medium leading-none",
-                        t.status === "completed"
-                          ? "bg-green-100 text-green-700"
-                          : t.status === "in_progress"
-                            ? "bg-sky-100 text-sky-700"
-                            : t.status === "cancelled"
-                              ? "bg-[var(--kp-bg-mute)] text-[var(--kp-text-3)]"
-                              : "bg-amber-100 text-amber-700",
-                      )}
-                    >
-                      {todoStatusLabel[t.status] ?? t.status}
-                    </span>
-                    <span
-                      className={cn(
-                        "min-w-0 flex-1",
-                        t.status === "completed" || t.status === "cancelled"
-                          ? "text-[var(--kp-text-3)] line-through"
-                          : "",
-                      )}
-                    >
-                      {t.content}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <TodoWriteResult items={todoItems} />
             ) : askUserAnswer ? (
               <div className="space-y-2 text-[11px]">
                 <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">

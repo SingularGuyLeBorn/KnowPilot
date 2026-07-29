@@ -71,6 +71,14 @@ vi.mock("@/lib/trpc", () => ({
           isLoading: false,
         }),
       },
+      listLocalModels: {
+        useQuery: () => ({
+          data: { items: [], totalModels: 0 },
+          isLoading: false,
+          isError: false,
+          error: null,
+        }),
+      },
     },
   },
 }));

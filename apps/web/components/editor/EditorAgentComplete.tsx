@@ -15,6 +15,10 @@ export type EditorCompleteDocMeta = {
   title?: string;
   garden?: string;
   slug?: string;
+  /** 已落盘文章 id → 附件 uploads/{garden}/{postId}/ */
+  postId?: string;
+  /** 未落盘编辑会话草稿键 → uploads/{garden}/_draft/{draftKey}/ */
+  draftKey?: string;
 };
 
 export type EditorCompleteApplyPayload = {
