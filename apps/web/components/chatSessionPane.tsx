@@ -28,7 +28,7 @@ import {
 } from "@/components/saveMessageAsPostDialog";
 import {
   type ChatQueueItem,
-  createUserQueueItem,
+  countVisibleQueueItems,
   mergeUserQueueFromDb,
 } from "@/lib/chatQueueTypes";
 import { useSessionMessages } from "@/lib/useSessionMessages";
@@ -43,10 +43,9 @@ import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
 import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
 import { useChatEnqueue } from "@/lib/useChatEnqueue";
 import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
-import { useResumeSession } from "@/lib/hooks";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 import { sessionLabel } from "@/lib/displayLabels";
-import type { RunStreamOptions } from "@/lib/useChatRunStream";
+import type { RunStreamOptions, RunStreamOutcome } from "@/lib/useChatRunStream";
 
 export interface ChatSessionPaneProps {
   sessionId: string | null;
@@ -60,10 +59,9 @@ export interface ChatSessionPaneProps {
   skills: Skill[];
   selectedAgent: Agent | undefined;
   hasWorkspaces: boolean;
-  runStream: (opts: RunStreamOptions) => Promise<void>;
+  runStream: (opts: RunStreamOptions) => Promise<RunStreamOutcome>;
   consumeRef: MutableRefObject<(preferredSessionId?: string) => void>;
   createSessionQueueItemMutation: ReturnType<typeof trpc.agent.createSessionQueueItem.useMutation>;
-  submitInjectMutation: ReturnType<typeof trpc.agent.submitInject.useMutation>;
   deleteSessionQueueItemMutation: ReturnType<typeof trpc.agent.deleteSessionQueueItem.useMutation>;
   reorderSessionQueueItemsMutation: ReturnType<typeof trpc.agent.reorderSessionQueueItems.useMutation>;
   asyncQueueStats: ComponentProps<typeof ChatCenterPane>["asyncStats"];
@@ -91,7 +89,6 @@ export function ChatSessionPane({
   runStream,
   consumeRef,
   createSessionQueueItemMutation,
-  submitInjectMutation,
   deleteSessionQueueItemMutation,
   reorderSessionQueueItemsMutation,
   asyncQueueStats,
@@ -119,6 +116,7 @@ export function ChatSessionPane({
 
   const streamingContent = lifecycleState.streamingContent;
   const liveTimeline = lifecycleState.liveTimeline;
+  const streamConnected = lifecycleState.connected;
   const streamTargetUserId = lifecycleState.streamTargetUserId;
   const inFlightAssistantId =
     lifecycleState.phase === "streaming" || lifecycleState.phase === "done"
@@ -268,7 +266,6 @@ export function ChatSessionPane({
     isSubagentSession: !!isSubagentSession,
     canStartDeepResearch,
     createSessionQueueItemMutation,
-    submitInjectMutation,
     isSessionRunOccupied,
     showToast,
     consumeRef,
@@ -307,14 +304,6 @@ export function ChatSessionPane({
     });
   }, [sessionId]);
 
-  const { mutate: resumeSession, isPending: resumePending } = useResumeSession({
-    onError: (msg) => showToast(`恢复会话失败：${msg}`),
-  });
-  const handleResumeSession = useCallback(() => {
-    if (!sessionId) return;
-    resumeSession({ id: sessionId });
-  }, [sessionId, resumeSession]);
-
   const switchVersion = trpc.message.switchVersion.useMutation();
   const switchVersionMutateAsync = switchVersion.mutateAsync;
 
@@ -346,17 +335,14 @@ export function ChatSessionPane({
   const handleTimeoutRetryInBackground = useCallback(
     (lastText: string) => {
       const sid = sessionId ?? NEW_STREAM_KEY;
-      sessionComposeActions.patchUserQueue(sid, (prev) => [
-        ...prev,
-        createUserQueueItem(
-          `请用 async_task_run 在后台执行这个任务（避免前台超时）：\n${lastText}`,
-        ),
-      ]);
       streamLifecycleActions.clearError(sid);
       setViewError(null);
-      consumeRef.current(sid);
+      // 走完整 enqueue（写 DB + dbId + drain），禁止只本地塞队列无持久化
+      enqueueMessage(
+        `请用 async_task_run 在后台执行这个任务（避免前台超时）：\n${lastText}`,
+      );
     },
-    [sessionId, consumeRef],
+    [sessionId, enqueueMessage],
   );
 
   const handleEditConfirm = useCallback(
@@ -434,6 +420,7 @@ export function ChatSessionPane({
       liveTimeline,
       streamingContent,
       isStreaming,
+      streamConnected,
       streamTargetUserId,
       inFlightAssistantId,
       isSubagentSession,
@@ -464,6 +451,7 @@ export function ChatSessionPane({
       liveTimeline,
       streamingContent,
       isStreaming,
+      streamConnected,
       streamTargetUserId,
       inFlightAssistantId,
       isSubagentSession,
@@ -503,7 +491,10 @@ export function ChatSessionPane({
         selectedAgentName={selectedAgent?.name}
         chatConfigModel={chatConfig.model}
         chatConfigSystemPrompt={chatConfig.systemPrompt}
-        queueLength={queue.length}
+        queueLength={
+          countVisibleQueueItems(userQueue) +
+          queue.filter((i) => i.kind !== "user").length
+        }
         compactPending={isSessionRunOccupied(sessionId ?? "")}
         onCompact={() => enqueueMessage("请压缩当前会话上下文")}
         leftOpen={leftOpen}
@@ -528,8 +519,6 @@ export function ChatSessionPane({
         deleteSessionQueueItemMutation={deleteSessionQueueItemMutation}
         onSend={enqueueMessage}
         onStop={handleStop}
-        onResumeSession={handleResumeSession}
-        resumePending={resumePending}
         skills={skills}
         selectedSkill={selectedSkill}
         onSkillChange={setSelectedSkill}

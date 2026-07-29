@@ -3,7 +3,10 @@
 /**
  * useChatEnqueue —— 用户消息入队本仓（W13e 从 chat.tsx 抽出）。
  *
- * enqueueMessage：/goal|/research 斜杠指令、/compact 改写、归档拦截、运行中 Steering/follow_up 注入、
+ * enqueueMessage：/goal|/research 斜杠指令、/compact 改写、归档拦截、
+ * **统一经用户发送队列**（禁止默认 steer），但 INV-Send：
+ * - 空闲且队空且未 draining → visibility=dispatching（UI 不闪「待发」）+ 立刻 drain
+ * - 占用 / 已有待发 / draining → visibility=visible + toast，等 onStreamCommitted
  * 500ms 防重（lastEnqueueRef）、写 DB 得 dbId 回填 + INV-8 ④ 显式 drain。
  */
 
@@ -11,7 +14,7 @@ import { useCallback, useRef, type RefObject } from "react";
 import { trpc } from "@/lib/trpc";
 import { type ChatQueueItem, createUserQueueItem } from "@/lib/chatQueueTypes";
 import { type SelectedSkill } from "@/components/chatInput";
-import { sessionComposeActions } from "@/lib/useSessionComposeState";
+import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
 export interface UseChatEnqueueParams {
@@ -23,7 +26,6 @@ export interface UseChatEnqueueParams {
   /** 是否允许启动深度调研（仅空会话 / 新会话） */
   canStartDeepResearch: boolean;
   createSessionQueueItemMutation: ReturnType<typeof trpc.agent.createSessionQueueItem.useMutation>;
-  submitInjectMutation: ReturnType<typeof trpc.agent.submitInject.useMutation>;
   isSessionRunOccupied: (sid: string | null) => boolean;
   showToast: (msg: string | null) => void;
   consumeRef: RefObject<(preferredSessionId?: string) => void>;
@@ -36,7 +38,6 @@ export function useChatEnqueue({
   isSubagentSession,
   canStartDeepResearch,
   createSessionQueueItemMutation,
-  submitInjectMutation,
   isSessionRunOccupied,
   showToast,
   consumeRef,
@@ -46,6 +47,7 @@ export function useChatEnqueue({
   const pauseGoalMutation = trpc.session.pauseGoal.useMutation();
   const resumeGoalMutation = trpc.session.resumeGoal.useMutation();
   const clearGoalMutation = trpc.session.clearGoal.useMutation();
+  const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
   const utils = trpc.useUtils();
 
   const enqueueMessage = useCallback(
@@ -53,7 +55,6 @@ export function useChatEnqueue({
       text: string,
       skill?: SelectedSkill,
       attachments?: ChatQueueItem["attachments"],
-      delivery?: "steer" | "follow_up",
     ) => {
       let messageText = text.trim();
       if ((!messageText && !attachments?.length) || backendDown) return;
@@ -150,29 +151,6 @@ export function useChatEnqueue({
         return;
       }
 
-      if (effectiveSessionId && isSessionRunOccupied(effectiveSessionId)) {
-        const kind = delivery === "follow_up" ? "follow_up" : "steer";
-        if (!messageText) return;
-        (async () => {
-          try {
-            await submitInjectMutation.mutateAsync({
-              sessionId: effectiveSessionId,
-              content: messageText,
-              kind,
-            });
-            showToast(
-              kind === "steer"
-                ? "已注入偏转，将在当前轮尽快生效"
-                : "已加入后续追问，将在本轮结束后处理",
-            );
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            showToast(msg || "注入失败");
-          }
-        })().catch(() => {});
-        return;
-      }
-
       const now = Date.now();
       const last = lastEnqueueRef.current;
       const attachmentsKey =
@@ -185,11 +163,28 @@ export function useChatEnqueue({
         ? `# Skill: ${skill.name}\n\n${skill.description}\n\n${skill.code}`
         : undefined;
       const sid = effectiveSessionId ?? NEW_STREAM_KEY;
+      // INV-Send：空闲直发不进可见待发；占用/已有队/drain 中才可见排队
+      const occupied =
+        !!effectiveSessionId && isSessionRunOccupied(effectiveSessionId);
+      const compose = sessionComposeStore.get(sid);
+      const draining = compose.queueDraining;
+      const hasVisiblePending = compose.userQueue.some(
+        (i) => i.visibility !== "dispatching",
+      );
+      const showInQueue = occupied || draining || hasVisiblePending;
       const localItem = createUserQueueItem(messageText || "（见附件）", {
         skillId: skill?.id,
         skillPrompt,
         attachments,
+        visibility: showInQueue ? "visible" : "dispatching",
       });
+
+      sessionComposeActions.enqueueUserQueueItem(sid, localItem);
+      if (showInQueue && occupied) {
+        showToast("已加入发送队列，当前回复结束后发送");
+      } else if (showInQueue && !occupied) {
+        showToast("已加入发送队列");
+      }
 
       if (effectiveSessionId) {
         (async () => {
@@ -205,34 +200,35 @@ export function useChatEnqueue({
             });
             const dbId = (res as { data?: { id?: string } })?.data?.id;
             if (!dbId) {
-              console.warn("[enqueueMessage] createSessionQueueItem 未返回 id，跳过入队以防重复发送");
+              console.warn("[enqueueMessage] createSessionQueueItem 未返回 id，保留本地项");
+              // 无 dbId 仍尝试 drain（空闲可发；占用 no-op）
+              consumeRef.current(effectiveSessionId);
+              return;
+            }
+            const localStillQueued = sessionComposeStore
+              .get(effectiveSessionId)
+              .userQueue.some((i) => i.id === localItem.id);
+            if (!localStillQueued) {
+              // 本地项已被 drain 发出：本行是孤儿，删掉以免「待发」幽灵卡住
+              await deleteSessionQueueItemMutation.mutateAsync({ id: dbId }).catch(() => {});
               return;
             }
             sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
-              if (prev.some((i) => i.dbId === dbId || i.id === localItem.id)) return prev;
-              if (prev.some((i) => !i.dbId && i.text === localItem.text && i.kind === "user")) {
-                return prev.map((i) =>
-                  !i.dbId && i.text === localItem.text && i.kind === "user"
-                    ? { ...i, dbId }
-                    : i,
-                );
+              if (prev.some((i) => i.dbId === dbId)) {
+                return prev.filter((i) => i.id !== localItem.id || i.dbId === dbId);
               }
-              return [...prev, { ...localItem, dbId }];
+              return prev.map((i) => (i.id === localItem.id ? { ...i, dbId } : i));
             });
+            // 有 dbId 后 drain：空闲立即发；占用等 onStreamCommitted
             consumeRef.current(effectiveSessionId);
           } catch (err) {
             console.warn("[enqueueMessage] 持久化失败，仅本地入队（无 dbId）:", err);
-            sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
-              if (prev.some((i) => i.id === localItem.id || i.text === localItem.text)) return prev;
-              return [...prev, localItem];
-            });
             consumeRef.current(effectiveSessionId);
           }
         })().catch(() => {});
         return;
       }
 
-      sessionComposeActions.enqueueUserQueueItem(sid, localItem);
       consumeRef.current(sid);
     },
     [
@@ -241,7 +237,6 @@ export function useChatEnqueue({
       isSubagentSession,
       canStartDeepResearch,
       createSessionQueueItemMutation,
-      submitInjectMutation,
       isSessionRunOccupied,
       showToast,
       consumeRef,
@@ -250,6 +245,7 @@ export function useChatEnqueue({
       pauseGoalMutation,
       resumeGoalMutation,
       clearGoalMutation,
+      deleteSessionQueueItemMutation,
       utils.session.getGoal,
     ],
   );

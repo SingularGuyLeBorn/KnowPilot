@@ -77,10 +77,18 @@ export function toApiAttachments(
   });
 }
 
+/** INV-Send：可见排队 vs 空闲直发中的瞬态（UI 不渲染「待发」） */
+export type ChatQueueVisibility = "visible" | "dispatching";
+
 export interface ChatQueueItem {
   id: string;
   kind: ChatQueueItemKind;
   text: string;
+  /**
+   * INV-Send：`visible` = 占用/排队时展示；`dispatching` = 空闲直发，Panel/chip 不计。
+   * 缺省按 visible（DB 水合项、历史项）。
+   */
+  visibility?: ChatQueueVisibility;
   pinned?: boolean;
   skillId?: string;
   skillPrompt?: string;
@@ -437,13 +445,20 @@ export function sortQueueItems(items: ChatQueueItem[]): ChatQueueItem[] {
 
 export function createUserQueueItem(
   text: string,
-  opts?: { skillId?: string; skillPrompt?: string; attachments?: ChatQueueAttachment[]; dbId?: string },
+  opts?: {
+    skillId?: string;
+    skillPrompt?: string;
+    attachments?: ChatQueueAttachment[];
+    dbId?: string;
+    visibility?: ChatQueueVisibility;
+  },
 ): ChatQueueItem {
   return {
     id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     kind: "user",
     text,
     status: "pending",
+    visibility: opts?.visibility ?? "visible",
     skillId: opts?.skillId,
     skillPrompt: opts?.skillPrompt,
     attachments: opts?.attachments,
@@ -451,6 +466,19 @@ export function createUserQueueItem(
     dbId: opts?.dbId,
     source: "user",
   };
+}
+
+/** Panel / chip / 角标：只数可见待发（排除空闲直发的 dispatching） */
+export function isVisibleQueueItem(item: ChatQueueItem): boolean {
+  return item.visibility !== "dispatching";
+}
+
+export function filterVisibleQueueItems(items: ChatQueueItem[]): ChatQueueItem[] {
+  return items.filter(isVisibleQueueItem);
+}
+
+export function countVisibleQueueItems(items: ChatQueueItem[]): number {
+  return items.reduce((n, i) => n + (isVisibleQueueItem(i) ? 1 : 0), 0);
 }
 
 /** DB SessionQueueItem 行形状（list / SSE 合并共用） */
@@ -483,6 +511,8 @@ export function sessionQueueItemToChatItem(row: SessionQueueItemRow): ChatQueueI
     kind,
     text: row.content,
     status: "pending",
+    // DB 水合项一律可见（占用期间排队的待发）
+    visibility: "visible",
     skillId: row.skillId ?? undefined,
     skillPrompt: row.skillPrompt ?? undefined,
     attachments: Array.isArray(row.attachments) ? (row.attachments as ChatQueueAttachment[]) : undefined,
@@ -506,8 +536,14 @@ export function mergeUserQueueFromDb(
   dbRows: SessionQueueItemRow[],
   tombstonedDbIds?: ReadonlySet<string>,
 ): ChatQueueItem[] {
+  // steer/follow_up 是内部注入态，未移交前不进发送队列 UI（移交后 kind=user）
   const dbItems = dbRows
-    .filter((r) => !tombstonedDbIds?.has(r.id))
+    .filter(
+      (r) =>
+        !tombstonedDbIds?.has(r.id) &&
+        r.kind !== "steer" &&
+        r.kind !== "follow_up",
+    )
     .map(sessionQueueItemToChatItem);
   const localOnly = local.filter((i) => !i.dbId);
   return [...dbItems, ...localOnly];

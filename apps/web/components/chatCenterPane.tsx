@@ -15,7 +15,6 @@ import {
   Files,
   Loader2,
   PanelLeft,
-  Play,
   X,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -27,6 +26,8 @@ import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
 import {
   type ChatQueueItem,
   type SyncTaskItem,
+  countVisibleQueueItems,
+  filterVisibleQueueItems,
   sortQueueItems,
   splitQueueByKind,
 } from "@/lib/chatQueueTypes";
@@ -34,6 +35,7 @@ import { UserSendQueuePanel } from "@/components/chatQueue";
 import { ChatMessageList, type ChatMessageListProps } from "@/components/chatMessageList";
 import { ChatGoalBar } from "@/components/chatGoalBar";
 import { SessionAskUserBar } from "@/components/sessionAskUserBar";
+import { SessionArtifactsStrip } from "@/components/sessionArtifactsStrip";
 import { ChatDispatchStrip } from "@/components/chatDispatchStrip";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
@@ -80,9 +82,6 @@ export interface ChatCenterPaneProps {
   deleteSessionQueueItemMutation: ReturnType<typeof trpc.agent.deleteSessionQueueItem.useMutation>;
   onSend: ComponentProps<typeof ChatInputArea>["onSend"];
   onStop: () => void;
-  // C-3：paused 会话「恢复运行」入口（子 Agent 任务条状态标签处 + 普通会话横幅）
-  onResumeSession: () => void;
-  resumePending: boolean;
   skills: Skill[];
   selectedSkill: SelectedSkill | null;
   onSkillChange: (skill: SelectedSkill | null) => void;
@@ -137,8 +136,6 @@ export function ChatCenterPane({
   deleteSessionQueueItemMutation,
   onSend,
   onStop,
-  onResumeSession,
-  resumePending,
   skills,
   selectedSkill,
   onSkillChange,
@@ -265,19 +262,6 @@ export function ChatCenterPane({
               {!["running", "queued", "completed", "failed", "paused", "active"].includes(sessionDetail.status) && sessionDetail.status}
             </span>
           )}
-          {/* C-3：恢复按钮触发 resume mutation → chat.tsx INV-5 自动 runStream 续传 */}
-          {sessionDetail?.status === "paused" && (
-            <button
-              type="button"
-              data-testid="resume-session-button"
-              disabled={resumePending}
-              onClick={onResumeSession}
-              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--kp-brand-deep)] px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90 disabled:opacity-60"
-            >
-              {resumePending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-              恢复运行
-            </button>
-          )}
           {sessionDetail?.taskDescription && (
             <span className="min-w-0 flex-1 truncate text-[var(--kp-text-2)]">
               {sessionDetail.taskDescription}
@@ -359,26 +343,6 @@ export function ChatCenterPane({
         </div>
       )}
 
-      {/* C-3：恢复按钮触发 resume mutation → chat.tsx INV-5 自动 runStream 续传 */}
-      {!isSubagentSession && sessionDetail?.status === "paused" && (
-        <div
-          data-testid="session-resume-banner"
-          className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40 px-3 py-2 text-xs text-[var(--kp-brand-deep)]"
-        >
-          <span className="min-w-0 flex-1 truncate">会话已暂停，可恢复继续</span>
-          <button
-            type="button"
-            data-testid="resume-session-button"
-            disabled={resumePending}
-            onClick={onResumeSession}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--kp-brand-deep)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-60"
-          >
-            {resumePending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-            恢复运行
-          </button>
-        </div>
-      )}
-
       {!isSubagentSession && (
         <ChatDispatchStrip
           activeItems={dispatchActiveItems}
@@ -446,12 +410,16 @@ export function ChatCenterPane({
         style={{ paddingBottom: "max(0.75rem, calc(0.75rem + var(--kp-keyboard-inset, 0px)))" }}
       >
         <SessionAskUserBar sessionId={effectiveSessionId} />
+        <SessionArtifactsStrip sessionId={effectiveSessionId} />
         <UserSendQueuePanel
-          items={sortQueueItems(userQueue)}
+          items={sortQueueItems(filterVisibleQueueItems(userQueue))}
           editingId={activeEditingId}
           onEdit={(id) => setEditingQueueId(id)}
           onChange={(items) => {
-            const { userQueue: uq, asyncOverlays: ao } = splitQueueByKind(items, asyncQueueData);
+            // Panel 只编辑可见项：把 dispatching 项拼回，避免拖拽改序抹掉直发中条目
+            const dispatching = userQueue.filter((i) => i.visibility === "dispatching");
+            const merged = [...items, ...dispatching];
+            const { userQueue: uq, asyncOverlays: ao } = splitQueueByKind(merged, asyncQueueData);
             sessionComposeActions.setUserQueue(effectiveSessionId ?? NEW_STREAM_KEY, uq);
             sessionComposeActions.setAsyncOverlays(effectiveSessionId ?? NEW_STREAM_KEY, ao);
             persistQueueOrder(uq);
@@ -477,7 +445,7 @@ export function ChatCenterPane({
           onStop={onStop}
           disabled={backendDown || sessionDetail?.status === "archived"}
           isStreaming={isStreaming}
-          queueLength={userQueue.length}
+          queueLength={countVisibleQueueItems(userQueue)}
           skills={skills}
           selectedSkill={selectedSkill}
           onSkillChange={onSkillChange}
