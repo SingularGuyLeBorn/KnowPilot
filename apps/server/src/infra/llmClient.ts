@@ -24,6 +24,7 @@ import {
 } from "@knowpilot/mock-llm-core";
 import { getFreellmGatewayRuntime, withFreellmGatewayFallback } from "./freeLlmRuntime.js";
 import { makeAbortError } from "./abortReason.js";
+import { DsmlStreamFilter, stripDsmlToolMarkup } from "./deepseekDsmlFilter.js";
 
 // 类型再导出：全仓 import 路径不变（llmClient 仍是 LLM 客户端入口，协议类型单源在 mock-llm-core）
 export type {
@@ -316,7 +317,9 @@ export async function chatCompletion(options: {
   const rawContent = choice?.message?.content ?? null;
   // 思考与正文分离：不要把 reasoning_content 填进 content，否则会与正式回复串台，
   // 并误导上层再走一遍「有思考 → 二次 stream」路径。
-  const content = rawContent?.trim() ? rawContent : null;
+  // DeepSeek V4：非流式也可能把 DSML 工具块写进 content
+  const cleaned = rawContent ? stripDsmlToolMarkup(rawContent) : null;
+  const content = cleaned?.trim() ? cleaned : null;
 
   return {
     content,
@@ -401,6 +404,8 @@ export async function* chatCompletionStream(options: {
   let responseModel = model;
   let lastPartialEmitAt = 0;
   let lastPartialArgsChars = 0;
+  // DeepSeek V4：DSML 工具标记偶发漏进 content，流式缓冲过滤（见 deepseekDsmlFilter.ts）
+  const dsmlFilter = new DsmlStreamFilter();
   const snapshotToolCalls = () =>
     [...toolCallsAcc.entries()].sort(([a], [b]) => a - b).map(([, v]) => v);
   const maybeEmitPartial = function* () {
@@ -478,10 +483,14 @@ export async function* chatCompletionStream(options: {
       }
 
       if (choice.delta?.content) {
-        yield { type: "token", delta: choice.delta.content, model: responseModel, provider: provider.id };
+        const safe = dsmlFilter.push(choice.delta.content);
+        if (safe) {
+          yield { type: "token", delta: safe, model: responseModel, provider: provider.id };
+        }
       }
 
       if (choice.delta?.tool_calls) {
+        dsmlFilter.markStructuredToolCalls();
         for (const tc of choice.delta.tool_calls) {
           const existing = toolCallsAcc.get(tc.index) ?? {
             id: tc.id || `call_${tc.index}`,
@@ -504,6 +513,11 @@ export async function* chatCompletionStream(options: {
         };
       }
     }
+  }
+
+  const dsmlTail = dsmlFilter.flush();
+  if (dsmlTail) {
+    yield { type: "token", delta: dsmlTail, model: responseModel, provider: provider.id };
   }
 
   const toolCalls = [...toolCallsAcc.entries()].sort(([a], [b]) => a - b).map(([, v]) => v);
