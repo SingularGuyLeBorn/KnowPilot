@@ -234,6 +234,61 @@ describe("native:write_file", () => {
     expect(fs.readFileSync(path.join(root, "content/uploads/shot.png.txt"), "utf8")).toBe("img");
   });
 
+  it("禁止 write_file 写 apps/algo-viz（须用 algo_viz_create）", async () => {
+    const ctx = createNativeCtx(root);
+    fs.mkdirSync(path.join(root, "apps/algo-viz/src/compositions"), { recursive: true });
+    await expect(
+      executeNativeTool(
+        "write_file",
+        {
+          path: "apps/algo-viz/src/compositions/DemoClip.tsx",
+          content: "export const DemoClip = () => null;\n",
+        },
+        ctx,
+      ),
+    ).rejects.toThrow(/algo_viz_create/);
+    expect(
+      fs.existsSync(path.join(root, "apps/algo-viz/src/compositions/DemoClip.tsx")),
+    ).toBe(false);
+  });
+
+  it("禁止 write_file 把 .tsx 丢进 content/uploads/viz（须用 algo_viz_create）", async () => {
+    const ctx = createNativeCtx(root);
+    fs.mkdirSync(path.join(root, "content/uploads/viz"), { recursive: true });
+    await expect(
+      executeNativeTool(
+        "write_file",
+        {
+          path: "content/uploads/viz/DemoClip.tsx",
+          content: "export const DemoClip = () => null;\n",
+        },
+        ctx,
+      ),
+    ).rejects.toThrow(/algo_viz_create/);
+    expect(fs.existsSync(path.join(root, "content/uploads/viz/DemoClip.tsx"))).toBe(false);
+  });
+
+  it("可读 apps/algo-viz；其它 apps/ 仍落 Workspace", async () => {
+    const ctx = createNativeCtx(root);
+    fs.mkdirSync(path.join(root, "apps/algo-viz/src"), { recursive: true });
+    fs.writeFileSync(path.join(root, "apps/algo-viz/src/registry.ts"), "export {};\n", "utf8");
+    const got = (await executeNativeTool(
+      "read_file",
+      { path: "apps/algo-viz/src/registry.ts" },
+      ctx,
+    )) as { path: string; content: string };
+    expect(got.path.replace(/\\/g, "/")).toBe("apps/algo-viz/src/registry.ts");
+    expect(got.content).toContain("export");
+
+    await executeNativeTool(
+      "write_file",
+      { path: "apps/web/evil.txt", content: "nope" },
+      ctx,
+    );
+    expect(fs.existsSync(path.join(root, "apps/web/evil.txt"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "data/workspace/apps/web/evil.txt"))).toBe(true);
+  });
+
   it("Workspace.path 指向 content/posts 时写文件仍硬拒", async () => {
     const ctx = createNativeCtx(root, {
       prisma: {
@@ -351,14 +406,19 @@ describe("native:file_delete", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("删除项目内文件", async () => {
+  it("软删除项目内文件进 .trash", async () => {
     const ctx = createNativeCtx(root);
     const result = (await executeNativeTool("file_delete", { path: "to-delete.txt" }, ctx)) as {
       path: string;
       deleted: boolean;
+      softDelete?: boolean;
+      trashPath?: string;
     };
     expect(result.deleted).toBe(true);
+    expect(result.softDelete).toBe(true);
+    expect(result.trashPath).toMatch(/^\.trash\//);
     expect(fs.existsSync(path.join(root, "data/workspace/to-delete.txt"))).toBe(false);
+    expect(fs.existsSync(path.join(root, result.trashPath!))).toBe(true);
   });
 
   it("拒绝路径穿越", async () => {
@@ -655,16 +715,28 @@ describe("native:directory_delete", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("删除空目录", async () => {
+  it("软删除空目录进 .trash", async () => {
     const ctx = createNativeCtx(root);
-    await executeNativeTool("directory_delete", { path: "empty" }, ctx);
+    const result = (await executeNativeTool("directory_delete", { path: "empty" }, ctx)) as {
+      softDelete?: boolean;
+      trashPath?: string;
+    };
+    expect(result.softDelete).toBe(true);
+    expect(result.trashPath).toMatch(/^\.trash\//);
     expect(fs.existsSync(path.join(root, "data/workspace/empty"))).toBe(false);
+    expect(fs.existsSync(path.join(root, result.trashPath!))).toBe(true);
   });
 
-  it("recursive 删除非空目录", async () => {
+  it("recursive 软删除非空目录进 .trash", async () => {
     const ctx = createNativeCtx(root);
-    await executeNativeTool("directory_delete", { path: "full", recursive: true }, ctx);
+    const result = (await executeNativeTool(
+      "directory_delete",
+      { path: "full", recursive: true },
+      ctx,
+    )) as { softDelete?: boolean; trashPath?: string };
+    expect(result.softDelete).toBe(true);
     expect(fs.existsSync(path.join(root, "data/workspace/full"))).toBe(false);
+    expect(fs.existsSync(path.join(root, result.trashPath!))).toBe(true);
   });
 
   it("目标不是目录时报错", async () => {

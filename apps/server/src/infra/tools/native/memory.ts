@@ -421,7 +421,7 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     concurrencyClass: "D",
     destructive: true,
     description:
-      "删除空花园（无未删文章才可删；种子库 posts/knowledge/resources 不可删）。目录移入 content/.trash/gardens/。",
+      "软删除空花园（无未删文章才可删；种子库不可删）。目录移入 content/.trash/gardens/，可恢复。禁止 shell 硬删。",
     parameters: zodParams(z.object({ id: z.string() })),
   },
   {
@@ -475,7 +475,8 @@ const MEMORY_DEFS: NativeToolDefinition[] = [
     name: "post_delete",
     concurrencyClass: "D",
     destructive: true,
-    description: "删除本地知识库文章（软删进该花园 .trash）。",
+    description:
+      "软删除本地知识库文章（进该花园 .trash，可恢复）。禁止 run_shell 硬删；恢复走文章回收站 / 相关 restore。",
     parameters: zodParams(
       z.object({
         id: z.string().describe("文章 id"),

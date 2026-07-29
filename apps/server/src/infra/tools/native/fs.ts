@@ -8,35 +8,35 @@
  */
 import fs from "fs";
 import path from "path";
-import { resolveSafePath, resolveWithinDir, assertWritePathSafe } from "../../safePath.js";
-import type { AppConfig } from "../../config.js";
+import {
+  resolveSafePath,
+  resolveWithinDir,
+  assertPathWithinDir,
+  assertWritePathSafe,
+} from "../../safePath.js";
+import {
+  listTrash,
+  moveToTrash,
+  restoreFromTrash,
+} from "../../fsMutationGate.js";
 import type { ToolRollback } from "../types.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
 
-/** 回收站根目录名（projectRoot 下，safePath 沙箱内） */
-const TRASH_DIR_NAME = ".trash";
-
-/** 计算回收站目标：`.trash/<时间戳>-<随机>/<原相对路径>`，时间戳段避免跨 run 同路径碰撞 */
-function moveToTrash(config: AppConfig, abs: string, relPath: string): string {
-  const stamp =
-    new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14) +
-    "-" +
-    Math.random().toString(36).slice(2, 8);
-  const normalized = relPath.replace(/\\/g, "/").replace(/^\/+/, "");
-  const trashRel = `${TRASH_DIR_NAME}/${stamp}/${normalized}`;
-  const trashAbs = resolveSafePath(config, trashRel);
-  fs.mkdirSync(path.dirname(trashAbs), { recursive: true });
-  fs.renameSync(abs, trashAbs);
-  return trashRel;
-}
-
 /** content/ 写入白名单：仅 uploads；其余 content/（含动态花园与 about）禁 write_file */
 const CONTENT_WRITE_PREFIXES = ["content/uploads/"] as const;
+
+/** 算法可视化工程：允许 read_file / list_directory；写入走 native:algo_viz_create */
+const ALGO_VIZ_ROOT = "apps/algo-viz";
+
+function isAlgoVizProjectPath(p: string): boolean {
+  return p === ALGO_VIZ_ROOT || p.startsWith(`${ALGO_VIZ_ROOT}/`);
+}
 
 /**
  * Agent FS 路径单点（读写对称）：
  * - content/：读任意知识库；写仅 content/uploads/
+ * - apps/algo-viz/：只读（对照样例）；创建/注册动画用 algo_viz_create
  * - 其余：落到当前 Agent Workspace（无 Workspace → data/workspace/）
  * - list/search 默认 Workspace 根，禁止裸扫项目根
  */
@@ -60,11 +60,36 @@ export async function resolveAgentFsPath(
           `禁止 write_file 直写 ${p}：content/ 仅 uploads 可写；建库/首页走 garden_*，文章走 post_*`,
         );
       }
+      // uploads/viz 只收媒体成品；Remotion 源码必须走 algo_viz_create（禁止再甩 deploy 脚本给用户）
+      if (
+        (p === "content/uploads/viz" || p.startsWith("content/uploads/viz/")) &&
+        !/\.(mp4|webm|png|jpe?g|webp|gif|svg)$/i.test(p)
+      ) {
+        throw new Error(
+          `禁止 write_file 写动画源码到 ${p}：请用 native:algo_viz_create（自动写入 apps/algo-viz 并注册）。` +
+            "content/uploads/viz/ 仅可放 mp4/海报等媒体。禁止让用户跑 cp/deploy 脚本。",
+        );
+      }
     }
     if (p === "content") p = "content";
     const abs = resolveSafePath(ctx.config, p || "content");
     if (mode === "write") assertWritePathSafe(ctx.config, abs);
     return { abs, relForReturn: p || "content" };
+  }
+
+  if (isAlgoVizProjectPath(p)) {
+    if (mode === "write") {
+      throw new Error(
+        `禁止 write_file 写 ${p}：请用 native:algo_viz_create 创建并自动注册动画组件`,
+      );
+    }
+    const packageRootAbs = resolveSafePath(ctx.config, ALGO_VIZ_ROOT);
+    const abs =
+      p === ALGO_VIZ_ROOT
+        ? packageRootAbs
+        : resolveWithinDir(packageRootAbs, p.slice(`${ALGO_VIZ_ROOT}/`.length));
+    assertPathWithinDir(packageRootAbs, abs);
+    return { abs, relForReturn: p };
   }
 
   const wsId = ctx.agentSnapshot?.workspaceId;
@@ -146,7 +171,13 @@ async function fileDeleteTool(args: Record<string, unknown>, ctx: NativeToolCont
   const stat = fs.statSync(abs);
   if (stat.isDirectory()) throw new Error(`不支持删除目录，请指定文件: ${relForReturn}`);
   const trashPath = moveToTrash(ctx.config, abs, relForReturn);
-  return { path: relForReturn, deleted: true, trashPath };
+  return {
+    path: relForReturn,
+    deleted: true,
+    softDelete: true,
+    trashPath,
+    hint: "已软删进回收站。恢复：trash_restore(trashPath=…)",
+  };
 }
 
 async function fileRenameTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -294,7 +325,30 @@ async function directoryDeleteTool(args: Record<string, unknown>, ctx: NativeToo
     throw new Error(`目录非空，需 recursive=true 才能删除: ${relForReturn}`);
   }
   const trashPath = moveToTrash(ctx.config, abs, relForReturn);
-  return { path: relForReturn, deleted: true, trashPath };
+  return {
+    path: relForReturn,
+    deleted: true,
+    softDelete: true,
+    trashPath,
+    hint: "已软删进回收站。恢复：trash_restore(trashPath=…)",
+  };
+}
+
+async function trashListTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const limit = Math.max(1, Math.min(200, Number(args.limit ?? 50)));
+  const items = listTrash(ctx.config, limit);
+  return {
+    total: items.length,
+    items,
+    hint: "恢复用 trash_restore(trashPath)。文章回收站另见 post 回收站 UI / post.restore。",
+  };
+}
+
+async function trashRestoreTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const trashPath = String(args.trashPath ?? "").trim();
+  if (!trashPath) throw new Error("trashPath 不能为空");
+  const result = restoreFromTrash(ctx.config, trashPath);
+  return { ...result, restored: true, hint: "已从回收站移回原路径（软删可逆）" };
 }
 
 const FS_DEFS: NativeToolDefinition[] = [
@@ -302,11 +356,14 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "read_file",
     concurrencyClass: "A",
     description:
-      "读取文本文件。path 以 content/ 开头可读知识库；否则相对当前 Agent Workspace（禁止裸扫项目根/config/apps）。支持偏移与最大长度。",
+      "读取文本文件。path：content/… 知识库；apps/algo-viz/… 算法动画工程；否则相对当前 Agent Workspace（禁止裸扫项目根/config/其它 apps）。支持偏移与最大长度。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "content/… 或 Workspace 相对路径" },
+        path: {
+          type: "string",
+          description: "content/…、apps/algo-viz/… 或 Workspace 相对路径",
+        },
         maxChars: { type: "number", description: "最大读取字符数，默认 12000" },
         offset: { type: "number", description: "起始字符偏移，默认 0" },
       },
@@ -320,7 +377,7 @@ const FS_DEFS: NativeToolDefinition[] = [
     // 可回滚的常规写入，非删除类——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常写文件
     approvalExempt: true,
     description:
-      "写入文本文件。path：content/uploads/… 可写上传资源；禁止直写 content/ 其它路径（建库/首页走 garden_*，文章走 post_create）；其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
+      "写入文本文件。允许 content/uploads/…；禁止直写其它 content/（文章走 post_*）与 apps/algo-viz（动画用 algo_viz_create）。其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
     parameters: {
       type: "object",
       properties: {
@@ -337,7 +394,7 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "append_to_file",
     concurrencyClass: "D",
     description:
-      "在文本文件末尾追加内容（文件不存在则创建）。路径规则同 write_file（uploads 白名单 + Workspace）。",
+      "在文本文件末尾追加内容（文件不存在则创建）。路径规则同 write_file（uploads 白名单 + Workspace；algo-viz 请用 algo_viz_create）。",
     parameters: {
       type: "object",
       properties: {
@@ -353,11 +410,15 @@ const FS_DEFS: NativeToolDefinition[] = [
   {
     name: "list_directory",
     concurrencyClass: "A",
-    description: "列出目录内容（默认当前 Agent Workspace 根，可选递归）。path=content/… 可列知识库子树。",
+    description:
+      "列出目录内容（默认当前 Agent Workspace 根，可选递归）。path=content/… 或 apps/algo-viz/… 可列对应子树。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对 Workspace 或 content/…；默认 Workspace 根" },
+        path: {
+          type: "string",
+          description: "相对 Workspace、content/… 或 apps/algo-viz/…；默认 Workspace 根",
+        },
         recursive: { type: "boolean", description: "是否递归列出子目录，默认 false" },
       },
     },
@@ -446,7 +507,8 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "directory_delete",
     concurrencyClass: "D",
     destructive: true,
-    description: "删除项目根目录内的空目录（移入 .trash 回收站）；设置 recursive=true 可递归删除。",
+    description:
+      "软删除目录：移入项目根 .trash/ 回收站（可 trash_restore 恢复）。空目录默认可删；非空需 recursive=true。禁止用 run_shell rm。",
     parameters: {
       type: "object",
       properties: {
@@ -460,7 +522,8 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "file_delete",
     concurrencyClass: "D",
     destructive: true,
-    description: "删除项目根目录内的文件（移入 .trash 回收站，可恢复）。",
+    description:
+      "软删除文件：移入项目根 .trash/ 回收站（可 trash_restore 恢复）。禁止用 run_shell rm/del。",
     parameters: {
       type: "object",
       properties: {
@@ -468,7 +531,36 @@ const FS_DEFS: NativeToolDefinition[] = [
       },
       required: ["path"],
     },
-  }
+  },
+  {
+    name: "trash_list",
+    concurrencyClass: "A",
+    description: "列出项目根 .trash/ 回收站中可恢复的软删条目（stamp + originalPath + trashPath）。",
+    parameters: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "最多返回条数，默认 50，上限 200" },
+      },
+    },
+  },
+  {
+    name: "trash_restore",
+    concurrencyClass: "D",
+    destructive: true,
+    approvalExempt: true,
+    description:
+      "从 .trash/ 恢复此前 file_delete/directory_delete 软删的路径。传入 trash_list 返回的 trashPath。",
+    parameters: {
+      type: "object",
+      properties: {
+        trashPath: {
+          type: "string",
+          description: "回收站相对路径，如 .trash/20260729…/workspaces/…/demo.html",
+        },
+      },
+      required: ["trashPath"],
+    },
+  },
 ];
 
 const FS_HANDLERS = {
@@ -484,6 +576,8 @@ const FS_HANDLERS = {
   directory_delete: directoryDeleteTool,
   file_stat: fileStatTool,
   file_delete: fileDeleteTool,
+  trash_list: trashListTool,
+  trash_restore: trashRestoreTool,
 };
 
 /**
