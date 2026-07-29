@@ -23,12 +23,13 @@ describe("editorAgentComplete", () => {
     completeSpy.mockResolvedValue({ content: "## 示例\n\n内容。" });
   });
 
-  it("prompt 含指令与前后文", () => {
+  it("prompt 含指令与前后文与当前段落", () => {
     const p = __buildEditorCompleteUserPromptForTests({
       agentId: "x",
       instruction: "在这里写一个 LoRA 例子",
       before: "前文AAA",
       after: "后文BBB",
+      paragraph: "这里应该是例子",
       title: "持续学习",
       garden: "llm-guide",
       slug: "4.7",
@@ -36,6 +37,8 @@ describe("editorAgentComplete", () => {
     expect(p).toContain("在这里写一个 LoRA 例子");
     expect(p).toContain("前文AAA");
     expect(p).toContain("后文BBB");
+    expect(p).toContain("这里应该是例子");
+    expect(p).toContain("当前段落");
     expect(p).toContain("持续学习");
   });
 

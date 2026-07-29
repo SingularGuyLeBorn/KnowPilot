@@ -111,12 +111,32 @@
         border-radius: 0.75rem;
         overflow-x: auto;
       }
-      .milkdown-editor .milkdown ul,
-      .milkdown-editor .milkdown ol {
+      /* Tailwind preflight 会 list-style:none；必须显式恢复，否则有序/无序都看不见序号 */
+      .milkdown-editor .milkdown ul {
+        list-style-type: disc;
+        list-style-position: outside;
         padding-left: 1.5rem;
         margin: 0.75rem 0;
       }
-      .milkdown-editor .milkdown li { margin: 0.25rem 0; }
+      .milkdown-editor .milkdown ol {
+        list-style-type: decimal;
+        list-style-position: outside;
+        padding-left: 1.5rem;
+        margin: 0.75rem 0;
+      }
+      .milkdown-editor .milkdown ul ul {
+        list-style-type: circle;
+      }
+      .milkdown-editor .milkdown ul ul ul {
+        list-style-type: square;
+      }
+      .milkdown-editor .milkdown li {
+        display: list-item;
+        margin: 0.25rem 0;
+      }
+      .milkdown-editor .milkdown li > p {
+        margin: 0;
+      }
       .milkdown-editor .milkdown a {
         color: var(--kp-brand-deep);
         text-decoration: underline;

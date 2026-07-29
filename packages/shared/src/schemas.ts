@@ -207,13 +207,16 @@ export type ExplainSelectionInput = z.infer<typeof explainSelectionSchema>;
  * 不建 ChatSession、不跑工具；前端 Accept 后才写入正文。
  */
 export const editorAgentCompleteSchema = z.object({
-  agentId: z.string().cuid(),
+  /** 省略则走默认 assistant */
+  agentId: z.string().cuid().optional(),
   /** 用户指令，如「在这里写一个 LoRA 小节例子」 */
   instruction: z.string().trim().min(1).max(2000),
   /** 光标前上下文 */
   before: z.string().max(8000).default(""),
   /** 光标后上下文 */
   after: z.string().max(8000).default(""),
+  /** 光标所在段落（默认上下文焦点） */
+  paragraph: z.string().max(4000).optional(),
   /** 若有选区，将替换该段 */
   selected: z.string().max(4000).optional(),
   title: z.string().max(300).optional(),

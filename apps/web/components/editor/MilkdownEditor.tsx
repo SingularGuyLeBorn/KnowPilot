@@ -53,10 +53,15 @@ import {
   setMilkdownImageUploader,
 } from "@/components/editor/milkdownImageUpload";
 import {
+  insertMilkdownMarkdownAtCursor,
   milkdownSelectionApi,
   replaceMilkdownSelectionWithMarkdown,
   saveMilkdownSelectionRange,
 } from "@/components/editor/milkdownSelectionApi";
+import {
+  milkdownAtAgent,
+  registerMilkdownAtAgentHandler,
+} from "@/components/editor/milkdownAtAgent";
 import {
   ImageUploadButton,
   imageToMarkdown,
@@ -137,6 +142,7 @@ function MilkdownWysiwyg({
         .use(milkdownLinkNav)
         .use(milkdownImageUpload)
         .use(milkdownSelectionApi)
+        .use(milkdownAtAgent)
         .use(history)
         .use(listener)
         .use(editorSlash);
@@ -204,7 +210,22 @@ function MilkdownEditorInner({
   const mode = controlledMode ?? internalMode;
   const [wysiwygEpoch, setWysiwygEpoch] = useState(0);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
-  const [atTrigger, setAtTrigger] = useState<{ token: number; query: string } | null>(null);
+  const [atTrigger, setAtTrigger] = useState<{
+    token: number;
+    query: string;
+    mode?: "wysiwyg" | "source";
+  } | null>(null);
+
+  useEffect(() => {
+    registerMilkdownAtAgentHandler((hit) => {
+      setAtTrigger((prev) => ({
+        token: (prev?.token ?? 0) + 1,
+        query: hit.query,
+        mode: "wysiwyg",
+      }));
+    });
+    return () => registerMilkdownAtAgentHandler(null);
+  }, []);
   const pendingCursorRef = useRef<number | null>(null);
   const boardHookRef = useRef<BoardInsertRequest | null>(null);
   const [boardModal, setBoardModal] = useState<{
@@ -424,17 +445,36 @@ function MilkdownEditorInner({
             content={draft}
             sourceTextareaRef={sourceRef}
             docMeta={docMeta}
+            editorMode={mode}
             atTrigger={atTrigger}
             registerApi={registerAgentApi}
             onPreferSourceMode={() => setMode("source")}
+            onCaptureWysiwygSelection={() => {
+              const snap = saveMilkdownSelectionRange();
+              return snap ? { text: snap.text } : null;
+            }}
             onRewriteContent={rewriteContent}
-            onApply={({ insertStart, insertEnd, content: snippet, wysiwyg }) => {
+            onApply={({
+              insertStart,
+              insertEnd,
+              content: snippet,
+              wysiwyg,
+              replaceDocument,
+            }) => {
+              if (replaceDocument) {
+                rewriteContent(snippet, Math.min(snippet.length, 0));
+                if (mode === "wysiwyg") setWysiwygEpoch((n) => n + 1);
+                return;
+              }
               if (wysiwyg) {
-                if (!replaceMilkdownSelectionWithMarkdown(snippet)) {
-                  // 回退：文末追加
-                  rewriteContent(`${draft}\n\n${snippet}`);
-                  setWysiwygEpoch((n) => n + 1);
+                if (
+                  replaceMilkdownSelectionWithMarkdown(snippet) ||
+                  insertMilkdownMarkdownAtCursor(snippet)
+                ) {
+                  return;
                 }
+                rewriteContent(`${draft}\n\n${snippet}`);
+                setWysiwygEpoch((n) => n + 1);
                 return;
               }
               const next = draft.slice(0, insertStart) + snippet + draft.slice(insertEnd);
@@ -515,17 +555,18 @@ function MilkdownEditorInner({
             rewriteContent(applied.next, applied.cursor);
           }}
           onKeyUp={(e) => {
-            // 仅在刚输入 @ 时唤起，避免每键重开面板
-            if (e.key !== "@" && e.key !== "Process") return;
+            // 键入 @agent 才唤起（避免单独 @ 误触）
+            if (e.key.length > 1 && e.key !== "Process") return;
             const ta = e.currentTarget;
             const hit = detectEditorAgentAtTrigger(ta.value, ta.selectionStart);
             if (!hit) return;
             setAtTrigger((prev) => ({
               token: (prev?.token ?? 0) + 1,
               query: hit.query,
+              mode: "source",
             }));
           }}
-          placeholder={placeholder || "写 Markdown… /gs 公式 · /code 代码 · /hb 画板 · @ Agent"}
+          placeholder={placeholder || "写 Markdown… /gs 公式 · /code 代码 · /hb 画板 · @agent 协写"}
           spellCheck={false}
           className="min-h-[calc(100dvh-14rem)] flex-1 resize-none bg-transparent px-4 py-4 font-mono text-sm leading-relaxed text-[var(--kp-text-1)] outline-none placeholder:text-[var(--kp-text-3)]"
         />

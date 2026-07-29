@@ -49,7 +49,7 @@ export const EDITOR_SLASH_COMMANDS: EditorSlashCommand[] = [
     alias: "hb",
     aliases: ["hb", "board", "画板"],
     title: "画板",
-    description: "插入空白画板，可手绘示意",
+    description: "手写白板（钢笔/荧光笔/压感）",
   },
   {
     id: "h1",
@@ -102,7 +102,17 @@ export function matchSlashToken(textBeforeCursor: string): { token: string; quer
 }
 
 export const EMPTY_BOARD_JSON = JSON.stringify(
-  { v: 1, w: 720, h: 360, strokes: [] as Array<{ color: string; width: number; points: number[] }> },
+  {
+    v: 2,
+    w: 960,
+    h: 540,
+    strokes: [] as Array<{
+      color: string;
+      size: number;
+      points: number[];
+      tool: "pen" | "highlighter";
+    }>,
+  },
   null,
   0,
 );

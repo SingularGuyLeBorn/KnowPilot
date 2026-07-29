@@ -30,10 +30,13 @@ const FORMAT_RULES = `【输出格式铁律】
 - 代码块：标明语言；数学专用块也可用 $$，不要用 \`\`\`math 除非用户明确要求`;
 
 export type EditorAgentCompleteArgs = {
-  agentId: string;
+  /** 省略则 resolveAgent → 默认 assistant */
+  agentId?: string;
   instruction: string;
   before?: string;
   after?: string;
+  /** 光标所在段落 */
+  paragraph?: string;
   selected?: string;
   title?: string;
   garden?: string;
@@ -67,6 +70,11 @@ function buildUserPrompt(input: EditorAgentCompleteArgs): string {
   parts.push("【光标前上下文】");
   parts.push(sliceCtx(input.before ?? "", true) || "（文首）");
   parts.push("");
+  if (input.paragraph?.trim()) {
+    parts.push("【当前段落（默认焦点，优先围绕此段补全/改写）】");
+    parts.push(input.paragraph.trim());
+    parts.push("");
+  }
   if (input.selected?.trim()) {
     parts.push("【当前选区（将被替换）】");
     parts.push(input.selected.trim());
@@ -91,7 +99,13 @@ export async function completeEditorWithAgent(
     throw new TRPCError({ code: "BAD_REQUEST", message: "指令不能为空" });
   }
 
-  const agent = await services.agent.getById(input.agentId);
+  let agent: { id: string; name: string; status: string; systemPrompt?: string | null };
+  if (input.agentId) {
+    agent = await services.agent.getById(input.agentId);
+  } else {
+    const resolved = await resolveAgent(services);
+    agent = resolved.agent;
+  }
   if (agent.status === "deleted") {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Agent「${agent.name}」已删除` });
   }

@@ -434,6 +434,27 @@ html.dark .kp-card,
   color: var(--kp-brand-light);
 }
 
+/* Tailwind preflight 去掉 ul/ol 序号；prose / 非 prose 正文都恢复 */
+.prose ul {
+  list-style-type: disc;
+  list-style-position: outside;
+  padding-left: 1.5em;
+}
+.prose ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+  padding-left: 1.5em;
+}
+.prose li {
+  display: list-item;
+}
+.prose ul ul {
+  list-style-type: circle;
+}
+.prose ul ul ul {
+  list-style-type: square;
+}
+
 /* Markdown 段落：用 div.kp-md-p 代替 p，保留 prose 段落间距 */
 .prose .kp-md-p {
   margin-top: 1.25em;
