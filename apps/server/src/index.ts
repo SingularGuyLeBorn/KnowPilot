@@ -211,6 +211,42 @@ app.post("/api/webhooks/qq", async (req, res) => {
   }
 });
 
+// 飞书机器人事件订阅（URL 验证 + im.message.receive_v1）
+// 飞书后台 → 事件订阅 → 请求地址 https://<公网>/api/webhooks/feishu
+app.post("/api/webhooks/feishu", async (req, res) => {
+  try {
+    const { getChannelAdapter } = await import("./infra/messageGateway.js");
+    const { getFeishuAdapterIngest } = await import("./infra/channels/feishuBot.js");
+    const adapter = getChannelAdapter("feishu");
+    if (!adapter?.enabled) {
+      res.status(503).json({
+        error: "飞书 Bot 未启用（需 FEISHU_APP_ID / FEISHU_APP_SECRET；可用 FEISHU_BOT_ENABLED=false 关闭）",
+      });
+      return;
+    }
+    const ingest = getFeishuAdapterIngest(adapter);
+    if (!ingest) {
+      res.status(500).json({ error: "飞书 adapter 无 ingest" });
+      return;
+    }
+    const result = ingest(req.body);
+    // URL 验证必须同步返回 challenge
+    if (result.challenge) {
+      res.status(200).json({ challenge: result.challenge });
+      return;
+    }
+    if (!result.ok) {
+      console.warn(`[feishu webhook] 忽略: ${result.error}`);
+      res.status(200).json({ ok: false, error: result.error });
+      return;
+    }
+    res.status(202).json({ ok: true });
+  } catch (err) {
+    console.error("[feishu webhook]", err);
+    if (!res.headersSent) res.status(500).json({ error: "internal" });
+  }
+});
+
 // AgentMail（agentmail.to）入站 webhook —— ask_user 邮件答复 + 审批邮件回复
 // 工业级模式：快速 202 ack + 异步处理（防 AgentMail 超时重投雪崩）。
 // 异步处理靠 DB 幂等（claimWebhookEvent）+ 兜底轮询保证最终一致，AgentMail 收到 202 即不重投。

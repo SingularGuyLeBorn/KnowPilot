@@ -343,6 +343,22 @@ export async function feishuSendText(receiveId: string, receiveIdType: string, t
   return feishuSendMessage(receiveId, receiveIdType, "text", { text }, config);
 }
 
+/** 回复指定消息（同线程回帖）。messageId 为飞书 message_id。 */
+export async function feishuReplyText(messageId: string, text: string, config: AppConfig): Promise<unknown> {
+  return feishuApi(
+    `/im/v1/messages/${encodeURIComponent(messageId)}/reply`,
+    {
+      method: "POST",
+      body: {
+        msg_type: "text",
+        content: JSON.stringify({ text }),
+      },
+    },
+    undefined,
+    config,
+  );
+}
+
 export async function feishuGetDoc(documentId: string, prisma: PrismaClient, config: AppConfig) {
   return feishuApi(`/docx/v1/documents/${documentId}`, { useUserToken: true }, prisma, config);
 }

@@ -1,5 +1,5 @@
 /**
- * IM 通道启动入口：注册 QQ Adapter 并挂到 MessageGateway。
+ * IM 通道启动入口：注册 QQ / 飞书 Adapter 并挂到 MessageGateway。
  */
 
 import type { PrismaClient } from "@prisma/client";
@@ -12,6 +12,7 @@ import {
   stopAllChannelAdapters,
 } from "../messageGateway.js";
 import { createQqOfficialBotAdapter, loadQqBotConfigFromEnv } from "./qqOfficialBot.js";
+import { createFeishuBotAdapter, loadFeishuBotConfigFromEnv } from "./feishuBot.js";
 
 export async function bootstrapMessageChannels(opts: {
   prisma: PrismaClient;
@@ -20,6 +21,7 @@ export async function bootstrapMessageChannels(opts: {
 }): Promise<void> {
   initMessageGateway(opts);
   registerChannelAdapter(createQqOfficialBotAdapter(loadQqBotConfigFromEnv()));
+  registerChannelAdapter(createFeishuBotAdapter(loadFeishuBotConfigFromEnv()));
   await startAllChannelAdapters();
 }
 
