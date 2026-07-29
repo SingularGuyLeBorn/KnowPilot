@@ -210,13 +210,34 @@ export const ChatMessageList = memo(function ChatMessageList({
   const [navActiveIdx, setNavActiveIdx] = useState<number | null>(null);
   /** Virtuoso atBottom 状态：离开底部时显示「回到底部」按钮，回底后隐藏 */
   const [isAtBottom, setIsAtBottom] = useState(true);
+  /**
+   * 用户显式「回到底部」后的钉底意图：在高度估算抖动 / 流式追加时仍 followOutput，
+   * 直到用户再次上滑（atBottom→false 且非点击过渡期）才解除。
+   */
+  const stickToBottomRef = useRef(true);
+  /** 点击回底后的短窗口：忽略中间的 false atBottom，避免按钮闪回、follow 被掐断 */
+  const scrollToBottomPendingUntilRef = useRef(0);
   /** 点击导航后短暂钉住高亮，避免 Virtuoso 估算滚动未到位时 rangeChanged 抢回上一轮 */
   const navPinUntilRef = useRef(0);
   useEffect(() => {
     setNavActiveIdx(null);
     navPinUntilRef.current = 0;
+    stickToBottomRef.current = true;
+    scrollToBottomPendingUntilRef.current = 0;
+    setIsAtBottom(true);
   }, [effectiveSessionId]);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    setIsAtBottom(atBottom);
+    if (atBottom) {
+      stickToBottomRef.current = true;
+      return;
+    }
+    // 点击回底的过渡帧里 Virtuoso 常先报 false（smooth/估算），勿解除钉底
+    if (Date.now() < scrollToBottomPendingUntilRef.current) return;
+    stickToBottomRef.current = false;
+  }, []);
 
   // 流式续写交给 followOutput；切会话落底见下方 useLayoutEffect（禁止 Virtuoso key remount）。
   const showLiveStream = isStreaming || liveTimeline.length > 0 || !!streamingContent;
@@ -579,6 +600,28 @@ export const ChatMessageList = memo(function ChatMessageList({
   const displayItems = showingStale ? holdRef.current.items : chatItems;
   const hasDisplay = displayItems.length > 0;
 
+  const scrollToBottom = useCallback(() => {
+    const last = Math.max(0, displayItems.length - 1);
+    stickToBottomRef.current = true;
+    scrollToBottomPendingUntilRef.current = Date.now() + 800;
+    setIsAtBottom(true);
+    // 禁止 smooth：估算高度在动画中途修正会「滚一下又弹回」
+    virtuosoRef.current?.scrollToIndex({
+      index: last,
+      align: "end",
+      behavior: "auto",
+    });
+    requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollToIndex({
+        index: Math.max(0, displayItems.length - 1),
+        align: "end",
+        behavior: "auto",
+      });
+      // 流式/图片撑高后仍贴底（Virtuoso 官方与 followOutput 配套 API）
+      virtuosoRef.current?.autoscrollToBottom();
+    });
+  }, [displayItems.length]);
+
   const handleNavNavigate = useCallback((navIdx: number, item: NavItem) => {
     setNavActiveIdx(navIdx);
     navPinUntilRef.current = Date.now() + 1200;
@@ -621,6 +664,7 @@ export const ChatMessageList = memo(function ChatMessageList({
       if (isMessagesHydrated || !effectiveSessionId) scrolledForSidRef.current = sid;
       return;
     }
+    stickToBottomRef.current = true;
     virtuosoRef.current?.scrollToIndex({
       index: chatItems.length - 1,
       align: "end",
@@ -719,8 +763,12 @@ export const ChatMessageList = memo(function ChatMessageList({
                 ),
               Footer: () => <div className="h-4" />,
             }}
-            followOutput={(atBottom) => (atBottom ? "auto" : false)}
-            atBottomStateChange={setIsAtBottom}
+            // 钉底意图优先：点击「回到底部」后即使 atBottom 短暂抖动仍继续跟随输出
+            followOutput={(atBottom) =>
+              stickToBottomRef.current || atBottom ? "auto" : false
+            }
+            atBottomStateChange={handleAtBottomStateChange}
+            atBottomThreshold={120}
             rangeChanged={(range) => {
               if (navItems.length === 0) return;
               // 点击导航钉住期间不跟滚，防止估算高度导致高亮退回上一轮
@@ -763,19 +811,13 @@ export const ChatMessageList = memo(function ChatMessageList({
           )}
         </>
       )}
-      {/* 回到底部：仅离开底部时出现，回底后自动隐藏（对标 Kimi Code 右下角浮钮） */}
+      {/* 回到底部：仅离开底部时出现；点击后钉底，禁止 smooth 弹回 */}
       {hasDisplay && !isAtBottom && (
         <button
           type="button"
           data-testid="scroll-to-bottom"
           aria-label="回到底部"
-          onClick={() =>
-            virtuosoRef.current?.scrollToIndex({
-              index: displayItems.length - 1,
-              align: "end",
-              behavior: "smooth",
-            })
-          }
+          onClick={scrollToBottom}
           className="absolute bottom-5 right-12 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] text-[var(--kp-text-2)] shadow-md transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]"
         >
           <ChevronDown className="h-4 w-4" />
