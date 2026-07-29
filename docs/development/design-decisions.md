@@ -1,12 +1,15 @@
 # Agent 消息投递与队列设计决策
 
 > 本文件合并了原 `swarm/` 下的三轮设计讨论，遵循 `AGENTS.md` 的「设计决策 Q&A 流程」。
-> 约定：不写回答 = 默认同意推荐方案；写了回答 = AI 需调整后再确认。
+>
+> **约定（2026-07-29 修订）**：
+> - **纯基础设施**（内部 API、实现细节、无用户可感知默认行为变化）：不写回答 = 默认同意推荐方案。
+> - **产品 / UI 默认行为**（发送路径、队列语义、快捷键、可见文案、与已定场景文档冲突的项）：**必须显式回答**；空回答不得落地。问题 A（Pi steer 默认盖过 §4 发送队列）即前车之鉴。
 
 # Agent 间消息与子 Agent 结果投递设计决策
 
 > 本文件遵循 `AGENTS.md` 的「设计决策 Q&A 流程」。
-> **约定**：不写回答 = 默认同意推荐方案；写了回答 = AI 需调整后再确认。
+> **约定**：同上（产品默认须显式拍板；纯基建可空回答默认同意）。
 
 ---
 
@@ -678,8 +681,8 @@ LoopX 不是执行器，而是长程 Agent 的**控制平面**：跨 turn / 重�
 
 | 决策                 | 默认                                                                           |
 | ---------------------- | -------------------------------------------------------------------------------- |
-| A Steering/Follow-up | 引入；投递点在后端 loop；streaming 回车=steer；配置`one-at-a-time`             |
-| B 与 phase 咬合      | steer 不改 phase；follow-up 同 run 续轮；abort 清队列；Turn Snapshot 冻结      |
+| A Steering/Follow-up | **2026-07-29 用户改口**：前端发送**一律进 user 发送队列**（chat-scenario-states §4）；废除 streaming 默认 steer / Alt+Enter follow_up。后端 loop 注入点可保留给系统（反思等），**禁止**占用户发送路径 |
+| B 与 phase 咬合      | 用户消息不走 steer phase；Turn Snapshot 冻结仍有效；abort 后未消费 inject 移交 user 队列并推 SSE |
 | C Loop Contract      | Phase 1 仅心跳超级 Agent；不替换执行器                                         |
 | D P0 边界            | 工具注册表 + 硬停 + HITL 下沉 + RunPhase + ReAct 收敛；反思/向量库/Redis 非 P0 |
 | E 目录               | infra 内按域拆 native；services/router 铁律不变                                |
@@ -689,7 +692,7 @@ LoopX 不是执行器，而是长程 Agent 的**控制平面**：跨 turn / 重�
 
 | 项                      | 状态                                                                                                                                                           |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A/B Steering·Follow-up | ✅`SessionStreamHub` 内存队列 + `reactLoop` AFTER_TOOL_BATCH / BEFORE_STOP + `agent.submitInject`；前端 occupied 时 Ctrl+Enter=steer，Ctrl+Alt+Enter=follow_up |
+| A/B Steering·Follow-up | ⚠️ 后端注入能力仍在；**前端默认已撤销**（2026-07-29）：occupied 时发送 = `createSessionQueueItem(kind=user)`，与 §4 场景文档对齐 |
 | PR-5 统一 loop          | ✅`infra/loop/`                                                                                                                                                |
 | PR-1/2 预算·HITL       | ✅                                                                                                                                                             |
 | C Loop Contract         | ✅ Phase 1：`infra/loopContract.ts` + 超级 Agent 心跳门禁/evidence/stopRule；`agent.getLoopContract` / `resumeLoopContract` / `closeLoopGate`                  |
@@ -1555,6 +1558,72 @@ WIP 分支（Kimi 模型菜单/飞书集成/软暂停占位/tombstone 等，基�
 | write_file | 整个 content/ 除 uploads 硬禁 |
 
 **回答**：按上表落地
+
+---
+
+## INV-Send：空闲直发不闪可见队列（2026-07-29）
+
+### 背景
+
+空闲发送仍先 `enqueueUserQueueItem` 再 drain，UI 会闪一下「待发消息」。根因不是 busy 误判，而是「一律进可见队列」。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 不变量 | INV-Send：空闲且队空且未 draining → `visibility=dispatching`（Panel/chip 不计）+ 立刻 drain；占用/已有可见待发/draining → `visibility=visible` + toast |
+| 契约不动 | Drain 认领/回滚、superior 优先级、DB `SessionQueueItem` 仍走原路径；visibility 仅前端展示层 |
+| 负向测试 | `enqueueIdleDispatch.test.ts`：idle 可见计数=0；occupied 可见≥1 |
+
+**回答**：按上表落地
+
+---
+
+## 软删除铁律：Agent 面禁止硬删（2026-07-29）
+
+### 背景
+
+Agent 缺 `directory_delete` 时谎称「没法删」；即便有 delete，`run_shell rm` 可绕过回收站硬删。
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 唯一消失原语 | `FsMutationGate.moveToTrash`；`file_delete`/`directory_delete` 只走 Gate |
+| Shell | `validateShellCommand` 全量 ban `rm`/`del`/`Remove-Item`/`rd`/`git rm` 等，提示改用 soft-delete 工具 |
+| 工具清单 | 默认补 `file_delete`/`directory_delete`/`trash_list`/`trash_restore`；提示词「删除铁律」 |
+| 恢复 | `trash_restore` + 文章回收站 UI；`permanentDelete` 仅人类 tRPC，不暴露给 Agent |
+| 诚实边界 | OS 层无限制删盘挡不住；目标是 Agent 工具面 + 受限 shell 内硬删无合法路径 |
+| Memory/FileSync 硬删 | 第二批再收敛（本批先堵 Agent 可达 FS + shell） |
+
+**回答**：按上表落地
+
+---
+
+## DeerFlow 对照备忘（学习不搬迁）（2026-07-29）
+
+DeerFlow 2.0 = 字节开源 SuperAgent harness（LangGraph）。见微可学：中间件横切、Skills 强制路径、沙箱隔离、长任务阶段 UI。  
+与软删同构的启发：危险能力走受控原语，不靠模型自觉。  
+**不做**：整仓迁 LangGraph / 替换 SessionStreamHub。
+
+---
+
+## DeerFlow 高/中价值落地（2026-07-29）
+
+### 决策
+
+| 项 | 结论 |
+| --- | --- |
+| 工具大结果落盘 | `toolResultOffload`：超阈值写 `data/tool-results/`，LLM 只拿 path+preview；`read_file` 分段读 |
+| LoopDetection | `toolLoopGuard`：同 name+args 连续 ≥N（默认 3）注入阻断 + 合成 tool 结果，禁止死循环重试 |
+| ask_user 链尾 | 同批含 `ask_user` 时只执行澄清，其余 call 标 `ask_user_last_gate` 跳过 |
+| Skill 渐进 + Scan | 提示词强化 list→view；`skillScan` 拦私钥/child_process/eval；create/write_file 挂钩 |
+| 子 Agent 用量归因 | `recordTokenUsage(..., meta)` → `.dev-log/llm-attribution.json`；父会话累计 childTokens |
+| Sandbox 分层 | `SHELL_MODE=docker`：`docker run -v projectRoot:/workspace`；默认仍 `host_restricted` |
+| Artifacts | SSE `artifact_created` + `SessionArtifactsStrip`；复用 offload/工具产物字段 |
+| Memory debounce | 同 scope+contentHash 2s 内合并，避免刷写 |
+
+**回答**：按上表落地（不迁 LangGraph）
 
 ---
 
