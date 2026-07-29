@@ -118,10 +118,11 @@ const SESSION_HISTORY_GUIDE = `## 会话压缩与历史召回
 - 跨会话长期事实用 memory_*；本会话细节用 session_search。`;
 
 /** Hermes SKILLS_GUIDANCE：程序记忆 vs Memory（陈述事实） */
-export const SKILLS_GUIDANCE = `## Skill 程序记忆（Hermes）
+export const SKILLS_GUIDANCE = `## Skill 程序记忆（Hermes + DeerFlow 渐进加载）
 After completing a complex task (约 5+ tool calls)、攻克棘手错误、或发现可复用工作流，用 skill_manage 保存为 Skill，下次复用。
 使用 Skill 时若发现过时/缺步/错误，立刻 skill_manage(action='patch')，不要等被要求。
-加载：skills_list 看目录 → skill_view 读全文/references。procedural Skill 不会出现在 skill__* 工具列表里。
+**渐进加载（铁律）**：默认只 skills_list 看短描述；需要时再 skill_view 读全文/references——禁止一上来把多个 Skill 全文灌进上下文。
+procedural Skill 不会出现在 skill__* 工具列表里。create/write_file 会跑 SkillScan（拦私钥/child_process/eval 等）。
 Memory 记「用户是谁/偏好」；Skill 记「这类任务怎么做」。禁止把一次性任务名（PR 号、今日 debug）当成 skill name。`;
 
 const GOAL_TOOL_GUIDE = `## Standing Goal（跨轮外环）
@@ -130,6 +131,18 @@ const GOAL_TOOL_GUIDE = `## Standing Goal（跨轮外环）
 - \`todo_write\` = 本轮步骤清单；\`session_goal_set\` = 跨轮外环（回合结束后系统裁判续跑）。
 - 查进度用 \`session_goal_status\`；完成/放弃用 \`session_goal_clear\`；暂停/恢复用 pause/resume。
 - 设立后本轮直接推进目标，勿再要求用户手动 /goal。`;
+
+const ALGO_VIZ_TOOL_GUIDE = `## 算法动画（algo-viz）铁律
+- 创建/更新动画**唯一**工具：\`algo_viz_create\`（直接写入 apps/algo-viz 并自动注册）。\`algo_viz_list\` 查已有 id。
+- **禁止** \`write_file\` 写 \`apps/algo-viz/**\` 或把 \`.tsx\` 丢进 \`content/uploads/viz/\`。
+- **禁止**让用户跑 \`cp\` / \`deploy-*.sh\` / \`bash\` 部署脚本；**禁止**声称「sandbox 写不了 apps/algo-viz」。
+- 交片后用 \`post_update\` 插入 \`\`\`viz composition: {Id}\`\`\`；缺工具时如实报告，不要发明旁路。`;
+
+const SOFT_DELETE_GUIDE = `## 删除铁律（系统强制软删）
+- **你可以删除**：文章用 \`post_delete\`，花园用 \`garden_delete\`，工作区文件/目录用 \`file_delete\` / \`directory_delete\`。
+- **一律软删进回收站**（可恢复）：返回 \`trashPath\` / 花园 .trash；用 \`trash_list\` / \`trash_restore\` 恢复；文章另有回收站 UI。
+- **禁止**用 \`run_shell\` 的 rm/del/Remove-Item 等硬删（系统会拒绝）。
+- **禁止**声称「没有删除工具」——缺的是硬删，不是软删。`;
 
 /** 根据 Agent 已授权工具追加简短使用指引 */
 export function buildAgentToolGuide(tools: string[]): string {
@@ -149,6 +162,9 @@ export function buildAgentToolGuide(tools: string[]): string {
   ) {
     parts.push(WEB_TOOL_GUIDE);
   }
+  if (has("algo_viz_create") || has("algo_viz_list")) {
+    parts.push(ALGO_VIZ_TOOL_GUIDE);
+  }
   if (has("pinme_upload")) {
     parts.push(PINME_TOOL_GUIDE);
   }
@@ -164,6 +180,16 @@ export function buildAgentToolGuide(tools: string[]): string {
     has("session_goal_clear")
   ) {
     parts.push(GOAL_TOOL_GUIDE);
+  }
+  if (
+    has("file_delete") ||
+    has("directory_delete") ||
+    has("trash_list") ||
+    has("trash_restore") ||
+    has("post_delete") ||
+    has("garden_delete")
+  ) {
+    parts.push(SOFT_DELETE_GUIDE);
   }
   return parts.join("\n\n");
 }

@@ -27,6 +27,7 @@ import {
   markSkillAgentCreated,
   markSkillArchived,
 } from "../../skillUsage.js";
+import { scanSkillPackage } from "../../skillScan.js";
 
 function skillsRoot(ctx: NativeToolContext): string {
   return ctx.config.configPaths.skills;
@@ -229,8 +230,21 @@ async function skillManageTool(args: Record<string, unknown>, ctx: NativeToolCon
     const result = await upsertProceduralSkill(ctx, name, content, { agentCreated: agentCreatedOrigin || true });
     if ("error" in result && result.error) return result;
     markSkillAgentCreated(name, root);
+    const pkgDir = skillPackageDir(root, name);
+    const scan = scanSkillPackage(fs.existsSync(pkgDir) ? pkgDir : skillMdPath(root, name, "procedural"));
+    if (!scan.ok) {
+      return {
+        ...result,
+        securityScan: scan,
+        error: `Skill「${name}」已写入但安全扫描未通过（critical）：${scan.findings
+          .filter((f) => f.severity === "critical")
+          .map((f) => `${f.rule}@${f.path}`)
+          .join("; ")}。请 patch 后重试。`,
+      };
+    }
     return {
       ...result,
+      securityScan: scan,
       message: `Skill「${name}」已创建（procedural 包）。用 skills_list / skill_view 加载。`,
     };
   }
@@ -300,7 +314,26 @@ async function skillManageTool(args: Record<string, unknown>, ctx: NativeToolCon
     const written = writeSkillSupportFile(root, name, filePath, fileContent);
     if (!written.ok) return { error: written.error };
     bumpSkillPatch(name, root);
-    return { success: true, name, file_path: filePath, message: "附属文件已写入。" };
+    const scan = scanSkillPackage(skillPackageDir(root, name));
+    if (!scan.ok) {
+      return {
+        success: true,
+        name,
+        file_path: filePath,
+        securityScan: scan,
+        error: `文件已写入但安全扫描未通过：${scan.findings
+          .filter((f) => f.severity === "critical")
+          .map((f) => `${f.rule}@${f.path}`)
+          .join("; ")}`,
+      };
+    }
+    return {
+      success: true,
+      name,
+      file_path: filePath,
+      securityScan: scan,
+      message: "附属文件已写入。",
+    };
   }
 
   if (action === "remove_file") {
