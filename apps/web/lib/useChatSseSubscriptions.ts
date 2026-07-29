@@ -205,6 +205,36 @@ export function useChatSseSubscriptions({
       register("ask_user_pending", () => {
         utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
       });
+      register("artifact_created", (ev) => {
+        try {
+          const data = JSON.parse(ev.data) as {
+            sessionId?: string;
+            artifactKind?: string;
+            title?: string;
+            path?: string;
+            mime?: string;
+            toolCallId?: string;
+            toolName?: string;
+          };
+          if (data.path && data.toolCallId) {
+            window.dispatchEvent(
+              new CustomEvent("kp:artifact-created", {
+                detail: {
+                  sessionId: data.sessionId ?? sid,
+                  artifactKind: data.artifactKind ?? "file",
+                  title: data.title,
+                  path: data.path,
+                  mime: data.mime,
+                  toolCallId: data.toolCallId,
+                  toolName: data.toolName ?? "tool",
+                },
+              }),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+      });
       register("ask_user_resolved", (ev) => {
         utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
         // 邮件回复路径：把 answer 回填到 AskUserPrompt 的 customResponse 输入框（不创建气泡）

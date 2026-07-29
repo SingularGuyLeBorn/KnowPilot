@@ -37,6 +37,10 @@ function newMemoryId(): string {
   return `c${Date.now().toString(36)}${randomBytes(8).toString("hex")}`;
 }
 
+/** DeerFlow：同 scope+hash 写入防抖窗口（毫秒），避免短时刷写 */
+const MEMORY_WRITE_DEBOUNCE_MS = 2000;
+const recentMemoryWrites = new Map<string, { at: number; item: MemoryItem }>();
+
 export interface MemoryItem {
   id: string;
   content: string;
@@ -297,6 +301,11 @@ export class PrismaMemoryRepository implements MemoryRepository {
     const scope = input.scope || MEMORY_SCOPE_GLOBAL;
     const contentHash = hashMemoryContent(input.content);
     const agentId = agentIdFromScope(scope);
+    const debounceKey = `${scope}:${contentHash}`;
+    const recent = recentMemoryWrites.get(debounceKey);
+    if (recent && Date.now() - recent.at < MEMORY_WRITE_DEBOUNCE_MS) {
+      return recent.item;
+    }
 
     // 去重：同 scope 同 contentHash（仅 active）→ 幂等刷新强度（取高者），不重复插入
     const existing = await this.prisma.memory.findFirst({
@@ -304,16 +313,26 @@ export class PrismaMemoryRepository implements MemoryRepository {
     });
     if (existing) {
       const strength = Math.max(existing.strength, input.strength ?? existing.strength);
+      if (strength === existing.strength && recent && Date.now() - recent.at < MEMORY_WRITE_DEBOUNCE_MS) {
+        return recent.item;
+      }
+      let item: MemoryItem;
       if (this.memoryService) {
         const updated = await this.memoryService.update({ id: existing.id, strength } as any);
-        if (updated.success && updated.data) return toItem(updated.data as any);
+        if (updated.success && updated.data) {
+          item = toItem(updated.data as any);
+          recentMemoryWrites.set(debounceKey, { at: Date.now(), item });
+          return item;
+        }
       } else {
         console.error(
           "[MemoryRepository] memoryService 缺省：strength 刷新走裸 Prisma，跳过文件写回与 FTS",
         );
       }
       const raw = await this.prisma.memory.update({ where: { id: existing.id }, data: { strength } });
-      return toItem(raw);
+      item = toItem(raw);
+      recentMemoryWrites.set(debounceKey, { at: Date.now(), item });
+      return item;
     }
 
     const createInput = {
@@ -336,7 +355,9 @@ export class PrismaMemoryRepository implements MemoryRepository {
       if (!created.success || !created.data) {
         throw new Error(created.error?.message ?? "Memory 创建失败");
       }
-      return toItem(created.data as any);
+      const item = toItem(created.data as any);
+      recentMemoryWrites.set(debounceKey, { at: Date.now(), item });
+      return item;
     }
     console.error(
       "[MemoryRepository] memoryService 缺省：create 走裸 Prisma，跳过文件写回与 FTS",
