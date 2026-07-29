@@ -15,13 +15,13 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["productivity", "utilities"],
     icons: [
       {
-        src: "/icons/robot.svg",
+        src: "/icons/oasismind.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "any",
       },
       {
-        src: "/icons/robot.svg",
+        src: "/icons/oasismind.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "maskable",

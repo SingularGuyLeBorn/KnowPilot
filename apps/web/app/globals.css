@@ -214,9 +214,10 @@ html {
 }
 
 /* 首页动画与玻璃卡片工具类 */
+/* 切文淡入压到极短，避免叠在重解析上加重「粘」感 */
 @keyframes kp-post-swap {
   from {
-    opacity: 0.55;
+    opacity: 0.92;
   }
   to {
     opacity: 1;
@@ -224,7 +225,7 @@ html {
 }
 
 .kp-post-swap {
-  animation: kp-post-swap 140ms ease-out;
+  animation: kp-post-swap 60ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -440,6 +441,26 @@ html.dark .kp-card,
 }
 .prose .kp-md-p:first-child {
   margin-top: 0;
+}
+.prose .kp-md-p:last-child {
+  margin-bottom: 0;
+}
+/* 尾随空段（模型常带多余换行）不占位，避免气泡像多出一行 */
+.prose .kp-md-p:empty {
+  display: none;
+  margin: 0;
+}
+
+/* Chat 气泡：比文章更紧，单行不再像底下空一行 */
+.prose.kp-chat-md .kp-md-p {
+  margin-top: 0.65em;
+  margin-bottom: 0.65em;
+}
+.prose.kp-chat-md .kp-md-p:first-child {
+  margin-top: 0;
+}
+.prose.kp-chat-md .kp-md-p:last-child {
+  margin-bottom: 0;
 }
 
 /* KaTeX 公式
@@ -693,21 +714,31 @@ html.dark .kp-card,
   }
 }
 
-/* 标题锚点 */
+/* 标题锚点：hover 显示 # 数量 = 标题级别 */
 .kp-heading-anchor {
   position: absolute;
-  left: -1.5rem;
+  left: -0.15rem;
   top: 50%;
   display: inline-flex;
-  transform: translateY(-50%);
+  transform: translate(-100%, -50%);
   align-items: center;
   justify-content: center;
-  width: 1.25rem;
+  min-width: 1.25rem;
   height: 1.25rem;
+  padding: 0 0.25rem;
+  margin-right: 0.25rem;
   border-radius: 0.25rem;
   color: var(--kp-text-3);
   opacity: 0;
   transition: opacity 0.2s, color 0.2s, background 0.2s;
+}
+
+.kp-heading-level {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
 }
 
 .group:hover .kp-heading-anchor,

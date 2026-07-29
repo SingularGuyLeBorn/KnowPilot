@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 220" width="880" height="220" role="img">
+  <defs>
+    <linearGradient id="card" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8f6f3"/>
+      <stop offset="100%" stop-color="#efeae4"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="88%" cy="22%" r="40%">
+      <stop offset="0%" stop-color="rgba(184,160,144,0.32)"/>
+      <stop offset="100%" stop-color="rgba(184,160,144,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="880" height="220" rx="20" fill="url(#card)"/>
+  <circle cx="760" cy="48" r="110" fill="url(#glow)"/>
+  <g opacity="0.16" stroke="#6e5c4a" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M48 178 H832"/>
+    <path d="M120 178 V148 M200 178 V138 M280 178 V152"/>
+    <path d="M620 178 Q700 145 780 160"/>
+  </g>
+  <g fill="#a89080" opacity="0.55">
+    <circle cx="700" cy="40" r="2"/>
+    <circle cx="760" cy="70" r="1.5"/>
+    <circle cx="820" cy="48" r="2.2"/>
+  </g>
+  <text x="48" y="48" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" letter-spacing="4" fill="#9a9588">UIH</text>
+  <text x="48" y="108" font-family="Georgia, 'Songti SC', 'Noto Serif SC', serif" font-size="22" font-weight="600" fill="#2d2a26">我们的征途是星辰大海，但在那之前，不妨先去码头搞点薯条。</text>
+  <text x="48" y="158" font-family="Georgia, 'Times New Roman', serif" font-size="16" font-style="italic" fill="#5a554f">Our voyage is to the stars and the sea — but first, fries at the pier.</text>
+</svg>

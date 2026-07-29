@@ -1,0 +1,32 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="t d">
+  <title id="t">见微 · 书页微光</title>
+  <desc id="d">展开书页与微光——Markdown 知识花园</desc>
+  <defs>
+    <linearGradient id="gBg" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#faf7f3"/>
+      <stop offset="100%" stop-color="#ebe3d9"/>
+    </linearGradient>
+    <linearGradient id="gPageL" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#d4c4be"/>
+      <stop offset="100%" stop-color="#8f7a66"/>
+    </linearGradient>
+    <linearGradient id="gPageR" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c9b8b3"/>
+      <stop offset="100%" stop-color="#6e5c4a"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#gBg)"/>
+  <path d="M60 28 L28 36 L28 96 L60 104 Z" fill="url(#gPageL)" opacity="0.9"/>
+  <path d="M68 28 L100 36 L100 96 L68 104 Z" fill="url(#gPageR)" opacity="0.95"/>
+  <path d="M64 30 V102" stroke="#f6f3ef" stroke-width="3.5" stroke-linecap="round" opacity="0.55"/>
+  <g stroke="#f6f3ef" stroke-width="2" stroke-linecap="round" opacity="0.4">
+    <path d="M36 50 H52"/>
+    <path d="M36 60 H50"/>
+    <path d="M36 70 H48"/>
+    <path d="M76 50 H92"/>
+    <path d="M76 60 H90"/>
+  </g>
+  <circle cx="64" cy="58" r="9" fill="#f8f4ef"/>
+  <circle cx="64" cy="58" r="4" fill="#5e4d3e"/>
+  <circle cx="62.2" cy="56.2" r="1.4" fill="#fff" opacity="0.85"/>
+</svg>

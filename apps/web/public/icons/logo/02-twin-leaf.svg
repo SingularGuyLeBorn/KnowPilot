@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="t d">
+  <title id="t">Á® · Ìö</title>
+  <desc id="d">$Gÿ2öâ O-Ã®¹</desc>
+  <defs>
+    <linearGradient id="gBg" x1="12%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#faf7f3"/>
+      <stop offset="100%" stop-color="#e8e0d6"/>
+    </linearGradient>
+    <linearGradient id="gLeafL" x1="20%" y1="20%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#c4b09e"/>
+      <stop offset="100%" stop-color="#6e5c4a"/>
+    </linearGradient>
+    <linearGradient id="gLeafR" x1="80%" y1="15%" x2="20%" y2="95%">
+      <stop offset="0%" stop-color="#b8a090"/>
+      <stop offset="100%" stop-color="#5e4d3e"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#gBg)"/>
+  <!-- æö -->
+  <path
+    d="M64 22
+       C40 28 26 48 28 68
+       C30 90 46 106 64 112
+       C52 92 50 68 64 48
+       Z"
+    fill="url(#gLeafL)"
+    opacity="0.92"
+  />
+  <!-- óö -->
+  <path
+    d="M64 22
+       C88 28 102 48 100 68
+       C98 90 82 106 64 112
+       C76 92 78 68 64 48
+       Z"
+    fill="url(#gLeafR)"
+    opacity="0.88"
+  />
+  <!-- ö	—: -->
+  <path d="M64 40 V96" stroke="#f6f3ef" stroke-width="2" stroke-linecap="round" opacity="0.35"/>
+  <!-- ®¹ -->
+  <circle cx="64" cy="58" r="7" fill="#f8f4ef"/>
+  <circle cx="64" cy="58" r="3.2" fill="#6e5c4a"/>
+</svg>

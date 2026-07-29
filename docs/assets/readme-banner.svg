@@ -1,19 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#f8f6f3"/>
       <stop offset="100%" stop-color="#f0ede8"/>
     </linearGradient>
-    <radialGradient id="glow" cx="80%" cy="60%" r="50%">
-      <stop offset="0%" stop-color="rgba(184,160,144,0.25)"/>
+    <radialGradient id="glow" cx="82%" cy="48%" r="48%">
+      <stop offset="0%" stop-color="rgba(184,160,144,0.28)"/>
       <stop offset="100%" stop-color="rgba(184,160,144,0)"/>
     </radialGradient>
+    <linearGradient id="mark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c9b8b3"/>
+      <stop offset="100%" stop-color="#6e5c4a"/>
+    </linearGradient>
   </defs>
   <rect width="1200" height="400" fill="url(#bg)"/>
-  <circle cx="900" cy="200" r="160" fill="url(#glow)"/>
-
-  <!-- Star field -->
-  <g fill="#a89080" opacity="0.6">
+  <circle cx="960" cy="190" r="170" fill="url(#glow)"/>
+  <g fill="#a89080" opacity="0.55">
     <circle cx="120" cy="80" r="2"/>
     <circle cx="240" cy="140" r="1.5"/>
     <circle cx="180" cy="280" r="2.5"/>
@@ -22,24 +25,24 @@
     <circle cx="540" cy="100" r="1.5"/>
     <circle cx="660" cy="260" r="2"/>
     <circle cx="780" cy="50" r="1.5"/>
-    <circle cx="1020" cy="120" r="2"/>
-    <circle cx="1080" cy="300" r="1.5"/>
-    <circle cx="1140" cy="180" r="2"/>
+    <circle cx="1040" cy="100" r="2"/>
+    <circle cx="1100" cy="280" r="1.5"/>
+    <circle cx="1140" cy="160" r="2"/>
   </g>
-
-  <!-- Wireframe planet -->
-  <g transform="translate(900, 200)" opacity="0.35" stroke="#b8a090" stroke-width="1" fill="none">
-    <circle cx="0" cy="0" r="120"/>
-    <ellipse cx="0" cy="0" rx="120" ry="40"/>
-    <ellipse cx="0" cy="0" rx="120" ry="80"/>
-    <line x1="-120" y1="0" x2="120" y2="0"/>
-    <line x1="0" y1="-120" x2="0" y2="120"/>
-    <line x1="-85" y1="-85" x2="85" y2="85"/>
-    <line x1="-85" y1="85" x2="85" y2="-85"/>
+  <g transform="translate(900, 190)">
+    <circle cx="0" cy="0" r="78" fill="#f6f3ef" stroke="#d4c4be" stroke-width="1"/>
+    <g fill="none" stroke="url(#mark)" stroke-linecap="round">
+      <circle cx="0" cy="0" r="22" stroke-width="1.4" opacity="0.4"/>
+      <circle cx="0" cy="0" r="38" stroke-width="1.7" opacity="0.5"/>
+      <circle cx="0" cy="0" r="54" stroke-width="2" opacity="0.55"/>
+      <circle cx="0" cy="0" r="68" stroke-width="2.2" opacity="0.28"/>
+    </g>
+    <path d="M-52 18 C-28 -4, 28 -4, 52 18" fill="none" stroke="#a89080" stroke-width="1.6" opacity="0.5" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="11" fill="url(#mark)"/>
+    <circle cx="-3" cy="-3" r="3.2" fill="#f8f6f3" opacity="0.85"/>
   </g>
-
-  <!-- Text -->
-  <text x="120" y="170" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="72" font-weight="700" fill="#2d2a26">KnowPilot</text>
-  <text x="120" y="220" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="28" font-weight="400" fill="#6a6560">Agentic Knowledge OS — 你的本地优先知识工作台</text>
-  <text x="120" y="270" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="16" fill="#9a9588">Next.js 16 · React 19 · tRPC 11 · Prisma · SQLite · Tailwind CSS v4</text>
+  <text x="100" y="148" font-family="Georgia, 'Songti SC', 'Noto Serif SC', serif" font-size="64" font-weight="700" fill="#2d2a26">见微</text>
+  <text x="100" y="198" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="28" font-weight="600" fill="#6e5c4a">OasisMind</text>
+  <text x="100" y="248" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="22" font-weight="400" fill="#6a6560">见微知著 · 本地优先的数字主力</text>
+  <text x="100" y="300" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="15" fill="#9a9588">Markdown · Agent · Swarm · Taste Distillation</text>
 </svg>

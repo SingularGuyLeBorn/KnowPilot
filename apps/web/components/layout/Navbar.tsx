@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { KnowPilotLogo } from "@/lib/icons";
+import dynamic from "next/dynamic";
+import { OasisMindLogo } from "@/lib/icons";
 import { usePathname } from "next/navigation";
 import { BookOpen, LayoutGrid, Menu, MessageSquare, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CommandPalette } from "./CommandPalette";
 import { ThemeToggle } from "@/components/themeToggle";
 import type { LayoutMode } from "./layoutMode";
+
+/** CmdK 面板按需加载，勿进根布局静态图 */
+const CommandPalette = dynamic(
+  () => import("./CommandPalette").then((m) => m.CommandPalette),
+  { ssr: false, loading: () => null },
+);
 
 interface NavbarProps {
   mode: LayoutMode;
@@ -68,8 +74,8 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
           href="/"
           className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight text-[var(--kp-text-1)]"
         >
-          <KnowPilotLogo size={32} className="shrink-0" />
-          <span className="hidden sm:inline">KnowPilot</span>
+          <OasisMindLogo size={32} className="shrink-0" />
+          <span className="hidden sm:inline">见微</span>
         </Link>
 
         {/* 顶栏只留四入口：知识库 · 对话 · 关于我 · 管理（=原 Agents 工作台） */}

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="t d">
+  <title id="t">¡Æ ∑ ÆW‡U</title>
+  <desc id="d">ΩaÆ”ÑÊ¡÷Û8Æπ</desc>
+  <defs>
+    <linearGradient id="gBg" x1="0%" y1="10%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f9f6f2"/>
+      <stop offset="100%" stop-color="#e6ded4"/>
+    </linearGradient>
+    <linearGradient id="gInk" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#b8a090"/>
+      <stop offset="100%" stop-color="#5e4d3e"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#gBg)"/>
+  <!-- Ê¡∆÷ + Ìá¡ÆKÆ	 -->
+  <g stroke="url(#gInk)" stroke-width="8" stroke-linecap="round" fill="none">
+    <path d="M34 34 V94"/>
+    <path d="M34 52 H52"/>
+  </g>
+  <!-- Û8π-ÑÆπ -->
+  <rect x="58" y="36" width="46" height="56" rx="16" fill="none" stroke="url(#gInk)" stroke-width="7"/>
+  <circle cx="81" cy="64" r="11" fill="url(#gInk)"/>
+  <circle cx="77.5" cy="60.5" r="3.5" fill="#f8f4ef" opacity="0.9"/>
+  <!-- ÛÂWÌ' -->
+  <path
+    d="M96 88 C104 80 108 70 106 58"
+    fill="none"
+    stroke="#a89080"
+    stroke-width="3"
+    stroke-linecap="round"
+    opacity="0.55"
+  />
+</svg>

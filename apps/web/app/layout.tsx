@@ -17,17 +17,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KnowPilot — 智能知识管理与博客平台",
-  description: "基于 Next.js + React + tRPC 的智能知识管理与博客平台",
-  applicationName: "KnowPilot",
+  title: "见微 · OasisMind — 本地优先的数字主力",
+  description: "见微知著：以 Markdown 为原子、AI 为引擎的本地优先知识花园与数字主力",
+  applicationName: "见微",
   appleWebApp: {
     capable: true,
-    title: "KnowPilot",
+    title: "见微",
     statusBarStyle: "default",
   },
   icons: {
-    icon: [{ url: "/icons/robot.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/icons/robot.svg", type: "image/svg+xml" }],
+    icon: [{ url: "/icons/oasismind.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icons/oasismind.svg", type: "image/svg+xml" }],
   },
   formatDetection: {
     telephone: false,
