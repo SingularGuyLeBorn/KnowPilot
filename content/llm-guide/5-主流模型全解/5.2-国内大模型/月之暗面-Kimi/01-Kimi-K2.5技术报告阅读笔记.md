@@ -1,7 +1,16 @@
 ---
 title: "01 · Kimi K2.5 技术报告阅读笔记"
-date: 2026-05-16
-tags: [Kimi, K2.5, 多模态, MoE, Muon, Agent Swarm, MoonViT]
+category: null
+tags:
+  - "Kimi"
+  - "K2.5"
+  - "多模态"
+  - "MoE"
+  - "Muon"
+  - "Agent Swarm"
+  - "MoonViT"
+published: true
+excerpt: null
 ---
 
 # Kimi K2.5 技术报告阅读笔记
@@ -135,3 +144,4 @@ Kimi K2.5 的关键创新点：
 | Agent | Agent Swarm + PARL 多智能体训练 |
 
 > 参考来源：[Kimi K2.5 技术报告阅读笔记](https://zhuanlan.zhihu.com/p/2000719027690030326)
+
