@@ -206,6 +206,17 @@ export type AgentStreamEvent =
       channel: "ui" | "email";
       subject?: string;
     }
+  /** 工具产物落盘/可预览（DeerFlow Artifacts 启发） */
+  | {
+      type: "artifact_created";
+      sessionId: string;
+      artifactKind: string;
+      title?: string;
+      path: string;
+      mime?: string;
+      toolCallId: string;
+      toolName: string;
+    }
   /** ask_user 已答复/超时/中止：前端收起弹框；answered 时带 answer 回填 customResponse 输入框 */
   | {
       type: "ask_user_resolved";
@@ -399,22 +410,24 @@ export async function runAgentLoopStream(options: {
  * 重试/重新生成时复用：与编辑一致，删除尾部后重发该用户消息，避免后续消息残留导致状态混乱
  * （如「重试 A 却残留 B，新 assistant 插入后 B 重复」竞态）。
  */
+/** 重试/编辑/重新生成：按树删 keep 的全部后代（单一入口 truncateAfter） */
 async function deleteTailMessages(
   services: ServiceContainer,
   sessionId: string,
   items: Awaited<ReturnType<typeof services.message.list>>["items"],
   idx: number,
 ): Promise<void> {
-  const tailIds = items.slice(idx + 1).map((m) => m.id);
-  if (tailIds.length === 0) return;
-  await services.prisma.chatMessage.deleteMany({ where: { id: { in: tailIds } } });
-  // deleteMany 绕过 MessageService.afterDelete，需手动推 message_deleted SSE，
-  // 否则前端 MessageStore 残留被删消息直到 hydrate 兜底才消失
+  const keepId = items[idx]?.id;
+  if (!keepId) return;
+  const { truncateAfter } = await import("./chatTree.js");
+  const { deletedIds } = await truncateAfter(services.prisma, sessionId, keepId);
+  if (deletedIds.length === 0) return;
+  // truncate 绕过 MessageService.afterDelete，补推 message_deleted SSE
   try {
     const { getStreamHub } = await import("./sessionStreamHub.js");
     const hub = getStreamHub();
     if (hub) {
-      for (const tailId of tailIds) {
+      for (const tailId of deletedIds) {
         hub.pushExternalEvent(sessionId, {
           type: "message_deleted",
           sessionId,
@@ -1010,15 +1023,15 @@ export async function chatAgentStream(
       }
     }
 
-    // 用户软暂停：会话进 paused，前端才能出「恢复运行」（无 partial 也要标，否则 Resume 入口消失）
+    // 用户停止本轮：归 active（半截气泡已落库；直接再发消息即可，无「恢复运行」入口）
     if (isUserSoftStop && sessionId) {
       try {
         await services.prisma.chatSession.updateMany({
-          where: { id: sessionId, status: { in: ["active", "running"] } },
-          data: { status: "paused" },
+          where: { id: sessionId, status: { in: ["active", "running", "paused"] } },
+          data: { status: "active" },
         });
-      } catch (pauseErr) {
-        console.warn("[chatAgentStream] 软暂停标 paused 失败:", pauseErr);
+      } catch (activeErr) {
+        console.warn("[chatAgentStream] 停止后标 active 失败:", activeErr);
       }
     }
 
@@ -1037,7 +1050,7 @@ export async function chatAgentStream(
       suggestion: isBudget
         ? "可在 .env 提高 LLM_DAILY_BUDGET，或明日再试。"
         : isUserSoftStop
-          ? "会话已暂停，可点「恢复运行」从中断处继续。"
+          ? "本轮已停止；直接发送下一条消息即可继续。"
           : llm.suggestion,
     });
   }
@@ -1087,11 +1100,32 @@ export async function handleBusyHubPost(
   const msg = typeof body.message === "string" ? body.message.trim() : "";
   if (!msg) return null;
 
+  // 优先按 queueItemId 幂等（drain 起流）：释放软认领，禁止按 content 误认 child_notify / 双写
+  const queueItemIdHint =
+    typeof (body as { queueItemId?: string }).queueItemId === "string"
+      ? (body as { queueItemId?: string }).queueItemId
+      : undefined;
+  if (queueItemIdHint) {
+    const byId = await services.prisma.sessionQueueItem.findFirst({
+      where: { id: queueItemIdHint, sessionId },
+    });
+    if (byId) {
+      if (byId.claimedAt) await services.sessionQueueItem.unclaim(byId.id);
+      return { kind: "queued", queueItemId: byId.id };
+    }
+  }
+
+  // 回退：同文 user 项（旧客户端无 queueItemId）
   const existing = await services.prisma.sessionQueueItem.findFirst({
     where: { sessionId, kind: "user", content: msg },
     orderBy: { order: "desc" },
   });
-  if (existing) return { kind: "queued", queueItemId: existing.id };
+  if (existing) {
+    if (existing.claimedAt) {
+      await services.sessionQueueItem.unclaim(existing.id);
+    }
+    return { kind: "queued", queueItemId: existing.id };
+  }
 
   const created = await services.sessionQueueItem.create({
     sessionId,

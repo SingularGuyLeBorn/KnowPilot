@@ -23,15 +23,15 @@ const SECRET = "SECRET_API_KEY_9f3e2a1b";
 function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
   return createTestConfig("/tmp", {
     compact: {
-      enabled: true,
-      triggerRatio: 0.05,
-      keepRecent: 4,
-      summaryModel: "auto",
-      microCompact: { enabled: true, toolResultMaxChars: 4000 },
-      memoryFlush: { enabled: false, maxFacts: 5 },
-      ...overrides,
-      // Partial 展开后可能为 undefined；单测需小预算才能触发压缩（默认 20k 会整段保留）
+      enabled: overrides?.enabled ?? true,
+      triggerRatio: overrides?.triggerRatio ?? 0.05,
+      keepRecent: overrides?.keepRecent ?? 4,
       keepRecentTokens: overrides?.keepRecentTokens ?? 200,
+      summaryModel: overrides?.summaryModel ?? "auto",
+      microCompact: overrides?.microCompact ?? { enabled: true, toolResultMaxChars: 4000 },
+      toolResultOffload: overrides?.toolResultOffload ?? { enabled: true, thresholdChars: 4000 },
+      toolLoopStreakLimit: overrides?.toolLoopStreakLimit ?? 3,
+      memoryFlush: overrides?.memoryFlush ?? { enabled: false, maxFacts: 5 },
     },
   });
 }

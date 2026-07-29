@@ -44,6 +44,8 @@ import { runContextHooks, type ContextHookInput } from "../contextHooks.js";
 import type { Agent } from "@knowpilot/shared";
 import { buildSystemPromptSkeleton } from "../promptBuilder.js";
 import { formatTrace } from "../trace.js";
+import { offloadToolResultIfNeeded } from "../toolResultOffload.js";
+import { checkToolLoop, createLoopGuardState } from "./toolLoopGuard.js";
 
 /** W11：Run.output 活状态快照写回节流间隔（每轮 tool_batch 后至多写一次） */
 const RUN_SNAPSHOT_THROTTLE_MS = 5000;
@@ -252,21 +254,67 @@ function appendToolResultMessages(
   executedTools: StoredToolCall[],
   items: Array<{ call: LlmToolCall; name: string; args: Record<string, unknown>; result: unknown; kind?: StoredToolCall["kind"] }>,
   maxChars: number,
+  offloadCtx?: {
+    config: ReactLoopInput["config"];
+    sessionId?: string;
+    runId?: string;
+    onArtifact?: (a: {
+      type: string;
+      title?: string;
+      path: string;
+      mime?: string;
+      toolCallId: string;
+      toolName: string;
+    }) => void;
+  },
 ) {
   for (const item of items) {
+    let resultForStore = item.result;
+    let resultForLlm = item.result;
+
+    // DeerFlow：大结果落盘，LLM 只拿路径 + 预览
+    if (offloadCtx?.config) {
+      try {
+        const off = offloadToolResultIfNeeded(offloadCtx.config, item.result, {
+          sessionId: offloadCtx.sessionId,
+          runId: offloadCtx.runId,
+          toolCallId: item.call.id,
+          toolName: item.name,
+          thresholdChars: offloadCtx.config.compact.toolResultOffload.thresholdChars,
+        });
+        if (off) {
+          resultForLlm = off.llmResult;
+          // 存盘路径留给 UI/审计；完整原文已在文件
+          resultForStore = off.llmResult;
+          if (off.artifact) {
+            offloadCtx.onArtifact?.({
+              ...off.artifact,
+              toolCallId: item.call.id,
+              toolName: item.name,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[ReactLoop] tool result offload 失败，回退截断:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
     executedTools.push({
       id: item.call.id,
       name: item.name,
       args: item.args,
-      result: item.result,
+      result: resultForStore,
       kind: item.kind ?? "tool",
     });
     // P2-04：截断时加显式 [TRUNCATED] 后缀，让 LLM 知道结果被裁，避免基于残缺 JSON 误判。
     // 优先截断 result 的 content/文本字段而非整个 JSON，保留结构完整性。
-    const fullStr = JSON.stringify(item.result);
+    const fullStr = JSON.stringify(resultForLlm);
     let content = fullStr;
     if (fullStr.length > maxChars) {
-      const trimmed = truncateToolResultContent(item.result, maxChars);
+      const trimmed = truncateToolResultContent(resultForLlm, maxChars);
       content = trimmed ?? fullStr.slice(0, maxChars) + `\n...[TRUNCATED, original=${fullStr.length} chars, limit=${maxChars}]`;
     }
     llmMessages.push({
@@ -363,13 +411,24 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
   let hitToolBudget = false;
   // W7：反思重修已消耗轮数（策略上限随 verdict.maxRounds 携带，消耗计数在本状态机内）
   let reflectionRoundsUsed = 0;
+  let loopGuard = createLoopGuardState();
+  /** 子会话血缘：用于 token 回记父会话 */
+  let attributedParentSessionId: string | undefined;
 
-  const accumulateUsage = (u?: { prompt: number; completion: number; total: number }) => {
+  const accumulateUsage = (
+    u?: { prompt: number; completion: number; total: number },
+    model?: string,
+  ) => {
     if (!u) return;
     totalUsage.prompt += u.prompt;
     totalUsage.completion += u.completion;
     totalUsage.total += u.total;
-    recordTokenUsage(input.config, u);
+    recordTokenUsage(input.config, u, model ?? lastModel, {
+      sessionId: input.sessionId,
+      parentSessionId: attributedParentSessionId,
+      agentId: input.agentMeta?.id,
+      runId,
+    });
   };
 
   // ── W11：Run 活状态——入口落 running 行，tool_batch 后节流快照，终态由内核统一 update ──
@@ -396,6 +455,19 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       }
     } catch (err) {
       console.warn("[ReactLoop] running Run 落库失败（不影响本次运行）:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // 子会话 token 回记父会话（DeerFlow 子 Agent 用量归因）
+  if (input.sessionId && input.services?.session) {
+    try {
+      const sess =
+        (await input.services.session.getByIdLite?.(input.sessionId)) ??
+        (await input.services.session.getById(input.sessionId));
+      const pid = (sess as { parentSessionId?: string | null } | null)?.parentSessionId;
+      if (pid) attributedParentSessionId = pid;
+    } catch {
+      /* 归因失败不阻断 */
     }
   }
 
@@ -621,7 +693,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
       lastModel = turn.model || lastModel;
       lastProvider = turn.provider || lastProvider;
-      accumulateUsage(turn.tokenUsage);
+      accumulateUsage(turn.tokenUsage, lastModel);
 
       if (turn.reasoningContent) {
         pushThinking(executedTools, roundsUsed, turn.reasoningContent);
@@ -721,8 +793,61 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
 
       machine.transition("tool_batch");
 
+      // DeerFlow：ask_user 链尾门禁——同批若含 ask_user，只执行 ask_user，其余本批跳过
+      const parsedPreview = turn.toolCalls.map((c) => ({ call: c, ...parseToolCall(c) }));
+      const askUserCalls = parsedPreview.filter(
+        (p) => p.name === "ask_user" || p.name === "native:ask_user",
+      );
+      let callsForBudget = turn.toolCalls;
+      const askUserGateSkipped: typeof parsedPreview = [];
+      if (askUserCalls.length > 0 && parsedPreview.length > askUserCalls.length) {
+        callsForBudget = askUserCalls.map((p) => p.call);
+        for (const p of parsedPreview) {
+          if (p.name !== "ask_user" && p.name !== "native:ask_user") {
+            askUserGateSkipped.push(p);
+          }
+        }
+      }
+
+      // DeerFlow LoopDetection：同参连续工具调用熔断
+      const loopVerdict = checkToolLoop(
+        loopGuard,
+        parsedPreview.map((p) => ({ name: p.name, args: p.args })),
+        input.config.compact.toolLoopStreakLimit,
+      );
+      loopGuard = loopVerdict.state;
+      if (loopVerdict.blocked) {
+        // 已 push 带 tool_calls 的 assistant → 必须补齐 tool 消息，再 follow_up
+        const blockItems = parsedPreview.map((p) => ({
+          call: p.call,
+          name: p.name,
+          args: p.args,
+          result: {
+            error: "TOOL_LOOP_BLOCKED",
+            message: loopVerdict.message,
+            fingerprint: loopVerdict.fingerprint,
+          },
+          kind: "tool" as const,
+        }));
+        appendToolResultMessages(
+          llmMessages,
+          executedTools,
+          blockItems,
+          snapshot.toolResultMaxChars,
+        );
+        await injectUserMessages(
+          input,
+          llmMessages,
+          [{ id: `loop-guard-${roundsUsed}`, content: loopVerdict.message }],
+          "follow_up",
+        );
+        input.hooks?.onProgress?.(`工具死循环熔断：${loopVerdict.fingerprint.slice(0, 80)}`);
+        machine.transition("llm");
+        continue;
+      }
+
       const { runnable, deferred } = partitionToolCallsByBudget(
-        turn.toolCalls,
+        callsForBudget,
         toolCallsUsed,
         snapshot.maxToolCalls,
       );
@@ -747,6 +872,38 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         : [];
       toolCtx.inToolRound = false;
 
+      const offloadAppend = {
+        config: input.config,
+        sessionId: input.sessionId,
+        runId,
+        onArtifact: (a: {
+          type: string;
+          title?: string;
+          path: string;
+          mime?: string;
+          toolCallId: string;
+          toolName: string;
+        }) => {
+          const sid = input.sessionId;
+          if (!sid) return;
+          try {
+            const hub = getStreamHub();
+            hub?.pushExternalEvent(sid, {
+              type: "artifact_created",
+              sessionId: sid,
+              artifactKind: a.type,
+              title: a.title,
+              path: a.path,
+              mime: a.mime,
+              toolCallId: a.toolCallId,
+              toolName: a.toolName,
+            });
+          } catch {
+            /* ignore */
+          }
+        },
+      };
+
       const executedItems = batchResults.map(({ call, parsed: p, result }) => ({
         call,
         name: p.name,
@@ -754,7 +911,13 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         result,
         kind: "tool" as const,
       }));
-      appendToolResultMessages(llmMessages, executedTools, executedItems, snapshot.toolResultMaxChars);
+      appendToolResultMessages(
+        llmMessages,
+        executedTools,
+        executedItems,
+        snapshot.toolResultMaxChars,
+        offloadAppend,
+      );
       for (const item of executedItems) {
         input.hooks?.onToolEnd?.({
           toolCallId: item.call.id,
@@ -774,8 +937,26 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           kind: "tool" as const,
         };
       });
-      appendToolResultMessages(llmMessages, executedTools, deferredItems, snapshot.toolResultMaxChars);
-      for (const item of deferredItems) {
+      // ask_user 门禁跳过的同批工具：明确回写，避免模型以为已执行
+      const askGateItems = askUserGateSkipped.map((p) => ({
+        call: p.call,
+        name: p.name,
+        args: p.args,
+        result: {
+          skipped: true,
+          reason: "ask_user_last_gate",
+          hint: "同批含 ask_user 时仅执行澄清；其它工具已跳过，用户答复后续轮再调。",
+        },
+        kind: "tool" as const,
+      }));
+      appendToolResultMessages(
+        llmMessages,
+        executedTools,
+        [...deferredItems, ...askGateItems],
+        snapshot.toolResultMaxChars,
+        offloadAppend,
+      );
+      for (const item of [...deferredItems, ...askGateItems]) {
         input.hooks?.onToolEnd?.({
           toolCallId: item.call.id,
           name: item.name,
@@ -957,9 +1138,9 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
           if (input.signal?.aborted) {
             throw makeAbortError(input.signal);
           }
-          accumulateUsage(synthesis.tokenUsage);
           if (synthesis.model) lastModel = synthesis.model;
           if (synthesis.provider) lastProvider = synthesis.provider;
+          accumulateUsage(synthesis.tokenUsage, lastModel);
           if (synthesis.reasoningContent) {
             pushThinking(executedTools, roundsUsed || 1, synthesis.reasoningContent);
           }

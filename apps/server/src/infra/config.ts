@@ -113,6 +113,8 @@ export interface AppConfig {
     messages: string;
     sessions: string;
     tools: string;
+    /** 工具大结果落盘（DeerFlow offload） */
+    toolResults: string;
     workspace: string;
     /** 知识 Inbox 原始件（截图/平台收藏缓存） */
     inbox: string;
@@ -136,6 +138,11 @@ export interface AppConfig {
     /** 全局默认模型 id：env DEFAULT_LLM_MODEL > config.yaml llm.defaultModel > shared DEFAULT_LLM_MODEL 常量 */
     defaultModel: string;
     dailyBudget: number;
+    /**
+     * 本地日预算粗算单价（USD / 1K tokens）。≠厂商账单；免费模型见 llmBudget.isZeroCostModel。
+     * env LLM_BLENDED_USD_PER_1K 可覆盖。
+     */
+    blendedUsdPer1k: number;
     maxToolRounds: number;
     /** 单次 Agent 运行的总工具调用次数上限（#32a：用户确认 168） */
     maxToolCallsPerRun: number;
@@ -252,6 +259,13 @@ export interface AppConfig {
       enabled: boolean;
       toolResultMaxChars: number;
     };
+    /** 工具大结果落盘：超阈值写 data/tool-results，LLM 只拿路径+预览 */
+    toolResultOffload: {
+      enabled: boolean;
+      thresholdChars: number;
+    };
+    /** 同参连续 tool call 熔断阈值（DeerFlow LoopDetection） */
+    toolLoopStreakLimit: number;
     memoryFlush: {
       enabled: boolean;
       maxFacts: number;
@@ -585,6 +599,7 @@ export function createAppConfig(): AppConfig {
       messages: path.join(dataDir, "messages"),
       sessions: path.join(dataDir, "sessions"),
       tools: path.join(dataDir, "tools"),
+      toolResults: path.join(dataDir, "tool-results"),
       workspace: path.join(dataDir, "workspace"),
       inbox: path.join(dataDir, "inbox"),
     },
@@ -607,6 +622,12 @@ export function createAppConfig(): AppConfig {
       defaultProvider: readEnv("LLM_DEFAULT_PROVIDER") || LLM_PROVIDER_DEEPSEEK,
       defaultModel: readEnv("DEFAULT_LLM_MODEL") || llmYaml.defaultModel || DEFAULT_LLM_MODEL,
       dailyBudget: parseFloat(readEnv("LLM_DAILY_BUDGET") || "10"),
+      // 默认 $0.10 / 1M tokens（≈ DeepSeek flash 输入偏多时的本地粗算）；旧值 0.0005=$0.50/1M 易虚高
+      blendedUsdPer1k: (() => {
+        const raw = readEnv("LLM_BLENDED_USD_PER_1K");
+        const n = raw ? Number(raw) : 0.0001;
+        return Number.isFinite(n) && n >= 0 ? n : 0.0001;
+      })(),
       // 默认 12 轮：覆盖绝大多数 ReAct 场景，避免坏 LLM 空转到 100 轮长时间转圈
       maxToolRounds: Math.max(1, parseInt(readEnv("AGENT_MAX_TOOL_ROUNDS") || "12", 10)),
       // P1-02：单次运行总工具调用上限默认 60（原 168 偏高，坏 LLM 可烧数十分钟才被叫停）。
@@ -773,6 +794,27 @@ export function createAppConfig(): AppConfig {
           ),
         ),
       },
+      toolResultOffload: {
+        enabled:
+          String(
+            (compactConfig.toolResultOffload as Record<string, unknown> | undefined)?.enabled ?? "true",
+          ) !== "false",
+        thresholdChars: Math.max(
+          500,
+          parseInt(
+            String(
+              (compactConfig.toolResultOffload as Record<string, unknown> | undefined)?.thresholdChars ??
+                (compactConfig.microCompact as Record<string, unknown> | undefined)?.toolResultMaxChars ??
+                "4000",
+            ),
+            10,
+          ),
+        ),
+      },
+      toolLoopStreakLimit: Math.max(
+        2,
+        parseInt(String(compactConfig.toolLoopStreakLimit ?? "3"), 10) || 3,
+      ),
       memoryFlush: {
         enabled: String((compactConfig.memoryFlush as Record<string, unknown> | undefined)?.enabled ?? "true") !== "false",
         maxFacts: Math.max(

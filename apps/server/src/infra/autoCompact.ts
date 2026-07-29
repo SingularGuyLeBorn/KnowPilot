@@ -479,6 +479,8 @@ export async function compactSessionHistory(
           enabled: base.microCompactEnabled,
           toolResultMaxChars: base.microCompactToolMaxChars,
         },
+        toolResultOffload: config.compact.toolResultOffload,
+        toolLoopStreakLimit: config.compact.toolLoopStreakLimit,
         memoryFlush: {
           enabled: base.memoryFlushEnabled,
           maxFacts: config.compact?.memoryFlush?.maxFacts ?? 5,
