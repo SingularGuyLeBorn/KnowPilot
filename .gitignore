@@ -76,6 +76,7 @@ config/agents/*-e3f87d.md
 # Agent 误把任务文本当名称创建的文件（发现即删；此处防御再生成）
 config/agents/调用*.md
 config/agents/请先*.md
+config/agents/你需要*.md
 config/skills/smoke_skill_*.md
 config/skills/Test Skill*.md
 config/skills/.curator_state
@@ -93,17 +94,14 @@ config/memories/*.md
 # data/ 运行时产物根（整体 .gitignore，可随时重建）
 /data/
 
-# User scratch / experiment prompts (not project source)
-prompts/
+# User scratch / experiment prompts（仅根目录；勿匹配 config/prompts）
+/prompts/
 
-# Runtime generated trash / dev logs
-.dev-log/llm-budget.json
-.dev-log/openrouter-free-models.json
-.dev-log/oschina-sample.html
-.dev-log/project-summary.md
-.dev-log/test-write*.md
-.dev-log/mock-*.log
-.dev-log/validate-*.log
+# 花园内软删回收站（勿入库）
+content/**/.trash/
+
+# Runtime generated trash / dev logs（整体忽略，可随时重建）
+.dev-log/
 
 # E2E / dev screenshots and markers
 dev-*.png
