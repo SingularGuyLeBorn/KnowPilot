@@ -9,7 +9,12 @@ import fs from "fs";
 import path from "path";
 import { load as loadYaml } from "js-yaml";
 import { z } from "zod";
-import { DEFAULT_LLM_MODEL, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
+import {
+  DEFAULT_LLM_MODEL,
+  LLM_PROVIDER_DEEPSEEK,
+  LOCAL_LLM_DEFAULT_BASE_URLS,
+  type LocalLlmProviderId,
+} from "@knowpilot/shared";
 import { buildEffectiveSearchPriorityString } from "./metablog/search/priority.js";
 
 /** config.yaml llm 段：弹性调用参数（缺省时走默认值） */
@@ -322,6 +327,22 @@ function readProvider(modelKeys: string[], apiKeyKeys: string[], baseUrlKeys: st
   };
 }
 
+/** 本地 OpenAI 兼容后端：无 key 时填 local；无 baseUrl 时填默认端口 */
+function readLocalProvider(
+  id: LocalLlmProviderId,
+  modelKeys: string[],
+  apiKeyKeys: string[],
+  baseUrlKeys: string[],
+  defaultModel: string,
+): LlmProviderConfig {
+  const base = readProvider(modelKeys, apiKeyKeys, baseUrlKeys, defaultModel);
+  return {
+    apiKey: base.apiKey || "local",
+    model: base.model,
+    baseUrl: base.baseUrl || LOCAL_LLM_DEFAULT_BASE_URLS[id],
+  };
+}
+
 /* ─── 路径解析 ─── */
 
 function resolveProjectRoot(): string {
@@ -471,6 +492,34 @@ export function createAppConfig(): AppConfig {
       ["OPENROUTER_API_KEY", "VITE_OPENROUTER_API_KEY"],
       ["OPENROUTER_BASE_URL", "VITE_OPENROUTER_BASE_URL"],
       "anthropic/claude-3.5-sonnet",
+    ),
+    ollama: readLocalProvider(
+      "ollama",
+      ["OLLAMA_MODEL", "VITE_OLLAMA_MODEL"],
+      ["OLLAMA_API_KEY", "VITE_OLLAMA_API_KEY"],
+      ["OLLAMA_BASE_URL", "VITE_OLLAMA_BASE_URL"],
+      "llama3.2",
+    ),
+    llamacpp: readLocalProvider(
+      "llamacpp",
+      ["LLAMACPP_MODEL", "VITE_LLAMACPP_MODEL"],
+      ["LLAMACPP_API_KEY", "VITE_LLAMACPP_API_KEY"],
+      ["LLAMACPP_BASE_URL", "VITE_LLAMACPP_BASE_URL"],
+      "local",
+    ),
+    lmstudio: readLocalProvider(
+      "lmstudio",
+      ["LMSTUDIO_MODEL", "VITE_LMSTUDIO_MODEL"],
+      ["LMSTUDIO_API_KEY", "VITE_LMSTUDIO_API_KEY"],
+      ["LMSTUDIO_BASE_URL", "VITE_LMSTUDIO_BASE_URL"],
+      "local",
+    ),
+    vllm: readLocalProvider(
+      "vllm",
+      ["VLLM_MODEL", "VITE_VLLM_MODEL"],
+      ["VLLM_API_KEY", "VITE_VLLM_API_KEY"],
+      ["VLLM_BASE_URL", "VITE_VLLM_BASE_URL"],
+      "local",
     ),
   };
 

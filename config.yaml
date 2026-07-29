@@ -14,6 +14,9 @@ llm:
   fallbackModels: []
   # P3-03：可选覆盖各厂商 baseUrl（env <provider>_BASE_URL 仍优先；都未配则回退内置 DEFAULT_BASE_URLS）
   # 例：providers: { deepseek: { baseUrl: "https://proxy.example.com/v1" } }
+  # 本地 OpenAI 兼容后端（默认端口：ollama 11434 / llamacpp 8080 / lmstudio 1234 / vllm 8000）
+  # 会话模型 id：ollama/llama3.2、llamacpp/xxx、lmstudio/xxx、vllm/xxx
+  # 例：providers: { ollama: { baseUrl: "http://127.0.0.1:11434/v1" } }
   providers: {}
 
 stream:

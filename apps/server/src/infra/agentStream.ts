@@ -65,6 +65,11 @@ export type AgentStreamEvent =
   | { type: "thinking"; delta: string }
   | { type: "token"; delta: string }
   | { type: "intermediate_content"; content: string; round: number }
+  | {
+      type: "tool_preparing";
+      round: number;
+      tools: Array<{ toolCallId: string; name: string; argsChars: number }>;
+    }
   | { type: "tool_start"; toolCallId: string; name: string; args: unknown; round: number }
   | { type: "tool_end"; toolCallId: string; name: string; result: unknown; round: number; hint?: string }
   | {
@@ -297,6 +302,17 @@ export async function runAgentLoopStream(options: {
         onToken: (delta) => {
           if (reflectionOn) pendingTokens.push(delta);
           else options.emit({ type: "token", delta });
+        },
+        onToolCallsPartial: (round, toolCalls) => {
+          options.emit({
+            type: "tool_preparing",
+            round,
+            tools: toolCalls.map((tc) => ({
+              toolCallId: tc.id,
+              name: tc.function.name || "tool",
+              argsChars: tc.function.arguments?.length ?? 0,
+            })),
+          });
         },
       },
       () => roundRef.current,

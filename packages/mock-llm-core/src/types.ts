@@ -57,7 +57,8 @@ export interface LlmRequestOptions {
 }
 
 export interface StreamChunk {
-  type: "token" | "reasoning" | "tool_calls";
+  /** tool_calls_partial：流式组装工具参数中途快照（长 post_create 等避免 UI 假死） */
+  type: "token" | "reasoning" | "tool_calls" | "tool_calls_partial";
   delta?: string;
   toolCalls?: LlmToolCall[];
   finishReason?: string | null;

@@ -4,7 +4,13 @@
 
 import type { AppConfig, LlmProviderConfig } from "./config.js";
 import type { ReasoningEffort } from "@knowpilot/shared";
-import { LLM_MODEL_IDS, LLM_PROVIDER_DEEPSEEK } from "@knowpilot/shared";
+import {
+  LLM_MODEL_IDS,
+  LLM_PROVIDER_DEEPSEEK,
+  LOCAL_LLM_DEFAULT_BASE_URLS,
+  isLocalLlmProviderId,
+  parseLocalModelRef,
+} from "@knowpilot/shared";
 import {
   mockChatCompletion,
   mockChatCompletionStream,
@@ -65,15 +71,32 @@ const DEFAULT_BASE_URLS: Record<string, string> = {
   cohere: "https://api.cohere.com/compatibility/v1",
   mistral: "https://api.mistral.ai/v1",
   openrouter: "https://openrouter.ai/api/v1",
+  ...LOCAL_LLM_DEFAULT_BASE_URLS,
 };
 
 export function resolveProvider(config: AppConfig, modelOrProvider?: string): LlmProviderConfig & { id: string } {
   const raw = (modelOrProvider || config.llm.defaultProvider).trim();
   const providerId = config.llm.providers[raw] ? raw : config.llm.defaultProvider;
-  const provider = withFreellmGatewayFallback(config.llm.providers[providerId] ?? { apiKey: "", model: "", baseUrl: "" });
+  const rawProvider = config.llm.providers[providerId] ?? { apiKey: "", model: "", baseUrl: "" };
+
+  // 本地后端：不走 freellm 网关，无真实 key 时用 "local"，baseUrl 回退默认端口
+  if (isLocalLlmProviderId(providerId)) {
+    const baseUrl =
+      rawProvider.baseUrl?.trim() ||
+      DEFAULT_BASE_URLS[providerId] ||
+      LOCAL_LLM_DEFAULT_BASE_URLS[providerId];
+    return {
+      id: providerId,
+      apiKey: rawProvider.apiKey?.trim() || "local",
+      model: rawProvider.model?.trim() || "local",
+      baseUrl,
+    };
+  }
+
+  const provider = withFreellmGatewayFallback(rawProvider);
   if (!provider?.apiKey) {
     throw new Error(
-      `LLM 厂商 "${providerId}" 未配置 API Key。请在 .env 设置对应密钥，或等待免费 key 同步（freeKeysSync）注入 freellm 网关。`,
+      `LLM 厂商 "${providerId}" 未配置 API Key。请在 .env 设置对应密钥，或等待免费 key 同步（freeKeysSync）注入 freellm 网关。本地模型请用 ollama/llamacpp/lmstudio/vllm（会话模型 id 形如 ollama/llama3.2）。`,
     );
   }
   return { id: providerId, ...provider };
@@ -166,6 +189,11 @@ function applyDeepSeekThinkingBody(
 
 /** 根据 model 字段推断 provider（agent.model 可能是 v4-flash / kimi-k2.5 等各厂商模型 id） */
 export function inferProviderFromModel(config: AppConfig, model: string): LlmProviderConfig & { id: string } {
+  const localRef = parseLocalModelRef(model);
+  if (localRef.providerId) {
+    return resolveProvider(config, localRef.providerId);
+  }
+
   const lower = model.toLowerCase();
   // 官方 OpenRouter 免费模型（需 OPENROUTER_API_KEY）；优先于名称里的 vendor 关键字
   if (lower.endsWith(":free") && config.llm.providers.openrouter?.apiKey?.trim()) {
@@ -182,6 +210,10 @@ export function inferProviderFromModel(config: AppConfig, model: string): LlmPro
   if (lower.includes("qwen")) return resolveProvider(config, "qwen");
   if (lower.includes("grok")) return resolveProvider(config, "xai");
   if (lower.includes("mistral") || lower.includes("mixtral")) return resolveProvider(config, "mistral");
+  // 默认厂商若是本地后端，裸模型名（llama3.2）直接走本地
+  if (isLocalLlmProviderId(config.llm.defaultProvider)) {
+    return resolveProvider(config, config.llm.defaultProvider);
+  }
   return resolveProvider(config, config.llm.defaultProvider);
 }
 
@@ -192,6 +224,13 @@ function resolveEffectiveModel(
 ): string {
   if (!requested?.trim()) return providerDefault;
   const r = requested.trim();
+  const localRef = parseLocalModelRef(r);
+  // 本地：会话 id 为 ollama/xxx，上游只要 xxx
+  if (isLocalLlmProviderId(providerId)) {
+    if (localRef.providerId === providerId && localRef.apiModel) return localRef.apiModel;
+    if (!localRef.providerId && r) return r;
+    return providerDefault;
+  }
   const lower = r.toLowerCase();
   if (lower === "kimi" || lower === "moonshot-v1-auto" || lower.includes("moonshot")) {
     return providerDefault;
@@ -296,7 +335,7 @@ export async function chatCompletion(options: {
   };
 }
 
-/** OpenAI 协议 SSE 流式补全（仅文本 delta；tool_calls 在流结束后一次性返回） */
+/** OpenAI 协议 SSE 流式补全；tool_calls 边收边发 partial，结束后再发完整 tool_calls */
 export async function* chatCompletionStream(options: {
   config: AppConfig;
   model?: string;
@@ -360,6 +399,33 @@ export async function* chatCompletionStream(options: {
   let finishReason: string | null = null;
   let usage: { prompt: number; completion: number; total: number } | undefined;
   let responseModel = model;
+  let lastPartialEmitAt = 0;
+  let lastPartialArgsChars = 0;
+  const snapshotToolCalls = () =>
+    [...toolCallsAcc.entries()].sort(([a], [b]) => a - b).map(([, v]) => v);
+  const maybeEmitPartial = function* () {
+    if (toolCallsAcc.size === 0) return;
+    const toolCalls = snapshotToolCalls();
+    if (!toolCalls.some((tc) => tc.function.name)) return;
+    const argsChars = toolCalls.reduce((n, tc) => n + (tc.function.arguments?.length ?? 0), 0);
+    const now = Date.now();
+    // 节流：首次有名字必发；之后 ≥400ms 或参数增长 ≥1.5KB
+    if (
+      lastPartialEmitAt > 0 &&
+      now - lastPartialEmitAt < 400 &&
+      argsChars - lastPartialArgsChars < 1500
+    ) {
+      return;
+    }
+    lastPartialEmitAt = now;
+    lastPartialArgsChars = argsChars;
+    yield {
+      type: "tool_calls_partial" as const,
+      toolCalls,
+      model: responseModel,
+      provider: provider.id,
+    };
+  };
   while (true) {
     if (options.signal?.aborted) {
       throw makeAbortError(options.signal);
@@ -427,6 +493,7 @@ export async function* chatCompletionStream(options: {
           if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
           toolCallsAcc.set(tc.index, existing);
         }
+        yield* maybeEmitPartial();
       }
 
       if (parsed.usage) {

@@ -80,6 +80,9 @@ export function createStreamTransport(
           content += chunk.delta;
           hooks?.onToken?.(chunk.delta);
         }
+        if (chunk.type === "tool_calls_partial" && chunk.toolCalls?.length) {
+          hooks?.onToolCallsPartial?.(round, chunk.toolCalls);
+        }
         if (chunk.type === "tool_calls" && chunk.toolCalls?.length) {
           toolCalls = chunk.toolCalls;
         }

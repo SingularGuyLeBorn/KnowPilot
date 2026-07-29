@@ -68,6 +68,11 @@ export interface LoopHooks {
   onThinking?(round: number, delta: string): void;
   /** 流式正文 delta；非流式可不实现 */
   onToken?(delta: string): void;
+  /**
+   * 流式工具参数组装中途（长 content 的 post_create 等）。
+   * 在 tool_start 之前推送，供 UI 显示「正在组装工具…」避免假死感。
+   */
+  onToolCallsPartial?(round: number, toolCalls: LlmToolCall[]): void;
   onIntermediateContent?(round: number, content: string): void;
   onToolStart?(info: { toolCallId: string; name: string; args: Record<string, unknown>; round: number }): void;
   onToolEnd?(info: {
