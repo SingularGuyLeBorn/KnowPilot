@@ -22,7 +22,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { postDetailHref } from "@/lib/postHref";
 import { exportPostMarkdownZip } from "@/lib/postExport";
-import { usePostMutations } from "@/lib/hooks";
+import { usePostMutations } from "@/lib/usePostMutations";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/shared";
 

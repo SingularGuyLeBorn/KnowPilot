@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prompts 提示词模板管理页面 (L2/L4)
  */
 
@@ -10,7 +10,8 @@ import { motion } from "framer-motion";
 import { FileCode2, Plus, Tag } from "lucide-react";
 import Link from "next/link";
 import type { Prompt } from "@knowpilot/shared";
-import { usePrompt, useCardDensity } from "@/lib/hooks";
+import { usePrompt } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 
 export default function PromptsPage() {

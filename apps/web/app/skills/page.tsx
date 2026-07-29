@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Skill 管理页面 (L2 智能工作台)
  *
  * 展示大模型代理可以调用的 TypeScript 技能代码库。
@@ -11,7 +11,8 @@ import { motion } from "framer-motion";
 import { Wand2, Plus, Code } from "lucide-react";
 import Link from "next/link";
 import type { Skill } from "@knowpilot/shared";
-import { useSkill, useCardDensity } from "@/lib/hooks";
+import { useSkill } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { LucideIconByName } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";

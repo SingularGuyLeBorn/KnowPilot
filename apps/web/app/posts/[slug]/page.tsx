@@ -3,6 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { keepPreviousData } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { DEFAULT_POST_GARDEN, isValidGardenIdFormat } from "@knowpilot/shared";
 import { PostLiveDoc } from "@/components/post/PostLiveDoc";
@@ -32,13 +33,17 @@ export default function PostDetailPage() {
     }
   }, [garden, slug, router]);
 
-  const { data: post, isPending } = trpc.post.getBySlug.useQuery(
+  const { data: post, isPending, isFetching } = trpc.post.getBySlug.useQuery(
     { slug, garden },
     {
       enabled: !(garden === DEFAULT_POST_GARDEN && slug.startsWith("llm-guide/")),
       staleTime: 5 * 60 * 1000,
+      // 切文时保留上一篇，避免卸掉整页再挂骨架/编辑器
+      placeholderData: keepPreviousData,
     },
   );
+  const postMatchesRoute =
+    !!post && post.slug === slug && (post.garden ?? DEFAULT_POST_GARDEN) === garden;
 
   const [showSkeleton, setShowSkeleton] = useState(false);
   useEffect(() => {
@@ -93,11 +98,19 @@ export default function PostDetailPage() {
     );
   }
 
-  if (post) {
+  if (postMatchesRoute && post) {
     return <PostLiveDoc key={post.id} post={post} />;
   }
 
-  if (isPending) {
+  // 仍在拉新文：留上一篇（placeholder）或轻占位，不闪空
+  if (isPending || isFetching) {
+    if (post) {
+      return (
+        <div className="pointer-events-none opacity-60 transition-opacity">
+          <PostLiveDoc key={post.id} post={post} />
+        </div>
+      );
+    }
     return <div className="min-h-[40vh]" aria-hidden />;
   }
 

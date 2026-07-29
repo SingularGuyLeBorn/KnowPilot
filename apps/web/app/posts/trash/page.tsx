@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RotateCcw, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { usePostMutations } from "@/lib/hooks";
+import { usePostMutations } from "@/lib/usePostMutations";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Pagination, ConfirmDialog, EmptyState, LoadingState } from "@/components/shared";

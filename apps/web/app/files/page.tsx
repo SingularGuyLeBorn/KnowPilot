@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { Files, Upload, Link, Database } from "lucide-react";
 import type { FileMeta } from "@knowpilot/shared";
-import { useFile, useCardDensity } from "@/lib/hooks";
+import { useFile } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function FilesPage() {

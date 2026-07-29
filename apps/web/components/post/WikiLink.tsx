@@ -34,7 +34,10 @@ function matchPost(
 }
 
 export function WikiLink({ target, children, preferGarden }: WikiLinkProps) {
-  const { data: posts = [] } = trpc.post.tree.useQuery({});
+  const { data: posts = [] } = trpc.post.tree.useQuery(
+    {},
+    { staleTime: 10 * 60 * 1000 },
+  );
   const match = matchPost(posts, target, preferGarden);
 
   if (!match) {

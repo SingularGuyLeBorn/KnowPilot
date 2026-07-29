@@ -11,7 +11,8 @@ import { KeyRound, Plus, Download } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Credential } from "@knowpilot/shared";
-import { useCredential, useCardDensity } from "@/lib/hooks";
+import { useCredential } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from "@/components/shared";
 
 const TYPE_LABEL: Record<Credential["type"], string> = {

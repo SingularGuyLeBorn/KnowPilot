@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Memories 长期记忆管理页面 (L2 智能工作台)
  */
 
@@ -11,7 +11,8 @@ import { Brain, Plus, Zap, Tag } from "lucide-react";
 import Link from "next/link";
 import type { Memory } from "@knowpilot/shared";
 import { MEMORY_TYPE_LABELS } from "@knowpilot/shared";
-import { useMemory, useCardDensity } from "@/lib/hooks";
+import { useMemory } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { AdminPage, EmptyState, KpSelect, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 function formatScope(scope?: string) {

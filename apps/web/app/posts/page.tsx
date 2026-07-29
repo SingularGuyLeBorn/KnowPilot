@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import type { Post } from "@knowpilot/shared";
 import { trpc } from "@/lib/trpc";
-import { usePostMutations } from "@/lib/hooks";
+import { usePostMutations } from "@/lib/usePostMutations";
 import { postDetailHref } from "@/lib/postHref";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

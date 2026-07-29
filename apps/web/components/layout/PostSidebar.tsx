@@ -6,7 +6,7 @@ import { PostTreeNav } from "@/components/post/PostTreeNav";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, FolderOpen, PlusCircle } from "lucide-react";
-import { useContentGardenScope } from "@/lib/hooks";
+import { useContentGardenScope } from "@/lib/useContentGardenScope";
 import { trpc } from "@/lib/trpc";
 import { ContinueReadingSidebarLink } from "@/components/post/ContinueReading";
 

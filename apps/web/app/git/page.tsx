@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { GitRepo } from "@knowpilot/shared";
-import { useGit, useCardDensity } from "@/lib/hooks";
+import { useGit } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 

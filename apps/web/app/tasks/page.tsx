@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tasks 后台任务管理页面 (L3 系统与运维)
  */
 
@@ -11,7 +11,8 @@ import { CalendarClock, Plus, Play, Info } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import type { Task } from "@knowpilot/shared";
-import { useTask, useCardDensity } from "@/lib/hooks";
+import { useTask } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function TasksPage() {
@@ -47,7 +48,7 @@ export default function TasksPage() {
       <PageHeader
         icon={CalendarClock}
         title="Tasks 定时任务"
-        description="配置定期备份、增量编译、健康检查或 AI 定期摘要的自动化脚本作业，让 KnowPilot 系统独立且持续地后台运营。"
+        description="配置定期备份、增量编译、健康检查或 AI 定期摘要的自动化脚本作业，让见微系统独立且持续地后台运营。"
         action={{ label: "新建定时任务", onClick: handleCreateDemo, icon: Plus }}
         showDensityToggle
       />

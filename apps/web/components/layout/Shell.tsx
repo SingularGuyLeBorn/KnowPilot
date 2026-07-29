@@ -1,13 +1,25 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { Navbar } from "./Navbar";
-import { Sidebar } from "./Sidebar";
-import { PostSidebar } from "./PostSidebar";
 import { MobileBottomNav } from "./mobileNav";
 import { getLayoutMode, showPostSidebar, showSystemSidebar } from "./layoutMode";
 import { cn } from "@/lib/utils";
+
+/**
+ * 侧栏按模式动态加载，避免根布局静态吞进 PostTreeNav → shared → hooks 整图。
+ * 管理页（/agents 等）不再编译文章树；文章页再拉 PostSidebar chunk。
+ */
+const Sidebar = dynamic(() => import("./Sidebar").then((m) => m.Sidebar), {
+  ssr: false,
+  loading: () => null,
+});
+const PostSidebar = dynamic(() => import("./PostSidebar").then((m) => m.PostSidebar), {
+  ssr: false,
+  loading: () => null,
+});
 
 interface ShellProps {
   children: React.ReactNode;
@@ -41,13 +53,10 @@ export function Shell({ children, className }: ShellProps) {
       <Navbar mode={mode} onMenuClick={() => setMobileMenuOpen(!mobileMenuOpen)} />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* 桌面：系统侧栏（仅 Agent / 运维页） */}
         {systemSidebar && <Sidebar className="hidden lg:flex" />}
 
-        {/* 桌面：文档侧栏（仅文章 / 编辑器页） */}
         {postSidebar && <PostSidebar className="hidden lg:flex" />}
 
-        {/* 移动端侧栏抽屉（底栏「更多」之外的分组导航） */}
         {showDrawer && (
           <>
             <div
@@ -75,7 +84,6 @@ export function Shell({ children, className }: ShellProps) {
           data-kp-main-scroll
           className={cn(
             "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-[var(--kp-bg)]",
-            /* 为固定底栏留空；Chat 自己也会吃满高度，额外 padding 避免输入被挡 */
             "pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] md:pb-0",
             className,
           )}

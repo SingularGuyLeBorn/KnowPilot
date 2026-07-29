@@ -27,7 +27,10 @@ export function PostMarkdownLink({
   ...props
 }: PostMarkdownLinkProps) {
   // 全库树用于相对路径/跨库解析；同库优先在 resolvePostLinkHref / WikiLink 内处理
-  const { data: posts = [] } = trpc.post.tree.useQuery({});
+  const { data: posts = [] } = trpc.post.tree.useQuery(
+    {},
+    { staleTime: 10 * 60 * 1000 },
+  );
 
   if (!href) {
     return <span {...props}>{children}</span>;

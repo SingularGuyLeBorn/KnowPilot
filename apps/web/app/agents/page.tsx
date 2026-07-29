@@ -27,7 +27,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Agent } from "@knowpilot/shared";
 import { CHAT_MODELS, DEFAULT_LLM_MODEL, materializeAgentTools } from "@knowpilot/shared";
-import { useAgent, useWorkspace, useCardDensity, type CardDensity } from "@/lib/hooks";
+import { useAgent, useWorkspace } from "@/lib/hooks";
+import { useCardDensity, type CardDensity } from "@/lib/useCardDensity";
 import {
   EmptyState,
   KpSelect,

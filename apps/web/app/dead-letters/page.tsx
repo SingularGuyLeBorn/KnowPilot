@@ -11,7 +11,8 @@ import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { MailX, Check, Trash2, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useDeadLetterList, useDeadLetterReview, useDeadLetterClear, useCardDensity } from "@/lib/hooks";
+import { useDeadLetterList, useDeadLetterReview, useDeadLetterClear } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 

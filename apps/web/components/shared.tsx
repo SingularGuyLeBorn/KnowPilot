@@ -37,7 +37,7 @@ import {
   Languages,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCardDensity, type CardDensity } from "@/lib/hooks";
+import { useCardDensity, type CardDensity } from "@/lib/useCardDensity";
 import { Button, buttonVariants } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 

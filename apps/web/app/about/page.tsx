@@ -3,18 +3,18 @@ import { trpcQuery } from "@/lib/serverTrpc";
 import type { AboutProfile } from "@knowpilot/shared";
 
 export const metadata = {
-  title: "About Me | KnowPilot",
-  description: "关于 KnowPilot 作者 SingularGuyLeBorn — AI 工程与知识管理",
+  title: "关于应知序 | 见微 · OasisMind",
+  description: "应知序 — 粗鄙、偏颇，但还有点梦想。见微知著，本地优先的数字主力。",
 };
 
 export const dynamic = "force-dynamic";
 
 const FALLBACK_PROFILE: AboutProfile = {
-  name: "KnowPilot",
-  title: "Creator",
-  tagline: "",
+  name: "应知序",
+  title: "粗鄙 · 偏颇 · 还有点梦想",
+  tagline: "写代码不是目的，做出东西才是。",
   location: "",
-  github: "",
+  github: "https://github.com/SingularGuyLeBorn",
   site: "",
   email: "",
   focus: [],

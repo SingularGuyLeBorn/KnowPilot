@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { ChevronLeft, Plus, ToggleLeft, ToggleRight, Zap } from "lucide-react";
 import type { Trigger } from "@knowpilot/shared";
-import { useTrigger, useTask, useAgent, useCardDensity } from "@/lib/hooks";
+import { useTrigger, useTask, useAgent } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import {
   AdminFormShell,
   AdminPage,

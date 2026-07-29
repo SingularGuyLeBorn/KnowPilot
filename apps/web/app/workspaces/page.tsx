@@ -22,7 +22,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Workspace } from "@knowpilot/shared";
-import { useWorkspace, useCardDensity } from "@/lib/hooks";
+import { useWorkspace } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { trpc } from "@/lib/trpc";
 import { AdminPage, EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 

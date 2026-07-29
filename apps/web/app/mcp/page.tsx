@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MCP 服务器配置页面 (L2 智能工作台)
  */
 
@@ -10,7 +10,8 @@ import { motion } from "framer-motion";
 import { Cpu, Plus, Terminal } from "lucide-react";
 import Link from "next/link";
 import type { McpServer } from "@knowpilot/shared";
-import { useMcp, useCardDensity } from "@/lib/hooks";
+import { useMcp } from "@/lib/hooks";
+import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function McpPage() {

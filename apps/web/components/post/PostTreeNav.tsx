@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, memo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -234,7 +234,7 @@ function saveScrollTop(top: number) {
   }
 }
 
-function TreeNodeItem({
+const TreeNodeItem = memo(function TreeNodeItem({
   node,
   expanded,
   activeSlug,
@@ -355,6 +355,42 @@ function TreeNodeItem({
       )}
     </div>
   );
+}, (prev, next) => {
+  if (prev.node !== next.node) return false;
+  if (prev.onToggle !== next.onToggle) return false;
+  if (prev.onNavigate !== next.onNavigate) return false;
+  if (prev.onPrefetch !== next.onPrefetch) return false;
+  if (prev.onPinnedChange !== next.onPinnedChange) return false;
+  if (prev.expanded.has(prev.node.key) !== next.expanded.has(next.node.key)) return false;
+  // 激活态：仅本节点或子树内 slug 变化时才重绘
+  const prevActiveHere =
+    prev.activeSlug === prev.node.slug ||
+    (prev.activeSlug != null && nodeContainsSlug(prev.node, prev.activeSlug));
+  const nextActiveHere =
+    next.activeSlug === next.node.slug ||
+    (next.activeSlug != null && nodeContainsSlug(next.node, next.activeSlug));
+  if (prevActiveHere !== nextActiveHere) return false;
+  if (prevActiveHere && prev.activeSlug !== next.activeSlug) return false;
+  // 展开集合：子树任一 key 变化则重绘
+  if (subtreeExpandedChanged(prev.node, prev.expanded, next.expanded)) return false;
+  return true;
+});
+
+function nodeContainsSlug(node: TreeNode, slug: string): boolean {
+  if (node.slug === slug) return true;
+  return node.children.some((c) => nodeContainsSlug(c, slug));
+}
+
+function subtreeExpandedChanged(
+  node: TreeNode,
+  prev: Set<string>,
+  next: Set<string>,
+): boolean {
+  if (prev.has(node.key) !== next.has(node.key)) return true;
+  for (const child of node.children) {
+    if (subtreeExpandedChanged(child, prev, next)) return true;
+  }
+  return false;
 }
 
 export function PostTreeNav({
@@ -367,6 +403,7 @@ export function PostTreeNav({
 }) {
   const { data, isLoading } = trpc.post.tree.useQuery(
     gardenId ? { garden: gardenId } : {},
+    { staleTime: 10 * 60 * 1000 },
   );
   const pathname = usePathname();
   const navHighlight = useContentNavHighlight();
@@ -527,9 +564,11 @@ export function PostTreeNav({
     scrollToActiveItem(true);
   }, [scrollToActiveItem]);
 
-  useLayoutEffect(() => {
+  // 勿用 useLayoutEffect：与主内容挂载抢主线程，切文更粘
+  useEffect(() => {
     if (!activeSlug || isSearchMode) return;
-    scrollToActiveItem(false);
+    const t = window.setTimeout(() => scrollToActiveItem(false), 80);
+    return () => window.clearTimeout(t);
   }, [activeSlug, isSearchMode, scrollToActiveItem]);
 
   if (isLoading) {
