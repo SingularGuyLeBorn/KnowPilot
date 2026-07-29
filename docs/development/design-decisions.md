@@ -1592,7 +1592,7 @@ Agent 缺 `directory_delete` 时谎称「没法删」；即便有 delete，`run_
 | 唯一消失原语 | `FsMutationGate.moveToTrash`；`file_delete`/`directory_delete` 只走 Gate |
 | Shell | `validateShellCommand` 全量 ban `rm`/`del`/`Remove-Item`/`rd`/`git rm` 等，提示改用 soft-delete 工具 |
 | 工具清单 | 默认补 `file_delete`/`directory_delete`/`trash_list`/`trash_restore`；提示词「删除铁律」 |
-| 恢复 | `trash_restore` + 文章回收站 UI；`permanentDelete` 仅人类 tRPC，不暴露给 Agent |
+| 恢复 | `trash_restore` / `garden_restore` + 文章回收站 UI；`permanentDelete` 仅人类 tRPC（`aiReadable=false`，且 `ai.invoke` 硬拒） |
 | 诚实边界 | OS 层无限制删盘挡不住；目标是 Agent 工具面 + 受限 shell 内硬删无合法路径 |
 | Memory/FileSync 硬删 | 第二批再收敛（本批先堵 Agent 可达 FS + shell） |
 
