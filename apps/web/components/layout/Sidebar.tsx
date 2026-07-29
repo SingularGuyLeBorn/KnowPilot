@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Bot,
@@ -30,7 +30,7 @@ import {
   Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { KnowPilotLogo } from "@/lib/icons";
+import { OasisMindLogo } from "@/lib/icons";
 
 interface SidebarProps {
   className?: string;
@@ -80,7 +80,7 @@ const navGroups: Record<string, NavGroup> = {
       { href: "/platform-sync", icon: RefreshCw, label: "平台每日同步" },
       { href: "/channels", icon: Radio, label: "IM 通道" },
       { href: "/triggers", icon: Zap, label: "事件触发器" },
-      { href: "/approvals", icon: ShieldCheck, label: "审批队列" },
+      { href: "/approvals", icon: ShieldCheck, label: "待你点头" },
     ],
   },
   ops: {
@@ -102,6 +102,7 @@ const navGroups: Record<string, NavGroup> = {
 
 export function Sidebar({ className, onNavigate }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const startXRef = useRef(0);
@@ -125,6 +126,32 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
       }
     });
   }, []);
+
+  // 空闲时预热当前分组路由，把 webpack on-demand 编译挪到点击前
+  useEffect(() => {
+    const hrefs = activeGroup.items.map((i) => i.href);
+    let cancelled = false;
+    const warm = () => {
+      if (cancelled) return;
+      for (const href of hrefs) {
+        try {
+          router.prefetch(href);
+        } catch {
+          // ignore
+        }
+      }
+    };
+    const ric = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 200));
+    const id = ric(warm);
+    return () => {
+      cancelled = true;
+      if (typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(id as number);
+      } else {
+        clearTimeout(id as number);
+      }
+    };
+  }, [activeGroup, router]);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -201,10 +228,10 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     >
       <div className="flex h-full flex-col overflow-hidden">
         <Link href="/" className="flex shrink-0 items-center gap-3 border-b border-[var(--kp-divider)] px-5 py-4 transition hover:bg-[var(--kp-bg-mute)]">
-          <KnowPilotLogo size={36} className="shrink-0" />
+          <OasisMindLogo size={36} className="shrink-0" />
           <div>
-            <p className="text-base font-bold tracking-tight text-[var(--kp-text-1)]">控制台</p>
-            <p className="text-xs text-[var(--kp-text-3)]">Agent · 运维</p>
+            <p className="text-base font-bold tracking-tight text-[var(--kp-text-1)]">见微</p>
+            <p className="text-xs text-[var(--kp-text-3)]">OasisMind · 控制台</p>
           </div>
         </Link>
 

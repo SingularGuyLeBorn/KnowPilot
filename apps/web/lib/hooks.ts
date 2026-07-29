@@ -7,8 +7,7 @@
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- 动态 tRPC router 名称绑定 */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import type {
@@ -96,40 +95,6 @@ export function useGardens() {
   return useCRUDApi<CreateGardenInput, UpdateGardenInput & { id: string }, ListGardensInput, Garden>("garden");
 }
 
-/**
- * 内容区当前「作用域花园」。
- * - `/gardens/{id}`、`?garden=` → 只显示该库目录
- * - `/posts/{slug}` 无 query → 默认 posts 库（不混其它库）
- * - `/posts` 全部列表（无 garden）→ null（跨库全树）
- * - `/editor`：优先 `?garden=`（编辑页会把文章所属库写进 URL）；无 query 时新建页默认 posts
- */
-export function useContentGardenScope(): {
-  gardenId: string | null;
-  isScoped: boolean;
-} {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  return useMemo(() => {
-    const fromQuery = searchParams.get("garden")?.trim() || "";
-    const gardenHome = pathname.match(/^\/gardens\/([^/]+)\/?$/);
-    if (gardenHome?.[1]) {
-      const id = decodeURIComponent(gardenHome[1]);
-      return { gardenId: id, isScoped: true };
-    }
-    if (fromQuery) {
-      return { gardenId: fromQuery, isScoped: true };
-    }
-    if (pathname.startsWith("/posts/") && !pathname.startsWith("/posts/trash")) {
-      return { gardenId: DEFAULT_POST_GARDEN, isScoped: true };
-    }
-    // 编辑器无 ?garden= 时：新建默认 posts；编辑已有文由页面 sync query，避免误显 posts 三篇
-    if (pathname === "/editor" || pathname.startsWith("/editor/")) {
-      return { gardenId: DEFAULT_POST_GARDEN, isScoped: true };
-    }
-    return { gardenId: null, isScoped: false };
-  }, [pathname, searchParams]);
-}
-
 /** 文章专属 Hooks 扩展 */
 export function usePosts() {
   const postCrud = useCRUDApi<CreatePostInput, UpdatePostInput, ListPostsInput, Post>("post");
@@ -162,77 +127,6 @@ export function usePosts() {
       return trpc.post.tags.useQuery(undefined, options);
     },
   };
-}
-
-/** 文章 mutation 封装：创建/更新/删除后统一刷新相关 query */
-export function usePostMutations(options?: {
-  /** 创建成功：回传 slug + garden，便于跳转带花园的详情页 */
-  onCreateSuccess?: (post: { slug: string; garden: Post["garden"] }) => void;
-  onUpdateSuccess?: (post: { slug: string; garden: Post["garden"] }) => void;
-  onDeleteSuccess?: () => void;
-}) {
-  const utils = trpc.useUtils();
-
-  const invalidatePostQueries = () => {
-    utils.post.list.invalidate().catch(() => {});
-    utils.post.tree.invalidate().catch(() => {});
-    utils.post.categories.invalidate().catch(() => {});
-    utils.post.tags.invalidate().catch(() => {});
-  };
-
-  const create = trpc.post.create.useMutation({
-    onSuccess: (result: OperationResult<Post>) => {
-      if (result.success && result.data?.slug) {
-        invalidatePostQueries();
-        options?.onCreateSuccess?.({
-          slug: result.data.slug,
-          garden: result.data.garden ?? "posts",
-        });
-      }
-    },
-  });
-
-  const update = trpc.post.update.useMutation({
-    onSuccess: (result: OperationResult<Post>) => {
-      if (result.success && result.data) {
-        invalidatePostQueries();
-        utils.post.getById.invalidate({ id: result.data.id }).catch(() => {});
-        utils.post.getBySlug
-          .invalidate({ slug: result.data.slug, garden: result.data.garden ?? "posts" })
-          .catch(() => {});
-        options?.onUpdateSuccess?.({
-          slug: result.data.slug,
-          garden: result.data.garden ?? "posts",
-        });
-      }
-    },
-  });
-
-  const remove = trpc.post.delete.useMutation({
-    onSuccess: (result) => {
-      const res = result as OperationResult;
-      if (res.success) {
-        invalidatePostQueries();
-        options?.onDeleteSuccess?.();
-      }
-    },
-  });
-
-  const restore = trpc.post.restore.useMutation({
-    onSuccess: () => {
-      invalidatePostQueries();
-      utils.post.listDeleted.invalidate().catch(() => {});
-    },
-  });
-
-  const permanentDelete = trpc.post.permanentDelete.useMutation({
-    onSuccess: () => {
-      invalidatePostQueries();
-      utils.post.listDeleted.invalidate().catch(() => {});
-    },
-  });
-
-  return { create, update, remove, restore, permanentDelete, invalidatePostQueries };
 }
 
 // 通用实体 Hooks
@@ -448,12 +342,42 @@ export const useApproval = () => {
       const utils = trpc.useUtils() as any;
       return trpc.approval.approveAndExecute.useMutation({
         onSuccess: (res: OperationResult<any>) => {
-          if (res.success) utils.approval.list.invalidate();
+          if (res.success) {
+            utils.approval.list.invalidate().catch(() => {});
+            utils.approval.humanTodoSummary.invalidate().catch(() => {});
+          }
           options?.onSuccess?.(res);
         },
         ...options,
       });
     },
+    useApproveAndExecuteBatch: (options?: any) => {
+      const utils = trpc.useUtils() as any;
+      return trpc.approval.approveAndExecuteBatch.useMutation({
+        onSuccess: () => {
+          utils.approval.list.invalidate().catch(() => {});
+          utils.approval.humanTodoSummary.invalidate().catch(() => {});
+          options?.onSuccess?.();
+        },
+        ...options,
+      });
+    },
+    useRejectBatch: (options?: any) => {
+      const utils = trpc.useUtils() as any;
+      return trpc.approval.rejectBatch.useMutation({
+        onSuccess: () => {
+          utils.approval.list.invalidate().catch(() => {});
+          utils.approval.humanTodoSummary.invalidate().catch(() => {});
+          options?.onSuccess?.();
+        },
+        ...options,
+      });
+    },
+    useHumanTodoSummary: (options?: any) =>
+      trpc.approval.humanTodoSummary.useQuery(undefined, {
+        refetchInterval: 30_000,
+        ...options,
+      }),
   };
 };
 export const useTool = () => useCRUDApi<any, any, any, Tool>("tool");
@@ -520,55 +444,7 @@ export function useAIApi() {
   };
 }
 
-/* ─── 4. 实体卡片密度偏好 ─── */
-
-export type CardDensity = "comfortable" | "compact";
-
-const CARD_DENSITY_KEY = "kp-card-density";
-const CARD_DENSITY_CHANGE_EVENT = "kp-card-density-change";
-
-function readSavedDensity(): CardDensity {
-  try {
-    const saved = localStorage.getItem(CARD_DENSITY_KEY);
-    if (saved === "comfortable" || saved === "compact") return saved;
-  } catch {
-    // ignore
-  }
-  return "comfortable";
-}
-
-export function useCardDensity() {
-  // 水合约束：SSR 与客户端首帧必须渲染相同结果，localStorage 只能在挂载后（effect 里）读，
-  // 否则存了 compact 的浏览器首帧图标/title 与服务端 HTML 不一致 → hydration mismatch
-  const [density, setDensityState] = useState<CardDensity>("comfortable");
-
-  useEffect(() => {
-    // mount 后读 localStorage 同步到 React state（SSR hydration 安全），非派生数据
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDensityState(readSavedDensity());
-    const handler = () => setDensityState(readSavedDensity());
-    window.addEventListener(CARD_DENSITY_CHANGE_EVENT, handler);
-    return () => window.removeEventListener(CARD_DENSITY_CHANGE_EVENT, handler);
-  }, []);
-
-  const setDensity = useCallback((d: CardDensity) => {
-    setDensityState(d);
-    try {
-      localStorage.setItem(CARD_DENSITY_KEY, d);
-    } catch {
-      // ignore
-    }
-    window.dispatchEvent(new CustomEvent(CARD_DENSITY_CHANGE_EVENT));
-  }, []);
-
-  const toggle = useCallback(() => {
-    setDensity(density === "compact" ? "comfortable" : "compact");
-  }, [density, setDensity]);
-
-  return { density, setDensity, toggle };
-}
-
-/* ─── 4b. 会话列表 hover 预览悬浮窗（默认关闭） ─── */
+/* ─── 4. 会话列表 hover 预览悬浮窗（默认关闭） ─── */
 
 const SESSION_HOVER_PREVIEW_KEY = "kp-session-hover-preview";
 const SESSION_HOVER_PREVIEW_EVENT = "kp-session-hover-preview-change";

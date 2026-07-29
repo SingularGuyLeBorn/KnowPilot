@@ -196,24 +196,53 @@ export async function notifyPendingApprovalIfCooldownAllows(
     return { notified: false };
   }
 
+  const ttlMs = getApprovalPendingTtlMs();
+  const ttlHint =
+    ttlMs <= 0
+      ? "过期策略：已关闭 TTL（会一直挂着，绝不自动执行）"
+      : `过期策略：${Math.round(ttlMs / 3_600_000)} 小时后自动拒绝（绝不自动执行）`;
   const scopeHint = approval.decisionScope ? ` scope=${approval.decisionScope}` : "";
   const subject =
-    opts?.subject ?? `[KnowPilot 待审批] ${approval.toolName}${scopeHint}`;
+    opts?.subject ?? `[见微 待你点头] ${approval.toolName}${scopeHint}`;
   const body =
     opts?.body ??
-    `操作「${approval.toolName}」需要人工审批。\n\n` +
+    `操作「${approval.toolName}」需要你点头后才会执行（人不在场绝不擅自执行）。\n\n` +
       `审批ID：${approval.id}\n` +
       `操作：${approval.toolName}\n` +
       (approval.decisionScope ? `Scope：${approval.decisionScope}\n` : "") +
-      `\n处理方式（二选一）：\n` +
-      `1. 打开 KnowPilot /approvals 页面批准或拒绝\n` +
-      `2. 直接回复本邮件即可，回复内容会作为你的答复注入给 Agent（和聊天框打字等价），Agent 会自行理解你的意图\n`;
+      `${ttlHint}\n` +
+      `\n处理方式：\n` +
+      `1. 打开见微 /approvals「待你点头」队列批准或拒绝（支持批量）\n` +
+      `2. 直接回复本邮件，内容会注入给 Agent（与聊天框等价）\n`;
 
   const result = await sendEmailNotification(config, services.log, {
     subject,
     body,
   });
-  if ("error" in result) {
+
+  // 飞书扇出：配置了 FEISHU_APPROVAL_NOTIFY_OPEN_ID（或 chat_id）时额外推一条
+  const feishuTarget = (process.env.FEISHU_APPROVAL_NOTIFY_OPEN_ID || "").trim();
+  let feishuOk = false;
+  if (feishuTarget) {
+    try {
+      const { feishuSendText } = await import("./feishuClient.js");
+      const idType = feishuTarget.startsWith("oc_") ? "chat_id" : "open_id";
+      await feishuSendText(
+        feishuTarget,
+        idType,
+        `${subject}\n\n${body}\n→ http://localhost:3000/approvals`,
+        config,
+      );
+      feishuOk = true;
+    } catch (err) {
+      console.warn(
+        "[ApprovalGate] 飞书审批通知失败:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  if ("error" in result && !feishuOk) {
     console.warn(`[ApprovalGate] gate 通知未发送：${result.error}`);
     // 发送失败不盖 lastNotifiedAt，允许下次重试
     return { notified: false };
@@ -223,8 +252,8 @@ export async function notifyPendingApprovalIfCooldownAllows(
     where: { id: approval.id, status: "pending" },
     data: {
       lastNotifiedAt: new Date(nowMs),
-      lastNotifiedMessageId: result.messageId ?? null,
-      lastNotifiedThreadId: result.threadId ?? null,
+      lastNotifiedMessageId: "error" in result ? null : (result.messageId ?? null),
+      lastNotifiedThreadId: "error" in result ? null : (result.threadId ?? null),
     },
   });
   return { notified: true };
