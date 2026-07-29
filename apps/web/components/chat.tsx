@@ -15,6 +15,7 @@ import {
 } from "@/lib/chatConfig";
 import { type Agent, type ChatMessage, type ChatSessionConfig } from "@knowpilot/shared";
 import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
+import { isBackendDown } from "@/lib/backendReachability";
 import { ChatHoverMonitor } from "@/components/chatHoverMonitor";
 import { ChatOverlays } from "@/components/chatOverlays";
 import { ChatSidebar } from "@/components/chatSidebar";
@@ -364,12 +365,18 @@ export function ChatView() {
   const mainSessionId = isSubagentSession ? parentSessionId : effectiveSessionId;
   // 与 SubagentCreateDialog 乐观更新使用同一 query key（pageSize 必须一致）
   // 推优先：子会话状态走 SSE subagent_session_update，仅 mount/focus 兜底拉取
+  // 与 SubagentPanel 共用 pageSize=100，避免 invalidate 命中错误 query key
   trpc.session.listChildren.useQuery(
-    { parentSessionId: mainSessionId!, pageSize: 20 },
+    { parentSessionId: mainSessionId!, pageSize: 100 },
     { enabled: !!mainSessionId, refetchInterval: false, refetchOnWindowFocus: true },
   );
 
-  const backendDown = agentsQuery.isError || sessionsQuery.isError || providers.isError;
+  // 429/限流是瞬态，绝不当「后端宕机」——否则整页 queries 被 enabled:false 锁死
+  const backendDown = isBackendDown([
+    agentsQuery.isError ? agentsQuery.error : null,
+    sessionsQuery.isError ? sessionsQuery.error : null,
+    providers.isError ? providers.error : null,
+  ]);
 
   // 发现运行中会话：改 focus/mount 拉取，不再 5s 空轮询（visibilitychange 已覆盖切回标签）
   const runningSessionsQuery = trpc.session.listRunning.useQuery(undefined, {
@@ -405,9 +412,9 @@ export function ChatView() {
     },
   );
   const createSessionQueueItemMutation = trpc.agent.createSessionQueueItem.useMutation();
-  const submitInjectMutation = trpc.agent.submitInject.useMutation();
   const consumeSessionQueueItemMutation = trpc.agent.consumeSessionQueueItem.useMutation();
   const finalizeSessionQueueItemMutation = trpc.agent.finalizeSessionQueueItem.useMutation();
+  const unclaimSessionQueueItemMutation = trpc.agent.unclaimSessionQueueItem.useMutation();
   const deleteSessionQueueItemMutation = trpc.agent.deleteSessionQueueItem.useMutation();
   const reorderSessionQueueItemsMutation = trpc.agent.reorderSessionQueueItems.useMutation();
   const ackAsyncDeliveryMutation = trpc.agent.ackAsyncDelivery.useMutation();
@@ -460,11 +467,13 @@ export function ChatView() {
 
   // 【队列水合 · INV-8 ④】E6：切会话与同会话统一走 mergeUserQueueFromDb
   // （DB 行 + 无 dbId 本地项保留），禁止 sessionChanged 全量替换抹掉迁移中的排队项。
+  // 必须带 tombstone：chat.tsx 与 pane 双路水合，缺 tombstone 会把已认领项塞回「待发」。
   useEffect(() => {
     if (!effectiveSessionId) return;
     if (!sessionQueueQuery.data) return;
+    const tombstones = sessionComposeStore.get(effectiveSessionId).consumedQueueDbIds;
     sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) =>
-      mergeUserQueueFromDb(prev, sessionQueueQuery.data!),
+      mergeUserQueueFromDb(prev, sessionQueueQuery.data!, tombstones),
     );
     // INV-8 ④：发送队列 hydrate/merge 完成 → 显式 drain（仅 user/child_notify；superior 由服务端起流）
     streamLifecycleActions.hydrateDone(effectiveSessionId);
@@ -600,22 +609,6 @@ export function ChatView() {
         const parsed = JSON.parse(composeRaw) as Record<string, Parameters<typeof sessionComposeStore.hydrate>[0][string]>;
         sessionComposeStore.hydrate(parsed);
       }
-      // INV-8 ④：sessionStorage 恢复完成 = 显式 drain 请求。
-      // drain 钩子在后面的 effect 才订阅——drainRequested 标记 + takeDrainRequests
-      // 晚订阅补偿保证不丢，不依赖订阅时序。
-      for (const sid of sessionComposeStore.listSessionIds()) {
-        const compose = sessionComposeStore.get(sid);
-        const hasPending =
-          compose.userQueue.some(
-            (t) =>
-              (t.kind === "user" || t.kind === "superior") &&
-              (t.text.trim() || t.attachments?.length),
-          ) ||
-          compose.asyncOverlays.some(
-            (t) => t.kind === "async-result" && (t.text.trim() || t.asyncResult),
-          );
-        if (hasPending) streamLifecycleActions.hydrateDone(sid);
-      }
       const lifeRaw = sessionStorage.getItem(LIFECYCLE_STORAGE_KEY);
       if (lifeRaw) {
         const parsed = JSON.parse(lifeRaw) as Record<string, StreamLifecycleState & { isStreaming?: boolean }>;
@@ -645,6 +638,25 @@ export function ChatView() {
             }).catch(() => {});
           }
         }
+      }
+      // INV-8 ④：lifecycle 恢复之后再请求 drain——若先 hydrateDone 再 restore streaming，
+      // 晚订阅的 drain 会撞上占用被跳过，待发消息就永远卡住。
+      for (const sid of sessionComposeStore.listSessionIds()) {
+        if (streamLifecycleStore.isRunOccupied(sid)) continue;
+        const compose = sessionComposeStore.get(sid);
+        const hasPending =
+          compose.userQueue.some(
+            (t) =>
+              (t.kind === "user" || t.kind === "child_notify") &&
+              (t.text.trim() || t.attachments?.length),
+          ) ||
+          compose.asyncOverlays.some(
+            (t) =>
+              t.kind === "async-result" &&
+              !t.serverConsumed &&
+              (t.text.trim() || t.asyncResult),
+          );
+        if (hasPending) streamLifecycleActions.hydrateDone(sid);
       }
     } catch (e) {
       console.error("[mount] restore error", e);
@@ -750,6 +762,7 @@ export function ChatView() {
       }).catch(() => {});
     }
     // 幽灵占用：服务端不在跑 + 本地无 SSE AC → 合法释放（服务重启会话已 paused，禁止假 streaming）
+    const released: string[] = [];
     for (const [sid, st] of Object.entries(streamLifecycleStore.serialize())) {
       if (sid === NEW_STREAM_KEY) continue;
       if (st.phase !== "streaming" && st.phase !== "done") continue;
@@ -759,6 +772,24 @@ export function ChatView() {
         partialAssistantMessageId: null,
         leftoverContent: st.streamingContent,
       });
+      released.push(sid);
+    }
+    // abort→idle 会 notifyCommit；再显式 hydrateDone，挡住「占用期间队列已到、drain 被跳过」的窗口
+    for (const sid of released) {
+      const compose = sessionComposeStore.get(sid);
+      const hasPending =
+        compose.userQueue.some(
+          (t) =>
+            (t.kind === "user" || t.kind === "child_notify") &&
+            (t.text.trim() || t.attachments?.length),
+        ) ||
+        compose.asyncOverlays.some(
+          (t) =>
+            t.kind === "async-result" &&
+            !t.serverConsumed &&
+            (t.text.trim() || t.asyncResult),
+        );
+      if (hasPending) streamLifecycleActions.hydrateDone(sid);
     }
   }, [runningSessionsQuery.data, runningSessionsQuery.isFetched]);
 
@@ -772,6 +803,7 @@ export function ChatView() {
     sessionsItems: sessionsQuery.data?.items,
     consumeSessionQueueItemMutation,
     finalizeSessionQueueItemMutation,
+    unclaimSessionQueueItemMutation,
     ackAsyncDeliveryMutation,
     asyncQueueQuery,
     runStream,
@@ -1023,7 +1055,6 @@ export function ChatView() {
     runStream,
     consumeRef,
     createSessionQueueItemMutation,
-    submitInjectMutation,
     deleteSessionQueueItemMutation,
     reorderSessionQueueItemsMutation,
     asyncQueueStats: asyncQueueStatsQuery.data,
