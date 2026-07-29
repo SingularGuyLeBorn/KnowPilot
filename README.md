@@ -43,13 +43,14 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 
 | 能力 | 说明 |
 |------|------|
-| <img src="docs/assets/icons/markdown.svg" width="18" align="absmiddle" alt=""> **Markdown 原生** | 文章以 `.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑，粘贴/拖拽上传图片。 |
-| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。 |
+| <img src="docs/assets/icons/markdown.svg" width="18" align="absmiddle" alt=""> **Markdown 原生** | 文章以 `.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑；图片按花园/文章分目录落盘（`content/uploads/{garden}/{slug}/`），上传先占位再替换，刷新不丢。 |
+| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。编辑器选区可一键润色 / 精简 / 扩写（Canvas 式改写）。 |
 | <img src="docs/assets/icons/sparkles.svg" width="18" align="absmiddle" alt=""> **Swarm 三层 Agent** | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。 |
 | <img src="docs/assets/icons/palette.svg" width="18" align="absmiddle" alt=""> **莫兰迪星河设计** | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。 |
 | <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。19 实体 CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
 | <img src="docs/assets/icons/wrench.svg" width="18" align="absmiddle" alt=""> **自动化流** | Trigger 事件触发 + Approval 审批拦截 + Agent Loop。异步任务队列 `async_task_run/status`，后台运行结果自动回流对话。 |
-| <img src="docs/assets/icons/map.svg" width="18" align="absmiddle" alt=""> **全局搜索** | FTS5 全文索引 `search.global`，跨文章 / Agent / Skill / Memory / Prompt 统一检索。 |
+| <img src="docs/assets/icons/map.svg" width="18" align="absmiddle" alt=""> **全局搜索与相关笔记** | FTS5 全文索引 `search.global`，跨文章 / Agent / Skill / Memory / Prompt 统一检索。阅读页 `post.related` 按全文 / 标签 / 花园 / 分类综合推荐邻近笔记。 |
+| <img src="docs/assets/icons/folder.svg" width="18" align="absmiddle" alt=""> **对话落库与派工可见** | Chat 助手消息可一键写入知识库（新建 / 覆盖 / 追加，正文以服务端 `messageId` 为准）。中栏派工条展示进行中 / 待消费 / 同步子任务，可跳转子会话与取消。 |
 | <img src="docs/assets/icons/hourglass.svg" width="18" align="absmiddle" alt=""> **可选鉴权与部署** | `AUTH_MODE=none/password` 本地或远程部署。Docker + CI + `db:backup` 一键备份。 |
 
 ---
@@ -231,6 +232,7 @@ KnowPilot/
 
 L1 ~ L5 已全部落地，项目处于**功能完备、持续打磨**阶段。近期完成的重点：
 
+- **数字花园体验（完整版）**：附件按 `uploads/{garden}/{slug}/` 分目录；Milkdown 上传占位；编辑器选区 AI 润色 / 精简 / 扩写；阅读页相关笔记（`post.related`）；Chat → 知识库落库（`post.createFromChat` 新建 / 覆盖 / 追加）；中栏派工条（进行中 / 待消费 / 同步子任务）
 - **v8 ~ v10**：全局任务池、投递可靠性、可重入与续跑
 - **W1 ~ W16**：会话树、心跳决策层、审批 scope、context 钩子、compaction 切割、stream 内核不变量、Web Chat store 不变量
 - **Chat UI**：Kimi 风格模型菜单、思考时间线、回到底部按钮、刷新不丢回复

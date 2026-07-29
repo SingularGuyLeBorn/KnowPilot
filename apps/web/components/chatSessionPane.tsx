@@ -23,6 +23,10 @@ import { ChatCenterPane } from "@/components/chatCenterPane";
 import { type ChatMessageListProps } from "@/components/chatMessageList";
 import { type SelectedSkill } from "@/components/chatInput";
 import {
+  SaveMessageAsPostDialog,
+  type SaveMessageAsPostTarget,
+} from "@/components/saveMessageAsPostDialog";
+import {
   type ChatQueueItem,
   createUserQueueItem,
   mergeUserQueueFromDb,
@@ -69,6 +73,8 @@ export interface ChatSessionPaneProps {
   onOpenPromptEditor: () => void;
   onOpenFilesPanel?: () => void;
   filesPanelOpen?: boolean;
+  /** 打开左栏「运行」Tab */
+  onOpenRuntimePanel?: () => void;
 }
 
 export function ChatSessionPane({
@@ -95,7 +101,9 @@ export function ChatSessionPane({
   onOpenPromptEditor,
   onOpenFilesPanel,
   filesPanelOpen,
+  onOpenRuntimePanel,
 }: ChatSessionPaneProps) {
+  const [saveAsPostTarget, setSaveAsPostTarget] = useState<SaveMessageAsPostTarget | null>(null);
   const lifecycleKey = sessionId ?? NEW_STREAM_KEY;
 
   const {
@@ -215,7 +223,12 @@ export function ChatSessionPane({
   });
 
 
-  const { queue } = useChatDerivedQueues({
+  const {
+    queue,
+    runtimeActiveItems,
+    runtimeToConsumeItems,
+    syncTaskItems,
+  } = useChatDerivedQueues({
     asyncOverlays,
     asyncQueueQuery,
     consumedDeliveries,
@@ -391,6 +404,28 @@ export function ChatSessionPane({
     }
   }, []);
 
+  const handleSaveAsPost = useCallback(
+    (messageId: string, content: string) => {
+      if (!sessionId) {
+        showToast("请先选择会话再写入知识库");
+        return;
+      }
+      const firstLine =
+        content
+          .split("\n")
+          .map((l) => l.replace(/^#+\s*/, "").trim())
+          .find((l) => l.length > 0)
+          ?.slice(0, 80) || undefined;
+      setSaveAsPostTarget({
+        sessionId,
+        messageId,
+        previewTitle: firstLine,
+        previewExcerpt: content.replace(/\s+/g, " ").trim().slice(0, 220),
+      });
+    },
+    [sessionId, showToast],
+  );
+
   const messageListProps: ChatMessageListProps = useMemo(
     () => ({
       messageGroups,
@@ -418,6 +453,7 @@ export function ChatSessionPane({
       onSwitchVersion: handleSwitchVersion,
       onEditConfirm: handleEditConfirm,
       onRetry: handleRetry,
+      onSaveAsPost: handleSaveAsPost,
       setEditingUserId,
       setEditDraft,
     }),
@@ -447,6 +483,7 @@ export function ChatSessionPane({
       handleSwitchVersion,
       handleEditConfirm,
       handleRetry,
+      handleSaveAsPost,
     ],
   );
 
@@ -509,6 +546,17 @@ export function ChatSessionPane({
         filesPanelOpen={filesPanelOpen}
         modelSupportsReasoning={!!modelOpt.supportsThinking}
         modelReasoningRequired={!!modelOpt.reasoningRequired}
+        dispatchActiveItems={runtimeActiveItems}
+        dispatchToConsumeItems={runtimeToConsumeItems}
+        dispatchSyncTasks={syncTaskItems}
+        onOpenRuntimePanel={onOpenRuntimePanel}
+      />
+
+      <SaveMessageAsPostDialog
+        open={!!saveAsPostTarget}
+        target={saveAsPostTarget}
+        onClose={() => setSaveAsPostTarget(null)}
+        onSuccess={() => showToast("已写入知识库")}
       />
     </div>
   );

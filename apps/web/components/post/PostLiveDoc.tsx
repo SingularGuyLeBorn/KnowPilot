@@ -15,6 +15,7 @@ import { TableOfContents, usePostTocVisible } from "@/components/post/TableOfCon
 import { PageSearch } from "@/components/post/PageSearch";
 import { SelectionExplain } from "@/components/post/SelectionExplain";
 import { PostExportActions } from "@/components/post/PostExportActions";
+import { RelatedPosts } from "@/components/post/RelatedPosts";
 import { ReadingProgressTracker } from "@/components/post/ReadingProgressTracker";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { cn } from "@/lib/utils";
@@ -159,6 +160,8 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           className="border-0 shadow-none"
         />
       </article>
+
+      <RelatedPosts postId={post.id} />
 
       <PageSearch containerRef={articleRef} />
       <SelectionExplain

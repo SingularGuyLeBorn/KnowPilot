@@ -21,6 +21,8 @@ import {
   type CreatePostInput,
   type UpdatePostInput,
   type ListPostsInput,
+  type RelatedPostsInput,
+  type CreatePostFromChatInput,
   type CreateGardenInput,
   type UpdateGardenInput,
   type ListGardensInput,
@@ -128,6 +130,23 @@ import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
 import { claimTaskRun } from "./infra/taskClaim.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
+
+/** Post FTS body：含 garden/slug/category/tags，供相关推荐与全局搜索命中标签 */
+function buildPostFtsBody(entity: {
+  garden: string;
+  slug: string;
+  content?: string | null;
+  category?: string | null;
+  tags?: string[] | string | null;
+}): string {
+  const tags =
+    Array.isArray(entity.tags)
+      ? entity.tags.join(" ")
+      : typeof entity.tags === "string"
+        ? entity.tags.split(",").map((t) => t.trim()).filter(Boolean).join(" ")
+        : "";
+  return `[${entity.garden}] ${entity.slug}\ncategory:${entity.category ?? ""}\ntags:${tags}\n${entity.content ?? ""}`;
+}
 
 /** 预生成与 Prisma @default(cuid()) / z.string().cuid() 兼容的 id（文件先行写路径需要） */
 function newEntityId(): string {
@@ -1203,24 +1222,14 @@ ${entity.content}
 
   protected getFileSlug(entity: PostEntity): string { return entity.slug; }
 
-  // P11：FTS 增量——body 带 garden 前缀便于检索
+  // P11：FTS 增量——body 含 garden/slug/category/tags
   protected override async afterCreate(entity: PostEntity, input: CreatePostInput): Promise<void> {
     await super.afterCreate(entity, input);
-    await this.syncFts(
-      "post",
-      entity.id,
-      entity.title,
-      `[${entity.garden}] ${entity.slug}\n${entity.content ?? ""}`,
-    );
+    await this.syncFts("post", entity.id, entity.title, buildPostFtsBody(entity));
   }
   protected override async afterUpdate(entity: PostEntity, existing: any, input: UpdatePostInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
-    await this.syncFts(
-      "post",
-      entity.id,
-      entity.title,
-      `[${entity.garden}] ${entity.slug}\n${entity.content ?? ""}`,
-    );
+    await this.syncFts("post", entity.id, entity.title, buildPostFtsBody(entity));
   }
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
@@ -1441,6 +1450,287 @@ ${entity.content}
       }
     }
     return Array.from(tagSet).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }
+
+  /**
+   * 相关笔记完整打分：
+   * - FTS（标题/正文/标签）BM25
+   * - 标签交集
+   * - 同花园 / 同分类
+   * 排除自身与未发布/墓碑。
+   */
+  async related(input: RelatedPostsInput): Promise<
+    Array<{
+      id: string;
+      title: string;
+      slug: string;
+      garden: string;
+      excerpt: string | null;
+      category: string | null;
+      tags: string[];
+      score: number;
+      reasons: string[];
+      updatedAt: Date;
+    }>
+  > {
+    const limit = input.limit ?? 8;
+    const self = await this.prisma.post.findUnique({ where: { id: input.id } });
+    if (!self || self.deletedAt) {
+      throw new TRPCError({ code: "NOT_FOUND", message: `related 失败：文章 ${input.id} 不存在` });
+    }
+    const selfTags = self.tags
+      ? self.tags.split(",").map((t) => t.trim()).filter(Boolean)
+      : [];
+    const titleTokens = self.title
+      .replace(/[^\p{L}\p{N}\s_-]/gu, " ")
+      .split(/\s+/)
+      .filter((t) => t.length >= 2)
+      .slice(0, 10);
+    const query = [...titleTokens, ...selfTags].join(" ").trim() || self.title;
+
+    type Cand = {
+      id: string;
+      title: string;
+      slug: string;
+      garden: string;
+      excerpt: string | null;
+      category: string | null;
+      tags: string;
+      content: string | null;
+      updatedAt: Date;
+      published: boolean;
+    };
+    const byId = new Map<string, Cand>();
+    const bump = (row: Cand) => {
+      if (row.id === self.id) return;
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    };
+
+    try {
+      const ftsHits = await searchFtsByEntity(this.prisma, "post", query, limit * 5);
+      const ids = ftsHits.map((h) => h.entityId).filter((id) => id !== self.id);
+      if (ids.length > 0) {
+        const rows = await this.prisma.post.findMany({
+          where: { id: { in: ids }, deletedAt: null, published: true },
+        });
+        for (const r of rows) bump(r as Cand);
+      }
+    } catch {
+      /* FTS 不可用则只靠标签/分类 */
+    }
+
+    for (const tag of selfTags.slice(0, 8)) {
+      const rows = await this.prisma.post.findMany({
+        where: {
+          deletedAt: null,
+          published: true,
+          id: { not: self.id },
+          tags: { contains: tag },
+        },
+        take: 30,
+      });
+      for (const r of rows) bump(r as Cand);
+    }
+
+    if (self.category) {
+      const rows = await this.prisma.post.findMany({
+        where: {
+          deletedAt: null,
+          published: true,
+          id: { not: self.id },
+          category: self.category,
+        },
+        take: 30,
+        orderBy: { updatedAt: "desc" },
+      });
+      for (const r of rows) bump(r as Cand);
+    }
+
+    // 同花园近邻兜底
+    const gardenRows = await this.prisma.post.findMany({
+      where: {
+        deletedAt: null,
+        published: true,
+        id: { not: self.id },
+        garden: self.garden,
+      },
+      take: 40,
+      orderBy: { updatedAt: "desc" },
+    });
+    for (const r of gardenRows) bump(r as Cand);
+
+    let ftsRankById = new Map<string, number>();
+    try {
+      const ftsHits = await searchFtsByEntity(this.prisma, "post", query, limit * 5);
+      ftsHits.forEach((h, i) => {
+        // BM25 越小越好；转成正分：靠前加分
+        const bm25 = typeof h.rank === "number" ? h.rank : -i;
+        ftsRankById.set(h.entityId, Math.max(0, 40 + bm25 * -2) + Math.max(0, 20 - i));
+      });
+    } catch {
+      ftsRankById = new Map();
+    }
+
+    const scored = Array.from(byId.values()).map((row) => {
+      const tags = row.tags
+        ? row.tags.split(",").map((t) => t.trim()).filter(Boolean)
+        : [];
+      const overlap = selfTags.filter((t) => tags.includes(t));
+      const reasons: string[] = [];
+      let score = 0;
+
+      const ftsScore = ftsRankById.get(row.id) ?? 0;
+      if (ftsScore > 0) {
+        score += ftsScore;
+        reasons.push("全文相关");
+      }
+      if (overlap.length > 0) {
+        score += overlap.length * 18;
+        reasons.push(`标签重合：${overlap.slice(0, 4).join("、")}`);
+      }
+      if (row.garden === self.garden) {
+        score += 12;
+        reasons.push("同花园");
+      }
+      if (self.category && row.category === self.category) {
+        score += 14;
+        reasons.push(`同分类：${self.category}`);
+      }
+      // 标题子串轻量加分
+      const titleHit = titleTokens.some(
+        (t) => t.length >= 2 && row.title.toLowerCase().includes(t.toLowerCase()),
+      );
+      if (titleHit) {
+        score += 10;
+        reasons.push("标题相近");
+      }
+      // 新鲜度轻微加成（30 天内）
+      const ageDays = (Date.now() - new Date(row.updatedAt).getTime()) / 86400000;
+      if (ageDays < 30) score += Math.max(0, 6 - ageDays / 5);
+
+      const excerpt =
+        row.excerpt ||
+        (row.content ? row.content.replace(/\s+/g, " ").trim().slice(0, 140) : null);
+
+      return {
+        id: row.id,
+        title: row.title,
+        slug: row.slug,
+        garden: row.garden,
+        excerpt,
+        category: row.category,
+        tags,
+        score: Math.round(score * 10) / 10,
+        reasons: reasons.length ? reasons : ["邻近文章"],
+        updatedAt: row.updatedAt,
+      };
+    });
+
+    return scored
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score || b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, limit);
+  }
+
+  /**
+   * Chat 消息 → 文章落库（create / update / append）。
+   * 正文只信服务端 ChatMessage，且须属于给定 session。
+   */
+  async createFromChat(input: CreatePostFromChatInput): Promise<OperationResult<PostEntity>> {
+    try {
+      const msg = await this.prisma.chatMessage.findFirst({
+        where: { id: input.messageId, sessionId: input.sessionId },
+      });
+      if (!msg) {
+        throw new ServiceValidationError(
+          failure({
+            code: "CHAT_MESSAGE_NOT_FOUND",
+            message: `createFromChat 失败：会话 ${input.sessionId} 中找不到消息 ${input.messageId}`,
+            details: { sessionId: input.sessionId, messageId: input.messageId },
+            suggestion: "刷新会话后重试，或换一条消息。",
+            retryable: false,
+            operation: "createFromChat",
+            entity: "post",
+          }),
+        );
+      }
+      const body = (msg.content || "").trim();
+      if (!body) {
+        throw new ServiceValidationError(
+          failure({
+            code: "CHAT_MESSAGE_EMPTY",
+            message: "createFromChat 失败：消息正文为空，无法落库。",
+            retryable: false,
+            operation: "createFromChat",
+            entity: "post",
+          }),
+        );
+      }
+
+      const mode = input.mode ?? "create";
+      if (mode === "create") {
+        const title =
+          input.title?.trim() ||
+          body
+            .split("\n")
+            .map((l) => l.replace(/^#+\s*/, "").trim())
+            .find((l) => l.length > 0)
+            ?.slice(0, 80) ||
+          `来自对话 ${new Date().toLocaleString("zh-CN")}`;
+        return this.create({
+          title,
+          content: body,
+          garden: input.garden,
+          category: input.category ?? null,
+          tags: input.tags,
+          published: input.published ?? true,
+          excerpt: body.replace(/\s+/g, " ").trim().slice(0, 160),
+        });
+      }
+
+      if (!input.targetPostId) {
+        throw new ServiceValidationError(
+          failure({
+            code: "TARGET_POST_REQUIRED",
+            message: `createFromChat 失败：mode=${mode} 时必须提供 targetPostId。`,
+            field: "targetPostId",
+            retryable: false,
+            operation: "createFromChat",
+            entity: "post",
+          }),
+        );
+      }
+
+      const target = await this.getById(input.targetPostId);
+      if (mode === "update") {
+        return this.update({
+          id: target.id,
+          content: body,
+          title: input.title?.trim() || undefined,
+          category: input.category === undefined ? undefined : input.category,
+          tags: input.tags,
+          published: input.published,
+        });
+      }
+
+      // append
+      const heading = input.appendHeading?.trim();
+      const block = heading
+        ? `\n\n## ${heading}\n\n${body}\n`
+        : `\n\n---\n\n${body}\n`;
+      const nextContent = `${target.content || ""}${block}`;
+      return this.update({
+        id: target.id,
+        content: nextContent,
+        title: input.title?.trim() || undefined,
+        category: input.category === undefined ? undefined : input.category,
+        tags: input.tags,
+        published: input.published,
+      });
+    } catch (error: any) {
+      if (error instanceof ServiceValidationError || error instanceof TRPCError) throw error;
+      return failureFromError(error, "createFromChat", "post", "POST_FROM_CHAT_FAILED");
+    }
   }
 
   async getById(id: string): Promise<PostEntity> {
@@ -3195,20 +3485,46 @@ export class FileService extends BaseService<CreateFileInput, UpdateFileInput, L
   protected buildCreateData(input: CreateFileInput) { return input; }
   protected buildUpdateData(input: UpdateFileInput) { const { id: _id, ...data } = input; return data; }
 
-  async upload(input: { name: string; mimeType: string; size: number; data: string }): Promise<OperationResult<any>> {
+  async upload(input: {
+    name: string;
+    mimeType: string;
+    size: number;
+    data: string;
+    garden?: string;
+    slug?: string;
+  }): Promise<OperationResult<any>> {
     const start = Date.now();
     try {
-      const { name, mimeType, size, data } = input;
+      const { name, mimeType, size, data, garden, slug } = input;
       const safeName = path.basename(name);
       const ext = path.extname(safeName);
-      const baseName = path.basename(safeName, ext);
+      const baseName = path.basename(safeName, ext).replace(/[^\w\u4e00-\u9fff.-]+/g, "_") || "file";
       const uniqueName = `${baseName}_${Date.now().toString(36)}${ext}`;
-      const uploadDir = this.config.uploadDir;
-      const filePath = path.join(uploadDir, uniqueName);
+      const uploadRoot = path.resolve(this.config.uploadDir);
+
+      // Obsidian 式：uploads/{garden}/{slug段…}/file — 无 meta 时保持扁平兼容
+      const segments: string[] = [];
+      if (garden) segments.push(garden);
+      if (slug) {
+        for (const part of slug.split("/")) {
+          const seg = path.basename(part.trim());
+          if (!seg || seg === "." || seg === "..") continue;
+          segments.push(seg);
+        }
+      }
+
+      const destDir = segments.length > 0 ? path.resolve(uploadRoot, ...segments) : uploadRoot;
+      const relToRoot = path.relative(uploadRoot, destDir);
+      if (relToRoot.startsWith("..") || path.isAbsolute(relToRoot)) {
+        throw new Error(`非法上传目录：拒绝写出 uploads 根之外（garden/slug 穿越）`);
+      }
+      fs.mkdirSync(destDir, { recursive: true });
+
+      const filePath = path.join(destDir, uniqueName);
       const buffer = Buffer.from(data, "base64");
       fs.writeFileSync(filePath, buffer);
 
-      const fileUrl = `/uploads/${uniqueName}`;
+      const fileUrl = `/uploads/${[...segments, uniqueName].join("/")}`;
       const fileRecord = await this.prisma.file.create({
         data: { name: safeName, path: filePath, mimeType, size, url: fileUrl },
       });

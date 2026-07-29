@@ -21,6 +21,18 @@ export type EditorCompleteApplyPayload = {
   insertStart: number;
   insertEnd: number;
   content: string;
+  /** true = 在 WYSIWYG 用 ProseMirror 替换冻结选区 */
+  wysiwyg?: boolean;
+};
+
+export type EditorAgentCompleteApi = {
+  openForRewrite: (opts: {
+    instruction: string;
+    selected: string;
+    start?: number;
+    end?: number;
+    wysiwyg?: boolean;
+  }) => void;
 };
 
 type Phase = "closed" | "compose" | "loading" | "preview";
@@ -35,6 +47,8 @@ interface EditorAgentCompleteProps {
   onRewriteContent?: (next: string, cursor?: number) => void;
   /** 外部 @ 触发：递增 token + 可选预填搜索词 */
   atTrigger?: { token: number; query: string } | null;
+  /** 挂载命令式 API（选区工具条） */
+  registerApi?: (api: EditorAgentCompleteApi | null) => void;
   className?: string;
 }
 
@@ -56,6 +70,7 @@ export function EditorAgentComplete({
   onApply,
   onRewriteContent,
   atTrigger,
+  registerApi,
   className,
 }: EditorAgentCompleteProps) {
   const [phase, setPhase] = useState<Phase>("closed");
@@ -69,6 +84,7 @@ export function EditorAgentComplete({
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
   const [selectedSnap, setSelectedSnap] = useState("");
+  const [wysiwygRewrite, setWysiwygRewrite] = useState(false);
 
   const agentsQuery = trpc.agent.list.useQuery(
     { page: 1, pageSize: 100 },
@@ -108,6 +124,7 @@ export function EditorAgentComplete({
       onPreferSourceMode?.();
       window.setTimeout(() => {
         captureRange();
+        setWysiwygRewrite(false);
         setPhase("compose");
         setPickerOpen(true);
         setAgentQuery(query);
@@ -119,6 +136,48 @@ export function EditorAgentComplete({
     },
     [captureRange, onPreferSourceMode],
   );
+
+  const openForRewrite = useCallback(
+    (opts: {
+      instruction: string;
+      selected: string;
+      start?: number;
+      end?: number;
+      wysiwyg?: boolean;
+    }) => {
+      setSelectedSnap(opts.selected);
+      setWysiwygRewrite(Boolean(opts.wysiwyg));
+      setInstruction(opts.instruction);
+      setPreview("");
+      setError(null);
+      setHighlightIdx(0);
+      setPhase("compose");
+      setPickerOpen(!agentId);
+
+      if (opts.wysiwyg) {
+        setRange({ start: -1, end: -1 });
+        return;
+      }
+
+      onPreferSourceMode?.();
+      const start = opts.start ?? 0;
+      const end = opts.end ?? start;
+      setRange({ start, end });
+      window.setTimeout(() => {
+        const ta = sourceTextareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        ta.setSelectionRange(start, end);
+      }, 0);
+    },
+    [agentId, onPreferSourceMode, sourceTextareaRef],
+  );
+
+  useEffect(() => {
+    if (!registerApi) return;
+    registerApi({ openForRewrite });
+    return () => registerApi(null);
+  }, [registerApi, openForRewrite]);
 
   useEffect(() => {
     if (!atTrigger || atTrigger.token <= 0) return;
@@ -133,6 +192,7 @@ export function EditorAgentComplete({
     setPreview("");
     setError(null);
     setInstruction("");
+    setWysiwygRewrite(false);
   }, []);
 
   const selectAgent = (id: string, name: string) => {
@@ -152,10 +212,31 @@ export function EditorAgentComplete({
 
   const runComplete = () => {
     if (!agentId || !instruction.trim() || completeMut.isPending) return;
-    const { start, end } = captureRange();
-    const before = content.slice(0, start);
-    const after = content.slice(end);
-    const selected = start !== end ? content.slice(start, end) : selectedSnap || undefined;
+
+    let start = range.start;
+    let end = range.end;
+    let selected = selectedSnap || undefined;
+    let before = "";
+    let after = "";
+
+    if (wysiwygRewrite) {
+      selected = selectedSnap || undefined;
+      const idx = selected ? content.indexOf(selected) : -1;
+      if (idx >= 0 && selected) {
+        before = content.slice(Math.max(0, idx - 800), idx);
+        after = content.slice(idx + selected.length, idx + selected.length + 800);
+      }
+    } else {
+      const captured = captureRange();
+      start = captured.start;
+      end = captured.end;
+      before = content.slice(0, start);
+      after = content.slice(end);
+      selected = start !== end ? content.slice(start, end) : selectedSnap || undefined;
+      setRange({ start, end });
+    }
+
+    if (!selected?.trim() && !instruction.trim()) return;
 
     setPhase("loading");
     setError(null);
@@ -173,7 +254,7 @@ export function EditorAgentComplete({
       })
       .then((res) => {
         setPreview(res.content);
-        setRange({ start, end });
+        if (!wysiwygRewrite) setRange({ start, end });
         setPhase("preview");
       })
       .catch((err: unknown) => {
@@ -192,6 +273,7 @@ export function EditorAgentComplete({
       insertStart: range.start,
       insertEnd: range.end,
       content: preview,
+      wysiwyg: wysiwygRewrite,
     });
     close();
   };
@@ -233,17 +315,31 @@ export function EditorAgentComplete({
           </div>
 
           <p className="mb-2 text-[10px] text-[var(--kp-text-3)]">
-            模型 {DEFAULT_LLM_MODEL} · Accept 写入光标/选区 · 可生成公式 / 表格 / SVG·HTML 图
+            模型 {DEFAULT_LLM_MODEL} · Accept 写入光标/选区
+            {selectedSnap ? " · 将替换选中段落" : " · 可生成公式 / 表格 / SVG·HTML 图"}
           </p>
+
+          {selectedSnap && (
+            <div className="mb-2 max-h-16 overflow-y-auto rounded-md border border-dashed border-[var(--kp-divider)] bg-[var(--kp-bg-mute)]/40 px-2 py-1.5 text-[10px] text-[var(--kp-text-3)]">
+              选区：{selectedSnap.slice(0, 160)}
+              {selectedSnap.length > 160 ? "…" : ""}
+            </div>
+          )}
 
           {(phase === "compose" || phase === "loading") && agentId && (
             <div className="mb-2 flex flex-wrap gap-1.5">
-              {(
-                [
-                  ["写一个相关公式", "公式"],
-                  ["做一张对比表格", "表格"],
-                  ["用 SVG 画一张示意图", "图表"],
-                ] as const
+              {(selectedSnap
+                ? ([
+                    ["润色选中段落：更流畅、专业，保持原意，只输出改写后的正文。", "润色"],
+                    ["精简选中段落：删冗余留要点，只输出改写后的正文。", "精简"],
+                    ["扩写选中段落：补充解释与例子，只输出改写后的正文。", "扩写"],
+                    ["把选中段落改得更易懂，面向初学者，只输出改写后的正文。", "易懂"],
+                  ] as const)
+                : ([
+                    ["写一个相关公式", "公式"],
+                    ["做一张对比表格", "表格"],
+                    ["用 SVG 画一张示意图", "图表"],
+                  ] as const)
               ).map(([text, label]) => (
                 <button
                   key={label}
@@ -344,7 +440,11 @@ export function EditorAgentComplete({
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
                 rows={3}
-                placeholder="例：写 SFT 损失公式 · 做一张数据集对比表 · 用 SVG 画训练流程图"
+                placeholder={
+                  selectedSnap
+                    ? "例：改成更正式的语气 · 加上一句过渡 · 纠正术语"
+                    : "例：写 SFT 损失公式 · 做一张数据集对比表 · 用 SVG 画训练流程图"
+                }
                 disabled={phase === "loading" || !agentId}
                 className="mb-2 w-full resize-none rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)]/40 px-2.5 py-2 text-xs text-[var(--kp-text-1)] outline-none focus:border-[var(--kp-brand)] disabled:opacity-50"
                 data-testid="editor-agent-instruction"

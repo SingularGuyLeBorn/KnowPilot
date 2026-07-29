@@ -11,7 +11,7 @@ import { router, publicProcedure } from "./trpc/trpc.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {
-  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, getPostBySlugSchema, postGardenSchema, postRecordViewSchema, explainSelectionSchema,
+  createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, relatedPostsSchema, createPostFromChatSchema, getPostBySlugSchema, postGardenSchema, postRecordViewSchema, explainSelectionSchema,
   createGardenSchema, updateGardenSchema, listGardensSchema, getGardenByIdSchema, deleteGardenSchema,
   createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema, editorAgentCompleteSchema, editorFormulaCopilotSchema,
   resolveAskUserSchema, listAskUserPendingSchema,
@@ -137,6 +137,20 @@ const postRouter = router({
   permanentDelete: publicProcedure.meta({ description: "从回收站永久删除文章。", aiReadable: true }).input(deleteByIdSchema).mutation(({ ctx, input }) => ctx.services.post.permanentDelete(input.id)),
   listDeleted: publicProcedure.meta({ description: "列出回收站中的文章。", aiReadable: true }).query(({ ctx }) => ctx.services.post.listDeleted()),
   search: publicProcedure.meta({ description: "搜索文章标题和内容（可选花园过滤）。", aiReadable: true }).input(searchPostsSchema).query(({ ctx, input }) => ctx.services.post.search(input.query, input.limit, input.garden)),
+  related: publicProcedure
+    .meta({
+      description: "相关笔记：FTS + 标签交集 + 同花园/同分类加权，排除自身。",
+      aiReadable: true,
+    })
+    .input(relatedPostsSchema)
+    .query(({ ctx, input }) => ctx.services.post.related(input)),
+  createFromChat: publicProcedure
+    .meta({
+      description: "把 Chat 消息落库为文章（create/update/append）；正文以服务端 message 为准。",
+      aiReadable: false,
+    })
+    .input(createPostFromChatSchema)
+    .mutation(({ ctx, input }) => ctx.services.post.createFromChat(input)),
   categories: publicProcedure.meta({ description: "获取所有已发布文章的分类列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.categories()),
   tags: publicProcedure.meta({ description: "获取所有已发布文章的标签列表。", aiReadable: true }).query(({ ctx }) => ctx.services.post.tags()),
   explainSelection: publicProcedure

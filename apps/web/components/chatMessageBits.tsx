@@ -7,6 +7,7 @@
 
 import { memo } from "react";
 import {
+  BookPlus,
   Bookmark,
   Bot,
   Check,
@@ -161,6 +162,7 @@ export function MessageActions({
   onRegenerate,
   onShare,
   onSpeak,
+  onSaveAsPost,
   onToggleBookmark,
   bookmarked = false,
   showEdit = true,
@@ -169,6 +171,7 @@ export function MessageActions({
   showShare = true,
   showSpeak = true,
   showBookmark = false,
+  showSaveAsPost = false,
   isEditing = false,
   isSpeaking = false,
   disabled,
@@ -183,6 +186,7 @@ export function MessageActions({
   onRegenerate?: () => void;
   onShare?: () => void;
   onSpeak?: () => void;
+  onSaveAsPost?: () => void;
   onToggleBookmark?: () => void;
   bookmarked?: boolean;
   showEdit?: boolean;
@@ -191,6 +195,7 @@ export function MessageActions({
   showShare?: boolean;
   showSpeak?: boolean;
   showBookmark?: boolean;
+  showSaveAsPost?: boolean;
   isEditing?: boolean;
   isSpeaking?: boolean;
   disabled?: boolean;
@@ -235,6 +240,19 @@ export function MessageActions({
       {showShare && onShare && (
         <button type="button" onClick={onShare} disabled={disabled} className={btnClass} title="分享" aria-label="分享">
           <Share2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {showSaveAsPost && onSaveAsPost && (
+        <button
+          type="button"
+          onClick={onSaveAsPost}
+          disabled={disabled}
+          className={btnClass}
+          title="写入知识库"
+          aria-label="写入知识库"
+          data-testid="message-save-as-post-btn"
+        >
+          <BookPlus className="h-3.5 w-3.5" />
         </button>
       )}
       {showRegenerate && onRegenerate && (

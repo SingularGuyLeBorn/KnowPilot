@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import { Editor, rootCtx, defaultValueCtx } from "@milkdown/core";
 import { gfm } from "@milkdown/preset-gfm";
@@ -13,8 +13,10 @@ import { cn } from "@/lib/utils";
 import {
   detectEditorAgentAtTrigger,
   EditorAgentComplete,
+  type EditorAgentCompleteApi,
   type EditorCompleteDocMeta,
 } from "@/components/editor/EditorAgentComplete";
+import { EditorSelectionToolbar } from "@/components/editor/EditorSelectionToolbar";
 import { BoardEditorModal } from "@/components/editor/BoardCanvas";
 import {
   applySlashInSource,
@@ -42,6 +44,23 @@ import {
   milkdownLinkNav,
   setMilkdownLinkNavMeta,
 } from "@/components/editor/milkdownLinkNav";
+import {
+  beginMilkdownImageUpload,
+  insertMilkdownImageAtCursor,
+  milkdownImageUpload,
+  setMilkdownImageUploader,
+} from "@/components/editor/milkdownImageUpload";
+import {
+  milkdownSelectionApi,
+  replaceMilkdownSelectionWithMarkdown,
+  saveMilkdownSelectionRange,
+} from "@/components/editor/milkdownSelectionApi";
+import {
+  ImageUploadButton,
+  imageToMarkdown,
+  useImageUploader,
+  type UploadedImage,
+} from "@/components/editor/ImageUploadButton";
 import { trpc } from "@/lib/trpc";
 
 export type EditorViewMode = "wysiwyg" | "source";
@@ -114,6 +133,8 @@ function MilkdownWysiwyg({
         .use(mathInlineEditableView)
         .use(emptyCodeBlockDeleteKeymap)
         .use(milkdownLinkNav)
+        .use(milkdownImageUpload)
+        .use(milkdownSelectionApi)
         .use(history)
         .use(listener)
         .use(editorSlash);
@@ -144,7 +165,7 @@ function ModeToggle({
             ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
             : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
         )}
-        title="所见即所得 · Ctrl+S · /gs 公式 · /code 代码 · /tb 表格 · /hb 画板 · 清空后 Backspace 删块"
+        title="所见即所得 · Ctrl+S · Ctrl+V 粘贴图片 · /gs 公式 · /code 代码 · /tb 表格 · /hb 画板 · 清空后 Backspace 删块"
       >
         <Eye className="h-3.5 w-3.5" />
         预览
@@ -205,6 +226,25 @@ function MilkdownEditorInner({
   });
 
   const trpcUtils = trpc.useUtils();
+  const editorRootRef = useRef<HTMLDivElement>(null);
+  const agentApiRef = useRef<EditorAgentCompleteApi | null>(null);
+  const registerAgentApi = useCallback((api: EditorAgentCompleteApi | null) => {
+    agentApiRef.current = api;
+  }, []);
+  const uploadMeta = {
+    garden: docMeta?.garden,
+    slug: docMeta?.slug || (docMeta?.garden ? "_draft" : undefined),
+  };
+  const { upload: uploadImage, uploading: imageUploading } = useImageUploader(uploadMeta);
+
+  useEffect(() => {
+    setMilkdownImageUploader(async (file) => {
+      const image = await uploadImage(file);
+      if (!image) return null;
+      return { src: image.url, alt: image.alt };
+    });
+    return () => setMilkdownImageUploader(null);
+  }, [uploadImage]);
 
   useEffect(() => {
     setFormulaCopilotDocMeta({
@@ -267,6 +307,69 @@ function MilkdownEditorInner({
     }
   };
 
+  const insertUploadedImage = (image: UploadedImage) => {
+    const md = imageToMarkdown(image);
+    if (mode === "wysiwyg") {
+      const ok = insertMilkdownImageAtCursor({ src: image.url, alt: image.alt });
+      if (!ok) {
+        // 编辑器尚未就绪时退化为文末追加并 remount
+        const base = sourceRef.current?.value ?? draft;
+        rewriteContent(`${base}${md}`);
+        setWysiwygEpoch((n) => n + 1);
+      }
+      return;
+    }
+    const ta = sourceRef.current;
+    const current = ta?.value ?? draft;
+    if (!ta) {
+      rewriteContent(`${current}${md}`);
+      return;
+    }
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const next = current.slice(0, start) + md + current.slice(end);
+    rewriteContent(next, start + md.length);
+  };
+
+  const handleSourcePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData.items);
+    const imageItem = items.find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+    e.preventDefault();
+    const file = imageItem.getAsFile();
+    if (!file) return;
+    const ext = file.type.split("/")[1] || "png";
+    const named =
+      file.name && file.name !== "image.png"
+        ? file
+        : new File([file], `paste-${Date.now()}.${ext}`, { type: file.type });
+    const ta = e.currentTarget;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const altBase = named.name.replace(/\.[^/.]+$/, "") || "image";
+    const token = `kp-uploading://${Date.now().toString(36)}`;
+    const placeholder = `\n![上传中… ${altBase}](${token})\n`;
+    const current = ta.value;
+    const withPlaceholder = current.slice(0, start) + placeholder + current.slice(end);
+    rewriteContent(withPlaceholder, start + placeholder.length);
+
+    uploadImage(named)
+      .then((image) => {
+        const live = sourceRef.current?.value ?? withPlaceholder;
+        const base = live.includes(placeholder) ? live : withPlaceholder;
+        if (!image) {
+          rewriteContent(base.replace(placeholder, ""));
+          return;
+        }
+        rewriteContent(base.replace(placeholder, imageToMarkdown(image)));
+      })
+      .catch(() => {
+        const live = sourceRef.current?.value ?? withPlaceholder;
+        const base = live.includes(placeholder) ? live : withPlaceholder;
+        rewriteContent(base.replace(placeholder, ""));
+      });
+  };
+
   useEffect(() => {
     if (mode !== "source" || pendingCursorRef.current == null) return;
     const ta = sourceRef.current;
@@ -289,6 +392,7 @@ function MilkdownEditorInner({
 
   return (
     <div
+      ref={editorRootRef}
       className={cn(
         "milkdown-editor flex min-h-[calc(100dvh-12rem)] flex-col rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)]",
         className,
@@ -297,18 +401,39 @@ function MilkdownEditorInner({
       <div className="flex items-center justify-end gap-3 border-b border-[var(--kp-divider)] px-3 py-2">
         <span className="sr-only">
           {mode === "wysiwyg"
-            ? "所见即所得。Ctrl+S 保存。斜杠命令：/gs 公式、/code 代码、/tb 表格、/hb 画板。公式或代码块清空后 Backspace 删除。"
-            : "源码模式。Ctrl+S 保存。Ctrl+Z/Y 撤销重做。"}
+            ? "所见即所得。Ctrl+S 保存。Ctrl+V 粘贴图片。划选可润色。斜杠命令：/gs 公式、/code 代码、/tb 表格、/hb 画板。"
+            : "源码模式。Ctrl+S 保存。Ctrl+V 粘贴图片。划选可润色。"}
         </span>
         <div className="flex items-center gap-2">
+          {imageUploading && (
+            <span className="text-xs text-[var(--kp-text-3)]">图片上传中…</span>
+          )}
+          <ImageUploadButton
+            meta={uploadMeta}
+            onUploaded={insertUploadedImage}
+            interceptFile={
+              mode === "wysiwyg"
+                ? (file) => beginMilkdownImageUpload(file)
+                : undefined
+            }
+          />
           <EditorAgentComplete
             content={draft}
             sourceTextareaRef={sourceRef}
             docMeta={docMeta}
             atTrigger={atTrigger}
+            registerApi={registerAgentApi}
             onPreferSourceMode={() => setMode("source")}
             onRewriteContent={rewriteContent}
-            onApply={({ insertStart, insertEnd, content: snippet }) => {
+            onApply={({ insertStart, insertEnd, content: snippet, wysiwyg }) => {
+              if (wysiwyg) {
+                if (!replaceMilkdownSelectionWithMarkdown(snippet)) {
+                  // 回退：文末追加
+                  rewriteContent(`${draft}\n\n${snippet}`);
+                  setWysiwygEpoch((n) => n + 1);
+                }
+                return;
+              }
               const next = draft.slice(0, insertStart) + snippet + draft.slice(insertEnd);
               const cursor = insertStart + snippet.length;
               rewriteContent(next, cursor);
@@ -319,11 +444,24 @@ function MilkdownEditorInner({
         </div>
       </div>
 
+      <EditorSelectionToolbar
+        containerRef={editorRootRef}
+        mode={mode}
+        sourceTextareaRef={sourceRef}
+        content={draft}
+        agentApiRef={agentApiRef}
+        onSaveWysiwygSelection={() => {
+          const snap = saveMilkdownSelectionRange();
+          return snap ? { text: snap.text } : null;
+        }}
+      />
+
       {mode === "source" ? (
         <textarea
           ref={sourceRef}
           value={draft}
           onChange={(e) => handleChange(e.target.value)}
+          onPaste={handleSourcePaste}
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
             const ta = e.currentTarget;
@@ -453,6 +591,22 @@ export function MilkdownStyles() {
       .milkdown-editor .milkdown .ProseMirror {
         min-height: 320px;
         outline: none;
+      }
+      .milkdown-editor .milkdown img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 0.5rem;
+        margin: 0.75rem 0;
+      }
+      .milkdown-editor .milkdown img[title^="kp-uploading:"] {
+        opacity: 0.55;
+        outline: 2px dashed var(--kp-brand);
+        outline-offset: 2px;
+        animation: kp-img-uploading 1.2s ease-in-out infinite;
+      }
+      @keyframes kp-img-uploading {
+        0%, 100% { opacity: 0.45; }
+        50% { opacity: 0.75; }
       }
       .milkdown-editor .milkdown p {
         margin: 0.4rem 0;

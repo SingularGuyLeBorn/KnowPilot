@@ -66,20 +66,30 @@ async function mapFtsHits(prisma: PrismaClient, rows: FtsHit[], targets: GlobalS
   const messageIds = filtered.filter((r) => r.entity === "message").map((r) => r.entityId);
 
   const [posts, msgs] = await Promise.all([
-    postIds.length ? prisma.post.findMany({ where: { id: { in: postIds } }, select: { id: true, slug: true } }) : [],
+    postIds.length
+      ? prisma.post.findMany({ where: { id: { in: postIds } }, select: { id: true, slug: true, garden: true } })
+      : [],
     messageIds.length
       ? prisma.chatMessage.findMany({ where: { id: { in: messageIds } }, select: { id: true, sessionId: true } })
       : [],
   ]);
-  const postSlugById = new Map(posts.map((p) => [p.id, p.slug] as const));
+  const postMetaById = new Map(posts.map((p) => [p.id, p] as const));
   const msgSessionById = new Map(msgs.map((m) => [m.id, m.sessionId] as const));
 
   const hits: GlobalSearchHit[] = [];
   for (const row of filtered) {
     let href = "/search";
     if (row.entity === "post") {
-      const slug = postSlugById.get(row.entityId);
-      href = slug ? `/posts/${encodeURIComponent(slug)}` : "/posts";
+      const meta = postMetaById.get(row.entityId);
+      if (meta?.slug) {
+        const enc = encodeURIComponent(meta.slug);
+        href =
+          meta.garden && meta.garden !== "posts"
+            ? `/posts/${enc}?garden=${encodeURIComponent(meta.garden)}`
+            : `/posts/${enc}`;
+      } else {
+        href = "/posts";
+      }
     } else if (row.entity === "message") {
       const sid = msgSessionById.get(row.entityId);
       href = sid ? `/chat?sessionId=${sid}` : "/chat";
@@ -132,7 +142,10 @@ export async function runGlobalSearch(
               id: p.id,
               title: p.title,
               subtitle: p.slug,
-              href: `/posts/${encodeURIComponent(p.slug)}`,
+              href:
+                p.garden && p.garden !== "posts"
+                  ? `/posts/${encodeURIComponent(p.slug)}?garden=${encodeURIComponent(p.garden)}`
+                  : `/posts/${encodeURIComponent(p.slug)}`,
               score: p.title.toLowerCase().includes(q) ? 2 : 1,
             });
           }

@@ -121,6 +121,8 @@ export interface ChatMessageListProps {
   onSwitchVersion: (assistantMessageId: string, versionIndex: number) => void;
   onEditConfirm: (userMessageId: string) => void;
   onRetry: (messageId: string) => void;
+  /** Chat → 知识库：打开落库对话框 */
+  onSaveAsPost?: (messageId: string, content: string) => void;
   setEditingUserId: (id: string | null) => void;
   setEditDraft: (draft: string) => void;
 }
@@ -151,6 +153,7 @@ export const ChatMessageList = memo(function ChatMessageList({
   onSwitchVersion: handleSwitchVersion,
   onEditConfirm: handleEditConfirm,
   onRetry: handleRetry,
+  onSaveAsPost: handleSaveAsPost,
   setEditingUserId,
   setEditDraft,
 }: ChatMessageListProps) {
@@ -270,6 +273,12 @@ export const ChatMessageList = memo(function ChatMessageList({
           showRegenerate={isLastGroup}
           showEdit={false}
           showRetry={false}
+          showSaveAsPost={!!handleSaveAsPost && !!active.content.trim()}
+          onSaveAsPost={
+            handleSaveAsPost
+              ? () => handleSaveAsPost(assistantId, active.content)
+              : undefined
+          }
           disabled={isStreaming}
           copied={copiedId === assistantId}
           versionNav={

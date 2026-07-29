@@ -1007,6 +1007,12 @@ export function ChatView() {
     () => getSessionConfigSnapshot(overlaySessionId),
   );
 
+  const openRuntimePanel = useCallback(() => {
+    setLeftOpen(true);
+    setLeftTab("runtime");
+    syncChatUiToUrl({ panel: "runtime" });
+  }, [setLeftOpen, setLeftTab, syncChatUiToUrl]);
+
   const paneShared = {
     backendDown,
     leftOpen,
@@ -1028,6 +1034,7 @@ export function ChatView() {
     onOpenPromptEditor: handleOpenPromptEditor,
     onOpenFilesPanel: () => setRightFilesOpen(true),
     filesPanelOpen: rightFilesOpen,
+    onOpenRuntimePanel: openRuntimePanel,
   } as const;
 
   return (

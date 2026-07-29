@@ -12,11 +12,9 @@ const MilkdownEditor = dynamic(
   () => import("@/components/editor/MilkdownEditor").then((m) => m.MilkdownEditor),
   { ssr: false }
 );
-import { ImageUploadButton, useImageDrop, useImagePaste } from "@/components/editor/ImageUploadButton";
 import { usePostMutations } from "@/lib/hooks";
 import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
-import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 
 export default function NewPostPage() {
@@ -47,21 +45,12 @@ export default function NewPostPage() {
   });
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [uploadKey, setUploadKey] = useState(0);
 
   const { create } = usePostMutations({
     onCreateSuccess: ({ slug, garden: g }) => {
       router.push(postDetailHref(slug, g));
     },
   });
-
-  const appendImage = (markdown: string) => {
-    setContent((prev) => (prev ? `${prev}\n${markdown}` : markdown));
-    setUploadKey((k) => k + 1);
-  };
-
-  const { dragOver, dropHandlers } = useImageDrop(appendImage);
-  const pasteHandlers = useImagePaste(appendImage);
 
   const handleCreate = () => {
     if (!title.trim()) return;
@@ -121,7 +110,6 @@ export default function NewPostPage() {
                 本地已记 {lastSavedAt.toLocaleTimeString("zh-CN")}
               </span>
             )}
-            <ImageUploadButton onUploaded={appendImage} />
             <button
               type="button"
               onClick={handleCreate}
@@ -169,21 +157,11 @@ export default function NewPostPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div
-            {...dropHandlers}
-            {...pasteHandlers}
-            className={cn(
-              "h-full rounded-xl transition-colors",
-              dragOver && "bg-[var(--kp-brand)]/5 ring-2 ring-[var(--kp-brand)]/30"
-            )}
-          >
-            <MilkdownEditor
-              key={uploadKey}
-              initialValue={content}
-              onChange={setContent}
-              docMeta={{ title, garden }}
-            />
-          </div>
+          <MilkdownEditor
+            initialValue={content}
+            onChange={setContent}
+            docMeta={{ title, garden }}
+          />
         </div>
       </div>
     </>

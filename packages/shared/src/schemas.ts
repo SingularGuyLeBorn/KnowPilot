@@ -150,6 +150,35 @@ export const searchPostsSchema = z.object({
   garden: gardenIdSchema.optional(),
 });
 
+/**
+ * 相关笔记：FTS（标题/正文/标签）+ 标签交集 + 同花园/同分类加权。
+ * 排除自身，返回带 score/reasons 的完整推荐。
+ */
+export const relatedPostsSchema = z.object({
+  id: z.string().cuid(),
+  limit: z.number().int().min(1).max(20).default(8),
+});
+
+/**
+ * Chat 消息落库为文章（完整三模式）：
+ * - create：新建
+ * - update：覆盖已有文章正文
+ * - append：在已有文章末尾追加（可选二级标题）
+ * 正文以服务端 messageId 为准，防前端篡改。
+ */
+export const createPostFromChatSchema = z.object({
+  sessionId: z.string().cuid(),
+  messageId: z.string().cuid(),
+  mode: z.enum(["create", "update", "append"]).default("create"),
+  garden: gardenIdSchema.default(DEFAULT_POST_GARDEN),
+  title: z.string().min(1).max(200).optional(),
+  targetPostId: z.string().cuid().optional(),
+  category: z.string().max(100).optional().nullable(),
+  tags: z.array(z.string().max(40)).max(20).optional(),
+  published: z.boolean().default(true),
+  appendHeading: z.string().max(200).optional(),
+});
+
 /** 按花园 + slug 取文 */
 export const getPostBySlugSchema = z.object({
   slug: safeEntitySlugSchema,
@@ -768,11 +797,17 @@ export const createFileSchema = z.object({
   url: z.string(),
 });
 
+/**
+ * 上传文件。可选 garden/slug → 落盘 content/uploads/{garden}/{slug}/…（Obsidian 式按文分目录）。
+ * 新建未落盘文章传 slug=`_draft`。
+ */
 export const uploadFileSchema = z.object({
   name: z.string().min(1),
   mimeType: z.string(),
   size: z.number().int().positive(),
   data: z.string().min(1), // base64 encoded file content
+  garden: gardenIdSchema.optional(),
+  slug: safeEntitySlugSchema.optional(),
 });
 
 export const updateFileSchema = z.object({
@@ -1554,6 +1589,8 @@ export type UpdateGardenInput = z.infer<typeof updateGardenSchema>;
 export type ListGardensInput = z.infer<typeof listGardensSchema>;
 export type ListPostsInput = z.infer<typeof listPostsSchema>;
 export type SearchPostsInput = z.infer<typeof searchPostsSchema>;
+export type RelatedPostsInput = z.infer<typeof relatedPostsSchema>;
+export type CreatePostFromChatInput = z.infer<typeof createPostFromChatSchema>;
 
 export type CreateAgentInput = z.infer<typeof createAgentSchema>;
 export type UpdateAgentInput = z.infer<typeof updateAgentSchema>;

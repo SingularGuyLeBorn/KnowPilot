@@ -26,6 +26,7 @@ import { SessionContextBar } from "@/components/sessionContextUsage";
 import { ChatInputArea, type SelectedSkill } from "@/components/chatInput";
 import {
   type ChatQueueItem,
+  type SyncTaskItem,
   sortQueueItems,
   splitQueueByKind,
 } from "@/lib/chatQueueTypes";
@@ -33,6 +34,7 @@ import { UserSendQueuePanel } from "@/components/chatQueue";
 import { ChatMessageList, type ChatMessageListProps } from "@/components/chatMessageList";
 import { ChatGoalBar } from "@/components/chatGoalBar";
 import { SessionAskUserBar } from "@/components/sessionAskUserBar";
+import { ChatDispatchStrip } from "@/components/chatDispatchStrip";
 import { sessionComposeActions } from "@/lib/useSessionComposeState";
 import { NEW_STREAM_KEY } from "@/lib/chatKeys";
 
@@ -95,6 +97,11 @@ export interface ChatCenterPaneProps {
   filesPanelOpen?: boolean;
   modelSupportsReasoning: boolean;
   modelReasoningRequired: boolean;
+  /** 派工条：进行中 / 待消费 / 同步等待 */
+  dispatchActiveItems?: ChatQueueItem[];
+  dispatchToConsumeItems?: ChatQueueItem[];
+  dispatchSyncTasks?: SyncTaskItem[];
+  onOpenRuntimePanel?: () => void;
 }
 
 export function ChatCenterPane({
@@ -145,6 +152,10 @@ export function ChatCenterPane({
   filesPanelOpen = false,
   modelSupportsReasoning,
   modelReasoningRequired,
+  dispatchActiveItems = [],
+  dispatchToConsumeItems = [],
+  dispatchSyncTasks = [],
+  onOpenRuntimePanel,
 }: ChatCenterPaneProps) {
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingForSessionId, setEditingForSessionId] = useState(effectiveSessionId);
@@ -366,6 +377,16 @@ export function ChatCenterPane({
             恢复运行
           </button>
         </div>
+      )}
+
+      {!isSubagentSession && (
+        <ChatDispatchStrip
+          activeItems={dispatchActiveItems}
+          toConsumeItems={dispatchToConsumeItems}
+          syncTasks={dispatchSyncTasks}
+          onSelectSession={selectSession}
+          onOpenRuntimePanel={onOpenRuntimePanel}
+        />
       )}
 
       <ChatMessageList {...messageListProps} />

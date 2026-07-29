@@ -331,6 +331,20 @@ describe("tRPC Routers Comprehensive CRUD tests (All 18 Entities)", () => {
     expect(uploaded.data.name).toBe(testFileName);
     expect(uploaded.data.url).toContain("/uploads/");
 
+    // Obsidian 式：按花园/文章分目录
+    const nestedName = `vitest-nested-${Date.now()}.png`;
+    const nested = await caller.file.upload({
+      name: nestedName,
+      mimeType: "image/png",
+      size: 40,
+      data: dummyBase64,
+      garden: "posts",
+      slug: "demo/note",
+    });
+    expect(nested.success).toBe(true);
+    expect(nested.data.url).toMatch(/\/uploads\/posts\/demo\/note\//);
+    expect(nested.data.path.replace(/\\/g, "/")).toContain("/uploads/posts/demo/note/");
+
     // GetById
     const fetched = await caller.file.getById({ id: uploaded.data.id });
     expect(fetched.name).toBe(testFileName);
