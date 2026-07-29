@@ -1,9 +1,12 @@
 <div align="center">
-  <img src="docs/assets/readme-banner.svg" alt="KnowPilot" width="100%">
+  <p>
+    <img src="docs/assets/logo.svg" alt="见微 · OasisMind" width="96" height="96">
+  </p>
+  <img src="docs/assets/readme-banner.svg" alt="见微 · OasisMind" width="100%">
 
   <p align="center">
-    <strong>智能知识管理与博客平台</strong><br>
-    以 Markdown 为原子、AI 为引擎的本地优先数字花园。
+    <strong>见微 · OasisMind</strong><br>
+    见微知著 · 以 Markdown 为原子、AI 为引擎的本地优先数字主力
   </p>
 
   <p align="center">
@@ -17,21 +20,41 @@
   </p>
 
   <p align="center">
+    <a href="#为什么做见微">为什么做见微</a> ·
     <a href="#快速开始">快速开始</a> ·
     <a href="#核心能力">核心能力</a> ·
     <a href="#技术栈">技术栈</a> ·
     <a href="#项目结构">项目结构</a> ·
     <a href="#架构亮点">架构亮点</a> ·
     <a href="#路线图">路线图</a> ·
+    <a href="#uih">UIH</a> ·
     <a href="docs/development/README.md">开发文档</a>
   </p>
 </div>
 
 ---
 
+## 为什么做见微
+
+LLM 领域里，为了对抗 Transformer 的平方复杂度，已经出现了诸多流派。算法在竞速，上下文窗口在变长，工具调用在变稳。
+
+但当 **2025 年 7 月前后**，大模型的 **agentic 能力**真正起来之后，human-in-the-loop 里最大的瓶颈，渐渐不再是模型——而是 **human 的上下文**，以及人类自己的懒惰。
+
+你对技术仍有热忱：每天收藏、点赞、稍后读。内容散落在知乎、小红书、B 站、微信、浏览器书签……很多地方打开都费劲，每天手动收一次会累，自然想「干脆收集起来」。可真正动手时又很难：收藏一多，收藏本身就需要分类；越拖成本越高；到后面彻底放弃。
+
+这时，让一个 Agent 去做，就很合适。
+
+重要的是：这个 Agent 不该只是通用助手——它应该和你**一样的品味（taste）**。要做到这一点，就要**自己蒸馏自己**；蒸馏需要来源，也需要对自我有清晰认知。这很难，非常需要时间与精力。但总要做。
+
+**见微（OasisMind）** 因此而生：希望它成为真正的**数字主力**——常驻、本地、不离场；每天提醒你昨晚还有什么没看、没做；一周过去了，哪些事还在晾着。见微知著：从细处积累，看见自己。
+
+> 产品曾用名 KnowPilot。仓库与 npm 工作区包名（`@knowpilot/*`）仍处过渡期，用户可见品牌以 **见微 / OasisMind** 为准。
+
+---
+
 ## 项目简介
 
-KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」。
+见微是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」。
 
 它把博客、AI 对话和自主 Agent 收拢在同一张桌面：文章以本地 Markdown 文件为唯一事实源，SQLite 只作查询与缓存层；Agent 不仅能聊天，还能读文章、调技能、记记忆、跑工作流，并通过三层 Swarm 层级自主协作。所有数据落盘在你自己的机器上，Git 可跟踪、可离线编辑，没有云端锁定。
 
@@ -43,8 +66,8 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 
 | 能力 | 说明 |
 |------|------|
-| <img src="docs/assets/icons/markdown.svg" width="18" align="absmiddle" alt=""> **Markdown 原生** | 文章以 `.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑；图片按花园/文章分目录落盘（`content/uploads/{garden}/{slug}/`），上传先占位再替换，刷新不丢。 |
-| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。编辑器选区可一键润色 / 精简 / 扩写（Canvas 式改写）。 |
+| <img src="docs/assets/icons/markdown.svg" width="18" align="absmiddle" alt=""> **Markdown 原生** | 文章以 `.md` 文件为单一事实来源，Git 可跟踪。支持 GFM、代码高亮、数学公式、HTML 嵌入、脚注。Milkdown 所见即所得编辑；图片按文章稳定 id 分目录（`content/uploads/{garden}/{postId}/`，草稿走 `_draft/{draftKey}`），改 slug 不断链；上传先占位再替换。 |
+| <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。编辑器选区可一键润色 / 精简 / 扩写（Canvas 式改写）。支持本地推理：Ollama / llama.cpp / LM Studio / vLLM（OpenAI 兼容，会话模型 id 形如 `ollama/llama3.2`）。 |
 | <img src="docs/assets/icons/sparkles.svg" width="18" align="absmiddle" alt=""> **Swarm 三层 Agent** | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。 |
 | <img src="docs/assets/icons/palette.svg" width="18" align="absmiddle" alt=""> **莫兰迪星河设计** | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。 |
 | <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。19 实体 CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
@@ -67,16 +90,20 @@ KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平
 ```bash
 # 1. 克隆仓库
 git clone <repository-url>
-cd KnowPilot
+cd OasisMind   # 或本地目录名 KnowPilot（过渡期）
 
 # 2. 安装依赖
 pnpm install
 
-# 3. 同步 Markdown 文章到 SQLite
+# 3. 一键补齐开发 .env（CREDENTIAL_MASTER_KEY / EMAIL_PROVIDER=none 等，不覆盖已有值）
+pnpm setup:dev
+
+# 4. 同步 Markdown 文章到 SQLite
 pnpm db:sync
 
-# 4. 启动开发服务（并行启动 server + web）
+# 5. 启动开发服务（并行启动 server + web）
 pnpm dev
+# 已有库、想跳过全量 sync：pnpm dev:quick
 ```
 
 - 前端：<http://localhost:3000>
@@ -98,10 +125,15 @@ DATABASE_URL="file:./dev.db"
 # 生成：node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 CREDENTIAL_MASTER_KEY=
 
-# LLM API Key（至少一个）
+# LLM API Key（云端至少一个；或改用下方本地后端）
 DEEPSEEK_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
+
+# 本地模型（可选；无需真实 Key，Chat 菜单「本地模型」可探测）
+# LLM_DEFAULT_PROVIDER=ollama
+# DEFAULT_LLM_MODEL=ollama/llama3.2
+# OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
 
 # 可选鉴权：none（默认，本地）/ password（远程部署）
 AUTH_MODE=none
@@ -152,7 +184,7 @@ pnpm validate       # lint → test → build → e2e 一键验收
 ## 项目结构
 
 ```text
-KnowPilot/
+OasisMind/                  # 产品名见微；本地目录或仍叫 KnowPilot
 ├── apps/
 │   ├── web/                 # Next.js 16 前端（App Router）
 │   └── server/              # Express + tRPC + Prisma 后端
@@ -173,7 +205,8 @@ KnowPilot/
 │   └── uploads/             # 上传文件
 ├── docs/
 │   ├── development/        # L1-L5 阶段开发文档与 API 规范
-│   └── surveys-2026/       # 2026 记忆 / Harness / Agent 综述与 KnowPilot 对比分析
+│   ├── assets/             # logo / banner / UIH 等品牌素材
+│   └── surveys-2026/       # 2026 记忆 / Harness / Agent 综述与对比分析
 ├── config.yaml              # 运行时业务参数（stream / compact 等）
 └── README.md                # 本文件
 ```
@@ -233,6 +266,8 @@ KnowPilot/
 L1 ~ L5 已全部落地，项目处于**功能完备、持续打磨**阶段。近期完成的重点：
 
 - **数字花园体验（完整版）**：附件按 `uploads/{garden}/{slug}/` 分目录；Milkdown 上传占位；编辑器选区 AI 润色 / 精简 / 扩写；阅读页相关笔记（`post.related`）；Chat → 知识库落库（`post.createFromChat` 新建 / 覆盖 / 追加）；中栏派工条（进行中 / 待消费 / 同步子任务）
+- **本地推理**：Ollama / llama.cpp / LM Studio / vLLM（OpenAI 兼容）；Chat 模型菜单「本地模型」动态探测；会话 id 形如 `ollama/llama3.2`
+- **工程纪律**：Chat Store 不变量有 Vitest 锁定（`chatStoreInvariants.test.ts`）；实验模块时间盒见 [`docs/development/experiments.md`](docs/development/experiments.md)；`pnpm setup:dev` 降低换机摩擦
 - **v8 ~ v10**：全局任务池、投递可靠性、可重入与续跑
 - **W1 ~ W16**：会话树、心跳决策层、审批 scope、context 钩子、compaction 切割、stream 内核不变量、Web Chat store 不变量
 - **Chat UI**：Kimi 风格模型菜单、思考时间线、回到底部按钮、刷新不丢回复
@@ -368,6 +403,18 @@ ask_user：resolveAskUserFromMail → 注入答复给 Agent 续轮
 - 默认 `AUTH_MODE=none` 无鉴权，仅适合本地。暴露公网必须启用鉴权。
 - 用隧道把本机暴露到公网（无需开端口）：**ngrok 固定域名**（`pnpm dev:ngrok`，见上方「远程访问与邮件 webhook」）或 Cloudflare Tunnel（见 [docs/development/cloudflare-tunnel.md](docs/development/cloudflare-tunnel.md)，`pnpm remote` / `pnpm remote --named`）。
 - `apps/server/prisma/dev.db` 不进 Git；数据持久化依赖 `content/` 下的 Markdown 源文件。
+
+---
+
+## UIH
+
+<div align="center">
+  <img src="docs/assets/uih-quote.svg" alt="UIH — 我们的征途是星辰大海，但在那之前，不妨先去码头搞点薯条。" width="100%">
+  <p>
+    <strong>我们的征途是星辰大海，但在那之前，不妨先去码头搞点薯条。</strong><br>
+    <em>Our voyage is to the stars and the sea — but first, fries at the pier.</em>
+  </p>
+</div>
 
 ---
 

@@ -1,9 +1,10 @@
 {
-  "name": "knowpilot",
+  "name": "oasismind",
   "version": "0.1.0",
   "private": true,
-  "description": "KnowPilot — 智能知识管理与博客平台",
+  "description": "见微 · OasisMind — 本地优先的数字主力与知识花园",
   "scripts": {
+    "setup:dev": "node scripts/setup-dev-env.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:quick": "node scripts/dev.mjs --quick",
     "dev:remote": "node scripts/dev.mjs --remote",

@@ -243,6 +243,119 @@
 
 ---
 
+## 场景 9～N：产品能力已落地、文档补登（简表）
+
+下列场景在代码/E2E 已存在，但原先未写入本文件；与场景 1～8 同属「已设计」。
+
+| # | 场景 | 用户目标 | 关键能力 |
+|---|------|----------|----------|
+| 9 | 流式中连续发送 / 队列 | 边等回复边排队下一条 | `userQueue` + drain（见 `chat-scenario-states.md` §4） |
+| 10 | 刷新 / 切会话后续传 | 不丢流式结果 | StreamHub + INV-5/7；E2E `chat-resume-mock` |
+| 11 | 阅读 LiveDoc + 划词解释 | 读文时选中一段即时解释 | `explainSelection`；不写回文章 |
+| 12 | 编辑器选区 AI 改写 | 润色 / 精简 / 扩写选区 | Canvas 式 toolbar + `editorAgentComplete` |
+| 13 | 相关笔记推荐 | 读完一文发现邻近笔记 | `post.related`（FTS+标签+花园） |
+| 14 | Chat → 知识库落库 | 助手结论一键成文 | `post.createFromChat`（新建/覆盖/追加） |
+| 15 | 中栏派工条 | 一眼看子任务进度 | `ChatDispatchStrip` + 运行栏 |
+| 16 | 本地模型对话 | 无云 Key 也能聊 | Ollama 等；模型 id `ollama/…` |
+| 17 | Inbox 抓取 → 蒸馏成文 | 收藏/链接进花园 | inbox capture + distill |
+| 18 | 视频转文字 | B 站/YouTube → 逐字稿 | `video_transcript` |
+| 19 | 平台登录后读文 | 知乎等需登录内容 | `platform_login` + `read_article` |
+| 20 | 深度调研 Goal | 多轮外环直到达标 | session goal / deep research |
+
+状态机级细节（phase / MessageStore / Compose）见 [`chat-scenario-states.md`](./chat-scenario-states.md)。
+
+---
+
+## 场景 A：晨间简报 → 花园笔记（实用新增）
+
+> **价值**：把「快」（Agent 扫源）和「慢」（你筛进花园）接成闭环；本地模型可先做摘要，云模型做精炼。
+
+### 用户动作
+
+1. 前一晚在 Inbox / InfoSource 配好关注源（RSS、知乎收藏、固定 URL 列表）。
+2. 早上打开 Chat，对超级 Agent 或专用「简报员」说：「把昨夜新增条目汇总成 5 条要点，挑 1～2 条值得沉淀的写成 knowledge 花园草稿。」
+3. 看完简报后，在助手气泡点「写入知识库」→ 追加到既有「每日简报」文，或新建一篇。
+
+### 系统行为
+
+1. Agent 调 `inbox` / `infoSource` / `read_article`（必要时 `platform_login`）拉增量。
+2. 可选：先用 `ollama/…` 做粗摘要（省云额度），再用云模型精炼标题与标签。
+3. 用户确认后 `post.createFromChat`（mode=`append` 或 `create`，garden=`knowledge`）。
+4. 若需后台扫源：前一夜 `async_task_run` / 非阻塞子 Agent，晨间只消费投递结果（中栏派工条可见）。
+
+### 前端呈现
+
+1. Chat：要点列表 +「建议落库」条目。
+2. 派工条：昨夜任务 done / 待消费。
+3. 落库对话框：花园 knowledge、标签 `日报`、可选追加到「每日简报」文。
+4. 打开新笔记底部出现「相关笔记」（连到昨日简报 / 主题旧文）。
+
+### 验收一句
+
+「从 Inbox 增量到 knowledge 草稿 ≤ 3 分钟，且正文只来自服务端 messageId。」
+
+---
+
+## 场景 B：专题深挖 → 阻塞调研子 Agent → 一键成文（实用新增）
+
+> **价值**：一次对话内完成「调研—整合—落库」，适合写技术专栏 / 学习笔记，而不是散落在 Chat 历史里。
+
+### 用户动作
+
+1. 在 Chat 说：「调研 DDPM 采样技巧，对比 3 篇我花园里已有的 diffusion 笔记，写一篇可发布草稿。」
+2. 等父 Agent 整合完成后，点「写入知识库」→ 新建到 `diffusion`（或 knowledge）花园，填分类/标签后发布。
+
+### 系统行为
+
+1. 父 Agent：`post_list` / `post.related` 思路的检索（`post_list` + 读正文）摸清已有笔记。
+2. `spawn_subagent(waitForResult=true)` 派「资料员」跑 `web_search` + `read_article` / `save_webpage`。
+3. 阻塞返回后父 Agent 对照旧笔记写「增量」而非重复科普。
+4. 用户 `createFromChat` → Markdown 落盘；相关笔记推荐挂到旧 diffusion 文。
+
+### 前端呈现
+
+1. 时间线：`spawn_subagent` running→done；派工条可跳转子会话看过程。
+2. 最终回复带结构（摘要 / 对比表 / 待验证点）。
+3. 落库成功链到 `/posts/...`；阅读页底部相关笔记指向旧文。
+
+### 验收一句
+
+「子 Agent 阻塞调研完成后，父回复可直接成文，且与花园旧文有可点击相关推荐。」
+
+---
+
+## 场景 C：本地草稿 + 云精修 + 选区打磨（实用新增）
+
+> **价值**：敏感/未定稿内容尽量不出域；定稿前再用云模型与编辑器选区改写，兼顾隐私与质量。
+
+### 用户动作
+
+1. `.env` 设 `DEFAULT_LLM_MODEL=ollama/<本地模型>`（或 Chat 菜单选本地模型）。
+2. 口述或粘贴一坨乱笔记：「整理成结构清晰的学习笔记，先别发网上。」
+3. 本地模型出草稿后，切换到云模型：「只改第 2 节，更短、更可引用。」
+4. 进入编辑器 / LiveDoc，对某段用选区工具「精简」或「扩写」。
+5. 满意后发布；附件已在 `uploads/{garden}/{postId}/`，改标题 slug 也不掉图。
+
+### 系统行为
+
+1. 会话 model=`ollama/...` → 本地 OpenAI 兼容调用，无云 Key 也可跑。
+2. 用户改 model 后下一轮走云厂商；历史仍在同一 Session。
+3. 选区改写走 `editorAgentComplete`，Accept 才写回正文。
+4. 图片上传带 `postId`（或新建页 `draftKey`），与 slug 解耦。
+
+### 前端呈现
+
+1. 模型菜单显示 `llama3.2 · ollama` 等本地标签。
+2. 本地不可达时有可读错误（未连接），不静默失败。
+3. 编辑器选区浮条：润色 / 精简 / 扩写 / 自定义。
+4. 发布后阅读页相关笔记 + 稳定图片 URL。
+
+### 验收一句
+
+「本地出稿 → 云改一节 → 选区精简，全程同一篇文章，改 slug 后图片仍在。」
+
+---
+
 ## 总结
 
 - **普通对话**：用户消息 → userQueue → runStream → 左侧 assistant 气泡。
@@ -251,3 +364,4 @@
 - **非阻塞式子 Agent**：父 Agent 立即返回 → 子 Agent 后台跑 → `agent_report_back` 投递 → 父会话右侧 user 气泡 → 父 Agent 继续。
 - **异步任务**：同非阻塞子 Agent 共用投递机制，来源标识为 `Sync`。
 - **审批**：高风险操作被拦截 → 用户批准 → 重新执行。
+- **实用闭环（新增 A/B/C）**：晨间简报落库、专题阻塞调研成文、本地草稿+云精修+选区打磨。

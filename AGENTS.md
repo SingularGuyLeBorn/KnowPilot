@@ -1,17 +1,19 @@
-# KnowPilot — AI 开发指南
+# 见微 · OasisMind — AI 开发指南
 
 > 本文件面向 AI 编码助手。阅读本文档前，默认你对本项目一无所知。请优先以本文件、README.md、MIGRATION_PLAN.md、docs/development/ 的顺序了解项目背景与规范。
+>
+> **品牌**：产品中文名 **见微**（见微知著），英文名 **OasisMind**。曾用名 KnowPilot；npm 工作区包名仍为 `@knowpilot/*`（过渡期）。
 
 ---
 
 ## 项目概述
 
-KnowPilot 是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」。
+见微（OasisMind）是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」——并进一步做成常驻的**数字主力**（提醒、收集、蒸馏品味）。
 
 - **核心原则**：本地 Markdown 文件是数据的唯一事实源，SQLite（通过 Prisma）只作为查询与缓存层。
 - **当前阶段**：**L1–L5 已全部落地**。本地 Markdown 为源、19 实体 CRUD + 管理页、Agent SSE Chat、自动化/审批、FTS 搜索、可选鉴权、Docker/CI 均已就绪。
 
-项目完整路径：`D:\ALL IN AI\KnowPilot`
+项目完整路径：`D:\ALL IN AI\KnowPilot`（本地目录名可暂未改）
 
 ---
 
