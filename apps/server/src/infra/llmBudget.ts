@@ -5,6 +5,9 @@
  * assertLlmBudget 与 recordTokenUsage 分离——N 个并发入口可同时看到未超限并全放行，
  * 实际花费可能短暂超过 dailyBudget。不做预留制（预留制见 design-decisions 待办）。
  *
+ * 重要：spentUsd 是本地粗算（token × blendedUsdPer1k），不是厂商/OpenRouter 真实账单。
+ * 免费模型（:free / freellm / mock / 本地）只记 totalTokens，不累加美元。
+ *
  * 状态管理：模块级内存为唯一运行时真相，LLM 调用路径上零同步 IO。
  * - 落盘：防抖异步写（fs.promises），进程崩溃最多丢失最近一个防抖窗口的消耗
  * - 恢复：启动期 await hydrateLlmBudget（index.ts 挂载）；同日合并 max(内存, 磁盘)，不丢已花额度
@@ -14,9 +17,6 @@ import fs from "fs";
 import path from "path";
 import type { AppConfig } from "./config.js";
 
-/** 混合 token 粗算单价（USD / 1K tokens） */
-const BLENDED_USD_PER_1K = 0.0005;
-
 /** 异步落盘防抖窗口（毫秒） */
 const FLUSH_DEBOUNCE_MS = 250;
 
@@ -25,7 +25,7 @@ interface BudgetState {
   spentUsd: number;
   /** 无产出 run 累计 token（仅观测，不拦截日预算） */
   wastedTokens: number;
-  /** 今日累计 token（用于空转占比） */
+  /** 今日累计 token（用于空转占比；含免费模型） */
   totalTokens: number;
 }
 
@@ -45,6 +45,22 @@ function todayKey() {
 
 function budgetFile(projectRoot: string) {
   return path.join(projectRoot, ".dev-log", "llm-budget.json");
+}
+
+/**
+ * 不计入美元日预算的模型（仍记 totalTokens 便于观测）。
+ * OpenRouter `:free`、freellm 网关、mock、本地/ollama 等。
+ */
+export function isZeroCostModel(model?: string): boolean {
+  const m = (model ?? "").trim().toLowerCase();
+  if (!m) return false;
+  if (m.endsWith(":free")) return true;
+  if (m.includes("freellm")) return true;
+  if (m.includes("mock")) return true;
+  if (m.startsWith("ollama/") || m.startsWith("ollama:")) return true;
+  if (m.startsWith("local/") || m.startsWith("local:")) return true;
+  if (m.includes("lmstudio") || m.includes("llama.cpp")) return true;
+  return false;
 }
 
 /**
@@ -147,11 +163,14 @@ export interface LlmBudgetStatus {
   totalTokens: number;
   /** wastedTokens / totalTokens；无消费时为 0 */
   wasteRatio: number;
+  /** 当前粗算单价（USD / 1K tokens） */
+  blendedUsdPer1k: number;
 }
 
 export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
   const s = getState(config);
   const limitUsd = config.llm.dailyBudget;
+  const blendedUsdPer1k = config.llm.blendedUsdPer1k;
   const ratio = limitUsd > 0 ? s.spentUsd / limitUsd : 0;
   const wasteRatio = s.totalTokens > 0 ? s.wastedTokens / s.totalTokens : 0;
   return {
@@ -164,6 +183,7 @@ export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
     wastedTokens: s.wastedTokens,
     totalTokens: s.totalTokens,
     wasteRatio,
+    blendedUsdPer1k,
   };
 }
 
@@ -174,24 +194,110 @@ export function assertLlmBudget(config: AppConfig) {
   const status = getLlmBudgetStatus(config);
   if (status.exceeded) {
     throw new Error(
-      `今日 LLM 预算已用尽（约 $${status.spentUsd.toFixed(2)} / $${status.limitUsd}）。` +
-        "请明日再试，或在 .env 提高 LLM_DAILY_BUDGET。",
+      `今日 LLM 预算（本地估算，非真实账单）已用尽（约 $${status.spentUsd.toFixed(2)} / $${status.limitUsd}）。` +
+        "请明日再试，或在 .env 提高 LLM_DAILY_BUDGET / 调低 LLM_BLENDED_USD_PER_1K，" +
+        "或删除 .dev-log/llm-budget.json 后重启服务重置当日计数。",
     );
   }
+}
+
+export type TokenUsageAttribution = {
+  sessionId?: string;
+  parentSessionId?: string;
+  agentId?: string;
+  runId?: string;
+};
+
+/** 会话级归因（内存；日切清空；落盘到 llm-attribution.json） */
+type AttributionState = {
+  date: string;
+  bySession: Record<string, number>;
+  /** 父会话累计的子会话 token */
+  byParentFromChildren: Record<string, number>;
+};
+
+let attribution: AttributionState = { date: todayKey(), bySession: {}, byParentFromChildren: {} };
+let attributionDirty = false;
+let attributionTimer: ReturnType<typeof setTimeout> | null = null;
+
+function attributionFile(projectRoot: string) {
+  return path.join(projectRoot, ".dev-log", "llm-attribution.json");
+}
+
+function ensureAttributionDay() {
+  const d = todayKey();
+  if (attribution.date !== d) {
+    attribution = { date: d, bySession: {}, byParentFromChildren: {} };
+  }
+}
+
+function scheduleAttributionFlush(projectRoot: string) {
+  if (attributionTimer) clearTimeout(attributionTimer);
+  attributionTimer = setTimeout(() => {
+    attributionTimer = null;
+    if (!attributionDirty) return;
+    try {
+      const dir = path.dirname(attributionFile(projectRoot));
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(attributionFile(projectRoot), JSON.stringify(attribution, null, 2), "utf8");
+      attributionDirty = false;
+    } catch (err) {
+      console.warn(
+        "[llmBudget] attribution 落盘失败:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }, FLUSH_DEBOUNCE_MS);
 }
 
 export function recordTokenUsage(
   config: AppConfig,
   usage?: { prompt?: number; completion?: number; total?: number },
+  model?: string,
+  meta?: TokenUsageAttribution,
 ) {
   const total = usage?.total ?? (usage?.prompt ?? 0) + (usage?.completion ?? 0);
   if (!total) return;
   const s = getState(config);
-  s.spentUsd += (total / 1000) * BLENDED_USD_PER_1K;
   s.totalTokens += total;
+  if (!isZeroCostModel(model)) {
+    const rate = config.llm.blendedUsdPer1k;
+    s.spentUsd += (total / 1000) * rate;
+  }
   dirty = true;
   version += 1;
   scheduleFlush(config.projectRoot);
+
+  // DeerFlow：子 Agent 用量回记父会话账本（不重复扣美元，只记账）
+  if (meta?.sessionId || meta?.parentSessionId) {
+    ensureAttributionDay();
+    if (meta.sessionId) {
+      attribution.bySession[meta.sessionId] =
+        (attribution.bySession[meta.sessionId] ?? 0) + total;
+    }
+    if (meta.parentSessionId) {
+      attribution.byParentFromChildren[meta.parentSessionId] =
+        (attribution.byParentFromChildren[meta.parentSessionId] ?? 0) + total;
+    }
+    attributionDirty = true;
+    scheduleAttributionFlush(config.projectRoot);
+  }
+}
+
+/** 查询会话归因（含子任务回记）；供看板 / tRPC */
+export function getSessionTokenAttribution(sessionId: string): {
+  sessionTokens: number;
+  childTokens: number;
+  totalAttributed: number;
+} {
+  ensureAttributionDay();
+  const sessionTokens = attribution.bySession[sessionId] ?? 0;
+  const childTokens = attribution.byParentFromChildren[sessionId] ?? 0;
+  return {
+    sessionTokens,
+    childTokens,
+    totalAttributed: sessionTokens + childTokens,
+  };
 }
 
 /**
@@ -217,7 +323,13 @@ export function resetLlmBudgetForTests(): void {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
+  if (attributionTimer) {
+    clearTimeout(attributionTimer);
+    attributionTimer = null;
+  }
   state = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
+  attribution = { date: todayKey(), bySession: {}, byParentFromChildren: {} };
+  attributionDirty = false;
   dirty = false;
   version = 0;
   hydrated = false;
