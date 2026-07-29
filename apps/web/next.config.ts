@@ -11,6 +11,10 @@ const withBundleAnalyzer = bundleAnalyzer({
 // type-only import 在编译期被擦除，无需把整个 server 包拉进 Next 编译/打包图（否则 dev/build 都更慢）。
 const nextConfig: NextConfig = {
   transpilePackages: ["@knowpilot/shared"],
+  // lucide / lodash 按符号拆包，减轻 webpack 开发态 on-demand 编译体积
+  experimental: {
+    optimizePackageImports: ["lucide-react", "lodash-es", "framer-motion"],
+  },
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   async rewrites() {
     return [

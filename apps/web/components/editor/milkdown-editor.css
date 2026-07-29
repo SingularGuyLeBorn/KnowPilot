@@ -1,0 +1,411 @@
+.milkdown-editor > div:last-child {
+        flex: 1 1 0%;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .milkdown-editor .milkdown {
+        flex: 1 1 0%;
+        min-height: 0;
+        /* 左侧多留一点给标题 hover 的 # 级别标记 */
+        padding: 1.25rem 1.5rem 2rem 2.75rem;
+        outline: none;
+        color: var(--kp-text-1);
+        background: var(--kp-bg);
+        overflow: auto;
+      }
+      .milkdown-editor .milkdown .ProseMirror {
+        min-height: 320px;
+        outline: none;
+      }
+      .milkdown-editor .milkdown img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 0.5rem;
+        margin: 0.75rem 0;
+      }
+      .milkdown-editor .milkdown img[title^="kp-uploading:"] {
+        opacity: 0.55;
+        outline: 2px dashed var(--kp-brand);
+        outline-offset: 2px;
+        animation: kp-img-uploading 1.2s ease-in-out infinite;
+      }
+      @keyframes kp-img-uploading {
+        0%, 100% { opacity: 0.45; }
+        50% { opacity: 0.75; }
+      }
+      .milkdown-editor .milkdown p {
+        margin: 0.4rem 0;
+        line-height: 1.7;
+      }
+      .milkdown-editor .milkdown li > p {
+        margin: 0.15rem 0;
+      }
+      .milkdown-editor .milkdown h1,
+      .milkdown-editor .milkdown h2,
+      .milkdown-editor .milkdown h3,
+      .milkdown-editor .milkdown h4,
+      .milkdown-editor .milkdown h5,
+      .milkdown-editor .milkdown h6 {
+        position: relative;
+        margin: 1.5rem 0 0.75rem;
+        font-weight: 600;
+        color: var(--kp-text-1);
+        line-height: 1.35;
+      }
+      .milkdown-editor .milkdown h1 { font-size: 1.75rem; }
+      .milkdown-editor .milkdown h2 { font-size: 1.4rem; }
+      .milkdown-editor .milkdown h3 { font-size: 1.2rem; }
+      /* hover 显示 # 数量 = 标题级别（与 Markdown 源一致） */
+      .milkdown-editor .milkdown h1::before,
+      .milkdown-editor .milkdown h2::before,
+      .milkdown-editor .milkdown h3::before,
+      .milkdown-editor .milkdown h4::before,
+      .milkdown-editor .milkdown h5::before,
+      .milkdown-editor .milkdown h6::before {
+        position: absolute;
+        right: 100%;
+        top: 0.15em;
+        margin-right: 0.35rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.7rem;
+        font-weight: 500;
+        line-height: 1.4;
+        letter-spacing: 0.02em;
+        color: var(--kp-text-3);
+        opacity: 0;
+        pointer-events: none;
+        white-space: nowrap;
+        transition: opacity 0.15s ease;
+      }
+      .milkdown-editor .milkdown h1:hover::before,
+      .milkdown-editor .milkdown h2:hover::before,
+      .milkdown-editor .milkdown h3:hover::before,
+      .milkdown-editor .milkdown h4:hover::before,
+      .milkdown-editor .milkdown h5:hover::before,
+      .milkdown-editor .milkdown h6:hover::before {
+        opacity: 1;
+      }
+      .milkdown-editor .milkdown h1::before { content: "#"; }
+      .milkdown-editor .milkdown h2::before { content: "##"; }
+      .milkdown-editor .milkdown h3::before { content: "###"; }
+      .milkdown-editor .milkdown h4::before { content: "####"; }
+      .milkdown-editor .milkdown h5::before { content: "#####"; }
+      .milkdown-editor .milkdown h6::before { content: "######"; }
+      .milkdown-editor .milkdown blockquote {
+        border-left: 4px solid var(--kp-brand);
+        padding-left: 1rem;
+        color: var(--kp-text-2);
+        margin: 1rem 0;
+      }
+      .milkdown-editor .milkdown code {
+        background: var(--kp-bg-mute);
+        padding: 0.05rem 0.3rem;
+        border-radius: 0.25rem;
+        font-size: 0.875em;
+        line-height: 1.4;
+      }
+      .milkdown-editor .milkdown pre {
+        background: var(--kp-bg-mute);
+        padding: 1rem;
+        border-radius: 0.75rem;
+        overflow-x: auto;
+      }
+      .milkdown-editor .milkdown ul,
+      .milkdown-editor .milkdown ol {
+        padding-left: 1.5rem;
+        margin: 0.75rem 0;
+      }
+      .milkdown-editor .milkdown li { margin: 0.25rem 0; }
+      .milkdown-editor .milkdown a {
+        color: var(--kp-brand-deep);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        cursor: pointer;
+      }
+      .milkdown-editor .milkdown hr {
+        border: none;
+        border-top: 1px solid var(--kp-divider);
+        margin: 1.5rem 0;
+      }
+      .milkdown-editor .milkdown table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.925rem;
+      }
+      .milkdown-editor .milkdown th,
+      .milkdown-editor .milkdown td {
+        border: 1px solid var(--kp-divider);
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      .milkdown-editor .milkdown th {
+        background: var(--kp-bg-mute);
+        font-weight: 600;
+      }
+      .milkdown-editor .milkdown tr:nth-child(even) td {
+        background: color-mix(in oklab, var(--kp-bg-mute) 45%, transparent);
+      }
+      /* 公式：背景与页面一致（禁止 mute/灰底）；编辑时上方源码 + 下方实时预览 */
+      .milkdown-editor .milkdown .kp-math-block,
+      .milkdown-editor .milkdown .math-block,
+      .milkdown-editor .milkdown div[data-type="math_block"] {
+        cursor: pointer;
+        margin: 0.85rem 0;
+        padding: 0.15rem 0;
+        border-radius: 0;
+        background: transparent !important;
+        background-color: transparent !important;
+        overflow-x: auto;
+        min-height: 1.5rem;
+        box-shadow: none;
+      }
+      .milkdown-editor .milkdown .kp-math-block:hover:not(.is-editing) .kp-math-block-idle {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--kp-divider) 80%, transparent);
+        border-radius: 0.35rem;
+      }
+      .milkdown-editor .milkdown .kp-math-block-idle,
+      .milkdown-editor .milkdown .kp-math-block-edit,
+      .milkdown-editor .milkdown .kp-math-block-live,
+      .milkdown-editor .milkdown .kp-math-block-source {
+        background: transparent !important;
+      }
+      .milkdown-editor .milkdown .kp-math-block-idle {
+        padding: 0.35rem 0.25rem;
+      }
+      .milkdown-editor .milkdown .kp-math-block[data-align="center"] .kp-math-block-idle,
+      .milkdown-editor .milkdown .kp-math-block[data-align="center"] .kp-math-block-live {
+        text-align: center;
+      }
+      .milkdown-editor .milkdown .kp-math-block[data-align="left"] .kp-math-block-idle,
+      .milkdown-editor .milkdown .kp-math-block[data-align="left"] .kp-math-block-live {
+        text-align: left;
+      }
+      .milkdown-editor .milkdown .kp-math-block[data-align="left"] .katex-display {
+        text-align: left;
+      }
+      .milkdown-editor .milkdown .kp-math-block-toolbar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.2rem;
+        margin-bottom: 0.15rem;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+      .milkdown-editor .milkdown .kp-math-block:hover .kp-math-block-toolbar,
+      .milkdown-editor .milkdown .kp-math-block.is-editing .kp-math-block-toolbar {
+        opacity: 1;
+      }
+      .milkdown-editor .milkdown .kp-math-align-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        height: 1.5rem;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 0.3rem;
+        background: transparent;
+        color: var(--kp-text-3);
+        cursor: pointer;
+      }
+      .milkdown-editor .milkdown .kp-math-align-btn:hover {
+        color: var(--kp-text-1);
+        background: color-mix(in oklab, var(--kp-text-1) 5%, transparent);
+      }
+      .milkdown-editor .milkdown .kp-math-align-btn[data-active="true"] {
+        color: var(--kp-brand-deep, var(--kp-brand));
+        border-color: color-mix(in oklab, var(--kp-brand) 35%, var(--kp-divider));
+        background: color-mix(in oklab, var(--kp-brand) 8%, transparent);
+      }
+      .milkdown-editor .milkdown .kp-math-block-idle.is-empty {
+        color: var(--kp-text-3);
+        font-size: 0.875rem;
+        text-align: left;
+      }
+      .milkdown-editor .milkdown .kp-math-block.is-editing {
+        cursor: text;
+        padding: 0.35rem 0 0.15rem;
+        border-top: 1px solid color-mix(in oklab, var(--kp-divider) 55%, transparent);
+        border-bottom: 1px solid color-mix(in oklab, var(--kp-divider) 55%, transparent);
+        background: transparent !important;
+      }
+      .milkdown-editor .milkdown .kp-math-block-source {
+        position: relative;
+        overflow: hidden; /* 防 ghost 绝对定位溢出叠到下方 live 预览 */
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.875rem;
+        line-height: 1.55;
+      }
+      .milkdown-editor .milkdown .kp-math-block-ghost {
+        position: absolute;
+        inset: 0;
+        padding: 0.2rem 0.15rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow: hidden;
+        pointer-events: none;
+        color: transparent;
+      }
+      .milkdown-editor .milkdown .kp-math-ghost-typed {
+        color: transparent;
+      }
+      .milkdown-editor .milkdown .kp-math-ghost-suffix {
+        color: color-mix(in oklab, var(--kp-text-3) 75%, transparent);
+      }
+      .milkdown-editor .milkdown .kp-math-block-input {
+        position: relative;
+        z-index: 1;
+        display: block;
+        width: 100%;
+        min-height: 1.75rem;
+        resize: none;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--kp-text-1);
+        font: inherit;
+        line-height: inherit;
+        padding: 0.2rem 0.15rem;
+        outline: none;
+        caret-color: var(--kp-brand-deep, var(--kp-brand));
+      }
+      .milkdown-editor .milkdown .kp-math-block-hint {
+        min-height: 1rem;
+        margin-top: 0.1rem;
+        font-size: 0.7rem;
+        color: var(--kp-text-3);
+        letter-spacing: 0.01em;
+      }
+      .milkdown-editor .milkdown .kp-math-block-live {
+        margin-top: 0.35rem;
+        padding: 0.45rem 0.25rem 0.2rem;
+        border-top: 1px dashed color-mix(in oklab, var(--kp-divider) 80%, transparent);
+        text-align: center;
+        overflow-x: auto;
+      }
+      .milkdown-editor .milkdown .kp-math-block-live.is-empty {
+        color: var(--kp-text-3);
+        font-size: 0.8rem;
+        text-align: left;
+      }
+      .milkdown-editor .milkdown .kp-math-block-live.is-suggestion {
+        opacity: 0.55;
+      }
+      .milkdown-editor .milkdown .kp-math-inline {
+        cursor: pointer;
+        border-radius: 0.2rem;
+        padding: 0 0.1rem;
+      }
+      .milkdown-editor .milkdown .kp-math-inline:hover:not(.is-editing) {
+        background: transparent;
+        box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--kp-divider) 70%, transparent);
+      }
+      .milkdown-editor .milkdown .kp-math-inline-idle.is-empty {
+        color: var(--kp-text-3);
+        font-size: 0.85em;
+      }
+      /* 行内公式编辑：源码在上、预览在下（与块级一致，禁止左右并排） */
+      .milkdown-editor .milkdown .kp-math-inline-edit {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.25rem;
+        width: min(100%, 28rem);
+        max-width: 100%;
+        padding: 0.2rem 0;
+      }
+      .milkdown-editor .milkdown .kp-math-inline-input {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        border: 0;
+        border-bottom: 1px solid color-mix(in oklab, var(--kp-divider) 90%, transparent);
+        border-radius: 0;
+        background: transparent;
+        color: var(--kp-text-1);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.875rem;
+        padding: 0.15rem 0.1rem;
+        outline: none;
+      }
+      .milkdown-editor .milkdown .kp-math-inline-live {
+        display: block;
+        margin-top: 0.15rem;
+        padding: 0.35rem 0.15rem 0.1rem;
+        border-top: 1px dashed color-mix(in oklab, var(--kp-divider) 80%, transparent);
+        color: var(--kp-text-2);
+        overflow-x: auto;
+      }
+      .milkdown-editor .milkdown .kp-math-inline-live.is-empty {
+        display: none;
+      }
+      .milkdown-editor .milkdown .ProseMirror-selectednode.kp-math-inline,
+      .milkdown-editor .milkdown .ProseMirror-selectednode.kp-math-block {
+        outline: none;
+      }
+      .milkdown-editor .milkdown [data-placeholder]:empty::before {
+        content: attr(data-placeholder);
+        color: var(--kp-text-3);
+        pointer-events: none;
+      }
+      /* 飞书式斜杠菜单 */
+      .kp-editor-slash {
+        position: absolute;
+        z-index: 60;
+        display: none;
+        min-width: 16rem;
+        max-width: 20rem;
+        padding: 0.35rem;
+        border-radius: 0.75rem;
+        border: 1px solid var(--kp-divider);
+        background: var(--kp-bg);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+      }
+      .kp-editor-slash[data-show="true"] {
+        display: block;
+      }
+      .kp-editor-slash-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+        gap: 0.1rem 0.75rem;
+        width: 100%;
+        padding: 0.55rem 0.65rem;
+        border: 0;
+        border-radius: 0.5rem;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        color: var(--kp-text-1);
+      }
+      .kp-editor-slash-item[data-active="true"],
+      .kp-editor-slash-item:hover {
+        background: var(--kp-bg-mute);
+      }
+      .kp-editor-slash-title {
+        grid-column: 1;
+        font-size: 0.875rem;
+        font-weight: 600;
+      }
+      .kp-editor-slash-alias {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        align-self: center;
+        font-size: 0.75rem;
+        color: var(--kp-brand-deep);
+        font-family: ui-monospace, monospace;
+      }
+      .kp-editor-slash-desc {
+        grid-column: 1;
+        font-size: 0.75rem;
+        color: var(--kp-text-3);
+      }
+      .kp-editor-slash-empty {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.8rem;
+        color: var(--kp-text-3);
+      }
