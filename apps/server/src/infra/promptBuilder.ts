@@ -6,6 +6,9 @@
  * 不依赖 loop/reactLoop/agentTools/nativeTools。
  */
 
+import { readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import type { ServiceContainer } from "./serviceContainer.js";
 import {
   MEMORY_INJECTABLE_TYPES,
@@ -19,6 +22,27 @@ import {
   shouldSkipMemoryRetrieve,
 } from "./memoryRetrieveGate.js";
 import { ensurePinnedMemoryHint } from "./pinnedMemory.js";
+
+/** 从 config/prompts 加载面经 Markdown 范文（公式写法 few-shot） */
+function loadMathMarkdownExample(): string {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(here, "../../../config/prompts/math-markdown-example.md"),
+    path.resolve(process.cwd(), "config/prompts/math-markdown-example.md"),
+    path.resolve(process.cwd(), "../../config/prompts/math-markdown-example.md"),
+  ];
+  for (const p of candidates) {
+    try {
+      const body = readFileSync(p, "utf-8").trim();
+      if (body) return body;
+    } catch {
+      // try next
+    }
+  }
+  return "";
+}
+
+const MATH_MARKDOWN_EXAMPLE = loadMathMarkdownExample();
 
 /**
  * 构建注入 system prompt 的长期记忆片段。
@@ -144,10 +168,52 @@ const SOFT_DELETE_GUIDE = `## 删除铁律（系统强制软删）
 - **禁止**用 \`run_shell\` 的 rm/del/Remove-Item 等硬删（系统会拒绝）。
 - **禁止**声称「没有删除工具」——缺的是硬删，不是软删。`;
 
+const MATH_MARKDOWN_GUIDE = `## 数学公式铁律（Markdown / KaTeX，前端只认 $…$）
+写知识库文章、面经、推导、Chat 回复里凡出现公式，**必须**用 LaTeX 定界（行内 \`$…$\`，块级 \`$$…$$\`）。
+前端用 remark-math + KaTeX：**不会**把 Unicode 伪公式（\`√d_k\`、\`dₖ\`、\`Q·Kᵀ\`）渲成根号/下标。
+下面表格与句例请**照抄风格**；输出里的反斜杠是单个 \`\\\`（如 \`\\sqrt\`），不要写成双反斜杠。
+
+### 行内对照表（句子里夹公式）
+| 要表达 | ✅ 正确（原样写入 Markdown） | ❌ 禁止 |
+|---|---|---|
+| 根号 | \`$\\sqrt{d_k}$\` | \`√d_k\` / \`√dₖ\` / \`sqrt(d_k)\` |
+| 下标 | \`$d_k$\` / \`$q_i$\` / \`$h_t$\` | 正文凑 \`d_k\` 当公式、\`dₖ\` |
+| 上标 | \`$K^{T}$\` / \`$x^{2}$\` / \`$e^{-x}$\` | \`Kᵀ\` / \`x²\` |
+| 点积 | \`$Q \\cdot K^{T}$\` | \`Q·Kᵀ\` / \`Q*K^T\` |
+| 分数 | \`$\\frac{Q K^{T}}{\\sqrt{d_k}}$\` | \`QK^T / √d_k\` |
+| 求和 | \`$\\sum_{i=1}^{n} x_i$\` | \`Σ x_i\` / \`sum_i x_i\` |
+| 期望方差 | \`$\\mathrm{Var}(q\\cdot k)=d_k$\` | \`Var(q·k)=d_k\` |
+| 正态分布 | \`$q_i,k_j \\sim \\mathcal{N}(0,1)$\` | \`q_i, k_j ~ N(0,1)\` |
+| Softmax | \`$\\mathrm{softmax}(z_i)=\\frac{e^{z_i}}{\\sum_j e^{z_j}}$\` | \`softmax(z)=e^z/Σe^z\` |
+| 近似 | \`$\\approx 0$\` / \`$\\propto$\` | 单独用 \`≈\` / \`∝\` 当公式 |
+| 范数 | \`$\\|x\\|_2$\` | \`‖x‖₂\` |
+| 矩阵 | \`$W \\in \\mathbb{R}^{d \\times d}$\` | \`W ∈ R^{d×d}\` |
+
+### 块级公式（单独成行，前后空行）
+\`\`\`
+$$
+\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\left(\\frac{QK^{T}}{\\sqrt{d_k}}\\right)V
+$$
+\`\`\`
+多行推导也用 \`$$…$$\`，不要用 Unicode 拼「假块级」。
+
+### 更多句例
+- ✅ \`交叉熵 $\\mathcal{L}=-\\sum_y y\\log \\hat{y}$。\`　❌ \`交叉熵 L=-Σ y log ŷ。\`
+- ✅ \`残差 $x_{l+1}=x_l+F(x_l)$。\`　❌ \`残差 x_{l+1}=x_l+F(x_l)（无 $ 定界）。\`
+- ✅ \`学习率常用 $\\eta=10^{-4}$。\`　❌ \`学习率 η=1e-4 里用希腊字母凑公式。\`
+- 纯数字维度可写「维度 4096」；**根号 / 下标 / 运算式 / 希腊字母公式必须 $…$。**
+
+### 落盘自检（post_create / post_update / write_file 前必做）
+文中若出现 \`√\`、\`ₖ\`、\`ᵀ\`、\`·\`、\`Σ\`、\`≈\`、\`∈\` 当公式用 → **改成 $…$ / $$…$$ 再写。**
+完整面经范文见下节「完整 Markdown 范文」——**写文章时对齐该格式。**`;
+
 /** 根据 Agent 已授权工具追加简短使用指引 */
 export function buildAgentToolGuide(tools: string[]): string {
   const has = (name: string) => tools.some((t) => t === `native:${name}` || t === name);
-  const parts: string[] = [];
+  const parts: string[] = [MATH_MARKDOWN_GUIDE];
+  if (MATH_MARKDOWN_EXAMPLE) {
+    parts.push(`## 完整 Markdown 范文（照抄格式）\n${MATH_MARKDOWN_EXAMPLE}`);
+  }
   if (
     has("web_search") ||
     has("read_article") ||

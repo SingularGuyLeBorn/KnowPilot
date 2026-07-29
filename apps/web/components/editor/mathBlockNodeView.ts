@@ -84,6 +84,7 @@ function createMathBlockView(
   const textarea = document.createElement("textarea");
   textarea.className = "kp-math-block-input";
   textarea.rows = 1;
+  textarea.wrap = "soft";
   textarea.placeholder = "正在根据上下文补全…";
   textarea.spellcheck = false;
 
@@ -135,9 +136,14 @@ function createMathBlockView(
 
   const autosize = () => {
     // ghost 为 absolute，不撑开 sourceRow；按 max(输入, 幽灵) 抬高，避免叠到下方 live 预览
+    // 超过 CSS max-height 后保持封顶高度，由 textarea overflow-y 纵向滚动（禁止横向）
     textarea.style.height = "auto";
     const textH = Math.max(28, textarea.scrollHeight);
-    textarea.style.height = `${Math.max(textH, measureGhostHeight())}px`;
+    const needed = Math.max(textH, measureGhostHeight());
+    const cs = window.getComputedStyle(textarea);
+    const maxH = Number.parseFloat(cs.maxHeight);
+    const capped = Number.isFinite(maxH) && maxH > 0 ? Math.min(needed, maxH) : needed;
+    textarea.style.height = `${capped}px`;
   };
 
   const renderIdle = () => {

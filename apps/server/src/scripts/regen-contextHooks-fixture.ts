@@ -1,17 +1,17 @@
 /**
- * 重新生成 contextHooks.equivalence.json（WEB_TOOL_GUIDE 等文案变更后跑一次）。
+ * 按当前 promptBuilder / contextHooks 内建钩子重写 equivalence fixture。
  * 用法：pnpm --filter @knowpilot/server exec tsx src/scripts/regen-contextHooks-fixture.ts
  */
-import { readFileSync, writeFileSync } from "fs";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
-  __resetContextHooksForTests,
-  ensureBuiltinContextHooks,
   runContextHooks,
+  ensureBuiltinContextHooks,
+  __resetContextHooksForTests,
   type ContextHookInput,
 } from "../infra/contextHooks.js";
-import { buildAgentToolGuide, buildTierIdentityHint } from "../infra/promptBuilder.js";
+import type { LlmMessage } from "../infra/llmClient.js";
 import type { NativeToolContext } from "../infra/tools/native/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -19,13 +19,13 @@ const fixturePath = path.resolve(__dirname, "../__tests__/fixtures/contextHooks.
 
 type Fixture = {
   id: string;
-  basePrompt?: string;
+  basePrompt: string;
   tools: string[];
   memoryHint: string;
   identity: { tier: string | null; name: string | null };
   systemPrompt: string;
-  identityHint?: string;
-  toolGuide?: string;
+  identityHint: string;
+  toolGuide: string;
 };
 
 function makeCtx(): NativeToolContext {
@@ -41,6 +41,10 @@ function makeCtx(): NativeToolContext {
 }
 
 function makeInput(overrides?: Partial<ContextHookInput>): ContextHookInput {
+  const messages: LlmMessage[] = [
+    { role: "system", content: "你是 KnowPilot 助手。" },
+    { role: "user", content: "触发检索的用户问题" },
+  ];
   return {
     agent: {
       id: "agent-1",
@@ -63,10 +67,7 @@ function makeInput(overrides?: Partial<ContextHookInput>): ContextHookInput {
     sessionId: "sess-1",
     runId: "run-1",
     round: 1,
-    messages: [
-      { role: "system", content: "你是 KnowPilot 助手。" },
-      { role: "user", content: "触发检索的用户问题" },
-    ],
+    messages: messages.map((m) => ({ ...m })),
     systemPrompt: "你是 KnowPilot 助手。",
     ctx: makeCtx(),
     scratch: {},
@@ -75,12 +76,15 @@ function makeInput(overrides?: Partial<ContextHookInput>): ContextHookInput {
 }
 
 async function main() {
-  const fixtures = JSON.parse(readFileSync(fixturePath, "utf-8")) as Fixture[];
-  __resetContextHooksForTests({ registerBuiltins: true });
+  __resetContextHooksForTests({ registerBuiltins: false });
   ensureBuiltinContextHooks();
+
+  const fixtures = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Fixture[];
+  const next: Fixture[] = [];
 
   for (const f of fixtures) {
     const base = f.basePrompt || "你是 KnowPilot 助手。";
+    const scratch: Record<string, unknown> = { __testMemoryHint: f.memoryHint };
     const out = await runContextHooks(
       makeInput({
         round: 1,
@@ -91,31 +95,28 @@ async function main() {
         ],
         agent: {
           ...makeInput().agent,
-          name: f.identity.name as string,
-          tier: f.identity.tier as "super" | "manager" | "sub",
+          name: f.identity.name as unknown as string,
+          tier: f.identity.tier as unknown as "super" | "manager" | "sub",
           tools: f.tools,
           systemPrompt: base,
         },
-        scratch: { __testMemoryHint: f.memoryHint },
+        scratch,
       }),
     );
-    f.systemPrompt = out.systemPrompt;
-    if ("toolGuide" in f) {
-      f.toolGuide = buildAgentToolGuide(f.tools || []);
-    }
-    if ("identityHint" in f) {
-      f.identityHint = buildTierIdentityHint(
-        f.identity.tier as "super" | "manager" | "sub" | null,
-        f.identity.name,
-      );
-    }
+
+    next.push({
+      ...f,
+      systemPrompt: out.systemPrompt,
+      identityHint: String(scratch.__identityHint ?? ""),
+      toolGuide: String(scratch.__toolGuide ?? ""),
+    });
   }
 
-  writeFileSync(fixturePath, JSON.stringify(fixtures, null, 2) + "\n", "utf-8");
-  console.log(`updated ${fixtures.length} fixtures → ${fixturePath}`);
+  fs.writeFileSync(fixturePath, JSON.stringify(next, null, 2) + "\n", "utf-8");
+  console.log(`rewrote ${next.length} fixtures → ${fixturePath}`);
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((e) => {
+  console.error(e);
   process.exit(1);
 });

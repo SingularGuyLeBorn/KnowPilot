@@ -252,23 +252,30 @@
         border-top: 1px solid color-mix(in oklab, var(--kp-divider) 55%, transparent);
         border-bottom: 1px solid color-mix(in oklab, var(--kp-divider) 55%, transparent);
         background: transparent !important;
+        overflow-x: hidden; /* 编辑期禁止横向条；预览宽公式各自处理 */
       }
       .milkdown-editor .milkdown .kp-math-block-source {
         position: relative;
-        overflow: hidden; /* 防 ghost 绝对定位溢出叠到下方 live 预览 */
+        width: 100%;
+        max-width: min(100%, 48rem); /* 源码框加宽封顶，长行换行 + 纵向滚 */
+        overflow-x: hidden;
+        overflow-y: hidden; /* 防 ghost 绝对定位溢出叠到下方 live 预览 */
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         font-size: 0.875rem;
         line-height: 1.55;
+        box-sizing: border-box;
       }
       .milkdown-editor .milkdown .kp-math-block-ghost {
         position: absolute;
         inset: 0;
         padding: 0.2rem 0.15rem;
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
         word-break: break-word;
         overflow: hidden;
         pointer-events: none;
         color: transparent;
+        box-sizing: border-box;
       }
       .milkdown-editor .milkdown .kp-math-ghost-typed {
         color: transparent;
@@ -281,7 +288,9 @@
         z-index: 1;
         display: block;
         width: 100%;
+        max-width: 100%;
         min-height: 1.75rem;
+        max-height: min(40vh, 20rem);
         resize: none;
         border: 0;
         border-radius: 0;
@@ -292,6 +301,12 @@
         padding: 0.2rem 0.15rem;
         outline: none;
         caret-color: var(--kp-brand-deep, var(--kp-brand));
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        overflow-x: hidden;
+        overflow-y: auto;
+        box-sizing: border-box;
       }
       .milkdown-editor .milkdown .kp-math-block-hint {
         min-height: 1rem;
@@ -334,14 +349,17 @@
         flex-direction: column;
         align-items: stretch;
         gap: 0.25rem;
-        width: min(100%, 28rem);
+        width: min(100%, 40rem); /* 加宽；最大宽度封顶 */
         max-width: 100%;
         padding: 0.2rem 0;
+        box-sizing: border-box;
       }
       .milkdown-editor .milkdown .kp-math-inline-input {
         display: block;
         width: 100%;
         min-width: 0;
+        max-width: 100%;
+        max-height: min(32vh, 12rem);
         border: 0;
         border-bottom: 1px solid color-mix(in oklab, var(--kp-divider) 90%, transparent);
         border-radius: 0;
@@ -351,6 +369,12 @@
         font-size: 0.875rem;
         padding: 0.15rem 0.1rem;
         outline: none;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        overflow-x: hidden;
+        overflow-y: auto;
+        box-sizing: border-box;
       }
       .milkdown-editor .milkdown .kp-math-inline-live {
         display: block;
@@ -358,7 +382,7 @@
         padding: 0.35rem 0.15rem 0.1rem;
         border-top: 1px dashed color-mix(in oklab, var(--kp-divider) 80%, transparent);
         color: var(--kp-text-2);
-        overflow-x: auto;
+        overflow-x: auto; /* 渲染后的 KaTeX 仍可横向看全式 */
       }
       .milkdown-editor .milkdown .kp-math-inline-live.is-empty {
         display: none;
