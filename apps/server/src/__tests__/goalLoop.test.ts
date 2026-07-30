@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   parseJudgeOutput,
   parseGoalState,
+  parseLeadingGoalDirective,
   evaluateGoalAfterTurn,
   drainGoalContinueAfterSettle,
   buildGoalKickoffMessage,
@@ -14,6 +15,19 @@ import type { SessionGoalState } from "@knowpilot/shared";
 
 describe("goalLoop", () => {
   let mem: Map<string, SessionGoalState | null>;
+
+  it("parseLeadingGoalDirective：识别 /goal 与控制子命令", () => {
+    expect(parseLeadingGoalDirective("普通任务")).toEqual({
+      goalText: null,
+      message: "普通任务",
+    });
+    expect(parseLeadingGoalDirective("/goal 完成入库并报告")).toEqual({
+      goalText: "完成入库并报告",
+      message: "完成入库并报告",
+    });
+    expect(parseLeadingGoalDirective("/goal pause").goalText).toBeNull();
+    expect(parseLeadingGoalDirective("/goal status").goalText).toBeNull();
+  });
 
   beforeEach(() => {
     __resetGoalLoopHookForTests();
@@ -185,7 +199,28 @@ describe("goalLoop", () => {
     expect(mem.get("s1")?.mode).toBe("deep_research");
   });
 
-  it("setSessionGoal：子会话拒绝 Goal / 调研", async () => {
+  it("setSessionGoal：子会话允许 goal，拒绝 deep_research", async () => {
+    const goal = await setSessionGoal({
+      services: {
+        session: {
+          getByIdLite: vi.fn(async () => ({
+            id: "sub1",
+            kind: "subagent",
+            parentSessionId: "parent1",
+          })),
+          update: vi.fn(),
+        },
+      } as never,
+      config: createTestConfig("/tmp/goal", {
+        goal: { maxTurns: 20, deepResearchMaxTurns: 30, judgeModel: "auto" },
+      }),
+      sessionId: "sub1",
+      text: "完成调研并 report_back",
+      mode: "goal",
+    });
+    expect(goal.mode).toBe("goal");
+    expect(mem.get("sub1")?.text).toMatch(/report_back/);
+
     await expect(
       setSessionGoal({
         services: {
@@ -199,10 +234,10 @@ describe("goalLoop", () => {
         } as never,
         config: createTestConfig("/tmp/goal"),
         sessionId: "sub1",
-        text: "目标",
-        mode: "goal",
+        text: "深度调研",
+        mode: "deep_research",
       }),
-    ).rejects.toThrow(/子 Agent/);
+    ).rejects.toThrow(/深度调研/);
   });
 
   it("setSessionGoal：deep_research 已有用户消息时拒绝", async () => {

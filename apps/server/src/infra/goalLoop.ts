@@ -95,6 +95,25 @@ export function buildGoalContinueMessage(goal: SessionGoalState, reason: string)
     .join("\n");
 }
 
+/**
+ * 解析消息前缀 `/goal …`（父派子 / agent_send_message）。
+ * 控制子命令 pause|resume|clear|status 不在此设立 goal（留给显式工具）。
+ */
+export function parseLeadingGoalDirective(input: string): {
+  goalText: string | null;
+  message: string;
+} {
+  const trimmed = input.trim();
+  const m = trimmed.match(/^\/goal(?:\s+|$)([\s\S]*)$/i);
+  if (!m) return { goalText: null, message: input };
+  const rest = (m[1] ?? "").trim();
+  if (!rest) return { goalText: null, message: input };
+  if (/^(pause|resume|clear|status)\b/i.test(rest)) {
+    return { goalText: null, message: input };
+  }
+  return { goalText: rest, message: rest };
+}
+
 export function buildGoalKickoffMessage(goal: SessionGoalState): string {
   if (goal.mode === "deep_research") {
     return [
@@ -179,11 +198,16 @@ export async function setSessionGoal(args: {
 }): Promise<SessionGoalState> {
   const session = await args.services.session.getByIdLite(args.sessionId);
   if (!session) throw new Error("会话不存在");
-  if (session.kind === "subagent" || session.parentSessionId) {
-    throw new Error("子 Agent 会话不支持 Goal / 深度调研");
-  }
   if (session.kind === "heartbeat" || session.kind === "skill_review") {
     throw new Error("该类型会话不支持 Goal / 深度调研");
+  }
+  // 子会话允许 mode=goal（外环续跑走同一 SessionHub；父 waitForResult 会等到 goal 终态）。
+  // deep_research 仍禁止挂在子会话上（调研语义面向独立 chat，且子会话通常已有任务消息）。
+  if (
+    args.mode === "deep_research" &&
+    (session.kind === "subagent" || session.parentSessionId)
+  ) {
+    throw new Error("子 Agent 会话不支持深度调研；请用 mode=goal，或 session_spawn_goal 开独立会话");
   }
   if (args.mode === "deep_research") {
     // 深度调研必须在「尚未有用户消息」的新会话上启动

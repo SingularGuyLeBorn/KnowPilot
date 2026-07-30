@@ -47,18 +47,30 @@ async function main() {
   }
 
   const defaultModel = getAppConfig().llm.defaultModel || superA.model || "deepseek-chat";
-  const prompt =
-    `【Briefing 专用】摸清 llm-interview 花园与 bus 现状后，写出今日完整执行 prompt，然后必须调用：\n` +
-    `session_spawn_goal({\n` +
-    `  model: "${defaultModel}",\n` +
-    `  mode: "goal",\n` +
-    `  title: "知乎面经日搜 · " + 今日日期,\n` +
-    `  prompt: <你写的完整执行说明>\n` +
-    `})\n` +
-    `执行说明须要求：按 config/prompts/zhihu-llm-interview-collect.md，` +
-    `用 zhihu_openapi_search(scope=zhihu) 搜「大模型 面试」等关键词，最多深读 8 篇、整理最多 15 题写入花园 llm-interview；` +
-    `公式 $…$；缺 ZHIHU_ACCESS_SECRET 则停并告知；结束后更新花园首页并 write_file 更新 bus。\n` +
-    `本 briefing 会话禁止亲自搜题入库。`;
+  const prompt = [
+    "## Briefing 专用",
+    "",
+    "摸清 `llm-interview` 花园与 bus 现状后，写出今日完整执行 prompt，然后必须调用：",
+    "",
+    "```ts",
+    "session_spawn_goal({",
+    `  model: "${defaultModel}",`,
+    '  mode: "goal",',
+    '  title: "知乎面经日搜 · " + 今日日期,',
+    '  prompt: "<你写的完整执行说明>",',
+    "})",
+    "```",
+    "",
+    "### 执行说明须包含",
+    "",
+    "- 按 `config/prompts/zhihu-llm-interview-collect.md`",
+    "- `zhihu_openapi_search(scope=zhihu)` 搜「大模型 面试」等关键词",
+    "- 最多深读 8 篇、整理最多 15 题 → 花园 `llm-interview`",
+    "- 公式用 `$…$`；缺 `ZHIHU_ACCESS_SECRET` 则停并告知",
+    "- 结束后更新花园首页并 `write_file` 更新 bus",
+    "",
+    "> 本 briefing 会话禁止亲自搜题入库。",
+  ].join("\n");
 
   const row = await upsertCronJob(prisma, {
     agentId: superA.id,

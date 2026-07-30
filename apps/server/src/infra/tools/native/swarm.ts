@@ -484,6 +484,32 @@ async function prepareAgentRun(
       if (!mainSession) throw new Error("无法创建或找到目标 Agent 的主会话");
       sessionIdForCleanup = mainSession.id;
 
+      // 父派子：消息以 `/goal …` 开头则在子会话设立 standing goal，首条改为 kickoff
+      let runInput = input;
+      {
+        const { parseLeadingGoalDirective, setSessionGoal, buildGoalKickoffMessage } =
+          await import("../../goalLoop.js");
+        const parsed = parseLeadingGoalDirective(input);
+        if (parsed.goalText) {
+          try {
+            const goal = await setSessionGoal({
+              services: ctx.services,
+              config: ctx.config,
+              sessionId: mainSession.id,
+              text: parsed.goalText,
+              mode: "goal",
+            });
+            runInput = buildGoalKickoffMessage(goal);
+          } catch (err) {
+            console.warn(
+              "[prepareAgentRun] /goal 设立失败，按普通任务投递:",
+              err instanceof Error ? err.message : err,
+            );
+            runInput = parsed.message;
+          }
+        }
+      }
+
       // W-E busy 判定（写 ChatMessage 之前）。hub 缺失时跳过判定，idle 路径在起流前再报错（原语义）
       // SWARM_MODE=redis 时再看跨实例 running 宣称（本进程 hub 看不到他机内存 runs）
       const hub = getStreamHub();
@@ -507,7 +533,7 @@ async function prepareAgentRun(
           {
             fromAgentId: ctx.agentSnapshot?.id ?? "",
             toAgentId: targetAgentId,
-            content: input,
+            content: input, // 队列保留原文（含 /goal），drain 时再设立 goal
             messageType: opts?.messageType,
             source: ctx.agentSnapshot?.tier as any,
           },
@@ -566,7 +592,7 @@ async function prepareAgentRun(
         where: {
           sessionId: mainSession.id,
           role: "user",
-          content: input,
+          content: runInput,
         },
         select: { id: true, createdAt: true },
         orderBy: { createdAt: "desc" },
@@ -595,7 +621,7 @@ async function prepareAgentRun(
         await ctx.services.message.create({
           sessionId: mainSession.id,
           role: "user",
-          content: input,
+          content: runInput,
           source: messageSource,
         });
       }
@@ -613,7 +639,7 @@ async function prepareAgentRun(
       const runModel = (mainSession.model && String(mainSession.model).trim()) || agent.model;
       const messages: LlmMessage[] = [
         { role: "system", content: systemPrompt },
-        { role: "user", content: input },
+        { role: "user", content: runInput },
       ];
       const invokeTrpc = createTrpcInvoker({ services: ctx.services });
       const agentMeta = {

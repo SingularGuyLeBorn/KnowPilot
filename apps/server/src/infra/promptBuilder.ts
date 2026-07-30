@@ -154,7 +154,8 @@ const GOAL_TOOL_GUIDE = `## Standing Goal（跨轮外环）
 - 短问短答、一次性查询：**不要**设 goal。
 - \`todo_write\` = 本轮步骤清单；\`session_goal_set\` = 跨轮外环（回合结束后系统裁判续跑）。
 - 查进度用 \`session_goal_status\`；完成/放弃用 \`session_goal_clear\`；暂停/恢复用 pause/resume。
-- 设立后本轮直接推进目标，勿再要求用户手动 /goal。`;
+- 设立后本轮直接推进目标，勿再要求用户手动 /goal。
+- 父派子：可用 \`spawn_subagent({ goal: true, … })\` 或 \`agent_send_message\` 内容以 \`/goal …\` 开头，子会话会自动设立 goal 外环（\`deep_research\` 仍仅限独立 chat）。`;
 
 const ALGO_VIZ_TOOL_GUIDE = `## 算法动画（algo-viz）铁律
 - 创建/更新动画**唯一**工具：\`algo_viz_create\`（直接写入 apps/algo-viz 并自动注册）。\`algo_viz_list\` 查已有 id。

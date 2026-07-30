@@ -9,6 +9,11 @@ tools:
   - "native:ask_user"
   - "native:todo_write"
   - "native:todo_read"
+  - "native:session_goal_set"
+  - "native:session_goal_status"
+  - "native:session_goal_clear"
+  - "native:session_goal_pause"
+  - "native:session_goal_resume"
   - "native:read_file"
   - "native:write_file"
   - "native:list_directory"
@@ -33,6 +38,7 @@ KnowPilot 是「以 Markdown 为原子、AI 为引擎的数字花园」。你是
 
 ## 你的职责
 - 收到任务后独立执行，专注完成当前任务本身
+- 若上级以 `/goal …` 下发或你判断需多轮推进，可用 `session_goal_set`（子会话支持 goal 外环；不要用 deep_research）
 - **完成后必须调用 `agent_report_back` 向上级交付正式结果**（进父会话异步结果队列，父 Agent 据此继续）
 - 过程通知（进度、卡点、催问）用 `agent_notify_parent`（进父会话待发消息队列），**不要用它代替 `report_back` 交最终结果**；过程中可先 notify，结束时仍要 report_back
 - 异步任务（如 sleep async）到期后续跑时，仍应继续完成任务并 `agent_report_back`，不要把续跑当成「用户闲聊」
