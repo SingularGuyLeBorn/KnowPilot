@@ -14,7 +14,7 @@ import {
   type ComponentProps,
   type MutableRefObject,
 } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { stopAgentChat, copyToClipboard } from "@/lib/agentStream";
 import { getModelOption } from "@/lib/chatConfig";
 import { buildMessageGroups } from "@/lib/chatMessageUtils";
@@ -336,7 +336,7 @@ export function ChatSessionPane({
         regenerateUserMessageId: userMessageId,
         targetSessionId: sessionId,
         keepCurrentView: !isFocused,
-      }).catch(() => {});
+      }).catch(catchUnlessCancelled("components/chatSessionPane.tsx"));
     },
     [sessionId, isSessionRunOccupied, runStream, isFocused],
   );
@@ -348,7 +348,7 @@ export function ChatSessionPane({
         retryFromMessageId: messageId,
         targetSessionId: sessionId,
         keepCurrentView: !isFocused,
-      }).catch(() => {});
+      }).catch(catchUnlessCancelled("components/chatSessionPane.tsx"));
     },
     [sessionId, isSessionRunOccupied, runStream, isFocused],
   );
@@ -378,7 +378,7 @@ export function ChatSessionPane({
           if (result.success && result.data) {
             sessionMessagesStore.upsertMessage(sessionId, result.data as ChatMessage);
           } else {
-            hydrateFromServer().catch(() => {});
+            hydrateFromServer().catch(catchUnlessCancelled("components/chatSessionPane.tsx"));
           }
           setEditingMessageId(null);
           setEditDraft("");
@@ -405,7 +405,7 @@ export function ChatSessionPane({
     async (assistantMessageId: string, versionIndex: number) => {
       if (isSessionStreaming(sessionId)) return;
       await switchVersionMutateAsync({ messageId: assistantMessageId, versionIndex });
-      hydrateFromServer().catch(() => {});
+      hydrateFromServer().catch(catchUnlessCancelled("components/chatSessionPane.tsx"));
     },
     [sessionId, isSessionStreaming, switchVersionMutateAsync, hydrateFromServer],
   );

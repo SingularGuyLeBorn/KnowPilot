@@ -1244,7 +1244,7 @@ async function workspaceCreateTool(args: Record<string, unknown>, ctx: NativeToo
 
 async function workspaceArchiveTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const wsId = String(args.id || "");
-  const ws = await ctx.services.workspace.getById(wsId).catch(() => null);
+  const ws = await ctx.services.workspace.getById(wsId).catch((err) => { console.warn("[swarm.ts] best-effort failed:", err instanceof Error ? err.message : err); return null; });
   if (!ws) return { error: "Workspace 不存在" };
   if ((ws as { isSystem?: boolean }).isSystem) {
     return { error: "[SYSTEM_WORKSPACE_IMMUTABLE] Root / 系统 Workspace 不可归档。" };

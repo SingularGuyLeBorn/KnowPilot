@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSearchParams } from "next/navigation";
 import { Bot, Loader2, Sparkles, Plus } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { KpSelect } from "@/components/shared";
@@ -70,8 +70,8 @@ export function SubagentCreateDialog({
   const createAgentMut = trpc.agent.create.useMutation({
     onSuccess: (res) => {
       if (res.success && res.data?.id) {
-        utils.agent.list.refetch().catch(() => {});
-        utils.session.list.refetch().catch(() => {});
+        utils.agent.list.refetch().catch(catchUnlessCancelled("components/subagentCreateDialog.tsx"));
+        utils.session.list.refetch().catch(catchUnlessCancelled("components/subagentCreateDialog.tsx"));
         // 创建成功后继续用新 Agent 启动子 Agent 任务
         spawnWithAgent(res.data.id);
       }
@@ -101,11 +101,11 @@ export function SubagentCreateDialog({
           },
         );
       }
-      utils.session.list.refetch().catch(() => {});
-      utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 }).catch(() => {});
-      utils.agent.list.refetch().catch(() => {});
+      utils.session.list.refetch().catch(catchUnlessCancelled("components/subagentCreateDialog.tsx"));
+      utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 }).catch(catchUnlessCancelled("components/subagentCreateDialog.tsx"));
+      utils.agent.list.refetch().catch(catchUnlessCancelled("components/subagentCreateDialog.tsx"));
       // 强制立即刷新子 Agent 列表，确保新卡片在面板中实时出现
-      utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 }).catch(() => {});
+      utils.session.listChildren.refetch({ parentSessionId: variables.parentSessionId, pageSize: 20 }).catch(catchUnlessCancelled("components/subagentCreateDialog.tsx"));
       onCreated?.({
         subagentSessionId: data.subagentSessionId,
         status: data.status,

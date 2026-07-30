@@ -1684,12 +1684,28 @@ export async function startAsyncAgentTask(options: {
       : stats.runningGlobal + stats.hubInteractiveRunning >= stats.limits.maxGlobal;
   const initialStatus = willQueue ? "queued" : "running";
 
-  const parentAgent = await prisma.agent.findUnique({ where: { id: options.agent.id } }).catch(() => null);
+  const parentAgent = await prisma.agent
+    .findUnique({ where: { id: options.agent.id } })
+    .catch((err) => {
+      console.warn(
+        "[asyncJobManager] 读 parent Agent 失败:",
+        err instanceof Error ? err.message : err,
+      );
+      return null;
+    });
   // 行级 Workspace 槽配额（Q4）；Root 常用 0=不限，业务空间默认 2
   let workspaceSlotQuota: number | undefined;
   const parentWorkspaceId = parentAgent?.workspaceId ?? null;
   if (parentWorkspaceId) {
-    const ws = await prisma.workspace.findUnique({ where: { id: parentWorkspaceId } }).catch(() => null);
+    const ws = await prisma.workspace
+      .findUnique({ where: { id: parentWorkspaceId } })
+      .catch((err) => {
+        console.warn(
+          "[asyncJobManager] 读 Workspace 配额失败:",
+          err instanceof Error ? err.message : err,
+        );
+        return null;
+      });
     const quota = (ws as { asyncSlotQuota?: number } | null)?.asyncSlotQuota;
     if (typeof quota === "number") workspaceSlotQuota = quota;
   }
@@ -1941,7 +1957,7 @@ export async function startAsyncSleepTask(options: {
             output: {
               error: abortMsg.includes("用户中断") ? "定时器已取消" : abortMsg,
             } satisfies AsyncTaskOutput,
-          } as any).catch(() => undefined);
+          } as any).catch(catchUnlessAbort("[asyncJobManager] timer abort task update"));
           // 失败不 notify：右栏可见，对话区不灌错误气泡
           return;
         }
@@ -1996,7 +2012,7 @@ export async function appendAsyncJobLog(
   await services.task.update({
     id: jobId,
     output: { ...output, logs: trimmed },
-  } as any).catch(() => undefined);
+  } as any).catch(catchUnlessAbort("[asyncJobManager] appendAsyncJobLog update"));
 }
 
 /** 查询单个异步任务状态（W-B：只回状态，不回结果全文/日志——结果完成后经队列唯一通道投递） */

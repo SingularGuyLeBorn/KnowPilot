@@ -104,7 +104,7 @@ async function findMcpServer(services: ServiceContainer, name: string): Promise<
 function evictClient(serverName: string): void {
   const client = clientCache.get(serverName);
   if (client) {
-    client.close().catch(() => undefined);
+    client.close().catch((err) => { console.warn("[mcpClient.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
   }
   clientCache.delete(serverName);
 }

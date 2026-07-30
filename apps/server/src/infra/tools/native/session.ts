@@ -184,10 +184,10 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
       if (prepared?.jobId) {
         await ctx.services.task
           .update({ id: prepared.jobId, status: "failed", finishedAt: new Date(), output: { error: msg } } as any)
-          .catch(() => undefined);
+          .catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
       }
       if (prepared?.subagentSessionId) {
-        await ctx.services.session.update({ id: prepared.subagentSessionId, status: "failed" } as any).catch(() => undefined);
+        await ctx.services.session.update({ id: prepared.subagentSessionId, status: "failed" } as any).catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
       }
       throw err;
     }
@@ -287,7 +287,7 @@ async function spawnSubagentPrepare(
     if (!args.name && /^子\s*Agent\s+[a-z0-9]+$/i.test(subagentName)) {
       import("../../sessionAutoName.js")
         .then(({ autoNameAgent }) => autoNameAgent(subagentId, task))
-        .catch(() => undefined);
+        .catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
     }
   }
 
@@ -403,14 +403,14 @@ async function spawnSubagentPooledRun(
     if (jobId) {
       await ctx.services.task
         .update({ id: jobId, status: "failed", finishedAt: new Date(), output: { error } } as any)
-        .catch(() => undefined);
+        .catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
     }
     return { status: "failed", error, attach: { success: false, agentId: subagentId, subagentName, subagentSessionId, jobId, error } };
   };
 
   // 获槽起流：跟踪 Task queued → running（右栏从「agent 未启动」转「执行中」）
   if (jobId) {
-    await ctx.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any).catch(() => undefined);
+    await ctx.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any).catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
   }
 
   // Q2 不双算：子会话起流期间 claim 占用（池槽位已计）；release 前 waitFor 已解析，无窗口
@@ -488,7 +488,7 @@ async function spawnSubagentSyncWait(
           finishedAt: new Date(),
           output: { error: (sendResult as { error?: string }).error ?? "派活失败" },
         } as any)
-        .catch(() => undefined);
+        .catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
     }
     return { status: "failed", attach: { error: (sendResult as { error?: string }).error ?? "派活失败" } };
   }
@@ -517,7 +517,7 @@ async function spawnSubagentSyncWait(
         // 闭环交付语义（与 async_task_run 同步路径同口径）；cleanup 只回收 delivered=true 的行。
         await ctx.services.task
           .update({ id: jobId, delivered: true, deliveredAt: new Date() } as any)
-          .catch(() => undefined);
+          .catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
         break;
       }
     }
@@ -584,7 +584,7 @@ async function spawnSubagentSyncWait(
               deliveredAt: new Date(),
               output: { asyncResult: finalContent },
             } as any)
-            .catch(() => undefined);
+            .catch((err) => { console.warn("[session.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
         }
         break;
       }

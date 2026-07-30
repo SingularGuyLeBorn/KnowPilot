@@ -751,7 +751,7 @@ export class SessionStreamHub {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
-    this.flushPersistQueue().catch(() => undefined);
+    this.flushPersistQueue().catch((err) => { console.warn("[sessionStreamHub.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
   }
 
   /**

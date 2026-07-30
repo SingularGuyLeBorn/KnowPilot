@@ -95,7 +95,7 @@ export async function resolveAgentFsPath(
   const wsId = ctx.agentSnapshot?.workspaceId;
   let wsRelPath = "";
   if (wsId && ctx.prisma) {
-    const ws = await ctx.prisma.workspace.findUnique({ where: { id: wsId } }).catch(() => null);
+    const ws = await ctx.prisma.workspace.findUnique({ where: { id: wsId } }).catch((err) => { console.warn("[fs.ts] best-effort failed:", err instanceof Error ? err.message : err); return null; });
     wsRelPath = (ws as { path?: string } | null)?.path?.trim() || "";
   }
   if (!wsRelPath) {
