@@ -14,7 +14,7 @@ import { createContextInner } from "../trpc/context.js";
 import { enqueueSuperiorQueueDrain, runStartupRecovery } from "../infra/asyncJobManager.js";
 import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
 import { setStreamHub, SessionStreamHub } from "../infra/sessionStreamHub.js";
-import { SESSION_QUEUE_CLAIM_STALE_MS } from "../services.js";
+import { SESSION_QUEUE_CLAIM_STALE_MS } from "../infra/entityServices/sessionQueueItemService.js";
 
 type Ctx = Awaited<ReturnType<typeof createContextInner>>;
 
