@@ -20,12 +20,9 @@ import {
   SessionService,
   MessageService,
   SessionQueueItemService,
-  FileService,
-  GitService,
   TaskService,
   WorkspaceService,
   ApprovalService,
-  InfoSourceService,
   InboxService,
 } from "../services.js";
 import { CredentialService } from "./entityServices/credentialService.js";
@@ -34,6 +31,9 @@ import { ToolService } from "./entityServices/toolService.js";
 import { TriggerService } from "./entityServices/triggerService.js";
 import { RunService } from "./entityServices/runService.js";
 import { PromptService } from "./entityServices/promptService.js";
+import { FileService } from "./entityServices/fileService.js";
+import { GitService } from "./entityServices/gitService.js";
+import { InfoSourceService } from "./entityServices/infoSourceService.js";
 
 export class ServiceContainer {
   readonly prisma: PrismaClient;
