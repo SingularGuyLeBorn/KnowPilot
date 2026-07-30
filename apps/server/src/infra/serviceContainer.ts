@@ -14,12 +14,12 @@ import {
   PostService,
   AgentService,
   SessionService,
-  MessageService,
 } from "../services.js";
 import { GardenService } from "./entityServices/gardenService.js";
 import { ApprovalService } from "./entityServices/approvalService.js";
 import { InboxService } from "./entityServices/inboxService.js";
 import { SessionQueueItemService } from "./entityServices/sessionQueueItemService.js";
+import { MessageService } from "./entityServices/messageService.js";
 import { CredentialService } from "./entityServices/credentialService.js";
 import { LogService } from "./entityServices/logService.js";
 import { ToolService } from "./entityServices/toolService.js";

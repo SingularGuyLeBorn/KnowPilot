@@ -44,6 +44,7 @@ const entries: Array<{ name: string; specifier: string; key: string; kind?: "fun
   { name: "approvalService", specifier: "../infra/entityServices/approvalService.js", key: "ApprovalService" },
   { name: "inboxService", specifier: "../infra/entityServices/inboxService.js", key: "InboxService" },
   { name: "sessionQueueItemService", specifier: "../infra/entityServices/sessionQueueItemService.js", key: "SessionQueueItemService" },
+  { name: "messageService", specifier: "../infra/entityServices/messageService.js", key: "MessageService" },
   { name: "gardenRouter", specifier: "../infra/trpcRouters/gardenRouter.js", key: "gardenRouter", kind: "object" },
   { name: "logRouter", specifier: "../infra/trpcRouters/logRouter.js", key: "logRouter", kind: "object" },
   { name: "toolRouter", specifier: "../infra/trpcRouters/toolRouter.js", key: "toolRouter", kind: "object" },
@@ -70,6 +71,12 @@ const entries: Array<{ name: string; specifier: string; key: string; kind?: "fun
   { name: "askUserRouter", specifier: "../infra/trpcRouters/askUserRouter.js", key: "askUserRouter", kind: "object" },
   { name: "runRouter", specifier: "../infra/trpcRouters/runRouter.js", key: "runRouter", kind: "object" },
   { name: "credentialRouter", specifier: "../infra/trpcRouters/credentialRouter.js", key: "credentialRouter", kind: "object" },
+  { name: "postRouter", specifier: "../infra/trpcRouters/postRouter.js", key: "postRouter", kind: "object" },
+  { name: "agentRouter", specifier: "../infra/trpcRouters/agentRouter.js", key: "agentRouter", kind: "object" },
+  { name: "sessionRouter", specifier: "../infra/trpcRouters/sessionRouter.js", key: "sessionRouter", kind: "object" },
+  { name: "aiRouter", specifier: "../infra/trpcRouters/aiRouter.js", key: "aiRouter", kind: "object" },
+  { name: "llmRouter", specifier: "../infra/trpcRouters/llmRouter.js", key: "llmRouter", kind: "object" },
+  { name: "deadLetterRouter", specifier: "../infra/trpcRouters/deadLetterRouter.js", key: "deadLetterRouter", kind: "object" },
 ];
 
 describe("W4 import 顺序冒烟（循环依赖防线）", () => {
