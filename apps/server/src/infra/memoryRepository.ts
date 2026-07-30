@@ -21,7 +21,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { ServiceContainer } from "./serviceContainer.js";
-import type { MemoryEntity, MemoryService } from "../services.js";
+import type { MemoryEntity, MemoryService } from "./entityServices/memoryService.js";
 import { deleteFtsRow, searchFts } from "./ftsIndex.js";
 import {
   MEMORY_ARCHIVE_THRESHOLD,
