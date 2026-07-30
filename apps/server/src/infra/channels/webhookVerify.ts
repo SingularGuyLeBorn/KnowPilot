@@ -4,8 +4,10 @@
  */
 
 import {
+  createHash,
   createPrivateKey,
   createPublicKey,
+  createDecipheriv,
   sign as cryptoSign,
   verify as cryptoVerify,
   type KeyObject,
@@ -153,4 +155,90 @@ export function gateFeishuVerificationToken(opts: {
     return { ok: false, error: "verification token 不匹配" };
   }
   return { ok: true };
+}
+
+/**
+ * 飞书 Encrypt Key 解密（官方：SHA256(key) 作 AES-256-CBC key，IV=密文前 16 字节）。
+ * 官方样例：key=test key, encrypt=P37w+… → "hello world"
+ */
+export function decryptFeishuEncryptPayload(encryptKey: string, encryptBase64: string): string {
+  const key = createHash("sha256").update(encryptKey, "utf8").digest();
+  const buf = Buffer.from(encryptBase64, "base64");
+  if (buf.length < 17) throw new Error("飞书 encrypt 密文过短");
+  const iv = buf.subarray(0, 16);
+  const data = buf.subarray(16);
+  const decipher = createDecipheriv("aes-256-cbc", key, iv);
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+}
+
+/** 飞书签名：sha256(timestamp + nonce + encrypt_key + rawBody) 对 X-Lark-Signature */
+export function verifyFeishuRequestSignature(opts: {
+  encryptKey: string;
+  timestamp: string | undefined;
+  nonce: string | undefined;
+  rawBody: string | Buffer;
+  signature: string | undefined;
+}): boolean {
+  const { encryptKey, timestamp, nonce, rawBody, signature } = opts;
+  if (!encryptKey.trim() || !timestamp || !nonce || !signature) return false;
+  const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : String(rawBody);
+  const expect = createHash("sha256")
+    .update(timestamp + nonce + encryptKey + bodyStr, "utf8")
+    .digest("hex");
+  return expect === signature.toLowerCase() || expect === signature;
+}
+
+/**
+ * 飞书 webhook 入站门禁：可选 Encrypt Key 验签+解密，再交业务 ingest。
+ * - 配了 Encrypt Key：必须验签；body.encrypt 则解密
+ * - 未配 Encrypt Key 但收到 encrypt：硬拒（防半配置裸奔）
+ */
+export function prepareFeishuWebhookBody(opts: {
+  encryptKey: string;
+  body: unknown;
+  rawBody: string | Buffer | undefined;
+  timestamp: string | undefined;
+  nonce: string | undefined;
+  signature: string | undefined;
+}): { ok: true; body: unknown } | { ok: false; status: number; error: string } {
+  const encryptKey = opts.encryptKey.trim();
+  const b = (opts.body ?? {}) as Record<string, unknown>;
+  const hasEncryptField = typeof b.encrypt === "string" && b.encrypt.length > 0;
+
+  if (encryptKey) {
+    if (opts.rawBody === undefined || opts.rawBody === null || opts.rawBody === "") {
+      return { ok: false, status: 401, error: "缺 rawBody，无法校验飞书签名" };
+    }
+    if (
+      !verifyFeishuRequestSignature({
+        encryptKey,
+        timestamp: opts.timestamp,
+        nonce: opts.nonce,
+        rawBody: opts.rawBody,
+        signature: opts.signature,
+      })
+    ) {
+      return { ok: false, status: 401, error: "飞书 X-Lark-Signature 验签失败" };
+    }
+  } else if (hasEncryptField) {
+    return {
+      ok: false,
+      status: 503,
+      error: "收到加密事件但未配置 FEISHU_ENCRYPT_KEY，拒绝处理",
+    };
+  }
+
+  if (!hasEncryptField) return { ok: true, body: opts.body };
+
+  try {
+    const plain = decryptFeishuEncryptPayload(encryptKey, String(b.encrypt));
+    const parsed = JSON.parse(plain) as unknown;
+    return { ok: true, body: parsed };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 400,
+      error: `飞书 encrypt 解密失败: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 }

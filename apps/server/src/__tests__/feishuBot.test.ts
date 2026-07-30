@@ -24,6 +24,7 @@ describe("feishuBot ingest", () => {
       appId: "a",
       appSecret: "s",
       verificationToken: "tok",
+      encryptKey: "",
       enabled: true,
       allowedOpenIds: [],
     });
@@ -41,6 +42,7 @@ describe("feishuBot ingest", () => {
       appId: "a",
       appSecret: "s",
       verificationToken: "",
+      encryptKey: "",
       enabled: true,
       allowedOpenIds: [],
     });
@@ -63,6 +65,7 @@ describe("feishuBot ingest", () => {
       appId: "a",
       appSecret: "s",
       verificationToken: "tok",
+      encryptKey: "",
       enabled: true,
       allowedOpenIds: [],
     });
@@ -96,6 +99,7 @@ describe("feishuBot ingest", () => {
       appId: "a",
       appSecret: "s",
       verificationToken: "tok",
+      encryptKey: "",
       enabled: true,
       allowedOpenIds: [],
     });

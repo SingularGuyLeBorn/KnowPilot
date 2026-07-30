@@ -27,6 +27,8 @@ export type FeishuBotConfig = {
   appId: string;
   appSecret: string;
   verificationToken: string;
+  /** 飞书加密策略 Encrypt Key；配置后 webhook 须验签+解密 */
+  encryptKey: string;
   enabled: boolean;
   allowedOpenIds: string[];
 };
@@ -46,6 +48,12 @@ export function loadFeishuBotConfigFromEnv(): FeishuBotConfig {
     process.env.FEISHU_VERIFICATION_TOKEN ||
     ""
   ).trim();
+  const encryptKey = (
+    process.env.FEISHU_ENCRYPT_KEY ||
+    process.env.FEISHU_BOT_ENCRYPT_KEY ||
+    process.env.LARK_ENCRYPT_KEY ||
+    ""
+  ).trim();
   const allowed = (process.env.FEISHU_BOT_ALLOWED_OPENIDS || "")
     .split(",")
     .map((s) => s.trim())
@@ -55,6 +63,7 @@ export function loadFeishuBotConfigFromEnv(): FeishuBotConfig {
     appId,
     appSecret,
     verificationToken,
+    encryptKey,
     enabled: Boolean(appId && appSecret) && !yamlOff,
     allowedOpenIds: allowed,
   };

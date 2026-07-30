@@ -241,7 +241,10 @@ app.post("/api/webhooks/qq", async (req, res) => {
 app.post("/api/webhooks/feishu", async (req, res) => {
   try {
     const { getChannelAdapter } = await import("./infra/messageGateway.js");
-    const { getFeishuAdapterIngest } = await import("./infra/channels/feishuBot.js");
+    const { getFeishuAdapterIngest, loadFeishuBotConfigFromEnv } = await import(
+      "./infra/channels/feishuBot.js"
+    );
+    const { prepareFeishuWebhookBody } = await import("./infra/channels/webhookVerify.js");
     const adapter = getChannelAdapter("feishu");
     if (!adapter?.enabled) {
       res.status(503).json({
@@ -249,12 +252,25 @@ app.post("/api/webhooks/feishu", async (req, res) => {
       });
       return;
     }
+    const feishuCfg = loadFeishuBotConfigFromEnv();
+    const prepared = prepareFeishuWebhookBody({
+      encryptKey: feishuCfg.encryptKey,
+      body: req.body,
+      rawBody: (req as express.Request & { rawBody?: Buffer }).rawBody,
+      timestamp: String(req.headers["x-lark-request-timestamp"] ?? ""),
+      nonce: String(req.headers["x-lark-request-nonce"] ?? ""),
+      signature: String(req.headers["x-lark-signature"] ?? ""),
+    });
+    if (!prepared.ok) {
+      res.status(prepared.status).json({ error: prepared.error });
+      return;
+    }
     const ingest = getFeishuAdapterIngest(adapter);
     if (!ingest) {
       res.status(500).json({ error: "飞书 adapter 无 ingest" });
       return;
     }
-    const result = ingest(req.body);
+    const result = ingest(prepared.body);
     // URL 验证必须同步返回 challenge
     if (result.challenge) {
       res.status(200).json({ challenge: result.challenge });

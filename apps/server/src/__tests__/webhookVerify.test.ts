@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { sign } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
+  decryptFeishuEncryptPayload,
   gateFeishuVerificationToken,
   gateQqWebhook,
+  prepareFeishuWebhookBody,
   qqEd25519PrivateKeyFromSecret,
   qqEd25519SeedFromSecret,
   signQqUrlValidation,
+  verifyFeishuRequestSignature,
   verifyQqEventSignature,
 } from "../infra/channels/webhookVerify.js";
 
@@ -97,5 +101,70 @@ describe("webhookVerify 飞书 token", () => {
     expect(
       gateFeishuVerificationToken({ configuredToken: "tok", incomingToken: "bad" }).ok,
     ).toBe(false);
+  });
+});
+
+describe("webhookVerify 飞书 Encrypt Key", () => {
+  it("官方样例 decrypt → hello world", () => {
+    expect(
+      decryptFeishuEncryptPayload("test key", "P37w+VZImNgPEO1RBhJ6RtKl7n6zymIbEG1pReEzghk="),
+    ).toBe("hello world");
+  });
+
+  it("配了 Encrypt Key 时验签失败拒", () => {
+    const body = { encrypt: "P37w+VZImNgPEO1RBhJ6RtKl7n6zymIbEG1pReEzghk=" };
+    const raw = JSON.stringify(body);
+    const r = prepareFeishuWebhookBody({
+      encryptKey: "test key",
+      body,
+      rawBody: raw,
+      timestamp: "1",
+      nonce: "n",
+      signature: "deadbeef",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(401);
+  });
+
+  it("验签通过后解密 JSON body", () => {
+    // 用官方样例明文 hello world（非 JSON）验证 decrypt；JSON 事件用自签名明文路径
+    const plainObj = { type: "url_verification", challenge: "c-ok", token: "tok" };
+    // 自签：无 encrypt 字段时只验签，body 原样返回
+    const raw = JSON.stringify(plainObj);
+    const ts = "1725442341";
+    const nonce = "nonce1";
+    const key = "test key";
+    const sig = createHash("sha256").update(ts + nonce + key + raw, "utf8").digest("hex");
+    expect(
+      verifyFeishuRequestSignature({
+        encryptKey: key,
+        timestamp: ts,
+        nonce,
+        rawBody: raw,
+        signature: sig,
+      }),
+    ).toBe(true);
+    const r = prepareFeishuWebhookBody({
+      encryptKey: key,
+      body: plainObj,
+      rawBody: raw,
+      timestamp: ts,
+      nonce,
+      signature: sig,
+    });
+    expect(r).toEqual({ ok: true, body: plainObj });
+  });
+
+  it("未配 Encrypt Key 但收到 encrypt 硬拒", () => {
+    const r = prepareFeishuWebhookBody({
+      encryptKey: "",
+      body: { encrypt: "P37w+VZImNgPEO1RBhJ6RtKl7n6zymIbEG1pReEzghk=" },
+      rawBody: "{}",
+      timestamp: "1",
+      nonce: "n",
+      signature: "x",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(503);
   });
 });
