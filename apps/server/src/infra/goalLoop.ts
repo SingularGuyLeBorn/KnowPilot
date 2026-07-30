@@ -299,7 +299,7 @@ export async function evaluateGoalAfterTurn(args: {
     return { goal, action: "skip" };
   }
 
-  // P2-02：外环与内环共享全局日预算——已超限则 exhausted，禁止再烧外环轮次
+  // P2-02：外环与内环共享全局日预算（含 reactLoop 在途 reservedUsd）——超限则 exhausted
   try {
     const { assertLlmBudget } = await import("./llmBudget.js");
     assertLlmBudget(args.config);

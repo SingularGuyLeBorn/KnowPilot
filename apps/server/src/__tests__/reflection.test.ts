@@ -172,6 +172,25 @@ describe("W7 反思装饰器 withReflection", () => {
     expect(result.content).toContain("修订版 v2");
   });
 
+  it("P3-02：maxToolRounds=1 时反思重修仍可再跑一轮（不占工具轮预算）", async () => {
+    const main = scriptedTransport([{ content: "草稿" }, { content: "修订终稿" }]);
+    const critic = scriptedTransport([
+      { content: '{"passed": false, "issues": ["缺表格"]}' },
+      { content: '{"passed": true, "issues": []}' },
+    ]);
+    const input = loopInput(main.transport, { critic: critic.transport, maxRounds: 1 });
+    input.config = {
+      ...input.config,
+      llm: { ...input.config.llm, maxToolRounds: 1 },
+    };
+
+    const result = await runReactLoop(input);
+
+    expect(main.calls).toHaveLength(2);
+    expect(result.content).toBe("修订终稿");
+    expect(result.content).not.toContain(REFLECTION_UNPASSED_MARK);
+  });
+
   it("critic 抛错 → 静默跳过，不影响主链路", async () => {
     const main = scriptedTransport([{ content: "最终答案" }]);
     const critic = scriptedTransport([{ throwError: "critic boom" }]);

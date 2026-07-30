@@ -723,7 +723,9 @@ async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult
 
     machine.transition("llm");
 
-    for (let round = 0; round < snapshot.maxRounds; round++) {
+    // P3-02：反思重修不占用工具轮预算——每回注一次加 1 个 bonus 迭代上限
+    let reflectionBonusRounds = 0;
+    for (let round = 0; round < snapshot.maxRounds + reflectionBonusRounds; round++) {
       roundsUsed = round + 1;
       input.hooks?.onRoundStart?.(roundsUsed);
 
@@ -818,6 +820,7 @@ async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult
           input.hooks?.onProgress?.(
             `反思复核未通过，已回注重修（第 ${reflectionRoundsUsed}/${reflection.maxRounds} 轮）`,
           );
+          reflectionBonusRounds++;
           continue;
         }
 

@@ -89,23 +89,36 @@ function parseCriticOutput(raw: string): Omit<ReflectionVerdict, "maxRounds"> | 
   const text = raw.replace(/```(?:json)?/gi, "").trim();
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
+  if (start < 0 || end <= start) {
+    console.warn("[Reflection] critic 输出无 JSON 对象，跳过反思");
+    return null;
+  }
   try {
     const parsed = JSON.parse(text.slice(start, end + 1)) as { passed?: unknown; issues?: unknown };
-    if (typeof parsed.passed !== "boolean") return null;
+    if (typeof parsed.passed !== "boolean") {
+      console.warn("[Reflection] critic JSON 缺 passed:boolean，跳过反思");
+      return null;
+    }
     if (parsed.passed) return { passed: true, issues: [], feedback: "" };
     const issues = Array.isArray(parsed.issues)
       ? parsed.issues.filter((i): i is string => typeof i === "string" && i.trim().length > 0)
       : [];
     // 不通过但给不出具体问题：无可执行的回注意见，视为 critic 输出异常，跳过反思
-    if (issues.length === 0) return null;
+    if (issues.length === 0) {
+      console.warn("[Reflection] critic 判定不通过但 issues 为空，跳过反思");
+      return null;
+    }
     return { passed: false, issues, feedback: buildFeedback(issues) };
-  } catch {
+  } catch (err) {
+    console.warn(
+      "[Reflection] critic JSON 解析失败，跳过反思:",
+      err instanceof Error ? err.message : err,
+    );
     return null;
   }
 }
 
-/** 跑一票 critic；任何失败（调用抛错 / 解析失败）都返回 null——静默跳过，绝不影响主链路 */
+/** 跑一票 critic；任何失败（调用抛错 / 解析失败）都返回 null——跳过反思，绝不阻断主链路 */
 async function runCritic(
   critic: LlmTransport,
   messages: LlmMessage[],
