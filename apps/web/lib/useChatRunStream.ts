@@ -15,7 +15,7 @@
 import { useCallback, useRef, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import type { useRouter, useSearchParams } from "next/navigation";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { SessionBusyQueuedError, streamAgentChat } from "@/lib/agentStream";
 import { buildStreamConfig } from "@/lib/chatConfig";
 import { formatToolResultHint, pruneEmptyThinkingSteps } from "@/lib/chatMessageUtils";
@@ -31,6 +31,8 @@ import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions, streamLifecycleStore } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 
+const logQueryCatch = catchUnlessCancelled("[useChatRunStream] query");
+
 export function saveChatStoresToStorage() {
   try {
     const life = streamLifecycleStore.serialize();
@@ -39,8 +41,8 @@ export function saveChatStoresToStorage() {
     const compose = sessionComposeStore.serialize();
     delete compose[NEW_STREAM_KEY];
     sessionStorage.setItem(COMPOSE_STORAGE_KEY, JSON.stringify(compose));
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn("[useChatRunStream] saveChatStoresToStorage failed:", err);
   }
 }
 
@@ -314,14 +316,14 @@ export function useChatRunStream({
                         // 本地项已被 drain：删孤儿行，避免「待发」幽灵
                         await utils.client.agent.deleteSessionQueueItem
                           .mutate({ id: dbId })
-                          .catch(() => {});
+                          .catch(logQueryCatch);
                         return;
                       }
                       sessionComposeActions.patchUserQueue(sid, (q) =>
                         q.map((i) => (i.id === localId ? { ...i, dbId } : i)),
                       );
                     })
-                    .catch(() => {});
+                    .catch(logQueryCatch);
                 }
               }
               // 视图不变量：流回调只在「用户仍在新对话页」时 adopt 新 session，
@@ -338,7 +340,7 @@ export function useChatRunStream({
               }
               // session 一建立就刷新侧边栏列表，不要等 onDone——用户发首条消息后
               // 新会话应立即可见，而非等第一条回复结束才出现。
-              utils.session.list.invalidate().catch(() => {});
+              utils.session.list.invalidate().catch(logQueryCatch);
               scheduleStreamSave(true);
             },
             onRoundStart: (round) => {
@@ -528,10 +530,10 @@ export function useChatRunStream({
                       );
                     }
                   }
-                  utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => {});
-                  utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
+                  utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(logQueryCatch);
+                  utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(logQueryCatch);
                   // 子会话树：与 SubagentPanel listChildren(pageSize=100) 对齐
-                  utils.session.listChildren.invalidate().then(() => utils.session.listChildren.refetch()).catch(() => {});
+                  utils.session.listChildren.invalidate().then(() => utils.session.listChildren.refetch()).catch(logQueryCatch);
                 }
                 if (r.jobId && (r.status === "running" || r.status === "queued")) {
                   const jobId = r.jobId;
@@ -582,19 +584,19 @@ export function useChatRunStream({
                 name === "agent_delete" || name === "agent_delete_sub" ||
                 name === "workspace_create" || name === "workspace_archive"
               ) {
-                utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(() => {});
-                utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
+                utils.agent.list.invalidate().then(() => utils.agent.list.refetch()).catch(logQueryCatch);
+                utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(logQueryCatch);
               }
               // 知识库写工具：立刻刷花园/文章列表，避免用户手动刷新
               if (
                 name === "garden_create" || name === "garden_update" || name === "garden_delete" ||
                 name === "post_create" || name === "post_update" || name === "post_delete"
               ) {
-                utils.garden.list.invalidate().catch(() => {});
-                utils.post.list.invalidate().catch(() => {});
-                utils.post.tree.invalidate().catch(() => {});
-                utils.post.categories.invalidate().catch(() => {});
-                utils.post.tags.invalidate().catch(() => {});
+                utils.garden.list.invalidate().catch(logQueryCatch);
+                utils.post.list.invalidate().catch(logQueryCatch);
+                utils.post.tree.invalidate().catch(logQueryCatch);
+                utils.post.categories.invalidate().catch(logQueryCatch);
+                utils.post.tags.invalidate().catch(logQueryCatch);
                 if (
                   (name === "post_create" || name === "post_update") &&
                   result &&
@@ -604,7 +606,7 @@ export function useChatRunStream({
                   const slug = r.slug ?? r.data?.slug;
                   const garden = r.garden ?? r.data?.garden ?? "posts";
                   if (slug) {
-                    utils.post.getBySlug.invalidate({ slug, garden }).catch(() => {});
+                    utils.post.getBySlug.invalidate({ slug, garden }).catch(logQueryCatch);
                   }
                 }
               }
@@ -616,14 +618,14 @@ export function useChatRunStream({
                 name === "session_goal_resume"
               ) {
                 if (originSid && originSid !== NEW_STREAM_KEY) {
-                  utils.session.getGoal.invalidate({ sessionId: originSid }).catch(() => {});
+                  utils.session.getGoal.invalidate({ sessionId: originSid }).catch(logQueryCatch);
                 }
               }
               if (name === "session_spawn_goal") {
-                utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
+                utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(logQueryCatch);
                 const r = result as { newSessionId?: string } | null;
                 if (r?.newSessionId) {
-                  utils.session.getGoal.invalidate({ sessionId: r.newSessionId }).catch(() => {});
+                  utils.session.getGoal.invalidate({ sessionId: r.newSessionId }).catch(logQueryCatch);
                 }
               }
             },
@@ -655,7 +657,7 @@ export function useChatRunStream({
                 );
               }
               if (data.sessionId) {
-                utils.session.getById.invalidate({ id: data.sessionId }).catch(() => {});
+                utils.session.getById.invalidate({ id: data.sessionId }).catch(logQueryCatch);
               }
               const content = data.content ?? "";
               const assistantMessageId = data.assistantMessageId ?? null;
@@ -680,7 +682,7 @@ export function useChatRunStream({
               if (opts.optimisticUser) {
                 sessionComposeActions.removeOptimisticUserBubble(originSid, opts.optimisticUser.id);
               }
-              utils.session.list.invalidate().catch(() => {});
+              utils.session.list.invalidate().catch(logQueryCatch);
             },
             onError: (message, sid, suggestion) => {
               if (originSid === NEW_STREAM_KEY && sid) {
@@ -705,7 +707,7 @@ export function useChatRunStream({
                 streamLifecycleActions.abortStream(originSid, {
                   partialAssistantMessageId: null,
                 });
-                hydrateSessionMessagesFallback(originSid).catch(() => {});
+                hydrateSessionMessagesFallback(originSid).catch(logQueryCatch);
                 return;
               }
               // 用户软暂停 / 中断：半截进 MessageStore 再拆 live，禁止 commit 后气泡变空

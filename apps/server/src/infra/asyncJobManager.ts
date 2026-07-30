@@ -42,6 +42,15 @@ import {
 import { getTool } from "./tools/registry.js";
 import { isAbortLikeError, messageFromAbortSignal } from "./abortReason.js";
 
+function warnUnlessAbort(context: string, err: unknown): void {
+  if (isAbortLikeError(err)) return;
+  console.warn(context, err);
+}
+
+function catchUnlessAbort(context: string): (err: unknown) => void {
+  return (err) => warnUnlessAbort(context, err);
+}
+
 export interface AsyncTaskLogEntry {
   timestamp: number;
   level: "info" | "progress" | "error";
@@ -814,7 +823,7 @@ export async function runStartupRecovery(options: {
       status: "paused",
       title: row.title ?? undefined,
       agentId: row.agentId,
-    }).catch(() => {});
+    }).catch(catchUnlessAbort("[asyncJobManager] notifySubagentSessionUpdate (zombie pause)"));
   }
   // 动作 2：Task 恢复（服务重启一律标 failed，不自动续跑）
   const { failed: staleTasksFailed } = await recoverStaleAsyncJobs(config, services);
@@ -902,7 +911,7 @@ export function wireAsyncJobPush(config: AppConfig): void {
       } catch (err) {
         console.warn(`[asyncJobManager] async_job_update 推送失败:`, err);
       }
-    })().catch(() => {});
+    })().catch(catchUnlessAbort("[asyncJobManager] async_job_update push outer"));
   });
 }
 
@@ -989,10 +998,10 @@ export async function recoverStaleAsyncJobs(
             status: "failed",
             title: subRow.title ?? undefined,
             agentId: subRow.agentId,
-          }).catch(() => {});
+          }).catch(catchUnlessAbort("[asyncJobManager] notifySubagentSessionUpdate (stale task)"));
         }
-      } catch {
-        // subagent session 可能已删除，忽略
+      } catch (err) {
+        console.warn("[asyncJob] stale task 清理时读子会话失败（可能已删）", err);
       }
     }
     failed++;
@@ -1744,7 +1753,7 @@ export async function startAsyncAgentTask(options: {
           status: initialStatus,
           title: taskLabel.slice(0, 60),
           agentId: actualSubAgentId,
-        }).catch(() => {});
+        }).catch(catchUnlessAbort("[asyncJobManager] notifySubagentSessionUpdate (spawn)"));
       }
     } catch (err) {
       console.warn(`[asyncJobManager] 创建 subagent session 失败，降级为无可视化载体继续执行:`, err);
@@ -1854,7 +1863,7 @@ export async function startAsyncAgentTask(options: {
         finishedAt: new Date(),
         output: { error: err instanceof Error ? err.message : String(err) } satisfies AsyncTaskOutput,
       } as any)
-      .catch(() => undefined);
+      .catch(catchUnlessAbort("[asyncJobManager] task cleanup update (pool reject)"));
     throw err;
   }
 
@@ -1949,7 +1958,7 @@ export async function startAsyncSleepTask(options: {
         finishedAt: new Date(),
         output: { error: err instanceof Error ? err.message : String(err) } satisfies AsyncTaskOutput,
       } as any)
-      .catch(() => undefined);
+      .catch(catchUnlessAbort("[asyncJobManager] task cleanup update (pool reject)"));
     throw err;
   }
   return {
@@ -2153,7 +2162,7 @@ export async function retryAsyncJob(
         finishedAt: new Date(),
         output: { error: err instanceof Error ? err.message : String(err) } satisfies AsyncTaskOutput,
       } as any)
-      .catch(() => undefined);
+      .catch(catchUnlessAbort("[asyncJobManager] task cleanup update (pool reject)"));
     throw err;
   }
 

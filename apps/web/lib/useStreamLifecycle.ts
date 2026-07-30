@@ -507,8 +507,8 @@ class StreamLifecycleStore {
     for (const listener of this.commitListeners) {
       try {
         listener(sessionId);
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.warn("[useStreamLifecycle] commit listener failed:", err);
       }
     }
   };
@@ -518,8 +518,8 @@ class StreamLifecycleStore {
       if (filter == null || changedSessionIds.includes(filter)) {
         try {
           listener();
-        } catch {
-          /* ignore */
+        } catch (err) {
+          console.warn("[useStreamLifecycle] store listener failed:", err);
         }
       }
     }

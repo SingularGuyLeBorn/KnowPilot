@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { useSessionHoverPreview } from "@/lib/hooks";
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 
@@ -41,7 +41,7 @@ export function useChatHoverMonitor(opts: { effectiveSessionId: string | null })
       if (!id || id === effectiveSessionId) return;
       sessionMessagesStore.prefetchSessionMessages(id, (opts) =>
         utils.message.listForChat.fetch(opts),
-      ).catch(() => {});
+      ).catch(catchUnlessCancelled("[useChatHoverMonitor] prefetch"));
       if (!sessionHoverPreviewEnabled) return;
       if (hoverMonitorTimeoutRef.current) clearTimeout(hoverMonitorTimeoutRef.current);
       setHoverMonitorSessionId(id);

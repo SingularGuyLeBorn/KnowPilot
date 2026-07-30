@@ -11,7 +11,9 @@
  */
 
 import { useCallback, useRef, type RefObject } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
+
+const logQueryCatch = catchUnlessCancelled("[useChatEnqueue] query");
 import { type ChatQueueItem, createUserQueueItem } from "@/lib/chatQueueTypes";
 import { type SelectedSkill } from "@/components/chatInput";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
@@ -129,7 +131,7 @@ export function useChatEnqueue({
             } catch (err) {
               showToast(err instanceof Error ? err.message : "Goal 操作失败");
             }
-          })().catch(() => {});
+          })().catch(logQueryCatch);
           return;
         }
       }
@@ -210,7 +212,7 @@ export function useChatEnqueue({
               .userQueue.some((i) => i.id === localItem.id);
             if (!localStillQueued) {
               // 本地项已被 drain 发出：本行是孤儿，删掉以免「待发」幽灵卡住
-              await deleteSessionQueueItemMutation.mutateAsync({ id: dbId }).catch(() => {});
+              await deleteSessionQueueItemMutation.mutateAsync({ id: dbId }).catch(logQueryCatch);
               return;
             }
             sessionComposeActions.patchUserQueue(effectiveSessionId, (prev) => {
@@ -225,7 +227,7 @@ export function useChatEnqueue({
             console.warn("[enqueueMessage] 持久化失败，仅本地入队（无 dbId）:", err);
             consumeRef.current(effectiveSessionId);
           }
-        })().catch(() => {});
+        })().catch(logQueryCatch);
         return;
       }
 

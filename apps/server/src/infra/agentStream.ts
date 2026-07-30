@@ -487,8 +487,8 @@ async function deleteTailMessages(
         });
       }
     }
-  } catch {
-    /* ignore SSE */
+  } catch (err) {
+    console.warn("[agentStream] message_deleted SSE 推送失败", err);
   }
 }
 
@@ -672,7 +672,10 @@ export async function chatAgentStream(
 
     // 自动命名：不管新建还是已有 session，都 fire-and-forget。
     // autoNameSession 内部幂等：autoName 已有值 或 msgCount>1 都跳过，不会重复命名。
-    autoNameSession(sessionId, prepared.messageText).catch(() => {});
+    autoNameSession(sessionId, prepared.messageText).catch((err) => {
+      if (isAbortLikeError(err)) return;
+      console.warn("[agentStream] autoNameSession failed:", err);
+    });
 
     // E3：预生成 assistant 消息 id，stop 响应与 abort 落库共用
     pendingAssistantId = prepared.updateAssistantId ?? allocateCuid();
@@ -984,7 +987,9 @@ export async function chatAgentStream(
           workspaceId: (agent as any).workspaceId ?? null,
         }, Date.now() - start),
       )
-      .catch(() => { /* 经验积累失败不阻塞 */ });
+      .catch((err) => {
+        console.warn("[agentStream] accumulateExperience 失败", err);
+      });
 
     // Goal 外环：回合后裁判；CONTINUE 写 pendingContinue，由 onHubRunSettled 起下一轮
     try {
@@ -996,8 +1001,8 @@ export async function chatAgentStream(
         lastAssistantText: result.content ?? "",
         mainModel: result.model || effectiveModel,
       });
-    } catch {
-      /* goal 裁判失败不阻塞 done */
+    } catch (err) {
+      console.warn("[agentStream] evaluateGoalAfterTurn 失败", err);
     }
 
     // Hermes：回合后 skill background review（达 nudge 阈值才调度；不阻塞 done）
@@ -1010,8 +1015,8 @@ export async function chatAgentStream(
         sessionId: sessionId!,
         toolCalls: result.toolCalls ?? [],
       });
-    } catch {
-      /* 审查调度失败不阻塞 */
+    } catch (err) {
+      console.warn("[agentStream] maybeSpawnSkillBackgroundReview 失败", err);
     }
 
     emit({

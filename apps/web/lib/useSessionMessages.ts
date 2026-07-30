@@ -12,7 +12,7 @@
 
 import { useSyncExternalStore, useCallback, useRef, useEffect, useState } from "react";
 import type { ChatMessage } from "@knowpilot/shared";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled, warnUnlessCancelled } from "@/lib/trpc";
 import { getAuthToken } from "@/lib/auth";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 
@@ -637,7 +637,10 @@ export const sessionMessagesStore = {
     }
     return fetchAndHydrateSession(sessionId, fetchPage, "prefetch")
       .then(() => undefined)
-      .catch(() => undefined);
+      .catch((err) => {
+        warnUnlessCancelled(`[useSessionMessages] prefetch ${sessionId}`, err);
+        return undefined;
+      });
   },
   upsertAssistantFromDone: (
     sessionId: string,

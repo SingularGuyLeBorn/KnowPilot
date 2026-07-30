@@ -13,7 +13,9 @@
 
 import { useEffect, useRef } from "react";
 import type { AsyncQueueStats } from "@knowpilot/server";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
+
+const logQueryCatch = catchUnlessCancelled("[useChatSseSubscriptions] query");
 import { sessionMessagesStore } from "@/lib/useSessionMessages";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
@@ -67,20 +69,20 @@ export function useChatSseSubscriptions({
     /** 按事件所属 session 刷新切片；禁止一律刷 effectiveSessionId（后台 Tab 幽灵根因）
      *  CancelledError 兜底：并发 refetch 取消旧 fetch 抛错，.catch 静默避免 unhandled rejection */
     const refreshAsyncQueueFor = (targetSid: string) => {
-      refreshSessionAsyncQueue(utils, targetSid).catch(() => {});
+      refreshSessionAsyncQueue(utils, targetSid).catch(logQueryCatch);
       // 焦点 query 缓存对齐（同 session 时 UI 立刻一致）
       if (targetSid === effectiveSessionId) {
-        asyncQueueQuery.refetch().catch(() => {});
+        asyncQueueQuery.refetch().catch(logQueryCatch);
       }
-      asyncQueueStatsQuery.refetch().catch(() => {});
+      asyncQueueStatsQuery.refetch().catch(logQueryCatch);
     };
 
     const refreshAsync = (opts: { heavy?: boolean; sessionId: string }) => {
       refreshAsyncQueueFor(opts.sessionId);
       // heavy：终态才 invalidate 子会话列表 / task.list，避免 running 进度抖整批
       if (opts.heavy && mainSessionId) {
-        utils.session.listChildren.invalidate({ parentSessionId: mainSessionId }).catch(() => {});
-        utils.task.list.invalidate().catch(() => {});
+        utils.session.listChildren.invalidate({ parentSessionId: mainSessionId }).catch(logQueryCatch);
+        utils.task.list.invalidate().catch(logQueryCatch);
       }
     };
 
@@ -105,14 +107,14 @@ export function useChatSseSubscriptions({
       register("session_run_started", (ev) => {
         try {
           const data = JSON.parse(ev.data) as { sessionId?: string };
-          utils.session.listRunning.invalidate().catch(() => {});
+          utils.session.listRunning.invalidate().catch(logQueryCatch);
           refreshAsync({ heavy: true, sessionId: data.sessionId || sid });
           if (data.sessionId && data.sessionId !== sid) {
             sessionMessagesStore.watchSession(data.sessionId);
             extraWatchedSessionsRef.current.add(data.sessionId);
           }
         } catch {
-          utils.session.listRunning.invalidate().catch(() => {});
+          utils.session.listRunning.invalidate().catch(logQueryCatch);
           refreshAsync({ heavy: true, sessionId: sid });
         }
       });
@@ -139,15 +141,15 @@ export function useChatSseSubscriptions({
         refreshAsync({ heavy: terminal, sessionId: targetSid });
       });
       register("agent_message", () => {
-        if (isSubagentSession) pullAgentMessagesQuery.refetch().catch(() => {});
+        if (isSubagentSession) pullAgentMessagesQuery.refetch().catch(logQueryCatch);
       });
       register("subagent_session_update", (ev) => {
         if (mainSessionId) {
-          utils.session.listChildren.invalidate({ parentSessionId: mainSessionId }).catch(() => {});
+          utils.session.listChildren.invalidate({ parentSessionId: mainSessionId }).catch(logQueryCatch);
         }
         // 子 Agent 实体本身也要刷（spawn 后左侧「子 Agent」tab 靠 parentId 列表）
-        utils.agent.list.invalidate().catch(() => {});
-        utils.session.listRunning.invalidate().catch(() => {});
+        utils.agent.list.invalidate().catch(logQueryCatch);
+        utils.session.listRunning.invalidate().catch(logQueryCatch);
         try {
           const data = JSON.parse(ev.data) as {
             subagentSessionId?: string;
@@ -174,13 +176,13 @@ export function useChatSseSubscriptions({
           if (viewingOld) {
             setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
           }
-          utils.session.list.invalidate().catch(() => {});
+          utils.session.list.invalidate().catch(logQueryCatch);
           const invalidateId = data.oldSessionId ?? effectiveSessionId ?? undefined;
           if (invalidateId) {
-            utils.session.getById.invalidate({ id: invalidateId }).catch(() => {});
+            utils.session.getById.invalidate({ id: invalidateId }).catch(logQueryCatch);
           }
           if (data.newSessionId) {
-            utils.session.getById.invalidate({ id: data.newSessionId }).catch(() => {});
+            utils.session.getById.invalidate({ id: data.newSessionId }).catch(logQueryCatch);
           }
           // 防乱飞：仅当用户正看着发起 rotate 的旧会话时才自动跳；否则只留横幅/列表刷新
           if (data.focusNewSession && viewingOld && onFocusSession) {
@@ -192,45 +194,45 @@ export function useChatSseSubscriptions({
       });
       register("cron_session_started", () => {
         // 同 Agent 下新建 cron briefing：侧栏立即出现，无需整页刷新
-        utils.session.list.invalidate().catch(() => {});
-        utils.session.listRunning.invalidate().catch(() => {});
-        utils.agentCron.list.invalidate().catch(() => {});
+        utils.session.list.invalidate().catch(logQueryCatch);
+        utils.session.listRunning.invalidate().catch(logQueryCatch);
+        utils.agentCron.list.invalidate().catch(logQueryCatch);
         postSessionListHint();
         postUiState({ type: "cron_session_started" });
       });
       register("cron_job_updated", () => {
-        utils.agentCron.list.invalidate().catch(() => {});
+        utils.agentCron.list.invalidate().catch(logQueryCatch);
         postUiState({ type: "cron_job_updated" });
       });
       register("session_list_changed", () => {
-        utils.session.list.invalidate().catch(() => {});
-        utils.session.listRunning.invalidate().catch(() => {});
+        utils.session.list.invalidate().catch(logQueryCatch);
+        utils.session.listRunning.invalidate().catch(logQueryCatch);
         postUiState({ type: "session_list_changed" });
       });
       register("approval_updated", () => {
-        utils.approval.list.invalidate().catch(() => {});
-        utils.approval.humanTodoSummary.invalidate().catch(() => {});
+        utils.approval.list.invalidate().catch(logQueryCatch);
+        utils.approval.humanTodoSummary.invalidate().catch(logQueryCatch);
         postUiState({ type: "approval_updated" });
       });
       register("agent_list_changed", () => {
-        utils.agent.list.invalidate().catch(() => {});
-        utils.workspace.list.invalidate().catch(() => {});
+        utils.agent.list.invalidate().catch(logQueryCatch);
+        utils.workspace.list.invalidate().catch(logQueryCatch);
         postUiState({ type: "agent_list_changed" });
       });
       register("run_updated", () => {
-        utils.run.list.invalidate().catch(() => {});
+        utils.run.list.invalidate().catch(logQueryCatch);
         postUiState({ type: "run_updated" });
       });
       register("task_updated", () => {
-        utils.task.list.invalidate().catch(() => {});
-        utils.trigger.list.invalidate().catch(() => {});
+        utils.task.list.invalidate().catch(logQueryCatch);
+        utils.trigger.list.invalidate().catch(logQueryCatch);
         postUiState({ type: "task_updated" });
       });
       register("session_title_updated", () => {
-        utils.session.list.invalidate().catch(() => {});
+        utils.session.list.invalidate().catch(logQueryCatch);
       });
       register("agent_renamed", () => {
-        utils.agent.list.invalidate().catch(() => {});
+        utils.agent.list.invalidate().catch(logQueryCatch);
       });
       register("session_queue_update", () => {
         // 按本 watch 的 sid 刷新（分屏两侧各自 merge）
@@ -244,10 +246,10 @@ export function useChatSseSubscriptions({
             );
             streamLifecycleActions.hydrateDone(sid);
           })
-          .catch(() => {});
+          .catch(logQueryCatch);
       });
       register("ask_user_pending", () => {
-        utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
+        utils.askUser.listPending.invalidate({ sessionId: sid }).catch(logQueryCatch);
       });
       register("artifact_created", (ev) => {
         try {
@@ -280,7 +282,7 @@ export function useChatSseSubscriptions({
         }
       });
       register("ask_user_resolved", (ev) => {
-        utils.askUser.listPending.invalidate({ sessionId: sid }).catch(() => {});
+        utils.askUser.listPending.invalidate({ sessionId: sid }).catch(logQueryCatch);
         // 邮件回复路径：把 answer 回填到 AskUserPrompt 的 customResponse 输入框（不创建气泡）
         try {
           const data = JSON.parse(ev.data) as { askId?: string; answer?: string; outcome?: string };
@@ -297,8 +299,8 @@ export function useChatSseSubscriptions({
       });
       register("swarm_task_update", () => {
         // 父会话被动跟进 Swarm 任务态，少靠 task.list 盲轮询
-        utils.task.list.invalidate().catch(() => {});
-        utils.agent.asyncQueueStats.invalidate().catch(() => {});
+        utils.task.list.invalidate().catch(logQueryCatch);
+        utils.agent.asyncQueueStats.invalidate().catch(logQueryCatch);
       });
     }
     return () => {
@@ -335,24 +337,24 @@ export function useChatSseSubscriptions({
       const t = data?.type;
       if (!t) return;
       if (t === "cron_session_started" || t === "session_list_changed") {
-        utils.session.list.invalidate().catch(() => {});
-        utils.session.listRunning.invalidate().catch(() => {});
+        utils.session.list.invalidate().catch(logQueryCatch);
+        utils.session.listRunning.invalidate().catch(logQueryCatch);
       }
       if (t === "cron_job_updated" || t === "cron_session_started") {
-        utils.agentCron.list.invalidate().catch(() => {});
+        utils.agentCron.list.invalidate().catch(logQueryCatch);
       }
       if (t === "approval_updated") {
-        utils.approval.list.invalidate().catch(() => {});
-        utils.approval.humanTodoSummary.invalidate().catch(() => {});
+        utils.approval.list.invalidate().catch(logQueryCatch);
+        utils.approval.humanTodoSummary.invalidate().catch(logQueryCatch);
       }
       if (t === "agent_list_changed") {
-        utils.agent.list.invalidate().catch(() => {});
-        utils.workspace.list.invalidate().catch(() => {});
+        utils.agent.list.invalidate().catch(logQueryCatch);
+        utils.workspace.list.invalidate().catch(logQueryCatch);
       }
-      if (t === "run_updated") utils.run.list.invalidate().catch(() => {});
+      if (t === "run_updated") utils.run.list.invalidate().catch(logQueryCatch);
       if (t === "task_updated") {
-        utils.task.list.invalidate().catch(() => {});
-        utils.trigger.list.invalidate().catch(() => {});
+        utils.task.list.invalidate().catch(logQueryCatch);
+        utils.trigger.list.invalidate().catch(logQueryCatch);
       }
     };
     for (const name of ["knowpilot-ui-state", "knowpilot-session-list"]) {

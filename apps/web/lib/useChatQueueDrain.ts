@@ -13,7 +13,9 @@
  */
 
 import { useCallback, type RefObject } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
+
+const logQueryCatch = catchUnlessCancelled("[useChatQueueDrain] query");
 import { getModelOption } from "@/lib/chatConfig";
 import { type ChatQueueItem, formatQueueItemForLlm, toApiAttachments } from "@/lib/chatQueueTypes";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
@@ -148,8 +150,8 @@ export function useChatQueueDrain({
           );
           if (claim === "not_claimed") {
             sessionComposeActions.setQueueDraining(sid, false);
-            utils.session.listRunning.invalidate().catch(() => {});
-            if (sid === viewSid) asyncQueueQuery.refetch().catch(() => {});
+            utils.session.listRunning.invalidate().catch(logQueryCatch);
+            if (sid === viewSid) asyncQueueQuery.refetch().catch(logQueryCatch);
             // 已释放 drain 锁且在 async 续体内（调用栈已 unwind），直接重试下一项
             consumeRef.current(sid);
             return;
@@ -292,7 +294,7 @@ export function useChatQueueDrain({
         // 起流成功：tombstone 挡迟到 SSE + finalize 删行
         if ((task.kind === "user" || task.kind === "child_notify") && task.dbId) {
           sessionComposeActions.markQueueDbIdConsumed(sid, task.dbId);
-          await finalizeSessionQueueItemMutation.mutateAsync({ id: task.dbId }).catch(() => {});
+          await finalizeSessionQueueItemMutation.mutateAsync({ id: task.dbId }).catch(logQueryCatch);
         }
       } else if (
         outcome.status === "begin_rejected" ||
@@ -300,7 +302,7 @@ export function useChatQueueDrain({
       ) {
         // 未真正起流：回滚认领 + 恢复待发
         if (softClaimedDbId) {
-          await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(() => {});
+          await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(logQueryCatch);
         }
         if (task.kind === "user" || task.kind === "child_notify") {
           restoreUserQueueItem(sid, task);
@@ -321,7 +323,7 @@ export function useChatQueueDrain({
       } catch {
         /* claim / 拼装阶段抛错：回滚软认领 */
         if (softClaimedDbId) {
-          await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(() => {});
+          await unclaimSessionQueueItemMutation.mutateAsync({ id: softClaimedDbId }).catch(logQueryCatch);
           if (task.kind === "user" || task.kind === "child_notify") {
             restoreUserQueueItem(sid, task);
           }
@@ -335,7 +337,7 @@ export function useChatQueueDrain({
           sessionComposeActions.setQueueDraining(sid, false);
         }
       }
-    })().catch(() => {});
+    })().catch(logQueryCatch);
   }, [runStream, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, unclaimSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);
 
   /** 优先 preferred，再可见 pane；不扫隐藏 tab（避免后台 tab 抢起流） */

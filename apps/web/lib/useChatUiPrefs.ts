@@ -55,7 +55,8 @@ function readChatUiPrefs(): ChatUiPrefs {
       leftTab: normalizeLeftTab(parsed.leftTab),
       historySubTab: parsed.historySubTab === "sub" ? "sub" : "main",
     };
-  } catch {
+  } catch (err) {
+    console.warn("[useChatUiPrefs] readChatUiPrefs JSON parse failed:", err);
     return defaults;
   }
 }
@@ -63,8 +64,8 @@ function readChatUiPrefs(): ChatUiPrefs {
 function writeChatUiPrefs(prefs: ChatUiPrefs) {
   try {
     localStorage.setItem(CHAT_UI_STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    /* ignore */
+  } catch (err) {
+    console.warn("[useChatUiPrefs] writeChatUiPrefs failed:", err);
   }
 }
 
