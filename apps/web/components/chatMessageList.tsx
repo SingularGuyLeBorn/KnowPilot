@@ -1,4 +1,5 @@
 "use client";
+import { catchUnlessCancelled } from "@/lib/trpc";
 
 /**
  * ChatMessageList —— 消息列表渲染（W13a 从 chat.tsx 拆出）。
@@ -174,6 +175,8 @@ export const ChatMessageList = memo(function ChatMessageList({
     useSpeechSynthesis({ lang: "zh-CN", rate: 1 });
   const [speakingAssistantId, setSpeakingAssistantId] = useState<string | null>(null);
   useEffect(() => {
+    // 外部 TTS 引擎停讲 → 清 UI 高亮（非可派生的同步，必须 effect）
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 订阅 ttsSpeaking 外部态
     if (!ttsSpeaking) setSpeakingAssistantId(null);
   }, [ttsSpeaking]);
   const handleSpeak = useCallback(
@@ -194,11 +197,9 @@ export const ChatMessageList = memo(function ChatMessageList({
   const [showOnboarding, setShowOnboarding] = useState(false);
   useEffect(() => {
     // mount 后读 localStorage 同步到 React state（SSR 安全），非派生数据。
-    // 故意在 effect 里 setState；react-hooks/set-state-in-effect（v6 编译器规则）
-    // 不分析 memo 组件，原 eslint-disable 已随 W16b memo 化移除——若将来摘掉
-    // memo，该规则报错时再把 disable 加回来。
     try {
       if (localStorage.getItem("kp-swarm-onboarding-dismissed") !== "1") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe localStorage hydrate
         setShowOnboarding(true);
       }
     } catch {
@@ -233,6 +234,8 @@ export const ChatMessageList = memo(function ChatMessageList({
   /** 点击导航后短暂钉住高亮，避免 Virtuoso 估算滚动未到位时 rangeChanged 抢回上一轮 */
   const navPinUntilRef = useRef(0);
   useEffect(() => {
+    // 切会话重置导航/贴底 UI 意图（外部会话 id 变化，非可纯派生）
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- session switch reset
     setNavActiveIdx(null);
     navPinUntilRef.current = 0;
     stickToBottomRef.current = true;
@@ -315,10 +318,10 @@ export const ChatMessageList = memo(function ChatMessageList({
 
         <MessageActions
           onCopy={() =>
-            handleCopy(assistantId, isEditingAssistant ? editDraft : active.content).catch(() => {})
+            handleCopy(assistantId, isEditingAssistant ? editDraft : active.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))
           }
           onShare={() =>
-            handleShare(isEditingAssistant ? editDraft : active.content).catch(() => {})
+            handleShare(isEditingAssistant ? editDraft : active.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))
           }
           onRegenerate={() => handleRegenerate(group.userMessage.id)}
           onSpeak={
@@ -353,8 +356,8 @@ export const ChatMessageList = memo(function ChatMessageList({
               <MessageVersions
                 current={group.activeVersionIndex}
                 total={group.versions.length}
-                onPrev={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex - 1).catch(() => {})}
-                onNext={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex + 1).catch(() => {})}
+                onPrev={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex - 1).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
+                onNext={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex + 1).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
               />
             ) : null
           }
@@ -508,8 +511,8 @@ export const ChatMessageList = memo(function ChatMessageList({
               )}
             </div>
             <MessageActions
-              onCopy={() => handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content).catch(() => {})}
-              onShare={() => handleShare(isEditing ? editDraft : group.userMessage.content).catch(() => {})}
+              onCopy={() => handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
+              onShare={() => handleShare(isEditing ? editDraft : group.userMessage.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
               onEdit={() => {
                 setEditingMessageId(group.userMessage.id);
                 setEditDraft(group.userMessage.content);
@@ -623,21 +626,36 @@ export const ChatMessageList = memo(function ChatMessageList({
     return items;
   }, [chatItems]);
 
-  // 冷加载：仅 view hydrate 完成后撤 hold（禁止「有任意一条消息」当就绪 → 闪成最近窗）
-  const holdRef = useRef<{ sessionId: string | null; items: ChatItem[] }>({
-    sessionId: effectiveSessionId,
-    items: [],
-  });
+  // 冷加载：仅 view hydrate 完成后撤 hold（禁止「有任意一条消息」当就绪 → 闪成最近窗）。
+  // holdRef 只在 layout effect 里写（流式不额外 setState）；进冷加载时冻入 state，
+  // 渲染期只读 staleHold/chatItems——满足 react-hooks/refs。
+  const holdRef = useRef<ChatItem[]>([]);
+  const [staleHold, setStaleHold] = useState<ChatItem[] | null>(null);
+  const wasColdRef = useRef(false);
   const sessionReady =
     !effectiveSessionId ||
     isMessagesHydrated ||
     ((isStreaming || optimistic.length > 0) && chatItems.length > 0);
   const isColdLoading = !!effectiveSessionId && !sessionReady;
-  if (sessionReady) {
-    holdRef.current = { sessionId: effectiveSessionId, items: chatItems };
-  }
-  const showingStale = isColdLoading && holdRef.current.items.length > 0;
-  const displayItems = showingStale ? holdRef.current.items : chatItems;
+  useLayoutEffect(() => {
+    if (sessionReady) holdRef.current = chatItems;
+  }, [sessionReady, chatItems]);
+  useLayoutEffect(() => {
+    if (isColdLoading) {
+      if (!wasColdRef.current) {
+        wasColdRef.current = true;
+        const snap = holdRef.current;
+        setStaleHold(snap.length > 0 ? snap : null);
+      }
+      return;
+    }
+    if (wasColdRef.current) {
+      wasColdRef.current = false;
+      setStaleHold(null);
+    }
+  }, [isColdLoading]);
+  const showingStale = staleHold !== null;
+  const displayItems = staleHold ?? chatItems;
   const hasDisplay = displayItems.length > 0;
 
   const scrollToBottom = useCallback(() => {
@@ -860,7 +878,7 @@ export const ChatMessageList = memo(function ChatMessageList({
             startReached={() => {
               if (showingStale) return;
               if (hasOlderMessages && !isLoadingOlderMessages) {
-                loadOlderMessages().catch(() => {});
+                loadOlderMessages().catch(catchUnlessCancelled("components/chatMessageList.tsx"));
               }
             }}
           />
