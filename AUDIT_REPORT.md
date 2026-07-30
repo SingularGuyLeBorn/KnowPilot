@@ -558,7 +558,9 @@ flowchart TB
 | P1-06 | ✅ 已修 | AGENTS 实体/model 表述对齐 |
 | P2-08 | ✅ 已修 | 移除 web `zustand` 死依赖 |
 | 空 tools skill:* | ✅ 已修 | shared + server 不再隐式 `skillWildcard` |
+| P2-01 | ✅ 已修 | toolLoopGuard：同名变参 + A/B 交替熔断 |
+| P1-03（骨架） | 🟡 部分 | `evals/README.md` + G01 黄金用例；CI 脚本未接 |
 
-未在本波动刀（中/大手术）：P1-01 工具面瘦身、P1-02 god file 拆分、P1-03 evals、P1-04 空 catch 全扫、P1-05 webhook 验签。
+未在本波动刀（需大手术/长周期）：P1-01 工具面瘦身、P1-02 god file 拆分、P1-03 完整 CI evals、P1-04 空 catch 全扫、P1-05 webhook 验签。
 
 *报告结束。生成：2026-07-30 · 修复落地同日。*
