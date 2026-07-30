@@ -1,7 +1,7 @@
 ---
 name: "知乎·LLM/Agent 面试题搜集"
-version: "1.1.0"
-description: "用知乎开放平台 API 搜面经/题库，整理写入 llm-interview。禁止跨平台与泛搜。"
+version: "1.2.0"
+description: "用知乎开放平台 API 搜面经/题库，整理写入 llm-interview。可自设每日 cron（新建会话）。"
 variables:
   - "topic"
   - "max_articles"
@@ -87,6 +87,21 @@ tags:
 3. 新增/更新的 slug 与题数  
 4. 未采纳条目及原因  
 5. 缺 `ZHIHU_ACCESS_SECRET` 时：只提示配置，**绝不改搜其他平台**
+
+## 可选：给自己挂每日 cron（Briefing → session_spawn_goal）
+
+若用户要求「每天自动搜集」，用（manager/super；sub 禁止）。Cron 点火是 **briefing 会话**：只摸现状、写 prompt，再 `session_spawn_goal` 开执行会话（goal 模式）。
+
+```
+agent_cron_set({
+  name: "zhihu-llm-interview-daily",
+  cron: "0 8 * * *",
+  prompt: "Briefing：读 llm-interview 与 bus，写今日搜集执行 prompt，再 session_spawn_goal({ model, mode:\"goal\", prompt })。执行会话按「知乎·LLM/Agent 面试题搜集」用 zhihu_openapi_search(scope=zhihu) 搜 {{topic}}，最多深读 {{max_articles}}、入库最多 {{max_questions}} 题到 {{garden}}。",
+  busPath: "cron-bus/zhihu-interview-state.md"
+})
+```
+
+`agent_cron_list` / `agent_cron_clear` 查看与删除。
 
 ## 开始
 

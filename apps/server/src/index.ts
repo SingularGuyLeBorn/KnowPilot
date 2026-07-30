@@ -496,7 +496,12 @@ const server = app.listen(PORT, () => {
       heartbeatEngineRef = getHeartbeatEngine(prisma, services, config);
       return heartbeatEngineRef.start();
     })
-    .catch((err) => console.error("❌ [Swarm] 初始化/心跳启动失败:", err));
+    .then(() => import("./infra/agentCronEngine.js"))
+    .then(({ getAgentCronEngine }) => {
+      agentCronEngineRef = getAgentCronEngine(prisma, services, config);
+      agentCronEngineRef.start();
+    })
+    .catch((err) => console.error("❌ [Swarm] 初始化/心跳/cron 启动失败:", err));
   // R-2 重启恢复首扫（四动作，条件写幂等，DB 为 ground truth）：僵尸 Task→failed（不自动重跑）
   // + 僵尸 running 会话→paused + superior 孤儿队列项重注册 drain + 未投递终态/孤儿交付合并对账
   // （动作 2 与 R-1 reconciler 同一幂等入口；周期对账由下方 startAsyncDeliveryReconciler 负责）
@@ -641,6 +646,7 @@ const server = app.listen(PORT, () => {
 
 // 优雅退出处理
 let heartbeatEngineRef: { start: () => void; stop: () => void } | null = null;
+let agentCronEngineRef: { start: () => void; stop: () => void } | null = null;
 let agentMailPollerRef: { stop: () => void } | null = null;
 let agentMailWebhookHealthRef: { stop: () => void } | null = null;
 const handleShutdown = () => {
@@ -648,6 +654,7 @@ const handleShutdown = () => {
   triggerEngine.stop();
   taskScheduler.stop();
   heartbeatEngineRef?.stop();
+  agentCronEngineRef?.stop();
   agentMailPollerRef?.stop();
   agentMailWebhookHealthRef?.stop();
   stopAsyncDeliveryReconciler();

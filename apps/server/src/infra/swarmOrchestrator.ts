@@ -29,7 +29,12 @@ import { deriveRequiredScopesFromTools } from "./approvalScope.js";
 /** spawn 去重窗口：同 (agentId, hash(taskText)) 在窗口内重复 dispatch 直接返回已有 task */
 export const SWARM_SPAWN_DEDUP_WINDOW_MS = 60_000;
 
-export type SwarmDispatchOrigin = "spawn_subagent" | "async_task_run" | "heartbeat" | "trigger";
+export type SwarmDispatchOrigin =
+  | "spawn_subagent"
+  | "async_task_run"
+  | "heartbeat"
+  | "trigger"
+  | "cron";
 
 /** 一次任务执行的聚合结果（入口闭包自落库后回传，供审计/去重命中方消费） */
 export interface SwarmTaskOutcome {

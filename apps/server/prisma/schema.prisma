@@ -86,11 +86,33 @@ model Agent {
   // Agent 间消息
   sentMessages     AgentMessage[] @relation("AgentMsgFrom")
   receivedMessages AgentMessage[] @relation("AgentMsgTo")
+  // Agent 自设 cron 任务（每次点火新建 session）
+  cronJobs         AgentCronJob[]
   // Workspace 的管理 Agent 反向关系
   managedWorkspace Workspace? @relation("WorkspaceManager")
   @@index([tier, status])
   @@index([workspaceId, tier])
   @@index([parentId])
+}
+
+/// Agent 自设 cron 任务（与 heartbeat 正交：每次点火新建 ChatSession，注入 prompt / 可选 bus 文件）
+model AgentCronJob {
+  id            String    @id @default(cuid())
+  agentId       String
+  name          String    /// 同 Agent 内唯一，供 upsert / clear
+  cron          String    /// 标准 5 段 cron，如 "0 9 * * *"
+  prompt        String    /// 每次点火注入的详细初始提示词（user 消息）
+  busPath       String?   /// 可选 file-as-bus：相对 Workspace 或 projectRoot 的文件，点火时拼进首条消息
+  enabled       Boolean   @default(true)
+  lastRunAt     DateTime?
+  lastRunStatus String?   /// "success" | "failed" | "cancelled"
+  lastSessionId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  agent         Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  @@unique([agentId, name])
+  @@index([enabled])
+  @@index([agentId, enabled])
 }
 
 /// 技能 (Skill)
@@ -121,7 +143,7 @@ model ChatSession {
   agentId      String?
   // Swarm/Subagent：父会话 id（普通会话为 null）
   parentSessionId String?
-  // 会话类型："chat" | "subagent" | "heartbeat" | "skill_review"
+  // 会话类型："chat" | "subagent" | "heartbeat" | "skill_review" | "cron"
   kind         String        @default("chat")
   // 任务状态：active | queued | running | paused | completed | failed
   status       String        @default("active")

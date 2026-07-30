@@ -24,12 +24,15 @@ import { z } from "zod";
 import { zodParams } from "./zodParams.js";
 import { registerNativeDomain } from "./registerDomain.js";
 import {
+  buildGoalKickoffMessage,
   clearSessionGoal,
   pauseSessionGoal,
   readGoalStateRaw,
   resumeSessionGoal,
   setSessionGoal,
 } from "../../goalLoop.js";
+import { createTrpcInvoker } from "../../trpcInvoker.js";
+import { prisma } from "../../../db.js";
 
 /**
  * spawn waitForResult 轮询的空闲判定（S2）。仅「无流」不够，必须四条件同时满足：
@@ -1287,6 +1290,158 @@ async function sessionGoalResumeTool(_args: Record<string, unknown>, ctx: Native
   };
 }
 
+/**
+ * Briefing → 新独立 chat 会话 + standing goal + 可选立刻起流。
+ * 供 cron briefing / 编排层：本会话只搜集上下文写 prompt，执行放到新会话。
+ * 禁止 parentSessionId（否则 setSessionGoal 拒绝）。
+ */
+async function sessionSpawnGoalTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const operatorTier = ctx.agentSnapshot?.tier ?? "sub";
+  const operatorId = ctx.agentSnapshot?.id ?? null;
+  if (operatorTier === "sub") {
+    return { error: "[TIER_INSUFFICIENT] 子 Agent 不允许调用 session_spawn_goal。" };
+  }
+  if (!operatorId) {
+    return { error: "缺少调用方 Agent 身份，无法 session_spawn_goal。" };
+  }
+
+  const prompt = String(args.prompt ?? "").trim();
+  const model = String(args.model ?? "").trim();
+  if (prompt.length < 16) {
+    return { error: "prompt 过短：请写入完整可执行任务说明（含验收标准）" };
+  }
+  if (!model) {
+    return { error: "model 必填：指定新会话执行模型 id" };
+  }
+
+  const requestedAgentId =
+    args.agentId === undefined || args.agentId === null || args.agentId === ""
+      ? null
+      : String(args.agentId);
+  const targetAgentId = requestedAgentId ?? operatorId;
+  if (operatorTier !== "super" && targetAgentId !== operatorId) {
+    return {
+      error: "[SELF_ONLY] 管理 Agent 只能为自己 spawn goal 会话；跨 Agent 仅超级 Agent 可操作。",
+    };
+  }
+
+  const target = await ctx.services.prisma.agent.findUnique({
+    where: { id: targetAgentId },
+    select: { id: true, name: true, tier: true, status: true, model: true },
+  });
+  if (!target || target.status === "deleted") {
+    return { error: "目标 Agent 不存在" };
+  }
+  if (target.tier === "sub") {
+    return { error: "不能给子 Agent 开 goal 执行会话" };
+  }
+
+  const mode = args.mode === "deep_research" ? "deep_research" : "goal";
+  const maxTurns =
+    typeof args.maxTurns === "number" && Number.isFinite(args.maxTurns)
+      ? Math.max(1, Math.min(200, Math.floor(args.maxTurns)))
+      : undefined;
+  const judgeModel =
+    typeof args.judgeModel === "string" && args.judgeModel.trim()
+      ? args.judgeModel.trim()
+      : undefined;
+  const startImmediately =
+    args.startImmediately === undefined ? true : coerceToolBoolean(args.startImmediately);
+  const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const title =
+    typeof args.title === "string" && args.title.trim()
+      ? args.title.trim().slice(0, 200)
+      : `[goal] ${target.name} · ${stamp}`;
+
+  const created = await ctx.services.session.create({
+    title,
+    model,
+    agentId: target.id,
+    kind: "chat",
+    isMainSession: false,
+    taskDescription: prompt.slice(0, 500),
+    status: "active",
+  });
+  if (!created.success || !created.data) {
+    return {
+      error: created.error?.message ?? "创建执行会话失败",
+    };
+  }
+  const newSessionId = (created.data as { id: string }).id;
+
+  let goal;
+  try {
+    goal = await setSessionGoal({
+      services: ctx.services,
+      config: ctx.config,
+      sessionId: newSessionId,
+      text: prompt,
+      mode,
+      maxTurns,
+      judgeModel,
+      execModel: model,
+    });
+  } catch (err) {
+    await ctx.services.session
+      .update({ id: newSessionId, status: "failed" } as never)
+      .catch(() => {});
+    return {
+      error: err instanceof Error ? err.message : String(err),
+      newSessionId,
+    };
+  }
+
+  let streamStarted = false;
+  let startError: string | undefined;
+  if (startImmediately) {
+    const hub = getStreamHub();
+    if (!hub) {
+      startError = "StreamHub 未就绪，goal 已写入但未起流（重启 server 后可手动 resume）";
+    } else {
+      const message = buildGoalKickoffMessage(goal);
+      const body = {
+        sessionId: newSessionId,
+        message,
+        model: goal.execModel || model,
+        source: "system" as const,
+        agentId: target.id,
+      };
+      try {
+        const invoke = createTrpcInvoker({
+          services: ctx.services,
+          config: ctx.config,
+          prisma: ctx.services.prisma ?? prisma,
+        });
+        streamStarted =
+          (await hub.startIfNotRunning(newSessionId, body, (emit, signal) =>
+            import("../../agentStream.js").then(({ chatAgentStream }) =>
+              chatAgentStream(ctx.services, ctx.config, body, invoke, emit, signal),
+            ),
+          )) === "started";
+        if (!streamStarted) {
+          startError = "会话已有进行中的流，goal 已设立但本次未起流";
+        }
+      } catch (err) {
+        startError = err instanceof Error ? err.message : String(err);
+      }
+    }
+  }
+
+  return {
+    success: true,
+    newSessionId,
+    goal: summarizeGoal(goal),
+    streamStarted,
+    startError,
+    hint:
+      "已开独立执行会话并设立 standing goal。" +
+      (streamStarted
+        ? "执行会话已起流，本 briefing 会话可收尾汇报 newSessionId。"
+        : "执行会话已创建；若未起流请检查 StreamHub / 稍后手动打开该会话。") +
+      " 勿在本会话重复做完整交付。",
+  };
+}
+
 const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
@@ -1429,6 +1584,39 @@ const SESSION_DEFS: NativeToolDefinition[] = [
     parameters: zodParams(z.object({})),
   },
   {
+    name: "session_spawn_goal",
+    concurrencyClass: "D",
+    description:
+      "开一个新的独立 ChatSession，写入你准备好的详细 prompt 作为 standing goal，指定执行模型并默认立刻起流（goal 外环续跑）。" +
+      "典型用法：cron/briefing 会话只搜集项目现状与必要上下文 → 写出可执行 prompt → 调用本工具把执行交给新会话；本会话不要自己做完整交付。" +
+      "禁止用于子 Agent；manager 只能为自己开；super 可指定 agentId。" +
+      "与 session_goal_set 区别：后者改当前会话；本工具新建会话。" +
+      "与 spawn_subagent 区别：子会话禁止 goal；本工具开的是无 parent 的 chat+goal。",
+    parameters: zodParams(
+      z.object({
+        prompt: z
+          .string()
+          .describe("完整可执行任务说明（将作为 standing goal text，并注入 kickoff）"),
+        model: z.string().describe("新会话执行模型 id（必填）"),
+        mode: z
+          .enum(["goal", "deep_research"])
+          .describe("goal=普通目标（默认）；deep_research=深度调研")
+          .optional(),
+        title: z.string().describe("新会话标题（可选）").optional(),
+        agentId: z
+          .string()
+          .describe("执行 Agent id（默认自己；仅 super 可跨 Agent）")
+          .optional(),
+        maxTurns: z.number().describe("goal 最大续跑轮数").optional(),
+        judgeModel: z.string().describe("裁判模型 id，默认 auto").optional(),
+        startImmediately: z
+          .boolean()
+          .describe("true(默认)=立刻 hub 起流；false=只建会话+goal")
+          .optional(),
+      }),
+    ),
+  },
+  {
     name: "session_goal_set",
     concurrencyClass: "D",
     description:
@@ -1486,6 +1674,7 @@ const SESSION_HANDLERS: Record<string, NativeToolHandler> = {
   task_run: taskRunTool,
   todo_write: todoWriteTool,
   todo_read: todoReadTool,
+  session_spawn_goal: sessionSpawnGoalTool,
   session_goal_set: sessionGoalSetTool,
   session_goal_status: sessionGoalStatusTool,
   session_goal_clear: sessionGoalClearTool,

@@ -36,7 +36,7 @@ export async function runAgentLoop(options: {
   /** 工具上下文：传入后 async_task_run / spawn_subagent / sleep(async) 等可在本循环内使用 */
   sessionId?: string;
   agentMeta?: { id: string; name?: string | null; model: string; systemPrompt: string; tools: string[]; tier?: string; parentId?: string | null; workspaceId?: string | null };
-  runOrigin?: "user" | "parent" | "heartbeat";
+  runOrigin?: "user" | "parent" | "heartbeat" | "async";
   /** W11：Run.input 业务描述（触发消息等），run 入口落库时写入 */
   runInput?: unknown;
   /** W3 safe bypass：只读 turn */

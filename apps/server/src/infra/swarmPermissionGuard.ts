@@ -69,6 +69,12 @@ const TIER_RESTRICTED_TOOLS: Record<string, string[]> = {
     "optimize_agent_prompt",
     "generate_skill_from_experience",
     "skill_enable",
+    // Agent 自设 cron（sub 禁止；manager 自限 / super 任意 — handler 内再校验）
+    "agent_cron_set",
+    "agent_cron_list",
+    "agent_cron_clear",
+    // briefing → 新 chat+goal（sub 禁止；handler 内再校验跨 Agent）
+    "session_spawn_goal",
   ],
   // 子 Agent 及以上（manager/super 也可以用）：可执行异步任务，但不能再派生子 Agent
   sub: [

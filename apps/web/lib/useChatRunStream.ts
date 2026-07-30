@@ -611,7 +611,7 @@ export function useChatRunStream({
                   }
                 }
               }
-              // Goal 工具：顶栏即时出现/消失
+              // Goal 工具：顶栏即时出现/消失；spawn 刷新会话列表
               if (
                 name === "session_goal_set" ||
                 name === "session_goal_clear" ||
@@ -620,6 +620,13 @@ export function useChatRunStream({
               ) {
                 if (originSid && originSid !== NEW_STREAM_KEY) {
                   utils.session.getGoal.invalidate({ sessionId: originSid }).catch(() => {});
+                }
+              }
+              if (name === "session_spawn_goal") {
+                utils.session.list.invalidate().then(() => utils.session.list.refetch()).catch(() => {});
+                const r = result as { newSessionId?: string } | null;
+                if (r?.newSessionId) {
+                  utils.session.getGoal.invalidate({ sessionId: r.newSessionId }).catch(() => {});
                 }
               }
             },
