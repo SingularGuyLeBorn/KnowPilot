@@ -14,7 +14,7 @@
  */
 
 import type { ServiceContainer } from "./serviceContainer.js";
-import type { AgentEntity } from "../services.js";
+import type { AgentEntity } from "./entityServices/agentService.js";
 import { ASSISTANT_DEFAULT_TOOLS } from "@knowpilot/shared";
 import { getAppConfig } from "./config.js";
 

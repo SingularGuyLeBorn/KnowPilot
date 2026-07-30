@@ -10,16 +10,14 @@ import type { AppEventBus } from "./eventBus.js";
 import type { AppConfig } from "./config.js";
 
 // Service imports
-import {
-  PostService,
-  AgentService,
-  SessionService,
-} from "../services.js";
 import { GardenService } from "./entityServices/gardenService.js";
 import { ApprovalService } from "./entityServices/approvalService.js";
 import { InboxService } from "./entityServices/inboxService.js";
 import { SessionQueueItemService } from "./entityServices/sessionQueueItemService.js";
 import { MessageService } from "./entityServices/messageService.js";
+import { SessionService } from "./entityServices/sessionService.js";
+import { PostService } from "./entityServices/postService.js";
+import { AgentService } from "./entityServices/agentService.js";
 import { CredentialService } from "./entityServices/credentialService.js";
 import { LogService } from "./entityServices/logService.js";
 import { ToolService } from "./entityServices/toolService.js";

@@ -12,7 +12,7 @@ import {
   memoryWorkspaceScope,
   type MemoryUserCreatableType,
 } from "@knowpilot/shared";
-import type { PostEntity } from "../../../services.js";
+import type { PostEntity } from "../../entityServices/postService.js";
 import { createMemoryRepository, resolveMemoryWriteScope } from "../../memoryRepository.js";
 import { readPinnedFile, writePinnedFile, type PinnedWhich } from "../../pinnedMemory.js";
 import { appendDailyNote, searchDailyNotes } from "../../memoryDaily.js";

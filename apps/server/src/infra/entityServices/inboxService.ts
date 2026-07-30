@@ -26,9 +26,9 @@ import {
 } from "@knowpilot/shared";
 import {
   BaseService,
-  PostService,
   type PaginatedResult,
 } from "../../services.js";
+import { PostService } from "./postService.js";
 import { upsertFtsRow, deleteFtsRow, searchFtsByEntity } from "../ftsIndex.js";
 
 export class InboxService extends BaseService<

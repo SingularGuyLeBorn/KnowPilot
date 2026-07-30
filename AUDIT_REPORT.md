@@ -698,11 +698,11 @@ flowchart TB
 
 | 编号 | 状态 | 说明 |
 |---|---|---|
-| router 收官 | ✅ | post/agent/session/ai/llm/deadLetter → `infra/trpcRouters/`；根 `router.ts` ≈73 行纯聚合 `AppRouter` |
-| services 第九刀 | ✅ | Message → entityServices（导出 `MessageEntity`/`SESSION` 无关）；`services.ts` ≈2272（仅剩 Post/Agent/Session） |
-| importOrder | ✅ | + messageService + 6 厚路由入口 |
-| 手术边界 | 🛑 | Post/Agent/Session Service（FileSync + hub/swarm 重耦合）；真实 LLM 周跑 evals；metablog 软失败；chat.tsx 再拆 |
+| router 收官 | ✅ | 全部域 → `infra/trpcRouters/`（含 post/agent/session/ai/llm/deadLetter）；根 `router.ts` ≈73 行纯聚合 |
+| services 收官 | ✅ | 全部实体 → entityServices（含 Message/Session/Post/Agent）；`services.ts` ≈基座 only |
+| importOrder | ✅ | + message/session/post/agent Service + 厚路由入口 |
+| 手术边界 | 🛑 | 真实 LLM 周跑 evals；metablog Playwright/`json` 软失败；Goal×内环精细 token；`chat.tsx` 物理再拆；完整元工具化 |
 
-刻意未动：完整元工具化、Post/Agent/Session Service、真实 LLM 周跑 evals、metablog Playwright/`json` 软失败、Goal×内环精细 token、`chat.tsx` 物理再拆。
+刻意未动：完整元工具化、真实 LLM 周跑 evals、metablog Playwright/`json` 软失败、Goal×内环精细 token、`chat.tsx` 物理再拆。
 
 *报告结束。生成：2026-07-30 · P12 续修：2026-07-31。*
