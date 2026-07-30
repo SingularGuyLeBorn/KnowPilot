@@ -17,6 +17,8 @@ import { registerInboxTools } from "./inbox.js";
 import { registerDeployTools } from "./deploy.js";
 import { registerAlgoVizTools } from "./algoViz.js";
 import { registerAgentCronTools } from "./agentCron.js";
+import { registerLiteratureTools } from "./literature.js";
+import { registerDocumentTools } from "./document.js";
 
 export function registerNativeDomains(): void {
   registerFsTools();
@@ -33,6 +35,8 @@ export function registerNativeDomains(): void {
   registerDeployTools();
   registerAlgoVizTools();
   registerAgentCronTools();
+  registerLiteratureTools();
+  registerDocumentTools();
 }
 
 export type { NativeToolContext, NativeToolDefinition, NativeToolHandler } from "./types.js";
