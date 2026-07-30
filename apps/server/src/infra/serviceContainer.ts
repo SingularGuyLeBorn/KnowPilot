@@ -11,15 +11,15 @@ import type { AppConfig } from "./config.js";
 
 // Service imports
 import {
-  GardenService,
   PostService,
   AgentService,
   SessionService,
   MessageService,
   SessionQueueItemService,
-  ApprovalService,
-  InboxService,
 } from "../services.js";
+import { GardenService } from "./entityServices/gardenService.js";
+import { ApprovalService } from "./entityServices/approvalService.js";
+import { InboxService } from "./entityServices/inboxService.js";
 import { CredentialService } from "./entityServices/credentialService.js";
 import { LogService } from "./entityServices/logService.js";
 import { ToolService } from "./entityServices/toolService.js";

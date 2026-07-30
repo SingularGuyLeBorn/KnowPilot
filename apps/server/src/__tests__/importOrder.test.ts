@@ -40,6 +40,9 @@ const entries: Array<{ name: string; specifier: string; key: string }> = [
   { name: "skillService", specifier: "../infra/entityServices/skillService.js", key: "SkillService" },
   { name: "mcpService", specifier: "../infra/entityServices/mcpService.js", key: "McpService" },
   { name: "memoryService", specifier: "../infra/entityServices/memoryService.js", key: "MemoryService" },
+  { name: "gardenService", specifier: "../infra/entityServices/gardenService.js", key: "GardenService" },
+  { name: "approvalService", specifier: "../infra/entityServices/approvalService.js", key: "ApprovalService" },
+  { name: "inboxService", specifier: "../infra/entityServices/inboxService.js", key: "InboxService" },
 ];
 
 describe("W4 import 顺序冒烟（循环依赖防线）", () => {
