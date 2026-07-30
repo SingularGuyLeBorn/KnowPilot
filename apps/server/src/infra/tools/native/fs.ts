@@ -129,20 +129,36 @@ async function readFileTool(args: Record<string, unknown>, ctx: NativeToolContex
   };
 }
 
+/** P2-05：单次写入硬顶（审批表不宜落超大正文；超限请拆分或 ask_user 后分批写） */
+const WRITE_FILE_MAX_BYTES = 512_000;
+
+function assertWriteSizeAllowed(op: string, bytes: number) {
+  if (bytes <= WRITE_FILE_MAX_BYTES) return;
+  throw new Error(
+    `${op} 单次内容 ${bytes} 字节超过上限 ${WRITE_FILE_MAX_BYTES}。请拆成多次写入，或先 ask_user 征得同意后再分批写。`,
+  );
+}
+
 async function writeFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
+  const content = String(args.content ?? "");
+  const bytes = Buffer.byteLength(content, "utf8");
+  assertWriteSizeAllowed("write_file", bytes);
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(abs, String(args.content ?? ""), "utf8");
-  return { path: relForReturn, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
+  fs.writeFileSync(abs, content, "utf8");
+  return { path: relForReturn, bytes };
 }
 
 async function appendToFileTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const { abs, relForReturn } = await resolveAgentFsPath(ctx, String(args.path), "write");
+  const content = String(args.content ?? "");
+  const bytes = Buffer.byteLength(content, "utf8");
+  assertWriteSizeAllowed("append_to_file", bytes);
   const dir = path.dirname(abs);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(abs, String(args.content ?? ""), "utf8");
-  return { path: relForReturn, bytes: Buffer.byteLength(String(args.content ?? ""), "utf8") };
+  fs.appendFileSync(abs, content, "utf8");
+  return { path: relForReturn, bytes };
 }
 
 async function listDirectoryTool(args: Record<string, unknown>, ctx: NativeToolContext) {
@@ -374,10 +390,10 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "write_file",
     concurrencyClass: "D",
     destructive: true,
-    // 可回滚的常规写入，非删除类——不因 AGENT_DESTRUCTIVE_APPROVAL 拦截日常写文件
+    // 日常小文件豁免 AGENT_DESTRUCTIVE_APPROVAL；单次 >512KB 硬拒（P2-05）
     approvalExempt: true,
     description:
-      "写入文本文件。允许 content/uploads/…；禁止直写其它 content/（文章走 post_*）与 apps/algo-viz（动画用 algo_viz_create）。其余相对当前 Agent Workspace。禁止 .. 与绝对路径。",
+      "写入文本文件。允许 content/uploads/…；禁止直写其它 content/（文章走 post_*）与 apps/algo-viz（动画用 algo_viz_create）。其余相对当前 Agent Workspace。禁止 .. 与绝对路径。单次内容上限约 512KB，超限请拆分写入。",
     parameters: {
       type: "object",
       properties: {

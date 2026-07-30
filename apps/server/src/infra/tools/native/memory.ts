@@ -238,6 +238,28 @@ async function memoryCreateTool(args: Record<string, unknown>, ctx: NativeToolCo
     workspaceId: ctx.agentSnapshot?.workspaceId,
     tier: ctx.agentSnapshot?.tier,
   });
+  // P2-06：global 写入可污染全部 Agent 上下文——审计日志 + 强制审批（无视 approvalExempt）
+  if (scope === "global" && ctx.services) {
+    console.warn(
+      `[memory_create] global 写入 agent=${ctx.agentSnapshot?.id ?? "?"} tier=${ctx.agentSnapshot?.tier ?? "?"} chars=${content.length}`,
+    );
+    const { forceApprovalOrProceed } = await import("../../approvalGate.js");
+    const approvalId =
+      typeof args.approvalId === "string" && args.approvalId.trim()
+        ? args.approvalId.trim()
+        : undefined;
+    await forceApprovalOrProceed(
+      ctx.services,
+      "memory_create",
+      {
+        content,
+        type: rawType,
+        scope: "global",
+        ...(Array.isArray(args.keywords) ? { keywords: args.keywords.map(String) } : {}),
+      },
+      approvalId,
+    );
+  }
   const repo = createMemoryRepository(ctx.services);
   const attributionRaw = args.attribution ? String(args.attribution) : "agent";
   const attribution = ["user", "agent", "system"].includes(attributionRaw)

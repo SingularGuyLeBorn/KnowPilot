@@ -72,6 +72,9 @@ function defaultSubagentPlaceholderName(task: string): string {
  *   hub.waitFor(子会话) 解析；queued 期间跟踪 Task / 子会话状态落 queued（右栏可见「agent 未启动」）。
  * - waitForResult=true：同步等待，走槽位血缘继承（Q4）inline 不占新槽——claimOccupancy 把子会话
  *   hub 流从「hub 交互 running」中剔除（父槽位让渡）。父流挂起轮询，子会话空闲后抓最后一条 assistant。
+ *   【正式例外 · P2-07】异步路径结果唯一通道仍是 agent_report_back→autoConsume；
+ *   仅 waitForResult=true 允许把子会话末条 assistant 截断摘要（content≤500）经 tool return 交给父。
+ *   attach.content 可含全文供编排层，父 Agent 不得另开 agent_inspect 窥消息。
  * - 底层实现仍是 agent_create_sub + agent_send_message({ autoRun: true })，但执行入口统一收口到
  *   SwarmOrchestrator.dispatch，禁止各调用方私自起流。
  *
@@ -1475,7 +1478,7 @@ const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
     description:
-      "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 作为工具返回值（不强制 report_back，也不进异步队列）。" +
+      "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待（正式例外）：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 摘要作为工具返回值（不强制 report_back，也不进异步队列）；勿再 agent_inspect 窥子消息全文。" +
       "goal=true 或提供 goalText：在子会话设立 standing goal 外环（裁判续跑），等同向子会话发送 `/goal …`；waitForResult=true 时会等到 goal 终态/子空闲。" +
       "waitForResult=false 派生后应立即结束当前轮（直接 return，告知用户已派子 Agent 即可），结果会经 report_back 自动投递到父会话异步结果队列，下一轮自动出现气泡；切勿轮询 async_task_status 查看进度——该工具只用于你已主动发起的 async_task_run 纯工具任务。",
     parameters: zodParams(

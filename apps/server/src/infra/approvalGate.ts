@@ -50,6 +50,8 @@ const NATIVE_APPROVAL_EXECUTE_OPS = new Set([
   "git_push",
   "skill_enable",
   "skill_promote",
+  // P2-06：global memory_create 经 forceApproval 入队后，/approvals 执行须走 native
+  "memory_create",
 ]);
 
 /**
@@ -504,6 +506,7 @@ export async function expireStaleApprovals(services: ServiceContainer): Promise<
 
 /**
  * 校验审批状态；未携带 approvalId 时自动创建 pending 记录并抛出 FORBIDDEN。
+ * 仅当 toolRequiresApproval(toolName) 为真时生效。
  */
 export async function assertApprovalOrProceed(
   services: ServiceContainer,
@@ -512,7 +515,28 @@ export async function assertApprovalOrProceed(
   approvalId?: string,
 ): Promise<void> {
   if (!toolRequiresApproval(toolName)) return;
+  await enforceApprovalOrProceed(services, toolName, args, approvalId);
+}
 
+/**
+ * 强制审批（忽略 registry approvalExempt / AGENT_DESTRUCTIVE_APPROVAL 开关）。
+ * 用于超大 write_file、global memory_create 等「工具本身豁免但场景必须闸」的路径。
+ */
+export async function forceApprovalOrProceed(
+  services: ServiceContainer,
+  toolName: string,
+  args: Record<string, unknown>,
+  approvalId?: string,
+): Promise<void> {
+  await enforceApprovalOrProceed(services, toolName, args, approvalId);
+}
+
+async function enforceApprovalOrProceed(
+  services: ServiceContainer,
+  toolName: string,
+  args: Record<string, unknown>,
+  approvalId?: string,
+): Promise<void> {
   // 惰性清理过期 pending，避免堆积
   try {
     await expireStaleApprovals(services);
