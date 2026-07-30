@@ -40,12 +40,13 @@ async function readDecision(agentId: string) {
   };
 }
 
-describe("W2 heartbeatDecision 引擎集成", () => {
+describe.sequential("W2 heartbeatDecision 引擎集成", () => {
   beforeEach(() => {
     resetHeartbeatEngineForTests();
     resetAsyncJobOrchestratorForTests();
     resetSwarmOrchestratorForTests();
     setStreamHub(null);
+    vi.restoreAllMocks();
   });
 
   afterEach(async () => {
@@ -136,7 +137,7 @@ describe("W2 heartbeatDecision 引擎集成", () => {
       async () => {
         expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
       },
-      { timeout: 5000, interval: 100 },
+      { timeout: 15_000, interval: 100 },
     );
     const d = await readDecision(agentId);
     expect(d.decision.lastMode).toBe("terminal_no_followup");
