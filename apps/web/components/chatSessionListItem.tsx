@@ -6,7 +6,7 @@
  */
 
 import { memo } from "react";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { AlarmClock, Check, HeartPulse, Pencil, Trash2, X } from "lucide-react";
 import type { ChatSession } from "@knowpilot/shared";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
@@ -90,15 +90,30 @@ export const SessionListItem = memo(function SessionListItem({
           active ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-2)]",
         )}
       >
-        <div className="truncate font-medium">
-          {session.autoName || session.title || "新对话"}
-          {session.kind === "heartbeat" && (
-            <span className="ml-1.5 rounded bg-orange-100 px-1 py-0.5 text-[10px] font-normal text-orange-700">
-              心跳
+        <div className="flex min-w-0 items-center gap-1.5">
+          {session.kind === "cron" ? (
+            <span
+              className="inline-flex shrink-0 items-center justify-center rounded-md bg-amber-100 p-0.5 text-amber-700"
+              title="定时节律"
+              aria-label="定时节律"
+            >
+              <AlarmClock className="h-3 w-3" />
             </span>
-          )}
+          ) : null}
+          {session.kind === "heartbeat" ? (
+            <span
+              className="inline-flex shrink-0 items-center justify-center rounded-md bg-orange-100 p-0.5 text-orange-700"
+              title="心跳"
+              aria-label="心跳"
+            >
+              <HeartPulse className="h-3 w-3" />
+            </span>
+          ) : null}
+          <span className="min-w-0 truncate font-medium">
+            {session.autoName || session.title || "新对话"}
+          </span>
           {session.status === "archived" && (
-            <span className="ml-1.5 rounded bg-[var(--kp-bg-mute)] px-1 py-0.5 text-[10px] font-normal text-[var(--kp-text-3)]">
+            <span className="shrink-0 rounded bg-[var(--kp-bg-mute)] px-1 py-0.5 text-[10px] font-normal text-[var(--kp-text-3)]">
               已归档
             </span>
           )}

@@ -15,10 +15,7 @@ import {
   listCronJobs,
   upsertCronJob,
 } from "../infra/agentCronStore.js";
-import {
-  SwarmOrchestrator,
-  resetSwarmOrchestratorForTests,
-} from "../infra/swarmOrchestrator.js";
+import { resetSwarmOrchestratorForTests } from "../infra/swarmOrchestrator.js";
 import { resetAsyncJobOrchestratorForTests } from "../infra/asyncJobOrchestrator.js";
 import { getAppConfig } from "../infra/config.js";
 import { setStreamHub } from "../infra/sessionStreamHub.js";
@@ -183,17 +180,29 @@ describe("agentCron", () => {
     }
   });
 
-  it("fire 每次新建 kind=cron 会话并注入详细 prompt", async () => {
+  it("fire 每次新建 kind=cron 会话并经 Hub 起流注入详细 prompt", async () => {
     const ctx = await createContextInner();
     const suffix = `${Date.now()}`;
     const mgr = await createAgent(ctx, { name: `cron-fire-${suffix}`, tier: "manager" });
 
-    const dispatchSpy = vi.spyOn(SwarmOrchestrator.prototype, "dispatch").mockResolvedValue({
-      jobId: "mock-job",
-      origin: "cron",
-      status: "queued",
-      deduped: false,
+    const startIfNotRunning = vi.fn().mockImplementation(async (sessionId: string, body: { message: string; source?: string }) => {
+      await prisma.chatMessage.create({
+        data: {
+          sessionId,
+          role: "user",
+          content: body.message,
+          source: body.source === "cron" ? "cron" : "system",
+        },
+      });
+      return "started" as const;
     });
+    const pushExternalEvent = vi.fn();
+    setStreamHub({
+      startIfNotRunning,
+      pushExternalEvent,
+      isRunning: () => false,
+      stop: vi.fn(),
+    } as never);
 
     try {
       const row = await upsertCronJob(prisma, {
@@ -218,11 +227,17 @@ describe("agentCron", () => {
         orderBy: { createdAt: "asc" },
       });
       expect(msgs[0]?.role).toBe("user");
+      expect(msgs[0]?.source).toBe("cron");
       expect(msgs[0]?.content).toContain("详细初始提示词");
       expect(msgs[0]?.content).toContain("fire-once");
       expect(msgs[0]?.content).toContain("session_spawn_goal");
       expect(msgs[0]?.content).toContain("Briefing");
-      expect(dispatchSpy).toHaveBeenCalled();
+      expect(startIfNotRunning).toHaveBeenCalled();
+      expect(startIfNotRunning.mock.calls[0]?.[1]?.source).toBe("cron");
+
+      const marked = await listCronJobs(prisma, { agentId: mgr.id });
+      expect(marked.find((r) => r.id === row.id)?.lastRunStatus).toBe("running");
+      expect(marked.find((r) => r.id === row.id)?.lastSessionId).toBe(r1.sessionId);
 
       const r2 = await engine.fire(row.id);
       expect(r2.sessionId).toBeTruthy();

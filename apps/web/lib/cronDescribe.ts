@@ -50,6 +50,21 @@ export function describeCron(cron: string | undefined | null): string {
     }
   }
 
+  // 0 H * * 1-5 → 工作日 H:00
+  if (min === "0" && dom === "*" && mon === "*" && dow === "1-5") {
+    const h = parseIntField(hour ?? "");
+    if (h !== null && h >= 0 && h <= 23) return `工作日 ${h}:00`;
+  }
+
+  // M H * * 1-5 → 工作日 H:MM
+  if (dom === "*" && mon === "*" && dow === "1-5") {
+    const m = parseIntField(min ?? "");
+    const h = parseIntField(hour ?? "");
+    if (m !== null && h !== null && m >= 0 && m <= 59 && h >= 0 && h <= 23) {
+      return `工作日 ${h}:${pad2(m)}`;
+    }
+  }
+
   // 0 H * * D → 每周X H:00
   if (min === "0" && dom === "*" && mon === "*") {
     const h = parseIntField(hour ?? "");

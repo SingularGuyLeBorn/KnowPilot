@@ -5,7 +5,7 @@
 
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ShieldCheck, Check, X, Play, Clock, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { useApproval } from "@/lib/hooks";
 import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, Pagination, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
+import { UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
 
 type StatusFilter = "all" | "pending" | "approved" | "rejected" | "executed";
 
@@ -62,8 +64,35 @@ export default function ApprovalsPage() {
     pageSize: 10,
     ...(statusFilter !== "all" ? { status: statusFilter } : {}),
   };
-  const { data, isLoading } = useList(listInput);
-  const { data: summary } = useHumanTodoSummary();
+  // 推拉：PUSH=approval_updated SSE/BC；PULL=有 pending 时 3s，否则 15s
+  const { data, isLoading } = useList(listInput, {
+    refetchInterval: (q: { state: { data?: { items?: Approval[] } } }) => {
+      const items = q.state.data?.items ?? [];
+      const pending = items.some((a) => a.status === "pending");
+      return pending || statusFilter === "pending" ? 3000 : 15_000;
+    },
+  });
+  const { data: summary } = useHumanTodoSummary({ refetchInterval: 5000 });
+  const utils = trpc.useUtils();
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    let bc: BroadcastChannel;
+    try {
+      bc = new BroadcastChannel(UI_STATE_CHANNEL);
+    } catch {
+      return;
+    }
+    const onMsg = (ev: MessageEvent) => {
+      if ((ev.data as { type?: string } | null)?.type !== "approval_updated") return;
+      utils.approval.list.invalidate().catch(() => {});
+      utils.approval.humanTodoSummary.invalidate().catch(() => {});
+    };
+    bc.addEventListener("message", onMsg);
+    return () => {
+      bc.removeEventListener("message", onMsg);
+      bc.close();
+    };
+  }, [utils]);
   const updateMutation = useUpdate();
   const approveExecuteMutation = useApproveAndExecute();
   const executeMutation = useExecute();

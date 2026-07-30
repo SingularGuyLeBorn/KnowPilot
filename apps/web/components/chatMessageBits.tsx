@@ -7,6 +7,7 @@
 
 import { memo } from "react";
 import {
+  AlarmClock,
   BookPlus,
   Bookmark,
   Bot,
@@ -28,6 +29,7 @@ const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: str
   manager: { label: "管理 Agent", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
   sub: { label: "子 Agent 发送", bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
   system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
+  cron: { label: "定时节律", bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-200" },
   childNotify: { label: "来自子 Agent", bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-200" },
 };
 
@@ -61,6 +63,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   asyncKind,
   taskLabel,
   childNotify,
+  cronName,
 }: {
   source?: string;
   isSubagentSession?: boolean;
@@ -71,8 +74,27 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   taskLabel?: string;
   /** 子 Agent 主动通知（agent_notify_parent）元信息 */
   childNotify?: { sourceName?: string; source?: string };
+  /** Agent Cron 任务名（与用户消息区分） */
+  cronName?: string;
 }) {
   if (!source || source === "user") return null;
+  if (source === "cron") {
+    const label = cronName?.trim()
+      ? `定时节律 · ${cronName.trim().slice(0, 28)}`
+      : "定时节律";
+    return (
+      <span
+        className={cn(
+          "pointer-events-none absolute -top-2.5 z-10 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shadow-sm",
+          align === "right" ? "right-3" : "left-3",
+          "border-amber-200 bg-amber-100 text-amber-800",
+        )}
+      >
+        <AlarmClock className="h-3.5 w-3.5" />
+        {label}
+      </span>
+    );
+  }
   if (childNotify) {
     const notifyName = formatSubagentDisplayName(childNotify.sourceName);
     const label = notifyName ? `来自子 Agent · ${notifyName}` : "来自子 Agent";

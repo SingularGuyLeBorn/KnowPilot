@@ -455,7 +455,7 @@ export const agentChatSchema = z
     editMessageId: z.string().cuid().optional(),
     editContent: z.string().min(1).optional(),
     skillId: z.string().cuid().optional(),
-    source: z.enum(["user", "super", "manager", "sub", "system"]).optional(),
+    source: z.enum(["user", "super", "manager", "sub", "system", "cron"]).optional(),
     /** 工具权限血统：parent=上级任务/异步续跑（允许 report_back）；user=用户直接对话 */
     runOrigin: z.enum(["user", "parent", "heartbeat"]).optional(),
     toolResults: z.record(z.unknown()).optional(),
@@ -545,7 +545,7 @@ export const listSkillsSchema = z.object({
 
 export const sessionStatusSchema = z.enum(["active", "queued", "running", "paused", "completed", "failed", "archived"]);
 
-export const sessionKindSchema = z.enum(["chat", "subagent", "heartbeat", "skill_review", "channel"]);
+export const sessionKindSchema = z.enum(["chat", "subagent", "heartbeat", "skill_review", "channel", "cron"]);
 
 export const sessionGoalModeSchema = z.enum(["goal", "deep_research"]);
 export const sessionGoalStatusSchema = z.enum(["active", "paused", "done", "exhausted"]);
@@ -690,7 +690,7 @@ export const createMessageSchema = z.object({
     total: z.number(),
   }).optional(),
   finishReason: z.string().optional(),
-  source: z.enum(["user", "super", "manager", "sub", "system"]).optional(), // 不传则 service 层默认 "user"
+  source: z.enum(["user", "super", "manager", "sub", "system", "cron"]).optional(), // 不传则 service 层默认 "user"
 });
 
 export const updateMessageSchema = z.object({
@@ -1364,6 +1364,47 @@ export const listTriggersSchema = z.object({
 });
 
 /* ═══════════════════════════════════════════════════════
+   AgentCronJob（Agent 自设定时任务）
+   ═══════════════════════════════════════════════════════ */
+
+const cronFiveField = z
+  .string()
+  .min(5)
+  .max(64)
+  .regex(/^(\S+\s+){4}\S+$/, "需为标准 5 段 cron，如 0 8 * * *");
+
+export const listAgentCronSchema = z.object({
+  agentId: z.string().cuid().optional(),
+  enabledOnly: z.boolean().optional(),
+});
+
+export const upsertAgentCronSchema = z.object({
+  agentId: z.string().cuid(),
+  name: z.string().min(1).max(100),
+  cron: cronFiveField,
+  prompt: z.string().min(8).max(12000),
+  busPath: z.string().max(500).nullable().optional(),
+  enabled: z.boolean().default(true),
+});
+
+export const clearAgentCronSchema = z.object({
+  id: z.string().min(1).optional(),
+  agentId: z.string().cuid().optional(),
+  name: z.string().min(1).max(100).optional(),
+}).refine((v) => Boolean(v.id) || (Boolean(v.agentId) && Boolean(v.name)), {
+  message: "需要 id，或 agentId+name",
+});
+
+export const setAgentCronEnabledSchema = z.object({
+  id: z.string().min(1),
+  enabled: z.boolean(),
+});
+
+export const fireAgentCronSchema = z.object({
+  id: z.string().min(1),
+});
+
+/* ═══════════════════════════════════════════════════════
    Approval (审批队列)
    ═══════════════════════════════════════════════════════ */
 
@@ -1724,6 +1765,10 @@ export type ListWorkspacesInput = z.infer<typeof listWorkspacesSchema>;
 export type CreateTriggerInput = z.infer<typeof createTriggerSchema>;
 export type UpdateTriggerInput = z.infer<typeof updateTriggerSchema>;
 export type ListTriggersInput = z.infer<typeof listTriggersSchema>;
+
+export type ListAgentCronInput = z.infer<typeof listAgentCronSchema>;
+export type UpsertAgentCronInput = z.infer<typeof upsertAgentCronSchema>;
+export type ClearAgentCronInput = z.infer<typeof clearAgentCronSchema>;
 
 export type CreateApprovalInput = z.infer<typeof createApprovalSchema>;
 export type UpdateApprovalInput = z.infer<typeof updateApprovalSchema>;

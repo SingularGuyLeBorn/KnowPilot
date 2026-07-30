@@ -83,6 +83,15 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
   const task = String(args.task || "");
   if (!task.trim()) throw new Error("spawn_subagent 需要 task（子 Agent 任务描述）");
   const waitForResult = coerceToolBoolean(args.waitForResult);
+  // 父派子 goal：显式 goal/goalText，或 task 已带 /goal 前缀 → 经 prepareAgentRun 设立外环
+  const goalTextArg =
+    typeof args.goalText === "string" && args.goalText.trim() ? args.goalText.trim() : "";
+  const wantGoal = coerceToolBoolean(args.goal) || Boolean(goalTextArg);
+  const dispatchTask = wantGoal
+    ? task.trim().toLowerCase().startsWith("/goal")
+      ? task
+      : `/goal ${goalTextArg || task.trim()}`
+    : task;
   const parentSnapshot = ctx.agentSnapshot;
 
   // TP-1：maxSubagentsPerSession 数量检查（manual path 此前无检查——
@@ -151,7 +160,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
         guard,
         dedup: {
           agentId: parentSnapshot.id,
-          taskText: task,
+          taskText: dispatchTask,
           // 早结 attach：dedup 命中方拿 ids 即返回，不等池任务收口（fire-and-forget）
           earlyOutcome: () => ({ status: "success", attach: buildAttach(getPrepared()!) }),
         },
@@ -163,7 +172,7 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
             metadata: p.subagentSessionId ? { subagentSessionId: p.subagentSessionId } : undefined,
           };
         },
-        execute: (signal) => spawnSubagentPooledRun(ctx, task, getPrepared()!, signal),
+        execute: (signal) => spawnSubagentPooledRun(ctx, dispatchTask, getPrepared()!, signal),
       });
     } catch (err) {
       // 入池拒绝（maxQueued 满）/准备失败：回收 Phase A 产物，避免永远挂在 queued
@@ -205,13 +214,13 @@ async function spawnSubagentTool(args: Record<string, unknown>, ctx: NativeToolC
       sessionId: ctx.sessionId,
       taskLabel: task.slice(0, 80),
       guard,
-      dedup: { agentId: parentSnapshot.id, taskText: task },
+      dedup: { agentId: parentSnapshot.id, taskText: dispatchTask },
       prepare: async () => {
         const p = setPrepared(await spawnSubagentPrepare(args, ctx, task, true));
         if (p.subagentSessionId) releaseClaim = pool.claimOccupancy(p.subagentSessionId);
         return { jobId: p.jobId };
       },
-      execute: () => spawnSubagentSyncWait(ctx, task, getPrepared()!),
+      execute: () => spawnSubagentSyncWait(ctx, dispatchTask, getPrepared()!),
     });
   } finally {
     // 为什么 finally 还槽：claim 期间子会话 hub 流退出「交互 running」口径（Q4 父槽位让渡），
@@ -1368,6 +1377,20 @@ async function sessionSpawnGoalTool(args: Record<string, unknown>, ctx: NativeTo
     };
   }
   const newSessionId = (created.data as { id: string }).id;
+  // SessionService.afterCreate 已推 session_list_changed；再推当前会话确保 briefing 标签即时侧栏刷新
+  try {
+    const { pushUiStateToSession } = await import("../../uiStateNotify.js");
+    if (ctx.sessionId) {
+      pushUiStateToSession(ctx.sessionId, {
+        type: "session_list_changed",
+        agentId: target.id,
+        sessionId: newSessionId,
+        reason: "session_spawn_goal",
+      });
+    }
+  } catch {
+    /* ignore */
+  }
 
   let goal;
   try {
@@ -1446,7 +1469,9 @@ const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "spawn_subagent",
     description:
-      "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 作为工具返回值（不强制 report_back，也不进异步队列）。waitForResult=false 派生后应立即结束当前轮（直接 return，告知用户已派子 Agent 即可），结果会经 report_back 自动投递到父会话异步结果队列，下一轮自动出现气泡；切勿轮询 async_task_status 查看进度——该工具只用于你已主动发起的 async_task_run 纯工具任务。",
+      "派生一个独立子 Agent（Subagent）执行长任务。waitForResult=false（默认）=异步投递：工具立刻返回，用户可继续与父 Agent 对话，子 Agent 完成后须调用 agent_report_back，结果进父会话异步任务结果队列。waitForResult=true=同步等待：父流挂起转圈，子会话空闲后系统抓取最后一条 assistant 作为工具返回值（不强制 report_back，也不进异步队列）。" +
+      "goal=true 或提供 goalText：在子会话设立 standing goal 外环（裁判续跑），等同向子会话发送 `/goal …`；waitForResult=true 时会等到 goal 终态/子空闲。" +
+      "waitForResult=false 派生后应立即结束当前轮（直接 return，告知用户已派子 Agent 即可），结果会经 report_back 自动投递到父会话异步结果队列，下一轮自动出现气泡；切勿轮询 async_task_status 查看进度——该工具只用于你已主动发起的 async_task_run 纯工具任务。",
     parameters: zodParams(
       z.object({
         task: z.string().describe("子 Agent 要执行的任务描述（详细越好）"),
@@ -1461,6 +1486,14 @@ const SESSION_DEFS: NativeToolDefinition[] = [
         waitForResult: z
           .boolean()
           .describe("true=同步等待子 Agent 完成并作为工具返回值；false(默认)=异步投递，立刻返回，结果经 report_back 进父异步队列")
+          .optional(),
+        goal: z
+          .boolean()
+          .describe("true=在子会话启用 standing goal 外环续跑（等同 task 前加 /goal）；与 goalText 任一即可")
+          .optional(),
+        goalText: z
+          .string()
+          .describe("standing goal 文本（不填则用 task）；提供后自动启用 goal 模式")
           .optional(),
         shareToSessionIds: z.array(z.string()).describe("swarm 协作：结果额外广播到这些会话 id").optional(),
       }),
@@ -1622,7 +1655,7 @@ const SESSION_DEFS: NativeToolDefinition[] = [
     description:
       "为当前会话设立/覆盖 standing goal（跨轮外环，系统裁判续跑）。用户不必输入 /goal——当你判断任务需要多轮推进（修测试、深度调研、长报告、明确交付物）时主动调用。" +
       "短问短答、一次性查询不要设。" +
-      "mode=goal 普通目标；mode=deep_research 深度调研（仅新会话、尚无用户消息时可用）。" +
+      "mode=goal 普通目标（含子 Agent 会话）；mode=deep_research 深度调研（仅独立 chat、尚无用户消息；子会话不可用）。" +
       "与 todo_write 分工：todo=本轮步骤清单；goal=跨轮外环目标。" +
       "调用后本轮继续推进目标即可，勿再让用户手动 /goal。",
     parameters: zodParams(

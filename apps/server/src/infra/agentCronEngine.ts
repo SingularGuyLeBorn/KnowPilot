@@ -2,18 +2,16 @@
  * AgentCronEngine — Agent 自设 cron（与 Heartbeat 正交）
  *
  * - 每次点火 **新建** ChatSession（kind=cron），不复用主会话 / 心跳会话
- * - 首条 user 消息 = 配置的详细 prompt（可选拼接 busPath 文件内容）
- * - 调度走 SwarmOrchestrator 池（origin=cron）
+ * - 经 SessionStreamHub **交互式起流**（不入全局异步池）：避免审批 gate / 池排队导致
+ *   「立刻跑一次」看起来完全没反应；Chat 可订阅 SSE 看 briefing 进度
+ * - 首条 user 消息由 chatAgentStream 落库；可选 busPath 拼进首条内容
  */
 import cron, { type ScheduledTask } from "node-cron";
 import fs from "fs/promises";
 import type { PrismaClient } from "@prisma/client";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import { getSwarmOrchestrator, type SwarmTaskOutcome } from "./swarmOrchestrator.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
-import { claimExclusiveSessionTaskRun } from "./taskClaim.js";
-import { deriveRequiredScopesFromTools } from "./approvalScope.js";
 import { resolveSafePath, resolveWithinDir } from "./safePath.js";
 import {
   ensureAgentCronJobTable,
@@ -21,12 +19,16 @@ import {
   markCronJobRun,
   type AgentCronJobRow,
 } from "./agentCronStore.js";
+import { getStreamHub, onHubRunSettled } from "./sessionStreamHub.js";
 
 type JobKey = string; // cronJobId
 
 export class AgentCronEngine {
   private jobs = new Map<JobKey, ScheduledTask>();
   private running = new Set<JobKey>();
+  /** sessionId → cronJobId，供 hub settled 回写 lastRun* */
+  private sessionToCron = new Map<string, string>();
+  private unsubSettled: (() => void) | null = null;
 
   constructor(
     private prisma: PrismaClient,
@@ -34,7 +36,15 @@ export class AgentCronEngine {
     private config: AppConfig,
   ) {}
 
+  private ensureSettledHook(): void {
+    if (this.unsubSettled) return;
+    this.unsubSettled = onHubRunSettled((sessionId) => {
+      void this.onSessionSettled(sessionId);
+    });
+  }
+
   start(): void {
+    this.ensureSettledHook();
     void ensureAgentCronJobTable(this.prisma)
       .then(() => this.refresh())
       .catch((err) => {
@@ -51,6 +61,9 @@ export class AgentCronEngine {
       task.stop();
     }
     this.jobs.clear();
+    this.unsubSettled?.();
+    this.unsubSettled = null;
+    this.sessionToCron.clear();
     console.log("  ⏰ [AgentCronEngine] 已停止");
   }
 
@@ -84,8 +97,34 @@ export class AgentCronEngine {
     this.jobs.set(row.id, task);
   }
 
-  /** 测试 / 手动触发入口 */
+  private async onSessionSettled(sessionId: string): Promise<void> {
+    const cronJobId = this.sessionToCron.get(sessionId);
+    if (!cronJobId) return;
+    this.sessionToCron.delete(sessionId);
+    try {
+      const session = await this.prisma.chatSession.findUnique({
+        where: { id: sessionId },
+        select: { status: true },
+      });
+      const status =
+        session?.status === "failed" || session?.status === "paused"
+          ? "failed"
+          : session?.status === "archived"
+            ? "cancelled"
+            : "success";
+      await markCronJobRun(this.prisma, cronJobId, status, sessionId);
+      console.log(`  ⏰ [AgentCronEngine] 会话收尾 session=${sessionId} → ${status}`);
+    } catch (err) {
+      console.warn(
+        `  ⏰ [AgentCronEngine] 回写 lastRun 失败:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  /** 测试 / 手动触发 / 定时点火入口 */
   async fire(cronJobId: string): Promise<{ sessionId?: string; error?: string }> {
+    this.ensureSettledHook();
     if (this.running.has(cronJobId)) {
       return { error: "同任务仍在执行，跳过重叠触发" };
     }
@@ -101,169 +140,102 @@ export class AgentCronEngine {
         return { error: "目标 Agent 不可用" };
       }
       if (agent.tier === "sub") {
-        // 防御：sub 不应持有 cron；若历史脏数据则跳过
         return { error: "子 Agent 不允许执行 cron 任务" };
       }
 
       const userContent = await this.buildUserContent(job, agent.workspaceId);
       const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-      const session = await this.prisma.chatSession.create({
-        data: {
-          title: `[cron] ${job.name} · ${stamp}`,
-          model: agent.model,
-          agentId: agent.id,
-          kind: "cron",
-          isMainSession: false,
-          status: "active",
-          taskDescription: job.prompt.slice(0, 500),
-        },
-      });
-
-      await this.services.message.create({
-        sessionId: session.id,
-        role: "user",
-        content: userContent,
-        source: "system",
-      });
-
-      const tools = agent.tools ? agent.tools.split(",").filter(Boolean) : [];
-      const agentSnapshot = {
-        id: agent.id,
+      // 走 SessionService：触发 afterCreate → session_list_changed（推拉铁律）
+      const created = await this.services.session.create({
+        title: `[cron] ${job.name} · ${stamp}`,
         model: agent.model,
-        systemPrompt: agent.systemPrompt,
-        tools,
-        tier: agent.tier,
-        workspaceId: agent.workspaceId,
-        parentId: agent.parentId,
+        agentId: agent.id,
+        kind: "cron",
+        isMainSession: false,
+        status: "active",
+        taskDescription: job.prompt.slice(0, 500),
+      });
+      if (!created.success || !created.data) {
+        return { error: created.error?.message ?? "创建 cron 会话失败" };
+      }
+      const session = created.data as { id: string; title: string };
+
+      // 立刻回写「运行中」，管理页不再显示「从未运行」假象（markCronJobRun 内推 cron_job_updated）
+      await markCronJobRun(this.prisma, job.id, "running", session.id);
+
+      const hub = getStreamHub();
+      if (!hub) {
+        await markCronJobRun(this.prisma, job.id, "failed", session.id);
+        return { sessionId: session.id, error: "StreamHub 未就绪，请确认 server 已完整启动" };
+      }
+
+      const body = {
+        sessionId: session.id,
+        message: userContent,
+        model: agent.model,
+        source: "cron" as const,
+        agentId: agent.id,
+        toolResults: {
+          cron: { jobId: job.id, name: job.name, cron: job.cron },
+        },
       };
 
-      const task = await this.prisma.task.create({
-        data: {
-          name: `[cron] ${agent.name}/${job.name}`,
-          type: "oneshot",
-          status: "queued",
-          queuedAt: new Date(),
+      const invoke = createTrpcInvoker({
+        services: this.services,
+        config: this.config,
+        prisma: this.prisma,
+      });
+
+      this.sessionToCron.set(session.id, job.id);
+
+      let started: "started" | "duplicate" | "busy";
+      try {
+        started = await hub.startIfNotRunning(session.id, body, (emit, signal) =>
+          import("./agentStream.js").then(({ chatAgentStream }) =>
+            chatAgentStream(this.services, this.config, body, invoke, emit, signal),
+          ),
+        );
+      } catch (err) {
+        this.sessionToCron.delete(session.id);
+        await markCronJobRun(this.prisma, job.id, "failed", session.id);
+        return {
           sessionId: session.id,
-          input: {
-            kind: "cron",
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+
+      if (started !== "started") {
+        this.sessionToCron.delete(session.id);
+        await markCronJobRun(this.prisma, job.id, "failed", session.id);
+        return {
+          sessionId: session.id,
+          error: started === "busy" ? "会话占线，未能起流" : "重复起流被拒绝",
+        };
+      }
+
+      // 通知该 Agent 主会话：其它已打开的 Chat 标签页刷新侧栏，无需整页刷新
+      try {
+        const main = await this.prisma.chatSession.findFirst({
+          where: { agentId: agent.id, isMainSession: true, status: { not: "archived" } },
+          select: { id: true },
+        });
+        if (main && main.id !== session.id) {
+          hub.pushExternalEvent(main.id, {
+            type: "cron_session_started",
             agentId: agent.id,
-            cronJobId: job.id,
             sessionId: session.id,
-            agentSnapshot,
-          },
-        },
-      });
+            cronJobId: job.id,
+            cronName: job.name,
+            title: session.title,
+          });
+        }
+      } catch {
+        /* 侧栏通知失败不影响点火 */
+      }
 
-      const orchestrator = getSwarmOrchestrator(this.config, this.services);
-      await orchestrator.dispatch({
-        origin: "cron",
-        schedule: "pool",
-        sessionId: session.id,
-        workspaceId: agent.workspaceId ?? null,
-        jobId: task.id,
-        taskLabel: `[cron] ${agent.name}/${job.name}`,
-        requiredScopes: deriveRequiredScopesFromTools(tools),
-        tools,
-        execute: async (signal): Promise<SwarmTaskOutcome> => {
-          const claimed = await claimExclusiveSessionTaskRun(this.prisma, task.id, session.id);
-          if (!claimed) {
-            await this.prisma.task.updateMany({
-              where: { id: task.id, status: { in: ["queued", "running"] } },
-              data: {
-                status: "cancelled",
-                finishedAt: new Date(),
-                output: { error: "重叠跳过" },
-                delivered: true,
-                deliveredAt: new Date(),
-              },
-            });
-            await markCronJobRun(this.prisma, job.id, "cancelled", session.id);
-            return { status: "failed", error: "重叠跳过" };
-          }
-
-          try {
-            const { runAgentLoop } = await import("./agentRuntime.js");
-            const invokeTrpc = createTrpcInvoker({ services: this.services, prisma: this.prisma });
-            const loop = await runAgentLoop({
-              config: this.config,
-              services: this.services,
-              agent: {
-                model: agent.model,
-                systemPrompt:
-                  `${agent.systemPrompt}\n\n` +
-                  `你因 cron 定时任务「${job.name}」被唤醒（本次为全新 briefing 会话，无历史对话）。\n` +
-                  `【Cron Briefing 铁律】本会话唯一职责：搜集项目/花园/bus 必要现状 → 写出详细可执行 prompt → 调用 session_spawn_goal(model, prompt, mode=goal) 开新会话执行。\n` +
-                  `禁止在本会话亲自完成完整交付（不要长链路搜题入库）；执行交给新会话的 goal 外环。可用 write_file 维护 bus。`,
-                tools,
-              },
-              messages: [{ role: "user", content: userContent }],
-              invokeTrpc,
-              signal,
-              sessionId: session.id,
-              agentMeta: agentSnapshot,
-              runOrigin: "async",
-              runInput: {
-                cron: true,
-                cronJobId: job.id,
-                cronName: job.name,
-                taskId: task.id,
-              },
-            });
-
-            await this.prisma.task.update({
-              where: { id: task.id },
-              data: {
-                status: "success",
-                finishedAt: new Date(),
-                output: { asyncResult: loop.content, tokenUsage: loop.tokenUsage },
-                delivered: true,
-                deliveredAt: new Date(),
-              },
-            });
-            await this.prisma.chatSession.update({
-              where: { id: session.id },
-              data: { status: "completed" },
-            });
-            await markCronJobRun(this.prisma, job.id, "success", session.id);
-            console.log(`  ⏰ [AgentCronEngine] ${agent.name}/${job.name} 完成 session=${session.id}`);
-            return {
-              status: "success",
-              content: typeof loop.content === "string" ? loop.content.slice(0, 500) : "cron 完成",
-            };
-          } catch (err: unknown) {
-            const isAbort = err instanceof Error && err.name === "AbortError";
-            await this.prisma.task
-              .update({
-                where: { id: task.id },
-                data: {
-                  status: "failed",
-                  finishedAt: new Date(),
-                  output: { error: err instanceof Error ? err.message : String(err) },
-                  delivered: true,
-                  deliveredAt: new Date(),
-                },
-              })
-              .catch(() => {});
-            await this.prisma.chatSession
-              .update({
-                where: { id: session.id },
-                data: { status: "failed" },
-              })
-              .catch(() => {});
-            await markCronJobRun(
-              this.prisma,
-              job.id,
-              isAbort ? "cancelled" : "failed",
-              session.id,
-            );
-            return {
-              status: "failed",
-              error: err instanceof Error ? err.message : String(err),
-            };
-          }
-        },
-      });
-
+      console.log(
+        `  ⏰ [AgentCronEngine] 已起流 ${agent.name}/${job.name} session=${session.id}`,
+      );
       return { sessionId: session.id };
     } finally {
       this.running.delete(cronJobId);

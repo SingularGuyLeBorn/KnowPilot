@@ -19,6 +19,7 @@ import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
 import { refreshSessionAsyncQueue } from "@/lib/refreshSessionAsyncQueue";
+import { postSessionListHint, postUiState } from "@/lib/uiStateChannel";
 
 export interface UseChatSseSubscriptionsParams {
   effectiveSessionId: string | null;
@@ -184,6 +185,42 @@ export function useChatSseSubscriptions({
           /* ignore */
         }
       });
+      register("cron_session_started", () => {
+        // 同 Agent 下新建 cron briefing：侧栏立即出现，无需整页刷新
+        utils.session.list.invalidate().catch(() => {});
+        utils.session.listRunning.invalidate().catch(() => {});
+        utils.agentCron.list.invalidate().catch(() => {});
+        postSessionListHint();
+        postUiState({ type: "cron_session_started" });
+      });
+      register("cron_job_updated", () => {
+        utils.agentCron.list.invalidate().catch(() => {});
+        postUiState({ type: "cron_job_updated" });
+      });
+      register("session_list_changed", () => {
+        utils.session.list.invalidate().catch(() => {});
+        utils.session.listRunning.invalidate().catch(() => {});
+        postUiState({ type: "session_list_changed" });
+      });
+      register("approval_updated", () => {
+        utils.approval.list.invalidate().catch(() => {});
+        utils.approval.humanTodoSummary.invalidate().catch(() => {});
+        postUiState({ type: "approval_updated" });
+      });
+      register("agent_list_changed", () => {
+        utils.agent.list.invalidate().catch(() => {});
+        utils.workspace.list.invalidate().catch(() => {});
+        postUiState({ type: "agent_list_changed" });
+      });
+      register("run_updated", () => {
+        utils.run.list.invalidate().catch(() => {});
+        postUiState({ type: "run_updated" });
+      });
+      register("task_updated", () => {
+        utils.task.list.invalidate().catch(() => {});
+        utils.trigger.list.invalidate().catch(() => {});
+        postUiState({ type: "task_updated" });
+      });
       register("session_title_updated", () => {
         utils.session.list.invalidate().catch(() => {});
       });
@@ -283,4 +320,50 @@ export function useChatSseSubscriptions({
     setRotateBanner,
     onFocusSession,
   ]);
+
+  // 跨标签兜底：管理页 / 其它 Chat 经 BroadcastChannel 推过来的状态（主路径仍是 SSE）
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channels: BroadcastChannel[] = [];
+    const onMsg = (ev: MessageEvent) => {
+      const data = ev.data as { type?: string } | null;
+      const t = data?.type;
+      if (!t) return;
+      if (t === "cron_session_started" || t === "session_list_changed") {
+        utils.session.list.invalidate().catch(() => {});
+        utils.session.listRunning.invalidate().catch(() => {});
+      }
+      if (t === "cron_job_updated" || t === "cron_session_started") {
+        utils.agentCron.list.invalidate().catch(() => {});
+      }
+      if (t === "approval_updated") {
+        utils.approval.list.invalidate().catch(() => {});
+        utils.approval.humanTodoSummary.invalidate().catch(() => {});
+      }
+      if (t === "agent_list_changed") {
+        utils.agent.list.invalidate().catch(() => {});
+        utils.workspace.list.invalidate().catch(() => {});
+      }
+      if (t === "run_updated") utils.run.list.invalidate().catch(() => {});
+      if (t === "task_updated") {
+        utils.task.list.invalidate().catch(() => {});
+        utils.trigger.list.invalidate().catch(() => {});
+      }
+    };
+    for (const name of ["knowpilot-ui-state", "knowpilot-session-list"]) {
+      try {
+        const bc = new BroadcastChannel(name);
+        bc.addEventListener("message", onMsg);
+        channels.push(bc);
+      } catch {
+        /* ignore */
+      }
+    }
+    return () => {
+      for (const bc of channels) {
+        bc.removeEventListener("message", onMsg);
+        bc.close();
+      }
+    };
+  }, [utils]);
 }

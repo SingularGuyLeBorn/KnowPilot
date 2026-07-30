@@ -396,9 +396,12 @@ export const ChatMessageList = memo(function ChatMessageList({
     const deliveryJobId = isAsyncResultDelivery ? subResult?.jobId : undefined;
     // 子 Agent 主动通知父会话（agent_notify_parent）
     const isChildNotify = !!childNotify;
-    // 心跳触发：放右侧（通知位），气泡内文字仍左对齐；视觉用灰底+橙标，不走 brand 用户色
+    // 心跳 / cron：放右侧（通知位），与用户手发消息区分（角标不同）
     const isHeartbeat = msgSource === "system";
-    const isRightSide = isHeartbeat || isChildNotify
+    const isCron = msgSource === "cron";
+    const cronMeta = (msgToolResults as { cron?: { name?: string } } | undefined)?.cron;
+    const isSystemish = isHeartbeat || isCron;
+    const isRightSide = isSystemish || isChildNotify
       || (isSubagentSession
         ? msgSource === "user" || isParentAgentTask || isAsyncResultDelivery
         : msgSource === "user" || msgSource === "sub" || isParentAgentTask);
@@ -440,6 +443,7 @@ export const ChatMessageList = memo(function ChatMessageList({
                 asyncKind={isAsyncResultDelivery ? subResult?.sourceType : undefined}
                 taskLabel={isAsyncResultDelivery ? subResult?.taskLabel : undefined}
                 childNotify={childNotify}
+                cronName={isCron ? cronMeta?.name : undefined}
               />
               {group.userMessage.skillName && (
                 <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.5 text-[10px] text-[var(--kp-brand-deep)]">
@@ -480,8 +484,8 @@ export const ChatMessageList = memo(function ChatMessageList({
               onEditSave={() => handleEditConfirm(group.userMessage.id)}
               onEditCancel={() => setEditingUserId(null)}
               onRetry={() => handleRetry(group.userMessage.id)}
-              showEdit={isLastUser && !isHeartbeat}
-              showRetry={isLastUser && !isEditing && !isHeartbeat}
+              showEdit={isLastUser && !isSystemish}
+              showRetry={isLastUser && !isEditing && !isSystemish}
               showRegenerate={false}
               isEditing={isEditing}
               disabled={isStreaming}

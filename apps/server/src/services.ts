@@ -2105,6 +2105,12 @@ ${entity.systemPrompt}
     });
     // A14：通知 heartbeatEngine / agentSchemaCache 等 agent 配置变更
     this.eventBus.emit("agent.created", entity);
+    const { notifyAllMainSessionsUi } = await import("./infra/uiStateNotify.js");
+    await notifyAllMainSessionsUi(this.prisma, {
+      type: "agent_list_changed",
+      agentId: entity.id,
+      reason: "create",
+    });
   }
   protected override async afterUpdate(entity: AgentEntity, existing: any, input: UpdateAgentInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
@@ -2115,6 +2121,12 @@ ${entity.systemPrompt}
     await super.afterDelete(existing);
     await this.removeFts("agent", existing.id);
     this.eventBus.emit("agent.deleted", existing);
+    const { notifyAllMainSessionsUi } = await import("./infra/uiStateNotify.js");
+    await notifyAllMainSessionsUi(this.prisma, {
+      type: "agent_list_changed",
+      agentId: existing.id,
+      reason: "delete",
+    });
   }
 
   // 超级 Agent 全局唯一——创建时拦截
@@ -2721,6 +2733,30 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       ...(taskDescription !== undefined ? { taskDescription } : {}),
       ...(goalState !== undefined ? { goalState: goalState === null ? null : goalState } : {}),
     };
+  }
+
+  protected override async afterCreate(entity: SessionEntity, input: CreateSessionInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    if (!entity.agentId) return;
+    const { notifyAgentUi } = await import("./infra/uiStateNotify.js");
+    await notifyAgentUi(this.prisma, entity.agentId, {
+      type: "session_list_changed",
+      agentId: entity.agentId,
+      sessionId: entity.id,
+      reason: "create",
+    });
+  }
+
+  protected override async afterDelete(existing: any): Promise<void> {
+    await super.afterDelete(existing);
+    if (!existing?.agentId) return;
+    const { notifyAgentUi } = await import("./infra/uiStateNotify.js");
+    await notifyAgentUi(this.prisma, existing.agentId, {
+      type: "session_list_changed",
+      agentId: existing.agentId,
+      sessionId: existing.id,
+      reason: "delete",
+    });
   }
 
   /**
@@ -3887,11 +3923,20 @@ export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, L
     await super.afterUpdate(entity, existing, input);
     const { tryGetTaskScheduler } = await import("./infra/taskScheduler.js");
     const scheduler = tryGetTaskScheduler();
-    if (!scheduler) return;
-    if (entity?.type === "cron" && entity.cronExpression) {
-      await scheduler.upsertCronJob(entity.id);
-    } else {
-      scheduler.removeCronJob(entity.id);
+    if (scheduler) {
+      if (entity?.type === "cron" && entity.cronExpression) {
+        await scheduler.upsertCronJob(entity.id);
+      } else {
+        scheduler.removeCronJob(entity.id);
+      }
+    }
+    if (input.status !== undefined && input.status !== existing?.status) {
+      const { notifyAllMainSessionsUi } = await import("./infra/uiStateNotify.js");
+      await notifyAllMainSessionsUi(this.prisma, {
+        type: "task_updated",
+        taskId: entity.id,
+        status: entity.status,
+      });
     }
   }
 
@@ -4105,6 +4150,16 @@ export class ApprovalService extends BaseService<CreateApprovalInput, UpdateAppr
    * 唤醒挂在该审批上的 run（awaiting_human → llm，注入拒绝消息让 LLM 收尾）。
    * approved 不在此发：执行完成（executeApprovedOperation）才发，携带执行结果。
    */
+  protected override async afterCreate(entity: any, input: CreateApprovalInput): Promise<void> {
+    await super.afterCreate(entity, input);
+    const { notifyAllMainSessionsUi } = await import("./infra/uiStateNotify.js");
+    await notifyAllMainSessionsUi(this.prisma, {
+      type: "approval_updated",
+      approvalId: entity.id,
+      status: entity.status,
+    });
+  }
+
   protected override async afterUpdate(entity: any, existing: any, input: UpdateApprovalInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
     if (input.status === "rejected") {
@@ -4114,6 +4169,12 @@ export class ApprovalService extends BaseService<CreateApprovalInput, UpdateAppr
         toolName: entity.toolName ?? "unknown",
       });
     }
+    const { notifyAllMainSessionsUi } = await import("./infra/uiStateNotify.js");
+    await notifyAllMainSessionsUi(this.prisma, {
+      type: "approval_updated",
+      approvalId: entity.id,
+      status: entity.status,
+    });
   }
 }
 

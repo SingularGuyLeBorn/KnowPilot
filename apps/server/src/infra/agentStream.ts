@@ -165,6 +165,56 @@ export type AgentStreamEvent =
       reason: "async_auto_consume" | "subagent_start";
       jobId?: string;
     }
+  /** Agent Cron 新建 briefing 会话并起流：推到该 Agent 主会话，供其它 Chat 标签页刷新侧栏 */
+  | {
+      type: "cron_session_started";
+      agentId: string;
+      sessionId: string;
+      cronJobId: string;
+      cronName: string;
+      title?: string;
+    }
+  /** Cron 任务配置/运行态变更（lastRunStatus 等）：管理页与 Chat 侧 invalidate agentCron.list */
+  | {
+      type: "cron_job_updated";
+      agentId: string;
+      cronJobId: string;
+      cronName?: string;
+      lastRunStatus?: string;
+    }
+  /** 审批队列变更：/approvals 与 humanTodoSummary 刷新 */
+  | {
+      type: "approval_updated";
+      approvalId: string;
+      status?: string;
+    }
+  /** 会话列表变更（create/delete/spawn_goal/cron 会话）：侧栏 invalidate session.list */
+  | {
+      type: "session_list_changed";
+      agentId?: string;
+      sessionId?: string;
+      reason?: string;
+    }
+  /** Agent / Workspace 列表变更 */
+  | {
+      type: "agent_list_changed";
+      agentId?: string;
+      reason?: string;
+    }
+  /** Run 生命周期变更：/runs 页刷新 */
+  | {
+      type: "run_updated";
+      runId: string;
+      sessionId?: string;
+      status?: string;
+      phase?: string;
+    }
+  /** Task 状态变更：/tasks /triggers 刷新 */
+  | {
+      type: "task_updated";
+      taskId: string;
+      status?: string;
+    }
   /** ChatMessage 写入后广播：前端 reducer 直接 patch messages[]，不再靠 invalidate→refetch 闪烁刷新 */
   | {
       type: "message_upserted";
@@ -1131,7 +1181,8 @@ export async function handleBusyHubPost(
     sessionId,
     kind: "user",
     content: msg,
-    source: body.source === "system" ? "system" : "user",
+    source:
+      body.source === "system" || body.source === "cron" ? body.source : "user",
     attachments: body.attachments,
     skillId: body.skillId,
   });

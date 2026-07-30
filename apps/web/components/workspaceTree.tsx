@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useMemo } from "react";
-import { Bot, Crown, Loader2, Pin, ShieldCheck, Trash2 } from "lucide-react";
+import { AlarmClock, Bot, Crown, HeartPulse, Loader2, Pin, ShieldCheck, Trash2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn, formatRelativeTime, groupBySessionDate } from "@/lib/utils";
 import { AgentAvatar } from "./agentAvatar";
@@ -265,6 +265,12 @@ export function WorkspaceTree({
             {session && (
               <div className="flex items-center gap-1.5 pl-5 text-[11px] text-[var(--kp-text-2)]">
                 {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand-deep)]" />}
+                {session.kind === "cron" && (
+                  <AlarmClock className="h-2.5 w-2.5 shrink-0 text-amber-700" aria-label="定时节律" />
+                )}
+                {session.kind === "heartbeat" && (
+                  <HeartPulse className="h-2.5 w-2.5 shrink-0 text-orange-700" aria-label="心跳" />
+                )}
                 <span className="min-w-0 flex-1 truncate">{session.autoName || session.title}</span>
                 <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
                   {formatRelativeTime(session.updatedAt)}
@@ -357,6 +363,12 @@ function SessionRow({
         className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
       >
         {session.isMainSession && <Pin className="h-2.5 w-2.5 shrink-0 text-[var(--kp-brand-deep)]" />}
+        {session.kind === "cron" && (
+          <AlarmClock className="h-2.5 w-2.5 shrink-0 text-amber-700" aria-label="定时节律" />
+        )}
+        {session.kind === "heartbeat" && (
+          <HeartPulse className="h-2.5 w-2.5 shrink-0 text-orange-700" aria-label="心跳" />
+        )}
         <span className="min-w-0 flex-1 truncate">{session.autoName || session.title || "新对话"}</span>
         <span className="ml-auto shrink-0 text-[9px] text-[var(--kp-text-3)]">
           {formatRelativeTime(session.updatedAt)}

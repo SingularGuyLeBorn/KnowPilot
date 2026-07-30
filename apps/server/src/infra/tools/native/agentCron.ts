@@ -106,6 +106,12 @@ async function cronSetTool(args: Record<string, unknown>, ctx: NativeToolContext
       err instanceof Error ? err.message : err,
     );
   }
+  try {
+    const { notifyCronJobUpdated } = await import("../../uiStateNotify.js");
+    await notifyCronJobUpdated(ctx.services.prisma, row);
+  } catch {
+    /* ignore */
+  }
 
   return {
     success: true,
@@ -163,6 +169,7 @@ async function cronClearTool(args: Record<string, unknown>, ctx: NativeToolConte
       // super 按 id 清除任意
       const { deleted } = await deleteCronJob(ctx.services.prisma, { id });
       await refreshSafe(ctx, existing.agentId);
+      await notifyCronCleared(ctx, existing.agentId, existing.id, existing.name);
       return { success: true, deleted };
     }
   }
@@ -172,12 +179,17 @@ async function cronClearTool(args: Record<string, unknown>, ctx: NativeToolConte
     if (!existing) return { error: `未找到 name=${name} 的 cron` };
   }
 
+  const before =
+    id
+      ? await getCronJobById(ctx.services.prisma, id)
+      : await getCronJobByName(ctx.services.prisma, target.agentId, name);
   const { deleted } = await deleteCronJob(ctx.services.prisma, {
     id: id || undefined,
     agentId: id ? undefined : target.agentId,
     name: id ? undefined : name,
   });
   await refreshSafe(ctx, target.agentId);
+  if (before) await notifyCronCleared(ctx, before.agentId, before.id, before.name);
   return { success: true, deleted };
 }
 
@@ -190,6 +202,25 @@ async function refreshSafe(ctx: NativeToolContext, agentId: string): Promise<voi
     );
   } catch {
     // ignore
+  }
+}
+
+async function notifyCronCleared(
+  ctx: NativeToolContext,
+  agentId: string,
+  jobId: string,
+  name: string,
+): Promise<void> {
+  try {
+    const { notifyCronJobUpdated } = await import("../../uiStateNotify.js");
+    await notifyCronJobUpdated(ctx.services.prisma, {
+      id: jobId,
+      agentId,
+      name,
+      lastRunStatus: "cancelled",
+    });
+  } catch {
+    /* ignore */
   }
 }
 

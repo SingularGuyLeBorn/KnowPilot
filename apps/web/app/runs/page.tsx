@@ -37,11 +37,24 @@ export default function RunsPage() {
   const { useList: useAgentList } = useAgent();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("");
-  const { data, isLoading } = useList({
-    page,
-    pageSize: 20,
-    status: statusFilter || undefined,
-  });
+  // 推拉：PUSH=run_updated；PULL=看 running/空筛 时短轮询
+  const { data, isLoading } = useList(
+    {
+      page,
+      pageSize: 20,
+      status: statusFilter || undefined,
+    },
+    {
+      refetchInterval: (q: { state: { data?: { items?: { status?: string }[] } } }) => {
+        const items = q.state.data?.items ?? [];
+        const busy =
+          !statusFilter ||
+          statusFilter === "running" ||
+          items.some((r) => r.status === "running" || r.status === "pending");
+        return busy ? 4000 : 20_000;
+      },
+    },
+  );
   const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
   const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 100 });
   const agentNameById = useMemo(() => {

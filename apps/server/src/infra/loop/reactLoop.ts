@@ -558,6 +558,21 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         durationMs: Date.now() - runStartedAt,
         toolCallCount: countExecutedTools(),
       });
+      // PUSH：/runs 与开着的 Chat 立刻对齐终态（推拉铁律）
+      try {
+        const { notifyAllMainSessionsUi, pushUiStateToSession } = await import("../uiStateNotify.js");
+        const ev = {
+          type: "run_updated" as const,
+          runId,
+          sessionId: input.sessionId,
+          status: effective,
+          phase: machine.phase,
+        };
+        if (input.sessionId) pushUiStateToSession(input.sessionId, ev);
+        await notifyAllMainSessionsUi(input.services.prisma, ev);
+      } catch {
+        /* ignore */
+      }
     } catch (err) {
       console.warn(`${formatTrace()}[ReactLoop] Run 终态写回失败:`, err instanceof Error ? err.message : err);
     }

@@ -19,7 +19,16 @@ export default function TasksPage() {
   const { useList, useCreate, useDelete, useRun } = useTask();
   const { density } = useCardDensity();
   const [page] = useState(1);
-  const { data, isLoading } = useList({ page, pageSize: 12 });
+  const { data, isLoading } = useList(
+    { page, pageSize: 12 },
+    {
+      refetchInterval: (q: { state: { data?: { items?: { status?: string }[] } } }) => {
+        const items = q.state.data?.items ?? [];
+        const busy = items.some((t) => t.status === "running" || t.status === "pending" || t.status === "queued");
+        return busy ? 4000 : 20_000;
+      },
+    },
+  );
   const createMutation = useCreate();
   const deleteMutation = useDelete();
   const runMutation = useRun();

@@ -247,7 +247,7 @@ export interface ChatSession {
   agentId?: string | null;
   // Swarm/Subagent 扩展字段
   parentSessionId?: string | null;
-  kind?: "chat" | "subagent" | "heartbeat" | "skill_review";
+  kind?: "chat" | "subagent" | "heartbeat" | "skill_review" | "channel" | "cron";
   status?: import("./schemas.js").SessionStatus;
   taskDescription?: string | null;
   isMainSession?: boolean;
@@ -296,7 +296,7 @@ export interface ChatMessage {
     total: number;
   } | null;
   finishReason?: string | null;
-  source?: "user" | "super" | "manager" | "sub" | "system";
+  source?: "user" | "super" | "manager" | "sub" | "system" | "cron";
   createdAt: string | Date;
 }
 

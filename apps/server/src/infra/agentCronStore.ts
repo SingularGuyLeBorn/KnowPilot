@@ -176,10 +176,27 @@ export async function deleteCronJob(
   throw new Error("deleteCronJob 需要 id，或 agentId+name");
 }
 
+export async function setCronJobEnabled(
+  prisma: PrismaClient,
+  id: string,
+  enabled: boolean,
+): Promise<AgentCronJobRow | null> {
+  const existing = await getCronJobById(prisma, id);
+  if (!existing) return null;
+  const now = new Date().toISOString();
+  await prisma.$executeRawUnsafe(
+    `UPDATE AgentCronJob SET enabled = ?, updatedAt = ? WHERE id = ?`,
+    enabled ? 1 : 0,
+    now,
+    id,
+  );
+  return getCronJobById(prisma, id);
+}
+
 export async function markCronJobRun(
   prisma: PrismaClient,
   id: string,
-  status: "success" | "failed" | "cancelled",
+  status: "running" | "success" | "failed" | "cancelled",
   sessionId: string | null,
 ): Promise<void> {
   const now = new Date().toISOString();
@@ -191,4 +208,19 @@ export async function markCronJobRun(
     now,
     id,
   );
+  // PUSH：lastRunStatus 变更立刻通知开着的 Chat / 经 BC 到 /cron（禁止等 F5）
+  try {
+    const row = await getCronJobById(prisma, id);
+    if (row) {
+      const { notifyCronJobUpdated } = await import("./uiStateNotify.js");
+      await notifyCronJobUpdated(prisma, {
+        id: row.id,
+        agentId: row.agentId,
+        name: row.name,
+        lastRunStatus: status,
+      });
+    }
+  } catch {
+    /* 通知失败不阻断写库 */
+  }
 }
