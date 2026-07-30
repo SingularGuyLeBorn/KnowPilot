@@ -440,10 +440,11 @@ export const AGENT_TIERS = ["super", "manager", "sub"] as const;
 export type AgentTier = (typeof AGENT_TIERS)[number];
 
 /**
- * 飞书 / 语雀 / GitHub 集成工具（单点定义）。
- * 超级 Agent 与默认 assistant 共用；调用前需在 Credentials / .env 配好对应密钥。
+ * 飞书 / 语雀 / GitHub / SwanLab / 知乎开放平台等集成工具（单点定义）。
+ * P1-01：opt-in —— 不进入 tier/assistant 默认清单（schema 体积与误触风险）；
+ * 需在 /agents 显式勾选。调用前在 Credentials / .env 配好对应密钥。
  */
-export const INTEGRATION_DEFAULT_TOOLS: string[] = [
+export const INTEGRATION_OPT_IN_TOOLS: string[] = [
   // SwanLab：深度学习实验跟踪（CLI OpenAPI）
   "native:swanlab_status",
   "native:swanlab_user_info",
@@ -546,6 +547,7 @@ export const INTEGRATION_DEFAULT_TOOLS: string[] = [
  * 各 tier 新建 Agent 的默认工具清单（单点定义，原 swarmInitializer / workspaceProvision /
  * loop/setup 三处独立维护）。使用处：swarmInitializer（super）、workspaceProvision（manager）、
  * loop/setup resolveToolsForAgentTier（sub 兜底）。
+ * 不含 INTEGRATION_OPT_IN_TOOLS（P1-01 schema 瘦身）。
  */
 export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
   super: [
@@ -655,7 +657,6 @@ export const TIER_DEFAULT_TOOLS: Record<AgentTier, string[]> = {
     "native:inbox_distill",
     "native:inbox_ignore",
     "native:pinme_upload",
-    ...INTEGRATION_DEFAULT_TOOLS,
   ],
   manager: [
     "native:web_search",
@@ -887,7 +888,6 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:skills_list",
   "native:skill_view",
   "native:skill_manage",
-  ...INTEGRATION_DEFAULT_TOOLS,
   "native:platform_login",
   "native:browser_login_status",
   "native:platform_doctor",
@@ -907,7 +907,6 @@ export const ASSISTANT_DEFAULT_TOOLS: string[] = [
   "native:inbox_distill",
   "native:inbox_ignore",
   "native:pinme_upload",
-  "skill:*",
 ];
 
 /* ─── 知识库花园（动态 N 座） ───

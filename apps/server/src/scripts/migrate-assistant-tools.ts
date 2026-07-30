@@ -10,7 +10,18 @@
  *   pnpm --filter @knowpilot/server exec tsx src/scripts/migrate-assistant-tools.ts
  */
 import { PrismaClient } from "@prisma/client";
-import { ASSISTANT_DEFAULT_TOOLS, TIER_DEFAULT_TOOLS } from "@knowpilot/shared";
+import {
+  ASSISTANT_DEFAULT_TOOLS,
+  INTEGRATION_OPT_IN_TOOLS,
+  TIER_DEFAULT_TOOLS,
+} from "@knowpilot/shared";
+
+/** P1-01：合并默认工具时禁止把集成 opt-in / skill:* 灌回（或保留旧固化项） */
+const STRIP_FROM_DEFAULTS = new Set<string>([...INTEGRATION_OPT_IN_TOOLS, "skill:*"]);
+
+function withoutOptInBloat(tools: string[]): string[] {
+  return tools.filter((t) => !STRIP_FROM_DEFAULTS.has(t));
+}
 import { getAppConfig, loadRootEnv } from "../infra/config.js";
 import { getEventBus } from "../infra/eventBus.js";
 import { getServiceContainer } from "../infra/serviceContainer.js";
@@ -59,9 +70,12 @@ async function migrateAssistant(services: ReturnType<typeof getServiceContainer>
 
   const tools = asToolList(exact.tools);
   const needsPromptUpdate = drift.some((d) => d.includes("系统提示"));
+  const nextTools = withoutOptInBloat(
+    Array.from(new Set([...tools, ...ASSISTANT_DEFAULT_TOOLS])),
+  );
   const updated = await services.agent.update({
     id: exact.id,
-    tools: Array.from(new Set([...tools, ...ASSISTANT_DEFAULT_TOOLS])),
+    tools: nextTools,
     ...(needsPromptUpdate ? { systemPrompt: DEFAULT_ASSISTANT_SYSTEM_PROMPT } : {}),
     ...(!exact.tier ? { tier: "manager" as const } : {}),
   });
@@ -89,12 +103,15 @@ async function migrateSuperAgents(services: ReturnType<typeof getServiceContaine
     const missing = TIER_DEFAULT_TOOLS.super.filter((t) => !tools.includes(t));
     const prompt = exact.systemPrompt || "";
     const needsGardenPrompt = !prompt.includes("garden_create");
-    if (missing.length === 0 && !needsGardenPrompt) {
+    const needsStrip = tools.some((t) => STRIP_FROM_DEFAULTS.has(t));
+    if (missing.length === 0 && !needsGardenPrompt && !needsStrip) {
       console.log(`✅ 超级 Agent「${exact.name}」（${exact.id}）工具与花园指引已齐。`);
       continue;
     }
 
-    const nextTools = Array.from(new Set([...tools, ...TIER_DEFAULT_TOOLS.super]));
+    const nextTools = withoutOptInBloat(
+      Array.from(new Set([...tools, ...TIER_DEFAULT_TOOLS.super])),
+    );
     const nextPrompt = needsGardenPrompt
       ? `${prompt.trimEnd()}\n${GARDEN_PROMPT_SECTION}\n`
       : undefined;
