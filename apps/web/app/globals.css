@@ -1187,21 +1187,29 @@ html.dark .kp-shadow-lg,
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
-/* 高级卡片：表面 + 顶部渐变高光 + 微浮起 */
+/* 高级卡片：表面 + 顶部品牌/accent 高光 + 微浮起 */
 .kp-card-premium {
   position: relative;
   background: var(--kp-bg-alt);
   border: 1px solid var(--kp-divider);
-  box-shadow: 0 1px 2px rgba(120, 104, 88, 0.05), 0 6px 20px rgba(120, 104, 88, 0.05);
+  box-shadow:
+    0 1px 2px rgba(var(--kp-brand-rgb), 0.06),
+    0 6px 20px rgba(var(--kp-brand-rgb), 0.06);
   overflow: hidden;
 }
 .kp-card-premium::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-  opacity: 0.6;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--kp-brand-rgb), 0.45),
+    rgba(var(--kp-accent-rgb), 0.55),
+    transparent
+  );
+  opacity: 0.85;
 }
 html.dark .kp-card-premium,
 .dark .kp-card-premium {
@@ -1209,8 +1217,7 @@ html.dark .kp-card-premium,
 }
 html.dark .kp-card-premium::before,
 .dark .kp-card-premium::before {
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
-  opacity: 0.5;
+  opacity: 0.65;
 }
 
 /* 数据徽章：趋势/状态一目了然 */
@@ -1270,13 +1277,13 @@ html.dark .kp-badge-info,
   border-color: rgba(59, 130, 246, 0.28);
 }
 
-/* 渐变数字：关键指标更醒目 */
+/* 渐变数字：关键指标更醒目（墨色花园 brand → accent） */
 .kp-stat-number {
   font-size: 1.75rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.1;
-  background: linear-gradient(135deg, var(--kp-text-1), var(--kp-text-2));
+  background: linear-gradient(135deg, var(--kp-brand-deep), var(--kp-accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1302,6 +1309,7 @@ html.dark .kp-badge-info,
   font-weight: 600;
   color: var(--kp-text-3);
   border-bottom: 1px solid var(--kp-divider);
+  background: color-mix(in srgb, var(--kp-brand-soft) 55%, transparent);
 }
 .kp-table tbody td {
   padding: 0.625rem 0.75rem;
@@ -1312,7 +1320,7 @@ html.dark .kp-badge-info,
   transition: background 0.15s;
 }
 .kp-table tbody tr:hover {
-  background: var(--kp-bg-soft);
+  background: color-mix(in srgb, var(--kp-accent-soft) 40%, var(--kp-bg-soft));
 }
 .kp-table tbody tr:last-child td {
   border-bottom: 0;
@@ -1480,7 +1488,7 @@ html.dark .kp-badge-info,
 .kp-progress-bar {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--kp-brand), var(--kp-brand-deep));
+  background: linear-gradient(90deg, var(--kp-brand), var(--kp-accent));
   transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -1490,9 +1498,66 @@ html.dark .kp-badge-info,
 }
 .kp-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(120, 104, 88, 0.08), 0 12px 28px rgba(120, 104, 88, 0.1);
+  box-shadow:
+    0 4px 8px rgba(var(--kp-brand-rgb), 0.1),
+    0 12px 28px rgba(var(--kp-accent-rgb), 0.1);
 }
 html.dark .kp-lift:hover,
 .dark .kp-lift:hover {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.32), 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
+/* ── 管理页 / Chat 壳表面（仅视觉，不改交互） ── */
+
+/* 管理主栏：角落淡墨晕，与首页墨色花园同调 */
+.kp-admin-surface {
+  background:
+    radial-gradient(ellipse 70% 42% at 0% 0%, rgba(var(--kp-brand-rgb), 0.08), transparent 55%),
+    radial-gradient(ellipse 55% 36% at 100% 0%, rgba(var(--kp-accent-rgb), 0.07), transparent 50%),
+    var(--kp-bg);
+}
+
+/* 侧栏轨道：纵向微渐变 */
+.kp-shell-rail {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--kp-bg-alt) 88%, rgba(var(--kp-brand-rgb), 0.12)),
+    var(--kp-bg-alt) 40%,
+    var(--kp-bg-alt)
+  );
+}
+
+/* 页头图标井 */
+.kp-header-icon {
+  background: linear-gradient(145deg, var(--kp-brand-soft), var(--kp-accent-soft));
+  color: var(--kp-brand-deep);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kp-brand) 24%, transparent);
+}
+
+/* 水平导航激活 pill（顶栏 / Chat 分段） */
+.kp-nav-pill-active {
+  background: var(--kp-brand-soft);
+  color: var(--kp-brand-deep);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--kp-brand) 28%, transparent),
+    0 1px 2px rgba(var(--kp-brand-rgb), 0.08);
+}
+
+/* 垂直导航激活条（管理侧栏） */
+.kp-nav-rail-active {
+  background: var(--kp-brand-soft);
+  color: var(--kp-brand-deep);
+  box-shadow: inset 3px 0 0 0 var(--kp-accent);
+}
+
+/* Chat 输入框表面 */
+.kp-chat-composer {
+  box-shadow:
+    0 1px 2px rgba(var(--kp-brand-rgb), 0.05),
+    0 8px 22px rgba(var(--kp-brand-rgb), 0.06);
+}
+.kp-chat-composer:focus-within {
+  box-shadow:
+    0 0 0 3px var(--kp-accent-soft),
+    0 8px 24px rgba(var(--kp-accent-rgb), 0.1);
 }

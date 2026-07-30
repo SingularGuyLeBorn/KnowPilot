@@ -333,7 +333,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               className={cn(
                 "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
                 isMain
-                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  ? "kp-nav-pill-active"
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
               )}
             >
@@ -349,7 +349,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               className={cn(
                 "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
                 !isMain
-                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  ? "kp-nav-pill-active"
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
               )}
             >
@@ -557,7 +557,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       )}
       <aside
         className={cn(
-          "flex min-h-0 flex-col border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]",
+          "kp-shell-rail flex min-h-0 flex-col border-[var(--kp-divider)]",
           // 仅用户折叠/展开时过渡；水合期禁止，避免刷新「侧栏长出来」叠层
           prefsReady && "transition-[width] duration-300 ease-out",
           // 桌面：侧栏伸缩
@@ -571,7 +571,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       >
         <div className="w-full shrink-0 border-b border-[var(--kp-divider)] px-3 py-2.5 md:w-64" data-testid="chat-left-panel-header">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+            <span className="kp-header-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
               <Bot className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0 flex-1">
@@ -605,7 +605,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               className={cn(
                 "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
                 leftTab === "history"
-                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  ? "kp-nav-pill-active"
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
               )}
             >
@@ -621,7 +621,7 @@ export const ChatSidebar = memo(function ChatSidebar({
               className={cn(
                 "flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition",
                 leftTab === "runtime"
-                  ? "bg-[var(--kp-bg)] text-[var(--kp-text-1)] shadow-sm"
+                  ? "kp-nav-pill-active"
                   : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-2)]",
               )}
             >

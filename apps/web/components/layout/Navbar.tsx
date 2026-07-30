@@ -55,6 +55,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
       className={cn(
         "sticky top-0 z-50 shrink-0 border-b border-[var(--kp-divider)]",
         "bg-[var(--kp-glass-bg)] backdrop-blur-md",
+        "shadow-[0_1px_0_0_color-mix(in_srgb,var(--kp-brand)_12%,transparent)]",
         className,
       )}
     >
@@ -72,7 +73,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
 
         <Link
           href="/"
-          className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight text-[var(--kp-text-1)]"
+          className="flex shrink-0 items-center gap-2 text-base font-semibold tracking-tight text-[var(--kp-ink)]"
         >
           <OasisMindLogo size={32} className="shrink-0" />
           <span className="hidden sm:inline">见微</span>
@@ -128,7 +129,7 @@ function TopNavLink({
       className={cn(
         "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition",
         active
-          ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+          ? "kp-nav-pill-active"
           : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
       )}
     >

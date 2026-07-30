@@ -814,11 +814,11 @@ export const ChatInputArea = memo(function ChatInputArea({
 
       <div
         className={cn(
-          "overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] transition-colors",
-          "focus-within:border-[var(--kp-brand)]",
+          "kp-chat-composer overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg)] transition-colors",
+          "focus-within:border-[var(--kp-accent)]",
           deepResearchEnabled &&
             canStartDeepResearch &&
-            "border-[var(--kp-brand)]/50 bg-[var(--kp-brand-soft)]/15",
+            "border-[var(--kp-accent)]/50 bg-[var(--kp-brand-soft)]/15",
           disabled && "opacity-60",
         )}
       >

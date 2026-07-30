@@ -76,7 +76,7 @@ export const SessionListItem = memo(function SessionListItem({
       className={cn(
         "group/sess mb-1 flex items-stretch overflow-hidden rounded-xl border transition-colors",
         active
-          ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/40"
+          ? "border-[var(--kp-brand-light)] bg-[var(--kp-brand-soft)]/45 shadow-[inset_3px_0_0_0_var(--kp-accent)]"
           : "border-transparent hover:bg-[var(--kp-bg-mute)]/60",
       )}
     >

@@ -142,7 +142,7 @@ export function EntityCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] transition hover:shadow-lg",
+        "group relative overflow-hidden rounded-2xl kp-card-premium kp-lift",
         density === "compact" ? "p-3" : "p-5",
         className,
       )}
@@ -190,9 +190,9 @@ export function EmptyState({
   onAction,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center p-8 text-center border border-dashed border-[var(--kp-divider)] rounded-2xl bg-[var(--kp-bg-alt)] min-h-[300px]">
-      <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-[var(--kp-bg-soft)] text-[var(--kp-text-3)] mb-4">
-        {icon || <Inbox className="w-6 h-6" />}
+    <div className="flex min-h-[300px] flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--kp-divider)] bg-[color-mix(in_srgb,var(--kp-bg-alt)_88%,var(--kp-brand-soft))] p-8 text-center">
+      <div className="kp-header-icon mb-4 flex h-12 w-12 items-center justify-center rounded-xl">
+        {icon || <Inbox className="h-6 w-6" />}
       </div>
       <h3 className="text-base font-semibold text-[var(--kp-text-1)] mb-1">
         {title}
@@ -227,7 +227,7 @@ export function LoadingState({ count = 3 }: LoadingStateProps) {
       {Array.from({ length: count }).map((_, idx) => (
         <div
           key={idx}
-          className="p-5 border border-[var(--kp-divider-light)] rounded-2xl bg-[var(--kp-bg-alt)] space-y-3 animate-pulse"
+          className="kp-card-premium animate-pulse space-y-3 rounded-2xl p-5"
         >
           <div className="flex items-center justify-between">
             <Skeleton className="h-5 w-1/4 rounded-lg bg-[var(--kp-bg-mute)]" />
@@ -908,7 +908,7 @@ export function PageHeader({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
         {Icon && (
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+          <span className="kp-header-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
             <Icon className="h-5 w-5" />
           </span>
         )}
@@ -961,7 +961,7 @@ export function AdminPage({
     <div
       className={cn(
         // 只由 Shell <main> 滚动；此处再 overflow-y-auto = 双滚动条（设计败笔）
-        "mx-auto w-full max-w-[1400px] flex-1 space-y-4 overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6 md:px-8 md:py-8",
+        "kp-admin-surface mx-auto w-full max-w-[1400px] flex-1 space-y-4 overflow-x-hidden px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6 md:px-8 md:py-8",
         "[&_.kp-table-scroll]:overflow-x-auto [&_.kp-table-scroll]:overscroll-x-contain",
         className,
       )}
@@ -982,7 +982,7 @@ export function AdminFormShell({
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-x-hidden bg-[var(--kp-bg)] px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6 md:px-8 md:py-8",
+        "kp-admin-surface mx-auto w-full max-w-[1400px] flex-1 space-y-5 overflow-x-hidden px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6 md:px-8 md:py-8",
         className,
       )}
     >
