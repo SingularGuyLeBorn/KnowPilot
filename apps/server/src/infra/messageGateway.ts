@@ -173,7 +173,7 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
           source: msg.envelope.channel,
           sourceName: `im:${msg.envelope.peerId}`,
         })
-        .catch(() => {});
+        .catch((err) => { console.warn("[messageGateway.ts] best-effort failed:", err instanceof Error ? err.message : err); });
       return { ok: true, sessionId: binding.sessionId, busy: true };
     }
     if (started === "duplicate") {
@@ -208,7 +208,7 @@ export async function startAllChannelAdapters(): Promise<void> {
 
 export async function stopAllChannelAdapters(): Promise<void> {
   for (const adapter of adapters.values()) {
-    await adapter.stop().catch(() => {});
+    await adapter.stop().catch((err) => { console.warn("[messageGateway.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   }
 }
 

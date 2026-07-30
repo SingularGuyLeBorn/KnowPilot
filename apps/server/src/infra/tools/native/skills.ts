@@ -209,7 +209,7 @@ async function upsertProceduralSkill(
   await ctx.services.skill.update({
     id: created.data.id,
     metaJson,
-  } as never).catch(() => {});
+  } as never).catch((err) => { console.warn("[skills.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   if (opts?.agentCreated) markSkillAgentCreated(safe, root);
   return { success: true, skillId: created.data.id, name: safe, action: "created" as const };
 }

@@ -500,9 +500,9 @@ export function startFreeKeysAutoSync(prisma: PrismaClient, config: AppConfig): 
     }
   };
 
-  tick().catch(() => {});
+  tick().catch((err) => { console.warn("[freeKeysSync.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   if (timer) clearInterval(timer);
-  timer = setInterval(() => { tick().catch(() => {}); }, intervalMs);
+  timer = setInterval(() => { tick().catch((err) => { console.warn("[freeKeysSync.ts] best-effort failed:", err instanceof Error ? err.message : err); }); }, intervalMs);
   console.log(`  👀 [freeKeysSync] 已启动（默认开启，间隔 ${Math.round(intervalMs / 60000)} 分钟）`);
 }
 

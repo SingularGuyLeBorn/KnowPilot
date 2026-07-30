@@ -7,7 +7,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- 动态 tRPC router 名称绑定 */
 import { useCallback, useEffect, useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import type {
   OperationResult,
@@ -138,12 +138,12 @@ export const useInfoSource = () => {
   const utils = trpc.useUtils();
   const fetchMutation = trpc.infoSource.fetch.useMutation({
     onSuccess: () => {
-      utils.infoSource.list.invalidate().catch(() => {});
+      utils.infoSource.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
     },
   });
   const fetchDueMutation = trpc.infoSource.fetchDue.useMutation({
     onSuccess: () => {
-      utils.infoSource.list.invalidate().catch(() => {});
+      utils.infoSource.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
     },
   });
   return {
@@ -157,9 +157,9 @@ export const useInbox = () => {
   const base = useCRUDApi<any, any, any, InboxItem>("inbox");
   const utils = trpc.useUtils();
   const invalidate = () => {
-    utils.inbox.list.invalidate().catch(() => {});
-    utils.inbox.stats.invalidate().catch(() => {});
-    utils.inbox.facets.invalidate().catch(() => {});
+    utils.inbox.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+    utils.inbox.stats.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+    utils.inbox.facets.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
   };
   return {
     ...base,
@@ -254,9 +254,9 @@ export const useGit = () => {
     }) =>
       trpc.git.commit.useMutation({
         onSuccess: (res) => {
-          utils.git.status.invalidate().catch(() => {});
-          utils.git.log.invalidate().catch(() => {});
-          utils.git.diff.invalidate().catch(() => {});
+          utils.git.status.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+          utils.git.log.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+          utils.git.diff.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.(res);
         },
         onError: options?.onError,
@@ -267,9 +267,9 @@ export const useGit = () => {
     }) =>
       trpc.git.pull.useMutation({
         onSuccess: (res) => {
-          utils.git.status.invalidate().catch(() => {});
-          utils.git.log.invalidate().catch(() => {});
-          utils.git.diff.invalidate().catch(() => {});
+          utils.git.status.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+          utils.git.log.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+          utils.git.diff.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.(res);
         },
         onError: options?.onError,
@@ -280,8 +280,8 @@ export const useGit = () => {
     }) =>
       trpc.git.push.useMutation({
         onSuccess: (res) => {
-          utils.git.status.invalidate().catch(() => {});
-          utils.git.log.invalidate().catch(() => {});
+          utils.git.status.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+          utils.git.log.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.(res);
         },
         onError: options?.onError,
@@ -325,8 +325,8 @@ export const useApproval = () => {
       return trpc.approval.approveAndExecute.useMutation({
         onSuccess: (res: OperationResult<any>) => {
           if (res.success) {
-            utils.approval.list.invalidate().catch(() => {});
-            utils.approval.humanTodoSummary.invalidate().catch(() => {});
+            utils.approval.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+            utils.approval.humanTodoSummary.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           }
           options?.onSuccess?.(res);
         },
@@ -337,8 +337,8 @@ export const useApproval = () => {
       const utils = trpc.useUtils() as any;
       return trpc.approval.approveAndExecuteBatch.useMutation({
         onSuccess: () => {
-          utils.approval.list.invalidate().catch(() => {});
-          utils.approval.humanTodoSummary.invalidate().catch(() => {});
+          utils.approval.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+          utils.approval.humanTodoSummary.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.();
         },
         ...options,
@@ -348,8 +348,8 @@ export const useApproval = () => {
       const utils = trpc.useUtils() as any;
       return trpc.approval.rejectBatch.useMutation({
         onSuccess: () => {
-          utils.approval.list.invalidate().catch(() => {});
-          utils.approval.humanTodoSummary.invalidate().catch(() => {});
+          utils.approval.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+          utils.approval.humanTodoSummary.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.();
         },
         ...options,
@@ -398,7 +398,7 @@ export const useCredential = () => {
       const utils = trpc.useUtils();
       return trpc.credential.importFromEnv.useMutation({
         onSuccess: (res: any) => {
-          if (res?.imported?.length) utils.credential.list.invalidate().catch(() => {});
+          if (res?.imported?.length) utils.credential.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.(res);
         },
         ...options,
@@ -471,9 +471,9 @@ export function useAgentChat() {
   const chat = trpc.agent.chat.useMutation({
     onSuccess: (res) => {
       if (res.success && res.data?.sessionId) {
-        utils.session.list.invalidate().catch(() => {});
-        utils.session.getById.invalidate({ id: res.data.sessionId }).catch(() => {});
-        utils.message.list.invalidate({ sessionId: res.data.sessionId }).catch(() => {});
+        utils.session.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
+        utils.session.getById.invalidate({ id: res.data.sessionId }).catch(catchUnlessCancelled("lib/hooks.ts"));
+        utils.message.list.invalidate({ sessionId: res.data.sessionId }).catch(catchUnlessCancelled("lib/hooks.ts"));
       }
     },
   });

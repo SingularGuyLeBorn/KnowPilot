@@ -102,7 +102,7 @@ export function maybeSpawnSkillBackgroundReview(args: SkillReviewSpawnArgs): boo
     } finally {
       reviewLocks.delete(lockKey);
     }
-  })().catch(() => {});
+  })().catch((err) => { console.warn("[skillBackgroundReview.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
   return true;
 }
@@ -154,11 +154,11 @@ async function runDefaultSkillReview(args: SkillReviewSpawnArgs, message: string
     );
     await args.services.session
       .update({ id: reviewSessionId, status: "completed" } as never)
-      .catch(() => {});
+      .catch((err) => { console.warn("[skillBackgroundReview.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   } catch (err) {
     await args.services.session
       .update({ id: reviewSessionId, status: "failed" } as never)
-      .catch(() => {});
+      .catch((err) => { console.warn("[skillBackgroundReview.ts] best-effort failed:", err instanceof Error ? err.message : err); });
     throw err;
   }
 }

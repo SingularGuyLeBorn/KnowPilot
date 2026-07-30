@@ -159,7 +159,7 @@ export class RedisSwarmBus implements SwarmBus {
           },
         },
       })
-      .catch(() => {});
+      .catch((err) => { console.warn("[redisSwarmBus.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
     this.notifyAgentMessage({
       toAgentId: msg.toAgentId,
@@ -167,7 +167,7 @@ export class RedisSwarmBus implements SwarmBus {
       content: msg.content,
       fromAgentId: msg.fromAgentId,
       source: msg.source ?? fromTier,
-    }).catch(() => {});
+    }).catch((err) => { console.warn("[redisSwarmBus.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
     return { success: true, message: "消息已发送（Redis 旁路）。", messageId: created.id };
   }

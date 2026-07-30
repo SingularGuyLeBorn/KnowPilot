@@ -97,7 +97,7 @@ export async function accumulateExperience(
     await prisma.agent.update({
       where: { id: agentId },
       data: { status: "active" },
-    }).catch(() => {});
+    }).catch((err) => { console.warn("[agentEvolution.ts] best-effort failed:", err instanceof Error ? err.message : err); });
     return { written: true };
   } catch (err) {
     console.warn(`[AgentEvolution] 经验积累失败 for ${agentId}:`, err);
@@ -180,7 +180,7 @@ ${successRate < 60 ? "- 建议：成功率偏低，检查任务描述是否清�
         message: `Agent ${agent.name} 的 system prompt 被自动优化（成功率 ${successRate.toFixed(0)}%）`,
         metadata: { agentId: targetAgentId, operatorAgentId, successRate, experienceCount: experiences.length },
       },
-    }).catch(() => {});
+    }).catch((err) => { console.warn("[agentEvolution.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
     return { success: true, optimized: optimizationNote };
   } catch (err) {
@@ -307,7 +307,7 @@ export async function generateSkillFromExperience(
           draft: true,
         },
       },
-    }).catch(() => {});
+    }).catch((err) => { console.warn("[agentEvolution.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
     return { success: true, skillId: created.data.id, draft: true };
   } catch (err) {

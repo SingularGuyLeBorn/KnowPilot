@@ -269,7 +269,7 @@ export async function chatAgent(
           Date.now() - start,
         ),
       )
-      .catch(() => {});
+      .catch((err) => { console.warn("[agentRuntime.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
     return success({
       data: {

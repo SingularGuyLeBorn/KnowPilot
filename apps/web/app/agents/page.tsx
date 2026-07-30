@@ -46,7 +46,7 @@ import { SwarmAlertsBanner } from "@/components/swarmAlertsBanner";
 import { SwarmHealthPanel } from "@/components/swarmHealthPanel";
 import { AgentLoopContractPanel } from "@/components/agentLoopContractPanel";
 import { cn } from "@/lib/utils";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { describeCron, describeCronOption } from "@/lib/cronDescribe";
 
 type AgentForm = {
@@ -433,7 +433,7 @@ export default function AgentsPage() {
   const deleteMutation = useDelete();
   const bulkDeleteMutation = trpc.agent.bulkDelete.useMutation({
     onSuccess: () => {
-      utils.agent.list.invalidate().catch(() => {});
+      utils.agent.list.invalidate().catch(catchUnlessCancelled("app/agents/page.tsx"));
       setSelectedIds(new Set());
     },
   });
@@ -479,13 +479,13 @@ export default function AgentsPage() {
       utils.agent
         .getById.fetch({ id: agent.id })
         .then((row) => apply(row as Agent))
-        .catch(() => {});
+        .catch(catchUnlessCancelled("app/agents/page.tsx"));
     },
     [utils.agent.getById],
   );
 
   const resumeHeartbeatMut = trpc.agent.resumeHeartbeat.useMutation({
-    onSuccess: () => { utils.agent.list.invalidate().catch(() => {}); },
+    onSuccess: () => { utils.agent.list.invalidate().catch(catchUnlessCancelled("app/agents/page.tsx")); },
   });
 
   const handleSave = async () => {
@@ -514,7 +514,7 @@ export default function AgentsPage() {
       await createMutation.mutateAsync(payload);
     }
     setView("list");
-    refetch().catch(() => {});
+    refetch().catch(catchUnlessCancelled("app/agents/page.tsx"));
   };
 
   const confirmDelete = () => {
@@ -747,7 +747,7 @@ export default function AgentsPage() {
         </div>
 
         <div className="flex gap-3">
-          <Button onClick={() => { handleSave().catch(() => {}); }} disabled={createMutation.isPending || updateMutation.isPending}>
+          <Button onClick={() => { handleSave().catch(catchUnlessCancelled("app/agents/page.tsx")); }} disabled={createMutation.isPending || updateMutation.isPending}>
             {editingId ? "保存修改" : "创建 Agent"}
           </Button>
           {editingId && (

@@ -138,7 +138,7 @@ export async function provisionWorkspace(
       managerAgentId = (mgrResult.data as { id: string }).id;
       await services.prisma.workspace
         .update({ where: { id: wsId }, data: { managerAgentId } })
-        .catch(() => {});
+        .catch((err) => { console.warn("[workspaceProvision.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
       // agent.create → afterCreate 已 ensureMainSession；此处取回 id（幂等再 ensure 一次）
       const { ensureMainSession } = await import("./ensureMainSession.js");
@@ -155,7 +155,7 @@ export async function provisionWorkspace(
               where: { id: main.session.id },
               data: { title: `${name} 管理主会话` },
             })
-            .catch(() => {});
+            .catch((err) => { console.warn("[workspaceProvision.ts] best-effort failed:", err instanceof Error ? err.message : err); });
         }
       }
 
@@ -204,7 +204,7 @@ export async function provisionWorkspace(
         operatorAgentId: input.operatorAgentId ?? "user",
       },
     })
-    .catch(() => {});
+    .catch((err) => { console.warn("[workspaceProvision.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
   return {
     success: true,

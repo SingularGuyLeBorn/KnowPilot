@@ -234,7 +234,7 @@ async function sendReminderEmail(askId: string): Promise<void> {
   if (!pending || pending.status !== "pending" || !handles) return;
 
   pending.reminderCount += 1;
-  persistReminderCount(askId, pending.reminderCount).catch(() => {});
+  persistReminderCount(askId, pending.reminderCount).catch((err) => { console.warn("[askUserGate.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
   const mins = Math.round((Date.now() - pending.createdAt) / 60000);
   const optionsBlock =
@@ -297,7 +297,7 @@ function scheduleReminders(
       // sendReminderEmail 已把 reminderCount+1；下次用 ladder[新 reminderCount] 档
       const nextInterval = reminderIntervalFor(p.reminderCount);
       still.timer = setTimeout(fire, nextInterval);
-    }).catch(() => {});
+    }).catch((err) => { console.warn("[askUserGate.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   };
 
   handles.timer = setTimeout(fire, delay);
@@ -309,7 +309,7 @@ function finishAsk(askId: string, resolution: AskUserResolution): void {
   if (pending) {
     pending.status = "resolved";
     pending.resolution = resolution;
-    persistResolve(askId, resolution, pending.reminderCount).catch(() => {});
+    persistResolve(askId, resolution, pending.reminderCount).catch((err) => { console.warn("[askUserGate.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   }
   clearReminders(askId);
 
@@ -323,7 +323,7 @@ function finishAsk(askId: string, resolution: AskUserResolution): void {
 
   // 重启后无挂起 run：答复仍进会话队列，由 drain 续跑
   if (!hadWaiters && pending && resolution.outcome === "answered") {
-    deliverOrphanAskAnswer(pending, resolution).catch(() => {});
+    deliverOrphanAskAnswer(pending, resolution).catch((err) => { console.warn("[askUserGate.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   }
 }
 
@@ -376,7 +376,7 @@ export function bindAskUserMailIds(
     pending.threadId = ids.threadId;
     byThreadId.set(ids.threadId, askId);
   }
-  persistMailIds(askId, ids).catch(() => {});
+  persistMailIds(askId, ids).catch((err) => { console.warn("[askUserGate.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 }
 
 export function getAskUserPending(askId: string): AskUserPending | undefined {

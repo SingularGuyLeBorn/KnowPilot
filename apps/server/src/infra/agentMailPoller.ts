@@ -86,7 +86,7 @@ export function startAgentMailPoller(opts: {
     if (stopped) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      tick().catch(() => {});
+      tick().catch((err) => { console.warn("[agentMailPoller.ts] best-effort failed:", err instanceof Error ? err.message : err); });
     }, ms);
   }
 

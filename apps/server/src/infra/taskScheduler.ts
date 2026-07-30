@@ -32,7 +32,7 @@ export class TaskScheduler {
       }
 
       const job = cron.schedule(task.cronExpression, () => {
-        this.runScheduled(task.id, task.name).catch(() => {});
+        this.runScheduled(task.id, task.name).catch((err) => { console.warn("[taskScheduler.ts] best-effort failed:", err instanceof Error ? err.message : err); });
       });
       this.jobs.set(task.id, job);
       registered++;
@@ -62,7 +62,7 @@ export class TaskScheduler {
       return;
     }
     const job = cron.schedule(task.cronExpression, () => {
-      this.runScheduled(task.id, task.name).catch(() => {});
+      this.runScheduled(task.id, task.name).catch((err) => { console.warn("[taskScheduler.ts] best-effort failed:", err instanceof Error ? err.message : err); });
     });
     this.jobs.set(task.id, job);
     console.log(`  ⏰ [TaskScheduler] 已热注册 "${task.name}" → ${task.cronExpression}`);

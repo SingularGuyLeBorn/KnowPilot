@@ -133,15 +133,15 @@ export class HeartbeatEngine {
     // Hermes：同通道挂 skill curator（stale/archive，非硬删）
     if (!this.maintenanceJob) {
       this.maintenanceJob = cron.schedule(MEMORY_DECAY_CRON, () => {
-        this.runMemoryDecay().catch(() => {});
-        this.runSkillCurator().catch(() => {});
+        this.runMemoryDecay().catch((err) => { console.warn("[heartbeatEngine.ts] best-effort failed:", err instanceof Error ? err.message : err); });
+        this.runSkillCurator().catch((err) => { console.warn("[heartbeatEngine.ts] best-effort failed:", err instanceof Error ? err.message : err); });
       });
     }
 
     // W12：审批过期清理维护任务（启动时的一次性清理在 index.ts，这里负责每日定时清扫）
     if (!this.approvalCleanupJob) {
       this.approvalCleanupJob = cron.schedule(APPROVAL_CLEANUP_CRON, () => {
-        this.runApprovalCleanup().catch(() => {});
+        this.runApprovalCleanup().catch((err) => { console.warn("[heartbeatEngine.ts] best-effort failed:", err instanceof Error ? err.message : err); });
       });
     }
 
@@ -153,7 +153,7 @@ export class HeartbeatEngine {
       if (this.refreshTimer) clearTimeout(this.refreshTimer);
       this.refreshTimer = setTimeout(() => {
         this.refreshTimer = null;
-        this.refresh().catch(() => {});
+        this.refresh().catch((err) => { console.warn("[heartbeatEngine.ts] best-effort failed:", err instanceof Error ? err.message : err); });
       }, 500);
     };
     for (const ev of ["agent.created", "agent.updated", "agent.deleted"]) {
@@ -287,7 +287,7 @@ export class HeartbeatEngine {
             } catch (err) {
               console.error(`${formatTrace()}[HeartbeatEngine] triggerHeartbeat 未捕获异常:`, err instanceof Error ? err.message : err);
             }
-          }).catch(() => {});
+          }).catch((err) => { console.warn("[heartbeatEngine.ts] best-effort failed:", err instanceof Error ? err.message : err); });
         });
         this.jobs.set(agent.id, job);
       }
@@ -623,7 +623,7 @@ export class HeartbeatEngine {
     ]);
 
     // W3：刷新 pending scope 缓存（供调度面 drain 同步判定）
-    refreshPendingApprovalScopeCache(this.services).catch(() => {});
+    refreshPendingApprovalScopeCache(this.services).catch((err) => { console.warn("[heartbeatEngine.ts] best-effort failed:", err instanceof Error ? err.message : err); });
 
     const pendingApprovals = pendingApprovalRows.length;
     const pendingApprovalScopes = pendingApprovalRows.map((r) => {

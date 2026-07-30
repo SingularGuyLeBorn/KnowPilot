@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { useAgent } from "@/lib/hooks";
 import {
   loadDefaultChatConfig,
@@ -251,8 +251,8 @@ export function ChatView() {
   useEffect(() => {
     if (sessionFromUrl && sessionFromUrl !== focusedSessionIdRef.current) {
       ensureFocusedSession(sessionFromUrl);
-      utils.session.list.invalidate().catch(() => {});
-      utils.session.listRunning.invalidate().catch(() => {});
+      utils.session.list.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
+      utils.session.listRunning.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
       consumeRef.current(sessionFromUrl);
     }
   }, [sessionFromUrl, ensureFocusedSession, utils.session.list, utils.session.listRunning]);
@@ -307,7 +307,7 @@ export function ChatView() {
       if (sid === effectiveSessionId) {
         // 不 await：hydrate → store dispatch → tryCommitAfterHydrate（INV-1 对账）
         // + hydrateDone（INV-8 ④）全部经 store 事件流转，不把 await 挂在流式回调上。
-        hydrateFromServer().catch(() => {});
+        hydrateFromServer().catch(catchUnlessCancelled("components/chat.tsx"));
         return;
       }
       try {
@@ -440,7 +440,7 @@ export function ChatView() {
 
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {
-      asyncQueueQuery.refetch().catch(() => {});
+      asyncQueueQuery.refetch().catch(catchUnlessCancelled("components/chat.tsx"));
       showToast("已请求取消任务");
     },
     onError: (err) => {
@@ -461,7 +461,7 @@ export function ChatView() {
 
   const pinAsyncJobMutation = trpc.agent.toggleAsyncJobPinned.useMutation({
     onSuccess: () => {
-      asyncQueueQuery.refetch().catch(() => {});
+      asyncQueueQuery.refetch().catch(catchUnlessCancelled("components/chat.tsx"));
     },
   });
 
@@ -516,7 +516,7 @@ export function ChatView() {
     if (backendDown) return;
     for (const sid of watchedSessionIds) {
       if (!sid || sid === NEW_STREAM_KEY) continue;
-      utils.agent.pullAsyncQueue.prefetch({ sessionId: sid }).catch(() => {});
+      utils.agent.pullAsyncQueue.prefetch({ sessionId: sid }).catch(catchUnlessCancelled("components/chat.tsx"));
     }
   }, [watchedSessionIds, backendDown, utils.agent.pullAsyncQueue]);
 
@@ -634,7 +634,7 @@ export function ChatView() {
               targetSessionId: sid,
               resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
               isResume: true,
-            }).catch(() => {});
+            }).catch(catchUnlessCancelled("components/chat.tsx"));
           }
         }
       }
@@ -690,7 +690,7 @@ export function ChatView() {
             targetSessionId: sid,
             resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
             isResume: true,
-          }).catch(() => {});
+          }).catch(catchUnlessCancelled("components/chat.tsx"));
         }
       }
     };
@@ -758,7 +758,7 @@ export function ChatView() {
         targetSessionId: sid,
         resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
         isResume: true,
-      }).catch(() => {});
+      }).catch(catchUnlessCancelled("components/chat.tsx"));
     }
     // 幽灵占用：服务端不在跑 + 本地无 SSE AC → 合法释放（服务重启会话已 paused，禁止假 streaming）
     const released: string[] = [];
@@ -852,7 +852,7 @@ export function ChatView() {
         const res = await ensureMainMutateAsync({ agentId: aid });
         migrateSessionConfig(NEW_STREAM_KEY, res.id);
         openTab(res.id);
-        utils.session.list.invalidate().catch(() => {});
+        utils.session.list.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
         return res.id;
       } catch {
         return null;
@@ -866,7 +866,7 @@ export function ChatView() {
     if (!tabsHydrated || backendDown) return;
     if (focusedSessionId || sessionFromUrl) return;
     if (!effectiveAgentId) return;
-    bindAgentMainSession(effectiveAgentId).catch(() => {});
+    bindAgentMainSession(effectiveAgentId).catch(catchUnlessCancelled("components/chat.tsx"));
   }, [
     tabsHydrated,
     backendDown,
@@ -926,11 +926,11 @@ export function ChatView() {
         }
         openTab(res.id);
         migrateSessionConfig(NEW_STREAM_KEY, res.id);
-        utils.session.list.invalidate().catch(() => {});
+        utils.session.list.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
       } catch {
         showToast("创建新会话失败");
       }
-    })().catch(() => {});
+    })().catch(catchUnlessCancelled("components/chat.tsx"));
   }, [
     agentId,
     selectedAgent,
@@ -954,7 +954,7 @@ export function ChatView() {
       setAgentId("");
       setUserSelectedWorkspaceId(null);
       setEditingSessionId(null);
-      utils.session.listRunning.invalidate().catch(() => {});
+      utils.session.listRunning.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
       const targetSt = streamLifecycleStore.get(id);
       if (
         targetSt.phase === "streaming" &&
@@ -966,7 +966,7 @@ export function ChatView() {
           targetSessionId: id,
           resumeAfter: streamLifecycleStore.resolveResumeAfter(id),
           isResume: true,
-        }).catch(() => {});
+        }).catch(catchUnlessCancelled("components/chat.tsx"));
       }
       consumeRef.current(id);
       const params = new URLSearchParams(searchParams.toString());

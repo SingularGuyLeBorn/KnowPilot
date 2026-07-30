@@ -11,7 +11,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, ListChecks, PanelLeftClose, Plus, Search } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { useAgent } from "@/lib/hooks";
 import { cn, groupBySessionDate } from "@/lib/utils";
 import { type Agent } from "@knowpilot/shared";
@@ -195,8 +195,8 @@ export const ChatSidebar = memo(function ChatSidebar({
         setError(res.error?.message ?? "重命名失败");
         return;
       }
-      utils.session.list.invalidate().catch(() => {});
-      if (effectiveSessionId === id) refetchSession().catch(() => {});
+      utils.session.list.invalidate().catch(catchUnlessCancelled("components/chatSidebar.tsx"));
+      if (effectiveSessionId === id) refetchSession().catch(catchUnlessCancelled("components/chatSidebar.tsx"));
       setEditingSessionId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "重命名失败");
@@ -218,7 +218,7 @@ export const ChatSidebar = memo(function ChatSidebar({
       streamLifecycleActions.deleteSession(id);
       sessionComposeActions.deleteComposeSession(id);
       closeTab?.(id);
-      utils.session.list.invalidate().catch(() => {});
+      utils.session.list.invalidate().catch(catchUnlessCancelled("components/chatSidebar.tsx"));
       if (effectiveSessionId === id) startNewChat();
       setDeleteSessionTarget(null);
     } catch (err) {
@@ -254,7 +254,7 @@ export const ChatSidebar = memo(function ChatSidebar({
     renameDraftRef.current = renameDraft;
   }, [renameDraft]);
   const handleConfirmRename = useCallback((id: string) => {
-    handleRenameSession(id, renameDraftRef.current).catch(() => {});
+    handleRenameSession(id, renameDraftRef.current).catch(catchUnlessCancelled("components/chatSidebar.tsx"));
   }, [handleRenameSession]);
 
   const handleCancelRename = useCallback(() => {
@@ -644,7 +644,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         description={`确定删除「${deleteSessionTarget?.title ?? ""}」？所有消息将被永久删除。`}
         confirmLabel="删除"
         isDestructive
-        onConfirm={() => deleteSessionTarget && handleDeleteSession(deleteSessionTarget.id).catch(() => {})}
+        onConfirm={() => deleteSessionTarget && handleDeleteSession(deleteSessionTarget.id).catch(catchUnlessCancelled("components/chatSidebar.tsx"))}
         onCancel={() => setDeleteSessionTarget(null)}
       />
 
@@ -667,7 +667,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 setBulkSelected(new Set());
                 setBulkMode(false);
                 if (effectiveSessionId && ids.includes(effectiveSessionId)) startNewChat();
-                utils.session.list.invalidate().catch(() => {});
+                utils.session.list.invalidate().catch(catchUnlessCancelled("components/chatSidebar.tsx"));
               },
             },
           );

@@ -24,7 +24,7 @@ export function wrapEmitForChannelReply(
     if (finished && finish) return;
     if (finish) finished = true;
     lastFlush = Date.now();
-    void Promise.resolve(onChunk({ text: buf, finish, streamId })).catch(() => {});
+    void Promise.resolve(onChunk({ text: buf, finish, streamId })).catch((err) => { console.warn("[channelStreamBridge.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   };
 
   return (event: AgentStreamEvent) => {

@@ -231,7 +231,7 @@ export async function sendEmailNotification(
           errors: failed.map((r) => `${r.name}: ${(r.result as { error: string }).error}`),
         },
       })
-      .catch(() => {});
+      .catch((err) => { console.warn("[emailNotifier.ts] best-effort failed:", err instanceof Error ? err.message : err); });
     return {
       success: true,
       message,

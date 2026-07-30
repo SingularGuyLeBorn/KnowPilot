@@ -27,7 +27,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { describeCron } from "@/lib/cronDescribe";
 import { agentLabel } from "@/lib/displayLabels";
 import { cn } from "@/lib/utils";
@@ -246,7 +246,7 @@ export default function AgentCronPage() {
 
   const upsertMutation = trpc.agentCron.upsert.useMutation({
     onSuccess: () => {
-      listQuery.refetch().catch(() => {});
+      listQuery.refetch().catch(catchUnlessCancelled("app/cron/page.tsx"));
       setComposerOpen(false);
       setForm(EMPTY_FORM);
       setFormError(null);
@@ -254,19 +254,19 @@ export default function AgentCronPage() {
     },
   });
   const setEnabledMutation = trpc.agentCron.setEnabled.useMutation({
-    onSuccess: () => listQuery.refetch().catch(() => {}),
+    onSuccess: () => listQuery.refetch().catch(catchUnlessCancelled("app/cron/page.tsx")),
   });
   const clearMutation = trpc.agentCron.clear.useMutation({
     onSuccess: () => {
-      listQuery.refetch().catch(() => {});
+      listQuery.refetch().catch(catchUnlessCancelled("app/cron/page.tsx"));
       setDeleteId(null);
     },
   });
   const fireTargetRef = React.useRef<{ jobName: string; agentName: string } | null>(null);
   const fireMutation = trpc.agentCron.fire.useMutation({
     onSuccess: (data) => {
-      listQuery.refetch().catch(() => {});
-      utils.session.list.invalidate().catch(() => {});
+      listQuery.refetch().catch(catchUnlessCancelled("app/cron/page.tsx"));
+      utils.session.list.invalidate().catch(catchUnlessCancelled("app/cron/page.tsx"));
       if (!data.sessionId) {
         setFireHint("已触发，但未返回会话 id");
         return;
@@ -293,8 +293,8 @@ export default function AgentCronPage() {
     const onMsg = (ev: MessageEvent) => {
       const t = (ev.data as { type?: string } | null)?.type;
       if (t === "cron_job_updated" || t === "cron_session_started" || t === "session_list_changed") {
-        listQuery.refetch().catch(() => {});
-        utils.session.list.invalidate().catch(() => {});
+        listQuery.refetch().catch(catchUnlessCancelled("app/cron/page.tsx"));
+        utils.session.list.invalidate().catch(catchUnlessCancelled("app/cron/page.tsx"));
       }
     };
     for (const name of [UI_STATE_CHANNEL, "knowpilot-session-list"]) {
