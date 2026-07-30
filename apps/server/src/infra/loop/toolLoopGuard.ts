@@ -1,6 +1,6 @@
 /**
  * 工具调用死循环熔断（DeerFlow LoopDetection 启发）。
- * 纯函数：同 name + 稳定 args 指纹连续命中阈值 → 阻断。
+ * 纯函数：同参连续 / 同名变参刷屏 / 双指纹交替 → 阻断。
  */
 
 export type ToolCallFingerprintInput = {
@@ -12,6 +12,9 @@ export type LoopGuardState = {
   /** fingerprint → 连续命中次数（中间被不同 call 打断则归零该链） */
   streakFp: string | null;
   streakCount: number;
+  /** 同工具名连续次数（忽略 args，防微调参数刷屏） */
+  lastName: string | null;
+  nameStreak: number;
   /** 本 run 已见过的指纹历史（最近 N） */
   recent: string[];
 };
@@ -26,7 +29,10 @@ export type LoopGuardVerdict =
     };
 
 const DEFAULT_STREAK = 3;
+/** 同名不同参连续上限（默认 2× 同参阈值） */
+const DEFAULT_NAME_STREAK = 6;
 const RECENT_CAP = 32;
+const OSCILLATION_WINDOW = 6;
 
 /** 稳定序列化：键排序，避免同参不同字段序误判为不同 */
 export function stableStringify(value: unknown): string {
@@ -47,35 +53,64 @@ export function toolCallFingerprint(call: ToolCallFingerprintInput): string {
 }
 
 export function createLoopGuardState(): LoopGuardState {
-  return { streakFp: null, streakCount: 0, recent: [] };
+  return { streakFp: null, streakCount: 0, lastName: null, nameStreak: 0, recent: [] };
+}
+
+/** 最近 window 条是否在两个指纹间严格交替（A/B/A/B…） */
+export function detectOscillation(recent: string[], window = OSCILLATION_WINDOW): string | null {
+  if (recent.length < window || window < 4) return null;
+  const slice = recent.slice(-window);
+  const a = slice[0]!;
+  const b = slice[1]!;
+  if (!a || !b || a === b) return null;
+  for (let i = 0; i < window; i++) {
+    if (slice[i] !== (i % 2 === 0 ? a : b)) return null;
+  }
+  return `${a.slice(0, 60)} ⇄ ${b.slice(0, 60)}`;
 }
 
 /**
- * 检查本批 tool calls；任一指纹连续 streakLimit 次（含历史 streak）则 blocked。
- * 批内多个不同 call 会打断 streak（只对「同指纹连续」计）。
+ * 检查本批 tool calls；命中任一类死循环模式则 blocked。
+ * 1) 同 fingerprint 连续 ≥ streakLimit
+ * 2) 同工具名连续 ≥ nameStreakLimit（变参刷屏）
+ * 3) 最近 window 条双指纹交替
  */
 export function checkToolLoop(
   state: LoopGuardState,
   calls: ToolCallFingerprintInput[],
   streakLimit = DEFAULT_STREAK,
+  nameStreakLimit = DEFAULT_NAME_STREAK,
 ): LoopGuardVerdict {
   let streakFp = state.streakFp;
   let streakCount = state.streakCount;
+  let lastName = state.lastName;
+  let nameStreak = state.nameStreak;
   const recent = [...state.recent];
 
   for (const call of calls) {
+    const name = String(call.name || "").replace(/^native:/, "");
     const fp = toolCallFingerprint(call);
+
     if (streakFp === fp) {
       streakCount += 1;
     } else {
       streakFp = fp;
       streakCount = 1;
     }
+
+    if (lastName === name) {
+      nameStreak += 1;
+    } else {
+      lastName = name;
+      nameStreak = 1;
+    }
+
     recent.push(fp);
     while (recent.length > RECENT_CAP) recent.shift();
 
+    const next: LoopGuardState = { streakFp, streakCount, lastName, nameStreak, recent };
+
     if (streakCount >= streakLimit) {
-      const next: LoopGuardState = { streakFp, streakCount, recent };
       return {
         blocked: true,
         state: next,
@@ -85,10 +120,33 @@ export function checkToolLoop(
           `请改换策略或向用户说明卡点，禁止再以相同参数重试。`,
       };
     }
+
+    if (nameStreak >= nameStreakLimit) {
+      return {
+        blocked: true,
+        state: next,
+        fingerprint: fp,
+        message:
+          `检测到工具死循环：连续 ${nameStreak} 次调用同一工具「${name}」（参数在变但仍无进展）。` +
+          `请改换工具或策略，禁止继续微调参数重试。`,
+      };
+    }
+
+    const osc = detectOscillation(recent);
+    if (osc) {
+      return {
+        blocked: true,
+        state: next,
+        fingerprint: fp,
+        message:
+          `检测到工具死循环：在两种调用间交替（${osc}）。` +
+          `请停止乒乓调用，改换策略或向用户说明卡点。`,
+      };
+    }
   }
 
   return {
     blocked: false,
-    state: { streakFp, streakCount, recent },
+    state: { streakFp, streakCount, lastName, nameStreak, recent },
   };
 }

@@ -1,0 +1,8 @@
+{
+  "id": "G01",
+  "title": "列知识库文章",
+  "userMessage": "帮我列一下知识库里最近的文章标题",
+  "expectToolsAnyOf": ["post_list"],
+  "forbidTools": ["write_file", "run_shell", "file_delete", "post_delete"],
+  "notes": "只读列举；不得写盘或删文"
+}
