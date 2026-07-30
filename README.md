@@ -70,7 +70,7 @@ LLM 领域里，为了对抗 Transformer 的平方复杂度，已经出现了诸
 | <img src="docs/assets/icons/ai.svg" width="18" align="absmiddle" alt=""> **AI 核心** | Agent、Skill、MCP Server、Memory、Prompt 全部内置。ReAct + SSE 流式 `/chat`，思考时间线、工具同步/异步标识；三段式 auto-compact（micro → memory flush → macro），`/compact` 与侧栏按钮经 Agent `session_compact` 统一执行。编辑器选区可一键润色 / 精简 / 扩写（Canvas 式改写）。支持本地推理：Ollama / llama.cpp / LM Studio / vLLM（OpenAI 兼容，会话模型 id 形如 `ollama/llama3.2`）。 |
 | <img src="docs/assets/icons/sparkles.svg" width="18" align="absmiddle" alt=""> **Swarm 三层 Agent** | 超级 / 管理 / 子 Agent 三层层级，权限硬拦截、Agent 间消息总线、心跳自主运行、`spawn_subagent` 异步派生与 `report_back`。 |
 | <img src="docs/assets/icons/palette.svg" width="18" align="absmiddle" alt=""> **莫兰迪星河设计** | 暖灰莫兰迪色系 + 玻璃拟态 + Three.js 星空 Hero + Bento 网格。100 个几何 SVG Agent 头像按 id 稳定分配，深浅主题切换。 |
-| <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。19 实体 CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
+| <img src="docs/assets/icons/database.svg" width="18" align="absmiddle" alt=""> **本地优先** | 内容先落盘到本地文件，再同步到 SQLite。~22 Service CRUD + 管理页，Markdown ↔ SQLite 双向写回，`db:sync` 支持 `--watch`。 |
 | <img src="docs/assets/icons/wrench.svg" width="18" align="absmiddle" alt=""> **自动化流** | Trigger 事件触发 + Approval 审批拦截 + Agent Loop。异步任务队列 `async_task_run/status`，后台运行结果自动回流对话。 |
 | <img src="docs/assets/icons/map.svg" width="18" align="absmiddle" alt=""> **全局搜索与相关笔记** | FTS5 全文索引 `search.global`，跨文章 / Agent / Skill / Memory / Prompt 统一检索。阅读页 `post.related` 按全文 / 标签 / 花园 / 分类综合推荐邻近笔记。 |
 | <img src="docs/assets/icons/folder.svg" width="18" align="absmiddle" alt=""> **对话落库与派工可见** | Chat 助手消息可一键写入知识库（新建 / 覆盖 / 追加，正文以服务端 `messageId` 为准）。中栏派工条展示进行中 / 待消费 / 同步子任务，可跳转子会话与取消。 |
@@ -188,7 +188,7 @@ OasisMind/                  # 产品名见微；本地目录或仍叫 KnowPilot
 ├── apps/
 │   ├── web/                 # Next.js 16 前端（App Router）
 │   └── server/              # Express + tRPC + Prisma 后端
-│       ├── prisma/schema.prisma   # 19 实体模型
+│       ├── prisma/schema.prisma   # ~30 model（业务实体 + 支撑表）
 │       └── src/
 │           ├── router.ts          # 唯一 API 路由文件（20 业务路由）
 │           ├── services.ts        # 唯一业务服务层

@@ -46,7 +46,7 @@ KnowPilot/
 
 | 文件 | 职责 | 禁止做的事 |
 | --- | --- | --- |
-| `apps/server/src/services.ts` | 19 个实体的业务逻辑 | 禁止创建 `services/` 子目录 |
+| `apps/server/src/services.ts` | BaseService + 未拆出的实体 Service | 禁止平行 `services/` 树；低耦合可拆 `infra/entityServices/` |
 | `apps/server/src/router.ts` | 所有 tRPC 路由 | 禁止创建 `trpc/routers/` 子目录 |
 | `apps/server/src/infra/*.ts` | 基础设施（Agent 运行时、工具、Swarm、异步任务等） | — |
 | `apps/server/prisma/schema.prisma` | 数据库模型 | — |
@@ -101,7 +101,7 @@ KnowPilot/
 
 ## 3. 实体与 CRUD
 
-目前共有 **19 个实体**，每个实体在后端都有完整的 `create / getById / list / update / delete`，前端都有对应的管理页面。
+业务 CRUD 实体约 **22 个 Service**（Prisma schema ~30 model，含支撑表）。每个业务实体在后端有完整的 `create / getById / list / update / delete`，多数有对应管理页。部分低耦合 Service 已拆至 `infra/entityServices/`。
 
 | # | 实体 | 管理页面 | 完整 CRUD | 数据源文件 |
 | --- | --- | --- | --- | --- |

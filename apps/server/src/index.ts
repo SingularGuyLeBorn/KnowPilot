@@ -125,7 +125,7 @@ app.use(
   }),
 );
 
-// P2 安全加固：全局限流（默认 600 req/15min/IP，本地开发不触发；RATE_LIMIT_ENABLED=false 关闭）
+// P2 安全加固：全局限流（默认 3000 req/15min/IP，loopback 默认跳过；RATE_LIMIT_ENABLED=false 关闭）
 app.use(globalRateLimiter);
 
 // P2 可观测性：trace_id 透传/生成，写入 ALS 作用域 + 响应 header（web→server 关联排障）
@@ -190,7 +190,11 @@ app.get(
   "/api/agent/chat/stream",
   handleAgentChatStream(services, config, createTrpcInvoker({ services }), streamHub),
 );
-app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub, config));
+app.post(
+  "/api/agent/chat/stop",
+  chatStreamRateLimiter,
+  handleAgentChatStop(streamHub, config),
+);
 
 // QQ 官方 Bot 入站 webhook（需公网 URL / pnpm remote）；Ed25519 验签 + op=13 challenge
 app.post("/api/webhooks/qq", async (req, res) => {

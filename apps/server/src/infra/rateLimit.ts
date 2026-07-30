@@ -2,7 +2,7 @@
  * Express 速率限制中间件（P2 安全加固）
  *
  * 设计原则：
- * - 本地单用户优先：loopback 默认跳过全局限流（Chat 一页几十个 tRPC + SSE，600/15min 极易误伤 → 前端误报「后端未连接」）。
+ * - 本地单用户优先：loopback 默认跳过全局限流（Chat 一页几十个 tRPC + SSE，默认全局 3000/15min 仍可能误伤 → 前端误报「后端未连接」）。
  * - 远程暴露时兜底：防止 /chat/stream 等昂贵端点被滥用刷 LLM、防 tRPC 暴力枚举。
  * - 环境变量可调：RATE_LIMIT_ENABLED=false 整体关闭；RATE_LIMIT_SKIP_LOCALHOST=false 强制对本机也限流。
  * - AUTH_MODE=none（裸奔）时尤其需要；AUTH_MODE=password 时叠加鉴权前限流防暴力。
@@ -53,7 +53,7 @@ export const globalRateLimiter = rateLimit({
   handler: jsonTooManyRequests as unknown as Options["handler"],
 });
 
-/** SSE chat stream 限流器：仅作用于 POST /api/agent/chat/stream。 */
+/** Chat 昂贵 POST 限流：/api/agent/chat/stream 与 /api/agent/chat/stop（同阈值）。 */
 export const chatStreamRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: streamPerMin,

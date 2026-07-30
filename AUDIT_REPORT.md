@@ -613,6 +613,21 @@ flowchart TB
 | 默认 bind | ✅ | `SERVER_HOST` 默认 `127.0.0.1`；Docker `0.0.0.0` |
 | services 第二刀 | ✅ | LogService + ToolService → entityServices |
 
-刻意未动（更大手术）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本、chat.tsx 再拆（P3-04）、package pin 统一（P3-03）。
+刻意未动（更大手术，P4 当时）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本、chat.tsx 再拆（P3-04）、package pin 统一（P3-03）。
 
-*报告结束。生成：2026-07-30 · P4 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p5`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| services 第三刀 | ✅ | Trigger / Run / Prompt → entityServices |
+| P1-06 余 | ✅ | README / docs/development/README / services 头注释对齐 ~22 Service / ~30 model |
+| P1-04 余 | 🟡 | Session 删/恢复/heal、askUser/heartbeat/taskScheduler、messageGateway 等 hotspot + web hooks/chat/cron/agents `catchUnlessCancelled`；全仓仍未扫清 |
+| P2-09 余 | ✅ | importOrder +6（hub/stream/async/trigger/tool/prompt） |
+| P3-03 部分 | ✅ | server: bullmq/ioredis/rate-limit/cron/chokidar；web: clsx/cva/tailwind-merge 精确 pin |
+| 安全小项 | ✅ | `/chat/stop` 同 chatStreamRateLimiter；限流注释 600→3000 |
+| chatMessageList refs | ✅ | 冷加载 hold：ref 仅 layout 写、stale 冻入 state；清 `react-hooks/refs`；既有 set-state-in-effect 定向 disable |
+| 回归补丁 | ✅ | redis Queue mock 补 `on`；memory debounce 不挡 strength 升级；memory_create 单测走 agent scope |
+
+刻意未动（更大手术）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本、chat.tsx 物理再拆（P3-04）、Approval/Session 等重耦合 Service 拆分。
+
+*报告结束。生成：2026-07-30 · P5 续修：2026-07-31。*

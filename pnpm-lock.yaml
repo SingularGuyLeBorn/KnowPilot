@@ -98,10 +98,10 @@ importers:
         specifier: ^1.8.1
         version: 1.8.1
       bullmq:
-        specifier: ^5.79.3
+        specifier: 5.79.3
         version: 5.79.3
       chokidar:
-        specifier: ^5.0.0
+        specifier: 5.0.0
         version: 5.0.0
       compression:
         specifier: ^1.8.1
@@ -116,13 +116,13 @@ importers:
         specifier: 5.1.0
         version: 5.1.0
       express-rate-limit:
-        specifier: ^8.6.0
+        specifier: 8.6.0
         version: 8.6.0(express@5.1.0)
       gray-matter:
         specifier: 4.0.3
         version: 4.0.3
       ioredis:
-        specifier: ^5.11.1
+        specifier: 5.11.1
         version: 5.11.1
       js-yaml:
         specifier: ^5.2.0
@@ -134,7 +134,7 @@ importers:
         specifier: ^1.12.0
         version: 1.12.0
       node-cron:
-        specifier: ^4.5.0
+        specifier: 4.5.0
         version: 4.5.0
       nodemailer:
         specifier: ^9.0.3
@@ -276,10 +276,10 @@ importers:
         specifier: ^0.185.0
         version: 0.185.0
       class-variance-authority:
-        specifier: ^0.7.1
+        specifier: 0.7.1
         version: 0.7.1
       clsx:
-        specifier: ^2.1.1
+        specifier: 2.1.1
         version: 2.1.1
       framer-motion:
         specifier: 12.42.0
@@ -354,7 +354,7 @@ importers:
         specifier: 2.2.2
         version: 2.2.2
       tailwind-merge:
-        specifier: ^3.6.0
+        specifier: 3.6.0
         version: 3.6.0
       three:
         specifier: ^0.185.0
