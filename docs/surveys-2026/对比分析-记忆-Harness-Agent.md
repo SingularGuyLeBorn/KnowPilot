@@ -348,7 +348,7 @@
 **我的设计**：= Part 1 全部（记忆注入 + 三段式压缩 + 摘要复用）+ 两项 harness 层专属：
 
 - **`chatHistory.ts` 历史重建**：扁平存储（一条 assistant 含全部 toolCalls）→ 重建为合法 OpenAI 多轮格式——每个 tool_call 拆成 `assistant(content=null) + tool result` 消息对，最终答案是独立 assistant 消息，thinking 聚合为 reasoning_content；vision 模型直传 image_url，否则 OCR 文本拼接。**存储格式与 API 格式解耦**，换 provider 只改重建层。
-- **上下文可视化**：前端 `sessionContextUsage` / `tokenBudgetBar` 把上下文占用与预算**实时可视化**给用户——多数 CLI/Web harness 没有这层透明。
+- **上下文可视化**：前端 `sessionContextUsage` 把上下文占用与预算**实时可视化**给用户——多数 CLI/Web harness 没有这层透明。
 - 会话设置面板（`chatSettingsPanel`）支持 model/temperature/maxToolRounds/toolCallTimeoutMs 的会话级覆盖——**harness 参数对单用户可见可调**（Runtime Harness Adaptation 的手动版）。
 
 **差异对比**：对齐 Claude Code 主线实践，可视化与参数可见是体验亮点。差距：①无 Aider repo map 式「项目结构常驻表示」——Agent 了解代码库靠临时读文件，每个会话重复付探索成本；②无文件按需加载的引用机制（大文件读入即全额占预算，无「引用-展开」懒加载）；③上下文经济学的量化面板只有占用率，没有「各段贡献度」（哪段上下文值得它占的 token）。
