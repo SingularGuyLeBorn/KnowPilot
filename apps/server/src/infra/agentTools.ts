@@ -6,7 +6,16 @@
 import type { LlmToolCall } from "./llmClient.js";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import { DEFAULT_AGENT_NATIVE } from "@knowpilot/shared";
+import { DEFAULT_AGENT_NATIVE, INTEGRATION_OPT_IN_TOOLS } from "@knowpilot/shared";
+
+/** schema 体积 warn 阈值（字节）；超此仅告警 */
+const SCHEMA_WARN_BYTES = 50_000;
+/** schema 硬顶：超限先剥集成/skill/mcp，仍超则抛错拒跑（可用 env 覆盖） */
+const SCHEMA_HARD_CAP_BYTES = (() => {
+  const n = Number(process.env.AGENT_TOOL_SCHEMA_HARD_CAP_BYTES);
+  return Number.isFinite(n) && n >= 20_000 ? Math.floor(n) : 100_000;
+})();
+const INTEGRATION_OPT_IN_SET = new Set(INTEGRATION_OPT_IN_TOOLS.map((t) => t.replace(/^native:/, "")));
 import {
   buildNativeToolSchemas,
   executeNativeTool,
@@ -277,14 +286,40 @@ export async function buildAgentToolSchemas(
     }
   }
 
-  // P1-03：schema 体积监控——超 50KB 打 warn，提示工具集过大影响 token 消耗与 LLM 选择准确率
-  const schemaBytes = JSON.stringify(schemas).length;
-  if (schemaBytes > 50_000) {
+  // P1-01 余项：超 50KB warn；超硬顶先剥集成 opt-in → skill → mcp，仍超则拒跑
+  let schemaBytes = JSON.stringify(schemas).length;
+  if (schemaBytes > SCHEMA_WARN_BYTES) {
     const toolCount = schemas.length;
     const nativeCount = parsed.native === "all" ? "all" : parsed.native.length;
     console.warn(
-      `${formatTrace()}[agentTools] schema 体积过大: ${Math.round(schemaBytes / 1024)}KB / ${toolCount} 工具 (native=${nativeCount}, skills=${parsed.skills.length}, mcp=${parsed.mcpServers.length})，考虑用 integration_list/integration_call 元工具或显式声明子集降低 schema 体积`,
+      `${formatTrace()}[agentTools] schema 体积过大: ${Math.round(schemaBytes / 1024)}KB / ${toolCount} 工具 (native=${nativeCount}, skills=${parsed.skills.length}, mcp=${parsed.mcpServers.length})，考虑显式声明子集或元工具`,
     );
+  }
+  if (schemaBytes > SCHEMA_HARD_CAP_BYTES) {
+    const dropped: string[] = [];
+    const dropMatching = (pred: (name: string) => boolean) => {
+      for (let i = schemas.length - 1; i >= 0 && schemaBytes > SCHEMA_HARD_CAP_BYTES; i--) {
+        const name = schemas[i]!.function.name;
+        if (!pred(name)) continue;
+        schemas.splice(i, 1);
+        registry.delete(name);
+        dropped.push(name);
+        schemaBytes = JSON.stringify(schemas).length;
+      }
+    };
+    dropMatching((n) => INTEGRATION_OPT_IN_SET.has(n));
+    dropMatching((n) => n.startsWith("skill__"));
+    dropMatching((n) => n.startsWith("mcp__"));
+    if (dropped.length) {
+      console.warn(
+        `${formatTrace()}[agentTools] schema 超硬顶 ${Math.round(SCHEMA_HARD_CAP_BYTES / 1024)}KB，已剥离 ${dropped.length} 个工具: ${dropped.slice(0, 12).join(", ")}${dropped.length > 12 ? "…" : ""}`,
+      );
+    }
+    if (schemaBytes > SCHEMA_HARD_CAP_BYTES) {
+      throw new Error(
+        `Agent 工具 schema 体积 ${Math.round(schemaBytes / 1024)}KB 超过硬顶 ${Math.round(SCHEMA_HARD_CAP_BYTES / 1024)}KB（剥集成/skill/mcp 后仍超）。请缩减 Agent.tools，或设 AGENT_TOOL_SCHEMA_HARD_CAP_BYTES 仅作紧急抬顶。`,
+      );
+    }
   }
 
   agentSchemaCache.set(cacheKey, { schemas, registryEntries: [...registry.entries()] });
