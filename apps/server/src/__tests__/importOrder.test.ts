@@ -25,6 +25,10 @@ const entries: Array<{ name: string; specifier: string; key: string }> = [
   { name: "promptBuilder", specifier: "../infra/promptBuilder.js", key: "buildSystemPromptSkeleton" },
   { name: "agentResolver", specifier: "../infra/agentResolver.js", key: "resolveAgent" },
   { name: "contextHooks", specifier: "../infra/contextHooks.js", key: "runContextHooks" },
+  { name: "approvalGate", specifier: "../infra/approvalGate.js", key: "assertApprovalOrProceed" },
+  { name: "swarmOrchestrator", specifier: "../infra/swarmOrchestrator.js", key: "getSwarmOrchestrator" },
+  { name: "inboxShared", specifier: "../infra/inbox/shared.js", key: "ensureInboxDirs" },
+  { name: "webhookVerify", specifier: "../infra/channels/webhookVerify.js", key: "gateQqWebhook" },
 ];
 
 describe("W4 import 顺序冒烟（循环依赖防线）", () => {

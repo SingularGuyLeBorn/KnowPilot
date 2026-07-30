@@ -89,6 +89,20 @@ export default function RunsPage() {
         description="查看 Agent 对话与工作流的每次执行状态、耗时与 Token 消耗，便于调试与审计。"
       />
 
+      {(statusFilter === "interrupted" ||
+        data?.items?.some((r) => r.status === "interrupted")) && (
+        <div
+          className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
+          data-testid="runs-interrupted-resume-hint"
+        >
+          「已中断」表示服务重启时该 Run 未续跑（ReAct 内存态已丢失）。审批完成后也不会自动唤醒原循环——请到{" "}
+          <Link href="/chat" className="font-medium underline underline-offset-2">
+            Chat
+          </Link>{" "}
+          对对应会话点「恢复」或重发任务。
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {["", "success", "failed", "running", "interrupted", "pending", "cancelled"].map((s) => (
           <button

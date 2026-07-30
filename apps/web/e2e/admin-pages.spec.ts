@@ -29,6 +29,9 @@ const ADMIN_PAGES: Array<{ path: string; heading: string }> = [
   { path: "/approvals", heading: "Approvals 审批队列" },
   { path: "/triggers", heading: "Triggers 触发器" },
   { path: "/cron", heading: "定时节律" },
+  { path: "/inbox", heading: "知识收件箱" },
+  { path: "/channels", heading: "IM 通道" },
+  { path: "/platform-sync", heading: "平台每日同步" },
 ];
 
 test.describe("管理控制台冒烟", () => {

@@ -29,10 +29,13 @@ export default function ChannelsPage() {
   const bindings = bindingsQ.data?.items ?? [];
 
   return (
-    <AdminPage
-      title="IM 通道"
-      description="QQ 官方 Bot。入站归一化后进既有 ChatSession / SessionStreamHub。"
-    >
+    <AdminPage>
+      <header className="mb-2">
+        <h1 className="text-xl font-semibold tracking-tight text-[var(--kp-text-1)]">IM 通道</h1>
+        <p className="mt-0.5 text-xs text-[var(--kp-text-3)]">
+          QQ / 飞书入站归一化后进既有 ChatSession / SessionStreamHub。
+        </p>
+      </header>
       <div className="mb-4 rounded-xl border border-[var(--kp-border)] bg-[var(--kp-surface)] p-4 text-sm text-[var(--kp-text-2)]">
         <p className="font-medium text-[var(--kp-text-1)]">配置（根目录 .env）</p>
         <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
