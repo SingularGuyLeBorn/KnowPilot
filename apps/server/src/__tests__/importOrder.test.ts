@@ -37,6 +37,8 @@ const entries: Array<{ name: string; specifier: string; key: string }> = [
   { name: "promptService", specifier: "../infra/entityServices/promptService.js", key: "PromptService" },
   { name: "taskService", specifier: "../infra/entityServices/taskService.js", key: "TaskService" },
   { name: "workspaceService", specifier: "../infra/entityServices/workspaceService.js", key: "WorkspaceService" },
+  { name: "skillService", specifier: "../infra/entityServices/skillService.js", key: "SkillService" },
+  { name: "mcpService", specifier: "../infra/entityServices/mcpService.js", key: "McpService" },
 ];
 
 describe("W4 import 顺序冒烟（循环依赖防线）", () => {

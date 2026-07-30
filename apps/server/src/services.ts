@@ -4,7 +4,7 @@
  * 【扁平化 + 按需叶子拆分】：
  * 1. 本文件含 Service 错误定义、CRUD 基类 BaseService 与 FileSyncService，以及未拆出的实体 Service。
  * 2. Prisma ~30 model；业务 Service ~22 个（含 Inbox 等）。低耦合实体已拆至
- *    `infra/entityServices/<entity>Service.ts`（Credential/Log/Tool/Trigger/Run/Prompt/File/Git/InfoSource/Task/Workspace…），
+ *    `infra/entityServices/<entity>Service.ts`（…/Skill/Mcp/Task/Workspace…），
  *    由 serviceContainer 直连叶子，禁止兼容 re-export。
  * 3. 禁止平行 `services/` 子目录树；体量过大时只允许上述 entityServices 叶子拆分。
  */
@@ -32,12 +32,6 @@ import {
   type UpdateAgentInput,
   type ListAgentsInput,
   materializeAgentTools,
-  type CreateSkillInput,
-  type UpdateSkillInput,
-  type ListSkillsInput,
-  type CreateMcpServerInput,
-  type UpdateMcpServerInput,
-  type ListMcpServersInput,
   type CreateMemoryInput,
   type UpdateMemoryInput,
   type ListMemoriesInput,
@@ -93,7 +87,6 @@ import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { deriveDecisionScope } from "./infra/approvalScope.js";
 import { upsertFtsRow, deleteFtsRow, searchFts, searchFtsByEntity } from "./infra/ftsIndex.js";
 import { assertPathWithinProjectRoot } from "./infra/safePath.js";
-import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
 
@@ -2234,266 +2227,9 @@ ${entity.systemPrompt}
   // sourceSlug 仍 @unique，由 getFileSlug 生成唯一 slug
 }
 
-/** Skill 技能 */
-export interface SkillEntity {
-  id: string;
-  name: string;
-  description: string;
-  code: string;
-  icon: string | null;
-  trigger: string | null;
-  enabled: boolean;
-  metaJson: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+/** SkillService 已拆至 infra/entityServices/skillService.ts */
 
-export class SkillService extends FileSyncService<CreateSkillInput, UpdateSkillInput, ListSkillsInput, SkillEntity> {
-  readonly entityName = "skill";
-  readonly contentDirName = "skills";
-  readonly fileExtension = ".md";
-
-  protected get delegate() { return this.prisma.skill; }
-  protected formatEntity(raw: any): SkillEntity { return raw; }
-
-  protected buildListWhere(input: ListSkillsInput): any {
-    const where: any = {};
-    if (input.enabled !== undefined) where.enabled = input.enabled;
-    if (input.keyword) {
-      where.OR = [{ name: { contains: input.keyword } }, { description: { contains: input.keyword } }];
-    }
-    return where;
-  }
-
-  protected buildCreateData(input: CreateSkillInput): any { return input; }
-  protected buildUpdateData(input: UpdateSkillInput): any {
-    const { id: _id, ...data } = input;
-    return data;
-  }
-
-  private skillKindOf(entity: SkillEntity): "procedural" | "executable" | "reference" {
-    return parseSkillKind(entity.metaJson, "executable");
-  }
-
-  protected serializeToFile(entity: SkillEntity): string {
-    let meta: Record<string, unknown> = {};
-    if (entity.metaJson) {
-      try {
-        meta = JSON.parse(entity.metaJson);
-      } catch {
-        meta = {};
-      }
-    }
-    const kind = this.skillKindOf(entity);
-    const lines = [
-      `name: "${entity.name.replace(/"/g, '\\"')}"`,
-      `description: "${entity.description.replace(/"/g, '\\"')}"`,
-      `icon: ${entity.icon ? `"${entity.icon}"` : "null"}`,
-      `trigger: ${entity.trigger ? `"${entity.trigger}"` : "null"}`,
-      `enabled: ${entity.enabled}`,
-      `kind: ${kind}`,
-    ];
-    if (meta.model) lines.push(`model: "${meta.model}"`);
-    if (meta.context) lines.push(`context: ${meta.context}`);
-    if (Array.isArray(meta.allowedTools) && meta.allowedTools.length) {
-      lines.push(`allowed-tools:\n${(meta.allowedTools as string[]).map((t) => `  - ${t}`).join("\n")}`);
-    }
-    return `---\n${lines.join("\n")}\n---\n${entity.code}\n`;
-  }
-
-  /** procedural → `{name}/SKILL.md`；其余扁平 `{name}.md` */
-  protected getFileSlug(entity: SkillEntity): string {
-    return skillFileSlug(entity.name, this.skillKindOf(entity));
-  }
-
-  // P11：FTS 增量
-  protected override async afterCreate(entity: SkillEntity, input: CreateSkillInput): Promise<void> {
-    await super.afterCreate(entity, input);
-    await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
-    // A9：通知 agentSchemaCache 失效
-    this.eventBus.emit("skill.created", entity);
-  }
-  protected override async afterUpdate(entity: SkillEntity, existing: any, input: UpdateSkillInput): Promise<void> {
-    await super.afterUpdate(entity, existing, input);
-    await this.syncFts("skill", entity.id, entity.name, `${entity.description}\n${entity.code}`);
-    this.eventBus.emit("skill.updated", entity);
-  }
-  protected override async afterDelete(existing: any): Promise<void> {
-    await super.afterDelete(existing);
-    await this.removeFts("skill", existing.id);
-    this.eventBus.emit("skill.deleted", existing);
-  }
-
-  protected override async validateCreate(input: CreateSkillInput): Promise<void> {
-    await this.assertUnique("name", input.name, "创建");
-  }
-
-  protected override async validateUpdate(input: UpdateSkillInput, existing: any): Promise<void> {
-    if (input.name !== undefined && input.name !== existing.name) {
-      await this.assertUnique("name", input.name, "更新", input.id);
-    }
-  }
-
-  protected override buildDeleteSummary(existing: any): Record<string, unknown> {
-    return { id: existing.id, name: existing.name };
-  }
-}
-
-/** McpServer MCP 数据源服务器 */
-export interface McpServerEntity {
-  id: string;
-  name: string;
-  transport: "stdio" | "http";
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  url: string | null;
-  headers: Record<string, string>;
-  enabled: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export class McpService extends FileSyncService<CreateMcpServerInput, UpdateMcpServerInput, ListMcpServersInput, McpServerEntity> {
-  readonly entityName = "mcp";
-  readonly contentDirName = "mcp";
-  readonly fileExtension = ".json";
-
-  protected get delegate() { return this.prisma.mcpServer; }
-
-  protected formatEntity(raw: any): McpServerEntity {
-    const transport = raw.transport === "http" ? "http" : "stdio";
-    return {
-      ...raw,
-      transport,
-      command: raw.command ?? "",
-      args: typeof raw.args === "string" ? JSON.parse(raw.args) : (raw.args || []),
-      env: typeof raw.env === "string" ? JSON.parse(raw.env) : (raw.env || {}),
-      url: raw.url ?? null,
-      headers: typeof raw.headers === "string" ? JSON.parse(raw.headers) : (raw.headers || {}),
-    };
-  }
-
-  protected buildListWhere(input: ListMcpServersInput): any {
-    const where: any = {};
-    if (input.keyword) {
-      where.OR = [
-        { name: { contains: input.keyword } },
-        { command: { contains: input.keyword } },
-        { url: { contains: input.keyword } },
-      ];
-    }
-    return where;
-  }
-
-  protected buildCreateData(input: CreateMcpServerInput): any {
-    return {
-      name: input.name,
-      transport: input.transport ?? "stdio",
-      command: input.command ?? "",
-      args: JSON.stringify(input.args ?? []),
-      env: JSON.stringify(input.env ?? {}),
-      url: input.url?.trim() || null,
-      headers: JSON.stringify(input.headers ?? {}),
-      enabled: input.enabled,
-    };
-  }
-
-  protected buildUpdateData(input: UpdateMcpServerInput): any {
-    const { id: _id, args, env, headers, ...data } = input;
-    const updateData: any = { ...data };
-    if (args !== undefined) updateData.args = JSON.stringify(args);
-    if (env !== undefined) updateData.env = JSON.stringify(env);
-    if (headers !== undefined) updateData.headers = JSON.stringify(headers);
-    if (input.url !== undefined) updateData.url = input.url?.trim() || null;
-    return updateData;
-  }
-
-  protected serializeToFile(entity: McpServerEntity): string {
-    const body: Record<string, unknown> = {
-      name: entity.name,
-      transport: entity.transport,
-      enabled: entity.enabled,
-    };
-    if (entity.transport === "http") {
-      body.url = entity.url;
-      body.headers = entity.headers ?? {};
-      if (entity.command) body.command = entity.command;
-    } else {
-      body.command = entity.command;
-      body.args = entity.args;
-      body.env = entity.env;
-    }
-    return JSON.stringify(body, null, 2) + "\n";
-  }
-
-  protected getFileSlug(entity: McpServerEntity): string { return entity.name; }
-
-  // A9：MCP CRUD 后 emit 事件；D5：FTS 增量挂钩
-  protected override async afterCreate(entity: McpServerEntity, input: CreateMcpServerInput): Promise<void> {
-    await super.afterCreate(entity, input);
-    await this.syncFts("mcp", entity.id, entity.name, entity.command ?? "");
-    this.eventBus.emit("mcp.created", entity);
-  }
-  protected override async afterUpdate(entity: McpServerEntity, existing: any, input: UpdateMcpServerInput): Promise<void> {
-    await super.afterUpdate(entity, existing, input);
-    await this.syncFts("mcp", entity.id, entity.name, entity.command ?? "");
-    this.eventBus.emit("mcp.updated", entity);
-  }
-  protected override async afterDelete(existing: any): Promise<void> {
-    await super.afterDelete(existing);
-    await this.removeFts("mcp", existing.id);
-    this.eventBus.emit("mcp.deleted", existing);
-  }
-
-  protected override async validateCreate(input: CreateMcpServerInput): Promise<void> {
-    await this.assertUnique("name", input.name, "创建");
-    this.assertMcpTransport(input.transport ?? "stdio", input.command, input.url);
-  }
-
-  protected override async validateUpdate(input: UpdateMcpServerInput, existing: any): Promise<void> {
-    if (input.name !== undefined && input.name !== existing.name) {
-      await this.assertUnique("name", input.name, "更新", input.id);
-    }
-    const transport = (input.transport ?? existing.transport ?? "stdio") as "stdio" | "http";
-    const command = input.command !== undefined ? input.command : existing.command;
-    const url = input.url !== undefined ? input.url : existing.url;
-    this.assertMcpTransport(transport, command, url);
-  }
-
-  private assertMcpTransport(
-    transport: "stdio" | "http",
-    command: string | null | undefined,
-    url: string | null | undefined,
-  ): void {
-    if (transport === "stdio" && !String(command ?? "").trim()) {
-      throw new ServiceValidationError(
-        failure({
-          code: "BAD_REQUEST",
-          message: "stdio 传输必须填写 command",
-          retryable: false,
-          operation: "validate",
-          entity: this.entityName,
-        }),
-      );
-    }
-    if (transport === "http" && !String(url ?? "").trim()) {
-      throw new ServiceValidationError(
-        failure({
-          code: "BAD_REQUEST",
-          message: "http 传输必须填写 url",
-          retryable: false,
-          operation: "validate",
-          entity: this.entityName,
-        }),
-      );
-    }
-  }
-
-  protected override buildDeleteSummary(existing: any): Record<string, unknown> {
-    return { id: existing.id, name: existing.name };
-  }
-}
+/** McpService 已拆至 infra/entityServices/mcpService.ts */
 
 /** Memory 长期语义记忆 */
 export interface MemoryEntity {

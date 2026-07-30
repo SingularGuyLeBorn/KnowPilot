@@ -8,7 +8,7 @@ import path from "path";
 import type { AppConfig } from "../../infra/config.js";
 import type { NativeToolContext } from "../../infra/nativeTools.js";
 import type { AgentToolContext, ParsedAgentTools } from "../../infra/agentTools.js";
-import type { SkillEntity } from "../../services.js";
+import type { SkillEntity } from "../../infra/entityServices/skillService.js";
 
 export function createTempProjectDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "kp-tool-test-"));

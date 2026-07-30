@@ -14,7 +14,7 @@ import {
   buildMcpToolSchemas,
   disconnectAllMcpClients,
 } from "../infra/mcpClient.js";
-import type { McpServerEntity } from "../services.js";
+import type { McpServerEntity } from "../infra/entityServices/mcpService.js";
 import { createMcpServerSchema } from "@knowpilot/shared";
 import type { ServiceContainer } from "../infra/serviceContainer.js";
 

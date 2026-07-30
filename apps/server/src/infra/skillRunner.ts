@@ -4,7 +4,7 @@
 
 import vm from "node:vm";
 import type { ServiceContainer } from "./serviceContainer.js";
-import type { SkillEntity } from "../services.js";
+import type { SkillEntity } from "./entityServices/skillService.js";
 
 const SKILL_TIMEOUT_MS = 8_000;
 

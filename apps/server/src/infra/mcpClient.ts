@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import type { McpServerEntity } from "../services.js";
+import type { McpServerEntity } from "./entityServices/mcpService.js";
 import { executeMockMcpTool, getMockMcpToolSchemas } from "./mockMcpRegistry.js";
 import { CircuitBreaker } from "./circuitBreaker.js";
 

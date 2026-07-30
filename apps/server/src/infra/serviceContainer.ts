@@ -14,8 +14,6 @@ import {
   GardenService,
   PostService,
   AgentService,
-  SkillService,
-  McpService,
   MemoryService,
   SessionService,
   MessageService,
@@ -34,6 +32,8 @@ import { GitService } from "./entityServices/gitService.js";
 import { InfoSourceService } from "./entityServices/infoSourceService.js";
 import { TaskService } from "./entityServices/taskService.js";
 import { WorkspaceService } from "./entityServices/workspaceService.js";
+import { SkillService } from "./entityServices/skillService.js";
+import { McpService } from "./entityServices/mcpService.js";
 
 export class ServiceContainer {
   readonly prisma: PrismaClient;
