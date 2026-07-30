@@ -55,6 +55,21 @@ const entries: Array<{ name: string; specifier: string; key: string; kind?: "fun
   { name: "infoSourceRouter", specifier: "../infra/trpcRouters/infoSourceRouter.js", key: "infoSourceRouter", kind: "object" },
   { name: "inboxRouter", specifier: "../infra/trpcRouters/inboxRouter.js", key: "inboxRouter", kind: "object" },
   { name: "channelRouter", specifier: "../infra/trpcRouters/channelRouter.js", key: "channelRouter", kind: "object" },
+  { name: "messageRouter", specifier: "../infra/trpcRouters/messageRouter.js", key: "messageRouter", kind: "object" },
+  { name: "gitRouter", specifier: "../infra/trpcRouters/gitRouter.js", key: "gitRouter", kind: "object" },
+  { name: "searchRouter", specifier: "../infra/trpcRouters/searchRouter.js", key: "searchRouter", kind: "object" },
+  { name: "analyticsRouter", specifier: "../infra/trpcRouters/analyticsRouter.js", key: "analyticsRouter", kind: "object" },
+  { name: "aboutRouter", specifier: "../infra/trpcRouters/aboutRouter.js", key: "aboutRouter", kind: "object" },
+  { name: "authRouter", specifier: "../infra/trpcRouters/authRouter.js", key: "authRouter", kind: "object" },
+  { name: "nativeRouter", specifier: "../infra/trpcRouters/nativeRouter.js", key: "nativeRouter", kind: "object" },
+  { name: "taskRouter", specifier: "../infra/trpcRouters/taskRouter.js", key: "taskRouter", kind: "object" },
+  { name: "workspaceRouter", specifier: "../infra/trpcRouters/workspaceRouter.js", key: "workspaceRouter", kind: "object" },
+  { name: "triggerRouter", specifier: "../infra/trpcRouters/triggerRouter.js", key: "triggerRouter", kind: "object" },
+  { name: "agentCronRouter", specifier: "../infra/trpcRouters/agentCronRouter.js", key: "agentCronRouter", kind: "object" },
+  { name: "approvalRouter", specifier: "../infra/trpcRouters/approvalRouter.js", key: "approvalRouter", kind: "object" },
+  { name: "askUserRouter", specifier: "../infra/trpcRouters/askUserRouter.js", key: "askUserRouter", kind: "object" },
+  { name: "runRouter", specifier: "../infra/trpcRouters/runRouter.js", key: "runRouter", kind: "object" },
+  { name: "credentialRouter", specifier: "../infra/trpcRouters/credentialRouter.js", key: "credentialRouter", kind: "object" },
 ];
 
 describe("W4 import 顺序冒烟（循环依赖防线）", () => {

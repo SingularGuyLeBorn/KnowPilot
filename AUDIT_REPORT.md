@@ -687,11 +687,11 @@ flowchart TB
 | 编号 | 状态 | 说明 |
 |---|---|---|
 | services 第八刀 | ✅ | SessionQueueItem → entityServices；`services.ts` ≈2375（仅剩 Post/Agent/Session/Message）；entityServices 18 叶子 |
-| router 第一刀 | ✅ | 11 域叶子 + `withApprovalGuard`：garden/log/tool/prompt/skill/mcp/memory/file/infoSource/inbox/channel；`router.ts` ≈1696；AGENTS 允许 `infra/trpcRouters/` |
-| importOrder | ✅ | + sessionQueueItemService + 11 router 入口（object kind） |
+| router 第一刀 | ✅ | 26 域叶子 + `withApprovalGuard`；`router.ts` ≈1130（根文件仅剩 post/agent/session/ai/llm/deadLetter 等厚路由）；AGENTS 允许 `infra/trpcRouters/` |
+| importOrder | ✅ | + sessionQueueItemService + 26 router 入口（object kind） |
 | 审计数字 | ✅ | §2.2 evals 与 P1-02 行数证据对齐现状 |
-| 手术边界 | 🛑 | Post/Agent/Session/Message 与 session/agent/approval/git/run/credential 等厚路由、真实 LLM 周跑 evals、metablog 软失败、chat.tsx 再拆 |
+| 手术边界 | 🛑 | Post/Agent/Session/Message Service；post/agent/session/ai/llm 厚路由；真实 LLM 周跑 evals；metablog 软失败；chat.tsx 再拆 |
 
-刻意未动：完整元工具化、上述重耦合 Service/厚路由全量拆、真实 LLM 周跑 evals、metablog Playwright/`json` 软失败、Goal×内环精细 token、`chat.tsx` 物理再拆。
+刻意未动：完整元工具化、上述重耦合 Service/厚路由、真实 LLM 周跑 evals、metablog Playwright/`json` 软失败、Goal×内环精细 token、`chat.tsx` 物理再拆。
 
 *报告结束。生成：2026-07-30 · P11 续修：2026-07-31。*
