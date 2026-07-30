@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Radio, Trash2 } from "lucide-react";
 import { AdminPage, EmptyState } from "@/components/shared";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
 export default function ChannelsPage() {
@@ -12,13 +12,13 @@ export default function ChannelsPage() {
   const bindingsQ = trpc.channel.listBindings.useQuery(undefined, { refetchInterval: 10_000 });
   const deleteMut = trpc.channel.deleteBinding.useMutation({
     onSuccess: () => {
-      bindingsQ.refetch().catch(() => {});
+      bindingsQ.refetch().catch(catchUnlessCancelled("channel.bindings.refetch"));
     },
   });
   const simMut = trpc.channel.simulateInbound.useMutation({
     onSuccess: () => {
-      statusQ.refetch().catch(() => {});
-      bindingsQ.refetch().catch(() => {});
+      statusQ.refetch().catch(catchUnlessCancelled("channel.status.refetch"));
+      bindingsQ.refetch().catch(catchUnlessCancelled("channel.bindings.refetch"));
     },
   });
   const [peerId, setPeerId] = useState("debug-user");

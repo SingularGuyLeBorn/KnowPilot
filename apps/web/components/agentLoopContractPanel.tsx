@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Lock, Unlock } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -13,10 +13,18 @@ export function AgentLoopContractPanel({ agentId }: { agentId: string }) {
     { enabled: !!agentId, refetchInterval: 15_000 },
   );
   const resumeMut = trpc.agent.resumeLoopContract.useMutation({
-    onSuccess: () => { utils.agent.getLoopContract.invalidate({ agentId }).catch(() => {}); },
+    onSuccess: () => {
+      utils.agent.getLoopContract
+        .invalidate({ agentId })
+        .catch(catchUnlessCancelled("agent.getLoopContract.invalidate"));
+    },
   });
   const closeMut = trpc.agent.closeLoopGate.useMutation({
-    onSuccess: () => { utils.agent.getLoopContract.invalidate({ agentId }).catch(() => {}); },
+    onSuccess: () => {
+      utils.agent.getLoopContract
+        .invalidate({ agentId })
+        .catch(catchUnlessCancelled("agent.getLoopContract.invalidate"));
+    },
   });
 
   if (isLoading) {

@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import type { Workspace } from "@knowpilot/shared";
 import { useWorkspace } from "@/lib/hooks";
 import { useCardDensity } from "@/lib/useCardDensity";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { AdminPage, EmptyState, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
 
 export default function WorkspacesPage() {
@@ -37,9 +37,10 @@ export default function WorkspacesPage() {
   const utils = trpc.useUtils();
   const resetAssistantMut = trpc.workspace.resetAssistantHome.useMutation({
     onSuccess: () => {
-      utils.workspace.list.invalidate().catch(() => {});
-      utils.agent.list.invalidate().catch(() => {});
-      utils.session.list.invalidate().catch(() => {});
+      const w = catchUnlessCancelled("workspace.reset.invalidate");
+      utils.workspace.list.invalidate().catch(w);
+      utils.agent.list.invalidate().catch(w);
+      utils.session.list.invalidate().catch(w);
     },
   });
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -113,7 +114,7 @@ export default function WorkspacesPage() {
         managerName: "",
         initialTask: "",
       });
-      refetch().catch(() => {});
+      refetch().catch(catchUnlessCancelled("workspace.list.refetch"));
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "创建失败");
     }
@@ -427,7 +428,12 @@ export default function WorkspacesPage() {
               <Button variant="outline" onClick={() => setShowCreate(false)}>
                 取消
               </Button>
-              <Button onClick={() => { handleCreate().catch(() => {}); }} disabled={createMutation.isPending}>
+              <Button
+                onClick={() => {
+                  handleCreate().catch(catchUnlessCancelled("workspace.create"));
+                }}
+                disabled={createMutation.isPending}
+              >
                 {createMutation.isPending ? "创建中…" : "创建"}
               </Button>
             </div>

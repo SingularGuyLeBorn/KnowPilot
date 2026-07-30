@@ -1,7 +1,7 @@
 "use client";
 
 import { DEFAULT_POST_GARDEN, type OperationResult, type Post } from "@knowpilot/shared";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 
 /** 文章 mutation：创建/更新/删除后统一刷新相关 query（叶子，勿经 hooks 大桶） */
 export function usePostMutations(options?: {
@@ -12,10 +12,11 @@ export function usePostMutations(options?: {
   const utils = trpc.useUtils();
 
   const invalidatePostQueries = () => {
-    utils.post.list.invalidate().catch(() => {});
-    utils.post.tree.invalidate().catch(() => {});
-    utils.post.categories.invalidate().catch(() => {});
-    utils.post.tags.invalidate().catch(() => {});
+    const w = catchUnlessCancelled("post.invalidate");
+    utils.post.list.invalidate().catch(w);
+    utils.post.tree.invalidate().catch(w);
+    utils.post.categories.invalidate().catch(w);
+    utils.post.tags.invalidate().catch(w);
   };
 
   const create = trpc.post.create.useMutation({
@@ -34,13 +35,15 @@ export function usePostMutations(options?: {
     onSuccess: (result: OperationResult<Post>) => {
       if (result.success && result.data) {
         invalidatePostQueries();
-        utils.post.getById.invalidate({ id: result.data.id }).catch(() => {});
+        utils.post.getById
+          .invalidate({ id: result.data.id })
+          .catch(catchUnlessCancelled("post.getById.invalidate"));
         utils.post.getBySlug
           .invalidate({
             slug: result.data.slug,
             garden: result.data.garden ?? DEFAULT_POST_GARDEN,
           })
-          .catch(() => {});
+          .catch(catchUnlessCancelled("post.getBySlug.invalidate"));
         options?.onUpdateSuccess?.({
           slug: result.data.slug,
           garden: result.data.garden ?? DEFAULT_POST_GARDEN,
@@ -62,14 +65,14 @@ export function usePostMutations(options?: {
   const restore = trpc.post.restore.useMutation({
     onSuccess: () => {
       invalidatePostQueries();
-      utils.post.listDeleted.invalidate().catch(() => {});
+      utils.post.listDeleted.invalidate().catch(catchUnlessCancelled("post.listDeleted.invalidate"));
     },
   });
 
   const permanentDelete = trpc.post.permanentDelete.useMutation({
     onSuccess: () => {
       invalidatePostQueries();
-      utils.post.listDeleted.invalidate().catch(() => {});
+      utils.post.listDeleted.invalidate().catch(catchUnlessCancelled("post.listDeleted.invalidate"));
     },
   });
 

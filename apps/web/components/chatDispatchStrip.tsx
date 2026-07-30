@@ -20,7 +20,7 @@ import {
   formatQueuedHint,
 } from "@/lib/chatQueueTypes";
 import { asyncResultLabel, formatSubagentDisplayName } from "@/components/chatMessageBits";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 
 type StripStatus = "pending" | "queued" | "running" | "done" | "failed";
 
@@ -133,7 +133,7 @@ export function ChatDispatchStrip({
       onCancelJob(jobId);
       return;
     }
-    cancelMut.mutateAsync({ jobId }).catch(() => {});
+    cancelMut.mutateAsync({ jobId }).catch(catchUnlessCancelled("asyncJob.cancel"));
   };
 
   return (

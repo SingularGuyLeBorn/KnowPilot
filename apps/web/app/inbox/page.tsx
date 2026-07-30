@@ -39,7 +39,7 @@ import {
   KpSelect,
 } from "@/components/shared";
 import { cn } from "@/lib/utils";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 
 const VIEW_MODE_KEY = "kp-inbox-view-mode";
 const COLLECTION_PAGE_SIZE = 8;
@@ -64,7 +64,7 @@ const PLATFORMS = ["zhihu", "xhs", "bilibili", "wechat", "screenshot", "url"] as
 type ViewMode = "card" | "list";
 const DEFAULT_VIEW_MODE: ViewMode = "list";
 
-let viewModeListeners = new Set<() => void>();
+const viewModeListeners = new Set<() => void>();
 function subscribeViewMode(cb: () => void) {
   viewModeListeners.add(cb);
   const onStorage = (e: StorageEvent) => {
@@ -427,10 +427,11 @@ export default function InboxPage() {
   };
 
   const refreshAll = () => {
-    refetch().catch(() => {});
-    refetchStats().catch(() => {});
-    refetchFacets().catch(() => {});
-    utils.inbox.list.invalidate().catch(() => {});
+    const w = catchUnlessCancelled("inbox.refresh");
+    refetch().catch(w);
+    refetchStats().catch(w);
+    refetchFacets().catch(w);
+    utils.inbox.list.invalidate().catch(w);
   };
 
   const setBrowseAndReset = (next: BrowseKey) => {
@@ -572,7 +573,7 @@ export default function InboxPage() {
                 runAction("收录链接", async () => {
                   await captureMutation.mutateAsync({ url: pasteUrl.trim() });
                   setPasteUrl("");
-                }).catch(() => {});
+                }).catch(catchUnlessCancelled("inbox.capture"));
               }
             }}
           />
@@ -1100,7 +1101,7 @@ export default function InboxPage() {
             } else {
               await bulkDeleteMutation.mutateAsync({ ids });
             }
-          }).catch(() => {});
+          }).catch(catchUnlessCancelled("inbox.delete"));
         }}
         onCancel={() => setPendingDeleteIds(null)}
       />

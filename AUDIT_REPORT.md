@@ -596,7 +596,7 @@ flowchart TB
 | P2-02 Goal | ✅ | Goal 继续前 `assertLlmBudget`；`getGoal` 附会话 token；ChatGoalBar 展示 |
 | P2-10 | ✅ | `remote`/`remote-ngrok` 缺 `CREDENTIAL_MASTER_KEY` 拒启；llmBudget `tryReserve` 硬预留 MVP（reactLoop） |
 | services 第一刀 | ✅ | `CredentialService` → `infra/entityServices/credentialService.ts`；AGENTS 修订 |
-| P1-04 余 | 🟡 | hub/swarmBus 热点 catch 可观测；全仓未扫清 |
+| P1-04 余 | 🟡 | hub/swarmBus + 管理页（inbox/channels/gardens/workspaces/settings/trash/postMutations）+ llmBudget；全仓仍未扫清 |
 | experiments | ✅ | `experiments/README.md` 标明非维护 |
 
 刻意未动（更大手术）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本。

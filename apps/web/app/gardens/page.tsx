@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRight, ChevronRight, FileText, Layers, Plus, Trash2 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,7 @@ export default function GardensPage() {
   const { data, isLoading } = trpc.garden.list.useQuery({ page: 1, pageSize: 100 });
   const create = trpc.garden.create.useMutation({
     onSuccess: () => {
-      utils.garden.list.invalidate().catch(() => {});
+      utils.garden.list.invalidate().catch(catchUnlessCancelled("garden.list.invalidate"));
       setOpen(false);
       setId("");
       setTitle("");
@@ -33,7 +33,7 @@ export default function GardensPage() {
   });
   const remove = trpc.garden.delete.useMutation({
     onSuccess: () => {
-      utils.garden.list.invalidate().catch(() => {});
+      utils.garden.list.invalidate().catch(catchUnlessCancelled("garden.list.invalidate"));
       setDeleteId(null);
     },
   });

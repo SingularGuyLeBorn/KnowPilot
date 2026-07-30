@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Task } from "@knowpilot/shared";
 import { useTask, useInbox } from "@/lib/hooks";
+import { catchUnlessCancelled } from "@/lib/trpc";
 import { AdminPage, LoadingState } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
@@ -273,7 +274,7 @@ export default function PlatformSyncPage() {
           output: {},
         });
       }
-      await refetch().catch(() => {});
+      await refetch().catch(catchUnlessCancelled("platform-sync.refetch"));
       setNotice("已启用每日同步：调度器已热注册，无需重启服务");
     } catch (err) {
       setNotice(`启用失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -297,7 +298,7 @@ export default function PlatformSyncPage() {
         setNotice("已触发定时任务执行，结果进知识 Inbox");
         invalidateInboxQueries();
       }
-      await refetch().catch(() => {});
+      await refetch().catch(catchUnlessCancelled("platform-sync.refetch"));
     } catch (err) {
       setNotice(`失败: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

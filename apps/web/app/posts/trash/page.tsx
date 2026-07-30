@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RotateCcw, Trash2 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { usePostMutations } from "@/lib/usePostMutations";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,7 @@ export default function PostTrashPage() {
 
   const handleRestore = async (post: Post) => {
     const res = await restore.mutateAsync({ id: post.id });
-    if (res.success) refetch().catch(() => {});
+    if (res.success) refetch().catch(catchUnlessCancelled("post.listDeleted.refetch"));
     setRestoreTarget(null);
   };
 
@@ -29,7 +29,7 @@ export default function PostTrashPage() {
     const res = await permanentDelete.mutateAsync({ id: deleteTarget.id });
     if (res.success) {
       setDeleteTarget(null);
-      refetch().catch(() => {});
+      refetch().catch(catchUnlessCancelled("post.listDeleted.refetch"));
     }
   };
 
@@ -110,7 +110,10 @@ export default function PostTrashPage() {
         title="恢复文章"
         description={`确定恢复「${restoreTarget?.title ?? ""}」？恢复后将重新出现在文章列表中。`}
         confirmLabel="恢复"
-        onConfirm={() => restoreTarget && handleRestore(restoreTarget).catch(() => {})}
+        onConfirm={() =>
+          restoreTarget &&
+          handleRestore(restoreTarget).catch(catchUnlessCancelled("post.trash.restore"))
+        }
         onCancel={() => setRestoreTarget(null)}
       />
 

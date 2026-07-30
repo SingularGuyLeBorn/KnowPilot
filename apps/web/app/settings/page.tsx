@@ -18,7 +18,7 @@ import {
   Circle,
   Terminal,
 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { clearAuthToken } from "@/lib/auth";
 import { LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ export default function SettingsPage() {
 
   const handleLogout = () => {
     clearAuthToken();
-    refetch().catch(() => {});
+    refetch().catch(catchUnlessCancelled("auth.status.refetch"));
     window.location.href = "/login";
   };
 
