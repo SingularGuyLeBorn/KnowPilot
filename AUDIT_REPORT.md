@@ -547,7 +547,9 @@ flowchart TB
 
 ---
 
-## 七、保命清单落地状态（分支 `arch/audit-fix-2026-07-30`）
+## 七、保命清单落地状态
+
+### 分支 `arch/audit-fix-2026-07-30`（P0 + 部分 P1/P2）
 
 | 编号 | 状态 | 说明 |
 |---|---|---|
@@ -559,8 +561,17 @@ flowchart TB
 | P2-08 | ✅ 已修 | 移除 web `zustand` 死依赖 |
 | 空 tools skill:* | ✅ 已修 | shared + server 不再隐式 `skillWildcard` |
 | P2-01 | ✅ 已修 | toolLoopGuard：同名变参 + A/B 交替熔断 |
-| P1-03（骨架） | 🟡 部分 | `evals/README.md` + G01 黄金用例；CI 脚本未接 |
 
-未在本波动刀（需大手术/长周期）：P1-01 工具面瘦身、P1-02 god file 拆分、P1-03 完整 CI evals、P1-04 空 catch 全扫、P1-05 webhook 验签。
+### 分支 `arch/audit-fix-p1`（本轮 P1）
 
-*报告结束。生成：2026-07-30 · 修复落地同日。*
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| P1-01 | ✅ 已修 | `INTEGRATION_OPT_IN_TOOLS` 出默认；assistant 去 `skill:*`；strip/migrate 防回灌 |
+| P1-02 | ✅ 已修 | `inboxPipeline.ts` → `infra/inbox/{shared,zhihu,xhs,bilibili,wechat,screenshots}`；旧文件删除 |
+| P1-03 | ✅ 已修 | `pnpm test:evals` + G01/G02 + mock scenario；CI 已挂（G03–G10 待扩） |
+| P1-04 | 🟡 部分 | hydrate / asyncJob 热点空 catch → `console.warn`；全仓静默 catch 未扫清 |
+| P1-05 | ✅ 已修 | QQ Ed25519（op=13 + 事件验签）+ rawBody；飞书 verification token 未配置硬拒 |
+
+刻意未动（大手术）：完整元工具化、services.ts 域拆、飞书 Encrypt Key、真实 LLM 周跑 evals、全仓空 catch 清零。
+
+*报告结束。生成：2026-07-30 · P1 续修：2026-07-31。*
