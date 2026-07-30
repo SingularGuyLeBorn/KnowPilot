@@ -752,7 +752,8 @@ export function createAppConfig(): AppConfig {
       tunnelToken: readEnv("CLOUDFLARE_TUNNEL_TOKEN"),
     },
     shell: {
-      enabled: readEnv("SHELL_ENABLED", "SHELL_TOOL_ENABLED") !== "false",
+      // P0-02：默认关闭，须显式 SHELL_ENABLED=true（防未授权本机命令面）
+      enabled: readEnv("SHELL_ENABLED", "SHELL_TOOL_ENABLED") === "true",
       mode: (() => {
         const raw = readEnv("SHELL_MODE") || "host_restricted";
         if (raw === "disabled" || raw === "host_restricted" || raw === "host_full" || raw === "docker") {

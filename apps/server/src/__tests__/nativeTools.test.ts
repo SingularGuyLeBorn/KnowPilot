@@ -1825,7 +1825,9 @@ describe("native:run_shell", () => {
   it("危险命令被拒绝", async () => {
     const root = createTempProjectDir();
     const ctx = createNativeCtx(root);
-    await expect(executeNativeTool("run_shell", { command: "rm -rf /" }, ctx)).rejects.toThrow(/安全策略/);
+    await expect(executeNativeTool("run_shell", { command: "rm -rf /" }, ctx)).rejects.toThrow(
+      /安全策略|禁止用 shell 删除/,
+    );
     fs.rmSync(root, { recursive: true, force: true });
   });
 

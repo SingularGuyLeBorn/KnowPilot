@@ -5,7 +5,10 @@
  * 结果唯一通道 = tool return；waitForResult=false（默认）时 deliverToQueue=true，
  * 结果经异步队列 + 原子 CLAIM 后注入会话。两条通道互斥，防止结果二次投喂。
  */
+import fs from "node:fs";
+import path from "node:path";
 import { runShellRestricted, waitMs } from "../../shellRunner.js";
+import { resolveSafePath } from "../../safePath.js";
 import type { NativeToolContext, NativeToolDefinition } from "./types.js";
 import { coerceToolBoolean } from "./types.js";
 import { registerNativeDomain } from "./registerDomain.js";
@@ -75,11 +78,32 @@ async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolCon
   if (!jobId) throw new Error("async_task_cancel 需要 jobId");
   return cancelAsyncJob(jobId, ctx.config, ctx.services);
 }
+/** 解析 Agent Workspace 绝对路径；无则回退 data/workspace（仍在项目根内） */
+async function resolveShellSandboxRoot(ctx: NativeToolContext): Promise<string> {
+  const wsId = ctx.agentSnapshot?.workspaceId;
+  let abs: string;
+  if (wsId && ctx.prisma) {
+    const ws = await ctx.prisma.workspace.findUnique({ where: { id: wsId } }).catch(() => null);
+    const wsRel = (ws as { path?: string } | null)?.path?.trim() || "";
+    if (wsRel) {
+      abs = path.isAbsolute(wsRel) ? path.resolve(wsRel) : resolveSafePath(ctx.config, wsRel);
+    } else {
+      abs = resolveSafePath(ctx.config, "data/workspace");
+    }
+  } else {
+    abs = resolveSafePath(ctx.config, "data/workspace");
+  }
+  if (!fs.existsSync(abs)) fs.mkdirSync(abs, { recursive: true });
+  return abs;
+}
+
 async function runShellTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const rootDir = await resolveShellSandboxRoot(ctx);
   return runShellRestricted(ctx.config, String(args.command || ""), {
     cwd: args.cwd ? String(args.cwd) : undefined,
     shell: args.shell ? String(args.shell) : undefined,
     timeoutMs: args.timeoutMs !== undefined ? Math.max(1000, Number(args.timeoutMs)) : undefined,
+    rootDir,
   });
 }
 
@@ -169,13 +193,15 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "run_shell",
     concurrencyClass: "C",
+    // P0-02：标 destructive → 入审批清单 + native:all 默认隐藏；须显式 native:run_shell
+    destructive: true,
     description:
-      "在项目根目录内执行 Shell 命令（host_restricted：超时/输出上限/危险命令拦截）。Windows 默认 PowerShell，Linux/macOS 默认 bash。",
+      "在当前 Agent Workspace（无则 data/workspace）内执行 Shell 命令（须 SHELL_ENABLED=true；host_restricted：超时/输出上限/危险命令拦截）。Windows 默认 PowerShell，Linux/macOS 默认 bash。删除请用 file_delete 等软删工具。",
     parameters: {
       type: "object",
       properties: {
         command: { type: "string", description: "要执行的命令，如 pnpm test 或 dir" },
-        cwd: { type: "string", description: "相对项目根的工作目录，默认 ." },
+        cwd: { type: "string", description: "相对 Workspace 沙箱根的工作目录，默认 ." },
         shell: { type: "string", enum: ["auto", "powershell", "cmd", "bash"], description: "Shell 类型，默认 auto" },
         timeoutMs: { type: "number", description: "命令超时毫秒数，不填则使用全局默认值" },
       },

@@ -77,12 +77,25 @@ export function validateShellCommand(command: string): void {
   }
 }
 
-export function resolveShellCwd(config: AppConfig, cwdArg?: string): string {
+/**
+ * 解析 shell cwd。
+ * @param rootDir 沙箱根（默认 projectRoot；run_shell 可收窄为 Agent Workspace）
+ */
+export function resolveShellCwd(config: AppConfig, cwdArg?: string, rootDir?: string): string {
   const rel = (cwdArg || ".").replace(/\\/g, "/").replace(/^\/+/, "");
   if (rel.includes("..")) throw new Error("cwd 不允许包含 ..");
-  const abs = path.resolve(config.projectRoot, rel);
-  const root = path.resolve(config.projectRoot);
-  if (!abs.startsWith(root)) throw new Error("cwd 超出项目根目录范围");
+  const root = path.resolve(rootDir || config.projectRoot);
+  const abs = path.resolve(root, rel);
+  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  if (abs !== root && !abs.startsWith(rootWithSep)) {
+    throw new Error("cwd 超出沙箱根目录范围");
+  }
+  // 仍须落在项目根内（Workspace 路径本身已在项目内）
+  const projectRoot = path.resolve(config.projectRoot);
+  const projectWithSep = projectRoot.endsWith(path.sep) ? projectRoot : projectRoot + path.sep;
+  if (abs !== projectRoot && !abs.startsWith(projectWithSep)) {
+    throw new Error("cwd 超出项目根目录范围");
+  }
   return abs;
 }
 
@@ -124,12 +137,12 @@ export interface ShellRunResult {
 export async function runShellRestricted(
   config: AppConfig,
   command: string,
-  opts?: { cwd?: string; shell?: string; timeoutMs?: number },
+  opts?: { cwd?: string; shell?: string; timeoutMs?: number; rootDir?: string },
 ): Promise<ShellRunResult> {
   assertShellEnabled(config);
   validateShellCommand(command);
 
-  const cwd = resolveShellCwd(config, opts?.cwd);
+  const cwd = resolveShellCwd(config, opts?.cwd, opts?.rootDir);
   const maxBuffer = config.shell.maxOutputChars * 4;
   const timeoutMs = Math.max(1000, Math.min(300_000, opts?.timeoutMs ?? config.shell.timeoutMs));
   const start = Date.now();
