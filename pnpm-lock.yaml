@@ -83,7 +83,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@modelcontextprotocol/sdk':
-        specifier: ^1.29.0
+        specifier: 1.29.0
         version: 1.29.0(zod@3.25.56)
       '@mozilla/readability':
         specifier: 0.5.0
@@ -95,7 +95,7 @@ importers:
         specifier: 11.1.0
         version: 11.1.0(typescript@5.8.3)
       '@types/compression':
-        specifier: ^1.8.1
+        specifier: 1.8.1
         version: 1.8.1
       bullmq:
         specifier: 5.79.3
@@ -104,7 +104,7 @@ importers:
         specifier: 5.0.0
         version: 5.0.0
       compression:
-        specifier: ^1.8.1
+        specifier: 1.8.1
         version: 1.8.1
       cors:
         specifier: 2.8.5
@@ -125,19 +125,19 @@ importers:
         specifier: 5.11.1
         version: 5.11.1
       js-yaml:
-        specifier: ^5.2.0
+        specifier: 5.2.0
         version: 5.2.0
       jsdom:
         specifier: 23.2.0
         version: 23.2.0
       mammoth:
-        specifier: ^1.12.0
+        specifier: 1.12.0
         version: 1.12.0
       node-cron:
         specifier: 4.5.0
         version: 4.5.0
       nodemailer:
-        specifier: ^9.0.3
+        specifier: 9.0.3
         version: 9.0.3
       playwright:
         specifier: 1.59.1
@@ -146,28 +146,28 @@ importers:
         specifier: 2.2.2
         version: 2.2.2
       tesseract.js:
-        specifier: ^6.0.0
+        specifier: 6.0.0
         version: 6.0.0
       turndown:
         specifier: 7.2.4
         version: 7.2.4
       undici:
-        specifier: ^8.9.0
+        specifier: 8.9.0
         version: 8.9.0
       unpdf:
-        specifier: ^1.8.0
+        specifier: 1.8.0
         version: 1.8.0
       ws:
-        specifier: ^8.21.1
+        specifier: 8.21.1
         version: 8.21.1
       youtube-transcript-api-js:
-        specifier: ^4.0.0
+        specifier: 4.0.0
         version: 4.0.0
       zod:
         specifier: 3.25.56
         version: 3.25.56
       zod-to-json-schema:
-        specifier: ^3.25.2
+        specifier: 3.25.2
         version: 3.25.2(zod@3.25.56)
     devDependencies:
       '@types/cors':

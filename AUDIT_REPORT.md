@@ -630,4 +630,14 @@ flowchart TB
 
 刻意未动（更大手术）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本、chat.tsx 物理再拆（P3-04）、Approval/Session 等重耦合 Service 拆分。
 
-*报告结束。生成：2026-07-30 · P5 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p6`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| services 第四刀 | ✅ | File / Git / InfoSource → entityServices |
+| P1-04 余 | 🟡 | swarmOrchestrator / agentRunLock / inbox zhihu+xhs warn；web approvals/git/sources/tools/chat* 等 `catchUnlessCancelled`；全仓仍未扫清 |
+| P3-03 余 | ✅ | server 依赖（mcp sdk / compression / js-yaml / mammoth / nodemailer / tesseract / undici / ws…）精确 pin |
+
+刻意未动：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token、chat.tsx 物理再拆、Approval/Session/Inbox/Task 重耦合拆分。
+
+*报告结束。生成：2026-07-30 · P6 续修：2026-07-31。*
