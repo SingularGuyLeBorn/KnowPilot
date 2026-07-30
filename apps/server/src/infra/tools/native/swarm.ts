@@ -64,7 +64,9 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
       event: "agent_create_sensitive_field_denied",
       message: `非 super Agent 试图创建 Agent 时设置敏感字段 [${sensitiveFieldsAttempted.join(", ")}]，已忽略`,
       metadata: { operatorAgentId: ctx.agentSnapshot?.id, operatorTier, attemptedFields: sensitiveFieldsAttempted },
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   }
   const created = await ctx.services.agent.create({
     name: String(args.name || ""),
@@ -90,7 +92,9 @@ async function agentCreateTool(args: Record<string, unknown>, ctx: NativeToolCon
     event: "agent_created",
     message: `Agent ${created.data.name} 被创建（tier: ${args.tier ?? "sub"}）`,
     metadata: { agentId: created.data.id, operatorAgentId: ctx.agentSnapshot?.id, tier: args.tier ?? "sub" },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   return { success: true, agentId: created.data.id, name: created.data.name };
 }
 
@@ -129,7 +133,9 @@ async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolCon
       event: "agent_update_sensitive_field_denied",
       message: `非 super Agent 试图更新 Agent ${targetId} 的敏感字段 [${sensitiveUpdateAttempted.join(", ")}]，已忽略`,
       metadata: { targetAgentId: targetId, operatorAgentId: ctx.agentSnapshot?.id, operatorTier: operatorTierForSensitive, attemptedFields: sensitiveUpdateAttempted },
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   }
   const result = await ctx.services.agent.update({
     id: targetId,
@@ -150,7 +156,9 @@ async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolCon
     level: "info", component: "swarm", event: "agent_updated",
     message: `Agent ${id} 被更新`,
     metadata: { agentId: String(id), operatorAgentId: ctx.agentSnapshot?.id },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   return { success: true };
 }
 
@@ -173,13 +181,17 @@ async function agentDeleteTool(args: Record<string, unknown>, ctx: NativeToolCon
   await ctx.services.agent.update({
     id: targetId,
     status: "deleted",
-  } as any).catch(() => {});
+  } as any).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   // 审计日志
   await ctx.services.log?.create?.({
     level: "warn", component: "swarm", event: "agent_deleted",
     message: `Agent ${existing.name} 被删除（tombstone）`,
     metadata: { agentId: targetId, agentName: existing.name, operatorAgentId: ctx.agentSnapshot?.id, deletedAt: new Date().toISOString() },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   return { success: true, message: `Agent ${existing.name} 已标记为 deleted（tombstone 保留）。session/message/memory 将级联清理。` };
 }
 
@@ -842,7 +854,9 @@ export async function requeueOrphanedSuperiorDrains(
       targetAgentId: session.agentId as string,
       config,
       services,
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
     registered++;
   }
   return registered;
@@ -1186,7 +1200,9 @@ export async function agentCreateSubTool(args: Record<string, unknown>, ctx: Nat
     level: "info", component: "swarm", event: "sub_agent_created",
     message: `子 Agent ${created.data.name} 被创建`,
     metadata: { agentId: created.data.id, parentAgentId: ctx.agentSnapshot?.id, workspaceId: ctx.agentSnapshot?.workspaceId },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   return { success: true, agentId: created.data.id, name: created.data.name };
 }
 
@@ -1238,13 +1254,17 @@ async function workspaceArchiveTool(args: Record<string, unknown>, ctx: NativeTo
   if (!updated.success) return { error: updated.error?.message ?? "归档失败" };
   const agents = await ctx.prisma?.agent.findMany({ where: { workspaceId: wsId, status: { not: "deleted" } } }) ?? [];
   for (const a of agents) {
-    await ctx.services.agent.update({ id: a.id, status: "dormant" } as any).catch(() => {});
+    await ctx.services.agent.update({ id: a.id, status: "dormant" } as any).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   }
   await ctx.services.log?.create?.({
     level: "info", component: "swarm", event: "workspace_archived",
     message: `Workspace ${wsId} 已归档（${agents.length} 个 Agent 设为 dormant）`,
     metadata: { workspaceId: wsId, agentCount: agents.length, operatorAgentId: ctx.agentSnapshot?.id },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   return { success: true, message: `Workspace 已归档，${agents.length} 个 Agent 设为 dormant。可随时恢复。` };
 }
 
@@ -1305,7 +1325,9 @@ async function freeApiKeysFetchTool(args: Record<string, unknown>, ctx: NativeTo
   await ctx.prisma.credential.update({
     where: { id: picked.id },
     data: { lastUsedAt: new Date() },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   let meta: Record<string, unknown> = {};
   try {
     meta = JSON.parse(picked.metadata || "{}") as Record<string, unknown>;
@@ -1496,7 +1518,9 @@ async function skillEnableTool(args: Record<string, unknown>, ctx: NativeToolCon
     event: "skill_enabled",
     message: `Skill ${skill.name} 已启用（经审批）`,
     metadata: { skillId, skillName: skill.name, operatorAgentId: ctx.agentSnapshot?.id },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   return {
     success: true,
     skillId,
@@ -1541,7 +1565,9 @@ async function skillPromoteTool(args: Record<string, unknown>, ctx: NativeToolCo
     level: "info", component: "swarm", event: "skill_promoted",
     message: `Skill ${skill.name} 推广到 ${promoted} 个 Agent`,
     metadata: { skillId, skillName: skill.name, targetAgentIds, promoted, errors, operatorAgentId: ctx.agentSnapshot?.id },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
+    });
   return { success: true, promoted, errors: errors.length > 0 ? errors : undefined, message: `Skill ${skill.name} 已推广到 ${promoted} 个 Agent。` };
 }
 

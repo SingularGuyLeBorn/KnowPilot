@@ -805,11 +805,18 @@ export class SessionStreamHub {
     this.enqueuePersist(buffered, state.sessionId);
     for (const sub of state.subscribers) {
       try {
-        Promise.resolve(sub(buffered)).catch(() => {
+        Promise.resolve(sub(buffered)).catch((err) => {
           // 单个订阅者失败不打扰其他订阅者
+          console.warn(
+            "[SessionStreamHub] 订阅者推送失败:",
+            err instanceof Error ? err.message : err,
+          );
         });
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.warn(
+          "[SessionStreamHub] 订阅者同步抛错:",
+          err instanceof Error ? err.message : err,
+        );
       }
     }
   }

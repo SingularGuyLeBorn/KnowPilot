@@ -1073,7 +1073,9 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
       mode: rotateMode,
       focusNewSession,
     },
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+    console.warn("[session] session_rotate 审计日志失败:", err instanceof Error ? err.message : err);
+  });
 
   return {
     success: true,
@@ -1416,7 +1418,12 @@ async function sessionSpawnGoalTool(args: Record<string, unknown>, ctx: NativeTo
   } catch (err) {
     await ctx.services.session
       .update({ id: newSessionId, status: "failed" } as never)
-      .catch(() => {});
+      .catch((updateErr: unknown) => {
+        console.warn(
+          "[session] setSessionGoal 失败后回滚 status 失败:",
+          updateErr instanceof Error ? updateErr.message : updateErr,
+        );
+      });
     return {
       error: err instanceof Error ? err.message : String(err),
       newSessionId,

@@ -1506,7 +1506,12 @@ function buildAsyncExecute(
         role: "assistant",
         content: resultText,
         source: "sub",
-      }).catch(() => {});
+      }).catch((err: unknown) => {
+        console.warn(
+          "[asyncJob] 纯工具结果写入子会话失败:",
+          err instanceof Error ? err.message : err,
+        );
+      });
     }
     await services.task.update({
       id: jobId,

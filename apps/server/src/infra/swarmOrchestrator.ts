@@ -384,7 +384,12 @@ export class SwarmOrchestrator {
     // 为什么尽力而为：审计失败若阻塞调度，日志服务抖动会拖垮所有任务入口；与 swarmBus 同策略
     void this.deps.services.log
       ?.create?.({ level, component: "swarm.orchestrator", event, message, metadata })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        console.warn(
+          "[swarmOrchestrator] 审计日志失败:",
+          err instanceof Error ? err.message : err,
+        );
+      });
   }
 }
 

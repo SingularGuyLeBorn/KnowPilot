@@ -77,6 +77,7 @@ const triggerEngine = getTriggerEngine(prisma, eventBus, services);
 const taskScheduler = getTaskScheduler(prisma, services);
 
 const PORT = config.port;
+const HOST = config.host;
 const postsDir = config.contentPaths.posts;
 const uploadsDir = config.uploadDir;
 
@@ -483,11 +484,12 @@ try {
   process.exit(1);
 }
 
-// 启动
-const server = app.listen(PORT, () => {
-  console.log(`\n  🚀 KnowPilot Server running at http://localhost:${PORT}`);
-  console.log(`  📡 tRPC endpoint: http://localhost:${PORT}/api/trpc`);
-  console.log(`  💚 Health check:  http://localhost:${PORT}/health\n`);
+// 启动（默认 127.0.0.1；Docker 等设 SERVER_HOST=0.0.0.0）
+const server = app.listen(PORT, HOST, () => {
+  const origin = HOST === "0.0.0.0" || HOST === "::" ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
+  console.log(`\n  🚀 KnowPilot Server listening on ${HOST}:${PORT}`);
+  console.log(`  📡 tRPC endpoint: ${origin}/api/trpc`);
+  console.log(`  💚 Health check:  ${origin}/health\n`);
 
   // 凭据加密护栏：生产模式无 CREDENTIAL_MASTER_KEY 拒启动；开发模式 warn
   assertCredentialEncryptionAvailable();
@@ -651,7 +653,12 @@ const server = app.listen(PORT, () => {
                 );
               }
             })
-            .catch(() => {});
+            .catch((err) => {
+              console.warn(
+                "  ⚠️ [AgentMail] 隧道自检异常:",
+                err instanceof Error ? err.message : err,
+              );
+            });
         }, 10_000);
       }
       // 兜底轮询（webhook 通道挂了的最后防线）
@@ -709,10 +716,14 @@ const handleShutdown = () => {
   stopAsyncDeliveryReconciler();
   import("./infra/channels/index.js")
     .then(({ stopAllChannelAdapters }) => stopAllChannelAdapters())
-    .catch(() => {});
+    .catch((err) => {
+      console.warn("[Shutdown] stopAllChannelAdapters:", err instanceof Error ? err.message : err);
+    });
   import("./infra/freeKeysSync.js")
     .then(({ stopFreeKeysAutoSync }) => stopFreeKeysAutoSync())
-    .catch(() => {});
+    .catch((err) => {
+      console.warn("[Shutdown] stopFreeKeysAutoSync:", err instanceof Error ? err.message : err);
+    });
   streamHub.destroy();
   closeSharedBrowser().catch(() => undefined);
   server.close(() => {

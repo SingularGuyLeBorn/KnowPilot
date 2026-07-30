@@ -398,7 +398,12 @@ export async function waitApprovalResolution(
             removeApprovalWaiter(approvalId, waiter);
             settle({ outcome: "rejected", approvalId, toolName });
           }
-        })().catch(() => {});
+        })().catch((err) => {
+          console.warn(
+            "[approvalGate] TTL waiter 异常:",
+            err instanceof Error ? err.message : err,
+          );
+        });
       }, Math.max(remaining, 0));
       if (typeof waiter.timer === "object" && "unref" in waiter.timer) waiter.timer.unref();
     };
@@ -422,7 +427,12 @@ export async function waitApprovalResolution(
         removeApprovalWaiter(approvalId, waiter);
         settle({ outcome: "rejected", approvalId, toolName });
       }
-    })().catch(() => {});
+    })().catch((err) => {
+      console.warn(
+        "[approvalGate] 注册后对账异常:",
+        err instanceof Error ? err.message : err,
+      );
+    });
   });
 }
 
