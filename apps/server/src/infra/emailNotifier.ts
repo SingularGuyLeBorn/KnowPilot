@@ -94,7 +94,13 @@ async function runWithNotifyBreaker(
 
 async function sendViaSmtp(to: string, subject: string, body: string): Promise<EmailSendResult> {
   // @ts-ignore — nodemailer 可选依赖
-  const nodemailer: any = await import("nodemailer").catch(() => null);
+  const nodemailer: any = await import("nodemailer").catch((err) => {
+    console.warn(
+      "[emailNotifier] nodemailer 动态 import 失败:",
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  });
   const createTransport = nodemailer?.default?.createTransport || nodemailer?.createTransport;
   if (!createTransport) {
     return { error: "nodemailer 未安装，请在 apps/server 执行 pnpm add nodemailer" };

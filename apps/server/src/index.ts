@@ -729,7 +729,9 @@ const handleShutdown = () => {
       console.warn("[Shutdown] stopFreeKeysAutoSync:", err instanceof Error ? err.message : err);
     });
   streamHub.destroy();
-  closeSharedBrowser().catch(() => undefined);
+  closeSharedBrowser().catch((err) => {
+    console.warn("[Shutdown] closeSharedBrowser:", err instanceof Error ? err.message : err);
+  });
   server.close(() => {
     prisma
       .$disconnect()
@@ -737,7 +739,10 @@ const handleShutdown = () => {
         console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");
         process.exit(0);
       })
-      .catch(() => process.exit(1));
+      .catch((err) => {
+        console.warn("[Shutdown] prisma.$disconnect:", err instanceof Error ? err.message : err);
+        process.exit(1);
+      });
   });
 };
 
