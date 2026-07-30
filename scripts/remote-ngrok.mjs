@@ -78,6 +78,19 @@ if (!ngrokDomain) {
       process.exit(1);
     }
   }
+  const masterKey = (env.CREDENTIAL_MASTER_KEY || process.env.CREDENTIAL_MASTER_KEY || "").trim();
+  if (!masterKey) {
+    if (allowInsecureAuth || process.env.KP_ALLOW_INSECURE_PUBLIC === "1") {
+      console.warn(
+        "\n  ⚠️ [安全] 未配置 CREDENTIAL_MASTER_KEY，但已用 --allow-insecure-auth / KP_ALLOW_INSECURE_PUBLIC=1 强制继续。\n",
+      );
+    } else {
+      console.error("\n  ❌ 拒绝启动 ngrok 远程：公网暴露必须配置 CREDENTIAL_MASTER_KEY。");
+      console.error("     运行 pnpm setup:dev 或在 .env 写入 CREDENTIAL_MASTER_KEY");
+      console.error("     或临时: pnpm dev:ngrok --allow-insecure-auth\n");
+      process.exit(1);
+    }
+  }
 }
 
 const quick = process.argv.includes("--quick");

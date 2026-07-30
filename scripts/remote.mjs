@@ -137,6 +137,23 @@ function assertRemoteAuthOrExit(env) {
   process.exit(1);
 }
 
+/** 公网暴露必须有 CREDENTIAL_MASTER_KEY（否则凭据落盘明文/不可解密） */
+function assertRemoteCredentialKeyOrExit(env) {
+  const key = (env.CREDENTIAL_MASTER_KEY || process.env.CREDENTIAL_MASTER_KEY || "").trim();
+  if (key) return;
+  if (allowInsecureAuth || process.env.KP_ALLOW_INSECURE_PUBLIC === "1") {
+    console.warn(
+      "\n  ⚠️ [安全] 未配置 CREDENTIAL_MASTER_KEY，但已用 --allow-insecure-auth / KP_ALLOW_INSECURE_PUBLIC=1 强制继续。\n",
+    );
+    return;
+  }
+  console.error("\n  ❌ 拒绝启动远程隧道：公网暴露必须配置 CREDENTIAL_MASTER_KEY。");
+  console.error("     运行: pnpm setup:dev  （自动生成）");
+  console.error("     或在 .env 写入 CREDENTIAL_MASTER_KEY");
+  console.error("     仅本地临时调试可加: pnpm remote --allow-insecure-auth\n");
+  process.exit(1);
+}
+
 function printRemoteBanner(url, env) {
   const authMode = (env.AUTH_MODE || process.env.AUTH_MODE || "none").toLowerCase();
   console.log("\n══════════════════════════════════════════════════");
@@ -186,6 +203,7 @@ async function main() {
 
   const env = loadDotEnv(path.join(root, ".env"));
   assertRemoteAuthOrExit(env);
+  assertRemoteCredentialKeyOrExit(env);
   const cf = findCloudflared();
   if (!cf) {
     throw new Error("未找到 cloudflared。请运行: winget install Cloudflare.cloudflared");
