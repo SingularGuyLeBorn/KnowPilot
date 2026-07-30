@@ -60,7 +60,11 @@ export default function TriggersPage() {
   const { useList: useAgentList } = useAgent();
   const { density } = useCardDensity();
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useList({ page, pageSize: 12 });
+  // 推拉结合：Trigger 无专用 SSE；短轮询作 PULL 兜底（与 /cron 空闲档对齐）
+  const { data, isLoading } = useList(
+    { page, pageSize: 12 },
+    { refetchInterval: 12_000 },
+  );
   const tasksQuery = useTaskList({ page: 1, pageSize: 100 });
   const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
   const createMutation = useCreate();

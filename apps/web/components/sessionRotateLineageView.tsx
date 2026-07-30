@@ -5,13 +5,14 @@
  * 数据只读 session.rotateGraph（rotatedFrom/rotatedTo），不另造协议。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ExternalLink, GitBranch } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { EmptyState, LoadingState } from "@/components/shared";
+import { UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
 
 const NODE_W = 148;
 const NODE_H = 52;
@@ -34,8 +35,33 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 export function SessionRotateLineageView() {
-  const { data, isLoading, error } = trpc.session.rotateGraph.useQuery({ limit: 300 });
+  const utils = trpc.useUtils();
+  // 推拉：PUSH=session_list_changed（SSE→BC）；PULL=15s 兜底（无 Chat 开着也能动）
+  const { data, isLoading, error } = trpc.session.rotateGraph.useQuery(
+    { limit: 300 },
+    { refetchInterval: 15_000 },
+  );
   const [selectedRootId, setSelectedRootId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    let bc: BroadcastChannel;
+    try {
+      bc = new BroadcastChannel(UI_STATE_CHANNEL);
+    } catch {
+      return;
+    }
+    const onMsg = (ev: MessageEvent) => {
+      const t = (ev.data as { type?: string } | null)?.type;
+      if (t !== "session_list_changed" && t !== "cron_session_started") return;
+      utils.session.rotateGraph.invalidate().catch(() => {});
+    };
+    bc.addEventListener("message", onMsg);
+    return () => {
+      bc.removeEventListener("message", onMsg);
+      bc.close();
+    };
+  }, [utils]);
 
   const byId = useMemo(() => {
     type Node = NonNullable<typeof data>["nodes"][number];

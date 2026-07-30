@@ -2748,6 +2748,38 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     });
   }
 
+  /**
+   * 列表可见字段变更才推（status/title/血缘等）。
+   * 跳过 contextSummary / goalState / todoState 等高频写，避免 SSE 风暴。
+   */
+  protected override async afterUpdate(
+    entity: SessionEntity,
+    existing: any,
+    input: UpdateSessionInput,
+  ): Promise<void> {
+    await super.afterUpdate(entity, existing, input);
+    const agentId = entity.agentId ?? existing?.agentId;
+    if (!agentId) return;
+    const listAffecting =
+      input.status !== undefined ||
+      input.title !== undefined ||
+      input.autoName !== undefined ||
+      input.kind !== undefined ||
+      input.parentSessionId !== undefined ||
+      input.isMainSession !== undefined ||
+      input.rotatedToSessionId !== undefined ||
+      input.rotatedFromSessionId !== undefined ||
+      input.agentId !== undefined;
+    if (!listAffecting) return;
+    const { notifyAgentUi } = await import("./infra/uiStateNotify.js");
+    await notifyAgentUi(this.prisma, agentId, {
+      type: "session_list_changed",
+      agentId,
+      sessionId: entity.id,
+      reason: "update",
+    });
+  }
+
   protected override async afterDelete(existing: any): Promise<void> {
     await super.afterDelete(existing);
     if (!existing?.agentId) return;

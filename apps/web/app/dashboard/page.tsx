@@ -67,7 +67,10 @@ export default function DashboardPage() {
   const { data, isLoading } = trpc.analytics.dashboard.useQuery({});
   const { data: caps } = useNativeCapabilities();
   const { data: swarmStats } = trpc.analytics.swarmStats.useQuery({ days: 30 });
-  const { data: recentRotates } = trpc.session.listRecentRotates.useQuery({ limit: 10 });
+  const { data: recentRotates } = trpc.session.listRecentRotates.useQuery(
+    { limit: 10 },
+    { refetchInterval: 15_000 },
+  );
   const { data: llmBudget } = trpc.agent.llmBudgetStatus.useQuery(undefined, {
     refetchInterval: 30_000,
   });
