@@ -11,7 +11,7 @@
 见微（OasisMind）是一个**单用户、本地优先**的智能知识管理与博客平台，定位为「以 Markdown 为原子、AI 为引擎的数字花园」——并进一步做成常驻的**数字主力**（提醒、收集、蒸馏品味）。
 
 - **核心原则**：本地 Markdown 文件是数据的唯一事实源，SQLite（通过 Prisma）只作为查询与缓存层。
-- **当前阶段**：**L1–L5 已全部落地**。本地 Markdown 为源、19 实体 CRUD + 管理页、Agent SSE Chat、自动化/审批、FTS 搜索、可选鉴权、Docker/CI 均已就绪。
+- **当前阶段**：**L1–L5 已全部落地**。本地 Markdown 为源、业务实体 CRUD + 管理页、Agent SSE Chat、自动化/审批、FTS 搜索、可选鉴权、Docker/CI 均已就绪。Prisma 现约 **30** 个 model（含 ChatMessage/AgentMessage/InboxItem 等支撑表）；业务 Service 约 22 个。
 
 项目完整路径：`D:\ALL IN AI\KnowPilot`（本地目录名可暂未改）
 
@@ -30,7 +30,7 @@
 | Markdown 渲染 | `react-markdown` + `remark-gfm` + `remark-math` + `rehype-raw` + `rehype-highlight` + `rehype-katex` |
 | 前后端通信 | tRPC 11.1.0 + `@trpc/react-query` + `superjson` |
 | 数据获取 | TanStack React Query 5.66.0 |
-| 全局状态 | Zustand 5.0.3（当前未实际使用） |
+| 全局状态 | 无（Chat 用三层 store hooks；勿再引入未使用的 zustand） |
 | 后端 | Express 5.1.0 + CORS |
 | ORM / 数据库 | Prisma 6.9.0 + SQLite |
 | 校验 / 共享类型 | Zod 3.25.56，集中定义在 `packages/shared` |
@@ -48,7 +48,7 @@ KnowPilot/
 ├── apps/
 │   ├── server/                 # Express + tRPC + Prisma 后端
 │   │   ├── prisma/
-│   │   │   ├── schema.prisma   # 19 个实体模型
+│   │   │   ├── schema.prisma   # ~30 个 Prisma model（业务实体 + 支撑表）
 │   │   │   ├── seed.ts         # 3 篇示例文章种子
 │   │   │   └── dev.db          # SQLite 数据库（运行时生成/更新）
 │   │   └── src/
@@ -298,7 +298,7 @@ pnpm test         # 全仓库运行 Vitest
 ### 项目扁平化与代码收拢约定
 
 为了杜绝项目文件夹过深、同名文件繁多引发维护崩溃，以及防止功能重复定义，项目必须严格遵循**“单文件逻辑收拢”**原则：
-1. **后端业务层合并**：禁止创建 `services/` 子目录及零散服务文件。所有 19 个实体的 Service 业务逻辑统一写在 `apps/server/src/services.ts` 中。
+1. **后端业务层合并**：禁止创建 `services/` 子目录及零散服务文件。业务 Service 逻辑统一写在 `apps/server/src/services.ts`（体量过大时允许按域拆到 `infra/*` 叶子模块，禁止平行第二套 Service 实现）。
 2. **后端路由层合并**：禁止创建 `trpc/routers/` 子目录及零散路由文件。所有 API 路由统一声明在 `apps/server/src/router.ts` 中。
 3. **前端 Hooks 合并**：禁止创建 `hooks/` 子目录及零散数据 hooks 文件。所有 React Query hooks 统一放在 `apps/web/lib/hooks.ts` 中。
 4. **前端通用组件合并**：禁止创建 `components/shared/` 目录及零散小组件。通用的页面基础 UI 组件（如分页、空状态、骨架屏、确认弹窗）统一放在 `apps/web/components/shared.tsx` 中。
@@ -497,7 +497,7 @@ pnpm --filter @knowpilot/server test
 
 | 文件 | 覆盖 |
 |---|---|
-| `trpc.test.ts` | 19 实体 CRUD（含 InfoSource）、db:sync、Agent chat、GitRepo 沙箱、git.commit/pull 审批 |
+| `trpc.test.ts` | 业务实体 CRUD（含 InfoSource）、db:sync、Agent chat、GitRepo 沙箱、git.commit/pull 审批 |
 | `trpcSmoke.test.ts` | 所有 ai-readable procedure 通过 ai.invoke 触达无崩溃 |
 | `auth.test.ts` | AUTH_MODE 鉴权 |
 | `fts.test.ts` | FTS5 全局搜索索引 |
