@@ -127,12 +127,17 @@ describe("W2 heartbeatDecision 引擎集成", () => {
     await engine.triggerHeartbeat(agentId);
 
     // 驱动至 terminal：monitor(+skip*) × 直到 quietStreak>=3
+    // 全量并行下 SQLite 落库偶发 >1s，用 waitFor 等 suspended 置位（勿仅靠同步读）
     for (let i = 0; i < 20; i++) {
       await engine.triggerHeartbeat(agentId);
       if (await engine.isHeartbeatSuspended(agentId)) break;
     }
-
-    expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
+    await vi.waitFor(
+      async () => {
+        expect(await engine.isHeartbeatSuspended(agentId)).toBe(true);
+      },
+      { timeout: 5000, interval: 100 },
+    );
     const d = await readDecision(agentId);
     expect(d.decision.lastMode).toBe("terminal_no_followup");
     expect(d.decision.terminalAt).toBeTruthy();

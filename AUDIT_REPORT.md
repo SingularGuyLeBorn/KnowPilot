@@ -43,7 +43,7 @@
 | 记忆 | FTS5 + LIKE，**无向量库** |
 | 规模 | server ~95k 行 / web ~57k 行 / shared ~3.6k；合计应用侧 ~17.5 万行 |
 | Git | 719 commits，2026-06-28 → 2026-07-30，单作者高活跃 |
-| 测试 | server Vitest ~142 文件；web e2e 24；**无 `evals/`** |
+| 测试 | server Vitest ~145 文件；web e2e 24；**`evals/` G01–G10 mock**（`pnpm test:evals`） |
 | Prisma | **30** model（文档仍写 19——漂移） |
 | Native 工具 | fixture 登记 **236** 名 |
 
@@ -187,11 +187,11 @@ function trimOldest(messages, keepRecent) {
 ```
 【编号】P1-02
 【级别】P1 严重
-【位置】apps/server/src/services.ts（~4743 行）；
-       apps/server/src/infra/inboxPipeline.ts（~3443 行）；
-       apps/server/src/router.ts（~1879 行）
+【位置】apps/server/src/services.ts（审计时 ~4743；p11 后 ≈2375，仅剩 Post/Agent/Session/Message）；
+       apps/server/src/infra/inboxPipeline.ts（已删除→`infra/inbox/*`）；
+       apps/server/src/router.ts（审计时 ~1879；p11 后 ≈1850 + `infra/trpcRouters/` 4 叶子）
 【问题】God file：CRUD 全集 + Inbox 管道 + 全路由单文件，与「单文件收拢」初衷冲突到不可审查
-【证据】行数统计（2026-07-30）；services.ts 头注释仍写「18 个实体」
+【证据】行数统计（2026-07-30）；后续 entityServices / trpcRouters 叶子拆分已启动（见 §七）
 【影响】任何 Inbox/实体改动冲突率极高；新接手无法安全改；单测覆盖与体量严重不成比例。
 【修复建议】在不违反「禁止散落 services/ 目录」纪律下：按域拆叶子模块
            （inboxPipeline 已在 infra——继续拆 platform 文件）；services.ts 用域 section +
@@ -682,4 +682,16 @@ flowchart TB
 
 刻意未动（确认不能以本线小 PR 再推进）：完整元工具化、`router.ts` 全量域拆、Post/Agent/Session/Message/SessionQueueItem、真实 LLM 周跑 evals、metablog Playwright 时序/`json` 软失败全改、Goal×内环精细 token、`chat.tsx`（仍 ≈1088）物理再拆。
 
-*报告结束。生成：2026-07-30 · P10 收口：2026-07-31。*
+### 分支 `arch/audit-fix-p11`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| services 第八刀 | ✅ | SessionQueueItem → entityServices；`services.ts` ≈2375（仅剩 Post/Agent/Session/Message）；entityServices 18 叶子 |
+| router 第一刀 | ✅ | 11 域叶子 + `withApprovalGuard`：garden/log/tool/prompt/skill/mcp/memory/file/infoSource/inbox/channel；`router.ts` ≈1696；AGENTS 允许 `infra/trpcRouters/` |
+| importOrder | ✅ | + sessionQueueItemService + 11 router 入口（object kind） |
+| 审计数字 | ✅ | §2.2 evals 与 P1-02 行数证据对齐现状 |
+| 手术边界 | 🛑 | Post/Agent/Session/Message 与 session/agent/approval/git/run/credential 等厚路由、真实 LLM 周跑 evals、metablog 软失败、chat.tsx 再拆 |
+
+刻意未动：完整元工具化、上述重耦合 Service/厚路由全量拆、真实 LLM 周跑 evals、metablog Playwright/`json` 软失败、Goal×内环精细 token、`chat.tsx` 物理再拆。
+
+*报告结束。生成：2026-07-30 · P11 续修：2026-07-31。*
