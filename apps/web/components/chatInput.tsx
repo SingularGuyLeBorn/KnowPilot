@@ -2,19 +2,15 @@
 
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
-  AtSign,
   Bot,
   Check,
   FileText,
   Flag,
-  ImagePlus,
-  ListOrdered,
   Loader2,
   Mic,
   Search,
   Send,
   Square,
-  Wand2,
   X,
 } from "lucide-react";
 import type { ChatPostAttachment, ChatSessionConfig, Skill } from "@knowpilot/shared";
@@ -23,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc";
 import type { ChatQueueAttachment, ChatQueueImageAttachment } from "@/lib/chatQueueTypes";
 import { ChatModelMenu } from "@/components/chatModelMenu";
+import { ChatInputChips } from "@/components/chatInputChips";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 import {
   restoreDraftAfterQueueEdit,
@@ -74,6 +71,8 @@ interface ChatInputAreaProps {
   queueEdit?: QueueEditTarget | null;
   onCommitQueueEdit?: (id: string, text: string) => void;
   onCancelQueueEdit?: () => void;
+  /** 集群 pill：打开左侧 Agent / 会话树 */
+  onFocusSwarm?: () => void;
 }
 
 type SlashCommandItem = {
@@ -108,6 +107,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   canStartDeepResearch = false,
   queueEdit = null,
   onCommitQueueEdit,
+  onFocusSwarm,
   onCancelQueueEdit,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -151,6 +151,16 @@ export const ChatInputArea = memo(function ChatInputArea({
     document
       .querySelector<HTMLElement>("[data-testid='chat-queue-panel']")
       ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
+
+  const insertGoalPrefix = useCallback(() => {
+    setInput((prev) => {
+      const t = prev.trim();
+      if (!t) return "/goal ";
+      if (/^\/(goal|research|deepresearch|deep-research)\b/i.test(t)) return prev;
+      return `/goal ${prev}`;
+    });
+    textareaRef.current?.focus();
   }, []);
   const [pendingImages, setPendingImages] = useState<ChatQueueImageAttachment[]>([]);
   /** 正在 OCR 的附件 id → true（蒙版按图显示，而非整栏一个 loading） */
@@ -1019,7 +1029,7 @@ export const ChatInputArea = memo(function ChatInputArea({
           )}
         </div>
 
-        {/* 能力条：与输入同表面，无分割线；Skill 只在这里出现一次 */}
+        {/* 底栏：语音 / 模型 / 发送（能力入口下移为 Kimi 式动态 pill） */}
         <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-1">
           <div className="flex items-center gap-0.5">
             {isEditingQueue && (
@@ -1039,35 +1049,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                 </button>
               </span>
             )}
-            {!isSubagentSession && (
-              <button
-                type="button"
-                disabled={disabled || !canStartDeepResearch}
-                data-testid="chat-deep-research-toggle"
-                aria-pressed={deepResearchEnabled && canStartDeepResearch}
-                onClick={() => {
-                  if (!canStartDeepResearch) return;
-                  setDeepResearchEnabled((v) => !v);
-                }}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition",
-                  deepResearchEnabled && canStartDeepResearch
-                    ? "bg-[var(--kp-brand-soft)]/70 text-[var(--kp-brand-deep)]"
-                    : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
-                  !canStartDeepResearch && "cursor-not-allowed opacity-40",
-                )}
-                title={
-                  canStartDeepResearch
-                    ? deepResearchEnabled
-                      ? "关闭深度研究（发送不再自动加 /research）"
-                      : "开启深度研究：发送时自动加 /research"
-                    : "深度研究仅新会话首条消息前可选"
-                }
-              >
-                <Search className="h-4 w-4" />
-                <span className="hidden sm:inline">深度研究</span>
-              </button>
-            )}
             <input
               ref={fileRef}
               type="file"
@@ -1080,33 +1061,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                 e.target.value = "";
               }}
             />
-            <button
-              type="button"
-              disabled={disabled || ocrLoading}
-              onClick={() => fileRef.current?.click()}
-              data-testid="chat-attach-image"
-              className="inline-flex items-center justify-center rounded-lg p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)] disabled:opacity-50"
-              title={ocrLoading ? "OCR 识别中…" : "添加图片"}
-              aria-label={ocrLoading ? "OCR 识别中" : "添加图片"}
-            >
-              <ImagePlus className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={openMentionPicker}
-              data-testid="chat-mention-post"
-              className={cn(
-                "inline-flex items-center justify-center rounded-lg p-1.5 transition disabled:opacity-50",
-                pendingPosts.length > 0 || mentionOpen
-                  ? "bg-[var(--kp-brand-soft)]/70 text-[var(--kp-brand-deep)]"
-                  : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
-              )}
-              title="引用文章（输入 @ 也可）"
-              aria-label="引用文章"
-            >
-              <AtSign className="h-4 w-4" />
-            </button>
             {sttSupported && (
               <button
                 type="button"
@@ -1129,41 +1083,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                 aria-label={listening ? "停止语音输入" : "开始语音输入"}
               >
                 <Mic className={cn("h-4 w-4", listening && "animate-pulse")} />
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={openSkillPicker}
-              data-testid="chat-chip-skill"
-              className={cn(
-                "inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition",
-                selectedSkill
-                  ? "bg-[var(--kp-brand-soft)]/60 text-[var(--kp-brand-deep)]"
-                  : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
-              )}
-              title={
-                selectedSkill
-                  ? `已选 ${selectedSkill.name}（点击更换）`
-                  : isSubagentSession
-                    ? "选择已启用 Skill，或输入 /"
-                    : "选择命令 / Skill，或输入 /goal、/research"
-              }
-              aria-label="选择命令或 Skill"
-            >
-              <Wand2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Skill</span>
-            </button>
-            {queueLength > 0 && (
-              <button
-                type="button"
-                onClick={focusQueuePanel}
-                data-testid="chat-chip-queue"
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)]"
-                title="查看发送队列"
-              >
-                <ListOrdered className="h-4 w-4" />
-                {queueLength}
               </button>
             )}
             <ChatShortcutHints isStreaming={isStreaming} />
@@ -1195,6 +1114,26 @@ export const ChatInputArea = memo(function ChatInputArea({
           </div>
         </div>
       </div>
+
+      {/* Kimi 式动态 icon pill：悬停微动效，激活态循环呼吸 */}
+      <ChatInputChips
+        disabled={disabled || ocrLoading}
+        isSubagentSession={isSubagentSession}
+        deepResearchEnabled={deepResearchEnabled}
+        canStartDeepResearch={canStartDeepResearch}
+        onToggleDeepResearch={() => {
+          if (!canStartDeepResearch) return;
+          setDeepResearchEnabled((v) => !v);
+        }}
+        selectedSkillName={selectedSkill?.name}
+        onOpenSkillPicker={openSkillPicker}
+        onInsertGoal={insertGoalPrefix}
+        onOpenMention={openMentionPicker}
+        onAttachImage={() => fileRef.current?.click()}
+        onFocusSwarm={onFocusSwarm}
+        queueLength={queueLength}
+        onFocusQueue={focusQueuePanel}
+      />
 
       {modelHint && (
         <p className="mt-1.5 px-1 text-center text-[11px] leading-relaxed text-[var(--kp-text-3)]">

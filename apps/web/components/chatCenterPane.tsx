@@ -101,6 +101,8 @@ export interface ChatCenterPaneProps {
   dispatchToConsumeItems?: ChatQueueItem[];
   dispatchSyncTasks?: SyncTaskItem[];
   onOpenRuntimePanel?: () => void;
+  /** 集群 pill：打开左侧会话 / Agent 树 */
+  onFocusSwarm?: () => void;
 }
 
 export function ChatCenterPane({
@@ -153,6 +155,7 @@ export function ChatCenterPane({
   dispatchToConsumeItems = [],
   dispatchSyncTasks = [],
   onOpenRuntimePanel,
+  onFocusSwarm,
 }: ChatCenterPaneProps) {
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingForSessionId, setEditingForSessionId] = useState(effectiveSessionId);
@@ -468,6 +471,7 @@ export function ChatCenterPane({
           sessionId={effectiveSessionId}
           isSubagentSession={isSubagentSession}
           canStartDeepResearch={allowDeepResearch}
+          onFocusSwarm={onFocusSwarm}
           queueEdit={
             editingQueueItem
               ? { id: editingQueueItem.id, text: editingQueueItem.text }

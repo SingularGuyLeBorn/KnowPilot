@@ -1045,6 +1045,12 @@ export function ChatView() {
     syncChatUiToUrl({ panel: "runtime" });
   }, [setLeftOpen, setLeftTab, syncChatUiToUrl]);
 
+  const openSwarmPanel = useCallback(() => {
+    setLeftOpen(true);
+    setLeftTab("history");
+    syncChatUiToUrl({ panel: "history" });
+  }, [setLeftOpen, setLeftTab, syncChatUiToUrl]);
+
   const paneShared = {
     backendDown,
     leftOpen,
@@ -1066,6 +1072,7 @@ export function ChatView() {
     onOpenFilesPanel: () => setRightFilesOpen(true),
     filesPanelOpen: rightFilesOpen,
     onOpenRuntimePanel: openRuntimePanel,
+    onFocusSwarm: openSwarmPanel,
   } as const;
 
   return (
