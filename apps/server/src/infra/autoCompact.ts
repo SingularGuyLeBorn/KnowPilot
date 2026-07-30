@@ -34,6 +34,7 @@ import {
   extractFileOpsFromMessages,
   findCompactCutIndex,
   formatCompactFileDetails,
+  isSafeCompactCutIndex,
   mergeCompactFileDetails,
   parseCompactFileDetails,
   type CompactFileDetails,
@@ -218,11 +219,33 @@ export function buildLlmContextSinceCompact(
   return [...system, ...buildSummaryPair(summary, generation), ...rest];
 }
 
-function trimOldest(messages: LlmMessage[], keepRecent: number): LlmMessage[] {
+/**
+ * P0-03：摘要失败降级裁剪——必须保持 tool_call/tool_result 配对。
+ * 无法安全切点时返回原消息（宁可不压也不喂坏上下文）。
+ */
+export function trimOldestPreservingToolPairs(
+  messages: LlmMessage[],
+  keepRecent: number,
+): LlmMessage[] {
   const system = messages.filter((m) => m.role === "system");
   const rest = messages.filter((m) => m.role !== "system");
   if (rest.length <= keepRecent) return messages;
-  return [...system, ...rest.slice(-keepRecent)];
+
+  let cut = Math.max(0, rest.length - keepRecent);
+  while (cut > 0 && !isSafeCompactCutIndex(rest, cut)) cut--;
+  if (!isSafeCompactCutIndex(rest, cut)) {
+    for (let i = cut; i <= rest.length; i++) {
+      if (isSafeCompactCutIndex(rest, i)) {
+        cut = i;
+        break;
+      }
+    }
+  }
+  if (!isSafeCompactCutIndex(rest, cut)) {
+    console.warn("[AutoCompact] trimOldestPreservingToolPairs：无安全切点，放弃裁剪以保护 tool 配对");
+    return messages;
+  }
+  return [...system, ...rest.slice(cut)];
 }
 
 /** 下一压缩代数 = 当前列值 + 1（显式列，不再解析摘要文本） */
@@ -390,7 +413,7 @@ export async function maybeCompactMessages(
 
     const summaryBody = summary.content?.trim();
     if (!summaryBody) {
-      const trimmed = trimOldest(working, settings.keepRecent);
+      const trimmed = trimOldestPreservingToolPairs(working, settings.keepRecent);
       options?.emit?.({
         type: "compact_error",
         message: "摘要 LLM 返回空内容，已降级裁剪最早消息",
@@ -435,7 +458,7 @@ export async function maybeCompactMessages(
     };
   } catch (err) {
     console.warn("[AutoCompact] 压缩失败，降级裁剪最早消息:", err instanceof Error ? err.message : err);
-    const trimmed = trimOldest(working, settings.keepRecent);
+    const trimmed = trimOldestPreservingToolPairs(working, settings.keepRecent);
     options?.emit?.({
       type: "compact_error",
       message: err instanceof Error ? err.message : String(err),

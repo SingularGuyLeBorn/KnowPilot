@@ -23,6 +23,7 @@ import {
   maybeCompactMessages,
   getCompactSettings,
   persistCompactResult,
+  trimOldestPreservingToolPairs,
   type CompactResult,
 } from "../infra/autoCompact.js";
 import {
@@ -77,6 +78,27 @@ function makeConfig(over?: Partial<AppConfig["compact"]>): AppConfig {
     },
   } as AppConfig;
 }
+
+describe("P0-03 trimOldestPreservingToolPairs", () => {
+  it("降级裁剪不切断 tool_call/tool_result 配对", () => {
+    const msgs: LlmMessage[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "old-1" },
+      { role: "assistant", content: "old-a" },
+      { role: "user", content: "u" },
+      assistantWithTools(["t1"]),
+      toolResult("t1", "result"),
+      { role: "user", content: "recent" },
+      { role: "assistant", content: "recent-a" },
+    ];
+    // keepRecent=3 若裸 slice 会从 tool result 切开；安全实现必须成对
+    const trimmed = trimOldestPreservingToolPairs(msgs, 3);
+    const rest = trimmed.filter((m) => m.role !== "system");
+    expect(toolPairsComplete(rest)).toBe(true);
+    expect(rest.some((m) => m.role === "tool")).toBe(true);
+    expect(rest.some((m) => m.role === "assistant" && m.tool_calls?.length)).toBe(true);
+  });
+});
 
 describe("compactCut 切割合法性", () => {
   it("toolPairsComplete：缺 result 或缺 call 均 false", () => {
