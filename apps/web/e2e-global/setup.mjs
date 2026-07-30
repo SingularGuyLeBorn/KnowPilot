@@ -281,6 +281,10 @@ export default async function globalSetup() {
   process.env.KP_CONTENT_DIR = TEST_CONTENT_DIR;
   process.env.KP_CONFIG_DIR = TEST_CONFIG_DIR;
   process.env.KP_DATA_DIR = TEST_DATA_DIR;
+  if (!process.env.CREDENTIAL_MASTER_KEY?.trim()) {
+    process.env.CREDENTIAL_MASTER_KEY =
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  }
 
   // 3. 删除旧测试库（带重试，防止残留进程占用）
   await removeDbFiles(path.join(serverDir, "prisma"), TEST_DB_NAME);

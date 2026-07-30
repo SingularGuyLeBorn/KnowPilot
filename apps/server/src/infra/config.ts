@@ -80,6 +80,11 @@ export interface LlmProviderConfig {
 
 export interface AppConfig {
   port: number;
+  /**
+   * HTTP 监听地址。默认 127.0.0.1（防 LAN 误暴露）。
+   * Docker / 需外网直连时设 SERVER_HOST=0.0.0.0。
+   */
+  host: string;
   projectRoot: string;
   /** 知识库事实源根（posts/about/uploads），Git 跟踪 */
   contentDir: string;
@@ -570,6 +575,7 @@ export function createAppConfig(): AppConfig {
 
   const config: AppConfig = {
     port: parseInt(process.env.SERVER_PORT || "3010", 10),
+    host: (process.env.SERVER_HOST || "127.0.0.1").trim() || "127.0.0.1",
     projectRoot,
     contentDir,
     contentPaths: {

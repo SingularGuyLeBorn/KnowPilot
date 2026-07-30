@@ -29,6 +29,7 @@ export function createTestConfig(projectRoot: string, overrides?: Partial<AppCon
   };
   return {
     port: 3010,
+    host: "127.0.0.1",
     projectRoot,
     contentDir: path.join(projectRoot, "content"),
     contentPaths: {

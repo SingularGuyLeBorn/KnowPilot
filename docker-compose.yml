@@ -14,6 +14,7 @@ services:
     environment:
       DATABASE_URL: "file:/data/dev.db"
       SERVER_PORT: "3010"
+      SERVER_HOST: "0.0.0.0"
       NODE_ENV: "production"
       # Swarm 模式：取消注释启用 Redis SwarmBus
       # SWARM_MODE: "redis"

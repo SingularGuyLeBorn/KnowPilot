@@ -54,6 +54,11 @@ export default async function globalSetup() {
   process.env.KP_CONTENT_DIR = TEST_CONTENT_DIR;
   process.env.KP_CONFIG_DIR = TEST_CONFIG_DIR;
   process.env.KP_DATA_DIR = TEST_DATA_DIR;
+  // 测试库强制加密路径（与生产一致；避免明文污染断言与泄漏面）
+  if (!process.env.CREDENTIAL_MASTER_KEY?.trim()) {
+    process.env.CREDENTIAL_MASTER_KEY =
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  }
 
   // about.getProfile 依赖 about/profile.md：优先复制真实文件，否则写占位
   const realProfile = path.join(projectRoot, "content", "about", "profile.md");
