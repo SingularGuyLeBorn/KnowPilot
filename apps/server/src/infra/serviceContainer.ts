@@ -21,19 +21,19 @@ import {
   MessageService,
   SessionQueueItemService,
   FileService,
-  LogService,
   GitService,
   TaskService,
   WorkspaceService,
   TriggerService,
   ApprovalService,
-  ToolService,
   RunService,
   PromptService,
   InfoSourceService,
   InboxService,
 } from "../services.js";
 import { CredentialService } from "./entityServices/credentialService.js";
+import { LogService } from "./entityServices/logService.js";
+import { ToolService } from "./entityServices/toolService.js";
 
 export class ServiceContainer {
   readonly prisma: PrismaClient;

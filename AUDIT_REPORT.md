@@ -599,6 +599,20 @@ flowchart TB
 | P1-04 余 | 🟡 | hub/swarmBus + 管理页（inbox/channels/gardens/workspaces/settings/trash/postMutations）+ llmBudget；全仓仍未扫清 |
 | experiments | ✅ | `experiments/README.md` 标明非维护 |
 
-刻意未动（更大手术）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本。
+刻意未动（更大手术，P3 当时）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本。
 
-*报告结束。生成：2026-07-30 · P3 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p4`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| P3-01 | ✅ | critic 解析/失败 `console.warn`（不再完全静默） |
+| P3-02 | ✅ | 反思重修 `reflectionBonusRounds` 不占 maxToolRounds |
+| P4 文档 | ✅ | design-decisions / concurrency 同步预留制 MVP |
+| P1-04 余 | 🟡 | approvalGate / asyncJob / hub / index / orchestrator / swarm×13 / session 工具；全仓仍未扫清 |
+| P2-10 余 | ✅ | 测试/E2E 注入 `CREDENTIAL_MASTER_KEY`；encrypt 单测 |
+| 默认 bind | ✅ | `SERVER_HOST` 默认 `127.0.0.1`；Docker `0.0.0.0` |
+| services 第二刀 | ✅ | LogService + ToolService → entityServices |
+
+刻意未动（更大手术）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本、chat.tsx 再拆（P3-04）、package pin 统一（P3-03）。
+
+*报告结束。生成：2026-07-30 · P4 续修：2026-07-31。*

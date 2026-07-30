@@ -51,9 +51,6 @@ import {
   type CreateFileInput,
   type UpdateFileInput,
   type ListFilesInput,
-  type CreateLogInput,
-  type UpdateLogInput,
-  type ListLogsInput,
   type CreateGitRepoInput,
   type UpdateGitRepoInput,
   type ListGitReposInput,
@@ -69,9 +66,6 @@ import {
   type CreateApprovalInput,
   type UpdateApprovalInput,
   type ListApprovalsInput,
-  type CreateToolInput,
-  type UpdateToolInput,
-  type ListToolsInput,
   type CreateRunInput,
   type UpdateRunInput,
   type ListRunsInput,
@@ -3843,28 +3837,7 @@ export class FileService extends BaseService<CreateFileInput, UpdateFileInput, L
   }
 }
 
-/** Log 系统日志 */
-export class LogService extends BaseService<CreateLogInput, UpdateLogInput, ListLogsInput, any> {
-  readonly entityName = "log";
-  protected get delegate() { return this.prisma.log; }
-  protected formatEntity(raw: any) { return raw; }
-  protected buildListWhere(input: ListLogsInput) {
-    const where: any = {};
-    if (input.level) where.level = input.level;
-    if (input.component) where.component = input.component;
-    if (input.keyword) {
-      where.OR = [{ message: { contains: input.keyword } }, { event: { contains: input.keyword } }];
-    }
-    return where;
-  }
-  protected buildCreateData(input: CreateLogInput) { return input; }
-  protected buildUpdateData(input: UpdateLogInput) { const { id: _id, ...data } = input; return data; }
-
-  async clearAll(): Promise<number> {
-    const { count } = await this.prisma.log.deleteMany();
-    return count;
-  }
-}
+/** LogService 已拆至 infra/entityServices/logService.ts */
 
 /** GitRepo Git仓库 */
 export class GitService extends BaseService<CreateGitRepoInput, UpdateGitRepoInput, ListGitReposInput, any> {
@@ -4226,30 +4199,7 @@ export class ApprovalService extends BaseService<CreateApprovalInput, UpdateAppr
   }
 }
 
-/** Tool 工具注册表 */
-export class ToolService extends BaseService<CreateToolInput, UpdateToolInput, ListToolsInput, any> {
-  readonly entityName = "tool";
-  protected get delegate() { return this.prisma.tool; }
-  protected formatEntity(raw: any) { return raw; }
-  protected buildListWhere(input: ListToolsInput) {
-    const where: any = {};
-    if (input.type) where.type = input.type;
-    if (input.enabled !== undefined) where.enabled = input.enabled;
-    if (input.keyword) {
-      where.OR = [{ name: { contains: input.keyword } }, { description: { contains: input.keyword } }];
-    }
-    return where;
-  }
-  protected buildCreateData(input: CreateToolInput) { return input; }
-  protected buildUpdateData(input: UpdateToolInput) { const { id: _id, ...data } = input; return data; }
-
-  protected override async validateCreate(input: CreateToolInput): Promise<void> {
-    await this.assertUnique("name", input.name, "创建");
-  }
-  protected override async validateUpdate(input: UpdateToolInput, existing: any): Promise<void> {
-    if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
-  }
-}
+/** ToolService 已拆至 infra/entityServices/toolService.ts */
 
 /** Run 执行记录 */
 export class RunService extends BaseService<CreateRunInput, UpdateRunInput, ListRunsInput, any> {
