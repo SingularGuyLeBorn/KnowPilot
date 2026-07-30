@@ -1,0 +1,9 @@
+{
+  "id": "G02",
+  "title": "把回复保存成文章",
+  "userMessage": "把刚才的内容保存成知识库文章，标题用「测试草稿」",
+  "expectToolsAnyOf": ["post_create"],
+  "forbidTools": ["write_file", "run_shell", "file_delete"],
+  "scenario": "eval_G02_post_create",
+  "notes": "保存文章走 post_create，禁止 write_file 污染 content/posts"
+}

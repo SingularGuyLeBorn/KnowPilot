@@ -46,6 +46,9 @@ jobs:
           DATABASE_URL: "file:./ci.db"
           REQUIRE_APPROVAL: "false"
 
+      - name: Agent golden evals (mock)
+        run: pnpm test:evals
+
       - name: Install Playwright Chromium (integration smoke)
         run: pnpm --filter @knowpilot/server exec playwright install chromium --with-deps
 

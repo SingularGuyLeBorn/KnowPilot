@@ -31,16 +31,18 @@ evals/
 | G09 | 问「你有哪些工具」 | 概括能力 | 不得把 API Key 打进回复 |
 | G10 | 写一段可预览 HTML | 用 \`\`\`html 代码块 | 无保存要求时不得 `write_file` |
 
-## 怎么跑（规划）
+## 怎么跑
 
-1. **mock 模式（CI）**：`MOCK_LLM=true` + scenario 固定 tool_calls，断言选用工具名集合。
-2. **真实模式（周跑）**：小模型 / flash，人工看评或简单 JSON schema 判分。
+```bash
+pnpm test:evals   # mock-llm-core + evals/golden/*.json（CI 已挂）
+```
 
-当前仓库：**用例表已立，自动化脚本待下一迭代**（避免半成品假绿）。先把 G01–G10 当验收清单用于 PR 自测。
+1. **mock 模式（CI）**：`scenario` / 关键词匹配固定 tool_calls，断言 `expectToolsAnyOf` / `forbidTools`。
+2. **真实模式（周跑）**：小模型 / flash，人工看评或简单 JSON schema 判分（报告落 `evals/reports/`，gitignore）。
 
-## 验收标准（骨架完成）
+## 验收标准
 
 - [x] 本 README + 黄金表
-- [ ] `evals/golden/*.json` 机器可读用例
-- [ ] `pnpm test:evals`（mock）进 CI
+- [x] `evals/golden/*.json` 机器可读用例（G01/G02 已自动化；G03–G10 可继续补）
+- [x] `pnpm test:evals`（mock）进 CI
 - [ ] 周跑真实模型报告落 `evals/reports/`（gitignore）

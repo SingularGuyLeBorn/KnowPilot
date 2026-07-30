@@ -388,6 +388,46 @@ export const scenarios: MockLlmScenario[] = [
     },
   },
   {
+    name: "eval_G01_post_list",
+    match: (opts, forced) =>
+      forced === "eval_G01_post_list" ||
+      (/列.*文章|知识库.*文章|最近的文章/i.test(lastUserText(opts)) &&
+        hasTool(opts, "post_list") &&
+        !hasAnyToolResult(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("post_list", { page: 1, pageSize: 10 })],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("post_list", { page: 1, pageSize: 10 })],
+      });
+    },
+  },
+  {
+    name: "eval_G02_post_create",
+    match: (opts, forced) =>
+      forced === "eval_G02_post_create" ||
+      (/保存成.*文章|保存.*知识库/i.test(lastUserText(opts)) &&
+        hasTool(opts, "post_create") &&
+        !hasAnyToolResult(opts)),
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("post_create", { title: "测试草稿", content: "草稿正文", garden: "posts" })],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("post_create", { title: "测试草稿", content: "草稿正文", garden: "posts" })],
+      });
+    },
+  },
+  {
     name: "greeting",
     match: () => true,
     completion: (opts) => ({

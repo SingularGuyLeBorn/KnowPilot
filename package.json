@@ -19,6 +19,7 @@
     "build": "pnpm --filter @knowpilot/web build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
+    "test:evals": "pnpm --filter @knowpilot/server exec tsx ../../evals/scripts/run-golden.mjs",
     "test:e2e": "pnpm --filter @knowpilot/web test:e2e",
     "test:e2e:mock": "pnpm --filter @knowpilot/web test:e2e:mock",
     "validate": "pnpm lint && pnpm test && pnpm build && pnpm test:e2e",
