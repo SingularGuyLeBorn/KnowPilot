@@ -145,7 +145,9 @@ export class SessionStreamHub {
     if (this.config.persist && this.config.cleanupIntervalMs > 0) {
       this.cleanupTimer = setInterval(() => this.deleteExpired(), this.config.cleanupIntervalMs);
       // 启动时先清理一轮，避免上次崩溃残留过期数据
-      this.deleteExpired().catch(() => {});
+      this.deleteExpired().catch((err) => {
+        console.warn("[SessionStreamHub] 启动清理过期事件失败:", err instanceof Error ? err.message : err);
+      });
     }
   }
 
@@ -867,10 +869,16 @@ export class SessionStreamHub {
       eventType: buffered.event.type,
       payload: buffered.event,
     });
+    const warnFlush = (err: unknown) => {
+      console.warn(
+        "[SessionStreamHub] flushPersistQueue 失败:",
+        err instanceof Error ? err.message : err,
+      );
+    };
     if (this.persistQueue.length >= 50) {
-      this.flushPersistQueue().catch(() => {});
+      this.flushPersistQueue().catch(warnFlush);
     } else if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => this.flushPersistQueue().catch(() => {}), 50);
+      this.flushTimer = setTimeout(() => this.flushPersistQueue().catch(warnFlush), 50);
     }
   }
 
@@ -899,7 +907,16 @@ export class SessionStreamHub {
       });
       // 退避：失败后延迟 500ms 再 flush，避免立即重排又立即 flush 在锁竞争下雪崩。
       if (!this.flushTimer) {
-        this.flushTimer = setTimeout(() => this.flushPersistQueue().catch(() => {}), 500);
+        this.flushTimer = setTimeout(
+          () =>
+            this.flushPersistQueue().catch((err) => {
+              console.warn(
+                "[SessionStreamHub] flushPersistQueue 退避重试失败:",
+                err instanceof Error ? err.message : err,
+              );
+            }),
+          500,
+        );
       }
     }
   }

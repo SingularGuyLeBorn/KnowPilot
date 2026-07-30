@@ -586,6 +586,19 @@ flowchart TB
 | P2-07 | ✅ | waitForResult=true 正式例外文档化 |
 | P2-09 | ✅ | e2e 补 inbox/channels/platform-sync；importOrder 扩入口 |
 
-刻意未动（大手术）：完整元工具化、`services.ts`/`router.ts` 域拆、飞书 Encrypt Key、真实 LLM 周跑、Goal 全局预算（P2-02）、全仓空 catch 清零、llmBudget 硬预留。
+刻意未动（大手术，P2 当时）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑、全仓空 catch 清零。
 
-*报告结束。生成：2026-07-30 · P2 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p3`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| 飞书 Encrypt Key | ✅ | `decryptFeishuEncryptPayload` + `X-Lark-Signature`；`prepareFeishuWebhookBody` 接入 `/api/webhooks/feishu`；官方样例单测 |
+| P2-02 Goal | ✅ | Goal 继续前 `assertLlmBudget`；`getGoal` 附会话 token；ChatGoalBar 展示 |
+| P2-10 | ✅ | `remote`/`remote-ngrok` 缺 `CREDENTIAL_MASTER_KEY` 拒启；llmBudget `tryReserve` 硬预留 MVP（reactLoop） |
+| services 第一刀 | ✅ | `CredentialService` → `infra/entityServices/credentialService.ts`；AGENTS 修订 |
+| P1-04 余 | 🟡 | hub/swarmBus 热点 catch 可观测；全仓未扫清 |
+| experiments | ✅ | `experiments/README.md` 标明非维护 |
+
+刻意未动（更大手术）：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零、Goal×内环精细 token 账本。
+
+*报告结束。生成：2026-07-30 · P3 续修：2026-07-31。*

@@ -135,7 +135,9 @@ export class LocalSwarmBus implements SwarmBus {
         message: `${msg.fromAgentId} → ${msg.toAgentId}: ${msg.content.slice(0, 80)}`,
         metadata: { messageId: created.id, fromTier, toTier: toAgent.tier, depth, messageType: msg.messageType ?? "command" },
       },
-    }).catch(() => { /* 审计日志失败不阻塞 */ });
+    }).catch((err) => {
+      console.warn("[SwarmBus] 审计日志失败（不阻塞）:", err instanceof Error ? err.message : err);
+    });
 
     this.notifyAgentMessage({
       toAgentId: msg.toAgentId,
@@ -143,7 +145,9 @@ export class LocalSwarmBus implements SwarmBus {
       content: msg.content,
       fromAgentId: msg.fromAgentId,
       source: msg.source ?? fromTier,
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn("[SwarmBus] notifyAgentMessage 失败:", err instanceof Error ? err.message : err);
+    });
 
     return { success: true, message: "消息已发送。", messageId: created.id };
   }
