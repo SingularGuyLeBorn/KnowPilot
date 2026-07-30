@@ -7,7 +7,7 @@
 > - `apps/web/lib/useStreamLifecycle.ts`
 > - `apps/web/lib/useSessionComposeState.ts`
 > - `apps/web/components/chat.tsx`（编排层）
-> - `apps/server/src/services.ts` MessageService.afterCreate/Update/Delete → SSE
+> - `apps/server/src/infra/entityServices/messageService.ts` afterCreate/Update/Delete → SSE
 >
 > 最后更新：2026-07-12（新增 §13 INV-4/5；§14 INV-6 消息持久化广播一致性 / INV-7 切会话即对账）
 

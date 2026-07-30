@@ -44,6 +44,7 @@ import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
 import { useChatSseSubscriptions } from "@/lib/useChatSseSubscriptions";
 import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
 import { useChatTabs } from "@/lib/useChatTabs";
+import { useChatUrlSync } from "@/lib/useChatUrlSync";
 import {
   COMPOSE_STORAGE_KEY,
   LIFECYCLE_STORAGE_KEY,
@@ -187,7 +188,6 @@ export function ChatView() {
   // 会短暂仍指向旧会话，导致 NEW_STREAM_KEY 入队却 runStream 打到旧 sid（第二会话无回复）。
   // 深链由下方 URL→tabs effect 的 ensureFocusedSession 灌入 tabs。
   const effectiveSessionId = focusedSessionId;
-  const prevFocusedRef = useRef<string | null>(null);
 
   // 仅可见 pane 长连 SSE；闲置 open tab 不占 EventSource。切回时 INV-7 hydrate 对账 + 可续传。
   const watchedSessionIds = useMemo(() => {
@@ -208,87 +208,17 @@ export function ChatView() {
     handleHoverMonitorLeave,
   } = useChatHoverMonitor({ effectiveSessionId });
 
-  const syncChatUiToUrl = useCallback(
-    (patch: { view?: "main" | "sub"; panel?: "history" | "runtime" }) => {
-      const params = new URLSearchParams(searchParams.toString());
-      let changed = false;
-      if (patch.view === "sub" || patch.view === "main") {
-        // 主/子都显式写入 URL，刷新后恢复的是用户最后一次切换的值
-        if (params.get("view") !== patch.view) {
-          params.set("view", patch.view);
-          changed = true;
-        }
-      }
-      if (patch.panel === "runtime") {
-        if (params.get("panel") !== "runtime") {
-          params.set("panel", "runtime");
-          changed = true;
-        }
-      } else if (patch.panel === "history") {
-        if (params.has("panel")) {
-          params.delete("panel");
-          changed = true;
-        }
-      }
-      if (changed) {
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-      }
-    },
-    [searchParams, pathname, router],
-  );
-
-  // 【URL 同步群】
-  // 不变量：URL→tabs 只响应「URL 本身变化」（深链 / 前进后退 / 外链），
-  // 绝不把 focusedSessionId / layout 放进 deps——否则会与下方 tabs→URL 乒乓：
-  //   焦点刚切到 B、URL 仍是 A → URL 效应抢回 A，同时 tabs 效应把 URL 写成 B → 下一帧再反过来。
-  // 运行时读 ref，避免闭包陈旧；焦点被冲成 null 时另有恢复效应（只在空焦点时 ensure）。
-  // ref 同步放 effect：禁止 render 期写 ref（react-hooks/refs）。
-  const focusedSessionIdRef = useRef(focusedSessionId);
-  useEffect(() => {
-    focusedSessionIdRef.current = focusedSessionId;
-  }, [focusedSessionId]);
-
-  useEffect(() => {
-    if (sessionFromUrl && sessionFromUrl !== focusedSessionIdRef.current) {
-      ensureFocusedSession(sessionFromUrl);
-      utils.session.list.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
-      utils.session.listRunning.invalidate().catch(catchUnlessCancelled("components/chat.tsx"));
-      consumeRef.current(sessionFromUrl);
-    }
-  }, [sessionFromUrl, ensureFocusedSession, utils.session.list, utils.session.listRunning]);
-
-  // 深链 ensure 被其它 effect 冲成空焦点时补一次（有焦点绝不抢——避免与侧栏切换打架）
-  useEffect(() => {
-    if (!tabsHydrated) return;
-    if (sessionFromUrl && !focusedSessionId) {
-      ensureFocusedSession(sessionFromUrl);
-    }
-  }, [tabsHydrated, sessionFromUrl, focusedSessionId, ensureFocusedSession]);
-
-  // 焦点会话 → URL（本地操作的唯一写回通道；顺带清掉旧分屏 ?split=）
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    let changed = false;
-    const focus = focusedSessionId;
-    if (focus) {
-      if (params.get("sessionId") !== focus) {
-        params.set("sessionId", focus);
-        changed = true;
-      }
-    } else if (params.has("sessionId") && prevFocusedRef.current) {
-      // 仅在从有焦点变为新对话时清 URL（避免首帧清空深链）
-      params.delete("sessionId");
-      changed = true;
-    }
-    if (params.has("split")) {
-      params.delete("split");
-      changed = true;
-    }
-    prevFocusedRef.current = focus;
-    if (changed) {
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    }
-  }, [focusedSessionId, searchParams, pathname, router]);
+  // 【URL 同步群】体迁入 useChatUrlSync（P3-04 / p13）
+  const { syncChatUiToUrl } = useChatUrlSync({
+    searchParams,
+    pathname,
+    router,
+    sessionFromUrl,
+    focusedSessionId,
+    tabsHydrated,
+    ensureFocusedSession,
+    consumeRef,
+  });
 
   // 焦点 session：消息 + compose 供右栏/队列派生；lifecycle 不再订阅（每 token 重渲整树）
   // 中栏流式 UI 由 ChatSessionPane 各自 useStreamLifecycle；此处只走 store actions

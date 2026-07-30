@@ -390,8 +390,8 @@ function trimOldest(messages, keepRecent) {
 继续堆「又一个平台集成 / 又一个 inbox 源 / 又一批 native 工具」会在三处撞墙：
 
 1. **LLM 工具选择面**：super ~200 schema，再加 MCP/Skill 会不可用。  
-2. **单文件收拢铁律的物理极限**：`services.ts`/`inboxPipeline.ts` 已超人类审查带宽。  
-3. **无 evals**：效果回归只能靠作者本人记忆，作者失控 = 项目失控。
+2. **历史 god file 已拆**：`services.ts`/`router.ts` 收官为基座+聚合；剩余天花板在工具面与编排复杂度。  
+3. **evals（mock G01–G10）已进 CI**；真实 LLM 周跑仍缺，效果回归不能只靠作者记忆。
 
 ### 4.2 需要大手术的项
 
@@ -535,7 +535,7 @@ flowchart TB
 | H 配置 | 无源码硬编码密钥；dev 明文凭据；AUTH 默认 none |
 | I 错误 | 大量空 catch |
 | J 可观测 | 有 trace_id；Run 复盘不完整 |
-| K 测试 | 单测强；**无 evals** |
+| K 测试 | 单测强；**mock evals G01–G10 + CI**；真实周跑 🛑 |
 | L 依赖 | lockfile 有；zustand 死依赖 |
 | M 安全 | 路径沙箱好；远程鉴权/shell/webhook 是短板 |
 
@@ -705,4 +705,16 @@ flowchart TB
 
 刻意未动：完整元工具化、真实 LLM 周跑 evals、metablog Playwright/`json` 软失败、Goal×内环精细 token、`chat.tsx` 物理再拆。
 
-*报告结束。生成：2026-07-30 · P12 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p13`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| Goal PUSH | ✅ | `goal_updated` SSE + `notifyGoalUpdated` 写点同栈推；ChatGoalBar 60s 兜底 + BC；`/goal status` 展示 token |
+| P3-04 一步 | ✅ | `useChatUrlSync` 自 chat.tsx 拆出；编排文件 ≈1022 行 |
+| P1-04 余 | ✅ | swarmOrchestrator swarm_task_update / Milkdown 粘贴图 → `console.warn` |
+| 文档对齐 | ✅ | AGENTS/README/development README/evals README/AUDIT §4.1·§6.5 去掉过时「无 evals / 唯一 services+router」表述 |
+| 手术边界 | 🛑 | 完整元工具化；真实 LLM 周跑；metablog 软失败；Goal×内环精细 token 账本；`chat.tsx` 心脏区（mount/resume/drain）再拆 |
+
+刻意未动：完整元工具化、真实 LLM 周跑 evals、metablog Playwright/`json` 软失败、Goal×内环精细 token 账本、`chat.tsx` mount/resume 心脏区物理再拆。
+
+*报告结束。生成：2026-07-30 · P13 续修：2026-07-31。*

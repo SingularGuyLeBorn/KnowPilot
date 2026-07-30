@@ -375,8 +375,11 @@ export class SwarmOrchestrator {
               : undefined,
         });
       })
-      .catch(() => {
-        /* hub 未就绪时静默 */
+      .catch((err: unknown) => {
+        console.warn(
+          "[swarmOrchestrator] swarm_task_update 推送失败（hub 未就绪可忽略）:",
+          err instanceof Error ? err.message : err,
+        );
       });
   }
 

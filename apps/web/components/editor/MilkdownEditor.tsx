@@ -396,7 +396,11 @@ function MilkdownEditorInner({
         }
         rewriteContent(base.replace(placeholder, imageToMarkdown(image)));
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        console.warn(
+          "[MilkdownEditor] 粘贴图片上传失败:",
+          err instanceof Error ? err.message : err,
+        );
         const live = sourceRef.current?.value ?? withPlaceholder;
         const base = live.includes(placeholder) ? live : withPlaceholder;
         rewriteContent(base.replace(placeholder, ""));

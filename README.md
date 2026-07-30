@@ -190,19 +190,19 @@ OasisMind/                  # 产品名见微；本地目录或仍叫 KnowPilot
 │   └── server/              # Express + tRPC + Prisma 后端
 │       ├── prisma/schema.prisma   # ~30 model（业务实体 + 支撑表）
 │       └── src/
-│           ├── router.ts          # 唯一 API 路由文件（20 业务路由）
-│           ├── services.ts        # 唯一业务服务层
-│           └── infra/             # agentTools / nativeTools / mcpClient /
+│           ├── router.ts          # AppRouter 纯聚合（域路由 → infra/trpcRouters/）
+│           ├── services.ts        # BaseService / FileSync 基座（实体 → infra/entityServices/）
+│           └── infra/             # entityServices / trpcRouters / agentTools /
 │                                 # agentStream / sessionStreamHub / heartbeatEngine /
-│                                 / swarmBus / swarmPermissionGuard / asyncJobManager ...
+│                                 # swarmBus / asyncJobManager / uiStateNotify ...
 ├── packages/
 │   └── shared/              # 前后端共享 Zod schema + TS 类型 + 常量
-├── content/                 # Git 跟踪的文本数据源
-│   ├── posts/               # 文章 Markdown 源文件
-│   ├── agents/ skills/ memories/ prompts/   # Agent / Skill / Memory / Prompt 配置
-│   ├── tasks/               # Task 配置（JSON + db:sync）
-│   ├── mcp/                 # MCP Server 配置（YAML）
+├── content/                 # 纯知识库事实源（Git 跟踪）
+│   ├── {gardenId}/          # 动态花园（posts 等）
+│   ├── about/               # About Me
 │   └── uploads/             # 上传文件
+├── config/                  # Agent 配置事实源（agents/skills/memories/prompts/mcp/tasks/…）
+├── data/                    # 运行时产物（gitignore，可重建）
 ├── docs/
 │   ├── development/        # L1-L5 阶段开发文档与 API 规范
 │   ├── assets/             # logo / banner / UIH 等品牌素材
@@ -211,7 +211,7 @@ OasisMind/                  # 产品名见微；本地目录或仍叫 KnowPilot
 └── README.md                # 本文件
 ```
 
-> 项目遵循「单文件逻辑收拢」原则：后端业务层合并到 `services.ts`、路由层合并到 `router.ts`；前端 hooks 合并到 `lib/hooks.ts`、通用组件合并到 `components/shared.tsx`。禁止创建零散的 `services/`、`trpc/routers/`、`hooks/`、`components/shared/` 子目录。
+> 项目遵循「单出口 + 叶子拆分」：根 `router.ts` / `services.ts` 只聚合或保留基座；域逻辑在 `infra/trpcRouters/` 与 `infra/entityServices/`。前端 React Query hooks 仍收拢 `lib/hooks.ts`，通用 UI 收拢 `components/shared.tsx`。禁止平行第二套 `services/`、`trpc/routers/`、`hooks/`、`components/shared/` 树。
 
 ---
 

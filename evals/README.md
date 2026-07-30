@@ -43,6 +43,6 @@ pnpm test:evals   # mock-llm-core + evals/golden/*.json（CI 已挂）
 ## 验收标准
 
 - [x] 本 README + 黄金表
-- [x] `evals/golden/*.json` 机器可读用例（G01/G02 已自动化；G03–G10 可继续补）
+- [x] `evals/golden/*.json` 机器可读用例（G01–G10 mock 全覆盖，`pnpm test:evals`）
 - [x] `pnpm test:evals`（mock）进 CI
 - [ ] 周跑真实模型报告落 `evals/reports/`（gitignore）

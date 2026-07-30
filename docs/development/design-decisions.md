@@ -664,13 +664,13 @@ LoopX 不是执行器，而是长程 Agent 的**控制平面**：跨 turn / 重�
 
 ## 问题 E：目录拆分是否违反「单文件收拢」铁律？
 
-**推荐方案**：
+**推荐方案（已落地修订）**：
 
-- **不改**：`services.ts` / `router.ts` / `hooks.ts` / `shared.tsx` 单文件约定。
-- **允许**：`infra/tools/native/*.ts` 按域拆分 + `infra/tools/native/index.ts` barrel 注册；对外仍从 `nativeTools.js` 或 `tools/registry.js` 单一入口导出，避免调用方散落 import。
-- **判定标准**：新增 native 工具 = 新文件 + 一行 `register(...)`，**禁止**再往 4000+ 行文件追加 handler。
+- **根出口不变**：`hooks.ts` / `shared.tsx` 仍单文件；`services.ts` / `router.ts` **只保留基座 / 纯聚合**。
+- **允许叶子**：`infra/entityServices/`、`infra/trpcRouters/`、`infra/tools/native/*.ts`；禁止平行第二套 `services/`、`trpc/routers/`。
+- **判定标准**：新增实体 Service / 域路由 = 新叶子 + container/serviceContainer 一行挂载，**禁止**再往根 god file 堆逻辑。
 
-**回答**：
+**回答**：默认同意（p11–p12 已按此落地）。
 
 ---
 

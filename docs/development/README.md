@@ -46,9 +46,9 @@ KnowPilot/
 
 | 文件 | 职责 | 禁止做的事 |
 | --- | --- | --- |
-| `apps/server/src/services.ts` | BaseService + 未拆出的实体 Service | 禁止平行 `services/` 树；低耦合可拆 `infra/entityServices/` |
-| `apps/server/src/router.ts` | 所有 tRPC 路由 | 禁止创建 `trpc/routers/` 子目录 |
-| `apps/server/src/infra/*.ts` | 基础设施（Agent 运行时、工具、Swarm、异步任务等） | — |
+| `apps/server/src/services.ts` | BaseService / FileSyncService 基座 | 禁止平行第二套 `services/`；实体在 `infra/entityServices/` |
+| `apps/server/src/router.ts` | AppRouter 纯聚合出口 | 禁止平行 `trpc/routers/`；域路由在 `infra/trpcRouters/` |
+| `apps/server/src/infra/*.ts` | 基础设施 + entityServices + trpcRouters 等 | — |
 | `apps/server/prisma/schema.prisma` | 数据库模型 | — |
 | `apps/server/src/scripts/sync.ts` | Markdown/YAML ↔ SQLite 同步入口 | — |
 

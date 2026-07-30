@@ -53,12 +53,12 @@ KnowPilot/
 │   │   │   └── dev.db          # SQLite 数据库（运行时生成/更新）
 │   │   └── src/
 │   │       ├── index.ts        # Express 入口（启动 EventBus + TriggerEngine）
-│   │       ├── router.ts       # 唯一 API 路由文件（20 业务路由 + about + ai 反射）
-│   │       ├── services.ts     # 唯一业务服务层文件（收拢全部 Service 逻辑）
+│   │       ├── router.ts       # AppRouter 纯聚合出口（域路由在 infra/trpcRouters/）
+│   │       ├── services.ts     # BaseService / FileSyncService 基座（实体在 infra/entityServices/）
 │   │       ├── db.ts           # Prisma 单例
-│   │       ├── infra/          # agentTools、nativeTools、tools/{registry,native/*}、loop/、
-│   │       │                  # mcpClient、autoCompact、agentStream、swarm*、heartbeatEngine、
-│   │       │                  # asyncJobManager、safePath 等
+│   │       ├── infra/          # entityServices/、trpcRouters/、agentTools、tools/native/*、
+│   │       │                  # loop/、mcpClient、agentStream、swarm*、heartbeatEngine、
+│   │       │                  # asyncJobManager、safePath、uiStateNotify 等
 │   │       ├── scripts/
 │   │       │   ├── sync.ts     # Markdown/YAML ↔ SQLite 同步入口
 │   │       │   ├── sync-free-keys.ts  # 免费 API Key 同步（GitHub → Credential 表）
