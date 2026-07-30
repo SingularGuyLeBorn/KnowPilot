@@ -32,7 +32,12 @@ import {
 } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
-import { MessageActions, MessageSourceLabel, MessageVersions } from "@/components/chatMessageBits";
+import {
+  MessageActions,
+  MessageMarkdownSourceEditor,
+  MessageSourceLabel,
+  MessageVersions,
+} from "@/components/chatMessageBits";
 import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
 import { type OptimisticUserBubble } from "@/lib/useSessionComposeState";
 import { registerDeliveryLocateHandler } from "@/lib/deliveryLocate";
@@ -108,8 +113,10 @@ export interface ChatMessageListProps {
   inFlightAssistantId: string | null;
   isSubagentSession: boolean;
   copiedId: string | null;
-  editingUserId: string | null;
+  /** 正在编辑的消息 id（user 或 assistant） */
+  editingMessageId: string | null;
   editDraft: string;
+  editSaving?: boolean;
   isMessagesHydrated: boolean;
   effectiveSessionId: string | null;
   backendDown: boolean;
@@ -121,11 +128,12 @@ export interface ChatMessageListProps {
   onShare: (content: string) => void;
   onRegenerate: (userMessageId: string) => void;
   onSwitchVersion: (assistantMessageId: string, versionIndex: number) => void;
-  onEditConfirm: (userMessageId: string) => void;
+  /** 确认保存 Markdown 源码（仅落库，不重跑） */
+  onEditConfirm: (messageId: string) => void;
   onRetry: (messageId: string) => void;
   /** Chat → 知识库：打开落库对话框 */
   onSaveAsPost?: (messageId: string, content: string) => void;
-  setEditingUserId: (id: string | null) => void;
+  setEditingMessageId: (id: string | null) => void;
   setEditDraft: (draft: string) => void;
 }
 
@@ -141,8 +149,9 @@ export const ChatMessageList = memo(function ChatMessageList({
   inFlightAssistantId,
   isSubagentSession,
   copiedId,
-  editingUserId,
+  editingMessageId,
   editDraft,
+  editSaving = false,
   isMessagesHydrated,
   effectiveSessionId,
   backendDown,
@@ -157,7 +166,7 @@ export const ChatMessageList = memo(function ChatMessageList({
   onEditConfirm: handleEditConfirm,
   onRetry: handleRetry,
   onSaveAsPost: handleSaveAsPost,
-  setEditingUserId,
+  setEditingMessageId,
   setEditDraft,
 }: ChatMessageListProps) {
   // 语音输出：assistant 回复朗读（浏览器原生 speechSynthesis，免费）
@@ -272,6 +281,8 @@ export const ChatMessageList = memo(function ChatMessageList({
     if (!active || !group.assistantMessage) return null;
     const assistantId = group.assistantMessage.id;
     const isInterrupted = group.assistantMessage.finishReason === "aborted";
+    const isEditingAssistant = editingMessageId === assistantId;
+    const editBusy = isStreaming || editSaving;
 
     return (
       <div
@@ -280,11 +291,21 @@ export const ChatMessageList = memo(function ChatMessageList({
         className="group/msg relative mb-6 ml-6 mr-2 flex w-full max-w-[96%] flex-col items-start gap-1"
       >
         <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3.5 py-2 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
-          <PostContent
-            content={active.content.trimEnd()}
-            className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
-          />
-          {isInterrupted && (
+          {isEditingAssistant ? (
+            <MessageMarkdownSourceEditor
+              value={editDraft}
+              onChange={setEditDraft}
+              onSave={() => handleEditConfirm(assistantId)}
+              onCancel={() => setEditingMessageId(null)}
+              disabled={editBusy}
+            />
+          ) : (
+            <PostContent
+              content={active.content.trimEnd()}
+              className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
+            />
+          )}
+          {isInterrupted && !isEditingAssistant && (
             <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600">
               <Ban className="h-3 w-3" />
               <span>已停止生成</span>
@@ -293,24 +314,42 @@ export const ChatMessageList = memo(function ChatMessageList({
         </div>
 
         <MessageActions
-          onCopy={() => handleCopy(assistantId, active.content).catch(() => {})}
-          onShare={() => handleShare(active.content).catch(() => {})}
+          onCopy={() =>
+            handleCopy(assistantId, isEditingAssistant ? editDraft : active.content).catch(() => {})
+          }
+          onShare={() =>
+            handleShare(isEditingAssistant ? editDraft : active.content).catch(() => {})
+          }
           onRegenerate={() => handleRegenerate(group.userMessage.id)}
-          onSpeak={ttsSupported ? () => handleSpeak(assistantId, active.content) : undefined}
+          onSpeak={
+            ttsSupported && !isEditingAssistant
+              ? () => handleSpeak(assistantId, active.content)
+              : undefined
+          }
           isSpeaking={speakingAssistantId === assistantId && ttsSpeaking}
-          showRegenerate={isLastGroup}
-          showEdit={false}
+          showRegenerate={isLastGroup && !isEditingAssistant}
+          showEdit
           showRetry={false}
-          showSaveAsPost={!!handleSaveAsPost && !!active.content.trim()}
+          showSpeak={!isEditingAssistant}
+          showSaveAsPost={
+            !!handleSaveAsPost && !!active.content.trim() && !isEditingAssistant
+          }
           onSaveAsPost={
             handleSaveAsPost
               ? () => handleSaveAsPost(assistantId, active.content)
               : undefined
           }
-          disabled={isStreaming}
+          onEdit={() => {
+            setEditingMessageId(assistantId);
+            setEditDraft(active.content);
+          }}
+          onEditSave={() => handleEditConfirm(assistantId)}
+          onEditCancel={() => setEditingMessageId(null)}
+          isEditing={isEditingAssistant}
+          disabled={editBusy}
           copied={copiedId === assistantId}
           versionNav={
-            group.versions.length > 1 ? (
+            !isEditingAssistant && group.versions.length > 1 ? (
               <MessageVersions
                 current={group.activeVersionIndex}
                 total={group.versions.length}
@@ -372,7 +411,8 @@ export const ChatMessageList = memo(function ChatMessageList({
   // 提取为函数供虚拟列表 itemContent 调用，仅可见项会执行。
   const renderMessageGroup = (group: MessageGroup, groupIdx: number) => {
     const isLastUser = groupIdx === lastGroupIndex;
-    const isEditing = editingUserId === group.userMessage.id;
+    const isEditing = editingMessageId === group.userMessage.id;
+    const editBusy = isStreaming || editSaving;
     const msgSource = (group.userMessage as { source?: string }).source ?? "user";
     const msgToolResults = (group.userMessage as { toolResults?: unknown }).toolResults;
     const subResult = (msgToolResults as {
@@ -452,19 +492,12 @@ export const ChatMessageList = memo(function ChatMessageList({
                 </span>
               )}
               {isEditing ? (
-                <textarea
+                <MessageMarkdownSourceEditor
                   value={editDraft}
-                  onChange={(e) => setEditDraft(e.target.value)}
-                  rows={Math.max(1, editDraft.split("\n").length)}
-                  className="block w-full resize-none border-0 bg-transparent p-0 text-left text-sm leading-relaxed text-[var(--kp-text-1)] outline-none placeholder:text-[var(--kp-text-3)] [field-sizing:content]"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleEditConfirm(group.userMessage.id);
-                    }
-                    if (e.key === "Escape") setEditingUserId(null);
-                  }}
+                  onChange={setEditDraft}
+                  onSave={() => handleEditConfirm(group.userMessage.id)}
+                  onCancel={() => setEditingMessageId(null)}
+                  disabled={editBusy}
                 />
               ) : (
                 // 用户消息一律 Markdown 渲染（含普通提问 / 异步投递 / 父下发任务）
@@ -478,17 +511,17 @@ export const ChatMessageList = memo(function ChatMessageList({
               onCopy={() => handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content).catch(() => {})}
               onShare={() => handleShare(isEditing ? editDraft : group.userMessage.content).catch(() => {})}
               onEdit={() => {
-                setEditingUserId(group.userMessage.id);
+                setEditingMessageId(group.userMessage.id);
                 setEditDraft(group.userMessage.content);
               }}
               onEditSave={() => handleEditConfirm(group.userMessage.id)}
-              onEditCancel={() => setEditingUserId(null)}
+              onEditCancel={() => setEditingMessageId(null)}
               onRetry={() => handleRetry(group.userMessage.id)}
-              showEdit={isLastUser && !isSystemish}
+              showEdit={!isSystemish}
               showRetry={isLastUser && !isEditing && !isSystemish}
               showRegenerate={false}
               isEditing={isEditing}
-              disabled={isStreaming}
+              disabled={editBusy}
               copied={copiedId === group.userMessage.id}
             />
           </div>

@@ -113,3 +113,25 @@ export function activeVersionPayload(meta: AssistantVersionMeta): {
   const v = meta.versions[meta.activeIndex];
   return { content: v.content, toolCalls: v.toolCalls ?? [] };
 }
+
+/**
+ * 手工编辑 assistant 正文时，同步写回 versionMeta 当前激活版本，
+ * 避免之后 switchVersion 把编辑盖掉。保留 toolResults 其它字段。
+ */
+export function syncAssistantActiveContent(
+  msg: { content: string; toolCalls?: unknown; toolResults?: unknown },
+  nextContent: string,
+): Record<string, unknown> {
+  const { versionMeta } = getActiveAssistantPayload(msg);
+  const versions = versionMeta.versions.map((v, i) =>
+    i === versionMeta.activeIndex ? { ...v, content: nextContent } : v,
+  );
+  const prev =
+    msg.toolResults && typeof msg.toolResults === "object" && !Array.isArray(msg.toolResults)
+      ? { ...(msg.toolResults as Record<string, unknown>) }
+      : {};
+  return {
+    ...prev,
+    versionMeta: { versions, activeIndex: versionMeta.activeIndex },
+  };
+}

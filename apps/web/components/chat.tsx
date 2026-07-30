@@ -589,7 +589,6 @@ export function ChatView() {
     thinkingRafRef,
     streamSaveTimeoutRef,
     setSessionId,
-    setEditingUserId: () => {},
     searchParams,
     pathname,
     router,

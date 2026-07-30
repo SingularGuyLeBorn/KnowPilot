@@ -175,6 +175,56 @@ export function MessageVersions({
   );
 }
 
+/** AI Studio 式 Markdown 源码编辑器（确认保存，不重跑） */
+export function MessageMarkdownSourceEditor({
+  value,
+  onChange,
+  onSave,
+  onCancel,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-2" data-testid="message-markdown-source-editor">
+      <div className="flex items-center justify-between gap-2">
+        <span className="rounded-md bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--kp-text-3)]">
+          Markdown
+        </span>
+        <span className="text-[10px] text-[var(--kp-text-3)]">Ctrl/⌘+Enter 保存 · Esc 取消</span>
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={Math.max(3, Math.min(24, value.split("\n").length + 1))}
+        disabled={disabled}
+        autoFocus
+        spellCheck={false}
+        className={cn(
+          "block w-full resize-y rounded-lg border border-[var(--kp-divider)] bg-[var(--kp-bg)]",
+          "px-3 py-2 font-mono text-[13px] leading-relaxed text-[var(--kp-text-1)] outline-none",
+          "focus:border-[var(--kp-accent)] focus:ring-2 focus:ring-[var(--kp-accent-soft)]",
+          "disabled:opacity-60",
+        )}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            onSave();
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 export function MessageActions({
   onCopy,
   onEdit,
@@ -228,7 +278,14 @@ export function MessageActions({
     "rounded-lg p-1.5 text-[var(--kp-text-3)] transition hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)] disabled:pointer-events-none disabled:opacity-40";
 
   return (
-    <div className="flex items-center gap-0.5 opacity-0 pointer-events-none transition-opacity duration-200 group-hover/msg:opacity-100 group-hover/msg:pointer-events-auto group-focus-within/msg:opacity-100 group-focus-within/msg:pointer-events-auto">
+    <div
+      className={cn(
+        "flex items-center gap-0.5 transition-opacity duration-200",
+        isEditing
+          ? "pointer-events-auto opacity-100"
+          : "pointer-events-none opacity-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100",
+      )}
+    >
       {versionNav}
       {showBookmark && onToggleBookmark && (
         <button
@@ -283,17 +340,41 @@ export function MessageActions({
         </button>
       )}
       {isEditing && onEditSave && (
-        <button type="button" onClick={onEditSave} disabled={disabled} className={btnClass} title="保存并重新生成" aria-label="保存">
+        <button
+          type="button"
+          onClick={onEditSave}
+          disabled={disabled}
+          className={btnClass}
+          title="保存"
+          aria-label="保存"
+          data-testid="message-edit-save"
+        >
           <Check className="h-3.5 w-3.5" />
         </button>
       )}
       {isEditing && onEditCancel && (
-        <button type="button" onClick={onEditCancel} disabled={disabled} className={btnClass} title="取消编辑" aria-label="取消">
+        <button
+          type="button"
+          onClick={onEditCancel}
+          disabled={disabled}
+          className={btnClass}
+          title="取消编辑"
+          aria-label="取消"
+          data-testid="message-edit-cancel"
+        >
           <X className="h-3.5 w-3.5" />
         </button>
       )}
       {!isEditing && showEdit && onEdit && (
-        <button type="button" onClick={onEdit} disabled={disabled} className={btnClass} title="编辑" aria-label="编辑">
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={disabled}
+          className={btnClass}
+          title="编辑 Markdown 源码"
+          aria-label="编辑"
+          data-testid="message-edit-btn"
+        >
           <Pencil className="h-3.5 w-3.5" />
         </button>
       )}

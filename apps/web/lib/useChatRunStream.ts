@@ -93,7 +93,6 @@ export interface UseChatRunStreamParams {
   thinkingRafRef: RefObject<Map<string, number>>;
   streamSaveTimeoutRef: RefObject<ReturnType<typeof setTimeout> | null>;
   setSessionId: (id: string | null) => void;
-  setEditingUserId: (id: string | null) => void;
   searchParams: ReturnType<typeof useSearchParams>;
   pathname: string;
   router: ReturnType<typeof useRouter>;
@@ -114,7 +113,6 @@ export function useChatRunStream({
   thinkingRafRef,
   streamSaveTimeoutRef,
   setSessionId,
-  setEditingUserId,
   searchParams,
   pathname,
   router,
@@ -248,7 +246,6 @@ export function useChatRunStream({
         return { status: "begin_rejected" };
       }
       scheduleStreamSave(true);
-      setEditingUserId(null);
 
       // E8：运行时按 originSid 取权威 config，禁止吃 React 闭包首帧 DEFAULT / 错 pane
       const runtimeConfig = ensureSessionConfigHydrated(originSid);
@@ -855,7 +852,6 @@ export function useChatRunStream({
       isPageUnloadingRef,
       pendingStreamDeltaRef,
       pendingThinkingDeltaRef,
-      setEditingUserId,
       setSessionId,
     ],
   );
