@@ -30,10 +30,10 @@ import {
   ToolService,
   RunService,
   PromptService,
-  CredentialService,
   InfoSourceService,
   InboxService,
 } from "../services.js";
+import { CredentialService } from "./entityServices/credentialService.js";
 
 export class ServiceContainer {
   readonly prisma: PrismaClient;

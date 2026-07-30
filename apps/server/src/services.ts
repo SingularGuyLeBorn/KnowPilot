@@ -78,9 +78,6 @@ import {
   type CreatePromptInput,
   type UpdatePromptInput,
   type ListPromptsInput,
-  type CreateCredentialInput,
-  type UpdateCredentialInput,
-  type ListCredentialsInput,
   type CreateInfoSourceInput,
   type UpdateInfoSourceInput,
   type ListInfoSourcesInput,
@@ -123,7 +120,6 @@ import matter from "gray-matter";
 // type-only：编译期擦除，不构成运行时循环依赖（resume 的 runner emit 追踪用）
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { deriveDecisionScope } from "./infra/approvalScope.js";
-import { encryptCredentialValue, decryptCredentialValue, maskSecret, invalidateIntegrationCredentials } from "./infra/credentialVault.js";
 import { upsertFtsRow, deleteFtsRow, searchFts, searchFtsByEntity } from "./infra/ftsIndex.js";
 import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
 import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
@@ -4359,63 +4355,7 @@ ${entity.content}
   }
 }
 
-/** Credential 凭据管理 */
-export class CredentialService extends BaseService<CreateCredentialInput, UpdateCredentialInput, ListCredentialsInput, any> {
-  readonly entityName = "credential";
-  protected get delegate() { return this.prisma.credential; }
-
-  protected formatEntity(raw: any) {
-    // 安全：API 响应永不返回明文 value，仅返回遮蔽后的 valuePreview。
-    // 明文仅在 credentialVault 内部（getCredentialValue 等）解密使用。
-    const { value: _encryptedValue, ...rest } = raw;
-    return {
-      ...rest,
-      valuePreview: maskSecret(decryptCredentialValue(raw.value)),
-      scope: raw.scope ? raw.scope.split(",").filter(Boolean).map((s: string) => s.trim()) : [],
-      metadata: raw.metadata ? safeJsonParse(raw.metadata) : null,
-    };
-  }
-
-  protected buildListWhere(input: ListCredentialsInput) {
-    const where: any = {};
-    if (input.type) where.type = input.type;
-    if (input.keyword) where.name = { contains: input.keyword };
-    return where;
-  }
-
-  protected buildCreateData(input: CreateCredentialInput) {
-    return {
-      name: input.name,
-      type: input.type,
-      value: encryptCredentialValue(input.value),
-      scope: input.scope.join(","),
-      expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-      metadata: input.metadata ? JSON.stringify(input.metadata) : null,
-    };
-  }
-
-  protected buildUpdateData(input: UpdateCredentialInput) {
-    const { id: _id, scope, expiresAt, metadata, value, ...data } = input;
-    const updateData: any = { ...data };
-    if (value !== undefined) updateData.value = encryptCredentialValue(value);
-    if (scope !== undefined) updateData.scope = scope.join(",");
-    if (expiresAt !== undefined) updateData.expiresAt = expiresAt ? new Date(expiresAt) : null;
-    if (metadata !== undefined) updateData.metadata = metadata ? JSON.stringify(metadata) : null;
-    return updateData;
-  }
-
-  protected override async validateCreate(input: CreateCredentialInput): Promise<void> {
-    await this.assertUnique("name", input.name, "创建");
-  }
-  protected override async validateUpdate(input: UpdateCredentialInput, existing: any): Promise<void> {
-    if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
-  }
-  // P1-5 / P1：CRUD 后清 credential vault 缓存 + 立即重新注入 config.integrations，
-  // 用最新 DB 数据刷新（generation 计数器保证进行中的旧注入不会覆盖新值）。
-  protected override async afterCreate(): Promise<void> { await invalidateIntegrationCredentials(this.config, this.prisma); }
-  protected override async afterUpdate(): Promise<void> { await invalidateIntegrationCredentials(this.config, this.prisma); }
-  protected override async afterDelete(): Promise<void> { await invalidateIntegrationCredentials(this.config, this.prisma); }
-}
+/** CredentialService 已拆至 infra/entityServices/credentialService.ts */
 
 /** InfoSource 信息源 — Agent 可信信息来源 */
 export interface InfoSourceEntity {
