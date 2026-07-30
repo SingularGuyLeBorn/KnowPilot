@@ -42,6 +42,19 @@ export const SMOKE_SKIP = new Set<string>([
   "approval.execute",
   "approval.approveAndExecute",
   "auth.login",
+  // Inbox 同步/富化会起 Playwright / 外网，单测易挂死拖垮 120s smoke
+  "inbox.syncZhihu",
+  "inbox.syncXhs",
+  "inbox.enrich",
+  "native.platform_login",
+  "native.sleep",
+  "native.scroll_screenshot",
+  "native.browser_screenshot",
+  "native.read_article",
+  "native.save_webpage",
+  "native.video_transcript",
+  "native.coze_chat",
+  "native.dify_chat",
 ]);
 
 /** 精确参数覆盖（优先于启发式） */

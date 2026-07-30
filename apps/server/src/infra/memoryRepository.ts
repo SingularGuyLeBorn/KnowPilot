@@ -303,17 +303,18 @@ export class PrismaMemoryRepository implements MemoryRepository {
     const agentId = agentIdFromScope(scope);
     const debounceKey = `${scope}:${contentHash}`;
     const recent = recentMemoryWrites.get(debounceKey);
-    if (recent && Date.now() - recent.at < MEMORY_WRITE_DEBOUNCE_MS) {
-      return recent.item;
-    }
-
     // 去重：同 scope 同 contentHash（仅 active）→ 幂等刷新强度（取高者），不重复插入
     const existing = await this.prisma.memory.findFirst({
       where: { scope, contentHash, status: MEMORY_STATUS_ACTIVE },
     });
     if (existing) {
       const strength = Math.max(existing.strength, input.strength ?? existing.strength);
-      if (strength === existing.strength && recent && Date.now() - recent.at < MEMORY_WRITE_DEBOUNCE_MS) {
+      // debounce 只挡「同强度重复刷」；更高 strength 必须落库
+      if (
+        strength === existing.strength &&
+        recent &&
+        Date.now() - recent.at < MEMORY_WRITE_DEBOUNCE_MS
+      ) {
         return recent.item;
       }
       let item: MemoryItem;
@@ -335,6 +336,10 @@ export class PrismaMemoryRepository implements MemoryRepository {
       return item;
     }
 
+    // 新建路径 debounce：同 content 风暴只落一行（强度升级走上面 existing 分支）
+    if (recent && Date.now() - recent.at < MEMORY_WRITE_DEBOUNCE_MS) {
+      return recent.item;
+    }
     const createInput = {
       content: input.content,
       type: input.type,

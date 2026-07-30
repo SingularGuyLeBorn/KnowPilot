@@ -885,6 +885,8 @@ describe("native:memory_create / memory_search", () => {
     // 需补 prisma mock 应答 contentHash 去重查询（无重复 → null）
     const prismaMock = { memory: { findFirst: vi.fn(async () => null) } };
     const ctx = createNativeCtx(root, { services: { memory: memoryService, prisma: prismaMock } as never });
+    // P2-06：无 agentSnapshot 时默认 global → forceApproval；本测只验 agent 域写路径
+    ctx.agentSnapshot = { id: "agent-test", tier: "manager", workspaceId: "ws-1", model: "test" } as never;
     const result = (await executeNativeTool("memory_create", { content: "记住这件事", type: "note", strength: 0.8, keywords: ["a", "b"] }, ctx)) as {
       id: string;
       strength: number;

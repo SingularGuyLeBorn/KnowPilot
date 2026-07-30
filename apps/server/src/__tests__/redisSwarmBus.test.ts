@@ -10,6 +10,7 @@ vi.mock("bullmq", () => {
   class Queue {
     add = vi.fn(async () => ({ id: "job-1" }));
     close = vi.fn(async () => {});
+    on = vi.fn();
   }
   return { Queue };
 });
