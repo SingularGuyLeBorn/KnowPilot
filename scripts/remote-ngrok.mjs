@@ -56,10 +56,28 @@ function loadDotEnv(filePath) {
 const env = loadDotEnv(path.join(root, ".env"));
 const ngrokDomain = env.NGROK_DOMAIN || process.env.NGROK_DOMAIN;
 const publicUrl = env.PUBLIC_URL || process.env.PUBLIC_URL;
+const allowInsecureAuth = process.argv.includes("--allow-insecure-auth");
 
 if (!ngrokDomain) {
   console.error("\n  ❌ .env 未配置 NGROK_DOMAIN。请先在 ngrok dashboard 领一个免费 dev domain，写入 .env:\n     NGROK_DOMAIN=xxx.ngrok-free.dev\n     PUBLIC_URL=https://xxx.ngrok-free.dev\n");
   process.exit(1);
+}
+
+{
+  const authMode = (env.AUTH_MODE || process.env.AUTH_MODE || "none").toLowerCase();
+  const password = (env.AUTH_PASSWORD || process.env.AUTH_PASSWORD || "").trim();
+  if (!(authMode === "password" && password)) {
+    if (allowInsecureAuth || process.env.KP_ALLOW_INSECURE_PUBLIC === "1") {
+      console.warn(
+        "\n  ⚠️ [安全] 未启用 AUTH_MODE=password，但已用 --allow-insecure-auth / KP_ALLOW_INSECURE_PUBLIC=1 强制继续。\n",
+      );
+    } else {
+      console.error("\n  ❌ 拒绝启动 ngrok 远程：公网暴露必须启用密码鉴权。");
+      console.error("     在 .env 设置 AUTH_MODE=password 与 AUTH_PASSWORD");
+      console.error("     或临时: pnpm dev:ngrok --allow-insecure-auth\n");
+      process.exit(1);
+    }
+  }
 }
 
 const quick = process.argv.includes("--quick");

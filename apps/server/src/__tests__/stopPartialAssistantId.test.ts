@@ -11,7 +11,12 @@ import { prisma } from "../db.js";
 import { SessionStreamHub, setStreamHub } from "../infra/sessionStreamHub.js";
 import { handleAgentChatStop } from "../infra/agentStream.js";
 import { createContextInner } from "../trpc/context.js";
+import { createTestConfig } from "./helpers/toolTestFixtures.js";
 import type { AgentChatInput } from "@knowpilot/shared";
+
+const stopConfig = createTestConfig(process.cwd(), {
+  auth: { mode: "none", password: "", token: "" },
+});
 
 describe("E3 stop partialAssistantMessageId 契约", () => {
   let hub: SessionStreamHub;
@@ -47,7 +52,7 @@ describe("E3 stop partialAssistantMessageId 契约", () => {
       status: vi.fn().mockReturnThis(),
       json: vi.fn(),
     };
-    handleAgentChatStop(hub)({ body: { sessionId } } as never, res as never);
+    handleAgentChatStop(hub, stopConfig)({ body: { sessionId } } as never, res as never);
     expect(res.json).toHaveBeenCalledWith({
       stopped: true,
       partialAssistantMessageId: null,
@@ -92,7 +97,7 @@ describe("E3 stop partialAssistantMessageId 契约", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const json = vi.fn();
-    handleAgentChatStop(hub)({ body: { sessionId } } as never, { status: vi.fn(), json } as never);
+    handleAgentChatStop(hub, stopConfig)({ body: { sessionId } } as never, { status: vi.fn(), json } as never);
 
     expect(json).toHaveBeenCalledWith({
       stopped: true,

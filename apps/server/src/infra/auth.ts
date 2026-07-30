@@ -49,3 +49,30 @@ export function getRemoteAccessInfo(config: AppConfig) {
     authRecommended: !!config.publicUrl && !isAuthEnabled(config),
   };
 }
+
+/**
+ * 公网 URL 已配置但未开密码鉴权 → 不安全。
+ * - production / KP_REQUIRE_PUBLIC_AUTH=1：抛错（调用方应拒启）
+ * - 开发：仅 warn（本地常配 PUBLIC_URL 给 AgentMail webhook，由 remote 脚本硬拦隧道）
+ * - KP_ALLOW_INSECURE_PUBLIC=1：显式逃生，仅 warn
+ */
+export function assertPublicUrlAuthSafe(config: AppConfig): void {
+  if (!config.publicUrl?.trim()) return;
+  if (isAuthEnabled(config)) return;
+  const msg =
+    "检测到 PUBLIC_URL 但 AUTH_MODE 未设为 password。公网暴露必须启用鉴权：" +
+    "在 .env 设置 AUTH_MODE=password 与 AUTH_PASSWORD；" +
+    "隧道请用 pnpm remote（无鉴权会拒绝）；本地临时可设 KP_ALLOW_INSECURE_PUBLIC=1。";
+  if (process.env.KP_ALLOW_INSECURE_PUBLIC === "1") {
+    console.warn(`  ⚠️ [安全] ${msg}（KP_ALLOW_INSECURE_PUBLIC=1 强制放行）`);
+    return;
+  }
+  const isProd =
+    config.env === "production" ||
+    process.env.NODE_ENV === "production" ||
+    process.env.KP_REQUIRE_PUBLIC_AUTH === "1";
+  if (isProd) {
+    throw new Error(msg);
+  }
+  console.warn(`  ⚠️ [安全] ${msg}（开发模式仅警告；生产 / KP_REQUIRE_PUBLIC_AUTH=1 将拒绝启动）`);
+}

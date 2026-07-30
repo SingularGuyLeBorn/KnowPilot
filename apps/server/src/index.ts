@@ -39,7 +39,7 @@ import { SessionStreamHub, setStreamHub } from "./infra/sessionStreamHub.js";
 import { createTrpcInvoker } from "./infra/trpcInvoker.js";
 import { assertCredentialEncryptionAvailable } from "./infra/credentialVault.js";
 import { ensureIntegrationCredentialsInjected } from "./infra/credentialVault.js";
-import { isAuthEnabled, verifyAuthHeader } from "./infra/auth.js";
+import { isAuthEnabled, verifyAuthHeader, assertPublicUrlAuthSafe } from "./infra/auth.js";
 import { globalRateLimiter, chatStreamRateLimiter } from "./infra/rateLimit.js";
 import { traceMiddleware, formatTrace } from "./infra/trace.js";
 import { prisma } from "./db.js";
@@ -181,7 +181,7 @@ app.get(
   "/api/agent/chat/stream",
   handleAgentChatStream(services, config, createTrpcInvoker({ services }), streamHub),
 );
-app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub));
+app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub, config));
 
 // QQ 官方 Bot 入站 webhook（需公网 URL / pnpm remote）；验签 MVP 仅校验配置已启用
 app.post("/api/webhooks/qq", async (req, res) => {
@@ -433,6 +433,14 @@ app.use(
 await hydrateLlmBudget(config.projectRoot).catch((err) => {
   console.error("❌ [llmBudget] 启动 hydrate 失败（将以内存零消耗继续）:", err);
 });
+
+// P0-01：PUBLIC_URL + 无鉴权 → 拒绝启动（除非 KP_ALLOW_INSECURE_PUBLIC=1）
+try {
+  assertPublicUrlAuthSafe(config);
+} catch (err) {
+  console.error(`\n  ❌ [安全] ${err instanceof Error ? err.message : err}\n`);
+  process.exit(1);
+}
 
 // 启动
 const server = app.listen(PORT, () => {

@@ -23,6 +23,7 @@ const healthUrl = process.env.SERVER_INTERNAL_URL
 const named = process.argv.includes("--named");
 const quick = process.argv.includes("--quick");
 const noSync = process.argv.includes("--no-sync");
+const allowInsecureAuth = process.argv.includes("--allow-insecure-auth");
 
 /** @type {import('child_process').ChildProcess[]} */
 const children = [];
@@ -117,6 +118,25 @@ export function extractTunnelUrl(text) {
   return m ? m[0] : null;
 }
 
+/** 公网暴露必须 AUTH_MODE=password（可用 --allow-insecure-auth 逃生，不安全） */
+function assertRemoteAuthOrExit(env) {
+  const authMode = (env.AUTH_MODE || process.env.AUTH_MODE || "none").toLowerCase();
+  const password = (env.AUTH_PASSWORD || process.env.AUTH_PASSWORD || "").trim();
+  if (authMode === "password" && password) return;
+  if (allowInsecureAuth || process.env.KP_ALLOW_INSECURE_PUBLIC === "1") {
+    console.warn(
+      "\n  ⚠️ [安全] 未启用 AUTH_MODE=password，但已用 --allow-insecure-auth / KP_ALLOW_INSECURE_PUBLIC=1 强制继续（勿用于真实公网）。\n",
+    );
+    return;
+  }
+  console.error("\n  ❌ 拒绝启动远程隧道：公网暴露必须启用密码鉴权。");
+  console.error("     在 .env 设置:");
+  console.error("       AUTH_MODE=password");
+  console.error("       AUTH_PASSWORD=你的强密码");
+  console.error("     仅本地临时调试可加: pnpm remote --allow-insecure-auth\n");
+  process.exit(1);
+}
+
 function printRemoteBanner(url, env) {
   const authMode = (env.AUTH_MODE || process.env.AUTH_MODE || "none").toLowerCase();
   console.log("\n══════════════════════════════════════════════════");
@@ -128,12 +148,10 @@ function printRemoteBanner(url, env) {
   }
   console.log("  本机 Web:  http://localhost:3000");
   console.log("══════════════════════════════════════════════════");
-  if (authMode === "none" || authMode === "") {
-    console.log("  ⚠️  AUTH_MODE 未开启密码。公网暴露前请在 .env 设置:");
-    console.log("     AUTH_MODE=password");
-    console.log("     AUTH_PASSWORD=你的强密码");
-  } else {
+  if (authMode === "password") {
     console.log("  ✅ AUTH_MODE=password 已配置，手机打开后应先登录。");
+  } else {
+    console.log("  ⚠️  以不安全模式运行（未启用 AUTH_MODE=password）。");
   }
   if (url && !named) {
     console.log("  提示: 临时链接每次会变；同源 rewrite 一般无需改 PUBLIC_URL。");
@@ -167,6 +185,7 @@ async function main() {
   console.log("\n  🚀 KnowPilot Remote（dev + tunnel）\n");
 
   const env = loadDotEnv(path.join(root, ".env"));
+  assertRemoteAuthOrExit(env);
   const cf = findCloudflared();
   if (!cf) {
     throw new Error("未找到 cloudflared。请运行: winget install Cloudflare.cloudflared");

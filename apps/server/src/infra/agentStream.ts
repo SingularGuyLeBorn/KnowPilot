@@ -1424,9 +1424,16 @@ export function handleAgentChatStream(
   };
 }
 
-/** Express handler: POST /api/agent/chat/stop */
-export function handleAgentChatStop(hub: SessionStreamHub) {
+/** Express handler: POST /api/agent/chat/stop（鉴权与 stream 对齐） */
+export function handleAgentChatStop(hub: SessionStreamHub, config: AppConfig) {
   return (req: Request, res: Response) => {
+    if (isAuthEnabled(config) && !verifyAuthHeader(config, req.headers.authorization)) {
+      res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "未授权：请先登录后再停止 Chat 流。",
+      });
+      return;
+    }
     const sessionId = (req.body as { sessionId?: string }).sessionId;
     if (!sessionId) {
       res.status(400).json({ error: "缺少 sessionId" });
