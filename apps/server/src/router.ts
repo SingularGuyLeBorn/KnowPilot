@@ -886,7 +886,10 @@ const sessionRouter = router({
     .input(sessionGoalControlSchema)
     .query(async ({ input }) => {
       const { readGoalStateRaw } = await import("./infra/goalLoop.js");
-      return { goal: await readGoalStateRaw(input.sessionId) };
+      const { getSessionTokenAttribution } = await import("./infra/llmBudget.js");
+      const goal = await readGoalStateRaw(input.sessionId);
+      const tokens = getSessionTokenAttribution(input.sessionId);
+      return { goal, tokens };
     }),
   update: publicProcedure.meta({ description: "更新会话标题或系统提示。", aiReadable: true }).input(updateSessionSchema).mutation(({ ctx, input }) => ctx.services.session.update(input)),
   compact: publicProcedure

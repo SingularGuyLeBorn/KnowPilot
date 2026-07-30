@@ -18,7 +18,14 @@ import {
   TOOL_BUDGET_SKIP_RESULT,
   type ToolRegistryEntry,
 } from "../agentTools.js";
-import { assertLlmBudget, markTokensWasted, recordTokenUsage } from "../llmBudget.js";
+import {
+  assertLlmBudget,
+  defaultLlmBudgetReserveEstimate,
+  markTokensWasted,
+  recordTokenUsage,
+  releaseLlmBudgetReservation,
+  tryReserveLlmBudget,
+} from "../llmBudget.js";
 import { maybeCompactMessages, persistCompactResult } from "../autoCompact.js";
 import { completeWithOverflowCompact } from "../overflowCompactRetry.js";
 import { sanitizePostCompactAssistantContent, type StoredToolCall } from "../chatHistory.js";
@@ -390,7 +397,20 @@ async function injectUserMessages(
 
 export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResult> {
   assertLlmBudget(input.config);
+  const reserveEst = defaultLlmBudgetReserveEstimate(input.config);
+  if (!tryReserveLlmBudget(input.config, reserveEst)) {
+    throw new Error(
+      "今日 LLM 预算预留失败（并发在途占用已达上限）。请稍候再试，或提高 LLM_DAILY_BUDGET。",
+    );
+  }
+  try {
+    return await runReactLoopInner(input);
+  } finally {
+    releaseLlmBudgetReservation(reserveEst);
+  }
+}
 
+async function runReactLoopInner(input: ReactLoopInput): Promise<ReactLoopResult> {
   const effectiveModel = resolveEffectiveAgentModel(input.config, input.agent.model);
   const tierTools = resolveToolsForAgentTier(input.agentMeta?.tier, input.agent.tools);
   const parsed = parseAgentTools(tierTools);

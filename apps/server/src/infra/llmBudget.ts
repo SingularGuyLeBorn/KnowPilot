@@ -1,9 +1,9 @@
 /**
  * LLM 每日预算追踪（美元估算，OpenClaw 式网关预算）
  *
- * 软语义（明示）：日预算是「估算下界、并发可超」。
- * assertLlmBudget 与 recordTokenUsage 分离——N 个并发入口可同时看到未超限并全放行，
- * 实际花费可能短暂超过 dailyBudget。不做预留制（预留制见 design-decisions 待办）。
+ * 日预算语义：spentUsd + reservedUsd 合计不得超过 limit（最小硬预留）。
+ * tryReserveLlmBudget / releaseLlmBudgetReservation / commitLlmBudgetReservation
+ * 挡住「尚未 record 的在途占用」；recordTokenUsage 仍记真实花费。
  *
  * 重要：spentUsd 是本地粗算（token × blendedUsdPer1k），不是厂商/OpenRouter 真实账单。
  * 免费模型（:free / freellm / mock / 本地）只记 totalTokens，不累加美元。
@@ -31,6 +31,8 @@ interface BudgetState {
 
 /** 模块级内存状态（替代原 globalThis 隐式全局） */
 let state: BudgetState = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
+/** 在途预留（USD）：已 tryReserve 尚未 commit/release */
+let reservedUsd = 0;
 /** 内存状态是否已领先于磁盘（领先时落盘需跟上） */
 let dirty = false;
 /** 单调递增版本号：用于识别异步落盘期间是否发生新消耗 */
@@ -143,8 +145,9 @@ function getState(config: AppConfig): BudgetState {
     hydrateLlmBudget(config.projectRoot).catch(() => {});
   }
   if (state.date !== todayKey()) {
-    // 跨天 rollover：内存内重置并标记落盘
+    // 跨天 rollover：内存内重置并标记落盘；在途预留随日切作废
     state = { date: todayKey(), spentUsd: 0, wastedTokens: 0, totalTokens: 0 };
+    reservedUsd = 0;
     dirty = true;
     version += 1;
     scheduleFlush(config.projectRoot);
@@ -155,6 +158,8 @@ function getState(config: AppConfig): BudgetState {
 export interface LlmBudgetStatus {
   limitUsd: number;
   spentUsd: number;
+  /** 在途预留合计 */
+  reservedUsd: number;
   ratio: number;
   warn: boolean;
   exceeded: boolean;
@@ -171,14 +176,16 @@ export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
   const s = getState(config);
   const limitUsd = config.llm.dailyBudget;
   const blendedUsdPer1k = config.llm.blendedUsdPer1k;
-  const ratio = limitUsd > 0 ? s.spentUsd / limitUsd : 0;
+  const effectiveSpent = s.spentUsd + reservedUsd;
+  const ratio = limitUsd > 0 ? effectiveSpent / limitUsd : 0;
   const wasteRatio = s.totalTokens > 0 ? s.wastedTokens / s.totalTokens : 0;
   return {
     limitUsd,
     spentUsd: s.spentUsd,
+    reservedUsd,
     ratio: Math.min(1, ratio),
     warn: limitUsd > 0 && ratio >= 0.85 && ratio < 1,
-    exceeded: limitUsd > 0 && s.spentUsd >= limitUsd,
+    exceeded: limitUsd > 0 && effectiveSpent >= limitUsd,
     date: s.date,
     wastedTokens: s.wastedTokens,
     totalTokens: s.totalTokens,
@@ -188,17 +195,51 @@ export function getLlmBudgetStatus(config: AppConfig): LlmBudgetStatus {
 }
 
 /**
- * 软闸：已超限则抛错。与 record 分离 → 并发下可短暂超限（估算下界，非硬预留）。
+ * 预算闸：spent+reserved 已超限则抛错。
  */
 export function assertLlmBudget(config: AppConfig) {
   const status = getLlmBudgetStatus(config);
   if (status.exceeded) {
     throw new Error(
-      `今日 LLM 预算（本地估算，非真实账单）已用尽（约 $${status.spentUsd.toFixed(2)} / $${status.limitUsd}）。` +
+      `今日 LLM 预算（本地估算，非真实账单）已用尽（约 $${status.spentUsd.toFixed(2)}` +
+        (status.reservedUsd > 0 ? `+预留$${status.reservedUsd.toFixed(2)}` : "") +
+        ` / $${status.limitUsd}）。` +
         "请明日再试，或在 .env 提高 LLM_DAILY_BUDGET / 调低 LLM_BLENDED_USD_PER_1K，" +
         "或删除 .dev-log/llm-budget.json 后重启服务重置当日计数。",
     );
   }
+}
+
+/**
+ * 并发硬预留：估算本次 run 将花费的美元；失败返回 false（不抛）。
+ * 默认估算：blendedUsdPer1k * 4（约 4k tokens）。
+ */
+export function tryReserveLlmBudget(config: AppConfig, estimateUsd?: number): boolean {
+  const s = getState(config);
+  const limitUsd = config.llm.dailyBudget;
+  if (limitUsd <= 0) return true;
+  const est =
+    typeof estimateUsd === "number" && Number.isFinite(estimateUsd) && estimateUsd >= 0
+      ? estimateUsd
+      : config.llm.blendedUsdPer1k * 4;
+  if (s.spentUsd + reservedUsd + est > limitUsd) return false;
+  reservedUsd += est;
+  return true;
+}
+
+export function releaseLlmBudgetReservation(estimateUsd: number): void {
+  const n = Math.max(0, Number(estimateUsd) || 0);
+  reservedUsd = Math.max(0, reservedUsd - n);
+}
+
+/** 花费已由 recordTokenUsage 入账后调用，只释放预留槽 */
+export function commitLlmBudgetReservation(estimateUsd: number): void {
+  releaseLlmBudgetReservation(estimateUsd);
+}
+
+/** 默认预留估算（与 tryReserve 缺省一致） */
+export function defaultLlmBudgetReserveEstimate(config: AppConfig): number {
+  return config.llm.blendedUsdPer1k * 4;
 }
 
 export type TokenUsageAttribution = {
@@ -319,6 +360,7 @@ export const WASTED_TOKEN_ALERT_RATIO = 0.5;
 
 /** 测试隔离：重置预算内存状态与待落盘任务 */
 export function resetLlmBudgetForTests(): void {
+  reservedUsd = 0;
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;

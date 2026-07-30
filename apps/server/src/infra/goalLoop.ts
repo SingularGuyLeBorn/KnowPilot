@@ -299,6 +299,24 @@ export async function evaluateGoalAfterTurn(args: {
     return { goal, action: "skip" };
   }
 
+  // P2-02：外环与内环共享全局日预算——已超限则 exhausted，禁止再烧外环轮次
+  try {
+    const { assertLlmBudget } = await import("./llmBudget.js");
+    assertLlmBudget(args.config);
+  } catch (err) {
+    const exhausted: SessionGoalState = {
+      ...goal,
+      status: "exhausted",
+      pendingContinue: null,
+      lastVerdict: {
+        done: false,
+        reason: err instanceof Error ? err.message : "LLM daily budget exceeded",
+      },
+    };
+    await goalStateStore.write(args.sessionId, exhausted);
+    return { goal: exhausted, action: "exhausted" };
+  }
+
   const turnsUsed = goal.turnsUsed + 1;
   if (turnsUsed >= goal.maxTurns) {
     const exhausted: SessionGoalState = {
@@ -370,6 +388,23 @@ export async function drainGoalContinueAfterSettle(args: {
 }): Promise<boolean> {
   const goal = await goalStateStore.read(args.sessionId);
   if (!goal || goal.status !== "active" || !goal.pendingContinue) return false;
+
+  // P2-02：续跑起流前再闸一次日预算（防止裁判后、settle 前预算被其他会话耗尽）
+  try {
+    const { assertLlmBudget } = await import("./llmBudget.js");
+    assertLlmBudget(args.config);
+  } catch (err) {
+    await goalStateStore.write(args.sessionId, {
+      ...goal,
+      status: "exhausted",
+      pendingContinue: null,
+      lastVerdict: {
+        done: false,
+        reason: err instanceof Error ? err.message : "LLM daily budget exceeded before continue",
+      },
+    });
+    return false;
+  }
 
   const reason = goal.pendingContinue.reason;
   // 禁止先清 pending 再起流：busy 时续跑会永久丢失（与 user-queue drain 抢 hub 竞态）

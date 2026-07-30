@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import { ChevronDown, Flag, Pause, Play, Search, X } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import type { SessionGoalState } from "@knowpilot/shared";
 
@@ -19,6 +19,13 @@ function goalSummary(text: string): { short: string; expandable: boolean } {
   const oneLine = text.replace(/\s+/g, " ").trim();
   if (oneLine.length <= SUMMARY_MAX) return { short: oneLine, expandable: false };
   return { short: `${oneLine.slice(0, SUMMARY_MAX)}…`, expandable: true };
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
 }
 
 export function ChatGoalBar({ sessionId }: { sessionId: string | null }) {
@@ -32,26 +39,37 @@ export function ChatGoalBar({ sessionId }: { sessionId: string | null }) {
 
   const pauseMut = trpc.session.pauseGoal.useMutation({
     onSuccess: () => {
-      if (sessionId) utils.session.getGoal.invalidate({ sessionId }).catch(() => {});
+      if (sessionId) {
+        utils.session.getGoal.invalidate({ sessionId }).catch(catchUnlessCancelled("getGoal.invalidate"));
+      }
     },
   });
   const resumeMut = trpc.session.resumeGoal.useMutation({
     onSuccess: () => {
-      if (sessionId) utils.session.getGoal.invalidate({ sessionId }).catch(() => {});
+      if (sessionId) {
+        utils.session.getGoal.invalidate({ sessionId }).catch(catchUnlessCancelled("getGoal.invalidate"));
+      }
     },
   });
   const clearMut = trpc.session.clearGoal.useMutation({
     onSuccess: () => {
-      if (sessionId) utils.session.getGoal.invalidate({ sessionId }).catch(() => {});
+      if (sessionId) {
+        utils.session.getGoal.invalidate({ sessionId }).catch(catchUnlessCancelled("getGoal.invalidate"));
+      }
     },
   });
 
   const goal = (sessionId ? goalQuery.data?.goal : null) as SessionGoalState | null | undefined;
+  const tokens = sessionId ? goalQuery.data?.tokens : undefined;
   const goalActive = !!goal && goal.status !== "done" && goal.status !== "exhausted";
 
   if (!goalActive || !sessionId || !goal) return null;
 
   const { short, expandable } = goalSummary(goal.text);
+  const tokenLabel =
+    tokens && (tokens.sessionTokens > 0 || tokens.childTokens > 0)
+      ? ` · ${formatTokenCount(tokens.totalAttributed)} tok`
+      : "";
 
   return (
     <div
@@ -66,6 +84,7 @@ export function ChatGoalBar({ sessionId }: { sessionId: string | null }) {
             <Flag className="h-3.5 w-3.5" />
           )}
           {goal.mode === "deep_research" ? "调研" : "Goal"} {goal.turnsUsed}/{goal.maxTurns}
+          {tokenLabel}
           <span
             className={cn(
               "rounded px-1.5 py-0.5 text-[10px]",
