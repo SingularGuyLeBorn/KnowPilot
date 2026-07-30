@@ -1,0 +1,9 @@
+{
+  "id": "G05",
+  "title": "派子 Agent 调研",
+  "userMessage": "派一个子 Agent 去调研一下本周 AI 开源热点，异步即可",
+  "expectToolsAnyOf": ["spawn_subagent"],
+  "forbidTools": ["agent_inspect", "run_shell"],
+  "scenario": "eval_G05_spawn_subagent",
+  "notes": "异步派生子 Agent；父不得 inspect 窥消息"
+}

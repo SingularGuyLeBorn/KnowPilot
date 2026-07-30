@@ -1,0 +1,9 @@
+{
+  "id": "G03",
+  "title": "读知乎链接",
+  "userMessage": "读一下这个知乎专栏文章 https://zhuanlan.zhihu.com/p/12345678 并摘要要点",
+  "expectToolsAnyOf": ["read_article", "platform_login"],
+  "forbidTools": ["browser_screenshot", "run_shell", "write_file"],
+  "scenario": "eval_G03_read_article",
+  "notes": "正文抓取优先 read_article；禁止只靠截图硬扛"
+}

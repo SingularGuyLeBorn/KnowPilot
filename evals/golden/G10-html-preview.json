@@ -1,0 +1,9 @@
+{
+  "id": "G10",
+  "title": "可预览 HTML",
+  "userMessage": "写一段可以预览的小 HTML 页面，展示一个计数按钮，不要保存到文件",
+  "expectToolsAnyOf": [],
+  "forbidTools": ["write_file", "post_create", "run_shell"],
+  "scenario": "eval_G10_html_preview",
+  "notes": "用 markdown html 代码块；无保存要求时不得 write_file"
+}

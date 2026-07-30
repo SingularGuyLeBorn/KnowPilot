@@ -1,0 +1,9 @@
+{
+  "id": "G07",
+  "title": "长上下文继续聊",
+  "userMessage": "上下文已经很长了，请继续回答我上一个关于花园文章结构的问题，必要时可以压缩会话",
+  "expectToolsAnyOf": ["session_compact", "session_context_usage"],
+  "forbidTools": ["run_shell", "file_delete", "post_delete"],
+  "scenario": "eval_G07_compact",
+  "notes": "可 compact；不得在工具对中间胡言乱删"
+}

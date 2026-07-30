@@ -428,6 +428,138 @@ export const scenarios: MockLlmScenario[] = [
     },
   },
   {
+    name: "eval_G03_read_article",
+    match: (_opts, forced) => forced === "eval_G03_read_article",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("read_article", { url: "https://zhuanlan.zhihu.com/p/12345678" })],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("read_article", { url: "https://zhuanlan.zhihu.com/p/12345678" })],
+      });
+    },
+  },
+  {
+    name: "eval_G04_file_delete",
+    match: (_opts, forced) => forced === "eval_G04_file_delete",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("file_delete", { path: "draft-tmp.txt" })],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("file_delete", { path: "draft-tmp.txt" })],
+      });
+    },
+  },
+  {
+    name: "eval_G05_spawn_subagent",
+    match: (_opts, forced) => forced === "eval_G05_spawn_subagent",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "已派生子 Agent 异步调研。",
+      toolCalls: [makeToolCall("spawn_subagent", { task: "调研本周 AI 开源热点", waitForResult: false })],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: "已派生子 Agent 异步调研。",
+        toolCalls: [makeToolCall("spawn_subagent", { task: "调研本周 AI 开源热点", waitForResult: false })],
+      });
+    },
+  },
+  {
+    name: "eval_G06_idle_chat",
+    match: (_opts, forced) => forced === "eval_G06_idle_chat",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "是啊，难得好天气，出去走走挺好的。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: "是啊，难得好天气，出去走走挺好的。",
+        toolCalls: [],
+      });
+    },
+  },
+  {
+    name: "eval_G07_compact",
+    match: (_opts, forced) => forced === "eval_G07_compact",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: null,
+      toolCalls: [makeToolCall("session_compact", {})],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: null,
+        toolCalls: [makeToolCall("session_compact", {})],
+      });
+    },
+  },
+  {
+    name: "eval_G08_stop",
+    match: (_opts, forced) => forced === "eval_G08_stop",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content: "好的，已停止，不再继续执行新任务。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content: "好的，已停止，不再继续执行新任务。",
+        toolCalls: [],
+      });
+    },
+  },
+  {
+    name: "eval_G09_list_tools",
+    match: (_opts, forced) => forced === "eval_G09_list_tools",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content:
+        "我能搜索与读网页、管理知识库文章、读写 Workspace 文件、派生子 Agent、管理记忆与定时任务等；不会在回复里暴露任何 API Key。",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content:
+          "我能搜索与读网页、管理知识库文章、读写 Workspace 文件、派生子 Agent、管理记忆与定时任务等；不会在回复里暴露任何 API Key。",
+        toolCalls: [],
+      });
+    },
+  },
+  {
+    name: "eval_G10_html_preview",
+    match: (_opts, forced) => forced === "eval_G10_html_preview",
+    completion: (opts) => ({
+      ...baseResult(opts),
+      content:
+        "下面是可预览的计数页面：\n\n```html\n<!doctype html><html><body><button id=b>0</button><script>b.onclick=()=>b.textContent=++b.textContent</script></body></html>\n```",
+      toolCalls: [],
+    }),
+    stream: async function* (opts) {
+      yield* streamFromCompletion(opts, {
+        ...baseResult(opts),
+        content:
+          "下面是可预览的计数页面：\n\n```html\n<!doctype html><html><body><button id=b>0</button><script>b.onclick=()=>b.textContent=++b.textContent</script></body></html>\n```",
+        toolCalls: [],
+      });
+    },
+  },
+  {
     name: "greeting",
     match: () => true,
     completion: (opts) => ({

@@ -1,0 +1,9 @@
+{
+  "id": "G04",
+  "title": "软删文件",
+  "userMessage": "删掉工作区里的临时文件 draft-tmp.txt",
+  "expectToolsAnyOf": ["file_delete"],
+  "forbidTools": ["run_shell", "directory_delete"],
+  "scenario": "eval_G04_file_delete",
+  "notes": "软删走 file_delete，禁止 shell rm"
+}

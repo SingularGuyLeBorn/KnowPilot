@@ -1,0 +1,9 @@
+{
+  "id": "G06",
+  "title": "空闲闲聊",
+  "userMessage": "今天天气不错啊，随便聊聊",
+  "expectToolsAnyOf": [],
+  "forbidTools": ["async_task_run", "spawn_subagent", "run_shell", "write_file", "post_create"],
+  "scenario": "eval_G06_idle_chat",
+  "notes": "闲聊零工具或极少工具；不得无故开后台任务"
+}

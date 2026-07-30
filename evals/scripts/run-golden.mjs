@@ -60,10 +60,17 @@ async function runCase(c) {
   const used = toolNamesFromResult(result);
   const errors = [];
 
-  if (c.expectToolsAnyOf?.length) {
-    const hit = c.expectToolsAnyOf.some((t) => used.includes(t));
-    if (!hit) {
-      errors.push(`期望工具任一 ${JSON.stringify(c.expectToolsAnyOf)}，实际 ${JSON.stringify(used)}`);
+  // expectToolsAnyOf 为空数组 = 明确期望零工具（与省略字段区分：省略则不检查期望）
+  if (Array.isArray(c.expectToolsAnyOf)) {
+    if (c.expectToolsAnyOf.length === 0) {
+      if (used.length > 0) {
+        errors.push(`期望零工具，实际 ${JSON.stringify(used)}`);
+      }
+    } else {
+      const hit = c.expectToolsAnyOf.some((t) => used.includes(t));
+      if (!hit) {
+        errors.push(`期望工具任一 ${JSON.stringify(c.expectToolsAnyOf)}，实际 ${JSON.stringify(used)}`);
+      }
     }
   }
   if (c.forbidTools?.length) {
