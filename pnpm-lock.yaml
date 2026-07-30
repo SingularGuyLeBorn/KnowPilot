@@ -177,19 +177,19 @@ importers:
         specifier: 5.0.2
         version: 5.0.2
       '@types/js-yaml':
-        specifier: ^4.0.9
+        specifier: 4.0.9
         version: 4.0.9
       '@types/jsdom':
-        specifier: ^21.1.7
+        specifier: 21.1.7
         version: 21.1.7
       '@types/node-cron':
-        specifier: ^3.0.11
+        specifier: 3.0.11
         version: 3.0.11
       '@types/nodemailer':
-        specifier: ^8.0.1
+        specifier: 8.0.1
         version: 8.0.1
       '@types/ws':
-        specifier: ^8.18.1
+        specifier: 8.18.1
         version: 8.18.1
       prisma:
         specifier: 6.9.0
@@ -207,7 +207,7 @@ importers:
   apps/web:
     dependencies:
       '@base-ui/react':
-        specifier: ^1.6.0
+        specifier: 1.6.0
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@knowpilot/algo-viz':
         specifier: workspace:*
@@ -258,7 +258,7 @@ importers:
         specifier: 7.5.9
         version: 7.5.9(@milkdown/core@7.5.9(@milkdown/ctx@7.5.9)(@milkdown/prose@7.5.9)(@milkdown/transformer@7.5.9(@milkdown/prose@7.5.9)))(@milkdown/ctx@7.5.9)(@milkdown/prose@7.5.9)(@milkdown/transformer@7.5.9(@milkdown/prose@7.5.9))
       '@react-three/fiber':
-        specifier: ^9.6.1
+        specifier: 9.6.1
         version: 9.6.1(@types/react@19.2.17)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.185.0)
       '@remotion/player':
         specifier: 4.0.489
@@ -364,16 +364,16 @@ importers:
         version: 1.4.0
     devDependencies:
       '@next/bundle-analyzer':
-        specifier: ^16.2.10
+        specifier: 16.2.10
         version: 16.2.10
       '@playwright/test':
-        specifier: ^1.52.0
+        specifier: 1.61.1
         version: 1.61.1
       '@tailwindcss/postcss':
         specifier: 4.3.1
         version: 4.3.1
       '@tailwindcss/typography':
-        specifier: ^0.5.20
+        specifier: 0.5.20
         version: 0.5.20(tailwindcss@4.3.1)
       '@types/lodash-es':
         specifier: 4.17.12

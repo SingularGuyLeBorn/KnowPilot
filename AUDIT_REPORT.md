@@ -660,4 +660,15 @@ flowchart TB
 
 刻意未动：完整元工具化、router 全量域拆、Garden/Post/Agent/Session/Message/Approval/Inbox/SessionQueueItem 重耦合拆分、真实 LLM 周跑 evals、metablog Playwright 时序 catch 全改、Goal×内环精细 token、chat.tsx 物理再拆。
 
-*报告结束。生成：2026-07-30 · P8 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p9`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| services 第七刀 | ✅ | Garden / Approval / Inbox → entityServices；container 直连叶子；`services.ts` ≈2791 行（仅剩 Post/Agent/Session/Message/SessionQueueItem） |
+| importOrder | ✅ | + gardenService / approvalService / inboxService |
+| P3-03 余 | ✅ | server `@types/*` 与 web `@base-ui/react` / fiber / playwright / typography / bundle-analyzer 精确 pin |
+| P1-04 余 | 🟡 | metablog Playwright 时序 / `json().catch(()=>null)` 软失败、测试清理 `.catch`、可选 nodemailer 动态 import 保留 |
+
+刻意未动（更大手术边界）：完整元工具化、router 全量域拆、Post/Agent/Session/Message/SessionQueueItem（与流式 hub / tree / swarm 重耦合）、真实 LLM 周跑 evals、metablog catch 全改、Goal×内环精细 token、chat.tsx 物理再拆。
+
+*报告结束。生成：2026-07-30 · P9 续修：2026-07-31。*

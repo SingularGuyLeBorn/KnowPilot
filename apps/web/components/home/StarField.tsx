@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable react-hooks/immutability, react-hooks/purity -- r3f useFrame 故意突变相机/粒子 buffer；Math.random 仅粒子场初始化 */
 /**
  * 首页 / About 共用 WebGL 背景：星尘 + 绿洲环 + 线框体 + 流星 + 指针视差。
  * 仅依赖 three + @react-three/fiber（无 drei）。尊重 prefers-reduced-motion。
