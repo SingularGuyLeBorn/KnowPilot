@@ -1,0 +1,101 @@
+import { describe, expect, it } from "vitest";
+import { sign } from "node:crypto";
+import {
+  gateFeishuVerificationToken,
+  gateQqWebhook,
+  qqEd25519PrivateKeyFromSecret,
+  qqEd25519SeedFromSecret,
+  signQqUrlValidation,
+  verifyQqEventSignature,
+} from "../infra/channels/webhookVerify.js";
+
+describe("webhookVerify QQ Ed25519", () => {
+  const secret = "test-bot-secret-abc";
+
+  it("seed 重复截断为 32 字节", () => {
+    const seed = qqEd25519SeedFromSecret("short");
+    expect(seed.length).toBe(32);
+  });
+
+  it("op=13 challenge 返回可验的 signature", () => {
+    const raw = JSON.stringify({
+      op: 13,
+      d: { plain_token: "Arq0D5A61EgUu4OxUvOp", event_ts: "1725442341" },
+    });
+    const gate = gateQqWebhook({
+      botSecret: secret,
+      body: JSON.parse(raw),
+      rawBody: raw,
+      signatureHex: undefined,
+      timestamp: undefined,
+    });
+    expect(gate.kind).toBe("challenge");
+    if (gate.kind !== "challenge") return;
+    expect(gate.plain_token).toBe("Arq0D5A61EgUu4OxUvOp");
+    expect(gate.signature).toMatch(/^[0-9a-f]{128}$/);
+    const expected = signQqUrlValidation({
+      botSecret: secret,
+      eventTs: "1725442341",
+      plainToken: "Arq0D5A61EgUu4OxUvOp",
+    });
+    expect(gate.signature).toBe(expected);
+  });
+
+  it("事件验签：自签自验通过，篡改失败", () => {
+    const body = '{"op":0,"t":"C2C_MESSAGE_CREATE","d":{"content":"hi"}}';
+    const ts = "1725442341";
+    const msg = Buffer.concat([Buffer.from(ts, "utf8"), Buffer.from(body, "utf8")]);
+    const sig = sign(null, msg, qqEd25519PrivateKeyFromSecret(secret)).toString("hex");
+    expect(
+      verifyQqEventSignature({
+        botSecret: secret,
+        signatureHex: sig,
+        timestamp: ts,
+        rawBody: body,
+      }),
+    ).toBe(true);
+    expect(
+      verifyQqEventSignature({
+        botSecret: secret,
+        signatureHex: sig,
+        timestamp: ts,
+        rawBody: body + "x",
+      }),
+    ).toBe(false);
+    const gate = gateQqWebhook({
+      botSecret: secret,
+      body: JSON.parse(body),
+      rawBody: body,
+      signatureHex: sig,
+      timestamp: ts,
+    });
+    expect(gate.kind).toBe("ok");
+  });
+
+  it("缺签名拒绝对事件", () => {
+    const gate = gateQqWebhook({
+      botSecret: secret,
+      body: { op: 0 },
+      rawBody: "{}",
+      signatureHex: "",
+      timestamp: "1",
+    });
+    expect(gate.kind).toBe("reject");
+  });
+});
+
+describe("webhookVerify 飞书 token", () => {
+  it("未配置硬拒", () => {
+    const r = gateFeishuVerificationToken({ configuredToken: "", incomingToken: "x" });
+    expect(r.ok).toBe(false);
+  });
+
+  it("匹配通过 / 不匹配拒", () => {
+    expect(
+      gateFeishuVerificationToken({ configuredToken: "tok", incomingToken: "tok" }).ok,
+    ).toBe(true);
+    expect(
+      gateFeishuVerificationToken({ configuredToken: "tok", incomingToken: "bad" }).ok,
+    ).toBe(false);
+  });
+});

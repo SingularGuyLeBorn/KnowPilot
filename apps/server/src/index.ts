@@ -57,7 +57,7 @@ initGlobalProxy();
 const config = getAppConfig();
 syncSearchEnvFromConfig(config);
 // 知识 Inbox 目录（截图 drop / 微信 links.txt）
-import("./infra/inboxPipeline.js")
+import("./infra/inbox/index.js")
   .then(({ ensureInboxDirs }) => ensureInboxDirs(config))
   .catch((err) => {
     console.warn("  ⚠️ [Inbox] 目录初始化失败:", err instanceof Error ? err.message : err);
@@ -102,7 +102,15 @@ app.use(
 );
 
 // JSON body 解析
-app.use(express.json({ limit: "10mb" }));
+// rawBody：QQ/部分 webhook Ed25519 验签需要原始字节（json 解析后不可还原空白差异）
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, _res, buf) => {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+    },
+  }),
+);
 
 // P9：gzip/deflate 压缩大响应（session 详情、post 内容等）。排除 SSE（text/event-stream），
 // 避免压缩缓冲破坏流式实时性。
@@ -183,14 +191,33 @@ app.get(
 );
 app.post("/api/agent/chat/stop", handleAgentChatStop(streamHub, config));
 
-// QQ 官方 Bot 入站 webhook（需公网 URL / pnpm remote）；验签 MVP 仅校验配置已启用
+// QQ 官方 Bot 入站 webhook（需公网 URL / pnpm remote）；Ed25519 验签 + op=13 challenge
 app.post("/api/webhooks/qq", async (req, res) => {
   try {
     const { getChannelAdapter } = await import("./infra/messageGateway.js");
-    const { getQqAdapterIngest } = await import("./infra/channels/qqOfficialBot.js");
+    const { getQqAdapterIngest, loadQqBotConfigFromEnv } = await import(
+      "./infra/channels/qqOfficialBot.js"
+    );
+    const { gateQqWebhook } = await import("./infra/channels/webhookVerify.js");
     const adapter = getChannelAdapter("qq");
     if (!adapter?.enabled) {
       res.status(503).json({ error: "QQ Bot 未启用（需 QQ_BOT_APP_ID / QQ_BOT_SECRET）" });
+      return;
+    }
+    const qqCfg = loadQqBotConfigFromEnv();
+    const gate = gateQqWebhook({
+      botSecret: qqCfg.secret,
+      body: req.body,
+      rawBody: (req as express.Request & { rawBody?: Buffer }).rawBody,
+      signatureHex: String(req.headers["x-signature-ed25519"] ?? ""),
+      timestamp: String(req.headers["x-signature-timestamp"] ?? ""),
+    });
+    if (gate.kind === "challenge") {
+      res.status(200).json({ plain_token: gate.plain_token, signature: gate.signature });
+      return;
+    }
+    if (gate.kind === "reject") {
+      res.status(gate.status).json({ error: gate.error });
       return;
     }
     const ingest = getQqAdapterIngest(adapter);
@@ -198,10 +225,8 @@ app.post("/api/webhooks/qq", async (req, res) => {
       res.status(500).json({ error: "QQ adapter 无 ingest" });
       return;
     }
-    // QQ 开放平台 URL 验证可能带 plain token challenge
-    const body = req.body as { d?: unknown; op?: number; t?: string };
     res.status(202).json({ ok: true });
-    const result = ingest(body);
+    const result = ingest(req.body);
     if (!result.ok) {
       console.warn(`[qq webhook] 忽略: ${result.error}`);
     }

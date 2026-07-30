@@ -36,8 +36,7 @@ describe("feishuBot ingest", () => {
     expect(r.challenge).toBe("c-123");
   });
 
-  it("im.message.receive_v1 剥 @ 后入站", async () => {
-    const { handleIncomingMessage } = await import("../infra/messageGateway.js");
+  it("未配置 verification token 时拒绝 url_verification", () => {
     const adapter = createFeishuBotAdapter({
       appId: "a",
       appSecret: "s",
@@ -46,7 +45,29 @@ describe("feishuBot ingest", () => {
       allowedOpenIds: [],
     });
     const r = adapter.ingestWebhookPayload({
-      header: { event_type: "im.message.receive_v1", event_id: "ev1" },
+      type: "url_verification",
+      challenge: "c-123",
+      token: "anything",
+    });
+    expect(r).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.stringMatching(/VERIFICATION_TOKEN|未配置/),
+      }),
+    );
+  });
+
+  it("im.message.receive_v1 剥 @ 后入站", async () => {
+    const { handleIncomingMessage } = await import("../infra/messageGateway.js");
+    const adapter = createFeishuBotAdapter({
+      appId: "a",
+      appSecret: "s",
+      verificationToken: "tok",
+      enabled: true,
+      allowedOpenIds: [],
+    });
+    const r = adapter.ingestWebhookPayload({
+      header: { event_type: "im.message.receive_v1", event_id: "ev1", token: "tok" },
       event: {
         sender: { sender_id: { open_id: "ou_user1" } },
         message: {
@@ -74,12 +95,12 @@ describe("feishuBot ingest", () => {
     const adapter = createFeishuBotAdapter({
       appId: "a",
       appSecret: "s",
-      verificationToken: "",
+      verificationToken: "tok",
       enabled: true,
       allowedOpenIds: [],
     });
     const r = adapter.ingestWebhookPayload({
-      header: { event_type: "im.message.receive_v1" },
+      header: { event_type: "im.message.receive_v1", token: "tok" },
       event: {
         sender: { sender_id: { open_id: "ou_x" } },
         message: {

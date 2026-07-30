@@ -3,7 +3,7 @@
  *
  * 配置：
  * - FEISHU_APP_ID / FEISHU_APP_SECRET（tenant token，出站回帖）
- * - FEISHU_BOT_VERIFICATION_TOKEN（可选，校验 URL verification / 事件 token）
+ * - FEISHU_BOT_VERIFICATION_TOKEN（必填；缺省或 mismatch 硬拒 webhook）
  * - FEISHU_BOT_ALLOWED_OPENIDS（可选白名单，逗号分隔）
  * - FEISHU_BOT_ENABLED=false 可强制关闭
  *
@@ -21,6 +21,7 @@ import type {
   UnifiedMessage,
 } from "../messageGateway.js";
 import { handleIncomingMessage } from "../messageGateway.js";
+import { gateFeishuVerificationToken } from "./webhookVerify.js";
 
 export type FeishuBotConfig = {
   appId: string;
@@ -130,21 +131,25 @@ export function createFeishuBotAdapter(cfg: FeishuBotConfig): ChannelAdapter & {
   const ingestWebhookPayload = (body: unknown) => {
     const b = body as Record<string, unknown>;
 
-    // URL 验证（飞书配置事件订阅时）
+    // URL 验证（飞书配置事件订阅时）—— verification token 必填且必须匹配
     if (b.type === "url_verification" || (typeof b.challenge === "string" && !b.header)) {
       const token = String(b.token ?? "");
-      if (cfg.verificationToken && token && token !== cfg.verificationToken) {
-        return { ok: false as const, error: "verification token 不匹配" };
-      }
+      const gate = gateFeishuVerificationToken({
+        configuredToken: cfg.verificationToken,
+        incomingToken: token,
+      });
+      if (!gate.ok) return { ok: false as const, error: gate.error };
       return { ok: true as const, challenge: String(b.challenge ?? "") };
     }
 
-    // 事件 token 校验（header.token 或顶层 token）
+    // 事件 token 校验（header.token 或顶层 token）—— 未配置 / 不匹配一律拒
     const header = (b.header ?? {}) as Record<string, unknown>;
     const eventToken = String(header.token ?? b.token ?? "");
-    if (cfg.verificationToken && eventToken && eventToken !== cfg.verificationToken) {
-      return { ok: false as const, error: "event token 不匹配" };
-    }
+    const eventGate = gateFeishuVerificationToken({
+      configuredToken: cfg.verificationToken,
+      incomingToken: eventToken,
+    });
+    if (!eventGate.ok) return { ok: false as const, error: eventGate.error };
 
     const eventType = String(header.event_type ?? b.type ?? "");
     if (eventType && eventType !== "im.message.receive_v1") {
