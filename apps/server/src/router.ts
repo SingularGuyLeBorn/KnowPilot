@@ -19,7 +19,7 @@ import {
   createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
   createMemorySchema, updateMemorySchema, listMemoriesSchema,
   createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, ensureMainSessionSchema, openNewSessionSchema, compactSessionSchema,
-  setSessionGoalSchema, sessionGoalControlSchema, listSideRunsSchema,
+  setSessionGoalSchema, sessionGoalControlSchema, listSideRunsSchema, rotateLineageSchema, listRecentRotatesSchema, rotateGraphSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
   switchBranchSchema, sessionTreeSchema, setMessageLabelSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
@@ -740,6 +740,42 @@ const sessionRouter = router({
         kind: "subagent",
       }),
     ),
+  rotateLineage: publicProcedure
+    .meta({
+      description:
+        "session_rotate 血缘链派生视图：沿 rotatedFrom/rotatedTo 拉链（只读，非新协议）。",
+      aiReadable: true,
+    })
+    .input(rotateLineageSchema)
+    .query(async ({ ctx, input }) => {
+      const { getRotateLineage } = await import("./infra/sessionRotateLineage.js");
+      const result = await getRotateLineage(ctx.prisma, input.sessionId);
+      if (result.nodes.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `会话不存在: ${input.sessionId}` });
+      }
+      return result;
+    }),
+  listRecentRotates: publicProcedure
+    .meta({
+      description: "最近由 session_rotate 产生的会话（看板派生列表）。",
+      aiReadable: true,
+    })
+    .input(listRecentRotatesSchema)
+    .query(async ({ ctx, input }) => {
+      const { listRecentRotates } = await import("./infra/sessionRotateLineage.js");
+      return { items: await listRecentRotates(ctx.prisma, input.limit) };
+    }),
+  rotateGraph: publicProcedure
+    .meta({
+      description:
+        "session_rotate 全图派生：nodes/edges/chains 均只读 rotatedFrom/rotatedTo，供管理页血缘链与图。",
+      aiReadable: true,
+    })
+    .input(rotateGraphSchema)
+    .query(async ({ ctx, input }) => {
+      const { getRotateGraph } = await import("./infra/sessionRotateLineage.js");
+      return getRotateGraph(ctx.prisma, input.limit);
+    }),
   listSideRuns: publicProcedure
     .meta({
       description: "列出父会话下的旁路复盘会话（kind=skill_review），供 Chat 运行栏展示。",
@@ -1027,7 +1063,13 @@ const messageRouter = router({
     .meta({ description: "Chat 消息 cursor 无限查询：无 cursor 返最近 limit 条，有 cursor 返更早 limit 条。", aiReadable: false })
     .input(listMessagesForChatSchema)
     .query(({ ctx, input }) => ctx.services.message.listForChat(input)),
-  update: publicProcedure.meta({ description: "更新消息内容。", aiReadable: true }).input(updateMessageSchema).mutation(({ ctx, input }) => ctx.services.message.update(input)),
+  update: publicProcedure
+    .meta({
+      description: "更新消息内容（AI Studio 式手工编辑落库；assistant 会同步 versionMeta 激活版本）。",
+      aiReadable: true,
+    })
+    .input(updateMessageSchema)
+    .mutation(({ ctx, input }) => ctx.services.message.update(input)),
   delete: publicProcedure.meta({ description: "删除单条消息。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.message.delete(input.id)),
   switchVersion: publicProcedure
     .meta({ description: "切换 assistant 消息的多版本回答。", aiReadable: true })

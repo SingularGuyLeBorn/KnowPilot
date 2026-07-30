@@ -2669,6 +2669,7 @@ export interface SessionEntity {
   contextSummary?: string | null;
   contextCompactedAt?: Date | string | null;
   rotatedToSessionId?: string | null;
+  rotatedFromSessionId?: string | null;
   /** 会话级待办清单（todo_write / todo_read） */
   todoState?: unknown | null;
   /** 会话树当前叶消息 id */
@@ -3164,6 +3165,25 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
     } catch {
       /* StreamHub 未初始化或会话已清理，忽略 */
     }
+  }
+
+  /**
+   * 手工编辑 content 时同步 assistant versionMeta（激活版本），
+   * 调用方未显式传 toolResults 才介入（switchVersion 自带 toolResults）。
+   */
+  override async update(input: UpdateMessageInput): Promise<OperationResult<MessageEntity>> {
+    let next = input;
+    if (typeof input.content === "string" && input.toolResults === undefined) {
+      const existing = await this.delegate.findUnique({ where: { id: input.id } });
+      if (existing?.role === "assistant") {
+        const { syncAssistantActiveContent } = await import("./infra/messageVersions.js");
+        next = {
+          ...input,
+          toolResults: syncAssistantActiveContent(existing, input.content),
+        };
+      }
+    }
+    return super.update(next);
   }
 
   protected override async afterUpdate(entity: MessageEntity, _existing: any, _input: UpdateMessageInput): Promise<void> {

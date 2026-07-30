@@ -587,6 +587,8 @@ export const createSessionSchema = z.object({
   status: sessionStatusSchema.optional(),
   isMainSession: z.boolean().optional(), // 管理 Agent 的主 session
   goalState: sessionGoalStateSchema.nullable().optional(),
+  /** session_rotate：新会话指向来源旧会话 */
+  rotatedFromSessionId: z.string().cuid().optional(),
 });
 
 export const updateSessionSchema = z.object({
@@ -606,6 +608,7 @@ export const updateSessionSchema = z.object({
   contextSummary: z.string().max(20000).nullable().optional(),
   contextCompactedAt: z.coerce.date().nullable().optional(),
   rotatedToSessionId: z.string().cuid().nullable().optional(),
+  rotatedFromSessionId: z.string().cuid().nullable().optional(),
   goalState: sessionGoalStateSchema.nullable().optional(),
 });
 
@@ -627,6 +630,21 @@ export const sessionGoalControlSchema = z.object({
 export const listSideRunsSchema = z.object({
   parentSessionId: z.string().cuid(),
   pageSize: z.number().int().min(1).max(100).default(30),
+});
+
+/** session_rotate 血缘链（派生只读；seed = 链上任一会话） */
+export const rotateLineageSchema = z.object({
+  sessionId: z.string().cuid(),
+});
+
+/** 看板：最近由 rotate 产生的会话列表 */
+export const listRecentRotatesSchema = z.object({
+  limit: z.number().int().min(1).max(50).default(12),
+});
+
+/** 管理页：session_rotate 全图派生（只读边字段） */
+export const rotateGraphSchema = z.object({
+  limit: z.number().int().min(1).max(500).default(300),
 });
 
 export const compactSessionSchema = z.object({
@@ -1693,6 +1711,9 @@ export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 export type SetSessionGoalInput = z.infer<typeof setSessionGoalSchema>;
 export type SessionGoalControlInput = z.infer<typeof sessionGoalControlSchema>;
 export type ListSideRunsInput = z.infer<typeof listSideRunsSchema>;
+export type RotateLineageInput = z.infer<typeof rotateLineageSchema>;
+export type ListRecentRotatesInput = z.infer<typeof listRecentRotatesSchema>;
+export type RotateGraphInput = z.infer<typeof rotateGraphSchema>;
 
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;

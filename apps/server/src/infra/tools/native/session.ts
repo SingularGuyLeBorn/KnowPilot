@@ -927,7 +927,8 @@ async function sessionMessageGetTool(args: Record<string, unknown>, ctx: NativeT
 
 /**
  * 归档当前会话并开启同 Agent 新会话；总结写入 data/sessions/ 与新会话首条消息。
- * 不自动切换前端视图——通过 SSE session_rotated 提示用户手动跳转。
+ * 双向血缘：旧.rotatedToSessionId ↔ 新.rotatedFromSessionId。
+ * 聚焦仅为请求：SSE focusNewSession=true 时，前端仅当用户正看旧会话才自动跳转。
  */
 async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const summary = String(args.summary ?? "").trim();
@@ -979,34 +980,35 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     "---",
     "",
     summary,
-    ""
-].join("\n");
+    "",
+  ].join("\n");
   fs.writeFileSync(summaryPath, summaryDoc, "utf8");
   const relativeSummaryPath = path
     .relative(ctx.config.projectRoot, summaryPath)
     .split(path.sep)
     .join("/");
 
-  // 再创建新会话；失败时旧会话仍未 archived，保留人工重试/排查的闭环
+  const firstMessageOverride = args.firstMessage ? String(args.firstMessage).trim() : "";
+  const focusNewSession = args.focusNewSession === true;
+  const rotateMode = firstMessageOverride ? "firstMessage" : "summary";
+
+  // 创建新会话并写入反向血缘（rotatedFrom ↔ 随后旧会话的 rotatedTo）
   const created = await ctx.services.session.create({
     title: newTitle,
     model: oldSession.model || ctx.config.llm.defaultModel,
     systemPrompt: oldSession.systemPrompt ?? undefined,
     agentId,
-    kind: "chat",
-    status: "active",
+    kind: "chat" as const,
+    status: "active" as const,
+    rotatedFromSessionId: oldSession.id,
   } as any);
   if (!created.success || !created.data) {
     throw new Error(created.error?.message ?? "创建新会话失败");
   }
   const newSession = created.data as { id: string; title: string };
 
-  const firstMessageOverride = args.firstMessage ? String(args.firstMessage).trim() : "";
-  const focusNewSession = args.focusNewSession === true;
-
-  // 首条消息：firstMessage 优先（作为右侧 user 气泡，source=user）；否则用 summary 作为 system 注入消息。
+  // 首条消息：firstMessage 优先（右侧 user）；否则 summary 作 system 注入
   if (firstMessageOverride) {
-    // 干净重启：firstMessage 作为新会话首条用户气泡；summary 仅归档旧会话，不注入新会话上下文
     await ctx.services.message.create({
       sessionId: newSession.id,
       role: "user",
@@ -1014,7 +1016,6 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
       source: "user",
     } as any);
   } else {
-    // 默认：summary 作为新会话首条用户消息（继承决策/未完事项），source=system 标注非用户直接输入
     let firstMessage = `【上一会话摘要】\n\n${summary}`;
     if (carryMemoryIds.length > 0) {
       firstMessage += `\n\n【需继续参考的 Memory】\n${carryMemoryIds.map((id) => `- ${id}`).join("\n")}`;
@@ -1030,7 +1031,7 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     } as any);
   }
 
-  // 归档旧会话并记录 rotatedToSessionId：既防止重复轮换，也保留用户手动跳转的链路
+  // 归档旧会话并写 rotatedTo（正向血缘）
   await ctx.services.session.update({
     id: oldSession.id,
     status: "archived",
@@ -1039,7 +1040,6 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     rotatedToSessionId: newSession.id,
   } as any);
 
-  // 通过 SSE 提示旧会话页面可跳转；focusNewSession=true 时前端自动聚焦新会话
   try {
     const hub = getStreamHub();
     hub?.pushExternalEvent(oldSession.id, {
@@ -1049,6 +1049,8 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
       newTitle: newSession.title || newTitle,
       reason,
       focusNewSession,
+      agentId,
+      mode: rotateMode,
     });
   } catch (err) {
     console.warn("[session_rotate] SSE 推送失败:", err);
@@ -1065,6 +1067,8 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
       reason,
       summaryPath: relativeSummaryPath,
       agentId,
+      mode: rotateMode,
+      focusNewSession,
     },
   }).catch(() => {});
 
@@ -1075,9 +1079,11 @@ async function sessionRotateTool(args: Record<string, unknown>, ctx: NativeToolC
     newTitle: newSession.title || newTitle,
     summaryPath: relativeSummaryPath,
     focusNewSession,
+    focusRequested: focusNewSession,
+    mode: rotateMode,
     firstMessageUsed: !!firstMessageOverride,
     message: focusNewSession
-      ? "已归档当前会话并创建新会话，前端已自动聚焦新会话。"
+      ? "已归档并创建新会话，已请求前端聚焦（仅当用户正查看本会话时才会自动跳转；否则仅提示手动跳转）。"
       : "已归档当前会话并创建新会话。请告知用户可点击提示跳转；不要假设页面已自动切换。",
   };
 }
@@ -1513,7 +1519,7 @@ const SESSION_DEFS: NativeToolDefinition[] = [
   {
     name: "session_rotate",
     description:
-      "当当前会话轮数过多、话题切换或用户要求换干净上下文时调用：归档当前会话，创建同一 Agent 的新会话。默认把你写的总结作为新会话首条用户消息（继承决策/未完事项）。若提供 firstMessage，则用 firstMessage 作为新会话首条用户气泡（右侧，source=user），summary 仅归档到旧会话不注入新会话——适用于「上下文污染了，开干净会话用新问题重启」。focusNewSession=true 时前端自动聚焦新会话。",
+      "当当前会话轮数过多、话题切换、上下文腐烂或用户要求换干净上下文时调用：归档当前会话，创建同一 Agent 的新会话，并写入双向血缘（旧→新 / 新←旧）。默认把你写的总结作为新会话首条（source=system）。若提供 firstMessage，则用其作为新会话首条用户气泡（source=user），summary 仅归档不注入——适用于开干净会话重启。focusNewSession=true 仅表示「请求聚焦」：前端仅当用户正看着本会话时才会自动跳转，否则只出提示，勿假设已切换。",
     parameters: zodParams(
       z.object({
         summary: z.string().describe("给新会话用的中文总结（Markdown），需保留目标、决策、未完成事项与关键结论"),
@@ -1526,7 +1532,7 @@ const SESSION_DEFS: NativeToolDefinition[] = [
           .optional(),
         focusNewSession: z
           .boolean()
-          .describe("true=前端自动聚焦/跳转到新会话；false(默认)=仅提示用户手动跳转")
+          .describe("true=请求前端聚焦新会话（仅用户正看旧会话时生效）；false(默认)=仅提示手动跳转")
           .optional(),
       }),
     ),

@@ -255,6 +255,8 @@ export interface ChatSession {
   contextSummary?: string | null;
   contextCompactedAt?: string | Date | null;
   rotatedToSessionId?: string | null;
+  /** session_rotate：本会话由哪次旧会话轮换而来（与 parentSessionId 派工正交） */
+  rotatedFromSessionId?: string | null;
   /** Goal / Deep Research 外环 */
   goalState?: import("./schemas.js").SessionGoalState | null;
   /** 会话树当前叶消息 id */

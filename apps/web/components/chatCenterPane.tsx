@@ -60,6 +60,14 @@ export interface ChatCenterPaneProps {
   isSubagentSession: boolean;
   parentSessionId: string | null;
   parentSessionTitle: string | undefined;
+  /**
+   * session_rotate 血缘链（派生视图）：nodes 按时间序 A→B→C，
+   * currentIndex 为当前会话；长度 < 2 时不展示条。
+   */
+  rotateLineage: {
+    nodes: Array<{ id: string; label: string }>;
+    currentIndex: number;
+  } | null;
   /** 空主会话才允许深度调研入口 */
   allowDeepResearch: boolean;
   // 横幅群：后端离线 / session_rotate 跳转
@@ -121,6 +129,7 @@ export function ChatCenterPane({
   isSubagentSession,
   parentSessionId,
   parentSessionTitle,
+  rotateLineage,
   allowDeepResearch,
   backendDown,
   rotateBanner,
@@ -172,8 +181,8 @@ export function ChatCenterPane({
   const activeEditingId = editingQueueItem?.id ?? null;
   const { messages, messageGroups } = messageListProps;
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 border-b border-[var(--kp-divider)] px-4 py-2.5">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--kp-bg)]">
+      <header className="flex items-center gap-2 border-b border-[var(--kp-divider)] bg-[var(--kp-glass-bg)] px-4 py-2.5 backdrop-blur-sm">
         <button
           type="button"
           onClick={() => setLeftOpen((v) => !v)}
@@ -188,10 +197,12 @@ export function ChatCenterPane({
         >
           <PanelLeft className="h-5 w-5 md:h-4 md:w-4" />
         </button>
-        <Bot className="h-5 w-5 shrink-0 text-[var(--kp-brand)]" />
+        <span className="kp-header-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
+          <Bot className="h-3.5 w-3.5" />
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-semibold">
+            <h1 className="truncate text-sm font-semibold text-[var(--kp-text-1)]">
               {sessionDetail?.autoName || sessionDetail?.title || "Agent 对话"}
             </h1>
             {isLoadingOlderMessages && !isStreaming && (
@@ -280,6 +291,44 @@ export function ChatCenterPane({
               来自会话{parentSessionTitle ? ` · ${parentSessionTitle.slice(0, 16)}` : ""}
             </Link>
           )}
+        </div>
+      )}
+
+      {/* rotate 血缘链（派生视图；与 parentSessionId 派工父子正交） */}
+      {!isSubagentSession && rotateLineage && rotateLineage.nodes.length > 1 && (
+        <div
+          data-testid="session-rotate-lineage-bar"
+          className="flex flex-wrap items-center gap-1 border-b border-[var(--kp-divider)] bg-[color-mix(in_srgb,var(--kp-bg)_90%,var(--kp-brand-soft))] px-4 py-1.5 text-[11px] text-[var(--kp-text-2)]"
+        >
+          <span className="mr-1 shrink-0 text-[var(--kp-text-3)]">轮换链</span>
+          {rotateLineage.nodes.map((n, i) => {
+            const current = i === rotateLineage.currentIndex;
+            return (
+              <span key={n.id} className="inline-flex items-center gap-1">
+                {i > 0 && <span className="text-[var(--kp-text-3)]" aria-hidden>→</span>}
+                {current ? (
+                  <span
+                    className="rounded-md bg-[var(--kp-brand-soft)] px-1.5 py-0.5 font-medium text-[var(--kp-brand-deep)]"
+                    title="当前会话"
+                  >
+                    {n.label}
+                  </span>
+                ) : (
+                  <Link
+                    href={`/chat?sessionId=${n.id}`}
+                    className="rounded-md px-1.5 py-0.5 font-medium text-[var(--kp-brand-deep)] hover:bg-[var(--kp-brand-soft)]"
+                    title={`打开：${n.label}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      selectSession(n.id);
+                    }}
+                  >
+                    {n.label}
+                  </Link>
+                )}
+              </span>
+            );
+          })}
         </div>
       )}
 
@@ -409,7 +458,7 @@ export function ChatCenterPane({
       )}
 
       <div
-        className="relative z-30 border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-4 pt-3 pb-3 md:px-6"
+        className="relative z-30 border-t border-[var(--kp-divider-light)] bg-[color-mix(in_srgb,var(--kp-bg)_92%,var(--kp-brand-soft))] px-4 pt-3 pb-3 md:px-6"
         style={{ paddingBottom: "max(0.75rem, calc(0.75rem + var(--kp-keyboard-inset, 0px)))" }}
       >
         <SessionAskUserBar sessionId={effectiveSessionId} />

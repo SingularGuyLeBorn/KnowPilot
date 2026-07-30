@@ -22,6 +22,7 @@ const ADMIN_PAGES: Array<{ path: string; heading: string }> = [
   { path: "/tools", heading: "Tools 工具目录" },
   { path: "/sources", heading: "信息源管理" },
   { path: "/runs", heading: "Runs 执行记录" },
+  { path: "/session-lineage", heading: "会话轮换血缘" },
   { path: "/credentials", heading: "Credentials 凭据库" },
   { path: "/free-models", heading: "免费模型目录" },
   { path: "/settings", heading: "远程访问与安全" },

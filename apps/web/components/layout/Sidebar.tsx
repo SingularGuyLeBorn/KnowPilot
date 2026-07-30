@@ -12,6 +12,7 @@ import {
   HardDrive,
   Files,
   GitBranch,
+  Waypoints,
   CalendarClock,
   Clock3,
   ScrollText,
@@ -70,6 +71,7 @@ const navGroups: Record<string, NavGroup> = {
       { href: "/prompts", icon: FileCode2, label: "提示词模板" },
       { href: "/tools", icon: Wrench, label: "工具注册" },
       { href: "/runs", icon: Activity, label: "执行记录" },
+      { href: "/session-lineage", icon: Waypoints, label: "会话轮换血缘" },
       { href: "/search", icon: Search, label: "全局搜索" },
     ],
   },
@@ -205,7 +207,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
               className={cn(
                 "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
                 isActive
-                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+                  ? "kp-nav-rail-active"
                   : "text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
               )}
             >
@@ -222,7 +224,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     <aside
       suppressHydrationWarning
       className={cn(
-        "relative flex shrink-0 flex-col border-r border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]",
+        "kp-shell-rail relative flex shrink-0 flex-col border-r border-[var(--kp-divider)]",
         isResizing && "select-none",
         className
       )}
@@ -246,12 +248,12 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                 <Link
                   key={key}
                   href={group.items[0].href}
-                  className={cn(
-                    "flex flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-medium transition",
-                    activeTab === key
-                      ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
-                      : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
-                  )}
+                    className={cn(
+                      "flex flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-medium transition",
+                      activeTab === key
+                        ? "kp-nav-pill-active"
+                        : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
+                    )}
                 >
                   <Icon className="h-4 w-4" />
                   <span className="line-clamp-1">{group.title}</span>

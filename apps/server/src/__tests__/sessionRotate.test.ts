@@ -85,7 +85,12 @@ describe("session_rotate", () => {
     expect(result.success).toBe(true);
     expect(result.oldSessionId).toBe(oldSession.id);
     expect(result.newSessionId).toBe(newSession.id);
-    expect(sessionService.create).toHaveBeenCalled();
+    expect(sessionService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rotatedFromSessionId: oldSession.id,
+        agentId: oldSession.agentId,
+      }),
+    );
     expect(sessionService.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: oldSession.id,
@@ -109,6 +114,82 @@ describe("session_rotate", () => {
       expect.objectContaining({
         type: "session_rotated",
         newSessionId: newSession.id,
+        oldSessionId: oldSession.id,
+        agentId: oldSession.agentId,
+        mode: "summary",
+      }),
+    );
+  });
+
+  it("focusNewSession 仅为请求，返回文案不声称已聚焦", async () => {
+    vi.resetModules();
+    vi.doMock("../infra/sessionStreamHub.js", () => ({
+      getStreamHub: () => ({ pushExternalEvent }),
+    }));
+    const { executeNativeTool: exec } = await import("../infra/nativeTools.js");
+
+    const oldSession = {
+      id: "clxxxxxxxxxxxxxxxxxxxx01",
+      title: "旧对话",
+      model: "deepseek-v4-flash",
+      systemPrompt: "sys",
+      agentId: "clxxxxxxxxxxxxxxxxxxxxag",
+      kind: "chat",
+      status: "active",
+    };
+    const newSession = { id: "clxxxxxxxxxxxxxxxxxxxx02", title: "干净重启" };
+    const sessionService = {
+      getByIdLite: vi.fn().mockResolvedValue(oldSession),
+      create: vi.fn().mockResolvedValue({ success: true, data: newSession }),
+      update: vi.fn().mockResolvedValue({ success: true }),
+    };
+    const messageService = {
+      create: vi.fn().mockResolvedValue({ success: true, data: { id: "msg1" } }),
+    };
+    const config = createTestConfig(tmpRoot);
+    const ctx = {
+      ...createNativeCtx(tmpRoot),
+      config,
+      sessionId: oldSession.id,
+      agentSnapshot: { id: oldSession.agentId, tier: "manager" as const },
+      services: {
+        session: sessionService,
+        message: messageService,
+        log: { create: vi.fn().mockResolvedValue({}) },
+      },
+    };
+
+    const result = (await exec(
+      "session_rotate",
+      {
+        summary: "归档摘要",
+        firstMessage: "用新问题干净重启",
+        focusNewSession: true,
+      },
+      ctx as any,
+    )) as {
+      success: boolean;
+      focusRequested?: boolean;
+      mode?: string;
+      message?: string;
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.focusRequested).toBe(true);
+    expect(result.mode).toBe("firstMessage");
+    expect(result.message).toMatch(/请求前端聚焦/);
+    expect(result.message).not.toMatch(/已自动聚焦新会话/);
+    expect(messageService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "用新问题干净重启",
+        source: "user",
+      }),
+    );
+    expect(pushExternalEvent).toHaveBeenCalledWith(
+      oldSession.id,
+      expect.objectContaining({
+        focusNewSession: true,
+        mode: "firstMessage",
       }),
     );
   });

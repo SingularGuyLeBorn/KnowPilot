@@ -18,6 +18,7 @@ import {
   HardDrive,
   Files,
   GitBranch,
+  Waypoints,
   CalendarClock,
   ScrollText,
   Settings,
@@ -62,6 +63,7 @@ export const MOBILE_MORE_ITEMS: MobileMoreItem[] = [
   { href: "/prompts", icon: FileCode2, label: "提示词模板", group: "智能工作台" },
   { href: "/tools", icon: Wrench, label: "工具注册", group: "智能工作台" },
   { href: "/runs", icon: Activity, label: "执行记录", group: "智能工作台" },
+  { href: "/session-lineage", icon: Waypoints, label: "会话轮换血缘", group: "智能工作台" },
   { href: "/search", icon: Search, label: "全局搜索", group: "智能工作台" },
   { href: "/inbox", icon: Inbox, label: "知识 Inbox", group: "自动化与工作流" },
   { href: "/platform-sync", icon: RefreshCw, label: "平台每日同步", group: "自动化与工作流" },
@@ -186,7 +188,7 @@ export function MobileBottomNav() {
                           className={cn(
                             "flex min-h-11 items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                             active
-                              ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
+                              ? "kp-nav-pill-active"
                               : "bg-[var(--kp-bg)] text-[var(--kp-text-2)] hover:bg-[var(--kp-bg-mute)]",
                           )}
                         >
@@ -222,7 +224,7 @@ export function MobileBottomNav() {
                 className={cn(
                   "flex min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition",
                   active
-                    ? "text-[var(--kp-brand-deep)]"
+                    ? "text-[var(--kp-accent-deep)]"
                     : "text-[var(--kp-text-3)] active:bg-[var(--kp-bg-mute)]",
                 )}
               >
@@ -237,7 +239,7 @@ export function MobileBottomNav() {
             className={cn(
               "flex min-h-11 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition",
               moreActive || moreOpen
-                ? "text-[var(--kp-brand-deep)]"
+                ? "text-[var(--kp-accent-deep)]"
                 : "text-[var(--kp-text-3)] active:bg-[var(--kp-bg-mute)]",
             )}
             aria-expanded={moreOpen}

@@ -31,7 +31,7 @@ import {
   countVisibleQueueItems,
   mergeUserQueueFromDb,
 } from "@/lib/chatQueueTypes";
-import { useSessionMessages } from "@/lib/useSessionMessages";
+import { sessionMessagesStore, useSessionMessages } from "@/lib/useSessionMessages";
 import { useStreamLifecycle, streamLifecycleActions, streamLifecycleStore } from "@/lib/useStreamLifecycle";
 import {
   useSessionComposeState,
@@ -131,15 +131,17 @@ export function ChatSessionPane({
   const [viewError, setViewError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SelectedSkill | null>(null);
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
   // 切会话时在 render 期重置本会话 UI 态（React 推荐的 props→state 对齐写法，替代 effect setState）
   const [paneSessionId, setPaneSessionId] = useState(sessionId);
   if (paneSessionId !== sessionId) {
     setPaneSessionId(sessionId);
     setSelectedSkill(null);
-    setEditingUserId(null);
+    setEditingMessageId(null);
     setEditDraft("");
+    setEditSaving(false);
     setViewError(null);
     setCopiedId(null);
   }
@@ -156,6 +158,23 @@ export function ChatSessionPane({
     { id: parentSessionId! },
     { enabled: !!parentSessionId },
   );
+  const hasRotateEdge = !!(
+    sessionDetail?.rotatedFromSessionId || sessionDetail?.rotatedToSessionId
+  );
+  const { data: rotateLineageData } = trpc.session.rotateLineage.useQuery(
+    { sessionId: sessionId! },
+    { enabled: !!sessionId && hasRotateEdge },
+  );
+  const rotateLineage = useMemo(() => {
+    if (!rotateLineageData || rotateLineageData.nodes.length < 2) return null;
+    return {
+      nodes: rotateLineageData.nodes.map((n) => ({
+        id: n.id,
+        label: (n.autoName || n.title || "会话").slice(0, 20),
+      })),
+      currentIndex: rotateLineageData.currentIndex,
+    };
+  }, [rotateLineageData]);
 
   const asyncQueueQuery = trpc.agent.pullAsyncQueue.useQuery(
     { sessionId: sessionId! },
@@ -306,6 +325,8 @@ export function ChatSessionPane({
 
   const switchVersion = trpc.message.switchVersion.useMutation();
   const switchVersionMutateAsync = switchVersion.mutateAsync;
+  const updateMessageMut = trpc.message.update.useMutation();
+  const updateMessageMutateAsync = updateMessageMut.mutateAsync;
 
   const handleRegenerate = useCallback(
     (userMessageId: string) => {
@@ -345,18 +366,39 @@ export function ChatSessionPane({
     [sessionId, enqueueMessage],
   );
 
+  /** AI Studio 式：编辑 Markdown 源码后仅落库，不截断、不重跑 */
   const handleEditConfirm = useCallback(
-    (userMessageId: string) => {
+    (messageId: string) => {
+      if (!sessionId || editSaving || isSessionStreaming(sessionId)) return;
       const content = editDraft.trim();
-      if (!content || isSessionRunOccupied(sessionId)) return;
-      runStream({
-        editMessageId: userMessageId,
-        editContent: content,
-        targetSessionId: sessionId ?? undefined,
-        keepCurrentView: !isFocused,
-      }).catch(() => {});
+      if (!content) return;
+      setEditSaving(true);
+      updateMessageMutateAsync({ id: messageId, content })
+        .then((result) => {
+          if (result.success && result.data) {
+            sessionMessagesStore.upsertMessage(sessionId, result.data as ChatMessage);
+          } else {
+            hydrateFromServer().catch(() => {});
+          }
+          setEditingMessageId(null);
+          setEditDraft("");
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : "保存消息失败";
+          setViewError(msg);
+        })
+        .finally(() => {
+          setEditSaving(false);
+        });
     },
-    [editDraft, sessionId, isSessionRunOccupied, runStream, isFocused],
+    [
+      sessionId,
+      editDraft,
+      editSaving,
+      isSessionStreaming,
+      updateMessageMutateAsync,
+      hydrateFromServer,
+    ],
   );
 
   const handleSwitchVersion = useCallback(
@@ -425,8 +467,9 @@ export function ChatSessionPane({
       inFlightAssistantId,
       isSubagentSession,
       copiedId,
-      editingUserId,
+      editingMessageId,
       editDraft,
+      editSaving,
       isMessagesHydrated,
       effectiveSessionId: sessionId,
       backendDown,
@@ -441,7 +484,7 @@ export function ChatSessionPane({
       onEditConfirm: handleEditConfirm,
       onRetry: handleRetry,
       onSaveAsPost: handleSaveAsPost,
-      setEditingUserId,
+      setEditingMessageId,
       setEditDraft,
     }),
     [
@@ -456,8 +499,9 @@ export function ChatSessionPane({
       inFlightAssistantId,
       isSubagentSession,
       copiedId,
-      editingUserId,
+      editingMessageId,
       editDraft,
+      editSaving,
       isMessagesHydrated,
       sessionId,
       backendDown,
@@ -502,6 +546,7 @@ export function ChatSessionPane({
         isSubagentSession={!!isSubagentSession}
         parentSessionId={parentSessionId}
         parentSessionTitle={parentSession ? sessionLabel(parentSession) : undefined}
+        rotateLineage={rotateLineage}
         allowDeepResearch={canStartDeepResearch}
         backendDown={backendDown}
         rotateBanner={isFocused ? rotateBanner : null}

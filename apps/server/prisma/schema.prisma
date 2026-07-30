@@ -160,8 +160,9 @@ model ChatSession {
   compactBoundaryMessageId String?
   /// L1 常驻层（USER.md/AGENT.md）会话冻结快照；首轮注入时写入，会话内不变
   pinnedMemorySnapshot String?
-  // session_rotate：轮换到的新会话 id（旧会话 archived 后保留跳转）
-  rotatedToSessionId String?
+  // session_rotate：旧→新 / 新←旧（双向血缘；与 parentSessionId 派工父子正交）
+  rotatedToSessionId   String?
+  rotatedFromSessionId String?
   /// 会话级待办清单（todo_write/todo_read）：{ todos: TodoItem[], updatedAt: string }
   todoState    Json?
   /// Goal / Deep Research 外环状态（standing goal + 裁判续跑）
@@ -181,6 +182,7 @@ model ChatSession {
   @@index([parentSessionId, status, updatedAt])
   @@index([kind, status])
   @@index([agentId, updatedAt])
+  @@index([rotatedFromSessionId])
   // 会话侧栏列表 ORDER BY updatedAt DESC（无 status 过滤时走此索引避免全表排序）
   @@index([updatedAt])
 }

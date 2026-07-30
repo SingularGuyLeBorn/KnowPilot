@@ -148,15 +148,17 @@ export type AgentStreamEvent =
       boundaryMessageId?: string;
     }
   | { type: "compact_error"; message: string; fallback: "trim" | "none"; generation: number }
-  /** Agent 轮换会话：旧会话归档，新会话已创建（前端提示跳转，不自动切换） */
+  /** Agent 轮换会话：旧会话归档，新会话已创建；focus 仅为请求，由前端闸门决定是否跳 */
   | {
       type: "session_rotated";
       oldSessionId: string;
       newSessionId: string;
       newTitle: string;
       reason?: string;
-      /** true=前端自动聚焦新会话；false/缺省=仅提示用户手动跳转 */
+      /** true=请求聚焦；前端仅当用户正看 oldSessionId 时才自动跳 */
       focusNewSession?: boolean;
+      agentId?: string;
+      mode?: "summary" | "firstMessage";
     }
   /** 服务端自动消费异步结果后启动了会话流（前端应挂接 listRunning / resume） */
   | {

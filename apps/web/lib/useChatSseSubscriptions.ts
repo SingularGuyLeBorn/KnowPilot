@@ -169,7 +169,9 @@ export function useChatSseSubscriptions({
             newTitle: string;
             focusNewSession?: boolean;
           };
-          if (data.oldSessionId && data.oldSessionId === effectiveSessionId) {
+          const viewingOld =
+            !!data.oldSessionId && data.oldSessionId === effectiveSessionId;
+          if (viewingOld) {
             setRotateBanner({ newSessionId: data.newSessionId, newTitle: data.newTitle });
           }
           utils.session.list.invalidate().catch(() => {});
@@ -177,8 +179,11 @@ export function useChatSseSubscriptions({
           if (invalidateId) {
             utils.session.getById.invalidate({ id: invalidateId }).catch(() => {});
           }
-          // focusNewSession=true：agent 主动要求前端自动聚焦新会话（干净重启场景）
-          if (data.focusNewSession && onFocusSession) {
+          if (data.newSessionId) {
+            utils.session.getById.invalidate({ id: data.newSessionId }).catch(() => {});
+          }
+          // 防乱飞：仅当用户正看着发起 rotate 的旧会话时才自动跳；否则只留横幅/列表刷新
+          if (data.focusNewSession && viewingOld && onFocusSession) {
             onFocusSession(data.newSessionId);
           }
         } catch {

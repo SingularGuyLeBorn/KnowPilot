@@ -5,8 +5,9 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { BarChart3, Bot, Crown, FileText, ShieldCheck, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, Activity, TrendingUp, type LucideIcon } from "lucide-react";
+import { BarChart3, Bot, Crown, FileText, ShieldCheck, Sparkles, Wand2, MessageSquare, CalendarClock, AlertTriangle, Activity, TrendingUp, GitBranch, type LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useNativeCapabilities } from "@/lib/hooks";
 import { AdminPage, LoadingState, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
@@ -66,6 +67,7 @@ export default function DashboardPage() {
   const { data, isLoading } = trpc.analytics.dashboard.useQuery({});
   const { data: caps } = useNativeCapabilities();
   const { data: swarmStats } = trpc.analytics.swarmStats.useQuery({ days: 30 });
+  const { data: recentRotates } = trpc.session.listRecentRotates.useQuery({ limit: 10 });
   const { data: llmBudget } = trpc.agent.llmBudgetStatus.useQuery(undefined, {
     refetchInterval: 30_000,
   });
@@ -194,6 +196,58 @@ export default function DashboardPage() {
             value={data.tokens.estimatedTotal.toLocaleString()}
           />
         </div>
+      )}
+
+      {/* session_rotate 血缘派生列表（只读边字段，非新协议） */}
+      {recentRotates && recentRotates.items.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="kp-card-premium rounded-2xl p-6"
+          data-testid="dashboard-recent-rotates"
+        >
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
+              <GitBranch className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-bold text-[var(--kp-text-1)]">最近会话轮换</h2>
+              <p className="text-xs text-[var(--kp-text-3)]">派生自 rotatedFrom / rotatedTo，非独立事件流</p>
+            </div>
+            <Link
+              href="/session-lineage"
+              className="shrink-0 text-xs font-medium text-[var(--kp-brand-deep)] hover:underline"
+            >
+              打开血缘图
+            </Link>
+          </div>
+          <ul className="divide-y divide-[var(--kp-divider)]">
+            {recentRotates.items.map((item) => {
+              const toLabel = (item.autoName || item.title).slice(0, 28);
+              const fromLabel = (item.fromTitle || "上一会话").slice(0, 24);
+              return (
+                <li key={item.id} className="flex flex-wrap items-center gap-2 py-2.5 text-sm">
+                  <Link
+                    href={`/chat?sessionId=${item.rotatedFromSessionId}`}
+                    className="text-[var(--kp-text-2)] hover:text-[var(--kp-brand-deep)]"
+                  >
+                    {fromLabel}
+                  </Link>
+                  <span className="text-[var(--kp-text-3)]" aria-hidden>→</span>
+                  <Link
+                    href={`/chat?sessionId=${item.id}`}
+                    className="font-medium text-[var(--kp-brand-deep)] hover:underline"
+                  >
+                    {toLabel}
+                  </Link>
+                  {item.agentName && (
+                    <span className="ml-auto text-[11px] text-[var(--kp-text-3)]">{item.agentName}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </motion.div>
       )}
 
       {/* Swarm Agent 运行统计（#25/#46） */}
