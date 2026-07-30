@@ -568,10 +568,24 @@ flowchart TB
 |---|---|---|
 | P1-01 | ✅ 已修 | `INTEGRATION_OPT_IN_TOOLS` 出默认；assistant 去 `skill:*`；strip/migrate 防回灌 |
 | P1-02 | ✅ 已修 | `inboxPipeline.ts` → `infra/inbox/{shared,zhihu,xhs,bilibili,wechat,screenshots}`；旧文件删除 |
-| P1-03 | ✅ 已修 | `pnpm test:evals` + G01/G02 + mock scenario；CI 已挂（G03–G10 待扩） |
-| P1-04 | 🟡 部分 | hydrate / asyncJob 热点空 catch → `console.warn`；全仓静默 catch 未扫清 |
+| P1-03 | ✅ 已修 | `pnpm test:evals` + G01–G10 mock scenario；CI 已挂 |
+| P1-04 | 🟡 部分 | Chat/asyncJob/agentStream 热点可观测；全仓静默 catch 未扫清 |
 | P1-05 | ✅ 已修 | QQ Ed25519（op=13 + 事件验签）+ rawBody；飞书 verification token 未配置硬拒 |
 
-刻意未动（大手术）：完整元工具化、services.ts 域拆、飞书 Encrypt Key、真实 LLM 周跑 evals、全仓空 catch 清零。
+### 分支 `arch/audit-fix-p2`
 
-*报告结束。生成：2026-07-30 · P1 续修：2026-07-31。*
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| P1-01 余 | ✅ | schema >100KB 硬顶：剥集成/skill/mcp，仍超拒跑 |
+| P1-03 余 | ✅ | Run 快照 `recentToolNames`；G03–G10 全绿 |
+| P1-04 余 | 🟡 | web Chat + asyncJob/agentStream 再加固 |
+| P2-03 | ✅ | `/runs` interrupted → 提示手动 Chat 恢复 |
+| P2-04 | ✅ | tool 结果不可信标记 |
+| P2-05 | ✅ | write/append 单次 >512KB 硬拒 |
+| P2-06 | ✅ | global memory_create 强制审批 |
+| P2-07 | ✅ | waitForResult=true 正式例外文档化 |
+| P2-09 | ✅ | e2e 补 inbox/channels/platform-sync；importOrder 扩入口 |
+
+刻意未动（大手术）：完整元工具化、`services.ts`/`router.ts` 域拆、飞书 Encrypt Key、真实 LLM 周跑、Goal 全局预算（P2-02）、全仓空 catch 清零、llmBudget 硬预留。
+
+*报告结束。生成：2026-07-30 · P2 续修：2026-07-31。*
