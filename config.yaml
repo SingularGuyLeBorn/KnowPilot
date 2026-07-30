@@ -98,6 +98,7 @@ asyncJobs:
 reflection:
   enabled: false
   # 最大反思重修轮数；0 = 只审不修（不通过直接标记放行）
+  # 重修不占用 reactLoop maxToolRounds（P3-02）；critic 失败/解析失败会 console.warn 后跳过（不阻断）
   maxRounds: 1
   # critic 使用的便宜模型（空 = 与主 Agent 模型相同）
   criticModel: ""

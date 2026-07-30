@@ -1301,11 +1301,12 @@ LoopX 不是执行器，而是长程 Agent 的**控制平面**：跨 turn / 重�
 | C3 | 审批等待 missed-wakeup | 「注册先行、对账在后」；TTL expired 须条件写 count=1；expireStaleApprovals 只 notify 实际翻转行。approval abort=抛错 / ask_user abort=注入续轮（A6 文档化，不对齐实现） |
 | D6 | destructive 清单 | 删除硬编码 Set；`listDestructiveNativeOpsForApproval()` 从 registry 派生；创建/写入类标 `approvalExempt` |
 | C6 | 半开探测纪元 | half-open 发放 probeToken；record* 校验令牌；迟到无令牌事件忽略 |
-| C5 | llmBudget hydrate | 启动 await hydrate + 同日 max 合并；日预算软语义「估算下界、并发可超」 |
+| C5 | llmBudget hydrate | 启动 await hydrate + 同日 max 合并；日预算软语义演进见下 |
 
-### 待办：LLM 预算预留制
+### LLM 预算预留制（MVP 已落地）
 
-日预算当前为软闸（见 concurrency.md §13）。若未来要硬上限，需独立工单做「登记占用再放行」预留制，不在本 PR 范围。
+- **已落地**：`tryReserveLlmBudget` / `releaseLlmBudgetReservation`；`reactLoop` 入口硬预留、finally 释放；`assert`/`getStatus` 计入 `reservedUsd`（见 concurrency.md §13）。
+- **仍待办**：Goal 外环裁判调用的独立预留细化、per-turn / Goal×内环精细 token 账本（非本 MVP 范围）。
 
 ---
 

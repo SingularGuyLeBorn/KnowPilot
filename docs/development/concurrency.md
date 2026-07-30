@@ -328,13 +328,14 @@ if (depth > MAX_DEPTH) {
 
 ---
 
-## 13. LLM 日预算软语义（C5）
+## 13. LLM 日预算与硬预留 MVP（C5）
 
-`llmBudget`（`apps/server/src/infra/llmBudget.ts`）日预算是**估算下界、并发可超**：
+`llmBudget`（`apps/server/src/infra/llmBudget.ts`）：
 
-- `assertLlmBudget` 与 `recordTokenUsage` 分离：N 个并发入口可同时看到「未超限」并全放行，实际花费可能短暂超过 `dailyBudget`。
-- **不做预留制**（登记占用再放行）——预留制见 `design-decisions.md` 待办。
-- 启动期 `await hydrateLlmBudget`（`index.ts`）：同日取 `max(内存已花, 磁盘已花)`，消除「hydrate 完成前新消耗导致整份磁盘额度被丢弃」的竞态。
+- **硬预留 MVP**：`reactLoop` 入口 `tryReserveLlmBudget`（默认约 4k tokens 估值），`finally` 释放；`assertLlmBudget` / `getLlmBudgetStatus` 按 `spentUsd + reservedUsd` 判定超限，挡住「尚未 record 的在途占用」。
+- `recordTokenUsage` 仍记真实花费；预留不是厂商账单。
+- Goal 外环在继续前 `assertLlmBudget`（见 `goalLoop`）；细粒度 Goal×内环账本仍待办。
+- 启动期 `await hydrateLlmBudget`（`index.ts`）：同日取 `max(内存已花, 磁盘已花)`，消除 hydrate 竞态抹额度。
 
 ---
 
