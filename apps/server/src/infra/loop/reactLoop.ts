@@ -1132,6 +1132,7 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
       const hasToolWork = executedTools.some(
         (t) => t.name !== "__thinking__" && t.name !== "__content__",
       );
+      let synthesisFailedMsg: string | null = null;
       if (hasToolWork) {
         try {
           llmMessages = await applyContextHooksBeforeComplete(
@@ -1176,11 +1177,15 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
             };
           }
         } catch (err) {
-          // AbortError 必须重抛中断；其他合成失败才落兜底
+          // AbortError 必须重抛中断；其他合成失败落真实错误文案（禁止伪装成预算耗尽）
           if (isAbortLikeError(err) || input.signal?.aborted) {
             throw isAbortLikeError(err) ? err : makeAbortError(input.signal);
           }
-          /* 合成失败落兜底 */
+          synthesisFailedMsg = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `${formatTrace()}[reactLoop] synthesizing 失败（不伪装预算耗尽）:`,
+            synthesisFailedMsg,
+          );
         }
       }
 
@@ -1188,15 +1193,22 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
         throw makeAbortError(input.signal);
       }
 
-      const fallback = hitToolBudget
-        ? `已达到单次运行工具调用上限（${snapshot.maxToolCalls}）。可通过环境变量 AGENT_MAX_TOOL_CALLS_PER_RUN 调整。`
-        : `已达到最大工具调用轮次（${snapshot.maxRounds}）。可通过环境变量 AGENT_MAX_TOOL_ROUNDS 调整上限。`;
+      const fallback = synthesisFailedMsg
+        ? `合成最终回复失败：${synthesisFailedMsg}`
+        : hitToolBudget
+          ? `已达到单次运行工具调用上限（${snapshot.maxToolCalls}）。可通过环境变量 AGENT_MAX_TOOL_CALLS_PER_RUN 调整。`
+          : `已达到最大工具调用轮次（${snapshot.maxRounds}）。可通过环境变量 AGENT_MAX_TOOL_ROUNDS 调整上限。`;
       // 流式：兜底文案也推给前端
       input.hooks?.onToken?.(fallback);
       machine.transition("done");
       // P1-02：预算/轮次耗尽是异常终止（非正常完成），改记 failed 而非 success——
       // 避免监控/账本低估失败率；wastedTokens 在 finalizeRun 内按 hitToolBudget/roundsExhausted 标记统计。
-      await finalizeRun("failed", { content: fallback, hitToolBudget, roundsExhausted: !hitToolBudget });
+      await finalizeRun("failed", {
+        content: fallback,
+        hitToolBudget,
+        roundsExhausted: !hitToolBudget && !synthesisFailedMsg,
+        synthesisFailed: !!synthesisFailedMsg,
+      });
       return {
         content: fallback,
         toolCalls: executedTools,

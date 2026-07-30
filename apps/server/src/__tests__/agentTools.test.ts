@@ -18,12 +18,12 @@ import type { ToolRegistryEntry } from "../infra/agentTools.js";
 import fs from "fs";
 
 describe("Agent 工具桥 — parseAgentTools", () => {
-  it("空 tools 返回 DEFAULT_NATIVE 只读集 + skillWildcard（与 shared 物化路径对齐，不再走 all）", () => {
+  it("空 tools 返回 DEFAULT_NATIVE 只读集且不隐式 skill:*（不再走 all）", () => {
     const parsed = parseAgentTools([]);
     expect(Array.isArray(parsed.native)).toBe(true);
     expect(parsed.native).toEqual([...DEFAULT_NATIVE]);
     expect(parsed.skills).toEqual([]);
-    expect(parsed.skillWildcard).toBe(true);
+    expect(parsed.skillWildcard).toBe(false);
     expect(parsed.mcpServers).toEqual([]);
   });
 

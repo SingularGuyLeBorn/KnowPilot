@@ -7,13 +7,12 @@ import {
 } from "../agentTools.js";
 
 describe("materializeAgentTools", () => {
-  it("空配置物化为默认 native + skill:*", () => {
+  it("空配置物化为默认 native（不隐式 skill:*）", () => {
     expect(materializeAgentTools([])).toEqual([
       "native:web_search",
       "native:read_file",
       "native:list_directory",
       "native:session_clear",
-      "skill:*",
     ]);
   });
 

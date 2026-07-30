@@ -48,7 +48,8 @@ export function parseAgentToolSelection(tools: string[]): AgentToolSelection {
 
   if (tools.length === 0) {
     for (const name of DEFAULT_AGENT_NATIVE) nativeSet.add(name);
-    return { native: [...nativeSet], skillWildcard: true, skills, mcp };
+    // 与 server parseAgentTools 对齐：空配置不隐式 skill:*
+    return { native: [...nativeSet], skillWildcard: false, skills, mcp };
   }
 
   const hasNonNative = skillWildcard || skills.length > 0 || mcp.length > 0;

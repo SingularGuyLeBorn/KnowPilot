@@ -154,7 +154,8 @@ void (() => {
  */
 export function parseAgentTools(agentTools: string[]): ParsedAgentTools {
   if (agentTools.length === 0) {
-    return { native: [...DEFAULT_NATIVE], skills: [], skillWildcard: true, mcpServers: [] };
+    // P1：空配置仅默认只读 native，不再隐式 skill:*（避免挂上最多 200 个 Skill schema）
+    return { native: [...DEFAULT_NATIVE], skills: [], skillWildcard: false, mcpServers: [] };
   }
 
   const native = agentTools.filter((t) => t.startsWith("native:")).map((t) => t.slice("native:".length));
