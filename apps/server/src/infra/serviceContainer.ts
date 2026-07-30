@@ -24,16 +24,16 @@ import {
   GitService,
   TaskService,
   WorkspaceService,
-  TriggerService,
   ApprovalService,
-  RunService,
-  PromptService,
   InfoSourceService,
   InboxService,
 } from "../services.js";
 import { CredentialService } from "./entityServices/credentialService.js";
 import { LogService } from "./entityServices/logService.js";
 import { ToolService } from "./entityServices/toolService.js";
+import { TriggerService } from "./entityServices/triggerService.js";
+import { RunService } from "./entityServices/runService.js";
+import { PromptService } from "./entityServices/promptService.js";
 
 export class ServiceContainer {
   readonly prisma: PrismaClient;
