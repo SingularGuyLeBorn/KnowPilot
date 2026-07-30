@@ -4,7 +4,7 @@
  * 【扁平化 + 按需叶子拆分】：
  * 1. 本文件含 Service 错误定义、CRUD 基类 BaseService 与 FileSyncService，以及未拆出的实体 Service。
  * 2. Prisma ~30 model；业务 Service ~22 个（含 Inbox 等）。低耦合实体已拆至
- *    `infra/entityServices/<entity>Service.ts`（Credential/Log/Tool/Trigger/Run/Prompt/File/Git/InfoSource…），
+ *    `infra/entityServices/<entity>Service.ts`（Credential/Log/Tool/Trigger/Run/Prompt/File/Git/InfoSource/Task/Workspace…），
  *    由 serviceContainer 直连叶子，禁止兼容 re-export。
  * 3. 禁止平行 `services/` 子目录树；体量过大时只允许上述 entityServices 叶子拆分。
  */
@@ -50,24 +50,9 @@ import {
   type CreateSessionQueueItemInput,
   type UpdateSessionQueueItemInput,
   type ListSessionQueueItemsInput,
-  type CreateFileInput,
-  type UpdateFileInput,
-  type ListFilesInput,
-  type CreateGitRepoInput,
-  type UpdateGitRepoInput,
-  type ListGitReposInput,
-  type CreateTaskInput,
-  type UpdateTaskInput,
-  type ListTasksInput,
-  type CreateWorkspaceInput,
-  type UpdateWorkspaceInput,
-  type ListWorkspacesInput,
   type CreateApprovalInput,
   type UpdateApprovalInput,
   type ListApprovalsInput,
-  type CreateInfoSourceInput,
-  type UpdateInfoSourceInput,
-  type ListInfoSourcesInput,
   type CreateInboxItemInput,
   type UpdateInboxItemInput,
   type ListInboxItemsInput,
@@ -90,7 +75,6 @@ import {
   type AgentRunInput,
   type AgentChatInput,
   type WebSearchInput,
-  type GitRepoPathInput,
   type NativeExecuteInput,
   DEFAULT_POST_GARDEN,
   SEED_GARDENS,
@@ -108,10 +92,8 @@ import matter from "gray-matter";
 import { notifyApprovalResolved } from "./infra/approvalGate.js";
 import { deriveDecisionScope } from "./infra/approvalScope.js";
 import { upsertFtsRow, deleteFtsRow, searchFts, searchFtsByEntity } from "./infra/ftsIndex.js";
-import { invalidateCapabilitiesCache } from "./infra/capabilities.js";
-import { resolveSafePath, assertPathWithinProjectRoot } from "./infra/safePath.js";
+import { assertPathWithinProjectRoot } from "./infra/safePath.js";
 import { parseSkillKind, skillFileSlug } from "./infra/skillPackage.js";
-import { claimTaskRun } from "./infra/taskClaim.js";
 
 /* ─── 1. 辅助类型与基类 ─── */
 
@@ -3807,202 +3789,9 @@ export class SessionQueueItemService extends BaseService<
 
 /** GitService 已拆至 infra/entityServices/gitService.ts */
 
-/** Task 后台任务 */
-export class TaskService extends BaseService<CreateTaskInput, UpdateTaskInput, ListTasksInput, any> {
-  readonly entityName = "task";
-  protected get delegate() { return this.prisma.task; }
-  protected formatEntity(raw: any) { return raw; }
-  protected buildListWhere(input: ListTasksInput) {
-    const where: any = {};
-    if (input.status) where.status = input.status;
-    if (input.keyword) where.name = { contains: input.keyword };
-    // R7：按会话过滤，供 listSessionAsyncJobs 在 DB 层精准查询
-    if (input.sessionId) where.sessionId = input.sessionId;
-    return where;
-  }
-  protected buildCreateData(input: CreateTaskInput) { return input; }
-  protected buildUpdateData(input: UpdateTaskInput) { const { id: _id, ...data } = input; return data; }
+/** TaskService 已拆至 infra/entityServices/taskService.ts */
 
-  protected override async afterCreate(entity: any, input: CreateTaskInput): Promise<void> {
-    await super.afterCreate(entity, input);
-    if (entity?.type === "cron" && entity.cronExpression) {
-      const { tryGetTaskScheduler } = await import("./infra/taskScheduler.js");
-      await tryGetTaskScheduler()?.upsertCronJob(entity.id);
-    }
-  }
-
-  protected override async afterUpdate(entity: any, existing: any, input: UpdateTaskInput): Promise<void> {
-    await super.afterUpdate(entity, existing, input);
-    const { tryGetTaskScheduler } = await import("./infra/taskScheduler.js");
-    const scheduler = tryGetTaskScheduler();
-    if (scheduler) {
-      if (entity?.type === "cron" && entity.cronExpression) {
-        await scheduler.upsertCronJob(entity.id);
-      } else {
-        scheduler.removeCronJob(entity.id);
-      }
-    }
-    if (input.status !== undefined && input.status !== existing?.status) {
-      const { notifyAllMainSessionsUi } = await import("./infra/uiStateNotify.js");
-      await notifyAllMainSessionsUi(this.prisma, {
-        type: "task_updated",
-        taskId: entity.id,
-        status: entity.status,
-      });
-    }
-  }
-
-  protected override async afterDelete(existing: any): Promise<void> {
-    await super.afterDelete(existing);
-    const { tryGetTaskScheduler } = await import("./infra/taskScheduler.js");
-    tryGetTaskScheduler()?.removeCronJob(existing.id);
-  }
-
-  /** 立即执行任务（db:sync 等）；认领单点 = claimTaskRun，落选如实返回「正在运行」 */
-  async run(id: string): Promise<OperationResult<any>> {
-    let task: { id: string; name: string; type: string; input?: unknown };
-    try {
-      task = (await this.getById(id)) as { id: string; name: string; type: string; input?: unknown };
-    } catch {
-      return failure({
-        code: "TASK_NOT_FOUND",
-        message: `执行任务失败：id 为 "${id}" 的任务不存在。`,
-        details: { id },
-        field: "id",
-        retryable: false,
-        operation: "run",
-        entity: this.entityName,
-        durationMs: 0,
-      });
-    }
-
-    const claimed = await claimTaskRun(this.prisma, id);
-    if (!claimed) {
-      return failure({
-        code: "TASK_ALREADY_RUNNING",
-        message: `任务「${task.name}」正在运行，请等待完成后再触发。`,
-        details: { id },
-        suggestion: "同一任务同时只允许一个执行体；稍后重试或先取消当前运行。",
-        retryable: true,
-        operation: "run",
-        entity: this.entityName,
-        durationMs: 0,
-      });
-    }
-
-    try {
-      const { executeTaskJob } = await import("./infra/taskRunner.js");
-      const output = await executeTaskJob(this.prisma, task);
-      return this.update({ id, status: "success", output });
-    } catch (err: unknown) {
-      return this.update({
-        id,
-        status: "failed",
-        output: { error: err instanceof Error ? err.message : String(err) },
-      });
-    }
-  }
-}
-
-/** Workspace 工作区 */
-export class WorkspaceService extends BaseService<CreateWorkspaceInput, UpdateWorkspaceInput, ListWorkspacesInput, any> {
-  readonly entityName = "workspace";
-  protected get delegate() { return this.prisma.workspace; }
-  protected formatEntity(raw: any) { return raw; }
-  protected buildListWhere(input: ListWorkspacesInput) {
-    const where: any = {};
-    if (input.keyword) {
-      where.OR = [{ name: { contains: input.keyword } }, { description: { contains: input.keyword } }];
-    }
-    if (input.status) where.status = input.status;
-    else where.status = { not: "deleted" }; // 默认不返回 tombstone
-    return where;
-  }
-  protected buildCreateData(input: CreateWorkspaceInput) {
-    const {
-      autoCreateManager: _auto,
-      withManager: _with,
-      managerName: _mgrName,
-      initialTask: _task,
-      ...data
-    } = input;
-    return {
-      ...data,
-      status: "active",
-      asyncSlotQuota: typeof input.asyncSlotQuota === "number" ? input.asyncSlotQuota : 2,
-    };
-  }
-  protected buildUpdateData(input: UpdateWorkspaceInput) {
-    const { id: _id, ...data } = input;
-    return data;
-  }
-  protected override getOrderBy(input: ListWorkspacesInput): any {
-    // 系统 Workspace 置顶，其余按创建时间倒序
-    if ((input as any).orderBy) return super.getOrderBy(input);
-    return [{ isSystem: "desc" }, { createdAt: "desc" }];
-  }
-
-  protected override async validateCreate(input: CreateWorkspaceInput): Promise<void> {
-    await this.assertUnique("path", input.path, "创建");
-  }
-  protected override async validateUpdate(input: UpdateWorkspaceInput, existing: any): Promise<void> {
-    if (existing.isSystem) {
-      if (input.status && input.status !== "active") {
-        throw new ServiceValidationError(
-          failure({
-            code: "SYSTEM_WORKSPACE_IMMUTABLE",
-            message: "系统 Workspace 不可归档或删除",
-            suggestion: "系统 Workspace 是 KnowPilot 运行所必需，无法修改其状态。",
-            retryable: false,
-            operation: "update",
-            entity: this.entityName,
-          }),
-        );
-      }
-      if (input.path && input.path !== existing.path) {
-        throw new ServiceValidationError(
-          failure({
-            code: "SYSTEM_WORKSPACE_IMMUTABLE",
-            message: "系统 Workspace 路径不可修改",
-            suggestion: "系统 Workspace 路径固定，无法变更。",
-            retryable: false,
-            operation: "update",
-            entity: this.entityName,
-          }),
-        );
-      }
-    }
-    if (input.path && input.path !== existing.path) await this.assertUnique("path", input.path, "更新", input.id);
-  }
-
-  override async delete(id: string): Promise<OperationResult<Record<string, unknown>>> {
-    const existing = await this.delegate.findUnique({ where: { id } });
-    if (existing?.isSystem) {
-      return failure({
-        code: "SYSTEM_WORKSPACE_NOT_DELETABLE",
-        message: "系统 Workspace 不可删除",
-        suggestion: "系统 Workspace 是 KnowPilot 运行所必需。",
-        retryable: false,
-        operation: "delete",
-        entity: this.entityName,
-      });
-    }
-    const hasSuperAgent = await this.prisma.agent.findFirst({
-      where: { workspaceId: id, tier: "super", status: { not: "deleted" } },
-    });
-    if (hasSuperAgent) {
-      return failure({
-        code: "WORKSPACE_HAS_SUPER_AGENT",
-        message: "该 Workspace 包含超级 Agent，不可删除",
-        suggestion: "请先迁移或删除该 Workspace 下的超级 Agent 后再注销 Workspace。",
-        retryable: false,
-        operation: "delete",
-        entity: this.entityName,
-      });
-    }
-    return super.delete(id);
-  }
-}
+/** WorkspaceService 已拆至 infra/entityServices/workspaceService.ts */
 
 /** TriggerService 已拆至 infra/entityServices/triggerService.ts */
 
