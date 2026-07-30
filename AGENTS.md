@@ -357,6 +357,73 @@ pnpm test         # 全仓库运行 Vitest
 
 几十个场景靠几十个补丁维护的项目，不是工程，是债务堆。本项目不接受这种债务。
 
+### 架构纪律：状态在内存 · 推拉结合 · 刷新不丢（前端只忠实显示）
+
+> **铁律，不是建议。** 与「禁止打补丁」同级。违反 = 失职。  
+> 凡用户可见状态：**开着页必须自己动；刷新不得变干净；禁止用 F5 当修复。**
+
+#### 一句话（死命令）
+
+**权威只在服务端（DB + hub/store 内存）。前端零真相、只订阅、只渲染。**  
+**核心状态变化必须「推拉结合」——缺任一半 = 不合格交付。**
+
+#### 推拉结合（强制双通道，不是二选一）
+
+| 通道 | 职责 | 不做的后果 |
+|---|---|---|
+| **PUSH（推）** | 权威写点**同事务/同调用栈内**推 SSE / hub 内存 /（跨标签）BroadcastChannel；Chat 或管理页订阅后 `invalidate`/`setData`/`reducer patch` | 用户盯着开着的页，库已变、界面假死，只能 F5 → **P0 事故** |
+| **PULL（拉）** | 进页 / 刷新 / 管理页挂载时从权威源再水合；开着的管理页对「进行中」态保留短 `refetchInterval` 作兜底（推是主路径，拉是保险） | F5 丢气泡 / 丢任务 / 丢 cron 状态 → **P0 事故** |
+
+**禁止**：
+- 只写 `prisma.*.create/update`，不推事件，交付文案写「刷新一下就好」  
+- 只靠内存乐观 UI，不落库，刷新变空白  
+- 只用 mount 一次 `useQuery`、无 SSE、无 interval，后台改了列表永陈旧  
+- 用 `setTimeout` / `useEffect` 猜时序代替推送（那是补丁，打回）
+
+**合法 PUSH 通道（优先从上到下）**：
+1. `SessionStreamHub.pushExternalEvent`（`message_upserted` / `cron_job_updated` / `session_list_changed` / `approval_updated` / …）  
+2. hub 内存态（`listRunning`、环形缓冲）  
+3. 事件驱动的 React Query `invalidate` / `setData`（必须由 1/2 触发，不是用户手刷）  
+4. 同浏览器 `BroadcastChannel("knowpilot-ui-state")`（跨标签兜底；**不能替代**服务端推）
+
+收拢入口：`apps/server/src/infra/uiStateNotify.ts`（`notifyAgentUi` / `notifyAllMainSessionsUi` / `notifyCronJobUpdated`）。新写点优先走这里，禁止再散落裸 `prisma` + 沉默。
+
+#### 三条硬约束
+
+1. **状态先进内存可观测面，再谈 UI** — 写库瞬间用户侧必须有可订阅读点。  
+2. **打开中的一切表面实时更新** — 含其它标签页、侧栏、`/cron` `/approvals` `/runs`；秒级，不靠 F5。  
+3. **刷新 = 再水合，信息零损失** — 流式中靠续传 + 落库消息；冲突以服务端为准。
+
+#### 前端职责边界（死命令）
+
+| 前端必须 | 前端严禁 |
+|---|---|
+| 订 PUSH + 做 PULL 水合 | 把业务真相 invent 在本地又不同步 |
+| reducer / `setData` 幂等 patch | `useEffect` / `setTimeout` 赌「何时出现」 |
+| 管理页：有 running/pending 就短轮询兜底 | 「刷新当修复」、交付说明教用户按 F5 |
+| 跨标签仍一致 | 只伺候当前焦点页 |
+
+#### 自检清单（改状态机 / SSE / 管理页 / Chat 前必过，打勾才能交）
+
+- [ ] **PUSH**：权威写点之后调了 `uiStateNotify` 或等价 `pushExternalEvent`？  
+- [ ] **PULL**：刷新 / 进页能从 DB·list·getById 完整回来？  
+- [ ] 用户开着 A 页、在 B 触发变化，A 会不会自己动？不会 → **缺 PUSH**，不准合。  
+- [ ] 立刻 F5，信息还在吗？不在 → **缺 PULL/落库**，不准合。  
+- [ ] 交付里有没有「刷新一下」？有 → **打回重做**。
+
+#### 反例（已踩过，再犯按失职论）
+
+- Cron 只写库入池，管理页 `lastRunStatus` 假死、侧栏不出现  
+- 会话列表只 mount fetch，新 session / spawn_goal 要手动刷新  
+- 消息靠盲 `invalidate` 赌落库，SSE 晚到空白  
+- `/approvals` `/runs` 无推无拉，Agent 已挂起人还不知道
+
+#### 正例（参照执行）
+
+- Chat：`MessageService` → `message_upserted` → reducer（推）+ `listForChat` 水合（拉）  
+- Cron：`fire` → hub 起流 + `cron_session_started` / `cron_job_updated`（推）+ `/cron` 短轮询与进页 list（拉）  
+- 样板文档：`docs/development/chat-state-architecture.md`
+
 ### 架构纪律：自主执行铁律（禁止停下等用户选择）
 
 > 与「禁止打补丁」「禁止向后兼容」同级的铁律。本项目是单人项目，用户的时间比 AI 的时间贵，**AI 不得把决策成本转嫁给用户**。
@@ -572,6 +639,7 @@ reflection:
 | 项目模块 / 实体 / CRUD / 前端用法 | `docs/development/README.md` |
 | 具体使用场景（Agent / 子 Agent / 异步任务） | `docs/development/scenarios.md` |
 | 并发 / 阻塞 / 竞态条件防护 | `docs/development/concurrency.md` |
+| UI 实时性铁律（推拉结合） | `AGENTS.md`「状态在内存 · 推拉结合 · 刷新不丢」；`infra/uiStateNotify.ts`；`.cursor/rules/ui-state-realtime.mdc`；Chat 样板 `chat-state-architecture.md` |
 | 开发踩坑与教训（战地笔记） | `docs/development/开发心路历程.md` |
 | 未来功能规划 | `docs/development/future-features.md` |
 | 文内手写画板 | `apps/web/components/editor/BoardCanvas.tsx`（编辑器 `/hb`） |
@@ -654,7 +722,7 @@ reflection:
 
 ---
 
-> 最后更新：2026-07-22。L1–L5 已全部落地；2026-07-20/21 重构套件 **PR-1～PR-6 + W1～W5 已全部合入 master**（W1 会话树 parentId/activeLeafId；W2 心跳决策层；W3 审批 scope；W4 context 钩子；W5 compaction 切割/stall/wastedTokens）；P0 Agent 架构 PR-1～7 已验收；W1–W12 / v4 / v7～v10 既有落地见上。
+> 最后更新：2026-07-30。铁律升级为「推拉结合」：`uiStateNotify` + `cron_job_updated`/`approval_updated`/`session_list_changed`/`run_updated`/`task_updated`；管理页短轮询兜底。L1–L5 已全部落地；重构套件 PR-1～PR-6 + W1～W5 已合入；P0 Agent 架构 PR-1～7 已验收。
 
 ### 2026-07-22 追加
 

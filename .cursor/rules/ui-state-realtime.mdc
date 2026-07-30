@@ -1,0 +1,26 @@
+---
+description: 铁律：推拉结合 · 状态在内存 · 刷新不丢 · 前端只忠实显示
+alwaysApply: true
+---
+
+# 铁律：推拉结合（违反 = 失职）
+
+与 AGENTS.md「状态在内存 · 推拉结合 · 刷新不丢」同级。改任何用户可见状态时强制遵守。
+
+## 死命令
+
+1. **权威只在服务端**（DB + hub/store）。前端零真相，只订阅、只渲染。
+2. **推拉结合，缺一不可**：
+   - **PUSH**：写库后同栈推 SSE（优先 `infra/uiStateNotify.ts`）→ 订阅方 `invalidate`/`setData`/reducer；跨标签可再 `BroadcastChannel("knowpilot-ui-state")`。
+   - **PULL**：进页/刷新从权威源水合；管理页对 running/pending 保留短 `refetchInterval` 兜底。
+3. **禁止**「只写库等 F5」「刷新当修复」「交付文案写刷新一下」「用 setTimeout/useEffect 猜时序代替推送」。
+4. 开着的 Chat / `/cron` / `/approvals` / `/runs` / 侧栏必须秒级自己动。
+
+## 自检（不过不准交）
+
+- [ ] 写点后有 PUSH？
+- [ ] F5 后有 PULL 水合、信息不丢？
+- [ ] 另一标签开着会更新？
+- [ ] 有没有教用户刷新？有 → 打回。
+
+详见 `AGENTS.md`；Chat 样板 `docs/development/chat-state-architecture.md`。
