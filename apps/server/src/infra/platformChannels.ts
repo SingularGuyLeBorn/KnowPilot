@@ -171,7 +171,7 @@ export async function doctorPlatformChannels(
   const login = listPlatformLoginStatus();
   const loginBy = Object.fromEntries(login.map((d) => [d.platform, d]));
 
-  const openApiSecret = await resolveZhihuAccessSecret(prisma).catch(() => null);
+  const openApiSecret = await resolveZhihuAccessSecret(prisma).catch((err) => { console.warn("[platformChannels.ts] best-effort failed:", err instanceof Error ? err.message : err); return null; });
 
   const channels: ChannelDoctorRow[] = [];
 

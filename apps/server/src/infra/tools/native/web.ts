@@ -633,7 +633,7 @@ async function scrollScreenshotTool(args: Record<string, unknown>, ctx: NativeTo
         step,
       });
       // 滚动一个视口高度
-      await page.evaluate((h) => window.scrollBy(0, h), height).catch(() => undefined);
+      await page.evaluate((h) => window.scrollBy(0, h), height).catch((err) => { console.warn("[web.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
       await page.waitForTimeout(scrollDelay);
       // 检测是否已到底（scrollY + innerHeight >= scrollHeight - 10）
       const atBottom = await page
@@ -654,7 +654,7 @@ async function scrollScreenshotTool(args: Record<string, unknown>, ctx: NativeTo
       note: "返回多张视口截图（按滚动顺序），用 read_image 逐张识图；或用 vision_describe 做语义理解",
     };
   } finally {
-    if (context) await context.close().catch(() => undefined);
+    if (context) await context.close().catch((err) => { console.warn("[web.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
   }
 }
 

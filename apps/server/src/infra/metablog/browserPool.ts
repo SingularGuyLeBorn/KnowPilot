@@ -11,7 +11,7 @@ let browserInstance: Browser | null = null;
 export async function getSharedBrowser(): Promise<Browser> {
   if (!browserInstance?.isConnected()) {
     if (browserInstance) {
-      await browserInstance.close().catch(() => undefined);
+      await browserInstance.close().catch((err) => { console.warn("[browserPool.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
       browserInstance = null;
     }
     browserInstance = await chromium.launch(getChromeLaunchOptions());
@@ -26,7 +26,7 @@ export async function getSharedBrowser(): Promise<Browser> {
 /** 优雅退出时关闭共享浏览器 */
 export async function closeSharedBrowser(): Promise<void> {
   if (browserInstance) {
-    await browserInstance.close().catch(() => undefined);
+    await browserInstance.close().catch((err) => { console.warn("[browserPool.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
     browserInstance = null;
   }
 }

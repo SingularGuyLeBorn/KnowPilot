@@ -146,7 +146,7 @@ export async function provisionWorkspace(
         agentId: managerAgentId,
         title: `${name} 管理主会话`,
         model: input.managerModel ?? config.llm.defaultModel,
-      }).catch(() => null);
+      }).catch((err) => { console.warn("[workspaceProvision.ts] best-effort failed:", err instanceof Error ? err.message : err); return null; });
       if (main?.session.id) {
         managerSessionId = main.session.id;
         if (main.session.title !== `${name} 管理主会话`) {

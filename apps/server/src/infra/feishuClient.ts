@@ -84,7 +84,7 @@ export async function getUserAccessTokenStatus(
 ): Promise<{ exists: boolean; valid: boolean; expiresAt?: number; scope?: string; source?: "credential" | "file" }> {
   const credValue = await getCredentialValue(prisma, "feishu", "feishu_user_access_token");
   if (credValue) {
-    const metadataRaw = await getCredentialValue(prisma, "feishu", "feishu_user_access_token_metadata").catch(() => undefined);
+    const metadataRaw = await getCredentialValue(prisma, "feishu", "feishu_user_access_token_metadata").catch((err) => { console.warn("[feishuClient.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
     const metadata = metadataRaw ? (JSON.parse(metadataRaw) as { expiresAt?: number; scope?: string }) : undefined;
     const expiresAt = metadata?.expiresAt;
     const valid = !expiresAt || expiresAt > nowSec() + 300;

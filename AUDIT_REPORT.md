@@ -650,4 +650,14 @@ flowchart TB
 
 刻意未动：完整元工具化、`services.ts`/`router.ts` 全量域拆、真实 LLM 周跑 evals、全仓空 catch 清零（含 metablog 浏览器）、Goal×内环精细 token、chat.tsx 物理再拆、Approval/Session/Inbox/Message 重耦合拆分。
 
-*报告结束。生成：2026-07-30 · P7 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p8`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| services 第六刀 | ✅ | Skill / Mcp → entityServices；调用方改直连叶子（禁兼容 re-export） |
+| P1-04 余 | 🟡 | feishuClient / platformChannels / workspaceProvision / web / browserPool；metablog waitFor/json 软失败保留 |
+| importOrder | ✅ | + skillService / mcpService |
+
+刻意未动：完整元工具化、router 全量域拆、Garden/Post/Agent/Memory/Session/Message/Approval/Inbox 重耦合拆分、真实 LLM 周跑 evals、metablog Playwright 时序 catch 全改、Goal×内环精细 token、chat.tsx 物理再拆。
+
+*报告结束。生成：2026-07-30 · P8 续修：2026-07-31。*
