@@ -671,4 +671,15 @@ flowchart TB
 
 刻意未动（更大手术边界）：完整元工具化、router 全量域拆、Post/Agent/Session/Message/SessionQueueItem（与流式 hub / tree / swarm 重耦合）、真实 LLM 周跑 evals、metablog catch 全改、Goal×内环精细 token、chat.tsx 物理再拆。
 
-*报告结束。生成：2026-07-30 · P9 续修：2026-07-31。*
+### 分支 `arch/audit-fix-p10`
+
+| 编号 | 状态 | 说明 |
+|---|---|---|
+| P3-03 收口 | ✅ | 根 `cross-env`/`emoji-regex`；`algo-viz` react 对齐 web 19.2.4；`mock-llm-core` `@types/node` 精确 pin。skill 内 remotion shot-library 仍为内容资产 `^`（非运行时工作区） |
+| P1-04 余 | 🟡 | `index.ts` shutdown `closeSharedBrowser`/`$disconnect` 可观测；metablog/xhs `json().catch→null` / Playwright 时序软失败、测试清理 catch、可选依赖动态 import **刻意保留** |
+| P1-02 进度备注 | ✅ | 现状：`services.ts` ≈2791 行 + `entityServices/` 17 叶子；`inboxPipeline.ts` 已删除（域在 `infra/inbox/*`）；`router.ts` 仍 ≈1882（全量域拆仍为更大手术） |
+| 手术边界 | 🛑 | 审计续修到此收口：剩余均为「刻意未动」大手术或噪声软失败，不宜再以小刀硬拆 |
+
+刻意未动（确认不能以本线小 PR 再推进）：完整元工具化、`router.ts` 全量域拆、Post/Agent/Session/Message/SessionQueueItem、真实 LLM 周跑 evals、metablog Playwright 时序/`json` 软失败全改、Goal×内环精细 token、`chat.tsx`（仍 ≈1088）物理再拆。
+
+*报告结束。生成：2026-07-30 · P10 收口：2026-07-31。*
