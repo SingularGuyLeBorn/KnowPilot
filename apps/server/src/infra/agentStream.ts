@@ -217,6 +217,12 @@ export type AgentStreamEvent =
       taskId: string;
       status?: string;
     }
+  /** Goal / Deep Research 状态写回：ChatGoalBar invalidate getGoal（推优先） */
+  | {
+      type: "goal_updated";
+      sessionId: string;
+      status?: string;
+    }
   /** ChatMessage 写入后广播：前端 reducer 直接 patch messages[]，不再靠 invalidate→refetch 闪烁刷新 */
   | {
       type: "message_upserted";

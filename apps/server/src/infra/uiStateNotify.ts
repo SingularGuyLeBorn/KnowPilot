@@ -14,7 +14,20 @@ export type UiStateNotifyKind =
   | "session_list_changed"
   | "agent_list_changed"
   | "run_updated"
-  | "task_updated";
+  | "task_updated"
+  | "goal_updated";
+
+/** Goal 写库后推到该会话（ChatGoalBar / 跨标签） */
+export function notifyGoalUpdated(
+  sessionId: string,
+  status?: string | null,
+): void {
+  pushUiStateToSession(sessionId, {
+    type: "goal_updated",
+    sessionId,
+    status: status ?? undefined,
+  });
+}
 
 /** 推到指定会话（已连 SSE 的标签页立刻收到） */
 export function pushUiStateToSession(

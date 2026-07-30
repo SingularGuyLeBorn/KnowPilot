@@ -5,12 +5,14 @@
  * - 仅在进行中 Goal/调研时展示（暂停/继续/清除）。
  * - 默认只显示短摘要；点「展开」才看全文，避免长 Goal 正文占满顶栏。
  * - 子 Agent 会话不挂载本组件。
+ * - 推拉结合：PUSH=goal_updated SSE/BC；PULL=进页 + 60s 兜底（禁止只靠轮询）。
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, Flag, Pause, Play, Search, X } from "lucide-react";
 import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
 import type { SessionGoalState } from "@knowpilot/shared";
 
 const SUMMARY_MAX = 48;
@@ -34,8 +36,34 @@ export function ChatGoalBar({ sessionId }: { sessionId: string | null }) {
 
   const goalQuery = trpc.session.getGoal.useQuery(
     { sessionId: sessionId! },
-    { enabled: !!sessionId, refetchInterval: 5_000 },
+    {
+      enabled: !!sessionId,
+      // 推优先（goal_updated）；60s 兜底防漏推 / 无 SSE 的边缘路径
+      refetchInterval: 60_000,
+      refetchOnWindowFocus: true,
+    },
   );
+
+  useEffect(() => {
+    if (!sessionId || typeof BroadcastChannel === "undefined") return;
+    let bc: BroadcastChannel;
+    try {
+      bc = new BroadcastChannel(UI_STATE_CHANNEL);
+    } catch {
+      return;
+    }
+    const onMsg = (ev: MessageEvent) => {
+      const data = ev.data as { type?: string; sessionId?: string } | null;
+      if (data?.type !== "goal_updated") return;
+      if (data.sessionId && data.sessionId !== sessionId) return;
+      utils.session.getGoal.invalidate({ sessionId }).catch(catchUnlessCancelled("getGoal.bc"));
+    };
+    bc.addEventListener("message", onMsg);
+    return () => {
+      bc.removeEventListener("message", onMsg);
+      bc.close();
+    };
+  }, [sessionId, utils.session.getGoal]);
 
   const pauseMut = trpc.session.pauseGoal.useMutation({
     onSuccess: () => {

@@ -99,9 +99,14 @@ export function useChatEnqueue({
                 }
                 const g = await utils.session.getGoal.fetch({ sessionId: effectiveSessionId });
                 const goal = g.goal;
+                const tok = g.tokens;
+                const tokPart =
+                  tok && (tok.sessionTokens > 0 || tok.childTokens > 0)
+                    ? ` · ${tok.totalAttributed} tok`
+                    : "";
                 showToast(
                   goal
-                    ? `${goal.mode === "deep_research" ? "调研" : "Goal"} ${goal.status} ${goal.turnsUsed}/${goal.maxTurns}：${goal.text.slice(0, 80)}`
+                    ? `${goal.mode === "deep_research" ? "调研" : "Goal"} ${goal.status} ${goal.turnsUsed}/${goal.maxTurns}${tokPart}：${goal.text.slice(0, 80)}`
                     : "当前会话没有活跃目标",
                 );
                 return;

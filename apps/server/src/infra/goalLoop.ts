@@ -14,6 +14,7 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import { resolveAuxiliaryModel } from "./auxiliaryModel.js";
 import { resilientChatCompletion } from "./resilientLlmClient.js";
 import { onHubRunSettled, getStreamHub } from "./sessionStreamHub.js";
+import { notifyGoalUpdated } from "./uiStateNotify.js";
 import { prisma } from "../db.js";
 
 /** 读写 goalState：绕过可能未 regenerate 的 Prisma Client 字段校验（列已由 ALTER 存在） */
@@ -37,6 +38,8 @@ export async function writeGoalStateRaw(
 ): Promise<void> {
   if (goal === null) {
     await prisma.$executeRawUnsafe(`UPDATE ChatSession SET goalState = NULL WHERE id = ?`, sessionId);
+    // 推拉结合：写点同栈 PUSH，禁止只靠 ChatGoalBar 轮询
+    notifyGoalUpdated(sessionId, null);
     return;
   }
   await prisma.$executeRawUnsafe(
@@ -44,6 +47,7 @@ export async function writeGoalStateRaw(
     JSON.stringify(goal),
     sessionId,
   );
+  notifyGoalUpdated(sessionId, goal.status);
 }
 
 type GoalStateStore = {

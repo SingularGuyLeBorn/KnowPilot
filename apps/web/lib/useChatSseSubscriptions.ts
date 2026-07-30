@@ -228,6 +228,17 @@ export function useChatSseSubscriptions({
         utils.trigger.list.invalidate().catch(logQueryCatch);
         postUiState({ type: "task_updated" });
       });
+      register("goal_updated", (ev) => {
+        let targetSid = sid;
+        try {
+          const data = JSON.parse(ev.data) as { sessionId?: string };
+          if (data.sessionId) targetSid = data.sessionId;
+        } catch {
+          /* ignore */
+        }
+        utils.session.getGoal.invalidate({ sessionId: targetSid }).catch(logQueryCatch);
+        postUiState({ type: "goal_updated", sessionId: targetSid });
+      });
       register("session_title_updated", () => {
         utils.session.list.invalidate().catch(logQueryCatch);
       });
@@ -355,6 +366,17 @@ export function useChatSseSubscriptions({
       if (t === "task_updated") {
         utils.task.list.invalidate().catch(logQueryCatch);
         utils.trigger.list.invalidate().catch(logQueryCatch);
+      }
+      if (t === "goal_updated") {
+        const sid =
+          data && typeof data === "object" && "sessionId" in data && typeof (data as { sessionId?: unknown }).sessionId === "string"
+            ? (data as { sessionId: string }).sessionId
+            : undefined;
+        if (sid) {
+          utils.session.getGoal.invalidate({ sessionId: sid }).catch(logQueryCatch);
+        } else {
+          utils.session.getGoal.invalidate().catch(logQueryCatch);
+        }
       }
     };
     for (const name of ["knowpilot-ui-state", "knowpilot-session-list"]) {
