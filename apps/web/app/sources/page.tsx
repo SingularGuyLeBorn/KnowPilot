@@ -1,8 +1,8 @@
+"use client";
 /**
  * 信息源配置页面 — 参考 MetaBlog TrustedSourceManager
  */
 
-"use client";
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
@@ -181,7 +181,7 @@ export default function SourcesPage() {
       await createMutation.mutateAsync(payload);
     }
     setView("list");
-    refetch().catch(() => {});
+    refetch().catch(catchUnlessCancelled("app/sources/page.tsx"));
   };
 
   const handleSearch = () => {
@@ -334,7 +334,7 @@ export default function SourcesPage() {
           </div>
 
           <div className="flex gap-3">
-            <Button onClick={() => { handleSave().catch(() => {}); }} disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button onClick={() => { handleSave().catch(catchUnlessCancelled("app/sources/page.tsx")); }} disabled={createMutation.isPending || updateMutation.isPending}>
               {editingId ? "保存修改" : "创建信息源"}
             </Button>
             {editingId && (
@@ -371,7 +371,7 @@ export default function SourcesPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => { fetchDueMutation.mutateAsync({}).catch(() => {}); }}
+          onClick={() => { fetchDueMutation.mutateAsync({}).catch(catchUnlessCancelled("app/sources/page.tsx")); }}
           disabled={fetchDueMutation.isPending}
           className="gap-1 text-xs"
         >

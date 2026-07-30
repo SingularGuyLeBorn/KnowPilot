@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { ImageIcon, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 
 export type UploadedImage = {
   url: string;
@@ -142,7 +142,7 @@ export function ImageUploadButton({
         accept="image/*"
         className="hidden"
         onChange={(e) => {
-          handleFileSelect(e.target.files?.[0]).catch(() => {});
+          handleFileSelect(e.target.files?.[0]).catch(catchUnlessCancelled("components/editor/ImageUploadButton.tsx"));
         }}
       />
       <button

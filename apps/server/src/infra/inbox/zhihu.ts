@@ -329,7 +329,7 @@ export async function listZhihuMyCollections(opts?: {
         }
         await context.close();
       } finally {
-        await browser.close().catch(() => {});
+        await browser.close().catch((err) => { console.warn("[zhihu.ts] best-effort failed:", err instanceof Error ? err.message : err); });
       }
     } catch (err) {
       errors.push(`Playwright 发现收藏夹失败: ${err instanceof Error ? err.message : String(err)}`);

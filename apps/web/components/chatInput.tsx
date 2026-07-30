@@ -16,7 +16,7 @@ import {
 import type { ChatPostAttachment, ChatSessionConfig, Skill } from "@knowpilot/shared";
 import { LucideIconByName, ChatShortcutHints } from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import type { ChatQueueAttachment, ChatQueueImageAttachment } from "@/lib/chatQueueTypes";
 import { ChatModelMenu } from "@/components/chatModelMenu";
 import { ChatInputChips } from "@/components/chatInputChips";
@@ -707,7 +707,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                 key={post.id}
                 type="button"
                 onClick={() => {
-                  selectPostMention(post).catch(() => {});
+                  selectPostMention(post).catch(catchUnlessCancelled("components/chatInput.tsx"));
                 }}
                 className={cn(
                   "flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition",
@@ -932,7 +932,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                 }
                 if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
                   e.preventDefault();
-                  selectPostMention(mentionCandidates[activeHighlightIdx]!).catch(() => {});
+                  selectPostMention(mentionCandidates[activeHighlightIdx]!).catch(catchUnlessCancelled("components/chatInput.tsx"));
                   return;
                 }
                 if (e.key === "Escape") {

@@ -5,7 +5,7 @@
  */
 
 import { AskUserPrompt } from "@/components/askUserPrompt";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 
 export function SessionAskUserBar({ sessionId }: { sessionId: string | null }) {
   const query = trpc.askUser.listPending.useQuery(
@@ -26,7 +26,7 @@ export function SessionAskUserBar({ sessionId }: { sessionId: string | null }) {
           options={item.options}
           channel={item.channel}
           onResolved={() => {
-            query.refetch().catch(() => {});
+            query.refetch().catch(catchUnlessCancelled("components/sessionAskUserBar.tsx"));
           }}
         />
       ))}

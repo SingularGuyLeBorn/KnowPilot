@@ -1,4 +1,5 @@
 "use client";
+import { catchUnlessCancelled } from "@/lib/trpc";
 
 /**
  * 相关笔记完整版：FTS + 标签交集 + 同花园/同分类加权（post.related）。
@@ -51,7 +52,7 @@ export function RelatedPosts({
             type="button"
             className="ml-2 underline"
             onClick={() => {
-              refetch().catch(() => {});
+              refetch().catch(catchUnlessCancelled("components/post/RelatedPosts.tsx"));
             }}
           >
             重试

@@ -1,4 +1,5 @@
 "use client";
+import { catchUnlessCancelled } from "@/lib/trpc";
 
 /**
  * Chat → 知识库落库完整对话框：新建 / 覆盖更新 / 追加到已有文章。
@@ -115,9 +116,9 @@ function SaveMessageAsPostDialogInner({
         const href = postDetailHref(res.data.slug, res.data.garden ?? garden);
         setResultHref(href);
         await Promise.all([
-          utils.post.list.invalidate().catch(() => {}),
-          utils.post.tree.invalidate().catch(() => {}),
-          utils.post.related.invalidate().catch(() => {}),
+          utils.post.list.invalidate().catch(catchUnlessCancelled("components/saveMessageAsPostDialog.tsx")),
+          utils.post.tree.invalidate().catch(catchUnlessCancelled("components/saveMessageAsPostDialog.tsx")),
+          utils.post.related.invalidate().catch(catchUnlessCancelled("components/saveMessageAsPostDialog.tsx")),
         ]);
         onSuccess?.(href);
       })

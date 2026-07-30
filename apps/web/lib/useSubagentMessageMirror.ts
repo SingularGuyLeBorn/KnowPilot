@@ -9,7 +9,7 @@
  */
 
 import { useEffect } from "react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 
 type PendingAgentMessage = {
   id: string;
@@ -54,7 +54,7 @@ export function useSubagentMessageMirror(opts: {
             });
             // 服务端 shouldSkipSuperiorMirror：success 但无 data → 已投递/对账跳过，回写 consumed
             if (created?.success && !created.data) {
-              await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id }).catch(() => {});
+              await markAgentMessageConsumedMutation.mutateAsync({ messageId: msg.id }).catch(catchUnlessCancelled("lib/useSubagentMessageMirror.ts"));
             }
           } catch {
             // 幂等冲突或网络错误忽略
@@ -64,7 +64,7 @@ export function useSubagentMessageMirror(opts: {
       if (cancelled) return;
       // 仅当至少有一条实际处理（非全 rejected）才 refetch
       if (results.some((r) => r.status === "fulfilled")) {
-        refetchSessionQueue().catch(() => {});
+        refetchSessionQueue().catch(catchUnlessCancelled("lib/useSubagentMessageMirror.ts"));
       }
     })();
     return () => {

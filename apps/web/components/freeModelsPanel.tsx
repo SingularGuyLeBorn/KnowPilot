@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { Copy, Check, ExternalLink, RefreshCw, Sparkles, Radio, Search } from "lucide-react";
 import { motion } from "framer-motion";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState, LoadingState, KpSelect, Pagination } from "@/components/shared";
@@ -364,7 +364,7 @@ export function FreeModelsPanel({ locale = "zh" }: { locale?: FreeModelsLocale }
                         <CopyIdButton
                           id={m.id}
                           copied={copiedId === m.id}
-                          onCopy={() => onCopy(m.id).catch(() => {})}
+                          onCopy={() => onCopy(m.id).catch(catchUnlessCancelled("components/freeModelsPanel.tsx"))}
                           title={t.copyTitle}
                         />
                         {text ? (
@@ -400,7 +400,7 @@ export function FreeModelsPanel({ locale = "zh" }: { locale?: FreeModelsLocale }
                           size="sm"
                           variant="secondary"
                           className="h-8 gap-1.5 border border-[var(--kp-divider)] bg-[var(--kp-bg)] text-[var(--kp-text-1)] hover:border-[var(--kp-brand)]/40 hover:bg-[var(--kp-brand-soft)]"
-                          onClick={() => onCopy(m.id).catch(() => {})}
+                          onClick={() => onCopy(m.id).catch(catchUnlessCancelled("components/freeModelsPanel.tsx"))}
                         >
                           {copiedId === m.id ? (
                             <>
@@ -505,7 +505,7 @@ export function FreeModelsPanel({ locale = "zh" }: { locale?: FreeModelsLocale }
                       size="sm"
                       variant="secondary"
                       className="h-8 shrink-0 gap-1.5 border border-[var(--kp-divider)] bg-[var(--kp-bg)] hover:bg-[var(--kp-brand-soft)]"
-                      onClick={() => onCopy(c.model!).catch(() => {})}
+                      onClick={() => onCopy(c.model!).catch(catchUnlessCancelled("components/freeModelsPanel.tsx"))}
                     >
                       {copiedId === c.model ? (
                         <>

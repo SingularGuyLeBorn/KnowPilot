@@ -155,7 +155,7 @@ export class SwarmOrchestrator {
         // pool 命中：先等准备段（快，仅 DB），有早结 outcome 立即返回——不等执行收口（fire-and-forget，可能数分钟）。
         // P1-01：existing.jobId 在 prepare 段可能被改写为 finalJobId，必须 await prepared 之后再读，
         //        否则 audit 日志与返回值 jobId 可能不一致（一个用初始 uuid，一个用 finalJobId）。
-        if (existing.prepared) await existing.prepared.catch(() => {});
+        if (existing.prepared) await existing.prepared.catch((err) => { console.warn("[swarmOrchestrator.ts] best-effort failed:", err instanceof Error ? err.message : err); });
         const resolvedJobId = existing.jobId;
         const outcome = existing.outcome ?? (existing.completion ? await existing.completion : undefined);
         this.audit("info", "swarm_dispatch_deduped", `${spec.origin} 任务「${spec.taskLabel}」命中 60s 去重窗口，返回已有任务 ${resolvedJobId}`, {

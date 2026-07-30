@@ -1,9 +1,9 @@
+"use client";
 /**
  * 待你点头 — 高风险动作人类审批队列
  * 承诺：人不在场 → 请求挂着，绝不擅自执行；超时只拒绝不执行。
  */
 
-"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
@@ -14,7 +14,7 @@ import { useApproval } from "@/lib/hooks";
 import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, Pagination, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
 
 type StatusFilter = "all" | "pending" | "approved" | "rejected" | "executed";
@@ -84,8 +84,8 @@ export default function ApprovalsPage() {
     }
     const onMsg = (ev: MessageEvent) => {
       if ((ev.data as { type?: string } | null)?.type !== "approval_updated") return;
-      utils.approval.list.invalidate().catch(() => {});
-      utils.approval.humanTodoSummary.invalidate().catch(() => {});
+      utils.approval.list.invalidate().catch(catchUnlessCancelled("app/approvals/page.tsx"));
+      utils.approval.humanTodoSummary.invalidate().catch(catchUnlessCancelled("app/approvals/page.tsx"));
     };
     bc.addEventListener("message", onMsg);
     return () => {

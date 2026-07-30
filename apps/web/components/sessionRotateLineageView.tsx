@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ExternalLink, GitBranch } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { EmptyState, LoadingState } from "@/components/shared";
 import { UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
@@ -54,7 +54,7 @@ export function SessionRotateLineageView() {
     const onMsg = (ev: MessageEvent) => {
       const t = (ev.data as { type?: string } | null)?.type;
       if (t !== "session_list_changed" && t !== "cron_session_started") return;
-      utils.session.rotateGraph.invalidate().catch(() => {});
+      utils.session.rotateGraph.invalidate().catch(catchUnlessCancelled("components/sessionRotateLineageView.tsx"));
     };
     bc.addEventListener("message", onMsg);
     return () => {

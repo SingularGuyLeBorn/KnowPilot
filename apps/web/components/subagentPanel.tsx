@@ -9,7 +9,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, Plus, Trash2, ExternalLink, Eye, Play } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { AgentAvatar } from "./agentAvatar";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -161,7 +161,7 @@ function SubagentAgentCard({
         isDestructive
         onConfirm={() => {
           deleteMut.mutate({ id: agent.id });
-          utils.agent.list.invalidate().catch(() => {});
+          utils.agent.list.invalidate().catch(catchUnlessCancelled("components/subagentPanel.tsx"));
           setConfirmDelete(false);
         }}
         onCancel={() => setConfirmDelete(false)}
@@ -215,10 +215,10 @@ export function SubagentPanel({
   }, [childrenQuery.data?.items]);
 
   const refresh = () => {
-    query.refetch().catch(() => {});
-    utils.agent.list.invalidate().catch(() => {});
+    query.refetch().catch(catchUnlessCancelled("components/subagentPanel.tsx"));
+    utils.agent.list.invalidate().catch(catchUnlessCancelled("components/subagentPanel.tsx"));
     if (parentSessionId) {
-      utils.session.listChildren.invalidate({ parentSessionId }).catch(() => {});
+      utils.session.listChildren.invalidate({ parentSessionId }).catch(catchUnlessCancelled("components/subagentPanel.tsx"));
     }
   };
 

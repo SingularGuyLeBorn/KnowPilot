@@ -15,7 +15,7 @@ import {
   X,
   Pin,
 } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { postDetailHref } from "@/lib/postHref";
 import { cn } from "@/lib/utils";
 import { useContentNavHighlight } from "@/lib/contentNavContext";
@@ -523,7 +523,7 @@ export function PostTreeNav({
     (slug: string, garden?: string) => {
       utils.post.getBySlug
         .prefetch({ slug, garden: garden ?? DEFAULT_POST_GARDEN })
-        .catch(() => {});
+        .catch(catchUnlessCancelled("components/post/PostTreeNav.tsx"));
     },
     [utils],
   );

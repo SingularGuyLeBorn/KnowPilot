@@ -7,7 +7,7 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import { DEFAULT_POST_GARDEN, isValidGardenIdFormat } from "@knowpilot/shared";
 import { PostLiveDoc } from "@/components/post/PostLiveDoc";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -87,7 +87,7 @@ export default function PostDetailPage() {
           prev ? { ...prev, viewCount: res.viewCount } : prev,
         );
       })
-      .catch(() => {});
+      .catch(catchUnlessCancelled("app/posts/[slug]/page.tsx"));
   }, [post?.id, post?.slug, post?.garden, utils, recordView]);
 
   if (showSkeleton && !post) {

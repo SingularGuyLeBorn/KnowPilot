@@ -1,4 +1,5 @@
 "use client";
+import { catchUnlessCancelled } from "@/lib/trpc";
 
 import { useMemo, useState } from "react";
 import {
@@ -127,7 +128,7 @@ function downloadFile(file: ExtractedFile) {
         a.click();
         URL.revokeObjectURL(url);
       })
-      .catch(() => {});
+      .catch(catchUnlessCancelled("components/chatFilesPanel.tsx"));
     return;
   }
   if (file.content !== undefined) {

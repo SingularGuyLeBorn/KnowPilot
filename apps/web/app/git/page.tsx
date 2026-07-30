@@ -1,8 +1,8 @@
+"use client";
 /**
  * Git 仓库工作台 — 关联本项目仓库 + status / diff / log + commit/pull/push（写操作走审批）
  */
 
-"use client";
 
 import React, { useCallback, useState } from "react";
 import { motion } from "framer-motion";
@@ -57,7 +57,7 @@ export default function GitPage() {
         return;
       }
       setBanner({ type: "ok", text: "已关联本项目仓库（path: .）" });
-      refetch().catch(() => {});
+      refetch().catch(catchUnlessCancelled("app/git/page.tsx"));
     },
     onError: (err: { message?: string }) => {
       setBanner({ type: "err", text: err.message || "关联失败" });
@@ -73,10 +73,10 @@ export default function GitPage() {
   const diffQuery = useDiff({ repoId: activeId, staged: false }, { enabled: !!activeId });
 
   const refreshAll = useCallback(() => {
-    statusQuery.refetch().catch(() => {});
-    logQuery.refetch().catch(() => {});
-    diffQuery.refetch().catch(() => {});
-    refetch().catch(() => {});
+    statusQuery.refetch().catch(catchUnlessCancelled("app/git/page.tsx"));
+    logQuery.refetch().catch(catchUnlessCancelled("app/git/page.tsx"));
+    diffQuery.refetch().catch(catchUnlessCancelled("app/git/page.tsx"));
+    refetch().catch(catchUnlessCancelled("app/git/page.tsx"));
   }, [statusQuery, logQuery, diffQuery, refetch]);
 
   const commitMutation = useCommit({

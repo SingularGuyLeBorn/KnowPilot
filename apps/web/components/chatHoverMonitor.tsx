@@ -12,7 +12,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, ExternalLink, Loader2, MessageSquare, X } from "lucide-react";
 import type { ChatMessage } from "@knowpilot/shared";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { buildMessageGroups, type MessageGroup } from "@/lib/chatMessageUtils";
 import { buttonVariants } from "@/components/ui/button";
@@ -57,7 +57,7 @@ export function ChatHoverMonitor({ sessionId, onMouseEnter, onMouseLeave, onClos
   // 预加载：鼠标进入时由父组件触发 prefetch，组件挂载后也主动取一次第一页
   useEffect(() => {
     if (!sessionId) return;
-    messagesQuery.fetchNextPage().catch(() => {});
+    messagesQuery.fetchNextPage().catch(catchUnlessCancelled("components/chatHoverMonitor.tsx"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 

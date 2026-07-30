@@ -42,7 +42,7 @@ export class LocalAgentRunLock implements AgentRunLock {
       agentId,
       prev.then(() => held),
     );
-    await prev.catch(() => {});
+    await prev.catch((err) => { console.warn("[agentRunLock.ts] best-effort failed:", err instanceof Error ? err.message : err); });
     try {
       return await fn();
     } finally {

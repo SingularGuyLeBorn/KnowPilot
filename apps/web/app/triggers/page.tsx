@@ -1,8 +1,8 @@
+"use client";
 /**
  * Triggers 事件触发器管理 — 完整创建/编辑表单
  */
 
-"use client";
 
 import React, { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -285,7 +285,7 @@ export default function TriggersPage() {
           {formError && <p className="text-xs text-red-600">{formError}</p>}
           <div className="flex gap-2 pt-1">
             <Button
-              onClick={() => { handleSave().catch(() => {}); }}
+              onClick={() => { handleSave().catch(catchUnlessCancelled("app/triggers/page.tsx")); }}
               disabled={createMutation.isPending || updateMutation.isPending}
             >
               {editingId ? "保存修改" : "创建触发器"}

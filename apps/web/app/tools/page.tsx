@@ -1,8 +1,8 @@
+"use client";
 /**
  * Tools 工具注册表 — 完整 CRUD 配置页（参考 MetaBlog / sources）
  */
 
-"use client";
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Tool } from "@knowpilot/shared";
 import { useTool, useNativeCapabilities } from "@/lib/hooks";
-import { trpc } from "@/lib/trpc";
+import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
 
@@ -192,7 +192,7 @@ export default function ToolsPage() {
       await createMutation.mutateAsync(payload);
     }
     setView("list");
-    refetch().catch(() => {});
+    refetch().catch(catchUnlessCancelled("app/tools/page.tsx"));
   };
 
   const handleSearch = () => {
@@ -347,7 +347,7 @@ export default function ToolsPage() {
 
           <div className="flex gap-3">
             <Button
-              onClick={() => { handleSave().catch(() => {}); }}
+              onClick={() => { handleSave().catch(catchUnlessCancelled("app/tools/page.tsx")); }}
               disabled={createMutation.isPending || updateMutation.isPending}
             >
               {editingId ? "保存修改" : "注册工具"}

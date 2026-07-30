@@ -1108,12 +1108,12 @@ export async function syncXhsLibrary(
 
     activeKind = null;
     await persistChain;
-    await context.close().catch(() => {});
+    await context.close().catch((err) => { console.warn("[xhs.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   } catch (err) {
     errors.push(`小红书同步失败: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    await persistChain.catch(() => {});
-    await browser?.close().catch(() => {});
+    await persistChain.catch((err) => { console.warn("[xhs.ts] best-effort failed:", err instanceof Error ? err.message : err); });
+    await browser?.close().catch((err) => { console.warn("[xhs.ts] best-effort failed:", err instanceof Error ? err.message : err); });
   }
 
   for (const kind of uniqueKinds) {
