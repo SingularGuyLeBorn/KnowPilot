@@ -299,7 +299,7 @@ pnpm test         # 全仓库运行 Vitest
 
 为了杜绝项目文件夹过深、同名文件繁多引发维护崩溃，以及防止功能重复定义，项目必须严格遵循**“单文件逻辑收拢”**原则：
 1. **后端业务层合并**：禁止创建 `services/` 子目录及零散平行 Service 树。默认收拢在 `apps/server/src/services.ts`；体量过大时**按域拆到** `infra/entityServices/<entity>Service.ts`（继承同文件 `BaseService`/`FileSyncService`，由 `serviceContainer` 直连叶子），禁止平行第二套实现或兼容 re-export。
-2. **后端路由层合并**：禁止创建 `trpc/routers/` 子目录及零散路由文件。所有 API 路由统一声明在 `apps/server/src/router.ts` 中。
+2. **后端路由层合并**：禁止创建 `trpc/routers/` 子目录及零散平行路由树。默认收拢在 `apps/server/src/router.ts`；体量过大时**按域拆到** `infra/trpcRouters/<domain>Router.ts`（由根 `router.ts` 聚合出口 `AppRouter`），禁止第二套实现或兼容 re-export。
 3. **前端 Hooks 合并**：禁止创建 `hooks/` 子目录及零散数据 hooks 文件。所有 React Query hooks 统一放在 `apps/web/lib/hooks.ts` 中。
 4. **前端通用组件合并**：禁止创建 `components/shared/` 目录及零散小组件。通用的页面基础 UI 组件（如分页、空状态、骨架屏、确认弹窗）统一放在 `apps/web/components/shared.tsx` 中。
 

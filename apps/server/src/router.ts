@@ -1,9 +1,9 @@
 /**
  * KnowPilot 根路由合集与编译出口 (Root Router)
  *
- * 【扁平化单文件设计】：
- * 1. 包含 18 个实体路由和 1 个 AI 工具反射路由的全部 API Procedures。
- * 2. 彻底删除 trpc/routers/ 子目录，减少开发时的文件切换开销。
+ * 【扁平化 + 按需叶子拆分】：
+ * 1. 本文件聚合业务子路由与 AI 工具反射；低耦合域可拆至 infra/trpcRouters/。
+ * 2. 禁止平行 trpc/routers/ 树与兼容 re-export；AppRouter 仍从此文件出口。
  */
 
 import { z } from "zod";
@@ -12,19 +12,13 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { success, failure } from "./trpc/result.js";
 import {
   createPostSchema, updatePostSchema, listPostsSchema, searchPostsSchema, relatedPostsSchema, createPostFromChatSchema, getPostBySlugSchema, postGardenSchema, postRecordViewSchema, explainSelectionSchema,
-  createGardenSchema, updateGardenSchema, listGardensSchema, getGardenByIdSchema, deleteGardenSchema,
   createAgentSchema, updateAgentSchema, listAgentsSchema, agentRunSchema, agentChatSchema, submitAgentInjectSchema, editorAgentCompleteSchema, editorFormulaCopilotSchema,
   resolveAskUserSchema, listAskUserPendingSchema,
-  createSkillSchema, updateSkillSchema, listSkillsSchema,
-  createMcpServerSchema, updateMcpServerSchema, listMcpServersSchema,
-  createMemorySchema, updateMemorySchema, listMemoriesSchema,
   createSessionSchema, updateSessionSchema, listSessionsSchema, stopSessionSchema, rerunSessionSchema, resumeSessionSchema, ensureMainSessionSchema, openNewSessionSchema, compactSessionSchema,
   setSessionGoalSchema, sessionGoalControlSchema, listSideRunsSchema, rotateLineageSchema, listRecentRotatesSchema, rotateGraphSchema,
   createMessageSchema, updateMessageSchema, listMessagesSchema, listMessagesForChatSchema, switchMessageVersionSchema,
   switchBranchSchema, sessionTreeSchema, setMessageLabelSchema,
   createSessionQueueItemSchema, reorderSessionQueueItemsSchema,
-  createFileSchema, updateFileSchema, listFilesSchema, uploadFileSchema,
-  createLogSchema, updateLogSchema, listLogsSchema,
   createGitRepoSchema, updateGitRepoSchema, listGitReposSchema, gitRepoPathSchema, gitLogSchema, gitDiffSchema, gitCommitSchema,
   createTaskSchema, updateTaskSchema, listTasksSchema,
   createWorkspaceSchema, updateWorkspaceSchema, listWorkspacesSchema,
@@ -32,16 +26,7 @@ import {
   listAgentCronSchema, upsertAgentCronSchema, clearAgentCronSchema,
   setAgentCronEnabledSchema, fireAgentCronSchema,
   createApprovalSchema, updateApprovalSchema, listApprovalsSchema,
-  createToolSchema, updateToolSchema, listToolsSchema,
   createRunSchema, updateRunSchema, listRunsSchema,
-  createPromptSchema, updatePromptSchema, listPromptsSchema,
-  createInfoSourceSchema, updateInfoSourceSchema, listInfoSourcesSchema,
-  createInboxItemSchema, updateInboxItemSchema, listInboxItemsSchema,
-  inboxCaptureUrlSchema, inboxCaptureUrlsSchema, inboxSyncZhihuSchema, inboxSyncXhsSchema, inboxSyncBilibiliSchema,
-  inboxPlatformSyncStartSchema, inboxPlatformSyncProgressSchema,
-  inboxScanScreenshotsSchema, inboxIngestWechatDropSchema, inboxDistillSchema, inboxIgnoreSchema, inboxEnrichSchema,
-  inboxBulkDeleteSchema,
-  inboxFacetsSchema,
   createCredentialSchema, updateCredentialSchema, listCredentialsSchema,
   webSearchSchema, nativeExecuteSchema,
   deleteByIdSchema, deleteByIdWithApprovalSchema, gitPushWithApprovalSchema, gitCommitWithApprovalSchema, gitPullWithApprovalSchema,
@@ -100,31 +85,24 @@ import {
   verifyAuthHeader,
 } from "./infra/auth.js";
 import type { ServiceContainer } from "./infra/serviceContainer.js";
+import { gardenRouter } from "./infra/trpcRouters/gardenRouter.js";
+import { logRouter } from "./infra/trpcRouters/logRouter.js";
+import { toolRouter } from "./infra/trpcRouters/toolRouter.js";
+import { promptRouter } from "./infra/trpcRouters/promptRouter.js";
+import { skillRouter } from "./infra/trpcRouters/skillRouter.js";
+import { mcpRouter } from "./infra/trpcRouters/mcpRouter.js";
+import { memoryRouter } from "./infra/trpcRouters/memoryRouter.js";
+import { fileRouter } from "./infra/trpcRouters/fileRouter.js";
+import { infoSourceRouter } from "./infra/trpcRouters/infoSourceRouter.js";
+import { inboxRouter } from "./infra/trpcRouters/inboxRouter.js";
+import { channelRouter } from "./infra/trpcRouters/channelRouter.js";
 import { TRPCError } from "@trpc/server";
 
 /* ─── 19 个业务子路由定义 ─── */
 
 const createTrpcInvokerForCtx = createTrpcInvoker;
 
-async function withApprovalGuard(
-  services: ServiceContainer,
-  toolName: string,
-  args: Record<string, unknown>,
-  approvalId: string | undefined,
-  execute: () => Promise<unknown>,
-) {
-  await assertApprovalOrProceed(services, toolName, args, approvalId);
-  return execute();
-}
-
-const gardenRouter = router({
-  list: publicProcedure.meta({ description: "分页列出知识库花园。", aiReadable: true }).input(listGardensSchema).query(({ ctx, input }) => ctx.services.garden.list(input)),
-  getById: publicProcedure.meta({ description: "获取花园详情与首页正文。", aiReadable: true }).input(getGardenByIdSchema).query(({ ctx, input }) => ctx.services.garden.getById(input.id)),
-  create: publicProcedure.meta({ description: "新建知识库花园（content/{id}/_garden.md）。", aiReadable: true }).input(createGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.create(input)),
-  update: publicProcedure.meta({ description: "更新花园标题/说明/首页。", aiReadable: true }).input(updateGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.update(input)),
-  delete: publicProcedure.meta({ description: "软删除空花园（种子库不可删；进 content/.trash/gardens/）。", aiReadable: true }).input(deleteGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.delete(input.id)),
-  restore: publicProcedure.meta({ description: "从 content/.trash/gardens/ 恢复已软删花园。", aiReadable: true }).input(deleteGardenSchema).mutation(({ ctx, input }) => ctx.services.garden.restore(input.id)),
-});
+import { withApprovalGuard } from "./infra/trpcRouters/withApprovalGuard.js";
 
 const postRouter = router({
   list: publicProcedure.meta({ description: "分页列出文章；可按花园 garden id /分类/标签/关键词过滤。", aiReadable: true }).input(listPostsSchema).query(({ ctx, input }) => ctx.services.post.list(input)),
@@ -507,143 +485,6 @@ const agentRouter = router({
         data: { paused: false, steps: stepResults },
         operation: "runWorkflow",
         entity: "agent",
-      });
-    }),
-});
-
-const skillRouter = router({
-  create: publicProcedure.meta({ description: "创建技能。name 必须唯一。", aiReadable: true }).input(createSkillSchema).mutation(({ ctx, input }) => ctx.services.skill.create(input)),
-  getById: publicProcedure.meta({ description: "获取技能详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.skill.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出所有技能，支持分页和过滤。", aiReadable: true }).input(listSkillsSchema).query(({ ctx, input }) => ctx.services.skill.list(input)),
-  update: publicProcedure.meta({ description: "更新技能配置。", aiReadable: true }).input(updateSkillSchema).mutation(({ ctx, input }) => ctx.services.skill.update(input)),
-  delete: publicProcedure.meta({ description: "删除技能及其本地配置文件。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
-    withApprovalGuard(ctx.services, "skill.delete", { id: input.id }, input.approvalId, () => ctx.services.skill.delete(input.id)),
-  ),
-});
-
-const mcpRouter = router({
-  create: publicProcedure.meta({ description: "注册 MCP 服务器配置。name 必须唯一。", aiReadable: true }).input(createMcpServerSchema).mutation(({ ctx, input }) => ctx.services.mcp.create(input)),
-  getById: publicProcedure.meta({ description: "获取 MCP 服务器详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.mcp.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出所有 MCP 服务器配置。", aiReadable: true }).input(listMcpServersSchema).query(({ ctx, input }) => ctx.services.mcp.list(input)),
-  update: publicProcedure.meta({ description: "更新 MCP 服务器配置。", aiReadable: true }).input(updateMcpServerSchema).mutation(({ ctx, input }) => ctx.services.mcp.update(input)),
-  delete: publicProcedure.meta({ description: "删除 MCP 服务器配置及本地 JSON 文件。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
-    withApprovalGuard(ctx.services, "mcp.delete", { id: input.id }, input.approvalId, () => ctx.services.mcp.delete(input.id)),
-  ),
-});
-
-const memoryRouter = router({
-  create: publicProcedure.meta({ description: "创建长期记忆条目。", aiReadable: true }).input(createMemorySchema).mutation(({ ctx, input }) => ctx.services.memory.create(input)),
-  getById: publicProcedure.meta({ description: "获取记忆详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.memory.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出记忆，支持按 type/keyword 过滤。", aiReadable: true }).input(listMemoriesSchema).query(({ ctx, input }) => ctx.services.memory.list(input)),
-  update: publicProcedure.meta({ description: "更新记忆条目。", aiReadable: true }).input(updateMemorySchema).mutation(({ ctx, input }) => ctx.services.memory.update(input)),
-  delete: publicProcedure.meta({ description: "删除记忆条目。", aiReadable: true }).input(z.object({ id: z.string().cuid(), approvalId: z.string().cuid().optional() })).mutation(({ ctx, input }) =>
-    withApprovalGuard(ctx.services, "memory.delete", { id: input.id }, input.approvalId, () => ctx.services.memory.delete(input.id)),
-  ),
-});
-
-const infoSourceRouter = router({
-  create: publicProcedure.meta({ description: "创建信息源（可信信息来源配置）。", aiReadable: true }).input(createInfoSourceSchema).mutation(({ ctx, input }) => ctx.services.infoSource.create(input)),
-  getById: publicProcedure.meta({ description: "获取信息源详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.infoSource.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出信息源，支持类型/标签/可信度筛选。", aiReadable: true }).input(listInfoSourcesSchema).query(({ ctx, input }) => ctx.services.infoSource.list(input)),
-  update: publicProcedure.meta({ description: "更新信息源配置。", aiReadable: true }).input(updateInfoSourceSchema).mutation(({ ctx, input }) => ctx.services.infoSource.update(input)),
-  delete: publicProcedure.meta({ description: "删除信息源。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.infoSource.delete(input.id)),
-  fetch: publicProcedure
-    .meta({ description: "手动触发 RSS/Atom 信息源抓取。", aiReadable: true })
-    .input(z.object({ id: z.string().cuid(), maxItems: z.number().int().min(1).max(50).optional(), autoDraft: z.boolean().optional() }))
-    .mutation(async ({ ctx, input }) => {
-      const { fetchRssSource } = await import("./infra/rssFetch.js");
-      return fetchRssSource(ctx.prisma, input.id, {
-        maxItems: input.maxItems ?? 20,
-        timeoutMs: 20000,
-      });
-    }),
-  fetchDue: publicProcedure
-    .meta({ description: "抓取所有到期的 RSS 信息源。", aiReadable: true })
-    .input(z.object({ maxItems: z.number().int().min(1).max(50).optional() }))
-    .mutation(async ({ ctx, input }) => {
-      const { fetchDueRssSources } = await import("./infra/rssFetch.js");
-      return fetchDueRssSources(ctx.prisma, { maxItems: input.maxItems ?? 20, timeoutMs: 20000 });
-    }),
-});
-
-const inboxRouter = router({
-  create: publicProcedure.meta({ description: "手动创建 Inbox 条目。", aiReadable: true }).input(createInboxItemSchema).mutation(({ ctx, input }) => ctx.services.inbox.create(input)),
-  getById: publicProcedure.meta({ description: "获取 Inbox 条目详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.inbox.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出 Inbox 素材（截图/知乎/小红书/B站/微信）。", aiReadable: true }).input(listInboxItemsSchema).query(({ ctx, input }) => ctx.services.inbox.list(input)),
-  update: publicProcedure.meta({ description: "更新 Inbox 条目。", aiReadable: true }).input(updateInboxItemSchema).mutation(({ ctx, input }) => ctx.services.inbox.update(input)),
-  delete: publicProcedure.meta({ description: "删除 Inbox 条目。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.inbox.delete(input.id)),
-  bulkDelete: publicProcedure.meta({ description: "批量删除 Inbox 条目（仅队列记录，不动已蒸馏文章）。", aiReadable: true }).input(inboxBulkDeleteSchema).mutation(({ ctx, input }) => ctx.services.inbox.bulkDelete(input.ids)),
-  stats: publicProcedure.meta({ description: "Inbox 统计（待消化/已蒸馏/按来源）。", aiReadable: true }).query(({ ctx }) => ctx.services.inbox.stats()),
-  facets: publicProcedure.meta({ description: "Inbox 分面：来源计数、知乎收藏夹、小红书点赞/收藏、B站收藏/稍后再看。", aiReadable: true }).input(inboxFacetsSchema).query(({ ctx, input }) => ctx.services.inbox.facets(input)),
-  captureUrl: publicProcedure.meta({ description: "抓取单个 URL 写入 Inbox。", aiReadable: true }).input(inboxCaptureUrlSchema).mutation(({ ctx, input }) => ctx.services.inbox.captureUrl(input)),
-  captureUrls: publicProcedure.meta({ description: "批量抓取 URL 写入 Inbox。", aiReadable: true }).input(inboxCaptureUrlsSchema).mutation(({ ctx, input }) => ctx.services.inbox.captureUrls(input)),
-  syncZhihu: publicProcedure.meta({ description: "同步知乎收藏到 Inbox：优先 ZHIHU_ACCESS_SECRET 开放平台；否则 platform_login。不填 collectionUrl=全部收藏夹；mode=full|incremental。", aiReadable: true }).input(inboxSyncZhihuSchema).mutation(({ ctx, input }) => ctx.services.inbox.syncZhihu(input)),
-  syncXhs: publicProcedure.meta({ description: "同步小红书点赞/收藏到 Inbox（需 platform_login xhs；mode=full|incremental；kinds 默认两者）。", aiReadable: true }).input(inboxSyncXhsSchema).mutation(({ ctx, input }) => ctx.services.inbox.syncXhs(input)),
-  syncBilibili: publicProcedure.meta({ description: "同步 B 站收藏夹/稍后再看到 Inbox（需 platform_login bilibili；学 BiliNote 复用 SESSDATA；kinds=fav|toview）。", aiReadable: true }).input(inboxSyncBilibiliSchema).mutation(({ ctx, input }) => ctx.services.inbox.syncBilibili(input)),
-  startPlatformSync: publicProcedure.meta({ description: "启动平台批量同步后台任务（立即返回 jobId，前端轮询 platformSyncProgress）。", aiReadable: true }).input(inboxPlatformSyncStartSchema).mutation(({ ctx, input }) => ctx.services.inbox.startPlatformSync(input)),
-  cancelPlatformSync: publicProcedure.meta({ description: "停止进行中的平台同步（下一页/下一夹退出，已写入保留）。", aiReadable: true }).input(z.object({ jobId: z.string().min(1).max(64).optional() }).optional()).mutation(({ ctx, input }) => ctx.services.inbox.cancelPlatformSync(input?.jobId)),
-  platformSyncProgress: publicProcedure.meta({ description: "查询平台批量同步进度（percent + 分步状态）。", aiReadable: true }).input(inboxPlatformSyncProgressSchema).query(({ ctx, input }) => ctx.services.inbox.getPlatformSyncProgress(input.jobId)),
-  activePlatformSync: publicProcedure.meta({ description: "当前进行中的平台同步任务（无则 null）。", aiReadable: true }).query(({ ctx }) => ctx.services.inbox.getActivePlatformSync()),
-  latestPlatformSync: publicProcedure.meta({ description: "最近一次平台同步任务（进行中优先，含已结束；切页恢复进度卡）。", aiReadable: true }).query(({ ctx }) => ctx.services.inbox.getLatestPlatformSync()),
-  scanScreenshots: publicProcedure.meta({ description: "扫描截图目录 OCR 入库。", aiReadable: true }).input(inboxScanScreenshotsSchema).mutation(({ ctx, input }) => ctx.services.inbox.scanScreenshots(input)),
-  ingestWechatDrop: publicProcedure.meta({ description: "读取 data/inbox/wechat/links.txt 入库。", aiReadable: true }).input(inboxIngestWechatDropSchema).mutation(({ ctx, input }) => ctx.services.inbox.ingestWechatDrop(input)),
-  distill: publicProcedure.meta({ description: "将 Inbox 条目蒸馏为未发布 Post 草稿。", aiReadable: true }).input(inboxDistillSchema).mutation(({ ctx, input }) => ctx.services.inbox.distill(input)),
-  enrich: publicProcedure.meta({ description: "分批补抓 Inbox 缺正文（防风控：跳过已有、条间慢间隔、撞墙停）。", aiReadable: true }).input(inboxEnrichSchema).mutation(({ ctx, input }) => ctx.services.inbox.enrichContent(input)),
-  ignore: publicProcedure.meta({ description: "忽略 Inbox 条目。", aiReadable: true }).input(inboxIgnoreSchema).mutation(({ ctx, input }) => ctx.services.inbox.ignoreItems(input)),
-});
-
-const channelRouter = router({
-  status: publicProcedure
-    .meta({ description: "IM 通道（QQ）连接状态与统计。", aiReadable: true })
-    .query(async () => {
-      const { getMessageGatewayStats, listChannelAdapters } = await import("./infra/messageGateway.js");
-      return {
-        stats: getMessageGatewayStats(),
-        adapters: listChannelAdapters().map((a) => ({
-          channel: a.channel,
-          name: a.name,
-          enabled: a.enabled,
-          ...a.getStatus(),
-        })),
-      };
-    }),
-  listBindings: publicProcedure
-    .meta({ description: "列出 IM 对端 ↔ 会话绑定。", aiReadable: true })
-    .input(z.object({ channel: z.enum(["qq", "feishu", "telegram"]).optional(), limit: z.number().int().min(1).max(200).optional() }).optional())
-    .query(async ({ ctx, input }) => {
-      const { listChannelBindings } = await import("./infra/channelBinding.js");
-      return { items: await listChannelBindings(ctx.prisma, input ?? undefined) };
-    }),
-  deleteBinding: publicProcedure
-    .meta({ description: "删除 IM 绑定（不删会话消息）。", aiReadable: true })
-    .input(z.object({ id: z.string().cuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const { deleteChannelBinding } = await import("./infra/channelBinding.js");
-      return { ok: await deleteChannelBinding(ctx.prisma, input.id) };
-    }),
-  simulateInbound: publicProcedure
-    .meta({ description: "模拟一条 IM 入站（开发调试；需服务已 init MessageGateway）。", aiReadable: true })
-    .input(
-      z.object({
-        channel: z.enum(["qq"]),
-        peerId: z.string().min(1).max(128),
-        text: z.string().min(1).max(4000),
-        chatId: z.string().max(128).optional(),
-        eventId: z.string().max(128).optional(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      const { handleIncomingMessage } = await import("./infra/messageGateway.js");
-      const { randomUUID } = await import("node:crypto");
-      return handleIncomingMessage({
-        envelope: {
-          channel: input.channel,
-          peerId: input.peerId,
-          chatId: input.chatId,
-          timestamp: new Date().toISOString(),
-        },
-        payload: { text: input.text },
-        meta: { eventId: input.eventId || randomUUID() },
       });
     }),
 });
@@ -1082,26 +923,6 @@ const messageRouter = router({
     .meta({ description: "为消息设置或清除书签标签。", aiReadable: false })
     .input(setMessageLabelSchema)
     .mutation(({ ctx, input }) => ctx.services.message.setLabel(input)),
-});
-
-const fileRouter = router({
-  upload: publicProcedure.meta({ description: "通过 base64 编码数据上传文件，返回上传后的文件记录和相对 URL。", aiReadable: true }).input(uploadFileSchema).mutation(({ ctx, input }) => ctx.services.file.upload(input)),
-  create: publicProcedure.meta({ description: "创建文件元数据记录。", aiReadable: true }).input(createFileSchema).mutation(({ ctx, input }) => ctx.services.file.create(input)),
-  getById: publicProcedure.meta({ description: "获取文件元数据。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.file.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出上传的文件。", aiReadable: true }).input(listFilesSchema).query(({ ctx, input }) => ctx.services.file.list(input)),
-  update: publicProcedure.meta({ description: "更新文件名称。", aiReadable: true }).input(updateFileSchema).mutation(({ ctx, input }) => ctx.services.file.update(input)),
-  delete: publicProcedure.meta({ description: "删除文件记录。", aiReadable: true }).input(deleteByIdWithApprovalSchema).mutation(({ ctx, input }) =>
-    withApprovalGuard(ctx.services, "file.delete", { id: input.id }, input.approvalId, () => ctx.services.file.delete(input.id)),
-  ),
-});
-
-const logRouter = router({
-  create: publicProcedure.meta({ description: "创建日志记录。", aiReadable: true }).input(createLogSchema).mutation(({ ctx, input }) => ctx.services.log.create(input)),
-  getById: publicProcedure.meta({ description: "获取日志详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.log.getById(input.id)),
-  list: publicProcedure.meta({ description: "分页列出日志，支持按 level/component/keyword 过滤。", aiReadable: true }).input(listLogsSchema).query(({ ctx, input }) => ctx.services.log.list(input)),
-  update: publicProcedure.meta({ description: "更新日志（一般不建议）。", aiReadable: false }).input(updateLogSchema).mutation(({ ctx, input }) => ctx.services.log.update(input)),
-  delete: publicProcedure.meta({ description: "删除单条日志。", aiReadable: false }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.log.delete(input.id)),
-  clearAll: publicProcedure.meta({ description: "一键清空日志审计库。", aiReadable: false }).mutation(({ ctx }) => ctx.services.log.clearAll()),
 });
 
 const gitRouter = router({
@@ -1595,14 +1416,6 @@ const askUserRouter = router({
     }),
 });
 
-const toolRouter = router({
-  create: publicProcedure.meta({ description: "注册工具。name 必须唯一。", aiReadable: true }).input(createToolSchema).mutation(({ ctx, input }) => ctx.services.tool.create(input)),
-  getById: publicProcedure.meta({ description: "获取工具详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.tool.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出所有工具，支持按 type/enabled 过滤。", aiReadable: true }).input(listToolsSchema).query(({ ctx, input }) => ctx.services.tool.list(input)),
-  update: publicProcedure.meta({ description: "更新工具配置。", aiReadable: true }).input(updateToolSchema).mutation(({ ctx, input }) => ctx.services.tool.update(input)),
-  delete: publicProcedure.meta({ description: "删除工具注册。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.tool.delete(input.id)),
-});
-
 const runRouter = router({
   create: publicProcedure.meta({ description: "记录 Agent 执行。", aiReadable: true }).input(createRunSchema).mutation(({ ctx, input }) => ctx.services.run.create(input)),
   getById: publicProcedure.meta({ description: "获取执行记录详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.run.getById(input.id)),
@@ -1626,14 +1439,6 @@ const runRouter = router({
         });
       }
     }),
-});
-
-const promptRouter = router({
-  create: publicProcedure.meta({ description: "创建提示词模板。name 必须唯一。", aiReadable: true }).input(createPromptSchema).mutation(({ ctx, input }) => ctx.services.prompt.create(input)),
-  getById: publicProcedure.meta({ description: "获取提示词模板详情。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).query(({ ctx, input }) => ctx.services.prompt.getById(input.id)),
-  list: publicProcedure.meta({ description: "列出提示词模板，支持按 tag 过滤。", aiReadable: true }).input(listPromptsSchema).query(({ ctx, input }) => ctx.services.prompt.list(input)),
-  update: publicProcedure.meta({ description: "更新提示词模板。", aiReadable: true }).input(updatePromptSchema).mutation(({ ctx, input }) => ctx.services.prompt.update(input)),
-  delete: publicProcedure.meta({ description: "删除提示词模板。", aiReadable: true }).input(z.object({ id: z.string().cuid() })).mutation(({ ctx, input }) => ctx.services.prompt.delete(input.id)),
 });
 
 const credentialRouter = router({

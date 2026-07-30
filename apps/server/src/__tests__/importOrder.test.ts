@@ -17,7 +17,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const entries: Array<{ name: string; specifier: string; key: string }> = [
+const entries: Array<{ name: string; specifier: string; key: string; kind?: "function" | "object" }> = [
   { name: "nativeTools", specifier: "../infra/nativeTools.js", key: "executeNativeTool" },
   { name: "agentTools", specifier: "../infra/agentTools.js", key: "executeAgentTool" },
   { name: "reactLoop", specifier: "../infra/loop/reactLoop.js", key: "runReactLoop" },
@@ -43,6 +43,18 @@ const entries: Array<{ name: string; specifier: string; key: string }> = [
   { name: "gardenService", specifier: "../infra/entityServices/gardenService.js", key: "GardenService" },
   { name: "approvalService", specifier: "../infra/entityServices/approvalService.js", key: "ApprovalService" },
   { name: "inboxService", specifier: "../infra/entityServices/inboxService.js", key: "InboxService" },
+  { name: "sessionQueueItemService", specifier: "../infra/entityServices/sessionQueueItemService.js", key: "SessionQueueItemService" },
+  { name: "gardenRouter", specifier: "../infra/trpcRouters/gardenRouter.js", key: "gardenRouter", kind: "object" },
+  { name: "logRouter", specifier: "../infra/trpcRouters/logRouter.js", key: "logRouter", kind: "object" },
+  { name: "toolRouter", specifier: "../infra/trpcRouters/toolRouter.js", key: "toolRouter", kind: "object" },
+  { name: "promptRouter", specifier: "../infra/trpcRouters/promptRouter.js", key: "promptRouter", kind: "object" },
+  { name: "skillRouter", specifier: "../infra/trpcRouters/skillRouter.js", key: "skillRouter", kind: "object" },
+  { name: "mcpRouter", specifier: "../infra/trpcRouters/mcpRouter.js", key: "mcpRouter", kind: "object" },
+  { name: "memoryRouter", specifier: "../infra/trpcRouters/memoryRouter.js", key: "memoryRouter", kind: "object" },
+  { name: "fileRouter", specifier: "../infra/trpcRouters/fileRouter.js", key: "fileRouter", kind: "object" },
+  { name: "infoSourceRouter", specifier: "../infra/trpcRouters/infoSourceRouter.js", key: "infoSourceRouter", kind: "object" },
+  { name: "inboxRouter", specifier: "../infra/trpcRouters/inboxRouter.js", key: "inboxRouter", kind: "object" },
+  { name: "channelRouter", specifier: "../infra/trpcRouters/channelRouter.js", key: "channelRouter", kind: "object" },
 ];
 
 describe("W4 import 顺序冒烟（循环依赖防线）", () => {
@@ -50,10 +62,11 @@ describe("W4 import 顺序冒烟（循环依赖防线）", () => {
     it(`以 ${entry.name} 为首个入口加载，模块求值不炸且 ${entry.key} 已定义`, async () => {
       vi.resetModules();
       const mod = (await import(entry.specifier)) as Record<string, unknown>;
+      const expectKind = entry.kind ?? "function";
       expect(
         typeof mod[entry.key],
         `${entry.name}.${entry.key} 为 ${typeof mod[entry.key]}——循环依赖导致模块求值顺序问题`,
-      ).toBe("function");
+      ).toBe(expectKind);
     });
   }
 
