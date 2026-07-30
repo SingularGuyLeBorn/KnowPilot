@@ -351,7 +351,8 @@ export async function autoConsumeAsyncDelivery(options: {
   let session: { agentId?: string | null; status?: string | null; parentSessionId?: string | null; kind?: string | null } | null = null;
   try {
     session = await services.session.getByIdLite(sessionId);
-  } catch {
+  } catch (err) {
+    console.warn(`[asyncJob] notify delivery skip: session getByIdLite 失败 ${sessionId}`, err);
     return "skipped";
   }
   if (!session?.agentId || session.status === "archived" || session.status === "deleted") {
@@ -380,8 +381,8 @@ export async function autoConsumeAsyncDelivery(options: {
       });
       const display = agentRow?.autoName?.trim() || agentRow?.name?.trim();
       if (display) resolvedSubagentName = display;
-    } catch {
-      /* 读名失败仍用快照名 */
+    } catch (err) {
+      console.warn(`[asyncJob] 读子 Agent 显示名失败 agentId=${snapshotAgentId}`, err);
     }
   }
 
@@ -709,7 +710,8 @@ export async function reconcileAsyncDeliveries(options: {
     let session: { status?: string | null } | null = null;
     try {
       session = await services.session.getByIdLite(sessionId);
-    } catch {
+    } catch (err) {
+      console.warn(`[reconciler] session getByIdLite 失败 session=${sessionId}`, err);
       session = null;
     }
     if (!session || session.status === "archived" || session.status === "deleted") {
@@ -1912,8 +1914,8 @@ export async function startAsyncSleepTask(options: {
       execute: async (signal) => {
         try {
           await options.services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
-        } catch {
-          /* 状态回写失败不阻塞 */
+        } catch (err) {
+          console.warn(`[asyncJob] sleep 任务标 running 失败 jobId=${jobId}`, err);
         }
         const { aborted } = await waitMs(ms, signal);
         if (aborted || signal.aborted) {

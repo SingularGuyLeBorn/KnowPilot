@@ -520,10 +520,14 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
             cursorRef.current = nextCursor ?? undefined;
             setHasOlderMessages(!!nextCursor);
           }
-        } catch {
+        } catch (err) {
+          // 后台刷新失败仍标 hydrated（已有 cache）；必须打日志，禁止静默假死难查
+          console.warn("[chat] hydrate refresh failed", sessionId, err);
           streamLifecycleActions.hydrateDone(sessionId);
         }
-      })().catch(() => {});
+      })().catch((err) => {
+        console.warn("[chat] hydrate refresh outer", sessionId, err);
+      });
       return;
     }
 
@@ -543,7 +547,9 @@ export function useSessionMessages(sessionId: string | null | undefined): UseSes
         if (!cancelled) setHydratedForSessionId(sessionId);
         streamLifecycleActions.hydrateDone(sessionId);
       }
-    })().catch(() => {});
+    })().catch((err) => {
+      console.warn(`[useSessionMessages] hydrate outer ${sessionId}:`, err);
+    });
     return () => {
       cancelled = true;
       // 根因修复：切走时关闭旧 session 的 EventSource，防止 HTTP/1.1 6 连接上限耗尽
