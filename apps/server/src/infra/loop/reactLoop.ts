@@ -317,6 +317,8 @@ function appendToolResultMessages(
       const trimmed = truncateToolResultContent(resultForLlm, maxChars);
       content = trimmed ?? fullStr.slice(0, maxChars) + `\n...[TRUNCATED, original=${fullStr.length} chars, limit=${maxChars}]`;
     }
+    // P2-04：工具结果不可信指令标记（defense-in-depth；单用户本地仍建议保留）
+    content = markToolResultUntrusted(item.name, content);
     llmMessages.push({
       role: "tool",
       tool_call_id: item.call.id,
@@ -324,6 +326,26 @@ function appendToolResultMessages(
       content,
     });
   }
+}
+
+/** 给 LLM 侧 tool 消息加不可信标记：JSON 对象注入字段，否则行前缀 */
+function markToolResultUntrusted(toolName: string, content: string): string {
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+        return JSON.stringify({
+          ...obj,
+          _kp_untrusted_tool_result: true,
+          _kp_tool: toolName,
+        });
+      }
+    } catch {
+      /* 非严格 JSON，走前缀 */
+    }
+  }
+  return `[UNTRUSTED_TOOL_RESULT:${toolName}]\n${content}`;
 }
 
 /**
@@ -478,16 +500,23 @@ export async function runReactLoop(input: ReactLoopInput): Promise<ReactLoopResu
     if (!force && now - lastRunSnapshotAt < RUN_SNAPSHOT_THROTTLE_MS) return;
     lastRunSnapshotAt = now;
     const executedToolsCount = countExecutedTools();
-    const lastTool = [...executedTools].reverse().find((t) => t.kind === "tool");
+    const toolOnly = executedTools.filter((t) => t.kind === "tool");
+    const lastTool = [...toolOnly].reverse()[0];
     const lastToolName =
       lastTool && typeof (lastTool as { name?: string }).name === "string"
         ? String((lastTool as { name: string }).name)
         : undefined;
+    // P1-03：最近工具名摘要（复盘/导出用；不含 args/正文）
+    const recentToolNames = toolOnly
+      .slice(-8)
+      .map((t) => (typeof (t as { name?: string }).name === "string" ? String((t as { name: string }).name) : "?"))
+      .filter(Boolean);
     const output = {
       phase: machine.phase,
       roundsUsed,
       executedToolsCount,
       ...(lastToolName ? { lastToolName } : {}),
+      ...(recentToolNames.length ? { recentToolNames } : {}),
     };
     try {
       await runSvc.update({
