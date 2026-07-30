@@ -31,7 +31,7 @@ export function TechMarquee({ tags = DEFAULT_TAGS, label = "Powered by modern st
       {displayTags.map((tag) => (
         <span
           key={tag}
-          className="flex-shrink-0 rounded-full kp-card px-5 py-2.5 text-sm font-medium text-[var(--kp-text-2)] transition-colors duration-300 hover:bg-[var(--kp-brand-soft)] hover:text-[var(--kp-text-1)]"
+          className="flex-shrink-0 rounded-full border border-[var(--kp-divider)] bg-[color-mix(in_srgb,var(--kp-bg-alt)_90%,white)] px-5 py-2.5 text-sm font-medium text-[var(--kp-text-2)] shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-[var(--kp-accent)]/40 hover:bg-[var(--kp-accent-soft)] hover:text-[var(--kp-accent-deep)]"
         >
           {tag}
         </span>
@@ -40,7 +40,8 @@ export function TechMarquee({ tags = DEFAULT_TAGS, label = "Powered by modern st
   );
 
   return (
-    <section className="relative overflow-hidden py-20">
+    <section className="relative overflow-hidden py-16 md:py-20">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_80%_at_50%_50%,rgba(var(--kp-accent-rgb),0.06),transparent_70%)]" />
       <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[var(--kp-bg)] to-transparent" />
       <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[var(--kp-bg)] to-transparent" />
 
@@ -49,9 +50,9 @@ export function TechMarquee({ tags = DEFAULT_TAGS, label = "Powered by modern st
         whileInView={{ opacity: 1 }}
         viewport={{ once: true, margin: "-80px" }}
         transition={{ duration: 0.8 }}
-        className="mb-10 text-center"
+        className="relative mb-10 text-center"
       >
-        <p className="text-sm font-medium text-[var(--kp-text-3)]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--kp-accent)]">
           {label}
         </p>
       </motion.div>

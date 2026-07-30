@@ -47,8 +47,8 @@ export function HeroSection({ postCount, categoryCount }: HeroSectionProps) {
       <StarField variant="home" className="pointer-events-none absolute inset-0" />
 
       {/* 浅色氛围：少遮罩，让 WebGL 更可见 */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(184,160,144,0.12),transparent_58%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_75%,rgba(201,184,179,0.1),transparent_42%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(var(--kp-accent-rgb),0.12),transparent_58%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_75%,rgba(var(--kp-brand-rgb),0.14),transparent_42%)]" />
       <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[var(--kp-bg)] to-transparent" />
 
       <motion.div
@@ -84,7 +84,7 @@ export function HeroSection({ postCount, categoryCount }: HeroSectionProps) {
         >
           <Link
             href="/posts"
-            className="group inline-flex h-12 items-center gap-2 rounded-full bg-[var(--kp-brand-deep)] px-7 text-sm font-semibold text-white shadow-lg shadow-[rgba(110,92,74,0.35)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[rgba(110,92,74,0.45)]"
+            className="group inline-flex h-12 items-center gap-2 rounded-full bg-[var(--kp-accent)] px-7 text-sm font-semibold text-white shadow-lg shadow-[rgba(var(--kp-accent-rgb),0.35)] transition-transform duration-300 hover:-translate-y-0.5 hover:bg-[var(--kp-accent-deep)] hover:shadow-xl hover:shadow-[rgba(var(--kp-accent-rgb),0.45)]"
           >
             浏览文章
             <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />

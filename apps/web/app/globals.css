@@ -5,28 +5,39 @@
 @plugin "@tailwindcss/typography";
 
 :root {
-  /* KnowPilot 莫兰迪色系 — Star River Design System */
-  --kp-bg: #f8f6f3;
-  --kp-bg-alt: #f0ede8;
-  --kp-bg-soft: #e8e4dd;
-  --kp-bg-mute: #e0dcd5;
+  /*
+   * 见微视觉系统 —「墨色花园」
+   * 纸感底 + 鼠尾草品牌 + 青绿 accent，打破全盘莫兰迪暖灰单调；
+   * 禁止默认紫渐变 / 霓虹 / 纯 #fff·#000。
+   */
+  --kp-bg: #f3f5f2;
+  --kp-bg-alt: #eef1ec;
+  --kp-bg-soft: #e4e9e3;
+  --kp-bg-mute: #d9e0d7;
 
-  --kp-text: #2d2a26;
-  --kp-text-1: #2d2a26;
-  --kp-text-2: #6a6560;
-  --kp-text-3: #9a9588;
+  --kp-text: #1c2420;
+  --kp-text-1: #1c2420;
+  --kp-text-2: #4f5c55;
+  --kp-text-3: #7a877f;
 
-  --kp-brand: #b8a090;
-  --kp-brand-1: #b8a090;
-  --kp-brand-light: #c9b8b3;
-  --kp-brand-dark: #a89080;
-  --kp-brand-deep: #6e5c4a;
-  --kp-brand-darker: #5e4d3e;
-  --kp-brand-rgb: 184, 160, 144;
-  --kp-brand-soft: rgba(184, 160, 144, 0.12);
+  --kp-brand: #7d917f;
+  --kp-brand-1: #7d917f;
+  --kp-brand-light: #a8b9a6;
+  --kp-brand-dark: #5f7362;
+  --kp-brand-deep: #3a4f40;
+  --kp-brand-darker: #2b3b30;
+  --kp-brand-rgb: 125, 145, 127;
+  --kp-brand-soft: rgba(125, 145, 127, 0.14);
 
-  --kp-divider: rgba(200, 195, 188, 0.35);
-  --kp-divider-light: rgba(200, 195, 188, 0.18);
+  /* 高对比点缀：CTA / 悬停光晕 / 强调线 */
+  --kp-accent: #1f8a7a;
+  --kp-accent-deep: #14685c;
+  --kp-accent-soft: rgba(31, 138, 122, 0.14);
+  --kp-accent-rgb: 31, 138, 122;
+  --kp-ink: #121916;
+
+  --kp-divider: rgba(90, 110, 98, 0.18);
+  --kp-divider-light: rgba(90, 110, 98, 0.10);
 
   /* 全局滚动条（原生 + ScrollArea 共用） */
   --kp-scrollbar-size: 8px;
@@ -35,8 +46,8 @@
   --kp-scrollbar-track: transparent;
 
   /* 玻璃拟态（可选 accent） */
-  --kp-glass-bg: rgba(248, 246, 243, 0.78);
-  --kp-glass-border: rgba(255, 255, 255, 0.18);
+  --kp-glass-bg: rgba(243, 245, 242, 0.82);
+  --kp-glass-border: rgba(255, 255, 255, 0.22);
 
   /* 动态曲线 */
   --kp-spring-gentle: cubic-bezier(0.22, 1, 0.36, 1);
@@ -108,32 +119,38 @@
   --sidebar-ring: var(--kp-brand);
 }
 
-/* 深色模式覆盖 KnowPilot 莫兰迪色系 */
+/* 深色模式 — 墨色花园 */
 html.dark,
 .dark {
-  --kp-bg: #1c1a18;
-  --kp-bg-alt: #252320;
-  --kp-bg-soft: #2e2b28;
-  --kp-bg-mute: #3a3632;
+  --kp-bg: #121816;
+  --kp-bg-alt: #1a211e;
+  --kp-bg-soft: #232c28;
+  --kp-bg-mute: #2e3934;
 
-  --kp-text: #e8e4dd;
-  --kp-text-1: #f0ede8;
-  --kp-text-2: #b8b3a8;
-  --kp-text-3: #8a847a;
+  --kp-text: #e6ebe7;
+  --kp-text-1: #eef3ef;
+  --kp-text-2: #a8b5ad;
+  --kp-text-3: #7d8c84;
 
-  --kp-brand: #c9b8b3;
-  --kp-brand-1: #d4c4be;
-  --kp-brand-light: #e0d2cd;
-  --kp-brand-dark: #a89080;
-  --kp-brand-deep: #7e6a55;
-  --kp-brand-darker: #6e5c4a;
-  --kp-brand-rgb: 201, 184, 179;
-  --kp-brand-soft: rgba(201, 184, 179, 0.14);
+  --kp-brand: #9bb09a;
+  --kp-brand-1: #a8bca7;
+  --kp-brand-light: #c2d2c0;
+  --kp-brand-dark: #7d917f;
+  --kp-brand-deep: #6a8070;
+  --kp-brand-darker: #55685c;
+  --kp-brand-rgb: 155, 176, 154;
+  --kp-brand-soft: rgba(155, 176, 154, 0.16);
+
+  --kp-accent: #3db8a6;
+  --kp-accent-deep: #2a9d8c;
+  --kp-accent-soft: rgba(61, 184, 166, 0.16);
+  --kp-accent-rgb: 61, 184, 166;
+  --kp-ink: #0b100e;
 
   --kp-divider: rgba(255, 255, 255, 0.10);
   --kp-divider-light: rgba(255, 255, 255, 0.06);
 
-  --kp-glass-bg: rgba(28, 26, 24, 0.80);
+  --kp-glass-bg: rgba(18, 24, 22, 0.82);
   --kp-glass-border: rgba(255, 255, 255, 0.10);
 
   /* 暗色模式：primary 提亮为浅 brand，保证 text-primary 链接在深底上达 WCAG AA
@@ -297,13 +314,31 @@ html {
    finesse anti-cheap：glassmorphism 不作默认；实心表面 + 半透明边框 + 品牌色投影。
    glass-card 仅保留给「叠在 imagery 之上」的 ghost 控件（如 Hero 次按钮）。 */
 .kp-card {
-  background: var(--kp-bg-alt);
+  background: color-mix(in srgb, var(--kp-bg-alt) 92%, white);
   border: 1px solid var(--kp-divider);
-  box-shadow: 0 1px 2px rgba(120, 104, 88, 0.05), 0 6px 20px rgba(120, 104, 88, 0.05);
+  box-shadow:
+    0 1px 2px rgba(var(--kp-brand-rgb), 0.06),
+    0 10px 28px rgba(var(--kp-brand-rgb), 0.07);
 }
 html.dark .kp-card,
 .dark .kp-card {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24), 0 6px 20px rgba(0, 0, 0, 0.2);
+  background: var(--kp-bg-alt);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+/* 首页区块节奏：交替微色带，避免「整页同一片灰米色」 */
+.kp-section-band {
+  position: relative;
+  background:
+    radial-gradient(90% 70% at 8% 0%, rgba(var(--kp-accent-rgb), 0.08), transparent 55%),
+    radial-gradient(70% 60% at 92% 30%, rgba(var(--kp-brand-rgb), 0.10), transparent 50%),
+    var(--kp-bg);
+}
+.kp-section-band-alt {
+  position: relative;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--kp-bg-soft) 55%, transparent), transparent 40%),
+    var(--kp-bg);
 }
 
 /* Markdown 渲染：代码块 / 行内代码 / 数学公式 —— 莫兰迪主题

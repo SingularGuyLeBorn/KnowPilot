@@ -20,14 +20,12 @@ import {
 } from "lucide-react";
 import type { AboutProfile } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
-import { FinalCta } from "@/components/home/FinalCta";
 import { RecentIntelligence } from "@/components/home/RecentIntelligence";
 // R14：three.js 改 client 懒加载，从 about 初始 bundle 拆出
 const StarField = dynamic(() => import("@/components/home/StarField").then((m) => m.StarField), {
   ssr: false,
   loading: () => null,
 });
-import { TechMarquee } from "@/components/home/TechMarquee";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
@@ -47,17 +45,12 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
     recentPosts?.items.map((p) => p.category).filter(Boolean) ?? [],
   ).size;
 
-  const stackTags =
-    profile.stack.length > 0
-      ? [...profile.stack, ...profile.focus.slice(0, 4)]
-      : undefined;
-
   return (
     <div className="relative w-full shrink-0 overflow-x-hidden">
       {/* 全页单 Canvas：滚动时 WebGL 仍在背后（比双 Canvas 省很多） */}
       <div className="pointer-events-none fixed inset-0 z-0 opacity-90">
         <StarField variant="about" className="h-full w-full" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(246,243,239,0.15),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(var(--kp-accent-rgb),0.10),transparent_50%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[var(--kp-bg)]/80" />
       </div>
 
@@ -210,11 +203,9 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
         </motion.section>
       </div>
 
-      {/* 与首页相同的动态区块（抬到 WebGL 之上） */}
+      {/* About 只保留最近文章；禁止复用首页 FinalCta / TechMarquee（每页同一块=丑） */}
       <div className="relative z-10 bg-[var(--kp-bg)]/92">
         <RecentIntelligence posts={posts} />
-        <TechMarquee tags={stackTags} label="技术栈与关注方向" />
-        <FinalCta />
       </div>
     </div>
   );
