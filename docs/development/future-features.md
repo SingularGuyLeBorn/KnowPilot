@@ -1,236 +1,61 @@
 # KnowPilot 未来功能规划
 
-> 本文档描述已规划但尚未实现的功能。每条功能都给出动机、期望行为和实现提示。
+> 只列**尚未做完**的项。已落地能力见 `AGENTS.md`「当前状态与近期变更」与 `design-decisions.md`。
 
 ---
 
-## 1. Agent 自动开启新 Session
+## 已落地（勿再当未来项）
 
-### 1.1 动机
-
-当一个会话的交互轮数太多时：
-
-- 上下文越来越长，LLM 调用成本升高。
-- 历史消息里混杂了多个话题，Agent 容易答非所问。
-- 用户想“换个干净会话继续”，但又不想丢失之前的结论。
-
-### 1.2 期望行为
-
-1. Agent 在 ReAct 循环中判断：当前 session 的轮数或 token 超过阈值。
-2. Agent 调用一个工具（暂定名 `session_rotate` 或 `session_fork`）：
-   - 让 Agent 自己生成一份总结文档（Markdown）。
-   - 把总结文档写入 `content/sessions/[old-session-id]-summary.md`（或 Memory）。
-   - 结束当前 session（标记为 `archived` 或 `rotated`）。
-   - 启动**同一个 Agent** 的新 session。
-   - 新 session 的第一条 user 消息设为总结内容。
-3. 如果用户当前正在查看旧 session 页面：
-   - **不要自动切换**到新 session。
-   - 只在当前页面显示一条提示：「新 session 已创建：xxx」。
-   - 用户手动点击提示跳转到新 session。
-
-### 1.3 工具设计草案
-
-```ts
-session_rotate({
-  summary: string;          // Agent 自己写的总结
-  reason?: string;          // 为什么 rotate（轮数过多 / 话题切换 / 用户要求）
-  carryMemoryIds?: string[]; // 需要带到新 session 的 Memory
-})
-```
-
-工具返回：
-
-```ts
-{
-  success: true,
-  oldSessionId: string,
-  newSessionId: string,
-  summaryPath: string,
-}
-```
-
-### 1.4 前端呈现
-
-- 旧 session 页面顶部出现 toast：「新 session 已创建：[新会话标题]，点击跳转」。
-- 左栏会话列表新增一条新会话。
-- 旧会话标记为已归档，不再接收新消息。
-
-### 1.5 待确认问题
-
-- 总结文档存在哪里：`content/sessions/` 还是 Memory？
-- 旧 session 是 `archived` 还是 `deleted`？
-- 用户是否可以在 `/settings` 里配置自动 rotate 的阈值？
+| 项 | 落点 |
+|---|---|
+| `session_rotate` + 双向血缘 + 防乱飞聚焦 + `/session-lineage` | `session.ts` / `sessionRotateLineage.ts` |
+| Auto-Compact（`config.yaml` compact + `contextSummary` + 手动压缩） | `autoCompact` / ChatSession |
+| 推拉结合（SSE + `uiStateNotify` + 管理页短轮询 + BC） | `uiStateNotify.ts` / `uiStateChannel.ts` |
+| 队列持久化与拖拽排序（`SessionQueueItem`） | Prisma + Chat 队列 UI |
+| 移动端适配 | 底栏 / Chat 叠层 / `pnpm remote` |
 
 ---
 
-## 2. 自动压缩（Auto-Compact）
-
-### 2.1 动机
-
-长会话的 token 成本会持续升高，即使不 rotate，也需要把历史上下文压缩成更短的形式。
-
-### 2.2 期望行为
-
-1. 当 session 的累计 token 超过阈值（例如 80% 模型上下文）。
-2. 系统自动触发压缩：
-   - 调用 LLM 把历史消息压缩成一份“会话摘要”。
-   - 摘要写入 Memory（`kind="summary"`）或 `ChatSession.summary` 字段。
-3. 后续 LLM 调用只携带：
-   - 压缩后的摘要。
-   - 最近 N 条原始消息（滑动窗口）。
-
-### 2.3 实现提示
-
-- 复用现有 `autoCompact` 相关代码（如果有的话）。
-- 压缩结果需要可追溯：用户能在 `/memories` 或 session 详情页看到摘要。
-- 压缩失败时降级：只裁剪最早的消息，不压缩。
-
-### 2.4 待确认问题
-
-- 压缩阈值是按 token 还是按消息条数？
-- 摘要存在 Memory 还是 `ChatSession` 上？
-- 用户是否可以手动触发压缩？
-
----
-
-## 3. 推送替代轮询
-
-### 3.1 动机
-
-当前多个列表/队列依赖前端轮询：
-
-- `pullAsyncQueue`
-- `pullAgentMessages`
-- `session.listRunning`
-- `session.listChildren`
-- 异步任务运行状态
-
-轮询的缺点：
-
-- 延迟：要等下一个轮询周期才更新。
-- 浪费：没有变化时也一直在请求。
-
-### 3.2 期望行为
-
-- 父会话/子会话有活跃 SSE 流时，后端直接推送事件：
-  - `async_delivery`：异步任务完成。
-  - `agent_message`：上级 Agent 发来消息。
-  - `session_status`：会话状态变化。
-- 无活跃流时，fallback 到拉取/补推。
-- 每条事件带自增 ID，重连时前端上报 `lastEventId`，后端补推缺失事件。
-
-### 3.3 待确认问题
-
-- 是否所有轮询都改成推送，还是只改 `pullAsyncQueue` 和 `pullAgentMessages`？
-- 推送通道是用现有 SSE 还是新增 WebSocket？
-
----
-
-## 4. 队列持久化与拖拽排序
-
-### 4.1 动机
-
-用户希望发送队列：
-
-- 能拖拽调整顺序。
-- 刷新和重启后顺序不丢失。
-
-### 4.2 期望行为
-
-- 新建 `SessionQueueItem` 表，存储用户和上级 Agent 的队列项。
-- 每条队列项带 `order` 字段。
-- 拖拽后 500ms 防抖写 DB。
-- 异步任务结果支持 `pinned`，pinned 的项排在最后。
-
-### 4.3 待确认问题
-
-- 是否复用 `ChatMessage` 表加 `status=queued`，还是新建表？
-- 上级 Agent 消息是否允许用户编辑内容（建议只允许调整顺序，不允许编辑）？
-
----
-
-## 5. 多实例部署
+## 1. 多实例部署
 
 > **决策（2026-07-18）**：**缓做完整多实例**。单用户本地默认 `SWARM_MODE=local` 足够。  
-> 已落地底座（`SWARM_MODE=redis` 时生效，local 无感）：分布式 prepare 锁、`RedisSwarmBus` 与 Local 语义对齐、session running Redis 宣称。  
-> **暂不做**：全局任务池 Redis 化、BullMQ Worker 消费 Agent、PostgreSQL 迁移、SSE 跨实例亲和。真要多机部署时再开，且几乎必须切 Postgres。
-
-### 5.1 动机
-
-进程内 `agentRunLocks` / hub / 任务池在多实例下失效。
-
-### 5.2 完整形态（未来，非当前目标）
-
-- Agent 运行锁、异步任务池、消息总线、busy 信号全走 Redis。
-- 多写 DB → PostgreSQL；SSE sticky 或跨实例事件回放。
+> 已落地底座（`SWARM_MODE=redis` 时生效）：分布式 prepare 锁、`RedisSwarmBus`、session running Redis 宣称。  
+> **暂不做**：全局任务池 Redis 化、BullMQ Worker、PostgreSQL 迁移、SSE 跨实例亲和。
 
 ---
 
-## 6. Agent 进化（Hermes 风格）— 真闭环对标
+## 2. Agent 进化（Hermes 风格）— 后续
 
-> **决策（2026-07-18）**：对照 `NousResearch/hermes-agent` 源码做**运行时 Closed Learning Loop**。  
-> **假对标已撤回**：此前 `generate_skill_from_experience` + `enabled=false` + `skill_enable/promote` **不是** Hermes（无 `skill_manage`、无回合后 review、无渐进披露、无 curator、无 GEPA）。  
-> **本期范围**：主仓闭环（procedural SKILL.md + list/view/manage + background review + usage/curator）。  
+> 主仓闭环（procedural SKILL.md + list/view/manage + background review + usage/curator）**已落地**。  
 > **后续**：`hermes-agent-self-evolution` DSPy/GEPA 离线进化（另立工单）。
 
-### 6.1 Hermes 模块对照
-
-| Hermes 模块 | KnowPilot 目标 | 状态 |
-|---|---|---|
-| `skills_list` / `skill_view` 渐进披露 | native + procedural 不进 `skill__*` schema | ✅ |
-| `skill_manage` create/patch/write_file/archive | native + `content/skills/{name}/SKILL.md` | ✅ |
-| `SKILLS_GUIDANCE` + 回合后 skill review | `promptBuilder` + `skillBackgroundReview` | ✅ |
-| `.usage.json` + curator 生命周期 | `skillUsage` + `skillCurator`（心跳 maintenance） | ✅ |
-| experience Memory（陈述事实） | 保留；**≠** Skill 生成主路径 | ✅ |
-| DSPy/GEPA `evolve_skill` | 后续工单 | 未做 |
-
-### 6.2 双形态 Skill
-
-- **procedural**（主路径）：`content/skills/{name}/SKILL.md` + references/templates/scripts；经 list/view 加载。  
-- **executable**（旁路）：扁平 `{slug}.md` + 沙箱 `run()`；仍可 `skill__*` 注册。  
-- Memory = 用户/情境事实；Skill = 程序记忆。**禁止**把 experience Memory 拼 JS 冒充 Hermes。
-
-### 6.3 明确不做（本期）
-
-- DSPy/GEPA / 连续离线进化管道。  
-- 心跳无人值守 generate→enable→promote。  
-- 把进化塞进 `consolidateMemories`。
+| Hermes 模块 | 状态 |
+|---|---|
+| skills_list / skill_view / skill_manage / review / usage+curator | ✅ |
+| DSPy/GEPA `evolve_skill` | 未做 |
 
 ---
 
-## 7. 其他候选
+## 3. 其他候选
 
-- **多模态识图**：图片附件直接走 vision 模型，不依赖 OCR。
-- **协作模式**：多个用户共享同一个 Workspace（与单用户定位冲突，低优先）。
-- **插件市场**：用户可以发布/安装 Skill 和 MCP Server。
-- ~~**移动端适配**~~：**已落地**（底栏/Chat 单栏叠层/`pnpm remote`/Settings 清单）。
+- **多模态识图默认路径**：附件直走 vision（`vision_describe` 已有；可再强化默认路由）。
+- **协作模式**：多用户共享 Workspace（与单用户定位冲突，低优先）。
+- **插件市场**：发布/安装 Skill 与 MCP。
 
 ---
 
-## 8. 综述对照后续项（2026-07-18 登记）
-
-> 对照 `docs/surveys-2026/` 两篇对比文 + **当前代码**。
-
-### 8.1 综述文已过时（不必再排）
-
-- `memory_update`（native + MemoryRepository 软版本链）
-- `todo_write` / `todo_read`（会话级 todoState）
-- `AGENT_MAX_TOOL_CALLS_PER_RUN` 循环强制（reactLoop）
-
-### 8.2 进度
+## 4. 综述对照后续项
 
 | 优先级 | 项 | 状态 |
 |---|---|---|
-| P1 | 记忆检索：BM25 × (1+strength) × recency；retrieve-or-not 门控 | **已落地** |
-| P1 | 记忆 attribution / validTo + 心跳 consolidate | **已落地** |
-| P1 | Run/Session 轨迹 JSONL 导出骨架 | **已落地**；Mock 平台基准仍待 |
+| P1 | 记忆检索 / attribution / 轨迹 JSONL | **已落地**；Mock 平台基准仍待 |
 | P2 | 轻量 SOP / 阶段工件（Markdown 接力） | 待做 |
 | P2 | 常驻层 USER.md/AGENT.md 硬预算 | **已落地** |
-| P3 | **MCP 远程（Streamable HTTP）** | **已落地**（`transport=http` + url/headers；stdio 默认并存） |
-| P3 | 本地 side 模型（如 Ollama） | 按需，与 MCP 正交 |
-| — | A2A（跨产品 Agent 协议） | **不做**（见下） |
+| P3 | MCP 远程 Streamable HTTP | **已落地** |
+| P3 | 本地 side 模型（Ollama 等） | 按需 |
+| — | A2A 联邦 | **不做** |
 
-### 8.3 理念不做
+### 理念不做
 
-- 对等群聊 Swarm、参数化记忆、容器级沙箱（单用户本地定位）。
-- **A2A 联邦 / Agent Card 市场**：已有私有 SwarmBus；无外部对端不造标准协议层。
+- 对等群聊 Swarm、参数化记忆、容器级沙箱。
+- A2A 联邦 / Agent Card 市场。

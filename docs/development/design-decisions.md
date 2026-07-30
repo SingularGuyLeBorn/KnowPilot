@@ -738,7 +738,7 @@ LoopX 不是执行器，而是长程 Agent 的**控制平面**：跨 turn / 重�
 
 ## W1–W12 架构修复：不做 / 跟进项登记（2026-07-15，DoD 收尾）
 
-> 12 个架构工单已全部提交并验收（分支 `fix/p0-agent-budget-hitl`），审计报告维度终态见 `architecture-audit-2026-07.md`。以下为工单执行中明确「不做 / 另立跟进」的事项，按本文件惯例挂 `回答：` 待拍板；不写回答 = 默认同意维持现状。
+> 12 个架构工单已全部提交并验收（分支 `fix/p0-agent-budget-hitl`），审计快照见 `architecture-audit-2026-07-20.md`。以下为工单执行中明确「不做 / 另立跟进」的事项，按本文件惯例挂 `回答：` 待拍板；不写回答 = 默认同意维持现状。
 
 | # | 事项 | 来源工单 | 状态 | 说明 |
 |---|---|---|---|---|
@@ -862,7 +862,7 @@ LoopX 不是执行器，而是长程 Agent 的**控制平面**：跨 turn / 重�
 
 1. **双工具分工**：`spawn_subagent` 专职带 LLM 子任务；`async_task_run` 收窄纯工具（删 `mode` 参数、`toolCall` 必填）。两者 `waitForResult` 语义完全一致（见上表）。注意：`buildAsyncExecute` 的 llm 执行分支**一行不删**——它是前端「派生子代理」按钮（tRPC `session.spawn`/`session.rerun`）的执行体。
 2. **`async_task_wait` 删除**：def/handler/注册/权限清单/UI 条目全清，注册表负向断言（`async-task-queue.test.ts`）。
-3. **`async_task_status` 去全文**：问题 G 的 A1/A2 撞车面随 1+2+3 机制性消除；方案三的 `deliveredBy` 审计列永久失去消费方，不加。详见 `async-result-dedup-proposal.md` §8（已标「已落地（变体）」）。
+3. **`async_task_status` 去全文**：问题 G 的 A1/A2 撞车面随 1+2+3 机制性消除；方案三的 `deliveredBy` 审计列永久失去消费方，不加（见本节 v7 与 `async-tools-semantics.md`）。
 4. **C7 服务端队列**：给 running 子 Agent 发消息走服务端持久队列 + 空闲自动 drain（W-E 决策记录见上一节）。
 5. **存量硬删**：dev.db 历史 `sourceType="async_task_llm"` Task 行一次性物理删除（W-F；执行结果 0 行命中，存量库已无此类行），不留脚本不留兼容。
 
