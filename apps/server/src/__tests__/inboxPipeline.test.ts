@@ -26,7 +26,7 @@ import {
   bilibiliInboxExternalId,
   hasUsableInboxContent,
   looksLikeInboxFetchBlocked,
-} from "../infra/inboxPipeline.js";
+} from "../infra/inbox/index.js";
 import {
   inboxSyncXhsSchema,
   inboxSyncZhihuSchema,
@@ -250,7 +250,7 @@ describe("inboxPipeline", () => {
   });
 
   it("coerceXhsEpochMs 拒绝相对文案与过小数", async () => {
-    const { coerceXhsEpochMs } = await import("../infra/inboxPipeline.js");
+    const { coerceXhsEpochMs } = await import("../infra/inbox/xhs.js");
     expect(coerceXhsEpochMs("3天前")).toBeUndefined();
     expect(coerceXhsEpochMs(123)).toBeUndefined();
     expect(coerceXhsEpochMs(1710000000)).toBe(1710000000 * 1000);
@@ -276,7 +276,7 @@ describe("inboxPipeline", () => {
   });
 
   it("parseXhsNotesFromApiJson 无 display_title 时用 desc 首行，不落成笔记 id", async () => {
-    const { isXhsPlaceholderTitle, titleFromXhsDesc } = await import("../infra/inboxPipeline.js");
+    const { isXhsPlaceholderTitle, titleFromXhsDesc } = await import("../infra/inbox/xhs.js");
     expect(titleFromXhsDesc("做一个多模态 RAG\n#AI")).toBe("做一个多模态 RAG");
     expect(isXhsPlaceholderTitle("笔记 6a644bff0000000011004ed5")).toBe(true);
     const notes = parseXhsNotesFromApiJson(

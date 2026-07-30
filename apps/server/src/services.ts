@@ -4839,23 +4839,23 @@ export class InboxService extends BaseService<
   }
 
   async captureUrl(input: InboxCaptureUrlInput) {
-    const { captureInboxUrl, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { captureInboxUrl, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     return captureInboxUrl(this.prisma, this.config, input);
   }
 
   async captureUrls(input: InboxCaptureUrlsInput) {
-    const { captureInboxUrls, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { captureInboxUrls, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     return captureInboxUrls(this.prisma, this.config, input);
   }
 
   async syncZhihu(
     input: InboxSyncZhihuInput,
-    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    onProgress?: import("./infra/inbox/index.js").InboxSyncProgressFn,
     shouldAbort?: () => boolean,
   ) {
-    const { syncZhihuCollection, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { syncZhihuCollection, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     const parsed = inboxSyncZhihuSchema.parse(input ?? {});
     return syncZhihuCollection(this.prisma, this.config, {
@@ -4867,10 +4867,10 @@ export class InboxService extends BaseService<
 
   async syncXhs(
     input: InboxSyncXhsInput,
-    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    onProgress?: import("./infra/inbox/index.js").InboxSyncProgressFn,
     shouldAbort?: () => boolean,
   ) {
-    const { syncXhsLibrary, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { syncXhsLibrary, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     const parsed = inboxSyncXhsSchema.parse(input ?? {});
     return syncXhsLibrary(this.prisma, this.config, { ...parsed, onProgress, shouldAbort });
@@ -4878,10 +4878,10 @@ export class InboxService extends BaseService<
 
   async syncBilibili(
     input: InboxSyncBilibiliInput,
-    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    onProgress?: import("./infra/inbox/index.js").InboxSyncProgressFn,
     shouldAbort?: () => boolean,
   ) {
-    const { syncBilibiliLibrary, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { syncBilibiliLibrary, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     const parsed = inboxSyncBilibiliSchema.parse(input ?? {});
     return syncBilibiliLibrary(this.prisma, this.config, {
@@ -4893,7 +4893,7 @@ export class InboxService extends BaseService<
 
   async startPlatformSync(input: InboxPlatformSyncStartInput) {
     const { startInboxPlatformSyncJob } = await import("./infra/inboxPlatformSyncJob.js");
-    const { ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { ensureInboxDirs } = await import("./infra/inbox/index.js");
     const { getServiceContainer } = await import("./infra/serviceContainer.js");
     ensureInboxDirs(this.config);
     const parsed = inboxPlatformSyncStartSchema.parse(input ?? {});
@@ -4946,18 +4946,18 @@ export class InboxService extends BaseService<
 
   async scanScreenshots(
     input: InboxScanScreenshotsInput,
-    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    onProgress?: import("./infra/inbox/index.js").InboxSyncProgressFn,
   ) {
-    const { scanScreenshotDrop, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { scanScreenshotDrop, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     return scanScreenshotDrop(this.prisma, this.config, { ...input, onProgress });
   }
 
   async ingestWechatDrop(
     input: InboxIngestWechatDropInput,
-    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    onProgress?: import("./infra/inbox/index.js").InboxSyncProgressFn,
   ) {
-    const { ingestWechatDropFile, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { ingestWechatDropFile, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     return ingestWechatDropFile(this.prisma, this.config, { ...input, onProgress });
   }
@@ -4975,10 +4975,10 @@ export class InboxService extends BaseService<
    */
   async enrichContent(
     input: InboxEnrichInput,
-    onProgress?: import("./infra/inboxPipeline.js").InboxSyncProgressFn,
+    onProgress?: import("./infra/inbox/index.js").InboxSyncProgressFn,
     shouldAbort?: () => boolean,
   ) {
-    const { enrichInboxMissingContent, ensureInboxDirs } = await import("./infra/inboxPipeline.js");
+    const { enrichInboxMissingContent, ensureInboxDirs } = await import("./infra/inbox/index.js");
     ensureInboxDirs(this.config);
     const parsed = inboxEnrichSchema.parse(input ?? {});
     return enrichInboxMissingContent(this.prisma, this.config, {
@@ -4989,7 +4989,7 @@ export class InboxService extends BaseService<
   }
 
   async distill(input: InboxDistillInput) {
-    const { formatInboxItemBody } = await import("./infra/inboxPipeline.js");
+    const { formatInboxItemBody } = await import("./infra/inbox/index.js");
     const garden = input.garden || this.config.inbox.defaultGarden || "knowledge";
     const items = await this.prisma.inboxItem.findMany({
       where: { id: { in: input.ids } },

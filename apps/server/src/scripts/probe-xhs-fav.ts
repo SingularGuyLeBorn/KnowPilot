@@ -16,7 +16,7 @@ import {
 } from "../infra/metablog/auth/platformLogin.js";
 import { launchZhihuBrowser } from "../infra/metablog/auth/zhihuBrowser.js";
 import { loadCookies } from "../infra/cookieJar.js";
-import { parseXhsNotesFromApiJson, type XhsSyncKind } from "../infra/inboxPipeline.js";
+import { parseXhsNotesFromApiJson, type XhsSyncKind } from "../infra/inbox/xhs.js";
 
 const DEFAULT_UID = "63461962000000001802c1c4";
 

@@ -11,8 +11,8 @@ import path from "node:path";
 import type { InboxPlatformSyncStartInput } from "@knowpilot/shared";
 import { getAppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
-import type { InboxSyncProgress, InboxSyncProgressChild } from "./inboxPipeline.js";
-import { isInboxSyncAbortedError } from "./inboxPipeline.js";
+import type { InboxSyncProgress, InboxSyncProgressChild } from "./inbox/shared.js";
+import { isInboxSyncAbortedError } from "./inbox/shared.js";
 
 export type PlatformSyncStepKey = "screenshots" | "wechat" | "zhihu" | "xhs" | "bilibili";
 export type PlatformSyncStepStatus = "pending" | "running" | "done" | "error" | "skipped";
@@ -337,7 +337,7 @@ export function startInboxPlatformSyncJob(
 
   Promise.resolve()
     .then(async () => {
-      const { isInboxSyncAbortedError } = await import("./inboxPipeline.js");
+      const { isInboxSyncAbortedError } = await import("./inbox/shared.js");
       for (const step of job.steps) {
         if (shouldAbort()) {
           finalizeCancelled(job, id);
