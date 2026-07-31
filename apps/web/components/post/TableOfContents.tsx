@@ -36,7 +36,10 @@ function parseHeadings(content: string): TocItem[] {
   for (const line of lines) {
     const match = line.match(/^(#{2,4})\s+(.+)$/);
     if (match) {
-      const text = match[2].trim().replace(/<[^>]+>/g, "");
+      const text = match[2]
+        .trim()
+        .replace(/<[^>]+>/g, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
       items.push({ id: slugify(text), text, level: match[1].length });
     }
   }
@@ -74,10 +77,15 @@ function buildGroups(items: TocItem[]): TocGroup[] {
   return groups;
 }
 
-function scrollToId(id: string) {
+function scrollToId(id: string, attempt = 0) {
   const el = document.getElementById(id);
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!el) {
+    if (attempt < 1) {
+      window.setTimeout(() => scrollToId(id, attempt + 1), 50);
+    }
+    return;
+  }
+  el.scrollIntoView({ behavior: "auto", block: "start" });
   history.replaceState(null, "", `#${id}`);
 }
 
