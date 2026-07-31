@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Check } from "lucide-react";
@@ -16,7 +16,7 @@ import { postDetailHref } from "@/lib/postHref";
 import { useAutoSave } from "@/lib/useAutoSave";
 import { trpc } from "@/lib/trpc";
 
-export default function NewPostPage() {
+function NewPostPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const gardenFromUrl = searchParams.get("garden") || DEFAULT_POST_GARDEN;
@@ -169,5 +169,20 @@ export default function NewPostPage() {
         </div>
       </div>
     </>
+  );
+}
+
+// useSearchParams 需 Suspense 边界，否则 Next 16 下整页 CSR bailout
+export default function NewPostPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center text-sm text-[var(--kp-text-3)]">
+          加载编辑器…
+        </div>
+      }
+    >
+      <NewPostPageContent />
+    </Suspense>
   );
 }

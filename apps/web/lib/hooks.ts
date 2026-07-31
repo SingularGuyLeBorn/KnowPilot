@@ -48,7 +48,7 @@ export function useCRUDApi<TCreate = any, TUpdate extends { id: string } = any, 
       return api.create.useMutation({
         onSuccess: (res: OperationResult<TEntity>) => {
           if (res.success) {
-            utils[entityRouterName].list.invalidate();
+            utils[entityRouterName].list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           }
           options?.onSuccess?.(res);
         },
@@ -61,9 +61,9 @@ export function useCRUDApi<TCreate = any, TUpdate extends { id: string } = any, 
       return api.update.useMutation({
         onSuccess: (res: OperationResult<TEntity>) => {
           if (res.success) {
-            utils[entityRouterName].list.invalidate();
+            utils[entityRouterName].list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
             if (res.data) {
-              utils[entityRouterName].getById.invalidate({ id: (res.data as any).id });
+              utils[entityRouterName].getById.invalidate({ id: (res.data as any).id }).catch(catchUnlessCancelled("lib/hooks.ts"));
             }
           }
           options?.onSuccess?.(res);
@@ -77,7 +77,7 @@ export function useCRUDApi<TCreate = any, TUpdate extends { id: string } = any, 
       return api.delete.useMutation({
         onSuccess: (res: OperationResult<any>) => {
           if (res.success) {
-            utils[entityRouterName].list.invalidate();
+            utils[entityRouterName].list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           }
           options?.onSuccess?.(res);
         },
@@ -220,10 +220,11 @@ export const useMessage = () => useCRUDApi<any, any, any, ChatMessage>("message"
 
 export const useFile = () => {
   const base = useCRUDApi<any, any, any, FileMeta>("file");
+  // trpc.useUtils() 是 hook，必须在函数体顶层调用；放 mutation 回调里会抛 Invalid hook call
+  const utils = trpc.useUtils();
   const uploadMutation = trpc.file.upload.useMutation({
     onSuccess: () => {
-      const utils = trpc.useUtils();
-      utils.file.list.invalidate();
+      utils.file.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
     },
   });
   return {
@@ -296,7 +297,7 @@ export const useTask = () => {
       const utils = trpc.useUtils() as any;
       return trpc.task.run.useMutation({
         onSuccess: (res: OperationResult<any>) => {
-          if (res.success) utils.task.list.invalidate();
+          if (res.success) utils.task.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.(res);
         },
         ...options,
@@ -314,7 +315,7 @@ export const useApproval = () => {
       const utils = trpc.useUtils() as any;
       return trpc.approval.execute.useMutation({
         onSuccess: (res: OperationResult<any>) => {
-          if (res.success) utils.approval.list.invalidate();
+          if (res.success) utils.approval.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
           options?.onSuccess?.(res);
         },
         ...options,
@@ -371,13 +372,13 @@ export function useDeadLetterList(status: "pending" | "reviewed" | "all" = "all"
 export function useDeadLetterReview() {
   const utils = trpc.useUtils() as any;
   return trpc.deadLetter.review.useMutation({
-    onSuccess: () => utils.deadLetter.list.invalidate(),
+    onSuccess: () => utils.deadLetter.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts")),
   });
 }
 export function useDeadLetterClear() {
   const utils = trpc.useUtils() as any;
   return trpc.deadLetter.clear.useMutation({
-    onSuccess: () => utils.deadLetter.list.invalidate(),
+    onSuccess: () => utils.deadLetter.list.invalidate().catch(catchUnlessCancelled("lib/hooks.ts")),
   });
 }
 
@@ -418,7 +419,7 @@ export function useAIApi() {
     useCall: (options?: any) => {
       return trpc.ai.invoke.useMutation({
         onSuccess: () => {
-          utils.invalidate();
+          utils.invalidate().catch(catchUnlessCancelled("lib/hooks.ts"));
         },
         ...options,
       });

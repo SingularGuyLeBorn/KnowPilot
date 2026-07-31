@@ -256,11 +256,11 @@ export function PostTreeDocActions({
                   setRenaming(true);
                 }}
               />
-              <MenuItem icon={<Link2 className="h-3.5 w-3.5" />} label="复制链接" onClick={() => void copyLink()} />
-              <MenuItem icon={<Share2 className="h-3.5 w-3.5" />} label="分享" onClick={() => void share()} />
+              <MenuItem icon={<Link2 className="h-3.5 w-3.5" />} label="复制链接" onClick={() => copyLink().catch(() => {})} />
+              <MenuItem icon={<Share2 className="h-3.5 w-3.5" />} label="分享" onClick={() => share().catch(() => {})} />
               <MenuItem icon={<ExternalLink className="h-3.5 w-3.5" />} label="新标签页打开" onClick={openNewTab} />
-              <MenuItem icon={<Copy className="h-3.5 w-3.5" />} label="复制" onClick={() => void copyDoc()} />
-              <MenuItem icon={<Download className="h-3.5 w-3.5" />} label="导出" onClick={() => void exportMd()} />
+              <MenuItem icon={<Copy className="h-3.5 w-3.5" />} label="复制" onClick={() => copyDoc().catch(() => {})} />
+              <MenuItem icon={<Download className="h-3.5 w-3.5" />} label="导出" onClick={() => exportMd().catch(() => {})} />
               <MenuItem
                 icon={<Pin className={cn("h-3.5 w-3.5", pinned && "text-[var(--kp-brand-deep)]")} />}
                 label={pinned ? "取消置顶" : "置顶"}

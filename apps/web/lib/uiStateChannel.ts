@@ -28,15 +28,7 @@ export function postUiState(msg: UiStateChannelMessage): void {
   }
 }
 
-/** 兼容旧频道名（cron 页曾用 knowpilot-session-list） */
+/** 会话列表变化提示：统一走 UI_STATE_CHANNEL 单频道（旧 knowpilot-session-list 频道已无消费者，已删） */
 export function postSessionListHint(sessionId?: string): void {
   postUiState({ type: "cron_session_started", sessionId });
-  if (typeof BroadcastChannel === "undefined") return;
-  try {
-    const bc = new BroadcastChannel("knowpilot-session-list");
-    bc.postMessage({ type: "cron_session_started", sessionId });
-    bc.close();
-  } catch {
-    /* ignore */
-  }
 }

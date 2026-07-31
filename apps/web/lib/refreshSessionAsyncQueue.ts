@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { mergeAsyncPollIntoQueue } from "@/lib/chatQueueTypes";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
+import { isCancelledOrAbortError } from "@/lib/trpc";
 
 type Utils = ReturnType<typeof trpc.useUtils>;
 
@@ -23,8 +24,8 @@ export async function refreshSessionAsyncQueue(
   try {
     data = await utils.agent.pullAsyncQueue.fetch({ sessionId });
   } catch (err) {
-    // CancelledError（并发 refetch 取消旧 fetch）或网络瞬断：静默跳过，不阻塞 SSE 处理
-    if (err instanceof Error && err.name === "CancelledError") return;
+    // CancelledError/AbortError（并发 refetch 取消旧 fetch）或网络瞬断：静默跳过，不阻塞 SSE 处理
+    if (isCancelledOrAbortError(err)) return;
     console.warn(`[refreshSessionAsyncQueue] pullAsyncQueue.fetch 失败 session=${sessionId}:`, err);
     return;
   }

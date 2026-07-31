@@ -9,9 +9,14 @@ import { authHeaders } from "@/lib/auth";
 
 export const trpc = createTRPCReact<AppRouter>();
 
-/** TanStack Query 并发 refetch 取消旧 fetch 时抛 CancelledError；AbortError 同理。 */
+/** TanStack Query 并发 refetch 取消旧 fetch 时抛 CancelledError；AbortError 同理。
+ * 兜底检查 message：trpc/TanStack Query 某些版本抛出的 Error 实例 name 为 "Error"，
+ * 但 message 仍为 "CancelledError" / "AbortError"。 */
 export function isCancelledOrAbortError(err: unknown): boolean {
-  return err instanceof Error && (err.name === "CancelledError" || err.name === "AbortError");
+  if (!(err instanceof Error)) return false;
+  const names = new Set(["CancelledError", "AbortError"]);
+  if (names.has(err.name)) return true;
+  return names.has(err.message);
 }
 
 /** 取消类错误静默；其余 warn 便于观测，避免 unhandled rejection。 */

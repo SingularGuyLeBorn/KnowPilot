@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { keepPreviousData } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -13,7 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export default function PostDetailPage() {
+function PostDetailPageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -145,5 +145,20 @@ function NotFound() {
         </Link>
       </CardContent>
     </Card>
+  );
+}
+
+// useSearchParams 需 Suspense 边界，否则 Next 16 下整页 CSR bailout
+export default function PostDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="w-full px-4 py-8 sm:px-5 lg:px-6">
+          <PostSkeleton />
+        </div>
+      }
+    >
+      <PostDetailPageContent />
+    </Suspense>
   );
 }

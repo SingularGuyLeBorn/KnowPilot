@@ -421,7 +421,7 @@ function MilkdownEditorInner({
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "s") return;
       e.preventDefault();
-      void onManualSave?.();
+      Promise.resolve(onManualSave?.()).catch(() => {});
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

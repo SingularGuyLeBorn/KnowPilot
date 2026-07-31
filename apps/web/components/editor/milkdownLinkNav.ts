@@ -127,9 +127,10 @@ export const milkdownLinkNav = $prose(
             return true;
           }
           event.preventDefault();
-          void navigateFromHref(href).then((ok) => {
-            if (!ok) void navigateFromWikiText(view, pos);
-          });
+          // 链尾统一 catch：fetchPostTree 内 fetch/res.json() 会 reject，禁止 unhandled rejection
+          navigateFromHref(href)
+            .then((ok) => (ok ? false : navigateFromWikiText(view, pos)))
+            .catch(() => {});
           return true;
         },
         handleDOMEvents: {
@@ -143,7 +144,7 @@ export const milkdownLinkNav = $prose(
             const target = wikiAtOffset($pos.parent.textContent, $pos.parentOffset);
             if (!target) return false;
             event.preventDefault();
-            void navigateFromWikiText(view, coords.pos);
+            navigateFromWikiText(view, coords.pos).catch(() => {});
             return true;
           },
         },

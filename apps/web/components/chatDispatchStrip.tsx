@@ -145,9 +145,12 @@ export function ChatDispatchStrip({
       data-testid="chat-dispatch-strip"
     >
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--kp-text-2)]">
+        <div
+          className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--kp-text-2)]"
+          title="全局任务池限制同时运行的后台 LLM 任务数，避免耗尽 API 额度；当前并发上限见 config.yaml asyncJobs.maxConcurrent"
+        >
           <Bot className="h-3.5 w-3.5 text-[var(--kp-brand)]" />
-          派工进行中
+          后台任务
           <span className="rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-0.5 text-[10px] tabular-nums text-[var(--kp-brand-deep)]">
             {rows.length}
           </span>

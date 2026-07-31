@@ -605,7 +605,11 @@ html.dark .kp-card,
 .kp-katex-formula--display.kp-katex-align-left .katex-display {
   text-align: left;
 }
-.kp-katex-formula-trigger:hover,
+.kp-katex-formula-trigger:hover {
+  /* 去掉 hover 方框：用户反馈鼠标划过公式时出现的边框干扰阅读 */
+  background: transparent;
+  box-shadow: none;
+}
 .kp-katex-formula.is-open .kp-katex-formula-trigger {
   /* 与页面同色，仅淡描边提示可点，避免灰/品牌底 */
   background: transparent;

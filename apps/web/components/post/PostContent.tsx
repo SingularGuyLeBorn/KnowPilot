@@ -20,6 +20,7 @@ import {
   isMathClassName,
   useInsideKatexFormula,
 } from "@/components/post/KatexFormula";
+import { buildTocItems, type TocItem } from "@/components/post/TableOfContents";
 import dynamic from "next/dynamic";
 import { BoardPreview } from "@/components/editor/BoardCanvas";
 import "highlight.js/styles/github.css";
@@ -261,12 +262,16 @@ function MarkdownSpan({
 
 function Heading({
   level,
+  id: propId,
   children,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement> & { level: 1 | 2 | 3 | 4 | 5 | 6 }) {
   const fallbackId = useId();
   const text = getText(children);
-  const id = slugify(text) || `heading-${level}-${fallbackId.replace(/[^a-z0-9]/gi, "").slice(0, 6)}`;
+  const id =
+    (typeof propId === "string" && propId) ||
+    slugify(text) ||
+    `heading-${level}-${fallbackId.replace(/[^a-z0-9]/gi, "").slice(0, 6)}`;
   const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
   const hashes = "#".repeat(level);
   return (
@@ -451,6 +456,48 @@ function rehypeNormalizeCustomTags() {
   };
 }
 
+/** rehype-raw 不带 sanitize：iframe/object/embed 可嵌入任意第三方内容，整节点丢弃（script 已在 components 层丢弃） */
+const UNSAFE_EMBED_TAGS = new Set(["iframe", "object", "embed"]);
+
+function rehypeDropUnsafeEmbeds() {
+  return (tree: RehypeRoot) => {
+    const walk = (node: RehypeRoot | RehypeNode) => {
+      const children = node.children;
+      if (!Array.isArray(children)) return;
+      // 先过滤掉嵌入节点本身，再递归其余子节点
+      const kept = children.filter(
+        (child) => !(child.type === "element" && UNSAFE_EMBED_TAGS.has((child as RehypeElement).tagName)),
+      );
+      node.children = kept;
+      for (const child of kept) walk(child);
+    };
+    walk(tree);
+  };
+}
+
+/**
+ * 把 TOC 预计算的 id 写回 h2-h4。
+ * 与 TableOfContents 共用 buildTocItems，彻底消除「重复标题 id 冲突」
+ * 和「math/特殊字符导致正文与目录 id 不一致」两种跳转失效。
+ */
+function rehypeHeadingIds(items: TocItem[]) {
+  let index = 0;
+  return (tree: RehypeRoot) => {
+    const walk = (node: RehypeNode) => {
+      if (node.type !== "element") return;
+      const el = node as RehypeElement;
+      if (/^h[2-4]$/.test(el.tagName) && index < items.length) {
+        const item = items[index++];
+        if (item?.id) {
+          el.properties = { ...el.properties, id: item.id };
+        }
+      }
+      for (const child of el.children) walk(child);
+    };
+    for (const child of tree.children) walk(child);
+  };
+}
+
 function ThinkingNode({
   category,
   children,
@@ -482,16 +529,19 @@ export const PostContent = memo(function PostContent({
     [content],
   );
 
+  const tocItems = useMemo(() => buildTocItems(content), [content]);
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(
     () =>
       [
         rehypeRaw,
         rehypeNormalizeCustomTags,
+        rehypeDropUnsafeEmbeds,
+        rehypeHeadingIds(tocItems),
         rehypeHighlight,
         [rehypeKatex, { throwOnError: false, strict: false }],
       ] as NonNullable<React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>,
-    [],
+    [tocItems],
   );
 
   const components = useMemo(

@@ -33,7 +33,7 @@ describe("AssistantDriftBanner（W16d-3）", () => {
         <AssistantDriftBanner
           agentName="assistant"
           drift={["工具清单缺少 2 个内置默认工具（native:a, native:b）", "未设置 tier（应为 manager）"]}
-          migrationHint="pnpm --filter @knowpilot/server exec tsx src/scripts/migrate-assistant-tools.ts"
+          migrationHint="请在 /agents 页手动对齐内置默认工具与系统提示"
         />,
       );
     });
@@ -43,7 +43,7 @@ describe("AssistantDriftBanner（W16d-3）", () => {
     expect(banner!.textContent).toContain("assistant");
     expect(banner!.textContent).toContain("工具清单缺少 2 个内置默认工具");
     expect(banner!.textContent).toContain("未设置 tier");
-    expect(banner!.textContent).toContain("migrate-assistant-tools");
+    expect(banner!.textContent).toContain("/agents");
   });
 
   it("drift 为空 → 渲染 null（无横幅）", async () => {

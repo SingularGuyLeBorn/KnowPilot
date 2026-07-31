@@ -10,7 +10,7 @@ export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "sup
 export type AsyncQueuedReason = "global" | "session" | "workspace" | "gate";
 
 const ASYNC_QUEUED_REASON_LABEL: Record<AsyncQueuedReason, string> = {
-  global: "全局上限",
+  global: "并发限制",
   session: "会话上限",
   workspace: "workspace 上限",
   gate: "审批 gate",

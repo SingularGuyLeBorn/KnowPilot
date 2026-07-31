@@ -130,12 +130,8 @@ export function SubagentCreateDialog({
   const [description, setDescription] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
 
-  useEffect(() => {
-    if (open && !agentId && agents[0]) {
-      // queueMicrotask 避免在 effect 同步阶段调用 setState
-      queueMicrotask(() => setAgentId(agents[0].id));
-    }
-  }, [open, agents, agentId]);
+  // 未显式选择时默认取第一个 Agent：派生值替代「effect + setState」，少一次级联渲染（react-hooks/set-state-in-effect）
+  const effectiveAgentId = agentId || agents[0]?.id || "";
 
   const resetAndClose = () => {
     setTask("");
@@ -150,9 +146,7 @@ export function SubagentCreateDialog({
   };
 
   useEffect(() => {
-    if (!open) {
-      queueMicrotask(resetAndClose);
-    }
+    if (!open) resetAndClose();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -171,8 +165,8 @@ export function SubagentCreateDialog({
     const trimmed = task.trim();
     if (!trimmed || !effectiveParentSessionId) return;
     if (mode === "existing") {
-      if (!agentId) return;
-      spawnWithAgent(agentId);
+      if (!effectiveAgentId) return;
+      spawnWithAgent(effectiveAgentId);
     } else {
       const trimmedName = name.trim();
       if (!trimmedName) return;
@@ -195,7 +189,7 @@ export function SubagentCreateDialog({
   const canSubmit =
     task.trim() &&
     !!effectiveParentSessionId &&
-    (mode === "existing" ? !!agentId : name.trim() && !isPending);
+    (mode === "existing" ? !!effectiveAgentId : name.trim() && !isPending);
 
   const error = spawnMut.error?.message ?? createAgentMut.error?.message ?? null;
 
@@ -257,7 +251,7 @@ export function SubagentCreateDialog({
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--kp-text-2)]">Agent</label>
                   <KpSelect
-                    value={agentId}
+                    value={effectiveAgentId}
                     onChange={setAgentId}
                     options={agents.map((a) => ({ value: a.id, label: a.name }))}
                     variant="capsule"

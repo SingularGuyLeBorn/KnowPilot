@@ -135,7 +135,7 @@ export function useAutoSave({
 
   useEffect(() => {
     debouncedSaveRef.current = debounce(() => {
-      void flushSave();
+      flushSave().catch(() => {});
     }, 2000);
     return () => {
       debouncedSaveRef.current?.cancel();

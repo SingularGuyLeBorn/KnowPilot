@@ -297,7 +297,7 @@ export default function AgentCronPage() {
         utils.session.list.invalidate().catch(catchUnlessCancelled("app/cron/page.tsx"));
       }
     };
-    for (const name of [UI_STATE_CHANNEL, "knowpilot-session-list"]) {
+    for (const name of [UI_STATE_CHANNEL]) {
       try {
         const bc = new BroadcastChannel(name);
         bc.addEventListener("message", onMsg);

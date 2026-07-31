@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -26,7 +26,7 @@ import { ContinueReadingCard } from "@/components/post/ContinueReading";
 
 type PublishFilter = "all" | "published" | "draft";
 
-export default function PostsPage() {
+function PostsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const gardenFromUrl = searchParams.get("garden") || "";
@@ -340,5 +340,20 @@ function PostRow({
         </div>
       </div>
     </article>
+  );
+}
+
+// useSearchParams 需 Suspense 边界，否则 Next 16 下整页 CSR bailout
+export default function PostsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center text-sm text-[var(--kp-text-3)]">
+          加载文章列表…
+        </div>
+      }
+    >
+      <PostsPageContent />
+    </Suspense>
   );
 }

@@ -43,6 +43,21 @@ function parseHeadings(content: string): TocItem[] {
   return items;
 }
 
+/**
+ * 为每个标题生成唯一 id，与正文 Heading 组件使用的 id 保持一致。
+ * 重复标题追加 `-2`、`-3`…，避免 DOM id 冲突导致目录跳转错位。
+ */
+export function buildTocItems(content: string): TocItem[] {
+  const raw = parseHeadings(content);
+  const counts = new Map<string, number>();
+  return raw.map((item) => {
+    const base = item.id;
+    const count = (counts.get(base) ?? 0) + 1;
+    counts.set(base, count);
+    return { ...item, id: count === 1 ? base : `${base}-${count}` };
+  });
+}
+
 function buildGroups(items: TocItem[]): TocGroup[] {
   const groups: TocGroup[] = [];
   let current: TocGroup | null = null;
@@ -122,7 +137,7 @@ export function TableOfContents({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [manuallyExpanded, setManuallyExpanded] = useState<Set<string>>(new Set());
 
-  const items = useMemo(() => parseHeadings(content), [content]);
+  const items = useMemo(() => buildTocItems(content), [content]);
   const groups = useMemo(() => buildGroups(items), [items]);
 
   const expanded = useMemo(() => {

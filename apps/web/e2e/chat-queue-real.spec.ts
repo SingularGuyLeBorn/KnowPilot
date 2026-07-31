@@ -8,6 +8,7 @@ import {
 
 test.describe("Chat 真实 LLM — 发送队列", () => {
   test.describe.configure({ timeout: 240_000 });
+  test.skip(!process.env.DEEPSEEK_API_KEY, "缺少 DEEPSEEK_API_KEY，跳过真实 LLM 套件");
 
   test.beforeEach(async ({ request }) => {
     await expect

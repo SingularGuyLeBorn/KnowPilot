@@ -104,8 +104,15 @@ async function parseSseBlock(
     callbacks.onEventId?.(eventId);
   }
   if (!dataLine) return { finished: false, eventId };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SSE 事件负载为动态 JSON，由下方 switch 逐事件收窄
+  let payload: any;
   try {
-    const payload = JSON.parse(dataLine);
+    payload = JSON.parse(dataLine);
+  } catch {
+    // 仅 JSON 解析失败按「畸形 chunk」忽略；回调异常在下方单独捕获，不得混入此分支
+    return { finished: false, eventId };
+  }
+  try {
     switch (eventType) {
       case "session_start":
         callbacks.onSessionStart?.(payload.sessionId ?? "");
@@ -201,8 +208,16 @@ async function parseSseBlock(
         await callbacks.onError?.(payload.message, payload.sessionId, payload.suggestion);
         return { finished: true, eventId };
     }
-  } catch {
-    // ignore malformed chunk
+  } catch (err) {
+    // 应用层回调自身抛错：不是畸形 chunk，禁止静默吞掉后走 12 次指数退避重连（重连修不好应用错误）。
+    // console.error 上报后按流失败收尾：通知 onError 并结束本次流（finished=true 不再重连）。
+    console.error("agentStream: SSE 事件回调异常，按流失败收尾", err);
+    try {
+      callbacks.onError?.(err instanceof Error ? err.message : String(err));
+    } catch {
+      /* onError 自身也抛错时放弃上报 */
+    }
+    return { finished: true, eventId };
   }
   return { finished: false, eventId };
 }

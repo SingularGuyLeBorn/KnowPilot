@@ -304,6 +304,13 @@ export function ChatSessionPane({
     [sessionId, reorderSessionQueueItemsMutation],
   );
 
+  // 卸载时清理重排防抖定时器，避免组件卸载后 500ms 触发 mutation
+  useEffect(() => {
+    return () => {
+      if (reorderTimerRef.current) clearTimeout(reorderTimerRef.current);
+    };
+  }, []);
+
   const handleStop = useCallback(async () => {
     // E3：先拿 stop 契约 partialAssistantMessageId，再 applyUserStop——
     // 有 AC → abort() 交 AbortError 路径；无 AC（幽灵 streaming）→ 直接 ABORT_STREAM。

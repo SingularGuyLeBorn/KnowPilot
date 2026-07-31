@@ -1,17 +1,41 @@
 "use client";
 
 /**
- * 流式期轻量渲染：不做 remark/rehype/KaTeX/高亮，只保空白与极简行内标记。
+ * 流式期轻量渲染：不做 remark/rehype/高亮，但保留行内 code/bold/数学公式，
+ * 解决 Thinking 过程中 LaTeX 下标（$x_l$、$$x_{l+1}$$）被原样显示为下划线的问题。
  * 终态 / 非 live 仍走完整 PostContent。
  */
 
 import { memo, useMemo, type ReactNode } from "react";
+import katex from "katex";
 import { cn } from "@/lib/utils";
 
+function InlineKatex({ tex }: { tex: string }) {
+  const html = useMemo(() => {
+    try {
+      return katex.renderToString(tex, { throwOnError: false, strict: false });
+    } catch {
+      return tex;
+    }
+  }, [tex]);
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function DisplayKatex({ tex }: { tex: string }) {
+  const html = useMemo(() => {
+    try {
+      return katex.renderToString(tex, { throwOnError: false, strict: false, displayMode: true });
+    } catch {
+      return tex;
+    }
+  }, [tex]);
+  return <div className="my-2 text-center" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
 function renderInline(text: string): ReactNode[] {
-  // 极简：`code` 与 **bold**；其余原样（避免流式半截语法抖动）
+  // 极简：code / **bold** / $inline math$；其余原样（避免流式半截语法抖动）
   const nodes: ReactNode[] = [];
-  const re = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  const re = /(`[^`]+`|\*\*[^*]+\*\*|\$[^$\n]+\$)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let key = 0;
@@ -29,12 +53,14 @@ function renderInline(text: string): ReactNode[] {
           {token.slice(1, -1)}
         </code>,
       );
-    } else {
+    } else if (token.startsWith("**")) {
       nodes.push(
         <strong key={key++} className="font-semibold">
           {token.slice(2, -2)}
         </strong>,
       );
+    } else {
+      nodes.push(<InlineKatex key={key++} tex={token.slice(1, -1)} />);
     }
     last = m.index + token.length;
   }
@@ -51,8 +77,8 @@ export const StreamingPlainContent = memo(function StreamingPlainContent({
 }) {
   const blocks = useMemo(() => {
     if (!content) return null;
-    // 简易 fenced code：完整闭合的 ``` 块按 pre 渲染，未闭合尾块仍当正文
-    const parts = content.split(/(```[\s\S]*?```)/g);
+    // 同时处理 ``` 代码块与 $$ 块级公式，其余当正文做行内渲染
+    const parts = content.split(/(```[\s\S]*?```|\$\$[\s\S]*?\$\$)/g);
     return parts.map((part, i) => {
       if (part.startsWith("```") && part.endsWith("```") && part.length >= 6) {
         const inner = part.slice(3, -3);
@@ -66,6 +92,10 @@ export const StreamingPlainContent = memo(function StreamingPlainContent({
             {code}
           </pre>
         );
+      }
+      if (part.startsWith("$$") && part.endsWith("$$") && part.length >= 4) {
+        const tex = part.slice(2, -2).trim();
+        return <DisplayKatex key={i} tex={tex} />;
       }
       return (
         <span key={i} className="whitespace-pre-wrap break-words">

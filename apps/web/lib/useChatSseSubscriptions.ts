@@ -21,7 +21,7 @@ import { streamLifecycleActions } from "@/lib/useStreamLifecycle";
 import { sessionComposeActions, sessionComposeStore } from "@/lib/useSessionComposeState";
 import { mergeUserQueueFromDb } from "@/lib/chatQueueTypes";
 import { refreshSessionAsyncQueue } from "@/lib/refreshSessionAsyncQueue";
-import { postSessionListHint, postUiState } from "@/lib/uiStateChannel";
+import { postSessionListHint, postUiState, UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
 
 export interface UseChatSseSubscriptionsParams {
   effectiveSessionId: string | null;
@@ -379,7 +379,7 @@ export function useChatSseSubscriptions({
         }
       }
     };
-    for (const name of ["knowpilot-ui-state", "knowpilot-session-list"]) {
+    for (const name of [UI_STATE_CHANNEL]) {
       try {
         const bc = new BroadcastChannel(name);
         bc.addEventListener("message", onMsg);
