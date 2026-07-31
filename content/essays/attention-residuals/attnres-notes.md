@@ -14,7 +14,7 @@ tags:
 
 > 从 Pre-LN 残差连接的累加问题出发，推导 Attention Residuals（AttnRes）的设计动机与最终形式。
 
----
+***
 
 ## 1. Pre-LN 残差连接的问题
 
@@ -46,7 +46,7 @@ $$
 x_l = x_0 + \sum_{i=0}^{l-1} h_i
 $$
 
----
+***
 
 ## 2. 两个核心问题
 
@@ -93,8 +93,9 @@ $$
 **结论**：无论累加是同向还是随机，早期层 $h_i$ 对深层状态 $x_L$ 的相对影响力都会随深度衰减。这就是"早期层信息被稀释"的数学含义。
 
 此外，所有层系数固定为 $1$，意味着：
-- 当前层无法选择性地关注更相关的历史层；
-- 不同类型的层（Attention / MLP）对输入的需求相同。
+
+* 当前层无法选择性地关注更相关的历史层；
+* 不同类型的层（Attention / MLP）对输入的需求相同。
 
 ### 两个问题的耦合
 
@@ -145,15 +146,16 @@ $$
 $$
 
 **耦合的直观解释**：
-- $x_l$ 越大 → $h_l$ 必须越大才能影响 $x_{l+1}$；
-- $h_l$ 越大 → $x_{l+1} = x_l + h_l$ 越大；
-- 循环往复，导致深层 $h_l$ 和 $x_l$ 同步指数增长。
+
+* $x_l$ 越大 → $h_l$ 必须越大才能影响 $x_{l+1}$；
+* $h_l$ 越大 → $x_{l+1} = x_l + h_l$ 越大；
+* 循环往复，导致深层 $h_l$ 和 $x_l$ 同步指数增长。
 
 这正对应原文中的观察：深层网络必须学习越来越大的输出，从而增加训练不稳定性。
 
 AttnRes 通过 $\sum_i a_i = 1$ 的凸组合，将 $x_{l+1}$ 限制在 $\max_i \|h_i\|$ 范围内，直接打断这一正反馈循环。
 
----
+***
 
 ## 3. 改进思路：从固定累加到加权聚合
 
@@ -190,7 +192,7 @@ $$
 
 这样，设计问题从"直接学习受约束的 $a_i$"简化为：
 
-> **设计分数函数 $s_i^{(l+1)}$，使其合理反映历史层 $h_i$ 与当前层 $l+1$ 的关联程度。**
+> **设计分数函数** $s_i^{(l+1)}$，使其合理反映历史层 $h_i$ 与当前层 $l+1$ 的关联程度。
 
 由于 softmax 自动满足非负性和归一化，我们只需要关注 $s_i^{(l+1)}$ 如何与 $h_i$ 相关即可。
 
@@ -233,8 +235,9 @@ g_{l+1} = W_q \, x_{l+1} + b_q
 $$
 
 论文消融实验显示，input-dependent query 能进一步降低 loss（$1.731$ vs $1.737$），但会带来额外计算和推理复杂度。AttnRes 默认采用**静态 query + 动态 key** 的折中：
-- query 只与层索引有关，便于工程实现和预计算；
-- key 来自历史层输出，权重仍随输入变化，保留了内容感知能力。
+
+* query 只与层索引有关，便于工程实现和预计算；
+* key 来自历史层输出，权重仍随输入变化，保留了内容感知能力。
 
 **总结**：系数和为 $1$ 且非负是自然的约束，softmax 是满足这一约束的最自然形式。在此形式下，只需设计分数函数 $s_i^{(l+1)}$。分数函数必须与历史层内容 $h_i$ 相关，才能真正实现选择性访问；静态分数虽然也能满足约束，但无法突破残差 baseline。
 
@@ -244,22 +247,23 @@ $$
 
 ResNet 原论文的消融主要集中在快捷连接本身的设计：
 
-| 实验 | 内容 | 结论 |
-|------|------|------|
-| Plain vs Residual | 同深度的 plain 网络 vs 残差网络 | 残差连接解决退化问题 |
-| Identity vs Projection shortcut | 恒等映射 vs 1×1 卷积投影 | 恒等映射足够好，投影只在维度变化时必要 |
-| Bottle-neck design | 1×1-3×3-1×1 结构 | 更深的网络可用 bottleneck |
+| 实验                              | 内容                    | 结论                  |
+| ------------------------------- | --------------------- | ------------------- |
+| Plain vs Residual               | 同深度的 plain 网络 vs 残差网络 | 残差连接解决退化问题          |
+| Identity vs Projection shortcut | 恒等映射 vs 1×1 卷积投影      | 恒等映射足够好，投影只在维度变化时必要 |
+| Bottle-neck design              | 1×1-3×3-1×1 结构        | 更深的网络可用 bottleneck  |
 
 原论文的核心形式是 $y = F(x) + x$，系数固定为 $1$，没有尝试学习每层不同的权重。
 
 最接近的相关工作：
-- **DenseNet**（2017）：把所有历史层**拼接**起来；
-- **DenseFormer**：把所有历史层用**固定可学习标量**加权，即 AttnRes 论文 Table 4 中 loss 1.767 的 baseline；
-- **Highway Networks**（2015）：用可学习门控控制残差与变换的加权，但实验发现门控会趋于"打开"状态，即退化为普通残差。
 
-因此，AttnRes 论文中 DenseFormer 的消融结果是后来这一研究方向上的证据，用来支撑：**单纯把固定系数 $1$ 改成可学习静态系数，不足以超越残差 baseline；必须让权重与内容相关（即 attention），才能真正实现选择性聚合。**
+* **DenseNet**（2017）：把所有历史层**拼接**起来；
+* **DenseFormer**：把所有历史层用**固定可学习标量**加权，即 AttnRes 论文 Table 4 中 loss 1.767 的 baseline；
+* **Highway Networks**（2015）：用可学习门控控制残差与变换的加权，但实验发现门控会趋于"打开"状态，即退化为普通残差。
 
----
+因此，AttnRes 论文中 DenseFormer 的消融结果是后来这一研究方向上的证据，用来支撑：**单纯把固定系数** $1$ 改成可学习静态系数，不足以超越残差 baseline；必须让权重与内容相关（即 attention），才能真正实现选择性聚合。
+
+***
 
 ## 4. 分数函数的具体设计
 
@@ -291,7 +295,7 @@ $$
 
 于是 $g_{l+1}^\top k_i$ 只反映方向夹角的余弦相似度，不受原始幅度影响。
 
----
+***
 
 ## 5. 最终形式
 
@@ -310,37 +314,38 @@ a_i^{(l+1)} = \frac{\exp\!\left(g_{l+1}^\top \, \mathrm{RMSNorm}(h_i)\right)}{\s
 $$
 
 其中：
-- $g_{l+1} \in \mathbb{R}^d$：第 $l+1$ 层的可学习 query 向量，只与层索引有关，与输入无关；
-- $h_i$：第 $i$ 个 Transformer block 的输出（$h_0 = x_0$ 为 embedding）；
-- $k_i = \mathrm{RMSNorm}(h_i)$：第 $i$ 层输出的归一化 key；
-- $a_i^{(l+1)}$：第 $l+1$ 层对第 $i$ 层的注意力权重。
 
----
+* $g_{l+1} \in \mathbb{R}^d$：第 $l+1$ 层的可学习 query 向量，只与层索引有关，与输入无关；
+* $h_i$：第 $i$ 个 Transformer block 的输出（$h_0 = x_0$ 为 embedding）；
+* $k_i = \mathrm{RMSNorm}(h_i)$：第 $i$ 层输出的归一化 key；
+* $a_i^{(l+1)}$：第 $l+1$ 层对第 $i$ 层的注意力权重。
+
+***
 
 ## 6. 设计动机总结
 
-| 问题 | 解决方案 | 作用 |
-|------|---------|------|
-| 残差流 $x_l$ 无界增长 | 加权聚合 + $\sum a_i = 1$ | 凸组合，幅度有界 |
-| 历史层等权累加，无选择性 | 可学习 softmax attention | 动态选择相关历史层 |
-| 幅度大的层主导注意力 | key 做 RMSNorm | 匹配基于方向，而非幅度 |
-| 权重可能为负或归一化困难 | softmax | 保证非负、和为 1、竞争性选择 |
+| 问题             | 解决方案                  | 作用              |
+| -------------- | --------------------- | --------------- |
+| 残差流 $x_l$ 无界增长 | 加权聚合 + $\sum a_i = 1$ | 凸组合，幅度有界        |
+| 历史层等权累加，无选择性   | 可学习 softmax attention | 动态选择相关历史层       |
+| 幅度大的层主导注意力     | key 做 RMSNorm         | 匹配基于方向，而非幅度     |
+| 权重可能为负或归一化困难   | softmax               | 保证非负、和为 1、竞争性选择 |
 
----
+***
 
 ## 7. 与 Block AttnRes 的关系
 
 Full AttnRes 需要对每一层都 attention 到所有历史层，计算和通信复杂度为 $O(L^2 \cdot d)$。为了扩展到大规模模型，引入 Block AttnRes：
 
-- 将 $L$ 层划分为 $N$ 个 block；
-- block 内用标准残差累加压缩成一个 block 表示；
-- block 之间执行 Full AttnRes 风格的注意力。
+* 将 $L$ 层划分为 $N$ 个 block；
+* block 内用标准残差累加压缩成一个 block 表示；
+* block 之间执行 Full AttnRes 风格的注意力。
 
 复杂度从 $O(L^2 \cdot d)$ 降到 $O(N \cdot L \cdot d)$，同时保留了大部分收益。
 
 核心洞察：Block AttnRes 的压缩仍然是加权求和的一种形式——每个 block 内是等权求和，block 之间是 softmax 加权。它优于 Sliding Window Attention（SWA）是因为压缩保留了所有历史层信息，只是粒度变粗；而 SWA 直接丢弃远距离层，破坏了残差连接的完整性。
 
----
+***
 
 ## 8. 相关思想：大模型中"把固定权重动态化"的其他例子
 
@@ -350,11 +355,11 @@ AttnRes 的核心模式是：
 
 这种模式在大模型领域非常常见，下面按不同维度给出最典型的例子，帮助理解 AttnRes 在更广泛的架构演进中的位置。
 
----
+***
 
 ### 8.1 Self-Attention：序列维度上的同一个模式
 
-**原本固定为 $1$ 的结构**：RNN / 因果递推
+**原本固定为** $1$ 的结构：RNN / 因果递推
 
 $$
 h_t = f(h_{t-1}, x_t)
@@ -376,18 +381,18 @@ $$
 
 **对应关系**：
 
-| AttnRes | Self-Attention |
-|---------|---------------|
-| 深度维度：第 $l$ 层看历史所有层 | 序列维度：第 $t$ 个 token 看所有位置 |
+| AttnRes                       | Self-Attention              |
+| ----------------------------- | --------------------------- |
+| 深度维度：第 $l$ 层看历史所有层            | 序列维度：第 $t$ 个 token 看所有位置    |
 | 固定残差系数 $1$ → 动态 $\alpha_{li}$ | 固定递推 $1$ → 动态 $\alpha_{ts}$ |
 
 这其实就是 AttnRes 论文的核心类比：既然 attention 在序列维度上成功替代了固定递推，那么它也可以在深度维度上替代固定残差累加。
 
----
+***
 
 ### 8.2 Mixture of Experts（MoE）：把 FFN 的固定输出动态化
 
-**原本固定为 $1$ 的结构**：标准 FFN
+**原本固定为** $1$ 的结构：标准 FFN
 
 所有 token 都走同一个 FFN，每个参数对所有输入都生效。
 
@@ -403,11 +408,11 @@ $$
 
 典型工作：Switch Transformer、GLaM、Mixtral、DeepSeek-V3 / Moonlight。
 
----
+***
 
 ### 8.3 GLU / SwiGLU：FFN 内部的动态门控
 
-**原本固定为 $1$ 的结构**：标准 FFN
+**原本固定为** $1$ 的结构：标准 FFN
 
 $$
 \mathrm{FFN}(x) = W_2 \cdot \sigma(W_1 x)
@@ -427,13 +432,13 @@ $$
 
 **共同点**：把 FFN 的线性变换输出，用输入依赖的门控 $\sigma(\cdot)$ 动态调制。每个神经元/通道的激活强度都随输入变化。
 
----
+***
 
 ### 8.4 Hyper-Connections / xHC：多残差流的动态混合
 
 这是和 AttnRes 最直接竞争的一路线。
 
-**原本固定为 $1$ 的结构**：单残差流
+**原本固定为** $1$ 的结构：单残差流
 
 $$
 x_{l+1} = x_l + h_l
@@ -452,14 +457,15 @@ $$
 早期的 mHC 用 sigmoid 和双随机性保证稳定性，并验证了大模型上的有效性。近期这一路线已进一步发展成为 **xHC（Expanded Hyper-Connections）**：在 mHC 的基础上引入时序特征增强（richer write-back）和稀疏残差流结构，把可扩展的并行流数 $N$ 从 mHC 的 $N=4$ 瓶颈进一步推开，成为当前 HC 系列的代表。
 
 **与 AttnRes 的区别**：
-- Hyper-Connections / xHC：多流状态，矩阵混合；
-- AttnRes：单流，但跨层 attention 选择历史层。
 
----
+* Hyper-Connections / xHC：多流状态，矩阵混合；
+* AttnRes：单流，但跨层 attention 选择历史层。
+
+***
 
 ### 8.5 RWKV：带通道衰减的线性递推
 
-**原本固定为 $1$ 的结构**：RNN / 因果线性 attention
+**原本固定为** $1$ 的结构：RNN / 因果线性 attention
 
 RNN 把历史压缩到单个隐状态，每个时间步对前一状态的传递权重固定为 $1$：
 
@@ -498,17 +504,18 @@ o_t = r_t \odot \bigl(W_o \cdot \mathrm{wkv}_t\bigr)
 $$
 
 **关键点**：
-- 衰减 $w$ 是**数据无关**的（只与通道有关），让历史信息以可学习但固定的半衰期消退；
-- receptance $r_t$ 是**输入依赖**的，决定当前 token 在多大程度上使用聚合后的历史；
-- 因此历史权重不再是固定 $1$，而是 $e^{-(t-1-s)w} \cdot r_t$，实现了序列维度上的动态残差/递推。
+
+* 衰减 $w$ 是**数据无关**的（只与通道有关），让历史信息以可学习但固定的半衰期消退；
+* receptance $r_t$ 是**输入依赖**的，决定当前 token 在多大程度上使用聚合后的历史；
+* 因此历史权重不再是固定 $1$，而是 $e^{-(t-1-s)w} \cdot r_t$，实现了序列维度上的动态残差/递推。
 
 **与 Mamba 的对比**：Mamba 的状态转移矩阵 $\bar{A}(x_t)$ 和输入门 $\bar{B}(x_t)$ 都是输入依赖的，选择性更强；RWKV 的 decay 是数据无关的，选择能力较弱，但实现更简单、推理更快（类似线性 RNN）。
 
----
+***
 
 ### 8.6 Mamba / Selective SSM：把状态转移动态化
 
-**原本固定为 $1$ 的结构**：线性状态空间模型
+**原本固定为** $1$ 的结构：线性状态空间模型
 
 $$
 h_t = A h_{t-1} + B x_t
@@ -526,48 +533,48 @@ $A, B, \Delta$ 都变成输入 $x_t$ 的函数。
 
 **共同点**：原来"固定参数控制信息如何传递"，现在"根据输入动态决定保留/遗忘多少"。
 
----
+***
 
 ### 8.7 动态深度 / Early Exit：让层数本身动态
 
-**原本固定为 $1$ 的结构**：所有输入都过 $L$ 层。
+**原本固定为** $1$ 的结构：所有输入都过 $L$ 层。
 
 **动态化**：不同输入过不同层数。
 
-- **PABEE**：基于内部层输出一致性决定提前退出；
-- **Dynamic Depth**：学习退出策略；
-- **Mixture of Depths（Apple, 2024）**：不同 token 经过不同层数。
+* **PABEE**：基于内部层输出一致性决定提前退出；
+* **Dynamic Depth**：学习退出策略；
+* **Mixture of Depths（Apple, 2024）**：不同 token 经过不同层数。
 
 **共同点**：原来"每层权重都是 $1$（必须过）"，现在"某些 token 可以跳过某些层"。
 
----
+***
 
 ### 8.8 总结表
 
-| 固定结构 | 动态化方法 | 维度 |
-|---------|-----------|------|
-| 残差累加（深度） | AttnRes、Hyper-Connections、xHC（mHC 为其前身） | 深度 |
-| RNN 递推（序列） | Self-Attention | 序列 |
-| 线性递推的固定衰减核 | RWKV | 序列时间 / 线性递推 |
-| FFN 固定输出 | MoE、GLU/SwiGLU | 特征/专家 |
-| 线性状态转移 | Mamba / Selective SSM | 时间/序列 |
-| 固定层数 | Early Exit / Dynamic Depth | 深度 |
-| 固定多流混合 | Hyper-Connections / SiameseNorm | 多流 |
+| 固定结构       | 动态化方法                                   | 维度          |
+| ---------- | --------------------------------------- | ----------- |
+| 残差累加（深度）   | AttnRes、Hyper-Connections、xHC（mHC 为其前身） | 深度          |
+| RNN 递推（序列） | Self-Attention                          | 序列          |
+| 线性递推的固定衰减核 | RWKV                                    | 序列时间 / 线性递推 |
+| FFN 固定输出   | MoE、GLU/SwiGLU                          | 特征/专家       |
+| 线性状态转移     | Mamba / Selective SSM                   | 时间/序列       |
+| 固定层数       | Early Exit / Dynamic Depth              | 深度          |
+| 固定多流混合     | Hyper-Connections / SiameseNorm         | 多流          |
 
 **AttnRes 的特殊位置**：它是在**深度维度**上，对**残差连接**本身做 attention 动态化。这与 Self-Attention 在序列维度上的做法高度对称，也是它被称为"把 attention 从序列维度搬到深度维度"的根本原因。
 
----
+***
 
 ## 参考
 
-- Attention Residuals, arXiv:2603.15031
-- 苏剑林：《Attention Residuals 回忆录》, https://kexue.fm/archives/11664
-- YyWangCS：《从推理架构的角度，谈谈 Attention Residual 架构一些背后的想法》, https://qingkeai.online/archives/Attention%20Residual%20
-- He et al.：Deep Residual Learning for Image Recognition, CVPR 2016
-- Vaswani et al.：Attention Is All You Need, NeurIPS 2017
-- Shazeer et al.：Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer, ICLR 2017
-- Srivastava et al.：Training Very Deep Networks, NeurIPS 2015 (Highway Networks)
-- Huang et al.：Densely Connected Convolutional Networks, CVPR 2017 (DenseNet)
-- Peng et al.：RWKV: Reinventing RNNs for the Transformer Era, arXiv:2305.13048, 2023
-- Gu & Dao：Mamba: Linear-Time Sequence Modeling with Selective State Spaces, 2023
-- Zhu et al.：xHC: Expanded Hyper-Connections, arXiv:2607.14530, 2026
+* Attention Residuals, arXiv:2603.15031
+* 苏剑林：《Attention Residuals 回忆录》, <https://kexue.fm/archives/11664>
+* YyWangCS：《从推理架构的角度，谈谈 Attention Residual 架构一些背后的想法》, <https://qingkeai.online/archives/Attention%20Residual%20>
+* He et al.：Deep Residual Learning for Image Recognition, CVPR 2016
+* Vaswani et al.：Attention Is All You Need, NeurIPS 2017
+* Shazeer et al.：Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer, ICLR 2017
+* Srivastava et al.：Training Very Deep Networks, NeurIPS 2015 (Highway Networks)
+* Huang et al.：Densely Connected Convolutional Networks, CVPR 2017 (DenseNet)
+* Peng et al.：RWKV: Reinventing RNNs for the Transformer Era, arXiv:2305.13048, 2023
+* Gu & Dao：Mamba: Linear-Time Sequence Modeling with Selective State Spaces, 2023
+* Zhu et al.：xHC: Expanded Hyper-Connections, arXiv:2607.14530, 2026

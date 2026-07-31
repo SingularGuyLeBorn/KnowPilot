@@ -11,7 +11,7 @@ tags:
 ---
 # 〈Research Debt〉读书笔记
 
-> 原文：https://distill.pub/2017/research-debt/（Chris Olah & Shan Carter, Distill, 2017）
+> 原文：https://distill.pub/2017/research-debt/（Chris Olah & Shan Carter, Distill, 2017）<br>
 > 本笔记是个人对原文的梳理与延伸思考，非翻译。
 
 ---

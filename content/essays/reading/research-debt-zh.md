@@ -11,9 +11,9 @@ tags:
 ---
 # Research Debt 中文翻译
 
-> 原文：https://distill.pub/2017/research-debt/
-> 作者：Chris Olah（撰文）& Shan Carter（插图）
-> 来源：Distill, 2017 · DOI: 10.23915/distill.00005
+> 原文：https://distill.pub/2017/research-debt/<br>
+> 作者：Chris Olah（撰文）& Shan Carter（插图）<br>
+> 来源：Distill, 2017 · DOI: 10.23915/distill.00005<br>
 > 本文为忠实完整翻译，图片与交互图示详见原站。
 
 ---

@@ -10,11 +10,12 @@ tags:
 ---
 # The Illustrated Transformer 中文翻译
 
-> 原文：https://jalammar.github.io/illustrated-transformer/
+> 原文：[https://jalammar.github.io/illustrated-transformer](https://jalammar.github.io/illustrated-transformer/)
+>
 > 作者：Jay Alammar（"一次一个概念地可视化机器学习"）
-> 本文为忠实完整翻译；原文中的图（Image 1~37）均为文字说明并注明原图位置，详见原站。
+> 本文为忠实完整翻译；原文中的图（Image 1\~37）均为文字说明并注明原图位置，详见原站。
 
----
+***
 
 ## 引言
 
@@ -276,10 +277,10 @@ Linear 层是一个简单的全连接神经网络，它把 decoder 堆叠产生�
 
 但注意这是一个过度简化的例子。更现实地，我们会用比一个词长的句子。例如——输入："je suis étudiant"，期望输出："i am a student"。这实际意味着，我们希望模型依次输出概率分布，其中：
 
-*   每个概率分布用一个宽度为 vocab_size 的向量表示（我们的玩具例子中是 6，但更现实的是 30,000 或 50,000 这样的数字）；
-*   第一个概率分布在 "i" 关联的单元处概率最高；
-*   第二个概率分布在 "am" 关联的单元处概率最高；
-*   依此类推，直到第五个输出分布指示 `<end of sentence>` 符号（它也在 10,000 元素词汇表中有对应单元）。
+* 每个概率分布用一个宽度为 vocab\_size 的向量表示（我们的玩具例子中是 6，但更现实的是 30,000 或 50,000 这样的数字）；
+* 第一个概率分布在 "i" 关联的单元处概率最高；
+* 第二个概率分布在 "am" 关联的单元处概率最高；
+* 依此类推，直到第五个输出分布指示 `<end of sentence>` 符号（它也在 10,000 元素词汇表中有对应单元）。
 
 **（图 Image 36：单个样本句子的训练目标概率分布序列）**
 
@@ -289,18 +290,18 @@ Linear 层是一个简单的全连接神经网络，它把 decoder 堆叠产生�
 
 希望训练后，模型会输出我们期望的正确翻译。当然，如果这个短语是训练数据集的一部分，这并不能真正说明什么（参见[交叉验证](https://www.youtube.com/watch?v=TIgfjmp-4BA)）。注意每个位置都得到一点概率，即使它不太可能是该时间步的输出——这是 softmax 的一个非常有用的性质，帮助训练过程。
 
-现在，由于模型一次只产生一个输出，我们可以假设模型从概率分布中选择概率最高的词并丢弃其余部分。这是一种方法（称为**贪心解码 greedy decoding**）。另一种方法是，例如保留前两个词（比如 'I' 和 'a'），然后在下一步运行模型两次：一次假设第一个输出位置是 'I'，另一次假设第一个输出位置是 'a'，保留在位置 #1 和 #2 上误差更小的版本。我们对位置 #2 和 #3 重复这个过程……等等。这种方法称为**束搜索 beam search**，在我们的例子里 beam_size 是 2（意味着任何时候都保留两个部分假设（未完成的翻译）在内存中），top_beams 也是 2（意味着我们返回两个翻译）。这两个都是你可以实验的超参数。
+现在，由于模型一次只产生一个输出，我们可以假设模型从概率分布中选择概率最高的词并丢弃其余部分。这是一种方法（称为**贪心解码 greedy decoding**）。另一种方法是，例如保留前两个词（比如 'I' 和 'a'），然后在下一步运行模型两次：一次假设第一个输出位置是 'I'，另一次假设第一个输出位置是 'a'，保留在位置 #1 和 #2 上误差更小的版本。我们对位置 #2 和 #3 重复这个过程……等等。这种方法称为**束搜索 beam search**，在我们的例子里 beam\_size 是 2（意味着任何时候都保留两个部分假设（未完成的翻译）在内存中），top\_beams 也是 2（意味着我们返回两个翻译）。这两个都是你可以实验的超参数。
 
 ## 去变形吧（Go Forth And Transform）
 
 我希望你觉得这里是一个打破 Transformer 主要概念僵局的有用起点。如果你想深入，我建议这些下一步：
 
-*   阅读 [Attention Is All You Need](https://arxiv.org/abs/1706.03762) 论文、Transformer 博客文章（[Transformer: A Novel Neural Network Architecture for Language Understanding](https://ai.googleblog.com/2017/08/transformer-novel-neural-network.html)）；
-*   阅读 Harvard NLP 的 PyTorch 注释版（[The Annotated Transformer](http://nlp.seas.harvard.edu/2018/04/03/attention.html)）；
-*   查看 [Tensor2Tensor 的 Transformer 代码](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/models/transformer.py)；
-*   观看 [Łukasz Kaiser 的讲解 Transformer 的讲座](https://www.youtube.com/watch?v=rBCqOTEfxvg)；
-*   阅读[关于 Attention 的下一篇博文](https://jalammar.github.io/visualizing-neural-machine-translation-mechanics-of-seq2seq-models-with-attention/)。
+* 阅读 [Attention Is All You Need](https://arxiv.org/abs/1706.03762) 论文、Transformer 博客文章（[Transformer: A Novel Neural Network Architecture for Language Understanding](https://ai.googleblog.com/2017/08/transformer-novel-neural-network.html)）；
+* 阅读 Harvard NLP 的 PyTorch 注释版（[The Annotated Transformer](http://nlp.seas.harvard.edu/2018/04/03/attention.html)）；
+* 查看 [Tensor2Tensor 的 Transformer 代码](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/models/transformer.py)；
+* 观看 [Łukasz Kaiser 的讲解 Transformer 的讲座](https://www.youtube.com/watch?v=rBCqOTEfxvg)；
+* 阅读[关于 Attention 的下一篇博文](https://jalammar.github.io/visualizing-neural-machine-translation-mechanics-of-seq2seq-models-with-attention/)。
 
----
+***
 
-*全文完。原文所有图见 https://jalammar.github.io/illustrated-transformer/*
+*全文完。原文所有图见* *<https://jalammar.github.io/illustrated-transformer/>*
