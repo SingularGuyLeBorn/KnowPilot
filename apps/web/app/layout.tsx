@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import "katex/dist/katex.min.css";
 import { Providers } from "./providers";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayoutClient } from "@/components/layout/AppLayoutClient";
@@ -58,6 +57,9 @@ export default function RootLayout({
       spellCheck={false}
     >
       <head>
+        {/* KaTeX 静态化到 public/，确保首屏阻塞加载，避免 dev 模式下 CSS chunk 延迟导致公式闪烁 */}
+        {/* eslint-disable-next-line @next/next/no-css-tags */}
+        <link rel="stylesheet" href="/katex/katex.min.css" />
         <script
           id="kp-theme-init"
           dangerouslySetInnerHTML={{
