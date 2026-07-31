@@ -10,6 +10,7 @@ import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { Check, Copy, Eye, Code2, Maximize2, Minimize2, WrapText, ListOrdered } from "lucide-react";
 import { cn } from "@/lib/utils";
+// KaTeX CSS 只在根布局 layout.tsx 导入一次，避免 client chunk 延迟加载导致公式初始闪烁
 import { transformWikiLinks } from "./WikiLink";
 import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
@@ -25,7 +26,6 @@ import { buildTocItems, type TocItem } from "@/components/post/TableOfContents";
 import dynamic from "next/dynamic";
 import { BoardPreview } from "@/components/editor/BoardCanvas";
 import "highlight.js/styles/github.css";
-import "katex/dist/katex.min.css";
 
 /** Remotion 很重：按需加载，避免整页卡在 Next「Rendering…」 */
 const VizEmbed = dynamic(

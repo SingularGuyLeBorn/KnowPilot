@@ -10,7 +10,6 @@ import { listener, listenerCtx } from "@milkdown/plugin-listener";
 import { math } from "@milkdown/plugin-math";
 import { history } from "@milkdown/plugin-history";
 import { Code2, Eye } from "lucide-react";
-import "katex/dist/katex.min.css";
 import { cn } from "@/lib/utils";
 import {
   detectEditorAgentAtTrigger,
