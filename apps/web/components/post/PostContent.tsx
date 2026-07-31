@@ -435,8 +435,9 @@ type RehypeRoot = { type: "root"; children: RehypeNode[] };
 /** 将未知自定义 HTML 标签降级为 div，避免 React 控制台报错 */
 function rehypeNormalizeCustomTags() {
   return (tree: RehypeRoot) => {
+    if (!tree || !Array.isArray(tree.children)) return;
     const walk = (node: RehypeNode) => {
-      if (node.type !== "element") return;
+      if (!node || node.type !== "element") return;
       const el = node as RehypeElement;
       if (el.tagName === "llmguidepage") {
         el.tagName = "div";
@@ -450,7 +451,9 @@ function rehypeNormalizeCustomTags() {
         };
         el.tagName = "div";
       }
-      for (const child of el.children) walk(child);
+      if (Array.isArray(el.children)) {
+        for (const child of el.children) walk(child);
+      }
     };
     for (const child of tree.children) walk(child);
   };
@@ -461,6 +464,7 @@ const UNSAFE_EMBED_TAGS = new Set(["iframe", "object", "embed"]);
 
 function rehypeDropUnsafeEmbeds() {
   return (tree: RehypeRoot) => {
+    if (!tree || !Array.isArray(tree.children)) return;
     const walk = (node: RehypeRoot | RehypeNode) => {
       const children = node.children;
       if (!Array.isArray(children)) return;
