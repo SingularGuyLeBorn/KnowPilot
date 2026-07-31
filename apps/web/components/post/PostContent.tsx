@@ -648,7 +648,10 @@ export const PostContent = memo(function PostContent({
   );
 
   return (
-    <div className={`prose prose-stone dark:prose-invert max-w-none ${className || ""}`}>
+    <div
+      className={`prose prose-stone dark:prose-invert max-w-none ${className || ""}`}
+      spellCheck={false}
+    >
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}

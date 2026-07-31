@@ -109,6 +109,7 @@ export const StreamingPlainContent = memo(function StreamingPlainContent({
     <div
       data-testid="streaming-plain-content"
       className={cn("text-sm leading-relaxed text-[var(--kp-text-1)]", className)}
+      spellCheck={false}
     >
       {blocks}
     </div>
