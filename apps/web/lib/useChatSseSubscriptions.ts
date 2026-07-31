@@ -219,6 +219,14 @@ export function useChatSseSubscriptions({
         utils.workspace.list.invalidate().catch(logQueryCatch);
         postUiState({ type: "agent_list_changed" });
       });
+      register("post_list_changed", () => {
+        utils.garden.list.invalidate().catch(logQueryCatch);
+        utils.post.list.invalidate().catch(logQueryCatch);
+        utils.post.tree.invalidate().catch(logQueryCatch);
+        utils.post.categories.invalidate().catch(logQueryCatch);
+        utils.post.tags.invalidate().catch(logQueryCatch);
+        postUiState({ type: "post_list_changed" });
+      });
       register("run_updated", () => {
         utils.run.list.invalidate().catch(logQueryCatch);
         postUiState({ type: "run_updated" });
@@ -361,6 +369,13 @@ export function useChatSseSubscriptions({
       if (t === "agent_list_changed") {
         utils.agent.list.invalidate().catch(logQueryCatch);
         utils.workspace.list.invalidate().catch(logQueryCatch);
+      }
+      if (t === "post_list_changed") {
+        utils.garden.list.invalidate().catch(logQueryCatch);
+        utils.post.list.invalidate().catch(logQueryCatch);
+        utils.post.tree.invalidate().catch(logQueryCatch);
+        utils.post.categories.invalidate().catch(logQueryCatch);
+        utils.post.tags.invalidate().catch(logQueryCatch);
       }
       if (t === "run_updated") utils.run.list.invalidate().catch(logQueryCatch);
       if (t === "task_updated") {

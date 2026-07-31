@@ -13,6 +13,7 @@ export type UiStateNotifyKind =
   | "approval_updated"
   | "session_list_changed"
   | "agent_list_changed"
+  | "post_list_changed"
   | "run_updated"
   | "task_updated"
   | "goal_updated";
@@ -107,6 +108,17 @@ export async function notifyCronJobUpdated(
     cronJobId: job.id,
     cronName: job.name,
     lastRunStatus: job.lastRunStatus ?? undefined,
+  });
+}
+
+/** Post / Garden 等 content 列表变更：创建/更新/删除/恢复后推到所有主会话 */
+export async function notifyPostListChanged(
+  prisma: PrismaClient,
+  reason?: string,
+): Promise<void> {
+  await notifyAllMainSessionsUi(prisma, {
+    type: "post_list_changed",
+    reason,
   });
 }
 

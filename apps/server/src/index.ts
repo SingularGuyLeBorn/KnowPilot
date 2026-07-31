@@ -44,6 +44,7 @@ import { globalRateLimiter, chatStreamRateLimiter } from "./infra/rateLimit.js";
 import { traceMiddleware, formatTrace } from "./infra/trace.js";
 import { prisma } from "./db.js";
 import { hydrateLlmBudget } from "./infra/llmBudget.js";
+import { notifyPostListChanged } from "./infra/uiStateNotify.js";
 
 const app = express();
 
@@ -70,6 +71,16 @@ import("./infra/inbox/index.js")
   });
 const eventBus = getEventBus();
 const services = getServiceContainer(prisma, eventBus, config);
+// 内容列表变更 → 推送到所有主会话（PUSH 半边；管理页仍保留 refetchInterval 兜底）
+eventBus.on("post.created", () => {
+  notifyPostListChanged(prisma, "post.created").catch(() => {});
+});
+eventBus.on("post.updated", () => {
+  notifyPostListChanged(prisma, "post.updated").catch(() => {});
+});
+eventBus.on("post.deleted", () => {
+  notifyPostListChanged(prisma, "post.deleted").catch(() => {});
+});
 // 种子花园 posts/knowledge/resources：补 _garden.md + DB 行
 services.garden.ensureSeedGardens().catch((err) => {
   console.warn("  ⚠️ [Garden] 种子库初始化失败:", err instanceof Error ? err.message : err);

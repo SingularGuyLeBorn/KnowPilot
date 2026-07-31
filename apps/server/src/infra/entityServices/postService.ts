@@ -808,6 +808,7 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
       const entity = this.formatEntity(raw);
       // #11：恢复后重新入 FTS，使文章可被搜索（body 与 create/update 统一含 category/tags）
       await this.syncFts("post", entity.id, entity.title, buildPostFtsBody(entity));
+      this.eventBus.emit("post.updated", entity);
       return success({
         data: entity,
         state: await this.getState(),

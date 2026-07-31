@@ -223,6 +223,11 @@ export type AgentStreamEvent =
       sessionId: string;
       status?: string;
     }
+  /** Post / Garden / Upload 等内容列表变更：管理页与 Chat 侧 invalidate post.* */
+  | {
+      type: "post_list_changed";
+      reason?: string;
+    }
   /** ChatMessage 写入后广播：前端 reducer 直接 patch messages[]，不再靠 invalidate→refetch 闪烁刷新 */
   | {
       type: "message_upserted";
