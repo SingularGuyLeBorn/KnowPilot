@@ -9,6 +9,7 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { Check, Copy, Eye, Code2, Maximize2, Minimize2, WrapText, ListOrdered } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { transformWikiLinks } from "./WikiLink";
 import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
@@ -483,10 +484,12 @@ function rehypeDropUnsafeEmbeds() {
  * 把 TOC 预计算的 id 写回 h2-h4。
  * 与 TableOfContents 共用 buildTocItems，彻底消除「重复标题 id 冲突」
  * 和「math/特殊字符导致正文与目录 id 不一致」两种跳转失效。
+ * index 必须放在返回函数内部：React 严格模式/重渲染时插件会被多次调用，
+ * 闭包外的 index 会累加导致第二次调用跳过所有标题。
  */
 function rehypeHeadingIds(items: TocItem[]) {
-  let index = 0;
   return (tree: RehypeRoot) => {
+    let index = 0;
     // 防御：某些 rehype 调用链（如空内容/SSR 片段）可能传非 root 或 undefined
     if (!tree || !Array.isArray(tree.children)) return;
     const walk = (node: RehypeNode) => {
@@ -649,7 +652,7 @@ export const PostContent = memo(function PostContent({
 
   return (
     <div
-      className={`prose prose-stone dark:prose-invert max-w-none ${className || ""}`}
+      className={cn("prose prose-stone dark:prose-invert max-w-none kp-post-content", className)}
       spellCheck={false}
     >
       <ReactMarkdown

@@ -14,20 +14,12 @@ interface TocItem {
   id: string;
   text: string;
   level: number;
+  index: number;
 }
 
 interface TocGroup {
   heading: TocItem;
   children: TocItem[];
-}
-
-function slugify(text: string) {
-  return text
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\w\u4e00-\u9fa5-]/g, "")
-    .replace(/--+/g, "-")
-    .replace(/^-|-$/g, "");
 }
 
 function parseHeadings(content: string): TocItem[] {
@@ -40,7 +32,7 @@ function parseHeadings(content: string): TocItem[] {
         .trim()
         .replace(/<[^>]+>/g, "")
         .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-      items.push({ id: slugify(text), text, level: match[1].length });
+      items.push({ id: `kp-h-${items.length}`, text, level: match[1].length, index: items.length });
     }
   }
   return items;
@@ -48,17 +40,11 @@ function parseHeadings(content: string): TocItem[] {
 
 /**
  * 为每个标题生成唯一 id，与正文 Heading 组件使用的 id 保持一致。
- * 重复标题追加 `-2`、`-3`…，避免 DOM id 冲突导致目录跳转错位。
+ * 使用 `kp-h-${index}` 作为 id，彻底避免「math/特殊字符导致正文与目录 id 不一致」
+ * 以及「重复标题 id 冲突」两类跳转失效。index 按文档顺序从 0 开始。
  */
 export function buildTocItems(content: string): TocItem[] {
-  const raw = parseHeadings(content);
-  const counts = new Map<string, number>();
-  return raw.map((item) => {
-    const base = item.id;
-    const count = (counts.get(base) ?? 0) + 1;
-    counts.set(base, count);
-    return { ...item, id: count === 1 ? base : `${base}-${count}` };
-  });
+  return parseHeadings(content);
 }
 
 function buildGroups(items: TocItem[]): TocGroup[] {
@@ -79,14 +65,28 @@ function buildGroups(items: TocItem[]): TocGroup[] {
 
 function scrollToId(id: string, attempt = 0) {
   const el = document.getElementById(id);
-  if (!el) {
-    if (attempt < 1) {
-      window.setTimeout(() => scrollToId(id, attempt + 1), 50);
-    }
+  if (el) {
+    el.scrollIntoView({ behavior: "auto", block: "start" });
+    history.replaceState(null, "", `#${id}`);
     return;
   }
-  el.scrollIntoView({ behavior: "auto", block: "start" });
-  history.replaceState(null, "", `#${id}`);
+  if (attempt < 1) {
+    window.setTimeout(() => scrollToId(id, attempt + 1), 50);
+    return;
+  }
+  // 兜底：按索引直接取第 N 个 h2/h3/h4，避免 id 生成/渲染不一致导致点击无响应
+  const idxMatch = /^kp-h-(\d+)$/.exec(id);
+  if (!idxMatch) return;
+  const targetIndex = Number(idxMatch[1]);
+  const container = document.querySelector(".kp-post-content");
+  const headings = container
+    ? Array.from(container.querySelectorAll("h2, h3, h4"))
+    : Array.from(document.querySelectorAll("article.kp-post-swap h2, article.kp-post-swap h3, article.kp-post-swap h4"));
+  const target = headings[targetIndex];
+  if (target) {
+    target.scrollIntoView({ behavior: "auto", block: "start" });
+    history.replaceState(null, "", `#${id}`);
+  }
 }
 
 function useInitialHash(items: TocItem[], setActiveId: (id: string) => void) {
