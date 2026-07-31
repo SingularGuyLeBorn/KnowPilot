@@ -527,9 +527,8 @@ html.dark .kp-card,
  */
 .katex {
   color: var(--kp-text-1);
-  font-size: 1.05em;
-  /* KaTeX 字体按 400 字重设计，强制 500 会破坏下标/符号的精确排版 */
-  font-weight: 400;
+  /* 不覆盖 font-size / font-weight：KaTeX 字体按自身度量设计，
+     外部强制 1.05em/500 会在字体加载前后产生度量偏差，导致下标错位或初始渲染异常。 */
 }
 .katex-display {
   display: block;
@@ -538,15 +537,13 @@ html.dark .kp-card,
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
-  /* hidden 会裁掉异常下移的下标；visible 允许子元素自然溢出，同时不引入垂直滚动条 */
-  overflow-y: visible;
+  overflow-y: hidden;
 }
 .katex-display > .katex {
   /* 与 KaTeX 默认一致：block 全宽，\tag 才能贴右 */
   display: block;
   text-align: center;
   white-space: nowrap;
-  font-size: 1.1em;
   max-width: 100%;
 }
 .katex-display > .katex > .katex-html {
