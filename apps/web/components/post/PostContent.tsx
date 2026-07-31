@@ -247,9 +247,12 @@ function MarkdownSpan({
 }: React.HTMLAttributes<HTMLSpanElement>) {
   const inside = useInsideKatexFormula();
   const { root, display } = isKatexRootClassName(className);
-  if (!inside && root) {
+  // 行内公式不再套 KatexFormula 交互外壳：外壳的 button/role/tabIndex 在 chat 气泡
+  // 的 prose 布局里会干扰 KaTeX 下标排版（下标飘到基字符左侧/下一行）。
+  // 行间公式保留外壳，用户仍可点击查看 LaTeX 源码。
+  if (!inside && root && display) {
     return (
-      <KatexFormula display={display} className={className}>
+      <KatexFormula display className={className}>
         {children}
       </KatexFormula>
     );
