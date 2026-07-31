@@ -565,7 +565,7 @@ html.dark .kp-card,
 .kp-katex-formula--display {
   display: block;
   width: 100%;
-  margin: 1.25rem 0;
+  margin: 0.6rem 0;
   text-align: center;
 }
 .kp-katex-formula-trigger {

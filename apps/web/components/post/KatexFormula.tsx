@@ -141,16 +141,31 @@ export function KatexFormula({ children, className, display = false }: KatexForm
   const placePanel = useCallback(() => {
     const el = triggerRef.current;
     if (!el) return;
-    const r = el.getBoundingClientRect();
     const margin = 16;
-    // 最大宽度封顶；默认比旧 420 更宽，长公式靠换行 + 纵向滚动，禁止横向条
+    const panelH = panelRef.current?.offsetHeight ?? 128;
+
+    // 行内公式：居中弹窗，避免紧贴行内元素导致整行重排/换行
+    if (!display) {
+      const width = Math.min(640, window.innerWidth - margin * 2);
+      setPanelStyle({
+        position: "fixed",
+        top: Math.max(margin, (window.innerHeight - panelH) / 2),
+        left: Math.max(margin, (window.innerWidth - width) / 2),
+        width,
+        maxWidth: width,
+        zIndex: 80,
+      });
+      return;
+    }
+
+    // 行间公式：贴在公式下方
+    const r = el.getBoundingClientRect();
     const maxW = Math.min(900, window.innerWidth - margin * 2);
-    const preferred = display ? 760 : 640;
-    const width = Math.min(maxW, Math.max(display ? 420 : 360, Math.min(Math.max(r.width, preferred), maxW)));
+    const preferred = 760;
+    const width = Math.min(maxW, Math.max(420, Math.min(Math.max(r.width, preferred), maxW)));
     let left = r.left;
     left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
     let top = r.bottom + 6;
-    const panelH = panelRef.current?.offsetHeight ?? 128;
     if (top + panelH > window.innerHeight - margin) {
       top = Math.max(margin, r.top - panelH - 6);
     }
