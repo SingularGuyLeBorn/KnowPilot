@@ -25,7 +25,6 @@
     "sync-free-keys:watch": "tsx src/scripts/sync-free-keys.ts --watch",
     "db:cleanup-test-sessions": "tsx src/scripts/cleanup-test-sessions.ts",
     "cleanup:smoke-artifacts": "tsx src/scripts/cleanup-smoke-artifacts.ts",
-    "cleanup:duplicate-agents": "tsx src/scripts/cleanup-duplicate-agents.ts",
     "reset:runtime": "tsx src/scripts/reset-runtime-data.ts",
     "integration:smoke": "tsx src/scripts/integration-smoke.ts",
     "integration:smoke:platform": "tsx src/scripts/integration-smoke.ts --platform",
@@ -46,7 +45,6 @@
     "@mozilla/readability": "0.5.0",
     "@prisma/client": "6.9.0",
     "@trpc/server": "11.1.0",
-    "@types/compression": "1.8.1",
     "bullmq": "5.79.3",
     "chokidar": "5.0.0",
     "compression": "1.8.1",
@@ -61,7 +59,7 @@
     "mammoth": "1.12.0",
     "node-cron": "4.5.0",
     "nodemailer": "9.0.3",
-    "playwright": "1.59.1",
+    "playwright": "1.61.1",
     "superjson": "2.2.2",
     "tesseract.js": "6.0.0",
     "turndown": "7.2.4",
@@ -73,6 +71,7 @@
     "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
+    "@types/compression": "1.8.1",
     "@types/cors": "2.8.18",
     "@types/express": "5.0.2",
     "@types/js-yaml": "4.0.9",

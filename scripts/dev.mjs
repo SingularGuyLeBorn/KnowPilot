@@ -9,6 +9,7 @@
  */
 
 import { spawn, exec } from "child_process";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { promisify } from "util";
@@ -20,14 +21,19 @@ const healthUrl = process.env.SERVER_INTERNAL_URL
 
 /** 避免 shell:true + args 触发 Node DEP0190；Windows 上直接 spawn pnpm 会 ENOENT/EINVAL */
 const pnpmJs = path.join(path.dirname(process.execPath), "node_modules", "corepack", "dist", "pnpm.js");
+/** 非 corepack 安装的 pnpm（如 npm i -g pnpm / scoop）没有该路径，回退 shell 模式调 PATH 中的 pnpm */
+const pnpmJsExists = fs.existsSync(pnpmJs);
 
 function spawnPnpm(args, opts = {}) {
-  return spawn(process.execPath, [pnpmJs, ...args], {
+  const base = {
     cwd: opts.cwd ?? root,
-    shell: false,
     stdio: opts.stdio ?? "inherit",
     env: { ...process.env, FORCE_COLOR: "1" },
-  });
+  };
+  if (pnpmJsExists) {
+    return spawn(process.execPath, [pnpmJs, ...args], { ...base, shell: false });
+  }
+  return spawn("pnpm", args, { ...base, shell: true });
 }
 
 const quick = process.argv.includes("--quick");

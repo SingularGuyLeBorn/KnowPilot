@@ -21,8 +21,9 @@ services:
       # REDIS_URL: "redis://redis:6379"
     volumes:
       - kp-data:/data
-      - ./content:/app/content:ro
-      - ./config:/app/config:ro
+      # 运行时 CRUD 会写回 config/agents、config/memories/daily、content/uploads，必须可写
+      - ./content:/app/content
+      - ./config:/app/config
     depends_on:
       redis:
         condition: service_healthy

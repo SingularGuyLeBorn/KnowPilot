@@ -20,6 +20,8 @@ RUN pnpm --filter @knowpilot/web build
 
 FROM base AS runner
 ENV NODE_ENV=production
+# config.ts 默认 127.0.0.1，单独 docker run 时端口映射不通；compose 里已显式设置，此处兜底
+ENV SERVER_HOST=0.0.0.0
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
@@ -33,4 +35,4 @@ COPY --from=build /app/scripts ./scripts
 
 EXPOSE 3000 3010
 
-CMD ["sh", "-c", "pnpm --filter @knowpilot/server exec prisma db push --accept-data-loss && pnpm db:sync && (pnpm --filter @knowpilot/server start &) && pnpm --filter @knowpilot/web start -p 3000"]
+CMD ["sh", "-c", "pnpm --filter @knowpilot/server exec prisma db push && pnpm db:sync && (pnpm --filter @knowpilot/server start &) && pnpm --filter @knowpilot/web start -p 3000"]

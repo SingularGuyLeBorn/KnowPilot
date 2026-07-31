@@ -92,3 +92,12 @@ jobs:
           CI: "true"
           DATABASE_URL: "file:./ci.db"
           REQUIRE_APPROVAL: "false"
+
+      - name: Build web (mock)
+        run: pnpm --filter @knowpilot/web build:mock
+
+      - name: E2E tests (mock, offline)
+        run: pnpm test:e2e:mock
+        env:
+          CI: "true"
+          DATABASE_URL: "file:./ci.db"

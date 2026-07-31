@@ -1,0 +1,46 @@
+# 密钥（保留 .env.example 供说明）
+.env
+.env.*
+!.env.example
+
+# VCS / IDE
+.git
+.idea
+.vscode
+
+# 依赖（宿主机 node_modules 可能含 Windows 产物，容器内重新安装）
+node_modules
+**/node_modules
+
+# 数据库与备份
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+backups
+
+# 运行时产物（容器内重建，随时可再生成）
+data
+workspaces
+.dev-log
+
+# 测试隔离目录与报告
+.test-*
+coverage
+apps/web/e2e/playwright-report
+apps/web/e2e/playwright-report-mock
+apps/web/e2e/test-results
+apps/web/e2e/test-results-mock
+
+# 构建输出（容器内重新构建）
+.next
+dist
+out
+
+# 模型权重（大文件，按需拉取）
+weights
+
+# 本地二进制与日志
+scripts/ngrok.exe
+scripts/ngrok.zip
+*.log

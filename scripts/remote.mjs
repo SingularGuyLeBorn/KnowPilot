@@ -261,9 +261,16 @@ async function main() {
       printRemoteBanner(url, env);
       // 临时隧道 URL 解析到后，通知 server 用该 URL 注册 AgentMail webhook（邮件回复接收通道）。
       // server 启动时 PUBLIC_URL 为空已跳过注册；此处动态注入隧道 URL 触发重新注册。
+      // AUTH_MODE=password 时该端点强制 Bearer 校验（防隧道下公网重注册劫持审批邮件），此处带上本机凭据。
+      const adminToken = (
+        env.AUTH_TOKEN || process.env.AUTH_TOKEN || env.AUTH_PASSWORD || process.env.AUTH_PASSWORD || ""
+      ).trim();
       void fetch("http://127.0.0.1:3010/api/admin/agentmail-webhook", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+        },
         body: JSON.stringify({ url: `${url.replace(/\/$/, "")}/api/webhooks/agentmail` }),
       })
         .then((r) => r.json().catch(() => ({})))
