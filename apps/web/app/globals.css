@@ -529,8 +529,13 @@ html.dark .kp-card,
   color: var(--kp-text-1);
   /* 不覆盖 font-size / font-weight：KaTeX 字体按自身度量设计，
      外部强制 1.05em/500 会在字体加载前后产生度量偏差，导致下标错位或初始渲染异常。
-     line-height 必须隔离：chat 气泡常带 leading-relaxed/prose-sm，父级行高会干扰下标位置。 */
+     line-height 必须隔离：chat 气泡常带 leading-relaxed/prose-sm，父级行高会干扰下标位置。
+     禁止内部折行：chat 气泡的 break-words/overflow-wrap 会把 KaTeX 下标/上标拆开，
+     导致下标被挤到下一行或飘到奇怪位置。 */
   line-height: normal;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .katex-display {
   display: block;
