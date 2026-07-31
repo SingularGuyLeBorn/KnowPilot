@@ -483,8 +483,10 @@ function rehypeDropUnsafeEmbeds() {
 function rehypeHeadingIds(items: TocItem[]) {
   let index = 0;
   return (tree: RehypeRoot) => {
+    // 防御：某些 rehype 调用链（如空内容/SSR 片段）可能传非 root 或 undefined
+    if (!tree || !Array.isArray(tree.children)) return;
     const walk = (node: RehypeNode) => {
-      if (node.type !== "element") return;
+      if (!node || node.type !== "element") return;
       const el = node as RehypeElement;
       if (/^h[2-4]$/.test(el.tagName) && index < items.length) {
         const item = items[index++];
@@ -492,7 +494,9 @@ function rehypeHeadingIds(items: TocItem[]) {
           el.properties = { ...el.properties, id: item.id };
         }
       }
-      for (const child of el.children) walk(child);
+      if (Array.isArray(el.children)) {
+        for (const child of el.children) walk(child);
+      }
     };
     for (const child of tree.children) walk(child);
   };
