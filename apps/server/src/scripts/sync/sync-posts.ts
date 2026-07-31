@@ -86,6 +86,7 @@ export function createPostGardenSyncer(garden: string): Syncer<PostData> {
           category: data.category,
           tags: data.tags,
           sourceMtime: mtime,
+          deletedAt: null,
         },
         create: {
           garden,
@@ -190,7 +191,7 @@ export function createPostGardenSyncer(garden: string): Syncer<PostData> {
 
     async getExistingMtimes(prisma: PrismaClient): Promise<Map<string, Date>> {
       const rows = await prisma.post.findMany({
-        where: { garden },
+        where: { garden, deletedAt: null },
         select: { slug: true, sourceMtime: true },
       });
       const map = new Map<string, Date>();
