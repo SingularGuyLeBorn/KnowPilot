@@ -200,6 +200,12 @@ export const skillSyncer: Syncer<SkillData> = {
     for (const dbSkill of allInDb) {
       if (dbSkill.sourceSlug && !activeSlugs.includes(dbSkill.sourceSlug)) {
         await prisma.skill.delete({ where: { id: dbSkill.id } });
+        // 与 deleteBySlug 对齐：cleanup 硬删同样清 FTS，防幽灵搜索结果
+        try {
+          await deleteFtsRow(prisma, "skill", dbSkill.id);
+        } catch (e) {
+          console.warn(`  ⚠️ [Skill FTS] delete 失败 id=${dbSkill.id}:`, e instanceof Error ? e.message : e);
+        }
         console.log(`  🗑️ [Skill 已清理] "${dbSkill.sourceSlug}" (本地文件已被删除)`);
         deleted++;
       }

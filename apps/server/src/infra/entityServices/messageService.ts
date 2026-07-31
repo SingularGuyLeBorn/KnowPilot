@@ -10,6 +10,7 @@ import type {
 } from "@knowpilot/shared";
 import { BaseService, ServiceValidationError, failureFromPrismaUnique } from "../../services.js";
 import { success, failureFromError } from "../../trpc/result.js";
+import { deleteFtsRow } from "../ftsIndex.js";
 
 /** ChatMessage 聊天消息 */
 export interface MessageEntity {
@@ -184,6 +185,12 @@ export class MessageService extends BaseService<CreateMessageInput, UpdateMessag
     const sessionId: string | undefined = existing?.sessionId;
     const messageId: string | undefined = existing?.id;
     if (!sessionId || !messageId) return;
+    // 硬删消息后同步清 FTS，避免已删内容仍被 globalSearch 搜出（幽灵结果）
+    try {
+      await deleteFtsRow(this.prisma, "message", messageId);
+    } catch (e) {
+      console.warn(`[FTS] delete message:${messageId} 失败:`, e instanceof Error ? e.message : e);
+    }
     try {
       const { getStreamHub } = await import("../sessionStreamHub.js");
       const hub = getStreamHub();

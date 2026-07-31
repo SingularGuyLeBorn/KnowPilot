@@ -142,6 +142,12 @@ export const mcpServerSyncer: Syncer<McpServerData> = {
     for (const dbServer of allInDb) {
       if (dbServer.sourceSlug && !activeSlugs.includes(dbServer.sourceSlug)) {
         await prisma.mcpServer.delete({ where: { id: dbServer.id } });
+        // 与 deleteBySlug 对齐：cleanup 硬删同样清 FTS，防幽灵搜索结果
+        try {
+          await deleteFtsRow(prisma, "mcp", dbServer.id);
+        } catch (e) {
+          console.warn(`  ⚠️ [McpServer FTS] delete 失败 id=${dbServer.id}:`, e instanceof Error ? e.message : e);
+        }
         console.log(`  🗑 [MCP Server 已清理] "${dbServer.sourceSlug}" (本地文件已被删除)`);
         deleted++;
       }

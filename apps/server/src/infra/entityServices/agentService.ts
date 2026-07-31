@@ -13,6 +13,7 @@ import type {
 } from "@knowpilot/shared";
 import { materializeAgentTools } from "@knowpilot/shared";
 import { TRPCError } from "@trpc/server";
+import matter from "gray-matter";
 import {
   FileSyncService,
   ServiceValidationError,
@@ -123,16 +124,15 @@ export class AgentService extends FileSyncService<CreateAgentInput, UpdateAgentI
   }
 
   protected serializeToFile(entity: AgentEntity): string {
-    const toolsYaml = entity.tools.length > 0 ? `\ntools:\n` + entity.tools.map((t) => `  - "${t}"`).join("\n") : "\ntools: []";
-    return `---
-name: "${entity.name.replace(/"/g, '\\"')}"
-description: ${entity.description ? `"${entity.description.replace(/"/g, '\\"')}"` : "null"}
-model: "${entity.model}"
-tier: "${entity.tier}"${toolsYaml}
-source: ${entity.source ? `"${entity.source.replace(/"/g, '\\"')}"` : "null"}
----
-${entity.systemPrompt}
-`;
+    // gray-matter/js-yaml 统一序列化：引号/反斜杠/换行由 YAML 库正确转义，杜绝手拼的往返损坏
+    return matter.stringify(entity.systemPrompt ?? "", {
+      name: entity.name,
+      description: entity.description ?? null,
+      model: entity.model,
+      tier: entity.tier,
+      tools: entity.tools,
+      source: entity.source ?? null,
+    });
   }
 
   protected getFileSlug(entity: AgentEntity): string { return `${entity.name}-${entity.id.slice(-6)}`; }
@@ -160,7 +160,12 @@ ${entity.systemPrompt}
   }
   protected override async afterUpdate(entity: AgentEntity, existing: any, input: UpdateAgentInput): Promise<void> {
     await super.afterUpdate(entity, existing, input);
-    await this.syncFts("agent", entity.id, entity.name, `${entity.description ?? ""}\n${entity.systemPrompt ?? ""}`);
+    // tombstone（status=deleted）必须出索引而非重插——否则已删 Agent 仍能被全局搜索命中
+    if (entity.status === "deleted") {
+      await this.removeFts("agent", entity.id);
+    } else {
+      await this.syncFts("agent", entity.id, entity.name, `${entity.description ?? ""}\n${entity.systemPrompt ?? ""}`);
+    }
     this.eventBus.emit("agent.updated", entity);
   }
   protected override async afterDelete(existing: any): Promise<void> {
@@ -175,9 +180,10 @@ ${entity.systemPrompt}
     });
   }
 
-  // 超级 Agent 全局唯一——创建时拦截
+  // 超级 Agent 全局唯一——创建时拦截。
+  // name 不做唯一性校验：schema 注释「名称（可重复）」，swarm 允许重名（#37），id 才是全局唯一标识；
+  // 也因此 tombstone 的名字天然可复用，无需在唯一性层过滤 status=deleted。
   protected override async validateCreate(input: CreateAgentInput): Promise<void> {
-    await this.assertUnique("name", input.name, "创建");
     if (input.tier === "super") {
       const existingSuper = await this.prisma.agent.findFirst({
         where: { tier: "super", status: { not: "deleted" } },
@@ -192,7 +198,7 @@ ${entity.systemPrompt}
   }
 
   protected override async validateUpdate(input: UpdateAgentInput, existing: any): Promise<void> {
-    if (input.name && input.name !== existing.name) await this.assertUnique("name", input.name, "更新", input.id);
+    // name 允许重名（同 validateCreate），不做唯一性校验
     // Q1：超级 Agent 禁止降级 / 改 tier；禁止把其他 Agent 改成第二个 super
     if (existing.tier === "super" && input.tier !== undefined && input.tier !== "super") {
       throw new ServiceValidationError(
@@ -266,6 +272,54 @@ ${entity.systemPrompt}
       }
     }
     return super.update(input);
+  }
+
+  /**
+   * tombstone 删除（native agent_delete 的统一入口）。
+   * 与 tRPC 硬删保持一致的最终效果：出 FTS、删配置文件、名字可复用（name 本无唯一约束）；
+   * 区别在于保留 DB 行作审计（status=deleted + deletedAt/deletedBy）。
+   * sourceSlug 同步清空：防止 cleanup 按 sourceSlug 误收审计行，也防止文件残留时 sync 把行复活。
+   */
+  async tombstone(id: string, opts?: { deletedBy?: string }): Promise<OperationResult<Record<string, unknown>>> {
+    const existing = await this.delegate.findUnique({ where: { id } });
+    if (!existing) return this.buildNotFoundFailure("删除", id, 0);
+    if (existing.tier === "super") {
+      return failure({
+        code: "SUPER_AGENT_NOT_DELETABLE",
+        message: "超级 Agent 不可删除。它是 Swarm 体系的核心，删除将导致整个系统瘫痪。",
+        details: { id, tier: "super" },
+        retryable: false,
+        operation: "delete",
+        entity: this.entityName,
+      });
+    }
+    // 删配置文件：优先 sourceSlug（文件源 Agent 的真实落点），回退实体推导 slug；
+    // required=false——文件可能本就不存在（运行时创建从未落盘），删不掉不阻塞 tombstone
+    const slug = existing.sourceSlug ?? this.getExistingFileSlug(existing);
+    if (slug) this.deleteFileBySlug(slug, { required: false });
+    await this.delegate.update({
+      where: { id },
+      data: {
+        status: "deleted",
+        deletedAt: new Date(),
+        deletedBy: opts?.deletedBy ?? null,
+        sourceSlug: null,
+        sourceMtime: null,
+      },
+    });
+    await this.removeFts("agent", id);
+    this.eventBus.emit("agent.deleted", existing);
+    const { notifyAllMainSessionsUi } = await import("../uiStateNotify.js");
+    await notifyAllMainSessionsUi(this.prisma, {
+      type: "agent_list_changed",
+      agentId: id,
+      reason: "delete",
+    });
+    return success({
+      data: this.buildDeleteSummary(existing),
+      operation: "delete",
+      entity: this.entityName,
+    });
   }
 
   // 超级 Agent 不可删除——系统核心，删除会导致 Swarm 体系崩溃

@@ -9,6 +9,7 @@
 import { PrismaClient } from "@prisma/client";
 import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
 import { getAppConfig } from "../../infra/config.js";
+import { buildPostFtsBody } from "../../services.js";
 import { Syncer, SyncRecord } from "./types.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, getFileMtime } from "./utils.js";
 import { discoverGardenIds } from "./discover-gardens.js";
@@ -102,17 +103,12 @@ export function createPostGardenSyncer(garden: string): Syncer<PostData> {
 
       const row = await prisma.post.findUnique({
         where: { garden_slug: { garden, slug } },
-        select: { id: true, title: true, content: true, slug: true, garden: true, deletedAt: true },
+        select: { id: true, title: true, content: true, slug: true, garden: true, category: true, tags: true, deletedAt: true },
       });
       if (row && !row.deletedAt) {
         try {
-          await upsertFtsRow(
-            prisma,
-            "post",
-            row.id,
-            row.title,
-            `[${row.garden}] ${row.slug}\n${row.content ?? ""}`,
-          );
+          // 与 postService 增量路径统一：body 含 category/tags，标签/分类立即可搜
+          await upsertFtsRow(prisma, "post", row.id, row.title, buildPostFtsBody(row));
         } catch (e) {
           console.warn(`  ⚠️ [Post FTS] upsert 失败 garden=${garden} slug=${slug}:`, e instanceof Error ? e.message : e);
         }

@@ -570,8 +570,9 @@ export abstract class FileSyncService<
       }
       await this.delegate.update({ where: { id }, data: { sourceSlug: slug, sourceMtime: mtime } });
     } catch (e) {
+      // 升格 error：sourceSlug 回写失败会让 db:sync 匹配不到记录而重复建行（Memory 重复事故根因），必须显眼
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[FileSync] syncFileMetaToDb 失败 entity=${this.entityName} id=${id}:`, msg);
+      console.error(`[FileSync] syncFileMetaToDb 失败 entity=${this.entityName} id=${id}:`, msg);
     }
   }
 

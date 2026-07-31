@@ -43,6 +43,12 @@ export async function executeTaskJob(
 
   if (action === "db:sync") {
     const results = await runContentSync(prisma);
+    // 推拉结合：sync 落库后必须推事件，开着的管理页/侧栏不得靠 F5 才更新
+    const { notifyContentSynced } = await import("./uiStateNotify.js");
+    await notifyContentSynced(
+      prisma,
+      results.map((r) => ({ entityName: r.entityName, changed: r.upserted + r.cleaned })),
+    );
     return {
       action: "db:sync",
       synced: results.reduce((sum, r) => sum + r.upserted, 0),

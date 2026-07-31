@@ -30,9 +30,18 @@ export const agentSyncer: Syncer<AgentData> = {
   async scan(prisma: PrismaClient, contentDir: string): Promise<SyncRecord<AgentData>[]> {
     const filePaths = getFilesRecursive(contentDir, [".md"]);
     const records: SyncRecord<AgentData>[] = [];
+    // 同名文件防 flip-flop：name-fallback 会把同名文件当同一行交替覆写 systemPrompt/tools，
+    // scan 阶段直接 warn 跳过后者，保证同步结果确定
+    const seenNames = new Set<string>();
     for (const filePath of filePaths) {
       const r = await this.scanFile!(filePath, contentDir);
-      if (r) records.push(r);
+      if (!r) continue;
+      if (seenNames.has(r.data.name)) {
+        console.warn(`  ⚠️ [Agent 跳过] ${filePath}: 名称 "${r.data.name}" 与同目录其他文件重复`);
+        continue;
+      }
+      seenNames.add(r.data.name);
+      records.push(r);
     }
     return records;
   },
@@ -65,9 +74,25 @@ export const agentSyncer: Syncer<AgentData> = {
     // 1. 按 sourceSlug 精确匹配（正常路径）
     let existing = await prisma.agent.findFirst({ where: { sourceSlug: slug } });
     // 2. 防御：sourceSlug 未匹配时按 name 兜底，避免历史遗留 sourceSlug=null 的记录被重复创建
-    //    （曾导致超级 Agent 每次 sync 复制一份）
+    //    （曾导致超级 Agent 每次 sync 复制一份）。
+    //    收窄：只匹配 sourceSlug 为空的运行时 Agent——文件源 Agent 必有 sourceSlug，
+    //    不收窄会把同名不同源的文件 Agent 误合并成一行互相覆写。
     if (!existing) {
-      existing = await prisma.agent.findFirst({ where: { name: data.name, status: { not: "deleted" } } });
+      existing = await prisma.agent.findFirst({
+        where: { name: data.name, status: { not: "deleted" }, sourceSlug: null },
+      });
+    }
+    // 3. 全局唯一 super 守卫：Service 层拦截可被 sync 直写绕过，
+    //    config/agents/ 出现第二个 tier: super 文件时跳过而非创建第二个超级 Agent
+    if (data.tier === "super") {
+      const liveSuper = await prisma.agent.findFirst({
+        where: { tier: "super", status: { not: "deleted" } },
+        select: { id: true },
+      });
+      if (liveSuper && liveSuper.id !== existing?.id) {
+        console.warn(`  ⚠️ [Agent 跳过] ${slug}: 文件声明 tier=super，但已存在超级 Agent（全局唯一）`);
+        return;
+      }
     }
     let rowId: string;
     if (existing) {

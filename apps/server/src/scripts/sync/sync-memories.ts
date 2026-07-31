@@ -9,6 +9,7 @@
 import { PrismaClient } from "@prisma/client";
 import { Syncer, SyncRecord } from "./types.js";
 import { upsertFtsRow, deleteFtsRow } from "../../infra/ftsIndex.js";
+import { hashMemoryContent } from "../../infra/memoryRepository.js";
 import { getFilesRecursive, parseMarkdownFile, filePathToSlug, readStringArray, readNumber, getFileMtime } from "./utils.js";
 
 interface MemoryData {
@@ -67,9 +68,16 @@ export const memorySyncer: Syncer<MemoryData> = {
     const { slug, mtime, data } = record;
 
     // Memory 以 sourceSlug 作为本地标识进行幂等同步
-    const existing = await prisma.memory.findUnique({
+    let existing = await prisma.memory.findUnique({
       where: { sourceSlug: slug },
     });
+    if (!existing) {
+      // sourceSlug 回写失败的历史遗留兜底：按 contentHash 认领已有行，补写 sourceSlug 而非重复建行
+      const contentHash = hashMemoryContent(data.content);
+      existing = await prisma.memory.findFirst({
+        where: { contentHash, sourceSlug: null },
+      });
+    }
 
     let rowId: string;
     if (existing) {
@@ -80,6 +88,7 @@ export const memorySyncer: Syncer<MemoryData> = {
           type: data.type,
           strength: data.strength,
           keywords: data.keywords,
+          sourceSlug: slug,
           sourceMtime: mtime,
           // scope 仅在文件显式声明时覆盖，否则保留 DB 现值（衰减/运行时写入不丢）
           ...(data.scope ? { scope: data.scope } : {}),
@@ -139,6 +148,12 @@ export const memorySyncer: Syncer<MemoryData> = {
     for (const dbMemory of allInDb) {
       if (dbMemory.sourceSlug && !activeSlugs.includes(dbMemory.sourceSlug)) {
         await prisma.memory.delete({ where: { id: dbMemory.id } });
+        // 与 deleteBySlug 对齐：cleanup 硬删同样清 FTS，防幽灵搜索结果
+        try {
+          await deleteFtsRow(prisma, "memory", dbMemory.id);
+        } catch (e) {
+          console.warn(`  ⚠️ [Memory FTS] delete 失败 id=${dbMemory.id}:`, e instanceof Error ? e.message : e);
+        }
         console.log(`  🗑️ [Memory 已清理] "${dbMemory.sourceSlug}" (本地文件已被删除)`);
         deleted++;
       }

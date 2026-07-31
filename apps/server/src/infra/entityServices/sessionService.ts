@@ -18,6 +18,7 @@ import {
   type PaginatedResult,
 } from "../../services.js";
 import { success, failureFromError } from "../../trpc/result.js";
+import { deleteFtsRow, ensureFtsTable } from "../ftsIndex.js";
 
 export interface SessionEntity {
   id: string;
@@ -428,6 +429,13 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       return { count: 0 };
     });
     const result = await this.prisma.chatSession.deleteMany({});
+    // 全部消息已级联删除：message FTS 行整体清空，防幽灵搜索
+    try {
+      await ensureFtsTable(this.prisma);
+      await this.prisma.$executeRawUnsafe(`DELETE FROM search_fts WHERE entity = 'message'`);
+    } catch (err) {
+      console.warn("[session.deleteMany] message FTS 清空失败:", err instanceof Error ? err.message : err);
+    }
     return { count: result.count };
   }
 
@@ -437,6 +445,13 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
       where: { parentSessionId: id },
       select: { id: true },
     });
+    // 级联删除前先把将被删的消息 id 查出来（含子会话），用于删后清 FTS
+    const cascadingMessageIds = (
+      await this.prisma.chatMessage.findMany({
+        where: { sessionId: { in: [id, ...children.map((c) => c.id)] } },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
     // 先停所有运行中的 Agent 流 / 清理 StreamHub 内存状态，否则删除 DB 记录后
     // zombie stream 仍在后台跑、消耗 LLM token，且 cleanupTimer 触发时 runs.delete 找不到对应条目
     try {
@@ -468,7 +483,16 @@ export class SessionService extends BaseService<CreateSessionInput, UpdateSessio
     await this.prisma.sessionStreamEvent
       .deleteMany({ where: { sessionId: id } })
       .catch(warnCascade("streamEvent", id));
-    return super.delete(id);
+    const result = await super.delete(id);
+    // 级联删除的消息同步清 FTS（含子会话），防已删消息幽灵搜索；best-effort 不阻塞删除结果
+    for (const mid of cascadingMessageIds) {
+      try {
+        await deleteFtsRow(this.prisma, "message", mid);
+      } catch (err) {
+        console.warn(`[session.delete] message FTS 清理失败 id=${mid}:`, err instanceof Error ? err.message : err);
+      }
+    }
+    return result;
   }
 
   protected override getCreateNextSteps(entity: SessionEntity): NextStep[] {

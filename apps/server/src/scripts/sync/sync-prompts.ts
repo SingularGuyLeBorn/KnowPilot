@@ -116,6 +116,12 @@ export const promptSyncer: Syncer<PromptData> = {
     for (const dbPrompt of allInDb) {
       if (dbPrompt.sourceSlug && !activeSlugs.includes(dbPrompt.sourceSlug)) {
         await prisma.prompt.delete({ where: { id: dbPrompt.id } });
+        // 与 deleteBySlug 对齐：cleanup 硬删同样清 FTS，防幽灵搜索结果
+        try {
+          await deleteFtsRow(prisma, "prompt", dbPrompt.id);
+        } catch (e) {
+          console.warn(`  ⚠️ [Prompt FTS] delete 失败 id=${dbPrompt.id}:`, e instanceof Error ? e.message : e);
+        }
         console.log(`  🗑️ [Prompt 已清理] "${dbPrompt.sourceSlug}" (本地文件已被删除)`);
         deleted++;
       }

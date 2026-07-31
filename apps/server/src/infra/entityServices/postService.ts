@@ -15,6 +15,7 @@ import type {
 } from "@knowpilot/shared";
 import { DEFAULT_POST_GARDEN, isValidGardenIdFormat, isReservedContentDir } from "@knowpilot/shared";
 import { TRPCError } from "@trpc/server";
+import matter from "gray-matter";
 import {
   FileSyncService,
   ServiceValidationError,
@@ -193,15 +194,15 @@ export class PostService extends FileSyncService<CreatePostInput, UpdatePostInpu
     // garden 由目录表达，不写入 frontmatter（目录是事实源）
     // 正文禁止再夹一层 frontmatter，否则落盘双头、预览把 YAML 渲成列表
     const body = stripLeadingMarkdownFrontmatter(entity.content ?? "");
-    const tagsYaml = entity.tags?.length > 0 ? `\ntags:\n` + entity.tags.map((t) => `  - "${t}"`).join("\n") : "";
-    return `---
-title: "${entity.title.replace(/"/g, '\\"')}"
-category: ${entity.category ? `"${entity.category.replace(/"/g, '\\"')}"` : "null"}${tagsYaml}
-published: ${entity.published}
-excerpt: ${entity.excerpt ? `"${entity.excerpt.replace(/"/g, '\\"')}"` : "null"}
----
-${body}
-`;
+    // gray-matter/js-yaml 统一序列化：引号/反斜杠/换行由 YAML 库正确转义，杜绝手拼的往返损坏
+    const fm: Record<string, unknown> = {
+      title: entity.title,
+      category: entity.category ?? null,
+      published: entity.published,
+      excerpt: entity.excerpt ?? null,
+    };
+    if (entity.tags?.length > 0) fm.tags = entity.tags;
+    return matter.stringify(body, fm);
   }
 
   protected getFileSlug(entity: PostEntity): string { return entity.slug; }
@@ -805,13 +806,8 @@ ${body}
       if (slug) this.moveFileFromTrash(garden, slug);
       const raw = await this.delegate.update({ where: { id }, data: { deletedAt: null } });
       const entity = this.formatEntity(raw);
-      // #11：恢复后重新入 FTS，使文章可被搜索
-      await this.syncFts(
-        "post",
-        entity.id,
-        entity.title,
-        `[${entity.garden}] ${entity.slug}\n${entity.content ?? ""}`,
-      );
+      // #11：恢复后重新入 FTS，使文章可被搜索（body 与 create/update 统一含 category/tags）
+      await this.syncFts("post", entity.id, entity.title, buildPostFtsBody(entity));
       return success({
         data: entity,
         state: await this.getState(),

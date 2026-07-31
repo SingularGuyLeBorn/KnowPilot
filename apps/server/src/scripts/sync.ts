@@ -140,14 +140,53 @@ async function runWatch(): Promise<void> {
 
   console.log(`\n👀 进入监听模式，实时同步 content/ 目录变更...\n`);
 
+  // 防抖键 = `${entityName}:${eventPath}`：同窗口多文件事件（新增 A + 删除 B）各自独立防抖，
+  // 不再互相覆盖导致「后一个事件吞掉前一个」而丢同步。
   const debounceMap = new Map<string, ReturnType<typeof setTimeout>>();
-  /** D4：改名窗口跳过 delete 后，下一防抖周期跑全量 upsert 收敛 */
-  const pendingFullRescan = new Set<string>();
+  /** D4 兜底：改名窗口跳过删除后自行调度的全量重扫定时器（entityName 级去重） */
+  const fullRescanTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 已挂 watcher 的 Post 花园（contentDirName = garden id），用于新花园去重 */
+  const attachedPostGardens = new Set<string>();
 
-  // watch：挂 content 根 + 各配置目录；新建花园后下一轮 runContentSync 会重建 Post syncer
-  for (const syncer of buildSyncers()) {
+  /**
+   * D4：改名窗口跳过删除后自行调度一次全量重扫（不再依赖后续文件事件触发）。
+   * 不变量：凡跳过删除 ⇒ 必有一次全量重扫排期，残留行必然收敛。
+   */
+  const scheduleFullRescan = (target: Syncer<unknown>) => {
+    if (fullRescanTimers.has(target.entityName)) return;
+    fullRescanTimers.set(
+      target.entityName,
+      setTimeout(() => {
+        fullRescanTimers.delete(target.entityName);
+        syncEntity(target, prisma)
+          .then((result) => {
+            console.log(`  📊 [${target.entityName}] 全量重扫（改名窗口保护）: 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+            if (target.entityName === "Garden") attachNewGardenSyncers();
+          })
+          .catch((e) => console.error(`  ❌ [${target.entityName}] 全量重扫失败:`, e));
+      }, 1500),
+    );
+  };
+
+  /** 新花园发现：为尚未挂载的花园动态挂 Post syncer + watcher，并立即全量同步一次 */
+  const attachNewGardenSyncers = () => {
+    for (const postSyncer of buildPostGardenSyncers(getAppConfig().contentDir)) {
+      if (attachedPostGardens.has(postSyncer.contentDirName)) continue;
+      if (!fs.existsSync(resolveSyncerDir(postSyncer))) continue;
+      attachedPostGardens.add(postSyncer.contentDirName);
+      console.log(`  🌱 [${postSyncer.entityName}] 发现新花园，动态挂载监听`);
+      attachWatcher(postSyncer);
+      syncEntity(postSyncer, prisma)
+        .then((r) =>
+          console.log(`  📊 [${postSyncer.entityName}] 新花园首次同步: 扫描 ${r.scanned} 条，同步 ${r.upserted} 条，清理 ${r.cleaned} 条`),
+        )
+        .catch((e) => console.error(`  ❌ [${postSyncer.entityName}] 新花园首次同步失败:`, e));
+    }
+  };
+
+  function attachWatcher(syncer: Syncer<unknown>): void {
     const contentDir = resolveSyncerDir(syncer);
-    if (!fs.existsSync(contentDir)) continue;
+    if (!fs.existsSync(contentDir)) return;
 
     // 忽略点开头与 `_` 开头目录；Garden 特例允许 _garden.md（首页事实源）
     const watcher = chokidar.watch(contentDir, {
@@ -169,20 +208,15 @@ async function runWatch(): Promise<void> {
 
       console.log(`  🔔 [${syncer.entityName}] 检测到${eventType}: ${path.relative(contentDir, eventPath)}`);
 
-      if (debounceMap.has(syncer.entityName)) {
-        clearTimeout(debounceMap.get(syncer.entityName));
+      const debounceKey = `${syncer.entityName}:${eventPath}`;
+      if (debounceMap.has(debounceKey)) {
+        clearTimeout(debounceMap.get(debounceKey));
       }
 
       debounceMap.set(
-        syncer.entityName,
+        debounceKey,
         setTimeout(async () => {
-          // D4：上一轮因改名窗口跳过删除 → 本周期全量重扫
-          if (pendingFullRescan.has(syncer.entityName)) {
-            pendingFullRescan.delete(syncer.entityName);
-            const result = await syncEntity(syncer, prisma);
-            console.log(`  📊 [${syncer.entityName}] 全量重扫（改名窗口保护）: 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
-            return;
-          }
+          debounceMap.delete(debounceKey);
 
           // A13 + #7：删除事件优先走增量 deleteBySlug（不再全目录扫描）；不支持时回退全量 syncEntity。
           // 新增/变更走单文件 scanFile + upsert。
@@ -190,13 +224,13 @@ async function runWatch(): Promise<void> {
             if (syncer.deleteBySlug) {
               try {
                 const slug = filePathToSlug(contentDir, eventPath);
-                // D4：目标行 5s 内刚 update → 跳过硬删，标记全量重扫
+                // D4：目标行 5s 内刚 update → 跳过硬删，自行调度全量重扫
                 const { deleted, skipped } = await guardedWatchDeleteBySlug(prisma, syncer, slug);
                 if (skipped) {
-                  pendingFullRescan.add(syncer.entityName);
                   console.warn(
-                    `  ⚠️ [${syncer.entityName}] 跳过删除 slug=${slug}（行 5s 内刚更新，疑似改名窗口）；已标记全量重扫`,
+                    `  ⚠️ [${syncer.entityName}] 跳过删除 slug=${slug}（行 5s 内刚更新，疑似改名窗口）；已调度全量重扫`,
                   );
+                  scheduleFullRescan(syncer);
                   return;
                 }
                 console.log(`  🗑️ [${syncer.entityName}] 增量清理: ${path.relative(contentDir, eventPath)} (${deleted} 条)`);
@@ -204,10 +238,12 @@ async function runWatch(): Promise<void> {
                 console.error(`  ❌ [${syncer.entityName}] 增量清理失败，回退全量:`, e.message);
                 const result = await syncEntity(syncer, prisma);
                 console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+                if (syncer.entityName === "Garden") attachNewGardenSyncers();
               }
             } else {
               const result = await syncEntity(syncer, prisma);
               console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+              if (syncer.entityName === "Garden") attachNewGardenSyncers();
             }
           } else if (syncer.scanFile) {
             try {
@@ -215,6 +251,8 @@ async function runWatch(): Promise<void> {
               if (record) {
                 await syncer.upsert(prisma, record);
                 console.log(`  📊 [${syncer.entityName}] 单文件同步: ${path.relative(contentDir, eventPath)}`);
+                // 新花园的 _garden.md 落盘 → 动态挂 Post syncer + watcher
+                if (syncer.entityName === "Garden") attachNewGardenSyncers();
               }
             } catch (e: any) {
               console.error(`  ❌ [${syncer.entityName}] 单文件同步失败:`, e.message);
@@ -222,6 +260,7 @@ async function runWatch(): Promise<void> {
           } else {
             const result = await syncEntity(syncer, prisma);
             console.log(`  📊 [${syncer.entityName}] 扫描 ${result.scanned} 条，同步 ${result.upserted} 条，清理 ${result.cleaned} 条`);
+            if (syncer.entityName === "Garden") attachNewGardenSyncers();
           }
         }, 1500)
       );
@@ -232,6 +271,15 @@ async function runWatch(): Promise<void> {
       .on("change", (filePath) => triggerSync(filePath, "变更"))
       .on("unlink", (filePath) => triggerSync(filePath, "删除"))
       .on("error", (error) => console.error(`  ❌ [${syncer.entityName}] 监听错误:`, error));
+  }
+
+  // watch：挂 content 根 + 各配置目录；watch 运行期间新建的花园由 Garden 事件触发
+  // attachNewGardenSyncers 动态补挂 Post syncer + watcher（见上）。
+  for (const syncer of buildSyncers()) {
+    if (syncer.entityName.startsWith("Post:")) {
+      attachedPostGardens.add(syncer.contentDirName);
+    }
+    attachWatcher(syncer);
   }
 }
 

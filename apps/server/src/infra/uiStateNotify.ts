@@ -109,3 +109,20 @@ export async function notifyCronJobUpdated(
     lastRunStatus: job.lastRunStatus ?? undefined,
   });
 }
+
+/**
+ * db:sync 完成后推送列表变更（推拉结合 · 收拢入口）。
+ * hub 未就绪（CLI 无服务进程）时 pushUiStateToSession 内部静默 no-op，CLI 场景安全。
+ * Post/Memory 等无专属事件类型的实体由管理页 refetchInterval 兜底（PULL），
+ * 这里推 agent_list_changed 让侧栏与 /agents 秒级对齐（web 端同时 invalidate agent/workspace 列表）。
+ */
+export async function notifyContentSynced(
+  prisma: PrismaClient,
+  results: Array<{ entityName: string; changed: number }>,
+): Promise<void> {
+  if (!results.some((r) => r.changed > 0)) return;
+  await notifyAllMainSessionsUi(prisma, {
+    type: "agent_list_changed",
+    reason: "db:sync",
+  });
+}

@@ -128,11 +128,10 @@ export async function rebuildFtsIndex(prisma: PrismaClient): Promise<number> {
     );
   }
 
+  // 全量索引：本地单用户场景消息量级可承受，截断会导致更早消息永不可搜
   const messages = await prisma.chatMessage.findMany({
     where: { role: { in: ["user", "assistant"] } },
     select: { id: true, content: true, sessionId: true },
-    take: 5000,
-    orderBy: { createdAt: "desc" },
   });
   for (const msg of messages) add("message", msg.id, safeSlice(msg.content, 80), msg.content);
 
