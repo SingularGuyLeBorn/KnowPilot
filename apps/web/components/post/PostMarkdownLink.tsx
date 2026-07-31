@@ -86,6 +86,16 @@ export function PostMarkdownLink({
     );
   }
 
+  // 兼容 /{garden}/{slug} 这种花园前缀绝对路径（如 /essays/foo → /posts/foo?garden=essays）
+  const gardenPrefixed = resolveGardenPrefixedHref(href, posts);
+  if (gardenPrefixed) {
+    return (
+      <Link href={gardenPrefixed} {...props}>
+        {children}
+      </Link>
+    );
+  }
+
   if (href.startsWith("/") && !href.endsWith(".md")) {
     return (
       <Link href={href} {...props}>
@@ -103,4 +113,29 @@ export function PostMarkdownLink({
       {children}
     </span>
   );
+}
+
+/** 解析 /{garden}/{slug} 这种花园前缀绝对路径，命中则返回规范文章 URL */
+function resolveGardenPrefixedHref(
+  href: string,
+  posts: Array<{ slug: string; title: string; garden: string }>,
+): string | null {
+  if (!href.startsWith("/") || href.startsWith("/posts/")) return null;
+  const clean = href.split(/[?#]/)[0];
+  const parts = clean.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const maybeGarden = parts[0];
+  const slug = parts.slice(1).join("/");
+  if (!slug) return null;
+
+  const gardens = new Set(posts.map((p) => p.garden));
+  if (!gardens.has(maybeGarden)) return null;
+
+  const match = posts.find(
+    (p) => p.garden === maybeGarden && p.slug === slug,
+  );
+  if (!match) return null;
+
+  return postDetailHref(match.slug, match.garden);
 }

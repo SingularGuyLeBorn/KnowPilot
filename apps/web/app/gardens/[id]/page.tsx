@@ -89,7 +89,11 @@ export default function GardenHomePage() {
       <ContinueReadingCard garden={id} className="mb-8" />
 
       <section className="mb-12 rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] p-6 sm:p-8">
-        <PostContent content={garden.homeContent || "_（首页暂无正文，可用 garden_update 编辑）_"} />
+        <PostContent
+          content={garden.homeContent || "_（首页暂无正文，可用 garden_update 编辑）_"}
+          postSlug={`${id}/_garden`}
+          postGarden={id}
+        />
       </section>
 
       <section>
