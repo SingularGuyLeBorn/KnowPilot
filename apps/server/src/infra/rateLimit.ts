@@ -10,6 +10,10 @@
  * 两层：
  *   1. 全局：所有路由统一阈值（默认 3000 req / 15min / IP；loopback 默认跳过）。
  *   2. SSE chat stream：昂贵端点单独收紧（默认 60 POST / min / IP；loopback 同样跳过）。
+ *
+ * 注意：loopback 判定依赖 Express `trust proxy = "loopback"`（index.ts 设置）。
+ * 隧道场景（公网→cloudflared→Next.js rewrite→127.0.0.1:3010）下 req.ip 已还原为真实公网 IP，
+ * 不再命中 skip；纯本地直连（无 XFF）req.ip 仍是 127.0.0.1，保持 skip。
  */
 
 import rateLimit, { ipKeyGenerator, type Options } from "express-rate-limit";
@@ -28,6 +32,7 @@ function isLoopbackIp(raw: string | undefined): boolean {
 function shouldSkipGlobal(req: Request): boolean {
   if (!enabled) return true;
   if (!skipLocalhost) return false;
+  // trust proxy="loopback" 下 req.ip 已是真实客户端 IP：隧道公网流量不再误判为 loopback
   const raw = req.ip || (req.socket?.remoteAddress as string | undefined);
   return isLoopbackIp(raw);
 }

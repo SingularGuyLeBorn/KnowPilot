@@ -88,7 +88,7 @@ describe("auth module", () => {
     expect(() => assertPublicUrlAuthSafe(config)).not.toThrow();
   });
 
-  it("chat/stop 在 AUTH_MODE=password 时拒绝无 Bearer", () => {
+  it("chat/stop 在 AUTH_MODE=password 时拒绝无 Bearer", async () => {
     const config = createTestConfig("/tmp", {
       auth: { mode: "password", password: "secret", token: "kp-test-token" },
     });
@@ -104,10 +104,10 @@ describe("auth module", () => {
       res as never,
     );
     expect(res.status).toHaveBeenCalledWith(401);
-    hub.destroy();
+    await hub.dispose();
   });
 
-  it("chat/stop 在 AUTH_MODE=password 时接受正确 Bearer", () => {
+  it("chat/stop 在 AUTH_MODE=password 时接受正确 Bearer", async () => {
     const config = createTestConfig("/tmp", {
       auth: { mode: "password", password: "secret", token: "kp-test-token" },
     });
@@ -129,6 +129,6 @@ describe("auth module", () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ stopped: expect.any(Boolean) }),
     );
-    hub.destroy();
+    await hub.dispose();
   });
 });

@@ -196,7 +196,7 @@ const SHELL_DEFS: NativeToolDefinition[] = [
     // P0-02：标 destructive → 入审批清单 + native:all 默认隐藏；须显式 native:run_shell
     destructive: true,
     description:
-      "在当前 Agent Workspace（无则 data/workspace）内执行 Shell 命令（须 SHELL_ENABLED=true；host_restricted：超时/输出上限/危险命令拦截）。Windows 默认 PowerShell，Linux/macOS 默认 bash。删除请用 file_delete 等软删工具。",
+      "在当前 Agent Workspace（无则 data/workspace）内执行 Shell 命令（须 SHELL_ENABLED=true；host_restricted：超时/输出上限/危险命令拦截）。安全边界如实说明：host_restricted 只限制 cwd 落点与黑名单命令片段，命令体本身仍可读写系统任意路径、访问网络，不等于文件系统沙箱；删除/写文件请用 file_delete / write_file 等 native 软删工具。Windows 默认 PowerShell，Linux/macOS 默认 bash。",
     parameters: {
       type: "object",
       properties: {

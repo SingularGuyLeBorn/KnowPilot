@@ -5,6 +5,7 @@
  * AUTH_MODE=password：需 Bearer Token（login 或 AUTH_TOKEN）。
  */
 
+import crypto from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import type { AppConfig } from "./config.js";
 
@@ -12,12 +13,20 @@ export function isAuthEnabled(config: AppConfig): boolean {
   return config.auth.mode === "password" && !!config.auth.password;
 }
 
+/** 常量时间比较密钥/密码（防时序侧信道）；长度不等先返回 false */
+function safeEqualSecret(a: string, b: string): boolean {
+  const ba = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
 export function verifyAuthHeader(config: AppConfig, authorization?: string | string[]): boolean {
   if (!isAuthEnabled(config)) return true;
   const raw = Array.isArray(authorization) ? authorization[0] : authorization;
   if (!raw?.startsWith("Bearer ")) return false;
   const token = raw.slice("Bearer ".length).trim();
-  return token.length > 0 && token === config.auth.token;
+  return token.length > 0 && safeEqualSecret(token, config.auth.token);
 }
 
 export function assertAuthHeader(config: AppConfig, authorization?: string | string[]): void {
@@ -36,7 +45,7 @@ export function loginWithPassword(
   if (!isAuthEnabled(config)) {
     return { token: "" };
   }
-  if (password !== config.auth.password) return null;
+  if (password.length === 0 || !safeEqualSecret(password, config.auth.password)) return null;
   return { token: config.auth.token };
 }
 

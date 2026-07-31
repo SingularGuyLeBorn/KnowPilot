@@ -14,11 +14,13 @@ const execFileAsync = promisify(execFile);
 
 export type ShellMode = "disabled" | "host_restricted" | "host_full" | "docker";
 
-/** 传给子进程时需剔除的敏感环境变量键模式（防恶意命令读取 API Key/Token 泄漏） */
-const SENSITIVE_ENV_RE = /(?:API_KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASS|COOKIE|CREDENTIAL|AUTH)_|_API_KEY$|_TOKEN$|_SECRET$|CREDENTIAL_MASTER_KEY|^AUTH_PASSWORD$|^AUTH_TOKEN$/i;
+/** 传给子进程时需剔除的敏感环境变量键模式（防恶意命令读取 API Key/Token 泄漏）。
+ * 宽松策略：变量名只要含敏感子串即剔除——旧的前/后缀精确匹配漏掉
+ * EMAIL_SMTP_PASS / ZHIHU_COOKIE / YUQUE_CTOKEN 等真实泄漏案例。 */
+const SENSITIVE_ENV_RE = /API_KEY|TOKEN|SECRET|PASSWORD|PASSWD|COOKIE|CREDENTIAL|CTOKEN|_PASS/i;
 
 /** 从 process.env 派生一份剔除敏感键的子进程环境（P2 安全加固） */
-function buildSandboxEnv(): Record<string, string | undefined> {
+export function buildSandboxEnv(): Record<string, string | undefined> {
   const safe: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (SENSITIVE_ENV_RE.test(k)) continue;
@@ -31,6 +33,10 @@ function buildSandboxEnv(): Record<string, string | undefined> {
 const SHELL_DELETE_BLOCKED =
   "禁止用 shell 删除文件/目录（硬删不可恢复）。请用 native:file_delete / directory_delete / post_delete / garden_delete（软删进回收站）；恢复用 native:trash_restore。";
 
+/** 写/移文件铁律：shell 直写绕过 Workspace 隔离与回收站，逼回 native 文件工具 */
+const SHELL_WRITE_BLOCKED =
+  "禁止用 shell 写入/移动文件。请用 native:write_file / append_to_file（落 Workspace，可审计）；移动可用 write_file + file_delete 组合。";
+
 /** 明显危险的命令片段（大小写不敏感） */
 const BLOCKED_PATTERNS: Array<{ re: RegExp; message?: string }> = [
   // 软删铁律：任意 rm / del / Remove-Item / rmdir 等（含 git rm、docker rm 一并拦，防旁路硬删）
@@ -38,9 +44,17 @@ const BLOCKED_PATTERNS: Array<{ re: RegExp; message?: string }> = [
   { re: /(^|[\s;&|])(del|erase)\b/i, message: SHELL_DELETE_BLOCKED },
   { re: /\bRemove-Item\b/i, message: SHELL_DELETE_BLOCKED },
   { re: /\bClear-Item\b/i, message: SHELL_DELETE_BLOCKED },
+  // PowerShell .NET 直删/直写 API（绕过 Remove-Item 关键字）
+  { re: /\[\s*(?:System\.)?IO\.(?:File|Directory)\s*\]::\s*Delete/i, message: SHELL_DELETE_BLOCKED },
+  { re: /\[\s*(?:System\.)?IO\.File\s*\]::\s*(WriteAll|AppendAll)/i, message: SHELL_WRITE_BLOCKED },
   { re: /\brimraf\b/i, message: SHELL_DELETE_BLOCKED },
   { re: /\bunlink\b/i, message: SHELL_DELETE_BLOCKED },
   { re: /\bgit\s+rm\b/i, message: SHELL_DELETE_BLOCKED },
+  // PowerShell 移动/写文件（应走 native 文件工具，便于回收站与 Workspace 隔离）
+  { re: /\bMove-Item\b/i, message: SHELL_WRITE_BLOCKED },
+  { re: /\bSet-Content\b/i, message: SHELL_WRITE_BLOCKED },
+  // 下载执行（iex (iwr ...) / Invoke-Expression 动态执行远程脚本）
+  { re: /\b(iex|Invoke-Expression)\b/i, message: "禁止动态执行（iex/Invoke-Expression），下载执行远程脚本属高危操作。" },
   { re: /\bformat\s+[a-z]:/i },
   { re: /\b(shutdown|reboot|poweroff|halt)\b/i },
   { re: /\bmkfs\b/i },
