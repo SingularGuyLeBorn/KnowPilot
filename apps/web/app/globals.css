@@ -528,7 +528,9 @@ html.dark .kp-card,
 .katex {
   color: var(--kp-text-1);
   /* 不覆盖 font-size / font-weight：KaTeX 字体按自身度量设计，
-     外部强制 1.05em/500 会在字体加载前后产生度量偏差，导致下标错位或初始渲染异常。 */
+     外部强制 1.05em/500 会在字体加载前后产生度量偏差，导致下标错位或初始渲染异常。
+     line-height 必须隔离：chat 气泡常带 leading-relaxed/prose-sm，父级行高会干扰下标位置。 */
+  line-height: normal;
 }
 .katex-display {
   display: block;

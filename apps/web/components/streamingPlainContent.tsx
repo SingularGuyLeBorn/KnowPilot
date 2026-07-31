@@ -18,7 +18,9 @@ function InlineKatex({ tex }: { tex: string }) {
       return tex;
     }
   }, [tex]);
-  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+  /* inline-block + leading-none 把公式从 chat 气泡的 leading-relaxed/外部 line-height 里隔离出来，
+     避免下标被父级行高推到错误位置 */
+  return <span className="inline-block align-baseline leading-none" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function DisplayKatex({ tex }: { tex: string }) {
@@ -29,7 +31,7 @@ function DisplayKatex({ tex }: { tex: string }) {
       return tex;
     }
   }, [tex]);
-  return <div className="my-2 text-center" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div className="my-2 text-center leading-normal" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function renderInline(text: string): ReactNode[] {
