@@ -55,6 +55,7 @@ export default function RootLayout({
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
+      spellCheck={false}
     >
       <head>
         <script
