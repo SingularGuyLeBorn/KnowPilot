@@ -164,7 +164,7 @@ async function agentUpdateTool(args: Record<string, unknown>, ctx: NativeToolCon
 
 async function agentDeleteTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const targetId = String(args.id || "");
-  // tombstone 删除：先 abort 运行中任务，再标记 deleted（不真删 DB 记录）
+  // tombstone 删除：保留 DB 行作审计（出 FTS + 删配置文件由 AgentService.tombstone 统一处理）
   const existing = await ctx.services.agent.getById(targetId);
   if (!existing) return { error: "Agent 不存在" };
   // Q1：任何超级 Agent 不可删（含自己；权限层亦拦 SELF_DELETE）
@@ -177,13 +177,9 @@ async function agentDeleteTool(args: Record<string, unknown>, ctx: NativeToolCon
     "agent_delete",
   );
   if (scopeErr) return { error: `[${scopeErr.code}] ${scopeErr.reason}` };
-  // 先标记 deleted（tombstone），保留记录
-  await ctx.services.agent.update({
-    id: targetId,
-    status: "deleted",
-  } as any).catch((err: unknown) => {
-      console.warn("[swarm] best-effort failed:", err instanceof Error ? err.message : err);
-    });
+  // tombstone 删除：出 FTS + 删配置文件 + 清 sourceSlug，DB 行保留作审计（与 tRPC 硬删最终效果一致）
+  const tomb = await ctx.services.agent.tombstone(targetId, { deletedBy: ctx.agentSnapshot?.id });
+  if (!tomb.success) return { error: tomb.error?.message ?? "删除 Agent 失败" };
   // 审计日志
   await ctx.services.log?.create?.({
     level: "warn", component: "swarm", event: "agent_deleted",
