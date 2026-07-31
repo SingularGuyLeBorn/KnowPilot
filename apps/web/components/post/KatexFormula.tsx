@@ -142,11 +142,11 @@ export function KatexFormula({ children, className, display = false }: KatexForm
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const margin = 12;
+    const margin = 16;
     // 最大宽度封顶；默认比旧 420 更宽，长公式靠换行 + 纵向滚动，禁止横向条
-    const maxW = Math.min(720, window.innerWidth - margin * 2);
-    const preferred = display ? 640 : 520;
-    const width = Math.min(maxW, Math.max(display ? 360 : 280, Math.min(Math.max(r.width, preferred), maxW)));
+    const maxW = Math.min(900, window.innerWidth - margin * 2);
+    const preferred = display ? 760 : 640;
+    const width = Math.min(maxW, Math.max(display ? 420 : 360, Math.min(Math.max(r.width, preferred), maxW)));
     let left = r.left;
     left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
     let top = r.bottom + 6;
