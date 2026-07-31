@@ -37,7 +37,7 @@ describe("E3 stop partialAssistantMessageId 契约", () => {
   });
 
   afterEach(async () => {
-    hub.destroy();
+    await hub.dispose();
     setStreamHub(null);
     await prisma.chatMessage.deleteMany({ where: { sessionId } });
     await prisma.chatSession.deleteMany({ where: { id: sessionId } });

@@ -8,7 +8,7 @@
  */
 
 import type { ServiceContainer } from "./serviceContainer.js";
-import { mcpToolName, truncateMcpResult } from "./mcpClient.js";
+import { mcpToolName, truncateMcpResult } from "./mcpUtils.js";
 
 export interface MockMcpTool {
   serverName: string;

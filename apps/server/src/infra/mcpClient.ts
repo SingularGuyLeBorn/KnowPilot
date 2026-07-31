@@ -10,6 +10,7 @@ import type { ServiceContainer } from "./serviceContainer.js";
 import type { McpServerEntity } from "./entityServices/mcpService.js";
 import { executeMockMcpTool, getMockMcpToolSchemas } from "./mockMcpRegistry.js";
 import { CircuitBreaker } from "./circuitBreaker.js";
+import { mcpToolName, truncateMcpResult } from "./mcpUtils.js";
 
 interface McpToolMeta {
   serverName: string;
@@ -24,7 +25,6 @@ const schemaCache = new Map<string, Array<{ type: "function"; function: { name: 
 const circuitBreakers = new Map<string, CircuitBreaker>();
 
 const MCP_CONNECT_TIMEOUT_MS = 12_000;
-const MCP_MAX_RESULT_CHARS = 12_000;
 
 function getMcpCircuitBreaker(serverName: string): CircuitBreaker {
   let breaker = circuitBreakers.get(serverName);
@@ -55,12 +55,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-export function mcpToolName(serverName: string, toolName: string): string {
-  const safeServer = serverName.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const safeTool = toolName.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `mcp__${safeServer}__${safeTool}`;
-}
-
 export function parseMcpToolName(externalName: string): McpToolMeta | null {
   if (!externalName.startsWith("mcp__")) return null;
   const meta = toolRegistry.get(externalName);
@@ -70,28 +64,6 @@ export function parseMcpToolName(externalName: string): McpToolMeta | null {
   const toolName = parts.pop()!;
   const serverName = parts.join("__").replace(/_/g, "-");
   return { serverName, toolName };
-}
-
-/** 截断过大 MCP 结果，避免撑爆上下文 */
-export function truncateMcpResult(result: unknown): unknown {
-  const json = JSON.stringify(result);
-  if (json.length <= MCP_MAX_RESULT_CHARS) return result;
-
-  const truncated = json.slice(0, MCP_MAX_RESULT_CHARS);
-  let parsed: unknown = truncated;
-  try {
-    parsed = JSON.parse(truncated);
-  } catch {
-    parsed = truncated;
-  }
-
-  return {
-    _truncated: true,
-    _originalChars: json.length,
-    _maxChars: MCP_MAX_RESULT_CHARS,
-    preview: parsed,
-    hint: "MCP 结果过大已截断。请缩小查询范围或分页获取。",
-  };
 }
 
 async function findMcpServer(services: ServiceContainer, name: string): Promise<McpServerEntity> {
@@ -282,5 +254,3 @@ export async function disconnectAllMcpClients(): Promise<void> {
   toolRegistry.clear();
   schemaCache.clear();
 }
-
-export { MCP_MAX_RESULT_CHARS };

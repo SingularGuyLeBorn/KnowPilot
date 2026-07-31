@@ -411,6 +411,16 @@ export async function drainGoalContinueAfterSettle(args: {
   }
 
   const reason = goal.pendingContinue.reason;
+  /**
+   * 同代判定：读→起流→清标记非原子，与用户 setSessionGoal 覆盖竞态时
+   * 只有「同一 goal 同一代 pendingContinue」才允许清/续跑，否则放弃本次续跑
+   */
+  const isSamePending = (latest: SessionGoalState | null): boolean =>
+    !!latest &&
+    latest.text === goal.text &&
+    latest.turnsUsed === goal.turnsUsed &&
+    latest.pendingContinue?.reason === reason;
+
   // 禁止先清 pending 再起流：busy 时续跑会永久丢失（与 user-queue drain 抢 hub 竞态）
   const session = await args.services.session.getByIdLite(args.sessionId);
   const message = buildGoalContinueMessage(goal, reason);
@@ -420,9 +430,8 @@ export async function drainGoalContinueAfterSettle(args: {
     const ok = await args.startContinuation(message, model);
     if (ok) {
       const latest = await goalStateStore.read(args.sessionId);
-      if (latest?.pendingContinue) {
-        await goalStateStore.write(args.sessionId, { ...latest, pendingContinue: null });
-      }
+      if (!isSamePending(latest)) return false; // goal 已被覆盖：新 goal 的标记不可误清
+      await goalStateStore.write(args.sessionId, { ...latest!, pendingContinue: null });
     }
     return ok;
   }
@@ -442,15 +451,21 @@ export async function drainGoalContinueAfterSettle(args: {
     source: "system" as const,
   };
 
+  // 起流前再核一次同代：读→起流窗口内 goal 被覆盖则直接放弃
+  if (!isSamePending(await goalStateStore.read(args.sessionId))) return false;
+
   const started = await hub.startIfNotRunning(args.sessionId, body, (emit, signal) =>
     chatAgentStream(args.services, args.config, body, invoke, emit, signal),
   );
   if (started === "started") {
     const latest = await goalStateStore.read(args.sessionId);
-    if (latest?.pendingContinue) {
-      await goalStateStore.write(args.sessionId, { ...latest, pendingContinue: null });
+    if (isSamePending(latest)) {
+      await goalStateStore.write(args.sessionId, { ...latest!, pendingContinue: null });
+      return true;
     }
-    return true;
+    // 起流期间 goal 被覆盖：撤回误起的旧 goal 续跑，新 goal 会话不背旧 goal 的轮次
+    hub.stop(args.sessionId, "user");
+    return false;
   }
   // busy/duplicate：保留 pendingContinue，等下次 settle 再试
   return false;

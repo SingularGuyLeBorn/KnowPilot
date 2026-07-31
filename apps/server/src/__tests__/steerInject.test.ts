@@ -30,7 +30,7 @@ describe("SessionStreamHub inject queues", () => {
   });
 
   afterEach(async () => {
-    hub.destroy();
+    await hub.dispose();
     setStreamHub(null);
     await prisma.sessionQueueItem.deleteMany({ where: { sessionId } });
     await prisma.chatSession.deleteMany({ where: { id: sessionId } });
@@ -129,6 +129,6 @@ describe("SessionStreamHub inject queues", () => {
     );
     resolveRun();
     await allHub.waitFor(sessionId);
-    allHub.destroy();
+    await allHub.dispose();
   });
 });

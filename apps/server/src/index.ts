@@ -47,6 +47,12 @@ import { hydrateLlmBudget } from "./infra/llmBudget.js";
 
 const app = express();
 
+// 信任 loopback 反代的 X-Forwarded-For：远程隧道链路为 公网→cloudflared→Next.js rewrite→127.0.0.1:3010，
+// 不设 trust proxy 时所有公网请求 req.ip 都是 127.0.0.1，全局限流 / chat-stream 限流 / 管理端点本机判定全部失效。
+// 仅信任 loopback 来源（Next.js dev server 跑在本机），公网直连伪造 XFF 不会生效；
+// 纯本地直连无 XFF，req.ip 仍为 127.0.0.1，限流 skip 逻辑不受影响。
+app.set("trust proxy", "loopback");
+
 // 优先加载 monorepo 根目录 .env
 loadRootEnv();
 
@@ -411,13 +417,22 @@ async function handleAgentMailInbound(
 }
 
 // Admin：临时隧道解析到公网 URL 后，remote.mjs 调此端点动态注册 AgentMail webhook。
-// 仅允许本机调用（防公网滥用）；AUTH_MODE=none 时也只放行 localhost。
+// 安全：该路径被 Next.js rewrite 转发（next.config.ts），隧道开启时公网可达——
+// 不设防则任何公网用户可 POST 任意 url 重注册 webhook，劫持审批/ask_user 邮件（含 APPROVE 决策）。
+// AUTH 启用时强制 Bearer 校验；未启用时按真实客户端 IP（trust proxy 后）限 loopback。
 app.post("/api/admin/agentmail-webhook", async (req, res) => {
-  const ip = req.ip || (req.socket?.remoteAddress as string | undefined) || "";
-  const isLocal = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
-  if (!isLocal) {
-    res.status(403).json({ error: "FORBIDDEN", message: "仅允许本机调用" });
-    return;
+  if (isAuthEnabled(config)) {
+    if (!verifyAuthHeader(config, req.headers.authorization)) {
+      res.status(401).json({ error: "UNAUTHORIZED", message: "未授权：请提供 Bearer Token。" });
+      return;
+    }
+  } else {
+    const ip = req.ip || (req.socket?.remoteAddress as string | undefined) || "";
+    const isLocal = ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+    if (!isLocal) {
+      res.status(403).json({ error: "FORBIDDEN", message: "仅允许本机调用" });
+      return;
+    }
   }
   const body = (req.body ?? {}) as { url?: string };
   const { ensureAgentMailWebhook } = await import("./infra/agentMailClient.js");
@@ -426,6 +441,8 @@ app.post("/api/admin/agentmail-webhook", async (req, res) => {
 });
 
 // 异步任务推送 SSE（独立于 Agent 运行流，用于推优先的 async_delivery 事件）
+// ?token= 查询串携带凭据易进浏览器历史/代理日志，仅提示一次（EventSource 无法自定义 header，保留兼容兜底）
+let sseQueryTokenWarned = false;
 app.get("/api/agent/async-stream", (req, res) => {
   const sessionId = String(req.query.sessionId || "");
   if (!sessionId) {
@@ -434,6 +451,13 @@ app.get("/api/agent/async-stream", (req, res) => {
   }
   // EventSource 无法设 Authorization header，允许 ?token= 兜底
   const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+  if (queryToken && !sseQueryTokenWarned) {
+    sseQueryTokenWarned = true;
+    console.warn(
+      "  ⚠️ [安全] SSE 正在使用 ?token= 查询串携带凭据：URL 可能进入浏览器历史 / 代理日志 / Referer。" +
+        "建议优先使用 Authorization header；仅 EventSource 不支持自定义 header 的场景保留此兜底。",
+    );
+  }
   const authHeader =
     req.headers.authorization || (queryToken ? `Bearer ${queryToken}` : undefined);
   if (isAuthEnabled(config) && !verifyAuthHeader(config, authHeader)) {
@@ -728,21 +752,42 @@ const handleShutdown = () => {
     .catch((err) => {
       console.warn("[Shutdown] stopFreeKeysAutoSync:", err instanceof Error ? err.message : err);
     });
-  streamHub.destroy();
-  closeSharedBrowser().catch((err) => {
-    console.warn("[Shutdown] closeSharedBrowser:", err instanceof Error ? err.message : err);
-  });
-  server.close(() => {
-    prisma
-      .$disconnect()
-      .then(() => {
-        console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");
-        process.exit(0);
-      })
-      .catch((err) => {
-        console.warn("[Shutdown] prisma.$disconnect:", err instanceof Error ? err.message : err);
-        process.exit(1);
-      });
+  // 串行收尾：先刷盘 SSE 事件、断开 MCP stdio 子进程，再关 HTTP 与 DB
+  (async () => {
+    try {
+      await streamHub.dispose();
+    } catch (err) {
+      console.warn("[Shutdown] streamHub.dispose:", err instanceof Error ? err.message : err);
+    }
+    try {
+      const { disconnectAllMcpClients } = await import("./infra/mcpClient.js");
+      await disconnectAllMcpClients();
+    } catch (err) {
+      console.warn(
+        "[Shutdown] disconnectAllMcpClients:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+    try {
+      await closeSharedBrowser();
+    } catch (err) {
+      console.warn("[Shutdown] closeSharedBrowser:", err instanceof Error ? err.message : err);
+    }
+    server.close(() => {
+      prisma
+        .$disconnect()
+        .then(() => {
+          console.log("  👋 [Shutdown] 数据库连接已断开，服务正常退出。");
+          process.exit(0);
+        })
+        .catch((err) => {
+          console.warn("[Shutdown] prisma.$disconnect:", err instanceof Error ? err.message : err);
+          process.exit(1);
+        });
+    });
+  })().catch((err) => {
+    console.warn("[Shutdown] 收尾异常，强制退出:", err instanceof Error ? err.message : err);
+    process.exit(1);
   });
 };
 

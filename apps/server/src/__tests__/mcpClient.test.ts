@@ -6,14 +6,16 @@ import { beforeEach, describe, it, expect, vi } from "vitest";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
-  mcpToolName,
   parseMcpToolName,
-  truncateMcpResult,
-  MCP_MAX_RESULT_CHARS,
   createMcpTransport,
   buildMcpToolSchemas,
   disconnectAllMcpClients,
 } from "../infra/mcpClient.js";
+import {
+  mcpToolName,
+  truncateMcpResult,
+  MCP_MAX_RESULT_CHARS,
+} from "../infra/mcpUtils.js";
 import type { McpServerEntity } from "../infra/entityServices/mcpService.js";
 import { createMcpServerSchema } from "@knowpilot/shared";
 import type { ServiceContainer } from "../infra/serviceContainer.js";

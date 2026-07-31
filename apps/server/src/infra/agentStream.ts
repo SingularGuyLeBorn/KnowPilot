@@ -480,6 +480,15 @@ async function deleteTailMessages(
   const { truncateAfter } = await import("./chatTree.js");
   const { deletedIds } = await truncateAfter(services.prisma, sessionId, keepId);
   if (deletedIds.length === 0) return;
+  // truncate 绕过 MessageService.afterDelete，FTS 行需同步清理（防已删消息幽灵搜索）
+  try {
+    const { deleteFtsRow } = await import("./ftsIndex.js");
+    for (const tailId of deletedIds) {
+      await deleteFtsRow(services.prisma, "message", tailId);
+    }
+  } catch (err) {
+    console.warn("[agentStream] message FTS 清理失败", err);
+  }
   // truncate 绕过 MessageService.afterDelete，补推 message_deleted SSE
   try {
     const { getStreamHub } = await import("./sessionStreamHub.js");
@@ -1093,6 +1102,20 @@ export async function chatAgentStream(
           where: { id: sessionId, status: { in: ["active", "running", "paused"] } },
           data: { status: "active" },
         });
+        // 推拉铁律：状态写点后推 session_list_changed，其它标签页侧栏秒级对齐
+        const row = await services.prisma.chatSession.findUnique({
+          where: { id: sessionId },
+          select: { agentId: true },
+        });
+        if (row?.agentId) {
+          const { notifyAgentUi } = await import("./uiStateNotify.js");
+          await notifyAgentUi(services.prisma, row.agentId, {
+            type: "session_list_changed",
+            agentId: row.agentId,
+            sessionId,
+            reason: "update",
+          });
+        }
       } catch (activeErr) {
         console.warn("[chatAgentStream] 停止后标 active 失败:", activeErr);
       }

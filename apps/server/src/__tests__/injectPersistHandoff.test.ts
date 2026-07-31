@@ -34,7 +34,7 @@ describe("A5 inject 持久化与收尾移交", () => {
   });
 
   afterEach(async () => {
-    hub.destroy();
+    await hub.dispose();
     setStreamHub(null);
     await prisma.sessionQueueItem.deleteMany({ where: { sessionId } });
     await prisma.chatSession.deleteMany({ where: { id: sessionId } });

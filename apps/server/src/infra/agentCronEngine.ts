@@ -29,6 +29,10 @@ export class AgentCronEngine {
   /** sessionId → cronJobId，供 hub settled 回写 lastRun* */
   private sessionToCron = new Map<string, string>();
   private unsubSettled: (() => void) | null = null;
+  /** refresh 串行链（同 HeartbeatEngine C2）：新调用挂到上一条之后，禁止交叠 clear/schedule */
+  private refreshChain: Promise<void> = Promise.resolve();
+  /** 代际令牌：每次 refresh 递增；过期代际放弃注册，防被覆盖的 ScheduledTask 泄漏双触发 */
+  private refreshGeneration = 0;
 
   constructor(
     private prisma: PrismaClient,
@@ -39,7 +43,12 @@ export class AgentCronEngine {
   private ensureSettledHook(): void {
     if (this.unsubSettled) return;
     this.unsubSettled = onHubRunSettled((sessionId) => {
-      void this.onSessionSettled(sessionId);
+      this.onSessionSettled(sessionId).catch((err) => {
+        console.warn(
+          "  ⏰ [AgentCronEngine] settled 回写异常:",
+          err instanceof Error ? err.message : err,
+        );
+      });
     });
   }
 
@@ -57,6 +66,8 @@ export class AgentCronEngine {
   }
 
   stop(): void {
+    // 作废在途 refresh：代际递增后旧 refreshInternal 见 mismatch 即放弃注册
+    this.refreshGeneration++;
     for (const task of this.jobs.values()) {
       task.stop();
     }
@@ -67,14 +78,34 @@ export class AgentCronEngine {
     console.log("  ⏰ [AgentCronEngine] 已停止");
   }
 
-  /** 重建全部 enabled cron 的 node-cron 注册 */
+  /**
+   * 重建全部 enabled cron 的 node-cron 注册。
+   * 串行链 + 代际令牌（同 HeartbeatEngine C2）：链防交叠 clear/schedule，
+   * 令牌防「旧代际 await 间隙被新代际取代后仍注册」导致同一 cron 双倍触发。
+   */
   async refresh(): Promise<void> {
+    const gen = ++this.refreshGeneration;
+    const run = () => this.refreshInternal(gen);
+    const next = this.refreshChain.then(run, run);
+    this.refreshChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private async refreshInternal(gen: number): Promise<void> {
+    // 已被更新一代取代：直接跳过（coalesce 为「只落地最新一代」）
+    if (gen !== this.refreshGeneration) return;
+
     for (const task of this.jobs.values()) {
       task.stop();
     }
     this.jobs.clear();
 
     const rows = await listCronJobs(this.prisma, { enabledOnly: true });
+    // await 间隙来了更新一代：放弃本代注册（jobs 已清空，由新代际重建），防旧 task 泄漏
+    if (gen !== this.refreshGeneration) return;
     for (const row of rows) {
       this.scheduleOne(row);
     }
@@ -92,7 +123,13 @@ export class AgentCronEngine {
       return;
     }
     const task = cron.schedule(row.cron, () => {
-      void this.fire(row.id);
+      // fire 内部错误已各自落库；外层只需日志兜底，防裸 reject 卡死 lastRunStatus
+      this.fire(row.id).catch((err) => {
+        console.warn(
+          `  ⏰ [AgentCronEngine] 点火异常 id=${row.id}:`,
+          err instanceof Error ? err.message : err,
+        );
+      });
     });
     this.jobs.set(row.id, task);
   }

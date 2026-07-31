@@ -263,6 +263,17 @@ export class SwarmOrchestrator {
         slotClass: spec.slotClass,
         metadata: resolvedMetadata,
         requiredScopes,
+        // 排队期被丢弃（取消 / 排队超时）时 execute 不会运行：必须在此收口，
+        // 否则 completion 永不 settle、dedup 在途项永久卡死、命中方 await 永久挂起
+        onQueuedDrop: () => {
+          const outcome: SwarmTaskOutcome = {
+            status: "failed",
+            error: "任务在排队期被取消或排队超时，未获槽执行",
+          };
+          if (dedupKey) this.dedupEntries.delete(dedupKey);
+          settleCompletion?.(outcome);
+          this.auditOutcome(spec, finalJobId, outcome);
+        },
         execute: async (signal) => {
           let outcome: SwarmTaskOutcome;
           try {

@@ -9,7 +9,7 @@
  * W9：只读化。历史上本模块会在读路径「顺手 update」老库默认 assistant 的工具/提示词/层级，
  * 读路径写副作用违反「Markdown 为源、读路径纯净」原则。现改为：
  *   - 检测到配置漂移时只返回 drift 描述（调用方决定如何提示/消费），不做任何修改；
- *   - 老库修复走一次性迁移脚本 scripts/migrate-assistant-tools.ts。
+ *   - 老库的一次性迁移脚本已执行并退役，漂移修复走人工对齐（见 ASSISTANT_MIGRATION_HINT）。
  * （未找到默认 assistant 时的「创建」保留：这是首次启动的引导行为，不是读路径修补。）
  */
 
@@ -29,9 +29,9 @@ export const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
 const OUTDATED_ASSISTANT_SYSTEM_PROMPT =
   "你是 KnowPilot 智能助手，可以阅读本地 Markdown 知识库、搜索网络、抓取网页、操作 Git、调用 Skill 与 MCP 工具。回答请简洁、准确，优先使用工具获取事实。";
 
-/** 一次性迁移脚本的执行方式（drift 提示中引用） */
+/** 漂移修复指引（drift 提示中引用；原一次性迁移脚本已执行并退役） */
 export const ASSISTANT_MIGRATION_HINT =
-  "pnpm --filter @knowpilot/server exec tsx src/scripts/migrate-assistant-tools.ts";
+  "请在 /agents 页手动对齐内置默认工具与系统提示，或删除默认 assistant 后重启，由系统按最新模板重建";
 
 export interface ResolveAgentResult {
   agent: AgentEntity;
@@ -41,7 +41,7 @@ export interface ResolveAgentResult {
 
 /**
  * 检测默认 assistant 相对内置默认配置的漂移（只读，不写库）。
- * 与迁移脚本 migrate-assistant-tools.ts 的修复逻辑一一对应。
+ * 修复指引见 ASSISTANT_MIGRATION_HINT。
  */
 export function detectAssistantDrift(agent: AgentEntity): string[] {
   const drift: string[] = [];

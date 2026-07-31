@@ -12,7 +12,7 @@ import {
   DEFAULT_NATIVE,
 } from "../infra/agentTools.js";
 import { skillToolName, parseSkillToolName, buildSkillToolSchema, executeSkill } from "../infra/skillRunner.js";
-import { mcpToolName } from "../infra/mcpClient.js";
+import { mcpToolName } from "../infra/mcpUtils.js";
 import { createTempProjectDir, createAgentCtx, makeSkillEntity } from "./helpers/toolTestFixtures.js";
 import type { ToolRegistryEntry } from "../infra/agentTools.js";
 import fs from "fs";

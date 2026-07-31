@@ -1,7 +1,7 @@
 /**
  * W16d-3：agent.driftStatus tRPC 通道测试
  *
- * 1. 通道返回默认 assistant 漂移摘要 + 迁移脚本提示（只读：不创建、不修改）
+ * 1. 通道返回默认 assistant 漂移摘要 + 修复指引（只读：不创建、不修改）
  * 2. 人为制造漂移（摘掉一个内置默认工具）→ drift 增长并点名缺失工具；恢复后回到基线
  */
 
@@ -32,7 +32,7 @@ describe("W16d-3 agent.driftStatus tRPC 通道", () => {
     const ctx = await createContextInner();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.agent.driftStatus();
-    expect(result.migrationHint).toContain("migrate-assistant-tools");
+    expect(result.migrationHint).toContain("/agents");
     expect(result.agentId).toBeNull();
     expect(result.agentName).toBeNull();
     expect(result.drift).toEqual([]);
@@ -60,7 +60,7 @@ describe("W16d-3 agent.driftStatus tRPC 通道", () => {
 
     try {
       const before = await caller.agent.driftStatus();
-      expect(before.migrationHint).toContain("migrate-assistant-tools");
+      expect(before.migrationHint).toContain("/agents");
       expect(Array.isArray(before.drift)).toBe(true);
       expect(before.agentId).toBeTruthy();
       expect(before.agentName).toBeTruthy();

@@ -530,6 +530,23 @@ export class SessionStreamHub {
     this.runs.set(newId, state);
     this.runs.delete(oldId);
 
+    // 外部事件通道同步改键：占位窗口内推到旧 id 的事件/订阅必须随新 id 重放与投递，
+    // 否则 subscribeExternal 重放漏掉占位期的 session_queue_update 等幂等事件
+    const extRing = this.externalRing.get(oldId);
+    if (extRing) {
+      this.externalRing.delete(oldId);
+      const merged = [...(this.externalRing.get(newId) ?? []), ...extRing];
+      while (merged.length > SessionStreamHub.EXTERNAL_RING_SIZE) merged.shift();
+      this.externalRing.set(newId, merged);
+    }
+    const extSubs = this.externalSubs.get(oldId);
+    if (extSubs) {
+      this.externalSubs.delete(oldId);
+      const mergedSubs = this.externalSubs.get(newId) ?? new Set();
+      for (const sub of extSubs) mergedSubs.add(sub);
+      this.externalSubs.set(newId, mergedSubs);
+    }
+
     // 已入队但尚未 flush 的事件也迁移 sessionId
     for (const item of this.persistQueue) {
       if (item.sessionId === oldId) item.sessionId = newId;
@@ -738,20 +755,27 @@ export class SessionStreamHub {
           where: { id: sessionId, status: { in: ["active", "running", "paused"] } },
           data: { status: "active" },
         })
+        .then(async () => {
+          // 推拉铁律：状态写点后推 session_list_changed，其它标签页侧栏秒级对齐
+          const row = await prisma.chatSession.findUnique({
+            where: { id: sessionId },
+            select: { agentId: true },
+          });
+          if (!row?.agentId) return;
+          // 动态 import：uiStateNotify 反向依赖本模块（getStreamHub），静态引入会成环
+          const { notifyAgentUi } = await import("./uiStateNotify.js");
+          await notifyAgentUi(prisma, row.agentId, {
+            type: "session_list_changed",
+            agentId: row.agentId,
+            sessionId,
+            reason: "update",
+          });
+        })
         .catch((err) => {
           console.warn(`[SessionStreamHub] 停止后标 active 失败 session=${sessionId}:`, err);
         });
     }
     return true;
-  }
-
-  /** 进程退出时清理：停 cleanup interval，避免句柄泄漏阻止退出 */
-  destroy(): void {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-      this.cleanupTimer = null;
-    }
-    this.flushPersistQueue().catch((err) => { console.warn("[sessionStreamHub.ts] best-effort failed:", err instanceof Error ? err.message : err); return undefined; });
   }
 
   /**
