@@ -1,298 +1,282 @@
 ---
-title: "Markdown & KaTeX LaTeX & 手绘标注 终极语法速查手册"
-category: "教程"
-tags: ["Markdown", "LaTeX", "KaTeX", "RoughAnnotation", "语法指南"]
+title: Markdown & KaTeX LaTeX 全能速查手册
+category: 教程
 published: true
-excerpt: "全网最全的 Markdown 标准语法、GFM 拓展、KaTeX 数学公式大全与 RoughAnnotation 动态手绘标注的完整示例速查指南。"
+excerpt: >-
+  见微 OasisMind 的 Markdown、GFM 扩展语法、KaTeX / LaTeX 全量数学公式以及 RoughAnnotation
+  手绘注解效果全景穷尽指南。
+tags:
+  - Markdown
+  - LaTeX
+  - KaTeX
+  - 手写效果
+  - 指南
 ---
+# 见微 · OasisMind Markdown & KaTeX 全能速查手册
 
-# 📖 Markdown & KaTeX & 手绘标注 终极速查手册
+欢迎使用 **见微 (OasisMind)** 终极 Markdown 与数学公式指南！本文档作为系统的**语法示范与渲染标准**，穷尽涵盖了 Markdown 常用及高级语法、GFM 扩展、KaTeX / LaTeX 数学符号与环境，以及独具特色的 **RoughAnnotation 手绘注解** 效果。
 
-本手册汇集了 OasisMind 引擎支持的全部 **Markdown (GFM)** 标准语法、**KaTeX 数学公式** 表达方式以及 **RoughAnnotation 动态手绘标注** 的全套语法示例。
+***
 
----
+## 一、基础 Markdown 与 GFM 扩展
 
-## 🎨 一、 RoughAnnotation 动态手绘标注大全
-
-在文本中，你可以通过 HTML `<mark>` 标签配合 `data-annotation` 属性触发动态手绘笔触动效（当页面滚动到该位置时自动绘制）。
-
-### 1. 基础手绘类型与参数
-
-| 效果类型 | Markdown / HTML 标签源码 | 效果说明 |
-| :--- | :--- | :--- |
-| **手绘下划线** | `<mark data-annotation="underline" data-color="#e74c3c">重点标注文字</mark>` | 底部手绘红线 |
-| **手绘画圈** | `<mark data-annotation="circle" data-color="#3498db">圈选核心概念</mark>` | 手绘蓝圈整体包围 |
-| **手绘方框** | `<mark data-annotation="box" data-color="#2ecc71">框住关键参数</mark>` | 绿色矩形外框 |
-| **荧光高亮** | `<mark data-annotation="highlight" data-color="#fef08a">黄底荧光高亮</mark>` | 黄色背景笔刷涂满 |
-| **手绘括号** | `<mark data-annotation="bracket" data-color="#9b59b6">括号包围正文</mark>` | 左右两侧手绘紫色大括号 |
-| **打叉删除** | `<mark data-annotation="crossed-off" data-color="#e74c3c">打叉划掉废弃案</mark>` | 红色手绘打叉斜线 |
-| **手绘删除线** | `<mark data-annotation="strike-through" data-color="#e74c3c">手绘贯穿删除线</mark>` | 单条手绘水平贯穿线 |
-
----
-
-### 2. 高阶属性调节（粗细 / 边距 / 笔触）
-
-可以通过以下 `data-` 属性精细微调手绘质感：
-
-- `data-color`: 笔触颜色（Hex，如 `#3b82f6`、`#10b981`）
-- `data-stroke-width`: 线条粗细（默认 `2`，可设为 `1` ~ `5`）
-- `data-padding`: 标注边距（默认 `4`）
-- `data-iterations`: 迭代重复笔刷次数（默认 `2`，值越大越有手绘随意感）
-
-```html
-<!-- 粗笔触橙色框选 -->
-<mark data-annotation="box" data-color="#f97316" data-stroke-width="3" data-padding="6">粗笔触橙色矩形框</mark>
-
-<!-- 多重手绘迭代深紫圈选 -->
-<mark data-annotation="circle" data-color="#7c3aed" data-iterations="4">多重手绘迭代线条</mark>
-```
-
----
-
-### 3. 实战案例：任务看板图解（复刻代码说明图）
-
-结合 Markdown 任务列表与 `<mark>` 手绘标注，可轻松制作清晰直观的代码/任务图解：
-
-# Tasks
-
-- [ ] <mark data-annotation="box" data-color="#3b82f6">CLI-042</mark> Add export command <mark data-annotation="highlight" data-color="#d1fae5">#cli</mark> <mark data-annotation="highlight" data-color="#fee2e2">!high</mark> <mark data-annotation="underline" data-color="#8b5cf6">@blocked_by:CLI-041</mark>
-      <mark data-annotation="underline" data-color="#94a3b8">Write task output as JSON for scripts and agents</mark>
-
-```markdown
-- [ ] <mark data-annotation="box" data-color="#3b82f6">CLI-042</mark> Add export command <mark data-annotation="highlight" data-color="#d1fae5">#cli</mark> <mark data-annotation="highlight" data-color="#fee2e2">!high</mark> <mark data-annotation="underline" data-color="#8b5cf6">@blocked_by:CLI-041</mark>
-      <mark data-annotation="underline" data-color="#94a3b8">Write task output as JSON for scripts and agents</mark>
-```
-
----
-
-## 🧮 二、 KaTeX / LaTeX 数学公式穷尽指南
-
-OasisMind 内置了完整的 KaTeX 解析引擎，支持包含微分方程、矩阵、方程组、希腊字母在内的全量学术公式。
-
-### 1. 行内公式与独立块级公式
-
-- **行内公式**：使用单美元符号包围，例如：质能方程 $E = mc^2$ 与欧拉恒等式 $e^{i\pi} + 1 = 0$。
-- **独立块级公式**：使用双美元符号 `$$ ... $$` 包围或 ` ```math ` 代码块：
-
-$$
-i\hbar\frac{\partial}{\partial t}\Psi(\mathbf{r},t) = \left[ -\frac{\hbar^2}{2m}\nabla^2 + V(\mathbf{r},t) \right]\Psi(\mathbf{r},t)
-$$
-
----
-
-### 2. 希腊字母 (Greek Letters)
-
-#### 小写希腊字母
-$\alpha$ (`\alpha`), $\beta$ (`\beta`), $\gamma$ (`\gamma`), $\delta$ (`\delta`), $\epsilon$ (`\epsilon`), $\varepsilon$ (`\varepsilon`), $\zeta$ (`\zeta`), $\eta$ (`\eta`), $\theta$ (`\theta`), $\iota$ (`\iota`), $\kappa$ (`\kappa`), $\lambda$ (`\lambda`), $\mu$ (`\mu`), $\nu$ (`\nu`), $\xi$ (`\xi`), $\pi$ (`\pi`), $\rho$ (`\rho`), $\sigma$ (`\sigma`), $\tau$ (`\tau`), $\upsilon$ (`\upsilon`), $\phi$ (`\phi`), $\varphi$ (`\varphi`), $\chi$ (`\chi`), $\psi$ (`\psi`), $\omega$ (`\omega`)
-
-#### 大写希腊字母
-$\Gamma$ (`\Gamma`), $\Delta$ (`\Delta`), $\Theta$ (`\Theta`), $\Lambda$ (`\Lambda`), $\Xi$ (`\Xi`), $\Pi$ (`\Pi`), $\Sigma$ (`\Sigma`), $\Upsilon$ (`\Upsilon`), $\Phi$ (`\Phi`), $\Psi$ (`\Psi`), $\Omega$ (`\Omega`)
-
----
-
-### 3. 基础算子、关系符与符号 (Operators & Symbols)
-
-| 符号类别 | 常见 LaTeX 表达式 | 渲染输出 |
-| :--- | :--- | :--- |
-| **四则算术** | `a \pm b \mp c \times d \div e \cdot f` | $a \pm b \mp c \times d \div e \cdot f$ |
-| **比较关系** | `a \le b \ge c \neq d \approx e \equiv f \propto g` | $a \le b \ge c \neq d \approx e \equiv f \propto g$ |
-| **集合与逻辑**| `x \in A \notin B \subset C \subseteq D \cup E \cap F` | $x \in A \notin B \subset C \subseteq D \cup E \cap F$ |
-| **量词与符号**| `\forall x, \exists y, \infty, \partial, \nabla, \hbar` | $\forall x, \exists y, \infty, \partial, \nabla, \hbar$ |
-
----
-
-### 4. 分式、根式、求和与积分 (Calculus & Algebra)
-
-- **分式**：`\frac{a}{b}` $\rightarrow \frac{a}{b}$；大尺寸分式 `\dfrac{a}{b}` $\rightarrow \dfrac{a}{b}$
-- **根式**：`\sqrt{x}` $\rightarrow \sqrt{x}$；高次根式 `\sqrt[3]{x^2 + y^2}` $\rightarrow \sqrt[3]{x^2 + y^2}$
-- **求和与连乘**：
-  $$\sum_{k=1}^{n} k = \frac{n(n+1)}{2}, \quad \prod_{i=1}^{n} i = n!$$
-- **定积分与重积分**：
-  $$\int_{a}^{b} f(x) \, dx, \quad \iint_{D} f(x,y) \, dx dy, \quad \oint_{C} \mathbf{F} \cdot d\mathbf{r}$$
-- **极限**：
-  $$\lim_{x \to 0} \frac{\sin x}{x} = 1, \quad \lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n = e$$
-
----
-
-### 5. 矩阵与行列式 (Matrices & Determinants)
-
-#### 圆括号矩阵 (`pmatrix`)
-$$
-\mathbf{A} = \begin{pmatrix}
-a_{11} & a_{12} & \cdots & a_{1n} \\
-a_{21} & a_{22} & \cdots & a_{2n} \\
-\vdots & \vdots & \ddots & \vdots \\
-a_{m1} & a_{m2} & \cdots & a_{mn}
-\end{pmatrix}
-$$
-
-#### 方括号矩阵 (`bmatrix`) 与 行列式 (`vmatrix`)
-$$
-\mathbf{B} = \begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}, \quad |\mathbf{B}| = \begin{vmatrix} 1 & 2 \\ 3 & 4 \end{vmatrix} = 1 \times 4 - 2 \times 3 = -2
-$$
-
----
-
-### 6. 多行推导对齐与分段函数 (Aligned & Cases)
-
-#### 分段函数 (`cases`)
-$$
-f(x) = \begin{cases}
-0, & x < 0 \\
-x^2 \sin\left(\frac{1}{x}\right), & x > 0 \\
-\frac{1}{2}, & x = 0
-\end{cases}
-$$
-
-#### 步骤推导等号对齐 (`aligned`)
-$$
-\begin{aligned}
-(a + b)^3 &= (a + b)(a + b)^2 \\
-&= (a + b)(a^2 + 2ab + b^2) \\
-&= a^3 + 3a^2b + 3ab^2 + b^3
-\end{aligned}
-$$
-
----
-
-### 7. 向量、张量与箭头 (Vectors & Arrows)
-
-- 向量箭头：`\vec{v}` $\rightarrow \vec{v}$，黑体向量：`\mathbf{v}` $\rightarrow \mathbf{v}$
-- 粗体张量：`\hat{\mathbf{n}}` $\rightarrow \hat{\mathbf{n}}$，平均值：`\bar{x}` $\rightarrow \bar{x}$
-- 逻辑推导箭头：`A \implies B` $\rightarrow A \implies B$；`A \iff B` $\rightarrow A \iff B$
-
----
-
-## 📝 三、 标准 Markdown & GFM 拓展语法
-
-### 1. 标题与排版
+### 1. 标题与层级
 
 # 一级标题 H1
+
 ## 二级标题 H2
+
 ### 三级标题 H3
+
 #### 四级标题 H4
 
----
+##### 五级标题 H5
 
-### 2. 文本强调与内联样式
+###### 六级标题 H6
 
-- **粗体文字**：`**粗体文字**` 或 `__粗体文字__`
-- *斜体文字*：`*斜体文字*` 或 `_斜体文字_`
-- ***粗斜体***：`***粗斜体***`
-- ~~删除线文字~~：`~~删除线文字~~`
-- <u>带下划线文字</u>：`<u>带下划线文字</u>`
-- 上标与下标：$H_2O$ (`H_2O`)， $2^{10} = 1024$ (`2^{10}`)
-- 键盘按键风格：按 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> 打开命令面板
+> **提示**：鼠标悬停在任意标题上，左侧会自动浮现与标题字号一致的 `#` 锚点标识，点击即可复制链接或跳转。
 
----
+***
 
-### 3. 引用与多层嵌套引用
+### 2. 文本强调与行内样式
 
-> 这是一级引用文本。
-> 
-> > 这是二级嵌套引用文本。
-> > > 这是三级嵌套引用文本。
+* **加粗文本** (`**加粗**` 或 `__加粗__`)
+* *斜体文本* (`*斜体*` 或 `_斜体_`)
+* ***加粗斜体*** (`***加粗斜体***`)
+* ~~删除线~~ (`~~删除线~~`)
+* 行内代码 `const oasis = "Mind"`
+* 下标：H~~2~~O，上标：X^2^
+* 键盘按键：<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>
 
----
+***
 
-### 4. 列表与任务清单 (Task Lists)
+### 3. 列表与任务清单
 
 #### 无序列表
-- 关联项目 1
-- 关联项目 2
-  - 子项目 2.1
-  - 子项目 2.2
+
+* 墨色花园设计语言
+* 本地优先，Markdown 为唯一事实源
+  * 支持三栏式 Agent 智能体对话
+  * 支持自定义 Skill 与 MCP 工具扩展
 
 #### 有序列表
-1. 第一步：准备配置环境
-2. 第二步：执行构建脚本
-3. 第三步：部署服务节点
 
-#### 任务清单 (GFM Task List)
-- [x] 已完成的任务项
-- [ ] 待处理的开发任务
-- [ ] 待验证的测试用例
+1. 第一步：配置 SQLite / Prisma 数据库
+2. 第二步：同步 `content/` 目录下知识库文件
+3. 第三步：启动 Next.js 16 + React 19 客户端
 
----
+#### 任务清单 (Task Lists)
 
-### 5. 代码块与语法高亮 (Code Blocks)
+* [x] 完成 L1–L5 系统基础架构落地
+* [x] 重构 Chat 三层状态机 store
+* [x] 支持 RoughAnnotation 局部滚动定位与手绘标注
+* [ ] 探索分布式 Swarm 多 Agent 编排
 
-行内代码示例：`const version = "v2.5.0";`
+***
 
-#### TypeScript 代码块
+### 4. 引用块与多级嵌套
+
+> **哲学声明**：见微（OasisMind）定位是以 Markdown 为原子、AI 为引擎的数字花园。
+>
+> > **架构原则**：本地 Markdown 文件是数据的唯一事实源，SQLite 只作为查询与缓存层。
+> >
+> > > **设计铁律**：禁止打补丁，必须从架构层面根治不变量。
+
+***
+
+### 5. 表格 (GFM Tables)
+
+| 功能特性 |          技术栈 / 规范         |                                         状态                                         |                         备注说明 |
+| :--- | :-----------------------: | :--------------------------------------------------------------------------------: | ---------------------------: |
+| 前端框架 | Next.js 16.2 (App Router) | <mark data-annotation="highlight" data-color="rgba(52, 211, 153, 0.35)">已落地</mark> | React 19 + Server Components |
+| 样式系统 |      Tailwind CSS 4.3     | <mark data-annotation="highlight" data-color="rgba(52, 211, 153, 0.35)">已落地</mark> |       莫兰迪配色 + tw-animate-css |
+| 通信协议 |   tRPC 11.1 + SuperJSON   | <mark data-annotation="highlight" data-color="rgba(52, 211, 153, 0.35)">已落地</mark> |                 类型安全 端到端 API |
+| 白板手绘 |    perfect-freehand SVG   |             <mark data-annotation="box" data-color="#1f8a7a">交互式</mark>            |             压感笔迹 + Undo/Redo |
+
+***
+
+### 6. 代码块与语法高亮
+
 ```typescript
-interface UserProfile {
+export interface AgentMessage {
   id: string;
-  name: string;
-  role: "admin" | "user";
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: number;
 }
 
-export function greet(user: UserProfile): string {
-  return `Hello, ${user.name}! (Role: ${user.role})`;
-}
+// 示例：类型安全的 tRPC Procedure 调用
+export const getPostBySlug = publicProcedure
+  .input(z.object({ slug: z.string() }))
+  .query(async ({ ctx, input }) => {
+    return ctx.prisma.post.findUnique({ where: { slug: input.slug } });
+  });
 ```
 
-#### Python 代码块
-```python
-def fibonacci(n: int) -> list[int]:
-    a, b = 0, 1
-    result = []
-    for _ in range(n):
-        result.append(a)
-        a, b = b, a + b
-    return result
+***
 
-print(fibonacci(8))
-```
+## 二、KaTeX / LaTeX 全量数学公式 (穷尽速查)
 
----
+见微 内置 `react-markdown` + `remark-math` + `rehype-katex`，支持高精度的 LaTeX 数学公式渲染。点击任意公式可展开交互式源码面板。
 
-### 6. 表格与对齐 (GFM Tables)
+### 1. 上下括号与标记 (`\overbrace` & `\underbrace` & `\tag`)
 
-| 左对齐列 (Left) | 居中对齐列 (Center) | 右对齐列 (Right) | 状态 |
-| :--- | :---: | ---: | :---: |
-| React 19 | Frontend | 128.5 KB | <mark data-annotation="highlight" data-color="#d1fae5">稳定</mark> |
-| Next.js 16 | App Router | 2.4 MB | <mark data-annotation="highlight" data-color="#d1fae5">稳定</mark> |
-| Prisma 6 | ORM | 450 KB | <mark data-annotation="box" data-color="#3b82f6">活跃</mark> |
+#### 上括号 `\overbrace`
 
----
+$$
+\overbrace{a_1 + a_2 + \dots + a_n}^{n \text{ 个正实数}} \ge n \sqrt[n]{a_1 a_2 \dots a_n} \tag{1.1}
+$$
 
-### 7. 链接、双链与超链接
+#### 下括号 `\underbrace`
 
-- **标准超链接**：[OasisMind 官方文档](https://github.com/SingularGuyLeBorn/KnowPilot)
-- **双链 (Wiki Links)**：`[[posts/welcome-to-knowpilot|欢迎使用指南]]`
-- **自动解析链接**：<https://github.com>
+$$
+f(x) = \underbrace{x^4 - 2x^2 + 1}_{\text{可化为 } (x^2-1)^2} + \underbrace{\sin^2(x) + \cos^2(x)}_{\text{恒等于 } 1} \tag{1.2}
+$$
 
----
+#### 定位与间距 (`\quad`, `\qquad`, `\,`)
 
-## 🛠️ 四、 OasisMind 特有高级组件
+$$
+A \quad \text{与} \qquad B \quad \text{之间具有间距}
+$$
 
-### 1. Thinking Node 结构化思考块
+***
 
-可以使用自定义 `<thinkingnode>` 标签插入结构化推导与思考过程：
+### 2. 矩阵全系列 (Six Matrix Environments)
 
-<thinkingnode category="架构分析">
-这是系统的底层思考推导逻辑过程。Thinking Node 常用于展示 AI Agent 的推理推断或复杂计算链路。
-</thinkingnode>
+#### 普通矩阵 `matrix`
 
-```html
-<thinkingnode category="架构分析">
-这是系统的底层思考推导逻辑过程。
-</thinkingnode>
-```
+$$
+\begin{matrix} a & b \\ c & d \end{matrix}
+$$
 
----
+#### 圆括号矩阵 `pmatrix`
 
-### 2. Excalidraw 手绘画板嵌入
+$$
+\begin{pmatrix} 1 & 2 & 3 \\ 0 & 1 & 4 \\ 5 & 6 & 0 \end{pmatrix}
+$$
 
-使用 ` ```kp-board ` 代码块可直接在 Markdown 中嵌入可交互的手绘 Canvas 画板：
+#### 方括号矩阵 `bmatrix`
+
+$$
+\mathbf{J} = \begin{bmatrix} \frac{\partial f_1}{\partial x_1} & \dots & \frac{\partial f_1}{\partial x_n} \\ \vdots & \ddots & \vdots \\ \frac{\partial f_m}{\partial x_1} & \dots & \frac{\partial f_m}{\partial x_n} \end{bmatrix} \tag{2.1}
+$$
+
+#### 行列式矩阵 `vmatrix`
+
+$$
+\det(A) = \begin{vmatrix} a_{11} & a_{12} \\ a_{21} & a_{22} \end{vmatrix} = a_{11}a_{22} - a_{12}a_{21}
+$$
+
+#### 范数矩阵 `Vmatrix`
+
+$$
+\|A\| = \begin{Vmatrix} x_1 & x_2 \\ y_1 & y_2 \end{Vmatrix}
+$$
+
+#### 行内小矩阵 `smallmatrix`
+
+行内嵌入小矩阵：$\left(\begin{smallmatrix} a & b \\ c & d \end{smallmatrix}\right)$ 完美适应正文行高。
+
+***
+
+### 3. 多行对齐与分段函数 (`aligned` & `cases`)
+
+#### 多行推导对齐 `aligned`
+
+$$
+\begin{aligned}
+\nabla \cdot \mathbf{E} &= \frac{\rho}{\varepsilon_0} \\
+\nabla \cdot \mathbf{B} &= 0 \\
+\nabla \times \mathbf{E} &= -\frac{\partial \mathbf{B}}{\partial t} \\
+\nabla \times \mathbf{B} &= \mu_0 \mathbf{J} + \mu_0 \varepsilon_0 \frac{\partial \mathbf{E}}{\partial t}
+\end{aligned} \tag{3.1}
+$$
+
+#### 分段函数 `cases`
+
+$$
+u(x, t) = \begin{cases} 
+u_0(x - ct), & t \ge 0, \, x > ct \\ 
+g\left(t - \frac{x}{c}\right), & t \ge 0, \, x \le ct 
+\end{cases} \tag{3.2}
+$$
+
+***
+
+### 4. 微积分、极限与多重积分
+
+#### 多重积分与路径积分
+
+$$
+\iint_D \left( \frac{\partial Q}{\partial x} - \frac{\partial P}{\partial y} \right) \mathrm{d}x \mathrm{d}y = \oint_{\partial D} (P \mathrm{d}x + Q \mathrm{d}y) \tag{4.1}
+$$
+
+#### 三重积分与极限
+
+$$
+\lim_{N \to \infty} \sum_{i=1}^N f(x_i^*) \Delta x = \iiint_\Omega f(x, y, z) \, \mathrm{d}V
+$$
+
+#### 偏导数与拉普拉斯算子
+
+$$
+\Delta \psi = \nabla^2 \psi = \frac{\partial^2 \psi}{\partial x^2} + \frac{\partial^2 \psi}{\partial y^2} + \frac{\partial^2 \psi}{\partial z^2} = \frac{1}{c^2} \frac{\partial^2 \psi}{\partial t^2}
+$$
+
+***
+
+### 5. 希腊字母与字体变体
+
+#### 希腊字母及变体
+
+* 小写：
+* 大写：$\Gamma, \Delta, \Theta, \Lambda, \Xi, \Pi, \Sigma, \Upsilon, \Phi, \Psi, \Omega$
+
+#### 数学字体集
+
+* 双线体（黑板报体）：
+* 花体（手写体）：
+* 德文哥特体：$\mathbf{v}, \mathbf{x}, \mathrm{d}x, \mathrm{e}^{ix}, \mathsf{Var}(X)$
+* 粗体与正体：$\mathbf{v}, \mathbf{x}, \mathrm{d}x, \mathrm{e}^{ix}, \mathsf{Var}(X)$
+
+#### 帽子与修饰符
+
+$$
+\hat{x}, \quad \bar{x}, \quad \tilde{x}, \quad \vec{v}, \quad \dot{y}, \quad \ddot{y}, \quad \widehat{AB}, \quad \widetilde{XYZ}
+$$
+
+***
+
+## 三、RoughAnnotation 手绘注解效果全集
+
+见微 采用 `rough-notation` 打造极致手绘感文本标注。所有手绘效果均具有视口滚动自然随文平移的架构保障。
+
+### 1. 常见手绘样式示范
+
+* **单/双下划线**：`<mark data-annotation="underline" data-color="#7d917f">莫兰迪鼠尾草绿</mark>` 渲染效果为 <mark data-annotation="underline" data-color="#7d917f">莫兰迪鼠尾草绿</mark>。
+* **手绘矩形框**：`<mark data-annotation="box" data-color="#1f8a7a">青绿高亮框</mark>` 渲染效果为 <mark data-annotation="box" data-color="#1f8a7a">青绿高亮框</mark>。
+* **手绘圆圈**：`<mark data-annotation="circle" data-color="#e74c3c">红色重点圈出</mark>` 渲染效果为 <mark data-annotation="circle" data-color="#e74c3c">红色重点圈出</mark>。
+* **荧光笔高亮**：`<mark data-annotation="highlight" data-color="rgba(250, 204, 21, 0.45)">黄色半透明荧光</mark>` 渲染效果为 <mark data-annotation="highlight" data-color="rgba(250, 204, 21, 0.45)">黄色半透明荧光</mark>。
+* **手绘删除线**：`<mark data-annotation="strike-through" data-color="#95a5a6">废弃逻辑标记</mark>` 渲染效果为 <mark data-annotation="strike-through" data-color="#95a5a6">废弃逻辑标记</mark>。
+* **叉号标记 (Crossed-off)**：`<mark data-annotation="crossed-off" data-color="#e74c3c">禁止违规调用</mark>` 渲染效果为 <mark data-annotation="crossed-off" data-color="#e74c3c">禁止违规调用</mark>。
+
+### 2. 四向手绘括号 (Brackets)
+
+* **左括号**：`<mark data-annotation="bracket" data-bracket="left" data-color="#8e44ad">左侧大括号包裹内容</mark>` 渲染为 <mark data-annotation="bracket" data-bracket="left" data-color="#8e44ad">左侧大括号包裹内容</mark>
+* **右括号**：`<mark data-annotation="bracket" data-bracket="right" data-color="#8e44ad">右侧大括号包裹内容</mark>` 渲染为 <mark data-annotation="bracket" data-bracket="right" data-color="#8e44ad">右侧大括号包裹内容</mark>
+* **上括号**：`<mark data-annotation="bracket" data-bracket="top" data-color="#1f8a7a">顶部大括号包裹内容</mark>` 渲染为 <mark data-annotation="bracket" data-bracket="top" data-color="#1f8a7a">顶部大括号包裹内容</mark>
+* **下括号**：`<mark data-annotation="bracket" data-bracket="bottom" data-color="#1f8a7a">底部大括号包裹内容</mark>` 渲染为 <mark data-annotation="bracket" data-bracket="bottom" data-color="#1f8a7a">底部大括号包裹内容</mark>
+
+***
+
+## 四、交互式手绘白板 (`kp-board`)
+
+见微 提供了内嵌真笔迹手绘白板，支持**钢笔、荧光笔、压感调节、橡皮擦、Undo (Ctrl+Z) 与 Redo (Ctrl+Y)**。
 
 ```kp-board
-{"type":"excalidraw","version":2,"elements":[]}
+{"v":2,"w":960,"h":540,"strokes":[{"color":"#1c1917","size":8,"points":[134.71206665039062,90.64749908447266,0.5,133.7053680419922,91.65416717529297,0.5,132.69874572753906,94.67420196533203,0.5,130.68533325195312,100.71420288085938,0.5,129.67869567871094,107.76091003417969,0.5,128.6719970703125,115.81424713134766,0.5,128.6719970703125,122.86095428466797,0.5,127.66536712646484,130.91432189941406,0.5,127.66536712646484,137.96099853515625,0.5,127.66536712646484,144.00103759765625,0.5,127.66536712646484,153.0610809326172,0.5,130.68533325195312,161.11444091796875,0.5,134.71206665039062,169.16778564453125,0.5,141.7587127685547,178.2278289794922,0.5,150.81875610351562,187.28785705566406,0.5,160.88548278808594,196.34786987304688,0.5,173.97219848632812,204.40127563476562,0.5,192.09228515625,212.45462036132812,0.5,206.1856231689453,217.4879913330078,0.5,219.27232360839844,220.50794982910156,0.5,231.35240173339844,223.52798461914062,0.5,241.41908264160156,224.53468322753906,0.5,248.4657745361328,224.53468322753906,0.5,253.4991455078125,224.53468322753906,0.5,256.5191955566406,222.5213623046875,0.5,259.5391540527344,221.5146484375,0.5,260.5458679199219,218.49461364746094,0.5,260.5458679199219,216.4812774658203,0.5,260.5458679199219,213.46131896972656,0.5,256.5191955566406,207.42124938964844,0.5,249.4724884033203,199.36790466308594,0.5,240.41244506835938,191.3145294189453,0.5,233.36573791503906,186.2812042236328,0.5,226.31903076171875,182.25450134277344,0.5,224.30569458007812,180.2411651611328,0.5,222.2923583984375,179.2344970703125,0.5,226.31903076171875,181.24783325195312,0.5,232.35903930664062,185.2745361328125,0.5,240.41244506835938,190.307861328125,0.5,251.48582458496094,196.34786987304688,0.5,263.5658264160156,203.3945770263672,0.5,275.6459045410156,208.42794799804688,0.5,286.7192687988281,214.46795654296875,0.5,294.7726135253906,217.4879913330078,0.5,299.80596923828125,220.50794982910156,0.5,301.8193054199219,221.5146484375,0.5,300.81268310546875,222.5213623046875,0.5,298.7992858886719,222.5213623046875,0.5,294.7726135253906,222.5213623046875,0.5,290.7459411621094,222.5213623046875,0.5,286.7192687988281,222.5213623046875,0.5,284.7059326171875,222.5213623046875,0.5,282.6925964355469,222.5213623046875,0.5,286.7192687988281,222.5213623046875,0.5,292.75927734375,222.5213623046875,0.5,302.8260192871094,222.5213623046875,0.5,311.885986328125,222.5213623046875,0.5,320.946044921875,222.5213623046875,0.5,328.99945068359375,222.5213623046875,0.5,337.0527648925781,222.5213623046875,0.5,345.1061096191406,222.5213623046875,0.5,352.15283203125,222.5213623046875,0.5,356.1794738769531,222.5213623046875,0.5,360.2061462402344,222.5213623046875,0.5,363.2261962890625,222.5213623046875,0.5,365.2395935058594,222.5213623046875,0.5],"tool":"pen"}]}
 ```
 
----
+***
 
-### 🌟 总结
-
-这份速查手册穷尽了 Markdown、KaTeX 公式与 OasisMind 动态手绘标注的全部常见语法。你可以随时编辑或引用本文档作为写作与设计的参考指南！
+*总结：见微（OasisMind）旨在融合极致的写字体验、数学严密性与 AI 智能体生产力。*
