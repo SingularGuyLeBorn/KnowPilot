@@ -139,6 +139,23 @@
       }
       .milkdown-editor .milkdown li > p {
         margin: 0;
+        min-height: 1.7em;
+      }
+      /* ProseMirror  hack 节点：Tailwind preflight 把 img 默认变成 block，会导致段落内被撑开/多出空行，必须恢复 inline 且零尺寸。 */
+      .milkdown-editor .milkdown .ProseMirror-separator {
+        display: inline;
+        width: 0;
+        height: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+      /* ProseMirror 在非空段落末尾加的 trailingBreak 会在 inline-block/leaf 节点后产生多余空行；
+         空段落（仅含该 br）保留，避免塌陷。 */
+      .milkdown-editor .milkdown .ProseMirror-trailingBreak:not(:only-child) {
+        display: none;
+      }
+      .milkdown-editor .milkdown p {
+        min-height: 1.7em;
       }
       .milkdown-editor .milkdown a {
         color: var(--kp-brand-deep);
