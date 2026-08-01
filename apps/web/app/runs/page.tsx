@@ -13,6 +13,7 @@ import { EmptyState, LoadingState, ConfirmDialog, Pagination, PageHeader } from 
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { agentLabel, runLabel, sessionLabel } from "@/lib/displayLabels";
 import { trpc } from "@/lib/trpc";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 const STATUS_STYLE: Record<Run["status"], string> = {
   pending: "kp-badge-warning",
@@ -50,7 +51,7 @@ export default function RunsPage() {
         const busy =
           !statusFilter ||
           statusFilter === "running" ||
-          items.some((r) => r.status === "running" || r.status === "pending");
+          items.some((r: { status?: string }) => r.status === "running" || r.status === "pending");
         return busy ? 4000 : 20_000;
       },
     },
@@ -90,7 +91,7 @@ export default function RunsPage() {
       />
 
       {(statusFilter === "interrupted" ||
-        data?.items?.some((r) => r.status === "interrupted")) && (
+        data?.items?.some((r: Run) => r.status === "interrupted")) && (
         <div
           className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
           data-testid="runs-interrupted-resume-hint"
@@ -161,10 +162,12 @@ export default function RunsPage() {
                               <span
                                 className="text-[10px] font-mono text-amber-700 dark:text-amber-400"
                                 data-testid="run-awaiting-human-scope"
-                                title="awaiting_human 被堵 scope"
+                                title="AwaitingHuman 被堵 Scope"
                               >
                                 等待审批
-                                {scopes.length > 0 ? ` · ${scopes.join(", ")}` : ""}
+                                {scopes.length > 0
+                                  ? ` · ${scopes.map(toPascalCaseId).join(", ")}`
+                                  : ""}
                               </span>
                             );
                           })()}

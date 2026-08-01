@@ -102,6 +102,7 @@ const stableProps: ChatSidebarProps = {
   setToast: noop,
   refetchSession: noop,
   cancelAsyncJobMutate: noop,
+  resumeAsyncJobMutate: noop,
   pinAsyncJobMutate: noop,
   runtimeGroupTab: "async",
   setRuntimeGroupTab: noop,

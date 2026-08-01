@@ -13,6 +13,7 @@ import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { EmptyState, LoadingState } from "@/components/shared";
 import { UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 const NODE_W = 148;
 const NODE_H = 52;
@@ -127,7 +128,7 @@ export function SessionRotateLineageView() {
       <EmptyState
         icon={<GitBranch className="h-6 w-6 opacity-50" />}
         title="暂无会话轮换血缘"
-        description="Agent 调用 session_rotate 后，会在此只读展示 rotatedFrom / rotatedTo 链与图。"
+        description="Agent 调用 SessionRotate 后，会在此只读展示 RotatedFrom / RotatedTo 链与图。"
       />
     );
   }
@@ -269,7 +270,7 @@ export function SessionRotateLineageView() {
                           className="fill-[var(--kp-text-3)]"
                           style={{ fontSize: 10 }}
                         >
-                          {n.status}
+                          {toPascalCaseId(n.status)}
                           {n.agentName ? ` · ${n.agentName.slice(0, 8)}` : ""}
                         </text>
                       </a>
@@ -395,7 +396,7 @@ export function SessionRotateLineageView() {
                             y={y + 38}
                             style={{ fontSize: 9, fill: "var(--kp-text-3)" }}
                           >
-                            {n.status}
+                            {toPascalCaseId(n.status)}
                           </text>
                         </g>
                       ))}

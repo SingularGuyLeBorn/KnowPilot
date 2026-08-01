@@ -6,7 +6,11 @@
  * - 只取 assistant 激活版本；不双写 toolCalls / versionMeta
  * - 工具结果按 DEFAULT_MICRO_COMPACT_TOOL_MAX_CHARS 截断
  * - thinking 单独计「思考」
- * - ↑↓ 为各轮 API tokenUsage 累计（会叠乘），不是当前窗口
+ *
+ * 两个百分比勿混用（UI 只把 ratio 当主指标）：
+ * - ratio = estimatedTotal / maxContextTokens（当前送模窗口占模型上限）
+ * - compactRatio = estimatedChars / compactCharThreshold ≈ ratio / triggerRatio（距自动压缩）
+ * - inputTokens/outputTokens = 各轮 API 累计叠乘，≠ 当前窗口
  */
 
 import type { ChatMessage } from "@knowpilot/shared";
@@ -18,7 +22,11 @@ import {
   resolveModelContextWindowTokens,
 } from "@knowpilot/shared";
 import { formatTokenCount } from "@/lib/tokenBudget";
-import { COMPACT_BOUNDARY_PREFIX, SUMMARY_MARKER } from "@/lib/compactMarkers";
+import {
+  COMPACT_BOUNDARY_PREFIX,
+  SUMMARY_MARKER,
+  isCompactBoundaryMessage,
+} from "@/lib/compactMarkers";
 
 export interface ContextUsageSegment {
   id: string;
@@ -131,15 +139,7 @@ function isRealToolCall(tc: StoredToolCall): boolean {
   return Boolean(name);
 }
 
-/** 与 server chatHistory.isCompactBoundaryHistoryItem 对齐 */
-export function isCompactBoundaryMessage(msg: ChatMessage): boolean {
-  const content = msg.content ?? "";
-  if (content.includes(COMPACT_BOUNDARY_PREFIX)) return true;
-  const tools = getActiveAssistantParts(msg).toolCalls;
-  return tools.some(
-    (tc) => tc.kind === "compact" || tc.name === "__context_compact__",
-  );
-}
+export { isCompactBoundaryMessage };
 
 /**
  * 与 server historySinceLastCompactBoundary 对齐：

@@ -15,7 +15,7 @@ export default function SessionLineagePage() {
       <PageHeader
         icon={Waypoints}
         title="会话轮换血缘"
-        description="从 session_rotate 的 rotatedFrom / rotatedTo 边字段派生链与图；点击节点打开 Chat。"
+        description="从 SessionRotate 的 RotatedFrom / RotatedTo 边字段派生链与图；点击节点打开 Chat。"
       />
       <SessionRotateLineageView />
     </AdminPage>

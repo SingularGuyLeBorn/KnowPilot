@@ -16,6 +16,7 @@ import { EmptyState, LoadingState, Pagination, PageHeader } from "@/components/s
 import { cn } from "@/lib/utils";
 import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
+import { formatToolDisplayName, toPascalCaseId } from "@/lib/toolDisplayName";
 
 type StatusFilter = "all" | "pending" | "approved" | "rejected" | "executed";
 
@@ -280,23 +281,23 @@ export default function ApprovalsPage() {
                           className="h-4 w-4 accent-[var(--kp-brand-deep)]"
                           checked={selected.has(approval.id)}
                           onChange={() => toggleOne(approval.id)}
-                          aria-label={`选择 ${approval.toolName}`}
+                          aria-label={`选择 ${formatToolDisplayName(approval.toolName)}`}
                         />
                       )}
                       <code className="rounded-lg bg-[var(--kp-bg-mute)] px-2 py-1 text-sm font-bold text-[var(--kp-text-1)]">
-                        {approval.toolName}
+                        {formatToolDisplayName(approval.toolName)}
                       </code>
                       <span className={cn("kp-badge", STATUS_BADGE[approval.status] ?? "kp-badge-warning")}>
-                        {STATUS_LABELS[approval.status] ?? approval.status}
+                        {STATUS_LABELS[approval.status] ?? toPascalCaseId(approval.status)}
                       </span>
                       {approval.decisionScope ? (
                         <code
                           className="kp-badge"
                           style={{ background: "var(--kp-bg-mute)", color: "var(--kp-text-2)" }}
-                          title="decisionScope（调度面相交检查）"
+                          title="DecisionScope（调度面相交检查）"
                           data-testid="approval-decision-scope"
                         >
-                          {approval.decisionScope}
+                          {toPascalCaseId(approval.decisionScope)}
                         </code>
                       ) : null}
                     </div>

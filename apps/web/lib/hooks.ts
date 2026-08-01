@@ -164,7 +164,7 @@ export const useInbox = () => {
   return {
     ...base,
     useStats: (options?: any) => trpc.inbox.stats.useQuery(undefined, options),
-    useFacets: (input?: { status?: string }, options?: any) =>
+    useFacets: (input?: { status?: "fetched" | "distilled" | "ignored" }, options?: any) =>
       trpc.inbox.facets.useQuery(input ?? {}, options),
     useCaptureUrl: () =>
       trpc.inbox.captureUrl.useMutation({ onSuccess: invalidate }),

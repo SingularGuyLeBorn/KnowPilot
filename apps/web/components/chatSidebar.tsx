@@ -64,7 +64,8 @@ export interface ChatSidebarProps {
   setError: (msg: string | null) => void;
   setToast: (msg: string | null) => void;
   refetchSession: () => void;
-  cancelAsyncJobMutate: ReturnType<typeof trpc.agent.cancelAsyncJob.useMutation>["mutate"];
+  cancelAsyncJobMutate: (input: { jobId: string }) => void;
+  resumeAsyncJobMutate: (input: { jobId: string }) => void;
   pinAsyncJobMutate: ReturnType<typeof trpc.agent.toggleAsyncJobPinned.useMutation>["mutate"];
   runtimeGroupTab: "async" | "sync" | "side";
   setRuntimeGroupTab: (tab: "async" | "sync" | "side") => void;
@@ -107,6 +108,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   setToast,
   refetchSession,
   cancelAsyncJobMutate,
+  resumeAsyncJobMutate,
   pinAsyncJobMutate,
   runtimeGroupTab,
   setRuntimeGroupTab,
@@ -199,7 +201,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         return;
       }
       utils.session.list.invalidate().catch(catchUnlessCancelled("components/chatSidebar.tsx"));
-      if (effectiveSessionId === id) refetchSession().catch(catchUnlessCancelled("components/chatSidebar.tsx"));
+      if (effectiveSessionId === id) refetchSession();
       setEditingSessionId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "重命名失败");
@@ -299,6 +301,7 @@ export const ChatSidebar = memo(function ChatSidebar({
                 consumedItems={runtimeConsumedItems}
                 syncTaskItems={syncTaskItems}
                 onCancel={(jobId) => cancelAsyncJobMutate({ jobId })}
+                onResume={(jobId) => resumeAsyncJobMutate({ jobId })}
                 onTogglePin={(jobId, pinned) => pinAsyncJobMutate({ jobId, pinned })}
                 sidePanel={
                   <div data-testid="left-runtime-side-runs">

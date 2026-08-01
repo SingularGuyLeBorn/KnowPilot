@@ -18,6 +18,7 @@ import {
 import { trpc } from "../lib/trpc";
 import type { ChatMessage, ChatImageAttachment } from "@knowpilot/shared";
 import { PostContent } from "./post/PostContent";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 /** 从消息里提取的文件项 */
 type ExtractedFile = {
@@ -316,7 +317,7 @@ export function ChatFilesPanel({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm text-[var(--kp-text-1)]">{f.name}</span>
                 <span className="text-xs text-[var(--kp-text-3)]">
-                  {f.source === "upload" ? "上传" : "Agent 创建"} · {f.type}
+                  {f.source === "upload" ? "上传" : "Agent 创建"} · {toPascalCaseId(f.type)}
                 </span>
               </span>
               <Download

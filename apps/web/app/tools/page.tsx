@@ -24,6 +24,7 @@ import { useTool, useNativeCapabilities } from "@/lib/hooks";
 import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { EmptyState, KpSelect, LoadingState, ConfirmDialog, Pagination, NativeCapabilitiesPanel, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
+import { formatToolDisplayName } from "@/lib/toolDisplayName";
 
 type ToolForm = {
   name: string;
@@ -448,7 +449,9 @@ export default function ToolsPage() {
                         <Icon className="h-5 w-5" />
                       </div>
                       <div>
-                        <h3 className="font-bold text-[var(--kp-text-1)]">{tool.name}</h3>
+                        <h3 className="font-bold text-[var(--kp-text-1)]">
+                          {formatToolDisplayName(tool.name)}
+                        </h3>
                         <span className="text-[10px] text-[var(--kp-text-3)]">{TYPE_LABELS[tool.type]}</span>
                       </div>
                     </div>

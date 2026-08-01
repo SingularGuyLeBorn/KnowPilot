@@ -334,6 +334,59 @@ const ContentStep = memo(function ContentStep({
   );
 });
 
+/** JSON 卡片形式：把对象递归渲染成缩进键值对列表（比裸 JSON 更友好） */
+function JsonCardView({ data, depth = 0 }: { data: unknown; depth?: number }) {
+  if (data === null) return <span className="text-[var(--kp-text-3)]">null</span>;
+  if (typeof data === "boolean")
+    return <span className="text-[var(--kp-brand-deep)]">{String(data)}</span>;
+  if (typeof data === "number")
+    return <span className="text-[var(--kp-brand)]">{String(data)}</span>;
+  if (typeof data === "string") {
+    const trimmed = data.length > 280 ? data.slice(0, 280) + "…" : data;
+    return <span className="text-green-700">&quot;{trimmed}&quot;</span>;
+  }
+  if (Array.isArray(data)) {
+    if (data.length === 0) return <span>[]</span>;
+    return (
+      <div
+        className={cn(
+          "space-y-0.5",
+          depth > 0 && "border-l border-[var(--kp-divider-light)] pl-2",
+        )}
+      >
+        {data.map((item, i) => (
+          <div key={i} className="flex items-start gap-1">
+            <span className="shrink-0 select-none text-[var(--kp-text-3)]">[{i}]</span>
+            <JsonCardView data={item} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (typeof data === "object") {
+    const entries = Object.entries(data as Record<string, unknown>);
+    if (entries.length === 0) return <span>{"{}"}</span>;
+    return (
+      <div
+        className={cn(
+          "space-y-0.5",
+          depth > 0 && "border-l border-[var(--kp-divider-light)] pl-2",
+        )}
+      >
+        {entries.map(([key, value]) => (
+          <div key={key} className="flex items-start gap-1">
+            <span className="shrink-0 select-none font-medium text-[var(--kp-text-2)]">
+              {key}:
+            </span>
+            <JsonCardView data={value} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <span>{String(data)}</span>;
+}
+
 const ToolStep = memo(function ToolStep({
   step,
   isLive = false,
@@ -348,6 +401,8 @@ const ToolStep = memo(function ToolStep({
   const isTodoWrite = toolBaseName === "todo_write";
   // null = 跟随默认（todo 有清单则开）；用户点过 summary 后锁定
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const [requestView, setRequestView] = useState<"json" | "card">("json");
+  const [responseView, setResponseView] = useState<"json" | "card">("json");
   // UI 统一大驼峰（WriteFile）；底层 id 仍为 snake_case
   const displayName = formatToolDisplayName(step.name);
   const hasError =
@@ -542,7 +597,7 @@ const ToolStep = memo(function ToolStep({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)] transition-transform duration-200 group-open/tool:rotate-90" />
         </summary>
         {open && (
-          <div className="border-t border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/40 px-3 py-2">
+          <div className="border-t border-[var(--kp-divider-light)] px-3 py-2 space-y-2">
             {todoItems ? (
               <TodoWriteResult items={todoItems} />
             ) : askUserAnswer ? (
@@ -579,13 +634,61 @@ const ToolStep = memo(function ToolStep({
             ) : (
               <>
                 {resultImages.length > 0 && <ToolResultImageGallery images={resultImages} />}
-                <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)]">
-                  {argsJson}
-                </pre>
+                {/* Request */}
+                <div className="group/request overflow-hidden rounded-lg bg-[var(--kp-bg-mute)]/50">
+                  <div className="flex items-center justify-between px-3 py-1.5">
+                    <span className="text-[10px] font-medium text-[var(--kp-text-3)]">Request</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRequestView((v) => (v === "json" ? "card" : "json"));
+                      }}
+                      className="opacity-0 transition group-hover/request:opacity-100 text-[9px] text-[var(--kp-text-3)] hover:text-[var(--kp-brand-deep)]"
+                    >
+                      {requestView === "json" ? "卡片" : "JSON"}
+                    </button>
+                  </div>
+                  <div className="px-3 pb-2">
+                    {requestView === "json" ? (
+                      <pre className="max-h-48 overflow-hidden whitespace-pre-wrap text-[10px] text-[var(--kp-text-3)] group-hover/request:max-h-96 group-hover/request:overflow-y-auto">
+                        {argsJson}
+                      </pre>
+                    ) : (
+                      <div className="max-h-48 overflow-hidden text-[10px] text-[var(--kp-text-2)] group-hover/request:max-h-96 group-hover/request:overflow-y-auto">
+                        <JsonCardView data={step.args} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* Response */}
                 {step.result !== undefined && (
-                  <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap border-t border-[var(--kp-divider-light)] pt-2 text-[10px] text-[var(--kp-text-2)]">
-                    {resultJson}
-                  </pre>
+                  <div className="group/response overflow-hidden rounded-lg bg-[var(--kp-bg-mute)]/50">
+                    <div className="flex items-center justify-between px-3 py-1.5">
+                      <span className="text-[10px] font-medium text-[var(--kp-text-3)]">Response</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setResponseView((v) => (v === "json" ? "card" : "json"));
+                        }}
+                        className="opacity-0 transition group-hover/response:opacity-100 text-[9px] text-[var(--kp-text-3)] hover:text-[var(--kp-brand-deep)]"
+                      >
+                        {responseView === "json" ? "卡片" : "JSON"}
+                      </button>
+                    </div>
+                    <div className="px-3 pb-2">
+                      {responseView === "json" ? (
+                        <pre className="max-h-48 overflow-hidden whitespace-pre-wrap text-[10px] text-[var(--kp-text-2)] group-hover/response:max-h-96 group-hover/response:overflow-y-auto">
+                          {resultJson}
+                        </pre>
+                      ) : (
+                        <div className="max-h-48 overflow-hidden text-[10px] text-[var(--kp-text-2)] group-hover/response:max-h-96 group-hover/response:overflow-y-auto">
+                          <JsonCardView data={step.result} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </>
             )}

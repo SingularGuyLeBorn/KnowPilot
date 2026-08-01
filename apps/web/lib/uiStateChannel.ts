@@ -13,7 +13,8 @@ export type UiStateChannelMessage = {
     | "agent_list_changed"
     | "run_updated"
     | "task_updated"
-    | "goal_updated";
+    | "goal_updated"
+    | "post_list_changed";
   [key: string]: unknown;
 };
 

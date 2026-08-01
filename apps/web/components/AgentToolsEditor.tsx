@@ -182,7 +182,9 @@ function ToolRow({
           >
             {label}
           </span>
-          <code className="font-mono text-[10px] text-[var(--kp-text-3)]">{name}</code>
+          <code className="font-mono text-[10px] text-[var(--kp-text-3)]">
+            {formatToolDisplayName(name)}
+          </code>
         </span>
         {description ? (
           <span className="mt-0.5 line-clamp-2 block text-[11px] leading-relaxed text-[var(--kp-text-3)]">

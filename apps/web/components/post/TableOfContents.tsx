@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 const TOC_VISIBLE_KEY = "kp-post-toc-visible";
 const tocListeners = new Set<() => void>();
 
-interface TocItem {
+export interface TocItem {
   id: string;
   text: string;
   level: number;

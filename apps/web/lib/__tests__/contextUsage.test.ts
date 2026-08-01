@@ -137,12 +137,26 @@ describe("buildContextUsage 送模口径", () => {
           id: "a1",
           role: "assistant",
           content: "hi",
-          tokenUsage: { prompt: 100_000, completion: 50 },
+          tokenUsage: { prompt: 100_000, completion: 50, total: 100_050 },
         }),
       ],
       systemPrompt: "s",
     });
     expect(usage.inputTokens).toBe(100_000);
     expect(usage.estimatedTotal).toBeLessThan(5_000);
+  });
+
+  it("deepseek-v4-flash 窗口为 1M；compactRatio ≈ ratio / triggerRatio", () => {
+    const usage = buildContextUsage({
+      messages: [msg({ id: "u1", role: "user", content: "x".repeat(40_000) })],
+      systemPrompt: "sys",
+      modelId: "deepseek-v4-flash",
+      triggerRatio: 0.75,
+    });
+    expect(usage.maxContextTokens).toBe(1_000_000);
+    expect(usage.ratio).toBeLessThan(0.05);
+    // compactRatio 相对压缩阈值放大：ratio / 0.75
+    expect(usage.compactRatio).toBeGreaterThan(usage.ratio);
+    expect(usage.compactRatio).toBeCloseTo(usage.ratio / 0.75, 2);
   });
 });

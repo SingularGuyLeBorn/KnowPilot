@@ -24,7 +24,7 @@ type ConsumedDelivery = {
   jobId: string;
   taskLabel: string;
   asyncResult: string;
-  status: "done" | "failed";
+  status: "done" | "failed" | "interrupted";
   error?: string;
   subagentSessionId?: string;
   subagentName?: string;
@@ -80,7 +80,12 @@ export function useChatDerivedQueues({
       text: "",
       jobId: del.jobId,
       taskLabel: del.taskLabel,
-      asyncResult: del.status === "failed" ? `任务失败：${del.error || "未知错误"}` : del.asyncResult,
+      asyncResult:
+        del.status === "interrupted"
+          ? `任务已中断：${del.error || "主动取消"}`
+          : del.status === "failed"
+            ? `任务失败：${del.error || "未知错误"}`
+            : del.asyncResult,
       status: del.status,
       subagentSessionId: del.subagentSessionId,
       subagentName: del.subagentName,

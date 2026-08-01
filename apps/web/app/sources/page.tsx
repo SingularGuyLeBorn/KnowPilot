@@ -5,6 +5,7 @@
 
 
 import { useMemo, useState } from "react";
+import { catchUnlessCancelled } from "@/lib/trpc";
 import { motion } from "framer-motion";
 import {
   ChevronLeft,
@@ -385,14 +386,14 @@ export default function SourcesPage() {
           <NativeCapabilitiesPanel
             data={caps}
             compact
-            title="web_search 与 read_article"
+            title="WebSearch 与 ReadArticle"
             showSearchEnginesInCompact
             detailHref="/tools"
             detailLabel="完整能力"
           />
           {!isLoading && data && (
             <p className="text-[10px] text-[var(--kp-text-3)] px-1">
-              全局已启用 {caps.infoSources?.enabled ?? "—"} 条 · 本页 {enabledSourceCount}/{data.total} 条 · web_search 在 Tavily 等引擎下可 scoped 到信息源域名
+              全局已启用 {caps.infoSources?.enabled ?? "—"} 条 · 本页 {enabledSourceCount}/{data.total} 条 · WebSearch 在 Tavily 等引擎下可 Scoped 到信息源域名
             </p>
           )}
         </motion.div>

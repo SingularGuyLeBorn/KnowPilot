@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { FileText, X } from "lucide-react";
+import { formatToolDisplayName, toPascalCaseId } from "@/lib/toolDisplayName";
 
 export type SessionArtifact = {
   artifactKind: string;
@@ -48,7 +49,7 @@ export function SessionArtifactsStrip({ sessionId }: { sessionId: string | null 
           <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
           <div className="min-w-0 flex-1">
             <div className="truncate font-medium text-[var(--kp-text-2)]">
-              {a.title || a.artifactKind} · {a.toolName}
+              {a.title || toPascalCaseId(a.artifactKind)} · {formatToolDisplayName(a.toolName)}
             </div>
             <div className="truncate font-mono text-[10px] text-[var(--kp-text-3)]" title={a.path}>
               {a.path}

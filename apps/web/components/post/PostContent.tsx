@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 // KaTeX CSS 只在根布局 layout.tsx 导入一次，避免 client chunk 延迟加载导致公式初始闪烁
 import { transformWikiLinks } from "./WikiLink";
 import { PostMarkdownLink } from "./PostMarkdownLink";
+import { RoughAnnotation } from "./RoughAnnotation";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
 import { useShowCodeLineNumbers } from "@/lib/codeBlockPrefs";
 import { MarkdownTable } from "@/components/post/MarkdownTable";
@@ -550,94 +551,116 @@ export const PostContent = memo(function PostContent({
     [tocItems],
   );
 
-  const components = useMemo(
-    () => ({
-    // rehype-raw 可能带进正文里的 <script>；React 客户端永不执行，直接丢弃避免控制台报错
-    script: () => null,
-    a: ({ href, children, ...props }) => (
-      <PostMarkdownLink href={href} postSlug={postSlug} postGarden={postGarden} {...props}>
-        {children}
-      </PostMarkdownLink>
-    ),
-    h1: (props) => <Heading level={1} {...props} />,
-    h2: (props) => <Heading level={2} {...props} />,
-    h3: (props) => <Heading level={3} {...props} />,
-    h4: (props) => <Heading level={4} {...props} />,
-    h5: (props) => <Heading level={5} {...props} />,
-    h6: (props) => <Heading level={6} {...props} />,
-    img: ({ src, alt }) => {
-      if (typeof src !== "string") return null;
-      return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={resolveAssetUrl(src, postSlug)}
-          alt={alt || ""}
-          className="rounded-xl border border-[var(--kp-divider)]"
-          loading="lazy"
-        />
-      );
-    },
-    code: ({ className, children, ...props }) => {
-      const cls = typeof className === "string" ? className : "";
-      // 行内公式在此直接渲染；块级 math-display 保持 <code> 交给 Pre（否则 Pre 认不出）
-      if (cls.includes("math-inline")) {
-        return <KatexHtml tex={getText(children)} display={false} />;
-      }
-
-      const isBlock =
-        typeof className === "string" &&
-        (className.includes("language-") || className.includes("hljs"));
-
-      if (isBlock) {
-        return (
-          <code className={className} {...props}>
+  const components = useMemo<Components>(
+    () =>
+      ({
+        // rehype-raw 可能带进正文里的 <script>；React 客户端永不执行，直接丢弃避免控制台报错
+        script: () => null,
+        a: ({ href, children, ...props }: ComponentPropsWithoutRef<"a"> & { node?: unknown }) => (
+          <PostMarkdownLink href={href} postSlug={postSlug} postGarden={postGarden} {...props}>
             {children}
-          </code>
-        );
-      }
+          </PostMarkdownLink>
+        ),
+        h1: (props: ComponentPropsWithoutRef<"h1"> & { node?: unknown }) => <Heading level={1} {...props} />,
+        h2: (props: ComponentPropsWithoutRef<"h2"> & { node?: unknown }) => <Heading level={2} {...props} />,
+        h3: (props: ComponentPropsWithoutRef<"h3"> & { node?: unknown }) => <Heading level={3} {...props} />,
+        h4: (props: ComponentPropsWithoutRef<"h4"> & { node?: unknown }) => <Heading level={4} {...props} />,
+        h5: (props: ComponentPropsWithoutRef<"h5"> & { node?: unknown }) => <Heading level={5} {...props} />,
+        h6: (props: ComponentPropsWithoutRef<"h6"> & { node?: unknown }) => <Heading level={6} {...props} />,
+        img: ({ src, alt }: ComponentPropsWithoutRef<"img"> & { node?: unknown }) => {
+          if (typeof src !== "string") return null;
+          return (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolveAssetUrl(src, postSlug)}
+              alt={alt || ""}
+              className="rounded-xl border border-[var(--kp-divider)]"
+              loading="lazy"
+            />
+          );
+        },
+        code: ({ className, children, ...props }: ComponentPropsWithoutRef<"code"> & { node?: unknown }) => {
+          const cls = typeof className === "string" ? className : "";
+          // 行内公式在此直接渲染；块级 math-display 保持 <code> 交给 Pre（否则 Pre 认不出）
+          if (cls.includes("math-inline")) {
+            return <KatexHtml tex={getText(children)} display={false} />;
+          }
 
-      return (
-        <code {...props}>
-          {children}
-        </code>
-      );
-    },
-    span: MarkdownSpan,
-    pre: Pre,
-    // 用 div 代替 p：避免 display 公式 / 代码块等块级结构落入 <p> 触发 hydration
-    p: ({ children, className, ...props }) => (
-      <div className={["kp-md-p", className].filter(Boolean).join(" ")} {...props}>
-        {children}
-      </div>
-    ),
-    table: ({ children, ...props }) => (
-      <MarkdownTable {...props}>{children}</MarkdownTable>
-    ),
-    thinkingnode: ({
-      category,
-      children,
-      ...props
-    }: ComponentPropsWithoutRef<"aside"> & { category?: string }) => (
-      <ThinkingNode category={typeof category === "string" ? category : undefined} {...props}>
-        {children}
-      </ThinkingNode>
-    ),
-    video: ({ src, children, ...props }) => {
-      const resolved = typeof src === "string" ? src : undefined;
-      return (
-        <video
-          {...props}
-          src={resolved}
-          className="my-6 aspect-video w-full overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-black"
-          controls
-          playsInline
-          preload="metadata"
-        >
-          {children}
-        </video>
-      );
-    },
-  }) as Components,
+          const isBlock =
+            typeof className === "string" &&
+            (className.includes("language-") || className.includes("hljs"));
+
+          if (isBlock) {
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            );
+          }
+
+          return (
+            <code {...props}>
+              {children}
+            </code>
+          );
+        },
+        span: MarkdownSpan as Components["span"],
+        pre: Pre as Components["pre"],
+        // 用 div 代替 p：避免 display 公式 / 代码块等块级结构落入 <p> 触发 hydration
+        p: ({ children, className, ...props }: ComponentPropsWithoutRef<"div"> & { node?: unknown }) => (
+          <div className={["kp-md-p", className].filter(Boolean).join(" ")} {...props}>
+            {children}
+          </div>
+        ),
+        table: ({ children, ...props }: ComponentPropsWithoutRef<"table"> & { node?: unknown }) => (
+          <MarkdownTable {...props}>{children}</MarkdownTable>
+        ),
+        thinkingnode: ({
+          category,
+          children,
+          ...props
+        }: ComponentPropsWithoutRef<"aside"> & { category?: unknown; node?: unknown }) => (
+          <ThinkingNode category={typeof category === "string" ? category : undefined} {...props}>
+            {children}
+          </ThinkingNode>
+        ),
+        mark: ({ children, ...props }: ComponentPropsWithoutRef<"mark"> & { node?: unknown }) => {
+          const rest = props as Record<string, unknown>;
+          const annotationType = typeof rest["data-annotation"] === "string" ? rest["data-annotation"] : undefined;
+          if (!annotationType) {
+            return <mark {...props}>{children}</mark>;
+          }
+          return (
+            <RoughAnnotation
+              type={annotationType}
+              color={typeof rest["data-color"] === "string" ? rest["data-color"] : undefined}
+              strokeWidth={typeof rest["data-stroke-width"] === "string" ? Number(rest["data-stroke-width"]) : undefined}
+              padding={typeof rest["data-padding"] === "string" ? Number(rest["data-padding"]) : undefined}
+              iterations={typeof rest["data-iterations"] === "string" ? Number(rest["data-iterations"]) : undefined}
+              multiline={rest["data-multiline"] !== "false"}
+              animate={rest["data-animate"] !== "false"}
+              animationDuration={typeof rest["data-animation-duration"] === "string" ? Number(rest["data-animation-duration"]) : undefined}
+            >
+              {children}
+            </RoughAnnotation>
+          );
+        },
+        video: ({ src, children, ...props }: ComponentPropsWithoutRef<"video"> & { node?: unknown }) => {
+          const resolved = typeof src === "string" ? src : undefined;
+          return (
+            <video
+              {...props}
+              src={resolved}
+              className="my-6 aspect-video w-full overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-black"
+              controls
+              playsInline
+              preload="metadata"
+            >
+              {children}
+            </video>
+          );
+        },
+      }) as Components,
     [postSlug, postGarden],
   );
 

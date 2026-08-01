@@ -499,6 +499,8 @@ export function ChatSessionPane({
       onSaveAsPost: handleSaveAsPost,
       setEditingMessageId,
       setEditDraft,
+      contextSummary: sessionDetail?.contextSummary ?? null,
+      sessionModel: chatConfig.model,
     }),
     [
       messageGroups,
@@ -529,6 +531,8 @@ export function ChatSessionPane({
       handleEditConfirm,
       handleRetry,
       handleSaveAsPost,
+      sessionDetail?.contextSummary,
+      chatConfig.model,
     ],
   );
 

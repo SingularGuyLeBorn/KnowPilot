@@ -59,7 +59,7 @@ export default function SkillsPage() {
       <PageHeader
         icon={Wand2}
         title="Skills 专属动作库"
-        description="可被 Agent 调用的脚本/程序包（Markdown SKILL.md 或 TS）。空库很正常——点「新建」或让 Agent 用 skill_manage 生成；对话里也可用 skills_list / skill_view。"
+        description="可被 Agent 调用的脚本/程序包（Markdown SKILL.md 或 TS）。空库很正常——点「新建」或让 Agent 用 SkillManage 生成；对话里也可用 SkillsList / SkillView。"
         action={{ label: "新建插件技能", onClick: handleCreateDemo, icon: Plus }}
         showDensityToggle
       />
@@ -70,7 +70,7 @@ export default function SkillsPage() {
       ) : !data?.items || data.items.length === 0 ? (
         <EmptyState
           title="还没有 Skill"
-          description="Skill 是实体，有完整 CRUD，并同步到 config/skills/。Agent 工具：skills_list、skill_view、skill_manage（写包）、skill_discover / skill_enable / skill_promote。点下方可加示例，或在对话里让 Agent 创建。"
+          description="Skill 是实体，有完整 CRUD，并同步到 config/skills/。Agent 工具：SkillsList、SkillView、SkillManage（写包）、SkillDiscover / SkillEnable / SkillPromote。点下方可加示例，或在对话里让 Agent 创建。"
           actionLabel="添加示例技能"
           onAction={handleCreateDemo}
         />

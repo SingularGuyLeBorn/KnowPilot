@@ -7,13 +7,14 @@ import type { ChatAttachment, ChatPostAttachment } from "@knowpilot/shared";
 export type ChatQueueItemKind = "user" | "async-running" | "async-result" | "superior" | "child_notify";
 
 /** 排队阻塞原因：哪个上限卡住（与服务端 AsyncJobQueuedReason 一致，orchestrator 真实判定） */
-export type AsyncQueuedReason = "global" | "session" | "workspace" | "gate";
+export type AsyncQueuedReason = "global" | "session" | "workspace" | "gate" | "lightweight";
 
 const ASYNC_QUEUED_REASON_LABEL: Record<AsyncQueuedReason, string> = {
   global: "并发限制",
   session: "会话上限",
-  workspace: "workspace 上限",
-  gate: "审批 gate",
+  workspace: "Workspace 上限",
+  gate: "审批 Gate",
+  lightweight: "工具并发上限",
 };
 
 /** queued 条目的排队提示：「第 N 位 · 因 X 上限排队」（数据均来自池统计，缺哪段省哪段） */
@@ -25,7 +26,12 @@ export function formatQueuedHint(item: {
   const parts: string[] = [];
   if (item.queuePosition !== undefined) parts.push(`第 ${item.queuePosition + 1} 位`);
   if (item.queuedReason === "gate" && item.gateBlock) {
-    parts.push(`因审批 ${item.gateBlock.approvalId} 阻塞 scope ${item.gateBlock.scope}`);
+    const scope = item.gateBlock.scope
+      .split(/[^a-zA-Z0-9]+/)
+      .filter(Boolean)
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+      .join("");
+    parts.push(`因审批 ${item.gateBlock.approvalId} 阻塞 Scope ${scope}`);
   } else if (item.queuedReason) {
     parts.push(`因${ASYNC_QUEUED_REASON_LABEL[item.queuedReason]}排队`);
   }
@@ -96,7 +102,7 @@ export interface ChatQueueItem {
   /** 异步任务 */
   jobId?: string;
   taskLabel?: string;
-  status?: "pending" | "queued" | "running" | "done" | "failed"; // user 仅 pending；async 用 queued/running/done/failed
+  status?: "pending" | "queued" | "running" | "done" | "failed" | "interrupted"; // user 仅 pending；async 含 interrupted
   /** queued 任务在池队列中的位置（0-based，来自 orchestrator.getPosition） */
   queuePosition?: number;
   /** queued 任务的排队原因：哪个上限卡住（来自 orchestrator.getQueuedReason） */
@@ -138,7 +144,7 @@ export interface ChatQueueItem {
 export interface SyncTaskItem {
   jobId: string;
   taskLabel: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "interrupted";
   elapsedMs?: number;
   asyncResult?: string;
   error?: string;
@@ -207,7 +213,7 @@ export function mergeAsyncPollIntoQueue(
       jobId: string;
       taskLabel: string;
       asyncResult: string;
-      status: "done" | "failed";
+      status: "done" | "failed" | "interrupted";
       error?: string;
       subagentSessionId?: string;
       subagentName?: string;
@@ -221,7 +227,7 @@ export function mergeAsyncPollIntoQueue(
       jobId: string;
       taskLabel: string;
       asyncResult: string;
-      status: "done" | "failed";
+      status: "done" | "failed" | "interrupted";
       error?: string;
       subagentSessionId?: string;
       subagentName?: string;
@@ -277,7 +283,11 @@ export function mergeAsyncPollIntoQueue(
           kind: "async-result",
           status: del.status,
           asyncResult:
-            del.status === "failed" ? `任务失败：${del.error || "未知错误"}` : del.asyncResult,
+            del.status === "interrupted"
+              ? `任务已中断：${del.error || "主动取消"}`
+              : del.status === "failed"
+                ? `任务失败：${del.error || "未知错误"}`
+                : del.asyncResult,
           logs: del.logs ?? item.logs,
           removeAt: item.createdAt + 15_000,
           serverConsumed: true,
@@ -347,7 +357,11 @@ export function mergeAsyncPollIntoQueue(
       jobId: del.jobId,
       taskLabel: del.taskLabel,
       asyncResult:
-        del.status === "failed" ? `任务失败：${del.error || "未知错误"}` : del.asyncResult,
+        del.status === "interrupted"
+          ? `任务已中断：${del.error || "主动取消"}`
+          : del.status === "failed"
+            ? `任务失败：${del.error || "未知错误"}`
+            : del.asyncResult,
       status: del.status,
       userAppend: prev?.userAppend ?? "",
       subagentSessionId: del.subagentSessionId ?? prev?.subagentSessionId,

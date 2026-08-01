@@ -15,6 +15,9 @@
   "scripts": {
     "dev": "remotion studio",
     "compositions": "remotion compositions src/index.ts",
+    "still": "remotion still",
+    "preview": "remotion render --scale=0.5 --crf=28",
+    "render": "remotion render",
     "lint": "tsc --noEmit"
   },
   "peerDependencies": {

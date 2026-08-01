@@ -21,6 +21,7 @@ import type { ChatQueueAttachment, ChatQueueImageAttachment } from "@/lib/chatQu
 import { ChatModelMenu } from "@/components/chatModelMenu";
 import { ChatInputChips } from "@/components/chatInputChips";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
+import { useVoiceConversation } from "@/lib/useVoiceConversation";
 import {
   restoreDraftAfterQueueEdit,
   stashDraftOnEnterQueueEdit,
@@ -75,6 +76,11 @@ interface ChatInputAreaProps {
   onFocusSwarm?: () => void;
   /** 输入框聚焦时提前拉取 Skill 列表 */
   onWarmSkills?: () => void;
+  /**
+   * 语音对话模式：流式结束后朗读的最新 assistant 正文。
+   * 由中栏传入；未传则语音对话仅听写发送、不自动朗读。
+   */
+  voiceReplyText?: string | null;
 }
 
 type SlashCommandItem = {
@@ -112,6 +118,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   onFocusSwarm,
   onWarmSkills,
   onCancelQueueEdit,
+  voiceReplyText = null,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -192,15 +199,21 @@ export const ChatInputArea = memo(function ChatInputArea({
     };
   }, []);
 
-  // 语音输入：webkitSpeechRecognition 实时转写，interim/final 追加到 input 末尾
+  // 听写模式（点 Mic）：webkitSpeechRecognition 追加到输入框，不自动发送
   const voiceBaseRef = useRef("");
+  const [voiceChatOn] = useState(false);
   const { supported: sttSupported, listening, error: sttError, start: sttStart, stop: sttStop } =
     useSpeechRecognition(
-      { lang: "zh-CN", interimResults: true, continuous: false },
+      { lang: "zh-CN", interimResults: true, continuous: false, keepAlive: false },
       {
-        onInterim: (t) => setInput((voiceBaseRef.current + t).replace(/\s+$/, " ")),
+        onInterim: (t) => {
+          if (voiceChatOn) return;
+          setInput((voiceBaseRef.current + t).replace(/\s+$/, " "));
+        },
         onFinal: (t) => {
-          const merged = (voiceBaseRef.current ? voiceBaseRef.current.replace(/\s+$/, "") + " " : "") + t;
+          if (voiceChatOn) return;
+          const merged =
+            (voiceBaseRef.current ? voiceBaseRef.current.replace(/\s+$/, "") + " " : "") + t;
           voiceBaseRef.current = merged + " ";
           setInput(voiceBaseRef.current);
         },
@@ -210,6 +223,22 @@ export const ChatInputArea = memo(function ChatInputArea({
     if (!listening) voiceBaseRef.current = input;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listening]);
+
+  // 语音对话模式：停顿自动发送 → 回复自动朗读（轻量，浏览器原生）
+  const voiceSendRef = useRef<(text: string) => void>(() => {});
+  useVoiceConversation({
+    enabled: voiceChatOn,
+    isStreaming: !!isStreaming,
+    disabled: !!disabled,
+    replyText: voiceReplyText,
+    onSend: (text) => voiceSendRef.current(text),
+    onDraftChange: (t) => {
+      if (voiceChatOn) setInput(t);
+    },
+  });
+  useEffect(() => {
+    if (voiceChatOn && listening) sttStop();
+  }, [voiceChatOn, listening, sttStop]);
 
   // 上键历史恢复：按 sessionId 隔离，存 localStorage
   const historyKey = sessionId ? `kp-input-history:${sessionId}` : null;
@@ -599,6 +628,19 @@ export const ChatInputArea = memo(function ChatInputArea({
     // 同步释放 ref 锁；isSending 继续保留 300ms，让按钮保持禁用，防止连击/快捷键穿透。
     sendLockRef.current = false;
     setTimeout(releaseSendLock, 300);
+  };
+
+  // 语音对话：停顿后直接 onSend，不走图片 OCR 路径
+  voiceSendRef.current = (text: string) => {
+    const t = text.trim();
+    if (!t || disabled || sendLockRef.current) return;
+    sendLockRef.current = true;
+    onSend(t, selectedSkill ?? undefined, undefined);
+    setInput("");
+    pushHistory(t);
+    onSkillChange(null);
+    setDeepResearchEnabled(false);
+    sendLockRef.current = false;
   };
 
   const addImageFile = (file: File) => {

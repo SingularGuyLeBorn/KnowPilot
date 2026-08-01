@@ -116,7 +116,7 @@ export const MessageNavRail = memo(function MessageNavRail({
               onFocus={(e) => handleEnter(idx, e.currentTarget)}
               onBlur={handleLeave}
               onClick={() => onNavigate?.(idx, item)}
-              aria-label={`第 ${idx + 1} 条消息`}
+              aria-label={`# ${idx + 1}`}
               aria-current={isActive ? "true" : undefined}
               data-testid={`message-nav-tick-${idx}`}
             >
@@ -144,6 +144,22 @@ export const MessageNavRail = memo(function MessageNavRail({
             style={{ top: previewPos.top, right: previewPos.right }}
             data-testid="message-nav-preview"
           >
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "font-mono text-[10px] font-semibold",
+                  hoverIdx === resolvedActive ? "text-[var(--kp-brand-deep)]" : "text-[var(--kp-text-3)]",
+                )}
+              >
+                # {(hoverIdx ?? 0) + 1}
+                {hoverIdx === resolvedActive ? " · 当前" : ""}
+              </span>
+              {hoverItem.versionLabel && (
+                <span className="rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-px text-[10px] text-[var(--kp-brand-deep)]">
+                  {hoverItem.versionLabel}
+                </span>
+              )}
+            </div>
             <div
               className={cn(
                 "line-clamp-4",
@@ -151,17 +167,6 @@ export const MessageNavRail = memo(function MessageNavRail({
               )}
             >
               {hoverItem.preview}
-            </div>
-            <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-[var(--kp-text-3)]">
-              <span>
-                第 {(hoverIdx ?? 0) + 1} 条消息
-                {hoverIdx === resolvedActive ? " · 当前" : ""}
-              </span>
-              {hoverItem.versionLabel && (
-                <span className="rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-px text-[var(--kp-brand-deep)]">
-                  {hoverItem.versionLabel}
-                </span>
-              )}
             </div>
           </div>,
           document.body,

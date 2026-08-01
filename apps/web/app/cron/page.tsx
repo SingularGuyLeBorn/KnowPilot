@@ -42,6 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PostContent } from "@/components/post/PostContent";
 import { postSessionListHint, UI_STATE_CHANNEL } from "@/lib/uiStateChannel";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 const CRON_PRESETS = [
   { value: "0 8 * * *", label: "每天 08:00" },
@@ -164,7 +165,7 @@ function StatusDot({ status }: { status: string | null | undefined }) {
       </span>
     );
   }
-  return <span className="kp-badge kp-badge-warning">{status}</span>;
+  return <span className="kp-badge kp-badge-warning">{toPascalCaseId(status)}</span>;
 }
 
 function ConfigRow({
@@ -558,7 +559,7 @@ export default function AgentCronPage() {
           title={filter === "all" ? "还没有定时节律" : "没有符合筛选的任务"}
           description={
             filter === "all"
-              ? "新建一条，或在 Chat 里让超级 Agent / assistant 调用 agent_cron_set。"
+              ? "新建一条，或在 Chat 里让超级 Agent / assistant 调用 AgentCronSet。"
               : "切换筛选看看其它状态。"
           }
           actionLabel={filter === "all" ? "新建第一条" : undefined}
@@ -626,7 +627,7 @@ export default function AgentCronPage() {
                             {row.name}
                           </h2>
                           <p className="mt-0.5 text-[11px] text-[var(--kp-text-3)]">
-                            节律配置 · Briefing → session_spawn_goal
+                            节律配置 · Briefing → SessionSpawnGoal
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -752,7 +753,7 @@ export default function AgentCronPage() {
                       </div>
                       {fireMutation.isError && fireMutation.variables?.id === row.id ? (
                         <p className="mt-2 text-xs text-red-600">
-                          {(fireMutation.error as Error)?.message ?? "触发失败"}
+                          {(fireMutation.error as unknown as Error)?.message ?? "触发失败"}
                         </p>
                       ) : null}
                     </div>
@@ -792,7 +793,7 @@ export default function AgentCronPage() {
               </h2>
               <p className="mt-1 text-xs text-[var(--kp-text-3)]">
                 同 Agent + 同名会覆盖。Prompt 请用 Markdown；到点开 briefing，须调用{" "}
-                <code className="rounded bg-[var(--kp-bg-soft)] px-1">session_spawn_goal</code>。
+                <code className="rounded bg-[var(--kp-bg-soft)] px-1">SessionSpawnGoal</code>。
               </p>
 
               <div className="mt-4 space-y-4">
@@ -924,7 +925,7 @@ export default function AgentCronPage() {
                 ) : null}
                 {upsertMutation.isError ? (
                   <p className="text-xs text-red-600">
-                    {(upsertMutation.error as Error)?.message ?? "保存失败"}
+                    {(upsertMutation.error as unknown as Error)?.message ?? "保存失败"}
                   </p>
                 ) : null}
               </div>

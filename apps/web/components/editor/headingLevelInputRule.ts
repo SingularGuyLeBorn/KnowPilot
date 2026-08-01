@@ -13,8 +13,8 @@ import { textblockTypeInputRule } from "@milkdown/prose/inputrules";
 import { $inputRule } from "@milkdown/utils";
 
 export const headingLevelReplaceInputRule = $inputRule((ctx) =>
-  textblockTypeInputRule(/^(?<hashes>#{1,6})\s$/, headingSchema.type(ctx), (match) => {
-    const n = match.groups?.hashes?.length ?? 1;
+  textblockTypeInputRule(/^(#{1,6})\s$/, headingSchema.type(ctx), (match) => {
+    const n = match[1]?.length ?? 1;
     return { level: Math.min(6, Math.max(1, n)) };
   }),
 );

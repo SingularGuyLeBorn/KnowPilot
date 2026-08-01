@@ -6,7 +6,7 @@
  * 不变量：
  * - 队列预览统一截断至 120 字符（previewText）。
  * - 运行栏一级：异步队列 / 同步任务 / 旁路复盘。
- * - 异步队列二级子 Tab：进行中 / 待消费（含钉住子组）/ 已消费（TP-3）。
+ * - 异步任务扁平列表：状态打在卡片上（执行中 / 等待中 / 待消费 / 已消费）。
  */
 
 import { useCallback, useState } from "react";
@@ -32,23 +32,76 @@ import { formatQueuedHint, type ChatQueueItem } from "@/lib/chatQueueTypes";
 export function kindLabel(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
     if (item.sourceType === "sleep" || /^sleep\b/i.test(item.taskLabel ?? "")) {
-      return item.status === "queued" ? "async sleep · 排队" : "async sleep · 执行中";
+      return item.status === "queued" ? "AsyncSleep · 排队" : "AsyncSleep · 执行中";
     }
-    if (item.status === "queued") return "异步任务 · 排队中";
-    return "异步任务 · 执行中";
+    if (item.sourceType === "async_task_tool") {
+      return item.status === "queued" ? "AsyncTool · 排队" : "AsyncTool · 执行中";
+    }
+    if (item.sourceType === "async_task_llm" || item.sourceType === "subagent") {
+      return item.status === "queued" ? "AsyncTask · 排队" : "AsyncTask · 执行中";
+    }
+    if (item.status === "queued") return "AsyncTask · 排队";
+    return "AsyncTask · 执行中";
   }
   if (item.kind === "async-result") {
-    if (item.sourceType === "sleep" || /^sleep\b/i.test(item.taskLabel ?? "")) return "async sleep";
-    if (item.sourceType === "subagent") return "async subagent";
-    if (item.sourceType === "async_task_tool") return "async tool";
-    return "async task";
+    if (item.sourceType === "sleep" || /^sleep\b/i.test(item.taskLabel ?? "")) return "AsyncSleep";
+    if (item.sourceType === "subagent") return "AsyncSubagent";
+    if (item.sourceType === "async_task_tool") return "AsyncTool";
+    if (item.sourceType === "async_task_llm") return "AsyncTask";
+    return "AsyncTask";
   }
   if (item.kind === "superior") return item.sourceName ? `上级 · ${item.sourceName}` : "上级 Agent";
   if (item.kind === "child_notify") return item.sourceName ? `来自子 Agent · ${item.sourceName}` : "来自子 Agent";
   return "待发消息";
 }
 
-/** 队列预览统一截断至 120 字符：超过部分不展示，保持卡片高度一致。 */
+/**
+ * 把投递正文收成卡片可读一行：优先信封/标题/错误，避免裸 JSON 前缀刷屏。
+ * 旧任务仍可能是 JSON.stringify 残留，这里做展示降级。
+ */
+export function humanizeDeliveryPreview(raw: string | undefined | null, maxLen = 72): string {
+  const t = (raw ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+
+  // 新契约信封：[异步工具结果 · read_article · …]
+  if (t.startsWith("[异步工具结果") || t.startsWith("[异步任务结果")) {
+    const titleLine = t.match(/标题[：:]\s*([^\n]+)/);
+    if (titleLine?.[1]) return titleLine[1].trim().slice(0, maxLen);
+    const errLine = t.match(/(?:错误|失败)[：:]\s*([^\n]+)/);
+    if (errLine?.[1]) return errLine[1].trim().slice(0, maxLen);
+    const afterHeader = t.replace(/^\[[^\]]+\]\s*/, "").replace(/^后台工具已完成。?\s*/, "");
+    return afterHeader.slice(0, maxLen);
+  }
+
+  // 裸 / 截断 JSON
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(t) as Record<string, unknown>;
+      if (typeof parsed.error === "string" && parsed.error.trim()) {
+        return parsed.error.trim().slice(0, maxLen);
+      }
+      if (typeof parsed.title === "string" && parsed.title.trim()) {
+        return parsed.title.trim().slice(0, maxLen);
+      }
+      if (typeof parsed.message === "string" && parsed.message.trim()) {
+        return parsed.message.trim().slice(0, maxLen);
+      }
+    } catch {
+      const err = t.match(/"error"\s*:\s*"((?:\\.|[^"\\])*)"/);
+      if (err?.[1]) return err[1].replace(/\\"/g, '"').slice(0, maxLen);
+      const title = t.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)"/);
+      if (title?.[1]) return title[1].replace(/\\"/g, '"').slice(0, maxLen);
+    }
+  }
+
+  return t
+    .replace(/请根据以上结果继续推进用户目标[^\n]*/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+
+/** 队列预览统一截断：超过部分不展示，保持卡片高度一致。 */
 export function previewText(item: ChatQueueItem): string {
   if (item.kind === "async-running") {
     const hint = item.status === "queued" ? formatQueuedHint(item) : "";
@@ -56,7 +109,7 @@ export function previewText(item: ChatQueueItem): string {
     return (item.taskLabel || "后台任务…") + suffix;
   }
   if (item.kind === "async-result") {
-    return item.asyncResult?.slice(0, 120) || item.text || "（空结果）";
+    return humanizeDeliveryPreview(item.asyncResult, 120) || item.text || "（空结果）";
   }
   return item.text.slice(0, 120) || "（附件）";
 }
@@ -134,7 +187,7 @@ export function QueueCard({
             {isRunning && <Loader2 className="h-3 w-3 animate-spin text-[var(--kp-brand)]" />}
             {isEditing && (
               <span className="text-[10px] font-medium text-[var(--kp-text-3)]" data-testid="chat-queue-editing-badge">
-                Editing
+                编辑中
               </span>
             )}
             {item.pinned && <span className="text-[10px] text-[var(--kp-brand-deep)]">已置顶</span>}

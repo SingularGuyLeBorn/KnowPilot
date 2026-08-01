@@ -53,7 +53,12 @@ const SOURCE_LABEL: Record<string, string> = {
 
 function formatSource(source?: string | null): string {
   if (!source) return "未知来源";
-  return SOURCE_LABEL[source] ?? source;
+  if (SOURCE_LABEL[source]) return SOURCE_LABEL[source];
+  return source
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join("");
 }
 
 function SubagentAgentCard({

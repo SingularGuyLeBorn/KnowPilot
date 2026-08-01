@@ -14,12 +14,13 @@ import { MEMORY_TYPE_LABELS } from "@knowpilot/shared";
 import { useMemory } from "@/lib/hooks";
 import { useCardDensity } from "@/lib/useCardDensity";
 import { AdminPage, EmptyState, KpSelect, LoadingState, ConfirmDialog, PageHeader } from "@/components/shared";
+import { formatToolDisplayName, toPascalCaseId } from "@/lib/toolDisplayName";
 
 function formatScope(scope?: string) {
-  if (!scope || scope === "global") return "global";
+  if (!scope || scope === "global") return "Global";
   if (scope.startsWith("workspace:")) return `空间 ${scope.slice(10, 18)}…`;
   if (scope.startsWith("agent:")) return `Agent ${scope.slice(6, 14)}…`;
-  return scope;
+  return toPascalCaseId(scope);
 }
 
 export default function MemoriesPage() {
@@ -106,7 +107,7 @@ export default function MemoriesPage() {
               className="inline-flex items-center gap-0.5 rounded-full bg-[var(--kp-brand-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--kp-brand-deep)]"
             >
               <Tag className="h-2 w-2" />
-              {t}
+              {formatToolDisplayName(t)}
             </span>
           ))
         ) : (
@@ -153,7 +154,7 @@ const confirmDelete = () => {
       <PageHeader
         icon={Brain}
         title="Memories 记忆晶体"
-        description="长期记忆实体：手动写入、Agent memory_create，或对话结束后自动沉淀 experience。文件回写 config/memories/；检索进 system prompt。"
+        description="长期记忆实体：手动写入、Agent MemoryCreate，或对话结束后自动沉淀 Experience。文件回写 config/memories/；检索进 system prompt。"
         action={{ label: "写入记忆晶体", onClick: handleCreateDemo, icon: Plus }}
         showDensityToggle
       />
@@ -163,11 +164,11 @@ const confirmDelete = () => {
           value={scopeFilter || "__all__"}
           onChange={(v) => setScopeFilter(v === "__all__" ? "" : v)}
           options={[
-            { value: "__all__", label: "全部 scope" },
-            { value: "global", label: "global" },
+            { value: "__all__", label: "全部 Scope" },
+            { value: "global", label: "Global" },
           ]}
           className="w-40"
-          aria-label="scope 筛选"
+          aria-label="Scope 筛选"
         />
         <KpSelect
           value={statusFilter || "__all__"}
@@ -175,9 +176,9 @@ const confirmDelete = () => {
             setStatusFilter(v === "__all__" ? "" : (v as "active" | "superseded"))
           }
           options={[
-            { value: "__all__", label: "默认（不含 superseded）" },
-            { value: "active", label: "active" },
-            { value: "superseded", label: "superseded" },
+            { value: "__all__", label: "默认（不含 Superseded）" },
+            { value: "active", label: "Active" },
+            { value: "superseded", label: "Superseded" },
           ]}
           className="w-40"
           aria-label="状态筛选"
@@ -189,7 +190,7 @@ const confirmDelete = () => {
       ) : !data?.items || data.items.length === 0 ? (
         <EmptyState
           title="记忆脑海空无一物"
-          description="空很正常。生成路径：① Agent 调用 memory_create；② 有工具调用的对话结束后自动写 experience（agent/workspace 双写）；③ 本页手动创建。心跳会按日衰减低分记忆。"
+          description="空很正常。生成路径：① Agent 调用 MemoryCreate；② 有工具调用的对话结束后自动写 Experience（Agent/Workspace 双写）；③ 本页手动创建。心跳会按日衰减低分记忆。"
           actionLabel="植入偏好记忆"
           onAction={handleCreateDemo}
         />
@@ -217,12 +218,12 @@ const confirmDelete = () => {
                     </span>
                     {memory.status && memory.status !== "active" && (
                       <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] text-amber-800">
-                        {memory.status}
+                        {toPascalCaseId(memory.status)}
                       </span>
                     )}
                     {memory.attribution && (
                       <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] text-blue-700">
-                        {memory.attribution}
+                        {toPascalCaseId(memory.attribution)}
                       </span>
                     )}
                   </div>

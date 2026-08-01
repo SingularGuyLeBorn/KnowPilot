@@ -4,6 +4,7 @@ import { Loader2, Lock, Unlock } from "lucide-react";
 import { catchUnlessCancelled, trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 /** 超级 Agent 心跳 Loop Contract 控制平面（只在编辑页、已开心跳时展示） */
 export function AgentLoopContractPanel({ agentId }: { agentId: string }) {
@@ -70,7 +71,7 @@ export function AgentLoopContractPanel({ agentId }: { agentId: string }) {
         <ul className="max-h-24 space-y-1 overflow-y-auto text-[10px] text-[var(--kp-text-2)]">
           {[...contract.evidence].slice(-5).reverse().map((e, i) => (
             <li key={`${e.at}-${i}`} className="truncate rounded bg-[var(--kp-bg-mute)] px-2 py-1">
-              {e.status} · {e.summary}
+              {toPascalCaseId(e.status)} · {e.summary}
             </li>
           ))}
         </ul>

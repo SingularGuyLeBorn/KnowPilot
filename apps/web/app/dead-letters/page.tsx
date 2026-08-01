@@ -15,6 +15,7 @@ import { useDeadLetterList, useDeadLetterReview, useDeadLetterClear } from "@/li
 import { useCardDensity } from "@/lib/useCardDensity";
 import { EmptyState, LoadingState, PageHeader } from "@/components/shared";
 import { cn } from "@/lib/utils";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 type StatusFilter = "all" | "pending" | "reviewed";
 
@@ -31,7 +32,7 @@ export default function DeadLettersPage() {
     <div className="mx-auto max-w-5xl px-4 py-8">
       <PageHeader
         title="邮件回复死信"
-        description="未匹配 pending 的邮件回复（webhook/轮询收到但找不到对应 ask_user/审批）。审计用，可追查为什么某封回复没生效。"
+        description="未匹配 Pending 的邮件回复（Webhook/轮询收到但找不到对应 AskUser/审批）。审计用，可追查为什么某封回复没生效。"
         icon={MailX}
       />
 
@@ -92,7 +93,7 @@ export default function DeadLettersPage() {
                     <span className={cn("kp-badge", d.status === "pending" ? "kp-badge-warning" : "kp-badge-info")}>
                       {d.status === "pending" ? "待审阅" : "已审阅"}
                     </span>
-                    <span className="kp-badge kp-badge-muted">{d.source}</span>
+                    <span className="kp-badge kp-badge-muted">{toPascalCaseId(d.source)}</span>
                   </div>
                   <div className="mb-1 text-sm font-medium text-kp-text">{d.subject ?? "(无主题)"}</div>
                   <div className="mb-2 text-xs text-kp-muted">

@@ -4,6 +4,7 @@
 
 import type { ChatMessage } from "@knowpilot/shared";
 import { formatToolResultHint, formatToolTimingHint } from "@knowpilot/shared";
+import { isCompactBoundaryMessage } from "@/lib/compactMarkers";
 
 export type ToolCallRecord = {
   id: string;
@@ -56,49 +57,96 @@ function parseUserSkill(raw: unknown): { name?: string; icon?: string | null } {
   return skill ? { name: skill.name, icon: skill.icon } : {};
 }
 
+function attachAssistantToGroup(g: MessageGroup, msg: ChatMessage): void {
+  g.assistantMessage = msg;
+  const meta = parseVersionMeta(msg.toolResults);
+  if (meta) {
+    g.versions = meta.versions.map((v) => ({
+      ...v,
+      toolCalls: parseToolCalls(v.toolCalls),
+    }));
+    g.activeVersionIndex = meta.activeIndex;
+  } else {
+    g.versions = [
+      {
+        id: msg.id,
+        content: msg.content,
+        toolCalls: parseToolCalls(msg.toolCalls),
+        createdAt: typeof msg.createdAt === "string" ? msg.createdAt : new Date().toISOString(),
+      },
+    ];
+    g.activeVersionIndex = 0;
+  }
+}
+
 export function buildMessageGroups(messages: ChatMessage[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
-  let pendingUser: (ChatMessage & { skillName?: string; skillIcon?: string | null }) | null = null;
 
   for (const msg of messages) {
+    // 压缩边界不挂到上一轮 assistant，避免盖住真实回复
+    if (isCompactBoundaryMessage(msg)) continue;
     if (msg.role === "user") {
       const skill = parseUserSkill(msg.toolResults);
-      pendingUser = {
-        ...msg,
-        skillName: skill.name,
-        skillIcon: skill.icon,
-      };
       groups.push({
-        userMessage: pendingUser,
+        userMessage: {
+          ...msg,
+          skillName: skill.name,
+          skillIcon: skill.icon,
+        },
         versions: [],
         activeVersionIndex: 0,
       });
       continue;
     }
     if (msg.role === "assistant" && groups.length > 0) {
-      const g = groups[groups.length - 1];
-      g.assistantMessage = msg;
-      const meta = parseVersionMeta(msg.toolResults);
-      if (meta) {
-        g.versions = meta.versions.map((v) => ({
-          ...v,
-          toolCalls: parseToolCalls(v.toolCalls),
-        }));
-        g.activeVersionIndex = meta.activeIndex;
-      } else {
-        g.versions = [
-          {
-            id: msg.id,
-            content: msg.content,
-            toolCalls: parseToolCalls(msg.toolCalls),
-            createdAt: typeof msg.createdAt === "string" ? msg.createdAt : new Date().toISOString(),
-          },
-        ];
-        g.activeVersionIndex = 0;
-      }
+      attachAssistantToGroup(groups[groups.length - 1]!, msg);
     }
   }
   return groups;
+}
+
+/** 时间线项：普通对话轮 + 压缩边界卡片（点击才看摘要） */
+export type ChatTimelineItem =
+  | { kind: "group"; group: MessageGroup }
+  | { kind: "compact"; message: ChatMessage };
+
+export function buildChatTimeline(messages: ChatMessage[]): ChatTimelineItem[] {
+  const items: ChatTimelineItem[] = [];
+  let current: MessageGroup | null = null;
+
+  const flush = () => {
+    if (current) {
+      items.push({ kind: "group", group: current });
+      current = null;
+    }
+  };
+
+  for (const msg of messages) {
+    if (isCompactBoundaryMessage(msg)) {
+      flush();
+      items.push({ kind: "compact", message: msg });
+      continue;
+    }
+    if (msg.role === "user") {
+      flush();
+      const skill = parseUserSkill(msg.toolResults);
+      current = {
+        userMessage: {
+          ...msg,
+          skillName: skill.name,
+          skillIcon: skill.icon,
+        },
+        versions: [],
+        activeVersionIndex: 0,
+      };
+      continue;
+    }
+    if (msg.role === "assistant" && current) {
+      attachAssistantToGroup(current, msg);
+    }
+  }
+  flush();
+  return items;
 }
 
 export function getActiveVersion(group: MessageGroup): AssistantVersionEntry | null {

@@ -20,10 +20,11 @@ import type { Workspace } from "@knowpilot/shared";
 import { AdminFormShell, KpSelect } from "@/components/shared";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 const STATUS_OPTIONS = [
-  { value: "active", label: "活跃 active" },
-  { value: "archived", label: "已归档 archived" },
+  { value: "active", label: "活跃 Active" },
+  { value: "archived", label: "已归档 Archived" },
 ] as const;
 
 function formatTime(v: string | Date | null | undefined): string {
@@ -257,7 +258,9 @@ export default function WorkspaceDetailPage() {
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-[var(--kp-text-3)]">状态</dt>
-                <dd className="font-medium text-[var(--kp-text-1)]">{workspace.status}</dd>
+                <dd className="font-medium text-[var(--kp-text-1)]">
+                  {toPascalCaseId(workspace.status)}
+                </dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-[var(--kp-text-3)]">槽位配额</dt>
@@ -334,7 +337,9 @@ export default function WorkspaceDetailPage() {
                     <span className="min-w-0 flex-1 truncate font-medium text-[var(--kp-text-1)]">
                       {a.name}
                     </span>
-                    <span className="shrink-0 text-[10px] text-[var(--kp-text-3)]">{a.status}</span>
+                    <span className="shrink-0 text-[10px] text-[var(--kp-text-3)]">
+                      {toPascalCaseId(a.status)}
+                    </span>
                   </li>
                 ))}
               </ul>

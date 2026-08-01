@@ -56,7 +56,7 @@ export default function PromptsPage() {
       ) : !data?.items || data.items.length === 0 ? (
         <EmptyState
           title="尚无提示词模板"
-          description="空是因为 config/prompts/ 里还没有 .md，也不是 bug。点下方创建示例；CRUD 走本页 / tRPC prompt.*。Agent 没有专用 prompt_* 工具（改 Agent 人设用 optimize_agent_prompt）。"
+          description="空是因为 config/prompts/ 里还没有 .md，也不是 bug。点下方创建示例；CRUD 走本页 / tRPC。Agent 没有专用 Prompt 工具（改 Agent 人设用 OptimizeAgentPrompt）。"
           actionLabel="创建示例模板"
           onAction={handleCreateDemo}
         />

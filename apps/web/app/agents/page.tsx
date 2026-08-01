@@ -44,6 +44,7 @@ import { AgentAvatar } from "@/components/agentAvatar";
 import { cn } from "@/lib/utils";
 import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { describeCron, describeCronOption } from "@/lib/cronDescribe";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 /** 重面板按需加载，减轻顶栏首次进「管理」的静态依赖图 */
 const AgentToolsEditor = dynamic(
@@ -332,16 +333,24 @@ const AgentCard = memo(function AgentCard({
                 <span className="text-[var(--kp-text-3)]">上次 </span>
                 {formatHeartbeatLastRun(hb.lastRunAt)}
                 {hb.lastRunStatus
-                  ? ` · ${hb.lastRunStatus === "success" ? "成功" : hb.lastRunStatus}`
+                  ? ` · ${
+                      hb.lastRunStatus === "success"
+                        ? "成功"
+                        : hb.lastRunStatus === "failed"
+                          ? "失败"
+                          : toPascalCaseId(hb.lastRunStatus)
+                    }`
                   : ""}
               </div>
               {hb.decision?.lastMode && (
                 <div data-testid="agent-heartbeat-decision">
                   <span className="text-[var(--kp-text-3)]">决策 </span>
-                  <span className="font-mono text-[9px]">{hb.decision.lastMode}</span>
+                  <span className="font-mono text-[9px]">
+                    {toPascalCaseId(hb.decision.lastMode)}
+                  </span>
                   {(hb.decision.skipRemaining ?? 0) > 0 && (
                     <span className="ml-1 rounded-full bg-[var(--kp-bg-mute)] px-1.5 py-0.5 text-[9px]">
-                      skip {hb.decision.skipRemaining}
+                      Skip {hb.decision.skipRemaining}
                     </span>
                   )}
                 </div>

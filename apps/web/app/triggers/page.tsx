@@ -5,6 +5,7 @@
 
 
 import React, { useMemo, useState } from "react";
+import { catchUnlessCancelled } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { ChevronLeft, Plus, ToggleLeft, ToggleRight, Zap } from "lucide-react";
@@ -24,10 +25,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { agentLabel } from "@/lib/displayLabels";
+import { toPascalCaseId } from "@/lib/toolDisplayName";
 
 const EVENT_SOURCES = ["post.create", "post.update", "post.delete", "agent.create", "skill.create"];
 const TYPE_OPTIONS = [
-  { value: "file_change", label: "文件/实体事件 file_change" },
+  { value: "file_change", label: "文件/实体事件 · FileChange" },
   { value: "webhook", label: "Webhook" },
   { value: "cron", label: "Cron 表达式" },
 ] as const;
@@ -187,7 +189,7 @@ export default function TriggersPage() {
             {editingId ? "编辑触发器" : "新建触发器"}
           </h1>
           <p className="mt-1 text-sm text-[var(--kp-text-3)]">
-            事件发生时自动唤醒 Agent 或执行 Task。file_change 的 source 形如 entity.action。
+            事件发生时自动唤醒 Agent 或执行 Task。FileChange 的事件源形如 Entity.Action（底层仍为 entity.action）。
           </p>
         </div>
 
@@ -237,10 +239,10 @@ export default function TriggersPage() {
                 value={EVENT_SOURCES.includes(form.source) ? form.source : "custom"}
                 onChange={(v) => v !== "custom" && setForm({ ...form, source: v })}
                 options={[
-                  ...EVENT_SOURCES.map((s) => ({ value: s, label: s })),
+                  ...EVENT_SOURCES.map((s) => ({ value: s, label: toPascalCaseId(s) })),
                   ...(EVENT_SOURCES.includes(form.source)
                     ? []
-                    : [{ value: "custom", label: `自定义（${form.source}）` }]),
+                    : [{ value: "custom", label: `自定义（${toPascalCaseId(form.source)}）` }]),
                 ]}
                 className="w-full"
                 aria-label="事件源"
@@ -304,14 +306,14 @@ export default function TriggersPage() {
       <PageHeader
         icon={Zap}
         title="Triggers 触发器"
-        description="当 post.create 等事件发生时，自动唤醒 Agent 或执行后台 Task。"
+        description="当 PostCreate 等事件发生时，自动唤醒 Agent 或执行后台 Task。"
         action={{ label: "新建触发器", onClick: openCreate, icon: Plus }}
         showDensityToggle
       />
 
       <div className="rounded-2xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-alt)] p-4 text-xs text-[var(--kp-text-3)]">
         <p className="mb-1 font-semibold text-[var(--kp-text-2)]">常用事件源</p>
-        <code className="text-[10px]">{EVENT_SOURCES.join(" · ")}</code>
+        <code className="text-[10px]">{EVENT_SOURCES.map(toPascalCaseId).join(" · ")}</code>
       </div>
 
       {isLoading ? (
@@ -349,7 +351,7 @@ export default function TriggersPage() {
                   <div>
                     <h3 className="font-bold text-[var(--kp-text-1)]">{trigger.name}</h3>
                     <p className="mt-1 text-[10px] text-[var(--kp-text-3)]">
-                      {trigger.type} · {trigger.actionType}
+                      {toPascalCaseId(trigger.type)} · {toPascalCaseId(trigger.actionType)}
                     </p>
                   </div>
                   <button
@@ -371,7 +373,7 @@ export default function TriggersPage() {
                   <div>
                     <span className="text-[var(--kp-text-3)]">事件源 </span>
                     <code className="rounded bg-[var(--kp-bg-mute)] px-1.5 py-0.5 font-mono">
-                      {trigger.source}
+                      {toPascalCaseId(trigger.source)}
                     </code>
                   </div>
                   <div>

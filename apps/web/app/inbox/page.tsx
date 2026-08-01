@@ -25,6 +25,7 @@ import {
   Check,
   CheckSquare,
   Square,
+  Tv,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -335,7 +336,9 @@ export default function InboxPage() {
   const { data, isLoading, refetch } = useList(listInput);
   const { data: stats, refetch: refetchStats } = useStats();
   const { data: facets, refetch: refetchFacets } = useFacets(
-    statusFilter ? { status: statusFilter } : {},
+    statusFilter === "fetched" || statusFilter === "distilled" || statusFilter === "ignored"
+      ? { status: statusFilter }
+      : {},
   );
   const deleteMutation = useDelete();
   const bulkDeleteMutation = useBulkDelete();
@@ -473,7 +476,7 @@ export default function InboxPage() {
 
   const selectAllOnPage = () => {
     setMultiSelect(true);
-    setSelected(new Set(items.map((it) => it.id)));
+    setSelected(new Set(items.map((it: InboxItem) => it.id)));
   };
 
   const clearSelection = () => setSelected(new Set());

@@ -25,7 +25,55 @@ export function writeFreeModelsLocale(locale: FreeModelsLocale): void {
   }
 }
 
-const zh = {
+export type FreeModelsMessages = {
+  pageTitle: string;
+  pageDesc: string;
+  langZh: string;
+  langEn: string;
+  syncAt: string;
+  refresh: string;
+  refreshing: string;
+  refreshed: (or: number, validated: number, synced: number) => string;
+  refreshFailed: (msg: string) => string;
+  noOrKey: string;
+  runtime: string;
+  openRouterTitle: string;
+  openRouterSubtitle: string;
+  officialCatalog: string;
+  noOrKeyHint: string;
+  searchPlaceholder: string;
+  modalityAll: string;
+  modalityText: string;
+  modalityMulti: string;
+  sortCtxDesc: string;
+  sortCtxAsc: string;
+  sortName: string;
+  emptyOrTitle: string;
+  emptyOrDescHasKey: string;
+  emptyOrDescNoKey: string;
+  multimodal: string;
+  freeBadge: string;
+  ctxLabel: string;
+  modalityTextToText: string;
+  expand: string;
+  collapse: string;
+  copyId: string;
+  copied: string;
+  copyTitle: string;
+  freellmTitle: string;
+  freellmSubtitle: string;
+  emptyFreellmTitle: string;
+  emptyFreellmDesc: string;
+  validated: string;
+  budget: string;
+  rateLimit: string;
+  expires: string;
+  summaryTitle: string;
+  summaryLoading: string;
+  summaryViewAll: string;
+};
+
+const zh: FreeModelsMessages = {
   pageTitle: "免费模型目录",
   pageDesc: "OpenRouter :free 与 freellm 通道 · 复制模型 id 即可在 Chat / 压缩摘要中使用",
   langZh: "中文",
@@ -74,9 +122,9 @@ const zh = {
   summaryTitle: "免费模型目录",
   summaryLoading: "加载中…",
   summaryViewAll: "查看全部 →",
-} as const;
+};
 
-const en: { [K in keyof typeof zh]: (typeof zh)[K] } = {
+const en: FreeModelsMessages = {
   pageTitle: "Free Models",
   pageDesc: "OpenRouter :free & freellm · Copy a model id for Chat / compaction",
   langZh: "中文",
@@ -84,9 +132,9 @@ const en: { [K in keyof typeof zh]: (typeof zh)[K] } = {
   syncAt: "Synced",
   refresh: "Refresh now",
   refreshing: "Syncing…",
-  refreshed: (or, validated, synced) =>
+  refreshed: (or: number, validated: number, synced: number) =>
     `Refreshed: OpenRouter ${or} · freellm validated ${validated} (+${synced})`,
-  refreshFailed: (msg) => `Refresh failed: ${msg}`,
+  refreshFailed: (msg: string) => `Refresh failed: ${msg}`,
   noOrKey: "No OR key",
   runtime: "Runtime",
   openRouterTitle: "OpenRouter free models",
@@ -125,8 +173,6 @@ const en: { [K in keyof typeof zh]: (typeof zh)[K] } = {
   summaryLoading: "Loading…",
   summaryViewAll: "View all →",
 };
-
-export type FreeModelsMessages = typeof zh;
 
 export function freeModelsMessages(locale: FreeModelsLocale): FreeModelsMessages {
   return locale === "en" ? en : zh;

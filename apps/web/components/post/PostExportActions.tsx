@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Download, FileDown, FileText, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { catchUnlessCancelled } from "@/lib/trpc";
 import { buttonVariants } from "@/components/ui/button";
 import { exportPostMarkdownZip, exportPostPdf, type PostExportInput } from "@/lib/postExport";
 

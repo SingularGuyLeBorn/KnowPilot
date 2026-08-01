@@ -58,7 +58,7 @@ function SaveMessageAsPostDialogInner({
   onSuccess?: (href: string) => void;
 }) {
   const [mode, setMode] = useState<Mode>("create");
-  const [garden, setGarden] = useState(DEFAULT_POST_GARDEN);
+  const [garden, setGarden] = useState<string>(DEFAULT_POST_GARDEN);
   const [title, setTitle] = useState(target.previewTitle?.slice(0, 80) || "");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
