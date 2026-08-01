@@ -220,6 +220,44 @@ describe("native:read_file", () => {
       executeNativeTool("write_file", { path: "data/webpages/x.md", content: "no" }, ctx),
     ).rejects.toThrow(/禁止 write_file 直写 data/);
   });
+
+  it("write_file 返回的 workspaces/ 路径可原样 read_file（不二次嵌套）", async () => {
+    const wsDir = path.join(root, "workspaces", "ws1");
+    fs.mkdirSync(wsDir, { recursive: true });
+    const prisma = {
+      workspace: {
+        findUnique: async () => ({ path: "workspaces/ws1" }),
+      },
+    };
+    const ctx = createNativeCtx(root, {
+      prisma: prisma as never,
+      config: {},
+    });
+    ctx.agentSnapshot = { id: "a1", name: "t", tier: "sub", workspaceId: "w1", tools: [] } as never;
+    const written = (await executeNativeTool(
+      "write_file",
+      { path: "note.md", content: "hello-ws" },
+      ctx,
+    )) as { path: string };
+    expect(written.path.replace(/\\/g, "/")).toBe("workspaces/ws1/note.md");
+    const read = (await executeNativeTool("read_file", { path: written.path }, ctx)) as {
+      content: string;
+    };
+    expect(read.content).toBe("hello-ws");
+  });
+
+  it("可读 config/memories（日记/pinned 回传路径）", async () => {
+    const dir = path.join(root, "config", "memories", "daily");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "2026-08-01.md"), "day note\n", "utf8");
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool(
+      "read_file",
+      { path: "config/memories/daily/2026-08-01.md" },
+      ctx,
+    )) as { content: string };
+    expect(result.content).toContain("day note");
+  });
 });
 
 describe("native:write_file", () => {

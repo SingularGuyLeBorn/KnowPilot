@@ -65,6 +65,22 @@ export async function resolveAgentFsPath(
     const abs = resolveSafePath(ctx.config, p === "data" ? "data" : p);
     return { abs, relForReturn: p === "data" ? "data" : p };
   }
+  // workspaces/*：write_file/search/list 常返回 projectRoot 相对路径；再读时禁止二次嵌进当前 Workspace
+  if (p === "workspaces" || p.startsWith("workspaces/")) {
+    const abs = resolveSafePath(ctx.config, p === "workspaces" ? "workspaces" : p);
+    if (mode === "write") assertWritePathSafe(ctx.config, abs);
+    return { abs, relForReturn: p === "workspaces" ? "workspaces" : p };
+  }
+  // 日记 / pinned 工具会回传 config/memories/…；只读开放，其它 config 仍禁止裸扫
+  if (p === "config/memories" || p.startsWith("config/memories/")) {
+    if (mode === "write") {
+      throw new Error(
+        "禁止 write_file 直写 config/memories：请用 memory_create / memory_daily_append / pinned_memory_write",
+      );
+    }
+    const abs = resolveSafePath(ctx.config, p);
+    return { abs, relForReturn: p };
+  }
   if (p.startsWith("content/") || p === "content") {
     if (mode === "write") {
       const allowed = CONTENT_WRITE_PREFIXES.some((a) => p.startsWith(a));
@@ -385,13 +401,14 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "read_file",
     concurrencyClass: "A",
     description:
-      "读取文本文件。path：content/… 知识库；data/… 运行时产物（tool-results/webpages 等，只读）；apps/algo-viz/… 算法动画工程；否则相对当前 Agent Workspace（禁止裸扫项目根/config/其它 apps）。支持偏移与最大长度。",
+      "读取文本文件。path：content/… 知识库；data/… 运行时产物（只读）；workspaces/…（工具回传的项目相对路径）；config/memories/…（只读）；apps/algo-viz/…；否则相对当前 Agent Workspace。支持偏移与最大长度。",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "content/…、data/…（只读）、apps/algo-viz/… 或 Workspace 相对路径",
+          description:
+            "content/…、data/…、workspaces/…、config/memories/…、apps/algo-viz/… 或 Workspace 相对路径（如 notes.md）",
         },
         maxChars: { type: "number", description: "最大读取字符数，默认 12000" },
         offset: { type: "number", description: "起始字符偏移，默认 0" },

@@ -32,22 +32,32 @@ describe("toolLoopGuard", () => {
     expect(v.blocked).toBe(false);
   });
 
-  it("同名变参连续达到 nameStreakLimit 熔断（P2-01）", () => {
+  it("同名变参连续达到 nameStreakLimit 熔断（非勘察工具）", () => {
     let state = createLoopGuardState();
+    // web_search 已进勘察白名单；用写侧工具验证同名变参熔断
     for (let i = 0; i < 5; i++) {
-      const v = checkToolLoop(state, [{ name: "web_search", args: { q: `q${i}` } }], 3, 6);
+      const v = checkToolLoop(state, [{ name: "post_create", args: { title: `t${i}` } }], 3, 6);
       expect(v.blocked).toBe(false);
       state = v.state;
     }
-    const blocked = checkToolLoop(state, [{ name: "web_search", args: { q: "q5" } }], 3, 6);
+    const blocked = checkToolLoop(state, [{ name: "post_create", args: { title: "t5" } }], 3, 6);
     expect(blocked.blocked).toBe(true);
     if (blocked.blocked) expect(blocked.message).toMatch(/同一工具/);
   });
 
+  it("连续 web_search 不同关键词不触发同名熔断", () => {
+    let state = createLoopGuardState();
+    for (let i = 0; i < 8; i++) {
+      const v = checkToolLoop(state, [{ name: "web_search", args: { q: `q${i}` } }], 3, 6);
+      expect(v.blocked).toBe(false);
+      state = v.state;
+    }
+  });
+
   it("双指纹交替熔断（P2-01，非勘察工具）", () => {
     let state = createLoopGuardState();
-    const a = { name: "web_search", args: { q: "a" } };
-    const b = { name: "web_search", args: { q: "b" } };
+    const a = { name: "post_create", args: { title: "a" } };
+    const b = { name: "post_create", args: { title: "b" } };
     // A B A B A → 尚未满 6；再 B → 交替窗口命中
     for (const call of [a, b, a, b, a]) {
       const v = checkToolLoop(state, [call], 99, 99);

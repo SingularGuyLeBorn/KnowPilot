@@ -25,18 +25,23 @@ function clampInt(n: unknown, def: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.floor(v)));
 }
 
-function resolveInputPath(ctx: NativeToolContext, relPath: string): { abs: string; rel: string } {
+async function resolveInputPath(
+  ctx: NativeToolContext,
+  relPath: string,
+): Promise<{ abs: string; rel: string }> {
   let p = String(relPath ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
-  if (!p) throw new Error("需要 path（相对项目根的 PDF/DOCX 路径，如 content/uploads/foo.pdf）");
-  if (p.includes("..")) throw new Error("路径不允许包含 ..");
-  if (/^[a-zA-Z]:[\\/]/.test(p) || p.startsWith("//")) {
-    throw new Error(`路径不允许为盘符绝对路径：${relPath}`);
+  if (!p) {
+    throw new Error(
+      "需要 path：Workspace 相对（如 downloads/foo.pdf）、content/uploads/… 或 workspaces/…",
+    );
   }
-  const abs = resolveSafePath(ctx.config, p);
+  // 与 download_file / write_file 对齐，避免「下到 Workspace、解析却按项目根找」
+  const { resolveAgentFsPath } = await import("./fs.js");
+  const { abs, relForReturn } = await resolveAgentFsPath(ctx, p, "read");
   assertPathWithinProjectRoot(ctx.config, abs);
-  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${p}`);
-  if (!fs.statSync(abs).isFile()) throw new Error(`不是文件: ${p}`);
-  return { abs, rel: p };
+  if (!fs.existsSync(abs)) throw new Error(`文件不存在: ${relForReturn}`);
+  if (!fs.statSync(abs).isFile()) throw new Error(`不是文件: ${relForReturn}`);
+  return { abs, rel: relForReturn };
 }
 
 function detectKind(filePath: string, explicit?: string): "pdf" | "docx" {
@@ -94,7 +99,7 @@ function defaultOutPath(inputRel: string): string {
 }
 
 async function documentToMarkdown(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { abs, rel } = resolveInputPath(ctx, String(args.path ?? ""));
+  const { abs, rel } = await resolveInputPath(ctx, String(args.path ?? ""));
   const kind = detectKind(abs, args.fileType != null ? String(args.fileType) : undefined);
   const maxChars = clampInt(args.maxChars, 20000, 1000, 100000);
   const save = args.save !== false && String(args.save).toLowerCase() !== "false";
@@ -163,11 +168,14 @@ const DOCUMENT_DEFS: NativeToolDefinition[] = [
     name: "document_to_markdown",
     concurrencyClass: "A",
     description:
-      "将本地 PDF 或 Word（.docx）转为 Markdown。用于 Inbox/论文入库：path 相对项目根（如 content/uploads/paper.pdf）。默认把 .md 写到同目录或 data/workspace/parsed/。扫描件无文本层时会报错并提示 OCR。长文返回可能截断，完整版看 outputPath。",
+      "将本地 PDF 或 Word（.docx）转为 Markdown。path 与 download_file 对齐：Workspace 相对（如 downloads/paper.pdf）、content/uploads/… 或 workspaces/…。默认把 .md 写到同目录或 data/workspace/parsed/。扫描件无文本层时会报错并提示 OCR。长文返回可能截断，完整版看 outputPath。",
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", description: "相对项目根的 PDF/DOCX 路径" },
+        path: {
+          type: "string",
+          description: "Workspace 相对、content/uploads/… 或 workspaces/… 的 PDF/DOCX",
+        },
         fileType: { type: "string", description: "可选 pdf|docx，默认按扩展名" },
         outputPath: {
           type: "string",

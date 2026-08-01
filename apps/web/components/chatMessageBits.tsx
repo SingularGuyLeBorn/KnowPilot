@@ -28,7 +28,8 @@ const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: str
   super: { label: "子 Agent 任务", bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200" },
   manager: { label: "管理 Agent", bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-200" },
   sub: { label: "子 Agent 发送", bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
-  system: { label: "心跳触发", bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
+  // system = 熔断注入 / resume / 轮换摘要等；心跳会话另有 cron/kind 区分，勿一律标「心跳」
+  system: { label: "系统", bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200" },
   cron: { label: "定时节律", bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-200" },
   childNotify: { label: "来自子 Agent", bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-200" },
 };

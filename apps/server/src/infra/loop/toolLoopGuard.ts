@@ -53,6 +53,19 @@ const EXPLORE_READONLY_TOOLS = new Set([
   "memory_daily_search",
   "todo_read",
   "browser_login_status",
+  "web_search",
+  "search_arxiv",
+  "fetch_arxiv",
+  "search_huggingface",
+  "literature_search",
+  "literature_get",
+  "video_transcript",
+  "tikhub_request",
+  "inbox_list",
+  "inbox_stats",
+  "inbox_enrich",
+  "session_search",
+  "rss_fetch",
 ]);
 
 function isExploreReadonlyTool(name: string): boolean {

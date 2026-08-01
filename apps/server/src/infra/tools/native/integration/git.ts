@@ -102,15 +102,17 @@ async function gitCloneTool(args: Record<string, unknown>, ctx: NativeToolContex
   }
   const destRel = String(args.dest || "").trim();
   if (!destRel) throw new Error("dest 不能为空");
-  const destAbs = resolveSafePath(ctx.config, destRel);
-  if (fs.existsSync(destAbs)) throw new Error(`目标目录已存在: ${destRel}`);
+  // 与 write_file 同源：默认落当前 Workspace；返回路径可被 read_file 原样读回
+  const { resolveAgentFsPath } = await import("../fs.js");
+  const { abs: destAbs, relForReturn } = await resolveAgentFsPath(ctx, destRel, "write");
+  if (fs.existsSync(destAbs)) throw new Error(`目标目录已存在: ${relForReturn}`);
   const parent = path.dirname(destAbs);
   if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
   const { stdout, stderr } = await execFileAsync("git", ["clone", url, destAbs], {
     maxBuffer: 4 * 1024 * 1024,
     windowsHide: true,
   });
-  return { url, dest: destRel, output: (stdout || stderr || "").trim() };
+  return { url, dest: relForReturn, output: (stdout || stderr || "").trim() };
 }
 
 export const gitDefs: NativeToolDefinition[] = [
@@ -139,11 +141,12 @@ export const gitDefs: NativeToolDefinition[] = [
   },
   {
     name: "git_clone",
-    description: "克隆远程 Git 仓库到项目根目录内的指定子目录。",
+    description:
+      "克隆远程 Git 仓库到当前 Agent Workspace（或 content/uploads/、workspaces/…）。dest 规则同 write_file；返回 dest 可直接 read_file。",
     parameters: zodParams(
       z.object({
         url: z.string().describe("仓库 HTTPS/SSH URL"),
-        dest: z.string().describe("项目内目标相对目录，如 repos/foo"),
+        dest: z.string().describe("相对 Workspace 的目标目录，如 repos/foo；也可 workspaces/… 或 content/uploads/…"),
       }),
     ),
   },
