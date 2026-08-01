@@ -27,39 +27,20 @@ const VALID_TYPES = new Set<string>([
   "strike-through",
 ]);
 
-/** Milkdown 手绘标注全局刷新注册表：主滚动容器滚动时统一重绘所有标注 */
-const annotationRefreshers = new Set<() => void>();
-let mainScrollListenerAdded = false;
-let scrollRefreshRaf: number | null = null;
-
-function refreshAllAnnotations() {
-  for (const refresh of annotationRefreshers) {
-    try {
-      refresh();
-    } catch (e) {
-      console.warn("[htmlMarkSchema] refresh annotation failed:", e);
-    }
-  }
-}
-
-function onMainScroll() {
-  if (scrollRefreshRaf != null) return;
-  scrollRefreshRaf = requestAnimationFrame(() => {
-    scrollRefreshRaf = null;
-    refreshAllAnnotations();
-  });
-}
-
-function registerAnnotationRefresh(refresh: () => void) {
-  annotationRefreshers.add(refresh);
-  if (!mainScrollListenerAdded && typeof document !== "undefined") {
-    mainScrollListenerAdded = true;
-    const scroller = document.querySelector("[data-kp-main-scroll]");
-    const target = scroller || window;
-    target.addEventListener("scroll", onMainScroll, { passive: true });
-  }
-  return () => {
-    annotationRefreshers.delete(refresh);
+/** 创建时动画配置（统一入口，避免散落默认值） */
+function buildAnnotationConfig(attrs: MarkHtmlData) {
+  const type = VALID_TYPES.has(attrs.annotation) ? attrs.annotation : "underline";
+  const color = attrs.color || DEFAULT_COLOR;
+  return {
+    type: type as RoughAnnotationType,
+    color,
+    strokeWidth: Number(attrs.strokeWidth) || 2,
+    padding: Number(attrs.padding) || 4,
+    iterations: Number(attrs.iterations) || 2,
+    multiline: attrs.multiline !== false,
+    animate: attrs.animate !== false,
+    animationDuration: Number(attrs.animationDuration) || 800,
+    ...(type === "bracket" && attrs.bracket ? { bracket: attrs.bracket } : {}),
   };
 }
 
@@ -134,9 +115,11 @@ export const htmlMarkSchema = $node("html_mark", () => ({
 
 function createHtmlMarkView(node: ProseNode): NodeView {
   const attrs = node.attrs as MarkHtmlData;
+
+  // 外层 wrapper 是节点视图本身；内部文本 + SVG 手绘覆盖层都收在 wrapper 里，
+  // 避免 rough-notation 把 SVG 插到 contenteditable 的节点视图外部，干扰 ProseMirror 的选区映射。
   const dom = document.createElement("span");
   dom.className = "kp-html-mark";
-  dom.textContent = attrs.value;
   dom.dataset.type = "html_mark";
   dom.dataset.raw = attrs.raw;
   dom.dataset.annotation = attrs.annotation;
@@ -146,9 +129,17 @@ function createHtmlMarkView(node: ProseNode): NodeView {
   dom.style.display = "inline-block";
   dom.style.verticalAlign = "baseline";
 
+  const content = document.createElement("span");
+  content.className = "kp-html-mark-content";
+  content.textContent = attrs.value;
+  content.style.display = "inline-block";
+  dom.appendChild(content);
+
   let annotation: ReturnType<typeof annotate> | null = null;
   let ro: ResizeObserver | null = null;
   let io: IntersectionObserver | null = null;
+  let roTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastParentRect: DOMRectReadOnly | null = null;
 
   const removeAnnotation = () => {
     annotation?.remove();
@@ -157,19 +148,7 @@ function createHtmlMarkView(node: ProseNode): NodeView {
 
   const applyAnnotation = () => {
     removeAnnotation();
-    const type = VALID_TYPES.has(attrs.annotation) ? attrs.annotation : "underline";
-    const color = attrs.color || DEFAULT_COLOR;
-    annotation = annotate(dom, {
-      type: type as RoughAnnotationType,
-      color,
-      strokeWidth: Number(attrs.strokeWidth) || 2,
-      padding: Number(attrs.padding) || 4,
-      iterations: Number(attrs.iterations) || 2,
-      multiline: attrs.multiline !== false,
-      animate: attrs.animate !== false,
-      animationDuration: Number(attrs.animationDuration) || 800,
-      ...(type === "bracket" && attrs.bracket ? { bracket: attrs.bracket } : {}),
-    });
+    annotation = annotate(content, buildAnnotationConfig(attrs));
     annotation.show();
   };
 
@@ -177,11 +156,10 @@ function createHtmlMarkView(node: ProseNode): NodeView {
     applyAnnotation();
   };
 
+  // rough-notation 状态陷阱：remove() 会把状态置为 'unattached'，
+  // 此时再调 show() 会直接 break 什么都不画。任何“刷新”都必须销毁对象并重建。
   const refresh = () => {
-    if (annotation) {
-      annotation.remove();
-      annotation.show();
-    }
+    applyAnnotation();
   };
 
   if (attrs.animate && typeof IntersectionObserver !== "undefined") {
@@ -202,13 +180,31 @@ function createHtmlMarkView(node: ProseNode): NodeView {
     show();
   }
 
+  // 不观察 wrapper（含 SVG）避免插入/移除 SVG 触发 ResizeObserver → refresh 死循环；
+  // 只观察 wrapper 父级段落，且只在尺寸变化超过 2px 并防抖 150ms 后才 refresh，
+  // 避免鼠标 hover/微小布局抖动导致手绘层被 remove/show 反复重建而闪烁或消失。
   if (typeof ResizeObserver !== "undefined") {
-    ro = new ResizeObserver(() => refresh());
-    ro.observe(dom);
-    if (document.body) ro.observe(document.body);
+    ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const rect = entry.contentRect;
+      if (lastParentRect) {
+        const dx = Math.abs(rect.width - lastParentRect.width);
+        const dy = Math.abs(rect.height - lastParentRect.height);
+        if (dx <= 2 && dy <= 2) return;
+      }
+      lastParentRect = rect;
+      if (roTimer) clearTimeout(roTimer);
+      roTimer = setTimeout(() => {
+        roTimer = null;
+        refresh();
+      }, 150);
+    });
+    ro.observe(dom.parentElement ?? dom);
   }
 
-  const unregisterScrollRefresh = registerAnnotationRefresh(refresh);
+  // SVG 已随 wrapper span（position: relative）插入 DOM 流，跟随滚动容器自然滚动；
+  // 不需要额外监听 scroll，否则滚动时调用 rough-notation 的 remove/show 会触发状态陷阱。
 
   return {
     dom,
@@ -216,7 +212,7 @@ function createHtmlMarkView(node: ProseNode): NodeView {
       if (updated.type.name !== "html_mark") return false;
       const next = updated.attrs as MarkHtmlData;
       if (next.raw === attrs.raw) return true;
-      dom.textContent = next.value;
+      content.textContent = next.value;
       dom.dataset.raw = next.raw;
       dom.dataset.annotation = next.annotation;
       if (next.color) dom.dataset.color = next.color;
@@ -227,11 +223,15 @@ function createHtmlMarkView(node: ProseNode): NodeView {
       applyAnnotation();
       return true;
     },
+    ignoreMutation: () => true,
     destroy() {
       removeAnnotation();
+      if (roTimer) {
+        clearTimeout(roTimer);
+        roTimer = null;
+      }
       ro?.disconnect();
       io?.disconnect();
-      unregisterScrollRefresh();
     },
   };
 }

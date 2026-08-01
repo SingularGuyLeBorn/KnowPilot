@@ -137,6 +137,14 @@ function MilkdownWysiwyg({
     view.setProps({ editable: () => !readOnly });
   }, [editorLoading, getEditor, readOnly]);
 
+  // useEffect(() => {
+  //   if (editorLoading) return;
+  //   const editor = getEditor();
+  //   if (!editor) return;
+  //   (window as any).__milkdown_editor = editor;
+  //   (window as any).__milkdown_view = editor.ctx.get(editorViewCtx);
+  // }, [editorLoading, getEditor]);
+
   useEditor(
     (root) => {
       setMilkdownLinkNavMeta({ garden: linkNavGarden, slug: linkNavSlug });

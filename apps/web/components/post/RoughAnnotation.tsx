@@ -100,7 +100,7 @@ export function RoughAnnotation({
     const el = ref.current;
     if (!el) return;
 
-    const ann = annotate(el, {
+    let ann = annotate(el, {
       type: resolvedType,
       color: resolvedColor,
       strokeWidth,
@@ -111,33 +111,35 @@ export function RoughAnnotation({
       animationDuration,
       ...(bracket ? { bracket } : {}),
     });
-
-    const showingRef = { current: false };
+    annotationRef.current = ann;
 
     const safeShow = () => {
-      showingRef.current = true;
       requestAnimationFrame(() => {
-        if (annotationRef.current) {
-          annotationRef.current.show();
-        }
+        ann.show();
       });
     };
 
+    // rough-notation 状态陷阱：remove() 会把状态置为 'unattached'，
+    // 此时 show() 什么都不做。任何刷新都必须销毁对象并重建。
     const refresh = () => {
-      if (showingRef.current && annotationRef.current) {
-        annotationRef.current.remove();
-        annotationRef.current.show();
-      }
+      ann.remove();
+      annotationRef.current = ann = annotate(el, {
+        type: resolvedType,
+        color: resolvedColor,
+        strokeWidth,
+        padding,
+        iterations,
+        multiline,
+        animate,
+        animationDuration,
+        ...(bracket ? { bracket } : {}),
+      });
+      ann.show();
     };
 
-    // 观察元素自身及 document.body 的尺寸变化（如 KaTeX 渲染 / 表格布局下推时更新手绘坐标）
-    const ro = new ResizeObserver(() => {
-      refresh();
-    });
+    // 观察元素自身的尺寸变化（如 KaTeX 渲染 / 表格布局下推时更新手绘坐标）
+    const ro = new ResizeObserver(() => refresh());
     ro.observe(el);
-    if (document.body) {
-      ro.observe(document.body);
-    }
     window.addEventListener("resize", refresh);
 
     // IntersectionObserver：滚入视口时触发动画

@@ -149,13 +149,10 @@
         opacity: 0;
         pointer-events: none;
       }
-      /* ProseMirror 在非空段落末尾加的 trailingBreak 会在 inline-block/leaf 节点后产生多余空行；
-         空段落（仅含该 br）保留，避免塌陷。 */
-      .milkdown-editor .milkdown .ProseMirror-trailingBreak:not(:only-child) {
-        display: none;
-      }
-      .milkdown-editor .milkdown p {
-        min-height: 1.7em;
+      /* ProseMirror 在非空段落末尾加的 trailingBreak 在 inline-block/leaf 节点后可能产生空行；
+         但 display:none 会导致光标回弹。先只让 separator 归 inline，必要时再处理。 */
+      .milkdown-editor .milkdown .ProseMirror-trailingBreak {
+        display: inline;
       }
       .milkdown-editor .milkdown a {
         color: var(--kp-brand-deep);
