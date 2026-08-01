@@ -378,6 +378,8 @@ async function injectUserMessages(
           sessionId: input.sessionId!,
           role: "user",
           content: item.content,
+          // 熔断/审批/steer 注入不是用户手打——source=system，避免气泡伪装成用户发言
+          source: "system",
         } as Parameters<typeof input.services.message.create>[0]);
         if (created.success && created.data && typeof created.data === "object" && "id" in created.data) {
           messageId = String((created.data as { id: string }).id);

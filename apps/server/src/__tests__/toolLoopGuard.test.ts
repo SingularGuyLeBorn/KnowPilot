@@ -44,10 +44,10 @@ describe("toolLoopGuard", () => {
     if (blocked.blocked) expect(blocked.message).toMatch(/同一工具/);
   });
 
-  it("双指纹交替熔断（P2-01）", () => {
+  it("双指纹交替熔断（P2-01，非勘察工具）", () => {
     let state = createLoopGuardState();
-    const a = { name: "read_file", args: { path: "a" } };
-    const b = { name: "read_file", args: { path: "b" } };
+    const a = { name: "web_search", args: { q: "a" } };
+    const b = { name: "web_search", args: { q: "b" } };
     // A B A B A → 尚未满 6；再 B → 交替窗口命中
     for (const call of [a, b, a, b, a]) {
       const v = checkToolLoop(state, [call], 99, 99);
@@ -57,6 +57,27 @@ describe("toolLoopGuard", () => {
     const blocked = checkToolLoop(state, [b], 99, 99);
     expect(blocked.blocked).toBe(true);
     if (blocked.blocked) expect(blocked.message).toMatch(/交替/);
+  });
+
+  it("勘察类 list/read 不同路径不触发同名/交替熔断，同参仍熔断", () => {
+    let state = createLoopGuardState();
+    for (let i = 0; i < 8; i++) {
+      const v = checkToolLoop(state, [{ name: "list_directory", args: { path: `d${i}` } }], 3, 6);
+      expect(v.blocked).toBe(false);
+      state = v.state;
+    }
+    const a = { name: "read_file", args: { path: "a.md" } };
+    const b = { name: "read_file", args: { path: "b.md" } };
+    for (const call of [a, b, a, b, a, b]) {
+      const v = checkToolLoop(state, [call], 3, 6);
+      expect(v.blocked).toBe(false);
+      state = v.state;
+    }
+    // 同参连续仍熔断
+    state = checkToolLoop(state, [a], 3, 6).state;
+    state = checkToolLoop(state, [a], 3, 6).state;
+    const blocked = checkToolLoop(state, [a], 3, 6);
+    expect(blocked.blocked).toBe(true);
   });
 
   it("detectOscillation 识别 A/B 乒乓", () => {

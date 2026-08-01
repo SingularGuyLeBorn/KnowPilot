@@ -34,6 +34,24 @@ const DEFAULT_NAME_STREAK = 6;
 const RECENT_CAP = 32;
 const OSCILLATION_WINDOW = 6;
 
+/**
+ * 知识库勘察类只读工具：连续 list/read 不同路径是正常推进，
+ * 不计入「同名变参刷屏」与「双指纹交替」；仍受同参 fingerprint 熔断约束。
+ */
+const EXPLORE_READONLY_TOOLS = new Set([
+  "list_directory",
+  "read_file",
+  "post_list",
+  "garden_list",
+  "garden_get",
+  "search_files",
+  "glob_files",
+]);
+
+function isExploreReadonlyTool(name: string): boolean {
+  return EXPLORE_READONLY_TOOLS.has(String(name || "").replace(/^native:/, ""));
+}
+
 /** 稳定序列化：键排序，避免同参不同字段序误判为不同 */
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") {
@@ -98,11 +116,18 @@ export function checkToolLoop(
       streakCount = 1;
     }
 
-    if (lastName === name) {
-      nameStreak += 1;
+    const explore = isExploreReadonlyTool(name);
+    if (!explore) {
+      if (lastName === name) {
+        nameStreak += 1;
+      } else {
+        lastName = name;
+        nameStreak = 1;
+      }
     } else {
-      lastName = name;
-      nameStreak = 1;
+      // 勘察工具打断「写/搜」类同名 streak，避免读完目录后误连坐
+      lastName = null;
+      nameStreak = 0;
     }
 
     recent.push(fp);
@@ -121,7 +146,7 @@ export function checkToolLoop(
       };
     }
 
-    if (nameStreak >= nameStreakLimit) {
+    if (!explore && nameStreak >= nameStreakLimit) {
       return {
         blocked: true,
         state: next,
@@ -132,16 +157,19 @@ export function checkToolLoop(
       };
     }
 
-    const osc = detectOscillation(recent);
-    if (osc) {
-      return {
-        blocked: true,
-        state: next,
-        fingerprint: fp,
-        message:
-          `检测到工具死循环：在两种调用间交替（${osc}）。` +
-          `请停止乒乓调用，改换策略或向用户说明卡点。`,
-      };
+    // 勘察类 A/B 交替读文件是常态，不做乒乓熔断
+    if (!explore) {
+      const osc = detectOscillation(recent);
+      if (osc) {
+        return {
+          blocked: true,
+          state: next,
+          fingerprint: fp,
+          message:
+            `检测到工具死循环：在两种调用间交替（${osc}）。` +
+            `请停止乒乓调用，改换策略或向用户说明卡点。`,
+        };
+      }
     }
   }
 

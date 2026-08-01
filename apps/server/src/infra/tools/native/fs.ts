@@ -36,6 +36,7 @@ function isAlgoVizProjectPath(p: string): boolean {
 /**
  * Agent FS 路径单点（读写对称）：
  * - content/：读任意知识库；写仅 content/uploads/
+ * - data/tool-results/：只读（大工具结果落盘，offload 提示的路径必须能读回）
  * - apps/algo-viz/：只读（对照样例）；创建/注册动画用 algo_viz_create
  * - 其余：落到当前 Agent Workspace（无 Workspace → data/workspace/）
  * - list/search 默认 Workspace 根，禁止裸扫项目根
@@ -51,6 +52,14 @@ export async function resolveAgentFsPath(
   if (p.includes("..")) throw new Error("路径不允许包含 ..");
   if (/^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]/.test(p) || p.startsWith("//")) {
     throw new Error(`路径不允许为绝对路径：${relPath}`);
+  }
+  // 工具大结果落盘路径（相对 projectRoot）；禁止误落到 Workspace 下变成 workspaces/.../data/tool-results
+  if (p === "data/tool-results" || p.startsWith("data/tool-results/")) {
+    if (mode === "write") {
+      throw new Error("禁止 write_file 写 data/tool-results：该目录仅由运行时 offload 写入，用 read_file 分段读取");
+    }
+    const abs = resolveSafePath(ctx.config, p);
+    return { abs, relForReturn: p };
   }
   if (p.startsWith("content/") || p === "content") {
     if (mode === "write") {

@@ -188,6 +188,20 @@ describe("native:read_file", () => {
     expect(result.offset).toBe(3);
     expect(result.totalChars).toBe(10);
   });
+
+  it("可读 data/tool-results（offload 落盘路径，不误落到 Workspace）", async () => {
+    const offDir = path.join(root, "data", "tool-results", "sess1");
+    fs.mkdirSync(offDir, { recursive: true });
+    fs.writeFileSync(path.join(offDir, "call_1.json"), '{"items":[1,2,3]}', "utf8");
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool(
+      "read_file",
+      { path: "data/tool-results/sess1/call_1.json" },
+      ctx,
+    )) as { content: string; path: string };
+    expect(result.path).toBe("data/tool-results/sess1/call_1.json");
+    expect(result.content).toContain('"items"');
+  });
 });
 
 describe("native:write_file", () => {
