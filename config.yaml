@@ -84,6 +84,9 @@ asyncJobs:
   # 排队总数上限，满则入池拒绝，调用方（LLM 工具/UI）收到「队列已满，请稍后再派」明确错误
   # env AGENT_ASYNC_MAX_QUEUED 可覆盖
   maxQueued: 100
+  # lightweight（纯工具/sleep/Playwright 抓取）并发上限——与 LLM 槽正交；
+  # 默认 2，避免多路浏览器把 Node 打崩。env AGENT_ASYNC_MAX_LIGHTWEIGHT 可覆盖
+  maxLightweightConcurrent: 2
   # 单任务执行超时（毫秒）
   taskTimeoutMs: 300000
   # 排队超时（毫秒）；0 = 不限制

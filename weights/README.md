@@ -8,13 +8,14 @@
 ```
 weights/
 ├── ocr/                    # 光学字符识别模型
-│   └── paddleocr/          # PaddleOCR 模型(从 C 盘迁移至此)
+│   └── paddleocr/          # PaddleOCR（PPOCR_HOME）
+├── hf/                     # Hugging Face Hub 缓存（HF_HOME；faster-whisper 等）
+│   └── hub/                # models--Systran--faster-whisper-* 等
 ├── tts/                    # 文本转语音引擎+模型
 │   └── piper/
-└── asr/                    # 语音转文字引擎+模型
+└── asr/                    # 语音转文字（whisper.cpp 二进制路线，可选）
     └── whisper/
 ```
-
 ---
 
 ## OCR — PaddleOCR
@@ -26,6 +27,16 @@ weights/
 | `ocr/paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/` | 方向分类模型 | ~2 MB |
 
 **注意**: 首次运行会自动下载模型. 已通过 `PPOCR_HOME` 环境变量将下载路径指向本目录,不再占用 C 盘空间. 
+
+---
+
+## HF — faster-whisper（视频笔记 STT）
+
+| 路径 | 说明 | 大小 |
+|------|------|------|
+| `hf/hub/models--Systran--faster-whisper-small/` | 默认（只保留这一档） | ~464 MB |
+
+`.env`：`HF_HOME` + `HUGGINGFACE_HUB_CACHE=...\weights\hf\hub` + `STT_WHISPER_MODEL=small`；国内加 `HF_ENDPOINT=https://hf-mirror.com` 与 `HF_HUB_DISABLE_XET=1`。
 
 ---
 

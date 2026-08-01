@@ -1,20 +1,11 @@
 ---
-name: deep-research
-kind: procedural
-version: "1.0.0"
+name: "deep-research"
+description: "deep-research"
+icon: "Wand2"
+trigger: "/deep-research"
 enabled: true
-description: "精简深度调研：选题策略 → 网页+文献检索 → 交叉验证 → Markdown 报告。创作前调研、技术综述、竞品/领域扫读时用。"
-origin: "adapted from futuregene/future-skills deep-research (MIT); KnowPilot-native tools"
-allowed-tools:
-  - native:web_search
-  - native:literature_search
-  - native:literature_get
-  - native:read_article
-  - native:document_to_markdown
-  - native:write_file
-  - native:post_create
+kind: procedural
 ---
-
 # Deep Research（KnowPilot 精简版）
 
 陪伴创作的调研流程：先想清楚问什么，再搜网页与文献，交叉验证后落盘成 Markdown。
@@ -31,10 +22,11 @@ allowed-tools:
 |------|------|
 | 网页广搜 | `web_search` |
 | 学术检索 | `literature_search`（openalex / arxiv / semantic_scholar / all） |
+| arXiv 全文获取 | `fetch_arxiv`（arXiv ID）→ `download_file` 下载 PDF |
 | 单篇详情 | `literature_get`（DOI / arXiv id） |
 | 精读网页 | `read_article`（长文用 offset 翻页） |
 | PDF/Word 入库 | `document_to_markdown` |
-| 报告落盘 | `write_file` 或 `post_create` |
+| 报告落盘 | `write_file`（Workspace）或 `post_create`（数字花园） |
 
 **禁止**调用 `future` CLI 或不存在的 `search_paper` / `parse_doc`。
 

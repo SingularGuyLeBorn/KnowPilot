@@ -17,6 +17,8 @@ author: KnowPilot
 - 「3b1b 风格 / 板书式算法动画」
 - 「Remotion Code Motion Explainer」
 
+微信/博客**文章转短片**请改走 Skill `wechat-article-remotion`（`article_material_pack` → `beats.json` → `article_video_compose`），不要用算法白底模板硬套长文。
+
 ## 教学验收铁律（v0.3）
 
 > 完整清单见 `skill_view(name="algo-viz", file_path="references/algorithm-explainer-pedagogy.md")`。
