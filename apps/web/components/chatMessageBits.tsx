@@ -213,35 +213,33 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* 渲染 / 源码(可编辑) 分段切换按钮 */}
-          <div className="flex items-center gap-0.5 rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] p-0.5 text-[11px]">
+          {/* 渲染 / 源码(可编辑) 纯图标分段切换按钮 */}
+          <div className="flex items-center gap-0.5 rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] p-0.5">
             <button
               type="button"
               onClick={() => setViewMode("rendered")}
               className={cn(
-                "flex items-center gap-1 rounded-md px-2.5 py-0.5 font-medium transition",
+                "flex h-6 w-6 items-center justify-center rounded-md transition-all",
                 viewMode === "rendered"
-                  ? "bg-[var(--kp-brand-soft)] font-semibold text-[var(--kp-brand-deep)] shadow-2xs"
-                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
+                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] shadow-2xs"
+                  : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
               )}
-              title="富文本 / Markdown 渲染视图"
+              title="Markdown 富文本渲染视图"
             >
-              <Eye className="h-3 w-3" />
-              <span>渲染</span>
+              <Eye className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
               onClick={() => setViewMode("source")}
               className={cn(
-                "flex items-center gap-1 rounded-md px-2.5 py-0.5 font-medium transition",
+                "flex h-6 w-6 items-center justify-center rounded-md transition-all",
                 viewMode === "source"
-                  ? "bg-zinc-800 font-semibold text-zinc-100 shadow-2xs dark:bg-zinc-700"
-                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
+                  ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)] shadow-2xs"
+                  : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-text-1)]",
               )}
-              title="查看原始源码文本，并可直接在框内编辑修改"
+              title="原始源码视图（可直接在此编辑内容）"
             >
-              <Code2 className="h-3 w-3" />
-              <span>源码 (可编辑)</span>
+              <Code2 className="h-3.5 w-3.5" />
             </button>
           </div>
 
@@ -329,18 +327,18 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
           </div>
         </div>
 
-        {/* 1. 源码模式（直接在代码框内编辑） */}
+        {/* 1. 源码模式（浅色基调，直接在代码框内编辑） */}
         {viewMode === "source" ? (
-          <div className="space-y-1.5 rounded-xl border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs text-zinc-200 shadow-inner">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5 text-[10px] text-zinc-400">
-              <span className="font-semibold text-zinc-300">RAW SOURCE CODE (EDITABLE)</span>
-              <span>{content.length} CHARS</span>
+          <div className="space-y-1.5 rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)]/70 p-3 font-mono text-xs text-[var(--kp-text-1)] shadow-inner">
+            <div className="flex items-center justify-between border-b border-[var(--kp-divider-light)] pb-1.5 text-[10px] font-medium text-[var(--kp-text-3)]">
+              <span className="font-semibold text-[var(--kp-text-2)] uppercase tracking-wider">原始源码（在框内可直接编辑）</span>
+              <span>{content.length} 字符</span>
             </div>
             <textarea
               value={content}
               onChange={(e) => handleContentChange(e.target.value)}
               rows={Math.min(18, Math.max(6, content.split("\n").length + 1))}
-              className="w-full resize-y border-0 bg-transparent p-0 font-mono text-[11px] leading-relaxed text-zinc-100 shadow-none focus:outline-none focus:ring-0 selection:bg-zinc-700 selection:text-white"
+              className="w-full resize-y border-0 bg-transparent p-0 font-mono text-[11px] leading-relaxed text-[var(--kp-text-1)] placeholder-[var(--kp-text-3)] shadow-none focus:outline-none focus:ring-0 selection:bg-[var(--kp-brand-soft)] selection:text-[var(--kp-brand-deep)]"
               placeholder="输入或修改源码正文..."
             />
           </div>
