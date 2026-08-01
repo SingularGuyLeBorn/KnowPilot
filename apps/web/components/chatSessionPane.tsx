@@ -73,6 +73,10 @@ export interface ChatSessionPaneProps {
   filesPanelOpen?: boolean;
   /** 打开左栏「运行」Tab */
   onOpenRuntimePanel?: () => void;
+  /** 集群 pill：打开左侧会话 / Agent 树 */
+  onFocusSwarm?: () => void;
+  /** 输入框聚焦时提前拉取 Skill 列表（idle 兜底之外的快路径） */
+  onWarmSkills?: () => void;
 }
 
 export function ChatSessionPane({
@@ -99,6 +103,8 @@ export function ChatSessionPane({
   onOpenFilesPanel,
   filesPanelOpen,
   onOpenRuntimePanel,
+  onFocusSwarm,
+  onWarmSkills,
 }: ChatSessionPaneProps) {
   const [saveAsPostTarget, setSaveAsPostTarget] = useState<SaveMessageAsPostTarget | null>(null);
   const lifecycleKey = sessionId ?? NEW_STREAM_KEY;
@@ -591,6 +597,8 @@ export function ChatSessionPane({
         dispatchToConsumeItems={runtimeToConsumeItems}
         dispatchSyncTasks={syncTaskItems}
         onOpenRuntimePanel={onOpenRuntimePanel}
+        onFocusSwarm={onFocusSwarm}
+        onWarmSkills={onWarmSkills}
       />
 
       <SaveMessageAsPostDialog

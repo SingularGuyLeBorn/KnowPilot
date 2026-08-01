@@ -106,6 +106,8 @@ export function ChatView() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [showCreateSubagent, setShowCreateSubagent] = useState(false);
+  /** 首屏 idle 后再拉 Skill 列表，避免进 Chat 就多打一枪；输入框聚焦会提前触发 */
+  const [skillsQueryReady, setSkillsQueryReady] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   // toast 自动消失：showToast 内联重置定时器（重复调用重新计时、传 null 停表）。
   // 与原「toast state 变化 → useEffect 重置计时」相比：不同文案路径逐点等价；
@@ -162,15 +164,32 @@ export function ChatView() {
   const { useList: useAgentList } = useAgent();
   // R10：pageSize 50→100，兼顾 WorkspaceTree 对全部 Agent 的需求；WorkspaceTree 复用本查询，不再各自发 agent.list(100)。
   const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
-  // A16：skill 列表极少变化，加 staleTime 5min，减少每次进 Chat 都重请求。
-  // skill CRUD 后 useCRUDApi 会 invalidate utils.skill.list（按 key 失效全部 input），自动刷新。
-  const skillsQuery = trpc.skill.list.useQuery({ page: 1, pageSize: 100, enabled: true }, { staleTime: 5 * 60 * 1000 });
+  useEffect(() => {
+    const warm = () => setSkillsQueryReady(true);
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof w.requestIdleCallback === "function") {
+      const id = w.requestIdleCallback(warm, { timeout: 2000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(warm, 1200);
+    return () => window.clearTimeout(t);
+  }, []);
+  // A16：skill 列表极少变化；idle / 输入聚焦后再拉，不挡首屏。
+  // skill CRUD 后 useCRUDApi 会 invalidate utils.skill.list，自动刷新。
+  const skillsQuery = trpc.skill.list.useQuery(
+    { page: 1, pageSize: 100, enabled: true },
+    { enabled: skillsQueryReady, staleTime: 5 * 60 * 1000 },
+  );
   // 含 chat + channel（IM）；排除 skill_review/heartbeat。子 Agent 会话由侧栏客户端过滤。
   const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
-  const providers = trpc.agent.llmProviders.useQuery();
-  // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
-  const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
-  const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
+  // Workspace 列表只在 ChatSidebar 拉一次；此处用 agent.workspaceId 推导，避免双请求
+  const hasWorkspaces = useMemo(
+    () => (agentsQuery.data?.items ?? []).some((a: Agent) => !!a.workspaceId),
+    [agentsQuery.data?.items],
+  );
   const utils = trpc.useUtils();
   const ensureMainSessionMutation = trpc.session.ensureMain.useMutation();
   const ensureMainMutateAsync = ensureMainSessionMutation.mutateAsync;
@@ -272,19 +291,13 @@ export function ChatView() {
   const effectiveAgentId =
     agentFromUrl || agentId || sessionDetail?.agentId || defaultAgentId;
 
-  // 根据 effectiveAgentId / session 推导当前 Workspace；用户未手动切换时自动跟随
+  // 根据 effectiveAgentId 推导当前 Workspace；列表校验交给侧栏 WorkspaceSelect
   const derivedWorkspaceId = useMemo(() => {
-    const workspaces = workspacesQuery.data?.items;
-    if (!workspaces?.length) return null;
     const agent = effectiveAgentId
       ? agentsQuery.data?.items.find((a: Agent) => a.id === effectiveAgentId)
       : undefined;
-    if (agent?.workspaceId && workspaces.some((w) => w.id === agent.workspaceId)) {
-      return agent.workspaceId;
-    }
-    const systemWs = workspaces.find((w) => w.isSystem);
-    return systemWs?.id ?? workspaces[0].id;
-  }, [workspacesQuery.data?.items, agentsQuery.data?.items, effectiveAgentId]);
+    return agent?.workspaceId ?? null;
+  }, [agentsQuery.data?.items, effectiveAgentId]);
   const selectedWorkspaceId = userSelectedWorkspaceId ?? derivedWorkspaceId;
 
   // 子 Agent 会话下，所有「主 Agent」视角的过滤/创建都应以父会话/父 Agent 为锚点，
@@ -294,18 +307,21 @@ export function ChatView() {
     : effectiveAgentId;
   const mainSessionId = isSubagentSession ? parentSessionId : effectiveSessionId;
   // 与 SubagentCreateDialog 乐观更新使用同一 query key（pageSize 必须一致）
-  // 推优先：子会话状态走 SSE subagent_session_update，仅 mount/focus 兜底拉取
-  // 与 SubagentPanel 共用 pageSize=100，避免 invalidate 命中错误 query key
+  // 推优先：SSE subagent_session_update；仅打开「子 Agent」标签或创建对话框时再 PULL
   trpc.session.listChildren.useQuery(
     { parentSessionId: mainSessionId!, pageSize: 100 },
-    { enabled: !!mainSessionId, refetchInterval: false, refetchOnWindowFocus: true },
+    {
+      enabled: !!mainSessionId && (historySubTab === "sub" || showCreateSubagent),
+      refetchInterval: false,
+      refetchOnWindowFocus: true,
+    },
   );
 
   // 429/限流是瞬态，绝不当「后端宕机」——否则整页 queries 被 enabled:false 锁死
+  // 不再订 llmProviders：全页只用它做 backendDown，agents+sessions 已够
   const backendDown = isBackendDown([
     agentsQuery.isError ? agentsQuery.error : null,
     sessionsQuery.isError ? sessionsQuery.error : null,
-    providers.isError ? providers.error : null,
   ]);
 
   // 发现运行中会话：改 focus/mount 拉取，不再 5s 空轮询（visibilitychange 已覆盖切回标签）
@@ -1002,6 +1018,7 @@ export function ChatView() {
     filesPanelOpen: rightFilesOpen,
     onOpenRuntimePanel: openRuntimePanel,
     onFocusSwarm: openSwarmPanel,
+    onWarmSkills: () => setSkillsQueryReady(true),
   } as const;
 
   return (

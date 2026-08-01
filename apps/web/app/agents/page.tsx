@@ -5,6 +5,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -39,15 +40,36 @@ import {
   AdminPage,
   AdminFormShell,
 } from "@/components/shared";
-import { AgentToolsEditor, AgentToolSummaryCard } from "@/components/AgentToolsEditor";
 import { AgentAvatar } from "@/components/agentAvatar";
-import { AssistantDriftBanner } from "@/components/assistantDriftBanner";
-import { SwarmAlertsBanner } from "@/components/swarmAlertsBanner";
-import { SwarmHealthPanel } from "@/components/swarmHealthPanel";
-import { AgentLoopContractPanel } from "@/components/agentLoopContractPanel";
 import { cn } from "@/lib/utils";
 import { trpc, catchUnlessCancelled } from "@/lib/trpc";
 import { describeCron, describeCronOption } from "@/lib/cronDescribe";
+
+/** 重面板按需加载，减轻顶栏首次进「管理」的静态依赖图 */
+const AgentToolsEditor = dynamic(
+  () => import("@/components/AgentToolsEditor").then((m) => m.AgentToolsEditor),
+  { ssr: false, loading: () => null },
+);
+const AgentToolSummaryCard = dynamic(
+  () => import("@/components/AgentToolsEditor").then((m) => m.AgentToolSummaryCard),
+  { ssr: false, loading: () => null },
+);
+const AssistantDriftBanner = dynamic(
+  () => import("@/components/assistantDriftBanner").then((m) => m.AssistantDriftBanner),
+  { ssr: false, loading: () => null },
+);
+const SwarmAlertsBanner = dynamic(
+  () => import("@/components/swarmAlertsBanner").then((m) => m.SwarmAlertsBanner),
+  { ssr: false, loading: () => null },
+);
+const SwarmHealthPanel = dynamic(
+  () => import("@/components/swarmHealthPanel").then((m) => m.SwarmHealthPanel),
+  { ssr: false, loading: () => null },
+);
+const AgentLoopContractPanel = dynamic(
+  () => import("@/components/agentLoopContractPanel").then((m) => m.AgentLoopContractPanel),
+  { ssr: false, loading: () => null },
+);
 
 type AgentForm = {
   name: string;

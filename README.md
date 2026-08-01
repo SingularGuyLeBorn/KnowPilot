@@ -103,7 +103,8 @@ pnpm db:sync
 
 # 5. 启动开发服务（并行启动 server + web）
 pnpm dev
-# 已有库、想跳过全量 sync：pnpm dev:quick
+# 已有库、想跳过全量 sync（日常更快）：pnpm dev:quick
+# 前端 Turbopack（可选）：pnpm --filter @knowpilot/web dev:turbo
 ```
 
 - 前端：<http://localhost:3000>

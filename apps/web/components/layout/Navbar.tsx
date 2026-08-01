@@ -1,13 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { OasisMindLogo } from "@/lib/icons";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, LayoutGrid, Menu, MessageSquare, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/themeToggle";
 import type { LayoutMode } from "./layoutMode";
+
+/** 重页面：idle + hover 预取，摊平首次点「对话/管理」的编译峰值 */
+const HEAVY_NAV_HREFS = ["/chat", "/agents"] as const;
 
 /** CmdK 面板按需加载，勿进根布局静态图 */
 const CommandPalette = dynamic(
@@ -48,7 +52,27 @@ function isManageActive(pathname: string): boolean {
 
 export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const showMobileMenu = mode === "app" || mode === "content";
+
+  useEffect(() => {
+    // 仅客户端 effect，勿写 typeof window 分支（会触发 Next hydration 误报）
+    const prefetchHeavy = () => {
+      for (const href of HEAVY_NAV_HREFS) {
+        router.prefetch(href);
+      }
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof w.requestIdleCallback === "function") {
+      const id = w.requestIdleCallback(prefetchHeavy, { timeout: 2500 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(prefetchHeavy, 1200);
+    return () => window.clearTimeout(t);
+  }, [router]);
 
   return (
     <header
@@ -88,6 +112,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
             href="/chat"
             active={pathname.startsWith("/chat")}
             icon={<MessageSquare className="h-4 w-4" />}
+            onPrefetch={() => router.prefetch("/chat")}
           >
             对话
           </TopNavLink>
@@ -98,6 +123,7 @@ export function Navbar({ mode, onMenuClick, className }: NavbarProps) {
             href="/agents"
             active={isManageActive(pathname)}
             icon={<LayoutGrid className="h-4 w-4" />}
+            onPrefetch={() => router.prefetch("/agents")}
           >
             管理
           </TopNavLink>
@@ -117,15 +143,19 @@ function TopNavLink({
   active,
   icon,
   children,
+  onPrefetch,
 }: {
   href: string;
   active: boolean;
   icon: React.ReactNode;
   children: React.ReactNode;
+  onPrefetch?: () => void;
 }) {
   return (
     <Link
       href={href}
+      onMouseEnter={onPrefetch}
+      onFocus={onPrefetch}
       className={cn(
         "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition",
         active

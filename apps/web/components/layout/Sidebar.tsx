@@ -131,31 +131,16 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     });
   }, []);
 
-  // 空闲时预热当前分组路由，把 webpack on-demand 编译挪到点击前
-  useEffect(() => {
-    const hrefs = activeGroup.items.map((i) => i.href);
-    let cancelled = false;
-    const warm = () => {
-      if (cancelled) return;
-      for (const href of hrefs) {
-        try {
-          router.prefetch(href);
-        } catch {
-          // ignore
-        }
+  const prefetchHref = useCallback(
+    (href: string) => {
+      try {
+        router.prefetch(href);
+      } catch {
+        // ignore
       }
-    };
-    const ric = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 200));
-    const id = ric(warm);
-    return () => {
-      cancelled = true;
-      if (typeof window.cancelIdleCallback === "function") {
-        window.cancelIdleCallback(id as number);
-      } else {
-        clearTimeout(id as number);
-      }
-    };
-  }, [activeGroup, router]);
+    },
+    [router],
+  );
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -204,6 +189,8 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
               key={item.href}
               href={item.href}
               onClick={() => onNavigate?.()}
+              onPointerEnter={() => prefetchHref(item.href)}
+              onFocus={() => prefetchHref(item.href)}
               className={cn(
                 "flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition",
                 isActive

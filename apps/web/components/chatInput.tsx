@@ -73,6 +73,8 @@ interface ChatInputAreaProps {
   onCancelQueueEdit?: () => void;
   /** 集群 pill：打开左侧 Agent / 会话树 */
   onFocusSwarm?: () => void;
+  /** 输入框聚焦时提前拉取 Skill 列表 */
+  onWarmSkills?: () => void;
 }
 
 type SlashCommandItem = {
@@ -108,6 +110,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   queueEdit = null,
   onCommitQueueEdit,
   onFocusSwarm,
+  onWarmSkills,
   onCancelQueueEdit,
 }: ChatInputAreaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -132,12 +135,13 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [postFetchError, setPostFetchError] = useState<string | null>(null);
 
   const openSkillPicker = useCallback(() => {
+    onWarmSkills?.();
     textareaRef.current?.focus();
     setMentionOpen(false);
     setSkillQuery("");
     setSkillOpen(true);
     setHighlightIdx(0);
-  }, []);
+  }, [onWarmSkills]);
 
   const openMentionPicker = useCallback(() => {
     textareaRef.current?.focus();
@@ -913,6 +917,7 @@ export const ChatInputArea = memo(function ChatInputArea({
           <textarea
             ref={textareaRef}
             value={input}
+            onFocus={() => onWarmSkills?.()}
             onChange={(e) => {
               setInput(e.target.value);
               detectTriggers(e.target.value, e.target.selectionStart);

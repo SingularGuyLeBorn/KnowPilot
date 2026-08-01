@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { ChatView } from "@/components/chat";
+import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 
 function ChatFallback() {
@@ -11,6 +11,12 @@ function ChatFallback() {
     </div>
   );
 }
+
+/** Chat 巨型 client 图按需加载，避免顶栏首次点「对话」卡死编译主线程 */
+const ChatView = dynamic(
+  () => import("@/components/chat").then((m) => m.ChatView),
+  { ssr: false, loading: () => <ChatFallback /> },
+);
 
 export default function ChatPage() {
   return (

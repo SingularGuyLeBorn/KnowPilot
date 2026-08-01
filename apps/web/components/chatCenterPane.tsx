@@ -111,6 +111,8 @@ export interface ChatCenterPaneProps {
   onOpenRuntimePanel?: () => void;
   /** 集群 pill：打开左侧会话 / Agent 树 */
   onFocusSwarm?: () => void;
+  /** 输入聚焦时提前拉 Skill 列表 */
+  onWarmSkills?: () => void;
 }
 
 export function ChatCenterPane({
@@ -165,6 +167,7 @@ export function ChatCenterPane({
   dispatchSyncTasks = [],
   onOpenRuntimePanel,
   onFocusSwarm,
+  onWarmSkills,
 }: ChatCenterPaneProps) {
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingForSessionId, setEditingForSessionId] = useState(effectiveSessionId);
@@ -521,6 +524,7 @@ export function ChatCenterPane({
           isSubagentSession={isSubagentSession}
           canStartDeepResearch={allowDeepResearch}
           onFocusSwarm={onFocusSwarm}
+          onWarmSkills={onWarmSkills}
           queueEdit={
             editingQueueItem
               ? { id: editingQueueItem.id, text: editingQueueItem.text }

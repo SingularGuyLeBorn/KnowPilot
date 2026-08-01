@@ -126,8 +126,11 @@ export const ChatSidebar = memo(function ChatSidebar({
   const agentsQuery = useAgentList({ page: 1, pageSize: 100 });
   // 含 chat + channel（IM）；子 Agent 在 filteredSessions 里剔除
   const sessionsQuery = trpc.session.list.useQuery({ page: 1, pageSize: 40 });
-  // Swarm：拉取 Workspace 列表判断是否显示 Workspace 树
-  const workspacesQuery = trpc.workspace.list.useQuery({ page: 1, pageSize: 100, status: "active" });
+  // Swarm：左栏打开时再拉 Workspace（与 ChatView 去重；关栏不抢首屏）
+  const workspacesQuery = trpc.workspace.list.useQuery(
+    { page: 1, pageSize: 100, status: "active" },
+    { enabled: leftOpen },
+  );
   const hasWorkspaces = (workspacesQuery.data?.items ?? []).length > 0;
   const utils = trpc.useUtils();
   const updateSession = trpc.session.update.useMutation();

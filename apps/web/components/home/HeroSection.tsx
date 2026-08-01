@@ -1,17 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { ArrowRight, PenLine } from "lucide-react";
 import Link from "next/link";
 import { OasisMindLogo } from "@/lib/icons";
-
-// R14：three.js + @react-three/fiber（~600KB）改为 client 懒加载（ssr:false），
-// 从首页/about 初始 bundle 拆出，首屏 HTML/JS 不再背 three.js，StarField 在客户端异步挂载。
-const StarField = dynamic(() => import("./StarField").then((m) => m.StarField), {
-  ssr: false,
-  loading: () => null,
-});
+import { DeferredStarField } from "./DeferredStarField";
 
 interface HeroSectionProps {
   postCount: number;
@@ -43,8 +36,8 @@ const itemVariants = {
 export function HeroSection({ postCount, categoryCount }: HeroSectionProps) {
   return (
     <section className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center overflow-hidden px-[5%] py-20 md:px-[8%] lg:px-[10%]">
-      {/* Three.js starfield + planet */}
-      <StarField variant="home" className="pointer-events-none absolute inset-0" />
+      {/* Three.js：idle 后再挂，先靠下方 CSS 渐变撑氛围 */}
+      <DeferredStarField variant="home" className="pointer-events-none absolute inset-0" />
 
       {/* 浅色氛围：少遮罩，让 WebGL 更可见 */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(var(--kp-accent-rgb),0.12),transparent_58%)]" />

@@ -1,6 +1,6 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
@@ -21,11 +21,7 @@ import {
 import type { AboutProfile } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
 import { RecentIntelligence } from "@/components/home/RecentIntelligence";
-// R14：three.js 改 client 懒加载，从 about 初始 bundle 拆出
-const StarField = dynamic(() => import("@/components/home/StarField").then((m) => m.StarField), {
-  ssr: false,
-  loading: () => null,
-});
+import { DeferredStarField } from "@/components/home/DeferredStarField";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
@@ -35,11 +31,29 @@ const easeOut = [0.22, 1, 0.36, 1] as const;
 export function AboutView({ profile }: { profile: AboutProfile }) {
   const { data: recentPosts, isLoading: postsLoading } = trpc.post.list.useQuery({
     published: true,
-    pageSize: 100,
+    pageSize: 6,
   });
-  const { data: analytics, isLoading: analyticsLoading } = trpc.analytics.dashboard.useQuery({});
+  // 看板统计非首屏关键路径：idle 后再拉，先进页用 recentPosts.total 兜底
+  const [analyticsReady, setAnalyticsReady] = useState(false);
+  useEffect(() => {
+    const warm = () => setAnalyticsReady(true);
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof w.requestIdleCallback === "function") {
+      const id = w.requestIdleCallback(warm, { timeout: 2500 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(warm, 1400);
+    return () => window.clearTimeout(t);
+  }, []);
+  const { data: analytics, isLoading: analyticsLoading } = trpc.analytics.dashboard.useQuery(
+    {},
+    { enabled: analyticsReady },
+  );
 
-  const posts = recentPosts?.items.slice(0, 6) ?? [];
+  const posts = recentPosts?.items ?? [];
   const postCount = analytics?.posts.published ?? recentPosts?.total ?? 0;
   const categoryCount = new Set(
     recentPosts?.items.map((p) => p.category).filter(Boolean) ?? [],
@@ -49,7 +63,7 @@ export function AboutView({ profile }: { profile: AboutProfile }) {
     <div className="relative w-full shrink-0 overflow-x-hidden">
       {/* 全页单 Canvas：滚动时 WebGL 仍在背后（比双 Canvas 省很多） */}
       <div className="pointer-events-none fixed inset-0 z-0 opacity-90">
-        <StarField variant="about" className="h-full w-full" />
+        <DeferredStarField variant="about" className="h-full w-full" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(var(--kp-accent-rgb),0.10),transparent_50%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[var(--kp-bg)]/80" />
       </div>

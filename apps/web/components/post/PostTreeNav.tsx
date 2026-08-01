@@ -22,7 +22,7 @@ import { useContentNavHighlight } from "@/lib/contentNavContext";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { VirtualFlatList } from "@/components/shared";
+import { VirtualFlatList } from "@/components/post/VirtualFlatList";
 import { isPostPinned, PostTreeDocActions } from "@/components/post/PostTreeDocActions";
 
 interface PostSummary {
