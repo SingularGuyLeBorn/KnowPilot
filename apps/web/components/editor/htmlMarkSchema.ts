@@ -31,16 +31,19 @@ const VALID_TYPES = new Set<string>([
 function buildAnnotationConfig(attrs: MarkHtmlData) {
   const type = VALID_TYPES.has(attrs.annotation) ? attrs.annotation : "underline";
   const color = attrs.color || DEFAULT_COLOR;
+  const bracketList = type === "bracket" && attrs.bracket
+    ? attrs.bracket.split(/\s+/).filter((b) => ["left", "right", "top", "bottom"].includes(b))
+    : [];
   return {
     type: type as RoughAnnotationType,
     color,
     strokeWidth: Number(attrs.strokeWidth) || 2,
-    padding: Number(attrs.padding) || 4,
+    padding: Number(attrs.padding) || 2,
     iterations: Number(attrs.iterations) || 2,
     multiline: attrs.multiline !== false,
     animate: attrs.animate !== false,
     animationDuration: Number(attrs.animationDuration) || 800,
-    ...(type === "bracket" && attrs.bracket ? { bracket: attrs.bracket } : {}),
+    ...(bracketList.length ? { brackets: bracketList as ("left" | "right" | "top" | "bottom")[] } : {}),
   };
 }
 

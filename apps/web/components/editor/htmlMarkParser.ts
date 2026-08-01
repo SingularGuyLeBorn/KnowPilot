@@ -20,7 +20,7 @@ const DEFAULTS = {
   annotation: "underline",
   color: "",
   strokeWidth: 2,
-  padding: 4,
+  padding: 2,
   iterations: 2,
   multiline: true,
   animate: true,

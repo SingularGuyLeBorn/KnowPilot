@@ -60,6 +60,17 @@ const DEFAULT_COLORS: Record<string, string> = {
   "strike-through": "#e74c3c",
 };
 
+const VALID_BRACKETS = new Set<string>(["left", "right", "top", "bottom"]);
+
+function normalizeBrackets(
+  bracket?: "left" | "right" | "top" | "bottom" | ("left" | "right" | "top" | "bottom")[],
+): RoughAnnotationType extends never ? never : ("left" | "right" | "top" | "bottom")[] | undefined {
+  if (!bracket) return undefined;
+  const list = Array.isArray(bracket) ? bracket : String(bracket).split(/\s+/);
+  const valid = list.filter((b) => VALID_BRACKETS.has(b)) as ("left" | "right" | "top" | "bottom")[];
+  return valid.length ? valid : undefined;
+}
+
 export interface RoughAnnotationProps {
   type: string;
   color?: string;
@@ -69,7 +80,7 @@ export interface RoughAnnotationProps {
   multiline?: boolean;
   animate?: boolean;
   animationDuration?: number;
-  bracket?: "left" | "right" | "top" | "bottom";
+  bracket?: "left" | "right" | "top" | "bottom" | ("left" | "right" | "top" | "bottom")[];
   children: ReactNode;
   className?: string;
 }
@@ -78,7 +89,7 @@ export function RoughAnnotation({
   type,
   color,
   strokeWidth = 2,
-  padding = 4,
+  padding = 2,
   iterations = 2,
   multiline = true,
   animate = true,
@@ -109,7 +120,7 @@ export function RoughAnnotation({
       multiline,
       animate,
       animationDuration,
-      ...(bracket ? { bracket } : {}),
+      ...(bracket ? { brackets: normalizeBrackets(bracket) } : {}),
     });
     annotationRef.current = ann;
 
@@ -132,7 +143,7 @@ export function RoughAnnotation({
         multiline,
         animate,
         animationDuration,
-        ...(bracket ? { bracket } : {}),
+        ...(bracket ? { brackets: normalizeBrackets(bracket) } : {}),
       });
       ann.show();
     };
