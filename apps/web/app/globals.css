@@ -363,6 +363,12 @@ html.dark .kp-card,
   min-width: 0;
 }
 
+/* 普通代码块：限制最大高度，内部滚动，避免超长代码撑爆页面 */
+.kp-code-block .kp-code-body {
+  max-height: min(60vh, 560px);
+  overflow: auto;
+}
+
 .kp-code-gutter {
   flex-shrink: 0;
   display: flex;

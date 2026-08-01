@@ -360,7 +360,7 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   const body = (
     <>
       {state.mode === "preview" && canPreview ? (
-        <div className="h-[360px] w-full">
+        <div className="min-h-[400px] h-[60vh] w-full">
           <CodePreview code={codeText} language={language} />
         </div>
       ) : (
