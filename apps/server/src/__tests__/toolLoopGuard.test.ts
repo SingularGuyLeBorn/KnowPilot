@@ -54,6 +54,20 @@ describe("toolLoopGuard", () => {
     }
   });
 
+  it("场景 B 资料员：连续 save_webpage 不同 URL 不熔断", () => {
+    let state = createLoopGuardState();
+    for (let i = 0; i < 8; i++) {
+      const v = checkToolLoop(
+        state,
+        [{ name: "save_webpage", args: { url: `https://ex.com/${i}` } }],
+        3,
+        6,
+      );
+      expect(v.blocked).toBe(false);
+      state = v.state;
+    }
+  });
+
   it("双指纹交替熔断（P2-01，非勘察工具）", () => {
     let state = createLoopGuardState();
     const a = { name: "post_create", args: { title: "a" } };

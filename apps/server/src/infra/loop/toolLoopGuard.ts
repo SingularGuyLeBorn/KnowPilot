@@ -64,8 +64,26 @@ const EXPLORE_READONLY_TOOLS = new Set([
   "inbox_list",
   "inbox_stats",
   "inbox_enrich",
+  "inbox_capture_url",
+  "inbox_capture_urls",
+  "inbox_scan_screenshots",
+  "inbox_platform_sync_status",
+  "inbox_sync_zhihu",
+  "inbox_sync_xhs",
+  "inbox_sync_bilibili",
   "session_search",
   "rss_fetch",
+  // 场景 B 资料员：连存多页 / 连截多屏是推进
+  "save_webpage",
+  "download_file",
+  "browser_screenshot",
+  "scroll_screenshot",
+  "read_image",
+  "vision_describe",
+  // 状态轮询（换 jobId / 平台）
+  "async_task_status",
+  "platform_login",
+  "agent_inspect",
 ]);
 
 function isExploreReadonlyTool(name: string): boolean {
