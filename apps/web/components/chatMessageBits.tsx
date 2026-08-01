@@ -84,6 +84,77 @@ export function asyncResultLabel(
   return "AsyncTask";
 }
 
+/**
+ * 格式化与规范化工具输出内容：
+ * 1. 处理转义的 \n \t 换行符（如 JSON 字符串解出的字面量 \n）
+ * 2. 如果包含搜索结果等 JSON 结构，美化并渲染为清晰可读的 Markdown
+ */
+export function formatToolResultForDisplay(raw: string): string {
+  if (!raw) return "";
+
+  let unescaped = raw;
+  // 1. 转义字符还原：若字符串中包含字面量 \n，将其恢复为真正的 LF 换行符
+  if (unescaped.includes("\\n")) {
+    unescaped = unescaped
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t");
+  }
+
+  // 2. 判断是否为 JSON 结构
+  const trimmed = unescaped.trim();
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      const parsed = JSON.parse(trimmed);
+
+      // 场景 A: 包含 results 列表（如 web_search / tavily / bing_crawler 等工具返回）
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.results)) {
+        const results = parsed.results;
+        const mdParts: string[] = [];
+
+        if (parsed.query) {
+          mdParts.push(`**搜索查询**: \`${parsed.query}\``);
+        }
+
+        results.forEach((rawItem: unknown, idx: number) => {
+          const item = (rawItem && typeof rawItem === "object" ? rawItem : {}) as Record<string, unknown>;
+          const titleStr = typeof item.title === "string" ? item.title : undefined;
+          const urlStr = typeof item.url === "string" ? item.url : undefined;
+          const snippetStr = typeof item.snippet === "string" ? item.snippet : undefined;
+          const contentStr = typeof item.content === "string" ? item.content : undefined;
+
+          const title = titleStr || urlStr || `结果 #${idx + 1}`;
+          const url = urlStr ? `[${title}](${urlStr})` : title;
+          mdParts.push(`### ${idx + 1}. ${url}`);
+
+          if (snippetStr) {
+            const cleanSnippet = formatToolResultForDisplay(snippetStr);
+            mdParts.push(`**摘要**: ${cleanSnippet}`);
+          }
+          if (contentStr && contentStr !== snippetStr) {
+            const cleanContent = formatToolResultForDisplay(contentStr);
+            mdParts.push(`> ${cleanContent.slice(0, 1200)}${cleanContent.length > 1200 ? "..." : ""}`);
+          }
+        });
+
+        return mdParts.join("\n\n");
+      }
+
+      // 场景 B: 包含 content 字段的对象
+      if (parsed && typeof parsed === "object" && typeof parsed.content === "string") {
+        return formatToolResultForDisplay(parsed.content);
+      }
+
+      // 场景 C: 通用 JSON 对象，进行带缩进美化
+      return "```json\n" + JSON.stringify(parsed, null, 2) + "\n```";
+    } catch {
+      // 解析失败，保持 unescaped 原样
+    }
+  }
+
+  return unescaped;
+}
+
 /** 异步工具投递结构化卡片（与服务端 asyncToolDeliveryFormat.structured 对齐） */
 export type AsyncDeliveryStructured = {
   tool?: string;
@@ -123,7 +194,8 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
   jobId,
   onSaveEditedContent,
 }: AsyncToolResultCardProps) {
-  const initialContent = structured?.content || fallbackMarkdown || "";
+  const rawInitial = structured?.content || fallbackMarkdown || "";
+  const initialContent = formatToolResultForDisplay(rawInitial);
   const [content, setContent] = useState(initialContent);
   const [viewMode, setViewMode] = useState<"rendered" | "source">("rendered");
   const [open, setOpen] = useState(false);
