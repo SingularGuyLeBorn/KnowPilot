@@ -12,7 +12,7 @@
  * 本 hook 不新增任何 useEffect。INV-1~8 与 drain 链语义不变。
  */
 
-import { useCallback, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import type { useRouter, useSearchParams } from "next/navigation";
 import { trpc, catchUnlessCancelled } from "@/lib/trpc";
@@ -98,6 +98,7 @@ export interface UseChatRunStreamParams {
   searchParams: ReturnType<typeof useSearchParams>;
   pathname: string;
   router: ReturnType<typeof useRouter>;
+  runStreamRef?: RefObject<((opts: RunStreamOptions) => Promise<RunStreamOutcome>) | null>;
 }
 
 export function useChatRunStream({
@@ -118,6 +119,7 @@ export function useChatRunStream({
   searchParams,
   pathname,
   router,
+  runStreamRef,
 }: UseChatRunStreamParams) {
   const utils = trpc.useUtils();
 
@@ -857,6 +859,12 @@ export function useChatRunStream({
       setSessionId,
     ],
   );
+
+  useEffect(() => {
+    if (runStreamRef) {
+      runStreamRef.current = runStream;
+    }
+  }, [runStream, runStreamRef]);
 
   return { runStream };
 }

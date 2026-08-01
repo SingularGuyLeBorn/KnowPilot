@@ -5,24 +5,42 @@
  * 包含消息来源角标、版本切换、消息操作按钮（复制/编辑/重试/分享等）。
  */
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import {
   AlarmClock,
   BookPlus,
   Bookmark,
   Bot,
   Check,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  Clock,
   Copy,
+  Cpu,
+  ExternalLink,
+  FileText,
+  Gauge,
+  Globe,
+  Info,
   Pencil,
   RefreshCw,
   RotateCcw,
+  Search,
   Share2,
+  Sparkles,
+  Terminal,
   Volume2,
   X,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PostContent } from "@/components/post/PostContent";
+import { formatTokenCount } from "@/lib/tokenBudget";
+import { formatToolDisplayName } from "@/lib/toolDisplayName";
+import type { ChatMessage } from "@knowpilot/shared";
 
 const SOURCE_LABEL_STYLES: Record<string, { label: string; bg: string; text: string; border: string }> = {
   super: { label: "子 Agent 任务", bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200" },
@@ -44,17 +62,273 @@ export function formatSubagentDisplayName(name?: string | null): string | undefi
   return t;
 }
 
-export function asyncResultLabel(sourceType?: string, taskLabel?: string, subagentName?: string): string {
-  if (sourceType === "sleep" || /^sleep\b/i.test(taskLabel ?? "")) return "async sleep";
+export function asyncResultLabel(
+  sourceType?: string,
+  taskLabel?: string,
+  subagentName?: string,
+  toolName?: string,
+): string {
+  if (sourceType === "sleep" || /^sleep\b/i.test(taskLabel ?? "")) return "AsyncSleep";
   if (sourceType === "subagent") {
     const display = formatSubagentDisplayName(subagentName);
-    return display ? `async · ${display}` : "async subagent";
+    return display ? `Async · ${display}` : "AsyncSubagent";
   }
-  if (sourceType === "async_task_tool") return "async tool";
+  if (sourceType === "async_task_tool") {
+    const tool = toolName?.trim() ? formatToolDisplayName(toolName) : "";
+    return tool ? `AsyncTool · ${tool}` : "AsyncTool";
+  }
+  if (sourceType === "async_task_llm") return "AsyncTask";
   const labelDisplay = formatSubagentDisplayName(taskLabel) ?? taskLabel?.trim();
-  if (labelDisplay) return `async · ${labelDisplay.slice(0, 24)}`;
-  return "async task";
+  if (labelDisplay) return `Async · ${labelDisplay.slice(0, 24)}`;
+  return "AsyncTask";
 }
+
+/** 异步工具投递结构化卡片（与服务端 asyncToolDeliveryFormat.structured 对齐） */
+export type AsyncDeliveryStructured = {
+  tool?: string;
+  kind?: "read_article" | "generic" | string;
+  title?: string;
+  author?: string;
+  platform?: string;
+  url?: string;
+  content?: string;
+  contentChars?: number;
+  totalChars?: number;
+  method?: string;
+  elapsedMs?: number;
+  truncated?: boolean;
+  previewFields?: Array<{ key: string; value: string }>;
+};
+
+export interface AsyncToolResultCardProps {
+  structured?: AsyncDeliveryStructured | null;
+  /** 无 structured 时降级：Markdown 渲染投递正文（信封文本，不是裸 JSON） */
+  fallbackMarkdown: string;
+  toolName?: string;
+  taskLabel?: string;
+  subagentName?: string;
+  sourceType?: string;
+  jobId?: string;
+}
+
+export const AsyncToolResultCard = memo(function AsyncToolResultCard({
+  structured,
+  fallbackMarkdown,
+  toolName,
+  taskLabel,
+  subagentName,
+  sourceType,
+  jobId,
+}: AsyncToolResultCardProps) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // 1. 提取正文与字数
+  const fullContent = structured?.content || fallbackMarkdown || "";
+  const totalChars = structured?.totalChars ?? structured?.contentChars ?? fullContent.length;
+  const isLong = totalChars > 320 || fullContent.split("\n").length > 8;
+
+  // 2. 格式化工具名与任务描述
+  const resolvedTool = structured?.tool || toolName || sourceType;
+  const displayToolName = formatToolDisplayName(resolvedTool || "异步工具");
+
+  const rawTaskTitle = structured?.title || taskLabel || subagentName || "后台任务处理";
+  const displayTaskTitle = rawTaskTitle.length > 50 ? `${rawTaskTitle.slice(0, 50)}...` : rawTaskTitle;
+
+  // 3. 图标类型推导
+  const getToolIcon = () => {
+    const t = (resolvedTool || "").toLowerCase();
+    const s = (sourceType || "").toLowerCase();
+    if (t.includes("read") || t.includes("article") || s.includes("read")) {
+      return <FileText className="h-4 w-4 text-[var(--kp-brand)]" />;
+    }
+    if (t.includes("search") || s.includes("search")) {
+      return <Search className="h-4 w-4 text-emerald-600" />;
+    }
+    if (t.includes("cmd") || t.includes("command") || t.includes("exec") || t.includes("bash")) {
+      return <Terminal className="h-4 w-4 text-amber-600" />;
+    }
+    if (s.includes("subagent") || subagentName) {
+      return <Cpu className="h-4 w-4 text-purple-600" />;
+    }
+    if (s.includes("sleep")) {
+      return <Clock className="h-4 w-4 text-blue-600" />;
+    }
+    return <Sparkles className="h-4 w-4 text-[var(--kp-brand)]" />;
+  };
+
+  // 4. 复制正文
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(fullContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // 5. 元数据面板
+  const metaBits = [
+    structured?.author ? `作者: ${structured.author}` : null,
+    structured?.platform ? `平台: ${structured.platform}` : null,
+    structured?.method ? `方式: ${structured.method}` : null,
+    structured?.elapsedMs != null ? `耗时: ${Math.round(structured.elapsedMs)}ms` : null,
+    jobId ? `Job: ${jobId.slice(0, 8)}` : null,
+  ].filter(Boolean);
+
+  const previewFields = structured?.previewFields?.slice(0, 6) ?? [];
+
+  return (
+    <div
+      className="group/card my-1 overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-bg)] to-[var(--kp-bg-alt)] shadow-xs transition-all hover:border-[var(--kp-brand)]/40 hover:shadow-sm"
+      data-testid="async-tool-result-card"
+    >
+      {/* 顶栏 Header: 工具名、任务名、状态与字数 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/50 px-3.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-2xs">
+            {getToolIcon()}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-[var(--kp-text-1)]">
+                {displayToolName}
+              </span>
+              <span className="rounded-full bg-[var(--kp-brand-soft)] px-2 py-0.2 text-[10px] font-semibold text-[var(--kp-brand-deep)]">
+                异步工具
+              </span>
+            </div>
+            <p className="truncate text-[11px] text-[var(--kp-text-2)]" title={rawTaskTitle}>
+              {displayTaskTitle}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+            <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+            已完成
+          </span>
+          <span className="text-[10px] font-medium text-[var(--kp-text-3)]">
+            {totalChars > 1000 ? `${(totalChars / 1000).toFixed(1)}k 字` : `${totalChars} 字`}
+          </span>
+        </div>
+      </div>
+
+      {/* 详细元信息 / 动作参数区域 */}
+      {(structured?.url || metaBits.length > 0 || previewFields.length > 0) && (
+        <div className="space-y-1.5 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg)]/40 px-3.5 py-2 text-[11px]">
+          {structured?.url && (
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <Globe className="h-3.5 w-3.5 shrink-0 text-[var(--kp-text-3)]" />
+              <a
+                href={structured.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-[var(--kp-brand-deep)] hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="truncate">{structured.url}</span>
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            </div>
+          )}
+
+          {metaBits.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--kp-text-3)]">
+              {metaBits.map((bit, idx) => (
+                <span key={idx} className="inline-flex items-center">
+                  {idx > 0 && <span className="mr-2 text-[var(--kp-divider)]">•</span>}
+                  {bit}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {previewFields.length > 0 && (
+            <dl className="mt-1 grid grid-cols-1 gap-x-3 gap-y-1 rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/60 px-2.5 py-1.5 text-[11px] sm:grid-cols-2">
+              {previewFields.map((f) => (
+                <div key={f.key} className="flex min-w-0 gap-1.5">
+                  <dt className="shrink-0 font-medium text-[var(--kp-text-3)]">{f.key}:</dt>
+                  <dd className="min-w-0 truncate text-[var(--kp-text-1)]">{f.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      )}
+
+      {/* 投递说明与正文展示控制 */}
+      <div className="p-3.5">
+        <div className="mb-2 flex items-center justify-between gap-2 text-[11px]">
+          <span className="inline-flex items-center gap-1 font-medium text-[var(--kp-text-2)]">
+            <Zap className="h-3.5 w-3.5 text-amber-500" />
+            已将以下工具返回结果注入给大模型:
+          </span>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1 text-[11px] text-[var(--kp-text-3)] transition hover:text-[var(--kp-text-1)]"
+            title="复制完整投递内容"
+          >
+            {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+            <span>{copied ? "已复制" : "复制"}</span>
+          </button>
+        </div>
+
+        {/* 结果文本区 */}
+        {isLong ? (
+          <div className="space-y-2">
+            {!open ? (
+              /* 长文本默认摘要折叠态 */
+              <div className="relative rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/50 p-3">
+                <PostContent
+                  content={fullContent.slice(0, 240) + "..."}
+                  className="prose-sm max-w-none text-left text-[var(--kp-text-2)] [&_table]:text-xs"
+                />
+                <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[var(--kp-bg-alt)] to-transparent" />
+              </div>
+            ) : (
+              /* 展开完整文本 */
+              <div className="max-h-80 overflow-y-auto rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)] p-3 text-[12px] shadow-inner">
+                <PostContent
+                  content={fullContent}
+                  className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
+                />
+              </div>
+            )}
+
+            {/* 展开/收起切换按钮 */}
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] py-1.5 text-[11px] font-semibold text-[var(--kp-brand-deep)] shadow-2xs transition hover:border-[var(--kp-brand)]/30 hover:bg-[var(--kp-brand-soft)]/40"
+              data-testid="async-tool-result-toggle"
+            >
+              {open ? (
+                <>
+                  <span>收起完整返回结果</span>
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </>
+              ) : (
+                <>
+                  <span>展开完整返回结果 ({totalChars > 1000 ? `${(totalChars / 1000).toFixed(1)}k` : totalChars} 字)</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          /* 短文本直接展示 */
+          <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/60 p-3">
+            <PostContent
+              content={fullContent}
+              className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export const MessageSourceLabel = memo(function MessageSourceLabel({
   source,
@@ -63,6 +337,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   subagentName,
   asyncKind,
   taskLabel,
+  toolName,
   childNotify,
   cronName,
 }: {
@@ -73,6 +348,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
   /** 异步投递角标：sleep / async_task_llm / ... */
   asyncKind?: string;
   taskLabel?: string;
+  toolName?: string;
   /** 子 Agent 主动通知（agent_notify_parent）元信息 */
   childNotify?: { sourceName?: string; source?: string };
   /** Agent Cron 任务名（与用户消息区分） */
@@ -113,7 +389,7 @@ export const MessageSourceLabel = memo(function MessageSourceLabel({
     );
   }
   if (asyncKind || (source === "sub" && taskLabel)) {
-    const label = asyncResultLabel(asyncKind, taskLabel, subagentName);
+    const label = asyncResultLabel(asyncKind, taskLabel, subagentName, toolName);
     return (
       <span
         className={cn(
@@ -226,6 +502,109 @@ export function MessageMarkdownSourceEditor({
   );
 }
 
+/** 点击才展开：模型 + 输入/输出 token（不进气泡正文） */
+export function MessageUsageDetails({
+  open,
+  tokenUsage,
+  fallbackModel,
+}: {
+  open: boolean;
+  tokenUsage?: ChatMessage["tokenUsage"] | null;
+  fallbackModel?: string;
+}) {
+  if (!open) return null;
+  const model = tokenUsage?.model?.trim() || fallbackModel?.trim() || "—";
+  const prompt = tokenUsage?.prompt;
+  const completion = tokenUsage?.completion;
+  const total = tokenUsage?.total;
+  const hasTokens = prompt != null || completion != null || total != null;
+  return (
+    <div
+      className="mt-1 w-full max-w-[96%] rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-3 py-2 text-[11px] text-[var(--kp-text-2)]"
+      data-testid="message-usage-details"
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>
+          <span className="text-[var(--kp-text-3)]">模型 </span>
+          <span className="font-medium text-[var(--kp-text-1)]">{model}</span>
+        </span>
+        {hasTokens ? (
+          <>
+            <span>
+              <span className="text-[var(--kp-text-3)]">输入 </span>
+              <span className="tabular-nums text-[var(--kp-text-1)]">
+                {prompt != null ? formatTokenCount(prompt) : "—"}
+              </span>
+            </span>
+            <span>
+              <span className="text-[var(--kp-text-3)]">输出 </span>
+              <span className="tabular-nums text-[var(--kp-text-1)]">
+                {completion != null ? formatTokenCount(completion) : "—"}
+              </span>
+            </span>
+            <span>
+              <span className="text-[var(--kp-text-3)]">合计 </span>
+              <span className="tabular-nums font-medium text-[var(--kp-text-1)]">
+                {total != null ? formatTokenCount(total) : "—"}
+              </span>
+            </span>
+          </>
+        ) : (
+          <span className="text-[var(--kp-text-3)]">本条未记录 token 用量</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 压缩边界：摘要不进正文，点击展开 session.contextSummary */
+export function CompactBoundaryCard({
+  message,
+  contextSummary,
+}: {
+  message: ChatMessage;
+  contextSummary?: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const args =
+    Array.isArray(message.toolCalls) && message.toolCalls[0] && typeof message.toolCalls[0] === "object"
+      ? (message.toolCalls[0] as { args?: { messagesSummarized?: number; trigger?: string; generation?: number } }).args
+      : undefined;
+  const summarized = args?.messagesSummarized;
+  const trigger =
+    args?.trigger === "manual" ? "手动压缩" : args?.trigger === "auto" ? "自动压缩" : "上下文压缩";
+  const summary = contextSummary?.trim() || "";
+
+  return (
+    <div className="my-3 flex w-full justify-center px-4" data-testid="compact-boundary-card">
+      <div className="w-full max-w-xl rounded-xl border border-dashed border-[var(--kp-divider)] bg-[var(--kp-bg-alt)]/80 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center gap-2 text-left text-[12px] text-[var(--kp-text-2)] transition hover:text-[var(--kp-text-1)]"
+          aria-expanded={open}
+          data-testid="compact-boundary-toggle"
+        >
+          <Gauge className="h-3.5 w-3.5 shrink-0 text-[var(--kp-brand)]" />
+          <span className="min-w-0 flex-1 font-medium">
+            {trigger}
+            {summarized != null ? ` · ${summarized} 条旧消息已摘要` : ""}
+          </span>
+          <span className="shrink-0 text-[10px] text-[var(--kp-text-3)]">
+            {open ? "收起摘要" : "查看摘要"}
+          </span>
+          {open ? <ChevronUp className="h-3.5 w-3.5 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+        </button>
+        {open ? (
+          <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] px-3 py-2 text-[12px] leading-relaxed text-[var(--kp-text-2)] whitespace-pre-wrap">
+            {summary || "（暂无持久化摘要正文）"}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function MessageActions({
   onCopy,
   onEdit,
@@ -237,6 +616,7 @@ export function MessageActions({
   onSpeak,
   onSaveAsPost,
   onToggleBookmark,
+  onToggleUsage,
   bookmarked = false,
   showEdit = true,
   showRetry = true,
@@ -245,6 +625,8 @@ export function MessageActions({
   showSpeak = true,
   showBookmark = false,
   showSaveAsPost = false,
+  showUsage = false,
+  usageOpen = false,
   isEditing = false,
   isSpeaking = false,
   disabled,
@@ -261,6 +643,7 @@ export function MessageActions({
   onSpeak?: () => void;
   onSaveAsPost?: () => void;
   onToggleBookmark?: () => void;
+  onToggleUsage?: () => void;
   bookmarked?: boolean;
   showEdit?: boolean;
   showRetry?: boolean;
@@ -269,6 +652,8 @@ export function MessageActions({
   showSpeak?: boolean;
   showBookmark?: boolean;
   showSaveAsPost?: boolean;
+  showUsage?: boolean;
+  usageOpen?: boolean;
   isEditing?: boolean;
   isSpeaking?: boolean;
   disabled?: boolean;
@@ -282,12 +667,26 @@ export function MessageActions({
     <div
       className={cn(
         "flex items-center gap-0.5 transition-opacity duration-200",
-        isEditing
+        isEditing || usageOpen
           ? "pointer-events-auto opacity-100"
           : "pointer-events-none opacity-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100 group-focus-within/msg:pointer-events-auto group-focus-within/msg:opacity-100",
       )}
     >
       {versionNav}
+      {showUsage && onToggleUsage && (
+        <button
+          type="button"
+          onClick={onToggleUsage}
+          disabled={disabled}
+          className={cn(btnClass, usageOpen && "text-[var(--kp-brand)]")}
+          title="用量与模型"
+          aria-label="用量与模型"
+          aria-pressed={usageOpen}
+          data-testid="message-usage-btn"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      )}
       {showBookmark && onToggleBookmark && (
         <button
           type="button"

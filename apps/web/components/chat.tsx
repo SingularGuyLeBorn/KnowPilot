@@ -386,11 +386,13 @@ export function ChatView() {
 
   const cancelAsyncJobMutation = trpc.agent.cancelAsyncJob.useMutation({
     onSuccess: () => {
+      // 推优先：SSE async_job_update(interrupted) 会 refresh；此处拉兜底
       asyncQueueQuery.refetch().catch(catchUnlessCancelled("components/chat.tsx"));
-      showToast("已请求取消任务");
+      asyncQueueStatsQuery.refetch().catch(catchUnlessCancelled("components/chat.tsx"));
+      showToast("已中断任务");
     },
     onError: (err) => {
-      showToast(err.message || "取消失败：后端不可用或任务已结束");
+      showToast(err.message || "中断失败：后端不可用或任务已结束");
     },
   });
   const cancelAsyncJobMutateFn = cancelAsyncJobMutation.mutate;
@@ -400,9 +402,39 @@ export function ChatView() {
         showToast("后端未连接，无法取消任务。请先运行 pnpm dev");
         return;
       }
-      cancelAsyncJobMutateFn(input);
+      if (!effectiveSessionId) {
+        showToast("无当前会话，无法中断任务");
+        return;
+      }
+      cancelAsyncJobMutateFn({ jobId: input.jobId, sessionId: effectiveSessionId });
     },
-    [backendDown, cancelAsyncJobMutateFn, showToast],
+    [backendDown, cancelAsyncJobMutateFn, effectiveSessionId, showToast],
+  );
+
+  const resumeAsyncJobMutation = trpc.agent.resumeAsyncJob.useMutation({
+    onSuccess: () => {
+      asyncQueueQuery.refetch().catch(catchUnlessCancelled("components/chat.tsx"));
+      asyncQueueStatsQuery.refetch().catch(catchUnlessCancelled("components/chat.tsx"));
+      showToast("已恢复任务");
+    },
+    onError: (err) => {
+      showToast(err.message || "恢复失败");
+    },
+  });
+  const resumeAsyncJobMutateFn = resumeAsyncJobMutation.mutate;
+  const resumeAsyncJobMutate = useCallback(
+    (input: { jobId: string }) => {
+      if (backendDown) {
+        showToast("后端未连接，无法恢复任务。请先运行 pnpm dev");
+        return;
+      }
+      if (!effectiveSessionId) {
+        showToast("无当前会话，无法恢复任务");
+        return;
+      }
+      resumeAsyncJobMutateFn({ jobId: input.jobId, sessionId: effectiveSessionId });
+    },
+    [backendDown, effectiveSessionId, resumeAsyncJobMutateFn, showToast],
   );
 
   const pinAsyncJobMutation = trpc.agent.toggleAsyncJobPinned.useMutation({
@@ -444,6 +476,21 @@ export function ChatView() {
   // effect 体逐字迁入 useChatSseSubscriptions（W13e），调用位置即原 effect 位置，
   // 挂载顺序与 cleanup 的 closeSessionWatch 引用计数时序不变。
   const handleFocusSession = useCallback((id: string) => selectSessionRef.current(id), []);
+  const handleSessionRunStarted = useCallback(
+    (sid: string) => {
+      if (!streamLifecycleStore.isRunOccupied(sid)) {
+        ensureSessionConfigHydrated(sid);
+        if (runStreamRef.current) {
+          runStreamRef.current({
+            targetSessionId: sid,
+            resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
+            isResume: true,
+          }).catch(catchUnlessCancelled("components/chat.tsx"));
+        }
+      }
+    },
+    [],
+  );
   useChatSseSubscriptions({
     effectiveSessionId,
     mainSessionId,
@@ -455,6 +502,7 @@ export function ChatView() {
     isSubagentSession,
     setRotateBanner,
     onFocusSession: handleFocusSession,
+    onSessionRunStarted: handleSessionRunStarted,
   });
 
   // 预热打开中会话的 async 切片缓存，供非焦点 drain / SSE merge 使用
@@ -517,6 +565,9 @@ export function ChatView() {
     [showToast],
   );
 
+  // 用 ref 保存最新的 runStream，供 mount / sse / 自动续传使用
+  const runStreamRef = useRef<((opts: RunStreamOptions) => Promise<RunStreamOutcome>) | null>(null);
+
   // 【runStream 流式编排内核】runStream + rAF token 合帧三件套 + 持久化调度收拢于
   // useChatRunStream（W13e 拆出）。E8：config 运行时从 sessionConfigStore 按 sid 取，不经 props。
   // rAF/定时器 refs 留在本文件，供 unmount 清理 effect 统一回收。
@@ -538,12 +589,8 @@ export function ChatView() {
     searchParams,
     pathname,
     router,
+    runStreamRef,
   });
-
-  // 用 ref 保存最新的 runStream，供 mount 自动续传使用（避免把 runStream 本身放进 mount effect deps）
-  // 镜像赋值已归并进下方【ref 镜像群】；mount 批读到的是 useRef(runStream) 首帧初始值，
-  // 与原实现（原镜像 effect 在 mount 批内赋的也是首帧 runStream）完全一致。
-  const runStreamRef = useRef(runStream);
 
   // 【mount 恢复与续传 · 心脏区】从 sessionStorage 恢复 compose + lifecycle，并自动续传
   // 刷新前正在运行的会话（INV-8 ④ drain 请求源；续传时序经 chat-resume/subagent-resume e2e 覆盖；effect 体未改）
@@ -576,7 +623,7 @@ export function ChatView() {
             // runStreamRef.current 此时读到的是 useRef(runStream) 首帧初始值
             // （镜像 effect 声明在下方、mount 批内此时尚未执行，但它要赋的也是同一个首帧 runStream）；
             // 事件处理内同步续传，无需 microtask
-            runStreamRef.current({
+            runStreamRef.current?.({
               targetSessionId: sid,
               resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
               isResume: true,
@@ -700,7 +747,7 @@ export function ChatView() {
       // INV-5：续传起点唯一走 resolveResumeAfter（禁止各 effect 手写 lastEventId 判定）
       // runStreamRef.current 读到 useRef 首帧初始值（mount 首跑时镜像 effect 尚未执行，
       // 其镜像赋值也是同一个首帧 runStream）；同步挂接，无需 microtask
-      runStreamRef.current({
+      runStreamRef.current?.({
         targetSessionId: sid,
         resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
         isResume: true,
@@ -762,9 +809,8 @@ export function ChatView() {
   // queueMicrotask 消费点执行（microtask 在全部 mount effects 之后），时序等价。
   useEffect(() => {
     effectiveSessionIdRef.current = effectiveSessionId;
-    runStreamRef.current = runStream;
     consumeRef.current = drainAllPendingQueues;
-  }, [effectiveSessionId, runStream, drainAllPendingQueues]);
+  }, [effectiveSessionId, drainAllPendingQueues]);
 
   // 【drain 订阅 · INV-8 ②④ · 心脏区】drain 的 ②（onStreamCommitted）④（HYDRATE_DONE）消费点。
   // ① 用户入队 / ③ 会话切换在各自事件处理里直接调 consumeRef，不再有任何
@@ -1056,6 +1102,7 @@ export function ChatView() {
         setToast={showToast}
         refetchSession={refetchSession}
         cancelAsyncJobMutate={cancelAsyncJobMutate}
+        resumeAsyncJobMutate={resumeAsyncJobMutate}
         pinAsyncJobMutate={pinAsyncJobMutation.mutate}
         runtimeGroupTab={runtimeGroupTab}
         setRuntimeGroupTab={setRuntimeGroupTab}

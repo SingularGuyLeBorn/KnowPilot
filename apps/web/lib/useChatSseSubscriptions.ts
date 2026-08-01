@@ -36,6 +36,8 @@ export interface UseChatSseSubscriptionsParams {
   setRotateBanner: (banner: { newSessionId: string; newTitle: string } | null) => void;
   /** session_rotate focusNewSession=true 时调用，前端自动聚焦新会话 */
   onFocusSession?: (sessionId: string) => void;
+  /** 后端起流或异步投递完成时触发，用于即时挂接前端流 */
+  onSessionRunStarted?: (sessionId: string) => void;
 }
 
 export function useChatSseSubscriptions({
@@ -49,6 +51,7 @@ export function useChatSseSubscriptions({
   isSubagentSession,
   setRotateBanner,
   onFocusSession,
+  onSessionRunStarted,
 }: UseChatSseSubscriptionsParams) {
   const utils = trpc.useUtils();
 
@@ -103,12 +106,15 @@ export function useChatSseSubscriptions({
           /* ignore */
         }
         refreshAsync({ heavy: true, sessionId: targetSid });
+        if (onSessionRunStarted) onSessionRunStarted(targetSid);
       });
       register("session_run_started", (ev) => {
+        let targetSid = sid;
         try {
           const data = JSON.parse(ev.data) as { sessionId?: string };
+          if (data.sessionId) targetSid = data.sessionId;
           utils.session.listRunning.invalidate().catch(logQueryCatch);
-          refreshAsync({ heavy: true, sessionId: data.sessionId || sid });
+          refreshAsync({ heavy: true, sessionId: targetSid });
           if (data.sessionId && data.sessionId !== sid) {
             sessionMessagesStore.watchSession(data.sessionId);
             extraWatchedSessionsRef.current.add(data.sessionId);
@@ -137,7 +143,10 @@ export function useChatSseSubscriptions({
           /* ignore parse */
         }
         const terminal =
-          status === "done" || status === "failed" || status === "cancelled";
+          status === "done" ||
+          status === "failed" ||
+          status === "cancelled" ||
+          status === "interrupted";
         refreshAsync({ heavy: terminal, sessionId: targetSid });
       });
       register("agent_message", () => {
@@ -345,6 +354,7 @@ export function useChatSseSubscriptions({
     utils,
     setRotateBanner,
     onFocusSession,
+    onSessionRunStarted,
   ]);
 
   // 跨标签兜底：管理页 / 其它 Chat 经 BroadcastChannel 推过来的状态（主路径仍是 SSE）

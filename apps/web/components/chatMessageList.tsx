@@ -18,6 +18,7 @@ import Link from "next/link";
 import { Ban, Bot, Check, ChevronDown, FileText, Loader2, X } from "lucide-react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
+  buildChatTimeline,
   buildTimelineFromStored,
   getActiveVersion,
   type MessageGroup,
@@ -35,9 +36,12 @@ import { PostContent } from "@/components/post/PostContent";
 import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import {
+  AsyncToolResultCard,
+  CompactBoundaryCard,
   MessageActions,
   MessageMarkdownSourceEditor,
   MessageSourceLabel,
+  MessageUsageDetails,
   MessageVersions,
 } from "@/components/chatMessageBits";
 import { MessageNavRail, type NavItem } from "@/components/messageNavRail";
@@ -137,6 +141,10 @@ export interface ChatMessageListProps {
   onSaveAsPost?: (messageId: string, content: string) => void;
   setEditingMessageId: (id: string | null) => void;
   setEditDraft: (draft: string) => void;
+  /** 会话级压缩摘要（压缩卡片点击展开） */
+  contextSummary?: string | null;
+  /** 会话当前模型（消息未落 model 时的回退） */
+  sessionModel?: string;
 }
 
 export const ChatMessageList = memo(function ChatMessageList({
@@ -170,11 +178,14 @@ export const ChatMessageList = memo(function ChatMessageList({
   onSaveAsPost: handleSaveAsPost,
   setEditingMessageId,
   setEditDraft,
+  contextSummary,
+  sessionModel,
 }: ChatMessageListProps) {
   // 语音输出：assistant 回复朗读（浏览器原生 speechSynthesis，免费）
   const { supported: ttsSupported, speaking: ttsSpeaking, speak: ttsSpeak, cancel: ttsCancel } =
     useSpeechSynthesis({ lang: "zh-CN", rate: 1 });
   const [speakingAssistantId, setSpeakingAssistantId] = useState<string | null>(null);
+  const [usageOpenId, setUsageOpenId] = useState<string | null>(null);
   useEffect(() => {
     // 外部 TTS 引擎停讲 → 清 UI 高亮（非可派生的同步，必须 effect）
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 订阅 ttsSpeaking 外部态
@@ -319,10 +330,10 @@ export const ChatMessageList = memo(function ChatMessageList({
 
         <MessageActions
           onCopy={() =>
-            handleCopy(assistantId, isEditingAssistant ? editDraft : active.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))
+            handleCopy(assistantId, isEditingAssistant ? editDraft : active.content)
           }
           onShare={() =>
-            handleShare(isEditingAssistant ? editDraft : active.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))
+            handleShare(isEditingAssistant ? editDraft : active.content)
           }
           onRegenerate={() => handleRegenerate(group.userMessage.id)}
           onSpeak={
@@ -335,6 +346,11 @@ export const ChatMessageList = memo(function ChatMessageList({
           showEdit
           showRetry={false}
           showSpeak={!isEditingAssistant}
+          showUsage={!isEditingAssistant}
+          usageOpen={usageOpenId === assistantId}
+          onToggleUsage={() =>
+            setUsageOpenId((id) => (id === assistantId ? null : assistantId))
+          }
           showSaveAsPost={
             !!handleSaveAsPost && !!active.content.trim() && !isEditingAssistant
           }
@@ -357,11 +373,16 @@ export const ChatMessageList = memo(function ChatMessageList({
               <MessageVersions
                 current={group.activeVersionIndex}
                 total={group.versions.length}
-                onPrev={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex - 1).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
-                onNext={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex + 1).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
+                onPrev={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex - 1)}
+                onNext={() => handleSwitchVersion(group.assistantMessage!.id, group.activeVersionIndex + 1)}
               />
             ) : null
           }
+        />
+        <MessageUsageDetails
+          open={usageOpenId === assistantId}
+          tokenUsage={group.assistantMessage.tokenUsage}
+          fallbackModel={sessionModel}
         />
       </div>
     );
@@ -425,6 +446,8 @@ export const ChatMessageList = memo(function ChatMessageList({
         subagentName?: string;
         sourceType?: string;
         taskLabel?: string;
+        toolName?: string;
+        structured?: import("@/components/chatMessageBits").AsyncDeliveryStructured;
       };
     } | undefined)?.subagentResult;
     const childNotify = (msgToolResults as {
@@ -486,6 +509,7 @@ export const ChatMessageList = memo(function ChatMessageList({
                 subagentName={subagentName}
                 asyncKind={isAsyncResultDelivery ? subResult?.sourceType : undefined}
                 taskLabel={isAsyncResultDelivery ? subResult?.taskLabel : undefined}
+                toolName={isAsyncResultDelivery ? subResult?.toolName : undefined}
                 childNotify={childNotify}
                 cronName={isCron ? cronMeta?.name : undefined}
               />
@@ -503,8 +527,17 @@ export const ChatMessageList = memo(function ChatMessageList({
                   onCancel={() => setEditingMessageId(null)}
                   disabled={editBusy}
                 />
+              ) : isAsyncResultDelivery ? (
+                <AsyncToolResultCard
+                  structured={subResult?.structured}
+                  fallbackMarkdown={group.userMessage.content}
+                  toolName={subResult?.toolName}
+                  taskLabel={subResult?.taskLabel}
+                  subagentName={subResult?.subagentName}
+                  sourceType={subResult?.sourceType}
+                  jobId={subResult?.jobId}
+                />
               ) : (
-                // 用户消息一律 Markdown 渲染（含普通提问 / 异步投递 / 父下发任务）
                 <PostContent
                   content={group.userMessage.content}
                   className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
@@ -512,8 +545,8 @@ export const ChatMessageList = memo(function ChatMessageList({
               )}
             </div>
             <MessageActions
-              onCopy={() => handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
-              onShare={() => handleShare(isEditing ? editDraft : group.userMessage.content).catch(catchUnlessCancelled("components/chatMessageList.tsx"))}
+              onCopy={() => handleCopy(group.userMessage.id, isEditing ? editDraft : group.userMessage.content)}
+              onShare={() => handleShare(isEditing ? editDraft : group.userMessage.content)}
               onEdit={() => {
                 setEditingMessageId(group.userMessage.id);
                 setEditDraft(group.userMessage.content);
@@ -569,9 +602,10 @@ export const ChatMessageList = memo(function ChatMessageList({
     </div>
   );
 
-  // 统一虚拟列表数据：消息组 + 乐观消息 + 尾部流式块（仅 !streamTargetUserId 时）
+  // 统一虚拟列表：对话轮 + 压缩边界卡片 + 乐观消息 + 尾部流式块
   type ChatItem =
     | { kind: "group"; key: string; group: MessageGroup; index: number }
+    | { kind: "compact"; key: string; message: ChatMessage }
     | { kind: "optimistic"; key: string; msg: { id: string; content: string; attachments?: ChatAttachment[]; createdAt?: number } }
     | { kind: "live"; key: "live-trailing" };
   // 后端已持久化的用户消息如果带有 clientMessageId，则隐藏对应的乐观气泡，避免重复显示。
@@ -583,13 +617,22 @@ export const ChatMessageList = memo(function ChatMessageList({
     }
     return set;
   }, [messages]);
+  const timeline = useMemo(() => buildChatTimeline(messages), [messages]);
   const chatItems = useMemo<ChatItem[]>(() => {
-    const items: ChatItem[] = messageGroups.map((group, index) => ({
-      kind: "group",
-      key: group.userMessage.id,
-      group,
-      index,
-    }));
+    const items: ChatItem[] = [];
+    let groupIndex = 0;
+    for (const t of timeline) {
+      if (t.kind === "compact") {
+        items.push({ kind: "compact", key: t.message.id, message: t.message });
+      } else {
+        items.push({
+          kind: "group",
+          key: t.group.userMessage.id,
+          group: t.group,
+          index: groupIndex++,
+        });
+      }
+    }
     for (const msg of optimistic) {
       if (materializedClientIds.has(msg.id)) continue;
       items.push({ kind: "optimistic", key: msg.id, msg });
@@ -597,12 +640,14 @@ export const ChatMessageList = memo(function ChatMessageList({
     // INV-4：in-flight assistant 已物化进组（live 块在组内原位渲染）时，不再渲染尾部 live 项
     const inFlightMaterialized =
       !!inFlightAssistantId &&
-      messageGroups.some((g) => g.assistantMessage?.id === inFlightAssistantId);
+      timeline.some(
+        (t) => t.kind === "group" && t.group.assistantMessage?.id === inFlightAssistantId,
+      );
     if (showLiveStream && !streamTargetUserId && !inFlightMaterialized) {
       items.push({ kind: "live", key: "live-trailing" });
     }
     return items;
-  }, [messageGroups, optimistic, showLiveStream, streamTargetUserId, materializedClientIds, inFlightAssistantId]);
+  }, [timeline, optimistic, showLiveStream, streamTargetUserId, materializedClientIds, inFlightAssistantId]);
 
   // 右侧导航：锚点 = 用户发送的消息（对标 DeepSeek 大纲），不是 assistant 回复
   const navItems = useMemo<NavItem[]>(() => {
@@ -694,7 +739,10 @@ export const ChatMessageList = memo(function ChatMessageList({
     if (last.kind === "optimistic") {
       return `o:${last.key}:${last.msg.content.length}`;
     }
-    return last.key;
+    if (last.kind === "compact") {
+      return `c:${last.key}`;
+    }
+    return (last as { key: string }).key;
   }, [displayItems, streamingContent, liveTimeline.length]);
 
   useLayoutEffect(() => {
@@ -829,6 +877,9 @@ export const ChatMessageList = memo(function ChatMessageList({
             itemContent={(_, item) => (
               <div className="py-1 pl-4 pr-9 md:pl-6 md:pr-12">
                 {item.kind === "group" && renderMessageGroup(item.group, item.index)}
+                {item.kind === "compact" && (
+                  <CompactBoundaryCard message={item.message} contextSummary={contextSummary} />
+                )}
                 {item.kind === "optimistic" && renderOptimisticMessage(item.msg)}
                 {item.kind === "live" && renderLiveStreamBlock()}
               </div>
