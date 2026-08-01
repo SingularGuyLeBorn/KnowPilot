@@ -32,6 +32,7 @@ import {
   type ChatMessage,
 } from "@knowpilot/shared";
 import { PostContent } from "@/components/post/PostContent";
+import { StreamingPlainContent } from "@/components/streamingPlainContent";
 import { ThinkingTimeline } from "@/components/chatTimelineSteps";
 import {
   MessageActions,
@@ -305,7 +306,7 @@ export const ChatMessageList = memo(function ChatMessageList({
           ) : (
             <PostContent
               content={active.content.trimEnd()}
-              className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
+              className="prose-sm kp-chat-md max-w-none text-left"
             />
           )}
           {isInterrupted && !isEditingAssistant && (
@@ -391,11 +392,11 @@ export const ChatMessageList = memo(function ChatMessageList({
           >
             {streamingContent ? (
               <div className="w-full rounded-2xl border border-[var(--kp-divider)] bg-[var(--kp-bg-alt)] px-3.5 py-2 text-left text-sm text-[var(--kp-text-1)] shadow-sm">
-                {/* 流式期直接走完整 PostContent：代码块即时支持代码/预览切换、复制、最大化，
-                    实现「边流式输出边视图渲染」。落库后复用同一渲染器，无流式→终态视觉跳变。 */}
-                <PostContent
+                {/* 流式期轻量渲染：避免每 token 跑完整 remark/rehype/高亮。
+                    落库终态气泡仍用 PostContent（代码预览 / viz / 画板）。 */}
+                <StreamingPlainContent
                   content={streamingContent.trimEnd()}
-                  className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
+                  className="prose-sm kp-chat-md max-w-none text-left"
                 />
               </div>
             ) : liveTimeline.length === 0 ? (

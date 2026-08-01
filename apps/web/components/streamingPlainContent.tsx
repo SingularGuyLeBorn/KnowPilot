@@ -6,27 +6,36 @@
  * 终态 / 非 live 仍走完整 PostContent。
  */
 
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useEffect, useMemo, type ReactNode } from "react";
 import katex from "katex";
 import { cn } from "@/lib/utils";
+import { warmKatexFonts } from "@/components/post/KatexHtml";
 
 function InlineKatex({ tex }: { tex: string }) {
   const html = useMemo(() => {
     try {
-      return katex.renderToString(tex, { throwOnError: false, strict: false });
+      return katex.renderToString(tex, {
+        throwOnError: false,
+        strict: false,
+        output: "html",
+      });
     } catch {
       return tex;
     }
   }, [tex]);
-  /* inline-block + leading-none 把公式从 chat 气泡的 leading-relaxed/外部 line-height 里隔离出来，
-     避免下标被父级行高推到错误位置 */
+  /* inline-block + leading-none：与终态 .katex 隔离策略一致 */
   return <span className="inline-block align-baseline leading-none" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function DisplayKatex({ tex }: { tex: string }) {
   const html = useMemo(() => {
     try {
-      return katex.renderToString(tex, { throwOnError: false, strict: false, displayMode: true });
+      return katex.renderToString(tex, {
+        throwOnError: false,
+        strict: false,
+        displayMode: true,
+        output: "html",
+      });
     } catch {
       return tex;
     }
@@ -105,6 +114,10 @@ export const StreamingPlainContent = memo(function StreamingPlainContent({
         </span>
       );
     });
+  }, [content]);
+
+  useEffect(() => {
+    if (content.includes("$")) warmKatexFonts();
   }, [content]);
 
   return (

@@ -57,7 +57,7 @@ export default function RootLayout({
       spellCheck={false}
     >
       <head>
-        {/* KaTeX 静态化到 public/，确保首屏阻塞加载，避免 dev 模式下 CSS chunk 延迟导致公式闪烁 */}
+        {/* KaTeX CSS 全站一份（小）；字体改由 KatexHtml 首次出现时按需预热，避免首页抢 ~260KB */}
         {/* eslint-disable-next-line @next/next/no-css-tags */}
         <link rel="stylesheet" href="/katex/katex.min.css" />
         <script

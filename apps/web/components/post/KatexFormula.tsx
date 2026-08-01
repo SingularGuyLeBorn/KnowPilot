@@ -102,20 +102,33 @@ interface KatexFormulaProps {
   children?: ReactNode;
   className?: string;
   display?: boolean;
+  /** 官方 renderToString HTML；有则不再走 React 子树（保 strut） */
+  html?: string;
+  /** 已知 TeX 源；有则点击弹窗不必再从 DOM 刮 annotation */
+  tex?: string;
 }
 
 /**
  * 可交互公式：
  * - 外壳永远用 span（避免 p > div hydration）
  * - 源码面板 portal 到 body，定位在公式正下方
+ * - 优先 html（renderToString），避免空 strut 被 React 调和丢掉
  */
-export function KatexFormula({ children, className, display = false }: KatexFormulaProps) {
+export function KatexFormula({
+  children,
+  className,
+  display = false,
+  html,
+  tex: texProp,
+}: KatexFormulaProps) {
   const panelId = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [tex, setTex] = useState("");
+  /** 仅 DOM 刮取路径用；有 texProp 时直接用 prop，避免 effect 同步 setState */
+  const [scrapedTex, setScrapedTex] = useState("");
+  const tex = texProp?.trim() ? texProp : scrapedTex;
   const [copied, setCopied] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
   const mounted = useSyncExternalStore(
@@ -125,18 +138,19 @@ export function KatexFormula({ children, className, display = false }: KatexForm
   );
 
   const refreshTex = useCallback(() => {
+    if (texProp?.trim()) return texProp;
     const next = extractTex(triggerRef.current);
-    setTex(next);
+    setScrapedTex(next);
     return next;
-  }, []);
+  }, [texProp]);
 
   // 块级公式：从 LaTeX 源里读 `% kp-align: left`，直接改 class（避免 setState 级联）
   useLayoutEffect(() => {
     if (!display || !rootRef.current) return;
-    const src = extractTex(triggerRef.current);
+    const src = texProp?.trim() || extractTex(triggerRef.current);
     const { align } = parseMathBlockPayload(src);
     rootRef.current.classList.toggle("kp-katex-align-left", align === "left");
-  }, [display, children]);
+  }, [display, children, html, texProp]);
 
   const placePanel = useCallback(() => {
     const el = triggerRef.current;
@@ -301,27 +315,39 @@ export function KatexFormula({ children, className, display = false }: KatexForm
           safeClass,
         )}
       >
-        <span
-          ref={triggerRef}
-          className="kp-katex-formula-trigger"
-          role="button"
-          tabIndex={0}
-          onClick={toggle}
-          onKeyDown={onKeyActivate}
-          aria-expanded={open}
-          aria-controls={open ? panelId : undefined}
-          title={open ? "收起 LaTeX" : "查看 LaTeX 源码"}
-        >
-          {/*
-            外壳剥掉后再还原：display 必须全宽，否则 \tag{n} 会叠在公式上。
-            display 根的 children 已是 .katex，只还原外层；inline 根需还原 .katex。
-          */}
-          {display ? (
-            <span className="katex-display">{children}</span>
-          ) : (
-            <span className="katex">{children}</span>
-          )}
-        </span>
+        {html ? (
+          <span
+            ref={triggerRef}
+            className="kp-katex-formula-trigger"
+            role="button"
+            tabIndex={0}
+            onClick={toggle}
+            onKeyDown={onKeyActivate}
+            aria-expanded={open}
+            aria-controls={open ? panelId : undefined}
+            title={open ? "收起 LaTeX" : "查看 LaTeX 源码"}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        ) : (
+          <span
+            ref={triggerRef}
+            className="kp-katex-formula-trigger"
+            role="button"
+            tabIndex={0}
+            onClick={toggle}
+            onKeyDown={onKeyActivate}
+            aria-expanded={open}
+            aria-controls={open ? panelId : undefined}
+            title={open ? "收起 LaTeX" : "查看 LaTeX 源码"}
+          >
+            {/* children 路径：display 必须全宽，否则 \tag{n} 会叠在公式上 */}
+            {display ? (
+              <span className="katex-display">{children}</span>
+            ) : (
+              <span className="katex">{children}</span>
+            )}
+          </span>
+        )}
         {panel}
       </span>
     </InsideKatexFormulaContext.Provider>

@@ -6,7 +6,6 @@ import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
-import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import { Check, Copy, Eye, Code2, Maximize2, Minimize2, WrapText, ListOrdered } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,15 +15,10 @@ import { PostMarkdownLink } from "./PostMarkdownLink";
 import { memoizeMarkdownTransform } from "@knowpilot/shared";
 import { useShowCodeLineNumbers } from "@/lib/codeBlockPrefs";
 import { MarkdownTable } from "@/components/post/MarkdownTable";
-import {
-  KatexFormula,
-  isKatexRootClassName,
-  isMathClassName,
-  useInsideKatexFormula,
-} from "@/components/post/KatexFormula";
+import { isMathClassName } from "@/components/post/KatexFormula";
+import { KatexHtml } from "@/components/post/KatexHtml";
 import { buildTocItems, type TocItem } from "@/components/post/TableOfContents";
 import dynamic from "next/dynamic";
-import { BoardPreview } from "@/components/editor/BoardCanvas";
 import "highlight.js/styles/github.css";
 
 /** Remotion 很重：按需加载，避免整页卡在 Next「Rendering…」 */
@@ -38,6 +32,22 @@ const VizEmbed = dynamic(
         <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-[var(--kp-divider)] bg-white text-sm text-[var(--kp-text-3)]">
           加载动画…
         </div>
+      </div>
+    ),
+  },
+);
+
+/** 手写画板预览：按需加载，避免文章页主包绑死 BoardCanvas */
+const BoardPreview = dynamic(
+  () => import("@/components/editor/BoardCanvas").then((m) => m.BoardPreview),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="my-4 flex h-40 items-center justify-center rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)] text-sm text-[var(--kp-text-3)]"
+        data-no-edit-click
+      >
+        加载画板…
       </div>
     ),
   },
@@ -239,24 +249,12 @@ function slugify(text: string) {
     .replace(/^-|-$/g, "");
 }
 
-/** rehype-katex 替换后的根节点是 span.katex / span.katex-display */
 function MarkdownSpan({
   className,
   children,
   ...props
 }: React.HTMLAttributes<HTMLSpanElement>) {
-  const inside = useInsideKatexFormula();
-  const { root, display } = isKatexRootClassName(className);
-  // 行内公式不再套 KatexFormula 交互外壳：外壳的 button/role/tabIndex 在 chat 气泡
-  // 的 prose 布局里会干扰 KaTeX 下标排版（下标飘到基字符左侧/下一行）。
-  // 行间公式保留外壳，用户仍可点击查看 LaTeX 源码。
-  if (!inside && root && display) {
-    return (
-      <KatexFormula display className={className}>
-        {children}
-      </KatexFormula>
-    );
-  }
+  // 公式已改走 KatexHtml（renderToString）；此处不再拦截 katex 根节点
   return (
     <span className={className} {...props}>
       {children}
@@ -321,16 +319,9 @@ function Pre({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
   const update = (next: Partial<CodeBlockState>) => setState((prev) => ({ ...prev, ...next }));
   const toggleLineNumbers = () => setShowLineNumbers(!showLineNumbers);
 
-  // 展示型公式勿走代码块外壳（hooks 已全部调用完再分支）
+  // 展示型公式：官方 HTML 字符串注入（hooks 已全部调用完再分支）
   if (isMathBlock) {
-    const inner = isValidElement(children)
-      ? (children as ReactElement<{ children?: ReactNode }>).props.children
-      : children;
-    return (
-      <KatexFormula display className={childClass}>
-        {inner}
-      </KatexFormula>
-    );
+    return <KatexHtml tex={codeText} display />;
   }
 
   if (isBoardBlock) {
@@ -544,6 +535,8 @@ export const PostContent = memo(function PostContent({
   );
 
   const tocItems = useMemo(() => buildTocItems(content), [content]);
+  // 公式：remark-math 产出 code.language-math → KatexHtml(renderToString)
+  // 不再用 rehype-katex→React 子树（空 strut 易丢，下标飞掉）
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(
     () =>
@@ -553,7 +546,6 @@ export const PostContent = memo(function PostContent({
         rehypeDropUnsafeEmbeds,
         rehypeHeadingIds(tocItems),
         rehypeHighlight,
-        [rehypeKatex, { throwOnError: false, strict: false }],
       ] as NonNullable<React.ComponentProps<typeof ReactMarkdown>["rehypePlugins"]>,
     [tocItems],
   );
@@ -586,14 +578,10 @@ export const PostContent = memo(function PostContent({
       );
     },
     code: ({ className, children, ...props }) => {
-      // 少数未替换路径；正常情况 rehype-katex 已换成 span.katex*
-      const math = isKatexRootClassName(className);
-      if (math.root) {
-        return (
-          <KatexFormula display={math.display} className={className}>
-            {children}
-          </KatexFormula>
-        );
+      const cls = typeof className === "string" ? className : "";
+      // 行内公式在此直接渲染；块级 math-display 保持 <code> 交给 Pre（否则 Pre 认不出）
+      if (cls.includes("math-inline")) {
+        return <KatexHtml tex={getText(children)} display={false} />;
       }
 
       const isBlock =

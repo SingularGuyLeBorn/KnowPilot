@@ -328,7 +328,7 @@ const ContentStep = memo(function ContentStep({
     >
       <PostContent
         content={content.trimEnd()}
-        className="prose-sm kp-chat-md max-w-none text-left leading-relaxed"
+        className="prose-sm kp-chat-md max-w-none text-left"
       />
     </div>
   );
