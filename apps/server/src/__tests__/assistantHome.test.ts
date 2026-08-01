@@ -48,6 +48,7 @@ describe("Assistant Home Workspace", () => {
         where: { session: { agentId: a.id } },
       });
       await prisma.chatSession.deleteMany({ where: { agentId: a.id } });
+      await prisma.agent.update({ where: { id: a.id }, data: { status: "deleted" } });
     }
 
     const agent = await prisma.agent.create({
