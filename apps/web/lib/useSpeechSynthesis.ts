@@ -39,13 +39,15 @@ function pickVoice(voices: SpeechSynthesisVoice[], lang: string): SpeechSynthesi
   return pool[0] ?? null;
 }
 
+const emptySubscribe = () => () => {};
+
 export function useSpeechSynthesis(
   opts: UseSpeechSynthesisOptions = {},
 ): UseSpeechSynthesisResult {
   const { lang = "zh-CN", rate = 1, pitch = 1, volume = 1 } = opts;
   // useSyncExternalStore：SSR 用 false，客户端 hydration 后读真实值，避免 hydration mismatch（不触发 set-state-in-effect）
   const supported = useSyncExternalStore(
-    () => () => {},
+    emptySubscribe,
     () => typeof window !== "undefined" && "speechSynthesis" in window,
     () => false,
   );
