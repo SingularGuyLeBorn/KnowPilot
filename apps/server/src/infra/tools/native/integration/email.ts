@@ -11,7 +11,7 @@ import { zodParams } from "../zodParams.js";
 
 async function sendEmailTool(args: Record<string, unknown>, ctx: NativeToolContext) {
   const rawSubject = String(args.subject || "");
-  const subject = rawSubject.startsWith("[KnowPilot 通知]") ? rawSubject : `[KnowPilot 通知] ${rawSubject}`;
+  const subject = rawSubject.startsWith("[OasisMind 通知]") ? rawSubject : `[OasisMind 通知] ${rawSubject}`;
   return sendEmailNotification(ctx.config, ctx.services.log, {
     subject,
     body: String(args.body || ""),
@@ -31,7 +31,7 @@ export const emailDefs: NativeToolDefinition[] = [
       "它会发一封可回复邮件并挂起 run 等待用户答复（Chat 作答或回复邮件均可），答复会回填 customResponse 并注入会话继续。",
     parameters: zodParams(
       z.object({
-        subject: z.string().describe("邮件主题（自动加 [KnowPilot 通知] 前缀）"),
+        subject: z.string().describe("邮件主题（自动加 [OasisMind 通知] 前缀）"),
         body: z.string().describe("邮件正文（纯文本）"),
         to: z.string().describe("收件人邮箱（不填则用 EMAIL_TO 环境变量）").optional(),
       }),

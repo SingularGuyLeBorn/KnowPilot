@@ -50,7 +50,7 @@ async function askUserTool(args: Record<string, unknown>, ctx: NativeToolContext
 
   const channel = (String(args.channel || "ui").toLowerCase() === "email" ? "email" : "ui") as AskUserChannel;
   const options = normalizeOptions(args.options);
-  const subject = String(args.subject || "[KnowPilot 需回复] 需要你的确认").trim();
+  const subject = String(args.subject || "[OasisMind 需回复] 需要你的确认").trim();
 
   let messageId: string | undefined;
   let threadId: string | undefined;
@@ -79,7 +79,7 @@ async function askUserTool(args: Record<string, unknown>, ctx: NativeToolContext
 
     const text =
       `${question}${optionsBlock}\n\n` +
-      `——\n此邮件由 KnowPilot Agent 发出。请直接「回复」本邮件；也可在 Chat 弹框中作答。\n` +
+      `——\n此邮件由 OasisMind Agent 发出。请直接「回复」本邮件；也可在 Chat 弹框中作答。\n` +
       `会话：${ctx.sessionId}\n`;
 
     const sent = await sendAgentMailMessage({ to, subject, text });

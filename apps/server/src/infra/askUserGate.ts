@@ -246,14 +246,14 @@ async function sendReminderEmail(askId: string): Promise<void> {
   // 用 sendEmailNotification 发送（agentmail 通道返回 messageId/threadId），绑定回 pending，
   // 这样 webhook/poller 收到回复时能通过 inReplyTo/threadId 匹配回 askId。
   const result = await sendEmailNotification(handles.config, handles.log, {
-    subject: `[KnowPilot 需回复] Agent 正在等你回复（已等待 ${mins} 分钟）`,
+    subject: `[OasisMind 需回复] Agent 正在等你回复（已等待 ${mins} 分钟）`,
     body:
       `Agent 正在等待你的回复（第 ${pending.reminderCount} 次提醒）。\n\n` +
       `问题：${pending.question}\n` +
       optionsBlock +
       `\n会话：${pending.sessionId}\naskId：${askId}\n\n` +
       `直接回复本邮件即可，回复内容会作为你的答复发给 Agent（和聊天框打字等价）。\n` +
-      `你也可以打开 KnowPilot Chat 在 ask_user 弹框中作答。\n`,
+      `你也可以打开 OasisMind Chat 在 ask_user 弹框中作答。\n`,
     agentId: pending.agentId,
   });
 
@@ -346,7 +346,7 @@ export async function createAskUserPending(input: {
     question: input.question.trim(),
     options: input.options?.map((o) => String(o).trim()).filter(Boolean),
     channel: input.channel,
-    subject: (input.subject || `KnowPilot 需要你的确认`).trim(),
+    subject: (input.subject || `OasisMind 需要你的确认`).trim(),
     agentId: input.agentId,
     messageId: input.messageId,
     threadId: input.threadId,

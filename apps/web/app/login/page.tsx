@@ -42,7 +42,7 @@ function LoginForm() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]">
             <Lock className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-bold text-[var(--kp-text-1)]">KnowPilot 登录</h1>
+          <h1 className="text-xl font-bold text-[var(--kp-text-1)]">见微 · OasisMind 登录</h1>
           <p className="text-xs text-[var(--kp-text-3)]">
             远程访问已启用密码保护（AUTH_MODE=password）
           </p>
