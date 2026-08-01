@@ -46,6 +46,13 @@ const EXPLORE_READONLY_TOOLS = new Set([
   "garden_get",
   "search_files",
   "glob_files",
+  // 连续换 URL/关键词勘察也是推进，不是死循环
+  "read_article",
+  "scrape_web_page",
+  "memory_search",
+  "memory_daily_search",
+  "todo_read",
+  "browser_login_status",
 ]);
 
 function isExploreReadonlyTool(name: string): boolean {

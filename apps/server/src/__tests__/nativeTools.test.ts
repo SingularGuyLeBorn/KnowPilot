@@ -202,6 +202,24 @@ describe("native:read_file", () => {
     expect(result.path).toBe("data/tool-results/sess1/call_1.json");
     expect(result.content).toContain('"items"');
   });
+
+  it("可读 data/webpages（save_webpage 落盘路径）", async () => {
+    const dir = path.join(root, "data", "webpages");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "a.md"), "# hi\n", "utf8");
+    const ctx = createNativeCtx(root);
+    const result = (await executeNativeTool("read_file", { path: "data/webpages/a.md" }, ctx)) as {
+      content: string;
+    };
+    expect(result.content).toContain("# hi");
+  });
+
+  it("禁止 write_file 直写 data/", async () => {
+    const ctx = createNativeCtx(root);
+    await expect(
+      executeNativeTool("write_file", { path: "data/webpages/x.md", content: "no" }, ctx),
+    ).rejects.toThrow(/禁止 write_file 直写 data/);
+  });
 });
 
 describe("native:write_file", () => {

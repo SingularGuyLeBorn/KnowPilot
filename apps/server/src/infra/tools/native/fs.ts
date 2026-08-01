@@ -36,7 +36,8 @@ function isAlgoVizProjectPath(p: string): boolean {
 /**
  * Agent FS 路径单点（读写对称）：
  * - content/：读任意知识库；写仅 content/uploads/
- * - data/tool-results/：只读（大工具结果落盘，offload 提示的路径必须能读回）
+ * - data/：只读运行时产物（tool-results / webpages / sessions / workspace 审计路径等）
+ *   写禁止走 write_file（由 offload / save_webpage / 专用工具落盘；工作产物写 Workspace 相对路径）
  * - apps/algo-viz/：只读（对照样例）；创建/注册动画用 algo_viz_create
  * - 其余：落到当前 Agent Workspace（无 Workspace → data/workspace/）
  * - list/search 默认 Workspace 根，禁止裸扫项目根
@@ -53,13 +54,16 @@ export async function resolveAgentFsPath(
   if (/^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]/.test(p) || p.startsWith("//")) {
     throw new Error(`路径不允许为绝对路径：${relPath}`);
   }
-  // 工具大结果落盘路径（相对 projectRoot）；禁止误落到 Workspace 下变成 workspaces/.../data/tool-results
-  if (p === "data/tool-results" || p.startsWith("data/tool-results/")) {
+  // data/* 相对 projectRoot 只读：与 offload / save_webpage / document_to_markdown 返回路径对齐
+  if (p === "data" || p.startsWith("data/")) {
     if (mode === "write") {
-      throw new Error("禁止 write_file 写 data/tool-results：该目录仅由运行时 offload 写入，用 read_file 分段读取");
+      throw new Error(
+        "禁止 write_file 直写 data/：运行时目录只读。工作产物请写 Workspace 相对路径（如 notes.md）；" +
+          "大工具结果 / 网页存档由运行时自动落盘后用 read_file 读回。",
+      );
     }
-    const abs = resolveSafePath(ctx.config, p);
-    return { abs, relForReturn: p };
+    const abs = resolveSafePath(ctx.config, p === "data" ? "data" : p);
+    return { abs, relForReturn: p === "data" ? "data" : p };
   }
   if (p.startsWith("content/") || p === "content") {
     if (mode === "write") {
@@ -381,13 +385,13 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "read_file",
     concurrencyClass: "A",
     description:
-      "读取文本文件。path：content/… 知识库；apps/algo-viz/… 算法动画工程；否则相对当前 Agent Workspace（禁止裸扫项目根/config/其它 apps）。支持偏移与最大长度。",
+      "读取文本文件。path：content/… 知识库；data/… 运行时产物（tool-results/webpages 等，只读）；apps/algo-viz/… 算法动画工程；否则相对当前 Agent Workspace（禁止裸扫项目根/config/其它 apps）。支持偏移与最大长度。",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "content/…、apps/algo-viz/… 或 Workspace 相对路径",
+          description: "content/…、data/…（只读）、apps/algo-viz/… 或 Workspace 相对路径",
         },
         maxChars: { type: "number", description: "最大读取字符数，默认 12000" },
         offset: { type: "number", description: "起始字符偏移，默认 0" },
@@ -436,13 +440,13 @@ const FS_DEFS: NativeToolDefinition[] = [
     name: "list_directory",
     concurrencyClass: "A",
     description:
-      "列出目录内容（默认当前 Agent Workspace 根，可选递归）。path=content/… 或 apps/algo-viz/… 可列对应子树。",
+      "列出目录内容（默认当前 Agent Workspace 根，可选递归）。path=content/…、data/…（只读）或 apps/algo-viz/… 可列对应子树。",
     parameters: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "相对 Workspace、content/… 或 apps/algo-viz/…；默认 Workspace 根",
+          description: "相对 Workspace、content/…、data/… 或 apps/algo-viz/…；默认 Workspace 根",
         },
         recursive: { type: "boolean", description: "是否递归列出子目录，默认 false" },
       },

@@ -80,6 +80,20 @@ describe("toolLoopGuard", () => {
     expect(blocked.blocked).toBe(true);
   });
 
+  it("连续 read_article 不同 URL 不触发同名熔断", () => {
+    let state = createLoopGuardState();
+    for (let i = 0; i < 8; i++) {
+      const v = checkToolLoop(
+        state,
+        [{ name: "read_article", args: { url: `https://x.com/${i}` } }],
+        3,
+        6,
+      );
+      expect(v.blocked).toBe(false);
+      state = v.state;
+    }
+  });
+
   it("detectOscillation 识别 A/B 乒乓", () => {
     const a = "read_file::{\"path\":\"a\"}";
     const b = "read_file::{\"path\":\"b\"}";
