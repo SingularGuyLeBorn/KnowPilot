@@ -125,7 +125,6 @@ export function useChatQueueDrain({
     sessionComposeActions.setQueueDraining(sid, true);
 
     (async () => {
-      let handedToRunStream = false;
       let softClaimedDbId: string | null = null;
       try {
 
@@ -225,7 +224,6 @@ export function useChatQueueDrain({
           });
         }
       }
-      handedToRunStream = true;
       const outcome = await runStream({
         message: streamMessage,
         attachments: streamAttachments?.length ? streamAttachments : undefined,
@@ -298,10 +296,10 @@ export function useChatQueueDrain({
           sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
         }
       } finally {
-        // 未交给 runStream 时必须释放锁，否则后续待发永远被 queueDraining 挡住
-        if (!handedToRunStream) {
-          sessionComposeActions.setQueueDraining(sid, false);
-        }
+        // 无论是否起流，必须释放 drain 锁。
+        // 若起流成功，isSessionRunOccupied(sid) 会在流结束前挡住新并发；
+        // 若流结束，isSessionRunOccupied 变 false，这里锁释放后才能继续 drain 下一项。
+        sessionComposeActions.setQueueDraining(sid, false);
       }
     })().catch(logQueryCatch);
   }, [runStream, asyncResultQueue, effectiveSessionId, isSessionRunOccupied, consumeSessionQueueItemMutation, finalizeSessionQueueItemMutation, unclaimSessionQueueItemMutation, ackAsyncDeliveryMutation, utils, asyncQueueQuery, sessionsItems, consumeRef]);

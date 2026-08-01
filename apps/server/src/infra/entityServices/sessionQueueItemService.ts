@@ -215,11 +215,14 @@ export class SessionQueueItemService extends BaseService<
         role: "user",
         content: { in: [...new Set(userRows.map((r) => r.content))] },
       },
-      select: { content: true },
+      select: { content: true, createdAt: true },
     });
     if (delivered.length === 0) return rows.map((r) => this.formatEntity(r));
-    const deliveredSet = new Set(delivered.map((d) => d.content));
-    const orphanIds = userRows.filter((r) => deliveredSet.has(r.content)).map((r) => r.id);
+
+    const orphanIds = userRows
+      .filter((r) => delivered.some((d) => d.content === r.content && d.createdAt >= r.createdAt))
+      .map((r) => r.id);
+
     if (orphanIds.length > 0) {
       // 异步清幽灵行：不阻塞 list；失败留给 reconciler
       this.prisma.sessionQueueItem
@@ -231,8 +234,9 @@ export class SessionQueueItemService extends BaseService<
           );
         });
     }
+    const orphanIdSet = new Set(orphanIds);
     return rows
-      .filter((r) => !(r.kind === "user" || r.kind === "child_notify") || !deliveredSet.has(r.content))
+      .filter((r) => !orphanIdSet.has(r.id))
       .map((r) => this.formatEntity(r));
   }
 
@@ -325,7 +329,7 @@ export class SessionQueueItemService extends BaseService<
       const delivered =
         item.kind === "user" || item.kind === "child_notify"
           ? await this.prisma.chatMessage.findFirst({
-              where: { sessionId: item.sessionId, role: "user", content: item.content },
+              where: { sessionId: item.sessionId, role: "user", content: item.content, createdAt: { gte: item.createdAt } },
               select: { id: true },
             })
           : null;
