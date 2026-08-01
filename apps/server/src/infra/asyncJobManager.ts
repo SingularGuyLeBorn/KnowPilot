@@ -40,7 +40,11 @@ import {
   rollbackAgentMessageDeliveredByTaskRef,
 } from "./agentMessageLedger.js";
 import { getTool } from "./tools/registry.js";
-import { isAbortLikeError, messageFromAbortSignal } from "./abortReason.js";
+import {
+  isAbortLikeError,
+  messageFromAbortSignal,
+  resolveAbortReasonCode,
+} from "./abortReason.js";
 
 function warnUnlessAbort(context: string, err: unknown): void {
   if (isAbortLikeError(err)) return;
@@ -63,7 +67,7 @@ export interface AsyncQueueDelivery {
   sessionId: string;
   taskLabel: string;
   asyncResult: string;
-  status: "done" | "failed";
+  status: "done" | "failed" | "interrupted";
   error?: string;
   subagentSessionId?: string;
   subagentName?: string;
@@ -123,6 +127,13 @@ interface AsyncTaskOutput {
    * （如 sleep/async_task_tool 失败）。reconciler Pass 1 识别后跳过，避免孤儿回滚循环。
    */
   deliveryExempt?: boolean;
+  /** 纯工具投递：UI 卡片用结构化元数据（与 asyncResult 文本同源） */
+  structured?: import("./asyncToolDeliveryFormat.js").AsyncToolDeliveryStructured;
+  /**
+   * 单次执行世代：resume 同 jobId 再入池时换新值；
+   * 旧 execute 收尾若 executionId 不一致则禁止覆写终态（防打断迟到写回 interrupted）。
+   */
+  executionId?: string;
 }
 
 function parseAsyncInput(raw: unknown): AsyncTaskInput | null {
@@ -162,6 +173,7 @@ function toDelivery(task: {
   const input = parseAsyncInput(task.input);
   if (!input) return null;
   const output = parseAsyncOutput(task.output);
+  const interrupted = task.status === "interrupted" || task.status === "cancelled";
   const failed = task.status === "failed";
   const pinned = task.pinned === true || task.pinned === 1;
   return {
@@ -169,8 +181,8 @@ function toDelivery(task: {
     jobId: task.id,
     sessionId: input.sessionId,
     taskLabel: input.taskLabel,
-    asyncResult: failed ? "" : output.asyncResult || "(无文本输出)",
-    status: failed ? "failed" : "done",
+    asyncResult: failed || interrupted ? "" : output.asyncResult || "(无文本输出)",
+    status: interrupted ? "interrupted" : failed ? "failed" : "done",
     error: output.error,
     subagentSessionId: input.subagentSessionId,
     subagentName: input.agentSnapshot?.name ?? undefined,
@@ -370,7 +382,7 @@ export async function autoConsumeAsyncDelivery(options: {
 
   const output = parseAsyncOutput(task.output);
   const message = failed
-    ? `任务失败：${output.error || "未知错误"}`
+    ? `任务失败：${output.error || "未知错误"}\n\n请根据失败信息调整方案后继续推进用户目标。`
     : output.asyncResult || "(无文本输出)";
 
   // 子任务会话（有 parentSessionId）上的异步续跑视为任务血统，允许 report_back
@@ -395,6 +407,7 @@ export async function autoConsumeAsyncDelivery(options: {
     }
   }
 
+  const toolName = input?.toolCall?.tool;
   const body = {
     sessionId,
     agentId: session.agentId as string,
@@ -411,6 +424,8 @@ export async function autoConsumeAsyncDelivery(options: {
         subagentName: resolvedSubagentName,
         sourceType: input?.sourceType ?? "async_task_llm",
         taskLabel,
+        ...(toolName ? { toolName } : {}),
+        ...(output.structured ? { structured: output.structured } : {}),
       },
     },
   };
@@ -896,7 +911,8 @@ export function wireAsyncJobPush(config: AppConfig): void {
           queued: "queued",
           started: "running",
           completed: "done",
-          cancelled: "cancelled",
+          // 池 cancelled 事件 = 主动中断（与 failed 区分）
+          cancelled: "interrupted",
           failed: "failed",
           timeout: "failed",
         } as const;
@@ -1065,7 +1081,7 @@ export async function pullConsumedAsyncDeliveries(
       sessionId,
       delivered: true,
       OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
-      status: { in: ["success", "failed"] },
+      status: { in: ["success", "failed", "interrupted", "cancelled"] },
     },
     orderBy: { deliveredAt: "desc" },
     take: Math.max(1, Math.min(limit, 100)),
@@ -1188,7 +1204,7 @@ export async function listQueuedAsyncJobs(
 export interface SyncAsyncJob {
   jobId: string;
   taskLabel: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "interrupted";
   elapsedMs?: number;
   asyncResult?: string;
   error?: string;
@@ -1234,11 +1250,13 @@ export async function listSyncAsyncJobs(
         ? "queued"
         : row.status === "success"
           ? "completed"
-          : row.status === "failed"
-            ? "failed"
-            : row.status === "running" || row.status === "queued"
-              ? row.status
-              : "failed";
+          : row.status === "interrupted" || row.status === "cancelled"
+            ? "interrupted"
+            : row.status === "failed"
+              ? "failed"
+              : row.status === "running" || row.status === "queued"
+                ? row.status
+                : "failed";
     items.push({
       jobId: row.id,
       taskLabel: input.taskLabel,
@@ -1261,40 +1279,374 @@ export async function listSyncAsyncJobs(
   return items;
 }
 
-/** 取消必须幂等：运行中 abort 信号；排队中移出队列且手动回写 failed。只清队列不会触发 execute finally，不能漏状态回写。 */
+/** 推优先：取消/中断写库后立刻推 async_job_update（拉由前端 invalidate/refetch 兜底） */
+async function pushAsyncJobInterrupted(
+  sessionId: string,
+  jobId: string,
+  config: AppConfig,
+): Promise<void> {
+  try {
+    const { getStreamHub } = await import("./sessionStreamHub.js");
+    const hub = getStreamHub();
+    if (!hub) return;
+    hub.pushExternalEvent(sessionId, {
+      type: "async_job_update",
+      sessionId,
+      jobId,
+      status: "interrupted",
+      stats: getAsyncQueueStats(config),
+    });
+  } catch (err) {
+    console.warn(`[asyncJobManager] interrupted 推送失败 job=${jobId}:`, err);
+  }
+}
+
+/**
+ * 取消必须幂等：运行中 abort；排队中移出队列。
+ * 终态统一写 interrupted（与 failed 区分：主动关掉 ≠ 执行出错）。
+ * ownerSessionId 有值时强制归属校验——只能关本会话创建的任务。
+ */
 export async function cancelAsyncJob(
   jobId: string,
   config: AppConfig,
   services: ServiceContainer,
-): Promise<{ cancelled: boolean; message: string }> {
+  opts?: { ownerSessionId?: string },
+): Promise<{ cancelled: boolean; message: string; status?: "interrupted" }> {
   const task = await services.task.getById(jobId);
   if (!task) return { cancelled: false, message: "任务不存在" };
-  // 接受 running 与 queued 两种活跃状态；已完成（success/failed）的不允许取消
+
+  if (opts?.ownerSessionId) {
+    if (task.sessionId !== opts.ownerSessionId) {
+      return { cancelled: false, message: "只能取消本会话创建的异步任务" };
+    }
+  }
+
+  if (task.status === "interrupted" || task.status === "cancelled") {
+    return { cancelled: true, message: "任务已中断", status: "interrupted" };
+  }
   if (task.status !== "running" && task.status !== "queued") {
     return { cancelled: false, message: "任务未在运行中或排队中" };
   }
 
+  const sessionId = task.sessionId || opts?.ownerSessionId;
+  const prevOut = parseAsyncOutput(task.output);
+  const interruptOutput = {
+    ...prevOut,
+    error: "异步任务已中断（用户/Agent 主动取消）",
+    deliveryExempt: true,
+  } satisfies AsyncTaskOutput;
+
   const orchestrator = getAsyncJobOrchestrator(config);
+  const wasRunning = orchestrator.isRunning(jobId);
   const cancelled = orchestrator.cancel(jobId);
-  if (!cancelled) {
-    // 任务可能刚好执行完但尚未被 poll，把仍标记为 running/queued 的记录置为失败，防止永久占坑
-    await services.task.update({
-      id: jobId,
-      status: "failed",
+
+  // 条件写：与 finalizeFailure 竞态时以 interrupted 为准，禁止被 failed 覆盖后再推错态
+  const written = await prisma.task.updateMany({
+    where: { id: jobId, status: { in: ["running", "queued"] } },
+    data: {
+      status: "interrupted",
       finishedAt: new Date(),
-      output: { error: "任务已结束或丢失，取消失败" } satisfies AsyncTaskOutput,
-    } as any);
-    return { cancelled: true, message: "任务已结束，已标记为失败" };
+      delivered: true,
+      deliveredAt: new Date(),
+      output: interruptOutput as object,
+    },
+  });
+
+  if (!cancelled && written.count === 0) {
+    const latest = await services.task.getById(jobId);
+    if (latest?.status === "interrupted" || latest?.status === "cancelled") {
+      return { cancelled: true, message: "任务已中断", status: "interrupted" };
+    }
+    return { cancelled: false, message: "任务已结束或丢失，无法中断" };
   }
 
-  // 对排队中任务，orchestrator 只清队列不会执行 finally，需要手动回写状态
-  await services.task.update({
-    id: jobId,
-    status: "failed",
-    finishedAt: new Date(),
-    output: { error: "异步任务已取消" } satisfies AsyncTaskOutput,
-  } as any);
-  return { cancelled: true, message: "已取消异步任务" };
+  if (sessionId) {
+    await pushAsyncJobInterrupted(sessionId, jobId, config);
+  }
+
+  return {
+    cancelled: true,
+    message: wasRunning ? "已中断运行中的任务" : "已中断排队中的任务",
+    status: "interrupted",
+  };
+}
+
+/**
+ * 批量中断本会话创建的活跃异步任务（queued/running）。
+ * jobIds 缺省 = 本会话全部活跃项。归属硬校验：只动 sessionId=ownerSessionId 的行。
+ */
+export async function cancelOwnedAsyncJobs(
+  ownerSessionId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+  opts?: { jobIds?: string[] },
+): Promise<{
+  cancelled: string[];
+  skipped: Array<{ jobId: string; reason: string }>;
+}> {
+  const cancelled: string[] = [];
+  const skipped: Array<{ jobId: string; reason: string }> = [];
+
+  let targets: string[];
+  if (opts?.jobIds?.length) {
+    targets = [...new Set(opts.jobIds)];
+  } else {
+    const rows = await prisma.task.findMany({
+      where: {
+        sessionId: ownerSessionId,
+        status: { in: ["running", "queued"] },
+        OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+      },
+      select: { id: true },
+      take: 100,
+    });
+    targets = rows.map((r) => r.id);
+  }
+
+  for (const jobId of targets) {
+    const result = await cancelAsyncJob(jobId, config, services, {
+      ownerSessionId,
+    });
+    if (result.cancelled) cancelled.push(jobId);
+    else skipped.push({ jobId, reason: result.message });
+  }
+
+  return { cancelled, skipped };
+}
+
+/**
+ * 恢复本会话已中断的异步任务（interrupted/cancelled → 同 jobId 重新入池）。
+ * 与 retryAsyncJob（failed→新 jobId）正交：中断是主动关掉，恢复继续同一条台账。
+ * 推优先：CAS 成功后入池，wireAsyncJobPush 推 queued/started；失败回滚 interrupted。
+ */
+export async function resumeAsyncJob(
+  jobId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+  opts?: { ownerSessionId?: string },
+): Promise<{ jobId: string; status: "queued" | "running"; message: string }> {
+  const existing = await services.task.getById(jobId);
+  if (!existing) throw new Error("任务不存在");
+  if (opts?.ownerSessionId && existing.sessionId !== opts.ownerSessionId) {
+    throw new Error("只能恢复本会话创建的异步任务");
+  }
+  if (existing.status !== "interrupted" && existing.status !== "cancelled") {
+    throw new Error("只能恢复已中断的任务（interrupted）；失败任务请用 retry");
+  }
+  const input = parseAsyncInput(existing.input);
+  if (!input) throw new Error("不是有效的异步 Agent 任务");
+
+  const orchestrator = getAsyncJobOrchestrator(config);
+  // DB 已 interrupted 但池可能仍占位（execute 未响应 abort）→ 强制摘槽，同 jobId 才能再入队
+  if (orchestrator.isRunning(jobId) || orchestrator.isQueued(jobId)) {
+    orchestrator.releaseStaleSlot(jobId);
+  }
+
+  const prevOut = parseAsyncOutput(existing.output);
+  const claimed = await prisma.task.updateMany({
+    where: { id: jobId, status: { in: ["interrupted", "cancelled"] } },
+    data: {
+      status: "queued",
+      queuedAt: new Date(),
+      startedAt: null,
+      finishedAt: null,
+      delivered: false,
+      deliveredAt: null,
+      output: {
+        logs: prevOut.logs,
+      } satisfies AsyncTaskOutput as object,
+    },
+  });
+  if (claimed.count === 0) {
+    throw new Error("任务状态已变，无法恢复（可能已被恢复或删除）");
+  }
+
+  const mode: "llm" | "tool" = input.toolCall ? "tool" : "llm";
+  const slotClass = mode === "tool" || input.sourceType === "sleep" ? "lightweight" : "llm";
+
+  try {
+    if (input.sourceType === "sleep") {
+      const secMatch =
+        /sleep\s+(\d+)\s*s/i.exec(input.taskLabel) ||
+        /(\d+)\s*秒/.exec(input.task) ||
+        /等待\s*(\d+)/.exec(input.task);
+      const seconds = Math.max(0, Math.min(secMatch ? Number(secMatch[1]) : 10, 300));
+      const ms = seconds * 1000;
+      const sleepExecutionId = `e_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+      await prisma.task.updateMany({
+        where: { id: jobId },
+        data: {
+          status: "running",
+          startedAt: new Date(),
+          output: { logs: prevOut.logs, executionId: sleepExecutionId } satisfies AsyncTaskOutput as object,
+        },
+      });
+      orchestrator.enqueue({
+        jobId,
+        sessionId: input.sessionId,
+        timeoutMs: ms + 10_000,
+        slotClass: "lightweight",
+        execute: async (signal) => {
+          const stillMine = async () =>
+            parseAsyncOutput((await services.task.getById(jobId))?.output).executionId ===
+            sleepExecutionId;
+          try {
+            if (signal.aborted) throw new Error(messageFromAbortSignal(signal));
+            await new Promise<void>((resolve, reject) => {
+              const timer = setTimeout(resolve, ms);
+              const onAbort = () => {
+                clearTimeout(timer);
+                reject(new Error(messageFromAbortSignal(signal)));
+              };
+              if (signal.aborted) {
+                onAbort();
+                return;
+              }
+              signal.addEventListener("abort", onAbort, { once: true });
+            });
+            if (!(await stillMine())) return;
+            await services.task.update({
+              id: jobId,
+              status: "success",
+              finishedAt: new Date(),
+              output: {
+                asyncResult: `定时时间${seconds}s到了，请继续完成任务`,
+                executionId: sleepExecutionId,
+              } satisfies AsyncTaskOutput,
+            } as any);
+            await notifyAsyncDelivery(
+              input.sessionId,
+              jobId,
+              "done",
+              input.taskLabel,
+              services,
+              config,
+            );
+          } catch (err) {
+            if (!(await stillMine())) return;
+            const msg = err instanceof Error ? err.message : String(err);
+            await services.task.update({
+              id: jobId,
+              status: "interrupted",
+              finishedAt: new Date(),
+              delivered: true,
+              deliveredAt: new Date(),
+              output: {
+                error: msg,
+                deliveryExempt: true,
+                executionId: sleepExecutionId,
+              } satisfies AsyncTaskOutput,
+            } as any);
+            await pushAsyncJobInterrupted(input.sessionId, jobId, config);
+          }
+        },
+      });
+    } else {
+      orchestrator.enqueue({
+        jobId,
+        sessionId: input.sessionId,
+        timeoutMs: input.timeoutMs,
+        slotClass,
+        execute: buildAsyncExecute(
+          config,
+          services,
+          jobId,
+          input.task,
+          input.agentSnapshot,
+          "resume",
+          input.subagentSessionId,
+          mode,
+          input.toolCall,
+          input.shareToSessionIds,
+          input.sessionId,
+        ),
+      });
+    }
+  } catch (err) {
+    await prisma.task
+      .updateMany({
+        where: { id: jobId, status: { in: ["queued", "running"] } },
+        data: {
+          status: "interrupted",
+          finishedAt: new Date(),
+          delivered: true,
+          deliveredAt: new Date(),
+          output: {
+            error: err instanceof Error ? err.message : String(err),
+            deliveryExempt: true,
+            logs: prevOut.logs,
+          } satisfies AsyncTaskOutput as object,
+        },
+      })
+      .catch(catchUnlessAbort("[asyncJobManager] resume 入池失败回滚"));
+    if (input.sessionId) await pushAsyncJobInterrupted(input.sessionId, jobId, config);
+    throw err;
+  }
+
+  const running = orchestrator.isRunning(jobId);
+  const status = running ? ("running" as const) : ("queued" as const);
+  // 入池后立刻推一次（queued 事件在 enqueue 内已发；此处补 stats 对齐）
+  try {
+    const { getStreamHub } = await import("./sessionStreamHub.js");
+    getStreamHub()?.pushExternalEvent(input.sessionId, {
+      type: "async_job_update",
+      sessionId: input.sessionId,
+      jobId,
+      status,
+      stats: getAsyncQueueStats(config),
+    });
+  } catch (err) {
+    console.warn(`[asyncJobManager] resume 推送失败 job=${jobId}:`, err);
+  }
+
+  return {
+    jobId,
+    status,
+    message: `已恢复中断任务「${input.taskLabel}」${status === "queued" ? "（排队中）" : ""}。`,
+  };
+}
+
+/** 批量恢复本会话 interrupted 任务；jobIds 缺省 = 全部 interrupted */
+export async function resumeOwnedAsyncJobs(
+  ownerSessionId: string,
+  config: AppConfig,
+  services: ServiceContainer,
+  opts?: { jobIds?: string[] },
+): Promise<{
+  resumed: string[];
+  skipped: Array<{ jobId: string; reason: string }>;
+}> {
+  const resumed: string[] = [];
+  const skipped: Array<{ jobId: string; reason: string }> = [];
+
+  let targets: string[];
+  if (opts?.jobIds?.length) {
+    targets = [...new Set(opts.jobIds)];
+  } else {
+    const rows = await prisma.task.findMany({
+      where: {
+        sessionId: ownerSessionId,
+        status: { in: ["interrupted", "cancelled"] },
+        OR: [{ name: { startsWith: "[async]" } }, { type: "async_agent" }],
+      },
+      select: { id: true },
+      take: 100,
+    });
+    targets = rows.map((r) => r.id);
+  }
+
+  for (const jobId of targets) {
+    try {
+      await resumeAsyncJob(jobId, config, services, { ownerSessionId });
+      resumed.push(jobId);
+    } catch (err) {
+      skipped.push({
+        jobId,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { resumed, skipped };
 }
 
 function buildAsyncExecute(
@@ -1303,8 +1655,8 @@ function buildAsyncExecute(
   jobId: string,
   task: string,
   agentSnapshot: AsyncTaskInput["agentSnapshot"],
-  // 重跑来源（仅系统提示文案）：null=首发；"manual"=手动 retryAsyncJob
-  retryKind: "manual" | null,
+  // 重跑来源（仅系统提示文案）：null=首发；"manual"=手动 retry；"resume"=中断恢复
+  retryKind: "manual" | "resume" | null,
   subagentSessionId?: string,
   mode: "llm" | "tool" = "llm",
   toolCall?: { tool: string; args: Record<string, unknown> },
@@ -1312,7 +1664,10 @@ function buildAsyncExecute(
   parentSessionId?: string,
 ): (signal: AbortSignal) => Promise<void> {
   const invokeTrpc = createTrpcInvoker({ services });
-  const retryHint = retryKind === "manual" ? "（手动重试）" : "";
+  const retryHint =
+    retryKind === "manual" ? "（手动重试）" : retryKind === "resume" ? "（恢复中断任务）" : "";
+  /** 本轮执行世代；resume 换新后旧轮 finalize* 见不一致即退出 */
+  let executionId = "";
   const syncSubStatus = async (status: "completed" | "failed" | "paused" | "running") => {
     if (!subagentSessionId) return;
     try {
@@ -1377,6 +1732,10 @@ function buildAsyncExecute(
     },
     emit?: (event: AgentStreamEvent) => void,
   ) => {
+    const latestBefore = await services.task.getById(jobId);
+    if (parseAsyncOutput(latestBefore?.output).executionId !== executionId) {
+      return;
+    }
     const resultText = loop.content || "(无文本输出)";
     const tokenUsage = loop.tokenUsage;
     await appendAsyncJobLog(jobId, { level: "info", message: `任务完成，共 ${loop.roundsUsed} 轮` }, services);
@@ -1433,8 +1792,18 @@ function buildAsyncExecute(
   };
 
   const finalizeFailure = async (err: unknown, emit?: (event: AgentStreamEvent) => void) => {
+    // resume 已开新执行：旧轮收尾不得把新状态打回 interrupted/failed
+    const latestBefore = await services.task.getById(jobId);
+    if (parseAsyncOutput(latestBefore?.output).executionId !== executionId) {
+      return;
+    }
     const isAbort = isAbortLikeError(err);
-    const isTimeout = err instanceof Error && err.message.includes("超时");
+    const abortCode = resolveAbortReasonCode(undefined, err);
+    const isTimeout = abortCode === "timeout" || (err instanceof Error && err.message.includes("超时"));
+    // 主动取消/停会话 → interrupted；超时与其它错误 → failed（与取消语义区分）
+    const isInterrupt =
+      isAbort && (abortCode === "cancel" || abortCode === "session_stop" || abortCode === "user");
+    const terminalStatus = isInterrupt ? "interrupted" : "failed";
     const errorText = isAbort
       ? messageFromAbortSignal(undefined, err)
       : isTimeout
@@ -1444,22 +1813,37 @@ function buildAsyncExecute(
           : String(err);
     await appendAsyncJobLog(jobId, { level: "error", message: errorText }, services);
     const existingOutputFailed = parseAsyncOutput((await services.task.getById(jobId))?.output);
-    await services.task.update({
-      id: jobId,
-      status: "failed",
-      finishedAt: new Date(),
-      output: {
-        error: errorText,
-        logs: existingOutputFailed.logs,
-      } satisfies AsyncTaskOutput,
-    } as any);
-    await syncSubStatus(isAbort && !isTimeout ? "paused" : "failed");
+    // 若 cancelAsyncJob 已先写 interrupted，禁止再覆写为 failed
+    const written = await prisma.task.updateMany({
+      where: { id: jobId, status: { in: ["running", "queued"] } },
+      data: {
+        status: terminalStatus,
+        finishedAt: new Date(),
+        ...(isInterrupt
+          ? { delivered: true, deliveredAt: new Date() }
+          : {}),
+        output: {
+          error: errorText,
+          logs: existingOutputFailed.logs,
+          ...(isInterrupt ? { deliveryExempt: true } : {}),
+        } satisfies AsyncTaskOutput as object,
+      },
+    });
+    if (written.count === 0 && isInterrupt) {
+      // 已是 interrupted：仍推一次，保证开着的 UI 对齐
+      const row = await services.task.getById(jobId);
+      if (row?.sessionId) await pushAsyncJobInterrupted(row.sessionId, jobId, config);
+    } else if (written.count > 0 && isInterrupt) {
+      const row = await services.task.getById(jobId);
+      if (row?.sessionId) await pushAsyncJobInterrupted(row.sessionId, jobId, config);
+    }
+    await syncSubStatus(isInterrupt || (isAbort && !isTimeout) ? "paused" : "failed");
     if (subagentSessionId) {
       try {
         await services.message.create({
           sessionId: subagentSessionId,
           role: "assistant",
-          content: `任务未能完成：${errorText}`,
+          content: isInterrupt ? `任务已中断：${errorText}` : `任务未能完成：${errorText}`,
           source: "sub",
         });
       } catch (msgErr) {
@@ -1468,9 +1852,11 @@ function buildAsyncExecute(
     }
     await broadcastShare("failed", { error: errorText });
     const parentInputFailed = parseAsyncInput((await services.task.getById(jobId))?.input);
-    // sync 失败走 tool return；sleep/纯工具失败不进对话气泡（右栏 Task 仍可见）
+    // 中断/sleep/纯工具失败：不进对话气泡（右栏 Task 仍可见）
     const skipFailedBubble =
-      parentInputFailed?.sourceType === "sleep" || parentInputFailed?.sourceType === "async_task_tool";
+      isInterrupt ||
+      parentInputFailed?.sourceType === "sleep" ||
+      parentInputFailed?.sourceType === "async_task_tool";
     if (
       parentInputFailed?.sessionId &&
       parentInputFailed.deliverToQueue !== false &&
@@ -1499,7 +1885,17 @@ function buildAsyncExecute(
     };
     const results = await executeToolCallsBatch([call], toolCtx, registry, parsed, signal);
     const result = results[0]?.result;
-    const resultText = typeof result === "string" ? result : JSON.stringify(result ?? null);
+    const latestTool = await services.task.getById(jobId);
+    if (parseAsyncOutput(latestTool?.output).executionId !== executionId) {
+      return;
+    }
+    // 禁止裸 JSON.stringify：投递契约收在 asyncToolDeliveryFormat（LLM 可行动 + UI structured）
+    const { formatAsyncToolDelivery } = await import("./asyncToolDeliveryFormat.js");
+    const parentInputForLabel = parseAsyncInput(latestTool?.input);
+    const formatted = formatAsyncToolDelivery(toolCall.tool, result, {
+      taskLabel: parentInputForLabel?.taskLabel ?? task,
+    });
+    const resultText = formatted.textForLlm;
     if (subagentSessionId) {
       await services.message.create({
         sessionId: subagentSessionId,
@@ -1517,10 +1913,14 @@ function buildAsyncExecute(
       id: jobId,
       status: "success",
       finishedAt: new Date(),
-      output: { asyncResult: resultText } satisfies AsyncTaskOutput,
+      output: {
+        asyncResult: resultText,
+        structured: formatted.structured,
+        executionId,
+      } satisfies AsyncTaskOutput,
     } as any);
     await syncSubStatus("completed");
-    await broadcastShare("success", { asyncResult: resultText });
+    await broadcastShare("success", { asyncResult: resultText, structured: formatted.structured });
     const parentInputTool = parseAsyncInput((await services.task.getById(jobId))?.input);
     // 同 finalizeSuccess 的 v7 投递闸（纯工具路径）
     if (parentInputTool?.sessionId && parentInputTool.deliverToQueue !== false) {
@@ -1529,6 +1929,7 @@ function buildAsyncExecute(
   };
 
   return async (signal) => {
+    executionId = `e_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
     // 任务原文落 user 消息：与 finalizeSuccess 的 assistant 结果消息配对，构成子会话 ReAct 上下文事实链（同上）
     if (subagentSessionId) {
       try {
@@ -1549,7 +1950,13 @@ function buildAsyncExecute(
       }
       await syncSubStatus("running");
       try {
-        await services.task.update({ id: jobId, status: "running", startedAt: new Date() } as any);
+        const prev = parseAsyncOutput((await services.task.getById(jobId))?.output);
+        await services.task.update({
+          id: jobId,
+          status: "running",
+          startedAt: new Date(),
+          output: { logs: prev.logs, executionId } satisfies AsyncTaskOutput,
+        } as any);
       } catch (err) {
         console.warn(`[asyncJobManager] 标记任务 running 失败 job=${jobId}:`, err instanceof Error ? err.message : err);
       }
@@ -2034,7 +2441,17 @@ export async function getAsyncJobStatus(
   const orchestrator = getAsyncJobOrchestrator(config);
   const running = orchestrator.isRunning(jobId);
   const queued = orchestrator.isQueued(jobId);
-  const status = running ? "running" : queued ? "queued" : task.status === "success" ? "completed" : task.status === "failed" ? "failed" : task.status;
+  const status = running
+    ? "running"
+    : queued
+      ? "queued"
+      : task.status === "success"
+        ? "completed"
+        : task.status === "interrupted" || task.status === "cancelled"
+          ? "interrupted"
+          : task.status === "failed"
+            ? "failed"
+            : task.status;
   // 防绕过：明确告知 LLM 结果会自动投递，阻止其轮询后调 agent_inspect 主动窥探子会话消息
   // （invoke_api 已下线；agent_inspect 已不返消息内容。结果唯一通道 = autoConsume 注入）。
   const hint =
@@ -2042,7 +2459,9 @@ export async function getAsyncJobStatus(
       ? "任务已完成，结果已自动投递到你的会话（异步任务结果气泡），无需主动拉取或读子会话消息。结束当前轮即可看到结果。"
       : status === "failed"
         ? "任务失败，失败信息已自动投递到你的会话，无需主动拉取。"
-        : undefined;
+        : status === "interrupted"
+          ? "任务已中断（主动取消），不会投递结果气泡。"
+          : undefined;
   return {
     jobId,
     status,
@@ -2070,7 +2489,17 @@ export async function listSessionAsyncJobs(
     if (!input) continue;
     const running = orchestrator.isRunning(row.id);
     const queued = orchestrator.isQueued(row.id);
-    const status = running ? "running" : queued ? "queued" : row.status === "success" ? "completed" : row.status === "failed" ? "failed" : row.status;
+    const status = running
+      ? "running"
+      : queued
+        ? "queued"
+        : row.status === "success"
+          ? "completed"
+          : row.status === "interrupted" || row.status === "cancelled"
+            ? "interrupted"
+            : row.status === "failed"
+              ? "failed"
+              : row.status;
     items.push({
       jobId: row.id,
       status,
@@ -2091,15 +2520,26 @@ export async function waitForAsyncJob(
   jobId: string,
   config: AppConfig,
   services: ServiceContainer,
-): Promise<{ jobId: string; status: "completed" | "failed"; asyncResult?: string; error?: string }> {
+): Promise<{ jobId: string; status: "completed" | "failed" | "interrupted"; asyncResult?: string; error?: string }> {
   const deadline = Date.now() + 10 * 60 * 1000;
   while (Date.now() < deadline) {
     const task = await services.task.getById(jobId);
-    if (task && (task.status === "success" || task.status === "failed")) {
+    if (
+      task &&
+      (task.status === "success" ||
+        task.status === "failed" ||
+        task.status === "interrupted" ||
+        task.status === "cancelled")
+    ) {
       const output = parseAsyncOutput(task.output);
       return {
         jobId,
-        status: task.status === "success" ? "completed" : "failed",
+        status:
+          task.status === "success"
+            ? "completed"
+            : task.status === "interrupted" || task.status === "cancelled"
+              ? "interrupted"
+              : "failed",
         asyncResult: output.asyncResult,
         error: output.error,
       };

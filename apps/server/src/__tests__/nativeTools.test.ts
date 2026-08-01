@@ -1030,7 +1030,7 @@ describe("native:git_clone", () => {
 
   it("目标目录已存在时报错", async () => {
     const root = createTempProjectDir();
-    fs.mkdirSync(path.join(root, "repo"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data/workspace/repo"), { recursive: true });
     const ctx = createNativeCtx(root);
     await expect(executeNativeTool("git_clone", { url: "https://example.com/repo.git", dest: "repo" }, ctx)).rejects.toThrow(/已存在/);
     fs.rmSync(root, { recursive: true, force: true });

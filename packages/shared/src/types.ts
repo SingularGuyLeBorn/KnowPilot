@@ -296,6 +296,8 @@ export interface ChatMessage {
     prompt: number;
     completion: number;
     total: number;
+    /** 本轮实际模型（落库可选） */
+    model?: string;
   } | null;
   finishReason?: string | null;
   source?: "user" | "super" | "manager" | "sub" | "system" | "cron";

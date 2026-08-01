@@ -117,7 +117,7 @@ describe("TP-2 池准入与统计（AsyncJobOrchestrator 单元）", () => {
     orch.enqueue({ jobId: "f-global", sessionId: "s5", workspaceId: "ws5", execute: async () => {} });
 
     const stats = orch.getStats();
-    expect(stats.queuedByReason).toEqual({ global: 1, session: 1, workspace: 1, gate: 0 });
+    expect(stats.queuedByReason).toEqual({ global: 1, session: 1, workspace: 1, gate: 0, lightweight: 0 });
     expect(stats.runningByWorkspace).toEqual({ ws1: 1, ws2: 1, ws4: 1 });
     expect(orch.getQueuedReason("c-session")).toBe("session");
     expect(orch.getQueuedReason("d-workspace")).toBe("workspace");
@@ -1060,7 +1060,7 @@ describe("TP-4 防崩压测", () => {
       expect(orch.isQueued(b.jobId!)).toBe(false);
       expect(orch.getPosition(b.jobId!)).toBeUndefined();
       const bRow = await prisma.task.findUnique({ where: { id: b.jobId! } });
-      expect(bRow?.status).toBe("failed");
+      expect(bRow?.status).toBe("interrupted");
       expect(JSON.stringify(bRow?.output)).toMatch(/取消/);
 
       // 5) 取消 A（运行中）：signal abort 级联到子会话流（占位流被 hub.stop）

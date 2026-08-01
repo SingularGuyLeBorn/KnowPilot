@@ -20,7 +20,8 @@ function ensureUploadDir(): void {
   }
 }
 
-function getRefererForUrl(url: string): string {
+/** 平台 CDN 防盗链 Referer（download_file / OCR / 素材包共用） */
+export function getRefererForUrl(url: string): string {
   if (url.includes("mmbiz.qpic.cn") || url.includes("mmbiz.qlogo.cn")) {
     return "https://mp.weixin.qq.com/";
   }
@@ -29,6 +30,15 @@ function getRefererForUrl(url: string): string {
   }
   if (url.includes("byteimg.com")) {
     return "https://www.toutiao.com/";
+  }
+  if (url.includes("xhscdn.com") || url.includes("xiaohongshu.com")) {
+    return "https://www.xiaohongshu.com/";
+  }
+  if (url.includes("hdslb.com") || url.includes("bilibili.com")) {
+    return "https://www.bilibili.com/";
+  }
+  if (url.includes("sinaimg.cn")) {
+    return "https://weibo.com/";
   }
   return "";
 }

@@ -41,8 +41,8 @@ function longMessages(n: number, charsEach = 200): LlmMessage[] {
   return msgs;
 }
 
-/** deepseek-v4-flash @ triggerRatio=0.05 → 阈值 25600；留足余量避免贴边假红 */
-const OVER_THRESHOLD_CHARS = 800;
+/** deepseek-v4-flash 1M @ triggerRatio=0.05 → 阈值 200_000 chars；40×6000 越过阈值 */
+const OVER_THRESHOLD_CHARS = 6_000;
 
 describe("autoCompact", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,7 +82,7 @@ describe("autoCompact", () => {
 
   it("超阈值时调用 LLM 并返回带 boundary 的 summaryText", async () => {
     const messages = longMessages(40, OVER_THRESHOLD_CHARS);
-    expect(estimateChars(messages)).toBeGreaterThan(25_600);
+    expect(estimateChars(messages)).toBeGreaterThan(200_000);
     const result = await maybeCompactMessages(makeConfig({ triggerRatio: 0.05 }), messages, "deepseek-v4-flash");
     expect(result.compacted).toBe(true);
     expect(result.summaryText).toContain("摘要");

@@ -224,6 +224,7 @@ describe("async-task-queue 工具协议", () => {
         maxQueued: 100,
         maxConcurrent: 1,
         maxPerSession: 2,
+        maxLightweightConcurrent: 2,
         taskTimeoutMs: 60_000,
         queuedTimeoutMs: 0,
         maxSubagentsPerSession: 10,

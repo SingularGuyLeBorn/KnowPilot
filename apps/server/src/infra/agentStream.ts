@@ -93,7 +93,7 @@ export type AgentStreamEvent =
       type: "async_job_update";
       sessionId: string;
       jobId: string;
-      status: "queued" | "running" | "done" | "cancelled" | "failed";
+      status: "queued" | "running" | "done" | "cancelled" | "failed" | "interrupted";
       taskLabel?: string;
       subagentSessionId?: string;
       stats?: {
@@ -935,7 +935,9 @@ export async function chatAgentStream(
           content: result.content,
           toolCalls: result.toolCalls,
           toolResults: initial.toolResults,
-          tokenUsage: result.tokenUsage,
+          tokenUsage: result.tokenUsage
+            ? { ...result.tokenUsage, model: result.model || effectiveModel }
+            : undefined,
         });
         assistantMessageId = created.id;
         createdParentId = created.parentId ?? null;
@@ -987,7 +989,9 @@ export async function chatAgentStream(
           kind: null,
           toolCalls: result.toolCalls ?? undefined,
           toolResults: persistedToolResults ?? undefined,
-          tokenUsage: result.tokenUsage ?? undefined,
+          tokenUsage: result.tokenUsage
+            ? { ...result.tokenUsage, model: result.model || effectiveModel }
+            : undefined,
           attachments: undefined,
           source: null,
           createdAt: persistedCreatedAt ?? new Date().toISOString(),
@@ -1133,6 +1137,35 @@ export async function chatAgentStream(
         : rawMessage;
     const isBudget = message.includes("LLM 预算");
     const llm = describeLlmError(err, "检查 LLM 配置与会话 ID 是否有效。");
+
+    // 投递续跑不变量：autoConsume 注入的 user 气泡写在 LLM 之前；若本 turn 失败且无
+    // partial/aborted assistant，用户会看到「有结果气泡但模型像没收到」。
+    // 收进 catch：delivery turn（source=sub + jobId）失败必须落一条 error assistant。
+    const deliveryJobId = (
+      input.toolResults as { subagentResult?: { jobId?: unknown } } | undefined
+    )?.subagentResult?.jobId;
+    const isDeliveryTurn =
+      input.source === "sub" && typeof deliveryJobId === "string" && deliveryJobId.length > 0;
+    if (isDeliveryTurn && sessionId && !isUserSoftStop) {
+      const alreadySavedPartial =
+        isAbort && (!!partialContent.trim() || partialToolCalls.length > 0);
+      if (!alreadySavedPartial) {
+        try {
+          await services.message.create({
+            sessionId,
+            role: "assistant",
+            content:
+              `（异步结果续跑失败：${message}）\n` +
+              "上一条工具结果已进入会话；可点重试，或直接说明下一步继续任务。",
+            finishReason: "error",
+            toolResults: { deliveryResumeFailed: true, jobId: deliveryJobId },
+          });
+        } catch (saveErr) {
+          console.error("[chatAgentStream] 投递续跑失败落库 assistant 失败:", saveErr);
+        }
+      }
+    }
+
     emit({
       type: "error",
       message,

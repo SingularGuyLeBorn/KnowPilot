@@ -26,6 +26,7 @@ import {
   markAsyncDeliveryConsumed,
   listRunningAsyncJobs,
   cancelAsyncJob,
+  resumeAsyncJob,
   retryAsyncJob,
   getAsyncQueueStats,
   listQueuedAsyncJobs,
@@ -205,9 +206,27 @@ export const agentRouter = router({
       syncTasks: await listSyncAsyncJobs(input.sessionId, ctx.config),
     })),
   cancelAsyncJob: publicProcedure
-    .meta({ description: "取消运行中或排队中的后台异步任务。", aiReadable: false })
-    .input(z.object({ jobId: z.string().cuid() }))
-    .mutation(async ({ ctx, input }) => cancelAsyncJob(input.jobId, ctx.config, ctx.services)),
+    .meta({
+      description: "中断本会话创建的后台异步任务（running/queued→interrupted）。须传 sessionId 做归属校验。",
+      aiReadable: false,
+    })
+    .input(z.object({ jobId: z.string().cuid(), sessionId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) =>
+      cancelAsyncJob(input.jobId, ctx.config, ctx.services, {
+        ownerSessionId: input.sessionId,
+      }),
+    ),
+  resumeAsyncJob: publicProcedure
+    .meta({
+      description: "恢复本会话已中断的异步任务（interrupted→queued/running，同 jobId）。须传 sessionId。",
+      aiReadable: false,
+    })
+    .input(z.object({ jobId: z.string().cuid(), sessionId: z.string().cuid() }))
+    .mutation(async ({ ctx, input }) =>
+      resumeAsyncJob(input.jobId, ctx.config, ctx.services, {
+        ownerSessionId: input.sessionId,
+      }),
+    ),
   retryAsyncJob: publicProcedure
     .meta({ description: "重试一条失败的异步任务。", aiReadable: false })
     .input(z.object({ jobId: z.string().cuid() }))

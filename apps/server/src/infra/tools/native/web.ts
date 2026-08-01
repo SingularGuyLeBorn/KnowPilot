@@ -17,7 +17,7 @@ import {
   type SearchEngineName,
 } from "../../metablog/index.js";
 import { fetchWithTimeout } from "../../metablog/search/engines.js";
-import { downloadImageToTemp, ocrRemoteImage } from "../../metablog/ocrBridge.js";
+import { downloadImageToTemp, getRefererForUrl, ocrRemoteImage } from "../../metablog/ocrBridge.js";
 import { performOcrFromFile } from "../../ocrService.js";
 import { resilientChatCompletion } from "../../resilientLlmClient.js";
 import { resolveSafePath } from "../../safePath.js";
@@ -722,6 +722,8 @@ async function downloadFileTool(args: Record<string, unknown>, ctx: NativeToolCo
     destRel = `${destRel}${filename}`;
   }
 
+  const refererArg = String(args.referer || "").trim();
+  const referer = refererArg || getRefererForUrl(url);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -729,8 +731,10 @@ async function downloadFileTool(args: Record<string, unknown>, ctx: NativeToolCo
       signal: controller.signal,
       redirect: "follow",
       headers: {
-        "User-Agent": "KnowPilot/1.0 (download_file)",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         Accept: "*/*",
+        ...(referer ? { Referer: referer } : {}),
       },
     });
     if (!res.ok) {
@@ -1394,7 +1398,7 @@ const WEB_DEFS: NativeToolDefinition[] = [
     name: "download_file",
     concurrencyClass: "A",
     description:
-      "按 URL 下载任意文件到本地（PDF/zip/图片/二进制等）。默认落到当前 Agent Workspace 的 downloads/<文件名>；也可指定 path（相对 Workspace，或 content/uploads/… 写入知识库上传区）。与 save_webpage 区别：本工具保存原始字节；save_webpage 存网页正文 HTML/Markdown。上限 50MB。文本类返回后可用 read_file 阅读。",
+      "按 URL 下载任意文件到本地（PDF/zip/图片/二进制等）。默认落到当前 Agent Workspace 的 downloads/<文件名>；也可指定 path（相对 Workspace，或 content/uploads/…）。微信/知乎/小红书等 CDN 会自动带 Referer（也可手动传 referer）。文章成片批量落图优先用 article_material_pack。上限 50MB。",
     parameters: {
       type: "object",
       properties: {
@@ -1403,6 +1407,10 @@ const WEB_DEFS: NativeToolDefinition[] = [
           type: "string",
           description:
             "保存路径。默认 downloads/<从 URL 或 Content-Disposition 推断的文件名>。可传文件路径（如 downloads/report.pdf）或目录（以 / 结尾，如 content/uploads/）。content/ 仅允许 uploads/",
+        },
+        referer: {
+          type: "string",
+          description: "可选 Referer；不传时对 mmbiz/zhimg 等 CDN 自动填充，避免防盗链 403",
         },
         overwrite: { type: "boolean", description: "目标已存在时是否覆盖，默认 false" },
         timeoutMs: { type: "number", description: "超时毫秒，默认 60000，上限 300000" },
@@ -1466,7 +1474,7 @@ const WEB_DEFS: NativeToolDefinition[] = [
     name: "video_transcript",
     concurrencyClass: "B",
     description:
-      "视频转文字逐字稿：给一个 bilibili 或 YouTube 视频链接/ID，抓取字幕逐字稿（+ bilibili 的 AI 总结）。用于「视频转文字、生成草稿、逐字稿、内容整理、做笔记」场景。返回 transcript（字幕逐字稿）、summary（bilibili AI 总结，YouTube 无）、title/author（YouTube 元信息）。bilibili 用 BV 号或链接；YouTube 用 watch/youtu.be/shorts 链接或 11 位 videoId。无字幕视频（纯音乐/无 CC）会返回空 transcript，可建议用户提供音频文件走 whisper 转写。结果可直接用于生成知识库文章（post_create）或草稿（write_file）。",
+      "视频字幕逐字稿：bilibili / YouTube 抓官方 CC（+ bilibili AI 总结）。有字幕时优先用本工具。无字幕/空 transcript 时改走本地 STT：video_notes（或 media_download → audio_transcribe，需本机 faster-whisper + yt-dlp）。长视频用 async_task_run。结果可 post_create 成文。",
     parameters: {
       type: "object",
       properties: {

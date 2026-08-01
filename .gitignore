@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+.venv/
 
 # Build output
 dist/
@@ -138,10 +139,11 @@ config/agents/你是*.md
 # Stray shell artifact
 /^
 
-# OCR / TTS / ASR 模型权重（大文件，用 pnpm ocr:download 拉取）
+# OCR / TTS / ASR / HF Hub 模型权重（大文件，用 pnpm ocr:download 或 HF 镜像拉取）
 weights/ocr/
 weights/tts/
 weights/asr/
+weights/hf/
 !weights/README.md
 !weights/**/.gitkeep
 .test-e2e-pids.json

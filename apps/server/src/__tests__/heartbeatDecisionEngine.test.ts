@@ -41,12 +41,13 @@ async function readDecision(agentId: string) {
 }
 
 describe.sequential("W2 heartbeatDecision 引擎集成", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetHeartbeatEngineForTests();
     resetAsyncJobOrchestratorForTests();
     resetSwarmOrchestratorForTests();
     setStreamHub(null);
     vi.restoreAllMocks();
+    await prisma.approval.deleteMany({ where: { status: "pending" } }).catch(() => undefined);
   });
 
   afterEach(async () => {

@@ -36,8 +36,8 @@ function makeConfig(overrides?: Partial<AppConfig["compact"]>): AppConfig {
   });
 }
 
-/** deepseek-v4-flash @ triggerRatio=0.05 → 阈值 25600；留足余量 */
-function longHistoryItems(count: number, charsEach = 800) {
+/** deepseek-v4-flash 1M @ triggerRatio=0.05 → 阈值 200_000 chars */
+function longHistoryItems(count: number, charsEach = 6_000) {
   return Array.from({ length: count }, (_, i) => ({
     id: `m-${i}`,
     role: i % 2 === 0 ? "user" : "assistant",

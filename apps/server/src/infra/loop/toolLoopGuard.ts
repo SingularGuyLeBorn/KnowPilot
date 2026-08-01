@@ -60,6 +60,9 @@ const EXPLORE_READONLY_TOOLS = new Set([
   "literature_search",
   "literature_get",
   "video_transcript",
+  "media_download",
+  "audio_transcribe",
+  "video_notes",
   "tikhub_request",
   "inbox_list",
   "inbox_stats",
@@ -76,6 +79,7 @@ const EXPLORE_READONLY_TOOLS = new Set([
   // 场景 B 资料员：连存多页 / 连截多屏是推进
   "save_webpage",
   "download_file",
+  "article_material_pack",
   "browser_screenshot",
   "scroll_screenshot",
   "read_image",

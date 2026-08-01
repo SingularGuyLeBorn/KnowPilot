@@ -81,7 +81,12 @@ describe("AsyncJobOrchestrator", () => {
   });
 
   it("lightweight 不占全局 LLM 槽：满槽时 sleep 类仍立即 start", async () => {
-    const orch = new AsyncJobOrchestrator({ maxGlobal: 1, maxPerSession: 5, taskTimeoutMs: 60_000 });
+    const orch = new AsyncJobOrchestrator({
+      maxGlobal: 1,
+      maxPerSession: 5,
+      maxLightweight: 2,
+      taskTimeoutMs: 60_000,
+    });
     const gate = { open: false };
     const started: string[] = [];
 
@@ -120,6 +125,39 @@ describe("AsyncJobOrchestrator", () => {
     gate.open = true;
     await new Promise((r) => setTimeout(r, 60));
     expect(started).toContain("llm-2");
+  });
+
+  it("lightweight 受 maxLightweight 限制：超额排队且 reason=lightweight", async () => {
+    const orch = new AsyncJobOrchestrator({
+      maxGlobal: 10,
+      maxPerSession: 10,
+      maxLightweight: 2,
+      taskTimeoutMs: 60_000,
+    });
+    const gate = { open: false };
+    const started: string[] = [];
+
+    for (const id of ["lw-1", "lw-2", "lw-3"]) {
+      orch.enqueue({
+        jobId: id,
+        sessionId: "s1",
+        slotClass: "lightweight",
+        execute: async () => {
+          started.push(id);
+          while (!gate.open) await new Promise((r) => setTimeout(r, 15));
+        },
+      });
+    }
+
+    await new Promise((r) => setTimeout(r, 40));
+    expect(started).toEqual(expect.arrayContaining(["lw-1", "lw-2"]));
+    expect(started).not.toContain("lw-3");
+    const queued = orch.getStats().queuedByReason;
+    expect(queued.lightweight).toBeGreaterThanOrEqual(1);
+
+    gate.open = true;
+    await new Promise((r) => setTimeout(r, 80));
+    expect(started).toContain("lw-3");
   });
 
   it("超时自动 abort", async () => {

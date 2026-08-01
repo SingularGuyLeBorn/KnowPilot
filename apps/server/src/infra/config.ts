@@ -171,6 +171,8 @@ export interface AppConfig {
     maxPerWorkspace: number;
     /** 排队总数上限，满则入池拒绝并给调用方明确错误 */
     maxQueued: number;
+    /** lightweight（纯工具/sleep）并发上限；与 LLM 槽正交 */
+    maxLightweightConcurrent: number;
     taskTimeoutMs: number;
     queuedTimeoutMs: number;
     /** 每个父会话允许的 subagent 任务数量上限（防止失控） */
@@ -185,6 +187,19 @@ export interface AppConfig {
     ocrSpaceDefaultLang: string;
     /** Tesseract.js 默认语言组合（纯 JS 兜底引擎，零 Python 依赖） */
     tesseractLang: string;
+  };
+  /** 本地语音转文字（STT / Whisper；不是 TTS） */
+  stt: {
+    pythonPath: string;
+    whisperModel: string;
+    language: string;
+    ytDlpPath: string;
+    scriptPath: string;
+    /** 单次 STT 超时（毫秒）；同步工具仍受 llm.toolCallTimeoutMs 上限约束 */
+    timeoutMs: number;
+    downloadTimeoutMs: number;
+    /** yt-dlp 最长下载时长（秒），默认 20 分钟 */
+    maxDurationSec: number;
   };
   search: {
     tavilyApiKey: string;
@@ -679,6 +694,14 @@ export function createAppConfig(): AppConfig {
         1,
         parseInt(readEnv("AGENT_ASYNC_MAX_QUEUED") || String(asyncJobsConfig.maxQueued ?? "100"), 10),
       ),
+      maxLightweightConcurrent: Math.max(
+        1,
+        parseInt(
+          readEnv("AGENT_ASYNC_MAX_LIGHTWEIGHT") ||
+            String(asyncJobsConfig.maxLightweightConcurrent ?? "2"),
+          10,
+        ),
+      ),
       taskTimeoutMs: Math.max(
         10_000,
         parseInt(
@@ -711,6 +734,19 @@ export function createAppConfig(): AppConfig {
       ocrSpaceApiKey: readEnv("OCR_SPACE_API_KEY"),
       ocrSpaceDefaultLang: readEnv("OCR_SPACE_DEFAULT_LANG") || "chs",
       tesseractLang: readEnv("TESSERACT_LANG") || "chi_sim+eng",
+    },
+    stt: {
+      pythonPath: readEnv("STT_PYTHON_PATH") || readEnv("PADDLEOCR_PYTHON_PATH") || "",
+      whisperModel: readEnv("STT_WHISPER_MODEL") || "small",
+      language: readEnv("STT_LANGUAGE") || "zh",
+      ytDlpPath: readEnv("STT_YT_DLP_PATH") || "yt-dlp",
+      scriptPath: "",
+      timeoutMs: Math.max(30_000, parseInt(readEnv("STT_TIMEOUT_MS") || "600000", 10)),
+      downloadTimeoutMs: Math.max(
+        30_000,
+        parseInt(readEnv("STT_DOWNLOAD_TIMEOUT_MS") || "600000", 10),
+      ),
+      maxDurationSec: Math.max(60, parseInt(readEnv("STT_MAX_DURATION_SEC") || "1200", 10)),
     },
     search: (() => {
       const tavilyApiKey = readEnv("SEARCH_TAVILY_API_KEY", "TAVILY_API_KEY");

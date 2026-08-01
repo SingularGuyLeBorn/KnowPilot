@@ -10,6 +10,7 @@ import {
   recoverStaleAsyncJobs,
   cleanupDeliveredAsyncJobs,
   cancelAsyncJob,
+  resumeAsyncJob,
   retryAsyncJob,
   startAsyncAgentTask,
   getAsyncQueueStats,
@@ -291,7 +292,7 @@ describe("asyncJobManager 持久化", () => {
     vi.restoreAllMocks();
   });
 
-  it("cancelAsyncJob 取消排队中的任务并回写失败状态", async () => {
+  it("cancelAsyncJob 取消排队中的任务并回写 interrupted（非 failed）", async () => {
     vi.spyOn(agentRuntime, "runAgentLoop").mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve({ content: "慢任务", toolCalls: [], tokenUsage: { prompt: 1, completion: 2, total: 3 }, model: "m", provider: "p", roundsUsed: 1 }), 5000)),
     );
@@ -299,7 +300,7 @@ describe("asyncJobManager 持久化", () => {
     const ctx = await createContextInner();
     const narrowConfig = createTestConfig(ctx.config.projectRoot, {
       ...ctx.config,
-      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 1, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxSubagentsPerSession: 10 },
+      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 1, maxLightweightConcurrent: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxSubagentsPerSession: 10 },
     });
 
     const first = await startAsyncAgentTask({
@@ -324,15 +325,37 @@ describe("asyncJobManager 持久化", () => {
     const runningBefore = await listRunningAsyncJobs(sessionId);
     expect(runningBefore.some((j) => j.jobId === first.jobId)).toBe(true);
 
-    const cancelled = await cancelAsyncJob(queued.jobId, narrowConfig, ctx.services);
+    const cancelled = await cancelAsyncJob(queued.jobId, narrowConfig, ctx.services, {
+      ownerSessionId: sessionId,
+    });
     expect(cancelled.cancelled).toBe(true);
+    expect(cancelled.status).toBe("interrupted");
 
     const queuedRow = await prisma.task.findUnique({ where: { id: queued.jobId } });
-    expect(queuedRow?.status).toBe("failed");
-    expect((queuedRow?.output as { error?: string })?.error).toContain("已取消");
+    expect(queuedRow?.status).toBe("interrupted");
+    expect((queuedRow?.output as { error?: string })?.error).toContain("中断");
+
+    // 异会话不可取消
+    const foreign = await cancelAsyncJob(first.jobId, narrowConfig, ctx.services, {
+      ownerSessionId: "clxxxxxxxxxxxxxxxxxxxxxxxxx",
+    });
+    expect(foreign.cancelled).toBe(false);
 
     // 清理运行中任务
-    await cancelAsyncJob(first.jobId, narrowConfig, ctx.services);
+    await cancelAsyncJob(first.jobId, narrowConfig, ctx.services, { ownerSessionId: sessionId });
+    const firstRow = await prisma.task.findUnique({ where: { id: first.jobId } });
+    expect(firstRow?.status).toBe("interrupted");
+
+    // resume：同 jobId 回到 queued/running
+    const resumed = await resumeAsyncJob(first.jobId, narrowConfig, ctx.services, {
+      ownerSessionId: sessionId,
+    });
+    expect(resumed.jobId).toBe(first.jobId);
+    expect(["queued", "running"]).toContain(resumed.status);
+    const afterResume = await prisma.task.findUnique({ where: { id: first.jobId } });
+    expect(["queued", "running"]).toContain(afterResume?.status ?? "");
+
+    await cancelAsyncJob(first.jobId, narrowConfig, ctx.services, { ownerSessionId: sessionId });
     vi.restoreAllMocks();
   });
 
@@ -344,7 +367,7 @@ describe("asyncJobManager 持久化", () => {
     const ctx = await createContextInner();
     const narrowConfig = createTestConfig(ctx.config.projectRoot, {
       ...ctx.config,
-      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxSubagentsPerSession: 10 },
+      asyncJobs: { maxPerWorkspace: 0, maxQueued: 100, maxConcurrent: 1, maxPerSession: 2, maxLightweightConcurrent: 2, taskTimeoutMs: 60_000, queuedTimeoutMs: 0, maxSubagentsPerSession: 10 },
     });
 
     const first = await startAsyncAgentTask({ sessionId, task: "排队测 A", label: "A", config: narrowConfig, services: ctx.services, agent: { id: "t", model: "m", systemPrompt: "test", tools: [] } });

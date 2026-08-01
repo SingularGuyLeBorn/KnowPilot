@@ -325,10 +325,10 @@ describe("maybeCompactMessages 使用切割点", () => {
   });
 
   it("超阈值时按 keepRecentTokens 切，保留段不含残缺 tool 对", async () => {
-    // 内容需超过 resolveCompactCharThreshold(model, 0.05)（约数万字符）
+    // deepseek-v4-flash 1M @ 0.05 → 阈值 200k chars
     const msgs: LlmMessage[] = [{ role: "system", content: "sys" }];
     for (let i = 0; i < 40; i++) {
-      msgs.push({ role: "user", content: `u${i}-` + "x".repeat(2000) });
+      msgs.push({ role: "user", content: `u${i}-` + "x".repeat(5500) });
       const id = `c${i}`;
       msgs.push(
         assistantWithTools([id], i % 2 === 0 ? ["read_file"] : ["write_file"], [

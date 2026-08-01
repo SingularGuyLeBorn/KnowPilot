@@ -115,8 +115,13 @@ describe("Workspace 行级异步槽（Q4）", () => {
     resetAsyncJobOrchestratorForTests();
   });
 
-  it("workspaceSlotQuota=1 时同空间第二个 llm 任务排队；lightweight 不受限", async () => {
-    const orch = new AsyncJobOrchestrator({ maxGlobal: 10, maxPerSession: 10, taskTimeoutMs: 60_000 });
+  it("workspaceSlotQuota=1 时同空间第二个 llm 任务排队；lightweight 不受 workspace 配额", async () => {
+    const orch = new AsyncJobOrchestrator({
+      maxGlobal: 10,
+      maxPerSession: 10,
+      maxLightweight: 4,
+      taskTimeoutMs: 60_000,
+    });
     const gate = { open: false };
     const started: string[] = [];
 

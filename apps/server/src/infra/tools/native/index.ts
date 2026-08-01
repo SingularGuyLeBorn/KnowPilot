@@ -16,6 +16,8 @@ import { registerSkillsTools } from "./skills.js";
 import { registerInboxTools } from "./inbox.js";
 import { registerDeployTools } from "./deploy.js";
 import { registerAlgoVizTools } from "./algoViz.js";
+import { registerArticleVideoTools } from "./articleVideo.js";
+import { registerMediaSttTools } from "./mediaStt.js";
 import { registerAgentCronTools } from "./agentCron.js";
 import { registerLiteratureTools } from "./literature.js";
 import { registerDocumentTools } from "./document.js";
@@ -34,6 +36,8 @@ export function registerNativeDomains(): void {
   registerInboxTools();
   registerDeployTools();
   registerAlgoVizTools();
+  registerArticleVideoTools();
+  registerMediaSttTools();
   registerAgentCronTools();
   registerLiteratureTools();
   registerDocumentTools();

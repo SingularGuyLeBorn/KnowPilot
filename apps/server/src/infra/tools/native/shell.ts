@@ -73,11 +73,58 @@ async function taskStatusTool(args: Record<string, unknown>, ctx: NativeToolCont
 }
 
 async function cancelAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
-  const { cancelAsyncJob } = await import("../../asyncJobManager.js");
-  const jobId = String(args.jobId || "");
-  if (!jobId) throw new Error("async_task_cancel 需要 jobId");
-  return cancelAsyncJob(jobId, ctx.config, ctx.services);
+  const { cancelAsyncJob, cancelOwnedAsyncJobs } = await import("../../asyncJobManager.js");
+  if (!ctx.sessionId) {
+    throw new Error("async_task_cancel 需要当前会话上下文（只能取消本会话创建的任务）");
+  }
+  const allActive = args.allActive === true;
+  const jobIdsRaw = Array.isArray(args.jobIds) ? args.jobIds.map(String).filter(Boolean) : [];
+  const jobId = typeof args.jobId === "string" ? args.jobId.trim() : "";
+
+  if (allActive || jobIdsRaw.length > 0) {
+    const ids = allActive ? undefined : jobId ? [...jobIdsRaw, jobId] : jobIdsRaw;
+    const result = await cancelOwnedAsyncJobs(ctx.sessionId, ctx.config, ctx.services, {
+      jobIds: ids,
+    });
+    return {
+      ...result,
+      message: `已中断 ${result.cancelled.length} 个任务` +
+        (result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ""),
+    };
+  }
+  if (!jobId) {
+    throw new Error("async_task_cancel 需要 jobId，或传 allActive=true / jobIds[]");
+  }
+  return cancelAsyncJob(jobId, ctx.config, ctx.services, { ownerSessionId: ctx.sessionId });
 }
+
+async function resumeAsyncTool(args: Record<string, unknown>, ctx: NativeToolContext) {
+  const { resumeAsyncJob, resumeOwnedAsyncJobs } = await import("../../asyncJobManager.js");
+  if (!ctx.sessionId) {
+    throw new Error("async_task_resume 需要当前会话上下文（只能恢复本会话创建的任务）");
+  }
+  const allInterrupted = args.allInterrupted === true;
+  const jobIdsRaw = Array.isArray(args.jobIds) ? args.jobIds.map(String).filter(Boolean) : [];
+  const jobId = typeof args.jobId === "string" ? args.jobId.trim() : "";
+
+  if (allInterrupted || jobIdsRaw.length > 0) {
+    const ids = allInterrupted ? undefined : jobId ? [...jobIdsRaw, jobId] : jobIdsRaw;
+    const result = await resumeOwnedAsyncJobs(ctx.sessionId, ctx.config, ctx.services, {
+      jobIds: ids,
+    });
+    return {
+      ...result,
+      message:
+        `已恢复 ${result.resumed.length} 个中断任务` +
+        (result.skipped.length ? `，跳过 ${result.skipped.length} 个` : ""),
+    };
+  }
+  if (!jobId) {
+    throw new Error("async_task_resume 需要 jobId，或传 allInterrupted=true / jobIds[]");
+  }
+  return resumeAsyncJob(jobId, ctx.config, ctx.services, { ownerSessionId: ctx.sessionId });
+}
+
 /** 解析 Agent Workspace 绝对路径；无则回退 data/workspace（仍在项目根内） */
 async function resolveShellSandboxRoot(ctx: NativeToolContext): Promise<string> {
   const wsId = ctx.agentSnapshot?.workspaceId;
@@ -153,7 +200,12 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "async_task_run",
     concurrencyClass: "A",
-    description: "后台执行一次工具调用（不跑 LLM，入全局任务池 queued→running）。waitForResult=false（默认）=异步投递：立刻返回，完成后结果进会话异步任务结果队列。waitForResult=true=同步等待：父流挂起直到任务完成，结果作为工具返回值（不进异步队列）。要跑带 LLM 的子任务请用 spawn_subagent。",
+    description:
+      "后台执行一次工具调用（不跑 LLM，入全局任务池）。" +
+      "waitForResult=false（默认）=异步投递：立刻返回，完成后结果注入会话并触发父 Agent 续跑；" +
+      "waitForResult=true=同步等待：父流挂起，结果作为本轮 tool return（不进队列、无气泡）。" +
+      "短读（单篇 read_article）优先直接调 read_article 或 waitForResult=true，避免拆成二次起流；" +
+      "多篇并行抓取才用默认异步。要跑带 LLM 的子任务请用 spawn_subagent。",
     parameters: {
       type: "object",
       properties: {
@@ -161,7 +213,11 @@ const SHELL_DEFS: NativeToolDefinition[] = [
         label: { type: "string", description: "任务标签，用于前端展示" },
         toolCall: { type: "object", description: "必填：{ tool: 工具名, args: 工具参数 }", properties: { tool: { type: "string" }, args: { type: "object" } } },
         timeoutMs: { type: "number", description: "任务最大运行时长毫秒数，不填用全局默认值" },
-        waitForResult: { type: "boolean", description: "true=同步等待完成并作为工具返回值；false(默认)=异步投递，立刻返回，结果进队列" },
+        waitForResult: {
+          type: "boolean",
+          description:
+            "true=同步等待并作 tool return（短任务推荐）；false(默认)=异步投递后父会话续跑",
+        },
         shareToSessionIds: { type: "array", items: { type: "string" }, description: "swarm 协作：结果额外广播到这些会话 id" },
       },
       required: ["task", "toolCall"],
@@ -181,13 +237,46 @@ const SHELL_DEFS: NativeToolDefinition[] = [
   {
     name: "async_task_cancel",
     concurrencyClass: "A",
-    description: "取消一条运行中或排队中的异步任务/Subagent。",
+    description:
+      "中断本会话创建的后台异步任务（只能关自己会话派的；运行中/排队 → status=interrupted，与 failed 区分）。" +
+      "用户改主意不要这些任务时调用。jobId 单条；jobIds 批量；allActive=true 中断本会话全部活跃任务。" +
+      "之后可用 async_task_resume 恢复。",
     parameters: {
       type: "object",
       properties: {
-        jobId: { type: "string", description: "要取消的任务 id" },
+        jobId: { type: "string", description: "单条任务 id（async_task_run / spawn 返回的 jobId）" },
+        jobIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "批量任务 id；与 allActive 二选一",
+        },
+        allActive: {
+          type: "boolean",
+          description: "true=中断本会话全部 running/queued 异步任务",
+        },
       },
-      required: ["jobId"],
+    },
+  },
+  {
+    name: "async_task_resume",
+    concurrencyClass: "A",
+    description:
+      "恢复本会话已中断（interrupted）的异步任务：同 jobId 重新入池执行（与 failed 的 retry 不同）。" +
+      "jobId 单条；jobIds 批量；allInterrupted=true 恢复本会话全部中断任务。",
+    parameters: {
+      type: "object",
+      properties: {
+        jobId: { type: "string", description: "已中断任务的 jobId" },
+        jobIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "批量 jobId",
+        },
+        allInterrupted: {
+          type: "boolean",
+          description: "true=恢复本会话全部 interrupted 任务",
+        },
+      },
     },
   },
   {
@@ -239,6 +328,7 @@ const SHELL_HANDLERS = {
   async_task_run: runAsyncTool,
   async_task_status: taskStatusTool,
   async_task_cancel: cancelAsyncTool,
+  async_task_resume: resumeAsyncTool,
   run_shell: runShellTool,
   wait: waitTool,
   sleep: sleepTool,

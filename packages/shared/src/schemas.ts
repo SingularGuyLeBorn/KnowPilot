@@ -706,6 +706,8 @@ export const createMessageSchema = z.object({
     prompt: z.number(),
     completion: z.number(),
     total: z.number(),
+    /** 本轮实际调用的模型（可选，便于 UI 点击查看） */
+    model: z.string().optional(),
   }).optional(),
   finishReason: z.string().optional(),
   source: z.enum(["user", "super", "manager", "sub", "system", "cron"]).optional(), // 不传则 service 层默认 "user"
@@ -1282,7 +1284,9 @@ export const listGitReposSchema = z.object({
 export const createTaskSchema = z.object({
   name: z.string().min(1),
   type: z.enum(["cron", "oneshot", "async_agent"]),
-  status: z.enum(["pending", "queued", "running", "success", "failed", "cancelled"]).default("pending"),
+  status: z
+    .enum(["pending", "queued", "running", "success", "failed", "cancelled", "interrupted"])
+    .default("pending"),
   sessionId: z.string().nullish(),
   input: z.any().optional(),
   output: z.any().optional(),
@@ -1295,7 +1299,9 @@ export const createTaskSchema = z.object({
 export const updateTaskSchema = z.object({
   id: z.string().cuid(),
   name: z.string().min(1).optional(),
-  status: z.enum(["pending", "queued", "running", "success", "failed", "cancelled"]).optional(),
+  status: z
+    .enum(["pending", "queued", "running", "success", "failed", "cancelled", "interrupted"])
+    .optional(),
   sessionId: z.string().nullish(),
   input: z.any().optional(),
   output: z.any().optional(),
@@ -1308,7 +1314,9 @@ export const updateTaskSchema = z.object({
 export const listTasksSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
-  status: z.enum(["pending", "queued", "running", "success", "failed", "cancelled"]).optional(),
+  status: z
+    .enum(["pending", "queued", "running", "success", "failed", "cancelled", "interrupted"])
+    .optional(),
   keyword: z.string().optional(),
   // R7：按会话过滤（listSessionAsyncJobs 用），避免全局拉 50 条后 JS 过滤漏掉非 top-50 任务
   sessionId: z.string().optional(),

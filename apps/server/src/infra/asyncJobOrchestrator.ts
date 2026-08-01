@@ -34,12 +34,13 @@ import {
 } from "./approvalScope.js";
 
 /** 排队阻塞原因：哪个上限卡住（queuedByReason 统计与 UI「第 N 位 · 因 X 上限排队」共用） */
-export type AsyncJobQueuedReason = "global" | "session" | "workspace" | "gate";
+export type AsyncJobQueuedReason = "global" | "session" | "workspace" | "gate" | "lightweight";
 
 /**
  * 槽位类别：
  * - llm：占全局 LLM 容量（默认）；准入受 maxGlobal / hub 交互占用约束
- * - lightweight：sleep / 纯工具等短任务；可取消、可超时，但不计入 runningGlobal，不堵 LLM 槽
+ * - lightweight：sleep / 纯工具等短任务；不占 LLM 槽，但受 maxLightweight 限制
+ *   （防多路 Playwright/抓取把 Node 打崩；默认 2）
  */
 export type AsyncJobSlotClass = "llm" | "lightweight";
 
@@ -103,6 +104,8 @@ type AsyncJobEventListener = (event: { type: AsyncJobEventType; jobId: string; s
 export class AsyncJobOrchestrator {
   private readonly queue: QueuedItem[] = [];
   private runningGlobal = 0;
+  /** 当前 running 的 lightweight 任务数（与 LLM 槽正交） */
+  private runningLightweight = 0;
   private readonly runningBySession = new Map<string, number>();
   private readonly runningByWorkspace = new Map<string, number>();
   private readonly runningJobs = new Map<string, RunningJob>();
@@ -112,6 +115,11 @@ export class AsyncJobOrchestrator {
   /** 排队超时句柄：jobId -> timeout */
   private readonly queuedTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   /**
+   * resume 提前摘槽的 jobId：execute finally 再遇到时跳过二次减计数。
+   * 场景：DB 已 interrupted，但 mock/慢工具未响应 abort，池仍占 runningJobs。
+   */
+  private readonly earlyReleasedSlots = new Set<string>();
+  /**
    * 占用认领（sessionId -> refcount）：被 claim 的会话，其 hub 流不计入「hub 交互 running」。
    * 两类调用方：池内任务起流前 claim（不双算）、血缘让渡 inline 执行 claim（Q4 不占新槽）。
    */
@@ -120,6 +128,7 @@ export class AsyncJobOrchestrator {
   private hubRunningSessionsProvider: (() => string[]) | null = null;
   private readonly maxPerWorkspace: number;
   private readonly maxQueued: number;
+  private readonly maxLightweight: number;
 
   constructor(
     private readonly limits: {
@@ -129,12 +138,15 @@ export class AsyncJobOrchestrator {
       maxPerWorkspace?: number;
       /** 排队总数上限，满则入池拒绝 */
       maxQueued?: number;
+      /** lightweight（纯工具/sleep）并发上限；默认 2 */
+      maxLightweight?: number;
       taskTimeoutMs: number;
       queuedTimeoutMs?: number;
     },
   ) {
     this.maxPerWorkspace = Math.max(0, limits.maxPerWorkspace ?? 0);
     this.maxQueued = Math.max(1, limits.maxQueued ?? 100);
+    this.maxLightweight = Math.max(1, limits.maxLightweight ?? 2);
   }
 
   /** 生命周期事件：解耦状态统计、SSE 推送与调度逻辑；listener 抛错不阻塞编排。 */
@@ -221,8 +233,11 @@ export class AsyncJobOrchestrator {
   private blockReason(spec: AsyncJobRunSpec): AsyncJobQueuedReason | null {
     // W3：审批 scope 相交优先于容量——被堵 lane 挂着，其他 lane 继续
     if (this.gateBlockFor(spec)) return "gate";
-    // lightweight（sleep/纯工具）不参与 LLM 容量竞争，直接获槽
-    if (spec.slotClass === "lightweight") return null;
+    // lightweight 不占 LLM 槽，但有独立并发顶（Playwright/抓取内存）
+    if (spec.slotClass === "lightweight") {
+      if (this.runningLightweight >= this.maxLightweight) return "lightweight";
+      return null;
+    }
     if (this.runningGlobal + this.hubInteractiveRunning() >= this.limits.maxGlobal) return "global";
     if ((this.runningBySession.get(spec.sessionId) ?? 0) >= this.limits.maxPerSession) return "session";
     if (spec.workspaceId) {
@@ -321,6 +336,7 @@ export class AsyncJobOrchestrator {
       session: 0,
       workspace: 0,
       gate: 0,
+      lightweight: 0,
     };
     for (const item of this.queue) queuedByReason[item.reason]++;
     return {
@@ -372,6 +388,50 @@ export class AsyncJobOrchestrator {
       return true;
     }
     return false;
+  }
+
+  /**
+   * 台账已终态（interrupted）但池占位未释放时强制摘槽，供 resume 同 jobId 再入队。
+   * abort 仍会留给原 execute；finally 见 earlyReleasedSlots 则不再减计数。
+   */
+  releaseStaleSlot(jobId: string): boolean {
+    const running = this.runningJobs.get(jobId);
+    if (running) {
+      abortController(running.controller, "cancel");
+      this.runningJobs.delete(jobId);
+      if (running.spec.metadata?.subagentSessionId) {
+        this.subagentControllers.delete(running.spec.metadata.subagentSessionId);
+      }
+      this.releaseSlotCounters(running.spec);
+      this.earlyReleasedSlots.add(jobId);
+      this.drain();
+      return true;
+    }
+    const idx = this.queue.findIndex((q) => q.spec.jobId === jobId);
+    if (idx >= 0) {
+      const [dropped] = this.queue.splice(idx, 1);
+      this.clearQueuedTimeout(jobId);
+      dropped.spec.onQueuedDrop?.();
+      this.emit({ type: "cancelled", jobId, sessionId: dropped.spec.sessionId });
+      return true;
+    }
+    return false;
+  }
+
+  private releaseSlotCounters(spec: AsyncJobRunSpec): void {
+    if (spec.slotClass === "lightweight") {
+      this.runningLightweight = Math.max(0, this.runningLightweight - 1);
+      return;
+    }
+    this.runningGlobal = Math.max(0, this.runningGlobal - 1);
+    const left = (this.runningBySession.get(spec.sessionId) ?? 1) - 1;
+    if (left <= 0) this.runningBySession.delete(spec.sessionId);
+    else this.runningBySession.set(spec.sessionId, left);
+    if (spec.workspaceId) {
+      const wsLeft = (this.runningByWorkspace.get(spec.workspaceId) ?? 1) - 1;
+      if (wsLeft <= 0) this.runningByWorkspace.delete(spec.workspaceId);
+      else this.runningByWorkspace.set(spec.workspaceId, wsLeft);
+    }
   }
 
   /** subagent session 停止必须同时清掉 orchestrator 槽位与 subagentControllers，否则 signal 中断不到后台任务。
@@ -453,6 +513,8 @@ export class AsyncJobOrchestrator {
       if (spec.workspaceId) {
         this.runningByWorkspace.set(spec.workspaceId, (this.runningByWorkspace.get(spec.workspaceId) ?? 0) + 1);
       }
+    } else {
+      this.runningLightweight++;
     }
     this.runningJobs.set(spec.jobId, { spec, controller, startedAt: Date.now() });
     if (spec.metadata?.subagentSessionId) {
@@ -478,17 +540,12 @@ export class AsyncJobOrchestrator {
           this.subagentControllers.delete(spec.metadata.subagentSessionId);
         }
         this.runningJobs.delete(spec.jobId);
-        if (occupiesLlmSlot) {
-          this.runningGlobal = Math.max(0, this.runningGlobal - 1);
-          const left = (this.runningBySession.get(spec.sessionId) ?? 1) - 1;
-          if (left <= 0) this.runningBySession.delete(spec.sessionId);
-          else this.runningBySession.set(spec.sessionId, left);
-          if (spec.workspaceId) {
-            const wsLeft = (this.runningByWorkspace.get(spec.workspaceId) ?? 1) - 1;
-            if (wsLeft <= 0) this.runningByWorkspace.delete(spec.workspaceId);
-            else this.runningByWorkspace.set(spec.workspaceId, wsLeft);
-          }
+        // resume 已提前摘槽：计数已释放，此处只清理占位
+        if (this.earlyReleasedSlots.delete(spec.jobId)) {
+          this.drain();
+          return;
         }
+        this.releaseSlotCounters(spec);
         this.drain();
       });
   }
@@ -503,6 +560,7 @@ export function getAsyncJobOrchestrator(config: AppConfig): AsyncJobOrchestrator
       maxPerSession: Math.max(1, config.asyncJobs.maxPerSession),
       maxPerWorkspace: Math.max(0, config.asyncJobs.maxPerWorkspace),
       maxQueued: Math.max(1, config.asyncJobs.maxQueued),
+      maxLightweight: Math.max(1, config.asyncJobs.maxLightweightConcurrent ?? 2),
       taskTimeoutMs: config.asyncJobs.taskTimeoutMs,
       queuedTimeoutMs: config.asyncJobs.queuedTimeoutMs,
     });

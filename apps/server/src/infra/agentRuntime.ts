@@ -244,7 +244,9 @@ export async function chatAgent(
       role: "assistant",
       content: sanitizePostCompactAssistantContent(result.content, result.toolCalls),
       toolCalls: result.toolCalls,
-      tokenUsage: result.tokenUsage,
+      tokenUsage: result.tokenUsage
+        ? { ...result.tokenUsage, model: result.model }
+        : undefined,
     });
 
     // Hermes：有工具调用时沉淀 experience（与 agentStream onDone 同语义）

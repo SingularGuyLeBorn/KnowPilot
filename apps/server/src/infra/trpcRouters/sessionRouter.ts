@@ -310,17 +310,22 @@ export const sessionRouter = router({
       if (session.kind === "subagent") {
         const { stopSubagentSession } = await import("../asyncJobManager.js");
         const result = stopSubagentSession(session.id, ctx.config);
-        // 排队中任务被移出队列后 orchestrator 不会触发 catch，需手动回写 Task 为 cancelled，
-        // 否则 DB 中 Task.status 永远停留在 running
+        // 排队中任务被移出队列后 orchestrator 不会触发 catch，需手动回写 Task 为 interrupted
         if (result.stopped && !result.wasRunning && result.jobId) {
           try {
             await ctx.services.task.update({
               id: result.jobId,
-              status: "failed",
-              output: { error: "异步任务已取消（用户停止）" },
+              status: "interrupted",
+              finishedAt: new Date(),
+              delivered: true,
+              deliveredAt: new Date(),
+              output: {
+                error: "异步任务已中断（用户停止）",
+                deliveryExempt: true,
+              },
             } as any);
           } catch (err) {
-            console.warn(`[session.stop] 回写排队任务 ${result.jobId} 为 cancelled 失败:`, err);
+            console.warn(`[session.stop] 回写排队任务 ${result.jobId} 为 interrupted 失败:`, err);
           }
         }
         // 运行中任务的 session 状态由 buildAsyncExecute catch 统一回写为 paused（用户停止），
