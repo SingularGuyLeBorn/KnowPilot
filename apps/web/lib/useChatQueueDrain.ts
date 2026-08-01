@@ -102,30 +102,16 @@ export function useChatQueueDrain({
       t.kind !== "async-running" &&
       (t.text.trim() || t.asyncResult || t.attachments?.length);
 
-    // 按 session 合并 RQ 缓存 + overlays（禁止非焦点只看 overlays、焦点才看 poll）
-    const asyncCandidates =
-      sid === viewSid ? asyncResultQueue : mergeAsyncQueueFromCache(utils, sid);
-
-    let asyncReady: ChatQueueItem | undefined;
-    for (const t of asyncCandidates) {
-      // serverConsumed = 服务端 autoConsume 已消费，纯展示，前端不再参与 CLAIM
-      if (t.kind === "async-result" && !t.serverConsumed && isReady(t) && !t.pinned) {
-        asyncReady = t;
+    let userReady: ChatQueueItem | undefined;
+    for (const t of compose.userQueue) {
+      // superior：服务端 FIFO drain 专属；队首是 superior 时前端停，绝不越过起流
+      if (t.kind === "superior") break;
+      if ((t.kind === "user" || t.kind === "child_notify") && isReady(t)) {
+        userReady = t;
         break;
       }
     }
-    let userReady: ChatQueueItem | undefined;
-    if (!asyncReady) {
-      for (const t of compose.userQueue) {
-        // superior：服务端 FIFO drain 专属；队首是 superior 时前端停，绝不越过起流
-        if (t.kind === "superior") break;
-        if ((t.kind === "user" || t.kind === "child_notify") && isReady(t)) {
-          userReady = t;
-          break;
-        }
-      }
-    }
-    const task = asyncReady ?? userReady;
+    const task = userReady;
     if (!task) return;
 
     if (task.kind === "superior" && sid === NEW_STREAM_KEY) {
@@ -142,27 +128,7 @@ export function useChatQueueDrain({
       let handedToRunStream = false;
       let softClaimedDbId: string | null = null;
       try {
-      if (task.kind === "async-result" && task.jobId) {
-        try {
-          // E1：claimed:true 之后才 mark（queueDraining 已防并发；提前 mark 无保护作用且 ACK 失败会永久 skip）
-          const claim = await ackThenMarkDelivery(sid, task.jobId, (input) =>
-            ackAsyncDeliveryMutation.mutateAsync(input),
-          );
-          if (claim === "not_claimed") {
-            sessionComposeActions.setQueueDraining(sid, false);
-            utils.session.listRunning.invalidate().catch(logQueryCatch);
-            if (sid === viewSid) asyncQueueQuery.refetch().catch(logQueryCatch);
-            // 已释放 drain 锁且在 async 续体内（调用栈已 unwind），直接重试下一项
-            consumeRef.current(sid);
-            return;
-          }
-        } catch {
-          // 未 mark；若防御性误 mark 过则回滚（当前路径不会）
-          sessionComposeActions.unmarkDeliveryConsumed(sid, task.jobId);
-          sessionComposeActions.setQueueDraining(sid, false);
-          return;
-        }
-      }
+
 
       // E8：按被 drain 的 sessionId 取 model，禁止吃焦点 pane 闭包
       const drainModel = getSessionConfig(sid).model;

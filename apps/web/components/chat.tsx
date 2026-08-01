@@ -646,6 +646,8 @@ export function ChatView() {
             (t) =>
               t.kind === "async-result" &&
               !t.serverConsumed &&
+              t.sourceType !== "async_task_tool" &&
+              t.sourceType !== "sleep" &&
               (t.text.trim() || t.asyncResult),
           );
         if (hasPending) streamLifecycleActions.hydrateDone(sid);

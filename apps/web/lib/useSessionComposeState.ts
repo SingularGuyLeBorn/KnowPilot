@@ -97,11 +97,18 @@ function reducer(state: ComposeMap, action: Action): ComposeMap {
     }
     case "SET_ABORT":
       return set(action.sessionId, { ...ensure(state, action.sessionId), abort: action.abort });
-    case "SET_USER_QUEUE":
-      return set(action.sessionId, { ...ensure(state, action.sessionId), userQueue: action.userQueue });
+    case "SET_USER_QUEUE": {
+      const cleanQueue = action.userQueue.filter(
+        (i) => i.kind === "user" || i.kind === "superior" || i.kind === "child_notify",
+      );
+      return set(action.sessionId, { ...ensure(state, action.sessionId), userQueue: cleanQueue });
+    }
     case "PATCH_USER_QUEUE": {
       const cur = ensure(state, action.sessionId);
-      return set(action.sessionId, { ...cur, userQueue: action.updater(cur.userQueue) });
+      const nextQueue = action.updater(cur.userQueue).filter(
+        (i) => i.kind === "user" || i.kind === "superior" || i.kind === "child_notify",
+      );
+      return set(action.sessionId, { ...cur, userQueue: nextQueue });
     }
     case "SET_ASYNC_OVERLAYS":
       return set(action.sessionId, {
