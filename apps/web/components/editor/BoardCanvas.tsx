@@ -5,9 +5,9 @@
  * 数据落在 Markdown ```kp-board``` JSON；阅读态 BoardPreview 同款渲染。
  */
 
-import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { getStroke } from "perfect-freehand";
-import { Eraser, Highlighter, Pen, RotateCcw, Trash2, Check, X } from "lucide-react";
+import { Eraser, Highlighter, Pen, RotateCcw, RotateCw, Trash2, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { EMPTY_BOARD_JSON } from "@/components/editor/editorSlashCommands";
@@ -176,29 +176,73 @@ function StrokePaths({ strokes }: { strokes: BoardStroke[] }) {
 }
 
 /** 阅读态：静态 SVG 画板 */
-export function BoardPreview({ raw, className }: { raw: string; className?: string }) {
+export function BoardPreview({
+  raw,
+  className,
+  onEdit,
+}: {
+  raw: string;
+  className?: string;
+  onEdit?: (newRaw: string) => void;
+}) {
   const doc = parseBoardDoc(raw);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const handleSave = (newRaw: string) => {
+    setModalOpen(false);
+    onEdit?.(newRaw);
+  };
+
   return (
-    <div
-      className={cn(
-        "my-4 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)]",
-        className,
-      )}
-    >
-      <div className="flex items-center gap-2 border-b border-[var(--kp-divider)] px-3 py-1.5 text-xs text-[var(--kp-text-3)]">
-        画板 · 手写
-      </div>
-      <svg
-        viewBox={`0 0 ${doc.w} ${doc.h}`}
-        className="block w-full bg-[var(--kp-bg)] text-[var(--kp-text-1)]"
-        style={{ aspectRatio: `${doc.w} / ${doc.h}` }}
-        role="img"
-        aria-label="画板"
+    <>
+      <div
+        className={cn(
+          "group relative my-4 overflow-hidden rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg-mute)] transition hover:border-[var(--kp-brand)]",
+          className,
+        )}
       >
-        <rect width={doc.w} height={doc.h} fill="transparent" />
-        <StrokePaths strokes={doc.strokes} />
-      </svg>
-    </div>
+        <div className="flex items-center justify-between border-b border-[var(--kp-divider)] px-3 py-1.5 text-xs text-[var(--kp-text-3)]">
+          <span className="font-medium text-[var(--kp-text-2)]">画板 · 手写</span>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="rounded bg-[var(--kp-brand-soft)] px-2 py-0.5 text-xs font-medium text-[var(--kp-brand-deep)] hover:opacity-80 transition"
+            >
+              点击编辑手绘
+            </button>
+          )}
+        </div>
+        <div
+          onClick={() => {
+            if (onEdit) setModalOpen(true);
+          }}
+          className={cn(
+            "relative block w-full bg-[var(--kp-bg)] text-[var(--kp-text-1)]",
+            onEdit && "cursor-pointer",
+          )}
+        >
+          <svg
+            viewBox={`0 0 ${doc.w} ${doc.h}`}
+            className="block w-full"
+            style={{ aspectRatio: `${doc.w} / ${doc.h}` }}
+            role="img"
+            aria-label="画板"
+          >
+            <rect width={doc.w} height={doc.h} fill="transparent" />
+            <StrokePaths strokes={doc.strokes} />
+          </svg>
+        </div>
+      </div>
+      {onEdit && (
+        <BoardEditorModal
+          open={modalOpen}
+          initialRaw={raw}
+          onSave={handleSave}
+          onCancel={() => setModalOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -228,6 +272,7 @@ function BoardEditorModalBody({
   onCancel,
 }: Omit<BoardEditorModalProps, "open">) {
   const [doc, setDoc] = useState<BoardDoc>(() => parseBoardDoc(initialRaw ?? EMPTY_BOARD_JSON));
+  const [redoStack, setRedoStack] = useState<BoardStroke[]>([]);
   const [tool, setTool] = useState<BoardTool>("pen");
   const [penColor, setPenColor] = useState<string>(PEN_COLORS[0].value);
   const [hiColor, setHiColor] = useState<string>(HIGHLIGHTER_COLORS[0].value);
@@ -236,6 +281,44 @@ function BoardEditorModalBody({
   const svgRef = useRef<SVGSVGElement>(null);
 
   const brushSize = SIZE_PRESETS.find((s) => s.id === sizeId)?.size ?? 8;
+
+  const undo = useCallback(() => {
+    setDoc((prev) => {
+      if (prev.strokes.length === 0) return prev;
+      const last = prev.strokes[prev.strokes.length - 1]!;
+      setRedoStack((r) => [...r, last]);
+      return { ...prev, strokes: prev.strokes.slice(0, -1) };
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setRedoStack((r) => {
+      if (r.length === 0) return r;
+      const last = r[r.length - 1]!;
+      setDoc((prev) => ({ ...prev, strokes: [...prev.strokes, last] }));
+      return r.slice(0, -1);
+    });
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if (key === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo, redo]);
 
   const toLocal = useCallback((clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -261,6 +344,7 @@ function BoardEditorModalBody({
     const p = toLocal(e.clientX, e.clientY);
     if (!p) return;
     drawing.current = true;
+    setRedoStack([]); // 新开始一笔绘制，清空 redo 栈
     if (tool === "eraser") {
       setDoc((prev) => ({
         ...prev,
@@ -334,7 +418,7 @@ function BoardEditorModalBody({
           <div>
             <p className="text-sm font-medium text-[var(--kp-text-1)]">画板 · 手写</p>
             <p className="text-[10px] text-[var(--kp-text-3)]">
-              支持触控笔压感 · 编辑器输入 /hb 插入
+              支持触控笔压感 · Ctrl+Z 撤销 · Ctrl+Y 重做
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-1">
@@ -394,18 +478,13 @@ function BoardEditorModalBody({
                 />
               ))}
             <span className="mx-1 h-5 w-px bg-[var(--kp-divider)]" />
-            <ToolBtn
-              onClick={() =>
-                setDoc((prev) => ({
-                  ...prev,
-                  strokes: prev.strokes.slice(0, -1),
-                }))
-              }
-              title="撤销"
-            >
+            <ToolBtn onClick={undo} disabled={doc.strokes.length === 0} title="撤销 (Ctrl+Z)">
               <RotateCcw className="h-4 w-4" />
             </ToolBtn>
-            <ToolBtn onClick={() => setDoc((prev) => ({ ...prev, strokes: [] }))} title="清空">
+            <ToolBtn onClick={redo} disabled={redoStack.length === 0} title="重做 (Ctrl+Y)">
+              <RotateCw className="h-4 w-4" />
+            </ToolBtn>
+            <ToolBtn onClick={() => { setDoc((prev) => ({ ...prev, strokes: [] })); setRedoStack([]); }} title="清空">
               <Trash2 className="h-4 w-4" />
             </ToolBtn>
           </div>
@@ -470,11 +549,13 @@ function ToolBtn({
   children,
   onClick,
   active,
+  disabled,
   title,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
   title: string;
 }) {
   return (
@@ -483,8 +564,9 @@ function ToolBtn({
       title={title}
       aria-label={title}
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--kp-text-2)] transition",
+        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--kp-text-2)] transition disabled:opacity-40 disabled:pointer-events-none",
         active
           ? "bg-[var(--kp-brand-soft)] text-[var(--kp-brand-deep)]"
           : "hover:bg-[var(--kp-bg-mute)]",

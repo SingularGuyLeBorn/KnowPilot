@@ -599,7 +599,7 @@ export const PostContent = memo(function PostContent({
           }
 
           return (
-            <code {...props}>
+            <code className="kp-inline-code" {...props}>
               {children}
             </code>
           );
@@ -624,22 +624,77 @@ export const PostContent = memo(function PostContent({
             {children}
           </ThinkingNode>
         ),
+        kbd: ({ children, ...props }: ComponentPropsWithoutRef<"kbd"> & { node?: unknown }) => (
+          <kbd
+            className="rounded border border-[var(--kp-divider)] bg-[var(--kp-bg-soft)] px-1.5 py-0.5 font-mono text-xs shadow-xs text-[var(--kp-text-1)]"
+            {...props}
+          >
+            {children}
+          </kbd>
+        ),
         mark: ({ children, ...props }: ComponentPropsWithoutRef<"mark"> & { node?: unknown }) => {
           const rest = props as Record<string, unknown>;
-          const annotationType = typeof rest["data-annotation"] === "string" ? rest["data-annotation"] : undefined;
+          const annotationType =
+            typeof rest["data-annotation"] === "string"
+              ? rest["data-annotation"]
+              : typeof rest["dataAnnotation"] === "string"
+              ? rest["dataAnnotation"]
+              : undefined;
           if (!annotationType) {
-            return <mark {...props}>{children}</mark>;
+            return (
+              <mark className="rounded-sm bg-[var(--kp-brand-soft)] px-1 py-0.5 text-inherit" {...props}>
+                {children}
+              </mark>
+            );
           }
+          const color =
+            typeof rest["data-color"] === "string"
+              ? rest["data-color"]
+              : typeof rest["dataColor"] === "string"
+              ? rest["dataColor"]
+              : undefined;
+          const bracket =
+            typeof rest["data-bracket"] === "string"
+              ? rest["data-bracket"]
+              : typeof rest["dataBracket"] === "string"
+              ? rest["dataBracket"]
+              : undefined;
+
           return (
             <RoughAnnotation
               type={annotationType}
-              color={typeof rest["data-color"] === "string" ? rest["data-color"] : undefined}
-              strokeWidth={typeof rest["data-stroke-width"] === "string" ? Number(rest["data-stroke-width"]) : undefined}
-              padding={typeof rest["data-padding"] === "string" ? Number(rest["data-padding"]) : undefined}
-              iterations={typeof rest["data-iterations"] === "string" ? Number(rest["data-iterations"]) : undefined}
-              multiline={rest["data-multiline"] !== "false"}
-              animate={rest["data-animate"] !== "false"}
-              animationDuration={typeof rest["data-animation-duration"] === "string" ? Number(rest["data-animation-duration"]) : undefined}
+              color={color}
+              bracket={bracket as "left" | "right" | "top" | "bottom"}
+              strokeWidth={
+                typeof rest["data-stroke-width"] === "string"
+                  ? Number(rest["data-stroke-width"])
+                  : typeof rest["dataStrokeWidth"] === "string"
+                  ? Number(rest["dataStrokeWidth"])
+                  : undefined
+              }
+              padding={
+                typeof rest["data-padding"] === "string"
+                  ? Number(rest["data-padding"])
+                  : typeof rest["dataPadding"] === "string"
+                  ? Number(rest["dataPadding"])
+                  : undefined
+              }
+              iterations={
+                typeof rest["data-iterations"] === "string"
+                  ? Number(rest["data-iterations"])
+                  : typeof rest["dataIterations"] === "string"
+                  ? Number(rest["dataIterations"])
+                  : undefined
+              }
+              multiline={rest["data-multiline"] !== "false" && rest["dataMultiline"] !== "false"}
+              animate={rest["data-animate"] !== "false" && rest["dataAnimate"] !== "false"}
+              animationDuration={
+                typeof rest["data-animation-duration"] === "string"
+                  ? Number(rest["data-animation-duration"])
+                  : typeof rest["dataAnimationDuration"] === "string"
+                  ? Number(rest["dataAnimationDuration"])
+                  : undefined
+              }
             >
               {children}
             </RoughAnnotation>
@@ -672,6 +727,7 @@ export const PostContent = memo(function PostContent({
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
+        remarkRehypeOptions={{ allowDangerousHtml: true }}
         urlTransform={urlTransform}
         components={components}
       >

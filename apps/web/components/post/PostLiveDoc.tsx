@@ -1,17 +1,19 @@
 "use client";
 
 /**
- * 文章页 = 编辑页：所见即所得，自动保存。
- * 默认 PostContent 阅读态（含 ```viz Remotion）；显式点正文文字才挂 Milkdown。
- * 交互控件（播放/链接/代码工具栏）不得进编辑——否则会卸正文闪出「只有相关笔记」。
+ * 文章页 = 编辑页：Milkdown 统一渲染面。
+ * 默认「预览」WYSIWYG（可直接编辑），顶部模式切换可进入 Markdown 源码编辑。
+ * 实时保存与源码→预览切换都基于同一份 markdown 字符串，避免两套渲染逻辑漂移。
  */
 
-import dynamic from "next/dynamic";
-import { useCallback, useRef, useState, type MouseEvent } from "react";
+import { useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { ArrowLeft, Calendar, Eye } from "lucide-react";
 import { DEFAULT_POST_GARDEN } from "@knowpilot/shared";
-import { PostContent } from "@/components/post/PostContent";
+import {
+  MilkdownEditor,
+  type EditorViewMode,
+} from "@/components/editor/MilkdownEditor";
 import { TableOfContents, usePostTocVisible } from "@/components/post/TableOfContents";
 import { PageSearch } from "@/components/post/PageSearch";
 import { SelectionExplain } from "@/components/post/SelectionExplain";
@@ -22,34 +24,6 @@ import { useAutoSave } from "@/lib/useAutoSave";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-
-const MilkdownEditor = dynamic(
-  () => import("@/components/editor/MilkdownEditor").then((m) => m.MilkdownEditor),
-  { ssr: false },
-);
-
-/** 这些目标上的点击是交互，不是「点文进编辑」 */
-const NO_EDIT_CLICK_SELECTOR = [
-  "a",
-  "button",
-  "input",
-  "textarea",
-  "select",
-  "video",
-  "audio",
-  "canvas",
-  "summary",
-  "[role='button']",
-  "[contenteditable='true']",
-  "[data-no-edit-click]",
-  ".not-prose",
-  ".kp-code-block",
-].join(", ");
-
-function isNoEditClickTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return Boolean(target.closest(NO_EDIT_CLICK_SELECTOR));
-}
 
 export interface PostLiveDocModel {
   id: string;
@@ -70,12 +44,12 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
 
   const [title, setTitle] = useState(post.title);
   const [content, setContent] = useState(post.content);
-  /**
-   * editorRequested：开始拉 Milkdown chunk
-   * editorSurfaceReady：编辑面已挂上，才卸阅读面（原子切换，禁止中间空白窗）
-   */
-  const [editorRequested, setEditorRequested] = useState(false);
-  const [editorSurfaceReady, setEditorSurfaceReady] = useState(false);
+  const [mode, setMode] = useState<EditorViewMode>("wysiwyg");
+  const [editorReady, setEditorReady] = useState(false);
+
+  const readOnly = false;
+
+  const handleEditorReady = useCallback(() => setEditorReady(true), []);
 
   const { lastSavedAt, isSaving, saveNow } = useAutoSave({
     id: post.id,
@@ -84,22 +58,8 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
     category: post.category || "",
     tags: (post.tags || []).join(", "),
     published: true,
-    enabled: editorSurfaceReady,
+    enabled: editorReady,
   });
-
-  const requestEditor = useCallback(() => {
-    setEditorRequested(true);
-  }, []);
-
-  const handleReadingClick = useCallback(
-    (e: MouseEvent<HTMLDivElement>) => {
-      if (isNoEditClickTarget(e.target)) return;
-      requestEditor();
-    },
-    [requestEditor],
-  );
-
-  const showReading = !editorSurfaceReady;
 
   return (
     <div
@@ -127,10 +87,8 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           className="text-xs text-[var(--kp-text-3)]"
           title="改动 2 秒后写入 Markdown 文件；Ctrl+S 立刻保存"
         >
-          {!editorSurfaceReady
-            ? editorRequested
-              ? "正在加载编辑器…"
-              : "阅读中 · 点击正文编辑"
+          {mode === "source"
+            ? "源码编辑 · 切换回预览即可实时渲染"
             : isSaving
               ? "保存中…"
               : lastSavedAt
@@ -139,7 +97,7 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
         </span>
       </div>
 
-      <article ref={articleRef} className="kp-post-swap">
+      <article ref={articleRef} className="kp-post-swap kp-post-content">
         <ReadingProgressTracker
           postId={post.id}
           slug={post.slug}
@@ -202,57 +160,29 @@ export function PostLiveDoc({ post }: { post: PostLiveDocModel }) {
           )}
         </header>
 
-        {/* 编辑面：先离屏挂载，ready 后再显示；阅读面同期保留 → 无空白窗 */}
-        {editorRequested && (
-          <div
-            className={cn(!editorSurfaceReady && "pointer-events-none absolute -left-[9999px] top-0 w-[min(100%,48rem)] opacity-0")}
-            aria-hidden={!editorSurfaceReady}
-          >
-            <MilkdownEditor
-              key={post.id}
-              initialValue={content}
-              onChange={setContent}
-              onManualSave={saveNow}
-              onEditorReady={() => setEditorSurfaceReady(true)}
-              docMeta={{
-                title,
-                garden: post.garden,
-                slug: post.slug,
-                postId: post.id,
-              }}
-              className="border-0 shadow-none"
-            />
-          </div>
-        )}
-
-        {showReading && (
-          <div
-            className="w-full cursor-text rounded-xl border border-transparent text-left transition hover:border-[var(--kp-divider-light)]"
-            onClick={handleReadingClick}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                if (isNoEditClickTarget(e.target)) return;
-                requestEditor();
-              }
-            }}
-            role="presentation"
-            title="点击正文编辑"
-          >
-            <PostContent
-              content={content}
-              postSlug={post.slug}
-              postGarden={post.garden}
-              className="prose prose-neutral dark:prose-invert max-w-none"
-            />
-          </div>
-        )}
+        <MilkdownEditor
+          key={post.id}
+          initialValue={content}
+          onChange={setContent}
+          onManualSave={saveNow}
+          mode={mode}
+          onModeChange={setMode}
+          readOnly={readOnly}
+          onEditorReady={handleEditorReady}
+          docMeta={{
+            title,
+            garden: post.garden,
+            slug: post.slug,
+            postId: post.id,
+          }}
+          className="border-0 shadow-none"
+        />
       </article>
 
-      {/* 阅读态也展示；勿绑 editorReady（否则误进编辑时只剩相关笔记） */}
       <RelatedPosts postId={post.id} />
 
       <PageSearch containerRef={articleRef} />
-      {editorSurfaceReady && (
+      {!readOnly && editorReady && (
         <SelectionExplain
           containerRef={articleRef}
           title={title}

@@ -782,28 +782,26 @@ html.dark .kp-card,
 /* 标题锚点：hover 显示 # 数量 = 标题级别 */
 .kp-heading-anchor {
   position: absolute;
-  left: -0.15rem;
+  left: -0.25rem;
   top: 50%;
   display: inline-flex;
   transform: translate(-100%, -50%);
   align-items: center;
   justify-content: center;
-  min-width: 1.25rem;
-  height: 1.25rem;
-  padding: 0 0.25rem;
-  margin-right: 0.25rem;
-  border-radius: 0.25rem;
+  padding: 0 0.15rem;
   color: var(--kp-text-3);
   opacity: 0;
-  transition: opacity 0.2s, color 0.2s, background 0.2s;
+  transition: opacity 0.15s, color 0.15s;
+  font-size: inherit;
+  line-height: 1;
 }
 
 .kp-heading-level {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.7rem;
+  font-size: 1em;
   font-weight: 500;
   line-height: 1;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.02em;
 }
 
 .group:hover .kp-heading-anchor,
@@ -813,7 +811,29 @@ html.dark .kp-card,
 
 .kp-heading-anchor:hover {
   color: var(--kp-brand-1);
-  background: var(--kp-brand-soft);
+}
+
+/* 行内代码：轻量自然高亮，消除突兀笨重的黑灰圆角矩形边框 */
+.prose :where(code):not(:where([class~="not-prose"] *, pre *)),
+code.kp-inline-code {
+  display: inline;
+  padding: 0.15em 0.35em !important;
+  margin: 0 0.1em !important;
+  border-radius: 0.25rem !important;
+  border: none !important;
+  background: color-mix(in srgb, var(--kp-brand-soft) 45%, var(--kp-bg-mute)) !important;
+  color: var(--kp-brand-deep) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-size: 0.88em !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+
+.prose :where(code):not(:where([class~="not-prose"] *, pre *))::before,
+.prose :where(code):not(:where([class~="not-prose"] *, pre *))::after,
+code.kp-inline-code::before,
+code.kp-inline-code::after {
+  content: "" !important;
 }
 
 /* 右侧目录 */

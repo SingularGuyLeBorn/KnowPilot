@@ -145,7 +145,7 @@ export async function transcribeAudioFile(
         HUGGINGFACE_HUB_CACHE: hfHub,
         HF_HUB_DISABLE_XET: process.env.HF_HUB_DISABLE_XET || "1",
         HF_HUB_DISABLE_SYMLINKS_WARNING: process.env.HF_HUB_DISABLE_SYMLINKS_WARNING || "1",
-      },
+      } as unknown as NodeJS.ProcessEnv,
     },
   );
 

@@ -69,6 +69,7 @@ export interface RoughAnnotationProps {
   multiline?: boolean;
   animate?: boolean;
   animationDuration?: number;
+  bracket?: "left" | "right" | "top" | "bottom";
   children: ReactNode;
   className?: string;
 }
@@ -82,6 +83,7 @@ export function RoughAnnotation({
   multiline = true,
   animate = true,
   animationDuration = 800,
+  bracket,
   children,
   className,
 }: RoughAnnotationProps) {
@@ -107,9 +109,36 @@ export function RoughAnnotation({
       multiline,
       animate,
       animationDuration,
+      ...(bracket ? { bracket } : {}),
     });
 
-    annotationRef.current = ann;
+    const showingRef = { current: false };
+
+    const safeShow = () => {
+      showingRef.current = true;
+      requestAnimationFrame(() => {
+        if (annotationRef.current) {
+          annotationRef.current.show();
+        }
+      });
+    };
+
+    const refresh = () => {
+      if (showingRef.current && annotationRef.current) {
+        annotationRef.current.remove();
+        annotationRef.current.show();
+      }
+    };
+
+    // 观察元素自身及 document.body 的尺寸变化（如 KaTeX 渲染 / 表格布局下推时更新手绘坐标）
+    const ro = new ResizeObserver(() => {
+      refresh();
+    });
+    ro.observe(el);
+    if (document.body) {
+      ro.observe(document.body);
+    }
+    window.addEventListener("resize", refresh);
 
     // IntersectionObserver：滚入视口时触发动画
     if (animate) {
@@ -117,21 +146,25 @@ export function RoughAnnotation({
         (entries) => {
           for (const entry of entries) {
             if (entry.isIntersecting) {
-              ann.show();
+              safeShow();
               observer.disconnect();
             }
           }
         },
-        { threshold: 0.3 },
+        { threshold: 0.2 },
       );
       observer.observe(el);
       return () => {
         observer.disconnect();
+        ro.disconnect();
+        window.removeEventListener("resize", refresh);
         ann.remove();
       };
     } else {
-      ann.show();
+      safeShow();
       return () => {
+        ro.disconnect();
+        window.removeEventListener("resize", refresh);
         ann.remove();
       };
     }
@@ -144,10 +177,15 @@ export function RoughAnnotation({
     multiline,
     animate,
     animationDuration,
+    bracket,
   ]);
 
   return (
-    <span ref={ref} className={className} style={{ display: "inline" }}>
+    <span
+      ref={ref}
+      className={className}
+      style={{ position: "relative", display: "inline-block", verticalAlign: "baseline" }}
+    >
       {children}
     </span>
   );

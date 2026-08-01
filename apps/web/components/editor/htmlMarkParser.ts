@@ -30,7 +30,7 @@ const DEFAULTS = {
 
 export function parseMarkHtml(raw: string): MarkHtmlData | null {
   if (!raw || !raw.startsWith("<mark")) return null;
-  const m = raw.match(/^<mark\b\s*([^>]*)>((?:(?!<\/mark>).)*)<\/mark>$/is);
+  const m = raw.match(/^<mark\b\s*([^>]*)>([\s\S]*?)<\/mark>$/i);
   if (!m) return null;
   const [, attrString, value] = m;
   const attrs = parseAttributes(attrString ?? "");

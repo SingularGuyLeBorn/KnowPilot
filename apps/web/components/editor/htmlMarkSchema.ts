@@ -10,7 +10,8 @@ import type { Node as ProseNode } from "@milkdown/prose/model";
 import type { NodeView } from "@milkdown/prose/view";
 import { $node } from "@milkdown/utils";
 import { $view } from "@milkdown/utils";
-import { annotate, type RoughAnnotationType } from "rough-notation";
+import { annotate } from "rough-notation";
+import type { RoughAnnotationType } from "@/components/post/RoughAnnotation";
 import type { MarkHtmlData } from "./htmlMarkParser";
 import { parseMarkHtml, serializeMarkHtml } from "./htmlMarkParser";
 
@@ -25,6 +26,42 @@ const VALID_TYPES = new Set<string>([
   "crossed-off",
   "strike-through",
 ]);
+
+/** Milkdown 手绘标注全局刷新注册表：主滚动容器滚动时统一重绘所有标注 */
+const annotationRefreshers = new Set<() => void>();
+let mainScrollListenerAdded = false;
+let scrollRefreshRaf: number | null = null;
+
+function refreshAllAnnotations() {
+  for (const refresh of annotationRefreshers) {
+    try {
+      refresh();
+    } catch (e) {
+      console.warn("[htmlMarkSchema] refresh annotation failed:", e);
+    }
+  }
+}
+
+function onMainScroll() {
+  if (scrollRefreshRaf != null) return;
+  scrollRefreshRaf = requestAnimationFrame(() => {
+    scrollRefreshRaf = null;
+    refreshAllAnnotations();
+  });
+}
+
+function registerAnnotationRefresh(refresh: () => void) {
+  annotationRefreshers.add(refresh);
+  if (!mainScrollListenerAdded && typeof document !== "undefined") {
+    mainScrollListenerAdded = true;
+    const scroller = document.querySelector("[data-kp-main-scroll]");
+    const target = scroller || window;
+    target.addEventListener("scroll", onMainScroll, { passive: true });
+  }
+  return () => {
+    annotationRefreshers.delete(refresh);
+  };
+}
 
 export const htmlMarkSchema = $node("html_mark", () => ({
   content: "",
@@ -171,6 +208,8 @@ function createHtmlMarkView(node: ProseNode): NodeView {
     if (document.body) ro.observe(document.body);
   }
 
+  const unregisterScrollRefresh = registerAnnotationRefresh(refresh);
+
   return {
     dom,
     update(updated) {
@@ -192,6 +231,7 @@ function createHtmlMarkView(node: ProseNode): NodeView {
       removeAnnotation();
       ro?.disconnect();
       io?.disconnect();
+      unregisterScrollRefresh();
     },
   };
 }

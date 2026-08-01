@@ -18,6 +18,9 @@
         min-height: 320px;
         outline: none;
       }
+      .milkdown-editor[data-readonly="true"] .milkdown .ProseMirror {
+        min-height: 0;
+      }
       .milkdown-editor .milkdown img {
         max-width: 100%;
         height: auto;
@@ -132,7 +135,7 @@
       }
       .milkdown-editor .milkdown li {
         display: list-item;
-        margin: 0.25rem 0;
+        margin: 0;
       }
       .milkdown-editor .milkdown li > p {
         margin: 0;
@@ -344,6 +347,12 @@
         font-size: 0.85em;
       }
       /* 行内公式编辑：源码在上、预览在下（与块级一致，禁止左右并排） */
+      /* [hidden] 守卫：hidden 属性只靠 UA 样式 [hidden]{display:none}，优先级低于下方 display:flex，
+         会被覆盖成“永远可见”——表现为每个行内公式后面多一条可聚焦的空行。块级同理加防御。 */
+      .milkdown-editor .milkdown .kp-math-inline-edit[hidden],
+      .milkdown-editor .milkdown .kp-math-block-edit[hidden] {
+        display: none;
+      }
       .milkdown-editor .milkdown .kp-math-inline-edit {
         display: flex;
         flex-direction: column;

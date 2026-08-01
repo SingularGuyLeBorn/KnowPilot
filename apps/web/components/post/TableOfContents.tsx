@@ -26,7 +26,7 @@ function parseHeadings(content: string): TocItem[] {
   const items: TocItem[] = [];
   const lines = content.split(/\r?\n/);
   for (const line of lines) {
-    const match = line.match(/^(#{2,4})\s+(.+)$/);
+    const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const text = match[2]
         .trim()
@@ -51,7 +51,7 @@ function buildGroups(items: TocItem[]): TocGroup[] {
   const groups: TocGroup[] = [];
   let current: TocGroup | null = null;
   for (const item of items) {
-    if (item.level === 2) {
+    if (item.level <= 2) {
       current = { heading: item, children: [] };
       groups.push(current);
     } else if (current) {

@@ -3,14 +3,15 @@
 import "./milkdown-editor.css";
 
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
-import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
-import { Editor, rootCtx, defaultValueCtx } from "@milkdown/core";
+import { Milkdown, MilkdownProvider, useEditor, useInstance } from "@milkdown/react";
+import { Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx, editorViewCtx } from "@milkdown/core";
 import { gfm } from "@milkdown/preset-gfm";
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
 import { math } from "@milkdown/plugin-math";
 import { history } from "@milkdown/plugin-history";
 import { Code2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { headingIdPlugin } from "@/components/editor/headingIdPlugin";
 import {
   detectEditorAgentAtTrigger,
   EditorAgentComplete,
@@ -88,6 +89,8 @@ interface MilkdownEditorProps {
   onManualSave?: () => void | Promise<void>;
   /** 编辑器壳已挂载（供阅读面原子切换，勿用 setTimeout 赌） */
   onEditorReady?: () => void;
+  /** 仅预览：禁用正文编辑，只保留模式切换 */
+  readOnly?: boolean;
   className?: string;
 }
 
@@ -95,6 +98,8 @@ function MilkdownWysiwyg({
   initialValue = "",
   onChange,
   placeholder,
+  readOnly = false,
+  onEditorReady,
   boardHookRef,
   linkNavGarden,
   linkNavSlug,
@@ -102,6 +107,8 @@ function MilkdownWysiwyg({
   initialValue?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
+  readOnly?: boolean;
+  onEditorReady?: () => void;
   boardHookRef: MutableRefObject<BoardInsertRequest | null>;
   linkNavGarden?: string;
   linkNavSlug?: string;
@@ -116,6 +123,20 @@ function MilkdownWysiwyg({
     setMilkdownLinkNavMeta({ garden: linkNavGarden, slug: linkNavSlug });
   }, [linkNavGarden, linkNavSlug]);
 
+  const [editorLoading, getEditor] = useInstance();
+
+  useEffect(() => {
+    if (!editorLoading) onEditorReady?.();
+  }, [editorLoading, onEditorReady]);
+
+  useEffect(() => {
+    if (editorLoading) return;
+    const editor = getEditor();
+    if (!editor) return;
+    const view = editor.ctx.get(editorViewCtx);
+    view.setProps({ editable: () => !readOnly });
+  }, [editorLoading, getEditor, readOnly]);
+
   useEditor(
     (root) => {
       setMilkdownLinkNavMeta({ garden: linkNavGarden, slug: linkNavSlug });
@@ -123,6 +144,7 @@ function MilkdownWysiwyg({
         .config((ctx) => {
           ctx.set(rootCtx, root);
           ctx.set(defaultValueCtx, initialValue);
+          ctx.set(editorViewOptionsCtx, { editable: () => !readOnly });
 
           const l = ctx.get(listenerCtx);
           l.markdownUpdated((_, markdown) => {
@@ -155,6 +177,7 @@ function MilkdownWysiwyg({
         .use(history)
         .use(gapCursorPlugin)
         .use(gapCursorKeymapPlugin)
+        .use(headingIdPlugin)
         .use(listener)
         .use(editorSlash);
 
@@ -216,10 +239,13 @@ function MilkdownEditorInner({
   docMeta,
   onManualSave,
   onEditorReady,
+  readOnly = false,
   className,
 }: MilkdownEditorProps) {
   const [internalMode, setInternalMode] = useState<EditorViewMode>("wysiwyg");
   const mode = controlledMode ?? internalMode;
+  // 预览模式强制走 WYSIWYG，让正文只读；源码模式才允许切 source
+  const effectiveMode = readOnly ? "wysiwyg" : mode;
   const [wysiwygEpoch, setWysiwygEpoch] = useState(0);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const [atTrigger, setAtTrigger] = useState<{
@@ -227,10 +253,6 @@ function MilkdownEditorInner({
     query: string;
     mode?: "wysiwyg" | "source";
   } | null>(null);
-
-  useEffect(() => {
-    onEditorReady?.();
-  }, [onEditorReady]);
 
   useEffect(() => {
     registerMilkdownAtAgentHandler((hit) => {
@@ -437,89 +459,99 @@ function MilkdownEditorInner({
   return (
     <div
       ref={editorRootRef}
+      data-readonly={readOnly ? "true" : undefined}
       className={cn(
-        "milkdown-editor flex min-h-[calc(100dvh-12rem)] flex-col rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)]",
+        "milkdown-editor flex flex-col rounded-xl border border-[var(--kp-divider)] bg-[var(--kp-bg)]",
+        readOnly ? "min-h-0" : "min-h-[calc(100dvh-12rem)]",
         className,
       )}
     >
       <div className="flex items-center justify-end gap-3 border-b border-[var(--kp-divider)] px-3 py-2">
         <span className="sr-only">
-          {mode === "wysiwyg"
-            ? "所见即所得。Ctrl+S 保存。Ctrl+V 粘贴图片。划选可润色。斜杠命令：/gs 公式、/code 代码、/tb 表格、/hb 画板。"
-            : "源码模式。Ctrl+S 保存。Ctrl+V 粘贴图片。划选可润色。"}
+          {readOnly
+            ? "预览模式。顶部可切换到 Markdown 源码进行编辑。"
+            : mode === "wysiwyg"
+              ? "所见即所得。Ctrl+S 保存。Ctrl+V 粘贴图片。划选可润色。斜杠命令：/gs 公式、/code 代码、/tb 表格、/hb 画板。"
+              : "源码模式。Ctrl+S 保存。Ctrl+V 粘贴图片。划选可润色。"}
         </span>
         <div className="flex items-center gap-2">
-          {imageUploading && (
-            <span className="text-xs text-[var(--kp-text-3)]">图片上传中…</span>
-          )}
-          <ImageUploadButton
-            meta={uploadMeta}
-            onUploaded={insertUploadedImage}
-            interceptFile={
-              mode === "wysiwyg"
-                ? (file) => beginMilkdownImageUpload(file)
-                : undefined
-            }
-          />
-          <EditorAgentComplete
-            content={draft}
-            sourceTextareaRef={sourceRef}
-            docMeta={docMeta}
-            editorMode={mode}
-            atTrigger={atTrigger}
-            registerApi={registerAgentApi}
-            onPreferSourceMode={() => setMode("source")}
-            onCaptureWysiwygSelection={() => {
-              const snap = saveMilkdownSelectionRange();
-              return snap ? { text: snap.text } : null;
-            }}
-            onRewriteContent={rewriteContent}
-            onApply={({
-              insertStart,
-              insertEnd,
-              content: snippet,
-              wysiwyg,
-              replaceDocument,
-            }) => {
-              if (replaceDocument) {
-                rewriteContent(snippet, Math.min(snippet.length, 0));
-                if (mode === "wysiwyg") setWysiwygEpoch((n) => n + 1);
-                return;
-              }
-              if (wysiwyg) {
-                if (
-                  replaceMilkdownSelectionWithMarkdown(snippet) ||
-                  insertMilkdownMarkdownAtCursor(snippet)
-                ) {
-                  return;
+          {!readOnly && (
+            <>
+              {imageUploading && (
+                <span className="text-xs text-[var(--kp-text-3)]">图片上传中…</span>
+              )}
+              <ImageUploadButton
+                meta={uploadMeta}
+                onUploaded={insertUploadedImage}
+                interceptFile={
+                  mode === "wysiwyg"
+                    ? (file) => beginMilkdownImageUpload(file)
+                    : undefined
                 }
-                rewriteContent(`${draft}\n\n${snippet}`);
-                setWysiwygEpoch((n) => n + 1);
-                return;
-              }
-              const next = draft.slice(0, insertStart) + snippet + draft.slice(insertEnd);
-              const cursor = insertStart + snippet.length;
-              rewriteContent(next, cursor);
-              if (mode === "wysiwyg") setWysiwygEpoch((n) => n + 1);
-            }}
-          />
+              />
+              <EditorAgentComplete
+                content={draft}
+                sourceTextareaRef={sourceRef}
+                docMeta={docMeta}
+                editorMode={effectiveMode}
+                atTrigger={atTrigger}
+                registerApi={registerAgentApi}
+                onPreferSourceMode={() => setMode("source")}
+                onCaptureWysiwygSelection={() => {
+                  const snap = saveMilkdownSelectionRange();
+                  return snap ? { text: snap.text } : null;
+                }}
+                onRewriteContent={rewriteContent}
+                onApply={({
+                  insertStart,
+                  insertEnd,
+                  content: snippet,
+                  wysiwyg,
+                  replaceDocument,
+                }) => {
+                  if (replaceDocument) {
+                    rewriteContent(snippet, Math.min(snippet.length, 0));
+                    if (effectiveMode === "wysiwyg") setWysiwygEpoch((n) => n + 1);
+                    return;
+                  }
+                  if (wysiwyg) {
+                    if (
+                      replaceMilkdownSelectionWithMarkdown(snippet) ||
+                      insertMilkdownMarkdownAtCursor(snippet)
+                    ) {
+                      return;
+                    }
+                    rewriteContent(`${draft}\n\n${snippet}`);
+                    setWysiwygEpoch((n) => n + 1);
+                    return;
+                  }
+                  const next = draft.slice(0, insertStart) + snippet + draft.slice(insertEnd);
+                  const cursor = insertStart + snippet.length;
+                  rewriteContent(next, cursor);
+                  if (effectiveMode === "wysiwyg") setWysiwygEpoch((n) => n + 1);
+                }}
+              />
+            </>
+          )}
           <ModeToggle mode={mode} onChange={setMode} />
         </div>
       </div>
 
-      <EditorSelectionToolbar
-        containerRef={editorRootRef}
-        mode={mode}
-        sourceTextareaRef={sourceRef}
-        content={draft}
-        agentApiRef={agentApiRef}
-        onSaveWysiwygSelection={() => {
-          const snap = saveMilkdownSelectionRange();
-          return snap ? { text: snap.text } : null;
-        }}
-      />
+      {!readOnly && (
+        <EditorSelectionToolbar
+          containerRef={editorRootRef}
+          mode={mode}
+          sourceTextareaRef={sourceRef}
+          content={draft}
+          agentApiRef={agentApiRef}
+          onSaveWysiwygSelection={() => {
+            const snap = saveMilkdownSelectionRange();
+            return snap ? { text: snap.text } : null;
+          }}
+        />
+      )}
 
-      {mode === "source" ? (
+      {effectiveMode === "source" ? (
         <textarea
           ref={sourceRef}
           value={draft}
@@ -591,13 +623,15 @@ function MilkdownEditorInner({
           className="min-h-[calc(100dvh-14rem)] flex-1 resize-none bg-transparent px-4 py-4 font-mono text-sm leading-relaxed text-[var(--kp-text-1)] outline-none placeholder:text-[var(--kp-text-3)]"
         />
       ) : (
-        <div className="min-h-[calc(100dvh-14rem)] flex-1">
+        <div className={cn("flex-1", readOnly ? "min-h-0" : "min-h-[calc(100dvh-14rem)]")}>
           <MilkdownProvider key={`md-provider-${wysiwygEpoch}`}>
             <MilkdownWysiwyg
               key={`wysiwyg-${wysiwygEpoch}`}
               initialValue={draft}
               onChange={handleChange}
               placeholder={placeholder}
+              readOnly={readOnly}
+              onEditorReady={onEditorReady}
               boardHookRef={boardHookRef}
               linkNavGarden={docMeta?.garden}
               linkNavSlug={docMeta?.slug}

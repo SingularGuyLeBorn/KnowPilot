@@ -39,7 +39,7 @@ import { useChatUiPrefs } from "@/lib/useChatUiPrefs";
 import { useChatHoverMonitor } from "@/lib/useChatHoverMonitor";
 import { useSubagentMessageMirror } from "@/lib/useSubagentMessageMirror";
 import { useChatAsyncOverlayEffects } from "@/lib/useChatAsyncOverlayEffects";
-import { saveChatStoresToStorage, useChatRunStream } from "@/lib/useChatRunStream";
+import { saveChatStoresToStorage, useChatRunStream, type RunStreamOptions, type RunStreamOutcome } from "@/lib/useChatRunStream";
 import { useChatQueueDrain } from "@/lib/useChatQueueDrain";
 import { useChatSseSubscriptions } from "@/lib/useChatSseSubscriptions";
 import { useChatDerivedQueues } from "@/lib/useChatDerivedQueues";
@@ -481,7 +481,7 @@ export function ChatView() {
       if (!streamLifecycleStore.isRunOccupied(sid)) {
         ensureSessionConfigHydrated(sid);
         if (runStreamRef.current) {
-          runStreamRef.current({
+          runStreamRef.current?.({
             targetSessionId: sid,
             resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
             isResume: true,
@@ -681,7 +681,7 @@ export function ChatView() {
         if (st.phase === "streaming" && !sessionComposeActions.getActiveAbortController(sid)) {
           ensureSessionConfigHydrated(sid);
           // 事件处理内同步续传；INV-5 续传起点唯一走 resolveResumeAfter
-          runStreamRef.current({
+          runStreamRef.current?.({
             targetSessionId: sid,
             resumeAfter: streamLifecycleStore.resolveResumeAfter(sid),
             isResume: true,
@@ -956,7 +956,7 @@ export function ChatView() {
         !sessionComposeActions.getActiveAbortController(id)
       ) {
         ensureSessionConfigHydrated(id);
-        runStreamRef.current({
+        runStreamRef.current?.({
           targetSessionId: id,
           resumeAfter: streamLifecycleStore.resolveResumeAfter(id),
           isResume: true,
