@@ -215,21 +215,27 @@ function CodeToolbar({
   );
 }
 
-/** iframe 预览：sandbox 隔离，allow-scripts 但不给 allow-same-origin（防访问父页 cookie/storage） */
-function CodePreview({ code, language }: { code: string; language: string }) {
-  const srcDoc = useMemo(() => {
-    // SVG 直接作为文档；HTML 原样渲染
-    if (language.toLowerCase() === "svg") {
-      return code;
+/** 代码预览：用 Shadow DOM 渲染，无内部滚动条，随页面自然滚动；
+ * 样式与脚本隔离在 shadow root 内，不污染父页。 */
+function CodePreview({ code }: { code: string; language: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let shadow = el.shadowRoot;
+    if (!shadow) {
+      shadow = el.attachShadow({ mode: "open" });
     }
-    return code;
-  }, [code, language]);
+    // SVG 需要根标签，HTML 直接写入
+    shadow.innerHTML = code;
+  }, [code]);
+
   return (
-    <iframe
-      srcDoc={srcDoc}
-      sandbox="allow-scripts allow-forms allow-modals allow-popups"
-      className="h-full w-full border-0 bg-white"
-      title="代码预览"
+    <div
+      ref={containerRef}
+      className="w-full rounded-lg bg-white"
+      data-no-edit-click
     />
   );
 }
