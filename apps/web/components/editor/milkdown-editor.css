@@ -453,3 +453,27 @@
         font-size: 0.8rem;
         color: var(--kp-text-3);
       }
+
+      /* ProseMirror GapCursor：块间隙光标，避免 margin 间隙被误当成空行 */
+      .milkdown-editor .milkdown .ProseMirror-gapcursor {
+        display: none;
+        pointer-events: none;
+        position: absolute;
+      }
+      .milkdown-editor .milkdown .ProseMirror-gapcursor::after {
+        content: "";
+        display: block;
+        position: absolute;
+        top: -2px;
+        width: 20px;
+        border-top: 1px solid var(--kp-brand);
+        animation: kp-gapcursor-blink 1.1s steps(2, start) infinite;
+      }
+      @keyframes kp-gapcursor-blink {
+        to {
+          visibility: hidden;
+        }
+      }
+      .milkdown-editor .milkdown .ProseMirror-focused .ProseMirror-gapcursor {
+        display: block;
+      }

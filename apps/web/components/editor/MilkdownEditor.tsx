@@ -41,6 +41,9 @@ import {
   setFormulaCopilotDocMeta,
 } from "@/components/editor/mathFormulaCopilot";
 import { emptyCodeBlockDeleteKeymap } from "@/components/editor/emptyCodeBlockDelete";
+import { gapCursorKeymapPlugin, gapCursorPlugin } from "@/components/editor/gapCursor";
+import { htmlMarkSchema, htmlMarkView } from "@/components/editor/htmlMarkSchema";
+import { htmlMarkRemark } from "@/components/editor/htmlMarkRemark";
 import { vizCodeBlockView } from "@/components/editor/vizCodeBlockNodeView";
 import {
   milkdownLinkNav,
@@ -134,19 +137,24 @@ function MilkdownWysiwyg({
             onOpenBoard: (api) => boardHookRef.current?.onOpenBoard(api),
           });
         })
+        .use(emptyCodeBlockDeleteKeymap)
         .use(commonmarkWithAbsoluteHeading())
         .use(gfm)
         .use(math)
         .use(mathBlockAlignExtend)
+        .use(htmlMarkSchema)
+        .use(htmlMarkRemark)
+        .use(htmlMarkView)
         .use(mathBlockEditableView)
         .use(mathInlineEditableView)
-        .use(emptyCodeBlockDeleteKeymap)
         .use(vizCodeBlockView)
         .use(milkdownLinkNav)
         .use(milkdownImageUpload)
         .use(milkdownSelectionApi)
         .use(milkdownAtAgent)
         .use(history)
+        .use(gapCursorPlugin)
+        .use(gapCursorKeymapPlugin)
         .use(listener)
         .use(editorSlash);
 
