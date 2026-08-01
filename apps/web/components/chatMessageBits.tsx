@@ -18,14 +18,15 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  Code2,
   Copy,
   Cpu,
   ExternalLink,
+  Eye,
   FileText,
   Gauge,
   Globe,
   Info,
-  Pencil,
   RefreshCw,
   RotateCcw,
   Search,
@@ -34,7 +35,7 @@ import {
   Terminal,
   Volume2,
   X,
-  Zap,
+  Zap, Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PostContent } from "@/components/post/PostContent";
@@ -109,6 +110,7 @@ export interface AsyncToolResultCardProps {
   subagentName?: string;
   sourceType?: string;
   jobId?: string;
+  onSaveEditedContent?: (newContent: string) => void;
 }
 
 export const AsyncToolResultCard = memo(function AsyncToolResultCard({
@@ -119,14 +121,17 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
   subagentName,
   sourceType,
   jobId,
+  onSaveEditedContent,
 }: AsyncToolResultCardProps) {
+  const initialContent = structured?.content || fallbackMarkdown || "";
+  const [content, setContent] = useState(initialContent);
+  const [viewMode, setViewMode] = useState<"rendered" | "source">("rendered");
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // 1. 提取正文与字数
-  const fullContent = structured?.content || fallbackMarkdown || "";
-  const totalChars = structured?.totalChars ?? structured?.contentChars ?? fullContent.length;
-  const isLong = totalChars > 320 || fullContent.split("\n").length > 8;
+  const totalChars = structured?.totalChars ?? structured?.contentChars ?? content.length;
+  const isLong = totalChars > 320 || content.split("\n").length > 8;
 
   // 2. 格式化工具名与任务描述
   const resolvedTool = structured?.tool || toolName || sourceType;
@@ -160,7 +165,7 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
   // 4. 复制正文
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(fullContent);
+    navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -176,12 +181,17 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
 
   const previewFields = structured?.previewFields?.slice(0, 6) ?? [];
 
+  const handleContentChange = (newVal: string) => {
+    setContent(newVal);
+    if (onSaveEditedContent) onSaveEditedContent(newVal);
+  };
+
   return (
     <div
       className="group/card my-1 overflow-hidden rounded-2xl border border-[var(--kp-divider)] bg-gradient-to-br from-[var(--kp-bg)] to-[var(--kp-bg-alt)] shadow-xs transition-all hover:border-[var(--kp-brand)]/40 hover:shadow-sm"
       data-testid="async-tool-result-card"
     >
-      {/* 顶栏 Header: 工具名、任务名、状态与字数 */}
+      {/* 顶栏 Header: 工具名、任务名、模式切换与状态 */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/50 px-3.5 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] shadow-2xs">
@@ -203,6 +213,38 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 渲染 / 源码(可编辑) 分段切换按钮 */}
+          <div className="flex items-center gap-0.5 rounded-lg border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setViewMode("rendered")}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2.5 py-0.5 font-medium transition",
+                viewMode === "rendered"
+                  ? "bg-[var(--kp-brand-soft)] font-semibold text-[var(--kp-brand-deep)] shadow-2xs"
+                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
+              )}
+              title="富文本 / Markdown 渲染视图"
+            >
+              <Eye className="h-3 w-3" />
+              <span>渲染</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("source")}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2.5 py-0.5 font-medium transition",
+                viewMode === "source"
+                  ? "bg-zinc-800 font-semibold text-zinc-100 shadow-2xs dark:bg-zinc-700"
+                  : "text-[var(--kp-text-3)] hover:text-[var(--kp-text-1)]",
+              )}
+              title="查看原始源码文本，并可直接在框内编辑修改"
+            >
+              <Code2 className="h-3 w-3" />
+              <span>源码 (可编辑)</span>
+            </button>
+          </div>
+
           <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-3 w-3 text-emerald-600" />
             已完成
@@ -263,67 +305,97 @@ export const AsyncToolResultCard = memo(function AsyncToolResultCard({
             <Zap className="h-3.5 w-3.5 text-amber-500" />
             已将以下工具返回结果注入给大模型:
           </span>
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="inline-flex items-center gap-1 text-[11px] text-[var(--kp-text-3)] transition hover:text-[var(--kp-text-1)]"
-            title="复制完整投递内容"
-          >
-            {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-            <span>{copied ? "已复制" : "复制"}</span>
-          </button>
-        </div>
-
-        {/* 结果文本区 */}
-        {isLong ? (
-          <div className="space-y-2">
-            {!open ? (
-              /* 长文本默认摘要折叠态 */
-              <div className="relative rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/50 p-3">
-                <PostContent
-                  content={fullContent.slice(0, 240) + "..."}
-                  className="prose-sm max-w-none text-left text-[var(--kp-text-2)] [&_table]:text-xs"
-                />
-                <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[var(--kp-bg-alt)] to-transparent" />
-              </div>
-            ) : (
-              /* 展开完整文本 */
-              <div className="max-h-80 overflow-y-auto rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)] p-3 text-[12px] shadow-inner">
-                <PostContent
-                  content={fullContent}
-                  className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
-                />
-              </div>
+          <div className="flex items-center gap-2">
+            {content !== initialContent && (
+              <button
+                type="button"
+                onClick={() => handleContentChange(initialContent)}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:underline transition"
+                title="恢复为工具原始返回结果"
+              >
+                <RotateCcw className="h-3 w-3" />
+                <span>重置为默认</span>
+              </button>
             )}
-
-            {/* 展开/收起切换按钮 */}
             <button
               type="button"
-              onClick={() => setOpen((v) => !v)}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] py-1.5 text-[11px] font-semibold text-[var(--kp-brand-deep)] shadow-2xs transition hover:border-[var(--kp-brand)]/30 hover:bg-[var(--kp-brand-soft)]/40"
-              data-testid="async-tool-result-toggle"
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1 text-[11px] text-[var(--kp-text-3)] transition hover:text-[var(--kp-text-1)]"
+              title="复制完整投递内容"
             >
-              {open ? (
-                <>
-                  <span>收起完整返回结果</span>
-                  <ChevronUp className="h-3.5 w-3.5" />
-                </>
-              ) : (
-                <>
-                  <span>展开完整返回结果 ({totalChars > 1000 ? `${(totalChars / 1000).toFixed(1)}k` : totalChars} 字)</span>
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </>
-              )}
+              {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+              <span>{copied ? "已复制" : "复制"}</span>
             </button>
           </div>
-        ) : (
-          /* 短文本直接展示 */
-          <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/60 p-3">
-            <PostContent
-              content={fullContent}
-              className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
+        </div>
+
+        {/* 1. 源码模式（直接在代码框内编辑） */}
+        {viewMode === "source" ? (
+          <div className="space-y-1.5 rounded-xl border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs text-zinc-200 shadow-inner">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-1.5 text-[10px] text-zinc-400">
+              <span className="font-semibold text-zinc-300">RAW SOURCE CODE (EDITABLE)</span>
+              <span>{content.length} CHARS</span>
+            </div>
+            <textarea
+              value={content}
+              onChange={(e) => handleContentChange(e.target.value)}
+              rows={Math.min(18, Math.max(6, content.split("\n").length + 1))}
+              className="w-full resize-y border-0 bg-transparent p-0 font-mono text-[11px] leading-relaxed text-zinc-100 shadow-none focus:outline-none focus:ring-0 selection:bg-zinc-700 selection:text-white"
+              placeholder="输入或修改源码正文..."
             />
           </div>
+        ) : (
+          /* 2. 渲染模式 (Rendered Markdown) */
+          isLong ? (
+            <div className="space-y-2">
+              {!open ? (
+                /* 长文本默认摘要折叠态 */
+                <div className="relative rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/50 p-3">
+                  <PostContent
+                    content={content.slice(0, 240) + "..."}
+                    className="prose-sm max-w-none text-left text-[var(--kp-text-2)] [&_table]:text-xs"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[var(--kp-bg-alt)] to-transparent" />
+                </div>
+              ) : (
+                /* 展开完整文本 */
+                <div className="max-h-80 overflow-y-auto rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)] p-3 text-[12px] shadow-inner">
+                  <PostContent
+                    content={content}
+                    className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
+                  />
+                </div>
+              )}
+
+              {/* 展开/收起切换按钮 */}
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg)] py-1.5 text-[11px] font-semibold text-[var(--kp-brand-deep)] shadow-2xs transition hover:border-[var(--kp-brand)]/30 hover:bg-[var(--kp-brand-soft)]/40"
+                data-testid="async-tool-result-toggle"
+              >
+                {open ? (
+                  <>
+                    <span>收起完整返回结果</span>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </>
+                ) : (
+                  <>
+                    <span>展开完整返回结果 ({totalChars > 1000 ? `${(totalChars / 1000).toFixed(1)}k` : totalChars} 字)</span>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            /* 短文本直接展示 */
+            <div className="rounded-xl border border-[var(--kp-divider-light)] bg-[var(--kp-bg-mute)]/60 p-3">
+              <PostContent
+                content={content}
+                className="prose-sm max-w-none text-left text-[var(--kp-text-1)] [&_table]:text-xs [&_th]:px-2 [&_td]:px-2"
+              />
+            </div>
+          )
         )}
       </div>
     </div>
