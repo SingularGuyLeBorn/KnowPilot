@@ -34,7 +34,7 @@ const HTTP_URL = (process.env.ONEBOT_HTTP_URL || "http://127.0.0.1:3001").trim()
 const QQ_EXE = (process.env.ONEBOT_QQ_EXE || "D:\\Program Files\\Tencent\\QQNT\\QQ.exe").trim();
 const KILL_ON_MISMATCH = (process.env.ONEBOT_QQ_KILL_ON_MISMATCH || "false").trim().toLowerCase() !== "false";
 const WEBHOOK_URL = (process.env.ONEBOT_WEBHOOK_URL || "http://localhost:3010/api/webhooks/onebot").trim();
-const QQ_MULTI_OPEN = (process.env.ONEBOT_QQ_MULTI_OPEN || "true").trim().toLowerCase() !== "false";
+const QQ_MULTI_OPEN = (process.env.ONEBOT_QQ_MULTI_OPEN || "false").trim().toLowerCase() !== "false";
 const QQ_AUTO_OPEN = (process.env.ONEBOT_QQ_AUTO_OPEN || "true").trim().toLowerCase() !== "false";
 const QQ_LOGIN_TIMEOUT_MS = Math.max(30000, parseInt(process.env.ONEBOT_QQ_LOGIN_TIMEOUT_MS || "120000", 10));
 
