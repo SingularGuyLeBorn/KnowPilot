@@ -6,6 +6,7 @@ import {
   Check,
   FileText,
   Flag,
+  Headphones,
   Loader2,
   Mic,
   Search,
@@ -201,7 +202,7 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   // 听写模式（点 Mic）：webkitSpeechRecognition 追加到输入框，不自动发送
   const voiceBaseRef = useRef("");
-  const [voiceChatOn] = useState(false);
+  const [voiceChatOn, setVoiceChatOn] = useState(false);
   const { supported: sttSupported, listening, error: sttError, start: sttStart, stop: sttStop } =
     useSpeechRecognition(
       { lang: "zh-CN", interimResults: true, continuous: false, keepAlive: false },
@@ -1109,6 +1110,24 @@ export const ChatInputArea = memo(function ChatInputArea({
               }}
             />
             {sttSupported && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setVoiceChatOn((v) => !v)}
+                data-testid="chat-voice-conversation"
+                className={cn(
+                  "inline-flex items-center justify-center rounded-lg p-1.5 transition disabled:opacity-50",
+                  voiceChatOn
+                    ? "bg-[var(--kp-brand)]/15 text-[var(--kp-brand)] hover:bg-[var(--kp-brand)]/25"
+                    : "text-[var(--kp-text-3)] hover:bg-[var(--kp-bg-mute)] hover:text-[var(--kp-brand-deep)]",
+                )}
+                title={voiceChatOn ? "语音对话开启中：你说完我答，答完我念" : "开启语音对话（你说完自动发送，我答完自动朗读）"}
+                aria-label={voiceChatOn ? "关闭语音对话" : "开启语音对话"}
+              >
+                <Headphones className={cn("h-4 w-4", voiceChatOn && "animate-pulse")} />
+              </button>
+            )}
+            {sttSupported && !voiceChatOn && (
               <button
                 type="button"
                 disabled={disabled}
