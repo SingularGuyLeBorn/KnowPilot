@@ -25,6 +25,7 @@ const schemaCache = new Map<string, Array<{ type: "function"; function: { name: 
 const circuitBreakers = new Map<string, CircuitBreaker>();
 
 const MCP_CONNECT_TIMEOUT_MS = 12_000;
+const MCP_CALL_TIMEOUT_MS = 60_000;
 
 function getMcpCircuitBreaker(serverName: string): CircuitBreaker {
   let breaker = circuitBreakers.get(serverName);
@@ -192,7 +193,12 @@ async function callToolOnce(
   reconnect: boolean,
 ): Promise<unknown> {
   const client = await getOrConnectClient(server, reconnect);
-  return client.callTool({ name: toolName, arguments: args });
+  // 工具调用必须有顶层层超时，防止 MCP server 僵死导致请求永久挂起、占着池槽不释放
+  return withTimeout(
+    client.callTool({ name: toolName, arguments: args }),
+    MCP_CALL_TIMEOUT_MS,
+    `MCP ${server.name}.${toolName}`,
+  );
 }
 
 export async function executeMcpTool(

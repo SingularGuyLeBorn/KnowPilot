@@ -199,12 +199,15 @@ const sessionAutoConsumeChains = new Map<string, Promise<void>>();
 /**
  * per-session 串行链：同会话的自动续跑（异步投递 / superior 队列 drain）全部串行。
  * 返回链 promise（含本次 work），供 waitForRun 等调用方等待「该次入队工作完成」。
+ * @internal 测试用
  */
-function enqueueSessionAutoConsume(sessionId: string, work: () => Promise<void>): Promise<void> {
+export function enqueueSessionAutoConsume(sessionId: string, work: () => Promise<void>): Promise<void> {
   const prev = sessionAutoConsumeChains.get(sessionId) ?? Promise.resolve();
   // work 同挂 then 双分支 = 失败隔离：前序环节 reject 也必须继续跑本次，
   // 否则一条坏消息会毒死整条会话链（同会话后续投递全部永久阻塞）。
-  const next = prev.then(work, work).finally(() => {
+  // Promise.resolve().then(work) 兜住 work 同步抛错，避免未处理 rejection。
+  const safeWork = () => Promise.resolve().then(work);
+  const next = prev.then(safeWork, safeWork).finally(() => {
     // identity 比对后才删：本次执行期间新 work 可能已挂链尾（Map 里已是新链头），误删会砍断新链 → 并发双跑
     if (sessionAutoConsumeChains.get(sessionId) === next) {
       sessionAutoConsumeChains.delete(sessionId);
@@ -527,7 +530,9 @@ export async function autoConsumeAsyncDelivery(options: {
     }
   };
 
-  enqueueSessionAutoConsume(sessionId, consumeWork);
+  enqueueSessionAutoConsume(sessionId, consumeWork).catch((err) => {
+    console.warn(`[asyncJobManager] autoConsume chain 未处理异常 session=${sessionId} job=${jobId}:`, err);
+  });
 
   return "started";
 }
@@ -1732,199 +1737,234 @@ function buildAsyncExecute(
     },
     emit?: (event: AgentStreamEvent) => void,
   ) => {
-    const latestBefore = await services.task.getById(jobId);
-    if (parseAsyncOutput(latestBefore?.output).executionId !== executionId) {
-      return;
-    }
-    const resultText = loop.content || "(无文本输出)";
-    const tokenUsage = loop.tokenUsage;
-    await appendAsyncJobLog(jobId, { level: "info", message: `任务完成，共 ${loop.roundsUsed} 轮` }, services);
-    // 为什么结果要落一条 assistant 消息：子会话消息链是 ReAct 上下文的事实源
-    //（agentRuntime/agentStream 均按 sessionId 从消息表扁平重建多轮上下文），只写 Task.output 会断链；同时供子会话页可视化。
-    if (subagentSessionId) {
-      try {
-        await services.message.create({
-          sessionId: subagentSessionId,
-          role: "assistant",
-          content: resultText,
-          toolCalls: loop.toolCalls as any,
-          tokenUsage: tokenUsage ?? undefined,
-          source: "sub",
+    try {
+      const latestBefore = await services.task.getById(jobId);
+      if (parseAsyncOutput(latestBefore?.output).executionId !== executionId) {
+        return;
+      }
+      const resultText = loop.content || "(无文本输出)";
+      const tokenUsage = loop.tokenUsage;
+      await appendAsyncJobLog(jobId, { level: "info", message: `任务完成，共 ${loop.roundsUsed} 轮` }, services);
+      // 为什么结果要落一条 assistant 消息：子会话消息链是 ReAct 上下文的事实源
+      //（agentRuntime/agentStream 均按 sessionId 从消息表扁平重建多轮上下文），只写 Task.output 会断链；同时供子会话页可视化。
+      if (subagentSessionId) {
+        try {
+          await services.message.create({
+            sessionId: subagentSessionId,
+            role: "assistant",
+            content: resultText,
+            toolCalls: loop.toolCalls as any,
+            tokenUsage: tokenUsage ?? undefined,
+            source: "sub",
+          });
+        } catch (msgErr) {
+          console.warn(`[asyncJobManager] 保存子 Agent 结果消息失败:`, msgErr);
+        }
+      }
+      const existingOutput = parseAsyncOutput((await services.task.getById(jobId))?.output);
+      await services.task.update({
+        id: jobId,
+        status: "success",
+        finishedAt: new Date(),
+        output: {
+          asyncResult: resultText,
+          tokenUsage,
+          logs: existingOutput.logs,
+        } satisfies AsyncTaskOutput,
+      } as any);
+      await syncSubStatus("completed");
+      if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
+        await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch((err) => {
+          console.warn(`[asyncJobManager] 标记子 Agent dormant 失败 agent=${agentSnapshot.id}:`, err instanceof Error ? err.message : err);
         });
-      } catch (msgErr) {
-        console.warn(`[asyncJobManager] 保存子 Agent 结果消息失败:`, msgErr);
+      }
+      await broadcastShare("success", { asyncResult: resultText, tokenUsage });
+      const parentInput = parseAsyncInput((await services.task.getById(jobId))?.input);
+      // v7 唯一投递闸：deliverToQueue=false（同步等待）时结果唯一通道是 tool return，禁止 notify 进队列二次投喂
+      if (parentInput?.sessionId && parentInput.deliverToQueue !== false) {
+        await notifyAsyncDelivery(parentInput.sessionId, jobId, "done", parentInput.taskLabel, services, config);
+      }
+      emit?.({
+        type: "done",
+        sessionId: subagentSessionId!,
+        agentId: agentSnapshot.id,
+        content: resultText,
+        toolCalls: loop.toolCalls,
+        model: loop.model,
+        provider: loop.provider,
+        roundsUsed: loop.roundsUsed,
+        tokenUsage,
+      });
+    } catch (err) {
+      // 成功收尾任何步骤失败都不得上抛——否则 Task 终态落不了库，前端右栏永久 running
+      console.warn(`[asyncJobManager] finalizeSuccess 失败 job=${jobId}:`, err);
+      try {
+        await services.task.update({
+          id: jobId,
+          status: "failed",
+          finishedAt: new Date(),
+          output: { error: `收尾失败: ${err instanceof Error ? err.message : String(err)}` } satisfies AsyncTaskOutput,
+        } as any);
+      } catch (lastErr) {
+        console.error(`[asyncJobManager] finalizeSuccess 最终兜底也失败 job=${jobId}:`, lastErr);
       }
     }
-    const existingOutput = parseAsyncOutput((await services.task.getById(jobId))?.output);
-    await services.task.update({
-      id: jobId,
-      status: "success",
-      finishedAt: new Date(),
-      output: {
-        asyncResult: resultText,
-        tokenUsage,
-        logs: existingOutput.logs,
-      } satisfies AsyncTaskOutput,
-    } as any);
-    await syncSubStatus("completed");
-    if (agentSnapshot.tier === "sub" && agentSnapshot.parentId) {
-      await services.agent.update({ id: agentSnapshot.id, status: "dormant" } as any).catch((err) => {
-        console.warn(`[asyncJobManager] 标记子 Agent dormant 失败 agent=${agentSnapshot.id}:`, err instanceof Error ? err.message : err);
-      });
-    }
-    await broadcastShare("success", { asyncResult: resultText, tokenUsage });
-    const parentInput = parseAsyncInput((await services.task.getById(jobId))?.input);
-    // v7 唯一投递闸：deliverToQueue=false（同步等待）时结果唯一通道是 tool return，禁止 notify 进队列二次投喂
-    if (parentInput?.sessionId && parentInput.deliverToQueue !== false) {
-      await notifyAsyncDelivery(parentInput.sessionId, jobId, "done", parentInput.taskLabel, services, config);
-    }
-    emit?.({
-      type: "done",
-      sessionId: subagentSessionId!,
-      agentId: agentSnapshot.id,
-      content: resultText,
-      toolCalls: loop.toolCalls,
-      model: loop.model,
-      provider: loop.provider,
-      roundsUsed: loop.roundsUsed,
-      tokenUsage,
-    });
   };
 
   const finalizeFailure = async (err: unknown, emit?: (event: AgentStreamEvent) => void) => {
-    // resume 已开新执行：旧轮收尾不得把新状态打回 interrupted/failed
-    const latestBefore = await services.task.getById(jobId);
-    if (parseAsyncOutput(latestBefore?.output).executionId !== executionId) {
-      return;
-    }
-    const isAbort = isAbortLikeError(err);
-    const abortCode = resolveAbortReasonCode(undefined, err);
-    const isTimeout = abortCode === "timeout" || (err instanceof Error && err.message.includes("超时"));
-    // 主动取消/停会话 → interrupted；超时与其它错误 → failed（与取消语义区分）
-    const isInterrupt =
-      isAbort && (abortCode === "cancel" || abortCode === "session_stop" || abortCode === "user");
-    const terminalStatus = isInterrupt ? "interrupted" : "failed";
-    const errorText = isAbort
-      ? messageFromAbortSignal(undefined, err)
-      : isTimeout
-        ? "异步任务执行超时"
-        : err instanceof Error
-          ? err.message
-          : String(err);
-    await appendAsyncJobLog(jobId, { level: "error", message: errorText }, services);
-    const existingOutputFailed = parseAsyncOutput((await services.task.getById(jobId))?.output);
-    // 若 cancelAsyncJob 已先写 interrupted，禁止再覆写为 failed
-    const written = await prisma.task.updateMany({
-      where: { id: jobId, status: { in: ["running", "queued"] } },
-      data: {
-        status: terminalStatus,
-        finishedAt: new Date(),
-        ...(isInterrupt
-          ? { delivered: true, deliveredAt: new Date() }
-          : {}),
-        output: {
-          error: errorText,
-          logs: existingOutputFailed.logs,
-          ...(isInterrupt ? { deliveryExempt: true } : {}),
-        } satisfies AsyncTaskOutput as object,
-      },
-    });
-    if (written.count === 0 && isInterrupt) {
-      // 已是 interrupted：仍推一次，保证开着的 UI 对齐
-      const row = await services.task.getById(jobId);
-      if (row?.sessionId) await pushAsyncJobInterrupted(row.sessionId, jobId, config);
-    } else if (written.count > 0 && isInterrupt) {
-      const row = await services.task.getById(jobId);
-      if (row?.sessionId) await pushAsyncJobInterrupted(row.sessionId, jobId, config);
-    }
-    await syncSubStatus(isInterrupt || (isAbort && !isTimeout) ? "paused" : "failed");
-    if (subagentSessionId) {
+    try {
+      // resume 已开新执行：旧轮收尾不得把新状态打回 interrupted/failed
+      const latestBefore = await services.task.getById(jobId);
+      if (parseAsyncOutput(latestBefore?.output).executionId !== executionId) {
+        return;
+      }
+      const isAbort = isAbortLikeError(err);
+      const abortCode = resolveAbortReasonCode(undefined, err);
+      const isTimeout = abortCode === "timeout" || (err instanceof Error && err.message.includes("超时"));
+      // 主动取消/停会话 → interrupted；超时与其它错误 → failed（与取消语义区分）
+      const isInterrupt =
+        isAbort && (abortCode === "cancel" || abortCode === "session_stop" || abortCode === "user");
+      const terminalStatus = isInterrupt ? "interrupted" : "failed";
+      const errorText = isAbort
+        ? messageFromAbortSignal(undefined, err)
+        : isTimeout
+          ? "异步任务执行超时"
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      await appendAsyncJobLog(jobId, { level: "error", message: errorText }, services);
+      const existingOutputFailed = parseAsyncOutput((await services.task.getById(jobId))?.output);
+      // 若 cancelAsyncJob 已先写 interrupted，禁止再覆写为 failed
+      const written = await prisma.task.updateMany({
+        where: { id: jobId, status: { in: ["running", "queued"] } },
+        data: {
+          status: terminalStatus,
+          finishedAt: new Date(),
+          ...(isInterrupt
+            ? { delivered: true, deliveredAt: new Date() }
+            : {}),
+          output: {
+            error: errorText,
+            logs: existingOutputFailed.logs,
+            ...(isInterrupt ? { deliveryExempt: true } : {}),
+          } satisfies AsyncTaskOutput as object,
+        },
+      });
+      if (written.count === 0 && isInterrupt) {
+        // 已是 interrupted：仍推一次，保证开着的 UI 对齐
+        const row = await services.task.getById(jobId);
+        if (row?.sessionId) await pushAsyncJobInterrupted(row.sessionId, jobId, config);
+      } else if (written.count > 0 && isInterrupt) {
+        const row = await services.task.getById(jobId);
+        if (row?.sessionId) await pushAsyncJobInterrupted(row.sessionId, jobId, config);
+      }
+      await syncSubStatus(isInterrupt || (isAbort && !isTimeout) ? "paused" : "failed");
+      if (subagentSessionId) {
+        try {
+          await services.message.create({
+            sessionId: subagentSessionId,
+            role: "assistant",
+            content: isInterrupt ? `任务已中断：${errorText}` : `任务未能完成：${errorText}`,
+            source: "sub",
+          });
+        } catch (msgErr) {
+          console.warn(`[asyncJobManager] 保存子 Agent 失败消息失败:`, msgErr);
+        }
+      }
+      await broadcastShare("failed", { error: errorText });
+      const parentInputFailed = parseAsyncInput((await services.task.getById(jobId))?.input);
+      // 中断/sleep/纯工具失败：不进对话气泡（右栏 Task 仍可见）
+      const skipFailedBubble =
+        isInterrupt ||
+        parentInputFailed?.sourceType === "sleep" ||
+        parentInputFailed?.sourceType === "async_task_tool";
+      if (
+        parentInputFailed?.sessionId &&
+        parentInputFailed.deliverToQueue !== false &&
+        !skipFailedBubble
+      ) {
+        await notifyAsyncDelivery(parentInputFailed.sessionId, jobId, "failed", parentInputFailed.taskLabel, services, config);
+      }
+      emit?.({ type: "error", message: errorText, sessionId: subagentSessionId });
+    } catch (outerErr) {
+      // 失败收尾本身绝不允许上抛——否则 Task 终态落不了库，前端右栏永久 running
+      console.error(`[asyncJobManager] finalizeFailure 失败 job=${jobId}:`, outerErr);
       try {
-        await services.message.create({
-          sessionId: subagentSessionId,
-          role: "assistant",
-          content: isInterrupt ? `任务已中断：${errorText}` : `任务未能完成：${errorText}`,
-          source: "sub",
-        });
-      } catch (msgErr) {
-        console.warn(`[asyncJobManager] 保存子 Agent 失败消息失败:`, msgErr);
+        await services.task.update({
+          id: jobId,
+          status: "failed",
+          finishedAt: new Date(),
+          output: { error: `收尾失败: ${outerErr instanceof Error ? outerErr.message : String(outerErr)}` } satisfies AsyncTaskOutput,
+        } as any);
+      } catch (lastErr) {
+        console.error(`[asyncJobManager] finalizeFailure 最终兜底也失败 job=${jobId}:`, lastErr);
       }
     }
-    await broadcastShare("failed", { error: errorText });
-    const parentInputFailed = parseAsyncInput((await services.task.getById(jobId))?.input);
-    // 中断/sleep/纯工具失败：不进对话气泡（右栏 Task 仍可见）
-    const skipFailedBubble =
-      isInterrupt ||
-      parentInputFailed?.sourceType === "sleep" ||
-      parentInputFailed?.sourceType === "async_task_tool";
-    if (
-      parentInputFailed?.sessionId &&
-      parentInputFailed.deliverToQueue !== false &&
-      !skipFailedBubble
-    ) {
-      await notifyAsyncDelivery(parentInputFailed.sessionId, jobId, "failed", parentInputFailed.taskLabel, services, config);
-    }
-    emit?.({ type: "error", message: errorText, sessionId: subagentSessionId });
   };
 
   const runToolOnly = async (signal: AbortSignal) => {
     if (!toolCall) throw new Error("mode=tool 但未提供 toolCall");
-    const parsed = parseAgentTools(workerTools);
-    const registry = new Map<string, ToolRegistryEntry>();
-    await buildAgentToolSchemas(services, parsed, registry);
-    const toolCtx = createAgentToolContext(config, services, invokeTrpc, parsed, undefined, {
-      // 纯工具异步复用父会话上下文；缺 sessionId 会导致 sleep(async=true) 等工具直接抛错
-      sessionId: subagentSessionId ?? parentSessionId,
-      agentSnapshot,
-      runOrigin: "parent",
-    });
-    const call: LlmToolCall = {
-      id: `tool-${jobId.slice(0, 8)}`,
-      type: "function",
-      function: { name: toolCall.tool, arguments: JSON.stringify(toolCall.args ?? {}) },
-    };
-    const results = await executeToolCallsBatch([call], toolCtx, registry, parsed, signal);
-    const result = results[0]?.result;
-    const latestTool = await services.task.getById(jobId);
-    if (parseAsyncOutput(latestTool?.output).executionId !== executionId) {
-      return;
-    }
-    // 禁止裸 JSON.stringify：投递契约收在 asyncToolDeliveryFormat（LLM 可行动 + UI structured）
-    const { formatAsyncToolDelivery } = await import("./asyncToolDeliveryFormat.js");
-    const parentInputForLabel = parseAsyncInput(latestTool?.input);
-    const formatted = formatAsyncToolDelivery(toolCall.tool, result, {
-      taskLabel: parentInputForLabel?.taskLabel ?? task,
-    });
-    const resultText = formatted.textForLlm;
-    if (subagentSessionId) {
-      await services.message.create({
-        sessionId: subagentSessionId,
-        role: "assistant",
-        content: resultText,
-        source: "sub",
-      }).catch((err: unknown) => {
-        console.warn(
-          "[asyncJob] 纯工具结果写入子会话失败:",
-          err instanceof Error ? err.message : err,
-        );
+    try {
+      const parsed = parseAgentTools(workerTools);
+      const registry = new Map<string, ToolRegistryEntry>();
+      await buildAgentToolSchemas(services, parsed, registry);
+      const toolCtx = createAgentToolContext(config, services, invokeTrpc, parsed, undefined, {
+        // 纯工具异步复用父会话上下文；缺 sessionId 会导致 sleep(async=true) 等工具直接抛错
+        sessionId: subagentSessionId ?? parentSessionId,
+        agentSnapshot,
+        runOrigin: "parent",
       });
-    }
-    await services.task.update({
-      id: jobId,
-      status: "success",
-      finishedAt: new Date(),
-      output: {
-        asyncResult: resultText,
-        structured: formatted.structured,
-        executionId,
-      } satisfies AsyncTaskOutput,
-    } as any);
-    await syncSubStatus("completed");
-    await broadcastShare("success", { asyncResult: resultText, structured: formatted.structured });
-    const parentInputTool = parseAsyncInput((await services.task.getById(jobId))?.input);
-    // 同 finalizeSuccess 的 v7 投递闸（纯工具路径）
-    if (parentInputTool?.sessionId && parentInputTool.deliverToQueue !== false) {
-      await notifyAsyncDelivery(parentInputTool.sessionId, jobId, "done", parentInputTool.taskLabel, services, config);
+      const call: LlmToolCall = {
+        id: `tool-${jobId.slice(0, 8)}`,
+        type: "function",
+        function: { name: toolCall.tool, arguments: JSON.stringify(toolCall.args ?? {}) },
+      };
+      const results = await executeToolCallsBatch([call], toolCtx, registry, parsed, signal);
+      const result = results[0]?.result;
+      const latestTool = await services.task.getById(jobId);
+      if (parseAsyncOutput(latestTool?.output).executionId !== executionId) {
+        return;
+      }
+      // 禁止裸 JSON.stringify：投递契约收在 asyncToolDeliveryFormat（LLM 可行动 + UI structured）
+      const { formatAsyncToolDelivery } = await import("./asyncToolDeliveryFormat.js");
+      const parentInputForLabel = parseAsyncInput(latestTool?.input);
+      const formatted = formatAsyncToolDelivery(toolCall.tool, result, {
+        taskLabel: parentInputForLabel?.taskLabel ?? task,
+      });
+      const resultText = formatted.textForLlm;
+      if (subagentSessionId) {
+        await services.message.create({
+          sessionId: subagentSessionId,
+          role: "assistant",
+          content: resultText,
+          source: "sub",
+        }).catch((err: unknown) => {
+          console.warn(
+            "[asyncJob] 纯工具结果写入子会话失败:",
+            err instanceof Error ? err.message : err,
+          );
+        });
+      }
+      await services.task.update({
+        id: jobId,
+        status: "success",
+        finishedAt: new Date(),
+        output: {
+          asyncResult: resultText,
+          structured: formatted.structured,
+          executionId,
+        } satisfies AsyncTaskOutput,
+      } as any);
+      await syncSubStatus("completed");
+      await broadcastShare("success", { asyncResult: resultText, structured: formatted.structured });
+      const parentInputTool = parseAsyncInput((await services.task.getById(jobId))?.input);
+      // 同 finalizeSuccess 的 v7 投递闸（纯工具路径）
+      if (parentInputTool?.sessionId && parentInputTool.deliverToQueue !== false) {
+        await notifyAsyncDelivery(parentInputTool.sessionId, jobId, "done", parentInputTool.taskLabel, services, config);
+      }
+    } catch (err) {
+      // 纯工具路径任何步骤失败都必须走到 finalizeFailure，禁止未处理 rejection 或永久 running
+      await finalizeFailure(err);
     }
   };
 

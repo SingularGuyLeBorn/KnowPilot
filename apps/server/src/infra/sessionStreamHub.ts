@@ -121,6 +121,7 @@ export class SessionStreamHub {
   private persistQueue: PersistItem[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private flushBackoffMs = 500;
   /** 独立于 Agent 运行流的外部事件订阅者（如 async_delivery） */
   private externalSubs = new Map<string, Set<(event: AgentStreamEvent) => void>>();
   /**
@@ -434,7 +435,21 @@ export class SessionStreamHub {
             this.runs.delete(sessionId);
           }, this.config.eventTtlMs);
         }
-      })();
+      })().catch(async (err: unknown) => {
+        // runner 或 finally 中任何未处理抛错都必须落在这里，否则 state.promise 会变成 unhandled rejection
+        console.error(`[SessionStreamHub] 运行 promise 未捕获异常 session=${sessionId}:`, err);
+        try {
+          await settleSessionDbStatus(sessionId, "error");
+        } catch {
+          /* ignore */
+        }
+        try {
+          await releaseSessionRunning(sessionId);
+        } catch {
+          /* ignore */
+        }
+        this.startingSessions.delete(sessionId);
+      });
     } catch (err) {
       await releaseSessionRunning(sessionId);
       this.runs.delete(sessionId);
@@ -929,6 +944,8 @@ export class SessionStreamHub {
           payload: item.payload as unknown as import("@prisma/client").Prisma.InputJsonValue,
         })),
       });
+      // 成功：重置退避
+      this.flushBackoffMs = 500;
     } catch (err) {
       console.warn(`[SessionStreamHub] 持久化 ${batch.length} 条事件失败:`, err);
       // 失败重排：按 sessionId + seq 排序落回队列，保持原有顺序
@@ -936,7 +953,9 @@ export class SessionStreamHub {
         if (a.sessionId !== b.sessionId) return a.sessionId.localeCompare(b.sessionId);
         return a.seq - b.seq;
       });
-      // 退避：失败后延迟 500ms 再 flush，避免立即重排又立即 flush 在锁竞争下雪崩。
+      // 指数退避：500ms → 1s → 2s → … → 上限 30s，避免锁竞争下雪崩
+      const backoff = this.flushBackoffMs;
+      this.flushBackoffMs = Math.min(this.flushBackoffMs * 2, 30_000);
       if (!this.flushTimer) {
         this.flushTimer = setTimeout(
           () =>
@@ -946,7 +965,7 @@ export class SessionStreamHub {
                 err instanceof Error ? err.message : err,
               );
             }),
-          500,
+          backoff,
         );
       }
     }

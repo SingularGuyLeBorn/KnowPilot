@@ -114,7 +114,17 @@ export async function executeNativeTool(
   const artifact = stack ? await stack.capture(cmd, args, ctx) : undefined;
   const started = Date.now();
   const raw = await cmd.execute(args, ctx);
-  if (stack && artifact) stack.commit(cmd, args, raw, artifact);
+  if (stack && artifact) {
+    try {
+      await stack.commit(cmd, args, raw, artifact);
+    } catch (commitErr) {
+      console.warn(
+        `[nativeTools] rollback commit 失败 tool=${name}:`,
+        commitErr instanceof Error ? commitErr.message : String(commitErr),
+      );
+      // commit 失败不影响工具结果返回给 LLM，但日志告警供排查
+    }
+  }
   if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.elapsedMs !== "number") {

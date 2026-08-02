@@ -1437,36 +1437,59 @@ export function handleAgentChatStream(
       }
     };
 
-    const { unsubscribe, replayHadTerminal } = await hub.subscribe(
-      runSessionId,
-      afterEventId,
-      async (buffered: BufferedEvent) => {
-        const event = buffered.event;
-        // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
-        if (event.type === "session_start" && event.sessionId && !requestSessionId) {
-          if (runSessionId !== event.sessionId) {
-            await hub.migrateSessionId(runSessionId, event.sessionId);
-            runSessionId = event.sessionId;
+    let unsubscribe = () => {};
+    let replayHadTerminal = false;
+    try {
+      const sub = await hub.subscribe(
+        runSessionId,
+        afterEventId,
+        async (buffered: BufferedEvent) => {
+          try {
+            const event = buffered.event;
+            // POST 占位 sessionId 迁移到真实 sessionId，确保刷新/切 tab 后的 GET 续传能命中同一运行。
+            if (event.type === "session_start" && event.sessionId && !requestSessionId) {
+              if (runSessionId !== event.sessionId) {
+                await hub.migrateSessionId(runSessionId, event.sessionId);
+                runSessionId = event.sessionId;
+              }
+            }
+            if (event.type === "token") {
+              tokenBuffer += event.delta;
+              tokenFlushSeq = buffered.id;
+              if (tokenBuffer.length >= 512) {
+                flushTokens();
+              } else if (!tokenFlushTimer) {
+                tokenFlushTimer = setTimeout(flushTokens, 16);
+              }
+            } else {
+              flushTokens();
+              writeSse(res, event, buffered.id);
+            }
+            if (event.type === "done" || event.type === "error") {
+              flushTokens();
+              setTimeout(end, 0);
+            }
+          } catch (callbackErr) {
+            // 单个事件处理失败不得毒化整个 SSE 连接；冲刷已缓冲内容并关闭连接
+            console.error(`${formatTrace()}[agentStream] SSE 事件处理失败 session=${runSessionId}:`, callbackErr);
+            try {
+              flushTokens();
+            } catch {
+              /* ignore */
+            }
+            setTimeout(end, 0);
           }
-        }
-        if (event.type === "token") {
-          tokenBuffer += event.delta;
-          tokenFlushSeq = buffered.id;
-          if (tokenBuffer.length >= 512) {
-            flushTokens();
-          } else if (!tokenFlushTimer) {
-            tokenFlushTimer = setTimeout(flushTokens, 16);
-          }
-        } else {
-          flushTokens();
-          writeSse(res, event, buffered.id);
-        }
-        if (event.type === "done" || event.type === "error") {
-          flushTokens();
-          setTimeout(end, 0);
-        }
-      },
-    );
+        },
+      );
+      unsubscribe = sub.unsubscribe;
+      replayHadTerminal = sub.replayHadTerminal;
+    } catch (subscribeErr) {
+      console.error(`${formatTrace()}[agentStream] 订阅会话 ${runSessionId} 失败:`, subscribeErr);
+      flushTokens();
+      writeSse(res, { type: "error", message: "订阅流失败，请刷新重试。" });
+      end();
+      return;
+    }
 
     // 心跳：防止浏览器/反代因长时间无数据关闭空闲连接
     const heartbeat = setInterval(() => {
@@ -1486,17 +1509,21 @@ export function handleAgentChatStream(
     // 若重放已含真实 done/error，禁止再补发 synthetic done（避免双发）。
     if (!hub.isRunning(runSessionId) && ended === false && !replayHadTerminal) {
       setTimeout(() => {
-        flushTokens();
-        writeSse(res, {
-          type: "done",
-          sessionId: runSessionId,
-          agentId: "",
-          content: "",
-          toolCalls: [],
-          model: "",
-          provider: "",
-          roundsUsed: 0,
-        } as AgentStreamEvent);
+        try {
+          flushTokens();
+          writeSse(res, {
+            type: "done",
+            sessionId: runSessionId,
+            agentId: "",
+            content: "",
+            toolCalls: [],
+            model: "",
+            provider: "",
+            roundsUsed: 0,
+          } as AgentStreamEvent);
+        } catch {
+          /* ignore */
+        }
         end();
       }, 0);
     }
