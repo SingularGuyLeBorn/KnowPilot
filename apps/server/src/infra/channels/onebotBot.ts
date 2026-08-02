@@ -213,10 +213,7 @@ export function loadOneBotConfigFromEnv(): OneBotConfig {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const enabled =
-    process.env.ONEBOT_ENABLED === "true" ||
-    Boolean(httpUrl) ||
-    Boolean(secret);
+  const enabled = process.env.ONEBOT_ENABLED !== "false";
 
   return {
     httpUrl: httpUrl || "http://127.0.0.1:3000",
