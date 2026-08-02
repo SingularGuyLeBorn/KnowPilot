@@ -61,6 +61,14 @@ export type OneBotConfig = {
 export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
   let state = "disconnected";
   let lastError: string | undefined;
+  const openMode = cfg.allowedUsers.includes("*");
+  if (openMode) {
+    console.log("[onebot] 白名单模式：允许所有用户（ONEBOT_ALLOWED_USERS=*）");
+  } else if (cfg.allowedUsers.length > 0) {
+    console.log(`[onebot] 白名单模式：仅允许 ${cfg.allowedUsers.length} 个 QQ 号`);
+  } else {
+    console.log("[onebot] 白名单模式：未配置白名单，拒绝所有用户");
+  }
   const replyCtx = new Map<
     string,
     { userId: string; groupId?: string; isGroup: boolean; msgId: string }
@@ -72,8 +80,10 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
     msgId: string;
     groupId?: string;
   }) => {
-    if (cfg.allowedUsers.length && !cfg.allowedUsers.includes(opts.userId)) {
-      console.warn(`[onebot] 拒绝非白名单用户 QQ: ${opts.userId}`);
+    const openMode = cfg.allowedUsers.includes("*");
+    const allowed = openMode || cfg.allowedUsers.includes(opts.userId);
+    if (!allowed) {
+      console.log(`[onebot] 忽略非白名单用户 QQ: ${opts.userId}`);
       return;
     }
     const text = opts.text.trim();

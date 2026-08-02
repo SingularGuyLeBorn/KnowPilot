@@ -89,6 +89,14 @@ export function createFeishuBotAdapter(cfg: FeishuBotConfig): ChannelAdapter & {
     | { ok: true; challenge?: string }
     | { ok: false; error: string; challenge?: string };
 } {
+  const openMode = cfg.allowedOpenIds.includes("*");
+  if (openMode) {
+    console.log("[feishu-bot] 白名单模式：允许所有 openid（FEISHU_BOT_ALLOWED_OPENIDS=*）");
+  } else if (cfg.allowedOpenIds.length > 0) {
+    console.log(`[feishu-bot] 白名单模式：仅允许 ${cfg.allowedOpenIds.length} 个 openid`);
+  } else {
+    console.log("[feishu-bot] 白名单模式：未配置白名单，拒绝所有用户");
+  }
   let state = "disconnected";
   let lastError: string | undefined;
   const replyCtx = new Map<string, ReplyCtx>();
@@ -106,8 +114,10 @@ export function createFeishuBotAdapter(cfg: FeishuBotConfig): ChannelAdapter & {
     messageId: string;
     chatType: string;
   }) => {
-    if (cfg.allowedOpenIds.length && !cfg.allowedOpenIds.includes(opts.openId)) {
-      console.warn(`[feishu-bot] 拒绝非白名单 ${opts.openId}`);
+    const openMode = cfg.allowedOpenIds.includes("*");
+    const allowed = openMode || cfg.allowedOpenIds.includes(opts.openId);
+    if (!allowed) {
+      console.log(`[feishu-bot] 忽略非白名单 ${opts.openId}`);
       return;
     }
     const text = opts.text.trim();
@@ -195,12 +205,9 @@ export function createFeishuBotAdapter(cfg: FeishuBotConfig): ChannelAdapter & {
     const mentions = message.mentions as Array<{ key?: string; name?: string }> | undefined;
     text = stripMentions(text, mentions);
 
-    // 群聊：要求被 @ 才响应（有 mentions 或原文含 @）
+    // 群聊：要求被 @ 才响应（无论是否配置白名单，避免在群里刷屏）
     if (chatType === "group" && (!mentions || mentions.length === 0)) {
-      // 若飞书未带 mentions，仍允许白名单用户的纯文本（私聊等价）
-      if (!cfg.allowedOpenIds.length) {
-        return { ok: false as const, error: "群聊未 @ 机器人，忽略" };
-      }
+      return { ok: false as const, error: "群聊未 @ 机器人，忽略" };
     }
 
     if (!openId || !chatId || !text) {

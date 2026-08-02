@@ -35,6 +35,14 @@ export function createQqOfficialBotAdapter(cfg: QqBotConfig): ChannelAdapter {
   let state = "disconnected";
   let lastError: string | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  const openMode = cfg.allowedOpenIds.includes("*");
+  if (openMode) {
+    console.log("[qq] 白名单模式：允许所有 openid（QQ_BOT_ALLOWED_OPENIDS=*）");
+  } else if (cfg.allowedOpenIds.length > 0) {
+    console.log(`[qq] 白名单模式：仅允许 ${cfg.allowedOpenIds.length} 个 openid`);
+  } else {
+    console.log("[qq] 白名单模式：未配置白名单，拒绝所有用户");
+  }
   const replyCtx = new Map<string, { openid: string; msgId: string; isGroup: boolean; groupOpenid?: string }>();
 
   const ensureToken = async (): Promise<string> => {
@@ -60,8 +68,10 @@ export function createQqOfficialBotAdapter(cfg: QqBotConfig): ChannelAdapter {
     msgId: string;
     groupOpenid?: string;
   }) => {
-    if (cfg.allowedOpenIds.length && !cfg.allowedOpenIds.includes(opts.openid)) {
-      console.warn(`[qq] 拒绝非白名单 ${opts.openid}`);
+    const openMode = cfg.allowedOpenIds.includes("*");
+    const allowed = openMode || cfg.allowedOpenIds.includes(opts.openid);
+    if (!allowed) {
+      console.log(`[qq] 忽略非白名单 ${opts.openid}`);
       return;
     }
     const text = opts.text.trim();

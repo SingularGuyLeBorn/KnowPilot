@@ -59,7 +59,7 @@ describe("feishuBot ingest", () => {
     );
   });
 
-  it("im.message.receive_v1 剥 @ 后入站", async () => {
+  it("im.message.receive_v1 剥 @ 后入站（白名单匹配）", async () => {
     const { handleIncomingMessage } = await import("../infra/messageGateway.js");
     const adapter = createFeishuBotAdapter({
       appId: "a",
@@ -67,7 +67,7 @@ describe("feishuBot ingest", () => {
       verificationToken: "tok",
       encryptKey: "",
       enabled: true,
-      allowedOpenIds: [],
+      allowedOpenIds: ["ou_user1"],
     });
     const r = adapter.ingestWebhookPayload({
       header: { event_type: "im.message.receive_v1", event_id: "ev1", token: "tok" },
@@ -94,7 +94,8 @@ describe("feishuBot ingest", () => {
     expect(msg.payload.text).not.toContain("@_user_1");
   });
 
-  it("群聊无 mention 且无白名单时忽略", () => {
+  it("未配置白名单时拒绝所有 p2p 入站", async () => {
+    const { handleIncomingMessage } = await import("../infra/messageGateway.js");
     const adapter = createFeishuBotAdapter({
       appId: "a",
       appSecret: "s",
@@ -102,6 +103,62 @@ describe("feishuBot ingest", () => {
       encryptKey: "",
       enabled: true,
       allowedOpenIds: [],
+    });
+    adapter.ingestWebhookPayload({
+      header: { event_type: "im.message.receive_v1", event_id: "ev2", token: "tok" },
+      event: {
+        sender: { sender_id: { open_id: "ou_user2" } },
+        message: {
+          message_id: "om_2",
+          chat_id: "oc_chat2",
+          chat_type: "p2p",
+          message_type: "text",
+          content: JSON.stringify({ text: "你好" }),
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(handleIncomingMessage).not.toHaveBeenCalled();
+  });
+
+  it("* 白名单允许任意 openid", async () => {
+    const { handleIncomingMessage } = await import("../infra/messageGateway.js");
+    const adapter = createFeishuBotAdapter({
+      appId: "a",
+      appSecret: "s",
+      verificationToken: "tok",
+      encryptKey: "",
+      enabled: true,
+      allowedOpenIds: ["*"],
+    });
+    adapter.ingestWebhookPayload({
+      header: { event_type: "im.message.receive_v1", event_id: "ev3", token: "tok" },
+      event: {
+        sender: { sender_id: { open_id: "ou_anyone" } },
+        message: {
+          message_id: "om_3",
+          chat_id: "oc_chat3",
+          chat_type: "p2p",
+          message_type: "text",
+          content: JSON.stringify({ text: "开放模式" }),
+        },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(handleIncomingMessage).toHaveBeenCalled();
+    });
+    const msg = (handleIncomingMessage as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(msg.payload.text).toBe("开放模式");
+  });
+
+  it("群聊无 mention 时忽略（无论是否配置白名单）", () => {
+    const adapter = createFeishuBotAdapter({
+      appId: "a",
+      appSecret: "s",
+      verificationToken: "tok",
+      encryptKey: "",
+      enabled: true,
+      allowedOpenIds: ["ou_x"],
     });
     const r = adapter.ingestWebhookPayload({
       header: { event_type: "im.message.receive_v1", token: "tok" },
