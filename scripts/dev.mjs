@@ -21,8 +21,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
  *  行为对齐 server 的 loadRootEnv：已存在的环境变量不覆盖。 */
 function loadRootEnv() {
   const envPath = path.join(root, ".env");
-  if (!fs.existsSync(envPath)) return;
+  if (!fs.existsSync(envPath)) {
+    console.log(`  ℹ️  未找到根目录 .env (${envPath})，跳过环境变量预加载`);
+    return;
+  }
   const content = fs.readFileSync(envPath, "utf8");
+  let loaded = 0;
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
@@ -36,7 +40,14 @@ function loadRootEnv() {
     }
     if (process.env[key] === undefined) {
       process.env[key] = value;
+      loaded++;
     }
+  }
+  console.log(`  ✅ 已加载根目录 .env：${loaded} 个键（已存在环境变量不覆盖）`);
+  if (process.env.ONEBOT_QQ_ACCOUNT) {
+    console.log(`  🤖 检测到 ONEBOT_QQ_ACCOUNT=${process.env.ONEBOT_QQ_ACCOUNT}，将自动启动 NapCat`);
+  } else {
+    console.log(`  ℹ️  未配置 ONEBOT_QQ_ACCOUNT，NapCat 不会自动启动`);
   }
 }
 loadRootEnv();
