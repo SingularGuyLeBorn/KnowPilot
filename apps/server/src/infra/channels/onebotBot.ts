@@ -7,6 +7,7 @@
  * - 支持私聊 (private) 与群聊 (group @Bot)
  * - 剥离 CQ 码与 @ 占位，自动清洗文本
  * - 通过 OneBot HTTP API (/send_msg, /send_private_msg, /send_group_msg) 回发 Agent 响应
+ * - 安全：可绑定指定 QQ 账号（self_id 校验）、用户白名单、群聊白名单、消息类型过滤、@ 才响应
  */
 
 import crypto from "node:crypto";
@@ -50,13 +51,94 @@ async function saveOneBotImageLocally(url: string): Promise<string | null> {
   }
 }
 
+export type OneBotMessageType = "text" | "image" | "at" | "reply" | "file" | "other";
+
 export type OneBotConfig = {
   httpUrl: string;
   accessToken: string;
   secret: string;
   enabled: boolean;
   allowedUsers: string[];
+  /** 指定本 Bot 的 QQ 账号；收到 self_id 不匹配的消息会忽略 */
+  qqAccount?: string;
+  /** 群聊白名单；空=拒绝所有群；*=允许所有群 */
+  allowedGroups: string[];
+  /** 群内允许的消息类型；默认 text */
+  groupMessageTypes: OneBotMessageType[];
+  /** 群内是否需要 @ 本 Bot 才响应；默认 true */
+  groupRequireAt: boolean;
 };
+
+/** 从 message / raw_message 中提取文本、图片、以及用于过滤的元信息 */
+function parseOneBotMessage(body: Record<string, unknown>): {
+  textParts: string[];
+  imageUrls: string[];
+  types: Set<OneBotMessageType>;
+  atSelf: boolean;
+} {
+  const textParts: string[] = [];
+  const imageUrls: string[] = [];
+  const types = new Set<OneBotMessageType>();
+  let atSelf = false;
+  const selfId = String(body.self_id ?? "");
+
+  if (Array.isArray(body.message)) {
+    for (const seg of body.message as any[]) {
+      const type = String(seg.type ?? "");
+      if (type === "text") {
+        types.add("text");
+        if (seg.data?.text) textParts.push(seg.data.text);
+      } else if (type === "image") {
+        types.add("image");
+        const imgUrl = seg.data?.url || (seg.data?.file?.startsWith("http") ? seg.data.file : "");
+        if (imgUrl) imageUrls.push(imgUrl);
+      } else if (type === "at") {
+        types.add("at");
+        if (selfId && String(seg.data?.qq ?? "") === selfId) atSelf = true;
+      } else if (type === "reply") {
+        types.add("reply");
+      } else if (type === "file") {
+        types.add("file");
+      } else {
+        types.add("other");
+      }
+    }
+  } else if (typeof body.raw_message === "string" && body.raw_message) {
+    let raw = body.raw_message;
+
+    // 提取 CQ:image 中的 url
+    const cqImgRegex = /\[CQ:image,[^\]]*url=([^,\]]+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = cqImgRegex.exec(raw)) !== null) {
+      if (match[1]) imageUrls.push(match[1]);
+    }
+
+    // 检测 @ 本 Bot
+    if (selfId) {
+      const atRegex = new RegExp(`\\[CQ:at,qq=${selfId}\\]`);
+      if (atRegex.test(raw)) atSelf = true;
+    }
+
+    // 检测消息类型
+    if (/\[CQ:image,/.test(raw)) types.add("image");
+    if (/\[CQ:at,/.test(raw)) types.add("at");
+    if (/\[CQ:reply,/.test(raw)) types.add("reply");
+    if (/\[CQ:file,/.test(raw)) types.add("file");
+    if (/\[CQ:[^\]]+\]/.test(raw)) types.add("other");
+    if (raw.replace(/\[CQ:[^\]]+\]/g, "").trim()) types.add("text");
+
+    // 清洗 CQ 码
+    raw = raw.replace(/\[CQ:at,qq=[^\]]+\]/g, "").trim();
+    raw = raw.replace(/\[CQ:[^\]]+\]/g, "").trim();
+    if (raw) textParts.push(raw);
+  } else if (typeof body.message === "string" && body.message) {
+    // 兜底：message 是字符串
+    textParts.push(body.message);
+    types.add("text");
+  }
+
+  return { textParts, imageUrls, types, atSelf };
+}
 
 export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
   let state = "disconnected";
@@ -69,6 +151,18 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
   } else {
     console.log("[onebot] 白名单模式：未配置白名单，拒绝所有用户");
   }
+  if (cfg.qqAccount) {
+    console.log(`[onebot] 强制绑定 QQ 账号：${cfg.qqAccount}（self_id 不匹配则忽略）`);
+  }
+  if (cfg.allowedGroups.includes("*")) {
+    console.log("[onebot] 群聊模式：允许所有群聊");
+  } else if (cfg.allowedGroups.length > 0) {
+    console.log(`[onebot] 群聊模式：仅允许 ${cfg.allowedGroups.length} 个群`);
+  } else {
+    console.log("[onebot] 群聊模式：未配置群聊白名单，拒绝所有群聊");
+  }
+  console.log(`[onebot] 群聊消息类型：${cfg.groupMessageTypes.join(",") || "none"}；需@：${cfg.groupRequireAt}`);
+
   const replyCtx = new Map<
     string,
     { userId: string; groupId?: string; isGroup: boolean; msgId: string }
@@ -139,39 +233,53 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
       return { ok: true as const, ignored: true };
     }
 
+    const selfId = String(b.self_id ?? "").trim();
+    if (cfg.qqAccount && selfId !== cfg.qqAccount) {
+      return {
+        ok: false as const,
+        error: `self_id 不匹配：收到 ${selfId || "(empty)"}，配置要求 ${cfg.qqAccount}`,
+      };
+    }
+
     const messageType = String(b.message_type ?? "");
     const userId = String(b.user_id ?? "").trim();
     const groupId = b.group_id ? String(b.group_id).trim() : undefined;
     const msgId = String(b.message_id ?? crypto.randomUUID());
-    
+
+    const isGroup = messageType === "group";
+
+    if (isGroup && groupId) {
+      // 群聊白名单
+      const groupOpenMode = cfg.allowedGroups.includes("*");
+      const groupAllowed = groupOpenMode || cfg.allowedGroups.includes(groupId);
+      if (!groupAllowed) {
+        console.log(`[onebot] 忽略非白名单群聊：group=${groupId}`);
+        return { ok: true as const, ignored: true };
+      }
+    }
+
     // 异步解析消息中的文本、图片 (CQ 码 / Segment 数组)
     (async () => {
-      let textParts: string[] = [];
-      let imageUrlsToDownload: string[] = [];
+      const parsed = parseOneBotMessage(b);
+      const { textParts, imageUrls: imageUrlsToDownload, types, atSelf } = parsed;
 
-      if (Array.isArray(b.message)) {
-        for (const seg of b.message as any[]) {
-          if (seg.type === "text") {
-            if (seg.data?.text) textParts.push(seg.data.text);
-          } else if (seg.type === "image") {
-            const imgUrl = seg.data?.url || (seg.data?.file?.startsWith("http") ? seg.data.file : "");
-            if (imgUrl) imageUrlsToDownload.push(imgUrl);
+      // 群聊消息类型过滤 + @ 要求
+      if (isGroup && groupId) {
+        if (cfg.groupMessageTypes.length > 0) {
+          const allowedSet = new Set(cfg.groupMessageTypes);
+          // 若消息只包含 text，且 text 未在白名单，忽略；但 text 通常与 at 共存，需同时允许
+          const relevantTypes = new Set([...types]);
+          relevantTypes.delete("other"); // other 不纳入过滤，避免误判纯文本里夹带未知段
+          const hasAllowed = [...relevantTypes].some((t) => allowedSet.has(t));
+          if (!hasAllowed) {
+            console.log(`[onebot] 忽略群聊消息类型：group=${groupId}, types=${[...types].join(",")}`);
+            return;
           }
         }
-      } else if (typeof b.raw_message === "string" && b.raw_message) {
-        let raw = b.raw_message;
-
-        // 提取 CQ:image 中的 url
-        const cqImgRegex = /\[CQ:image,[^\]]*url=([^,\]]+)/g;
-        let match: RegExpExecArray | null;
-        while ((match = cqImgRegex.exec(raw)) !== null) {
-          if (match[1]) imageUrlsToDownload.push(match[1]);
+        if (cfg.groupRequireAt && !atSelf) {
+          console.log(`[onebot] 忽略群聊非 @ 消息：group=${groupId}, user=${userId}`);
+          return;
         }
-
-        // 清洗 CQ 码
-        raw = raw.replace(/\[CQ:at,qq=[^\]]+\]/g, "").trim();
-        raw = raw.replace(/\[CQ:[^\]]+\]/g, "").trim();
-        if (raw) textParts.push(raw);
       }
 
       // 下载并保存本地图片
@@ -199,7 +307,7 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
         userId,
         text: combinedText,
         msgId,
-        groupId: messageType === "group" ? groupId : undefined,
+        groupId: isGroup ? groupId : undefined,
       });
     })().catch((err) => {
       console.error("[onebot] 异步解析 Webhook 消息失败:", err);
@@ -239,13 +347,30 @@ export function createOneBotAdapter(cfg: OneBotConfig): ChannelAdapter {
     enabled: cfg.enabled,
     getStatus: () => ({
       state: cfg.enabled ? state : "disconnected",
-      detail: cfg.enabled ? `url=${cfg.httpUrl}` : "未配置",
+      detail: cfg.enabled ? `url=${cfg.httpUrl}${cfg.qqAccount ? ` account=${cfg.qqAccount}` : ""}` : "未配置",
       lastError,
     }),
     start: async () => {
       if (!cfg.enabled) return;
       state = "connected";
       lastError = undefined;
+      if (cfg.qqAccount) {
+        try {
+          const info = await sendOneBotApi("/get_login_info", {});
+          const selfId = String(info.data?.user_id ?? info.data?.self_id ?? "");
+          if (selfId && selfId !== cfg.qqAccount) {
+            throw new Error(`当前登录账号 ${selfId} 与配置 ${cfg.qqAccount} 不匹配`);
+          }
+          if (selfId) {
+            console.log(`[onebot] 登录账号校验通过：${selfId}`);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[onebot] 登录账号校验失败: ${msg}`);
+          // 不阻断启动（QQ 可能尚未完成登录），但记录 lastError
+          lastError = msg;
+        }
+      }
     },
     stop: async () => {
       state = "disconnected";
@@ -300,6 +425,16 @@ export function loadOneBotConfigFromEnv(): OneBotConfig {
     .map((s) => s.trim())
     .filter(Boolean);
   const enabled = process.env.ONEBOT_ENABLED !== "false";
+  const qqAccount = (process.env.ONEBOT_QQ_ACCOUNT || "").trim();
+  const allowedGroups = (process.env.ONEBOT_ALLOWED_GROUPS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const groupMessageTypes = (process.env.ONEBOT_GROUP_MESSAGE_TYPES || "text")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean) as OneBotMessageType[];
+  const groupRequireAt = (process.env.ONEBOT_GROUP_REQUIRE_AT || "true").trim().toLowerCase() !== "false";
 
   return {
     httpUrl: httpUrl || "http://127.0.0.1:3001",
@@ -307,6 +442,10 @@ export function loadOneBotConfigFromEnv(): OneBotConfig {
     secret,
     enabled,
     allowedUsers: allowed,
+    qqAccount: qqAccount || undefined,
+    allowedGroups,
+    groupMessageTypes: groupMessageTypes.length > 0 ? groupMessageTypes : ["text"],
+    groupRequireAt,
   };
 }
 
