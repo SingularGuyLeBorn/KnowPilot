@@ -11,7 +11,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { AppConfig } from "./config.js";
 import type { ServiceContainer } from "./serviceContainer.js";
 import { claimWebhookEvent } from "./webhookIdempotency.js";
-import { resolveOrCreateChannelBinding } from "./channelBinding.js";
+import { resolveOrCreateChannelBinding, setDefaultChannelSession } from "./channelBinding.js";
 import { getStreamHub } from "./sessionStreamHub.js";
 import { createTrpcInvoker } from "./trpcInvoker.js";
 import { wrapEmitForChannelReply } from "./channelStreamBridge.js";
@@ -114,8 +114,10 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
   let text = msg.payload.text?.trim();
   if (!text) return { ok: false, error: "空消息" };
 
-  // 检测「新话题」指令：/new [主题名] 或 /新话题 [主题名]
-  const newTopicMatch = text.match(/^\/(?:new|新话题|newtopic|换话题)\s*(.*)/i);
+  // 检测「新话题」指令：/new /新话题 /开启一个新话题 /开启新话题 /换话题 /newtopic，或自然语言同义短语
+  const newTopicMatch = text.match(
+    /^(?:\/(?:new|新话题|newtopic|换话题|开启新话题|开启一个新话题)|新话题|开启新话题|开启一个新话题|换话题)\s*(.*)/i,
+  );
   let forceChatId: string | undefined;
   if (newTopicMatch) {
     const topicLabel = newTopicMatch[1]?.trim();
@@ -146,6 +148,18 @@ export async function handleIncomingMessage(msg: UnifiedMessage): Promise<Gatewa
       chatId: msg.envelope.chatId ?? null,
       forceChatId,
     });
+
+    // /new 创建的新 session 要把默认绑定切过去，否则下一条无 chatId 的消息会回到旧 session
+    if (newTopicMatch) {
+      await setDefaultChannelSession(
+        deps.prisma,
+        msg.envelope.channel,
+        msg.envelope.peerId,
+        msg.envelope.chatId ?? null,
+        binding.sessionId,
+        binding.agentId,
+      );
+    }
 
     // 清空当前 IM session 上下文
     if (clearMatch) {

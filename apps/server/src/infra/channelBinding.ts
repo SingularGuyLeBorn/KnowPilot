@@ -244,6 +244,36 @@ export async function listChannelBindings(
   return rows.map((r) => ({ ...r, chatId: r.chatId || null })) as ChannelBindingRow[];
 }
 
+export async function setDefaultChannelSession(
+  prisma: PrismaClient,
+  channel: ImChannel,
+  peerId: string,
+  chatId: string | null,
+  sessionId: string,
+  agentId: string,
+): Promise<void> {
+  const key = chatId?.trim() ?? "";
+  await prisma.channelBinding.upsert({
+    where: {
+      channel_peerId_chatId: {
+        channel,
+        peerId,
+        chatId: key,
+      },
+    },
+    update: { sessionId, agentId, lastMessageAt: new Date() },
+    create: {
+      channel,
+      peerId,
+      chatId: key,
+      sessionId,
+      agentId,
+      title: null,
+      lastMessageAt: new Date(),
+    },
+  });
+}
+
 export async function deleteChannelBinding(prisma: PrismaClient, id: string): Promise<boolean> {
   const n = await prisma.channelBinding.deleteMany({ where: { id } });
   return n.count > 0;
