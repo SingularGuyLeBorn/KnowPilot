@@ -124,6 +124,19 @@ export function useChatSseSubscriptions({
           refreshAsync({ heavy: true, sessionId: sid });
         }
       });
+      register("session_run_settled", (ev) => {
+        // run 完全 settled（服务端 DB + 内存占用均已释放）：
+        // 触发 hydrateDone → onStreamCommitted → drain 消费队列，
+        // 修复 done 事件后立即 drain 撞上运行声明未释放而 busy_queued 卡死。
+        let targetSid = sid;
+        try {
+          const data = JSON.parse(ev.data) as { sessionId?: string };
+          if (data.sessionId) targetSid = data.sessionId;
+        } catch {
+          /* ignore */
+        }
+        streamLifecycleActions.hydrateDone(targetSid);
+      });
       register("async_job_update", (ev) => {
         let status: string | undefined;
         let targetSid = sid;

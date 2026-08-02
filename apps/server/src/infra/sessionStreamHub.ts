@@ -1000,4 +1000,15 @@ export function emitHubRunSettled(sessionId: string): void {
       /* 监听失败不阻塞 hub 收尾 */
     }
   }
+  // PUSH：run 完全 settled（DB + 内存占用均已释放）后通知前端，
+  // 让排队消息在服务端真正空闲后再触发 drain，避免 done 事件后立即 drain
+  // 撞上内存/DB 运行声明还没释放而 busy_queued 卡死。
+  try {
+    getStreamHub()?.pushExternalEvent(sessionId, {
+      type: "session_run_settled",
+      sessionId,
+    });
+  } catch {
+    /* ignore */
+  }
 }

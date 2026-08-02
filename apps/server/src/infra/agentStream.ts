@@ -104,6 +104,8 @@ export type AgentStreamEvent =
         taskTimeoutMs: number;
       };
     }
+  /** 交互式 run 完全 settled（DB + 内存占用均已释放），前端据此触发 drain */
+  | { type: "session_run_settled"; sessionId: string }
   /** Swarm 上级消息到达，替代 pullAgentMessages 轮询 */
   | {
       type: "agent_message";
