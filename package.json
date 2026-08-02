@@ -44,7 +44,7 @@
     "integration:smoke:platform:extended": "pnpm --filter @knowpilot/server integration:smoke:platform:extended",
     "read-article:spot": "pnpm --filter @knowpilot/server read-article:spot",
     "cleanup:smoke-artifacts": "pnpm --filter @knowpilot/server cleanup:smoke-artifacts",
-    "napcat": "tools/napcat/bootmain/NapCatWinBootMain.exe"
+    "napcat": "node scripts/start-napcat.mjs"
   },
   "devDependencies": {
     "concurrently": "9.1.2",
